@@ -2182,6 +2182,16 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
    */
   const shapedCorners = new Uint8Array(GRID * GRID);
   const spherePoint = new Vector3();
+  /**
+   * The whole plate's normals, steepness and bounds worked out again: every corner moved (a map loaded,
+   * the land made anew), never a dab.
+   * @rebuild Only when the whole land changed.
+   */
+  const wholePlateMoved = (): void => {
+    geometry.computeVertexNormals();
+    refreshAllSteep();
+    geometry.computeBoundingSphere();
+  };
   /** The cells the last `update` rewrote (see `lastRegion`). */
   let lastRegion: TerrainRegion | null = null;
   /** The water waits for the end of a stroke (see `settle`). */
@@ -3159,11 +3169,13 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
           for (let ix = box[0]; ix <= box[1]; ix++) moved.push(iy * GRID + ix);
         }
         refreshNormals(moved);
-      } else {
-        geometry.computeVertexNormals();
-        refreshAllSteep();
-      }
-      geometry.computeBoundingSphere();
+        // The bounds grown over the corners the dab moved (`Sphere.expandByPoint`), as the shaping
+        // pass does: DO NOT work the sphere out again over every corner of the plate at every dab.
+        // The sphere is made with the plate (`computeBoundingSphere` once, where the mesh is made).
+        const sphere = geometry.boundingSphere!;
+        const position = geometry.getAttribute('position');
+        for (const i of moved) sphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
+      } else wholePlateMoved();
       lastStamps = doc.terrainStamps;
       // The water - every pool and river on the map - is the deferred part of
       // a stroke (Unity's SetHeightsDelayLOD then SyncHeightmap on release):

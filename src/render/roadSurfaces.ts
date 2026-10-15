@@ -21,7 +21,8 @@ import {
 import type { RoadElevation } from '@world/elevation';
 import { m } from '@world/units';
 import { medianNose } from '@world/landscape';
-import { PAINT_RISE, markingQuads, paintMaterial } from './markings';
+import { LANE_LINE } from '@world/roadTypes';
+import { PAINT_RISE, markingQuads } from './markings';
 import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrain';
 import { mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
@@ -384,16 +385,11 @@ export function* roadSurfaceSteps(
   let built = 0;
   let reused = 0;
   const rebuilt: TileRect[] = [];
-  // Without a caller to own them, the paint materials belong to this build.
-  const paint = reuse?.paint ?? new Map<string, Material>();
-  const paintFor = (color: string): Material => {
-    let material = paint.get(color);
-    if (!material) {
-      material = paintMaterial(color);
-      paint.set(color, material);
-    }
-    return material;
-  };
+  // The paint of every colour, made at load (`paintCatalogue`): read here, never made. A colour not in
+  // it (none is: `tests/render/paintCatalogue.spec.ts`) takes the lane lines' paint; without a caller's
+  // catalogue (a test) the materials' road paint stands in.
+  const paint = reuse?.paint;
+  const paintFor = (color: string): Material => paint?.get(color) ?? paint?.get(LANE_LINE) ?? materials.asphalt;
 
   const reading = <T>(work: () => T): T => elevation.remembering ? elevation.remembering(work) : work();
   const manual = (id: SegmentId): boolean => {
@@ -439,14 +435,16 @@ export function* roadSurfaceSteps(
     const current = new Set(passes.map((pass) => pass.id));
     for (const id of reuse.tiles.keys()) if (!current.has(id)) reuse.tiles.delete(id);
   }
+  // The structures some road not set by hand stands on, read once: DO NOT walk every segment of the map
+  // for each pass (passes x segments, the whole map again for every alignment).
+  const structuresBuilt = new Set<string>();
+  for (const segment of net.doc.segments.values()) if (!manual(segment.id)) structuresBuilt.add(segment.structure);
   for (const pass of passes) {
     yield;
     const structure = roadStructure(pass.structure);
-    const present = [...net.doc.segments.values()].some(
-      (segment) => pass.chain !== undefined
-        ? pass.chain.includes(segment.id)
-        : segment.structure === structure.id && !manual(segment.id),
-    );
+    const present = pass.chain !== undefined
+      ? pass.chain.some((id) => net.doc.segment(id) !== undefined)
+      : structuresBuilt.has(structure.id);
     if (!present) {
       reuse?.tiles.delete(pass.id);
       continue;
@@ -862,7 +860,6 @@ export function* roadSurfaceSteps(
       // Meshes the cache keeps are freed by `disposeSurfaceReuse`.
       if (!chunks) for (const mesh of meshes) disposeMesh(mesh);
       group.clear();
-      if (!reuse) for (const material of paint.values()) material.dispose();
     },
   };
 }

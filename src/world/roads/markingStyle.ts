@@ -21,6 +21,8 @@ export type MarkingStyleId = 'classic' | 'br' | 'us' | 'eu';
 
 const YELLOW = '#e1c45a';
 const WHITE = '#eee8d7';
+/** The centre line colours the regional standards paint (`render/markings.ts` `PAINT_COLOURS`). */
+export const STYLE_PAINT: readonly string[] = Object.freeze([YELLOW, WHITE]);
 
 export interface MarkingStyle {
   readonly id: MarkingStyleId;

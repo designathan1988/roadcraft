@@ -2,7 +2,8 @@ import { Color, MeshStandardMaterial, type Material } from 'three';
 
 import type { Vec2 } from '@core/vec2';
 import { GEO_EPS } from '@core/scalar';
-import { Level } from '@world/roadTypes';
+import { LANE_LINE, Level, ROAD_TYPES } from '@world/roadTypes';
+import { STYLE_PAINT } from '@world/roads/markingStyle';
 import type { Network } from '@world/network';
 import type { NodeId, SegmentId } from '@world/ids';
 import {
@@ -15,7 +16,7 @@ import {
   transitionMarkings,
 } from '@world/markings';
 import { STOP_BAR_WIDTH } from '@world/approach';
-import { parkingLayout } from '@world/parkingLayout';
+import { PARKING_PAINT, parkingLayout } from '@world/parkingLayout';
 import { m } from '@world/units';
 import { pullTowardEye } from './depthConvention';
 
@@ -114,6 +115,24 @@ function stroke(batch: Batch, spec: StrokeSpec): void {
 
 function addBar(batch: Batch, value: Bar): void {
   quad(batch, value.a, value.b, value.width / 2);
+}
+
+/**
+ * Every colour the roads are painted in: each class's line, the lane lines, the regional standards'
+ * centres and the parking's lines - a closed set, so the paint is made at load (`paintCatalogue`).
+ */
+/** The stop lines' and the zebras' paint. */
+const STOP_PAINT = '#ece9d9';
+const ZEBRA_PAINT = '#f4f1e3';
+export const PAINT_COLOURS: readonly string[] = Object.freeze([...new Set([...ROAD_TYPES.map((rt) => rt.line), LANE_LINE, ...STYLE_PAINT, ...PARKING_PAINT, STOP_PAINT, ZEBRA_PAINT])]);
+
+/**
+ * The paint of every colour, made once when the scene is (CLAUDE.md: a material made once, never in a
+ * rebuild): the road surfaces only read it (`roadSurfaces.ts`). DO NOT make a paint material where a
+ * frame reaches: a colour first painted made its material in the frame of the edit.
+ */
+export function paintCatalogue(): Map<string, Material> {
+  return new Map(PAINT_COLOURS.map((color) => [color, paintMaterial(color)]));
 }
 
 /** Paint of one colour: lit like the asphalt under it, drawn over it. */
@@ -224,8 +243,8 @@ export function markingQuads(
   }
   if (includeJunctionDetails) {
     const detail = junctionDetail(net);
-    for (const value of detail.stops) addBar(at('#ece9d9'), value);
-    for (const value of detail.zebras) addBar(at('#f4f1e3'), value);
+    for (const value of detail.stops) addBar(at(STOP_PAINT), value);
+    for (const value of detail.zebras) addBar(at(ZEBRA_PAINT), value);
     // Mini-roundabouts' painted islands (V5).
     for (const spec of miniRoundaboutMarkings(net)) stroke(at(spec.color), spec);
     // The junction rule's words and symbols before the stop lines (V6).

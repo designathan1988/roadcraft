@@ -70,6 +70,8 @@ const MER_DASH: readonly number[] = [m(1), m(1)];
 const YELLOW = '#e1c45a';
 /** The red of a ciclofaixa's paving. */
 const CYCLE_RED = '#a8473e';
+/** Every colour the parking's lines are painted in (`render/markings.ts` `PAINT_COLOURS`). */
+export const PARKING_PAINT: readonly string[] = Object.freeze([WHITE, YELLOW, CYCLE_RED]);
 /** The narrowest gate a car goes through (a person's is 1.2 m); `sim/agents/parking.ts` `CAR_GATE`. */
 const CAR_GATE_WIDTH = m(2.2);
 /** Kept clear either side of a lot's frontage for its entrance. */

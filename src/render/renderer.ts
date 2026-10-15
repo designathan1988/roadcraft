@@ -85,6 +85,7 @@ import { applyWear, createWearField } from './wear';
 import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
 import { createSignLayer } from './signLayer';
 import { type PlantCells, createCoverCells, createTreeCells } from './plantCells';
+import { paintCatalogue } from './markings';
 import { CandidateKeep } from './candidateKeep';
 import { JournalCursor } from '@world/derived';
 import { Engine } from '@core/engine';
@@ -758,7 +759,7 @@ export function createSceneRenderer(
       .add(elevation?.digest(minX, minY, maxX, maxY, SURFACE_READ_REACH) ?? 0)
       .add(terrain.digest(minX, minY, maxX, maxY))
       .value(),
-    paint: new Map(),
+    paint: paintCatalogue(),
     chunks: new Map(),
     retired: [],
     stored: new Map(),
