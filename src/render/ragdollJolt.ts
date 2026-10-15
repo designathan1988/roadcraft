@@ -189,13 +189,19 @@ export class JoltWorld {
         const axis = tmpV.subVectors(b, a);
         const len = axis.length();
         rot.setFromUnitVectors(tmpW.set(0, 1, 0), len > 1e-6 ? axis.divideScalar(len) : tmpW.set(0, 1, 0));
-        shape = new J.CapsuleShapeSettings(Math.max(0.01, len / 2), radius).Create().Get();
+        // The settings destroyed once the shape is made, as `ground` and `prism` do: kept,
+        // they hold the shape too (their cached result), and every ragdoll leaked twelve of each.
+        const settings = new J.CapsuleShapeSettings(Math.max(0.01, len / 2), radius);
+        shape = settings.Create().Get();
+        J.destroy(settings);
       } else {
         centre.copy(part.shape.centre);
         rot.setFromRotationMatrix(tmpM.makeBasis(part.shape.axes[0], part.shape.axes[1], part.shape.axes[2]));
         const [hx, hy, hz] = part.shape.half;
         const he = new J.Vec3(hx, hy, hz);
-        shape = new J.BoxShapeSettings(he, Math.min(0.05, hx * 0.5, hy * 0.5, hz * 0.5)).Create().Get();
+        const settings = new J.BoxShapeSettings(he, Math.min(0.05, hx * 0.5, hy * 0.5, hz * 0.5));
+        shape = settings.Create().Get();
+        J.destroy(settings);
         J.destroy(he);
       }
       const pos = new J.RVec3(centre.x, centre.y, centre.z), q = new J.Quat(rot.x, rot.y, rot.z, rot.w);
