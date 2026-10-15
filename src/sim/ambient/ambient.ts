@@ -11,7 +11,7 @@ import { spawnVehicleAt, trafficTarget } from '../vehicles/spawn';
 import { vehiclePose } from '../pose';
 import { joinsFootway, onLastStretch, removeWalker, walkerAlive, walkerOf, walkOn, walkThrough } from '../agents/walk';
 import type { Walkway } from '@world/walkways';
-import { collectBays, stallFits, type Bay } from '../agents/parking';
+import { bayChangesSince, baySources, baysOfSource, stallFits, type Bay } from '../agents/parking';
 import { type DoorWay, doorWay, personGates } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
 import { busy, CARS, outShare, PEOPLE, type Mix } from './demand';
@@ -107,24 +107,46 @@ export class AmbientWorld {
   readonly parked: Vehicle[] = [];
   /** The members of `parked` put there by the scenery or through `addParked` (`isParked`). */
   private readonly standing = new Set<Vehicle>();
-  /** The scenery's own cars standing in bays, by the bay's place (`spotKey`), and each one's bay. */
+  /** Each car's place in `parked`, for its removal in one step (`removeParked`). */
+  private readonly parkedAt = new Map<Vehicle, number>();
+  /**
+   * The cars of `parked` that may move while they stand in it: those put
+   * there through `addParked` (the lots' cars driving into or out of a bay,
+   * the lorries in a yard). The scenery's own stand where they were put.
+   */
+  readonly movers = new Set<Vehicle>();
+  /**
+   * The cars that came into `parked` and went since `parkedBase`, oldest
+   * first (`parkedSince`), and the serial of the latest: what the walkers'
+   * zones of the parked cars follow (`agents/walk.ts` ParkedZoneIndex). DO
+   * NOT make a reader compare the whole list every tick to find what changed:
+   * every parked car of the map, each tick.
+   */
+  private parkedLog: { readonly car: Vehicle; readonly added: boolean }[] = [];
+  private parkedBase = 0;
+  parkedSerial = 0;
+  /** The scenery's own cars standing in bays, by the bay's place (`spotKey`). */
   private readonly sceneryAt = new Map<string, Vehicle>();
-  private readonly bayOf = new Map<Vehicle, number>();
+  /**
+   * The scenery's cars by the source of their bays (`parking.ts`
+   * bayChangesSince: a lot's, a street's kerb), and each car's source: what
+   * a change of one source's bays stands again, and nothing else.
+   */
+  private readonly carsBySource = new Map<string, Vehicle[]>();
+  private readonly sourceOf = new Map<Vehicle, string>();
+  /** The serial of the bays' changes last taken in (`bayChangesSince`); -1: none yet. */
+  private baysSerial = -1;
 
-  private readonly rng = new Rng(0xa3b1e7);
   private readonly walkers = new Set<number>();
   private readonly drivers = new Set<number>();
   /** The drivers made here that may be on screen now: never taken off the road at a dead end (`vehicles/spawn.ts` stepDespawn). */
   readonly sighted = new Set<number>();
-  private readonly bays = new Map<number, Vehicle>();
   private clock = 0;
   private nextTrip = 1 << 26;
   private lanesFor = '';
   private lanes: { id: string; length: number; x: number; y: number }[] = [];
   /** Each lane's end along all of them laid end to end, in the order of `lanes`: `lanesAt[k]` is the lengths of lanes 0..k summed. */
   private lanesAt = new Float64Array(0);
-  private baysFor = '';
-  private bayList: Bay[] = [];
   /** A map just opened: the first fill may use the view (`reset`). */
   private fresh = true;
   /** Seconds the fresh fill may still use the view. */
@@ -153,12 +175,15 @@ export class AmbientWorld {
     this.places = newPlaces();
     this.drivers.clear();
     this.sighted.clear();
-    this.bays.clear();
     this.parked.length = 0;
     this.standing.clear();
+    this.parkedAt.clear();
+    this.movers.clear();
+    this.forgetParkedLog();
     this.sceneryAt.clear();
-    this.bayOf.clear();
-    this.baysFor = '';
+    this.carsBySource.clear();
+    this.sourceOf.clear();
+    this.baysSerial = -1;
     this.vacated.clear();
     // The lots' cars of the old map with it (`agents/lotTraffic.ts`).
     w.city.lots.reset();
@@ -167,6 +192,16 @@ export class AmbientWorld {
     this.opening = true;
     this.openTicks = OPEN_TICKS;
     this.openSpots.length = 0;
+    // As a new map's: the looks from the first, the counters from nought (the
+    // random stream is the world's, `SimWorld.rng.ambient`, forked again by
+    // `SimWorld.reset`). DO NOT keep them going: the same map opened twice
+    // filled other streets with other people at other ticks. The trip ids go
+    // on (`nextTrip`), as the vehicles' (`SimWorld.reset`).
+    this.clock = 0;
+    this.nextEdgeLook = 0;
+    this.gateWalks.made = 0;
+    this.gateWalks.fromGate = 0;
+    this.gateWalks.toGate = 0;
   }
 
   step(w: SimWorld): void {
@@ -304,7 +339,7 @@ export class AmbientWorld {
         this.walkers.delete(id);
       } else if (inSight) {
         // In sight on their last stretch: on to somewhere else, never ending where they are seen.
-        const b = this.rng.float() * Math.PI * 2, e = reach * (0.3 + this.rng.float() * 0.7);
+        const b = w.rng.ambient.float() * Math.PI * 2, e = reach * (0.3 + w.rng.ambient.float() * 0.7);
         walkOn(w, id, focus.x + Math.cos(b) * e, focus.y + Math.sin(b) * e, m(30));
       }
     }
@@ -312,19 +347,19 @@ export class AmbientWorld {
     if (!engine.walkTrip || !engine.walkableNear) return;
     const anywhere = !seen || this.fresh;
     for (let made = 0; made < MAKE_PER_LOOK * (anywhere ? 4 : 1) && this.walkers.size < want; made++) {
-      const a = this.rng.float() * Math.PI * 2;
-      const d = anywhere ? reach * Math.sqrt(this.rng.float()) : focus.r * 1.05 + (reach - focus.r * 1.05) * this.rng.float();
+      const a = w.rng.ambient.float() * Math.PI * 2;
+      const d = anywhere ? reach * Math.sqrt(w.rng.ambient.float()) : focus.r * 1.05 + (reach - focus.r * 1.05) * w.rng.ambient.float();
       const from = engine.walkableNear.call(engine, w, focus.x + Math.cos(a) * d, focus.y + Math.sin(a) * d, m(30));
       if (!from || (seen && !this.fresh && this.seen(w, focus, from.x, from.y, m(6)))) continue;
       // Somewhere across the view: the walk passes through what is seen.
-      const b = this.rng.float() * Math.PI * 2, e = reach * (0.3 + this.rng.float() * 0.9);
+      const b = w.rng.ambient.float() * Math.PI * 2, e = reach * (0.3 + w.rng.ambient.float() * 0.9);
       const to = engine.walkableNear.call(engine, w, focus.x + Math.cos(b) * e, focus.y + Math.sin(b) * e, m(30));
       if (!to || Math.hypot(to.x - from.x, to.y - from.y) < m(40)) continue;
-      const roll = this.rng.float();
+      const roll = w.rng.ambient.float();
       const ageClass: PersonAgeClass = roll < 0.12 ? 'child' : roll < 0.28 ? 'elder' : 'adult';
       const id = engine.walkTrip.call(engine, w, {
         trip: this.nextTrip++, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
-        seed: Math.floor(this.rng.float() * 0x7fffffff), ageClass, reach: m(30),
+        seed: Math.floor(w.rng.ambient.float() * 0x7fffffff), ageClass, reach: m(30),
       });
       if (id !== null) { this.walkers.add(id); this.company(w, id, ageClass, from, to, false); }
     }
@@ -442,10 +477,10 @@ export class AmbientWorld {
       // Out of a lot, into one, both (the other end in town as often as any end is), or neither.
       let fromLot: DoorWay | null = null;
       let toLot: DoorWay | null = null;
-      if (outW + inW > 0 && this.rng.float() < local) {
-        const out = !ends.length || this.rng.float() * (outW + inW) < outW;
+      if (outW + inW > 0 && w.rng.ambient.float() < local) {
+        const out = !ends.length || w.rng.ambient.float() * (outW + inW) < outW;
         const first = this.pickPlace(w, hour, out, null);
-        const second = first && this.rng.float() < local ? this.pickPlace(w, hour, !out, first) : null;
+        const second = first && w.rng.ambient.float() < local ? this.pickPlace(w, hour, !out, first) : null;
         if (out) { fromLot = first; toLot = second; } else { toLot = first; fromLot = second; }
       }
       let from: { node: number; x: number; y: number };
@@ -454,7 +489,7 @@ export class AmbientWorld {
         from = { node: -1, x: door.x, y: door.y };
       } else {
         if (!ends.length) continue;
-        from = ends[Math.floor(this.rng.float() * ends.length)]!;
+        from = ends[Math.floor(w.rng.ambient.float() * ends.length)]!;
         // Not onto somebody standing there (out of a door, they wait inside until it is clear).
         if (engine.bridge.anyoneWithin(w, from.x, from.y, m(1.5), null)) continue;
       }
@@ -485,13 +520,13 @@ export class AmbientWorld {
         roams = true;
       }
     }
-    const roll = this.rng.float();
+    const roll = w.rng.ambient.float();
     const ageClass: PersonAgeClass = roll < 0.12 ? 'child' : roll < 0.28 ? 'elder' : 'adult';
     const head = fromLot ? fromLot.out : NO_WAY;
     const tail = toLot ? reversed(toLot) : NO_WAY;
     const trip = {
       trip: this.nextTrip++, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
-      seed: Math.floor(this.rng.float() * 0x7fffffff), ageClass, reach: m(30),
+      seed: Math.floor(w.rng.ambient.float() * 0x7fffffff), ageClass, reach: m(30),
     };
     const id = fromLot || toLot ? walkThrough(w, trip, head, tail) : engine.walkTrip.call(engine, w, trip);
     if (id === null) return null;
@@ -508,7 +543,7 @@ export class AmbientWorld {
   private across(w: SimWorld, from: { x: number; y: number }): { x: number; y: number } | null {
     const engine = w.pedEngine;
     for (let k = 0; k < 4; k++) {
-      const a = this.rng.float() * Math.PI * 2, d = m(60) + this.rng.float() * m(200);
+      const a = w.rng.ambient.float() * Math.PI * 2, d = m(60) + w.rng.ambient.float() * m(200);
       const p = engine.walkableNear?.call(engine, w, from.x + Math.cos(a) * d, from.y + Math.sin(a) * d, m(30));
       if (p) return p;
     }
@@ -529,7 +564,7 @@ export class AmbientWorld {
       if (!onLastStretch(w, id)) continue;
       const at = walkerOf(w, id);
       if (!at) continue;
-      const lot = this.gates && this.placesReady(w) && this.rng.float() < 0.6 ? this.pickPlace(w, hour, false, null) : null;
+      const lot = this.gates && this.placesReady(w) && w.rng.ambient.float() < 0.6 ? this.pickPlace(w, hour, false, null) : null;
       if (lot && walkOn(w, id, lot.out[0]!.x, lot.out[0]!.y, m(30), reversed(lot))) {
         this.roaming.delete(id);
         this.gateWalks.toGate++;
@@ -667,7 +702,9 @@ export class AmbientWorld {
    * the share that way at this hour (`outShare`). Not `not`, nor one too near
    * it to be worth the walk; the other end of a walk from `not` nearer is
    * likelier, by the gravity model's negative exponential (`WALK_DECAY`).
-   * Drawn in O(log n) (`LotPlaces.pick`), the lot drawn worked out then.
+   * Drawn by `LotPlaces.pick` - with no other end, in O(log n) (a Fenwick tree
+   * per kind); from another end, over the place cells (one look a cell) - the
+   * lot drawn worked out then.
    */
   private pickPlace(w: SimWorld, hour: number, out: boolean, not: DoorWay | null): DoorWay | null {
     this.refreshPlaces(w);
@@ -675,7 +712,7 @@ export class AmbientWorld {
       const share = outShare(kind, hour);
       return PEOPLE[kind] * busy(kind, hour) * (out ? share : 1 - share);
     });
-    return this.places.pick(this.rng, coef, not, (p) => joinsFootway(w, p), WALK_DECAY, m(40));
+    return this.places.pick(w.rng.ambient, coef, not, (p) => joinsFootway(w, p), WALK_DECAY, m(40));
   }
 
   /**
@@ -689,7 +726,7 @@ export class AmbientWorld {
     head: readonly { x: number; y: number }[] = NO_WAY, tail: readonly { x: number; y: number }[] = NO_WAY): void {
     const engine = w.pedEngine;
     if (!engine.walkTrip) return;
-    const roll = this.rng.float();
+    const roll = w.rng.ambient.float();
     if (roll >= 0.4) return;
     const ageClass: PersonAgeClass = age === 'child' ? 'adult' : roll < 0.1 && age === 'adult' ? 'child' : age;
     // Out of the same door: after the first, when the spot is clear (`walk.ts`
@@ -698,7 +735,7 @@ export class AmbientWorld {
     // until the first had walked off, and a group was seen to step out apart.
     const trip = {
       trip: this.nextTrip++, fromX: from.x + (head.length ? 0 : m(0.9)), fromY: from.y, toX: to.x, toY: to.y,
-      seed: Math.floor(this.rng.float() * 0x7fffffff), ageClass, reach: m(30), with: leader,
+      seed: Math.floor(w.rng.ambient.float() * 0x7fffffff), ageClass, reach: m(30), with: leader,
     };
     const id = head.length || tail.length ? walkThrough(w, trip, head, tail) : engine.walkTrip.call(engine, w, trip);
     if (id === null) return;
@@ -709,7 +746,7 @@ export class AmbientWorld {
   /** A road end's footway point at another road end than `not`; null when there is none. */
   private pickEnd(w: SimWorld, not: number | null): { node: number; x: number; y: number } | null {
     const ends = this.roadEnds(w).filter((e) => e.node !== not);
-    return ends.length ? ends[Math.floor(this.rng.float() * ends.length)]! : null;
+    return ends.length ? ends[Math.floor(w.rng.ambient.float() * ends.length)]! : null;
   }
 
   // ------------------------------------------------------------ traffic
@@ -743,13 +780,13 @@ export class AmbientWorld {
     // Cars are drawn at every zoom: only past the edge of the view, but for a map just opened.
     const anywhere = this.fresh;
     for (let tries = 0, made = 0; tries < 48 && made < MAKE_PER_LOOK * (anywhere ? 4 : 1) && this.drivers.size < want; tries++) {
-      const pick = lanes[Math.floor(this.rng.float() * lanes.length)]!;
+      const pick = lanes[Math.floor(w.rng.ambient.float() * lanes.length)]!;
       // A lane wholly out of reach is not looked at further.
       if (Math.hypot(pick.x - focus.x, pick.y - focus.y) > reach + pick.length / 2) continue;
       const lane = w.lanelet(pick.id);
       if (!lane) continue;
-      const arch = this.rng.weighted(TRAFFIC);
-      const s = arch.length + m(0.4) + this.rng.float() * Math.max(0, lane.length - arch.length - m(0.8));
+      const arch = w.rng.ambient.weighted(TRAFFIC);
+      const s = arch.length + m(0.4) + w.rng.ambient.float() * Math.max(0, lane.length - arch.length - m(0.8));
       const at = lane.centre.sampleAt(s).p;
       const d = Math.hypot(at.x - focus.x, at.y - focus.y);
       const ok = anywhere ? d < reach : d < reach && !this.seen(w, focus, at.x, at.y, arch.length + m(4));
@@ -791,8 +828,7 @@ export class AmbientWorld {
    * filled again when the bays are made again (a car would appear in it).
    */
   release(car: Vehicle): void {
-    const bay = this.bayOf.get(car);
-    if (bay !== undefined) { this.bays.delete(bay); this.bayOf.delete(car); }
+    this.leaveSource(car);
     if (car.free) {
       const spot = spotKey(car.free);
       this.vacated.add(spot);
@@ -810,18 +846,49 @@ export class AmbientWorld {
     return this.standing.has(body);
   }
 
-  /** A car of the lots' (or anybody's) drawn with the cars standing in bays. */
+  /** A car of the lots' (or anybody's) drawn with the cars standing in bays: one that may move there (`movers`). */
   addParked(body: Vehicle): void {
     if (this.standing.has(body)) return;
     this.standing.add(body);
+    this.parkedAt.set(body, this.parked.length);
     this.parked.push(body);
+    this.movers.add(body);
+    this.logParked(body, true);
   }
 
-  /** A car taken out of the cars standing in bays (the order of the rest kept). */
+  /**
+   * A car taken out of the cars standing in bays: the last of the list takes
+   * its place. DO NOT `indexOf` and `splice` it out: every parked car of the
+   * map, for each car of the lots that drives out (nobody reads the order).
+   */
   removeParked(body: Vehicle): void {
     this.standing.delete(body);
-    const at = this.parked.indexOf(body);
-    if (at >= 0) this.parked.splice(at, 1);
+    this.movers.delete(body);
+    const at = this.parkedAt.get(body);
+    if (at === undefined) return;
+    const last = this.parked.pop()!;
+    if (last !== body) { this.parked[at] = last; this.parkedAt.set(last, at); }
+    this.parkedAt.delete(body);
+    this.logParked(body, false);
+  }
+
+  /** The cars that came into `parked` (`added`) and went since `serial`, oldest first; null: read it whole. */
+  parkedSince(serial: number): readonly { readonly car: Vehicle; readonly added: boolean }[] | null {
+    if (serial < this.parkedBase || serial > this.parkedSerial) return null;
+    return this.parkedLog.slice(serial - this.parkedBase);
+  }
+
+  private logParked(car: Vehicle, added: boolean): void {
+    this.parkedLog.push({ car, added });
+    this.parkedSerial++;
+    // Longer than the list itself, reading the list whole is no dearer: forgotten.
+    if (this.parkedLog.length > Math.max(64, this.parked.length)) this.forgetParkedLog();
+  }
+
+  /** Everything logged forgotten: a reader of before reads `parked` whole (`parkedSince` null). */
+  private forgetParkedLog(): void {
+    this.parkedLog = [];
+    this.parkedBase = ++this.parkedSerial;
   }
 
   /** The scenery's own car standing in the bay at `spot` (`spotKey` of the bay), if one stands there. */
@@ -830,54 +897,93 @@ export class AmbientWorld {
   }
 
   /**
-   * The cars standing in the bays of the whole map, made again only when the
-   * bays change (a building, a road): the same car in the same bay each time.
+   * The cars standing in the bays of the whole map: the same car in the same
+   * bay each time. Only the sources of bays whose bays changed (a lot, a
+   * street's kerb: `parking.ts` bayChangesSince) are stood again; every one
+   * at the first look. DO NOT stand every bay of the town again at each
+   * change: every bay of the map (and a seeded draw each) for each building
+   * grown, and every parked car of the town filed again by the walkers.
    */
   private parking(w: SimWorld): void {
-    const key = `${w.doc.buildings.revision}:${w.topologyRevision}`;
-    if (key === this.baysFor) return;
-    this.baysFor = key;
-    this.bayList = collectBays(w);
-    const kept = new Map(this.bays);
-    // The list is shared: the lots' own cars (`agents/lotTraffic.ts`, stepped
-    // before the scenery) are in it too. Only the scenery's are made again;
-    // the others stay, or a car driving into a lot went undrawn for the tick.
-    const mine = new Set(kept.values());
-    const others = this.parked.filter((car) => !mine.has(car));
-    this.bays.clear();
-    this.sceneryAt.clear();
-    this.bayOf.clear();
-    this.parked.length = 0;
-    this.parked.push(...others);
-    this.standing.clear();
-    for (const car of others) this.standing.add(car);
-    for (const bay of this.bayList) {
-      // Left empty by a car the lots drove out (`release`), or held by one of theirs.
-      if (this.vacated.has(spotKey(bay))) continue;
-      if (others.some((car) => car.free && Math.hypot(car.free.x - bay.x, car.free.y - bay.y) < m(1.5))) continue;
-      // Seeded by where the bay is, in steps of 0.4 m: the same car in it at any world unit.
-      const r = new Rng(0x9e3779b9 ^ Math.imul(Math.round(stepsIn(bay.x, 0.4) * 7) + Math.round(stepsIn(bay.y, 0.4) * 13) * 4099, 2654435761));
-      if (r.float() >= PARKED) continue;
-      // A body the stall holds whole (`stallFits`): a van's nose stood through
-      // the fence at the back of a car's stall.
-      const fits = PARKED_KINDS.filter((kind) => stallFits(bay, kind.length));
-      const pick = r.float();
-      if (!fits.length) continue;
-      const arch = fits[Math.floor(pick * fits.length)]!;
-      const colour = arch.palette[Math.floor(r.float() * arch.palette.length)]!;
-      // A bay that was there before keeps its car (same place, same body).
-      const was = kept.get(bay.id);
-      const angle = Math.atan2(-bay.oy, -bay.ox);
-      const car = was && was.free && was.free.x === bay.x && was.free.y === bay.y ? was
-        : createVehicle(w.nextVehicleId++, arch, makeDriver(arch, () => r.float()), colour, bay.lane?.lanelet ?? '', 0, w.clock.tick);
-      car.seats = 0;
-      car.free = { x: bay.x, y: bay.y, angle, px: bay.x, py: bay.y, pangle: angle, lot: bay.building };
-      this.bays.set(bay.id, car);
-      this.bayOf.set(car, bay.id);
-      this.sceneryAt.set(spotKey(bay), car);
-      this.parked.push(car);
-      this.standing.add(car);
+    const { serial, changed } = bayChangesSince(w, this.baysSerial);
+    if (serial === this.baysSerial && changed !== null) return;
+    this.baysSerial = serial;
+    if (changed === null) {
+      for (const source of [...this.carsBySource.keys()]) this.standSource(w, source, false);
+      for (const source of baySources(w)) this.standSource(w, source, true);
+      return;
     }
+    for (const source of new Set(changed)) this.standSource(w, source, true);
+  }
+
+  /**
+   * The scenery's cars of one source of bays stood again: those there now
+   * off, a car in each of its bays now (`stand`); a car whose bay is where it
+   * stood is kept (the same body in the same place). `fill` false: only off.
+   */
+  private standSource(w: SimWorld, source: string, fill: boolean): void {
+    const was = new Map<string, Vehicle>();
+    for (const car of [...(this.carsBySource.get(source) ?? [])]) {
+      if (car.free) was.set(spotKey(car.free), car);
+      this.takeScenery(car);
+    }
+    if (!fill) return;
+    const cars: Vehicle[] = [];
+    for (const bay of baysOfSource(w, source)) {
+      const car = this.stand(w, bay, was.get(spotKey(bay)));
+      if (!car) continue;
+      cars.push(car);
+      this.sourceOf.set(car, source);
+    }
+    if (cars.length) this.carsBySource.set(source, cars);
+  }
+
+  /** A scenery car in a bay, or none (the bay left empty): the same body in the same bay each time. */
+  private stand(w: SimWorld, bay: Bay, was: Vehicle | undefined): Vehicle | null {
+    // Left empty by a car the lots drove out (`release`), or held by one of theirs.
+    if (this.vacated.has(spotKey(bay))) return null;
+    for (const car of this.movers) if (car.free && Math.hypot(car.free.x - bay.x, car.free.y - bay.y) < m(1.5)) return null;
+    // Seeded by where the bay is, in steps of 0.4 m: the same car in it at any world unit.
+    const r = new Rng(0x9e3779b9 ^ Math.imul(Math.round(stepsIn(bay.x, 0.4) * 7) + Math.round(stepsIn(bay.y, 0.4) * 13) * 4099, 2654435761));
+    if (r.float() >= PARKED) return null;
+    // A body the stall holds whole (`stallFits`): a van's nose stood through
+    // the fence at the back of a car's stall.
+    const fits = PARKED_KINDS.filter((kind) => stallFits(bay, kind.length));
+    const pick = r.float();
+    if (!fits.length) return null;
+    const arch = fits[Math.floor(pick * fits.length)]!;
+    const colour = arch.palette[Math.floor(r.float() * arch.palette.length)]!;
+    // A bay that was there before keeps its car (same place, same body).
+    const angle = Math.atan2(-bay.oy, -bay.ox);
+    const car = was && was.free && was.free.x === bay.x && was.free.y === bay.y ? was
+      : createVehicle(w.nextVehicleId++, arch, makeDriver(arch, () => r.float()), colour, bay.lane?.lanelet ?? '', 0, w.clock.tick);
+    car.seats = 0;
+    car.free = { x: bay.x, y: bay.y, angle, px: bay.x, py: bay.y, pangle: angle, lot: bay.building };
+    this.sceneryAt.set(spotKey(bay), car);
+    this.standing.add(car);
+    this.parkedAt.set(car, this.parked.length);
+    this.parked.push(car);
+    this.logParked(car, true);
+    return car;
+  }
+
+  /** A scenery car taken out of its bay (the bays changed): off the cars standing, and out of its source. */
+  private takeScenery(car: Vehicle): void {
+    this.leaveSource(car);
+    if (car.free && this.sceneryAt.get(spotKey(car.free)) === car) this.sceneryAt.delete(spotKey(car.free));
+    this.removeParked(car);
+  }
+
+  /** A scenery car no longer counted with its source of bays. */
+  private leaveSource(car: Vehicle): void {
+    const source = this.sourceOf.get(car);
+    if (source === undefined) return;
+    this.sourceOf.delete(car);
+    const list = this.carsBySource.get(source);
+    if (!list) return;
+    const at = list.indexOf(car);
+    if (at >= 0) list.splice(at, 1);
+    if (!list.length) this.carsBySource.delete(source);
   }
 
   // ------------------------------------------------------------ the place

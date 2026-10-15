@@ -6,11 +6,12 @@ import type { Lot } from '@world/lots';
 import { levelPolygons } from '@world/surfaces';
 import { Level } from '@world/roadTypes';
 import type { MultiPoly } from '@core/clipper';
+import { Digest } from '@core/digest';
 import type { Network } from '@world/network';
 import { m } from '@world/units';
 import type { SimWorld } from '../world';
 import type { Archetype } from '../vehicles/archetypes';
-import { carGates, gatedProperty, gateExits, wallsOf, type BayLane, type LotExit } from './parking';
+import { carGates, gatedProperty, gateExits, lanesInBox, wallsOf, type BayLane, type LotExit } from './parking';
 import {
   type AxlePose, bodyClear, bodyClearExact, type Clearance, clearanceSteps, discsOf, fillRing, fillRings,
   type Solid, type Steered, type Waypoint, WaySearch,
@@ -116,9 +117,17 @@ export class Yard {
   /** The lot's ring, local. */
   readonly ring: { x: number; y: number }[];
 
-  /** Made by `buildYard`, whose grid and clearance it takes; here its gates and docks are worked out. */
-  constructor(readonly building: Building, readonly key: string, w: SimWorld, body: Steered, made: YardGrid) {
+  /** What it was made from, near it (`yardInputs`): it stands while these do, whatever changed elsewhere. */
+  readonly inputs: number;
+
+  /**
+   * Made by `buildYard`, whose grid and clearance it takes; here its gates
+   * and docks are worked out. `key`: the roads it was last known good for
+   * (`yardKey`), moved on by `knownYard` while its own inputs stand.
+   */
+  constructor(readonly building: Building, public key: string, w: SimWorld, body: Steered, made: YardGrid) {
     this.body = body;
+    this.inputs = made.inputs;
     const b = building;
     this.ring = made.ring;
     const exits = made.exits;
@@ -264,6 +273,7 @@ export class Yard {
 
 /** A yard's grid as `buildYard` fills it, before its gates and docks. */
 interface YardGrid {
+  readonly inputs: number;
   readonly ring: { x: number; y: number }[];
   readonly exits: LotExit[];
   readonly solid: Solid;
@@ -340,21 +350,15 @@ function near(index: YardNeighbours, w: SimWorld, x0: number, y0: number, x1: nu
  */
 export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered, index: YardNeighbours): Generator<void, Yard, void> {
   const prop = gatedProperty(b)!;
+  const inputs = yardInputs(w, b, index);
   const lot = index.lotOf.get(b.id);
   const ring = lot ? lot.corners.map((q) => worldToLocal(b, q)) : [];
   const exits = gateExits(w, b, prop, wallsOf(w));
-  const x0 = prop.x - STREET_REACH, y0 = prop.y - STREET_REACH;
-  const nx = Math.ceil((prop.w + 2 * STREET_REACH) / CELL), ny = Math.ceil((prop.d + 2 * STREET_REACH) / CELL);
+  const { x0, y0, nx, ny, box, wx0, wy0, wx1, wy1 } = yardBox(b, prop);
   const solid: Solid = { x0, y0, cell: CELL, nx, ny, blocked: new Uint8Array(nx * ny).fill(1) };
-  const box = { x0: x0, y0: y0, x1: x0 + nx * CELL, y1: y0 + ny * CELL };
-  // The grid's box in the world, for what is near it.
-  const corners = [localToWorld(b, box.x0, box.y0), localToWorld(b, box.x1, box.y0), localToWorld(b, box.x1, box.y1), localToWorld(b, box.x0, box.y1)];
-  const wx0 = Math.min(...corners.map((q) => q.x)), wx1 = Math.max(...corners.map((q) => q.x));
-  const wy0 = Math.min(...corners.map((q) => q.y)), wy1 = Math.max(...corners.map((q) => q.y));
   // Open: the lot, the carriageways round it and each gate's mouth across the footway.
   if (ring.length) fillRing(solid, ring, 0);
-  for (const { rings: world, box: wb } of asphaltOf(w.net)) {
-    if (wb.x1 < wx0 || wb.x0 > wx1 || wb.y1 < wy0 || wb.y0 > wy1) continue;
+  for (const { rings: world } of asphaltNear(w.net, wx0, wy0, wx1, wy1)) {
     fillRings(solid, world.map((r) => r.map(([x, y]) => worldToLocal(b, { x: x!, y: y! }))), 0);
   }
   yield;
@@ -412,27 +416,106 @@ export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered,
   }
   yield;
   const field = yield* clearanceSteps(solid, YARD_SLICE);
-  return new Yard(b, key, w, body, { ring, exits, solid, field });
+  return new Yard(b, key, w, body, { inputs, ring, exits, solid, field });
 }
 
-/** The yards of a world, made when first asked and again when their building or the roads change. */
-const YARDS = new WeakMap<SimWorld, Map<number, Yard>>();
+/** A yard's grid (local frame: its corner, cells across and down, its box) and the grid's box in the world. */
+function yardBox(b: Building, prop: { x: number; y: number; w: number; d: number }) {
+  const x0 = prop.x - STREET_REACH, y0 = prop.y - STREET_REACH;
+  const nx = Math.ceil((prop.w + 2 * STREET_REACH) / CELL), ny = Math.ceil((prop.d + 2 * STREET_REACH) / CELL);
+  const box = { x0: x0, y0: y0, x1: x0 + nx * CELL, y1: y0 + ny * CELL };
+  const corners = [localToWorld(b, box.x0, box.y0), localToWorld(b, box.x1, box.y0), localToWorld(b, box.x1, box.y1), localToWorld(b, box.x0, box.y1)];
+  const wx0 = Math.min(...corners.map((q) => q.x)), wx1 = Math.max(...corners.map((q) => q.x));
+  const wy0 = Math.min(...corners.map((q) => q.y)), wy1 = Math.max(...corners.map((q) => q.y));
+  return { x0, y0, nx, ny, box, wx0, wy0, wx1, wy1 };
+}
 
-/** What a yard is made from: the roads and the buildings as they stand. */
+/** How far from a yard's grid the lanes its gates may be joined to are read (`parking.ts` gateLane's reach, and a margin). */
+const GATE_LANES_READ = m(45) + m(5);
+
+/**
+ * What a yard is made from, near it, as one number: the lanes its gates may
+ * be joined to (their ids, lengths and lines), the carriageway pieces over
+ * its grid, the lots and the buildings near it (their places and blocks).
+ * The building's own record is the yard's `building`. A yard whose inputs are
+ * the same is the same yard (`knownYard`).
+ */
+function yardInputs(w: SimWorld, b: Building, index: YardNeighbours): number {
+  const prop = gatedProperty(b);
+  if (!prop) return 0;
+  const { wx0, wy0, wx1, wy1 } = yardBox(b, prop);
+  const d = new Digest();
+  for (const lane of lanesInBox(w, wx0 - GATE_LANES_READ, wy0 - GATE_LANES_READ, wx1 + GATE_LANES_READ, wy1 + GATE_LANES_READ)) {
+    d.addText(lane.id).add(lane.length).addAll(lane.centre.xy);
+  }
+  for (const { rings } of asphaltNear(w.net, wx0, wy0, wx1, wy1)) {
+    for (const ring of rings) for (const [x, y] of ring) d.add(x!).add(y!);
+  }
+  const around = near(index, w, wx0, wy0, wx1, wy1);
+  for (const lot of around.lots) for (const q of lot.corners) d.add(q.x).add(q.y);
+  for (const o of around.buildings) {
+    d.add(o.id).add(o.x).add(o.y).add(o.rotation);
+    for (const v of o.volumes) d.add(v.x).add(v.y).add(v.w).add(v.d).add(v.open ? 1 : 0);
+  }
+  return d.value();
+}
+
+/**
+ * The yards of a world, made when first asked and again when their building
+ * or the roads change, and the lots near each place for their checks
+ * (`yardNeighbours`).
+ */
+interface WorldYards { readonly byBuilding: Map<number, Yard>; neighbours: YardNeighbours | null }
+const YARDS = new WeakMap<SimWorld, WorldYards>();
+function yardsOf(w: SimWorld): WorldYards {
+  let yards = YARDS.get(w);
+  if (!yards) YARDS.set(w, yards = { byBuilding: new Map(), neighbours: null });
+  return yards;
+}
+
+/** The roads as they stand: a yard known good for them needs no look (`knownYard`). */
 export const yardKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revision}:${w.net.revision}`;
 
-/** A building's yard as already made: null when it has none, undefined when it must be made (`buildYard`). */
+/**
+ * A building's yard as already made: null when it has none, undefined when it
+ * must be made (`buildYard`). Made for this record and, once the roads moved,
+ * still the same yard while what it was made from near it is the same
+ * (`yardInputs`). DO NOT throw a yard away on `yardKey` alone: a road drawn
+ * anywhere in the town made every yard again - a grid of a third of a million
+ * cells and some 50 000 poses of search a dock.
+ */
 export function knownYard(w: SimWorld, b: Building): Yard | null | undefined {
   if (!gatedProperty(b) || !lorryDocks(b).length) return null;
-  const known = YARDS.get(w)?.get(b.id);
-  return known && known.building === b && known.key === yardKey(w) ? known : undefined;
+  const known = YARDS.get(w)?.byBuilding.get(b.id);
+  if (!known || known.building !== b) return undefined;
+  const key = yardKey(w);
+  if (known.key === key) return known;
+  if (yardInputs(w, b, neighboursOf(w)) !== known.inputs) return undefined;
+  known.key = key;
+  return known;
+}
+
+/** The lots near each place for the yards' checks (`yardNeighbours`), kept with the world's yards. */
+function neighboursOf(w: SimWorld): YardNeighbours {
+  const yards = yardsOf(w);
+  return yards.neighbours = yardNeighbours(w, yards.neighbours);
+}
+
+/** A building's yard forgotten: its building gone, or no longer one with a yard (`lorryTraffic.ts` YardList). */
+export function forgetYard(w: SimWorld, building: number): void {
+  YARDS.get(w)?.byBuilding.delete(building);
+}
+
+/** @rebuild The yards of the buildings `keep` turns down forgotten: when the town's yards were read whole. */
+export function forgetYardsBut(w: SimWorld, keep: (building: number) => boolean): void {
+  const byBuilding = YARDS.get(w)?.byBuilding;
+  if (!byBuilding) return;
+  for (const id of [...byBuilding.keys()]) if (!keep(id)) byBuilding.delete(id);
 }
 
 /** Keeps a yard made (`buildYard`) for its building. */
 export function keepYard(w: SimWorld, yard: Yard): void {
-  let byBuilding = YARDS.get(w);
-  if (!byBuilding) YARDS.set(w, byBuilding = new Map());
-  byBuilding.set(yard.building.id, yard);
+  yardsOf(w).byBuilding.set(yard.building.id, yard);
 }
 
 /** The yard of a building as it stands now, made to the end at once if it must be (probes and specs). */
@@ -450,17 +533,54 @@ export function yardOf(w: SimWorld, b: Building, body: Steered): Yard | null {
 
 /** The carriageways' polygons, each with its box in the world: a yard takes in only those near it. */
 type AsphaltPiece = { readonly rings: MultiPoly[number]; readonly box: { x0: number; y0: number; x1: number; y1: number } };
-const ASPHALT = new WeakMap<Network, { revision: number; pieces: AsphaltPiece[] }>();
-function asphaltOf(net: Network): readonly AsphaltPiece[] {
+/** Cell of the pieces' grid (`asphaltNear`). */
+const ASPHALT_CELL = m(64);
+const ASPHALT = new WeakMap<Network, { revision: number; pieces: AsphaltPiece[]; cells: Map<number, number[]> }>();
+/** @rebuild The pieces and their grid, made again when the network moved (`levelPolygons` is the whole map's: `world/surfaces.ts`). */
+function asphaltOf(net: Network): { pieces: readonly AsphaltPiece[]; cells: ReadonlyMap<number, number[]> } {
   const known = ASPHALT.get(net);
-  if (known && known.revision === net.revision) return known.pieces;
+  if (known && known.revision === net.revision) return known;
   const pieces = levelPolygons(net, Level.Asphalt as never).map((rings): AsphaltPiece => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [x, y] of rings[0] ?? []) { x0 = Math.min(x0, x!); x1 = Math.max(x1, x!); y0 = Math.min(y0, y!); y1 = Math.max(y1, y!); }
     return { rings, box: { x0, y0, x1, y1 } };
   });
-  ASPHALT.set(net, { revision: net.revision, pieces });
-  return pieces;
+  const cells = new Map<number, number[]>();
+  pieces.forEach((p, i) => {
+    if (!(p.box.x0 <= p.box.x1 && p.box.y0 <= p.box.y1)) return;
+    for (let gx = Math.floor(p.box.x0 / ASPHALT_CELL); gx <= Math.floor(p.box.x1 / ASPHALT_CELL); gx++) {
+      for (let gy = Math.floor(p.box.y0 / ASPHALT_CELL); gy <= Math.floor(p.box.y1 / ASPHALT_CELL); gy++) {
+        const k = neighbourCell(gx, gy);
+        const list = cells.get(k);
+        if (list) list.push(i); else cells.set(k, [i]);
+      }
+    }
+  });
+  const made = { revision: net.revision, pieces, cells };
+  ASPHALT.set(net, made);
+  return made;
+}
+
+/**
+ * The carriageway pieces whose box meets a box of the world, in the order of
+ * the pieces, from their grid. DO NOT walk every piece of the map for a yard:
+ * every carriageway of the town, for each yard made and each yard checked.
+ */
+function asphaltNear(net: Network, x0: number, y0: number, x1: number, y1: number): AsphaltPiece[] {
+  const { pieces, cells } = asphaltOf(net);
+  const picked = new Set<number>();
+  for (let gx = Math.floor(x0 / ASPHALT_CELL); gx <= Math.floor(x1 / ASPHALT_CELL); gx++) {
+    for (let gy = Math.floor(y0 / ASPHALT_CELL); gy <= Math.floor(y1 / ASPHALT_CELL); gy++) {
+      for (const i of cells.get(neighbourCell(gx, gy)) ?? []) picked.add(i);
+    }
+  }
+  const out: AsphaltPiece[] = [];
+  for (const i of [...picked].sort((a, b) => a - b)) {
+    const wb = pieces[i]!.box;
+    if (wb.x1 < x0 || wb.x0 > x1 || wb.y1 < y0 || wb.y0 > y1) continue;
+    out.push(pieces[i]!);
+  }
+  return out;
 }
 
 /** How far a gate's inside is from a dock's open end. */

@@ -23,7 +23,10 @@ export function greenWave(w: SimWorld, start: NodeId): Map<NodeId, SignalSetting
   // Each signal's main stage: the one that lets the corridor's through movement go.
   const plans = signals.map((c) => {
     const ctl = w.controllers.get(c.node)!;
-    const conn = [...w.graph.connectors.values()].find((x) => x.node === c.node && x.inSegment === c.from && x.outSegment === c.to);
+    // The junction's own movements, in the graph's order (`JunctionTopology.connectors`).
+    // DO NOT search `w.graph.connectors`: every movement of the map, copied, for each signal.
+    const conn = (w.graph.junctions.get(c.node)?.connectors ?? []).map((id) => w.graph.connectors.get(id))
+      .find((x) => x !== undefined && x.inSegment === c.from && x.outSegment === c.to);
     const main = Math.max(0, ctl.plan.stages.findIndex((s) => conn !== undefined && s.greenGroups.includes(conn.group)));
     return { ...c, ctl, main, cycle: fixedCycle(ctl.plan, undefined) };
   });

@@ -53,11 +53,6 @@ export function anyClosed(w: SimWorld): boolean {
   return !!byLane && byLane.size > 0;
 }
 
-/** Every closure dropped (a new map). */
-export function clearClosures(w: SimWorld): void {
-  CLOSED.delete(w);
-}
-
 /** Kept between a closed stretch and the nearest body on it or past it. */
 const CLEAR_MARGIN = m(2);
 
@@ -72,13 +67,41 @@ export function laneClear(w: SimWorld, lanelet: LaneletId, from: number, to: num
     const rear = body.s - body.vehicle.archetype.length;
     if (rear < to + margin && body.s > from - stopShort - stopping(body.vehicle)) return false;
   }
-  for (const v of w.vehicles.values()) {
-    if (v.lanelet === lanelet) continue;
-    const k = v.route.indexOf(lanelet);
-    if (k <= 0 || k > 2) continue;
-    let ahead = -v.s;
-    for (let j = 0; j < k; j++) ahead += w.lanelet(v.route[j]!)?.length ?? 0;
-    if (ahead + from - stopShort < stopping(v)) return false;
+  // Those bound onto it a lane or two on: on the lanes into it, and the lanes
+  // into those (a route runs lane, connector, lane, so it reaches `lanelet`
+  // within two only from there). DO NOT walk `w.vehicles` for them: a lorry
+  // asked it of the whole fleet for every stretch it closes, every tick it
+  // waited for the street to clear.
+  const near = new Set<LaneletId>();
+  for (const before of lanesInto(w, lanelet)) {
+    near.add(before);
+    for (const further of lanesInto(w, before)) near.add(further);
+  }
+  near.delete(lanelet);
+  for (const id of near) {
+    for (const vid of w.rt(id).order) {
+      const v = w.veh(vid);
+      if (!v || v.lanelet === lanelet) continue;
+      const k = v.route.indexOf(lanelet);
+      if (k <= 0 || k > 2) continue;
+      let ahead = -v.s;
+      for (let j = 0; j < k; j++) ahead += w.lanelet(v.route[j]!)?.length ?? 0;
+      if (ahead + from - stopShort < stopping(v)) return false;
+    }
   }
   return true;
+}
+
+/** The lanes a vehicle enters `id` from: a connector's own approach, or the connectors into a link at its junction. */
+function lanesInto(w: SimWorld, id: LaneletId): LaneletId[] {
+  const lane = w.lanelet(id);
+  if (!lane) return [];
+  if (lane.kind === 'connector') return lane.fromLane === undefined ? [] : [lane.fromLane];
+  if (lane.from === undefined) return [];
+  const out: LaneletId[] = [];
+  for (const cid of w.graph.junctions.get(lane.from)?.connectors ?? []) {
+    const c = w.connector(cid);
+    if (c && c.toLane === id) out.push(c.lanelet);
+  }
+  return out;
 }

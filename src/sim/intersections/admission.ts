@@ -74,13 +74,16 @@ const RANK: Record<RowClass, number> = {
  *     stationary at the line — is always a contender.
  */
 export function stepAdmission(w: SimWorld): void {
+  // A pass's own movement tokens: they are compared only within it.
+  MOVEMENT_TOKENS.clear();
   revokeStaleGrants(w);
-  holdings = new Map();
   // Who was admitted to which connector, and who holds anything: read by
   // every request's tests, which went through the whole fleet each time.
   admittedBy = new Map();
   holders = new Set();
-  for (const v of w.vehicles.values()) {
+  // Only the vehicles at a junction (`SimWorld.junctionHolders`): a vehicle
+  // holding anything is admitted, clearing, or on a connector.
+  for (const v of w.junctionHolders()) {
     if (v.admittedConnector) {
       const list = admittedBy.get(v.admittedConnector);
       if (list) list.push(v); else admittedBy.set(v.admittedConnector, [v]);
@@ -88,9 +91,8 @@ export function stepAdmission(w: SimWorld): void {
     if (holdsAnything(w, v)) holders.add(v);
   }
   try {
-    admit(w);
+    admit(w, new BankerPass(holders));
   } finally {
-    holdings = null;
     pending = null;
     admittedBy = null;
     holders = null;
@@ -116,7 +118,7 @@ function granted(v: Vehicle, conn: string | null): void {
 /** This pass's requests, by node. Null outside `stepAdmission`. */
 let pending: Map<NodeId, Request[]> | null = null;
 
-function admit(w: SimWorld): void {
+function admit(w: SimWorld, banker: BankerPass): void {
   const requests: Request[] = [];
 
   // Doing less (`SimWorld.doLess`): only the junctions somebody approaches.
@@ -188,7 +190,7 @@ function admit(w: SimWorld): void {
   }
 
   for (const r of requests) {
-    const verdict = evaluate(w, r);
+    const verdict = evaluate(w, r, banker);
     if (verdict.ok) {
       const reservations = verdict.reservations ?? [];
       if (verdict.reserveOnly) {
@@ -198,7 +200,7 @@ function admit(w: SimWorld): void {
         r.v.reservedConnectors = reservations.map(
           (reservation) => reservation.connector.id,
         );
-        holdings?.delete(r.v.id);
+        banker.changed(r.v);
         // `longitudinalConstraints` has already pushed the signal obstacle
         // for this vehicle from the same `mustStopAtSignal` decision. Pushing
         // a second identical one changes nothing for IDM, which takes the
@@ -233,8 +235,9 @@ function admit(w: SimWorld): void {
           .map((reservation) => reservation.connector.id);
       }
       r.v.admittedConnector = r.conn.id;
+      w.noteHolder(r.v);
       w.mergeTurn.set(r.conn.toLane, r.conn.fromLane);
-      holdings?.delete(r.v.id);
+      banker.changed(r.v);
       granted(r.v, r.conn.id);
       // Waiting time before admission is ordinary queueing, not time spent
       // holding a reservation.  Start the watchdog clock at the grant.
@@ -289,7 +292,9 @@ function admit(w: SimWorld): void {
  * and clears under the all-red, which is exactly what the all-red is for.
  */
 function revokeStaleGrants(w: SimWorld): void {
-  for (const v of w.vehiclesInIdOrder()) {
+  // The admitted, in id order (`SimWorld.junctionHolders`, not the fleet).
+  const admitted = w.junctionHolders().filter((v) => v.admittedConnector !== null).sort((a, b) => a.id - b.id);
+  for (const v of admitted) {
     if (!v.admittedConnector) continue;
     const lane = w.lanelet(v.lanelet);
     // Only while the nose is still on the approach. Once the vehicle is on the
@@ -357,7 +362,7 @@ const byPriority = (a: Request, b: Request): number =>
   a.d - b.d ||
   a.v.id - b.v.id;
 
-function evaluate(w: SimWorld, r: Request): Verdict {
+function evaluate(w: SimWorld, r: Request, banker: BankerPass): Verdict {
   if (r.conn.maxBodyClass < bodyClassOfArchetype(r.v.archetype)) return { ok: false, reason: 'conflict' };
   const alreadyDeclared = r.v.reservedConnectors[0] === r.conn.id;
   const chain = alreadyDeclared
@@ -418,7 +423,7 @@ function evaluate(w: SimWorld, r: Request): Verdict {
     return { ok: false, reason: 'yield', reservations };
   }
 
-  if (!bankerSafeAfterGrant(w, r.v, reservations)) {
+  if (!bankerSafeAfterGrant(w, r.v, reservations, banker)) {
     return { ok: false, reason: 'conflict', reservations };
   }
 
@@ -781,6 +786,12 @@ function convoyCanEnter(w: SimWorld, r: Request, conn: Connector): boolean {
  */
 type ResourceKey = number;
 
+/**
+ * The tokens of this admission pass (cleared at its start, `stepAdmission`):
+ * a token is only ever compared with others of the same pass. DO NOT keep
+ * them for the session: every connector id ever met stayed in it, across
+ * every edit and every map opened.
+ */
 const MOVEMENT_TOKENS = new Map<string, number>();
 function movementToken(connector: string): ResourceKey {
   let token = MOVEMENT_TOKENS.get(connector);
@@ -856,42 +867,118 @@ interface Holding {
 }
 
 /**
- * Every vehicle's holding, measured once per admission pass and dropped for a
- * vehicle as soon as a grant or a reservation changes it. Each applicant's
- * Banker's test used to rebuild every vehicle's sets from the claims table -
- * the whole fleet, per request, per tick - for answers that only a grant in
- * this same pass can change. Null outside `stepAdmission`.
+ * The Banker's tests' view of one admission pass (`stepAdmission` makes one
+ * and drops it at the end).
+ *
+ * Every vehicle's holding, measured once per pass and dropped for a vehicle
+ * as soon as a grant or a reservation changes it (`changed`). Each
+ * applicant's Banker's test used to rebuild every vehicle's sets from the
+ * claims table - the whole fleet, per request, per tick - for answers that
+ * only a grant in this same pass can change.
+ *
+ * And the holders by resource (`filed`): every holder (a non-empty
+ * allocation) under each resource of its maximum claim, built at the pass's
+ * first test (when the holdings were measured before) and kept as holdings
+ * change, so that a test reads the applicant's group and not the map.
  */
-let holdings: Map<number, Holding> | null = null;
+class BankerPass {
+  private readonly holdings = new Map<number, Holding>();
+  private byResource: Map<ResourceKey, Set<Vehicle>> | null = null;
+  /** Vehicles whose holding changed since they were filed: filed again at the next test. */
+  private readonly refile = new Set<Vehicle>();
 
-function holdingOf(w: SimWorld, vehicle: Vehicle): Holding {
-  const known = holdings?.get(vehicle.id);
-  if (known) return known;
-  const allocation = actualAllocation(w, vehicle);
-  const maximum = new Set(allocation);
-  for (const id of vehicle.reservedConnectors) {
-    const connector = w.connector(id);
-    if (!connector) continue;
-    for (const resource of connectorResources(w, connector)) maximum.add(resource);
+  /** `holders`: this pass's set, which grants add to (`granted`). */
+  constructor(private readonly holders: ReadonlySet<Vehicle>) {}
+
+  holdingOf(w: SimWorld, vehicle: Vehicle): Holding {
+    const known = this.holdings.get(vehicle.id);
+    if (known) return known;
+    const allocation = actualAllocation(w, vehicle);
+    const maximum = new Set(allocation);
+    for (const id of vehicle.reservedConnectors) {
+      const connector = w.connector(id);
+      if (!connector) continue;
+      for (const resource of connectorResources(w, connector)) maximum.add(resource);
+    }
+    const holding = { allocation, maximum };
+    this.holdings.set(vehicle.id, holding);
+    return holding;
   }
-  const holding = { allocation, maximum };
-  holdings?.set(vehicle.id, holding);
-  return holding;
+
+  /** A grant or a reservation changed what this vehicle holds or may claim. */
+  changed(v: Vehicle): void {
+    const old = this.holdings.get(v.id);
+    this.holdings.delete(v.id);
+    if (!this.byResource) return;
+    if (old) for (const resource of old.maximum) this.byResource.get(resource)?.delete(v);
+    this.refile.add(v);
+  }
+
+  /** The holders filed under each resource of their maximum claims. */
+  filed(w: SimWorld): ReadonlyMap<ResourceKey, ReadonlySet<Vehicle>> {
+    if (!this.byResource) {
+      this.byResource = new Map();
+      for (const v of this.holders) this.file(w, v);
+    } else {
+      for (const v of this.refile) if (this.holders.has(v)) this.file(w, v);
+    }
+    this.refile.clear();
+    return this.byResource;
+  }
+
+  private file(w: SimWorld, v: Vehicle): void {
+    const { allocation, maximum } = this.holdingOf(w, v);
+    if (!allocation.size) return;
+    for (const resource of maximum) {
+      let filed = this.byResource!.get(resource);
+      if (!filed) this.byResource!.set(resource, filed = new Set());
+      filed.add(v);
+    }
+  }
 }
 
+/** Each Banker's verdict with the applicant and the movements asked for: for the specs only (`tests/sim/admissionGroup.spec.ts`). */
+export const admissionProbe: {
+  banker: ((w: SimWorld, applicant: Vehicle, proposal: readonly Connector[], safe: boolean) => void) | null;
+} = { banker: null };
+
 /**
- * Banker's safety test over all live maximum claims.
+ * Banker's safety test over the live maximum claims the grant can reach.
  *
  * Future movement intents do not own resources. A current grant is allowed
  * only if the resulting state still has some completion order in which every
  * compound-box vehicle can obtain its remaining connector points and release
  * what it physically holds. This prevents circular hold-and-wait without the
  * throughput collapse caused by hard-locking several future junctions.
+ *
+ * Only the processes linked to the applicant through shared resources are
+ * read: those filed (`BankerPass.filed`) under a resource of its maximum claim,
+ * then under theirs, and so on. A process finishes on the resources of its
+ * own maximum and frees only those of its allocation, so processes that share
+ * no resource cannot hold each other up (a deadlock is a cycle of waits,
+ * en.wikipedia.org/wiki/Wait-for_graph), and the grant changes nothing outside
+ * the applicant's group. The test used to read every holder of the map for
+ * every request: the same verdict while the rest of the map is safe, and when
+ * it was not - a lock at another junction - it refused every grant in the city,
+ * the veto audit P2-11 already took away from double holdings.
+ * DO NOT go back to iterating every holder (`holders`, `w.vehicles`) here.
  */
 function bankerSafeAfterGrant(
   w: SimWorld,
   applicant: Vehicle,
   proposal: readonly ConnectorReservation[],
+  banker: BankerPass,
+): boolean {
+  const safe = bankerSafeInGroup(w, applicant, proposal, banker);
+  admissionProbe.banker?.(w, applicant, proposal.map((p) => p.connector), safe);
+  return safe;
+}
+
+function bankerSafeInGroup(
+  w: SimWorld,
+  applicant: Vehicle,
+  proposal: readonly ConnectorReservation[],
+  banker: BankerPass,
 ): boolean {
   const processes: BankerProcess[] = [];
   const owners = new Map<ResourceKey, number>();
@@ -903,36 +990,52 @@ function bankerSafeAfterGrant(
   for (const intention of proposal) for (const r of connectorResources(w, intention.connector)) mine.add(r);
   for (const r of actualAllocation(w, applicant)) mine.add(r);
 
-  // The applicant, then those holding anything: a vehicle that holds nothing
-  // is skipped below (it cannot be part of a deadlock), so it is not read at
-  // all. The verdict does not depend on the order (a fixed point, and a
-  // double holding is found whichever holder comes first).
-  const others: Iterable<Vehicle> = holders ?? w.vehicles.values();
-  let first = true;
-  for (const vehicle of [applicant, ...others]) {
-    // The applicant once, first.
-    if (!first && vehicle.id === applicant.id) continue;
-    first = false;
-    let allocation: Set<ResourceKey>;
-    let maximum: Set<ResourceKey>;
-    if (vehicle.id === applicant.id) {
-      allocation = actualAllocation(w, vehicle);
-      maximum = new Set(allocation);
-      const current = proposal[0];
-      if (current) {
-        for (const resource of connectorResources(w, current.connector)) {
-          allocation.add(resource);
-        }
-      }
-      for (const intention of proposal) {
-        for (const resource of connectorResources(w, intention.connector)) {
-          maximum.add(resource);
-        }
-      }
-    } else {
-      // Read only below: the sets are this pass's, shared across applicants.
-      ({ allocation, maximum } = holdingOf(w, vehicle));
+  // The applicant, as it would be after the grant.
+  const allocation0 = actualAllocation(w, applicant);
+  const maximum0 = new Set(allocation0);
+  const current = proposal[0];
+  if (current) {
+    for (const resource of connectorResources(w, current.connector)) {
+      allocation0.add(resource);
     }
+  }
+  for (const intention of proposal) {
+    for (const resource of connectorResources(w, intention.connector)) {
+      maximum0.add(resource);
+    }
+  }
+
+  // Its group: the applicant first, then every holder sharing a resource of
+  // the maximum claims met so far (breadth first over `BankerPass.filed`). A
+  // vehicle that holds nothing is not filed (it cannot be part of a deadlock).
+  // The verdict does not depend on the order (a fixed point, and a double
+  // holding is found whichever holder comes first).
+  const filed = banker.filed(w);
+  const group: Holding[] = [{ allocation: allocation0, maximum: maximum0 }];
+  const groupIds: number[] = [applicant.id];
+  const met = new Set<number>([applicant.id]);
+  const reached = new Set<ResourceKey>(maximum0);
+  const frontier: ResourceKey[] = [...maximum0];
+  while (frontier.length) {
+    const resource = frontier.pop()!;
+    for (const other of filed.get(resource) ?? []) {
+      if (met.has(other.id)) continue;
+      met.add(other.id);
+      // Read only below: the sets are this pass's, shared across applicants.
+      const holding = banker.holdingOf(w, other);
+      group.push(holding);
+      groupIds.push(other.id);
+      for (const next of holding.maximum) {
+        if (reached.has(next)) continue;
+        reached.add(next);
+        frontier.push(next);
+      }
+    }
+  }
+
+  for (let g = 0; g < group.length; g++) {
+    const { allocation, maximum } = group[g]!;
+    const vehicleId = groupIds[g]!;
 
     // A process that HOLDS NOTHING cannot be part of a deadlock.
     //
@@ -954,8 +1057,8 @@ function bankerSafeAfterGrant(
     if (!maximum.size) continue;
     for (const resource of allocation) {
       const owner = owners.get(resource);
-      if (owner !== undefined && owner !== vehicle.id && !sharedConvoyResource(w, resource) && mine.has(resource)) return false;
-      owners.set(resource, vehicle.id);
+      if (owner !== undefined && owner !== vehicleId && !sharedConvoyResource(w, resource) && mine.has(resource)) return false;
+      owners.set(resource, vehicleId);
       universe.add(resource);
     }
     for (const resource of maximum) universe.add(resource);
@@ -1090,9 +1193,11 @@ export function rightOfWay(
   // three queued behind it. Nothing in `audit()` saw it either, because
   // `greenBlocked` only watches signals and there was no signal.
   //
-  // A real uncontrolled junction is not symmetric: the larger road has priority
-  // and the smaller one gives way. So `none` falls through to the same class
-  // ranking `auto` uses, which is what breaks the tie and keeps the node alive.
+  // A real uncontrolled junction is not symmetric. `none` is answered below
+  // by its own rule (CTB art. 29, III: a "rodovia" goes first, else everyone
+  // gives way to the right, `yieldSide`), and the claim table and the wait
+  // ceiling break a full tie; `auto` goes on to the ranking of the road the
+  // junction is on.
   if (policy === 'stop') return 'stop';
   if (policy === 'yield') return 'yield';
   // A junction on "automatic" its flows put under a stop on every leg (V5).

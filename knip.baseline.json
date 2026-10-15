@@ -156,7 +156,6 @@
  "exports src/sim/signals/query.ts remainingProtectedTime",
  "exports src/sim/transit/transit.ts STOP_REACH",
  "exports src/sim/vehicles/cycleLane.ts CYCLE_EASE",
- "exports src/sim/vehicles/laneClosures.ts clearClosures",
  "exports src/sim/vehicles/leaderIndex.ts upcomingLanelets",
  "exports src/sim/vehicles/spawn.ts ARCHETYPES",
  "exports src/sim/vehicles/spawn.ts ENTRY_QUEUE",

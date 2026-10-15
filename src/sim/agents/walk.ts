@@ -4,6 +4,7 @@ import { newFrame } from '@core/polyline';
 import type { WalkGraph, Walkway } from '@world/walkways';
 import { m } from '@world/units';
 import type { SegmentId } from '@world/ids';
+import { SIGNAL_POST_RADIUS } from '@world/signalPosts';
 import { DT, PED } from '../params';
 import { newPose, vehiclePoseNowInto } from '../pose';
 import type { SimWorld } from '../world';
@@ -177,23 +178,177 @@ const NO_POINTS: readonly Vec2[] = [];
 
 /**
  * A car's body as a zone: three discs along its length, half its width round.
- * Kept per car while it stands where it stood, so the town's parked cars are
- * not rebuilt as fresh objects every tick. Shared and read-only: a car on a
- * trip copies the discs before adding its way.
+ * Made once per pose by `ParkedZoneIndex`, which keeps it while the car
+ * stands where it stood. Shared and read-only.
  */
-const PARKED = new WeakMap<Vehicle, { x: number; y: number; angle: number; zone: CarZone }>();
 function parkedZone(car: Vehicle, f: FreePose): CarZone {
-  const hit = PARKED.get(car);
-  if (hit && hit.x === f.x && hit.y === f.y && hit.angle === f.angle) return hit.zone;
   const r = car.archetype.width / 2;
   const reach = Math.max(0, car.archetype.length / 2 - r);
   const discs = [-1, 0, 1].map((k) => ({ x: f.x + Math.cos(f.angle) * reach * k, y: f.y + Math.sin(f.angle) * reach * k, r }));
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const d of discs) { x0 = Math.min(x0, d.x - d.r); y0 = Math.min(y0, d.y - d.r); x1 = Math.max(x1, d.x + d.r); y1 = Math.max(y1, d.y + d.r); }
-  const zone: CarZone = { x0, y0, x1, y1, discs, on: null, crossingOnly: false };
-  PARKED.set(car, { x: f.x, y: f.y, angle: f.angle, zone });
-  return zone;
+  return { x0, y0, x1, y1, discs, on: null, crossingOnly: false };
 }
+
+/**
+ * The work of the walkers' derived products, counted (counts, not times: the
+ * same on every machine), for the scale specs (`tests/sim/walkSpine.spec.ts`):
+ * - `hailLooked`: walkers `hailable` looked at;
+ * - `routeNodes`: walkway nodes a route search touched;
+ * - `parkedFiled`: parked cars' zones filed or taken out of their cells.
+ */
+export const walkWork = { hailLooked: 0, routeNodes: 0, parkedFiled: 0 };
+
+interface ParkedEntry { readonly car: Vehicle; x: number; y: number; angle: number; zone: CarZone | null; readonly cells: number[]; seen: number }
+
+/** The parked cars as their keeper tells their changes (`ambient/ambient.ts` AmbientWorld). */
+export interface ParkedSource {
+  /** The cars standing now. */
+  readonly parked: readonly Vehicle[];
+  /** The serial of the latest change of `parked`. */
+  readonly parkedSerial: number;
+  /** The cars that came (`added`) and went since `serial`, oldest first; null: `parked` is to be read whole. */
+  parkedSince(serial: number): readonly { readonly car: Vehicle; readonly added: boolean }[] | null;
+  /** The cars of `parked` that may move while standing in it. */
+  readonly movers: ReadonlySet<Vehicle>;
+}
+
+/**
+ * The parked cars' zones by cell, kept as the cars come, go and move: only a
+ * car that changed is taken out of its cells and filed again. DO NOT file
+ * every parked car again when one of them changes: a car of the lots or a
+ * lorry manoeuvring in a yard is in `ambient.parked` and moves every tick,
+ * and every parked car of the map was made and filed again each tick for it
+ * (O(parked cars) per tick, the map's size). The cars are compared with what
+ * was seen in the list's own order, plain fields read, so a tick in which
+ * nothing changed touches no cell.
+ */
+export class ParkedZoneIndex {
+  /** The zones by cell, each in every cell its box reaches with a walker's look ahead round it. */
+  readonly cells = new Map<number, CarZone[]>();
+  /** What was seen, in the list's order. */
+  private readonly list: ParkedEntry[] = [];
+  private readonly byCar = new Map<Vehicle, ParkedEntry>();
+  private pass = 0;
+  /** The serial of the source last followed (`follow`); -1: never. */
+  private serial = -1;
+
+  /**
+   * Brought up to the cars standing, from what their keeper says changed:
+   * the cars that came and went since the last look, and the cars that may
+   * move (`ParkedSource.movers`) looked at again; the rest are not looked at.
+   * Whole when the keeper cannot say (the bays made again, a new map).
+   */
+  follow(source: ParkedSource): void {
+    const changes = this.serial < 0 ? null : source.parkedSince(this.serial);
+    this.serial = source.parkedSerial;
+    // The order-kept list belongs to `sync`: a later `sync` finds it from the cars.
+    this.list.length = 0;
+    if (changes === null) {
+      const now = new Set(source.parked);
+      for (const [car, e] of [...this.byCar]) {
+        if (now.has(car)) continue;
+        this.unfile(e);
+        this.byCar.delete(car);
+      }
+      for (const car of source.parked) this.keep(car);
+    } else {
+      for (const c of changes) {
+        if (c.added) { this.keep(c.car); continue; }
+        const e = this.byCar.get(c.car);
+        if (!e) continue;
+        this.unfile(e);
+        this.byCar.delete(c.car);
+      }
+    }
+    for (const car of source.movers) {
+      const e = this.byCar.get(car);
+      if (e && moved(e, car.free)) this.place(e, car.free);
+    }
+  }
+
+  /** A car filed where it stands, if it is not, or again if it moved. */
+  private keep(car: Vehicle): void {
+    let e = this.byCar.get(car);
+    if (!e) {
+      e = { car, x: 0, y: 0, angle: 0, zone: null, cells: [], seen: 0 };
+      this.byCar.set(car, e);
+      this.place(e, car.free);
+    } else if (moved(e, car.free)) this.place(e, car.free);
+  }
+
+  /** Brings the cells up to `cars`, the cars standing now (`AmbientWorld.parked`). */
+  sync(cars: readonly Vehicle[]): void {
+    const list = this.list;
+    const n = Math.min(cars.length, list.length);
+    let i = 0;
+    for (; i < n; i++) {
+      const e = list[i]!;
+      if (e.car !== cars[i]) break;
+      if (moved(e, e.car.free)) this.place(e, e.car.free);
+    }
+    if (i === cars.length && i === list.length) return;
+    // The list changed from `i` on (a car came or went): the rest by car.
+    // Those before `i` are the same and stay; of those seen from `i` on, the
+    // ones not in the list now are gone.
+    const pass = ++this.pass;
+    for (let k = 0; k < i; k++) list[k]!.seen = pass;
+    const tail = list.slice(i);
+    for (let k = i; k < cars.length; k++) {
+      const car = cars[k]!;
+      let e = this.byCar.get(car);
+      if (!e) {
+        e = { car, x: 0, y: 0, angle: 0, zone: null, cells: [], seen: 0 };
+        this.byCar.set(car, e);
+        this.place(e, car.free);
+      } else if (moved(e, car.free)) this.place(e, car.free);
+      e.seen = pass;
+      list[k] = e;
+    }
+    list.length = cars.length;
+    for (const e of tail) {
+      if (e.seen === pass || this.byCar.get(e.car) !== e) continue;
+      this.unfile(e);
+      this.byCar.delete(e.car);
+    }
+  }
+
+  private place(e: ParkedEntry, f: FreePose | null | undefined): void {
+    this.unfile(e);
+    if (!f) return;
+    e.x = f.x; e.y = f.y; e.angle = f.angle;
+    const z = e.zone = parkedZone(e.car, f);
+    const gx0 = Math.floor((z.x0 - LOOK) / ZONE_CELL), gx1 = Math.floor((z.x1 + LOOK) / ZONE_CELL);
+    const gy0 = Math.floor((z.y0 - LOOK) / ZONE_CELL), gy1 = Math.floor((z.y1 + LOOK) / ZONE_CELL);
+    for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+      const k = cell(gx, gy);
+      const at = this.cells.get(k);
+      if (at) at.push(z); else this.cells.set(k, [z]);
+      e.cells.push(k);
+    }
+    walkWork.parkedFiled++;
+  }
+
+  private unfile(e: ParkedEntry): void {
+    const z = e.zone;
+    if (z) {
+      for (const k of e.cells) {
+        const at = this.cells.get(k);
+        if (!at) continue;
+        const j = at.indexOf(z);
+        if (j >= 0) at.splice(j, 1);
+        if (!at.length) this.cells.delete(k);
+      }
+      walkWork.parkedFiled++;
+    }
+    e.cells.length = 0;
+    e.zone = null;
+  }
+}
+
+/** Whether a car stands otherwise than when it was filed (came, went, or moved). */
+const moved = (e: ParkedEntry, f: FreePose | null | undefined): boolean =>
+  f ? e.zone === null || f.x !== e.x || f.y !== e.y || f.angle !== e.angle : e.zone !== null;
 
 interface Step {
   /** The walkway, or null for a straight stretch off it (to a door or a car). */
@@ -336,8 +491,12 @@ interface State {
   clock: number;
   /** When the walkers were last checked against the shocks. */
   shockLook: number;
-  /** The walkers by cell for `anyoneWithin`, and the clock they were filed at (-1: again). */
-  near: Map<number, Walker[]>;
+  /**
+   * The walkers by cell for the cars' questions (`anyoneWithin`, `hailable`),
+   * filed at the first question after the walkers stepped, and the clock they
+   * were filed at (-1: again).
+   */
+  near: WalkerGrid;
   nearAt: number;
   /** The vehicles by cell for `gapOpen`, filed once a tick when somebody first asks; the fastest of them. */
   traffic: Map<number, TrafficSeen[]>;
@@ -345,22 +504,21 @@ interface State {
   fastest: number;
   /** The walkers by cell, filed again at the start of every step (`WalkerGrid`). */
   grid: WalkerGrid;
-  /** The parked cars' zones by cell, kept while the same cars stand where they stood. */
-  parkedCells: Map<number, CarZone[]>;
-  /** The parked cars as last seen, in the scenery's order: where each stood, and its body (null: not standing). */
-  parkedSeen: { car: Vehicle; x: number; y: number; angle: number; zone: CarZone | null }[];
+  /** The parked cars' zones by cell, kept as the cars come, go and move (`ParkedZoneIndex`). */
+  parked: ParkedZoneIndex;
+  /**
+   * Each party's walkers (`PedView.party.id`), in the order they were made:
+   * who walks with whom, asked when a companion is made and when one is shot
+   * (`startWalk`, `mourn`). DO NOT find them in `walkers`: every walker of
+   * the map, for each companion made.
+   */
+  parties: Map<number, Walker[]>;
 }
 
 /** A vehicle as `gapOpen` reads it: where it is, which way it faces, how fast it goes. */
 interface TrafficSeen { readonly x: number; readonly y: number; readonly angle: number; readonly speed: number }
 /** Cells for the vehicles near a crossing (`gapOpen`). */
 const TRAFFIC_CELL = m(32);
-/**
- * Out of the player's view (`SimWorld.focus`) a walker is stepped one tick in
- * this many, by as many ticks' time, without stepping round the others: their
- * route, the zebras and the waits go on as before, and nobody sees the rest.
- */
-const COARSE = 4;
 
 /**
  * A test bench's trace of what happens to chosen walkers (the weapons lab,
@@ -456,8 +614,8 @@ function stateOf(w: SimWorld): State {
   let s = STATES.get(w);
   if (!s) {
     s = { graph: null, builtFor: '', wayIndex: new Map(), walkers: [], byId: new Map(), arrivals: [], nextId: 1, onCarWay: new Map(),
-      shocks: [], clock: 0, shockLook: 0, near: new Map(), nearAt: -1, traffic: new Map(), trafficAt: -1, fastest: 0,
-      grid: new WalkerGrid(), parkedCells: new Map(), parkedSeen: [] };
+      shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, traffic: new Map(), trafficAt: -1, fastest: 0,
+      grid: new WalkerGrid(), parked: new ParkedZoneIndex(), parties: new Map() };
     STATES.set(w, s);
   }
   return s;
@@ -531,32 +689,35 @@ const wayCost = (way: Walkway): number => way.path.length + (way.kind === 'cross
  * The steps from one point on a way to another: the shortest chain of
  * walkways between them (Dijkstra over the walkway nodes).
  */
-function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way: Walkway; s: number }): Step[] | null {
+export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way: Walkway; s: number }): Step[] | null {
   if (from.way.id === to.way.id) {
     return [{ way: from.way, dir: to.s >= from.s ? 1 : -1, from: from.s, to: to.s }];
   }
   const n = g.nodes.length;
-  const dist = new Float64Array(n).fill(Infinity);
-  const via = new Int32Array(n).fill(-1);
+  // The graph's own arrays, used again by every search on it: a node's entry
+  // counts only when its stamp is this search's (`RouteScratch`).
+  const r = routeScratch(g);
+  const { dist, via, stamp, done, open } = r;
+  const gen = r.gen;
+  const distOf = (node: number): number => (stamp[node] === gen ? dist[node]! : Infinity);
   // A binary heap, and done once both ends of the goal way are settled: the
   // open list was scanned whole for every node taken and the search went on
   // over the whole graph, for every walker, when an edit moved them all onto
   // the new footways in one frame (docs/performance.md #27).
-  const open = new Heap();
   const push = (node: number, d: number, way: number): void => {
-    if (d >= dist[node]!) return;
+    if (d >= distOf(node)) return;
+    if (stamp[node] !== gen) { stamp[node] = gen; walkWork.routeNodes++; }
     dist[node] = d;
     via[node] = way;
     open.push(node, d);
   };
   push(from.way.a, from.s, from.way.id);
   push(from.way.b, from.way.path.length - from.s, from.way.id);
-  const done = new Uint8Array(n);
   let goals = to.way.a === to.way.b ? 1 : 2;
   while (open.size && goals > 0) {
     const node = open.pop();
-    if (done[node]) continue;
-    done[node] = 1;
+    if (done[node] === gen) continue;
+    done[node] = gen;
     if (node === to.way.a || node === to.way.b) goals--;
     const d = dist[node]!;
     for (const wid of g.at.get(node) ?? []) {
@@ -567,8 +728,8 @@ function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way: Walkw
     }
   }
   const ends = [
-    { node: to.way.a, total: dist[to.way.a]! + to.s },
-    { node: to.way.b, total: dist[to.way.b]! + (to.way.path.length - to.s) },
+    { node: to.way.a, total: distOf(to.way.a) + to.s },
+    { node: to.way.b, total: distOf(to.way.b) + (to.way.path.length - to.s) },
   ].sort((p, q) => p.total - q.total);
   const end = ends[0]!;
   if (!Number.isFinite(end.total)) return null;
@@ -577,7 +738,7 @@ function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way: Walkw
   let node = end.node;
   let guard = 0;
   while (guard++ < n) {
-    const wid = via[node]!;
+    const wid = stamp[node] === gen ? via[node]! : -1;
     if (wid < 0) return null;
     const way = g.ways[wid]!;
     if (way.id === from.way.id) break;
@@ -596,6 +757,34 @@ function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way: Walkw
   const arriveAtA = end.node === to.way.a;
   steps.push({ way: to.way, dir: arriveAtA ? 1 : -1, from: arriveAtA ? 0 : to.way.path.length, to: to.s });
   return steps;
+}
+
+/**
+ * A route search's arrays, one set per walk graph, sized to its nodes and
+ * used again by every search on it: a node's `dist` and `via` count only when
+ * its `stamp` is the search's generation (`gen`), and it is settled when its
+ * `done` is - so a search touches the nodes it reaches and no others, as
+ * Detour's node pool is cleared between queries without touching its nodes
+ * (recastnavigation, DetourNode.cpp `dtNodePool::clear`). DO NOT go back to
+ * `new Float64Array(n).fill(Infinity)` per search: three arrays of every
+ * walkway node of the map were made and filled for each walker's route,
+ * however short (O(map) per route).
+ */
+interface RouteScratch { dist: Float64Array; via: Int32Array; stamp: Uint32Array; done: Uint32Array; gen: number; open: Heap }
+const ROUTE_SCRATCH = new WeakMap<WalkGraph, RouteScratch>();
+/** The graph's search arrays, on a new generation, the heap empty. */
+function routeScratch(g: WalkGraph): RouteScratch {
+  const n = g.nodes.length;
+  let r = ROUTE_SCRATCH.get(g);
+  if (!r || r.stamp.length < n) {
+    r = { dist: new Float64Array(n), via: new Int32Array(n), stamp: new Uint32Array(n), done: new Uint32Array(n), gen: 0, open: new Heap() };
+    ROUTE_SCRATCH.set(g, r);
+  }
+  // Every 2^32 searches the stamps start again from nought (none is then this generation).
+  if (r.gen === 0xffffffff) { r.stamp.fill(0); r.done.fill(0); r.gen = 0; }
+  r.gen++;
+  r.open.clear();
+  return r;
 }
 
 
@@ -931,17 +1120,42 @@ export function createAgentWalkEngine(): PedestrianEngine {
     hailable(w, lanelet, s0, s1, exclude) {
       const lane = w.lanelet(lanelet);
       if (!lane) return null;
-      let best: { id: number; s: number } | null = null;
-      for (const p of stateOf(w).walkers) {
-        if (p.done || p.inside || p.player || p.act || p.rush || (p.fright ?? 0) > p.age) continue;
-        if (p.view.ageClass === 'child' || p.view.ground !== 'footway' || exclude?.has(p.id)) continue;
-        const hit = lane.centre.closestPoint({ x: p.x, y: p.y });
-        if (hit.s < s0 || hit.s > s1 || hit.distance > HAIL_REACH) continue;
-        // The kerb side: right of the way the lane runs (`kerbStops.ts` kerbSide).
-        const f = lane.centre.sampleAt(hit.s);
-        if ((p.x - f.p.x) * f.t.y - (p.y - f.p.y) * f.t.x <= 0) continue;
-        if (!best || hit.s < best.s) best = { id: p.id, s: hit.s };
+      // Only those near the lane between `s0` and `s1`: anybody it takes is
+      // within `HAIL_REACH` of a point of that stretch (their nearest point on
+      // the lane is in it), so within the stretch's box widened by that - and
+      // by a cell, for anybody moved since they were filed (`nearNow`). DO NOT
+      // walk every walker of the map: this is asked for every car out to pick
+      // somebody up, every tick, and read the whole town's people for each.
+      const c = lane.centre;
+      const a = Math.max(0, s0), b = Math.min(c.length, s1);
+      if (a > b) return null;
+      const pa = c.sampleAt(a).p, pb = c.sampleAt(b).p;
+      let x0 = Math.min(pa.x, pb.x), y0 = Math.min(pa.y, pb.y), x1 = Math.max(pa.x, pb.x), y1 = Math.max(pa.y, pb.y);
+      const cum = c.cum, xy = c.xy;
+      for (let i = 0; i < c.n; i++) {
+        if (cum[i]! <= a || cum[i]! >= b) continue;
+        const x = xy[i * 2]!, y = xy[i * 2 + 1]!;
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
       }
+      const pad = HAIL_REACH + CELL;
+      const s = stateOf(w);
+      let best: { id: number; s: number } | null = null;
+      // Ties go to the earliest walker (`rank`, the order they walk in), as the walk over them all had it.
+      let bestRank = -1;
+      nearNow(s).someIn(Math.floor((x0 - pad) / CELL), Math.floor((y0 - pad) / CELL),
+        Math.floor((x1 + pad) / CELL), Math.floor((y1 + pad) / CELL), (p, rank) => {
+          walkWork.hailLooked++;
+          if (p.done || p.inside || p.player || p.act || p.rush || (p.fright ?? 0) > p.age) return false;
+          if (p.view.ageClass === 'child' || p.view.ground !== 'footway' || exclude?.has(p.id)) return false;
+          const hit = c.closestPoint({ x: p.x, y: p.y });
+          if (hit.s < s0 || hit.s > s1 || hit.distance > HAIL_REACH) return false;
+          // The kerb side: right of the way the lane runs (`kerbStops.ts` kerbSide).
+          const f = c.sampleAt(hit.s);
+          if ((p.x - f.p.x) * f.t.y - (p.y - f.p.y) * f.t.x <= 0) return false;
+          if (!best || hit.s < best.s || (hit.s === best.s && rank < bestRank)) { best = { id: p.id, s: hit.s }; bestRank = rank; }
+          return false;
+        });
       return best;
     },
     // Into the car: off the street, as they stand, if they are still free
@@ -992,25 +1206,11 @@ export function createAgentWalkEngine(): PedestrianEngine {
     },
     anyoneWithin(w, x, y, radius, except) {
       // The walkers by cell, filed once a tick (every walker was read at every ask).
-      const s = stateOf(w);
-      if (s.nearAt !== s.clock) {
-        s.nearAt = s.clock;
-        s.near.clear();
-        for (const p of s.walkers) {
-          if (p.inside || p.done) continue;
-          const k = cellKey(p.x, p.y, CELL);
-          const list = s.near.get(k);
-          if (list) list.push(p); else s.near.set(k, [p]);
-        }
-      }
       // A cell's margin: anybody moved since they were filed is still found.
       const r = radius + CELL;
-      const gx0 = Math.floor((x - r) / CELL), gx1 = Math.floor((x + r) / CELL);
-      const gy0 = Math.floor((y - r) / CELL), gy1 = Math.floor((y + r) / CELL);
-      for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
-        for (const p of s.near.get(cell(gx, gy)) ?? []) if (!p.inside && !p.done && p.id !== except && hypot(p.x - x, p.y - y) < radius) return true;
-      }
-      return false;
+      return nearNow(stateOf(w)).someIn(Math.floor((x - r) / CELL), Math.floor((y - r) / CELL),
+        Math.floor((x + r) / CELL), Math.floor((y + r) / CELL),
+        (p) => !p.inside && !p.done && p.id !== except && hypot(p.x - x, p.y - y) < radius);
     },
   };
   const engine: PedestrianEngine = {
@@ -1048,14 +1248,16 @@ export function createAgentWalkEngine(): PedestrianEngine {
     },
     publish(w) { publish(w); },
     audit(_w: SimWorld, _out: AuditIssue[]) {},
+    // Everybody gone and everything the walkers' step keeps made new - the
+    // clock, the grids, the parked cars' zones, the cars' ways, the shocks -
+    // as a new world's (`SimWorld.reset`): kept, the clock and the filed
+    // grids of the old map made a reset world walk otherwise than a new one.
+    // The ids still to give go on, as the vehicles' (`nextVehicleId`): the
+    // renderer knows a person by id.
     reset(w) {
-      const s = stateOf(w);
-      s.walkers.length = 0;
-      s.byId.clear();
-      s.arrivals.length = 0;
-      s.graph = null;
-      s.builtFor = '';
-      s.shocks.length = 0;
+      const next = stateOf(w).nextId;
+      STATES.delete(w);
+      stateOf(w).nextId = next;
     },
     walkTrip(w, trip) { return startWalk(w, trip); },
     takeArrivals(w) {
@@ -1071,7 +1273,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
       // the body comes to rest (`getUp`); everybody within `scare` runs.
       const s = stateOf(w);
       let dead = 0;
-      for (const p of [...s.walkers]) {
+      for (const p of walkersWithin(s, x, y, kill * 2)) {
         if (p.inside || p.done) continue;
         const d = hypot(p.x - x, p.y - y);
         if (d >= kill * 2) continue;
@@ -1355,7 +1557,7 @@ function startWalk(w: SimWorld, trip: ResidentWalk, head: readonly Vec2[] = NO_P
   if (leader) {
     // One group: the leader's id, its size, a child in it or not; a pair a couple, with a child a family.
     p.leader = leader.id;
-    const members = s.walkers.filter((q) => !q.done && q.view.party.id === leader.view.party.id);
+    const members = (s.parties.get(leader.view.party.id) ?? []).filter((q) => !q.done);
     const hasChild = ageClass === 'child' || members.some((q) => q.view.ageClass === 'child');
     const party = { id: leader.view.party.id, size: members.length + 1, archetype: hasChild ? 'family' as const : 'couple' as const, hasChild };
     for (const q of members) q.view.party = party;
@@ -1366,13 +1568,45 @@ function startWalk(w: SimWorld, trip: ResidentWalk, head: readonly Vec2[] = NO_P
   p.s = pr.s; p.d = pr.d; p.aim = clamp(pr.d, room(steps[0]!));
   s.walkers.push(p);
   s.byId.set(id, p);
+  joinParty(s, p);
   return id;
+}
+
+/** `p` filed with its party (`State.parties`). */
+function joinParty(s: State, p: Walker): void {
+  const list = s.parties.get(p.view.party.id);
+  if (list) list.push(p); else s.parties.set(p.view.party.id, [p]);
 }
 
 function finish(s: State, p: Walker, arrived = true): void {
   p.done = true;
   s.byId.delete(p.id);
   if (arrived) s.arrivals.push(p.trip);
+  const party = s.parties.get(p.view.party.id);
+  if (party) {
+    const at = party.indexOf(p);
+    if (at >= 0) party.splice(at, 1);
+    if (!party.length) s.parties.delete(p.view.party.id);
+  }
+}
+
+/**
+ * The walkers out on the street (not inside, not done) within `radius` of a
+ * point, in the walkers' own order: from the walkers' grid (`nearNow`), a
+ * cell's margin for anybody moved since they were filed. What a blow, a shot
+ * or a look round asks. DO NOT walk `State.walkers` for a place: every
+ * walker of the map, for each blow and each look.
+ */
+function walkersWithin(s: State, x: number, y: number, radius: number): Walker[] {
+  const r = radius + CELL;
+  const found: { p: Walker; rank: number }[] = [];
+  nearNow(s).someIn(Math.floor((x - r) / CELL), Math.floor((y - r) / CELL), Math.floor((x + r) / CELL), Math.floor((y + r) / CELL),
+    (p, rank) => {
+      if (!p.inside && !p.done && hypot(p.x - x, p.y - y) <= radius) found.push({ p, rank });
+      return false;
+    });
+  found.sort((a, b) => a.rank - b.rank);
+  return found.map((f) => f.p);
 }
 
 function prune(s: State): void {
@@ -1490,19 +1724,41 @@ class WalkerGrid {
 
   /** Whether `fn` is true of anybody filed within `reach` cells of (x, y); stops at the first. */
   someNear(x: number, y: number, reach: number, fn: (q: Walker) => boolean): boolean {
-    if (!this.list.length) return false;
     const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+    return this.someIn(cx - reach, cy - reach, cx + reach, cy + reach, fn);
+  }
+
+  /**
+   * Whether `fn` is true of anybody filed in the cells [gx0, gx1] x [gy0, gy1];
+   * stops at the first. `rank`: their place in the order they were filed in
+   * (the walkers' own order).
+   */
+  someIn(gx0: number, gy0: number, gx1: number, gy1: number, fn: (q: Walker, rank: number) => boolean): boolean {
+    if (!this.list.length) return false;
     const start = this.start, entries = this.entries;
-    for (let gx = cx - reach; gx <= cx + reach; gx++) for (let gy = cy - reach; gy <= cy + reach; gy++) {
+    for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
       const h = this.slot(gx, gy);
       for (let k = start[h]!, end = start[h + 1]!; k < end; k++) {
         const i = entries[k]!;
         if (this.cx[i] !== gx || this.cy[i] !== gy) continue;
-        if (fn(this.list[i]!)) return true;
+        if (fn(this.list[i]!, i)) return true;
       }
     }
     return false;
   }
+}
+
+/**
+ * The walkers by cell for the cars' questions, filed at the first one after
+ * the walkers stepped (`State.near`): positions do not change until they step
+ * again, but for a body set down where it lies (`getUp`, which files again).
+ */
+function nearNow(s: State): WalkerGrid {
+  if (s.nearAt !== s.clock) {
+    s.nearAt = s.clock;
+    s.near.build(s.walkers);
+  }
+  return s.near;
 }
 
 // ---------------------------------------------------- the step's scratch
@@ -1608,6 +1864,7 @@ function stepWalkers(w: SimWorld): void {
   const s = stateOf(w);
   if (!s.walkers.length) return;
   ensureGraph(w, s);
+  w.signalPosts.follow(w);
   indexReservations(w);
   // Who is where, a cell of a few metres each (`WalkerGrid`); those who come
   // out of a door or a car during the pass are read from `late`.
@@ -1619,13 +1876,16 @@ function stepWalkers(w: SimWorld): void {
   if (s.shocks.length && s.clock >= s.shockLook) {
     s.shockLook = s.clock + 0.4;
     s.shocks = s.shocks.filter((k) => k.until > s.clock);
-    for (const p of s.walkers) {
-      if (p.inside || p.done || p.player || (p.fright ?? 0) > p.age || p.act) continue;
-      for (const k of s.shocks) {
+    // Shock by shock, those near each (`walkersWithin`), in the order of the
+    // shocks: a walker is frightened by the first one it is near, and is then
+    // frightened (`fright`) for the rest. DO NOT walk every walker of the map
+    // against every shock.
+    for (const k of s.shocks) {
+      for (const p of walkersWithin(s, k.x, k.y, k.radius)) {
+        if (p.inside || p.done || p.player || (p.fright ?? 0) > p.age || p.act) continue;
         const d = hypot(p.x - k.x, p.y - k.y);
         if (d > k.radius) continue;
         frighten(w, s, p, k.x, k.y, d, 18);
-        break;
       }
     }
   }
@@ -1661,17 +1921,10 @@ function stepWalkers(w: SimWorld): void {
   const carZones: CarZone[] = [];
   // The scenery's parked cars stand where they stand (the residents' own
   // cars, which drove across the footway in and out of their bays, were kept
-  // apart with them, `src/backup/residents`). Their bodies are made again
-  // only when a car came, went or moved: compared car by car with what was
-  // seen last tick, plain fields read in order - a look-up of every one of
-  // the town's ~220 parked cars in the zone cache each tick was 2 % of the
-  // main thread with the test city running (audit, 2026-10-09).
-  const parkedCars = w.ambient.parked;
-  let sameParked = parkedCars.length === s.parkedSeen.length;
-  for (let i = 0; sameParked && i < parkedCars.length; i++) {
-    const car = parkedCars[i]!, seen = s.parkedSeen[i]!, f = car.free;
-    sameParked = car === seen.car && (f ? f.x === seen.x && f.y === seen.y && f.angle === seen.angle : seen.zone === null);
-  }
+  // apart with them, `src/backup/residents`); the lots' cars and the lorries
+  // in that list move. Only a car that came, went or moved is filed again
+  // (`ParkedZoneIndex`).
+  s.parked.follow(w.ambient);
   s.onCarWay.clear();
   // The trains at grade: solid as cars are (nobody walks across a level crossing under one).
   for (const discs of w.city.transit.trainZones()) {
@@ -1684,32 +1937,15 @@ function stepWalkers(w: SimWorld): void {
   // ahead round it: a walker reads its own cell instead of every car in town
   // (the town's parked cars made that the step's second largest cost). A zone
   // a walker could see or touch is always in the walker's cell. The parked
-  // cars' are filed again only when a car came, went or moved; the moving
-  // ones' and the trains' every tick.
-  if (!sameParked) {
-    s.parkedSeen = parkedCars.map((car) => {
-      const f = car.free;
-      return f ? { car, x: f.x, y: f.y, angle: f.angle, zone: parkedZone(car, f) } : { car, x: 0, y: 0, angle: 0, zone: null };
-    });
-    s.parkedCells = fileZones(s.parkedSeen.flatMap((p) => (p.zone ? [p.zone] : [])));
-  }
-  const zoneCells = fileZones(carZones);
-  const parkedCells = s.parkedCells;
-  nearParked = parkedCells;
-  nearMoving = zoneCells;
-  // Where the player looks (`SimWorld.focus`, set by the renderer; null in the
-  // specs: everybody in full). Out of it, a walker steps one tick in `COARSE`;
-  // stepping round the others only where people are seen big enough to see it.
-  const focus = w.focus;
-  const tick = Math.round(s.clock / DT);
-  const watched = (p: Walker): boolean => {
-    if (!focus || hypot(p.x - focus.x, p.y - focus.y) <= focus.r) return true;
-    const view = focus.view;
-    if (!view) return false;
-    const ex = p.x - view.ex, ey = p.y - view.ey, l = hypot(ex, ey);
-    return l <= view.far && ex * view.dx + ey * view.dy >= view.cos * l;
-  };
-
+  // cars' are kept as they change (`ParkedZoneIndex`); the trains' every tick.
+  nearParked = s.parked.cells;
+  nearMoving = fileZones(carZones);
+  // Everybody is stepped in full, every tick, wherever the camera is. DO NOT
+  // read `SimWorld.focus` here: walkers out of the view were stepped one tick
+  // in four, by four ticks' time, and not round each other, so the same town
+  // with the same seed went otherwise with the camera elsewhere (deterministic
+  // simulation: the same state and inputs give the same result, and the camera
+  // is not an input). The cost is cut in the algorithm, not by the view.
 
   for (const p of s.walkers) {
     p.age += DT;
@@ -1732,12 +1968,7 @@ function stepWalkers(w: SimWorld): void {
       if (p.act && p.age >= p.act.until) p.act = null;
       continue;
     }
-    // Out of the view: a step one tick in `COARSE`, by as many ticks' time.
-    const seen = watched(p);
-    if (!seen && ((tick + p.id) % COARSE + COARSE) % COARSE !== 0) continue;
-    const dt = seen ? DT : COARSE * DT;
-    // Stepping round the others where people are seen, and big enough to see it.
-    const crowded = seen && (!focus || focus.detail);
+    const dt = DT;
     // Stopped for something (a word, a fall): standing there, facing it.
     // (Crawling is moving: on below, at a crawl.)
     if (p.act && p.act.kind !== 'crawl') {
@@ -1808,7 +2039,8 @@ function stepWalkers(w: SimWorld): void {
 
     // --- the others, in this walker's own frame: how far ahead, how far across, which way they go.
     othersN = 0;
-    if (crowded) {
+    {
+      // The others near it (a block: its cells are its own).
       seer = p; seerFrame = f;
       grid.someNear(p.x, p.y, 1, seeWalker);
       // Out of a door or a car this pass: within the same cells.
@@ -1818,8 +2050,8 @@ function stepWalkers(w: SimWorld): void {
         if (Math.abs(Math.floor(q.x / CELL) - cx) <= 1 && Math.abs(Math.floor(q.y / CELL) - cy) <= 1) seeWalker(q);
       }
     }
-    // The cars and trains: kept off wherever anybody can see it.
-    const zonesN = seen ? zonesNearInto(p) : 0;
+    // The cars and trains: kept off.
+    const zonesN = zonesNearInto(p);
     for (let zi = 0; zi < zonesN; zi++) {
       const z = ZONES[zi]!;
       if (p.x < z.x0 - LOOK || p.x > z.x1 + LOOK || p.y < z.y0 - LOOK || p.y > z.y1 + LOOK) continue;
@@ -1838,6 +2070,20 @@ function stepWalkers(w: SimWorld): void {
         if (along + 2 * c.r <= 0 || along > LOOK) continue;
         addOther(Math.max(0.01, along), p.d - rx * f.ty + ry * f.tx, false, c.r, null, false);
       }
+    }
+    // The traffic signal posts: a body standing still in the stripes, kept
+    // clear of as a car's discs are (SUMO's striping keeps its distance
+    // within a stripe, sumo.dlr.de/docs/Simulation/Pedestrians.html). The
+    // post stands 0.9 m in from the kerb, 2 m past the zebra: inside the
+    // crowd waiting along the kerb (`WAIT_HALF`). DO NOT leave them out:
+    // people queuing for the crossing stood inside the post.
+    const posts = w.signalPosts.near(p.x, p.y, LOOK);
+    for (let k = 0; k < posts.length; k++) {
+      const post = posts[k]!;
+      const rx = post.x - p.x, ry = post.y - p.y;
+      const along = rx * f.tx + ry * f.ty - SIGNAL_POST_RADIUS + BODY;
+      if (along + 2 * SIGNAL_POST_RADIUS <= 0 || along > LOOK) continue;
+      addOther(Math.max(0.01, along), p.d - rx * f.ty + ry * f.tx, false, SIGNAL_POST_RADIUS, null, false);
     }
 
     // --- the stripe: the most room ahead, keeping to the right (SUMO's striping).
@@ -2159,7 +2405,7 @@ const seen = (p: Walker): WalkerSeen => ({ id: p.id, trip: p.trip, x: p.x, y: p.
 
 /** The walkers within `radius` of a point, out on the street. */
 export function walkersNear(w: SimWorld, x: number, y: number, radius: number): WalkerSeen[] {
-  return stateOf(w).walkers.filter((p) => !p.inside && !p.done && hypot(p.x - x, p.y - y) < radius).map(seen);
+  return walkersWithin(stateOf(w), x, y, radius).filter((p) => hypot(p.x - x, p.y - y) < radius).map(seen);
 }
 
 /** One walker, by id, or null when nobody of that id is out. */
@@ -2170,8 +2416,11 @@ export function walkerOf(w: SimWorld, id: number): WalkerSeen | null {
 
 /** Puts somebody walking under the player's hand: they stop following their route. */
 export function takeWalker(w: SimWorld, id: number): boolean {
-  const p = stateOf(w).byId.get(id);
+  const s = stateOf(w);
+  const p = s.byId.get(id);
   if (!p || p.done) return false;
+  // Out on the street now, if not before: the walkers are filed again (`nearNow`).
+  if (p.inside) s.nearAt = -1;
   p.inside = false;
   p.player = true;
   p.act = null;
@@ -2199,6 +2448,9 @@ export function addPlayerWalker(w: SimWorld, id: number, x: number, y: number, h
   };
   s.walkers.push(p);
   s.byId.set(id, p);
+  joinParty(s, p);
+  // Out on the street at once: the walkers are filed again (`nearNow`).
+  s.nearAt = -1;
 }
 
 /** The player's body moved: where it is now, the way it faces, how fast it goes. */
@@ -2291,7 +2543,7 @@ const PANIC_RUN = 3.4;
 export function startle(w: SimWorld, x: number, y: number, radius: number, seconds: number, except: number | null): number[] {
   const s = stateOf(w);
   const saw: number[] = [];
-  for (const p of s.walkers) {
+  for (const p of walkersWithin(s, x, y, radius)) {
     if (p.inside || p.done || p.player || p.id === except) continue;
     const d = hypot(p.x - x, p.y - y);
     if (d > radius) continue;
@@ -2307,7 +2559,7 @@ export function startle(w: SimWorld, x: number, y: number, radius: number, secon
  */
 function mourn(s: State, p: Walker): void {
   if (p.view.party.size < 2) return;
-  for (const q of s.walkers) {
+  for (const q of [...(s.parties.get(p.view.party.id) ?? [])]) {
     if (q === p || q.done || q.inside || q.player || q.view.party.id !== p.view.party.id) continue;
     if (hypot(q.x - p.x, q.y - p.y) > m(12) || woundOf(q) || q.act?.kind === 'fall') continue;
     const hold = 3 + (personHash(q.id ^ 0x3e1) % 4);

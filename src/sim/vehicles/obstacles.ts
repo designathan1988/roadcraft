@@ -13,13 +13,21 @@ import { CROSSING_STOP } from '../transit/transit';
 import { type CrossingId, makeCrossingId } from '../signals/plan';
 import type { NodeId } from '@world/ids';
 
-/** Stop short of a zebra span somebody is on; null when the path is clear. */
 /** How far short of a closed stretch of lane the traffic stops. */
 export const CLOSURE_STOP = m(1.5);
 
+/**
+ * Stop short of a zebra span somebody is on; null when the path is clear.
+ *
+ * One vehicle's own work: the crossings of the one junction its movement
+ * runs through (`crossingIdsAt`, spelt once per topology) and, for each, a
+ * look-up of the people on it (`pedestrianInSpan`, keyed maps). Nothing here
+ * reads the rest of the map: a person on a zebra elsewhere costs this vehicle
+ * one look-up per road at its own junction, never a pass over the people or
+ * the fleet.
+ */
 function pedestrianAhead(w: SimWorld, v: Vehicle): Obstacle | null {
-  // Nobody on or at any zebra: nothing to stop for (the commonest case, and
-  // the crossing ids below were spelt out and hashed for every vehicle).
+  // Nobody on or at any zebra: nothing to look up.
   if (w.crossingStates.size === 0) return null;
   const lane = w.lanelet(v.lanelet);
   if (!lane) return null;

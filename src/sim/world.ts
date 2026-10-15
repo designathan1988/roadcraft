@@ -2,7 +2,7 @@ import { Rng } from '@core/rng';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
-import { type Connector, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
+import { type Connector, type JunctionTopology, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
 import { ConflictIndex, type BodyClass, type WAITING } from '@world/conflictPoints';
 import type { PairMeasurer } from '@world/conflictTable';
 import { SimClock } from './clock';
@@ -12,6 +12,7 @@ import { type SignalController, type SignalDeps, createController, rebuildContro
 import { type CrossingId, makeCrossingId } from './signals/plan';
 import type { AuditIssue } from './audit';
 import { SidewalkGraph } from './peds/sidewalk';
+import { SignalPostIndex } from './peds/signalPostIndex';
 import { hasDownstreamStorage } from './intersections/spillback';
 import { CrossingSpans } from './intersections/crossingSpans';
 import { m } from '@world/units';
@@ -28,7 +29,7 @@ import type { PedestrianEngine } from './people/engine';
 import { City } from './city/city';
 import { AmbientWorld } from './ambient/ambient';
 import { buildWalkways, walkwaySteps, type WalkGraph } from '@world/walkways';
-import { mainRoadLegs } from '@world/roads/rules';
+import { mainRoadLegs, type SignalSettings } from '@world/roads/rules';
 import { FlowStats } from './roads/flowStats';
 import { type AutoControl, ControlAdvisor } from './roads/controlAdvisor';
 import { rebuildWork } from '@world/rebuildWork';
@@ -69,6 +70,58 @@ export interface LaneletRuntime {
   ghostSince: number;
 }
 
+/** The world's random streams, one per consumer, forked by tag so a new consumer reshuffles no other (`core/rng.ts`). */
+export interface SimStreams {
+  readonly spawnVehicles: Rng;
+  readonly spawnPeds: Rng;
+  readonly driver: Rng;
+  readonly route: Rng;
+  readonly gap: Rng;
+  readonly pedParams: Rng;
+  readonly courtesy: Rng;
+  readonly signalOffsets: Rng;
+  /** The People engine's own stream (`people/people.ts`). */
+  readonly people: Rng;
+  readonly occupancy: Rng;
+  /** The lots' cars (`agents/lotTraffic.ts`), the lorries (`agents/lorryTraffic.ts`) and the scenery's life (`ambient/ambient.ts`). */
+  readonly lots: Rng;
+  readonly lorries: Rng;
+  readonly ambient: Rng;
+}
+
+/** The streams of a world seeded `seed`: what a new world starts with, and a reset starts again from. */
+function forkStreams(seed: number): SimStreams {
+  const root = new Rng(seed);
+  return {
+    spawnVehicles: root.fork('spawnVehicles'),
+    spawnPeds: root.fork('spawnPeds'),
+    driver: root.fork('driver'),
+    route: root.fork('routeChoice'),
+    gap: root.fork('gapAcceptance'),
+    pedParams: root.fork('pedParams'),
+    courtesy: root.fork('courtesy'),
+    signalOffsets: root.fork('signalOffsets'),
+    occupancy: root.fork('occupancy'),
+    people: root.fork('people'),
+    // Forked last: each fork takes one draw of the root, so the streams above
+    // keep their numbers. DO NOT give the lots, the lorries or the scenery a
+    // fixed seed of their own again: every world drew the same lots and
+    // lorries whatever its seed.
+    lots: root.fork('lots'),
+    lorries: root.fork('lorries'),
+    ambient: root.fork('ambient'),
+  };
+}
+
+/** What `SimWorld.rt` answers for a lane nobody has been on: empty, not a ghost, frozen against writes. */
+const NO_RUNTIME: LaneletRuntime = Object.freeze({
+  id: '' as LaneletId,
+  order: Object.freeze([]) as unknown as VehicleId[],
+  shadows: Object.freeze([]) as unknown as VehicleId[],
+  ghost: false,
+  ghostSince: 0,
+});
+
 /**
  * Everything the simulation owns.
  *
@@ -81,6 +134,8 @@ export class SimWorld {
   readonly graph = new LaneletGraph();
   readonly conflicts = new ConflictIndex();
   readonly sidewalks = new SidewalkGraph();
+  /** The traffic signal posts by place, kept from the junctions' controls (`signalChangesSince`): the walkers keep clear of them. */
+  readonly signalPosts = new SignalPostIndex();
   readonly claims = new ClaimTable();
 
   /** @mapWide Every vehicle on the map. */
@@ -98,7 +153,7 @@ export class SimWorld {
    * that set it still read as they did.
    */
   driveModel = 'v2' as const;
-  /** @mapWide One per lanelet of the graph. */
+  /** @mapWide One per lanelet a vehicle (or its shadow) has been on; written only through `runtimeFor`. */
   readonly runtime = new Map<LaneletId, LaneletRuntime>();
   readonly controllers = new Map<NodeId, SignalController>();
   /**
@@ -113,6 +168,17 @@ export class SimWorld {
   doLess = true;
   /** Lanes with a vehicle on them: written only by `enterLanelet`/`exitLanelet`, the only writers of `order`. */
   readonly occupied = new Set<LaneletId>();
+  /**
+   * The vehicles that may hold something at a junction: given a movement
+   * (`admittedConnector`, admission), clearing one with their rear
+   * (`clearingConnectors`, integration), or on a connector
+   * (`enterLanelet`). Noted by those writers (`noteHolder`), dropped by
+   * `junctionHolders` once they hold nothing. DO NOT find them by walking
+   * the fleet: three passes over every vehicle of the map each tick (the
+   * signals' reservations, the walkers', the admission's holders) for the
+   * few at a junction.
+   */
+  private readonly maybeHolders = new Set<Vehicle>();
   /** Runtime lanes no longer in the graph (an edit took them): stage 7's work list (`collectGhosts`). */
   readonly ghostCandidates = new Set<LaneletId>();
   /**
@@ -158,23 +224,15 @@ export class SimWorld {
   /** Cumulative link entries since the current simulation session began. */
   readonly segmentVolume = new Map<number, number>();
   /** Vehicles an hour into each junction from each leg, as a trend (docs/VIAS.md V5). */
-  readonly flow = new FlowStats();
+  get flow(): FlowStats { return this.flowStats; }
+  private flowStats = new FlowStats();
   /** The control each junction left on "automatic" gets from its flows (docs/VIAS.md V5). */
-  readonly advisor = new ControlAdvisor();
+  get advisor(): ControlAdvisor { return this.controlAdvisor; }
+  private controlAdvisor = new ControlAdvisor();
 
-  readonly rng: {
-    readonly spawnVehicles: Rng;
-    readonly spawnPeds: Rng;
-    readonly driver: Rng;
-    readonly route: Rng;
-    readonly gap: Rng;
-    readonly pedParams: Rng;
-    readonly courtesy: Rng;
-    readonly signalOffsets: Rng;
-    /** The People engine's own stream (`people/people.ts`). */
-    readonly people: Rng;
-    readonly occupancy: Rng;
-  };
+  /** The world's random streams, forked from its seed (`reset` forks them again). */
+  get rng(): SimStreams { return this.streams; }
+  private streams: SimStreams;
 
   nextVehicleId = 1;
   /** Per-world population timer; simulations must never influence each other. */
@@ -268,33 +326,11 @@ export class SimWorld {
   constructor(
     readonly doc: RoadDoc,
     readonly net: Network,
-    seed = 0x5eed,
+    private readonly seed = 0x5eed,
   ) {
-    const root = new Rng(seed);
-    this.rng = {
-      spawnVehicles: root.fork('spawnVehicles'),
-      spawnPeds: root.fork('spawnPeds'),
-      driver: root.fork('driver'),
-      route: root.fork('routeChoice'),
-      gap: root.fork('gapAcceptance'),
-      pedParams: root.fork('pedParams'),
-      courtesy: root.fork('courtesy'),
-      signalOffsets: root.fork('signalOffsets'),
-      occupancy: root.fork('occupancy'),
-      people: root.fork('people'),
-    };
+    this.streams = forkStreams(seed);
   }
 
-  /**
-   * Forgets every agent and everything learned about the previous map.
-   *
-   * For loading a DIFFERENT document (open, import, new map). Lanelet and
-   * footway ids are built from small integers and coincide between maps, so
-   * rebinding after a load kept old vehicles - with their routes, claims and
-   * kerb stops - on unrelated roads of the new map, and carried issues,
-   * volumes and trip counts across. Undo and redo keep rebinding: they edit
-   * the same map. Seeds and settings are kept; the clock is not rewound.
-   */
   /**
    * Switches the model that moves the people. Everybody walking is dropped:
    * the two engines share no state, only what they publish.
@@ -307,11 +343,33 @@ export class SimWorld {
     engine.rebind(this);
   }
 
+  /**
+   * Forgets every agent and everything learned about the previous map.
+   *
+   * For loading a DIFFERENT document (open, import, new map). Lanelet and
+   * footway ids are built from small integers and coincide between maps, so
+   * rebinding after a load kept old vehicles - with their routes, claims and
+   * kerb stops - on unrelated roads of the new map, and carried issues,
+   * volumes and trip counts across. Undo and redo keep rebinding: they edit
+   * the same map. The world is then a new world with the same seed
+   * (`tests/sim/resetLikeNew.spec.ts`; the scenery's own reset is
+   * `AmbientWorld.reset`), but for three things kept on purpose: the
+   * settings, the clock (the city's hour, `City.minutes`) and the ids still
+   * to give (`nextVehicleId`: the renderer keeps a car's look by its id, and
+   * an id given again would dress a new car as an old one).
+   */
   reset(): void {
     this.vehicles.clear();
+    this.maybeHolders.clear();
     this.runtime.clear();
     this.claims.clear();
     this.controllers.clear();
+    this.planInputs.clear();
+    // The kerbs and zebras of the old map: a new world has none until its
+    // topology is built, and the controllers made in its first half read them
+    // (`crossingsAt`). Kept, a reset world made its signals from the old
+    // map's crossings and ran otherwise than a new one.
+    this.sidewalks.clear();
     this.junctionsVersion++;
     this.occupied.clear();
     this.ghostCandidates.clear();
@@ -329,6 +387,16 @@ export class SimWorld {
     this.issues.length = 0;
     this.topologyRevision = -1;
     this.vehicleTopologyRevision = -1;
+    // As a new world with the same seed: the junctions' flows and the
+    // controls chosen from them were the old map's (node ids coincide between
+    // maps), and the random streams start again from the seed. DO NOT keep
+    // them: the advisor turned the new map's junctions to signals it had
+    // measured on the old one, and the same map opened twice ran two
+    // different cities.
+    this.flowStats = new FlowStats();
+    this.controlAdvisor = new ControlAdvisor();
+    this.streams = forkStreams(this.seed);
+    this.forgetSignals();
     this.pedEngine.reset(this);
   }
 
@@ -348,7 +416,22 @@ export class SimWorld {
     return this.graph.connectors.get(id);
   }
 
+  /**
+   * A lane's occupants, to read. A lane nobody has been on answers the
+   * shared empty runtime (`NO_RUNTIME`, Nystrom's null service): frozen, so
+   * a write through it throws instead of being lost. DO NOT create the
+   * runtime here: routing, lane changes and the inspector read every lane
+   * they look at through this, and each read used to leave a runtime behind
+   * (a lane id gone from the graph a ghost candidate too) - the map grew to
+   * one per lane looked at, all of them walked by the full cleanup and audit.
+   * Writers go through `runtimeFor` (TC39 upsert: `get` reads, `getOrInsert` writes).
+   */
   rt(id: LaneletId): LaneletRuntime {
+    return this.runtime.get(id) ?? NO_RUNTIME;
+  }
+
+  /** A lane's runtime, made when a vehicle or its shadow first comes onto it: for `enterLanelet` and `addShadow` only. */
+  private runtimeFor(id: LaneletId): LaneletRuntime {
     let r = this.runtime.get(id);
     if (!r) {
       r = { id, order: [], shadows: [], ghost: false, ghostSince: 0 };
@@ -366,19 +449,38 @@ export class SimWorld {
     return this.controllers.get(node);
   }
 
-  /** Deterministic iteration order for any pass with cross-agent effects. */
-  //
-  // Sorted once per change of the fleet, not on every call: a tick asked for
-  // it about ten times, each a copy and a sort. The array handed out is never
-  // changed afterwards - a change of the fleet makes a new one - so a pass
-  // that adds or removes vehicles while walking it walks what it was given.
-  vehiclesInIdOrder(): readonly Vehicle[] {
-    if (this.vehicleOrder.version !== this.vehicles.version) {
-      this.vehicleOrder = { version: this.vehicles.version, list: [...this.vehicles.values()].sort((a, b) => a.id - b.id) };
-    }
-    return this.vehicleOrder.list;
+  /** A vehicle that may now hold something at a junction (`maybeHolders`): for the writers of what it holds. */
+  noteHolder(v: Vehicle): void {
+    this.maybeHolders.add(v);
   }
-  private vehicleOrder: { version: number; list: readonly Vehicle[] } = { version: -1, list: [] };
+
+  /**
+   * The vehicles holding or clearing a movement, or on a connector, now - in
+   * no set order (every reader's answer is a set: who reserves what, who
+   * holds what). Those noted that hold nothing any more are dropped here.
+   */
+  junctionHolders(): Vehicle[] {
+    const out: Vehicle[] = [];
+    for (const v of this.maybeHolders) {
+      if (this.vehicles.get(v.id) !== v) { this.maybeHolders.delete(v); continue; }
+      if (v.admittedConnector !== null || v.clearingConnectors.length > 0 || this.lanelet(v.lanelet)?.kind === 'connector') out.push(v);
+      else this.maybeHolders.delete(v);
+    }
+    return out;
+  }
+
+  /**
+   * Deterministic iteration order for any pass with cross-agent effects: the
+   * fleet by id, kept in that order as it changes (`VersionedMap.inKeyOrder`).
+   * The array handed out is never changed afterwards - a change of the fleet
+   * after it was handed out works on a copy - so a pass that adds or removes
+   * vehicles while walking it walks what it was given. DO NOT sort the fleet
+   * again at each change of it: a car made or gone each tick was the whole
+   * fleet copied and sorted each tick.
+   */
+  vehiclesInIdOrder(): readonly Vehicle[] {
+    return this.vehicles.inKeyOrder();
+  }
 
   junctionNodesInOrder(): readonly NodeId[] {
     if (this.junctionOrder.version !== this.junctionsVersion) this.refreshJunctionOrder();
@@ -571,10 +673,20 @@ export class SimWorld {
       if (!this.doc.segment(segment as SegmentId)) this.segmentVolume.delete(segment);
     }
     this.vehicleTopologyRevision = this.net.trafficRevision;
-    // The lanes the edit took, kept while vehicles still drive on them (`collectGhosts`).
-    for (const id of this.runtime.keys()) {
+    // The lanes the edit took, kept while vehicles still drive on them
+    // (`collectGhosts`); and a ghost whose id is in the graph again (an undo
+    // gives the same road the same lane ids) is a lane again, before the
+    // vehicles are rebound and routed onto it. DO NOT leave this to stage 7:
+    // the mark only ever went on, and a lane given back would stay dead to
+    // routes, bays, lane changes, entry and spawning for good - and the
+    // rebind right after this plans every route round a lane still marked.
+    // (Today a vehicle on a lane gone is removed before stage 7 can mark it -
+    // `rebindVehicles`, `integrateAll`, `stepDespawn` - so this is the guard
+    // for the day one is kept, as the ghost's own comment intends.)
+    for (const [id, rt] of this.runtime) {
       rebuildWork.lanes++;
       if (!this.graph.lanelets.has(id)) this.ghostCandidates.add(id);
+      else if (rt.ghost) { rt.ghost = false; rt.ghostSince = 0; }
     }
     this.junctionsVersion++;
     // The controls the flows chose stay chosen across an edit (V5).
@@ -582,7 +694,47 @@ export class SimWorld {
     rebuildWork.lanes += nodes.size;
     this.flow.keepOnly(nodes);
     this.advisor.forget(nodes);
+    // Every junction built again: whoever keeps something by a junction's control reads them all.
+    this.forgetSignals();
     if (this.applyAutoControl()) this.syncControllers();
+  }
+
+  /**
+   * The junctions whose signal came or went with the roads as they were (the
+   * advisor's choice, `applyAutoControl`), oldest first, since
+   * `signalLogBase`, and the serial of the latest. Forgotten when the
+   * junctions are built again (an edit of the roads) or the world is reset:
+   * every junction is then to be read again. For whatever keeps something by
+   * a junction's control (the posts the walkers keep clear of, the drawn
+   * signals and posts). DO NOT read a junction's control off
+   * `topologyRevision` alone: a switch by the advisor moves no revision, and
+   * a junction it turned to a signal showed no lights until the next edit of
+   * the roads.
+   */
+  private signalLog: NodeId[] = [];
+  private signalLogBase = 0;
+  private signalSerial = 0;
+
+  /**
+   * The junctions whose signal came or went since `serial` (`signalLog`),
+   * and the serial now; `nodes` null: every junction is to be read again (a
+   * first look, a rebuilt graph, a log forgotten).
+   */
+  signalChangesSince(serial: number): { readonly serial: number; readonly nodes: readonly NodeId[] | null } {
+    if (serial < this.signalLogBase || serial > this.signalSerial) return { serial: this.signalSerial, nodes: null };
+    return { serial: this.signalSerial, nodes: this.signalLog.slice(serial - this.signalLogBase) };
+  }
+
+  private noteSignal(node: NodeId): void {
+    this.signalLog.push(node);
+    this.signalSerial++;
+    // Longer than reading every junction: forgotten (its readers read them all).
+    if (this.signalLog.length > Math.max(64, this.graph.junctions.size)) this.forgetSignals();
+  }
+
+  private forgetSignals(): void {
+    this.signalLog = [];
+    this.signalLogBase = ++this.signalSerial;
   }
 
   /**
@@ -601,6 +753,7 @@ export class SimWorld {
       if (junction.signalised === signalised) continue;
       this.graph.junctions.set(node, { ...junction, signalised });
       this.junctionsVersion++;
+      this.noteSignal(node);
       changed = true;
     }
     return changed;
@@ -609,7 +762,8 @@ export class SimWorld {
   /**
    * Stage 0's measuring of the junctions (docs/VIAS.md V5): the flows aged,
    * and every so often each junction on "automatic" given the control its
-   * trend warrants. A change of signal rebuilds that junction's controller.
+   * trend warrants. A change of signal rebuilds that junction's controller
+   * alone (`syncControllers`).
    */
   stepControlAdvisor(dt: number): void {
     this.flow.step(dt);
@@ -712,7 +866,7 @@ export class SimWorld {
     const reservedGroups = (): Map<NodeId, Set<number>> => {
       if (reserved) return reserved;
       reserved = new Map();
-      for (const vehicle of this.vehicles.values()) {
+      for (const vehicle of this.junctionHolders()) {
         const lane = this.lanelet(vehicle.lanelet);
         const ownsAllocation =
           vehicle.admittedConnector !== null ||
@@ -864,19 +1018,33 @@ export class SimWorld {
     return this.clock.tick;
   }
 
+  /**
+   * The controllers brought up to the junctions: a new junction gets one, a
+   * junction gone loses its own, and a junction whose plan's inputs changed
+   * (`PlanInputs`) has its controller rebuilt. A junction an edit did not
+   * reach keeps its controller as it runs - its stage, its timer, its
+   * history. DO NOT rebuild every controller here: `rebuildController` puts
+   * one caught between greens into ALL_RED from nought, so every road drawn
+   * anywhere, and every control the advisor switched, reset the lights of the
+   * whole city (and paid a plan per junction of the map).
+   */
   private syncControllers(): void {
     const deps = this.signalDeps();
 
     for (const [node, junction] of this.graph.junctions) {
-      rebuildWork.signals++;
       const crossings = this.crossingsAt(node);
       const existing = this.controllers.get(node);
       const settings = this.doc.node(node)?.signal;
+      const inputs = this.planInputsOf(junction, crossings, settings);
       if (existing) {
+        const was = this.planInputs.get(node);
+        if (was && samePlanInputs(was, inputs)) continue;
+        rebuildWork.signals++;
         rebuildController(existing, junction, crossings, deps);
         // A fixed-time signal back where the common clock says, with its offset (V5).
         if (settings?.mode === 'fixed') seekFixed(existing, settings, this.tickCount() * DT);
       } else {
+        rebuildWork.signals++;
         // A deterministic per-node offset so neighbouring junctions do not all
         // switch together.
         const offset = (node * 7.317) % 60;
@@ -884,26 +1052,50 @@ export class SimWorld {
         if (settings?.mode === 'fixed') seekFixed(created, settings, this.tickCount() * DT);
         this.controllers.set(node, created);
       }
+      this.planInputs.set(node, inputs);
     }
 
     for (const node of [...this.controllers.keys()]) {
       if (!this.graph.junctions.has(node)) {
         this.controllers.delete(node);
+        this.planInputs.delete(node);
       }
     }
     this.junctionsVersion++;
+  }
+
+  /** What each controller's plan was made from (`syncControllers`). */
+  private readonly planInputs = new Map<NodeId, PlanInputs>();
+
+  /**
+   * What a junction's plan is made from (`signals/plan.ts` buildSignalPlan):
+   * its approach groups and connectors - kept as the very objects while the
+   * lanelet graph reuses the junction (`LaneletGraph.buildJunctions`, whose
+   * key holds the node's control, legs, lane links and every lane meeting
+   * there, so their speeds and the movements' conflicts with them) - whether
+   * it is signalised, its crossings and the player's settings.
+   */
+  private planInputsOf(junction: JunctionTopology, crossings: readonly CrossingId[], settings: SignalSettings | undefined): PlanInputs {
+    return {
+      groups: junction.groups,
+      connectors: junction.connectors.map((id) => this.graph.connectors.get(id)),
+      signalised: junction.signalised,
+      crossings: crossings.join(','),
+      settings: settingsKey(settings),
+    };
   }
 
   // ----------------------------------------------------------- lane order
 
   /** Inserts a vehicle into a lanelet's occupancy list, keeping it sorted. */
   enterLanelet(v: Vehicle, id: LaneletId, recordVolume = true): void {
-    const rt = this.rt(id);
+    const rt = this.runtimeFor(id);
     if (!rt.order.includes(v.id)) rt.order.push(v.id);
     this.occupied.add(id);
     this.sortLane(rt);
     v.lanelet = id;
     const lane = this.lanelet(id);
+    if (lane?.kind === 'connector') this.noteHolder(v);
     // A vehicle entering a junction's movement: the flow from its leg (V5).
     if (recordVolume && lane?.kind === 'connector' && lane.node !== undefined) {
       const from = this.lanelet(lane.fromLane ?? '')?.segment;
@@ -947,7 +1139,7 @@ export class SimWorld {
   addShadow(v: Vehicle, lanelet: LaneletId, offset: number, clearAt: number): void {
     this.clearShadow(v);
     v.shadow = { lanelet, offset, clearAt };
-    const rt = this.rt(lanelet);
+    const rt = this.runtimeFor(lanelet);
     if (!rt.shadows.includes(v.id)) rt.shadows.push(v.id);
   }
 
@@ -992,6 +1184,7 @@ export class SimWorld {
   }
 
   removeVehicle(v: Vehicle): void {
+    this.maybeHolders.delete(v);
     this.clearShadow(v);
     this.exitLanelet(v, v.lanelet);
     this.claims.releaseAll(v.id);
@@ -1004,19 +1197,92 @@ export class SimWorld {
   }
 }
 
-/** A Map that counts its changes of membership, for caches over it (`vehiclesInIdOrder`). */
-export class VersionedMap<K, V> extends Map<K, V> {
+/** What a controller's plan was made from (`SimWorld.planInputsOf`). */
+interface PlanInputs {
+  readonly groups: JunctionTopology['groups'];
+  readonly connectors: readonly (Connector | undefined)[];
+  readonly signalised: boolean;
+  readonly crossings: string;
+  readonly settings: string;
+}
+
+/** The player's settings of a signal as one string, field by field (`SignalSettings`). */
+function settingsKey(s: SignalSettings | undefined): string {
+  if (!s) return '';
+  return `${s.mode ?? '-'}|${s.greens?.join(',') ?? '-'}|${s.offset ?? '-'}|${s.busPriority ? 1 : 0}`;
+}
+
+function samePlanInputs(a: PlanInputs, b: PlanInputs): boolean {
+  if (a.groups !== b.groups || a.signalised !== b.signalised || a.crossings !== b.crossings || a.settings !== b.settings) return false;
+  if (a.connectors.length !== b.connectors.length) return false;
+  for (let i = 0; i < a.connectors.length; i++) if (a.connectors[i] !== b.connectors[i]) return false;
+  return true;
+}
+
+/**
+ * A Map that counts its changes of membership, for caches over it, and keeps
+ * its values in the order of their keys (`inKeyOrder`): a key above every
+ * other - a new vehicle's id - goes on the end, any other is put in its place
+ * by halving, and one taken out leaves its place. The list handed out is
+ * shared until the next change, which copies it first (copy on write).
+ */
+export class VersionedMap<K extends number, V> extends Map<K, V> {
   version = 0;
+  private orderedKeys: K[] = [];
+  private ordered: V[] = [];
+  /** The list was handed out: the next change copies it first. */
+  private shared = false;
+
   override set(key: K, value: V): this {
     this.version++;
-    return super.set(key, value);
+    const had = super.has(key);
+    super.set(key, value);
+    this.own();
+    const keys = this.orderedKeys;
+    const at = had ? slotOf(keys, key) : keys.length && keys[keys.length - 1]! >= key ? slotOf(keys, key) : keys.length;
+    if (had) this.ordered[at] = value;
+    else { keys.splice(at, 0, key); this.ordered.splice(at, 0, value); }
+    return this;
   }
   override delete(key: K): boolean {
     this.version++;
-    return super.delete(key);
+    const had = super.delete(key);
+    if (had) {
+      this.own();
+      const at = slotOf(this.orderedKeys, key);
+      this.orderedKeys.splice(at, 1);
+      this.ordered.splice(at, 1);
+    }
+    return had;
   }
   override clear(): void {
     this.version++;
     super.clear();
+    this.orderedKeys = [];
+    this.ordered = [];
+    this.shared = false;
   }
+
+  /** The values in the order of their keys; the array is never changed after it is handed out. */
+  inKeyOrder(): readonly V[] {
+    this.shared = true;
+    return this.ordered;
+  }
+
+  private own(): void {
+    if (!this.shared) return;
+    this.orderedKeys = this.orderedKeys.slice();
+    this.ordered = this.ordered.slice();
+    this.shared = false;
+  }
+}
+
+/** Where `key` is, or would go, in ascending `keys` (the first not below it). */
+function slotOf<K extends number>(keys: readonly K[], key: K): number {
+  let lo = 0, hi = keys.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (keys[mid]! < key) lo = mid + 1; else hi = mid;
+  }
+  return lo;
 }

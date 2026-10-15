@@ -1,6 +1,6 @@
 import { DT, JAM_GAP, STUCK_SECONDS } from './params';
 import type { SimWorld } from './world';
-import { stepController } from './signals/fsm';
+import { restController, stepController } from './signals/fsm';
 import { longitudinalConstraints } from './vehicles/obstacles';
 import {
   compactReservationChain,
@@ -49,7 +49,9 @@ export interface StepOptions {
  *   vehicle constraints (append only)          stages 4-5
  *   claims (grant)                             stage 5
  *   vehicle s, v, lanelet, lane order          stage 6
- *   claims (release), ghosts                   stages 6-7
+ *   claims (release), ghosts                   stages 6-7 (a ghost back in
+ *                                              the graph is unmarked by the
+ *                                              topology, stage 0)
  *
  * @perFrame Runs every tick: `scripts/check-code.mjs` holds what it reaches to the per-frame rules.
  */
@@ -88,7 +90,7 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   const deps = w.signalDeps();
   const asleep = w.signalsAsleep(deps);
   for (const c of w.signalisedControllers()) {
-    if (asleep.has(c)) { c.elapsed += DT; continue; }
+    if (asleep.has(c)) { restController(c); continue; }
     tickWork.controllers++;
     if (stepController(c, deps) && w.doLess) asleep.add(c);
   }

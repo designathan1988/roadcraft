@@ -1,4 +1,3 @@
-import { Rng } from '@core/rng';
 import type { Building, BuildingId } from '@world/buildings/types';
 import type { LaneletId } from '@world/lanelets';
 import { m } from '@world/units';
@@ -13,7 +12,7 @@ import { chooseVehicleDestination } from '../routing/destination';
 import { closeLane, laneClear, openLanes, type Closure } from '../vehicles/laneClosures';
 import { CLOSURE_STOP } from '../vehicles/obstacles';
 import { Shunt } from './manoeuvre';
-import { buildYard, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, type YardNeighbours, yardNeighbours, yardOf } from './lorryDocks';
+import { buildYard, forgetYard, forgetYardsBut, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, type YardNeighbours, yardNeighbours, yardOf } from './lorryDocks';
 import { gatedProperty, lanesInBox } from './parking';
 import { BuildingsInOrder } from './buildingOrder';
 import type { RoadDoc } from '@world/doc';
@@ -81,12 +80,8 @@ interface Lorry {
   waited: number;
 }
 
-/** The seed of the lorries' own draws: which yard, which dock, the driver, the time at the dock. */
-const LORRY_SEED = 0x10221;
-
 export class LorryTraffic {
   private readonly lorries = new Map<VehicleId, Lorry>();
-  private rng = new Rng(LORRY_SEED);
   private clock = 0;
   /** The dock being planned now. */
   private planning: { building: BuildingId; dock: number } | null = null;
@@ -100,10 +95,10 @@ export class LorryTraffic {
 
   /**
    * A different map (`LotTraffic.reset`, from `AmbientWorld.reset`): the
-   * lorries of the old one gone, the yard in hand dropped, and the draws
-   * started from the seed again, as a new `LorryTraffic` would. DO NOT keep
-   * the stream running across maps: what the lorries did on a map depended
-   * on how many draws the map opened before it took.
+   * lorries of the old one gone, the yard in hand dropped. The draws are the
+   * world's (`SimWorld.rng.lorries`), started from its seed again by
+   * `SimWorld.reset`: what the lorries did on a map no longer depends on how
+   * many draws the map opened before it took.
    */
   reset(w: SimWorld | null = this.world): void {
     for (const lorry of this.lorries.values()) if (w) openLanes(w, lorry.id);
@@ -112,7 +107,6 @@ export class LorryTraffic {
     this.making = null;
     this.neighbours = null;
     this.clock = 0;
-    this.rng = new Rng(LORRY_SEED);
   }
 
   /** Lorries driving off the road now. */
@@ -175,7 +169,7 @@ export class LorryTraffic {
     const lane = w.lanelet(ways.gate.lane.lanelet);
     if (!lane) return false;
     const id = w.nextVehicleId++ as VehicleId;
-    const v = createVehicle(id, truck, makeDriver(truck, () => this.rng.float()), truck.palette[0]!, lane.id, 0, w.clock.tick);
+    const v = createVehicle(id, truck, makeDriver(truck, () => w.rng.lorries.float()), truck.palette[0]!, lane.id, 0, w.clock.tick);
     const lorry = this.make(w, v, yard, dock, ways);
     lorry.phase = 'waiting';
     lorry.body = this.offRoad(w, v, ways.into.poses[0]!, building);
@@ -196,6 +190,12 @@ export class LorryTraffic {
    */
   private readYards(w: SimWorld): void {
     this.yards = this.yardList.read(w.doc);
+    // The yards of buildings gone, or with no yard now, forgotten with them.
+    // Kept, every yard ever made stayed in memory (a grid and its clearance
+    // field, megabytes each) after its building was demolished.
+    const gone = this.yardList.gone;
+    if (gone === null) forgetYardsBut(w, (id) => this.yardList.has(id as BuildingId));
+    else for (const id of gone) forgetYard(w, id);
   }
 
   /**
@@ -246,8 +246,8 @@ export class LorryTraffic {
     this.readYards(w);
     const free = this.yards.filter((y) => ![...this.lorries.values()].some((l) => l.building === y.building));
     if (!free.length) return;
-    const pick = free[Math.floor(this.rng.float() * free.length)]!;
-    const dock = Math.floor(this.rng.float() * pick.docks);
+    const pick = free[Math.floor(w.rng.lorries.float() * free.length)]!;
+    const dock = Math.floor(w.rng.lorries.float() * pick.docks);
     // With a dock of another yard in hand, only a yard already made is taken:
     // the yard in hand is not thrown away (its grid and clearance, many
     // slices) to begin this one. DO NOT call `yardFor` to begin a yard here
@@ -359,7 +359,7 @@ export class LorryTraffic {
     if (!shunt.done) return;
     if (lorry.phase === 'arriving') {
       lorry.phase = 'docked';
-      lorry.stay = UNLOAD_MIN + this.rng.float() * (UNLOAD_MAX - UNLOAD_MIN);
+      lorry.stay = UNLOAD_MIN + w.rng.lorries.float() * (UNLOAD_MAX - UNLOAD_MIN);
       lorry.t = 0;
       this.docked++;
       return;
@@ -413,7 +413,8 @@ export class LorryTraffic {
       const c = Math.cos(q.angle), sn = Math.sin(q.angle);
       for (let k = -2; k <= 2 && clear; k++) {
         const x = q.x + c * k * (a.length / 5), y = q.y + sn * k * (a.length / 5);
-        for (const p of w.pedViews) if (Math.hypot(p.x - x, p.y - y) < r) { clear = false; break; }
+        // The people near the point (`PeopleBridge.anyoneWithin`, the walkers' grid), not every person of the map.
+        if (w.pedEngine.bridge.anyoneWithin(w, x, y, r, null)) clear = false;
       }
     }
     if (clear) { lorry.waited = 0; return true; }
@@ -494,14 +495,23 @@ export class YardList {
   private readonly kept = new BuildingsInOrder(hasYard);
   private readonly docks = new Map<BuildingId, number>();
   private list: { building: BuildingId; docks: number }[] = [];
+  /** The buildings the last `read` took out (gone, or with no yard now); null: it read the town whole. */
+  gone: BuildingId[] | null = [];
+
+  /** Whether a building has a yard, as of the last `read`. */
+  has(id: BuildingId): boolean {
+    return this.kept.has(id);
+  }
 
   read(doc: RoadDoc): readonly { building: BuildingId; docks: number }[] {
     const delta = this.kept.update(doc);
+    this.gone = delta === null ? null : [];
     if (delta !== null && delta.ids.length === 0) return this.list;
     if (delta === null) this.docks.clear();
     for (const id of delta === null ? this.kept.ids : delta.ids) {
       const b = doc.buildings.get(id);
-      if (b && this.kept.has(id)) this.docks.set(id, lorryDocks(b).length); else this.docks.delete(id);
+      if (b && this.kept.has(id)) this.docks.set(id, lorryDocks(b).length);
+      else { this.docks.delete(id); this.gone?.push(id); }
     }
     this.list = this.kept.ids.map((building) => ({ building, docks: this.docks.get(building)! }));
     return this.list;

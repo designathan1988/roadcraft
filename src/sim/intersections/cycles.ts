@@ -56,14 +56,24 @@ export function cyclesOf(w: SimWorld, lanelet: LaneletId): readonly RoadCycle[] 
 /**
  * Whether a movement onto a small loop it is not already on has to wait for
  * room on it. Traffic already on a loop is never metered onto it.
+ *
+ * The cars on the loop are read from the occupancy of the loop's own lanes
+ * (`SimWorld.rt(id).order`, kept by `enterLanelet`/`exitLanelet`, which also
+ * set `v.lanelet`): exactly the vehicles whose `lanelet` is on the loop. The
+ * work is the loop's (at most `MAX_CYCLE_STORAGE` of road), whatever the size
+ * of the city. DO NOT go back to walking `w.vehicles` here: that was the whole
+ * fleet for every request onto a ring, every tick.
  */
 export function cycleFull(w: SimWorld, from: LaneletId, to: LaneletId, need: number): boolean {
   for (const cycle of cyclesOf(w, to)) {
     if (cycle.lanelets.has(from)) continue;
     let used = need;
-    for (const v of w.vehicles.values()) {
-      if (!cycle.lanelets.has(v.lanelet)) continue;
-      used += v.archetype.length + Math.max(JAM_GAP, v.driver.s0);
+    for (const lane of cycle.lanelets) {
+      for (const id of w.rt(lane).order) {
+        const v = w.veh(id);
+        if (!v) continue;
+        used += v.archetype.length + Math.max(JAM_GAP, v.driver.s0);
+      }
     }
     if (used > cycle.storage * METER_SHARE) return true;
   }

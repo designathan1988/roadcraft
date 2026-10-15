@@ -6,6 +6,7 @@ import type { Vehicle } from './state';
 import { ARCHETYPES } from './archetypes';
 import type { Boarder } from '../people/engine';
 import { personHash, type PersonAgeClass, type PersonGender } from '../people/view';
+import { lanesInBox } from '../agents/parking';
 
 /**
  * Somebody getting out of a car at the kerb, or getting in.
@@ -118,6 +119,14 @@ const BUS_FETCH = m(45);
 
 /** First id of the people who ride in vehicles, clear of any pedestrian id. */
 const PERSON_BASE = 1 << 24;
+/**
+ * Seat ids per vehicle: a vehicle's seats are `PERSON_BASE + id * SEAT_STRIDE
+ * + seat`, so the stride must be at least the most seats any body has. DO NOT
+ * go back to a bare 8: a body of nine seats or more gave its last seats the
+ * ids of the next vehicle's first ones (two people with one identity, one
+ * look). Never under 8, so the people of the bodies there are keep their ids.
+ */
+const SEAT_STRIDE = Math.max(8, ...ARCHETYPES.map((a) => a.seats));
 
 /**
  * Who sits in a seat. A passenger keeps one identity from spawn to wherever
@@ -127,7 +136,7 @@ const PERSON_BASE = 1 << 24;
  */
 export function seatPerson(v: Vehicle, seat: number): { seed: number; gender: PersonGender; ageClass: PersonAgeClass } {
   const picked = v.people[seat];
-  const seed = picked ?? PERSON_BASE + v.id * 8 + seat;
+  const seed = picked ?? PERSON_BASE + v.id * SEAT_STRIDE + seat;
   const hash = personHash(seed);
   const gender: PersonGender = (hash >>> 3) & 1 ? 'f' : 'm';
   if (picked !== undefined) return { seed, gender, ageClass: v.peopleAge[seat] ?? 'adult' };
@@ -210,8 +219,6 @@ function doorAlongFromFront(v: Vehicle, door: number): number {
 
 /** One step of every errand. The only writer of `kerbStop` and `doors`. */
 export function stepKerbStops(w: SimWorld): void {
-  // Filed again at the first door that asks this step (`roomToOpen`).
-  middles = null;
   for (const v of w.vehiclesInIdOrder()) {
     const stop = v.kerbStop;
     if (!stop) {
@@ -294,8 +301,10 @@ export function stepKerbStops(w: SimWorld): void {
           v.doors = [];
           const next = v.kerbQueue.shift();
           v.kerbStop = next ?? null;
-          // The next task of the same stop, the car still standing there.
-          if (next) enter(next, next.hold > 0 ? 'hold' : next.kind === 'pick' ? 'halt' : 'halt');
+          // The next task of the same stop, the car still standing there: a
+          // delivery's wait first, or the halt (a pick-up hails, a drop-off
+          // waits for room to open the door again, the doors being shut).
+          if (next) enter(next, next.hold > 0 ? 'hold' : 'halt');
           if (next && next.hold > 0) next.person = stop.person;
         }
         break;
@@ -518,41 +527,24 @@ function roomToOpen(w: SimWorld, v: Vehicle, stop: KerbStop): boolean {
   if (people.anyoneWithin(w, door.x, door.y, DOOR_CLEAR, stop.pedId)) return false;
   if (stop.kind === 'drop' && people.anyoneWithin(w, foot.x, foot.y, m(0.9), stop.pedId)) return false;
   // Nothing in the lane beside the door either: a cyclist or a motorcycle
-  // squeezing past on the kerb side would ride into it. The vehicles' middles
-  // filed by cell once this step (nothing moves while the stops are stepped):
-  // every door asked every vehicle in town before.
-  const grid = middles ??= fileMiddles(w);
-  const reach = DOOR_CLEAR + grid.half;
-  const gx0 = Math.floor((door.x - reach) / MIDDLE_CELL), gx1 = Math.floor((door.x + reach) / MIDDLE_CELL);
-  const gy0 = Math.floor((door.y - reach) / MIDDLE_CELL), gy1 = Math.floor((door.y + reach) / MIDDLE_CELL);
-  for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
-    for (const o of grid.cells.get(gx * 65536 + gy) ?? []) {
-      if (o.id === v.id) continue;
-      if (Math.hypot(o.x - door.x, o.y - door.y) < DOOR_CLEAR + o.half) return false;
+  // squeezing past on the kerb side would ride into it. A vehicle's middle is
+  // on its own lane's centre line, so one near enough to touch the door's
+  // swing is on a lane whose box comes within `DOOR_CLEAR` and the longest
+  // half-body of it: those lanes (`lanesInBox`, the lanes' grid) and their
+  // occupants are read. DO NOT file every vehicle of the town for a door: it
+  // was the whole fleet once a step whenever any door was about to open.
+  const reach = DOOR_CLEAR + LONGEST_BODY / 2;
+  for (const lane of lanesInBox(w, door.x - reach, door.y - reach, door.x + reach, door.y + reach)) {
+    for (const id of w.rt(lane.id).order) {
+      if (id === v.id) continue;
+      const other = w.veh(id);
+      if (!other) continue;
+      const half = other.archetype.length / 2;
+      const p = lane.centre.sampleAt(Math.min(Math.max(0, other.s - half), lane.length)).p;
+      if (Math.hypot(p.x - door.x, p.y - door.y) < DOOR_CLEAR + half) return false;
     }
   }
   return true;
-}
-
-/** Cells of the vehicles' middles (`roomToOpen`). */
-const MIDDLE_CELL = m(16);
-/** This step's vehicles' middles by cell, and the longest half-length among them. Null: not filed yet. */
-let middles: { cells: Map<number, { id: number; x: number; y: number; half: number }[]>; half: number } | null = null;
-function fileMiddles(w: SimWorld): NonNullable<typeof middles> {
-  const cells = new Map<number, { id: number; x: number; y: number; half: number }[]>();
-  let longest = 0;
-  for (const other of w.vehicles.values()) {
-    const o = w.lanelet(other.lanelet);
-    if (!o) continue;
-    const half = other.archetype.length / 2;
-    const p = o.centre.sampleAt(Math.min(Math.max(0, other.s - half), o.length)).p;
-    const k = Math.floor(p.x / MIDDLE_CELL) * 65536 + Math.floor(p.y / MIDDLE_CELL);
-    const entry = { id: other.id, x: p.x, y: p.y, half };
-    const list = cells.get(k);
-    if (list) list.push(entry); else cells.set(k, [entry]);
-    if (half > longest) longest = half;
-  }
-  return { cells, half: longest };
 }
 
 function beginTransfer(w: SimWorld, v: Vehicle, stop: KerbStop): void {
@@ -610,15 +602,15 @@ function completeTransfer(w: SimWorld, v: Vehicle, stop: KerbStop): void {
     if (!staysAboard) {
       v.seats &= ~(1 << stop.seat);
       if (!stop.keep) {
-        delete v.people[stop.seat];
-        delete v.peopleAge[stop.seat];
+        setSeat(v.people, stop.seat, undefined);
+        setSeat(v.peopleAge, stop.seat, undefined);
       }
     }
   } else {
     v.seats |= 1 << stop.seat;
     if (stop.person && !v.people[stop.seat] && stop.person.seed < PERSON_BASE) {
-      v.people[stop.seat] = stop.person.seed;
-      v.peopleAge[stop.seat] = stop.person.ageClass;
+      setSeat(v.people, stop.seat, stop.person.seed);
+      setSeat(v.peopleAge, stop.seat, stop.person.ageClass);
     }
   }
   // A bus's next passenger uses the doors already open; anything that waits
@@ -632,6 +624,20 @@ function completeTransfer(w: SimWorld, v: Vehicle, stop: KerbStop): void {
   }
   if (!next && v.errand !== 'service') v.errand = null;
   enter(stop, 'close');
+}
+
+/**
+ * A seat's entry of `people` or `peopleAge` written, the seats before it
+ * filled with `undefined` (nobody picked up there, read as absent by
+ * `seatPerson` and the renderer). DO NOT `delete` an entry or write past the
+ * end: either leaves a hole, and V8 keeps a holey array holey for good,
+ * reading it through the prototype chain (v8.dev/blog/elements-kinds).
+ */
+function setSeat<T>(list: T[], seat: number, value: T | undefined): void {
+  const seats = list as (T | undefined)[];
+  while (seats.length < seat) seats.push(undefined);
+  if (seats.length === seat) seats.push(value);
+  else seats[seat] = value;
 }
 
 /**
