@@ -1,4 +1,6 @@
-import { type SweepSamples, pairTable } from '@world/conflictTable';
+import { Polyline } from '@core/polyline';
+import type { Vec2 } from '@core/vec2';
+import { type Crossing, type SampledSweep, type SweepSamples, firstCrossing, pairTable, sampleSweep } from '@world/conflictTable';
 import type { ChosenTurn } from '@world/junctionTurns';
 import type { JunctionSurface } from '@world/turnPaths';
 import { chooseTurnOf } from '@world/turnChoice';
@@ -11,7 +13,11 @@ import { keepDerivedMany } from './render/derivedCache';
  *   sent, the tables' buffers transferred, not copied (MDN, "Transferable
  *   objects");
  * - junction turns: each by `chooseTurnOf` on the lanes and the surface sent,
- *   each surface made once.
+ *   each surface made once;
+ * - movements' sweeps: each by `sampleSweep` on the lanes sent, each lane made
+ *   and digested once, the frames' buffers transferred;
+ * - pairs' centreline crossings: each by `firstCrossing` on the two
+ *   centrelines sent, each centreline's points made once.
  */
 interface PairsAsk {
   readonly kind: 'pairs';
@@ -32,10 +38,30 @@ interface TurnsAsk {
   }[];
 }
 
+interface SweepsAsk {
+  readonly kind: 'sweeps';
+  readonly id: number;
+  /** Every lane the share's sweeps read, once (`Polyline.xy`). */
+  readonly lines: readonly Float64Array[];
+  /** Three indices into `lines` a sweep: approach, movement, exit. */
+  readonly refs: Int32Array;
+  readonly c0: Float64Array;
+  readonly count: Int32Array;
+}
+
+interface CrossingsAsk {
+  readonly kind: 'crossings';
+  readonly id: number;
+  /** Every centreline the share's pairs read, once (`Polyline.xy`). */
+  readonly lines: readonly Float64Array[];
+  /** Two indices into `lines` a pair. */
+  readonly refs: Int32Array;
+}
+
 /** Most time between two words to the page while working: the pool's watchdog hears the worker is alive (`SILENCE_MS`). */
 const BEAT_MS = 500;
 
-self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk>) => {
+self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk | SweepsAsk | CrossingsAsk>) => {
   const ask = event.data;
   let spoke = performance.now();
   const beat = (): void => {
@@ -52,6 +78,33 @@ self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk>) => {
         beat();
       }
       self.postMessage({ id: ask.id, turns });
+      return;
+    }
+    if (ask.kind === 'crossings') {
+      // The points as the page reads them (`Polyline.toPoints`), each centreline's once.
+      const points = ask.lines.map((xy) => Polyline.fromFlat(xy).toPoints() as readonly Vec2[]);
+      const crossings: (Crossing | null)[] = [];
+      for (let k = 0; k < ask.refs.length; k += 2) {
+        crossings.push(firstCrossing(points[ask.refs[k]!]!, points[ask.refs[k + 1]!]!));
+        beat();
+      }
+      self.postMessage({ id: ask.id, crossings });
+      return;
+    }
+    if (ask.kind === 'sweeps') {
+      const made = new Map<Float64Array, { line: Polyline; digest: number }>();
+      const sweeps: SampledSweep[] = [];
+      const transfer: ArrayBuffer[] = [];
+      for (let q = 0; q < ask.c0.length; q++) {
+        const sweep = sampleSweep({
+          inXY: ask.lines[ask.refs[q * 3]!]!, crossXY: ask.lines[ask.refs[q * 3 + 1]!]!, outXY: ask.lines[ask.refs[q * 3 + 2]!]!,
+          c0: ask.c0[q]!, count: ask.count[q]!,
+        }, made);
+        sweeps.push(sweep);
+        transfer.push(sweep.frame.buffer as ArrayBuffer, sweep.frameLengthSq.buffer as ArrayBuffer);
+        beat();
+      }
+      (self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void }).postMessage({ id: ask.id, sweeps }, transfer);
       return;
     }
     // The caches `pairTable` keeps on a sweep start empty here, as on the page.

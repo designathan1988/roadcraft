@@ -662,8 +662,9 @@ export class SimWorld {
     // (`TurnPlan`, `conflictPool.ts`): the build stands them in, and the junctions that did are built again
     // with the answers. DO NOT sweep them here: a generated city's turns held one frame 25 s (2026-10-15).
     graph.turnPlan = measurer?.chooseTurns ? new TurnPlan() : null;
-    // Only what the edit changed (`LaneletGraph.update`): the graph built whole only when the network cannot say.
-    const changed = graph.update(this.doc, this.net);
+    // Only what the edit changed (`LaneletGraph.update`): the graph built whole only when the network cannot say,
+    // through its steps as the edit's (`updateSteps`). DO NOT call `update` here: a whole build was one call.
+    const changed = yield* graph.updateSteps(this.doc, this.net);
     const plan = graph.turnPlan;
     if (plan && plan.asks.size > 0) {
       const keys = [...plan.asks.keys()];
@@ -675,7 +676,7 @@ export class SimWorld {
       while (!answer.turns && !answer.failed) yield WAITING;
       keys.forEach((k, i) => { const turn = answer.turns?.[i]; if (turn) plan.chosen.set(k, turn); });
     }
-    // The junctions that stood turns in, built again with them (none: nothing to do).
+    // The junctions that stood turns in, their movements shaped with them (none: nothing to do).
     graph.redoProvisional(this.doc, this.net);
     yield;
     // The new pairs of the junctions built again, measured by `measurer`'s workers when there are some (`conflictPool.ts`).

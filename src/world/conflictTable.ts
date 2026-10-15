@@ -1,4 +1,9 @@
+import { Digest } from '@core/digest';
+import { segSeg } from '@core/intersect';
+import { Polyline } from '@core/polyline';
+import type { Vec2 } from '@core/vec2';
 import { m } from './units';
+import { HEADING_CHORD, chordHeading } from './heading';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from './junctionTurns';
 
 /**
@@ -35,10 +40,177 @@ export const HEAVY: BodyClass = 2;
  * overlap and a thin conflict cannot fall between two of them.
  */
 export const SWEEP_STEP = m(0.4);
+/**
+ * How far behind its stop line the front of a waiting body is swept, world
+ * units: vehicles stop a few units short of the line, and a long one turning
+ * beside them swings over that much of the lane next to it (see `inRange`).
+ */
+const QUEUE_BACK = m(3.2);
+
+/** A sweep's first sample and count: from a heavy body a little short of its stop line (`QUEUE_BACK`) to its rear past the movement's end (`length`). */
+export function sweepSpan(length: number): { c0: number; count: number } {
+  const heavy = BODY_ENVELOPE[HEAVY] as { length: number; width: number };
+  const c0 = -heavy.length / 2 - QUEUE_BACK;
+  const c1 = length + heavy.length / 2;
+  return { c0, count: Math.max(2, Math.ceil((c1 - c0) / SWEEP_STEP) + 1) };
+}
+
 /** Clearance kept around every body, world units (6 cm). */
 const SWEEP_MARGIN = m(0.06);
 /** Broad-phase cell size, world units. */
 const CELL = m(3.2);
+
+/**
+ * What one movement's sweep is sampled from, as plain numbers (`ConflictIndex.prepare` asks, a worker
+ * answers by `sampleSweep`): the approach, the movement and the exit as flat x, y lists (`Polyline.xy`,
+ * never changed once made: handed over as they are, copied once by the message), and where the samples
+ * start and how many there are.
+ */
+export interface SweepAsk {
+  readonly inXY: Float64Array;
+  readonly crossXY: Float64Array;
+  readonly outXY: Float64Array;
+  readonly c0: number;
+  readonly count: number;
+}
+
+/** A movement's sweep sampled (`sampleSweep`): its frame, and the digests the page keys it by. */
+export interface SampledSweep {
+  /** Per sample: centre x, y and unit tangent x, y (`SweepSamples.frame`). */
+  readonly frame: Float64Array;
+  readonly frameLengthSq: Float64Array;
+  /** `lineDigest` of the approach, the movement and the exit. */
+  readonly lines: readonly [number, number, number];
+  /** `shapeDigest` of the frame and the movement's centreline. */
+  readonly shape: number;
+}
+
+/** Digest of a centreline's points: part of a sweep's cache key (`conflictPoints.ts` `sweepOf`). */
+export function lineDigest(xy: Float64Array): number {
+  return new Digest().addAll(xy).value();
+}
+
+/**
+ * Digest of a sweep's frame and its movement's centreline: what a pair's key is made of (`conflictPoints.ts`
+ * `measureShape`). Only a key: a collision costs a recompute, never a wrong answer, because a hit is
+ * confirmed by comparing the values. It was a plain FNV-1a over the bytes, which mirrored movements beat:
+ * negating a double flips only its top bit, a multiply never carries a top bit down, and the flips
+ * cancelled in pairs - so in a town laid out symmetrically about the origin every movement shared its key
+ * with its mirror image, the two threw each other out of the cache, and every rebuild measured some six
+ * hundred pairs again (a third of a second). `Digest` mixes its words.
+ */
+export function shapeDigest(frame: Float64Array, centre: Float64Array): number {
+  return new Digest().addAll(frame).addAll(centre).value();
+}
+
+/**
+ * The approach, the movement and the exit as one arc-length parameter.
+ * Beyond either end the path continues straight along its end tangent, so a
+ * very short approach still places the tail of a long body somewhere sensible.
+ */
+export function joinedPath(inbound: Polyline, crossing: Polyline, outbound: Polyline): { sampleAt(c: number): { p: Vec2; t: Vec2 } } {
+  return {
+    sampleAt(c: number): { p: Vec2; t: Vec2 } {
+      if (c < 0) {
+        const s = inbound.length + c;
+        if (s >= 0) return inbound.sampleAt(s);
+        const f = inbound.sampleAt(0);
+        return { p: { x: f.p.x + f.t.x * s, y: f.p.y + f.t.y * s }, t: f.t };
+      }
+      if (c <= crossing.length) return crossing.sampleAt(c);
+      const s = c - crossing.length;
+      if (s <= outbound.length) return outbound.sampleAt(s);
+      const f = outbound.sampleAt(outbound.length);
+      const over = s - outbound.length;
+      return { p: { x: f.p.x + f.t.x * over, y: f.p.y + f.t.y * over }, t: f.t };
+    },
+  };
+}
+
+/**
+ * The frame of a sweep: `count` body centres `SWEEP_STEP` apart from `c0` along the joined path, each
+ * pointed along the same chord the drawn body is (`HEADING_CHORD`). A function of the three centrelines
+ * and the two numbers alone, so the page and a worker make the same one, bit for bit.
+ */
+export function sweepFrame(path: { sampleAt(c: number): { p: Vec2; t: Vec2 } }, c0: number, count: number): Float64Array {
+  const frame = new Float64Array(count * 4);
+  for (let i = 0; i < count; i++) {
+    const at = c0 + i * SWEEP_STEP;
+    const f = path.sampleAt(at);
+    const t = chordHeading(path.sampleAt(at - HEADING_CHORD).p, path.sampleAt(at + HEADING_CHORD).p, f.t);
+    frame[i * 4] = f.p.x;
+    frame[i * 4 + 1] = f.p.y;
+    frame[i * 4 + 2] = t.x;
+    frame[i * 4 + 3] = t.y;
+  }
+  return frame;
+}
+
+/** Squared tangent length per sample of a frame (`SweepSamples.frameLengthSq`). */
+export function frameLengthsOf(frame: Float64Array): Float64Array {
+  const count = frame.length / 4;
+  const out = new Float64Array(count);
+  for (let i = 0; i < count; i++) {
+    const x = frame[i * 4 + 2]!, y = frame[i * 4 + 3]!;
+    out[i] = x * x + y * y;
+  }
+  return out;
+}
+
+/**
+ * One movement's sweep sampled from plain numbers, as `conflictPoints.ts` `sweepOf` and `measureShape`
+ * would on the page: what a worker does (`conflictTable.worker.ts`). `lines`: the centrelines already
+ * made from the same lists, with their digests (a lane is the approach or exit of several movements).
+ */
+export function sampleSweep(ask: SweepAsk, lines?: Map<Float64Array, { line: Polyline; digest: number }>): SampledSweep {
+  const lineOf = (xy: Float64Array): { line: Polyline; digest: number } => {
+    let known = lines?.get(xy);
+    if (!known) {
+      known = { line: Polyline.fromFlat(xy), digest: lineDigest(xy) };
+      lines?.set(xy, known);
+    }
+    return known;
+  };
+  const inbound = lineOf(ask.inXY), crossing = lineOf(ask.crossXY), outbound = lineOf(ask.outXY);
+  const frame = sweepFrame(joinedPath(inbound.line, crossing.line, outbound.line), ask.c0, ask.count);
+  return {
+    frame,
+    frameLengthSq: frameLengthsOf(frame),
+    lines: [inbound.digest, crossing.digest, outbound.digest],
+    shape: shapeDigest(frame, ask.crossXY),
+  };
+}
+
+/** Where two movements' centrelines first cross, with the arc position on each. */
+export interface Crossing {
+  readonly sA: number;
+  readonly sB: number;
+  readonly at: Vec2;
+}
+
+/** First intersection between two polylines, with arc positions on each (`conflictPoints.ts` keeps it with the pair). */
+export function firstCrossing(a: readonly Vec2[], b: readonly Vec2[]): Crossing | null {
+  let sA = 0;
+  for (let i = 0; i + 1 < a.length; i++) {
+    const a0 = a[i] as Vec2;
+    const a1 = a[i + 1] as Vec2;
+    const segA = Math.hypot(a1.x - a0.x, a1.y - a0.y);
+
+    let sB = 0;
+    for (let j = 0; j + 1 < b.length; j++) {
+      const b0 = b[j] as Vec2;
+      const b1 = b[j + 1] as Vec2;
+      const segB = Math.hypot(b1.x - b0.x, b1.y - b0.y);
+      const hit = segSeg(a0, a1, b0, b1);
+      if (hit) {
+        return { sA: sA + hit.t * segA, sB: sB + hit.u * segB, at: hit.point };
+      }
+      sB += segB;
+    }
+    sA += segA;
+  }
+  return null;
+}
 
 /** What `pairTable` reads of a movement's sweep (`conflictPoints.ts` `Sweep`), and the caches it keeps on it. */
 export interface SweepSamples {
@@ -283,4 +455,16 @@ export interface PairMeasurer {
    * `LaneletGraph.redoProvisional`). Absent: every turn is chosen on the page.
    */
   chooseTurns?(asks: readonly TurnAsk[], surfaces: ReadonlyMap<string, SurfaceRings>): Promise<readonly ChosenTurn[]>;
+  /**
+   * Samples many movements' sweeps somewhere else, each as `sampleSweep` would here, answered in the
+   * order asked; rejected when it cannot (`ConflictIndex.prepare` then samples them on the page). Absent:
+   * every sweep is sampled on the page.
+   */
+  sampleSweeps?(asks: readonly SweepAsk[]): Promise<readonly SampledSweep[]>;
+  /**
+   * Finds many pairs' centreline crossings somewhere else, each as `firstCrossing` would here on the two
+   * movements' own point lists (`Polyline.xy`), answered in the order asked; rejected when it cannot
+   * (the conflict index then finds them on the page, `ConflictIndex.build`). Absent: found on the page.
+   */
+  crossings?(pairs: readonly { readonly a: Float64Array; readonly b: Float64Array }[]): Promise<readonly (Crossing | null)[]>;
 }
