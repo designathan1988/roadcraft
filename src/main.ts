@@ -4077,7 +4077,9 @@ function noteSimulationIssues(): void {
   for (const issue of sim.issues) {
     if (issuesSeen.has(issue)) continue;
     issuesSeen.add(issue);
-    health.record('invariant', 'warning', `Simulação: ${issue.code}`, { detail: `${issue.subject}: ${issue.detail} (passo ${issue.tick})` });
+    // Shown in the F9 monitor: the words from the dictionaries.
+    health.record('invariant', 'warning', t('health.msg.invariant', { code: issue.code }),
+      { detail: t('health.msg.invariantDetail', { subject: issue.subject, detail: issue.detail, tick: issue.tick }) });
   }
 }
 
@@ -4085,7 +4087,7 @@ const valueText = (value: unknown): string => (value === null || value === undef
 const healthPanel = mountHealthPanel({
   log: health,
   world: (n) => doc.changes.latest(n).map((c) => {
-    const where = c.rects === null ? 'mapa inteiro' : `${c.rects.length} ret.`;
+    const where = c.rects === null ? t('health.world.whole') : t('health.world.rects', { count: c.rects.length });
     return `#${c.serial} ${c.kind} · ${c.cause}${c.parent ? ` ← #${c.parent}` : ''} · ${where}${c.ms !== undefined ? ` · ${c.ms.toFixed(1)} ms` : ''}${c.detail ? ` · ${c.detail}` : ''}`;
   }),
   state: (n) => ({
@@ -4094,7 +4096,7 @@ const healthPanel = mountHealthPanel({
       ...tools.latest(3).map((r) => `tool machine #${r.serial}: ${r.from} → ${r.to} (${r.event})`),
     ],
     wide: [...gpuLines(),
-      `simulação: ${populationGovernor.stepMs.toFixed(1)} ms/passo · população ${Math.round(populationGovernor.share * 100)}% (${sim.vehicles.size} veículos, ${sim.pedViews.length} pessoas)`],
+      t('health.state.simulation', { ms: populationGovernor.stepMs.toFixed(1), share: Math.round(populationGovernor.share * 100), vehicles: sim.vehicles.size, people: sim.pedViews.length })],
     changes: gameState.latest(n).map((c) => `${c.key}: ${valueText(c.from)} → ${valueText(c.to)} (${c.cause})`),
   }),
 });
@@ -4107,7 +4109,7 @@ const healthPanel = mountHealthPanel({
 (window as unknown as { __changes: unknown }).__changes = (count = 30, serial?: number): unknown => {
   const row = (c: Change) => ({
     serial: c.serial, kind: c.kind, cause: c.cause, after: c.parent ?? '',
-    where: c.rects === null ? 'mapa inteiro' : `${c.rects.length} ret. ${Math.round(c.rects.reduce((a, r) => a + (r[2] - r[0]) * (r[3] - r[1]), 0) / 1e3)} mil u²`,
+    where: c.rects === null ? 'whole map' : `${c.rects.length} rects ${Math.round(c.rects.reduce((a, r) => a + (r[2] - r[0]) * (r[3] - r[1]), 0) / 1e3)}k u²`,
     ids: c.ids?.slice(0, 8).join(' ') ?? '', ms: c.ms === undefined ? '' : c.ms.toFixed(1), detail: c.detail ?? '',
   });
   if (serial !== undefined) {
