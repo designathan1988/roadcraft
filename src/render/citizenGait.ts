@@ -57,7 +57,7 @@ export interface GaitClip {
 
 export const GAIT_CLIP_NAMES = [
   'walk', 'walkElder', 'walkSlow', 'walkShuffle', 'walkRest', 'walkBack', 'walkLeft', 'walkRight', 'run', 'walkDrunk', 'walkHandL', 'walkHandR', 'start', 'stop', 'turnLeft', 'turnRight',
-  'idle', 'look', 'phone', 'talk', 'listen', 'sitDown', 'sitIdle', 'standUp', 'walkDrunk',
+  'idle', 'look', 'phone', 'talk', 'listen', 'sitDown', 'sitIdle', 'standUp',
   'read', 'bag', 'trolley', 'umbrella', 'cheer', 'dance', 'wave', 'drink', 'photo', 'crouchDown', 'crouchIdle', 'crouchUp', 'laugh', 'angry', 'argue', 'knock', 'headphones', 'eatIdle', 'workTable',
   'walkN1', 'walkN2', 'walkN3', 'walkStroll', 'walkCool', 'walkFast',
 ] as const;
@@ -186,6 +186,8 @@ export const GAIT_LIBRARY = [
   'idle', 'look', 'phone', 'talk', 'listen', 'sitDown', 'sitIdle', 'standUp',
   'read', 'bag', 'trolley', 'umbrella', 'cheer', 'dance', 'wave', 'drink', 'photo', 'crouchDown', 'crouchIdle', 'crouchUp', 'laugh', 'angry', 'argue', 'knock', 'headphones', 'eatIdle', 'workTable',
   'walkN1', 'walkN2', 'walkN3', 'walkStroll', 'walkCool', 'walkFast',
+  // A drunk's walk (`DRUNK_WALKS`): every key of `GaitClips` made here, or `pace` read undefined.
+  'walkDrunk',
 ] as const satisfies readonly (LibraryClipName & GaitClipName)[];
 
 /**

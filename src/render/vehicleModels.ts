@@ -1185,7 +1185,8 @@ function spreadOrder(n: number): number[] {
   const out: number[] = [];
   const used = new Set<number>();
   const want = [0.08, 0.55, 0.3, 0.8, 0.18, 0.66, 0.42, 0.92];
-  want.forEach((f, k) => {
+  // No more picks than seats: with fewer than eight, the search below found no free seat and never ended.
+  want.slice(0, n).forEach((f, k) => {
     let i = Math.min(n - 1, Math.floor(f * n)) + (k % 2);
     while (used.has(i % n)) i++;
     used.add(i % n);
