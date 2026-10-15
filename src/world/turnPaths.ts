@@ -10,6 +10,7 @@ import { BODY_ENVELOPE, HEAVY, type BodyClass } from './conflictPoints';
 import { m, stepsIn } from './units';
 import { HEADING_CHORD, chordHeading } from './heading';
 import { type Queue, type Rect, clearOfQueue, overlap, queueOf, rect } from './sweptBodies';
+import type { JunctionTurns, TurnChoice } from './junctionTurns';
 
 /**
  * The path a vehicle drives through a junction, as open as the kerbs allow.
@@ -461,31 +462,31 @@ export interface RoadEnds {
 const NO_ROAD_ENDS: RoadEnds = { fromRoadEnd: false, toRoadEnd: false };
 
 export function turnPath(inCentre: Polyline, outCentre: Polyline, surface: JunctionSurface | null,
-  waiting: readonly WaitingLane[] = [], ends: RoadEnds = NO_ROAD_ENDS): TurnPathResult {
+  waiting: readonly WaitingLane[] = [], ends: RoadEnds = NO_ROAD_ENDS, turns: JunctionTurns | null = null): TurnPathResult {
   if (!surface || surface.empty) return {
     path: bezierTurn(inCentre, outCentre, FALLBACK_HANDLE), maxBodyClass: HEAVY,
   };
-  // Every rebuild re-derives every movement of every junction, and nearly all
-  // of them are unchanged by an edit elsewhere. The chosen handle depends only
-  // on the geometry the sweep reads - the approach and exit near the junction,
-  // the waiting lanes, the surface, whether a lane meets a road's end - so it
-  // is memoised on a digest of exactly that, and the path rebuilt from it is
-  // the same one a cold build makes.
-  const key = `${laneEndKey(inCentre, true)}|${laneEndKey(outCentre, false)}|${surface.key}|` +
+  // A junction rebuilt for a change that did not move this movement (its
+  // control, a ban, a lane link) asks for the same turn again. The chosen
+  // handle depends only on the geometry the sweep reads - the approach and
+  // exit near the junction, the waiting lanes, the surface, whether a lane
+  // meets a road's end - so the junction keeps it under a digest of exactly
+  // that (`JunctionTurns`), and the path rebuilt from it is the same one a
+  // cold build makes.
+  const key = turns ? `${laneEndKey(inCentre, true)}|${laneEndKey(outCentre, false)}|${surface.key}|` +
     `${ends.fromRoadEnd ? 1 : 0}${ends.toRoadEnd ? 1 : 0}|` +
-    waiting.map((lane) => laneEndKey(lane.centre, true, QUEUE_REACH)).join(',');
-  const known = memo.get(key);
+    waiting.map((lane) => laneEndKey(lane.centre, true, QUEUE_REACH)).join(',') : '';
+  const known = turns?.find(key);
   if (known !== undefined) return {
     path: makeChoice(inCentre, outCentre, known.choice), maxBodyClass: known.maxBodyClass,
   };
-  if (memo.size > MEMO_LIMIT) memo.clear();
   // The search already knows the largest body the chosen path fits: it is the
   // one the path was chosen for (see `chooseTurn`). DO NOT sweep the chosen
   // path again, class by class, to find it: that was one to three more full
   // sweeps for every movement, each answering what the search had just
   // measured.
   const { choice, path, body: maxBodyClass } = chooseTurn(inCentre, outCentre, surface, waiting, ends);
-  memo.set(key, { choice, maxBodyClass });
+  turns?.keep(key, { choice, maxBodyClass });
   return { path, maxBodyClass };
 }
 
@@ -587,10 +588,8 @@ export function turnFits(inCentre: Polyline, path: Polyline, outCentre: Polyline
   return sweep(surface, inCentre, path, outCentre, [], body, ends) !== null;
 }
 
-type TurnChoice = number | { x: number; y: number; share: number };
-const memo = new Map<string, { choice: TurnChoice; maxBodyClass: BodyClass | -1 }>();
-const MEMO_LIMIT = 50_000;
-const makeChoice = (a: Polyline, b: Polyline, choice: TurnChoice): Polyline =>
+const makeChoice
+ = (a: Polyline, b: Polyline, choice: TurnChoice): Polyline =>
   typeof choice === 'number' ? bezierTurn(a, b, choice) :
     twoPieceTurn(a, b, { x: choice.x, y: choice.y }, choice.share);
 

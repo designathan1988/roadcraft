@@ -14,6 +14,7 @@ import { orientedPolyline } from './geometry';
 import { type ApproachGroup, computeApproachGroups } from './approachGroups';
 import { TUNNELS_DRAWN } from './structures';
 import { JunctionSurface, bulbTurnPath, medianUturnPath, turnPath } from './turnPaths';
+import { JunctionTurns } from './junctionTurns';
 import { BULB_TURN_RADIUS } from './junction/bulb';
 import type { BodyClass } from './conflictPoints';
 import { m } from './units';
@@ -116,6 +117,9 @@ export interface JunctionTopology {
 
 /** What one junction built, kept between builds (`buildJunctions`). */
 interface JunctionCache {
+  readonly node: NodeId;
+  /** The turns its movements were shaped with (`turnPath`): kept with the junction, gone with it. */
+  readonly turns: JunctionTurns;
   readonly groups: readonly ApproachGroup[];
   readonly signalised: boolean;
   /** The connector lanelets and the connectors, in creation order. */
@@ -398,6 +402,15 @@ export class LaneletGraph {
 
   private *buildJunctions(doc: RoadDoc, net: Network,
     previous: Map<string, JunctionCache>, next: Map<string, JunctionCache>): Generator<void, void, void> {
+    /** The last build's junction at each node, for the turns of a junction built again (`JunctionTurns`). */
+    let previousAt: Map<NodeId, JunctionCache> | null = null;
+    const before = (nodeId: NodeId): JunctionCache | undefined => {
+      if (!previousAt) {
+        previousAt = new Map();
+        for (const entry of previous.values()) previousAt.set(entry.node, entry);
+      }
+      return previousAt.get(nodeId);
+    };
     for (const [nodeId, node] of doc.nodes) {
       yield;
       laneletWork.nodes++;
@@ -482,6 +495,8 @@ export class LaneletGraph {
 
       const connectorIds: ConnectorId[] = [];
       const road = carriedPair(doc, nodeId);
+      // The turns this junction chose before: a movement whose geometry did not move keeps its turn.
+      const turns = new JunctionTurns(before(nodeId)?.turns ?? null);
 
       const addConnector = (
         inId: LaneletId, inLane: Lanelet, outId: LaneletId, outLane: Lanelet, turn: TurnKind, carried = false,
@@ -499,7 +514,7 @@ export class LaneletGraph {
             : turnPath(inCentre, outCentre, surfaceOf(), waiting, {
               fromRoadEnd: inLane.from !== undefined && doc.mapEdge(inLane.from),
               toRoadEnd: outLane.to !== undefined && doc.mapEdge(outLane.to),
-            });
+            }, turns);
         const path = turnResult.path;
         const lanelet: Lanelet = {
           id: cid,
@@ -654,8 +669,11 @@ export class LaneletGraph {
         control: node.control,
       });
       next.set(key, {
+        node: nodeId,
+        turns: turns.settle(),
         groups,
         signalised,
+
         connectors: connectorIds.map((id) => this.connectors.get(id)!),
         lanelets: connectorIds.map((id) => this.lanelets.get(id)!),
       });
