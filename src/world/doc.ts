@@ -1490,23 +1490,14 @@ export class RoadDoc {
     if (!this.sharedIndices.delete(kind)) return;
     switch (kind) {
       case 'poles':
-        this.poleIndex = this.poleIndex.copy();
-        forkWork.copied += this.poleMap.size + this.spanMap.size;
+        this.poleIndex = this.poleIndex.over();
         return;
-      case 'barriers': {
-        const cells = new CellFiling<number, Barrier>(LANDSCAPE_CELL);
-        cells.copyFrom(this.barrierCells);
-        this.barrierCells = cells;
-        forkWork.copied += this.barrierMap.size;
+      case 'barriers':
+        this.barrierCells = CellFiling.over(this.barrierCells);
         return;
-      }
-      case 'landscape': {
-        const cells = new CellFiling<number, LandscapeItem>(LANDSCAPE_CELL);
-        cells.copyFrom(this.landscapeCells);
-        this.landscapeCells = cells;
-        this.streetNameCount = new Map(this.streetNameCount);
-        forkWork.copied += this.landscapeMap.size;
-      }
+      case 'landscape':
+        this.landscapeCells = CellFiling.over(this.landscapeCells);
+        this.streetNameCount = new ForkMap(this.streetNameCount);
     }
   }
 

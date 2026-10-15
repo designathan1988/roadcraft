@@ -1,3 +1,4 @@
+import { ForkMap } from '@core/forkMap';
 import type { ChangeRect } from './changes';
 import type { PoleId, SpanId } from './ids';
 import { m } from './units';
@@ -11,17 +12,22 @@ const keyOf = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32768
 const cellOf = (x: number, y: number): number => keyOf(Math.floor(x / CELL), Math.floor(y / CELL));
 
 export class PoleIndex {
-  private readonly cells = new Map<number, Set<PoleId>>();
-  private readonly cellOfPole = new Map<PoleId, number>();
-  private readonly spansOfPole = new Map<PoleId, Set<SpanId>>();
+  private cells: Map<number, Set<PoleId>> = new Map();
+  private cellOfPole: Map<PoleId, number> = new Map();
+  private spansOfPole: Map<PoleId, Set<SpanId>> = new Map();
 
-  /** An index filing the same poles and spans in the same order (a working copy's own, `RoadDoc.ownIndex`). */
-  copy(): PoleIndex {
+  /** DO NOT copy every pole for an edit's working copy: an index over this one keeping only what it files (`RoadDoc.ownIndex`). */
+  over(): PoleIndex {
     const out = new PoleIndex();
-    for (const [key, cell] of this.cells) out.cells.set(key, new Set(cell));
-    for (const [id, key] of this.cellOfPole) out.cellOfPole.set(id, key);
-    for (const [id, spans] of this.spansOfPole) out.spansOfPole.set(id, new Set(spans));
+    out.cells = new ForkMap(this.cells);
+    out.cellOfPole = new ForkMap(this.cellOfPole);
+    out.spansOfPole = new ForkMap(this.spansOfPole);
     return out;
+  }
+
+  /** A set of the index to change in place: in a working copy, the one below copied first. */
+  private own<K>(map: Map<K, Set<number>>, key: K): Set<number> | undefined {
+    return map instanceof ForkMap ? map.writable(key, (set) => new Set(set)) : map.get(key);
   }
 
   clear(): void {
@@ -37,7 +43,7 @@ export class PoleIndex {
     if (was === key) return;
     if (was !== undefined) this.unfile(pole.id, was);
     this.cellOfPole.set(pole.id, key);
-    const cell = this.cells.get(key);
+    const cell = this.own(this.cells, key);
     if (cell) cell.add(pole.id);
     else this.cells.set(key, new Set([pole.id]));
   }
@@ -50,7 +56,7 @@ export class PoleIndex {
   }
 
   private unfile(id: PoleId, key: number): void {
-    const cell = this.cells.get(key);
+    const cell = this.own(this.cells, key);
     if (!cell) return;
     cell.delete(id);
     if (cell.size === 0) this.cells.delete(key);
@@ -58,7 +64,7 @@ export class PoleIndex {
 
   putSpan(span: UtilitySpan): void {
     for (const end of [span.a, span.b]) {
-      const at = this.spansOfPole.get(end);
+      const at = this.own(this.spansOfPole, end);
       if (at) at.add(span.id);
       else this.spansOfPole.set(end, new Set([span.id]));
     }
@@ -66,7 +72,7 @@ export class PoleIndex {
 
   deleteSpan(span: UtilitySpan): void {
     for (const end of [span.a, span.b]) {
-      const at = this.spansOfPole.get(end);
+      const at = this.own(this.spansOfPole, end);
       if (!at) continue;
       at.delete(span.id);
       if (at.size === 0) this.spansOfPole.delete(end);
