@@ -847,7 +847,7 @@
   },
   "src/world/poleLines.ts": {
     "roadcraft/no-module-state": {
-      "count": 4
+      "count": 2
     }
   },
   "src/world/solids.ts": {
@@ -862,7 +862,7 @@
   },
   "src/world/turnPaths.ts": {
     "roadcraft/no-module-state": {
-      "count": 3
+      "count": 2
     }
   },
   "tests/arch/roads.spec.ts": {
