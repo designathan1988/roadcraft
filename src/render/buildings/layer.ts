@@ -28,6 +28,9 @@ import type { CellEntry, ChunkSummary } from './cellWork';
 /** What the page keeps of a building emitted in a worker: by the record and ground it was made for (their digests). */
 interface Kept { readonly sig: number; readonly digest: number; readonly b: Building; readonly summary: ChunkSummary; readonly pavedAt?: PavedAt; lot?: LotGround | null }
 
+/** How many times the ground the screen takes in a cell's detail stays resident on the GPU (`levelOfDetail`). */
+const RESIDENT_REACH = 2;
+
 export function createBuildingLayer(): BuildingLayer {
   const kit: BuildingKit = createBuildingKit();
   void kit.farReady.then(() => applyFacadeDetail()); // every batch takes its geometry and shadow detail again
@@ -116,6 +119,14 @@ export function createBuildingLayer(): BuildingLayer {
    * for the seconds that took. NOR walk every detailed cell each frame for its visibility.
    */
   let shownNear = new Set<string>();
+  /**
+   * Where the resident cells were last checked from (`levelOfDetail`): a cell's detail stays on the GPU,
+   * hidden when far, while it is within `RESIDENT_REACH` times the ground the screen takes in, and is let
+   * go past it - the loading range of a streamed world (Unreal's World Partition, by distance from the
+   * source), so what is kept grows with the view, never with the town or the ground already seen. Checked
+   * again when the eye has moved a quarter of that ground.
+   */
+  let residentFrom = { x: Infinity, y: Infinity, reach: -1 };
   /**
    * Each detail cell's centre (map x/y) and whether it is drawn by the far
    * versions of its parts (`cullDetails`): kept per batch, so the key is read
@@ -636,6 +647,18 @@ export function createBuildingLayer(): BuildingLayer {
       for (const key of shownNear) if (!now.has(key)) cells.get(key)?.part.setVisible(false);
       for (const key of now) if (!shownNear.has(key)) cells.get(key)?.part.setVisible(true);
       shownNear = now;
+      if (Number.isFinite(reach) && (Math.hypot(eyeX - residentFrom.x, eyeY - residentFrom.y) > reach / 4 || reach !== residentFrom.reach)) {
+        residentFrom = { x: eyeX, y: eyeY, reach };
+        const keep = reach * RESIDENT_REACH;
+        for (const key of [...cells.keys()]) {
+          if (now.has(key) || pendingCells.has(key)) continue;
+          const comma = key.indexOf(',');
+          const cx = (Number(key.slice(0, comma)) + 0.5) * BATCH_CELL, cy = (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL;
+          if (Math.hypot(cx - eyeX, cy - eyeY) <= keep) continue;
+          dropCell(cells, key, stored);
+          for (const sub of detailKeysOf(key)) dropCell(detailCells, sub, details);
+        }
+      }
     },
     cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx) {
       cullDetailCells(detailCells, detailState, (key) => massCells.near(key), eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, (part, cellFar) => {
