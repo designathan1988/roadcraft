@@ -1,3 +1,4 @@
+import { Digest } from '@core/digest';
 import type { BuildingStore } from '@world/buildings/store';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { CellFiling } from '@world/cells';
@@ -30,8 +31,8 @@ export interface GardenLists {
   update(buildings: BuildingStore, settled: boolean): GardenChange | null;
 }
 
-/** A planted building: its record, its plants as text, its bank, and its plants on the ground (once placed) with the ground change they follow. */
-interface Site { b: Building; text: string; box: Rect; plants: readonly GardenPlant[] | null; seen: number }
+/** A planted building: its record, its plants digested, its bank, and its plants on the ground (once placed) with the ground change they follow. */
+interface Site { b: Building; key: number; box: Rect; plants: readonly GardenPlant[] | null; seen: number }
 
 /**
  * `ground`: where and when the drawn ground changed (with `rectsSince`, the
@@ -46,18 +47,19 @@ export function gardenLists(
 ): GardenLists {
   /**
    * The plants of the buildings' gardens, as `plantsOf` reads them: each
-   * building's plant elements and where it stands, as text, once per record
-   * (a record is replaced on any change, its age included).
+   * building's plant elements and where it stands, digested (`Digest.addPlain`), once per
+   * record (a record is replaced on any change, its age included); -1: no plants. DO NOT key it by
+   * the JSON text: a string kept for every building with a garden.
    */
-  const plantText = new WeakMap<Building, string>();
-  const plantTextOf = (b: Building): string => {
-    let text = plantText.get(b);
-    if (text === undefined) {
+  const plantKey = new WeakMap<Building, number>();
+  const plantKeyOf = (b: Building): number => {
+    let key = plantKey.get(b);
+    if (key === undefined) {
       const plants = (b.elements ?? []).filter((el: { kind: string }) => el.kind === 'tree' || el.kind === 'shrub' || el.kind === 'hedge' || el.kind === 'flowers');
-      text = plants.length ? JSON.stringify([b.x, b.y, b.rotation, plants]) : '';
-      plantText.set(b, text);
+      key = plants.length ? new Digest().add(b.x).add(b.y).add(b.rotation).addPlain(plants).value() : -1;
+      plantKey.set(b, key);
     }
-    return text;
+    return key;
   };
   /** The planted buildings, taken in by the ids the diary gives (`BuildingStore.changedSince`), and filed by their banks. */
   const sites = new Map<BuildingId, Site>();
@@ -70,9 +72,9 @@ export function gardenLists(
   let groundRead = -1;
   /** A building's record taken in. */
   const take = (id: BuildingId, b: Building | undefined): void => {
-    const text = b ? plantTextOf(b) : '';
+    const key = b ? plantKeyOf(b) : -1;
     const site = sites.get(id);
-    if (!text) {
+    if (key < 0) {
       if (!site) return;
       if (site.plants) gone.push(site.plants);
       sites.delete(id);
@@ -80,15 +82,15 @@ export function gardenLists(
       pending.delete(id);
       return;
     }
-    if (site?.text === text) { site.b = b!; return; }
+    if (site?.key === key) { site.b = b!; return; }
     const box = bankBox(b!);
     if (site) {
       if (site.plants) gone.push(site.plants);
-      Object.assign(site, { b, text, box, plants: null });
+      Object.assign(site, { b, key, box, plants: null });
       banks.remove(id);
       banks.file(id, site, box);
     } else {
-      const fresh: Site = { b: b!, text, box, plants: null, seen: -1 };
+      const fresh: Site = { b: b!, key, box, plants: null, seen: -1 };
       sites.set(id, fresh);
       banks.file(id, fresh, box);
     }
