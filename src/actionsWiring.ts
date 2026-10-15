@@ -365,7 +365,9 @@ export function createActions(deps: ActionsDeps): Actions {
         changed = true;
       }
       // Traffic lights: a junction whose posts the blast reaches loses them.
-      for (const post of signalPosts(net, sim.graph)) {
+      // The posts of the junctions on the roads within reach only (`near`):
+      // DO NOT ask for every post of the map to keep those round one blow.
+      for (const post of signalPosts(net, sim.graph, { x: world.x, y: world.y, radius })) {
         if (!near(post.x, post.y, radius)) continue;
         hit.posts.push({ x: post.x, y: post.y, yaw: post.yaw });
         if (doc.node(post.node)?.control !== 'none') { doc.setNodeControl(post.node, 'none'); changed = true; }
