@@ -74,7 +74,7 @@ interface RampState {
   state: object | null;
   readonly byNode: Map<NodeId, readonly CurbRamp[]>;
   readonly grid: Map<number, CurbRamp[]>;
-  /** Every ramp, in the order of the document's nodes; null until asked after a change. */
+  /** Every ramp, node by node; null until asked after a change. */
   list: readonly CurbRamp[] | null;
 }
 
@@ -85,8 +85,9 @@ export function curbRamps(net: Network): readonly CurbRamp[] {
   const state = rampState(net);
   if (!state.list) {
     const list: CurbRamp[] = [];
-    // In the order of the nodes, as the ramps were laid when they were all made at once.
-    for (const id of net.doc.nodes.keys()) for (const r of state.byNode.get(id) ?? []) list.push(r);
+    // Node by node in the order they were placed (the document's order when
+    // all were made at once; a node given ramps later comes last).
+    for (const ramps of state.byNode.values()) for (const r of ramps) list.push(r);
     state.list = list;
   }
   return state.list;
