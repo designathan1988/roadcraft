@@ -12,7 +12,7 @@ import { chooseVehicleDestination } from '../routing/destination';
 import { closeLane, laneClear, openLanes, type Closure } from '../vehicles/laneClosures';
 import { CLOSURE_STOP } from '../vehicles/obstacles';
 import { Shunt } from './manoeuvre';
-import { buildYard, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, type YardNeighbours, yardNeighbours, yardOf } from './lorryDocks';
+import { buildYard, forgetYard, forgetYardsBut, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, type YardNeighbours, yardNeighbours, yardOf } from './lorryDocks';
 import { gatedProperty, lanesInBox } from './parking';
 import { BuildingsInOrder } from './buildingOrder';
 import type { RoadDoc } from '@world/doc';
@@ -190,6 +190,12 @@ export class LorryTraffic {
    */
   private readYards(w: SimWorld): void {
     this.yards = this.yardList.read(w.doc);
+    // The yards of buildings gone, or with no yard now, forgotten with them.
+    // Kept, every yard ever made stayed in memory (a grid and its clearance
+    // field, megabytes each) after its building was demolished.
+    const gone = this.yardList.gone;
+    if (gone === null) forgetYardsBut(w, (id) => this.yardList.has(id as BuildingId));
+    else for (const id of gone) forgetYard(w, id);
   }
 
   /**
@@ -489,14 +495,23 @@ export class YardList {
   private readonly kept = new BuildingsInOrder(hasYard);
   private readonly docks = new Map<BuildingId, number>();
   private list: { building: BuildingId; docks: number }[] = [];
+  /** The buildings the last `read` took out (gone, or with no yard now); null: it read the town whole. */
+  gone: BuildingId[] | null = [];
+
+  /** Whether a building has a yard, as of the last `read`. */
+  has(id: BuildingId): boolean {
+    return this.kept.has(id);
+  }
 
   read(doc: RoadDoc): readonly { building: BuildingId; docks: number }[] {
     const delta = this.kept.update(doc);
+    this.gone = delta === null ? null : [];
     if (delta !== null && delta.ids.length === 0) return this.list;
     if (delta === null) this.docks.clear();
     for (const id of delta === null ? this.kept.ids : delta.ids) {
       const b = doc.buildings.get(id);
-      if (b && this.kept.has(id)) this.docks.set(id, lorryDocks(b).length); else this.docks.delete(id);
+      if (b && this.kept.has(id)) this.docks.set(id, lorryDocks(b).length);
+      else { this.docks.delete(id); this.gone?.push(id); }
     }
     this.list = this.kept.ids.map((building) => ({ building, docks: this.docks.get(building)! }));
     return this.list;
