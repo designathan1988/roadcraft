@@ -1,6 +1,7 @@
 import type { Mesh } from 'three';
 import { cancelWarm, warmLooseAhead } from '../uploads';
 import { type BuildingMeshes, meshesOf } from './buildingMesh';
+import type { CellMass } from './cellArrays';
 import type { CellEnv, CellPool } from './cellPool';
 import type { CellEntry, CellResult, ChunkSummary } from './cellWork';
 import type { BuildingKit } from './kit';
@@ -36,6 +37,8 @@ export class CellRequests {
   private readonly landed = new Map<string, Landing>();
   /** Summary jobs asked and not answered: cancelled with the rest (`clear`). */
   private readonly summaries = new Set<number>();
+  /** Each cell's masses asked and not answered, by the job's id. */
+  private readonly masses = new Map<string, number>();
 
   constructor(private readonly pool: CellPool, private readonly kit: BuildingKit, private readonly onSummaries: (summaries: readonly ChunkSummary[], entries: readonly CellEntry[], env: CellEnv) => void) {}
 
@@ -106,6 +109,34 @@ export class CellRequests {
     if (this.pool.isRunning(id)) this.summaries.add(id);
   }
 
+  /**
+   * A cell's masses from afar made of `entries` (`cellWork.ts` 'mass'), handed to `done` when they
+   * come - at once where no worker runs. A cell asked again before they came gives up the old ask.
+   */
+  mass(cell: string, entries: readonly CellEntry[], env: CellEnv, done: (mass: CellMass | null) => void): void {
+    const was = this.masses.get(cell);
+    if (was !== undefined) { this.pool.cancel(was); this.masses.delete(cell); }
+    let id = -1;
+    id = this.pool.run('mass', cell, entries, env, (result) => {
+      if (this.masses.get(cell) === id) this.masses.delete(cell);
+      done(result.mass ?? null);
+    });
+    if (this.pool.isRunning(id)) this.masses.set(cell, id);
+  }
+
+  /** A cell's masses no longer wanted (it has no building left). */
+  dropMass(cell: string): void {
+    const id = this.masses.get(cell);
+    if (id === undefined) return;
+    this.pool.cancel(id);
+    this.masses.delete(cell);
+  }
+
+  /** Cells whose masses are asked and not come. */
+  get massing(): number {
+    return this.masses.size;
+  }
+
   /** A cell drawn far: its worker may give its buildings' chunks up first. */
   release(cell: string): void {
     this.pool.release(cell);
@@ -117,6 +148,8 @@ export class CellRequests {
     this.asked.clear();
     for (const id of this.summaries) this.pool.cancel(id);
     this.summaries.clear();
+    for (const id of this.masses.values()) this.pool.cancel(id);
+    this.masses.clear();
     for (const l of this.landed.values()) disposeLanded(l);
     this.landed.clear();
   }

@@ -33,18 +33,6 @@ export function groundDigest(b: Building, groundAt: GroundAt, pavedAt?: PavedAt)
   }
   return out;
 }
-/** Milliseconds a frame spent emitting the buildings of a change (`update`). */
-export const WARM_SLICE_MS = 6;
-/** Milliseconds a frame while a whole town is loaded (Unity, backgroundLoadingPriority High). */
-export const LOADING_SLICE_MS = 50;
-/**
- * Milliseconds a frame while a town loads behind the loading curtain: nothing
- * is presented, so the frame is the load's (Unity's
- * `allowSceneActivation = false`: loaded whole in the background, then shown).
- */
-export const HIDDEN_SLICE_MS = 250;
-/** More buildings than this not made yet: a load, not an edit. */
-export const LOADING_COUNT = 100;
 /**
  * Bytes of buildings' chunks the cell workers keep, all of them (`cellWork.ts`),
  * so a camera coming back finds them made: the cells in view are kept whatever

@@ -3,6 +3,7 @@ import { FURNITURE_KINDS, type FurnitureKind } from '@world/buildings/interior';
 import type { BuildingChunk, PartBatch } from './chunk';
 import { FACADE_PROP_KINDS } from './facadeProps';
 import type { PartKind } from './kit';
+import type { MassingChunk } from './massing';
 import { ROOM_FLOATS } from './roomBehind';
 
 /**
@@ -100,6 +101,53 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
   }
   return { shells, parts, furniture };
 }
+
+/**
+ * A cell's buildings from afar as one mesh's arrays (`massCells.ts`): their
+ * masses in order, the indices shifted, the box and sphere as three works them
+ * out, and the highest point. Put together where the masses are made (the
+ * cell workers, `cellWork.ts`): the page keeps no building's mass.
+ */
+export interface CellMass {
+  readonly position: Float32Array;
+  readonly normal: Float32Array;
+  readonly color: Float32Array;
+  readonly facade: Float32Array;
+  readonly glazing: Float32Array;
+  readonly index: Uint32Array;
+  readonly bounds: Bounds;
+  readonly top: number;
+}
+
+/** The masses of a cell's buildings as one set of arrays; null when none has any. */
+export function cellMass(masses: readonly MassingChunk[]): CellMass | null {
+  let vertices = 0, indices = 0;
+  for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; }
+  if (indices === 0) return null;
+  const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3), color = new Float32Array(vertices * 3);
+  const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = new Uint32Array(indices);
+  let v = 0, n = 0, top = -Infinity;
+  for (const c of masses) {
+    position.set(c.position, v * 3);
+    normal.set(c.normal, v * 3);
+    color.set(c.colour, v * 3);
+    facade.set(c.facade, v * 4);
+    glazing.set(c.glazing, v * 2);
+    for (let i = 0; i < c.index.length; i++) index[n + i] = c.index[i]! + v;
+    for (let i = 1; i < c.position.length; i += 3) top = Math.max(top, c.position[i]!);
+    v += c.position.length / 3;
+    n += c.index.length;
+  }
+  return { position, normal, color, facade, glazing, index, bounds: shellBounds(position), top };
+}
+
+/** The bytes of a building's mass (what the workers' cache counts). */
+export const massBytes = (c: MassingChunk): number =>
+  c.position.byteLength + c.normal.byteLength + c.colour.byteLength + c.facade.byteLength + c.glazing.byteLength + c.index.byteLength;
+
+/** Every buffer of a cell's masses: handed over, not copied. */
+export const cellMassBuffers = (c: CellMass): ArrayBuffer[] =>
+  [c.position, c.normal, c.color, c.facade, c.glazing, c.index, c.bounds].map((a) => a.buffer as ArrayBuffer);
 
 /** Every array buffer of a batch: handed over, not copied (MDN, `postMessage` transfer). */
 export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {

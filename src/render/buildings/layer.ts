@@ -1,4 +1,3 @@
-import { workUntil } from '@core/frameWork';
 import { Group, type InstancedMesh, type Object3D } from 'three';
 
 import type { RoadDoc } from '@world/doc';
@@ -10,12 +9,10 @@ import { CellFiling } from '@world/cells';
 import { type BuildingChunk, type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
 import {
   BATCH_CELL, CHUNK_CACHE_BYTES, type CellCache, type DetailState, cullDetailCells, watchedCells,
-  HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, STREAM_AHEAD, WARM_SLICE_MS, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
+  STREAM_AHEAD, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
 } from './layerCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
-import { drawsSignature } from './signature';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
-import { emitMassing, type MassingChunk } from './massing';
 import { createMassCells } from './massCells';
 import { type BuildingKit, type PartKind, createBuildingKit } from './kit';
 import { type CellEnv, CellPool } from './cellPool';
@@ -58,11 +55,12 @@ export interface BuildingLayer {
   readonly triangles: number;
   /** Bumped whenever the stored buildings are rebuilt. */
   readonly version: number;
-  /** A change is still being made (`update` keeps the town as it was until it is done). */
+  /** A change is still being made: masses or near cells asked of the workers and not come. */
   readonly pending: boolean;
   /**
-   * Nothing is being shown (a map loading behind its curtain, `SceneHandle.opening`):
-   * a load then takes `HIDDEN_SLICE_MS` a frame, there being no frame to keep smooth.
+   * Nothing is being shown (a map loading behind its curtain, `SceneHandle.opening`). Read by
+   * nothing here any more: the layer makes nothing a slice a frame (the cells and their masses come
+   * from the workers).
    */
   hidden: boolean;
   /**
@@ -191,14 +189,6 @@ export function createBuildingLayer(): BuildingLayer {
   let dimmed: BuildingId | null | undefined = undefined;
   let ghost: BuildingMeshes | null = null;
   let storedKey = '';
-  /** A change being made, the town as it was staying drawn: its masses a slice a frame, then its cells from the workers. */
-  let warming: { key: string; queue: Building[]; at: number;
-    /** A whole town to put together (the opening, a map opened): worked at the loading priority. */
-    loading: boolean;
-    /** The masses of the queue are made and the far level chosen: the detail of the near cells comes next. */
-    massed: boolean;
-    /** A change of some buildings only (`townIndex.ts`): the cells it touched and the buildings, by id. */
-    dirty?: Set<string>; ids?: Set<BuildingId> } | null = null;
   let ghostKey = '';
   let preview: BuildingPreviewInput | null = null;
   let cutaway: CutawaySpec | null = null;
@@ -364,7 +354,7 @@ export function createBuildingLayer(): BuildingLayer {
     const k = kept.get(b.id);
     return k && k.record === recordText(b) && k.digest === groundDigests.get(b.id)?.digest ? k : undefined;
   };
-  const pool = new CellPool(() => kitBoxes(kit), CHUNK_CACHE_BYTES);
+  const pool = new CellPool(() => kitBoxes(kit), CHUNK_CACHE_BYTES, true, kit.finishTone);
   pool.warm();
   const requests = new CellRequests(pool, kit, keep);
   /**
@@ -381,32 +371,26 @@ export function createBuildingLayer(): BuildingLayer {
     flagLayer.set(flags);
     flagsMoved = false;
   };
-  /** Each building's mass from afar (`massing.ts`), kept by its record and the ground under it. */
-  const masses = new Map<BuildingId, { record: string; digest: string; mass: MassingChunk | null }>();
-  const massFor = (b: Building, groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt): MassingChunk | null => {
-    const record = recordText(b);
-    const digest = digestFor(b, record, groundKey, groundAt, pavedAt);
-    const known = masses.get(b.id);
-    if (known && known.record === record && known.digest === digest) return known.mass;
-    const mass = emitMassing(b, groundAt, pavedAt, naturalAt, drawsSignature(b), kit.finishTone);
-    masses.set(b.id, { record, digest, mass });
-    return mass;
-  };
+  /** The buildings by coarse cell whose masses stand for them from afar: the shown ones (`update`), the faded included. */
+  let massTown = new Map<string, Building[]>();
   /**
-   * The masses of these buildings by coarse cell, for `massCells.update`: every cell they stand in,
-   * an empty list for one whose buildings have no mass (lots only), drawn by its detail alone.
+   * A cell's masses asked of the workers (`cellWork.ts` 'mass') for its buildings now, the cell kept
+   * as it stands until they come; a cell with no building goes. DO NOT mass the buildings on the page:
+   * every building of the town was massed there a slice a frame, and its mass kept there for good.
    */
-  const massesByCell = (list: readonly Building[], groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt,
-    naturalAt: GroundAt = groundAt): Map<string, MassingChunk[] | null> => {
-    const byCell = new Map<string, MassingChunk[] | null>();
-    for (const b of list) {
-      const cell = cellOf(b);
-      let masses = byCell.get(cell);
-      if (!masses) byCell.set(cell, masses = []);
-      const mass = massFor(b, groundAt, groundKey, pavedAt, naturalAt);
-      if (mass) masses.push(mass);
-    }
-    return byCell;
+  const askMass = (cell: string, env: CellEnv, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): void => {
+    const list = massTown.get(cell);
+    if (!list?.length) { requests.dropMass(cell); massCells.remove(cell); return; }
+    massCells.plan(cell);
+    const entries = list.map((b): CellEntry => {
+      const record = recordText(b);
+      return { key: String(b.id), record, digest: digestFor(b, record, groundKey, groundAt, pavedAt) };
+    });
+    requests.mass(cell, entries, env, (mass) => {
+      massCells.land(cell, mass);
+      chooseNow();
+      version++;
+    });
   };
   /** The cells held near whatever the eye says: the building cut open (`near`), the one being edited (`dimmed`). */
   const forcedCells = (shown: readonly Building[]): ReadonlySet<string> =>
@@ -498,11 +482,10 @@ export function createBuildingLayer(): BuildingLayer {
       }
       if (done) pendingCells.delete(cell);
     }
-    // Nothing near to make: the far buildings' flags, while the frame has room.
+    // Nothing near to make: the far buildings' flags (the workers take them after the cells and masses).
     if (pendingCells.size === 0 && backlog.length) {
-      const until = workUntil(WARM_SLICE_MS);
       const byCell = new Map<string, Building[]>();
-      while (until && backlog.length && performance.now() < until) {
+      while (backlog.length) {
         const b = backlog.pop()!;
         if (keptFor(b)) continue;
         const cell = cellOf(b);
@@ -526,7 +509,7 @@ export function createBuildingLayer(): BuildingLayer {
       return version;
     },
     get pending() {
-      return warming !== null || pendingCells.size > 0;
+      return pendingCells.size > 0 || requests.massing > 0;
     },
     hidden: false,
     kit,
@@ -549,65 +532,33 @@ export function createBuildingLayer(): BuildingLayer {
       // The buildings' shape and their wear (`BuildingStore.wear`): a building drawn shows both.
       const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${rest}`;
       let rebuilt = false;
-      // The masses of the buildings an edit changed (or whose ground it moved) are made a few
-      // milliseconds a frame first, then their cells asked of the workers, the town as it was
-      // staying drawn; the cells are swapped once every one has landed. Made in the frame of
-      // the edit, they were a stall of 100-500 ms when a road took buildings away or reshaped
-      // the ground beside them (docs/performance.md #16). The first town too (the opening, a
-      // map loaded). A building cut open or the others faded takes the same road (its cells
-      // are held near, `forcedCells`).
+      // The masses of the buildings an edit changed (or whose ground it moved) are asked of the cell
+      // workers, cell by cell, each cell standing as it was until its masses come; then the cells drawn
+      // near are asked their detail (`landCells`). The first town too (the opening, a map loaded).
+      // A building cut open or the others faded takes the same road (its cells are held near, `forcedCells`).
       if (key !== storedKey) {
         // Only buildings changed since the town was put together, each with its id in the diary, nothing else of the key:
         // their cells, from the town kept by cell (`townIndex.ts`). NOT the town again for one building (AUDITORIA A1).
         const since = stored && details && doc === townDoc && rest === storedRest && dimmed === undefined && cutaway === null
-          && (!warming || warming.dirty) && warming?.key !== key ? doc.changes.since(townSeen, ['buildings', 'buildingWear']) : null;
+          ? doc.changes.since(townSeen, ['buildings', 'buildingWear']) : null;
         const changed = since?.every((e) => e.ids) ? since : null;
-        if (changed || !warming || warming.key !== key) {
-          let queue: Building[], loading = false;
-          const dirty = warming?.dirty ?? new Set<string>(), ids = warming?.ids ?? new Set<BuildingId>();
-          if (changed) {
-            for (const id of changed.flatMap((e) => e.ids!) as BuildingId[]) {
-              const b = doc.buildings.get(id);
-              town.take(id, b && b.id !== hides && !ruined.has(b.id) ? b : undefined, dirty);
-              ids.add(id);
-            }
-            townSeen = doc.changes.version;
-            queue = [...dirty].flatMap((cell) => town.byCell.get(cell) ?? []);
-          } else {
-            queue = [...doc.buildings.all()].filter((b) => b.id !== hides && !ruined.has(b.id));
-            // A town none of whose buildings is made yet - the opening, a map opened - is a load, not an edit of
-            // a running game: it takes the loading budget (Unity's backgroundLoadingPriority High, 50 ms a frame)
-            // instead of the 6 ms an edit may take. At 6 ms a frame the 761 buildings of the default town came
-            // 10-20 s after its roads. Made = has its mass (every edit was a load: AUDITORIA A2).
-            loading = (stored === null ? queue.length : queue.reduce((n, b) => n + (masses.has(b.id) ? 0 : 1), 0)) > LOADING_COUNT;
+        if (changed && stored && details) {
+          const dirty = new Set<string>(), ids = new Set<BuildingId>();
+          for (const id of changed.flatMap((e) => e.ids!) as BuildingId[]) {
+            const b = doc.buildings.get(id);
+            town.take(id, b && b.id !== hides && !ruined.has(b.id) ? b : undefined, dirty);
+            ids.add(id);
           }
-          warming = { key, queue, at: 0, loading, massed: false, ...(changed ? { dirty, ids } : {}) };
-          forcedNear = forcedCells(queue);
-        }
-        // A load's time is its own (Unity: the most loading may take in a frame), not what the frame's other work
-        // left: shared, it got nothing while the traffic's topology took every frame's allowance, and the town
-        // stood without buildings for over 20 s.
-        warming = warming!;
-        const until = warming.loading ? performance.now() + (this.hidden ? HIDDEN_SLICE_MS : LOADING_SLICE_MS) : workUntil(WARM_SLICE_MS);
-        if (!until) return false;
-        while (!warming.massed && warming.at < warming.queue.length && performance.now() < until) massFor(warming.queue[warming.at++]!, groundAt, groundKey, pavedAt, naturalAt);
-        if (!warming.massed && warming.at < warming.queue.length) return false;
-        // The far level first, so the eye can say which cells need their detail.
-        const byCell = massesByCell(warming.queue, groundAt, groundKey, pavedAt, naturalAt);
-        // A changed cell left with no building at all goes (null).
-        if (warming.dirty) for (const cell of warming.dirty) if (!byCell.has(cell)) byCell.set(cell, null);
-        if (warming.dirty) massCells.patch(byCell); else massCells.update(byCell);
-        chooseNow();
-        const done = warming;
-        warming = null;
-        if (done.dirty && stored && details) {
-          // Some buildings changed: their cells made again, each shown as it lands (`landCells`), the rest of the
-          // town as it is (AUDITORIA A1).
-          for (const cell of done.dirty) pendingCells.add(cell);
-          for (const id of done.ids!) {
+          townSeen = doc.changes.version;
+          forcedNear = forcedCells([...dirty].flatMap((cell) => town.byCell.get(cell) ?? []));
+          // Some buildings changed: their cells' masses asked again and their detail made again, each shown as
+          // it lands (`landCells`), the rest of the town as it is (AUDITORIA A1).
+          for (const cell of dirty) { askMass(cell, env, groundAt, groundKey, pavedAt); pendingCells.add(cell); }
+          chooseNow();
+          for (const id of ids) {
             const b = doc.buildings.get(id);
             if (b) cover.set(b);
-            else { cover.remove(id); dropKept(id); sent.delete(String(id)); groundDigests.delete(id); masses.delete(id); }
+            else { cover.remove(id); dropKept(id); sent.delete(String(id)); groundDigests.delete(id); }
             const shown = b && town.has(id) ? b : undefined;
             if (!shown) { lastShown.delete(id); flagsFor(id); signatures.remove(id); continue; }
             lastShown.set(id, shown);
@@ -625,11 +576,10 @@ export function createBuildingLayer(): BuildingLayer {
             group.remove(batch.group);
             batch.dispose();
           }
-          const shown = done.queue;
+          const shown = [...doc.buildings.all()].filter((b) => b.id !== hides && !ruined.has(b.id));
           for (const id of [...kept.keys()]) if (!doc.buildings.has(id)) dropKept(id);
           for (const [k, b] of sent) if (!doc.buildings.has(b.id)) sent.delete(k);
           for (const id of groundDigests.keys()) if (!doc.buildings.has(id)) groundDigests.delete(id);
-          for (const id of masses.keys()) if (!doc.buildings.has(id)) masses.delete(id);
           const solid = dimmed === undefined ? shown : shown.filter((b) => b.id === dimmed);
           const others = dimmed === undefined ? [] : shown.filter((b) => b.id !== dimmed);
           if (cutTexts.size > 64) cutTexts.clear();
@@ -637,6 +587,13 @@ export function createBuildingLayer(): BuildingLayer {
           townCells = town.byCell;
           othersByCell = groupByCell(others, cellOf, (b) => b);
           [townSeen, townDoc, storedRest] = [doc.changes.version, doc, rest];
+          // The far level: every cell's masses asked (the workers keep those of the buildings unchanged),
+          // the cells with no building left gone.
+          massTown = dimmed === undefined ? town.byCell : groupByCell(shown, cellOf, (b) => b);
+          for (const cell of [...massCells.keys()]) if (!massTown.has(cell)) askMass(cell, env, groundAt, groundKey, pavedAt);
+          for (const cell of massTown.keys()) askMass(cell, env, groundAt, groundKey, pavedAt);
+          forcedNear = forcedCells(shown);
+          chooseNow();
           goneFar.clear();
           // Only the cells drawn near have their detail; the rest stand as their masses (`massCells`) and come in
           // by `landCells` when the eye nears.
@@ -676,7 +633,7 @@ export function createBuildingLayer(): BuildingLayer {
         rebuilt = true;
       }
       // The cells pending land as they come back from the workers; those the eye neared since are asked; those long far go out (HLOD streaming).
-      if (!warming && stored && details && landCells(env, groundAt, groundKey, pavedAt)) {
+      if (stored && details && landCells(env, groundAt, groundKey, pavedAt)) {
         version++;
         rebuilt = true;
       }
@@ -776,6 +733,8 @@ export function createBuildingLayer(): BuildingLayer {
         for (const { part } of cache.values()) part.dispose();
         cache.clear();
       }
+      // The masses too: asked again whole by the next update.
+      massCells.dispose();
       storedKey = '';
       townDoc = null;
     },

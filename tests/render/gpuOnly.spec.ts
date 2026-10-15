@@ -3,6 +3,7 @@ import { BoxGeometry, type BufferAttribute, Color, InstancedMesh, type Mesh, Mes
 import { compileCopy, shadowStandIn } from '@render/uploads';
 
 import { createBuildingKit } from '@render/buildings/kit';
+import { cellMass } from '@render/buildings/cellArrays';
 import { createMassCells } from '@render/buildings/massCells';
 import { emitMassing } from '@render/buildings/massing';
 import { refillArrays } from '@render/mesh/gpuOnly';
@@ -72,7 +73,7 @@ describe('meshes that live on the GPU', () => {
     checks(mesh, mesh);
   });
 
-  it('a cell of building masses does the same', () => {
+  it('a cell of building masses lets its arrays go too (a lost context asks the workers again, layer.ts refill)', () => {
     const kit = createBuildingKit();
     const cells = createMassCells(kit, m(240));
     const masses = [0, 1, 2].map((i) => {
@@ -80,10 +81,15 @@ describe('meshes that live on the GPU', () => {
       const b = { ...JSON.parse(JSON.stringify(bp.body)), id: i + 1, x: i * m(30), y: m(10), rotation: 0 } as Building;
       return emitMassing(b, () => 0)!;
     });
-    cells.update(new Map([['0,0', masses]]));
+    cells.land('0,0', cellMass(masses));
     const mesh = cells.group.children.find((o) => o.name === 'building-massing') as Mesh;
     expect(mesh).toBeDefined();
-    checks(mesh, cells.group);
+    const counts = attributes(mesh).map((a) => a.count);
+    upload(mesh);
+    for (const a of attributes(mesh)) expect(a.array).toBeNull();
+    expect(mesh.geometry.boundingSphere).not.toBeNull();
+    expect(mesh.geometry.boundingBox).not.toBeNull();
+    expect(attributes(mesh).map((a) => a.count)).toEqual(counts);
     cells.dispose();
   });
 });

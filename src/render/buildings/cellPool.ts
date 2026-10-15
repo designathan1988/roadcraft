@@ -1,4 +1,5 @@
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
+import type { Finish } from '@world/buildings/materials';
 import type { KitBoxes } from './cellArrays';
 import { type CellEntry, type CellJob, type CellResult, CellWork, GROUND, type JobKind, NATURAL, PAVED, type WorkReply } from './cellWork';
 
@@ -38,6 +39,8 @@ const MOST_LANES = 4;
  * been through them all (36 cells asked, none landed in 8 s, 2026-10-14).
  */
 const ACTIVE_PER_LANE = 1;
+/** Which jobs a lane begins first (lower first). */
+const PRIORITY: Readonly<Record<JobKind, number>> = { cell: 0, faded: 0, mass: 1, summary: 2 };
 
 export class CellPool {
   private lanes: Lane[] | null = null;
@@ -45,8 +48,9 @@ export class CellPool {
   private local: CellWork | null = null;
   private nextId = 1;
 
-  /** `workers`: false does every job on the page (tests). */
-  constructor(private readonly boxes: () => KitBoxes, private readonly budget: number, private readonly workers = true) {}
+  /** `workers`: false does every job on the page (tests). `tone`: each finish's colour from afar, for the masses (`kit.ts`). */
+  constructor(private readonly boxes: () => KitBoxes, private readonly budget: number, private readonly workers = true,
+    private readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>) {}
 
   /** Jobs handed out or waiting their turn, not done yet. */
   get running(): number {
@@ -71,10 +75,18 @@ export class CellPool {
     return job.id;
   }
 
-  /** The lane's next jobs begun while it has room. */
+  /**
+   * The lane's next jobs begun while it has room: a cell's detail first, then masses, then the far
+   * flags (`PRIORITY`), each kind in the order asked. DO NOT take them only in the order asked: the
+   * masses of a whole town asked at its opening kept the near cells' detail waiting behind them.
+   */
   private pump(lane: Lane): void {
     while (lane.jobs.size < ACTIVE_PER_LANE && lane.queue.length) {
-      const next = lane.queue.shift()!;
+      let at = 0;
+      for (let i = 1; i < lane.queue.length && PRIORITY[lane.queue[at]!.job.kind] > 0; i++) {
+        if (PRIORITY[lane.queue[i]!.job.kind] < PRIORITY[lane.queue[at]!.job.kind]) at = i;
+      }
+      const next = lane.queue.splice(at, 1)[0]!;
       lane.jobs.set(next.job.id, next);
       lane.worker.postMessage({ type: 'start', job: next.job });
     }
@@ -125,7 +137,7 @@ export class CellPool {
 
   /** The job done here, every round answered at once. */
   private onPage(running: Running): void {
-    this.local ??= new CellWork(this.boxes(), this.budget);
+    this.local ??= new CellWork(this.boxes(), this.budget, this.tone);
     const work = this.local;
     let reply = work.start(running.job);
     while (reply.kind !== 'done') reply = work.readings(reply.job, readingsOf(reply.points, running.env));
@@ -153,7 +165,7 @@ export class CellPool {
           console.warn('[buildings] the cell workers failed; cells are put together on the page', event.message);
           this.giveUp();
         };
-        worker.postMessage({ type: 'init', boxes, budget: this.budget / count });
+        worker.postMessage({ type: 'init', boxes, budget: this.budget / count, tone: this.tone });
         lanes.push(lane);
       }
       this.lanes = lanes;

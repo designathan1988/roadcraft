@@ -1,28 +1,33 @@
+import type { Finish } from '@world/buildings/materials';
 import type { Building } from '@world/buildings/types';
 import { emitChunk } from './buildingMesh';
-import { type CellArrays, type CellSelection, type KitBoxes, cellArrays, cellBuffers } from './cellArrays';
+import { type CellArrays, type CellMass, type CellSelection, type KitBoxes, cellArrays, cellBuffers, cellMass, cellMassBuffers, massBytes } from './cellArrays';
 import type { BuildingChunk, CellEntry, LotGroundRecipe } from './chunk';
 import type { FlagInstance } from './flagLayer';
 import { PART_KINDS } from './kit';
 import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
+import { emitMassing, type MassingChunk } from './massing';
+import { drawsSignature } from './signature';
 
 /**
  * THE BUILDINGS' CELLS PUT TOGETHER AWAY FROM THE PAGE (`cell.worker.ts`; on
  * the page itself where no worker runs, the tests). A worker keeps the chunks
- * of the cells sent to it, emits the buildings it lacks and hands back each
- * cell's batches as arrays (`cellArrays.ts`), ready to be wrapped in meshes:
- * Cesium's `combineGeometry` worker, which combines a primitive's geometries
- * and transfers the packed result. What an emission reads that lives on the
- * page - the ground as drawn and as it was, the footways' paving, the light
- * slots' table - is asked of the page: emitted once with the readings unknown,
- * a building says which points it read, the page reads them, and the next
- * emission, with them all known, reads nothing else (a point that depends on an
- * answer is asked in the next round). A window's light needs nothing of the
- * page: its space's seed is a hash (`lightSlots.ts`).
+ * and the masses of the cells sent to it, emits the buildings it lacks and
+ * hands back each cell's batches - or its masses from afar - as arrays
+ * (`cellArrays.ts`), ready to be wrapped in meshes: Cesium's `combineGeometry`
+ * worker, which combines a primitive's geometries and transfers the packed
+ * result. What an emission reads that lives on the page - the ground as drawn
+ * and as it was, the footways' paving - is asked of the page: emitted once with
+ * the readings unknown, a building says which points it read, the page reads
+ * them, and the next emission, with them all known, reads nothing else (a point
+ * that depends on an answer is asked in the next round). A window's light
+ * needs nothing of the page: its space's seed is a hash (`lightSlots.ts`).
  *
  * DO NOT send the page a chunk per building: rebuilding each one's dozens of
  * arrays on the page cost as much as emitting it there (2026-10-14,
- * OTIMIZACAO pendente 16). The page gets one message a cell.
+ * OTIMIZACAO pendente 16). The page gets one message a cell. DO NOT make the
+ * masses on the page either: every building of the town was massed there, a
+ * slice a frame, and each one's mass kept there for good (`layer.ts` before).
  */
 
 /** Which reading a point asks for. */
@@ -34,10 +39,11 @@ export type { CellEntry } from './chunk';
 
 /**
  * What a job makes: a cell's detail (its coarse batch and its detail cells'),
- * a cell's buildings faded (the editor's "hide the others"), or only what the
- * page reads of far buildings (their flags, lots' ground, signature floor).
+ * a cell's buildings faded (the editor's "hide the others"), a cell's
+ * buildings from afar (their masses, `massing.ts`), or only what the page reads
+ * of far buildings (their flags, lots' ground, signature floor).
  */
-export type JobKind = 'cell' | 'faded' | 'summary';
+export type JobKind = 'cell' | 'faded' | 'mass' | 'summary';
 
 export interface CellJob {
   readonly id: number;
@@ -58,12 +64,14 @@ export interface ChunkSummary {
 }
 
 export interface CellResult {
-  /** The coarse batch ('cell'), the faded one ('faded'); none for a summary. */
+  /** The coarse batch ('cell'), the faded one ('faded'); none for a summary or masses. */
   readonly batch: CellArrays | null;
   /** Each detail cell's batch, by its key ('cell'). */
   readonly details: readonly (readonly [string, CellArrays])[];
-  /** The buildings this job emitted. */
+  /** The buildings this job emitted whole. */
   readonly summaries: readonly ChunkSummary[];
+  /** The cell's masses ('mass'): null when none of its buildings has any. */
+  readonly mass?: CellMass | null;
 }
 
 export type WorkReply =
@@ -76,6 +84,7 @@ export function replyBuffers(reply: WorkReply): ArrayBuffer[] {
   if (reply.kind === 'need') return [reply.points.buffer as ArrayBuffer];
   const out = reply.result.batch ? cellBuffers(reply.result.batch) : [];
   for (const [, arrays] of reply.result.details) out.push(...cellBuffers(arrays));
+  if (reply.result.mass) out.push(...cellMassBuffers(reply.result.mass));
   return out;
 }
 
@@ -85,23 +94,90 @@ const readingKey = (kind: number, x: number, y: number): string => `${kind} ${x}
 /** Rounds of readings before a building is given up as never settling (none has needed more than two). */
 const MOST_ROUNDS = 16;
 
-/** A building of a job being emitted: its record, the readings known, those asked last round, and its chunk once made. */
+/** A building of a job being emitted: its record, the readings known, those asked last round, and what it made once made. */
 interface Emitting {
   readonly entry: CellEntry;
   readonly building: Building;
   readonly known: Map<string, number>;
   asked: number[];
+  done: boolean;
   chunk: BuildingChunk | null;
+  mass: MassingChunk | null;
 }
 
 interface JobState {
   readonly job: CellJob;
-  readonly chunks: (BuildingChunk | null)[];
+  /** Per entry: what was kept for it ('mass' jobs: its mass, or null for none), undefined while it is being made. */
+  readonly kept: (BuildingChunk | MassingChunk | null | undefined)[];
   readonly emitting: Emitting[];
   rounds: number;
 }
 
-interface Kept { readonly record: string; readonly digest: string; readonly building: Building; readonly chunk: BuildingChunk; readonly bytes: number }
+/** A building as kept: its record and ground, what was made of them, and its bytes. */
+interface Kept<T> { readonly record: string; readonly digest: string; readonly building: Building; readonly made: T; readonly bytes: number }
+
+/**
+ * What a worker keeps of one product (the chunks, or the masses), by key, and
+ * which cells hold each key: a key is let go when no cell of its kind holds it.
+ * The two products are kept apart, so a cell letting its chunks go frees them
+ * even while its masses stay.
+ */
+class Store<T> {
+  readonly kept = new Map<string, Kept<T>>();
+  /** Each cell's and job kind's keys, as last sent, and how many of these groups hold each key. */
+  private readonly members = new Map<string, Set<string>>();
+  private readonly groupsOf = new Map<string, number>();
+  bytes = 0;
+
+  constructor(private readonly sizeOf: (made: T) => number) {}
+
+  /** What was made for this record on this ground, if kept. */
+  get(entry: CellEntry): T | undefined {
+    const known = this.kept.get(entry.key);
+    return known && known.record === entry.record && known.digest === entry.digest ? known.made : undefined;
+  }
+
+  /** The building as last parsed for this record, if any. */
+  building(entry: CellEntry): Building | undefined {
+    const known = this.kept.get(entry.key);
+    return known && known.record === entry.record ? known.building : undefined;
+  }
+
+  /** The cell's group made of these entries now: what was made kept, the keys gone from it let go. */
+  keep(group: string, entries: readonly CellEntry[], made: readonly { entry: CellEntry; building: Building; made: T }[]): void {
+    for (const m of made) {
+      this.forget(m.entry.key);
+      const bytes = this.sizeOf(m.made);
+      this.kept.set(m.entry.key, { record: m.entry.record, digest: m.entry.digest, building: m.building, made: m.made, bytes });
+      this.bytes += bytes;
+    }
+    const was = this.members.get(group) ?? new Set<string>();
+    const now = new Set(entries.map((e) => e.key));
+    for (const key of now) if (!was.has(key)) this.groupsOf.set(key, (this.groupsOf.get(key) ?? 0) + 1);
+    for (const key of was) if (!now.has(key)) this.leave(key);
+    this.members.set(group, now);
+  }
+
+  /** A group let go: its keys too, where no other group holds them. */
+  drop(group: string): void {
+    for (const key of this.members.get(group) ?? []) this.leave(key);
+    this.members.delete(group);
+  }
+
+  private leave(key: string): void {
+    const left = (this.groupsOf.get(key) ?? 1) - 1;
+    if (left > 0) { this.groupsOf.set(key, left); return; }
+    this.groupsOf.delete(key);
+    this.forget(key);
+  }
+
+  private forget(key: string): void {
+    const known = this.kept.get(key);
+    if (!known) return;
+    this.bytes -= known.bytes;
+    this.kept.delete(key);
+  }
+}
 
 /** The bytes of a chunk's arrays (what the cache counts). */
 function chunkBytes(chunk: BuildingChunk): number {
@@ -117,43 +193,46 @@ const DETAIL: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS.filter(
 const WHOLE: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS, shells: true, furniture: true };
 
 /**
- * One worker's cells: the chunks it keeps, by cell, within its share of the
- * cache's budget - the cells the page let go (`release`) give theirs up first,
- * least recently let go first, as `layer.ts` slimmed far buildings. A cell
- * sent again keeps the chunks of the buildings still in it (by record and
- * ground) and emits only the rest.
+ * One worker's cells: the chunks and masses it keeps, by cell, within its
+ * share of the cache's budget - the cells the page let go (`release`) give
+ * their chunks up first, least recently let go first, then the masses of the
+ * cells asked longest ago. A cell sent again keeps what was made of the
+ * buildings still in it (by record and ground) and emits only the rest.
  */
 export class CellWork {
-  private readonly kept = new Map<string, Kept>();
-  /** Each cell's and job kind's chunk keys, as last sent, and how many of these groups hold each key. */
-  private readonly members = new Map<string, Set<string>>();
-  private readonly groupsOf = new Map<string, number>();
+  private readonly chunks = new Store<BuildingChunk>(chunkBytes);
+  private readonly masses = new Store<MassingChunk | null>((m) => (m ? massBytes(m) : 0));
   /** The cells let go, in the order they were (oldest first). */
   private readonly released = new Map<string, true>();
+  /** The cells whose masses were asked, in the order last asked (oldest first). */
+  private readonly massed = new Map<string, true>();
   private readonly jobs = new Map<number, JobState>();
-  private bytes = 0;
 
-  constructor(private readonly boxes: KitBoxes, private readonly budget: number) {}
+  /** `tone`: each finish's colour from afar (`kit.ts` `finishTone`), for the masses. */
+  constructor(private readonly boxes: KitBoxes, private readonly budget: number,
+    private readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>) {}
 
   /**
-   * A job begun: done at once if every chunk is kept, else what the page must answer first.
-   * @rebuild Asked only for a cell whose entries changed (`cellRequests.ts` `want`); a record is parsed only when it is new.
+   * A job begun: done at once if everything is kept, else what the page must answer first.
+   * @rebuild Asked only for a cell whose entries changed (`cellRequests.ts`); a record is parsed only when it is new.
    */
   start(job: CellJob): WorkReply {
-    const chunks: (BuildingChunk | null)[] = [];
+    const kept: (BuildingChunk | MassingChunk | null | undefined)[] = [];
     const emitting: Emitting[] = [];
+    const masses = job.kind === 'mass';
     for (const entry of job.entries) {
-      const known = this.kept.get(entry.key);
-      if (known && known.record === entry.record && known.digest === entry.digest) { chunks.push(known.chunk); continue; }
-      chunks.push(null);
+      const made = masses ? this.masses.get(entry) : this.chunks.get(entry);
+      if (made !== undefined) { kept.push(made); continue; }
+      kept.push(undefined);
       // The record parsed once a record: the same text, the same building.
-      const building = known && known.record === entry.record ? known.building : JSON.parse(entry.record) as Building;
-      emitting.push({ entry, building, known: new Map(), asked: [], chunk: null });
+      const building = this.chunks.building(entry) ?? this.masses.building(entry) ?? JSON.parse(entry.record) as Building;
+      emitting.push({ entry, building, known: new Map(), asked: [], done: false, chunk: null, mass: null });
     }
-    const state: JobState = { job, chunks, emitting, rounds: 0 };
+    const state: JobState = { job, kept, emitting, rounds: 0 };
     this.jobs.set(job.id, state);
-    // Only the cell's own batches bring it near again: a summary of its far buildings' flags does not.
-    if (job.kind !== 'summary') this.released.delete(job.cell);
+    // Only the cell's own batches bring it near again: a summary of its far buildings' flags, or its masses, do not.
+    if (job.kind === 'cell' || job.kind === 'faded') this.released.delete(job.cell);
+    if (masses) { this.massed.delete(job.cell); this.massed.set(job.cell, true); }
     return this.emitRound(state);
   }
 
@@ -162,7 +241,7 @@ export class CellWork {
     const state = this.jobs.get(id)!;
     let at = 0;
     for (const e of state.emitting) {
-      if (e.chunk) continue;
+      if (e.done) continue;
       for (let i = 0; i < e.asked.length; i += 3) e.known.set(readingKey(e.asked[i]!, e.asked[i + 1]!, e.asked[i + 2]!), values[at++]!);
     }
     return this.emitRound(state);
@@ -183,8 +262,9 @@ export class CellWork {
   /** Emits every building of the job not made yet with the readings it has; asks what is still unknown. */
   private emitRound(state: JobState): WorkReply {
     const need: number[] = [];
+    const { job } = state;
     for (const e of state.emitting) {
-      if (e.chunk) continue;
+      if (e.done) continue;
       const asked = new Set<string>();
       const points: number[] = [];
       const reading = (kind: number) => (x: number, y: number): number => {
@@ -194,30 +274,45 @@ export class CellWork {
         if (!asked.has(k)) { asked.add(k); points.push(kind, x, y); }
         return kind === PAVED ? NaN : 0;
       };
-      const chunk = emitChunk(e.building, reading(GROUND), state.job.paved ? reading(PAVED) : undefined, reading(NATURAL));
+      const paved = job.paved ? reading(PAVED) : undefined;
+      if (job.kind === 'mass') e.mass = emitMassing(e.building, reading(GROUND), paved, reading(NATURAL), drawsSignature(e.building), this.tone);
+      else e.chunk = emitChunk(e.building, reading(GROUND), paved, reading(NATURAL));
       e.asked = points;
       if (points.length) { need.push(...points); continue; }
-      e.chunk = chunk;
+      e.done = true;
     }
     if (need.length) {
-      if (++state.rounds > MOST_ROUNDS) throw new Error(`[buildings] a cell's readings never settled (${state.job.cell})`);
-      return { kind: 'need', job: state.job.id, points: Float64Array.from(need) };
+      if (++state.rounds > MOST_ROUNDS) throw new Error(`[buildings] a cell's readings never settled (${job.cell})`);
+      return { kind: 'need', job: job.id, points: Float64Array.from(need) };
     }
     return this.finish(state);
   }
 
-  /** Every chunk made: the new ones kept (a summary job keeps none), the batches put together. */
+  /** Everything made: the new ones kept (a summary job keeps none), the batches or the masses put together. */
   private finish(state: JobState): WorkReply {
     const { job } = state;
     this.jobs.delete(job.id);
+    const group = `${job.kind}|${job.cell}`;
     let next = 0;
-    const chunks = state.chunks.map((c) => c ?? state.emitting[next++]!.chunk!);
+    const made = state.kept.map((k) => {
+      if (k !== undefined) return k;
+      const e = state.emitting[next++]!;
+      return job.kind === 'mass' ? e.mass : e.chunk!;
+    });
+    if (job.kind === 'mass') {
+      this.masses.keep(group, job.entries, state.emitting.map((e) => ({ entry: e.entry, building: e.building, made: e.mass })));
+      this.trim();
+      const masses = made.filter((x): x is MassingChunk => x !== null);
+      return { kind: 'done', job: job.id, result: { batch: null, details: [], summaries: [], mass: cellMass(masses) } };
+    }
+    const chunks = made as BuildingChunk[];
     const summaries: ChunkSummary[] = state.emitting.map((e) => {
       const { flags, lotGround, signatureFloor } = e.chunk!;
       return { key: e.entry.key, ...(flags ? { flags } : {}), lot: lotGround?.recipe ?? null, ...(signatureFloor !== undefined ? { signatureFloor } : {}) };
     });
     if (job.kind === 'summary') return { kind: 'done', job: job.id, result: { batch: null, details: [], summaries } };
-    this.keep(job, state.emitting);
+    this.chunks.keep(group, job.entries, state.emitting.map((e) => ({ entry: e.entry, building: e.building, made: e.chunk! })));
+    this.trim();
     if (job.kind === 'faded') {
       return { kind: 'done', job: job.id, result: { batch: cellArrays(chunks, { ...WHOLE, ghost: false, dim: true }, this.boxes), details: [], summaries } };
     }
@@ -225,7 +320,7 @@ export class CellWork {
     // The detail cells inside, each its buildings in the cell's order (`layerCells.ts` `chunksByCell`).
     const byDetail = new Map<string, BuildingChunk[]>();
     job.entries.forEach((entry, i) => {
-      const b = this.kept.get(entry.key)!.building;
+      const b = this.chunks.kept.get(entry.key)!.building;
       const key = `${Math.floor(b.x / DETAIL_CELL)},${Math.floor(b.y / DETAIL_CELL)}`;
       const list = byDetail.get(key);
       if (list) list.push(chunks[i]!); else byDetail.set(key, [chunks[i]!]);
@@ -234,48 +329,19 @@ export class CellWork {
     return { kind: 'done', job: job.id, result: { batch, details, summaries } };
   }
 
-  /** The job's cell made of its entries now: the chunks made kept, those of buildings gone from it let go. */
-  private keep(job: CellJob, made: readonly Emitting[]): void {
-    for (const e of made) {
-      this.forget(e.entry.key);
-      const bytes = chunkBytes(e.chunk!);
-      this.kept.set(e.entry.key, { record: e.entry.record, digest: e.entry.digest, building: e.building, chunk: e.chunk!, bytes });
-      this.bytes += bytes;
-    }
-    const group = `${job.kind}|${job.cell}`;
-    const was = this.members.get(group) ?? new Set<string>();
-    const now = new Set(job.entries.map((e) => e.key));
-    for (const key of now) if (!was.has(key)) this.groupsOf.set(key, (this.groupsOf.get(key) ?? 0) + 1);
-    for (const key of was) if (!now.has(key)) this.leave(key);
-    this.members.set(group, now);
-    this.trim();
-  }
-
-  /** A key out of one group: its chunk let go when no group holds it. */
-  private leave(key: string): void {
-    const left = (this.groupsOf.get(key) ?? 1) - 1;
-    if (left > 0) { this.groupsOf.set(key, left); return; }
-    this.groupsOf.delete(key);
-    this.forget(key);
-  }
-
-  private forget(key: string): void {
-    const known = this.kept.get(key);
-    if (!known) return;
-    this.bytes -= known.bytes;
-    this.kept.delete(key);
-  }
-
-  /** Over its share of the budget: the cells let go give their chunks up, oldest first. */
+  /** Over its share of the budget: the cells let go give their chunks up, oldest first; then the masses asked longest ago. */
   private trim(): void {
+    const over = (): boolean => this.chunks.bytes + this.masses.bytes > this.budget;
     for (const cell of this.released.keys()) {
-      if (this.bytes <= this.budget) return;
-      for (const kind of ['cell', 'faded'] as const) {
-        const group = `${kind}|${cell}`;
-        for (const key of this.members.get(group) ?? []) this.leave(key);
-        this.members.delete(group);
-      }
+      if (!over()) return;
+      this.chunks.drop(`cell|${cell}`);
+      this.chunks.drop(`faded|${cell}`);
       this.released.delete(cell);
+    }
+    for (const cell of this.massed.keys()) {
+      if (!over()) return;
+      this.masses.drop(`mass|${cell}`);
+      this.massed.delete(cell);
     }
   }
 }
