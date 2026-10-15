@@ -111,3 +111,18 @@ describe('the workers', () => {
     });
   }
 });
+
+describe('the road tiles made off the page', () => {
+  it('are shaped and meshed in the workers, and taken as they come on the page', () => {
+    // The worker meshes: every vertex's reads are in the modules it reaches, over the roads handed to it.
+    expect([...reach('src/render/roadTile.worker.ts')]).toEqual(expect.arrayContaining([
+      'src/render/roadTileMesh.ts', 'src/render/mesh/tileMesh.ts', 'src/render/roadSurfaceReads.ts', 'src/world/roadField.ts']));
+    // The page takes a served tile's arrays as they are: DO NOT read its vertices again here.
+    const surfaces = read('src/render/roadSurfaces.ts');
+    const buildAll = surfaces.slice(surfaces.indexOf('const buildAll = function*'), surfaces.indexOf('/** The tiles built afresh this pass'));
+    expect(buildAll).toMatch(/const bundle = made \? made\[k - from\]! : reading\(\(\) => buildTile\(/);
+    expect(buildAll).not.toMatch(/bundleOf|meshTileShape|tileShapes/);
+    // The pool hands the tiles and answers the ground; it neither shapes nor meshes.
+    expect(read('src/render/roadTilePool.ts')).not.toMatch(/meshTileShape\(|tileShapes\(|passSurfaces\(/);
+  });
+});
