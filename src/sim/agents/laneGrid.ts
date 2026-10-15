@@ -3,12 +3,22 @@ import { ChangeLog } from '@core/changeLog';
 import type { GraphChange, Lanelet, LaneletGraph, LaneletId } from '@world/lanelets';
 import type { ChangeRect } from '@world/changes';
 import { m } from '@world/units';
-import type { SimWorld } from '../world';
 
 /** Cell of the lanes' grid, world units. */
 const LANE_CELL = m(30);
 
 const cellKey = (gx: number, gy: number): number => (gx + 32768) * 65536 + (gy + 32768);
+
+/**
+ * Whether the grid finds a lane of these bounds for a box (`LaneGrid.near`,
+ * `lanesIn`): the cells the lane is filed in meet the cells the box covers.
+ * For a worker holding a few lanes and no grid (`lotBays.ts` `baysOfShare`).
+ */
+export function cellsMeet(box: { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number },
+  x0: number, y0: number, x1: number, y1: number): boolean {
+  return Math.floor(box.minX / LANE_CELL) <= Math.floor(x1 / LANE_CELL) && Math.floor(box.maxX / LANE_CELL) >= Math.floor(x0 / LANE_CELL)
+    && Math.floor(box.minY / LANE_CELL) <= Math.floor(y1 / LANE_CELL) && Math.floor(box.maxY / LANE_CELL) >= Math.floor(y0 / LANE_CELL);
+}
 const byId = (a: Lanelet, b: Lanelet): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 interface Filed {
@@ -151,19 +161,31 @@ function boxOf(lane: Lanelet): ChangeRect {
   return [b.minX, b.minY, b.maxX, b.maxY];
 }
 
+/**
+ * What the lane grid reads of the world (`SimWorld`): its lane graph, the log of
+ * the graph's changes and the grid kept with it. DO NOT import `SimWorld`:
+ * `sim/world.ts` imports this file, and the type import closed an import
+ * cycle (`tests/arch/imports.spec.ts`).
+ */
+export interface LaneGridWorld {
+  readonly graph: LaneletGraph;
+  readonly topologyLog: ChangeLog<GraphChange>;
+  readonly laneGrid: LaneGrid;
+}
+
 /** The world's lanes' grid (`SimWorld.laneGrid`), brought up to the lane graph's changes. */
-export function laneGrid(w: SimWorld): LaneGrid {
+export function laneGrid(w: LaneGridWorld): LaneGrid {
   w.laneGrid.follow(w.graph, w.topologyLog);
   return w.laneGrid;
 }
 
 /** The lanes whose bounds come within `reach` of a point, in id order (`LaneGrid.near`). */
-export function lanesNear(w: SimWorld, x: number, y: number, reach: number): readonly Lanelet[] {
+export function lanesNear(w: LaneGridWorld, x: number, y: number, reach: number): readonly Lanelet[] {
   return laneGrid(w).near(x, y, reach);
 }
 
 /** The lanes whose bounds meet a box, in id order (`LaneGrid.inBox`). */
-export function lanesInBox(w: SimWorld, x0: number, y0: number, x1: number, y1: number): Lanelet[] {
+export function lanesInBox(w: LaneGridWorld, x0: number, y0: number, x1: number, y1: number): Lanelet[] {
   return laneGrid(w).inBox(x0, y0, x1, y1);
 }
 
@@ -172,7 +194,7 @@ export function lanesInBox(w: SimWorld, x0: number, y0: number, x1: number, y1: 
  * before and after; null: every lane), and the state now: for what was worked out
  * from the lanes near a place (a bus stop's lane, a train's level crossings).
  */
-export function laneChangesSince(w: SimWorld, seen: object | null): { readonly state: object; readonly boxes: readonly ChangeRect[] | null } {
+export function laneChangesSince(w: LaneGridWorld, seen: object | null): { readonly state: object; readonly boxes: readonly ChangeRect[] | null } {
   const grid = laneGrid(w);
   const since = grid.changes.since(seen);
   return { state: grid.changes.state, boxes: since === null ? null : since.flat() };

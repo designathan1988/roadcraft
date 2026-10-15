@@ -63,3 +63,31 @@ describe('the gardens, a change at a time', () => {
     expect(placed).toBeGreaterThan(15);
   });
 });
+
+describe('the gardens when the ground moves', () => {
+  /** A ground that moved in the rectangles given, after each serial, and counts the questions asked of it. */
+  function ground(): GroundRecord & { moves: { serial: number; rect: Rect }[]; asked: number; move(rect: Rect): void } {
+    const g = {
+      version: 0, asked: 0, moves: [] as { serial: number; rect: Rect }[],
+      move(rect: Rect) { g.version++; g.moves.push({ serial: g.version, rect }); },
+      touches: () => { g.asked++; return true; },
+      rectsSince: (since: number) => g.moves.filter((x) => x.serial > since).map((x) => x.rect),
+    };
+    return g;
+  }
+
+  it('find the buildings a change reached by place, never asking the record of each', () => {
+    const doc = new RoadDoc();
+    for (let i = 0; i < 400; i++) doc.buildings.add(body(i, (i % 20) * m(100), Math.floor(i / 20) * m(100), true));
+    const g = ground();
+    const lists = gardenLists(g, bank, plantsOf);
+    expect(lists.update(doc.buildings, true)!.added).toHaveLength(400);
+    // The ground cut and filled round one building's bank (the one at 500 m, 500 m).
+    g.move([m(495), m(495), m(505), m(505)]);
+    const change = lists.update(doc.buildings, true)!;
+    expect(change.added).toHaveLength(1);
+    expect(change.removed).toHaveLength(1);
+    // DO NOT ask every planted building whether the ground moved under it.
+    expect(g.asked).toBe(0);
+  });
+});

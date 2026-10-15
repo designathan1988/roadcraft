@@ -3,7 +3,7 @@ import { type Vec2, dot } from '@core/vec2';
 import type { RoadDoc } from './doc';
 import type { NodeCrossing } from './doc';
 import type { NodeId, SegmentId } from './ids';
-import { PolylineCache, segmentStartsAt } from './geometry';
+import { PolylineCache, orientedPolyline, segmentStartsAt } from './geometry';
 import { Level, type SurfaceLevel, footwayOn, roadProfile, roadType } from './roadTypes';
 import type { Junction } from './junction/build';
 import { TRANSITION_BEND } from './junction/transition';
@@ -18,6 +18,7 @@ import {
   stopLineDistance as stopLine,
 } from './approach';
 import { CellFiling } from './cells';
+import { m } from './units';
 import type { ChangeRect } from './changes';
 import { NetworkBuild } from './networkBuild';
 import type { SegmentRibbon, SegmentTrims } from './ribbons';
@@ -42,6 +43,16 @@ export type { SegmentRibbon, SegmentTrims } from './ribbons';
  * and let `approachAxis` rebuild signal plans from the renderer (defects 5.7
  * and 3.3). Nothing in this class is reachable from a draw call.
  */
+/** A crossing's landing on the footways (`Network.crossingLandingAt`): kept clear of everything. */
+export interface CrossingLanding {
+  readonly x: number;
+  readonly y: number;
+  readonly tx: number;
+  readonly ty: number;
+  readonly across: number;
+  readonly structure: string;
+}
+
 export class Network {
   /** The footway the crossings are fitted to, by cell (`walkable.ts`): kept across rebuilds. */
   private crossingWalkable: WalkableSurface | null = null;
@@ -52,6 +63,19 @@ export class Network {
    * crossing of the map again for whoever asked next.
    */
   private readonly crossingDistances = new Map<SegmentId, Map<NodeId, number>>();
+  /**
+   * Each crossing's landing on the footways (`crossingLandingAt`), by road and
+   * node, kept and dropped with the distances (`forgetCrossings`): the
+   * distance, the road's profile and its centreline are all it reads. Every
+   * item of street furniture asks the landings of the nodes round it
+   * (`landscape.ts` nearCrossingAccess), and each node's were worked out again
+   * - its legs' profiles and centrelines built again - for every item that
+   * asked, some ten times each: 140 of the 175 ms a generated city's furniture
+   * of 2,560 m took to stand (profile of 2026-10-15: `crossingAccessesAt`,
+   * `travelProfile`, `Polyline` tan/cum). DO NOT work a landing out again for
+   * each asker.
+   */
+  private readonly crossingLandings = new Map<SegmentId, Map<NodeId, CrossingLanding | null>>();
   readonly junctions = new Map<NodeId, Map<SurfaceLevel, Junction>>();
   readonly ribbons = new Map<SegmentId, SegmentRibbon>();
   /**
@@ -235,10 +259,10 @@ export class Network {
   /**
    * Takes over another network's derived geometry instead of recomputing it.
    *
-   * `commitDraft` works on a clone, builds a network for it to find crossings
-   * and splits, and then - on success - replaces the live document with the
-   * clone: the clone's network was built from the very same segments, and
-   * `RoadDoc.replaceWith` has made the two documents equal. Measured on a
+   * `commitDraft` works on a working copy (`RoadDoc.fork`), builds a network for it to find crossings
+   * and splits, and then - on success - takes the copy back into the live
+   * document: the copy's network was built from the very same segments, and
+   * `RoadDoc.takeBack` has made the two documents equal. Measured on a
    * 205-segment map: a rebuild cost about 55 ms, and drawing one road paid
    * for three of them. What the other network changed comes across with it
    * (`changesSince`), so whatever reads this one sees the edit.
@@ -289,12 +313,40 @@ export class Network {
    * `fits`, lies within the road's ribbon). `null`: all of them.
    */
   private forgetCrossings(delta: NetworkDelta | null): void {
-    if (delta === null) { this.crossingDistances.clear(); return; }
-    for (const seg of delta.segments) this.crossingDistances.delete(seg);
+    if (delta === null) { this.crossingDistances.clear(); this.crossingLandings.clear(); return; }
+    for (const seg of delta.segments) { this.crossingDistances.delete(seg); this.crossingLandings.delete(seg); }
     for (const node of delta.nodes) {
-      for (const seg of this.doc.node(node)?.incident ?? []) this.crossingDistances.get(seg)?.delete(node);
+      for (const seg of this.doc.node(node)?.incident ?? []) {
+        this.crossingDistances.get(seg)?.delete(node);
+        this.crossingLandings.get(seg)?.delete(node);
+      }
     }
-    for (const rect of delta.rects) for (const seg of this.segmentCells.idsMeeting(rect)) this.crossingDistances.delete(seg);
+    for (const rect of delta.rects) {
+      for (const seg of this.segmentCells.idsMeeting(rect)) { this.crossingDistances.delete(seg); this.crossingLandings.delete(seg); }
+    }
+  }
+
+  /**
+   * Where the crossing of `seg` at `node` lands on the footways (its centre on
+   * the road's centreline, the road's direction there leaving the node, how
+   * far across it reaches), or null: no crossing there. Kept (`crossingLandings`).
+   */
+  crossingLandingAt(seg: SegmentId, node: NodeId): CrossingLanding | null {
+    const kept = this.crossingLandings.get(seg)?.get(node);
+    if (kept !== undefined) return kept;
+    let landing: CrossingLanding | null = null;
+    const crossing = this.crosswalkDistanceAt(seg, node);
+    if (crossing > 0) {
+      const segment = this.doc.requireSegment(seg);
+      const road = roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking);
+      const frame = orientedPolyline(this.doc, segment, node).sampleAt(crossing);
+      landing = { x: frame.p.x, y: frame.p.y, tx: frame.t.x, ty: frame.t.y,
+        across: road.width / 2 + road.sidewalk + m(0.3), structure: segment.structure };
+    }
+    let byNode = this.crossingLandings.get(seg);
+    if (!byNode) this.crossingLandings.set(seg, byNode = new Map());
+    byNode.set(node, landing);
+    return landing;
   }
 
   /**

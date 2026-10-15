@@ -5,6 +5,9 @@ import { orientedPolyline } from './geometry';
 import { carriesPedestrians } from './pedestrianAccess';
 import { FOOTWAY_RISE, roadProfile } from './roadTypes';
 import { m } from './units';
+import { RAMP_CELL, rampCellKey, rampCells, rampRiseIn, type CurbRamp } from './rampRise';
+
+export type { CurbRamp } from './rampRise';
 
 /**
  * THE DROPPED KERBS: at each end of every zebra the footway ramps down to the
@@ -22,26 +25,6 @@ import { m } from './units';
  * (`walkingRise`): the footway's mesh, its kerb and the people standing on it
  * read the same, so the body meets the paving drawn under its feet.
  */
-export interface CurbRamp {
-  /** The middle of the ramp's foot, on the kerb face (the carriageway's edge). */
-  readonly x: number;
-  readonly y: number;
-  /** Along the street. */
-  readonly tx: number;
-  readonly ty: number;
-  /** Across the street, from the carriageway into the footway. */
-  readonly nx: number;
-  readonly ny: number;
-  /** Half the ramp's width along the street (half the zebra's). */
-  readonly half: number;
-  /** How far into the footway the slope runs, to the footway's full height. */
-  readonly run: number;
-  /** Length of each flared side along the street. */
-  readonly flare: number;
-  /** The street whose zebra it serves. */
-  readonly segment: SegmentId;
-  readonly structure: string;
-}
 
 /** The steepest ramp: 1 in 12. */
 const RAMP_RUN = FOOTWAY_RISE * 12;
@@ -49,16 +32,6 @@ const RAMP_RUN = FOOTWAY_RISE * 12;
 const FLARE_RUN = FOOTWAY_RISE * 10;
 /** The width of the unmarked crossing at a road's end (`walkways.ts`). */
 const UNMARKED_WIDTH = m(2);
-/** How far onto the carriageway a ramp still answers, so a walker's step off it is level. */
-const ROAD_REACH = m(0.6);
-/** Bucket size of the lookup grid. */
-const CELL = m(20);
-/**
- * A grid cell's key as a number: `walkingRise` is asked for every walker drawn
- * every frame, and a string key there was a string per person per frame.
- */
-const cellKey = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);
-
 /**
  * The dropped kerbs of a network, kept node by node across its rebuilds: a
  * node's ramps are worked out again only when the network's change since the
@@ -91,6 +64,14 @@ export function curbRamps(net: Network): readonly CurbRamp[] {
     state.list = list;
   }
   return state.list;
+}
+
+/**
+ * The dropped kerbs of one node, as it stands (`rampState` brought up to the network first): what the
+ * road surfaces read of a node an edit reached (`render/roadSurfaceInputs.ts`), never every ramp of the map.
+ */
+export function rampsOfNode(net: Network, node: NodeId): readonly CurbRamp[] {
+  return rampState(net).byNode.get(node) ?? [];
 }
 
 /** The ramps a node's zebras (and a road's end there) have. */
@@ -129,14 +110,6 @@ function rampsAt(net: Network, nodeId: NodeId): CurbRamp[] {
     if (crossing > 0) pair(segmentId, crossing, CROSSWALK_DEPTH / 2);
   }
   return ramps;
-}
-
-/** Calls `visit` with the key of every cell a ramp reaches. */
-function rampCells(r: CurbRamp, visit: (key: number) => void): void {
-  const reach = r.half + r.flare + r.run;
-  for (let cx = Math.floor((r.x - reach) / CELL); cx <= Math.floor((r.x + reach) / CELL); cx++) {
-    for (let cy = Math.floor((r.y - reach) / CELL); cy <= Math.floor((r.y + reach) / CELL); cy++) visit(cellKey(cx, cy));
-  }
 }
 
 /** A node's ramps worked out again and filed, its old ones taken out of their cells. */
@@ -191,25 +164,19 @@ function rampState(net: Network): RampState {
  * zebra is level.
  */
 export function walkingRise(net: Network, x: number, y: number, onFootway: boolean, structure = 'ground'): number {
+  return rampRiseIn(rampState(net).grid, x, y, onFootway, structure);
+}
+
+/** The ramps filed in the cells `rect` reaches (each once): every ramp `walkingRise` reads at a point of it. */
+export function rampsMeeting(net: Network, rect: readonly [number, number, number, number]): Set<CurbRamp> {
   const { grid } = rampState(net);
-  const list = grid.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL)));
-  let share = onFootway ? 1 : 0;
-  if (!list) return share;
-  let inside = false;
-  let low = 1;
-  for (const r of list) {
-    if (r.structure !== structure) continue;
-    const dx = x - r.x, dy = y - r.y;
-    const u = Math.abs(dx * r.tx + dy * r.ty);
-    const v = dx * r.nx + dy * r.ny;
-    if (u > r.half + r.flare || v > r.run || v < -ROAD_REACH) continue;
-    inside = true;
-    let f = v <= 0 ? 0 : v / r.run;
-    if (u > r.half) f = Math.max(f, (u - r.half) / r.flare);
-    low = Math.min(low, Math.min(1, f));
+  const out = new Set<CurbRamp>();
+  for (let cx = Math.floor(rect[0] / RAMP_CELL); cx <= Math.floor(rect[2] / RAMP_CELL); cx++) {
+    for (let cy = Math.floor(rect[1] / RAMP_CELL); cy <= Math.floor(rect[3] / RAMP_CELL); cy++) {
+      for (const r of grid.get(rampCellKey(cx, cy)) ?? []) out.add(r);
+    }
   }
-  if (inside) share = low;
-  return share;
+  return out;
 }
 
 /** A ramp's outline, its flares included, for cutting the footway and the kerb (rings of [x, y]). */

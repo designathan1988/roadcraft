@@ -1,13 +1,15 @@
+import type { ChangeLog } from '@core/changeLog';
 import type { Vec2 } from '@core/vec2';
 import type { BuildingId } from '@world/buildings/types';
+import type { RoadDoc } from '@world/doc';
 import type { SegmentId } from '@world/ids';
+import type { GraphChange } from '@world/lanelets';
 import type { Network } from '@world/network';
 import { PARKING_PITCH } from '@world/parking';
 import { entrancesOf, parkingLayout } from '@world/parkingLayout';
 import { m } from '@world/units';
-import type { SimWorld } from '../world';
 import type { BuildingDelta } from './buildingOrder';
-import type { Bay, BayLane } from './parking';
+import type { Bay, BayLane } from './bay';
 
 /**
  * THE BAYS ALONG THE KERBS, KEPT BY STREET (`parking.ts` `collectBays` hands
@@ -15,6 +17,18 @@ import type { Bay, BayLane } from './parking';
  * and the entrances of the lots in front of it; a building change lays out
  * again only the streets an entrance of it faces.
  */
+
+/**
+ * What the kerbs read of the world (`SimWorld`): the document's buildings, the
+ * roads and the log of the lane graph's changes. DO NOT import `SimWorld`:
+ * the world reaches this file, and the type import closed an import cycle
+ * (`tests/arch/imports.spec.ts`).
+ */
+export interface KerbWorld {
+  readonly doc: RoadDoc;
+  readonly net: Network;
+  readonly topologyLog: ChangeLog<GraphChange>;
+}
 
 /** The lane beside a point of a street, on its kerb side (`parking.ts` `laneBeside`). */
 type LaneAt = (x: number, y: number, segment: SegmentId) => BayLane | null;
@@ -27,8 +41,6 @@ const KERB_MIN_AHEAD = m(4);
 const NO_LOT = -1 as BuildingId;
 
 type Entrance = [Vec2, Vec2];
-/** The narrowest gate a car is driven through (a person's is 1.2 m); `parkingLayout.ts` `CAR_GATE_WIDTH`. */
-export const CAR_GATE = m(2.2);
 /** Past this beyond a street's half width, a lot's entrance keeps no bay off its kerb (`parkingLayout.ts` `frontagesOn`). */
 const FRONTAGE_REACH = m(8);
 /** Cell of the kerbs' and entrances' grids, world units. */
@@ -109,7 +121,7 @@ function fileEntrances(book: KerbBook, id: BuildingId, list: readonly Entrance[]
  * bayChangesSince). DO NOT lay out every street of the town when the roads
  * move: every road drawn laid out the town's kerbs again.
  */
-export function followKerbs(w: SimWorld, book: KerbBook, delta: BuildingDelta | null, rank: (id: BuildingId) => number, laneAt: LaneAt): Set<SegmentId> {
+export function followKerbs(w: KerbWorld, book: KerbBook, delta: BuildingDelta | null, rank: (id: BuildingId) => number, laneAt: LaneAt): Set<SegmentId> {
   const dirty = new Set<SegmentId>();
   // The roads: what the network and the lane graph changed since the streets were read (null: read them all).
   const net = book.net === w.net && book.netSeen !== null ? w.net.changesSince(book.netSeen) : null;
@@ -191,7 +203,7 @@ function sameBays(a: readonly Bay[], b: readonly Bay[]): boolean {
 }
 
 /** @rebuild Every building's entrances, read whole: the first look, or when the diary cannot say what changed. */
-function readEntrances(w: SimWorld, book: KerbBook): void {
+function readEntrances(w: KerbWorld, book: KerbBook): void {
   book.entrances.clear();
   book.entranceCells.clear();
   for (const b of w.doc.buildings.all()) {
@@ -203,7 +215,7 @@ function readEntrances(w: SimWorld, book: KerbBook): void {
 }
 
 /** @rebuild The streets that park, read whole: the first look, a map opened, or roads further behind than the logs remember. */
-function readStreets(w: SimWorld, book: KerbBook): void {
+function readStreets(w: KerbWorld, book: KerbBook): void {
   book.reach.clear();
   book.streets.clear();
   book.bays.clear();
@@ -211,7 +223,7 @@ function readStreets(w: SimWorld, book: KerbBook): void {
 }
 
 /** A street that parks filed: its reach (its line's box, grown) and the cells it covers. */
-function fileStreet(w: SimWorld, book: KerbBook, id: SegmentId): void {
+function fileStreet(w: KerbWorld, book: KerbBook, id: SegmentId): void {
   const ribbon = w.net.ribbons.get(id);
   if (!ribbon) return;
   const rt = ribbon.road;
@@ -259,7 +271,7 @@ function entrancesFacing(book: KerbBook, r: { x0: number; y0: number; x1: number
 }
 
 /** One street's kerb bays: laid out alone (`parkingLayout` over a network of this one street), against the entrances in front of it. */
-function kerbBaysOf(w: SimWorld, book: KerbBook, id: SegmentId, rank: (id: BuildingId) => number, laneAt: LaneAt): Bay[] {
+function kerbBaysOf(w: KerbWorld, book: KerbBook, id: SegmentId, rank: (id: BuildingId) => number, laneAt: LaneAt): Bay[] {
   const ribbon = w.net.ribbons.get(id)!;
   // The network as it is, with only this street in `ribbons`: each street's
   // bays are laid out from its own line, its own ends and the entrances near

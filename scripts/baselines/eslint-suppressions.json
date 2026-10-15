@@ -150,7 +150,7 @@
       "count": 1
     },
     "roadcraft/no-global-revision": {
-      "count": 17
+      "count": 15
     },
     "roadcraft/no-logic-timer": {
       "count": 3
@@ -194,9 +194,6 @@
   },
   "src/render/agents.ts": {
     "max-lines": {
-      "count": 1
-    },
-    "roadcraft/no-global-revision": {
       "count": 1
     },
     "roadcraft/no-module-state": {
@@ -305,11 +302,6 @@
   },
   "src/render/lowPolyTrees.ts": {
     "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
-  "src/render/markings.ts": {
-    "roadcraft/no-whole-map-walk": {
       "count": 1
     }
   },
@@ -438,9 +430,6 @@
     "roadcraft/no-global-revision": {
       "count": 42
     },
-    "roadcraft/no-logic-timer": {
-      "count": 1
-    },
     "roadcraft/no-silent-catch": {
       "count": 1
     }
@@ -456,14 +445,6 @@
     },
     "roadcraft/no-silent-catch": {
       "count": 4
-    }
-  },
-  "src/render/roadSurfaces.ts": {
-    "max-lines": {
-      "count": 1
-    },
-    "roadcraft/no-whole-map-walk": {
-      "count": 2
     }
   },
   "src/render/structures.ts": {
@@ -563,7 +544,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 3
+      "count": 2
     }
   },
   "src/sim/agents/reedsShepp.ts": {
@@ -658,7 +639,7 @@
       "count": 1
     },
     "roadcraft/no-global-revision": {
-      "count": 8
+      "count": 4
     }
   },
   "src/ui/buildStamp.ts": {
@@ -914,7 +895,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 4
+      "count": 3
     },
     "roadcraft/no-whole-map-walk": {
       "count": 1
@@ -933,7 +914,7 @@
       "count": 1
     },
     "roadcraft/no-global-revision": {
-      "count": 3
+      "count": 2
     }
   },
   "src/world/lotStore.ts": {

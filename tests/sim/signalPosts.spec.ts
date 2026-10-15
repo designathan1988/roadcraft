@@ -94,7 +94,7 @@ describe('the signal posts the walkers keep clear of', () => {
     expect(sim.signalChangesSince(before).nodes).not.toBeNull();
     sim.signalPosts.follow(sim);
     expect(indexed(sim, junctions)).toEqual(signalPosts(sim.net, sim.graph).map(key).sort());
-  }, 60_000);
+  });
 
   it('are never stood inside by anybody walking or waiting at the corner', () => {
     const doc = new RoadDoc();
@@ -105,7 +105,9 @@ describe('the signal posts the walkers keep clear of', () => {
     const posts = signalPosts(sim.net, sim.graph);
     expect(posts.length).toBe(4);
     let near = 0, inside = 0, worst = Infinity;
-    sim.clock.run(Math.round(120 / DT), () => {
+    // A minute of the corner: some 1,500 walker-ticks within 1.5 m of a post
+    // (2026-10-15); two minutes took 8 s, past a test's 10 s with the suite running.
+    sim.clock.run(Math.round(60 / DT), () => {
       step(sim, { traffic: true, pedestrians: true });
       for (const v of sim.pedViews) {
         if (v.ground === 'open') continue;
@@ -121,5 +123,5 @@ describe('the signal posts the walkers keep clear of', () => {
     console.log(`signalPosts: ${near} walker-ticks within 1.5 m of a post, ${inside} inside one, nearest ${(worst / m(1)).toFixed(2)} m`);
     expect(near).toBeGreaterThan(50);
     expect(inside).toBe(0);
-  }, 120_000);
+  });
 });

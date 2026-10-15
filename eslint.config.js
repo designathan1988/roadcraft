@@ -152,6 +152,29 @@ export default tseslint.config(
     },
   },
   {
+    // THE HEAVY WORK OFF THE FRAME (OTIMIZACAO.md 60-65, 2026-10-15): what kept a
+    // generated city's work on the page or held its layers, refused where it is
+    // written. tests/arch/asyncPaths.spec.ts checks the same in the code's shape.
+    files: ['src/**/*.ts'],
+    ignores: ['src/**/*.d.ts'],
+    rules: {
+      'no-restricted-syntax': ['error',
+        {
+          selector: "Identifier[name=/^(holdBuildings|buildingsHeld)$/]",
+          message: 'Do not hold the buildings layer until a city is grown: every site graded and every building put in the layer in one frame (5.6 s). Grade and draw each building in the frame it grows.',
+        },
+        {
+          selector: "FunctionDeclaration[id.name='frame'] CallExpression[callee.name=/^(rebuildSimulationTopology)$/], FunctionDeclaration[id.name='frame'] CallExpression[callee.property.name=/^(rebuildTopology|rebuildVehicleTopology|rebuildWalkTopology)$/]",
+          message: 'Do not rebuild the traffic topology in the frame: TopologyCatchUp brings it up with its turns and pairs in the workers (a 5.8 s frame).',
+        },
+        {
+          selector: "FunctionDeclaration[id.name='warmLoose'] CallExpression[callee.property.name='render'][arguments.0.name='scene']",
+          message: "Do not draw the game's scene to send one mesh up: draw it alone (`LOOSE.scene`); three walks every object of a scene it draws.",
+        },
+      ],
+    },
+  },
+  {
     // Where a revision or the diary itself is the thing: the engine, the diary
     // and its cursors, the document's own bookkeeping, the save and the load.
     files: ['src/core/engine.ts', 'src/core/changeLog.ts', 'src/world/changes.ts', 'src/world/derived.ts',

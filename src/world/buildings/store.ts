@@ -2,6 +2,7 @@ import { IdAllocator } from '../ids';
 import { ChangeJournal, type ChangeRect } from '../changes';
 import { JournalCursor } from '../derived';
 import { samePlain } from '@core/plain';
+import { ForkMap } from '@core/forkMap';
 import { storedBounds } from './geometry';
 import { BuildingGrid } from './grid';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
@@ -57,8 +58,13 @@ function rectOf(b: Building): ChangeRect {
  * that keeps editing what it handed over copies it itself.
  */
 export class BuildingStore {
-  /** @mapWide Every building of the map. */
-  private readonly items = new Map<BuildingId, Building>();
+  /** @mapWide Every building of the map. A working copy's lies over the original's (`forkFrom`). */
+  private items: Map<BuildingId, Building> = new Map();
+  /**
+   * The store a working copy lies over (`forkFrom`) while it has written
+   * nothing: its questions by place are that store's. Null: the store's own.
+   */
+  private below: BuildingStore | null = null;
   private ids = new IdAllocator(1);
   /**
    * The records made plain JSON data when they were adopted (`settleBuilding`,
@@ -143,8 +149,21 @@ export class BuildingStore {
    * asks about one place asks this, never `all()`.
    */
   near(minX: number, minY: number, maxX: number, maxY: number): Building[] {
+    if (this.below) return this.below.near(minX, minY, maxX, maxY);
     this.grid ??= new BuildingGrid(this.items.values());
     return this.grid.near(minX, minY, maxX, maxY).map((id) => this.items.get(id)!);
+  }
+
+  /**
+   * The buildings `meets` keeps for one of `rects`, asked of those within `pad` of it, each once, in the
+   * store's order (`BuildingGrid.nearAny`): what `near` of each rectangle grown by `pad`, tested and joined,
+   * gives - each cell read once.
+   */
+  nearAny(rects: readonly (readonly [number, number, number, number])[], pad: number,
+    meets: (b: Building, rect: readonly [number, number, number, number]) => boolean): Building[] {
+    if (this.below) return this.below.nearAny(rects, pad, meets);
+    this.grid ??= new BuildingGrid(this.items.values());
+    return this.grid.nearAny(rects, pad, (id, rect) => meets(this.items.get(id)!, rect)).map((id) => this.items.get(id)!);
   }
 
   /** The id the next `add` will hand out. */
@@ -161,6 +180,7 @@ export class BuildingStore {
   add(value: Omit<Building, 'id'>): Building {
     const id = asBuildingId(this.ids.take());
     const building = settleBuilding({ ...value, id } as Building, this.settled);
+    this.leaveBelow();
     this.items.set(id, building);
     this.grid?.insert(building);
     this.changed([building], 'added');
@@ -175,6 +195,7 @@ export class BuildingStore {
     const was = this.items.get(building.id);
     if (!was) return;
     const now = settleBuilding(building, this.settled, was);
+    this.leaveBelow();
     this.items.set(building.id, now);
     this.grid?.update(now);
     // Where it stood and where it stands: a moved building changes both.
@@ -194,6 +215,7 @@ export class BuildingStore {
     const was = this.items.get(id);
     if (!was || (was.decay ?? 0) === decay) return;
     const now = settleBuilding({ ...was, decay }, this.settled, was);
+    this.leaveBelow();
     this.items.set(id, now);
     this.grid?.update(now);
     this.journal.record('buildingWear', [rectOf(now)], { ids: [id as number] });
@@ -209,12 +231,14 @@ export class BuildingStore {
     const was = this.items.get(id);
     if (value === undefined) {
       if (!was) return;
+      this.leaveBelow();
       this.items.delete(id);
       this.grid?.delete(id);
       this.changed([was], 'restored');
       return;
     }
     const now = settleBuilding(value, this.settled, was);
+    this.leaveBelow();
     this.items.set(id, now);
     // A record put back where one stood keeps its place in the order; a new one goes last, as in `items`.
     if (was) this.grid?.update(now); else this.grid?.insert(now);
@@ -231,6 +255,7 @@ export class BuildingStore {
   remove(id: BuildingId): boolean {
     const was = this.items.get(id);
     if (!was) return false;
+    this.leaveBelow();
     this.items.delete(id);
     this.grid?.delete(id);
     this.changed([was], 'removed');
@@ -239,6 +264,7 @@ export class BuildingStore {
 
   clear(): void {
     if (this.items.size === 0) return;
+    this.leaveBelow();
     this.items.clear();
     this.grid = null;
     this.changed(null, 'cleared');
@@ -263,6 +289,7 @@ export class BuildingStore {
 
   /** Loads stored buildings, repairing or dropping what cannot be read. */
   load(data: readonly unknown[] | undefined): void {
+    this.leaveBelow();
     this.items.clear();
     this.grid = null;
     for (const raw of data ?? []) {
@@ -280,6 +307,7 @@ export class BuildingStore {
    * (`ChangeJournal.continueFrom`), so the copy is at the same revision.
    */
   shareFrom(source: BuildingStore): void {
+    this.leaveBelow();
     this.items.clear();
     this.grid = null;
     for (const [id, b] of source.items) this.items.set(id, b);
@@ -287,6 +315,41 @@ export class BuildingStore {
     this.settled = source.settled;
     this.ids = new IdAllocator(Math.max(this.ids.peek, source.ids.peek));
     this.changed(null, 'shared');
+  }
+
+  /**
+   * A working copy over another store (`RoadDoc.fork`): its records read
+   * through, each written here only (`ForkMap`), its questions by place the
+   * other's until this one writes. Writes nothing in the diary: the copy's
+   * diary goes on from the original's, at the same revision.
+   */
+  forkFrom(source: BuildingStore): void {
+    this.items = new ForkMap(source.items);
+    this.below = source;
+    this.grid = null;
+    this.settled = source.settled;
+    this.ids = new IdAllocator(source.ids.peek);
+  }
+
+  /**
+   * Takes back a working copy over this store (`forkFrom`): the records it
+   * deleted, replaced (each keeping its place) and added (last, in order),
+   * the grid kept by the same writers. The diary entries come with the
+   * copy's diary (`ChangeJournal.take`): none written here.
+   */
+  takeFork(copy: BuildingStore): void {
+    const { gone, replaced, added } = (copy.items as ForkMap<BuildingId, Building>).changes();
+    for (const id of gone) { this.items.delete(id); this.grid?.delete(id); }
+    for (const [id, b] of replaced) { this.items.set(id, b); this.grid?.update(b); }
+    for (const [id, b] of added) { this.items.set(id, b); this.grid?.insert(b); }
+    this.ids = new IdAllocator(copy.ids.peek);
+  }
+
+  /** A working copy about to write: its questions by place its own from now on (the grid made when first asked). */
+  private leaveBelow(): void {
+    if (!this.below) return;
+    this.below = null;
+    this.grid = null;
   }
 
   /** Keeps id allocation monotonic across a clone (see `RoadDoc.clone`). */
@@ -321,6 +384,7 @@ export class BuildingStore {
       const was = this.items.get(id);
       const now = source.items.get(id);
       if (was === now) return;
+      this.leaveBelow();
       if (!now) {
         this.items.delete(id);
         this.grid?.delete(id);

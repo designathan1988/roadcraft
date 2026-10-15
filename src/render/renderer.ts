@@ -43,8 +43,9 @@ import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network } from '@world/network';
 import { GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, type RoadElevation } from '@world/elevation';
-import { FOOTWAY_RISE, ROAD_TYPES, casingHalf, sidewalkHalf } from '@world/roadTypes';
-import { footwayRiseAt } from '@world/roads/footwayRise';
+import { FOOTWAY_RISE, sidewalkHalf } from '@world/roadTypes';
+import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
+import { type PavingData, type PavingSource, pavedHeightFrom } from '@world/paving';
 import type { RoadStructure } from '@world/structures';
 import type { SimWorld } from '@sim/world';
 import type { Viewport } from '@view/viewport';
@@ -53,11 +54,17 @@ import { createAgentMeshes, type AgentMeshes } from './agents';
 import { createEnvironment, slopeScaledShadowOffset } from './environment';
 import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
+import { renderTargetsBytes } from './targetBytes';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, storedKey, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
+import { SurfaceInputs } from './roadSurfaceInputs';
 import { forgetDerivedKeys, forgetOtherDerived, readDerivedAll, writeDerivedMany } from './derivedCache';
 import { disposeMesh } from './mesh/surfaceMesh';
+import { RoadTilePool } from './roadTilePool';
+import { GroundShapePool } from './groundShapePool';
+import { type BlockDigestAsk, type GroundShapeAsk, type PlateShapeAnswer, blockDigest, cornerBoxes, shapeGroundAsk } from './groundShape';
+import { shapeBoth } from './terrainShaping';
 import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
 import { createStreetFurniture } from './streetFurnitureLayer';
 import { createGardens, type GardenPlant, type Gardens } from './gardens';
@@ -65,7 +72,7 @@ import { gardenLists } from './gardenLists';
 import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { followPieces } from '@world/buildings/elements';
 import { RoadDoc } from '@world/doc';
-import { compileAhead, compileCopy, drainCompiles, drainUploads, drainWarm, shadowStandIn } from './uploads';
+import { compileAhead, compileCopy, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather } from './wind';
 import { holdStill } from './stillTree';
@@ -80,6 +87,8 @@ import { applyWear, createWearField } from './wear';
 import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
 import { createSignLayer } from './signLayer';
 import { type PlantCells, createCoverCells, createTreeCells } from './plantCells';
+import { paintCatalogue } from './markings';
+import { isNear, updateRoadLevels } from './mesh/roadResidency';
 import { CandidateKeep } from './candidateKeep';
 import { JournalCursor } from '@world/derived';
 import { Engine } from '@core/engine';
@@ -95,7 +104,8 @@ import { createFlatAtlas } from './flatAtlas';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
-import { FLOOR_READ_REACH, floorHeight } from '@world/buildings/foundation';
+import { buildingFloors } from '@world/buildings/floors';
+import { FLOOR_READ_REACH } from '@world/buildings/foundation';
 import { RoomLamps } from './roomLamps';
 import { TUNED_UNIT, m, perM } from '@world/units';
 /** Room lights kept in the scene for the floors cut open (`roomLamps.ts`). */
@@ -282,6 +292,8 @@ export interface SceneHandle {
   busy(): boolean;
   /** Clouds drifting over the map: worth a frame now and then even with nothing else moving. */
   drifting(): boolean;
+  /** The bytes of the render targets and shadow maps alive (an estimate, `targetBytes.ts`): not in the scene, so not in `countMemory`. */
+  targetBytes(): number;
   /** Forgets a building's ruin (it was removed). */
   forgetRuin(id: number): void;
   /**
@@ -297,12 +309,6 @@ export interface SceneHandle {
   setAtmosphere(atmosphere: Atmosphere): void;
   /** Perspective camera on, or the orthographic (isometric) view. */
   setPerspective(on: boolean): void;
-  /**
-   * While a whole city is being built (`editor/cityGenerator.ts`), the
-   * buildings and the ground graded round them are not rebuilt every frame:
-   * once, when it is let go.
-   */
-  holdBuildings(on: boolean): void;
   /** A shot: a tracer from the muzzle to where it struck, and the muzzle's flash (world x, y, height). */
   shot(from: readonly [number, number, number], to: readonly [number, number, number]): void;
   /**
@@ -749,19 +755,40 @@ export function createSceneRenderer(
   let storedRead = tilesPrefix === null;
   /** What the store holds now, by `storedKey`. */
   const storedKeys = new Set<string>();
-  /** Tiles built since the last build was kept, to be written. */
-  const toKeep = new Map<string, TileBundle>();
+  /** Where the road tiles are kept for a later session, off the page (`derivedWriter.worker.ts`); none in tests. */
+  const tileWriter = tilesPrefix && typeof Worker !== 'undefined'
+    ? new Worker(new URL('./derivedWriter.worker.ts', import.meta.url), { type: 'module' }) : null;
+  /** Where the camera looks and how far the roads are at full detail round it (`mesh/roadResidency.ts`). */
+  const roadFocus = { x: initialCentre.x, y: initialCentre.y, reach: 700, frames: 0 };
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
     dependsOn: (minX, minY, maxX, maxY) => new Digest()
       .add(elevation?.digest(minX, minY, maxX, maxY, SURFACE_READ_REACH) ?? 0)
       .add(terrain.digest(minX, minY, maxX, maxY))
       .value(),
-    paint: new Map(),
+    paint: paintCatalogue(),
+    // A block of road is made at full detail only near the camera (`mesh/roadLod.ts`).
+    near: (x, y) => isNear(x, y, roadFocus.x, roadFocus.y, roadFocus.reach),
     chunks: new Map(),
+    inputs: new SurfaceInputs(),
     retired: [],
     stored: new Map(),
-    keep: (key, bundle) => { if (tilesPrefix) toKeep.set(key, bundle); },
+    // Written as each tile is built (the store copies it by the structured clone, MDN IndexedDB), so
+    // its arrays go with its build. DO NOT hold the built tiles for idle writes: at the opening that
+    // was every tile of the city, held on the CPU after its blocks were on the GPU.
+    keep: (key, bundle) => {
+      if (!tilesPrefix || storedKeys.has(key)) return;
+      storedKeys.add(key);
+      // The tile's arrays handed to the writer, not copied: nothing reads them once its blocks are
+      // merged (`SurfaceReuse.keep`). Without workers, written here as before.
+      if (tileWriter) {
+        const buffers: ArrayBuffer[] = [];
+        for (const tile of bundle.values()) {
+          for (const a of [tile.positions, tile.normals, tile.uvs, tile.colors, tile.sections, tile.indices]) buffers.push(a.buffer as ArrayBuffer);
+        }
+        tileWriter.postMessage({ prefix: tilesPrefix, entries: [[key, bundle]] }, buffers);
+      } else writeDerivedMany(tilesPrefix, new Map([[key, bundle]]));
+    },
   };
   if (tilesPrefix && ROAD_TILES_HASH) {
     forgetOtherDerived('roadtiles', ROAD_TILES_HASH);
@@ -774,9 +801,8 @@ export function createSceneRenderer(
   }
   /**
    * After a build: the store made to hold the network just built - its new
-   * tiles written, the tiles no network uses any more forgotten - in idle
-   * time, a few tiles a transaction (MDN, IndexedDB: values are copied by the
-   * structured clone, on this thread).
+   * tiles written as they were built (`keep`), the tiles no network uses any
+   * more (a build overtaken by an edit's included) forgotten.
    */
   const keepTiles = (): void => {
     surfaceReuse.stored!.clear();
@@ -786,19 +812,6 @@ export function createSceneRenderer(
     const gone = [...storedKeys].filter((key) => !current.has(key));
     for (const key of gone) storedKeys.delete(key);
     forgetDerivedKeys(tilesPrefix, gone);
-    const fresh = [...toKeep].filter(([key]) => current.has(key) && !storedKeys.has(key));
-    toKeep.clear();
-    for (const [key] of fresh) storedKeys.add(key);
-    const write = (): void => {
-      const batch = new Map(fresh.splice(0, 8));
-      if (batch.size) writeDerivedMany(tilesPrefix, batch);
-      if (fresh.length) idle(write);
-    };
-    if (fresh.length) idle(write);
-  };
-  const idle = (fn: () => void): void => {
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 4000 });
-    else setTimeout(fn, 50);
   };
 
   /**
@@ -809,8 +822,20 @@ export function createSceneRenderer(
   let worldJob: Generator<'wait' | void, void, void> | null = null;
   /** The roads' heights an edit solved ahead (`offerElevation`). */
   let offeredElevation: { elevation: RoadElevation; revision: number; terrain: number } | null = null;
+  /** The roads' surface tiles shaped on the other cores (`roadTilePool.ts`). */
+  const roadTiles = new RoadTilePool();
   /** The job was started in this frame (`pumpWorld` waits for the next). */
   let worldJobFresh = false;
+  /**
+   * The job has not shaped its ground yet (`worldSteps`, up to its blocks or
+   * the whole map): the sites grown meanwhile are graded by its own steps
+   * (`shapeBlocksSteps`). Once its ground is shaped the frames grade them
+   * again (`draw`), while the rest of the job (the road tiles, seconds of a
+   * generated city) goes on. DO NOT hold the grading for the whole job: the
+   * buildings a city grew meanwhile, thousands, were graded in the frame the
+   * job ended (10 s, 2026-10-15).
+   */
+  let worldJobGround = false;
   /** The opening's town (or a map opened) is held until it is whole (`revealGate.ts`). */
   const reveal = new RevealGate();
   let openingSince: number | null = null;
@@ -879,22 +904,25 @@ export function createSceneRenderer(
     return segment === undefined ? elevation.at(x, y) : elevation.onSegment(segment, x, y);
   };
 
-  /** See `SceneHandle.pavedHeightAt`. */
-  const pavedHeightAt = (x: number, y: number): number => {
+  /** The footway's rise over the carriageway at a point (`footwayRiseAt`), kerbed before any network is built. */
+  const footwayRiseHere = (x: number, y: number): number => (worldNet ? footwayRiseAt(worldNet, x, y) : FOOTWAY_RISE);
+  /**
+   * See `SceneHandle.pavedHeightAt` (`world/paving.ts`). With `pack`: what a building cell's worker
+   * reads it from near its cell (`cellPool.ts`), so the workers ask the page for none of it.
+   */
+  const pavedHeightAt: PavingSource = Object.assign((x: number, y: number): number => {
     if (!elevation || !elevation.has(GROUND_ONLY)) return NaN;
-    const road = elevation.roadAt(x, y, GROUND_ONLY);
-    const rt = road.type >= 0 ? ROAD_TYPES[road.type] : undefined;
-    if (!rt) return NaN;
-    // `half` is this road's own casing (its lanes may be set individually):
-    // the footway ends a casing band inside it and starts a footway further in.
-    // Each side its own footway (docs/VIAS.md V1): `half` reaches the wider one.
-    const walk = (road.across >= 0 ? road.sidewalkLeft : road.sidewalkRight) ?? road.sidewalk ?? rt.sidewalk;
-    const footway = road.half - (casingHalf(rt) - sidewalkHalf(rt)) - ((road.sidewalk ?? rt.sidewalk) - walk);
-    const across = Math.abs(road.across);
-    if (across > footway) return NaN;
-    const deck = elevation.at(x, y, GROUND_ONLY);
-    return across > footway - walk ? deck + (worldNet ? footwayRiseAt(worldNet, x, y) : FOOTWAY_RISE) : deck;
-  };
+    return pavedHeightFrom(elevation, GROUND_ONLY, footwayRiseHere, x, y);
+  }, {
+    pack: (rect: readonly [number, number, number, number]): { data: PavingData; transfer: ArrayBuffer[] } | null => {
+      const ground = elevation !== null && elevation.has(GROUND_ONLY);
+      if (ground && !elevation!.fieldFor) return null;
+      const field = ground ? elevation!.fieldFor!([rect], []) : null;
+      const flush = worldNet ? packFlush(worldNet, [rect]) : null;
+      return { data: { rect, field: field?.data ?? null, flush: flush?.data ?? null },
+        transfer: [...field?.transfer ?? [], ...flush?.transfer ?? []] };
+    },
+  });
 
   const agents: AgentMeshes = createAgentMeshes(deckHeight, onAssetsReady,
     // A walker off the streets stands on what is drawn there: a building's
@@ -1168,6 +1196,17 @@ export function createSceneRenderer(
   const GROUND_KINDS: readonly DerivedChangeKind[] = ['elevation', 'ground'];
   /** The serial of the latest change of the ground (not of the diary: a zone drawn is no change of the ground), and how far the diary was read for it. */
   let groundVersion = 0, groundScanned = 0;
+  /** Where the ground changed after `since`, from the diary; null where it cannot say (the whole map, or forgotten). */
+  const groundRectsSince = (since: number): ChangeRect[] | null => {
+    const entries = groundDiary?.since(since, GROUND_KINDS);
+    if (!entries) return null;
+    const rects: ChangeRect[] = [];
+    for (const entry of entries) {
+      if (entry.rects === null) return null;
+      rects.push(...entry.rects);
+    }
+    return rects;
+  };
   const groundChanges: GroundRecord = {
     get version() {
       const diary = groundDiary;
@@ -1179,17 +1218,40 @@ export function createSceneRenderer(
       return groundVersion;
     },
     touches: (since, area) => groundDiary?.touches(since, area, GROUND_KINDS) ?? false,
+    // DO NOT leave it out: without it the gardens asked every planted
+    // building of the city whether the ground moved under it, at every
+    // change of the ground (`gardenLists.ts` `groundMoved`).
+    rectsSince: (since) => groundRectsSince(since),
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
   const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt));
   /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
   const groundSince: GroundSince = {
     get version() { return groundChanges.version; },
-    rectsSince(since) {
+    rectsSince: (since) => groundRectsSince(since),
+  };
+  /**
+   * The diary's serials of the ground graded round the sites that changed (`shapeGround` with `sites`):
+   * a building's floor reads the land and the paving (`floorHeight` on `builtGroundAt`, `pavedHeightAt`),
+   * never the ground graded to the buildings, and the buildings that changed are named by their own
+   * entries. Kept until the floors' reader has passed them (`floorGroundSince`).
+   */
+  const sitesGradedSerials = new Set<number>();
+  /**
+   * Where the ground a building's floor reads changed since a serial (`cameraSolids.ts` `GroundSince`):
+   * the diary's ground less the sites graded. DO NOT re-floor the buildings round a graded site: every
+   * site graded in a growing city floored again every building its bank reached (40 m and more round
+   * it), the whole town in the frame its thousands of sites were graded (2026-10-15).
+   */
+  const floorGroundSince: GroundSince = {
+    get version() { return groundChanges.version; },
+    rectsSince: (since) => {
+      for (const serial of sitesGradedSerials) if (serial <= since) sitesGradedSerials.delete(serial);
       const entries = groundDiary?.since(since, GROUND_KINDS);
       if (!entries) return null;
       const rects: ChangeRect[] = [];
       for (const entry of entries) {
+        if (sitesGradedSerials.has(entry.serial)) continue;
         if (entry.rects === null) return null;
         rects.push(...entry.rects);
       }
@@ -1234,7 +1296,13 @@ export function createSceneRenderer(
     const grow = (r: ChangeRect, d: number): ChangeRect => [r[0] - d, r[1] - d, r[2] + d, r[3] + d];
     return entries.flatMap((e) => e.kind === 'buildings' ? e.rects! : e.rects!.map((r) => grow(r, CANYON_GROUND_REACH)));
   };
-  const cameraSolidsKept = cameraSolidsKeeper((b) => floorHeight(b, builtGroundAt, pavedHeightAt), floorBox, FLOOR_READ_REACH);
+  /**
+   * Each building's floor, once per record while what it reads stands (`floors.ts`): the sites' platforms
+   * and the camera's solids read the same numbers. Brought up to the diary before each reads (`followFloors`).
+   */
+  const floors = buildingFloors(builtGroundAt, pavedHeightAt, floorBox, FLOOR_READ_REACH);
+  const followFloors = (net: Network): void => floors.follow(net.doc.buildings, floorGroundSince);
+  const cameraSolidsKept = cameraSolidsKeeper((b) => floors.floorOf(b), floorBox, FLOOR_READ_REACH);
   /**
    * The roads watched for vanishing from the picture (seen once, 2026-10-09:
    * a few seconds after a bomb the streets showed as grass, then came back;
@@ -1283,7 +1351,7 @@ export function createSceneRenderer(
    * ground it has claimed; a platform takes the rest.
    */
   /** Each building's platform, the town's, and the sites as last graded (`world/buildings/siteGrading.ts`). */
-  const sitesGraded = siteGrading(builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, (b) => bankBox(b));
+  const sitesGraded = siteGrading(builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, (b) => bankBox(b), floors);
   /**
    * The box a building's bank reaches, once per record (records are never
    * changed in place): asked for every building in town by the layer's
@@ -1312,14 +1380,11 @@ export function createSceneRenderer(
   const buildingsOnGroundSince = (doc: RoadDoc, serial: number): Building[] | null => {
     const rects = groundSince.rectsSince(serial);
     if (!rects) return null;
-    const out = new Map<BuildingId, Building>();
-    for (const r of rects) {
-      for (const b of doc.buildings.near(r[0] - BANK_REACH, r[1] - BANK_REACH, r[2] + BANK_REACH, r[3] + BANK_REACH)) {
-        const box = bankBox(b);
-        if (box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1]) out.set(b.id, b);
-      }
-    }
-    return [...out.values()];
+    // Every change in one look (`nearAny`): a change at a time read the cells they share again for each.
+    return doc.buildings.nearAny(rects, BANK_REACH, (b, r) => {
+      const box = bankBox(b);
+      return box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1];
+    });
   };
   /** The ground serial the buildings were last told of (`buildingGround`). */
   let buildingGroundSeen = -1;
@@ -1344,43 +1409,107 @@ export function createSceneRenderer(
    * Heights to a thousandth of a unit, as the solve's own digest had them.
    */
   const groundRead = new WeakMap<RoadElevation, Map<number, number>>();
-  const blockRead = (solve: RoadElevation, x0: number, y0: number): number => {
+  /** The blocks of a solve being digested off the page, each with the job that will file it (`compareSolves`). */
+  const groundReading = new WeakMap<RoadElevation, Map<number, Promise<void>>>();
+  const blockKey = (x0: number, y0: number): number => x0 * 65_536 + y0;
+  const readOf = (solve: RoadElevation): Map<number, number> => {
     let known = groundRead.get(solve);
     if (!known) groundRead.set(solve, known = new Map());
-    const key = x0 * 65_536 + y0;
+    return known;
+  };
+  /** A block of a solve digested on the page (`groundShape.ts` `blockDigest`, the worker's own function). */
+  const blockRead = (solve: RoadElevation, x0: number, y0: number): number => {
+    const known = readOf(solve);
+    const key = blockKey(x0, y0);
     const kept = known.get(key);
     if (kept !== undefined) return kept;
-    const digest = new Digest();
-    const quantum = (h: number): number => Math.round(h * 1000);
-    for (let x = Math.ceil((x0 + TERRAIN_HALF) / TERRAIN_CELL) * TERRAIN_CELL - TERRAIN_HALF; x <= x0 + SHAPE_BLOCK; x += TERRAIN_CELL) {
-      for (let y = Math.ceil((y0 + TERRAIN_HALF) / TERRAIN_CELL) * TERRAIN_CELL - TERRAIN_HALF; y <= y0 + SHAPE_BLOCK; y += TERRAIN_CELL) {
-        const shaped = solve.shapeAt(x, y, terrain.naturalRenderedHeightAt(x, y));
-        digest.add(quantum(shaped.height)).add(quantum(shaped.weight));
-        const road = solve.roadAt(x, y);
-        if (road.type >= 0 && Math.abs(road.across) <= road.half) digest.add(road.type).add(quantum(solve.at(x, y)));
-        else digest.add(-1);
-      }
-    }
-    const value = digest.value();
+    const value = blockDigest(solve, terrain.naturalRenderedHeightAt, x0, y0, SHAPE_BLOCK, TERRAIN_CELL, TERRAIN_HALF);
     known.set(key, value);
     return value;
   };
-  const changedBlocks = (before: RoadElevation, after: RoadElevation): [number, number, number, number][] => {
-    const out: [number, number, number, number][] = [];
+  /** Two solves compared block by block (`compareSolves`): `blocks` once `ready`, with the page's time it took. */
+  interface BlockCompare { blocks: [number, number, number, number][]; ready: boolean; ms: number }
+  /**
+   * The blocks whose ground two solves of the roads shape differently, or
+   * whose decks differ: digested by the ground's worker when it is there
+   * (`groundShape.ts` `digestBlocks`, the page's `blockDigest` to the bit),
+   * on the page otherwise. A block of a solve already digested, or being
+   * digested for an earlier comparison, is not asked again.
+   */
+  const compareSolves = (before: RoadElevation, after: RoadElevation, landBlocks: readonly [number, number, number, number][] | null): BlockCompare => {
+    const at = performance.now();
+    const out: BlockCompare = { blocks: [], ready: false, ms: 0 };
+    const candidates: [number, number][] = [];
     // Only blocks a road that differs reaches can differ (`differences`):
     // every block of the map used to be digested twice on every edit.
     const where = after.differences?.(before) ?? null;
-    if (where && !where.length) return out;
-    // Every plate's own blocks.
-    for (const plate of MAP_REGIONS) {
-      for (let x = plate.cx - plate.half; x < plate.cx + plate.half; x += SHAPE_BLOCK) {
-        for (let y = plate.cy - plate.half; y < plate.cy + plate.half; y += SHAPE_BLOCK) {
-          const x1 = x + SHAPE_BLOCK, y1 = y + SHAPE_BLOCK;
-          if (where && !where.some((r) => r.minX <= x1 && r.maxX >= x && r.minY <= y1 && r.maxY >= y)) continue;
-          if (blockRead(before, x, y) !== blockRead(after, x, y)) out.push([x, y, x1, y1]);
+    if (!where || where.length) {
+      // Every plate's own blocks.
+      for (const plate of MAP_REGIONS) {
+        for (let x = plate.cx - plate.half; x < plate.cx + plate.half; x += SHAPE_BLOCK) {
+          for (let y = plate.cy - plate.half; y < plate.cy + plate.half; y += SHAPE_BLOCK) {
+            const x1 = x + SHAPE_BLOCK, y1 = y + SHAPE_BLOCK;
+            if (where && !where.some((r) => r.minX <= x1 && r.maxX >= x && r.minY <= y1 && r.maxY >= y)) continue;
+            candidates.push([x, y]);
+          }
         }
       }
     }
+    const finish = (): void => {
+      const changed: [number, number, number, number][] = [];
+      for (const [x, y] of candidates) if (blockRead(before, x, y) !== blockRead(after, x, y)) changed.push([x, y, x + SHAPE_BLOCK, y + SHAPE_BLOCK]);
+      if (landBlocks) {
+        const seen = new Set(changed.map((b) => `${b[0]},${b[1]}`));
+        for (const b of landBlocks) if (!seen.has(`${b[0]},${b[1]}`)) changed.push(b);
+      }
+      out.blocks = changed;
+      out.ready = true;
+    };
+    const waits: Promise<void>[] = [];
+    const ask: { solve: RoadElevation; blocks: [number, number][] }[] = [];
+    for (const solve of [before, after]) {
+      const known = readOf(solve);
+      const reading = groundReading.get(solve);
+      const mine: [number, number][] = [];
+      for (const [x, y] of candidates) {
+        const key = blockKey(x, y);
+        if (known.has(key)) continue;
+        const job = reading?.get(key);
+        if (job) { if (!waits.includes(job)) waits.push(job); continue; }
+        mine.push([x, y]);
+      }
+      if (mine.length) ask.push({ solve, blocks: mine });
+    }
+    if (ask.length && groundWorkers.available && ask.every((a) => a.solve.shapeCut)) {
+      // The roads near the blocks asked and the ground under them, as plain numbers; a block the worker
+      // cannot read (NaN: a plate not made) and a job that fails are digested here, in `finish`.
+      const rect = (x: number, y: number): [number, number, number, number] => [x - 1, y - 1, x + SHAPE_BLOCK + 1, y + SHAPE_BLOCK + 1];
+      const job: BlockDigestAsk = {
+        solves: ask.map(({ solve, blocks }) => ({
+          roads: solve.shapeCut!(blocks.map(([x, y]) => rect(x, y))),
+          blocks: Float64Array.from(blocks.flat()),
+        })),
+        plates: terrain.naturalCut?.(ask.flatMap(({ blocks }) => blocks.map(([x, y]) => rect(x, y)))) ?? [],
+        block: SHAPE_BLOCK, cell: TERRAIN_CELL, half: TERRAIN_HALF,
+      };
+      const filed = groundWorkers.digest(job).then((answers) => {
+        ask.forEach(({ solve, blocks }, k) => {
+          const known = readOf(solve);
+          blocks.forEach(([x, y], j) => { const v = answers[k]![j]!; if (!Number.isNaN(v)) known.set(blockKey(x, y), v); });
+        });
+      }, (error: unknown) => { console.warn('[ground] blocks digested on the page', error); }).finally(() => {
+        for (const { solve, blocks } of ask) for (const [x, y] of blocks) groundReading.get(solve)?.delete(blockKey(x, y));
+      });
+      for (const { solve, blocks } of ask) {
+        let reading = groundReading.get(solve);
+        if (!reading) groundReading.set(solve, reading = new Map());
+        for (const [x, y] of blocks) reading.set(blockKey(x, y), filed);
+      }
+      waits.push(filed);
+    }
+    if (!waits.length) { finish(); out.ms = performance.now() - at; return out; }
+    out.ms = performance.now() - at;
+    void Promise.all(waits).then(() => { const t = performance.now(); finish(); out.ms += performance.now() - t; });
     return out;
   };
   /** A terrain region (`terrainRegion`) back as the world box it covers, a cell round. */
@@ -1403,18 +1532,17 @@ export function createSceneRenderer(
    * its own, then the ground a few blocks at a time - in one go it was 60-150
    * ms of every road edit in the default town (docs/performance.md #10).
    */
-  function* shapeBlocksSteps(net: Network, blocks: readonly [number, number, number, number][]): Generator<void, void, void> {
+  function* shapeBlocksSteps(net: Network, blocks: readonly [number, number, number, number][]): Generator<'wait' | void, void, void> {
     // The buildings whose bank reaches a block the roads changed, found by place. DO NOT walk
     // `buildings.all()` for them, nor every building for a platform not known yet (`ensure`, a
     // building a step): the town twice for each road drawn; `rebuild` works out the platforms it lacks.
-    const reached = new Map<BuildingId, Building>();
-    for (const q of blocks) {
-      for (const b of net.doc.buildings.near(q[0] - BANK_REACH, q[1] - BANK_REACH, q[2] + BANK_REACH, q[3] + BANK_REACH)) {
-        const box = bankBox(b);
-        if (box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1]) reached.set(b.id, b);
-      }
-    }
-    for (const b of reached.values()) {
+    // Every block in one look (`nearAny`): a block at a time read the cells they share again for each.
+    const reached = net.doc.buildings.nearAny(blocks, BANK_REACH, (b, q) => {
+      const box = bankBox(b);
+      return box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1];
+    });
+    followFloors(net);
+    for (const b of reached) {
       sitesGraded.refresh(b);
       yield;
     }
@@ -1431,31 +1559,78 @@ export function createSceneRenderer(
       return [[q[0], q[1], mx, my], [mx, q[1], q[2], my], [q[0], my, mx, q[3]], [mx, my, q[2], q[3]]];
     };
     const regions = blocks.flatMap(quarters).map(terrainRegion);
-    if (sites) regions.push(...quarters(sites).map(terrainRegion));
-    // A block a step: three were 33 ms, past the frame's allowance (`core/frameWork.ts`).
-    const BATCH = 1;
-    let shaping = 0;
-    for (let i = 0; i < regions.length; i += BATCH) {
-      const at = performance.now();
-      shapeGround(net, regions.slice(i, i + BATCH), false, true);
-      shaping += performance.now() - at;
-      yield;
-    }
+    if (sites) regions.push(...sites.map(terrainRegion));
+    // Every region in one pass, worked out by the ground's worker while the frames go on (`shapeGround`).
+    // DO NOT cut it into a block a step again: that spread the page's work over frames, and it is the
+    // worker's now.
+    const shaping = shapeGround(net, regions, false, true);
+    while (!shaping.landed) { landShapes(); if (shaping.landed) break; yield 'wait'; }
     derived(net, 'ground', regions.map(regionRect), 'chão cortado e aterrado até as vias', worldCause,
-      { ms: shaping, detail: `${regions.length} regiões` });
+      { ms: shaping.ms, detail: `${regions.length} regiões` });
   }
 
 
-  const shapeGround = (net: Network, regions: TerrainRegion | readonly TerrainRegion[] | null = null, sites = false, padsReady = false): void => {
+  /** The ground's work off the page (`groundShapePool.ts`). */
+  const groundWorkers = new GroundShapePool();
+  /** A shaping pass asked of the ground's worker (`shapeGround`): put in place in the order asked (`landShapes`). */
+  interface Shaping {
+    readonly ask: GroundShapeAsk;
+    readonly take: (answers: readonly PlateShapeAnswer[]) => boolean;
+    /** What the ground's readers are told, once the heights are in place (the diary's 'ground'). */
+    readonly then: () => void;
+    answers: PlateShapeAnswer[] | null;
+    failed: boolean;
+    landed: boolean;
+    /** The page's time: the ask put together and the answer put in place. */
+    ms: number;
+  }
+  /**
+   * The passes asked, in order. Each is put in place once it and every pass
+   * before it are answered: the ground ends as the passes made one after the
+   * other here left it, each reading the roads and the platforms as they were
+   * when it was asked (its ask holds them). A pass the worker failed is made
+   * here from the same ask. Never asked again.
+   */
+  const shapings: Shaping[] = [];
+  const LANDED = { landed: true, ms: 0 } as const;
+  /** Puts in place every pass answered, in the order asked, up to the first still being worked out. */
+  const landShapes = (): void => {
+    while (shapings.length) {
+      const next = shapings[0]!;
+      if (!next.answers && !next.failed) { groundWorkers.check(); return; }
+      shapings.shift();
+      const at = performance.now();
+      next.take(next.answers ?? shapeGroundAsk(next.ask));
+      next.ms += performance.now() - at;
+      next.landed = true;
+      next.then();
+    }
+  };
+  /**
+   * Cuts and fills the ground round `regions` (null: the whole map) to the
+   * roads and the platforms. Off the page whenever the ground's worker is
+   * there (and behind any pass still waiting for it): the heights land with
+   * its answer (`landShapes`), and `landed` says when. DO NOT shape the
+   * corners here while the worker is there: 9.5 s of the page in a 2,560 m
+   * city's growth (2026-10-15).
+   */
+  const shapeGround = (net: Network, regions: TerrainRegion | readonly TerrainRegion[] | null = null, sites = false, padsReady = false): { readonly landed: boolean; readonly ms: number } => {
+    const at = performance.now();
     const list: readonly TerrainRegion[] | null = regions === null ? null
       : typeof regions[0] === 'number' ? [regions as TerrainRegion] : regions as readonly TerrainRegion[];
-    if (list && !list.length) return;
+    if (list && !list.length) return LANDED;
     const region = list;
     // The ground is cut and filled here, and only here: what stands on it reads
-    // where from the diary - once per call; a road edit's quarter blocks are
-    // written together when the last is shaped (`shapeBlocksSteps`).
-    if (!padsReady) derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'chão dos lotes nivelado' : 'chão cortado e aterrado', net.doc.changes.version);
+    // where from the diary - once per call, when its heights are in place; a road
+    // edit's blocks are written together by their job (`shapeBlocksSteps`).
+    const parent = net.doc.changes.version;
+    const told = (): void => {
+      if (padsReady) return;
+      const serial = derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'chão dos lotes nivelado' : 'chão cortado e aterrado', parent);
+      if (sites && serial) sitesGradedSerials.add(serial);
+    };
     const roads = net.doc.segments.size > 0 ? elevation : null;
+    followFloors(net);
     if (!padsReady && (!region || !sitesGraded.pads || sites)) {
       gradedFor = net.doc.buildings.revision;
       // The roads or the land moved: every platform is worked out afresh.
@@ -1463,20 +1638,28 @@ export function createSceneRenderer(
       sitesGraded.rebuild(net.doc.buildings);
     }
     const pads = net.doc.buildings.size > 0 ? sitesGraded.pads : null;
-    if (!pads) {
-      terrain.shapeToRoads(roads, region);
-      return;
+    if (groundWorkers.available || shapings.length) {
+      // The corners asked, and the roads and platforms they read as they stand now, as plain numbers.
+      const asking = terrain.askShape(region, region ? null : [...(roads?.shapeBounds() ?? []), ...(pads?.shapeBounds() ?? [])]);
+      const boxes = cornerBoxes(asking.plates, TERRAIN_CELL, TERRAIN_HALF);
+      const ask: GroundShapeAsk = { roads: roads ? roads.shapeCut!(boxes) : null, pads: pads ? pads.cut(boxes) : null, plates: asking.plates };
+      const shaping: Shaping = { ask, take: asking.take, then: told, answers: null, failed: false, landed: false, ms: 0 };
+      shapings.push(shaping);
+      if (groundWorkers.available) {
+        groundWorkers.shape(ask).then((answers) => { shaping.answers = answers; }, (error: unknown) => {
+          console.warn('[ground] a pass is shaped on the page', error);
+          shaping.failed = true;
+        });
+      } else shaping.failed = true;
+      shaping.ms = performance.now() - at;
+      // No worker: put in place now, after the passes before it.
+      if (shaping.failed) landShapes();
+      return shaping;
     }
-    terrain.shapeToRoads({
-      shapeBounds: () => [...(roads?.shapeBounds() ?? []), ...pads.shapeBounds()],
-      shapeAt(x, y, ground) {
-        const road = roads ? roads.shapeAt(x, y, ground) : { height: ground, weight: 0 };
-        const pad = pads.shapeAt(x, y, ground);
-        if (pad.weight <= 0) return road;
-        if (road.weight <= 0) return pad;
-        return { height: pad.height + (road.height - pad.height) * road.weight, weight: 1 };
-      },
-    }, region);
+    told();
+    const shape = pads ? { shapeBounds: () => [...(roads?.shapeBounds() ?? []), ...pads.shapeBounds()], shapeAt: shapeBoth(roads, pads) } : roads;
+    terrain.shapeToRoads(shape, region);
+    return { landed: true, ms: performance.now() - at };
   };
 
   /** `doc.utilityRevision` the poles and the furniture were last brought up to. */
@@ -1596,8 +1779,12 @@ export function createSceneRenderer(
     },
   }, 'draw');
 
-  /** Blocks whose ground a dropped rebuild had not shaped yet (`null`: the whole map). */
-  let pendingBlocks: [number, number, number, number][] | null = [];
+  /**
+   * The comparisons of solves whose blocks a dropped rebuild had not shaped
+   * yet (`compareSolves`, each read when its job reads them; `null`: the
+   * whole map), the last one's own.
+   */
+  let pendingBlocks: (BlockCompare | null)[] = [];
   /**
    * The land a brush moved since the world was last built (`'all'`: anywhere -
    * an undo, a map loaded, several stamps at once): the dirty region of the
@@ -1688,25 +1875,13 @@ export function createSceneRenderer(
     const land = landDirty;
     landDirty = null;
     const landBlocks = !landStill && land !== null && land !== 'all' ? blocksOver(land) : null;
-    let changed: [number, number, number, number][] | null = null;
-    const atBlocks = performance.now();
-    if (previousElevation && (landStill || landBlocks)) {
-      changed = changedBlocks(previousElevation, elevation);
-      if (landBlocks) {
-        const seen = new Set(changed.map((b) => `${b[0]},${b[1]}`));
-        for (const b of landBlocks) if (!seen.has(`${b[0]},${b[1]}`)) changed.push(b);
-      }
-    }
-    performance.measure('hitch:road-edit/changed blocks', { start: atBlocks, end: performance.now() });
-    // In the diary: the roads' heights solved again where they differ, after the edit that moved them.
-    worldCause = derived(net, 'elevation', changed, 'alturas das vias resolvidas', net.doc.changes.version,
-      { ms: performance.now() - started, detail: changed ? `${changed.length} blocos de ${SHAPE_BLOCK} u` : 'mapa inteiro' }) || net.doc.changes.version;
-    const blocks = changed && pendingBlocks ? [...pendingBlocks, ...changed] : null;
-    // The roads' own heights (the footway, the carriageway) moved where the
-    // solve did: the 'elevation' entry just written is what the things on the
-    // ground read (`groundChanges`).
-    const local = blocks !== null && blocks.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_SIZE * MAP_SIZE * 0.25;
-    pendingBlocks = local ? blocks : null;
+    // The blocks the two solves differ in, digested off the page (`compareSolves`) and read by the job,
+    // which waits for them; null: the whole map. With those of the jobs an edit overtook before they shaped
+    // their ground.
+    const compare = previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null;
+    pendingBlocks = compare && !pendingBlocks.includes(null) ? [...pendingBlocks, compare] : [null];
+    const elevationMs = performance.now() - started;
+    const cause = net.doc.changes.version;
     // The land itself changed: at once. After a road edit, and for the first
     // world when the game opens: a few milliseconds a frame (`pumpWorld`) -
     // built in the frame of the edit, it was a stall of 100-500 ms on every
@@ -1716,16 +1891,13 @@ export function createSceneRenderer(
     // new one is complete. A job an edit overtakes is dropped.
     // A map being opened is built behind its curtain, in slices too: the
     // old world is not drawn meanwhile, nothing is (`beginLoad`).
-    const sliced = !roads || local || !reveal.opened;
-    const steps = worldSteps(net, local ? blocks : null, started, sliced);
-    if (!sliced) {
-      let step = steps.next();
-      while (!step.done) step = steps.next();
-      worldJob = null;
-    } else {
-      worldJob = steps;
-      worldJobFresh = true;
-    }
+    // A change of much of the map while the game is open (a generated city, a map opened over another)
+    // is sliced too, its tiles shaped by the workers (`roadTilePool.ts`). DO NOT build it in one go: the
+    // roads of a generated city were built in the frame of the change, on the page, and the workers never
+    // ran (2026-10-15).
+    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true);
+    worldJobFresh = true;
+    worldJobGround = true;
   };
 
   /**
@@ -1733,11 +1905,27 @@ export function createSceneRenderer(
    * a slice a frame (`pumpWorld`), so it may wait for its shaders.
    * @rebuild Started by `buildWorld`; its slices run only while a rebuild is in progress.
    */
-  function* worldSteps(net: Network, blocks: [number, number, number, number][] | null, started: number, sliced: boolean): Generator<'wait' | void, void, void> {
+  function* worldSteps(net: Network, compares: readonly (BlockCompare | null)[], solved: { readonly cause: number; readonly elevationMs: number },
+    started: number, sliced: boolean): Generator<'wait' | void, void, void> {
     const solve = elevation!;
-    if (blocks === null) shapeGround(net);
-    else if (blocks.length || gradedFor !== net.doc.buildings.revision) yield* shapeBlocksSteps(net, blocks);
+    // The blocks the solves differ in, once the worker has digested them (`compareSolves`).
+    while (compares.some((c) => c && !c.ready)) { groundWorkers.check(); yield 'wait'; }
+    const own = compares[compares.length - 1] ?? null;
+    const changed = own ? own.blocks : null;
+    // In the diary: the roads' heights solved again where they differ, after the edit that moved them.
+    worldCause = derived(net, 'elevation', changed, 'alturas das vias resolvidas', solved.cause,
+      { ms: solved.elevationMs + (own?.ms ?? 0), detail: changed ? `${changed.length} blocos de ${SHAPE_BLOCK} u` : 'mapa inteiro' }) || solved.cause;
+    const joined = compares.includes(null) ? null : compares.flatMap((c) => c!.blocks);
+    // The roads' own heights (the footway, the carriageway) moved where the
+    // solve did: the 'elevation' entry just written is what the things on the
+    // ground read (`groundChanges`).
+    const blocks = joined !== null && joined.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_SIZE * MAP_SIZE * 0.25 ? joined : null;
+    if (blocks === null) {
+      const shaping = shapeGround(net);
+      while (!shaping.landed) { landShapes(); if (shaping.landed) break; yield 'wait'; }
+    } else if (blocks.length || gradedFor !== net.doc.buildings.revision) yield* shapeBlocksSteps(net, blocks);
     pendingBlocks = [];
+    worldJobGround = false;
     yield;
     // The tiles kept from the last session, read while the game started: a
     // sliced build waits for them a little (never an edit's frame spinning).
@@ -1745,7 +1933,10 @@ export function createSceneRenderer(
       const since = performance.now();
       while (!storedRead && performance.now() - since < KEPT_TILES_WAIT_MS) yield 'wait';
     }
-    const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial);
+    // Sliced, the tiles are shaped by the workers while the frames go on (`roadTilePool.ts`); built in
+    // one go (an edit's frame), on the page: nothing there may wait.
+    const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
+      sliced ? roadTiles : null);
     keepTiles();
     derived(net, 'surfaces', freshRoads.rebuilt, 'superfícies das vias refeitas', worldCause,
       { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
@@ -1855,6 +2046,15 @@ export function createSceneRenderer(
         buildUtilities(warmNet, poleGroundAt(warmElevation, flat), sceneryKit),
       ];
       for (const part of parts) group.add(part.group);
+      // And the street furniture's, the long grass's and the signs' meshes as their layers draw them, with
+      // their shadows (`warm`): made when their first thing stands, their programs were linked in that frame.
+      const placedShadows = new Group();
+      for (const mesh of [...furniture.warm(), ...signs.warm()]) {
+        group.add(mesh);
+        const standIn = shadowStandIn(mesh);
+        if (standIn) placedShadows.add(standIn);
+      }
+      void compileAhead(placedShadows, true).then(() => placedShadows.clear());
       void compileAhead(group).then(() => {
         for (const part of parts) part.dispose();
       });
@@ -2011,7 +2211,6 @@ export function createSceneRenderer(
   let transitPreview: TrackPreview | null = null;
   let transitPreviewKey = '';
 
-  let buildingsHeld = false;
   /** The map zoom and the plant layers `setMap` was last told about (`draw`). */
   let plantMapFor: { map: boolean | null; gardens: Gardens | null } = { map: null, gardens: null };
   /** In perspective: how far down the street a person or a car is still big enough to see appear, u. */
@@ -2444,9 +2643,6 @@ export function createSceneRenderer(
     // effects, and now the physics the bodies fall with (`warmPhysics`). The
     // idle preload below makes the effects only.
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
-    holdBuildings(on) {
-      buildingsHeld = on;
-    },
     flashGrid(cells) {
       if (!cells.length) return;
       const pos: number[] = [], ring: number[] = [];
@@ -2585,6 +2781,7 @@ export function createSceneRenderer(
     onStrike(listener) { strikeListeners.push(listener); },
     cloudDrift: () => cloudDrift,
     busy: () => (fx?.busy() ?? false) || natureTreesPending || cameraEasing,
+    targetBytes: () => renderTargetsBytes([...post.targets(), environment.sun.shadow.map]),
     drifting: () => ((fogMoving || placedCloudsShown) && post.enabled && (quality.cloudShadows || quality.skyClouds)) || weatherActive,
     forgetRuin(id) { fx?.forgetRuin(id); },
     setTransitXray(on) {
@@ -2701,11 +2898,17 @@ export function createSceneRenderer(
       // Only the ground round the sites that changed is graded again (growing
       // a building re-graded the whole map and every platform: a hitch for
       // every building the zones grew, the profile of 2026-10-05).
-      // While a road edit is prepared in slices its steps grade the sites (`shapeBlocksSteps`).
-      if (!buildingsHeld && !worldJob && gradedFor !== net.doc.buildings.revision) {
+      // While a road edit's job is shaping its ground its steps grade the sites (`shapeBlocksSteps`);
+      // after that, the frames do, the job's road tiles still being made (`worldJobGround`).
+      // Each site on its own (`changedSites`): the buildings a frame of a generated city grew, wherever
+      // they stand, cut and fill the ground round each of them, not the box round them all.
+      // The passes the ground's worker answered put in place, in the order asked, where they were asked.
+      landShapes();
+      followFloors(net);
+      if (!(worldJob && worldJobGround) && gradedFor !== net.doc.buildings.revision) {
         gradedFor = net.doc.buildings.revision;
         const changed = sitesGraded.changedSites(net.doc.buildings);
-        if (changed) shapeGround(net, terrainRegion(changed), true);
+        if (changed) shapeGround(net, changed.map(terrainRegion), true);
       }
       // What stands on the ground - the buildings, the walls, the transport,
       // the gardens - waits while an edit's world is still being built: each
@@ -2732,7 +2935,7 @@ export function createSceneRenderer(
       // A map opened behind the curtain: not on the old map's ground while
       // its own world is still being built - they were emitted twice, on
       // the ground going and then on the one coming.
-      if (!buildingsHeld && roads !== null && (reveal.opened || !worldJob)) {
+      if (roads !== null && (reveal.opened || !worldJob)) {
         buildings.hidden = !reveal.opened;
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new
         // casters: the shadow map is drawn again.
@@ -2769,8 +2972,7 @@ export function createSceneRenderer(
       // have. Not in the middle of a stroke, and not while an edit's world is
       // still being built: the old one is drawn meanwhile, and the ground the
       // plants stand on is only final when it is swapped in.
-      // Not while the buildings are held: the covers they stand on are brought up when they are let go.
-      if (!stroking && !worldJob && !buildingsHeld) {
+      if (!stroking && !worldJob) {
         keepNet = net;
         // What the tests read that changed since the last look, and where (null: the diary cannot say).
         const entries = vegetationRead.read(net.doc.changes);
@@ -2962,7 +3164,8 @@ export function createSceneRenderer(
       // only the buildings the diary names, or where the ground moved under
       // their floor, are filed again (`cameraSolidsKeeper`); NOT the town at
       // every building grown or every road solved.
-      if (cameraSolidsKept.follow(net.doc.buildings, groundSince)) {
+      followFloors(net);
+      if (cameraSolidsKept.follow(net.doc.buildings, floorGroundSince)) {
         rig.setSolids((x, y) => cameraSolidsKept.solids().floorAt(x, y), (x, y) => cameraSolidsKept.solids().roofAt(x, y));
         townSolids = () => cameraSolidsKept.solids();
       }
@@ -3297,6 +3500,15 @@ export function createSceneRenderer(
         }
         // The atlas keeps in full only the plates near what the view takes in (`flatAtlas.ts`).
         terrain.focus?.(centre.x, centre.y, halfHeight);
+        // The roads at full detail within reach of what the view takes in, the far level beyond: a few frames apart
+        // (the blocks are a few thousand), and a block coming near is made again from its tiles, a few a look.
+        roadFocus.x = centre.x; roadFocus.y = centre.y;
+        roadFocus.reach = Math.min(900, Math.max(320, halfHeight * 1.8));
+        if (roadFocus.frames++ % 6 === 0) {
+          const blocks: Mesh[] = [];
+          for (const { mesh } of surfaceReuse.chunks.values()) blocks.push(mesh);
+          updateRoadLevels(blocks, roadFocus.x, roadFocus.y, roadFocus.reach);
+        }
         terrain.bakeRelief(renderer, close ? reliefFocus : null);
       }
       {
@@ -3402,6 +3614,8 @@ export function createSceneRenderer(
       warmPreviewShaders();
       // One waiting body's geometry a frame to the GPU, before anybody draws it.
       drainWarm(renderer, rig.camera, scene, post.target);
+      // Meshes still waiting to go up: another frame, so the queue never stands while the game is still.
+      if (warmPending()) onAssetsReady();
 
       if (delta > 0) fps = fps * 0.9 + (1 / Math.min(1, delta)) * 0.1;
     },
@@ -3415,6 +3629,9 @@ export function createSceneRenderer(
       return requested;
     },
     dispose() {
+      roadTiles.dispose();
+      groundWorkers.dispose();
+      tileWriter?.terminate();
       // Everything the renderer made, the GPU's included: the layers, the
       // previews and the effects too (they were left out, and a renderer
       // made again - a map opened, the tier changed - left them all behind).

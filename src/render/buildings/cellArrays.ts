@@ -38,7 +38,7 @@ export interface ShellArrays {
   readonly colour: Float32Array;
   readonly uv: Float32Array;
   readonly decay: Float32Array;
-  readonly index: Uint32Array;
+  readonly index: Uint16Array | Uint32Array;
   readonly bounds: Bounds;
 }
 
@@ -114,9 +114,18 @@ export interface CellMass {
   readonly color: Float32Array;
   readonly facade: Float32Array;
   readonly glazing: Float32Array;
-  readonly index: Uint32Array;
+  readonly index: Uint16Array | Uint32Array;
   readonly bounds: Bounds;
   readonly top: number;
+}
+
+/**
+ * The index array a cell's mesh needs: 16 bits where its vertices fit (a cell of 240 m mostly does), else 32. The
+ * roads' blocks did this already (`surfaceTiles.ts`); the cells' were always 32, half the index memory and upload
+ * for nothing (audit of 2026-10-15, checked in the code).
+ */
+export function indexArray(vertices: number, indices: number): Uint16Array | Uint32Array {
+  return vertices > 0xffff ? new Uint32Array(indices) : new Uint16Array(indices);
 }
 
 /** The masses of a cell's buildings as one set of arrays; null when none has any. */
@@ -125,7 +134,7 @@ export function cellMass(masses: readonly MassingChunk[]): CellMass | null {
   for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; }
   if (indices === 0) return null;
   const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3), color = new Float32Array(vertices * 3);
-  const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = new Uint32Array(indices);
+  const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = indexArray(vertices, indices);
   let v = 0, n = 0, top = -Infinity;
   for (const c of masses) {
     position.set(c.position, v * 3);
@@ -179,7 +188,7 @@ function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): Omit<She
   const colour = new Float32Array(vertices * 3);
   const uv = new Float32Array(vertices * 2);
   const decay = new Float32Array(vertices);
-  const index = new Uint32Array(indices);
+  const index = indexArray(vertices, indices);
   let v = 0;
   let n = 0;
   for (const chunk of chunks) {

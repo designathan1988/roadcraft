@@ -709,7 +709,15 @@ const wayCost = (way: Walkway): number => way.path.length + (way.kind === 'cross
 
 /**
  * The steps from one point on a way to another: the shortest chain of
- * walkways between them (Dijkstra over the walkway nodes).
+ * walkways between them (A* over the walkway nodes; Hart, Nilsson and
+ * Raphael 1968). The estimate from a node is the straight line to an end of
+ * the goal way plus the rest of the goal way from that end: a way is never
+ * shorter than its chord and a zebra only costs more, so it never
+ * overestimates and never decreases by more than a way's cost - the route is
+ * as short as Dijkstra's. DO NOT search without it: the scenery's people
+ * come in at the map's edge for the far side, and each one's search spread
+ * over every footway of the town (1.2 s of a 2,560 m city's growth,
+ * 2026-10-15).
  */
 export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way: Walkway; s: number }): Step[] | null {
   if (from.way.id === to.way.id) {
@@ -722,6 +730,13 @@ export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way
   const { dist, via, stamp, done, open } = r;
   const gen = r.gen;
   const distOf = (node: number): number => (stamp[node] === gen ? dist[node]! : Infinity);
+  const goalA = g.nodes[to.way.a], goalB = g.nodes[to.way.b];
+  const restA = to.s, restB = to.way.path.length - to.s;
+  const estimate = (node: number): number => {
+    const p = g.nodes[node];
+    if (!p || !goalA || !goalB) return 0;
+    return Math.min(hypot(goalA.x - p.x, goalA.y - p.y) + restA, hypot(goalB.x - p.x, goalB.y - p.y) + restB);
+  };
   // A binary heap, and done once both ends of the goal way are settled: the
   // open list was scanned whole for every node taken and the search went on
   // over the whole graph, for every walker, when an edit moved them all onto
@@ -731,16 +746,20 @@ export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way
     if (stamp[node] !== gen) { stamp[node] = gen; walkWork.routeNodes++; }
     dist[node] = d;
     via[node] = way;
-    open.push(node, d);
+    open.push(node, d + estimate(node));
   };
   push(from.way.a, from.s, from.way.id);
   push(from.way.b, from.way.path.length - from.s, from.way.id);
   let goals = to.way.a === to.way.b ? 1 : 2;
-  while (open.size && goals > 0) {
+  // The best way in found so far, by an end of the goal way settled: once nothing open can do better
+  // (its distance plus the estimate is a bound from below), the search is done.
+  let best = Infinity;
+  while (open.size && goals > 0 && open.peekKey() < best) {
     const node = open.pop();
     if (done[node] === gen) continue;
     done[node] = gen;
-    if (node === to.way.a || node === to.way.b) goals--;
+    if (node === to.way.a) { goals--; best = Math.min(best, dist[node]! + restA); }
+    if (node === to.way.b && to.way.b !== to.way.a) { goals--; best = Math.min(best, dist[node]! + restB); }
     const d = dist[node]!;
     for (const wid of g.at.get(node) ?? []) {
       const way = g.ways[wid]!;

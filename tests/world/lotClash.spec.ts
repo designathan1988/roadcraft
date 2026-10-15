@@ -33,3 +33,18 @@ describe('the parts of a generated city\'s lots', () => {
     expect(meets.slice(0, 6), `${meets.length} parts in each other`).toEqual([]);
   });
 });
+
+describe('two parts of a lot far apart', () => {
+  type Part = Parameters<typeof elementsMeet>[0];
+  const part = (kind: Part['kind'], x: number, y: number, w: number, d: number, h: number, angle?: number): Part =>
+    ({ id: 1, kind, x: m(x), y: m(y), facing: 0, w: m(w), d: m(d), z: 0, h: m(h), ...(angle ? { angle } : {}) });
+
+  it('are told apart before any footprint, and a near one still meets, a sapling\'s trunk included', () => {
+    // A sapling narrower than its trunk's square: the trunk runs 7.5 cm into the post 20 cm away
+    // (its own 10 cm circle and the post's would not meet).
+    expect(elementsMeet(part('tree', 0, 0, 0.1, 0.1, 3), part('bollard', 0.2, 0, 0.15, 0.15, 1))).toBe(true);
+    // Turned boxes touching corner on: within the circles, decided by their plans.
+    expect(elementsMeet(part('bench', 0, 0, 2, 1, 0.5, Math.PI / 4), part('bench', 1.3, 0, 1, 1, 0.5))).toBe(true);
+    expect(elementsMeet(part('bench', 0, 0, 1.6, 0.5, 0.5), part('bench', 5, 5, 1.6, 0.5, 0.5))).toBe(false);
+  });
+});

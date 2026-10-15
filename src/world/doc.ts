@@ -1,6 +1,6 @@
 import { type MarkingStyleId, isMarkingStyle } from './roads/markingStyle';
 import { type ApproachRuleEntry, type SignalSettings, normalizeApproachRules, normalizeSignalSettings, rulesDigest, signalDigest } from './roads/rules';
-import { type LaneLink, linksDigest, normalizeLaneLinks } from './roads/connectors';
+import { type LaneLink, linksDigest, movementKey, normalizeLaneLinks } from './roads/connectors';
 import { cloneRoadSection, normalizeRoadSection, sameRoadSection, type RoadSection } from './roadSection';
 import { isLot, type Lot } from './lots';
 import { OpenLots } from './openLots';
@@ -37,7 +37,7 @@ import { DEFAULT_GULLY_AUTO, MAX_GULLY_DABS, readGullyDab, type GullyDab } from 
 import { DEFAULT_FOG, MAX_FOG_DABS, readFogDab, readFogSettings, type FogDab, type FogSettings } from './fogPaint';
 import { isNatureSettings, type NatureSettings } from './ecology';
 import { type TransitData, emptyTransit, hasTransit, normalizeTransit } from './transit';
-import { casingHalf, roadProfile } from './roadTypes';
+import { type SegmentDirection, casingHalf, roadProfile } from './roadTypes';
 import { BuildingStore } from './buildings/store';
 import type { SerializedBuilding } from './buildings/serialize';
 import type { Building, BuildingId } from './buildings/types';
@@ -48,6 +48,7 @@ import { PoleIndex } from './poleIndex';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
 import { METERS_PER_UNIT, m } from './units';
+import { ForkMap, forkWork } from '@core/forkMap';
 
 /** `shape` flattened until no band of a road of this profile folds over (see `RoadDoc.fitCurve`). */
 export function fitRoadCurve(
@@ -58,15 +59,15 @@ export function fitRoadCurve(
   return fitShapeToRadius(a, b, shape, casingHalf(roadProfile(type, lanes, direction, section, parking)));
 }
 
-/** Legal driving directions, relative to the stored `a -> b` orientation. */
-export type SegmentDirection = 'both' | 'aToB' | 'bToA';
+/** Legal driving directions, relative to the stored `a -> b` orientation (`roadTypes.ts`). */
+export type { SegmentDirection };
 
 /** Explicit junction policy. `auto` retains the class-based default policy. */
 /** 'mini': a mini-roundabout (docs/source/VIAS.md V5): every entry gives way to whoever is in it or comes from the left. */
 export type JunctionControl = 'auto' | 'signal' | 'stop' | 'yield' | 'priority' | 'none' | 'mini';
 
-/** Stable segment-pair key for a movement through a junction. */
-export const movementKey = (from: SegmentId, to: SegmentId): string => `${from}>${to}`;
+/** Stable segment-pair key for a movement through a junction (`roads/connectors.ts`). */
+export { movementKey };
 
 /** Whether a movement key names segment `id` as its entry or its exit. */
 function movementMentions(key: string, id: SegmentId): boolean {
@@ -195,7 +196,7 @@ export class RoadDoc {
    * node made, a road's end taken away, a node put back by undo. A superset,
    * kept by the writers of `incident` here; each is tested when pruned.
    */
-  private loose = new Set<NodeId>();
+  private loose = new LooseNodes();
 
   /**
    * The overhead utility network: poles and the wire runs between them.
@@ -207,11 +208,12 @@ export class RoadDoc {
    */
   // Written only through `putPoleRecord`/`deletePoleRecord`/`putSpanRecord`/`deleteSpanRecord`/`clearPoleRecords`,
   // which keep `poleIndex` in step. DO NOT write these maps directly.
-  private readonly poleMap = new Map<PoleId, UtilityPole>();
-  private readonly spanMap = new Map<SpanId, UtilitySpan>();
-  private readonly poleIndex = new PoleIndex();
-  readonly poles: ReadonlyMap<PoleId, UtilityPole> = this.poleMap;
-  readonly poleSpans: ReadonlyMap<SpanId, UtilitySpan> = this.spanMap;
+  // A working copy (`fork`) lays its own maps over the original's, and reads the original's index until it writes a pole.
+  private poleMap: Map<PoleId, UtilityPole> = new Map();
+  private spanMap: Map<SpanId, UtilitySpan> = new Map();
+  private poleIndex = new PoleIndex();
+  get poles(): ReadonlyMap<PoleId, UtilityPole> { return this.poleMap; }
+  get poleSpans(): ReadonlyMap<SpanId, UtilitySpan> { return this.spanMap; }
 
   /**
    * Walls, fences and hedges drawn along paths (`barriers.ts`). Like the poles
@@ -220,10 +222,10 @@ export class RoadDoc {
    */
   // Written only through `putBarrierRecord`/`deleteBarrierRecord`/`clearBarrierRecords`,
   // which keep `barrierCells` in step. DO NOT write this map directly.
-  private readonly barrierMap = new Map<number, Barrier>();
-  readonly barriers: ReadonlyMap<number, Barrier> = this.barrierMap;
+  private barrierMap: Map<number, Barrier> = new Map();
+  get barriers(): ReadonlyMap<number, Barrier> { return this.barrierMap; }
   /** The barriers by place (`barriersIn`), filed over the box of their points. */
-  private readonly barrierCells = new CellFiling<number, Barrier>(LANDSCAPE_CELL);
+  private barrierCells = new CellFiling<number, Barrier>(LANDSCAPE_CELL);
   private barrierIds = new IdAllocator(1);
 
   /**
@@ -235,13 +237,13 @@ export class RoadDoc {
    */
   // Written only through `putLandscapeRecord`/`deleteLandscapeRecord`/`clearLandscapeRecords`,
   // which keep `landscapeCells` in step. DO NOT write this map directly.
-  private readonly landscapeMap = new Map<number, LandscapeItem>();
-  readonly landscape: ReadonlyMap<number, LandscapeItem> = this.landscapeMap;
+  private landscapeMap: Map<number, LandscapeItem> = new Map();
+  get landscape(): ReadonlyMap<number, LandscapeItem> { return this.landscapeMap; }
   /** The street furniture by place (`landscapeIn`), in cells a few items wide. */
-  private readonly landscapeCells = new CellFiling<number, LandscapeItem>(LANDSCAPE_CELL);
+  private landscapeCells = new CellFiling<number, LandscapeItem>(LANDSCAPE_CELL);
   /** How many street name plates carry each name (`roads/streetNames.ts` gives a new street a name none has). */
-  private readonly streetNameCount = new Map<string, number>();
-  readonly streetNamesInUse: ReadonlyMap<string, number> = this.streetNameCount;
+  private streetNameCount = new Map<string, number>();
+  get streetNamesInUse(): ReadonlyMap<string, number> { return this.streetNameCount; }
   private landscapeIds = new IdAllocator(1);
 
   /**
@@ -324,6 +326,8 @@ export class RoadDoc {
 
   /** The planted trees standing in the cells a rectangle reaches (a superset: test each). */
   treesIn(rect: ChangeRect): PlantedTree[] {
+    // A working copy that has not written its trees reads the original's filing (`fork`).
+    if (this.below && this.sharedLists.has('trees')) return this.below.treesIn(rect);
     return this.treeCells.near(rect);
   }
   /** Where trees were cut away, the woods' own too (`trees.ts`), oldest first. */
@@ -347,6 +351,7 @@ export class RoadDoc {
 
   /** The elements standing in the cells a rectangle reaches (a superset: test each). */
   elementsIn(rect: ChangeRect): ElementItem[] {
+    if (this.below && this.sharedLists.has('elements')) return this.below.elementsIn(rect);
     return this.elementCells.near(rect);
   }
 
@@ -366,6 +371,16 @@ export class RoadDoc {
    * only while the original still stands at that serial.
    */
   private forkedFrom: { readonly doc: RoadDoc; readonly version: number } | null = null;
+  /**
+   * The document this one is a working copy OVER (`fork`): its records,
+   * lists and indices are that one's, read through, until this copy writes
+   * them. Null: a document of its own (or an independent `clone`).
+   */
+  private below: RoadDoc | null = null;
+  /** The lists still the original's (`fork`): each copied the first time this copy writes it (`ownList`). */
+  private sharedLists = new Set<DocListPart>();
+  /** The indices by place still the original's (`fork`): copied when this copy first writes their kind (`ownIndex`). */
+  private sharedIndices = new Set<IndexKind>();
 
   /**
    * The document this working copy was made from (`clone`), while that one
@@ -376,6 +391,25 @@ export class RoadDoc {
   get forkOrigin(): RoadDoc | null {
     const fork = this.forkedFrom;
     return fork && fork.doc.changes.version === fork.version ? fork.doc : null;
+  }
+
+  /**
+   * The ids (of nodes and of segments: they share the roads' entries) the
+   * diary names in the road changes that turned `before` into this document,
+   * read from this document's diary; null when it cannot say. It can when the
+   * two stood equal at a serial this diary goes on from: this a copy of
+   * `before` as it still stands (`fork`, `clone`), `before` an untouched copy
+   * of this one (a snapshot an edit in place is judged against), or both
+   * copies of one document at one serial, `before` untouched. A road whose
+   * shape, class or ends changed is named, or one of its end nodes is.
+   */
+  roadIdsChangedFrom(before: RoadDoc): Set<number> | null {
+    const mine = this.forkedFrom, theirs = before.forkedFrom;
+    let since: number | null = null;
+    if (mine && mine.doc === before && mine.version === before.changes.version) since = mine.version;
+    else if (theirs && theirs.doc === this && theirs.version === before.changes.version) since = theirs.version;
+    else if (mine && theirs && mine.doc === theirs.doc && mine.version === theirs.version && theirs.version === before.changes.version) since = mine.version;
+    return since === null ? null : this.changes.idsSince(since, ROAD_KINDS);
   }
 
   /**
@@ -462,6 +496,7 @@ export class RoadDoc {
 
   /** Adds a person, or replaces the one with the same id. */
   savePerson(person: PersonSpec): void {
+    this.ownList('people');
     const at = this.people.findIndex((p) => p.id === person.id);
     if (at >= 0) this.people[at] = person;
     else this.people.push(person);    this.changes.record('people', null, { ids: [person.id] });
@@ -470,6 +505,7 @@ export class RoadDoc {
   removePerson(id: number): void {
     const at = this.people.findIndex((p) => p.id === id);
     if (at < 0) return;
+    this.ownList('people');
     this.people.splice(at, 1);    this.changes.record('people', null, { ids: [id] });
   }
 
@@ -579,16 +615,19 @@ export class RoadDoc {
   }
 
   private putPoleRecord(pole: UtilityPole): void {
+    this.ownIndex('poles');
     this.poleMap.set(pole.id, pole);
     this.poleIndex.putPole(pole);
   }
 
   private deletePoleRecord(id: PoleId): void {
+    this.ownIndex('poles');
     this.poleMap.delete(id);
     this.poleIndex.deletePole(id);
   }
 
   private putSpanRecord(span: UtilitySpan): void {
+    this.ownIndex('poles');
     const was = this.spanMap.get(span.id);
     this.spanMap.set(span.id, span);
     // The same ends: the span keeps its place in each pole's order, as in the map.
@@ -600,6 +639,7 @@ export class RoadDoc {
   private deleteSpanRecord(id: SpanId): void {
     const was = this.spanMap.get(id);
     if (!was) return;
+    this.ownIndex('poles');
     this.spanMap.delete(id);
     this.poleIndex.deleteSpan(was);
   }
@@ -607,7 +647,9 @@ export class RoadDoc {
   private clearPoleRecords(): void {
     this.poleMap.clear();
     this.spanMap.clear();
-    this.poleIndex.clear();
+    // A working copy's index is the original's until it writes: a new one, never the shared one cleared.
+    if (this.sharedIndices.delete('poles')) this.poleIndex = new PoleIndex();
+    else this.poleIndex.clear();
   }
 
   /** Strings wire between two existing poles. Returns null for a degenerate run. */
@@ -643,24 +685,32 @@ export class RoadDoc {
   }
 
   /** The barriers whose box reaches a rectangle (a superset: test each), in increasing id order. */
+  /** The barriers whose box reaches any of `rects` (a superset: test each), each once, in increasing id order (`CellFiling.idsMeetingAny`). */
+  barriersInAny(rects: readonly ChangeRect[]): Barrier[] {
+    return this.barrierCells.idsMeetingAny(rects).map((id) => this.barrierMap.get(id)!);
+  }
+
   barriersIn(rect: ChangeRect): Barrier[] {
     return this.barrierCells.idsMeeting(rect).map((id) => this.barrierMap.get(id)!);
   }
 
   /** A barrier put (new, or replacing the one of its id, which keeps its place in the map's order). */
   private putBarrierRecord(barrier: Barrier): void {
+    this.ownIndex('barriers');
     this.barrierMap.set(barrier.id, barrier);
     this.barrierCells.file(barrier.id, barrier, rectAround(barrier.points)!);
   }
 
   private deleteBarrierRecord(id: number): void {
+    this.ownIndex('barriers');
     this.barrierMap.delete(id);
     this.barrierCells.remove(id);
   }
 
   private clearBarrierRecords(): void {
     this.barrierMap.clear();
-    this.barrierCells.copyFrom(new CellFiling(LANDSCAPE_CELL));
+    if (this.sharedIndices.delete('barriers')) this.barrierCells = new CellFiling(LANDSCAPE_CELL);
+    else this.barrierCells.copyFrom(new CellFiling(LANDSCAPE_CELL));
   }
 
   /** The barrier whose path passes nearest a point, within `radius`, or null: those round it only (`barriersIn`). */
@@ -682,14 +732,30 @@ export class RoadDoc {
 
   /** Places one landscaping item where `snapLandscape` put it. */
   addLandscape(kind: LandscapeKind, at: { x: number; y: number }, extra: { signType?: SignType; text?: string; planted?: number } = {}): LandscapeItem {
-    const on = clampToMap(at);
-    const text = extra.text?.slice(0, SIGN_TEXT_MAX);
-    const item: LandscapeItem = { id: this.landscapeIds.take(), kind, x: on.x, y: on.y,
-      ...(extra.signType ? { signType: extra.signType } : {}), ...(text ? { text } : {}),
-      ...(extra.planted !== undefined && Number.isFinite(extra.planted) ? { planted: extra.planted } : {}) };
-    this.putLandscapeRecord(item);
-    this.changes.record('landscape', [rectAround([item], ITEM_PAD)!], { ids: [item.id] });
-    return item;
+    return this.addLandscapeMany([{ kind, at, extra }])[0]!;
+  }
+
+  /**
+   * Places many items at once (a generated city's furniture and street names), in their order, written
+   * in the diary as ONE entry with each item's rectangle and id. DO NOT place a batch item by item with
+   * `addLandscape`: each wrote its own entry, a generated city's 11,000 overflowed the diary's kept
+   * entries of the kind (`changes.ts` KEPT), and every reader of the landscaping was told "everything
+   * changed" and worked out the whole map again - the street furniture, the signs, the poles, the
+   * walkers' footways - instead of the items placed.
+   */
+  addLandscapeMany(list: readonly { readonly kind: LandscapeKind; readonly at: { x: number; y: number };
+    readonly extra?: { signType?: SignType; text?: string; planted?: number } }[]): LandscapeItem[] {
+    const items = list.map(({ kind, at, extra = {} }) => {
+      const on = clampToMap(at);
+      const text = extra.text?.slice(0, SIGN_TEXT_MAX);
+      const item: LandscapeItem = { id: this.landscapeIds.take(), kind, x: on.x, y: on.y,
+        ...(extra.signType ? { signType: extra.signType } : {}), ...(text ? { text } : {}),
+        ...(extra.planted !== undefined && Number.isFinite(extra.planted) ? { planted: extra.planted } : {}) };
+      this.putLandscapeRecord(item);
+      return item;
+    });
+    if (items.length) this.changes.record('landscape', items.map((item) => rectAround([item], ITEM_PAD)!), { ids: items.map((item) => item.id) });
+    return items;
   }
 
   removeLandscape(id: number): boolean {
@@ -709,8 +775,14 @@ export class RoadDoc {
     return this.landscapeCells.idsMeeting(rect).map((id) => this.landscapeMap.get(id)!);
   }
 
+  /** The street furniture whose box reaches any of `rects`, each once, in increasing id order (`CellFiling.idsMeetingAny`). */
+  landscapeInAny(rects: readonly ChangeRect[]): LandscapeItem[] {
+    return this.landscapeCells.idsMeetingAny(rects).map((id) => this.landscapeMap.get(id)!);
+  }
+
   /** A record put (new, or replacing the one of its id, which keeps its place in the map's order). */
   private putLandscapeRecord(item: LandscapeItem): void {
+    this.ownIndex('landscape');
     const was = this.landscapeMap.get(item.id);
     if (was) this.countStreetName(was, -1);
     this.landscapeMap.set(item.id, item);
@@ -721,6 +793,7 @@ export class RoadDoc {
   private deleteLandscapeRecord(id: number): void {
     const was = this.landscapeMap.get(id);
     if (!was) return;
+    this.ownIndex('landscape');
     this.landscapeMap.delete(id);
     this.landscapeCells.remove(id);
     this.countStreetName(was, -1);
@@ -734,8 +807,13 @@ export class RoadDoc {
 
   private clearLandscapeRecords(): void {
     this.landscapeMap.clear();
-    this.landscapeCells.copyFrom(new CellFiling(LANDSCAPE_CELL));
-    this.streetNameCount.clear();
+    if (this.sharedIndices.delete('landscape')) {
+      this.landscapeCells = new CellFiling(LANDSCAPE_CELL);
+      this.streetNameCount = new Map();
+    } else {
+      this.landscapeCells.copyFrom(new CellFiling(LANDSCAPE_CELL));
+      this.streetNameCount.clear();
+    }
   }
 
   /** Removes a pole and every wire that reached it. */
@@ -842,10 +920,10 @@ export class RoadDoc {
       ...(authoredParking ? { parking: authoredParking } : {}),
     };
     this.segments.set(id, s);
-    this.requireNode(a).incident.push(id);
-    this.requireNode(b).incident.push(id);
+    this.nodeToWrite(a)!.incident.push(id);
+    this.nodeToWrite(b)!.incident.push(id);
     // A third road turns a mid-block crossing into a junction.
-    for (const end of [a, b]) dropStaleCrossing(this.requireNode(end));
+    for (const end of [a, b]) dropStaleCrossing(this.nodeToWrite(end));
     this.fitCurve(s);
     this.markSegment(id);
     return s;
@@ -855,14 +933,14 @@ export class RoadDoc {
     const s = this.segments.get(id);
     if (!s) return;
     this.markSegment(id);
-    detach(this.nodes.get(s.a), id);
-    detach(this.nodes.get(s.b), id);
+    detach(this.nodeToWrite(s.a), id);
+    detach(this.nodeToWrite(s.b), id);
     this.loose.add(s.a);
     this.loose.add(s.b);
     // A turn ban naming a road that is gone bans nothing - until the id is
     // handed out again and it silently bans a movement onto an unrelated road.
     for (const end of [s.a, s.b]) {
-      const n = this.nodes.get(end);
+      const n = this.nodeToWrite(end);
       if (!n) continue;
       for (let i = n.blockedMovements.length - 1; i >= 0; i--) {
         if (movementMentions(n.blockedMovements[i] as string, id)) n.blockedMovements.splice(i, 1);
@@ -879,7 +957,7 @@ export class RoadDoc {
    * left naming the old id, so they silently stopped applying.
    */
   carryMovements(node: NodeId, saved: readonly string[], from: SegmentId, to: SegmentId): void {
-    const n = this.nodes.get(node);
+    const n = this.nodeToWrite(node);
     if (!n) return;
     for (const key of saved) {
       if (!movementMentions(key, from)) continue;
@@ -897,8 +975,8 @@ export class RoadDoc {
    * `carryMovements` does for turn bans.
    */
   carryCrossing(node: NodeId, saved: NodeCrossing | undefined, from: SegmentId, to: SegmentId): void {
-    const n = this.nodes.get(node);
-    if (!n || !saved || saved.segment !== from) return;
+    if (!this.nodes.has(node) || !saved || saved.segment !== from) return;
+    const n = this.nodeToWrite(node)!;
     n.crossing = { kind: saved.kind, segment: to };
     dropStaleCrossing(n);
     this.markNode(node);
@@ -920,10 +998,12 @@ export class RoadDoc {
    */
   mergeNodes(target: NodeId, source: NodeId): boolean {
     if (target === source) return true;
-    const keep = this.nodes.get(target);
-    const remove = this.nodes.get(source);
-    if (!keep || !remove) return false;
-    if (Math.abs(keep.heightOffset - remove.heightOffset) > 0.75) return false;
+    const kept = this.nodes.get(target);
+    const removed = this.nodes.get(source);
+    if (!kept || !removed) return false;
+    if (Math.abs(kept.heightOffset - removed.heightOffset) > 0.75) return false;
+    const keep = this.nodeToWrite(target)!;
+    const remove = this.nodeToWrite(source)!;
 
     if (keep.control === 'auto' && remove.control !== 'auto') keep.control = remove.control;
     for (const movement of remove.blockedMovements) {
@@ -944,8 +1024,9 @@ export class RoadDoc {
         continue;
       }
       const before = this.segmentRect(id);
-      if (segment.a === source) segment.a = target;
-      if (segment.b === source) segment.b = target;
+      const moved = this.segmentToWrite(id)!;
+      if (moved.a === source) moved.a = target;
+      if (moved.b === source) moved.b = target;
       detach(remove, id);
       if (!keep.incident.includes(id)) keep.incident.push(id);
       this.markSegment(id, before);
@@ -960,18 +1041,19 @@ export class RoadDoc {
 
   /** Moves a node freely; junction geometry adapts to the resulting angle. */
   moveNode(id: NodeId, to: Vec2): boolean {
-    const n = this.nodes.get(id);
-    if (!n) return false;
+    const was = this.nodes.get(id);
+    if (!was) return false;
     // Dragging a node off the plate is the same offence as building one there,
     // and is caught in the same place.
     const p = clampToMap(to);
-    if (n.x === p.x && n.y === p.y) return true;
+    if (was.x === p.x && was.y === p.y) return true;
 
     // Where the junction and its roads stood: a move changes the place it
     // leaves as much as the one it reaches. DO NOT write only the rectangle
     // after the move: whatever is derived where the node was (paving, ground,
     // lots, the network's candidates) would keep the old road.
     const before = this.roadAreas(id);
+    const n = this.nodeToWrite(id)!;
     n.x = p.x;
     n.y = p.y;
     for (const segId of n.incident) {
@@ -1013,7 +1095,8 @@ export class RoadDoc {
     if (!a || !b) return;
     const fitted = fitRoadCurve(a, b, s.curve, s.type, s.lanes, s.direction, s.section, s.parking);
     if (fitted !== s.curve) {
-      s.curve = fitted;
+      // `s` may be the original's record, read through by a working copy: the change goes to its own.
+      this.segmentToWrite(s.id)!.curve = fitted;
       this.markSegment(s.id);
     }
   }
@@ -1022,27 +1105,29 @@ export class RoadDoc {
   // (`markSegment`'s `before`): a road made narrower, straighter or with
   // fewer lanes leaves ground its new rectangle no longer covers.
   setSegmentType(id: SegmentId, type: number): void {
-    const s = this.segments.get(id);
-    if (!s || s.type === type) return;
+    const was = this.segments.get(id);
+    if (!was || was.type === type) return;
     const before = this.segmentRect(id);
+    const s = this.segmentToWrite(id)!;
     s.type = type;
     this.fitCurve(s);
     this.markSegment(id, before);
   }
 
   setSegmentCurve(id: SegmentId, curve: CurveShape | null): void {
-    const s = this.segments.get(id);
-    if (!s) return;
+    if (!this.segments.has(id)) return;
     const before = this.segmentRect(id);
+    const s = this.segmentToWrite(id)!;
     s.curve = curve;
     this.fitCurve(s);
     this.markSegment(id, before);
   }
 
   setSegmentDirection(id: SegmentId, direction: SegmentDirection): void {
-    const s = this.segments.get(id);
-    if (!s || s.direction === direction) return;
+    const was = this.segments.get(id);
+    if (!was || was.direction === direction) return;
     const before = this.segmentRect(id);
+    const s = this.segmentToWrite(id)!;
     s.direction = direction;
     s.lanes = normaliseLaneCount(s.lanes, direction);
     this.fitCurve(s);
@@ -1050,10 +1135,11 @@ export class RoadDoc {
   }
 
   setSegmentLanes(id: SegmentId, lanes: number | null): void {
-    const s = this.segments.get(id);
-    const next = normaliseLaneCount(lanes, s?.direction ?? 'both');
-    if (!s || s.lanes === next) return;
+    const was = this.segments.get(id);
+    const next = normaliseLaneCount(lanes, was?.direction ?? 'both');
+    if (!was || was.lanes === next) return;
     const before = this.segmentRect(id);
+    const s = this.segmentToWrite(id)!;
     s.lanes = next;
     this.fitCurve(s);
     this.markSegment(id, before);
@@ -1061,10 +1147,11 @@ export class RoadDoc {
 
   /** Changes every section consumer through the existing geometry/topology revision gates. */
   setSegmentSection(id: SegmentId, section?: RoadSection): void {
-    const segment = this.segments.get(id);
+    const was = this.segments.get(id);
     const next = normalizeRoadSection(section);
-    if (!segment || (section !== undefined && !next) || sameRoadSection(segment.section, next)) return;
+    if (!was || (section !== undefined && !next) || sameRoadSection(was.section, next)) return;
     const before = this.segmentRect(id);
+    const segment = this.segmentToWrite(id)!;
     if (next) segment.section = next;
     else delete segment.section;
     this.fitCurve(segment);
@@ -1073,10 +1160,11 @@ export class RoadDoc {
 
   /** Parking on the two sides of a segment; none on either side removes it. */
   setSegmentParking(id: SegmentId, parking?: SegmentParking): void {
-    const segment = this.segments.get(id);
+    const was = this.segments.get(id);
     const next = normalizeParking(parking);
-    if (!segment || sameParking(segment.parking, next)) return;
+    if (!was || sameParking(was.parking, next)) return;
     const before = this.segmentRect(id);
+    const segment = this.segmentToWrite(id)!;
     if (next) segment.parking = next;
     else delete segment.parking;
     this.fitCurve(segment);
@@ -1085,8 +1173,9 @@ export class RoadDoc {
 
   /** Retaining walls on the sides of the road's cutting (`RoadSegment.cutWalls`). */
   setSegmentCutWalls(id: SegmentId, on: boolean): void {
-    const segment = this.segments.get(id);
-    if (!segment || (segment.cutWalls === true) === on) return;
+    const was = this.segments.get(id);
+    if (!was || (was.cutWalls === true) === on) return;
+    const segment = this.segmentToWrite(id)!;
     if (on) segment.cutWalls = true;
     else delete segment.cutWalls;
     this.markSegment(id);
@@ -1094,10 +1183,11 @@ export class RoadDoc {
 
   /** The player's lane connections at a node; undefined or empty: all derived (`RoadNode.laneLinks`). */
   setNodeLaneLinks(id: NodeId, links: readonly LaneLink[] | undefined): void {
-    const node = this.nodes.get(id);
-    if (!node) return;
+    const was = this.nodes.get(id);
+    if (!was) return;
     const next = normalizeLaneLinks(links);
-    if (linksDigest(node.laneLinks) === linksDigest(next)) return;
+    if (linksDigest(was.laneLinks) === linksDigest(next)) return;
+    const node = this.nodeToWrite(id)!;
     if (next) node.laneLinks = next;
     else delete node.laneLinks;
     this.markNode(id);
@@ -1119,8 +1209,9 @@ export class RoadDoc {
 
   /** A U-turn through the median for the traffic arriving from `from` (`RoadNode.uturn`), or none. */
   setNodeUturn(id: NodeId, from: SegmentId | undefined): void {
-    const node = this.nodes.get(id);
-    if (!node || node.uturn === from) return;
+    const was = this.nodes.get(id);
+    if (!was || was.uturn === from) return;
+    const node = this.nodeToWrite(id)!;
     if (from !== undefined) node.uturn = from;
     else delete node.uturn;
     this.markNode(id);
@@ -1128,8 +1219,9 @@ export class RoadDoc {
 
   /** What a road's end is (`RoadNode.end`): a turning circle, or (undefined) the map's edge. */
   setNodeEnd(id: NodeId, end: RoadEnd | undefined): void {
-    const node = this.nodes.get(id);
-    if (!node || node.end === end) return;
+    const was = this.nodes.get(id);
+    if (!was || was.end === end) return;
+    const node = this.nodeToWrite(id)!;
     if (end) node.end = end;
     else delete node.end;
     this.markNode(id);
@@ -1137,10 +1229,11 @@ export class RoadDoc {
 
   /** Each leg's rule at a junction (`RoadNode.approachRules`); undefined: all derived. */
   setNodeApproachRules(id: NodeId, rules: readonly ApproachRuleEntry[] | undefined): void {
-    const node = this.nodes.get(id);
-    if (!node) return;
+    const was = this.nodes.get(id);
+    if (!was) return;
     const next = normalizeApproachRules(rules);
-    if (rulesDigest(node.approachRules) === rulesDigest(next)) return;
+    if (rulesDigest(was.approachRules) === rulesDigest(next)) return;
+    const node = this.nodeToWrite(id)!;
     if (next) node.approachRules = next;
     else delete node.approachRules;
     this.markNode(id);
@@ -1148,28 +1241,29 @@ export class RoadDoc {
 
   /** A signal's settings (`RoadNode.signal`); undefined: adaptive with the game's timings. */
   setNodeSignal(id: NodeId, signal: SignalSettings | undefined): void {
-    const node = this.nodes.get(id);
-    if (!node) return;
+    const was = this.nodes.get(id);
+    if (!was) return;
     const next = normalizeSignalSettings(signal);
-    if (signalDigest(node.signal) === signalDigest(next)) return;
+    if (signalDigest(was.signal) === signalDigest(next)) return;
+    const node = this.nodeToWrite(id)!;
     if (next) node.signal = next;
     else delete node.signal;
     this.markNode(id);
   }
 
   setSegmentStructure(id: SegmentId, structure: RoadStructure): void {
-    const segment = this.segments.get(id);
-    if (!segment || segment.structure === structure) return;
-    segment.structure = structure;
+    const was = this.segments.get(id);
+    if (!was || was.structure === structure) return;
+    this.segmentToWrite(id)!.structure = structure;
     this.markSegment(id);
   }
 
   setNodeHeightOffset(id: NodeId, heightOffset: number): void {
-    const node = this.nodes.get(id);
-    if (!node || !Number.isFinite(heightOffset) || node.heightOffset === heightOffset) return;
-    const junctionModeChanged = (node.heightOffset < -TUNNEL_HEADROOM) !==
+    const was = this.nodes.get(id);
+    if (!was || !Number.isFinite(heightOffset) || was.heightOffset === heightOffset) return;
+    const junctionModeChanged = (was.heightOffset < -TUNNEL_HEADROOM) !==
       (heightOffset < -TUNNEL_HEADROOM);
-    node.heightOffset = heightOffset;
+    this.nodeToWrite(id)!.heightOffset = heightOffset;
     this.markNode(id, junctionModeChanged);
   }
 
@@ -1184,18 +1278,21 @@ export class RoadDoc {
   // with the new one's. DO NOT write `null` (the whole map) for it: on a map
   // at the cap every dab, stamp or tree laid the whole map again.
   addPaintDab(dab: PaintDab): void {
+    this.ownList('terrainPaint');
     this.terrainPaint.push({ ...dab });
     const gone = this.terrainPaint.length > MAX_PAINT_DABS ? this.terrainPaint.shift() : undefined;
     this.changes.record('paint', gone ? [circleRect(dab), circleRect(gone)] : [circleRect(dab)]);
   }
 
   addFogDab(dab: FogDab): void {
+    this.ownList('fogDabs');
     this.fogDabs.push({ ...dab });
     const gone = this.fogDabs.length > MAX_FOG_DABS ? this.fogDabs.shift() : undefined;
     this.changes.record('fog', gone ? [circleRect(dab), circleRect(gone)] : [circleRect(dab)]);
   }
 
   addGullyDab(dab: GullyDab): void {
+    this.ownList('gullyDabs');
     this.gullyDabs.push({ ...dab });
     const gone = this.gullyDabs.length > MAX_GULLY_DABS ? this.gullyDabs.shift() : undefined;
     this.changes.record('gullies', gone ? [circleRect(dab), circleRect(gone)] : [circleRect(dab)]);
@@ -1205,6 +1302,7 @@ export class RoadDoc {
   // not as the whole map: the land outside them did not change.
   clearGullies(): void {
     if (this.gullyDabs.length === 0) return;
+    this.ownList('gullyDabs');
     const where = circlesBox(this.gullyDabs);
     this.gullyDabs.length = 0;
     this.changes.record('gullies', where);
@@ -1231,6 +1329,7 @@ export class RoadDoc {
 
   plantTrees(trees: readonly PlantedTree[]): void {
     if (trees.length === 0) return;
+    this.ownList('trees');
     for (const t of trees) { const tree = { ...t }; this.trees.push(tree); this.treeGrid?.add(tree); }
     const gone = this.trees.length > MAX_PLANTED_TREES ? this.trees.splice(0, this.trees.length - MAX_PLANTED_TREES) : [];
     for (const t of gone) this.treeGrid?.remove(t);
@@ -1243,6 +1342,8 @@ export class RoadDoc {
    * and a clearing is kept so none of the woods' own grows there either.
    */
   cutTrees(x: number, y: number, radius: number): void {
+    this.ownList('trees');
+    this.ownList('treeClearings');
     const before = this.trees.length;
     // The ones there, by place; then one pass, the kept moved down in order.
     // DO NOT splice each one out (trees x trees cut), nor walk every tree of
@@ -1259,12 +1360,14 @@ export class RoadDoc {
   /** Every planted tree gone, and every clearing grown over again. */
   clearTrees(): void {
     if (this.trees.length > 0) {
+      this.ownList('trees');
       const where = rectAround(this.trees, ITEM_PAD)!;
       this.trees.length = 0;
       this.treeGrid = null;
       this.changes.record('trees', [where]);
     }
     if (this.treeClearings.length > 0) {
+      this.ownList('treeClearings');
       const where = circlesBox(this.treeClearings);
       this.treeClearings.length = 0;
       this.changes.record('clearings', where);
@@ -1273,6 +1376,7 @@ export class RoadDoc {
 
   addElements(items: readonly ElementItem[]): void {
     if (items.length === 0) return;
+    this.ownList('elements');
     for (const item of items) { this.elements.push(item); this.elementGrid?.add(item); }
     const gone = this.elements.length > MAX_ELEMENTS ? this.elements.splice(0, this.elements.length - MAX_ELEMENTS) : [];
     for (const item of gone) this.elementGrid?.remove(item);
@@ -1284,6 +1388,7 @@ export class RoadDoc {
 
   /** Takes away the elements within `radius` of (x, y) - of one kind, or every kind (`kind` null). How many went. */
   removeElements(x: number, y: number, radius: number, kind: ElementKind | null): number {
+    this.ownList('elements');
     // The ones there, by place; the list then kept in one pass without them.
     const there = new Set(this.elementCells.near([x - radius, y - radius, x + radius, y + radius])
       .filter((e) => (kind === null || e.kind === kind) && Math.hypot(e.x - x, e.y - y) <= radius));
@@ -1299,6 +1404,7 @@ export class RoadDoc {
   /** Takes away these elements (the very items), in one pass; how many went. */
   removeElementItems(items: ReadonlySet<ElementItem>): number {
     if (items.size === 0) return 0;
+    this.ownList('elements');
     const before = this.elements.length;
     keepWhere(this.elements, (e) => !items.has(e));
     for (const e of items) this.elementGrid?.remove(e);
@@ -1309,6 +1415,7 @@ export class RoadDoc {
 
   clearElements(): void {
     if (this.elements.length === 0) return;
+    this.ownList('elements');
     const where = elementsBox(this.elements)!;
     this.elements.length = 0;
     this.elementGrid = null;
@@ -1318,6 +1425,7 @@ export class RoadDoc {
   /** A new cloud; null when the sky already holds as many as it may. */
   addCloud(value: Omit<PlacedCloud, 'id'>): PlacedCloud | null {
     if (this.clouds.length >= MAX_PLACED_CLOUDS) return null;
+    this.ownList('clouds');
     const id = this.clouds.reduce((m, c) => Math.max(m, c.id), 0) + 1;
     const cloud = { ...value, id };
     this.clouds.push(cloud);    this.changes.record('clouds', [rectAround([cloud], cloud.size)!], { ids: [id] });
@@ -1326,6 +1434,7 @@ export class RoadDoc {
 
   /** Several clouds at once, as many as the sky has room for: how many were added. */
   addClouds(values: readonly Omit<PlacedCloud, 'id'>[]): number {
+    this.ownList('clouds');
     let id = this.clouds.reduce((m, c) => Math.max(m, c.id), 0);
     let added = 0;
     for (const value of values) {
@@ -1342,6 +1451,7 @@ export class RoadDoc {
   updateCloud(id: number, change: Partial<Omit<PlacedCloud, 'id'>>): void {
     const i = this.clouds.findIndex((c) => c.id === id);
     if (i < 0) return;
+    this.ownList('clouds');
     const was = this.clouds[i]!;
     const now = { ...was, ...change, id };
     this.clouds[i] = now;    this.changes.record('clouds', [rectAround([was, now], Math.max(was.size, now.size))!], { ids: [id] });
@@ -1350,11 +1460,13 @@ export class RoadDoc {
   removeCloud(id: number): void {
     const i = this.clouds.findIndex((c) => c.id === id);
     if (i < 0) return;
+    this.ownList('clouds');
     const [was] = this.clouds.splice(i, 1);    this.changes.record('clouds', [rectAround([was!], was!.size)!], { ids: [id] });
   }
 
   clearFog(): void {
     if (this.fogDabs.length === 0) return;
+    this.ownList('fogDabs');
     const where = circlesBox(this.fogDabs);
     this.fogDabs.length = 0;
     this.changes.record('fog', where);
@@ -1368,12 +1480,14 @@ export class RoadDoc {
 
   clearPaint(): void {
     if (this.terrainPaint.length === 0) return;
+    this.ownList('terrainPaint');
     const where = circlesBox(this.terrainPaint);
     this.terrainPaint.length = 0;
     this.changes.record('paint', where);
   }
 
   addTerrainStamp(value: Omit<TerrainStamp, 'id'>): TerrainStamp {
+    this.ownList('terrainStamps');
     const stamp: TerrainStamp = { ...value, id: this.nextTerrainId++ };
     this.terrainStamps.push(stamp);
     // The oldest stamp dropped moves the land where it lay too.
@@ -1385,6 +1499,7 @@ export class RoadDoc {
 
   clearTerrain(): void {
     if (this.terrainStamps.length === 0) return;
+    this.ownList('terrainStamps');
     const where = circlesBox(this.terrainStamps);
     const ids = this.terrainStamps.map((s) => s.id);
     this.terrainStamps.length = 0;
@@ -1392,9 +1507,9 @@ export class RoadDoc {
   }
 
   setNodeControl(id: NodeId, control: JunctionControl): void {
-    const n = this.nodes.get(id);
-    if (!n || n.control === control) return;
-    n.control = control;
+    const was = this.nodes.get(id);
+    if (!was || was.control === control) return;
+    this.nodeToWrite(id)!.control = control;
     this.markNode(id);
   }
 
@@ -1404,8 +1519,9 @@ export class RoadDoc {
    * pedestrian priority. Returns false when the node cannot carry one.
    */
   setNodeCrossing(id: NodeId, kind: NodeCrossingKind, segment: SegmentId): boolean {
-    const n = this.nodes.get(id);
-    if (!n || n.incident.length !== 2 || !n.incident.includes(segment)) return false;
+    const was = this.nodes.get(id);
+    if (!was || was.incident.length !== 2 || !was.incident.includes(segment)) return false;
+    const n = this.nodeToWrite(id)!;
     n.crossing = { kind, segment };
     n.control = kind === 'signal' ? 'signal' : 'priority';
     this.markNode(id);
@@ -1414,20 +1530,20 @@ export class RoadDoc {
 
   /** Removes a node's mid-block crossing; the node goes back to `auto`. */
   clearNodeCrossing(id: NodeId): void {
-    const n = this.nodes.get(id);
-    if (!n?.crossing) return;
+    if (!this.nodes.get(id)?.crossing) return;
+    const n = this.nodeToWrite(id)!;
     delete n.crossing;
     n.control = 'auto';
     this.markNode(id);
   }
 
   setMovementBlocked(id: NodeId, from: SegmentId, to: SegmentId, blocked: boolean): void {
-    const n = this.nodes.get(id);
-    if (!n || from === to) return;
+    const was = this.nodes.get(id);
+    if (!was || from === to) return;
     const key = movementKey(from, to);
-    const index = n.blockedMovements.indexOf(key);
-    if (blocked && index < 0) n.blockedMovements.push(key);
-    else if (!blocked && index >= 0) n.blockedMovements.splice(index, 1);
+    const index = was.blockedMovements.indexOf(key);
+    if (blocked && index < 0) this.nodeToWrite(id)!.blockedMovements.push(key);
+    else if (!blocked && index >= 0) this.nodeToWrite(id)!.blockedMovements.splice(index, 1);
     else return;
     this.markNode(id);
   }
@@ -1442,7 +1558,7 @@ export class RoadDoc {
     const rects: ChangeRect[] = [];
     const ids: number[] = [];
     // In id order, as the walk over the map met them.
-    for (const id of [...this.loose].sort((p, q) => p - q)) {
+    for (const id of this.loose.sorted()) {
       const n = this.nodes.get(id);
       if (!n || n.incident.length !== 0) continue;
       // Its rectangle before it goes: DO NOT write `null` (the whole map)
@@ -1520,12 +1636,210 @@ export class RoadDoc {
     if (traffic) this.changes.record('traffic', rects, { ...extra, parent: roads });
   }
 
+  // ------------------------------------------------------------ working copy
+
+  /**
+   * A WORKING COPY FOR ONE EDIT that costs what the edit writes, not the map:
+   * every keyed collection is a map laid over this document's (`ForkMap`),
+   * every list and index by place this document's own until the copy writes
+   * it, the buildings and lots stores laid over theirs (`forkFrom`), and the
+   * diary going on from this one's, keeping every entry it writes
+   * (`ChangeJournal.forkFrom`). An edit made on it reads exactly as the same
+   * edit made here would; `replaceWith(copy)` then writes into this document
+   * only the records the copy wrote, and the copy's own diary entries - the
+   * ones the same edits made here would have written (`takeFork`).
+   *
+   * It was `clone`: every node, segment, pole, span, landscaping item,
+   * barrier, stamp, dab, cloud, element, tree, zone, person and the transit
+   * copied, on every road drawn and on every pause of the pointer while one
+   * is drawn (the road tool's dry run), and every one of them compared and
+   * copied back on the commit (`replaceContents`). DO NOT go back to copying
+   * the document for an edit (CLAUDE.md, "Refazer tudo quando uma parte muda").
+   *
+   * THE RULES. Only this document's own writers write a copy (they take a
+   * record's own copy first, `nodeToWrite`/`segmentToWrite`, `ownList`,
+   * `ownIndex`): nothing outside changes a record or a list of a working copy
+   * in place. This document must not change while a copy of it is read or
+   * taken back: a copy lives within one edit (made, edited, then taken back
+   * or dropped). Taking back a copy of this document as it stood before a
+   * later change is refused (an error). `clone` stays the independent copy,
+   * for what must outlive changes here (a snapshot to judge an edit made in
+   * place against, `editRules.ts` `snapshotRoads`).
+   */
+  fork(): RoadDoc {
+    const copy = new RoadDoc();
+    this.layOver(copy);
+    return copy;
+  }
+
+  /**
+   * Takes back an edit made on a working copy of this document (`fork`): what
+   * it wrote and its diary entries (`takeFork`). What an edit commits with;
+   * `replaceWith` stays for any other document (an undo, a map loaded).
+   */
+  takeBack(copy: RoadDoc): void {
+    if (copy.below !== this) throw new Error('RoadDoc.takeBack: not a working copy of this document');
+    this.takeFork(copy);
+  }
+
+  /** Makes `copy` a working copy over this document as it stands (`fork`); also how a copy taken back starts again. */
+  private layOver(copy: RoadDoc): void {
+    const own = copy as unknown as { nodes: Map<NodeId, RoadNode>; segments: Map<SegmentId, RoadSegment> };
+    own.nodes = new ForkMap(this.nodes);
+    own.segments = new ForkMap(this.segments);
+    // The nodes that may have lost their last road: the original's read through, its own kept apart.
+    copy.loose = this.loose.over();
+    copy.poleMap = new ForkMap(this.poleMap);
+    copy.spanMap = new ForkMap(this.spanMap);
+    copy.poleIndex = this.poleIndex;
+    copy.barrierMap = new ForkMap(this.barrierMap);
+    copy.barrierCells = this.barrierCells;
+    copy.landscapeMap = new ForkMap(this.landscapeMap);
+    copy.landscapeCells = this.landscapeCells;
+    copy.streetNameCount = this.streetNameCount;
+    copy.sharedIndices = new Set(INDEX_KINDS);
+    for (const part of DOC_LISTS) copy.setList(part, this.listOf(part) as unknown[]);
+    copy.sharedLists = new Set(DOC_LISTS);
+    copy.treeGrid = null;
+    copy.elementGrid = null;
+    // Values, each replaced whole by its writers, never changed in place: shared.
+    copy.transit = this.transit;
+    copy.terrainRelief = this.terrainRelief;
+    copy.markingStyle = this.markingStyle;
+    copy.nature = this.nature;
+    copy.fogSettings = this.fogSettings;
+    copy.gullyAuto = this.gullyAuto;
+    copy.weather = this.weather;
+    copy.economy = this.economy;
+    copy.nextZoneId = this.nextZoneId;
+    copy.nodeIds = new IdAllocator(this.nodeIds.peek);
+    copy.segIds = new IdAllocator(this.segIds.peek);
+    copy.poleIds = new IdAllocator(this.poleIds.peek);
+    copy.spanIds = new IdAllocator(this.spanIds.peek);
+    copy.barrierIds = new IdAllocator(this.barrierIds.peek);
+    copy.landscapeIds = new IdAllocator(this.landscapeIds.peek);
+    copy.nextTerrainId = this.nextTerrainId;
+    copy.buildings.forkFrom(this.buildings);
+    copy.lotStore.forkFrom(this.lotStore);
+    copy.openLotsIndex = null;
+    copy.changes.forkFrom(this.changes);
+    copy.forkedFrom = { doc: this, version: this.changes.version };
+    copy.below = this;
+  }
+
+  /**
+   * A working copy (`fork`) of this document taken back: what it wrote, and
+   * only that, written here through this document's own writers (so every
+   * index by place stays in step), and its diary entries written here as
+   * they are (`ChangeJournal.take`). Then the copy starts again over this
+   * document as it now stands.
+   */
+  private takeFork(copy: RoadDoc): void {
+    if (copy.forkedFrom?.doc !== this || copy.forkedFrom.version !== this.changes.version) {
+      throw new Error('RoadDoc.replaceWith: a working copy of this document as it stood before a later change');
+    }
+    (copy.nodes as ForkMap<NodeId, RoadNode>).applyTo(this.nodes);
+    (copy.segments as ForkMap<SegmentId, RoadSegment>).applyTo(this.segments);
+    // Pruned by the copy: what it holds now; else the original's and the copy's.
+    this.loose.take(copy.loose);
+    (copy.poleMap as ForkMap<PoleId, UtilityPole>).applyTo(this.poleMap, (_, pole) => this.putPoleRecord(pole), (id) => this.deletePoleRecord(id));
+    (copy.spanMap as ForkMap<SpanId, UtilitySpan>).applyTo(this.spanMap, (_, span) => this.putSpanRecord(span), (id) => this.deleteSpanRecord(id));
+    (copy.landscapeMap as ForkMap<number, LandscapeItem>).applyTo(this.landscapeMap, (_, item) => this.putLandscapeRecord(item), (id) => this.deleteLandscapeRecord(id));
+    (copy.barrierMap as ForkMap<number, Barrier>).applyTo(this.barrierMap, (_, barrier) => this.putBarrierRecord(barrier), (id) => this.deleteBarrierRecord(id));
+    this.buildings.takeFork(copy.buildings);
+    this.lotStore.takeFork(copy.lotStore);
+    // The lists the copy wrote (it owns them): their items in place here, the filings by place kept by difference.
+    for (const part of DOC_LISTS) {
+      if (copy.sharedLists.has(part)) continue;
+      const mine = this.listOf(part) as unknown[], theirs = copy.listOf(part);
+      const grid = part === 'trees' ? this.treeGrid : part === 'elements' ? this.elementGrid : null;
+      if (grid) {
+        const kept = new Set(theirs), had = new Set(mine);
+        for (const item of mine) if (!kept.has(item)) grid.remove(item as PlantedTree & ElementItem);
+        for (const item of theirs) if (!had.has(item)) grid.add(item as PlantedTree & ElementItem);
+      }
+      mine.length = 0;
+      for (const item of theirs) mine.push(item);
+    }
+    this.transit = copy.transit;
+    this.terrainRelief = copy.terrainRelief;
+    this.markingStyle = copy.markingStyle;
+    this.nature = copy.nature;
+    this.fogSettings = copy.fogSettings;
+    this.gullyAuto = copy.gullyAuto;
+    this.weather = copy.weather;
+    this.economy = copy.economy;
+    this.nextZoneId = copy.nextZoneId;
+    this.nodeIds = new IdAllocator(copy.nodeIds.peek);
+    this.segIds = new IdAllocator(copy.segIds.peek);
+    this.poleIds = new IdAllocator(copy.poleIds.peek);
+    this.spanIds = new IdAllocator(copy.spanIds.peek);
+    this.barrierIds = new IdAllocator(copy.barrierIds.peek);
+    this.landscapeIds = new IdAllocator(copy.landscapeIds.peek);
+    this.nextTerrainId = copy.nextTerrainId;
+    this.changes.take(copy.changes);
+    this.layOver(copy);
+  }
+
+  /** A node's record to change in place: a working copy's own (copied from the original's the first time), or the record itself. */
+  private nodeToWrite(id: NodeId): RoadNode | undefined {
+    const map = this.nodes;
+    return map instanceof ForkMap ? map.writable(id, copyNode) : map.get(id);
+  }
+
+  /** A segment's record to change in place (as `nodeToWrite`). */
+  private segmentToWrite(id: SegmentId): RoadSegment | undefined {
+    const map = this.segments;
+    return map instanceof ForkMap ? map.writable(id, copySegment) : map.get(id);
+  }
+
+  /** A list about to be written in place: a working copy's own, copied from the original's the first time (`fork`). */
+  private ownList(part: DocListPart): void {
+    if (!this.sharedLists.delete(part)) return;
+    const list = this.listOf(part);
+    this.setList(part, list.slice());
+    forkWork.copied += list.length;
+    if (part === 'trees') this.treeGrid = null;
+    if (part === 'elements') this.elementGrid = null;
+  }
+
+  /** A list of the document set whole: only a working copy's, laid over or owned (`layOver`, `ownList`). */
+  private setList(part: DocListPart, list: unknown[]): void {
+    (this as unknown as Record<DocListPart, unknown[]>)[part] = list;
+  }
+
+  /** An index by place about to be written: a working copy's own, copied from the original's the first time (`fork`). */
+  private ownIndex(kind: IndexKind): void {
+    if (!this.sharedIndices.delete(kind)) return;
+    switch (kind) {
+      case 'poles':
+        this.poleIndex = this.poleIndex.copy();
+        forkWork.copied += this.poleMap.size + this.spanMap.size;
+        return;
+      case 'barriers': {
+        const cells = new CellFiling<number, Barrier>(LANDSCAPE_CELL);
+        cells.copyFrom(this.barrierCells);
+        this.barrierCells = cells;
+        forkWork.copied += this.barrierMap.size;
+        return;
+      }
+      case 'landscape': {
+        const cells = new CellFiling<number, LandscapeItem>(LANDSCAPE_CELL);
+        cells.copyFrom(this.landscapeCells);
+        this.landscapeCells = cells;
+        this.streetNameCount = new Map(this.streetNameCount);
+        forkWork.copied += this.landscapeMap.size;
+      }
+    }
+  }
+
   /**
    * Makes an independent working copy, including allocator high-water marks.
    *
    * Copying only the serialized ids is insufficient after a high id has been
-   * deleted: a speculative edit could otherwise recycle it.  Commits use this
-   * clone so a failed operation never mutates the live document.
+   * deleted: a speculative edit could otherwise recycle it. What outlives a
+   * change of this document takes this copy (a snapshot); an edit's working
+   * copy is a `fork`, which costs what the edit writes.
    */
   clone(): RoadDoc {
     // Field by field, each record copied as `replaceContents` copies it. It
@@ -1537,7 +1851,7 @@ export class RoadDoc {
     // NÃO voltar a clonar por JSON.
     const copy = new RoadDoc();
     for (const [id, node] of this.nodes) copy.nodes.set(id, copyNode(node));
-    copy.loose = new Set(this.loose);
+    copy.loose = this.loose.copy();
     for (const [id, segment] of this.segments) copy.segments.set(id, copySegment(segment));
     for (const pole of this.poles.values()) copy.putPoleRecord({ ...pole });
     for (const span of this.poleSpans.values()) copy.putSpanRecord({ ...span });
@@ -1597,6 +1911,11 @@ export class RoadDoc {
    * stand, and every other kind whose content moved.
    */
   replaceWith(source: RoadDoc): void {
+    // A working copy over this document (`fork`): what it wrote, and its own diary entries.
+    if (source.below === this) {
+      this.takeFork(source);
+      return;
+    }
     const moved = this.movedIn(source);
     // Read before anything here is written: it holds while this diary stands where the copy was made.
     const buildingIds = this.buildingsMovedIn(source);
@@ -1737,6 +2056,7 @@ export class RoadDoc {
     for (const { part, start, remove, items } of r.lists) {
       const kind = LIST_KINDS[part];
       const put = items.map((item) => structuredClone(item));
+      if (part !== 'lotKeys') this.ownList(part);
       // The keys through their owner, which keeps them as a set too.
       const gone = part === 'lotKeys' ? this.lotStore.spliceKeys(start, remove, put as string[]) : spliceIn(this.listOf(part) as unknown[], start, remove, put);
       if (part === 'elements') {
@@ -1895,6 +2215,8 @@ export class RoadDoc {
     // only when the primary data changes).
     this.nextZoneId = source.nextZoneId;
     if (moved('zones') && (JSON.stringify(this.zones) !== JSON.stringify(source.zones) || JSON.stringify(this.zoneMarks) !== JSON.stringify(source.zoneMarks))) {
+      this.ownList('zones');
+      this.ownList('zoneMarks');
       this.zones.length = 0;
       this.zones.push(...source.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })));
       this.zoneMarks.length = 0;
@@ -1908,6 +2230,7 @@ export class RoadDoc {
       others.push('transit');
     }
     if (moved('people') && JSON.stringify(this.people) !== JSON.stringify(source.people)) {
+      this.ownList('people');
       this.people.length = 0;
       this.people.push(...source.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec));
       others.push('people');
@@ -1927,18 +2250,21 @@ export class RoadDoc {
       others.push('weather');
     }
     if (moved('trees') && JSON.stringify(this.trees) !== JSON.stringify(source.trees)) {
+      this.ownList('trees');
       this.trees.length = 0;
       this.treeGrid = null;
       this.trees.push(...source.trees.map((t) => ({ ...t })));
       others.push('trees');
     }
     if (moved('clearings') && JSON.stringify(this.treeClearings) !== JSON.stringify(source.treeClearings)) {
+      this.ownList('treeClearings');
       this.treeClearings.length = 0;
       this.treeClearings.push(...source.treeClearings.map((c) => ({ ...c })));
       others.push('clearings');
     }
 
     if (moved('elements') && (this.elements.length !== source.elements.length || JSON.stringify(this.elements) !== JSON.stringify(source.elements))) {
+      this.ownList('elements');
       this.elements.length = 0;
       this.elementGrid = null;
       this.elements.push(...source.elements);
@@ -1946,12 +2272,14 @@ export class RoadDoc {
     }
 
     if (moved('clouds') && JSON.stringify(this.clouds) !== JSON.stringify(source.clouds)) {
+      this.ownList('clouds');
       this.clouds.length = 0;
       this.clouds.push(...source.clouds.map((c) => ({ ...c })));
       others.push('clouds');
     }
 
     if (moved('gullies') && (this.gullyAuto !== source.gullyAuto || JSON.stringify(this.gullyDabs) !== JSON.stringify(source.gullyDabs))) {
+      this.ownList('gullyDabs');
       this.gullyDabs.length = 0;
       this.gullyDabs.push(...source.gullyDabs.map((dab) => ({ ...dab })));
       this.gullyAuto = source.gullyAuto;
@@ -1959,6 +2287,7 @@ export class RoadDoc {
     }
 
     if (moved('fog') && (JSON.stringify(this.fogDabs) !== JSON.stringify(source.fogDabs) || JSON.stringify(this.fogSettings) !== JSON.stringify(source.fogSettings))) {
+      this.ownList('fogDabs');
       this.fogDabs.length = 0;
       this.fogDabs.push(...source.fogDabs.map((dab) => ({ ...dab })));
       this.fogSettings = { ...source.fogSettings };
@@ -1966,6 +2295,7 @@ export class RoadDoc {
     }
 
     if (moved('paint') && !samePaint(this.terrainPaint, source.terrainPaint)) {
+      this.ownList('terrainPaint');
       this.terrainPaint.length = 0;
       this.terrainPaint.push(...source.terrainPaint.map((dab) => ({ ...dab })));
       others.push('paint');
@@ -1977,6 +2307,7 @@ export class RoadDoc {
     }
 
     if (landMoved) {
+      this.ownList('terrainStamps');
       this.terrainStamps.length = 0;
       this.terrainStamps.push(...source.terrainStamps.map((stamp) => ({ ...stamp })));
       this.terrainRelief = source.terrainRelief;
@@ -2351,6 +2682,55 @@ export class RoadDoc {
   }
 }
 
+/**
+ * The nodes that may have been left with no road (`RoadDoc.pruneOrphanNodes`):
+ * a node made, a road's end taken away, a node put back by undo - those since
+ * the last prune, which empties it, so it holds what the edits since touched.
+ * A working copy's (`RoadDoc.fork`) reads the original's with its own until
+ * it prunes, and is taken back by what it holds then (`take`).
+ */
+class LooseNodes {
+  private own = new Set<NodeId>();
+  constructor(private below: LooseNodes | null = null) {}
+
+  add(id: NodeId): void {
+    this.own.add(id);
+  }
+
+  /** Each once, in id order (as the walk over the map met them). */
+  sorted(): NodeId[] {
+    const all = new Set(this.below?.sorted());
+    for (const id of this.own) all.add(id);
+    return [...all].sort((p, q) => p - q);
+  }
+
+  clear(): void {
+    this.own.clear();
+    this.below = null;
+  }
+
+  /** A working copy's, over this one. */
+  over(): LooseNodes {
+    return new LooseNodes(this);
+  }
+
+  /** An independent copy (`RoadDoc.clone`). */
+  copy(): LooseNodes {
+    const out = new LooseNodes();
+    for (const id of this.sorted()) out.add(id);
+    return out;
+  }
+
+  /** A working copy's over this one taken back: what it holds now (only its own once it pruned). */
+  take(copy: LooseNodes): void {
+    if (copy.below === null) {
+      this.own = copy.own;
+      this.below = null;
+    } else for (const id of copy.own) this.own.add(id);
+    copy.own = new Set();
+  }
+}
+
 /** Exact serialization key; normalises the two JavaScript spellings of zero. */
 function coordinateKey(x: number, y: number): string {
   const nx = Object.is(x, -0) ? 0 : x;
@@ -2364,6 +2744,14 @@ export type ListPart = 'terrainStamps' | 'terrainPaint' | 'fogDabs' | 'gullyDabs
   | 'zones' | 'zoneMarks' | 'lotKeys' | 'people';
 export type ValuePart = 'terrainRelief' | 'markingStyle' | 'nature' | 'fogSettings' | 'gullyAuto' | 'weather' | 'economy' | 'transit'
   | 'nextZoneId' | 'nextLotId' | 'allocators';
+/** The lists the document holds itself (the lots' keys are the lot store's): what a working copy shares until it writes (`RoadDoc.fork`). */
+type DocListPart = Exclude<ListPart, 'lotKeys'>;
+const DOC_LISTS: readonly DocListPart[] = ['terrainStamps', 'terrainPaint', 'fogDabs', 'gullyDabs', 'clouds', 'trees', 'treeClearings', 'elements', 'zones', 'zoneMarks', 'people'];
+/** The indices by place a working copy reads from the original until it writes their kind (`RoadDoc.ownIndex`). */
+type IndexKind = 'poles' | 'barriers' | 'landscape';
+const INDEX_KINDS: readonly IndexKind[] = ['poles', 'barriers', 'landscape'];
+/** The kinds the roads' changes are written under (`roadsChanged`). */
+const ROAD_KINDS: readonly DocChangeKind[] = ['roads', 'traffic'];
 /** The diary kind each list is written under. */
 export const LIST_KINDS: Readonly<Record<ListPart, DocChangeKind>> = {
   terrainStamps: 'terrain', terrainPaint: 'paint', fogDabs: 'fog', gullyDabs: 'gullies', clouds: 'clouds', trees: 'trees',

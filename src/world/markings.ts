@@ -198,37 +198,41 @@ const LEGEND_GAP = m(1.5);
  * way. From the same rule the posts' signs come from (`roads/rules.ts`).
  */
 export function approachLegends(net: Network, styleId: MarkingStyleId): StrokeSpec[] {
-  const style = markingStyle(styleId);
   const out: StrokeSpec[] = [];
-  for (const node of net.doc.nodes.values()) {
-    if (node.incident.length < 3) continue;
-    for (const segId of node.incident) {
-      const kind = approachSign(net.doc, node, segId);
-      if (!kind || !arrivesAt(net.doc, node.id, segId)) continue;
-      const segment = net.doc.segment(segId), ribbon = net.ribbons.get(segId);
-      const centre = ribbon?.centre[Level.Asphalt];
-      if (!segment || !ribbon || !centre) continue;
-      const rt = ribbon.road;
-      if (rt.id === 'highway' || rt.id === 'ramp') continue;
-      // Traffic arriving at b runs a to b (forward).
-      const forward = segment.b === node.id;
-      const trims = net.trims.get(segId);
-      const trim = (forward ? trims?.b[Level.Asphalt] : trims?.a[Level.Asphalt]) ?? 0;
-      // The stop line, as the distance from where the lane starts in its direction.
-      const stopAt = centre.length - Math.max(0, net.stopLineDistance(segId, node.id) - trim);
-      const speedKmh = rt.speedLimit / kmh(1);
-      const height = kind === 'stop' ? style.legendHeight(speedKmh) : m(3);
-      const foot = stopAt - LEGEND_GAP - height;
-      if (foot < m(2)) continue;
-      const lw = laneWidth(rt);
-      const word = kind === 'stop' ? wordStrokes(style.stopText) : YIELD_SYMBOL;
-      const letter = kind === 'stop' ? Math.min((lw * 0.78) / Math.max(1, word.width), height * 0.5) : Math.min(lw * 0.55, m(1.5));
-      for (let lane = 0; lane < travelLanes(rt, ribbon.direction); lane++) {
-        paintInLane(out, ribbon, centre, forward, lane, foot, word, letter, height, m(kind === 'stop' ? 0.2 : 0.16));
-      }
+  for (const node of net.doc.nodes.keys()) approachLegendsAt(net, node, styleId, out);
+  return out;
+}
+
+/** `approachLegends` of one node, onto `out`: what the surfaces paint of it again when an edit reaches it. */
+export function approachLegendsAt(net: Network, nodeId: NodeId, styleId: MarkingStyleId, out: StrokeSpec[]): void {
+  const node = net.doc.node(nodeId);
+  if (!node || node.incident.length < 3) return;
+  const style = markingStyle(styleId);
+  for (const segId of node.incident) {
+    const kind = approachSign(net.doc, node, segId);
+    if (!kind || !arrivesAt(net.doc, node.id, segId)) continue;
+    const segment = net.doc.segment(segId), ribbon = net.ribbons.get(segId);
+    const centre = ribbon?.centre[Level.Asphalt];
+    if (!segment || !ribbon || !centre) continue;
+    const rt = ribbon.road;
+    if (rt.id === 'highway' || rt.id === 'ramp') continue;
+    // Traffic arriving at b runs a to b (forward).
+    const forward = segment.b === node.id;
+    const trims = net.trims.get(segId);
+    const trim = (forward ? trims?.b[Level.Asphalt] : trims?.a[Level.Asphalt]) ?? 0;
+    // The stop line, as the distance from where the lane starts in its direction.
+    const stopAt = centre.length - Math.max(0, net.stopLineDistance(segId, node.id) - trim);
+    const speedKmh = rt.speedLimit / kmh(1);
+    const height = kind === 'stop' ? style.legendHeight(speedKmh) : m(3);
+    const foot = stopAt - LEGEND_GAP - height;
+    if (foot < m(2)) continue;
+    const lw = laneWidth(rt);
+    const word = kind === 'stop' ? wordStrokes(style.stopText) : YIELD_SYMBOL;
+    const letter = kind === 'stop' ? Math.min((lw * 0.78) / Math.max(1, word.width), height * 0.5) : Math.min(lw * 0.55, m(1.5));
+    for (let lane = 0; lane < travelLanes(rt, ribbon.direction); lane++) {
+      paintInLane(out, ribbon, centre, forward, lane, foot, word, letter, height, m(kind === 'stop' ? 0.2 : 0.16));
     }
   }
-  return out;
 }
 
 /** Painted turn arrows follow the same authored rule as the connector graph. */
@@ -389,42 +393,42 @@ function zebraBars(frameAt: (along: number) => { p: Vec2; nrm: Vec2 }, rt: RoadT
 export function junctionDetail(net: Network): { stops: Bar[]; zebras: Bar[] } {
   const stops: Bar[] = [];
   const zebras: Bar[] = [];
-
-  for (const [node, byLevel] of net.junctions) {
-    const junction = byLevel.get(Level.Asphalt);
-    if (!junction) continue;
-    if (junction.legs.some((leg) => leg.road.id === 'highway' || leg.road.id === 'ramp')) continue;
-
-
-    // A stop line exists because movements conflict, which needs three legs.
-    // A crossing exists on two-leg junctions that are not through transitions:
-    // the footway may need to cross there. A swept bend has no approach zone,
-    // and `crosswalkDistanceAt` returns zero for it.
-    const movementsConflict = junction.legs.length >= 3;
-
-    junction.legs.forEach((leg, i) => {
-      const rt = leg.road;
-      const trim = junction.trims[i] as number;
-      // A stop line only means something where traffic arrives. A one-way leg
-      // carrying only departing traffic gets a crossing but no bar.
-      // Ask the network where the crossing is, do not re-derive it from the
-      // trim. On a short link between two junctions the network suppresses the
-      // crossing entirely — there is no room for one a driver would not park
-      // on — and a painter computing its own `crosswalkDistance(trim)` would
-      // cheerfully paint a zebra the model says is not there.
-      const crossing = net.crosswalkDistanceAt(leg.seg, node);
-      if (movementsConflict && leg.approaching) {
-        const bar = stopBar(leg.origin, leg.dir, leg.nrm, rt, trim, leg.shift);
-        if (bar) stops.push(bar);
-      }
-      if (crossing > 0) {
-        zebras.push(...crosswalkBars(leg.origin, leg.dir, leg.nrm, rt, trim));
-      }
-    });
-  }
-
-  midBlockDetail(net, stops, zebras);
+  for (const node of net.junctions.keys()) junctionDetailAt(net, node, stops, zebras);
+  for (const node of net.doc.nodes.keys()) midBlockDetailAt(net, node, stops, zebras);
   return { stops, zebras };
+}
+
+/** The stop bars and crosswalks of one junction's approaches, onto `stops` and `zebras` (`junctionDetail`). */
+export function junctionDetailAt(net: Network, node: NodeId, stops: Bar[], zebras: Bar[]): void {
+  const junction = net.junctions.get(node)?.get(Level.Asphalt);
+  if (!junction) return;
+  if (junction.legs.some((leg) => leg.road.id === 'highway' || leg.road.id === 'ramp')) return;
+
+  // A stop line exists because movements conflict, which needs three legs.
+  // A crossing exists on two-leg junctions that are not through transitions:
+  // the footway may need to cross there. A swept bend has no approach zone,
+  // and `crosswalkDistanceAt` returns zero for it.
+  const movementsConflict = junction.legs.length >= 3;
+
+  junction.legs.forEach((leg, i) => {
+    const rt = leg.road;
+    const trim = junction.trims[i] as number;
+    // A stop line only means something where traffic arrives. A one-way leg
+    // carrying only departing traffic gets a crossing but no bar.
+    // Ask the network where the crossing is, do not re-derive it from the
+    // trim. On a short link between two junctions the network suppresses the
+    // crossing entirely — there is no room for one a driver would not park
+    // on — and a painter computing its own `crosswalkDistance(trim)` would
+    // cheerfully paint a zebra the model says is not there.
+    const crossing = net.crosswalkDistanceAt(leg.seg, node);
+    if (movementsConflict && leg.approaching) {
+      const bar = stopBar(leg.origin, leg.dir, leg.nrm, rt, trim, leg.shift);
+      if (bar) stops.push(bar);
+    }
+    if (crossing > 0) {
+      zebras.push(...crosswalkBars(leg.origin, leg.dir, leg.nrm, rt, trim));
+    }
+  });
 }
 
 /**
@@ -437,35 +441,34 @@ export function junctionDetail(net: Network): { stops: Bar[]; zebras: Bar[] } {
  * the half its traffic arrives in. Frames are taken at each distance, so a
  * crossing on a curve follows the curve.
  */
-function midBlockDetail(net: Network, stops: Bar[], zebras: Bar[]): void {
+export function midBlockDetailAt(net: Network, nodeId: NodeId, stops: Bar[], zebras: Bar[]): void {
   const doc = net.doc;
-  for (const node of doc.nodes.values()) {
-    if (!node.crossing || node.incident.length !== 2) continue;
-    for (const segId of node.incident) {
-      const seg = doc.segment(segId);
-      if (!seg) continue;
-      const rt = roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking);
-      const pl = net.polylines.get(doc, segId);
-      const startsHere = segmentStartsAt(seg, node.id);
-      const frameAt = (along: number) => frameFromNode(pl, startsHere, Math.max(0, Math.min(pl.length, along)));
-      const crossing = net.crosswalkDistanceAt(segId, node.id);
-      if (crossing > 0) zebras.push(...zebraBars(frameAt, rt, crossing));
-      const approaching = seg.direction === 'both' ||
-        (startsHere ? seg.direction === 'bToA' : seg.direction === 'aToB');
-      const s = net.stopLineDistance(segId, node.id);
-      if (!approaching || s <= 0) continue;
-      const f = frameAt(s);
-      // Right-hand traffic: the approaching side is the `+nrm` half, across
-      // the travel lanes only.
-      const shift = travelShift(rt) * (startsHere ? 1 : -1);
-      const inner = shift + rt.median / 2;
-      const outer = shift + travelWidth(rt) / 2;
-      stops.push({
-        a: { x: f.p.x + f.nrm.x * inner, y: f.p.y + f.nrm.y * inner },
-        b: { x: f.p.x + f.nrm.x * outer, y: f.p.y + f.nrm.y * outer },
-        width: STOP_BAR_WIDTH,
-      });
-    }
+  const node = doc.node(nodeId);
+  if (!node || !node.crossing || node.incident.length !== 2) return;
+  for (const segId of node.incident) {
+    const seg = doc.segment(segId);
+    if (!seg) continue;
+    const rt = roadProfile(seg.type, seg.lanes, seg.direction, seg.section, seg.parking);
+    const pl = net.polylines.get(doc, segId);
+    const startsHere = segmentStartsAt(seg, node.id);
+    const frameAt = (along: number) => frameFromNode(pl, startsHere, Math.max(0, Math.min(pl.length, along)));
+    const crossing = net.crosswalkDistanceAt(segId, node.id);
+    if (crossing > 0) zebras.push(...zebraBars(frameAt, rt, crossing));
+    const approaching = seg.direction === 'both' ||
+      (startsHere ? seg.direction === 'bToA' : seg.direction === 'aToB');
+    const s = net.stopLineDistance(segId, node.id);
+    if (!approaching || s <= 0) continue;
+    const f = frameAt(s);
+    // Right-hand traffic: the approaching side is the `+nrm` half, across
+    // the travel lanes only.
+    const shift = travelShift(rt) * (startsHere ? 1 : -1);
+    const inner = shift + rt.median / 2;
+    const outer = shift + travelWidth(rt) / 2;
+    stops.push({
+      a: { x: f.p.x + f.nrm.x * inner, y: f.p.y + f.nrm.y * inner },
+      b: { x: f.p.x + f.nrm.x * outer, y: f.p.y + f.nrm.y * outer },
+      width: STOP_BAR_WIDTH,
+    });
   }
 }
 
@@ -540,19 +543,16 @@ export function transitionMarkings(net: Network, node: NodeId): StrokeSpec[] {
  * island is painted or a low dome a lorry may drive over). Sized from the
  * junction's nearest mouth, so it sits inside the box.
  */
-export function miniRoundaboutMarkings(net: Network): StrokeSpec[] {
-  const out: StrokeSpec[] = [];
-  for (const node of net.doc.nodes.values()) {
-    if (node.control !== 'mini' || node.incident.length < 3) continue;
-    const mouth = Math.min(...node.incident.map((seg) => net.mouthDistance(seg, node.id)));
-    const r = Math.max(m(2), Math.min(m(4), mouth * 0.4));
-    const ring = (radius: number): Vec2[] => Array.from({ length: 41 }, (_, i) => {
-      const a = (i / 40) * Math.PI * 2;
-      return { x: node.x + Math.cos(a) * radius, y: node.y + Math.sin(a) * radius };
-    });
-    out.push({ points: ring(r), width: m(0.2), color: LANE_LINE, dash: null, dashOffset: 0 });
-    // The middle filled with paint: rings close enough to read as one disc.
-    for (let k = r - m(0.22); k > m(0.12); k -= m(0.22)) out.push({ points: ring(k), width: m(0.248), color: LANE_LINE, dash: null, dashOffset: 0 });
-  }
-  return out;
+export function miniRoundaboutAt(net: Network, nodeId: NodeId, out: StrokeSpec[]): void {
+  const node = net.doc.node(nodeId);
+  if (!node || node.control !== 'mini' || node.incident.length < 3) return;
+  const mouth = Math.min(...node.incident.map((seg) => net.mouthDistance(seg, node.id)));
+  const r = Math.max(m(2), Math.min(m(4), mouth * 0.4));
+  const ring = (radius: number): Vec2[] => Array.from({ length: 41 }, (_, i) => {
+    const a = (i / 40) * Math.PI * 2;
+    return { x: node.x + Math.cos(a) * radius, y: node.y + Math.sin(a) * radius };
+  });
+  out.push({ points: ring(r), width: m(0.2), color: LANE_LINE, dash: null, dashOffset: 0 });
+  // The middle filled with paint: rings close enough to read as one disc.
+  for (let k = r - m(0.22); k > m(0.12); k -= m(0.22)) out.push({ points: ring(k), width: m(0.248), color: LANE_LINE, dash: null, dashOffset: 0 });
 }

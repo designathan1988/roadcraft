@@ -54,7 +54,7 @@ export function commitRoundabout(
     }
   }
 
-  const work = doc.clone();
+  const work = doc.fork();
   const nodes: NodeId[] = [];
   const ring: SegmentId[] = [];
   const entrances: SegmentId[] = [];
@@ -90,7 +90,7 @@ export function commitRoundabout(
   workNet.seedJunctions(net);
   workNet.rebuild();
   if (nodes.some((id) => workNet.impossible.has(id))) return { committed: false, reason: 'geometry' };
-  doc.replaceWith(work);
+  doc.takeBack(work);
   net.adopt(workNet);
   return { committed: true, ring, entrances };
 }

@@ -56,4 +56,12 @@ describe("the city plan's budgets", () => {
     expect(cityBudgetTable(measure({ view: 'mapa', fps: 52, triangles: 1e6, drawCalls: 100 })).find((r) => r.item === 'fps (mapa)')?.situação).toBe('ok');
     expect(cityBudgetTable(measure({ view: 'rua', fps: 30 })).find((r) => r.item === 'fps (rua)')).toMatchObject({ situação: 'acima', vezes: 2 });
   });
+
+  it('measures the render targets and shadow maps when they are counted, and says so when they are not', () => {
+    const row = (over: Partial<CityMeasure>) => cityBudgetTable(measure(over)).find((r) => r.item === 'memória de vídeo: alvos de render e sombras')!;
+    expect(row({}).situação).toBe('não medido');
+    const counted = row({ targetBytes: 640e6 });
+    expect(counted.situação).toBe('acima');
+    expect(counted.medido).toContain('640');
+  });
 });

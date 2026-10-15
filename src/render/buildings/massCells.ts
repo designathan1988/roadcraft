@@ -1,5 +1,6 @@
 import { Box3, BufferAttribute, BufferGeometry, Group, Mesh, Sphere, Vector3 } from 'three';
 import { gpuOnly } from '../mesh/gpuOnly';
+import { cancelWarm, warmLooseAhead } from '../uploads';
 import { m } from '@world/units';
 import type { CellMass } from './cellArrays';
 import type { BuildingKit } from './kit';
@@ -146,6 +147,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
   };
   const drop = (cell: Cell): void => {
     if (!cell.mesh) return;
+    cancelWarm([cell.mesh]);
     group.remove(cell.mesh);
     cell.mesh.geometry.dispose();
     cell.mesh = null;
@@ -179,6 +181,10 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
         cell.x0 = Math.min(x0, box.min.x); cell.x1 = Math.max(x1, box.max.x); cell.y0 = Math.min(y0, -box.max.z); cell.y1 = Math.max(y1, -box.min.z);
         overhang = Math.max(overhang, x0 - cell.x0, cell.x1 - x1, y0 - cell.y0, cell.y1 - y1);
         group.add(mesh);
+        // Sent to the GPU ahead, a few a frame, so its arrays let go at once (`mesh/gpuOnly.ts`). DO NOT wait for
+        // the camera to frame it: a cell of masses out of view was never uploaded and kept its copy on the CPU -
+        // 157 MB of a 2,560 m city's 21,000 buildings (inventory of the scene, 2026-10-15).
+        void warmLooseAhead([mesh]);
       }
       cells.set(key, cell);
       // A cell with no mass is always near (its detail is all it has).

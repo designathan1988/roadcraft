@@ -20,7 +20,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 
-import { newPose, pedPose, vehiclePoseInto } from '@sim/pose';
+import { newPose, pedPoseInto, vehiclePoseInto } from '@sim/pose';
 import { roadFrameInto } from './vehicleFrame';
 import {
   ARCHETYPES,
@@ -2299,7 +2299,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         for (const ped of world.pedViews) {
           if (pedCount >= MAX_PEDS) break;
           if (options.hiddenPed?.(ped.id)) continue;
-          const pose = pedPose(ped, alpha);
+          pedPoseInto(ped, alpha, POSE);
+          const pose = POSE;
           const open = ped.ground === 'open';
           const segment = ped.segment;
           currentSegment = segment;

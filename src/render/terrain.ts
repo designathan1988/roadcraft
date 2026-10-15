@@ -1,4 +1,3 @@
-import type { Aabb } from '@core/aabb';
 import { Digest } from '@core/digest';
 import {
   BufferAttribute,
@@ -51,10 +50,14 @@ import {
   type TerrainStamp,
 } from '@world/terrain';
 import { bakeSurface, fbm, makeNoise, type SurfaceBake, type SurfaceRecipe } from './mesh/textureBaker';
+import { markAll, markBox } from './mesh/updateRanges';
 import { DETAIL_GLSL, detailSwitch, detailTextures } from './mesh/detailLayer';
 import { applyLotOverlay } from './lotOverlay';
 import { WATER_DEPTH_ATTRIBUTE, WATER_FLOW_ATTRIBUTE, createWaterSurface, type WaterLook } from './water';
 import type { GullyDab } from '@world/gullies';
+import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sampleCorners, shapeCorners } from './terrainShaping';
+import { type NaturalPlate, type PlateShapeAnswer, type PlateShapeAsk, askPlate } from './groundShape';
+import type { Aabb } from '@core/aabb';
 
 /**
  * Side of one terrain plate, in world units: the map is laid in square plates
@@ -102,6 +105,8 @@ const GRID = TERRAIN_SEGMENTS + 1;
  * edge planted trees off the end of the world.
  */
 export const TERRAIN_HALF = TERRAIN_SIZE / 2;
+/** A plate's grid of corners as the shaping and the sampling read it (`terrainShaping.ts`). */
+const plateGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 
 /**
  * Where the grass field stands this frame (`grassField.ts`): world x, y, how
@@ -258,6 +263,22 @@ export interface TerrainSurface {
    * bounds again: an edit touching 20 blocks paid that 20 times).
    */
   shapeToRoads(shape: TerrainShaper | null, region?: TerrainRegion | readonly TerrainRegion[] | null): boolean;
+  /**
+   * `shapeToRoads` asked off the page (`groundShape.ts`): the corners its pass
+   * reads for `region` - with none, for `bounds`, the shapers' boxes, world
+   * coordinates for the atlas and the plate's own for a plate - each plate's
+   * in `plates`, and `take`, which puts the worker's answers (one a plate, in
+   * order) in place as `shapeToRoads` would have: true when anything moved.
+   */
+  askShape(region: TerrainRegion | readonly TerrainRegion[] | null, bounds: readonly Aabb[] | null): ShapeAsking;
+  /** The plate's natural corners and the diagonals they are drawn with (`naturalRenderedHeightAt`), as kept: never written by the caller. */
+  naturalCorners?(): { readonly natural: Float64Array; readonly diagonals: Uint8Array };
+  /**
+   * The atlas's plates' natural ground a set of world boxes reads
+   * (`naturalRenderedHeightAt`), as plain data for the ground's worker; a
+   * plate not made is left out (the page reads it).
+   */
+  naturalCut?(boxes: readonly (readonly [number, number, number, number])[]): NaturalPlate[];
   /** The grid corners a world box covers, as `shapeToRoads` takes them. */
   regionOf(box: readonly [number, number, number, number]): TerrainRegion;
   /** A region back as the world box it covers, a cell round. */
@@ -291,8 +312,13 @@ export interface TerrainSurface {
   dispose(): void;
 }
 
-/** A box of grid corners, inclusive: x0..x1 across, y0..y1 down. */
-export type TerrainRegion = readonly [number, number, number, number];
+export type { TerrainRegion, TerrainShaper } from './terrainShaping';
+
+/** A shaping pass asked off the page (`TerrainSurface.askShape`). */
+export interface ShapeAsking {
+  readonly plates: readonly PlateShapeAsk[];
+  take(answers: readonly PlateShapeAnswer[]): boolean;
+}
 
 /**
  * A plate of the ground and where its centre stands (`flatAtlas.ts`).
@@ -302,13 +328,6 @@ export interface TerrainPart {
   readonly surface: TerrainSurface;
   readonly cx: number;
   readonly cy: number;
-}
-
-/** What `shapeToRoads` needs to know about the road network. */
-export interface TerrainShaper {
-  shapeAt(x: number, y: number, naturalGround: number): { height: number; weight: number };
-  /** Boxes outside which `shapeAt` always answers weight 0. */
-  shapeBounds(): readonly Aabb[];
 }
 
 /** 0..1 hash of an integer lattice point. */
@@ -2164,6 +2183,17 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
    */
   const shapedCorners = new Uint8Array(GRID * GRID);
   const spherePoint = new Vector3();
+  /**
+   * The whole plate's normals, steepness and bounds worked out again: every corner moved (a map loaded,
+   * the land made anew), never a dab.
+   * @rebuild Only when the whole land changed.
+   */
+  const wholePlateMoved = (): void => {
+    geometry.computeVertexNormals();
+    markAll(geometry.getAttribute('normal') as BufferAttribute);
+    refreshAllSteep();
+    geometry.computeBoundingSphere();
+  };
   /** The cells the last `update` rewrote (see `lastRegion`). */
   let lastRegion: TerrainRegion | null = null;
   /** The water waits for the end of a stroke (see `settle`). */
@@ -2247,7 +2277,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         }
       }
     }
-    triangles.needsUpdate = true;
+    markBox(triangles as BufferAttribute, 6, TERRAIN_SEGMENTS, cx0, cx1, cy0, cy1);
   };
 
   /** Bilinear read of one corner array, reproducing the plane's own diagonal. */
@@ -2255,24 +2285,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     if (!(x >= -TERRAIN_HALF && x <= TERRAIN_HALF && y >= -TERRAIN_HALF && y <= TERRAIN_HALF)) {
       return naturalHeightAt(x, y);
     }
-    // `PlaneGeometry` lays its rows from +y downwards, so the row index grows as
-    // world y falls.
-    const gx = (x + TERRAIN_HALF) / TERRAIN_CELL;
-    const gy = (TERRAIN_HALF - y) / TERRAIN_CELL;
-    const ix = Math.min(TERRAIN_SEGMENTS - 1, Math.floor(gx));
-    const iy = Math.min(TERRAIN_SEGMENTS - 1, Math.floor(gy));
-    const u = gx - ix;
-    const v = gy - iy;
-    const a = corners[ix + iy * GRID] as number;
-    const b = corners[ix + (iy + 1) * GRID] as number;
-    const c = corners[ix + 1 + (iy + 1) * GRID] as number;
-    const d = corners[ix + 1 + iy * GRID] as number;
-    // Each cell is split along the diagonal it is DRAWN with (`retriangulate`):
-    // b-d into (a, b, d) and (b, c, d), or a-c into (a, d, c) and (a, b, c).
-    if (diagonals[ix + iy * TERRAIN_SEGMENTS]) {
-      return u >= v ? a * (1 - u) + d * (u - v) + c * v : a * (1 - v) + b * (v - u) + c * u;
-    }
-    return u + v <= 1 ? a * (1 - u - v) + d * u + b * v : b * (1 - u) + c * (u + v - 1) + d * (1 - v);
+    return sampleCorners(plateGrid, corners, diagonals, x, y);
   };
 
   const renderedHeightAt = (x: number, y: number): number => sampleGrid(grid, flip, x, y);
@@ -2310,15 +2323,48 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
    * weight out where the road is buried deeply, so the ground closes over the
    * bore and stays open at the portals.
    */
-  /** Corners visited by the current shaping pass, by stamp, so boxes that overlap visit each once. */
+  /** Corners visited by the current shaping pass, by stamp, so regions and boxes that overlap visit each once. */
   const visited = new Int32Array(GRID * GRID);
   let pass = 0;
+  /** The plate's corners as `shapeCorners` reads them: where the mesh stands them. */
+  const corners: CornerGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF, x: (i) => position.getX(i), y: (i) => -position.getZ(i) };
 
+  const regionList = (region: TerrainRegion | readonly TerrainRegion[] | null): readonly TerrainRegion[] | null =>
+    region === null ? null : typeof region[0] === 'number' ? [region as TerrainRegion] : region as readonly TerrainRegion[];
   /** The corners the last shaping pass moved (`touchesWater`). */
   let lastChanged: readonly number[] = [];
   const shapeToRoads = (shape: TerrainShaper | null, region: TerrainRegion | readonly TerrainRegion[] | null = null): boolean => {
-    const regions: readonly TerrainRegion[] | null = region === null ? null
-      : typeof region[0] === 'number' ? [region as TerrainRegion] : region as readonly TerrainRegion[];
+    const regions = regionList(region);
+    // Only the corners of the regions, or of the boxes some road or platform
+    // could shape (`shapeCorners`): asking all 90 601 of them was most of the pass.
+    return shapePass(regions, shape && ((take) => {
+      pass++;
+      shapeCorners(corners, natural, shape, regions, visited, pass, take);
+    }));
+  };
+  /**
+   * The corners a pass of `region` reads (with none, of `bounds`: the boxes
+   * of the shapers, in the plate's coordinates), as the ground's worker takes
+   * them (`groundShape.ts`), and `take`, which puts its answer in place as
+   * `shapeToRoads` would have - the same corners, heights and order.
+   */
+  const askShape = (region: TerrainRegion | readonly TerrainRegion[] | null, bounds: readonly Aabb[] | null): {
+    ask: PlateShapeAsk; take(answer: PlateShapeAnswer): boolean;
+  } => {
+    const regions = regionList(region);
+    const asked = regions ?? (bounds ?? []).map((box) => boxRegion(plateGrid, box));
+    return {
+      ask: askPlate(corners, natural, asked),
+      take: (answer) => shapePass(regions, (take) => {
+        for (let k = 0; k < answer.corners.length; k++) take(answer.corners[k]!, answer.heights[k]!);
+      }),
+    };
+  };
+  /**
+   * One pass: the corners of `regions` (null: of the plate) back to their land,
+   * then `fill` hands each corner it shapes to `take`, then the mesh follows.
+   */
+  const shapePass = (regions: readonly TerrainRegion[] | null, fill: ((take: (i: number, height: number) => void) => void) | null): boolean => {
     // The corners whose height this pass changes, whichever way.
     const changed: number[] = [];
     // Restore whatever the last shaping moved, so this is a pure function of
@@ -2341,39 +2387,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       }
     }
     const fresh: number[] = [];
-
-    if (shape) {
-      // Only the corners some road could shape: everywhere else `shapeAt`
-      // answers weight 0, and asking all 90 601 of them was most of the pass.
-      pass++;
-      for (const box of shape.shapeBounds()) {
-        const bx0 = Math.max(0, Math.floor((box.minX + TERRAIN_HALF) / TERRAIN_CELL));
-        const bx1 = Math.min(GRID - 1, Math.ceil((box.maxX + TERRAIN_HALF) / TERRAIN_CELL));
-        const by0 = Math.max(0, Math.floor((TERRAIN_HALF - box.maxY) / TERRAIN_CELL));
-        const by1 = Math.min(GRID - 1, Math.ceil((TERRAIN_HALF - box.minY) / TERRAIN_CELL));
-        for (const r of regions ?? [null]) {
-          const x0 = r ? Math.max(bx0, r[0]) : bx0, x1 = r ? Math.min(bx1, r[1]) : bx1;
-          const y0 = r ? Math.max(by0, r[2]) : by0, y1 = r ? Math.min(by1, r[3]) : by1;
-          for (let iy = y0; iy <= y1; iy++) {
-            for (let ix = x0; ix <= x1; ix++) {
-              const i = ix + iy * GRID;
-              if (visited[i] === pass) continue;
-              visited[i] = pass;
-              const x = position.getX(i);
-              const worldY = -position.getZ(i);
-              const ground = natural[i] as number;
-              const { height, weight } = shape.shapeAt(x, worldY, ground);
-              if (weight <= 0.001) continue;
-              const blended = ground + (height - ground) * weight;
-              if (Math.abs(blended - ground) < 0.002) continue;
-              grid[i] = blended;
-              shapedCorners[i] = 1;
-              fresh.push(i);
-            }
-          }
-        }
-      }
-    }
+    fill?.((i, height) => {
+      grid[i] = height;
+      shapedCorners[i] = 1;
+      fresh.push(i);
+    });
 
     for (const i of fresh) {
       const was = before.get(i) ?? (natural[i] as number);
@@ -2383,13 +2401,13 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     for (const [i, was] of before) if (grid[i] !== was) changed.push(i);
     if (changed.length === 0) return false;
     for (const i of changed) position.setY(i, grid[i] as number);
-    position.needsUpdate = true;
     {
       let x0 = GRID, x1 = -1, y0 = GRID, y1 = -1;
       for (const i of changed) {
         const ix = i % GRID, iy = (i - ix) / GRID;
         if (ix < x0) x0 = ix; if (ix > x1) x1 = ix; if (iy < y0) y0 = iy; if (iy > y1) y1 = iy;
       }
+      markBox(position as BufferAttribute, 3, GRID, x0, x1, y0, y1);
       retriangulate(x0, x1 + 1, y0, y1 + 1);
       // The land's light is worked out again round these corners only (`setSun`).
       markLand({ x0, x1, y0, y1 });
@@ -2398,8 +2416,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     // The bounds grown over the corners that moved (`Sphere.expandByPoint`
     // keeps everything it held): worked out again over all 90 601 corners it
     // was 0.8 ms for each of the hundred-odd quarter blocks of a road edit.
-    if (geometry.boundingSphere) for (const i of changed) geometry.boundingSphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
-    else geometry.computeBoundingSphere();
+    // The sphere is made with the plate (`computeBoundingSphere` once, where the mesh is made): DO NOT
+    // work it out again here, over every corner, in the pass a frame puts in place.
+    const sphere = geometry.boundingSphere!;
+    for (const i of changed) sphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
     lastChanged = changed;
     return true;
   };
@@ -2441,7 +2461,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const cellSteep = new Float32Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS);
   const refreshAllSteep = (): void => {
     steepnessInto(position.array as ArrayLike<number>, flip, GRID, cellSteep, steep);
-    steepAttribute.needsUpdate = true;
+    markAll(steepAttribute);
   };
   /**
    * Recomputes the normals round the corners that moved: the corners
@@ -2451,9 +2471,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
    */
   const refreshNormals = (moved: readonly number[]): void => {
     const touched = new Set<number>();
+    let nx0 = GRID, nx1 = -1, ny0 = GRID, ny1 = -1;
     for (const i of moved) {
       const ix = i % GRID;
       const iy = (i - ix) / GRID;
+      if (ix - 1 < nx0) nx0 = ix - 1; if (ix + 1 > nx1) nx1 = ix + 1; if (iy - 1 < ny0) ny0 = iy - 1; if (iy + 1 > ny1) ny1 = iy + 1;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const x = ix + dx;
@@ -2489,8 +2511,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       normal.setXYZ(v, sum.x, sum.y, sum.z);
       steep[v] = faceSteep;
     }
-    normal.needsUpdate = true;
-    steepAttribute.needsUpdate = true;
+    if (nx1 >= 0) {
+      nx0 = Math.max(0, nx0); ny0 = Math.max(0, ny0); nx1 = Math.min(GRID - 1, nx1); ny1 = Math.min(GRID - 1, ny1);
+      markBox(normal as BufferAttribute, 3, GRID, nx0, nx1, ny0, ny1);
+      markBox(steepAttribute, 1, GRID, nx0, nx1, ny0, ny1);
+    }
   };
 
   let wetDiscs: readonly WaterStamp[] = [];
@@ -2729,6 +2754,15 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       if (near(stamp.x, stamp.y, stamp.x, stamp.y, reach)) return true;
     }
     return false;
+  };
+  /** After a shaping pass (here or off the page): a road that cut through a valley changes where the water's shore is. */
+  const shapeLanded = (moved: boolean, region: TerrainRegion | readonly TerrainRegion[] | null): boolean => {
+    // At once, or once the stroke is over when one is held (`settle`).
+    if (moved && touchesWater()) {
+      if (region) { waterStale = true; markWaterDirty(null); }
+      else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
+    }
+    return moved;
   };
   const touchesWater = (): boolean => {
     if (!waterBox) return wetDiscs.length > 0;
@@ -3048,14 +3082,21 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       const shapeAt = performance.now();
       const moved = shapeToRoads(shape, region);
       performance.measure('hitch:road-edit/ground shape', { start: shapeAt, end: performance.now() });
-      // A road that cut through a valley changes where the water's shore is:
-      // at once, or once the stroke is over when one is held (`settle`).
-      if (moved && touchesWater()) {
-        if (region) { waterStale = true; markWaterDirty(null); }
-        else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
-      }
-      return moved;
+      return shapeLanded(moved, region);
     },
+    askShape(region, bounds) {
+      const { ask, take } = askShape(region, bounds);
+      return {
+        plates: [ask],
+        take: (answers) => {
+          const at = performance.now();
+          const moved = take(answers[0]!);
+          performance.measure('hitch:ground/shaped heights put in place', { start: at, end: performance.now() });
+          return shapeLanded(moved, region);
+        },
+      };
+    },
+    naturalCorners: () => ({ natural, diagonals: naturalFlip }),
     update(doc, stroking = false) {
       diary = doc.changes;
       if (revision === doc.terrainRevision) return false;
@@ -3093,12 +3134,12 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         natural.set(h);
         naturalFlip.set(made.flip);
         lastRegion = null;
-        position.needsUpdate = true;
+        markAll(position as BufferAttribute);
         retriangulate(0, GRID - 1, 0, GRID - 1);
         (normal.array as Float32Array).set(made.normals);
-        normal.needsUpdate = true;
+        markAll(normal as BufferAttribute);
         steep.set(made.steep);
-        steepAttribute.needsUpdate = true;
+        markAll(steepAttribute);
         geometry.boundingSphere = new Sphere(new Vector3(0, (made.low + made.high) / 2, 0), Math.hypot(TERRAIN_HALF * Math.SQRT2, (made.high - made.low) / 2));
         lastStamps = doc.terrainStamps;
         if (stroking) { waterStale = true; markWaterDirty(null); } else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
@@ -3124,7 +3165,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         lastRegion = box;
       }
 
-      position.needsUpdate = true;
+      if (box) markBox(position as BufferAttribute, 3, GRID, box[0], box[1], box[2], box[3]);
+      else markAll(position as BufferAttribute);
       if (box) retriangulate(box[0], Math.min(GRID - 1, box[1] + 1), box[2], Math.min(GRID - 1, box[3] + 1));
       else retriangulate(0, GRID - 1, 0, GRID - 1);
       if (box) {
@@ -3135,11 +3177,13 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
           for (let ix = box[0]; ix <= box[1]; ix++) moved.push(iy * GRID + ix);
         }
         refreshNormals(moved);
-      } else {
-        geometry.computeVertexNormals();
-        refreshAllSteep();
-      }
-      geometry.computeBoundingSphere();
+        // The bounds grown over the corners the dab moved (`Sphere.expandByPoint`), as the shaping
+        // pass does: DO NOT work the sphere out again over every corner of the plate at every dab.
+        // The sphere is made with the plate (`computeBoundingSphere` once, where the mesh is made).
+        const sphere = geometry.boundingSphere!;
+        const position = geometry.getAttribute('position');
+        for (const i of moved) sphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
+      } else wholePlateMoved();
       lastStamps = doc.terrainStamps;
       // The water - every pool and river on the map - is the deferred part of
       // a stroke (Unity's SetHeightsDelayLOD then SyncHeightmap on release):

@@ -10,6 +10,8 @@ import { isMarkingStyle } from '@world/roads/markingStyle';
 import { createActions } from './actionsWiring';
 import { FrameClock, Periodic, SimPeriodic, TopologyCatchUp, coalescedTask } from './frameLoop';
 import { ConflictPool } from './conflictPool';
+import { BayPool } from './bayPool';
+import { useBayWorkers } from '@sim/agents/parking';
 import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
 import { Engine } from '@core/engine';
@@ -66,6 +68,7 @@ import { CanvasSurface } from '@ui/overlay/surface';
 import { INVALID, SELECTION, HOVER } from '@ui/overlay/palette';
 import { createSceneRenderer, type SceneHandle, type SkyMode } from '@render/renderer';
 import { countMemory } from '@render/memoryCounters';
+import { formatInventory, sceneInventory } from '@render/inventory';
 import { cityBudgetTable, VIEW_BUDGETS, type CityView } from '@core/perfBudget';
 import { primeSurfaceBake, startSurfaceBake } from '@render/surfaceBakeClient';
 import { forgetOtherDerived, readDerivedAll, writeDerivedMany } from '@render/derivedCache';
@@ -95,7 +98,8 @@ import { cutWallsChosen } from '@ui/roads/cutWalls';
 import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingPreset, setRoadParkingPreset } from '@editor/roadParking';
 import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
 import { STUTTER_MS } from '@core/sampleRing';
-import { type ImportResult, Persistence, exportToFile, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
+import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
+import { exportToFile } from '@editor/mapExport';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
 import { TransitTool, setTransitTool, transitTool } from '@editor/transitTools';
 import type { BuildingId } from '@world/buildings/types';
@@ -254,6 +258,9 @@ if (saved) {
 }
 
 const sim = new SimWorld(doc, net, 0x2024);
+// The lots' bays worked out on the other cores (`bayPool.ts`): a lot's grid and ways out are a
+// millisecond each, and a generated city's thousands held a simulation step for seconds on the page.
+useBayWorkers(sim, new BayPool());
 sim.auditEnabled = true;
 sim.auditLevel = 'cheap';
 // The status bar's alerts: checked once a second of play, not on every one
@@ -2182,10 +2189,8 @@ function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: nu
   return { zoned, ...green };
 }
 /**
- * Builds on the generated city's lots, forty milliseconds a frame, the
- * buildings held from the renderer meanwhile (`holdBuildings`) and drawn
- * once at the end: growing one costs a millisecond or two, but drawing each
- * as it came re-meshed the layer every frame - two buildings a second.
+ * Builds on the generated city's lots, `GROW_SLICE_MS` a frame: each building
+ * graded and drawn in the frame it grows, its own site and cell only.
  */
 const cityProgress = document.createElement('div');
 cityProgress.className = 'city-progress';
@@ -2194,16 +2199,17 @@ cityProgress.style.cssText = 'position:fixed;left:50%;top:76px;transform:transla
 document.body.appendChild(cityProgress);
 function growCity(): void {
   if (!cityGrowth) return;
-  // The notice painted first; then the lots built `GROW_SLICE_MS` a frame,
-  // the buildings held from the renderer until the last one (`holdBuildings`),
-  // so the page answers and the notice counts up. Built in one go, 1 348 lots
-  // froze the page for 3 s (2026-10-13); drawn one by one, each new building
-  // set off the rebuilds that follow a building edit, three buildings a second.
+  // The notice painted first; then the lots built `GROW_SLICE_MS` a frame, so
+  // the page answers and the notice counts up. Built in one go, 1 348 lots
+  // froze the page for 3 s (2026-10-13). Each building is graded and drawn in
+  // the frame it grows, its own site and cell only (`changedSites`, the
+  // layer's diary). DO NOT hold the buildings from the renderer until the
+  // last one: every site of the city was graded and every building put in
+  // the layer in the one frame they were let go, 5.6 s at 2 560 m (2026-10-15).
   const growing = cityGrowth;
   if (cityProgress.style.display !== 'block') {
     cityProgress.style.display = 'block';
     cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
-    scene.holdBuildings(true);
     lotTool.holdOverlay(true);
     requestDraw();
     return;
@@ -2231,7 +2237,6 @@ function growCity(): void {
   cityGrowth = null;
   cityBuiltIn = (performance.now() - growing.started) / 1000;
   cityProgress.style.display = 'none';
-  scene.holdBuildings(false);
   lotTool.holdOverlay(false);
   persistence.saveSessionSoon(doc, sessionSettings);
   updateStatus();
@@ -2677,7 +2682,7 @@ let actionsWarm = false;
 let topologyAfterDraw = false;
 /** The traffic's topology catching up with an edit, a slice a frame (`frameLoop.ts`). */
 // The new junctions' conflict pairs measured on the other cores (`conflictPool.ts`).
-const topology = new TopologyCatchUp(new ConflictPool());
+const topology = new TopologyCatchUp(new ConflictPool(ZONES_PREFIX));
 
 function requestDraw(): void {
   frameClock.request();
@@ -2768,8 +2773,9 @@ function frame(now: number): void {
   // gesture finishes so agents never rebuild against every intermediate shape.
   // The frame that first draws an edit is held the same way.
   let holdSim = mover.dragging || topologyAfterDraw || !worldShown;
-  // A generated city being built (`generateCity`).
+  // A generated city being built (`generateCity`): its own share of the frame, apart from the traffic's topology.
   growCity();
+  frameTimer.mark('growCity');
   // The pistol or the bomb chosen: their effects and the physics the bodies
   // fall with loaded now, while the player aims (`SceneHandle.effects`), not
   // in every session.
@@ -2802,8 +2808,11 @@ function frame(now: number): void {
     // than smooth enough and avoids repeatedly rebuilding routes, signals and
     // spatial indexes for pointer samples that will be superseded immediately.
     if (!mover.dragging || mover.previewDue(now, scene.stats.rebuildMs)) {
+      // The traffic's topology is brought up by `TopologyCatchUp` from the next frame, the simulation held
+      // meanwhile: its turns and conflict pairs chosen by the workers (`conflictPool.ts`). DO NOT rebuild it
+      // here, whole and on the page: every frame of a generated city that laid lots or furniture rebuilt
+      // the town's topology in that frame (5.8 s at 2 560 m, 2026-10-15), and the workers never ran.
       net.rebuild();
-      if (!mover.dragging && sim.topologyRevision !== net.trafficRevision) rebuildSimulationTopology();
     }
   }
   frameTimer.mark('roadNetwork');
@@ -4332,12 +4341,34 @@ const healthPanel = mountHealthPanel({
    * at the same view before and after a performance change. `heap` is
    * Chromium's `performance.memory`, rough and non-standard; null elsewhere.
    */
+  /**
+   * Everything the scene holds, by layer and kind of mesh (`render/inventory.ts`): meshes, instances, vertices,
+   * triangles, GPU and CPU bytes, and the flags that show where a layer is out of proportion. `text: true`: the table.
+   * What the document and the simulation hold is under `doc` and `sim`.
+   */
+  inventory: (options: { text?: boolean; top?: number } = {}) => {
+    const inv = sceneInventory(scene.scene);
+    const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
+    const counts = {
+      doc: {
+        nodes: doc.nodes.size, segments: doc.segments.size, buildings: doc.buildings.size, lots: doc.lots.length, poles: doc.poles.size,
+        landscape: doc.landscape.size, barriers: doc.barriers.size, trees: doc.trees.length, zones: doc.zones.length, people: doc.people.length,
+      },
+      sim: { vehicles: sim.vehicles.size, people: sim.pedViews.length },
+      gl: { geometries: scene.gl.info.memory.geometries, textures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0, drawCalls: scene.stats.drawCalls, triangles: scene.stats.triangles },
+      heapMB: heap === undefined ? null : Math.round(heap / 1e6),
+    };
+    if (options.text) return `${formatInventory(inv, options.top ?? 40)}
+
+${JSON.stringify(counts)}`;
+    return { ...inv, counts };
+  },
   memory: () => {
     const mb = (bytes: number): number => Math.round(bytes / 1e5) / 10;
     const c = countMemory(scene.scene);
     const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
     return {
-      geometryMB: mb(c.geometryBytes), geometryCpuMB: mb(c.geometryCpuBytes), textureMB: mb(c.textureBytes),
+      geometryMB: mb(c.geometryBytes), geometryCpuMB: mb(c.geometryCpuBytes), textureMB: mb(c.textureBytes), targetMB: mb(scene.targetBytes()),
       heapMB: heap === undefined ? null : mb(heap),
       cpuByName: c.cpuByName.map(([name, bytes]) => `${name} ${mb(bytes)}`),
       buffers: c.buffers, textures: c.textures,
@@ -4362,6 +4393,7 @@ const healthPanel = mountHealthPanel({
       fps: scene.stats.fps,
       bytesByName: c.bytesByName,
       textureBytes: c.textureBytes,
+      targetBytes: scene.targetBytes(),
       geometryCpuBytes: c.geometryCpuBytes,
       heapBytes: (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? null,
     });

@@ -1,5 +1,7 @@
-import { BufferAttribute, BufferGeometry, type Mesh } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, Sphere, type Mesh } from 'three';
 import { gpuOnly } from './gpuOnly';
+import { type BlockArrays, type BlockLevels, LOD_KEY, coarseArrays, coarseGeometry } from './roadLod';
+import { makeFar } from './roadResidency';
 import { finish, type SurfaceMeshOptions, type Tile } from './surfaceMesh';
 
 /** A surface's tiles, in order, as one mesh's arrays (the indices shifted); null for none. */
@@ -35,13 +37,15 @@ function tileArrays(parts: readonly Tile[]): {
 }
 
 /**
- * One mesh of a surface from its tiles, in order. The tiles are what the
- * network keeps (`roadSurfaces.ts`, a block merged again from them when one
- * changes); the mesh is a copy for the GPU and keeps no arrays once there
- * (`gpuOnly`).
+ * One mesh of a surface from its tiles, in order. The mesh is the only copy
+ * the network keeps, on the GPU (`gpuOnly`): `source` makes its tiles again
+ * from what they were made from (`roadSurfaces.ts`), for a lost WebGL context.
+ * DO NOT pass a source that returns `parts`: the closure would hold every
+ * tile's arrays for as long as the mesh lives.
  */
 export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOptions,
-  'name' | 'material' | 'castShadow' | 'receiveShadow'>): Mesh | null {
+  'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
+  far?: { readonly lock: readonly [number, number, number, number]; readonly near: boolean; readonly start?: (mesh: Mesh, arrays: BlockArrays) => void }): Mesh | null {
   const arrays = tileArrays(parts);
   if (!arrays) return null;
   const geometry = new BufferGeometry();
@@ -51,7 +55,57 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
   geometry.setAttribute('color', new BufferAttribute(arrays.color, 3));
   geometry.setAttribute('roadSection', new BufferAttribute(arrays.roadSection, 3));
   geometry.setIndex(new BufferAttribute(arrays.index, 1));
+  // Bounded by its tiles' boxes, made with them in the worker (`tileMesh.ts`): DO NOT measure every
+  // vertex of the block again on the page (0.6 s of a 2,560 m city's road blocks, 2026-10-15). The box
+  // is the one its vertices give; the sphere is the box's (`Box3.getBoundingSphere`): it holds them all.
+  if (parts.every((tile) => tile.box)) {
+    const box = new Box3();
+    for (const tile of parts) {
+      const b = tile.box!;
+      if (b[0]! > b[3]!) continue;
+      box.min.set(Math.min(box.min.x, b[0]!), Math.min(box.min.y, b[1]!), Math.min(box.min.z, b[2]!));
+      box.max.set(Math.max(box.max.x, b[3]!), Math.max(box.max.y, b[4]!), Math.max(box.max.z, b[5]!));
+    }
+    geometry.boundingBox = box;
+    geometry.boundingSphere = box.getBoundingSphere(new Sphere());
+  }
   const mesh = finish(geometry, options);
-  gpuOnly(mesh, () => tileArrays(parts)!);
+  tilesOnGpu(mesh, source);
+  if (far) {
+    // The block's far level is made off the page (`roadTile.worker.ts`) and arrives later (`attachFarLevel`): the
+    // block is its own mesh until then. DO NOT simplify it here, a block after the other on the page.
+    mesh.userData[LOD_KEY] = { coarse: null, x: (far.lock[0] + far.lock[2]) / 2, z: -(far.lock[1] + far.lock[3]) / 2, full: true } satisfies BlockLevels;
+    far.start?.(mesh, arrays);
+  }
   return mesh;
+}
+
+/** A block's arrays copied: what a worker is handed to simplify while the block keeps its own. */
+export function cloneBlock(arrays: BlockArrays): BlockArrays {
+  return { position: arrays.position.slice(), normal: arrays.normal.slice(), uv: arrays.uv.slice(), color: arrays.color.slice(), roadSection: arrays.roadSection.slice(), index: arrays.index.slice() };
+}
+
+/**
+ * The block's far level (`roadLod.ts`) as it arrives from its worker: a simplified mesh beside the block's own, one of
+ * the two on the GPU. `near`: the block's own stays (the far one waits hidden); else the far one is drawn and the
+ * block's own gives its buffers and arrays back at once (`roadResidency.ts`) - it was never sent to the GPU.
+ */
+export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<SurfaceMeshOptions,
+  'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
+  lock: readonly [number, number, number, number], near: boolean): Mesh {
+  const level = finish(coarseGeometry(coarse), { ...options, name: `${options.name}-far` });
+  // Made again from the block's tiles when a lost context asks, like the block's own.
+  gpuOnly(level, () => coarseArrays(tileArrays(source())!, lock) ?? coarse);
+  const levels = mesh.userData[LOD_KEY] as BlockLevels;
+  (levels as { coarse: Mesh | null }).coarse = level;
+  level.renderOrder = mesh.renderOrder;
+  level.visible = !near;
+  mesh.parent?.add(level);
+  if (!near) makeFar(mesh);
+  return level;
+}
+
+/** A merged mesh's arrays let go once on the GPU, and made again from `source`'s tiles when asked (`gpuOnly`). */
+export function tilesOnGpu(mesh: Mesh, source: () => readonly Tile[]): void {
+  gpuOnly(mesh as Mesh & { geometry: BufferGeometry }, () => tileArrays(source())!);
 }

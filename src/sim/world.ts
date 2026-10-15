@@ -8,7 +8,8 @@ import { ChangeLog } from '@core/changeLog';
 import { NetworkLength } from '@world/networkLength';
 import { LaneGrid } from './agents/laneGrid';
 import { LaneReaches } from './routing/laneReach';
-import { ConflictIndex, type BodyClass, type WAITING } from '@world/conflictPoints';
+import { ConflictIndex, type BodyClass, WAITING } from '@world/conflictPoints';
+import { type ChosenTurn, TurnPlan } from '@world/junctionTurns';
 import type { PairMeasurer } from '@world/conflictTable';
 import { SimClock } from './clock';
 import { ClaimTable } from './intersections/claims';
@@ -657,14 +658,54 @@ export class SimWorld {
    */
   *prepareVehicleTopology(measurer?: PairMeasurer): Generator<void | typeof WAITING, void> {
     const graph = this.prepGraph ??= new LaneletGraph();
-    // Only what the edit changed (`LaneletGraph.update`): the graph built whole only when the network cannot say.
-    const changed = graph.update(this.doc, this.net);
+    // The turns the build does not know are chosen by `measurer`'s workers when it has them
+    // (`TurnPlan`, `conflictPool.ts`): the build stands them in, and the junctions that did are built again
+    // with the answers. DO NOT sweep them here: a generated city's turns held one frame 25 s (2026-10-15).
+    // A preparation given up while the workers chose its turns (the network edited meanwhile) left its
+    // junctions on stand-ins: its plan is carried on, its asks sent again with this one's, and those junctions
+    // finished with the answers (`redoProvisional`), or here when there are no workers. DO NOT start a new
+    // plan over it: the junctions the next edit did not reach kept their stand-in turns in the graph.
+    const left = graph.turnPlan;
+    if (left) left.recording = measurer?.chooseTurns !== undefined;
+    graph.turnPlan = measurer?.chooseTurns ? left ?? new TurnPlan() : left;
+    // Only what the edit changed (`LaneletGraph.update`): the graph built whole only when the network cannot say,
+    // through its steps as the edit's (`updateSteps`). DO NOT call `update` here: a whole build was one call.
+    // A graph built whole has its junctions built by `measurer`'s workers when there are some (`junctionsOffPage`).
+    const changed = this.prepReach(yield* graph.updateSteps(this.doc, this.net, measurer ?? null));
+    const plan = graph.turnPlan;
+    if (plan && plan.asks.size > 0) {
+      const keys = [...plan.asks.keys()];
+      const answer: { turns?: readonly ChosenTurn[]; failed?: boolean } = {};
+      measurer!.chooseTurns!(keys.map((k) => plan.asks.get(k)!), plan.surfaces).then(
+        (turns) => { answer.turns = turns; },
+        (error: unknown) => { console.warn('[traffic] the turn workers failed; the turns are chosen on the page', error); answer.failed = true; },
+      );
+      while (!answer.turns && !answer.failed) yield WAITING;
+      keys.forEach((k, i) => { const turn = answer.turns?.[i]; if (turn) plan.chosen.set(k, turn); });
+    }
+    // The junctions that stood turns in, their movements shaped with them (none: nothing to do).
+    graph.redoProvisional(this.doc, this.net);
     yield;
-    // The new pairs of the junctions built again, measured by `measurer`'s workers when there are some (`conflictPool.ts`).
-    yield* this.conflicts.prepare(graph, measurer, changed?.junctions ?? null);
+    // The new pairs of the junctions built again since a preparation last ran to its end, measured by
+    // `measurer`'s workers when there are some (`conflictPool.ts`).
+    yield* this.conflicts.prepare(graph, measurer, changed);
     yield;
-    // The residents' walkways brought up to the network: only what the edit reached (`Walkways.update`).
-    this.walkwaysNow();
+    // The residents' walkways brought up to the network: only what the edit reached (`Walkways.updateSteps`),
+    // their corners rounded by `measurer`'s workers when there are some.
+    yield* this.walkways.updateSteps(this.net, measurer);
+    this.prepReached = new Set();
+  }
+
+  /**
+   * The junctions the preparation graph built again since a preparation last ran to its end (null: the
+   * graph built whole since): those a preparation given up built are prepared by the next. DO NOT prepare
+   * only the last edit's: the junctions of the one given up had their pairs measured on the page at the swap.
+   */
+  private prepReached: Set<NodeId> | null = new Set();
+  private prepReach(changed: GraphChange | null): ReadonlySet<NodeId> | null {
+    if (changed === null || this.prepReached === null) this.prepReached = null;
+    else for (const node of changed.junctions) this.prepReached.add(node);
+    return this.prepReached;
   }
 
   /** The residents' walkways (`world/walkways.ts`), kept by what each edit changed. */
@@ -677,7 +718,11 @@ export class SimWorld {
   /** Builds the preparation graph with a map's load, so its first edit does not build it from nothing. */
   warmTopologyPrep(): void {
     const graph = this.prepGraph ??= new LaneletGraph();
-    if (graph.revision !== this.net.revision) graph.update(this.doc, this.net);
+    if (graph.current(this.net)) return;
+    // A preparation's stand-in turns left (`prepareVehicleTopology`) are chosen here: no workers are asked.
+    if (graph.turnPlan) graph.turnPlan.recording = false;
+    this.prepReach(graph.update(this.doc, this.net));
+    graph.redoProvisional(this.doc, this.net);
   }
 
   /**
@@ -690,12 +735,12 @@ export class SimWorld {
 
   /** @rebuild Called when the network's traffic revision moved. */
   rebuildVehicleTopology(): void {
-    // The links and junctions the preparation turned (`prepareVehicleTopology`).
-    if (this.prepGraph && this.prepGraph.revision === this.net.revision) this.graph.seedCaches(this.prepGraph);
-    // What the edit changed, and only that, from here on (`LaneletGraph.update`; null: the graph built whole).
-    // DO NOT build the graph, the conflicts, the controllers and the lanes' runtimes of the whole map for an
-    // edit: every road drawn paid for the town.
-    const changed = this.graph.update(this.doc, this.net);
+    // What the edit changed, and only that, from here on (`LaneletGraph.update`; null: the graph built whole):
+    // taken from the graph the preparation built when it stands for the network as it is (`adopt`), built
+    // here otherwise. DO NOT build the graph, the conflicts, the controllers and the lanes' runtimes of the
+    // whole map for an edit: every road drawn paid for the town.
+    const prep = this.prepGraph;
+    const changed = prep?.current(this.net) ? this.graph.adopt(prep, this.doc, this.net) : this.graph.update(this.doc, this.net);
     this.topologyLog.push(changed);
     if (changed === null) this.conflicts.build(this.graph); else this.conflicts.update(this.graph, changed.junctions);
     this.claims.dropMissing(this.conflicts);

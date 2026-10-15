@@ -85,6 +85,15 @@ function eslintCache() {
 export const ALWAYS = [
   'tests/arch/', 'tests/tooling/', 'tests/ui/decimals.spec.ts', 'tests/ui/i18n.spec.ts', 'tests/ui/i18nKeys.spec.ts',
   'tests/ui/oldInterface.spec.ts', 'tests/render/citizenLod.spec.ts', 'tests/render/vehicleFrame.spec.ts',
+  'tests/render/warmLoose.spec.ts',
+  'tests/render/groundDigest.spec.ts',
+  'tests/world/buildings.spec.ts',
+  'tests/world/cellFilingAny.spec.ts',
+  'tests/world/buildingNearAny.spec.ts',
+  'tests/render/paintCatalogue.spec.ts',
+  'tests/render/gardenMatrix.spec.ts',
+  'tests/render/roadLod.spec.ts',
+  'tests/render/cheapAudit.spec.ts',
 ];
 
 /**

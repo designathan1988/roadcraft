@@ -146,6 +146,17 @@ export function structuralProblem(b: Building): BuildingProblem | null {
   return null;
 }
 
+/**
+ * What a stored building puts on the ground - its volumes, projections and
+ * ground elements - as world rings with their boxes, once per record (a record
+ * of the store is never changed in place). DO NOT turn a neighbour's corners
+ * into the world again at each check: every building tried while a city grows
+ * turned every neighbour's again, 3.8 s of `localToWorld` in a 2,560 m city's
+ * growth (2026-10-15).
+ */
+const obstaclesOf = identityMemo((other: Building): readonly { readonly ring: readonly Vec2[]; readonly box: ReturnType<typeof ringBox> }[] =>
+  [...footprintRects(other), ...groundProjections(other), ...groundElements(other)].map((ring) => ({ ring, box: ringBox(ring) })));
+
 /** The box round several rings. */
 function ringsBox(rings: readonly (readonly Vec2[])[]): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -199,22 +210,22 @@ export function validateBuilding(
   // `storedBounds`). DO NOT ask over `buildingBounds` alone: a bay window run
   // into the neighbour's wall, or the neighbour's into this one, went unseen.
   const reach = ringsBox(party.concat(rects));
+  const partyBoxes = party.map(ringBox);
   for (const other of ctx.doc.buildings.near(reach.minX - MAX_PROJECTION, reach.minY - MAX_PROJECTION,
     reach.maxX + MAX_PROJECTION, reach.maxY + MAX_PROJECTION)) {
     if (other.id === b.id || ignored?.has(other.id)) continue;
     const ob = storedBounds(other, MAX_PROJECTION);
     if (ob.minX > reach.maxX || ob.maxX < reach.minX || ob.minY > reach.maxY || ob.maxY < reach.minY) continue;
-    const others = [...footprintRects(other), ...groundProjections(other), ...groundElements(other)];
+    const others = obstaclesOf(other);
     // Two buildings may share a party wall: their volumes meet, and may run a
     // few centimetres into each other, as terraced houses and a row of shops
     // do. Measured with each volume shrunk by `PARTY_WALL`, so a joint is
     // never a gap (the player's order of 2026-10-05).
     // Clipped only where the two rectangles' boxes meet: apart, they share no
     // area. Clipped every pair, it was 0.5 s of a generated city's growth (2026-10-14).
-    for (const a of party) {
-      const pa = ringBox(a);
-      for (const c of others) {
-        const pc = ringBox(c);
+    for (let i = 0; i < party.length; i++) {
+      const a = party[i]!, pa = partyBoxes[i]!;
+      for (const { ring: c, box: pc } of others) {
         if (pa.minX > pc.maxX || pa.maxX < pc.minX || pa.minY > pc.maxY || pa.maxY < pc.minY) continue;
         if (overlapArea(a, c) > AREA_EPS) return 'building';
       }

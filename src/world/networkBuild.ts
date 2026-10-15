@@ -418,7 +418,7 @@ export class NetworkBuild {
     for (const entry of entries ?? []) {
       if (entry.rects === null) { everything = true; break; }
       for (const id of entry.ids ?? []) { candSegs.add(id as SegmentId); candNodes.add(id as NodeId); }
-      for (const rect of entry.rects) for (const id of this.nodePlaces.idsMeeting(rect)) candNodes.add(id);
+      for (const id of this.nodePlaces.idsMeetingAny(entry.rects)) candNodes.add(id);
     }
     if (everything) {
       // In increasing id order: what is built from nothing is filed in the

@@ -11,11 +11,13 @@ import { hull, lotCentre, orientedBox, simplifyRing } from './lotRings';
 import { offsetRing } from './buildings/footprints';
 import { touchesRoad } from './buildings/validate';
 import { m, stepsIn } from './units';
-import { pavedTester, quadsOverlap } from './zoneGrid';
+import { markPaved, pavedTester, quadsOverlap } from './zoneGrid';
 import type { ZoneDensity, ZoneUse } from './zones';
 import { rectAround, type ChangeRect } from './changes';
 import { grow } from './cells';
+import { LAND, NEAR } from './rasterGrid';
 import type { BuildingId } from './buildings/types';
+import { insideLot, type Lot } from './lotRecord';
 
 /**
  * Lots: the land cut into plots the player zones and buildings grow on, as a
@@ -39,21 +41,6 @@ import type { BuildingId } from './buildings/types';
  * and lots the paving now covers are removed.
  */
 
-export interface Lot {
-  readonly id: number;
-  /**
-   * The boundary, counter-clockwise (the inside on the left of each side):
-   * any polygon - four corners as generated, more where the player drew one,
-   * many along a curved side. The first side (corners 0 -> 1) is the front,
-   * on the street.
-   */
-  readonly corners: readonly Vec2[];
-  readonly use?: ZoneUse;
-  readonly density?: ZoneDensity;
-  /** The building that grew on it, while it stands. */
-  readonly building?: number;
-}
-
 /** Depth of a lot along an open street. */
 const LOT_DEPTH = m(32);
 /**
@@ -68,24 +55,13 @@ const MIN_LOT = m(10);
 const RASTER = m(2);
 
 export { lotCentre } from './lotRings';
+export { insideLot, type Lot } from './lotRecord';
 
 export function lotArea(l: Pick<Lot, 'corners'>): number {
   let a = 0;
   const q = l.corners;
   for (let i = 0; i < q.length; i++) { const p = q[i]!, r = q[(i + 1) % q.length]!; a += p.x * r.y - r.x * p.y; }
   return a / 2;
-}
-
-export function insideLot(point: Vec2, l: Pick<Lot, 'corners'>): boolean {
-  let inside = false;
-  const q = l.corners;
-  if (!q.length) return false;
-  const p = point;
-  for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
-    const a = q[i]!, b = q[j]!;
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
-  }
-  return inside;
 }
 
 /** The lot's frame for a building: front middle, facing angle (along the front), width and depth. */
@@ -305,10 +281,19 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
   // 23 million cells tested, a zone stroke's proposal waiting 3.3 s (the
   // player, 2026-10-10: "tem que aparecer na hora que clica").
   const pad = LOT_DEPTH + m(20);
+  /**
+   * A group's land: per cell its piece (an index of `pieces`), or `PAVED`,
+   * or `LAND` off every piece (never left so once labelled). Each piece kept
+   * as its count of cells, whether it reaches the raster's edge, and its
+   * bounds in cells - DO NOT keep a list of its cells (nor a point per cell
+   * for its hull): that was every cell of the town held at once, in arrays
+   * and objects, the most of the plan's memory.
+   */
+  interface Piece { count: number; open: boolean; i0: number; i1: number; j0: number; j1: number }
   interface Land {
     readonly minX: number; readonly minY: number; readonly W: number; readonly H: number;
     readonly label: Int32Array;
-    readonly pieces: { cells: number[]; open: boolean }[];
+    readonly pieces: Piece[];
   }
   const boxes = ribbons.map((r) => {
     const bb = r.full.bbox;
@@ -354,45 +339,59 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
       minX = Math.min(minX, b[0]); minY = Math.min(minY, b[1]); maxX = Math.max(maxX, b[2]); maxY = Math.max(maxY, b[3]);
     }
     const W = Math.ceil((maxX - minX) / RASTER), H = Math.ceil((maxY - minY) / RASTER);
-    const label = new Int32Array(W * H).fill(-1);
-    const isPaved = new Uint8Array(W * H);
+    // One array for the paving and the pieces (`Land.label`): LAND, NEAR,
+    // PAVED, then each land cell's piece.
+    const label = new Int32Array(W * H).fill(LAND);
     // Only the cells within a street's box (grown by a lot's depth) can be
-    // paved: those are tested, the rest is land. A town's group box is mostly
-    // open country, and every one of its cells was measured against the
-    // streets (most of a proposal's time).
-    const near = new Uint8Array(W * H);
+    // paved: those are asked (NEAR), the rest is land. A town's group box is
+    // mostly open country, and every one of its cells was measured against
+    // the streets (most of a proposal's time).
     for (const k of members) {
       const b = boxes[k]!;
       const i0 = Math.max(0, Math.floor((b[0] - minX) / RASTER)), i1 = Math.min(W - 1, Math.floor((b[2] - minX) / RASTER));
       const j0 = Math.max(0, Math.floor((b[1] - minY) / RASTER)), j1 = Math.min(H - 1, Math.floor((b[3] - minY) / RASTER));
-      for (let j = j0; j <= j1; j++) near.fill(1, j * W + i0, j * W + i1 + 1);
+      for (let j = j0; j <= j1; j++) label.fill(NEAR, j * W + i0, j * W + i1 + 1);
     }
-    for (let j = 0; j < H; j++) {
-      for (let i = 0; i < W; i++) {
-        if (near[j * W + i] && paved({ x: minX + (i + 0.5) * RASTER, y: minY + (j + 0.5) * RASTER })) isPaved[j * W + i] = 1;
-      }
-      yield;
-    }
-    const pieces: { cells: number[]; open: boolean }[] = [];
-    const stack: number[] = [];
+    // The paving scan-converted onto the raster: exactly the cells
+    // `pavedTester` answers paved at their centres. DO NOT go back to asking
+    // it for every cell: 7.7 s of a 2,560 m city's plan, growing with the
+    // town's area (`zoneGrid.ts` `markPaved`).
+    yield* markPaved(doc, net, { minX, minY, W, H, step: RASTER }, label);
+    // The land labelled into 4-connected pieces, in the order of each
+    // piece's first cell (row by row), by spans (Heckbert's seed fill,
+    // "Graphics Gems" I, 1990): a row's run of land filled at once and the
+    // rows above and below seeded from it - the stack holds runs, not cells.
+    const pieces: Piece[] = [];
+    const seeds: number[] = [];
     for (let start = 0; start < W * H; start++) {
-      if (isPaved[start] || label[start]! >= 0) continue;
+      if (label[start] !== LAND) continue;
       const id = pieces.length;
-      const piece = { cells: [] as number[], open: false };
+      const piece: Piece = { count: 0, open: false, i0: W, i1: -1, j0: H, j1: -1 };
       pieces.push(piece);
-      label[start] = id;
-      stack.push(start);
-      while (stack.length) {
-        const c = stack.pop()!;
-        piece.cells.push(c);
-        const i = c % W, j = (c - i) / W;
-        if (i === 0 || j === 0 || i === W - 1 || j === H - 1) piece.open = true;
-        for (const n of [i > 0 ? c - 1 : -1, i < W - 1 ? c + 1 : -1, j > 0 ? c - W : -1, j < H - 1 ? c + W : -1]) {
-          if (n < 0 || isPaved[n] || label[n]! >= 0) continue;
-          label[n] = id;
-          stack.push(n);
+      seeds.push(start);
+      while (seeds.length) {
+        const c = seeds.pop()!;
+        if (label[c] !== LAND) continue;
+        const j = (c - (c % W)) / W, row = j * W;
+        let l = c - row, r = l;
+        while (l > 0 && label[row + l - 1] === LAND) l--;
+        while (r < W - 1 && label[row + r + 1] === LAND) r++;
+        label.fill(id, row + l, row + r + 1);
+        piece.count += r - l + 1;
+        if (l < piece.i0) piece.i0 = l;
+        if (r > piece.i1) piece.i1 = r;
+        if (j < piece.j0) piece.j0 = j;
+        if (j > piece.j1) piece.j1 = j;
+        for (const nj of [j - 1, j + 1]) {
+          if (nj < 0 || nj >= H) continue;
+          const nrow = nj * W;
+          for (let i = l; i <= r; i++) {
+            if (label[nrow + i] === LAND && (i === l || label[nrow + i - 1] !== LAND)) seeds.push(nrow + i);
+          }
         }
       }
+      piece.open = piece.i0 === 0 || piece.j0 === 0 || piece.i1 === W - 1 || piece.j1 === H - 1;
+      if (id % 256 === 255) yield;
     }
     const land: Land = { minX, minY, W, H, label, pieces };
     for (const i of members) landOf.set(ribbons[i]!.id, land);
@@ -400,9 +399,20 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
 
     // --- closed blocks
     for (const [id, piece] of pieces.entries()) {
-      if (piece.open || piece.cells.length * RASTER * RASTER < MIN_LOT * MIN_LOT * 2) continue;
+      if (piece.open || piece.count * RASTER * RASTER < MIN_LOT * MIN_LOT * 2) continue;
       yield;
-      const pts = piece.cells.map((c) => ({ x: minX + ((c % W) + 0.5) * RASTER, y: minY + (Math.floor(c / W) + 0.5) * RASTER }));
+      // The hull of the piece's cell centres is the hull of each row's first
+      // and last: a cell between them in its row is never a hull vertex.
+      const pts: Vec2[] = [];
+      for (let j = piece.j0; j <= piece.j1; j++) {
+        const row = j * W;
+        let first = -1, last = -1;
+        for (let i = piece.i0; i <= piece.i1; i++) if (label[row + i] === id) { if (first < 0) first = i; last = i; }
+        if (first < 0) continue;
+        const y = minY + (j + 0.5) * RASTER;
+        pts.push({ x: minX + (first + 0.5) * RASTER, y });
+        if (last !== first) pts.push({ x: minX + (last + 0.5) * RASTER, y });
+      }
       const box = orientedBox(hull(pts));
       const key = `b:${Math.round(stepsIn(box.c.x, 4))},${Math.round(stepsIn(box.c.y, 4))},${Math.round(stepsIn(box.L, 4))},${Math.round(stepsIn(box.D, 4))}`;
       // Grow the raster box by half a raster cell: its points are cell centres.
@@ -495,7 +505,9 @@ export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotP
       const land = landOf.get(segId)!;
       for (let s = 0; s <= length; s += step) {
         const p = point(s, face + m(1.5)), q = point(s, face + LOT_DEPTH - m(1));
-        const ok = !paved(p) && !paved(q) && land.pieces[pieceIn(land, p)]?.open === true;
+        // The raster's piece first: most of a town's streets are between
+        // closed blocks, and the paving is then not asked (the same answer).
+        const ok = land.pieces[pieceIn(land, p)]?.open === true && !paved(p) && !paved(q);
         if (ok && from < 0) from = s;
         if ((!ok || s + step > length) && from >= 0) { runs.push([from, ok ? s : s - step]); from = -1; }
       }

@@ -109,7 +109,6 @@
  "exports src/sim/agents/lorryDocks.ts LORRY_RADIUS",
  "exports src/sim/agents/lorryDocks.ts settle",
  "exports src/sim/agents/lotNav.ts PEOPLE_SOLID",
- "exports src/sim/agents/parking.ts clearOfWalls",
  "exports src/sim/ambient/ambient.ts MAX_DRIVERS",
  "exports src/sim/ambient/ambient.ts MAX_WALKERS",
  "exports src/sim/audit.ts summarize",
@@ -195,7 +194,6 @@
  "types src/sim/vehicles/kerbStops.ts KerbStopPhase",
  "types src/sim/vehicles/kerbStops.ts TaskKind",
  "types src/sim/vehicles/state.ts ConnectorClearance",
- "types src/world/buildings/pads.ts BuildingPads",
  "types src/world/conflictPoints.ts Zone",
  "types src/world/walkways.ts WalkwayKind"
 ]

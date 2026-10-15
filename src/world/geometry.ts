@@ -1,5 +1,5 @@
 import { Polyline } from '@core/polyline';
-import { flattenSegment } from '@core/bezier';
+import { type CurveShape, flattenSegment } from '@core/bezier';
 import { type Vec2, neg, perp } from '@core/vec2';
 import type { RoadDoc, RoadSegment } from './doc';
 import type { NodeId, SegmentId } from './ids';
@@ -25,7 +25,12 @@ export interface LegFrame {
 export function segmentPolyline(doc: RoadDoc, seg: RoadSegment): Polyline {
   const a = doc.requireNode(seg.a);
   const b = doc.requireNode(seg.b);
-  return Polyline.fromPoints(flattenSegment({ x: a.x, y: a.y }, { x: b.x, y: b.y }, seg.curve));
+  return segmentLine({ x: a.x, y: a.y }, { x: b.x, y: b.y }, seg.curve);
+}
+
+/** A segment's centreline from its two ends and its curve (`segmentPolyline`): what a worker makes it from too (`junctionBuild.ts`). */
+export function segmentLine(a: Vec2, b: Vec2, curve: CurveShape | null): Polyline {
+  return Polyline.fromPoints(flattenSegment(a, b, curve));
 }
 
 /** Centreline oriented so that it starts at `from`. */

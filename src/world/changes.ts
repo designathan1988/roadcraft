@@ -107,26 +107,60 @@ export type ChangeArea = ChangeRect | readonly ChangeRect[] | null;
 const KEPT = 2048;
 
 /**
- * The entries of one kind, newest last, in a ring of `KEPT`, and the serial
- * up to which they may be missing (one overwritten, or the copy's start).
+ * A reader of some kinds that follows the diary (`ChangeJournal.follow`): the
+ * entries after the serial it last read are kept for it, however many come
+ * before it reads again.
+ */
+export interface JournalReader {
+  readonly kinds: readonly ChangeKind[];
+  /** The serial it has read up to; negative: it has read nothing yet (it reads everything first). */
+  readonly seenSerial: number;
+}
+
+/**
+ * The entries of one kind, oldest first, and the serial up to which they may
+ * be missing (let go, or the copy's start). At least the last `KEPT` are kept,
+ * and every entry a reader that follows the diary has not read yet
+ * (`needed`): the entries a reader still needs are let go only when it has
+ * read them. DO NOT let them go by count alone: a city growing while the
+ * simulation waited for the traffic's topology wrote thousands of building
+ * entries, its readers (the lots' bays, the store's order) were told
+ * "everything changed" and read every lot of the town again (2026-10-15).
  */
 class KindLog {
-  private readonly ring: Change[] = [];
-  private written = 0;
+  private entries: Change[] = [];
   constructor(public missingUpTo: number) {}
 
-  push(entry: Change): void {
-    const at = this.written % KEPT;
-    const old = this.ring[at];
-    if (old) this.missingUpTo = Math.max(this.missingUpTo, old.serial);
-    this.ring[at] = entry;
-    this.written++;
+  /** `needed`: the oldest serial a reader of this kind has read up to (Infinity: none follows it). */
+  push(entry: Change, needed: () => number): void {
+    this.entries.push(entry);
+    // Let go of what no one needs only past twice what is always kept: each entry looked at a constant number of times.
+    if (this.entries.length < 2 * KEPT) return;
+    const keepFrom = this.entries.length - KEPT;
+    const upTo = needed();
+    let cut = 0;
+    while (cut < keepFrom && this.entries[cut]!.serial <= upTo) cut++;
+    if (!cut) return;
+    this.missingUpTo = Math.max(this.missingUpTo, this.entries[cut - 1]!.serial);
+    this.entries = this.entries.slice(cut);
+  }
+
+  /** Whether an entry after `since` reaches one of `list` (a whole-map entry reaches all), newest first; each one looked at counted. */
+  reachesAfter(since: number, list: readonly ChangeRect[]): boolean {
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      const entry = this.entries[i]!;
+      journalWork.entries++;
+      if (entry.serial <= since) return false;
+      if (entry.rects === null) return true;
+      for (const r of entry.rects) for (const a of list) if (overlaps(r, a)) return true;
+    }
+    return false;
   }
 
   /** Its entries after `since`, newest first, into `out`; each one looked at counted. */
   after(since: number, out: Change[]): void {
-    for (let i = this.written - 1; i >= Math.max(0, this.written - KEPT); i--) {
-      const entry = this.ring[i % KEPT]!;
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      const entry = this.entries[i]!;
       journalWork.entries++;
       if (entry.serial <= since) return;
       out.push(entry);
@@ -157,6 +191,27 @@ export function rectAround(points: Iterable<{ readonly x: number; readonly y: nu
 
 export class ChangeJournal {
   private serial = 0;
+  /** The readers that follow this diary (`follow`), held weakly: one gone needs nothing kept. */
+  private readers: WeakRef<JournalReader>[] = [];
+
+  /** A reader follows this diary: what it has not read of its kinds is kept until it reads it. */
+  follow(reader: JournalReader): void {
+    if (!this.readers.some((r) => r.deref() === reader)) this.readers.push(new WeakRef(reader));
+  }
+
+  /** The oldest serial a live reader of `kind` has read up to (Infinity: none follows it). */
+  private neededFor(kind: ChangeKind): number {
+    let upTo = Infinity;
+    const live: WeakRef<JournalReader>[] = [];
+    for (const ref of this.readers) {
+      const reader = ref.deref();
+      if (!reader) continue;
+      live.push(ref);
+      if (reader.seenSerial >= 0 && reader.kinds.includes(kind)) upTo = Math.min(upTo, reader.seenSerial);
+    }
+    this.readers = live;
+    return upTo;
+  }
   /** Entries after `forgotten`, oldest first, in a ring of `KEPT`. */
   private readonly ring: (Change | undefined)[] = new Array<Change | undefined>(KEPT);
   private count = 0;
@@ -168,6 +223,12 @@ export class ChangeJournal {
   private readonly byKind = new Map<ChangeKind, KindLog>();
   /** Up to where every kind may be missing entries: a copy starts with none (`continueFrom`). */
   private startedAt = 0;
+  /**
+   * Every entry written since this diary went on from another as a working
+   * copy's (`forkFrom`), all of them, in order: what taking the copy back
+   * writes into the original (`take`). Null: not a working copy's.
+   */
+  private written: Change[] | null = null;
 
   /** The serial of the latest entry: what a reader that has seen everything holds. */
   get version(): number {
@@ -203,6 +264,34 @@ export class ChangeJournal {
     this.byKind.clear();
     this.startedAt = other.serial;
     this.pendingCause = other.pendingCause;
+    this.written = null;
+  }
+
+  /**
+   * Goes on from `other` as a working copy's diary (`RoadDoc.fork`): as
+   * `continueFrom`, and every entry written from here on is kept whole,
+   * however many, for the original to take (`take`).
+   */
+  forkFrom(other: ChangeJournal): void {
+    this.continueFrom(other);
+    this.written = [];
+  }
+
+  /**
+   * Writes a working copy's entries into this diary, which stands
+   * where the copy's started: each the same entry at the same serial - what
+   * the same edits made here would have written - and the copy's cause after.
+   */
+  take(from: ChangeJournal): void {
+    const entries = from.written;
+    if (!entries) throw new Error('ChangeJournal.take: not a working copy\'s diary');
+    if (from.startedAt !== this.serial) throw new Error(`ChangeJournal.take: the copy started at ${from.startedAt}, this diary stands at ${this.serial}`);
+    for (const entry of entries) {
+      if (entry.serial !== this.serial + 1) throw new Error(`ChangeJournal.take: entry ${entry.serial} after ${this.serial}`);
+      this.serial = entry.serial;
+      this.write(entry);
+    }
+    this.pendingCause = from.pendingCause;
   }
 
   /** The serial before which entries are no longer kept. */
@@ -232,13 +321,20 @@ export class ChangeJournal {
       ...(extra.ms !== undefined ? { ms: extra.ms } : {}),
       ...(extra.detail ? { detail: extra.detail } : {}),
     };
+    this.write(entry);
+    return serial;
+  }
+
+  /** An entry whose serial is this diary's latest, put in the ring, its kind's log and a copy's list. */
+  private write(entry: Change): void {
+    const { serial, kind } = entry;
     this.ring[serial % KEPT] = entry;
     if (this.count < KEPT) this.count++;
     this.lastOf.set(kind, serial);
     let log = this.byKind.get(kind);
     if (!log) this.byKind.set(kind, (log = new KindLog(this.startedAt)));
-    log.push(entry);
-    return serial;
+    log.push(entry, () => this.neededFor(kind));
+    this.written?.push(entry);
   }
 
   /**
@@ -280,13 +376,43 @@ export class ChangeJournal {
     if (area === null || since >= this.serial) return false;
     const list = isRect(area) ? [area] : area;
     if (list.length === 0) return false;
-    const entries = this.since(since, kinds);
+    if (kinds) {
+      // Each kind's own entries, newest first, back to `since`: no list made
+      // and sorted per question. DO NOT go through `since` here: a building's
+      // plants asking "did the ground move under me" made and sorted every
+      // entry since it was planted, buildings x entries a change (2026-10-15).
+      if (since >= this.serialOf(...kinds)) return false;
+      for (const kind of kinds) {
+        const log = this.byKind.get(kind);
+        if (since < (log ? log.missingUpTo : this.startedAt)) return true;
+        if (log?.reachesAfter(since, list)) return true;
+      }
+      return false;
+    }
+    const entries = this.since(since);
     if (entries === null) return true;
     for (const entry of entries) {
       if (entry.rects === null) return true;
       for (const r of entry.rects) for (const a of list) if (overlaps(r, a)) return true;
     }
     return false;
+  }
+
+  /**
+   * The ids the entries of these kinds after `since` carry, each once; null
+   * when it cannot say (an entry forgotten, or one without ids: everything).
+   * A one-off question about a span of the diary (`RoadDoc.roadIdsChangedFrom`),
+   * not a reader that follows it (`JournalCursor`).
+   */
+  idsSince(since: number, kinds: readonly ChangeKind[]): Set<number> | null {
+    const entries = this.since(since, kinds);
+    if (!entries) return null;
+    const ids = new Set<number>();
+    for (const entry of entries) {
+      if (!entry.ids) return null;
+      for (const id of entry.ids) ids.add(id);
+    }
+    return ids;
   }
 
   /** The last `n` entries, newest first. */

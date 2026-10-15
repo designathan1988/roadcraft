@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Digest } from '@core/digest';
 import { LaneletGraph, laneletWork } from '@world/lanelets';
 import { ConflictIndex } from '@world/conflictPoints';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
+import { conflictLines, graphLines } from './support/graphLines';
 
 /**
  * THE LANE GRAPH KEPT BY WHAT CHANGED (`LaneletGraph.update`): after every edit
@@ -14,22 +14,6 @@ import { generate, loadFixtures } from '../fuzz/support/runner';
  * every lanelet and connector, each lane's exits, each node's lanes in and out,
  * each junction's groups, connectors and signal.
  */
-function graphLines(graph: LaneletGraph): string[] {
-  const out: string[] = [];
-  for (const l of graph.lanelets.values()) {
-    const d = new Digest().addText(l.kind).addAll(l.centre.xy).add(l.length).add(l.speedLimit).add(l.controlled ? 1 : 0);
-    out.push(`lanelet ${l.id} ${l.segment ?? '-'} ${l.node ?? '-'} ${d.value()}`);
-  }
-  for (const c of graph.connectors.values()) out.push(`connector ${c.id} ${c.node} ${c.fromLane} ${c.toLane} ${c.turn} ${c.carried} ${c.group} ${c.maxBodyClass}`);
-  for (const [id, exits] of graph.exits) if (exits.length) out.push(`exits ${id} ${[...exits].sort().join(',')}`);
-  for (const [node, lanes] of graph.inbound) if (lanes.length) out.push(`in ${node} ${[...lanes].sort().join(',')}`);
-  for (const [node, lanes] of graph.outbound) if (lanes.length) out.push(`out ${node} ${[...lanes].sort().join(',')}`);
-  for (const [node, j] of graph.junctions) {
-    out.push(`junction ${node} ${j.signalised} ${j.control} ${[...j.connectors].sort().join(',')} ${j.groups.map((g) => `${g.id}:${[...g.segments].sort().join('/')}`).join(' ')}`);
-  }
-  return out.sort();
-}
-
 /** The ops the editor refused (a fuzz op may be one it would not do): the sequence stops there. */
 const rejected: unknown[] = [];
 const recordRejected = (error: unknown): void => { rejected.push(error); };
@@ -40,16 +24,6 @@ function fresh(doc: RoadDoc, net: Network): string[] {
   const conflicts = new ConflictIndex();
   conflicts.build(graph);
   return [...graphLines(graph), ...conflictLines(conflicts)].sort();
-}
-
-/** The conflicts as lines, without their ids (kept stable across builds, not across indexes). */
-function conflictLines(conflicts: ConflictIndex): string[] {
-  const out: string[] = [];
-  for (const point of conflicts.points) if (point) out.push(`point ${point.node} ${point.a} ${point.b} ${point.kind} ${point.sA} ${point.sB} ${point.at.x} ${point.at.y}`);
-  for (const [id, refs] of conflicts.byConnector) out.push(`refs ${id} ${refs.map((r) => `${r.other}:${r.kind}:${r.s}`).join(',')}`);
-  for (const [id, list] of conflicts.diverges) out.push(`diverges ${id} ${list.map((d) => d.other).sort().join(',')}`);
-  for (const q of conflicts.queueIntrusions) out.push(`intrusion ${q.a} ${q.b} ${q.mine} ${q.theirs}`);
-  return out;
 }
 
 /** A graph and its conflicts brought up by what changed, as the game keeps them. */

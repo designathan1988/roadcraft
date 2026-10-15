@@ -4,8 +4,9 @@ import type { Driver } from './driver';
 import { type ConstraintSet, emptyConstraints } from './idm';
 import type { ErrandKind, KerbStop } from './kerbStops';
 import type { PersonAgeClass } from '../people/view';
+import type { VehicleId } from './vehicleId';
 
-export type VehicleId = number;
+export type { VehicleId };
 
 export interface Kinematics {
   readonly lanelet: LaneletId;

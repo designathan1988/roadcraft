@@ -3,7 +3,7 @@ import type { Vec2 } from '@core/vec2';
 import { m } from '../units';
 import { type GroundAt, type PavedAt, PLINTH_MIN, floorHeight } from './foundation';
 import { groundVolumes, solidFootprints, volumeLift } from './geometry';
-import { lotSurfaces } from './lots';
+import { type LotSlope, lotHeightAt, lotSurfaces } from './lots';
 import type { Building } from './types';
 
 /**
@@ -34,10 +34,24 @@ export const POOL_TERRAIN_CLEARANCE = m(0.06);
 /** Furthest a bank may reach from its platform. */
 const PAD_REACH = m(40);
 
+/**
+ * The platform's height under a ring, as plain numbers (`padLevelAt`): a
+ * block's floor less the plinth, or a lot's surface (`lots.ts`) less what
+ * its plate stands over it. Plain data, so a platform is copied to the
+ * worker that grades the ground (`render/groundShape.worker.ts`) as it is.
+ */
+export interface PadLevel {
+  readonly slope: LotSlope;
+  readonly under: number;
+}
+
+/** A platform's height under one of its rings at a point (a car park falls with its street). */
+export const padLevelAt = (level: PadLevel, x: number, y: number): number => lotHeightAt(level.slope, x, y) - level.under;
+
 export interface Pad {
   readonly rings: readonly (readonly Vec2[])[];
-  /** The platform's height under each ring, at a point (a car park falls with its street). */
-  readonly levels: readonly ((x: number, y: number) => number)[];
+  /** The platform's height under each ring (`padLevelAt`). */
+  readonly levels: readonly PadLevel[];
   readonly water: readonly boolean[];
   /** Whether each ring is a paved lot (anything but grass and water). */
   readonly paved: readonly boolean[];
@@ -104,13 +118,15 @@ export function buildingPads(
    * worked out again. The caller drops it when the ground or the roads move.
    */
   known?: WeakMap<Building, Pad | null>,
+  /** Each building's floor as kept for every reader (`floors.ts`); worked out here without. */
+  floorOf?: (b: Building) => number,
 ): TownPads {
   const town = townPads(apron);
   for (const b of buildings) {
     let pad: Pad | null;
     if (known?.has(b)) pad = known.get(b) ?? null;
     else {
-      pad = padOf(b, naturalGround, pavedAt, apron);
+      pad = padOf(b, naturalGround, pavedAt, apron, floorOf);
       known?.set(b, pad);
     }
     town.put(b.id, pad);
@@ -119,13 +135,15 @@ export function buildingPads(
 }
 
 /** One building's platform (its blocks' and its open lots' rings, levels and bounds); null for one with none. */
-export function padOf(b: Building, naturalGround: GroundAt, pavedAt: PavedAt | undefined, apron: number): Pad | null {
+export function padOf(b: Building, naturalGround: GroundAt, pavedAt: PavedAt | undefined, apron: number,
+  floorOf?: (b: Building) => number): Pad | null {
   const built = solidFootprints(b);
   // Each block's own platform: a block at a floor of its own (a split
   // level, `Volume.lift`) has its own, as CityEngine aligns the terrain to
   // each shape at that shape's height.
   const lifts = groundVolumes(b).filter((v) => !v.open).map(volumeLift);
-  const floor = floorHeight(b, naturalGround, pavedAt);
+  // The floor as every reader has it (`floors.ts`), on the same ground and paving.
+  const floor = floorOf ? floorOf(b) : floorHeight(b, naturalGround, pavedAt);
   // Under the building, level at the floor less the plinth; under its open
   // lots, the lot's own surface (`lots.ts`), which falls with the street.
   const lots = lotSurfaces(b, floor, pavedAt);
@@ -136,14 +154,14 @@ export function padOf(b: Building, naturalGround: GroundAt, pavedAt: PavedAt | u
   // A lawn IS the ground, graded to the lot's surface (it is drawn as the
   // terrain's own grass, and people walk on it at that height); paving,
   // gravel, sand and water are laid as a thin plate just over it.
-  const levels = [...built.map((_, i) => { const level = flat + (lifts[i] ?? 0); return () => level; }), ...lots.map((l) => {
+  const levels: PadLevel[] = [...built.map((_, i): PadLevel => ({ slope: { kind: 'level', level: flat + (lifts[i] ?? 0) }, under: 0 })), ...lots.map((l): PadLevel => {
     const open = l.volume.open ?? 'grass';
     // A lawn is graded a little under the paving beside it, so a terrain
     // triangle reaching from the lawn into a car park never pokes up
     // through the asphalt (grass showing through the bays).
     const under = open === 'grass' ? LOT_PLATE * 3 : open === 'water'
       ? POOL_SINK + LOT_PLATE + POOL_TERRAIN_CLEARANCE : LOT_PLATE;
-    return (x: number, y: number) => l.heightAt(x, y) - under;
+    return { slope: l.slope, under };
   })];
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const boxes: Aabb[] = [];
@@ -168,7 +186,26 @@ export function padOf(b: Building, naturalGround: GroundAt, pavedAt: PavedAt | u
 export interface TownPads extends BuildingPads {
   /** A building's platform now (null: it has none, or is gone). */
   put(id: number, pad: Pad | null): void;
+  /** The platforms a point inside `boxes` can read, as plain data for the ground's worker (`padShaper`). */
+  cut(boxes: readonly (readonly [number, number, number, number])[]): PadShapeCut;
 }
+
+/**
+ * The town's platforms a shaping of the ground can read inside some boxes, as
+ * plain data: copied to the worker that grades the ground
+ * (`render/groundShape.worker.ts`), and read there (`padShaper`) as the town
+ * reads them here - every cell the boxes reach, its platforms in their order.
+ */
+export interface PadShapeCut {
+  readonly apron: number;
+  readonly pads: readonly Pad[];
+  /** Each cell the boxes reach, by key: its platforms (indices into `pads`) in the town's order, empty for none. */
+  readonly cells: ReadonlyMap<number, Int32Array>;
+}
+
+/** Side of the cells the town's platforms are filed under (`townPads`). */
+const PAD_CELL = m(25.6);
+const padCellKey = (cx: number, cy: number): number => cx * 100_003 + cy;
 
 /**
  * The platforms filed under every grid cell their box reaches: a corner of
@@ -180,9 +217,9 @@ export interface TownPads extends BuildingPads {
  * platforms filed again for one building (docs/AUDITORIA-2026-10-14.md C8).
  */
 export function townPads(apron: number): TownPads {
-  const CELL = m(25.6);
+  const CELL = PAD_CELL;
+  const cellKey = padCellKey;
   const cells = new Map<number, Pad[]>();
-  const cellKey = (cx: number, cy: number): number => cx * 100_003 + cy;
   const placed = new Map<number, { pad: Pad; keys: number[] }>();
   let bounds: Aabb[] | null = null;
   const keysOf = (pad: Pad): number[] => {
@@ -214,88 +251,137 @@ export function townPads(apron: number): TownPads {
       }
       if (pad) placed.set(id, { pad, keys }); else placed.delete(id);
     },
-    shapeAt(x, y, ground) {
-      // The nearest platform decides: two buildings side by side share the
-      // strip between them as each one's own apron, split down the middle.
-      let nearest = Infinity;
-      let level = 0;
-      let owner: Pad | null = null;
-      let solid = false;
-      let waterDistance = Infinity;
-      let waterLevel = 0;
-      let waterOwner: Pad | null = null;
-      // A split-level building's lowest block platform within an apron of the
-      // point: where two of its blocks meet at different floors, the lower
-      // one's excavation runs on under the edge of the upper one (hidden
-      // under its floor, behind its plinth). Each on its own, the terrain
-      // cell across the line rose as a bank of earth inside the lower room.
-      let stepLow = Infinity;
-      let stepPad: Pad | null = null;
-      // The lowest paving of a lot within an apron of the point (a car park,
-      // a yard, a drive's ramp, a terrace): the ground beside it never stands
-      // over it. A terrain triangle reaching from a cell corner on the bank
-      // beyond it, from the building's platform or from a higher lawn, over a
-      // lower paving buried its edge (on a hillside street 12 % of the
-      // paving, up to 2.25 m deep); under the paving a dip is hidden by the
-      // plate and its kerb.
-      let pavedLow = Infinity;
-      let pavedPad: Pad | null = null;
-      for (const pad of cells.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL))) ?? []) {
-        if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
-        for (let i = 0; i < pad.rings.length; i++) {
-          // The distance to the ring's bounds never exceeds the distance to
-          // the ring: a ring whose bounds are already no nearer than what
-          // each test below has found cannot change it, and is not measured
-          // (branch and bound, as a nearest-neighbour search prunes a region
-          // by the lower bound of its distance). A road edit in a town asked
-          // every ring of every platform within its bank's reach at every
-          // corner of the ground: 0.4-0.6 s of each edit (2026-10-11).
-          const rb = pad.boxes[i]!;
-          const lb = Math.hypot(Math.max(rb.minX - x, 0, x - rb.maxX), Math.max(rb.minY - y, 0, y - rb.maxY));
-          // A paved lot (a car park, a yard), not grass or water.
-          const paved = i >= pad.solidCount && !pad.water[i] && pad.paved[i];
-          if (lb > nearest + BOUND_SLACK && !(pad.water[i] && lb < waterDistance + BOUND_SLACK)
-            && !(pad.stepped && i < pad.solidCount && lb <= apron + BOUND_SLACK)
-            && !(paved && lb <= apron + BOUND_SLACK)) continue;
-          const ring = pad.rings[i]!;
-          padsWork.rings++;
-          const d = ringDistance(ring, x, y);
-          // Inside a paved lot, its plate decides, not a lawn whose edge it shares.
-          if (d < nearest || (d === 0 && paved && nearest === 0)) { nearest = d; level = pad.levels[i]!(x, y); owner = pad; solid = i < pad.solidCount; }
-          if (pad.water[i] && d < waterDistance) { waterDistance = d; waterLevel = pad.levels[i]!(x, y); waterOwner = pad; }
-          if (pad.stepped && i < pad.solidCount && d <= apron) {
-            const l = pad.levels[i]!(x, y);
-            if (l < stepLow) { stepLow = l; stepPad = pad; }
-          }
-          if (paved && d <= apron) {
-            const l = pad.levels[i]!(x, y);
-            if (l < pavedLow) { pavedLow = l; pavedPad = pad; }
+    shapeAt: (x, y, ground) => shapeOverPads(cells.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL))), apron, x, y, ground),
+    cut(boxes) {
+      const pads: Pad[] = [];
+      const indexOf = new Map<Pad, number>();
+      const out = new Map<number, Int32Array>();
+      for (const box of boxes) {
+        for (let cx = Math.floor(box[0] / CELL); cx <= Math.floor(box[2] / CELL); cx++) {
+          for (let cy = Math.floor(box[1] / CELL); cy <= Math.floor(box[3] / CELL); cy++) {
+            const key = cellKey(cx, cy);
+            if (out.has(key)) continue;
+            const list = cells.get(key) ?? NO_PADS;
+            const ids = new Int32Array(list.length);
+            list.forEach((pad, k) => {
+              let at = indexOf.get(pad);
+              if (at === undefined) { indexOf.set(pad, at = pads.length); pads.push(pad); }
+              ids[k] = at;
+            });
+            out.set(key, ids);
           }
         }
       }
-      if (nearest === Infinity) return { height: ground, weight: 0 };
-      if (solid && nearest === 0 && stepPad === owner && stepLow < level) level = stepLow;
-      // A water basin is cut into the ground under its surrounding deck too.
-      // Otherwise a terrain triangle whose outer corner reads the higher deck
-      // crosses the lower water plane and leaves only a triangular fragment.
-      // Cut, never filled: a pool on a terrace up the slope (a split-level's
-      // raised garden) raised the ground under the house beside it.
-      if ((waterOwner === owner || !solid) && apron > 0 && waterDistance < 2 * apron && waterLevel < level) {
-        // A neighbouring open garden can own a terrain grid corner beside the
-        // pool; its high corner would interpolate through the water. A solid
-        // building's own platform remains protected from this excavation.
-        const t = Math.min(1, (2 * apron - waterDistance) / apron);
-        level += (waterLevel - level) * t * t * (3 - 2 * t);
-      }
-      const out = Math.max(0, nearest - apron) / PAD_BATTER;
-      // Fill below the platform, cut above it, and the land itself once the
-      // bank has met it.
-      let height = ground < level ? Math.max(ground, level - out) : Math.min(ground, level + out);
-      // Never over a lot's paving close by - unless that would dig
-      // under another building's floor.
-      if (pavedLow < height && !(solid && owner !== pavedPad)) height = pavedLow;
-      if (Math.abs(height - ground) < 1e-3) return { height: ground, weight: 0 };
-      return { height, weight: 1 };
+      return { apron, pads, cells: out };
     },
   };
 }
+
+/**
+ * The platforms of a cut (`TownPads.cut`) graded as the town grades them
+ * (`shapeOverPads`, the same lists in the same order): the same heights to
+ * the bit. A point outside the cut's cells is an error, never a guess.
+ */
+export function padShaper(cut: PadShapeCut): Pick<BuildingPads, 'shapeAt'> {
+  const lists = new Map<number, readonly Pad[]>();
+  for (const [key, ids] of cut.cells) lists.set(key, Array.from(ids, (k) => cut.pads[k]!));
+  return {
+    shapeAt(x, y, ground) {
+      const list = lists.get(padCellKey(Math.floor(x / PAD_CELL), Math.floor(y / PAD_CELL)));
+      if (!list) throw new Error(`no platforms were cut for (${x}, ${y})`);
+      return shapeOverPads(list, cut.apron, x, y, ground);
+    },
+  };
+}
+
+/**
+ * The graded height at a point from the platforms filed under its cell, in
+ * their order (the first of equals wins), and how fully it replaces the land
+ * (0 or 1): the town's (`townPads`) and their copy off the page (`padShaper`)
+ * answer with this one function, so the two give the same ground to the bit.
+ */
+function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: number, y: number, ground: number): { height: number; weight: number } {
+  // The nearest platform decides: two buildings side by side share the
+  // strip between them as each one's own apron, split down the middle.
+  let nearest = Infinity;
+  let level = 0;
+  let owner: Pad | null = null;
+  let solid = false;
+  let waterDistance = Infinity;
+  let waterLevel = 0;
+  let waterOwner: Pad | null = null;
+  // A split-level building's lowest block platform within an apron of the
+  // point: where two of its blocks meet at different floors, the lower
+  // one's excavation runs on under the edge of the upper one (hidden
+  // under its floor, behind its plinth). Each on its own, the terrain
+  // cell across the line rose as a bank of earth inside the lower room.
+  let stepLow = Infinity;
+  let stepPad: Pad | null = null;
+  // The lowest paving of a lot within an apron of the point (a car park,
+  // a yard, a drive's ramp, a terrace): the ground beside it never stands
+  // over it. A terrain triangle reaching from a cell corner on the bank
+  // beyond it, from the building's platform or from a higher lawn, over a
+  // lower paving buried its edge (on a hillside street 12 % of the
+  // paving, up to 2.25 m deep); under the paving a dip is hidden by the
+  // plate and its kerb.
+  let pavedLow = Infinity;
+  let pavedPad: Pad | null = null;
+  for (const pad of list ?? NO_PADS) {
+    if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
+    for (let i = 0; i < pad.rings.length; i++) {
+      // The distance to the ring's bounds never exceeds the distance to
+      // the ring: a ring whose bounds are already no nearer than what
+      // each test below has found cannot change it, and is not measured
+      // (branch and bound, as a nearest-neighbour search prunes a region
+      // by the lower bound of its distance). A road edit in a town asked
+      // every ring of every platform within its bank's reach at every
+      // corner of the ground: 0.4-0.6 s of each edit (2026-10-11).
+      const rb = pad.boxes[i]!;
+      const lb = Math.hypot(Math.max(rb.minX - x, 0, x - rb.maxX), Math.max(rb.minY - y, 0, y - rb.maxY));
+      // A paved lot (a car park, a yard), not grass or water.
+      const paved = i >= pad.solidCount && !pad.water[i] && pad.paved[i];
+      if (lb > nearest + BOUND_SLACK && !(pad.water[i] && lb < waterDistance + BOUND_SLACK)
+        && !(pad.stepped && i < pad.solidCount && lb <= apron + BOUND_SLACK)
+        && !(paved && lb <= apron + BOUND_SLACK)) continue;
+      const ring = pad.rings[i]!;
+      padsWork.rings++;
+      const d = ringDistance(ring, x, y);
+      // Inside a paved lot, its plate decides, not a lawn whose edge it shares.
+      if (d < nearest || (d === 0 && paved && nearest === 0)) { nearest = d; level = padLevelAt(pad.levels[i]!, x, y); owner = pad; solid = i < pad.solidCount; }
+      if (pad.water[i] && d < waterDistance) { waterDistance = d; waterLevel = padLevelAt(pad.levels[i]!, x, y); waterOwner = pad; }
+      if (pad.stepped && i < pad.solidCount && d <= apron) {
+        const l = padLevelAt(pad.levels[i]!, x, y);
+        if (l < stepLow) { stepLow = l; stepPad = pad; }
+      }
+      if (paved && d <= apron) {
+        const l = padLevelAt(pad.levels[i]!, x, y);
+        if (l < pavedLow) { pavedLow = l; pavedPad = pad; }
+      }
+    }
+  }
+  if (nearest === Infinity) return { height: ground, weight: 0 };
+  if (solid && nearest === 0 && stepPad === owner && stepLow < level) level = stepLow;
+  // A water basin is cut into the ground under its surrounding deck too.
+  // Otherwise a terrain triangle whose outer corner reads the higher deck
+  // crosses the lower water plane and leaves only a triangular fragment.
+  // Cut, never filled: a pool on a terrace up the slope (a split-level's
+  // raised garden) raised the ground under the house beside it.
+  if ((waterOwner === owner || !solid) && apron > 0 && waterDistance < 2 * apron && waterLevel < level) {
+    // A neighbouring open garden can own a terrain grid corner beside the
+    // pool; its high corner would interpolate through the water. A solid
+    // building's own platform remains protected from this excavation.
+    const t = Math.min(1, (2 * apron - waterDistance) / apron);
+    level += (waterLevel - level) * t * t * (3 - 2 * t);
+  }
+  const out = Math.max(0, nearest - apron) / PAD_BATTER;
+  // Fill below the platform, cut above it, and the land itself once the
+  // bank has met it.
+  let height = ground < level ? Math.max(ground, level - out) : Math.min(ground, level + out);
+  // Never over a lot's paving close by - unless that would dig
+  // under another building's floor.
+  if (pavedLow < height && !(solid && owner !== pavedPad)) height = pavedLow;
+  if (Math.abs(height - ground) < 1e-3) return { height: ground, weight: 0 };
+  return { height, weight: 1 };
+}
+
+const NO_PADS: readonly Pad[] = Object.freeze([]);

@@ -33,13 +33,45 @@ export const MIN_SIZE = m(2);
 /** Two lengths closer than this (0.04 mm) are the same one (shared walls, touching volumes). */
 export const EPS = 1e-4 * TUNED_UNIT;
 
-export function localToWorld(b: Building, lx: number, ly: number): Vec2 {
+/** What a building's frame is read from: its origin and rotation (a worker is sent no more, `sim/agents/lotBays.ts`). */
+type Frame = Pick<Building, 'x' | 'y' | 'rotation'>;
+
+export function localToWorld(b: Frame, lx: number, ly: number): Vec2 {
   const c = Math.cos(b.rotation);
   const s = Math.sin(b.rotation);
   return { x: b.x + lx * c - ly * s, y: b.y + lx * s + ly * c };
 }
 
-export function worldToLocal(b: Building, p: Vec2): Vec2 {
+/**
+ * A building's frame - its origin, the cosine and the sine of its rotation -
+ * worked out once for the many points of one building (`frameX`, `frameY`,
+ * `frameToLocal`): the same numbers `localToWorld` and `worldToLocal` give,
+ * without a cosine and a sine a point. DO NOT call `localToWorld` point by
+ * point in a building's loops: grading the sites of a growing city, a floor's
+ * samples and its lots' heights at every corner of the ground were 1.4 s of
+ * cosines and sines in one frame (2026-10-15).
+ */
+export interface BuildingFrame {
+  readonly x: number;
+  readonly y: number;
+  readonly c: number;
+  readonly s: number;
+}
+
+export const buildingFrame = (b: Building): BuildingFrame => ({ x: b.x, y: b.y, c: Math.cos(b.rotation), s: Math.sin(b.rotation) });
+/** World x of a local point, as `localToWorld` gives it. */
+export const frameX = (f: BuildingFrame, lx: number, ly: number): number => f.x + lx * f.c - ly * f.s;
+/** World y of a local point, as `localToWorld` gives it. */
+export const frameY = (f: BuildingFrame, lx: number, ly: number): number => f.y + lx * f.s + ly * f.c;
+export const frameToWorld = (f: BuildingFrame, lx: number, ly: number): Vec2 => ({ x: frameX(f, lx, ly), y: frameY(f, lx, ly) });
+/** A world point in the building's frame, as `worldToLocal` gives it. */
+export function frameToLocal(f: BuildingFrame, x: number, y: number): Vec2 {
+  const dx = x - f.x;
+  const dy = y - f.y;
+  return { x: dx * f.c + dy * f.s, y: -dx * f.s + dy * f.c };
+}
+
+export function worldToLocal(b: Frame, p: Vec2): Vec2 {
   const c = Math.cos(b.rotation);
   const s = Math.sin(b.rotation);
   const dx = p.x - b.x;
@@ -53,7 +85,7 @@ export function worldToLocalAt(b: Building, p: Vec2): Vec2 {
 }
 
 /** A local direction turned into the world. */
-export function localDirToWorld(b: Building, dx: number, dy: number): Vec2 {
+export function localDirToWorld(b: Frame, dx: number, dy: number): Vec2 {
   const c = Math.cos(b.rotation);
   const s = Math.sin(b.rotation);
   return { x: dx * c - dy * s, y: dx * s + dy * c };

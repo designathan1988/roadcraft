@@ -117,17 +117,17 @@ export function commitRoadPath(
   // Each step of a road drawn timed (`hitch:` entries; docs/source/performance.md).
   let lap = performance.now();
   const timed = (what: string): void => { const now = performance.now(); performance.measure(`hitch:commit/${what}`, { start: lap, end: now }); lap = now; };
-  const work = doc.clone();
-  timed('clone');
+  // The live network brought up to the map first (only what the diary says
+  // changed since it was built): the copy's network takes it over as it
+  // stands (`adopt`), not built again - a whole network rebuild in every road
+  // drawn (docs/source/performance.md #35) - and the edit is judged against it.
+  // DO NOT copy the map to judge against when the network is behind
+  // (`snapshotRoads`): the whole document copied on a pause of the pointer.
+  if (net.revision !== doc.revision) net.rebuild();
+  const work = doc.fork();
+  timed('fork');
   const workNet = new Network(work);
-  // The copy is the document as the live network was built from: its
-  // geometry is taken as it stands (`adopt`), not built again - a whole
-  // network rebuild in every road drawn (docs/source/performance.md #35).
-  if (net.revision === doc.revision) workNet.adopt(net);
-  else {
-    workNet.seedJunctions(net);
-    workNet.rebuild();
-  }
+  workNet.adopt(net);
   timed('network');
   let committed = false;
   let heightLimited = false;
@@ -168,8 +168,7 @@ export function commitRoadPath(
   if (bore.bored) workNet.rebuild();
   timed('tunnels');
   // Judged on what it built, against the map as it was (`editRules.ts`).
-  const before = net.revision === doc.revision ? { doc, net } : snapshotRoads(doc, net);
-  const refused = refuseRoadEdit(before, { doc: work, net: workNet });
+  const refused = refuseRoadEdit({ doc, net }, { doc: work, net: workNet });
   timed('rules');
   if (refused) return { committed: false, reason: refused };
   // Paid for on the copy, so the live map takes the balance with the roads
@@ -182,7 +181,7 @@ export function commitRoadPath(
     timed('stations');
     return { committed: true, heightLimited, finalHeightOffset: currentHeight, cost: charge.amount, stations };
   }
-  doc.replaceWith(work);
+  doc.takeBack(work);
   net.adopt(workNet);
   timed('replace');
   return { committed: true, heightLimited, finalHeightOffset: currentHeight, cost: charge.amount,
@@ -356,7 +355,7 @@ interface TaggedCut<Tag> {
 /**
  * Commits a drafted road atomically, splitting anything it crosses.
  *
- * All topology work happens on a private document clone. A failed duplicate,
+ * All topology work happens on a working copy (`RoadDoc.fork`). A failed duplicate,
  * degenerate anchor or split therefore leaves the live map byte-for-byte
  * unchanged. The optional shape is the quadratic captured by curve mode.
  */
@@ -389,7 +388,7 @@ export function commitDraft(
   // one smooth curve instead of each being fitted on its own.
   const shape = fitRoadCurve(start.at, end.at, curve, type);
 
-  const work = doc.clone();
+  const work = doc.fork();
   const workNet = new Network(work);
   workNet.seedJunctions(net);
   workNet.rebuild();
@@ -409,7 +408,7 @@ export function commitDraft(
   const charge = settleRoadEdit(roadsBefore(doc), work);
   if (!charge.affordable) return { committed: false, reason: 'funds', cost: charge.amount };
 
-  doc.replaceWith(work);
+  doc.takeBack(work);
   net.adopt(workNet);
   return { ...result, cost: charge.amount };
 }
@@ -868,30 +867,33 @@ export function reconcileMovedNode(doc: RoadDoc, net: Network, id: NodeId, depth
  * A node dropped by the Move tool at `to`, reconciled with the network
  * (`reconcileMovedNode`) and judged by the editing rules against the map as
  * it was before the drop (`editRules.ts`), as a drawn road is. Not committed:
- * nothing moved (`duplicate`) or refused with a reason - the document is then
- * left as the drop made it, and the caller restores it.
+ * nothing moved (`duplicate`) or refused with a reason - the map and its
+ * network are then left as they were.
  */
 export function moveNodeChecked(doc: RoadDoc, net: Network, id: NodeId, to: Vec2): DraftResult {
-  // The copy the rules judge against is also what a refused move puts back,
-  // as `guardRoadEdit` does: the caller keeps no copy of its own (the Move
-  // tool took the whole document as JSON at every press to undo a refusal).
-  // The copy itself is the F2 debt (docs/PLANO-ESPINHA-2026-10-14.md, C3).
-  const before = snapshotRoads(doc, net);
-  const money = roadsBefore(doc);
-  if (!doc.moveNode(id, to)) return { committed: false, reason: 'duplicate' };
-  const refuse = (result: DraftResult): DraftResult => {
-    doc.replaceWith(before.doc);
-    net.adopt(before.net);
-    return result;
-  };
-  const result = reconcileMovedNode(doc, net, id);
-  if (!result.committed) return refuse(result);
-  net.rebuild();
-  const refused = refuseRoadEdit(before, { doc, net });
-  if (refused) return refuse({ committed: false, reason: refused });
+  // Made on a working copy (`RoadDoc.fork`) and judged against the map as it
+  // stands, as a drawn road is: a refused move leaves the map untouched, an
+  // accepted one is taken back as it was made. It was made on the map itself
+  // against a copy of the whole map taken first, which a refusal put back
+  // (docs/PLANO-ESPINHA-2026-10-14.md, C3, the F2 debt).
+  // `net` is built for `doc` as it stands (the Move tool's `putBack` keeps it so): the copy's network takes it over.
+  if (net.revision !== doc.revision) throw new Error('moveNodeChecked: the network is not built for the document as it stands');
+  const work = doc.fork();
+  const workNet = new Network(work);
+  workNet.adopt(net);
+  if (!work.moveNode(id, to)) return { committed: false, reason: 'duplicate' };
+  // `workNet` stands as before the move: the roads that did not move are filed where they are.
+  const result = reconcileMovedNode(work, workNet, id);
+  if (!result.committed) return result;
+  workNet.rebuild();
+  const refused = refuseRoadEdit({ doc, net }, { doc: work, net: workNet });
+  if (refused) return { committed: false, reason: refused };
   // The roads made longer are paid for, shorter partly paid back (`editor/roads/economy.ts`).
-  const charge = settleRoadEdit(money, doc);
-  return charge.affordable ? { ...result, cost: charge.amount } : refuse({ committed: false, reason: 'funds', cost: charge.amount });
+  const charge = settleRoadEdit(roadsBefore(doc), work);
+  if (!charge.affordable) return { committed: false, reason: 'funds', cost: charge.amount };
+  doc.takeBack(work);
+  net.adopt(workNet);
+  return { ...result, cost: charge.amount };
 }
 
 /** Joins two compatible straight segments meeting at an otherwise unused node. */

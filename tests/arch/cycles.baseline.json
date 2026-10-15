@@ -68,21 +68,12 @@
   "src/world/lots.ts",
   "src/world/network.ts",
   "src/world/networkBuild.ts",
-  "src/world/pedestrianAccess.ts",
   "src/world/poleLines.ts",
   "src/world/rescale.ts",
   "src/world/ribbons.ts",
-  "src/world/roadTypes.ts",
   "src/world/roads/rules.ts",
-  "src/world/section.ts",
-  "src/world/surfaces.ts",
   "src/world/walkable.ts",
   "src/world/walkways.ts",
   "src/world/zoneGrid.ts"
- ],
- [
-  "src/world/conflictPoints.ts",
-  "src/world/lanelets.ts",
-  "src/world/turnPaths.ts"
  ]
 ]

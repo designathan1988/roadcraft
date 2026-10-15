@@ -258,6 +258,20 @@ function lerpAngle(from: number, to: number, t: number): number {
  * simulation now owns a world position and a heading turned at a human rate
  * (`settlePose`), and this only blends them.
  */
+/**
+ * `pedPose` written into `out`: the same numbers (`lerpVec`'s sums), no object made. The drawing asks it for every
+ * pedestrian drawn, every frame - a pose, two points and a lerp made each (3,000-4,000 objects a frame at
+ * `MAX_PEDS`); the vehicles' own was fixed the same way (`vehiclePoseInto`).
+ */
+export function pedPoseInto(p: PedView, alpha: number, out: PoseOut): void {
+  const t = clamp(alpha, 0, 1);
+  const bx = p.prev.x, by = p.prev.y;
+  if (Math.hypot(p.x - bx, p.y - by) > POSE_JUMP_LIMIT) { out.p.x = p.x; out.p.y = p.y; out.angle = p.heading; return; }
+  out.p.x = bx + (p.x - bx) * t;
+  out.p.y = by + (p.y - by) * t;
+  out.angle = lerpAngle(p.prev.heading, p.heading, t);
+}
+
 export function pedPose(p: PedView, alpha: number): Pose {
   const t = clamp(alpha, 0, 1);
   const now = { x: p.x, y: p.y };

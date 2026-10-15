@@ -1,6 +1,21 @@
+import type { ChangeLog } from '@core/changeLog';
 import type { BodyClass } from '@world/conflictPoints';
-import type { GraphChange, LaneletId } from '@world/lanelets';
-import type { SimWorld } from '../world';
+import type { RoadDoc } from '@world/doc';
+import type { Connector, GraphChange, Lanelet, LaneletGraph, LaneletId } from '@world/lanelets';
+
+/**
+ * What the reach reads of the world (`SimWorld`): the lane graph, its lanes and
+ * connectors, the log of its changes and the map's edge. DO NOT import
+ * `SimWorld`: `sim/world.ts` imports this file, and the type import closed an
+ * import cycle (`tests/arch/imports.spec.ts`).
+ */
+export interface ReachWorld {
+  readonly doc: RoadDoc;
+  readonly graph: LaneletGraph;
+  readonly topologyLog: ChangeLog<GraphChange>;
+  lanelet(id: LaneletId): Lanelet | undefined;
+  connector(id: string): Connector | undefined;
+}
 
 /**
  * THE ROAD ENDS EACH LANE CAN REACH, for a body class: the strongly connected
@@ -45,13 +60,13 @@ class BodyReach {
   constructor(private readonly body: BodyClass) {}
 
   /** The road ends reachable from a link lane (its own included when it is one). */
-  exitsFrom(w: SimWorld, start: LaneletId): readonly LaneletId[] {
+  exitsFrom(w: ReachWorld, start: LaneletId): readonly LaneletId[] {
     const c = this.comp.get(start);
     return c === undefined ? [] : this.exitsOf(w, c);
   }
 
   /** @rebuild Every link lane: a body class asked for the first time, or a lane graph built whole. */
-  buildAll(w: SimWorld): void {
+  buildAll(w: ReachWorld): void {
     this.comp.clear(); this.members.clear(); this.out.clear(); this.into.clear();
     this.condOut.clear(); this.condIn.clear(); this.exitsMemo.clear();
     const links: LaneletId[] = [];
@@ -63,7 +78,7 @@ class BodyReach {
   }
 
   /** Brought up to the lane graph's changes. */
-  follow(w: SimWorld, changes: readonly GraphChange[]): void {
+  follow(w: ReachWorld, changes: readonly GraphChange[]): void {
     const isLink = (id: LaneletId): boolean => w.graph.lanelets.get(id)?.kind === 'link';
     // The lanes whose ways out may have changed: made or taken, and those into a junction built again.
     const lanes = new Set<LaneletId>();
@@ -158,7 +173,7 @@ class BodyReach {
   }
 
   /** A link's ways out this body takes: the movements it fits, and the lane changes beside it. */
-  private next(w: SimWorld, lane: LaneletId): LaneletId[] {
+  private next(w: ReachWorld, lane: LaneletId): LaneletId[] {
     const out: LaneletId[] = [];
     for (const id of w.graph.exitsOf(lane)) {
       const connector = w.connector(id);
@@ -297,7 +312,7 @@ class BodyReach {
   }
 
   /** A component's road ends: those of its lanes, and those of the components it leads to (summed first). */
-  private exitsOf(w: SimWorld, root: number): readonly LaneletId[] {
+  private exitsOf(w: ReachWorld, root: number): readonly LaneletId[] {
     const known = this.exitsMemo.get(root);
     if (known) return known;
     const stack: { c: number; ahead: number[]; at: number }[] = [{ c: root, ahead: [...this.condOut.get(root)?.keys() ?? []], at: 0 }];
@@ -330,7 +345,7 @@ function bump(ways: Map<number, Map<number, number>>, a: number, b: number, n: n
 }
 
 /** A lane that leaves the map: a link into a road end at the edge, with no way on. */
-export function boundaryExit(w: SimWorld, id: LaneletId): boolean {
+export function boundaryExit(w: ReachWorld, id: LaneletId): boolean {
   const lane = w.lanelet(id);
   return !!lane && lane.kind === 'link' && lane.to !== undefined &&
     w.doc.mapEdge(lane.to) && w.graph.exitsOf(id).length === 0;
@@ -342,7 +357,7 @@ export class LaneReaches {
   private seen: object | null = null;
 
   /** The road ends a link lane can reach, for a body (its own included when it is one). */
-  exitsFrom(w: SimWorld, start: LaneletId, body: BodyClass): readonly LaneletId[] {
+  exitsFrom(w: ReachWorld, start: LaneletId, body: BodyClass): readonly LaneletId[] {
     const changes = w.topologyLog.since(this.seen);
     this.seen = w.topologyLog.state;
     if (changes === null) this.bodies.clear();
