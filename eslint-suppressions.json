@@ -162,7 +162,7 @@
   },
   "src/render/bakePool.ts": {
     "roadcraft/no-module-state": {
-      "count": 5
+      "count": 4
     }
   },
   "src/render/buildings/buildingMesh.ts": {
@@ -288,9 +288,6 @@
   "src/render/people/crowdLod.ts": {
     "roadcraft/no-module-state": {
       "count": 1
-    },
-    "roadcraft/no-silent-catch": {
-      "count": 1
     }
   },
   "src/render/people/garmentPadding.worker.ts": {
@@ -352,7 +349,7 @@
   },
   "src/render/people/skinAppearance.ts": {
     "roadcraft/no-module-state": {
-      "count": 7
+      "count": 4
     }
   },
   "src/render/postprocess.ts": {

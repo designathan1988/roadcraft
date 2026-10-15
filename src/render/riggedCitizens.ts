@@ -23,7 +23,7 @@ import { HELD, createHeldProps } from './people/heldProps';
 import { attachFacialMorphs } from './people/facialMorphs';
 import { applyFace, channelShapes, faceAt, type FaceWeights } from './people/faceExpression';
 import { expressionShapes } from '@people/body/expressions';
-import { applySkinAppearance, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from './people/skinAppearance';
+import { applySkinAppearance, createFaceCardAtlas, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from './people/skinAppearance';
 import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
 import { wornItems } from '@people/spec';
 import { captureBind, captureBindRotations, loadRocketboxClips } from './citizenWalk';
@@ -110,9 +110,6 @@ export function citizenBandAt(zoom: number): number {
 export function citizenLevelFor(zoom: number): number {
   return citizenBandAt(zoom) === 0 ? 0 : citizenLevelAt(zoom);
 }
-
-/** Frames undrawn after which a person's body is forgotten: about a minute. */
-const CAST_FORGET = 3600;
 
 /** Who a figure drawn by `drawClip` is and with whom: the casting context without the place. */
 export interface ClipIdentity {
@@ -237,9 +234,15 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   // An active load remains useful only while a body requests it in drawn
   // frames. Wall time would cancel a visible person in a paused game.
   const wantedFrame = new Map<number, number>();
+  /** When each body's load last failed: asked again only `RETRY_MS` later (a network or a cook hiccup passes). */
+  const failed = new Map<number, number>();
+  const RETRY_MS = 5000;
   let visualFrame = 0;
   let activeLoads = 0;
   const resources = new Set<{ dispose(): void }>();
+  // The brows and lashes of every body's materials, in one array of layers (`FaceCardAtlas`).
+  const faceCards = createFaceCardAtlas();
+  resources.add(faceCards);
   const disposeOwned = (owned: Set<{ dispose(): void }>): void => {
     cancelUploads([...owned].filter((resource): resource is Texture => resource instanceof Texture));
     for (const resource of owned) resource.dispose();
@@ -531,7 +534,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           material.metalness = 0;
           skinMaterial(material, uniform, o, materialIndex === 0 ? (CROWD[index]?.look ?? 0) : 0);
           const skin = o.geometry.userData['skinAppearance'] as SkinAppearance | undefined;
-          if (skin) applySkinAppearance(material, o.geometry, skin);
+          if (skin) applySkinAppearance(material, o.geometry, skin, faceCards);
           owned.add(material);
           return material;
         });
@@ -674,10 +677,20 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       if (queued) { queued.priority ||= priority; queued.wantedAt = performance.now(); }
       return existing;
     }
+    const failedAt = failed.get(index);
+    // Failed a moment ago (said then): not drawn, not asked again yet.
+    if (failedAt !== undefined && performance.now() - failedAt < RETRY_MS) return Promise.resolve();
     const work = new Promise<void>((resolve, reject) => {
       queuedLoads.set(index, { priority, wantedAt: performance.now(), resolve, reject });
     });
     loading.set(index, work);
+    // A load that failed is let go, to be asked again later: DO NOT keep the
+    // rejected promise - the body was never loaded again for the session.
+    work.catch((error: unknown) => {
+      console.error(`Citizen ${models[index]} failed to load; asked again in ${RETRY_MS} ms`, error);
+      if (loading.get(index) === work) loading.delete(index);
+      failed.set(index, performance.now());
+    });
     pump();
     return work;
   }
@@ -709,8 +722,10 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     };
   }
 
+  // A person keeps their body for good (`CastingRegistry`): DO NOT give the
+  // registry a limit on how many it remembers - 3600 here re-dressed people.
   const registry = new CastingRegistry(CROWD.filter((m) => models.includes(m.id))
-    .sort((p, q) => models.indexOf(p.id) - models.indexOf(q.id)), CAST_FORGET);
+    .sort((p, q) => models.indexOf(p.id) - models.indexOf(q.id)));
   const helmetFits = (id: string): boolean => !NO_HELMET.has(id);
   function bodyFor(ctx: CastingContext): { index: number; size: number } | null {
     return registry.pickCitizenModel(ctx, helmetFits);
@@ -1073,7 +1088,16 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
               mesh.instanceColor.addUpdateRange(0, batch.count * 3);
               mesh.instanceColor.needsUpdate = true;
             }
-            if (mesh.morphTexture && lod === 0) mesh.morphTexture.needsUpdate = true;
+            if (mesh.morphTexture && lod === 0) {
+              // The faces of the bodies drawn, a row each (three sends an update
+              // range as one row of the image): DO NOT send all CAPACITY rows of
+              // weights every frame for the few people close enough to show a face.
+              const morph = mesh.morphTexture;
+              morph.clearUpdateRanges();
+              const row = morph.image.width;
+              if (batch.count * 2 < morph.image.height) for (let i = 0; i < batch.count; i++) morph.addUpdateRange(i * row, row);
+              morph.needsUpdate = true;
+            }
           }
         }
       }
@@ -1128,6 +1152,14 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     /** The body somebody of this identity is drawn with (a rider thrown off is the same person, `ragdoll.fling`). */
     indexFor(identity: ClipIdentity, helmet: boolean, x: number, y: number): number | null {
       return bodyFor({ ...identity, helmet, x, y })?.index ?? null;
+    },
+    /** The people cast in a company forgotten: its vehicle is gone from the world (`CastingRegistry.forgetCompany`). */
+    forgetCompany(company: Company, companyId: number): void {
+      registry.forgetCompany(company, companyId);
+    },
+    /** How many people the casting remembers (tests). */
+    get remembered(): number {
+      return registry.remembered;
     },
     drawPalette(index: number, palette: Float32Array, instance: Matrix4, charred = false): void {
       const batch = batches.get(index);

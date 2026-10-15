@@ -808,7 +808,10 @@ const LOD_LEVELS: readonly (readonly [number, number, boolean?])[] = [[0.3, 0.00
 
 let simplifierReady = false;
 /** Resolves once the simplifier is loaded: wait for it before building people (`riggedCitizens.ts`). */
-export const personSimplifier: Promise<void> = MeshoptSimplifier.ready.then(() => { simplifierReady = true; }, () => undefined);
+export const personSimplifier: Promise<void> = MeshoptSimplifier.ready.then(() => { simplifierReady = true; }, (error: unknown) => {
+  // Said, not swallowed: the bodies then fall back to grid clustering (`setLevels`).
+  console.error('[people] meshoptimizer did not load; bodies are simplified by clustering', error);
+});
 
 /**
  * The coarser levels, on the same vertices: `lodIndices` (and `lodGroups`,
@@ -837,7 +840,11 @@ function setLevels(geometry: BufferGeometry, positions: readonly number[], colou
   // its levels are ready (\`lodReady\`); elsewhere (tests) it is done here.
   const worker = lodPool();
   if (worker) {
-    geometry.userData['lodReady'] = worker.levels({ positions: pos, colours: col, index: all, ranges, levels: LOD_LEVELS }).then(store);
+    // A failure is said, and the body is drawn on its full level alone: DO NOT
+    // let it reject into the load (the body was never drawn) or swallow it.
+    geometry.userData['lodReady'] = worker.levels({ positions: pos, colours: col, index: all, ranges, levels: LOD_LEVELS }).then(store, (error: unknown) => {
+      console.error('[people] the levels of detail of a body failed; drawn at full detail', error);
+    });
     return;
   }
   store(simplifyLevels({ positions: pos, colours: col, index: all, ranges, levels: LOD_LEVELS }));

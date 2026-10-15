@@ -24,7 +24,7 @@ function fakeGl() {
     endQuery: () => { active = null; },
     getQueryParameter: (q: object, p: number) => (p === 0x8867 ? ready.has(q) : results.get(q) ?? 0),
   };
-  const renderer = { getContext: () => gl } as unknown as WebGLRenderer;
+  const renderer = { getContext: () => gl, domElement: new EventTarget() } as unknown as WebGLRenderer;
   return {
     renderer,
     get made() { return made; },

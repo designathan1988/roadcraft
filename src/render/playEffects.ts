@@ -19,7 +19,7 @@ import { impactCasualties } from '@sim/people/casualties';
 import { vehiclePose } from '@sim/pose';
 import { solidsOf } from '@world/solids';
 import { floorHeight } from '@world/buildings/foundation';
-import { elementRect, localToWorld, roofHeightAt, roofRise, volumeCorners, volumeElevation, worldToLocal } from '@world/buildings/geometry';
+import { roofHeightAt, roofRise, volumeCorners, volumeElevation, worldToLocal } from '@world/buildings/geometry';
 import { elementRing } from '@world/buildings/elements';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { POLE_ARM_DROP, POLE_ARM_HALF, POLE_HEIGHT, POLE_LAMP_REACH } from '@world/utilities';
@@ -210,39 +210,16 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
   /** The document's serial of what the ground found is read from (`wallsNear`). */
   let ragdollGroundSerial = '';
   /**
-   * The buildings by grid cell, by the box of their volumes (lots included)
-   * and elements (parking bays) grown a little: a uniform grid as a broad
-   * phase, each candidate then asked exactly (`lotHeightAt`). Made when first
-   * asked after the ground changed (`wallsNear`).
+   * The buildings whose box (their volumes, lots included, and elements such
+   * as parking bays) reaches a point, grown a little: the store's own index
+   * (`BuildingStore.near`, the same box, `buildingBounds`), each candidate then
+   * asked exactly (`lotHeightAt`), in the store's order. DO NOT file the town's
+   * buildings again here: the grid made from `buildings.all()` was made again
+   * for the first body after every change of a road, the land or a lot.
    */
-  let lotGrid: Map<number, BuildingId[]> | null = null;
-  const LOT_CELL = m(40);
-  const lotCell = (gx: number, gy: number): number => (gx + 32768) * 65536 + (gy + 32768);
-  const lotsAt = (x: number, y: number): readonly BuildingId[] => {
-    if (!lotGrid) {
-      lotGrid = new Map();
-      for (const b of ragdollSim?.doc.buildings.all() ?? []) {
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        const take = (p: { x: number; y: number }): void => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); };
-        // Every volume, the open ones (the lots) too.
-        for (const v of b.volumes) for (const p of volumeCorners(b, v)) take(p);
-        for (const e of b.elements ?? []) {
-          const [ex0, ey0, ex1, ey1] = elementRect(e);
-          for (const [lx, ly] of [[ex0, ey0], [ex1, ey0], [ex1, ey1], [ex0, ey1]] as const) take(localToWorld(b, lx, ly));
-        }
-        if (!Number.isFinite(x0)) continue;
-        const grow = m(2);
-        for (let gx = Math.floor((x0 - grow) / LOT_CELL); gx <= Math.floor((x1 + grow) / LOT_CELL); gx++) {
-          for (let gy = Math.floor((y0 - grow) / LOT_CELL); gy <= Math.floor((y1 + grow) / LOT_CELL); gy++) {
-            const key = lotCell(gx, gy);
-            const list = lotGrid.get(key);
-            if (list) list.push(b.id); else lotGrid.set(key, [b.id]);
-          }
-        }
-      }
-    }
-    return lotGrid.get(lotCell(Math.floor(x / LOT_CELL), Math.floor(y / LOT_CELL))) ?? [];
-  };
+  const LOT_GROW = m(2);
+  const lotsAt = (x: number, y: number): readonly Building[] =>
+    ragdollSim?.doc.buildings.near(x - LOT_GROW, y - LOT_GROW, x + LOT_GROW, y + LOT_GROW) ?? [];
   /** The ground at a corner of the bodies' ground grid (0.2 units a cell): a lot's yard as drawn, else the paving (a footway stands over the terrain), else the terrain. */
   const ragdollCorner = (ix: number, iy: number): number => {
     const key = ix * 100003 + iy;
@@ -254,8 +231,8 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
     // near does not throw away every height found, and a miss is not a walk
     // over every lot of the town.
     let h = NaN;
-    for (const id of lotsAt(cx, cy)) {
-      h = buildings.lotHeightAt(id, cx, cy);
+    for (const b of lotsAt(cx, cy)) {
+      h = buildings.lotHeightAt(b.id, cx, cy);
       if (Number.isFinite(h)) break;
     }
     if (!Number.isFinite(h)) h = ctx.pavedHeightAt(cx, cy);
@@ -290,11 +267,12 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
       const serial = land ? `${land.changes.serialOf('roads', 'terrain', 'lots')}:${land.buildings.size}:${destruction.ruined.size}` : '';
       if (serial !== ragdollGroundSerial) {
         ragdollGround.clear();
-        lotGrid = null;
         ragdollGroundSerial = serial;
       }
-      for (const b of ragdollSim?.doc.buildings.all() ?? []) {
-        if (destruction.ruined.has(b.id) || Math.hypot(b.x - x, b.y - y) > reach + m(40)) continue;
+      // Those near, from the store's index: DO NOT walk every building of the town per body.
+      const near = reach + m(40);
+      for (const b of land?.buildings.near(x - near, y - near, x + near, y + near) ?? []) {
+        if (destruction.ruined.has(b.id) || Math.hypot(b.x - x, b.y - y) > near) continue;
         const floor = floorHeight(b, ctx.naturalRenderedHeightAt, ctx.pavedHeightAt);
         for (const v of b.volumes) {
           if (v.base !== 0 || v.mode === 'void' || v.mode === 'intersect' || v.open) continue;
@@ -630,6 +608,8 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
       ragdolls.clear(); gore.clear(); blast.clear();
       tracers.dispose();
       scene.remove(destruction.group, casualties.group, blast.group, gore.group, muzzle);
+      // What each holds on the GPU (and the fracture's workers): only taken out of the scene, it stayed.
+      destruction.dispose(); casualties.dispose(); blast.dispose(); gore.dispose();
       agents.setBleed(() => {});
     },
   };

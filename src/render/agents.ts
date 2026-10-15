@@ -31,6 +31,7 @@ import {
 import type { SimWorld } from '@sim/world';
 import type { Vehicle as SimVehicle } from '@sim/vehicles/state';
 import type { SegmentId } from '@world/ids';
+import type { ChangeKind, ChangeRect } from '@world/changes';
 import { m, perM } from '@world/units';
 import { hypot2 } from '@core/scalar';
 import { DT, FLEET_CEILING, PED_CEILING } from '@sim/params';
@@ -65,16 +66,26 @@ import { createBlobShadows } from './blobShadows';
  * the near band adds the finest detail. Citizen stride follows distance travelled rather
  * than a shared clock, so each gait has its own phase.
  *
- * Buffers are allocated once. Only their written prefixes are uploaded, and
- * capacity overflow drops detail instead of allocating during a frame.
+ * Buffers start at the simulation's ceilings and double when a frame writes
+ * past them (`growPart`), as a growing array does: the town's parked cars are
+ * not bounded by the fleet's ceiling. Only their written prefixes are uploaded.
  */
 
 /**
- * Fleet and crowd the buffers are sized for: the simulation's own ceilings,
- * so nothing can be simulated that cannot be drawn.
+ * The fleet the vehicles' buffers START at: the moving fleet's ceiling. The
+ * town's parked cars come on top of it (`world.ambient.parked`), as many as the
+ * lots hold; the buffers grow for them.
+ * DO NOT stop drawing at this number again: past 1,200 parked cars, the rest
+ * vanished from the town.
  */
 const MAX_VEHICLES = FLEET_CEILING;
 const MAX_PEDS = PED_CEILING;
+/**
+ * What a car off the road stands on (`offRoadDeck`): the terrain and the
+ * ground as cut and filled, the roads' heights (a drive's crossing of the
+ * footway), and the lots and buildings whose yards it parks in.
+ */
+const OFF_ROAD_GROUND: readonly ChangeKind[] = ['terrain', 'ground', 'elevation', 'roads', 'lots', 'buildings'];
 /** Two-wheeler riders' own batches (frames, wheels, helmets). */
 const MAX_RIDERS = 400;
 
@@ -649,9 +660,15 @@ function instanced(
   return { mesh, n: 0, tinted: false };
 }
 
+/**
+ * `groundAt`: what a walker off the streets stands on (a yard, a terrace, the
+ * paving, the land); `roughGroundAt`: the land alone, cheap, for the test of
+ * whether they are on screen at all before `groundAt` is asked.
+ */
 export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () => void = () => {},
   groundAt?: (x: number, y: number) => number,
-  lotAt?: (building: number, x: number, y: number) => number): AgentMeshes {
+  lotAt?: (building: number, x: number, y: number) => number,
+  roughGroundAt?: (x: number, y: number) => number): AgentMeshes {
   // Paint, trim and the cabin read a vertex colour that multiplies the
   // instance colour: one body geometry carries its black-outs, seams, seats
   // and carpet in one draw. Every geometry drawn with them is built by
@@ -720,7 +737,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const thinWheels = instanced('bicycle-wheels', thinTyreGeometry, rubber, MAX_RIDERS * 2);
   const spokes = instanced('bicycle-spokes', spokedGeometry, trim, MAX_RIDERS * 2, false);
   const lamps = instanced('vehicle-lamps', unitBox, lampMaterial, MAX_VEHICLES * 9, false);
-  const lampGlow = new InstancedBufferAttribute(new Float32Array(MAX_VEHICLES * 9), 1);
+  /** Each lamp's glow (`LAMP_GAIN`): a per-instance attribute of the lamps' box, replaced when they grow (`growPart`). */
+  let lampGlow = new InstancedBufferAttribute(new Float32Array(MAX_VEHICLES * 9), 1);
   lampGlow.setUsage(DynamicDrawUsage);
   unitBox.setAttribute('glow', lampGlow);
   // A motorcyclist's helmet: a smooth shell, glossy like paint. Its facets
@@ -1172,6 +1190,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
    * (the player, 2026-10-06).
    */
   const procHeld = new Set<number>(), procHeldNow = new Set<number>();
+  /** The walkers of the simulation this frame (`sync`), one set for every frame. */
+  const procLive = new Set<number>();
   /** People made to play a clip (`forceClip`), and those whose clip did not move this frame. */
   const procForced = new Map<number, ProcClip>();
   const procFrozen = new Set<number>();
@@ -1386,7 +1406,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     rake = 0,
     yaw = 0,
   ): void => {
-    if (part.n >= part.mesh.instanceMatrix.count) return;
     // Through the vehicle's one transform (`fq`): position and orientation
     // both, so a lean or a gradient carries every part together.
     toWorld(along, up, side, partPoint);
@@ -1397,15 +1416,63 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     object.quaternion.copy(qPart);
     object.scale.set(sx, sy, sz);
     object.updateMatrix();
-    part.mesh.setMatrixAt(part.n, object.matrix);
+    write(part, object.matrix, tint);
+  };
+  /**
+   * THE one way an instance of a vehicle's part is written: its matrix, its
+   * tint, a lamp's glow, and the parked car's copy (`recording`). The steering
+   * wheel wrote its own matrix beside this and was not in the copy: every
+   * parked car lost its wheel from its second frame on.
+   * DO NOT write `setMatrixAt` on a part anywhere else: a parked car's copied
+   * frames show only what passed through here.
+   */
+  const write = (part: Part, matrix: Matrix4, tint: number): void => {
+    if (part.n >= part.mesh.instanceMatrix.count) growPart(part, part.n + 1);
+    part.mesh.setMatrixAt(part.n, matrix);
     if (tint >= 0) {
       colour.setHex(tint);
       part.mesh.setColorAt(part.n, colour);
       part.tinted = true;
     }
     if (part === lamps) lampGlow.setX(part.n, LAMP_GAIN.get(tint) ?? 0);
-    if (recording) recording.push({ part, m: new Float32Array(object.matrix.elements), tint, linear: tint >= 0 ? colour.clone() : null });
+    if (recording) recording.push({ part, m: new Float32Array(matrix.elements), tint, linear: tint >= 0 ? colour.clone() : null });
     part.n++;
+  };
+  /**
+   * A part's buffers made at least `needed` instances long, doubling (a
+   * growing array's amortised constant cost): its matrices, colours and, for
+   * the lamps, their glow, with what is written so far carried over. three
+   * cannot resize a buffer attribute (`WebGLAttributes.update`: "Resizing
+   * buffer attributes is not supported"), so they are new attributes, and the
+   * old ones' GPU buffers are freed first: an instanced mesh's `dispose` frees
+   * its `instanceMatrix` and `instanceColor` buffers and its vertex array
+   * states (`WebGLObjects` `onInstancedMeshDispose`), a geometry's its own
+   * attributes (`WebGLGeometries` `onGeometryDispose`); both are uploaded
+   * again on the next draw.
+   * DO NOT go back to dropping what passes the capacity: the town's parked
+   * cars past the fleet's ceiling were not drawn.
+   */
+  const growPart = (part: Part, needed: number): void => {
+    const mesh = part.mesh;
+    let capacity = Math.max(1, mesh.instanceMatrix.count);
+    while (capacity < needed) capacity *= 2;
+    const matrices = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
+    matrices.array.set(mesh.instanceMatrix.array);
+    matrices.setUsage(DynamicDrawUsage);
+    const colours = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+    if (mesh.instanceColor) colours.array.set(mesh.instanceColor.array);
+    colours.setUsage(DynamicDrawUsage);
+    mesh.dispose();
+    mesh.instanceMatrix = matrices;
+    mesh.instanceColor = colours;
+    if (part === lamps) {
+      const glow = new InstancedBufferAttribute(new Float32Array(capacity), 1);
+      glow.array.set(lampGlow.array);
+      glow.setUsage(DynamicDrawUsage);
+      unitBox.dispose();
+      unitBox.setAttribute('glow', glow);
+      lampGlow = glow;
+    }
   };
   /**
    * A parked car's instances as written (`place`), kept while it stands where
@@ -1423,7 +1490,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const replay = (writes: readonly Written[]): void => {
     for (const rec of writes) {
       const part = rec.part;
-      if (part.n >= part.mesh.instanceMatrix.count) continue;
+      if (part.n >= part.mesh.instanceMatrix.count) growPart(part, part.n + 1);
       (part.mesh.instanceMatrix.array as Float32Array).set(rec.m, part.n * 16);
       if (rec.linear) {
         part.mesh.setColorAt(part.n, rec.linear);
@@ -1569,10 +1636,36 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     for (let i = 0; i < seats; i++) if ((vehicle.seats & (1 << i)) !== 0 && seatPerson(vehicle, i).ageClass === 'child') return true;
     return false;
   };
+  /**
+   * The vehicles whose people were cast (`seatIdentity`), by id: when one is
+   * gone from the world its people are forgotten by the casting (`forgetCast`).
+   */
+  const castVehicles = new Map<number, SimVehicle>();
+  /** The fleet's version `forgetCast` last looked at. */
+  let castFleet = -1;
+  /**
+   * The people of the vehicles gone from the world let go by the casting,
+   * when the fleet changed: their end is the simulation's (`CastingRegistry`).
+   * O(vehicles whose people were drawn), never the whole registry. A car
+   * standing in a bay (`ambient.isParked`) is still about.
+   */
+  const forgetCast = (world: SimWorld): void => {
+    const fleet = world.vehicles.version;
+    if (fleet === castFleet) return;
+    castFleet = fleet;
+    for (const [id, vehicle] of castVehicles) {
+      if (world.vehicles.get(id) === vehicle || world.ambient.isParked(vehicle)) continue;
+      castVehicles.delete(id);
+      pedestrians.forgetCompany(vehicleCompany(vehicle), id);
+    }
+  };
   /** Who sits in (or steps out of) a seat: the seat's person, cast with the vehicle's company. */
   const seatIdentity = (vehicle: SimVehicle, person: { seed: number; gender: 'f' | 'm'; ageClass: 'child' | 'adult' | 'elder' },
-    hasChild: boolean): ClipIdentity => ({ seed: person.seed, gender: person.gender, ageClass: person.ageClass,
-    company: vehicleCompany(vehicle), companyId: vehicle.id, hasChild });
+    hasChild: boolean): ClipIdentity => {
+    castVehicles.set(vehicle.id, vehicle);
+    return { seed: person.seed, gender: person.gender, ageClass: person.ageClass,
+      company: vehicleCompany(vehicle), companyId: vehicle.id, hasChild };
+  };
 
   /** The whole person in a seat: its world point, written without allocating. */
   const seatPoint: { x: number; y: number; h?: number } = { x: 0, y: 0, h: 0 };
@@ -1639,7 +1732,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
 
   /** A steering wheel about its column: yaw with the vehicle, tilt, then the turn. */
   const placeSteeringWheel = (part: Part, along: number, side: number, up: number, tilt: number, turn: number, size = 1): void => {
-    if (part.n >= part.mesh.instanceMatrix.count) return;
     toWorld(along, up, side, partPoint);
     object.position.set(partPoint.x, partPoint.h, -partPoint.y);
     eulerScratch.rotation.order = 'YZX';
@@ -1650,8 +1742,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // The rim at the driver's size too, so the hands on it are on it.
     object.scale.set(size, size, size);
     object.updateMatrix();
-    part.mesh.setMatrixAt(part.n, object.matrix);
-    part.n++;
+    // Through `write`, so a parked car's copied frames keep its wheel.
+    write(part, object.matrix, -1);
   };
 
   const seatWorld = (seat: { x: number; z: number }): { x: number; y: number } =>
@@ -1790,14 +1882,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // feet on the pegs or pedals only there.
     const drawn = pedestrians.drawClip(seatIdentity(vehicle, seatPerson(vehicle, 0), false), x, y, height, fyaw, plays, froll, Infinity, false, 1,
       cyclist ? null : helmetMatrix);
-    if (!cyclist && drawn > 0 && helmets.n < helmets.mesh.instanceMatrix.count) {
+    if (!cyclist && drawn > 0) {
       // A motorcyclist's helmet, fitted to this body's head
       // (`riderPoses.helmetShape`) and put where the pose just drawn has it.
-      helmets.mesh.setMatrixAt(helmets.n, helmetMatrix);
-      colour.setHex(look.helmet);
-      helmets.mesh.setColorAt(helmets.n, colour);
-      helmets.tinted = true;
-      helmets.n++;
+      write(helmets, helmetMatrix, look.helmet);
     }
   };
 
@@ -1820,16 +1908,30 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /**
    * The height a car off the road stands at: its lot's surface as drawn, or the
    * road's where it crosses the footway on its way in or out. Kept per car while
-   * it stands still: a parked car's ground is asked once.
+   * it stands still, with the diary's serial it was asked at (`seen`): asked
+   * again only when a change of the ground, the roads' heights or the lots
+   * since then reaches where it stands (`ChangeJournal.touches`), as every
+   * reader of the ground reads it (`groundChanges.ts`, `lotOverlay.ts`).
+   * DO NOT key it by position alone: a parked car kept the height it was first
+   * asked at and floated over (or sank into) the ground edited under it.
    */
-  const offRoadDecks = new WeakMap<SimVehicle, { x: number; y: number; deck: number }>();
+  const offRoadDecks = new WeakMap<SimVehicle, { x: number; y: number; deck: number; seen: number }>();
+  /** The diary's latest serial of `OFF_ROAD_GROUND` this frame (`sync`). */
+  let offRoadSerial = 0;
   const offRoadDeck = (world: SimWorld, v: SimVehicle, x: number, y: number): number => {
     const known = offRoadDecks.get(v);
-    if (known && known.x === x && known.y === y) return known.deck;
+    if (known && known.x === x && known.y === y) {
+      if (known.seen >= offRoadSerial) return known.deck;
+      const at: ChangeRect = [x, y, x, y];
+      if (!world.net.doc.changes.touches(known.seen, at, OFF_ROAD_GROUND)) {
+        known.seen = offRoadSerial;
+        return known.deck;
+      }
+    }
     const lot = v.free?.lot ?? null;
     const onLot = lot !== null && lotAt ? lotAt(lot, x, y) : NaN;
     const deck = Number.isFinite(onLot) ? onLot : elevationAt(world, x, y, undefined);
-    offRoadDecks.set(v, { x, y, deck });
+    offRoadDecks.set(v, { x, y, deck, seen: offRoadSerial });
     return deck;
   };
   // `vehicleLook` by id: it is a pure function of the id and the seat count,
@@ -1971,6 +2073,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     renderPalettes: (renderer) => procedural?.renderPalettes(renderer),
     sync(world, alpha, detailed, zoom = Number.POSITIVE_INFINITY, options = {}) {
       currentWorld = world;
+      offRoadSerial = world.net.doc.changes.serialOf(...OFF_ROAD_GROUND);
       const now = typeof performance !== 'undefined' ? performance.now() : suspensionClock + 16;
       suspensionDt = Math.min(0.1, Math.max(0, (now - suspensionClock) / 1000));
       suspensionClock = now;
@@ -1982,6 +2085,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         for (const [id, ride] of suspension) if (suspensionFrame - ride.seen > 120) suspension.delete(id);
         for (const [id, entry] of looks) if (suspensionFrame - entry.seen > 120) looks.delete(id);
       }
+      forgetCast(world);
       pedestrians.begin(options.pedestrianDetail ?? 2, zoom);
       procPixels = options.personPixels ?? null;
       for (const part of allParts) part.n = 0;
@@ -1994,7 +2098,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       // Between the occupant zoom and 1.6 times it, only the front row.
       rowsDrawn = zoom >= occupantZoom * 1.6 ? Infinity : 0;
 
-      let drawn = 0;
       const screenScale = options.screenScale;
       const softShadows = options.shadows !== false;
       let whole = 0;
@@ -2005,8 +2108,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       vehicleBlobs.begin();
       if (suspensionFrame % 600 === 0) for (const [id, entry] of parkedDraws) if (suspensionFrame - entry.seen > 120) parkedDraws.delete(id);
       // The traffic, then the scenery's cars parked in their bays, on the ground of the lot.
+      // Every one of them: the buffers grow past the fleet's ceiling (`growPart`).
       for (const list of [world.vehiclesInIdOrder(), world.ambient.parked]) for (const vehicle of list) {
-        if (drawn >= MAX_VEHICLES) break;
         // Off the road and not moving (the town's parked cars): where it is,
         // with none of the interpolation's sums.
         const at = vehicle.free;
@@ -2042,7 +2145,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if (!twoWheeled && level >= 1) carsWheeled = true;
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
         // Standing where it stood, drawn as it was: its instances copied, none of the sums.
-        const still = parked && !twoWheeled && vehicle.doors.length === 0;
+        // Not with somebody at its kerb (`placeKerbPerson`): a person is drawn by
+        // the crowd's meshes, not through `write`, and is not in the copy.
+        const still = parked && !twoWheeled && vehicle.doors.length === 0 && !vehicle.kerbStop;
         if (still) {
           const kept = parkedDraws.get(vehicle.id);
           if (kept && kept.x === pose.p.x && kept.y === pose.p.y && kept.angle === pose.angle && kept.deck === deck
@@ -2055,7 +2160,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
               kept.blob ??= new Matrix4().makeRotationY(pose.angle).setPosition(pose.p.x, deck, -pose.p.y);
               vehicleBlobs.add(kept.blob, plan.length * 0.55, plan.width * 0.62);
             }
-            drawn++;
             continue;
           }
         }
@@ -2164,7 +2268,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           blobMatrix.makeRotationY(pose.angle).setPosition(pose.p.x, ride.deck, -pose.p.y);
           vehicleBlobs.add(blobMatrix, plan.length * 0.55, plan.width * 0.62);
         }
-        drawn++;
       }
       vehicleBlobs.finish();
       // The two-wheelers cast only while one is drawn whole; the shared tyres
@@ -2198,10 +2301,15 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           // between them - where both read the same, so stepping onto a zebra
           // is a walk down the ramp, not a 15 cm drop in one frame.
           // A footway laid flush (docs/VIAS.md V1) has no rise at all (`footwayRiseAt`).
+          // Off screen first, on the ground under them less the kerb's few
+          // centimetres (the test's sphere is metres across): the paving's
+          // rise and a yard's height are asked only of those drawn. DO NOT ask
+          // them of every walker of the simulation before the test.
+          const below = open ? (roughGroundAt ?? land)(pose.p.x, pose.p.y) : elevationAt(world, pose.p.x, pose.p.y, segment);
+          if (options.pedestrianVisible && !options.pedestrianVisible(pose.p.x, pose.p.y, below)) continue;
           const rise = open ? m(0.04) : footwayRiseAt(world.net, pose.p.x, pose.p.y) * walkingRise(world.net, pose.p.x, pose.p.y, ped.ground !== 'crossing',
             segment === undefined ? 'ground' : world.net.doc.segment(segment)?.structure ?? 'ground');
-          const deck = open ? land(pose.p.x, pose.p.y) + rise : elevationAt(world, pose.p.x, pose.p.y, segment) + rise;
-          if (options.pedestrianVisible && !options.pedestrianVisible(pose.p.x, pose.p.y, deck)) continue;
+          const deck = (open && roughGroundAt ? land(pose.p.x, pose.p.y) : below) + rise;
           frameAt(pose.p.x, pose.p.y, pose.angle, deck);
           if (procedural && ped.id !== PLAYER_ID) {
             // What they are doing shows before the fright on their face (a photo held up, a crouch, a fall).
@@ -2228,7 +2336,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       }
 
       if (procedural) {
-        const live = new Set<number>();
+        const live = procLive;
+        live.clear();
         for (const ped of world.pedViews) live.add(ped.id);
         // Those a ragdoll holds (struck, down, or dead) keep their person.
         for (const id of procHeld) live.add(id);
@@ -2249,9 +2358,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       // Upload only what was written this frame.
       //
       // `needsUpdate = true` with no range makes three re-send the WHOLE
-      // attribute. These buffers are sized for the population ceiling, so
-      // uploading their entire capacity wastes bandwidth on unused instances.
-      // The written prefix is usually a tiny fraction of that.
+      // attribute. These buffers start at the population ceilings and grow
+      // by doubling (`growPart`), so uploading their entire capacity wastes
+      // bandwidth on unused instances.
       for (const part of allParts) {
         part.mesh.count = part.n;
         // An empty instanced mesh still costs a program bind, its uniforms
@@ -2279,6 +2388,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     },
     dispose() {
       pedestrians.dispose();
+      vehicleBlobs.dispose();
+      for (const part of allParts) part.mesh.dispose();
       for (const geometry of [
         unitBox,
         torsoGeometry,

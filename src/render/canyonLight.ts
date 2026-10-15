@@ -41,9 +41,13 @@ import { DEPTH_GLSL } from './depthConvention';
  *   map's texel and its bias are too coarse.
  *
  * The field is a window of `WINDOW` metres round the view's centre in cells
- * of `CELL`, laid again only when the centre has moved a quarter of it or the
- * buildings changed - a few hundred volumes a frame, never the whole map -
- * and uploaded once laid (1 MB).
+ * of `CELL`, laid whole only when the centre has moved a quarter of it or the
+ * diary cannot say what changed - a few hundred volumes a frame, never the
+ * whole map - and uploaded once laid (1 MB). A change of the buildings or of
+ * the ground under them clears and lays again only its own rectangles, and
+ * only their rows go to the GPU. DO NOT lay the window again at every
+ * building: in a growing town the key moved before the window was laid, it
+ * started over, and the field was never put in place.
  */
 
 /** The field's side, world units, and its cell. */
@@ -59,11 +63,12 @@ const VOLUMES_PER_FRAME = 400;
 export interface CanyonLight {
   readonly pass: ShaderPass;
   /**
-   * The view's centre (map x, y) and the town's solids with the key of what
-   * they were built from: the field follows. Cheap when nothing moved.
-   * @rebuild A few hundred volumes a frame while a new window is laid; nothing otherwise.
+   * The view's centre (map x, y), the town's solids, and where they changed
+   * since the last call (the buildings' and the ground's rectangles from the
+   * diary; null: anywhere, the window laid whole; empty: nothing).
+   * @rebuild A few hundred volumes a frame while a new window is laid; a change's own rectangles otherwise.
    */
-  follow(cx: number, cy: number, solids: (() => CameraSolids) | null, key: string): void;
+  follow(cx: number, cy: number, solids: (() => CameraSolids) | null, changed: readonly (readonly [number, number, number, number])[] | null): void;
   /** The sun's direction (world, to the sun) and its share of the light on the ground. */
   setSun(direction: Vector3, directShare: number): void;
   dispose(): void;
@@ -268,16 +273,22 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
     draw(...args);
   };
 
-  /** The window being laid, and where: volumes still to lay (bx, by, cos, sin, x0, y0, x1, y1, top a volume). */
-  let laid = { key: '', cx: Number.NaN, cy: Number.NaN };
-  let pending: { key: string; cx: number; cy: number; ox: number; oy: number; volumes: number[]; at: number } | null = null;
+  /**
+   * The window being laid, and where: volumes still to lay (bx, by, cos, sin,
+   * x0, y0, x1, y1, top a volume), and the changes that came meanwhile, laid
+   * again over it once it is whole.
+   */
+  let laid = { cx: Number.NaN, cy: Number.NaN, ox: 0, oy: 0 };
+  let pending: { cx: number; cy: number; ox: number; oy: number; volumes: number[]; at: number; after: (readonly [number, number, number, number])[] } | null = null;
 
-  const lay = (volumes: readonly number[], from: number, to: number, ox: number, oy: number): void => {
+  const lay = (target: Uint8Array, volumes: readonly number[], from: number, to: number, ox: number, oy: number): void => {
     for (let i = from * 9; i < to * 9; i += 9) {
       const bx = volumes[i]!, by = volumes[i + 1]!, c = volumes[i + 2]!, s = volumes[i + 3]!;
       const lx0 = volumes[i + 4]!, ly0 = volumes[i + 5]!, lx1 = volumes[i + 6]!, ly1 = volumes[i + 7]!, top = volumes[i + 8]!;
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const [lx, ly] of [[lx0, ly0], [lx1, ly0], [lx1, ly1], [lx0, ly1]] as const) {
+      // The box's four corners in the world, written out (no array a corner: hundreds of thousands a window).
+      for (let corner = 0; corner < 4; corner++) {
+        const lx = corner === 0 || corner === 3 ? lx0 : lx1, ly = corner < 2 ? ly0 : ly1;
         const wx = bx + lx * c - ly * s, wy = by + lx * s + ly * c;
         minX = Math.min(minX, wx); maxX = Math.max(maxX, wx); minY = Math.min(minY, wy); maxY = Math.max(maxY, wy);
       }
@@ -291,35 +302,72 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
           const lx = dx * c + dy * s, ly = -dx * s + dy * c;
           if (lx < lx0 || lx > lx1 || ly < ly0 || ly > ly1) continue;
           const at = (j * SIDE + k) * 4;
-          const was = next[at]! * 256 + next[at + 1]!;
-          if (v > was) { next[at] = v >> 8; next[at + 1] = v & 255; }
+          const was = target[at]! * 256 + target[at + 1]!;
+          if (v > was) { target[at] = v >> 8; target[at + 1] = v & 255; }
         }
       }
     }
   };
 
+  /** The volumes the solids hold in a box, as `lay` reads them. */
+  const volumesIn = (solids: () => CameraSolids, x0: number, y0: number, x1: number, y1: number): number[] => {
+    const volumes: number[] = [];
+    solids().forEachIn(x0, y0, x1, y1, (bx, by, c, s, lx0, ly0, lx1, ly1, top) => { volumes.push(bx, by, c, s, lx0, ly0, lx1, ly1, top); });
+    return volumes;
+  };
+  /**
+   * The cells of `rect` cleared in `target` and laid again from what stands
+   * there now (a volume reaching out of the rectangle lays its own height,
+   * the same as before, outside it). The rows it spans, or null off the window.
+   */
+  const relay = (target: Uint8Array, solids: () => CameraSolids, rect: readonly [number, number, number, number], ox: number, oy: number): [number, number] | null => {
+    const i0 = Math.max(0, Math.floor((rect[0] - ox) / CELL)), i1 = Math.min(SIDE - 1, Math.floor((rect[2] - ox) / CELL));
+    const j0 = Math.max(0, Math.floor((rect[1] - oy) / CELL)), j1 = Math.min(SIDE - 1, Math.floor((rect[3] - oy) / CELL));
+    if (i0 > i1 || j0 > j1) return null;
+    for (let j = j0; j <= j1; j++) target.fill(0, (j * SIDE + i0) * 4, (j * SIDE + i1 + 1) * 4);
+    const volumes = volumesIn(solids, ox + i0 * CELL, oy + j0 * CELL, ox + (i1 + 1) * CELL, oy + (j1 + 1) * CELL);
+    lay(target, volumes, 0, volumes.length / 9, ox, oy);
+    return [j0, j1];
+  };
+
   return {
     pass,
-    follow(cx, cy, solids, key) {
+    follow(cx, cy, solids, changed) {
       if (!solids) return;
       const moved = !(Math.abs(cx - laid.cx) < WINDOW / 4 && Math.abs(cy - laid.cy) < WINDOW / 4);
-      if ((moved || key !== laid.key) && (!pending || pending.key !== key || Math.abs(cx - pending.cx) >= WINDOW / 4 || Math.abs(cy - pending.cy) >= WINDOW / 4)) {
+      const away = !pending || Math.abs(cx - pending.cx) >= WINDOW / 4 || Math.abs(cy - pending.cy) >= WINDOW / 4;
+      if ((moved && away) || changed === null) {
         const ox = Math.floor((cx - WINDOW / 2) / CELL) * CELL, oy = Math.floor((cy - WINDOW / 2) / CELL) * CELL;
-        const volumes: number[] = [];
-        solids().forEachIn(ox, oy, ox + WINDOW, oy + WINDOW, (bx, by, c, s, x0, y0, x1, y1, top) => { volumes.push(bx, by, c, s, x0, y0, x1, y1, top); });
         next.fill(0);
-        pending = { key, cx, cy, ox, oy, volumes, at: 0 };
+        pending = { cx, cy, ox, oy, volumes: volumesIn(solids, ox, oy, ox + WINDOW, oy + WINDOW), at: 0, after: [] };
+      } else if (changed.length) {
+        if (pending) pending.after.push(...changed);
+        else {
+          // In place, in the field drawn: its rows alone go up (three sends an update range as one row).
+          let rows = 0;
+          for (const rect of changed) {
+            const span = relay(data, solids, rect, laid.ox, laid.oy);
+            if (!span) continue;
+            // A volume laid again may reach rows past the rectangle: there it wrote its own height, as before.
+            for (let row = span[0]; row <= span[1]; row++) heights.addUpdateRange(row * SIDE * 4, SIDE * 4);
+            rows++;
+          }
+          if (rows) heights.needsUpdate = true;
+        }
       }
       if (!pending) return;
       const total = pending.volumes.length / 9;
       const to = Math.min(total, pending.at + VOLUMES_PER_FRAME);
-      lay(pending.volumes, pending.at, to, pending.ox, pending.oy);
+      lay(next, pending.volumes, pending.at, to, pending.ox, pending.oy);
       pending.at = to;
       if (to < total) return;
+      // What changed while it was laid, over it.
+      for (const rect of pending.after) relay(next, solids, rect, pending.ox, pending.oy);
       data.set(next);
+      heights.clearUpdateRanges();
       heights.needsUpdate = true;
       window.set(pending.ox, pending.oy, CELL, SIDE);
-      laid = { key: pending.key, cx: pending.cx, cy: pending.cy };
+      laid = { cx: pending.cx, cy: pending.cy, ox: pending.ox, oy: pending.oy };
       pending = null;
     },
     setSun(direction, directShare) {

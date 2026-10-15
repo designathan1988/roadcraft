@@ -16,6 +16,8 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 
 /** Seconds a strike lasts, from the first stroke to the last glow. */
 const STRIKE_LIFE = 0.45;
+/** Strikes drawn at once at most (`createLightning`): each lives under half a second. */
+const MAX_STRIKES = 4;
 
 export interface Lightning {
   readonly group: Group;
@@ -76,18 +78,46 @@ export function createLightning(): Lightning {
   const strikes: { age: number; meshes: LineSegments2[]; materials: LineMaterial[] }[] = [];
   // Brighter than white: past the tone curve, and into the bloom at night.
   const core = new Color(6, 6.4, 8);
+  /**
+   * The strikes' materials, made ONCE here, three a strike for `MAX_STRIKES`
+   * at once: a material made per strike and disposed after it released the
+   * line program with the last one (`WebGLPrograms.releaseProgram`), and the
+   * next strike compiled it again in the middle of the game. DO NOT make or
+   * dispose them in a strike. A strike past them cuts the oldest short (a
+   * bolt lives `STRIKE_LIFE`, under half a second).
+   */
+  const free: LineMaterial[] = Array.from({ length: MAX_STRIKES * 3 },
+    () => new LineMaterial({ color: core, linewidth: 1, transparent: true, opacity: 1, depthWrite: false, toneMapped: false }));
+  const all = [...free];
+  // One of them in the scene from the start, hidden, on an empty line: the
+  // renderer's look for new programs (`renderer.ts`, `compileCopy`) builds
+  // the line program before the first strike draws it.
+  const warm = new LineSegments2(new LineSegmentsGeometry().setPositions([0, 0, 0, 0, 0, 0]), free[0]!);
+  warm.visible = false;
+  warm.frustumCulled = false;
+  group.add(warm);
+  /** A strike over: its meshes gone, its materials back for the next. */
+  const end = (i: number): void => {
+    const s = strikes[i]!;
+    for (const m of s.meshes) { group.remove(m); m.geometry.dispose(); }
+    free.push(...s.materials);
+    strikes.splice(i, 1);
+  };
   const make = (positions: number[], width: number, opacity: number): { mesh: LineSegments2; material: LineMaterial } => {
     const geometry = new LineSegmentsGeometry();
     geometry.setPositions(positions);
-    const material = new LineMaterial({ color: core, linewidth: width, transparent: true, opacity, depthWrite: false, toneMapped: false });
-    const mesh = new LineSegments2(geometry, material);
+    const m = free.pop()!;
+    m.linewidth = width;
+    m.opacity = opacity;
+    const mesh = new LineSegments2(geometry, m);
     mesh.frustumCulled = false;
     mesh.renderOrder = 6;
-    return { mesh, material };
+    return { mesh, material: m };
   };
   return {
     group,
     strike(from, to) {
+      if (free.length < 3) end(0);
       const bolt = boltSegments(from, to, Math.random);
       const parts = [make(bolt.main, 2.6, 1), make(bolt.main, 8, 0.18), make(bolt.branches, 1.4, 0.8)];
       for (const p of parts) group.add(p.mesh);
@@ -99,9 +129,7 @@ export function createLightning(): Lightning {
         const s = strikes[i]!;
         s.age += delta;
         if (s.age >= STRIKE_LIFE) {
-          for (const m of s.meshes) { group.remove(m); m.geometry.dispose(); }
-          for (const m of s.materials) m.dispose();
-          strikes.splice(i, 1);
+          end(i);
           continue;
         }
         // A stroke, a dim, the return stroke, then the glow dies away.
@@ -121,6 +149,9 @@ export function createLightning(): Lightning {
         for (const m of s.materials) m.dispose();
       }
       strikes.length = 0;
+      for (const m of all) m.dispose();
+      free.length = 0;
+      warm.geometry.dispose();
     },
   };
 }

@@ -1,4 +1,4 @@
-import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, InstancedBufferAttribute, InstancedMesh, MeshDepthMaterial, Object3D, RGBADepthPacking, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
+import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, InstancedBufferAttribute, InstancedMesh, MeshDepthMaterial, Object3D, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
 
 /**
  * Textures waiting to be sent to the GPU ahead of their first use.
@@ -61,22 +61,27 @@ let compiler = false;
 /**
  * A stand-in drawn with the depth material the shadow pass will draw `mesh`
  * with, set as three's `WebGLShadowMap.getDepthMaterial` sets it (r186: the
- * object's own `customDepthMaterial` or the shared RGBA-packed depth
- * material; the side flipped for a PCF map, the colour map and alpha test
- * copied), for `compileAhead(..., true)`. three's `compile` builds the
+ * object's own `customDepthMaterial` or its shared depth material, which is
+ * `new MeshDepthMaterial()` - BASIC packing, `WebGLShadowMap.js` 44 - the
+ * side flipped for a PCF map, the colour and alpha maps and alpha test
+ * copied), for `compileAhead(..., true)`. DO NOT give the stand-in RGBA
+ * packing: the packing is part of the program's key (`WebGLPrograms`), so a
+ * program no shadow pass uses was built and the real one was linked in the
+ * first shadow pass that drew the mesh. three's `compile` builds the
  * scene's programs only, never a shadow's: the trees' wind-swayed depth
  * program was built in the first shadow pass, 3 s of the opening frozen on
  * the driver (profile of 2026-10-10). Null when the mesh casts no shadow.
  */
 const SHADOW_SIDE: Record<Side, Side> = { [FrontSide]: BackSide, [BackSide]: FrontSide, [DoubleSide]: DoubleSide };
-const plainDepth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+const plainDepth = new MeshDepthMaterial();
 export function shadowStandIn(mesh: Mesh): Mesh | null {
   if (!mesh.castShadow || Array.isArray(mesh.material)) return null;
-  const material = mesh.material as Material & { map?: Texture | null; shadowSide?: Side | null };
-  const depth = ((mesh as Mesh & { customDepthMaterial?: Material }).customDepthMaterial ?? plainDepth) as Material & { map?: Texture | null };
+  const material = mesh.material as Material & { map?: Texture | null; alphaMap?: Texture | null; shadowSide?: Side | null };
+  const depth = ((mesh as Mesh & { customDepthMaterial?: Material }).customDepthMaterial ?? plainDepth) as Material & { map?: Texture | null; alphaMap?: Texture | null };
   depth.side = material.shadowSide ?? SHADOW_SIDE[material.side];
   depth.alphaTest = material.alphaToCoverage ? 0.5 : material.alphaTest;
   depth.map = material.map ?? null;
+  depth.alphaMap = material.alphaMap ?? null;
   const copy = compileCopy(mesh) as Mesh;
   copy.material = depth;
   copy.visible = true;

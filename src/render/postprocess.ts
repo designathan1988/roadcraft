@@ -3,6 +3,7 @@ import {
   RedFormat, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
+import { CopyShader } from 'three/examples/jsm/shaders/CopyShader.js';
 import { MAP_HALF } from '@world/bounds';
 import { m, perM } from '@world/units';
 import { driftedCloud, type PlacedCloud } from '@world/clouds';
@@ -36,9 +37,10 @@ import type { CameraSolids } from '@world/buildings/cameraSolids';
  *
  * ## MSAA and SMAA
  *
- * The composer's half-float target is multisampled (4x where the GPU allows):
- * thin geometry - lane lines, kerbs, a road's edge seen from afar - is sampled
- * at every pixel it crosses. SMAA then runs on the resolved image, one pass,
+ * The scene's own half-float target is multisampled (up to 8x where the GPU
+ * allows): thin geometry - lane lines, kerbs, a road's edge seen from afar -
+ * is sampled at every pixel it crosses. Only the scene: the composer's
+ * buffers, which the full-screen passes draw, have no samples. SMAA then runs on the resolved image, one pass,
  * and - unlike FXAA - keeps the thin bright lines of lane markings sharp
  * instead of smearing them.
  *
@@ -67,10 +69,11 @@ export interface PostChain {
    */
   setDirectShare(share: number): void;
   /**
-   * The view's centre (map x, y) and the town's solids with their key: the
-   * light the buildings shut out of the streets follows (`canyonLight.ts`).
+   * The view's centre (map x, y), the town's solids and where they changed
+   * since the last call (null: anywhere): the light the buildings shut out of
+   * the streets follows (`canyonLight.ts`).
    */
-  followTown(cx: number, cy: number, solids: (() => CameraSolids) | null, key: string): void;
+  followTown(cx: number, cy: number, solids: (() => CameraSolids) | null, changed: readonly (readonly [number, number, number, number])[] | null): void;
   /**
    * The sky the player set (`Atmosphere`) and the light it is lit by; the
    * map is seen as a model over the void, the air round it drawn too: the
@@ -154,10 +157,10 @@ export function createPostChain(
   }
 
   const size = renderer.getSize(new Vector2());
-  // The scene is drawn into targets that keep their depth, so the occlusion
-  // pass reads it rather than drawing the whole scene a second time.
+  // The scene is drawn into ITS OWN target, which keeps its depth, so the
+  // occlusion pass reads it rather than drawing the whole scene a second time.
   const ratio = renderer.getPixelRatio();
-  const target = new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), {
+  const sceneTarget = new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), {
     type: HalfFloatType,
     // A float depth buffer: the reversed Z the renderer draws with keeps its
     // precision only in floats (`depthConvention.ts`; three's example
@@ -174,6 +177,23 @@ export function createPostChain(
     // next to a pass of the town.
     samples: Math.min(8, renderer.capabilities.maxSamples),
   });
+  /**
+   * The composer's two buffers: what the full-screen passes read and write.
+   * Plain, no samples and no depth. DO NOT hand the composer the scene's
+   * multisampled target again: it clones it (`EffectComposer`:
+   * `renderTarget.clone()`), and the two 8x HalfFloat targets with float
+   * depth were some 900 MB of video memory at a pixel ratio of 1.5 on a
+   * 1080p screen - for full-screen passes that need no samples - before the
+   * town's own (GL_OUT_OF_MEMORY close to the street, 2026-10-14); and each
+   * pass resolved colour and depth after it, its depth over the scene's.
+   */
+  const target = new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), { type: HalfFloatType, depthBuffer: false });
+  /** The scene's resolved picture into the composer's buffer the passes read (`scenePass`). */
+  const copyQuad = new FullScreenQuad(new ShaderMaterial({
+    uniforms: { tDiffuse: { value: null }, opacity: { value: 1 } },
+    vertexShader: CopyShader.vertexShader, fragmentShader: CopyShader.fragmentShader,
+    blending: NoBlending, depthTest: false, depthWrite: false,
+  }));
   const composer = new EffectComposer(renderer, target);
   /**
    * The programs being built ahead (`compileAsync` below): the chain is not
@@ -195,7 +215,7 @@ export function createPostChain(
    * one next frame, so a pass bound to one target's depth read a stale or
    * empty buffer every other frame - the cloud shadows flickered on and off.
    */
-  let sceneDepth: DepthTexture | null = target.depthTexture;
+  const sceneDepth: DepthTexture | null = sceneTarget.depthTexture;
   /**
    * How much each pixel may be sharpened (`SHARP_MASK`), worked out from the
    * scene's depth right after the scene is drawn: the full-screen passes after
@@ -213,8 +233,17 @@ export function createPostChain(
   {
     const draw = scenePass.render.bind(scenePass);
     scenePass.render = (...args: Parameters<RenderPass['render']>) => {
-      sceneDepth = args[2].depthTexture;
-      draw(...args);
+      // Into the scene's own target, then its resolved picture into the buffer the next pass reads.
+      const [, writeBuffer, readBuffer, delta, mask] = args;
+      draw(args[0], writeBuffer, sceneTarget, delta, mask);
+      {
+        const gl = args[0];
+        (copyQuad.material as ShaderMaterial).uniforms['tDiffuse']!.value = sceneTarget.texture;
+        const previous = gl.getRenderTarget();
+        gl.setRenderTarget(readBuffer);
+        copyQuad.render(gl);
+        gl.setRenderTarget(previous);
+      }
       if (sharpMask && sharpMaskQuad) {
         const u = (sharpMaskQuad.material as ShaderMaterial).uniforms;
         u['tDepth']!.value = sceneDepth;
@@ -254,7 +283,7 @@ export function createPostChain(
     const pass = gtao;
     const draw = pass.render.bind(pass);
     pass.render = (...args: Parameters<GTAOPass['render']>) => {
-      const depth = args[2].depthTexture;
+      const depth = sceneDepth;
       if (depth && pass.depthTexture !== depth) pass.setGBuffer(depth);
       draw(...args);
     };
@@ -266,7 +295,7 @@ export function createPostChain(
     // GTAO's denoise shader is the slowest program to link on a cold start.
     // Submit both fullscreen programs now, while the rest of the game boots,
     // using the same depth input and target format as the first real pass.
-    gtao.setGBuffer(target.depthTexture!);
+    gtao.setGBuffer(sceneTarget.depthTexture!);
     const quad = fullScreenTriangle();
     const warm = new Scene();
     warm.add(new Mesh(quad, gtao.gtaoMaterial), new Mesh(quad, gtao.pdMaterial));
@@ -486,7 +515,7 @@ export function createPostChain(
 
   return {
     enabled: true,
-    target,
+    target: sceneTarget,
     render(delta) {
       if (clouds) {
         camera.updateMatrixWorld();
@@ -540,8 +569,8 @@ export function createPostChain(
       (u['uGroundFog']!.value as Vector4).set(fog.density, 0, 0, 1);
       (u['uGroundFogSlab']!.value as Vector2).set(fog.low - 2, fog.high);
     },
-    followTown(cx, cy, solids, key) {
-      canyon?.follow(cx, cy, solids, key);
+    followTown(cx, cy, solids, changed) {
+      canyon?.follow(cx, cy, solids, changed);
     },
     setAtmosphere(atmosphere, sun, skyColor, sunLight, eyeShift = 0) {
       canyon?.setSun(sun, directShare);
@@ -557,22 +586,28 @@ export function createPostChain(
     },
     setSize(width, height, pixelRatio) {
       composer.setPixelRatio(pixelRatio);
+      // The composer sizes every pass, the bloom too, at the pixel ratio. DO
+      // NOT size the bloom again in CSS pixels: after a resize it ran at a
+      // smaller size than at the opening, its halo another size.
       composer.setSize(width, height);
-      bloom.setSize(width, height);
+      sceneTarget.setSize(Math.max(1, width * pixelRatio), Math.max(1, height * pixelRatio));
       for (const t of bodiesTargets) t.setSize(bodiesSize(width * pixelRatio), bodiesSize(height * pixelRatio));
       sharpMask?.setSize(Math.max(1, width * pixelRatio), Math.max(1, height * pixelRatio));
       (output.uniforms['uTexel']!.value as Vector2).set(1 / Math.max(1, width * pixelRatio), 1 / Math.max(1, height * pixelRatio));
       historyValid = false;
     },
     dispose() {
-      canyon?.dispose();
-      // After the programs built ahead are done (`warming`).
+      // After the programs built ahead are done (`warming`) - the canyon's is one of them.
       void Promise.allSettled(warming).then(disposeAll);
     },
   };
   function disposeAll(): void {
+    canyon?.dispose();
     composer.dispose();
     target.dispose();
+    sceneTarget.dispose();
+    copyQuad.dispose();
+    copyQuad.material.dispose();
     gtao?.dispose();
     bloom.dispose();
     smaa?.dispose();

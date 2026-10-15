@@ -123,6 +123,10 @@ export function createFlagLayer(): FlagLayer {
     set(flags) {
       if (mesh) {
         group.remove(mesh);
+        // Its geometry is its own (a clone carrying the flags' attributes):
+        // DO NOT leave it - `InstancedMesh.dispose` does not free it, and every
+        // call left the cloth and five instance attributes on the GPU.
+        mesh.geometry.dispose();
         mesh.dispose();
         mesh = null;
       }
@@ -160,7 +164,7 @@ export function createFlagLayer(): FlagLayer {
       group.add(mesh);
     },
     dispose() {
-      if (mesh) mesh.dispose();
+      if (mesh) { mesh.geometry.dispose(); mesh.dispose(); }
       geometry.dispose();
       mat.dispose();
     },

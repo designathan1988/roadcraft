@@ -16,16 +16,35 @@ export function lodPool(): Pool | null {
   if (pool !== undefined) return pool;
   if (typeof Worker === 'undefined' || typeof window === 'undefined') return (pool = null);
   const worker = new Worker(new URL('./lodWorker.ts', import.meta.url), { type: 'module' });
-  const waiting = new Map<number, (answer: { levels?: LodLevel[]; index?: Uint32Array | null }) => void>();
+  type Answer = { id: number; levels?: LodLevel[]; index?: Uint32Array | null; error?: string };
+  const waiting = new Map<number, { resolve: (answer: Answer) => void; reject: (error: Error) => void }>();
   let next = 1;
-  worker.onmessage = (e: MessageEvent<{ id: number; levels?: LodLevel[]; index?: Uint32Array | null }>) => {
-    waiting.get(e.data.id)?.(e.data);
+  worker.onmessage = (e: MessageEvent<Answer>) => {
+    const ask = waiting.get(e.data.id);
     waiting.delete(e.data.id);
+    if (e.data.error !== undefined) {
+      console.error(`[lod worker] request ${e.data.id}: ${e.data.error}`);
+      ask?.reject(new Error(`lod worker: ${e.data.error}`));
+    }
+    else ask?.resolve(e.data);
   };
-  const ask = (message: Record<string, unknown>, transfer: Transferable[]): Promise<{ levels?: LodLevel[]; index?: Uint32Array | null }> => {
+  /**
+   * The worker failed outside a request (its script, its wasm) or a message
+   * could not be read: every request waiting fails, and says so. DO NOT leave
+   * them pending: an item whose levels never came was never drawn, silently,
+   * on everybody who wore it.
+   */
+  const failAll = (why: string): void => {
+    console.error(`[lod worker] ${why}`);
+    for (const ask of waiting.values()) ask.reject(new Error(`lod worker: ${why}`));
+    waiting.clear();
+  };
+  worker.onerror = (e) => { e.preventDefault(); failAll(e.message || 'error'); };
+  worker.onmessageerror = () => failAll('a message could not be read');
+  const ask = (message: Record<string, unknown>, transfer: Transferable[]): Promise<Answer> => {
     const id = next++;
-    return new Promise((resolve) => {
-      waiting.set(id, resolve);
+    return new Promise((resolve, reject) => {
+      waiting.set(id, { resolve, reject });
       worker.postMessage({ id, ...message }, transfer);
     });
   };

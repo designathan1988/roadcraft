@@ -89,7 +89,10 @@ export const EYE_TRIANGLES = [Infinity, 200, 40, 0] as const;
 /** The far mesh (level 3): the skin left uncovered by the clothes, the outfit, and any garment under it. */
 export const FAR_TRIANGLES = { skin: 120, outfit: 90, garment: 60 } as const;
 
-export const lodReady: Promise<void> = MeshoptSimplifier.ready.catch(() => {});
+export const lodReady: Promise<void> = MeshoptSimplifier.ready.catch((error: unknown) => {
+  // Said, not swallowed: every piece is then drawn whole (`simplifyIndex` answers null).
+  console.error('[crowd] meshoptimizer did not load; pieces are drawn unsimplified', error);
+});
 
 function positionsOf(geometry: BufferGeometry): Float32Array {
   const position = geometry.getAttribute('position');
