@@ -94,7 +94,8 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
 /** A cell's buildings from afar as one mesh's arrays (`massCells.ts`) */
 export interface CellMass {
   readonly position: Float32Array;
-  readonly normal: Float32Array;
+  /** Four signed bytes a vertex over 127 (x, y, z, and one left over: no 3-byte format in Direct3D 11), as the shells' (`normalDecay`). */
+  readonly normal: Int8Array;
   readonly color: Float32Array;
   readonly facade: Float32Array;
   readonly glazing: Float32Array;
@@ -113,12 +114,14 @@ export function cellMass(masses: readonly MassingChunk[]): CellMass | null {
   let vertices = 0, indices = 0;
   for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; }
   if (indices === 0) return null;
-  const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3), color = new Float32Array(vertices * 3);
+  const position = new Float32Array(vertices * 3), normal = new Int8Array(vertices * 4), color = new Float32Array(vertices * 3);
   const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = indexArray(vertices, indices);
   let v = 0, n = 0, top = -Infinity;
   for (const c of masses) {
     position.set(c.position, v * 3);
-    normal.set(c.normal, v * 3);
+    for (let k = 0, count = c.position.length / 3; k < count; k++) {
+      normal[(v + k) * 4] = snorm(c.normal[k * 3]!); normal[(v + k) * 4 + 1] = snorm(c.normal[k * 3 + 1]!); normal[(v + k) * 4 + 2] = snorm(c.normal[k * 3 + 2]!);
+    }
     color.set(c.colour, v * 3);
     facade.set(c.facade, v * 4);
     glazing.set(c.glazing, v * 2);

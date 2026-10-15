@@ -59,7 +59,7 @@ const sphereOf = (b: Float64Array): Sphere => new Sphere(new Vector3(b[6], b[7],
 function cellMesh(mass: CellMass, kit: BuildingKit): Mesh {
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(mass.position, 3));
-  g.setAttribute('normal', new BufferAttribute(mass.normal, 3));
+  g.setAttribute('normal', new BufferAttribute(mass.normal, 4, true));
   g.setAttribute('color', new BufferAttribute(mass.color, 3));
   g.setAttribute('facade', new BufferAttribute(mass.facade, 4));
   g.setAttribute('glazing', new BufferAttribute(mass.glazing, 2));
