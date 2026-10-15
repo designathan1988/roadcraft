@@ -29,7 +29,7 @@ import { streetFurniture, type FurnitureItem, type FurnitureKind } from '@world/
 import { FOOTWAY_RISE } from '@world/roadTypes';
 import { footwayRiseAt } from '@world/roads/footwayRise';
 import { m, perM } from '@world/units';
-import { buildGrass, type GrassField } from './grass';
+import { buildGrass } from './grass';
 import { createInstanceCull, spatialOrder, type CulledInstances } from './instanceCull';
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 import { leafCardMaterials } from './lowPolyTrees';
@@ -584,46 +584,6 @@ function streetSpecies(roll: number): TreeSpecies {
   return roll < 0.89 ? 'ipeYellow' : 'ipePink';
 }
 
-export interface ScenerySettings {
-  /** Grass clumps. */
-  readonly grass: number;
-}
-
-/**
- * The ground cover of the open land: grass and wildflowers at close zoom.
- *
- * No trees or bushes are scattered over the terrain or along the roads any
- * more (the player's order of 2026-10-05): every tree on the map is one the
- * player planted with the landscaping tool, or one of a building's gardens.
- */
-export function buildScenery(
-  net: Network,
-  elevation: RoadElevation,
-  terrainAt: (x: number, y: number) => number,
-  wetAt: (x: number, y: number) => boolean,
-  settings: ScenerySettings,
-  kit: SceneryKit,
-): Scenery {
-  // No grass grows by itself (the player's order of 2026-10-05): long grass
-  // is placed with the landscaping tool and drawn with the street furniture.
-  void settings;
-  const grass: GrassField = buildGrass(net, elevation, terrainAt, wetAt, 0, kit);
-  return {
-    meshes: [],
-    grass: grass.group,
-    triangles: grass.triangles,
-    setNear() {},
-    setMap() {},
-    cull(frustum, view) {
-      if (grass.group.visible) grass.cull(frustum, view);
-    },
-    exclude() {},
-    dispose() {
-      grass.dispose();
-    },
-  };
-}
-
 /**
  * What the player placed on the footways (`world/streetFurniture.ts`): street
  * lights, benches, bins, hydrants, post boxes, street trees in their pits and
@@ -757,7 +717,7 @@ export function buildStreetFurniture(net: Network, elevation: RoadElevation, kit
 
   // Long grass placed on open ground (Paisagismo > Mato).
   const meadows = [...net.doc.landscape.values()].filter((item) => item.kind === 'meadow');
-  const meadow = buildGrass(net, elevation, terrainAt, () => false, 0, kit, meadows);
+  const meadow = buildGrass(elevation, terrainAt, kit, meadows);
   triangles += meadow.triangles;
 
   return {

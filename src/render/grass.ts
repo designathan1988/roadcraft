@@ -4,10 +4,8 @@ import {
 } from 'three';
 
 import { Rng } from '@core/rng';
-import type { Network } from '@world/network';
 import type { RoadElevation } from '@world/elevation';
 import { m, perM } from '@world/units';
-import { TERRAIN_HALF } from './terrain';
 
 /**
  * Grass you can see blades of: instanced tufts and wildflowers over the ground.
@@ -49,10 +47,6 @@ const TUFT_MIN = m(0.18);
 const TUFT_RANGE = m(0.3);
 const FLOWER_MIN = m(0.25);
 const FLOWER_RANGE = m(0.2);
-/** How far from the nearest road grass is scattered over open ground. */
-const OPEN_REACH = m(280);
-/** Share of clumps put along roads rather than scattered over open ground. */
-const ROADSIDE_SHARE = 0.65;
 
 export interface GrassField {
   readonly group: Group;
@@ -86,12 +80,16 @@ interface Tuft {
 
 const FLOWER_COLOURS = [0xf6f3e8, 0xf2d24b, 0xb58be0, 0xe8618c, 0xf5a13a].map((hex) => new Color(hex));
 
+/**
+ * The long grass the player placed (Paisagismo > Mato), a clump at each
+ * place. Nothing grows by itself (the player's order of 2026-10-05): the
+ * clumps scattered over open ground and along the roads (a `clumps` budget
+ * with a `wetAt` test) had no caller left with a budget above nought, and
+ * were removed with the scenery that asked for none (`buildScenery`).
+ */
 export function buildGrass(
-  net: Network,
   elevation: RoadElevation,
   terrainAt: (x: number, y: number) => number,
-  wetAt: (x: number, y: number) => boolean,
-  clumps: number,
   kit: { tuft: BufferGeometry; flower: BufferGeometry; grass: Material; flowers: Material },
   placed: readonly { readonly x: number; readonly y: number; readonly id: number }[] = [],
 ): GrassField {
@@ -110,15 +108,14 @@ export function buildGrass(
    * One clump at (cx, cy), from its own generator: the centre is tested
    * against the roads, the water and the slope, then its tufts are laid.
    */
-  const clump = (rng: Rng, cx: number, cy: number): boolean => {
+  const clump = (rng: Rng, cx: number, cy: number): void => {
     const radius = m(1) + rng.float() * m(2);
     const road = elevation.roadAt(cx, cy);
-    if (road.type >= 0 && Math.abs(road.across) < road.half + radius * 0.6 + m(0.32)) return false;
-    if (wetAt(cx, cy)) return false;
+    if (road.type >= 0 && Math.abs(road.across) < road.half + radius * 0.6 + m(0.32)) return;
     const slope =
       Math.abs(terrainAt(cx + m(1.6), cy) - terrainAt(cx - m(1.6), cy)) +
       Math.abs(terrainAt(cx, cy + m(1.6)) - terrainAt(cx, cy - m(1.6)));
-    if (slope > m(2.4)) return false;
+    if (slope > m(2.4)) return;
 
     // Dense enough to read as a patch of long grass. At 16 to 42 blades over
     // a clump several metres wide they were scattered dark specks - dirt on
@@ -139,7 +136,6 @@ export function buildGrass(
         const near = elevation.roadAt(x, y);
         if (near.type >= 0 && Math.abs(near.across) < near.half + m(0.24)) continue;
       }
-      if (wetAt(x, y)) continue;
       const z = terrainAt(x, y) - m(0.02);
       const shade = 0.95 + rng.float() * 0.22;
       const tuft: Tuft = {
@@ -162,91 +158,10 @@ export function buildGrass(
         push(tufts, tuft);
       }
     }
-    return true;
   };
-  let openClumps = 0;
-  let roadsideClumps = 0;
-
-  // Every candidate clump is seeded by the map cell it falls in and its own
-  // number there, never by a stream shared with the rest of the map. The
-  // stream used to be shared, and roadside clumps were dropped along a road
-  // picked at random from the list, so drawing any road anywhere moved 90 %
-  // of the grass on screen: every edit made the whole meadow jump. Now a
-  // clump is there or not by what is at its own spot, and an edit changes
-  // only the grass beside the road it touched.
-  if (clumps > 0 && net.ribbons.size > 0) {
-    const limit = TERRAIN_HALF - m(3.2);
-    // Densities that reproduce the old placement on the player map, measured:
-    // per length of road (5 120 m there) for the roadside clumps, and per
-    // area for the scattered ones, whose share of the budget works out at the
-    // whole 1 920 m map.
-    const perRoad = (clumps * ROADSIDE_SHARE) / m(5_120);
-    const perArea = (clumps * (1 - ROADSIDE_SHARE)) / (m(1_920) * m(1_920));
-    // Roadside candidates are thrown over the whole cell and kept within the
-    // verge band, more readily close to the casing; the band is 2 x 6.4 m wide
-    // and keeps on average 1/1.6 of what lands in it.
-    const roadsideTries = (perRoad / (2 * m(6.4) / 1.6)) * CHUNK * CHUNK;
-    const openTries = perArea * CHUNK * CHUNK;
-    // Grass grows within OPEN_REACH of some road, and roadside candidates are
-    // thrown only in cells a road comes near. Both are unions of per-road
-    // boxes, so drawing a road can only add cells round itself. They were a
-    // box about the whole network's extent, which a road drawn far away
-    // shifted, dropping and adding grass along its opposite edge.
-    const nearRoad = new Set<number>();
-    const grown = new Set<number>();
-    const key = (ix: number, iy: number): number => (ix + 4096) * 8192 + (iy + 4096);
-    const mark = (into: Set<number>, box: { minX: number; minY: number; maxX: number; maxY: number }, pad: number): void => {
-      const x0 = Math.floor(Math.max(-limit, box.minX - pad) / CHUNK);
-      const x1 = Math.floor(Math.min(limit, box.maxX + pad) / CHUNK);
-      const y0 = Math.floor(Math.max(-limit, box.minY - pad) / CHUNK);
-      const y1 = Math.floor(Math.min(limit, box.maxY + pad) / CHUNK);
-      for (let ix = x0; ix <= x1; ix++) for (let iy = y0; iy <= y1; iy++) into.add(key(ix, iy));
-    };
-    for (const box of elevation.shapeBounds()) {
-      mark(nearRoad, box, m(8));
-      mark(grown, box, OPEN_REACH);
-    }
-    const seedOf = (ix: number, iy: number, k: number, kind: number): number => {
-      let h = Math.imul(ix, 0x27d4eb2d) ^ Math.imul(iy, 0x165667b1) ^ Math.imul(k + 1, 0x9e3779b1) ^ (kind * 0x85ebca6b) ^ 0x9a55;
-      h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
-      h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
-      return (h ^ (h >>> 15)) >>> 0;
-    };
-    for (const cellKey of grown) {
-      const ix = Math.floor(cellKey / 8192) - 4096;
-      const iy = (cellKey % 8192) - 4096;
-      {
-        const cell = new Rng(seedOf(ix, iy, -1, 0));
-        const open = Math.floor(openTries + cell.float());
-        for (let k = 0; k < open; k++) {
-          const rng = new Rng(seedOf(ix, iy, k, 1));
-          const x = (ix + rng.float()) * CHUNK;
-          const y = (iy + rng.float()) * CHUNK;
-          if (Math.abs(x) > limit || Math.abs(y) > limit) continue;
-          if (clump(rng, x, y)) openClumps++;
-        }
-        if (!nearRoad.has(key(ix, iy))) continue;
-        const roadside = Math.floor(roadsideTries + cell.float());
-        for (let k = 0; k < roadside; k++) {
-          const rng = new Rng(seedOf(ix, iy, k, 2));
-          const x = (ix + rng.float()) * CHUNK;
-          const y = (iy + rng.float()) * CHUNK;
-          if (Math.abs(x) > limit || Math.abs(y) > limit) continue;
-          const road = elevation.roadAt(x, y);
-          if (road.type < 0) continue;
-          // Just past the casing, either side, thinning out over 6.4 m.
-          const out = (Math.abs(road.across) - road.half - m(0.6)) / m(6.4);
-          if (out < 0 || out > 1 || rng.float() > (1 - out) ** 0.6) continue;
-          if (clump(rng, x, y)) roadsideClumps++;
-        }
-      }
-    }
-  }
-
   // The clumps the player placed (Paisagismo > Mato): nothing grows by
   // itself any more (the player's order of 2026-10-05).
   for (const p of placed) clump(new Rng(Math.imul(p.id + 1, 0x9e3779b1) >>> 0), p.x, p.y);
-  group.userData.clumps = { open: openClumps, roadside: roadsideClumps };
   let triangles = 0;
   const fields: Field[] = [];
   const object = new Object3D();

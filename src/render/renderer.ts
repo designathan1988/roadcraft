@@ -58,7 +58,7 @@ import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, storedKey, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { forgetDerivedKeys, forgetOtherDerived, readDerivedAll, writeDerivedMany } from './derivedCache';
 import { disposeMesh } from './mesh/surfaceMesh';
-import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, buildScenery, buildStreetFurniture, createSceneryKit, plantSamples, type Scenery, type SceneryKit } from './scenery';
+import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, buildStreetFurniture, createSceneryKit, plantSamples, type Scenery, type SceneryKit } from './scenery';
 import { createGardens, type GardenPlant, type Gardens } from './gardens';
 import { gardenLists } from './gardenLists';
 import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
@@ -66,7 +66,6 @@ import { followPieces } from '@world/buildings/elements';
 import { RoadDoc } from '@world/doc';
 import { compileAhead, compileCopy, drainCompiles, drainUploads, drainWarm, shadowStandIn } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
-import { GRASS_MIN_ZOOM } from './grass';
 import { advanceWind, setWindWeather } from './wind';
 import { holdStill } from './stillTree';
 import { createRain } from './rain';
@@ -661,7 +660,6 @@ export function createSceneRenderer(
 
   let roads: RoadSurfaces | null = null;
   let details: StructureDetails | null = null;
-  let scenery: Scenery | null = null;
   /** What the player placed on the footways; on `doc.utilityRevision` like the poles. */
   let furniture: Scenery | null = null;
   let utilities: PoleLayer | null = null;
@@ -994,8 +992,6 @@ export function createSceneRenderer(
     for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
     buildings.refill();
   });
-  /** The scenery the building footprints were last cut out of. */
-  let excludedFor: { scenery: Scenery | null; site: string | null } = { scenery: null, site: null };
   /** The buildings' garden plants, and the buildings and ground they were planted for. */
   let gardens: Gardens | null = null;
   /** The painted rocks and scrub and the stones of the rivers (`coverSweep`, `coverKeep`). */
@@ -1764,10 +1760,6 @@ export function createSceneRenderer(
     const freshDetails = keepDetails ? details! : buildStructureDetails(net, solve, terrain.renderedHeightAt, materials, terrain.vergeMaterial);
     performance.measure('hitch:road-edit/details', { start: atdetails, end: performance.now() });
     yield;
-    const atscenery = performance.now();
-    const freshScenery = buildScenery(net, solve, terrain.renderedHeightAt, terrain.wetAt, { grass: quality.grass }, sceneryKit);
-    performance.measure('hitch:road-edit/scenery', { start: atscenery, end: performance.now() });
-    yield;
     // The overhead utility network. It is drawn from the document directly
     // rather than from the Network, because a pole line is not derived from
     // the roads - it can be drawn across open ground with no road near it.
@@ -1793,7 +1785,7 @@ export function createSceneRenderer(
     // stopped its frame while the driver built it.
     if (sliced) {
       const stage = new Group();
-      for (const piece of [freshRoads.group, freshDetails.group, freshScenery.grass, ...freshScenery.meshes]) {
+      for (const piece of [freshRoads.group, freshDetails.group]) {
         if (piece.parent === null) stage.add(piece);
       }
       if (stage.children.length > 0) {
@@ -1810,23 +1802,14 @@ export function createSceneRenderer(
     let triangles = builtTriangles;
     if (roads && roads !== freshRoads) { triangles -= roads.triangles; world.remove(roads.group); roads.dispose(); }
     if (details) { triangles -= details.triangles; world.remove(details.group); if (details !== freshDetails) details.dispose(); }
-    if (scenery) {
-      triangles -= scenery.triangles;
-      for (const mesh of scenery.meshes) world.remove(mesh);
-      world.remove(scenery.grass);
-      scenery.dispose();
-    }
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
     roads.adopt();
     world.add(roads.group);
     details = freshDetails;
     world.add(details.group);
-    scenery = freshScenery;
-    for (const mesh of scenery.meshes) world.add(mesh);
-    world.add(scenery.grass);
     utilityRevision = utilityBuilt;
-    builtTriangles = triangles + roads.triangles + details.triangles + scenery.triangles;
+    builtTriangles = triangles + roads.triangles + details.triangles;
     // The poles the edit reached, on the ground just put in place (`syncUtilities`, from the diary).
     const atutilities = performance.now();
     syncUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net));
@@ -1877,12 +1860,8 @@ export function createSceneRenderer(
         buildUtilities(warmNet, poleGroundAt(warmElevation, flat), sceneryKit),
       ];
       for (const part of parts) group.add(part.group);
-      const plants = buildScenery(warmNet, warmElevation, flat, () => false, { grass: quality.grass }, sceneryKit);
-      for (const mesh of plants.meshes) group.add(mesh);
-      group.add(plants.grass);
       void compileAhead(group).then(() => {
         for (const part of parts) part.dispose();
-        plants.dispose();
       });
     } catch (error) {
       console.warn('road shader warm-up skipped', error);
@@ -1996,9 +1975,11 @@ export function createSceneRenderer(
     post = createPostChain(renderer, scene, rig.camera, quality, level);
     post.setNight(Math.max(0, lastDark));
     resize();
-    // Vegetation density is baked into the instanced meshes, so it only takes
-    // effect on the next rebuild. Forcing one here keeps the tier honest.
-    networkRevision = -1;
+    // NO world rebuild here: nothing the world's build makes reads the tier
+    // (the woods' density is in the nature sweep's key). DO NOT force one with
+    // `networkRevision = -1`: every change of the tier built the whole map's
+    // roads, ground and structures again for the scenery that read it, an
+    // empty grass field (`buildScenery`, removed).
     // A new tier redraws the shadow map whatever the frame would have said.
     shadowMoved = true;
   };
@@ -2032,8 +2013,8 @@ export function createSceneRenderer(
 
   let buildingsHeld = false;
   /** The map zoom and the plant layers `setMap` was last told about (`draw`). */
-  let plantMapFor: { map: boolean | null; gardens: Gardens | null; scenery: Scenery | null; furniture: Scenery | null } =
-    { map: null, gardens: null, scenery: null, furniture: null };
+  let plantMapFor: { map: boolean | null; gardens: Gardens | null; furniture: Scenery | null } =
+    { map: null, gardens: null, furniture: null };
   /** In perspective: how far down the street a person or a car is still big enough to see appear, u. */
   const VIEW_SEEN = m(320);
   /** In perspective: radians added to each side of the camera's width (the camera turns). */
@@ -2821,13 +2802,6 @@ export function createSceneRenderer(
         fxPreload = true;
         requestIdleCallback(() => { void loadEffects(); }, { timeout: 5000 });
       }
-      // The plants under a building's footprints: on the scenery and the
-      // ground the buildings take (not their age or their paint).
-      const siteKey = String(buildings.coversVersion);
-      if (scenery && (excludedFor.scenery !== scenery || excludedFor.site !== siteKey)) {
-        scenery.exclude(net.doc.buildings.size > 0 ? buildings.covers : null);
-        excludedFor = { scenery, site: siteKey };
-      }
       // Walls, fences and hedges: on their own revision, and on the ground under each piece of them.
       if (groundSettled && onGround.barriers.stale(String(net.doc.barrierRevision), barriersAreaOf(net.doc))) {
         if (barriers) {
@@ -3135,9 +3109,6 @@ export function createSceneRenderer(
         mesh.visible = quality.detailProps && detailed && (!plantMap || !isLeafCards(mesh));
       }
       furniture?.setNear(rig.viewport.zoom >= PLANT_NEAR_ZOOM);
-      for (const mesh of scenery?.meshes ?? []) {
-        mesh.visible = quality.detailProps && detailed && (!plantMap || !isLeafCards(mesh));
-      }
       for (const mesh of gardens?.meshes ?? []) {
         mesh.visible = detailed && (!plantMap || !isLeafCards(mesh));
       }
@@ -3146,10 +3117,9 @@ export function createSceneRenderer(
       // when the map zoom is crossed or the layer is new: `gardens.setMap`
       // throws its cull away, and called every frame it culled every garden
       // of the town again on every frame with the camera still.
-      if (plantMap !== plantMapFor.map || gardens !== plantMapFor.gardens || scenery !== plantMapFor.scenery || furniture !== plantMapFor.furniture) {
-        plantMapFor = { map: plantMap, gardens, scenery, furniture };
+      if (plantMap !== plantMapFor.map || gardens !== plantMapFor.gardens || furniture !== plantMapFor.furniture) {
+        plantMapFor = { map: plantMap, gardens, furniture };
         gardens?.setMap(plantMap);
-        scenery?.setMap(plantMap);
         furniture?.setMap(plantMap);
       }
       // The roads just laid: a strip over their whole width, on their own deck.
@@ -3196,10 +3166,6 @@ export function createSceneRenderer(
         if (skyMesh) skyMesh.visible = false;
         scene.background = MAP_BACKGROUND;
       }
-      if (scenery) {
-        scenery.grass.visible = quality.detailProps && rig.viewport.zoom >= GRASS_MIN_ZOOM;
-        scenery.setNear(rig.viewport.zoom >= PLANT_NEAR_ZOOM);
-      }
       // The wind blows in real time: a paused simulation is still a windy day.
       windClock += Math.min(0.1, Math.max(0, delta));
       advanceWind(windClock);
@@ -3214,7 +3180,6 @@ export function createSceneRenderer(
       cssHalfW = renderer.domElement.clientWidth * 0.5;
       cssHalfH = renderer.domElement.clientHeight * 0.5;
       // Plants and street furniture outside the view are not drawn at all.
-      scenery?.cull(crowdFrustum, crowdProjection);
       furniture?.cull(crowdFrustum, crowdProjection);
       gardens?.cull(crowdFrustum, crowdProjection);
       transit?.update(sim.city.transit.trains(), terrain.renderedHeightAt);
@@ -3563,7 +3528,6 @@ export function createSceneRenderer(
       roads?.dispose();
       disposeSurfaceReuse(surfaceReuse);
       details?.dispose();
-      scenery?.dispose();
       furniture?.dispose();
       gardens?.dispose();
       cover?.dispose();
