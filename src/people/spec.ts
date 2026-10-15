@@ -1,3 +1,4 @@
+import { mulberry32 as rng } from '@core/rng';
 import { DEFAULT_MACRO, ageFromYears, yearsFromAge, type MacroParams } from './body/macro';
 import { phenotype } from './phenotype';
 import { COMMUNITY, communityItem, itemsOf } from './wardrobe';
@@ -136,18 +137,6 @@ export const DEFAULT_LOOK: PersonLook = {
 
 export function defaultPerson(id: number, name = ''): PersonSpec {
   return { id, name, body: { ...DEFAULT_MACRO }, features: {}, look: { ...DEFAULT_LOOK } };
-}
-
-/** A small, fast, seedable generator (mulberry32). */
-function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 const pick = <T>(r: () => number, list: readonly T[]): T => list[Math.floor(r() * list.length)]!;

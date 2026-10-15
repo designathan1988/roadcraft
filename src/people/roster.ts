@@ -1,3 +1,4 @@
+import { mulberry32 as rng } from '@core/rng';
 import { ageFromYears } from './body/macro';
 import { CLOTH_COLOURS, WARDROBE, randomPerson, type BottomStyle, type PersonSpec, type TopStyle } from './spec';
 
@@ -44,16 +45,6 @@ const DRESS: Readonly<Record<RosterWardrobe, Dress>> = {
   traditional: { top: ['longsleeve'], topColours: [0xf2f0ea, 0xc9a68a, 0x2f5d50, 0x8a2f1f], bottom: (f) => (f ? ['skirt'] : ['trousers']), bottomColours: [0xf2f0ea, 0xc9a68a, 0x22252b] },
 };
 
-function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 const pick = <T>(r: () => number, list: readonly T[]): T => list[Math.floor(r() * list.length)]!;
 
 /** How many people of each sex, age band and wardrobe the street has. */
