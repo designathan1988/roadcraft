@@ -9,14 +9,12 @@ import './roads.css';
  * game keeps for itself is refused with the reason, and "Restore" puts the
  * defaults back. The keys live in `editor/roads/keys.ts`.
  */
-let open: HTMLElement | null = null;
-/** Lets go of the open panel's key listener when it closes (MDN, addEventListener `signal`). */
-let listening: AbortController | null = null;
+/** The open panel, and what lets go of its key listener when it closes (MDN, addEventListener `signal`). */
+let open: { readonly root: HTMLElement; readonly listening: AbortController } | null = null;
 
 export function closeRoadKeys(): void {
-  listening?.abort();
-  listening = null;
-  open?.remove();
+  open?.listening.abort();
+  open?.root.remove();
   open = null;
 }
 
@@ -94,7 +92,7 @@ export function openRoadKeys(anchor?: HTMLElement): void {
   // own key listener: while this panel is open the next key is the one being bound, before the game sees it.
   // Removed with the panel (`closeRoadKeys`), not on the next key: a panel opened
   // and closed many times left one listener each until a key was pressed.
-  listening = new AbortController();
+  const listening = new AbortController();
   window.addEventListener('keydown', onKey, { capture: true, signal: listening.signal });
 
   if (anchor) {
@@ -103,6 +101,6 @@ export function openRoadKeys(anchor?: HTMLElement): void {
     root.style.bottom = `${Math.round(Math.max(12, window.innerHeight - box.bottom))}px`;
   }
   document.body.append(root);
-  open = root;
+  open = { root, listening };
   render();
 }

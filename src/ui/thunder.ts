@@ -4,7 +4,6 @@
  * strike is near and a long low roll when it is far, heard as long after the
  * flash as sound takes to come that far (343 m/s).
  */
-let context: AudioContext | null = null;
 
 /** The longest clap (far off), in seconds: `length` below at `near` 0. */
 const LONGEST = 5.6;
@@ -16,9 +15,11 @@ const NOISE_SECONDS = LONGEST + 4;
  * thousand samples of `Math.random` on the page at each bolt; a buffer is meant
  * to be reused by many cheap source nodes (MDN, AudioBufferSourceNode).
  */
-let noise: AudioBuffer | null = null;
-function noiseOf(ctx: AudioContext): AudioBuffer {
-  if (noise && noise.sampleRate === ctx.sampleRate) return noise;
+interface Audio { readonly ctx: AudioContext; noise: AudioBuffer | null }
+let audio: Audio | null = null;
+function noiseOf(state: Audio): AudioBuffer {
+  if (state.noise) return state.noise;
+  const { ctx } = state;
   const frames = Math.floor(ctx.sampleRate * NOISE_SECONDS);
   const buffer = ctx.createBuffer(1, frames, ctx.sampleRate);
   const data = buffer.getChannelData(0);
@@ -28,25 +29,25 @@ function noiseOf(ctx: AudioContext): AudioBuffer {
     last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02;
     data[i] = last * 3.5;
   }
-  return (noise = buffer);
+  return (state.noise = buffer);
 }
 
 /** Plays a thunderclap for a strike `metres` away, at `volume` (0..1). */
 export function playThunder(metres: number, volume: number): void {
   if (volume <= 0) return;
   try {
-    context ??= new AudioContext();
+    audio ??= { ctx: new AudioContext(), noise: null };
   } catch {
     return;
   }
-  const ctx = context;
+  const { ctx } = audio;
   // Browsers start audio only after the player has touched the page.
   if (ctx.state === 'suspended') void ctx.resume();
   const delay = Math.min(6, metres / 343);
   const near = 1 / (1 + metres / 500);
   const length = 2.6 + 3 * (1 - near);
   const source = ctx.createBufferSource();
-  source.buffer = noiseOf(ctx);
+  source.buffer = noiseOf(audio);
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
   // A near strike keeps its high crack; far off, only the low roll arrives.
