@@ -1,10 +1,10 @@
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
-import { buildWalkways, type WalkGraph } from '@world/walkways';
+import { nearestFootway } from '@world/footwayPath';
 import {
   ALONG_ROAD, JOIN, type TransitData, longestOnRoad, type TransitMode, addLine, addStop, addTrack, nearestTrack, removeLine, removeStop, removeTrack,
-  setLineVehicles, setTerminal,
+  setLineVehicles, setTerminal, stopById, stopNear, trackPointNear,
 } from '@world/transit';
 import { m } from '@world/units';
 import { volumeCorners } from '@world/buildings/geometry';
@@ -51,8 +51,6 @@ export class TransitTool {
   /** The stops of a line being made. */
   lineStops: number[] = [];
   cursor: Vec2 | null = null;
-  private walkways: WalkGraph | null = null;
-  private walkwaysFor = -1;
 
   constructor(private readonly deps: TransitToolDeps) {}
 
@@ -66,41 +64,39 @@ export class TransitTool {
 
   private get data(): TransitData { return this.deps.doc().transit; }
 
-  /** Whether a point is inside a building (a block built out over its footway). */
+  /**
+   * Whether a point is inside a building (a block built out over its footway):
+   * the buildings filed round it only (`BuildingStore.near`). DO NOT walk
+   * `buildings.all()`: the metro's way down asked it of every footway point
+   * of the map against every building.
+   */
   private built(p: Vec2): boolean {
     // Every volume, upper floors too: a block may overhang its footway, and the way down would be under it.
-    for (const b of this.deps.doc().buildings.all()) {
-      for (const v of b.volumes) if (!v.open && pointInPolygon(p, volumeCorners(b, v, m(1)))) return true;
+    const pad = m(1);
+    for (const b of this.deps.doc().buildings.near(p.x - pad, p.y - pad, p.x + pad, p.y + pad)) {
+      for (const v of b.volumes) if (!v.open && pointInPolygon(p, volumeCorners(b, v, pad))) return true;
     }
     return false;
   }
 
-  /** The footway point by a street nearest `p`, and its road. */
+  /**
+   * The footway point by a street nearest `p`, and its road: the footways of
+   * the roads filed within `reach` (`Network.ribbonsMeeting`, in the walking
+   * network's own order, so the same one wins a tie), laid as it lays them
+   * (`footwayPath`). DO NOT build the walking network of the whole map for a
+   * click (it was built again after every edit, and every footway of the map
+   * was measured).
+   */
   private footwayAt(p: Vec2, reach = STOP_REACH, clear = false): { x: number; y: number; segment: number } | null {
-    const net = this.deps.net();
-    if (!this.walkways || this.walkwaysFor !== net.revision) { this.walkways = buildWalkways(net); this.walkwaysFor = net.revision; }
-    let best: { x: number; y: number; segment: number; d: number } | null = null;
-    for (const way of this.walkways.ways) {
-      if (way.kind !== 'footway' || way.segment === undefined) continue;
-      const hit = way.path.closestPoint(p);
-      if (clear && this.built(hit.point)) continue;
-      if (hit.distance < reach && (!best || hit.distance < best.d)) best = { x: hit.point.x, y: hit.point.y, segment: way.segment, d: hit.distance };
-    }
-    return best;
+    return nearestFootway(this.deps.net(), p, reach, clear ? (q) => this.built(q) : undefined);
   }
 
   /** Whether a point is on a road's carriageway. */
   onRoad(p: Vec2): boolean { return onCarriageway(this.deps.net(), p); }
 
-  /** The stop or station nearest a point within reach, of a mode if given. */
+  /** The stop or station nearest a point within reach, of a mode if given (the stops round it, `stopNear`). */
   stopAt(p: Vec2, mode?: TransitMode): number | null {
-    let best: number | null = null, bestD = PICK;
-    for (const s of this.data.stops) {
-      if (mode && s.mode !== mode) continue;
-      const d = Math.hypot(s.x - p.x, s.y - p.y);
-      if (d < bestD) { bestD = d; best = s.id; }
-    }
-    return best;
+    return stopNear(this.data, p, PICK, mode)?.id ?? null;
   }
 
   /**
@@ -108,12 +104,9 @@ export class TransitTool {
    * @perInput Runs once a pointer move (the snap under the cursor): nothing it reaches may walk the map.
    */
   private snapTrack(p: Vec2): Vec2 {
-    for (const t of this.data.tracks) {
-      if (t.mode !== this.rail) continue;
-      for (const q of t.points) {
-        if (Math.hypot(q.x - p.x, q.y - p.y) < JOIN * 2) return { x: q.x, y: q.y };
-      }
-    }
+    // The track points round the pointer only (`trackPointNear`), not every point of every track.
+    const point = trackPointNear(this.data, p, JOIN * 2, this.rail);
+    if (point) return { x: point.x, y: point.y };
     const on = nearestTrack(this.data, p, JOIN * 2, this.rail);
     return on ? { x: on.x, y: on.y } : p;
   }
@@ -139,7 +132,7 @@ export class TransitTool {
       case 'terminal': {
         const stop = this.stopAt(p, 'bus');
         if (stop === null) { this.deps.hint('hint.transit.noStop'); return; }
-        const s = data.stops.find((x) => x.id === stop)!;
+        const s = stopById(data, stop)!;
         this.deps.edit(setTerminal(data, stop, !s.terminal));
         return;
       }
@@ -161,7 +154,7 @@ export class TransitTool {
       }
       case 'line': {
         const first = this.lineStops[0];
-        const mode = first !== undefined ? data.stops.find((s) => s.id === first)?.mode : undefined;
+        const mode = first !== undefined ? stopById(data, first)?.mode : undefined;
         const stop = this.stopAt(p, mode);
         if (stop === null) { this.deps.hint(double ? 'hint.transit.lineShort' : 'hint.transit.noStop'); if (double) this.finishLine(); return; }
         if (this.lineStops[this.lineStops.length - 1] !== stop) this.lineStops.push(stop);
@@ -203,7 +196,7 @@ export class TransitTool {
     const stops = this.lineStops;
     this.lineStops = [];
     if (stops.length < 2) { this.deps.hint('hint.transit.lineShort'); this.deps.redraw(); return; }
-    const mode = this.data.stops.find((s) => s.id === stops[0])!.mode;
+    const mode = stopById(this.data, stops[0]!)!.mode;
     this.deps.edit(addLine(this.data, mode, stops).data);
     this.deps.hint('hint.transit.lineMade');
   }
@@ -236,7 +229,7 @@ export class TransitTool {
         ctx.lineWidth = 3;
         ctx.beginPath();
         line.stops.forEach((id, i) => {
-          const s = data.stops.find((x) => x.id === id);
+          const s = stopById(data, id);
           if (!s) return;
           const q = at(s);
           if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
@@ -275,7 +268,7 @@ export class TransitTool {
       ctx.strokeStyle = '#ffd34d';
       ctx.lineWidth = 4;
       ctx.beginPath();
-      const pts = this.lineStops.map((id) => data.stops.find((s) => s.id === id)).filter((s): s is NonNullable<typeof s> => !!s);
+      const pts = this.lineStops.map((id) => stopById(data, id)).filter((s): s is NonNullable<typeof s> => !!s);
       [...pts, ...(this.cursor ? [this.cursor] : [])].forEach((p, i) => { const s = at(p); if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y); });
       ctx.stroke();
     }
