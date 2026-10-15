@@ -78,7 +78,28 @@ export const COARSE_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set(PART_KI
  * frame (picture and shadow), wherever the camera looked.
  */
 /** A cell's batch and the entries it was made of (its coarse cell's: `cellRequests.ts`), by cell key. */
-export type CellCache = Map<string, { entries: readonly CellEntry[]; part: BuildingMeshes }>;
+export type CellCache = Map<string, CellBatch>;
+export interface CellBatch { entries: readonly CellEntry[]; part: BuildingMeshes }
+
+/** A cell cache that tells `told` each key that comes in (true) or goes (false). */
+export function watchedCells(told: (key: string, has: boolean) => void): CellCache {
+  return new (class extends Map<string, CellBatch> {
+    override set(key: string, value: CellBatch): this {
+      super.set(key, value);
+      told(key, true);
+      return this;
+    }
+    override delete(key: string): boolean {
+      const had = super.delete(key);
+      if (had) told(key, false);
+      return had;
+    }
+    override clear(): void {
+      for (const key of this.keys()) told(key, false);
+      super.clear();
+    }
+  })();
+}
 
 /** The buildings' chunks by cell, in list order. */
 export function chunksByCell(buildings: readonly Building[], chunkOf: (b: Building) => BuildingChunk, cellSize: number): Map<string, BuildingChunk[]> {

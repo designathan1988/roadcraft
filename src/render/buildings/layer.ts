@@ -9,7 +9,7 @@ import { cutOpen } from '@world/buildings/interior';
 import { CellFiling } from '@world/cells';
 import { type BuildingChunk, type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
 import {
-  BATCH_CELL, CHUNK_CACHE_BYTES, type CellCache, type DetailState, cullDetailCells,
+  BATCH_CELL, CHUNK_CACHE_BYTES, type CellCache, type DetailState, cullDetailCells, watchedCells,
   HIDDEN_SLICE_MS, LOADING_COUNT, LOADING_SLICE_MS, STREAM_AHEAD, STREAM_CELLS_PER_FRAME, WARM_SLICE_MS, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
 } from './layerCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
@@ -182,22 +182,7 @@ export function createBuildingLayer(): BuildingLayer {
    * far level (`massCells.setDetailed`): its mass stands in while it is near with no detail. DO NOT
    * set that for every cell of the town every frame (`levelOfDetail` did): it changes only here.
    */
-  const cells: CellCache = new (class extends Map<string, CellCache extends Map<string, infer V> ? V : never> {
-    override set(key: string, value: CellCache extends Map<string, infer V> ? V : never): this {
-      super.set(key, value);
-      massCells.setDetailed(key, true);
-      return this;
-    }
-    override delete(key: string): boolean {
-      const had = super.delete(key);
-      if (had) massCells.setDetailed(key, false);
-      return had;
-    }
-    override clear(): void {
-      for (const key of this.keys()) massCells.setDetailed(key, false);
-      super.clear();
-    }
-  })();
+  const cells: CellCache = watchedCells((key, has) => massCells.setDetailed(key, has));
   const detailCells: CellCache = new Map();
   /** The buildings faded ("hide the others"), a batch a cell. */
   const fadedCells: CellCache = new Map();
@@ -406,10 +391,22 @@ export function createBuildingLayer(): BuildingLayer {
     masses.set(b.id, { record, digest, mass });
     return mass;
   };
-  /** The masses of these buildings by coarse cell, for `massCells.update`. */
+  /**
+   * The masses of these buildings by coarse cell, for `massCells.update`: every cell they stand in,
+   * an empty list for one whose buildings have no mass (lots only), drawn by its detail alone.
+   */
   const massesByCell = (list: readonly Building[], groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt,
-    naturalAt: GroundAt = groundAt): Map<string, MassingChunk[]> =>
-    groupByCell(list, cellOf, (b) => massFor(b, groundAt, groundKey, pavedAt, naturalAt));
+    naturalAt: GroundAt = groundAt): Map<string, MassingChunk[] | null> => {
+    const byCell = new Map<string, MassingChunk[] | null>();
+    for (const b of list) {
+      const cell = cellOf(b);
+      let masses = byCell.get(cell);
+      if (!masses) byCell.set(cell, masses = []);
+      const mass = massFor(b, groundAt, groundKey, pavedAt, naturalAt);
+      if (mass) masses.push(mass);
+    }
+    return byCell;
+  };
   /** The cells held near whatever the eye says: the building cut open (`near`), the one being edited (`dimmed`). */
   const forcedCells = (shown: readonly Building[]): ReadonlySet<string> =>
     new Set(shown.filter((b) => (dimmed !== undefined && b.id === dimmed) || (cutaway !== null && near(b))).map(cellOf));
@@ -446,7 +443,9 @@ export function createBuildingLayer(): BuildingLayer {
         releaseCell(key);
         changed = true;
       }
-      for (const key of townCells.keys()) if (!cells.has(key) && cellNear(key)) pendingCells.add(key);
+      // The cells drawn near (`massCells`, a cell with buildings but no mass always near): NOT every cell
+      // of the town each frame.
+      for (const key of massCells.nearKeys()) if (!cells.has(key) && townCells.has(key)) pendingCells.add(key);
     }
     const order = [...pendingCells];
     if (eye) {
@@ -594,7 +593,8 @@ export function createBuildingLayer(): BuildingLayer {
         if (!warming.massed && warming.at < warming.queue.length) return false;
         // The far level first, so the eye can say which cells need their detail.
         const byCell = massesByCell(warming.queue, groundAt, groundKey, pavedAt, naturalAt);
-        if (warming.dirty) for (const cell of warming.dirty) byCell.set(cell, byCell.get(cell) ?? []);
+        // A changed cell left with no building at all goes (null).
+        if (warming.dirty) for (const cell of warming.dirty) if (!byCell.has(cell)) byCell.set(cell, null);
         if (warming.dirty) massCells.patch(byCell); else massCells.update(byCell);
         chooseNow();
         const done = warming;

@@ -56,14 +56,18 @@ interface Cell {
 
 export interface MassCells {
   readonly group: Group;
-  /** The cells made again from their buildings' masses (by cell key); a cell whose masses are the same objects is kept. */
-  update(byCell: ReadonlyMap<string, readonly MassingChunk[]>): void;
   /**
-   * Only the cells given made again (a cell given no masses goes), the others
+   * The cells made again from their buildings' masses (by cell key; an empty
+   * list: buildings with no mass, a cell always near); a cell whose masses are
+   * the same objects is kept, a cell not given goes.
+   */
+  update(byCell: ReadonlyMap<string, readonly MassingChunk[] | null>): void;
+  /**
+   * Only the cells given made again (a cell given null goes), the others
    * left as they are: what one building changed costs its cell, not the town
    * (docs/AUDITORIA-2026-10-14.md A1).
    */
-  patch(byCell: ReadonlyMap<string, readonly MassingChunk[]>): void;
+  patch(byCell: ReadonlyMap<string, readonly MassingChunk[] | null>): void;
   /**
    * Which cells are drawn near (their detail) and which far (their masses),
    * from the eye (map x/y, height) and the screen: `pxAtMetre` the pixels a
@@ -77,6 +81,8 @@ export interface MassCells {
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number): void;
   /** Whether a cell is drawn near; a cell with no mass (lawns only) always is. */
   near(key: string): boolean;
+  /** The cells drawn near now (what the streaming of the detail reads, `layer.ts` `landCells`). */
+  nearKeys(): Iterable<string>;
   /**
    * Whether a cell's detail is shown (`layer.ts` streaming): a near cell
    * keeps its mass shown until its detail lands - between the two the cell
@@ -205,13 +211,13 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     group,
     /** @rebuild Called when the stored buildings were put together again (`layer.ts` `update`, the whole town). */
     update(byCell) {
-      for (const [key, masses] of byCell) put(key, masses);
-      for (const [key, cell] of [...cells]) if (!byCell.has(key)) forget(key, cell);
+      for (const [key, masses] of byCell) put(key, masses ?? []);
+      for (const [key, cell] of [...cells]) if (!byCell.get(key)) forget(key, cell);
     },
     /** @rebuild Called when some buildings changed (`layer.ts` `update`, their cells only). */
     patch(byCell) {
       for (const [key, masses] of byCell) {
-        if (masses.length) { put(key, masses); continue; }
+        if (masses) { put(key, masses); continue; }
         const known = cells.get(key);
         if (known) forget(key, known);
       }
@@ -270,6 +276,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     },
     near(key) {
       return cells.get(key)?.near ?? true;
+    },
+    nearKeys() {
+      return nearKeys;
     },
     setDetailed(key, on) {
       if (on) detailed.add(key); else detailed.delete(key);
