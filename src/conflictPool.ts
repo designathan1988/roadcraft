@@ -1,4 +1,4 @@
-import type { PairMeasurer, SweepSamples } from '@world/conflictTable';
+import type { Crossing, PairMeasurer, SampledSweep, SweepAsk, SweepSamples } from '@world/conflictTable';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from '@world/junctionTurns';
 
 /**
@@ -122,6 +122,75 @@ export class ConflictPool implements PairMeasurer {
     return Promise.all(parts).then((answers) => answers.flat());
   }
 
+  /**
+   * Movements' sweeps sampled across the workers (`conflictTable.worker.ts`, `sampleSweep`): contiguous
+   * shares in the order asked - a junction's movements come one after another - each share with every
+   * lane it reads once (a lane is the approach or the exit of several movements), the sweeps pointing at
+   * them; the frames come back transferred, not copied.
+   */
+  sampleSweeps(asks: readonly SweepAsk[]): Promise<readonly SampledSweep[]> {
+    const lanes = this.start();
+    if (!lanes) return Promise.reject(new Error('no workers in this browser'));
+    const per = Math.ceil(asks.length / lanes.length);
+    const parts: Promise<SampledSweep[]>[] = [];
+    for (let k = 0; k < lanes.length && k * per < asks.length; k++) {
+      const share = asks.slice(k * per, (k + 1) * per);
+      const index = new Map<Float64Array, number>();
+      const lines: Float64Array[] = [];
+      const at = (xy: Float64Array): number => {
+        let i = index.get(xy);
+        if (i === undefined) { i = lines.length; index.set(xy, i); lines.push(xy); }
+        return i;
+      };
+      const refs = new Int32Array(share.length * 3);
+      const c0 = new Float64Array(share.length), count = new Int32Array(share.length);
+      share.forEach((a, q) => {
+        refs[q * 3] = at(a.inXY); refs[q * 3 + 1] = at(a.crossXY); refs[q * 3 + 2] = at(a.outXY);
+        c0[q] = a.c0; count[q] = a.count;
+      });
+      const lane = lanes[k]!;
+      const id = this.nextId++;
+      parts.push(new Promise<SampledSweep[]>((resolve, reject) => {
+        lane.waiting.set(id, { resolve: (answer) => resolve(answer as SampledSweep[]), reject });
+        // The lanes' points are copied (the page keeps its own); the indices and the numbers handed over.
+        lane.worker.postMessage({ kind: 'sweeps', id, lines, refs, c0, count }, [refs.buffer, c0.buffer, count.buffer]);
+        this.arm(lane);
+      }));
+    }
+    return Promise.all(parts).then((answers) => answers.flat());
+  }
+
+  /**
+   * Pairs' centreline crossings found across the workers (`conflictTable.worker.ts`, `firstCrossing`):
+   * contiguous shares, each with every centreline it reads once, the pairs pointing at them.
+   */
+  crossings(pairs: readonly { readonly a: Float64Array; readonly b: Float64Array }[]): Promise<readonly (Crossing | null)[]> {
+    const lanes = this.start();
+    if (!lanes) return Promise.reject(new Error('no workers in this browser'));
+    const per = Math.ceil(pairs.length / lanes.length);
+    const parts: Promise<(Crossing | null)[]>[] = [];
+    for (let k = 0; k < lanes.length && k * per < pairs.length; k++) {
+      const share = pairs.slice(k * per, (k + 1) * per);
+      const index = new Map<Float64Array, number>();
+      const lines: Float64Array[] = [];
+      const at = (xy: Float64Array): number => {
+        let i = index.get(xy);
+        if (i === undefined) { i = lines.length; index.set(xy, i); lines.push(xy); }
+        return i;
+      };
+      const refs = new Int32Array(share.length * 2);
+      share.forEach((p, q) => { refs[q * 2] = at(p.a); refs[q * 2 + 1] = at(p.b); });
+      const lane = lanes[k]!;
+      const id = this.nextId++;
+      parts.push(new Promise<(Crossing | null)[]>((resolve, reject) => {
+        lane.waiting.set(id, { resolve: (answer) => resolve(answer as (Crossing | null)[]), reject });
+        lane.worker.postMessage({ kind: 'crossings', id, lines, refs }, [refs.buffer]);
+        this.arm(lane);
+      }));
+    }
+    return Promise.all(parts).then((answers) => answers.flat());
+  }
+
   /** The lane's silence deadline started again, or stopped when nothing waits on it. */
   private arm(lane: Lane): void {
     if (lane.watchdog !== null) clearTimeout(lane.watchdog);
@@ -140,7 +209,7 @@ export class ConflictPool implements PairMeasurer {
       for (let k = 0; k < count; k++) {
         const worker = new Worker(new URL('./conflictTable.worker.ts', import.meta.url), { type: 'module' });
         const lane: Lane = { worker, waiting: new Map(), watchdog: null };
-        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; error?: string }>) => {
+        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; crossings?: (Crossing | null)[]; error?: string }>) => {
           if (this.lanes !== lanes) return;
           const job = event.data.beat ? undefined : lane.waiting.get(event.data.id);
           if (job) lane.waiting.delete(event.data.id);
@@ -149,6 +218,8 @@ export class ConflictPool implements PairMeasurer {
           if (!job) return;
           if (event.data.tables) job.resolve(event.data.tables);
           else if (event.data.turns) job.resolve(event.data.turns);
+          else if (event.data.sweeps) job.resolve(event.data.sweeps);
+          else if (event.data.crossings) job.resolve(event.data.crossings);
           else job.reject(new Error(event.data.error ?? 'conflict worker failed'));
         };
         // A worker that cannot run, or a message it cannot read: the pool is

@@ -1,14 +1,12 @@
 import { Digest } from '@core/digest';
-import { segSeg } from '@core/intersect';
 import type { Vec2 } from '@core/vec2';
-import type { Polyline } from '@core/polyline';
 import type { NodeId } from './ids';
 import type { Connector, ConnectorId, JunctionTopology, Lanelet, LaneletGraph } from './lanelets';
-import { m } from './units';
-import { HEADING_CHORD, chordHeading } from './heading';
 import { rebuildWork } from './rebuildWork';
 import {
-  BODY_CLASSES, BODY_ENVELOPE, type BodyClass, HEAVY, type PairMeasurer, SWEEP_STEP, type SweepSamples, pairTable,
+  BODY_CLASSES, BODY_ENVELOPE, type BodyClass, type Crossing, HEAVY, type PairMeasurer, SWEEP_STEP, type SweepAsk,
+  type SweepSamples, firstCrossing, frameLengthsOf, joinedPath, lineDigest as digestOfLine, pairTable, shapeDigest, sweepFrame,
+  sweepSpan,
 } from './conflictTable';
 
 /** Yielded by `ConflictIndex.prepare` while its pairs are measured off the page: nothing to do here until they come back. */
@@ -83,13 +81,6 @@ export interface Diverge {
   /** Centre arc past which a body of class `mine` on the OTHER movement is clear of `theirs` on this one. */
   otherExit(mine: BodyClass, theirs: BodyClass): number;
 }
-
-/**
- * How far behind its stop line the front of a waiting body is swept, world
- * units: vehicles stop a few units short of the line, and a long one turning
- * beside them swings over that much of the lane next to it (see `inRange`).
- */
-const QUEUE_BACK = m(3.2);
 
 /**
  * Where two movements through a junction physically conflict.
@@ -196,8 +187,12 @@ export class ConflictIndex {
     /** The pairs to measure off the page (`measurer`), each key once. */
     const wanted: { key: string; a: Sweep; shapeA: SweepShape; b: Sweep; shapeB: SweepShape }[] = [];
     const asked = new Set<string>();
+    /** Every pair these junctions read, each key once: their centrelines' crossings are found off the page too. */
+    const read = new Map<string, { readonly a: Float64Array; readonly b: Float64Array }>();
     // The junctions an edit built again (`LaneletGraph.update`); every one only for a graph built whole.
-    const junctions = only ? [...only].map((node) => graph.junctions.get(node)).filter((j): j is JunctionTopology => j !== undefined) : graph.junctions.values();
+    const junctions = only ? [...only].map((node) => graph.junctions.get(node)).filter((j): j is JunctionTopology => j !== undefined) : [...graph.junctions.values()];
+    // The sweeps the caches do not hold, sampled by the workers when there are some: read back below.
+    if (measurer?.sampleSweeps) yield* this.sampleOffPage(graph, junctions, measurer);
     for (const junction of junctions) {
       rebuildWork.conflicts++;
       const ids = junction.connectors.slice().sort();
@@ -212,6 +207,7 @@ export class ConflictIndex {
         for (let j = i + 1; j < sweeps.length; j++) {
           const a = sweeps[i]!, b = sweeps[j]!;
           const key = `${a.shape.hash}|${b.shape.hash}`;
+          if (measurer?.crossings && !read.has(key)) read.set(key, { a: a.shape.centre, b: b.shape.centre });
           const known = this.pairCache.get(key);
           if (known && sameShape(known.a, a.shape) && sameShape(known.b, b.shape)) continue;
           const wasKept = this.store.kept.has(key);
@@ -226,26 +222,96 @@ export class ConflictIndex {
         }
       }
     }
-    if (!measurer || !wanted.length) return;
+    if (measurer && wanted.length) yield* this.measureOffPage(wanted, measurer);
+    if (measurer?.crossings && read.size) yield* this.crossOffPage(read, measurer);
+  }
+
+  /** The pairs `prepare` found new, measured by `measurer`'s workers (`conflictPool.ts`) and left in the caches. */
+  private *measureOffPage(wanted: readonly { key: string; a: Sweep; shapeA: SweepShape; b: Sweep; shapeB: SweepShape }[],
+    measurer: PairMeasurer): Generator<void | typeof WAITING, void> {
     // OFF THE PAGE: every new pair at once, across the measurer's workers
     // (`conflictPool.ts`), the same `pairTable` on the same samples, while
     // this thread draws and builds the rest of the town. A pair at a time
     // here, a generated city's 3.4 s of them held its opening (2026-10-14).
     // While they work this yields `WAITING`: the frame's slice ends there.
-    const answer: { tables?: readonly (Float64Array | null)[]; failed?: boolean } = {};
-    measurer.measure(wanted.map((w) => ({ a: w.a, b: w.b, key: w.key }))).then(
-      (tables) => { answer.tables = tables; },
-      (error: unknown) => { console.warn('[traffic] the conflict workers failed; the pairs are measured on the page', error); answer.failed = true; },
-    );
-    while (!answer.tables && !answer.failed) yield WAITING;
+    const tables = yield* answered(measurer.measure(wanted.map((w) => ({ a: w.a, b: w.b, key: w.key }))), 'the pairs are measured');
     for (let k = 0; k < wanted.length; k++) {
       const w = wanted[k]!;
-      const table = answer.tables?.[k];
+      const table = tables?.[k];
       this.pairCache.set(w.key, table !== undefined
         ? keepPair(w.key, w.shapeA, w.shapeB, table, this.store, !measurer.keeps)
         : measurePair(w.key, w.a, w.shapeA, w.b, w.shapeB, this.store));
       this.measured.prepare++;
       if (table === undefined) yield;
+    }
+  }
+
+  /**
+   * Where the centrelines of the pairs `prepare` read first cross (`firstCrossing`), found by `measurer`'s
+   * workers for every pair with zones not knowing it yet (measured now or read back from an earlier
+   * session) and kept with the pair for `buildJunction`; when they fail, the build finds them as before.
+   * DO NOT find them on the page when there are workers: every segment of one centreline against every
+   * segment of the other, every pair of a generated city, held the frame of the swap onto the new graph
+   * over a second at 2.5 km (2026-10-15).
+   */
+  private *crossOffPage(read: ReadonlyMap<string, { readonly a: Float64Array; readonly b: Float64Array }>,
+    measurer: PairMeasurer): Generator<void | typeof WAITING, void> {
+    const pairs: CachedPair[] = [];
+    const asks: { readonly a: Float64Array; readonly b: Float64Array }[] = [];
+    for (const [key, centres] of read) {
+      const pair = this.pairCache.get(key);
+      if (!pair?.zones || pair.crossing !== undefined) continue;
+      pairs.push(pair);
+      asks.push(centres);
+    }
+    const crossings = asks.length ? yield* answered(measurer.crossings!(asks), 'the crossings are found') : null;
+    // One a build found meanwhile is the same answer, kept as it is.
+    if (crossings) pairs.forEach((pair, k) => { if (pair.crossing === undefined) pair.crossing = crossings[k]!; });
+  }
+
+  /**
+   * The sweeps of these junctions' movements that `sweepCache` does not hold, sampled OFF THE PAGE by
+   * `measurer`'s workers (`sampleSweep`) from the lanes' own point lists and left in the caches as
+   * `sweepOf` and `shapeOf` leave them: the same frames, keys and shapes. When they fail, `sweepOf`
+   * samples them as before. DO NOT sample them on the page when there are workers: three `sampleAt` a
+   * step, every movement of a generated city, held a frame 0.9 s at 2.5 km (2026-10-15).
+   */
+  private *sampleOffPage(graph: LaneletGraph, junctions: readonly JunctionTopology[], measurer: PairMeasurer): Generator<void | typeof WAITING, void> {
+    const asks: SweepAsk[] = [];
+    /** The movement lanelet each ask was made from. */
+    const crossings: Lanelet[] = [];
+    const asked = new Set<string>();
+    for (const junction of junctions) {
+      for (const id of junction.connectors) {
+        const c = graph.connectors.get(id);
+        if (!c) continue;
+        const inbound = graph.lanelet(c.fromLane), crossing = graph.lanelet(c.lanelet), outbound = graph.lanelet(c.toLane);
+        if (!inbound || !crossing || !outbound) continue;
+        const { c0, count } = sweepSpan(crossing.length);
+        // Looked up when its three lines are digested; asked otherwise, the worker digesting them.
+        const d0 = LINE_DIGESTS.get(inbound.centre.xy), d1 = LINE_DIGESTS.get(crossing.centre.xy), d2 = LINE_DIGESTS.get(outbound.centre.xy);
+        if (d0 !== undefined && d1 !== undefined && d2 !== undefined) {
+          const key = sweepKey(d0, d1, d2, count);
+          if (this.sweepCache.has(key) || asked.has(key)) continue;
+          asked.add(key);
+        }
+        asks.push({ inXY: inbound.centre.xy, crossXY: crossing.centre.xy, outXY: outbound.centre.xy, c0, count });
+        crossings.push(crossing);
+      }
+    }
+    const sweeps = asks.length ? yield* answered(measurer.sampleSweeps!(asks), 'the sweeps are sampled') : null;
+    for (let k = 0; k < (sweeps?.length ?? 0); k++) {
+      const ask = asks[k]!, sampled = sweeps![k]!;
+      const [d0, d1, d2] = sampled.lines;
+      if (!LINE_DIGESTS.has(ask.inXY)) LINE_DIGESTS.set(ask.inXY, d0);
+      if (!LINE_DIGESTS.has(ask.crossXY)) LINE_DIGESTS.set(ask.crossXY, d1);
+      if (!LINE_DIGESTS.has(ask.outXY)) LINE_DIGESTS.set(ask.outXY, d2);
+      const key = sweepKey(d0, d1, d2, ask.count);
+      // A frame the cache holds already is the one `sweepOf` reads back: kept, object and all.
+      if (this.sweepCache.has(key)) continue;
+      this.sweepCache.set(key, sampled.frame);
+      FRAME_LENGTHS.set(sampled.frame, sampled.frameLengthSq);
+      SHAPES.set(sampled.frame, shapeFrom(sampled.shape, ask.c0, ask.count, crossings[k]!, sampled.frame));
     }
   }
 
@@ -292,6 +358,8 @@ export class ConflictIndex {
    */
   update(graph: LaneletGraph, junctions: ReadonlySet<NodeId>): void {
     const measuredBefore = pairsMeasured;
+    /** What the junctions read before: let go once they are built again, so what they read again is kept. */
+    const released: { readonly pairs: string[]; readonly sweeps: string[] }[] = [];
     for (const node of junctions) {
       const made = this.ofJunction.get(node);
       if (!made) continue;
@@ -300,8 +368,7 @@ export class ConflictIndex {
       for (const id of made.connectors) { this.byConnector.delete(id); this.diverges.delete(id); }
       // A reference or a diverge of a connector of another junction never names these (a pair is one junction's).
       for (let i = this.queueIntrusions.length - 1; i >= 0; i--) if (gone.has(this.queueIntrusions[i]!.a)) this.queueIntrusions.splice(i, 1);
-      for (const key of made.pairs) unuse(this.pairUses, this.pairCache, key);
-      for (const key of made.sweeps) unuse(this.sweepUses, this.sweepCache, key);
+      released.push(made);
       this.ofJunction.delete(node);
     }
     for (const node of [...junctions].sort((x, y) => x - y)) {
@@ -309,6 +376,12 @@ export class ConflictIndex {
       if (!junction) continue;
       this.buildJunction(graph, junction, this.pairCache, this.pairCache, this.sweepCache, this.sweepCache);
       for (const id of this.ofJunction.get(node)?.connectors ?? []) this.byConnector.get(id)?.sort((p, q) => p.s - q.s);
+    }
+    // DO NOT let them go before the junctions are built again: a movement the edit did not move lost its
+    // sweep, prepared or not (`prepare`), and was sampled again on the page.
+    for (const made of released) {
+      for (const key of made.pairs) unuse(this.pairUses, this.pairCache, key);
+      for (const key of made.sweeps) unuse(this.sweepUses, this.sweepCache, key);
     }
     this.measured.build = pairsMeasured - measuredBefore;
   }
@@ -450,6 +523,20 @@ export class ConflictIndex {
   }
 }
 
+/**
+ * The workers' answer, `WAITING` yielded until it comes (the frame's work ends there); null when they
+ * failed, and the page then does `what` as before.
+ */
+function* answered<T>(asked: Promise<T>, what: string): Generator<typeof WAITING, T | null> {
+  const answer: { value?: T; failed?: boolean } = {};
+  asked.then((value) => { answer.value = value; }, (error: unknown) => {
+    console.warn(`[traffic] the conflict workers failed; ${what} on the page`, error);
+    answer.failed = true;
+  });
+  while (!('value' in answer) && !answer.failed) yield WAITING;
+  return answer.failed ? null : answer.value as T;
+}
+
 // ------------------------------------------------------------------ sweeps
 
 /** One use fewer of a cached key; the entry let go when no junction reads it. */
@@ -475,45 +562,29 @@ function sweepOf(graph: LaneletGraph, c: Connector,
   if (!inbound || !crossing || !outbound) return null;
 
   const path = joinedPath(inbound.centre, crossing.centre, outbound.centre);
-  const heavy = BODY_ENVELOPE[HEAVY] as { length: number; width: number };
-  // From a heavy body standing a little short of its stop line (`QUEUE_BACK`).
-  const c0 = -heavy.length / 2 - QUEUE_BACK;
-  const c1 = crossing.length + heavy.length / 2;
-  const count = Math.max(2, Math.ceil((c1 - c0) / SWEEP_STEP) + 1);
+  const { c0, count } = sweepSpan(crossing.length);
 
   // The frame is a function of the three centrelines alone, so a movement
   // whose road was not touched reads back the samples it already had.
   // Each centreline's digest is kept with it (a polyline never changes): the
   // approach lanes are long, and digesting them again for every movement of
   // every junction on every build was most of a build where nothing moved.
-  const key = `${new Digest().add(lineDigest(inbound.centre.xy)).add(lineDigest(crossing.centre.xy))
-    .add(lineDigest(outbound.centre.xy)).add(count).value()}`;
-  let frame = previous.get(key) ?? next.get(key);
-  if (!frame) {
-    frame = new Float64Array(count * 4);
-    for (let i = 0; i < count; i++) {
-      const at = c0 + i * SWEEP_STEP;
-      const f = path.sampleAt(at);
-      // Pointed along the same chord the drawn body is (`HEADING_CHORD`).
-      const t = chordHeading(path.sampleAt(at - HEADING_CHORD).p, path.sampleAt(at + HEADING_CHORD).p, f.t);
-      frame[i * 4] = f.p.x;
-      frame[i * 4 + 1] = f.p.y;
-      frame[i * 4 + 2] = t.x;
-      frame[i * 4 + 3] = t.y;
-    }
-  }
+  const key = sweepKey(lineDigest(inbound.centre.xy), lineDigest(crossing.centre.xy), lineDigest(outbound.centre.xy), count);
+  // Sampled off the page beforehand when there are workers (`ConflictIndex.sampleOffPage`): read back here.
+  const frame = previous.get(key) ?? next.get(key) ?? sweepFrame(path, c0, count);
   next.set(key, frame);
   used?.push(key);
   let frameLengthSq = FRAME_LENGTHS.get(frame);
   if (!frameLengthSq) {
-    frameLengthSq = new Float64Array(count);
-    for (let i = 0; i < count; i++) {
-      const x = frame[i * 4 + 2]!, y = frame[i * 4 + 3]!;
-      frameLengthSq[i] = x * x + y * y;
-    }
+    frameLengthSq = frameLengthsOf(frame);
     FRAME_LENGTHS.set(frame, frameLengthSq);
   }
   return { crossing, path, c0, count, length: crossing.length, frame, frameLengthSq, bounds: null, grid: null, range: null };
+}
+
+/** The key of a sweep's frame in `sweepCache`: its three centrelines' digests and its sample count. */
+function sweepKey(inbound: number, crossing: number, outbound: number, count: number): string {
+  return `${new Digest().add(inbound).add(crossing).add(outbound).add(count).value()}`;
 }
 
 const FRAME_LENGTHS = new WeakMap<Float64Array, Float64Array>();
@@ -534,17 +605,18 @@ interface CachedPair {
   readonly a: SweepShape;
   readonly b: SweepShape;
   readonly zones: PairZones | null;
-  /** Where the two centrelines first cross; undefined until asked. */
-  crossing?: { sA: number; sB: number; at: Vec2 } | null;
+  /** Where the two centrelines first cross; undefined until asked (`buildJunction`, `crossOffPage`). */
+  crossing?: Crossing | null;
   /** Middle of the heavy-body zone on `a`; undefined until asked. */
   centre?: Vec2;
 }
 
+/** Each centreline's digest, kept with its point list (`sweepOf`; made by a worker, `sampleOffPage`). */
 const LINE_DIGESTS = new WeakMap<Float64Array, number>();
 function lineDigest(xy: Float64Array): number {
   let value = LINE_DIGESTS.get(xy);
   if (value === undefined) {
-    value = new Digest().addAll(xy).value();
+    value = digestOfLine(xy);
     LINE_DIGESTS.set(xy, value);
   }
   return value;
@@ -567,22 +639,19 @@ function shapeOf(s: Sweep): SweepShape {
 }
 
 function measureShape(s: Sweep): SweepShape {
-  // Only a key: a collision costs a recompute, never a wrong answer, because a
-  // hit is confirmed by `sameShape`. It was a plain FNV-1a over the bytes,
-  // which mirrored movements beat: negating a double flips only its top bit,
-  // a multiply never carries a top bit down, and the flips cancelled in
-  // pairs - so in a town laid out symmetrically about the origin every
-  // movement shared its key with its mirror image, the two threw each other
-  // out of the cache, and every rebuild measured some six hundred pairs
-  // again (a third of a second). `Digest` mixes its words.
-  const h = new Digest().addAll(s.frame).addAll(s.crossing.centre.xy).value();
+  // Only a key: a hit is confirmed by `sameShape` (`shapeDigest`).
+  return shapeFrom(shapeDigest(s.frame, s.crossing.centre.xy), s.c0, s.count, s.crossing, s.frame);
+}
+
+/** A sweep's shape from its digest (`shapeDigest`, taken here or by a worker). */
+function shapeFrom(digest: number, c0: number, count: number, crossing: Lanelet, frame: Float64Array): SweepShape {
   return {
-    hash: `${h.toString(36)}:${s.count}:${s.c0}:${s.crossing.length}`,
-    c0: s.c0,
-    count: s.count,
-    length: s.crossing.length,
-    frame: s.frame,
-    centre: s.crossing.centre.xy,
+    hash: `${digest.toString(36)}:${count}:${c0}:${crossing.length}`,
+    c0,
+    count,
+    length: crossing.length,
+    frame,
+    centre: crossing.centre.xy,
   };
 }
 
@@ -652,30 +721,6 @@ function cachedPair(
   return pair;
 }
 
-/**
- * The approach, the movement and the exit as one arc-length parameter.
- * Beyond either end the path continues straight along its end tangent, so a
- * very short approach still places the tail of a long body somewhere sensible.
- */
-function joinedPath(inbound: Polyline, crossing: Polyline, outbound: Polyline) {
-  return {
-    sampleAt(c: number): { p: Vec2; t: Vec2 } {
-      if (c < 0) {
-        const s = inbound.length + c;
-        if (s >= 0) return inbound.sampleAt(s);
-        const f = inbound.sampleAt(0);
-        return { p: { x: f.p.x + f.t.x * s, y: f.p.y + f.t.y * s }, t: f.t };
-      }
-      if (c <= crossing.length) return crossing.sampleAt(c);
-      const s = c - crossing.length;
-      if (s <= outbound.length) return outbound.sampleAt(s);
-      const f = outbound.sampleAt(outbound.length);
-      const over = s - outbound.length;
-      return { p: { x: f.p.x + f.t.x * over, y: f.p.y + f.t.y * over }, t: f.t };
-    },
-  };
-}
-
 // ------------------------------------------------------------------- zones
 
 interface PairZones {
@@ -683,10 +728,6 @@ interface PairZones {
   get(mine: BodyClass, theirs: BodyClass, onB: boolean): Zone | null;
 }
 
-/**
- * All nine class-pair zones of two movements, or null when even two heavy
- * bodies never touch.
- */
 /** A pair's zones over its table (`pairTable`): what is kept between sessions. */
 function zonesOf(table: Float64Array): PairZones {
   return {
@@ -752,31 +793,4 @@ function pushRef(
   const list = map.get(key);
   if (list) list.push(ref);
   else map.set(key, [ref]);
-}
-
-/** First intersection between two polylines, with arc positions on each. */
-function firstCrossing(
-  a: readonly Vec2[],
-  b: readonly Vec2[],
-): { sA: number; sB: number; at: Vec2 } | null {
-  let sA = 0;
-  for (let i = 0; i + 1 < a.length; i++) {
-    const a0 = a[i] as Vec2;
-    const a1 = a[i + 1] as Vec2;
-    const segA = Math.hypot(a1.x - a0.x, a1.y - a0.y);
-
-    let sB = 0;
-    for (let j = 0; j + 1 < b.length; j++) {
-      const b0 = b[j] as Vec2;
-      const b1 = b[j + 1] as Vec2;
-      const segB = Math.hypot(b1.x - b0.x, b1.y - b0.y);
-      const hit = segSeg(a0, a1, b0, b1);
-      if (hit) {
-        return { sA: sA + hit.t * segA, sB: sB + hit.u * segB, at: hit.point };
-      }
-      sB += segB;
-    }
-    sA += segA;
-  }
-  return null;
 }
