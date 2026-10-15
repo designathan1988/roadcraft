@@ -25,10 +25,13 @@ describe('the matrix of a plant turned about the up axis', () => {
     }
   });
 
-  it('is what the garden packs use, with no object made for each plant', () => {
+  it('is what the gardens draw with, from poses, with no object made for each plant', () => {
     const source = readFileSync('src/render/gardens.ts', 'utf8');
     const pack = source.slice(source.indexOf('const pack = (key'), source.indexOf('const pack = (key') + 900);
-    expect(pack).toMatch(/yawMatrixInto\(/);
-    expect(pack).not.toMatch(/updateMatrix|new Object3D/);
+    expect(pack).toMatch(/poses\[at\] = placement\.x/);
+    expect(pack).not.toMatch(/updateMatrix|new Object3D|\.set\(\[/);
+    // The matrix made only for a plant drawn at a new position (`visit`).
+    const visit = source.slice(source.indexOf('const visit = '), source.indexOf('const live = '));
+    expect(visit).toMatch(/yawMatrixInto\(target, n \* 16/);
   });
 });

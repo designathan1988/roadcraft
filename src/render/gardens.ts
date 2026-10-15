@@ -50,8 +50,12 @@ function gardenSpecies(roll: number): TreeSpecies {
 }
 
 /** One building's garden placed, per plant kind: its instances' matrices, tints and largest scale. */
+/** Floats a plant's pose takes (`POSE`): its place in the scene's frame (x, y, z), its yaw and its scale on three axes. */
+const POSE = 7;
+
 interface GardenPack {
-  readonly matrices: Float32Array;
+  /** Each plant's pose, `POSE` floats (DO NOT keep 16-float matrices of every plant of the town: built only for the ones drawn, `visit`). */
+  readonly poses: Float32Array;
   /** Tints, white where a plant has none; null when none has one. */
   readonly colours: Float32Array | null;
   readonly scales: Float32Array;
@@ -130,18 +134,20 @@ function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<string, GardenPac
   const out = new Map<string, GardenPack>();
   const pack = (key: string, placed: readonly Placement[]): void => {
     if (!placed.length) return;
-    const matrices = new Float32Array(placed.length * 16);
+    const poses = new Float32Array(placed.length * POSE);
     const scales = new Float32Array(placed.length);
     let colours: Float32Array | null = null;
     placed.forEach((placement, index) => {
-      yawMatrixInto(matrices, index * 16, placement.x, placement.z, -placement.y, placement.yaw, placement.sx, placement.sy, placement.sz);
+      const at = index * POSE;
+      poses[at] = placement.x; poses[at + 1] = placement.z; poses[at + 2] = -placement.y; poses[at + 3] = placement.yaw;
+      poses[at + 4] = placement.sx; poses[at + 5] = placement.sy; poses[at + 6] = placement.sz;
       scales[index] = Math.max(placement.sx, placement.sy, placement.sz);
       if (placement.tint) {
         colours ??= new Float32Array(placed.length * 3).fill(1);
         placement.tint.toArray(colours, index * 3);
       }
     });
-    out.set(key, { matrices, colours, scales, count: placed.length });
+    out.set(key, { poses, colours, scales, count: placed.length });
   };
   for (const [species, placed] of trees) pack(`tree:${species}`, placed);
   for (const [kind, placed] of bushes) pack(`bush:${kind}`, placed);
@@ -167,7 +173,8 @@ interface Store {
   capacity: number;
   used: number;
   dead: number;
-  matrices: Float32Array;
+  /** Per slot: its plant's pose (`POSE` floats). */
+  poses: Float32Array;
   colours: Float32Array;
   /** Per slot: centre x, y, z and radius, in the scene's frame. */
   spheres: Float32Array;
@@ -217,12 +224,6 @@ export interface Gardens extends Scenery {
 }
 
 export function createGardens(kit: SceneryKit): Gardens {
-  const packs = new WeakMap<readonly GardenPlant[], ReadonlyMap<string, GardenPack>>();
-  const packOf = (list: readonly GardenPlant[]): ReadonlyMap<string, GardenPack> => {
-    let known = packs.get(list);
-    if (!known) packs.set(list, known = gardenPack(list));
-    return known;
-  };
   const stores: Store[] = [];
   const store = (key: string, name: string, geometry: BufferGeometry, material: Material, depth: MeshDepthMaterial | undefined, cards: boolean): void => {
     // The kit's models have their spheres (`createSceneryKit`).
@@ -231,7 +232,7 @@ export function createGardens(kit: SceneryKit): Gardens {
       index: stores.length, key, name, geometry, material, depth, cards,
       centre: sphere?.center.clone() ?? new Vector3(), reach: sphere?.radius ?? 1,
       mesh: null, capacity: 0, used: 0, dead: 0,
-      matrices: new Float32Array(0), colours: new Float32Array(0), spheres: new Float32Array(0), bounds: null, runs: new Map(),
+      poses: new Float32Array(0), colours: new Float32Array(0), spheres: new Float32Array(0), bounds: null, runs: new Map(),
       shown: new Int32Array(0), drawn: 0, firstChanged: 0,
     });
   };
@@ -328,12 +329,12 @@ export function createGardens(kit: SceneryKit): Gardens {
   };
   /** The store's arrays sized for `capacity`; packed (`pack`), its live runs from slot 0 in the order they stood. */
   const repack = (s: Store, capacity: number, pack: boolean): void => {
-    const matrices = new Float32Array(capacity * 16), colours = new Float32Array(capacity * 3).fill(1), spheres = new Float32Array(capacity * 4);
+    const poses = new Float32Array(capacity * POSE), colours = new Float32Array(capacity * 3).fill(1), spheres = new Float32Array(capacity * 4);
     if (pack) {
       const runs = new Map<readonly GardenPlant[], { start: number; count: number }>();
       let at = 0;
       for (const [list, run] of [...s.runs].sort((a, b) => a[1].start - b[1].start)) {
-        matrices.set(s.matrices.subarray(run.start * 16, (run.start + run.count) * 16), at * 16);
+        poses.set(s.poses.subarray(run.start * POSE, (run.start + run.count) * POSE), at * POSE);
         colours.set(s.colours.subarray(run.start * 3, (run.start + run.count) * 3), at * 3);
         spheres.set(s.spheres.subarray(run.start * 4, (run.start + run.count) * 4), at * 4);
         runs.set(list, { start: at, count: run.count });
@@ -344,26 +345,28 @@ export function createGardens(kit: SceneryKit): Gardens {
       s.dead = 0;
       s.bounds = null;
       for (let i = 0; i < at; i++) s.bounds = enclose(s.bounds, { x: spheres[i * 4]!, y: spheres[i * 4 + 1]!, z: spheres[i * 4 + 2]!, r: spheres[i * 4 + 3]! });
-      s.matrices = matrices; s.colours = colours; s.spheres = spheres; s.capacity = capacity;
+      s.poses = poses; s.colours = colours; s.spheres = spheres; s.capacity = capacity;
       // The slots moved: the cells hold them anew.
       refile(s);
       return;
     }
     // Only grown: every slot where it was, and in its cell still.
-    matrices.set(s.matrices.subarray(0, s.used * 16));
+    poses.set(s.poses.subarray(0, s.used * POSE));
     colours.set(s.colours.subarray(0, s.used * 3));
     spheres.set(s.spheres.subarray(0, s.used * 4));
-    s.matrices = matrices; s.colours = colours; s.spheres = spheres; s.capacity = capacity;
+    s.poses = poses; s.colours = colours; s.spheres = spheres; s.capacity = capacity;
   };
-  const point = new Vector3(), matrix = new Matrix4();
+  const point = new Vector3(), matrix = new Matrix4(), elements = new Float32Array(16);
   const append = (s: Store, list: readonly GardenPlant[], one: GardenPack): void => {
     const start = s.used;
-    s.matrices.set(one.matrices, start * 16);
+    s.poses.set(one.poses, start * POSE);
     if (one.colours) s.colours.set(one.colours, start * 3);
     else s.colours.fill(1, start * 3, (start + one.count) * 3);
     let bounds: Bounds | null = null;
     for (let i = 0; i < one.count; i++) {
-      matrix.fromArray(one.matrices, i * 16);
+      const p = one.poses, at7 = i * POSE;
+      yawMatrixInto(elements, 0, p[at7]!, p[at7 + 1]!, p[at7 + 2]!, p[at7 + 3]!, p[at7 + 4]!, p[at7 + 5]!, p[at7 + 6]!);
+      matrix.fromArray(elements);
       point.copy(s.centre).applyMatrix4(matrix);
       const at = (start + i) * 4, r = s.reach * one.scales[i]!;
       s.spheres[at] = point.x; s.spheres[at + 1] = point.y; s.spheres[at + 2] = point.z; s.spheres[at + 3] = r;
@@ -399,7 +402,7 @@ export function createGardens(kit: SceneryKit): Gardens {
       const slots = node.slots![s.index]!;
       const mesh = s.mesh;
       if (!mesh || slots.length === 0 || !drawnNow(s)) continue;
-      const sp = s.spheres, shown = s.shown, matrices = s.matrices, colours = s.colours;
+      const sp = s.spheres, shown = s.shown, poses = s.poses, colours = s.colours;
       const target = mesh.instanceMatrix.array as Float32Array, tints = mesh.instanceColor!.array as Float32Array;
       let n = s.drawn;
       for (const i of slots) {
@@ -415,7 +418,8 @@ export function createGardens(kit: SceneryKit): Gardens {
         if (shown[n] !== i) {
           shown[n] = i;
           if (n < s.firstChanged) s.firstChanged = n;
-          for (let j = 0; j < 16; j++) target[n * 16 + j] = matrices[i * 16 + j]!;
+          const at = i * POSE;
+          yawMatrixInto(target, n * 16, poses[at]!, poses[at + 1]!, poses[at + 2]!, poses[at + 3]!, poses[at + 4]!, poses[at + 5]!, poses[at + 6]!);
           tints[n * 3] = colours[i * 3]!; tints[n * 3 + 1] = colours[i * 3 + 1]!; tints[n * 3 + 2] = colours[i * 3 + 2]!;
         }
         n++;
@@ -436,6 +440,8 @@ export function createGardens(kit: SceneryKit): Gardens {
       const removed: InstancedMesh[] = [], added: InstancedMesh[] = [];
       // Only the gardens that came and went are read.
       const gone = change.removed, fresh = change.added;
+      // Each new garden placed once for this update and let go after (DO NOT keep a copy of every garden's plants: the stores hold them).
+      const packs = new Map(fresh.map((list) => [list, gardenPack(list)] as const));
       let touched = false;
       for (const s of stores) {
         let left = 0;
@@ -449,7 +455,7 @@ export function createGardens(kit: SceneryKit): Gardens {
           s.runs.delete(list);
         }
         let coming = 0;
-        for (const list of fresh) coming += packOf(list).get(s.key)?.count ?? 0;
+        for (const list of fresh) coming += packs.get(list)!.get(s.key)?.count ?? 0;
         // A store none of whose gardens came or went: nothing of it is touched.
         if (left === 0 && coming === 0) continue;
         touched = true;
@@ -465,7 +471,7 @@ export function createGardens(kit: SceneryKit): Gardens {
           s.mesh = null;
         }
         for (const list of fresh) {
-          const one = packOf(list).get(s.key);
+          const one = packs.get(list)!.get(s.key);
           if (one) append(s, list, one);
         }
         if (!s.mesh && s.capacity > 0) s.mesh = newMesh(s);
