@@ -11,8 +11,19 @@ import type { PartKind } from './kit';
 /** A building of a cell as the cell workers are sent it (`cellWork.ts`): its chunk's key (an id, or a building cut open), its record as text and the ground under it. */
 export interface CellEntry {
   readonly key: string;
+  /** The record's digest (`Digest.addPlain`): two entries alike are the same record. */
+  readonly sig: number;
+  /** The ground under it, digested (`groundDigest`). */
+  readonly digest: number;
+}
+
+/**
+ * An entry as a job carries it to a worker: with its record's text, written
+ * for the message alone (`CellPool.run`). DO NOT keep the text with the
+ * entries the page keeps: a string the size of the record, for every building.
+ */
+export interface CellJobEntry extends CellEntry {
   readonly record: string;
-  readonly digest: string;
 }
 
 /** One part batch of one building: its instance matrices (and colours). */

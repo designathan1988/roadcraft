@@ -66,7 +66,9 @@ function grownTown(): RoadDoc {
 }
 
 const cellOf = (b: Building): string => `${Math.floor(b.x / BATCH_CELL)},${Math.floor(b.y / BATCH_CELL)}`;
-const entryOf = (b: Building): CellEntry => ({ key: String(b.id), record: JSON.stringify(b), digest: 'g' });
+/** The test's records by key: what the pool writes into each job (`CellPool` `text`). */
+const texts = new Map<string, string>();
+const entryOf = (b: Building): CellEntry => { texts.set(String(b.id), JSON.stringify(b)); return { key: String(b.id), sig: b.id, digest: 0 }; };
 
 describe('a cell put together off the page', () => {
   const kit = createBuildingKit();
@@ -77,7 +79,7 @@ describe('a cell put together off the page', () => {
       const doc = grownTown();
       const town = [...doc.buildings.all()];
       expect(town.length).toBeGreaterThan(20);
-      const pool = new CellPool(() => boxes, 64 * 1024 * 1024, false);
+      const pool = new CellPool(() => boxes, (e) => texts.get(e.key)!, false);
       const env = { groundAt, naturalAt, ...(paved ? { pavedAt: paved } : {}) };
       /** The cells of `list` both ways: emitted and joined here, and by the pool. */
       const compare = (list: readonly Building[]): void => {

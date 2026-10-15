@@ -1,4 +1,5 @@
 import { Group, type InstancedMesh, type Object3D } from 'three';
+import { Digest } from '@core/digest';
 
 import type { RoadDoc } from '@world/doc';
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
@@ -8,7 +9,7 @@ import { cutOpen } from '@world/buildings/interior';
 import { CellFiling } from '@world/cells';
 import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
 import {
-  BATCH_CELL, CHUNK_CACHE_BYTES, type CellCache, type DetailState, cullDetailCells, watchedCells,
+  BATCH_CELL, type CellCache, type DetailState, cullDetailCells, watchedCells,
   STREAM_AHEAD, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest, groupByCell,
 } from './layerCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
@@ -23,24 +24,8 @@ export type { BuildingLayer, BuildingPreviewInput, CutawaySpec } from './layerAp
 import type { CellEntry, ChunkSummary } from './cellWork';
 
 
-/**
- * Each record's text, written once per record object (MDN, WeakMap: a result
- * kept per object while the object lives). The store never changes a record in
- * place - `put` stores a copy (`BuildingStore.toText` keeps its text the same
- * way) - so the text of a record seen before is the text it has now.
- */
-const RECORD_TEXT = new WeakMap<Building, string>();
-const recordText = (b: Building): string => {
-  let text = RECORD_TEXT.get(b);
-  if (text === undefined) {
-    text = JSON.stringify(b);
-    RECORD_TEXT.set(b, text);
-  }
-  return text;
-};
-
-/** What the page keeps of a building emitted in a worker: by the record and ground it was made for. */
-interface Kept { readonly record: string; readonly digest: string; readonly b: Building; readonly summary: ChunkSummary; readonly pavedAt?: PavedAt; lot?: LotGround | null }
+/** What the page keeps of a building emitted in a worker: by the record and ground it was made for (their digests). */
+interface Kept { readonly sig: number; readonly digest: number; readonly b: Building; readonly summary: ChunkSummary; readonly pavedAt?: PavedAt; lot?: LotGround | null }
 
 export function createBuildingLayer(): BuildingLayer {
   const kit: BuildingKit = createBuildingKit();
@@ -56,7 +41,19 @@ export function createBuildingLayer(): BuildingLayer {
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
   group.add(signatureRoot);
-  const signatures = signatureBodies(signatureRoot, recordText);
+  /**
+   * Each record's digest (`Digest.addPlain`), once per record object (MDN, WeakMap: kept while the
+   * object lives). The store never changes a record in place, so a record seen before has the digest
+   * it had. DO NOT keep each record's JSON text instead: a string the size of the record, for every
+   * building of the town; the text is written only for the message to a worker (`textOf`).
+   */
+  const sigs = new WeakMap<Building, number>();
+  const sigOf = (b: Building): number => {
+    let sig = sigs.get(b);
+    if (sig === undefined) sigs.set(b, sig = new Digest().addPlain(b).value());
+    return sig;
+  };
+  const signatures = signatureBodies(signatureRoot, sigOf);
   group.matrixAutoUpdate = false;
   group.updateMatrix();
   let stored: BuildingMeshes | null = null;
@@ -109,8 +106,13 @@ export function createBuildingLayer(): BuildingLayer {
   let othersByCell = new Map<string, Building[]>();
   /** The cells whose batches must be made for the town as it is now, shown as they land (`landCells`). */
   const pendingCells = new Set<string>();
-  /** The cells with their detail made that are drawn far now (`levelOfDetail`): let go by `landCells`. */
-  const goneFar = new Set<string>();
+  /**
+   * The cells shown in detail as `levelOfDetail` last set them: a cell gone far is hidden, its buffers
+   * kept on the GPU, and shown again as it nears - only the cells whose nearness changed are touched.
+   * DO NOT let a far cell's detail go: coming back to it emitted the cell again and held it on its masses
+   * for the seconds that took. NOR walk every detailed cell each frame for its visibility.
+   */
+  let shownNear = new Set<string>();
   /**
    * Each detail cell's centre (map x/y) and whether it is drawn by the far
    * versions of its parts (`cullDetails`): kept per batch, so the key is read
@@ -139,19 +141,19 @@ export function createBuildingLayer(): BuildingLayer {
     }
   };
   /** An edit to one building must not resample the ground under every other building. */
-  const groundDigests = new Map<BuildingId, { record: string; groundKey: string; digest: string }>();
+  const groundDigests = new Map<BuildingId, { sig: number; groundKey: string; digest: number }>();
   /** Whether a ground change since a key reached a building; without one, any new key did. */
   let touched: ((b: Building, sinceKey: string) => boolean) | undefined;
-  const digestFor = (b: Building, record: string, groundKey: string, groundAt: GroundAt, pavedAt?: PavedAt): string => {
+  const digestFor = (b: Building, sig: number, groundKey: string, groundAt: GroundAt, pavedAt?: PavedAt): number => {
     const known = groundDigests.get(b.id);
-    if (known && known.record === record && known.groundKey === groundKey) return known.digest;
+    if (known && known.sig === sig && known.groundKey === groundKey) return known.digest;
     // The ground changed somewhere, not under this building: what it sampled stands.
-    if (known && known.record === record && touched && !touched(b, known.groundKey)) {
+    if (known && known.sig === sig && touched && !touched(b, known.groundKey)) {
       groundDigests.set(b.id, { ...known, groundKey });
       return known.digest;
     }
     const digest = groundDigest(b, groundAt, pavedAt);
-    groundDigests.set(b.id, { record, groundKey, digest });
+    groundDigests.set(b.id, { sig, groundKey, digest });
     return digest;
   };
   const near = (b: Building): boolean => {
@@ -162,9 +164,7 @@ export function createBuildingLayer(): BuildingLayer {
     const dy = Math.max(box.minY - cutaway.y, 0, cutaway.y - box.maxY);
     return Math.hypot(dx, dy) <= cutaway.radius;
   };
-  /** The buildings drawn cut open, by id, floor and side: the record cut open as text, kept while the record is. */
-  const cutTexts = new Map<string, { record: string; text: string }>();
-  /** Each building as last sent to the workers, by its entry's key: what a summary that comes back is of. */
+  /** Each building as last sent to the workers, by its entry's key: what a summary that comes back is of, and what `textOf` writes. */
   const sent = new Map<string, Building>();
   /**
    * A building as the workers are sent it: its key, its record as text and the
@@ -173,23 +173,27 @@ export function createBuildingLayer(): BuildingLayer {
    * turn: the walls that come down change only when the camera has really turned).
    */
   const entryFor = (b: Building, groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt): CellEntry => {
-    const record = recordText(b);
-    const digest = digestFor(b, record, groundKey, groundAt, pavedAt);
-    if (!(cutaway && near(b))) { sent.set(String(b.id), b); return { key: String(b.id), record, digest }; }
+    const sig = sigOf(b);
+    const digest = digestFor(b, sig, groundKey, groundAt, pavedAt);
+    if (!(cutaway && near(b))) { sent.set(String(b.id), b); return { key: String(b.id), sig, digest }; }
     const dir = Math.round(Math.atan2(cutaway.view.y, cutaway.view.x) / (Math.PI / 4));
     const key = `${b.id}|${cutaway.level}|${dir}`;
-    return { key, record: cutTextOf(b, record, key, cutaway.level, dir), digest };
+    sent.set(key, b);
+    return { key, sig: new Digest().add(sig).add(cutaway.level).add(dir).value(), digest };
   };
-  /** @rebuild A building's record cut open, as text: worked out once per record, floor and side. */
-  const cutTextOf = (b: Building, record: string, key: string, level: number, dir: number): string => {
-    const cut = cutTexts.get(key);
-    if (cut && cut.record === record) return cut.text;
-    const a = dir * (Math.PI / 4);
+  /**
+   * An entry's record as text, for a job's message (`CellPool`): the building as sent, or, under a
+   * key cut open (`id|floor|side`), cut open at that floor from that side. Written for the message
+   * and not kept. DO NOT keep the texts cut open in a map with a cap: a cache that drops and remakes.
+   */
+  const textOf = (entry: CellEntry): string => {
+    const b = sent.get(entry.key)!;
+    if (!entry.key.includes('|')) return JSON.stringify(b);
+    const [, level, dir] = entry.key.split('|').map(Number) as [number, number, number];
+    const turn = dir * (Math.PI / 4);
     // Opened, a signature building is drawn by the shared kit with its rooms and furniture.
-    const { blueprint: _sig, ...plain } = cutOpen(b, level, { x: Math.cos(a), y: Math.sin(a) });
-    const text = JSON.stringify(plain);
-    cutTexts.set(key, { record, text });
-    return text;
+    const { blueprint: _sig, ...plain } = cutOpen(b, level, { x: Math.cos(turn), y: Math.sin(turn) });
+    return JSON.stringify(plain);
   };
   const entriesOf = (list: readonly Building[], groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt): CellEntry[] =>
     list.map((b) => entryFor(b, groundAt, groundKey, pavedAt));
@@ -238,15 +242,15 @@ export function createBuildingLayer(): BuildingLayer {
       const entry = byKey.get(s.key);
       // A building cut open: its flags and lots are those of the whole one.
       if (!b || !entry || s.key.includes('|')) continue;
-      putKept(b.id, { record: entry.record, digest: entry.digest, b, summary: s, ...(env.pavedAt ? { pavedAt: env.pavedAt } : {}) });
+      putKept(b.id, { sig: entry.sig, digest: entry.digest, b, summary: s, ...(env.pavedAt ? { pavedAt: env.pavedAt } : {}) });
     }
   };
   /** What is kept of a building, if made for its record and the ground under it now (the digest its mass was last made on). */
   const keptFor = (b: Building): Kept | undefined => {
     const k = kept.get(b.id);
-    return k && k.record === recordText(b) && k.digest === groundDigests.get(b.id)?.digest ? k : undefined;
+    return k && k.sig === sigOf(b) && k.digest === groundDigests.get(b.id)?.digest ? k : undefined;
   };
-  const pool = new CellPool(() => kitBoxes(kit), CHUNK_CACHE_BYTES, true, kit.finishTone);
+  const pool = new CellPool(() => kitBoxes(kit), (entry) => textOf(entry), true, kit.finishTone);
   pool.warm();
   const requests = new CellRequests(pool, kit, keep);
   /**
@@ -275,8 +279,9 @@ export function createBuildingLayer(): BuildingLayer {
     if (!list?.length) { requests.dropMass(cell); massCells.remove(cell); return; }
     massCells.plan(cell);
     const entries = list.map((b): CellEntry => {
-      const record = recordText(b);
-      return { key: String(b.id), record, digest: digestFor(b, record, groundKey, groundAt, pavedAt) };
+      const sig = sigOf(b);
+      sent.set(String(b.id), b);
+      return { key: String(b.id), sig, digest: digestFor(b, sig, groundKey, groundAt, pavedAt) };
     });
     requests.mass(cell, entries, env, (mass) => {
       massCells.land(cell, mass);
@@ -311,13 +316,6 @@ export function createBuildingLayer(): BuildingLayer {
   /** The cut-open view the cells were last asked for (`cutKey` in `update`), and the cells it reaches. */
   let storedCut = 'whole';
   let cutCells = new Set<string>();
-  /** A cell's detail let go: its batches and its detail cells', its buildings' chunks left to the workers' cache. */
-  const releaseCell = (key: string): void => {
-    dropCell(cells, key, stored);
-    for (const sub of detailKeysOf(key)) dropCell(detailCells, sub, details);
-    goneFar.delete(key);
-    requests.release(key);
-  };
   /** Where the batches are shown, for `patchCell`. */
   const shownAt = () => ({ cells, details: detailCells, stored: stored!, detailed: details! });
   /** A cell landed shown: its coarse batch at the detail the eye has, its detail cells under theirs. */
@@ -330,7 +328,7 @@ export function createBuildingLayer(): BuildingLayer {
     part.setVisible(cellNear(key));
   };
   /**
-   * One frame's share of the cells: those drawn far let their detail go; those drawn near with no detail become pending (HLOD
+   * One frame's share of the cells: those drawn near with no detail become pending (HLOD
    * streaming); the pending ones are asked of the workers nearest first, a few
    * at once (a far one asked first would keep a near one waiting behind it in
    * its worker), and each is shown whole, once on the GPU, as it lands - its old
@@ -340,10 +338,6 @@ export function createBuildingLayer(): BuildingLayer {
   const landCells = (env: CellEnv, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): boolean => {
     let changed = false;
     if (eye) {
-      for (const key of goneFar) {
-        releaseCell(key);
-        changed = true;
-      }
       // The cells drawn near (`massCells`, a cell with buildings but no mass always near): NOT every cell
       // of the town each frame.
       for (const key of massCells.nearKeys()) if (!cells.has(key) && townCells.has(key)) pendingCells.add(key);
@@ -510,11 +504,10 @@ export function createBuildingLayer(): BuildingLayer {
           }
           const shown = [...doc.buildings.all()].filter((b) => b.id !== hides && !ruined.has(b.id));
           for (const id of [...kept.keys()]) if (!doc.buildings.has(id)) dropKept(id);
-          for (const [k, b] of sent) if (!doc.buildings.has(b.id)) sent.delete(k);
+          for (const [k, b] of sent) if (!doc.buildings.has(b.id) || (k.includes('|') && !cutaway)) sent.delete(k);
           for (const id of groundDigests.keys()) if (!doc.buildings.has(id)) groundDigests.delete(id);
           const solid = dimmed === undefined ? shown : shown.filter((b) => b.id === dimmed);
           const others = dimmed === undefined ? [] : shown.filter((b) => b.id !== dimmed);
-          if (cutTexts.size > 64) cutTexts.clear();
           town.reset(solid);
           townCells = town.byCell;
           othersByCell = groupByCell(others, cellOf, (b) => b);
@@ -527,7 +520,6 @@ export function createBuildingLayer(): BuildingLayer {
           cutCells = cutCellsOf(doc, cutaway);
           forcedNear = forcedCells(doc);
           chooseNow();
-          goneFar.clear();
           // Only the cells drawn near have their detail; the rest stand as their masses (`massCells`) and come in
           // by `landCells` when the eye nears.
           for (const cell of [...cells.keys()]) {
@@ -628,13 +620,11 @@ export function createBuildingLayer(): BuildingLayer {
       // A cell near with no detail yet (coming by `landCells`) keeps its mass until the detail lands
       // (`massCells.setDetailed`, told as the cells come and go).
       massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach);
-      for (const [key, cell] of cells) {
-        const isNear = cellNear(key);
-        cell.part.setVisible(isNear);
-        // A cell drawn far lets its detail go (`landCells`).
-        if (isNear) goneFar.delete(key);
-        else goneFar.add(key);
-      }
+      const now = new Set<string>(massCells.nearKeys());
+      for (const key of forcedNear) now.add(key);
+      for (const key of shownNear) if (!now.has(key)) cells.get(key)?.part.setVisible(false);
+      for (const key of now) if (!shownNear.has(key)) cells.get(key)?.part.setVisible(true);
+      shownNear = now;
     },
     cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx) {
       cullDetailCells(detailCells, detailState, (key) => massCells.near(key), eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, (part, cellFar) => {

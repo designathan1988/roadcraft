@@ -5,8 +5,8 @@ import { type CellEntry, type CellJob, type CellResult, CellWork, GROUND, type J
 
 /**
  * THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`,
- * `cell.worker.ts`): a cell always goes to the same worker, which keeps its
- * buildings' chunks; the page answers the readings of the ground a job asks
+ * `cell.worker.ts`): a cell always goes to the same worker, which emits its
+ * buildings and keeps nothing of them; the page answers the readings of the ground a job asks
  * for, and is handed the cell's batches as arrays. Cesium's
  * `TaskProcessor`: a worker made on the first task, the result handed back
  * with its buffers transferred. The workers are as many as the cores the
@@ -51,7 +51,8 @@ export class CellPool {
   private readonly abandoned = new Set<number>();
 
   /** `workers`: false does every job on the page (tests). `tone`: each finish's colour from afar, for the masses (`kit.ts`). */
-  constructor(private readonly boxes: () => KitBoxes, private readonly budget: number, private readonly workers = true,
+  /** `text`: an entry's record as text, for the job's message (the page keeps none). */
+  constructor(private readonly boxes: () => KitBoxes, private readonly text: (entry: CellEntry) => string, private readonly workers = true,
     private readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>) {}
 
   /** Jobs handed out or waiting their turn, not done yet. */
@@ -67,7 +68,8 @@ export class CellPool {
    * The id it returns cancels it.
    */
   run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void): number {
-    const job: CellJob = { id: this.nextId++, kind, cell, entries, paved: env.pavedAt !== undefined };
+    // Each record's text written for this job's message alone (`CellJobEntry`).
+    const job: CellJob = { id: this.nextId++, kind, cell, entries: entries.map((e) => ({ ...e, record: this.text(e) })), paved: env.pavedAt !== undefined };
     const lanes = this.start();
     const lane = lanes ? lanes[laneOf(cell, lanes.length)]! : null;
     // A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
@@ -121,30 +123,16 @@ export class CellPool {
   }
 
   /**
-   * A job a newer one for its cell replaces: out of its lane's queue if it has not begun; begun, left
-   * to finish into its worker's cache (the newer one then finds every building of it made) and its
-   * result not handed on. DO NOT cancel a begun job for a newer one of its cell: the worker threw away
-   * the rounds it had done and began the whole cell again (a building cut open, "ver por dentro",
-   * waited for its cell twice over, 2026-10-14).
+   * A job a newer one for its cell replaces: dropped, waiting or begun (`cancel`). The worker keeps
+   * nothing of a job (`cellWork.ts`), so one finished for nobody would only keep the newer one waiting.
    */
   supersede(id: number): void {
-    for (const lane of this.lanes ?? []) {
-      const waiting = lane.queue.findIndex((r) => r.job.id === id);
-      if (waiting >= 0) { lane.queue.splice(waiting, 1); return; }
-      if (lane.jobs.has(id)) { this.abandoned.add(id); return; }
-    }
+    this.cancel(id);
   }
 
   /** Whether a job is still waiting or being worked on (one done on the page never is). */
   isRunning(id: number): boolean {
     return (this.lanes ?? []).some((lane) => lane.jobs.has(id) || lane.queue.some((r) => r.job.id === id));
-  }
-
-  /** A cell drawn far: its worker may give its chunks up first. */
-  release(cell: string): void {
-    const lanes = this.start();
-    if (lanes) lanes[laneOf(cell, lanes.length)]!.worker.postMessage({ type: 'release', cell });
-    else this.local?.release(cell);
   }
 
   dispose(): void {
@@ -155,7 +143,7 @@ export class CellPool {
 
   /** The job done here, every round answered at once. */
   private onPage(running: Running): void {
-    this.local ??= new CellWork(this.boxes(), this.budget, this.tone);
+    this.local ??= new CellWork(this.boxes(), this.tone);
     const work = this.local;
     let reply = work.start(running.job);
     while (reply.kind !== 'done') reply = work.readings(reply.job, readingsOf(reply.points, running.env));
@@ -183,7 +171,7 @@ export class CellPool {
           console.warn('[buildings] the cell workers failed; cells are put together on the page', event.message);
           this.giveUp();
         };
-        worker.postMessage({ type: 'init', boxes, budget: this.budget / count, tone: this.tone });
+        worker.postMessage({ type: 'init', boxes, tone: this.tone });
         lanes.push(lane);
       }
       this.lanes = lanes;

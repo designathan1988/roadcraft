@@ -21,28 +21,20 @@ import { PART_KINDS, type PartKind } from './kit';
  * its bounds grown by two modules (the entrance steps land out there), of the
  * land and of the paving. Any change the foundation could see changes this.
  */
-export function groundDigest(b: Building, groundAt: GroundAt, pavedAt?: PavedAt): string {
+export function groundDigest(b: Building, groundAt: GroundAt, pavedAt?: PavedAt): number {
   const box = buildingBounds(b, b.module * 2);
-  let out = '';
+  // To the centimetre, as the text it replaced was; a number, never a string kept per building.
+  const out = new Digest();
   for (let i = 0; i <= 5; i++) {
     for (let j = 0; j <= 5; j++) {
       const x = box.minX + ((box.maxX - box.minX) * i) / 5;
       const y = box.minY + ((box.maxY - box.minY) * j) / 5;
-      out += `${groundAt(x, y).toFixed(2)}${pavedAt ? `/${pavedAt(x, y).toFixed(2)}` : ''},`;
+      out.add(Math.round(groundAt(x, y) * 100));
+      if (pavedAt) { const p = pavedAt(x, y); out.add(Number.isFinite(p) ? Math.round(p * 100) : NaN); }
     }
   }
-  return out;
+  return out.value();
 }
-/**
- * Bytes of buildings' chunks the cell workers keep, all of them (`cellWork.ts`),
- * so a camera coming back finds them made: the cells in view are kept whatever
- * it costs, and past it the cells let go longest ago give theirs up first, as
- * Cesium's `cacheBytes` / `maximumCacheOverflowBytes`. Far cells given up at
- * once were emitted again at every return of the camera - seconds of empty
- * lots. Small on purpose: at 768 MB, with the shells' lots, the heap reached
- * the browser's limit and the collector stalled the game (2026-10-14).
- */
-export const CHUNK_CACHE_BYTES = 128 * 1024 * 1024;
 /** Cells asked of the workers at once while the eye streams the town in (`landCells`, `layer.ts`), nearest first. */
 export const STREAM_AHEAD = 8;
 /** Side of the cells the buildings are batched in, world units. */

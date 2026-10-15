@@ -19,7 +19,7 @@ import type { BuildingKit } from './kit';
 
 /** Whether two lists are the same buildings with the same records on the same ground (the strings compared by reference). */
 export const sameEntries = (a: readonly CellEntry[], b: readonly CellEntry[]): boolean =>
-  a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.record === b[i]!.record && e.digest === b[i]!.digest);
+  a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.sig === b[i]!.sig && e.digest === b[i]!.digest);
 
 /** A cell's batches as landed: its coarse batch (or its faded one) and its detail cells'. */
 export interface LandedCell {
@@ -136,11 +136,6 @@ export class CellRequests {
   /** Cells whose masses are asked and not come. */
   get massing(): number {
     return this.masses.size;
-  }
-
-  /** A cell drawn far: its worker may give its buildings' chunks up first. */
-  release(cell: string): void {
-    this.pool.release(cell);
   }
 
   /** Every request forgotten and every batch not taken disposed (a context restored, the layer gone). */

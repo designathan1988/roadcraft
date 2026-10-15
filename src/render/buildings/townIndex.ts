@@ -73,11 +73,11 @@ export class TownIndex {
 /**
  * The signature buildings' bodies (`signature.ts`) under `root`, each built
  * again only when its record or its floor changed: asked by id for the
- * buildings a change touched, or for the whole town. The record by its text
- * kept per record object (`textOf`), NOT `JSON.stringify` of every signature
+ * buildings a change touched, or for the whole town. The record by its digest
+ * kept per record object (`sigOf`), NOT `JSON.stringify` of every signature
  * building at every change of any (docs/AUDITORIA-2026-10-14.md A16).
  */
-export function signatureBodies(root: Group, textOf: (b: Building) => string): {
+export function signatureBodies(root: Group, sigOf: (b: Building) => number): {
   set(b: Building, floor: number | undefined): void;
   remove(id: BuildingId): void;
   keepOnly(ids: ReadonlySet<BuildingId>): void;
@@ -93,7 +93,7 @@ export function signatureBodies(root: Group, textOf: (b: Building) => string): {
   return {
     set(b, floor) {
       if (floor === undefined) { remove(b.id); return; }
-      const key = `${textOf(b)}|${floor}`;
+      const key = `${sigOf(b)}|${floor}`;
       if (known.get(b.id)?.key === key) return;
       remove(b.id);
       const built = buildSignature(b, floor);

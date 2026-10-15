@@ -178,11 +178,6 @@
       "count": 1
     }
   },
-  "src/render/buildings/layer.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/render/buildings/parts.ts": {
     "roadcraft/no-module-state": {
       "count": 2
