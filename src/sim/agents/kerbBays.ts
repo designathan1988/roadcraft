@@ -41,8 +41,6 @@ const KERB_MIN_AHEAD = m(4);
 const NO_LOT = -1 as BuildingId;
 
 type Entrance = [Vec2, Vec2];
-/** The narrowest gate a car is driven through (a person's is 1.2 m); `parkingLayout.ts` `CAR_GATE_WIDTH`. */
-export const CAR_GATE = m(2.2);
 /** Past this beyond a street's half width, a lot's entrance keeps no bay off its kerb (`parkingLayout.ts` `frontagesOn`). */
 const FRONTAGE_REACH = m(8);
 /** Cell of the kerbs' and entrances' grids, world units. */

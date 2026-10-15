@@ -8,6 +8,17 @@ import { m } from '@world/units';
 const LANE_CELL = m(30);
 
 const cellKey = (gx: number, gy: number): number => (gx + 32768) * 65536 + (gy + 32768);
+
+/**
+ * Whether the grid finds a lane of these bounds for a box (`LaneGrid.near`,
+ * `lanesIn`): the cells the lane is filed in meet the cells the box covers.
+ * For a worker holding a few lanes and no grid (`lotBays.ts` `baysOfShare`).
+ */
+export function cellsMeet(box: { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number },
+  x0: number, y0: number, x1: number, y1: number): boolean {
+  return Math.floor(box.minX / LANE_CELL) <= Math.floor(x1 / LANE_CELL) && Math.floor(box.maxX / LANE_CELL) >= Math.floor(x0 / LANE_CELL)
+    && Math.floor(box.minY / LANE_CELL) <= Math.floor(y1 / LANE_CELL) && Math.floor(box.maxY / LANE_CELL) >= Math.floor(y0 / LANE_CELL);
+}
 const byId = (a: Lanelet, b: Lanelet): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 interface Filed {

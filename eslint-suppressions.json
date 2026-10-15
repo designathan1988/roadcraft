@@ -557,7 +557,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 3
+      "count": 2
     }
   },
   "src/sim/agents/reedsShepp.ts": {
