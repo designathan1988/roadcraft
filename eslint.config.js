@@ -2,6 +2,9 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import noSilentCatch from './eslint-rules/no-silent-catch.js';
 import noModuleState from './eslint-rules/no-module-state.js';
+import noGlobalRevision from './eslint-rules/no-global-revision.js';
+import noWholeMapWalk from './eslint-rules/no-whole-map-walk.js';
+import noLogicTimer from './eslint-rules/no-logic-timer.js';
 
 /**
  * The repository's own rules (`eslint-rules/`). What the SOURCE carried that
@@ -10,7 +13,15 @@ import noModuleState from './eslint-rules/no-module-state.js';
  * longer needed, so the count can only fall; it reaches zero by stage F4
  * (docs/PLAN.md).
  */
-const roadcraft = { rules: { 'no-silent-catch': noSilentCatch, 'no-module-state': noModuleState } };
+const roadcraft = {
+  rules: {
+    'no-silent-catch': noSilentCatch,
+    'no-module-state': noModuleState,
+    'no-global-revision': noGlobalRevision,
+    'no-whole-map-walk': noWholeMapWalk,
+    'no-logic-timer': noLogicTimer,
+  },
+};
 
 /**
  * THE LAYER ORDER, ENFORCED.
@@ -124,6 +135,37 @@ export default tseslint.config(
     ignores: ['src/**/*.d.ts'],
     plugins: { roadcraft },
     rules: { 'roadcraft/no-module-state': 'error' },
+  },
+  {
+    // THE BARRIER AGAINST THE PATTERNS COMING BACK (docs/PLANO-ESPINHA-2026-10-14.md,
+    // Passo 4): no product keyed on a global revision, no walk of the whole map
+    // outside a `@rebuild`, no timer of the game's own. What the code held when
+    // they came is in `eslint-suppressions.json` and may only shrink; DO NOT
+    // suppress them inline.
+    files: ['src/**/*.ts'],
+    ignores: ['src/**/*.d.ts'],
+    plugins: { roadcraft },
+    rules: {
+      'roadcraft/no-global-revision': 'error',
+      'roadcraft/no-whole-map-walk': 'error',
+      'roadcraft/no-logic-timer': 'error',
+    },
+  },
+  {
+    // Where a revision or the diary itself is the thing: the engine, the diary
+    // and its cursors, the document's own bookkeeping, the save and the load.
+    files: ['src/core/engine.ts', 'src/core/changeLog.ts', 'src/world/changes.ts', 'src/world/derived.ts',
+      'src/editor/persistence.ts', 'src/editor/history.ts', 'src/editor/chunkedSave.ts'],
+    rules: { 'roadcraft/no-global-revision': 'off' },
+  },
+  {
+    // Where waiting on the page is the point: the saves, the interface's
+    // notices and readouts, the workers' watch, a GPU release while nothing
+    // draws, the loading of people's assets, the frame loop itself.
+    files: ['src/ui/**/*.ts', 'src/editor/persistence.ts', 'src/editor/mapExport.ts', 'src/conflictPool.ts',
+      'src/render/people/**/*.ts', 'src/render/riggedCitizens.ts', 'src/render/citizenBake.ts',
+      'src/render/buildings/parts.ts', 'src/frameLoop.ts'],
+    rules: { 'roadcraft/no-logic-timer': 'off' },
   },
   {
     // Plain Node tooling. `eslint .` reaches it, and without globals every

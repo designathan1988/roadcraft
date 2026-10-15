@@ -13,6 +13,7 @@ import { ConflictPool } from './conflictPool';
 import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
 import { Engine } from '@core/engine';
+import { InputQueue } from '@core/events';
 import { rebuildWork } from '@world/rebuildWork';
 import { laneGrid } from '@sim/agents/laneGrid';
 import { FrameTimer, HealthLog, frameStats } from '@core/health';
@@ -1252,24 +1253,64 @@ function endTerrainStroke(): void {
 // See inside a building by clicking it, with nothing in hand: two clicks open
 // it (two on open ground close it); while one is open, a click on another
 // opens that one instead.
-canvas.addEventListener('dblclick', (e) => {
-  // A double click ends a track or a line being laid (`pointerdown` carries no click count).
-  if (game.tool === 'transit') { transitEditor.key('Enter'); return; }
-  if (game.tool !== 'inspect') return;
-  const r = canvas.getBoundingClientRect();
-  buildings.insideClick({ x: e.clientX - r.left, y: e.clientY - r.top }, true);
-});
-canvas.addEventListener('click', (e) => {
-  if (game.tool !== 'inspect' || e.detail > 1) return;
-  const r = canvas.getBoundingClientRect();
-  buildings.insideClick({ x: e.clientX - r.left, y: e.clientY - r.top }, false);
-});
+/**
+ * The canvas's input, taken as the browser dispatches it and handled at the
+ * start of the next frame, in order (`core/events.ts`): the event, the
+ * canvas's box then, and the positions a move went through.
+ */
+type CanvasInput =
+  | { readonly type: 'dblclick' | 'click'; readonly e: MouseEvent; readonly r: DOMRect }
+  | { readonly type: 'down' | 'up' | 'cancel' | 'leave' | 'lost'; readonly e: PointerEvent; readonly r: DOMRect }
+  | { readonly type: 'move'; readonly e: PointerEvent; readonly r: DOMRect; readonly path: PointerSample[] | undefined }
+  | { readonly type: 'wheel'; readonly e: WheelEvent; readonly r: DOMRect };
+const canvasInput = new InputQueue<CanvasInput>(() => requestDraw());
+const take = (input: CanvasInput): void => canvasInput.push(input);
+
+/** One input handled (`frame`, first thing). */
+function handleInput(input: CanvasInput): void {
+  switch (input.type) {
+    case 'dblclick': return doubleClick(input.e, input.r);
+    case 'click': return singleClick(input.e, input.r);
+    case 'down': return pointerDown(input.e, input.r);
+    case 'move': return pointerMove(input.e, input.r, input.path);
+    case 'up': case 'cancel': return endPointer(input.e);
+    case 'leave': return pointerLeft();
+    case 'lost': return captureLost(input.e);
+    case 'wheel': return wheel(input.e, input.r);
+  }
+}
+
+canvas.addEventListener('dblclick', (e) => take({ type: 'dblclick', e, r: canvas.getBoundingClientRect() }));
+canvas.addEventListener('click', (e) => take({ type: 'click', e, r: canvas.getBoundingClientRect() }));
 canvas.addEventListener('pointerdown', (e) => {
   // The mouse's back and forward buttons are not a click: they used to fall
   // through to the tool as if they were the left button.
   if (e.pointerType === 'mouse' && e.button > 2) return;
+  // Captured while dispatched: the capture is set only then.
   canvas.setPointerCapture(e.pointerId);
+  take({ type: 'down', e, r: canvas.getBoundingClientRect() });
+});
+canvas.addEventListener('pointermove', (e) => {
   const r = canvas.getBoundingClientRect();
+  // The positions it went through read now: the list is the dispatch's.
+  take({ type: 'move', e, r, path: coalescedPath(e, r) });
+});
+canvas.addEventListener('pointerup', (e) => take({ type: 'up', e, r: canvas.getBoundingClientRect() }));
+canvas.addEventListener('pointercancel', (e) => take({ type: 'cancel', e, r: canvas.getBoundingClientRect() }));
+canvas.addEventListener('pointerleave', (e) => take({ type: 'leave', e, r: canvas.getBoundingClientRect() }));
+canvas.addEventListener('lostpointercapture', (e) => take({ type: 'lost', e, r: canvas.getBoundingClientRect() }));
+
+function doubleClick(e: MouseEvent, r: DOMRect): void {
+  // A double click ends a track or a line being laid (`pointerdown` carries no click count).
+  if (game.tool === 'transit') { transitEditor.key('Enter'); return; }
+  if (game.tool !== 'inspect') return;
+  buildings.insideClick({ x: e.clientX - r.left, y: e.clientY - r.top }, true);
+}
+function singleClick(e: MouseEvent, r: DOMRect): void {
+  if (game.tool !== 'inspect' || e.detail > 1) return;
+  buildings.insideClick({ x: e.clientX - r.left, y: e.clientY - r.top }, false);
+}
+function pointerDown(e: PointerEvent, r: DOMRect): void {
   // The event's own time, as every time the camera's hand reads (`cameraGestures.ts`).
   cameraHand.press(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top }, e.timeStamp);
 
@@ -1461,19 +1502,18 @@ canvas.addEventListener('pointerdown', (e) => {
       break;
   }
   requestDraw();
-});
+}
 
 window.addEventListener('blur', releaseHeld);
-canvas.addEventListener('lostpointercapture', (e) => {
+function captureLost(e: PointerEvent): void {
   // After an ordinary release the pointer is already gone from the map.
   if (cameraHand.has(e.pointerId)) releaseHeld();
-});
+}
 
-canvas.addEventListener('pointermove', (e) => {
+function pointerMove(e: PointerEvent, r: DOMRect, path: PointerSample[] | undefined): void {
   // A mouse whose button is no longer down has ended its stroke, whether or
   // not the release reached us.
   if (e.pointerType === 'mouse' && e.buttons === 0 && terrainBrush.stroking) endTerrainStroke();
-  const r = canvas.getBoundingClientRect();
   const screen: Vec2 = { x: e.clientX - r.left, y: e.clientY - r.top };
   if (game.tool === 'road') roadTool.pointerAt(screen);
   // The pointer's look (`app.css`): a closed hand while it turns or drags the camera.
@@ -1482,7 +1522,7 @@ canvas.addEventListener('pointermove', (e) => {
   // A pinch, an orbit or a pan takes the move first; the hand's speed is read
   // from every position the pointer went through since the last event, at
   // their own times (`getCoalescedEvents`: Chrome sends one move a frame).
-  if (cameraHand.move(e.pointerId, screen, e.timeStamp, cameraHand.active ? coalescedPath(e, r) : undefined)) return;
+  if (cameraHand.move(e.pointerId, screen, e.timeStamp, cameraHand.active ? path : undefined)) return;
 
   const world = pointerWorld(e, r);
 
@@ -1547,7 +1587,7 @@ canvas.addEventListener('pointermove', (e) => {
   // the info ribbon): paused, every move of the mouse drew the whole town,
   // its shadows and its post-processing again for nothing.
   if (HOVER_DRAWN.has(game.tool)) requestDraw();
-});
+}
 /** The tools whose overlay follows the hover. */
 const HOVER_DRAWN: ReadonlySet<string> = new Set(['road', 'roundabout', 'terrain', 'control', 'inspect']);
 
@@ -1585,23 +1625,28 @@ function endPointer(e: PointerEvent): void {
   requestDraw();
 }
 
-canvas.addEventListener('pointerup', endPointer);
 // The camera let go: the pointer's own look again.
 for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, () => { canvas.dataset['camera'] = ''; });
 // Nothing to aim at off the map: no hover preview left behind on it.
-canvas.addEventListener('pointerleave', () => {
+function pointerLeft(): void {
   if (hoverAnchor) {
     hoverAnchor = null;
     requestDraw();
   }
-});
-canvas.addEventListener('pointercancel', endPointer);
+}
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 canvas.addEventListener(
   'wheel',
   (e) => {
+    // Prevented while dispatched (the page would scroll); handled with the rest of the input.
     e.preventDefault();
+    take({ type: 'wheel', e, r: canvas.getBoundingClientRect() });
+  },
+  { passive: false },
+);
+function wheel(e: WheelEvent, r: DOMRect): void {
+  {
     // The wheel zooms, whatever tool is in hand (the player, 2026-10-06); with
     // the landscape tool, Shift+wheel sizes the brush and Alt+wheel sets its
     // strength. With Shift held a browser may scroll sideways: either axis.
@@ -1611,7 +1656,6 @@ canvas.addEventListener(
       else setTerrainRadius(game.terrainRadius + notches * 10);
       return;
     }
-    const r = canvas.getBoundingClientRect();
     const at = { x: e.clientX - r.left, y: e.clientY - r.top };
     // About the ground under the pointer at its real height: on the plane at
     // zero a hill or a chapada under the pointer slid away as the view zoomed.
@@ -1619,9 +1663,8 @@ canvas.addEventListener(
     const lines = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1;
     cameraMotion.wheel(-e.deltaY * lines * 0.0013, at);
     requestDraw();
-  },
-  { passive: false },
-);
+  }
+}
 
 
 // -------------------------------------------------------------------- ui
@@ -2697,6 +2740,8 @@ function frame(now: number): void {
   // Each system's time in this frame (`core/health.ts`): a long frame is told with the systems that took it.
   frameTimer.begin();
   beginFrameWork();
+  // The input since the last frame, in the order it came (`core/events.ts`).
+  canvasInput.drain(handleInput);
   // Everyone watching the game's state is told what changed, once, here.
   gameState.flush();
   frameTimer.mark('panels');
@@ -2706,6 +2751,8 @@ function frame(now: number): void {
   // The coast of a drag let go (`cameraGestures.ts`), taken to this frame's
   // time on the events' clock: it starts at the release itself.
   cameraHand.advance(now);
+  // A flatten held still levels on, a dab when its interval allows (`terrainBrush.ts` tick).
+  if (terrainBrush.tick(performance.now())) requestDraw();
   frameTimer.mark('camera');
 
   // The opening puts the town together in parts (`SceneHandle.worldBusy`):

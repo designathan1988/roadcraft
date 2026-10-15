@@ -5,6 +5,10 @@ import { boundaryExit } from '@sim/routing/laneReach';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
 
+/** The ops the editor refused (a fuzz op may be one it would not do): the sequence stops there. */
+const rejected: unknown[] = [];
+const recordRejected = (error: unknown): void => { rejected.push(error); };
+
 /**
  * THE ROAD ENDS EACH LANE REACHES, KEPT BY WHAT CHANGED (`laneReach.ts`, from
  * the world's topology log): after every edit, for every link lane and body
@@ -47,7 +51,7 @@ function run(ops: readonly Parameters<typeof applyOp>[1][], name: string): void 
   let reached = check(w, `${name} start`);
   ops.forEach((op, i) => {
     let changed: boolean;
-    try { changed = applyOp(state, op); } catch { return; }
+    try { changed = applyOp(state, op); } catch (error) { recordRejected(error); return; }
     if (!changed) return;
     w.rebuildTopology();
     reached += check(w, `${name} op ${i} (${op.op})`);

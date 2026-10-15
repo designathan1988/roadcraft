@@ -110,16 +110,8 @@ export class CycleIndex {
     const changes = log.since(this.seen);
     if (changes !== null && !changes.length) return;
     this.seen = log.state;
-    const starts = new Set<LaneletId>();
-    if (changes === null) {
-      // @rebuild Every link: the first build of a world, or a lane graph built whole.
-      this.byLanelet.clear();
-      this.ofStart.clear();
-      this.laneReaders.clear();
-      this.nodeReaders.clear();
-      this.loops.clear();
-      for (const lane of graph.lanelets.values()) if (lane.kind === 'link') starts.add(lane.id);
-    } else {
+    const starts = changes === null ? this.restart(graph) : new Set<LaneletId>();
+    if (changes !== null) {
       for (const change of changes) {
         for (const lane of change.lanelets) {
           starts.add(lane);
@@ -130,6 +122,21 @@ export class CycleIndex {
       for (const start of starts) this.forget(start);
     }
     for (const start of [...starts].sort()) if (graph.lanelets.get(start)?.kind === 'link') this.search(graph, start);
+  }
+
+  /**
+   * Everything forgotten, and every link to search.
+   * @rebuild The first build of a world, or a lane graph built whole.
+   */
+  private restart(graph: LaneletGraph): Set<LaneletId> {
+    this.byLanelet.clear();
+    this.ofStart.clear();
+    this.laneReaders.clear();
+    this.nodeReaders.clear();
+    this.loops.clear();
+    const starts = new Set<LaneletId>();
+    for (const lane of graph.lanelets.values()) if (lane.kind === 'link') starts.add(lane.id);
+    return starts;
   }
 
   /** A link's search taken away: its reads, and its share of the loop it found. */

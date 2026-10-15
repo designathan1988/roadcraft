@@ -27,7 +27,6 @@ export const TERRAIN_MIN_MS = 45;
 /** Where the terrain stamps' allocator stands in `RoadDoc.allocatorMarks`. */
 const TERRAIN_STAMP_MARK = 6;
 /** How often a held flatten levels a little further, ms. */
-const TERRAIN_REPEAT_MS = 110;
 
 /** A landform: a shape and its rock in one tool (`main.ts` LANDFORMS). */
 interface Landform {
@@ -191,8 +190,8 @@ interface Stroke {
 
 export class TerrainBrush {
   private stroke: Stroke | null = null;
-  /** Drives the held-still repeat of a flatten. */
-  private repeat: ReturnType<typeof setInterval> | null = null;
+  /** A flatten held: it levels on at every frame its interval allows (`tick`). */
+  private repeat = false;
 
   constructor(private readonly host: TerrainBrushHost) {}
 
@@ -232,14 +231,26 @@ export class TerrainBrush {
     // every dab. A raise, a lower or a river stroke moves the ground by its
     // strength and no more however long it is held (its dabs are one stroke),
     // so repeating them would only spend the map's dab budget.
-    if (host.settings().mode === 'flatten') this.repeat = setInterval(() => {
-      const stroke = this.stroke;
-      if (!stroke) return;
-      if (performance.now() - stroke.applied < host.interval(true)) return;
+    this.repeat = host.settings().mode === 'flatten';
+  }
+
+  /**
+   * A frame of a flatten held still: another dab once its interval has gone
+   * by. True while one is held - the frame loop asks for the next frame.
+   * Run from the frame (`main.ts` frame), as the game's other timed work: DO
+   * NOT go back to a `setInterval` of its own, which dabbed between frames
+   * and in the middle of whatever the frame was doing.
+   */
+  tick(now: number): boolean {
+    const stroke = this.stroke;
+    if (!this.repeat || !stroke) return false;
+    const { host } = this;
+    if (now - stroke.applied >= host.interval(true)) {
       stampTerrain(host.doc, stroke.at, stroke.level, stroke.id, host.settings(), noiseOrigin(stroke, stroke.at));
-      stroke.applied = performance.now();
+      stroke.applied = now;
       host.redraw();
-    }, TERRAIN_REPEAT_MS);
+    }
+    return true;
   }
 
   /**
@@ -291,9 +302,6 @@ export class TerrainBrush {
   }
 
   private disarm(): void {
-    if (this.repeat !== null) {
-      clearInterval(this.repeat);
-      this.repeat = null;
-    }
+    this.repeat = false;
   }
 }

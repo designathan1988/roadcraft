@@ -9,6 +9,7 @@ import {
 import { solidFootprints } from '@world/buildings/geometry';
 import type { BuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
+import { nearestRibbon } from '@world/nearestRibbon';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
 
 /** How far apart a zone stroke is sampled between two pointer reports: under any lot's front. */
@@ -366,8 +367,7 @@ export class LotTool {
     const sides = points.map((p, i) => {
       const q = points[(i + 1) % points.length]!;
       const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-      let d = Infinity;
-      for (const r of this.net.ribbons.values()) d = Math.min(d, r.full.distanceTo(mid));
+      const d = nearestRibbon(this.net, mid)?.distance ?? Infinity;
       return { i, d, length: Math.hypot(q.x - p.x, q.y - p.y) };
     });
     const nearest = Math.min(...sides.map((side) => side.d));
@@ -382,15 +382,11 @@ export class LotTool {
 
   /** The direction of the street nearest a point, for a lot drawn there. */
   private streetAngleNear(p: Vec2): number {
-    let best = Infinity, angle = 0;
-    for (const r of this.net.ribbons.values()) {
-      const q = p;
-      const d = r.full.distanceTo(q);
-      if (d >= best) continue;
-      const f = r.full.sampleAt(r.full.closestPoint(q).s);
-      best = d; angle = Math.atan2(f.t.y, f.t.x);
-    }
-    return angle;
+    const nearest = nearestRibbon(this.net, p);
+    if (!nearest) return 0;
+    const line = nearest.ribbon.full;
+    const f = line.sampleAt(line.closestPoint(p).s);
+    return Math.atan2(f.t.y, f.t.x);
   }
 
   /** What the delete stroke takes at a point: the lot there, the building there. */

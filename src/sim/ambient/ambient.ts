@@ -406,13 +406,8 @@ export class AmbientWorld {
     if (!engine.walkableNear) return this.ends;
     const delta = this.endsFor === null ? null : w.net.changesSince(this.endsFor);
     this.endsFor = w.net.state;
-    const nodes = new Set<number>();
-    if (delta === null) {
-      // @rebuild Every road end: the first look, a map opened, a network further behind than it remembers.
-      this.ends = [];
-      this.endSlots.clear();
-      for (const id of w.doc.nodes.keys()) nodes.add(id);
-    } else {
+    const nodes = delta === null ? this.everyEnd(w) : new Set<number>();
+    if (delta !== null) {
       for (const id of delta.nodes) nodes.add(id);
       for (const id of delta.segments) {
         const seg = w.doc.segment(id);
@@ -780,6 +775,16 @@ export class AmbientWorld {
     if (id === null) return;
     this.walkers.add(id);
     if (roams) this.roaming.add(id);
+  }
+
+  /**
+   * The road ends forgotten, and every node to look round.
+   * @rebuild The first look, a map opened, a network further behind than it remembers.
+   */
+  private everyEnd(w: SimWorld): Set<number> {
+    this.ends = [];
+    this.endSlots.clear();
+    return new Set(w.doc.nodes.keys());
   }
 
   /** A road end's points taken out of `ends`, each place filled by the last point (its node's slot moved with it). */

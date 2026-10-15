@@ -99,12 +99,19 @@ function sideReach(
   const ex = { x: Math.cos(rotation), y: Math.sin(rotation) };
   const ey = { x: -ex.y, y: ex.x };
   const ownIds = new Set(own.map((cell) => cell.id));
-  const ribbons = [...net.ribbons.values()].filter((r) => doc.segment(r.id)?.structure === 'ground');
-  const near = [...doc.buildings.all()].filter((b) => {
-    const bb = buildingBounds(b);
-    return Math.hypot((bb.minX + bb.maxX) / 2 - anchor.x, (bb.minY + bb.maxY) / 2 - anchor.y) < width + depth + m(60);
-  }).map((b) => footprintRects(b));
   const LIMIT = ZONE_CELL * 1.25, STEP = m(0.25), NEAR = m(3);
+  // Every point looked at lies within `reach` of the anchor: the roads whose footway can hold one, and the
+  // buildings near, are found by place (`Network.ribbonsMeeting`, `BuildingStore.near`). DO NOT walk every
+  // road and building of the map here: every point of every side of every site tried for every building
+  // grown measured the whole town's roads - quadratic as a city grows.
+  const reach = Math.hypot(width / 2 + LIMIT, depth);
+  const ribbons = net.ribbonsMeeting([anchor.x - reach, anchor.y - reach, anchor.x + reach, anchor.y + reach])
+    .filter((r) => doc.segment(r.id)?.structure === 'ground');
+  const around = width + depth + m(60);
+  const near = doc.buildings.near(anchor.x - around, anchor.y - around, anchor.x + around, anchor.y + around).filter((b) => {
+    const bb = buildingBounds(b);
+    return Math.hypot((bb.minX + bb.maxX) / 2 - anchor.x, (bb.minY + bb.maxY) / 2 - anchor.y) < around;
+  }).map((b) => footprintRects(b));
   const blocked = (q: Vec2): 'road' | 'thing' | null => {
     for (const r of ribbons) if (r.full.distanceTo(q) < halfWidth(r.road, Level.Sidewalk) - m(0.02)) return 'road';
     for (const rects of near) for (const rect of rects) if (pointInPolygon(q, rect)) return 'thing';

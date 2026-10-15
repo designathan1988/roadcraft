@@ -23,12 +23,8 @@ export class NetworkLength {
     if (this.seen === net.state) return this.total / SCALE;
     const delta = this.seen === null ? null : net.changesSince(this.seen);
     this.seen = net.state;
-    if (delta === null) {
-      // @rebuild The first ask, a map opened, or a network further behind than it remembers.
-      this.bySegment.clear();
-      this.total = 0;
-      for (const id of net.ribbons.keys()) this.put(net, id);
-    } else {
+    if (delta === null) this.sumAll(net);
+    else {
       for (const id of delta.segments) {
         this.total -= this.bySegment.get(id) ?? 0;
         this.bySegment.delete(id);
@@ -36,6 +32,16 @@ export class NetworkLength {
       }
     }
     return this.total / SCALE;
+  }
+
+  /**
+   * Every road summed again.
+   * @rebuild The first ask, a map opened, or a network further behind than it remembers.
+   */
+  private sumAll(net: Network): void {
+    this.bySegment.clear();
+    this.total = 0;
+    for (const id of net.ribbons.keys()) this.put(net, id);
   }
 
   private put(net: Network, id: SegmentId): void {

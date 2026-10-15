@@ -6,6 +6,10 @@ import { CycleIndex } from '@sim/intersections/cycles';
 import { applyOp, freshState } from '../fuzz/support/ops';
 import { generate, loadFixtures } from '../fuzz/support/runner';
 
+/** The ops the editor refused (a fuzz op may be one it would not do): the sequence stops there. */
+const rejected: unknown[] = [];
+const recordRejected = (error: unknown): void => { rejected.push(error); };
+
 /**
  * THE SMALL LOOPS KEPT BY WHAT CHANGED (`CycleIndex.follow`, from the world's
  * topology log): after every edit, each lanelet's loops - their links,
@@ -34,7 +38,7 @@ function run(ops: readonly Parameters<typeof applyOp>[1][], name: string): void 
   kept.follow(w.graph, w.topologyLog);
   ops.forEach((op, i) => {
     let changed: boolean;
-    try { changed = applyOp(state, op); } catch { return; }
+    try { changed = applyOp(state, op); } catch (error) { recordRejected(error); return; }
     if (!changed) return;
     w.rebuildTopology();
     kept.follow(w.graph, w.topologyLog);

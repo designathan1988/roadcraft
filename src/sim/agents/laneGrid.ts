@@ -43,14 +43,7 @@ export class LaneGrid {
     const since = log.since(this.seen);
     if (since !== null && !since.length) return;
     this.seen = log.state;
-    if (since === null) {
-      // @rebuild A world's first topology, or a lane graph built whole.
-      this.filed.clear();
-      this.cells.clear();
-      for (const lane of graph.lanelets.values()) this.file(lane);
-      this.changes.push(null);
-      return;
-    }
+    if (since === null) { this.fileAll(graph); return; }
     const boxes: ChangeRect[] = [];
     for (const change of since) {
       for (const id of change.lanelets) {
@@ -62,6 +55,17 @@ export class LaneGrid {
       }
     }
     if (boxes.length) this.changes.push(boxes);
+  }
+
+  /**
+   * Every lane filed again.
+   * @rebuild A world's first topology, or a lane graph built whole.
+   */
+  private fileAll(graph: LaneletGraph): void {
+    this.filed.clear();
+    this.cells.clear();
+    for (const lane of graph.lanelets.values()) this.file(lane);
+    this.changes.push(null);
   }
 
   private file(lane: Lanelet): void {
