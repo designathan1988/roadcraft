@@ -744,8 +744,6 @@ export function createSceneRenderer(
   let storedRead = tilesPrefix === null;
   /** What the store holds now, by `storedKey`. */
   const storedKeys = new Set<string>();
-  /** Tiles built since the last build was kept, to be written. */
-  const toKeep = new Map<string, TileBundle>();
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
     dependsOn: (minX, minY, maxX, maxY) => new Digest()
@@ -756,7 +754,14 @@ export function createSceneRenderer(
     chunks: new Map(),
     retired: [],
     stored: new Map(),
-    keep: (key, bundle) => { if (tilesPrefix) toKeep.set(key, bundle); },
+    // Written as each tile is built (the store copies it by the structured clone, MDN IndexedDB), so
+    // its arrays go with its build. DO NOT hold the built tiles for idle writes: at the opening that
+    // was every tile of the city, held on the CPU after its blocks were on the GPU.
+    keep: (key, bundle) => {
+      if (!tilesPrefix || storedKeys.has(key)) return;
+      storedKeys.add(key);
+      writeDerivedMany(tilesPrefix, new Map([[key, bundle]]));
+    },
   };
   if (tilesPrefix && ROAD_TILES_HASH) {
     forgetOtherDerived('roadtiles', ROAD_TILES_HASH);
@@ -769,9 +774,8 @@ export function createSceneRenderer(
   }
   /**
    * After a build: the store made to hold the network just built - its new
-   * tiles written, the tiles no network uses any more forgotten - in idle
-   * time, a few tiles a transaction (MDN, IndexedDB: values are copied by the
-   * structured clone, on this thread).
+   * tiles written as they were built (`keep`), the tiles no network uses any
+   * more (a build overtaken by an edit's included) forgotten.
    */
   const keepTiles = (): void => {
     surfaceReuse.stored!.clear();
@@ -781,19 +785,6 @@ export function createSceneRenderer(
     const gone = [...storedKeys].filter((key) => !current.has(key));
     for (const key of gone) storedKeys.delete(key);
     forgetDerivedKeys(tilesPrefix, gone);
-    const fresh = [...toKeep].filter(([key]) => current.has(key) && !storedKeys.has(key));
-    toKeep.clear();
-    for (const [key] of fresh) storedKeys.add(key);
-    const write = (): void => {
-      const batch = new Map(fresh.splice(0, 8));
-      if (batch.size) writeDerivedMany(tilesPrefix, batch);
-      if (fresh.length) idle(write);
-    };
-    if (fresh.length) idle(write);
-  };
-  const idle = (fn: () => void): void => {
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, { timeout: 4000 });
-    else setTimeout(fn, 50);
   };
 
   /**

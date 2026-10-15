@@ -318,14 +318,17 @@ function uvConsistent(
   c: number,
   uvWorld: number,
 ): boolean {
-  const edge = (p: number, q: number): boolean => {
-    const world = Math.hypot(positions[p * 3]! - positions[q * 3]!, positions[p * 3 + 2]! - positions[q * 3 + 2]!);
-    if (world < 1e-3) return true;
-    const texture = Math.hypot(uvs[p * 2]! - uvs[q * 2]!, uvs[p * 2 + 1]! - uvs[q * 2 + 1]!) * uvWorld;
-    const ratio = texture / world;
-    return ratio > 0.5 && ratio < 2;
-  };
-  return edge(a, b) && edge(b, c) && edge(c, a);
+  return uvEdgeConsistent(positions, uvs, a, b, uvWorld) && uvEdgeConsistent(positions, uvs, b, c, uvWorld) &&
+    uvEdgeConsistent(positions, uvs, c, a, uvWorld);
+}
+
+/** One edge of `uvConsistent`: a function of its own, not a closure made per triangle. */
+function uvEdgeConsistent(positions: readonly number[], uvs: readonly number[], p: number, q: number, uvWorld: number): boolean {
+  const world = Math.hypot(positions[p * 3]! - positions[q * 3]!, positions[p * 3 + 2]! - positions[q * 3 + 2]!);
+  if (world < 1e-3) return true;
+  const texture = Math.hypot(uvs[p * 2]! - uvs[q * 2]!, uvs[p * 2 + 1]! - uvs[q * 2 + 1]!) * uvWorld;
+  const ratio = texture / world;
+  return ratio > 0.5 && ratio < 2;
 }
 
 /**
@@ -342,17 +345,21 @@ function smoothTopNormals(
   normals: number[],
   indices: readonly number[],
 ): void {
-  const flat = new Set<number>();
+  // By a flag per vertex, not a Set of them: asked three times per triangle
+  // of every road tile (1.1 s of a 2,560 m city's roads, 2026-10-15).
+  const count = normals.length / 3;
+  const flat = new Uint8Array(count);
+  let any = false;
   for (let i = 0; i < normals.length; i += 3) {
-    if (normals[i] === 0 && normals[i + 1] === 1 && normals[i + 2] === 0) flat.add(i / 3);
+    if (normals[i] === 0 && normals[i + 1] === 1 && normals[i + 2] === 0) { flat[i / 3] = 1; any = true; }
   }
-  if (flat.size === 0) return;
+  if (!any) return;
   const acc = new Float64Array(normals.length);
   for (let t = 0; t < indices.length; t += 3) {
     const a = indices[t] as number;
     const b = indices[t + 1] as number;
     const c = indices[t + 2] as number;
-    if (!flat.has(a) || !flat.has(b) || !flat.has(c)) continue;
+    if (!flat[a] || !flat[b] || !flat[c]) continue;
     const ax = positions[a * 3] as number;
     const ay = positions[a * 3 + 1] as number;
     const az = positions[a * 3 + 2] as number;
@@ -365,13 +372,15 @@ function smoothTopNormals(
     const nx = uy * vz - uz * vy;
     const ny = uz * vx - ux * vz;
     const nz = ux * vy - uy * vx;
-    for (const index of [a, b, c]) {
+    for (let k = 0; k < 3; k++) {
+      const index = k === 0 ? a : k === 1 ? b : c;
       acc[index * 3] = (acc[index * 3] as number) + nx;
       acc[index * 3 + 1] = (acc[index * 3 + 1] as number) + ny;
       acc[index * 3 + 2] = (acc[index * 3 + 2] as number) + nz;
     }
   }
-  for (const index of flat) {
+  for (let index = 0; index < count; index++) {
+    if (!flat[index]) continue;
     const x = acc[index * 3] as number;
     const y = acc[index * 3 + 1] as number;
     const z = acc[index * 3 + 2] as number;

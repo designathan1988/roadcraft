@@ -35,13 +35,14 @@ function tileArrays(parts: readonly Tile[]): {
 }
 
 /**
- * One mesh of a surface from its tiles, in order. The tiles are what the
- * network keeps (`roadSurfaces.ts`, a block merged again from them when one
- * changes); the mesh is a copy for the GPU and keeps no arrays once there
- * (`gpuOnly`).
+ * One mesh of a surface from its tiles, in order. The mesh is the only copy
+ * the network keeps, on the GPU (`gpuOnly`): `source` makes its tiles again
+ * from what they were made from (`roadSurfaces.ts`), for a lost WebGL context.
+ * DO NOT pass a source that returns `parts`: the closure would hold every
+ * tile's arrays for as long as the mesh lives.
  */
 export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOptions,
-  'name' | 'material' | 'castShadow' | 'receiveShadow'>): Mesh | null {
+  'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[]): Mesh | null {
   const arrays = tileArrays(parts);
   if (!arrays) return null;
   const geometry = new BufferGeometry();
@@ -52,6 +53,11 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
   geometry.setAttribute('roadSection', new BufferAttribute(arrays.roadSection, 3));
   geometry.setIndex(new BufferAttribute(arrays.index, 1));
   const mesh = finish(geometry, options);
-  gpuOnly(mesh, () => tileArrays(parts)!);
+  tilesOnGpu(mesh, source);
   return mesh;
+}
+
+/** A merged mesh's arrays let go once on the GPU, and made again from `source`'s tiles when asked (`gpuOnly`). */
+export function tilesOnGpu(mesh: Mesh, source: () => readonly Tile[]): void {
+  gpuOnly(mesh as Mesh & { geometry: BufferGeometry }, () => tileArrays(source())!);
 }
