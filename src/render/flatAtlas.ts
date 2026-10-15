@@ -4,6 +4,8 @@ import { reliefHeight, type ReliefVersion, type TerrainStamp } from '@world/terr
 import type { GullyDab } from '@world/gullies';
 import type { RoadDoc } from '@world/doc';
 import { MAP_HALF, MAP_REGIONS, PLATE_SIZE, plateOf } from '@world/bounds';
+import type { ChangeKind, ChangeRect } from '@world/changes';
+import { JournalCursor } from '@world/derived';
 import { GroundChanges } from './groundChanges';
 import { cancelFlatGround, flatGroundOffPage, readFlatGround, setFlatGroundFocus } from './flatGroundPool';
 import { readFarWoods } from './ecologyPool';
@@ -44,6 +46,8 @@ const NEAR_VIEW = m(1400);
 /** Corners along a plate's side (the terrain's grid). */
 const SIDE = Math.round((2 * TERRAIN_HALF) / TERRAIN_CELL) + 1;
 const PLATES = MAP_REGIONS.length;
+/** The kinds of change that put content on a plate (`readContent`): what the whole read marks. */
+const CONTENT_KINDS: readonly ChangeKind[] = ['roads', 'buildings', 'lots', 'utilities', 'landscape', 'trees', 'barriers', 'terrain', 'paint'];
 
 class PlateSource implements TerrainSource {
   changes!: RoadDoc['changes'];
@@ -325,11 +329,38 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   };
 
   let contentKey = '';
+  /**
+   * What changed on the map since the content was last read (`world/derived.ts`): a change marks the
+   * plates its rectangles reach. DO NOT walk every node, building, lot, pole, plant and wall of the
+   * map at each change (it was: every building grown read the whole town again - quadratic as a
+   * town grows); the whole map is read only when the diary cannot say where (`@rebuild`). A plate
+   * emptied keeps its ground in full until then (it only costs that plate being drawn in full).
+   */
+  const contentCursor = new JournalCursor(CONTENT_KINDS);
+  const plateCountOf = (rect: ChangeRect, into: Set<number>): void => {
+    const kx0 = Math.round(rect[0] / PLATE_SIZE), kx1 = Math.round(rect[2] / PLATE_SIZE);
+    const ky0 = Math.round(rect[1] / PLATE_SIZE), ky1 = Math.round(rect[3] / PLATE_SIZE);
+    for (let kx = kx0; kx <= kx1; kx++) for (let ky = ky0; ky <= ky1; ky++) into.add(plateOf(kx * PLATE_SIZE, ky * PLATE_SIZE));
+  };
   const readContent = (doc: TerrainSource): boolean => {
     const d = doc as Partial<RoadDoc>;
     const key = [d.revision, d.buildings?.revision, d.lotRevision, d.utilityRevision, d.treeRevision, doc.terrainRevision, doc.paintRevision, lastGullies?.dabs.length ?? 0].join(':');
     if (key === contentKey) return false;
     contentKey = key;
+    const entries = contentCursor.read(doc.changes);
+    if (entries && entries.every((e) => e.rects !== null)) {
+      const next = new Set(content);
+      for (const e of entries) for (const rect of e.rects!) plateCountOf(rect, next);
+      for (const p of plates) if (p.source.terrainStamps.length || p.source.terrainPaint.length) next.add(p.index);
+      const changed = next.size !== content.size;
+      content = next;
+      return changed;
+    }
+    return readWholeContent(doc);
+  };
+  /** @rebuild Every plate's content read from the whole document: the first time, or when the diary cannot say where. */
+  const readWholeContent = (doc: TerrainSource): boolean => {
+    const d = doc as Partial<RoadDoc>;
     const next = new Set<number>();
     const mark = (x: number, y: number): void => { next.add(plateOf(x, y)); };
     for (const n of d.nodes?.values() ?? []) mark(n.x, n.y);
