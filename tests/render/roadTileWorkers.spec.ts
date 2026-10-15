@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { MeshBasicMaterial, type BufferGeometry, type Object3D } from 'three';
+import { Box3, MeshBasicMaterial, Vector3, type BufferGeometry, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { RoadDoc } from '@world/doc';
@@ -126,5 +126,19 @@ describe('road surface tiles made off the page', () => {
     expect(off.built).toBe(tiler.asked);
     expect(tiler.groundAsked).toBeGreaterThan(0);
     expect(bytesOf(off.group)).toBe(bytesOf(here.group));
+    // Each block bounded by its tiles' boxes (`surfaceTiles.ts`): the box its vertices give, a sphere holding them.
+    let blocks = 0;
+    const p = new Vector3();
+    off.group.traverse((object) => {
+      const geometry = (object as { geometry?: BufferGeometry }).geometry;
+      if (!geometry) return;
+      blocks++;
+      const position = geometry.getAttribute('position');
+      const exact = new Box3().setFromBufferAttribute(position as never);
+      expect(geometry.boundingBox!.equals(exact), object.name).toBe(true);
+      const sphere = geometry.boundingSphere!;
+      for (let i = 0; i < position.count; i++) expect(sphere.distanceToPoint(p.fromBufferAttribute(position as never, i))).toBeLessThanOrEqual(1e-3);
+    });
+    expect(blocks).toBeGreaterThan(0);
   });
 });

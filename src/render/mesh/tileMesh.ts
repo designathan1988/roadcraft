@@ -205,6 +205,12 @@ export interface Tile {
   readonly sections: Float32Array;
   /** Local to the tile. */
   readonly indices: Uint32Array;
+  /**
+   * The tile's box, [minX, minY, minZ, maxX, maxY, maxZ] of its positions, made with it (in the
+   * worker): a block of tiles is bounded by its tiles' boxes, not by every vertex again on the page.
+   * Absent on a tile kept from before the boxes were (`derivedCache`): its block measures its vertices.
+   */
+  readonly box?: Float32Array;
 }
 
 /**
@@ -219,14 +225,29 @@ export function meshTileShape(shape: SurfaceShape, options: TileMeshOptions): Ti
   // whole mesh would get.
   smoothTopNormals(out.positions, out.normals, out.indices);
   if (shape.skirts) meshSkirts(shape.skirts, context, out);
+  const positions = new Float32Array(out.positions);
   return {
-    positions: new Float32Array(out.positions),
+    positions,
     normals: new Float32Array(out.normals),
     uvs: new Float32Array(out.uvs),
     colors: new Float32Array(out.colors),
     sections: new Float32Array(out.sections),
     indices: new Uint32Array(out.indices),
+    box: boxOf(positions),
   };
+}
+
+/** The box of a tile's positions, [minX, minY, minZ, maxX, maxY, maxZ], as three's `Box3.setFromBufferAttribute` gives it. */
+function boxOf(positions: Float32Array): Float32Array {
+  const box = new Float32Array([Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity]);
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const v = positions[i + k]!;
+      if (v < box[k]!) box[k] = v;
+      if (v > box[k + 3]!) box[k + 3] = v;
+    }
+  }
+  return box;
 }
 
 /**
