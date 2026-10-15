@@ -45,4 +45,46 @@ describe('bays kept by the diary', () => {
     expect(checks).toBeGreaterThan(8);
     expect(collectBays(w).filter((bay) => !bay.kerb).length).toBeGreaterThan(10);
   });
+
+  it('roads drawn, moved and taken away beside the lots leave the bays a fresh pass finds', () => {
+    // Bays are worked out again only within reach of the lanes an edit of the roads changed
+    // (`LaneGrid.changes`), and kerbs only on the streets the network or the lane graph changed
+    // (`kerbBays.ts` followKerbs): the rest must be what a fresh world finds.
+    const doc = new RoadDoc();
+    const a = doc.addNode({ x: m(-260), y: 0 }).id, b = doc.addNode({ x: m(260), y: 0 }).id;
+    const c = doc.addNode({ x: 0, y: m(-200) }).id, d = doc.addNode({ x: 0, y: m(200) }).id;
+    const parked = { left: 'parallel', right: 'parallel' } as const;
+    doc.addSegment(a, b, 1, null, 0, 'both', null, 'ground', undefined, parked);
+    doc.addSegment(c, d, 1, null, 0, 'both', null, 'ground', undefined, parked);
+    const net = new Network(doc);
+    net.rebuild();
+    applyLots(doc, planLots(doc, net));
+    doc.lots.forEach((l) => zoneLots(doc, [l.id], { use: 'commercial', density: 'low' }));
+    const refused = new Set<number>();
+    for (let k = 0; k < 24; k++) if (growOnLot({ doc, net, groundAt: () => 0 }, refused, 0x5eed) === null && refused.size >= doc.lots.length) break;
+    const w = new SimWorld(doc, net, 7);
+    w.rebuildTopology();
+    const fresh = (): unknown[] => {
+      const other = new SimWorld(doc, net, 7);
+      other.rebuildTopology();
+      return strip(collectBays(other));
+    };
+    expect(strip(collectBays(w))).toEqual(fresh());
+    const edits: (() => void)[] = [
+      () => { const e = doc.addNode({ x: m(-120), y: m(140) }).id, g = doc.addNode({ x: m(120), y: m(140) }).id; doc.addSegment(e, g, 1, null, 0, 'both', null, 'ground', undefined, parked); },
+      () => { doc.moveNode(b, { x: m(280), y: m(30) }); },
+      () => { const far = doc.addNode({ x: m(900), y: m(900) }).id, far2 = doc.addNode({ x: m(1000), y: m(900) }).id; doc.addSegment(far, far2, 1); },
+      () => { const seg = [...doc.segments.values()].find((x) => x.a === c || x.b === c); if (seg) doc.removeSegment(seg.id); },
+    ];
+    let kerbs = 0;
+    for (const edit of edits) {
+      edit();
+      net.rebuild();
+      w.rebuildTopology();
+      const kept = collectBays(w);
+      kerbs = Math.max(kerbs, kept.filter((bay) => bay.kerb).length);
+      expect(strip(kept)).toEqual(fresh());
+    }
+    expect(kerbs, 'kerb bays along the streets that park').toBeGreaterThan(0);
+  });
 });

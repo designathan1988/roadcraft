@@ -267,6 +267,15 @@ export class SidewalkGraph {
     this.ofNode.clear();
   }
 
+  /**
+   * What a road node's kerbs and zebras were made as (`update`): a new object
+   * each time the node is made again, the same while it stands - for what a
+   * reader keeps by node (`agents/walk.ts` crossingOf).
+   */
+  madeAt(node: NodeId): object | undefined {
+    return this.ofNode.get(node);
+  }
+
   crossingEdge(id: CrossingId): SidewalkEdge | undefined {
     const eid = this.crossings.get(id);
     return eid ? this.edges.get(eid) : undefined;

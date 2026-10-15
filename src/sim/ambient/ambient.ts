@@ -11,7 +11,7 @@ import { spawnVehicleAt, trafficTarget } from '../vehicles/spawn';
 import { vehiclePose } from '../pose';
 import { joinsFootway, onLastStretch, removeWalker, walkerAlive, walkerOf, walkOn, walkThrough } from '../agents/walk';
 import type { Walkway } from '@world/walkways';
-import { bayChangesSince, baySources, baysOfSource, stallFits, type Bay } from '../agents/parking';
+import { bayChangesSince, baySources, baysOfSource, lanesInBox, stallFits, type Bay } from '../agents/parking';
 import { type DoorWay, doorWay, personGates } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
 import { busy, CARS, outShare, PEOPLE, type Mix } from './demand';
@@ -61,6 +61,8 @@ import { LotPlaces, PLACE_KINDS } from './lotPlaces';
  *   no road end keeps its numbers on its lots alone.
  */
 
+/** How far round a road end its footway points are looked for, u. */
+const END_LOOK = m(16);
 /** Most people on foot at once, and cars driving, and the cars driving when zoomed out. */
 export const MAX_WALKERS = 260;
 export const MAX_DRIVERS = 180;
@@ -143,7 +145,8 @@ export class AmbientWorld {
   readonly sighted = new Set<number>();
   private clock = 0;
   private nextTrip = 1 << 26;
-  private lanesFor = '';
+  /** The lane graph's state the opening's lanes were listed at (`openingLanes`). */
+  private lanesFor: object | null = null;
   private lanes: { id: string; length: number; x: number; y: number }[] = [];
   /** Each lane's end along all of them laid end to end, in the order of `lanes`: `lanesAt[k]` is the lengths of lanes 0..k summed. */
   private lanesAt = new Float64Array(0);
@@ -367,9 +370,12 @@ export class AmbientWorld {
 
   // ------------------------------------------------------------ on foot, from the road ends
 
-  private endsFor = '';
-  /** The footway points at the end of each road, by the road end's node. */
+
+  /** The network's state the road ends were brought up to (`roadEnds`). */
+  private endsFor: object | null = null;
+  /** The footway points at the end of each road, by the road end's node; each node's places in `ends`. */
   private ends: { node: number; x: number; y: number }[] = [];
+  private readonly endSlots = new Map<number, number[]>();
   /** Walkers whose walk does not end at a road end (a map with one): sent on to one when they can be. */
   private readonly roaming = new Set<number>();
   private nextEdgeLook = 0;
@@ -385,28 +391,59 @@ export class AmbientWorld {
   /** People come out of and go in at the lots' gates (off: everybody passes from road end to road end, for a measure). */
   gates = true;
 
-  /** Where people come in and leave: the footways round every road end (a node with one road). */
+  /**
+   * Where people come in and leave: the footways round every road end (a node
+   * with one road), kept by what each rebuild of the network changed
+   * (`Network.changesSince`): the nodes it changed, the ends of the roads it
+   * changed, and the road ends near what it changed (the walkways round them,
+   * `walkableNear`), looked at again; the others stand. DO NOT look round
+   * every node of the map when the network moves: every road drawn probed the
+   * town's road ends again.
+   */
   private roadEnds(w: SimWorld): { node: number; x: number; y: number }[] {
-    const key = `${w.topologyRevision}:${w.net.revision}`;
-    if (key === this.endsFor) return this.ends;
-    this.endsFor = key;
-    this.ends = [];
+    if (this.endsFor === w.net.state) return this.ends;
     const engine = w.pedEngine;
     if (!engine.walkableNear) return this.ends;
-    for (const node of w.doc.nodes.values()) {
-      if (!w.doc.mapEdge(node.id)) continue;
+    const delta = this.endsFor === null ? null : w.net.changesSince(this.endsFor);
+    this.endsFor = w.net.state;
+    const nodes = new Set<number>();
+    if (delta === null) {
+      // @rebuild Every road end: the first look, a map opened, a network further behind than it remembers.
+      this.ends = [];
+      this.endSlots.clear();
+      for (const id of w.doc.nodes.keys()) nodes.add(id);
+    } else {
+      for (const id of delta.nodes) nodes.add(id);
+      for (const id of delta.segments) {
+        const seg = w.doc.segment(id);
+        if (seg) { nodes.add(seg.a); nodes.add(seg.b); }
+      }
+      // A walkway changed within reach of a road end's look (16 m round it) moves what it finds.
+      for (const r of delta.rects) {
+        for (const id of w.net.segmentCells.idsMeeting([r[0] - END_LOOK, r[1] - END_LOOK, r[2] + END_LOOK, r[3] + END_LOOK])) {
+          const seg = w.doc.segment(id);
+          if (seg) { nodes.add(seg.a); nodes.add(seg.b); }
+        }
+      }
+      for (const id of nodes) this.dropEnds(id);
+    }
+    for (const id of [...nodes].sort((x, y) => x - y)) {
+      const node = w.doc.node(id as never);
+      if (!node || !w.doc.mapEdge(node.id)) continue;
       const found: { x: number; y: number }[] = [];
       // Round the end, out to past the widest footway: each side's walkway once.
       for (let k = 0; k < 16; k++) {
-        const a = (k / 16) * Math.PI * 2;
+        const angle = (k / 16) * Math.PI * 2;
         for (const r of [m(4), m(8), m(12)]) {
-          const p = engine.walkableNear.call(engine, w, node.x + Math.cos(a) * r, node.y + Math.sin(a) * r, m(3));
-          if (!p || Math.hypot(p.x - node.x, p.y - node.y) > m(16)) continue;
-          if (found.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < m(3))) continue;
-          found.push({ x: p.x, y: p.y });
+          const q = engine.walkableNear.call(engine, w, node.x + Math.cos(angle) * r, node.y + Math.sin(angle) * r, m(3));
+          if (!q || Math.hypot(q.x - node.x, q.y - node.y) > END_LOOK) continue;
+          if (found.some((f) => Math.hypot(f.x - q.x, f.y - q.y) < m(3))) continue;
+          found.push({ x: q.x, y: q.y });
         }
       }
-      for (const p of found) this.ends.push({ node: node.id, x: p.x, y: p.y });
+      const slots: number[] = [];
+      for (const q of found) { slots.push(this.ends.length); this.ends.push({ node: node.id, x: q.x, y: q.y }); }
+      if (slots.length) this.endSlots.set(node.id, slots);
     }
     return this.ends;
   }
@@ -597,7 +634,7 @@ export class AmbientWorld {
   private open(w: SimWorld): void {
     // A map with no road (a new map): nothing to fill, and nothing filled later
     // in sight - the first road drawn is not filled in the middle of a street.
-    if (!this.lanesNear(w).length) { this.endOpening(); return; }
+    if (!this.openingLanes(w).length) { this.endOpening(); return; }
     const cars = w.edgeTraffic ? trafficTarget(w) - w.vehicles.size : 0;
     const people = this.peopleTarget(w) - this.walkers.size;
     if (cars > 0) this.openCars(w, Math.min(cars, OPEN_CARS));
@@ -619,7 +656,7 @@ export class AmbientWorld {
    * round until a lot calls them in (`agents/lotTraffic.ts`).
    */
   private openCars(w: SimWorld, n: number): void {
-    const lanes = this.lanesNear(w);
+    const lanes = this.openingLanes(w);
     const at = this.lanesAt;
     const total = at.length ? at[at.length - 1]! : 0;
     const rng = w.rng.spawnVehicles;
@@ -745,10 +782,35 @@ export class AmbientWorld {
     if (roams) this.roaming.add(id);
   }
 
-  /** A road end's footway point at another road end than `not`; null when there is none. */
+  /** A road end's points taken out of `ends`, each place filled by the last point (its node's slot moved with it). */
+  private dropEnds(node: number): void {
+    const slots = this.endSlots.get(node);
+    if (!slots) return;
+    this.endSlots.delete(node);
+    for (const slot of [...slots].sort((x, y) => y - x)) {
+      const last = this.ends.pop()!;
+      if (slot === this.ends.length) continue;
+      this.ends[slot] = last;
+      const moved = this.endSlots.get(last.node);
+      if (moved) moved[moved.indexOf(this.ends.length)] = slot;
+    }
+  }
+
+  /**
+   * A road end's footway point at another road end than `not`, each drawn
+   * alike; null when there is none. Drawn among all of them, a draw of `not`'s
+   * own points falling to the next of the others: DO NOT copy the list of the
+   * town's road ends for each walker sent.
+   */
   private pickEnd(w: SimWorld, not: number | null): { node: number; x: number; y: number } | null {
-    const ends = this.roadEnds(w).filter((e) => e.node !== not);
-    return ends.length ? ends[Math.floor(w.rng.ambient.float() * ends.length)]! : null;
+    const ends = this.roadEnds(w);
+    const own = not === null ? [] : [...this.endSlots.get(not) ?? []].sort((x, y) => x - y);
+    const others = ends.length - own.length;
+    if (others <= 0) return null;
+    // The k-th point of the others, in `ends` order: each of `not`'s points (few) at or before it steps it on.
+    let at = Math.floor(w.rng.ambient.float() * others);
+    for (const slot of own) if (slot <= at) at++;
+    return ends[at]!;
   }
 
   // ------------------------------------------------------------ traffic
@@ -777,7 +839,10 @@ export class AmbientWorld {
       }
     }
     if (this.drivers.size >= want) return;
-    const lanes = this.lanesNear(w);
+    // The lanes within reach of the focus, from the lanes' grid (`parking.ts` lanesInBox). DO NOT draw from
+    // every lane of the map and throw away those far off: on a large map nearly every draw fell outside the
+    // reach, and no car came near the view.
+    const lanes = this.lanesAround(w, focus, reach);
     if (!lanes.length) return;
     // Cars are drawn at every zoom: only past the edge of the view, but for a map just opened.
     const anywhere = this.fresh;
@@ -798,16 +863,26 @@ export class AmbientWorld {
     }
   }
 
-  /** The link lanes of the map, each with its middle: where cars can join. */
-  private lanesNear(w: SimWorld): { id: string; length: number; x: number; y: number }[] {
-    const key = `${w.topologyRevision}:${w.vehicleTopologyRevision}`;
-    if (key !== this.lanesFor) this.listLanes(w, key);
+  /** The link lanes whose bounds come within `reach` of the focus, each with its middle: where cars can join near the view. */
+  private lanesAround(w: SimWorld, focus: { x: number; y: number }, reach: number): { id: string; length: number; x: number; y: number }[] {
+    const out: { id: string; length: number; x: number; y: number }[] = [];
+    for (const lane of lanesInBox(w, focus.x - reach, focus.y - reach, focus.x + reach, focus.y + reach)) {
+      if (lane.kind !== 'link' || lane.length < m(12)) continue;
+      const mid = lane.centre.sampleAt(lane.length / 2).p;
+      out.push({ id: lane.id, length: lane.length, x: mid.x, y: mid.y });
+    }
+    return out;
+  }
+
+  /** The link lanes of the map, each with its middle, for the opening's cars drawn by length (`openCars`). */
+  private openingLanes(w: SimWorld): { id: string; length: number; x: number; y: number }[] {
+    if (w.topologyLog.state !== this.lanesFor) this.listLanes(w);
     return this.lanes;
   }
 
-  /** @rebuild Listed again only when the lanes changed (an edit of the roads), with their running sum. */
-  private listLanes(w: SimWorld, key: string): void {
-    this.lanesFor = key;
+  /** @rebuild Listed only while a map is opening (`OPEN_TICKS`), when the lanes changed, with their running sum. */
+  private listLanes(w: SimWorld): void {
+    this.lanesFor = w.topologyLog.state;
     this.lanes = [];
     for (const lane of w.graph.lanelets.values()) {
       if (lane.kind !== 'link' || lane.length < m(12)) continue;

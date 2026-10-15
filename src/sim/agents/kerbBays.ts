@@ -43,11 +43,11 @@ const kerbCell = (i: number, j: number): number => (i + 32768) * 65536 + (j + 32
  * entrance of the town on each pass (`lotEntrances` walks every building).
  */
 export interface KerbBook {
-  /** The network and its revision the streets were read at. */
+  /** The network, its state and the lane graph's the streets were read at (`Network.changesSince`, `SimWorld.topologyLog`). */
   net: Network | null;
-  revision: number;
-  /** The streets that park, in the network's order, and each one's reach (its line's box, grown). */
-  order: SegmentId[];
+  netSeen: object | null;
+  lanesSeen: object | null;
+  /** The streets that park: each one's reach (its line's box, grown), and the streets by cell. */
   readonly reach: Map<SegmentId, { x0: number; y0: number; x1: number; y1: number }>;
   readonly streets: Map<number, SegmentId[]>;
   /** Each street's bays (ids from 0). */
@@ -58,7 +58,7 @@ export interface KerbBook {
 }
 
 export function newKerbBook(): KerbBook {
-  return { net: null, revision: -1, order: [], reach: new Map(), streets: new Map(), bays: new Map(), entrances: new Map(), entranceCells: new Map() };
+  return { net: null, netSeen: null, lanesSeen: null, reach: new Map(), streets: new Map(), bays: new Map(), entrances: new Map(), entranceCells: new Map() };
 }
 
 function entranceBox(list: readonly Entrance[]): { x0: number; y0: number; x1: number; y1: number } {
@@ -100,15 +100,28 @@ function fileEntrances(book: KerbBook, id: BuildingId, list: readonly Entrance[]
 }
 
 /**
- * The kerbs brought up to date: every street laid out again when the roads
- * moved, else only the streets an entrance changed in front of (a lot's gate
- * or car park drawn, moved or taken away). The streets whose bays changed -
- * laid out otherwise, or gone - for whoever keeps something by street
- * (`parking.ts` bayChangesSince).
+ * The kerbs brought up to date: the streets the network changed and those
+ * whose lanes the lane graph built again laid out again (a street's bays read
+ * its own line, its own ends and its own lanes, `kerbBaysOf`), and the
+ * streets an entrance changed in front of (a lot's gate or car park drawn,
+ * moved or taken away). The streets whose bays changed - laid out otherwise,
+ * or gone - for whoever keeps something by street (`parking.ts`
+ * bayChangesSince). DO NOT lay out every street of the town when the roads
+ * move: every road drawn laid out the town's kerbs again.
  */
-export function followKerbs(w: SimWorld, book: KerbBook, roadsMoved: boolean, delta: BuildingDelta | null, rank: (id: BuildingId) => number, laneAt: LaneAt): Set<SegmentId> {
+export function followKerbs(w: SimWorld, book: KerbBook, delta: BuildingDelta | null, rank: (id: BuildingId) => number, laneAt: LaneAt): Set<SegmentId> {
   const dirty = new Set<SegmentId>();
-  const netMoved = roadsMoved || book.net !== w.net || book.revision !== w.net.revision;
+  // The roads: what the network and the lane graph changed since the streets were read (null: read them all).
+  const net = book.net === w.net && book.netSeen !== null ? w.net.changesSince(book.netSeen) : null;
+  const lanes = w.topologyLog.since(book.lanesSeen);
+  book.net = w.net;
+  book.netSeen = w.net.state;
+  book.lanesSeen = w.topologyLog.state;
+  const streets = new Set<SegmentId>();
+  if (net && lanes) {
+    for (const id of net.segments) streets.add(id);
+    for (const change of lanes) for (const id of change.segments) streets.add(id);
+  }
   // The entrances: read whole when the diary cannot say what changed.
   if (delta === null) readEntrances(w, book);
   const touched: { x0: number; y0: number; x1: number; y1: number }[] = [];
@@ -123,10 +136,20 @@ export function followKerbs(w: SimWorld, book: KerbBook, roadsMoved: boolean, de
     if (was.length) touched.push(entranceBox(was));
     if (now.length) touched.push(entranceBox(now));
   }
-  const before = netMoved ? new Map(book.bays) : book.bays;
-  if (netMoved) readStreets(w, book);
-  if (netMoved || delta === null) {
-    for (const id of book.order) dirty.add(id);
+  const whole = net === null || lanes === null;
+  const before = whole ? new Map(book.bays) : book.bays;
+  const changed = new Set<SegmentId>();
+  if (whole) readStreets(w, book);
+  else {
+    for (const id of streets) {
+      unfileStreet(book, id);
+      if (book.bays.delete(id)) changed.add(id);
+      fileStreet(w, book, id);
+      if (book.reach.has(id)) dirty.add(id);
+    }
+  }
+  if (whole || delta === null) {
+    for (const id of book.reach.keys()) dirty.add(id);
   } else {
     for (const box of touched) {
       for (let i = Math.floor(box.x0 / KERB_CELL); i <= Math.floor(box.x1 / KERB_CELL); i++) {
@@ -139,15 +162,14 @@ export function followKerbs(w: SimWorld, book: KerbBook, roadsMoved: boolean, de
       }
     }
   }
-  const changed = new Set<SegmentId>();
-  for (const id of dirty) {
+  for (const id of [...dirty].sort((a, b) => a - b)) {
     const was = before.get(id);
     const now = kerbBaysOf(w, book, id, rank, laneAt);
     book.bays.set(id, now);
     if (!was || !sameBays(was, now)) changed.add(id);
   }
   // Streets that no longer park (or are gone): their bays went with them.
-  if (netMoved) for (const id of before.keys()) if (!book.bays.has(id)) changed.add(id);
+  if (whole) for (const id of before.keys()) if (!book.bays.has(id)) changed.add(id);
   return changed;
 }
 
@@ -180,28 +202,45 @@ function readEntrances(w: SimWorld, book: KerbBook): void {
   }
 }
 
-/** @rebuild The streets that park, read again when the roads moved: each one's reach, filed by cell. */
+/** @rebuild The streets that park, read whole: the first look, a map opened, or roads further behind than the logs remember. */
 function readStreets(w: SimWorld, book: KerbBook): void {
-  book.net = w.net;
-  book.revision = w.net.revision;
-  book.order = [];
   book.reach.clear();
   book.streets.clear();
   book.bays.clear();
-  for (const ribbon of w.net.ribbons.values()) {
-    const rt = ribbon.road;
-    if (rt.parkingLeft <= 0 && rt.parkingRight <= 0) continue;
-    const pad = rt.width / 2 + FRONTAGE_REACH;
-    const bb = ribbon.full.bbox;
-    const reach = { x0: bb.minX - pad, y0: bb.minY - pad, x1: bb.maxX + pad, y1: bb.maxY + pad };
-    book.order.push(ribbon.id);
-    book.reach.set(ribbon.id, reach);
-    for (let i = Math.floor(reach.x0 / KERB_CELL); i <= Math.floor(reach.x1 / KERB_CELL); i++) {
-      for (let j = Math.floor(reach.y0 / KERB_CELL); j <= Math.floor(reach.y1 / KERB_CELL); j++) {
-        const k = kerbCell(i, j);
-        const list = book.streets.get(k);
-        if (list) list.push(ribbon.id); else book.streets.set(k, [ribbon.id]);
-      }
+  for (const id of w.net.ribbons.keys()) fileStreet(w, book, id);
+}
+
+/** A street that parks filed: its reach (its line's box, grown) and the cells it covers. */
+function fileStreet(w: SimWorld, book: KerbBook, id: SegmentId): void {
+  const ribbon = w.net.ribbons.get(id);
+  if (!ribbon) return;
+  const rt = ribbon.road;
+  if (rt.parkingLeft <= 0 && rt.parkingRight <= 0) return;
+  const pad = rt.width / 2 + FRONTAGE_REACH;
+  const bb = ribbon.full.bbox;
+  const reach = { x0: bb.minX - pad, y0: bb.minY - pad, x1: bb.maxX + pad, y1: bb.maxY + pad };
+  book.reach.set(id, reach);
+  for (let i = Math.floor(reach.x0 / KERB_CELL); i <= Math.floor(reach.x1 / KERB_CELL); i++) {
+    for (let j = Math.floor(reach.y0 / KERB_CELL); j <= Math.floor(reach.y1 / KERB_CELL); j++) {
+      const k = kerbCell(i, j);
+      const list = book.streets.get(k);
+      if (list) list.push(id); else book.streets.set(k, [id]);
+    }
+  }
+}
+
+/** A street taken out of the cells it was filed in. */
+function unfileStreet(book: KerbBook, id: SegmentId): void {
+  const reach = book.reach.get(id);
+  if (!reach) return;
+  book.reach.delete(id);
+  for (let i = Math.floor(reach.x0 / KERB_CELL); i <= Math.floor(reach.x1 / KERB_CELL); i++) {
+    for (let j = Math.floor(reach.y0 / KERB_CELL); j <= Math.floor(reach.y1 / KERB_CELL); j++) {
+      const k = kerbCell(i, j);
+      const list = book.streets.get(k);
+      const at = list ? list.indexOf(id) : -1;
+      if (at >= 0) list!.splice(at, 1);
+      if (list && !list.length) book.streets.delete(k);
     }
   }
 }

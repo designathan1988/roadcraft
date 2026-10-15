@@ -8,7 +8,7 @@ import { planTrip } from '../drive/tactical';
 import { makeDriver } from '../vehicles/driver';
 import { createVehicle, snapshot, type Vehicle, type VehicleId } from '../vehicles/state';
 import { planFrom } from '../routing/router';
-import { laneBeside, laneRank, lanesInBox } from '../agents/parking';
+import { LANE_BESIDE_REACH, laneBeside, laneChangesSince, lanesInBox } from '../agents/parking';
 import type { BayLane } from '../agents/parking';
 
 /**
@@ -84,7 +84,8 @@ interface LevelCrossing { readonly lanelet: string; readonly at: number; readonl
 
 interface RailLine {
   readonly line: TransitLine;
-  readonly crossings: LevelCrossing[];
+  /** Where it crosses the roads' lanes: made again when a lane near it changes (`followLanes`). */
+  crossings: LevelCrossing[];
   /** The loop out and back: points and the distance along it of each. */
   readonly points: Vec2[];
   readonly at: number[];
@@ -107,7 +108,9 @@ export interface TrainView {
 }
 
 export class TransitSim {
-  private builtFor = '';
+  /** The transit plan the lines were made from (`Doc.transitRevision`), and the lanes' changes read since. */
+  private transitFor = -1;
+  private lanesSeen: object | null = null;
   private stops = new Map<number, TransitStop>();
   /** Each bus stop's lane point (where a bus stands beside it). */
   private stopLanes = new Map<number, BayLane>();
@@ -140,13 +143,23 @@ export class TransitSim {
     }
     this.buses = [];
     const kept = new Set<Bus>();
-    for (const line of t.lines) {
-      if (line.mode !== 'bus') continue;
+    for (const line of t.lines) if (line.mode === 'bus') this.placeBuses(w, line, before.get(line.id) ?? [], kept);
+    for (const list of before.values()) {
+      for (const b of list) {
+        if (kept.has(b)) continue;
+        if (b.id !== null) { const v = w.vehicles.get(b.id); if (v) w.removeVehicle(v); }
+      }
+    }
+    this.placeRails(w);
+  }
+
+  /** A bus line's buses: those it had kept where they are, each sent on again; more put at its terminal, up to its number. */
+  private placeBuses(w: SimWorld, line: TransitLine, was: readonly Bus[], kept: Set<Bus>): void {
+    {
       const served = line.stops.filter((id) => this.stopLanes.has(id));
-      if (served.length < 2) continue;
+      if (served.length < 2) return;
       // From a terminal, if the line has one.
       const start = Math.max(0, line.stops.findIndex((id) => this.stops.get(id)?.terminal));
-      const was = before.get(line.id) ?? [];
       for (let k = 0; k < line.vehicles; k++) {
         const bus = was[k];
         if (!bus) {
@@ -160,12 +173,11 @@ export class TransitSim {
         this.buses.push(bus);
       }
     }
-    for (const list of before.values()) {
-      for (const b of list) {
-        if (kept.has(b)) continue;
-        if (b.id !== null) { const v = w.vehicles.get(b.id); if (v) w.removeVehicle(v); }
-      }
-    }
+  }
+
+  /** The train and metro lines' loops and trains, made from the transit plan. */
+  private placeRails(w: SimWorld): void {
+    const t = w.doc.transit;
     const railsBefore = new Map(this.rails.map((r) => [r.line.id, r]));
     this.rails = [];
     this.crossingsByLane.clear();
@@ -238,10 +250,67 @@ export class TransitSim {
    */
   private readonly crossingsByLane = new Map<string, { readonly rail: RailLine; readonly crossing: LevelCrossing }[]>();
 
+  /**
+   * The lines brought up to the roads' lanes: the bus stops near a lane that
+   * changed given their lane again, and their lines' buses sent on; the train
+   * lines a changed lane comes near given their level crossings again. The
+   * rest stands. DO NOT make every line again for an edit of the roads: every
+   * road drawn re-placed every stop and re-crossed every track of the town.
+   */
+  private followLanes(w: SimWorld): void {
+    const { state, boxes } = laneChangesSince(w, this.lanesSeen);
+    this.lanesSeen = state;
+    if (boxes === null) { this.rebuild(w); return; }
+    if (!boxes.length) return;
+    const near = (x0: number, y0: number, x1: number, y1: number): boolean =>
+      boxes.some((r) => r[0] <= x1 && r[2] >= x0 && r[1] <= y1 && r[3] >= y0);
+    const lines = new Set<number>();
+    for (const s of this.stops.values()) {
+      if (s.mode !== 'bus' || !near(s.x - LANE_BESIDE_REACH, s.y - LANE_BESIDE_REACH, s.x + LANE_BESIDE_REACH, s.y + LANE_BESIDE_REACH)) continue;
+      const lane = laneBeside(w, s.x, s.y, s.segment);
+      const was = this.stopLanes.get(s.id);
+      if (lane) this.stopLanes.set(s.id, lane); else this.stopLanes.delete(s.id);
+      if (!sameLane(was, lane)) for (const line of this.lines.values()) if (line.mode === 'bus' && line.stops.includes(s.id)) lines.add(line.id);
+    }
+    if (lines.size) {
+      const before = new Map<number, Bus[]>();
+      for (const b of this.buses) if (lines.has(b.line)) { const list = before.get(b.line); if (list) list.push(b); else before.set(b.line, [b]); }
+      this.buses = this.buses.filter((b) => !lines.has(b.line));
+      const kept = new Set<Bus>();
+      for (const id of [...lines].sort((a, b) => a - b)) this.placeBuses(w, this.lines.get(id)!, before.get(id) ?? [], kept);
+      for (const list of before.values()) for (const b of list) {
+        if (kept.has(b) || b.id === null) continue;
+        const v = w.vehicles.get(b.id);
+        if (v) w.removeVehicle(v);
+      }
+    }
+    for (const rail of this.rails) {
+      if (rail.line.mode !== 'train') continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const p of rail.points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+      if (!near(x0, y0, x1, y1)) continue;
+      for (const c of rail.crossings) {
+        const list = this.crossingsByLane.get(c.lanelet);
+        if (!list) continue;
+        const kept = list.filter((e) => e.rail !== rail);
+        if (kept.length) this.crossingsByLane.set(c.lanelet, kept); else this.crossingsByLane.delete(c.lanelet);
+      }
+      rail.crossings = levelCrossings(w, rail.points, rail.at);
+      for (const c of rail.crossings) {
+        const list = this.crossingsByLane.get(c.lanelet);
+        if (list) list.push({ rail, crossing: c }); else this.crossingsByLane.set(c.lanelet, [{ rail, crossing: c }]);
+      }
+    }
+  }
+
   /** One tick of every line. */
   step(w: SimWorld): void {
-    const key = `${w.doc.transitRevision}:${w.topologyRevision}`;
-    if (key !== this.builtFor) { this.builtFor = key; this.rebuild(w); }
+    if (w.doc.transitRevision !== this.transitFor) {
+      // @rebuild The transit plan itself changed (a line or stop drawn): its lines made again.
+      this.transitFor = w.doc.transitRevision;
+      this.lanesSeen = laneChangesSince(w, null).state;
+      this.rebuild(w);
+    } else this.followLanes(w);
     for (const bus of this.buses) this.stepBus(w, bus);
     for (const rail of this.rails) for (const train of rail.trains) this.stepTrain(rail, train);
   }
@@ -485,17 +554,22 @@ export class TransitSim {
  */
 const CROSS_SLACK = 1e-3;
 
+/** Whether a stop's lane point is the same before and after. */
+function sameLane(a: { lanelet: string; at: number; x: number; y: number } | undefined, b: { lanelet: string; at: number; x: number; y: number } | null): boolean {
+  if (!a || !b) return !a && !b;
+  return a.lanelet === b.lanelet && a.at === b.at && a.x === b.x && a.y === b.y;
+}
+
 /**
  * Where a train's loop crosses a lane of a road: each leg of the loop meets
  * the lanes near it (the lanes' grid, `parking.ts` `lanesInBox`) and the
  * segments of those lanes whose box reaches the leg's. Every lane of the map
  * was met with every leg of every line, segment by segment, on each road edit.
- * DO NOT go back to the loop over every lane: in the order that loop met them
- * (the graph's lanes, their segments, then the legs), which the sort below keeps.
+ * DO NOT go back to the loop over every lane. Sorted by lane id, then segment,
+ * then leg: the same order whatever order the edits built the lanes in.
  */
 export function levelCrossings(w: SimWorld, points: readonly Vec2[], at: readonly number[]): LevelCrossing[] {
-  const rank = laneRank(w);
-  const found: { rank: number; j: number; i: number; crossing: LevelCrossing }[] = [];
+  const found: { lane: string; j: number; i: number; crossing: LevelCrossing }[] = [];
   for (let i = 0; i < points.length; i++) {
     const a = points[i]!, b = points[(i + 1) % points.length]!;
     const x0 = Math.min(a.x, b.x) - CROSS_SLACK, x1 = Math.max(a.x, b.x) + CROSS_SLACK;
@@ -508,11 +582,11 @@ export function levelCrossings(w: SimWorld, points: readonly Vec2[], at: readonl
         const hit = crossAt(a, b, p, q);
         if (!hit) continue;
         const laneS = c.closestPoint({ x: p.x + (q.x - p.x) * hit.v, y: p.y + (q.y - p.y) * hit.v }).s;
-        found.push({ rank: rank(lane.id), j, i, crossing: { lanelet: lane.id, at: laneS, loopS: at[i]! + Math.hypot(b.x - a.x, b.y - a.y) * hit.u } });
+        found.push({ lane: lane.id, j, i, crossing: { lanelet: lane.id, at: laneS, loopS: at[i]! + Math.hypot(b.x - a.x, b.y - a.y) * hit.u } });
       }
     }
   }
-  found.sort((u, v) => u.rank - v.rank || u.j - v.j || u.i - v.i);
+  found.sort((u, v) => (u.lane < v.lane ? -1 : u.lane > v.lane ? 1 : 0) || u.j - v.j || u.i - v.i);
   return found.map((f) => f.crossing);
 }
 

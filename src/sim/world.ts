@@ -6,6 +6,7 @@ import type { Network } from '@world/network';
 import { type Connector, type GraphChange, type JunctionTopology, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
 import { ChangeLog } from '@core/changeLog';
 import { NetworkLength } from '@world/networkLength';
+import { LaneGrid } from './agents/laneGrid';
 import { ConflictIndex, type BodyClass, type WAITING } from '@world/conflictPoints';
 import type { PairMeasurer } from '@world/conflictTable';
 import { SimClock } from './clock';
@@ -191,7 +192,7 @@ export class SimWorld {
    * their last step. Stage 1 only keeps their time until somebody comes.
    */
   private readonly asleep = new Set<SignalController>();
-  private asleepSince = { revision: -1, junctions: -1 };
+  private asleepSince = { roads: -1, junctions: -1 };
 
   /**
    * What vehicles, signals and the audit may know about the people at each
@@ -248,6 +249,8 @@ export class SimWorld {
   nextPersonId = 1;
   /** The summed length of the roads, kept by what each rebuild changed (`world/networkLength.ts`). */
   readonly roadLength = new NetworkLength();
+  /** The lanes by place, kept by what each build of the lane graph changed (`agents/laneGrid.ts`). */
+  readonly laneGrid = new LaneGrid();
   /** Per-world population timer; simulations must never influence each other. */
   vehicleSpawnClock = 0;
   /**
@@ -582,14 +585,18 @@ export class SimWorld {
    * reads (`pedestriansCrossing`), its settings. Woken here, from what is
    * busy rather than from the map: a vehicle on one of its approaches
    * (`occupied`), somebody on or at one of its crossings (`crossingStates`
-   * holds only those), a reservation for it; and all of them by an edit or a
-   * rebuilt topology. Off (`doLess` false), none sleeps.
+   * holds only those), a reservation for it; and all of them by an edit of
+   * the roads or their traffic plan, or a rebuilt topology. Off (`doLess`
+   * false), none sleeps. DO NOT wake them on the document's revision: every
+   * building grown woke every signal of the town, and none slept while the
+   * city grew.
    */
   signalsAsleep(deps: WorldSignalDeps): Set<SignalController> {
     const asleep = this.asleep;
-    if (!this.doLess || this.asleepSince.revision !== this.doc.revision || this.asleepSince.junctions !== this.junctionsVersion) {
+    const roads = this.doc.changes.serialOf('roads', 'traffic');
+    if (!this.doLess || this.asleepSince.roads !== roads || this.asleepSince.junctions !== this.junctionsVersion) {
       asleep.clear();
-      this.asleepSince = { revision: this.doc.revision, junctions: this.junctionsVersion };
+      this.asleepSince = { roads, junctions: this.junctionsVersion };
     }
     if (asleep.size === 0) return asleep;
     if (this.junctionOrder.version !== this.junctionsVersion) this.refreshJunctionOrder();

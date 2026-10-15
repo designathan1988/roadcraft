@@ -23,7 +23,8 @@ function oldCrossings(w: SimWorld, points: readonly Vec2[], at: readonly number[
     return u >= 0 && u <= 1 && v >= 0 && v <= 1 ? { u, v } : null;
   };
   const crossings: { lanelet: string; at: number; loopS: number }[] = [];
-  for (const lane of w.graph.lanelets.values()) {
+  // In lane id order: the order the lanes' grid hands them out in, whatever order the edits built them in.
+  for (const lane of [...w.graph.lanelets.values()].sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0))) {
     const c = lane.centre;
     for (let j = 1; j < c.n; j++) {
       const p = c.point(j - 1), q = c.point(j);

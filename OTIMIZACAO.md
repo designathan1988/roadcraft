@@ -198,6 +198,11 @@ Cada linha é um commit; a causa estava no algoritmo e saiu do código.
 - Diário da topologia (`core/changeLog.ts`, `SimWorld.topologyLog`): calçadas e faixas da simulação (`SidewalkGraph.update`), trechos de faixa por cruzamento (`CrossingSpans.update`), controladores, anéis pequenos (busca por faixa com o que leu arquivado), ids de faixa por nó e faixas-armadilha (sementes pelo diário, descasque só da região presa). `tests/scale/baseline.json` vazio: nenhum produto de uma edição de rua cresce com o mapa.
 - Sai o fatiamento da topologia em quadros (`TOPOLOGY_SLICE_MS`, `LOADING_SLICE_MS`): o trabalho é o da edição; só os pares medidos pelos workers são esperados.
 - Reinício igual a mundo novo: índice dos postes de semáforo zerado com o mundo; o próximo id de pessoa é do mundo (`nextPersonId`), como o de veículo.
+- Vagas por edição de via só onde mudou: grade de faixas mantida pelo diário da topologia (`LaneGrid`, do `SimWorld`, em ordem de id), lotes refeitos só ao alcance das faixas que mudaram (caixas antes e depois), meio-fio só nas ruas do delta da rede e nas ruas cujas faixas foram refeitas.
+- Transporte: edição de via refaz só os pontos de ônibus perto das faixas mudadas (e os ônibus das linhas deles) e as passagens de nível das linhas de trem por onde passam; a linha inteira só quando o plano do transporte muda.
+- Ambiente: carros nascem entre as faixas perto da vista (índice espacial), não sorteando o mapa inteiro e descartando os longe (numa cidade grande quase nenhum nascia perto); pontas de rua mantidas pelo delta da rede, sorteio sem copiar a lista.
+- Semáforos dormentes acordam por mudança de via ou de controle (`roads`/`traffic` do diário), não a cada prédio crescido.
+- Faixa de cada caminho dos pedestres validada pelo registro do próprio nó (`SidewalkGraph.madeAt`), não pela revisão da topologia.
 
 ## Pendente e por quê
 

@@ -11,7 +11,8 @@ import type { VehicleId } from '../vehicles/state';
 import type { SegmentId } from '@world/ids';
 import type { BuildingStore } from '@world/buildings/store';
 import { BuildingsInOrder } from './buildingOrder';
-import { LaneGrid } from './laneGrid';
+import { laneChangesSince, laneGrid, lanesInBox, lanesNear } from './laneGrid';
+export { laneChangesSince, lanesInBox };
 import { CAR_GATE, type KerbBook, followKerbs, newKerbBook } from './kerbBays';
 
 /**
@@ -32,7 +33,9 @@ const STALL = m(2.5);
 /** A stall wider than this is a lorry's dock, not a car's bay. */
 const LORRY_DOCK = m(3.2);
 /** Farthest a bay may be from the lane it is reached from. */
-const LANE_REACH = m(45);
+/** How far from a point the lane beside it is looked for (`laneBeside`), u. */
+export const LANE_REACH = m(45);
+export const LANE_BESIDE_REACH = LANE_REACH;
 /** Kept clear of the ends of a lane where a car joins or leaves it. */
 const LANE_END = m(20);
 
@@ -203,38 +206,6 @@ const EDGE_REACH = m(22);
 export function collectBays(w: SimWorld): Bay[] {
   return townBays(baysNow(w)).map((bay) => ({ ...bay, car: null }));
 }
-/** What the bays read of the roads: the traffic's topology and the lanes. */
-const roadsKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revision}:${w.graph.lanelets.size}`;
-
-/** The lanes' grid of each lane graph (`LaneGrid`), made again when the graph moved. */
-const LANE_GRIDS = new WeakMap<object, LaneGrid>();
-
-/** The lanes whose bounds come within `reach` of a point, in the graph's order (`LaneGrid.near`). */
-function lanesNear(w: SimWorld, x: number, y: number, reach: number): readonly Lanelet[] {
-  return laneGrid(w).near(x, y, reach);
-}
-
-/** The lanes' grid (`lanesNear`). @rebuild Called when the lane graph moved; otherwise returns the grid it made. */
-function laneGrid(w: SimWorld): LaneGrid {
-  const key = `${w.graph.revision}:${w.graph.lanelets.size}`;
-  let grid = LANE_GRIDS.get(w.graph);
-  // Rebuilt under the same revision, the lanes are new objects: read again.
-  if (!grid || grid.key !== key || (grid.lanes.length > 0 && grid.lanes[0] !== w.graph.lanelets.values().next().value)) {
-    LANE_GRIDS.set(w.graph, grid = new LaneGrid(key, [...w.graph.lanelets.values()]));
-  }
-  return grid;
-}
-
-/** Each lane's place in the graph's order (`lanesInBox`'s order), to sort what was found by it. */
-export function laneRank(w: SimWorld): (id: LaneletId) => number {
-  return laneGrid(w).rank();
-}
-
-/** The lanes whose bounds meet a box, in the graph's order (`LaneGrid.inBox`). */
-export function lanesInBox(w: SimWorld, x0: number, y0: number, x1: number, y1: number): Lanelet[] {
-  return laneGrid(w).inBox(x0, y0, x1, y1);
-}
-
 /** How far a lot's bays read lanes and walls (`LANE_REACH`, the exits' reach), with a margin. */
 const LOT_READS = LANE_REACH + m(12);
 /**
@@ -300,9 +271,8 @@ interface BayBook {
   readonly lots: BuildingsInOrder;
   readonly known: Map<BuildingId, LotBays>;
   readonly kerb: KerbBook;
-  /** The roads the lots were last worked out on (`roadsKey`, the first lane object). */
-  roads: string | null;
-  first: unknown;
+  /** The lanes' changes the lots were last worked out on (`LaneGrid.changes`). */
+  lanesSeen: object | null;
   /** The town's list, ids in order. */
   out: readonly Bay[];
 }
@@ -317,24 +287,26 @@ const BOOKS = new WeakMap<SimWorld, BayBook>();
 function baysNow(w: SimWorld): BayBook {
   let book = BOOKS.get(w);
   if (!book) {
-    book = { lots: new BuildingsInOrder(hasParking), known: new Map(), kerb: newKerbBook(), roads: null, first: undefined, out: [],
+    book = { lots: new BuildingsInOrder(hasParking), known: new Map(), kerb: newKerbBook(), lanesSeen: null, out: [],
       log: [], logBase: 0, serial: 0, outStale: true };
     BOOKS.set(w, book);
   }
-  const roads = roadsKey(w);
-  const first = w.graph.lanelets.values().next().value;
-  const roadsMoved = book.roads !== roads || book.first !== first;
-  book.roads = roads;
-  book.first = first;
+  // The lanes an edit of the roads made or took, by their boxes before and after (`LaneGrid.changes`;
+  // null: every lane). DO NOT work out every lot of the town again when the roads move: only the lots
+  // within reach of a lane that changed read anything new.
+  const grid = laneGrid(w);
+  const lanes = grid.changes.since(book.lanesSeen);
+  book.lanesSeen = grid.changes.state;
+  const roadsMoved = lanes === null || lanes.length > 0;
   const delta = book.lots.update(w.doc);
-  for (const seg of followKerbs(w, book.kerb, roadsMoved, delta, (id) => book.lots.rank(id), (x, y, segment) => laneFor(w, x, y, undefined, segment))) {
+  for (const seg of followKerbs(w, book.kerb, delta, (id) => book.lots.rank(id), (x, y, segment) => laneFor(w, x, y, undefined, segment))) {
     noteBays(book, `K${seg}`);
   }
   if (!roadsMoved && delta !== null && delta.ids.length === 0) return book;
 
-  // With the roads as they were, a lot whose reach no building change
-  // touched keeps its bays without reading anything (the diary's rectangles).
-  const rects = roadsMoved || delta === null ? null : delta.rects;
+  // A lot whose reach neither a building change nor a lane that changed
+  // touched keeps its bays without reading anything (the rectangles).
+  const rects = lanes === null || delta === null ? null : [...delta.rects, ...lanes.flat()];
   // Read whole, the store's order may be another: the list is put together again.
   if (delta === null) book.outStale = true;
   if (delta === null) {
@@ -359,18 +331,21 @@ function noteBays(book: BayBook, source: string): void {
   book.log.push(source);
   book.serial++;
   // Longer than every source read once: forgotten (its readers read every source).
-  if (book.log.length > Math.max(256, book.known.size + book.kerb.order.length)) {
+  if (book.log.length > Math.max(256, book.known.size + book.kerb.reach.size)) {
     book.log = [];
     book.logBase = ++book.serial;
   }
 }
+
+/** The streets that park, in id order: the town's list puts their kerbs after the lots. */
+const streetsInOrder = (book: BayBook): SegmentId[] => [...book.kerb.reach.keys()].sort((a, b) => a - b);
 
 /** @rebuild The town's list of bays, put together again only after a change (`collectBays`). */
 function townBays(book: BayBook): readonly Bay[] {
   if (!book.outStale) return book.out;
   const out: Bay[] = [];
   for (const id of book.lots.ids) for (const bay of book.known.get(id)!.bays) out.push({ ...bay, id: out.length });
-  for (const id of book.kerb.order) for (const bay of book.kerb.bays.get(id) ?? []) out.push({ ...bay, id: out.length });
+  for (const id of streetsInOrder(book)) for (const bay of book.kerb.bays.get(id) ?? []) out.push({ ...bay, id: out.length });
   book.out = out;
   book.outStale = false;
   return out;
@@ -390,12 +365,12 @@ export function bayChangesSince(w: SimWorld, serial: number): { readonly serial:
   return { serial: book.serial, changed: book.log.slice(serial - book.logBase) };
 }
 
-/** @rebuild Every source of bays, in the town's order (the lots in the store's, then the streets): read whole. */
+/** @rebuild Every source of bays, in the town's order (the lots in the store's, then the streets by id): read whole. */
 export function baySources(w: SimWorld): string[] {
   const book = baysNow(w);
   const out: string[] = [];
   for (const id of book.lots.ids) if (book.known.has(id)) out.push(`L${id}`);
-  for (const id of book.kerb.order) if (book.kerb.bays.get(id)?.length) out.push(`K${id}`);
+  for (const id of streetsInOrder(book)) if (book.kerb.bays.get(id)?.length) out.push(`K${id}`);
   return out;
 }
 
@@ -441,8 +416,8 @@ function lotBaysOf(w: SimWorld, b: Building, was: LotBays | undefined, rects: re
   // 2.5 km city's growth).
   const digest = new Digest();
   const grid = laneGrid(w);
-  for (const i of grid.indicesNear(cx, cy, Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
-    digest.add(grid.digest(i)).add(w.rt(grid.lanes[i]!.id).ghost ? 1 : 0);
+  for (const lane of grid.near(cx, cy, Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
+    digest.add(grid.digest(lane)).add(w.rt(lane.id).ghost ? 1 : 0);
   }
   for (const wall of walls.inBox(box.minX, box.minY, box.maxX, box.maxY)) digest.add(wall.digest);
   const key = digest.value();

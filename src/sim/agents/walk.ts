@@ -1020,17 +1020,20 @@ interface Zebra { readonly id: CrossingId; readonly edge: SidewalkEdge | null; r
 
 function crossingOf(w: SimWorld, way: Walkway | null | undefined): Zebra | null {
   if (!way || way.kind !== 'crossing' || way.node === undefined || way.segment === undefined) return null;
-  // Kept per walkway for the topology it was read in: every walker asked it
-  // several times a tick, each a string id built and a fresh object.
+  // Kept per walkway while its node's zebras stand (`SidewalkGraph.madeAt`): every
+  // walker asked it several times a tick, each a string id built and a fresh
+  // object. DO NOT key it by the topology's revision: every edit dropped every
+  // walkway's, the town's, for whatever it changed.
+  const made = w.sidewalks.madeAt(way.node);
   const known = ZEBRAS.get(way);
-  if (known && known.revision === w.topologyRevision) return known.zebra;
+  if (known && known.made === made) return known.zebra;
   const id = makeCrossingId(way.node, way.segment);
   const edge = way.unmarked ? null : w.sidewalks.crossingEdge(id) ?? null;
   const zebra = edge || way.unmarked ? { id, edge, way } : null;
-  ZEBRAS.set(way, { revision: w.topologyRevision, zebra });
+  ZEBRAS.set(way, { made, zebra });
   return zebra;
 }
-const ZEBRAS = new WeakMap<Walkway, { revision: number; zebra: Zebra | null }>();
+const ZEBRAS = new WeakMap<Walkway, { made: object | undefined; zebra: Zebra | null }>();
 /** Each vehicle's pose as `gapOpen` files it, written in place. */
 const TRAFFIC_POSE = newPose();
 

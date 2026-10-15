@@ -46,7 +46,8 @@ function oldClosures(w: SimWorld, poses: readonly Waypoint[], owner: number, rea
   for (const p of poses) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
   const pad = length + LANE_HALF;
   const spans = new Map<LaneletId, { from: number; to: number }>();
-  for (const lane of w.graph.lanelets.values()) {
+  // In lane id order: the order the lanes' grid hands them out in, whatever order the edits built them in.
+  for (const lane of [...w.graph.lanelets.values()].sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0))) {
     const box = lane.centre.bbox;
     if (box.maxX < x0 - pad || box.minX > x1 + pad || box.maxY < y0 - pad || box.minY > y1 + pad) continue;
     for (let i = 0; i < poses.length; i += 2) {
