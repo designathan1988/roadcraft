@@ -1835,7 +1835,9 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     }
     if (s.shelf === 'patterns') {
       const { items } = section(label);
-      for (const p of FACADE_PATTERNS) items.appendChild(card(t(`creator.pattern.${p}`), state.pattern === p, () => actions.choosePattern(p), workspace.thumbnail(p), builderIconSvg(p, 30)));
+      // Until its picture comes (`requestThumbnails`), a pattern shows the facade glyph:
+      // the patterns have none of their own, and nine blank squares stood in a row.
+      for (const p of FACADE_PATTERNS) items.appendChild(card(t(`creator.pattern.${p}`), state.pattern === p, () => actions.choosePattern(p), workspace.thumbnail(p), builderIconSvg('face', 30)));
       return;
     }
     if (s.shelf === 'finishes') {
