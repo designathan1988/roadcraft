@@ -96,13 +96,26 @@ export class Machine<C, E extends MachineEvent> {
       if (!list) continue;
       for (const t of list) {
         if (t.guard && !t.guard(event, this.ctx)) continue;
-        this.take(event, t);
+        this.take(event, t, id);
         return;
       }
     }
   }
 
-  private take(event: E, t: Transition<C, E>): void {
+  /**
+   * Takes `t`, declared on `source` (the active state or one of its parents).
+   * The states left and entered are those below the transition's domain, the
+   * SCXML `getTransitionDomain`/`findLCCA` of an external transition
+   * (w3.org/TR/scxml, Appendix D): the innermost PROPER ancestor of the source
+   * that is also a proper ancestor of the target; none, the top. Everything
+   * active below it is exited, innermost first; the target and its ancestors
+   * below it are entered, outermost first.
+   * DO NOT take the shared part of the active leaf's and the target's paths as
+   * the domain: a transition to the source's own parent (or declared on a
+   * parent, to that parent) then neither exited nor re-entered the parent, and
+   * its entry and exit never ran.
+   */
+  private take(event: E, t: Transition<C, E>, source: string): void {
     const from = this.current;
     if (t.target === undefined) {
       t.actions?.(event, this.ctx);
@@ -112,18 +125,16 @@ export class Machine<C, E extends MachineEvent> {
     const raw = typeof t.target === 'function' ? t.target(event, this.ctx) : t.target;
     if (!(raw in this.states)) throw new Error(`${this.name}: no state ${raw} (event ${event.type})`);
     const target = this.descend(raw);
-    const left = this.path(from);
-    const entered = this.path(target);
-    // The innermost state both paths share stays; a transition to the state itself leaves and re-enters it.
-    let common = left.find((s) => entered.includes(s));
-    if (common === from && from === target) common = this.states[from]!.parent;
-    for (const id of left) {
-      if (id === common) break;
+    const aboveTarget = this.path(raw).slice(1);
+    const domain = this.path(source).slice(1).find((s) => aboveTarget.includes(s));
+    for (const id of this.path(from)) {
+      if (id === domain) break;
       this.states[id]!.exit?.(event, this.ctx);
     }
     t.actions?.(event, this.ctx);
     this.current = target;
-    const enter = entered.slice(0, common === undefined ? entered.length : entered.indexOf(common)).reverse();
+    const entered = this.path(target);
+    const enter = entered.slice(0, domain === undefined ? entered.length : entered.indexOf(domain)).reverse();
     for (const id of enter) this.states[id]!.entry?.(event, this.ctx);
     this.record(from, event.type, target);
   }

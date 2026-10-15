@@ -1,3 +1,4 @@
+import { Heap } from '@core/heap';
 import { type Vec2, dist } from '@core/vec2';
 import type { Network } from '@world/network';
 import { POLE_KERB_INSET, nearestOnContour, onFootway, type OnContour, type PoleLines } from '@world/poleLines';
@@ -170,40 +171,8 @@ export function route(g: RouteGraph, a: OnContour, b: OnContour, head: Vec2 | nu
     const pi = at(i), pj = at(j);
     return pi.x < pj.x || (pi.x === pj.x && pi.y < pj.y);
   };
-  // A binary heap of (cost, node), the lower cost first, then the node placed first.
-  const heap: number[] = [];
-  const lower = (u: number, v: number): boolean =>
-    heap[u * 2]! < heap[v * 2]! || (heap[u * 2] === heap[v * 2] && placedBefore(heap[u * 2 + 1]!, heap[v * 2 + 1]!));
-  const push = (cost: number, node: number): void => {
-    heap.push(cost, node);
-    let i = heap.length / 2 - 1;
-    while (i > 0) {
-      const p = (i - 1) >> 1;
-      if (!lower(i, p)) break;
-      [heap[p * 2], heap[i * 2]] = [heap[i * 2]!, heap[p * 2]!];
-      [heap[p * 2 + 1], heap[i * 2 + 1]] = [heap[i * 2 + 1]!, heap[p * 2 + 1]!];
-      i = p;
-    }
-  };
-  const pop = (): number => {
-    const node = heap[1]!;
-    const lastNode = heap.pop()!, lastCost = heap.pop()!;
-    if (heap.length) {
-      heap[0] = lastCost; heap[1] = lastNode;
-      let i = 0;
-      for (;;) {
-        const l = i * 2 + 1, r = l + 1;
-        let m0 = i;
-        if (l < heap.length / 2 && lower(l, m0)) m0 = l;
-        if (r < heap.length / 2 && lower(r, m0)) m0 = r;
-        if (m0 === i) break;
-        [heap[m0 * 2], heap[i * 2]] = [heap[i * 2]!, heap[m0 * 2]!];
-        [heap[m0 * 2 + 1], heap[i * 2 + 1]] = [heap[i * 2 + 1]!, heap[m0 * 2 + 1]!];
-        i = m0;
-      }
-    }
-    return node;
-  };
+  // The lower cost first, then the node placed first (`@core/heap` with `before`).
+  const heap = new Heap(placedBefore);
   /**
    * Costs in whole micrometres: a sum of integers is exact whatever order it
    * is added in, so two ways of the same length cost the same (in metres, the
@@ -212,15 +181,15 @@ export function route(g: RouteGraph, a: OnContour, b: OnContour, head: Vec2 | nu
    */
   const relax = (from: number, to: number, metres: number): void => {
     const next = distTo[from]! + Math.round(metres * 1e6);
-    if (next < distTo[to]!) { reachOf(to, next); prev[to] = from; push(next, to); }
+    if (next < distTo[to]!) { reachOf(to, next); prev[to] = from; heap.push(to, next); }
     // As cheap a way in: the one from the station placed first.
     else if (next === distTo[to] && !done[to] && placedBefore(from, prev[to]!)) prev[to] = from;
   };
   try {
     reachOf(START, 0);
-    push(0, START);
-    while (heap.length) {
-      const node = pop();
+    heap.push(START, 0);
+    while (heap.size) {
+      const node = heap.pop();
       if (done[node]) continue;
       done[node] = 1;
       if (node === END) break;

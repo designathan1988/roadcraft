@@ -17,7 +17,7 @@ import { levelElevation, solidFootprints, volumeElevation, worldToLocal } from '
 import { resolveBlocks } from '@world/buildings/blocks';
 import { signalPosts } from '@world/signalPosts';
 import { m, stepsIn } from '@world/units';
-import { Rng } from '@core/rng';
+import { editRng } from '@editor/editStream';
 import { MAX_STOREYS, MAX_STOREY_HEIGHT } from '@world/buildings/types';
 
 /** How high over the ground under the pointer a building can reach: the tallest stack of the tallest storeys, its roof and plinth. */
@@ -332,9 +332,9 @@ export function createActions(deps: ActionsDeps): Actions {
         if (near(pole.x, pole.y, radius)) broken.add(pole.id);
       }
       // Which neighbour a torn wire pulls over is drawn from a stream seeded by
-      // the document and the poles (`Rng`), not `Math.random`: the document's
+      // the document and the place (`editor/editStream.ts`), not `Math.random`: the document's
       // outcome is the same for the same blow, as every edit of it must be.
-      const pull = new Rng((doc.changes.version * 0x9e3779b1 + Math.round(world.x) * 73856093 + Math.round(world.y) * 19349663) >>> 0);
+      const pull = editRng(doc, world.x, world.y);
       // Each broken pole's wires, the ones it pulls over in their turn (a queue in
       // id order: the same blow tears the same wires).
       const queue = [...broken].sort((p, q) => p - q);
@@ -365,7 +365,9 @@ export function createActions(deps: ActionsDeps): Actions {
         changed = true;
       }
       // Traffic lights: a junction whose posts the blast reaches loses them.
-      for (const post of signalPosts(net, sim.graph)) {
+      // The posts of the junctions on the roads within reach only (`near`):
+      // DO NOT ask for every post of the map to keep those round one blow.
+      for (const post of signalPosts(net, sim.graph, { x: world.x, y: world.y, radius })) {
         if (!near(post.x, post.y, radius)) continue;
         hit.posts.push({ x: post.x, y: post.y, yaw: post.yaw });
         if (doc.node(post.node)?.control !== 'none') { doc.setNodeControl(post.node, 'none'); changed = true; }

@@ -13,8 +13,12 @@ interface Ask {
   readonly pairs: Int32Array;
 }
 
+/** Most time between two words to the page while working: the pool's watchdog hears the worker is alive (`SILENCE_MS`). */
+const BEAT_MS = 500;
+
 self.onmessage = (event: MessageEvent<Ask>) => {
   const { id, sweeps, pairs } = event.data;
+  let spoke = performance.now();
   try {
     // The caches `pairTable` keeps on a sweep start empty here, as on the page.
     const samples: SweepSamples[] = sweeps.map((s) => ({ ...s, bounds: null, grid: null, range: null }));
@@ -24,6 +28,8 @@ self.onmessage = (event: MessageEvent<Ask>) => {
       const table = pairTable(samples[pairs[k]!]!, samples[pairs[k + 1]!]!);
       tables.push(table);
       if (table) transfer.push(table.buffer as ArrayBuffer);
+      const now = performance.now();
+      if (now - spoke >= BEAT_MS) { spoke = now; self.postMessage({ id, beat: true }); }
     }
     (self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void }).postMessage({ id, tables }, transfer);
   } catch (error) {

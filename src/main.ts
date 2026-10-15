@@ -118,6 +118,8 @@ import { bulbClearing } from '@world/junction/bulb';
 
 import { createToolMachine, isTool, type Tool } from '@editor/toolMachine';
 import { createGameKeys } from '@editor/gameKeys';
+import { RoadTop } from '@editor/roadTop';
+import { editRandom } from '@editor/editStream';
 
 /** The turning circles cleared after each edit, from the network's changes since the last one (`bulbClearing`). */
 const clearBulbs = bulbClearing();
@@ -230,6 +232,8 @@ if (saved) {
     doc.changes.causeNext('mapa salvo carregado');
     restoreInto(doc, saved, net);
     doc.changes.causeNext('jogo');
+    // Opened from the map's parts: those parts are this document, the next save writes only what changes.
+    persistence.adoptLoaded(doc);
   } catch (error) {
     console.error('The saved map could not be loaded; it was set aside.', error);
     persistence.quarantineStored();
@@ -591,7 +595,6 @@ function dabSettings(): DabSettings {
     gully: { strength: gullyStrength, erase: gullyErase() },
     fog: { strength: fog.strength, height: fog.height, speed: fog.speed, erase: fogErase() },
     paint: paintKind(),
-    random: Math.random,
   };
 }
 canvas.dataset['tool'] = game.tool;
@@ -972,26 +975,21 @@ const PICK_STEP = m(0.8);
 /**
  * The highest surface drawn anywhere - the ground's corners (the mesh is flat
  * between them, so its top is one of them) and every road's height at its
- * nodes - with a margin for the decks between nodes and the platforms graded
- * under buildings, once per road or land edit. The picks march down the ray
- * from here: from a fixed ceiling over the highest possible mountain they
- * sampled the scene a hundred times and more on every pointer move above
- * nothing at all.
+ * nodes (`editor/roadTop.ts`, kept by cell from the diary) - with a margin for
+ * the decks between nodes and the platforms graded under buildings. The picks
+ * march down the ray from here: from a fixed ceiling over the highest possible
+ * mountain they sampled the scene a hundred times and more on every pointer
+ * move above nothing at all.
+ * DO NOT walk `doc.nodes` here on each road edit: `RoadTop` reads only the
+ * cells the edit reached.
  */
-let surfaceTopFor = '';
-let surfaceTopValue = PICK_TOP;
+const roadTop = new RoadTop(doc, net, (x, y) => scene.elevationAt(x, y));
 function surfaceTop(): number {
   // The land as drawn (`SceneHandle.landTop`, read again by the renderer when
   // it rewrites the ground); a road's cut and fill only brings the ground to
   // its deck, which the nodes' heights cover.
-  const land = scene.landTop();
-  const key = `${doc.revision}:${land}`;
-  if (key === surfaceTopFor) return surfaceTopValue;
-  surfaceTopFor = key;
-  let top = land;
-  for (const node of doc.nodes.values()) top = Math.max(top, scene.elevationAt(node.x, node.y));
-  surfaceTopValue = Number.isFinite(top) ? top + 12 : PICK_TOP;
-  return surfaceTopValue;
+  const top = Math.max(scene.landTop(), roadTop.height());
+  return Number.isFinite(top) ? top + 12 : PICK_TOP;
 }
 
 /**
@@ -1740,7 +1738,7 @@ if (atmosphere.atmoClouds > 0) {
   if (doc.clouds.length === 0) {
     doc.addClouds(scatterClouds(Math.round((atmosphere.atmoClouds / 100) * 12), {
       size: Math.max(40, atmosphere.atmoCloudThickness * UNITS_PER_METER), height: atmosphere.atmoCloudBase * UNITS_PER_METER, density: 0.8,
-    }, 0.3, MAP_SIZE / 2, [], Math.random));
+    }, 0.3, MAP_SIZE / 2, [], editRandom(doc, 0, 0)));
     persistence.saveSessionSoon(doc, sessionSettings);
   }
   atmosphere.atmoClouds = 0;
@@ -1847,7 +1845,7 @@ const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
     const brush = cloudBrush();
     const laid = scatterClouds(cloudScatter.count, {
       size: brush.size * UNITS_PER_METER, height: brush.height * UNITS_PER_METER, density: brush.density / 100,
-    }, cloudScatter.variation / 100, MAP_SIZE / 2, doc.clouds, Math.random);
+    }, cloudScatter.variation / 100, MAP_SIZE / 2, doc.clouds, editRandom(doc, 0, 0));
     if (doc.addClouds(laid) < cloudScatter.count) flashHint('hint.cloud.full');
   }),
 };
@@ -2642,14 +2640,14 @@ function frame(now: number): void {
   beginFrameWork();
   // Everyone watching the game's state is told what changed, once, here.
   gameState.flush();
-  frameTimer.mark('painéis');
+  frameTimer.mark('panels');
   const wall = frameClock.tick(now);
   // The camera's glide: keys held, the wheel's notches being spent.
   if (cameraMotion.step(now)) persistence.saveSettingsSoon(sessionSettings);
   // The coast of a drag let go (`cameraGestures.ts`), taken to this frame's
   // time on the events' clock: it starts at the release itself.
   cameraHand.advance(now);
-  frameTimer.mark('câmera');
+  frameTimer.mark('camera');
 
   // The opening puts the town together in parts (`SceneHandle.worldBusy`):
   // the traffic waits for the roads it drives on to be drawn.
@@ -2674,7 +2672,7 @@ function frame(now: number): void {
     holdSim = true;
     requestDraw();
   }
-  frameTimer.mark('topologia');
+  frameTimer.mark('topology');
   const alpha = holdSim
     ? 1
     : sim.clock.advance(wall, () => step(sim, { traffic: !game.paused, pedestrians: !game.paused }), SIM_FRAME_BUDGET_MS);
@@ -2684,7 +2682,7 @@ function frame(now: number): void {
   if (growthDue.due(simTime)) growZones();
   if (decayDue.due(simTime)) decayWatch();
   actions.tick(simTime);
-  frameTimer.mark('simulação');
+  frameTimer.mark('simulation');
 
   if (net.revision !== doc.revision) {
     // Geometry is still refreshed during a drag, but a 20 Hz preview is more
@@ -2695,22 +2693,22 @@ function frame(now: number): void {
       if (!mover.dragging && sim.topologyRevision !== net.trafficRevision) rebuildSimulationTopology();
     }
   }
-  frameTimer.mark('rede viária');
+  frameTimer.mark('roadNetwork');
   buildings.beforeDraw(game.tool === 'building');
-  frameTimer.mark('prédios');
+  frameTimer.mark('buildings');
   // The pole run under the pointer, planned once per frame: the 3D preview
   // shows it as it will stand, the overlay marks only what cannot be built.
   framePolePlan = poleTool.plan();
   scene.setPolePreview(net, framePolePlan && !framePolePlan.refused && framePolePlan.poles.length >= 2
     ? { poles: framePolePlan.poles.map((pole) => ({ x: pole.at.x, y: pole.at.y, lamp: pole.lamp, standing: pole.existing !== null })) }
     : null);
-  frameTimer.mark('postes');
+  frameTimer.mark('poles');
   scene.draw(net, sim, alpha, wall, { holdRoads: terrainBrush.stroking });
-  frameTimer.mark('desenho');
+  frameTimer.mark('drawing');
   drawnOnce = true;
   drawOverlayScreen();
   updateCompass();
-  frameTimer.mark('sobreposição');
+  frameTimer.mark('overlay');
   if (topologyAfterDraw) {
     topologyAfterDraw = false;
     requestDraw();
@@ -2727,7 +2725,7 @@ function frame(now: number): void {
     noteSimulationIssues();
   }
   syncLoadingCurtain();
-  frameTimer.mark('painéis');
+  frameTimer.mark('panels');
   const timed = frameTimer.end();
   healthWatch.frameEnded(timed.start, timed.end);
 

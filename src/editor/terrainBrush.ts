@@ -5,6 +5,7 @@ import { oneTree, plantTrees, type TreeBrush, type TreeKind } from '@world/trees
 import type { TerrainMode } from '@world/terrain';
 import type { GeologyKind, PaintKind } from '@world/terrainPaint';
 import { UNITS_PER_METER, m } from '@world/units';
+import { editRandom } from './editStream';
 
 /**
  * THE TERRAIN BRUSH: what one dab does, for every brush of the land tool
@@ -51,7 +52,6 @@ export interface DabSettings {
   /** Strength 0..100; height and speed in metres. */
   readonly fog: { readonly strength: number; readonly height: number; readonly speed: number; readonly erase: boolean };
   readonly paint: PaintKind;
-  readonly random: () => number;
 }
 
 /**
@@ -84,8 +84,12 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     }
     const { kind, brush } = s.element;
     const reach = s.radius + brush.spacing * UNITS_PER_METER;
-    const nearby = doc.elements.filter((e) => e.kind === kind && Math.abs(e.x - at.x) < reach && Math.abs(e.y - at.y) < reach);
-    doc.addElements(scatter(kind, brush, at.x, at.y, s.radius, UNITS_PER_METER, s.random, nearby));
+    // The elements round the dab only (`RoadDoc.elementsIn`). DO NOT filter
+    // `doc.elements`: every dab of a stroke walked every element of the map.
+    const nearby = doc.elementsIn([at.x - reach, at.y - reach, at.x + reach, at.y + reach])
+      .filter((e) => e.kind === kind && Math.abs(e.x - at.x) < reach && Math.abs(e.y - at.y) < reach);
+    // By chance seeded by the document and the dab (`editStream.ts`), never `Math.random`.
+    doc.addElements(scatter(kind, brush, at.x, at.y, s.radius, UNITS_PER_METER, editRandom(doc, at.x, at.y), nearby));
     return;
   }
   if (s.mode === 'trees') {
@@ -97,13 +101,15 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     }
     const { kind, brush } = s.tree;
     const reach = s.radius + brush.spacing * UNITS_PER_METER;
-    const nearby = doc.trees.filter((t) => Math.abs(t.x - at.x) < reach && Math.abs(t.y - at.y) < reach);
+    // The trees round the dab only (`RoadDoc.treesIn`), never every tree of the map.
+    const nearby = doc.treesIn([at.x - reach, at.y - reach, at.x + reach, at.y + reach])
+      .filter((t) => Math.abs(t.x - at.x) < reach && Math.abs(t.y - at.y) < reach);
     if (s.tree.mode === 'one') {
       const spacing = brush.spacing * UNITS_PER_METER;
-      if (nearby.every((t) => Math.hypot(t.x - at.x, t.y - at.y) >= spacing)) doc.plantTrees([oneTree(kind, brush, at.x, at.y, UNITS_PER_METER, s.random)]);
+      if (nearby.every((t) => Math.hypot(t.x - at.x, t.y - at.y) >= spacing)) doc.plantTrees([oneTree(kind, brush, at.x, at.y, UNITS_PER_METER, editRandom(doc, at.x, at.y))]);
       return;
     }
-    doc.plantTrees(plantTrees(kind, brush, at.x, at.y, s.radius, UNITS_PER_METER, s.random, nearby));
+    doc.plantTrees(plantTrees(kind, brush, at.x, at.y, s.radius, UNITS_PER_METER, editRandom(doc, at.x, at.y), nearby));
     return;
   }
   if (s.mode === 'gully') {

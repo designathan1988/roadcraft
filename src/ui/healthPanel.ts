@@ -1,4 +1,5 @@
 import type { HealthEntry, HealthLog } from '@core/health';
+import { systemName } from './healthWatch';
 import { t } from './i18n';
 
 /**
@@ -186,7 +187,7 @@ export function mountHealthPanel(sources: HealthPanelSources): { readonly button
       detail.className = 'health-detail';
       detail.textContent = [
         chosen.context ? `${t('health.context')}: ${chosen.context}` : '',
-        chosen.systems?.length ? `${t('health.systems')}: ${chosen.systems.map(([n, ms]) => `${n} ${ms} ms`).join(' · ')}` : '',
+        chosen.systems?.length ? `${t('health.systems')}: ${chosen.systems.map(([n, ms]) => `${systemName(n)} ${ms} ms`).join(' · ')}` : '',
         chosen.detail ?? '',
       ].filter(Boolean).join('\n');
       panel.appendChild(detail);

@@ -1,5 +1,13 @@
-/** A binary min-heap of (item, priority), ties broken by insertion order. */
+/**
+ * A binary min-heap of (item, priority), ties broken by `before(a, b)` (item
+ * a goes first) when given, then by insertion order. The one heap of the
+ * game: a search that needs its ties by place (`editor/poleRoutes.ts`) passes
+ * `before`. DO NOT write another heap beside it: the copies drifted (one read its
+ * keys from the array the search lowers, so waiting entries changed key under
+ * it, `sim/agents/lotNav.ts` before 2026-10-14).
+ */
 export class Heap {
+  constructor(private readonly before?: (a: number, b: number) => boolean) {}
   private items: number[] = [];
   private keys: number[] = [];
   private order: number[] = [];
@@ -34,7 +42,14 @@ export class Heap {
     return top;
   }
   private less(a: number, b: number): boolean {
-    return this.keys[a]! < this.keys[b]! || (this.keys[a] === this.keys[b] && this.order[a]! < this.order[b]!);
+    if (this.keys[a]! !== this.keys[b]!) return this.keys[a]! < this.keys[b]!;
+    const before = this.before;
+    if (before) {
+      const ia = this.items[a]!, ib = this.items[b]!;
+      if (before(ia, ib)) return true;
+      if (before(ib, ia)) return false;
+    }
+    return this.order[a]! < this.order[b]!;
   }
   // Swapped through locals: a destructuring swap made two arrays a swap.
   private swap(a: number, b: number): void {

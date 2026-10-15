@@ -58,17 +58,17 @@ describe('FrameTimer', () => {
   it('gives each system the time since the last mark, and finds the frames of a span', () => {
     const timer = new FrameTimer();
     timer.begin(100);
-    timer.mark('simulação', 104);
-    timer.mark('desenho', 160);
-    timer.mark('painéis', 161);
+    timer.mark('simulation', 104);
+    timer.mark('drawing', 160);
+    timer.mark('panels', 161);
     const frame = timer.end(161);
-    expect([...frame.systems]).toEqual([['simulação', 4], ['desenho', 56], ['painéis', 1]]);
-    expect(overBudget(frame).map(([name]) => name)).toEqual(['desenho']);
+    expect([...frame.systems]).toEqual([['simulation', 4], ['drawing', 56], ['panels', 1]]);
+    expect(overBudget(frame).map(([name]) => name)).toEqual(['drawing']);
     timer.begin(200);
-    timer.mark('simulação', 203);
+    timer.mark('simulation', 203);
     timer.end(203);
     expect(timer.between(150, 170)).toHaveLength(1);
-    expect(systemsOf(timer.between(0, 300))).toEqual([['desenho', 56], ['simulação', 7], ['painéis', 1]]);
+    expect(systemsOf(timer.between(0, 300))).toEqual([['drawing', 56], ['simulation', 7], ['panels', 1]]);
   });
 });
 
@@ -84,12 +84,12 @@ describe('frameStats', () => {
 
   it('sums up the frames per system, a system absent from a frame counting as 0 ms there', () => {
     const timer = new FrameTimer();
-    const frame = (start: number, sim: number, draw: number, minimap?: number): void => {
+    const frame = (start: number, sim: number, draw: number, overlay?: number): void => {
       timer.begin(start);
-      timer.mark('simulação', start + sim);
-      timer.mark('desenho', start + sim + draw);
-      if (minimap !== undefined) timer.mark('minimapa', start + sim + draw + minimap);
-      timer.end(start + sim + draw + (minimap ?? 0));
+      timer.mark('simulation', start + sim);
+      timer.mark('drawing', start + sim + draw);
+      if (overlay !== undefined) timer.mark('overlay', start + sim + draw + overlay);
+      timer.end(start + sim + draw + (overlay ?? 0));
     };
     frame(0, 2, 8);
     frame(100, 3, 10, 1);
@@ -98,7 +98,7 @@ describe('frameStats', () => {
     expect(stats.frames).toBe(3);
     expect(stats.long).toBe(1);
     expect(stats.total).toEqual({ p50: 14, p95: 64, max: 64 });
-    expect(stats.systems['desenho']).toEqual({ p50: 10, p95: 60, max: 60 });
-    expect(stats.systems['minimapa']).toEqual({ p50: 0, p95: 1, max: 1 });
+    expect(stats.systems['drawing']).toEqual({ p50: 10, p95: 60, max: 60 });
+    expect(stats.systems['overlay']).toEqual({ p50: 0, p95: 1, max: 1 });
   });
 });

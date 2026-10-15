@@ -5,19 +5,22 @@ import { type LargeStore, Persistence, normalizeSettings } from '@editor/persist
 import { RoadDoc } from '@world/doc';
 
 /**
- * A LARGE MAP IS SAVED IN PARTS (`chunkedSave.ts`): never one text of the
- * whole map. What is read back is the map as it was, and a save writes again
- * only the parts whose buildings changed.
+ * THE MAP IS SAVED IN PARTS (`chunkedSave.ts`): never one text of the whole
+ * map. What is read back is the map as it was, and a save writes again only
+ * what the diary says changed: the parts of the buildings it names, the head
+ * only when something of the head changed.
  */
 
-/** An IndexedDB stand-in that counts what each write touched. */
-function memoryStore(): PartStore & { readonly blobs: Map<string, Blob>; writes: string[][] } {
+/** An IndexedDB stand-in that counts what each write touched; `refuse` makes the next write fail. */
+function memoryStore(): PartStore & { readonly blobs: Map<string, Blob>; writes: string[][]; refuse: boolean } {
   const blobs = new Map<string, Blob>();
   const store = {
     blobs,
     writes: [] as string[][],
+    refuse: false,
     async get(keys: readonly string[]) { return keys.map((k) => blobs.get(k) ?? null); },
     async write(put: readonly (readonly [string, Blob])[], remove: readonly string[]) {
+      if (store.refuse) { store.refuse = false; return false; }
       for (const [k, b] of put) blobs.set(k, b);
       for (const k of remove) blobs.delete(k);
       store.writes.push(put.map(([k]) => k));
@@ -42,23 +45,71 @@ describe('a map saved in parts', () => {
     expect(RoadDoc.fromJSON(read!.document).toJSON()).toEqual(doc.toJSON());
   });
 
-  it('writes again only the parts whose buildings changed', async () => {
+  it('writes again only what the diary says changed', async () => {
     const doc = town();
     const store = memoryStore();
     const saves = new PartedSaves(store, 'map');
     await saves.save(doc, {});
     const parts = (keys: readonly string[]): string[] => keys.filter((k) => k.includes(':part:'));
     expect(parts(store.writes[0]!).length).toBeGreaterThan(1);
-    // Nothing changed: the head and the manifest, no part.
+    expect(store.writes[0]).toContain('map:head');
+    // Nothing changed: the manifest alone, no part and no head.
     await saves.save(doc, {});
-    expect(parts(store.writes[1]!)).toEqual([]);
-    // One building changed: its part alone.
+    expect(store.writes[1]).toEqual(['map:manifest']);
+    // One building changed: its part alone, not the head.
     const one = [...doc.buildings.all()][3]!;
     doc.buildings.put({ ...one, decay: 0.5 });
     await saves.save(doc, {});
-    expect(parts(store.writes[2]!)).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`]);
+    expect(store.writes[2]).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`, 'map:manifest']);
+    // A road changed: the head alone, no part.
+    const node = [...doc.nodes.values()][0]!;
+    doc.setNodeHeightOffset(node.id, node.heightOffset + 1);
+    await saves.save(doc, {});
+    expect(store.writes[3]).toEqual(['map:head', 'map:manifest']);
     const read = await saves.read();
     expect(RoadDoc.fromJSON(read!.document).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it('keeps what a failed write did not write for the next save', async () => {
+    const doc = town();
+    const store = memoryStore();
+    const saves = new PartedSaves(store, 'map');
+    await saves.save(doc, {});
+    const one = [...doc.buildings.all()][5]!;
+    doc.buildings.put({ ...one, decay: 0.25 });
+    store.refuse = true;
+    expect(await saves.save(doc, {})).toBe(false);
+    await saves.save(doc, {});
+    expect(store.writes.at(-1)).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`, 'map:manifest']);
+    const read = await saves.read();
+    expect(RoadDoc.fromJSON(read!.document).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it('a map opened from its parts is not written again whole', async () => {
+    const store = memoryStore();
+    await new PartedSaves(store, 'map').save(town(), {});
+    const reader = new PartedSaves(store, 'map');
+    const read = await reader.read();
+    const doc = RoadDoc.fromJSON(read!.document);
+    reader.adopt(doc, read!.parts);
+    const one = [...doc.buildings.all()][2]!;
+    doc.buildings.put({ ...one, decay: 0.75 });
+    await reader.save(doc, {});
+    expect(store.writes.at(-1)).toEqual([`map:part:${Math.floor(one.id / BUILDINGS_PER_PART)}`, 'map:manifest']);
+    expect(RoadDoc.fromJSON((await reader.read())!.document).toJSON()).toEqual(doc.toJSON());
+  });
+
+  it('a building taken away empties its part, and the part goes', async () => {
+    const doc = town();
+    const store = memoryStore();
+    const saves = new PartedSaves(store, 'map');
+    await saves.save(doc, {});
+    const last = Math.max(...[...doc.buildings.all()].map((b) => b.id));
+    const part = Math.floor(last / BUILDINGS_PER_PART);
+    for (const b of [...doc.buildings.all()]) if (Math.floor(b.id / BUILDINGS_PER_PART) === part) doc.buildings.remove(b.id);
+    await saves.save(doc, {});
+    expect(store.blobs.has(`map:part:${part}`)).toBe(false);
+    expect(RoadDoc.fromJSON((await saves.read())!.document).toJSON()).toEqual(doc.toJSON());
   });
 
   it('reads nothing where nothing was saved', async () => {
@@ -101,13 +152,17 @@ describe('a map in parts among the other copies', () => {
     expect((await new Persistence(undefined, large, parts).loadSessionAsync())?.document.buildings?.length).toBe(town().buildings.size);
   });
 
-  it('a map saved whole again leaves no parts behind', async () => {
+  it('a small map is saved in parts too, never as one text', async () => {
+    // Chosen by the count of buildings, a map of few buildings was written
+    // whole on every edit, whatever its roads, lots and trees.
     useStorage();
     const parts = memoryStore();
-    await new PartedSaves(parts, KEY).save(town(), settings, 1000);
-    expect(parts.blobs.size).toBeGreaterThan(2);
-    new Persistence(undefined, largeStore(), parts).saveSession(small(), settings);
-    await vi.waitFor(() => expect(parts.blobs.size).toBe(0));
+    const large = largeStore();
+    new Persistence(undefined, large, parts).saveSession(small(), settings);
+    await vi.waitFor(() => expect(parts.blobs.has(`${KEY}:manifest`)).toBe(true));
+    expect(large.items.size).toBe(0);
+    expect(localStorage.getItem(KEY)).toContain('"stored":"parts"');
+    expect((await new Persistence(undefined, large, parts).loadSessionAsync())?.document.nodes?.length).toBe(2);
   });
 
   it('a map in parts that failed to load is set aside, never deleted', async () => {
