@@ -379,6 +379,12 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     return local;
   };
   let seenTerrain = -1;
+  /**
+   * The terrain's changes since the plates' stamps were last sorted (the diary's 'terrain'): only the
+   * plates a change's rectangles reach sort the stamps again. DO NOT filter the map's every stamp for
+   * every plate at each change: stamps times plates for one dab of the brush.
+   */
+  const terrainCursor = new JournalCursor(['terrain']);
   let seenRelief: ReliefVersion | null = null;
   let seenPaint = -1;
   /** The map's own land before any stamp, world coordinates (`reliefHeight`). */
@@ -398,7 +404,12 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       seenRelief = relief;
       if (reliefMoved) bare = (x, y) => reliefHeight(relief, x, y);
       buildFar(relief);
+      const entries = terrainCursor.read(doc.changes);
+      const rects = entries && entries.every((e) => e.rects !== null) ? entries.flatMap((e) => e.rects!) : null;
       plates.forEach((p, i) => {
+        // A plate no change reached keeps its stamps as they were (the relief moved: every plate).
+        if (!reliefMoved && rects && p.source.terrainRevision !== 0
+          && !rects.some((r) => reaches(p, (r[0] + r[2]) / 2, (r[1] + r[3]) / 2, Math.hypot(r[2] - r[0], r[3] - r[1]) / 2))) return;
         const copies = stampCopies[i]!;
         const sources = doc.terrainStamps.filter((s) => copyOn(copies, p, s) !== null);
         p.source.terrainRelief = relief;
