@@ -73,6 +73,17 @@ folder imports `three`. This file lists what breaks far from where you edit here
   the reversed buffer but not its units); a frustum built from a camera's
   matrix passes `camera.reversedDepth`. A flicker at a distance is never fixed
   by pushing the near plane out or growing an offset.
+- **A staircase on an edge is not always the shadow map.** Switch one thing
+  at a time before blaming resolution or bias (the photos of 2026-10-14: a
+  map of 8192 changed nothing). Two had been the screen-space passes:
+  `canyonLight.ts` rebuilt its normals with `dFdx/dFdy`, which mix two
+  surfaces in every 2x2 block along an edge (now three's GTAO
+  reconstruction), and laid its contact shadows over what the shadow map had
+  already shaded (now gated by the map: `sunReaches`). The map's own fit
+  (`environment.ts` `follow`) runs up the line of sight no further than the
+  eye.
+- **A path stops at the foot of a flight** (`buildingMesh.ts` `flightFeet`,
+  `clearOf`; the apron in `emitLot`; `tests/render/flightFoot.spec.ts`).
 - **The procedural people's skeletons are drawn on the GPU** (`people/
   crowdAnimation.ts`): `renderPalettes(renderer)` must run after the crowd's
   `update` and before the scene is drawn (`renderer.ts` before `post.render`,

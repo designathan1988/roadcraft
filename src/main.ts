@@ -5,7 +5,7 @@ import { flipProfile, streetChain } from '@world/roads/streetChain';
 import { furnitureChosen } from '@ui/roads/furnitureChoice';
 import { isMarkingStyle } from '@world/roads/markingStyle';
 import { createActions } from './actionsWiring';
-import { FrameClock, Periodic, TopologyCatchUp } from './frameLoop';
+import { FrameClock, Periodic, SimPeriodic, TopologyCatchUp, coalescedTask } from './frameLoop';
 import { ConflictPool } from './conflictPool';
 import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
@@ -19,7 +19,7 @@ import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
 import { RoadDoc, type JunctionControl } from '@world/doc';
-import { DOC_CHANGE_KINDS, type Change, type ChangeKind } from '@world/changes';
+import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from '@world/changes';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
@@ -33,6 +33,7 @@ import { DEFAULT_REGION, isRegionId, type NatureSettings } from '@world/ecology'
 import type { NodeId, SegmentId } from '@world/ids';
 import { BARRIER_KINDS, type BarrierKind } from '@world/barriers';
 import { BarrierTool } from '@editor/barriers';
+import { barrierNear } from '@editor/itemCells';
 import {
   POLE_PICK_PIXELS,
   PoleTool,
@@ -44,8 +45,8 @@ import { blockGridChoice, onRoadGridChange, roadGridShown, signChoice, strikeCho
 import { TERRAIN_MIN_MS, TerrainBrush, type DabSettings } from '@editor/terrainBrush';
 import { scatterClouds } from '@world/clouds';
 import { CloudTool } from '@editor/cloudTool';
-import { createThunder } from '@ui/thunder';
-import { MAP_SIZE } from '@world/bounds';
+import { playThunder } from '@ui/thunder';
+import { MAP_HALF, MAP_SIZE } from '@world/bounds';
 import { blockGridLines, commitBlockGrid } from '@editor/blocks';
 import { m, stepsIn } from '@world/units';
 import { GRID_CELL } from '@world/grid';
@@ -144,11 +145,13 @@ const healthWatch = watchHealth({
   canvas,
   context: () => {
     const last = doc.changes.latest(1)[0];
+    // Shown to the player in the F9 monitor: every word from the dictionaries;
+    // the gestures are dictionary keys (`currentGesture`).
     return [
-      `ferramenta ${game.tool}`,
-      game.gesture ?? '',
-      last ? `última mudança #${last.serial} ${last.kind} (${last.cause})` : '',
-      booted ? '' : 'abrindo o jogo',
+      t('health.context.tool', { tool: game.tool }),
+      game.gesture ? t(game.gesture) : '',
+      last ? t('health.context.lastChange', { serial: last.serial, kind: last.kind, cause: last.cause }) : '',
+      booted ? '' : t('health.context.opening'),
     ].filter(Boolean).join(' · ');
   },
 });
@@ -492,7 +495,8 @@ const barrierTool = new BarrierTool({
   net: () => net,
   kind: () => game.barrierKind,
   removeAt: (at) => {
-    const hit = doc.barrierNear(at, BARRIER_PICK_PIXELS / view.zoom);
+    // The runs round the point only (`editor/itemCells.ts`), not every wall of the map.
+    const hit = barrierNear(doc, at, BARRIER_PICK_PIXELS / view.zoom);
     if (!hit) return false;
     mutate(() => doc.removeBarrier(hit.id));
     return true;
@@ -822,6 +826,20 @@ function mutateBuilt(fn: () => boolean): boolean {
   // What the diary says this edit came from (`world/changes.ts`).
   doc.changes.causeNext(`ferramenta ${game.tool}`);
   const changed = fn();
+  if (changed) {
+    // What the edit brings with it, INSIDE its undo step (before `history.end`):
+    // run after the step was closed, the buildings a road demolished were taken
+    // into the history with no step of their own, and undoing the road did not
+    // give them back. DO NOT move these below `history.end`.
+    // A pole or a wire moves `doc.utilityRevision`, not `doc.revision`: the
+    // network is unchanged, and rebuilding it (and, behind it, the simulation
+    // topology) cost about 330 ms per pole on a large map.
+    if (net.revision !== doc.revision) net.rebuild();
+    // A road over a building demolishes it (where the network changed only).
+    buildings.afterRoadEdit();
+    // And nothing stands in a turning circle's carriageway (V8): what stood on a road end's footway goes.
+    clearBulbs(doc, net);
+  }
   doc.changes.causeNext('jogo');
   // An edit that reports success without changing anything - the same lane
   // count, a split on an existing endpoint, a pole line traced over itself -
@@ -830,14 +848,6 @@ function mutateBuilt(fn: () => boolean): boolean {
   const recorded = history.end(doc);
   if (!changed || !recorded) return false;
   performance.measure('hitch:mutate/edit+after', { start: mutateAt, end: performance.now() });
-  // A pole or a wire moves `doc.utilityRevision`, not `doc.revision`: the
-  // network is unchanged, and rebuilding it (and, behind it, the simulation
-  // topology) cost about 330 ms per pole on a large map.
-  if (net.revision !== doc.revision) net.rebuild();
-  // A road over a building demolishes it, in this same undo step.
-  buildings.afterRoadEdit();
-  // And nothing stands in a turning circle's carriageway (V8): what stood on a road end's footway goes.
-  clearBulbs(doc, net);
   // The simulation catches up in the frame AFTER the one that draws the edit
   // (see `topologyAfterDraw`), so the player sees the road first.
   topologyAfterDraw = topologyAfterDraw || sim.topologyRevision !== net.trafficRevision;
@@ -1052,7 +1062,8 @@ function cancelGestures(): void {
 }
 
 /**
- * The gesture in progress, named: what the player is in the middle of
+ * The gesture in progress, named by its dictionary key (`gesture.*`, translated
+ * where it is shown, the F9 monitor's context): what the player is in the middle of
  * doing, read from the same variables `cancelGestures` ends. Written to the
  * game's state after every pointer and key event (`syncGesture`): since a
  * value set to what it already is writes nothing, the record holds where
@@ -1066,7 +1077,7 @@ function currentGesture(): string | null {
   if (movingNode) return movingNode;
   const road = roadTool.gesture();
   if (road) return road;
-  if (terrainBrush.stroking) return 'terreno: pincelando';
+  if (terrainBrush.stroking) return 'gesture.terrain.stroke';
   const pole = poleTool.gesture();
   if (pole) return pole;
   const barrier = barrierTool.gesture();
@@ -1085,8 +1096,11 @@ function syncGesture(): void {
 // After the event's own handlers: a task of its own, after the whole dispatch.
 // (A microtask would not do: the browser runs them after each listener, so one
 // queued from this capturing listener ran BEFORE the handlers it was to follow.)
+// One task for every event since the last one ran: a pointer reporting many
+// moves a frame queued a timer per move.
+const syncGestureSoon = coalescedTask(syncGesture);
 for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'keydown', 'keyup'] as const) {
-  window.addEventListener(type, () => setTimeout(syncGesture, 0), { capture: true, passive: true });
+  window.addEventListener(type, syncGestureSoon, { capture: true, passive: true });
 }
 /**
  * What the diary says a change came from (`world/changes.ts` `causeNext`):
@@ -1254,7 +1268,7 @@ canvas.addEventListener('pointerdown', (e) => {
         blockGridChoice.armed = false;
         let laid = 0;
         mutate(() => {
-          laid = commitBlockGrid(doc, world, blockGridChoice, game.roadTypeIndex, game.roadLanePreset, roadParking());
+          laid = commitBlockGrid(doc, net, world, blockGridChoice, game.roadTypeIndex, game.roadLanePreset, roadParking());
           return laid > 0;
         });
         flashHint(laid > 0 ? 'hint.blocks.built' : 'hint.road.invalid');
@@ -1686,8 +1700,7 @@ const brushSlider = (min: number, max: number, step: number, get: () => number, 
 // THE WEATHER (Paisagem > Céu, `world/weather.ts`) and the water under the
 // river brush: the map's, one undo step a drag. The thunder is heard at every
 // strike, as late as sound takes to come.
-const thunder = createThunder();
-scene.onStrike((_x, _y, distance) => thunder.play(distance / UNITS_PER_METER, doc.weather.thunder));
+scene.onStrike((_x, _y, distance) => playThunder(distance / UNITS_PER_METER, doc.weather.thunder));
 const weatherSlider = (key: keyof typeof doc.weather, min: number, max: number, step: number, scale: number): ShellSlider =>
   mapSlider(min, max, step, () => Math.round(doc.weather[key] * scale * 10) / 10, (v) => doc.setWeather({ [key]: v / scale }));
 
@@ -1959,6 +1972,8 @@ function mountInterface(): void {
       return { roads: doc.segments.size, nodes: doc.nodes.size, zoom: view.zoom, x: centre.x, y: centre.y };
     },
   });
+  // F9's button in the top bar, before Help (`ui/healthPanel.ts`).
+  shell.addToBar(healthPanel.button);
   // The compass in a corner (`ui/v2/compass.ts`): a click faces north, a drag turns and tilts.
   if (view.kind !== '2d') {
     compass = mountCompass(document.querySelector<HTMLElement>('.v2') ?? document.body, {
@@ -2054,7 +2069,7 @@ function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: nu
   // A square in each neighbourhood and the streets' trees and furniture (V7).
   const green = yield* greenCitySteps(doc, net, seed);
   yield;
-  const zoned = zoneCity(doc, plan);
+  const zoned = zoneCity(doc, net, plan);
   lotTool.refused.clear();
   lotTool.refusedFor(net.revision);
   return { zoned, ...green };
@@ -2128,9 +2143,11 @@ function growSlice(growing: NonNullable<typeof cityGrowth>): boolean {
       if (++growing.guard > growing.total * 3 + 50) { done = true; break; }
       const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed);
       if (id === null) {
-        // A lot refused (nothing fits it) is set aside; done when none is left open.
-        const open = doc.lots.some((l) => l.use && (l.building === undefined || !doc.buildings.has(l.building as BuildingId)) && !lotTool.refused.has(l.id));
-        if (!open) { done = true; break; }
+        // A lot refused (nothing fits it) is set aside; done when none is left
+        // open, as the document's index of open lots counts them (zoned, no
+        // building standing, not set aside). DO NOT filter `doc.lots` here: it
+        // ran once per lot refused, every lot each time.
+        if (doc.openLots.count(lotTool.refused) === 0) { done = true; break; }
         continue;
       }
       const fresh = doc.buildings.get(id as BuildingId);
@@ -2172,9 +2189,14 @@ try {
 gameState.watch(['sky'], () => { scene.setSkyMode(game.sky); requestDraw(); });
 scene.setSkyMode(game.sky);
 
+/**
+ * Save map: the map offered as a file, and the player told which way it went.
+ * DO NOT say "saved" without asking `exportToFile`: a map too large for one
+ * string failed in the click and the player read "Map saved to a file".
+ */
 function saveMap(): void {
-  exportToFile(doc, sessionSettings());
-  flashHint('hint.saved');
+  const offered = exportToFile(doc, sessionSettings(), undefined, () => flashHint('hint.exportFailed'));
+  if (offered) flashHint('hint.saved');
 }
 /**
  * Loads a picked map. The undo entry is recorded only once the map has
@@ -2555,34 +2577,38 @@ function requestDraw(): void {
 }
 
 /**
- * Buildings grow on zoned lots on their own, one at a time, twice a second:
- * the city fills in as the player watches, as in every city builder. Lots that
- * did not take a building are skipped until the land or the roads change.
+ * Buildings grow on zoned lots on their own, one at a time, twice a second of
+ * the city's time: the city fills in as the player watches, as in every city
+ * builder. Lots that did not take a building are skipped until the land or the
+ * roads change. Run by the frame loop on the simulation's clock (`SimPeriodic`):
+ * not while paused, faster at a higher speed, never with the tab hidden.
+ * DO NOT go back to a `setInterval` on the wall clock.
  */
-/** Wall-clock time before which nothing grows (rubble of a collapse lying, `strikeAt`). */
-let zoneGrowthHold = 0;
-setInterval(() => {
+const growthDue = new SimPeriodic(0.5);
+/** Nothing grows before this simulation time (rubble of a collapse lying, `strikeAt`); `at` the time it was set. */
+let zoneGrowthHold = { at: 0, until: 0 };
+function growZones(): void {
   // Buildings on zoned lots (`world/lots.ts`).
   // A road edit can make room on a lot refused before: try them again.
   const lotRefused = lotTool.refusedFor(net.revision);
-  // The city grows with its time: not while paused, nor with the tab hidden
-  // (the simulation stands still then too). It grew on regardless, each
-  // building bringing its grading, access and save work to a stopped game.
-  if (sim.clock.paused || document.hidden) return;
-  if (!mover.dragging && performance.now() >= zoneGrowthHold && doc.lots.some((l) => l.use)) {
-    const grown = caused('crescimento da zona', () => {
-      const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotRefused, 0x5eed);
-      const fresh = id === null ? undefined : doc.buildings.get(id as BuildingId);
-      if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.city.minutes(sim), decay: 0, lotPlan: LOT_PLAN_VERSION });
-      return id;
-    });
-    if (grown !== null) {
-      persistence.saveSessionSoon(doc, sessionSettings);
-      updateStatus();
-      requestDraw();
-    }
+  const now = sim.clock.time;
+  // A hold set before the clock went back (a new map) holds nothing.
+  if (mover.dragging || (now >= zoneGrowthHold.at && now < zoneGrowthHold.until)) return;
+  // `growOnLot` finds the open lots by the document's own index (`doc.openLots`):
+  // none open, none grown. DO NOT read `doc.lots` here (`lots.some` walked
+  // every lot twice a second).
+  const grown = caused('crescimento da zona', () => {
+    const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotRefused, 0x5eed);
+    const fresh = id === null ? undefined : doc.buildings.get(id as BuildingId);
+    if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.city.minutes(sim), decay: 0, lotPlan: LOT_PLAN_VERSION });
+    return id;
+  });
+  if (grown !== null) {
+    persistence.saveSessionSoon(doc, sessionSettings);
+    updateStatus();
+    requestDraw();
   }
-}, 500);
+}
 
 /**
  * The loading curtain: over the page while a town is put together unseen
@@ -2651,6 +2677,11 @@ function frame(now: number): void {
     ? 1
     : sim.clock.advance(wall, () => step(sim, { traffic: !game.paused, pedestrians: !game.paused }), SIM_FRAME_BUDGET_MS);
   if (!holdSim) sim.populationShare = populationGovernor.feed(sim.clock.lastSteps, sim.clock.lastStepMs, now / 1000, sim.vehicles.size, sim.pedViews.length);
+  // The city's own periodic work, on its clock (`SimPeriodic`).
+  const simTime = sim.clock.time;
+  if (growthDue.due(simTime)) growZones();
+  if (decayDue.due(simTime)) decayWatch();
+  actions.tick(simTime);
   frameTimer.mark('simulação');
 
   if (net.revision !== doc.revision) {
@@ -2734,6 +2765,31 @@ function simShowsMotion(): boolean {
  * now share one plan - keeping the drawing beside the rest of the hairlines
  * hid that.
  */
+/**
+ * The map's rectangle the screen can show: its corners and the middles of its
+ * sides on the ground and on the highest surface (`surfaceTop`), within the
+ * map; the whole map when a corner looks past the horizon.
+ */
+function groundOnScreen(w: number, h: number): ChangeRect {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const top = surfaceTop();
+  for (const [px, py] of [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]] as const) {
+    // The pixel's line of sight where the view has one: a ray level with or
+    // above the horizon meets no ground (`toWorldAt` then reads the view's centre).
+    const ray = view.rayAt?.(px, py, w, h);
+    for (const z of [0, top]) {
+      let p: Vec2;
+      if (ray) {
+        const t = (z - ray.oz) / ray.dz;
+        if (!(ray.dz < 0) || !(t >= 0) || !Number.isFinite(t)) return [-MAP_HALF, -MAP_HALF, MAP_HALF, MAP_HALF];
+        p = { x: ray.ox + ray.dx * t, y: ray.oy + ray.dy * t };
+      } else p = view.toWorldAt(px, py, z, w, h);
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+    }
+  }
+  return [Math.max(-MAP_HALF, x0), Math.max(-MAP_HALF, y0), Math.min(MAP_HALF, x1), Math.min(MAP_HALF, y1)];
+}
+
 /** Pick radius for a barrier under a shift-click, screen pixels. */
 const BARRIER_PICK_PIXELS = 10;
 
@@ -2991,8 +3047,9 @@ function drawOverlayScreen(): void {
     // What the Zoning tool draws (`editor/lotTool.ts`), in the scene; its labels on the 2D layer.
     const overlay = lotTool.overlayKeyed(game.tool === 'zone');
     const labels = overlay.labels;
-    // Lots left to lay: the next frame lays more (`lotOverlay.ts`).
-    if (scene.setLotOverlay(overlay, doc.changes)) requestDraw();
+    // All of them from the next frame: the ground's shaders draw them (`lotOverlay.ts`);
+    // the diary for the built lots' levels.
+    scene.setLotOverlay(overlay, doc.changes);
     // Labels stay on the 2D layer, projected at the ground's real height.
     const ground = (p: Vec2): Vec2 => view.toScreen(p, w, h, scene.surfaceHeightAt(p.x, p.y));
     ctx.save();
@@ -3178,8 +3235,11 @@ function drawOverlayScreen(): void {
     ctx.font = '600 10px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const node of doc.nodes.values()) {
-      if (node.incident.length < 3) continue;
+    // The junctions on screen only (`net.junctionCells`), never every node of
+    // the map each frame.
+    for (const id of net.junctionCells.idsMeeting(groundOnScreen(w, h))) {
+      const node = doc.node(id);
+      if (!node || node.incident.length < 3) continue;
       const centre = at({ x: node.x, y: node.y });
       const colour = CONTROL_COLOUR[node.control] ?? HOVER;
       const hot = hoverAnchor?.kind === 'node' && hoverAnchor.node === node.id;
@@ -4015,7 +4075,9 @@ function noteSimulationIssues(): void {
   for (const issue of sim.issues) {
     if (issuesSeen.has(issue)) continue;
     issuesSeen.add(issue);
-    health.record('invariant', 'warning', `Simulação: ${issue.code}`, { detail: `${issue.subject}: ${issue.detail} (passo ${issue.tick})` });
+    // Shown in the F9 monitor: the words from the dictionaries.
+    health.record('invariant', 'warning', t('health.msg.invariant', { code: issue.code }),
+      { detail: t('health.msg.invariantDetail', { subject: issue.subject, detail: issue.detail, tick: issue.tick }) });
   }
 }
 
@@ -4023,7 +4085,7 @@ const valueText = (value: unknown): string => (value === null || value === undef
 const healthPanel = mountHealthPanel({
   log: health,
   world: (n) => doc.changes.latest(n).map((c) => {
-    const where = c.rects === null ? 'mapa inteiro' : `${c.rects.length} ret.`;
+    const where = c.rects === null ? t('health.world.whole') : t('health.world.rects', { count: c.rects.length });
     return `#${c.serial} ${c.kind} · ${c.cause}${c.parent ? ` ← #${c.parent}` : ''} · ${where}${c.ms !== undefined ? ` · ${c.ms.toFixed(1)} ms` : ''}${c.detail ? ` · ${c.detail}` : ''}`;
   }),
   state: (n) => ({
@@ -4032,7 +4094,7 @@ const healthPanel = mountHealthPanel({
       ...tools.latest(3).map((r) => `tool machine #${r.serial}: ${r.from} → ${r.to} (${r.event})`),
     ],
     wide: [...gpuLines(),
-      `simulação: ${populationGovernor.stepMs.toFixed(1)} ms/passo · população ${Math.round(populationGovernor.share * 100)}% (${sim.vehicles.size} veículos, ${sim.pedViews.length} pessoas)`],
+      t('health.state.simulation', { ms: populationGovernor.stepMs.toFixed(1), share: Math.round(populationGovernor.share * 100), vehicles: sim.vehicles.size, people: sim.pedViews.length })],
     changes: gameState.latest(n).map((c) => `${c.key}: ${valueText(c.from)} → ${valueText(c.to)} (${c.cause})`),
   }),
 });
@@ -4045,7 +4107,7 @@ const healthPanel = mountHealthPanel({
 (window as unknown as { __changes: unknown }).__changes = (count = 30, serial?: number): unknown => {
   const row = (c: Change) => ({
     serial: c.serial, kind: c.kind, cause: c.cause, after: c.parent ?? '',
-    where: c.rects === null ? 'mapa inteiro' : `${c.rects.length} ret. ${Math.round(c.rects.reduce((a, r) => a + (r[2] - r[0]) * (r[3] - r[1]), 0) / 1e3)} mil u²`,
+    where: c.rects === null ? 'whole map' : `${c.rects.length} rects ${Math.round(c.rects.reduce((a, r) => a + (r[2] - r[0]) * (r[3] - r[1]), 0) / 1e3)}k u²`,
     ids: c.ids?.slice(0, 8).join(' ') ?? '', ms: c.ms === undefined ? '' : c.ms.toFixed(1), detail: c.detail ?? '',
   });
   if (serial !== undefined) {
@@ -4230,7 +4292,8 @@ function refreshShell(): void {
 // when its next tenth is due, the diary saying what came, changed or was replaced.
 const decayLook = createDecayWatch(doc, (id, decay) => caused('desgaste dos prédios', () => doc.buildings.wear(id, decay)));
 const decayWatch = (): void => { if (decayLook(sim.city.minutes(sim))) requestDraw(); };
-setInterval(decayWatch, 3000);
+/** The buildings' decay looked at every 3 s of the city's time (`frame`), not on the wall clock. */
+const decayDue = new SimPeriodic(3);
 
 /**
  * The Actions (`actionsWiring.ts`): the pistol, the bomb, the buildings it
@@ -4250,7 +4313,7 @@ const actions = createActions({
   caused: (cause, fn) => caused(cause, fn),
   hint: (key) => flashHint(key),
   redraw: () => requestDraw(),
-  holdGrowth: (until) => { zoneGrowthHold = until; },
+  holdGrowth: (seconds) => { zoneGrowthHold = { at: sim.clock.time, until: sim.clock.time + seconds }; },
 });
 
 // Everything is set up: the first frame may be drawn.

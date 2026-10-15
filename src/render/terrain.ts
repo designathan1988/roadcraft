@@ -53,6 +53,7 @@ import {
 } from '@world/terrain';
 import { bakeSurface, fbm, makeNoise, type SurfaceBake, type SurfaceRecipe } from './mesh/textureBaker';
 import { DETAIL_GLSL, detailSwitch, detailTextures } from './mesh/detailLayer';
+import { applyLotOverlay } from './lotOverlay';
 import { WATER_DEPTH_ATTRIBUTE, WATER_FLOW_ATTRIBUTE, createWaterSurface, type WaterLook } from './water';
 import type { GullyDab } from '@world/gullies';
 import { RELIEF_TEXTURE, createReliefBake } from './terrainRelief';
@@ -1136,11 +1137,12 @@ function terrainMaterial(
     // The close-zoom layer (see `mesh/detailLayer.ts`): blades over grass,
     // grit over dirt and rock, faded in by pixel footprint.
     uDetailOn: detailSwitch,
-    uGrassDetail: { value: grassDetail.map },
-    uGrassDetailN: { value: grassDetail.normalMap },
+    // Grass and soil as two layers of one array, maps and normals each
+    // (`detailLayers`): the land's material was at the sixteen textures a
+    // fragment shader may bind, and the lots read the ground's own (`lotOverlay.ts`).
+    uDetailMaps: { value: sharedLayers('detail-map', [grassDetail.map, soilDetail.map], false, anisotropy) as Texture },
+    uDetailNormals: { value: sharedLayers('detail-normal', [grassDetail.normalMap, soilDetail.normalMap], false, anisotropy) as Texture },
     uGrassDetailScale: { value: 1 / grassDetail.worldSize },
-    uSoilDetail: { value: soilDetail.map },
-    uSoilDetailN: { value: soilDetail.normalMap },
     uSoilDetailScale: { value: 1 / soilDetail.worldSize },
     // Set to the surface's own bake (`createTerrainSurface`).
     uRelief: RELIEF_TEXTURE,
@@ -1289,13 +1291,25 @@ function terrainMaterial(
          uniform float uGrassScale;
          uniform float uRockScale;
          uniform float uDirtScale;
-         uniform sampler2D uGrassDetail;
-         uniform sampler2D uGrassDetailN;
+         // The two detail kinds as layers of one array each (0 grass, 1
+         // soil): two texture units, not four (\`detailLayers\`).
+         uniform sampler2DArray uDetailMaps;
+         uniform sampler2DArray uDetailNormals;
          uniform float uGrassDetailScale;
-         uniform sampler2D uSoilDetail;
-         uniform sampler2D uSoilDetailN;
          uniform float uSoilDetailScale;
          ${DETAIL_GLSL}
+         // \`detailSample\` / \`detailNormal\` of DETAIL_GLSL, read from a layer.
+         vec3 detailSampleLayer(sampler2DArray tex, vec2 uv, float layer) {
+           vec3 a = texture(tex, vec3(uv, layer)).rgb * 2.0;
+           vec3 b = texture(tex, vec3(DETAIL_TURN * uv * 0.4137 + 0.31, layer)).rgb * 2.0;
+           return a * mix(vec3(1.0), b, 0.55);
+         }
+         vec3 detailNormalLayer(sampler2DArray tex, vec2 uv, float layer) {
+           vec3 a = texture(tex, vec3(uv, layer)).xyz * 2.0 - 1.0;
+           vec3 b = texture(tex, vec3(DETAIL_TURN * uv * 0.4137 + 0.31, layer)).xyz * 2.0 - 1.0;
+           b.xy = b.xy * DETAIL_TURN;
+           return vec3(a.xy + b.xy * 0.55, a.z);
+         }
 
          // Set once per fragment: how far the close-zoom layer has taken over.
          // The macro maps are NOT read softer under it any more: biased two
@@ -1666,8 +1680,8 @@ function terrainMaterial(
          // unit a pixel the grass had nothing finer than its patches.
          terrainDetailW = max(terrainDetailW, uDetailOn * (1.0 - smoothstep(${m(0.048).toFixed(6)}, ${m(0.44).toFixed(6)}, max(fwidth(vTerrainWorld.x), fwidth(vTerrainWorld.z)))) * 0.75);
          if (terrainDetailW > 0.001) {
-           vec3 bladeDetail = detailSample(uGrassDetail, vTerrainWorld.xz * uGrassDetailScale);
-           vec3 soilDetail = detailSample(uSoilDetail, terrainWallUv(vTerrainWorld, uSoilDetailScale, wallX));
+           vec3 bladeDetail = detailSampleLayer(uDetailMaps, vTerrainWorld.xz * uGrassDetailScale, 0.0);
+           vec3 soilDetail = detailSampleLayer(uDetailMaps, terrainWallUv(vTerrainWorld, uSoilDetailScale, wallX), 1.0);
            // Blades only where the ground is gentle: projected from above
            // onto a bank they stretched into long hairs.
            float soilMix = max(clamp(dirtMix + rockMix, 0.0, 1.0), smoothstep(12.0, 24.0, slopeDeg));
@@ -1922,8 +1936,8 @@ function terrainMaterial(
          vec3 mapN = normalize(mix(grassN, rockN, rockMix));
          mapN.xy *= normalScale;
          if (terrainDetailW > 0.001) {
-           vec3 bladeN = detailNormal(uGrassDetailN, vTerrainWorld.xz * uGrassDetailScale);
-           vec3 soilN = detailNormal(uSoilDetailN, vTerrainWorld.xz * uSoilDetailScale);
+           vec3 bladeN = detailNormalLayer(uDetailNormals, vTerrainWorld.xz * uGrassDetailScale, 0.0);
+           vec3 soilN = detailNormalLayer(uDetailNormals, vTerrainWorld.xz * uSoilDetailScale, 1.0);
            vec3 fineN = mix(bladeN, soilN, clamp(dirtMix + rockMix, 0.0, 1.0));
            mapN.xy += fineN.xy * 1.2 * terrainDetailW;
          }
@@ -1934,7 +1948,9 @@ function terrainMaterial(
   };
   // A changed program key forces three to compile this variant separately from
   // any other standard material in the scene.
-  material.customProgramCacheKey = () => 'terrain-splat-v32';
+  material.customProgramCacheKey = () => 'terrain-splat-v33';
+  // The lots coloured into the land (`lotOverlay.ts`), at its world position.
+  applyLotOverlay(material, 'terrain', { world: 'vTerrainAtlas' });
   return material;
 }
 
@@ -2892,7 +2908,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       'float slopeDeg = 0.0;',
     );
   };
-  vergeMaterial.customProgramCacheKey = () => 'terrain-splat-v31-verge';
+  vergeMaterial.customProgramCacheKey = () => 'terrain-splat-v33-verge-lots';
 
   let paintArray = material.userData['paint'] as DataArrayTexture;
   let paintRes = paintArray.image.width;

@@ -133,10 +133,15 @@ export class CameraGestures {
     return this.pointers.has(id);
   }
 
+  /**
+   * The gesture in progress, as a dictionary key, or null. The view may not
+   * import the interface (eslint layers): the reader translates it. DO NOT
+   * write the player's text here.
+   */
   gesture(): string | null {
-    if (this.pinch) return 'câmera: pinça';
-    if (this.orbit) return 'câmera: girando';
-    if (this.pan) return 'câmera: arrastando';
+    if (this.pinch) return 'gesture.camera.pinch';
+    if (this.orbit) return 'gesture.camera.orbit';
+    if (this.pan) return 'gesture.camera.pan';
     return null;
   }
 

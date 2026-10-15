@@ -46,9 +46,17 @@ const STEP_BUDGETS: Readonly<Record<string, Budget>> = {
   'draw/Render': { max: 100, level: 'warn', why: 'desenho de um quadro, CPU (até 83 ms)' },
 };
 
-/** The step a measure's name budgets, by its name up to the first space; null when none does. */
+/**
+ * The step a measure's name budgets: by its whole name, else by its name up
+ * to the first space (a step that adds a detail after it); null when none does.
+ * DO NOT cut at the space first: 'mutate/after edit' and 'road-edit/world
+ * rebuilt' became 'mutate/after' and 'road-edit/world', which no row holds, and
+ * those two steps were never held to a budget.
+ */
 export function stepBudget(name: string): { readonly key: string; readonly budget: Budget } | null {
   const bare = name.startsWith('hitch:') ? name.slice(6) : name;
+  const whole = STEP_BUDGETS[bare];
+  if (whole) return { key: bare, budget: whole };
   const space = bare.indexOf(' ');
   const key = space < 0 ? bare : bare.slice(0, space);
   const budget = STEP_BUDGETS[key];

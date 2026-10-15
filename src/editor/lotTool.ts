@@ -47,7 +47,8 @@ export interface LotToolHost {
 
 /** What the scene draws of the lots (the shape of `render/lotOverlay.ts` `LotOverlayInput`, without its key). */
 export interface LotOverlay {
-  readonly polygons: { corners: readonly Vec2[]; fill: number | null; fillAlpha: number; line: number; lineAlpha: number; width: number }[];
+  /** `built`: a lot with a building, whose yard's paving is coloured too. */
+  readonly polygons: { corners: readonly Vec2[]; fill: number | null; fillAlpha: number; line: number; lineAlpha: number; width: number; built?: boolean }[];
   readonly lines: { a: Vec2; b: Vec2; colour: number; dashed: boolean; width: number }[];
   readonly points: { p: Vec2; colour: number; radius: number }[];
   /** Labels for the 2D layer: a lot's size, a side's length. */
@@ -168,14 +169,14 @@ export class LotTool {
 
   /** What the player is in the middle of doing with it, named (`main.ts` `currentGesture`). */
   gesture(): string | null {
-    if (this.erase) return 'zona: apagando';
-    if (this.stroke) return this.stroke.remove ? 'lote: tirando zona' : 'lote: pintando zona';
-    if (this.corner) return 'lote: movendo um canto';
-    if (this.drawn) return 'lote: desenhando';
-    if (this.cutLine) return 'lote: cortando';
-    if (this.curve) return 'lote: curvando um lado';
-    if (this.polygon.length > 0) return 'lote: polígono';
-    if (this.joinFirst !== null) return 'lote: unindo';
+    if (this.erase) return 'gesture.zone.erasing';
+    if (this.stroke) return this.stroke.remove ? 'gesture.zone.unzoning' : 'gesture.zone.zoning';
+    if (this.corner) return 'gesture.lot.corner';
+    if (this.drawn) return 'gesture.lot.drawing';
+    if (this.cutLine) return 'gesture.lot.cutting';
+    if (this.curve) return 'gesture.lot.curving';
+    if (this.polygon.length > 0) return 'gesture.lot.polygon';
+    if (this.joinFirst !== null) return 'gesture.lot.joining';
     return null;
   }
 
@@ -383,7 +384,10 @@ export class LotTool {
       this.erase.lots.add(lot.id);
       if (lot.building !== undefined) this.erase.buildings.add(lot.building as BuildingId);
     }
-    for (const b of this.doc.buildings.all()) {
+    // A building over the point has the point in its stored box: the store's
+    // grid hands those (`BuildingStore.near`). DO NOT walk `buildings.all()`:
+    // this runs for each of up to 400 steps of a pointer move.
+    for (const b of this.doc.buildings.near(world.x, world.y, world.x, world.y)) {
       if (Math.hypot(b.x - world.x, b.y - world.y) > m(80)) continue;
       if (solidFootprints(b).some((ring) => insideLot(world, { corners: ring }))) this.erase.buildings.add(b.id as BuildingId);
     }
@@ -635,7 +639,7 @@ export class LotTool {
       const fillAlpha = painting ? 0.6 : l.use ? (editing ? (built ? 0.22 : 0.45) : 0.25) : brushHover ? 0.35 : 0;
       polygons.push({ corners: l.corners.map(dragged), fill, fillAlpha,
         line: picked ? (settings.mode === 'delete' ? 0xff6b5e : 0xffd25e) : 0xffffff, lineAlpha: editing ? (picked ? 1 : 0.85) : 0,
-        width: picked ? 0.7 : 0.35 });
+        width: picked ? 0.7 : 0.35, ...(built ? { built: true } : {}) });
     }
     // The street land proposed as lots, in every mode of the tool (they
     // vanished from the Lots modes): faint outlines; painted in the stroke, in

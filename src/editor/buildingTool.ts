@@ -16,6 +16,7 @@ import { FloorCache, type PavedAt, floorHeight } from '@world/buildings/foundati
 import { edgeFrame, localFootprint, overlapArea } from '@world/buildings/footprints';
 import { GRID } from '@world/buildings/geometry';
 import { METERS_PER_UNIT, m } from '@world/units';
+import { MAP_HALF } from '@world/bounds';
 import { MIN_SIZE, topLevel, baysOn, footprintBox, levelElevation, levelHeight, liftAt, localDirToWorld, localToWorld, reliefAt, volumeElevation, volumeLift, worldToLocal, worldToLocalAt } from '@world/buildings/geometry';
 import { opSetLift, snapLift } from '@world/buildings/splitLevel';
 import { type Handle, buildingHandles } from '@world/buildings/handles';
@@ -952,7 +953,10 @@ export class BuildingTool {
   cutView: { x: number; y: number } = { x: 0, y: 1 };
   /** A core in hand (lift or stair), or 'remove': the next click on the cut floor places or removes one. */
   coreKind: CoreKind | 'remove' | null = null;
-  private cutKey = '';
+  /** What the cut preview was made from: the record, the level and the direction. */
+  private cutRecord: Building | null = null;
+  private cutAt = -1;
+  private cutDir = Number.NaN;
   private cutPreview: BuildingPreview | null = null;
 
   setCutLevel(level: number | null): void {
@@ -972,9 +976,14 @@ export class BuildingTool {
     if (this.cutLevel === null || !b) return null;
     const level = Math.max(0, Math.min(this.cutLevel, topLevel(b) - 1));
     const dir = Math.round(Math.atan2(this.cutView.y, this.cutView.x) / (Math.PI / 4));
-    const key = `${JSON.stringify(b)}|${level}|${dir}`;
-    if (key !== this.cutKey) {
-      this.cutKey = key;
+    // The store's record is replaced whenever the building changes, never
+    // changed in place (`BuildingStore.put`): its identity says whether it
+    // moved. DO NOT key on `JSON.stringify(b)`: it wrote the whole building out
+    // every frame (`beforeDraw`).
+    if (b !== this.cutRecord || level !== this.cutAt || dir !== this.cutDir) {
+      this.cutRecord = b;
+      this.cutAt = level;
+      this.cutDir = dir;
       const a = dir * (Math.PI / 4);
       const cut = cutOpen(cloneBuilding(b), level, { x: Math.cos(a), y: Math.sin(a) });
       this.serial++;
@@ -2057,8 +2066,7 @@ export class BuildingTool {
   private pick(screen: Vec2): BuildingHit | null {
     const doc = this.host.context().doc;
     const hides = this.preview?.hides ?? null;
-    const buildings = [...doc.buildings.all()].filter((b) => b.id !== hides);
-    return pickBuilding(buildings, this.view.ray(screen), (b) => this.floorOf(b));
+    return pickAlongRay(doc.buildings, this.view.ray(screen), hides, (b) => this.floorOf(b));
   }
 
   private handleAt(screen: Vec2): Handle | null {
@@ -2770,4 +2778,61 @@ function stripId(b: Building & { id?: BuildingId }): Omit<Building, 'id'> {
   const copy = { ...b } as Partial<Building>;
   delete (copy as { id?: BuildingId }).id;
   return copy as Omit<Building, 'id'>;
+}
+
+/** How far along the map a step of the pick's walk reaches (the store's grid cell, `world/buildings/grid.ts`). */
+const PICK_STEP = m(64);
+/** How far round the ray's track a step looks: a building is picked on its own volumes, inside its stored box. */
+const PICK_PAD = m(2);
+
+/**
+ * The nearest building face under `ray`, `hides` left out: the buildings filed
+ * along the ray's track on the map (`BuildingStore.near`), a step at a time
+ * from the eye outwards, until a face is hit nearer than the next step begins
+ * (a hit point lies in its building's box, so a nearer one lies in a step
+ * already read: Amanatides & Woo, "A Fast Voxel Traversal Algorithm", the walk
+ * front to back with its early stop). A pointer over open ground reads the
+ * cells under its ray across the map, never every building of the city.
+ * DO NOT copy `buildings.all()` here: every move of the pointer over the map
+ * copied and tested the whole city (audit A9).
+ */
+export function pickAlongRay(
+  store: { near(minX: number, minY: number, maxX: number, maxY: number): Building[] },
+  ray: Ray3, hides: BuildingId | null, floorOf: (b: Building) => number,
+): BuildingHit | null {
+  const seen = new Set<BuildingId>();
+  const fresh = (rect: readonly [number, number, number, number]): Building[] => {
+    const out: Building[] = [];
+    for (const b of store.near(rect[0], rect[1], rect[2], rect[3])) {
+      if (b.id === hides || seen.has(b.id)) continue;
+      seen.add(b.id);
+      out.push(b);
+    }
+    return out;
+  };
+  const speed = Math.hypot(ray.dx, ray.dy);
+  // Looking straight down: the ray's track is a point.
+  if (speed < 1e-9) return pickBuilding(fresh([ray.ox - PICK_PAD, ray.oy - PICK_PAD, ray.ox + PICK_PAD, ray.oy + PICK_PAD]), ray, floorOf);
+  // The stretch of the ray (t >= 0) over the map, slab by slab.
+  let t0 = 0, t1 = Infinity;
+  for (const [o, d] of [[ray.ox, ray.dx], [ray.oy, ray.dy]] as const) {
+    if (Math.abs(d) < 1e-12) {
+      if (o < -MAP_HALF - PICK_PAD || o > MAP_HALF + PICK_PAD) return null;
+      continue;
+    }
+    const a = (-MAP_HALF - PICK_PAD - o) / d, b = (MAP_HALF + PICK_PAD - o) / d;
+    t0 = Math.max(t0, Math.min(a, b));
+    t1 = Math.min(t1, Math.max(a, b));
+  }
+  if (!(t0 <= t1)) return null;
+  const step = PICK_STEP / speed;
+  let best: BuildingHit | null = null;
+  for (let ta = t0; ta <= t1; ta += step) {
+    if (best && best.t < ta) break;
+    const tb = Math.min(t1, ta + step);
+    const ax = ray.ox + ray.dx * ta, ay = ray.oy + ray.dy * ta, bx = ray.ox + ray.dx * tb, by = ray.oy + ray.dy * tb;
+    const hit = pickBuilding(fresh([Math.min(ax, bx) - PICK_PAD, Math.min(ay, by) - PICK_PAD, Math.max(ax, bx) + PICK_PAD, Math.max(ay, by) + PICK_PAD]), ray, floorOf);
+    if (hit && (!best || hit.t < best.t)) best = hit;
+  }
+  return best;
 }

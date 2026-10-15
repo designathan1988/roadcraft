@@ -40,7 +40,7 @@ export class CloudTool {
   }
 
   gesture(): string | null {
-    return this.drag ? 'nuvem: arrastando' : null;
+    return this.drag ? 'gesture.cloud.drag' : null;
   }
 
   down(pointer: number, px: number, py: number): void {

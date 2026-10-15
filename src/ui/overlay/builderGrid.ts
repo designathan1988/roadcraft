@@ -1,0 +1,37 @@
+import type { Vec2 } from '@core/vec2';
+import { GRID } from '@world/buildings/geometry';
+import { m } from '@world/units';
+
+/**
+ * The Builder's construction grid on the overlay canvas, laid on the plane
+ * the work is happening on (the selected building's floor): the major lines
+ * every five cells out to 60 m, the minor ones within 24 m.
+ *
+ * The handles, the selection and the measures are the building tool's own
+ * layer (`buildingOverlay.ts`). DO NOT grow a second layer of gizmos here: one
+ * stood in this file, 260 lines of handles, rings, badges and a typed-number
+ * box that its only caller handed nothing to draw.
+ */
+export function drawBuilderGrid(ctx: CanvasRenderingContext2D, project: (x: number, y: number, z: number) => Vec2, centre: Vec2, z: number): void {
+  const radius = m(24);
+  const reach = m(60);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 1;
+  for (let v = -reach; v <= reach; v += GRID) {
+    const major = Math.abs(Math.round(v / (GRID * 5))) * GRID * 5 === Math.abs(v);
+    if (!major && Math.abs(v) > radius) continue;
+    ctx.strokeStyle = major ? 'rgba(85,230,206,0.22)' : 'rgba(85,230,206,0.1)';
+    const a = project(centre.x + v, centre.y - reach, z);
+    const b = project(centre.x + v, centre.y + reach, z);
+    const c = project(centre.x - reach, centre.y + v, z);
+    const d = project(centre.x + reach, centre.y + v, z);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.moveTo(c.x, c.y);
+    ctx.lineTo(d.x, d.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}

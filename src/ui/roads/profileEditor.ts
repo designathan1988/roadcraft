@@ -5,7 +5,7 @@ import {
   type MedianMaterial, ROAD_SECTION_LIMITS,
 } from '@world/roadSection';
 import { ROAD_TYPES } from '@world/roadTypes';
-import { type ProfileElement, type ProfileIssue, type RoadProfileSpec, profileIssues, profileWidth } from '@world/roads/profile';
+import { type ProfileElement, type ProfileIssue, type RoadProfileSpec, profileIssues, profileWidth, sameProfile } from '@world/roads/profile';
 import { type RoadTemplate, classTemplates } from '@world/roads/templates';
 import { METERS_PER_UNIT, UNITS_PER_METER } from '@world/units';
 import { t } from '../i18n';
@@ -418,7 +418,7 @@ export function openProfileEditor(options: ProfileEditorOptions): void {
 
   // ---- templates: the classes, the player's own, and a blank road
   const sameAs = (template: RoadTemplate): boolean =>
-    template.type === type && JSON.stringify(template.profile) === JSON.stringify(profile);
+    template.type === type && sameProfile(template.profile, profile);
   const renderCards = (): void => {
     cards.replaceChildren();
     const card = (name: string, on: boolean, art: string, pick: () => void, remove?: () => void, id?: string): void => {

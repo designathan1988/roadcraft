@@ -1,3 +1,5 @@
+import { CameraMotion } from '@view/cameraMotion';
+
 /**
  * THE ROAD TOOL'S KEYS, rebindable (docs/source/VIAS.md V3; read by `main.ts`): raise and lower the
  * road being drawn, and cycle its plan (straight, curve, freehand). Kept in
@@ -14,8 +16,34 @@ const STORAGE_KEY = 'roadcraft.roadKeys';
 
 /** Keys the game keeps for itself: not given to the road tool. */
 const RESERVED: ReadonlySet<string> = new Set(['Escape', 'Enter', 'Tab', ' ', 'Delete', 'Backspace', 'Shift', 'Control', 'Alt', 'Meta', 'F8', 'F9',
-  'q', 'e', 'u', 'm', 'x', 'b', 'c', 't', 'i', 'p', 'g', 'f', 'z', 'h', 'o', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home',
+  'u', 'm', 'x', 'b', 'c', 't', 'i', 'p', 'g', 'f', 'z', 'h', 'o', 'Home',
   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
+
+/**
+ * The `KeyboardEvent.code`s that type a key on a US keyboard: the camera's
+ * keys are codes (`CameraMotion.owns`), the road tool's are keys.
+ */
+const CODES_OF_KEY: Readonly<Record<string, readonly string[]>> = {
+  '=': ['Equal'], '+': ['Equal', 'NumpadAdd'], '-': ['Minus', 'NumpadSubtract'], '_': ['Minus'],
+};
+const codesOfKey = (key: string): readonly string[] =>
+  CODES_OF_KEY[key] ?? (/^[a-z]$/.test(key) ? [`Key${key.toUpperCase()}`] : /^\d$/.test(key) ? [`Digit${key}`, `Numpad${key}`] : [key]);
+/**
+ * Page Up and Page Down tilt the camera, and are the road's own raise and
+ * lower by default: the road tool reads its keys first (`editor/gameKeys.ts`),
+ * as Inspect's node height does.
+ */
+const lentByTheCamera = (key: string): boolean => key === 'PageUp' || key === 'PageDown';
+/**
+ * Whether a key moves the camera. Read from the camera's own table: the road
+ * tool reads its keys before the camera, and W, A, S, D, + and - left out of
+ * a list written here once let "raise the road" take W from the camera.
+ * DO NOT list the camera's keys here by hand.
+ */
+function cameraKey(key: string): boolean {
+  return !lentByTheCamera(key) && codesOfKey(key).some((code) => CameraMotion.owns(code));
+}
+const reserved = (key: string): boolean => RESERVED.has(key) || cameraKey(key);
 
 /** A key as stored: letters lower case, everything else as `KeyboardEvent.key` names it. */
 function normaliseKey(key: string): string {
@@ -32,7 +60,7 @@ function load(): Record<RoadKeyAction, string> {
     if (raw && typeof raw === 'object') {
       for (const action of ROAD_KEY_ACTIONS) {
         const key = (raw as Record<string, unknown>)[action];
-        if (typeof key === 'string' && key && !RESERVED.has(normaliseKey(key))) out[action] = normaliseKey(key);
+        if (typeof key === 'string' && key && !reserved(normaliseKey(key))) out[action] = normaliseKey(key);
       }
     }
   } catch { /* a broken or blocked store: the defaults */ }
@@ -51,7 +79,7 @@ export function roadKey(action: RoadKeyAction): string {
 
 /** Whether `key` may be given to a road action. */
 export function bindableKey(key: string): boolean {
-  return !RESERVED.has(normaliseKey(key));
+  return !reserved(normaliseKey(key));
 }
 
 /** Gives `key` to `action`; the action that had it takes `action`'s old key. False for a reserved key. */
