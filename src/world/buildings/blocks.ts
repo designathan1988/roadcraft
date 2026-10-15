@@ -22,7 +22,22 @@ import type { Building, Volume } from './types';
  * facade work. Pure and deterministic, so the renderer can call it on every
  * rebuild.
  */
+/**
+ * Each record resolved, once (a stored record is never changed in place,
+ * `BuildingStore` OWNERSHIP): the meshes, the massing and the floor read it
+ * several times a building, and a new object each time also missed every cache
+ * kept by record after it (`facadeBays`). The building handed out is shared:
+ * read it, never change it.
+ */
+const RESOLVED = new WeakMap<Building, Building>();
+
 export function resolveBlocks(b: Building): Building {
+  let known = RESOLVED.get(b);
+  if (!known) RESOLVED.set(b, known = resolve(b));
+  return known;
+}
+
+function resolve(b: Building): Building {
   const solids = b.volumes.filter((v) => !v.mode);
   const voids = b.volumes.filter((v) => v.mode === 'void');
   const clips = b.volumes.filter((v) => v.mode === 'intersect');
