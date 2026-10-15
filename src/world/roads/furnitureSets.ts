@@ -72,15 +72,22 @@ export interface FurniturePlacement {
  * tool would accept it among `existing` (and the pieces already chosen).
  * Deterministic: the same roads give the same pieces.
  */
-export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: FurnitureSet, existing: Iterable<LandscapeItem>,
+export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: FurnitureSet,
+  /**
+   * The items standing to place among; absent (the way to call it): the
+   * document's own, asked by place round each street (`RoadDoc.landscapeIn`).
+   * A list handed in is filed whole first - every item of the map, when it is
+   * the document's.
+   */
+  existing: Iterable<LandscapeItem> | null,
   /** The left side carries a power line whose poles hold the street lights (`editor/roads/powerLine.ts`): no lamp columns there. */
   powerLeft = false,
   /** Street trees, on the footways and down a planted median; the rest of the set without them when false. */
   trees = true): FurniturePlacement[] {
   if (set === 'none') return [];
   const out: FurniturePlacement[] = [];
-  // The items already standing, in cells: each street asks only those near it
-  // (a generated city lays thousands of pieces at once).
+  // The items handed in and the pieces chosen here, in cells: each street asks
+  // only those near it (a generated city lays thousands of pieces at once).
   const grid = new Map<string, LandscapeItem[]>();
   const cellOf = (x: number, y: number): string => `${Math.floor(x / CELL)},${Math.floor(y / CELL)}`;
   const file = (item: LandscapeItem): void => {
@@ -89,10 +96,7 @@ export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: F
     if (!list) grid.set(key, list = []);
     list.push(item);
   };
-  for (const item of existing) file(item);
-  // The utility poles standing count as lamp columns: nothing is put on them.
-  let poleId = -1_000_000;
-  for (const pole of net.doc.poles.values()) file({ id: poleId--, kind: 'lamp', x: pole.x, y: pole.y });
+  for (const item of existing ?? []) file(item);
   let nextId = -1;
   for (const id of [...segments].sort((a, b) => a - b)) {
     const segment = net.doc.segment(id), ribbon = net.ribbons.get(id);
@@ -102,6 +106,11 @@ export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: F
     for (let cx = Math.floor((box.minX - pad) / CELL); cx <= Math.floor((box.maxX + pad) / CELL); cx++) {
       for (let cy = Math.floor((box.minY - pad) / CELL); cy <= Math.floor((box.maxY + pad) / CELL); cy++) items.push(...(grid.get(`${cx},${cy}`) ?? []));
     }
+    const area = [box.minX - pad, box.minY - pad, box.maxX + pad, box.maxY + pad] as const;
+    if (existing === null) items.push(...net.doc.landscapeIn(area));
+    // The utility poles standing count as lamp columns: nothing is put on them.
+    // By place (`RoadDoc.polesIn`). DO NOT file every pole of the map for each road drawn.
+    for (const pole of net.doc.polesIn(area)) items.push({ id: -1_000_000 - pole.id, kind: 'lamp', x: pole.x, y: pole.y });
     const keep = (item: LandscapeItem): void => { items.push(item); file(item); };
     const line = ribbon.full;
     const section = sectionOf(ribbon.road, segment.direction);

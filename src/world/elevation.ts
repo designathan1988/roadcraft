@@ -487,8 +487,16 @@ export function buildRoadElevation(
 ): RoadElevation {
   const started = performance.now();
   const profiles: Profile[] = [];
-  /** The structures among `profiles`, once they are all laid (`has`). */
-  let present: Set<RoadStructure> | null = null;
+  /**
+   * The structures among `profiles` and their boxes, gathered as they are
+   * laid: `has` is asked at every point a pedestrian, a lot's colour or a
+   * paving height is read at (`surfaceHeightAt`, `pavedHeightAt`), and
+   * `shapeBounds` by every terrain patch shaped. DO NOT gather them from
+   * `profiles` at the question (a walk of every road, or a new list of every
+   * box, per call).
+   */
+  const present = new Set<RoadStructure>();
+  const boxes: Aabb[] = [];
   const byId = new Map<SegmentId, Profile>();
   const prior = previous ? memos.get(previous) : terrainAt === FLAT_GROUND && lastFlat ? memos.get(lastFlat) : undefined;
   // Never level ground for real ground or the other way round, whatever the caller says.
@@ -572,6 +580,8 @@ export function buildRoadElevation(
     };
     profiles.push(profile);
     byId.set(id, profile);
+    present.add(profile.structure);
+    boxes.push(box);
   }
 
   // ------------------------------------------------------------ node heights
@@ -1108,7 +1118,7 @@ export function buildRoadElevation(
       }
       return { along, across };
     },
-    shapeBounds: () => profiles.map((profile) => profile.bbox),
+    shapeBounds: () => boxes,
     shapeAt(x, y, naturalGround) {
       // EVERY structure may shape the ground, and which one does is decided by
       // authority rather than by distance.
@@ -1184,11 +1194,9 @@ export function buildRoadElevation(
     },
     has(structures) {
       if (!structures) return profiles.length > 0;
-      // The structures the roads are built as, gathered once (the profiles
-      // never change after this build): asked at every point a lot's colour
-      // is laid on (`surfaceHeightAt`), a scan of every profile for a
-      // structure the town has none of was 0.4 s of an opening (2026-10-14).
-      present ??= new Set(profiles.map((profile) => profile.structure));
+      // The structures the roads are built as, gathered with the profiles: a
+      // scan of every profile for a structure the town has none of was 0.4 s
+      // of an opening (2026-10-14).
       for (const structure of structures) if (present.has(structure)) return true;
       return false;
     },
@@ -1881,8 +1889,10 @@ class SpatialIndex {
   private readonly cell = INDEX_CELL;
   private readonly buckets = new Map<number, Profile[]>();
   private readonly oversized: Profile[] = [];
+  private readonly oversizedSet = new Set<Profile>();
+  /** By a set: asked for every profile of the build (`profileSummaries`). */
   isOversized(profile: Profile): boolean {
-    return this.oversized.includes(profile);
+    return this.oversizedSet.has(profile);
   }
   private readonly all: readonly Profile[];
 
@@ -1898,6 +1908,7 @@ class SpatialIndex {
       // those stay in the fallback list instead of being spread over it.
       if ((x1 - x0 + 1) * (y1 - y0 + 1) > 4096) {
         this.oversized.push(profile);
+        this.oversizedSet.add(profile);
         continue;
       }
       for (let x = x0; x <= x1; x++) {

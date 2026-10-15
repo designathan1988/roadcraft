@@ -32,11 +32,21 @@ function elevationLines(doc: RoadDoc, elevation: RoadElevation): string[] {
   return out;
 }
 
+/** Each crossing's place, which the network keeps across rebuilds (`Network.forgetCrossings`). */
+function crossingLines(net: Network): string[] {
+  const out: string[] = [];
+  for (const node of [...net.doc.nodes.keys()].sort((a, b) => a - b)) {
+    for (const seg of [...net.doc.node(node)!.incident].sort((a, b) => a - b)) out.push(`crossing ${seg}:${node} ${net.crosswalkDistanceAt(seg, node)}`);
+  }
+  return out;
+}
+
 /** The game's network and solve, against ones built from nothing. */
 function expectSameAsFull(doc: RoadDoc, net: Network, elevation: RoadElevation, ground: (x: number, y: number) => number, where: string): void {
   const fresh = new Network(doc.clone());
   fresh.rebuild({ full: true });
   expect(networkLines(net), `network after ${where}`).toEqual(networkLines(fresh));
+  expect(crossingLines(net), `crossings after ${where}`).toEqual(crossingLines(fresh));
   expect(laneletLines(doc, net), `lanelets after ${where}`).toEqual(laneletLines(fresh.doc, fresh));
   expect(elevationLines(doc, elevation), `heights after ${where}`).toEqual(elevationLines(doc, buildRoadElevation(fresh, ground)));
 }

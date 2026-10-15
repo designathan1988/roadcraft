@@ -330,6 +330,31 @@ export function onCrossingAccess(
   });
 }
 
+/**
+ * How far from a point a crossing's landing can reach it, besides the item's
+ * own radius: the landing runs from the road's centre out past its footway
+ * (`across`, the widest road's half and footway) and half a zebra along it.
+ */
+const ACCESS_REACH = m(40);
+
+/**
+ * `onCrossingAccess` against the landings near the point only: the crossings
+ * of the roads within reach of it (`Network.ribbonsMeeting`), at their ends'
+ * nodes. Every item placed - by hand under the pointer, or a road's furniture
+ * piece by piece (`roads/furnitureSets.ts`) - tested every crossing of the map.
+ * DO NOT test against `crossingAccesses(net)` (every landing of the map) for one point.
+ */
+export function nearCrossingAccess(net: Network, segment: SegmentId, x: number, y: number, radius: number): boolean {
+  const r = ACCESS_REACH + radius;
+  const nodes = new Set<NodeId>();
+  for (const ribbon of net.ribbonsMeeting([x - r, y - r, x + r, y + r])) {
+    const s = net.doc.segment(ribbon.id);
+    if (s) { nodes.add(s.a); nodes.add(s.b); }
+  }
+  if (nodes.size === 0) return false;
+  return onCrossingAccess(net, crossingAccessesAt(net, [...nodes].sort((a, b) => a - b)), segment, x, y, radius);
+}
+
 /** The side of the cells `crossingAccessTester` files the landings in. */
 const ACCESS_CELL = m(32);
 
@@ -410,7 +435,7 @@ export function snapLandscape(
     y: hit.frame.p.y + hit.frame.n.y * depth * hit.side,
   };
   const radius = LANDSCAPE_RADIUS[kind];
-  if (onCrossingAccess(net, crossingAccesses(net), hit.segment, placed.x, placed.y, radius)) {
+  if (nearCrossingAccess(net, hit.segment, placed.x, placed.y, radius)) {
     return { ok: false, at: placed, reason: 'crossing' };
   }
   for (const other of items) {
@@ -432,6 +457,20 @@ export function landscapeNear(items: Iterable<LandscapeItem>, at: Vec2, radius: 
     }
   }
   return best;
+}
+
+/** The largest radius of a placed item (`LANDSCAPE_RADIUS`). */
+const MAX_ITEM_RADIUS = Math.max(...Object.values(LANDSCAPE_RADIUS));
+
+/**
+ * `landscapeNear` over the document's items round the point only
+ * (`RoadDoc.landscapeIn`): what the pointer of the bulldozer and of the
+ * landscaping tool asks. DO NOT hand `doc.landscape.values()` to
+ * `landscapeNear` for one point: every item of the map, every move.
+ */
+export function landscapeNearIn(doc: { landscapeIn(rect: readonly [number, number, number, number]): LandscapeItem[] }, at: Vec2, radius: number): LandscapeItem | null {
+  const r = radius + MAX_ITEM_RADIUS;
+  return landscapeNear(doc.landscapeIn([at.x - r, at.y - r, at.x + r, at.y + r]), at, radius);
 }
 
 /** Whether a point is on any street's paving (carriageway, kerb or footway). */

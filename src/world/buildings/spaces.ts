@@ -27,7 +27,21 @@ const KIND: Readonly<Record<BuildingUse, SpaceKind>> = {
   mixed: 'unit',
 };
 
+/**
+ * Each record's spaces, worked out once (a stored record is never changed in
+ * place, `BuildingStore` OWNERSHIP): the list handed out is shared, read it and
+ * never change it. A floor's furniture (`interior.ts` `homeUnits`) asked the
+ * whole building's for each of its volumes and floors.
+ */
+const SPACES = new WeakMap<Building, StoreySpaces[]>();
+
 export function deriveSpaces(b: Building): StoreySpaces[] {
+  let known = SPACES.get(b);
+  if (!known) SPACES.set(b, known = workOutSpaces(b));
+  return known;
+}
+
+function workOutSpaces(b: Building): StoreySpaces[] {
   const out: StoreySpaces[] = [];
   for (const v of b.volumes) {
     v.storeys.forEach((storey, k) => {

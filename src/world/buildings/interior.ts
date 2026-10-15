@@ -168,8 +168,24 @@ function flightBox(f: LevelFlight): [number, number, number, number] {
     : [f.foot.x - h, Math.min(f.foot.y, f.top.y) - m(0.2), f.foot.x + h, Math.max(f.foot.y, f.top.y) + m(0.2)];
 }
 
+/**
+ * Each record's floors as furnished, by level, worked out once (a stored
+ * record is never changed in place, `BuildingStore` OWNERSHIP). The cut-open
+ * view, the room lamps and the meshes asked the same floor again and again,
+ * every plan and piece made anew. The floor handed out is shared: read it.
+ */
+const INTERIORS = new WeakMap<Building, Map<number, FloorInterior>>();
+
 /** One floor of a building, inside. */
 export function interiorAt(b: Building, level: number): FloorInterior {
+  let floors = INTERIORS.get(b);
+  if (!floors) INTERIORS.set(b, floors = new Map());
+  let floor = floors.get(level);
+  if (!floor) floors.set(level, floor = furnishFloor(b, level));
+  return floor;
+}
+
+function furnishFloor(b: Building, level: number): FloorInterior {
   const out: Furniture[] = [];
   const walls: Partition[] = [];
   const fn = b.function ?? defaultFunction(b);
@@ -498,7 +514,6 @@ function lobby(p: Plan): void {
   p.put('plant', p.x1 - m(1), p.y0 + m(1));
 }
 
-/** Homes (or hotel rooms) along the floor, each a few rooms with their furniture. */
 /**
  * A floor of flats, from its plan (`spaces.ts`): the corridor's two walls with
  * a door into every home, the walls between homes on the boundaries between
@@ -808,6 +823,7 @@ function houseFloor(p: Plan, b: Building, level: number): void {
   stairs();
 }
 
+/** Homes (or hotel rooms) along the floor, each a few rooms with their furniture. */
 function homeUnits(p: Plan, b: Building, hotel: boolean): void {
   const floor = deriveSpaces(b).find((s) => s.volume === p.v.id && s.level === p.level);
   const units = floor?.spaces.length ? floor.spaces : [{ x: p.v.x, y: p.v.y, w: p.v.w, d: p.v.d }];

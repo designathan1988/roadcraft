@@ -59,25 +59,47 @@ const CELL = m(20);
  */
 const cellKey = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);
 
-interface RampSet {
-  readonly revision: number;
-  readonly ramps: readonly CurbRamp[];
-  readonly grid: ReadonlyMap<number, readonly CurbRamp[]>;
+/**
+ * The dropped kerbs of a network, kept node by node across its rebuilds: a
+ * node's ramps are worked out again only when the network's change since the
+ * last ask (`Network.changesSince`) names the node, one of its roads, or a
+ * place one of its roads reaches (a crossing is fitted to the footway there,
+ * `Network.crosswalkDistanceAt`). Each ramp is filed in the cells it reaches.
+ * DO NOT build every ramp of the map again on a revision: `walkingRise` is
+ * asked for every walker every frame, and its first ask after each edit paid
+ * for every zebra of the city.
+ */
+interface RampState {
+  /** The network's state the ramps stand for (`Network.state`); null before the first ask. */
+  state: object | null;
+  readonly byNode: Map<NodeId, readonly CurbRamp[]>;
+  readonly grid: Map<number, CurbRamp[]>;
+  /** Every ramp, node by node; null until asked after a change. */
+  list: readonly CurbRamp[] | null;
 }
 
-const cache = new WeakMap<Network, RampSet>();
+const cache = new WeakMap<Network, RampState>();
 
-/** Every dropped kerb of the network, as built for its current revision. */
+/** Every dropped kerb of the network, as it stands. */
 export function curbRamps(net: Network): readonly CurbRamp[] {
-  return rampSet(net).ramps;
+  const state = rampState(net);
+  if (!state.list) {
+    const list: CurbRamp[] = [];
+    // Node by node in the order they were placed (the document's order when
+    // all were made at once; a node given ramps later comes last).
+    for (const ramps of state.byNode.values()) for (const r of ramps) list.push(r);
+    state.list = list;
+  }
+  return state.list;
 }
 
-function rampSet(net: Network): RampSet {
-  const known = cache.get(net);
-  if (known && known.revision === net.revision) return known;
+/** The ramps a node's zebras (and a road's end there) have. */
+function rampsAt(net: Network, nodeId: NodeId): CurbRamp[] {
   const ramps: CurbRamp[] = [];
+  const node = net.doc.node(nodeId);
+  if (!node) return ramps;
   /** A ramp each side of the street, `at` along it from the node, `half` its half width. */
-  const pair = (nodeId: NodeId, segmentId: SegmentId, at: number, half: number): void => {
+  const pair = (segmentId: SegmentId, at: number, half: number): void => {
     const segment = net.doc.requireSegment(segmentId);
     const road = roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking);
     if (!carriesPedestrians(road) || road.sidewalk <= 0) return;
@@ -95,33 +117,69 @@ function rampSet(net: Network): RampSet {
       });
     }
   };
-  for (const [nodeId, node] of net.doc.nodes) {
-    // A street that leads nowhere is crossed at its end, with no zebra
-    // (`walkways.ts`, the unmarked crossing): a dropped kerb there too.
-    if (node.incident.length === 1) {
-      // A turning circle is walked round, not across (`walkways.ts`).
-      if (node.end !== 'bulb') pair(nodeId, node.incident[0]!, 0, UNMARKED_WIDTH / 2);
-      continue;
-    }
-    for (const segmentId of node.incident) {
-      const crossing = net.crosswalkDistanceAt(segmentId, nodeId);
-      if (crossing > 0) pair(nodeId, segmentId, crossing, CROSSWALK_DEPTH / 2);
-    }
+  // A street that leads nowhere is crossed at its end, with no zebra
+  // (`walkways.ts`, the unmarked crossing): a dropped kerb there too.
+  if (node.incident.length === 1) {
+    // A turning circle is walked round, not across (`walkways.ts`).
+    if (node.end !== 'bulb') pair(node.incident[0]!, 0, UNMARKED_WIDTH / 2);
+    return ramps;
   }
-  const grid = new Map<number, CurbRamp[]>();
-  for (const r of ramps) {
-    const reach = r.half + r.flare + r.run;
-    for (let cx = Math.floor((r.x - reach) / CELL); cx <= Math.floor((r.x + reach) / CELL); cx++) {
-      for (let cy = Math.floor((r.y - reach) / CELL); cy <= Math.floor((r.y + reach) / CELL); cy++) {
-        const key = cellKey(cx, cy);
-        const list = grid.get(key);
-        if (list) list.push(r); else grid.set(key, [r]);
-      }
-    }
+  for (const segmentId of node.incident) {
+    const crossing = net.crosswalkDistanceAt(segmentId, nodeId);
+    if (crossing > 0) pair(segmentId, crossing, CROSSWALK_DEPTH / 2);
   }
-  const set = { revision: net.revision, ramps, grid };
-  cache.set(net, set);
-  return set;
+  return ramps;
+}
+
+/** Calls `visit` with the key of every cell a ramp reaches. */
+function rampCells(r: CurbRamp, visit: (key: number) => void): void {
+  const reach = r.half + r.flare + r.run;
+  for (let cx = Math.floor((r.x - reach) / CELL); cx <= Math.floor((r.x + reach) / CELL); cx++) {
+    for (let cy = Math.floor((r.y - reach) / CELL); cy <= Math.floor((r.y + reach) / CELL); cy++) visit(cellKey(cx, cy));
+  }
+}
+
+/** A node's ramps worked out again and filed, its old ones taken out of their cells. */
+function place(net: Network, state: RampState, nodeId: NodeId): void {
+  for (const r of state.byNode.get(nodeId) ?? []) {
+    rampCells(r, (key) => {
+      const list = state.grid.get(key);
+      if (!list) return;
+      const at = list.indexOf(r);
+      if (at >= 0) list.splice(at, 1);
+      if (list.length === 0) state.grid.delete(key);
+    });
+  }
+  const ramps = rampsAt(net, nodeId);
+  if (ramps.length) state.byNode.set(nodeId, ramps); else state.byNode.delete(nodeId);
+  for (const r of ramps) rampCells(r, (key) => { const list = state.grid.get(key); if (list) list.push(r); else state.grid.set(key, [r]); });
+}
+
+/** @rebuild Every node's ramps, only when the network cannot say what changed (the first ask, a load). */
+function placeAll(net: Network, state: RampState): void {
+  state.byNode.clear();
+  state.grid.clear();
+  for (const id of net.doc.nodes.keys()) place(net, state, id);
+}
+
+function rampState(net: Network): RampState {
+  let state = cache.get(net);
+  if (!state) cache.set(net, state = { state: null, byNode: new Map(), grid: new Map(), list: null });
+  if (state.state === net.state) return state;
+  const delta = state.state === null ? null : net.changesSince(state.state);
+  state.state = net.state;
+  state.list = null;
+  if (delta === null) { placeAll(net, state); return state; }
+  const dirty = new Set<NodeId>(delta.nodes);
+  const ends = (seg: SegmentId): void => {
+    const s = net.doc.segment(seg);
+    if (s) { dirty.add(s.a); dirty.add(s.b); }
+  };
+  for (const seg of delta.segments) ends(seg);
+  // A crossing is fitted to the footway along its road: a change where the road reaches moves it.
+  for (const rect of delta.rects) for (const seg of net.segmentCells.idsMeeting(rect)) ends(seg);
+  for (const id of dirty) place(net, state, id);
+  return state;
 }
 
 /**
@@ -133,7 +191,7 @@ function rampSet(net: Network): RampSet {
  * zebra is level.
  */
 export function walkingRise(net: Network, x: number, y: number, onFootway: boolean, structure = 'ground'): number {
-  const { grid } = rampSet(net);
+  const { grid } = rampState(net);
   const list = grid.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL)));
   let share = onFootway ? 1 : 0;
   if (!list) return share;

@@ -42,8 +42,15 @@ export type { SegmentRibbon, SegmentTrims } from './ribbons';
  * and 3.3). Nothing in this class is reachable from a draw call.
  */
 export class Network {
+  /** The footway the crossings are fitted to, by cell (`walkable.ts`): kept across rebuilds. */
   private crossingWalkable: WalkableSurface | null = null;
-  private readonly crossingDistances = new Map<string, number>();
+  /**
+   * Each crossing's distance from its node, by road and node, kept across
+   * rebuilds: what a rebuild changed is dropped (`forgetCrossings`), nothing
+   * else. DO NOT clear it on every rebuild: every edit then fitted every
+   * crossing of the map again for whoever asked next.
+   */
+  private readonly crossingDistances = new Map<SegmentId, Map<NodeId, number>>();
   readonly junctions = new Map<NodeId, Map<SurfaceLevel, Junction>>();
   readonly ribbons = new Map<SegmentId, SegmentRibbon>();
   /**
@@ -54,33 +61,31 @@ export class Network {
    */
   readonly segmentCells = new CellFiling<SegmentId, SegmentRibbon>();
   readonly junctionCells = new CellFiling<NodeId, ReadonlyMap<SurfaceLevel, Junction>>();
-  /** Each ribbon's place in `ribbons`, at a revision (`ribbonsMeeting`). */
-  private ribbonOrderAt = { revision: -1, order: new Map<SegmentId, number>() };
-
-  /** @rebuild Called when the network moved (`revision`); otherwise returns the order it made. */
-  private ribbonOrder(): ReadonlyMap<SegmentId, number> {
-    if (this.ribbonOrderAt.revision !== this.revision) {
-      const order = new Map<SegmentId, number>();
-      let i = 0;
-      for (const id of this.ribbons.keys()) order.set(id, i++);
-      this.ribbonOrderAt = { revision: this.revision, order };
-    }
-    return this.ribbonOrderAt.order;
-  }
-
+  /**
+   * The ribbons with a footway laid flush on a side (docs/source/VIAS.md V1),
+   * filed like `segmentCells`: what asks how high the footway stands at a
+   * point (`roads/footwayRise.ts`, for every walker and every lamp) reads the
+   * cells round it, and none where nothing is flush.
+   */
+  readonly flushCells = new CellFiling<SegmentId, SegmentRibbon>();
   /**
    * The ribbons whose surfaces reach `rect` (`segmentCells`), in the order of
    * `ribbons`: what a loop over every ribbon would meet there, in the order it
    * would meet them, so a search that keeps the first of equals finds the same.
+   *
+   * `ribbons` is kept in increasing id order by its one writer
+   * (`networkBuild.ts` `insertionWatch`, and `copyState` copies it as it is),
+   * and `idsMeeting` answers in increasing id order: the two orders are one.
+   * DO NOT go back to a rank of every ribbon made again at each revision
+   * (`ribbonOrder`): every edit paid a walk of the map for the next question.
    */
   ribbonsMeeting(rect: ChangeRect): SegmentRibbon[] {
-    const order = this.ribbonOrder();
     const out: SegmentRibbon[] = [];
     for (const id of this.segmentCells.idsMeeting(rect)) {
       const ribbon = this.ribbons.get(id);
-      if (ribbon && order.has(id)) out.push(ribbon);
+      if (ribbon) out.push(ribbon);
     }
-    return out.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+    return out;
   }
 
   /**
@@ -167,15 +172,11 @@ export class Network {
   rebuild(options: { readonly full?: boolean } = {}): void {
     const started = performance.now();
     if (options.full || this.build.empty) this.clear();
-    this.crossingWalkable = null;
-    this.crossingDistances.clear();
     const delta = this.build.rebuild();
+    this.forgetCrossings(delta);
     this.log.advance(delta);
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
-    // Every authoring invalidation is consumed. Leaving ids in these sets made
-    // subsequent edits to the same node look unchanged.
-    this.doc.clearDirty();
     measureHitch(options.full ? 'hitch:network/full' : 'hitch:network/rebuild', started);
   }
 
@@ -207,6 +208,7 @@ export class Network {
     this.squeezed.clear();
     this.segmentCells.copyFrom(new CellFiling());
     this.junctionCells.copyFrom(new CellFiling());
+    this.flushCells.copyFrom(new CellFiling());
   }
 
   /**
@@ -239,7 +241,6 @@ export class Network {
     this.build.copyFrom(other.build, true);
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
-    this.doc.clearDirty();
   }
 
   private copyState(other: Network): void {
@@ -249,6 +250,7 @@ export class Network {
     for (const [seg, ribbon] of other.ribbons) this.ribbons.set(seg, ribbon);
     this.segmentCells.copyFrom(other.segmentCells);
     this.junctionCells.copyFrom(other.junctionCells);
+    this.flushCells.copyFrom(other.flushCells);
     this.trims.clear();
     for (const [seg, t] of other.trims) this.trims.set(seg, t);
     this.plateReach.clear();
@@ -260,13 +262,32 @@ export class Network {
     this.squeezed.clear();
     for (const [node, short] of other.squeezed) this.squeezed.set(node, short);
     this.polylines.adopt(other.polylines);
+    const before = this.log.state;
     this.log.takeFrom(other.log);
-    // The crossing caches belong to the geometry just replaced. Not clearing
-    // them here, after every road drawn the zebras, stop lines, lanelets and
-    // footway furniture read crossing distances of the network before the
-    // edit (a highway joined to a junction still had its zebras).
-    this.crossingWalkable = null;
-    this.crossingDistances.clear();
+    // The crossing caches belong to the geometry just replaced: what changed
+    // between the state this network was in and the one it takes is dropped
+    // (everything, when the log cannot say); the rest is worked out again
+    // when asked. Kept whole, after every road drawn the zebras, stop lines,
+    // lanelets and footway furniture read crossing distances of the network
+    // before the edit (a highway joined to a junction still had its zebras).
+    // The footway's cells (`walkable.ts`) are kept by the versions of the
+    // filings, unique to each change of each cell (`cells.ts`): they stay.
+    this.forgetCrossings(this.log.since(before));
+  }
+
+  /**
+   * Drops the crossing distances a change of the network may have moved: those
+   * of the roads it changed, of the nodes it changed, and of every road whose
+   * ribbon reaches a place it changed (the footway a crossing is fitted to,
+   * `fits`, lies within the road's ribbon). `null`: all of them.
+   */
+  private forgetCrossings(delta: NetworkDelta | null): void {
+    if (delta === null) { this.crossingDistances.clear(); return; }
+    for (const seg of delta.segments) this.crossingDistances.delete(seg);
+    for (const node of delta.nodes) {
+      for (const seg of this.doc.node(node)?.incident ?? []) this.crossingDistances.get(seg)?.delete(node);
+    }
+    for (const rect of delta.rects) for (const seg of this.segmentCells.idsMeeting(rect)) this.crossingDistances.delete(seg);
   }
 
   /**
@@ -401,8 +422,7 @@ export class Network {
   }
 
   crosswalkDistanceAt(seg: SegmentId, node: NodeId): number {
-    const cacheKey = `${seg}:${node}`;
-    const cached = this.crossingDistances.get(cacheKey);
+    const cached = this.crossingDistances.get(seg)?.get(node);
     if (cached !== undefined) return cached;
     // An authored mid-block crossing is exactly where the player put it: its
     // centre half a crosswalk back from the node, on the piece it names.
@@ -457,14 +477,15 @@ export class Network {
       return walkable.footway(frame.p.x + nx * lateralLeft, frame.p.y + ny * lateralLeft) &&
         walkable.footway(frame.p.x - nx * lateralRight, frame.p.y - ny * lateralRight);
     };
+    const keep = (distance: number): number => {
+      let byNode = this.crossingDistances.get(seg);
+      if (!byNode) this.crossingDistances.set(seg, byNode = new Map());
+      byNode.set(node, distance);
+      return distance;
+    };
     for (let distance = proposed; distance <= limit; distance += 0.5) {
-      if (fits(distance)) {
-        this.crossingDistances.set(cacheKey, distance);
-        return distance;
-      }
+      if (fits(distance)) return keep(distance);
     }
-    const result = fits(limit) ? limit : 0;
-    this.crossingDistances.set(cacheKey, result);
-    return result;
+    return keep(fits(limit) ? limit : 0);
   }
 }

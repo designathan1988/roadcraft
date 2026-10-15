@@ -41,9 +41,11 @@ export const TAPER_RATIO = 8;
 /** Shortest taper worth drawing, end to end, in world units. */
 const TAPER_MIN = m(9.6);
 /**
- * Largest bend at a node of two legs that is still one road running on: a
- * taper (when the widths differ), no zebra and no stop line. Past it the node
- * is a corner, crossed on foot, and built as a junction.
+ * Largest bend at a node of two legs that is still one road running on: no
+ * zebra and no stop line (`Network.continues`), a taper when the widths
+ * differ (`isTransition`). Past it the node is a corner crossed on foot - its
+ * surface is still swept as a transition up to `build.ts`'s
+ * MAX_CONTINUOUS_BEND (55 degrees), and built as a junction plate past that.
  */
 export const TRANSITION_BEND = (30 * Math.PI) / 180;
 /** Taper length between two cross-sections when the outline is sampled. */

@@ -2,6 +2,7 @@ import { normalizeAngle } from '@core/scalar';
 import { Ring, arcEdge, lineEdge, type RingEdge } from '@core/ring';
 import { type Vec2, add, angleOf, scale, sub } from '@core/vec2';
 import type { RoadDoc } from '../doc';
+import type { ElementItem } from '../elements';
 import type { NodeId } from '../ids';
 import type { PolylineCache } from '../geometry';
 import type { Network } from '../network';
@@ -120,28 +121,55 @@ export function bulbLine(doc: RoadDoc, cache: PolylineCache, nodeId: NodeId, off
   return [...flat.slice(1), flat[0]!];
 }
 
+/** The network's state each document's turning circles were last cleared at (`clearBulbs`). */
+const clearedAt = new WeakMap<Network, object>();
+
 /**
  * Whatever stands in a turning circle's carriageway is taken away - a pole,
  * a tree, a bench set on the footway of a road's end before it was made a
- * circle (a pole stood in the middle of one, 2026-10-10): nothing stands on
- * the road. The number taken.
+ * circle (a pole stood in the middle of one, 2026-10-10), an element laid
+ * there: nothing stands on the road. The number taken.
+ *
+ * Only the circles the network changed since the last clearing are looked
+ * at (`Network.changesSince`: a node made a circle, moved, its road changed),
+ * and in each only what stands round it, by place (`RoadDoc.polesIn`,
+ * `landscapeIn`). DO NOT walk every junction of the map, and every pole and
+ * element of the map for each, after every edit (it ran after every road
+ * drawn, `main.ts`).
  */
 export function clearBulbs(doc: RoadDoc, net: Network): number {
-  let taken = 0;
-  for (const [nodeId, byLevel] of net.junctions) {
+  const since = clearedAt.get(net);
+  const delta = since === undefined ? null : net.changesSince(since);
+  clearedAt.set(net, net.state);
+  /** @rebuild Every junction only when the network cannot say what changed (the first clearing, a load). */
+  const candidates = (): Iterable<NodeId> => delta === null ? net.junctions.keys() : delta.nodes;
+  const bulbs: { node: Vec2; poly: Vec2[]; box: readonly [number, number, number, number] }[] = [];
+  const reach = BULB_RADIUS + BULB_RETURN * 2;
+  for (const nodeId of candidates()) {
     const node = doc.node(nodeId);
     if (!node || node.end !== 'bulb' || node.incident.length !== 1) continue;
-    const ring = byLevel.get(Level.Asphalt)?.ring;
+    const ring = net.junctions.get(nodeId)?.get(Level.Asphalt)?.ring;
     if (!ring || ring.isEmpty) continue;
-    const poly = ring.flatten();
-    const reach = BULB_RADIUS + BULB_RETURN * 2;
-    const inside = (p: Vec2): boolean => Math.hypot(p.x - node.x, p.y - node.y) < reach && pointInPolygon(p, poly);
-    for (const pole of [...doc.poles.values()]) {
+    bulbs.push({ node, poly: ring.flatten(), box: [node.x - reach, node.y - reach, node.x + reach, node.y + reach] });
+  }
+  if (!bulbs.length) return 0;
+  let taken = 0;
+  for (const bulb of bulbs) {
+    const inside = (p: Vec2): boolean => Math.hypot(p.x - bulb.node.x, p.y - bulb.node.y) < reach && pointInPolygon(p, bulb.poly);
+    for (const pole of doc.polesIn(bulb.box)) {
       if (inside(pole)) { doc.removePole(pole.id); taken++; }
     }
-    for (const item of [...doc.elements]) {
-      if (inside(item)) taken += doc.removeElements(item.x, item.y, 1e-6, item.kind);
+    for (const item of doc.landscapeIn(bulb.box)) {
+      if (inside(item) && doc.removeLandscape(item.id)) taken++;
     }
   }
-  return taken;
+  // The elements round each circle by place (`RoadDoc.elementsIn`), taken
+  // away together in one pass.
+  const inside = new Set<ElementItem>();
+  for (const bulb of bulbs) {
+    for (const item of doc.elementsIn(bulb.box)) {
+      if (Math.hypot(item.x - bulb.node.x, item.y - bulb.node.y) < reach && pointInPolygon(item, bulb.poly)) inside.add(item);
+    }
+  }
+  return taken + doc.removeElementItems(inside);
 }

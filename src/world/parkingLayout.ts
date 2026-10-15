@@ -5,6 +5,7 @@ import type { NodeId, SegmentId } from './ids';
 import type { Network } from './network';
 import { CROSSWALK_DEPTH } from './approach';
 import { localToWorld } from './buildings/geometry';
+import type { Building } from './buildings/types';
 import { CORNER_CLEAR, CROSSING_CLEAR, PARKING_PITCH, type ParkingKind } from './parking';
 import { m, stepsIn } from './units';
 
@@ -78,34 +79,56 @@ const RUN_STEP = m(1);
 /** Frontages of lots that hold parking, as world segments: their entrances. */
 export function lotEntrances(doc: RoadDoc): [Vec2, Vec2][] {
   const out: [Vec2, Vec2][] = [];
-  for (const b of doc.buildings.all()) {
-    // Every car gate is a lowered kerb (CTB art. 181 IX: no parking where the
-    // kerb is lowered for vehicles to go in or out): its span stays clear,
-    // whatever is behind it. Read off the back car park alone, the frontage
-    // was 20 m and more from the street, and bays were painted - and cars
-    // parked - across the drive's gate.
-    for (const el of b.elements ?? []) {
-      if (el.kind !== 'gate' || el.w < CAR_GATE_WIDTH) continue;
-      const alongY = el.facing === 1 || el.facing === 3;
-      const c = Math.cos(el.angle ?? 0), s = Math.sin(el.angle ?? 0);
-      const ux = alongY ? -s : c, uy = alongY ? c : s;
-      out.push([localToWorld(b, el.x - ux * el.w / 2, el.y - uy * el.w / 2), localToWorld(b, el.x + ux * el.w / 2, el.y + uy * el.w / 2)]);
-    }
-    for (const el of b.elements ?? []) {
-      if (el.kind !== 'parking') continue;
-      const lot = b.volumes.find((v) => v.open && el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
-      const box = lot ?? { x: el.x - el.w / 2, y: el.y - el.d / 2, w: el.w, d: el.d };
-      const corners = [
-        localToWorld(b, box.x, box.y), localToWorld(b, box.x + box.w, box.y),
-        localToWorld(b, box.x + box.w, box.y + box.d), localToWorld(b, box.x, box.y + box.d),
-      ];
-      for (let i = 0; i < 4; i++) out.push([corners[i]!, corners[(i + 1) % 4]!]);
-    }
-  }
+  for (const b of doc.buildings.all()) out.push(...entrancesOf(b));
   return out;
 }
 
-export function parkingLayout(net: Network, entrances: readonly [Vec2, Vec2][] = lotEntrances(net.doc)): ParkingLayout {
+/** Each record's entrances, worked out once (records are never changed, only replaced). */
+const ENTRANCES = new WeakMap<Building, readonly [Vec2, Vec2][]>();
+
+/**
+ * One building's entrances: its car gates and the edges of its parking, once
+ * per record. The one definition: `sim/agents/kerbBays.ts` keeps a copy of
+ * it (to be replaced by this).
+ */
+export function entrancesOf(b: Building): readonly [Vec2, Vec2][] {
+  const known = ENTRANCES.get(b);
+  if (known) return known;
+  const out: [Vec2, Vec2][] = [];
+  // Every car gate is a lowered kerb (CTB art. 181 IX: no parking where the
+  // kerb is lowered for vehicles to go in or out): its span stays clear,
+  // whatever is behind it. Read off the back car park alone, the frontage
+  // was 20 m and more from the street, and bays were painted - and cars
+  // parked - across the drive's gate.
+  for (const el of b.elements ?? []) {
+    if (el.kind !== 'gate' || el.w < CAR_GATE_WIDTH) continue;
+    const alongY = el.facing === 1 || el.facing === 3;
+    const c = Math.cos(el.angle ?? 0), s = Math.sin(el.angle ?? 0);
+    const ux = alongY ? -s : c, uy = alongY ? c : s;
+    out.push([localToWorld(b, el.x - ux * el.w / 2, el.y - uy * el.w / 2), localToWorld(b, el.x + ux * el.w / 2, el.y + uy * el.w / 2)]);
+  }
+  for (const el of b.elements ?? []) {
+    if (el.kind !== 'parking') continue;
+    const lot = b.volumes.find((v) => v.open && el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
+    const box = lot ?? { x: el.x - el.w / 2, y: el.y - el.d / 2, w: el.w, d: el.d };
+    const corners = [
+      localToWorld(b, box.x, box.y), localToWorld(b, box.x + box.w, box.y),
+      localToWorld(b, box.x + box.w, box.y + box.d), localToWorld(b, box.x, box.y + box.d),
+    ];
+    for (let i = 0; i < 4; i++) out.push([corners[i]!, corners[(i + 1) % 4]!]);
+  }
+  ENTRANCES.set(b, out);
+  return out;
+}
+
+/**
+ * The bays and paint of every street. `entrances`: the lot entrances to keep
+ * clear; null (the way to call it), those of the buildings near each street,
+ * found by place (`BuildingStore.near`). DO NOT hand every entrance of the
+ * map to every street: each street with parking tested every gate of the
+ * city.
+ */
+export function parkingLayout(net: Network, entrances: readonly [Vec2, Vec2][] | null = null): ParkingLayout {
   const bays: ParkingBay[] = [];
   const lines: ParkingLine[] = [];
   const doc = net.doc;
@@ -145,7 +168,7 @@ export function parkingLayout(net: Network, entrances: readonly [Vec2, Vec2][] =
       }
       // Which way a car moving on this side travels, along a -> b.
       const travel = segment.direction === 'aToB' ? 1 : segment.direction === 'bToA' ? -1 : side === 1 ? -1 : 1;
-      const blocked = frontagesOn(line, half, side, entrances);
+      const blocked = frontagesOn(line, half, side, entrances ?? entrancesNear(doc, line, half));
       const runs = subtract([[s0, s1]], blocked);
       const pitch = PARKING_PITCH[kind];
       const at = (s: number, offset: number): Vec2 => {
@@ -208,6 +231,15 @@ function endClear(net: Network, seg: SegmentId, node: NodeId): number {
   const pastCrossing = crossing > 0 ? crossing + CROSSWALK_DEPTH / 2 + CROSSING_CLEAR : 0;
   if (degree === 2 && !doc.node(node)?.crossing) return Math.max(mouth, pastCrossing);
   return Math.max(mouth + CORNER_CLEAR, pastCrossing, net.stopLineDistance(seg, node) + CROSSING_CLEAR);
+}
+
+/** The entrances of the buildings within reach of a street (`frontagesOn`'s reach). */
+function entrancesNear(doc: RoadDoc, line: Polyline, half: number): [Vec2, Vec2][] {
+  const reach = half + m(8);
+  const bb = line.bbox;
+  const out: [Vec2, Vec2][] = [];
+  for (const b of doc.buildings.near(bb.minX - reach, bb.minY - reach, bb.maxX + reach, bb.maxY + reach)) out.push(...entrancesOf(b));
+  return out;
 }
 
 /** Intervals along `line` in front of a lot entrance on one side. */

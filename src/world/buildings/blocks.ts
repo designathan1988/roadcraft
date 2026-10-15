@@ -22,7 +22,22 @@ import type { Building, Volume } from './types';
  * facade work. Pure and deterministic, so the renderer can call it on every
  * rebuild.
  */
+/**
+ * Each record resolved, once (a stored record is never changed in place,
+ * `BuildingStore` OWNERSHIP): the meshes, the massing and the floor read it
+ * several times a building, and a new object each time also missed every cache
+ * kept by record after it (`facadeBays`). The building handed out is shared:
+ * read it, never change it.
+ */
+const RESOLVED = new WeakMap<Building, Building>();
+
 export function resolveBlocks(b: Building): Building {
+  let known = RESOLVED.get(b);
+  if (!known) RESOLVED.set(b, known = resolve(b));
+  return known;
+}
+
+function resolve(b: Building): Building {
   const solids = b.volumes.filter((v) => !v.mode);
   const voids = b.volumes.filter((v) => v.mode === 'void');
   const clips = b.volumes.filter((v) => v.mode === 'intersect');
@@ -76,8 +91,10 @@ export function resolveBlocks(b: Building): Building {
       const whole = activeClips.length === 0 && activeVoids.length === 0;
       const storeys = s.storeys.slice(l0 - s.base, l1 - s.base);
       if (whole) {
-        // The range nothing cuts keeps the block's own plan and facade.
-        out.push({ ...structuredClone(s), id: nextId++, base: l0, storeys, roof: l1 === top(s) ? s.roof : 'flat' });
+        // The range nothing cuts keeps the block's own plan and facade: its
+        // parts shared, not cloned (a stored record and what is resolved from
+        // it are read-only, `BuildingStore` OWNERSHIP).
+        out.push({ ...s, id: nextId++, base: l0, storeys, roof: l1 === top(s) ? s.roof : 'flat' });
         continue;
       }
       for (const poly of shape) {
@@ -130,8 +147,10 @@ function volumeOf(s: Volume, ring: readonly Vec2[], base: number, storeys: Volum
   if (w < MIN_SIZE / 4 || d < MIN_SIZE / 4) return null;
   const outline = ring.map((p) => ({ x: (p.x - minX) / w, y: (p.y - minY) / d }));
   if (!validOutline(outline)) return null;
+  // The block's own fields shared (read-only); its storeys copied, as their
+  // bay-by-bay facade is taken off below.
   const v: Volume = {
-    ...structuredClone(s),
+    ...s,
     id, x: minX, y: minY, w, d, outline, base, storeys: structuredClone(storeys), roof,
   };
   // Bay-by-bay work belongs to the block's own sides; on a cut piece the

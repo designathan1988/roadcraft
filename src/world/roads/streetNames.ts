@@ -2,6 +2,7 @@ import type { Vec2 } from '@core/vec2';
 import type { NodeId, SegmentId } from '../ids';
 import type { RoadDoc } from '../doc';
 import type { Network } from '../network';
+import type { LandscapeItem } from '../landscape';
 import { roadType } from '../roadTypes';
 import { METERS_PER_UNIT, m } from '../units';
 import { streetChain } from './streetChain';
@@ -37,21 +38,48 @@ function prefixFor(type: number): string {
   return id === 'avenue' || id === 'boulevard' ? 'Avenida' : id === 'highway' || id === 'ramp' ? 'Rodovia' : 'Rua';
 }
 
-/** The street a name item belongs to: the segment nearest it, within reach, and its chain. */
+/** How far from a street its name plate may stand and still name it. */
+const NAME_REACH = m(30);
+
+/**
+ * The street a name item belongs to: the segment nearest it, within reach
+ * (the first in id order of equals). The roads near it are read from the
+ * network's cells (`Network.ribbonsMeeting`, in the order of `ribbons`).
+ * DO NOT walk every ribbon for each plate: the names of a city were plates ×
+ * roads.
+ */
 function nameItemSegment(net: Network, item: Vec2): SegmentId | null {
-  let best: SegmentId | null = null, bestD = m(30);
-  for (const ribbon of net.ribbons.values()) {
+  let best: SegmentId | null = null, bestD = NAME_REACH;
+  for (const ribbon of net.ribbonsMeeting([item.x - NAME_REACH, item.y - NAME_REACH, item.x + NAME_REACH, item.y + NAME_REACH])) {
     const d = ribbon.full.distanceTo(item);
     if (d < bestD) { bestD = d; best = ribbon.id; }
   }
   return best;
 }
 
-/** The name of the street a segment runs in, or null. */
+/** The street name plates that may name a road of `chain` (those within reach of one of its ribbons), in id order. */
+function platesNear(net: Network, chain: readonly SegmentId[]): LandscapeItem[] {
+  const found = new Map<number, LandscapeItem>();
+  for (const id of chain) {
+    const box = net.ribbons.get(id)?.full.bbox;
+    if (!box) continue;
+    for (const item of net.doc.landscapeIn([box.minX - NAME_REACH, box.minY - NAME_REACH, box.maxX + NAME_REACH, box.maxY + NAME_REACH])) {
+      if (item.kind === 'streetname') found.set(item.id, item);
+    }
+  }
+  return [...found.values()].sort((a, b) => a.id - b.id);
+}
+
+/**
+ * The name of the street a segment runs in, or null: the first plate (by id)
+ * that names one of its roads. The plates near the street are read by place
+ * (`RoadDoc.landscapeIn`), not the whole map's.
+ */
 export function streetNameOf(net: Network, segment: SegmentId): string | null {
-  const chain = new Set(streetChain(net.doc, segment).map((p) => p.id));
-  for (const item of net.doc.landscape.values()) {
-    if (item.kind !== 'streetname' || !item.text) continue;
+  const ids = streetChain(net.doc, segment).map((p) => p.id);
+  const chain = new Set(ids);
+  for (const item of platesNear(net, ids)) {
+    if (!item.text) continue;
     const seg = nameItemSegment(net, item);
     if (seg !== null && chain.has(seg)) return item.text;
   }
@@ -61,25 +89,25 @@ export function streetNameOf(net: Network, segment: SegmentId): string | null {
 /**
  * Names for the streets of `segments` that have none: one `streetname` item
  * per street, on its first segment's middle, a name no street of the map
- * already has while any is left. Deterministic.
+ * already has while any is left (`RoadDoc.streetNamesInUse`). Deterministic.
+ * Whether a street is named is asked of the plates near it, not of every
+ * plate of the map.
  */
 export function nameFor(net: Network, segments: Iterable<SegmentId>): { at: Vec2; text: string }[] {
   const doc = net.doc;
-  const used = new Set<string>();
-  for (const item of doc.landscape.values()) if (item.kind === 'streetname' && item.text) used.add(item.text);
+  const used = new Set<string>(doc.streetNamesInUse.keys());
   const named = new Set<SegmentId>();
-  for (const item of doc.landscape.values()) {
-    if (item.kind !== 'streetname') continue;
-    const seg = nameItemSegment(net, item);
-    if (seg !== null) for (const p of streetChain(doc, seg)) named.add(p.id);
-  }
   const out: { at: Vec2; text: string }[] = [];
   for (const id of [...segments].sort((a, b) => a - b)) {
     if (named.has(id)) continue;
     const seg = doc.segment(id), ribbon = net.ribbons.get(id);
     if (!seg || !ribbon) continue;
     const chain = streetChain(doc, id);
+    const ids = chain.map((p) => p.id);
     for (const p of chain) named.add(p.id);
+    const members = new Set(ids);
+    // A plate already on this street (a name the player kept, or one given before).
+    if (platesNear(net, ids).some((item) => { const on = nameItemSegment(net, item); return on !== null && members.has(on); })) continue;
     const prefix = prefixFor(seg.type);
     let k = (id * 2654435761) >>> 0;
     let name = '';
