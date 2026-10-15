@@ -1958,6 +1958,8 @@ function mountInterface(): void {
       return { roads: doc.segments.size, nodes: doc.nodes.size, zoom: view.zoom, x: centre.x, y: centre.y };
     },
   });
+  // F9's button in the top bar, before Help (`ui/healthPanel.ts`).
+  shell.addToBar(healthPanel.button);
   // The compass in a corner (`ui/v2/compass.ts`): a click faces north, a drag turns and tilts.
   if (view.kind !== '2d') {
     compass = mountCompass(document.querySelector<HTMLElement>('.v2') ?? document.body, {

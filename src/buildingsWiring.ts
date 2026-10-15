@@ -19,14 +19,13 @@ import { BUILDER_CATALOG, DRAW_SHAPES, OPENING_COMPONENTS, TIER_SHAPES, type Bui
 import type { Viewport } from '@view/viewport';
 import type { SceneHandle } from '@render/renderer';
 import { drawBuildingOverlay } from '@ui/overlay/buildingOverlay';
-import { drawBuilderGizmos, type GizmoInput } from '@ui/overlay/builderGizmos';
+import { drawBuilderGrid } from '@ui/overlay/builderGrid';
 import { type ThumbnailStudio, createThumbnailStudio } from '@render/buildings/parts';
 import { createReferenceModel, type ReferenceTarget } from '@render/buildings/referenceModel';
 import { buildFromReference } from '@editor/fromReference';
 import { buildingBounds } from '@world/buildings/geometry';
 import { initBuilderWorkspace, type BuilderActions, type BuilderState } from '@ui/builder/workspace';
 import { formatDecimal, plural, t } from '@ui/i18n';
-import { createInsideBar } from '@ui/insideBar';
 
 /**
  * The building tool's share of the composition root.
@@ -141,22 +140,14 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
   let gridVisible = false;
   let hideOthers = false;
   let lastHint = '';
-  /** See inside, for the whole city: on or off, and the floor seen. */
   // See inside: one building, the one clicked, cut open at a floor.
   const seeInside: { on: boolean; level: number; target: BuildingId | null } = { on: false, level: 0, target: null };
-  // The floors of the building open, from the game's own interface (`ui/insideBar.ts`).
-  const insideBar = createInsideBar({
-    down: () => { seeInside.level = Math.max(0, seeInside.level - 1); tellInside(); deps.requestDraw(); },
-    up: () => {
-      const b = seeInside.target !== null ? doc.buildings.get(seeInside.target) : undefined;
-      seeInside.level = Math.min(b ? Math.max(0, topLevel(b) - 1) : 60, seeInside.level + 1);
-      tellInside(); deps.requestDraw();
-    },
-    close: () => { seeInside.on = false; seeInside.target = null; tellInside(); deps.requestDraw(); },
-  });
-  /** See inside shown as it now is: on the floating bar and in the interface's own (`workspace.onInside`). */
+  /**
+   * See inside shown as it now is, in the interface's top bar (`workspace.onInside`).
+   * DO NOT add a second bar for it: a floating one (`ui/insideBar.ts`) stood beside
+   * the top bar's, numbering the same floor '1º andar' there and '2º' here.
+   */
   function tellInside(): void {
-    insideBar.show(seeInside);
     workspace.showInside(seeInside);
   }
   /** What a drawn shape does: new building, joined block, block on the roof, cut. */
@@ -749,14 +740,31 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     },
     seeInside: (command) => {
       if (command === 'toggle') {
-        seeInside.on = !seeInside.on;
-        // Switched on from the button: the building in the middle of the view.
-        if (seeInside.on && seeInside.target === null) {
+        if (seeInside.on) {
+          // Switched off: the building is let go, so the next switch-on opens the one in view.
+          seeInside.on = false;
+          seeInside.target = null;
+        } else {
+          // Switched on from the button: the building in the middle of the view,
+          // from its ground floor. DO NOT switch on with no building: the bar
+          // showed 'Térreo' over the street and climbed to any floor, nothing open.
           const { w, h } = deps.size();
-          seeInside.target = tool.buildingAt({ x: w / 2, y: h / 2 });
+          const target = tool.buildingAt({ x: w / 2, y: h / 2 });
+          if (target === null) {
+            deps.flash('hint.inside.none');
+            return { ...seeInside };
+          }
+          seeInside.on = true;
+          seeInside.target = target;
+          seeInside.level = 0;
         }
       }
-      else if (command === 'up') seeInside.level = Math.min(60, seeInside.level + 1);
+      // A floor up or down only with a building open, no higher than its top floor.
+      else if (!seeInside.on) return { ...seeInside };
+      else if (command === 'up') {
+        const b = seeInside.target !== null ? doc.buildings.get(seeInside.target) : undefined;
+        seeInside.level = Math.min(b ? Math.max(0, topLevel(b) - 1) : 0, seeInside.level + 1);
+      }
       else seeInside.level = Math.max(0, seeInside.level - 1);
       tellInside();
       deps.requestDraw();
@@ -1021,23 +1029,10 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
     workspace.refresh(state());
   }
 
-  /** The Builder's own layer: the construction grid and the number being typed. */
+  /** The Builder's own layer: the construction grid, on the selected building's floor while the grid is on. */
   const drawGizmos = (ctx: CanvasRenderingContext2D): void => {
     const building = tool.selected();
-    const input: GizmoInput = {
-      project: view.project,
-      handles: [],
-      hovered: null,
-      grid: gridVisible && building ? { centre: { x: building.x, y: building.y }, z: tool.floorOf(building) + m(0.05) } : null,
-      ring: null,
-      draw: null,
-      measure: null,
-      numeric: null,
-      snap: null,
-      repeat: null,
-      floorBand: null,
-    };
-    drawBuilderGizmos(ctx, input);
+    if (gridVisible && building) drawBuilderGrid(ctx, view.project, { x: building.x, y: building.y }, tool.floorOf(building) + m(0.05));
   };
 
   return {
@@ -1056,6 +1051,10 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       } else if (seeInside.on && hit !== null) {
         seeInside.target = hit;
       } else return false;
+      // The floor seen goes on in the building opened, no higher than its top:
+      // the bar named a floor the building did not have.
+      const b = hit !== null ? doc.buildings.get(hit) : undefined;
+      seeInside.level = b ? Math.min(seeInside.level, Math.max(0, topLevel(b) - 1)) : 0;
       tellInside();
       deps.requestDraw();
       return true;

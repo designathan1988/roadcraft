@@ -68,7 +68,7 @@ function clock(entry: HealthEntry): string {
 }
 
 /** The panel's keys, for the game's keys (`editor/gameKeys.ts`): F9 toggles it, Escape closes it (false: it was closed). */
-export function mountHealthPanel(sources: HealthPanelSources): { toggle(): void; close(): boolean } {
+export function mountHealthPanel(sources: HealthPanelSources): { readonly button: HTMLButtonElement; toggle(): void; close(): boolean } {
   const style = document.createElement('style');
   style.textContent = STYLE;
   document.head.appendChild(style);
@@ -249,7 +249,11 @@ export function mountHealthPanel(sources: HealthPanelSources): { toggle(): void;
   button.addEventListener('click', toggle);
   copy.addEventListener('click', () => {
     const text = JSON.stringify({ health: sources.log.latest(256), world: sources.world(60), state: sources.state(40) }, null, 1);
-    void navigator.clipboard?.writeText(text).then(() => { copy.textContent = t('health.copied'); setTimeout(label, 1500); }, () => {});
+    // Said on the button either way: a clipboard the page may not write (no
+    // permission, an insecure context, MDN Clipboard.writeText) answered nothing.
+    const said = (key: string): void => { copy.textContent = t(key); setTimeout(label, 1500); };
+    if (!navigator.clipboard) { said('health.copyFailed'); return; }
+    navigator.clipboard.writeText(text).then(() => said('health.copied'), () => said('health.copyFailed'));
   });
   // F9 and Escape come through the game's keys (`editor/gameKeys.ts`): a
   // listener of its own here closed the panel AND let the same Escape put
@@ -262,29 +266,11 @@ export function mountHealthPanel(sources: HealthPanelSources): { toggle(): void;
   };
   window.addEventListener('resize', () => { if (!pop.hidden) place(); });
 
-  // In the top bar, before Help; on its own in the corner without the v2 interface.
-  const mount = (): void => {
-    const actions = document.querySelector('.v2-actions');
-    const help = actions ? [...actions.querySelectorAll('button')].find((b) => /help|ajuda/i.test(b.getAttribute('aria-label') ?? b.title ?? '')) : null;
-    if (actions) actions.insertBefore(button, help ?? null);
-    else {
-      button.style.position = 'fixed';
-      button.style.right = '12px';
-      button.style.top = '12px';
-      button.style.zIndex = '60';
-      document.body.appendChild(button);
-    }
-    document.body.appendChild(pop);
-    label();
-  };
-  // The top bar is put up after the game's own module has run (`mountShell`):
-  // wait for it a moment before taking the corner.
-  let tries = 0;
-  const wait = (): void => {
-    if (document.querySelector('.v2-actions') || tries++ > 40) mount();
-    else setTimeout(wait, 50);
-  };
-  wait();
+  // The button goes in the top bar where the interface puts it (`ShellHandle.addToBar`,
+  // `main.ts` `mountInterface`). DO NOT look for the bar or its Help button here: the
+  // panel waited for it with a timer and found Help by its title, which the tooltip takes away.
+  document.body.appendChild(pop);
+  label();
 
   // The dot and the open panel follow the log, once a second (nothing to do when it did not change).
   let seen = -1;
@@ -295,5 +281,5 @@ export function mountHealthPanel(sources: HealthPanelSources): { toggle(): void;
     if (!pop.hidden && (open !== 'health' || sources.log.changes !== seen)) { seen = sources.log.changes; render(); }
   }, 1000);
 
-  return { toggle, close };
+  return { button, toggle, close };
 }
