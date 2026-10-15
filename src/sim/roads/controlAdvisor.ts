@@ -70,4 +70,9 @@ export class ControlAdvisor {
   forget(nodes: ReadonlySet<NodeId>): void {
     for (const node of [...this.choices.keys()]) if (!nodes.has(node)) { this.choices.delete(node); this.changedAt.delete(node); }
   }
+
+  /** These junctions' choices forgotten (gone with an edit). */
+  drop(nodes: ReadonlySet<NodeId>): void {
+    for (const node of nodes) { this.choices.delete(node); this.changedAt.delete(node); }
+  }
 }

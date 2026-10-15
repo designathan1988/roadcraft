@@ -368,6 +368,9 @@ export class SimWorld {
     this.claims.clear();
     this.controllers.clear();
     this.planInputs.clear();
+    // What was built from the graph is gone: the next rebuild builds it whole, as a new world's first.
+    this.graph.forget();
+    this.prepGraph?.forget();
     // The kerbs and zebras of the old map: a new world has none until its
     // topology is built, and the controllers made in its first half read them
     // (`crossingsAt`). Kept, a reset world made its signals from the old
@@ -632,10 +635,11 @@ export class SimWorld {
    */
   *prepareVehicleTopology(measurer?: PairMeasurer): Generator<void | typeof WAITING, void> {
     const graph = this.prepGraph ??= new LaneletGraph();
-    yield* graph.buildSteps(this.doc, this.net);
+    // Only what the edit changed (`LaneletGraph.update`): the graph built whole only when the network cannot say.
+    const changed = graph.update(this.doc, this.net);
     yield;
-    // The new pairs measured by `measurer`'s workers when there are some (`conflictPool.ts`).
-    yield* this.conflicts.prepare(graph, measurer);
+    // The new pairs of the junctions built again, measured by `measurer`'s workers when there are some (`conflictPool.ts`).
+    yield* this.conflicts.prepare(graph, measurer, changed?.junctions ?? null);
     yield;
     // The residents' walkways of the network (`walkways`), in a frame of their
     // own: built in the frame that rebinds the walkers, with the footway graph
@@ -660,18 +664,21 @@ export class SimWorld {
   /** Builds the preparation graph with a map's load, so its first edit does not build it from nothing. */
   warmTopologyPrep(): void {
     const graph = this.prepGraph ??= new LaneletGraph();
-    if (graph.revision !== this.net.revision) graph.build(this.doc, this.net);
+    if (graph.revision !== this.net.revision) graph.update(this.doc, this.net);
   }
 
   /** @rebuild Called when the network's traffic revision moved. */
   rebuildVehicleTopology(): void {
     // The links and junctions the preparation turned (`prepareVehicleTopology`).
     if (this.prepGraph && this.prepGraph.revision === this.net.revision) this.graph.seedCaches(this.prepGraph);
-    this.graph.build(this.doc, this.net);
-    this.conflicts.build(this.graph);
+    // What the edit changed, and only that, from here on (`LaneletGraph.update`; null: the graph built whole).
+    // DO NOT build the graph, the conflicts, the controllers and the lanes' runtimes of the whole map for an
+    // edit: every road drawn paid for the town.
+    const changed = this.graph.update(this.doc, this.net);
+    if (changed === null) this.conflicts.build(this.graph); else this.conflicts.update(this.graph, changed.junctions);
     this.claims.dropMissing(this.conflicts);
-    this.syncControllers();
-    for (const segment of [...this.segmentVolume.keys()]) {
+    this.syncControllers(changed?.junctions ?? null);
+    for (const segment of changed ? [...changed.segments] : [...this.segmentVolume.keys()]) {
       rebuildWork.lanes++;
       if (!this.doc.segment(segment as SegmentId)) this.segmentVolume.delete(segment);
     }
@@ -686,22 +693,29 @@ export class SimWorld {
     // (Today a vehicle on a lane gone is removed before stage 7 can mark it -
     // `rebindVehicles`, `integrateAll`, `stepDespawn` - so this is the guard
     // for the day one is kept, as the ghost's own comment intends.)
-    for (const [id, rt] of this.runtime) {
+    for (const id of changed ? changed.lanelets : this.runtime.keys()) {
+      const rt = this.runtime.get(id);
+      if (!rt) continue;
       rebuildWork.lanes++;
       if (!this.graph.lanelets.has(id)) this.ghostCandidates.add(id);
       else if (rt.ghost) { rt.ghost = false; rt.ghostSince = 0; }
     }
     this.junctionsVersion++;
-    // The controls the flows chose stay chosen across an edit (V5).
-    const nodes = new Set(this.graph.junctions.keys());
-    rebuildWork.lanes += nodes.size;
-    this.flow.keepOnly(nodes);
-    this.advisor.forget(nodes);
+    // The controls the flows chose stay chosen across an edit (V5); a junction gone takes its own away.
+    if (changed === null) {
+      const nodes = new Set(this.graph.junctions.keys());
+      rebuildWork.lanes += nodes.size;
+      this.flow.keepOnly(nodes);
+      this.advisor.forget(nodes);
+    } else {
+      const gone = new Set([...changed.junctions].filter((node) => !this.graph.junctions.has(node)));
+      if (gone.size) { this.flow.drop(gone); this.advisor.drop(gone); }
+    }
     // The junctions whose control the rebuild changed are noted by `syncControllers`; those at the ends
     // of the segments the edit reached (their posts stand where the roads are) are noted here. DO NOT
     // forget the log here: every road drawn anywhere had every junction's posts and heads placed again.
     this.noteJunctionsReached();
-    if (this.applyAutoControl()) this.syncControllers();
+    if (this.applyAutoControl(changed?.junctions)) this.syncControllers(changed?.junctions ?? null);
   }
 
   /**
@@ -771,9 +785,12 @@ export class SimWorld {
    * advisor's choice once it has spoken, else the game's geometric default
    * (`lanelets.ts` `shouldSignalise`). True when a junction's signal came or went.
    */
-  private applyAutoControl(): boolean {
+  private applyAutoControl(only?: Iterable<NodeId>): boolean {
     let changed = false;
-    for (const [node, junction] of this.graph.junctions) {
+    // The junctions built again keep no choice of the old graph's: only they are asked (`only`); a junction
+    // not built again keeps the control it was given.
+    const asked = only ? [...only].map((node) => [node, this.graph.junctions.get(node)] as const).filter((e): e is readonly [NodeId, JunctionTopology] => e[1] !== undefined) : this.graph.junctions;
+    for (const [node, junction] of asked) {
       rebuildWork.lanes++;
       if (this.doc.node(node)?.control !== 'auto') continue;
       const choice = this.advisor.choice(node);
@@ -1057,10 +1074,12 @@ export class SimWorld {
    * anywhere, and every control the advisor switched, reset the lights of the
    * whole city (and paid a plan per junction of the map).
    */
-  private syncControllers(): void {
+  private syncControllers(only: ReadonlySet<NodeId> | null = null): void {
     const deps = this.signalDeps();
-
-    for (const [node, junction] of this.graph.junctions) {
+    // The junctions an edit built again (`LaneletGraph.update`), or every one; a junction not built again
+    // has the controller and the plan it had.
+    const asked = only ? [...only].map((node) => [node, this.graph.junctions.get(node)] as const).filter((e): e is readonly [NodeId, JunctionTopology] => e[1] !== undefined) : this.graph.junctions;
+    for (const [node, junction] of asked) {
       const crossings = this.crossingsAt(node);
       const existing = this.controllers.get(node);
       const settings = this.doc.node(node)?.signal;
@@ -1086,8 +1105,8 @@ export class SimWorld {
       this.planInputs.set(node, inputs);
     }
 
-    for (const node of [...this.controllers.keys()]) {
-      if (!this.graph.junctions.has(node)) {
+    for (const node of only ? [...only] : [...this.controllers.keys()]) {
+      if (this.controllers.has(node) && !this.graph.junctions.has(node)) {
         this.controllers.delete(node);
         this.planInputs.delete(node);
         this.noteSignal(node);

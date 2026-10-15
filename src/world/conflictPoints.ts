@@ -3,7 +3,7 @@ import { segSeg } from '@core/intersect';
 import type { Vec2 } from '@core/vec2';
 import type { Polyline } from '@core/polyline';
 import type { NodeId } from './ids';
-import type { Connector, ConnectorId, Lanelet, LaneletGraph } from './lanelets';
+import type { Connector, ConnectorId, JunctionTopology, Lanelet, LaneletGraph } from './lanelets';
 import { m } from './units';
 import { HEADING_CHORD, chordHeading } from './heading';
 import { rebuildWork } from './rebuildWork';
@@ -191,12 +191,14 @@ export class ConflictIndex {
   /** Pairs measured (not read from the caches) by the last `build` and the last `prepare`: for the probes. */
   readonly measured = { build: 0, prepare: 0 };
 
-  *prepare(graph: LaneletGraph, measurer?: PairMeasurer): Generator<void | typeof WAITING, void> {
+  *prepare(graph: LaneletGraph, measurer?: PairMeasurer, only?: ReadonlySet<NodeId> | null): Generator<void | typeof WAITING, void> {
     this.measured.prepare = 0;
     /** The pairs to measure off the page (`measurer`), each key once. */
     const wanted: { key: string; a: Sweep; shapeA: SweepShape; b: Sweep; shapeB: SweepShape }[] = [];
     const asked = new Set<string>();
-    for (const junction of graph.junctions.values()) {
+    // The junctions an edit built again (`LaneletGraph.update`); every one only for a graph built whole.
+    const junctions = only ? [...only].map((node) => graph.junctions.get(node)).filter((j): j is JunctionTopology => j !== undefined) : graph.junctions.values();
+    for (const junction of junctions) {
       rebuildWork.conflicts++;
       const ids = junction.connectors.slice().sort();
       const sweeps: { sweep: Sweep; shape: SweepShape }[] = [];
@@ -247,82 +249,30 @@ export class ConflictIndex {
     }
   }
 
+  /**
+   * What each junction made (`buildJunction`): its points, its connectors, and the pair and sweep keys
+   * it read from the caches - what `update` takes away when the junction is built again.
+   */
+  private readonly ofJunction = new Map<NodeId, { readonly points: number[]; readonly connectors: ConnectorId[]; readonly pairs: string[]; readonly sweeps: string[] }>();
+  /** How many junctions read each cached pair and sweep: one no junction reads any more is let go. */
+  private readonly pairUses = new Map<string, number>();
+  private readonly sweepUses = new Map<string, number>();
+
   build(graph: LaneletGraph): void {
     this.points.length = 0;
     this.byConnector.clear();
     this.diverges.clear();
     this.queueIntrusions.length = 0;
+    this.ofJunction.clear();
+    this.pairUses.clear();
+    this.sweepUses.clear();
     const previous = this.pairCache;
     const next = new Map<string, CachedPair>();
     const measuredBefore = pairsMeasured;
     const previousSweeps = this.sweepCache;
     const nextSweeps = new Map<string, Float64Array>();
-
-    for (const junction of graph.junctions.values()) {
-      rebuildWork.conflicts++;
-      const ids = junction.connectors.slice().sort();
-      const sweeps = new Map<ConnectorId, Sweep>();
-      const shapes = new Map<ConnectorId, SweepShape>();
-      for (const id of ids) {
-        const c = graph.connectors.get(id);
-        if (!c) continue;
-        const sweep = sweepOf(graph, c, previousSweeps, nextSweeps);
-        if (!sweep) continue;
-        sweeps.set(id, sweep);
-        shapes.set(id, shapeOf(sweep));
-      }
-
-      for (let i = 0; i < ids.length; i++) {
-        for (let j = i + 1; j < ids.length; j++) {
-          const a = graph.connectors.get(ids[i] as ConnectorId);
-          const b = graph.connectors.get(ids[j] as ConnectorId);
-          const sa = a && sweeps.get(a.id);
-          const sb = b && sweeps.get(b.id);
-          if (!a || !b || !sa || !sb) continue;
-
-          const pair = cachedPair(
-            previous,
-            next,
-            sa,
-            shapes.get(a.id) as SweepShape,
-            sb,
-            shapes.get(b.id) as SweepShape,
-            this.store,
-          );
-          const zones = pair.zones;
-          if (!zones) continue;
-
-          if (a.fromLane === b.fromLane) {
-            pushDiverge(this.diverges, a.id, b.id, zones, false);
-            pushDiverge(this.diverges, b.id, a.id, zones, true);
-            continue;
-          }
-
-          this.recordIntrusions(a.id, b.id, zones);
-
-          let kind: ConflictKind = 'swept';
-          let at: Vec2;
-          if (a.toLane === b.toLane) {
-            kind = 'merge';
-            at = sa.path.sampleAt(sa.crossing.length).p;
-          } else {
-            // Both depend only on the two sweeps, so they are kept with the pair.
-            if (pair.crossing === undefined) {
-              pair.crossing = firstCrossing(sa.crossing.centre.toPoints(), sb.crossing.centre.toPoints());
-            }
-            if (pair.crossing) {
-              kind = 'cross';
-              at = pair.crossing.at;
-            } else {
-              pair.centre ??= zoneCentre(sa, zones);
-              at = pair.centre;
-            }
-          }
-          this.add(junction.node, a.id, b.id, kind, at, zones);
-        }
-      }
-    }
-
+    /** @rebuild Every junction: the first build, a map opened, a graph the network's delta could not follow. */
+    for (const junction of graph.junctions.values()) this.buildJunction(graph, junction, previous, next, previousSweeps, nextSweeps);
     this.measured.build = pairsMeasured - measuredBefore;
     this.pairCache = next;
     this.sweepCache = nextSweeps;
@@ -332,6 +282,103 @@ export class ConflictIndex {
       for (const key of this.store.kept.keys()) if (!next.has(key) && !this.store.fresh.has(key)) this.store.kept.delete(key);
     }
     for (const list of this.byConnector.values()) list.sort((p, q) => p.s - q.s);
+  }
+
+  /**
+   * The conflicts of these junctions only, built again from the graph as it is (`LaneletGraph.update`
+   * names them): their points, references, diverges and intrusions taken out and made again, every other
+   * junction's kept. DO NOT build the index of the whole map for an edit: every pair of every junction
+   * was looked up again, the town's for one road.
+   */
+  update(graph: LaneletGraph, junctions: ReadonlySet<NodeId>): void {
+    const measuredBefore = pairsMeasured;
+    for (const node of junctions) {
+      const made = this.ofJunction.get(node);
+      if (!made) continue;
+      for (const id of made.points) delete this.points[id];
+      const gone = new Set<ConnectorId>(made.connectors);
+      for (const id of made.connectors) { this.byConnector.delete(id); this.diverges.delete(id); }
+      // A reference or a diverge of a connector of another junction never names these (a pair is one junction's).
+      for (let i = this.queueIntrusions.length - 1; i >= 0; i--) if (gone.has(this.queueIntrusions[i]!.a)) this.queueIntrusions.splice(i, 1);
+      for (const key of made.pairs) unuse(this.pairUses, this.pairCache, key);
+      for (const key of made.sweeps) unuse(this.sweepUses, this.sweepCache, key);
+      this.ofJunction.delete(node);
+    }
+    for (const node of [...junctions].sort((x, y) => x - y)) {
+      const junction = graph.junctions.get(node);
+      if (!junction) continue;
+      this.buildJunction(graph, junction, this.pairCache, this.pairCache, this.sweepCache, this.sweepCache);
+      for (const id of this.ofJunction.get(node)?.connectors ?? []) this.byConnector.get(id)?.sort((p, q) => p.s - q.s);
+    }
+    this.measured.build = pairsMeasured - measuredBefore;
+  }
+
+  /** One junction's conflicts, from the graph and the caches, with what it made recorded (`ofJunction`). */
+  private buildJunction(graph: LaneletGraph, junction: JunctionTopology,
+    previous: Map<string, CachedPair>, next: Map<string, CachedPair>,
+    previousSweeps: Map<string, Float64Array>, nextSweeps: Map<string, Float64Array>): void {
+    rebuildWork.conflicts++;
+    const made = { points: [] as number[], connectors: [] as ConnectorId[], pairs: [] as string[], sweeps: [] as string[] };
+    this.ofJunction.set(junction.node, made);
+    const ids = junction.connectors.slice().sort();
+    made.connectors.push(...ids);
+    const sweeps = new Map<ConnectorId, Sweep>();
+    const shapes = new Map<ConnectorId, SweepShape>();
+    for (const id of ids) {
+      const c = graph.connectors.get(id);
+      if (!c) continue;
+      const sweep = sweepOf(graph, c, previousSweeps, nextSweeps, made.sweeps);
+      if (!sweep) continue;
+      sweeps.set(id, sweep);
+      shapes.set(id, shapeOf(sweep));
+    }
+    for (const key of made.sweeps) this.sweepUses.set(key, (this.sweepUses.get(key) ?? 0) + 1);
+
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = graph.connectors.get(ids[i] as ConnectorId);
+        const b = graph.connectors.get(ids[j] as ConnectorId);
+        const sa = a && sweeps.get(a.id);
+        const sb = b && sweeps.get(b.id);
+        if (!a || !b || !sa || !sb) continue;
+
+        const shapeA = shapes.get(a.id) as SweepShape, shapeB = shapes.get(b.id) as SweepShape;
+        const pair = cachedPair(previous, next, sa, shapeA, sb, shapeB, this.store);
+        const pairKey = `${shapeA.hash}|${shapeB.hash}`;
+        made.pairs.push(pairKey);
+        this.pairUses.set(pairKey, (this.pairUses.get(pairKey) ?? 0) + 1);
+        const zones = pair.zones;
+        if (!zones) continue;
+
+        if (a.fromLane === b.fromLane) {
+          pushDiverge(this.diverges, a.id, b.id, zones, false);
+          pushDiverge(this.diverges, b.id, a.id, zones, true);
+          continue;
+        }
+
+        this.recordIntrusions(a.id, b.id, zones);
+
+        let kind: ConflictKind = 'swept';
+        let at: Vec2;
+        if (a.toLane === b.toLane) {
+          kind = 'merge';
+          at = sa.path.sampleAt(sa.crossing.length).p;
+        } else {
+          // Both depend only on the two sweeps, so they are kept with the pair.
+          if (pair.crossing === undefined) {
+            pair.crossing = firstCrossing(sa.crossing.centre.toPoints(), sb.crossing.centre.toPoints());
+          }
+          if (pair.crossing) {
+            kind = 'cross';
+            at = pair.crossing.at;
+          } else {
+            pair.centre ??= zoneCentre(sa, zones);
+            at = pair.centre;
+          }
+        }
+        made.points.push(this.add(junction.node, a.id, b.id, kind, at, zones));
+      }
+    }
   }
 
   private recordIntrusions(a: ConnectorId, b: ConnectorId, zones: PairZones): void {
@@ -356,7 +403,7 @@ export class ConflictIndex {
     kind: ConflictKind,
     at: Vec2,
     zones: PairZones,
-  ): void {
+  ): number {
     const [lo, hi] = a < b ? [a, b] : [b, a];
     // The key is the connector pair: a pair changing from a line crossing to a
     // swept conflict after an edit is still the same resource.
@@ -385,6 +432,7 @@ export class ConflictIndex {
     this.points[id] = point;
     pushRef(this.byConnector, a, { point: id, s: sA, other: b, kind, exit: clearExits(zones, false) });
     pushRef(this.byConnector, b, { point: id, s: sB, other: a, kind, exit: clearExits(zones, true) });
+    return id;
   }
 
   refs(connector: ConnectorId): readonly ConflictRef[] {
@@ -404,6 +452,14 @@ export class ConflictIndex {
 
 // ------------------------------------------------------------------ sweeps
 
+/** One use fewer of a cached key; the entry let go when no junction reads it. */
+function unuse<V>(uses: Map<string, number>, cache: Map<string, V>, key: string): void {
+  const left = (uses.get(key) ?? 1) - 1;
+  if (left > 0) { uses.set(key, left); return; }
+  uses.delete(key);
+  cache.delete(key);
+}
+
 /** A movement's sweep (`conflictTable.ts` `SweepSamples`) and the lanelets it was sampled along. */
 interface Sweep extends SweepSamples {
   readonly crossing: Lanelet;
@@ -412,7 +468,7 @@ interface Sweep extends SweepSamples {
 }
 
 function sweepOf(graph: LaneletGraph, c: Connector,
-  previous: Map<string, Float64Array>, next: Map<string, Float64Array>): Sweep | null {
+  previous: Map<string, Float64Array>, next: Map<string, Float64Array>, used?: string[]): Sweep | null {
   const inbound = graph.lanelet(c.fromLane);
   const crossing = graph.lanelet(c.lanelet);
   const outbound = graph.lanelet(c.toLane);
@@ -447,6 +503,7 @@ function sweepOf(graph: LaneletGraph, c: Connector,
     }
   }
   next.set(key, frame);
+  used?.push(key);
   let frameLengthSq = FRAME_LENGTHS.get(frame);
   if (!frameLengthSq) {
     frameLengthSq = new Float64Array(count);

@@ -72,6 +72,11 @@ export class FlowStats {
   keepOnly(nodes: ReadonlySet<NodeId>): void {
     for (const node of [...this.rates.keys()]) if (!nodes.has(node)) this.rates.delete(node);
   }
+
+  /** These junctions' flows forgotten (gone with an edit). */
+  drop(nodes: ReadonlySet<NodeId>): void {
+    for (const node of nodes) this.rates.delete(node);
+  }
 }
 
 /** A rate brought up to the end of `second`: a factor `KEEP` for each second since it was kept, none counted. */
