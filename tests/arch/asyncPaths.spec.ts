@@ -148,7 +148,7 @@ describe('the growth of the buildings', () => {
     const feed = read('src/editor/growthFeed.ts');
     expect(feed).not.toMatch(/(designOnLot|growOnLot)\(/);
     // Asked again when the document moved: checked against it before it is written.
-    expect(bodyOf(feed.replace('  receive(', 'function receive('), 'receive')).toMatch(/moved && validateBuilding\(/);
+    expect(feed.slice(feed.indexOf('  receive('), feed.indexOf('  private lotOpen('))).toMatch(/moved && validateBuilding\(/);
   });
 });
 
