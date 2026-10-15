@@ -49,4 +49,13 @@ describe('the buildings several rectangles reach', () => {
     expect(body).toMatch(/doc\.buildings\.nearAny\(rects, BANK_REACH,/);
     expect(body).not.toMatch(/buildings\.near\(/);
   });
+
+  it('is how the camera solids and the gardens find what the ground moved under', () => {
+    const solids = readFileSync('src/world/buildings/cameraSolids.ts', 'utf8');
+    expect(solids).toMatch(/town\.nearAny\(rects, reach,/);
+    expect(solids).not.toMatch(/for \(const r of rects\)/);
+    const gardens = readFileSync('src/render/gardenLists.ts', 'utf8');
+    expect(gardens).toMatch(/banks\.idsMeetingAny\(rects\)/);
+    expect(gardens).not.toMatch(/for \(const rect of rects\)/);
+  });
 });
