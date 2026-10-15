@@ -658,7 +658,7 @@
       "count": 1
     },
     "roadcraft/no-global-revision": {
-      "count": 8
+      "count": 4
     }
   },
   "src/ui/buildStamp.ts": {
@@ -933,7 +933,7 @@
       "count": 1
     },
     "roadcraft/no-global-revision": {
-      "count": 3
+      "count": 2
     }
   },
   "src/world/lotStore.ts": {

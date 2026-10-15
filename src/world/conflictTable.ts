@@ -468,3 +468,147 @@ export interface PairMeasurer {
    */
   crossings?(pairs: readonly { readonly a: Float64Array; readonly b: Float64Array }[]): Promise<readonly (Crossing | null)[]>;
 }
+
+// ------------------------------------------------------------------ zones
+
+/**
+ * `cross`: the two centrelines intersect. `merge`: both end in the same lane.
+ * `swept`: the centrelines never meet, but the BODIES driven along them do —
+ * opposing left turns that pass too close, a bus swinging its tail across the
+ * lane beside it.
+ */
+export type ConflictKind = 'cross' | 'merge' | 'swept';
+
+/**
+ * Centre-arc interval over which a body of one class on one movement overlaps
+ * the swept area of a body of another class on the other movement.
+ *
+ * Arc positions are of the BODY CENTRE along the movement, measured from the
+ * stop line: negative while the centre is still on the approach, beyond the
+ * connector length once it is on the exit lane.
+ */
+export interface Zone {
+  readonly enter: number;
+  readonly exit: number;
+}
+
+/** A connector's id (`lanelets.ts` `ConnectorId`), named here without importing the graph. */
+type ConnectorId = string;
+
+export interface ConflictRef {
+  readonly point: number;
+  /** Earliest front arc position of the zone, for ordering. */
+  readonly s: number;
+  readonly other: ConnectorId;
+  readonly kind: ConflictKind;
+  /**
+   * Body-centre arc position past which a vehicle of each class has cleared
+   * the zone against ANY vehicle on the other movement. -Infinity when that
+   * class never touches it.
+   */
+  readonly exit: readonly number[];
+}
+
+/** Two movements out of the same lane: resolved by car-following, not claims. */
+export interface Diverge {
+  readonly other: ConnectorId;
+  /** Centre arc past which a body of class `mine` on the OTHER movement is clear of `theirs` on this one. */
+  otherExit(mine: BodyClass, theirs: BodyClass): number;
+}
+
+/** A pair of movements' zones as the conflict index reads them (`conflictPoints.ts` `ConflictIndex`), over the pair's table. */
+export interface PairZones {
+  /** Zone on `a` (`onB` false) or on `b` (true) for body `mine` against `theirs`. */
+  get(mine: BodyClass, theirs: BodyClass, onB: boolean): Zone | null;
+}
+
+/** A pair's zones over its table (`pairTable`): what is kept between sessions. */
+export function zonesOf(table: Float64Array): PairZones {
+  return {
+    get(mine, theirs, onB) {
+      const at = onB ? (theirs * 3 + mine) * 4 + 2 : (mine * 3 + theirs) * 4;
+      const enter = table[at] as number;
+      if (Number.isNaN(enter)) return null;
+      // Half a step either side covers the motion between two samples.
+      return { enter: enter - SWEEP_STEP / 2, exit: (table[at + 1] as number) + SWEEP_STEP / 2 };
+    },
+  };
+}
+
+/**
+ * What the index makes of a pair's zones for its conflict point (`ConflictIndex.add`) and its queue
+ * intrusions (`recordIntrusions`): a function of the zones alone, so worked out once a pair and kept with
+ * it (`CachedPair.facts`). DO NOT work them out again for each build: thirty zones a pair made and read
+ * again, every pair of every junction built, were a fifth of a city's swap onto its new graph (2026-10-15).
+ */
+export interface PairFacts {
+  readonly sA: number;
+  readonly sB: number;
+  /** Per class, the centre past which the body on `a` (`exitA`) or `b` is clear of any other body. Never changed. */
+  readonly exitA: readonly number[];
+  readonly exitB: readonly number[];
+  /** The intrusions in the order `recordIntrusions` finds them: whose (`onB`) and the two classes. */
+  readonly intrusions: readonly { readonly onB: boolean; readonly mine: BodyClass; readonly theirs: BodyClass }[];
+}
+
+export function pairFacts(zones: PairZones): PairFacts {
+  const intrusions: { onB: boolean; mine: BodyClass; theirs: BodyClass }[] = [];
+  for (const mine of BODY_CLASSES) {
+    for (const theirs of BODY_CLASSES) {
+      const onA = zones.get(mine, theirs, false);
+      if (onA && onA.enter + (BODY_ENVELOPE[mine]?.length ?? 0) / 2 <= 0) intrusions.push({ onB: false, mine, theirs });
+      const onB = zones.get(theirs, mine, true);
+      if (onB && onB.enter + (BODY_ENVELOPE[theirs]?.length ?? 0) / 2 <= 0) intrusions.push({ onB: true, mine: theirs, theirs: mine });
+    }
+  }
+  return { sA: earliestFront(zones, false), sB: earliestFront(zones, true), exitA: clearExits(zones, false), exitB: clearExits(zones, true), intrusions };
+}
+
+/** Earliest body-FRONT arc position at which any class enters the zone. */
+function earliestFront(zones: PairZones, onB: boolean): number {
+  let best = Infinity;
+  for (const mine of BODY_CLASSES) {
+    const z = zones.get(mine, HEAVY, onB);
+    const half = (BODY_ENVELOPE[mine] as { length: number }).length / 2;
+    if (z) best = Math.min(best, z.enter + half);
+  }
+  return best;
+}
+
+/** Per class, the centre past which the body is clear of any other body. */
+function clearExits(zones: PairZones, onB: boolean): number[] {
+  return BODY_CLASSES.map((mine) => {
+    let exit = -Infinity;
+    for (const theirs of BODY_CLASSES) {
+      const z = zones.get(mine, theirs, onB);
+      if (z) exit = Math.max(exit, z.exit);
+    }
+    return exit;
+  });
+}
+
+export function pushDiverge(
+  map: Map<ConnectorId, Diverge[]>,
+  self: ConnectorId,
+  other: ConnectorId,
+  zones: PairZones,
+  selfIsB: boolean,
+): void {
+  const entry: Diverge = {
+    other,
+    otherExit: (mine, theirs) => zones.get(mine, theirs, !selfIsB)?.exit ?? -Infinity,
+  };
+  const list = map.get(self);
+  if (list) list.push(entry);
+  else map.set(self, [entry]);
+}
+
+export function pushRef(
+  map: Map<ConnectorId, ConflictRef[]>,
+  key: ConnectorId,
+  ref: ConflictRef,
+): void {
+  const list = map.get(key);
+  if (list) list.push(ref);
+  else map.set(key, [ref]);
+}

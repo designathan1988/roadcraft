@@ -130,6 +130,14 @@ interface PendingJunction {
 }
 
 /** What one junction built, kept between builds (`buildJunctions`). */
+/** What `LaneletGraph.takeOut` took out, for `letGo`: the lanelets that went, the junctions' entries and keys, the links' keys. */
+interface TakenOut {
+  readonly lanes: Set<LaneletId>;
+  readonly before: Map<NodeId, JunctionCache>;
+  readonly junctionKeys: string[];
+  readonly linkKeys: string[];
+}
+
 interface JunctionCache {
   readonly node: NodeId;
   /** The turns its movements were shaped with (`turnPath`): kept with the junction, gone with it. */
@@ -253,8 +261,8 @@ export class LaneletGraph {
 
   /** The network's state this graph was last brought up to (`update`). */
   private netState: object | null = null;
-  /** The key the last `buildJunction` was built under (`update` keeps it). */
-  private junctionKeyUsed: string | null = null;
+  /** The key each junction's cache entry is under (`buildJunction`): found by its node, never by walking the cache. */
+  private readonly junctionKeyOf = new Map<NodeId, string>();
 
   /** The next `update` builds the whole graph (a world reset: what read the graph forgot it all). */
   forget(): void {
@@ -295,14 +303,111 @@ export class LaneletGraph {
       return null;
     }
     this.netState = net.state;
-    if (delta.segments.size === 0 && delta.nodes.size === 0) { this.revision = net.revision; return { junctions: new Set(), lanelets: new Set(), segments: new Set() }; }
-    // The segments to build again: those changed, and every segment meeting a node that changed (its
-    // stop line and its key read the node).
+    const { segments, junctions } = this.reach(doc, delta);
+    const out = this.takeOut(segments, junctions);
+    // In again, from the document as it is: the segments' links, then the junctions' connectors.
+    for (const seg of [...segments].sort((a, b) => a - b)) {
+      if (!doc.segment(seg)) continue;
+      this.buildSegmentLinks(doc, net, seg, this.linkCache, this.linkCache);
+      for (const id of this.bySegment.get(seg) ?? []) out.lanes.add(id);
+    }
+    for (const nodeId of [...junctions].sort((a, b) => a - b)) {
+      const node = doc.node(nodeId);
+      if (!node) continue;
+      this.buildJunction(doc, net, nodeId, node, this.junctionCache, this.junctionCache, (n) => out.before.get(n));
+      for (const cid of this.junctions.get(nodeId)?.connectors ?? []) out.lanes.add(cid);
+    }
+    return this.letGo(net, segments, junctions, out);
+  }
+
+  /**
+   * The graph brought up to `from`, a graph of the same network already brought up to it and finished
+   * (`current`; the preparation's, `SimWorld.prepareVehicleTopology`): what changed since this one was
+   * last brought up is TAKEN from `from` - the link lanelets of those segments, the junctions and their
+   * connectors, objects and all, with the keys they were built under - not built again. The same graph
+   * `update` makes (`tests/sim/topologyOffPage.spec.ts`), and what it returns. DO NOT seed this graph's
+   * caches from `from` and `update` it: every lane's key and every junction's surface and key were worked
+   * out a second time in the frame of the swap, a city's whole map on its first build (2026-10-15).
+   */
+  adopt(from: LaneletGraph, doc: RoadDoc, net: Network): GraphChange | null {
+    const delta = this.netState === null || this.lanelets.size === 0 ? null : net.changesSince(this.netState);
+    if (delta === null) {
+      this.takeWhole(from);
+      this.brought(net);
+      return null;
+    }
+    const { segments, junctions } = this.reach(doc, delta);
+    const out = this.takeOut(segments, junctions);
+    for (const seg of [...segments].sort((a, b) => a - b)) {
+      if (!doc.segment(seg)) continue;
+      for (const id of from.bySegment.get(seg) ?? []) {
+        const lane = from.lanelets.get(id)!, key = from.laneletKeys.get(id)!;
+        this.lanelets.set(id, lane);
+        this.laneletKeys.set(id, key);
+        this.linkCache.set(key, from.linkCache.get(key)!);
+        push(this.inbound, lane.to!, id);
+        push(this.outbound, lane.from!, id);
+        push(this.bySegment, seg, id);
+        out.lanes.add(id);
+      }
+    }
+    for (const nodeId of [...junctions].sort((a, b) => a - b)) {
+      const junction = doc.node(nodeId) ? from.junctions.get(nodeId) : undefined;
+      if (!junction) continue;
+      for (const cid of junction.connectors) {
+        const connector = from.connectors.get(cid)!;
+        this.lanelets.set(cid, from.lanelets.get(cid)!);
+        this.connectors.set(cid, connector);
+        push(this.exits, connector.fromLane, cid);
+        out.lanes.add(cid);
+      }
+      this.junctions.set(nodeId, junction);
+      const key = from.junctionKeyOf.get(nodeId);
+      if (key !== undefined) { this.junctionCache.set(key, from.junctionCache.get(key)!); this.junctionKeyOf.set(nodeId, key); }
+    }
+    return this.letGo(net, segments, junctions, out);
+  }
+
+  /** Whether this graph stands for the network as it is now, finished: no junction on stand-in turns (`adopt`). */
+  current(net: Network): boolean {
+    return this.netState === net.state && this.turnPlan === null && this.pending.size === 0;
+  }
+
+  /** Every link, junction and connector of `from`, and its caches, as this graph's own (`adopt` of a graph built whole). */
+  private takeWhole(from: LaneletGraph): void {
+    const copy = <K, V>(into: Map<K, V>, source: ReadonlyMap<K, V>): void => { into.clear(); for (const [k, v] of source) into.set(k, v); };
+    const lists = <K>(into: Map<K, string[]>, source: ReadonlyMap<K, readonly string[]>): void => { into.clear(); for (const [k, v] of source) into.set(k, [...v]); };
+    copy(this.lanelets, from.lanelets);
+    copy(this.connectors, from.connectors);
+    copy(this.junctions, from.junctions);
+    copy(this.laneletKeys, from.laneletKeys);
+    copy(this.junctionKeyOf, from.junctionKeyOf);
+    lists(this.exits, from.exits);
+    lists(this.inbound, from.inbound);
+    lists(this.outbound, from.outbound);
+    lists(this.bySegment, from.bySegment);
+    this.linkCache = new Map(from.linkCache);
+    this.junctionCache = new Map(from.junctionCache);
+    this.pending.clear();
+    this.siblings.clear();
+    this.changes.clear();
+  }
+
+  /** The graph now stands for the network as it is. */
+  private brought(net: Network): void {
+    this.netState = net.state;
+    this.revision = net.revision;
+  }
+
+  /**
+   * What a change of the network reaches (`update`, `adopt`): the segments to build again - those changed,
+   * and every segment meeting a node that changed (its stop line and its key read the node) - and the
+   * junctions at their ends, before and now.
+   */
+  private reach(doc: RoadDoc, delta: { readonly segments: ReadonlySet<SegmentId>; readonly nodes: ReadonlySet<NodeId> }): { segments: Set<SegmentId>; junctions: Set<NodeId> } {
     const segments = new Set<SegmentId>(delta.segments);
     for (const nodeId of delta.nodes) for (const seg of doc.node(nodeId)?.incident ?? []) segments.add(seg);
-    // The junctions at their ends, before and now.
     const junctions = new Set<NodeId>(delta.nodes);
-    const changedLanes = new Set<LaneletId>();
     for (const seg of segments) {
       const now = doc.segment(seg);
       if (now) { junctions.add(now.a); junctions.add(now.b); }
@@ -312,14 +417,23 @@ export class LaneletGraph {
         if (lane?.to !== undefined) junctions.add(lane.to);
       }
     }
-    // Out with what they made: their lanelets, the connectors of the junctions, every list naming them.
-    // Their cache entries stay until they are built again: a lanelet or a junction whose key comes round
-    // again is handed back, the same object (a height-only edit moves no lane); those not come round go after.
-    const before = new Map<NodeId, JunctionCache>();
-    const oldJunctionKeys: string[] = [];
-    for (const [key, entry] of this.junctionCache) if (junctions.has(entry.node)) { before.set(entry.node, entry); oldJunctionKeys.push(key); }
-    const oldLinkKeys: string[] = [];
+    return { segments, junctions };
+  }
+
+  /**
+   * Out with what these segments and junctions made: their lanelets, the junctions' connectors, every
+   * list naming them. Their cache entries stay until they are built again: a lanelet or a junction whose
+   * key comes round again is handed back, the same object (a height-only edit moves no lane); those not
+   * come round go after (`letGo`). Each junction's entry is found by its key (`junctionKeyOf`). DO NOT
+   * walk the junction cache to find them: every edit read every junction of the map.
+   */
+  private takeOut(segments: ReadonlySet<SegmentId>, junctions: ReadonlySet<NodeId>): TakenOut {
+    const out: TakenOut = { lanes: new Set(), before: new Map(), junctionKeys: [], linkKeys: [] };
     for (const nodeId of junctions) {
+      const key = this.junctionKeyOf.get(nodeId);
+      const entry = key === undefined ? undefined : this.junctionCache.get(key);
+      if (key !== undefined && entry) { out.before.set(nodeId, entry); out.junctionKeys.push(key); }
+      this.junctionKeyOf.delete(nodeId);
       const junction = this.junctions.get(nodeId);
       if (!junction) continue;
       for (const cid of junction.connectors) {
@@ -327,7 +441,7 @@ export class LaneletGraph {
         if (connector) drop(this.exits, connector.fromLane, cid);
         this.connectors.delete(cid);
         this.lanelets.delete(cid);
-        changedLanes.add(cid);
+        out.lanes.add(cid);
       }
       this.junctions.delete(nodeId);
     }
@@ -337,39 +451,37 @@ export class LaneletGraph {
         if (lane?.to !== undefined) drop(this.inbound, lane.to, id);
         if (lane?.from !== undefined) drop(this.outbound, lane.from, id);
         const key = this.laneletKeys.get(id);
-        if (key !== undefined) oldLinkKeys.push(key);
+        if (key !== undefined) out.linkKeys.push(key);
         this.laneletKeys.delete(id);
         this.lanelets.delete(id);
         this.exits.delete(id);
-        changedLanes.add(id);
+        out.lanes.add(id);
       }
       this.bySegment.delete(seg);
     }
     this.siblings.clear();
     this.changes.clear();
-    // In again, from the document as it is: the segments' links, then the junctions' connectors.
-    for (const seg of [...segments].sort((a, b) => a - b)) {
-      if (!doc.segment(seg)) continue;
-      this.buildSegmentLinks(doc, net, seg, this.linkCache, this.linkCache);
-      for (const id of this.bySegment.get(seg) ?? []) changedLanes.add(id);
-    }
+    return out;
+  }
+
+  /**
+   * The cache entries of before that did not come round again let go (the cache holds what the graph
+   * has), and the graph brought up to the network. A link's key names its segment, so only the lanes of
+   * the segments built again can hold one of them. DO NOT gather every lanelet's key to find out: every
+   * edit read the whole map's.
+   */
+  private letGo(net: Network, segments: ReadonlySet<SegmentId>, junctions: Set<NodeId>, out: TakenOut): GraphChange {
+    const liveLinkKeys = new Set<string>();
+    for (const seg of segments) for (const id of this.bySegment.get(seg) ?? []) liveLinkKeys.add(this.laneletKeys.get(id)!);
+    for (const key of out.linkKeys) if (!liveLinkKeys.has(key)) this.linkCache.delete(key);
     const keptJunctionKeys = new Set<string>();
-    for (const nodeId of [...junctions].sort((a, b) => a - b)) {
-      const node = doc.node(nodeId);
-      if (!node) continue;
-      const usedBefore = this.junctionKeyUsed;
-      this.junctionKeyUsed = null;
-      this.buildJunction(doc, net, nodeId, node, this.junctionCache, this.junctionCache, (n) => before.get(n));
-      if (this.junctionKeyUsed !== null) keptJunctionKeys.add(this.junctionKeyUsed);
-      this.junctionKeyUsed = usedBefore;
-      for (const cid of this.junctions.get(nodeId)?.connectors ?? []) changedLanes.add(cid);
+    for (const nodeId of junctions) {
+      const key = this.junctionKeyOf.get(nodeId);
+      if (key !== undefined) keptJunctionKeys.add(key);
     }
-    // The keys of before that did not come round again: their entries go (the cache holds what the graph has).
-    const liveLinkKeys = new Set(this.laneletKeys.values());
-    for (const key of oldLinkKeys) if (!liveLinkKeys.has(key)) this.linkCache.delete(key);
-    for (const key of oldJunctionKeys) if (!keptJunctionKeys.has(key)) this.junctionCache.delete(key);
-    this.revision = net.revision;
-    return { junctions, lanelets: changedLanes, segments };
+    for (const key of out.junctionKeys) if (!keptJunctionKeys.has(key)) this.junctionCache.delete(key);
+    this.brought(net);
+    return { junctions, lanelets: out.lanes, segments: new Set(segments) };
   }
 
   /**
@@ -421,6 +533,7 @@ export class LaneletGraph {
       this.lanelets.set(id, { ...lanelet, centre: path, length: path.length });
       this.connectors.set(id, { ...connector, length: path.length, maxBodyClass });
     }
+    this.junctionKeyOf.set(nodeId, pending.key);
     this.junctionCache.set(pending.key, {
       node: nodeId,
       turns: pending.turns.settle(),
@@ -431,22 +544,14 @@ export class LaneletGraph {
     });
   }
 
-  /**
-   * Another graph's caches, as this one's own: the simulation builds the graph
-   * of an edit ahead on a graph of its own, a few milliseconds a frame
-   * (`SimWorld.prepareVehicleTopology`), and the graph its agents run on then
-   * takes every link and junction from it instead of turning them all again
-   * in the frame of the swap (docs/performance.md #25).
-   */
-  seedCaches(from: LaneletGraph): void {
-    for (const [key, value] of from.linkCache) this.linkCache.set(key, value);
-    for (const [key, value] of from.junctionCache) this.junctionCache.set(key, value);
-  }
-
   /** `build` in steps, a segment's links or a junction's connectors at a time. */
   *buildSteps(doc: RoadDoc, net: Network): Generator<void, void, void> {
     this.siblings.clear();
     this.changes.clear();
+    // Every junction is built again: none stands on the turns of a build before, none's entry is kept.
+    this.pending.clear();
+    this.turnPlan?.provisional.clear();
+    this.junctionKeyOf.clear();
     this.lanelets.clear();
     this.connectors.clear();
     this.junctions.clear();
@@ -635,6 +740,13 @@ export class LaneletGraph {
   private buildJunction(doc: RoadDoc, net: Network, nodeId: NodeId, node: RoadNode,
     previous: Map<string, JunctionCache>, next: Map<string, JunctionCache>, before: (node: NodeId) => { readonly turns: JunctionTurns } | undefined): void {
     laneletWork.nodes++;
+    // Built again: whatever it stood in for its turns, and the key it was kept under, go with the build
+    // before. DO NOT keep them: a junction left on stand-in turns by a preparation given up (the network
+    // edited while its workers chose them) and built again later was reshaped with the old build's
+    // movements, and one never built again kept its stand-ins (`redoProvisional`).
+    this.pending.delete(nodeId);
+    this.turnPlan?.provisional.delete(nodeId);
+    this.junctionKeyOf.delete(nodeId);
     // A road's end that is a turning circle turns its traffic round (`junction/bulb.ts`).
     const bulb = node.incident.length === 1 && node.end === 'bulb';
     if (node.incident.length < 2 && !bulb) return;
@@ -672,7 +784,6 @@ export class LaneletGraph {
       .addText(`${node.uturn ?? '-'}${node.end ?? '-'}`)
       .addText(inbound.map((id) => this.laneletKeys.get(id) ?? id).join('|'))
       .addText(outbound.map((id) => this.laneletKeys.get(id) ?? id).join('|')).value()}`;
-    this.junctionKeyUsed = key;
     const known = key ? previous.get(key) : undefined;
     if (known) {
       for (const lanelet of known.lanelets) this.lanelets.set(lanelet.id, lanelet);
@@ -689,6 +800,7 @@ export class LaneletGraph {
         control: node.control,
       });
       next.set(key, known);
+      this.junctionKeyOf.set(nodeId, key);
       return;
     }
 
@@ -901,6 +1013,7 @@ export class LaneletGraph {
       this.pending.set(nodeId, { key, turns, groups, signalised, connectors: connectorIds, reshape });
       return;
     }
+    this.junctionKeyOf.set(nodeId, key);
     next.set(key, {
       node: nodeId,
       turns: turns.settle(),
