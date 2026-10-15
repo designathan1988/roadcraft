@@ -170,6 +170,8 @@ interface Store {
   readonly centre: Vector3;
   readonly reach: number;
   mesh: InstancedMesh | null;
+  /** Instances the mesh's buffers hold: the most ever in view, not the town's (`growBuffers`). */
+  meshCapacity: number;
   capacity: number;
   used: number;
   dead: number;
@@ -231,7 +233,7 @@ export function createGardens(kit: SceneryKit): Gardens {
     stores.push({
       index: stores.length, key, name, geometry, material, depth, cards,
       centre: sphere?.center.clone() ?? new Vector3(), reach: sphere?.radius ?? 1,
-      mesh: null, capacity: 0, used: 0, dead: 0,
+      mesh: null, meshCapacity: 0, capacity: 0, used: 0, dead: 0,
       poses: new Float32Array(0), colours: new Float32Array(0), spheres: new Float32Array(0), bounds: null, runs: new Map(),
       shown: new Int32Array(0), drawn: 0, firstChanged: 0,
     });
@@ -313,17 +315,31 @@ export function createGardens(kit: SceneryKit): Gardens {
     for (let i = 0; i < s.used; i++) if (s.spheres[i * 4 + 3] !== -Infinity) file(s, i);
   };
 
+  /** The mesh's instance buffers made for `capacity` plants in view (DO NOT size them by the town: a GPU buffer and its CPU copy of every plant of the map). */
+  const sizeBuffers = (s: Store, mesh: InstancedMesh, capacity: number): void => {
+    mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
+    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    // Every store tinted, white where a plant has none: one program variant for the shared materials.
+    mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+    mesh.instanceColor.setUsage(DynamicDrawUsage);
+    s.meshCapacity = capacity;
+    s.shown = new Int32Array(capacity).fill(-1);
+  };
+  /** More plants in view than the buffers hold: new ones twice as large, the old let go (three r186 `WebGLObjects` frees an instanced mesh's buffers on `dispose`). */
+  const growBuffers = (s: Store, needed: number): void => {
+    let capacity = s.meshCapacity;
+    while (capacity < needed) capacity *= 2;
+    s.mesh!.dispose();
+    sizeBuffers(s, s.mesh!, capacity);
+  };
   const newMesh = (s: Store): InstancedMesh => {
-    const mesh = new InstancedMesh(s.geometry, s.material, s.capacity);
+    const mesh = new InstancedMesh(s.geometry, s.material, MIN_CAPACITY);
     mesh.name = s.name;
     mesh.castShadow = !s.cards;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
-    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     if (s.depth) mesh.customDepthMaterial = s.depth;
-    // Every store tinted, white where a plant has none: one program variant for the shared materials.
-    mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(s.capacity * 3).fill(1), 3);
-    mesh.instanceColor.setUsage(DynamicDrawUsage);
+    sizeBuffers(s, mesh, MIN_CAPACITY);
     mesh.count = 0;
     return mesh;
   };
@@ -404,6 +420,7 @@ export function createGardens(kit: SceneryKit): Gardens {
       if (!mesh || slots.length === 0 || !drawnNow(s)) continue;
       const sp = s.spheres, shown = s.shown, poses = s.poses, colours = s.colours;
       const target = mesh.instanceMatrix.array as Float32Array, tints = mesh.instanceColor!.array as Float32Array;
+      const room = s.meshCapacity;
       let n = s.drawn;
       for (const i of slots) {
         const r = sp[i * 4 + 3]!;
@@ -414,8 +431,8 @@ export function createGardens(kit: SceneryKit): Gardens {
           probe.radius = r + SHADOW_REACH;
           if (!cullFrustum!.intersectsSphere(probe)) continue;
         }
-        // Written only when this position held another plant.
-        if (shown[n] !== i) {
+        // Written only when this position held another plant; past the buffers' room only counted (`growBuffers`, after the cull).
+        if (n < room && shown[n] !== i) {
           shown[n] = i;
           if (n < s.firstChanged) s.firstChanged = n;
           const at = i * POSE;
@@ -466,10 +483,7 @@ export function createGardens(kit: SceneryKit): Gardens {
           repack(s, Math.max(s.capacity, MIN_CAPACITY), true);
           moved = true;
         }
-        if (s.used + coming > s.capacity) {
-          repack(s, Math.max(MIN_CAPACITY, (s.used + coming) * 2), false);
-          s.mesh = null;
-        }
+        if (s.used + coming > s.capacity) repack(s, Math.max(MIN_CAPACITY, (s.used + coming) * 2), false);
         for (const list of fresh) {
           const one = packs.get(list)!.get(s.key);
           if (one) append(s, list, one);
@@ -481,10 +495,7 @@ export function createGardens(kit: SceneryKit): Gardens {
           if (s.mesh) added.push(s.mesh);
         }
         // DO NOT forget every store's positions at every building
-        if (moved || was !== s.mesh) {
-          if (s.shown.length < s.capacity) s.shown = new Int32Array(s.capacity);
-          s.shown.fill(-1);
-        }
+        if (moved) s.shown.fill(-1);
       }
       growAncestors();
       // Slots came or went: the next cull draws them.
@@ -510,6 +521,13 @@ export function createGardens(kit: SceneryKit): Gardens {
       for (const s of stores) { s.drawn = 0; s.firstChanged = Infinity; }
       cullFrustum = frustum;
       for (const root of rootOrder) visit(root, ALL_PLANES);
+      // More in view than the buffers hold: grown, and the cull run again into them (no frame drawn short).
+      let grew = false;
+      for (const s of stores) if (s.mesh && s.drawn > s.meshCapacity) { growBuffers(s, s.drawn); grew = true; }
+      if (grew) {
+        for (const s of stores) { s.drawn = 0; s.firstChanged = Infinity; }
+        for (const root of rootOrder) visit(root, ALL_PLANES);
+      }
       cullFrustum = null;
       for (const s of stores) {
         const mesh = s.mesh;
