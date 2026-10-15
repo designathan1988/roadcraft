@@ -250,9 +250,10 @@ is hidden every frame (no overdraw).
 ## Commits, branches, agents
 - `git status` first; commit only your paths (`git commit --only <paths>`) after reading their
   `git diff`. Every file saved in the main folder reloads the game on 5300.
-- Agents: at most 5 in parallel (player's order, 2026-10-15; replaces "No agents"), ultracode and
-  parallel sessions included. Each one in its own worktree made from local `main`, one part each,
-  no two on the same files; read its diff whole before merging. Keep progress here.
+- Agents: no limit on how many run in parallel (player's order, 2026-10-15), ultracode and
+  parallel sessions included. Each one in its own worktree made from local `main` (check its first
+  commit: the tool may cut it from an old one), one part each, no two on the same files; read its
+  diff whole before merging. Keep progress here.
 - Effort high for normal work; xhigh only to decide architecture and at phase gates. Grep before
   Read; in a file over 800 lines read only the part that matters. During a block only the
   typecheck and the tests of what was touched; the full check and the route at the end of the
