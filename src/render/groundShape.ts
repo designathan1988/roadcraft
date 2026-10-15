@@ -42,7 +42,10 @@ export function askPlate(grid: CornerGrid, natural: Float64Array, regions: reado
   const clamped = new Int32Array(regions.length * 4);
   let count = 0;
   regions.forEach((r, k) => {
-    const x0 = Math.max(0, r[0]), x1 = Math.min(n - 1, r[1]), y0 = Math.max(0, r[2]), y1 = Math.min(n - 1, r[3]);
+    // DO NOT count with numbers the Int32Array changes: an empty box's Infinity was stored as 0, and the corners written overran `lands` (the world's build stopped, its roads never drawn).
+    const bad = r.some((v) => Number.isNaN(v));
+    const x0 = bad ? 1 : Math.min(n, Math.max(0, Math.floor(r[0]))), x1 = bad ? 0 : Math.max(-1, Math.min(n - 1, Math.ceil(r[1])));
+    const y0 = bad ? 1 : Math.min(n, Math.max(0, Math.floor(r[2]))), y1 = bad ? 0 : Math.max(-1, Math.min(n - 1, Math.ceil(r[3])));
     clamped[k * 4] = x0; clamped[k * 4 + 1] = x1; clamped[k * 4 + 2] = y0; clamped[k * 4 + 3] = y1;
     if (x1 >= x0 && y1 >= y0) count += (x1 - x0 + 1) * (y1 - y0 + 1);
   });
