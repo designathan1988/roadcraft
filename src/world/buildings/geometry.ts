@@ -216,27 +216,24 @@ export function elementRect(e: BuildingElement): [number, number, number, number
 
 /** World bounding box of a building: its volumes and its elements. */
 export function buildingBounds(b: Building, grow = 0): { minX: number; minY: number; maxX: number; maxY: number } {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+  // DO NOT turn each corner into a point object: every check of a draft and every building filed passes here.
+  const c = Math.cos(b.rotation), s = Math.sin(b.rotation);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const take = (lx: number, ly: number): void => {
+    const x = b.x + lx * c - ly * s, y = b.y + lx * s + ly * c;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  };
   for (const v of b.volumes) {
-    for (const p of volumeCorners(b, v, grow)) {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
-    }
+    if (v.outline) { for (const p of offsetRing(localFootprint(v), grow)) take(p.x, p.y); continue; }
+    take(v.x - grow, v.y - grow); take(v.x + v.w + grow, v.y - grow); take(v.x + v.w + grow, v.y + v.d + grow); take(v.x - grow, v.y + v.d + grow);
   }
   for (const e of b.elements ?? []) {
     const [x0, y0, x1, y1] = elementRect(e);
-    for (const [lx, ly] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] as const) {
-      const p = localToWorld(b, lx + Math.sign(lx - e.x) * grow, ly + Math.sign(ly - e.y) * grow);
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
-    }
+    const gx0 = Math.sign(x0 - e.x) * grow, gx1 = Math.sign(x1 - e.x) * grow, gy0 = Math.sign(y0 - e.y) * grow, gy1 = Math.sign(y1 - e.y) * grow;
+    take(x0 + gx0, y0 + gy0); take(x1 + gx1, y0 + gy0); take(x1 + gx1, y1 + gy1); take(x0 + gx0, y1 + gy1);
   }
   return { minX, minY, maxX, maxY };
 }

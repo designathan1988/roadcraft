@@ -3,7 +3,7 @@ import { Digest } from '@core/digest';
 
 import type { RoadDoc } from '@world/doc';
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
-import { buildingBounds } from '@world/buildings/geometry';
+import { storedBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
 import { CellFiling } from '@world/cells';
@@ -162,7 +162,7 @@ export function createBuildingLayer(): BuildingLayer {
   const near = (b: Building): boolean => {
     if (!cutaway) return false;
     if (cutaway.only !== undefined) return b.id === cutaway.only;
-    const box = buildingBounds(b);
+    const box = storedBounds(b);
     const dx = Math.max(box.minX - cutaway.x, 0, cutaway.x - box.maxX);
     const dy = Math.max(box.minY - cutaway.y, 0, cutaway.y - box.maxY);
     return Math.hypot(dx, dy) <= cutaway.radius;
@@ -202,7 +202,7 @@ export function createBuildingLayer(): BuildingLayer {
     kept.set(id, k);
     flagsFor(id);
     if (!k.summary.lot) { lotFiling.remove(id); return; }
-    const box = buildingBounds(k.b);
+    const box = storedBounds(k.b);
     lotFiling.file(id, k, [box.minX, box.minY, box.maxX, box.maxY]);
   };
   const dropKept = (id: BuildingId): void => {

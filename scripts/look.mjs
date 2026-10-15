@@ -1,6 +1,6 @@
 // LOOK AT THE GAME AS THE PLAYER SEES IT, at full resolution, without taking anyone's window
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { chromium } from '@playwright/test';
@@ -152,8 +152,9 @@ async function steps(page, report) {
     } else if (step.allocations) {
       const c = await session();
       await c.send('HeapProfiler.enable');
-      // The objects already collected kept in the profile: what was allocated, not what survived (CDP HeapProfiler.startSampling).
-      await c.send('HeapProfiler.startSampling', { samplingInterval: 16384, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
+      // The objects already collected kept in the profile (what was allocated), or with `live` only what survived (CDP HeapProfiler.startSampling).
+      const collected = !step.live;
+      await c.send('HeapProfiler.startSampling', { samplingInterval: 16384, includeObjectsCollectedByMajorGC: collected, includeObjectsCollectedByMinorGC: collected });
       sampling = { name: step.allocations, t0: Date.now() };
     } else if (step.allocationsEnd) {
       if (!sampling) throw new Error('"allocationsEnd" with no "allocations" before it');
@@ -188,6 +189,18 @@ async function steps(page, report) {
     } else if (step.gc) {
       const c = await session();
       await c.send('HeapProfiler.collectGarbage');
+    } else if (step.snapshot) {
+      // The page's heap written whole (DevTools > Memory reads it), streamed in chunks (CDP HeapProfiler.takeHeapSnapshot).
+      const c = await session();
+      const file = join(out, `${String(i).padStart(2, '0')}-${step.snapshot}.heapsnapshot`);
+      const stream = createWriteStream(file);
+      const write = ({ chunk }) => { stream.write(chunk); };
+      c.on('HeapProfiler.addHeapSnapshotChunk', write);
+      await c.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false, captureNumericValue: false });
+      c.off('HeapProfiler.addHeapSnapshotChunk', write);
+      await new Promise((done) => stream.end(done));
+      line.file = file;
+      console.log(`snapshot: ${file}`);
     }
     else if (step.wait !== undefined) await page.waitForTimeout(step.wait);
     else if (step.frames !== undefined) await frames(step.frames);
