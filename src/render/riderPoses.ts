@@ -424,9 +424,6 @@ export const NO_HELMET: ReadonlySet<string> = new Set([
   'female_15',
 ]);
 
-/** The largest a helmet may be across any axis, metres. */
-export const HELMET_MAX = 0.405;
-
 /** Segments round a helmet shell: its flat facets sit this close to the true ellipsoid. */
 export const HELMET_SEGMENTS = { width: 24, height: 16 } as const;
 

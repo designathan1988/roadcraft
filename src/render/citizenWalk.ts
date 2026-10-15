@@ -410,11 +410,6 @@ function bytes(base64: string): ArrayBuffer {
   return out.buffer;
 }
 
-/** Decodes both libraries, as fetched (`loadRocketboxClips`) or read from disk (tests). */
-export function decodeRocketboxLibrary(male: unknown, female: unknown): RocketboxLibrary {
-  return { male: decode(male as LibraryFile, WALKS.male), female: decode(female as LibraryFile, WALKS.female) };
-}
-
 function decode(file: LibraryFile, walk: WalkFile): Record<LibraryClipName, LibraryClip> {
   const out = {} as Record<LibraryClipName, LibraryClip>;
   const bones = file.bones.length;

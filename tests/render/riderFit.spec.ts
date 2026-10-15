@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Matrix4, Vector3, type Object3D } from 'three';
 import {
-  BIKE_FIT, HELMET_MAX, HELMET_SEGMENTS, MOTO_FIT, NO_HELMET, RIDER_CLIPS, STEER_FULL, gripPoint, headPoints, helmetShape, pedalPoint,
+  BIKE_FIT, HELMET_SEGMENTS, MOTO_FIT, NO_HELMET, RIDER_CLIPS, STEER_FULL, gripPoint, headPoints, helmetShape, pedalPoint,
   type RiderClipKey, type TwoWheelerFit,
 } from '@render/riderPoses';
 import { CROWD } from '@render/citizenCasting';
@@ -24,6 +24,9 @@ import { bonePosition, citizenRig } from './support/citizenRig';
  * exactly as the renderer bakes it, in node, and measures on the real
  * skeleton and mesh.
  */
+
+/** The largest a helmet may be across any axis, metres. */
+const HELMET_MAX = 0.405;
 
 // Every body the casting may put on a two-wheeler.
 const ADULTS = CROWD.filter((m) => m.ageBand !== 'child' && m.rides !== false).map((m) => m.id);

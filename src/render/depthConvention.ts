@@ -86,19 +86,3 @@ export function pullTowardEye(material: Material, slope: number, steps: number):
     material.polygonOffsetUnits = renderer.capabilities.reversedDepthBuffer ? units : -units;
   };
 }
-
-/**
- * Whether a material is drawn pulled towards the eye in both terms by a
- * renderer whose depth buffer is `reversed` or not, as three hands its offset
- * to WebGL (the factor negated under the reversed buffer).
- */
-export function pulledTowardEye(material: Material, reversed: boolean): boolean {
-  if (!material.polygonOffset) return false;
-  const kept = material.polygonOffsetUnits;
-  const owner: DepthOwner = { capabilities: { reversedDepthBuffer: reversed } };
-  (material.onBeforeRender as (renderer: DepthOwner) => void)(owner);
-  const units = material.polygonOffsetUnits;
-  material.polygonOffsetUnits = kept;
-  const factor = reversed ? -material.polygonOffsetFactor : material.polygonOffsetFactor;
-  return reversed ? factor > 0 && units > 0 : factor < 0 && units < 0;
-}

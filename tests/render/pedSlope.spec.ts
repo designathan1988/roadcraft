@@ -5,7 +5,7 @@ import { buildRoadElevation } from '@world/elevation';
 import { FOOTWAY_RISE, roadType, sidewalkHalf } from '@world/roadTypes';
 import { sampleTerrainHeight } from '@world/terrain';
 import { m } from '@world/units';
-import { groundGradient, shearMatrix, shearedHeight } from '@render/groundShear';
+import { groundGradient, shearMatrix, type Gradient } from '@render/groundShear';
 import { buildInspectionMap } from '../fixtures/inspectionMap';
 
 /**
@@ -18,6 +18,10 @@ import { buildInspectionMap } from '../fixtures/inspectionMap';
 const TOLERANCE = m(0.01);
 const HALF_STRIDE = m(0.38);
 const HIP = m(0.12);
+
+/** Height a point of the body at world (x, y), level at `h0` over (x0, y0), is sheared to. */
+const shearedHeight = (g: Gradient, x0: number, y0: number, h0: number, x: number, y: number): number =>
+  h0 + g.gx * (x - x0) + g.gy * (y - y0);
 
 describe('pedestrian feet on a slope', () => {
   const map = buildInspectionMap();

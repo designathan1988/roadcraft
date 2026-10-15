@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Box3 } from 'three';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
-import { buildVehicleModel } from '@render/vehicleModels';
+import { buildCarModel } from '@render/carBody';
 import { vehicleLook, windowPane } from '@render/agents';
 
 /**
@@ -15,7 +15,7 @@ describe('car windows', () => {
   it('lower into the door, never out of it', () => {
     for (const a of ARCHETYPES) {
       if (a.shape !== 'car') continue;
-      const model = buildVehicleModel(a);
+      const model = buildCarModel(a);
       for (const door of model.doors) {
         if (door.kind !== 'hinge') continue;
         const shut = new Box3().setFromBufferAttribute(door.glass.getAttribute('position') as never);

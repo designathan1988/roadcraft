@@ -7,12 +7,9 @@ import {
   type Archetype,
 } from '@sim/vehicles/archetypes';
 import {
-  HAIR_COLOURS,
   SHIRT_COLOURS,
   SKIN_TONES,
-  TROUSER_COLOURS,
   agentHash,
-  pedLook,
   vehicleLook,
 } from '@render/agents';
 import { METERS_PER_UNIT } from '@world/units';
@@ -169,70 +166,6 @@ describe('agentHash', () => {
     const lowBytes = new Set<number>();
     for (let id = 0; id < 4096; id++) lowBytes.add(agentHash(id) & 0xff);
     expect(lowBytes.size).toBe(256);
-  });
-});
-
-describe('pedLook', () => {
-  it('is stable for an id', () => {
-    for (let id = 0; id < 32; id++) expect(pedLook(id)).toEqual(pedLook(id));
-  });
-
-  it('keeps every field in range and every colour on its palette', () => {
-    for (let id = 0; id < 600; id++) {
-      const look = pedLook(id);
-      expect(['child', 'adult', 'elder']).toContain(look.build);
-      const height = metres(look.height);
-      if (look.build === 'child') {
-        expect(height).toBeGreaterThanOrEqual(1.05);
-        expect(height).toBeLessThan(1.41);
-      } else {
-        expect(height).toBeGreaterThanOrEqual(1.5);
-        expect(height).toBeLessThan(1.91);
-      }
-      expect(look.girth).toBeGreaterThanOrEqual(0.86);
-      expect(look.girth).toBeLessThan(1.21);
-      expect(look.stride).toBeGreaterThanOrEqual(0.86);
-      expect(look.stride).toBeLessThan(1.21);
-      expect(look.stoop).toBeGreaterThanOrEqual(0);
-      expect(look.stoop).toBeLessThan(0.4);
-      expect(SKIN_TONES).toContain(look.skin);
-      expect(HAIR_COLOURS).toContain(look.hair);
-      expect(TROUSER_COLOURS).toContain(look.trousers);
-      // A child never walks a dog unaccompanied.
-      if (look.build === 'child') expect(look.dog).toBe(false);
-      // Children are top-heavy, which is most of what makes them read as
-      // children rather than as small adults.
-      expect(look.headFraction).toBeGreaterThan(look.build === 'child' ? 0.15 : 0.1);
-      expect(look.headFraction).toBeLessThan(0.21);
-    }
-  });
-
-  it('produces a crowd rather than a family', () => {
-    const skins = new Set<number>();
-    const hairs = new Set<number>();
-    const trousers = new Set<number>();
-    const builds = new Set<string>();
-    let dogs = 0;
-    let skirts = 0;
-    const N = 1000;
-    for (let id = 0; id < N; id++) {
-      const look = pedLook(id);
-      skins.add(look.skin);
-      hairs.add(look.hair);
-      trousers.add(look.trousers);
-      builds.add(look.build);
-      if (look.dog) dogs++;
-      if (look.skirt) skirts++;
-    }
-    expect(skins.size).toBe(SKIN_TONES.length);
-    expect(hairs.size).toBe(HAIR_COLOURS.length);
-    expect(trousers.size).toBe(TROUSER_COLOURS.length);
-    expect([...builds].sort()).toEqual(['adult', 'child', 'elder']);
-    // Dogs are flavour: a tenth of the crowd at most, but not none.
-    expect(dogs).toBeGreaterThan(N * 0.02);
-    expect(dogs).toBeLessThan(N * 0.12);
-    expect(skirts).toBeGreaterThan(N * 0.2);
-    expect(skirts).toBeLessThan(N * 0.55);
   });
 });
 

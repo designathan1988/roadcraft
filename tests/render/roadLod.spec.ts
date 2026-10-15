@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { MeshBasicMaterial, type BufferAttribute, type Mesh } from 'three';
 import { describe, expect, it } from 'vitest';
 
-import { COARSE_ERROR, coarseArrays } from '@render/mesh/roadLod';
+import { coarseArrays } from '@render/mesh/roadLod';
+import { COARSE_ERROR } from '@render/mesh/roadLodPure';
 import { FAR_MARGIN, makeFar, makeNear, updateRoadLevels } from '@render/mesh/roadResidency';
 import { attachFarLevel, cloneBlock, mergeTiles } from '@render/mesh/surfaceTiles';
 import type { Tile } from '@render/mesh/tileMesh';

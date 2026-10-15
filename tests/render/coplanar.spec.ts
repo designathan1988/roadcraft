@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { BufferGeometry } from 'three';
+import type { BufferGeometry, Material } from 'three';
 import { emitChunk } from '@render/buildings/buildingMesh';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
-import { pulledTowardEye } from '@render/depthConvention';
 import { m } from '@world/units';
 import type { Building } from '@world/buildings/types';
 import { growCity } from '../world/cityAudit';
@@ -181,6 +180,25 @@ function facesOf(b: Building, kit: ReturnType<typeof createBuildingKit>): Face[]
     for (let k = 0; k < batch.count; k++) facesOfGeometry(kit.geometry[kind], kind, batch.matrices.subarray(k * 16, k * 16 + 16), faces);
   }
   return faces;
+}
+
+/** What three hands a draw as the renderer (`depthConvention.ts`). */
+interface DepthOwner { readonly capabilities: { readonly reversedDepthBuffer: boolean } }
+
+/**
+ * Whether a material is drawn pulled towards the eye in both terms by a
+ * renderer whose depth buffer is `reversed` or not, as three hands its offset
+ * to WebGL (the factor negated under the reversed buffer).
+ */
+function pulledTowardEye(material: Material, reversed: boolean): boolean {
+  if (!material.polygonOffset) return false;
+  const kept = material.polygonOffsetUnits;
+  const owner: DepthOwner = { capabilities: { reversedDepthBuffer: reversed } };
+  (material.onBeforeRender as (renderer: DepthOwner) => void)(owner);
+  const units = material.polygonOffsetUnits;
+  material.polygonOffsetUnits = kept;
+  const factor = reversed ? -material.polygonOffsetFactor : material.polygonOffsetFactor;
+  return reversed ? factor > 0 && units > 0 : factor < 0 && units < 0;
 }
 
 describe('building surfaces', () => {

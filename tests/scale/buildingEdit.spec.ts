@@ -8,7 +8,7 @@ import { createBuildingLayer } from '@render/buildings/layer';
 import { beginFrameWork } from '@core/frameWork';
 import { m } from '@world/units';
 import { type DerivedChangeKind, journalWork } from '@world/changes';
-import { GroundDependant, type GroundRecord, type Rect } from '@render/groundChanges';
+import type { Area, GroundRecord, Rect } from '@render/groundChanges';
 import { Network } from '@world/network';
 import { SimWorld } from '@sim/world';
 import { collectBays } from '@sim/agents/parking';
@@ -92,6 +92,25 @@ function groundSince(doc: RoadDoc): GroundSince {
       return entries.flatMap((e) => e.rects!);
     },
   };
+}
+
+/**
+ * A thing drawn on the ground: built again only when its own key changes or
+ * the ground changes under its area. `stale` says whether to build it now,
+ * and takes the build as done when it says so.
+ */
+class GroundDependant {
+  private key: string | null = null;
+  private seen = -1;
+
+  constructor(private readonly changes: GroundRecord) {}
+
+  stale(key: string, area: Area): boolean {
+    if (key === this.key && !this.changes.touches(this.seen, area)) return false;
+    this.key = key;
+    this.seen = this.changes.version;
+    return true;
+  }
 }
 
 /** The box a building's bank reaches, as the renderer's `bankBox` (a square round it here). */

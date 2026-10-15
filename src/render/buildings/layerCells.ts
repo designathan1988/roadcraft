@@ -6,7 +6,7 @@ import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { footprintRects, solidFootprints, storedBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
-import type { BuildingChunk, BuildingMeshes } from './buildingMesh';
+import type { BuildingMeshes } from './buildingMesh';
 import type { CellEntry } from './chunk';
 import { PART_KINDS, type PartKind } from './kit';
 
@@ -81,18 +81,6 @@ export function watchedCells(told: (key: string, has: boolean) => void): CellCac
       super.clear();
     }
   })();
-}
-
-/** The buildings' chunks by cell, in list order. */
-export function chunksByCell(buildings: readonly Building[], chunkOf: (b: Building) => BuildingChunk, cellSize: number): Map<string, BuildingChunk[]> {
-  const byCell = new Map<string, BuildingChunk[]>();
-  for (const b of buildings) {
-    const key = `${Math.floor(b.x / cellSize)},${Math.floor(b.y / cellSize)}`;
-    const list = byCell.get(key);
-    if (list) list.push(chunkOf(b));
-    else byCell.set(key, [chunkOf(b)]);
-  }
-  return byCell;
 }
 
 /** A group of the cells in `cache` (the coarse batches, or the detail ones): its triangles theirs, disposing it lets go of the group only. */

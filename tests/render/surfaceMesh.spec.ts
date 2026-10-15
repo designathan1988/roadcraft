@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MeshBasicMaterial } from 'three';
 
 import type { MultiPoly } from '@core/clipper';
-import { buildSurfaceMesh } from '@render/mesh/surfaceMesh';
+import { buildSurfaceMesh } from './support/surfaceMesh';
 
 /**
  * The mesh builder's contract, stated as tests:

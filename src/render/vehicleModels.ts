@@ -19,7 +19,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Archetype } from '@sim/vehicles/archetypes';
 import { m } from '@world/units';
 import { BIKE_FIT, CAB_WHEEL, MOTO_FIT, gripPoint, type TwoWheelerFit, type WheelSpec } from './riderPoses';
-import { UPRIGHT_CUSHION_REACH, buildCarModel } from './carBody';
+import { UPRIGHT_CUSHION_REACH } from './carBody';
 import { CabinParts, type InteriorSolid } from './interiorSolids';
 
 /**
@@ -163,16 +163,6 @@ export function seatFitScale(seat: SeatModel): number {
     (metres(seat.hipY - seat.floor)) / e.bottom,
     metres(seat.legroom) / e.forward,
     metres(seat.sideRoom) / e.half);
-}
-
-/**
- * The largest size, metres per metre, a body is drawn at in this seat
- * (`agents.ts`): a car seat shrinks a tall person to fit (`seatFitScale`); an
- * upright cab or bus seat draws everybody at the size its pose was solved at,
- * 1, the feet put on the floor and the hands on the wheel by the pose itself.
- */
-export function occupantScale(seat: SeatModel): number {
-  return seat.pose === 'car' ? seatFitScale(seat) : 1;
 }
 
 /** Where a steering wheel sits and how it is inclined, in the vehicle frame. */
@@ -553,15 +543,6 @@ function steeringWheel(radius: number): BufferGeometry {
 }
 
 // ------------------------------------------------------------------ cars
-
-/**
- * A car of the class, in its own style (`carBody.ts`, where cars are built).
- * The simulation's sedan and SUV may also be drawn as an estate or a pick-up
- * (`carBody.carStyleOf`); this is the class's own body.
- */
-export function buildVehicleModel(a: Archetype): VehicleModel {
-  return buildCarModel(a);
-}
 
 /** Where a headrest goes for a seat reclined by `recline`. */
 function headrestAt(hipX: number, hipY: number, recline: number): { x: number; y: number } {

@@ -4,7 +4,6 @@ import {
   Color,
   DodecahedronGeometry,
   IcosahedronGeometry,
-  InstancedMesh,
   Matrix4,
   MeshStandardMaterial,
   Quaternion,
@@ -80,11 +79,6 @@ export interface GroundCoverKit {
 
 /** The forest's sway: the crown more than the trunk, as the garden trees. */
 const FOREST_WIND: WindResponse = { sway: 0.045, flutter: 0.009 };
-
-export interface GroundCover {
-  readonly meshes: readonly InstancedMesh[];
-  dispose(): void;
-}
 
 const ROCK_VARIANTS = 5;
 const SCRUB_VARIANTS = 4;
@@ -307,79 +301,9 @@ const COVER_UP = new Vector3(0, 1, 0);
 const COVER_SIDE = new Vector3(1, 0, 0);
 const COVER_SCRATCH = { position: new Vector3(), rotation: new Quaternion(), lean: new Quaternion(), scale: new Vector3() };
 
-function instanced(
-  list: readonly CoverPlacement[],
-  geometries: readonly BufferGeometry[],
-  material: MeshStandardMaterial,
-  name: string,
-  tint: (item: CoverPlacement, out: Color) => Color,
-  sink: number,
-  tilt: number,
-  upright = false,
-): InstancedMesh[] {
-  const byVariant: CoverPlacement[][] = Array.from({ length: geometries.length }, () => []);
-  for (const item of list) byVariant[Math.min(byVariant.length - 1, Math.floor(item.seed * byVariant.length))]!.push(item);
-  const meshes: InstancedMesh[] = [];
-  const matrix = new Matrix4();
-  const colour = new Color();
-  byVariant.forEach((items, k) => {
-    if (items.length === 0) return;
-    const mesh = new InstancedMesh(geometries[k]!, material, items.length);
-    mesh.name = name;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    items.forEach((item, i) => {
-      coverMatrixInto(item, sink, tilt, upright, matrix);
-      mesh.setMatrixAt(i, matrix);
-      mesh.setColorAt(i, tint(item, colour));
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.computeBoundingSphere();
-    meshes.push(mesh);
-  });
-  return meshes;
-}
-
 /** A tree's tint: its own colour is in its vertices; this only varies it a little. */
 export function treeTint(item: CoverPlacement, out: Color): Color {
   const seed = item.seed;
   const t = 0.86 + ((seed * 3.77) % 1) * 0.28;
   return out.setRGB(t * (0.97 + ((seed * 1.3) % 1) * 0.06), t, t * 0.96);
-}
-
-export function buildGroundCover(
-  rocks: readonly CoverPlacement[],
-  scrub: readonly CoverPlacement[],
-  kit: GroundCoverKit,
-  trees: readonly TreePlacement[] = [],
-): GroundCover {
-  const forest: InstancedMesh[] = [];
-  for (const species of FOREST_SPECIES) {
-    const ofSpecies = trees.filter((tree) => tree.species === species);
-    const models = kit.trees[species];
-    // Its size is its height; it stands straight (`upright`).
-    const bodies = instanced(ofSpecies, models.map((model) => model.body), kit.treeMaterial, 'forest', treeTint, 0, 0.05, true);
-    // Its shadow sways with it (the forest's wind in the depth pass too).
-    for (const mesh of bodies) mesh.customDepthMaterial = kit.treeDepth;
-    forest.push(...bodies);
-    if (models.every((model) => model.cards)) {
-      // The foliage cards, on the same placements; the crown's heart throws the shadow.
-      const cards = instanced(ofSpecies, models.map((model) => model.cards!), kit.cardMaterial, 'forest-cards', treeTint, 0, 0.05, true);
-      for (const mesh of cards) { mesh.castShadow = false; mesh.receiveShadow = false; }
-      forest.push(...cards);
-    }
-  }
-  const meshes = [
-    // A stone sunk by a fifth of its height, so it grows out of the ground.
-    ...instanced(rocks, kit.rocks, kit.rockMaterial, 'rocks', rockTint, 0.12, 0.35),
-    ...instanced(scrub, kit.scrub, kit.scrubMaterial, 'scrub', scrubTint, 0.05, 0.12),
-    ...forest,
-  ];
-  return {
-    meshes,
-    dispose() {
-      for (const mesh of meshes) mesh.dispose();
-    },
-  };
 }
