@@ -61,6 +61,8 @@ export class JunctionTurns {
   private readonly made = new Map<string, ChosenTurn>();
   /** Whether a turn of this build was left to be chosen off the page (`TurnPlan`): its junction is built again once chosen. */
   provisional = false;
+  /** How many turns this build left to be chosen off the page (`defer`): a movement that left one is shaped again once chosen. */
+  deferred = 0;
 
   /**
    * `before`: the same junction's turns of the build before, read where a movement is unchanged.
@@ -96,6 +98,7 @@ export class JunctionTurns {
       if (!plan.surfaces.has(made.surfaceKey)) plan.surfaces.set(made.surfaceKey, surface());
     }
     this.provisional = true;
+    this.deferred++;
     if (this.node !== null) plan.provisional.set(this.node, this);
   }
 

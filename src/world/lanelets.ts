@@ -13,7 +13,7 @@ import { linksDigest, linksOf } from './roads/connectors';
 import { orientedPolyline } from './geometry';
 import { type ApproachGroup, computeApproachGroups } from './approachGroups';
 import { TUNNELS_DRAWN } from './structures';
-import { JunctionSurface, bulbTurnPath, medianUturnPath, turnPath } from './turnPaths';
+import { JunctionSurface, type TurnPathResult, bulbTurnPath, medianUturnPath, turnPath } from './turnPaths';
 import { JunctionTurns, type TurnPlan } from './junctionTurns';
 import { BULB_TURN_RADIUS } from './junction/bulb';
 import type { BodyClass } from './conflictPoints';
@@ -113,6 +113,20 @@ export interface JunctionTopology {
   readonly signalised: boolean;
   /** Explicit policy copied from the authoring node when available. */
   readonly control?: JunctionControl;
+}
+
+/**
+ * A junction built on turns still to be chosen off the page (`TurnPlan`), kept until they are
+ * (`LaneletGraph.redoProvisional`): what its cache entry is made of, and each movement that stood a turn
+ * in, with how to shape it again.
+ */
+interface PendingJunction {
+  readonly key: string;
+  readonly turns: JunctionTurns;
+  readonly groups: readonly ApproachGroup[];
+  readonly signalised: boolean;
+  readonly connectors: readonly ConnectorId[];
+  readonly reshape: readonly { readonly id: ConnectorId; again(): TurnPathResult }[];
 }
 
 /** What one junction built, kept between builds (`buildJunctions`). */
@@ -259,8 +273,27 @@ export class LaneletGraph {
    * junction's were worked out again, the map's for one road.
    */
   update(doc: RoadDoc, net: Network): GraphChange | null {
+    const steps = this.updateSteps(doc, net);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
+
+  /**
+   * `update` as steps (`SimWorld.prepareVehicleTopology`): a graph built whole goes through `buildSteps`
+   * as the incremental path goes through its generator, so it is one more of the preparation's steps and
+   * never one call the generator cannot see into. DO NOT read this as slicing: `TopologyCatchUp` runs
+   * every plain step in the frame it starts, and only `WAITING` (workers busy) ends a frame.
+   */
+  *updateSteps(doc: RoadDoc, net: Network): Generator<void, GraphChange | null, void> {
     const delta = this.netState === null || this.lanelets.size === 0 ? null : net.changesSince(this.netState);
-    if (delta === null) { this.build(doc, net); return null; }
+    if (delta === null) {
+      // Not brought up to any state until the whole build is done: one left half way is built whole again.
+      this.netState = null;
+      yield* this.buildSteps(doc, net);
+      this.netState = net.state;
+      return null;
+    }
     this.netState = net.state;
     if (delta.segments.size === 0 && delta.nodes.size === 0) { this.revision = net.revision; return { junctions: new Set(), lanelets: new Set(), segments: new Set() }; }
     // The segments to build again: those changed, and every segment meeting a node that changed (its
@@ -350,6 +383,11 @@ export class LaneletGraph {
     if (!plan) return;
     plan.recording = false;
     for (const [nodeId, turns] of [...plan.provisional].sort((a, b) => a[0] - b[0])) {
+      const pending = this.pending.get(nodeId);
+      if (pending && pending.turns === turns && this.junctions.has(nodeId)) {
+        this.reshape(nodeId, pending);
+        continue;
+      }
       for (const cid of this.junctions.get(nodeId)?.connectors ?? []) {
         const connector = this.connectors.get(cid);
         if (connector) drop(this.exits, connector.fromLane, cid);
@@ -360,9 +398,37 @@ export class LaneletGraph {
       const node = doc.node(nodeId);
       if (node) this.buildJunction(doc, net, nodeId, node, this.junctionCache, this.junctionCache, () => ({ turns }));
     }
+    this.pending.clear();
     this.siblings.clear();
     this.changes.clear();
     this.turnPlan = null;
+  }
+
+  /** The junctions built on turns still to be chosen off the page, by node (`buildJunction`, `redoProvisional`). */
+  private readonly pending = new Map<NodeId, PendingJunction>();
+
+  /**
+   * A junction built on turns still to be chosen, finished with the turns chosen: only the movements
+   * that stood one in are shaped again (`turnPath`, now reading the plan's answers), each lanelet and
+   * connector the one `buildJunction` makes with them, and the junction kept as it keeps one. DO NOT
+   * build the whole junction again for its turns (its surface, its key, every movement): the second
+   * build of every junction of a generated city was 0.3 s of a frame on the page (2026-10-15).
+   */
+  private reshape(nodeId: NodeId, pending: PendingJunction): void {
+    for (const { id, again } of pending.reshape) {
+      const { path, maxBodyClass } = again();
+      const lanelet = this.lanelets.get(id)!, connector = this.connectors.get(id)!;
+      this.lanelets.set(id, { ...lanelet, centre: path, length: path.length });
+      this.connectors.set(id, { ...connector, length: path.length, maxBodyClass });
+    }
+    this.junctionCache.set(pending.key, {
+      node: nodeId,
+      turns: pending.turns.settle(),
+      groups: pending.groups,
+      signalised: pending.signalised,
+      connectors: pending.connectors.map((id) => this.connectors.get(id)!),
+      lanelets: pending.connectors.map((id) => this.lanelets.get(id)!),
+    });
   }
 
   /**
@@ -650,6 +716,8 @@ export class LaneletGraph {
     for (const g of groups) for (const s of g.segments) groupBySegment.set(s, g.id);
 
     const connectorIds: ConnectorId[] = [];
+    /** The movements that stood a turn in (`turns.defer`), shaped again once it is chosen (`reshape`). */
+    const reshape: { id: ConnectorId; again(): TurnPathResult }[] = [];
     const road = carriedPair(doc, nodeId);
     // The turns this junction chose before: a movement whose geometry did not move keeps its turn.
     const turns = new JunctionTurns(before(nodeId)?.turns ?? null, this.turnPlan, nodeId);
@@ -663,14 +731,17 @@ export class LaneletGraph {
         .map((id) => this.lanelets.get(id))
         .filter((l): l is Lanelet => !!l && l.id !== inId);
       const inCentre = inLane.centre, outCentre = outLane.centre;
-      const turnResult = bulb
+      const deferred = turns.deferred;
+      const shape = (): TurnPathResult => (bulb
         ? bulbTurnPath(inCentre, outCentre, surfaceOf(), { x: node.x, y: node.y }, BULB_TURN_RADIUS)
         : node.uturn === inLane.segment && turn === 'uturn' && node.incident.length === 2
           ? medianUturnPath(inCentre, outCentre, surfaceOf())
           : turnPath(inCentre, outCentre, surfaceOf(), waiting, {
             fromRoadEnd: inLane.from !== undefined && doc.mapEdge(inLane.from),
             toRoadEnd: outLane.to !== undefined && doc.mapEdge(outLane.to),
-          }, turns);
+          }, turns));
+      const turnResult = shape();
+      if (turns.deferred !== deferred) reshape.push({ id: cid, again: shape });
       const path = turnResult.path;
       const lanelet: Lanelet = {
         id: cid,
@@ -824,9 +895,12 @@ export class LaneletGraph {
       signalised,
       control: node.control,
     });
-    // A junction standing on turns still to be chosen off the page is not kept: built again with them
+    // A junction standing on turns still to be chosen off the page is not kept: finished with them
     // (`redoProvisional`), and a later build must not hand back its stand-ins.
-    if (turns.provisional) return;
+    if (turns.provisional) {
+      this.pending.set(nodeId, { key, turns, groups, signalised, connectors: connectorIds, reshape });
+      return;
+    }
     next.set(key, {
       node: nodeId,
       turns: turns.settle(),

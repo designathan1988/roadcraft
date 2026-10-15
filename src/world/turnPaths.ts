@@ -53,8 +53,9 @@ interface Area {
   readonly box: Box;
   readonly hashA: number;
   readonly hashB: number;
-  /** Its edges by band (`core/polygonBands.ts`), made the first time a point is tested against it. */
+  /** Its edges by band (`core/polygonBands.ts`), made the first time a point is tested against it; its flat x, y list, the first time a worker needs it (`flatRings`). */
   bands: PolygonBands | null;
+  flat: Float64Array | null;
 }
 
 /**
@@ -77,7 +78,7 @@ function areaOf(points: Poly): Area {
     box.minY = Math.min(box.minY, p.y); box.maxY = Math.max(box.maxY, p.y);
     digest.point(p);
   }
-  const area: Area = { poly: points, box, hashA: digest.a, hashB: digest.b, bands: null };
+  const area: Area = { poly: points, box, hashA: digest.a, hashB: digest.b, bands: null, flat: null };
   areas.set(points, area);
   return area;
 }
@@ -95,7 +96,6 @@ function surfaceKey(centre: Vec2, areas: readonly Area[]): string {
   for (const area of areas) digest.mix(area.hashA, area.hashB);
   return digest.value();
 }
-const flat = (poly: Poly): Float64Array => Float64Array.from(poly.flatMap((p) => [p.x, p.y]));
 const unflat = (xy: Float64Array): Vec2[] => Array.from({ length: xy.length / 2 }, (_, i) => ({ x: xy[i * 2]!, y: xy[i * 2 + 1]! }));
 
 /** The drivable surface around one node: its junction plate and its legs. */
@@ -169,9 +169,9 @@ export class JunctionSurface {
     this.key = surfaceKey(this.centre, this.areas);
   }
 
-  /** Its rings as flat x, y lists, in order: what a worker builds the same surface from. */
+  /** Its rings as flat x, y lists, in order: what a worker builds the same surface from. Each kept with its ring (`areaOf`): DO NOT flatten it per junction, a third of a city's graph build (2026-10-15). */
   flatRings(): Float64Array[] {
-    return this.areas.map((a) => flat(a.poly));
+    return this.areas.map((a) => (a.flat ??= Float64Array.from({ length: a.poly.length * 2 }, (_, i) => (i % 2 ? a.poly[i >> 1]!.y : a.poly[i >> 1]!.x))));
   }
 
   /**
