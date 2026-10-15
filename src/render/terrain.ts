@@ -23,7 +23,6 @@ import {
   SRGBColorSpace,
   Sphere,
   Vector3,
-  Vector4,
   type Material,
   type Object3D,
   type Texture,
@@ -55,7 +54,6 @@ import { bakeSurface, fbm, makeNoise, type SurfaceBake, type SurfaceRecipe } fro
 import { DETAIL_GLSL, detailSwitch, detailTextures } from './mesh/detailLayer';
 import { WATER_DEPTH_ATTRIBUTE, WATER_FLOW_ATTRIBUTE, createWaterSurface, type WaterLook } from './water';
 import type { GullyDab } from '@world/gullies';
-import { RELIEF_TEXTURE, createReliefBake } from './terrainRelief';
 
 /**
  * Side of one terrain plate, in world units: the map is laid in square plates
@@ -143,14 +141,11 @@ export interface TerrainSurface {
    */
   setSun(direction: { readonly x: number; readonly y: number; readonly z: number }): void;
   /**
-   * Bakes the fine relief the light reads (`terrainRelief.ts`) when the land
-   * has changed since - once a stroke is let go, as the water is.
-   * `keepWindow`: no ground has the focus (the view too far out), so a close
-   * window this ground holds is kept for the view coming back.
+   * Once a frame, after `focus`: the map's far woods (`flatAtlas.ts`,
+   * `farForest.ts`). A plate of ground has nothing to do here: the fine relief
+   * it baked (`terrainRelief.ts`, removed) was read by nothing the ground draws.
    */
-  bakeRelief(renderer: WebGLRenderer, focus: { readonly x: number; readonly z: number } | null, keepWindow?: boolean): void;
-  /** The fine relief let go on the graphics card while the ground is hidden; baked again by the next \`bakeRelief\`. */
-  releaseRelief?(): void;
+  bakeRelief(renderer: WebGLRenderer, focus: { readonly x: number; readonly z: number } | null): void;
   /** How the rivers and lakes look and move: waves, foam, current (`render/water.ts` WaterLook). */
   setWaterLook(look: WaterLook): void;
   /** The gullies the player cut or wiped, and how much of the steep land carries them of itself (`world/gullies.ts`). */
@@ -583,13 +578,6 @@ export const GRASS_TONES = {
   dry: [0.41, 0.4, 0.28],
   soil: [0.36, 0.3, 0.2],
 } as const;
-/** The fields' tint factors (`macroTexture`): lush, yellowing meadow, deep green, olive. */
-export const FIELD_TINTS = {
-  lush: [0.9, 1.0, 0.9],
-  meadow: [1.24, 1.1, 0.7],
-  deep: [0.7, 0.86, 0.84],
-  olive: [1.1, 0.96, 0.76],
-} as const;
 
 export function terrainBakes(anisotropy: number): {
   grass: SurfaceBake;
@@ -864,12 +852,6 @@ function sharedLayers(key: string, textures: readonly Texture[], srgb: boolean, 
   if (!made) layersMade.set(id, made = layeredTexture(textures, srgb, anisotropy));
   return made;
 }
-const macroMade = new Map<number, DataTexture>();
-function sharedMacro(anisotropy: number): DataTexture {
-  let made = macroMade.get(anisotropy);
-  if (!made) macroMade.set(anisotropy, made = macroTexture(anisotropy));
-  return made;
-}
 
 function layeredTexture(textures: readonly Texture[], srgb: boolean, anisotropy: number): DataArrayTexture {
   const first = textures[0]!.image as { width: number; height: number };
@@ -900,51 +882,6 @@ function layeredTexture(textures: readonly Texture[], srgb: boolean, anisotropy:
   array.anisotropy = anisotropy;
   array.needsUpdate = true;
   return array;
-}
-
-/**
- * The land's colour map: a tint per region, a few hundred metres to a field,
- * stored as half its factor (0.5 = unchanged) so the shader multiplies the
- * grass by it. Domain-warped, so fields have the soft, irregular edges of
- * country seen from the air, not noise blobs.
- */
-function macroTexture(anisotropy: number): DataTexture {
-  const res = 256;
-  const fields = makeNoise(0x6d1c);
-  const warp = makeNoise(0x2b77);
-  // Tint factors: lush, yellowing meadow, deep green, olive (`FIELD_TINTS`).
-  const { lush, meadow, deep, olive } = FIELD_TINTS;
-  const data = new Uint8Array(res * res * 4);
-  for (let y = 0; y < res; y++) {
-    for (let x = 0; x < res; x++) {
-      const u = x / res;
-      const v = y / res;
-      const wx = (fbm(warp, u * 6, v * 6, 6, 3) - 0.5) * 1.6;
-      const wy = (fbm(warp, u * 6 + 17, v * 6 + 5, 6, 3) - 0.5) * 1.6;
-      const a = fbm(fields, u * 4 + wx, v * 4 + wy, 4, 4);
-      const b = fbm(fields, u * 8 + wy + 31, v * 8 + wx + 7, 8, 3);
-      const k1 = Math.min(1, Math.max(0, (a - 0.42) / 0.2));
-      const k2 = Math.min(1, Math.max(0, (b - 0.55) / 0.15));
-      const k3 = Math.min(1, Math.max(0, (0.4 - a) / 0.12));
-      const i = (y * res + x) * 4;
-      for (let c = 0; c < 3; c++) {
-        let t = lush[c]! + (meadow[c]! - lush[c]!) * k1;
-        t += (deep[c]! - t) * k2 * 0.8;
-        t += (olive[c]! - t) * k3 * 0.7;
-        data[i + c] = Math.round(Math.min(1, t / 2) * 255);
-      }
-      data[i + 3] = 255;
-    }
-  }
-  const texture = new DataTexture(data, res, res, RGBAFormat, UnsignedByteType);
-  texture.wrapS = RepeatWrapping;
-  texture.wrapT = RepeatWrapping;
-  texture.magFilter = LinearFilter;
-  texture.minFilter = LinearMipmapLinearFilter;
-  texture.generateMipmaps = true;
-  texture.anisotropy = anisotropy;
-  texture.needsUpdate = true;
-  return texture;
 }
 
 /**
@@ -1112,10 +1049,6 @@ function terrainMaterial(
   material.userData['flowerCorners'] = flowerCornerData;
   material.userData['scrubCorners'] = scrubCornerData;
   material.userData['forestCorners'] = forestCornerData;
-  // Read by the relief's bake, which carries its brightness in its blue
-  // channel: the terrain shader is at the sixteen textures a fragment shader
-  // may bind, and the relief took the macro map's place.
-  material.userData['macro'] = sharedMacro(anisotropy);
   const uniforms = {
     uPaint: { value: paint as Texture },
     uPaintRes: { value: paint.image.width },
@@ -1147,8 +1080,6 @@ function terrainMaterial(
     uSoilDetailN: { value: soilDetail.normalMap },
     uSoilDetailScale: { value: 1 / soilDetail.worldSize },
     // Set to the surface's own bake (`createTerrainSurface`).
-    uRelief: RELIEF_TEXTURE,
-    uReliefWindow: { value: new Vector4(0, 0, 1, 0) },
     // Where this plate stands in the world: its own coordinates (its grids,
     // its textures) are the world's less this.
     uTileOrigin: { value: new Vector3() },
@@ -1187,46 +1118,6 @@ function terrainMaterial(
          varying vec3 vTerrainAtlas;
          varying vec3 vTerrainNormal;
          varying float vTerrainSteep;
-         uniform sampler2DArray uRelief;
-         uniform vec4 uReliefWindow; // x, z of the close window's corner, its side, on
-         // One level of the relief round xz: its slope, its crease, its ridge
-         // and macro brightness, read across a pixel's footprint or a texel,
-         // whichever is wider, so a far view takes the mean and never shimmers.
-         // The large octaves (R) weighted by how far out the view is (wide);
-         // the small ones (A) gentler up close: at full height they are
-         // wrinkles near 45 degrees every few metres, and grassland seen at
-         // that scale only undulates.
-         float terrainReliefHeight(vec4 t, float wide) { return t.r * wide + t.a * mix(0.5, 1.0, wide); }
-         void terrainReliefLevel(vec2 uv, float layer, float span, float wide, out vec2 grad, out float crease, out vec2 rest) {
-           // A texel of the level as baked.
-           float e = max(1.0 / float(textureSize(uRelief, 0).x), 0.5 * max(fwidth(uv.x), fwidth(uv.y)));
-           vec4 t0 = texture(uRelief, vec3(uv, layer));
-           vec3 c0 = vec3(terrainReliefHeight(t0, wide), t0.gb);
-           float xp = terrainReliefHeight(texture(uRelief, vec3(uv + vec2(e, 0.0), layer)), wide);
-           float xm = terrainReliefHeight(texture(uRelief, vec3(uv - vec2(e, 0.0), layer)), wide);
-           float zp = terrainReliefHeight(texture(uRelief, vec3(uv + vec2(0.0, e), layer)), wide);
-           float zm = terrainReliefHeight(texture(uRelief, vec3(uv - vec2(0.0, e), layer)), wide);
-           float d = e * span;
-           grad = vec2(xp - xm, zp - zm) / (2.0 * d);
-           // The crease over four units at the least: read at a texel, the
-           // finest octaves' curvature drowned the gullies in speckle.
-           float ec = max(e, ${m(1.6).toFixed(6)} / span);
-           float cxp = terrainReliefHeight(texture(uRelief, vec3(uv + vec2(ec, 0.0), layer)), wide);
-           float cxm = terrainReliefHeight(texture(uRelief, vec3(uv - vec2(ec, 0.0), layer)), wide);
-           float czp = terrainReliefHeight(texture(uRelief, vec3(uv + vec2(0.0, ec), layer)), wide);
-           float czm = terrainReliefHeight(texture(uRelief, vec3(uv - vec2(0.0, ec), layer)), wide);
-           float dc = ec * span;
-           crease = (cxp + cxm + czp + czm - 4.0 * c0.r) / (dc * dc);
-           rest = c0.gb;
-         }
-         // The fine relief here (terrainRelief.ts): its slope, how much of a
-         // crease (+) or a crest (-) the point is, and the filter's ridge map.
-         vec2 terrainGrad = vec2(0.0);
-         float terrainCrease = 0.0;
-         float terrainRidge = 0.0;
-         float terrainMacro = 1.0;
-         float terrainCarved = 0.0;
-         float terrainWide = 1.0;
          uniform sampler2DArray uRockMap;
          uniform sampler2DArray uPaint;
          uniform float uPaintRes; // the array's side (\`growPaint\`)
@@ -1508,47 +1399,6 @@ function terrainMaterial(
       .replace(
         '#include <map_fragment>',
         `terrainDetailW = detailWeight(vTerrainWorld.xz);
-         {
-           // Read across a pixel's footprint or a texel, whichever is wider,
-           // so the far view takes the relief's mean and never shimmers.
-           vec2 grad;
-           float creaseAt;
-           vec2 rest;
-           // How much ground a pixel covers: the large gullies only where it
-           // is two units or more, where the flat outline cannot give them away.
-           float footprint = max(fwidth(vTerrainWorld.x), fwidth(vTerrainWorld.z));
-           // From well out only: at the usual close zoom (a pixel a unit or two)
-           // the gullies still read as folded cloth (the player, 2026-10-07:
-           // "dar uma suavizada nessa textura do chão").
-           float wide = smoothstep(${m(0.32).toFixed(6)}, ${m(1.2).toFixed(6)}, footprint);
-           terrainWide = wide;
-           terrainReliefLevel((vTerrainWorld.xz + uPaintHalf) / uPaintSize, 0.0, uPaintSize, wide, grad, creaseAt, rest);
-           // The close window's finer level (the clipmap's nested grid),
-           // blended in over the window's outer tenth. The test is on a
-           // uniform, so the reads inside keep their derivatives.
-           if (uReliefWindow.w > 0.5) {
-             vec2 wuv = (vTerrainWorld.xz - uReliefWindow.xy) / uReliefWindow.z;
-             vec2 fineGrad;
-             float fineCrease;
-             vec2 fineRest;
-             terrainReliefLevel(wuv, 1.0, uReliefWindow.z, wide, fineGrad, fineCrease, fineRest);
-             vec2 edge = min(wuv, 1.0 - wuv);
-             float fine = smoothstep(0.0, 0.1, min(edge.x, edge.y));
-             grad = mix(grad, fineGrad, fine);
-             creaseAt = mix(creaseAt, fineCrease, fine);
-             rest = mix(rest, fineRest, fine);
-           }
-           // Carved into the hillsides, the plains left smooth: over the
-           // whole map it read as crumpled paper, and a town's ground has to
-           // look level. Full from some seventeen degrees.
-           float meshSlope = length(normalize(vTerrainNormal).xz) / max(normalize(vTerrainNormal).y, 0.25);
-           float carved = smoothstep(0.06, 0.3, meshSlope);
-           terrainCarved = carved;
-           terrainGrad = grad * carved * mix(0.8, 1.0, wide);
-           terrainCrease = creaseAt * carved;
-           terrainRidge = rest.x;
-           terrainMacro = rest.y;
-         }
          // Taken here, in uniform control flow: the rock is read only where
          // rock shows, with these gradients.
          rockDpdx = dFdx(vTerrainWorld) * uRockScale;
@@ -1938,7 +1788,7 @@ function terrainMaterial(
   };
   // A changed program key forces three to compile this variant separately from
   // any other standard material in the scene.
-  material.customProgramCacheKey = () => 'terrain-splat-v32';
+  material.customProgramCacheKey = () => 'terrain-splat-v33';
   return material;
 }
 
@@ -2284,13 +2134,9 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   // The heights the mesh actually carries, one per grid corner, so
   // `renderedHeightAt` interpolates exactly the numbers that are on screen.
   const grid = new Float64Array(GRID * GRID);
-  /** The fine relief the light reads, baked from `grid` (`terrainRelief.ts`). */
-  const relief = createReliefBake(GRID, TERRAIN_CELL, TERRAIN_HALF, material.userData['macro'] as Texture);
   {
-    // The ground reads its own bake, and its grids from where it stands.
-    const own = material.userData['terrainUniforms'] as { uRelief: { value: Texture }; uReliefWindow: { value: Vector4 }; uTileOrigin: { value: Vector3 } };
-    own.uRelief = relief.texture;
-    own.uReliefWindow = relief.window;
+    // The ground reads its grids from where it stands.
+    const own = material.userData['terrainUniforms'] as { uTileOrigin: { value: Vector3 } };
     own.uTileOrigin.value.set(origin.x, 0, -origin.y);
   }
   /** The same corners before any road shaped them, so shaping is idempotent. */
@@ -3102,12 +2948,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     },
     ground,
     setSun,
-    setGullies(dabs, auto) { relief.setGullies(dabs, auto); },
+    // The gullies were drawn by the fine relief alone; it was read by nothing the ground draws (see `bakeRelief`).
+    setGullies() {},
     setWaterLook(look) { waterSurface.setLook(look); },
-    bakeRelief(renderer, focus, keepWindow = false) {
-      if (!waterStale) relief.bake(renderer, grid, focus, keepWindow);
-    },
-    releaseRelief() { relief.release(); },
+    bakeRelief() {},
     vergeMaterial,
     updatePaint,
     get ecologyPending() { return ecologyStale && !waterStale; },
@@ -3242,7 +3086,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         lastStamps = doc.terrainStamps;
         if (stroking) { waterStale = true; markWaterDirty(null); } else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
         markLand('all');
-        relief.markDirty();
         return true;
       }
 
@@ -3290,13 +3133,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         markWaterDirty(added && added.mode !== 'river' ? box : null);
       } else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
       markLand(box ? { x0: box[0], x1: box[1], y0: box[2], y1: box[3] } : 'all');
-      relief.markDirty();
       return true;
     },
     woodsBase: () => woods,
     dispose() {
       disposed = true;
-      relief.dispose();
       geometry.dispose();
       material.dispose();
       water.geometry.dispose();

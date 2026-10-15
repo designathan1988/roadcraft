@@ -417,7 +417,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 2
+      "count": 1
     }
   },
   "src/render/terrainLight.worker.ts": {
@@ -431,11 +431,6 @@
   "src/render/terrainLightPool.ts": {
     "roadcraft/no-module-state": {
       "count": 2
-    }
-  },
-  "src/render/terrainRelief.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
     }
   },
   "src/render/transit.ts": {

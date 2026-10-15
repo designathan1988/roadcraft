@@ -1,6 +1,5 @@
 {
  "compile-in-frame  src/render/renderer.ts draw  compileAsync": 1,
- "compile-in-frame  src/render/terrainRelief.ts bake  compileAsync": 1,
  "compile-in-frame  src/render/uploads.ts drainCompiles  compileAsync": 1,
  "derived-map-nested  src/actionsWiring.ts shootVehicle  for SimWorld.vehicles ⊃ ground → heightAt → sceneHeightAt → surfaceHeightAt → has: map profiles(Network.ribbons)": 1,
  "derived-map-nested  src/editor/editRules.ts overlapsAnother  for others(RoadDoc.segments) ⊃ overlappedBefore → segmentsThrough: for RoadDoc.segments": 1,
@@ -162,7 +161,6 @@
  "material-in-frame  src/render/riggedCitizens.ts load  new MeshDepthMaterial": 1,
  "material-in-frame  src/render/signs.ts newAtlas  new MeshStandardMaterial": 1,
  "material-in-frame  src/render/terrain.ts terrainMaterial  new MeshStandardMaterial": 1,
- "material-in-frame  src/render/terrainRelief.ts createReliefBake  new ShaderMaterial": 1,
  "material-in-frame  src/render/transit.ts sharedMaterial  new MeshStandardMaterial": 1,
  "material-in-frame  src/render/water.ts createWaterSurface  new MeshStandardMaterial": 1,
  "material-in-frame  src/render/wind.ts windDepthMaterial  new MeshDepthMaterial": 1,

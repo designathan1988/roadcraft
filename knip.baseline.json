@@ -99,8 +99,6 @@
  "exports src/render/terrainLightCompute.ts shapeLand",
  "exports src/render/terrainLightCompute.ts shapeReach",
  "exports src/render/terrainLightCompute.ts wholeGrid",
- "exports src/render/terrainRelief.ts RELIEF_RES",
- "exports src/render/terrainRelief.ts RELIEF_WINDOW",
  "exports src/render/transit.ts METRO_DEPTH",
  "exports src/render/transit.ts trackBoxes",
  "exports src/render/vehicleFrame.ts MAX_FRAME_PITCH",
