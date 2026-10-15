@@ -3,8 +3,7 @@ import type { Network, SegmentRibbon } from './network';
 import type { NodeId, SegmentId } from './ids';
 import type { RoadSide, RoadType } from './roadTypes';
 import { m } from './units';
-import { roadProfile, travelShift } from './roadTypes';
-import { orientedPolyline } from './geometry';
+import { travelShift } from './roadTypes';
 import { CROSSWALK_DEPTH } from './approach';
 import { carriesPedestrians } from './pedestrianAccess';
 import { BENCH_ZONE, LAMP_ZONE, MIN_THROUGH, TREE_KERB_SETBACK, TREE_PIT, sectionOf, zonesOn } from './section';
@@ -298,20 +297,20 @@ function crossingAccessesNow(net: Network): CrossingAccess[] {
   return crossingAccessesAt(net, net.doc.nodes.keys());
 }
 
-/** The crossing landings at these nodes only (`poleLines.ts` poleLinesIn: the nodes of one place). */
+/**
+ * The crossing landings at these nodes only (`poleLines.ts` poleLinesIn: the nodes of one place), in
+ * their order: each kept by the network (`Network.crossingLandingAt`). Every item of street furniture
+ * asks those of the nodes round it, and each was worked out again for every item that asked. DO NOT
+ * work a landing out here again.
+ */
 export function crossingAccessesAt(net: Network, nodes: Iterable<NodeId>): CrossingAccess[] {
   const out: CrossingAccess[] = [];
   for (const nodeId of nodes) {
     const node = net.doc.node(nodeId);
     if (!node || node.incident.length < 2) continue;
     for (const segmentId of node.incident) {
-      const crossing = net.crosswalkDistanceAt(segmentId, nodeId);
-      if (crossing <= 0) continue;
-      const segment = net.doc.requireSegment(segmentId);
-      const road = roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking);
-      const frame = orientedPolyline(net.doc, segment, nodeId).sampleAt(crossing);
-      out.push({ x: frame.p.x, y: frame.p.y, tx: frame.t.x, ty: frame.t.y,
-        across: road.width / 2 + road.sidewalk + m(0.3), structure: segment.structure });
+      const landing = net.crossingLandingAt(segmentId, nodeId);
+      if (landing) out.push(landing);
     }
   }
   return out;
