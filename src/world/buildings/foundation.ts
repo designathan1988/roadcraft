@@ -1,7 +1,7 @@
 import { steadyRatio } from '@core/scalar';
 import { containsPoint, localFootprint } from './footprints';
 import { m } from '../units';
-import { type FacadeBay, type GroundBays, GB_NX, GB_NY, GB_X, GB_Y, GB_Z, GROUND_BAY_STRIDE, facadeBays, groundBayComponent, groundBays, groundVolumes, localToWorld, volumeLift } from './geometry';
+import { type FacadeBay, type GroundBays, GB_NX, GB_NY, GB_X, GB_Y, GB_Z, GROUND_BAY_STRIDE, facadeBays, buildingFrame, frameX, frameY, groundBayComponent, groundBays, groundVolumes, volumeLift } from './geometry';
 import type { BayComponent, Building, FaceId } from './types';
 
 /**
@@ -152,6 +152,7 @@ export function sampleFootprint(b: Building, groundAt: GroundAt): FootprintGroun
   // surface, `pads.ts`) only when it has nothing else.
   const all = groundVolumes(b);
   const solid = all.filter((v) => !v.open);
+  const f = buildingFrame(b);
   for (const v of solid.length ? solid : all) {
     const lift = volumeLift(v);
     const take = (h: number): void => {
@@ -161,10 +162,7 @@ export function sampleFootprint(b: Building, groundAt: GroundAt): FootprintGroun
       levelLowest = Math.min(levelLowest, h - lift);
       levelHighest = Math.max(levelHighest, h - lift);
     };
-    for (const vertex of localFootprint(v)) {
-      const p = localToWorld(b, vertex.x, vertex.y);
-      take(groundAt(p.x, p.y));
-    }
+    for (const vertex of localFootprint(v)) take(groundAt(frameX(f, vertex.x, vertex.y), frameY(f, vertex.x, vertex.y)));
     const stepsX = Math.max(1, Math.min(24, Math.ceil(v.w / (b.module * 0.5))));
     const stepsY = Math.max(1, Math.min(24, Math.ceil(v.d / (b.module * 0.5))));
     for (let a = 0; a <= stepsX; a++) {
@@ -172,8 +170,7 @@ export function sampleFootprint(b: Building, groundAt: GroundAt): FootprintGroun
         const lx = v.x + (v.w * a) / stepsX;
         const ly = v.y + (v.d * c) / stepsY;
         if (v.outline && !containsPoint(v, { x: lx, y: ly })) continue;
-        const p = localToWorld(b, lx, ly);
-        take(groundAt(p.x, p.y));
+        take(groundAt(frameX(f, lx, ly), frameY(f, lx, ly)));
       }
     }
   }
@@ -413,6 +410,7 @@ export function floorHeight(b: Building, groundAt: GroundAt, pavedAt: PavedAt = 
 function lotFront(b: Building, pavedAt: PavedAt): number {
   if (pavedAt === NO_PAVING) return -Infinity;
   let best = -Infinity;
+  const f = buildingFrame(b);
   for (const v of b.volumes) {
     if (!v.open) continue;
     const ring = localFootprint(v);
@@ -423,8 +421,8 @@ function lotFront(b: Building, pavedAt: PavedAt): number {
       // Either side of the edge: only the outside can be a street.
       const nx = (q.y - p.y) / len, ny = -(q.x - p.x) / len;
       for (const t of [0.25, 0.5, 0.75]) for (const side of [1, -1]) {
-        const a = localToWorld(b, p.x + (q.x - p.x) * t + side * nx * m(0.6), p.y + (q.y - p.y) * t + side * ny * m(0.6));
-        const h = pavedAt(a.x, a.y);
+        const lx = p.x + (q.x - p.x) * t + side * nx * m(0.6), ly = p.y + (q.y - p.y) * t + side * ny * m(0.6);
+        const h = pavedAt(frameX(f, lx, ly), frameY(f, lx, ly));
         if (Number.isFinite(h)) best = Math.max(best, h);
       }
     }

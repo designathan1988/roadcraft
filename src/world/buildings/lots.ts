@@ -1,6 +1,6 @@
 import type { Vec2 } from '@core/vec2';
 import { m } from '../units';
-import { localToWorld, worldToLocal } from './geometry';
+import { buildingFrame, frameToLocal, frameToWorld, frameX, frameY } from './geometry';
 import type { Building, Volume } from './types';
 
 /**
@@ -30,16 +30,14 @@ const LOOK_OUT = m(0.6);
 
 export function lotSurfaces(b: Building, floor: number, pavedAt?: PavingAt): LotSurface[] {
   const out: LotSurface[] = [];
+  // The building's frame once: a lot's height is asked at every corner of the ground its bank reaches (`pads.ts`).
+  const f = buildingFrame(b);
   for (const v of b.volumes) {
     if (!v.open) continue;
     const x0 = v.x, y0 = v.y, x1 = v.x + v.w, y1 = v.y + v.d;
-    const ring = [localToWorld(b, x0, y0), localToWorld(b, x1, y0), localToWorld(b, x1, y1), localToWorld(b, x0, y1)];
+    const ring = [frameToWorld(f, x0, y0), frameToWorld(f, x1, y0), frameToWorld(f, x1, y1), frameToWorld(f, x0, y1)];
     // The street edge: the side with pavement outside it at both ends.
-    const at = (lx: number, ly: number): number => {
-      if (!pavedAt) return NaN;
-      const p = localToWorld(b, lx, ly);
-      return pavedAt(p.x, p.y);
-    };
+    const at = (lx: number, ly: number): number => (pavedAt ? pavedAt(frameX(f, lx, ly), frameY(f, lx, ly)) : NaN);
     const sides = [
       { a: at(x0 + v.w * 0.06, y0 - LOOK_OUT), b: at(x1 - v.w * 0.06, y0 - LOOK_OUT) },
       { a: at(x1 + LOOK_OUT, y0 + v.d * 0.06), b: at(x1 + LOOK_OUT, y1 - v.d * 0.06) },
@@ -47,7 +45,7 @@ export function lotSurfaces(b: Building, floor: number, pavedAt?: PavingAt): Lot
       { a: at(x0 - LOOK_OUT, y0 + v.d * 0.06), b: at(x0 - LOOK_OUT, y1 - v.d * 0.06) },
     ];
     const street = sides.findIndex((s) => Number.isFinite(s.a) && Number.isFinite(s.b));
-    const local = (x: number, y: number): Vec2 => worldToLocal(b, { x, y });
+    const local = (x: number, y: number): Vec2 => frameToLocal(f, x, y);
     // A terrace of a hillside lot is laid at its own level (cut and fill kept
     // near the natural ground), held by the retaining wall the lot planner
     // stands at its edge; one on a street still meets the street.
