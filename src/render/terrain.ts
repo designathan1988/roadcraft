@@ -2820,7 +2820,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     lightCause = diary?.version ?? 0;
     lightBusy = true;
     const sent = submitLight(lightGrid, plate, request,
-      (result) => { lightBusy = false; applyLight(result); },
+      // A plate let go meanwhile writes nothing: its array is gone.
+      (result) => { lightBusy = false; if (!disposed) applyLight(result); },
       () => { lightBusy = false; landMoved = 'all'; });
     if (sent) return;
     lightBusy = false;
@@ -3140,6 +3141,13 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       disposed = true;
       geometry.dispose();
       material.dispose();
+      // Each plate's own: its verge's material, its shore and ecology textures, its painted layers
+      // (3 to 12 MB of the graphics card). DO NOT leave them: plates come and go as the camera
+      // crosses the map (`flatAtlas.ts`), and every plate let go kept them on the card.
+      vergeMaterial.dispose();
+      (material.userData['shore'] as Texture).dispose();
+      ecologyTexture.dispose();
+      paintArray.dispose();
       water.geometry.dispose();
       waterSurface.dispose();
       groundTexture.dispose();
