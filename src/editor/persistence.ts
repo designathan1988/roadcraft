@@ -96,12 +96,7 @@ export class Persistence {
    */
   onSaveFailed: (() => void) | null = null;
 
-  /**
-   * The map's parts (`chunkedSave.ts`), wherever the browser has IndexedDB and
-   * gzip streams: each save writes what the diary says changed, never one
-   * text of the whole map. Null without them (a test, an old browser): the
-   * whole text, as before.
-   */
+  /** The map's parts (`chunkedSave.ts`): what the diary says changed, never one text of the map; null without IndexedDB (the whole text). */
   private readonly parted: PartedSaves | null;
   /** The parts the opening read the map from (`loadSessionAsync`), for `adoptLoaded`. */
   private loadedParts: readonly number[] | null = null;
@@ -110,11 +105,7 @@ export class Persistence {
     this.parted = parts ? new PartedSaves(parts, storageKey) : null;
   }
 
-  /**
-   * The document the opening just restored from the session read
-   * (`loadSessionAsync`): when that session was the map in parts, those parts
-   * are this document, and the next save writes only what changes after now.
-   */
+  /** The document just restored from `loadSessionAsync`: read from the parts, they are it, and the next save writes only what changes. */
   adoptLoaded(doc: RoadDoc): void {
     if (this.parted && this.loadedParts) this.parted.adopt(doc, this.loadedParts);
     this.loadedParts = null;
@@ -175,10 +166,8 @@ export class Persistence {
 
   saveSession(doc: RoadDoc, settings: SavedSettings): boolean {
     const generation = ++this.generation;
-    // In parts, whatever the map's size: the parts the edits since the last
-    // save reached (`chunkedSave.ts`); the small key points there.
-    // DO NOT choose by the count of buildings: below it a map of any size of
-    // roads, lots and trees was written whole, as one text, on every edit.
+    // In parts, whatever the map's size (`chunkedSave.ts`); the small key points there. DO NOT choose by
+    // the count of buildings: below it a map of any size of roads, lots and trees was one text an edit.
     if (this.parted) {
       this.writeSettings(settings);
       const key = this.storageKey, savedAt = Date.now();
@@ -261,17 +250,16 @@ export class Persistence {
         bestParts = parted.parts;
       }
     }
-    const stored = await this.store.get(this.storageKey);
-    if (stored) {
-      try {
-        const parsed: unknown = JSON.parse(stored);
-        if (isRecord(parsed) && isSavedSession(parsed)) {
-          const storedAt = isFiniteNumber(parsed.savedAt) ? parsed.savedAt : 0;
-          if (storedAt > bestAt) return { document: parsed.document, settings: this.readSettings() ?? normalizeSettings(parsed.settings) };
-        }
-      } catch { /* unreadable: the newest other copy */ }
-    }
     this.loadedParts = bestParts;
+    const stored = await this.store.get(this.storageKey);
+    if (!stored) return best;
+    try {
+      const parsed: unknown = JSON.parse(stored);
+      if (isRecord(parsed) && isSavedSession(parsed)) {
+        const storedAt = isFiniteNumber(parsed.savedAt) ? parsed.savedAt : 0;
+        if (storedAt > bestAt) { this.loadedParts = null; return { document: parsed.document, settings: this.readSettings() ?? normalizeSettings(parsed.settings) }; }
+      }
+    } catch { /* unreadable: the newest other copy */ }
     return best;
   }
 
