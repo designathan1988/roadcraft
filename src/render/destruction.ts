@@ -18,8 +18,8 @@ import { interiorFurniture } from './buildings/buildingMesh';
  * building, thrown away from the impact; then every fragment no longer joined
  * to the ground through the others falls (the chunk graph's support check), so
  * a building cut low comes down on itself. Pieces tumble, land, settle as a
- * heap of the building's own walls, roof and floors, and sink away after a
- * while. Dust rises where pieces break off and where they land.
+ * heap of the building's own walls, roof and floors, and stay there for good.
+ * Dust rises where pieces break off and where they land.
  */
 
 const GRAVITY = m(9.8);
@@ -41,7 +41,6 @@ interface Piece {
   readonly floor: number;
   falling: boolean;
   settled: boolean;
-  gone: boolean;
   /** Its ranges in the ruin's `still` mesh: (start, vertex count, material) triples. */
   readonly slots: Int32Array;
   v: Vector3;
@@ -98,7 +97,19 @@ export function createDestruction(
   const workers: Worker[] = [];
   let nextWorker = 0;
   let nextJob = 1;
-  const jobs = new Map<number, { b: Building; floor: number; materials: Material[]; hits: [number, number, number, number, Vector3 | undefined][] }>();
+  const jobs = new Map<number, { b: Building; floor: number; materials: Material[]; hits: [number, number, number, number, Vector3 | undefined][]; worker?: Worker }>();
+  /**
+   * A job that will not come back (the worker failed it, or failed): let go,
+   * the building left standing and struck again next time. DO NOT keep it:
+   * its blows piled up and the building never broke.
+   */
+  const fail = (id: number, why: string): void => {
+    const job = jobs.get(id);
+    jobs.delete(id);
+    if (!job) return;
+    if (pending.get(job.b.id) === id) pending.delete(job.b.id);
+    console.error(`[fracture] building ${job.b.id}: ${why}`);
+  };
   const pending = new Map<number, number>();
   const api: { onDown: ((id: number) => void) | null; onRuined: (() => void) | null } = { onDown: null, onRuined: null };
   const workerOf = (): Worker => {
@@ -106,7 +117,11 @@ export function createDestruction(
     if (workers.length < size) {
       const worker = new Worker(new URL('./buildings/fracture.worker.ts', import.meta.url), { type: 'module' });
       workers.push(worker);
-      worker.onmessage = (e: MessageEvent<{ id: number; still: StillData }>) => {
+      const failAll = (why: string): void => { for (const [id, job] of [...jobs]) if (job.worker === worker) fail(id, why); };
+      worker.onerror = (e) => { e.preventDefault(); failAll(e.message || 'worker error'); };
+      worker.onmessageerror = () => failAll('a message could not be read');
+      worker.onmessage = (e: MessageEvent<{ id: number; still?: StillData; error?: string }>) => {
+        if (e.data.error !== undefined || !e.data.still) { fail(e.data.id, e.data.error ?? 'no pieces'); return; }
         const job = jobs.get(e.data.id);
         jobs.delete(e.data.id);
         if (!job) return;
@@ -163,7 +178,7 @@ export function createDestruction(
       mesh.position.set(fragment.centre[0], fragment.centre[1], fragment.centre[2]);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      return { fragment, index: i, mesh, floor, falling: false, settled: false, gone: false, slots: data.slots[i] ?? new Int32Array(0), v: new Vector3(), w: new Vector3(), age: 0 };
+      return { fragment, index: i, mesh, floor, falling: false, settled: false, slots: data.slots[i] ?? new Int32Array(0), v: new Vector3(), w: new Vector3(), age: 0 };
     });
     const ruin: Ruin = { pieces, floor, still, data, standing: pieces.length };
     for (const piece of pieces) owner.set(piece, ruin);
@@ -236,8 +251,9 @@ export function createDestruction(
     }
     const { input, materials } = prepareFracture(source.chunk, source.kit, slabs, b.id * 2654435761, interiorFurniture(b, floor));
     const id = nextJob++;
-    jobs.set(id, { b, floor, materials, hits: [] });
-    workerOf().postMessage({ id, input });
+    const worker = workerOf();
+    jobs.set(id, { b, floor, materials, hits: [], worker });
+    worker.postMessage({ id, input });
     return id;
   };
 
@@ -419,20 +435,23 @@ export function createDestruction(
           }
         }
       }
-      // A ruin whose pieces are all gone is forgotten; its geometry is released.
-      for (const [id, ruin] of ruins) {
-        if (!ruin.pieces.every((p) => p.gone)) continue;
-        for (const p of ruin.pieces) if (p.mesh.geometry !== NO_GEOMETRY) p.mesh.geometry.dispose();
-        ruin.still.geometry.dispose();
-        ruins.delete(id);
-        ruined.delete(id);
-      }
+      // The rubble stays for good (the player: "não faça os escombros sumirem"):
+      // NO walk over every ruin each frame for pieces that are never gone.
     },
     dispose() {
       for (const ruin of ruins.values()) {
         for (const p of ruin.pieces) if (p.mesh.geometry !== NO_GEOMETRY) p.mesh.geometry.dispose();
         ruin.still.geometry.dispose();
       }
+      ruins.clear();
+      ruined.clear();
+      loose.length = 0;
+      queued.length = 0;
+      queuedAt = 0;
+      jobs.clear();
+      pending.clear();
+      for (const worker of workers) worker.terminate();
+      workers.length = 0;
       group.clear();
     },
   };
