@@ -28,7 +28,7 @@ export interface PostChain {
   readonly enabled: boolean;
   /** What the scene is drawn into (null: the screen): shaders are compiled ahead for it. */
   readonly target: WebGLRenderTarget | null;
-  /** Every render target the chain holds (the scene's, the composer's two, the masks, the clouds'), for the video memory count (`targetBytes.ts`). */
+  /** Every render target the chain holds (the scene's, the composer's two, the masks, the clouds', the occlusion's), for the video memory count (`targetBytes.ts`). */
   targets(): readonly WebGLRenderTarget[];
   render(delta: number): void;
   setSize(width: number, height: number, pixelRatio: number): void;
@@ -114,7 +114,7 @@ export function createPostChain(
     // A float depth buffer: the reversed Z the renderer draws with keeps its precision only in floats
     depthTexture: new DepthTexture(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), FloatType),
     // Multisampled, its depth resolved into the texture the occlusion reads (three's `resolveDepthBuffer`).
-    samples: Math.min(8, renderer.capabilities.maxSamples),
+    samples: Math.min(quality.msaa, renderer.capabilities.maxSamples),
   });
   /** DO NOT hand the composer the scene's multisampled target again: it clones it */
   const target = new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), { type: HalfFloatType, depthBuffer: false });
@@ -193,9 +193,10 @@ export function createPostChain(
       if (depth && pass.depthTexture !== depth) pass.setGBuffer(depth);
       draw(...args);
     };
-    // At half the resolution, as games do
+    // At the scene's resolution, or half of it (`QualitySettings.aoFull`): scaled up, the half one blurs every edge the occlusion lies along
     const resize = pass.setSize.bind(pass);
-    pass.setSize = (width: number, height: number) => resize(Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2)));
+    const share = quality.aoFull ? 1 : 2;
+    pass.setSize = (width: number, height: number) => resize(Math.max(1, Math.ceil(width / share)), Math.max(1, Math.ceil(height / share)));
     composer.addPass(gtao);
     // GTAO's denoise shader is the slowest program to link on a cold start.
     gtao.setGBuffer(sceneTarget.depthTexture!);
@@ -362,7 +363,8 @@ export function createPostChain(
   return {
     enabled: true,
     target: sceneTarget,
-    targets: () => [sceneTarget, composer.renderTarget1, composer.renderTarget2, ...(sharpMask ? [sharpMask] : []), ...bodiesTargets, shadowMapTarget],
+    // The occlusion's two targets too (its `normalRenderTarget` is never bound once `setGBuffer` is handed the scene's depth: no GPU memory)
+    targets: () => [sceneTarget, composer.renderTarget1, composer.renderTarget2, ...(sharpMask ? [sharpMask] : []), ...bodiesTargets, shadowMapTarget, ...(gtao ? [gtao.gtaoRenderTarget, gtao.pdRenderTarget] : [])],
     render(delta) {
       if (clouds) {
         camera.updateMatrixWorld();

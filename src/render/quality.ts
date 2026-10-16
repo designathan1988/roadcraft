@@ -12,6 +12,10 @@ export interface QualitySettings {
   readonly postProcessing: boolean;
   readonly ambientOcclusion: boolean;
   readonly smaa: boolean;
+  /** Samples of the scene's multisampled target (MSAA), as many as the GPU has at most. */
+  readonly msaa: number;
+  /** Ground-truth ambient occlusion at the scene's full resolution, its denoise too; false: at half, scaled up. */
+  readonly aoFull: boolean;
   /** AMD FidelityFX Contrast Adaptive Sharpening on the final image, 0 (off) to 1 (strongest). */
   readonly sharpen: number;
   /** Maximum anisotropic filtering taps requested for ground textures. */
@@ -58,6 +62,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     postProcessing: false,
     ambientOcclusion: false,
     smaa: false,
+    msaa: 0,
+    aoFull: false,
     sharpen: 0,
     anisotropy: 2,
     detailProps: false,
@@ -84,6 +90,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     postProcessing: false,
     ambientOcclusion: false,
     smaa: false,
+    msaa: 0,
+    aoFull: false,
     sharpen: 0,
     anisotropy: 4,
     detailProps: true,
@@ -111,6 +119,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     postProcessing: true,
     ambientOcclusion: true,
     smaa: true,
+    msaa: 8,
+    aoFull: false,
     sharpen: 0.35,
     anisotropy: 8,
     detailProps: true,
@@ -137,6 +147,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     postProcessing: true,
     ambientOcclusion: true,
     smaa: true,
+    msaa: 8,
+    aoFull: false,
     sharpen: 0.45,
     anisotropy: 16,
     detailProps: true,
