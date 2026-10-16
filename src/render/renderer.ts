@@ -831,6 +831,7 @@ export function createSceneRenderer(
     for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
     buildings.refill();
     farRoads.refill();
+    signs.refill();
     wantAllTexels();
   });
   /** The buildings' garden plants, and the buildings and ground they were planted for. */
