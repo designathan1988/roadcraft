@@ -1,8 +1,8 @@
-import { DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
+import { type ChangeRect, DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import type { ListPart, RoadDoc } from '@world/doc';
 import { lotCentre } from '@world/lots';
-import { OWNER, TILE, TILE_IDS, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
+import { OWNER, TILE, TILE_IDS, tileIJ, tileKey, tileOfKey, tileRect, tilesAround } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
@@ -46,6 +46,8 @@ export interface StreamerEvents {
   letGo?(key: number, removedAt: ReadonlyMap<ListPart, readonly number[]>): void;
   /** A tile written at a version (what is baked of it is stale). */
   written?(key: number, version: number): void;
+  /** The camera's tile changed: the loaded tiles that came into the active region (3 x 3) or left it for the kept ring, and the rectangles of them. The ring keeps its records only: its near products are let go and the far levels draw it (CLAUDE.md "Streaming world", the solution's 5.4). */
+  activeChanged?(keys: readonly number[], rects: readonly ChangeRect[]): void;
   /** The map's parts no tile holds changed (zones, fog, transit, economy...): to be written (`RoadDoc.worldValues`). */
   writeWorld?(): Promise<unknown>;
   failed?(why: string): void;
@@ -90,10 +92,20 @@ export class WorldStreamer {
   focus(x: number, y: number): void {
     const { i, j } = tileIJ(x, y);
     if (i === this.around.i && j === this.around.j) { this.ask(); return; }
+    const wasActive = new Set(this.wanted);
     this.around = { i, j };
     this.wanted = tilesAround(i, j, ACTIVE_RADIUS).map((t) => tileKey(t.i, t.j));
+    // The loaded tiles whose standing changed: active now and not before, or the other way round.
+    const flipped: number[] = [];
+    for (const key of this.doc.loadedTiles) if (wasActive.has(key) !== this.wanted.includes(key)) flipped.push(key);
+    if (flipped.length) this.tell.activeChanged?.(flipped, flipped.map((key) => { const t = tileOfKey(key); return tileRect(t.i, t.j); }));
     this.aheadOrder = tilesAround(i, j, AHEAD_RADIUS).map((t) => tileKey(t.i, t.j));
     this.ask();
+  }
+
+  /** Whether a tile is in the active region (3 x 3 round the camera's tile): the near products are made for it; a tile kept in the ring beyond has its records only. */
+  isActive(key: number): boolean {
+    return this.wanted.includes(key);
   }
 
   /** Whether every tile the camera wants is in the document (the opening shows the town once it is). */
@@ -130,6 +142,8 @@ export class WorldStreamer {
       this.tell.letGo?.(key, this.doc.unloadTile(key));
       this.versions.delete(key);
     }
+    // A changed tile kept in the ring is written at once: the far levels draw it from the store (`activeChanged`), never from the page.
+    for (const key of [...this.dirty]) if (!this.wanted.includes(key)) this.write(key);
     if (now - this.lastWrite >= WRITE_EVERY_MS) {
       this.lastWrite = now;
       for (const key of [...this.dirty]) this.write(key);

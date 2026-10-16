@@ -6,6 +6,7 @@ import type { FarTiles } from './farLevels';
 import type { FrameScale } from './frameBudget';
 import type { BuildingKit } from './kit';
 import type { Frustum, Group } from 'three';
+import type { ChangeRect } from '@world/changes';
 
 /** DO NOT put the detail of every cell together again, and DO NOT hold a far cell's detail for a while */
 export interface BuildingPreviewInput {
@@ -46,6 +47,8 @@ export interface BuildingLayer {
   levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach?: number, view?: Frustum | null): void;
   /** The most the cells' detail may hold on the GPU, bytes: past it the cells drawn far go first (their masses stand for them). */
   setDetailBudget(bytes: number): void;
+  /** Only the buildings standing where `at` says (the streamed world's active tiles, `worldStreamer.ts`) are put together here; the far levels draw the rest. `rects`: where the standing changed since the last update, their buildings taken in or let go at the next one. Null: every building of the document. */
+  setActive(at: ((x: number, y: number) => boolean) | null, rects: readonly ChangeRect[]): void;
   /** The frame's scale (`frameBudget.ts`): the view's budget of triangles (`core/perfBudget.ts` `VIEW_BUDGETS`), the error scale that fits it (1 draws for 2 px of error, 2 for 4 px...; the roads' reach follows it, `renderer.ts`) and the floor the GPU's time sets (`governFrame`). */
   readonly frame: FrameScale;
   /** What the cells' detail holds on the GPU now, bytes. */

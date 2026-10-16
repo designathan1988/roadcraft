@@ -62,3 +62,27 @@ describe('the streamer', () => {
     expect(store.ensures.some((key) => ring(key) <= 1)).toBe(false);
   });
 });
+
+describe('the active region and the kept ring', () => {
+  it('tells which loaded tiles left the 3 x 3 for the ring or came back, with their rectangles', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const flips: { keys: number[]; rects: number[][] }[] = [];
+    const streamer = new WorldStreamer(doc, store, { activeChanged: (keys, rects) => flips.push({ keys: [...keys], rects: rects.map((r) => [...r]) }) });
+    streamer.focus(0, 0);
+    for (let frame = 0; frame < 30 && !streamer.settled; frame++) { await turns(1); streamer.focus(0, 0); streamer.apply(frame); }
+    expect(streamer.settled).toBe(true);
+    expect(flips).toEqual([]);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) expect(streamer.isActive(tileKey(i, j))).toBe(true);
+    // One tile east: the west column (i = -1) is kept in the ring, not active; the east column (i = 2) is active and not loaded yet.
+    streamer.focus(1024 + 10, 10);
+    expect(flips).toHaveLength(1);
+    expect(new Set(flips[0]!.keys)).toEqual(new Set([-1, 0, 1].map((j) => tileKey(-1, j))));
+    expect(flips[0]!.rects).toContainEqual([-1024, 0, 0, 1024]);
+    for (let j = -1; j <= 1; j++) { expect(streamer.isActive(tileKey(-1, j))).toBe(false); expect(doc.hasTile(tileKey(-1, j))).toBe(true); expect(streamer.isActive(tileKey(2, j))).toBe(true); }
+    // Back west: the same column active again, the east column (not loaded) told of nothing.
+    streamer.focus(10, 10);
+    expect(flips).toHaveLength(2);
+    expect(new Set(flips[1]!.keys)).toEqual(new Set([-1, 0, 1].map((j) => tileKey(-1, j))));
+  });
+});

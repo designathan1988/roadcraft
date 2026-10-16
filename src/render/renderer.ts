@@ -205,6 +205,8 @@ export interface SceneHandle {
   beginLoad(): void;
   /** What else the opening waits for besides the town drawn: the tiles round the camera come in (`worldStreamer.ts` settled); null: nothing. */
   holdOpening(until: (() => boolean) | null): void;
+  /** The streamed world's active tiles (`worldStreamer.ts` isActive): the buildings of the kept ring beyond are not put together here, the far levels draw them (`BuildingLayer.setActive`). */
+  setActiveTiles(at: ((x: number, y: number) => boolean) | null, rects: readonly ChangeRect[]): void;
   /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
   readonly farBuildings: FarTiles;
   /** The roads of the tiles not in the page's document, baked per tile from the tile store (`farRoads.ts`). */
@@ -2143,6 +2145,10 @@ export function createSceneRenderer(
     },
     get programsReady() {
       return programs.ready;
+    },
+    setActiveTiles(at, rects) {
+      buildings.setActive(at, rects);
+      if (rects.length) onAssetsReady();
     },
     holdOpening(until) {
       openingHeld = until;

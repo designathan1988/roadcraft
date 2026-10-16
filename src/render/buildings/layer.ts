@@ -8,6 +8,7 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { CellFiling } from '@world/cells';
 import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
 import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellDistance, cellGroup, createCoverIndex, dropCell, groundDigest, recordText } from './layerCells';
+import type { ChangeRect } from '@world/changes';
 import { type PartCell, type PartView, dropParts } from './partCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
@@ -165,6 +166,10 @@ export function createBuildingLayer(): BuildingLayer {
   };
   /** The shown buildings by coarse cell, as last put together (`update`): what a cell streamed in is made of. */
   let townCells = new Map<string, Building[]>();
+  /** Where a building must stand to be put together here (`setActive`: the streamed world's active tiles), the rectangles whose standing changed since the last update, and how many times it changed (part of the town's key). */
+  let activeAt: ((x: number, y: number) => boolean) | null = null;
+  const activeFlipped: ChangeRect[] = [];
+  let activeSerial = 0;
   /** What the levels chosen draw, triangles: each near cell's level (shown, or as its kind is reckoned until it lands), and every mass resident (the cells', tiles' and plates': those hidden under a cell's detail counted too, so never under what is drawn). */
   const chosenTriangles = (): number => {
     let n = gpuLedger.triangles('cell masses') + gpuLedger.triangles('tile masses') + gpuLedger.triangles('plate masses');
@@ -502,9 +507,9 @@ export function createBuildingLayer(): BuildingLayer {
         ? `${cutaway.only ?? ''}:${cutaway.level}@${Math.round(cutaway.x)},${Math.round(cutaway.y)}/${Math.round(Math.atan2(cutaway.view.y, cutaway.view.x) / (Math.PI / 4))}`
         : 'whole';
       // DO NOT put them back in this key: every road edit
-      const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${groundKey}|${hides}|${ruinedSerial}|${String(dimmed)}`;
-      /** A building drawn in its cell: not the one the preview stands for, nor a ruin, nor the one left solid while the others fade. */
-      const inCell = (b: Building): boolean => b.id !== hides && !ruined.has(b.id) && !(typeof dimmed === 'number' && b.id === dimmed);
+      const key = `${doc.buildings.revision}:${doc.buildings.wearRevision}|${groundKey}|${hides}|${ruinedSerial}|${String(dimmed)}|${activeSerial}`;
+      /** A building drawn in its cell: standing on an active tile, not the one the preview stands for, nor a ruin, nor the one left solid while the others fade. */
+      const inCell = (b: Building): boolean => (activeAt === null || activeAt(b.x, b.y)) && b.id !== hides && !ruined.has(b.id) && !(typeof dimmed === 'number' && b.id === dimmed);
       let rebuilt = false;
       // The masses of the buildings an edit changed
       if (key !== storedKey) {
@@ -517,6 +522,8 @@ export function createBuildingLayer(): BuildingLayer {
           const dirty = new Set<string>(), ids = new Set<BuildingId>();
           const named = changed.flatMap((e) => e.ids!) as BuildingId[];
           for (const b of groundMoved) named.push(b.id);
+          // The tiles that came into the active region or left it: their buildings taken in or let go.
+          for (const r of activeFlipped.splice(0)) for (const b of doc.buildings.near(r[0], r[1], r[2], r[3])) named.push(b.id);
           // The one the preview hid and the one it hides now; the ruins that came and went.
           if (hides !== storedHides) for (const id of [storedHides, hides]) if (id !== null) named.push(id);
           if (ruined !== storedRuined) {
@@ -560,6 +567,7 @@ export function createBuildingLayer(): BuildingLayer {
           for (const [k, b] of sent) if (!doc.buildings.has(b.id) || (k.includes('|') && !cutaway)) sent.delete(k);
           for (const id of groundDigests.keys()) if (!doc.buildings.has(id)) groundDigests.delete(id);
           const solid = shown.filter(inCell);
+          activeFlipped.length = 0;
           town.reset(solid);
           townCells = town.byCell;
           [townSeen, townDoc] = [doc.changes.version, doc];
@@ -694,6 +702,11 @@ export function createBuildingLayer(): BuildingLayer {
     setDetailBudget(bytes) {
       budget = bytes;
       keepToBudget();
+    },
+    setActive(at, rects) {
+      activeAt = at;
+      activeFlipped.push(...rects);
+      if (rects.length || at === null) activeSerial++;
     },
     frame,
     get residentBytes() {

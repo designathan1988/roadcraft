@@ -3,7 +3,7 @@ import { TileStore, portTiles, storeTiles } from '@editor/tileStore';
 import { jobPort } from './jobs/jobPool';
 import { WorldStreamer, tileOfRecord } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
-import { OWNER, tileKey } from '@world/tiles';
+import { OWNER, tileKey, tileKeyAt } from '@world/tiles';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
 import { mountProfilerHud } from '@ui/profilerHud';
@@ -1951,10 +1951,17 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
       sim.tile('letGo', key);
     },
     written: (key, version) => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); },
+    // The kept ring's buildings are the far levels' to draw, not the near cells' (the solution's 5.4): the layer and the far buildings told when a tile's standing changes.
+    activeChanged: (keys, rects) => { for (const key of keys) scene.farBuildings.loadedChanged(key); scene.setActiveTiles(activeAt, rects); },
     writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
   });
-  for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, ...(desktopStores ? {} : { workersRead: mapName }) }, (key) => doc.hasTile(key));
+  const activeAt = (x: number, y: number): boolean => streamer.isActive(tileKeyAt(x, y));
+  const source = { records: (key: number) => store.read(key), plan: options, ...(desktopStores ? {} : { workersRead: mapName }) };
+  // The far buildings stand in for every tile not in the active region, the kept ring's too; the far roads only for the tiles not in the document (the ring's roads are still built near).
+  scene.farBuildings.setSource(source, (key) => doc.hasTile(key) && streamer.isActive(key));
+  scene.farRoads.setSource(source, (key) => doc.hasTile(key));
+  scene.setActiveTiles(activeAt, []);
   // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`);
   // on the desktop the store is the main process's, read for it through a port.
   let port: MessagePort | null = null;
@@ -3819,6 +3826,7 @@ const healthPanel = mountHealthPanel({
       streamed.generator.dispose();
       scene.farBuildings.setSource(null, () => false);
       scene.farRoads.setSource(null, () => false);
+      scene.setActiveTiles(null, []);
       streamed = null;
       persistence.paused = false;
       scene.holdOpening(null);
