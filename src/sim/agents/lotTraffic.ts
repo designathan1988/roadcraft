@@ -244,7 +244,8 @@ export class LotTraffic {
     const lane = bay.lane!;
     const stopAt = lane.entryAt ?? lane.at;
     let best: Vehicle | null = null, bestD = CALL_REACH;
-    for (const v of w.vehicles.values()) {
+    // DO NOT walk the fleet for it: the cars on the lanes within reach (`vehiclesNear`).
+    for (const v of w.vehiclesNear(lane.x, lane.y, CALL_REACH)) {
       if (this.cars.has(v.id) || v.commute || v.kerbStop || v.errand || !PARKING_KINDS.has(v.archetype.id)) continue;
       // Only a body the stall holds whole (`stallFits`).
       if (!stallFits(bay, v.archetype.length)) continue;

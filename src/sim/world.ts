@@ -6,7 +6,7 @@ import type { Network } from '@world/network';
 import { type Connector, type GraphChange, type JunctionTopology, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
 import { ChangeLog } from '@core/changeLog';
 import { NetworkLength } from '@world/networkLength';
-import { LaneGrid } from './agents/laneGrid';
+import { LaneGrid, lanesNear } from './agents/laneGrid';
 import { LaneReaches } from './routing/laneReach';
 import { RouteIndex } from './routing/routeIndex';
 import { ConflictIndex, type BodyClass, WAITING } from '@world/conflictPoints';
@@ -33,6 +33,8 @@ const BUS_REACH = m(90);
 const VEHICLE_WINDOW = m(300);
 /** The most of the window round the focus, where the scenery's cars are made (`AmbientWorld.traffic`). */
 const FOCUS_WINDOW = m(600);
+/** How far a vehicle's pose can lie outside its lane's bounds (`vehiclesNear`): the longest body (its rear axle still on the lane behind) and a lane change's sideways reach. */
+const BODY_OFF_LANE = m(20);
 /** Seconds of the city's time between moves of the window. */
 const WINDOW_EVERY = 0.5;
 /** What the filing holds for a junction: its id is the whole of it. */
@@ -406,6 +408,18 @@ export class SimWorld {
       else this.maybeHolders.delete(v);
     }
     return out;
+  }
+
+  /** The vehicles on the lanes within `reach` of a point and a body's length and a lane's width more, in id order: DO NOT walk the fleet to find who is near. */
+  vehiclesNear(x: number, y: number, reach: number): Vehicle[] {
+    const out: Vehicle[] = [];
+    for (const lane of lanesNear(this, x, y, reach + BODY_OFF_LANE)) {
+      for (const id of this.rt(lane.id).order) {
+        const v = this.vehicles.get(id);
+        if (v) out.push(v);
+      }
+    }
+    return out.sort((a, b) => a.id - b.id);
   }
 
   /** DO NOT sort the fleet again at each change of it */

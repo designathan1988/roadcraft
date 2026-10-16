@@ -223,7 +223,8 @@ export class LorryTraffic {
     if (!lane) return;
     const stop = lane.centre.sampleAt(gate.stopAt).p;
     let best: Vehicle | null = null, bestD = CALL_REACH;
-    for (const v of w.vehicles.values()) {
+    // DO NOT walk the fleet for it: the trucks on the lanes within reach (`vehiclesNear`).
+    for (const v of w.vehiclesNear(stop.x, stop.y, CALL_REACH)) {
       if (v.archetype.id !== 'truck' || v.commute || v.kerbStop || v.errand || this.lorries.has(v.id)) continue;
       if (v.lanelet === lane.id && v.s > gate.stopAt) continue;
       const pose = vehiclePose(w, v, 1);
