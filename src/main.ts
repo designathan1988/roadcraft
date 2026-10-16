@@ -27,8 +27,9 @@ import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from 
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
-import { DEFAULT_CITY, planCity, type CityOptions, type CityPlan } from '@world/cityGen/plan';
-import { replicatePlan } from '@world/cityGen/replica';
+import { DEFAULT_CITY, planCity, type CityOptions, type CityPlan, type CitySize } from '@world/cityGen/plan';
+import { WHOLE_MAP_DEFAULTS, type WholeMapOptions } from '@world/cityGen/wholeMap';
+import { WholeMapRun } from './wholeMapRun';
 import { greenCitySteps, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
@@ -1894,6 +1895,40 @@ const GROW_SLICE_MS = 100;
 /** Seconds the last generated city took, from the call to its last building (probes). */
 let cityBuiltIn = 0;
 
+/** The whole map being generated (`wholeMapRun.ts`): its tiles built in the job pool, the page only counting them, then the map opened as a saved one is. */
+let wholeMap: WholeMapRun | null = null;
+function generateWholeMap(options: WholeMapOptions): { tiles: number } {
+  wholeMap?.dispose();
+  const started = performance.now();
+  const run = new WholeMapRun(options,
+    (done, total) => { cityProgress.textContent = t('city.tiles', { done, total }); },
+    (data, tileMs) => {
+      wholeMap = null;
+      const joined = performance.now();
+      // Opened as a map is opened (`openImported`): undo gives the map before it back.
+      history.begin(doc);
+      applySnapshot({ ...data, relief: NEW_RELIEF }, 'import');
+      history.end(doc);
+      updateHistoryButtons();
+      cityBuiltIn = (performance.now() - started) / 1000;
+      console.info(`[whole map] ${data.buildings?.length ?? 0} buildings, ${data.segments.length} roads: tiles in ${((joined - started) / 1000).toFixed(1)} s (${(tileMs / 1000).toFixed(1)} s of work), opened in ${((performance.now() - joined) / 1000).toFixed(1)} s`);
+      cityProgress.style.display = 'none';
+      fitView();
+      requestDraw();
+    },
+    (why) => {
+      wholeMap = null;
+      console.error(`[whole map] given up: ${why}`);
+      cityProgress.style.display = 'none';
+      flashHint('hint.openFailed');
+    });
+  wholeMap = run;
+  cityProgress.style.display = 'block';
+  cityProgress.textContent = t('city.tiles', { done: 0, total: run.total });
+  run.start();
+  return { tiles: run.total };
+}
+
 /** THE GROWTH (`editor/growthFeed.ts`): the generated city's buildings and the zones' (`growZones`), one at a time, each designed in the growth's worker (`growthPool.ts`, `growth.worker.ts`) and written here when its answer comes - outside the frame, in the worker's message - checked again first when the document moved meanwhile. */
 const growthPool = new GrowthPool((answer) => growthAnswered(answer), () => growth.restart());
 const growth = new GrowthSession(growthPool, () => ({
@@ -3678,11 +3713,17 @@ const healthPanel = mountHealthPanel({
     requestDraw();
   },
   /** A generated city (`editor/cityGenerator.ts`), and how far its building has gone. */
-  generateCity: (options: Partial<CityOptions> & { replicas?: number } = {}) => {
-    const { replicas = 1, ...asked } = options;
-    const chosen = { ...DEFAULT_CITY, ...asked };
-    // The worst case until the whole-map generator (rewrite F7): the same city `replicas` × `replicas` over the map.
-    return generateCity(chosen, replicas > 1 ? replicatePlan(planCity(chosen), replicas) : planCity(chosen));
+  generateCity: (options: Partial<Omit<CityOptions, 'size'>> & { size?: CitySize | 'whole' } = {}) => {
+    const { size = DEFAULT_CITY.size, ...asked } = options;
+    // The whole map, square, by tile (rewrite F7); else a round city of the size asked.
+    if (size === 'whole') {
+      const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
+      return generateWholeMap({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked });
+    }
+    wholeMap?.dispose();
+    wholeMap = null;
+    const chosen = { ...DEFAULT_CITY, ...asked, size };
+    return generateCity(chosen, planCity(chosen));
   },
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   growTimed: () => { const t = performance.now(); const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed); return { id, ms: performance.now() - t }; },

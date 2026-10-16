@@ -1752,5 +1752,6 @@ export const PT_BR: Dictionary = {
   'hint.transit.lineShort': 'Uma linha precisa de pelo menos duas paradas.',
   'hint.transit.lineMade': 'Linha criada.',
   'city.building': 'Construindo a cidade: {done} de {total} lotes',
+  'city.tiles': 'Gerando o mapa inteiro: {done} de {total} áreas',
   'map.loading': 'Carregando o mapa…',
 };

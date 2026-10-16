@@ -1,5 +1,5 @@
 {
-  "city": { "size": "large", "radius": 1250, "replicas": 4 },
+  "city": { "size": "whole", "seed": 1 },
   "steps": [
     { "key": "Shift+F9" },
     { "setView": [0, 0, 0.17, 45, 48] }, { "wait": 8000 },

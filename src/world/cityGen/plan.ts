@@ -49,7 +49,7 @@ export interface CityOptions {
   /** Share of blocks made parks, 0 to 0.2. */
   readonly parks: number;
   readonly industry: boolean;
-  /** The city's radius in world units, over the size's (probes and the whole map). */
+  /** The city's radius in world units, over the size's (probes). */
   readonly radius?: number;
 }
 

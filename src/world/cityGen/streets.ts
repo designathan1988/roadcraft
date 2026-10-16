@@ -16,6 +16,15 @@ export interface StreetLevel {
   readonly minLength: number;
   readonly maxLength: number;
   readonly seedTries: number;
+  /** Streets that must start here, traced before the random ones (a tile's gates, `tile.ts`). */
+  readonly seeds?: readonly ForcedSeed[];
+}
+
+/** A street that must start at `p`, on the family of the field running nearest `along`; failing that, a straight street along `along` to the first street it meets within `reach`. */
+export interface ForcedSeed {
+  readonly p: Vec2;
+  readonly along: Vec2;
+  readonly reach: number;
 }
 
 export interface StreetLine {
@@ -61,11 +70,26 @@ export function traceStreets(
   const lines: StreetLine[] = [];
   const dirOf = (family: 0 | 1, p: Vec2): Vec2 | null => (family === 0 ? field.major(p.x, p.y) : field.minor(p.x, p.y));
 
+  /** The forced seeds no street could start from: a straight street each, once every street is traced. */
+  const missed: { seed: ForcedSeed; level: number }[] = [];
+  const familyAlong = (seed: ForcedSeed): 0 | 1 | null => {
+    const major = field.major(seed.p.x, seed.p.y);
+    if (!major) return null;
+    return Math.abs(major.x * seed.along.x + major.y * seed.along.y) >= Math.SQRT1_2 ? 0 : 1;
+  };
   for (let level = 0; level < levels.length; level++) {
     const L = levels[level]!;
     for (const family of [0, 1] as const) {
       const dsep = family === 0 ? L.dsepMajor : L.dsepMinor;
       const dtest = dsep * L.testFraction;
+      // The forced seeds first, in order: held off only by a street of their family within the stopping distance.
+      for (const seed of L.seeds ?? []) {
+        if (familyAlong(seed) !== family && !(family === 1 && familyAlong(seed) === null)) continue;
+        const line = inside(seed.p) && !grids[family].near(seed.p, dtest) && dirOf(family, seed.p) ? trace(seed.p, family, L, dtest) : null;
+        if (!line) { missed.push({ seed, level }); continue; }
+        lines.push({ level, family, points: line.points, closed: line.closed });
+        for (const p of line.points) grids[family].add(p);
+      }
       let fails = 0;
       // Read from `head` on: DO NOT `shift()` it, a copy of the queue for every seed taken.
       const queue: Vec2[] = [];
@@ -106,6 +130,15 @@ export function traceStreets(
       if (end === 0) { pts.unshift(hit); stretches.addFront(line, k, hit, b); } else { pts.push(hit); stretches.addBack(line, k, b, hit); }
     }
   });
+  // A forced seed no street started from: straight on to the first street it meets, or none.
+  for (const { seed, level } of missed) {
+    const own: StreetLine = { level, family: 0, points: [seed.p], closed: false };
+    const hit = castTo(stretches, own, seed.p, seed.along, seed.reach);
+    if (!hit) continue;
+    own.points.push(hit);
+    lines.push(own);
+    stretches.addLine(own, lines.length - 1);
+  }
   return lines;
 
   function trace(seed: Vec2, family: 0 | 1, L: StreetLevel, dtest: number): { points: Vec2[]; closed: boolean } | null {
@@ -246,10 +279,19 @@ export interface GraphOptions {
   readonly simplify: number;
   /** Least distance between two points kept along an edge (the editor's shortest road and more). */
   readonly spacing: number;
+  /** Nodes made first, where the graph joins streets outside it: the points near them merged into them, never a dead end. */
+  readonly anchors?: readonly Vec2[];
+  /** A dead end whose free end lies where this says is taken away whatever its length (a street stopped short of a tile's border avenue). */
+  readonly pruneEnd?: (p: Vec2) => boolean;
+}
+
+/** The planar street graph, and each anchor's node in it (-1: no street reached it). */
+export interface AnchoredGraph extends StreetGraph {
+  readonly anchors: readonly number[];
 }
 
 /** Cuts the streamlines into a planar street graph. */
-export function planarize(lines: readonly StreetLine[], o: GraphOptions): StreetGraph {
+export function planarize(lines: readonly StreetLine[], o: GraphOptions): AnchoredGraph {
   const polys = lines.map((l) => ({ level: l.level, points: simplify(l.points, o.simplify) }));
   // Every crossing, as (polyline, segment, t) on both.
   const cuts: { seg: number; t: number; p: Vec2 }[][] = polys.map(() => []);
@@ -313,6 +355,8 @@ export function planarize(lines: readonly StreetLine[], o: GraphOptions): Street
     let l = nodeHash.get(key); if (!l) nodeHash.set(key, l = []); l.push(nodes.length - 1);
     return nodes.length - 1;
   };
+  const anchors = (o.anchors ?? []).map(nodeAt);
+  const anchored = new Set(anchors);
 
   let edges: { a: number; b: number; points: Vec2[]; level: number }[] = [];
   polys.forEach((pl, line) => {
@@ -355,12 +399,21 @@ export function planarize(lines: readonly StreetLine[], o: GraphOptions): Street
     const a = all[0]!, b = all[Math.min(all.length - 1, 1)]!;
     return Math.atan2(b.y - a.y, b.x - a.x);
   };
-  for (let pass = 0; pass < 8; pass++) {
+  // Until nothing changes when ends are pruned by place (a chain of them goes edge by edge), else 8 passes as always.
+  for (let pass = 0; o.pruneEnd ? pass <= edges.length : pass < 8; pass++) {
     let changed = false;
     const degree = new Map<number, number>();
+    // An anchor counts the street outside it.
+    for (const n of anchored) degree.set(n, 1);
     for (const e of edges) { degree.set(e.a, (degree.get(e.a) ?? 0) + 1); degree.set(e.b, (degree.get(e.b) ?? 0) + 1); }
+    const deadEnd = (e: { a: number; b: number; points: Vec2[] }): boolean => {
+      const freeA = degree.get(e.a) === 1, freeB = degree.get(e.b) === 1;
+      if (!freeA && !freeB) return false;
+      if (length(e) < o.prune) return true;
+      return o.pruneEnd !== undefined && ((freeA && o.pruneEnd(nodes[e.a]!)) || (freeB && o.pruneEnd(nodes[e.b]!)));
+    };
     // Short dead ends: stubs left where a line stopped just past a crossing.
-    const kept = edges.filter((e) => !((degree.get(e.a) === 1 || degree.get(e.b) === 1) && length(e) < o.prune));
+    const kept = edges.filter((e) => !deadEnd(e));
     if (kept.length !== edges.length) { edges = kept; changed = true; }
     // Two streets leaving a node too close in angle: the finer (or shorter) taken away.
     const at = new Map<number, typeof edges>();
@@ -396,7 +449,7 @@ export function planarize(lines: readonly StreetLine[], o: GraphOptions): Street
   const used = new Map<number, number>();
   const finalNodes: Vec2[] = [];
   for (const e of out) for (const n of [e.a, e.b]) if (!used.has(n)) { used.set(n, finalNodes.length); finalNodes.push(nodes[n]!); }
-  return { nodes: finalNodes, edges: out.map((e) => ({ ...e, a: used.get(e.a)!, b: used.get(e.b)! })) };
+  return { nodes: finalNodes, edges: out.map((e) => ({ ...e, a: used.get(e.a)!, b: used.get(e.b)! })), anchors: anchors.map((n) => used.get(n) ?? -1) };
 }
 
 function segCross(a: Vec2, b: Vec2, c: Vec2, d: Vec2): { t: number; u: number } | null {

@@ -5,7 +5,7 @@ export interface JobScope {
 }
 
 /** The services the job workers run, each a module with `serve(scope)`. */
-export type JobService = 'growth' | 'bays' | 'conflicts' | 'cells' | 'fracture' | 'citizenBake' | 'ecology' | 'flatGround' | 'groundShape'
+export type JobService = 'growth' | 'cityTiles' | 'bays' | 'conflicts' | 'cells' | 'fracture' | 'citizenBake' | 'ecology' | 'flatGround' | 'groundShape'
   | 'garmentPadding' | 'peopleLod' | 'roadTiles' | 'terrainLight' | 'derivedWriter';
 
 /** Page to job worker: a message for a service's port (the service made on the port's first message). */
