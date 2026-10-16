@@ -131,10 +131,13 @@ pasted in the session that started this; these are its binding decisions.
   buildings for traffic from the store, `intern` hashes numbers by their bits, tiles made ahead are stored by the generator's
   worker (the page gets the version). The opening now gets to drawing and runs out of GPU memory (`GL_OUT_OF_MEMORY`): the
   district view's near cells are L1 (facade level) at ~570 k vertices a 256 m cell (9.8 k a building, `facadeLevel.spec.ts`
-  town: L1 has 76% of L0's shell triangles), 1.2-3.3 GB of shells. 47% of L1's shell triangles are thin metal (lot fences
-  and railing posts every 0.45 m, roof drains and vents, gates, lamp posts, grilles: 4-8 cm wide, under half a pixel at
-  L1's zoom). Needs the player's call (shots): drop or merge thin parts in L1, or instance them; and the detail budget only
-  lets go of cells not shown (17 shown cells pass `buildingDetailMB`).
+  town: L1 has 76% of L0's shell triangles), 1.2-3.3 GB of shells. By emitter (triangles of L1 shells, 80 buildings):
+  ~75% are the lots' elements (`emitLots` -> `emitElement`: gates, lamp posts and bins of `emitLotPart` 68 k, fences 68 k,
+  stone/plaster/brick/concrete/wood element boxes 81 k, lot surfaces 19 k, parking 7 k), against ~25% the buildings
+  themselves (`emitBuilding`, roofs, plinths, jambs); roof plant 33 k. Every element is modelled into the shell, face by
+  face, never instanced. Needs the player's call (shots): lot furniture as instanced parts per kind (the brief's "parts
+  instanced per kind for the whole near ring"), or left out of L1 below its error; and the detail budget only lets go of
+  cells not shown (17 shown cells pass `buildingDetailMB`).
 - Also open: city statistics read the region only; growth runs in the region only; the joins between near and
   far roads at the region's edge do not match exactly (far junctions only on owned nodes, heights differ).
 
