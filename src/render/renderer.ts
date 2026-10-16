@@ -40,7 +40,7 @@ import { Digest } from '@core/digest';
 import type { ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
-import { Network } from '@world/network';
+import { Network, type SegmentRibbon } from '@world/network';
 import { GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, type RoadElevation } from '@world/elevation';
 import { FOOTWAY_RISE, sidewalkHalf } from '@world/roadTypes';
 import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
@@ -318,6 +318,21 @@ const SURFACE_SETS: readonly ReadonlySet<RoadStructure>[] = [GROUND_ONLY, new Se
 
 /** A plant's leaf cards (`scenery.ts` `plantMeshes`, `gardens.ts`): `...-trees-<species>-cards`, `...-bushes-<kind>-cards`. */
 const isLeafCards = (mesh: Object3D): boolean => mesh.name.endsWith('-cards');
+
+/** The vertices of the first mesh drawn under `root` (visible itself), 0 when none is: stops at the first, never counts them all. */
+function firstDrawnVertices(root: Object3D): number {
+  const stack: Object3D[] = [root];
+  while (stack.length) {
+    const o = stack.pop()!;
+    const mesh = o as Mesh;
+    if (mesh.isMesh && mesh.visible) {
+      const count = mesh.geometry.getAttribute('position')?.count ?? 0;
+      if (count > 0) return count;
+    }
+    for (const child of o.children) stack.push(child);
+  }
+  return 0;
+}
 
 /** The plants of every building's garden, in the world, on the ground they stand on. */
 function gardenPlants(all: Iterable<Building>, groundAt: (x: number, y: number) => number): GardenPlant[] {
@@ -1009,22 +1024,27 @@ export function createSceneRenderer(
   const cameraSolidsKept = cameraSolidsKeeper((b) => floors.floorOf(b), floorBox, FLOOR_READ_REACH);
   /** The roads watched for vanishing from the picture */
   let roadsWatchedAt = 0;
-  let roadsWatchCursor = 0;
   let roadsReported = false;
+  /** DO NOT copy every ribbon to pick four: a walk over the live map, four ribbons a look, started again at its end. */
+  let roadsWalk: { readonly net: Network; readonly at: Iterator<SegmentRibbon> } | null = null;
+  const nextWatched = (net: Network): SegmentRibbon | null => {
+    let walk = roadsWalk;
+    if (!walk || walk.net !== net) roadsWalk = walk = { net, at: net.ribbons.values() };
+    let step = walk.at.next();
+    if (step.done) { roadsWalk = walk = { net, at: net.ribbons.values() }; step = walk.at.next(); }
+    return step.done ? null : step.value;
+  };
   const watchRoads = (net: Network): void => {
     const now = performance.now();
     // Not while the world is being rebuilt: until the job lands the new roads have no picture yet by design
     if (now - roadsWatchedAt < 1000 || !reveal.opened || net.doc.segments.size === 0 || worldJob !== null) return;
     roadsWatchedAt = now;
-    let vertices = 0;
-    roads?.group.traverse((o) => {
-      const mesh = o as Mesh;
-      if (mesh.isMesh && mesh.visible) vertices += mesh.geometry.getAttribute('position')?.count ?? 0;
-    });
+    // DO NOT count every road mesh's vertices: one drawn mesh is the answer.
+    const vertices = roads ? firstDrawnVertices(roads.group) : 0;
     let buried: { x: number; y: number; land: number; paved: number } | null = null;
-    const ribbons = [...net.ribbons.values()];
-    for (let k = 0; k < 4 && ribbons.length; k++) {
-      const ribbon = ribbons[(roadsWatchCursor++) % ribbons.length]!;
+    for (let k = 0; k < 4; k++) {
+      const ribbon = nextWatched(net);
+      if (!ribbon) break;
       const p = ribbon.full.sampleAt(ribbon.full.length / 2).p;
       const paved = pavedHeightAt(p.x, p.y), land = terrain.renderedHeightAt(p.x, p.y);
       // Under the land on purpose in a tunnel.
@@ -1034,6 +1054,7 @@ export function createSceneRenderer(
     const missing = !roads || !roads.group.parent || vertices === 0;
     if ((missing || buried) && !roadsReported) {
       roadsReported = true;
+      // Once, latched by `roadsReported`; as text, so a headless console log keeps it.
       console.error('roads missing from the picture', JSON.stringify({
         missing, buried, vertices, inWorld: !!roads?.group.parent, worldJob: worldJob !== null,
         terrainRevision: net.doc.terrainRevision, revision: net.revision,
