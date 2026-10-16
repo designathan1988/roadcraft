@@ -20,6 +20,8 @@ const DERIVED = [
   { entry: 'src/world/conflictPoints.ts', also: [] as string[], define: '__CONFLICT_ZONES_HASH__' },
   // The road surfaces' tiles (`render/roadSurfaces.ts`, kept by `renderer.ts`).
   { entry: 'src/render/roadSurfaces.ts', also: [] as string[], define: '__ROAD_TILES_HASH__' },
+  // The buildings' far levels baked per tile (`render/buildings/farTiles.ts`, kept by `farLevels.ts`).
+  { entry: 'src/render/buildings/farTiles.ts', also: [] as string[], define: '__FAR_MASS_HASH__' },
 ] as const;
 /** The path aliases of `tsconfig.json`. */
 const ALIASES: readonly [string, string][] = [

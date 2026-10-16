@@ -36,6 +36,11 @@ function database(): Promise<IDBDatabase | null> {
   return opening;
 }
 
+/** Whether the store opens here (none in Node, refused in some private windows): what is kept can be read back. */
+export async function derivedCacheOpen(): Promise<boolean> {
+  return (await database()) !== null;
+}
+
 /** The keys from `prefix` up to every key that starts with it. */
 const prefixRange = (prefix: string): IDBKeyRange => IDBKeyRange.bound(prefix, `${prefix}￿`);
 

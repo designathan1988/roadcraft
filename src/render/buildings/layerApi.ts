@@ -2,6 +2,7 @@ import type { RoadDoc } from '@world/doc';
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import type { Building, BuildingId } from '@world/buildings/types';
 import type { BuildingChunk } from './buildingMesh';
+import type { FarTiles } from './farLevels';
 import type { BuildingKit } from './kit';
 import type { Group } from 'three';
 
@@ -60,6 +61,8 @@ export interface BuildingLayer {
   lotHeightAt(building: BuildingId, x: number, y: number): number;
   /** The drawn height of whichever building's lot is at a point, NaN off every lot. */
   anyLotHeightAt(x: number, y: number): number;
+  /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`farLevels.ts`): the coordinator wires the store and the streamer's region here. */
+  readonly far: FarTiles;
   /** A WebGL context restored (`mesh/gpuOnly.ts`): every cell made again, its arrays having been let go. */
   refill(): void;
   dispose(): void;

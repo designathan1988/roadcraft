@@ -283,7 +283,7 @@ function furnitureMatrices(chunks: readonly BuildingChunk[], kind: FurnitureKind
 }
 
 /** A shell's box and sphere as three's `BufferGeometry.computeBoundingBox` and `computeBoundingSphere` work them out */
-function shellBounds(position: Float32Array): Bounds {
+export function shellBounds(position: Float32Array): Bounds {
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for (let i = 0; i < position.length; i += 3) {
     const x = position[i]!, y = position[i + 1]!, z = position[i + 2]!;

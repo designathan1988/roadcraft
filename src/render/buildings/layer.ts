@@ -15,6 +15,8 @@ import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { createMassCells } from './massCells';
 import { MassLevels } from './massLevels';
+import { FarLevels, farRunner } from './farLevels';
+import type { SharedGroundAt } from '../sharedGround';
 import { type BuildingKit, createBuildingKit } from './kit';
 import { type CellEnv, CellPool } from './cellPool';
 import { type BatchKind, CellRequests, sameEntries } from './cellRequests';
@@ -56,6 +58,13 @@ export function createBuildingLayer(): BuildingLayer {
   /** Moves when the ruins change (`setRuined`), not when the same ones are given again. */
   let ruinedSerial = 0;
   let lastGround: { groundAt: GroundAt; groundKey: string; pavedAt: PavedAt | undefined; naturalAt: GroundAt } | null = null;
+  /** The buildings of the tiles not in the document, baked in workers from the tile store (`farLevels.ts`): the ground they read is the one shared with the workers. */
+  const farTiles = new FarLevels(kit, farRunner(() => ({
+    ground: (lastGround?.groundAt as SharedGroundAt | undefined)?.share?.current ?? null,
+    naturalIsGround: !lastGround || lastGround.naturalAt === lastGround.groundAt,
+    tone: kit.finishTone,
+  })));
+  group.add(farTiles.group);
   /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds `budget` bytes at most. */
   let budget = Infinity;
   let resident = 0;
@@ -420,12 +429,13 @@ export function createBuildingLayer(): BuildingLayer {
       return shown + (ghost?.triangles ?? 0);
     },
     get top() {
-      return Math.max(massCells.top(), signatures.top(), ghostTop, soloTop);
+      return Math.max(massCells.top(), signatures.top(), ghostTop, soloTop, farTiles.top());
     },
     get pending() {
-      // What the view draws, not the whole map: the cells near, the cells drawn one by one, the tiles and plates standing for the rest.
-      return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0;
+      // What the view draws, not the whole map: the cells near, the cells drawn one by one, the tiles and plates standing for the rest, the far levels.
+      return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;
     },
+    far: farTiles,
     hidden: false,
     kit,
     chunkOf(b) {
@@ -620,6 +630,7 @@ export function createBuildingLayer(): BuildingLayer {
       eye = eyeNow;
       // The building cut open and the one being edited stay in detail whatever the eye says.
       massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach);
+      farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx);
       const now = new Set<string>(massCells.nearKeys());
       for (const key of forcedNear) now.add(key);
       // Those gone far, and every one near: a cell near may have changed between its detail and its facade level.
@@ -692,6 +703,7 @@ export function createBuildingLayer(): BuildingLayer {
       massEntries.clear();
       massAsked.clear();
       massCells.dispose();
+      farTiles.refill();
       storedKey = '';
       townDoc = null;
     },
@@ -703,6 +715,7 @@ export function createBuildingLayer(): BuildingLayer {
       pool.dispose();
       flagLayer.dispose();
       massCells.dispose();
+      farTiles.dispose();
       stored?.dispose();
       solo?.dispose();
       for (const cache of [cells, facades]) {

@@ -10,15 +10,16 @@ import { PLATE_DETAIL, TILE_DETAIL } from './massing';
 
 /** THE BUILDINGS' FAR LEVEL, cell by cell: each cell of the buildings' grid */
 /** Above the cells, a tile (L2, 16 cells) and a plate (L3, 64 cells) of masses, one mesh each, chosen as Cesium's HLOD does (`massLevels.ts`) */
+/** Only the buildings of the page's document (the tiles loaded): the other tiles' are baked in workers from the tile store (`farLevels.ts`) */
 
 /** The largest thing the far level leaves out, m: a balcony's slab (1.3 m) or a sill and its frame stand out of the wall */
-const FAR_ERROR = m(1.5);
+export const FAR_ERROR = m(1.5);
 /** The largest thing the facade level (L1, `emitChunk` `far`) leaves out, m: the deepest reveal it lays flat. */
 const FACADE_ERROR = FLAT_DEPTH;
 /** The detail is drawn while what the far level leaves out spans this many pixels or more. */
 const NEAR_PIXELS = 2;
 /** A cell drawn near stays near down to this share of `NEAR_PIXELS`. */
-const HYSTERESIS = 0.85;
+export const HYSTERESIS = 0.85;
 /** STREET-LEVEL HORIZON VIEWS: with the eye near the ground and looking along the streets */
 const STREET_EYE = m(40);
 const HORIZON_HALF = m(150);
@@ -107,8 +108,24 @@ export interface MassCells {
 const boxOf = (b: Float64Array): Box3 => new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));
 const sphereOf = (b: Float64Array): Sphere => new Sphere(new Vector3(b[6], b[7], b[8]), b[9]);
 
+/** What the eye reads of a box (`measureSeen`): a metre's pixels there, the pixels allowed, its distance across the plan. */
+export interface Seen { perMetre: number; allowed: number; across: number }
+
+/** What the eye reads of a box (plan x/y, top), as Cesium measures to a tile's bounding volume; the eye low, the farther the box the more error it may make (`HORIZON_HALF`). */
+export function measureSeen(seen: Seen, eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, x0: number, y0: number, x1: number, y1: number, top: number): void {
+  const dx = Math.max(x0 - eyeX, 0, eyeX - x1);
+  const dy = Math.max(y0 - eyeY, 0, eyeY - y1);
+  seen.across = Math.hypot(dx, dy);
+  seen.allowed = NEAR_PIXELS;
+  if (orthoPx !== null) { seen.perMetre = orthoPx; return; }
+  const d = Math.max(Math.hypot(dx, dy, Math.max(eyeZ - top, 0)), 1);
+  seen.perMetre = pxAtMetre / d;
+  const street = Math.max(0, 1 - eyeZ / STREET_EYE);
+  seen.allowed = NEAR_PIXELS * (1 + (street * d) / HORIZON_HALF);
+}
+
 /** A cell's mesh from its masses' arrays, taken as they came */
-function cellMesh(mass: CellMass, kit: BuildingKit, name = 'building-massing'): Mesh {
+export function cellMesh(mass: CellMass, kit: BuildingKit, name = 'building-massing'): Mesh {
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(mass.position, 3));
   g.setAttribute('normal', new BufferAttribute(mass.normal, 4, true));
@@ -226,21 +243,10 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
   };
   /** The tiles and plates holding a cell held near (`choose`'s `allNear`): never drawn in its place. */
   const forcedLevels = new Set<string>();
-  /** What the eye reads of a box (plan x/y, top): a metre's pixels there and the pixels allowed, its distance across the plan. */
-  const seen = { perMetre: 0, allowed: NEAR_PIXELS, across: 0 };
-  const measure = (eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, x0: number, y0: number, x1: number, y1: number, top: number): void => {
-    // To the box's nearest point (Cesium measures to the tile's bounding volume).
-    const dx = Math.max(x0 - eyeX, 0, eyeX - x1);
-    const dy = Math.max(y0 - eyeY, 0, eyeY - y1);
-    seen.across = Math.hypot(dx, dy);
-    seen.allowed = NEAR_PIXELS;
-    if (orthoPx !== null) { seen.perMetre = orthoPx; return; }
-    const d = Math.max(Math.hypot(dx, dy, Math.max(eyeZ - top, 0)), 1);
-    seen.perMetre = pxAtMetre / d;
-    // The eye low: the farther the box, the more error it may make (`HORIZON_HALF`).
-    const street = Math.max(0, 1 - eyeZ / STREET_EYE);
-    seen.allowed = NEAR_PIXELS * (1 + (street * d) / HORIZON_HALF);
-  };
+  /** What the eye reads of a box, one object for every box measured (`measureSeen`). */
+  const seen: Seen = { perMetre: 0, allowed: NEAR_PIXELS, across: 0 };
+  const measure = (eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, x0: number, y0: number, x1: number, y1: number, top: number): void =>
+    measureSeen(seen, eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, x0, y0, x1, y1, top);
   return {
     group,
     plan(key) {

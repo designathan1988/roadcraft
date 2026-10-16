@@ -22,8 +22,8 @@ export interface CellEnv {
 const PAVING_REACH = m(64);
 /** Which jobs go first, a band each, nearest the eye first within a band: the detail, its far level, the masses, the summaries. */
 const TIER: Readonly<Record<JobKind, number>> = { cell: 0, facade: 1, mass: 2, massTile: 2.5, massPlate: 2.75, summary: 3 };
-/** A band: farther than any cell of any map is from the eye. */
-const TIER_SPAN = m(10_000_000);
+/** A band: farther than any cell of any map is from the eye (the far levels' jobs take a band of their own, `farLevels.ts`). */
+export const TIER_SPAN = m(10_000_000);
 /** Times a job is asked again over wider roads (`wider`) before the page puts it together. */
 const MOST_WIDER = 2;
 
