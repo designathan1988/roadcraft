@@ -1,3 +1,4 @@
+import { type RecordRef, refOf } from '@world/buildings/recordTable';
 import { describe, expect, it } from 'vitest';
 
 import { type BuildingChunk, emitChunk, kitBoxes, lotGroundAgain } from '@render/buildings/buildingMesh';
@@ -70,8 +71,8 @@ function chunksByCell(buildings: readonly Building[], chunkOf: (b: Building) => 
 
 const cellOf = (b: Building): string => `${Math.floor(b.x / BATCH_CELL)},${Math.floor(b.y / BATCH_CELL)}`;
 /** The test's records by key: what the pool writes into each job (`CellPool` `text`). */
-const texts = new Map<string, string>();
-const entryOf = (b: Building): CellEntry => { texts.set(String(b.id), JSON.stringify(b)); return { key: String(b.id), sig: b.id, digest: 0 }; };
+const texts = new Map<string, RecordRef>();
+const entryOf = (b: Building): CellEntry => { texts.set(String(b.id), refOf(b)); return { key: String(b.id), sig: b.id, digest: 0 }; };
 
 describe('a cell put together off the page', () => {
   const kit = createBuildingKit();

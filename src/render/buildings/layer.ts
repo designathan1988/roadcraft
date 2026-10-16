@@ -4,10 +4,11 @@ import { Digest } from '@core/digest';
 import type { RoadDoc } from '@world/doc';
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { buildingHeight, storedBounds } from '@world/buildings/geometry';
+import type { RecordRef } from '@world/buildings/recordTable';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { CellFiling } from '@world/cells';
 import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
-import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellDistance, cellGroup, createCoverIndex, dropCell, groundDigest, recordText } from './layerCells';
+import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellDistance, cellGroup, createCoverIndex, dropCell, groundDigest, recordRef } from './layerCells';
 import type { ChangeRect } from '@world/changes';
 import { type PartCell, type PartView, dropParts } from './partCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
@@ -237,11 +238,10 @@ export function createBuildingLayer(): BuildingLayer {
     sent.set(key, b);
     return { key, sig: new Digest().add(sig).add(cutaway.level).add(dir).value(), digest };
   };
-  /** Each record's text, made once per record (`layerCells.ts` `recordText`). */
-  const recordTexts = new WeakMap<Building, string>();
-  const textOf = (entry: CellEntry): () => string => {
+  /** Where a worker reads each record (`layerCells.ts` `recordRef`): its tile's shared table, never its text. */
+  const refFor = (entry: CellEntry): () => RecordRef => {
     const b = sent.get(entry.key)!;
-    return () => recordText(recordTexts, b, entry.key);
+    return () => recordRef(b, entry.key);
   };
   const entriesOf = (list: readonly Building[], groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt): CellEntry[] =>
     list.map((b) => entryFor(b, groundAt, groundKey, pavedAt));
@@ -285,7 +285,7 @@ export function createBuildingLayer(): BuildingLayer {
     const k = kept.get(b.id);
     return k && k.sig === sigOf(b) && k.digest === groundDigests.get(b.id)?.digest ? k : undefined;
   };
-  const pool = new CellPool(() => kitBoxes(kit), (entry) => textOf(entry), true, kit.finishTone);
+  const pool = new CellPool(() => kitBoxes(kit), (entry) => refFor(entry), true, kit.finishTone);
   pool.warm();
   /** A cell's level landed: uploaded only if the view still wants it at that level within the room (the cap worked out again with its measured bytes). */
   const admit = (kind: BatchKind, cell: string, bytes: number): boolean => {

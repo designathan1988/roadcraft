@@ -7,6 +7,7 @@ import type { NodeId, SegmentId } from '@world/ids';
 import { RoadDoc, type TileRecords, preparedTiles } from '@world/doc';
 import { Network, type NetworkBake } from '@world/network';
 import { internMembers } from '@world/buildings/intern';
+import { encodeRecords, tableRecords } from '@world/buildings/recordTable';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
 import { METERS_PER_UNIT, m } from '@world/units';
@@ -308,9 +309,10 @@ export interface MadeTile {
   readonly prepared?: PreparedTile;
 }
 
-/** A tile as the page takes it in: its records (the buildings prepared) and its network's bake (null when not asked for: a far tile's read). */
+/** A tile as the page takes it in: its records with no buildings, its buildings as one shared table (`recordTable.ts`: posted as a handle, the page reads its records from it and its jobs read its rows), and its network's bake (null when not asked for: a far tile's read). */
 export interface PreparedTile {
   readonly records: TileRecords;
+  readonly buildings: ArrayBufferLike;
   readonly network: NetworkBake | null;
 }
 
@@ -323,8 +325,15 @@ export function prepareTile(records: TileRecords, network = true): PreparedTile 
     internMembers(b as unknown as Record<string, unknown>);
     buildings.push(b);
   }
-  const prepared = { ...records, buildings: buildings as unknown as TileRecords['buildings'] };
-  return { records: prepared, network: network ? bakeTileNetwork(prepared) : null };
+  // DO NOT post the buildings as objects (cloned by every message, hash-consed again by every thread): one table, its shared members written once.
+  return { records: { ...records, buildings: [] }, buildings: encodeRecords(buildings).buffer, network: network ? bakeTileNetwork(records) : null };
+}
+
+/** A prepared tile's records as the page files them: its buildings read from its table, each knowing its row (`tableRecords`). */
+export function preparedRecords(prepared: PreparedTile): TileRecords {
+  const records = { ...prepared.records, buildings: tableRecords(prepared.buildings) as unknown as TileRecords['buildings'] };
+  preparedTiles.add(records);
+  return records;
 }
 
 /** The tile's roads built as a network of their own (the tile's nodes, its roads' foreign ends as borrowed nodes), its junctions and ribbons exported (`Network.exportBake`): the page takes a node's where its roads are the same there (a node with a neighbour's road is solved on the page). */
@@ -419,8 +428,7 @@ export class TileStore {
   private async readNow(key: number, network: boolean): Promise<TileRecords | null> {
     const prepared = (await this.backend.run({ op: 'read', map: this.map, key, network })) as PreparedTile | null;
     if (!prepared) return null;
-    const { records } = prepared;
-    preparedTiles.add(records);
+    const records = preparedRecords(prepared);
     if (prepared.network) this.bakes.set(key, prepared.network);
     this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
     return records;
@@ -439,9 +447,8 @@ export class TileStore {
     const made = await this.makeStored!(i, j, this.versions.get(key) ?? 0, true);
     if (!made.prepared) throw new Error(`tile ${key} was made and not handed back`);
     if (made.version === null) console.warn(`[save] tile ${key} was made and not stored`);
-    const { records } = made.prepared;
+    const records = preparedRecords(made.prepared);
     if (records.key !== key) throw new Error(`the generator made tile ${records.key} for tile ${key}`);
-    preparedTiles.add(records);
     if (made.prepared.network) this.bakes.set(key, made.prepared.network);
     this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
     return records;

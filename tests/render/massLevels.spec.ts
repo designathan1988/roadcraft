@@ -1,3 +1,4 @@
+import { refOf } from '@world/buildings/recordTable';
 import { describe, expect, it } from 'vitest';
 import type { Mesh, Object3D } from 'three';
 
@@ -173,7 +174,7 @@ describe('a tile or a plate of masses drawn in place of its cells', () => {
     const b = building(plain, m(10), m(10));
     const job = (kind: JobKind): CellJob => ({
       id: 1, kind, cell: 'x', paved: false, boxes: { parts: {}, furniture: {} } as unknown as CellJob['boxes'],
-      entries: [{ key: '1', sig: 1, digest: 1, record: JSON.stringify(b) }, { key: '2', sig: 2, digest: 1, record: JSON.stringify({ ...b, id: 2, x: m(80) }) }],
+      entries: [{ key: '1', sig: 1, digest: 1, record: refOf(b) }, { key: '2', sig: 2, digest: 1, record: refOf({ ...b, id: 2 as Building['id'], x: m(80) }) }],
     });
     const mass = (kind: JobKind): CellMass => {
       const reply = runCellJob(job(kind), { groundAt: flat, naturalAt: flat });

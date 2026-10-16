@@ -33,10 +33,10 @@ describe('a cell job waiting its turn', () => {
     vi.unstubAllGlobals();
   });
 
-  it('writes no record text until a worker takes it', async () => {
+  it('reads no record until a worker takes it', async () => {
     const { CellPool } = await import('@render/buildings/cellPool');
     const written: string[] = [];
-    const pool = new CellPool(() => boxes, (e) => () => { written.push(e.key); return '{}'; });
+    const pool = new CellPool(() => boxes, (e) => () => { written.push(e.key); return { buffer: new SharedArrayBuffer(0), row: 0 }; });
     for (let k = 0; k < 10; k++) pool.run('mass', `${k},0`, [entry(`b${k}a`), entry(`b${k}b`)], env, () => {});
     // Only the jobs the two workers took have had their records written: the two nearest the eye.
     expect(FakeWorker.made).toHaveLength(2);

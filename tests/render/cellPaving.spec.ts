@@ -1,3 +1,4 @@
+import { refOf } from '@world/buildings/recordTable';
 import { describe, expect, it } from 'vitest';
 
 import { emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
@@ -95,7 +96,7 @@ describe('the paving read by a building cell worker', () => {
     expect(buildings.length).toBeGreaterThan(3);
     const cellRect: [number, number, number, number] = [-BATCH_CELL - m(64), -BATCH_CELL - m(64), m(64), m(64)];
     const job: CellJob = structuredClone({ id: 1, kind: 'cell', cell: '-1,-1', paved: true, boxes: kitBoxes(kit),
-      entries: buildings.map((b) => ({ key: String(b.id), sig: b.id, digest: 0, record: JSON.stringify(b) })),
+      entries: buildings.map((b) => ({ key: String(b.id), sig: b.id, digest: 0, record: refOf(b) })),
       paving: paved.pack!(cellRect)!.data });
     /** The job's reads as a worker has them: the ground, and the paving off the roads handed over. */
     const reads = (asked: CellJob) => ({ groundAt: ground, naturalAt, ...(asked.paving ? { pavedAt: pavingReader(asked.paving, ground) } : {}) });

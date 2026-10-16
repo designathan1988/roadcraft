@@ -1,3 +1,4 @@
+import { refOf } from '@world/buildings/recordTable';
 import { describe, expect, it } from 'vitest';
 
 import type { CellMass } from '@render/buildings/cellArrays';
@@ -104,7 +105,7 @@ describe('a tile baked from the store', () => {
     for (const [kind, detail] of [['massTile', TILE_DETAIL], ['massPlate', PLATE_DETAIL]] as const) {
       const job: CellJob = {
         id: 1, kind, cell: 't:0,0', paved: false, boxes: { parts: {}, furniture: {} } as unknown as CellJob['boxes'],
-        entries: buildings.map((b, i) => ({ key: String(b.id), sig: i, digest: 0, record: JSON.stringify(b) })),
+        entries: buildings.map((b, i) => ({ key: String(b.id), sig: i, digest: 0, record: refOf(b) })),
       };
       const reply = runCellJob(job, { groundAt, naturalAt });
       if (reply.kind !== 'done') throw new Error(reply.kind);

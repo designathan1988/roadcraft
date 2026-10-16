@@ -2,6 +2,7 @@ import { canQueueJobs, focusDistance, type JobTicket, submitJob, warmJobWorkers 
 import type { GroundAt } from '@world/buildings/foundation';
 import type { Finish } from '@world/buildings/materials';
 import type { PavingSource } from '@world/paving';
+import type { RecordRef } from '@world/buildings/recordTable';
 import { m } from '@world/units';
 import type { SharedGroundAt } from '../sharedGround';
 import { BATCH_CELL } from './layerCells';
@@ -48,8 +49,8 @@ interface Asked {
   readonly kind: JobKind;
   readonly cell: string;
   readonly entries: readonly CellEntry[];
-  /** Each record taken when asked, written as text only for the message (the page keeps none: `CellJobEntry`). */
-  readonly writers: readonly (() => string)[];
+  /** Where each record is read, taken when the job is sent (its tile's shared table: posted as a handle, never copied). */
+  readonly writers: readonly (() => RecordRef)[];
   readonly env: CellEnv;
   readonly done: (result: CellResult) => void;
   readonly key: string | null;
@@ -68,8 +69,8 @@ export class CellPool {
   private warned = false;
 
   /** `workers`: false does every job on the page (tests). `tone`: each finish's colour from afar, for the masses (`kit.ts`). */
-  /** `text`: an entry's record, taken when asked, written as text for the job's message when it is sent (the page keeps none). */
-  constructor(private readonly boxes: () => KitBoxes, private readonly text: (entry: CellEntry) => () => string, private readonly workers = true,
+  /** `text`: where an entry's record is read (`recordTable.ts`), taken when the job is sent. */
+  constructor(private readonly boxes: () => KitBoxes, private readonly text: (entry: CellEntry) => () => RecordRef, private readonly workers = true,
     private readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>) {}
 
   /** Jobs asked and not answered. */
@@ -140,7 +141,7 @@ export class CellPool {
     });
   }
 
-  /** The job as its worker reads it: the records written now, the plates' shared buffers, the roads near the cell (MDN, transfer). */
+  /** The job as its worker reads it: the records' shared tables and rows, the plates' shared buffers, the roads near the cell (MDN, transfer). */
   private write(asked: Asked): { data: CellJob; transfer: ArrayBuffer[] } {
     const ground = (asked.env.groundAt as SharedGroundAt).share?.current;
     if (!ground) throw new Error('[buildings] the ground is not shared any more');

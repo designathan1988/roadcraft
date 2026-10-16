@@ -1,5 +1,5 @@
 import type { Finish } from '@world/buildings/materials';
-import type { Building } from '@world/buildings/types';
+import { readRecords } from '@world/buildings/recordTable';
 import { type PavingData, pavingReader } from '@world/paving';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { emitChunk } from './buildingMesh';
@@ -94,7 +94,8 @@ const DETAIL: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS.filter(
 
 /** DO NOT ask the page for the ground in rounds: a cell's job reads every height itself (`sharedGround.ts`), in one pass, nothing kept once it is done */
 export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
-  const buildings = job.entries.map((entry) => JSON.parse(entry.record) as Building);
+  // DO NOT parse a text per building: each record decoded from its tile's shared table, a tile's shared members once for the job.
+  const buildings = readRecords(job.entries.map((entry) => entry.record));
   // A paving point past the roads handed over: the box of them, to ask the job again over it (`wider`).
   let missX0 = Infinity, missY0 = Infinity, missX1 = -Infinity, missY1 = -Infinity;
   const pavedHere = reads.pavedAt;

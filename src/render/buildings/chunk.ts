@@ -1,5 +1,6 @@
 import type { FurnitureKind } from '@world/buildings/interior';
 import type { Finish } from '@world/buildings/materials';
+import type { RecordRef } from '@world/buildings/recordTable';
 import type { FlagInstance } from './flagLayer';
 import type { FacadePropKind } from './facadeProps';
 
@@ -42,9 +43,9 @@ export interface CellEntry {
 export const sameEntries = (a: readonly CellEntry[], b: readonly CellEntry[]): boolean =>
   a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.sig === b[i]!.sig && e.digest === b[i]!.digest);
 
-/** DO NOT keep the text with the entries the page keeps: a string the size of the record, for every building. */
+/** An entry as a job is sent it: where its worker reads the record (its tile's shared table and row, `recordTable.ts`), never the record. */
 export interface CellJobEntry extends CellEntry {
-  readonly record: string;
+  readonly record: RecordRef;
 }
 
 /** One part batch of one building: its instance matrices (and colours). */

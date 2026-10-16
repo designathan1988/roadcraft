@@ -48,7 +48,7 @@ describe('a cell job no longer wanted', () => {
 
   it('waiting, never starts; begun, its answer is dropped and the next one starts', async () => {
     const { CellPool } = await import('@render/buildings/cellPool');
-    const pool = new CellPool(() => boxes, () => () => '{}');
+    const pool = new CellPool(() => boxes, () => () => ({ buffer: new SharedArrayBuffer(0), row: 0 }));
     const done: number[] = [];
     const a = pool.run('cell', '0,0', [], env, () => done.push(a));
     const b = pool.run('cell', '0,0', [], env, () => done.push(b));
@@ -77,7 +77,7 @@ describe('a cell job no longer wanted', () => {
     const { CellPool } = await import('@render/buildings/cellPool');
     const { setJobFocus } = await import('@/jobs/jobPool');
     const written: string[] = [];
-    const pool = new CellPool(() => boxes, (e) => () => { written.push(e.key); return '{}'; });
+    const pool = new CellPool(() => boxes, (e) => () => { written.push(e.key); return { buffer: new SharedArrayBuffer(0), row: 0 }; });
     setJobFocus(0, 0);
     const busy = pool.run('cell', '9,9', [], env, () => {});
     const far = pool.run('cell', '40,40', [{ key: 'far', sig: 0, digest: 0 }], env, () => {}, 'cell|40,40');
@@ -98,7 +98,7 @@ describe('a cell job no longer wanted', () => {
     const pavedAt = Object.assign(() => NaN, {
       pack: (rect: readonly [number, number, number, number]) => { rects.push(rect); return { data: { rect, field: null, flush: null }, transfer: [] }; },
     });
-    const pool = new CellPool(() => boxes, () => () => '{}');
+    const pool = new CellPool(() => boxes, () => () => ({ buffer: new SharedArrayBuffer(0), row: 0 }));
     let landed = 0;
     const id = pool.run('cell', '0,0', [], { ...env, pavedAt }, () => landed++);
     const worker = FakeWorker.made[0]!;
