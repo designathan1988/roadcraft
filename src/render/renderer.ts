@@ -688,6 +688,13 @@ export function createSceneRenderer(
   const stepCosts = new Float64Array(8);
   let stepCursor = 0;
   /** Builds the world of the last edit for a few milliseconds; it puts itself in place once complete. */
+  /** DO NOT ask the next frame at once while the world's job waits on a worker: the unseen opening's frames come without the display's pace (`frameLoop.ts`), and it spun the page at 2,000 frames a second, starving the workers it waited on (2026-10-16); looked at again a display frame later. */
+  const WAIT_LOOK_MS = 16;
+  let waitLook: ReturnType<typeof setTimeout> | null = null;
+  const lookAgain = (): void => {
+    if (waitLook !== null) return;
+    waitLook = setTimeout(() => { waitLook = null; onAssetsReady(); }, WAIT_LOOK_MS);
+  };
   const pumpWorld = (): void => {
     if (!worldJob) return;
     // Not in the frame of the edit itself, which has already paid for the edit and the roads' heights
@@ -708,6 +715,7 @@ export function createSceneRenderer(
       step = worldJob.next();
     }
     if (step.done) { worldJob = null; stepCosts.fill(0); shadowMoved = true; }
+    else if (step.value === 'wait') lookAgain();
     else onAssetsReady();
   };
   let networkRevision = -1;
