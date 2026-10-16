@@ -37,6 +37,10 @@ produced nothing; what moved the game was reading the code, fixing it, and looki
   Its rules to copy: a tile draws by cells only when every cell is ready (`render/cellLayer.ts` cellsReady, fade),
   SoA tables, one job pool reading shared memory, 12 numbers a building + a versioned generator, binary save per tile.
 - Say plainly what you did not run or did not look at.
+- Never tell the player what the game shows ("opened", "fills the map", "fixed") before you opened the shot
+  with Read in this turn and saw it; name the shot. A run still going is "not seen yet", never "it works".
+- The player's message is followed in its turn. Do not turn one message into a new rule here: this file's
+  rules change only when he says to change this file.
 - If a fix does not hold, read more code and the official sources online (three.js r186 in
   `C:/Codex-Shared/referencia/`, Cesium 3D Tiles for level refinement); do not try variations at random.
 - Ask the player only: a change that lowers graphics quality (describe it; he asks for shots if he wants
@@ -139,8 +143,8 @@ a second RoadDoc + Network of the active region.
 ## Commits, branches, agents
 - `git status` first; commit only your paths (`git commit --only <paths>`) after reading their diff. Every
   file saved in the main folder reloads the game on 5300.
-- Agents: up to 10 at once, each in its own worktree from local `main`, one part each, no two on the same
-  files. Agents run no process besides git and reading/writing files. Read each diff whole before merging.
+- Agents only when the player asks for them: up to 10 at once, each in its own worktree from local `main`,
+  one part each, no two on the same files. Agents run no process besides git and reading/writing files. Read each diff whole before merging.
   Remove a worktree's junctions with `rmdir`, never `rm -rf`; delete the branch once merged.
 - Push only to `roadcraft4` (https://github.com/designathan1988/roadcraft-4.0.git); NEVER to `origin` or
   `roadcraft3`. Never touch ports 4180-4183, 5173, 5175-5178 or `C:/Codex-Shared/backup-mapa-jogador`.
