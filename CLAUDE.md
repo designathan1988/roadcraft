@@ -138,6 +138,17 @@ pasted in the session that started this; these are its binding decisions.
   face, never instanced. Needs the player's call (shots): lot furniture as instanced parts per kind (the brief's "parts
   instanced per kind for the whole near ring"), or left out of L1 below its error; and the detail budget only lets go of
   cells not shown (17 shown cells pass `buildingDetailMB`).
+- Measured again at 4b06665 (2026-10-16, dev 5300, headless Chrome on the RTX 3060, 25% CPU; memory-infra dumps and live
+  heap sampling of the page and every worker): the opening does NOT get to drawing now. 9 tiles (7,843 buildings, 2,319 roads)
+  are in by ~30 s; the world's job (road surfaces, waiting on the 4 job workers, one held by growth) never ends; 0 MB of
+  building detail ever reaches the GPU. Page process at 4.0 GB (~40 s): V8 2.0 GB (page 0.53, 8 worker isolates 1.5),
+  array buffers 1.0 GB, Blink buffers (messages in flight) 0.46 GB, malloc 0.35 GB. Live JS is small (page 318 MB, sim worker
+  181 MB, each job worker ~60 MB, mostly `intern.ts` building records and parsed tile text: every worker its own copy); the
+  rest is garbage and full young generations (page ~150 MB/s of allocation). The page and all its workers share ONE 4 GB V8
+  cage (V8 9.2 shared cage, required by the V8 sandbox; Electron the same). Under the 8 GB job it dies at ~75 s (6.3 GB);
+  under 10 GB it is shown by `REVEAL_LIMIT_MS` incomplete (`whole: false`) after a 51 s freeze, then dies at ~228 s at 6.8 GB
+  (below the cap; reason not captured). Cause: the records live as JS objects copied by message into stateful workers, not
+  as the brief's typed tables in shared memory read by stateless jobs. The L1 lot furniture above is the next wall, not this one.
 - Also open: city statistics read the region only; growth runs in the region only; the joins between near and
   far roads at the region's edge do not match exactly (far junctions only on owned nodes, heights differ).
 
