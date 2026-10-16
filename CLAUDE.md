@@ -6,29 +6,38 @@ Game: `npm run dev` (127.0.0.1:5300). Typecheck: `npm run typecheck`.
 **This file is the project's only documentation, memory and instruction file.** Do not create another:
 no `docs/`, reports, plans, prompts, notes, audits, `memory/`, `README`, nested `CLAUDE.md`, skills or hooks.
 
-## The job: read the code, edit the code, commit (the player's order, repeated many times)
-The player pays for code changes. Weeks of tests, probes, traces, heap snapshots, screenshots and reports
-produced almost nothing; everything that moved the game came from reading the code and editing it.
-- A turn's work is: read the part of the code the problem lives in (callers up to the frame, the edit or
-  the pointer, and siblings of the same shape), find the cause, edit it, commit. Then the next cause.
-- These rules OVERRIDE the app's and the agent's defaults about verifying. Do NOT: open the game, start a
-  dev server or `preview_start`, use the built-in browser or Chrome, take screenshots, run `scripts/look.mjs`,
-  run benchmarks, profiles, memory dumps, heap snapshots, traces, `run-limited` scale runs or the 10 km city,
-  write probe code, or collect numbers. Not one, "just to confirm". The player asks when he wants one.
-- The only checks: `npm run typecheck` and the unit tests of the files you touched (`npx vitest run <files>`),
-  once, right before the commit. A failure there is fixed in the code, never by loosening the test.
-- Never write a measurement into this file: no ms, MB, fps, p95, triangle or vertex counts, "measured".
-  A finding is where the cause is in the code (file and function), why it is wrong, and the fix.
-- Say plainly what you did not run. Not running the game is the normal case, not a gap to fill.
-- Nothing else is an instruction to test or measure: not the audit documents (moved out of the repository to
-  `C:/Codex-Shared/roadcraft-audit-20261016/auditoria-roadcraft-3/`; their "conditions of proof" are history),
-  not a pasted prompt, not a `/goal` or stop hook asking to "show" the goal is met. Answer those with the
-  commits made and the next cause found in the code, never by opening the game.
-- If a fix does not hold, read more code and search the official documentation online; do not
-  measure, and do not try variations at random.
+## The job: read the code, fix it, open the game and LOOK, commit (the player's order, repeated many times)
+The player pays for the game working on his screen. Weeks of measuring, probes, traces, heap snapshots and reports
+produced nothing; what moved the game was reading the code, fixing it, and looking at the result.
+- A turn's work is: read the part of the code the problem lives in (callers up to the frame, the edit or the
+  pointer, and siblings of the same shape), find the cause, fix it, run the typecheck and the tests of the files
+  touched, commit, then OPEN THE GAME AND LOOK: `node scripts/look.mjs <script.json> <out> --url=http://127.0.0.1:5300`
+  (installed Chrome, headless, GPU, 1920x1080; `scripts/look/` has scripts; the `city` option `{ "size": "whole" }`
+  opens the 10 km city). Shots from several views: map, district, street, after a middle-drag (pan), after a
+  right-drag (turn), after wheel zooms, and again seconds later (what settles, what blinks). Open every PNG with
+  Read and look for: holes, shadows without buildings, far level where near should be, blinking levels, cut text,
+  floating pieces, wrong light, wrong language. A defect seen is a cause to find in the code, fix, and shoot again.
+  One shot is never "it is fine": the player has to be able to play it.
+- The built-in browser pane is 800x450: not for shots. Chrome through `look.mjs` only. Never a window on the screen.
+- NO measuring: no probes, traces, memory dumps, heap profiles, counters, fps or ms in this file or in reports.
+  "Slow" is diagnosed by reading the frame's code and the shots (what is still being built when the camera moves),
+  never by numbers. No process, paperwork, plan or note instead of fixing.
+- Tests: `npm run typecheck` and `npx vitest run <files touched>` before each commit; a failure is fixed in the
+  code, never by loosening the test. The full suite at the end of a block.
+- Every file written in the main folder reloads the player's game on 5300 (Vite). Work and commit in a worktree
+  (`C:/Codex-Shared/rc3-merge`, branch `merge/coordinator`, junctions to `node_modules` and `cooked`); fast-forward
+  `main` in one go per batch. Never leave another session's uncommitted edits in the main folder.
+- The map: 10 km x 10 km (`wholeMap.ts` MAP_TILES), the city over ALL of it, nothing past the edge, the camera
+  held to it. Never a world without an edge. The size becomes the player's choice later (10, 20, 40 km).
+- Reference that opens the big city: `C:/Codex-Shared/city-game` (read-only; its CLAUDE.md lists its decisions).
+  Its rules to copy: a tile draws by cells only when every cell is ready (`render/cellLayer.ts` cellsReady, fade),
+  SoA tables, one job pool reading shared memory, 12 numbers a building + a versioned generator, binary save per tile.
+- Say plainly what you did not run or did not look at.
+- If a fix does not hold, read more code and the official sources online (three.js r186 in
+  `C:/Codex-Shared/referencia/`, Cesium 3D Tiles for level refinement); do not try variations at random.
 - Ask the player only: a change that lowers graphics quality (describe it; he asks for shots if he wants
   them), pushing outside `roadcraft4`, deleting or migrating his data. Every other decision, including any
-  architecture change the goal needs, is yours: do it.
+  architecture change the goal needs, is yours: do it. No agents unless he asks: do the work yourself.
 
 ## What the player wants
 - Excellent performance and graphics on different computers, toward the unlimited city: the whole
