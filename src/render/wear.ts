@@ -14,8 +14,8 @@ import { TorusWindow } from './torusWindow';
 
 /** Wear: streets and footways that age with use (the player's order of 2026-10-05). */
 
-/** Texels across the window round the view: 5 m each over 5,120 m, the micro window's 1,500 m (`sim/meso/memory.ts` MICRO_RADIUS: the only traffic that wears) and what it left round it. */
-export const WEAR_RES = 1024;
+/** Texels across the window round the view: 5 m each over 10,240 m, the reach the wear had (DO NOT shrink it without the player's yes on shots: wear past it is let go). */
+export const WEAR_RES = 2048;
 const RES = WEAR_RES;
 const CELL = m(5);
 /** How far the view goes from the window's middle before it follows (texels): an eighth of it, the texels that leave cleared. */
