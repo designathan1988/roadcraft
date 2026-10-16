@@ -83,6 +83,23 @@ pasted in the session that started this; these are its binding decisions.
   Chrome memory, the world not shown 4 min after; a medium city lost its WebGL context (GL_OUT_OF_MEMORY) in a
   8 GB job: 28 workers in the page's process (14 pools) and ~1 GB of geometry.
 - Still asks the player: graphics-quality changes (shots), migrating his saved map, pushing.
+- Adopted from "Cidade" (a 20 k-line game on the same brief that opens the whole large city; source extracted
+  in the session scratchpad, read-only reference, never run; player's order 2026-10-16 to take its architecture ideas):
+  one job queue with priority dispatching to any free worker, a key that cancels the older job and drops its result,
+  stateless jobs reading shared memory (terrain heights in a SharedArrayBuffer) instead of services pinned to workers
+  and page round trips; far building levels emitted again by the generator (same record, fewer pieces) with windows,
+  frames, shop fronts and lit rooms drawn by the shader from per-vertex facade attributes (style/seed/kind/column
+  width + wall coordinate), averaged by `fwidth` far away — L0 keeps its real openings; compact vertex (int16
+  position per cell, RGBA8 colour, planar uv in the shader) and 4-float instances; CDLOD with the heights texture
+  array as the same SAB, `texelFetch` + manual bilinear equal to the CPU; roads past ~2 km and markings painted by
+  shaders, density cars from an occupancy texture; meso traffic as per-lane exit events (saturation headway);
+  save per tile in binary, compressed, in a worker, only dirty tiles; steamworks.js in the Electron main process only.
+  Not taken: its WebGPU-only look (post, CSM, GPU-culled props are off in its WebGL2 mode), its simpler buildings,
+  its 500-step undo cap.
+- Work in flight (2026-10-16), each in `.claude/worktrees/agent-<id>`: running wires/poles (aa91207f),
+  simulation scans (a8a1fc47), whole-map generator F7 (a6521f41); waiting, partial work kept: building L1 by the
+  generator (ac1805fc), building parts (a3ae02c2), terrain CDLOD (ae1e1d82), vegetation (ad130cd5), world walks
+  (a64389c6), light F6 (a6bf0567), Steam F8 (aed0c028). Next new: the job queue above.
 
 ## How to work
 - Find the cause by reading the whole part of the code: file by file, each caller followed up to
@@ -250,10 +267,11 @@ is hidden every frame (no overdraw).
 ## Commits, branches, agents
 - `git status` first; commit only your paths (`git commit --only <paths>`) after reading their
   `git diff`. Every file saved in the main folder reloads the game on 5300.
-- Agents: no limit on how many run in parallel (player's order, 2026-10-15), ultracode and
-  parallel sessions included. Each one in its own worktree made from local `main` (check its first
-  commit: the tool may cut it from an old one), one part each, no two on the same files; read its
-  diff whole before merging. Keep progress here.
+- Agents: at most 3 running at once (player's order, 2026-10-16: 10 at once overloaded CPU and
+  memory); the others wait their turn. Each one in its own worktree made from local `main` (check its
+  first commit: the tool may cut it from an old one), one part each, no two on the same files; heavy
+  commands through `run-limited`, one headless Chrome at a time, vitest only on touched files with
+  `--maxWorkers=2`, its Vite stopped when done; read its diff whole before merging. Keep progress here.
 - Effort high for normal work; xhigh only to decide architecture and at phase gates. Grep before
   Read; in a file over 800 lines read only the part that matters. During a block only the
   typecheck and the tests of what was touched; the full check and the route at the end of the
