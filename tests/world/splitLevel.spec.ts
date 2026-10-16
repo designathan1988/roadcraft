@@ -13,7 +13,7 @@ import { cutOpen } from '@world/buildings/interior';
 import { validateBuilding } from '@world/buildings/validate';
 import { type Building, type Volume, volumeTop } from '@world/buildings/types';
 import { emitChunk } from '@render/buildings/buildingMesh';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
 /** Buildings follow their hillside as in real life (the player, 2026-10-09) */

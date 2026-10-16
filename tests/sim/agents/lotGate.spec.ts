@@ -6,7 +6,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { entrancesOf } from '@world/parkingLayout';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { SimWorld } from '@sim/world';
 import { type Bay, carGates, collectBays, gateExits, gatedProperty, wallsOf } from '@sim/agents/parking';
 import { arrival, departure } from '@sim/agents/manoeuvre';

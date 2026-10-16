@@ -9,7 +9,7 @@ import { blueprintByKey } from '@world/buildings/blueprints';
 import { BuildingStore } from '@world/buildings/store';
 import { type Building, type BuildingId, cloneBuilding } from '@world/buildings/types';
 import { editBuilding, placeBuilding } from '@editor/buildings';
-import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
+import { LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
 
 /** The building store keeps the records it is handed, without copying them (`store.ts`, OWNERSHIP) */
 

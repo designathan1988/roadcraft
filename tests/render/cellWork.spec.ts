@@ -7,7 +7,7 @@ import { CellPool } from '@render/buildings/cellPool';
 import type { CellEntry, CellResult } from '@render/buildings/cellWork';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { applyLots, planLots, zoneLots } from '@world/lots';

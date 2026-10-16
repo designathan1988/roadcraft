@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CITY } from '@world/cityGen/plan';
 import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
 import { buildTileMap } from '@editor/wholeMapTile';
-import { replayOnLot } from '@editor/zoning';
+import { replayOnLot } from '@world/growth/zoning';
 import type { Lot } from '@world/lots';
 
 /** A GROWN BUILDING IS A FEW NUMBERS (`zoning.ts` `GrownChoice`, the city-game's record and versioned generator): every building of a generated tile made again from its choices alone (`replayOnLot`) is the record the generator wrote, member for member. */

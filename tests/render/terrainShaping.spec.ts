@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { layCity } from '@editor/cityGenerator';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { type BlockDigestAsk, type GroundJob, type GroundShapeAsk, type PlateShapeAnswer, askPlate, blockDigest, cornerBoxes, runGroundJob } from '@render/groundShape';
 import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sampleCorners, shapeBoth, shapeCorners } from '@render/terrainShaping';
 import { storedBounds } from '@world/buildings/geometry';

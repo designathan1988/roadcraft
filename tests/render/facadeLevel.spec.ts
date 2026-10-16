@@ -11,7 +11,7 @@ import { shellUv } from '@render/buildings/shellParts';
 import { PART_KINDS, type PartKind, createBuildingKit } from '@render/buildings/kit';
 import { GROUND_ATTRIBUTE, LOOK_FLOATS, NO_GROUND, SHELL_PARTS, SHELL_PART_KINDS } from '@render/buildings/shellParts';
 import { FINISHES } from '@world/buildings/materials';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { applyLots, planLots, zoneLots } from '@world/lots';

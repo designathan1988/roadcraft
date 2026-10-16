@@ -6,7 +6,7 @@ import { applyLots, planLots } from '@world/lots';
 import { latticeHeight } from '@world/groundPatch';
 import { planCity, DEFAULT_CITY } from '@world/cityGen/plan';
 import { layCity, zoneCity } from '@editor/cityGenerator';
-import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
+import { LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
 import { type GrowthHost, type GrowthLane, GrowthSession } from '@editor/growthFeed';
 import { BATCH_MOST, type GrowAnswer, type GrowAsk, GrowthReplica } from '@editor/growthReplica';
 import { validateBuilding } from '@world/buildings/validate';

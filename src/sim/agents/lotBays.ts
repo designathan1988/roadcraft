@@ -134,7 +134,7 @@ const EDGE_REACH = m(22);
 export function bayRows(r: BayReads, b: LotRecord): Bay[] {
   const out: Bay[] = [];
   const navCache = new Map<object, { exits: LotExit[]; grid: LotGrid }>();
-  // A lot closed by a boundary with car gates (`editor/lotPlan.ts`)
+  // A lot closed by a boundary with car gates (`world/growth/lotPlan.ts`)
   const property = gatedProperty(b);
   for (const el of b.elements ?? []) {
     if (el.kind !== 'parking') continue;

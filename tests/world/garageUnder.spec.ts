@@ -8,8 +8,8 @@ import { floorHeight } from '@world/buildings/foundation';
 import { lotSurfaces } from '@world/buildings/lots';
 import { validateBuilding } from '@world/buildings/validate';
 import { type Building, componentAt } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
-import { GARAGE_GRADE } from '@editor/lotPlan';
+import { growOnLot } from '@world/growth/zoning';
+import { GARAGE_GRADE } from '@world/growth/lotPlan';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
 /** A house on a lot falling away from its street, stepped a whole storey down at the back */

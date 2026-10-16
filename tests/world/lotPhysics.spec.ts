@@ -7,7 +7,7 @@ import { unsupportedElements } from '@world/buildings/elements';
 import { elementRect } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
 import type { ZoneUse } from '@world/zones';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
 /** Nothing in a grown lot stands in the air (Etapa 5a) */

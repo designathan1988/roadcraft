@@ -13,7 +13,7 @@ import type { NodeId, SegmentId } from '@world/ids';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { validateBuilding } from '@world/buildings/validate';
 import type { GrowAnswer, GrowAsk, GrowthSync, JunctionPiece, RoadPiece } from './growthReplica';
-import { LIKE_REACH, commitGrown, growthReachOf, pickLot, streetPointsOf } from './zoning';
+import { LIKE_REACH, commitGrown, growthReachOf, pickLot, streetPointsOf } from '@world/growth/zoning';
 import { lotCentre } from '@world/lots';
 
 /** A rectangle grown by `pad` on every side. */

@@ -6,7 +6,7 @@ import { METERS_PER_UNIT, m } from '@world/units';
 import { applyLots, planLots, type Lot } from '@world/lots';
 import { planCity, DEFAULT_CITY, type CityOptions, type CityPlan } from '@world/cityGen/plan';
 import { layCity, zoneCity } from '@editor/cityGenerator';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { levelPolygons } from '@world/surfaces';
 import { Level } from '@world/roadTypes';
 import { roofRise, volumeCorners, levelElevation } from '@world/buildings/geometry';

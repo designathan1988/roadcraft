@@ -6,7 +6,7 @@ import { applyLots, planLots } from '@world/lots';
 import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 import type { BuildingId } from '@world/buildings/types';
 import { greenCity, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
-import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
+import { LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
 import { SimWorld } from '@sim/world';
 import { buildLotGrid as oldGrid } from './oracle/lotNavOld';
 

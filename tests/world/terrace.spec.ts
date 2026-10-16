@@ -8,7 +8,7 @@ import { floorHeight } from '@world/buildings/foundation';
 import { localToWorld } from '@world/buildings/geometry';
 import { validateBuilding } from '@world/buildings/validate';
 import type { Building } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
 /** Houses on a hillside follow the land */

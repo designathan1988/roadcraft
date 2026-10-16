@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { layCity } from '@editor/cityGenerator';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import type { GroundSince, Rect } from '@world/buildings/cameraSolids';
 import { buildingFloors } from '@world/buildings/floors';
 import { FLOOR_READ_REACH, floorHeight } from '@world/buildings/foundation';

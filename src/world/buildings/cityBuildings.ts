@@ -167,7 +167,7 @@ export class Model {
 }
 
 export const mat = (finish: MaterialSpec['finish'], colour: number): MaterialSpec => ({ finish, colour });
-/** A retaining wall's stone, and the flights cut through one (`editor/lotPlan.ts` terraces) */
+/** A retaining wall's stone, and the flights cut through one (`world/growth/lotPlan.ts` terraces) */
 export const RETAINING_STONE = mat('stone', 0x9a948a);
 /** Whether a material is the retaining wall's stone. */
 export const isRetainingStone = (spec: MaterialSpec | undefined): boolean =>

@@ -6,7 +6,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { worldToLocal } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
 import { pointInPolygon } from '@core/polygon';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { SimWorld } from '@sim/world';
 import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';

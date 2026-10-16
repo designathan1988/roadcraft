@@ -6,7 +6,7 @@ import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
 import { type CellJob, type WorkReply, runCellJob } from '@render/buildings/cellWork';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, COARSE_PARTS } from '@render/buildings/layerCells';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { GROUND_ONLY, buildRoadElevation } from '@world/elevation';

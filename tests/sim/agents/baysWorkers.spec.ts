@@ -4,7 +4,7 @@ import { Network } from '@world/network';
 import { m } from '@world/units';
 import { applyLots, planLots, zoneLots } from '@world/lots';
 import type { BuildingId } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 import { greenCity, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
 import { SimWorld } from '@sim/world';

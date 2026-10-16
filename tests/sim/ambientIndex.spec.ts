@@ -6,7 +6,7 @@ import { m } from '@world/units';
 import { applyLots, planLots, zoneLots } from '@world/lots';
 import { solidFootprints } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { BuildingMix, SightWalls, ambientIndexWork, crosses, StreetLength, atRoll } from '@sim/ambient/ambientIndex';
 import { kindOf, type Mix } from '@sim/ambient/demand';
 import { docBuildings } from '@sim/agents/trafficBuildings';

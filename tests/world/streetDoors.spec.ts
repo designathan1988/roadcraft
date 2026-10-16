@@ -5,7 +5,7 @@ import { m } from '@world/units';
 import { applyLots, planLots, zoneLots } from '@world/lots';
 import { streetDoors } from '@world/buildings/streetDoors';
 import type { Building } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
 /** A shop built up to the footway (no front garden, no forecourt: the lot's front is the street) has no people's gate */

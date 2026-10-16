@@ -260,7 +260,7 @@ function workOutBays(w: SimWorld, roads: string, first: unknown): Bay[] {
   return out;
 
   function bayRows(b: Building): void {
-    // A lot closed by a boundary with car gates (`editor/lotPlan.ts`)
+    // A lot closed by a boundary with car gates (`world/growth/lotPlan.ts`)
     const property = gatedProperty(b);
     for (const el of b.elements ?? []) {
       if (el.kind !== 'parking') continue;

@@ -6,7 +6,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { facadeBays, isMass } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
 import type { ZoneUse } from '@world/zones';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
 /** ONE WALL IS BUILT ONCE (5e). */

@@ -5,7 +5,7 @@ import { m } from '@world/units';
 import { Rng } from '@core/rng';
 import { applyLots, planLots, zoneLots } from '@world/lots';
 import type { Building, BuildingId } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { SimWorld } from '@sim/world';
 import { type Bay, collectBays } from '@sim/agents/parking';
 import { collectBays as oldCollectBays } from './oracle/parkingOld';

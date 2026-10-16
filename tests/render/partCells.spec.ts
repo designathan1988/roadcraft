@@ -6,7 +6,7 @@ import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
 import { PartCell, type PartView } from '@render/buildings/partCells';
 import { SHELL_PART_KINDS } from '@render/buildings/shellParts';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { applyLots, planLots, zoneLots } from '@world/lots';

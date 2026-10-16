@@ -6,7 +6,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { lorryDocks } from '@world/buildings/docks';
 import { facadeBays } from '@world/buildings/geometry';
 import type { Building } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
 /** A works' loading yard is laid with lorry docks, each square in front of a loading door of the hall */

@@ -14,7 +14,7 @@ import { emitChunk, withShellParts } from '@render/buildings/buildingMesh';
 import { TERRAIN_CELL, TERRAIN_HALF } from '@render/terrain';
 import { buildRoadElevation } from '@world/elevation';
 import type { Building } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
 

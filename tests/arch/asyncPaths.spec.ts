@@ -106,7 +106,7 @@ describe('the workers', () => {
     expect(modules.filter((m) => /src\/(main|growthPool|render\/|ui\/|view\/|sim\/|people\/)/.test(m))).toEqual([]);
     // Of the editor, the growth's pure part alone (the lot planned, the building made for it, checked).
     expect(modules.filter((m) => m.startsWith('src/editor/')).sort())
-      .toEqual(['src/editor/growthReplica.ts', 'src/editor/lotBoundaryRuns.ts', 'src/editor/lotPlan.ts', 'src/editor/zoning.ts']);
+      .toEqual(['src/editor/growthReplica.ts']);
   });
 });
 

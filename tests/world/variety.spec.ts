@@ -6,7 +6,7 @@ import { m } from '@world/units';
 import { applyLots, lotCentre, planLots, zoneLots } from '@world/lots';
 import { bodySignature, madeToMeasure, signatureDistance } from '@world/buildings/procedural';
 import type { Building } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import type { ZoneDensity, ZoneUse } from '@world/zones';
 
 /** Buildings grown on zoned lots do not repeat */

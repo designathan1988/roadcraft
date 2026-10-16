@@ -7,7 +7,7 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { lorryDocks } from '@world/buildings/docks';
 import type { LaneletId } from '@world/lanelets';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { SimWorld } from '@sim/world';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import type { Waypoint } from '@sim/agents/hybridAStar';

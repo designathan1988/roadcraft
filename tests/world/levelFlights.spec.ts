@@ -8,7 +8,7 @@ import { levelHeight, localToWorld, volumeLift } from '@world/buildings/geometry
 import { cutOpen, interiorAt, levelFlights } from '@world/buildings/interior';
 import type { Building } from '@world/buildings/types';
 import { emitChunk } from '@render/buildings/buildingMesh';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { FOOTWAY_RISE, Level, halfWidth, roadType } from '@world/roadTypes';
 
 /** Inside a split-level house, cut open, a flight of stairs joins its levels */

@@ -3,7 +3,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { m } from '@world/units';
 import { applyLots, planLots, zoneLots } from '@world/lots';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { SimWorld } from '@sim/world';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { clearanceOf } from '@sim/agents/hybridAStar';

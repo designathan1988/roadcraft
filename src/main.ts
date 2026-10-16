@@ -126,7 +126,7 @@ import { desktopSaves } from './desktopSaves';
 import { levelElevation, roofRise } from '@world/buildings/geometry';
 import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
-import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
+import { LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
 import { GrowthSession } from '@editor/growthFeed';
 import { BATCH_MOST, type GrowAnswer } from '@editor/growthReplica';
 import { GrowthPool } from './growthPool';

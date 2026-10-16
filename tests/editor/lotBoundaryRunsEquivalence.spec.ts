@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { type CoverBox, openRunsAlong } from '@editor/lotBoundaryRuns';
+import { type CoverBox, openRunsAlong } from '@world/growth/lotBoundaryRuns';
 import { growCity } from '../world/cityAudit';
 
 /** THE OPEN STRETCHES OF A LOT'S EDGE ARE THE OLD ONES (2026-10-14) */
@@ -7,8 +7,8 @@ import { growCity } from '../world/cityAudit';
 interface Call { readonly args: [number, 'x' | 'y', number, readonly CoverBox[]]; readonly out: [number, number][] }
 const calls = vi.hoisted((): Call[] => []);
 
-vi.mock('@editor/lotBoundaryRuns', async (importOriginal) => {
-  const real = await importOriginal<typeof import('@editor/lotBoundaryRuns')>();
+vi.mock('@world/growth/lotBoundaryRuns', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@world/growth/lotBoundaryRuns')>();
   return {
     ...real,
     openRunsAlong: (...args: Parameters<typeof real.openRunsAlong>): [number, number][] => {

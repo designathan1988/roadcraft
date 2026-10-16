@@ -4,7 +4,7 @@ import { Network } from '@world/network';
 import { m } from '@world/units';
 import { applyLots, planLots, zoneLots } from '@world/lots';
 import type { BuildingId } from '@world/buildings/types';
-import { growOnLot } from '@editor/zoning';
+import { growOnLot } from '@world/growth/zoning';
 import { SimWorld } from '@sim/world';
 import type { Driver } from '@sim/vehicles/driver';
 import { LorryTraffic, YardList } from '@sim/agents/lorryTraffic';

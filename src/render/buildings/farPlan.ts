@@ -18,7 +18,7 @@ import { BURY, GLASS_SHARE, rgbOf } from './massing';
 type Tone = Readonly<Record<Finish, readonly [number, number, number]>>;
 type StyleKind = Parameters<typeof styleFor>[0];
 
-/** What the growth builds on a lot of a zone's use and density (`procedural.ts` `madeToMeasure`, `editor/lotPlan.ts` `planLot`) */
+/** What the growth builds on a lot of a zone's use and density (`procedural.ts` `madeToMeasure`, `world/growth/lotPlan.ts` `planLot`) */
 interface BuildKind {
   /** Storeys, least and most (podium included); `tall` of the towers a landmark of `tallStoreys`. */
   readonly storeys: readonly [number, number];
