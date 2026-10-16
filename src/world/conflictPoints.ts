@@ -60,15 +60,15 @@ export class ConflictIndex {
   private sweepCache = new Map<string, Float64Array>();
 
   /** The junctions whose conflicts are kept (null: every one): the micro simulation's window round the focus and the vehicles (`SimWorld.keepMicroWindow`). */
-  private window: ReadonlySet<NodeId> | null = null;
-  private readonly inWindow = (node: NodeId): boolean => this.window === null || this.window.has(node);
+  private kept: ReadonlySet<NodeId> | null = null;
+  private readonly inWindow = (node: NodeId): boolean => this.kept === null || this.kept.has(node);
 
   /** The window moved: the junctions it left let go (their pairs with them, `unuse`), those it reached built (`update`); false when none changed. */
   setWindow(graph: LaneletGraph, next: ReadonlySet<NodeId>): boolean {
     const changed = new Set<NodeId>();
     for (const node of this.ofJunction.keys()) if (!next.has(node)) changed.add(node);
     for (const node of next) if (!this.ofJunction.has(node) && graph.junctions.has(node)) changed.add(node);
-    this.window = next;
+    this.kept = next;
     if (!changed.size) return false;
     this.update(graph, changed);
     return true;
@@ -83,7 +83,7 @@ export class ConflictIndex {
 
   /** Whether the window held is `next`. */
   holdsWindow(next: ReadonlySet<NodeId>): boolean {
-    const now = this.window;
+    const now = this.kept;
     if (!now || now.size !== next.size) return false;
     for (const node of next) if (!now.has(node)) return false;
     return true;
@@ -111,7 +111,7 @@ export class ConflictIndex {
   /** Pairs measured (not read from the caches) by the last `build` and the last `prepare`: for the probes. */
   readonly measured = { build: 0, prepare: 0 };
 
-  *prepare(graph: LaneletGraph, measurer?: PairMeasurer, only?: ReadonlySet<NodeId> | null, window?: ReadonlySet<NodeId>): Generator<void | typeof WAITING, void> {
+  *prepare(graph: LaneletGraph, measurer?: PairMeasurer, only?: ReadonlySet<NodeId> | null, around?: ReadonlySet<NodeId>): Generator<void | typeof WAITING, void> {
     this.measured.prepare = 0;
     /** The pairs to measure off the page (`measurer`), each key once. */
     const wanted: { key: string; a: Sweep; shapeA: SweepShape; b: Sweep; shapeB: SweepShape }[] = [];
@@ -120,7 +120,7 @@ export class ConflictIndex {
     const read = new Map<string, { readonly a: Float64Array; readonly b: Float64Array }>();
     // The junctions an edit built again (`LaneletGraph.update`); every one only for a graph built whole.
     const junctions = (only ? [...only].map((node) => graph.junctions.get(node)).filter((j): j is JunctionTopology => j !== undefined) : [...graph.junctions.values()])
-      .filter((j) => (window ? window.has(j.node) : this.inWindow(j.node)));
+      .filter((j) => (around ? around.has(j.node) : this.inWindow(j.node)));
     // The sweeps the caches do not hold, sampled by the workers when there are some: read back below.
     if (measurer?.sampleSweeps) yield* this.sampleOffPage(graph, junctions, measurer);
     this.prepared.clear();

@@ -84,7 +84,7 @@ export class Meso {
   /** The camera's focus (the window's centre asked last): the reach of the tables is round it. */
   private focusAt: { x: number; y: number } | null = null;
   /** The micro window: where it stands, and where it was asked to go (`want`). */
-  private window = { x: 0, y: 0, r: 0 };
+  private micro = { x: 0, y: 0, r: 0 };
   private wanted: { x: number; y: number; r: number } | null = null;
   /** The vehicles the meso handed to the micro simulation: taken back when they drive out of the window. */
   readonly owned = new Set<number>();
@@ -128,8 +128,8 @@ export class Meso {
     this.offered = [...this.tables.values(), ...this.offered];
     this.tables.clear();
     // The window stands where it was asked to: entered again over the new map's links at the next step.
-    this.wanted ??= { ...this.window };
-    this.window = { x: 0, y: 0, r: 0 };
+    this.wanted ??= { ...this.micro };
+    this.micro = { x: 0, y: 0, r: 0 };
   }
 
   /** The page's buffer the steps are written into (`render/densityCars.ts`). */
@@ -201,6 +201,8 @@ export class Meso {
     this.countMicro(w);
     this.rates(w);
     this.model.step();
+    // DO NOT make only the cars handed when a link came into the window: those that drove in since are made too.
+    for (const slot of this.model.handed) this.pendingSlots.add(slot);
     this.publish(w);
   }
 
@@ -579,18 +581,18 @@ export class Meso {
   // ------------------------------------------------------------ the micro window
 
   private inWindow(p: Filed): boolean {
-    const win = this.window;
+    const win = this.micro;
     return win.r > 0 && Math.hypot(p.x - win.x, p.y - win.y) < win.r;
   }
 
   /** DO NOT look at every link of the map: only those filed where the window was or will be. */
   private moveWindow(w: SimWorld, to: { x: number; y: number; r: number }): void {
     this.wanted = null;
-    const was = this.window;
+    const was = this.micro;
     const look = new Set<number>();
     if (was.r > 0) for (const id of this.filing.idsMeeting([was.x - was.r, was.y - was.r, was.x + was.r, was.y + was.r])) look.add(id);
     if (to.r > 0) for (const id of this.filing.idsMeeting([to.x - to.r, to.y - to.r, to.x + to.r, to.y + to.r])) look.add(id);
-    this.window = { ...to };
+    this.micro = { ...to };
     for (const slot of [...look].sort((a, b) => a - b)) {
       const p = this.middle.get(slot);
       if (!p || !this.model.has(slot)) continue;
@@ -734,9 +736,9 @@ export class Meso {
     // The slots past the buffer keep their lines owed: the page makes a bigger buffer (`wanted`), written whole.
     for (const slot of this.linesDirty) if (slot < n) this.linesDirty.delete(slot);
     memory.head[MH.time] = w.clock.time;
-    memory.head[MH.windowX] = this.window.x;
-    memory.head[MH.windowY] = this.window.y;
-    memory.head[MH.windowR] = this.window.r;
+    memory.head[MH.windowX] = this.micro.x;
+    memory.head[MH.windowY] = this.micro.y;
+    memory.head[MH.windowR] = this.micro.r;
     Atomics.store(memory.control, MC.wanted, model.slots);
     Atomics.add(memory.control, MC.serial, 1);
   }

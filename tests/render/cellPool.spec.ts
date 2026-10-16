@@ -56,8 +56,8 @@ describe('a cell job no longer wanted', () => {
     expect(FakeWorker.made).toHaveLength(1);
     const worker = FakeWorker.made[0]!;
     expect(started(worker)).toEqual([a]);
-    // The ground went with it, shared, and no page round trip is ever asked.
-    expect((worker.posted[0]!.data as CellJob).ground?.plates).toHaveLength(25);
+    // The ground went with it, shared (no plate made: only the relief, the world has no list of plates), and no page round trip is ever asked.
+    expect((worker.posted[0]!.data as CellJob).ground?.plates.size).toBe(0);
     pool.cancel(b);
     expect(pool.isRunning(b)).toBe(false);
     pool.cancel(a);

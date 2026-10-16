@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CITY } from '@world/cityGen/plan';
 import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
 import { lotCentre } from '@world/lots';
-import { OWNER, TILE, TILE_COUNTED, type TileRecords, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
+import { OWNER, TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { buildStreamTile } from '@editor/wholeMapTile';
 import type { JobScope } from '@/jobs/jobScope';
 import { type StreamTileAnswer, type StreamTileAsk, serve } from '@/cityTile.worker';
@@ -116,7 +117,7 @@ describe('a tile of the streamed world, built alone', () => {
     expect(left.nodes.length).toBeGreaterThan(0);
     expect(left.segments.length).toBeGreaterThan(0);
     expect(left.lots.length).toBeGreaterThan(0);
-  }, 120_000);
+  });
 
   it('names the shared edge\'s nodes alike from both tiles, and no road is both tiles\'', () => {
     const line = (i + 1) * TILE;
@@ -143,14 +144,14 @@ describe('a tile of the streamed world, built alone', () => {
     // No road in both: by its two ends' ids, which name the same places in both tiles.
     const roads = new Set(left.segments.map((s) => pairKey(s.a, s.b)));
     for (const s of right.segments) expect(roads.has(pairKey(s.a, s.b)), `road ${s.a}-${s.b} in both tiles`).toBe(false);
-  }, 120_000);
+  });
 
   it('builds a tile far from the origin', () => {
     const far = buildStreamTile(options, 40, -37);
     checkTile(far, 40, -37);
     expect(far.nodes.length).toBeGreaterThan(0);
     expect(far.segments.length).toBeGreaterThan(0);
-  }, 120_000);
+  }, 10_000);
 
   it('builds the same tile the same again, in the job worker too', () => {
     const posted: unknown[] = [];
@@ -163,5 +164,5 @@ describe('a tile of the streamed world, built alone', () => {
     if (!('records' in answer)) return;
     expect(answer.key).toBe(tileKey(i, j));
     expect(JSON.stringify(answer.records)).toBe(JSON.stringify(left));
-  }, 120_000);
+  }, 10_000);
 });

@@ -290,9 +290,13 @@ export class MesoModel {
     this.handedIn++;
   }
 
+  /** The links of the micro window handed a whole vehicle or more by the last step (`pending`): the micro simulation is to make them (`meso.ts` admit). */
+  readonly handed: number[] = [];
+
   /** One step of `dt`: origins fed, sending and receiving flows, each node's transfers, the cumulative counts moved on. */
   step(): void {
     const dt = this.dt;
+    this.handed.length = 0;
     for (let s = 0; s < this.size; s++) {
       this.inflow[s] = 0;
       this.outflow[s] = 0;
@@ -332,7 +336,11 @@ export class MesoModel {
     }
     for (let s = 0; s < this.size; s++) {
       if (!this.present[s]) continue;
-      if (this.insideOf[s]) { this.pendingOf[s] = this.pendingOf[s]! + this.inflow[s]!; continue; }
+      if (this.insideOf[s]) {
+        this.pendingOf[s] = this.pendingOf[s]! + this.inflow[s]!;
+        if (this.inflow[s]! > 0 && this.pendingOf[s]! >= 1) this.handed.push(s);
+        continue;
+      }
       const up = this.up[s]!, down = this.down[s]!;
       const up0 = this.cum(up, 0), down0 = this.cum(down, 0);
       up[this.ringAt(up, -1)] = up0 + this.inflow[s]!;

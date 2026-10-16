@@ -7,6 +7,14 @@ import { refillArrays } from '@render/mesh/gpuOnly';
 import { createBuildingKit } from '@render/buildings/kit';
 
 /** THE TOWN'S SHELLS LIVE ON THE GPU (`render/buildings/buildingMesh.ts`) */
+
+/** What three uploads of a geometry: each attribute, an interleaved one by its buffer (once), and the index. */
+function uploads(m: Mesh, withIndex = true): { array: ArrayLike<number> | null; onUploadCallback(): void }[] {
+  const out = new Set<{ array: ArrayLike<number> | null; onUploadCallback(): void }>();
+  for (const a of Object.values(m.geometry.attributes)) out.add((a as InterleavedBufferAttribute).isInterleavedBufferAttribute ? (a as InterleavedBufferAttribute).data : a as BufferAttribute);
+  if (withIndex && m.geometry.index) out.add(m.geometry.index);
+  return [...out];
+}
 function placed(index: number): Building {
   const bp = BLUEPRINTS[index]!;
   return { ...JSON.parse(JSON.stringify(bp.body)), id: index + 1, x: index * 60, y: 20, rotation: 0.3 } as Building;
@@ -19,18 +27,18 @@ describe("the town's shells", () => {
     const meshes = assembleBuildingMeshes(chunks, kit);
     const shells = meshes.group.children.filter((m) => m.name === 'building-shell') as Mesh[];
     expect(shells.length).toBe(1);
-    const before = shells.map((m) => [...Object.values(m.geometry.attributes), m.geometry.index!].map((a) => Array.from((a as BufferAttribute).array)));
+    const before = shells.map((m) => uploads(m).map((a) => Array.from(a.array!)));
     // The renderer's upload (WebGLAttributes calls it after bufferData).
-    for (const m of shells) for (const a of [...Object.values(m.geometry.attributes), m.geometry.index!]) (a as BufferAttribute).onUploadCallback();
+    for (const m of shells) for (const a of uploads(m)) a.onUploadCallback();
     for (const m of shells) {
-      for (const a of [...Object.values(m.geometry.attributes), m.geometry.index!]) expect((a as BufferAttribute).array).toBeNull();
+      for (const a of uploads(m)) expect(a.array).toBeNull();
       // Bounds were worked out before: culling and the shadows' box still read them.
       expect(m.geometry.boundingSphere).not.toBeNull();
       expect(m.geometry.boundingBox).not.toBeNull();
     }
     refillArrays(meshes.group);
     shells.forEach((m, k) => {
-      const after = [...Object.values(m.geometry.attributes), m.geometry.index!].map((a) => Array.from((a as BufferAttribute).array));
+      const after = uploads(m).map((a) => Array.from(a.array!));
       expect(after).toEqual(before[k]);
     });
     meshes.dispose();
@@ -69,7 +77,7 @@ describe("the town's shells", () => {
     const meshes = assembleBuildingMeshes([emitChunk(placed(2), () => 0)], kit, true);
     const shells = meshes.group.children.filter((m) => m.name === 'building-preview-shell') as Mesh[];
     expect(shells.length).toBeGreaterThan(0);
-    for (const m of shells) for (const a of Object.values(m.geometry.attributes)) { (a as BufferAttribute).onUploadCallback(); expect((a as BufferAttribute).array).not.toBeNull(); }
+    for (const m of shells) for (const a of uploads(m, false)) { a.onUploadCallback(); expect(a.array).not.toBeNull(); }
     meshes.dispose();
   });
 });

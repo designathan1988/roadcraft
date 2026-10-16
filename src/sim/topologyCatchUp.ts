@@ -9,16 +9,16 @@ export class TopologyCatchUp {
   constructor(private readonly measurer?: PairMeasurer) {}
 
   private vehicles: { revision: number; steps: Generator<void | typeof WAITING, void> } | null = null;
-  private window: Generator<void | typeof WAITING, void> | null = null;
+  private moving: Generator<void | typeof WAITING, void> | null = null;
 
   /** The micro window's move (`SimWorld.moveWindowSteps`), as far as it goes this frame without holding the simulation; none while the topology catches up. */
   stepWindow(sim: SimWorld, revision: number): void {
     if (sim.topologyRevision !== revision) return;
-    if (!this.window && !sim.windowMoving) return;
-    this.window ??= sim.moveWindowSteps(this.measurer);
-    let next = this.window.next();
-    while (!next.done && next.value !== WAITING) next = this.window.next();
-    if (next.done) this.window = null;
+    if (!this.moving && !sim.windowMoving) return;
+    this.moving ??= sim.moveWindowSteps(this.measurer);
+    let next = this.moving.next();
+    while (!next.done && next.value !== WAITING) next = this.moving.next();
+    if (next.done) this.moving = null;
   }
 
   /** This frame's work towards `revision` (the network's `trafficRevision`). */

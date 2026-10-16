@@ -1762,6 +1762,5 @@ export const EN: Dictionary = {
   'hint.transit.lineShort': 'A line needs at least two stops.',
   'hint.transit.lineMade': 'Line made.',
   'city.building': 'Building the city: {done} of {total} lots',
-  'city.tiles': 'Generating the whole map: {done} of {total} areas',
   'map.loading': 'Loading the map…',
 };
