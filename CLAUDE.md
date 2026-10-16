@@ -93,6 +93,14 @@ a second RoadDoc + Network of the active region.
   told to the page, which keeps a view each (`simClient.ts` `parked`), and the walkers file a zone for each
   (`walk.ts` `ParkedZoneIndex`). Fix: the page told the rows near the view only (by place), the walkers'
   zones made for the cells walkers are in.
+- Vehicles drawn (`render/agents.ts`): parked cars are kept instances and only the moving ones are written and
+  sent each frame (upload ranges); left: moving traffic interpolated on the CPU each frame (fix: two poses per
+  instance per tick interpolated in the vertex shader, every vehicle material and its depth material), the
+  worker still writes all 23 fields of every vehicle each tick (`simHost.ts` publish), `forgetCast` walks every
+  cast vehicle when the fleet moves, occupants allocate per seat per frame at the occupant zoom.
+- Near products (gardens, furniture, signs, barriers, poles, structure cells, planted trees, covers, elements,
+  lots) build only on active tiles (`render/activeTiles.ts`); still over the ring: camera solids, canyon light,
+  building floors, the cover index.
 - L1 lot furniture modelled face by face into the shell (`emitLots` -> `emitElement`, `emitLotPart`): the
   bulk of L1 triangles. Fix: instanced parts per kind (quality decision: ask the player).
 - Building shells cannot be simplified: each `Shell.face` is a loose quad, T-junctions round windows. Fix:
