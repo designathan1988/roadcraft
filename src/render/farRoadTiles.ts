@@ -3,7 +3,9 @@ import { type MultiPoly, difference, union } from '@core/clipper';
 import { RoadDoc } from '@world/doc';
 import type { NodeId, SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
-import { FOOTWAY_RISE, Level, ROAD_TYPES } from '@world/roadTypes';
+import { FOOTWAY_RISE, Level, ROAD_TYPES, type SurfaceLevel, halfWidth, roadType } from '@world/roadTypes';
+import { type WholeMapOptions, gatesOf, planWholeMap } from '@world/cityGen/wholeMap';
+import { PLAN_SIG } from './buildings/farTiles';
 import { levelRingsOf } from '@world/surfaces';
 import { TILE, tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
@@ -11,7 +13,7 @@ import { METERS_PER_UNIT, m } from '@world/units';
 import { roadRecipes } from './bake/roadRecipes';
 import { derivedCacheOpen, keepDerivedDurably, readDerived } from './derivedCache';
 import { surfaceShape } from './mesh/tileShape';
-import { readStored } from './buildings/farGrid';
+import { farNode, readStored } from './buildings/farGrid';
 import { medianOf } from './roadSurfaceRings';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR, FOOTWAY_TINT } from './roadTones';
 import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
@@ -155,12 +157,12 @@ function groundNormal(groundAt: (x: number, y: number) => number, x: number, y: 
   out.push(-hx / len, 1 / len, hy / len);
 }
 
-/** A band's polygons triangulated (`mesh/tileShape.ts`, refined to `MAX_EDGE`), its vertices shared within it. */
-function emitBand(out: Builder, shape: MultiPoly, band: Band, groundAt: (x: number, y: number) => number): void {
+/** A band's polygons triangulated (`mesh/tileShape.ts`, refined to `maxEdge`), its vertices shared within it. */
+function emitBand(out: Builder, shape: MultiPoly, band: Band, groundAt: (x: number, y: number) => number, maxEdge = MAX_EDGE): void {
   if (!shape.length) return;
   const [r, g, b] = srgbBytes(band.tone);
   const welded = new Map<string, number>();
-  for (const piece of surfaceShape(shape, MAX_EDGE, false).pieces) {
+  for (const piece of surfaceShape(shape, maxEdge, false).pieces) {
     const at: number[] = [];
     for (let v = 0; v < piece.xy.length; v += 2) {
       const x = piece.xy[v]!, y = piece.xy[v + 1]!;
@@ -279,6 +281,59 @@ export function bakeTileRoads(records: TileRoads, groundAt: (x: number, y: numbe
   return finish(out, (i + 0.5) * TILE, (j + 0.5) * TILE, TILE_ERROR);
 }
 
+// ---- the roads of the tiles never made, from the generator's plan (as `buildings/farPlan.ts` draws their buildings)
+
+/** The classes the plan's roads are laid as (`cityGen/plan.ts` LEVEL_ROAD): a border avenue and an avenue gate's street, a collector gate's street. */
+const AVENUE = Math.max(0, ROAD_TYPES.findIndex((t) => t.id === 'avenue'));
+const COLLECTOR = Math.max(0, ROAD_TYPES.findIndex((t) => t.id === 'urban'));
+
+/** A straight road of the plan: across x (`along` 'y': at x = `at`, from `from` to `to` in y) or across y; its class. */
+interface PlanLine { readonly along: 'x' | 'y'; readonly at: number; readonly from: number; readonly to: number; readonly type: number }
+
+/** A line's band at a level of the road (`halfWidth`): a rectangle on the plan. */
+function lineRect(line: PlanLine, level: SurfaceLevel): MultiPoly {
+  const half = halfWidth(roadType(line.type), level);
+  const [x0, y0, x1, y1] = line.along === 'y'
+    ? [line.at - half, line.from, line.at + half, line.to]
+    : [line.from, line.at - half, line.to, line.at + half];
+  return [[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]];
+}
+
+/** THE PLAN'S ROADS OF A NODE NO TILE WAS MADE UNDER (`farTree.ts` `PLAN_SIG`): every tile's border avenues on the edges it owns (its low ones, `OWNER`: the made tile beside one draws its own) and its gates' streets straight across it (`cityGen/tile.ts`: a grid tile's and the countryside's exactly, a traced tile's as their line), the collectors only at a tile's level; none where an avenue is narrower than the level leaves out. Baked once per world: the plan never changes. */
+export function bakePlanRoads(plan: WholeMapOptions, k: number, i: number, j: number, groundAt: (x: number, y: number) => number = FLAT): FarRoadMesh | null {
+  const error = farLevelError(k);
+  if (error > 2 * halfWidth(roadType(AVENUE), Level.Asphalt)) return null;
+  const side = TILE * 2 ** k, x0 = i * side, y0 = j * side, x1 = x0 + side, y1 = y0 + side;
+  const first = { i: i * 2 ** k, j: j * 2 ** k }, count = 2 ** k;
+  const lines: PlanLine[] = [];
+  const map = k === 0 ? planWholeMap(plan) : null;
+  for (let c = 0; c < count; c++) {
+    const ci = first.i + c, rj = first.j + c;
+    // Across the node: a column's low border and its avenue gates' streets (the same for every row of it); a row's likewise.
+    lines.push({ along: 'y', at: ci * TILE, from: y0, to: y1, type: AVENUE });
+    lines.push({ along: 'x', at: rj * TILE, from: x0, to: x1, type: AVENUE });
+    // A tile's collectors too, unless it is the countryside (its avenue gates' streets alone, `tile.ts`).
+    const rural = map !== null && map.tile(first.i, first.j).style === 'rural';
+    for (const gate of gatesOf(plan.seed, 1, ci)) {
+      if (gate.level === 0 || (map !== null && !rural)) lines.push({ along: 'y', at: gate.at, from: y0, to: y1, type: gate.level === 0 ? AVENUE : COLLECTOR });
+    }
+    for (const gate of gatesOf(plan.seed, 0, rj)) {
+      if (gate.level === 0 || (map !== null && !rural)) lines.push({ along: 'x', at: gate.at, from: x0, to: x1, type: gate.level === 0 ? AVENUE : COLLECTOR });
+    }
+  }
+  const tones = farRoadTones();
+  const out = new Builder();
+  const maxEdge = MAX_EDGE * 2 ** k;
+  const carriageway = union(lines.flatMap((line) => lineRect(line, Level.Asphalt)));
+  emitBand(out, carriageway, { order: 2, tone: tones.classes[AVENUE]!, lift: CARRIAGEWAY_LIFT, rings: carriageway }, groundAt, maxEdge);
+  // The footways at a tile's and a plate's levels, beside the carriageways (further out, under a pixel).
+  if (k <= 1) {
+    const footway = difference(union(lines.flatMap((line) => lineRect(line, Level.Sidewalk))), carriageway);
+    emitBand(out, footway, { order: 4, tone: tones.footway['pavers']!, lift: RAISED_LIFT, rings: footway }, groundAt, maxEdge);
+  }
+  return finish(out, (x0 + x1) / 2, (y0 + y1) / 2, error);
+}
+
 /** Several meshes as one, simplified to `error`, about the origin (`ox`, `oy`); null when nothing is left. */
 function mergeRoads(parts: readonly (FarRoadMesh | null)[], ox: number, oy: number, error: number): FarRoadMesh | null {
   const out = new Builder();
@@ -385,6 +440,8 @@ export interface FarRoadJob {
   readonly store?: string;
   /** The ground shared with the workers (`sharedGround.ts`); none: flat at 0. */
   readonly ground?: SharedGroundData | null;
+  /** The world's generator options: a node or a quarter no tile was made under (`PLAN_SIG`) is baked from its plan (`bakePlanRoads`). */
+  readonly plan?: WholeMapOptions;
 }
 
 export type FarRoadReply =
@@ -418,11 +475,20 @@ export async function runFarRoadJob(job: FarRoadJob, cache: FarRoadCache): Promi
     return entry?.sig === version ? entry : undefined;
   };
   let entry = keeps ? await kept(node, sig) : undefined;
+  const ground = job.ground ? sharedGroundReaders(job.ground).groundAt : FLAT;
+  // A node no tile was made under: the plan's roads, baked once per world.
+  if (sig === PLAN_SIG) {
+    if (!job.plan) return { kind: 'farError', node, sig, message: `far road node ${node}: no tile and no plan` };
+    if (!entry) {
+      entry = { sig, mesh: bakePlanRoads(job.plan, k, i, j, ground) };
+      if (keeps) await cache.put(`${prefix}${node}`, entry);
+    }
+    return { kind: 'far', node, sig, payload: job.want ? entry.mesh : null };
+  }
   if (k === 0) {
     if (!entry) {
       const records = job.records ?? await readStored(job.store, tileKey(i, j), 'roads');
       if (!records) return { kind: 'farRecords', node, sig };
-      const ground = job.ground ? sharedGroundReaders(job.ground).groundAt : FLAT;
       entry = { sig, mesh: bakeTileRoads(records, ground) };
       if (keeps) await cache.put(`${prefix}${node}`, entry);
     }
@@ -431,7 +497,16 @@ export async function runFarRoadJob(job: FarRoadJob, cache: FarRoadCache): Promi
   if (!keeps) return { kind: 'farNoCache', node, sig };
   if (!entry) {
     const children = job.children ?? [];
-    const got = await Promise.all(children.map((c) => (c ? kept(c.key, c.sig) : Promise.resolve(null))));
+    // MIXING: a quarter no tile was made under is the plan's (baked here once per world and kept); the others' bakes are read.
+    const planned = async (key: string): Promise<RoadEntry | undefined> => {
+      const known = await kept(key, PLAN_SIG);
+      if (known || !job.plan) return known;
+      const at = farNode(key);
+      const made: RoadEntry = { sig: PLAN_SIG, mesh: bakePlanRoads(job.plan, at.k, at.i, at.j, ground) };
+      await cache.put(`${prefix}${key}`, made);
+      return made;
+    };
+    const got = await Promise.all(children.map((c) => (!c ? Promise.resolve(null) : c.sig === PLAN_SIG ? planned(c.key) : kept(c.key, c.sig))));
     const missing: string[] = [];
     children.forEach((c, n) => { if (c && !got[n]) missing.push(c.key); });
     if (missing.length) return { kind: 'farChildren', node, sig, missing };

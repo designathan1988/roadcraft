@@ -78,7 +78,8 @@ function farRoadMesh(data: FarRoadMesh, material: MeshStandardMaterial): FarLand
 
 /** A tree's job as the far roads' job: the tile the page read (the desktop's store) cut to its roads (`tileRoads`), its buildings never posted; the store's map kept for the worker to read the tile itself. */
 export function farRoadJob(tree: FarTreeJob): FarRoadJob {
-  const { records, plan: _plan, ...job } = tree;
+  // The plan goes with it: a node no tile was made under is baked from it (`farRoadTiles.ts` bakePlanRoads).
+  const { records, ...job } = tree;
   return records ? { ...job, records: tileRoads(records) } : job;
 }
 
@@ -115,7 +116,8 @@ export class FarRoads extends FarTree<FarRoadMesh> {
   /** `ground`: the ground shared with the workers (null: flat at 0); `run`, `prefix`: where the jobs go and the bakes are kept (tests give their own). */
   constructor(ground: () => SharedGroundData | null, run?: FarTreeRun<FarRoadMesh>, prefix: string | null = FAR_PREFIX) {
     const material = createFarRoadMaterial();
-    const kind: FarKind<FarRoadMesh> = { name: 'roads', land: (data) => farRoadMesh(data, material), levelError: farLevelError };
+    // Drawn from the plan where no tile was made, down to a tile (`farRoadTiles.ts` bakePlanRoads): the roads go on past the tiles made, as the buildings do (`farPlan.ts`).
+    const kind: FarKind<FarRoadMesh> = { name: 'roads', land: (data) => farRoadMesh(data, material), levelError: farLevelError, planFrom: 0 };
     super(kind, run ?? farRoadsRunner(ground), prefix, canQueueJobs() ? jobWorkers() : 1);
     this.material = material;
     // The bakes of an older build of this code: let go.

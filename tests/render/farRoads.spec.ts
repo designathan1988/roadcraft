@@ -4,7 +4,9 @@ import { roadRecipes } from '@render/bake/roadRecipes';
 import { TOP_LEVEL, emptyRecords, farKey, farNode } from '@render/buildings/farTiles';
 import type { FarTileSource } from '@render/buildings/farLevels';
 import { FarRoads, farRoadJob } from '@render/farRoads';
-import { type FarRoadCache, type FarRoadMesh, bakeTileRoads, farRoadTones, runFarRoadJob, tileNetwork } from '@render/farRoadTiles';
+import { type FarRoadCache, type FarRoadMesh, bakePlanRoads, bakeTileRoads, farRoadTones, runFarRoadJob, tileNetwork } from '@render/farRoadTiles';
+import { DEFAULT_CITY } from '@world/cityGen/plan';
+import { WHOLE_MAP_DEFAULTS, type WholeMapOptions } from '@world/cityGen/wholeMap';
 import type { FarTreeRun } from '@render/farTree';
 import { surfaceTexels } from '@render/mesh/textureBaker';
 import { CURB_BAND, Level } from '@world/roadTypes';
@@ -225,5 +227,43 @@ describe('the far roads chosen top down', () => {
     const again = cache.puts.slice(before).sort();
     expect(again).toEqual(chain.sort());
     far.dispose();
+  });
+});
+
+describe('the far roads of the tiles never made, from the plan', () => {
+  const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
+  const plan: WholeMapOptions = { ...base, ...WHOLE_MAP_DEFAULTS, seed: 7 };
+
+  it('draws a tile\'s border avenues on the edges it owns and its gates\' streets, inside its box; nothing where an avenue is under the level\'s error', () => {
+    const mesh = bakePlanRoads(plan, 0, 2, -3);
+    expect(mesh).not.toBeNull();
+    const [x0, y0, x1, y1] = mesh!.bounds as unknown as number[];
+    expect(x0).toBeGreaterThanOrEqual(2 * TILE - m(20));
+    expect(x1).toBeLessThanOrEqual(3 * TILE + 1e-6);
+    expect(y0).toBeGreaterThanOrEqual(-3 * TILE - m(20));
+    expect(y1).toBeLessThanOrEqual(-2 * TILE + 1e-6);
+    // Its low edges are its own (a made tile beside it draws its own): on them, carriageway.
+    expect(hit(mesh!, 2 * TILE, -2.5 * TILE)).toBeGreaterThanOrEqual(0);
+    expect(hit(mesh!, 2.5 * TILE, -3 * TILE)).toBeGreaterThanOrEqual(0);
+    // Its high edges are the neighbours': nothing at their middle.
+    expect(hit(mesh!, 3 * TILE - m(0.5), -2.5 * TILE + m(1))).toBeLessThan(0);
+    // Past the levels where an avenue spans what the level leaves out: nothing.
+    expect(bakePlanRoads(plan, 9, 0, 0)).toBeNull();
+  });
+
+  it('bakes a node no tile was made under from the plan, and the plan\'s quarters of a node with a made tile, without asking for them', async () => {
+    const cache = memoryCache();
+    const planned = await runFarRoadJob({ node: farKey(0, 4, 4), k: 0, i: 4, j: 4, sig: 'plan', want: true, prefix: 'test:', plan }, cache);
+    if (planned.kind !== 'far') throw new Error(planned.kind);
+    expect(planned.payload).not.toBeNull();
+    // A level-1 node: one made tile (its bake kept), three quarters of the plan's.
+    const made = await runFarRoadJob({ node: farKey(0, 0, 0), k: 0, i: 0, j: 0, sig: '1', want: false, prefix: 'test:', records: crossTile(0, 0) }, cache);
+    expect(made.kind).toBe('far');
+    const children = [0, 1, 2, 3].map((q) => ({ key: farKey(0, q & 1, q >> 1), sig: q === 0 ? '1' : 'plan' }));
+    const mixed = await runFarRoadJob({ node: farKey(1, 0, 0), k: 1, i: 0, j: 0, sig: 'mixed', want: true, prefix: 'test:', plan, children }, cache);
+    if (mixed.kind !== 'far') throw new Error(mixed.kind);
+    expect(mixed.payload).not.toBeNull();
+    // The plan's quarters kept for the next node that reads them.
+    expect(cache.puts).toContain(`test:${farKey(0, 1, 0)}`);
   });
 });

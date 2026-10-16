@@ -91,7 +91,6 @@ a second RoadDoc + Network of the active region.
   `sceneryInBays` walk every gated bay with a string key each, every second; parked cars stand a whole
   Vehicle in most bays of the region and `simHost.ts` `publish` walks them each tick; `invariants.ts` audit
   walks every controller each second.
-- `farRoads.ts` has no plan source (far masses have `farPlan.ts`): tiles made ahead only feed far roads.
 - L1 lot furniture modelled face by face into the shell (`emitLots` -> `emitElement`, `emitLotPart`): the
   bulk of L1 triangles. Fix: instanced parts per kind (quality decision: ask the player).
 - Building shells cannot be simplified: each `Shell.face` is a loose quad, T-junctions round windows. Fix:
