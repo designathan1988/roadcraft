@@ -10,6 +10,7 @@ import { DT } from '@sim/params';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 import type { Bay } from '@sim/agents/parking';
 import type { StandingCar, Vehicle } from '@sim/vehicles/state';
+import type { WeightedSlots } from '@core/weightedSlots';
 import type { SceneryCar } from '@sim/ambient/ambient';
 import { Rng } from '@core/rng';
 import { makeDriver } from '@sim/vehicles/driver';
@@ -51,15 +52,19 @@ const bayKey = (b: { x: number; y: number }): string => `${Math.round(stepsIn(b.
 
 /** The lots' traffic's own state, read for the oracle. */
 interface LotsInside {
-  cars: Map<number, { bay: Bay; body: Vehicle | null; phase: string; go: boolean }>;
+  cars: Map<number, { bay: Bay; body: Vehicle | null; phase: string; go: boolean; until: number; slot: number }>;
   active: Set<unknown>;
   comingCount: number;
   movingCount: number;
   movingIn: Map<number, number>;
   leftBy: number;
-  bays: Map<string, Bay>;
-  freeBays(w: SimWorld): Bay[];
-  sceneryInBays(w: SimWorld): { bay: Bay; body: StandingCar }[];
+  time: number;
+  bays: Map<number, { bay: Bay; key: number; slot: number }>;
+  free: WeightedSlots;
+  scenery: WeightedSlots;
+  waiting: WeightedSlots;
+  holdLorries(hold: boolean): void;
+  ripen(w: SimWorld): void;
 }
 
 describe('the cars standing in bays, asked by the lots', () => {
@@ -97,15 +102,19 @@ describe('the cars standing in bays, asked by the lots', () => {
         expect(w.ambient.isParked(car.body)).toBe(parked.includes(car.body));
         bodies++;
       }
-      // The free bays: the old walk over every parked car (the oracle).
+      // The free bays, as the draws see them during a look (the lorries' places held): the old walk over every parked car (the oracle).
+      const gated = [...lots.bays.values()];
       const taken = new Set<string>();
       for (const car of parked) if (car.free) taken.add(bayKey(car.free));
       for (const car of lots.cars.values()) taken.add(bayKey(car.bay));
-      const oldFree = [...lots.bays.values()].filter((b) => !taken.has(bayKey(b)));
-      expect(lots.freeBays(w)).toEqual(oldFree);
+      const oldFree = gated.map((e) => e.bay).filter((b) => !taken.has(bayKey(b)));
+      lots.holdLorries(true);
+      expect(gated.filter((e) => lots.free.classAt(e.slot) >= 0).map((e) => e.bay)).toEqual(oldFree);
+      lots.holdLorries(false);
+      expect(lots.free.total()).toBe(gated.filter((e) => lots.free.classAt(e.slot) >= 0).length);
       freeSeen += oldFree.length;
       // The scenery's cars in gated bays: the old walk over every parked car (the oracle).
-      const byKey = new Map([...lots.bays.values()].map((b) => [bayKey(b), b] as const));
+      const byKey = new Map(gated.map((e) => [bayKey(e.bay), e.bay] as const));
       const oldPool: { bay: Bay; body: StandingCar }[] = [];
       for (const body of parked) {
         if (!body.free || lots.cars.has(body.id)) continue;
@@ -113,10 +122,14 @@ describe('the cars standing in bays, asked by the lots', () => {
         if (bay) oldPool.push({ bay, body });
       }
       // In the order of the bays the list of parked cars keeps none: a car taken out of it leaves its place to the last,
-      const rank = new Map([...lots.bays.values()].map((bay, i) => [bay, i] as const));
+      const rank = new Map(gated.map((e, i) => [e.bay, i] as const));
       oldPool.sort((p, q) => rank.get(p.bay)! - rank.get(q.bay)!);
-      expect(lots.sceneryInBays(w)).toEqual(oldPool);
+      expect(gated.filter((e) => lots.scenery.classAt(e.slot) >= 0).map((e) => ({ bay: e.bay, body: w.ambient.sceneryCarAt(e.key) }))).toEqual(oldPool);
       sceneryPooled += oldPool.length;
+      // The cars `depart` may send out: as the old filter over every car of the lots, in their order.
+      lots.ripen(w);
+      const oldRipe = [...lots.cars.values()].filter((c) => c.phase === 'parked' && !c.go && lots.time >= c.until && c.body);
+      expect([...lots.cars.values()].filter((c) => lots.waiting.classAt(c.slot) >= 0)).toEqual(oldRipe);
       // The counts kept by each change of phase: as a count over every car; the cars stepped: all but those parked and not sent out.
       let coming = 0, moving = 0;
       const movingIn = new Map<number, number>();

@@ -101,6 +101,11 @@ export class LorryTraffic {
     return false;
   }
 
+  /** Where each lorry's body stands off the road now (the lots' free bays, `lotTraffic.ts`). */
+  *places(): Generator<{ readonly x: number; readonly y: number }> {
+    for (const lorry of this.lorries.values()) if (lorry.body?.free) yield lorry.body.free;
+  }
+
   /** For probes: each lorry's phase, building, dock and where its body is. */
   view(): { id: number; phase: Phase; building: number; dock: number; x: number; y: number; angle: number }[] {
     return [...this.lorries.values()].map((l) => ({
