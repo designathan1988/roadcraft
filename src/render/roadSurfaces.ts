@@ -10,7 +10,7 @@ import { footwayRiseShare, packFlush } from '@world/roads/footwayRise';
 import { rampsMeeting, walkingRise } from '@world/curbRamps';
 import type { CurbRamp } from '@world/rampRise';
 import { RAISED_LIFT, isRaised, roadStructure } from '@world/structures';
-import type { RoadElevation } from '@world/elevation';
+import { type RoadElevation, SURFACE_READ_REACH } from '@world/elevation';
 import { LANE_LINE } from '@world/roadTypes';
 import { PAINT_RISE } from './markings';
 import { type Reach, SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadSurfaceInputs';
@@ -55,6 +55,8 @@ const RAISED_MAX_EDGE = TERRAIN_CELL;
 export interface SurfaceReuse {
   /** DO NOT keep a tile's arrays here */
   readonly tiles: Map<string, Map<number, KeptTile>>;
+  /** What each tile's ground and heights digested to at the last build (`dependsOn`), by pass and tile key: a tile no changed block reaches keeps it (DO NOT digest every tile of the region at every build: ~6,600 digests, 700 ms on the page at each tile a streamed world put in, 2026-10-16). */
+  readonly depends?: Map<string, Map<number, number>>;
   /** A digest of everything the height field and the texture frames read in a rectangle */
   readonly dependsOn: (minX: number, minY: number, maxX: number, maxY: number) => number;
   /** The paint materials, by colour: made once, not on every rebuild. */
@@ -229,6 +231,8 @@ export function* roadSurfaceSteps(
   groundMaterial?: Material,
   /** Shapes the tiles off the page (`roadTilePool.ts`); then the steps yield 'wait' while it works. None: all here. */
   tiler?: RoadTiler | null,
+  /** The blocks whose ground or heights changed since the last build (`renderer.ts` `compareSolves`), world units: only the tiles within the elevation's read reach of one are digested again; null, every tile (the land moved, or nothing is known). */
+  changed: readonly (readonly [number, number, number, number])[] | null = null,
 ): Generator<'wait' | void, RoadSurfaces, void> {
   const started = performance.now();
   let tilesMs = 0;
@@ -345,6 +349,11 @@ export function* roadSurfaceSteps(
 
     const previous = reuse?.tiles.get(pass.id);
     const kept = new Map<number, KeptTile>();
+    const knownDepends = reuse?.depends?.get(pass.id);
+    const depends = new Map<number, number>();
+    const reach = SURFACE_READ_REACH + 1;
+    const reached = (rect: TileRect): boolean => changed === null
+      || changed.some((b) => b[0] <= rect[2] + reach && b[2] >= rect[0] - reach && b[1] <= rect[3] + reach && b[3] >= rect[1] - reach);
     /** The tiles in tile order: kept from before (its surfaces known, its arrays not), read from the store, or to build. */
     const tiles: PassTile[] = [];
     /** The tiles to read from the store, by their place in `tiles`. */
@@ -360,7 +369,12 @@ export function* roadSurfaceSteps(
       // A paint colour's constants in the keys of the tiles that hold lines of that colour alone.
       const digest = new Digest().add(saltValue).add(key).add(read);
       for (const color of colours) digest.add(paintSalt.get(color) ?? 0);
-      if (reuse) digest.add(reuse.dependsOn(rect[0] - 1, rect[1] - 1, rect[2] + 1, rect[3] + 1));
+      if (reuse) {
+        const known = knownDepends?.get(key);
+        const depend = known !== undefined && !reached(rect) ? known : reuse.dependsOn(rect[0] - 1, rect[1] - 1, rect[2] + 1, rect[3] + 1);
+        depends.set(key, depend);
+        digest.add(depend);
+      }
       const value = digest.value();
       const surfaces = previous?.get(value);
       const stored = storedKey(pass.id, key, value);
@@ -474,6 +488,7 @@ export function* roadSurfaceSteps(
     });
     for (const tile of tiles) kept.set(tile.value, tile.surfaces!);
     reuse?.tiles.set(pass.id, kept);
+    reuse?.depends?.set(pass.id, depends);
 
     /** Each surface's tiles, by block of tiles, in tile order. */
     const parts = new Map<string, Map<string, PassTile[]>>();

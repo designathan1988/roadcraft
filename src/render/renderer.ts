@@ -650,6 +650,7 @@ export function createSceneRenderer(
   };
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
+    depends: new Map(),
     dependsOn: (minX, minY, maxX, maxY) => new Digest()
       .add(elevation?.digest(minX, minY, maxX, maxY, SURFACE_READ_REACH) ?? 0)
       .add(terrain.digest(minX, minY, maxX, maxY))
@@ -1522,14 +1523,14 @@ export function createSceneRenderer(
     const elevationMs = performance.now() - started;
     const cause = net.doc.changes.version;
     // DO NOT build it in one go: the roads of a generated city were built in the frame of the change, on the page
-    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true);
+    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true, landStill);
     worldJobFresh = true;
     worldJobGround = true;
   };
 
   /** @rebuild What `worldSteps` builds before it is put in place at once. */
   function* worldSteps(net: Network, compares: readonly (BlockCompare | null)[], solved: { readonly cause: number; readonly elevationMs: number },
-    started: number, sliced: boolean): Generator<'wait' | void, void, void> {
+    started: number, sliced: boolean, landStill: boolean): Generator<'wait' | void, void, void> {
     const solve = elevation!;
     // The blocks the solves differ in, once the worker has digested them (`compareSolves`).
     while (compares.some((c) => c && !c.ready)) { groundWorkers.check(); yield 'wait'; }
@@ -1554,8 +1555,9 @@ export function createSceneRenderer(
       while (!storedRead && performance.now() - since < KEPT_TILES_WAIT_MS) yield 'wait';
     }
     // Sliced, the tiles are shaped by the workers while the frames go on (`roadTilePool.ts`); built in one go
+    // On land that did not move, only the tiles the differing blocks reach are digested again (`roadSurfaces.ts` `depends`).
     const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
-      sliced ? roadTiles : null);
+      sliced ? roadTiles : null, landStill && blocks !== null ? blocks : null);
     derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
       { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
