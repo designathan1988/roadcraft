@@ -22,6 +22,9 @@ export type PartKind =
   | 'louvre'
   | 'glassRail'
   | 'brise'
+  | 'lotBox'
+  | 'lotRail'
+  | 'lotSlab'
   | FacadePropKind;
 
 /** WHAT ONE BUILDING CONTRIBUTES TO THE BATCHES */
@@ -53,6 +56,8 @@ export interface PartBatch {
   readonly slots?: Float32Array;
   /** Window panes: each one's room behind it, ROOM_FLOATS numbers (`roomBehind.ts`); a depth of 0 for none known. */
   readonly rooms?: Float32Array;
+  /** The shell's parts (`shellParts.ts`): each one's finish id, wear and ground, `LOOK_FLOATS` numbers. */
+  readonly looks?: Float32Array;
 }
 
 /** Everything one building contributes, in typed arrays: a shell fragment with local indices and its instance batches. */

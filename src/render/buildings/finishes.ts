@@ -5,6 +5,7 @@ import { LOOKS, finishTiles } from '../bake/finishRecipes';
 import { type SurfaceBake, surfaceMaps } from '../surfaceTextures';
 import { applyLotOverlay } from '../lotOverlay';
 import { FINISH_ATTRIBUTE } from './cellArrays';
+import { SHELL_PART_BEGIN, SHELL_PART_PARS, shellPartVertex } from './shellParts';
 
 /** The building finishes ("Materials"): their recipes in `bake/finishRecipes.ts`, baked at build time as one texture array per map, a layer per finish */
 
@@ -117,23 +118,33 @@ function shellShader(shader: WebGLProgramParametersWithUniforms, maps: SurfaceBa
   }
   const layer = 'vec3(vShellUv, float(vShellFinish))';
   // Each addition lands right after its chunk: a material built on this one (`facadeLevel.ts`) adds its own after it.
+  // Drawn instanced, it draws the shell's parts (`shellParts.ts`): their finish, wear and ground per instance, their uv and tone laid here as `Shell.face` laid the shell's.
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>
 attribute float ${FINISH_ATTRIBUTE};
 uniform vec4 shellLooks[${FINISHES.length * LOOK_ROWS}];
 flat varying int vShellFinish;
 varying vec2 vShellUv;
-${weathered ? 'attribute float aDecay;\nvarying float vDecay;\nvarying vec3 vDecayWorld;\nvarying vec3 vDecayNormal;' : ''}`)
+${weathered ? 'attribute float aDecay;\nvarying float vDecay;\nvarying vec3 vDecayWorld;\nvarying vec3 vDecayNormal;' : ''}
+${SHELL_PART_PARS}`)
     // The finish's tile, as each finish's map repeat was.
     .replace('#include <uv_vertex>', `#include <uv_vertex>
 vShellFinish = int(${FINISH_ATTRIBUTE} + 0.5);
-vShellUv = uv * shellLooks[vShellFinish * ${LOOK_ROWS}].x;`);
-  if (weathered) {
-    shader.vertexShader = shader.vertexShader.replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
-vDecay = aDecay;
-vDecayWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
-vDecayNormal = normalize(mat3(modelMatrix) * objectNormal);`);
-  }
+vShellUv = uv * shellLooks[vShellFinish * ${LOOK_ROWS}].x;`)
+    .replace('#include <begin_vertex>', `#include <begin_vertex>\n${SHELL_PART_BEGIN}`)
+    .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+${shellPartVertex(LOOK_ROWS)}
+${weathered ? `vDecay = aDecay;
+{
+  vec4 shellWorld = vec4(transformed, 1.0);
+  vec3 shellNormal = objectNormal;
+  #ifdef USE_INSTANCING
+    shellWorld = instanceMatrix * shellWorld;
+    shellNormal = mat3(instanceMatrix) * shellNormal;
+  #endif
+  vDecayWorld = (modelMatrix * shellWorld).xyz;
+  vDecayNormal = normalize(mat3(modelMatrix) * shellNormal);
+}` : ''}`);
   shader.fragmentShader = shader.fragmentShader
     .replace('#include <common>', `#include <common>\n${FINISH_PARS}\n${maps ? MAP_PARS : ''}\n${weathered ? WEATHER_PARS : ''}`)
     .replace('#include <envmap_physical_pars_fragment>', ShaderChunk.envmap_physical_pars_fragment.replace(/\benvMapIntensity\b/g, '( envMapIntensity * shellEnvScale )'))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emitChunk } from '@render/buildings/buildingMesh';
+import { emitChunk, withShellParts } from '@render/buildings/buildingMesh';
 import { m } from '@world/units';
 import { growCity } from '../world/cityAudit';
 
@@ -15,7 +15,7 @@ describe('the parapets', () => {
       return closed.length > 0 && closed.every((v) => v.roof === 'flat' && v.dress?.crown !== 'none' && v.storeys.length >= 3);
     };
     for (const b of [...city.doc.buildings.all()].filter((x, i) => i % 3 === 0 && parapeted(x))) {
-      const chunk = emitChunk(b, () => 0);
+      const chunk = withShellParts(emitChunk(b, () => 0));
       // Every vertical face of the shells, by its centre and normal (three's frame: y up).
       const faces: { c: [number, number, number]; n: [number, number] }[] = [];
       for (const shell of Object.values(chunk.shells)) {

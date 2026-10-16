@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { BufferGeometry, Material } from 'three';
-import { emitChunk } from '@render/buildings/buildingMesh';
+import { emitChunk, withShellParts } from '@render/buildings/buildingMesh';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
+import { SHELL_PARTS } from '@render/buildings/shellParts';
 import { m } from '@world/units';
 import type { Building } from '@world/buildings/types';
 import { growCity } from '../world/cityAudit';
@@ -129,10 +130,10 @@ function facesOfGeometry(g: BufferGeometry, look: string, e: Float32Array, out: 
   for (let t = 0; t + 2 < n; t += 3) face(at(idx ? idx.getX(t) : t), at(idx ? idx.getX(t + 1) : t + 1), at(idx ? idx.getX(t + 2) : t + 2), 'part', look, [0, 0, 0], out);
 }
 
-/** Every face of one building, in the world: its shells by finish and colour, its parts by kind. */
+/** Every face of one building, in the world: its shells by finish and colour (the shell's parts laid in them as they are drawn), its parts by kind. */
 function facesOf(b: Building, kit: ReturnType<typeof createBuildingKit>): Face[] {
   const faces: Face[] = [];
-  const chunk = emitChunk(b, ROLLING);
+  const chunk = withShellParts(emitChunk(b, ROLLING));
   for (const [finish, shell] of Object.entries(chunk.shells)) {
     if (!shell) continue;
     const pos = shell.position, index = shell.index, colour = shell.colour;
@@ -170,8 +171,9 @@ describe('building surfaces', () => {
   it('draws every instanced part over the shell it is set on', () => {
     // The parts (frames, shutters, balcony slabs) lie on the shell's faces by design
     const kit = createBuildingKit();
+    // The shell's parts are the shell itself, drawn instanced (`shellParts.ts`): nothing they are set on.
     for (const reversed of [false, true]) {
-      const loose = PART_KINDS.filter((kind) => !pulledTowardEye(kit.material[kind], reversed));
+      const loose = PART_KINDS.filter((kind) => !SHELL_PARTS.has(kind) && !pulledTowardEye(kit.material[kind], reversed));
       expect(loose, reversed ? 'reversed depth' : 'standard depth').toEqual([]);
     }
   });

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { type BuildingChunk, emitChunk } from '@render/buildings/buildingMesh';
-import { FACADE_BYTES, FACADE_FLOATS, cellArrays } from '@render/buildings/cellArrays';
-import { PART_KINDS, type PartKind } from '@render/buildings/kit';
+import type { InstancedMesh, InterleavedBufferAttribute } from 'three';
+import { type BuildingChunk, assembleBuildingMeshes, emitChunk, withShellParts } from '@render/buildings/buildingMesh';
+import { FACADE_BYTES, FACADE_FLOATS, FINISH_ATTRIBUTE, cellArrays } from '@render/buildings/cellArrays';
+import { PART_KINDS, type PartKind, createBuildingKit } from '@render/buildings/kit';
+import { GROUND_ATTRIBUTE, LOOK_FLOATS, SHELL_PARTS, SHELL_PART_KINDS } from '@render/buildings/shellParts';
+import { FINISHES } from '@world/buildings/materials';
 import { growOnLot } from '@editor/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
@@ -160,5 +163,131 @@ describe('the buildings\' far level', () => {
     let made = 0;
     for (const c of chunks) for (const part of Object.values(c.shells)) made += part.position.length / 3;
     expect(vertices).toBe(made);
+  });
+});
+
+/** A shell triangle as drawn: its finish, centroid, normal, mean colour, mean uv and wear (three's axes). */
+interface Tri { finish: string; c: number[]; n: number[]; rgb: number[]; uv: number[]; decay: number }
+
+function trianglesOf(c: BuildingChunk): Tri[] {
+  const out: Tri[] = [];
+  for (const [finish, s] of Object.entries(c.shells)) {
+    const { position: p, normal: n, colour, uv, decay, index } = s;
+    for (let t = 0; t < index.length; t += 3) {
+      const v = [index[t]!, index[t + 1]!, index[t + 2]!];
+      const mean = (a: ArrayLike<number>, size: number, k: number): number => v.reduce((sum, i) => sum + a[i * size + k]!, 0) / 3;
+      out.push({
+        finish, c: [0, 1, 2].map((k) => mean(p, 3, k)), n: [0, 1, 2].map((k) => n[v[0]! * 3 + k]!), rgb: [0, 1, 2].map((k) => mean(colour, 3, k)),
+        uv: [0, 1].map((k) => mean(uv, 2, k)), decay: mean(decay, 1, 0),
+      });
+    }
+  }
+  return out;
+}
+
+/** The triangles of `a` found in `b`: the same finish within a millimetre, the same normal, colour, uv and wear (the wear as a byte carries it to the GPU). */
+function unmatched(a: readonly Tri[], b: readonly Tri[]): Tri[] {
+  const CELL = 0.01;
+  const key = (x: number, y: number, z: number): string => `${x},${y},${z}`;
+  const grid = new Map<string, Tri[]>();
+  for (const t of b) {
+    const k = key(Math.floor(t.c[0]! / CELL), Math.floor(t.c[1]! / CELL), Math.floor(t.c[2]! / CELL));
+    const list = grid.get(k);
+    if (list) list.push(t); else grid.set(k, [t]);
+  }
+  const close = (x: readonly number[], y: readonly number[], eps: number): boolean => x.every((v, i) => Math.abs(v - y[i]!) <= eps);
+  const out: Tri[] = [];
+  for (const t of a) {
+    const [i, j, k] = t.c.map((x) => Math.floor(x / CELL)) as [number, number, number];
+    let found = false;
+    for (let di = -1; di <= 1 && !found; di++) for (let dj = -1; dj <= 1 && !found; dj++) for (let dk = -1; dk <= 1 && !found; dk++) {
+      const list = grid.get(key(i + di, j + dj, k + dk));
+      if (!list) continue;
+      const at = list.findIndex((u) => u.finish === t.finish && close(u.c, t.c, m(0.001)) && close(u.n, t.n, 1e-4) && close(u.rgb, t.rgb, 2e-3)
+        && close(u.uv, t.uv, 2e-3) && Math.abs(u.decay - t.decay) <= 1 / 254 + 1e-6);
+      if (at < 0) continue;
+      list.splice(at, 1);
+      found = true;
+    }
+    if (!found) out.push(t);
+  }
+  return out;
+}
+
+const shellTriangles = (c: BuildingChunk): number => Object.values(c.shells).reduce((n, s) => n + s.index.length / 3, 0);
+
+describe('the lots\' boxes, the shell\'s parts', () => {
+  const town = grownTown();
+
+  it('are instances of the shell\'s parts, every face the shell laid for them laid again from the instance alone, the shell far lighter', () => {
+    for (const far of [false, true]) {
+      let before = 0, after = 0, boxes = 0, others = 0, checked = 0;
+      for (const b of town) {
+        const was = emitChunk(b, groundAt, undefined, groundAt, undefined, far, false);
+        const now = emitChunk(b, groundAt, undefined, groundAt, undefined, far);
+        // Laid in the shell, none; every other part the same.
+        for (const kind of PART_KINDS) {
+          if (SHELL_PARTS.has(kind)) expect(was.parts[kind].count).toBe(0);
+          else expect(now.parts[kind].count, kind).toBe(was.parts[kind].count);
+        }
+        boxes += now.parts.lotBox.count;
+        others += now.parts.lotRail.count + now.parts.lotSlab.count;
+        before += shellTriangles(was);
+        after += shellTriangles(now);
+        if (checked >= 30 || SHELL_PART_KINDS.every((k) => now.parts[k].count === 0)) continue;
+        checked++;
+        // The shell as it was is the shell now with its parts laid in it again: the same triangles, place, colour, finish, uv and wear.
+        const laid = withShellParts(now);
+        expect(shellTriangles(laid), `building ${b.id}`).toBe(shellTriangles(was));
+        const old = trianglesOf(was), again = trianglesOf(laid);
+        expect(unmatched(old, again).slice(0, 5), `building ${b.id} ${far ? 'L1' : 'L0'}`).toEqual([]);
+        expect(unmatched(again, old).slice(0, 5), `building ${b.id} ${far ? 'L1' : 'L0'}`).toEqual([]);
+      }
+      expect(boxes).toBeGreaterThan(0);
+      expect(others).toBeGreaterThan(0);
+      expect(checked).toBeGreaterThan(10);
+      // The lots' gates, bins, lamps, fences and element boxes were about half the shells (measured 2026-10-16).
+      expect(after, far ? 'L1' : 'L0').toBeLessThan(before * (far ? 0.6 : 0.75));
+    }
+  });
+
+  it('stand square to their building, their looks a finish id, a wear and a ground each', () => {
+    for (const b of town) {
+      const chunk = emitChunk(b, groundAt);
+      for (const kind of ['lotBox', 'lotSlab'] as const) {
+        const batch = chunk.parts[kind];
+        expect(batch.looks!.length).toBe(batch.count * LOOK_FLOATS);
+        expect(batch.colours!.length).toBe(batch.count * 3);
+        for (let i = 0; i < batch.count; i++) {
+          const e = batch.matrices.subarray(i * 16, i * 16 + 16);
+          // T * Ry * S: the yaw the building's own turn.
+          const turn = Math.atan2(-e[2]!, e[0]!) - b.rotation;
+          expect(Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn)))).toBeLessThan(1e-5);
+          const finish = batch.looks![i * LOOK_FLOATS]!;
+          expect(Number.isInteger(finish) && finish >= 0 && finish < FINISHES.length).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('are drawn by the shell\'s material instanced, reading their looks per instance, faded with the shell', () => {
+    const kit = createBuildingKit();
+    const chunks = town.map((b) => emitChunk(b, groundAt));
+    for (const dim of [false, true]) {
+      const meshes = assembleBuildingMeshes(chunks, kit, false, dim);
+      const box = meshes.group.children.find((o) => o.name === 'building-lotBox') as InstancedMesh | undefined;
+      expect(box).toBeDefined();
+      expect(box!.material).toBe(dim ? kit.dimShell : kit.shellMaterial);
+      expect(box!.count).toBe(chunks.reduce((n, c) => n + c.parts.lotBox.count, 0));
+      for (const name of [FINISH_ATTRIBUTE, 'aDecay', GROUND_ATTRIBUTE]) {
+        const a = box!.geometry.getAttribute(name) as InterleavedBufferAttribute;
+        expect((a.data as unknown as { isInstancedInterleavedBuffer?: boolean }).isInstancedInterleavedBuffer, name).toBe(true);
+      }
+      // Its own copy of the model: the kit's stays as it is.
+      expect(box!.geometry).not.toBe(kit.geometry.lotBox);
+      expect(kit.geometry.lotBox.getAttribute(FINISH_ATTRIBUTE)).toBeUndefined();
+      meshes.dispose();
+    }
+    kit.dispose();
   });
 });

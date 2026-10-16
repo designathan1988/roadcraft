@@ -12,6 +12,10 @@ export function partWarmMeshes(kit: BuildingKit): InstancedMesh[] {
     mesh.castShadow = kit.castsShadow.has(kind);
     out.push(mesh);
   }
+  // The shell's parts faded with the shell ("Ocultar outros", `fade.ts`): its plain program drawn instanced, every kind of them one.
+  const faded = new InstancedMesh(kit.geometry.lotBox, kit.dimShell, 1);
+  faded.setColorAt(0, new Color(1, 1, 1));
+  out.push(faded);
   const furniture = kit.furniture();
   for (const kind of FURNITURE_KINDS) {
     const mesh = new InstancedMesh(furniture.geometry[kind], furniture.material, 1);

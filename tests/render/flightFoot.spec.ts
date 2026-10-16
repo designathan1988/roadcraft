@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emitChunk } from '@render/buildings/buildingMesh';
+import { emitChunk, withShellParts } from '@render/buildings/buildingMesh';
 import { resolveBlocks } from '@world/buildings/blocks';
 import { STEP_RUN, flightRun, floorHeight, foundationOf } from '@world/buildings/foundation';
 import type { Building } from '@world/buildings/types';
@@ -67,7 +67,8 @@ describe('flights of steps', () => {
       if (closed.length === 0) continue;
       const floor = floorHeight(resolved, ROLLING);
       const f = foundationOf({ ...resolved, volumes: closed }, ROLLING, undefined, undefined, floor);
-      const faces = upFaces(emitChunk(b, ROLLING));
+      // The paths are the shell's parts (`shellParts.ts`): laid in the shell again, as they are drawn.
+      const faces = upFaces(withShellParts(emitChunk(b, ROLLING)));
       for (const x of f.entrances) {
         if (x.steps <= 0 || x.recess > 0 || x.push < 0) continue;
         flights++;

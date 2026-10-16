@@ -4,11 +4,12 @@ import { FACADE_PROP_KINDS } from './facadeProps';
 import type { BuildingChunk, PartBatch, PartKind } from './chunk';
 import type { MassingChunk } from './massing';
 import { ROOM_FLOATS } from './roomBehind';
+import { LOOK_FLOATS, SHELL_PARTS, SHELL_PART_KINDS } from './shellParts';
 
 /** A BATCH OF BUILDINGS AS ARRAYS: what `buildingMesh.ts` `meshesOf` wraps in meshes */
 
-/** Parts drawn with a colour per instance: awnings, and the window frames and balcony railings in their building's trim (the materials are white). */
-export const COLOURED_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise', ...FACADE_PROP_KINDS]));
+/** Parts drawn with a colour per instance: awnings, the window frames and balcony railings in their building's trim (the materials are white), the shell's parts in their paint. */
+export const COLOURED_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise', ...FACADE_PROP_KINDS, ...SHELL_PART_KINDS]));
 
 /** What a batch takes: the part kinds, whether the shells and the furniture; the preview's look (`ghost`) or the faded one (`dim`). */
 export interface CellSelection {
@@ -54,6 +55,8 @@ interface InstanceArrays {
   /** Window panes: each one's light slot (-1: none) and the room behind it. */
   readonly litSlot?: Float32Array;
   readonly rooms?: Float32Array;
+  /** The shell's parts: each one's finish id, wear and ground (`shellParts.ts`). */
+  readonly looks?: Float32Array;
   readonly bounds: Bounds;
 }
 
@@ -85,7 +88,9 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
     const glassy = !ghost && (kind === 'glass' || kind === 'glassDark');
     // DO NOT colour only the trims there: the material seen with and without instance colours was built again and again
     const coloured = !ghost && (dim || COLOURED_PARTS.has(kind));
-    const arrays = partArrays(chunks, kind, count, glassy, coloured);
+    // The shell's parts read their finish, wear and ground as the shell's vertices do, faded too (`fade.ts`); the preview's ghost reads none.
+    const looked = !ghost && SHELL_PARTS.has(kind);
+    const arrays = partArrays(chunks, kind, count, glassy, coloured, looked);
     parts[kind] = { count, ...arrays, bounds: instanceBounds(arrays.instanceMatrix, count, boxes.parts[kind]) };
   }
   const furniture: Partial<Record<FurnitureKind, InstanceArrays>> = {};
@@ -165,7 +170,7 @@ export function cellBytes(arrays: CellArrays): number {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
       bytes += p.instanceMatrix.byteLength;
-      for (const a of [p.instanceColor, p.litSlot, p.rooms]) if (a) bytes += a.byteLength;
+      for (const a of [p.instanceColor, p.litSlot, p.rooms, p.looks]) if (a) bytes += a.byteLength;
     }
   }
   return bytes;
@@ -184,7 +189,7 @@ export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
       out.push(p.instanceMatrix.buffer, p.bounds.buffer);
-      for (const a of [p.instanceColor, p.litSlot, p.rooms]) if (a) out.push(a.buffer);
+      for (const a of [p.instanceColor, p.litSlot, p.rooms, p.looks]) if (a) out.push(a.buffer);
     }
   }
   return out as ArrayBuffer[];
@@ -245,13 +250,14 @@ function shellArrays(chunks: readonly BuildingChunk[]): Omit<ShellArrays, 'bound
 const snorm = (x: number): number => Math.round(Math.max(-1, Math.min(1, x)) * 127);
 
 /** A batch's own instance arrays from its chunks, in order: the matrices, the colours of a coloured kind */
-function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: number, glassy: boolean, coloured: boolean): {
-  instanceMatrix: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Float32Array;
+function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: number, glassy: boolean, coloured: boolean, looked: boolean): {
+  instanceMatrix: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Float32Array; looks?: Float32Array;
 } {
   const instanceMatrix = new Float32Array(count * 16);
   const instanceColor = coloured ? new Float32Array(count * 3).fill(1) : undefined;
   const litSlot = glassy ? new Float32Array(count) : undefined;
   const rooms = glassy ? new Float32Array(count * ROOM_FLOATS) : undefined;
+  const looks = looked ? new Float32Array(count * LOOK_FLOATS) : undefined;
   let at = 0;
   for (const chunk of chunks) {
     const batch: PartBatch = chunk.parts[kind];
@@ -263,9 +269,10 @@ function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: num
       else litSlot.fill(-1, at, at + batch.count);
     }
     if (rooms && batch.rooms) rooms.set(batch.rooms, at * ROOM_FLOATS);
+    if (looks && batch.looks) looks.set(batch.looks, at * LOOK_FLOATS);
     at += batch.count;
   }
-  return { instanceMatrix, ...(instanceColor ? { instanceColor } : {}), ...(litSlot ? { litSlot } : {}), ...(rooms ? { rooms } : {}) };
+  return { instanceMatrix, ...(instanceColor ? { instanceColor } : {}), ...(litSlot ? { litSlot } : {}), ...(rooms ? { rooms } : {}), ...(looks ? { looks } : {}) };
 }
 
 /** The furniture of one kind of every chunk, its matrices in chunk order. */
