@@ -3,7 +3,7 @@ import { CompressedArrayTexture, type CompressedPixelFormat, type Mesh, RGBAForm
 
 import { FINISHES, type Finish } from '@world/buildings/materials';
 import { kitBoxes, meshesOf } from '@render/buildings/buildingMesh';
-import { FINISH_ATTRIBUTE, SHELL_MESH, cellArrays, finishId } from '@render/buildings/cellArrays';
+import { NORMAL_UNIT, PAINT_ATTRIBUTE, SHELL_MESH, cellArrays, finishId, paintShort } from '@render/buildings/cellArrays';
 import type { BuildingChunk, PartBatch, ShellChunk } from '@render/buildings/chunk';
 import { PART_KINDS, type PartKind, createBuildingKit } from '@render/buildings/kit';
 import { createShellMaterial, finishLookTable } from '@render/buildings/finishes';
@@ -20,15 +20,17 @@ import { MAX_UNITS, listed, textureUnits, total } from './_textureUnits';
 /** A quad of one finish, its x telling the finish (10 m a finish id) and the chunk (1 m each). */
 function quad(finish: Finish, chunk: number): ShellChunk {
   const x = finishId(finish) * 10 + chunk;
+  const white = paintShort(1), id = finishId(finish);
   return {
     position: Float32Array.of(x, 0, 0, x + 0.5, 0, 0, x + 0.5, 1, 0, x, 1, 0),
-    normal: Float32Array.of(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1),
-    colour: new Float32Array(12).fill(1),
-    uv: Float32Array.of(0, 0, 1, 0, 1, 1, 0, 1),
+    normalDecay: Int16Array.of(0, 0, NORMAL_UNIT, 0, 0, 0, NORMAL_UNIT, 0, 0, 0, NORMAL_UNIT, 0, 0, 0, NORMAL_UNIT, 0),
+    paint: Uint16Array.of(white, white, white, id, white, white, white, id, white, white, white, id, white, white, white, id),
     index: Uint32Array.of(0, 1, 2, 0, 2, 3),
-    decay: new Float32Array(4),
   };
 }
+
+/** Each vertex's finish id, as the shell's program reads it from its paint (`finishes.ts`). */
+const finishesOf = (paint: Uint16Array): number[] => Array.from({ length: paint.length / 4 }, (_, v) => paint[v * 4 + 3]!);
 
 /** A building's chunk with shells in `finishes` and no parts. */
 function chunkOf(finishes: readonly Finish[], chunk: number): BuildingChunk {
@@ -53,20 +55,21 @@ describe("a cell's shells", () => {
 
   it('are one set of arrays, each vertex tagged with its own finish', () => {
     const shell = cellArrays(chunks, take, kitBoxes(kit)).shell!;
+    const finish = finishesOf(shell.paint);
     expect(shell.position.length / 3).toBe(6 * 4);
-    expect(shell.finish.length).toBe(6 * 4);
+    expect(finish.length).toBe(6 * 4);
     const seen = new Set<number>();
-    for (let v = 0; v < shell.finish.length; v++) {
+    for (let v = 0; v < finish.length; v++) {
       const expected = Math.floor(shell.position[v * 3]! / 10);
-      expect(shell.finish[v], `vertex ${v}`).toBe(expected);
+      expect(finish[v], `vertex ${v}`).toBe(expected);
       seen.add(expected);
     }
     expect([...seen].sort((a, b) => a - b)).toEqual((['plaster', 'brick', 'glass', 'slate', 'wood'] as const).map(finishId).sort((a, b) => a - b));
     // Every triangle within one finish: the indices shifted with their vertices.
     for (let t = 0; t < shell.index.length; t += 3) {
-      const f = shell.finish[shell.index[t]!];
-      expect(shell.finish[shell.index[t + 1]!]).toBe(f);
-      expect(shell.finish[shell.index[t + 2]!]).toBe(f);
+      const f = finish[shell.index[t]!];
+      expect(finish[shell.index[t + 1]!]).toBe(f);
+      expect(finish[shell.index[t + 2]!]).toBe(f);
     }
   });
 
@@ -80,7 +83,7 @@ describe("a cell's shells", () => {
       const mesh = shells[0]!;
       expect(mesh.material).toBe(dim ? kit.dimShell : kit.shellMaterial);
       expect(mesh.geometry.groups).toHaveLength(0);
-      expect(Array.from(mesh.geometry.getAttribute(FINISH_ATTRIBUTE).array)).toEqual(Array.from(arrays.shell!.finish));
+      expect(finishesOf(mesh.geometry.getAttribute(PAINT_ATTRIBUTE).array as Uint16Array)).toEqual(finishesOf(arrays.shell!.paint));
       meshes.dispose();
     }
   });

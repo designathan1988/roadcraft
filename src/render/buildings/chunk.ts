@@ -61,15 +61,18 @@ export interface PartBatch {
 }
 
 /** Everything one building contributes, in typed arrays: a shell fragment with local indices and its instance batches. */
+/** A shell's vertices are written in the GPU's layout as they are laid (`cellArrays.ts` `ShellArrays`): a cell's arrays are these concatenated. */
 export interface ShellChunk {
-  readonly decay: Float32Array;
   readonly position: Float32Array;
-  readonly normal: Float32Array;
-  readonly colour: Float32Array;
-  readonly uv: Float32Array;
+  /** The normal (three's axes) and the wear, `SHELL_SHORTS` signed shorts a vertex over `NORMAL_UNIT`. */
+  readonly normalDecay: Int16Array;
+  /** The paint's linear rgb over `COLOUR_RANGE` and the finish id, `SHELL_SHORTS` unsigned shorts a vertex over `PAINT_UNIT`. */
+  readonly paint: Uint16Array;
   readonly index: Uint32Array;
-  /** The far level only (`emitChunk` `far`): each vertex's window grid, `FACADE_FLOATS` numbers (`cellArrays.ts`). */
+  /** The far level only (`emitChunk` `far`): each vertex's bay width and storey height, `FACADE_FLOATS` numbers (`cellArrays.ts`). */
   readonly facade?: Float32Array;
+  /** The far level only: each vertex's bay, level, kind and volume * 4 + side, `FACADE_GRID` shorts. */
+  readonly grid?: Int16Array;
   /** The far level only: each vertex's opening and frame colour, `FACADE_BYTES` bytes. */
   readonly opening?: Uint8Array;
 }

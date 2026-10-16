@@ -7,6 +7,8 @@ import { ROOM_LAMP_GLSL } from './roomLamps';
 
 /** How the far level's shader fills a bay's opening (`buildingMesh.ts` `facadeKind` writes the same numbers), after `emitBay`'s panes */
 export const FACADE_KIND = { none: 0, window: 1, clear: 2, darkQuarter: 3, darkFifth: 4, door: 5, shutterDoor: 6 } as const;
+/** Added to a vertex's kind where its run's bays go against its face's own horizontal (`shellUv`'s t): the shader turns the derived direction round. */
+export const FACADE_FLIP = 8;
 
 /** How wide a window's frame reads round its pane, m: the frame part's border (`kit.ts`), with the reveal beside it. */
 const FRAME = m(0.08);
@@ -135,8 +137,8 @@ export function createFacadeMaterial(base: MeshStandardMaterial, p: FacadePanes,
     shader.uniforms['massingNight'] = uniforms.massingNight;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
-attribute vec4 facadeGrid;
-attribute vec4 facadeKey;
+attribute vec2 facadeSize;
+attribute vec4 facadeCell;
 attribute vec4 facadeOpening;
 attribute vec4 facadeTrim;
 varying vec4 vFacadeGrid;
@@ -145,8 +147,15 @@ varying vec4 vFacadeOpening;
 varying vec4 vFacadeTrim;
 varying vec3 vFacadeWorld;`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
-vFacadeGrid = facadeGrid;
-vFacadeKey = facadeKey;
+vFacadeGrid = vec4(facadeCell.xy, facadeSize);
+{
+  // The run's direction along the facade on the plan: the face's own horizontal (\`shellPlanarUv\`'s t), turned where the bays run the other way.
+  int facadeRaw = int(facadeCell.z + 0.5);
+  vec3 facadeOut = normalize(mat3(modelMatrix) * objectNormal);
+  vec2 facadeAlong = vec2(facadeOut.z, facadeOut.x) / max(length(facadeOut.xz), 1e-6);
+  if ((facadeRaw & ${FACADE_FLIP}) != 0) facadeAlong = -facadeAlong;
+  vFacadeKey = vec4(float(facadeRaw & ${FACADE_FLIP - 1}), facadeCell.w, facadeAlong);
+}
 vFacadeOpening = facadeOpening;
 vFacadeTrim = facadeTrim;
 vFacadeWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
@@ -170,6 +179,6 @@ totalEmissiveRadiance += facadeLamp * massingNight * facadeLit * facadeGlass * m
     // The shell's own after: each of its additions lands right after its chunk, so before these (its finish's map, roughness, metalness and relief first).
     baseCompile(shader, renderer);
   };
-  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v2`;
+  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v3`;
   return material;
 }

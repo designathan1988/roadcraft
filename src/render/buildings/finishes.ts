@@ -4,8 +4,8 @@ import { type Finish, FINISHES } from '@world/buildings/materials';
 import { LOOKS, finishTiles } from '../bake/finishRecipes';
 import { type SurfaceBake, surfaceMaps } from '../surfaceTextures';
 import { applyLotOverlay } from '../lotOverlay';
-import { FINISH_ATTRIBUTE } from './cellArrays';
-import { SHELL_PART_BEGIN, SHELL_PART_PARS, shellPartVertex } from './shellParts';
+import { COLOUR_RANGE, FINISH_ATTRIBUTE, PAINT_ATTRIBUTE, PAINT_UNIT } from './cellArrays';
+import { SHELL_PART_BEGIN, SHELL_PART_PARS, SHELL_UV_GLSL, shellPartVertex } from './shellParts';
 
 /** The building finishes ("Materials"): their recipes in `bake/finishRecipes.ts`, baked at build time as one texture array per map, a layer per finish */
 
@@ -108,8 +108,8 @@ if (vDecay > 0.001 && shellKind.z < 0.5) {
   }
 }`;
 
-/** The shell's program: each pixel's finish (a byte a vertex, `FINISH_ATTRIBUTE`) picks its layer of the maps and its rows of the look table; `weathered` adds the wear */
-function shellShader(shader: WebGLProgramParametersWithUniforms, maps: SurfaceBake | undefined, looks: { value: Float32Array }, weathered: boolean): void {
+/** The shell's program: each pixel's finish picks its layer of the maps and its rows of the look table; `weathered` adds the wear. A shell's vertex carries its paint and finish (`PAINT_ATTRIBUTE`), its uv worked out here from its place and normal as `Shell.face` laid it; instanced, the shell's parts (`shellParts.ts`) their finish, wear and ground per instance; `carried`: a ruin's pieces, which move, their uv, colour and finish carried per vertex (`fracture.ts`). */
+function shellShader(shader: WebGLProgramParametersWithUniforms, maps: SurfaceBake | undefined, looks: { value: Float32Array }, weathered: boolean, carried: boolean): void {
   shader.uniforms['shellLooks'] = looks;
   if (maps) {
     shader.uniforms['shellMaps'] = { value: maps.map };
@@ -117,23 +117,33 @@ function shellShader(shader: WebGLProgramParametersWithUniforms, maps: SurfaceBa
     shader.uniforms['shellRough'] = { value: maps.roughnessMap };
   }
   const layer = 'vec3(vShellUv, float(vShellFinish))';
+  const scale = `shellLooks[vShellFinish * ${LOOK_ROWS}].x`;
   // Each addition lands right after its chunk: a material built on this one (`facadeLevel.ts`) adds its own after it.
-  // Drawn instanced, it draws the shell's parts (`shellParts.ts`): their finish, wear and ground per instance, their uv and tone laid here as `Shell.face` laid the shell's.
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>
-attribute float ${FINISH_ATTRIBUTE};
+${carried ? `attribute float ${FINISH_ATTRIBUTE};` : `#ifdef USE_INSTANCING\nattribute float ${FINISH_ATTRIBUTE};\n#else\nattribute vec4 ${PAINT_ATTRIBUTE};\n#endif`}
 uniform vec4 shellLooks[${FINISHES.length * LOOK_ROWS}];
 flat varying int vShellFinish;
 varying vec2 vShellUv;
 ${weathered ? 'attribute float aDecay;\nvarying float vDecay;\nvarying vec3 vDecayWorld;\nvarying vec3 vDecayNormal;' : ''}
+${SHELL_UV_GLSL}
 ${SHELL_PART_PARS}`)
     // The finish's tile, as each finish's map repeat was.
     .replace('#include <uv_vertex>', `#include <uv_vertex>
+${carried ? `vShellFinish = int(${FINISH_ATTRIBUTE} + 0.5);\nvShellUv = uv * ${scale};` : `#ifdef USE_INSTANCING
 vShellFinish = int(${FINISH_ATTRIBUTE} + 0.5);
-vShellUv = uv * shellLooks[vShellFinish * ${LOOK_ROWS}].x;`)
+#else
+vShellFinish = int(${PAINT_ATTRIBUTE}.w * ${PAINT_UNIT}.0 + 0.5);
+#endif`}`)
+    // The paint as `Shell.face` laid it, tone and grime in it.
+    .replace('#include <color_vertex>', `#include <color_vertex>
+${carried ? '' : `#ifndef USE_INSTANCING\nvColor.rgb = ${PAINT_ATTRIBUTE}.rgb * ${COLOUR_RANGE.toFixed(1)};\n#endif`}`)
     .replace('#include <begin_vertex>', `#include <begin_vertex>\n${SHELL_PART_BEGIN}`)
     .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
 ${shellPartVertex(LOOK_ROWS)}
+${carried ? '' : `#ifndef USE_INSTANCING
+vShellUv = shellPlanarUv((modelMatrix * vec4(transformed, 1.0)).xyz, normalize(mat3(modelMatrix) * objectNormal)) * ${scale};
+#endif`}
 ${weathered ? `vDecay = aDecay;
 {
   vec4 shellWorld = vec4(transformed, 1.0);
@@ -176,16 +186,18 @@ ${maps ? `{
 /**
  * THE ONE SHELL MATERIAL: every finish of a cell's shells in one draw, textured where the build's baked surfaces are loaded (`surfaceBakeClient.ts`; none in a worker or a test).
  * `plain`: the faded copy's look ("Ocultar outros"): the finishes' maps and scalars without the wear or the lots, as the per-finish clones drew it.
+ * `carried`: a ruin's (`destruction.ts`): its pieces move, so each vertex carries its uv, colour and finish (`shellShader`).
  */
-export function createShellMaterial(options: { readonly plain?: boolean } = {}, anisotropy = 8): MeshStandardMaterial {
+export function createShellMaterial(options: { readonly plain?: boolean; readonly carried?: boolean } = {}, anisotropy = 8): MeshStandardMaterial {
   const plain = options.plain === true;
+  const carried = options.carried === true;
   const maps = surfaceMaps('building-finishes', anisotropy);
   // The shell is not a closed solid (openings, no underside), so it casts from both sides; roughness, metalness and the sky's share are each finish's row times these.
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: maps ? 1 : 0.9, metalness: 1, envMapIntensity: 1, shadowSide: DoubleSide });
-  material.name = plain ? 'building-shell-plain' : 'building-shell';
+  material.name = plain ? 'building-shell-plain' : carried ? 'building-ruin' : 'building-shell';
   const looks = { value: finishLookTable(maps !== undefined) };
-  material.onBeforeCompile = (shader) => shellShader(shader, maps, looks, !plain);
-  const key = `building-shell-v1-${plain ? 'plain' : 'weathered'}-${maps ? 'maps' : 'none'}`;
+  material.onBeforeCompile = (shader) => shellShader(shader, maps, looks, !plain, carried);
+  const key = `building-shell-v2-${plain ? 'plain' : 'weathered'}-${carried ? 'carried' : 'laid'}-${maps ? 'maps' : 'none'}`;
   material.customProgramCacheKey = () => key;
   // A built lot's yard - the paving and paths are this shell's level faces at the lot's ground
   if (!plain) applyLotOverlay(material, 'building-shell', { building: true });

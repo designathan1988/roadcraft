@@ -26,25 +26,41 @@ export type Bounds = Float64Array;
 /** The name of a batch's one shell mesh (`buildingMesh.ts` `meshesOf`), as `fade.ts` and the memory counters find it. */
 export const SHELL_MESH = 'building-shell';
 
-/** The shell's vertex attribute holding each vertex's finish id: its place in `FINISHES`, its layer of the finishes' maps (`finishes.ts`). */
+/** The finish id of a shell's part per instance, and of a ruin's piece per vertex (`finishes.ts`): its place in `FINISHES`, its layer of the finishes' maps. */
 export const FINISH_ATTRIBUTE = 'shellFinish';
+/** The shell's vertex attribute of its paint: rgb over `COLOUR_RANGE` and the finish id in w, four unsigned shorts read normalised (`finishes.ts`). */
+export const PAINT_ATTRIBUTE = 'shellPaint';
 
 /** A finish's id, as the shell's program reads it. */
 export const finishId = (finish: Finish): number => FINISHES.indexOf(finish);
 
-/** A batch's shells of every finish, one geometry drawn in one call */
+/** The brightest linear colour a shell's paint holds: a light paint shaded up (1.1), the building's own shade (1.05) and the tone (1.03) stay under it. */
+export const COLOUR_RANGE = 2;
+/** The largest unsigned short: a paint's channel and its finish id over it. */
+export const PAINT_UNIT = 65535;
+/** The largest signed short: a normal's and a wear's channel over it (WebGL 2: a normalised short reads back as c / 32767). */
+export const NORMAL_UNIT = 32767;
+
+/** A linear colour channel as the shell's paint holds it: 16 bits over `COLOUR_RANGE`, a step of 3e-5 (a byte would band the dark paints). */
+export const paintShort = (x: number): number => Math.round(Math.max(0, Math.min(1, Math.fround(x) / COLOUR_RANGE)) * PAINT_UNIT);
+/** A number in [-1, 1] as a signed short the GPU reads back normalised: the shell's normal and wear. */
+export const snorm16 = (x: number): number => Math.round(Math.max(-1, Math.min(1, x)) * NORMAL_UNIT);
+
+/** Numbers a shell vertex carries in its normal and wear (`normalDecay`) and in its paint (`paint`): four shorts each. */
+export const SHELL_SHORTS = 4;
+
+/** A batch's shells of every finish, one geometry drawn in one call: 28 bytes a vertex, 52 at the far level */
 interface ShellArrays {
   readonly position: Float32Array;
-  /** The normal (x, y, z) and the wear (w), each a signed byte over 127: four bytes a vertex (`meshesOf` reads both from it). */
-  readonly normalDecay: Int8Array;
-  readonly colour: Float32Array;
-  readonly uv: Float32Array;
-  /** Each vertex's finish id, a byte (`FINISH_ATTRIBUTE`). */
-  readonly finish: Uint8Array;
+  /** The normal (x, y, z) and the wear (w), each a signed short over 32767: the uv is worked out from it and the place (`shellParts.ts` `shellUv`), so it needs more than a byte. */
+  readonly normalDecay: Int16Array;
+  /** The paint's linear rgb (tone and grime in it) over `COLOUR_RANGE` and the finish id (`PAINT_ATTRIBUTE`), unsigned shorts. */
+  readonly paint: Uint16Array;
   readonly index: Uint16Array | Uint32Array;
   readonly bounds: Bounds;
-  /** The far level only (`emitChunk` `far`): each vertex's window grid, `FACADE_FLOATS` numbers, and its opening, `FACADE_BYTES` bytes (`facadeLevel.ts`). */
+  /** The far level only (`emitChunk` `far`): each vertex's bay width and storey height (`FACADE_FLOATS`), its grid (`FACADE_GRID` shorts) and its opening (`FACADE_BYTES`, `facadeLevel.ts`). */
   readonly facade?: Float32Array;
+  readonly grid?: Int16Array;
   readonly opening?: Uint8Array;
 }
 
@@ -108,15 +124,17 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
   return { shell, parts, furniture };
 }
 
-/** Numbers per vertex of the far level's window grid (`buildingMesh.ts` `FacadeStamp`): bay and level (u, v), bay width and storey height, kind, volume * 4 + side, the facade's direction along (world plan). */
-export const FACADE_FLOATS = 8;
+/** Floats per vertex of the far level's window grid (`buildingMesh.ts` `FacadeStamp`): one bay's width and one storey's height. */
+export const FACADE_FLOATS = 2;
+/** Shorts per vertex of the far level's window grid, each a whole number: bay and level (u, v, whole at a run's corners), kind + `FACADE_FLIP` where the bays run against the face's own horizontal, volume * 4 + side. */
+export const FACADE_GRID = 4;
 /** Bytes per vertex of the far level's opening (a0, a1, h0, h1, shares of the bay) its frames' colour (r, g, b) and whether its rooms are offices (255) or homes (0). */
 export const FACADE_BYTES = 8;
 
 /** A cell's buildings from afar as one mesh's arrays (`massCells.ts`) */
 export interface CellMass {
   readonly position: Float32Array;
-  /** Four signed bytes a vertex over 127 (x, y, z, and one left over: no 3-byte format in Direct3D 11), as the shells' (`normalDecay`). */
+  /** Four signed bytes a vertex over 127 (x, y, z, and one left over: no 3-byte format in Direct3D 11): lighting only, no uv worked out from it (the shells' are shorts, `normalDecay`). */
   readonly normal: Int8Array;
   readonly color: Float32Array;
   readonly facade: Float32Array;
@@ -165,7 +183,7 @@ export const cellMassBuffers = (c: CellMass): ArrayBuffer[] =>
 export function cellBytes(arrays: CellArrays): number {
   let bytes = 0;
   const s = arrays.shell;
-  if (s) bytes += s.position.byteLength + s.normalDecay.byteLength + s.colour.byteLength + s.uv.byteLength + s.finish.byteLength + s.index.byteLength + (s.facade?.byteLength ?? 0) + (s.opening?.byteLength ?? 0);
+  if (s) bytes += s.position.byteLength + s.normalDecay.byteLength + s.paint.byteLength + s.index.byteLength + (s.facade?.byteLength ?? 0) + (s.grid?.byteLength ?? 0) + (s.opening?.byteLength ?? 0);
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
@@ -181,8 +199,9 @@ export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
   const out: ArrayBufferLike[] = [];
   const s = arrays.shell;
   if (s) {
-    out.push(s.position.buffer, s.normalDecay.buffer, s.colour.buffer, s.uv.buffer, s.finish.buffer, s.index.buffer, s.bounds.buffer);
+    out.push(s.position.buffer, s.normalDecay.buffer, s.paint.buffer, s.index.buffer, s.bounds.buffer);
     if (s.facade) out.push(s.facade.buffer);
+    if (s.grid) out.push(s.grid.buffer);
     if (s.opening) out.push(s.opening.buffer);
   }
   for (const list of [arrays.parts, arrays.furniture]) {
@@ -195,7 +214,7 @@ export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
   return out as ArrayBuffer[];
 }
 
-/** Every finish's shells of every chunk in one set of arrays, finish by finish in `FINISHES` order (the vertices concatenated, each tagged with its finish id, the indices shifted), or null when none has any. */
+/** Every finish's shells of every chunk in one set of arrays, finish by finish in `FINISHES` order (the chunks' arrays, already in the GPU's layout, concatenated; the indices shifted), or null when none has any. */
 function shellArrays(chunks: readonly BuildingChunk[]): Omit<ShellArrays, 'bounds'> | null {
   let vertices = 0;
   let indices = 0;
@@ -212,38 +231,30 @@ function shellArrays(chunks: readonly BuildingChunk[]): Omit<ShellArrays, 'bound
   }
   if (indices === 0) return null;
   const position = new Float32Array(vertices * 3);
-  // DO NOT keep them as floats: 16 bytes a vertex of the town's largest geometry for what a byte each tells (normals of flat walls, a wear level).
-  const normalDecay = new Int8Array(vertices * 4);
-  const colour = new Float32Array(vertices * 3);
-  const uv = new Float32Array(vertices * 2);
-  const finishOf = new Uint8Array(vertices);
+  const normalDecay = new Int16Array(vertices * SHELL_SHORTS);
+  const paint = new Uint16Array(vertices * SHELL_SHORTS);
   const index = indexArray(vertices, indices);
   const facade = far ? new Float32Array(vertices * FACADE_FLOATS) : undefined;
+  const grid = far ? new Int16Array(vertices * FACADE_GRID) : undefined;
   const opening = far ? new Uint8Array(vertices * FACADE_BYTES) : undefined;
   let v = 0;
   let n = 0;
-  FINISHES.forEach((finish, id) => {
+  for (const finish of FINISHES) {
     for (const chunk of chunks) {
       const part = chunk.shells[finish];
       if (!part) continue;
       position.set(part.position, v * 3);
+      normalDecay.set(part.normalDecay, v * SHELL_SHORTS);
+      paint.set(part.paint, v * SHELL_SHORTS);
       if (facade && part.facade) facade.set(part.facade, v * FACADE_FLOATS);
+      if (grid && part.grid) grid.set(part.grid, v * FACADE_GRID);
       if (opening && part.opening) opening.set(part.opening, v * FACADE_BYTES);
-      const count = part.position.length / 3;
-      for (let k = 0; k < count; k++) {
-        const at = (v + k) * 4;
-        normalDecay[at] = snorm(part.normal[k * 3]!); normalDecay[at + 1] = snorm(part.normal[k * 3 + 1]!); normalDecay[at + 2] = snorm(part.normal[k * 3 + 2]!);
-        normalDecay[at + 3] = snorm(part.decay[k]!);
-      }
-      colour.set(part.colour, v * 3);
-      uv.set(part.uv, v * 2);
-      finishOf.fill(id, v, v + count);
       for (let i = 0; i < part.index.length; i++) index[n + i] = (part.index[i] as number) + v;
-      v += count;
+      v += part.position.length / 3;
       n += part.index.length;
     }
-  });
-  return { position, normalDecay, colour, uv, finish: finishOf, index, ...(facade && opening ? { facade, opening } : {}) };
+  }
+  return { position, normalDecay, paint, index, ...(facade && grid && opening ? { facade, grid, opening } : {}) };
 }
 
 /** A number in [-1, 1] as a signed byte the GPU reads back normalised (x / 127, WebGL 2 `vertexAttribPointer`). */

@@ -118,7 +118,7 @@ describe('the buildings layer, a change at a time', () => {
     doc.buildings.all = all;
     expect(rebuilt).toBe(true);
     expect(walked).toBe(0);
-    // A signed byte over 127 on the GPU (`cellArrays.ts` `normalDecay`): 0.9 reads back within 1/254.
+    // A signed short over 32767 on the GPU (`cellArrays.ts` `normalDecay`): 0.9 reads back within 1/65534.
     expect(worn()).toBeCloseTo(0.9, 2);
     live.dispose();
   });
