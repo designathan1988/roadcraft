@@ -38,7 +38,9 @@ import { GroundChanges } from './groundChanges';
 import { createLandLighter, unionCorners, type CornerRect, type LightRequest, type LightResult } from './terrainLightCompute';
 import { submitLight } from './terrainLightPool';
 import { ecologyOffPage, readEcology } from './ecologyPool';
-import { landNormalsInto, type PlateMesh } from './plateMesh';
+import type { PlateMesh } from './plateMesh';
+import { stageTexels, type StagedTexels } from './stagedTexels';
+import { ecologyCornersInto, groundCornersInto, landTexelsInto, lightLayerInto, lightRectInto, type CornerCover, type CornerStore } from './plateTexels';
 import { LOD_LEVELS, LandLevels } from './terrainLevels';
 import { LandLod, lodFragmentGlsl, lodVertexGlsl, type LandGrid } from './terrainLod';
 import type { ChangeJournal } from '@world/changes';
@@ -87,6 +89,9 @@ const NO_WATER = -100_000;
 
 /** Corners per side of the terrain grid — one more than its cells. */
 const GRID = TERRAIN_SEGMENTS + 1;
+/** Corners visited by the current shaping pass, by pass, so regions and boxes that overlap visit each once: one for every plate, the passes run one at a time. */
+let shapeVisited: Int32Array | null = null;
+let shapePasses = 0;
 /** A plate's grid of corners as the shaping and the sampling read it (`terrainShaping.ts`). */
 const plateGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 /** A plate's grid as its patches read it (`terrainLod.ts`). */
@@ -152,8 +157,6 @@ export interface TerrainSurface {
   ecology(): EcologyField | null;
   /** Moves whenever `ecology()` changes. */
   readonly ecologyRevision: number;
-  /** The ecology's ground classes per terrain corner, for the grass and the plants' shaders. */
-  readonly ecologyTexture: Texture;
   /** Where the painted geology changed: the stones on the ground take its colour. */
   readonly geologyChanges: GroundChanges;
   /** The water's level near a point (lake or river, within a few cells of it), or null. */
@@ -261,22 +264,6 @@ function shoreLevels(water: BufferGeometry, levels: Float32Array, ground: ArrayL
   }
 }
 
-/** The ground texture the terrain shader reads per corner: R the water's level */
-function packGroundCorners(texture: DataArrayTexture, levels: Float32Array, flowers: Float32Array, scrub: Float32Array, forest: Float32Array, sand: Float32Array, basalt: Float32Array): void {
-  // Its first layer: the ecology is the second (`terrainData`).
-  const data = texture.image.data as Float32Array;
-  texture.addLayerUpdate(0);
-  const byte = (value: number): number => Math.round(Math.min(1, Math.max(0, value)) * 255);
-  for (let k = 0; k < levels.length; k++) {
-    data[k * 4] = levels[k] as number;
-    // Two bytes to a channel, exact in a float: the flowers (the scrub) low, the painted sandstone (basalt) high.
-    data[k * 4 + 1] = byte(flowers[k] as number) + 256 * byte(sand[k] as number);
-    data[k * 4 + 2] = byte(scrub[k] as number) + 256 * byte(basalt[k] as number);
-    data[k * 4 + 3] = forest[k] as number;
-  }
-  texture.needsUpdate = true;
-}
-
 /** Lays one geology dab on the terrain's corners: within its radius the rock moves towards the dab's */
 function rasterGeology(sand: Float32Array, basalt: Float32Array, dab: PaintDab): readonly [number, number, number, number] {
   const toSand = dab.kind === 'sandstone' ? 1 : 0;
@@ -332,8 +319,9 @@ const PAINT_LAYERS = 3;
 const LIGHT_LAYER = 2;
 /** The side of the painted ground's array before anything is painted on it: the land's light layer */
 const PAINT_START_RES = Math.min(PAINT_RES, 2 ** Math.ceil(Math.log2(TERRAIN_SEGMENTS + 1)));
+/** The painted ground's array, its texels on the page only while sent (`stageTexels`). */
 function paintLayers(res = PAINT_START_RES): DataArrayTexture {
-  const texture = new DataArrayTexture(new Uint8Array(res * res * 4 * PAINT_LAYERS), res, res, PAINT_LAYERS);
+  const texture = new DataArrayTexture(null, res, res, PAINT_LAYERS);
   texture.format = RGBAFormat;
   texture.type = UnsignedByteType;
   texture.magFilter = LinearFilter;
@@ -344,11 +332,10 @@ function paintLayers(res = PAINT_START_RES): DataArrayTexture {
   texture.needsUpdate = true;
   return texture;
 }
-/** One layer of the painted ground's array, as a view on its data. */
-function paintLayer(texture: DataArrayTexture, layer: number): Uint8Array {
-  const res = texture.image.width;
+/** One layer of the painted ground's texels (`res` a side), as a view on them. */
+function paintLayer(texels: Uint8Array, res: number, layer: number): Uint8Array {
   const size = res * res * 4;
-  return (texture.image.data as Uint8Array).subarray(layer * size, (layer + 1) * size);
+  return texels.subarray(layer * size, (layer + 1) * size);
 }
 
 /** Lays one dab into the weight textures: within its radius every layer moves toward the dab's */
@@ -413,7 +400,7 @@ interface TerrainBakes {
   readonly landNormals: Texture;
 }
 
-/** What a plate's land materials share: its textures and corner fields (`userData`) and their uniforms. */
+/** What a plate's land materials share: their uniforms, kept in `userData` too for the plate to change. */
 interface TerrainData {
   readonly userData: Record<string, unknown>;
   readonly uniforms: Record<string, { value: unknown }>;
@@ -453,50 +440,21 @@ function terrainMaterial(bakes: TerrainBakes, data: TerrainData, lod: TerrainLod
   return material;
 }
 
-/** A plate's land textures, corner fields and uniforms, made once for all its materials. */
-function terrainData(bakes: TerrainBakes): TerrainData {
-  const userData: Record<string, unknown> = {};
-  const paint = paintLayers();
-  userData['paint'] = paint;
-  // The water's level at each terrain corner near water (`shoreLevels`), NO_WATER elsewhere
-  const shoreLevelData = new Float32Array(GRID * GRID).fill(NO_WATER);
-  const flowerCornerData = new Float32Array(GRID * GRID);
-  const scrubCornerData = new Float32Array(GRID * GRID);
-  const forestCornerData = new Float32Array(GRID * GRID);
-  // The painted geology at each corner: how much is sandstone, how much basalt (the rest granite).
-  const sandCornerData = new Float32Array(GRID * GRID);
-  const basaltCornerData = new Float32Array(GRID * GRID);
-  // The corners' water, flowers, scrub, geology and forest (layer 0) and the ecology's classes (layer 1, `ecologyUploaded`): one texture unit.
-  const shore = new DataArrayTexture(new Float32Array(GRID * GRID * 4 * 2), GRID, GRID, 2);
+/** The corners' water, flowers, scrub, geology and forest (layer 0) and the ecology's classes (layer 1): one texture unit, `side` corners a side. */
+function shoreLayers(side: number, data: Float32Array | null): DataArrayTexture {
+  const shore = new DataArrayTexture(data, side, side, 2);
   shore.format = RGBAFormat;
   shore.type = FloatType;
   shore.magFilter = NearestFilter;
   shore.minFilter = NearestFilter;
   shore.generateMipmaps = false;
-  packGroundCorners(shore, shoreLevelData, flowerCornerData, scrubCornerData, forestCornerData, sandCornerData, basaltCornerData);
-  userData['shore'] = shore;
-  userData['sandCorners'] = sandCornerData;
-  userData['basaltCorners'] = basaltCornerData;
-  // The ecosystem's ground per corner (`refreshEcology`): its bytes here, drawn from the shore's second layer.
-  const ecologyTexture = new DataTexture(new Uint8Array(GRID * GRID * 4), GRID, GRID, RGBAFormat, UnsignedByteType);
-  ecologyTexture.magFilter = LinearFilter;
-  ecologyTexture.minFilter = LinearFilter;
-  ecologyTexture.wrapS = ClampToEdgeWrapping;
-  ecologyTexture.wrapT = ClampToEdgeWrapping;
-  ecologyTexture.generateMipmaps = false;
-  userData['ecology'] = ecologyTexture;
-  userData['ecologyUploaded'] = (): void => {
-    const bytes = ecologyTexture.image.data as Uint8Array;
-    const data = shore.image.data as Float32Array;
-    const at = GRID * GRID * 4;
-    for (let i = 0; i < at; i++) data[at + i] = bytes[i]! / 255;
-    shore.addLayerUpdate(1);
-    shore.needsUpdate = true;
-  };
-  userData['shoreLevels'] = shoreLevelData;
-  userData['flowerCorners'] = flowerCornerData;
-  userData['scrubCorners'] = scrubCornerData;
-  userData['forestCorners'] = forestCornerData;
+  shore.needsUpdate = true;
+  return shore;
+}
+
+/** A plate's land textures and uniforms, made once for all its materials: the painted ground's array and the corners' (`shoreSide` corners a side). */
+function terrainData(bakes: TerrainBakes, paint: DataArrayTexture, shore: DataArrayTexture, shoreSide: number): TerrainData {
+  const userData: Record<string, unknown> = {};
   const uniforms = {
     uPaint: { value: paint as Texture },
     uPaintRes: { value: paint.image.width },
@@ -505,7 +463,7 @@ function terrainData(bakes: TerrainBakes): TerrainData {
     uGrassField: GRASS_FIELD,
     uGrid: TERRAIN_GRID,
     uShore: { value: shore as Texture },
-    uShoreGrid: { value: new Vector3(TERRAIN_HALF, TERRAIN_CELL, GRID) },
+    uShoreGrid: { value: new Vector3(TERRAIN_HALF, TERRAIN_CELL, shoreSide) },
     uLandMaps: { value: bakes.landMaps },
     uSeasonDry: SEASON_DRY,
     // One repeat of the grass texture over 32 units (13 m): its tufts some 40 cm, its dry patches 1.3 m.
@@ -523,6 +481,26 @@ function terrainData(bakes: TerrainBakes): TerrainData {
   };
   userData['terrainUniforms'] = uniforms;
   return { userData, uniforms };
+}
+
+/** The land's material for the far patches (`flatAtlas.ts`), made without a plate: a far plate holds no paint, no water and no ecology, so its textures are one texel of none. */
+export function farLandMaterial(anisotropy: number): { readonly material: Material; dispose(): void } {
+  const bakes = terrainBakes(anisotropy);
+  const paint = paintLayers(1);
+  paint.image.data = new Uint8Array(4 * PAINT_LAYERS);
+  // 2 x 2 corners, the fewest the shore's bilinear reads (`terrainShoreSample`): no water at any.
+  const corners = new Float32Array(2 * 2 * 4 * 2);
+  for (let k = 0; k < 4; k++) corners[k * 4] = NO_WATER;
+  const shore = shoreLayers(2, corners);
+  const material = terrainMaterial(bakes, terrainData(bakes, paint, shore, 2), null);
+  return {
+    material,
+    dispose() {
+      material.dispose();
+      paint.dispose();
+      shore.dispose();
+    },
+  };
 }
 
 /** Replaces `chunk` in a shader, or throws: a three upgrade that renamed it must not leave the land drawn wrong in silence. */
@@ -614,7 +592,7 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            vec4 w = bilinear * has;
            float sum = w.x + w.y + w.z + w.w;
            terrainShoreCover = sum;
-           // G and B carry two bytes each (packGroundCorners)
+           // G and B carry two bytes each (`groundCornersInto`)
            vec4 gPair = vec4(c00.y, c10.y, c01.y, c11.y);
            vec4 bPair = vec4(c00.z, c10.z, c01.z, c11.z);
            vec4 gHigh = floor(gPair / 256.0);
@@ -1331,19 +1309,23 @@ export function wallMaterial(anisotropy: number): MeshStandardMaterial {
 export function createTerrainSurface(anisotropy: number, origin: { readonly x: number; readonly y: number }, plate: number, prebuilt: PlateMesh | null = null,
   heights: PlateHeights | null = null): TerrainSurface {
   const bakes = terrainBakes(anisotropy);
-  const data = terrainData(bakes);
-  /** The land's material on an ordinary mesh of the ground: the verges' (`vergeMaterial`) and the far patches' (`flatAtlas.ts`). */
+  // DO NOT keep a CPU copy of what the GPU holds: each texture's texels are worked out from their truth when three sends them (`stagedTexels.ts`).
+  let paintArray = paintLayers();
+  const shore = shoreLayers(GRID, null);
+  const data = terrainData(bakes, paintArray, shore, GRID);
+  /** The land's material on an ordinary mesh of the ground: the verges' (`vergeMaterial`). */
   const material = terrainMaterial(bakes, data, null);
 
   // THE PLATE'S CORNERS ON THE GPU, as the patches and their pixels read them (`terrainLod.ts`): sent again only where they change.
-  const texels = new Float32Array(GRID * GRID * 4);
-  const land = new DataTexture(texels, GRID, GRID, RGBAFormat, FloatType);
+  const land = new DataTexture(null, GRID, GRID, RGBAFormat, FloatType);
   land.magFilter = NearestFilter;
   land.minFilter = NearestFilter;
   land.generateMipmaps = false;
   /** Whether the whole texture waits to be sent (its first upload, a whole plate rewritten): rows added meanwhile would cut it to them. */
   let landWhole = true;
   land.onUpdate = () => { landWhole = false; };
+  // From the drawn corners and their diagonals (the shared heights, `sharedGround.ts`): the box of rows three sends, or all of them.
+  const landTexels = stageTexels(land, Float32Array, GRID * GRID * 4, 4, (into, part) => landTexelsInto(grid, flip, GRID, TERRAIN_HALF, TERRAIN_CELL, into, part.box));
   /** A box of corners (inclusive) sent again, row by row (`Texture.addUpdateRange`): never the whole plate for a dab. */
   const sendLand = (x0: number, x1: number, y0: number, y1: number): void => {
     if (!landWhole) for (let y = Math.max(0, y0); y <= Math.min(GRID - 1, y1); y++) land.addUpdateRange((y * GRID + Math.max(0, x0)) * 4, (Math.min(GRID - 1, x1) - Math.max(0, x0) + 1) * 4);
@@ -1413,19 +1395,18 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const shapedCorners = new Uint8Array(GRID * GRID);
   /** The drawn corners of a box (inclusive) moved: their heights, the diagonals and normals round them and the levels over them, sent to the GPU. */
   const cornersMoved = (x0: number, x1: number, y0: number, y1: number): void => {
-    for (let iy = y0; iy <= y1; iy++) for (let ix = x0; ix <= x1; ix++) texels[(ix + iy * GRID) * 4 + 3] = grid[ix + iy * GRID]!;
     rediagonal(x0, Math.min(GRID - 1, x1 + 1), y0, Math.min(GRID - 1, y1 + 1));
-    // A moved corner tilts the faces round it, and with them its neighbours' normals.
-    landNormalsInto(grid, flip, GRID, TERRAIN_HALF, TERRAIN_CELL, texels, x0 - 1, x1 + 1, y0 - 1, y1 + 1);
+    // A moved corner tilts the faces round it, and with them its neighbours' normals: a corner round the box sent again.
+    const held = landTexels.held;
+    if (held) landTexelsInto(grid, flip, GRID, TERRAIN_HALF, TERRAIN_CELL, held, { x0: x0 - 1, x1: x1 + 1, y0: y0 - 1, y1: y1 + 1 });
     levels.markBox(x0, x1, y0, y1);
     levels.measure(grid, flip);
     sendLand(x0 - 1, x1 + 1, y0 - 1, y1 + 1);
   };
-  /** @rebuild The whole plate's heights, diagonals, normals and levels worked out again: every corner moved */
+  /** @rebuild The whole plate's diagonals and levels worked out again, its texels at their send: every corner moved */
   const wholePlateMoved = (): void => {
-    for (let i = 0; i < GRID * GRID; i++) texels[i * 4 + 3] = grid[i]!;
     rediagonal(0, GRID - 1, 0, GRID - 1);
-    landNormalsInto(grid, flip, GRID, TERRAIN_HALF, TERRAIN_CELL, texels, 0, GRID - 1, 0, GRID - 1);
+    landTexels.hold(null);
     levels.markAll();
     levels.measure(grid, flip);
     sendAllLand();
@@ -1448,10 +1429,17 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const heightAt = naturalHeightAt;
 
   // The drawn corners again, for the water to measure its depth per pixel (`WaterSurface.setGround`).
-  const groundTexture = new DataTexture(new Float32Array(GRID * GRID), GRID, GRID, RedFormat, FloatType);
+  const groundTexture = new DataTexture(null, GRID, GRID, RedFormat, FloatType);
   groundTexture.magFilter = NearestFilter;
   groundTexture.minFilter = NearestFilter;
   groundTexture.generateMipmaps = false;
+  // The corners as the water last read them, held until sent; the drawn corners again only after a context restored.
+  const groundTexels = stageTexels(groundTexture, Float32Array, GRID * GRID, 1, (into) => into.set(grid));
+  const sendGround = (): void => {
+    groundTexels.hold(Float32Array.from(grid));
+    groundTexture.needsUpdate = true;
+    groundTexels.letGoWhenSent();
+  };
   waterSurface.setGround(groundTexture, TERRAIN_HALF, TERRAIN_CELL, GRID, origin);
 
   /** Which diagonal each cell is drawn with: 0 the plane's own (b-d), 1 the other (a-c). */
@@ -1470,13 +1458,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       }
     }
   };
-  /** Re-chooses the diagonals of the cells round a box of corners (inclusive), into the land's texels (each cell's at its first corner). */
-  const rediagonal = (x0: number, x1: number, y0: number, y1: number): void => {
-    chooseDiagonals(grid, flip, x0, x1, y0, y1);
-    for (let cy = Math.max(0, y0 - 1); cy <= Math.min(TERRAIN_SEGMENTS - 1, y1); cy++) {
-      for (let cx = Math.max(0, x0 - 1); cx <= Math.min(TERRAIN_SEGMENTS - 1, x1); cx++) texels[(cx + cy * GRID) * 4 + 2] = flip[cx + cy * TERRAIN_SEGMENTS]!;
-    }
-  };
+  /** Re-chooses the diagonals of the cells round a box of corners (inclusive): the land's texels read them at their send (`landTexelsInto`). */
+  const rediagonal = (x0: number, x1: number, y0: number, y1: number): void => chooseDiagonals(grid, flip, x0, x1, y0, y1);
 
   /** Bilinear read of one corner array, reproducing the plane's own diagonal. */
   const sampleGrid = (corners: Float64Array, diagonals: Uint8Array, x: number, y: number): number => {
@@ -1506,9 +1489,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
 
   /** Pulls the ground towards the roads */
-  /** Corners visited by the current shaping pass, by stamp, so regions and boxes that overlap visit each once. */
-  const visited = new Int32Array(GRID * GRID);
-  let pass = 0;
   /** The plate's corners as `shapeCorners` reads them: where the mesh stands them. */
   const corners: CornerGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF, x: cornerX, y: cornerY };
 
@@ -1520,7 +1500,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const regions = regionList(region);
     // Only the corners of the regions, or of the boxes some road or platform could shape (`shapeCorners`)
     return shapePass(regions, shape && ((take) => {
-      pass++;
+      const visited = shapeVisited ??= new Int32Array(GRID * GRID);
+      const pass = ++shapePasses;
       shapeCorners(corners, natural, shape, regions, visited, pass, take);
     }));
   };
@@ -1604,10 +1585,35 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     return false;
   };
 
+  /** THE CORNER STORE: the water's level at each corner near water (`shoreLevels`, NO_WATER elsewhere) and the painted geology (the rest granite). */
+  const store: CornerStore = {
+    levels: new Float32Array(GRID * GRID).fill(NO_WATER),
+    sand: new Float32Array(GRID * GRID),
+    basalt: new Float32Array(GRID * GRID),
+  };
+  /** The covers painted at a corner, as the shore array carries them. */
+  const coverCorner: CornerCover = (k, kind) => {
+    const ix = k % GRID, iy = (k - ix) / GRID;
+    return coverAt(kind, -TERRAIN_HALF + ix * TERRAIN_CELL, TERRAIN_HALF - iy * TERRAIN_CELL);
+  };
+  // The shore array from the store, the covers and the ecology, the layers three sends.
+  stageTexels(shore, Float32Array, GRID * GRID * 4 * 2, 4, (into, part) => {
+    const layers = part.layers ?? [0, 1];
+    if (layers.includes(0)) groundCornersInto(into, store, coverCorner);
+    if (layers.includes(1)) ecologyCornersInto(into, GRID * GRID * 4, GRID * GRID, ecologyField);
+  });
+  /** The corner store or the covers changed: the shore array's first layer sent again. */
+  const sendCorners = (): void => {
+    shore.addLayerUpdate(0);
+    shore.needsUpdate = true;
+  };
+  /** The ecology changed: its layer sent again. */
+  const ecologyUploaded = (): void => {
+    shore.addLayerUpdate(1);
+    shore.needsUpdate = true;
+  };
+
   // ---- the ecosystem (world/ecology.ts)
-  const ecologyTexture = material.userData['ecology'] as DataTexture;
-  /** The ecology's bytes sent to the GPU, as the shore array's second layer (`terrainData`). */
-  const ecologyUploaded = material.userData['ecologyUploaded'] as () => void;
   /** The biomes painted per corner, `REGIONS.length` weights a corner (`rasterBiome`); made with the first biome painted (DO NOT keep ~10 MB a plate of zeros). */
   let biomeCorners: Float32Array | null = null;
   let nature: NatureSettings | null = null;
@@ -1631,24 +1637,17 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     ecologyStale = false;
     const dirty = ecologyDirty;
     ecologyDirty = null;
-    const data = ecologyTexture.image.data as Uint8Array;
     if (!nature) {
       if (ecologyField) {
         ecologyField = null;
-        data.fill(0);
         ecologyUploaded();
         ecologyRevision++;
       }
       return;
     }
-    const levels = material.userData['shoreLevels'] as Float32Array;
-    const wet = new Uint8Array(GRID * GRID);
-    for (let i = 0; i < wet.length; i++) {
-      const level = levels[i] as number;
-      wet[i] = level > NO_WATER / 2 && level >= (grid[i] as number) + 0.05 ? 1 : 0;
-    }
+    const wet = wetCorners();
     const over = ecologyField && dirty !== 'all' && dirty !== null && !ecologyInFlight ? dirty : null;
-    const sand = material.userData['sandCorners'] as Float32Array, basalt = material.userData['basaltCorners'] as Float32Array;
+    const { sand, basalt } = store;
     const ask = ++ecologyAsk;
     // A plate's whole field is read off the page (`ecologyPool.ts`): 90 ms of a frame each time the view brought a plate in.
     if (!over && ecologyOffPage()) {
@@ -1680,21 +1679,22 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   /** The latest reading asked: an older one coming back is dropped. */
   let ecologyAsk = 0;
   let disposed = false;
+  /** The corners under water (1), for the ecosystem. */
+  const wetCorners = (): Uint8Array => {
+    const wet = new Uint8Array(GRID * GRID);
+    for (let i = 0; i < wet.length; i++) {
+      const level = store.levels[i] as number;
+      wet[i] = level > NO_WATER / 2 && level >= (grid[i] as number) + 0.05 ? 1 : 0;
+    }
+    return wet;
+  };
   const readOnPage = (over: TerrainRegion | null, wetGiven?: Uint8Array): void => {
     if (!nature) return;
-    let wet = wetGiven;
-    if (!wet) {
-      const levels = material.userData['shoreLevels'] as Float32Array;
-      wet = new Uint8Array(GRID * GRID);
-      for (let i = 0; i < wet.length; i++) {
-        const level = levels[i] as number;
-        wet[i] = level > NO_WATER / 2 && level >= (grid[i] as number) + 0.05 ? 1 : 0;
-      }
-    }
+    const wet = wetGiven ?? wetCorners();
     const startedAt = performance.now();
     const field = computeEcology({
       side: GRID, cell: TERRAIN_CELL, heights: natural, water: wet,
-      sandstone: material.userData['sandCorners'] as Float32Array, basalt: material.userData['basaltCorners'] as Float32Array,
+      sandstone: store.sand, basalt: store.basalt,
       painted: biomeCorners, settings: nature,
     }, over && ecologyField ? { previous: ecologyField, ix0: over[0], ix1: over[1], iy0: over[2], iy1: over[3] } : undefined);
     performance.measure('hitch:ecology', { start: startedAt, end: performance.now() });
@@ -1702,15 +1702,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
   const applyEcology = (field: EcologyField): void => {
     ecologyField = field;
-    const data = ecologyTexture.image.data as Uint8Array;
-    const byte = (v: number): number => Math.round(Math.min(1, Math.max(0, v)) * 255);
-    for (let i = 0; i < GRID * GRID; i++) {
-      const canopy = field.canopy[i] as number, trees = field.trees[i] as number, grass = field.grass[i] as number;
-      data[i * 4] = byte(canopy + trees * 0.3 + (field.palm[i] as number) * 0.25);
-      data[i * 4 + 1] = byte(grass * (field.dry[i] as number));
-      data[i * 4 + 2] = byte(field.wet[i] as number);
-      data[i * 4 + 3] = byte((1 - grass) * (1 - Math.min(1, canopy + trees)));
-    }
+    // Its classes drawn from the field at the send (`ecologyCornersInto`).
     ecologyUploaded();
     ecologyRevision++;
   };
@@ -1761,14 +1753,13 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       discs.push({ x: stamp.x, y: stamp.y, radius: stamp.radius * WATER_RADIUS, level });
     }
     wetDiscs = discs;
-    (groundTexture.image.data as Float32Array).set(grid);
-    groundTexture.needsUpdate = true;
+    sendGround();
     const previous = water.geometry;
     floodCells = new Map();
     water.geometry = unifiedWaterGeometry(discs, renderedHeightAt, floodCells, ribbons);
     previous.dispose();
-    shoreLevels(water.geometry, material.userData['shoreLevels'] as Float32Array, grid);
-    packGroundCorners(material.userData['shore'] as DataArrayTexture,material.userData['shoreLevels'] as Float32Array, material.userData['flowerCorners'] as Float32Array, material.userData['scrubCorners'] as Float32Array, material.userData['forestCorners'] as Float32Array, material.userData['sandCorners'] as Float32Array, material.userData['basaltCorners'] as Float32Array);
+    shoreLevels(water.geometry, store.levels, grid);
+    sendCorners();
     water.geometry.computeBoundingBox();
     const box = water.geometry.boundingBox;
     // In world (x, y): the mesh is three's (x, height, -y).
@@ -1830,29 +1821,50 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
   vergeMaterial.customProgramCacheKey = () => 'terrain-splat-v34-verge-lots';
 
-  let paintArray = material.userData['paint'] as DataArrayTexture;
+  /** THE LAND'S OWN LIGHT per corner, RGBA (`terrainLight`): the workers' answers kept, the paint array's light layer drawn from it; lit and open to the sky until first worked out. */
+  const light = new Uint8Array(GRID * GRID * 4);
+  for (let k = 0; k < GRID * GRID; k++) { light[k * 4] = 255; light[k * 4 + 1] = 255; light[k * 4 + 2] = 128; }
   let paintRes = paintArray.image.width;
-  let paint = [paintLayer(paintArray, 0), paintLayer(paintArray, 1)];
-  // The land's own light (`terrainLight`): lit and open to the sky until it is first worked out.
-  let lightLayer = paintLayer(paintArray, LIGHT_LAYER);
-  for (let i = 0; i < GRID; i++) {
-    for (let j = 0; j < GRID; j++) lightLayer.set([255, 255, 128, 0], (i * paintRes + j) * 4);
-  }
+  /** The dabs the paint layers were last laid from (the document's, `paintStep`): laid again from them at a send. */
+  let paintDabs: readonly PaintDab[] = [];
+  /** The paint layers of `texels`: every dab of the ground's kinds laid in order onto none (`rasterPaint`). */
+  const layPaintInto = (texels: Uint8Array): void => {
+    const layers = [paintLayer(texels, paintRes, 0), paintLayer(texels, paintRes, 1)];
+    for (const layer of layers) layer.fill(0);
+    for (const dab of paintDabs) if (!isGeologyKind(dab.kind) && !isBiomeKind(dab.kind)) rasterPaint(layers, dab);
+  };
+  /** The array's `layers` (null: all) from their truth: the dabs and the light. */
+  const fillPaint = (into: Uint8Array, layers: readonly number[] | null): void => {
+    if (!layers || layers.includes(0) || layers.includes(1)) layPaintInto(into);
+    if (!layers || layers.includes(LIGHT_LAYER)) lightLayerInto(paintLayer(into, paintRes, LIGHT_LAYER), paintRes, light, GRID);
+  };
+  const stagePaint = (texture: DataArrayTexture): StagedTexels<Uint8Array> =>
+    stageTexels(texture, Uint8Array, texture.image.width * texture.image.height * 4 * PAINT_LAYERS, 4, (into, part) => fillPaint(into, part.layers));
+  let paintTexels = stagePaint(paintArray);
+  /** The paint layers a stroke's dabs are laid on: held while the brush paints this plate, let go at its end (`settle`). */
+  const paintRaster = (): Uint8Array[] => {
+    let texels = paintTexels.held;
+    if (!texels) {
+      texels = new Uint8Array(paintRes * paintRes * 4 * PAINT_LAYERS);
+      fillPaint(texels, null);
+      paintTexels.hold(texels);
+    }
+    return [paintLayer(texels, paintRes, 0), paintLayer(texels, paintRes, 1)];
+  };
   /** The painted ground's array at its full size (`PAINT_RES`), made when the first dab reaches this ground */
   const growPaint = (): void => {
     if (paintRes >= PAINT_RES) return;
-    const small = paintArray, was = paintRes;
+    const small = paintArray;
     const next = paintLayers(PAINT_RES);
-    const from = paintLayer(small, LIGHT_LAYER), to = paintLayer(next, LIGHT_LAYER);
-    for (let y = 0; y < GRID; y++) to.set(from.subarray(y * was * 4, (y * was + GRID) * 4), y * PAINT_RES * 4);
     const own = material.userData['terrainUniforms'] as { uPaint: { value: Texture }; uPaintRes: { value: number } };
     own.uPaint.value = next;
     own.uPaintRes.value = PAINT_RES;
-    material.userData['paint'] = next;
     paintArray = next;
     paintRes = PAINT_RES;
-    paint = [paintLayer(next, 0), paintLayer(next, 1)];
-    lightLayer = paintLayer(next, LIGHT_LAYER);
+    paintTexels.hold(null);
+    paintTexels = stagePaint(next);
+    // Every layer at its first send, the light too: the layers a dab marks would leave it out.
+    for (let layer = 0; layer < PAINT_LAYERS; layer++) next.addLayerUpdate(layer);
     small.dispose();
   };
   paintArray.addLayerUpdate(LIGHT_LAYER);
@@ -1874,10 +1886,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const startedAt = performance.now();
     const { rect, rgba } = result;
     const width = rect.x1 - rect.x0 + 1;
-    for (let iy = rect.y0; iy <= rect.y1; iy++) {
-      const row = (iy - rect.y0) * width * 4;
-      lightLayer.set(rgba.subarray(row, row + width * 4), (iy * paintRes + rect.x0) * 4);
-    }
+    const held = paintTexels.held;
+    lightRectInto(light, GRID, rect, rgba, held ? paintLayer(held, paintRes, LIGHT_LAYER) : null, paintRes);
     paintArray.addLayerUpdate(LIGHT_LAYER);
     paintArray.needsUpdate = true;
     performance.measure('hitch:terrain-light', { start: startedAt, end: performance.now() });
@@ -1922,8 +1932,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     if (gx < 0 || gy < 0 || gx >= FOREST_RES || gy >= FOREST_RES) return 0;
     return covers[kind][gy * FOREST_RES + gx]! / 255;
   };
-  const sandCorners = material.userData['sandCorners'] as Float32Array;
-  const basaltCorners = material.userData['basaltCorners'] as Float32Array;
+  const { sand: sandCorners, basalt: basaltCorners } = store;
   const geologyChanges = new GroundChanges();
   const updatePaint = (doc: TerrainSource, deferEcology = false): void => {
     if (doc.natureRevision !== natureSeen) {
@@ -1944,6 +1953,9 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const geologyRects: (readonly [number, number, number, number])[] = [];
     // Something to lay: the array at its full size first.
     if (dabs.length > 0) growPaint();
+    // Dabs only added since the last time: lay just those, on the layers held while the brush paints.
+    const appended = dabs.length >= paintCount && dabs[0] === paintFirst && paintCount > 0;
+    let raster: Uint8Array[] | null = null;
     const lay = (dab: PaintDab): void => {
       if (isGeologyKind(dab.kind)) {
         geologyRects.push(rasterGeology(sandCorners, basaltCorners, dab));
@@ -1955,16 +1967,17 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         ecologyAll();
         return;
       }
-      rasterPaint(paint, dab);
+      // The layers laid from the dabs before these (`paintDabs`), then these.
+      if (appended) rasterPaint(raster ??= paintRaster(), dab);
       rasterCover(covers, dab);
       covered = true;
     };
-    // Dabs only added since the last time: lay just those.
-    if (dabs.length >= paintCount && dabs[0] === paintFirst && paintCount > 0) {
+    if (appended) {
       for (let i = paintCount; i < dabs.length; i++) lay(dabs[i]!);
       if (geologyRects.length > 0) geologyChanges.mark(geologyRects);
     } else {
-      for (const layer of paint) layer.fill(0);
+      // Every dab laid again: the paint layers from all of them at the send.
+      paintTexels.hold(null);
       for (const kind of COVER_KINDS) covers[kind].fill(0);
       sandCorners.fill(0);
       basaltCorners.fill(0);
@@ -1974,31 +1987,17 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       covered = true;
       geologyChanges.mark(null);
     }
+    paintDabs = dabs;
     paintCount = dabs.length;
     paintFirst = dabs[0];
-    if (!covered) {
-      packGroundCorners(material.userData['shore'] as DataArrayTexture,material.userData['shoreLevels'] as Float32Array, material.userData['flowerCorners'] as Float32Array, material.userData['scrubCorners'] as Float32Array, material.userData['forestCorners'] as Float32Array, sandCorners, basaltCorners);
-      return;
+    if (covered) {
+      forestRevision++;
+      paintArray.addLayerUpdate(0);
+      paintArray.addLayerUpdate(1);
+      paintArray.needsUpdate = true;
     }
-    forestRevision++;
-    paintArray.addLayerUpdate(0);
-    paintArray.addLayerUpdate(1);
-    paintArray.needsUpdate = true;
-    {
-      // The flowers and the scrub at each terrain corner, into the shader's ground texture.
-      const flowers = material.userData['flowerCorners'] as Float32Array;
-      const scrub = material.userData['scrubCorners'] as Float32Array;
-      const forest = material.userData['forestCorners'] as Float32Array;
-      for (let iy = 0; iy < GRID; iy++) {
-        for (let ix = 0; ix < GRID; ix++) {
-          const x = -TERRAIN_HALF + ix * TERRAIN_CELL, y = TERRAIN_HALF - iy * TERRAIN_CELL;
-          flowers[iy * GRID + ix] = coverAt('flowers', x, y);
-          scrub[iy * GRID + ix] = coverAt('scrub', x, y);
-          forest[iy * GRID + ix] = coverAt('forest', x, y);
-        }
-      }
-      packGroundCorners(material.userData['shore'] as DataArrayTexture,material.userData['shoreLevels'] as Float32Array, flowers, scrub, forest, sandCorners, basaltCorners);
-    }
+    // The flowers, the scrub, the forest and the geology at each corner, from the covers and the store at the send.
+    sendCorners();
   };
 
   const parts: TerrainPart[] = [];
@@ -2041,7 +2040,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     get ecologyRevision() {
       return ecologyRevision;
     },
-    ecologyTexture,
     get forestRevision() {
       return forestRevision;
     },
@@ -2057,7 +2055,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       const ix = Math.round((x + TERRAIN_HALF) / TERRAIN_CELL);
       const iy = Math.round((TERRAIN_HALF - y) / TERRAIN_CELL);
       if (ix < 0 || iy < 0 || ix >= GRID || iy >= GRID) return null;
-      const level = (material.userData['shoreLevels'] as Float32Array)[iy * GRID + ix] as number;
+      const level = store.levels[iy * GRID + ix] as number;
       return level > NO_WATER / 2 ? level : null;
     },
     waterArea: () => waterBox,
@@ -2086,14 +2084,15 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     },
     get lastRegion() { return lastRegion; },
     settle() {
+      // No stroke held: the layers a brush painted go once sent, laid again from the dabs when needed.
+      paintTexels.letGoWhenSent();
       if (!waterStale) return;
       waterStale = false;
       const dirty = waterDirty;
       waterDirty = null;
       if (dirty !== null && dirty !== 'all' && !waterReaches(dirty)) {
         // The water stands as it was; what it reads of the ground is copied, and the ecosystem, which reads the land's heights
-        (groundTexture.image.data as Float32Array).set(grid);
-        groundTexture.needsUpdate = true;
+        sendGround();
         ecologyOver(dirty);
         return;
       }
@@ -2145,9 +2144,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         flip.set(made.flip);
         naturalFlip.set(made.flip);
         lastRegion = null;
-        texels.set(made.texels);
+        // The workers' texels sent as they are, then let go: never worked out again on the page.
+        landTexels.hold(made.texels);
         levels.take(made.levels);
         sendAllLand();
+        landTexels.letGoWhenSent();
         lastStamps = doc.terrainStamps;
         if (stroking) { waterStale = true; markWaterDirty(null); } else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
         markLand('all');
@@ -2199,12 +2200,15 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       material.dispose();
       // DO NOT leave them: plates come and go as the camera crosses the map
       vergeMaterial.dispose();
-      (material.userData['shore'] as Texture).dispose();
-      ecologyTexture.dispose();
+      shore.dispose();
       paintArray.dispose();
       water.geometry.dispose();
       waterSurface.dispose();
       groundTexture.dispose();
+      // What any texture still held goes with it.
+      paintTexels.hold(null);
+      landTexels.hold(null);
+      groundTexels.hold(null);
     },
   };
   parts.push({ surface, cx: 0, cy: 0 });

@@ -16,6 +16,7 @@ import {
   TERRAIN_CELL,
   TERRAIN_HALF,
   createTerrainSurface,
+  farLandMaterial,
   slabGeometry,
   wallMaterial,
   type TerrainPart,
@@ -53,8 +54,6 @@ const FAR_RING = 3;
 const FAR_SLOTS = (2 * FAR_RING + 1) ** 2;
 /** How far the view's focus goes from the ring's centre plate before the ring follows it: a quarter plate past its edge, so a focus on an edge does not swap a row of plates back and forth. */
 const RING_HOLD = PLATE_SIZE * 0.75;
-/** The far ground stands in for no surface of its own: no plate has this key. */
-const FAR_SURFACE_KEY = -1;
 
 class PlateSource implements TerrainSource {
   changes!: RoadDoc['changes'];
@@ -212,10 +211,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   /** The plates' corners in shared memory, each plate's own arrays: what the workers read the ground from (`sharedGround.ts`). */
   const share = new GroundShare(SIDE, TERRAIN_CELL, TERRAIN_HALF, TERRAIN_BASE);
 
-  // The far ground: a surface of its own lends the terrain's material
-  const farSurface = createTerrainSurface(anisotropy, { x: 0, y: 0 }, FAR_SURFACE_KEY);
+  // The far ground: the terrain's material without a plate of its own (DO NOT make a whole plate, ~15 MB, for its material)
+  const farGround = farLandMaterial(anisotropy);
   const far = createFlatFar(FAR_SLOTS);
-  const farMesh = new Mesh(far.geometry, farSurface.meshMaterial);
+  const farMesh = new Mesh(far.geometry, farGround.material);
   farMesh.matrixAutoUpdate = false;
   farMesh.name = 'flat-world-far';
   farMesh.frustumCulled = false;
@@ -639,7 +638,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     setSun(direction) {
       lastSun = direction;
       for (const p of shownList) p.surface!.setSun(direction);
-      farSurface.setSun(direction);
     },
     bakeRelief(renderer: WebGLRenderer) {
       // The far woods: each far plate's fade from whether it is in full and its own trees can grow.
@@ -706,7 +704,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     geologyAt: (x, y) => ask(x, y, (s, lx, ly) => s.geologyAt(lx, ly), (): GeologyKind => firstSurface.geologyAt(0, 0)),
     ecology: () => firstSurface.ecology(),
     get ecologyRevision() { return sum((s) => s.ecologyRevision) + shownVersion * 1_000_003; },
-    ecologyTexture: firstSurface.ecologyTexture,
     geologyChanges,
     shoreLevelAt: (x, y) => ask(x, y, (s, lx, ly) => s.shoreLevelAt(lx, ly), () => null),
     waterArea() {
@@ -802,7 +799,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     },
     dispose() {
       for (const p of plates.values()) p.surface?.dispose();
-      farSurface.dispose();
+      farGround.dispose();
       farForest.dispose();
       far.geometry.dispose();
       slab.geometry.dispose();
