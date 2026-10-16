@@ -1,6 +1,6 @@
 import { MESO_REACH } from '@sim/meso/tileFeed';
-import { TileStore, portTiles, storeTiles } from '@editor/tileStore';
-import { jobLanes, jobPort } from './jobs/jobPool';
+import { TileStore, portTiles } from '@editor/tileStore';
+import { jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
 import { WorldStreamer } from './worldStreamer';
 import { TileGenerator, tileLanes } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord } from '@world/tiles';
@@ -184,6 +184,16 @@ const history = new History();
 /** On the desktop the map is kept as files Steam Cloud syncs (`desktopSaves.ts`); in a browser, IndexedDB. */
 const desktopStores = desktopSaves();
 const persistence = desktopStores ? new Persistence(undefined, desktopStores.store, desktopStores.parts) : new Persistence();
+/** DO NOT read or write the desktop's tiles through the page: each job worker is handed a port of its own to the saves writer, before its first job (`editor/workerParts.ts`), and a new one when the writer started again. */
+if (desktopStores) {
+  const workers: Worker[] = [];
+  const handPort = (worker: Worker): void => {
+    desktopStores.connect().then((port) => worker.postMessage({ storeSetup: true, port }, [port]),
+      (error: unknown) => console.error('[save] a job worker got no port to the saves', error));
+  };
+  setJobWorkerSetup((worker) => { workers.push(worker); worker.postMessage({ storeSetup: true, byPort: true }); handPort(worker); });
+  desktopStores.onLost(() => { for (const worker of workers) handPort(worker); });
+}
 
 surface.observe();
 
@@ -1938,10 +1948,11 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   history.clear();
   const generator = new TileGenerator(options);
   const mapName = `roadcraft.tiles.${options.seed}`;
-  const store = new TileStore(mapName, desktopStores ? storeTiles(desktopStores.parts) : portTiles(() => jobPort('save'), jobLanes(3)),
+  // Read, written and made in the job workers, the desktop's as a browser's (each worker its own port to the shell's saves, `editor/workerParts.ts`).
+  const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
     (i, j) => generator.generate(tileKey(i, j)),
-    // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page (the desktop's store is the shell's).
-    desktopStores ? undefined : (i, j, after, text) => generator.makeStored(tileKey(i, j), mapName, after, text));
+    // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
+    (i, j, after, text) => generator.makeStored(tileKey(i, j), mapName, after, text));
   // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
   const empty = new RoadDoc();
@@ -1977,23 +1988,13 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   }, tileLanes());
   const activeAt = (x: number, y: number): boolean => streamer.isActive(tileKeyAt(x, y));
   // The far levels stand in for every tile not in the active region, the kept ring's too (its records are on the page for the edits and the simulation, its products are the far levels').
-  for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, ...(desktopStores ? {} : { workersRead: mapName }) }, (key) => doc.hasTile(key) && streamer.isActive(key));
+  for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, workersRead: mapName }, (key) => doc.hasTile(key) && streamer.isActive(key));
   scene.setActiveTiles(activeAt, []);
   // The simulation's worker holds the active region's records only: the ring's traffic is the meso's, from the store's tables.
   sim.setActive((key) => streamer.isActive(key));
-  // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`);
-  // on the desktop the store is the main process's, read for it through a port.
-  let port: MessagePort | null = null;
-  if (desktopStores) {
-    const channel = new MessageChannel();
-    channel.port1.onmessage = (e: MessageEvent<{ id: number; key: number }>) => {
-      store.read(e.data.key).then(
-        (records) => channel.port1.postMessage({ id: e.data.id, records }),
-        (error: unknown) => channel.port1.postMessage({ id: e.data.id, error: String(error) }));
-    };
-    port = channel.port2;
-  }
-  sim.tiles(mapName, MESO_REACH, port);
+  // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`); on the desktop through a port of its own to the shell's saves.
+  if (!desktopStores) sim.tiles(mapName, MESO_REACH);
+  else desktopStores.connect().then((port) => sim.tiles(mapName, MESO_REACH, port), (error: unknown) => console.error('[world] the simulation got no port to the saves', error));
   streamed = { store, generator, streamer };
   if (fresh) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }

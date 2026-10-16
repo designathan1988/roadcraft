@@ -3,13 +3,14 @@ import type { TileBaker, TileOp } from './tileStore';
 
 /** THE AUTOSAVE'S WRITER: the text, the compression and the IndexedDB write of what the page found changed, off the page */
 
-import { type SaveBatch, indexedDbParts, openSaves, SAVES_STORE, writeBatch } from './saveStore';
+import { type SaveBatch, writeBatch } from './saveStore';
+import { workerParts } from './workerParts';
 
 type SaveMessage = { readonly id: number; readonly batch: SaveBatch } | { readonly id: number; readonly tiles: TileOp };
 
 /** This service of the job system (`job.worker.ts`): each batch encoded and written, each tile call run, answered by its id; `bake`, a tile's sections baked as it is written (`sim/tileSections.ts`, given by the job worker: this layer does not import the simulation). */
 export function serve(self: JobScope, bake?: TileBaker): void {
-  const store = indexedDbParts(openSaves, SAVES_STORE);
+  const store = workerParts();
   self.onmessage = (event: MessageEvent<SaveMessage>) => {
     const message = event.data;
     if ('tiles' in message) {

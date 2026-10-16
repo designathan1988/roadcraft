@@ -7,7 +7,7 @@ import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTraffic
 import { step } from '../pipeline';
 import { Meso, type TileEvent } from '../meso/meso';
 import { MesoMemory } from '../meso/memory';
-import { type TileReader, TileLinkFeed, portReader } from '../meso/tileFeed';
+import { type TileReader, TileLinkFeed } from '../meso/tileFeed';
 import { storeTileReader } from '../../tileReader';
 import { laneGrid } from '../agents/laneGrid';
 import { useBayWorkers } from '../agents/parking';
@@ -76,8 +76,8 @@ export class SimHost {
         return;
       case 'load': this.meso.setLive(message.live); this.load(message.map); return;
       case 'tiles': {
-        // The store read here, never through the page: IndexedDB opened in this worker (read only), or the port the page was handed for the desktop's.
-        const reader = message.port ? portReader(message.port) : storeTileReader(message.map);
+        // The store read here, never through the page: IndexedDB opened in this worker, or the desktop's saves writer through a port of this worker's own.
+        const reader = storeTileReader(message.map, message.port);
         this.reader = reader;
         this.meso.useTiles(new TileLinkFeed(reader, message.reach));
         return;

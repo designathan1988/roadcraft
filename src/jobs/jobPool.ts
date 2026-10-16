@@ -183,8 +183,16 @@ class JobSystem {
   readonly queue = new JobQueue();
   focusX = 0;
   focusY = 0;
+  /** What each worker is told when it is made, before any job (`setJobWorkerSetup`). */
+  setup: ((worker: Worker) => void) | null = null;
 }
 const system = new JobSystem();
+
+/** Told to every worker of the pool, those made and those to come, before its first job: on the desktop, the port it reads and writes the tiles through (`editor/workerParts.ts`). */
+export function setJobWorkerSetup(setup: (worker: Worker) => void): void {
+  system.setup = setup;
+  for (const host of system.workers) setup(host.worker);
+}
 
 /** The most workers the pool holds: the cores less the page's and the simulation's, and no more than `POOL_SHARE` of the machine's memory holds (at least one). */
 export function jobWorkers(): number {
@@ -211,6 +219,7 @@ function hostsLong(host: Host): boolean {
 function grow(): Host | null {
   if (system.workers.length >= jobWorkers()) return null;
   const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
+  system.setup?.(worker);
   const host: Host = { worker, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0 };
   worker.onmessage = (event: MessageEvent<FromJob>) => {
     const port = system.ports.get(event.data.port);

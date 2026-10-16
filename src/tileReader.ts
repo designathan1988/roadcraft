@@ -1,5 +1,5 @@
 import { type StoredPart, type TilePartName, readTile, readTilePart } from '@editor/tileStore';
-import { SAVES_STORE, indexedDbParts, openSaves } from '@editor/saveStore';
+import { portParts, workerParts } from '@editor/workerParts';
 import type { TileRecords } from '@world/doc';
 import type { TileReader } from '@sim/meso/tileFeed';
 import { bakeTileLinks } from '@sim/meso/tileLinks';
@@ -19,8 +19,9 @@ const PART_FIELDS: Readonly<Record<TilePartName, readonly (keyof TileRecords)[]>
   buildings: ['buildings'],
 };
 
-export function storeTileReader(map: string): StoredTileReader {
-  const store = indexedDbParts(openSaves, SAVES_STORE);
+/** `port`: the desktop's saves writer, a port of this worker's own (`desktopSaves.ts` `connect`); none: this worker's store (`workerParts`). */
+export function storeTileReader(map: string, port?: MessagePort | null): StoredTileReader {
+  const store = port ? portParts(port) : workerParts();
   /** A tile stored with no such part, or with one of another format: its records, to derive it from here (format 1 is written again in parts by the save worker the next time the page asks for the tile, `TileStore`). */
   const recordsOf = (key: number, got: NonNullable<StoredPart>): Promise<TileRecords | null> =>
     ('records' in got ? Promise.resolve(got.records) : readTile(store, map, key));

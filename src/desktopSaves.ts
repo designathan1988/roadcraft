@@ -21,8 +21,16 @@ const MIGRATED = 'roadcraft.desktop.migrated';
 /** IndexedDB entries copied per write while migrating. */
 const MIGRATE_CHUNK = 32;
 
-/** The stores for `new Persistence`, or null where the page has no desktop shell. */
-export function desktopSaves(): { readonly store: LargeStore; readonly parts: PartStore } | null {
+/** The desktop's stores: the page's (`new Persistence`), a port of its own for each worker that reads or writes the tiles (`connect`, `editor/workerParts.ts`), and who to tell when the writer stopped (`onLost`: each such port is dead). */
+export interface DesktopStores {
+  readonly store: LargeStore;
+  readonly parts: PartStore;
+  connect(): Promise<MessagePort>;
+  onLost(listener: () => void): void;
+}
+
+/** The stores, or null where the page has no desktop shell. */
+export function desktopSaves(): DesktopStores | null {
   const bridge = (window as unknown as { roadcraftDesktop?: Partial<SavesBridge> }).roadcraftDesktop;
   if (!bridge || typeof bridge.connectSaves !== 'function') return null;
   const connect = (): void => bridge.connectSaves!();
@@ -30,30 +38,36 @@ export function desktopSaves(): { readonly store: LargeStore; readonly parts: Pa
   let port: Promise<MessagePort> | null = null;
   let next = 1;
   const waiting = new Map<number, (answer: Answer | null) => void>();
-  // The writer stopped (`desktop/main.cjs`): what waits fails, the next request connects again.
+  const lost: (() => void)[] = [];
+  // The writer stopped (`desktop/main.cjs`): what waits fails, the next request connects again, the workers are given new ports.
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.data !== LOST_MESSAGE) return;
     port = null;
     for (const done of waiting.values()) done(null);
     waiting.clear();
+    for (const listener of lost) listener();
   });
-  const open = (): Promise<MessagePort> => (port ??= new Promise<MessagePort>((resolve, reject) => {
-    const timer = setTimeout(() => { window.removeEventListener('message', onPort); port = null; reject(new Error('the saves writer did not answer')); }, CONNECT_MS);
-    function onPort(event: MessageEvent): void {
-      const given = event.ports[0];
-      if (event.source !== window || event.data !== PORT_MESSAGE || !given) return;
-      window.removeEventListener('message', onPort);
-      clearTimeout(timer);
-      given.onmessage = (answer: MessageEvent<Answer>) => {
-        const done = waiting.get(answer.data.id);
-        waiting.delete(answer.data.id);
-        done?.(answer.data);
-      };
-      resolve(given);
-    }
-    window.addEventListener('message', onPort);
+  // Each connection asked is handed the next port that comes, in order (the shell answers each `connectSaves` with one).
+  const asked: ((given: MessagePort) => void)[] = [];
+  window.addEventListener('message', (event) => {
+    const given = event.ports[0];
+    if (event.source !== window || event.data !== PORT_MESSAGE || !given) return;
+    asked.shift()?.(given);
+  });
+  const nextPort = (): Promise<MessagePort> => new Promise<MessagePort>((resolve, reject) => {
+    const take = (given: MessagePort): void => { clearTimeout(timer); resolve(given); };
+    const timer = setTimeout(() => { const at = asked.indexOf(take); if (at >= 0) asked.splice(at, 1); reject(new Error('the saves writer did not answer')); }, CONNECT_MS);
+    asked.push(take);
     connect();
-  }));
+  });
+  const open = (): Promise<MessagePort> => (port ??= nextPort().then((given) => {
+    given.onmessage = (answer: MessageEvent<Answer>) => {
+      const done = waiting.get(answer.data.id);
+      waiting.delete(answer.data.id);
+      done?.(answer.data);
+    };
+    return given;
+  }, (error: unknown) => { port = null; throw error; }));
   const call = async (request: Request): Promise<Answer | null> => {
     let to: MessagePort;
     try { to = await open(); } catch (error) { console.error('[save] no saves writer', error); return null; }
@@ -88,7 +102,9 @@ export function desktopSaves(): { readonly store: LargeStore; readonly parts: Pa
     put: (key, text) => parts.write([[key, new Blob([text])]], []),
     delete: (key) => parts.write([], [key]),
   };
-  return { store, parts };
+  // A worker's own port, once the old browser-storage map was copied (`migrate`): it reads and writes the folder as the page does.
+  const connectWorker = async (): Promise<MessagePort> => { await ready(); return nextPort(); };
+  return { store, parts, connect: connectWorker, onLost: (listener) => { lost.push(listener); } };
 }
 
 /** The map an older desktop build kept in IndexedDB copied once into an empty saves folder (IndexedDB left as it is); a folder with files (Steam Cloud brought them) is never overwritten. */

@@ -3,7 +3,7 @@ import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
-import { SAVES_STORE, indexedDbParts, openSaves } from '@editor/saveStore';
+import { workerParts } from '@editor/workerParts';
 import { type PreparedTile, prepareTile, writeTile } from '@editor/tileStore';
 import { bakeTileSections } from '@sim/tileSections';
 
@@ -15,7 +15,7 @@ export interface StreamTileAsk {
   readonly options: WholeMapOptions;
   readonly i: number;
   readonly j: number;
-  /** Stored here in the tile store's map (the browser's IndexedDB) at a version past `after`: the page never posts a tile it was handed back to the store; `records`, its records handed back prepared too (a tile of the region, `prepareTile`), else its version alone (a tile made ahead). */
+  /** Stored here in the tile store's map (`workerParts`) at a version past `after`: the page never posts a tile it was handed back to the store; `records`, its records handed back prepared too (a tile of the region, `prepareTile`), else its version alone (a tile made ahead). */
   readonly store?: { readonly map: string; readonly after: number; readonly records: boolean };
 }
 
@@ -23,9 +23,9 @@ export interface StreamTileAsk {
 export type StreamTileAnswer = { readonly key: number; readonly records: TileRecords } | { readonly key: number; readonly stored: number | null; readonly prepared?: PreparedTile }
   | { readonly i: number; readonly j: number; readonly error: string };
 
-/** The tile store's parts in this worker's IndexedDB, opened on the first tile stored. */
-let parts: ReturnType<typeof indexedDbParts> | null = null;
-const stored = (): ReturnType<typeof indexedDbParts> => (parts ??= indexedDbParts(openSaves, SAVES_STORE));
+/** The tile store's parts as this worker opens them (`workerParts`: IndexedDB, or the desktop's saves writer through its own port), on the first tile stored. */
+let parts: ReturnType<typeof workerParts> | null = null;
+const stored = (): ReturnType<typeof workerParts> => (parts ??= workerParts());
 
 export function serve(self: JobScope): void {
   self.onmessage = (event: MessageEvent<StreamTileAsk>) => {

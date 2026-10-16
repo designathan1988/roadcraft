@@ -1,5 +1,6 @@
 import { readStoredTilesWith } from '@core/storedTiles';
 import type { TilePartName } from '@editor/tileStore';
+import { isStoreSetup, takeStoreSetup } from '@editor/workerParts';
 import type { FromJob, JobScope, JobService, ToJob } from './jobs/jobScope';
 import type { StoredTileReader } from './tileReader';
 
@@ -7,7 +8,7 @@ import type { StoredTileReader } from './tileReader';
 
 type Serve = (scope: JobScope) => void;
 
-// The tile store read here by the far levels' bakes (`core/storedTiles.ts`), each its own part of a tile: its IndexedDB opened once per map, on the first read.
+// The tile store read here by the far levels' bakes (`core/storedTiles.ts`), each its own part of a tile: this worker's store (`editor/workerParts.ts`) opened once per map, on the first read.
 const readers = new Map<string, Promise<StoredTileReader>>();
 readStoredTilesWith(async (map, key, part) => {
   let reader = readers.get(map);
@@ -47,6 +48,8 @@ const answer = (port: number, entry: Port, message: { readonly data?: unknown; r
   host.postMessage({ port, ...message, ...(entry.seq !== undefined ? { seq: entry.seq } : {}) }, transfer);
 
 host.onmessage = (event) => {
+  // Where this worker's store is, said by the page before any job (`jobPool.ts` `setJobWorkerSetup`, the desktop's saves).
+  if (isStoreSetup(event.data)) { takeStoreSetup(event.data); return; }
   const { port, service, data, seq } = event.data;
   let entry = ports.get(port);
   const message = new MessageEvent('message', { data });

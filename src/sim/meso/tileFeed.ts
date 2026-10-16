@@ -1,9 +1,7 @@
 import { TILE, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
-import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 import type { TrafficBuilding } from '../agents/trafficBuildings';
-import { tileTraffic } from '../tileSections';
-import { type TileLinks, bakeTileLinks } from './tileLinks';
+import type { TileLinks } from './tileLinks';
 
 /** THE FAR TILES' LINK TABLES, READ BY THE SIMULATION'S WORKER STRAIGHT FROM THE TILE STORE: every stored tile within the meso's reach of the camera, its table baked where the tile was written (`tileSections.ts`), the page out of the way */
 
@@ -20,29 +18,6 @@ export interface TileReader {
   links(key: number): Promise<TileLinks | null>;
   /** Its buildings as traffic reads them. */
   traffic(key: number): Promise<readonly TrafficBuilding[] | null>;
-}
-
-/** A reader over a port that answers `{ id, key }` with `{ id, records }` (the desktop's store is the shell's, not IndexedDB): the sections derived here from the records. */
-export function portReader(port: MessagePort): TileReader {
-  let next = 1;
-  const waiting = new Map<number, { readonly done: (r: TileRecords | null) => void; readonly fail: (e: Error) => void }>();
-  port.onmessage = (event: MessageEvent<{ readonly id: number; readonly records?: TileRecords | null; readonly error?: string }>) => {
-    const w = waiting.get(event.data.id);
-    waiting.delete(event.data.id);
-    if (event.data.error !== undefined) w?.fail(new Error(event.data.error));
-    else w?.done(event.data.records ?? null);
-  };
-  const read = (key: number): Promise<TileRecords | null> => {
-    const id = next++;
-    return new Promise((done, fail) => {
-      waiting.set(id, { done, fail });
-      port.postMessage({ id, key });
-    });
-  };
-  return {
-    links: async (key) => { const records = await read(key); return records ? bakeTileLinks(records) : null; },
-    traffic: async (key) => { const records = await read(key); return records ? tileTraffic(records.buildings) : null; },
-  };
 }
 
 /** The tiles in reach read once, again when the page says one was written, never while the page's document holds it (the live network covers it) */
