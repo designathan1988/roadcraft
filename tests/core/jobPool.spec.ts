@@ -78,6 +78,23 @@ describe('the job system', () => {
     expect(done).toEqual(['b done', 'a done', 'c done']);
   });
 
+  it('sends a queued job to a worker whose lanes have nothing in flight, and to a busy one only when no other is free', async () => {
+    const { jobPort, submitJob } = await import('@/jobs/jobPool');
+    // Four lanes on the four workers; three of them with a request in flight.
+    const lanes = [0, 1, 2, 3].map(() => jobPort('roadTiles'));
+    expect(FakeWorker.made).toHaveLength(4);
+    const workerOf = (lane: Worker): FakeWorker => (lane as unknown as { worker: FakeWorker }).worker;
+    for (const lane of lanes.slice(0, 3)) lane.postMessage({ tiles: [] });
+    const job = (name: string): void => { submitJob({ service: 'cells', key: null, priority: 1, write: () => ({ data: name, transfer: [] }), done: () => {}, failed: () => {} }); };
+    const queuedOn = (name: string): number => FakeWorker.made.findIndex((w) => w.asked.some((m) => m.data === name && m.seq !== undefined));
+    job('first');
+    expect(queuedOn('first')).toBe(FakeWorker.made.indexOf(workerOf(lanes[3]!)));
+    // Every worker without lane work busy with a job: the next goes to a worker with lane work rather than waiting.
+    job('second');
+    expect(queuedOn('second')).toBeGreaterThanOrEqual(0);
+    expect(queuedOn('second')).not.toBe(queuedOn('first'));
+  });
+
   it('drops the answer of a job cancelled while it ran', async () => {
     const { submitJob } = await import('@/jobs/jobPool');
     const done: unknown[] = [];

@@ -91,9 +91,8 @@ desktop path still post Building objects; the sim worker keeps a second RoadDoc 
   `sceneryInBays` walk every gated bay with a string key each, every second; parked cars stand a whole
   Vehicle in most bays of the region and `simHost.ts` `publish` walks them each tick; `invariants.ts` audit
   walks every controller each second.
-- Jobs: lanes (`JobPort`) post straight to their worker; `cityTiles` runs synchronous tiles on the workers
-  growth leaves, so cells, road tiles, ground and saves wait behind them. The sim worker opens 2 job workers
-  of its own: all isolates share one 4 GB V8 cage.
+- Jobs: the sim worker opens 2 job workers of its own (`jobWorkers` in a worker): all isolates share one V8
+  cage. Fix: its bays and conflicts jobs through the page's queue (a port to the pool), no pool of its own.
 - `farRoads.ts` has no plan source (far masses have `farPlan.ts`): tiles made ahead only feed far roads.
 - L1 lot furniture modelled face by face into the shell (`emitLots` -> `emitElement`, `emitLotPart`): the
   bulk of L1 triangles. Fix: instanced parts per kind (quality decision: ask the player).
@@ -102,8 +101,6 @@ desktop path still post Building objects; the sim worker keeps a second RoadDoc 
 - Slicing still in the code (amortization): `main.ts` `GROW_SLICE_MS` (the fixed-size city's lot layout on
   the page: goes with one generation path, the tile generator's); `renderer.ts` `HIDDEN_SLICE_MS`/
   `WORLD_SLICE_MS` (the world job on the page: goes with per-tile road records).
-- Texture units over 16: terrain program and the cooked citizen with morph. Fix: terrain to <= 13, people
-  garments as a texture array.
 - Terrain: a stamp discards the worker-built mesh and rebuilds `TerrainIndex` (`terrain.ts`); textures
   re-uploaded whole; `rebuildWater` rebuilds all water at any stamp.
 - Region only: city statistics and growth; near/far road joins at the region's edge do not match.

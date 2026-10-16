@@ -171,6 +171,8 @@ interface Host {
   readonly queuePorts: Map<JobService, number>;
   job: Queued | null;
   failed: boolean;
+  /** Messages its lanes posted and not yet answered (`JobPort`): a queued job sent there waits behind them. */
+  laneWork: number;
 }
 
 /** The pool of this thread: its workers (made as work waits, `grow`), its lanes by port, its queue and the point the view looks at. */
@@ -209,10 +211,12 @@ function hostsLong(host: Host): boolean {
 function grow(): Host | null {
   if (system.workers.length >= jobWorkers()) return null;
   const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
-  const host: Host = { worker, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false };
+  const host: Host = { worker, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0 };
   worker.onmessage = (event: MessageEvent<FromJob>) => {
     const port = system.ports.get(event.data.port);
     if (port) {
+      // A lane's answer: its worker has one message less before a queued job (a lane posting without answer only ranks its worker lower).
+      if (port.answered()) dispatch();
       if (event.data.error !== undefined) port.onerror?.(new ErrorEvent('error', { message: event.data.error }));
       else port.onmessage?.(new MessageEvent('message', { data: event.data.data }));
       return;
@@ -254,17 +258,23 @@ function queuePort(host: Host, service: JobService): number {
 }
 
 /** The worker a queued job of `service` goes to: a free one already running the kind, else a new one while the pool has room, else any free one
- *  - DO NOT give it to a worker running growth while another worker could take it: it waited seconds behind it. */
+ *  - DO NOT give it to a worker running growth while another worker could take it: it waited seconds behind it.
+ *  - DO NOT give it to a worker whose lanes have messages in flight while one with none is free: it waited behind a tile read or a batch of road tiles (`JobPort` posts straight to its worker); such a worker only when no other is free. */
 function hostFor(service: JobService): Host | null {
   const all = system.workers;
   const short = all.some((h) => !h.failed && !hostsLong(h)) || all.length < jobWorkers();
-  let cold: Host | null = null;
+  let cold: Host | null = null, warmBusy: Host | null = null, coldBusy: Host | null = null;
   for (const host of all) {
     if (host.job || host.failed || (short && hostsLong(host))) continue;
-    if (host.queuePorts.has(service)) return host;
+    const warm = host.queuePorts.has(service);
+    if (host.laneWork > 0) {
+      if (warm) warmBusy ??= host; else coldBusy ??= host;
+      continue;
+    }
+    if (warm) return host;
     cold ??= host;
   }
-  return grow() ?? cold;
+  return grow() ?? cold ?? warmBusy ?? coldBusy;
 }
 
 /** Each waiting job, nearest first, to a worker free for it (Cidade's `pump`): one queued job at a time on a worker. */
@@ -344,6 +354,8 @@ export class JobPort {
   readonly worker: Worker;
   private readonly id = system.nextPort++;
   private readonly host: Host;
+  /** Messages posted and not yet answered. */
+  private inFlight = 0;
 
   constructor(private readonly service: JobService) {
     // The least busy worker; a service's own state is per worker, so a lane stays on the one it was given.
@@ -357,11 +369,23 @@ export class JobPort {
   postMessage(data: unknown, transfer: Transferable[] = []): void {
     const message: ToJob = { port: this.id, service: this.service, data };
     this.worker.postMessage(message, transfer);
+    this.inFlight++;
+    this.host.laneWork++;
+  }
+
+  /** An answer came on this lane: one message less in flight on its worker; whether that left the worker with none. */
+  answered(): boolean {
+    if (this.inFlight === 0) return false;
+    this.inFlight--;
+    this.host.laneWork--;
+    return this.host.laneWork === 0;
   }
 
   /** The lane let go (its service's state stays in the worker for the next lane of the kind). */
   terminate(): void {
     if (!system.ports.delete(this.id)) return;
+    this.host.laneWork -= this.inFlight;
+    this.inFlight = 0;
     this.host.ports--;
     const left = (this.host.services.get(this.service) ?? 1) - 1;
     if (left > 0) this.host.services.set(this.service, left); else this.host.services.delete(this.service);
