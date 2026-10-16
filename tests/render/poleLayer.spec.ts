@@ -5,9 +5,11 @@ import { applyLots, planLots } from '@world/lots';
 import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 import { greenCity, layCity, widenCityFootways } from '@editor/cityGenerator';
 import { createSceneryKit } from '@render/scenery';
-import { type PoleLayer, buildUtilities } from '@render/poleLayer';
+import { ActiveTiles } from '@render/activeTiles';
+import { type PoleLayer, buildUtilities, docPoles } from '@render/poleLayer';
 import type { RoadDoc } from '@world/doc';
 import type { PoleId } from '@world/ids';
+import { tileKey, tileKeyAt, tileRect } from '@world/tiles';
 import { m } from '@world/units';
 
 /** THE POLE LAYER KEPT BY POLE (`render/poleLayer.ts`) */
@@ -92,6 +94,50 @@ describe('the pole layer kept by pole', () => {
     // A lamp pole taken away, and everything checked once more.
     doc.removePole(lamp.id);
     follow();
+    layer.dispose();
+  });
+
+  it('places the poles of the streamed world\'s active tiles and those their wires tie, as a layer built whole, as tiles come and go', () => {
+    const { doc, net } = city();
+    const kit = createSceneryKit();
+    const ground = (): number => 0;
+    const shown = new Set([tileKey(0, 0)]);
+    const at = (x: number, y: number): boolean => shown.has(tileKeyAt(x, y));
+    const active = new ActiveTiles();
+    active.set(at, []);
+    const moves = active.reader();
+    const layer = buildUtilities(net, ground, kit, docPoles(doc, active));
+    const whole = (): Map<string, string[]> => {
+      const fresh = buildUtilities(net, ground, kit, docPoles(doc, active));
+      const out = picture(fresh);
+      fresh.dispose();
+      return out;
+    };
+    /** The layer as one built whole, and its poles: those on an active tile, and those a wire ties to one. */
+    const check = (label: string): number => {
+      expect(picture(layer), label).toEqual(whole());
+      const placed = new Set(layer.ids());
+      for (const pole of doc.poles.values()) {
+        const tied = doc.spansAt(pole.id).some((s) => { const o = doc.poles.get(s.a === pole.id ? s.b : s.a)!; return at(o.x, o.y); });
+        expect(placed.has(pole.id), `${label}: pole ${pole.id}`).toBe(at(pole.x, pole.y) || tied);
+      }
+      return placed.size;
+    };
+    const first = check('first');
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(doc.poles.size);
+    for (const [i, j] of [[-1, 0], [0, 0], [-1, -1], [0, -1], [0, 0]] as const) {
+      const key = tileKey(i, j);
+      if (shown.has(key)) shown.delete(key); else shown.add(key);
+      active.set(at, [tileRect(i, j)]);
+      layer.follow(net, ground, doc, moves.entries('utilities')!, docPoles(doc, active));
+      check(`${i},${j}`);
+    }
+    // Every tile round the town active: every pole, as with no streamed world.
+    for (let i = -3; i <= 2; i++) for (let j = -3; j <= 2; j++) shown.add(tileKey(i, j));
+    active.set(at, [[-3 * m(1024), -3 * m(1024), 3 * m(1024), 3 * m(1024)]]);
+    layer.follow(net, ground, doc, moves.entries('utilities')!, docPoles(doc, active));
+    expect(check('all')).toBe(doc.poles.size);
     layer.dispose();
   });
 });

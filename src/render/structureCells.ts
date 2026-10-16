@@ -4,6 +4,7 @@ import { CellFiling } from '@world/cells';
 import type { RoadElevation } from '@world/elevation';
 import type { Network, SegmentRibbon } from '@world/network';
 import { m } from '@world/units';
+import type { ActiveTiles } from './activeTiles';
 import type { SceneMaterials } from './materials';
 import { PIER_FOOT_FLARE, SPAN_REACH, buildStructureDetails, type StructureDetails } from './structures';
 
@@ -34,7 +35,8 @@ export interface StructureCells {
   dispose(): void;
 }
 
-export function createStructureCells(materials: SceneMaterials, groundMaterial?: Material): StructureCells {
+/** `active`: the streamed world's active tiles (`activeTiles.ts`): a cell none of whose roads reaches one is the far levels' (none: every cell is built). */
+export function createStructureCells(materials: SceneMaterials, groundMaterial?: Material, active?: ActiveTiles): StructureCells {
   const group = new Group();
   group.name = 'road-structure-details';
   // The shapes every cell's instances are drawn with, made once.
@@ -43,14 +45,18 @@ export function createStructureCells(materials: SceneMaterials, groundMaterial?:
   /** The cells by the box their structures read: what an edit there reaches. */
   const filing = new CellFiling<number, Cell>();
   let triangles = 0;
+  /** Where the active tiles moved since the cells were last put in place: read by a build, let go once it is applied (a build replaced halfway leaves them to the next); null, everywhere. */
+  const moves = active?.reader();
+  let owed: ChangeRect[] | null = [];
 
-  /** The roads whose line centres in the cell. */
+  /** The roads whose line centres in the cell; none when no road of it reaches an active tile (a cell reaching one keeps all its roads, so its structures stay as they were). */
   const ribbonsOf = (net: Network, key: number): SegmentRibbon[] => {
     const out: SegmentRibbon[] = [];
     for (const id of net.segmentCells.idsMeeting(cellRect(key))) {
       const ribbon = net.ribbons.get(id);
       if (ribbon && cellOfRibbon(ribbon) === key) out.push(ribbon);
     }
+    if (active && !out.some((r) => active.meets([r.full.bbox.minX, r.full.bbox.minY, r.full.bbox.maxX, r.full.bbox.maxY]))) return [];
     return out.sort((a, b) => a.id - b.id);
   };
 
@@ -58,13 +64,19 @@ export function createStructureCells(materials: SceneMaterials, groundMaterial?:
     group,
     get triangles() { return triangles; },
     prepare(net, elevation, terrainAt, blocks) {
+      const moved = moves?.take();
+      if (moved === null) owed = null;
+      else if (moved && owed) owed.push(...moved);
+      const read = owed === null ? null : owed.length;
+      // The tiles that came into the active region or left it: their cells built or let go, as an edit there would.
+      const reached = blocks === null || owed === null ? null : owed.length ? [...blocks, ...owed] : blocks;
       const dirty = new Set<number>();
-      if (blocks === null) {
+      if (reached === null) {
         /** @rebuild Every road of the map only when the edit cannot say where (the first world, a map opened). */
         for (const ribbon of net.ribbons.values()) dirty.add(cellOfRibbon(ribbon));
         for (const key of cells.keys()) dirty.add(key);
       } else {
-        for (const b of blocks) {
+        for (const b of reached) {
           for (const id of net.segmentCells.idsMeeting([b[0] - SPAN_REACH, b[1] - SPAN_REACH, b[2] + SPAN_REACH, b[3] + SPAN_REACH])) {
             const ribbon = net.ribbons.get(id);
             if (ribbon) dirty.add(cellOfRibbon(ribbon));
@@ -99,6 +111,9 @@ export function createStructureCells(materials: SceneMaterials, groundMaterial?:
             group.add(cell.details.group);
             triangles += cell.details.triangles;
           }
+          // What this build read of the moves is in place; a move told since waits for the next.
+          if (read === null) owed ??= [];
+          else owed?.splice(0, read);
         },
       };
     },

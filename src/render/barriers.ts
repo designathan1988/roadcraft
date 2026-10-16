@@ -6,6 +6,7 @@ import { CellFiling } from '@world/cells';
 import { Derived, type DerivedSpec } from '@world/derived';
 import type { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
+import type { ActiveTiles } from './activeTiles';
 import { createInstanceRuns, RunBuilder, sameRun, type Run, type RunStore } from './instanceRuns';
 
 /** DO NOT build every barrier of the map again for one placed or for the ground moved under one */
@@ -45,7 +46,8 @@ class BarrierProduct implements DerivedSpec<BarrierSource, number, BarrierPlace>
   readonly byId = false;
   private readonly filing = new CellFiling<number, BarrierPlace>();
 
-  constructor(private readonly stores: readonly RunStore[]) {}
+  /** `active`: where a barrier must reach for it to be made here (`activeTiles.ts`); none, everywhere. */
+  constructor(private readonly stores: readonly RunStore[], private readonly active?: ActiveTiles) {}
 
   /** @rebuild Every barrier of the map: read only when everything changed (a load, the diary forgotten). */
   allKeys(source: BarrierSource): Iterable<number> {
@@ -68,6 +70,11 @@ class BarrierProduct implements DerivedSpec<BarrierSource, number, BarrierPlace>
   compute(id: number, source: BarrierSource): BarrierPlace | undefined {
     const barrier = source.doc.barriers.get(id as Barrier['id']);
     if (!barrier || barrier.points.length < 2) return undefined;
+    let box: ChangeRect | null = null;
+    for (const q of barrier.points) box = box ? [Math.min(box[0], q.x), Math.min(box[1], q.y), Math.max(box[2], q.x), Math.max(box[3], q.y)] : [q.x, q.y, q.x, q.y];
+    const around = box!;
+    // A barrier wholly on the kept ring round the active tiles is the far levels' (`activeTiles.ts`); one reaching into an active tile is made whole.
+    if (this.active && !this.active.meets(around)) return undefined;
     const parts = Object.fromEntries(KINDS.map((k) => [k, []])) as unknown as PartList;
     placeBarrier(barrier, source.groundAt, parts);
     const builder = new RunBuilder(this.stores);
@@ -79,10 +86,7 @@ class BarrierProduct implements DerivedSpec<BarrierSource, number, BarrierPlace>
         boxes++;
       }
     });
-    let box: ChangeRect | null = null;
-    for (const q of barrier.points) box = box ? [Math.min(box[0], q.x), Math.min(box[1], q.y), Math.max(box[2], q.x), Math.max(box[3], q.y)] : [q.x, q.y, q.x, q.y];
-    const b = box!;
-    return { run: builder.build(), box: [b[0] - READ_REACH, b[1] - READ_REACH, b[2] + READ_REACH, b[3] + READ_REACH], boxes };
+    return { run: builder.build(), box: [around[0] - READ_REACH, around[1] - READ_REACH, around[2] + READ_REACH, around[3] + READ_REACH], boxes };
   }
 
   equals(a: BarrierPlace, b: BarrierPlace): boolean {
@@ -95,13 +99,16 @@ class BarrierProduct implements DerivedSpec<BarrierSource, number, BarrierPlace>
   }
 }
 
-export function createBarriers(): Barriers {
+/** `active`: the streamed world's active tiles, the only ones whose barriers are made here (`activeTiles.ts`); none, every barrier. */
+export function createBarriers(active?: ActiveTiles): Barriers {
   const { unit, material } = PARTS;
   const names = ['barrier-wall', 'barrier-coping', 'barrier-post', 'barrier-rail', 'barrier-hedge', 'barrier-guardrail-post', 'barrier-guardrail-beam', 'barrier-railing-post', 'barrier-railing-bar'];
   const mats = [material.wall, material.coping, material.post, material.rail, material.hedge, material.guardrailPost, material.guardrailBeam, material.railingPost, material.railingBar];
   const stores: RunStore[] = names.map((name, i) => ({ name, geometry: unit, material: mats[i]!, castShadow: true, receiveShadow: true, tinted: false, cards: false }));
   const runs = createInstanceRuns('barriers', stores, m(4));
-  const product = new Derived(new BarrierProduct(stores));
+  const product = new Derived(new BarrierProduct(stores, active));
+  /** Where the active tiles moved since the last sync: the barriers there made or let go, as a barrier entry there would. */
+  const moves = active?.reader();
   const drawn = new Map<number, BarrierPlace>();
   let boxes = 0;
   return {
@@ -110,7 +117,7 @@ export function createBarriers(): Barriers {
     sync(doc, groundAt) {
       const source: BarrierSource = { changes: doc.changes, doc, groundAt };
       const removed: Run[] = [], added: Run[] = [];
-      for (const id of product.refresh(source)) {
+      for (const id of product.refresh(source, moves ? moves.entries('barriers') : [])) {
         const was = drawn.get(id);
         if (was) { removed.push(was.run); boxes -= was.boxes; drawn.delete(id); }
         const now = product.get(id);

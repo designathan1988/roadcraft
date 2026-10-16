@@ -10,6 +10,7 @@ import { signsAtNode } from '@world/roads/derivedSigns';
 import { footwayRiseAt } from '@world/roads/footwayRise';
 import { sectionOf, LAMP_ZONE } from '@world/section';
 import { m } from '@world/units';
+import type { ActiveTiles } from './activeTiles';
 import { createInstanceRuns, RunBuilder, warmMeshes, type Run, type RunStore } from './instanceRuns';
 import { PLATE, POST, QUAD, QUAD_ORDER, SignSheets, cellUv, onTopOfPost, plateFaces, plateMaterial, streetChain, type Placed, type Sheet } from './signs';
 
@@ -68,6 +69,9 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
   /** Each key holding signs, by the ground it reads. */
   private readonly filing = new CellFiling<number, SignValue>();
 
+  /** `active`: where a junction or an item must stand for its signs to stand here (`activeTiles.ts`); none, everywhere. */
+  constructor(private readonly active?: ActiveTiles) {}
+
   /** @rebuild Every junction and every sign item of the map: read only when everything changed (a load, the diary forgotten). */
   allKeys(source: SignSource): Iterable<number> {
     const out: number[] = [];
@@ -110,6 +114,9 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
 
   compute(key: number, source: SignSource): SignValue | undefined {
     const id = Math.floor(key / 2);
+    // A junction or an item of the kept ring round the active tiles is the far levels' (`activeTiles.ts`): no sign stood for it here.
+    const at = key % 2 === 0 ? source.net.doc.node(id as NodeId) : source.net.doc.landscape.get(id);
+    if (!at || (this.active && !this.active.has(at.x, at.y))) return undefined;
     return key % 2 === 0 ? junctionSigns(source, id as NodeId) : itemSigns(source, id);
   }
 
@@ -128,8 +135,8 @@ class SignProduct implements DerivedSpec<SignSource, number, SignValue> {
 }
 
 /** The signs' product, made from nothing at its first refresh. */
-export function signProduct(): Derived<SignSource, number, SignValue> {
-  return new Derived(new SignProduct());
+export function signProduct(active?: ActiveTiles): Derived<SignSource, number, SignValue> {
+  return new Derived(new SignProduct(active));
 }
 
 /** A junction's signs (`signsAtNode`), reading its segments' ground. */
@@ -233,7 +240,8 @@ const POST_STORES: RunStore[] = [{
   castShadow: true, receiveShadow: true, tinted: false, cards: false,
 }];
 
-export function createSignLayer(): SignLayerKept {
+/** `active`: the streamed world's active tiles, the only ones whose signs stand here (`activeTiles.ts`); none, every sign. */
+export function createSignLayer(active?: ActiveTiles): SignLayerKept {
   const group = new Group();
   group.name = 'signs';
   const posts = createInstanceRuns('sign-posts', POST_STORES, m(4));
@@ -250,7 +258,9 @@ export function createSignLayer(): SignLayerKept {
       stores.delete(sheet);
     },
   });
-  const product = signProduct();
+  const product = signProduct(active);
+  /** Where the active tiles moved since the last sync: the junctions and the items there stood or let go, as a road entry there would. */
+  const moves = active?.reader();
   /** The plate the programs are compiled ahead with (`warm`), made with the layer and kept while it is */
   const warmPicture = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   warmPicture.colorSpace = SRGBColorSpace;
@@ -384,7 +394,7 @@ export function createSignLayer(): SignLayerKept {
       if (typeof document === 'undefined') return 0;
       const source: SignSource = { changes: net.doc.changes, net, elevation };
       const removed: Run[] = [], added: Run[] = [];
-      for (const key of product.refresh(source)) {
+      for (const key of product.refresh(source, moves ? moves.entries('roads') : [])) {
         const gone = take(key);
         if (gone) removed.push(gone);
         const value = product.get(key);

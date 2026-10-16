@@ -148,6 +148,7 @@ import { createFogField, createFogTexture, type FogLayer } from './fogLayer';
 import { createElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
 import { isCoverKind } from '@world/terrainPaint';
 import { CellKeeps, keepCellAt, keepCellRect, keepCellsOver } from './cellKeeps';
+import { ActiveTiles } from './activeTiles';
 import { createDensityCars } from './densityCars';
 import { COVER_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
 import { PlateFollow } from './plateFollow';
@@ -560,12 +561,14 @@ export function createSceneRenderer(
   /** The roads of the tiles not in the page's document (`farRoads.ts`), on the ground shared with the workers. */
   const farRoads = new FarRoads(() => (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null);
   world.add(farRoads.group);
+  /** The streamed world's active tiles as the near products read them (`activeTiles.ts`, `setActiveTiles`): the kept ring's items are the far levels'. */
+  const activeTiles = new ActiveTiles();
 
   let roads: RoadSurfaces | null = null;
   /** The roads' structures, cell by cell (`structureCells.ts`), made with the first world. */
   let details: StructureCells | null = null;
   /** What the player placed on the footways and the long grass, kept item by item from the diary (`streetFurnitureLayer.ts`) */
-  const furniture = createStreetFurniture(sceneryKit);
+  const furniture = createStreetFurniture(sceneryKit, activeTiles);
   world.add(furniture.group, furniture.grass);
   let utilities: PoleLayer | null = null;
   /** The pole tool's planned run, and the plan it was built for (rebuilt only when that changes). */
@@ -605,10 +608,10 @@ export function createSceneRenderer(
   });
   let polePreview: Utilities | null = null;
   /** Placed signs, street name plates and the junctions' rule plates, kept sign by sign from the diary (`signLayer.ts`). */
-  const signs = createSignLayer();
+  const signs = createSignLayer(activeTiles);
   let polePreviewKey = '';
   /** Walls, fences and hedges (`barriers.ts`), kept barrier by barrier from the diary. */
-  const barriers = createBarriers();
+  const barriers = createBarriers(activeTiles);
   /** Public transport (`transit.ts`), kept track by track and stop by stop from the diary. */
   const transit = createTransit();
   let elevation: RoadElevation | null = null;
@@ -1020,7 +1023,7 @@ export function createSceneRenderer(
     rectsSince: (since) => groundRectsSince(since),
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
-  const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt));
+  const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt), activeTiles);
   /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
   const groundSince: GroundSince = {
     get version() { return groundChanges.version; },
@@ -1367,18 +1370,21 @@ export function createSceneRenderer(
   const POLE_KINDS: readonly ChangeKind[] = ['utilities', 'roads', 'elevation', 'ground', 'terrain'];
   /** The diary's serial of `POLE_KINDS` the pole layer was brought up to. */
   let poleSerial = -1;
+  /** Where the active tiles moved since the poles were last brought up: their poles placed or let go (`activeTiles.ts`). */
+  const poleMoves = activeTiles.reader();
   /** The pole layer brought up to the diary (`poleLayer.ts`) */
   const syncUtilities = (net: Network, groundAt: (x: number, y: number) => number): void => {
     const serial = net.doc.changes.serialOf(...POLE_KINDS);
-    if (utilities && serial === poleSerial) return;
+    if (utilities && serial === poleSerial && !poleMoves.pending) return;
     const entries = utilities ? net.doc.changes.since(poleSerial, POLE_KINDS) : null;
+    const moved = poleMoves.entries('utilities');
     const before = utilities?.triangles ?? 0;
-    if (!utilities || entries === null || entries.some((e) => e.rects === null)) {
+    if (!utilities || entries === null || moved === null || entries.some((e) => e.rects === null)) {
       if (utilities) { world.remove(utilities.group); utilities.dispose(); }
-      utilities = buildUtilities(net, groundAt, sceneryKit, docPoles(net.doc));
+      utilities = buildUtilities(net, groundAt, sceneryKit, docPoles(net.doc, activeTiles));
       world.add(utilities.group);
     } else {
-      utilities.follow(net, groundAt, net.doc, entries);
+      utilities.follow(net, groundAt, net.doc, [...entries, ...moved], docPoles(net.doc, activeTiles));
     }
     builtTriangles += utilities.triangles - before;
     poleSerial = serial;
@@ -1571,7 +1577,7 @@ export function createSceneRenderer(
       { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
     const atdetails = performance.now();
-    details ??= createStructureCells(materials, terrain.vergeMaterial);
+    details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles);
     const freshDetails = details.prepare(net, solve, terrain.renderedHeightAt, blocks);
     performance.measure('hitch:road-edit/details', { start: atdetails, end: performance.now() });
     yield;
@@ -2010,8 +2016,8 @@ export function createSceneRenderer(
   const allCoverCells = (): Set<number> => new Set([...coverKeeps.forest.cellKeys(), ...coverKeeps.scrub.cellKeys(), ...coverKeeps.rocks.cellKeys(), ...coverKeeps.shore.cellKeys()]);
   /** Which of the trees the player planted stand: off the roads, out of the buildings. */
   const plantedKeeps = new CellKeeps<PlantedTree>((t) => (onCarriageway(keepNet!, t) || buildings.covers(t.x, t.y) ? null : terrain.renderedHeightAt(t.x, t.y)));
-  /** The planted trees standing in a keep cell, from the document's filing by place (`RoadDoc.treesIn`). */
-  const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key);
+  /** The planted trees standing in a keep cell, from the document's filing by place (`RoadDoc.treesIn`); none in a cell of the kept ring (`ActiveTiles.keepsCell`). */
+  const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => (activeTiles.keepsCell(key) ? doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key) : []);
   /** @rebuild Every planted tree filed cell by cell: the map opened, or its trees replaced whole. */
   const plantAll = (doc: RoadDoc): void => {
     plantedKeeps.clear();
@@ -2021,7 +2027,7 @@ export function createSceneRenderer(
       const list = byCell.get(key);
       if (list) list.push(t); else byCell.set(key, [t]);
     }
-    for (const [key, list] of byCell) plantedKeeps.fill(key, list);
+    for (const [key, list] of byCell) if (activeTiles.keepsCell(key)) plantedKeeps.fill(key, list);
   };
   /** What the cover sweeps read of the ground (`coverSweep.ts`). */
   const coverField: CoverField = {
@@ -2032,9 +2038,11 @@ export function createSceneRenderer(
   /** The painted covers of keep cells swept again, each cell's places kept as they stand where the sweep finds the same. */
   const resweepCovers = (cells: Iterable<number>): void => {
     for (const key of cells) {
-      coverKeeps.forest.fill(key, forestIn(key, coverField), sameCandidate);
-      coverKeeps.scrub.fill(key, scrubIn(key, coverField), sameCandidate);
-      coverKeeps.rocks.fill(key, rocksIn(key, coverField), sameCandidate);
+      // A cell of the kept ring round the active tiles: its covers let go (`ActiveTiles.keepsCell`).
+      const kept = activeTiles.keepsCell(key);
+      coverKeeps.forest.fill(key, kept ? forestIn(key, coverField) : [], sameCandidate);
+      coverKeeps.scrub.fill(key, kept ? scrubIn(key, coverField) : [], sameCandidate);
+      coverKeeps.rocks.fill(key, kept ? rocksIn(key, coverField) : [], sameCandidate);
     }
   };
   /** @rebuild The painted covers swept over every cover dab of the map (opened, replaced, or a change the diary cannot place). */
@@ -2140,6 +2148,8 @@ export function createSceneRenderer(
     },
     setActiveTiles(at, rects) {
       buildings.setActive(at, rects);
+      // The other near products (gardens, furniture, signs, walls, poles, structures, planted trees, covers, elements, lots) take in or let go the tiles that came or left (`activeTiles.ts`).
+      activeTiles.set(at, rects);
       // The near roads built again for the tiles that came in or left (`rebuildWorld`: the kept tiles' digests stand, only the flipped tiles are made or let go).
       if (rects.length || at === null) activeSerial++;
       activeAt = at;
@@ -2228,7 +2238,7 @@ export function createSceneRenderer(
       transitPreview.set(preview?.points ?? [], preview?.mode ?? 'train', terrain.renderedHeightAt, pavedHeightAt);
     },
     setLotOverlay(input, changes) {
-      lotOverlay ??= createLotOverlay((x, y) => handle.surfaceHeightAt(x, y));
+      lotOverlay ??= createLotOverlay((x, y) => handle.surfaceHeightAt(x, y), activeTiles);
       lotOverlay.set(input, changes);
     },
     setPolePreview(net, preview) {
@@ -2373,7 +2383,7 @@ export function createSceneRenderer(
         // The stones, the scrub and the painted woods: swept again only in the cells the paint reached (`coverSweep.ts`).
         {
           const at = performance.now();
-          const paint = coverPaintRead.read(net.doc.changes);
+          const paint = activeTiles.read(coverPaintRead, net.doc.changes);
           if (paint === null || paint.some((e) => e.rects === null)) sweepAllCovers(net.doc);
           else if (paint.length) {
             const cells = new Set<number>();
@@ -2480,7 +2490,7 @@ export function createSceneRenderer(
         }
         // The trees the player planted (`world/trees.ts`), with the woods' own models: filed again only in the cells planted or cut
         if (natureTreeKit) {
-          const planted = plantedRead.read(net.doc.changes);
+          const planted = activeTiles.read(plantedRead, net.doc.changes);
           if (planted === null || planted.some((e) => e.rects === null)) plantAll(net.doc);
           else if (planted.length) {
             const cells = new Set<number>();
@@ -2837,10 +2847,10 @@ export function createSceneRenderer(
         if (elementKit && !landHeld) {
           const startedAt = performance.now();
           if (!elementLayer) {
-            elementLayer = createElementLayer(elementKit);
+            elementLayer = createElementLayer(elementKit, activeTiles);
             world.add(elementLayer.group);
           }
-          const entries = elementRead.read(doc.changes);
+          const entries = activeTiles.read(elementRead, doc.changes);
           let cells: Set<number> | null = null;
           if (entries !== null && entries.every((e) => e.rects !== null)) {
             cells = new Set();

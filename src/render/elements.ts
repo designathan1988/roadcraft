@@ -21,6 +21,7 @@ import type { ChangeRect } from '@world/changes';
 import { m } from '@world/units';
 import { KEEP_CELL, keepCellKey } from './candidateKeep';
 import { keepCellAt, keepCellRect } from './cellKeeps';
+import type { ActiveTiles } from './activeTiles';
 import { createInstanceRuns, RunBuilder, type Run, type RunStore } from './instanceRuns';
 import type { Exhaust, PuffKind } from './exhaust';
 import URLS from 'virtual:model-urls/elements?ext=gltf,bin,png';
@@ -253,10 +254,11 @@ const ELEMENT_SHADOW_REACH = m(8);
 /** An effect giving off its particles: where it stands, and the particles owed since the last frame. */
 interface Emitter { readonly item: ElementItem; readonly z: number; owed: number }
 
-/** @rebuild Every element of the map by the cell it stands in, and every cell drawn before: a map opened or replaced whole. */
-function allByCell(source: ElementSource, before: Iterable<number>): Map<number, ElementItem[]> {
+/** @rebuild Every element of the map by the cell it stands in (those `here` says are made here), and every cell drawn before: a map opened or replaced whole. */
+function allByCell(source: ElementSource, before: Iterable<number>, here: (item: ElementItem) => boolean): Map<number, ElementItem[]> {
   const byCell = new Map<number, ElementItem[]>();
   for (const item of source.elements) {
+    if (!here(item)) continue;
     const key = keepCellAt(item.x, item.y);
     const list = byCell.get(key);
     if (list) list.push(item); else byCell.set(key, [item]);
@@ -265,8 +267,10 @@ function allByCell(source: ElementSource, before: Iterable<number>): Map<number,
   return byCell;
 }
 
-/** DO NOT build every element of the map again when one is laid: the elements kept cell by cell, instanced per kind */
-export function createElementLayer(kit: ElementKit): ElementLayer {
+/** DO NOT build every element of the map again when one is laid: the elements kept cell by cell, instanced per kind; `active`, the streamed world's active tiles, the only ones whose elements are made here (`activeTiles.ts`; none, every element) */
+export function createElementLayer(kit: ElementKit, active?: ActiveTiles): ElementLayer {
+  /** An element of the kept ring round the active tiles is the far levels' (`activeTiles.ts`): not made here. */
+  const here = (item: ElementItem): boolean => !active || active.has(item.x, item.y);
   const stores: RunStore[] = [];
   /** Each prop kind's variants, as the stores of their parts. */
   const storesOf = new Map<ElementKind, number[][]>();
@@ -306,9 +310,9 @@ export function createElementLayer(kit: ElementKit): ElementLayer {
     group: runs.group,
     get hasEffects() { return effects > 0; },
     sync(cells, source, groundAt) {
-      const byCell = cells === null ? allByCell(source, [...drawn.keys(), ...emitters.keys()]) : new Map<number, ElementItem[]>();
+      const byCell = cells === null ? allByCell(source, [...drawn.keys(), ...emitters.keys()], here) : new Map<number, ElementItem[]>();
       // A cell's elements from the document's filing by place (`RoadDoc.elementsIn`), each in the cell its point falls in.
-      for (const key of cells ?? []) byCell.set(key, source.elementsIn(keepCellRect(key)).filter((e) => keepCellAt(e.x, e.y) === key));
+      for (const key of cells ?? []) byCell.set(key, source.elementsIn(keepCellRect(key)).filter((e) => keepCellAt(e.x, e.y) === key && here(e)));
       const removed: Run[] = [], added: Run[] = [];
       for (const [key, items] of byCell) {
         const was = drawn.get(key);

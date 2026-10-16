@@ -64,6 +64,9 @@ export interface DerivedWork {
   last: number;
 }
 
+/** No entry added (`Derived.refresh`). */
+const NO_CHANGES: readonly Change[] = Object.freeze([]);
+
 /** A product derived from the document, key by key. */
 export class Derived<D extends { readonly changes: ChangeJournal }, K, V> {
   private readonly values = new Map<K, V>();
@@ -86,16 +89,18 @@ export class Derived<D extends { readonly changes: ChangeJournal }, K, V> {
     return this.values.size;
   }
 
-  /** Computes what the changes since the last refresh made dirty; returns the keys whose value changed. */
-  refresh(source: D): ReadonlySet<K> {
+  /** Computes what the changes since the last refresh made dirty, and what `more` does (entries the caller adds: where the streamed world's active region moved, `render/activeTiles.ts`; null, everything); returns the keys whose value changed. */
+  refresh(source: D, more: readonly Change[] | null = NO_CHANGES): ReadonlySet<K> {
     const entries = this.cursor.read(source.changes);
     const dirty = new Set<K>();
-    if (entries === null) {
+    // An added entry without ids makes a product by item whole (`byId`), as one of the diary's does.
+    if (entries === null || more === null || (this.spec.byId && more.some((e) => !e.ids))) {
       this.work.wholes++;
       for (const key of this.values.keys()) dirty.add(key);
       for (const key of this.spec.allKeys(source)) dirty.add(key);
     } else {
       for (const change of entries) this.spec.dirty(change, dirty, source);
+      for (const change of more) this.spec.dirty(change, dirty, source);
     }
     const changed = new Set<K>();
     for (const key of dirty) {

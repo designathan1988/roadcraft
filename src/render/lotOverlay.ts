@@ -5,6 +5,7 @@ import {
 import type { Vec2 } from '@core/vec2';
 import type { ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
 import { PLATE_SIZE, plateOf, plateRegion } from '@world/bounds';
+import type { ActiveTiles } from './activeTiles';
 import {
   DASH, GAP, FLAG_BUTT, FLAG_DASHED, FLAG_LEVEL, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, LotLattice, TEXTURE_WIDTH, TILE_CELLS, type LatticeShape,
 } from './lotLattice';
@@ -300,8 +301,18 @@ function shapesOf(input: LotOverlayShapes, levelOf: (where: string, points: read
 /** What moves the ground a built lot's level is read from (`surfaceHeightAt`): its level is read again there. */
 const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'ground', 'elevation', 'surfaces'];
 
-/** `groundAt`: the ground's height (`surfaceHeightAt`), read once for each built lot, at its middle. */
-export function createLotOverlay(groundAt: (x: number, y: number) => number = () => 0) {
+/** The box round a group's shapes; null for none. */
+function groupBox(g: LotOverlayShapes): ChangeRect | null {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const grow = (q: Vec2): void => { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); };
+  for (const p of g.polygons) for (const q of p.corners) grow(q);
+  for (const l of g.lines) { grow(l.a); grow(l.b); }
+  for (const d of g.points) grow(d.p);
+  return x0 <= x1 ? [x0, y0, x1, y1] : null;
+}
+
+/** `groundAt`: the ground's height (`surfaceHeightAt`), read once for each built lot, at its middle; `active`, the streamed world's active tiles: a group wholly on the kept ring round them is not drawn (`activeTiles.ts`; none, every group). */
+export function createLotOverlay(groundAt: (x: number, y: number) => number = () => 0, active?: ActiveTiles) {
   /** The lattice, its frame over the lots drawn (`frameFor`): stood again only when they leave it. */
   let lattice = new LotLattice(FRAME_HALF);
   frameUniforms(lattice);
@@ -309,6 +320,14 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
   /** The input drawn now, and this overlay's place in its changes (`LotOverlayInput.changedFor`). */
   let shown: LotOverlayInput | null = null;
   const reader = {};
+  /** Where the active tiles moved since the last `set`: the groups there laid or taken away. */
+  const moves = active?.reader();
+  /** Whether a group is laid: one reaching an active tile, whole (a lot astride the region's edge keeps its every shape). */
+  const laid = (g: LotOverlayShapes): boolean => {
+    if (!active) return true;
+    const box = groupBox(g);
+    return box === null || active.meets(box);
+  };
   /** The shapes in the lattice by group, then by key (a list: the same shape twice is two). */
   let held = new Map<string, Map<string, LatticeShape[]>>();
   /** The diary's serial the levels were read at. */
@@ -375,9 +394,10 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
     return groups;
   };
 
-  /** A group's shapes laid again (gone when `group` is undefined): a shape with the same key kept as it is. */
-  const remake = (name: string, group: LotOverlayGroup | undefined): void => {
+  /** A group's shapes laid again (gone when `given` is undefined or not `laid`): a shape with the same key kept as it is. */
+  const remake = (name: string, given: LotOverlayGroup | undefined): void => {
     const old = held.get(name);
+    const group = given && laid(given) ? given : undefined;
     if (!group) {
       if (old) for (const list of old.values()) for (const shape of list) lattice.remove(shape);
       held.delete(name);
@@ -425,11 +445,11 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
   /** The frame stood again over the lots drawn when they left it, on the plate under their middle (`world/bounds.ts`): every shape laid anew in it. */
   const standFrame = (input: LotOverlayInput): boolean => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    const grow = (q: Vec2): void => { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); };
     for (const g of input.groups.values()) {
-      for (const p of g.polygons) for (const q of p.corners) grow(q);
-      for (const l of g.lines) { grow(l.a); grow(l.b); }
-      for (const d of g.points) grow(d.p);
+      const box = groupBox(g);
+      // Over the groups laid only (`laid`): one wholly on the kept ring is not drawn.
+      if (!box || (active && !active.meets(box))) continue;
+      x0 = Math.min(x0, box[0]); y0 = Math.min(y0, box[1]); x1 = Math.max(x1, box[2]); y1 = Math.max(y1, box[3]);
     }
     if (!(x0 <= x1)) return false;
     const side = 2 * lattice.half;
@@ -453,6 +473,8 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
         groundSeen = changes.version;
         moved = forgetLevels(entries);
       }
+      // The active tiles' moves: nothing to lay while hidden (every group is laid anew when shown again).
+      const flipped = moves ? moves.take() : [];
       if (!input) {
         if (!shown && held.size === 0) return;
         shown = null;
@@ -466,7 +488,7 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
       // The frame stood again over lots that left it: every group laid anew in it.
       const restood = standFrame(input);
       // Another input than the one drawn, or one that cannot say what changed: every group, a shape with the same key kept.
-      if (restood || input !== shown || changed === null || moved === 'all') {
+      if (restood || input !== shown || changed === null || moved === 'all' || flipped === null) {
         shown = input;
         for (const name of [...held.keys()]) if (!input.groups.has(name)) remake(name, undefined);
         for (const [name, group] of input.groups) remake(name, group);
@@ -474,6 +496,13 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
         // DO NOT walk every group: only those the input or the ground say changed.
         const names = new Set(changed);
         for (const name of moved) names.add(name);
+        // And those of the tiles that came into the active region or left it: a look at each group's box once a tile is crossed, never at a pointer move.
+        if (flipped.length) {
+          for (const [name, group] of input.groups) {
+            const box = groupBox(group);
+            if (box && flipped.some((r) => r[0] <= box[2] && r[2] >= box[0] && r[1] <= box[3] && r[3] >= box[1])) names.add(name);
+          }
+        }
         if (names.size === 0) return;
         for (const name of names) remake(name, input.groups.get(name));
       }

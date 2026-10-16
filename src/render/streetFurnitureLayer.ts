@@ -13,6 +13,7 @@ import { FOOTWAY_RISE } from '@world/roadTypes';
 import { furnitureOf } from '@world/streetFurniture';
 import { m } from '@world/units';
 import { CLUMP_READ_REACH, grassClump, type Tuft } from './grass';
+import type { ActiveTiles } from './activeTiles';
 import { RunBuilder, createInstanceRuns, sameRun, warmMeshes, type Run, type RunStore } from './instanceRuns';
 import { BUSH_KINDS, TREE_SPECIES, type BushKind, type TreeSpecies } from './propGeometry';
 import { PICTURE_PX, sceneryPictures, type SceneryPictures } from './plantImpostors';
@@ -218,6 +219,7 @@ class PlacedProduct<V extends { readonly x: number; readonly y: number }> implem
     private readonly wanted: (item: LandscapeItem) => boolean,
     private readonly make: (item: LandscapeItem, source: FurnitureSource) => V | undefined,
     readonly equals: (a: V, b: V) => boolean,
+    private readonly active?: ActiveTiles,
   ) {
     this.kinds = Object.keys(pads) as ChangeKind[];
   }
@@ -252,7 +254,8 @@ class PlacedProduct<V extends { readonly x: number; readonly y: number }> implem
 
   compute(key: number, source: FurnitureSource): V | undefined {
     const item = source.net.doc.landscape.get(key);
-    return item && this.wanted(item) ? this.make(item, source) : undefined;
+    // An item of the kept ring round the active tiles is the far levels' (`activeTiles.ts`): not made here.
+    return item && this.wanted(item) && (this.active?.has(item.x, item.y) ?? true) ? this.make(item, source) : undefined;
   }
 
   changed(key: number, _before: V | undefined, after: V | undefined): void {
@@ -269,11 +272,11 @@ interface MeadowPlace {
 }
 
 /** The furniture's product: where each placed item stands (a product of the diary), proved against one made from nothing. */
-export function furnitureProduct(kit: SceneryKit): Derived<FurnitureSource, number, FurniturePlace> {
+export function furnitureProduct(kit: SceneryKit, active?: ActiveTiles): Derived<FurnitureSource, number, FurniturePlace> {
   return new Derived(new PlacedProduct<FurniturePlace>('street furniture', {
     landscape: 0, roads: ROAD_REACH, elevation: DECK_REACH,
   }, (item) => item.kind !== 'meadow' && item.kind !== 'sign' && item.kind !== 'streetname',
-  (item, source) => furniturePlace(source.net, source.elevation, item, kit), samePlace));
+  (item, source) => furniturePlace(source.net, source.elevation, item, kit), samePlace, active));
 }
 
 const MEADOW_STORES = (kit: SceneryKit): RunStore[] => [
@@ -282,7 +285,7 @@ const MEADOW_STORES = (kit: SceneryKit): RunStore[] => [
 ];
 
 /** The long grass's product: each placed clump's run, laid on the ground as drawn. */
-export function meadowProduct(kit: SceneryKit): Derived<FurnitureSource, number, MeadowPlace> {
+export function meadowProduct(kit: SceneryKit, active?: ActiveTiles): Derived<FurnitureSource, number, MeadowPlace> {
   const stores = MEADOW_STORES(kit);
   return new Derived(new PlacedProduct<MeadowPlace>('long grass', {
     landscape: 0, elevation: CLUMP_READ_REACH + m(1), ground: CLUMP_READ_REACH + m(1),
@@ -296,7 +299,7 @@ export function meadowProduct(kit: SceneryKit): Derived<FurnitureSource, number,
     for (const tuft of clump.tufts) add(0, tuft);
     for (const tuft of clump.flowers) add(1, tuft);
     return { x: item.x, y: item.y, run: builder.build() };
-  }, (a, b) => a.x === b.x && a.y === b.y && sameRun(a.run, b.run)));
+  }, (a, b) => a.x === b.x && a.y === b.y && sameRun(a.run, b.run), active));
 }
 
 /** The street furniture and the long grass, kept item by item. */
@@ -321,15 +324,18 @@ export interface StreetFurnitureLayer {
 const stillGrowing = (planted: number | undefined, minutes: number): boolean =>
   planted !== undefined && !(Number.isFinite(minutes) && minutes - planted >= GROW_MINUTES);
 
-export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
+/** `active`: the streamed world's active tiles, the only ones whose items are placed here (`activeTiles.ts`); none, every item. */
+export function createStreetFurniture(kit: SceneryKit, active?: ActiveTiles): StreetFurnitureLayer {
   const pictures = sceneryPictures(kit);
   const stores = furnitureStores(kit, pictures);
   const furniture = createInstanceRuns('street-furniture', stores, SHADOW_REACH);
   // The grass throws no shadow: only what the view itself takes.
   const meadowStores = MEADOW_STORES(kit);
   const meadow = createInstanceRuns('grass', meadowStores, 0);
-  const places = furnitureProduct(kit);
-  const clumps = meadowProduct(kit);
+  const places = furnitureProduct(kit, active);
+  const clumps = meadowProduct(kit, active);
+  /** Where the active tiles moved since the last sync: the items there placed or let go, as a landscaping entry there would. */
+  const moves = active?.reader();
   /** Each item's run as drawn, and the growth it was sized at. */
   const runs = new Map<number, { readonly place: FurniturePlace; readonly run: Run }>();
   const clumpRuns = new Map<number, Run>();
@@ -359,6 +365,7 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
     get triangles() { return furniture.triangles + meadow.triangles; },
     sync(net, elevation, groundAt, minutes) {
       const source: FurnitureSource = { changes: net.doc.changes, net, elevation, groundAt };
+      const moved = moves ? moves.entries('landscape') : [];
       const nowHour = Number.isFinite(minutes) ? Math.floor(minutes / 60) : Number.NaN;
       const now = nowHour * 60;
       const removed: Run[] = [], added = new Set<Run>();
@@ -374,7 +381,7 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
         added.add(run);
         if (stillGrowing(value.planted, now)) growing.add(id);
       };
-      for (const id of places.refresh(source)) place(id);
+      for (const id of places.refresh(source, moved)) place(id);
       let work = places.work.last;
       // A new hour: the plants still growing sized again (and only those).
       if (!Object.is(nowHour, hour)) {
@@ -383,7 +390,7 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
       }
       if (removed.length || added.size) furniture.update({ removed, added: [...added] });
       const gone: Run[] = [], grown: Run[] = [];
-      for (const id of clumps.refresh(source)) {
+      for (const id of clumps.refresh(source, moved)) {
         const was = clumpRuns.get(id);
         if (was) { gone.push(was); clumpRuns.delete(id); }
         const value = clumps.get(id);

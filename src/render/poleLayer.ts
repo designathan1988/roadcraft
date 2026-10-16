@@ -22,6 +22,7 @@ import { PoleIndex } from '@world/poleIndex';
 import { kerbward } from '@world/poleLines';
 import { m } from '@world/units';
 import { POLE_HEIGHT, type PoleArms, poleArmsAt, type UtilityPole, type UtilitySpan } from '@world/utilities';
+import type { ActiveTiles } from './activeTiles';
 import type { SceneryKit } from './scenery';
 import {
   POLE_PART_COUNT,
@@ -53,10 +54,23 @@ export interface PoleSource {
   spansAt(id: PoleId): Iterable<UtilitySpan>;
   /** Which poles get a mast, arms and lamp here; a pole a preview only ties into is standing already. */
   readonly draws?: (pole: UtilityPole) => boolean;
+  /** Which poles are placed here at all (none: every one): the streamed world's active tiles' (`docPoles`). */
+  readonly stands?: (pole: UtilityPole) => boolean;
+  /** Which spans are strung here, between two placed poles (none: every one). */
+  readonly strings?: (span: UtilitySpan) => boolean;
 }
 
-/** The document's poles as a layer's source. */
-export const docPoles = (doc: RoadDoc): PoleSource => ({ poles: doc.poles, spans: doc.poleSpans, spansAt: (id) => doc.spansAt(id) });
+/** The document's poles as a layer's source; `active`, the streamed world's active tiles (`activeTiles.ts`): a wire is strung when a pole of it stands on one, a pole placed when it stands on one or such a wire ties it, so the active tiles keep every wire and pole they had and the kept ring beyond is the far levels'. */
+export const docPoles = (doc: RoadDoc, active?: ActiveTiles): PoleSource => {
+  const source: PoleSource = { poles: doc.poles, spans: doc.poleSpans, spansAt: (id) => doc.spansAt(id) };
+  if (!active) return source;
+  const on = (id: PoleId): boolean => { const p = doc.poles.get(id); return !!p && active.has(p.x, p.y); };
+  return {
+    ...source,
+    stands: (pole) => active.has(pole.x, pole.y) || doc.spansAt(pole.id).some((s) => on(s.a === pole.id ? s.b : s.a)),
+    strings: (span) => on(span.a) || on(span.b),
+  };
+};
 
 /** How far from a pole a change of the roads or the ground can move it: its kerb (`kerbward`), its lamp's pool. */
 const POLE_REACH = m(12);
@@ -489,8 +503,8 @@ export class PoleLayer implements Utilities {
 
   /** Every pole and span of the source, on an empty layer, in the source's order: the layer a full build makes */
   fill(net: Network, groundAt: (x: number, y: number) => number, source: PoleSource): void {
-    for (const pole of source.poles.values()) this.place(net, groundAt, source, pole, undefined);
-    for (const span of source.spans.values()) this.string(span);
+    for (const pole of source.poles.values()) if (source.stands?.(pole) ?? true) this.place(net, groundAt, source, pole, undefined);
+    for (const span of source.spans.values()) if (source.strings?.(span) ?? true) this.string(span);
     this.flush();
   }
 
@@ -508,21 +522,21 @@ export class PoleLayer implements Utilities {
     const wanted = new Map<SpanId, UtilitySpan>();
     for (const id of dirty) {
       for (const sid of this.index.spansAt(id)) strung.add(sid);
-      if (source.poles.has(id)) for (const s of source.spansAt(id)) wanted.set(s.id, s);
+      if (source.poles.has(id)) for (const s of source.spansAt(id)) if (source.strings?.(s) ?? true) wanted.set(s.id, s);
     }
     for (const sid of strung) this.unstring(sid);
     for (const id of dirty) {
       const was = this.poles.get(id);
       if (was) this.unplace(id, was);
       const pole = source.poles.get(id);
-      if (pole) this.place(net, groundAt, source, pole, fresh.has(id) || !was || was.x !== pole.x || was.y !== pole.y ? undefined : was.kerb);
+      if (pole && (source.stands?.(pole) ?? true)) this.place(net, groundAt, source, pole, fresh.has(id) || !was || was.x !== pole.x || was.y !== pole.y ? undefined : was.kerb);
     }
     for (const span of wanted.values()) this.string(span);
     this.flush();
   }
 
-  /** The diary's changes since the layer was last brought up (none with a null rectangle: that is a whole build) */
-  follow(net: Network, groundAt: (x: number, y: number) => number, doc: RoadDoc, entries: readonly Change[]): void {
+  /** The diary's changes since the layer was last brought up (none with a null rectangle: that is a whole build), from `source` (the document's, `docPoles`) */
+  follow(net: Network, groundAt: (x: number, y: number) => number, doc: RoadDoc, entries: readonly Change[], source: PoleSource = docPoles(doc)): void {
     const seeds = new Set<PoleId>();
     for (const entry of entries) {
       const pad = entry.kind === 'utilities' ? 0 : POLE_REACH;
@@ -534,7 +548,7 @@ export class PoleLayer implements Utilities {
         for (const id of this.polesIn(rect)) seeds.add(id);
       }
     }
-    this.redo(net, groundAt, docPoles(doc), seeds);
+    this.redo(net, groundAt, source, seeds);
   }
 
   /** The cell at a key, made when first needed. */
