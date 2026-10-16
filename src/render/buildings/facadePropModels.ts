@@ -9,7 +9,7 @@ import {
   RingGeometry,
   SphereGeometry,
 } from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { AC, type FacadePropKind, POT_HIGH } from './facadeProps';
 
 /** The models of the props on the facades and balconies (`facadeProps.ts` places them) */
@@ -17,15 +17,16 @@ import { AC, type FacadePropKind, POT_HIGH } from './facadeProps';
 // ------------------------------------------------------------------ models
 
 /** A part of a model: a geometry and its tone (multiplied by the instance's colour). */
+/** DO NOT `toNonIndexed` a part: every instance of the prop drew each corner once per triangle; a loose list is indexed instead (identical vertices only, so a faceted part stays faceted; three `BufferGeometryUtils.mergeVertices`). */
 function tone(g: BufferGeometry, rgb: readonly [number, number, number]): BufferGeometry {
-  const flat = g.index ? g.toNonIndexed() : g;
-  if (flat !== g) g.dispose();
-  const n = flat.getAttribute('position').count;
+  g.deleteAttribute('uv');
+  const part = g.index ? g : mergeVertices(g);
+  if (part !== g) g.dispose();
+  const n = part.getAttribute('position').count;
   const c = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { c[i * 3] = rgb[0]; c[i * 3 + 1] = rgb[1]; c[i * 3 + 2] = rgb[2]; }
-  flat.setAttribute('color', new BufferAttribute(c, 3));
-  flat.deleteAttribute('uv');
-  return flat;
+  part.setAttribute('color', new BufferAttribute(c, 3));
+  return part;
 }
 const grey = (v: number): [number, number, number] => [v, v, v];
 
