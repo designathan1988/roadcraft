@@ -6,7 +6,18 @@ import type { ZoneDensity, ZoneUse } from '../zones';
 import { valueNoise } from './field';
 import type { CityOptions, CityStyle } from './plan';
 
-/** THE WORLD AS CITIES AND COUNTRYSIDE, WITHOUT AN EDGE (rewrite F7, "Streaming world"): the world's tiles (`tiles.ts`), each planned and built on its own (`tile.ts`, `editor/wholeMapTile.ts`) from the seed and its own place alone, so any tile of an unbounded world can be made in any order on any worker and come out the same. What the tiles share is decided here, by rules that read only the seed and the coordinates: the border avenues on every tile edge, the gates where streets cross them (the same for a whole row or column of tiles, so a street goes straight on into the next tile), and the districts - downtowns, neighbourhood centres, villages, industry, parks - from an endless lattice of district cells, each holding a city or countryside by a hash of the seed and the cell. */
+/** THE MAP (the player's order, 2026-10-16): a square of `MAP_TILES` tiles each way round the origin, 10 km x 10 km, the city over the WHOLE of it; never a world without an edge. The size will be the player's choice; the rules below stay pure functions of the seed and the place, so a larger map is the same rules over more tiles. */
+export const MAP_TILES = 10;
+/** The map's half side, world units. */
+export const MAP_HALF = (MAP_TILES / 2) * TILE;
+/** Whether tile (i, j) is on the map (-5..4 each way at 10). */
+export const tileOnMap = (i: number, j: number): boolean => i >= -MAP_TILES / 2 && i < MAP_TILES / 2 && j >= -MAP_TILES / 2 && j < MAP_TILES / 2;
+/** Whether a point is on the map. */
+export const onMap = (x: number, y: number): boolean => x >= -MAP_HALF && x < MAP_HALF && y >= -MAP_HALF && y < MAP_HALF;
+/** A point held to the map (the camera's focus). */
+export const clampToMap = (x: number, y: number): { x: number; y: number } => ({ x: Math.max(-MAP_HALF, Math.min(MAP_HALF, x)), y: Math.max(-MAP_HALF, Math.min(MAP_HALF, y)) });
+
+/** THE WORLD AS CITIES AND COUNTRYSIDE (rewrite F7, "Streaming world"): the world's tiles (`tiles.ts`), each planned and built on its own (`tile.ts`, `editor/wholeMapTile.ts`) from the seed and its own place alone, so any tile of an unbounded world can be made in any order on any worker and come out the same. What the tiles share is decided here, by rules that read only the seed and the coordinates: the border avenues on every tile edge, the gates where streets cross them (the same for a whole row or column of tiles, so a street goes straight on into the next tile), and the districts - downtowns, neighbourhood centres, villages, industry, parks - from an endless lattice of district cells, each holding a city or countryside by a hash of the seed and the cell. */
 
 /** No gate this near a tile's corner: the corner is the two border avenues' junction. */
 const CORNER = m(110);
@@ -44,6 +55,8 @@ export function mix(...values: readonly number[]): number {
 
 /** The gates of row or column `k`, any integer (`axis` 0: across the borders x = const of row k, at these y; 1: across y = const of column k, at these x). */
 export function gatesOf(seed: number, axis: 0 | 1, k: number): Gate[] {
+  // No street crosses the map's edge nor runs past it: no gate on its border lines or beyond.
+  if (k <= -MAP_TILES / 2 || k >= MAP_TILES / 2) return [];
   const lo = borderLine(k) + CORNER, hi = borderLine(k + 1) - CORNER;
   const rng = new Rng(mix(seed, 0x6a7e, axis, k));
   const out: Gate[] = [];
@@ -74,6 +87,8 @@ export interface TileCharacter {
 const DOWNTOWN = 0.72;
 const URBAN = 0.45;
 const SUBURB = 0.24;
+/** The least heat on the map: built up everywhere (suburbs at the least), the downtowns and the centres over it (the city over the whole map). */
+const MAP_FLOOR = SUBURB + 0.03;
 /** Centres of neighbourhoods besides a city's downtowns. */
 const SUB_CENTRES = 6;
 /** Industrial districts of a city, and their reach. */
@@ -172,12 +187,13 @@ export function planWholeMap(options: WholeMapOptions): WholeMapPlan {
   const shift = (options.density - 0.5) * 0.5;
   const salt = (options.seed % 997) * 0.37;
   const heatAt = (x: number, y: number): number => {
+    if (!onMap(x, y)) return 0;
     let h = 0;
     for (const c of blockAt(x, y).hubs) {
       const dx = (x - c.x) / c.radius, dy = (y - c.y) / c.radius;
       h = Math.max(h, c.weight * Math.exp(-(dx * dx + dy * dy)));
     }
-    return h + shift + 0.07 * valueNoise(x / m(700) + salt, y / m(700) - salt);
+    return Math.max(MAP_FLOOR, h + shift + 0.07 * valueNoise(x / m(700) + salt, y / m(700) - salt));
   };
   const nearWorks = (p: Vec2, reach: number): boolean => blockAt(p.x, p.y).works.some((w) => Math.hypot(p.x - w.x, p.y - w.y) < reach);
 
@@ -202,6 +218,7 @@ export function planWholeMap(options: WholeMapOptions): WholeMapPlan {
 
   const parkSalt = (options.seed * 7919) >>> 0;
   const zoneAt = (p: Vec2, onMain: boolean): { use: ZoneUse; density: ZoneDensity } | 'park' => {
+    if (!onMap(p.x, p.y)) return 'park';
     const heat = heatAt(p.x, p.y);
     // The countryside: open land, a village here and there along its roads.
     if (heat < SUBURB) return valueNoise(p.x / m(320) - salt, p.y / m(320) + salt) > 0.55 ? { use: 'residential', density: 'low' } : 'park';
@@ -214,6 +231,8 @@ export function planWholeMap(options: WholeMapOptions): WholeMapPlan {
     if (heat > 0.85 || (onMain && heat > 0.35)) return { use: 'commercial', density };
     return { use: 'residential', density };
   };
-  const centresNear = (p: Vec2): Vec2[] => blockAt(p.x, p.y).hubs.filter((c) => c.downtown).map((c) => ({ x: c.x, y: c.y }));
+  // Only the downtowns on the map (a neighbouring cell's stands past its edge and is nothing), the nearest first.
+  const centresNear = (p: Vec2): Vec2[] => blockAt(p.x, p.y).hubs.filter((c) => c.downtown && onMap(c.x, c.y))
+    .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y)).map((c) => ({ x: c.x, y: c.y }));
   return { options, centresNear, heatAt, tile, zoneAt };
 }

@@ -34,7 +34,7 @@ import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
 import { DEFAULT_CITY, planCity, type CityOptions, type CityPlan, type CitySize } from '@world/cityGen/plan';
-import { WHOLE_MAP_DEFAULTS, type WholeMapOptions } from '@world/cityGen/wholeMap';
+import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, clampToMap } from '@world/cityGen/wholeMap';
 import { greenCitySteps, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
@@ -2049,7 +2049,7 @@ function newMap(): void {
   fitView();
   flashHint('hint.newMap');
 }
-/** THE WORLD WITHOUT AN EDGE from the menu: a fresh seed, the streamed world opened round the camera (`openStreamedWorld`, as `generateCity({ size: 'whole' })`). */
+/** A NEW CITY OVER THE WHOLE MAP (10 km x 10 km, `wholeMap.ts` MAP_TILES) from the menu: a fresh seed, the streamed world opened round the camera (`openStreamedWorld`, as `generateCity({ size: 'whole' })`). */
 function newWorld(): void {
   if (!window.confirm(t('confirm.newWorld'))) return;
   const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
@@ -2460,6 +2460,9 @@ function frame(now: number): void {
   cameraHand.advance(now);
   // The streamed world's tiles round the camera: asked, put in, let go behind (`worldStreamer.ts`).
   if (streamed) {
+    // The camera's focus held to the map (the map has an edge, `wholeMap.ts` MAP_HALF): the view follows it.
+    const held = clampToMap(camera.x, camera.y);
+    if (held.x !== camera.x || held.y !== camera.y) { camera.x = held.x; camera.y = held.y; view.moveTo(held); }
     streamed.streamer.focus(camera.x, camera.y);
     streamed.streamer.apply(now);
   }

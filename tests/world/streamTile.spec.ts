@@ -146,11 +146,14 @@ describe('a tile of the streamed world, built alone', () => {
     for (const s of right.segments) expect(roads.has(pairKey(s.a, s.b)), `road ${s.a}-${s.b} in both tiles`).toBe(false);
   });
 
-  it('builds a tile far from the origin', () => {
-    const far = buildStreamTile(options, 40, -37);
-    checkTile(far, 40, -37);
+  it("builds a tile at the map's far corner, and nothing past the map's edge", () => {
+    const far = buildStreamTile(options, 4, -5);
+    checkTile(far, 4, -5);
     expect(far.nodes.length).toBeGreaterThan(0);
     expect(far.segments.length).toBeGreaterThan(0);
+    const past = buildStreamTile(options, 40, -37);
+    expect(past.nodes).toEqual([]);
+    expect(past.segments).toEqual([]);
   }, 10_000);
 
   it('builds the same tile the same again, in the job worker too', () => {

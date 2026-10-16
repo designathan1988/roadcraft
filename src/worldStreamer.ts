@@ -1,3 +1,4 @@
+import { tileOnMap } from '@world/cityGen/wholeMap';
 import { type ChangeRect, DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import type { ListPart, RoadDoc } from '@world/doc';
@@ -86,12 +87,13 @@ export class WorldStreamer {
     if (i === this.around.i && j === this.around.j) { this.ask(); return; }
     const wasActive = new Set(this.wanted);
     this.around = { i, j };
-    this.wanted = tilesAround(i, j, ACTIVE_RADIUS).map((t) => tileKey(t.i, t.j));
+    // DO NOT ask a tile past the map's edge (`tileOnMap`): there is nothing there, and the region ends with the map.
+    this.wanted = tilesAround(i, j, ACTIVE_RADIUS).filter((t) => tileOnMap(t.i, t.j)).map((t) => tileKey(t.i, t.j));
     // The loaded tiles whose standing changed: active now and not before, or the other way round.
     const flipped: number[] = [];
     for (const key of this.doc.loadedTiles) if (wasActive.has(key) !== this.wanted.includes(key)) flipped.push(key);
     if (flipped.length) this.tell.activeChanged?.(flipped, flipped.map((key) => { const t = tileOfKey(key); return tileRect(t.i, t.j); }));
-    this.aheadOrder = tilesAround(i, j, AHEAD_RADIUS).map((t) => tileKey(t.i, t.j));
+    this.aheadOrder = tilesAround(i, j, AHEAD_RADIUS).filter((t) => tileOnMap(t.i, t.j)).map((t) => tileKey(t.i, t.j));
     this.ask();
   }
 

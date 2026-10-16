@@ -12,7 +12,7 @@ import type { BuildingId } from '@world/buildings/types';
 import { asSegmentId } from '@world/ids';
 import type { SerializedDoc } from '@world/doc';
 import { type TilePlan, planTile } from '@world/cityGen/tile';
-import { type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
+import { type WholeMapOptions, planWholeMap, tileOnMap } from '@world/cityGen/wholeMap';
 import { greenCity, layCity, widenCityFootways, zoneCity } from './cityGenerator';
 import { LOT_PLAN_VERSION, growOnLot } from './zoning';
 
@@ -60,8 +60,19 @@ function buildTileMap(options: WholeMapOptions, i: number, j: number): { tile: T
   return { tile, data: doc.toJSON(), ms: performance.now() - started };
 }
 
-/** Builds tile (i, j) of the unbounded world as the tile store keeps it (`tiles.ts` `TileRecords`): what it owns, ids in its own range. */
+/** A tile with nothing on it: past the map's edge (`tileOnMap`). */
+export function emptyTileRecords(key: number): TileRecords {
+  const base = tileIdBase(key);
+  return {
+    key, version: 0, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [], lotKeys: [],
+    landscape: [], barriers: [], paint: [], trees: [], elements: [],
+    next: { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base },
+  };
+}
+
+/** Builds tile (i, j) as the tile store keeps it (`tiles.ts` `TileRecords`): what it owns, ids in its own range; a tile past the map's edge is empty (`tileOnMap`: no road, no lot). */
 export function buildStreamTile(options: WholeMapOptions, i: number, j: number): TileRecords {
+  if (!tileOnMap(i, j)) return emptyTileRecords(tileKey(i, j));
   return tileRecordsOf(tileKey(i, j), buildTileMap(options, i, j).data);
 }
 
