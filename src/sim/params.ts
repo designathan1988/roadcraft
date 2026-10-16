@@ -8,8 +8,6 @@ export { DT } from './dt';
 export const MAX_SUBSTEPS = 5;
 /** Wall-clock time is clamped to this before being accumulated. */
 export const MAX_FRAME = 0.25;
-/** The most wall time the simulation's steps may take in one frame, ms (`SimClock.advance`) */
-export const SIM_FRAME_BUDGET_MS = 8;
 
 /** A lane change is a PATH, not a slide. */
 const LANE_CHANGE_HEADING_SLOW = 0.42;
