@@ -230,6 +230,34 @@ is 4.4 GB, so no tuning fits a city much past 10 km. Binding decisions:
 - The fixed map today: 5 × 5 plates of 2,048 m (`world/bounds.ts`).
 
 ## Open findings
+Read whole by the coordinator on 2026-10-16 (main `0c7b15e`: every file of the opening and edit paths, sim and jobs;
+agent behaviour, effects and UI only scanned). Why the whole city dies of memory before drawing:
+- Root: a building record is the whole authored model (the lot's furniture inside it, 133 JS objects a building), kept per tile
+  as gzip JSON text, parsed and migrated again by every reader, sent as JSON text per cell job per level (`cellPool.ts:161`) or by
+  structured clone (growth, sim), hash-consed per thread (`intern.ts`); the sim worker keeps a second RoadDoc + Network, the
+  region's lane graph and a ~6 KB traffic record a building. Fix: the brief's per-tile typed tables in a SharedArrayBuffer, as
+  `sim/meso` already does.
+- Derived per building redone per emission and per load: `facadeBays` unmemoised (`buildingMesh.ts:835`, `massing.ts:214`/`:293`,
+  `foundation.ts:189`); `interiorAt` furnishes whole floors for the room behind each window (`buildingMesh.ts:956`); lot bays (a
+  nav grid per lot) and kerb bays (`parkingLayout` per street, on the sim thread, `parking.ts` `baysNow`) at every tile load,
+  never stored with the tile. Fix: baked with the tile as sections (the `sim/tileSections.ts` pattern).
+- Every tile load records 'roads' (`doc.ts:363`, the network revision) → `buildWorld`: elevation solve on the page, 160 m block
+  compares, every 76.8 m tile of every road pass digested with `dependsOn` (`roadSurfaces.ts:351-372`), sliced over frames.
+- `networkBuild.ts:685` re-sorts every ribbon and junction when a lower id arrives (a tile of lower key loaded after).
+- `flatAtlas.ts` `ecologyRevision` adds `shownVersion` (`:703-706`) and `waterArea` is the union box of every shown plate with a
+  summed revision (`:709-719`): each plate shown re-merges `natureSweep` and runs `resweepShore` over the whole box at 3 m.
+- Sim: `lorryDocks.ts:275` `yardNeighbours` keyed by the global `doc.lotRevision`; `lotTraffic.ts` `freeBays`/`sceneryInBays`
+  walk every gated bay of the region with a string key each, every second; `ambient.ts` `parking` stands a whole Vehicle in 62% of
+  EVERY bay of the region (not only near the view) and `simHost.ts` `publish` walks them each tick; the cheap audit walks every
+  controller each second (`invariants.ts`).
+- Jobs: lanes (`JobPort`) post straight to their worker and `hostFor` only looks at `host.job`; the 4 `cityTiles` lanes each run
+  a 5-25 s synchronous tile (`cityTile.worker.ts`) on the 3 workers growth leaves → cells, road tiles, ground, far roads and saves
+  wait behind them. The sim worker opens 2 job workers of its own: 8 isolates in the one 4 GB cage.
+- Tiles made ahead (`AHEAD_RADIUS` 5, 121 tiles) only feed the far roads: `farRoads.ts` has no plan source (far masses have
+  `farPlan.ts`).
+- The caps (`doc.ts:1053`, `:1103`, `:1145`) now drop items of loaded tiles (the document is the region), and the tile write
+  stores them as gone: data loss, the player's call.
+
 Read by agents on `fix/workers-10km` at `3780807` (quick read; line numbers from that commit;
 bytes and ms are estimates from reading). Re-check the line before fixing.
 
