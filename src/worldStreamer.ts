@@ -16,9 +16,11 @@ export const ACTIVE_RADIUS = 1;
 const KEEP_MARGIN = 1;
 /** Tiles asked of the store at once (each read, or made by the generator in a worker). */
 const IN_FLIGHT = 4;
-/** Tiles each way made ahead in the store (not put in the document): what the far levels draw from (`buildings/farLevels.ts`), ready when the camera comes. */
+/** Tiles each way made ahead in the store (not put in the document): what the far levels draw from (`buildings/farLevels.ts`, `farRoads.ts`: the far roads and the tiles' and plates' masses only from made tiles), ready when the camera comes. */
 export const AHEAD_RADIUS = 5;
-/** Tiles made ahead at once: behind the region's, one at a time. */
+/** The ring the region loads next as the camera moves (the tiles it keeps past its radius): made ahead first, as many at once as the region asks. */
+const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
+/** Tiles made ahead at once past the ring: behind the region's and the ring's, one at a time. */
 const AHEAD_IN_FLIGHT = 1;
 /** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
 const RETRY_MS = 30_000;
@@ -119,6 +121,8 @@ export class WorldStreamer {
       this.versions.set(best, records.version);
       this.tell.loaded?.(best);
       if (this.ready.size) this.tell.arrived?.();
+      // The region whole now: the tiles ahead asked.
+      else this.ask();
     }
     for (const key of [...this.doc.loadedTiles]) {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
@@ -169,12 +173,13 @@ export class WorldStreamer {
     }
   }
 
-  /** The tiles round the region made in the store ahead of the camera, behind the region's own asks (the far levels draw them, `written`). */
+  /** DO NOT make tiles ahead while the region waits for its own: once every tile it wants is in, the ring it loads next (several at once), then the far levels' tiles nearest first, one at a time (the far levels draw them, `written`). */
   private askAhead(): void {
-    if (this.asked.size > 0) return;
+    if (this.asked.size > 0 || this.ready.size > 0 || !this.settled) return;
     for (const key of this.aheadOrder) {
-      if (this.ahead.size >= AHEAD_IN_FLIGHT) return;
-      if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key)) continue;
+      // Nearest first: past the ring, the bound drops to one.
+      if (this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? IN_FLIGHT : AHEAD_IN_FLIGHT)) return;
+      if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key) || this.wantedNear(key, ACTIVE_RADIUS)) continue;
       this.ahead.add(key);
       // DO NOT bring a tile made ahead onto the page: only its version is wanted here (the far levels and the meso read it from the store).
       const made = this.source.ensure ? this.source.ensure(key) : this.source.load(key).then((records) => records.version);
