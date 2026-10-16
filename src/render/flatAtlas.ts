@@ -91,7 +91,6 @@ export interface FlatFar { readonly geometry: BufferGeometry; readonly all: Uint
 export function buildFlatFar(ground: (x: number, y: number) => number): FlatFar {
   const positions = new Float32Array(PLATES * FAR_VERTS * 3);
   const normals = new Float32Array(PLATES * FAR_VERTS * 3);
-  const steep = new Float32Array(PLATES * FAR_VERTS);
   const all = new Uint32Array(PLATES * FAR_INDICES);
   const high = new Float32Array(PLATES);
   const step = PLATE_SIZE / FAR_QUADS;
@@ -116,7 +115,6 @@ export function buildFlatFar(ground: (x: number, y: number) => number): FlatFar 
         const ny = 2 * step;
         const len = Math.hypot(nx, ny, nz);
         normals[v * 3] = nx / len; normals[v * 3 + 1] = ny / len; normals[v * 3 + 2] = nz / len;
-        steep[v] = Math.acos(Math.min(1, ny / len)) * (180 / Math.PI);
         v++;
       }
     }
@@ -138,7 +136,6 @@ export function buildFlatFar(ground: (x: number, y: number) => number): FlatFar 
         const t = e === 0 ? corner(k, 0) : e === 1 ? corner(k, FAR_QUADS) : e === 2 ? corner(0, k) : corner(FAR_QUADS, k);
         positions[v * 3] = positions[t * 3]!; positions[v * 3 + 1] = positions[t * 3 + 1]! - SKIRT; positions[v * 3 + 2] = positions[t * 3 + 2]!;
         normals[v * 3] = normals[t * 3]!; normals[v * 3 + 1] = normals[t * 3 + 1]!; normals[v * 3 + 2] = normals[t * 3 + 2]!;
-        steep[v] = steep[t]!;
         v++;
       }
       for (let k = 0; k < FAR_QUADS; k++) {
@@ -157,7 +154,6 @@ export function buildFlatFar(ground: (x: number, y: number) => number): FlatFar 
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
   geometry.setAttribute('normal', new BufferAttribute(normals, 3));
-  geometry.setAttribute('aSteep', new BufferAttribute(steep, 1));
   geometry.setIndex(new BufferAttribute(new Uint32Array(all.length), 1));
   geometry.computeBoundingSphere();
   return { geometry, all, high };
@@ -187,7 +183,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
 
   // The far ground: a surface of its own lends the terrain's material
   const farSurface = createTerrainSurface(anisotropy, { x: 0, y: 0 }, PLATES);
-  const farMesh = farSurface.ground;
+  const farMesh = new Mesh(new BufferGeometry(), farSurface.meshMaterial);
+  farMesh.matrixAutoUpdate = false;
   farMesh.name = 'flat-world-far';
   farMesh.frustumCulled = false;
   farMesh.receiveShadow = true;
@@ -234,12 +231,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   let highest = 0;
 
 
-  /** A plate's highest drawn corner, read once each time its ground moved (not every plate's 90 601 at every change of the set). */
+  /** A plate's highest drawn corner, read each time its ground moved (its levels keep it, `terrainLevels.ts`). */
   const measureTop = (p: Plate): void => {
-    const heights = p.surface!.ground.geometry.getAttribute('position').array;
-    let top = -Infinity;
-    for (let i = 1; i < heights.length; i += 3) if (heights[i]! > top) top = heights[i]!;
-    p.top = top;
+    p.top = p.surface!.highest!();
   };
   const measureHighest = (): void => {
     highest = -Infinity;
@@ -548,6 +542,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       farForest.book.setVegetation(amount);
     },
     vergeMaterial: firstSurface.vergeMaterial,
+    meshMaterial: firstSurface.meshMaterial,
+    lookFrom(camera, pixels) {
+      for (const p of shownList) p.surface!.lookFrom?.(camera, pixels);
+    },
     heightAt: (x, y) => ask(x, y, (s, lx, ly) => s.heightAt(lx, ly), bareAt),
     naturalRenderedHeightAt: (x, y) => ask(x, y, (s, lx, ly) => s.naturalRenderedHeightAt(lx, ly), bareAt),
     renderedHeightAt: (x, y) => ask(x, y, (s, lx, ly) => s.renderedHeightAt(lx, ly), bareAt),

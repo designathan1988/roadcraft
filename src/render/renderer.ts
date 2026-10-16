@@ -2715,6 +2715,8 @@ export function createSceneRenderer(
         }
         // The atlas keeps in full only the plates near what the view takes in (`flatAtlas.ts`).
         terrain.focus?.(centre.x, centre.y, halfHeight);
+        // Each plate's patches for this camera, where a coarser level would move the ground by under a pixel (`terrainLod.ts`).
+        terrain.lookFrom?.(rig.camera, renderer.domElement.height);
         // The roads at full detail within reach of what the view takes in, the far level beyond: a few frames apart
         roadFocus.x = centre.x; roadFocus.y = centre.y;
         roadFocus.reach = Math.min(900, Math.max(320, halfHeight * 1.8));

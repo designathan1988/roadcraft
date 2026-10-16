@@ -5,7 +5,7 @@ export function cellDiagonal(a: number, b: number, c: number, d: number): 0 | 1 
   return Math.abs(a - c) + 0.5 < Math.abs(b - d) ? 1 : 0;
 }
 
-/** The height at (u, v) of a cell with corners a (u 0, v 0), b (0, 1), c (1, 1), d (1, 0), split along `diagonal` (`cellDiagonal`). DO NOT change it here alone: the terrain mesh is drawn with it (`render/terrain.ts`). */
+/** The height at (u, v) of a cell with corners a (u 0, v 0), b (0, 1), c (1, 1), d (1, 0), split along `diagonal` (`cellDiagonal`). DO NOT change it here alone: the terrain's shaders draw with it (`render/terrainLod.ts` landSurface, landVertex). */
 export function cellHeight(a: number, b: number, c: number, d: number, u: number, v: number, diagonal: number): number {
   if (diagonal) return u >= v ? a * (1 - u) + d * (u - v) + c * v : a * (1 - v) + b * (v - u) + c * u;
   return u + v <= 1 ? a * (1 - u - v) + d * u + b * v : b * (1 - u) + c * (u + v - 1) + d * (1 - v);

@@ -7,7 +7,6 @@ import {
   FrontSide,
   Mesh,
   MeshStandardMaterial,
-  PlaneGeometry,
   DataTexture,
   DataArrayTexture,
   NoColorSpace,
@@ -21,11 +20,14 @@ import {
   FloatType,
   RepeatWrapping,
   SRGBColorSpace,
-  Sphere,
+  ShaderChunk,
   Vector3,
   type Material,
   type Object3D,
+  type OrthographicCamera,
+  type PerspectiveCamera,
   type Texture,
+  type WebGLProgramParametersWithUniforms,
   type WebGLRenderer,
 } from 'three';
 import { m, perM } from '@world/units';
@@ -37,8 +39,9 @@ import { GroundChanges } from './groundChanges';
 import { createLandLighter, unionCorners, type CornerRect, type LightRequest, type LightResult } from './terrainLightCompute';
 import { submitLight } from './terrainLightPool';
 import { ecologyOffPage, readEcology } from './ecologyPool';
-import type { PlateMesh } from './plateMesh';
-import { steepnessInto } from './terrainSteep';
+import { landNormalsInto, type PlateMesh } from './plateMesh';
+import { LOD_LEVELS, LandLevels } from './terrainLevels';
+import { LandLod, lodFragmentGlsl, lodVertexGlsl, type LandGrid } from './terrainLod';
 import type { ChangeJournal } from '@world/changes';
 import { MAP_HALF, PLATE_SIZE } from '@world/bounds';
 import {
@@ -51,7 +54,6 @@ import {
   type TerrainStamp,
 } from '@world/terrain';
 import { bakeSurface, fbm, makeNoise, type SurfaceBake, type SurfaceRecipe } from './mesh/textureBaker';
-import { markAll, markBox } from './mesh/updateRanges';
 import { DETAIL_GLSL, detailSwitch, detailTextures } from './mesh/detailLayer';
 import { applyLotOverlay } from './lotOverlay';
 import { WATER_DEPTH_ATTRIBUTE, WATER_FLOW_ATTRIBUTE, createWaterSurface, type WaterLook } from './water';
@@ -90,6 +92,8 @@ const GRID = TERRAIN_SEGMENTS + 1;
 export const TERRAIN_HALF = TERRAIN_SIZE / 2;
 /** A plate's grid of corners as the shaping and the sampling read it (`terrainShaping.ts`). */
 const plateGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
+/** A plate's grid as its patches read it (`terrainLod.ts`). */
+const LAND_GRID: LandGrid = { seg: TERRAIN_SEGMENTS, cell: TERRAIN_CELL, half: TERRAIN_HALF };
 
 /** Where the grass field stands this frame (`grassField.ts`): world x, y, how far it reaches, and 1 when it is drawn. */
 const GRASS_FIELD: { value: [number, number, number, number] } = { value: [0, 0, 0, 0] };
@@ -117,6 +121,10 @@ export interface TerrainSurface {
   setGullies(dabs: readonly GullyDab[], auto: number): void;
   /** The terrain's own surface for the batter from a footway down to the ground (`roadSurfaces.ts`) */
   readonly vergeMaterial: Material;
+  /** The land's material for an ordinary mesh of the ground: the far patches (`flatAtlas.ts`). */
+  readonly meshMaterial: Material;
+  /** Once a frame, before drawing: the patches the camera needs, `pixels` the drawing buffer's height (`terrainLod.ts`). */
+  lookFrom?(camera: PerspectiveCamera | OrthographicCamera, pixels: number): void;
   /** The analytic height field: the smooth surface the stamps describe. */
   heightAt(x: number, y: number): number;
   /** The ground as DRAWN, before any road cut or filled it. */
@@ -748,14 +756,21 @@ function rasterCover(covers: Readonly<Record<CoverKind, Uint8Array>>, dab: Paint
   }
 }
 
-function terrainMaterial(
-  bakes: {
-    grass: SurfaceBake;
-    rocks: readonly SurfaceBake[];
-    dirt: SurfaceBake;
-  },
-  anisotropy: number,
-): MeshStandardMaterial {
+type TerrainBakes = { grass: SurfaceBake; rocks: readonly SurfaceBake[]; dirt: SurfaceBake };
+/** What a plate's land materials share: its textures and corner fields (`userData`) and their uniforms. */
+interface TerrainData {
+  readonly userData: Record<string, unknown>;
+  readonly uniforms: Record<string, { value: unknown }>;
+}
+
+/** The ground of a plate drawn by distance (`terrainLod.ts`): its grid and the uniforms its patches read. */
+interface TerrainLodShader {
+  readonly grid: LandGrid;
+  readonly uniforms: Record<string, { value: unknown }>;
+}
+
+/** The land's material: on an ordinary mesh of the ground (`lod` null: the far patches, the verges), or on a plate's patches (`terrainLod.ts`). */
+function terrainMaterial(bakes: TerrainBakes, data: TerrainData, lod: TerrainLodShader | null): MeshStandardMaterial {
   const material = new MeshStandardMaterial({
     color: 0xffffff,
     map: bakes.grass.map,
@@ -767,11 +782,28 @@ function terrainMaterial(
     envMapIntensity: 0.12,
   });
   material.normalScale.set(0.8, 0.8);
+  material.userData = data.userData;
+  // The shadow's normal offset reads the patches' own normals (three defines it only for a `normal` attribute: `shadowmap_vertex`).
+  if (lod) material.defines = { HAS_NORMAL: '' };
+  const uniforms = lod ? { ...data.uniforms, ...lod.uniforms } : data.uniforms;
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    landShader(shader, lod?.grid ?? null);
+  };
+  // A changed program key forces three to compile this variant separately from any other standard material in the scene.
+  material.customProgramCacheKey = () => (lod ? 'terrain-splat-v34-lod' : 'terrain-splat-v34');
+  // The lots coloured into the land (`lotOverlay.ts`), at its world position.
+  applyLotOverlay(material, 'terrain', { world: 'vTerrainAtlas' });
+  return material;
+}
 
+/** A plate's land textures, corner fields and uniforms, made once for all its materials. */
+function terrainData(bakes: TerrainBakes, anisotropy: number): TerrainData {
+  const userData: Record<string, unknown> = {};
   const grassDetail = detailTextures('grass', anisotropy);
   const soilDetail = detailTextures('soil', anisotropy);
   const paint = paintLayers();
-  material.userData['paint'] = paint;
+  userData['paint'] = paint;
   // The water's level at each terrain corner near water (`shoreLevels`), NO_WATER elsewhere
   const shoreLevelData = new Float32Array(GRID * GRID).fill(NO_WATER);
   const flowerCornerData = new Float32Array(GRID * GRID);
@@ -785,9 +817,9 @@ function terrainMaterial(
   shore.minFilter = NearestFilter;
   shore.generateMipmaps = false;
   packGroundCorners(shore, shoreLevelData, flowerCornerData, scrubCornerData, forestCornerData, sandCornerData, basaltCornerData);
-  material.userData['shore'] = shore;
-  material.userData['sandCorners'] = sandCornerData;
-  material.userData['basaltCorners'] = basaltCornerData;
+  userData['shore'] = shore;
+  userData['sandCorners'] = sandCornerData;
+  userData['basaltCorners'] = basaltCornerData;
   // The ecosystem's ground per corner (`refreshEcology`)
   const ecologyTexture = new DataTexture(new Uint8Array(GRID * GRID * 4), GRID, GRID, RGBAFormat, UnsignedByteType);
   ecologyTexture.magFilter = LinearFilter;
@@ -796,11 +828,11 @@ function terrainMaterial(
   ecologyTexture.wrapT = ClampToEdgeWrapping;
   ecologyTexture.generateMipmaps = false;
   ecologyTexture.needsUpdate = true;
-  material.userData['ecology'] = ecologyTexture;
-  material.userData['shoreLevels'] = shoreLevelData;
-  material.userData['flowerCorners'] = flowerCornerData;
-  material.userData['scrubCorners'] = scrubCornerData;
-  material.userData['forestCorners'] = forestCornerData;
+  userData['ecology'] = ecologyTexture;
+  userData['shoreLevels'] = shoreLevelData;
+  userData['flowerCorners'] = flowerCornerData;
+  userData['scrubCorners'] = scrubCornerData;
+  userData['forestCorners'] = forestCornerData;
   const uniforms = {
     uPaint: { value: paint as Texture },
     uPaintRes: { value: paint.image.width },
@@ -829,39 +861,56 @@ function terrainMaterial(
     // Set to the surface's own bake (`createTerrainSurface`).
     uTileOrigin: { value: new Vector3() },
   };
-  material.userData['terrainUniforms'] = uniforms;
+  userData['terrainUniforms'] = uniforms;
+  return { userData, uniforms };
+}
 
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-         varying vec3 vTerrainWorld;
-         varying vec3 vTerrainAtlas;
-         varying vec3 vTerrainNormal;
-         attribute float aSteep;
-         varying float vTerrainSteep;
-         uniform vec3 uTileOrigin;`,
-      )
-      .replace(
-        '#include <worldpos_vertex>',
-        `#include <worldpos_vertex>
+/** Replaces `chunk` in a shader, or throws: a three upgrade that renamed it must not leave the land drawn wrong in silence. */
+function swap(source: string, chunk: string, by: string): string {
+  if (!source.includes(chunk)) throw new Error(`terrain shader: no ${chunk}`);
+  return source.replace(chunk, by);
+}
+
+/** The land's shaders: splatting by slope, rock and paint; on a plate's patches (`grid`), the ground read from the land's texels (`terrainLod.ts`). */
+function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid | null): void {
+  {
+    let vertex = swap(shader.vertexShader, '#include <common>', `#include <common>
+         uniform vec3 uTileOrigin;
+         ${grid ? lodVertexGlsl(grid) : 'varying vec3 vTerrainWorld;\nvarying vec3 vTerrainAtlas;\nvarying vec3 vTerrainNormal;'}`);
+    if (grid) {
+      // The patch placed and morphed first: the uvs, the normal and the position read it (`terrainLod.ts` landVertex).
+      vertex = swap(vertex, '#include <uv_vertex>', `landVertex();
+         #ifdef USE_MAP
+           vMapUv = (mapTransform * vec3(landUv, 1.0)).xy;
+         #endif
+         #ifdef USE_NORMALMAP
+           vNormalMapUv = (normalMapTransform * vec3(landUv, 1.0)).xy;
+         #endif`);
+      vertex = swap(vertex, '#include <beginnormal_vertex>', 'vec3 objectNormal = landN;');
+      vertex = swap(vertex, '#include <begin_vertex>', 'vec3 transformed = landP;');
+      vertex = swap(vertex, '#include <worldpos_vertex>', `#include <worldpos_vertex>
+         vLandAtlas = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    } else {
+      vertex = swap(vertex, '#include <worldpos_vertex>', `#include <worldpos_vertex>
          // The plate's own coordinates (its grids, its textures), and the world's (what lies round the camera).
          vTerrainAtlas = (modelMatrix * vec4(transformed, 1.0)).xyz;
          vTerrainWorld = vTerrainAtlas - uTileOrigin;
-         vTerrainNormal = normalize(mat3(modelMatrix) * objectNormal);
-         vTerrainSteep = aSteep;`,
-      );
+         vTerrainNormal = normalize(mat3(modelMatrix) * objectNormal);`);
+    }
+    shader.vertexShader = vertex;
+  }
+  if (grid) {
+    // Every point shaded as the full ground under it: the level that drew it moves it by under a pixel, never its colour.
+    shader.fragmentShader = swap(shader.fragmentShader, 'void main() {', 'void main() {\n  landSurface();');
+    shader.fragmentShader = swap(shader.fragmentShader, '#include <normal_fragment_begin>',
+      swap(ShaderChunk.normal_fragment_begin, 'normalize( vNormal )', 'normalize( ( viewMatrix * vec4( vTerrainNormal, 0.0 ) ).xyz )'));
+  }
 
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
-         varying vec3 vTerrainWorld;
-         varying vec3 vTerrainAtlas;
-         varying vec3 vTerrainNormal;
-         varying float vTerrainSteep;
+         ${grid ? lodFragmentGlsl(grid) : 'varying vec3 vTerrainWorld;\nvarying vec3 vTerrainAtlas;\nvarying vec3 vTerrainNormal;'}
          uniform sampler2DArray uRockMap;
          uniform sampler2DArray uPaint;
          uniform float uPaintRes; // the array's side (\`growPaint\`)
@@ -990,7 +1039,7 @@ function terrainMaterial(
            vec2 acrossZ = world.xy * scale;
            return mix(acrossZ, acrossX, wXl);
          }
-         // TRIPLANAR (GPU Gems 3 ch. 1; Golus, "Normal Mapping for a Triplanar Shader"): one sample per plane, the SAMPLES blended. corner touches a WALL (a face over 50 degrees, \`aSteep\`) - the wall's, so a cliff narrower than the grid is drawn as rock.
+         // TRIPLANAR (GPU Gems 3 ch. 1; Golus, "Normal Mapping for a Triplanar Shader"): one sample per plane, the SAMPLES blended.
          vec4 terrainLand() {
            vec2 cell = vec2((vTerrainWorld.x + uPaintHalf) / ${TERRAIN_CELL.toFixed(6)}, (uPaintHalf + vTerrainWorld.z) / ${TERRAIN_CELL.toFixed(6)});
            return texture(uPaint, vec3((cell + 0.5) / uPaintRes, ${LIGHT_LAYER.toFixed(1)}));
@@ -1358,12 +1407,6 @@ function terrainMaterial(
          normal = normalize(tbn * mapN);
          // (The fine relief's bumps are not added to the normal any more: the player asked for the terrain's effects to go.)`,
       );
-  };
-  // A changed program key forces three to compile this variant separately from any other standard material in the scene.
-  material.customProgramCacheKey = () => 'terrain-splat-v33';
-  // The lots coloured into the land (`lotOverlay.ts`), at its world position.
-  applyLotOverlay(material, 'terrain', { world: 'vTerrainAtlas' });
-  return material;
 }
 
 /** Metres along the rim one strata texture spans before it repeats. */
@@ -1617,18 +1660,55 @@ export function wallMaterial(anisotropy: number): MeshStandardMaterial {
 /** One plate of the ground (`flatAtlas.ts`). */
 export function createTerrainSurface(anisotropy: number, origin: { readonly x: number; readonly y: number }, plate: number, prebuilt: PlateMesh | null = null): TerrainSurface {
   const bakes = terrainBakes(anisotropy);
-  const material = terrainMaterial(bakes, anisotropy);
+  const data = terrainData(bakes, anisotropy);
+  /** The land's material on an ordinary mesh of the ground: the verges' (`vergeMaterial`) and the far patches' (`flatAtlas.ts`). */
+  const material = terrainMaterial(bakes, data, null);
 
-  const geometry = new PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
-  geometry.rotateX(-Math.PI / 2);
-  const ground = new Mesh(geometry, material);
-  ground.name = 'terrain-ground';
-  ground.receiveShadow = true;
-  // The ground does NOT cast.
-  ground.castShadow = false;
-  ground.matrixAutoUpdate = false;
-  ground.position.set(origin.x, 0, -origin.y);
-  ground.updateMatrix();
+  // THE PLATE'S CORNERS ON THE GPU, as the patches and their pixels read them (`terrainLod.ts`): sent again only where they change.
+  const texels = new Float32Array(GRID * GRID * 4);
+  const land = new DataTexture(texels, GRID, GRID, RGBAFormat, FloatType);
+  land.magFilter = NearestFilter;
+  land.minFilter = NearestFilter;
+  land.generateMipmaps = false;
+  /** Whether the whole texture waits to be sent (its first upload, a whole plate rewritten): rows added meanwhile would cut it to them. */
+  let landWhole = true;
+  land.onUpdate = () => { landWhole = false; };
+  /** A box of corners (inclusive) sent again, row by row (`Texture.addUpdateRange`): never the whole plate for a dab. */
+  const sendLand = (x0: number, x1: number, y0: number, y1: number): void => {
+    if (!landWhole) for (let y = Math.max(0, y0); y <= Math.min(GRID - 1, y1); y++) land.addUpdateRange((y * GRID + Math.max(0, x0)) * 4, (Math.min(GRID - 1, x1) - Math.max(0, x0) + 1) * 4);
+    land.needsUpdate = true;
+  };
+  const sendAllLand = (): void => {
+    landWhole = true;
+    land.clearUpdateRanges();
+    land.needsUpdate = true;
+  };
+  /** Its levels' bounds and errors, measured again where the ground moves (`terrainLevels.ts`). */
+  const levels = new LandLevels(TERRAIN_SEGMENTS);
+  // A skirt where the plate meets another plate, none on the map's own rim (the slab's cut side stands there, `slabGeometry`).
+  const rimOf = {
+    west: origin.x - TERRAIN_HALF > -MAP_HALF + 1e-6, east: origin.x + TERRAIN_HALF < MAP_HALF - 1e-6,
+    north: origin.y + TERRAIN_HALF < MAP_HALF - 1e-6, south: origin.y - TERRAIN_HALF > -MAP_HALF + 1e-6,
+  };
+  const lod = new LandLod(levels, LAND_GRID, origin, rimOf);
+  const lodUniforms = { uLand: { value: land as Texture }, uLodMorph: { value: lod.morph }, uLodSkirt: { value: lod.skirt } };
+  const groundMaterial = terrainMaterial(bakes, data, { grid: LAND_GRID, uniforms: lodUniforms });
+  /** The plate's patches (`lod.geometry`) and its rim's (`lod.rimGeometry`), placed each frame by `lookFrom`. */
+  const patchMesh = (geometry: BufferGeometry, name: string): Mesh => {
+    const mesh = new Mesh(geometry, groundMaterial);
+    mesh.name = name;
+    mesh.receiveShadow = true;
+    // The ground does NOT cast.
+    mesh.castShadow = false;
+    // Culled patch by patch (`LandLod.select`): the mesh's own bounds are one patch's.
+    mesh.frustumCulled = false;
+    mesh.matrixAutoUpdate = false;
+    mesh.position.set(origin.x, 0, -origin.y);
+    mesh.updateMatrix();
+    mesh.visible = false;
+    return mesh;
+  };
+  const ground = patchMesh(lod.geometry, 'terrain-ground');  const rim = patchMesh(lod.rimGeometry, 'terrain-rim');
 
   /** The woods' base made off the page with the first build (`woodsBase`), while it holds. */
   let woods: Float32Array | null = null;
@@ -1664,13 +1744,24 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const natural = new Float64Array(GRID * GRID);
   /** Corners a road has moved (1), so an unshaped one can be restored cheaply */
   const shapedCorners = new Uint8Array(GRID * GRID);
-  const spherePoint = new Vector3();
-  /** @rebuild The whole plate's normals, steepness and bounds worked out again: every corner moved */
+  /** The drawn corners of a box (inclusive) moved: their heights, the diagonals and normals round them and the levels over them, sent to the GPU. */
+  const cornersMoved = (x0: number, x1: number, y0: number, y1: number): void => {
+    for (let iy = y0; iy <= y1; iy++) for (let ix = x0; ix <= x1; ix++) texels[(ix + iy * GRID) * 4 + 3] = grid[ix + iy * GRID]!;
+    rediagonal(x0, Math.min(GRID - 1, x1 + 1), y0, Math.min(GRID - 1, y1 + 1));
+    // A moved corner tilts the faces round it, and with them its neighbours' normals.
+    landNormalsInto(grid, flip, GRID, TERRAIN_HALF, TERRAIN_CELL, texels, x0 - 1, x1 + 1, y0 - 1, y1 + 1);
+    levels.markBox(x0, x1, y0, y1);
+    levels.measure(grid, flip);
+    sendLand(x0 - 1, x1 + 1, y0 - 1, y1 + 1);
+  };
+  /** @rebuild The whole plate's heights, diagonals, normals and levels worked out again: every corner moved */
   const wholePlateMoved = (): void => {
-    geometry.computeVertexNormals();
-    markAll(geometry.getAttribute('normal') as BufferAttribute);
-    refreshAllSteep();
-    geometry.computeBoundingSphere();
+    for (let i = 0; i < GRID * GRID; i++) texels[i * 4 + 3] = grid[i]!;
+    rediagonal(0, GRID - 1, 0, GRID - 1);
+    landNormalsInto(grid, flip, GRID, TERRAIN_HALF, TERRAIN_CELL, texels, 0, GRID - 1, 0, GRID - 1);
+    levels.markAll();
+    levels.measure(grid, flip);
+    sendAllLand();
   };
   /** The cells the last `update` rewrote (see `lastRegion`). */
   let lastRegion: TerrainRegion | null = null;
@@ -1712,29 +1803,12 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       }
     }
   };
-  const triangles = geometry.index!;
-  /** Re-chooses the diagonals of the cells round a box of corners (inclusive). */
-  const retriangulate = (x0: number, x1: number, y0: number, y1: number): void => {
-    const cx0 = Math.max(0, x0 - 1), cx1 = Math.min(TERRAIN_SEGMENTS - 1, x1);
-    const cy0 = Math.max(0, y0 - 1), cy1 = Math.min(TERRAIN_SEGMENTS - 1, y1);
-    const index = triangles.array as Uint32Array | Uint16Array;
+  /** Re-chooses the diagonals of the cells round a box of corners (inclusive), into the land's texels (each cell's at its first corner). */
+  const rediagonal = (x0: number, x1: number, y0: number, y1: number): void => {
     chooseDiagonals(grid, flip, x0, x1, y0, y1);
-    for (let cy = cy0; cy <= cy1; cy++) {
-      for (let cx = cx0; cx <= cx1; cx++) {
-        const a = cx + GRID * cy, b = cx + GRID * (cy + 1), c = cx + 1 + GRID * (cy + 1), d = cx + 1 + GRID * cy;
-        const k = cx + cy * TERRAIN_SEGMENTS;
-        const flipped = flip[k];
-        const o = k * 6;
-        if (flipped) {
-          index[o] = a; index[o + 1] = b; index[o + 2] = c;
-          index[o + 3] = a; index[o + 4] = c; index[o + 5] = d;
-        } else {
-          index[o] = a; index[o + 1] = b; index[o + 2] = d;
-          index[o + 3] = b; index[o + 4] = c; index[o + 5] = d;
-        }
-      }
+    for (let cy = Math.max(0, y0 - 1); cy <= Math.min(TERRAIN_SEGMENTS - 1, y1); cy++) {
+      for (let cx = Math.max(0, x0 - 1); cx <= Math.min(TERRAIN_SEGMENTS - 1, x1); cx++) texels[(cx + cy * GRID) * 4 + 2] = flip[cx + cy * TERRAIN_SEGMENTS]!;
     }
-    markBox(triangles as BufferAttribute, 6, TERRAIN_SEGMENTS, cx0, cx1, cy0, cy1);
   };
 
   /** Bilinear read of one corner array, reproducing the plane's own diagonal. */
@@ -1748,16 +1822,15 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const renderedHeightAt = (x: number, y: number): number => sampleGrid(grid, flip, x, y);
   const naturalRenderedHeightAt = (x: number, y: number): number => sampleGrid(natural, naturalFlip, x, y);
 
-  const position = geometry.getAttribute('position');
+  /** Where a corner stands, the plate's own (x, y): as its mesh held it (float32), so the heights read there are the ones always read. */
+  const cornerX = (i: number): number => Math.fround((i % GRID) * TERRAIN_CELL - TERRAIN_HALF);
+  const cornerY = (i: number): number => -Math.fround(Math.floor(i / GRID) * TERRAIN_CELL - TERRAIN_HALF);
 
   const rewrite = (x0: number, x1: number, y0: number, y1: number): void => {
     for (let iy = y0; iy <= y1; iy++) {
       for (let ix = x0; ix <= x1; ix++) {
         const i = iy * GRID + ix;
-        const x = position.getX(i);
-        const worldY = -position.getZ(i);
-        const height = naturalHeightAt(x, worldY);
-        position.setY(i, height);
+        const height = naturalHeightAt(cornerX(i), cornerY(i));
         grid[i] = height;
         natural[i] = height;
       }
@@ -1770,7 +1843,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   const visited = new Int32Array(GRID * GRID);
   let pass = 0;
   /** The plate's corners as `shapeCorners` reads them: where the mesh stands them. */
-  const corners: CornerGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF, x: (i) => position.getX(i), y: (i) => -position.getZ(i) };
+  const corners: CornerGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF, x: cornerX, y: cornerY };
 
   const regionList = (region: TerrainRegion | readonly TerrainRegion[] | null): readonly TerrainRegion[] | null =>
     region === null ? null : typeof region[0] === 'number' ? [region as TerrainRegion] : region as readonly TerrainRegion[];
@@ -1829,104 +1902,18 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     }
     for (const [i, was] of before) if (grid[i] !== was) changed.push(i);
     if (changed.length === 0) return false;
-    for (const i of changed) position.setY(i, grid[i] as number);
     {
       let x0 = GRID, x1 = -1, y0 = GRID, y1 = -1;
       for (const i of changed) {
         const ix = i % GRID, iy = (i - ix) / GRID;
         if (ix < x0) x0 = ix; if (ix > x1) x1 = ix; if (iy < y0) y0 = iy; if (iy > y1) y1 = iy;
       }
-      markBox(position as BufferAttribute, 3, GRID, x0, x1, y0, y1);
-      retriangulate(x0, x1 + 1, y0, y1 + 1);
+      cornersMoved(x0, x1, y0, y1);
       // The land's light is worked out again round these corners only (`setSun`).
       markLand({ x0, x1, y0, y1 });
     }
-    refreshNormals(changed);
-    // The sphere is made with the plate (`computeBoundingSphere` once, where the mesh is made)
-    const sphere = geometry.boundingSphere!;
-    for (const i of changed) sphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
     lastChanged = changed;
     return true;
-  };
-
-  const normal = geometry.getAttribute('normal');
-  const pa = new Vector3();
-  const pb = new Vector3();
-  const pc = new Vector3();
-  const cb = new Vector3();
-  const ab = new Vector3();
-  const sum = new Vector3();
-  /** The steepest face round each corner, in degrees: what the shader calls a WALL. */
-  // Written through the attribute's own array (`BufferAttribute` keeps the array it is given; the typed subclasses copy it).
-  const steepAttribute = new BufferAttribute(new Float32Array(GRID * GRID), 1);
-  const steep = steepAttribute.array as Float32Array;
-  geometry.setAttribute('aSteep', steepAttribute);
-  let faceSteep = 0;
-  /** Adds one face's area-weighted normal, as `computeVertexNormals` forms it. */
-  const addFace = (a: number, b: number, c: number): void => {
-    pa.fromBufferAttribute(position, a);
-    pb.fromBufferAttribute(position, b);
-    pc.fromBufferAttribute(position, c);
-    cb.subVectors(pc, pb);
-    ab.subVectors(pa, pb);
-    cb.cross(ab);
-    sum.add(cb);
-    const length = cb.length();
-    if (length > 1e-9) faceSteep = Math.max(faceSteep, Math.acos(Math.min(1, Math.abs(cb.y) / length)) * (180 / Math.PI));
-  };
-  /** Every corner's steepest face, over the whole plate (`terrainSteep.ts`). */
-  const cellSteep = new Float32Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS);
-  const refreshAllSteep = (): void => {
-    steepnessInto(position.array as ArrayLike<number>, flip, GRID, cellSteep, steep);
-    markAll(steepAttribute);
-  };
-  /** Recomputes the normals round the corners that moved */
-  const refreshNormals = (moved: readonly number[]): void => {
-    const touched = new Set<number>();
-    let nx0 = GRID, nx1 = -1, ny0 = GRID, ny1 = -1;
-    for (const i of moved) {
-      const ix = i % GRID;
-      const iy = (i - ix) / GRID;
-      if (ix - 1 < nx0) nx0 = ix - 1; if (ix + 1 > nx1) nx1 = ix + 1; if (iy - 1 < ny0) ny0 = iy - 1; if (iy + 1 > ny1) ny1 = iy + 1;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const x = ix + dx;
-          const y = iy + dy;
-          if (x >= 0 && y >= 0 && x < GRID && y < GRID) touched.add(x + y * GRID);
-        }
-      }
-    }
-    for (const v of touched) {
-      sum.set(0, 0, 0);
-      faceSteep = 0;
-      const ix = v % GRID;
-      const iy = (v - ix) / GRID;
-      // The cells round the corner, split as `PlaneGeometry` splits them: (a, b, d) and (b, c, d).
-      for (let cy = iy - 1; cy <= iy; cy++) {
-        for (let cx = ix - 1; cx <= ix; cx++) {
-          if (cx < 0 || cy < 0 || cx >= TERRAIN_SEGMENTS || cy >= TERRAIN_SEGMENTS) continue;
-          const a = cx + GRID * cy;
-          const b = cx + GRID * (cy + 1);
-          const c = cx + 1 + GRID * (cy + 1);
-          const d = cx + 1 + GRID * cy;
-          if (flip[cx + cy * TERRAIN_SEGMENTS]) {
-            if (v === a || v === b || v === c) addFace(a, b, c);
-            if (v === a || v === c || v === d) addFace(a, c, d);
-          } else {
-            if (v === a || v === b || v === d) addFace(a, b, d);
-            if (v === b || v === c || v === d) addFace(b, c, d);
-          }
-        }
-      }
-      sum.normalize();
-      normal.setXYZ(v, sum.x, sum.y, sum.z);
-      steep[v] = faceSteep;
-    }
-    if (nx1 >= 0) {
-      nx0 = Math.max(0, nx0); ny0 = Math.max(0, ny0); nx1 = Math.min(GRID - 1, nx1); ny1 = Math.min(GRID - 1, ny1);
-      markBox(normal as BufferAttribute, 3, GRID, nx0, nx1, ny0, ny1);
-      markBox(steepAttribute, 1, GRID, nx0, nx1, ny0, ny1);
-    }
   };
 
   let wetDiscs: readonly WaterStamp[] = [];
@@ -2172,7 +2159,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       'float slopeDeg = 0.0;',
     );
   };
-  vergeMaterial.customProgramCacheKey = () => 'terrain-splat-v33-verge-lots';
+  vergeMaterial.customProgramCacheKey = () => 'terrain-splat-v34-verge-lots';
 
   let paintArray = material.userData['paint'] as DataArrayTexture;
   let paintRes = paintArray.image.width;
@@ -2347,7 +2334,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
 
   const parts: TerrainPart[] = [];
   const surface: TerrainSurface = {
-    meshes: [ground, water],
+    meshes: [ground, rim, water],
     parts,
     regionOf(box) {
       const last = TERRAIN_SEGMENTS;
@@ -2484,20 +2471,14 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       // The woods' base holds only on the land it was worked out on.
       woods = made?.woods ?? null;
       if (made) {
-        const pos = position.array as Float32Array;
-        const h = made.heights;
-        for (let i = 0; i < GRID * GRID; i++) pos[i * 3 + 1] = h[i]!;
-        grid.set(h);
-        natural.set(h);
+        grid.set(made.heights);
+        natural.set(made.heights);
+        flip.set(made.flip);
         naturalFlip.set(made.flip);
         lastRegion = null;
-        markAll(position as BufferAttribute);
-        retriangulate(0, GRID - 1, 0, GRID - 1);
-        (normal.array as Float32Array).set(made.normals);
-        markAll(normal as BufferAttribute);
-        steep.set(made.steep);
-        markAll(steepAttribute);
-        geometry.boundingSphere = new Sphere(new Vector3(0, (made.low + made.high) / 2, 0), Math.hypot(TERRAIN_HALF * Math.SQRT2, (made.high - made.low) / 2));
+        texels.set(made.texels);
+        levels.take(made.levels);
+        sendAllLand();
         lastStamps = doc.terrainStamps;
         if (stroking) { waterStale = true; markWaterDirty(null); } else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
         markLand('all');
@@ -2520,22 +2501,9 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         lastRegion = box;
       }
 
-      if (box) markBox(position as BufferAttribute, 3, GRID, box[0], box[1], box[2], box[3]);
-      else markAll(position as BufferAttribute);
-      if (box) retriangulate(box[0], Math.min(GRID - 1, box[1] + 1), box[2], Math.min(GRID - 1, box[3] + 1));
-      else retriangulate(0, GRID - 1, 0, GRID - 1);
-      if (box) {
-        // Only the corners the dab rewrote can have tilted, with their ring of neighbours
-        const moved: number[] = [];
-        for (let iy = box[2]; iy <= box[3]; iy++) {
-          for (let ix = box[0]; ix <= box[1]; ix++) moved.push(iy * GRID + ix);
-        }
-        refreshNormals(moved);
-        // The bounds grown over the corners the dab moved (`Sphere.expandByPoint`), as the shaping pass does
-        const sphere = geometry.boundingSphere!;
-        const position = geometry.getAttribute('position');
-        for (const i of moved) sphere.expandByPoint(spherePoint.fromBufferAttribute(position, i));
-      } else wholePlateMoved();
+      // Only the corners the dab rewrote, the diagonals and normals round them and the levels over them.
+      if (box) cornersMoved(box[0], box[1], box[2], box[3]);
+      else wholePlateMoved();
       lastStamps = doc.terrainStamps;
       // The water - every pool and river on the map - is the deferred part of a stroke
       if (stroking) {
@@ -2547,9 +2515,18 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       return true;
     },
     woodsBase: () => woods,
+    lookFrom(camera, pixels) {
+      const shown = lod.select(camera, pixels) > 0;
+      ground.visible = shown;
+      rim.visible = shown && lod.rimGeometry.instanceCount > 0;
+    },
+    highest: () => levels.hi(LOD_LEVELS - 1, 0, 0),
+    meshMaterial: material,
     dispose() {
       disposed = true;
-      geometry.dispose();
+      lod.dispose();
+      land.dispose();
+      groundMaterial.dispose();
       material.dispose();
       // DO NOT leave them: plates come and go as the camera crosses the map
       vergeMaterial.dispose();

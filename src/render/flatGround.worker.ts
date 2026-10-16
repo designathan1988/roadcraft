@@ -21,7 +21,7 @@ export function serve(self: JobScope): void {
       const natural = cornerLand(mesh.heights, mesh.flip, side, half, cell, (x, y) => base + reliefHeight(relief, cx + x, cy + y));
       mesh.woods = woodsBase(natural, half, cx, cy);
       (self as unknown as { postMessage(message: unknown, transfer: Transferable[]): void }).postMessage({ id, mesh },
-        [mesh.heights.buffer, mesh.flip.buffer, mesh.normals.buffer, mesh.steep.buffer, mesh.woods.buffer]);
+        [mesh.heights.buffer, mesh.flip.buffer, mesh.texels.buffer, mesh.levels.buffer, mesh.woods.buffer]);
     } catch (error) {
       self.postMessage({ id, error: String(error) });
     }
