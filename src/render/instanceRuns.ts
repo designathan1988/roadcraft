@@ -8,9 +8,31 @@ import {
   type Matrix4,
   type MeshDepthMaterial,
 } from 'three';
-import { createCellInstances, type KindLevels, type KindMesh, type KindSpec, type Pack } from './cellInstances';
+import { createCellInstances, type KindLevels, type KindMesh, type KindSpec, type Pack, type SlotFormat } from './cellInstances';
 
 /** The same design as the buildings' gardens (`gardens.ts`, which keeps a run per garden list), on the same cells (`cellInstances.ts`) */
+
+/** DO NOT keep a matrix per thing: a pose of `stride` floats, written out as three's matrix only for an instance drawn at a new position (`cellInstances.ts` `write`). */
+export type PoseFormat = SlotFormat;
+
+/** DO NOT go through an `Object3D` for each instance: three's `compose` of a turn about the up axis (r186 `Matrix4.compose`, `Quaternion.setFromEuler` with x = z = 0) */
+export function yawMatrixInto(out: Float32Array | number[], at: number, px: number, py: number, pz: number, yaw: number, sx: number, sy: number, sz: number): void {
+  const y = Math.sin(yaw / 2), w = Math.cos(yaw / 2);
+  const y2 = y + y;
+  const yy = y * y2, wy = w * y2;
+  out[at] = (1 - yy) * sx; out[at + 1] = 0; out[at + 2] = -wy * sx; out[at + 3] = 0;
+  out[at + 4] = 0; out[at + 5] = sy; out[at + 6] = 0; out[at + 7] = 0;
+  out[at + 8] = wy * sz; out[at + 9] = 0; out[at + 10] = (1 - yy) * sz; out[at + 11] = 0;
+  out[at + 12] = px; out[at + 13] = py; out[at + 14] = pz; out[at + 15] = 1;
+}
+
+/** A thing turned about the up axis: its place in the scene's frame (x, y, z), its yaw and its scale on three axes (7 floats, not 12). */
+export const YAW_POSE: PoseFormat = {
+  stride: 7,
+  matrixInto(data, at, out, outAt) {
+    yawMatrixInto(out, outAt, data[at]!, data[at + 1]!, data[at + 2]!, data[at + 3]!, data[at + 4]!, data[at + 5]!, data[at + 6]!);
+  },
+};
 
 /** One mesh of the layer: a model, its material, how it is drawn. */
 export interface RunStore {
@@ -33,10 +55,7 @@ export interface RunStore {
   readonly levels?: KindLevels;
 }
 
-/** Floats an instance's matrix is kept in: three's affine matrix without its last row (0, 0, 0, 1). */
-const AFFINE = 12;
-
-/** A thing's instances in one store: matrices (`AFFINE` floats, three's column order), tints (tinted stores) and each one's largest scale. */
+/** A thing's instances in one store: poses (the layer's `PoseFormat`), tints (tinted stores) and each one's largest scale. */
 type RunPack = Pack;
 
 /** A thing's instances, by store index. Never changed once made: a changed thing is a new run. */
@@ -48,26 +67,39 @@ interface RunChange {
   readonly added: readonly Run[];
 }
 
-/** Builds a run, placement by placement. */
+interface Tint { readonly r: number; readonly g: number; readonly b: number }
+
+/** Builds a run, placement by placement, in the poses of the layer it goes to (`createInstanceRuns`'s `format`). */
 export class RunBuilder {
-  private readonly lists = new Map<number, { matrices: number[]; colours: number[]; scales: number[] }>();
+  private readonly lists = new Map<number, { poses: number[]; colours: number[]; scales: number[] }>();
 
-  constructor(private readonly stores: readonly RunStore[]) {}
+  constructor(private readonly stores: readonly RunStore[], private readonly format: PoseFormat = YAW_POSE) {}
 
-  /** One instance in `store`: its matrix (16 numbers, affine), its largest scale, and its tint (r, g, b; white when none). */
-  add(store: number, matrix: ArrayLike<number>, scale: number, tint?: { readonly r: number; readonly g: number; readonly b: number }): void {
+  private listOf(store: number, scale: number, tint: Tint | undefined): number[] {
     let list = this.lists.get(store);
-    if (!list) this.lists.set(store, list = { matrices: [], colours: [], scales: [] });
-    for (let column = 0; column < 4; column++) for (let row = 0; row < 3; row++) list.matrices.push(matrix[column * 4 + row]!);
+    if (!list) this.lists.set(store, list = { poses: [], colours: [], scales: [] });
     list.scales.push(scale);
     if (this.stores[store]!.tinted) list.colours.push(tint?.r ?? 1, tint?.g ?? 1, tint?.b ?? 1);
+    return list.poses;
+  }
+
+  /** One instance in `store`: its pose (`format.stride` numbers), its largest scale, and its tint (r, g, b; white when none). */
+  add(store: number, pose: ArrayLike<number>, scale: number, tint?: Tint): void {
+    const poses = this.listOf(store, scale, tint);
+    for (let i = 0; i < this.format.stride; i++) poses.push(pose[i]!);
+  }
+
+  /** One instance turned about the up axis (`YAW_POSE`): its place in the scene's frame, its yaw, its scale on three axes, its largest scale and tint. */
+  turned(store: number, x: number, y: number, z: number, yaw: number, sx: number, sy: number, sz: number, scale: number, tint?: Tint): void {
+    if (this.format !== YAW_POSE) throw new Error('RunBuilder.turned: the layer keeps another pose');
+    this.listOf(store, scale, tint).push(x, y, z, yaw, sx, sy, sz);
   }
 
   build(): Run {
     const run = new Map<number, RunPack>();
     for (const [store, list] of [...this.lists].sort((a, b) => a[0] - b[0])) {
       run.set(store, {
-        data: Float32Array.from(list.matrices),
+        data: Float32Array.from(list.poses),
         colours: this.stores[store]!.tinted ? Float32Array.from(list.colours) : null,
         scales: Float32Array.from(list.scales),
         count: list.scales.length,
@@ -95,17 +127,6 @@ function sameArray(a: Float32Array, b: Float32Array): boolean {
   for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return false;
   return true;
 }
-
-/** An affine matrix kept in `AFFINE` floats, written out whole. */
-const AFFINE_FORMAT = {
-  stride: AFFINE,
-  matrixInto(data: Float32Array, at: number, out: Float32Array, outAt: number): void {
-    out[outAt] = data[at]!; out[outAt + 1] = data[at + 1]!; out[outAt + 2] = data[at + 2]!; out[outAt + 3] = 0;
-    out[outAt + 4] = data[at + 3]!; out[outAt + 5] = data[at + 4]!; out[outAt + 6] = data[at + 5]!; out[outAt + 7] = 0;
-    out[outAt + 8] = data[at + 6]!; out[outAt + 9] = data[at + 7]!; out[outAt + 10] = data[at + 8]!; out[outAt + 11] = 0;
-    out[outAt + 12] = data[at + 9]!; out[outAt + 13] = data[at + 10]!; out[outAt + 14] = data[at + 11]!; out[outAt + 15] = 1;
-  },
-};
 
 export interface InstanceRuns {
   /** Every mesh of the layer, under `group`. */
@@ -151,11 +172,11 @@ export function warmMeshes(specs: readonly RunStore[]): InstancedMesh[] {
   return specs.flatMap((spec) => kindOf(spec).meshes.map((mesh) => warmMesh(mesh, spec.tinted)));
 }
 
-/** The layer over these stores. */
-export function createInstanceRuns(name: string, specs: readonly RunStore[], margin: number): InstanceRuns {
+/** The layer over these stores, its runs built in `format`'s poses (`RunBuilder`). */
+export function createInstanceRuns(name: string, specs: readonly RunStore[], margin: number, format: PoseFormat = YAW_POSE): InstanceRuns {
   const group = new Group();
   group.name = name;
-  const cells = createCellInstances(specs.map(kindOf), AFFINE_FORMAT, margin);
+  const cells = createCellInstances(specs.map(kindOf), format, margin);
   return {
     group,
     get meshes() { return cells.meshes; },

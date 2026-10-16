@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 
-import { yawMatrixInto } from '@render/gardens';
+import { yawMatrixInto } from '@render/instanceRuns';
 
-/** A GARDEN PLANT'S MATRIX WITHOUT AN `Object3D` (`gardens.ts` `yawMatrixInto`) */
+/** A GARDEN PLANT'S MATRIX WITHOUT AN `Object3D` (`instanceRuns.ts` `yawMatrixInto`) */
 describe('the matrix of a plant turned about the up axis', () => {
   it('is the matrix three composes for it', () => {
     let seed = 9;
@@ -30,8 +30,10 @@ describe('the matrix of a plant turned about the up axis', () => {
     const pack = source.slice(source.indexOf('const pack = (key'), source.indexOf('const pack = (key') + 900);
     expect(pack).toMatch(/poses\[at\] = placement\.x/);
     expect(pack).not.toMatch(/updateMatrix|new Object3D|\.set\(\[/);
-    // The matrix made from the pose (`POSE_FORMAT`), only for a plant drawn at a new position (`cellInstances.ts` `write`).
-    const format = source.slice(source.indexOf('const POSE_FORMAT = '), source.indexOf('/** The buildings\' garden lists'));
+    // The matrix made from the pose (`YAW_POSE`), only for a plant drawn at a new position (`cellInstances.ts` `write`).
+    expect(source).toMatch(/createCellInstances\(kinds, YAW_POSE,/);
+    const runs = readFileSync('src/render/instanceRuns.ts', 'utf8');
+    const format = runs.slice(runs.indexOf('export const YAW_POSE'), runs.indexOf('/** One mesh of the layer'));
     expect(format).toMatch(/yawMatrixInto\(out, outAt/);
     const cells = readFileSync('src/render/cellInstances.ts', 'utf8');
     const write = cells.slice(cells.indexOf('const write = '), cells.indexOf('const visit = '));

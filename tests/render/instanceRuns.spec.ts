@@ -7,12 +7,16 @@ import {
   Object3D,
   OrthographicCamera,
   PerspectiveCamera,
+  Quaternion,
   Sphere,
+  Vector3,
   type BufferAttribute,
   type Camera,
 } from 'three';
 import { Rng } from '@core/rng';
-import { RunBuilder, createInstanceRuns, type Run, type RunStore } from '@render/instanceRuns';
+import { COVER_POSE, coverPoseInto, type CoverPlacement, type TreePlacement } from '@render/groundCover';
+import { RunBuilder, YAW_POSE, createInstanceRuns, type PoseFormat, type Run, type RunStore } from '@render/instanceRuns';
+import { TREE_POSE, treePoseInto } from '@render/natureTrees';
 import { SHADOW_REACH } from '@render/scenery';
 import { m } from '@world/units';
 
@@ -36,14 +40,18 @@ function thing(rng: Rng, cx: number, cz: number, spread: number): { run: Run; sp
   for (let i = 0; i < n; i++) {
     const store = Math.floor(rng.float() * specs.length);
     const s = m(0.3) + rng.float() * m(8);
-    object.position.set(cx + (rng.float() - 0.5) * spread, rng.float() * m(20), cz + (rng.float() - 0.5) * spread);
-    object.rotation.set(0, rng.float() * 6, 0);
-    object.scale.set(s, s * (0.5 + rng.float()), s);
+    const x = cx + (rng.float() - 0.5) * spread, y = rng.float() * m(20), z = cz + (rng.float() - 0.5) * spread;
+    const yaw = rng.float() * 6, sy = s * (0.5 + rng.float());
+    object.position.set(x, y, z);
+    object.rotation.set(0, yaw, 0);
+    object.scale.set(s, sy, s);
     object.updateMatrix();
     const tint = { r: rng.float(), g: rng.float(), b: rng.float() };
-    builder.add(store, object.matrix.elements, Math.max(s, s * (0.5 + 1)), tint);
+    builder.turned(store, x, y, z, yaw, s, sy, s, Math.max(s, s * (0.5 + 1)), tint);
     const sphere = geometry.boundingSphere!.clone().applyMatrix4(object.matrix);
-    const matrix = Float32Array.from(object.matrix.elements);
+    // The matrix the layer writes: its pose as kept (floats), written out.
+    const matrix = new Float32Array(16);
+    YAW_POSE.matrixInto(Float32Array.from([x, y, z, yaw, s, sy, s]), 0, matrix, 0);
     const colour = specs[store]!.tinted ? Float32Array.from([tint.r, tint.g, tint.b]) : new Float32Array(0);
     (spheres.get(store) ?? spheres.set(store, []).get(store)!).push(sphere);
     (rows.get(store) ?? rows.set(store, []).get(store)!).push([...matrix, ...colour].join(','));
@@ -172,5 +180,92 @@ describe('instances kept thing by thing', () => {
     expect(mesh.instanceMatrix.version).toBe(version);
     expect(mesh.count).toBe(count);
     layer.dispose();
+  });
+});
+
+/** The matrix written from a pose of `format` (as kept: floats), at `at` of a fresh array. */
+function written(format: PoseFormat, pose: ArrayLike<number>): Float32Array {
+  const out = new Float32Array(16);
+  format.matrixInto(Float32Array.from(pose), 0, out, 0);
+  return out;
+}
+
+/** The same matrix as the one kept before (three's, rounded to floats): the place to the bit, the rest within float rounding of the pose. */
+function expectSameMatrix(mine: Float32Array, old: Float32Array, scale: number, label: string): void {
+  for (let i = 0; i < 16; i++) {
+    if (i >= 12 || i % 4 === 3) expect(mine[i] === old[i], `${label}: element ${i}`).toBe(true);
+    else expect(Math.abs(mine[i]! - old[i]!), `${label}: element ${i}`).toBeLessThanOrEqual(2e-6 * scale);
+  }
+}
+
+describe('a thing kept as a pose, not a matrix', () => {
+  let seed = 77;
+  const rand = (): number => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32);
+
+  it('turned about the up axis: the matrix an Object3D composed', () => {
+    const object = new Object3D();
+    for (let k = 0; k < 5_000; k++) {
+      const x = (rand() - 0.5) * 10_000, y = (rand() - 0.5) * 200, z = (rand() - 0.5) * 10_000;
+      const yaw = (rand() - 0.5) * 14, sx = 0.05 + rand() * 30, sy = 0.05 + rand() * 30, sz = 0.05 + rand() * 30;
+      object.position.set(x, y, z);
+      object.rotation.set(0, yaw, 0);
+      object.scale.set(sx, sy, sz);
+      object.updateMatrix();
+      expectSameMatrix(written(YAW_POSE, [x, y, z, yaw, sx, sy, sz]), Float32Array.from(object.matrix.elements), Math.max(sx, sy, sz), `yaw ${yaw}`);
+    }
+  });
+
+  it('a tree of a wood: the matrix the stand made (yaw, width, height, lean to the open side)', () => {
+    for (let k = 0; k < 5_000; k++) {
+      const item = { x: (rand() - 0.5) * 10_000, y: (rand() - 0.5) * 10_000, z: rand() * 300, size: 2 + rand() * 20, yaw: rand() * Math.PI * 2, seed: rand(), species: 'broadleaf' } as TreePlacement;
+      const crowd = rand(), a = rand() * Math.PI * 2, open = rand() < 0.2 ? 0 : 1;
+      const openX = Math.cos(a) * open, openY = Math.sin(a) * open;
+      // The matrix as `treeMatrixInto` wrote it before (DO NOT call it: it is written from the pose now).
+      const tall = item.size * (0.92 + 0.22 * crowd);
+      const wide = item.size * (1.12 - 0.3 * crowd) * (0.94 + ((item.seed * 5.3) % 1) * 0.12);
+      const lean = 0.22 * (1 - crowd) * Math.min(1, crowd * 4);
+      const sx = openX * lean, sz = -openY * lean;
+      const c = Math.cos(item.yaw), s = Math.sin(item.yaw);
+      const old = Float32Array.from([c * wide, 0, -s * wide, 0, sx * tall, tall, sz * tall, 0, s * wide, 0, c * wide, 0, item.x, item.z, -item.y, 1]);
+      const pose = new Float32Array(TREE_POSE.stride);
+      treePoseInto(item, crowd, openX, openY, pose, 0);
+      expectSameMatrix(written(TREE_POSE, pose), old, Math.max(wide, tall), `tree ${k}`);
+    }
+  });
+
+  it('a stone, a bush or a card tree: the matrix three composed (yaw, then a lean about its x)', () => {
+    const up = new Vector3(0, 1, 0), side = new Vector3(1, 0, 0);
+    const position = new Vector3(), rotation = new Quaternion(), leaning = new Quaternion(), scale = new Vector3(), matrix = new Matrix4();
+    for (let k = 0; k < 5_000; k++) {
+      const item: CoverPlacement = { x: (rand() - 0.5) * 10_000, y: (rand() - 0.5) * 10_000, z: rand() * 300, size: 0.2 + rand() * 20, yaw: (rand() - 0.2) * 8, seed: rand() };
+      const sink = rand() * 0.2, tilt = rand() * 0.4, upright = rand() < 0.4;
+      // The matrix as `coverMatrixInto` composed it before.
+      const half = item.size / 2;
+      position.set(item.x, item.z - half * sink, -item.y);
+      rotation.setFromAxisAngle(up, item.yaw);
+      leaning.setFromAxisAngle(side, ((item.seed * 31.7) % 1 - 0.5) * tilt);
+      rotation.multiply(leaning);
+      if (upright) {
+        const spread = 0.9 + ((item.seed * 5.3) % 1) * 0.25;
+        scale.set(half * 2 * spread, half * 2, half * 2 * spread);
+      } else {
+        const squat = 0.75 + ((item.seed * 5.3) % 1) * 0.5;
+        scale.set(half, half * squat, half * (0.8 + ((item.seed * 13.1) % 1) * 0.4));
+      }
+      matrix.compose(position, rotation, scale);
+      const pose = new Float32Array(COVER_POSE.stride);
+      coverPoseInto(item, sink, tilt, upright, pose, 0);
+      expectSameMatrix(written(COVER_POSE, pose), Float32Array.from(matrix.elements), Math.max(scale.x, scale.y, scale.z), `cover ${k}`);
+    }
+  });
+
+  it('keeps 7 floats a thing turned about the up axis, not a matrix', () => {
+    const builder = new RunBuilder(specs);
+    for (let i = 0; i < 10; i++) builder.turned(1, i, 0, -i, i * 0.3, 1, 2, 3, 3);
+    const pack = builder.build().get(1)!;
+    expect(pack.count).toBe(10);
+    expect(pack.data.length).toBe(10 * YAW_POSE.stride);
+    expect(YAW_POSE.stride).toBe(7);
+    expect(() => new RunBuilder(specs, COVER_POSE).turned(0, 0, 0, 0, 0, 1, 1, 1, 1)).toThrow();
   });
 });

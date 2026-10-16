@@ -2,6 +2,7 @@ import { Group, type BufferGeometry, type Color, type InstancedMesh, type Materi
 import { Rng } from '@core/rng';
 import { m } from '@world/units';
 import { createCellInstances, type KindSpec, type Pack } from './cellInstances';
+import { YAW_POSE } from './instanceRuns';
 import { PICTURE_PX, sceneryPictures } from './plantImpostors';
 import { BUSH_KINDS, TREE_SPECIES, type TreeSpecies } from './propGeometry';
 import { SHADOW_REACH, foliageTint, type Scenery, type SceneryKit } from './scenery';
@@ -37,19 +38,8 @@ function gardenSpecies(roll: number): TreeSpecies {
   return roll < 0.9 ? 'ipeYellow' : 'ipePink';
 }
 
-/** Floats a plant's pose takes (`POSE`): its place in the scene's frame (x, y, z), its yaw and its scale on three axes. */
-const POSE = 7;
-
-/** DO NOT go through an `Object3D` for each plant of a garden */
-export function yawMatrixInto(out: Float32Array | number[], at: number, px: number, py: number, pz: number, yaw: number, sx: number, sy: number, sz: number): void {
-  const y = Math.sin(yaw / 2), w = Math.cos(yaw / 2);
-  const y2 = y + y;
-  const yy = y * y2, wy = w * y2;
-  out[at] = (1 - yy) * sx; out[at + 1] = 0; out[at + 2] = -wy * sx; out[at + 3] = 0;
-  out[at + 4] = 0; out[at + 5] = sy; out[at + 6] = 0; out[at + 7] = 0;
-  out[at + 8] = wy * sz; out[at + 9] = 0; out[at + 10] = (1 - yy) * sz; out[at + 11] = 0;
-  out[at + 12] = px; out[at + 13] = py; out[at + 14] = pz; out[at + 15] = 1;
-}
+/** Floats a plant's pose takes (`YAW_POSE`): its place in the scene's frame (x, y, z), its yaw and its scale on three axes. */
+const POSE = YAW_POSE.stride;
 
 /** The kinds of plant, in the order of the gardens' kinds: the trees by species, then the bushes. */
 const KIND_KEYS = [...TREE_SPECIES.map((s) => `tree:${s}`), ...BUSH_KINDS.map((k) => `bush:${k}`)];
@@ -136,14 +126,6 @@ function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<number, Pack> {
   return out;
 }
 
-/** A plant's pose written as three's matrix (`yawMatrixInto`): the matrix made only for a plant drawn at a new position. */
-const POSE_FORMAT = {
-  stride: POSE,
-  matrixInto(data: Float32Array, at: number, out: Float32Array, outAt: number): void {
-    yawMatrixInto(out, outAt, data[at]!, data[at + 1]!, data[at + 2]!, data[at + 3]!, data[at + 4]!, data[at + 5]!, data[at + 6]!);
-  },
-};
-
 /** The buildings' garden lists to place and to take away (`gardenLists.ts`): a list is placed once and taken away by the same object. */
 export interface GardenChange {
   readonly added: readonly (readonly GardenPlant[])[];
@@ -174,7 +156,8 @@ export function createGardens(kit: SceneryKit): Gardens {
     ...TREE_SPECIES.map((s) => kind(`garden-trees-${s}`, kit.trees[s], kit.foliage, kit.foliageDepth, kit.cards[s], kit.treeCards, kit.treeCardsDepth, pictures.treeAt(s))),
     ...BUSH_KINDS.map((k) => kind(`garden-bushes-${k}`, kit.bushes[k], kit.shrubs, kit.shrubsDepth, kit.cards[k], kit.shrubCards, kit.shrubCardsDepth, pictures.bushAt(k))),
   ];
-  const cells = createCellInstances(kinds, POSE_FORMAT, SHADOW_REACH);
+  // A plant's pose written as three's matrix only for a plant drawn at a new position (`YAW_POSE`).
+  const cells = createCellInstances(kinds, YAW_POSE, SHADOW_REACH);
   return {
     get meshes() { return cells.meshes; },
     grass: new Group(),

@@ -363,8 +363,7 @@ export function createSignLayer(): SignLayerKept {
       const size = PLATE[s.type];
       // Up to the plate's top behind it; up to its bottom under a plate on top of it.
       const top = m(size.z + (onTopOfPost(s.type) ? -size.h / 2 : size.h / 2));
-      matrix.makeScale(1, top, 1).setPosition(s.x, s.ground + top / 2, -s.y);
-      builder.add(0, matrix.elements, Math.max(1, top));
+      builder.turned(0, s.x, s.ground + top / 2, -s.y, 0, 1, top, 1, Math.max(1, top));
       const placed = sheets.take(s.type, s.text);
       for (const face of plateFaces(s.type, s.x, s.y, s.yaw)) {
         // The sheet may have been let go and made again since `take`: the store of the plate's sheet now.

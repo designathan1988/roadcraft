@@ -1,4 +1,4 @@
-import { Color, Group, Object3D, type Frustum, type InstancedMesh, type Matrix4, type MeshDepthMaterial } from 'three';
+import { Color, Group, type Frustum, type InstancedMesh, type Matrix4, type MeshDepthMaterial } from 'three';
 
 import { Rng } from '@core/rng';
 import { angleOf } from '@core/vec2';
@@ -284,18 +284,14 @@ const MEADOW_STORES = (kit: SceneryKit): RunStore[] => [
 /** The long grass's product: each placed clump's run, laid on the ground as drawn. */
 export function meadowProduct(kit: SceneryKit): Derived<FurnitureSource, number, MeadowPlace> {
   const stores = MEADOW_STORES(kit);
-  const object = new Object3D();
   return new Derived(new PlacedProduct<MeadowPlace>('long grass', {
     landscape: 0, elevation: CLUMP_READ_REACH + m(1), ground: CLUMP_READ_REACH + m(1),
   }, (item) => item.kind === 'meadow', (item, source) => {
     const clump = grassClump(source.elevation, source.groundAt, item);
     const builder = new RunBuilder(stores);
     const add = (store: number, tuft: Tuft): void => {
-      object.position.set(tuft.x, tuft.z, -tuft.y);
-      object.rotation.set(0, tuft.yaw, 0);
-      object.scale.set(tuft.height * tuft.width, tuft.height, tuft.height * tuft.width);
-      object.updateMatrix();
-      builder.add(store, object.matrix.elements, tuft.height * Math.max(1, tuft.width), tuft.tint);
+      builder.turned(store, tuft.x, tuft.z, -tuft.y, tuft.yaw, tuft.height * tuft.width, tuft.height, tuft.height * tuft.width,
+        tuft.height * Math.max(1, tuft.width), tuft.tint);
     };
     for (const tuft of clump.tufts) add(0, tuft);
     for (const tuft of clump.flowers) add(1, tuft);
@@ -340,7 +336,6 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
   /** The items with a plant still growing: sized again each city hour. */
   const growing = new Set<number>();
   let hour = Number.NaN;
-  const object = new Object3D();
 
   /** An item's instances at the city's time (the hour's start: the same whenever it is made in that hour). */
   const runOf = (place: FurniturePlace, now: number): Run => {
@@ -352,11 +347,7 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
         const height = p.h * growth;
         sx = height * p.sx; sy = height * p.sy; sz = height * p.sz;
       }
-      object.position.set(p.x, p.z, -p.y);
-      object.rotation.set(0, p.yaw, 0);
-      object.scale.set(sx, sy, sz);
-      object.updateMatrix();
-      builder.add(p.store, object.matrix.elements, Math.max(sx, sy, sz), p.tint ?? undefined);
+      builder.turned(p.store, p.x, p.z, -p.y, p.yaw, sx, sy, sz, Math.max(sx, sy, sz), p.tint ?? undefined);
     }
     return builder.build();
   };

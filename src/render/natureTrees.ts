@@ -5,6 +5,7 @@ import {
   MeshStandardMaterial,
   type MeshDepthMaterial,
 } from 'three';
+import type { SlotFormat } from './cellInstances';
 import type { TreePlacement } from './groundCover';
 import { leafCardMaterials, lowPolyTreeParts } from './lowPolyTrees';
 import { PICTURE_WIND, createPlantImpostors, type PlantImpostors } from './plantImpostors';
@@ -142,17 +143,40 @@ export function standsAmong(trees: readonly TreePlacement[], among: readonly Tre
   return { crowd, openX, openY };
 }
 
-/** A tree's matrix, into `m` at `o`: deep in a wood taller and narrower */
-export function treeMatrixInto(item: TreePlacement, crowd: number, openX: number, openY: number, m: { [i: number]: number }, o: number): void {
+/** A tree's pose, into `out` at `at` (`TREE_POSE`): deep in a wood taller and narrower, at a wood's edge leaning out to the open side. */
+export function treePoseInto(item: TreePlacement, crowd: number, openX: number, openY: number, out: { [i: number]: number }, at: number): void {
   const tall = item.size * (0.92 + 0.22 * crowd);
   const wide = item.size * (1.12 - 0.3 * crowd) * (0.94 + ((item.seed * 5.3) % 1) * 0.12);
   const lean = 0.22 * (1 - crowd) * Math.min(1, crowd * 4);
-  const sx = openX * lean, sz = -openY * lean;
-  const c = Math.cos(item.yaw), s = Math.sin(item.yaw);
+  out[at] = item.x; out[at + 1] = item.z; out[at + 2] = -item.y; out[at + 3] = item.yaw;
+  out[at + 4] = wide; out[at + 5] = tall; out[at + 6] = openX * lean; out[at + 7] = -openY * lean;
+}
+
+/** A tree's matrix from its pose's numbers, into `m` at `o`: turned by `yaw`, `wide` across, `tall`, its up axis sheared by (`shx`, `shz`) per unit of height. */
+function leaningMatrixInto(m: { [i: number]: number }, o: number, px: number, py: number, pz: number, yaw: number, wide: number, tall: number, shx: number, shz: number): void {
+  const c = Math.cos(yaw), s = Math.sin(yaw);
   m[o] = c * wide; m[o + 1] = 0; m[o + 2] = -s * wide; m[o + 3] = 0;
-  m[o + 4] = sx * tall; m[o + 5] = tall; m[o + 6] = sz * tall; m[o + 7] = 0;
+  m[o + 4] = shx * tall; m[o + 5] = tall; m[o + 6] = shz * tall; m[o + 7] = 0;
   m[o + 8] = s * wide; m[o + 9] = 0; m[o + 10] = c * wide; m[o + 11] = 0;
-  m[o + 12] = item.x; m[o + 13] = item.z; m[o + 14] = -item.y; m[o + 15] = 1;
+  m[o + 12] = px; m[o + 13] = py; m[o + 14] = pz; m[o + 15] = 1;
+}
+
+/** A tree kept as its pose (`treePoseInto`): place in the scene's frame, yaw, width, height and lean (8 floats, not 12). */
+export const TREE_POSE: SlotFormat = {
+  stride: 8,
+  matrixInto(data, at, out, outAt) {
+    leaningMatrixInto(out, outAt, data[at]!, data[at + 1]!, data[at + 2]!, data[at + 3]!, data[at + 4]!, data[at + 5]!, data[at + 6]!, data[at + 7]!);
+  },
+};
+
+/** `treeMatrixInto`'s pose in doubles (the forest's matrices as they were, not rounded to floats first). */
+const TREE_SCRATCH: number[] = new Array<number>(8).fill(0);
+
+/** A tree's matrix, into `m` at `o`: its pose (`treePoseInto`) written out */
+export function treeMatrixInto(item: TreePlacement, crowd: number, openX: number, openY: number, m: { [i: number]: number }, o: number): void {
+  const pose = TREE_SCRATCH;
+  treePoseInto(item, crowd, openX, openY, pose, 0);
+  leaningMatrixInto(m, o, pose[0]!, pose[1]!, pose[2]!, pose[3]!, pose[4]!, pose[5]!, pose[6]!, pose[7]!);
 }
 
 /** A tree's own green, into `col` at `o` (it multiplies the model's linear colours, three's color_vertex) */

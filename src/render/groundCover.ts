@@ -4,14 +4,13 @@ import {
   Color,
   DodecahedronGeometry,
   IcosahedronGeometry,
-  Matrix4,
   MeshStandardMaterial,
-  Quaternion,
   Vector3,
   type MeshDepthMaterial,
 } from 'three';
 
 import type { GeologyKind } from '@world/terrainPaint';
+import type { SlotFormat } from './cellInstances';
 import { leafCardMaterials, lowPolyTreeParts, type LowPolyKind } from './lowPolyTrees';
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 
@@ -249,27 +248,44 @@ export const COVER_STANCE = {
 /** A cover's variant among `variants`, by its seed. */
 export const coverVariant = (item: CoverPlacement, variants: number): number => Math.min(variants - 1, Math.floor(item.seed * variants));
 
-/** One placement's matrix, into `out`: on its ground, turned, leaning a little, sized by its kind. */
-export function coverMatrixInto(item: CoverPlacement, sink: number, tilt: number, upright: boolean, out: Matrix4): Matrix4 {
+/** One placement's pose, into `out` at `at` (`COVER_POSE`): on its ground, turned, leaning a little, sized by its kind. */
+export function coverPoseInto(item: CoverPlacement, sink: number, tilt: number, upright: boolean, out: { [i: number]: number }, at: number): void {
   const half = item.size / 2;
-  COVER_SCRATCH.position.set(item.x, item.z - half * sink, -item.y);
-  COVER_SCRATCH.rotation.setFromAxisAngle(COVER_UP, item.yaw);
-  COVER_SCRATCH.lean.setFromAxisAngle(COVER_SIDE, ((item.seed * 31.7) % 1 - 0.5) * tilt);
-  COVER_SCRATCH.rotation.multiply(COVER_SCRATCH.lean);
+  out[at] = item.x; out[at + 1] = item.z - half * sink; out[at + 2] = -item.y;
+  out[at + 3] = item.yaw;
+  out[at + 4] = ((item.seed * 31.7) % 1 - 0.5) * tilt;
   if (upright) {
     // A tree keeps its proportions, a little narrower or broader.
     const spread = 0.9 + ((item.seed * 5.3) % 1) * 0.25;
-    COVER_SCRATCH.scale.set(half * 2 * spread, half * 2, half * 2 * spread);
+    out[at + 5] = half * 2 * spread; out[at + 6] = half * 2; out[at + 7] = half * 2 * spread;
   } else {
     const squat = 0.75 + ((item.seed * 5.3) % 1) * 0.5;
-    COVER_SCRATCH.scale.set(half, half * squat, half * (0.8 + ((item.seed * 13.1) % 1) * 0.4));
+    out[at + 5] = half; out[at + 6] = half * squat; out[at + 7] = half * (0.8 + ((item.seed * 13.1) % 1) * 0.4);
   }
-  return out.compose(COVER_SCRATCH.position, COVER_SCRATCH.rotation, COVER_SCRATCH.scale);
 }
-/** The axes a placement turns and leans about, and the pieces of its matrix, written by `coverMatrixInto` alone. */
-const COVER_UP = new Vector3(0, 1, 0);
-const COVER_SIDE = new Vector3(1, 0, 0);
-const COVER_SCRATCH = { position: new Vector3(), rotation: new Quaternion(), lean: new Quaternion(), scale: new Vector3() };
+
+/** Three's `compose` (r186 `Matrix4.compose`) of a turn by `yaw` about the up axis times a lean by `lean` about the model's x (`setFromAxisAngle`, `multiplyQuaternions`, zero terms dropped). */
+function leanedMatrixInto(out: { [i: number]: number }, at: number, px: number, py: number, pz: number, yaw: number, lean: number, sx: number, sy: number, sz: number): void {
+  const ty = Math.sin(yaw / 2), tw = Math.cos(yaw / 2);
+  const lx = Math.sin(lean / 2), lw = Math.cos(lean / 2);
+  const x = tw * lx, y = ty * lw, z = -(ty * lx), w = tw * lw;
+  const x2 = x + x, y2 = y + y, z2 = z + z;
+  const xx = x * x2, xy = x * y2, xz = x * z2;
+  const yy = y * y2, yz = y * z2, zz = z * z2;
+  const wx = w * x2, wy = w * y2, wz = w * z2;
+  out[at] = (1 - (yy + zz)) * sx; out[at + 1] = (xy + wz) * sx; out[at + 2] = (xz - wy) * sx; out[at + 3] = 0;
+  out[at + 4] = (xy - wz) * sy; out[at + 5] = (1 - (xx + zz)) * sy; out[at + 6] = (yz + wx) * sy; out[at + 7] = 0;
+  out[at + 8] = (xz + wy) * sz; out[at + 9] = (yz - wx) * sz; out[at + 10] = (1 - (xx + yy)) * sz; out[at + 11] = 0;
+  out[at + 12] = px; out[at + 13] = py; out[at + 14] = pz; out[at + 15] = 1;
+}
+
+/** A cover kept as its pose (`coverPoseInto`): place in the scene's frame, yaw, lean and scale on three axes (8 floats, not 12). */
+export const COVER_POSE: SlotFormat = {
+  stride: 8,
+  matrixInto(data, at, out, outAt) {
+    leanedMatrixInto(out, outAt, data[at]!, data[at + 1]!, data[at + 2]!, data[at + 3]!, data[at + 4]!, data[at + 5]!, data[at + 6]!, data[at + 7]!);
+  },
+};
 
 /** A tree's tint: its own colour is in its vertices; this only varies it a little. */
 export function treeTint(item: CoverPlacement, out: Color): Color {

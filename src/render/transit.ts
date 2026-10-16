@@ -281,18 +281,14 @@ class TransitProduct implements DerivedSpec<TransitSource, number, TransitPlace>
       box = [stop.x - STOP_READS, stop.y - STOP_READS, stop.x + STOP_READS, stop.y + STOP_READS];
     }
     if (!box) return undefined;
-    const o = new Object3D();
     const c = new Color();
     const runOf = (kinds: readonly (keyof TransitParts)[], stores: readonly RunStore[]): { run: Run; boxes: number } => {
       const builder = new RunBuilder(stores);
       let boxes = 0;
       kinds.forEach((kind, store) => {
         for (const b of parts[kind]) {
-          o.position.set(b.x, b.z + b.height / 2, -b.y);
-          o.rotation.set(0, b.yaw, 0);
-          o.scale.set(b.length, b.height, b.width);
-          o.updateMatrix();
-          builder.add(store, o.matrix.elements, Math.max(b.length, b.height, b.width), stores[store]!.tinted ? c.set(b.colour ?? '#ffffff') : undefined);
+          builder.turned(store, b.x, b.z + b.height / 2, -b.y, b.yaw, b.length, b.height, b.width,
+            Math.max(b.length, b.height, b.width), stores[store]!.tinted ? c.set(b.colour ?? '#ffffff') : undefined);
           boxes++;
         }
       });

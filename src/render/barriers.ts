@@ -1,4 +1,4 @@
-import { BoxGeometry, Group, type Frustum, type Material, Matrix4, MeshStandardMaterial, Object3D } from 'three';
+import { BoxGeometry, Group, type Frustum, type Material, type Matrix4, MeshStandardMaterial } from 'three';
 
 import { BARRIER_SIZE, type Barrier } from '@world/barriers';
 import type { Change, ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
@@ -71,16 +71,11 @@ class BarrierProduct implements DerivedSpec<BarrierSource, number, BarrierPlace>
     const parts = Object.fromEntries(KINDS.map((k) => [k, []])) as unknown as PartList;
     placeBarrier(barrier, source.groundAt, parts);
     const builder = new RunBuilder(this.stores);
-    const o = new Object3D();
     let boxes = 0;
     KINDS.forEach((kind, store) => {
       for (const b of parts[kind]) {
         // World y is three's -z, as everywhere in the renderer.
-        o.position.set(b.x, b.z + b.height / 2, -b.y);
-        o.rotation.set(0, b.yaw, 0);
-        o.scale.set(b.length, b.height, b.width);
-        o.updateMatrix();
-        builder.add(store, o.matrix.elements, Math.max(b.length, b.height, b.width));
+        builder.turned(store, b.x, b.z + b.height / 2, -b.y, b.yaw, b.length, b.height, b.width, Math.max(b.length, b.height, b.width));
         boxes++;
       }
     });
