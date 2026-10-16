@@ -255,8 +255,10 @@ matrix auto-update (three forced every descendant's matrix every frame in every 
 per build). Long frames of a 16 s drag 5.4 s → 4.5 s, frames over 25 ms 158 → 107, p95 70 → 54 ms. What is left in the
 long frames, by the game's step: three's per-object work (1,500-2,400 objects × 4 passes: `projectObject`,
 `renderObject`, `bindVertexArray`: the draw-call count, 5.4), `pumpWorld` steps, a dense tile put in the document in one
-frame (`worldStreamer.apply` ~100 ms a tile: records interned and filed on the page), `layer.update` after it, road
-levels refilled on the page (`updateRoadLevels` `makeNear`).
+frame (`worldStreamer.apply` ~100 ms a tile even with its buildings prepared by the worker, commit 5035065: the roads,
+lots and the network's incremental rebuild), `layer.update` after it, road levels refilled on the page
+(`updateRoadLevels` `makeNear`), and `agents.sync` (`agents.ts` ~1678: the vehicles near the view, 600+ at the
+district zoom, written per frame: 1.4 s of a 16 s drag's long frames) with `replay` (`agents.ts` ~1072).
 Still open from the solution's parts: 5.2 roads per pixel (700 MB of road video memory, coarse level resident for
 every block of the region), 5.4 derived products by the view (masses 341 MB, draw calls 1,500-2,400; the kept ring of
 tiles gets near products too), 5.5 pixel cost on the integrated GPU (the player's call, with shots), 5.6 renderer memory
