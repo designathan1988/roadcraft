@@ -16,6 +16,8 @@ const IN_FLIGHT = 4;
 export const AHEAD_RADIUS = 5;
 /** Tiles made ahead at once: behind the region's, one at a time. */
 const AHEAD_IN_FLIGHT = 1;
+/** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
+const RETRY_MS = 30_000;
 /** Changed tiles are written this often (and always before they are let go). */
 const WRITE_EVERY_MS = 5_000;
 
@@ -61,6 +63,8 @@ export class WorldStreamer {
   private wanted: number[] = [];
   private around = { i: Number.NaN, j: Number.NaN };
   private lastWrite = 0;
+  /** When a tile last failed to come (`RETRY_MS`). */
+  private readonly failedAt = new Map<number, number>();
   /** Tiles known to be in the store (read or made this session), and those being made ahead now. */
   private readonly known = new Set<number>();
   private readonly ahead = new Set<number>();
@@ -127,6 +131,7 @@ export class WorldStreamer {
     for (const key of this.wanted) {
       if (this.asked.size >= IN_FLIGHT) return;
       if (this.doc.hasTile(key) || this.asked.has(key) || this.ready.has(key)) continue;
+      if (performance.now() - (this.failedAt.get(key) ?? -Infinity) < RETRY_MS) continue;
       this.asked.add(key);
       this.source.load(key).then((records) => {
         this.asked.delete(key);
@@ -136,6 +141,7 @@ export class WorldStreamer {
         this.ask();
       }, (error: unknown) => {
         this.asked.delete(key);
+        this.failedAt.set(key, performance.now());
         this.tell.failed?.(`tile ${key}: ${String(error)}`);
       });
     }
