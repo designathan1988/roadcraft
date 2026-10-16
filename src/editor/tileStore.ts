@@ -4,8 +4,9 @@ import { lotCentre } from '@world/lotRings';
 import { rescaleSerializedDoc } from '@world/rescale';
 import { OWNER, TILE_COUNTED, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
 import type { NodeId, SegmentId } from '@world/ids';
-import { RoadDoc, type TileRecords, preparedTiles } from '@world/doc';
-import { Network, type NetworkBake } from '@world/network';
+import { type TileRecords, preparedTiles } from '@world/doc';
+import type { NetworkBake } from '@world/network';
+import { tileRoadNetwork } from '@world/tileNetwork';
 import { internMembers } from '@world/buildings/intern';
 import { encodeRecords, readRecords, refOf, tableRecords } from '@world/buildings/recordTable';
 import { migrateBuilding } from '@world/buildings/serialize';
@@ -386,13 +387,8 @@ export function preparedRecords(prepared: PreparedTile): TileRecords {
 
 /** The tile's roads built as a network of their own (the tile's nodes, its roads' foreign ends as borrowed nodes), its junctions and ribbons exported (`Network.exportBake`): the page takes a node's where its roads are the same there (a node with a neighbour's road is solved on the page). */
 export function bakeTileNetwork(records: TileRecords): NetworkBake {
-  const owned = new Set(records.nodes.map((n) => n.id));
-  const doc = RoadDoc.fromJSON({
-    version: 1, unit: METERS_PER_UNIT,
-    nodes: [...records.nodes, ...records.borrowedNodes.filter((n) => !owned.has(n.id))], segments: records.segments,
-  }, { repair: false });
-  const net = new Network(doc);
-  net.rebuild();
+  // Built once for the tile's bakes (`world/tileNetwork.ts`): its parking bays read the same network.
+  const { net } = tileRoadNetwork(records);
   return net.exportBake(records.nodes.map((n) => n.id as NodeId), records.segments.map((s) => s.id as SegmentId));
 }
 

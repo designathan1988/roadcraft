@@ -1,11 +1,10 @@
 import { packArrays, packedArray, packedNumber, unpackArrays } from '@core/arrayPack';
 import { ChangeLog } from '@core/changeLog';
 import type { BuildingId } from '@world/buildings/types';
-import { RoadDoc, type TileRecords } from '@world/doc';
+import type { TileRecords } from '@world/doc';
 import type { NodeId, SegmentId } from '@world/ids';
 import { type GraphChange, LaneletGraph, laneletId } from '@world/lanelets';
-import { Network } from '@world/network';
-import { METERS_PER_UNIT } from '@world/units';
+import { tileRoadNetwork } from '@world/tileNetwork';
 import type { Bay, BayLane } from './agents/bay';
 import { LaneGrid } from './agents/laneGrid';
 import { type BakedBays, type BakedSource, type BayWorld, bakeBays } from './agents/parking';
@@ -30,13 +29,8 @@ const NOT_GHOST = Object.freeze({ ghost: false });
 
 /** @rebuild A tile's bays worked out from its own records alone (no workers): its roads as a network of their own with their link lanes, its buildings as traffic reads them back from the tile's traffic section (`traffic`) */
 export function bakeTileBays(records: TileRecords, traffic: readonly TrafficBuilding[]): Uint8Array<ArrayBuffer> {
-  const owned = new Set(records.nodes.map((n) => n.id));
-  const doc = RoadDoc.fromJSON({
-    version: 1, unit: METERS_PER_UNIT,
-    nodes: [...records.nodes, ...records.borrowedNodes.filter((n) => !owned.has(n.id))], segments: records.segments,
-  }, { repair: false });
-  const net = new Network(doc);
-  net.rebuild();
+  // The tile's roads built once for its bakes (`world/tileNetwork.ts`): the junctions' bake reads the same network.
+  const { doc, net } = tileRoadNetwork(records);
   // The link lanes alone: the bays read no junction's turns.
   const graph = LaneletGraph.linksOnly(doc, net);
   const buildings = new TrafficBuildingTable(doc.changes);
