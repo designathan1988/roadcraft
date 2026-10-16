@@ -75,18 +75,18 @@ produced almost nothing; everything that moved the game came from reading the co
 ## Work list (causes found by reading the code; re-read the line before fixing)
 Root: a building record is the whole authored model (lot furniture inside, many JS objects a building).
 Done: a tile's buildings are one typed table in a SharedArrayBuffer (`world/buildings/recordTable.ts`), made
-where the tile is prepared; the page reads its records from it and cell jobs get the buffer and rows, never
-JSON text. Left: growth, the tile write-back (`doc.tileRecords` clones every building), far levels on the
-desktop path still post Building objects; the sim worker keeps a second RoadDoc + Network.
-- Per-building derived data redone per emission and per load: `facadeBays` unmemoised (`buildingMesh.ts`,
-  `massing.ts`, `foundation.ts`); `interiorAt` furnishes whole floors for one window (`buildingMesh.ts`);
-  lot bays and kerb bays (`parking.ts` `baysNow`) at every tile load. Fix: baked with the tile as sections
-  (`sim/tileSections.ts` pattern).
+where the tile is prepared; the page reads its records from it; cell jobs, growth, the tile write-back and the
+far levels get buffers and rows, never objects or JSON text. The desktop's workers read and write the store by
+ports of their own (`editor/workerParts.ts`). The sim worker takes the page's junctions (`'bake'`) but still keeps
+a second RoadDoc + Network of the active region.
+- Per-building derived data: bays, floors and spaces are kept per blocks list (`bayLayout`, `interiorAt`,
+  `deriveSpaces`) and lot/kerb bays baked with the tile (`sim/tileBays.ts`); a worker job still decodes its records
+  fresh, so the layouts are redone once per job and level. Fix: bake them into the tile's table as sections.
 - Every tile load records 'roads' and runs `buildWorld`: the road surfaces now visit only the tiles that changed
   (`roadSurfaces.ts` PassState); left on the page: the block compares (`compareSolves`) and the world job's other steps.
 - `renderer.ts` `natureSweep`: the trees' scale is the average over the shown plates, so a plate shown re-picks
-  every plate's lattice on the page (`farForest.ts` keeps each tree's pick and moves a uniform); and it concatenates
-  every plate's trees into a list nothing reads (`NatureSweep.trees`). Fix: picks kept per plate, the list dropped.
+  every plate's lattice on the page (`farForest.ts` keeps each tree's pick and moves a uniform). Fix: picks kept
+  per plate (changes near forest density: the player's call).
 - Sim: `lorryDocks.ts` `yardNeighbours` keyed by the global `doc.lotRevision`; `lotTraffic.ts` `freeBays`/
   `sceneryInBays` walk every gated bay with a string key each, every second; parked cars stand a whole
   Vehicle in most bays of the region and `simHost.ts` `publish` walks them each tick; `invariants.ts` audit
