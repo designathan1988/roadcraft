@@ -133,59 +133,59 @@ describe("the GPU's time governing the floor", () => {
     return { asked, press: (up: boolean): boolean => { asked.push(up); if (up && left <= 0) return false; left += up ? -1 : 1; return true; } };
   };
 
-  it('over the budget: a step up, a window to settle, kept when the time fell by the gain', () => {
+  it('past OVER times the budget: a step up, a window to settle, kept when the time fell by the gain', () => {
     const g = new TimeGovernor();
     const { asked, press } = pressing();
-    g.read(20, 12, press);
+    g.read(40, 12, press);
     expect(asked).toEqual([true]);
-    g.read(20, 12, press);
+    g.read(40, 12, press);
     expect(asked).toEqual([true]);
-    g.read(20 * (1 - GAIN) - 0.1, 12, press);
+    g.read(40 * (1 - GAIN) - 0.1, 12, press);
     expect(asked).toEqual([true, true]);
   });
 
   it('a step that did not pay is undone, and none is tried again under that time', () => {
     const g = new TimeGovernor();
     const { asked, press } = pressing();
-    g.read(20, 12, press);
-    g.read(20, 12, press);
-    g.read(19.5, 12, press);
+    g.read(40, 12, press);
+    g.read(40, 12, press);
+    g.read(39, 12, press);
     expect(asked).toEqual([true, false]);
-    for (let i = 0; i < 5; i++) g.read(20, 12, press);
+    for (let i = 0; i < 5; i++) g.read(40, 12, press);
     expect(asked).toEqual([true, false]);
     // Slower than then by the gain: something changed, tried again.
-    g.read(20 * (1 + GAIN) + 0.1, 12, press);
+    g.read(40 * (1 + GAIN) + 0.1, 12, press);
     expect(asked).toEqual([true, false, true]);
   });
 
   it('well under the budget: a step down, and the vain mark forgotten', () => {
     const g = new TimeGovernor();
     const { asked, press } = pressing();
-    g.read(20, 12, press); g.read(20, 12, press); g.read(20, 12, press);
+    g.read(40, 12, press); g.read(40, 12, press); g.read(40, 12, press);
     expect(asked).toEqual([true, false]);
     g.read(12 * TIME_SLACK - 0.1, 12, press);
     expect(asked).toEqual([true, false, false]);
-    g.read(20, 12, press);
+    g.read(40, 12, press);
     expect(asked).toEqual([true, false, false, true]);
   });
 
-  it('between the slack and the budget nothing moves; a view change forgets the vain mark', () => {
+  it('between the slack and OVER times the budget nothing moves; a view change forgets the vain mark', () => {
     const g = new TimeGovernor();
     const { asked, press } = pressing();
-    g.read(10, 12, press);
+    g.read(20, 12, press);
     expect(asked).toEqual([]);
-    g.read(20, 12, press); g.read(20, 12, press); g.read(20, 12, press);
+    g.read(40, 12, press); g.read(40, 12, press); g.read(40, 12, press);
     expect(asked).toEqual([true, false]);
     g.reset();
-    g.read(20, 12, press);
+    g.read(40, 12, press);
     expect(asked).toEqual([true, false, true]);
   });
 
   it('at the coarsest floor nothing is asked for a window to settle', () => {
     const g = new TimeGovernor();
     const { asked, press } = pressing(0);
-    g.read(20, 12, press);
-    g.read(20, 12, press);
+    g.read(40, 12, press);
+    g.read(40, 12, press);
     expect(asked).toEqual([true, true]);
   });
 });

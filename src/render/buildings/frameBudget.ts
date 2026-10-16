@@ -75,8 +75,10 @@ export class LandedTriangles<K extends string> {
 export const GAIN = 0.1;
 /** Under this share of the budget the time's floor may come down a step. */
 export const TIME_SLACK = 0.66;
+/** The floor rises only past this many times the budget (30 ms at 12: under 33 fps, a view not playable). DO NOT trade the picture for a frame time the view cannot reach anyway: the pixel pipeline alone costs 15-20 ms at 1080p on the RTX 3060, and the governor stepped the district view down to masses chasing 12 ms (2026-10-16). */
+export const OVER = 2.5;
 
-/** THE GPU'S TIME GOVERNS THE SCALE'S FLOOR, one window of frames at a time (`renderer.ts` `governFrame`): over the budget, a step coarser is asked; the next window is the levels' to settle; the one after says whether the step paid (`GAIN`). A step that did not pay is undone and none is tried again until the frame is slower than it was then by `GAIN` (something changed) or the view changes (`reset`). Well under the budget, a step finer. */
+/** THE GPU'S TIME GOVERNS THE SCALE'S FLOOR, one window of frames at a time (`renderer.ts` `governFrame`): past `OVER` times the budget, a step coarser is asked; the next window is the levels' to settle; the one after says whether the step paid (`GAIN`). A step that did not pay is undone and none is tried again until the frame is slower than it was then by `GAIN` (something changed) or the view changes (`reset`). Well under the budget, a step finer. */
 export class TimeGovernor {
   /** The p95 before the step up being judged, ms. */
   private pressedAt: number | null = null;
@@ -93,7 +95,7 @@ export class TimeGovernor {
       this.pressedAt = null;
       if (p95 > before * (1 - GAIN)) { press(false); this.vainAt = before; return; }
     }
-    if (p95 > budget) {
+    if (p95 > budget * OVER) {
       if (p95 > this.vainAt * (1 + GAIN)) this.vainAt = Infinity;
       if (this.vainAt === Infinity && press(true)) { this.pressedAt = p95; this.settling = true; }
     } else if (p95 < budget * TIME_SLACK) {

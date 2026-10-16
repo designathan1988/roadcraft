@@ -39,11 +39,12 @@ export function stepBudget(name: string): { readonly key: string; readonly budge
 /** THE CITY PLAN'S BUDGETS: what the whole-map city may cost, from the plan */
 export type CityView = 'street' | 'district' | 'map';
 
-/** Per view: triangles and draw calls (colour + shadow) of one frame, GPU ms (p95), fps (a floor). */
+/** Per view: triangles and draw calls (colour + shadow) of one frame, GPU ms (p95), fps (a floor).
+ *  DO NOT set the triangles under what the view draws at full facade level on a dedicated GPU (district 13 M, street 5.4 M, map 4.9 M measured 2026-10-16): the levels' error scale rises until they fit (`buildings/frameBudget.ts`), and at 8 M the district view fell to masses - the picture lost for a number. A GPU that cannot play the view at all is the time governor's to pace (`gpuMs` times `OVER`), a step at a time and only while a step pays. */
 export const VIEW_BUDGETS: Readonly<Record<CityView, { readonly triangles: number; readonly drawCalls: number; readonly gpuMs: number; readonly fps: number }>> = {
-  street: { triangles: 10_000_000, drawCalls: 700 + 300, gpuMs: 12, fps: 60 },
-  district: { triangles: 8_000_000, drawCalls: 800 + 300, gpuMs: 12, fps: 60 },
-  map: { triangles: 4_000_000, drawCalls: 300 + 100, gpuMs: 12, fps: 50 },
+  street: { triangles: 16_000_000, drawCalls: 700 + 300, gpuMs: 12, fps: 60 },
+  district: { triangles: 16_000_000, drawCalls: 800 + 300, gpuMs: 12, fps: 60 },
+  map: { triangles: 8_000_000, drawCalls: 300 + 100, gpuMs: 12, fps: 50 },
 };
 
 /** What holds geometry on the GPU, by the plan's levels (§8.3); `null` budget: the plan sets none. */
