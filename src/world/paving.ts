@@ -1,14 +1,17 @@
-import { PointHeights, fieldOf, type FieldData, type RoadReads } from './roadField';
+import { PointHeights, fieldOf, roadSampleOut, type FieldData, type RoadReads } from './roadField';
 import { FOOTWAY_RISE, ROAD_TYPES, casingHalf, sidewalkHalf } from './roadTypes';
 import { type FlushData, flushShareOf } from './roads/footwayRise';
 import type { RoadStructure } from './structures';
 
 /** THE HEIGHT OF THE PAVING AT A POINT (footway or carriageway of a road at grade, NaN off the roads) */
 
+/** The road read under a point, kept (`roadAtInto`): DO NOT make a sample per read, a building's floor reads thousands (2026-10-16: 70 KB of garbage a floor). */
+const SAMPLE = roadSampleOut();
+
 /** The paving's height at (x, y) over a field of roads at grade; `riseAt` the footway's rise there. */
-export function pavedHeightFrom(field: Pick<RoadReads, 'roadAt' | 'at'>, structures: ReadonlySet<RoadStructure>,
+export function pavedHeightFrom(field: Pick<RoadReads, 'roadAt' | 'at' | 'roadAtInto'>, structures: ReadonlySet<RoadStructure>,
   riseAt: (x: number, y: number) => number, x: number, y: number): number {
-  const road = field.roadAt(x, y, structures);
+  const road = field.roadAtInto ? field.roadAtInto(x, y, structures, SAMPLE) : field.roadAt(x, y, structures);
   const rt = road.type >= 0 ? ROAD_TYPES[road.type] : undefined;
   if (!rt) return NaN;
   // `half` is this road's own casing (its lanes may be set individually)

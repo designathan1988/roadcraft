@@ -1,6 +1,6 @@
 import type { Aabb } from '@core/aabb';
 import { Digest } from '@core/digest';
-import { Polyline } from '@core/polyline';
+import { Polyline, newFrame } from '@core/polyline';
 import type { SegmentId } from './ids';
 import { ROAD_GROUND_CLEARANCE, type RoadStructure } from './structures';
 import { m } from './units';
@@ -63,6 +63,24 @@ interface RoadSample {
   readonly segment?: SegmentId;
 }
 
+/** `RoadSample` as `roadAtInto` writes it, one kept by its reader: every field written at each read. */
+export interface RoadSampleOut {
+  along: number;
+  across: number;
+  type: number;
+  half: number;
+  median: number;
+  sidewalk: number | undefined;
+  sidewalkLeft: number | undefined;
+  sidewalkRight: number | undefined;
+  segment: SegmentId | undefined;
+}
+
+/** A sample to hand `roadAtInto`. */
+export const roadSampleOut = (): RoadSampleOut => ({
+  along: 0, across: 0, type: -1, half: 0, median: 0, sidewalk: undefined, sidewalkLeft: undefined, sidewalkRight: undefined, segment: undefined,
+});
+
 /** The reads of the field a road surface makes per vertex (`render/roadSurfaceReads.ts`). */
 export interface RoadReads {
   /** Deck height of the road surface at a world point. */
@@ -71,6 +89,8 @@ export interface RoadReads {
   onSegment(segment: SegmentId, x: number, y: number): number;
   /** Everything a surface needs to know about the road nearest a point. */
   roadAt(x: number, y: number, structures?: ReadonlySet<RoadStructure>, includeManual?: boolean): RoadSample;
+  /** `roadAt` written into `out`, nothing made (the paving read under every building's footprint, `paving.ts`); `sidewalkLeft`/`Right` only when they differ. */
+  roadAtInto?(x: number, y: number, structures: ReadonlySet<RoadStructure> | undefined, out: RoadSampleOut, includeManual?: boolean): RoadSampleOut;
   /** Texture coordinates of (x, y) in the frame of the road nearest to */
   surfaceFrameAt(
     x: number,
@@ -220,8 +240,14 @@ export class SpatialIndex<P extends { readonly bbox: Aabb }> {
     if (this.buckets.size === 0) return this.all;
     const bucket = this.buckets.get(key);
     if (this.oversized.length === 0) return bucket ?? EMPTY;
-    return bucket ? [...bucket, ...this.oversized] : this.oversized;
+    if (!bucket) return this.oversized;
+    // DO NOT join a cell's roads to the oversized ones at each read: once per cell (the index never changes).
+    let joined = this.joined.get(key);
+    if (!joined) this.joined.set(key, joined = [...bucket, ...this.oversized]);
+    return joined;
   }
+  /** Each cell's roads with the oversized ones, as first asked (`near`). */
+  private readonly joined = new Map<number, readonly P[]>();
 }
 
 const EMPTY: readonly never[] = Object.freeze([]);
@@ -380,6 +406,8 @@ export function roadField<P extends FieldProfile>(
   terrainAt: (x: number, y: number) => number,
 ): Required<RoadReads> {
   const hit = { s: 0, distance: 0 };
+  /** The frame a read's side is taken from (`roadAt`): one, never kept. */
+  const frame = newFrame();
   const sampleProfile = (profile: P, x: number, y: number): number => {
     profile.line.closestInto(x, y, hit);
     return heightAtArc(profile, hit.s);
@@ -523,12 +551,30 @@ export function roadField<P extends FieldProfile>(
       if (!profile) return terrainAt(x, y) + ROAD_GROUND_CLEARANCE;
       return sampleProfile(profile, x, y);
     },
+    roadAtInto(x, y, structures, out, includeManual = true) {
+      const best = nearest(x, y, structures, includeManual);
+      if (!best) {
+        out.along = y; out.across = x; out.type = -1; out.half = 0; out.median = 0;
+        out.sidewalk = undefined; out.sidewalkLeft = undefined; out.sidewalkRight = undefined; out.segment = undefined;
+        return out;
+      }
+      const { s, distance } = last;
+      best.line.sampleAtInto(s, frame);
+      out.along = s;
+      out.across = distance * (Math.sign((x - frame.p.x) * frame.n.x + (y - frame.p.y) * frame.n.y) || 1);
+      out.type = best.type; out.half = best.half; out.median = best.median; out.sidewalk = best.sidewalk;
+      const apart = best.sidewalkLeft !== best.sidewalkRight;
+      out.sidewalkLeft = apart ? best.sidewalkLeft : undefined;
+      out.sidewalkRight = apart ? best.sidewalkRight : undefined;
+      out.segment = best.id;
+      return out;
+    },
     roadAt(x, y, structures, includeManual = true) {
       const best = nearest(x, y, structures, includeManual);
       if (!best) return { along: y, across: x, type: -1, half: 0, median: 0 };
       const { s, distance } = last;
       // Signed offset, so the two halves of a carriageway do not mirror the texture into a seam down the centre line.
-      const frame = best.line.sampleAt(s);
+      best.line.sampleAtInto(s, frame);
       const sign = Math.sign((x - frame.p.x) * frame.n.x + (y - frame.p.y) * frame.n.y) || 1;
       return {
         along: s,
