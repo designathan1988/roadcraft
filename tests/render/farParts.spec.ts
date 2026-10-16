@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BufferGeometry } from 'three';
 import { createBuildingKit } from '@render/buildings/kit';
 
-/** A RAILING IS SEEN FROM BOTH SIDES. */
+/** A RAILING, OR A BRISE'S BLADE, IS SEEN FROM BOTH SIDES FROM AFAR. */
 function faces(g: BufferGeometry): { at: string; n: [number, number, number] }[] {
   const p = g.getAttribute('position'), idx = g.getIndex();
   const count = idx ? idx.count : p.count;
@@ -22,8 +22,8 @@ function faces(g: BufferGeometry): { at: string; n: [number, number, number] }[]
 describe('the far parts', () => {
   it('draw every railing face from both sides', () => {
     const kit = createBuildingKit();
-    for (const kind of ['railing', 'roofRailing'] as const) {
-      const g = kit.far[kind];
+    for (const kind of ['railing', 'roofRailing', 'brise'] as const) {
+      const g = kit.screen[kind].levels[1]?.geometry;
       expect(g, kind).toBeDefined();
       const all = faces(g!);
       const lonely = all.filter((f) => !all.some((o) => o.at === f.at && o.n[0] * f.n[0] + o.n[1] * f.n[1] + o.n[2] * f.n[2] < -0.99));

@@ -3,7 +3,8 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import type { BuildingMeshes } from './buildingMesh';
 import type { LandedCell } from './cellRequests';
 import { buildSignature, disposeSignature } from './signature';
-import { type CellCache, detailKeysOf, dropCell } from './layerCells';
+import { type CellCache, dropCell } from './layerCells';
+import { type PartCell, dropParts } from './partCells';
 
 /** The buildings the layer shows, by id and by coarse cell, kept from one change to the next */
 export class TownIndex {
@@ -106,20 +107,19 @@ export function signatureBodies(root: Group, sigOf: (b: Building) => number): {
 /** Where a cell's batches are kept and shown. */
 export interface CellBatches {
   readonly cells: CellCache;
-  readonly details: CellCache;
+  readonly parts: Map<string, PartCell>;
   readonly stored: BuildingMeshes;
-  readonly detailed: BuildingMeshes;
+  readonly partRoot: Group;
 }
 
-/** One coarse cell's batches swapped for those landed for it (`cellRequests.ts`), its detail cells with it; none */
+/** One cell's batches swapped for those landed for it (`cellRequests.ts`), its parts with them; none */
 export function patchCell(key: string, landed: LandedCell | null, at: CellBatches): void {
   dropCell(at.cells, key, at.stored);
-  for (const sub of detailKeysOf(key)) dropCell(at.details, sub, at.detailed);
+  dropParts(at.parts, key, at.partRoot);
   if (!landed?.batch) return;
   at.cells.set(key, { entries: landed.entries, part: landed.batch, bytes: landed.bytes });
   at.stored.group.add(landed.batch.group);
-  for (const [sub, part] of landed.details) {
-    at.details.set(sub, { entries: landed.entries, part, bytes: 0 });
-    at.detailed.group.add(part.group);
-  }
+  if (!landed.parts) return;
+  at.parts.set(key, landed.parts);
+  at.partRoot.add(landed.parts.group);
 }

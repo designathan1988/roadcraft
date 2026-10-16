@@ -5,6 +5,7 @@ import { type CellMass, cellBytes } from './cellArrays';
 import type { CellEnv, CellPool } from './cellPool';
 import type { CellEntry, CellResult, ChunkSummary } from './cellWork';
 import type { BuildingKit } from './kit';
+import { PartCell } from './partCells';
 
 /** THE BUILDINGS' CELLS ASKED OF THE WORKERS AND LANDED (`layer.ts`) */
 
@@ -12,11 +13,11 @@ import type { BuildingKit } from './kit';
 export const sameEntries = (a: readonly CellEntry[], b: readonly CellEntry[]): boolean =>
   a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.sig === b[i]!.sig && e.digest === b[i]!.digest);
 
-/** A cell's batches as landed: its coarse batch and its detail cells'. */
+/** A cell's batches as landed: its shells, panes and furniture, and its parts by sub-cell (`partCells.ts`). */
 export interface LandedCell {
   readonly entries: readonly CellEntry[];
   readonly batch: BuildingMeshes | null;
-  readonly details: ReadonlyMap<string, BuildingMeshes>;
+  readonly parts: PartCell | null;
   /** What its batches send to the GPU, bytes (`cellBytes`): the layer's residency budget counts it. */
   readonly bytes: number;
 }
@@ -58,7 +59,7 @@ export class CellRequests {
       if (this.asked.get(key) !== ask) return;
       this.asked.delete(key);
       this.onSummaries(result.summaries, entries, env);
-      this.landed.set(key, this.land(entries, result, upload));
+      this.landed.set(key, this.land(cell, entries, result, upload));
     });
     // Where no worker runs the job is done by now.
     const now = this.landed.get(key);
@@ -137,12 +138,12 @@ export class CellRequests {
   }
 
   /** The batches wrapped in meshes, and sent to the GPU ahead (`warmLooseAhead`) when `upload`. */
-  private land(entries: readonly CellEntry[], result: CellResult, upload: boolean): Landing {
+  private land(cell: string, entries: readonly CellEntry[], result: CellResult, upload: boolean): Landing {
     const batch = result.batch ? meshesOf(result.batch, this.kit, false, false) : null;
-    const details = new Map(result.details.map(([key, arrays]) => [key, meshesOf(arrays, this.kit, false, false)] as const));
     let bytes = result.batch ? cellBytes(result.batch) : 0;
     for (const [, arrays] of result.details) bytes += cellBytes(arrays);
-    const landing: Landing = { entries, batch, details, bytes, uploads: 0 };
+    const parts = result.details.length ? new PartCell(cell, result.details, this.kit) : null;
+    const landing: Landing = { entries, batch, parts, bytes, uploads: 0 };
     if (!upload) return landing;
     const sent = warmLooseAhead(meshesIn(landing));
     if (sent) { landing.uploads++; void sent.then(() => { landing.uploads--; }); }
@@ -153,7 +154,8 @@ export class CellRequests {
 /** Every mesh of a landed cell. */
 function meshesIn(l: LandedCell): Mesh[] {
   const meshes: Mesh[] = [];
-  for (const part of [l.batch, ...l.details.values()]) part?.group.traverse((o) => { if ((o as Mesh).isMesh) meshes.push(o as Mesh); });
+  l.batch?.group.traverse((o) => { if ((o as Mesh).isMesh) meshes.push(o as Mesh); });
+  if (l.parts) meshes.push(...l.parts.warmMeshes());
   return meshes;
 }
 
@@ -161,5 +163,5 @@ function meshesIn(l: LandedCell): Mesh[] {
 function disposeLanded(l: LandedCell): void {
   cancelWarm(meshesIn(l));
   l.batch?.dispose();
-  for (const d of l.details.values()) d.dispose();
+  l.parts?.dispose();
 }

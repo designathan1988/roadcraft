@@ -6,6 +6,7 @@ import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { footprintRects, solidFootprints, storedBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
+import { CELL } from '@world/cells';
 import type { BuildingMeshes } from './buildingMesh';
 import type { CellEntry } from './chunk';
 import { PART_KINDS, type PartKind } from './kit';
@@ -29,22 +30,20 @@ export function groundDigest(b: Building, groundAt: GroundAt, pavedAt?: PavedAt)
 }
 /** Cells asked of the workers at once while the eye streams the town in (`landCells`, `layer.ts`), nearest first. */
 export const STREAM_AHEAD = 8;
-/** Side of the cells the buildings are batched in, world units. */
-export const BATCH_CELL = m(240);
-export const DETAIL_CELL = m(120);
-/** A window frame's side, m (`buildingMesh.ts`, the frames' depth). */
-const FRAME_SIDE = m(0.06);
-/** A detail cell's frames and railings are drawn whole while a frame's side spans this many pixels (`cullDetails`). */
-const FULL_DETAIL_PIXELS = 0.4;
-const DETAIL_HYSTERESIS = 0.1;
+/** Side of the cells the buildings are batched in: the world's one grid (`world/cells.ts`). */
+export const BATCH_CELL = CELL;
+/** Side of the sub-cells a cell's parts are filed by (four a side): each part kind's level is chosen per sub-cell, or per quadrant or cell where they agree (`partCells.ts`). */
+export const DETAIL_CELL = m(64);
 // Frozen tables, not state (`eslint-rules/no-module-state.js`).
-export const DETAIL_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['frame', 'railing', 'roofRailing', 'louvre']));
-export const COARSE_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set(PART_KINDS.filter((kind) => !DETAIL_PARTS.has(kind))));
+/** The parts drawn with the cell's shells, one batch a cell: window panes (each with its room's light) and pool water, their single level two triangles. */
+export const COARSE_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['glass', 'glassDark', 'water']));
+/** Every other part, filed by sub-cell and drawn by the error on the screen (`partCells.ts`). */
+export const DETAIL_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set(PART_KINDS.filter((kind) => !COARSE_PARTS.has(kind))));
 
 /** The buildings batched cell by cell, each cell its own meshes: a cell out of the view */
 /** A cell's batch and the entries it was made of (its coarse cell's: `cellRequests.ts`), by cell key. */
 export type CellCache = Map<string, CellBatch>;
-/** `bytes`: what a coarse cell and its detail cells send to the GPU, on the coarse cell's entry (0 on the detail cells'). */
+/** `bytes`: what a cell's batch and its parts (`partCells.ts`) send to the GPU. */
 interface CellBatch { entries: readonly CellEntry[]; part: BuildingMeshes; bytes: number }
 
 /** A cell cache that tells `told` each key that comes in (true) or goes (false). */
@@ -189,49 +188,6 @@ export function createCoverIndex(): CoverIndex {
   };
 }
 
-
-/** A detail cell's centre (map x/y), whether it is drawn by the far versions of its parts, and its coarse cell. */
-export interface DetailState { x: number; y: number; far: boolean; parent: string }
-
-/** Each detail cell shown with its coarse cell, and its frames and railings whole or by their street faces */
-export function cullDetailCells(detailCells: CellCache, states: WeakMap<BuildingMeshes, DetailState>, coarseNear: (key: string) => boolean,
-  eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, applyFar: (part: BuildingMeshes, far: boolean) => void): void {
-  for (const [key, cell] of detailCells) {
-    let state = states.get(cell.part);
-    // A cell new since the last frame is put to its detail whatever it is.
-    const fresh = !state;
-    if (!state) {
-      const comma = key.indexOf(',');
-      const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
-      // Its cell of the coarse grid (two of these a side), read once.
-      const parent = `${Math.floor((i * DETAIL_CELL) / BATCH_CELL)},${Math.floor((j * DETAIL_CELL) / BATCH_CELL)}`;
-      state = { x: (i + 0.5) * DETAIL_CELL, y: (j + 0.5) * DETAIL_CELL, far: false, parent };
-      states.set(cell.part, state);
-    }
-    const cx = state.x - eyeX, cy = state.y - eyeY;
-    // Drawn while its coarse cell is drawn in detail: the far level takes over by the error on the screen (`massCells.ts`).
-    cell.part.group.visible = coarseNear(state.parent);
-    // Its frames and railings whole while a frame's side spans `FULL_DETAIL_PIXELS` or more, by their street faces
-    const nx = Math.max(Math.abs(cx) - DETAIL_CELL / 2, 0), ny = Math.max(Math.abs(cy) - DETAIL_CELL / 2, 0);
-    const near = Math.max(Math.hypot(nx, ny, eyeZ), 1);
-    const pixels = orthoPx !== null ? FRAME_SIDE * orthoPx : (FRAME_SIDE * pxAtMetre) / near;
-    const nextFar = pixels < FULL_DETAIL_PIXELS * (state.far ? 1 : 1 - DETAIL_HYSTERESIS);
-    if (fresh || nextFar !== state.far) {
-      state.far = nextFar;
-      applyFar(cell.part, nextFar);
-    }
-  }
-}
-
-/** The detail cells (`DETAIL_CELL`) inside a coarse cell (`BATCH_CELL`), by key. */
-export function detailKeysOf(coarseKey: string): string[] {
-  const comma = coarseKey.indexOf(',');
-  const i = Number(coarseKey.slice(0, comma)), j = Number(coarseKey.slice(comma + 1));
-  const per = Math.round(BATCH_CELL / DETAIL_CELL);
-  const out: string[] = [];
-  for (let di = 0; di < per; di++) for (let dj = 0; dj < per; dj++) out.push(`${i * per + di},${j * per + dj}`);
-  return out;
-}
 
 /** A cell's batch out of its cache and its group, disposed. */
 export function dropCell(cache: CellCache, key: string, owner: BuildingMeshes | null): void {

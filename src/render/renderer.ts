@@ -115,8 +115,6 @@ const ROAD_TILES_HASH = typeof __ROAD_TILES_HASH__ !== 'undefined' && __ROAD_TIL
 /** How long the opening's roads wait for the kept tiles to be read, ms: past it they are built. */
 const KEPT_TILES_WAIT_MS = 3000;
 
-/** The thinnest frame bars are 0.045 u wide: their shadows are subpixel below this zoom. */
-const FACADE_SHADOW_ZOOM = perM(27.5);
 /** The zoom above which the shadow map is drawn every frame (px per metre). */
 const SHADOW_FULL_ZOOM = perM(12);
 /** Frames between shadow passes where a shadow is smaller than a texel. */
@@ -2451,9 +2449,7 @@ export function createSceneRenderer(
       post.followTown(rig.target.x, -rig.target.z, townSolids, canyonChanges(net.doc.changes));
       const detailed = rig.viewport.zoom >= quality.detailCutoffZoom;
       const plantMap = rig.viewport.zoom < PLANT_MAP_ZOOM;
-      // Keep the full facade at street zoom: the planar far mesh loses frames on side-facing windows.
-      buildings.setFar(rig.viewport.zoom < perM(7.5));
-      // Facade detail only within ~500 m of the eye (`cullDetails`).
+      // The buildings' detail and parts by the error on the screen (`levelOfDetail`, `cullDetails`).
       {
         const eye = rig.camera.position;
         let k = 1;
@@ -2473,9 +2469,11 @@ export function createSceneRenderer(
           reach = Math.hypot(halfW, halfH / Math.max(0.3, Math.sin(rig.viewport.elevation))) * 1.25 + m(120);
         }
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach);
-        buildings.cullDetails(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom);
+        // A shadow texel's side, m: a part's shadow narrower than it is not cast.
+        const shadow = environment.sun.shadow;
+        const texel = environment.sun.castShadow ? (shadow.camera.right - shadow.camera.left) / shadow.camera.zoom / shadow.mapSize.x : Infinity;
+        buildings.cullDetails(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, texel);
       }
-      buildings.setShadowFar(rig.viewport.zoom < FACADE_SHADOW_ZOOM);
       if (roads) roads.group.visible = true;
       if (details) details.group.visible = true;
       watchRoads(net);

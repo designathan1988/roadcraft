@@ -34,12 +34,8 @@ export interface BuildingLayer {
   setCutaway(spec: CutawaySpec | null): void;
   /** Windows lit from inside at night, as many as are awake at `hour` (see `BuildingKit.setNight`). */
   setNight(dark: number, hour?: number): void;
-  /** From afar (true) the frames and railings are drawn by their street faces only. */
-  setFar(far: boolean): void;
-  /** Thin facade parts stop casting shadows when their shadow width is subpixel. */
-  setShadowFar(far: boolean): void;
-  /** The frames, railings and louvres of each cell: drawn while its buildings are */
-  cullDetails(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null): void;
+  /** The parts of each cell drawn in detail, each kind at the coarsest level whose error is under a pixel, none under a pixel, its shadow only over `shadowTexel` (m; Infinity without shadows) */
+  cullDetails(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, shadowTexel: number): void;
   /** Each cell of buildings drawn near (in detail) or far (its buildings' masses, `massCells.ts`) by the error on the screen */
   levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach?: number): void;
   /** The most the cells' detail may hold on the GPU, bytes: past it the cells drawn far go first (their masses stand for them). */

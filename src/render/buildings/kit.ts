@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  BufferAttribute,
   BufferGeometry,
   Color,
   CylinderGeometry,
@@ -11,7 +12,7 @@ import {
   MeshStandardMaterial,
   PlaneGeometry,
 } from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import type { Finish } from '@world/buildings/materials';
 import { createFinishMaterials, finishAlbedo } from './finishes';
@@ -23,7 +24,7 @@ import { prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
 import { FACADE_PROP_KINDS, type FacadePropKind, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
 import { acFarGeometry, createFacadePropGeometries } from './facadePropModels';
-import { simplified } from '../mesh/simplify';
+import { MeshoptSimplifier } from 'meshoptimizer';
 import { m } from '@world/units';
 import { pullTowardEye } from '../depthConvention';
 
@@ -128,14 +129,31 @@ function scheduleOutsideLight(material: Material, key: string, after: string, ap
   material.customProgramCacheKey = () => key;
 }
 
+/** Three lengths along a part model's own axes (x along the wall, y up, z out of it): metres once scaled by an instance's matrix. */
+export type Axes = readonly [number, number, number];
+
+/** A part's geometry at one level of detail. */
+export interface PartLevel {
+  readonly geometry: BufferGeometry;
+  readonly triangles: number;
+  /** What it leaves out of the finest, along the model's axes: its error, the largest axis once scaled. */
+  readonly error: Axes;
+}
+
+/** How a part kind is drawn by the error on the screen (`partCells.ts`). */
+export interface PartScreen {
+  /** Finest first, each leaving out more; the small props' simplified levels come in once the simplifier has loaded (`SIMPLIFIED`). */
+  readonly levels: readonly PartLevel[];
+  /** The model's box: an instance under a pixel across its diagonal is not drawn. */
+  readonly extent: Axes;
+  /** The pieces its shadow is made of (a frame's rails and stiles, a brise's blades): under a shadow texel across the middle side of each it casts none. */
+  readonly pieces: readonly Axes[];
+}
+
 export interface BuildingKit {
   readonly geometry: Readonly<Record<PartKind, BufferGeometry>>;
-  /** Lighter geometry for the parts whose depth is lost from afar (`FAR_KINDS`). */
-  readonly far: Readonly<Partial<Record<PartKind, BufferGeometry>>>;
-  /** The thin parts drawn by their far versions whose shadow goes too when it is under a pixel (`setShadowFar`). */
-  readonly farShadows: ReadonlySet<PartKind>;
-  /** Settles when the simplified far versions of the small props are in `far` (`SIMPLIFIED_FAR`). */
-  readonly farReady: Promise<void>;
+  /** Each part kind's levels of detail, its size and its shadow's (`partCells.ts`). */
+  readonly screen: Readonly<Record<PartKind, PartScreen>>;
   readonly material: Readonly<Record<PartKind, Material>>;
   /** The merged shell - walls, plinths, bands, roofs, steps - one material per finish, vertex coloured. */
   readonly shell: Readonly<Record<Finish, MeshStandardMaterial>>;
@@ -159,9 +177,45 @@ export interface BuildingKit {
   dispose(): void;
 }
 
-/** The props drawn from afar by a simplified copy (`createBuildingKit` `farReady`): the heaviest, their detail under a pixel there. */
-// Not the louvres and brises: boxes of slats the simplifier cannot reduce within the error (measured).
-const SIMPLIFIED_FAR: readonly PartKind[] = ['bike', 'foliage', 'bush', 'airer', 'table', 'dish', 'pot', 'chair', 'lounger'];
+/** The props given simplified levels by meshoptimizer (`simplerLevels`): modelled in metres, their curves and leaves reducible. */
+// Not the louvres and brises: boxes of slats the simplifier cannot reduce within the error (measured); they have levels of their own.
+const SIMPLIFIED: readonly PartKind[] = ['bike', 'foliage', 'bush', 'airer', 'table', 'dish', 'pot', 'chair', 'lounger'];
+/** The errors those levels are asked at, metres (meshoptimizer's absolute error); one is kept only if it draws a quarter fewer triangles. */
+const SIMPLIFIED_ERRORS = [0.01, 0.025, 0.06];
+const FEWER = 0.75;
+
+const trianglesOf = (g: BufferGeometry): number => (g.index ? g.index.count : g.getAttribute('position').count) / 3;
+
+/** The coarser levels of a prop: welded, then simplified at each error with its normals and tones weighed in (meshoptimizer README, `simplifyWithAttributes`) */
+async function simplerLevels(source: BufferGeometry, finest: number): Promise<PartLevel[]> {
+  await MeshoptSimplifier.ready;
+  const welded = mergeVertices(source.clone(), 1e-4);
+  const index = welded.getIndex(), position = welded.getAttribute('position'), normal = welded.getAttribute('normal'), colour = welded.getAttribute('color');
+  if (!index || !normal) return [];
+  const count = position.count;
+  const positions = new Float32Array(count * 3), attributes = new Float32Array(count * 6);
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = position.getX(i); positions[i * 3 + 1] = position.getY(i); positions[i * 3 + 2] = position.getZ(i);
+    attributes[i * 6] = normal.getX(i); attributes[i * 6 + 1] = normal.getY(i); attributes[i * 6 + 2] = normal.getZ(i);
+    attributes[i * 6 + 3] = colour ? colour.getX(i) : 1; attributes[i * 6 + 4] = colour ? colour.getY(i) : 1; attributes[i * 6 + 5] = colour ? colour.getZ(i) : 1;
+  }
+  const indices = Uint32Array.from(index.array as ArrayLike<number>);
+  const out: PartLevel[] = [];
+  let was = finest;
+  for (const error of SIMPLIFIED_ERRORS) {
+    // Pruned: a piece smaller than the error (the soil, a spoke) goes whole.
+    const [kept, reached] = MeshoptSimplifier.simplifyWithAttributes(indices, positions, 3, attributes, 6, [0.5, 0.5, 0.5, 0.5, 0.5, 0.5], null, 3, error, ['ErrorAbsolute', 'Prune']);
+    if (kept.length === 0 || kept.length / 3 > was * FEWER) continue;
+    const g = welded.clone();
+    g.setIndex(new BufferAttribute(kept, 1));
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    out.push({ geometry: g, triangles: kept.length / 3, error: [reached, reached, reached] });
+    was = kept.length / 3;
+  }
+  welded.dispose();
+  return out;
+}
 
 /** A box of the given size whose centre is at (x, y, z). */
 function box(w: number, h: number, d: number, x: number, y: number, z: number): BufferGeometry {
@@ -170,9 +224,12 @@ function box(w: number, h: number, d: number, x: number, y: number, z: number): 
   return g;
 }
 
+/** A window frame's bar across the unit square. */
+const FRAME_BAR = 0.045;
+
 /** Window frame: outer border, a mullion and a transom, in a unit square. */
 function frameGeometry(): BufferGeometry {
-  const t = 0.045;
+  const t = FRAME_BAR;
   const parts = [
     box(1, t, 1, 0, 0.5 - t / 2, 0),
     box(1, t, 1, 0, -0.5 + t / 2, 0),
@@ -215,7 +272,7 @@ function quad(w: number, h: number, x: number, y: number, z: number, axis: 'z' |
 
 /** The far versions: what of a part is seen from a distance, its faces to the street only. */
 function frameFarGeometry(): BufferGeometry {
-  const t = 0.045;
+  const t = FRAME_BAR;
   const parts = [
     quad(1, t, 0, 0.5 - t / 2, 0.5),
     quad(1, t, 0, -0.5 + t / 2, 0.5),
@@ -307,13 +364,29 @@ function glassRailGeometry(): BufferGeometry {
 
 /** A bay's rack of sun fins: six vertical blades across the unit width, the storey's height, standing out of the wall */
 const BRISE_FINS = 6;
+/** A blade's thickness across the unit width. */
+const BRISE_BLADE = 0.035;
 function briseGeometry(): BufferGeometry {
-  const t = 0.035;
+  const t = BRISE_BLADE;
   const parts: BufferGeometry[] = [];
   for (let k = 0; k < BRISE_FINS; k++) parts.push(box(t, 1, 1, -0.5 + t / 2 + (k * (1 - t)) / (BRISE_FINS - 1), 0, 0));
   const merged = mergeGeometries(parts) as BufferGeometry;
   for (const p of parts) p.dispose();
   return merged;
+}
+
+/** A brise's rack from afar: each blade a plane through its middle, seen from both sides; its thickness (`BRISE_BLADE`) left out. */
+function briseFarGeometry(): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+  for (let k = 0; k < BRISE_FINS; k++) parts.push(quad(1, 1, -0.5 + BRISE_BLADE / 2 + (k * (1 - BRISE_BLADE)) / (BRISE_FINS - 1), 0, 0, 'x'));
+  const merged = mergeGeometries(parts) as BufferGeometry;
+  for (const p of parts) p.dispose();
+  return twoSided(merged);
+}
+
+/** A door from afar: its leaf alone, the panels' relief and the handle left out. */
+function doorFarGeometry(): BufferGeometry {
+  return box(1, 1, 0.6, 0, 0, -0.2);
 }
 
 function awningGeometry(): BufferGeometry {
@@ -448,28 +521,50 @@ export function createBuildingKit(): BuildingKit {
   const massingNight = { value: 0 };
   const massing = createMassingMaterial({ roomsAwake, massingNight });
   const unique = new Set<Material>([...Object.values(material), ...Object.values(shell), ...Object.values(dimShell), ghostShell, ghostParts, dimParts, massing]);
-  const far: Partial<Record<PartKind, BufferGeometry>> = {
-    frame: frameFarGeometry(),
-    railing: railingFarGeometry(),
-    roofRailing: roofRailingFarGeometry(),
-    acUnit: acFarGeometry(),
+  // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
+  const levels = {} as Record<PartKind, PartLevel[]>;
+  for (const kind of PART_KINDS) levels[kind] = [{ geometry: geometry[kind], triangles: trianglesOf(geometry[kind]), error: [0, 0, 0] }];
+  const coarser = (kind: PartKind, g: BufferGeometry, error: Axes): void => { levels[kind].push({ geometry: g, triangles: trianglesOf(g), error }); };
+  // Their street faces only: a frame's depth, a railing's bars' and rails' thickness.
+  coarser('frame', frameFarGeometry(), [0, 0, 1]);
+  coarser('railing', railingFarGeometry(), [0.05, 0, 0.05]);
+  coarser('roofRailing', roofRailingFarGeometry(), [0.02, 0, 0.05]);
+  // The case and its arms: the grille's rings, the coil's louvres and the lines into the wall left out (4.4 cm the thickest).
+  coarser('acUnit', acFarGeometry(), [0.045, 0.045, 0.045]);
+  coarser('brise', briseFarGeometry(), [BRISE_BLADE, 0, 0]);
+  // A leaf of slats from afar is a box: the slats' pitch and their depth in the frame left out.
+  coarser('louvre', unitBox, [0, 0.105, 0.6]);
+  coarser('door', doorFarGeometry(), [0, 0, 1.6]);
+  const extentOf = (g: BufferGeometry): Axes => {
+    if (!g.boundingBox) g.computeBoundingBox();
+    const b = g.boundingBox!;
+    return [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z];
   };
-  const geometries = new Set<BufferGeometry>([...Object.values(geometry), ...Object.values(far)]);
-  const farShadows = new Set(Object.keys(far) as PartKind[]);
-  // LOD OF THE SMALL PROPS: the balconies' life is 80-240 triangles a piece with no far version
-  const farReady = Promise.all(SIMPLIFIED_FAR.map(async (kind) => {
-    const lighter = await simplified(geometry[kind], 0.3, 0.04);
-    if (lighter === geometry[kind]) return;
-    far[kind] = lighter;
-    geometries.add(lighter);
-  })).then(() => {}, (error: unknown) => { console.error('Simplified far props failed', error); });
+  // What a shadow is made of: a frame's rails and stiles, a railing's rails and balusters, a rack's blades; a solid part its own box.
+  const pieces: Partial<Record<PartKind, Axes[]>> = {
+    frame: [[1, FRAME_BAR, 1], [FRAME_BAR, 1, 1]],
+    railing: [[1, 0.06, 0.05], [0.05, 0.06, 1], [0.015, 0.94, 0.015]],
+    roofRailing: [[1, 0.06, 0.05], [0.02, 0.94, 0.02]],
+    brise: [[BRISE_BLADE, 1, 1]],
+  };
+  const screen = {} as Record<PartKind, PartScreen>;
+  for (const kind of PART_KINDS) {
+    const extent = extentOf(geometry[kind]);
+    screen[kind] = { levels: levels[kind], extent, pieces: pieces[kind] ?? [extent] };
+  }
+  const geometries = new Set<BufferGeometry>(Object.values(levels).flatMap((list) => list.map((l) => l.geometry)));
+  // The small props' simplified levels, made off the frame's path once the simplifier has loaded.
+  void Promise.all(SIMPLIFIED.map(async (kind) => {
+    for (const level of await simplerLevels(geometry[kind], levels[kind][0]!.triangles)) {
+      levels[kind].push(level);
+      geometries.add(level.geometry);
+    }
+  })).then(() => {}, (error: unknown) => { console.error('Simplified prop levels failed', error); });
   let furniture: { geometry: Record<FurnitureKind, BufferGeometry>; material: MeshStandardMaterial } | null = null;
 
   return {
     geometry,
-    far,
-    farShadows,
-    farReady,
+    screen,
     material,
     shell,
     ghostShell,

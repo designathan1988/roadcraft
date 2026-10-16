@@ -1,4 +1,4 @@
-import { Box3, Group, type InstancedMesh, type Object3D } from 'three';
+import { Box3, Group } from 'three';
 import { Digest } from '@core/digest';
 
 import type { RoadDoc } from '@world/doc';
@@ -8,15 +8,13 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
 import { CellFiling } from '@world/cells';
 import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
-import {
-  BATCH_CELL, type CellCache, type DetailState, cullDetailCells, watchedCells,
-  STREAM_AHEAD, cellGroup, createCoverIndex, detailKeysOf, dropCell, groundDigest,
-} from './layerCells';
+import { BATCH_CELL, type CellCache, watchedCells, STREAM_AHEAD, cellGroup, createCoverIndex, dropCell, groundDigest } from './layerCells';
+import { type PartCell, type PartView, dropParts } from './partCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { createMassCells } from './massCells';
-import { type BuildingKit, type PartKind, createBuildingKit } from './kit';
+import { type BuildingKit, createBuildingKit } from './kit';
 import { type CellEnv, CellPool } from './cellPool';
 import { CellRequests, sameEntries } from './cellRequests';
 import type { BuildingLayer, BuildingPreviewInput, CutawaySpec } from './layerApi';
@@ -31,7 +29,6 @@ interface Kept { readonly sig: number; readonly digest: number; readonly b: Buil
 
 export function createBuildingLayer(): BuildingLayer {
   const kit: BuildingKit = createBuildingKit();
-  void kit.farReady.then(() => applyFacadeDetail()); // every batch takes its geometry and shadow detail again
   const group = new Group();
   group.name = 'buildings-layer';
   // Every flag in the city, waving: one instanced draw (`flagLayer.ts`).
@@ -69,8 +66,13 @@ export function createBuildingLayer(): BuildingLayer {
     resident += now - (residentBytes.get(key) ?? 0);
     if (now) residentBytes.set(key, now); else residentBytes.delete(key);
   });
-  const detailCells: CellCache = new Map();
-  let details: BuildingMeshes | null = null;
+  /** Each shown cell's parts, by the cell's key (`partCells.ts`), under one group. */
+  const partCells = new Map<string, PartCell>();
+  const partRoot = new Group();
+  partRoot.name = 'building-part-cells';
+  partRoot.matrixAutoUpdate = false;
+  partRoot.updateMatrix();
+  group.add(partRoot);
   let dimmed: BuildingId | null | undefined = undefined;
   /** "Ocultar outros" as the cells were last set (`fadeMeshes`), and the building left solid, drawn on its own */
   let storedDimmed: BuildingId | null | undefined = undefined;
@@ -83,8 +85,8 @@ export function createBuildingLayer(): BuildingLayer {
   let cutaway: CutawaySpec | null = null;
   /** The preview's and the solid building's tops (`top`), measured once each is made. */
   let ghostTop = -Infinity, soloTop = -Infinity;
-  let far = false;
-  let shadowFar = false;
+  /** The eye the parts' levels are chosen for (`cullDetails`), one object for every frame. */
+  const partView: { -readonly [K in keyof PartView]: PartView[K] } = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null, shadowTexel: Infinity };
   /** HLOD streaming (see the file's comment). */
   const eyeNow = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null as number | null, reach: Infinity };
   let eye: typeof eyeNow | null = null;
@@ -109,7 +111,7 @@ export function createBuildingLayer(): BuildingLayer {
   let shownNear = new Set<string>();
   /** Over the budget, the cells drawn far let go, the farthest first: their masses, on the GPU already, stand for them */
   const keepToBudget = (): void => {
-    if (resident <= budget || !eye || !stored || !details) return;
+    if (resident <= budget || !eye || !stored) return;
     const at = eye;
     const away = (key: string): number => {
       const comma = key.indexOf(',');
@@ -119,28 +121,7 @@ export function createBuildingLayer(): BuildingLayer {
     for (const key of far) {
       if (resident <= budget) break;
       dropCell(cells, key, stored);
-      for (const sub of detailKeysOf(key)) dropCell(detailCells, sub, details);
-    }
-  };
-  /** Each detail cell's centre (map x/y) and whether it is drawn by the far versions of its parts (`cullDetails`) */
-  const detailState = new WeakMap<BuildingMeshes, DetailState>();
-  /** The detail being applied by `applyDetail` (a closure made once, not a frame). */
-  let lighterNow = false;
-  const applyDetail = (o: Object3D): void => {
-    const mesh = o as InstancedMesh;
-    if (!mesh.isInstancedMesh) return;
-    const kind = mesh.name.startsWith('building-') ? (mesh.name.slice(9) as PartKind) : null;
-    const lighter = kind ? kit.far[kind] : undefined;
-    if (!kind || !lighter) return;
-    mesh.geometry = lighterNow ? lighter : kit.geometry[kind];
-    if (kit.farShadows.has(kind)) mesh.castShadow = !shadowFar && kit.castsShadow.has(kind);
-  };
-  const applyFacadeDetail = (): void => {
-    lighterNow = far;
-    stored?.group.traverse(applyDetail);
-    for (const cell of detailCells.values()) {
-      lighterNow = far || (detailState.get(cell.part)?.far ?? false);
-      cell.part.group.traverse(applyDetail);
+      dropParts(partCells, key, partRoot);
     }
   };
   /** An edit to one building must not resample the ground under every other building. */
@@ -289,20 +270,20 @@ export function createBuildingLayer(): BuildingLayer {
   let storedCut = 'whole';
   let cutCells = new Set<string>();
   /** Where the batches are shown, for `patchCell`. */
-  const shownAt = () => ({ cells, details: detailCells, stored: stored!, detailed: details! });
-  /** A cell landed shown: its coarse batch at the detail the eye has, its detail cells under theirs. */
+  const shownAt = () => ({ cells, parts: partCells, stored: stored!, partRoot });
+  /** A cell landed shown; its parts drawn from the next `cullDetails`, at the levels the eye allows. */
   const show = (key: string, landed: Parameters<typeof patchCell>[1]): void => {
     patchCell(key, landed, shownAt());
     const part = cells.get(key)?.part;
     if (!part) return;
-    lighterNow = far;
-    part.group.traverse(applyDetail);
-    // Landed while the others are faded: faded as the rest (`fadeMeshes`), its detail cells too.
+    const parts = partCells.get(key);
+    // Landed while the others are faded: faded as the rest (`fadeMeshes`), its parts too.
     if (dimmed !== undefined) {
       fadeMeshes(part.group, kit, true);
-      for (const sub of detailKeysOf(key)) { const d = detailCells.get(sub); if (d) fadeMeshes(d.part.group, kit, true); }
+      parts?.setFaded(true);
     }
     part.setVisible(cellNear(key));
+    if (parts) parts.group.visible = false;
   };
   /** One frame's share of the cells: those drawn near with no detail become pending (HLOD streaming) */
   const landCells = (env: CellEnv, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): boolean => {
@@ -376,7 +357,9 @@ export function createBuildingLayer(): BuildingLayer {
   return {
     group,
     get triangles() {
-      return (stored?.triangles ?? 0) + (details?.triangles ?? 0) + (ghost?.triangles ?? 0);
+      let parts = 0;
+      for (const cell of partCells.values()) if (cell.group.visible) parts += cell.triangles;
+      return (stored?.triangles ?? 0) + parts + (ghost?.triangles ?? 0);
     },
     get top() {
       return Math.max(massCells.top(), signatures.top(), ghostTop, soloTop);
@@ -408,11 +391,11 @@ export function createBuildingLayer(): BuildingLayer {
       // The masses of the buildings an edit changed
       if (key !== storedKey) {
         // Only buildings changed since the town was put together, each with its id in the diary, nothing else of the key
-        const since = stored && details && doc === townDoc ? doc.changes.since(townSeen, ['buildings', 'buildingWear']) : null;
+        const since = stored && doc === townDoc ? doc.changes.since(townSeen, ['buildings', 'buildingWear']) : null;
         // The buildings the ground moved under since the town was last taken in, found by place; null when that cannot be said.
         const groundMoved = groundKey === storedGround ? [] : groundMovedUnder?.(storedGround) ?? null;
         const changed = since?.every((e) => e.ids) && groundMoved ? since : null;
-        if (changed && groundMoved && stored && details) {
+        if (changed && groundMoved && stored) {
           const dirty = new Set<string>(), ids = new Set<BuildingId>();
           const named = changed.flatMap((e) => e.ids!) as BuildingId[];
           for (const b of groundMoved) named.push(b.id);
@@ -449,10 +432,9 @@ export function createBuildingLayer(): BuildingLayer {
           }
         } else {
           // @rebuild The whole town filed again (a first look, or a diary that cannot say what changed).
-          for (const batch of [stored, details]) {
-            if (!batch) continue;
-            group.remove(batch.group);
-            batch.dispose();
+          if (stored) {
+            group.remove(stored.group);
+            stored.dispose();
           }
           const shown = [...doc.buildings.all()].filter((b) => b.id !== hides && !ruined.has(b.id));
           for (const id of [...kept.keys()]) if (!doc.buildings.has(id)) dropKept(id);
@@ -473,11 +455,10 @@ export function createBuildingLayer(): BuildingLayer {
           for (const cell of [...cells.keys()]) {
             if (townCells.has(cell) && cellNear(cell)) continue;
             dropCell(cells, cell, null);
-            for (const sub of detailKeysOf(cell)) dropCell(detailCells, sub, null);
+            dropParts(partCells, cell, partRoot);
           }
           stored = cellGroup(cells);
-          details = cellGroup(detailCells);
-          group.add(stored.group, details.group);
+          group.add(stored.group);
           // DO NOT only clear the set: the requests stayed asked, held `STREAM_AHEAD`, and what landed was never taken.
           const wanted = new Set([...townCells.keys()].filter(cellNear));
           for (const cell of pendingCells) if (!wanted.has(cell)) requests.drop('cell', cell);
@@ -497,16 +478,16 @@ export function createBuildingLayer(): BuildingLayer {
         storedKey = key;
         // "Hide the others" turned on or off: every cell shown faded or made solid by its materials alone.
         if ((dimmed !== undefined) !== (storedDimmed !== undefined)) {
-          for (const cache of [cells, detailCells]) for (const cell of cache.values()) fadeMeshes(cell.part.group, kit, dimmed !== undefined);
+          for (const cell of cells.values()) fadeMeshes(cell.part.group, kit, dimmed !== undefined);
+          for (const cell of partCells.values()) cell.setFaded(dimmed !== undefined);
         }
         [storedGround, storedHides, storedRuined, storedDimmed] = [groundKey, hides, ruined, dimmed];
         storedCut = cutKey;
         flyFlags();
-        applyFacadeDetail();
         rebuilt = true;
       }
       // DO NOT put the town together again for it: every cell's masses were asked again and the cut cell waited behind them.
-      if (cutKey !== storedCut && stored && details) {
+      if (cutKey !== storedCut && stored) {
         const was = cutCells;
         cutCells = cutCellsOf(doc, cutaway);
         for (const cell of [...was, ...cutCells]) pendingCells.add(cell);
@@ -515,7 +496,7 @@ export function createBuildingLayer(): BuildingLayer {
         storedCut = cutKey;
       }
       // The cells pending land as they come back from the workers; those the eye neared since are asked; those long far go out (HLOD streaming).
-      if (stored && details && landCells(env, groundAt, groundKey, pavedAt)) {
+      if (stored && landCells(env, groundAt, groundKey, pavedAt)) {
         rebuilt = true;
         keepToBudget();
       }
@@ -565,11 +546,6 @@ export function createBuildingLayer(): BuildingLayer {
     setNight(dark, hour) {
       kit.setNight(dark, hour);
     },
-    setFar(next) {
-      if (next === far) return;
-      far = next;
-      applyFacadeDetail();
-    },
     levelOfDetail(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach = Infinity) {
       eyeNow.x = eyeX; eyeNow.y = eyeY; eyeNow.z = eyeZ; eyeNow.pxAtMetre = pxAtMetre; eyeNow.orthoPx = orthoPx; eyeNow.reach = reach;
       eye = eyeNow;
@@ -588,16 +564,13 @@ export function createBuildingLayer(): BuildingLayer {
     get residentBytes() {
       return resident;
     },
-    cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx) {
-      cullDetailCells(detailCells, detailState, (key) => massCells.near(key), eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, (part, cellFar) => {
-        lighterNow = far || cellFar;
-        part.group.traverse(applyDetail);
-      });
-    },
-    setShadowFar(next) {
-      if (next === shadowFar) return;
-      shadowFar = next;
-      applyFacadeDetail();
+    cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, shadowTexel) {
+      partView.x = eyeX; partView.y = eyeY; partView.z = eyeZ; partView.pxAtMetre = pxAtMetre; partView.orthoPx = orthoPx; partView.shadowTexel = shadowTexel;
+      // Drawn while its cell is drawn in detail (the masses stand for it from afar, `massCells.ts`), each kind by its error on the screen.
+      for (const [key, cell] of partCells) {
+        cell.group.visible = massCells.near(key);
+        if (cell.group.visible) cell.choose(partView);
+      }
     },
     setCutaway(next) {
       cutaway = next;
@@ -629,10 +602,11 @@ export function createBuildingLayer(): BuildingLayer {
       // The cells' arrays were let go once on the GPU (`gpuOnly.ts`) and live in the workers: every cell asked again.
       requests.clear();
       pendingCells.clear();
-      for (const cache of [cells, detailCells]) {
-        for (const { part } of cache.values()) part.dispose();
-        cache.clear();
-      }
+      for (const { part } of cells.values()) part.dispose();
+      cells.clear();
+      for (const cell of partCells.values()) cell.dispose();
+      partCells.clear();
+      partRoot.clear();
       // The masses too: asked again whole by the next update.
       massCells.dispose();
       storedKey = '';
@@ -644,12 +618,11 @@ export function createBuildingLayer(): BuildingLayer {
       flagLayer.dispose();
       massCells.dispose();
       stored?.dispose();
-      details?.dispose();
       solo?.dispose();
-      for (const cache of [cells, detailCells]) {
-        for (const cell of cache.values()) cell.part.dispose();
-        cache.clear();
-      }
+      for (const cell of cells.values()) cell.part.dispose();
+      cells.clear();
+      for (const cell of partCells.values()) cell.dispose();
+      partCells.clear();
       groundDigests.clear();
       ghost?.dispose();
       kit.dispose();
