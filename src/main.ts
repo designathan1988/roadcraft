@@ -2010,9 +2010,9 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   streamed = { store, generator, streamer };
   if (fresh) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
-  // The opening shows the town once the tiles round the camera are in.
-  // Held only until the first tile is in: the rest of the region lands behind the curtain's fall (`renderer.ts` reveal, the opening in two steps).
-  scene.holdOpening(() => doc.loadedTiles.size > 0);
+  // THE WHOLE MAP MADE BEFORE THE TOWN IS SHOWN (the city-game's opening): every tile generated and stored (`streamer.mapMade`), so every far level is drawn from a tile, never from a stand-in; the region's own detail lands behind the curtain's fall (`renderer.ts` reveal, the opening in two steps).
+  streamer.rush = true;
+  scene.holdOpening(() => doc.loadedTiles.size > 0 && streamer.mapMade >= streamer.mapTotal);
   // A new world opens over its first city, at the origin (`cityGen/wholeMap.ts`); one opened again where the camera was left.
   if (fresh) { camera.x = 0; camera.y = 0; view.moveTo({ x: 0, y: 0 }); }
   streamer.focus(camera.x, camera.y);
@@ -2432,6 +2432,15 @@ document.body.appendChild(loadingCurtain);
 let programsWaited: Promise<void> | null = null;
 let programsCompiled = false;
 function syncLoadingCurtain(): void {
+  // The map being generated (`holdOpening`): how far; once shown, the tiles ahead no longer take every lane.
+  if (streamed) {
+    const { streamer } = streamed;
+    if (scene.opening && streamer.mapMade < streamer.mapTotal) {
+      const text = t('map.generating', { done: streamer.mapMade, total: streamer.mapTotal });
+      if (loadingCurtain.textContent !== text) loadingCurtain.textContent = text;
+    } else if (loadingCurtain.textContent !== t('map.loading')) loadingCurtain.textContent = t('map.loading');
+    if (!scene.opening) streamer.rush = false;
+  }
   const ready = scene.programsReady;
   if (ready !== programsWaited) {
     programsWaited = ready;

@@ -5,8 +5,8 @@ import type { AdoptLane, FromJob, JobService, ToJob } from './jobScope';
 
 /** What one busy worker costs the page's process at its peak: its V8 heap with its services' code and state (about 110 MB), its young generation grown to its most under a fast allocator (about 56 MB) and the arrays it hands the page (2026-10-16, memory-infra of a streamed opening: 16 workers, 1.77 GB of V8 and 1.2 GB of array buffers). */
 const WORKER_BYTES = 512 * 2 ** 20;
-/** The share of the machine's memory the pool may take: the page, the GPU's process and the system keep the rest. */
-const POOL_SHARE = 1 / 8;
+/** The share of the machine's memory the pool may take: the page, the GPU's process and the system keep the rest. A quarter: 4 workers where the browser tells 8 GB (it tells no more), 2 at 4 GB; at an eighth an 8 GB machine had 2, and one made the map's 100 tiles one after another (the tiles' buildings are rows now, `world/growth/rows.ts`: a tile's worker holds a fraction of what it did). */
+const POOL_SHARE = 1 / 4;
 /** DO NOT size the pool by the machine alone: the page and every worker of its process share ONE V8 heap cage of 4 GB (pointer compression's shared cage, V8 9.2; the V8 sandbox needs it), and a streamed opening died "out of memory" with 3.4 GB of V8 across 24 workers (2026-10-16) - the pool takes a fifth of it, at a busy worker's V8 heap and young generation (~170 MB). */
 const CAGE_BYTES = 4 * 2 ** 30;
 /** Two fifths of the cage for the pool (2026-10-16: the worker that took it down was a Clipper2 union that never ended, fixed in `scripts/patches`; a busy worker holds 100-250 MB): 9 workers at most by the cage, the page's heap and the simulation's keep the rest. */

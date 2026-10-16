@@ -98,6 +98,19 @@ export class WorldStreamer {
     return this.wanted.includes(key);
   }
 
+  /** THE WHOLE MAP MADE BEFORE IT IS SHOWN (the city-game's opening: every tile generated, then the city): while set, the tiles ahead take every lane (nothing else waits on them); let go once the town is shown. */
+  rush = false;
+
+  /** The map's tiles there are, and those made (in the store, or failed and told): the opening waits for all (`main.ts` holdOpening). */
+  get mapTotal(): number {
+    return MAP_TILES * MAP_TILES;
+  }
+  get mapMade(): number {
+    let failed = 0;
+    for (const key of this.failedAt.keys()) if (!this.known.has(key)) failed++;
+    return this.known.size + failed;
+  }
+
   /** Whether every tile the camera wants is in the document (the opening shows the town once it is). */
   get settled(): boolean {
     // A tile that failed does not hold the opening (told, and asked again later).
@@ -157,9 +170,8 @@ export class WorldStreamer {
 
   /** The nearest wanted tiles not here nor asked: asked of the store, a few at a time; then the tiles ahead made in the store, one at a time. */
   private ask(): void {
-    this.askAhead();
     for (const key of this.wanted) {
-      if (this.asked.size >= this.inFlight) return;
+      if (this.asked.size >= this.inFlight) break;
       if (this.doc.hasTile(key) || this.asked.has(key) || this.ready.has(key)) continue;
       if (performance.now() - (this.failedAt.get(key) ?? -Infinity) < RETRY_MS) continue;
       this.asked.add(key);
@@ -175,14 +187,17 @@ export class WorldStreamer {
         this.tell.failed?.(`tile ${key}: ${String(error)}`);
       });
     }
+    this.askAhead();
   }
 
   /** DO NOT make tiles ahead while the region waits for its own: once every tile it wants is in, the ring it loads next (several at once), then every other tile of the map nearest first (the far levels draw them, `written`). */
   private askAhead(): void {
-    if (this.asked.size > 0 || this.ready.size > 0 || !this.settled) return;
+    // The map being made (`rush`): every lane the region's tiles leave free, at once; after, once the region is in.
+    if (!this.rush && (this.asked.size > 0 || this.ready.size > 0 || !this.settled)) return;
     for (const key of this.aheadOrder) {
       // Nearest first: past the ring, one lane kept free for the tiles the camera moves onto.
-      if (this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, this.inFlight - 1))) return;
+      if (this.rush ? this.asked.size + this.ahead.size >= this.inFlight
+        : this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, this.inFlight - 1))) return;
       if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key) || this.wantedNear(key, ACTIVE_RADIUS)) continue;
       this.ahead.add(key);
       // DO NOT bring a tile made ahead onto the page: only its version is wanted here (the far levels and the meso read it from the store).

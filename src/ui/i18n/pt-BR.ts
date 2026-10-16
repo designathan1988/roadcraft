@@ -1755,4 +1755,5 @@ export const PT_BR: Dictionary = {
   'hint.transit.lineMade': 'Linha criada.',
   'city.building': 'Construindo a cidade: {done} de {total} lotes',
   'map.loading': 'Carregando o mapa…',
+  'map.generating': 'Gerando a cidade… {done} de {total} partes',
 };

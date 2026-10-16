@@ -1765,4 +1765,5 @@ export const EN: Dictionary = {
   'hint.transit.lineMade': 'Line made.',
   'city.building': 'Building the city: {done} of {total} lots',
   'map.loading': 'Loading the map…',
+  'map.generating': 'Generating the city… {done} of {total} parts',
 };

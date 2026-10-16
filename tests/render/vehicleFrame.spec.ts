@@ -99,7 +99,8 @@ describe('vehicle frame', () => {
       const start = source.indexOf(fn);
       expect(start, fn).toBeGreaterThan(0);
       const body = source.slice(start, source.indexOf('\n  };', start));
-      expect(body, fn).toContain('toWorld(');
+      // Through the vehicle's frame: `toWorld`, or its matrix `F` written into the instance by hand (`place`, 9a59409b).
+      expect(/toWorld\(|F\[12\]/.test(body), fn).toBe(true);
       expect(body, fn).not.toMatch(/fdeck \+/);
     }
   });

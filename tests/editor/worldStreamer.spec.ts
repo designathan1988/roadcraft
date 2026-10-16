@@ -72,6 +72,30 @@ describe('the streamer', () => {
     const rings = store.ensures.map(ring);
     for (let k = 1; k < rings.length; k++) expect(rings[k]!).toBeGreaterThanOrEqual(rings[k - 1]!);
   });
+
+  it('makes the whole map while the opening waits for it (`rush`): every lane the region leaves free, nearest first, counted to the last tile', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const streamer = new WorldStreamer(doc, store, {}, 4);
+    streamer.rush = true;
+    streamer.focus(0, 0);
+    expect(streamer.mapTotal).toBe(MAP_TILES * MAP_TILES);
+    await turns(1);
+    // Before the region is put in, the lanes it leaves free already make the map: never more than the lanes at once.
+    expect(doc.loadedTiles.size).toBe(0);
+    expect(store.ensures.length).toBeGreaterThan(0);
+    expect(store.ensures.length).toBeLessThanOrEqual(4);
+    for (let round = 0; round < 80 && streamer.mapMade < streamer.mapTotal; round++) {
+      for (const key of [...store.ensures]) store.finish(key);
+      await turns(2);
+      streamer.focus(0, 0);
+      streamer.apply(round);
+    }
+    expect(streamer.mapMade).toBe(streamer.mapTotal);
+    // Ahead tiles asked before the region was in: the lanes it left free were used.
+    expect(store.ensures.length).toBe(MAP_TILES * MAP_TILES - 9);
+    expect(store.ensures.some((key) => ring(key) <= 1)).toBe(false);
+  });
 });
 
 describe('the active region and the kept ring', () => {

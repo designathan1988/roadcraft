@@ -23,10 +23,10 @@ export class RevealGate {
   get worked(): number {
     return this.work;
   }
-  /** One frame of the load: `whole`, everything of the town is in. */
-  step(whole: boolean, now: number): RevealStep {
+  /** One frame of the load: `whole`, everything of the town is in; `making`, the map is still being generated (the opening waits for all of it, `holdOpening`: that time is not the town's to put together and does not count). */
+  step(whole: boolean, now: number, making = false): RevealStep {
     if (this.opened) return 'show';
-    if (this.last >= 0) this.work += Math.min(MAX_GAP_MS, Math.max(0, now - this.last));
+    if (this.last >= 0 && !making) this.work += Math.min(MAX_GAP_MS, Math.max(0, now - this.last));
     this.last = now;
     if (whole && !this.warmed) {
       this.warmed = true;

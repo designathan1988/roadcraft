@@ -7,8 +7,8 @@ import { jobPort, longWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
-/** Workers making tiles at once, and how many the region asks at a time (`worldStreamer.ts` inFlight): the long-running side of the pool (`longWorkers`) less the growth's, one at least; never on the workers of the traffic's lanes, the cells or the far levels (`jobPool.ts` place). */
-export const tileLanes = (): number => Math.max(1, longWorkers() - 1);
+/** Workers making tiles at once, and how many the region asks at a time (`worldStreamer.ts` inFlight): the long-running side of the pool (`longWorkers`), the growth beside them (it grows the player's zones, once the map is made); never on the workers of the traffic's lanes, the cells or the far levels (`jobPool.ts` place). */
+export const tileLanes = (): number => longWorkers();
 
 /** Where a tile made is stored by the worker, and whether its texts come back with its version. */
 type StoreAsk = NonNullable<StreamTileAsk['store']>;
