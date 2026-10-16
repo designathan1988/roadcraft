@@ -8,6 +8,10 @@ import type { CityOptions, CityStyle } from './plan';
 
 /** THE MAP (the player's order, 2026-10-16): a square of `MAP_TILES` tiles each way round the origin, 10 km x 10 km, the city over the WHOLE of it; never a world without an edge. The size will be the player's choice; the rules below stay pure functions of the seed and the place, so a larger map is the same rules over more tiles. */
 export const MAP_TILES = 10;
+/** Bumped when what the plan puts where changes (the map's edge, the city's spread): a world's stored tiles and far bakes are kept under it, so a city of an older plan is never shown for a new one. */
+export const PLAN_VERSION = 2;
+/** The key a world is stored and baked under: the seed, the map's size and the plan's version. */
+export const worldKey = (seed: number): string => `${seed}.m${MAP_TILES}.p${PLAN_VERSION}`;
 /** The map's half side, world units. */
 export const MAP_HALF = (MAP_TILES / 2) * TILE;
 /** Whether tile (i, j) is on the map (-5..4 each way at 10). */

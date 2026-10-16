@@ -19,9 +19,13 @@ produced nothing; what moved the game was reading the code, fixing it, and looki
   floating pieces, wrong light, wrong language. A defect seen is a cause to find in the code, fix, and shoot again.
   One shot is never "it is fine": the player has to be able to play it.
 - The built-in browser pane is 800x450: not for shots. Chrome through `look.mjs` only. Never a window on the screen.
-- NO measuring: no probes, traces, memory dumps, heap profiles, counters, fps or ms in this file or in reports.
-  "Slow" is diagnosed by reading the frame's code and the shots (what is still being built when the camera moves),
-  never by numbers. No process, paperwork, plan or note instead of fixing.
+- ONE measurement is allowed, because it points at the code: the CPU profile of the long frames while the camera
+  moves (`look.mjs` steps `{ "profile": "name" }` ... drags ... `{ "profileEnd": true }`: it prints the functions
+  the long frames spent their time in). Each function it names is read and fixed the same hour. Nothing else:
+  no probes, traces, memory dumps, heap profiles, counters, fps or ms in this file or in reports; no process,
+  paperwork, plan or note instead of fixing.
+- A world's tiles are stored under `worldKey` (seed, map size, `PLAN_VERSION` in `wholeMap.ts`): bump
+  PLAN_VERSION whenever the plan puts things elsewhere, or the player sees the old city from the store.
 - Tests: `npm run typecheck` and `npx vitest run <files touched>` before each commit; a failure is fixed in the
   code, never by loosening the test. The full suite at the end of a block.
 - Every file written in the main folder reloads the player's game on 5300 (Vite). Work and commit in a worktree

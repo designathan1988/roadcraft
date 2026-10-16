@@ -1,6 +1,6 @@
 import { Group, type Mesh } from 'three';
 import { Digest } from '@core/digest';
-import type { WholeMapOptions } from '@world/cityGen/wholeMap';
+import { type WholeMapOptions, worldKey } from '@world/cityGen/wholeMap';
 import { tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
@@ -197,7 +197,8 @@ export class FarTree<P> implements FarTiles {
 
   setSource(source: FarTileSource | null, isLoaded: (tileKey: number) => boolean): void {
     const plan = source?.plan ?? null;
-    const world = plan ? new Digest().addPlain(plan).value().toString(36) : '';
+    // The plan's version and the map's size in it (`worldKey`): bakes of an older plan never read for this one.
+    const world = plan ? `${new Digest().addPlain(plan).value().toString(36)}.${worldKey(plan.seed)}` : '';
     if (world !== this.world) {
       // Another world: its plan's nodes gone, every bake asked again under its own keys.
       this.refill();

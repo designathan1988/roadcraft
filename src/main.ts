@@ -34,7 +34,7 @@ import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
 import { DEFAULT_CITY, planCity, type CityOptions, type CityPlan, type CitySize } from '@world/cityGen/plan';
-import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, clampToMap } from '@world/cityGen/wholeMap';
+import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, clampToMap, worldKey } from '@world/cityGen/wholeMap';
 import { greenCitySteps, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
@@ -1950,7 +1950,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   persistence.paused = true;
   history.clear();
   const generator = new TileGenerator(options);
-  const mapName = `roadcraft.tiles.${options.seed}`;
+  // Under the plan's version and the map's size (`worldKey`): DO NOT reopen tiles an older plan made (a city of 5 km, land past the edge).
+  const mapName = `roadcraft.tiles.${worldKey(options.seed)}`;
   // Read, written and made in the job workers, the desktop's as a browser's (each worker its own port to the shell's saves, `editor/workerParts.ts`).
   const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
     (i, j) => generator.generate(tileKey(i, j)),
