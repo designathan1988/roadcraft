@@ -51,7 +51,8 @@ export interface StreamerEvents {
 /** Where tiles come from and go to: the store, which makes a tile it does not have (`editor/tileStore.ts`). */
 export interface TileSource {
   load(key: number): Promise<TileRecords>;
-  write(records: TileRecords): Promise<boolean>;
+  /** The version written, or null when it was not. */
+  write(records: TileRecords): Promise<number | null>;
 }
 
 export class WorldStreamer {
@@ -225,11 +226,12 @@ export class WorldStreamer {
   /** A tile written as the document holds it now, its version moved on; written in order, never two of one tile at once. */
   private write(key: number): void {
     this.dirty.delete(key);
-    const version = (this.versions.get(key) ?? 0) + 1;
-    this.versions.set(key, version);
-    const records = this.doc.tileRecords(key, version);
-    this.writing = this.writing.then(() => this.source.write(records)).then((ok) => {
-      if (ok) this.tell.written?.(key, version); else this.tell.failed?.(`tile ${key} was not written`);
+    // The store says the version it wrote (one past what it knows): the far levels key their bakes by it.
+    const records = this.doc.tileRecords(key, this.versions.get(key) ?? 0);
+    this.writing = this.writing.then(() => this.source.write(records)).then((version) => {
+      if (version === null) { this.tell.failed?.(`tile ${key} was not written`); return; }
+      if (this.doc.hasTile(key)) this.versions.set(key, version);
+      this.tell.written?.(key, version);
     }, (error: unknown) => this.tell.failed?.(`tile ${key} was not written: ${String(error)}`));
   }
 }

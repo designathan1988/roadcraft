@@ -47,7 +47,7 @@ describe('a tile stored', () => {
     const store = memoryStore();
     const tiles = new TileStore('map', storeTiles(store), never);
     const tile = emptyTile(2, -3, { nodes: [node(7, m(2_100), m(-3_000))], lotKeys: ['b:1,2,3,4'] });
-    expect(await tiles.write(tile)).toBe(true);
+    expect(await tiles.write(tile)).toBe(1);
     const blob = store.blobs.get(`map:T:${tile.key}`)!;
     // gzip's magic bytes (RFC 1952).
     expect([...new Uint8Array(await blob.arrayBuffer()).slice(0, 2)]).toEqual([0x1f, 0x8b]);

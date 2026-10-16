@@ -179,9 +179,12 @@ export class TileStore {
     return this.chained(key, () => this.readNow(key));
   }
 
-  /** Stores a tile, its version one past the last the store knows; false when it was not written. */
-  write(records: TileRecords): Promise<boolean> {
-    return this.chained(records.key, () => this.put(this.stamped(records)));
+  /** Stores a tile, its version one past the last the store knows: the version written, or null when it was not (what is baked of it is keyed by that version). */
+  write(records: TileRecords): Promise<number | null> {
+    return this.chained(records.key, async () => {
+      const stamped = this.stamped(records);
+      return (await this.put(stamped)) ? stamped.version : null;
+    });
   }
 
   /** The stored tile, or the tile generated and stored: generated only when the store has none. */
