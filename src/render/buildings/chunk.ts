@@ -1,7 +1,28 @@
 import type { FurnitureKind } from '@world/buildings/interior';
 import type { Finish } from '@world/buildings/materials';
 import type { FlagInstance } from './flagLayer';
-import type { PartKind } from './kit';
+import type { FacadePropKind } from './facadeProps';
+
+/** A part instanced per kind for the whole near ring (`kit.ts` PART_KINDS): declared with the cell's data, which the kit's materials do not need. */
+export type PartKind =
+  | 'glass'
+  | 'frame'
+  | 'concrete'
+  | 'door'
+  | 'shutter'
+  | 'railing'
+  | 'roofRailing'
+  | 'awning'
+  | 'column'
+  | 'glassDark'
+  | 'water'
+  | 'lamp'
+  | 'wash'
+  | 'fin'
+  | 'louvre'
+  | 'glassRail'
+  | 'brise'
+  | FacadePropKind;
 
 /** WHAT ONE BUILDING CONTRIBUTES TO THE BATCHES */
 
@@ -13,6 +34,10 @@ export interface CellEntry {
   /** The ground under it, digested (`groundDigest`). */
   readonly digest: number;
 }
+
+/** Whether two lists are the same buildings with the same records on the same ground (the strings compared by reference). */
+export const sameEntries = (a: readonly CellEntry[], b: readonly CellEntry[]): boolean =>
+  a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.sig === b[i]!.sig && e.digest === b[i]!.digest);
 
 /** DO NOT keep the text with the entries the page keeps: a string the size of the record, for every building. */
 export interface CellJobEntry extends CellEntry {

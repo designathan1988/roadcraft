@@ -1,7 +1,7 @@
 import { fractureData, mergeFragments, type FractureInput } from './fracture';
 import type { JobScope } from '../../jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): its messages answered on the scope it is given. */
+/** This service of the job system (`job.worker.ts`): its messages answered on the scope it is given. */
 export function serve(self: JobScope): void {
   /** Breaks a building into its fragments off the main thread (`fracture.ts`) */
   self.onmessage = (e: MessageEvent<{ id: number; input: FractureInput }>) => {

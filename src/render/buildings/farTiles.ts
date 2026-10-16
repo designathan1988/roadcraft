@@ -1,7 +1,8 @@
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Finish } from '@world/buildings/materials';
 import type { Building } from '@world/buildings/types';
-import { TILE, type TileRecords } from '@world/tiles';
+import { TILE } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { derivedCacheOpen, keepDerivedDurably, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { type CellMass, cellMass, cellMassBuffers, indexArray, shellBounds } from './cellArrays';

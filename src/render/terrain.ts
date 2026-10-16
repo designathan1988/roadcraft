@@ -42,7 +42,6 @@ import { landNormalsInto, type PlateMesh } from './plateMesh';
 import { LOD_LEVELS, LandLevels } from './terrainLevels';
 import { LandLod, lodFragmentGlsl, lodVertexGlsl, type LandGrid } from './terrainLod';
 import type { ChangeJournal } from '@world/changes';
-import { PLATE_SIZE } from '@world/bounds';
 import {
   MAX_TERRAIN_STAMPS,
   RIVER_BED_FLOOR,
@@ -64,11 +63,10 @@ import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sam
 import { type NaturalPlate, type PlateShapeAnswer, type PlateShapeAsk, askPlate } from './groundShape';
 import type { Aabb } from '@core/aabb';
 import type { PlateHeights } from './sharedGround';
+import { TERRAIN_CELL, TERRAIN_HALF, TERRAIN_SEGMENTS, TERRAIN_SIZE } from './terrainGrid';
 
-/** Side of one terrain plate, in world units: the map is laid in square plates */
-const TERRAIN_SIZE = PLATE_SIZE;
-/** Cells per side: 320 cells of 6.4 m (`world/bounds.ts` PLATE_SIZE), fine enough for a brush. */
-const TERRAIN_SEGMENTS = 320;
+export { TERRAIN_CELL, TERRAIN_HALF } from './terrainGrid';
+
 export const TERRAIN_BASE = m(-0.048);
 
 /** Radius of a river's water disc, as a fraction of the stamp that carved it. */
@@ -82,8 +80,6 @@ const WATER_MARGIN = m(0.16);
 /** Grid resolution of the unified river surface. */
 const WATER_CELL = m(1.6);
 
-/** World size of one terrain quad. */
-export const TERRAIN_CELL = TERRAIN_SIZE / TERRAIN_SEGMENTS;
 
 
 /** A shore texel with no water near it (`shoreLevels`). */
@@ -91,8 +87,6 @@ const NO_WATER = -100_000;
 
 /** Corners per side of the terrain grid — one more than its cells. */
 const GRID = TERRAIN_SEGMENTS + 1;
-/** Half the terrain plate's extent. */
-export const TERRAIN_HALF = TERRAIN_SIZE / 2;
 /** A plate's grid of corners as the shaping and the sampling read it (`terrainShaping.ts`). */
 const plateGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 /** A plate's grid as its patches read it (`terrainLod.ts`). */

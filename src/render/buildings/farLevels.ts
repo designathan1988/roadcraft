@@ -1,7 +1,8 @@
 import { Group, type Mesh } from 'three';
 import { Digest } from '@core/digest';
 import type { Finish } from '@world/buildings/materials';
-import { type TileRecords, tileKey, tileOfKey } from '@world/tiles';
+import { tileKey, tileOfKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../../jobs/jobPool';
 import { forgetDerivedKeys, forgetOtherDerived } from '../derivedCache';
 import type { SharedGroundData } from '../sharedGround';

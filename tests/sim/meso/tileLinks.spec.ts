@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
-import { TILE, type TileRecords, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
+import { TILE, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 import { SimWorld } from '@sim/world';
 import { Meso } from '@sim/meso/meso';

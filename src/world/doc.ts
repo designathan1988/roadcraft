@@ -43,7 +43,7 @@ import { type Building, type BuildingId, cloneBuilding } from './buildings/types
 import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from './zones';
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, rectAround, type ChangeRect, type DocChangeKind } from './changes';
-import { OWNER, TILE_COUNTED, type TileRecords, tileIdBase, tileOfKey, tileRect } from './tiles';
+import { OWNER, TILE_COUNTED, tileIdBase, tileOfKey, tileRect } from './tiles';
 import { PoleIndex } from './poleIndex';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
@@ -51,7 +51,6 @@ import { METERS_PER_UNIT, m } from './units';
 import { ForkMap, forkWork } from '@core/forkMap';
 import { RecordMap } from '@core/recordMap';
 import { samePlain } from '@core/plain';
-import { patchBytes, type DocPatch } from './docImage';
 
 /** `shape` flattened until no band of a road of this profile folds over (see `RoadDoc.fitCurve`). */
 export function fitRoadCurve(
@@ -1397,7 +1396,10 @@ export class RoadDoc {
   tileIdAt(kind: 'building' | 'lot', at: { readonly x: number; readonly y: number }): number | null {
     const key = OWNER.at(at);
     const next = this.tileContents.has(key) ? this.tileNext.get(key) : undefined;
-    return next ? next[kind]++ : null;
+    if (!next) return null;
+    const id = next[kind]++;
+    if (id >= tileIdBase(key) + TILE_COUNTED) throw new Error(`tile ${key} has no ${kind} id left`);
+    return id;
   }
 
   /** A tile's records put in (`world/tiles.ts` TileRecords): read and checked as a map is (`fromJSON`), moved in, one diary entry per kind with the tile's square and the ids (cause `TILE_LOADED`)
@@ -1484,7 +1486,7 @@ export class RoadDoc {
       this.changes.record('elements', [square]);
     }
     this.tileContents.add(records.key);
-    this.tileNext.set(records.key, { ...records.next });
+    this.tileNext.set(records.key, tileNextOf(records));
     this.changes.causeNext(cause);
   }
 
@@ -2716,6 +2718,22 @@ const freshTileNext = (key: number): TileNext => {
   return { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base };
 };
 
+/** A tile's counters as written, raised past every id of its range its records hold: a counter written behind (an old save, a tile made by hand) never hands out an id in use, which would overwrite that record. */
+function tileNextOf(records: TileRecords): TileNext {
+  const base = tileIdBase(records.key);
+  const next: TileNext = { ...records.next };
+  const above = (kind: keyof TileNext, list: readonly unknown[]): void => {
+    next[kind] = Math.max(next[kind], base);
+    for (const r of list) {
+      const id = (r as { readonly id?: unknown }).id;
+      if (typeof id === 'number' && id >= next[kind] && id < base + TILE_COUNTED) next[kind] = id + 1;
+    }
+  };
+  above('node', records.nodes); above('segment', records.segments); above('pole', records.poles); above('span', records.poleSpans);
+  above('building', records.buildings); above('lot', records.lots); above('landscape', records.landscape); above('barrier', records.barriers);
+  return next;
+}
+
 /** How far a span reaches past its pole: the longest a wire runs (`roads/powerLine.ts` spans are tens of metres; a margin). */
 const SPAN_REACH = m(200);
 
@@ -2726,6 +2744,52 @@ const onWorld = (p: { readonly x: number; readonly y: number }): { x: number; y:
 function lotKeyPlace(key: string): { x: number; y: number } | null {
   const [x, y] = key.slice(2).split(',').map(Number);
   return Number.isFinite(x) && Number.isFinite(y) ? { x: x! * m(4), y: y! * m(4) } : null;
+}
+
+/** A tile as the store keeps it (`TileStore`): the records it owns, as a saved map holds them, and the ends of its roads and spans that are its neighbours' */
+export interface TileRecords {
+  readonly key: number;
+  /** Written again at each change of the tile (the store's), for what is baked from it (far levels, link tables) to know it is stale. */
+  readonly version: number;
+  readonly nodes: SerializedDoc['nodes'];
+  /** The nodes of other tiles its roads end on, as they were when written: put in the document only while their own tile is not. */
+  readonly borrowedNodes: SerializedDoc['nodes'];
+  readonly segments: SerializedDoc['segments'];
+  readonly poles: NonNullable<SerializedDoc['poles']>;
+  readonly borrowedPoles: NonNullable<SerializedDoc['poles']>;
+  readonly poleSpans: NonNullable<SerializedDoc['poleSpans']>;
+  readonly buildings: readonly unknown[];
+  readonly lots: readonly Lot[];
+  readonly lotKeys: readonly string[];
+  readonly landscape: NonNullable<SerializedDoc['landscape']>;
+  readonly barriers: NonNullable<SerializedDoc['barriers']>;
+  readonly paint: NonNullable<SerializedDoc['paint']>;
+  readonly trees: NonNullable<SerializedDoc['trees']>;
+  readonly elements: NonNullable<SerializedDoc['elements']>;
+  /** The next id each kind counts out in the tile's range (`TILE_COUNTED`), from `tileIdBase`. */
+  readonly next: Readonly<Record<'node' | 'segment' | 'pole' | 'span' | 'building' | 'lot' | 'landscape' | 'barrier', number>>;
+}
+
+/** An edit as a command and its inverse (`beginEdit`/`endEdit`, `world/docImage.ts`): the states before and after of what it changed. */
+export interface DocPatch {
+  readonly records: readonly { readonly part: RecordPart; readonly id: number; readonly before: unknown; readonly after: unknown }[];
+  readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly before: readonly unknown[]; readonly after: readonly unknown[] }[];
+  readonly values: readonly { readonly part: ValuePart; readonly before: unknown; readonly after: unknown }[];
+  /** The whole map before and after, when the edit replaced it whole (a map opened, a city generated). */
+  readonly whole?: { readonly before: SerializedDoc; readonly after: SerializedDoc | null };
+  /** Roughly what it holds, UTF-16 bytes of its text. */
+  readonly bytes: number;
+}
+
+const textBytes = (value: unknown): number => (value === undefined ? 0 : 2 * JSON.stringify(value).length);
+
+/** What a patch holds, UTF-16 bytes of its text (`editor/history.ts` keeps the steps under a budget). */
+function patchBytes(records: DocPatch['records'], lists: DocPatch['lists'], values: DocPatch['values'], whole?: DocPatch['whole']): number {
+  let bytes = whole ? textBytes(whole.before) + textBytes(whole.after) : 0;
+  for (const r of records) bytes += textBytes(r.before) + (r.part === 'buildings' || r.part === 'lots' ? 0 : textBytes(r.after));
+  for (const l of lists) bytes += textBytes(l.before) + textBytes(l.after);
+  for (const v of values) bytes += textBytes(v.before) + textBytes(v.after);
+  return bytes;
 }
 
 export interface Restoration {

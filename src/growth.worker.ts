@@ -1,7 +1,7 @@
 import { type GrowAsk, GrowthReplica } from '@editor/growthReplica';
 import type { JobScope } from './jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): the growth's buildings made off the page (`growthPool.ts`), one replica per port. */
+/** This service of the job system (`job.worker.ts`): the growth's buildings made off the page (`growthPool.ts`), one replica per port. */
 export function serve(self: JobScope): void {
   const replica = new GrowthReplica();
   self.onmessage = (event: MessageEvent<GrowAsk>) => {

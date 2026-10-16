@@ -5,7 +5,7 @@ import { laneletId } from '@world/lanelets';
 import type { SignalSettings } from '@world/roads/rules';
 import type { SimWorld } from '../world';
 import { greenWave } from '../roads/greenWave';
-import { laneEnds } from '@world/roads/connectors';
+import { laneEnds } from '@world/roads/laneEnds';
 import type { SimAsk } from './protocol';
 
 /** THE PANELS' QUESTIONS ANSWERED IN THE SIMULATION'S WORKER (`simHost.ts`): plain numbers, worded on the page */

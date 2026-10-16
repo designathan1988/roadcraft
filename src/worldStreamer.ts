@@ -2,7 +2,8 @@ import { DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import type { ListPart, RoadDoc } from '@world/doc';
 import { lotCentre } from '@world/lots';
-import { OWNER, TILE, TILE_IDS, type TileRecords, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
+import { OWNER, TILE, TILE_IDS, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
 

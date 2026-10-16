@@ -1,4 +1,5 @@
-import { type TileRecords, TILE, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
+import { TILE, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 import { type TileLinks, bakeTileLinks } from './tileLinks';
 

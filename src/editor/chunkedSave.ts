@@ -12,7 +12,7 @@ import {
   GLOBAL_PARTS, type GlobalPart, type RoadDoc, type RoadNode, type RoadSegment, type SavedGlobals, type SerializedDoc,
   savedBarrier, savedLandscape, savedNode, savedPole, savedSegment, savedSpan,
 } from '@world/doc';
-import { type PartStore, type SaveEntry, type SaveWriter, gunzip, storeWriter } from './save.worker';
+import { type PartStore, type SaveEntry, type SaveWriter, gunzip, storeWriter } from './saveStore';
 
 /** THE MAP SAVED BY TILES: each record in the square of the map it stands in, and a save writes only the squares the diary says changed */
 

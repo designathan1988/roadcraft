@@ -1,7 +1,7 @@
 import { type GroundJob, ShapeScratch, runGroundJob } from './groundShape';
 import type { JobScope } from '../jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): its messages answered on the scope it is given. */
+/** This service of the job system (`job.worker.ts`): its messages answered on the scope it is given. */
 export function serve(self: JobScope): void {
   /** The ground's worker (`groundShapePool.ts`): a shaping pass's corners, or two solves' blocks digested */
   /** This worker's scratch, sized to a plate by its first pass. */

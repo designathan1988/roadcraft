@@ -9,7 +9,7 @@ import { type JunctionAnswer, type JunctionAsk, buildJunctionOf } from '@world/j
 import { keepDerivedMany } from './render/derivedCache';
 import type { JobScope } from './jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): its messages answered on the scope it is given. */
+/** This service of the job system (`job.worker.ts`): its messages answered on the scope it is given. */
 export function serve(self: JobScope): void {
   /** The traffic's pure work off the page's thread (`conflictPool.ts`), answered with the job's id: - conflict pairs */
   interface PairsAsk {

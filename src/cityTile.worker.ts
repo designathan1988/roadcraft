@@ -1,9 +1,10 @@
 import { buildStreamTile } from '@editor/wholeMapTile';
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
-import { type TileRecords, tileKey } from '@world/tiles';
+import { tileKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
+/** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
 
 /** A tile of the streamed world asked for: built as the tile store keeps it. */
 export interface StreamTileAsk {

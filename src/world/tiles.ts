@@ -1,6 +1,4 @@
 import type { ChangeRect } from './changes';
-import type { SerializedDoc } from './doc';
-import type { Lot } from './lots';
 import { m } from './units';
 
 /** THE WORLD'S TILES: an unbounded grid of 1,024 m squares, the unit the world is generated, kept, loaded and drawn by (CLAUDE.md, "Streaming world") */
@@ -92,27 +90,3 @@ export const OWNER = {
   /** A building or a lot, a pole, a tree, a dab, an item: its anchor. */
   at: (p: { readonly x: number; readonly y: number }): number => tileKeyAt(p.x, p.y),
 } as const;
-
-/** A tile as the store keeps it (`TileStore`): the records it owns, as a saved map holds them, and the ends of its roads and spans that are its neighbours' */
-export interface TileRecords {
-  readonly key: number;
-  /** Written again at each change of the tile (the store's), for what is baked from it (far levels, link tables) to know it is stale. */
-  readonly version: number;
-  readonly nodes: SerializedDoc['nodes'];
-  /** The nodes of other tiles its roads end on, as they were when written: put in the document only while their own tile is not. */
-  readonly borrowedNodes: SerializedDoc['nodes'];
-  readonly segments: SerializedDoc['segments'];
-  readonly poles: NonNullable<SerializedDoc['poles']>;
-  readonly borrowedPoles: NonNullable<SerializedDoc['poles']>;
-  readonly poleSpans: NonNullable<SerializedDoc['poleSpans']>;
-  readonly buildings: readonly unknown[];
-  readonly lots: readonly Lot[];
-  readonly lotKeys: readonly string[];
-  readonly landscape: NonNullable<SerializedDoc['landscape']>;
-  readonly barriers: NonNullable<SerializedDoc['barriers']>;
-  readonly paint: NonNullable<SerializedDoc['paint']>;
-  readonly trees: NonNullable<SerializedDoc['trees']>;
-  readonly elements: NonNullable<SerializedDoc['elements']>;
-  /** The next id each kind counts out in the tile's range (`TILE_COUNTED`), from `tileIdBase`. */
-  readonly next: Readonly<Record<'node' | 'segment' | 'pole' | 'span' | 'building' | 'lot' | 'landscape' | 'barrier', number>>;
-}

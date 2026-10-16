@@ -13,12 +13,14 @@ const ALIASES: readonly [string, string][] = [
 /** Each layer and what it may import, itself included (CLAUDE.md; `people` is data under `world`). */
 const LAYERS: Readonly<Record<string, readonly string[]>> = {
   core: ['core'],
+  /** The one job system (`jobs/jobPool.ts`): the page's ports and the workers' scope, nothing of the game. */
+  jobs: ['core', 'jobs'],
   people: ['core', 'people'],
   world: ['core', 'people', 'world'],
   sim: ['core', 'people', 'world', 'sim'],
   view: ['core', 'view'],
-  render: ['core', 'people', 'world', 'sim', 'view', 'render'],
-  editor: ['core', 'people', 'world', 'editor'],
+  render: ['core', 'people', 'world', 'sim', 'view', 'jobs', 'render'],
+  editor: ['core', 'people', 'world', 'jobs', 'editor'],
   ui: ['core', 'people', 'world', 'sim', 'view', 'ui'],
 };
 

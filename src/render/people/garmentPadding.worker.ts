@@ -1,7 +1,7 @@
 import { padGarmentPixels, type GarmentPadRequest, type GarmentPadResponse } from './garmentPadding';
 import type { JobScope } from '../../jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): its messages answered on the scope it is given. */
+/** This service of the job system (`job.worker.ts`): its messages answered on the scope it is given. */
 export function serve(self: JobScope): void {
   const scope = self as unknown as {
     onmessage: ((event: MessageEvent<GarmentPadRequest>) => void) | null;

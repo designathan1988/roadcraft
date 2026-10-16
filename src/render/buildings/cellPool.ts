@@ -7,7 +7,7 @@ import type { SharedGroundAt } from '../sharedGround';
 import { BATCH_CELL } from './layerCells';
 import type { KitBoxes } from './cellArrays';
 import { type CellEntry, type CellJob, type CellResult, type JobKind, type WorkReply, runCellJob } from './cellWork';
-import { levelCells } from './massLevels';
+import { levelCells } from './levelKeys';
 
 /** THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`, `cell.worker.ts`), through the job system's one queue (`jobPool.ts` `submitJob`) */
 

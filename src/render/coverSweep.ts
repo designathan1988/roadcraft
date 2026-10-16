@@ -4,7 +4,7 @@ import { m } from '@world/units';
 import { keepCellAt, keepCellRect } from './cellKeeps';
 import type { ForestSpecies } from './groundCover';
 import { seedOfKind } from './natureTrees';
-import { TERRAIN_HALF } from './terrain';
+import { TERRAIN_HALF } from './terrainGrid';
 
 /** THE PAINTED COVERS' AND THE RIVERS' PLACES, ONE KEEP CELL AT A TIME (`cellKeeps.ts`) */
 

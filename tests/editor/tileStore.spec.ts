@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { TiledSaves } from '@editor/chunkedSave';
-import { type PartStore, gunzip } from '@editor/save.worker';
+import { type PartStore, gunzip } from '@editor/saveStore';
 import { TileStore, type WorldMeta, storeTiles } from '@editor/tileStore';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
-import { TILE_COUNTED, type TileRecords, tileIdBase, tileKey } from '@world/tiles';
+import { TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 
 /** THE TILE STORE (`tileStore.ts`): the world saved tile by tile, a missing tile generated once, a map saved before the tiles distributed into them. */

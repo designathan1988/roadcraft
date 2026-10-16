@@ -6,7 +6,7 @@ import type { SegmentId } from '@world/ids';
 import { roadProfile, sectionFromProfile } from '@world/roadTypes';
 import { normalizeRoadSection, flipSection, sameRoadSection } from '@world/roadSection';
 import { toggleLaneLink } from '@world/roads/connectors';
-import { nodeLanes } from '@world/roads/connectors';
+import { nodeLanes } from '@world/roads/laneEnds';
 import { layoutDoc, simOf } from './support/bodies';
 
 /** LANE CONNECTORS, LANE USES AND LINES, run as the traffic drives them */

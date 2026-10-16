@@ -1,8 +1,7 @@
 import { FINISHES, type Finish } from '@world/buildings/materials';
 import { FURNITURE_KINDS, type FurnitureKind } from '@world/buildings/interior';
-import type { BuildingChunk, PartBatch } from './chunk';
 import { FACADE_PROP_KINDS } from './facadeProps';
-import type { PartKind } from './kit';
+import type { BuildingChunk, PartBatch, PartKind } from './chunk';
 import type { MassingChunk } from './massing';
 import { ROOM_FLOATS } from './roomBehind';
 

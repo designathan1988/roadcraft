@@ -2,7 +2,7 @@ import { computeEcology, type EcologyField, type EcologyInput } from '@world/eco
 import { farWoods, type FarWoodsAsk } from './farWoods';
 import type { JobScope } from '../jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): its messages answered on the scope it is given. */
+/** This service of the job system (`job.worker.ts`): its messages answered on the scope it is given. */
 export function serve(self: JobScope): void {
   /** A plate's ecosystem off the page's thread (`ecologyPool.ts`): the whole field of what grows read from the land sent */
   self.onmessage = (event: MessageEvent<{ id: number; input?: EcologyInput; far?: FarWoodsAsk }>) => {

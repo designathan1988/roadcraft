@@ -170,7 +170,7 @@ function hostsLong(host: Host): boolean {
 function pool(): Host[] {
   if (system.workers) return system.workers;
   system.workers = Array.from({ length: jobWorkers() }, () => {
-    const worker = new Worker(new URL('./job.worker.ts', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
     const host: Host = { worker, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false };
     worker.onmessage = (event: MessageEvent<FromJob>) => {
       const port = system.ports.get(event.data.port);

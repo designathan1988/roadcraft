@@ -1,5 +1,6 @@
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
-import { type TileRecords, tileOfKey } from '@world/tiles';
+import { tileOfKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { jobLanes, jobPort } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */

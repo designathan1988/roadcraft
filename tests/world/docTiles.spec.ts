@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
-import { TILE, TILE_COUNTED, type TileRecords, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
+import { TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { isStreaming } from '@world/changes';
 import { m } from '@world/units';
 

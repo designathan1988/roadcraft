@@ -64,7 +64,7 @@ function handler(post: JobScope): (event: MessageEvent<Message>) => void {
   };
 }
 
-/** The road tiles' service of the job system (`jobs/job.worker.ts`). */
+/** The road tiles' service of the job system (`job.worker.ts`). */
 export function serve(self: JobScope): void {
   const handle = handler(self) as (event: MessageEvent) => void;
   // DO NOT simplify before the simplifier's WebAssembly is made: every far block failed and was drawn whole (meshoptimizer README, `MeshoptSimplifier.ready`).

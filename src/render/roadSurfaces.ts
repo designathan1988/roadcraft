@@ -16,7 +16,7 @@ import { PAINT_RISE } from './markings';
 import { type Reach, SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadSurfaceInputs';
 import type { Input } from './roadSurfaceRings';
 import type { SceneMaterials } from './materials';
-import { TERRAIN_CELL } from './terrain';
+import { TERRAIN_CELL } from './terrainGrid';
 import { attachFarLevel, cloneBlock, mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
 import { levelsOf } from './mesh/roadLod';

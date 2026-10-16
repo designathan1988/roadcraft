@@ -3,7 +3,7 @@ import { buildPlateMesh } from './plateMesh';
 import { cornerLand, woodsBase } from './woodsBase';
 import type { JobScope } from '../jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): its messages answered on the scope it is given. */
+/** This service of the job system (`job.worker.ts`): its messages answered on the scope it is given. */
 export function serve(self: JobScope): void {
   /** A plate of the map's land off the page's thread (`flatGroundPool.ts`) */
   interface Ask { readonly id: number; readonly relief: ReliefVersion; readonly cx: number; readonly cy: number; readonly half: number; readonly cell: number; readonly side: number; readonly base: number }

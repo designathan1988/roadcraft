@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SAVE_TILE, TiledSaves } from '@editor/chunkedSave';
-import { type PartStore, type SaveBatch, gzip, writeBatch } from '@editor/save.worker';
+import { type PartStore, type SaveBatch, gzip, writeBatch } from '@editor/saveStore';
 import { type LargeStore, Persistence, normalizeSettings } from '@editor/persistence';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
 import { CELL } from '@world/cells';

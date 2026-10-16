@@ -1,5 +1,5 @@
 import { readTile } from '@editor/tileStore';
-import { SAVES_STORE, indexedDbParts, openSaves } from '@editor/save.worker';
+import { SAVES_STORE, indexedDbParts, openSaves } from '@editor/saveStore';
 import type { TileReader } from '@sim/meso/tileFeed';
 
 /** The tile store's tiles read where they are asked (the simulation's worker): its IndexedDB opened read only there, the page out of the way (`editor/tileStore.ts` layout). */

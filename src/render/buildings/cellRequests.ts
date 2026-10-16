@@ -4,14 +4,11 @@ import { type BuildingMeshes, meshesOf } from './buildingMesh';
 import { type CellMass, cellBytes } from './cellArrays';
 import type { CellEnv, CellPool } from './cellPool';
 import type { CellEntry, CellResult, ChunkSummary } from './cellWork';
+import { sameEntries } from './chunk';
 import type { BuildingKit } from './kit';
 import { PartCell } from './partCells';
 
 /** THE BUILDINGS' CELLS ASKED OF THE WORKERS AND LANDED (`layer.ts`) */
-
-/** Whether two lists are the same buildings with the same records on the same ground (the strings compared by reference). */
-export const sameEntries = (a: readonly CellEntry[], b: readonly CellEntry[]): boolean =>
-  a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.sig === b[i]!.sig && e.digest === b[i]!.digest);
 
 /** A cell's batches as landed: its shells, panes and furniture, and its parts by sub-cell (`partCells.ts`). */
 export interface LandedCell {

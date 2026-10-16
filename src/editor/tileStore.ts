@@ -2,9 +2,10 @@ import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import type { SerializedDoc } from '@world/doc';
 import { lotCentre } from '@world/lotRings';
 import { rescaleSerializedDoc } from '@world/rescale';
-import { OWNER, TILE_COUNTED, type TileRecords, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
+import { OWNER, TILE_COUNTED, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { METERS_PER_UNIT, m } from '@world/units';
-import { type PartStore, type SaveEntry, gunzip, storeWriter } from './save.worker';
+import { type PartStore, type SaveEntry, gunzip, storeWriter } from './saveStore';
 
 /** THE TILE STORE: the save of a world of tiles (CLAUDE.md, "Streaming world"), each tile read and written alone, off the page */
 

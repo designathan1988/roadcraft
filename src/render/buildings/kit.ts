@@ -23,7 +23,8 @@ import { createMassingMaterial } from './massingMaterial';
 import { type FacadePanes, createFacadeMaterial } from './facadeLevel';
 import { prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
-import { FACADE_PROP_KINDS, type FacadePropKind, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
+import { FACADE_PROP_KINDS, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
+import type { PartKind } from './chunk';
 import { acFarGeometry, createFacadePropGeometries } from './facadePropModels';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { m } from '@world/units';
@@ -52,25 +53,7 @@ const tvClock = { value: 0 };
 
 /** Everything the buildings layer draws with, built ONCE per renderer. */
 
-export type PartKind =
-  | 'glass'
-  | 'frame'
-  | 'concrete'
-  | 'door'
-  | 'shutter'
-  | 'railing'
-  | 'roofRailing'
-  | 'awning'
-  | 'column'
-  | 'glassDark'
-  | 'water'
-  | 'lamp'
-  | 'wash'
-  | 'fin'
-  | 'louvre'
-  | 'glassRail'
-  | 'brise'
-  | FacadePropKind;
+export type { PartKind } from './chunk';
 
 export const PART_KINDS: readonly PartKind[] = [
   'glass',

@@ -1,7 +1,7 @@
 import { type BayShare, baysOfShare } from '@sim/agents/lotBays';
 import type { JobScope } from './jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): its messages answered on the scope it is given. */
+/** This service of the job system (`job.worker.ts`): its messages answered on the scope it is given. */
 export function serve(self: JobScope): void {
   /** The lots' bays off the page's thread (`bayPool.ts`): each lot of a share by `bayRows` itself on what the page sent */
   const BEAT_MS = 500;

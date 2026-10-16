@@ -77,7 +77,7 @@ import {
 } from '@world/buildings/materials';
 import { FOLLOWS_GROUND, elementRect, followPieces, onGround, partGroups, stairSteps, unsupportedElements } from '@world/buildings/elements';
 import { isRetainingStone } from '@world/buildings/cityBuildings';
-import { TERRAIN_CELL, TERRAIN_HALF } from '../terrain';
+import { TERRAIN_CELL, TERRAIN_HALF } from '../terrainGrid';
 import { highestGroundUnder } from './lawnGround';
 import {
   type BayComponent,

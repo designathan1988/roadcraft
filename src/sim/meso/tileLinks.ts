@@ -4,7 +4,7 @@ import type { SegmentParking } from '@world/parking';
 import { type RoadSection, laneUse } from '@world/roadSection';
 import { type SegmentDirection, roadProfile, travelLanes } from '@world/roadTypes';
 import { TUNNELS_DRAWN } from '@world/structures';
-import type { TileRecords } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { kindOf } from '../ambient/demand';
 import { cellKey } from '../ambient/ambientIndex';
 import { CELL_STRIDE, DEMAND_CELL } from './demand';

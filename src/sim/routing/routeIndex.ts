@@ -1,14 +1,13 @@
 import type { LaneletId } from '@world/lanelets';
-import type { Vehicle } from '../vehicles/state';
 
-/** The vehicles whose route goes over each lane or movement, filed by the writers of `Vehicle.route` (`SimWorld.noteRoute`). */
-export class RouteIndex {
-  private readonly byLane = new Map<LaneletId, Set<Vehicle>>();
+/** The vehicles whose route goes over each lane or movement, filed by the writers of `Vehicle.route` (`SimWorld.noteRoute`); generic, so it does not import the vehicle that the world imports. */
+export class RouteIndex<V extends { readonly route: readonly LaneletId[] }> {
+  private readonly byLane = new Map<LaneletId, Set<V>>();
   /** The ids each vehicle is filed under: its route as last noted. */
-  private readonly filed = new Map<Vehicle, readonly LaneletId[]>();
+  private readonly filed = new Map<V, readonly LaneletId[]>();
 
   /** A vehicle filed under its route now, out of the lanes of the route it had. */
-  file(v: Vehicle): void {
+  file(v: V): void {
     this.unfile(v);
     const ids = v.route.slice();
     for (const id of ids) {
@@ -18,7 +17,7 @@ export class RouteIndex {
     this.filed.set(v, ids);
   }
 
-  unfile(v: Vehicle): void {
+  unfile(v: V): void {
     const was = this.filed.get(v);
     if (!was) return;
     for (const id of was) {
@@ -31,7 +30,7 @@ export class RouteIndex {
   }
 
   /** The vehicles whose route goes over `id`, in no set order. */
-  routing(id: LaneletId): ReadonlySet<Vehicle> | undefined {
+  routing(id: LaneletId): ReadonlySet<V> | undefined {
     return this.byLane.get(id);
   }
 

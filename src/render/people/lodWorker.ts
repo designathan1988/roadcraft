@@ -79,7 +79,7 @@ export function simplifyIndex(source: Uint32Array, positions: Float32Array, tria
   }
 }
 
-/** The people's levels' service of the job system (`jobs/job.worker.ts`): each request answered. */
+/** The people's levels' service of the job system (`job.worker.ts`): each request answered. */
 export function serve(self: JobScope): void {
   self.onmessage = async (e: MessageEvent<LodRequest | IndexRequest | LadderRequest>) => {
     const req = e.data;

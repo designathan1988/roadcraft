@@ -1,5 +1,5 @@
 import type { LargeStore } from '@editor/persistence';
-import { type PartStore, type SaveBatch, SAVES_STORE, openSaves } from '@editor/save.worker';
+import { type PartStore, type SaveBatch, SAVES_STORE, openSaves } from '@editor/saveStore';
 
 /** THE DESKTOP'S SAVES: the autosave's stores as files in the folder Steam Auto-Cloud syncs, kept by the shell's utility process (`desktop/saves.cjs`); none in a browser. */
 

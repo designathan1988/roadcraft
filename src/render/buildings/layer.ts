@@ -19,7 +19,8 @@ import { FarLevels, farRunner } from './farLevels';
 import type { SharedGroundAt } from '../sharedGround';
 import { type BuildingKit, createBuildingKit } from './kit';
 import { type CellEnv, CellPool } from './cellPool';
-import { type BatchKind, CellRequests, sameEntries } from './cellRequests';
+import { type BatchKind, CellRequests } from './cellRequests';
+import { sameEntries } from './chunk';
 import type { BuildingLayer, BuildingPreviewInput, CutawaySpec } from './layerApi';
 
 export type { BuildingLayer, BuildingPreviewInput, CutawaySpec } from './layerApi';

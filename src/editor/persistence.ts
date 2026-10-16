@@ -9,7 +9,7 @@ import { isSerializedBuildings } from '@world/buildings/serialize';
 import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT, m, perM } from '@world/units';
 import { type SavedLayout, TiledSaves } from './chunkedSave';
-import { type PartStore, SAVES_STORE, indexedDbParts, openSaves, portWriter } from './save.worker';
+import { type PartStore, SAVES_STORE, indexedDbParts, openSaves, portWriter } from './saveStore';
 import { jobPort } from '../jobs/jobPool';
 
 /** Where the map is kept. */

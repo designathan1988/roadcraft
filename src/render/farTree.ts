@@ -1,6 +1,7 @@
 import { Group, type Mesh } from 'three';
 import { Digest } from '@core/digest';
-import { type TileRecords, tileKey, tileOfKey } from '@world/tiles';
+import { tileKey, tileOfKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { forgetDerivedKeys } from './derivedCache';
 import type { FarTileSource, FarTiles } from './buildings/farLevels';
 import { TOP_LEVEL, emptyRecords, farKey, nodeSide } from './buildings/farTiles';

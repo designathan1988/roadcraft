@@ -1,26 +1,26 @@
-import type { FromJob, JobScope, JobService, ToJob } from './jobScope';
+import type { FromJob, JobScope, JobService, ToJob } from './jobs/jobScope';
 
-/** ONE WORKER OF THE JOB SYSTEM (`jobPool.ts`): every service's ports in it, each service's module loaded on its first message */
+/** ONE WORKER OF THE JOB SYSTEM (`jobs/jobPool.ts`): at the root with the other entries, since it puts every service together: every service's ports in it, each service's module loaded on its first message */
 
 type Serve = (scope: JobScope) => void;
 const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
-  growth: () => import('../growth.worker'),
-  cityTiles: () => import('../cityTile.worker'),
-  bays: () => import('../bays.worker'),
-  conflicts: () => import('../conflictTable.worker'),
-  cells: () => import('../render/buildings/cell.worker'),
-  fracture: () => import('../render/buildings/fracture.worker'),
-  citizenBake: () => import('../render/citizenBake.worker'),
-  ecology: () => import('../render/ecology.worker'),
-  flatGround: () => import('../render/flatGround.worker'),
-  groundShape: () => import('../render/groundShape.worker'),
-  garmentPadding: () => import('../render/people/garmentPadding.worker'),
-  peopleLod: () => import('../render/people/lodWorker'),
-  roadTiles: () => import('../render/roadTile.worker'),
-  farRoads: () => import('../render/farRoads.worker'),
-  terrainLight: () => import('../render/terrainLight.worker'),
-  derivedWriter: () => import('../render/derivedWriter.worker'),
-  save: () => import('../editor/save.worker'),
+  growth: () => import('./growth.worker'),
+  cityTiles: () => import('./cityTile.worker'),
+  bays: () => import('./bays.worker'),
+  conflicts: () => import('./conflictTable.worker'),
+  cells: () => import('./render/buildings/cell.worker'),
+  fracture: () => import('./render/buildings/fracture.worker'),
+  citizenBake: () => import('./render/citizenBake.worker'),
+  ecology: () => import('./render/ecology.worker'),
+  flatGround: () => import('./render/flatGround.worker'),
+  groundShape: () => import('./render/groundShape.worker'),
+  garmentPadding: () => import('./render/people/garmentPadding.worker'),
+  peopleLod: () => import('./render/people/lodWorker'),
+  roadTiles: () => import('./render/roadTile.worker'),
+  farRoads: () => import('./render/farRoads.worker'),
+  terrainLight: () => import('./render/terrainLight.worker'),
+  derivedWriter: () => import('./render/derivedWriter.worker'),
+  save: () => import('./editor/save.worker'),
 };
 
 const host = self as unknown as { onmessage: ((e: MessageEvent<ToJob>) => void) | null; postMessage(message: FromJob, transfer?: Transferable[]): void };

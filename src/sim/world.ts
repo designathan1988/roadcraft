@@ -47,7 +47,6 @@ import type { PedView } from './people/view';
 import type { PedestrianEngine } from './people/engine';
 import { City } from './city/city';
 import { AmbientWorld } from './ambient/ambient';
-import type { Meso } from './meso/meso';
 import { Walkways, type WalkGraph } from '@world/walkways';
 import { mainRoadLegs, type SignalSettings } from '@world/roads/rules';
 import { FlowStats } from './roads/flowStats';
@@ -139,6 +138,12 @@ const NO_RUNTIME: LaneletRuntime = Object.freeze({
 });
 
 /** Everything the simulation owns. */
+/** The meso traffic as the world steps it (`meso/meso.ts` Meso): declared here so the world never imports the meso, which reads the world. */
+export interface MesoTraffic {
+  step(w: SimWorld, traffic: boolean): void;
+  reset(): void;
+}
+
 export class SimWorld {
   readonly clock = new SimClock();
   readonly graph = new LaneletGraph();
@@ -155,7 +160,7 @@ export class SimWorld {
     clear: () => this.routes.clear(),
   });
   /** The vehicles by the lanes and movements of their routes (`noteRoute`): those an edit reached (`vehiclesReached`). */
-  readonly routes = new RouteIndex();
+  readonly routes = new RouteIndex<Vehicle>();
   /** The lanes and movements the builds since the last rebind took or made again (`vehiclesReached`); `rebindAll` after a whole build. */
   private readonly rebindLanes = new Set<LaneletId>();
   private rebindAll = false;
@@ -250,7 +255,7 @@ export class SimWorld {
   /** The life of the scenery: people and traffic made round the view (`sim/ambient`). */
   readonly ambient = new AmbientWorld();
   /** The meso traffic of the whole map and its micro window (`meso/meso.ts`): the game's (`simHost.ts`); off in the specs, the micro simulation everywhere. */
-  meso: Meso | null = null;
+  meso: MesoTraffic | null = null;
   /** Share of the population ceilings this device carries (1, or `NARROW_SCREEN_SHARE` on a narrow screen). */
   populationShare = 1;
   /** Where the player is looking, world units */

@@ -8,7 +8,8 @@ import { type FarRoadCache, type FarRoadMesh, bakeTileRoads, farRoadTones, runFa
 import type { FarTreeRun } from '@render/farTree';
 import { surfaceTexels } from '@render/mesh/textureBaker';
 import { CURB_BAND, Level } from '@world/roadTypes';
-import { TILE, type TileRecords, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
+import { TILE, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 
 /** THE ROADS FAR FROM THE CAMERA, BAKED PER TILE FROM THE TILE STORE (`farRoadTiles.ts`, `farRoads.ts`, `farTree.ts`) */

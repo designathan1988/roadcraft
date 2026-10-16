@@ -13,7 +13,7 @@ export type BakedClip = Omit<ClipFrames, 'head'> & { head?: number[] };
 // Reuse decoded clips across this worker's jobs.
 const libraries: Partial<Record<WalkSex, RocketboxClips>> = {};
 
-/** The bakes' service of the job system (`jobs/job.worker.ts`). */
+/** The bakes' service of the job system (`job.worker.ts`). */
 export function serve(scope: JobScope): void {
   scope.onmessage = (e: MessageEvent<Job>) => { void bakeJob(scope, e); };
 }

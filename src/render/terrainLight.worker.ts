@@ -1,7 +1,7 @@
 import { createLandLighter, type LightGrid, type LightRequest } from './terrainLightCompute';
 import type { JobScope } from '../jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): its messages answered on the scope it is given. */
+/** This service of the job system (`job.worker.ts`): its messages answered on the scope it is given. */
 export function serve(self: JobScope): void {
   /** The land's light off the page's thread (`terrainLightCompute.ts`): the page sends a copy of the heights */
   let grid: LightGrid | null = null;

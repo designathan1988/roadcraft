@@ -22,7 +22,6 @@ import {
 } from 'three';
 import { FRAMES, FRAME_PX, IMPOSTOR_FRAMES_GLSL, IMPOSTOR_READ_GLSL, bakeMaterials, bakeShadowMaterials, frameBasis, hemiOctaDirection } from './impostorShaders';
 import { BUSH_KINDS, TREE_SPECIES, type BushKind, type TreeSpecies } from './propGeometry';
-import type { SceneryKit } from './scenery';
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 
 /**
@@ -455,9 +454,16 @@ export interface SceneryPictures {
   release(): void;
 }
 
-const sceneryShared = new WeakMap<SceneryKit, { set: PlantImpostors; users: number }>();
+/** The plants of the scenery's kit the pictures are made of (`scenery.ts` SceneryKit): only these, so this file does not import the kit, which imports the poses that import the pictures. */
+interface PlantModels {
+  readonly trees: Readonly<Record<TreeSpecies, BufferGeometry>>;
+  readonly bushes: Readonly<Record<BushKind, BufferGeometry>>;
+  readonly cards: Readonly<Partial<Record<TreeSpecies | BushKind, BufferGeometry>>>;
+}
+
+const sceneryShared = new WeakMap<PlantModels, { set: PlantImpostors; users: number }>();
 /** One set of pictures for the gardens and the street (`gardens.ts`, `streetFurnitureLayer.ts`): one atlas, one program. */
-export function sceneryPictures(kit: SceneryKit): SceneryPictures {
+export function sceneryPictures(kit: PlantModels): SceneryPictures {
   let shared = sceneryShared.get(kit);
   if (!shared) {
     const models: ImpostorModel[] = [

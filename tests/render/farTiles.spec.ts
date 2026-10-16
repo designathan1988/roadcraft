@@ -10,7 +10,8 @@ import { drawsSignature } from '@render/buildings/signature';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
-import { TILE, type TileRecords, tileKey, tileOfKey } from '@world/tiles';
+import { TILE, tileKey, tileOfKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 
 /** THE BUILDINGS FAR FROM THE CAMERA, BAKED PER TILE FROM THE TILE STORE (`farTiles.ts`, `farLevels.ts`) */
