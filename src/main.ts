@@ -2479,8 +2479,8 @@ function frame(now: number): void {
   if (terrainBrush.tick(performance.now())) requestDraw();
   frameTimer.mark('camera');
 
-  // The opening puts the town together in parts (`SceneHandle.worldBusy`)
-  if (!worldShown && drawnOnce && !scene.worldBusy) worldShown = true;
+  // The town shown (`SceneHandle.opening`): DO NOT wait for the world's job, which the streamed world starts again at every tile put in.
+  if (!worldShown && drawnOnce && !scene.opening) worldShown = true;
   // Moving a node is an authoring preview.
   let holdSim = mover.dragging || topologyAfterDraw || !worldShown;
   // A generated city being built (`generateCity`): its own share of the frame, apart from the traffic's topology.
@@ -2493,7 +2493,8 @@ function frame(now: number): void {
   }
   frameTimer.mark('topology');
   // The simulation steps in its own thread (`sim/host/simHost.ts`): the page sends the wall time and draws the last frame it wrote.
-  sim.frame(wall, holdSim || scene.worldBusy, { traffic: !game.paused, pedestrians: !game.paused, maxShare: maxPopulationShare });
+  // DO NOT hold the city for the page's world job (the roads' meshes): the worker steps its own network, and the streamed world's job runs whenever a tile comes.
+  sim.frame(wall, holdSim, { traffic: !game.paused, pedestrians: !game.paused, maxShare: maxPopulationShare });
   const alpha = holdSim ? 1 : sim.alpha;
   // The city's own periodic work, on its clock (`SimPeriodic`).
   const simTime = sim.clock.time;
