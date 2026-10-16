@@ -96,11 +96,16 @@ pasted in the session that started this; these are its binding decisions.
   save per tile in binary, compressed, in a worker, only dirty tiles; steamworks.js in the Electron main process only.
   Not taken: its WebGPU-only look (post, CSM, GPU-culled props are off in its WebGL2 mode), its simpler buildings,
   its 500-step undo cap.
-- Work in flight (2026-10-16), each in `.claude/worktrees/agent-<id>`, all paused with partial work kept, resumed
-  one at a time: wires/poles (aa91207f), simulation scans (a8a1fc47), whole-map generator F7 (a6521f41), building
-  L1 by the generator (ac1805fc), building parts (a3ae02c2), terrain CDLOD (ae1e1d82), vegetation (ad130cd5), world
-  walks (a64389c6), light F6 (a6bf0567), Steam F8 (aed0c028). Job lanes now go to the least busy worker, growth
-  alone (1237f74); next: the priority queue with keys, once heights live in shared memory.
+- Merged 2026-10-16 (main 7a49aaa): building L1 facade level by the emitter, shown by pixel error between detail and
+  mass (9de8469); save by tiles in a worker, the old save never touched (`:tiles` manifest, c111959-073afbd); lots planned
+  only where the diary says (035b42d); closed shader catalogue at load, the curtain waits (7f4207e); per-cascade casters
+  (bb95c88); ragdolls without per-frame allocation, cooked crowd palettes on the GPU (a01320e-06ac47d); renderer
+  derivatives by cell and diary (5d8fc21-5895df9); instance layers keep poses (3db1344); KTX2 surfaces baked at build,
+  rgba8 (20d18f7); Steam saves as files for Auto-Cloud, Windows and Linux depots (7a49aaa).
+- Work in flight (2026-10-16), each in `.claude/worktrees/agent-<id>`: far roads painted (af56964b), sim worker gets
+  only what traffic reads (a867f4d2), central job queue with heights in shared memory (afac36ec), people programs under
+  12 texture units (a5184644), cellInstances poses expanded in the shader (a6bbc65b), meso traffic and density cars
+  (aa10da2b), building L2 per tile and L3 per plate (ae14f86a).
 
 ## How to work
 - Find the cause by reading the whole part of the code: file by file, each caller followed up to
@@ -168,8 +173,11 @@ GPU memory and drawing
 - Render targets and shadow map are not counted (`core/perfBudget.ts:196` passes `null`).
 - `color`/`roadSection` attributes on every road strip (`mesh/surfaceMesh.ts:68`, `tileMesh.ts:83`):
   24 of 56 B per vertex unused. Fix: the `SurfaceSpec` declares what it reads.
-- Garden buffers sized to the whole city, never shrink; body and card stores keep the same matrices
-  (`gardens.ts:281-287, 512, 516`).
+- Texture units (measured 2026-10-16, ANGLE D3D11, 16 per stage): the 3 sun cascades take 3; the terrain program uses
+  16 and one variant fails to link; the cooked citizen with morph uses 18 and fails ("program not valid", not drawn).
+  Fix in flight: terrain to <= 13 (rock/dirt into the detail arrays), people to <= 12 (garments as a texture array).
+- `cellInstances.ts`: a kind's CPU arrays and GPU buffers only grow; body and cards meshes of a level each keep the same
+  matrices (fix in flight: one shared pose attribute, matrices built in the shader).
 - Non-indexed geometry: `structures.ts:414`, `vehicleModels.ts:298` (`toNonIndexed`).
 - Worst case still crashes the tab in the 8 GB job: a 2x2 city (19,635 buildings) holds ~3.2 GB in the page, ~1 GB in
   the sim worker, 0.34 GB in the pool (2026-10-15, `measureUserAgentSpecificMemory`). Not found yet: ~120 KB of page heap
@@ -178,7 +186,13 @@ GPU memory and drawing
 - The sim worker keeps a whole copy of the map (`SimClient.load` sends `doc.toJSON()`): it reads buildings only for
   parking, kerb bays, docks and entrances. Fix with the micro window (block E): the worker gets what traffic reads, near.
 - Terrain plates keep their editing arrays on the page (~6 MB geometry + paint layers each; 154 MB of CPU geometry at
-  2x2). `instanceRuns.ts` keeps 16-float matrices per thing as the gardens did (general matrices, not only yaw).
+  2x2).
+- KTX2 (20d18f7): UASTC (BC7, a quarter of the memory) waits for the player's yes on shots
+  (`ROADCRAFT_TEXTURE_CODEC=uastc`, needs `ktx2-encoder`); the foliage atlas is still drawn on a canvas
+  (`lowPolyTrees.ts`); `strataTexture` (`terrain.ts`) and the water texture (`water.ts`) are still baked at run time.
+- Steam (7a49aaa): not run in Electron yet (crossOriginIsolated under app://, the saves' MessagePort, flush on quit);
+  steamworks.js not installed in `desktop/`; a Linux build packed on Windows loses the executable bit; Steam Cloud quotas
+  for one file per square per layer unknown.
 - Building shells cannot be simplified (L1): 48% of their edges are open borders even welded by position (each
   `Shell.face` is a loose quad, T-junctions round every window), so meshoptimizer locks them. Tried 2026-10-15 with
   index-only levels (0.25 m / 0.6 m, `ErrorAbsolute`+`Prune`): -13% triangles in the district view, plaster not reduced
@@ -197,8 +211,9 @@ Main thread
 - Nature: one plate swept per frame (`renderer.ts` `natureSweep`, `HIDDEN_SLICE_MS`).
 - Road blocks' levels: every block of the map scanned every 6 frames (`renderer.ts` `updateRoadLevels`,
   `mesh/roadResidency.ts:48`). Fix: the blocks filed by place in `roadSurfaces.ts`, the near ones kept.
-- Scene scan for shader variants every 2 s, compiling during play (`renderer.ts:3112`). Fix: a
-  closed variant catalogue compiled at load.
+- Shader catalogue (7f4207e): the rigged scenery cast's programs still compile per model during play (its assets load
+  then); a quality change that toggles shadows is not re-run through the catalogue; stand-ins built from meshes not in
+  the scene (forest sample, `renderer.ts` ~857) get three's plain depth, not the RGBA-packed `depthVariants`.
 - Opening: `net.rebuild({ full: true })` (`history.ts:155`); `readDerivedAll` reads the whole cache
   (`renderer.ts:792`).
 - Profiler hooks always installed (`main.ts:707`, `profiler.ts:88`, `new Error().stack` per upload).
@@ -222,16 +237,12 @@ O(map) per edit
   `resweepShore`): it follows `terrain.ts` `rebuildWater`, which rebuilds all the water at any stamp.
 - Lot tool: `lotAt` is `doc.lots.find`, up to 400 times per move (`lotTool.ts:359, 552`); the
   overlay recomposes every lot; the proposal key uses `net.revision` (`:259`). Fix: `doc.lotsIn(box)`.
-- Simulation: `refreshJunctionOrder` sorts every junction per edit (`sim/world.ts:534`);
-  `rebindVehicles` walks the whole fleet (`pipeline.ts:167-200`); every signal, even asleep, each
-  tick (`pipeline.ts:92`); control advisor every 10 s (`controlAdvisor.ts:37`); all stops scanned
-  (`transit/transit.ts:268`); `trainZones` built each tick (`walk.ts:1952`).
 - Fleet copied or scanned: per tick in `lotTraffic.ts:156, 269, 309`, `lorryTraffic.ts:136, 247`;
   per frame in `render/agents.ts:2120`; per body in `wallsNear` (`playEffects.ts:307`); per status in
   `main.ts` `currentStatus` (fix: `SimClient`'s pose decode, which reads every car anyway, sums speed and queue).
-- Ragdoll allocates per frame (`ragdoll.ts:2027-2034, 1421`), one height field per body (`:1526`),
-  `ragdollGround` cleared whole above a cap (`playEffects.ts:240`). Baked crowd blends palettes on
-  the CPU (`riggedCitizens.ts:793, 911, 1143`).
+- Effects left (2026-10-16): `JoltRagdoll.push` allocates two Vector3 per call (`ragdollJolt.ts`); the procedural
+  crowd's `ragdoll.hold` slices a palette per held body per frame; `clipPose` makes a palette per frame while a body
+  gets up; `GPU_PLAYS` copies `crowdAnimation.ts` `PLAYS` (export it).
 - 188 global-revision reads still suppressed in `scripts/baselines/eslint-suppressions.json` (35
   files: `renderer.ts` 42, `doc.ts` 23, `flatAtlas.ts` 19, `main.ts` 15, `terrain.ts` 7). The engine
   has only 6 `engine.register`; the other derived products update themselves.
