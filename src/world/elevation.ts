@@ -2,6 +2,7 @@ import { Digest } from '@core/digest';
 import { type Aabb, expand as expandBox } from '@core/aabb';
 import { Polyline } from '@core/polyline';
 import type { NodeId, SegmentId } from './ids';
+import type { ChangeRect } from './changes';
 import type { Network } from './network';
 import type { NetworkDelta } from './networkDelta';
 import { RerootMap } from '@core/rerootMap';
@@ -193,8 +194,9 @@ export function roadStations(xy: Float64Array, half: number, terrainAt: (x: numb
   return readStations(line, half, count, length / (count - 1), terrainAt);
 }
 
-/** The roads the next solve of `net` from `previous` reads the ground under (new, moved or widened: those `buildRoadElevation` cannot keep), with their lines and casings; null `previous`: every road. */
-export function roadsToRead(net: Network, terrainAt: (x: number, y: number) => number, previous: RoadElevation | null): { readonly id: SegmentId; readonly xy: Float64Array; readonly half: number }[] {
+/** The roads the next solve of `net` from `previous` reads the ground under (new, moved or widened, or on ground that moved: those `buildRoadElevation` cannot keep), with their lines and casings; null `previous`: every road. */
+export function roadsToRead(net: Network, terrainAt: (x: number, y: number) => number, previous: RoadElevation | null,
+  groundMoved: readonly ChangeRect[] | null = null): { readonly id: SegmentId; readonly xy: Float64Array; readonly half: number }[] {
   const flat = terrainAt === FLAT_GROUND;
   const memo = previous ? memos.get(previous) : undefined;
   const from = memo && (memo.terrainAt === FLAT_GROUND) === flat ? memo : null;
@@ -204,13 +206,15 @@ export function roadsToRead(net: Network, terrainAt: (x: number, y: number) => n
     for (const id of delta.segments) touched.add(id);
     for (const node of delta.nodes) for (const id of net.doc.node(node)?.incident ?? []) touched.add(id);
   } else for (const id of net.ribbons.keys()) touched.add(id);
+  const regrounded = from && groundMoved ? new Set(net.segmentCells.idsMeetingAny(groundMoved)) : null;
+  for (const id of regrounded ?? []) touched.add(id);
   const out: { id: SegmentId; xy: Float64Array; half: number }[] = [];
   for (const id of touched) {
     const ribbon = net.ribbons.get(id);
     if (!ribbon || !net.doc.segment(id)) continue;
     const half = casingHalf(ribbon.road);
     const known = from?.profiles.get(id);
-    if (known !== undefined && known.half === half && sameLine(known.line, ribbon.full)) continue;
+    if (known !== undefined && known.half === half && sameLine(known.line, ribbon.full) && !regrounded?.has(id)) continue;
     out.push({ id, xy: ribbon.full.xy, half });
   }
   return out;
@@ -224,6 +228,8 @@ export function buildRoadElevation(
   previous?: RoadElevation | null,
   /** The ground under some roads read off the page on this same ground (`roadStations`): taken for a road whose line and casing are the hint's. */
   hints?: ReadonlyMap<SegmentId, StationHint>,
+  /** Where the ground moved since `previous` (a stroke of the terrain): the roads there solved again on the ground as it is, the others kept (DO NOT solve every road of the region again after a stroke). Null: `previous` is on the same ground. */
+  groundMoved: readonly ChangeRect[] | null = null,
 ): RoadElevation {
   const started = performance.now();
   const flat = terrainAt === FLAT_GROUND;
@@ -270,6 +276,9 @@ export function buildRoadElevation(
   } else {
     for (const id of net.ribbons.keys()) touched.add(id);
   }
+  // The roads the ground moved under: solved again, their ground read again (never kept from the solve before).
+  const regrounded = reuse && groundMoved ? new Set(net.segmentCells.idsMeetingAny(groundMoved)) : null;
+  for (const id of regrounded ?? []) touched.add(id);
   /** Nodes at the ends of a road whose inputs changed. */
   const changedEnds = new Set<NodeId>();
 
@@ -296,7 +305,7 @@ export function buildRoadElevation(
     const half = casingHalf(ribbon.road);
     // The ground under a road is read at 7 points across every 4 units of it, and its grade line smoothed: most of a solve.
     const known = stationsFrom?.profiles.get(id);
-    const kept = known !== undefined && known.half === half && sameLine(known.line, line);
+    const kept = known !== undefined && known.half === half && sameLine(known.line, line) && !regrounded?.has(id);
     const hint = kept ? undefined : hints?.get(id);
     const hinted = hint !== undefined && hint.half === half && sameXY(hint.xy, line.xy);
     const { ceil, base } = kept ? known : hinted ? { ceil: hint.ceil as number[], base: hint.base as number[] } : readStations(line, half, stationCount, step, terrainAt);

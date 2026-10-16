@@ -97,8 +97,7 @@ a second RoadDoc + Network of the active region.
 - Building shells cannot be simplified: each `Shell.face` is a loose quad, T-junctions round windows. Fix:
   each wall as one welded grid with the windows' holes sharing its vertices; then meshoptimizer.
 - Slicing still in the code (amortization): `main.ts` `GROW_SLICE_MS` (the fixed-size city's lot layout on
-  the page: goes with one generation path, the tile generator's); `renderer.ts` `HIDDEN_SLICE_MS`/
-  `WORLD_SLICE_MS` (the world job on the page: goes with per-tile road records).
+  the page: goes with one generation path, the tile generator's); `renderer.ts` `HIDDEN_SLICE_MS` (`natureSweep`).
 - Terrain: a stamp discards the worker-built mesh and rebuilds `TerrainIndex` (`terrain.ts`); textures
   re-uploaded whole; a river dab rebuilds the plate's every pool and river (`rebuildWater`, one water mesh a plate).
 - Region only: city statistics and growth; near/far road joins at the region's edge do not match.

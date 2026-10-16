@@ -33,7 +33,7 @@ describe('the frame and the world rebuild', () => {
 
   it('builds the world sliced, its roads shaped by the tile workers', () => {
     const renderer = read('src/render/renderer.ts');
-    expect(renderer).toMatch(/worldJob = worldSteps\([^;]*, true, landStill\);/);
+    expect(renderer).toMatch(/worldJob = worldSteps\([^;]*, true\);/);
     expect(renderer).not.toMatch(/const sliced = /);
     expect(renderer).toMatch(/roadSurfaceSteps\([\s\S]{0,200}sliced \? roadTiles : null,[^)]*\)/);
   });

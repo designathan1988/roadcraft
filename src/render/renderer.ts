@@ -4,7 +4,6 @@ import { onEcologyRead } from './ecologyPool';
 import { GRID_CELL } from '@world/grid';
 import type { BodyPart, Severable } from '@sim/people/view';
 import type { Archetype } from '@sim/vehicles/archetypes';
-import { workUntil } from '@core/frameWork';
 import { pointInPolygon } from '@core/polygon';
 import type { Occupant, RagdollProbe } from './ragdoll';
 import type { PlayEffects } from './playEffects';
@@ -714,15 +713,9 @@ export function createSceneRenderer(
   let openingSince: number | null = null;
   /** The streamed world's tiles round the camera (`holdOpening`): the opening shows the town once they are in. */
   let openingHeld: (() => boolean) | null = null;
-  /** While nothing is shown (`opened` false) the world is built this much a frame */
+  /** While nothing is shown (`opened` false) the nature is swept this much a frame (`natureSweep`). */
   const HIDDEN_SLICE_MS = 250;
-
-  /** The world of an edit is built up to this much a frame */
-  const WORLD_SLICE_MS = 28;
-  /** The last steps' costs, ms: the next step is started only if the dearest of them still fits in the slice */
-  const stepCosts = new Float64Array(8);
-  let stepCursor = 0;
-  /** Builds the world of the last edit for a few milliseconds; it puts itself in place once complete. */
+  /** Builds the world of the last edit up to its next wait on a worker; it puts itself in place once complete. */
   /** DO NOT ask the next frame at once while the world's job waits on a worker: the unseen opening's frames come without the display's pace (`frameLoop.ts`), and it spun the page at 2,000 frames a second, starving the workers it waited on (2026-10-16); looked at again a display frame later. */
   const WAIT_LOOK_MS = 16;
   let waitLook: ReturnType<typeof setTimeout> | null = null;
@@ -734,24 +727,11 @@ export function createSceneRenderer(
     if (!worldJob) return;
     // Not in the frame of the edit itself, which has already paid for the edit and the roads' heights
     if (worldJobFresh) { worldJobFresh = false; onAssetsReady(); return; }
-    const until = reveal.opened ? workUntil(WORLD_SLICE_MS, WORLD_SLICE_MS) : performance.now() + HIDDEN_SLICE_MS;
-    if (!until) { onAssetsReady(); return; }
-    // At least one step a frame, whatever it is expected to cost: the job always moves on.
-    let at = performance.now();
+    // DO NOT slice it by time (amortization: the cost came back with a bigger region): it does what the change named (the blocks, `roadSurfaces.ts` PassState) and stops only to wait on its workers.
     let step = worldJob.next();
-    for (;;) {
-      const now = performance.now();
-      stepCosts[stepCursor++ % stepCosts.length] = now - at;
-      if (step.done || step.value === 'wait') break;
-      let estimate = 0;
-      for (const cost of stepCosts) if (cost > estimate) estimate = cost;
-      if (now + estimate > until) break;
-      at = now;
-      step = worldJob.next();
-    }
-    if (step.done) { worldJob = null; stepCosts.fill(0); shadowMoved = true; }
-    else if (step.value === 'wait') lookAgain();
-    else onAssetsReady();
+    while (!step.done && step.value !== 'wait') step = worldJob.next();
+    if (step.done) { worldJob = null; shadowMoved = true; }
+    else lookAgain();
   };
   let networkRevision = -1;
   /** The blocks the roads' heights or ground changed in since the road surfaces were last built to the end (null: not known, every tile): kept across a world build replaced halfway. */
@@ -1518,9 +1498,15 @@ export function createSceneRenderer(
     const started = performance.now();
     // Only the roads changed (the land did not): the ground is cut and filled again only where the solve of the roads differs.
     const landStill = terrainRevision === net.doc.terrainRevision && elevation !== null;
+    // Where the land moved (a stroke's region), when it can be said: the solve and the surfaces follow it there only.
+    const land = landDirty;
+    landDirty = null;
+    const landBlocks = !landStill && land !== null && land !== 'all' ? blocksOver(land) : null;
+    const groundMoved = landBlocks && land !== null && land !== 'all' ? [land] : null;
+    const from = landStill || groundMoved ? elevation : null;
     // DO NOT read the ground under a tile's hundreds of new roads in this frame: a job reads it off the shared plates, the solve waits for it.
     const solvedAhead = offeredElevation !== null && offeredElevation.revision === net.revision && offeredElevation.terrain === net.doc.terrainRevision;
-    if (!solvedAhead && roadStations.waiting(roadsToRead(net, builtGroundAt, landStill ? elevation : null),
+    if (!solvedAhead && roadStations.waiting(roadsToRead(net, builtGroundAt, from, groundMoved),
       (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision)) return;
     const previousElevation = elevation;
     networkRevision = net.revision;
@@ -1533,27 +1519,24 @@ export function createSceneRenderer(
     elevation = offered && offered.revision === net.revision && offered.terrain === terrainRevision
       ? offered.elevation
       // On land that has not moved, from the last solve
-      : buildRoadElevation(net, builtGroundAt, landStill ? previousElevation : null, roadStations.current);
+      : buildRoadElevation(net, builtGroundAt, from, roadStations.current, groundMoved);
     roadStations.used();
     performance.measure('hitch:road-edit/elevation', { start: started, end: performance.now() });
     // Now the ground comes to meet the roads
-    const land = landDirty;
-    landDirty = null;
-    const landBlocks = !landStill && land !== null && land !== 'all' ? blocksOver(land) : null;
     // The blocks the two solves differ in, digested off the page (`compareSolves`) and read by the job, which waits for them
     const compare = previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null;
     pendingBlocks = compare && !pendingBlocks.includes(null) ? [...pendingBlocks, compare] : [null];
     const elevationMs = performance.now() - started;
     const cause = net.doc.changes.version;
     // DO NOT build it in one go: the roads of a generated city were built in the frame of the change, on the page
-    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true, landStill);
+    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true);
     worldJobFresh = true;
     worldJobGround = true;
   };
 
   /** @rebuild What `worldSteps` builds before it is put in place at once. */
   function* worldSteps(net: Network, compares: readonly (BlockCompare | null)[], solved: { readonly cause: number; readonly elevationMs: number },
-    started: number, sliced: boolean, landStill: boolean): Generator<'wait' | void, void, void> {
+    started: number, sliced: boolean): Generator<'wait' | void, void, void> {
     const solve = elevation!;
     // The blocks the solves differ in, once the worker has digested them (`compareSolves`).
     while (compares.some((c) => c && !c.ready)) { groundWorkers.check(); yield 'wait'; }
@@ -1578,9 +1561,9 @@ export function createSceneRenderer(
       while (!storedRead && performance.now() - since < KEPT_TILES_WAIT_MS) yield 'wait';
     }
     // Sliced, the tiles are shaped by the workers while the frames go on (`roadTilePool.ts`); built in one go
-    // On land that did not move, only the tiles the differing blocks reach are digested again (`roadSurfaces.ts` `depends`).
+    // Only the tiles the changed blocks reach are digested again (`roadSurfaces.ts` `depends`): the blocks hold where the land moved too (`landBlocks`), null when that cannot be said.
     // The blocks every build since the last finished one changed (a build replaced halfway left its own for this one).
-    surfaceBlocks = landStill && blocks !== null && surfaceBlocks !== null ? [...surfaceBlocks, ...blocks] : null;
+    surfaceBlocks = blocks !== null && surfaceBlocks !== null ? [...surfaceBlocks, ...blocks] : null;
     const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
       sliced ? roadTiles : null, surfaceBlocks);
     surfaceBlocks = [];
