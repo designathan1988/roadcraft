@@ -461,12 +461,16 @@ export class TransitSim {
         }
       }
     }
-    for (const t of this.trains()) {
-      if (t.metro) continue;
-      // Discs close enough to overlap: no gap a person could slip through.
-      for (const car of t.cars) {
-        for (let d = -CAR_LENGTH / 2 + m(1.5); d <= CAR_LENGTH / 2 - m(1.5) + 1e-6; d += m(2.5)) {
-          zone(t.key).push({ x: car.x + Math.cos(car.heading) * d, y: car.y + Math.sin(car.heading) * d, r: m(1.8) });
+    // DO NOT make every train's cars (`trains`) to throw the metro's away: the trains at grade only.
+    for (const rail of this.rails) {
+      if (rail.line.mode === 'metro') continue;
+      for (const train of rail.trains) {
+        // Discs close enough to overlap: no gap a person could slip through.
+        for (let k = 0; k < TRAIN_CARS; k++) {
+          const car = this.pointAt(rail, train.s - CAR_LENGTH * (k + 0.5));
+          for (let d = -CAR_LENGTH / 2 + m(1.5); d <= CAR_LENGTH / 2 - m(1.5) + 1e-6; d += m(2.5)) {
+            zone(train.key).push({ x: car.x + Math.cos(car.heading) * d, y: car.y + Math.sin(car.heading) * d, r: m(1.8) });
+          }
         }
       }
     }
