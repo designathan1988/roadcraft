@@ -583,12 +583,12 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 /** Ids stay far below 2^53: an allocator reserved past it stops counting */
-const MAX_ID = 2 ** 31;
 /** The widest stamp a map may hold: the map itself (4 800 units across). */
 const MAX_STAMP_RADIUS = m(1_920);
 
 function isId(value: unknown): value is number {
-  return Number.isInteger(value) && (value as number) > 0 && (value as number) <= MAX_ID;
+  // Any safe integer: a tile hands out ids from its own range, up to ~2^52 (`world/tiles.ts` tileIdBase).
+  return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
 export { RoadDoc };

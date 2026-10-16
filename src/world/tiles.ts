@@ -85,6 +85,8 @@ export const OWNER = {
   node: (n: { readonly x: number; readonly y: number }): number => tileKeyAt(n.x, n.y),
   /** A road: the tile of the middle of its ends (a border avenue on the edge: the tile whose low edge it is; a street crossing an edge: the side it mostly lies on); an end in another tile is kept with it as a borrowed node. */
   segment: (a: { readonly x: number; readonly y: number }, b: { readonly x: number; readonly y: number }): number => tileKeyAt((a.x + b.x) / 2, (a.y + b.y) / 2),
+  /** A span: the tile of the middle of its poles, as a road's (its other pole, if across an edge, borrowed). */
+  span: (a: { readonly x: number; readonly y: number }, b: { readonly x: number; readonly y: number }): number => tileKeyAt((a.x + b.x) / 2, (a.y + b.y) / 2),
   /** A building or a lot, a pole, a tree, a dab, an item: its anchor. */
   at: (p: { readonly x: number; readonly y: number }): number => tileKeyAt(p.x, p.y),
 } as const;

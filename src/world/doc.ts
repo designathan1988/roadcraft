@@ -1499,14 +1499,18 @@ export class RoadDoc {
       for (const end of [a, b]) if (OWNER.node(end) !== key) borrowed.set(end.id, end);
     }
     const poles = this.polesIn(square).filter(mine);
+    // A span by the middle of its poles (`OWNER.span`): one near the edge may end on a pole of the next tile, borrowed.
     const spans: UtilitySpan[] = [];
     const borrowedPoles = new Map<PoleId, UtilityPole>();
-    for (const pole of poles) {
-      for (const span of this.spansAt(pole.id)) {
-        if (span.a !== pole.id) continue;
+    const seen = new Set<SpanId>();
+    for (const near of this.polesIn([square[0] - SPAN_REACH, square[1] - SPAN_REACH, square[2] + SPAN_REACH, square[3] + SPAN_REACH])) {
+      for (const span of this.spansAt(near.id)) {
+        if (seen.has(span.id)) continue;
+        seen.add(span.id);
+        const a = this.poleMap.get(span.a), b = this.poleMap.get(span.b);
+        if (!a || !b || OWNER.span(a, b) !== key) continue;
         spans.push(span);
-        const other = this.poleMap.get(span.b);
-        if (other && !mine(other)) borrowedPoles.set(other.id, other);
+        for (const end of [a, b]) if (!mine(end)) borrowedPoles.set(end.id, end);
       }
     }
     return {
@@ -2701,6 +2705,9 @@ const freshTileNext = (key: number): TileNext => {
   const base = tileIdBase(key);
   return { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base };
 };
+
+/** How far a span reaches past its pole: the longest a wire runs (`roads/powerLine.ts` spans are tens of metres; a margin). */
+const SPAN_REACH = m(200);
 
 /** A place on the world, copied: the world has no edge to hold it to (CLAUDE.md, "Streaming world"). */
 const onWorld = (p: { readonly x: number; readonly y: number }): { x: number; y: number } => ({ x: p.x, y: p.y });

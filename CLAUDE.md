@@ -112,7 +112,8 @@ Measured before it: the page held every record of the map as JS objects in one d
 building with its derived copies), every product walked it, and the opening waited for the whole map; the page's V8 heap
 is 4.4 GB, so no tuning fits a city much past 10 km. Binding decisions:
 - The page never holds the whole map. The world is an unbounded grid of 1,024 m tiles (`world/tiles.ts`); every record
-  belongs to one tile (`OWNER`: a node where it stands, a road by its end `a`, everything else by its anchor).
+  belongs to one tile (`OWNER`: a node where it stands, a road and a span by the middle of their ends, everything else by
+  its anchor).
 - Ids per tile: tile k hands out ids from `tileIdBase(k)`; ids under `TILE_IDS` are a pre-tile map's, kept as they are.
 - The tile store is the save (`editor/chunkedSave.ts` layout, written in a worker): every tile ever made. A tile not in it
   is generated on demand, a pure function of the seed and its place (`cityGen/wholeMap.ts`, `editor/wholeMapTile.ts`),
