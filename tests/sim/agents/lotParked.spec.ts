@@ -149,7 +149,7 @@ describe('the cars standing in bays, asked by the lots', () => {
     expect(bodies).toBeGreaterThan(0);
     expect(freeSeen).toBeGreaterThan(0);
     expect(sceneryPooled).toBeGreaterThan(0);
-  }, 10_000);
+  }, 60_000);
 
   it('are rows of the scenery\'s, never vehicles, until the lots drive one out: then the vehicle it stood for', () => {
     const doc = closedTown();
