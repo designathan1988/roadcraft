@@ -7,19 +7,42 @@ import { COARSE_EPS } from '@core/scalar';
 import { pedestrianAffectsSpan, reservationCoversCrossing } from './intersections/crossingSpans';
 import { m } from '@world/units';
 import type { Vehicle } from './vehicles/state';
+import type { NodeId } from '@world/ids';
 
 /** Runtime invariant checks. */
-/** When demand was first seen waiting at each group's red, per controller (`groupStarved`). */
-const DEMAND_ONSET = new WeakMap<SignalController, Map<number, number>>();
+/** What a world's audits keep from one to the next (`runAudit`) */
+interface AuditMemory {
+  /** The audits run so far. */
+  pass: number;
+  /** The signals' log read so far (`SimWorld.signalChangesSince`). */
+  serial: number;
+  /** When demand was first seen waiting at each group's red, per controller (`groupStarved`), and the audit that last looked at it. */
+  readonly onsets: WeakMap<SignalController, { audited: number; readonly since: Map<number, number> }>;
+  /** Each junction's plan cycle, and the longest with how many have it (`maxCycle`); `stale`: the last of the longest went, found again when next asked. */
+  readonly cycles: Map<NodeId, number>;
+  longest: number;
+  longestCount: number;
+  stale: boolean;
+}
+const MEMORY = new WeakMap<SimWorld, AuditMemory>();
 
-export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
+/** The floor and the ceiling of the longest cycle the audit reads (`maxCycle`), s; a wedge is twice it, so never under twice the floor. */
+const CYCLE_FLOOR = 30;
+const CYCLE_CEILING = 200;
+const MIN_WEDGE = 2 * CYCLE_FLOOR;
+
+/** DO NOT walk every signal of the map each audit: `signals` (those stepped since, `pipeline.ts`) and those planned again are looked at; without it, every one */
+export function runAudit(w: SimWorld, level: 'cheap' | 'full', signals?: readonly SignalController[]): AuditIssue[] {
   const out: AuditIssue[] = [];
   const tick = w.clock.tick;
   const signalDeps = w.signalDeps();
+  const memory = memoryOf(w);
+  const pass = ++memory.pass;
+  const planned = followSignals(w, memory);
 
   // ---- signals ----------------------------------------------------------
   const maxDark = SIGNAL.amber + SIGNAL.minAllRed + 0.5;
-  for (const c of w.controllers.values()) {
+  for (const c of auditedSignals(w, signals, planned)) {
     if (c.degraded) {
       out.push(issue('degradedPlan', tick, c.node, 'plan failed validation'));
     }
@@ -37,8 +60,7 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
     // A busy stage is allowed to extend from its target to maxGreen.
     const limit = SIGNAL.starvationCycles * maxSignalCycle(c) + maxDark;
     // Starved is demand left waiting, not a group long unused
-    let onsets = DEMAND_ONSET.get(c);
-    if (!onsets) DEMAND_ONSET.set(c, onsets = new Map());
+    const onsets = onsetsOf(memory, c, pass);
     for (const g of c.plan.groups) {
       const last = c.lastServed.get(g);
       if (last === undefined) continue;
@@ -55,8 +77,9 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
     }
   }
 
-  // DO NOT move this back into the loop.
-  const wedgeLimit = 2 * maxCycle(w);
+  // DO NOT move this back into the loop, nor work it out while no car has stood past its floor.
+  let wedge = -1;
+  const wedgeLimit = (): number => (wedge < 0 ? (wedge = 2 * maxCycle(memory)) : wedge);
   for (const v of w.vehicles.values()) {
     const lane = w.lanelet(v.lanelet);
     if (!lane) {
@@ -99,10 +122,10 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
 
       // Being held out of a full lane is correct behaviour — it is what stops the network gridlocking
       if (
-        stalled > wedgeLimit &&
+        stalled > MIN_WEDGE && stalled > wedgeLimit() &&
         v.constraints.obstacles.some((o) => o.kind === 'spillback')
       ) {
-        if (junctionIsStuck(w, lane.to, wedgeLimit)) {
+        if (junctionIsStuck(w, lane.to, wedgeLimit())) {
           out.push(
             issue('spillbackWedge', tick, v.id, `held ${stalled.toFixed(0)}s at a stalled junction`),
           );
@@ -123,7 +146,7 @@ export function runAudit(w: SimWorld, level: 'cheap' | 'full'): AuditIssue[] {
       );
       if (
         ownsCompoundAllocation &&
-        currentAccessWait > wedgeLimit &&
+        currentAccessWait > MIN_WEDGE && currentAccessWait > wedgeLimit() &&
         v.constraints.obstacles.some(
           (o) => o.kind === 'yield' || o.kind === 'conflict' || o.kind === 'pedestrian',
         )
@@ -243,10 +266,91 @@ function junctionIsStuck(w: SimWorld, node: number | undefined, limit: number): 
   return w.clock.since(last) > limit;
 }
 
-function maxCycle(w: SimWorld): number {
-  let max = 30;
-  for (const c of w.controllers.values()) max = Math.max(max, c.plan.cycle);
-  return Math.min(max, 200);
+function memoryOf(w: SimWorld): AuditMemory {
+  let memory = MEMORY.get(w);
+  if (!memory) MEMORY.set(w, memory = { pass: 0, serial: -1, onsets: new WeakMap(), cycles: new Map(), longest: -Infinity, longestCount: 0, stale: false });
+  return memory;
+}
+
+/** The longest plan cycle of the map, from the cycles kept by node (`followSignals`), between the floor and the ceiling. */
+function maxCycle(memory: AuditMemory): number {
+  if (memory.stale) {
+    memory.stale = false;
+    memory.longest = -Infinity;
+    memory.longestCount = 0;
+    for (const cycle of memory.cycles.values()) keepLongest(memory, cycle);
+  }
+  return Math.min(Math.max(CYCLE_FLOOR, memory.longest), CYCLE_CEILING);
+}
+
+/** The signals an audit looks at: every one, or those given and those planned again since the last audit (`planned`, null: any may have been). */
+function auditedSignals(w: SimWorld, signals: readonly SignalController[] | undefined, planned: readonly NodeId[] | null): Iterable<SignalController> {
+  if (!signals || planned === null) return everySignal(w);
+  if (!planned.length) return signals;
+  const out = [...signals];
+  const seen = new Set(signals);
+  for (const node of planned) {
+    const c = w.controllers.get(node);
+    if (c && !seen.has(c)) { seen.add(c); out.push(c); }
+  }
+  return out;
+}
+
+/** @rebuild Every signal: the audit of everything (doing everything, the specs), or the first after the signals' log was forgotten. */
+function everySignal(w: SimWorld): Iterable<SignalController> {
+  return w.controllers.values();
+}
+
+/** A signal's demand onsets for this audit: forgotten when the audit before did not look at it (asleep then, no demand waited at it) */
+function onsetsOf(memory: AuditMemory, c: SignalController, pass: number): Map<number, number> {
+  let entry = memory.onsets.get(c);
+  if (!entry) memory.onsets.set(c, entry = { audited: pass, since: new Map() });
+  else if (entry.audited !== pass - 1) entry.since.clear();
+  entry.audited = pass;
+  return entry.since;
+}
+
+/** The plans' cycles brought up to the signals' log: the junctions planned again since the last audit, null when it cannot say which. */
+function followSignals(w: SimWorld, memory: AuditMemory): readonly NodeId[] | null {
+  const log = w.signalChangesSince(memory.serial);
+  memory.serial = log.serial;
+  if (log.nodes === null) {
+    refileCycles(w, memory);
+    return null;
+  }
+  for (const node of log.nodes) {
+    dropCycle(memory, node);
+    const c = w.controllers.get(node);
+    if (c) keepCycle(memory, node, c.plan.cycle);
+  }
+  return log.nodes;
+}
+
+/** @rebuild Every junction's cycle filed again: the first audit of a world, or after the signals' log was forgotten. */
+function refileCycles(w: SimWorld, memory: AuditMemory): void {
+  memory.cycles.clear();
+  memory.longest = -Infinity;
+  memory.longestCount = 0;
+  memory.stale = false;
+  for (const [node, c] of w.controllers) keepCycle(memory, node, c.plan.cycle);
+}
+
+function keepCycle(memory: AuditMemory, node: NodeId, cycle: number): void {
+  memory.cycles.set(node, cycle);
+  if (!memory.stale) keepLongest(memory, cycle);
+}
+
+function keepLongest(memory: AuditMemory, cycle: number): void {
+  if (cycle > memory.longest) { memory.longest = cycle; memory.longestCount = 1; }
+  else if (cycle === memory.longest) memory.longestCount++;
+}
+
+/** A junction's cycle taken out: when it was the last of the longest, the longest is found again only when asked (`maxCycle`). */
+function dropCycle(memory: AuditMemory, node: NodeId): void {
+  const cycle = memory.cycles.get(node);
+  if (cycle === undefined) return;
+  memory.cycles.delete(node);
+  if (!memory.stale && cycle === memory.longest && --memory.longestCount === 0) memory.stale = true;
 }
 
 function maxSignalCycle(c: SignalController): number {

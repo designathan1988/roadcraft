@@ -55,7 +55,11 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   // 1. signals: the sole mutator of phase state. Their clock passes first: every controller's time moves on, the asleep's too.
   w.signalClock.passes++;
   const deps = w.signalDeps();
-  for (const c of w.signalsToStep(deps)) {
+  const stepping = w.signalsToStep(deps);
+  // What the audit (8) looks at of the signals: those stepped now (the asleep stand still), every one when doing everything.
+  const audit = w.auditEnabled && w.clock.tick % w.auditEvery === 0;
+  const audited = audit && w.doLess ? [...stepping] : undefined;
+  for (const c of stepping) {
     tickWork.controllers++;
     if (stepController(c, deps) && w.doLess) w.restSignal(c);
   }
@@ -107,8 +111,8 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   lap('7 cleanup');
 
   // 8. audit
-  if (w.auditEnabled && w.clock.tick % w.auditEvery === 0) {
-    for (const i of runAudit(w, w.auditLevel)) w.report(i);
+  if (audit) {
+    for (const i of runAudit(w, w.auditLevel, audited)) w.report(i);
   }
   lap('8 audit');
 

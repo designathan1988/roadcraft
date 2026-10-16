@@ -41,4 +41,28 @@ describe('the audit, the longest cycle worked out once', () => {
     expect(w.signalisedControllers().length).toBeGreaterThan(2);
     void issues;
   });
+
+  it('given the signals stepped, looks at them and at those planned again, never at every signal', () => {
+    const w = seededWorld(0xa0d17);
+    for (const node of [...w.doc.nodes.keys()].filter((_, i) => i % 3 === 0)) w.doc.setNodeControl(node, 'signal');
+    w.net.rebuild();
+    w.rebuildTopology();
+    w.trafficCount = 90;
+    w.pedestrianCount = 0;
+    for (let t = 0; t < 60; t++) step(w, { traffic: true, pedestrians: false });
+    // The first audit files every plan's cycle; the walks of every signal counted after it.
+    runAudit(w, 'cheap', []);
+    const some = w.signalisedControllers().slice(0, 2);
+    expect(some.length).toBe(2);
+    const map = w.controllers;
+    const values = map.values.bind(map), entries = map[Symbol.iterator].bind(map);
+    let whole = 0;
+    map.values = () => { whole++; return values(); };
+    map[Symbol.iterator] = () => { whole++; return entries(); };
+    for (let k = 0; k < 5; k++) runAudit(w, 'full', some);
+    expect(whole).toBe(0);
+    // Without the signals: every one, as the specs and doing everything ask.
+    runAudit(w, 'cheap');
+    expect(whole).toBe(1);
+  });
 });
