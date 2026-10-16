@@ -418,7 +418,7 @@ interface ToldVehicle {
   /** Doors open or a kerb stop under way: told each frame while they last, and once after. */
   readonly busy: boolean;
   readonly people: readonly number[];
-  readonly peopleAge: readonly string[];
+  readonly peopleAge: readonly unknown[];
   seen: number;
 }
 
