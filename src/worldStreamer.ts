@@ -49,7 +49,9 @@ export class WorldStreamer {
   /** `letGo`: a tile let go, and the stretches of the lists it took (undo forgets what it named, `History.letGoTile`). */
   constructor(private readonly doc: RoadDoc, private readonly source: TileSource,
     private readonly letGo: (key: number, removedAt: ReadonlyMap<ListPart, readonly number[]>) => void = () => {},
-    private readonly failed: (why: string) => void = () => {}) {}
+    private readonly failed: (why: string) => void = () => {},
+    /** A tile came: a frame to put it in (the frames are drawn on demand, `frameLoop.ts`). */
+    private readonly arrived: () => void = () => {}) {}
 
   /** The camera's focus on the map (x, y): the tiles around it wanted, the nearest asked first. */
   focus(x: number, y: number): void {
@@ -109,6 +111,7 @@ export class WorldStreamer {
       this.source.load(key).then((records) => {
         this.asked.delete(key);
         this.ready.set(key, records);
+        this.arrived();
         this.ask();
       }, (error: unknown) => {
         this.asked.delete(key);

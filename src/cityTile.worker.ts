@@ -4,7 +4,7 @@ import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import { type TileRecords, tileKey } from '@world/tiles';
 import type { JobScope } from './jobs/jobScope';
 
-/** This service of the job system (`jobs/job.worker.ts`): one tile built off the page (`editor/wholeMapTile.ts`) - a piece of the fixed whole map, asked for by `wholeMapRun.ts`, or a tile of the streamed world (`world/tiles.ts`), asked for with `stream`. */
+/** This service of the job system (`jobs/job.worker.ts`): one tile built off the page (`editor/wholeMapTile.ts`) - a piece of the fixed whole map (its tests, `assemble.ts`), or a tile of the streamed world (`world/tiles.ts`), asked for with `stream`. */
 
 /** A tile of the fixed whole map asked for. */
 export interface TileAsk {
@@ -32,7 +32,7 @@ export function serve(self: JobScope): void {
       if ('stream' in ask && ask.stream) self.postMessage({ key: tileKey(i, j), records: buildStreamTile(options, i, j) } satisfies StreamTileAnswer);
       else self.postMessage({ piece: buildTile(options, i, j) } satisfies TileAnswer);
     } catch (error) {
-      // Told and answered (the same failure for both asks): the page gives the whole map up (`wholeMapRun.ts`); a streamed tile's asker decides.
+      // Told and answered (the same failure for both asks): a streamed tile's asker decides.
       console.error(`[city tile] tile ${i},${j} failed`, error);
       self.postMessage({ i, j, error: String(error) } satisfies TileAnswer);
     }
