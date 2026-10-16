@@ -94,12 +94,21 @@ export class WorldStreamer {
   apply(now: number): void {
     if (this.doc.editing) return;
     this.noteEdits();
-    for (const [key, records] of this.ready) {
-      this.ready.delete(key);
-      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
+    // One tile put in a frame, the nearest first: a dense tile is ~1,500 buildings read and filed, the frame stays a frame (the work is the view's tiles, never the map's).
+    let best: number | null = null, bestD = Infinity;
+    for (const key of this.ready.keys()) {
+      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) { this.ready.delete(key); continue; }
+      const { i, j } = tileOfKey(key);
+      const d = Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j));
+      if (d < bestD) { bestD = d; best = key; }
+    }
+    if (best !== null) {
+      const records = this.ready.get(best)!;
+      this.ready.delete(best);
       this.doc.loadTile(records);
-      this.versions.set(key, records.version);
-      this.tell.loaded?.(key);
+      this.versions.set(best, records.version);
+      this.tell.loaded?.(best);
+      if (this.ready.size) this.tell.arrived?.();
     }
     for (const key of [...this.doc.loadedTiles]) {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
