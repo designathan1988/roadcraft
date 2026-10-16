@@ -3,11 +3,12 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import type { NodeId } from '@world/ids';
 import { SimWorld } from '../world';
-import { TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents/trafficBuildings';
+import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap, trafficBuilding } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
-import { Meso } from '../meso/meso';
+import { Meso, type TileEvent } from '../meso/meso';
 import { MesoMemory } from '../meso/memory';
-import { TileLinkFeed, portReader } from '../meso/tileFeed';
+import { type TileReader, TileLinkFeed, portReader } from '../meso/tileFeed';
+import { migrateBuilding } from '@world/buildings/serialize';
 import { storeTileReader } from '../../tileReader';
 import { laneGrid } from '../agents/laneGrid';
 import { useBayWorkers } from '../agents/parking';
@@ -39,6 +40,9 @@ export class SimHost {
   private net = new Network(this.doc);
   /** The buildings as traffic reads them, by the world's cells, written in the copy's diary. */
   private readonly buildings = new TrafficBuildingTable(this.doc.changes);
+  /** The streamed world's tile store as this worker reads it (`tiles`), and the read under way for each tile put in the page's document. */
+  private reader: TileReader | null = null;
+  private readonly tileReads = new Map<number, number>();
   private sim: SimWorld | null = null;
   /** The meso traffic and its micro window: made before the world, so a window told early is kept for it. */
   private readonly meso = new Meso();
@@ -75,10 +79,14 @@ export class SimHost {
       case 'tiles': {
         // The store read here, never through the page: IndexedDB opened in this worker (read only), or the port the page was handed for the desktop's.
         const reader = message.port ? portReader(message.port) : storeTileReader(message.map);
+        this.reader = reader;
         this.meso.useTiles(new TileLinkFeed(reader, message.reach));
         return;
       }
-      case 'tile': this.meso.tileEvent(message.event, message.key, message.version); return;
+      case 'tile':
+        this.meso.tileEvent(message.event, message.key, message.version);
+        this.tileBuildings(message.event, message.key);
+        return;
       case 'delta':
         this.doc.restore(message.delta);
         this.buildings.apply(message.buildings);
@@ -119,6 +127,24 @@ export class SimHost {
     this.sim = sim;
     this.topology = new TopologyCatchUp(new ConflictPool(prefix));
     this.post({ type: 'ready' });
+  }
+
+  /** A tile put in the page's document: its buildings as the traffic reads them worked out here from the store (`trafficBuilding`), never on the page (`SimClient.sendChanges`)
+   *  - one let go before its read lands is not placed; a building the page already told (an edit since) keeps the page's. */
+  private tileBuildings(event: TileEvent, key: number): void {
+    if (event === 'letGo') { this.tileReads.delete(key); return; }
+    if (event !== 'loaded' || !this.reader) return;
+    const read = (this.tileReads.get(key) ?? 0) + 1;
+    this.tileReads.set(key, read);
+    this.reader.read(key).then((records) => {
+      if (this.tileReads.get(key) !== read || !records) return;
+      const changes: BuildingChange[] = [];
+      for (const raw of records.buildings) {
+        const b = migrateBuilding(raw);
+        if (b && !this.buildings.get(b.id)) changes.push({ id: b.id, value: trafficBuilding(b) });
+      }
+      this.buildings.apply(changes);
+    }, (error: unknown) => console.warn(`[sim] tile ${key}'s buildings could not be read from the store`, error));
   }
 
   /** Another map: the replica made whole again, and nothing of the old simulation carried over. */

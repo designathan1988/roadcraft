@@ -1,5 +1,5 @@
 import type { RoadDoc, Restoration, RecordPart, ValuePart } from '@world/doc';
-import type { DocChangeKind, JournalReader } from '@world/changes';
+import { type DocChangeKind, type JournalReader, TILE_LOADED } from '@world/changes';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { BuildingId } from '@world/buildings/types';
 import { buildingChangesOf, trafficMapOf } from '../agents/trafficBuildings';
@@ -83,6 +83,8 @@ export class SimClient implements JournalReader {
   private wallOwed = 0;
   /** The tile store told to the worker once it is up (`tiles`). */
   private tileStore: { readonly map: string; readonly reach: number; readonly port: MessagePort | null } | null = null;
+  /** Whether the worker reads the streamed world's tiles itself (`tiles`): a tile's buildings are not worked out here when it comes in. */
+  private workerReadsTiles = false;
   private readonly pending = new Map<number, (value: unknown) => void>();
   private nextAsk = 1;
   private readonly answers = new Map<string, unknown>();
@@ -225,6 +227,7 @@ export class SimClient implements JournalReader {
   /** The streamed world's tile store the worker reads the meso's far tiles from itself (`meso/tileFeed.ts`): by its map's name in IndexedDB, or over `port` (the desktop's store); sent once the worker is up. */
   tiles(map: string, reach: number, port: MessagePort | null = null): void {
     this.tileStore = { map, reach, port };
+    this.workerReadsTiles = true;
     this.sendTiles();
   }
 
@@ -346,6 +349,8 @@ export class SimClient implements JournalReader {
       if (e.kind === 'buildings') {
         // A change of buildings that does not say which: the worker's copy made whole again.
         if (!e.ids) { this.load(); return; }
+        // DO NOT work a tile's buildings out for the traffic here when it comes in: the worker reads the same tile from the store and does (`SimHost.tileBuildings`).
+        if (e.cause === TILE_LOADED && this.workerReadsTiles) continue;
         for (const id of e.ids) buildings.add(id as BuildingId);
         continue;
       }
