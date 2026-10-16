@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The desktop packages (npm run package:desktop)
+release/
 coverage/
 test-results/
 playwright-report/
