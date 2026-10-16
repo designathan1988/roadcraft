@@ -272,15 +272,15 @@ describe('a tile written', () => {
     expect((await readTile(store, 'map', now.key))!.buildings).toEqual(JSON.parse(JSON.stringify(now.buildings)));
   });
 
-  it('a tile the generator just made: its buildings one table for them all', () => {
+  it('a tile the generator just made and prepared: its buildings one table for them all', () => {
     const base = tileIdBase(tileKey(0, 0));
     const fresh = emptyTile(0, 0, { buildings: [house(base, m(100)), house(base + 1, m(300))] });
-    const write = tileWrite(fresh, true);
+    const write = tileWrite(preparedRecords(prepareTile(fresh, false)));
     expect(write.buildings.tables).toHaveLength(1);
     expect([...write.buildings.table]).toEqual([0, 0]);
     expect([...write.buildings.row]).toEqual([0, 1]);
-    expect(JSON.parse(JSON.stringify(writtenRecords(write)))).toEqual(JSON.parse(JSON.stringify(fresh)));
-    expect(tileWrite(emptyTile(0, 0), true).buildings.tables).toEqual([]);
+    expect(JSON.parse(JSON.stringify(writtenRecords(write).buildings))).toEqual(JSON.parse(JSON.stringify(fresh.buildings)));
+    expect(tileWrite(emptyTile(0, 0)).buildings.tables).toEqual([]);
   });
 });
 

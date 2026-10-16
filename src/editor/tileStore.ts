@@ -178,15 +178,11 @@ interface BuildingRows {
 /** A tile as a write hands it to the store: its records, its buildings as rows (`BuildingRows`), never as objects. */
 type TileWrite = Omit<TileRecords, 'buildings'> & { readonly buildings: BuildingRows };
 
-/** A tile's records as a write posts them - `fresh`: buildings none of which has a row (a tile the generator just made), one table for them all; else each building's row (`refOf`: its tile's, or a table of its own made once per record and kept with it). */
-export function tileWrite(records: TileRecords, fresh = false): TileWrite {
+/** A tile's records as a write posts them: each building's row (`refOf`: its tile's, or a table of its own made once per record and kept with it). */
+export function tileWrite(records: TileRecords): TileWrite {
   const buildings = records.buildings as readonly Building[];
   const n = buildings.length;
   const table = new Uint32Array(n), row = new Uint32Array(n);
-  if (fresh) {
-    for (let k = 0; k < n; k++) row[k] = k;
-    return { ...records, buildings: { tables: n ? [encodeRecords(buildings).buffer] : [], table, row } };
-  }
   const tables: ArrayBufferLike[] = [], index = new Map<ArrayBufferLike, number>();
   for (let k = 0; k < n; k++) {
     const ref = refOf(buildings[k]!);
@@ -499,10 +495,10 @@ export class TileStore {
     const { i, j } = tileOfKey(key);
     const fresh = await this.generate(i, j);
     if (fresh.key !== key) throw new Error(`the generator made tile ${fresh.key} for tile ${key}`);
-    const stamped = this.stamped(fresh);
-    // Its buildings have no row yet: one table for them all, never one a building.
-    if (!(await this.put(tileWrite(stamped, true)))) console.warn(`[save] tile ${key} was made and not stored`);
-    return stamped;
+    // Prepared here as a worker prepares one (`prepareTile`): its buildings one table, which the page reads them from, the write posts and the cell jobs read.
+    const records = preparedRecords(prepareTile(this.stamped(fresh), false));
+    if (!(await this.put(tileWrite(records)))) console.warn(`[save] tile ${key} was made and not stored`);
+    return records;
   }
 
   private stamped(records: TileRecords): TileRecords {
