@@ -105,7 +105,8 @@ describe('parked cars drawn by copying their first frame', () => {
     for (let i = 0; i < count; i++) cars.push(parkedCar(i + 1, (i % 60) * m(8), Math.floor(i / 60) * m(8)));
     const world = worldWith(cars);
     const bodies = meshesOf(agents, /^car-.*-(shell|shell-lite|far)$/);
-    const wheels = meshesOf(agents, /^vehicle-(wheels|hubs|lamps)|bicycle-wheels$/);
+    // The cars' wheels alone: hubs and lamps grow with them too, past the ceiling (`growPart`).
+    const wheels = meshesOf(agents, /^vehicle-wheels$/);
     agents.sync(world, netWith(), 0, true);
     expect(drawn(bodies)).toBe(count);
     expect(drawn(wheels)).toBe(count * 4);
