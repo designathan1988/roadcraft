@@ -364,7 +364,10 @@ export function createPostChain(
     enabled: true,
     target: sceneTarget,
     // The occlusion's two targets too (its `normalRenderTarget` is never bound once `setGBuffer` is handed the scene's depth: no GPU memory)
-    targets: () => [sceneTarget, composer.renderTarget1, composer.renderTarget2, ...(sharpMask ? [sharpMask] : []), ...bodiesTargets, shadowMapTarget, ...(gtao ? [gtao.gtaoRenderTarget, gtao.pdRenderTarget] : [])],
+    // The bloom's bright pass and its five mips each way (made at construction, on or off) and SMAA's edges and weights (r186 `_edgesRT`, `_weightsRT`)
+    targets: () => [sceneTarget, composer.renderTarget1, composer.renderTarget2, ...(sharpMask ? [sharpMask] : []), ...bodiesTargets, shadowMapTarget, ...(gtao ? [gtao.gtaoRenderTarget, gtao.pdRenderTarget] : []),
+      bloom.renderTargetBright, ...bloom.renderTargetsHorizontal, ...bloom.renderTargetsVertical,
+      ...(smaa ? [(smaa as unknown as { _edgesRT: WebGLRenderTarget })._edgesRT, (smaa as unknown as { _weightsRT: WebGLRenderTarget })._weightsRT] : [])],
     render(delta) {
       if (clouds) {
         camera.updateMatrixWorld();
