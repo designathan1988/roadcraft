@@ -182,6 +182,12 @@ export function createBuildingLayer(): BuildingLayer {
     }
     return n;
   };
+  /** DO NOT fit the view's budget of triangles by raising one error scale for the whole view: every cell coarsened at once, the ones at the eye fell to their facade level; the farthest go first (`MassCells.cap`, as the bytes' budget), detail to facade level to masses, the nearest kept in detail */
+  const capTriangles = (): void => {
+    if (!eye || !Number.isFinite(frame.budget)) return;
+    const masses = gpuLedger.triangles('cell masses') + gpuLedger.triangles('tile masses') + gpuLedger.triangles('plate masses');
+    massCells.cap(eye.x, eye.y, frame.budget - masses, (key, fine) => landedTriangles.of(fine ? 'cell' : 'facade', key), forcedNear);
+  };
   /** The cells whose batches must be made for the town as it is now, shown as they land (`landCells`). */
   const pendingCells = new Set<string>();
   /** DO NOT let a far cell's detail go */
@@ -687,8 +693,9 @@ export function createBuildingLayer(): BuildingLayer {
       eye = eyeNow;
       viewKnown = view !== null;
       if (view) eyeView.copy(view);
-      // The levels chosen at the frame's error scale, the scale raised until what they draw fits the view's budget of triangles (`frameBudget.ts`); the building cut open and the one being edited stay in detail whatever the eye says.
-      frame.fit((scale) => { massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseNow(); capNow(); return chosenTriangles(); });
+      // The levels chosen at the floor the GPU's time sets, over the view's budget of triangles the farthest coarsened first (`capTriangles`); only when the masses alone pass it does the scale rise (`frameBudget.ts`). The building cut open and the one being edited stay in detail whatever the eye says.
+      const fitted = (scale: number): number => { massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseNow(); capNow(); capTriangles(); return chosenTriangles(); };
+      if (fitted(frame.floor) > frame.budget) frame.fit(fitted); else frame.scale = frame.floor;
       farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach);
       // The room shrinks when another owner grows (a resize, the far levels): the hidden levels go first.
       keepToBudget();
