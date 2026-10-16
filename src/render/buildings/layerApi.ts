@@ -4,7 +4,7 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import type { BuildingChunk } from './buildingMesh';
 import type { FarTiles } from './farLevels';
 import type { BuildingKit } from './kit';
-import type { Group } from 'three';
+import type { Frustum, Group } from 'three';
 
 /** DO NOT put the detail of every cell together again, and DO NOT hold a far cell's detail for a while */
 export interface BuildingPreviewInput {
@@ -40,7 +40,7 @@ export interface BuildingLayer {
   /** Before a sun cascade is drawn: the parts shown cast into it only where wider than its texel, m (`sunCascades.ts` `setCasters`). */
   castInto(texel: number): void;
   /** Each cell of buildings drawn near (in detail) or far (its buildings' masses, `massCells.ts`) by the error on the screen */
-  levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach?: number): void;
+  levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach?: number, view?: Frustum | null): void;
   /** The most the cells' detail may hold on the GPU, bytes: past it the cells drawn far go first (their masses stand for them). */
   setDetailBudget(bytes: number): void;
   /** What the cells' detail holds on the GPU now, bytes. */

@@ -766,6 +766,9 @@ export function createSceneRenderer(
     (x, y) => terrain.renderedHeightAt(x, y));
 
   const crowdFrustum = new Frustum();
+  /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
+  const detailFrustum = new Frustum();
+  const detailProjection = new Matrix4();
   const crowdProjection = new Matrix4();
   const crowdBounds = new Sphere(new Vector3(), 8);
   const pedestrianVisible = (x: number, y: number, height: number): boolean => {
@@ -2499,7 +2502,10 @@ export function createSceneRenderer(
           const halfW = (halfH * canvas.clientWidth) / Math.max(1, canvas.clientHeight);
           reach = Math.hypot(halfW, halfH / Math.max(0.3, Math.sin(rig.viewport.elevation))) * 1.25 + m(120);
         }
-        buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach);
+        rig.camera.updateMatrixWorld();
+        detailProjection.multiplyMatrices(rig.camera.projectionMatrix, rig.camera.matrixWorldInverse);
+        detailFrustum.setFromProjectionMatrix(detailProjection, rig.camera.coordinateSystem, rig.camera.reversedDepth);
+        buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;

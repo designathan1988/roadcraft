@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Frustum, Matrix4, OrthographicCamera } from 'three';
 import { createBuildingKit } from '@render/buildings/kit';
 import { cellMass } from '@render/buildings/cellArrays';
 import { createMassCells } from '@render/buildings/massCells';
@@ -53,6 +54,26 @@ describe('the detail drawn', () => {
     const cells = row();
     cells.cap(CELL / 2, CELL / 2, 0, bytesOf, new Set(['4,0']));
     expect([cells.near('4,0'), cells.fine('4,0')]).toEqual([true, true]);
+    cells.dispose();
+  });
+});
+
+describe('the detail and the view', () => {
+  it('gives no detail to a cell the view does not meet, however many pixels a metre spans (the view from above)', () => {
+    const cells = createMassCells(createBuildingKit(), CELL);
+    for (let i = 0; i < 5; i++) {
+      const b = { ...JSON.parse(JSON.stringify(BLUEPRINTS[0]!.body)), id: i + 1, x: (i + 0.5) * CELL, y: CELL / 2, rotation: 0 } as Building;
+      cells.land(`${i},0`, cellMass([emitMassing(b, () => 0)!]));
+    }
+    // Straight down over the first cell, 200 m across (three's axes: map y is -z).
+    const camera = new OrthographicCamera(-100, 100, 100, -100, 1, 2000);
+    camera.position.set(CELL / 2, 1000, -CELL / 2);
+    camera.lookAt(CELL / 2, 0, -CELL / 2);
+    camera.updateMatrixWorld();
+    const view = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    cells.choose(CELL / 2, CELL / 2, m(1000), 1000, 10, false, Infinity, view);
+    expect(cells.near('0,0')).toBe(true);
+    for (let i = 2; i < 5; i++) expect(cells.near(`${i},0`)).toBe(false);
     cells.dispose();
   });
 });

@@ -1,4 +1,4 @@
-import { Box3, BufferAttribute, BufferGeometry, Group, Mesh, Sphere, Vector3 } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, type Frustum, Group, Mesh, Sphere, Vector3 } from 'three';
 import { gpuOnly } from '../mesh/gpuOnly';
 import { cancelWarm, warmLooseAhead } from '../uploads';
 import { m } from '@world/units';
@@ -23,6 +23,9 @@ export const HYSTERESIS = 0.85;
 /** STREET-LEVEL HORIZON VIEWS: with the eye near the ground and looking along the streets */
 const STREET_EYE = m(40);
 const HORIZON_HALF = m(150);
+/** A cell comes near only when its box, grown by this share of a cell, meets the view's frustum; a near cell stays near while its box grown by `VIEW_KEEP` does (hysteresis, so a pan does not let go what it just made). */
+const VIEW_COME = 0.125;
+const VIEW_KEEP = 0.5;
 
 /** A cell's key from its column and row (`layer.ts` `cellOf`). */
 const keyOf = (i: number, j: number): string => `${i},${j}`;
@@ -35,6 +38,8 @@ interface Cell {
   readonly j: number;
   /** Its box in the plan (map x/y) and its highest point, for the distance to the eye. */
   x0: number; y0: number; x1: number; y1: number; top: number;
+  /** Its lowest point (the ground under its buildings), for the view's frustum. */
+  bottom: number;
   near: boolean;
   /** Drawn near and at full detail (L0); near and not fine: its facade level (L1). */
   fine: boolean;
@@ -68,8 +73,8 @@ interface Level {
 
 export interface MassCells {
   readonly group: Group;
-  /** A cell whose masses are asked (new, or its buildings changed): kept as it stands until they come (`land`) */
-  plan(key: string): void;
+  /** A cell whose masses are asked (new, or its buildings changed): kept as it stands until they come (`land`); `bottom`/`top` its buildings' heights till then (the view's frustum). */
+  plan(key: string, bottom?: number, top?: number): void;
   /** A cell's masses come: its mesh made of them (null: its buildings have no mass, the cell always near). */
   land(key: string, mass: CellMass | null): void;
   /** A cell with no building left: gone. */
@@ -91,7 +96,8 @@ export interface MassCells {
   /** Every cell there is (the whole town filed again, `layer.ts`). */
   keys(): IterableIterator<string>;
   /** Which cells are drawn near (their detail) and which far (their masses), from the eye (map x/y, height) and the screen */
-  choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number): void;
+  /** - DO NOT give detail to a cell out of `view` (Cesium's HLOD culls by the frustum before the screen error): in the view from above a metre spans the same pixels everywhere, and the whole region came in detail (2026-10-16: 45 cells, 981 MB, the GPU out of memory on the 10 km city) */
+  choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number, view?: Frustum | null): void;
   /** DO NOT draw more detail than the budget holds (the brief: detail residency capped in bytes, falling back to L1): the farthest near cells fall back to their facade level, then to their masses, until `bytesOf` the cells left near fits `budget`; those forced near stay */
   cap(eyeX: number, eyeY: number, budget: number, bytesOf: (key: string, fine: boolean) => number, forced: boolean | ReadonlySet<string>): void;
   /** Whether a cell is drawn near; a cell with no mass (lawns only), or none known, always is. */
@@ -247,16 +253,29 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
   const forcedLevels = new Set<string>();
   /** What the eye reads of a box, one object for every box measured (`measureSeen`). */
   const seen: Seen = { perMetre: 0, allowed: NEAR_PIXELS, across: 0 };
+  /** A cell's box as the view's frustum is met by it (three's axes: map y is -z, height is y), one for every cell. */
+  const viewBox = new Box3();
+  const inView = (view: Frustum | null | undefined, cell: Cell, grow: number): boolean => {
+    if (!view) return true;
+    const g = grow * cellSize;
+    viewBox.min.set(cell.x0 - g, Math.min(cell.bottom, cell.top), -(cell.y1 + g));
+    viewBox.max.set(cell.x1 + g, Math.max(cell.bottom, cell.top), -(cell.y0 - g));
+    return view.intersectsBox(viewBox);
+  };
   const measure = (eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, x0: number, y0: number, x1: number, y1: number, top: number): void =>
     measureSeen(seen, eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, x0, y0, x1, y1, top);
   return {
     group,
-    plan(key) {
-      if (cells.has(key)) return;
+    plan(key, bottom = 0, top = 0) {
+      const known = cells.get(key);
+      if (known) {
+        if (!known.mesh) { known.bottom = bottom; known.top = top; }
+        return;
+      }
       const [i, j] = cellIndex(key);
       // Near until the eye says otherwise (`choose`), as a cell made before the eye is known; far under a tile or plate drawn.
       const covered = coveredAt(i, j);
-      const cell: Cell = { mesh: null, massless: false, i, j, ...square(i, j), top: 0, near: !covered, fine: !covered, covered };
+      const cell: Cell = { mesh: null, massless: false, i, j, ...square(i, j), top, bottom, near: !covered, fine: !covered, covered };
       cells.set(key, cell);
       setNear(key, cell, !covered);
     },
@@ -265,13 +284,15 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       if (known) drop(known);
       const [i, j] = cellIndex(key);
       const covered = coveredAt(i, j);
-      const cell: Cell = { mesh: null, massless: mass === null, i, j, ...square(i, j), top: 0, near: known?.near ?? !covered, fine: known?.fine ?? !covered, covered };
+      const cell: Cell = { mesh: null, massless: mass === null, i, j, ...square(i, j), top: known?.top ?? 0, bottom: known?.bottom ?? 0,
+        near: known?.near ?? !covered, fine: known?.fine ?? !covered, covered };
       if (known) lowered(known.top);
       if (mass) {
         const mesh = cellMesh(mass, kit);
         const box = mesh.geometry.boundingBox!;
         cell.mesh = mesh;
         cell.top = mass.top;
+        cell.bottom = box.min.y;
         // At least the old highest: the highest of all, whatever went before it.
         if (cell.top >= highest) { highest = cell.top; highestStale = false; }
         // A building reaching past its cell's edge: the cell's box is its masses'.
@@ -341,7 +362,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     keys() {
       return cells.keys();
     },
-    choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity) {
+    choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity, view = null) {
       // THE LEVELS FIRST, from the plates down (Cesium `selectTiles`): a level is drawn in place of its children while what it leaves out spans under the pixels the cells' masses are drawn for
       forcedLevels.clear();
       if (allNear !== true && allNear !== false) for (const key of allNear) { const [i, j] = cellIndex(key); forcedLevels.add(tileOf(i, j)); forcedLevels.add(plateOf(i, j)); }
@@ -372,13 +393,16 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       const decide = (key: string, cell: Cell): void => {
         let near: boolean, fine = true;
         const forced = allNear === true || (allNear !== false && allNear.has(key));
-        if (forced || cell.massless) near = true;
+        if (forced) near = true;
+        // A cell of lots alone has its detail only: drawn while the view meets it.
+        else if (cell.massless) near = inView(view, cell, cell.near ? VIEW_KEEP : VIEW_COME);
         else if (cell.covered) near = false;
         else {
           measure(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, cell.x0, cell.y0, cell.x1, cell.y1, cell.top);
           const { perMetre, allowed, across } = seen;
           // Within reach, with a margin for a cell already near (hysteresis).
-          near = FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) && across <= reach * (cell.near ? 1.25 : 1);
+          near = FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) && across <= reach * (cell.near ? 1.25 : 1)
+            && inView(view, cell, cell.near ? VIEW_KEEP : VIEW_COME);
           // Its facade level once what that leaves out is under the pixels the detail is drawn for.
           fine = FACADE_ERROR * perMetre >= allowed * (cell.fine ? HYSTERESIS : 1);
         }

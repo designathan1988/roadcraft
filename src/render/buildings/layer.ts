@@ -1,9 +1,9 @@
-import { Box3, Group } from 'three';
+import { Box3, Frustum, Group } from 'three';
 import { Digest } from '@core/digest';
 
 import type { RoadDoc } from '@world/doc';
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
-import { storedBounds } from '@world/buildings/geometry';
+import { buildingHeight, storedBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
 import { CellFiling } from '@world/cells';
@@ -112,6 +112,9 @@ export function createBuildingLayer(): BuildingLayer {
   /** HLOD streaming (see the file's comment). */
   const eyeNow = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null as number | null, reach: Infinity };
   let eye: typeof eyeNow | null = null;
+  /** The view's frustum the cells were last chosen in (`levelOfDetail`): a cell out of it gets no detail (`MassCells.choose`). */
+  const eyeView = new Frustum();
+  let viewKnown = false;
   const cellOf = (b: Building): string => `${Math.floor(b.x / BATCH_CELL)},${Math.floor(b.y / BATCH_CELL)}`;
   /** The shown town by cell, kept between changes, as of the diary's `townSeen` in `townDoc`. */
   const town = new TownIndex(cellOf);
@@ -141,7 +144,7 @@ export function createBuildingLayer(): BuildingLayer {
     massCells.setDetailed(key, level !== null);
   };
   const chooseNow = (): void => {
-    if (eye) massCells.choose(eye.x, eye.y, eye.z, eye.pxAtMetre, eye.orthoPx, forcedNear, eye.reach);
+    if (eye) massCells.choose(eye.x, eye.y, eye.z, eye.pxAtMetre, eye.orthoPx, forcedNear, eye.reach, viewKnown ? eyeView : null);
   };
   /** The shown buildings by coarse cell, as last put together (`update`): what a cell streamed in is made of. */
   let townCells = new Map<string, Building[]>();
@@ -296,7 +299,14 @@ export function createBuildingLayer(): BuildingLayer {
   const askMass = (cell: string, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): void => {
     const list = massTown.get(cell);
     if (!list?.length) { requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null); massEntries.delete(cell); massAsked.delete(cell); return; }
-    massCells.plan(cell);
+    // Its height till its masses come: the ground under its buildings to the highest roof (the view's frustum, `MassCells.choose`).
+    let bottom = Infinity, top = -Infinity;
+    for (const b of list) {
+      const ground = groundAt(b.x, b.y);
+      if (ground < bottom) bottom = ground;
+      top = Math.max(top, ground + buildingHeight(b));
+    }
+    massCells.plan(cell, bottom, top);
     const entries = list.map((b): CellEntry => {
       const sig = sigOf(b);
       sent.set(String(b.id), b);
@@ -629,11 +639,13 @@ export function createBuildingLayer(): BuildingLayer {
     setNight(dark, hour) {
       kit.setNight(dark, hour);
     },
-    levelOfDetail(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach = Infinity) {
+    levelOfDetail(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach = Infinity, view = null) {
       eyeNow.x = eyeX; eyeNow.y = eyeY; eyeNow.z = eyeZ; eyeNow.pxAtMetre = pxAtMetre; eyeNow.orthoPx = orthoPx; eyeNow.reach = reach;
       eye = eyeNow;
+      viewKnown = view !== null;
+      if (view) eyeView.copy(view);
       // The building cut open and the one being edited stay in detail whatever the eye says.
-      massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach);
+      massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach, view ? eyeView : null);
       // Within the detail's bytes (`setDetailBudget`): a cell not landed yet counts as the cells landed do on average.
       const typical = residentBytes.size > 0 ? resident / residentBytes.size : TYPICAL_CELL_BYTES;
       massCells.cap(eyeX, eyeY, budget, (key, fine) => (fine ? cells : facades).get(key)?.bytes ?? typical, forcedNear);
