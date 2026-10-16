@@ -10,6 +10,7 @@ import { LOT_PLAN_VERSION, growOnLot } from '@editor/zoning';
 import { type GrowthHost, type GrowthLane, GrowthSession } from '@editor/growthFeed';
 import { BATCH_MOST, type GrowAnswer, type GrowAsk, GrowthReplica } from '@editor/growthReplica';
 import { validateBuilding } from '@world/buildings/validate';
+import { RecordTable, encodeRecords, tableRecords } from '@world/buildings/recordTable';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { GROUND_ONLY, buildRoadElevation } from '@world/elevation';
 import { type PavingSource, pavedHeightFrom } from '@world/paving';
@@ -54,11 +55,12 @@ const stamp = (doc: RoadDoc, id: number): void => {
   doc.buildings.put({ ...fresh, builtAt: 0, decay: 0, lotPlan: LOT_PLAN_VERSION });
 };
 
-/** Grown on the page, one building after another (`growOnLot`). */
-function grownHere(city: City, host: Omit<GrowthHost, 'doc' | 'net' | 'cell'>): Set<number> {
+/** Grown on the page, one building after another (`growOnLot`), until `upTo` buildings stand. */
+function grownHere(city: City, host: Omit<GrowthHost, 'doc' | 'net' | 'cell'>, upTo = Infinity): Set<number> {
   const { doc, net } = city;
   const refused = new Set<number>();
   for (let guard = 0; guard < city.zoned * 3 + 50; guard++) {
+    if (doc.buildings.size >= upTo) break;
     const id = growOnLot({ doc, net, groundAt: host.groundAt, ...(host.pavedAt ? { pavedAt: host.pavedAt } : {}) }, refused, 0x5eed);
     if (id !== null) stamp(doc, id);
     else if (doc.openLots.count(refused) === 0) break;
@@ -125,6 +127,32 @@ describe('the growth in its worker', () => {
     expect(sent).toBeLessThanOrEqual(off.doc.buildings.size);
     expect(lane.asks.filter((a) => a.sync.buildings.reset || a.sync.roads?.reset).length).toBe(1);
     expect(Math.max(...lane.asks.map((a) => a.sync.buildings.put.length))).toBeLessThan(off.doc.buildings.size / 4);
+    // Each sent as where it is read (`recordTable.ts` `refOf`): a shared table and its row, never the record.
+    expect(lane.asks.every((a) => a.sync.buildings.put.every((r) => r.buffer instanceof SharedArrayBuffer && Number.isInteger(r.row)))).toBe(true);
+  });
+
+  it('sends a tile\'s buildings as rows of its one shared table, and grows on them as the page does', () => {
+    const here = laid(2), off = laid(2);
+    const host = { groundAt: ground, pavedAt: paved };
+    const half = Math.floor(here.zoned / 2);
+    // Half the town grown alike on both, then its buildings read back from one table, as a streamed tile's are (`tileStore.ts` `tableRecords`).
+    const tableOf = (city: City): ArrayBufferLike => {
+      grownHere(city, host, half);
+      const table = encodeRecords([...city.doc.buildings.all()]).buffer;
+      city.doc.buildings.loadPrepared(tableRecords(table));
+      return table;
+    };
+    tableOf(here);
+    const table = tableOf(off);
+    grownHere(here, host);
+    const { lane } = grownOff(off, host, BATCH_MOST);
+    expect(textOf(off.doc)).toEqual(textOf(here.doc));
+    // The table's handle and its rows, each building once: never a record copied, never a table made again for one of its buildings.
+    const fromTable = lane.asks.flatMap((a) => a.sync.buildings.put).filter((r) => r.buffer === table);
+    expect(fromTable.length).toBeGreaterThan(10);
+    expect(new Set(fromTable.map((r) => r.row)).size).toBe(fromTable.length);
+    const rows = new RecordTable(table);
+    expect(fromTable.every((r) => r.row < rows.rows && off.doc.buildings.has(rows.ids[r.row] as BuildingId))).toBe(true);
   });
 
   it('asks again with more round the lot when the worker reads outside what it was sent', () => {

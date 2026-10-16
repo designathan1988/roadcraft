@@ -8,6 +8,7 @@ import type { Lot } from '@world/lots';
 import type { Network } from '@world/network';
 import { Level } from '@world/roadTypes';
 import { BuildingStore } from '@world/buildings/store';
+import { type RecordRef, refOf } from '@world/buildings/recordTable';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { validateBuilding } from '@world/buildings/validate';
@@ -18,7 +19,7 @@ import { lotCentre } from '@world/lots';
 /** A rectangle grown by `pad` on every side. */
 const grow = (r: ChangeRect, pad: number): ChangeRect => [r[0] - pad, r[1] - pad, r[2] + pad, r[3] + pad];
 
-/** THE GROWTH, THE PAGE'S SIDE: the lot picked (`zoning.ts` `pickLot`), sent to the growth's worker with what it reads there (`growthReplica.ts`), and the building it sends back written in the document (`commitGrown`) - the same steps as `growOnLot`, the heavy one (`designOnLot`) off the page. One lot at a time: the next lot and its stream depend on the building grown before (the street fills along; the stream is seeded by the next id), so the city grows exactly as it grew on the page. What the worker keeps is kept in step here, from the document's diary and the network's changes, for the places it is sent: the buildings filed round each lot (`BuildingStore.near`) sent once, then again only when the diary names them (`changedSince`); the roads and junctions filed round each lot (`Network.segmentCells`, `junctionCells`) the same way (`changesSince`); the lot's own ground and paving read for it. DO NOT send the document or the network whole for a lot: the copy of a town's records for every building grown is the work this took off the page, made again. Written while the worker made it (a building put up, a road drawn, the ground sculpted), the building is checked again on the page (`validateBuilding`, the neighbours' rings already worked out) and asked again if it no longer stands - never added unchecked against the document as it is. */
+/** THE GROWTH, THE PAGE'S SIDE: the lot picked (`zoning.ts` `pickLot`), sent to the growth's worker with what it reads there (`growthReplica.ts`), and the building it sends back written in the document (`commitGrown`) - the same steps as `growOnLot`, the heavy one (`designOnLot`) off the page. One lot at a time: the next lot and its stream depend on the building grown before (the street fills along; the stream is seeded by the next id), so the city grows exactly as it grew on the page. What the worker keeps is kept in step here, from the document's diary and the network's changes, for the places it is sent: the buildings filed round each lot (`BuildingStore.near`) sent once, as where the worker reads them (`recordTable.ts` `refOf`: their tile's shared table and row, the one the cell jobs read; never the record copied), then again only when the diary names them (`changedSince`); the roads and junctions filed round each lot (`Network.segmentCells`, `junctionCells`) the same way (`changesSince`); the lot's own ground and paving read for it. DO NOT send the document or the network whole for a lot: the copy of a town's records for every building grown is the work this took off the page, made again. Written while the worker made it (a building put up, a road drawn, the ground sculpted), the building is checked again on the page (`validateBuilding`, the neighbours' rings already worked out) and asked again if it no longer stands - never added unchecked against the document as it is. */
 
 /** Where the growth reads the document: the page's document, network and ground. */
 export interface GrowthHost {
@@ -272,15 +273,15 @@ export class GrowthSession {
     }, transfer);
   }
 
-  /** The buildings the worker holds that changed (`readChanges`), and those round this lot it does not hold yet. */
+  /** The buildings the worker holds that changed (`readChanges`), and those round this lot it does not hold yet: each as its row in a shared table (`refOf`). */
   private syncBuildings(doc: RoadDoc, reach: { readonly lot: ChangeRect; readonly around: ChangeRect }): GrowthSync['buildings'] {
     const store = doc.buildings;
     const reset = this.resetBuildings;
-    const put: Building[] = [];
+    const put: RecordRef[] = [];
     const drop: number[] = [];
     for (const id of this.staleBuildings) {
       const b = store.get(id as BuildingId);
-      if (b) put.push(b);
+      if (b) put.push(refOf(b));
       else { drop.push(id); this.sentBuildings.delete(id); }
     }
     this.staleBuildings.clear();
@@ -289,7 +290,7 @@ export class GrowthSession {
       for (const b of store.near(r[0], r[1], r[2], r[3])) {
         if (this.sentBuildings.has(b.id)) continue;
         this.sentBuildings.add(b.id);
-        put.push(b);
+        put.push(refOf(b));
       }
     }
     return { reset, put, drop };
