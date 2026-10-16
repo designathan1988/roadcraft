@@ -62,17 +62,12 @@ function* finishArrays(): Generator<BakedTexture> {
 export function* bakeCatalogue(): Generator<BakedTexture> {
   for (const { key, recipe, mapOnly } of roadRecipes()) yield* surface(key, recipe, mapOnly === true);
   yield* finishArrays();
-  // The land reads the grass's colour and relief, the dirt's colour, the rocks' colour and relief as arrays (`terrain.ts` `terrainBakes`)
+  // The land reads the grass's colour and relief (`terrain.ts` `terrainBakes`)
   const land = terrainRecipes();
   const grass = surfaceTexels(land.grass);
   yield { name: 'terrain-grass:map', use: 'color', size: grass.size, layers: [grass.map] };
   yield { name: 'terrain-grass:normal', use: 'normal', size: grass.size, layers: [grass.normal] };
-  const dirt = surfaceTexels(land.dirt);
-  yield { name: 'terrain-dirt:map', use: 'color', size: dirt.size, layers: [dirt.map] };
-  const rocks = land.rocks.map(surfaceTexels);
-  yield { name: 'terrain-rock:map', use: 'color', size: rocks[0]!.size, layers: rocks.map((rock) => rock.map) };
-  yield { name: 'terrain-rock:normal', use: 'normal', size: rocks[0]!.size, layers: rocks.map((rock) => rock.normal) };
-  // The close-up layers: on the street surfaces (`mesh/detailLayer.ts`), and grass and soil as the land's two-layer arrays
+  // The close-up layers on the street surfaces (`mesh/detailLayer.ts`)
   for (const kind of ['asphalt', 'concrete'] as const) {
     const detail = detailTexels(kind);
     yield { name: `${kind}:detail`, use: 'data', size: detail.size, layers: [detail.map] };
@@ -82,6 +77,48 @@ export function* bakeCatalogue(): Generator<BakedTexture> {
   const soilDetail = detailTexels('soil');
   yield { name: 'grass:detail', use: 'data', size: grassDetail.size, layers: [grassDetail.map] };
   yield { name: 'grass:detail-normal', use: 'normal', size: grassDetail.size, layers: [grassDetail.normal] };
-  yield { name: 'terrain-detail:map', use: 'data', size: grassDetail.size, layers: [grassDetail.map, soilDetail.map] };
-  yield { name: 'terrain-detail:normal', use: 'normal', size: grassDetail.size, layers: [grassDetail.normal, soilDetail.normal] };
+  // DO NOT give the land a texture unit per family: its program ran out of the 16 a fragment shader has
+  const rocks = land.rocks.map(surfaceTexels);
+  const dirt = surfaceTexels(land.dirt);
+  const size = grassDetail.size;
+  yield {
+    name: 'terrain-land:map', use: 'color', size,
+    layers: [srgbEncoded(grassDetail.map), srgbEncoded(soilDetail.map), ...rocks.map((rock) => resized(rock.map, rock.size, size)), resized(dirt.map, dirt.size, size)],
+  };
+  yield {
+    name: 'terrain-land:normal', use: 'normal', size,
+    layers: [grassDetail.normal, soilDetail.normal, ...rocks.map((rock) => resized(rock.normal, rock.size, size))],
+  };
+}
+
+/** Linear bytes (data) as sRGB-encoded ones: kept in a colour array, they read back as themselves (IEC 61966-2-1). */
+function srgbEncoded(texels: Uint8Array): Uint8Array {
+  const table = Uint8Array.from({ length: 256 }, (_, i) => {
+    const c = i / 255;
+    return Math.round((c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255);
+  });
+  // Alpha is never decoded.
+  return texels.map((v, k) => ((k & 3) === 3 ? v : table[v]!));
+}
+
+/** Texels of a `from`-sided square at `to` texels a side, bilinear between texel centres, wrapping as the texture repeats (unchanged when equal). */
+function resized(texels: Uint8Array, from: number, to: number): Uint8Array {
+  if (from === to) return texels;
+  const out = new Uint8Array(to * to * 4);
+  for (let y = 0; y < to; y++) {
+    const sy = ((y + 0.5) * from) / to - 0.5;
+    const y0 = Math.floor(sy), fy = sy - y0;
+    const ya = ((y0 % from) + from) % from, yb = (ya + 1) % from;
+    for (let x = 0; x < to; x++) {
+      const sx = ((x + 0.5) * from) / to - 0.5;
+      const x0 = Math.floor(sx), fx = sx - x0;
+      const xa = ((x0 % from) + from) % from, xb = (xa + 1) % from;
+      for (let c = 0; c < 4; c++) {
+        const top = texels[(ya * from + xa) * 4 + c]! * (1 - fx) + texels[(ya * from + xb) * 4 + c]! * fx;
+        const bottom = texels[(yb * from + xa) * 4 + c]! * (1 - fx) + texels[(yb * from + xb) * 4 + c]! * fx;
+        out[(y * to + x) * 4 + c] = Math.round(top * (1 - fy) + bottom * fy);
+      }
+    }
+  }
+  return out;
 }

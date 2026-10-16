@@ -211,14 +211,14 @@ export interface TerrainPart {
 function terrainBakes(anisotropy: number): TerrainBakes {
   return {
     grass: { map: surfaceTexture('terrain-grass:map', anisotropy), normalMap: surfaceTexture('terrain-grass:normal', anisotropy) },
-    dirt: { map: surfaceTexture('terrain-dirt:map', anisotropy) },
-    rockMaps: surfaceTexture('terrain-rock:map', anisotropy),
-    rockNormals: surfaceTexture('terrain-rock:normal', anisotropy),
-    // Grass and soil as two layers of one array, maps and normals each
-    detailMaps: surfaceTexture('terrain-detail:map', anisotropy),
-    detailNormals: surfaceTexture('terrain-detail:normal', anisotropy),
+    landMaps: surfaceTexture('terrain-land:map', anisotropy),
+    landNormals: surfaceTexture('terrain-land:normal', anisotropy),
   };
 }
+
+/** The layers of the land's arrays (`bake/catalogue.ts` `terrain-land`): the detail's grass and soil, the rocks' faces and tops, the soil's map. */
+const LAND_ROCK = 2;
+const LAND_DIRT = 8;
 
 /** The terrain material: three surfaces blended by slope, height and noise. */
 /** Texels across a plate in each painted-ground weight texture. */
@@ -262,8 +262,10 @@ function shoreLevels(water: BufferGeometry, levels: Float32Array, ground: ArrayL
 }
 
 /** The ground texture the terrain shader reads per corner: R the water's level */
-function packGroundCorners(texture: DataTexture, levels: Float32Array, flowers: Float32Array, scrub: Float32Array, forest: Float32Array, sand: Float32Array, basalt: Float32Array): void {
+function packGroundCorners(texture: DataArrayTexture, levels: Float32Array, flowers: Float32Array, scrub: Float32Array, forest: Float32Array, sand: Float32Array, basalt: Float32Array): void {
+  // Its first layer: the ecology is the second (`terrainData`).
   const data = texture.image.data as Float32Array;
+  texture.addLayerUpdate(0);
   const byte = (value: number): number => Math.round(Math.min(1, Math.max(0, value)) * 255);
   for (let k = 0; k < levels.length; k++) {
     data[k * 4] = levels[k] as number;
@@ -406,11 +408,9 @@ function rasterCover(covers: Readonly<Record<CoverKind, Uint8Array>>, dab: Paint
 /** The land's baked textures (`terrainBakes`). */
 interface TerrainBakes {
   readonly grass: { readonly map: Texture; readonly normalMap: Texture };
-  readonly dirt: { readonly map: Texture };
-  readonly rockMaps: Texture;
-  readonly rockNormals: Texture;
-  readonly detailMaps: Texture;
-  readonly detailNormals: Texture;
+  /** The detail's grass and soil, the rocks and the soil as the layers of one colour array and one normal array (`LAND_ROCK`, `LAND_DIRT`). */
+  readonly landMaps: Texture;
+  readonly landNormals: Texture;
 }
 
 /** What a plate's land materials share: its textures and corner fields (`userData`) and their uniforms. */
@@ -466,7 +466,10 @@ function terrainData(bakes: TerrainBakes): TerrainData {
   // The painted geology at each corner: how much is sandstone, how much basalt (the rest granite).
   const sandCornerData = new Float32Array(GRID * GRID);
   const basaltCornerData = new Float32Array(GRID * GRID);
-  const shore = new DataTexture(new Float32Array(GRID * GRID * 4), GRID, GRID, RGBAFormat, FloatType);
+  // The corners' water, flowers, scrub, geology and forest (layer 0) and the ecology's classes (layer 1, `ecologyUploaded`): one texture unit.
+  const shore = new DataArrayTexture(new Float32Array(GRID * GRID * 4 * 2), GRID, GRID, 2);
+  shore.format = RGBAFormat;
+  shore.type = FloatType;
   shore.magFilter = NearestFilter;
   shore.minFilter = NearestFilter;
   shore.generateMipmaps = false;
@@ -474,15 +477,22 @@ function terrainData(bakes: TerrainBakes): TerrainData {
   userData['shore'] = shore;
   userData['sandCorners'] = sandCornerData;
   userData['basaltCorners'] = basaltCornerData;
-  // The ecosystem's ground per corner (`refreshEcology`)
+  // The ecosystem's ground per corner (`refreshEcology`): its bytes here, drawn from the shore's second layer.
   const ecologyTexture = new DataTexture(new Uint8Array(GRID * GRID * 4), GRID, GRID, RGBAFormat, UnsignedByteType);
   ecologyTexture.magFilter = LinearFilter;
   ecologyTexture.minFilter = LinearFilter;
   ecologyTexture.wrapS = ClampToEdgeWrapping;
   ecologyTexture.wrapT = ClampToEdgeWrapping;
   ecologyTexture.generateMipmaps = false;
-  ecologyTexture.needsUpdate = true;
   userData['ecology'] = ecologyTexture;
+  userData['ecologyUploaded'] = (): void => {
+    const bytes = ecologyTexture.image.data as Uint8Array;
+    const data = shore.image.data as Float32Array;
+    const at = GRID * GRID * 4;
+    for (let i = 0; i < at; i++) data[at + i] = bytes[i]! / 255;
+    shore.addLayerUpdate(1);
+    shore.needsUpdate = true;
+  };
   userData['shoreLevels'] = shoreLevelData;
   userData['flowerCorners'] = flowerCornerData;
   userData['scrubCorners'] = scrubCornerData;
@@ -496,10 +506,7 @@ function terrainData(bakes: TerrainBakes): TerrainData {
     uGrid: TERRAIN_GRID,
     uShore: { value: shore as Texture },
     uShoreGrid: { value: new Vector3(TERRAIN_HALF, TERRAIN_CELL, GRID) },
-    uRockMap: { value: bakes.rockMaps },
-    uRockNormal: { value: bakes.rockNormals },
-    uDirtMap: { value: bakes.dirt.map as Texture },
-    uEcology: { value: ecologyTexture as Texture },
+    uLandMaps: { value: bakes.landMaps },
     uSeasonDry: SEASON_DRY,
     // One repeat of the grass texture over 32 units (13 m): its tufts some 40 cm, its dry patches 1.3 m.
     uGrassScale: { value: 1 / m(12.8) },
@@ -507,13 +514,12 @@ function terrainData(bakes: TerrainBakes): TerrainData {
     uDirtScale: { value: 1 / m(13.6) },
     // The close-zoom layer (see `mesh/detailLayer.ts`)
     uDetailOn: detailSwitch,
-    // Grass and soil as two layers of one array, maps and normals each
-    uDetailMaps: { value: bakes.detailMaps },
-    uDetailNormals: { value: bakes.detailNormals },
     uGrassDetailScale: { value: 1 / DETAIL_WORLD_SIZE.grass },
     uSoilDetailScale: { value: 1 / DETAIL_WORLD_SIZE.soil },
     // Set to the surface's own bake (`createTerrainSurface`).
     uTileOrigin: { value: new Vector3() },
+    // The land's normals: the detail's grass and soil and the rocks' faces, one array (`LAND_ROCK`).
+    uLandNormals: { value: bakes.landNormals },
   };
   userData['terrainUniforms'] = uniforms;
   return { userData, uniforms };
@@ -565,14 +571,17 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
         '#include <common>',
         `#include <common>
          ${grid ? lodFragmentGlsl(grid) : 'varying vec3 vTerrainWorld;\nvarying vec3 vTerrainAtlas;\nvarying vec3 vTerrainNormal;'}
-         uniform sampler2DArray uRockMap;
+         // The land's colours and normals, two arrays (\`LAND_ROCK\`, \`LAND_DIRT\`)
+         uniform sampler2DArray uLandMaps;
+         uniform sampler2DArray uLandNormals;
          uniform sampler2DArray uPaint;
          uniform float uPaintRes; // the array's side (\`growPaint\`)
          uniform float uPaintHalf;
          uniform float uPaintSize;
          uniform vec4 uGrassField; // world x, y, reach, on
          uniform vec2 uGrid; // cell, strength
-         uniform sampler2D uShore;
+         // The corners' water, flowers, scrub, geology and forest (layer 0) and the ecology (layer 1): one unit.
+         uniform highp sampler2DArray uShore;
          float terrainHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
          float ecoHash(vec2 p) {
            vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -595,10 +604,10 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            vec2 i = floor(g);
            vec2 f = g - i;
            ivec2 p = ivec2(i);
-           vec4 c00 = texelFetch(uShore, p, 0);
-           vec4 c10 = texelFetch(uShore, p + ivec2(1, 0), 0);
-           vec4 c01 = texelFetch(uShore, p + ivec2(0, 1), 0);
-           vec4 c11 = texelFetch(uShore, p + ivec2(1, 1), 0);
+           vec4 c00 = texelFetch(uShore, ivec3(p, 0), 0);
+           vec4 c10 = texelFetch(uShore, ivec3(p + ivec2(1, 0), 0), 0);
+           vec4 c01 = texelFetch(uShore, ivec3(p + ivec2(0, 1), 0), 0);
+           vec4 c11 = texelFetch(uShore, ivec3(p + ivec2(1, 1), 0), 0);
            vec4 level = vec4(c00.x, c10.x, c01.x, c11.x);
            vec4 bilinear = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
            vec4 has = step(vec4(${NO_WATER / 2}.0), level);
@@ -616,16 +625,24 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            float forest = dot(vec4(c00.w, c10.w, c01.w, c11.w), bilinear);
            return vec4(sum > 1e-5 ? dot(level, w) / sum : ${NO_WATER}.0, flowers, scrub, forest);
          }
-         uniform sampler2DArray uRockNormal;
-         uniform sampler2D uDirtMap;
-         uniform sampler2D uEcology;
+         // The ecology's classes at a point: the corners' second layer, bilinear as its own texture was filtered.
+         vec4 terrainEcology(vec3 world) {
+           vec2 g = clamp((world.xz + uShoreGrid.x) / uShoreGrid.y, vec2(0.0), vec2(uShoreGrid.z - 1.001));
+           vec2 i = floor(g);
+           vec2 f = g - i;
+           ivec2 p = ivec2(i);
+           vec4 a = texelFetch(uShore, ivec3(p, 1), 0);
+           vec4 b = texelFetch(uShore, ivec3(p + ivec2(1, 0), 1), 0);
+           vec4 c = texelFetch(uShore, ivec3(p + ivec2(0, 1), 1), 0);
+           vec4 d = texelFetch(uShore, ivec3(p + ivec2(1, 1), 1), 0);
+           return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+         }
          uniform float uSeasonDry;
          uniform float uGrassScale;
          uniform float uRockScale;
          uniform float uDirtScale;
-         // The two detail kinds as layers of one array each (0 grass, 1 soil): two texture units, not four (\`detailLayers\`).
-         uniform sampler2DArray uDetailMaps;
-         uniform sampler2DArray uDetailNormals;
+         // The soil's map, a layer of the land's colours.
+         vec4 dirtTex(vec2 uv) { return texture(uLandMaps, vec3(uv, ${LAND_DIRT.toFixed(1)})); }
          uniform float uGrassDetailScale;
          uniform float uSoilDetailScale;
          ${DETAIL_GLSL}
@@ -650,9 +667,9 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            return vec2(uv.x * 0.9396926 - uv.y * 0.3420201,
                        uv.x * 0.3420201 + uv.y * 0.9396926) * 0.137;
          }
-         vec4 dualScale(sampler2D tex, vec2 uv) {
-           vec4 near = texture2D(tex, uv);
-           vec4 far = texture2D(tex, terrainWideUv(uv));
+         vec4 dirtDual(vec2 uv) {
+           vec4 near = dirtTex(uv);
+           vec4 far = dirtTex(terrainWideUv(uv));
            return mix(near, far, 0.42);
          }
          // THE TEXTURE WITHOUT ITS REPEAT (Quilez, "Texture Repetition", technique 3)
@@ -708,8 +725,8 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            vec3 w = pow(abs(n), vec3(4.0));
            return w / max(w.x + w.y + w.z, 1e-4);
          }
-         vec4 terrainTriColor(sampler2D tex, vec3 p, float scale, vec3 w) {
-           return texture2D(tex, p.zy * scale) * w.x + texture2D(tex, p.xz * scale) * w.y + texture2D(tex, p.xy * scale) * w.z;
+         vec4 dirtTri(vec3 p, float scale, vec3 w) {
+           return dirtTex(p.zy * scale) * w.x + dirtTex(p.xz * scale) * w.y + dirtTex(p.xy * scale) * w.z;
          }
          // The UDN blend with each axis's sign restored, in WORLD space.
          vec3 terrainTriNormal(sampler2D tex, vec3 p, float scale, vec3 n, vec3 w) {
@@ -728,30 +745,30 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          // How much of each rock the colour took (granite, sandstone, basalt); the normal reads the same.
          vec3 terrainRockMix = vec3(1.0, 0.0, 0.0);
          vec4 rockTriColor(float kind, vec3 p, vec3 w) {
-           float face = kind * 2.0;
+           float face = ${LAND_ROCK.toFixed(1)} + kind * 2.0;
            vec4 c = vec4(0.0);
            float used = 0.0;
-           if (w.x > 0.01) { c += textureGrad(uRockMap, vec3(p.zy * uRockScale, face), rockDpdx.zy, rockDpdy.zy) * w.x; used += w.x; }
-           if (w.y > 0.01) { c += textureGrad(uRockMap, vec3(p.xz * uRockScale, face + 1.0), rockDpdx.xz, rockDpdy.xz) * w.y; used += w.y; }
-           if (w.z > 0.01) { c += textureGrad(uRockMap, vec3(p.xy * uRockScale, face), rockDpdx.xy, rockDpdy.xy) * w.z; used += w.z; }
+           if (w.x > 0.01) { c += textureGrad(uLandMaps, vec3(p.zy * uRockScale, face), rockDpdx.zy, rockDpdy.zy) * w.x; used += w.x; }
+           if (w.y > 0.01) { c += textureGrad(uLandMaps, vec3(p.xz * uRockScale, face + 1.0), rockDpdx.xz, rockDpdy.xz) * w.y; used += w.y; }
+           if (w.z > 0.01) { c += textureGrad(uLandMaps, vec3(p.xy * uRockScale, face), rockDpdx.xy, rockDpdy.xy) * w.z; used += w.z; }
            return c / max(used, 1e-4);
          }
          vec3 rockTriNormal(float kind, vec3 p, vec3 n, vec3 w) {
-           float face = kind * 2.0;
+           float face = ${LAND_ROCK.toFixed(1)} + kind * 2.0;
            vec3 s = sign(n);
            vec3 acc = vec3(0.0);
            if (w.x > 0.01) {
-             vec3 t = textureGrad(uRockNormal, vec3(p.zy * uRockScale, face), rockDpdx.zy, rockDpdy.zy).xyz * 2.0 - 1.0;
+             vec3 t = textureGrad(uLandNormals, vec3(p.zy * uRockScale, face), rockDpdx.zy, rockDpdy.zy).xyz * 2.0 - 1.0;
              t = vec3(t.xy + n.zy, abs(n.x) * s.x);
              acc += t.zyx * w.x;
            }
            if (w.y > 0.01) {
-             vec3 t = textureGrad(uRockNormal, vec3(p.xz * uRockScale, face + 1.0), rockDpdx.xz, rockDpdy.xz).xyz * 2.0 - 1.0;
+             vec3 t = textureGrad(uLandNormals, vec3(p.xz * uRockScale, face + 1.0), rockDpdx.xz, rockDpdy.xz).xyz * 2.0 - 1.0;
              t = vec3(t.xy + n.xz, abs(n.y) * s.y);
              acc += t.xzy * w.y;
            }
            if (w.z > 0.01) {
-             vec3 t = textureGrad(uRockNormal, vec3(p.xy * uRockScale, face), rockDpdx.xy, rockDpdy.xy).xyz * 2.0 - 1.0;
+             vec3 t = textureGrad(uLandNormals, vec3(p.xy * uRockScale, face), rockDpdx.xy, rockDpdy.xy).xyz * 2.0 - 1.0;
              t = vec3(t.xy + n.xy, abs(n.z) * s.z);
              acc += t.xyz * w.z;
            }
@@ -817,15 +834,15 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          // High ground is bare whatever its slope: the quickest way to say "mountain" is that nothing grows on the top of it.
          float altitude = smoothstep(${m(168).toFixed(4)}, ${m(232).toFixed(4)}, vTerrainWorld.y);
          // The bands are in degrees of slope, and they were set for land that could not rise more than ten metres
-         float wanderA = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.00575).toFixed(6)}).g;
+         float wanderA = dirtTex(vTerrainWorld.xz * ${perM(0.00575).toFixed(6)}).g;
          float wanderB = texture2D(map, terrainWideUv(vTerrainWorld.xz * ${perM(0.0275).toFixed(6)})).g;
          // And a hill-sized one (about 50 m), or a hill still wears one even, wobbly ring of soil round its foot.
-         float wanderC = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.05).toFixed(6)} + 0.37).g;
+         float wanderC = dirtTex(vTerrainWorld.xz * ${perM(0.05).toFixed(6)} + 0.37).g;
          // And a ragged one of about 12 m, so the edge itself frays.
-         float wanderD = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.2075).toFixed(6)} + 0.61).b;
+         float wanderD = dirtTex(vTerrainWorld.xz * ${perM(0.2075).toFixed(6)} + 0.61).b;
          float wander = (wanderA - 0.5) * 14.0 + (wanderB - 0.5) * 10.0 + (wanderC - 0.5) * 30.0 + (wanderD - 0.5) * 16.0;
          // The wander eases on a cliff (nothing holds turf on a wall) but never lets go
-         float breakup = (texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.475).toFixed(6)} + 0.13).g - 0.5) * 26.0;
+         float breakup = (dirtTex(vTerrainWorld.xz * ${perM(0.475).toFixed(6)} + 0.13).g - 0.5) * 26.0;
          float rockW = max(smoothstep(30.0, 56.0, slopeDeg + wander * (1.0 - 0.5 * smoothstep(45.0, 70.0, slopeDeg)) + breakup), altitude * 0.92);
          // Narrowed where the rock is near
          float dirtW = smoothstep(27.0, 42.0, slopeDeg + wander * 1.0) * (1.0 - rockW) * (1.0 - 0.6 * smoothstep(36.0, 48.0, slopeDeg + wander * 1.0));
@@ -851,8 +868,8 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            rockColor = cGranite * terrainRockMix.x + cSand * terrainRockMix.y + cBasalt * terrainRockMix.z;
          }
          // Soil on a slope is read from the side, as the rock is: from above it smeared down every bank in long streaks.
-         vec4 dirtPlan = dualScale(uDirtMap, tDirt);
-         vec4 dirtSide = terrainTriColor(uDirtMap, vTerrainWorld, uDirtScale, triW);
+         vec4 dirtPlan = dirtDual(tDirt);
+         vec4 dirtSide = dirtTri(vTerrainWorld, uDirtScale, triW);
          vec4 dirtColor = mix(dirtPlan, dirtSide, smoothstep(22.0, 42.0, slopeDeg));
          // The soil is the rock it weathered from
          dirtColor.rgb *= geology.x * vec3(0.88, 0.86, 0.88) + geology.y * vec3(1.14, 1.06, 0.92) + geology.z * vec3(0.8, 0.56, 0.52);
@@ -871,7 +888,7 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          // TALUS where the rock gives out: its own rubble and grit, darker, mixed with the soil
          float talus = smoothstep(0.06, 0.4, rockW) * (1.0 - smoothstep(0.5, 0.92, rockW));
          if (talus > 0.001) {
-           float pebbles = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(1.325).toFixed(6)}).r;
+           float pebbles = dirtTex(vTerrainWorld.xz * ${perM(1.325).toFixed(6)}).r;
            vec3 scree = mix(rockColor.rgb * 0.7, dirtColor.rgb * 0.8, 0.4) * mix(0.75, 1.2, pebbles);
            blended.rgb = mix(blended.rgb, scree, talus * 0.75);
            rockMix = max(rockMix, talus * 0.5);
@@ -879,8 +896,8 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          // The terrain lets the blades in from much further than the shared layer does (DETAIL_FAR is 0.16 units a pixel): between that and a unit a pixel the grass had nothing finer than its patches.
          terrainDetailW = max(terrainDetailW, uDetailOn * (1.0 - smoothstep(${m(0.048).toFixed(6)}, ${m(0.44).toFixed(6)}, max(fwidth(vTerrainWorld.x), fwidth(vTerrainWorld.z)))) * 0.75);
          if (terrainDetailW > 0.001) {
-           vec3 bladeDetail = detailSampleLayer(uDetailMaps, vTerrainWorld.xz * uGrassDetailScale, 0.0);
-           vec3 soilDetail = detailSampleLayer(uDetailMaps, terrainWallUv(vTerrainWorld, uSoilDetailScale, wallX), 1.0);
+           vec3 bladeDetail = detailSampleLayer(uLandMaps, vTerrainWorld.xz * uGrassDetailScale, 0.0);
+           vec3 soilDetail = detailSampleLayer(uLandMaps, terrainWallUv(vTerrainWorld, uSoilDetailScale, wallX), 1.0);
            // Blades only where the ground is gentle: projected from above onto a bank they stretched into long hairs.
            float soilMix = max(clamp(dirtMix + rockMix, 0.0, 1.0), smoothstep(12.0, 24.0, slopeDeg));
            vec3 fine = mix(bladeDetail, soilDetail, soilMix);
@@ -910,7 +927,7 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          // Scrubland: the ground under painted scrub goes the dark olive of a thicket's shade
          blended.rgb = mix(blended.rgb, blended.rgb * vec3(0.42, 0.52, 0.32), clamp(shoreSample.z * 1.4, 0.0, 0.85));
          // Under a forest the floor is the canopy's shade: dark, mossy, with leaf litter
-         vec4 eco = texture2D(uEcology, ((vec2(vTerrainWorld.x, vTerrainWorld.z) + uShoreGrid.x) / uShoreGrid.y + 0.5) / uShoreGrid.z);
+         vec4 eco = terrainEcology(vTerrainWorld);
          float living = 1.0 - clamp(rockMix + dirtMix, 0.0, 1.0);
          {
            vec2 q = vTerrainWorld.xz;
@@ -975,8 +992,8 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            blended.rgb = mix(blended.rgb, dirtColor.rgb * vec3(0.78, 0.72, 0.62), bank * (1.0 - rockMix));
            // Below the water: a bed of sand and pebbles, seen through the shallows, going to silt as it deepens.
            float bed = smoothstep(0.0, ${m(-0.8).toFixed(4)}, above) * smoothstep(0.03, 0.35, terrainShoreCover);
-           float pebble = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(1.325).toFixed(6)}).r;
-           float stones = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.525).toFixed(6)} + 0.4).g;
+           float pebble = dirtTex(vTerrainWorld.xz * ${perM(1.325).toFixed(6)}).r;
+           float stones = dirtTex(vTerrainWorld.xz * ${perM(0.525).toFixed(6)} + 0.4).g;
            vec3 gravelBed = vec3(0.34, 0.3, 0.22) * mix(0.62, 1.3, pebble) * mix(0.85, 1.12, stones);
            vec3 silt = vec3(0.18, 0.17, 0.12) * (0.85 + sandLuma);
            vec3 bedColour = mix(gravelBed, silt, smoothstep(${m(-0.8).toFixed(4)}, ${m(-4.8).toFixed(4)}, above));
@@ -995,8 +1012,8 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          vec4 pb = texture(uPaint, vec3(paintUv, 1.0));
          float painted = pa.r + pa.g + pa.b + pa.a + pb.r + pb.g + pb.b;
          if (painted > 0.002) {
-           float grain = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(0.275).toFixed(6)}).r;
-           float speck = texture2D(uDirtMap, vTerrainWorld.xz * ${perM(1.325).toFixed(6)}).r;
+           float grain = dirtTex(vTerrainWorld.xz * ${perM(0.275).toFixed(6)}).r;
+           float speck = dirtTex(vTerrainWorld.xz * ${perM(1.325).toFixed(6)}).r;
            vec3 soilTex = dirtColor.rgb;
            vec3 sand = vec3(0.80, 0.70, 0.50) * mix(0.86, 1.1, grain) * mix(0.94, 1.04, speck);
            vec3 soil = soilTex * vec3(0.92, 0.78, 0.62) * mix(0.8, 1.08, grain);
@@ -1052,8 +1069,8 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          vec3 mapN = normalize(mix(grassN, rockN, rockMix));
          mapN.xy *= normalScale;
          if (terrainDetailW > 0.001) {
-           vec3 bladeN = detailNormalLayer(uDetailNormals, vTerrainWorld.xz * uGrassDetailScale, 0.0);
-           vec3 soilN = detailNormalLayer(uDetailNormals, vTerrainWorld.xz * uSoilDetailScale, 1.0);
+           vec3 bladeN = detailNormalLayer(uLandNormals, vTerrainWorld.xz * uGrassDetailScale, 0.0);
+           vec3 soilN = detailNormalLayer(uLandNormals, vTerrainWorld.xz * uSoilDetailScale, 1.0);
            vec3 fineN = mix(bladeN, soilN, clamp(dirtMix + rockMix, 0.0, 1.0));
            mapN.xy += fineN.xy * 1.2 * terrainDetailW;
          }
@@ -1589,6 +1606,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
 
   // ---- the ecosystem (world/ecology.ts)
   const ecologyTexture = material.userData['ecology'] as DataTexture;
+  /** The ecology's bytes sent to the GPU, as the shore array's second layer (`terrainData`). */
+  const ecologyUploaded = material.userData['ecologyUploaded'] as () => void;
   /** The biomes painted per corner, `REGIONS.length` weights a corner (`rasterBiome`); made with the first biome painted (DO NOT keep ~10 MB a plate of zeros). */
   let biomeCorners: Float32Array | null = null;
   let nature: NatureSettings | null = null;
@@ -1617,7 +1636,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       if (ecologyField) {
         ecologyField = null;
         data.fill(0);
-        ecologyTexture.needsUpdate = true;
+        ecologyUploaded();
         ecologyRevision++;
       }
       return;
@@ -1692,7 +1711,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       data[i * 4 + 2] = byte(field.wet[i] as number);
       data[i * 4 + 3] = byte((1 - grass) * (1 - Math.min(1, canopy + trees)));
     }
-    ecologyTexture.needsUpdate = true;
+    ecologyUploaded();
     ecologyRevision++;
   };
 
@@ -1749,7 +1768,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     water.geometry = unifiedWaterGeometry(discs, renderedHeightAt, floodCells, ribbons);
     previous.dispose();
     shoreLevels(water.geometry, material.userData['shoreLevels'] as Float32Array, grid);
-    packGroundCorners(material.userData['shore'] as DataTexture, material.userData['shoreLevels'] as Float32Array, material.userData['flowerCorners'] as Float32Array, material.userData['scrubCorners'] as Float32Array, material.userData['forestCorners'] as Float32Array, material.userData['sandCorners'] as Float32Array, material.userData['basaltCorners'] as Float32Array);
+    packGroundCorners(material.userData['shore'] as DataArrayTexture,material.userData['shoreLevels'] as Float32Array, material.userData['flowerCorners'] as Float32Array, material.userData['scrubCorners'] as Float32Array, material.userData['forestCorners'] as Float32Array, material.userData['sandCorners'] as Float32Array, material.userData['basaltCorners'] as Float32Array);
     water.geometry.computeBoundingBox();
     const box = water.geometry.boundingBox;
     // In world (x, y): the mesh is three's (x, height, -y).
@@ -1958,7 +1977,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     paintCount = dabs.length;
     paintFirst = dabs[0];
     if (!covered) {
-      packGroundCorners(material.userData['shore'] as DataTexture, material.userData['shoreLevels'] as Float32Array, material.userData['flowerCorners'] as Float32Array, material.userData['scrubCorners'] as Float32Array, material.userData['forestCorners'] as Float32Array, sandCorners, basaltCorners);
+      packGroundCorners(material.userData['shore'] as DataArrayTexture,material.userData['shoreLevels'] as Float32Array, material.userData['flowerCorners'] as Float32Array, material.userData['scrubCorners'] as Float32Array, material.userData['forestCorners'] as Float32Array, sandCorners, basaltCorners);
       return;
     }
     forestRevision++;
@@ -1978,7 +1997,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
           forest[iy * GRID + ix] = coverAt('forest', x, y);
         }
       }
-      packGroundCorners(material.userData['shore'] as DataTexture, material.userData['shoreLevels'] as Float32Array, flowers, scrub, forest, sandCorners, basaltCorners);
+      packGroundCorners(material.userData['shore'] as DataArrayTexture,material.userData['shoreLevels'] as Float32Array, flowers, scrub, forest, sandCorners, basaltCorners);
     }
   };
 
