@@ -2867,7 +2867,8 @@ export function createSceneRenderer(
       // The opening's town is shown whole
       openingSince ??= performance.now();
       if (!reveal.opened) {
-        const whole = roads !== null && !worldJob && !buildings.pending && natureTreesStarted && !natureTreesPending && (openingHeld?.() ?? true);
+        // THE OPENING IN TWO STEPS (CLAUDE.md "Streaming world"): shown once the roads built so far, the masses and the far levels are in; the near cells' detail, the tiles still coming and the world's later builds land after, as they do when the camera moves (DO NOT wait for `buildings.pending`, `worldJob` or every tile of the region: the whole city waited 2.5-4.5 min for them, 2026-10-16).
+        const whole = roads !== null && !buildings.coarsePending && natureTreesStarted && !natureTreesPending && (openingHeld?.() ?? true);
         const next = reveal.step(whole, performance.now());
         if (next === 'warm') {
           // One frame drawn unseen first: the new meshes go to the GPU

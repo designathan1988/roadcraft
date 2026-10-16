@@ -1972,7 +1972,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   if (fresh) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
   // The opening shows the town once the tiles round the camera are in.
-  scene.holdOpening(() => streamer.settled);
+  // Held only until the first tile is in: the rest of the region lands behind the curtain's fall (`renderer.ts` reveal, the opening in two steps).
+  scene.holdOpening(() => doc.loadedTiles.size > 0);
   // A new world opens over its first city, at the origin (`cityGen/wholeMap.ts`); one opened again where the camera was left.
   if (fresh) { camera.x = 0; camera.y = 0; view.moveTo({ x: 0, y: 0 }); }
   streamer.focus(camera.x, camera.y);

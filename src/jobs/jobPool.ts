@@ -9,11 +9,12 @@ const WORKER_BYTES = 512 * 2 ** 20;
 const POOL_SHARE = 1 / 8;
 /** DO NOT size the pool by the machine alone: the page and every worker of its process share ONE V8 heap cage of 4 GB (pointer compression's shared cage, V8 9.2; the V8 sandbox needs it), and a streamed opening died "out of memory" with 3.4 GB of V8 across 24 workers (2026-10-16) - the pool takes a fifth of it, at a busy worker's V8 heap and young generation (~170 MB). */
 const CAGE_BYTES = 4 * 2 ** 30;
-const POOL_CAGE_SHARE = 1 / 5;
+/** Two fifths of the cage for the pool (2026-10-16: the worker that took it down was a Clipper2 union that never ended, fixed in `scripts/patches`; a busy worker holds 100-250 MB): 9 workers at most by the cage, the page's heap and the simulation's keep the rest. */
+const POOL_CAGE_SHARE = 2 / 5;
 const WORKER_HEAP_BYTES = 170 * 2 ** 20;
 
-/** Services whose one job runs for seconds: each gets a worker of its own, so no other lane waits behind it. */
-const LONG_RUNNING: readonly JobService[] = ['growth'];
+/** Services whose one job runs for seconds: each gets a worker of its own, so no other lane waits behind it (a streamed tile is 2-25 s of generation and growth, `cityTile.worker.ts`: the roads', the ground's and the cells' lanes waited behind it at the opening, 2026-10-16). */
+const LONG_RUNNING: readonly JobService[] = ['growth', 'cityTiles'];
 
 /** A job of the central queue (Cidade's job pool, `submit`): its message written when a worker takes it, answered once. */
 interface JobSpec {

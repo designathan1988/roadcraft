@@ -16,8 +16,8 @@ export const ACTIVE_RADIUS = 1;
 const KEEP_MARGIN = 1;
 /** Tiles asked of the store at once (each read, or made by the generator in a worker). */
 const IN_FLIGHT = 4;
-/** Tiles each way made ahead in the store (not put in the document): what the far levels draw from (`buildings/farLevels.ts`, `farRoads.ts`: the far roads and the tiles' and plates' masses only from made tiles), ready when the camera comes. */
-export const AHEAD_RADIUS = 5;
+/** Tiles each way made ahead in the store (not put in the document): the ring the region loads next, what the far levels draw real masses and roads from (`buildings/farLevels.ts`, `farRoads.ts`); past it the generator's plan draws the city (`farPlan.ts`). DO NOT make 121 tiles ahead (radius 5) at an opening: 11 x 11 km generated, stored and baked before the player moved, 2026-10-16. */
+export const AHEAD_RADIUS = 2;
 /** The ring the region loads next as the camera moves (the tiles it keeps past its radius): made ahead first, as many at once as the region asks. */
 const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
 /** Tiles made ahead at once past the ring: behind the region's and the ring's, one at a time. */

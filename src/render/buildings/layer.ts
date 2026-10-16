@@ -489,6 +489,9 @@ export function createBuildingLayer(): BuildingLayer {
       // What the view draws, not the whole map: the cells near, the cells drawn one by one, the tiles and plates standing for the rest, the far levels.
       return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;
     },
+    get coarsePending() {
+      return requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;
+    },
     far: farTiles,
     hidden: false,
     kit,

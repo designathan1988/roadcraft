@@ -24,6 +24,8 @@ export interface BuildingLayer {
   readonly top: number;
   /** A change is still being made: masses or near cells asked of the workers and not come. */
   readonly pending: boolean;
+  /** The coarse levels still to come: masses and far levels asked of the workers (never the near cells' detail: the opening shows the town with its masses, the detail lands after, `renderer.ts` reveal). */
+  readonly coarsePending: boolean;
   /** Nothing is being shown (a map loading behind its curtain, `SceneHandle.opening`). */
   hidden: boolean;
   /** Rebuilds what is stale. */
