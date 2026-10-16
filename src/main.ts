@@ -1,3 +1,4 @@
+import { MESO_REACH } from '@sim/meso/tileFeed';
 import { TileStore, portTiles, storeTiles } from '@editor/tileStore';
 import { jobPort } from './jobs/jobPool';
 import { WorldStreamer, tileOfRecord } from './worldStreamer';
@@ -1922,7 +1923,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   persistence.paused = true;
   history.clear();
   const generator = new TileGenerator(options);
-  const store = new TileStore(`roadcraft.tiles.${options.seed}`, desktopStores ? storeTiles(desktopStores.parts) : portTiles(() => jobPort('save')),
+  const mapName = `roadcraft.tiles.${options.seed}`;
+  const store = new TileStore(mapName, desktopStores ? storeTiles(desktopStores.parts) : portTiles(() => jobPort('save')),
     (i, j) => generator.generate(tileKey(i, j)));
   // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
@@ -1939,16 +1941,30 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   const far = [scene.farBuildings, scene.farRoads];
   const streamer = new WorldStreamer(doc, store, {
     arrived: () => requestDraw(),
-    loaded: (key) => { for (const f of far) f.loadedChanged(key); },
+    loaded: (key) => { for (const f of far) f.loadedChanged(key); sim.tile('loaded', key); },
     letGo: (key, removedAt) => {
       history.letGoTile((r) => tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
       for (const f of far) f.loadedChanged(key);
+      sim.tile('letGo', key);
     },
-    written: (key, version) => { for (const f of far) f.stored(key, version); },
+    written: (key, version) => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); },
     writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
   });
   for (const f of far) f.setSource({ records: (key) => store.read(key) }, (key) => doc.hasTile(key));
+  // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`);
+  // on the desktop the store is the main process's, read for it through a port.
+  let port: MessagePort | null = null;
+  if (desktopStores) {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = (e: MessageEvent<{ id: number; key: number }>) => {
+      store.read(e.data.key).then(
+        (records) => channel.port1.postMessage({ id: e.data.id, records }),
+        (error: unknown) => channel.port1.postMessage({ id: e.data.id, error: String(error) }));
+    };
+    port = channel.port2;
+  }
+  sim.tiles(mapName, MESO_REACH, port);
   streamed = { store, generator, streamer };
   if (fresh) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
