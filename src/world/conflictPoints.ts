@@ -92,6 +92,9 @@ export class ConflictIndex {
   /** Every pair's zones known to this index, kept between sessions by the game (`seed`, `takeMeasured`). */
   private readonly store: KeptZones = { kept: new Map(), fresh: new Map() };
 
+  /** Reads the zones kept in an earlier session for these pairs (the derived cache, from the simulation's worker): only the pairs a build needs, never the whole store at the start. */
+  lookup: ((keys: readonly string[]) => Promise<ReadonlyMap<string, Float64Array | null>>) | null = null;
+
   /** Zones measured in an earlier session (the game keeps them in the browser, `main.ts`) */
   seed(kept: ReadonlyMap<string, Float64Array | null>): void {
     for (const [key, table] of kept) if (!this.store.kept.has(key)) this.store.kept.set(key, table);
@@ -150,6 +153,19 @@ export class ConflictIndex {
           if (wasKept) continue;
           this.measured.prepare++;
           yield;
+        }
+      }
+    }
+    // The pairs kept in an earlier session read now, these only; the rest measured.
+    if (this.lookup && wanted.length) {
+      const kept = yield* answered(this.lookup(wanted.map((w) => w.key)), 'the kept zones are read');
+      if (kept?.size) {
+        for (const [key, table] of kept) if (!this.store.kept.has(key)) this.store.kept.set(key, table);
+        for (let k = wanted.length - 1; k >= 0; k--) {
+          const w = wanted[k]!;
+          if (!this.store.kept.has(w.key)) continue;
+          this.pairCache.set(w.key, measurePair(w.key, w.a, w.shapeA, w.b, w.shapeB, this.store));
+          wanted.splice(k, 1);
         }
       }
     }

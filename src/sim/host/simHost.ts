@@ -1,3 +1,4 @@
+import { readDerivedSome } from '@core/derivedCache';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import type { NodeId } from '@world/ids';
@@ -95,6 +96,8 @@ export class SimHost {
     sim.auditLevel = 'cheap';
     sim.auditEvery = 60;
     sim.conflicts.seed(zones);
+    // The zones kept in earlier sessions read by the pairs a build needs (`ConflictIndex.lookup`), never all at the start.
+    if (prefix) sim.conflicts.lookup = (keys) => readDerivedSome<Float64Array | null>(prefix, keys);
     sim.usePedestrianEngine((await import('../agents/walk')).createAgentWalkEngine());
     sim.followCity = true;
     sim.ambient.enabled = true;

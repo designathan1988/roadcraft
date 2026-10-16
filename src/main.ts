@@ -72,7 +72,7 @@ import { countMemory } from '@render/memoryCounters';
 import { formatInventory, sceneInventory } from '@render/inventory';
 import { cityBudgetTable, VIEW_BUDGETS, type CityView } from '@core/perfBudget';
 import { primeSurfaceBake, startSurfaceBake } from '@render/surfaceBakeClient';
-import { forgetOtherDerived, readDerivedAll, writeDerivedMany } from '@render/derivedCache';
+import { forgetOtherDerived, writeDerivedMany } from '@render/derivedCache';
 
 declare const __CONFLICT_ZONES_HASH__: string | undefined;
 import { DEFAULT_AZIMUTH, DEFAULT_ELEVATION, isoZoomBounds } from '@render/isoViewport';
@@ -192,7 +192,8 @@ const surfaceBake = startSurfaceBake();
 /** The conflict zones measured in earlier sessions */
 const ZONES_PREFIX = typeof __CONFLICT_ZONES_HASH__ !== 'undefined' && __CONFLICT_ZONES_HASH__ ? `zones:${__CONFLICT_ZONES_HASH__}:` : null;
 if (ZONES_PREFIX) forgetOtherDerived('zones', ZONES_PREFIX.slice('zones:'.length, -1));
-const keptZones = ZONES_PREFIX ? readDerivedAll<Float64Array | null>(ZONES_PREFIX) : Promise.resolve(new Map<string, Float64Array | null>());
+// DO NOT read every kept zone at the start (the store grows with every junction the city ever had): the simulation's worker reads the pairs it needs (`ConflictIndex.lookup`).
+const keptZones = Promise.resolve(new Map<string, Float64Array | null>());
 clearOldMapsOnce();
 /** The streamed world open at the last close (CLAUDE.md, "Streaming world"): its options, opened again from its tile store at the end of the boot. */
 const STREAMED_MARK = 'roadcraft.streamedWorld';
