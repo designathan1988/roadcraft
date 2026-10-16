@@ -40,7 +40,8 @@ export class TileGenerator {
 
   /** The workers let go (another world opened, the page going away). */
   dispose(): void {
-    for (const lane of this.lanes) lane.port.terminate();
+    // A tile being made when let go is told so, as one waiting: whoever asked does not wait for ever.
+    for (const lane of this.lanes) { lane.port.terminate(); lane.busy?.failed('the generator was let go'); lane.busy = null; }
     this.lanes.length = 0;
     for (const w of this.queue.splice(0)) w.failed('the generator was let go');
   }
