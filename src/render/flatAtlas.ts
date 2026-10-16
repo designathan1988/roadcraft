@@ -20,6 +20,7 @@ import {
   farLandMaterial,
   slabGeometry,
   wallMaterial,
+  type PlateSurface,
   type TerrainPart,
   type TerrainRegion,
   type ShapeAsking,
@@ -81,7 +82,7 @@ interface Plate {
   /** The document's stamps and dabs that reach it, moved to its map (about its centre). */
   readonly stampCopies: WeakMap<TerrainStamp, TerrainStamp | null>;
   readonly dabCopies: WeakMap<PaintDab, PaintDab | null>;
-  surface: TerrainSurface | null;
+  surface: PlateSurface | null;
   shown: boolean;
   /** The land at the plate's grid corners, the base level added, read off the page (`flatGroundPool.ts`), rows from the north edge; null until then. */
   heights: Float64Array | null;
@@ -305,8 +306,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   let content = new Set<number>();
   let near: number[] = [];
   const shownList: Plate[] = [];
+  /** The plates shown, each with its own surface: what changed on a plate is read off its own revisions, never a sum over them (`plateFollow.ts`). */
   let partsShown: TerrainPart[] = [];
-  let shownVersion = 0;
   let lastSun: { x: number; y: number; z: number } | null = null;
   const lastLook = { waves: NaN, foam: NaN, current: NaN, windX: NaN, windZ: NaN, windSpeed: NaN };
   let lookGiven = false;
@@ -437,7 +438,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     for (const p of plates.values()) {
       if (p !== home && !p.surface && !p.asked && !wanted.has(p.key) && !wantedNear.includes(p) && outOfReach(p)) plates.delete(p.key);
     }
-    if (shownList.length !== partsShown.length || shownList.some((p, k) => partsShown[k]!.surface !== p.surface)) shownVersion++;
     partsShown = shownList.map((p) => ({ surface: p.surface!, cx: p.cx, cy: p.cy }));
     drawFar();
     measureHighest();
@@ -580,11 +580,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
 
   let lastPlate: Plate | null = null;
   const geologyChanges = new GroundChanges();
-  const sum = (read: (s: TerrainSurface) => number): number => {
-    let total = 0;
-    for (const p of shownList) total += read(p.surface!);
-    return total;
-  };
   /** A point read off its plate's surface where the plate is made, otherwise off the land (`bareRead`, world coordinates): no plate made for a read. */
   const ask = <T>(x: number, y: number, read: (s: TerrainSurface, lx: number, ly: number) => T, bareRead: (x: number, y: number) => T): T => {
     const p = plates.get(plateOf(x, y));
@@ -702,36 +697,22 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       sync(doc);
       for (const p of shownList) {
         p.surface!.updatePaint(p.source, false);
-        const v = p.surface!.geologyChanges.version;
-        if (v !== geologySeen.get(p)) { geologySeen.set(p, v); geologyChanges.mark(null); }
+        const log = p.surface!.geologyChanges, v = log.version, was = geologySeen.get(p);
+        if (v === was) continue;
+        geologySeen.set(p, v);
+        // DO NOT mark every plate's ground for one plate's geology: its own rectangles, or its square when it came or its log cannot say.
+        const rects = was === undefined ? null : log.rectsSince(was);
+        geologyChanges.mark(rects ? rects.map((r) => [r[0] + p.cx, r[1] + p.cy, r[2] + p.cx, r[3] + p.cy] as const)
+          : [[p.cx - TERRAIN_HALF, p.cy - TERRAIN_HALF, p.cx + TERRAIN_HALF, p.cy + TERRAIN_HALF]]);
       }
     },
     forestAt: (x, y) => ask(x, y, (s, lx, ly) => s.forestAt(lx, ly), () => 0),
     coverAt: (kind: CoverKind, x, y) => ask(x, y, (s, lx, ly) => s.coverAt(kind, lx, ly), () => 0),
-    get forestRevision() { return sum((s) => s.forestRevision) + shownVersion * 1_000_003; },
     geologyAt: (x, y) => ask(x, y, (s, lx, ly) => s.geologyAt(lx, ly), (): GeologyKind => firstSurface.geologyAt(0, 0)),
     ecology: () => firstSurface.ecology(),
-    get ecologyRevision() { return sum((s) => s.ecologyRevision) + shownVersion * 1_000_003; },
     geologyChanges,
+    // DO NOT merge the plates' ecology or water into one revision or one box: each part's own surface says (`plateFollow.ts`)
     shoreLevelAt: (x, y) => ask(x, y, (s, lx, ly) => s.shoreLevelAt(lx, ly), () => null),
-    waterArea() {
-      let box: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
-      for (const p of shownList) {
-        const w = p.surface!.waterArea();
-        if (!w) continue;
-        const b = { minX: w.minX + p.cx, maxX: w.maxX + p.cx, minY: w.minY + p.cy, maxY: w.maxY + p.cy };
-        box = box ? { minX: Math.min(box.minX, b.minX), maxX: Math.max(box.maxX, b.maxX), minY: Math.min(box.minY, b.minY), maxY: Math.max(box.maxY, b.maxY) } : b;
-      }
-      return box;
-    },
-    // The plates shown in it too: a plate shown or let go brings its shore in or takes it out (`waterParts`).
-    get waterRevision() { return sum((s) => s.waterRevision) + shownVersion * 1_000_003; },
-    waterParts() {
-      return shownList.map((p) => {
-        const s = p.surface!, w = s.waterArea();
-        return { key: p.key, token: s, revision: s.waterRevision, box: w ? { minX: w.minX + p.cx, maxX: w.maxX + p.cx, minY: w.minY + p.cy, maxY: w.maxY + p.cy } : null };
-      });
-    },
     get lastRegion() {
       const region = lastPlate?.surface?.lastRegion ?? null;
       return region && lastPlate ? encode(lastPlate, region) : null;

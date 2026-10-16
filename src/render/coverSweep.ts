@@ -1,9 +1,11 @@
 import { PLATE_SIZE } from '@world/bounds';
 import type { ChangeRect } from '@world/changes';
 import { m } from '@world/units';
+import { KEEP_CELL, keepCellKey } from './candidateKeep';
 import { keepCellAt, keepCellRect } from './cellKeeps';
 import type { ForestSpecies } from './groundCover';
 import { seedOfKind } from './natureTrees';
+import { PlateFollow, type ShownPlate } from './plateFollow';
 import { TERRAIN_HALF } from './terrainGrid';
 
 /** THE PAINTED COVERS' AND THE RIVERS' PLACES, ONE KEEP CELL AT A TIME (`cellKeeps.ts`) */
@@ -153,8 +155,8 @@ export function rocksIn(key: number, field: CoverField): Candidate[] {
   return out;
 }
 
-/** The world box the water covers (`TerrainSurface.waterArea`). */
-export interface WaterBox { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number }
+/** The world box a plate's water covers (`PlateSurface.waterArea`, moved by the plate's centre). */
+interface WaterBox { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number }
 
 /** The places a stone may lie along the water - in the shallows, on the line and up the bank - in keep cell `key`. */
 export function shoreIn(key: number, field: CoverField, water: WaterBox | null): ShoreCandidate[] {
@@ -178,6 +180,69 @@ export function shoreIn(key: number, field: CoverField, water: WaterBox | null):
     }
   }
   return out;
+}
+
+/** The keep cells of the plate centred on (cx, cy) a world rectangle reaches, grown by `SHORE_SWEEP_PAD`, into `out`: a keep cell never crosses a plate's edge. */
+function plateShoreCells(rect: ChangeRect, cx: number, cy: number, out: Set<number>): Set<number> {
+  const half = PLATE_SIZE / 2;
+  const i0 = Math.max(Math.floor((rect[0] - SHORE_SWEEP_PAD) / KEEP_CELL), Math.round((cx - half) / KEEP_CELL));
+  const i1 = Math.min(Math.floor((rect[2] + SHORE_SWEEP_PAD) / KEEP_CELL), Math.round((cx + half) / KEEP_CELL) - 1);
+  const j0 = Math.max(Math.floor((rect[1] - SHORE_SWEEP_PAD) / KEEP_CELL), Math.round((cy - half) / KEEP_CELL));
+  const j1 = Math.min(Math.floor((rect[3] + SHORE_SWEEP_PAD) / KEEP_CELL), Math.round((cy + half) / KEEP_CELL) - 1);
+  for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) out.add(keepCellKey(i, j));
+  return out;
+}
+
+/** What the shore reads of a plate's own ground (`PlateSurface`): where its water is and where it changed, in the plate's own (x, y). */
+interface ShoreSurface {
+  waterArea(): WaterBox | null;
+  readonly waterChanges: { readonly version: number; rectsSince(since: number): readonly ChangeRect[] | null };
+}
+
+/** What the shore keeps of a plate: its water's box as swept (world), and the version of the plate's log it was swept at. */
+interface ShoreKept {
+  readonly water: WaterBox | null;
+  readonly version: number;
+}
+
+/** DO NOT sweep the stones over the box of every plate's water at once: a plate's stones read its own water, so a plate shown sweeps its own cells and one gone lets its own go */
+export class ShorePlates {
+  private readonly plates = new PlateFollow<ShoreSurface, ShoreKept>((surface) => surface.waterChanges.version);
+  private readonly cells = new Set<number>();
+
+  /** `fill`: the stones of a keep cell swept again from the water's box given (world; null: none, the cell let go). */
+  constructor(private readonly fill: (key: number, water: WaterBox | null) => void) {}
+
+  /** Brought up to the plates shown now (`TerrainSurface.parts`). */
+  follow(parts: readonly ShownPlate<ShoreSurface>[]): void {
+    this.plates.follow(parts, this.took, this.left);
+  }
+
+  /** A plate come in, or whose water changed: the cells where its own log says the water was or is (where it is, for a plate come in), swept from its box now. */
+  private readonly took = ({ surface, cx, cy }: ShownPlate<ShoreSurface>, was: ShoreKept | undefined): ShoreKept => {
+    const local = surface.waterArea();
+    const water = local && { minX: local.minX + cx, maxX: local.maxX + cx, minY: local.minY + cy, maxY: local.maxY + cy };
+    const cells = this.cells;
+    cells.clear();
+    const moved = was ? surface.waterChanges.rectsSince(was.version) : null;
+    if (moved) {
+      for (const r of moved) plateShoreCells([r[0] + cx, r[1] + cy, r[2] + cx, r[3] + cy], cx, cy, cells);
+    } else {
+      // A plate come in, or a log that forgot: the box swept before and the box now.
+      for (const box of [was?.water, water]) if (box) plateShoreCells([box.minX, box.minY, box.maxX, box.maxY], cx, cy, cells);
+    }
+    for (const key of cells) this.fill(key, water);
+    return { water, version: surface.waterChanges.version };
+  };
+
+  /** A plate gone: its own cells let go. */
+  private readonly left = ({ cx, cy }: ShownPlate<ShoreSurface>, kept: ShoreKept | undefined): void => {
+    const water = kept?.water;
+    if (!water) return;
+    const cells = this.cells;
+    cells.clear();
+    for (const key of plateShoreCells([water.minX, water.minY, water.maxX, water.maxY], cx, cy, cells)) this.fill(key, null);
+  };
 }
 
 /** Two places the same: a cell swept again to the same places keeps them as they stand. */

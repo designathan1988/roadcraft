@@ -110,14 +110,6 @@ export type TerrainSource = Pick<RoadDoc, 'changes' | 'terrainRevision' | 'terra
   readonly terrainGround?: (x: number, y: number) => number;
 };
 
-/** One plate's water as it stands (`TerrainSurface.waterParts`): the plate, the surface it is drawn by, its water's revision and box (world, null for none). */
-export interface WaterPart {
-  readonly key: number;
-  readonly token: object;
-  readonly revision: number;
-  readonly box: { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number } | null;
-}
-
 export interface TerrainSurface {
   readonly meshes: readonly Object3D[];
   readonly ground: Mesh;
@@ -157,24 +149,14 @@ export interface TerrainSurface {
   forestAt(x: number, y: number): number;
   /** How much of a cover (forest, scrub, flowers, rocks) was painted at a point, 0..1. */
   coverAt(kind: CoverKind, x: number, y: number): number;
-  /** Moves whenever the covers painted change. */
-  readonly forestRevision: number;
   /** Which rock the land is made of at a point (the painted geology; granite where none was). */
   geologyAt(x: number, y: number): GeologyKind;
   /** What grows on the land (`world/ecology.ts`), or null on a map with no ecosystem. */
   ecology(): EcologyField | null;
-  /** Moves whenever `ecology()` changes. */
-  readonly ecologyRevision: number;
   /** Where the painted geology changed: the stones on the ground take its colour. */
   readonly geologyChanges: GroundChanges;
   /** The water's level near a point (lake or river, within a few cells of it), or null. */
   shoreLevelAt(x: number, y: number): number | null;
-  /** Where water is, world (x, y), or null when there is none. */
-  waterArea(): { minX: number; maxX: number; minY: number; maxY: number } | null;
-  /** Moves whenever the water is rebuilt (and, over plates, whenever the plates shown change). */
-  readonly waterRevision: number;
-  /** Each plate's water as it stands: what a change of one plate's water re-sweeps (`renderer.ts` resweepShore), never the water of every plate. */
-  waterParts(): readonly WaterPart[];
   /** The grid cells (x0, x1, y0, y1) the last `update` rewrote, or null when it rewrote the whole plate */
   readonly lastRegion: TerrainRegion | null;
   /** After a stroke: what was deferred while it was held (the water) is brought up to date. */
@@ -213,9 +195,19 @@ export interface ShapeAsking {
   take(answers: readonly PlateShapeAnswer[]): boolean;
 }
 
+/** One plate's own ground: its own revisions and water, never merged over the plates shown (a product follows them plate by plate, `plateFollow.ts`). */
+export interface PlateSurface extends TerrainSurface {
+  /** Moves whenever this plate's `ecology()` changes. */
+  readonly ecologyRevision: number;
+  /** Where this plate's water is, in the plate's own (x, y), or null when it holds none. */
+  waterArea(): { minX: number; maxX: number; minY: number; maxY: number } | null;
+  /** Where this plate's water changed, its own (x, y): the box it had and the box it has at each rebuild. */
+  readonly waterChanges: GroundChanges;
+}
+
 /** A plate of the ground and where its centre stands (`flatAtlas.ts`). */
 export interface TerrainPart {
-  readonly surface: TerrainSurface;
+  readonly surface: PlateSurface;
   readonly cx: number;
   readonly cy: number;
 }
@@ -1317,7 +1309,7 @@ export function wallMaterial(anisotropy: number): MeshStandardMaterial {
 
 /** One plate of the ground (`flatAtlas.ts`); `heights`, the shared arrays it keeps its corners in, read by the workers (`sharedGround.ts`). */
 export function createTerrainSurface(anisotropy: number, origin: { readonly x: number; readonly y: number }, plate: number, prebuilt: PlateMesh | null = null,
-  heights: PlateHeights | null = null): TerrainSurface {
+  heights: PlateHeights | null = null): PlateSurface {
   const bakes = terrainBakes(anisotropy);
   // DO NOT keep a CPU copy of what the GPU holds: each texture's texels are worked out from their truth when three sends them (`stagedTexels.ts`).
   let paintArray = paintLayers();
@@ -1577,7 +1569,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let wetDiscs: readonly WaterStamp[] = [];
   /** Where the water's mesh lies, world units (`touchesWater`). */
   let waterBox: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
-  let waterRevision = 0;
+  /** Where the water changed, the plate's own (x, y): its box as it was and as it is at each rebuild (`rebuildWater`). */
+  const waterChanges = new GroundChanges();
   /** The cells water flooded into past the brush (`floodBasins`), with their level. */
   let floodCells = new Map<string, number>();
   const wetAt = (x: number, y: number): boolean => {
@@ -1772,10 +1765,12 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     sendCorners();
     water.geometry.computeBoundingBox();
     const box = water.geometry.boundingBox;
+    const was = waterBox;
     // In world (x, y): the mesh is three's (x, height, -y).
     waterBox = box && !box.isEmpty() ? { minX: box.min.x, maxX: box.max.x, minY: -box.max.z, maxY: -box.min.z } : null;
     water.visible = waterBox !== null;
-    waterRevision++;
+    // Where it was and where it is: a plate with no water before or after changes nothing.
+    waterChanges.mark([was, waterBox].flatMap((b) => (b ? [[b.minX, b.minY, b.maxX, b.maxY] as const] : [])));
     // The water moved, and with it the rivers' forests and the veredas.
     ecologyAll();
   };
@@ -1795,6 +1790,16 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       if (near(stamp.x, stamp.y, stamp.x, stamp.y, reach)) return true;
     }
     return false;
+  };
+  /** The water brought up to land moved in `dirty` (corners; 'all' or null: anywhere, or a river dab): rebuilt only when the move reaches it or a river's banks (`waterReaches`). */
+  const landMovedWater = (dirty: TerrainRegion | 'all' | null): void => {
+    if (dirty !== null && dirty !== 'all' && !waterReaches(dirty)) {
+      // The water stands as it was; what it reads of the ground is copied, and the ecosystem, which reads the land's heights, read again there.
+      sendGround();
+      ecologyOver(dirty);
+      return;
+    }
+    rebuildWater(lastStamps);
   };
   /** After a shaping pass (here or off the page): a road that cut through a valley changes where the water's shore is. */
   const shapeLanded = (moved: boolean, region: TerrainRegion | readonly TerrainRegion[] | null): boolean => {
@@ -1935,7 +1940,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     flowers: new Uint8Array(FOREST_RES * FOREST_RES),
     rocks: new Uint8Array(FOREST_RES * FOREST_RES),
   };
-  let forestRevision = 0;
   const coverAt = (kind: CoverKind, x: number, y: number): number => {
     const cell = TERRAIN_SIZE / FOREST_RES;
     const gx = Math.floor((x + TERRAIN_HALF) / cell), gy = Math.floor((y + TERRAIN_HALF) / cell);
@@ -2001,7 +2005,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     paintCount = dabs.length;
     paintFirst = dabs[0];
     if (covered) {
-      forestRevision++;
       paintArray.addLayerUpdate(0);
       paintArray.addLayerUpdate(1);
       paintArray.needsUpdate = true;
@@ -2011,7 +2014,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
 
   const parts: TerrainPart[] = [];
-  const surface: TerrainSurface = {
+  const surface: PlateSurface = {
     meshes: [ground, rim, water],
     parts,
     regionOf(box) {
@@ -2050,9 +2053,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     get ecologyRevision() {
       return ecologyRevision;
     },
-    get forestRevision() {
-      return forestRevision;
-    },
     geologyAt(x, y) {
       const ix = Math.round((x + TERRAIN_HALF) / TERRAIN_CELL);
       const iy = Math.round((TERRAIN_HALF - y) / TERRAIN_CELL);
@@ -2069,12 +2069,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       return level > NO_WATER / 2 ? level : null;
     },
     waterArea: () => waterBox,
-    get waterRevision() {
-      return waterRevision;
-    },
-    waterParts() {
-      return [{ key: 0, token: this, revision: waterRevision, box: waterBox }];
-    },
+    waterChanges,
     heightAt,
     naturalRenderedHeightAt,
     renderedHeightAt,
@@ -2103,13 +2098,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       waterStale = false;
       const dirty = waterDirty;
       waterDirty = null;
-      if (dirty !== null && dirty !== 'all' && !waterReaches(dirty)) {
-        // The water stands as it was; what it reads of the ground is copied, and the ecosystem, which reads the land's heights
-        sendGround();
-        ecologyOver(dirty);
-        return;
-      }
-      rebuildWater(lastStamps);
+      landMovedWater(dirty);
     },
     shapeToRoads(shape, region = null) {
       const shapeAt = performance.now();
@@ -2188,12 +2177,16 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       if (box) cornersMoved(box[0], box[1], box[2], box[3]);
       else wholePlateMoved();
       lastStamps = doc.terrainStamps;
-      // The water - every pool and river on the map - is the deferred part of a stroke
-      if (stroking) {
-        waterStale = true;
-        // A river dab makes water; any other dab is its box.
-        markWaterDirty(added && added.mode !== 'river' ? box : null);
-      } else { waterStale = false; waterDirty = null; rebuildWater(lastStamps); }
+      // The water is the deferred part of a stroke: a river dab makes water, any other dab is its box (with what a stroke left waiting).
+      markWaterDirty(added && added.mode !== 'river' ? box : null);
+      if (stroking) waterStale = true;
+      else {
+        const dirty = waterDirty;
+        waterStale = false;
+        waterDirty = null;
+        // DO NOT rebuild the plate's every pool and river for a dab that reaches none of them (`landMovedWater`).
+        landMovedWater(dirty);
+      }
       markLand(box ? { x0: box[0], x1: box[1], y0: box[2], y1: box[3] } : 'all');
       return true;
     },

@@ -84,7 +84,9 @@ desktop path still post Building objects; the sim worker keeps a second RoadDoc 
   (`sim/tileSections.ts` pattern).
 - Every tile load records 'roads' and runs `buildWorld`: the road surfaces now visit only the tiles that changed
   (`roadSurfaces.ts` PassState); left on the page: the block compares (`compareSolves`) and the world job's other steps.
-- `flatAtlas.ts` `ecologyRevision` adds `shownVersion`: each plate shown walks `natureSweep` (per-plate keys kept).
+- `renderer.ts` `natureSweep`: the trees' scale is the average over the shown plates, so a plate shown re-picks
+  every plate's lattice on the page (`farForest.ts` keeps each tree's pick and moves a uniform); and it concatenates
+  every plate's trees into a list nothing reads (`NatureSweep.trees`). Fix: picks kept per plate, the list dropped.
 - Sim: `lorryDocks.ts` `yardNeighbours` keyed by the global `doc.lotRevision`; `lotTraffic.ts` `freeBays`/
   `sceneryInBays` walk every gated bay with a string key each, every second; parked cars stand a whole
   Vehicle in most bays of the region and `simHost.ts` `publish` walks them each tick; `invariants.ts` audit
@@ -100,9 +102,9 @@ desktop path still post Building objects; the sim worker keeps a second RoadDoc 
   the page: goes with one generation path, the tile generator's); `renderer.ts` `HIDDEN_SLICE_MS`/
   `WORLD_SLICE_MS` (the world job on the page: goes with per-tile road records).
 - Terrain: a stamp discards the worker-built mesh and rebuilds `TerrainIndex` (`terrain.ts`); textures
-  re-uploaded whole; `rebuildWater` rebuilds all water at any stamp.
+  re-uploaded whole; a river dab rebuilds the plate's every pool and river (`rebuildWater`, one water mesh a plate).
 - Region only: city statistics and growth; near/far road joins at the region's edge do not match.
-- 188 global-revision reads suppressed in `scripts/baselines/eslint-suppressions.json`.
+- 183 global-revision reads suppressed in `scripts/baselines/eslint-suppressions.json`.
 - Player's decisions (ask): caps that delete his work (`MAX_PLANTED_TREES` and the other caps in `doc.ts`,
   which now drop items of loaded tiles and the tile write stores them as gone); KTX2 UASTC; signature
   buildings without a far level (`massing.ts`); new save format (`rewrite/b-save-head-parts`).

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { platesOver, plateRegion } from '@world/bounds';
-import { keepCellsOver } from '@render/cellKeeps';
-import { COVER_SWEEP_PAD, SHORE_SWEEP_PAD, cellHash, forestIn, rocksIn, scrubIn, shoreIn, type Candidate, type CoverField } from '@render/coverSweep';
+import { PLATE_SIZE, platesOver, plateRegion } from '@world/bounds';
+import { KEEP_CELL } from '@render/candidateKeep';
+import { keepCellRect, keepCellsOver } from '@render/cellKeeps';
+import { COVER_SWEEP_PAD, SHORE_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, scrubIn, shoreIn, type Candidate, type CoverField } from '@render/coverSweep';
+import { GroundChanges } from '@render/groundChanges';
 import { TERRAIN_HALF } from '@render/terrain';
 
 /** A disc of painted cover, as a dab lays it. */
@@ -110,5 +112,107 @@ describe('the painted covers swept cell by cell', () => {
     }
     expect(stones).toBeGreaterThan(100);
     expect(shoreIn([...cells][0]!, field, null)).toEqual([]);
+  });
+});
+
+describe('the rivers\' stones plate by plate', () => {
+  interface Box { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number }
+  const rectOf = (b: Box): [number, number, number, number] => [b.minX, b.minY, b.maxX, b.maxY];
+  /** A plate's own ground as the shore reads it: its water's box (its own x, y) and the log of where it changed, marked as `rebuildWater` marks it. */
+  const plateAt = (cx: number, cy: number, first: Box | null) => {
+    const waterChanges = new GroundChanges();
+    let box: Box | null = null;
+    const surface = {
+      waterArea: () => box,
+      waterChanges,
+      rebuild(next: Box | null): void {
+        waterChanges.mark([box, next].flatMap((b) => (b ? [rectOf(b)] : [])));
+        box = next;
+      },
+    };
+    surface.rebuild(first);
+    return { surface, cx, cy };
+  };
+  /** The shore with what each keep cell was last filled from. */
+  const recorder = () => {
+    const filled = new Map<number, Box | null>();
+    return { shore: new ShorePlates((key, water) => { filled.set(key, water); }), filled };
+  };
+  const onPlate = (key: number, cx: number, cy: number): boolean => {
+    const [x0, y0, x1, y1] = keepCellRect(key);
+    return x0 >= cx - PLATE_SIZE / 2 && x1 <= cx + PLATE_SIZE / 2 && y0 >= cy - PLATE_SIZE / 2 && y1 <= cy + PLATE_SIZE / 2;
+  };
+  const cellsOf = (...boxes: Box[]): Set<number> => {
+    const out = new Set<number>();
+    for (const b of boxes) keepCellsOver(rectOf(b), SHORE_SWEEP_PAD, out);
+    return out;
+  };
+
+  it('never puts a keep cell across a plate\'s edge', () => {
+    expect((PLATE_SIZE / 2) % KEEP_CELL).toBe(0);
+  });
+
+  it('sweeps a plate come in over its own water, in its own cells only', () => {
+    const lake = { minX: 100, maxX: 300, minY: 0, maxY: 20 };
+    const a = plateAt(0, 0, lake);
+    // B's water runs up to its west edge, beside A.
+    const b = plateAt(PLATE_SIZE, 0, { minX: -PLATE_SIZE / 2, maxX: -PLATE_SIZE / 2 + 200, minY: -50, maxY: 50 });
+    const { shore, filled } = recorder();
+    shore.follow([a]);
+    expect(new Set(filled.keys())).toEqual(cellsOf(lake));
+    for (const water of filled.values()) expect(water).toEqual(lake);
+    filled.clear();
+    shore.follow([a, b]);
+    expect(filled.size).toBeGreaterThan(0);
+    for (const [key, water] of filled) {
+      expect(onPlate(key, PLATE_SIZE, 0)).toBe(true);
+      expect(water).toEqual({ minX: PLATE_SIZE / 2, maxX: PLATE_SIZE / 2 + 200, minY: -50, maxY: 50 });
+    }
+  });
+
+  it('sweeps again only the plate whose water changed, where it was and where it is', () => {
+    const was = { minX: 100, maxX: 300, minY: 0, maxY: 20 }, now = { minX: -400, maxX: -300, minY: 0, maxY: 20 };
+    const a = plateAt(0, 0, was), b = plateAt(PLATE_SIZE, 0, { minX: 0, maxX: 100, minY: 0, maxY: 100 });
+    const { shore, filled } = recorder();
+    shore.follow([a, b]);
+    filled.clear();
+    shore.follow([a, b]);
+    expect(filled.size).toBe(0);
+    a.surface.rebuild(now);
+    shore.follow([a, b]);
+    expect(new Set(filled.keys())).toEqual(cellsOf(was, now));
+    for (const water of filled.values()) expect(water).toEqual(now);
+  });
+
+  it('sweeps where it was and where it is when the plate\'s log forgot what came between', () => {
+    const was = { minX: 100, maxX: 300, minY: 0, maxY: 20 }, between = { minX: 500, maxX: 600, minY: 500, maxY: 600 };
+    const now = { minX: -400, maxX: -300, minY: 0, maxY: 20 };
+    const a = plateAt(0, 0, was);
+    const { shore, filled } = recorder();
+    shore.follow([a]);
+    filled.clear();
+    for (let k = 0; k < 300; k++) a.surface.rebuild(k % 2 ? between : { ...between, maxX: 650 });
+    a.surface.rebuild(now);
+    shore.follow([a]);
+    expect(new Set(filled.keys())).toEqual(cellsOf(was, now));
+  });
+
+  it('lets a plate that left go, in its own cells only', () => {
+    const a = plateAt(0, 0, { minX: 100, maxX: 300, minY: 0, maxY: 20 }), b = plateAt(PLATE_SIZE, 0, { minX: 0, maxX: 100, minY: 0, maxY: 100 });
+    const { shore, filled } = recorder();
+    shore.follow([a, b]);
+    filled.clear();
+    shore.follow([a]);
+    expect(new Set(filled.keys())).toEqual(cellsOf({ minX: PLATE_SIZE, maxX: PLATE_SIZE + 100, minY: 0, maxY: 100 }));
+    for (const water of filled.values()) expect(water).toBeNull();
+  });
+
+  it('sweeps nothing for a plate with no water', () => {
+    const dry = plateAt(0, 0, null);
+    const { shore, filled } = recorder();
+    shore.follow([dry]);
+    dry.surface.rebuild(null);
+    shore.follow([dry]);
+    expect(filled.size).toBe(0);
   });
 });

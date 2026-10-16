@@ -269,7 +269,7 @@
   },
   "src/render/flatAtlas.ts": {
     "roadcraft/no-global-revision": {
-      "count": 19
+      "count": 16
     }
   },
   "src/render/flatGround.worker.ts": {
@@ -400,7 +400,7 @@
       "count": 1
     },
     "roadcraft/no-global-revision": {
-      "count": 42
+      "count": 40
     },
     "roadcraft/no-silent-catch": {
       "count": 1

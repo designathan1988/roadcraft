@@ -105,7 +105,7 @@ import { poleGroundAt, type Utilities } from './utilities';
 import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
 import { createBarriers } from './barriers';
 import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview } from './transit';
-import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface, type WaterPart } from './terrain';
+import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { FarRoads } from './farRoads';
 import type { SharedGroundAt } from './sharedGround';
@@ -150,7 +150,8 @@ import { createElementLayer, loadElementKit, type ElementKit, type ElementLayer 
 import { isCoverKind } from '@world/terrainPaint';
 import { CellKeeps, keepCellAt, keepCellRect, keepCellsOver } from './cellKeeps';
 import { createDensityCars } from './densityCars';
-import { COVER_SWEEP_PAD, SHORE_SWEEP_PAD, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
+import { COVER_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
+import { PlateFollow } from './plateFollow';
 
 /** The scene renderer. ## The rebuild contract Everything derived from the road network or the terrain is rebuilt in */
 
@@ -901,11 +902,10 @@ export function createSceneRenderer(
   /** The card trees the cover cells were last drawn for (moved: every cell drawn again), and the geology serial their stones' colours read. */
   let coverStandIns: boolean | null = null;
   let coverGeologySeen = -1;
-  /** The paint the covers were swept for, read from the diary (`coverPaintRead`), and the water the rivers' stones were. */
+  /** The paint the covers were swept for, read from the diary (`coverPaintRead`). */
   const coverPaintRead = new JournalCursor(['paint']);
-  let coverWaterSeen = -1;
-  /** Each plate's water as the shore was last swept for (`resweepShore`). */
-  let shoreSeen = new Map<number, WaterPart>();
+  /** The shown plates' own ecology the ecosystem's trees were swept for (`natureSweep`): moved by a plate that came, left or changed, alone. */
+  const ecologySeen = new PlateFollow((surface: { readonly ecologyRevision: number }) => surface.ecologyRevision);
   /** The trees the player planted, cell by cell as the diary says they were planted or cut (`plantedRead`). */
   const plantedRead = new JournalCursor(['trees']);
   /** What the plants' and stones' tests read, from the diary: a change there tests again only the places it reached */
@@ -2070,25 +2070,8 @@ export function createSceneRenderer(
     }
     resweepCovers(cells);
   };
-  /** The rivers' stones swept again where a plate's water changed (`terrain.waterParts`): its box as it was and as it is; a plate shown or let go, its own (DO NOT sweep the box of every plate's water when one plate changes: each plate shown swept the whole region's shore again). */
-  const resweepShore = (): void => {
-    const now = new Map<number, WaterPart>();
-    for (const part of terrain.waterParts()) now.set(part.key, part);
-    const cells = new Set<number>();
-    const over = (box: WaterPart['box']): void => { if (box) keepCellsOver([box.minX, box.minY, box.maxX, box.maxY], SHORE_SWEEP_PAD, cells); };
-    for (const [key, was] of shoreSeen) {
-      const is = now.get(key);
-      if (is && is.token === was.token && is.revision === was.revision) continue;
-      over(was.box);
-      over(is?.box ?? null);
-    }
-    for (const [key, is] of now) if (!shoreSeen.has(key)) over(is.box);
-    shoreSeen = now;
-    if (!cells.size) return;
-    // The box of all the water only bounds each cell's lattice (a river across a plate's edge is read whole).
-    const water = terrain.waterArea();
-    for (const key of cells) coverKeeps.shore.fill(key, shoreIn(key, coverField, water), sameShore);
-  };
+  /** The rivers' stones plate by plate (`ShorePlates`): a plate come in, or whose water changed, sweeps its own cells; one gone lets them go. */
+  const shorePlates = new ShorePlates((key, water) => coverKeeps.shore.fill(key, shoreIn(key, coverField, water), sameShore));
   const handle: SceneHandle = {
     // Asked for by the Actions (a shot, a bomb) and the weapons lab: the effects, and now the physics the bodies fall with
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
@@ -2421,10 +2404,7 @@ export function createSceneRenderer(
             for (const e of paint) for (const r of e.rects!) keepCellsOver(r, COVER_SWEEP_PAD, cells);
             resweepCovers(cells);
           }
-          if (coverWaterSeen !== terrain.waterRevision) {
-            coverWaterSeen = terrain.waterRevision;
-            resweepShore();
-          }
+          shorePlates.follow(terrain.parts);
           performance.measure('hitch:cover/sweep', { start: at, end: performance.now() });
         }
         // The painted woods' trees are the countryside's (`natureTrees.ts`); the old card trees only if those cannot be grown.
@@ -2475,7 +2455,7 @@ export function createSceneRenderer(
         }
         // The ecosystem's own trees.
         bringPlateLand(net.doc);
-        const natureSweepKey = `${terrain.ecologyRevision}:${landSerial}:${quality.vegetation}`;
+        const natureSweepKey = `${ecologySeen.follow(terrain.parts)}:${landSerial}:${quality.vegetation}`;
         if (natureSweepWant !== natureSweepKey || natureSweepPending) {
           const at = performance.now();
           natureSweepWant = natureSweepKey;
