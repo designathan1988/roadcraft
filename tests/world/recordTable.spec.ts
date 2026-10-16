@@ -46,6 +46,17 @@ describe('a record table', () => {
     expect(c).not.toBe(d);
   });
 
+  it('reads a row whose shared members hold others met first in it, after a row that read them', () => {
+    const storey = rows[0]!.volumes[0]!.storeys[0]!;
+    const inner = { ...rows[0]!.volumes[0]!, storeys: [storey] };
+    const a = { ...rows[0]!, id: asBuildingId(1), volumes: [inner, { ...inner, id: 99 }] } as Building;
+    const b = { ...rows[1]!, id: asBuildingId(2), volumes: [{ ...inner, id: 7 }] } as Building;
+    const c = { ...rows[2]!, id: asBuildingId(3), volumes: [inner] } as Building;
+    const table = encodeRecords([a, b, c]);
+    const reader = table.reader();
+    for (const i of [2, 0, 1, 0]) expect(JSON.stringify(reader.record(i))).toBe(JSON.stringify([a, b, c][i]));
+  });
+
   it('lives in shared memory, posted as a handle', () => {
     expect(encodeRecords(rows).buffer).toBeInstanceOf(SharedArrayBuffer);
   });

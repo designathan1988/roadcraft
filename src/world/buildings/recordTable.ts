@@ -51,7 +51,7 @@ function layout(rows: number, strings: number, units: number, shapes: number, ke
 
 /** A growable byte stream the encoder writes the members into. */
 class Stream {
-  bytes = new Uint8Array(1 << 16);
+  bytes = new Uint8Array(1 << 12);
   view = new DataView(this.bytes.buffer);
   length = 0;
 
@@ -302,7 +302,9 @@ export class TableReader {
     switch (tag) {
       case T_NULL: case T_FALSE: case T_TRUE: return;
       case T_U8: this.pos += 1; return;
-      case T_I32: case T_STR: case T_NODE: this.pos += 4; return;
+      case T_I32: case T_STR: this.pos += 4; return;
+      // A shared member met here first has its body behind its mark: passed over with it.
+      case T_NODE: { const id = view.getUint32(this.pos, true); this.pos += 4; if (this.pos === this.nodeAt[id]) this.skip(); return; }
       case T_F64: this.pos += 8; return;
       case T_ARR: { const n = view.getUint32(this.pos, true); this.pos += 4; for (let i = 0; i < n; i++) this.skip(); return; }
       case T_OBJ: { const keys = this.shape(view.getUint32(this.pos, true)); this.pos += 4; for (let i = 0; i < keys.length; i++) this.skip(); return; }
