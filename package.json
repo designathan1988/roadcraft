@@ -61,6 +61,7 @@
       "src/render/surfaceBake.worker.ts!",
       "scripts/**/*.mjs",
       "desktop/main.cjs",
+      "desktop/preload.cjs",
       "eslint-rules/*.js"
     ],
     "project": [
@@ -73,7 +74,8 @@
       "scripts/**/*.ts"
     ],
     "ignoreDependencies": [
-      "electron"
+      "electron",
+      "steamworks.js"
     ],
     "ignoreBinaries": [
       "taskkill.exe"

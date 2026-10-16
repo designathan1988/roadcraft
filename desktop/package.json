@@ -4,5 +4,8 @@
   "version": "0.1.0",
   "description": "Roadcraft in a window of its own",
   "main": "main.cjs",
-  "private": true
+  "private": true,
+  "optionalDependencies": {
+    "steamworks.js": "0.4.0"
+  }
 }
