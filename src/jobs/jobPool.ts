@@ -7,6 +7,10 @@ import type { FromJob, JobService, ToJob } from './jobScope';
 const WORKER_BYTES = 512 * 2 ** 20;
 /** The share of the machine's memory the pool may take: the page, the GPU's process and the system keep the rest. */
 const POOL_SHARE = 1 / 8;
+/** DO NOT size the pool by the machine alone: the page and every worker of its process share ONE V8 heap cage of 4 GB (pointer compression's shared cage, V8 9.2; the V8 sandbox needs it), and a streamed opening died "out of memory" with 3.4 GB of V8 across 24 workers (2026-10-16) - the pool takes a fifth of it, at a busy worker's V8 heap and young generation (~170 MB). */
+const CAGE_BYTES = 4 * 2 ** 30;
+const POOL_CAGE_SHARE = 1 / 5;
+const WORKER_HEAP_BYTES = 170 * 2 ** 20;
 
 /** Services whose one job runs for seconds: each gets a worker of its own, so no other lane waits behind it. */
 const LONG_RUNNING: readonly JobService[] = ['growth'];
@@ -170,7 +174,8 @@ export function jobWorkers(): number {
   if (typeof document === 'undefined') return Math.max(1, Math.min(2, cores - 2));
   // `navigator.deviceMemory`: the machine's memory in GB, rounded by the browser; unknown, the cores alone.
   const byMemory = nav?.deviceMemory ? Math.floor((nav.deviceMemory * 2 ** 30 * POOL_SHARE) / WORKER_BYTES) : Infinity;
-  return Math.max(1, Math.min(cores - 2, byMemory));
+  const byCage = Math.floor((CAGE_BYTES * POOL_CAGE_SHARE) / WORKER_HEAP_BYTES);
+  return Math.max(1, Math.min(cores - 2, byMemory, byCage));
 }
 
 /** How many lanes a kind of work may have: never more than the pool's workers (a lane per worker, `jobPort`). */
