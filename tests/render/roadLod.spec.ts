@@ -128,7 +128,7 @@ describe('a block brought near from the kept tiles', () => {
     makeNear(mesh);
     updateRoadLevels([mesh], (mesh.userData.lod as { x: number }).x, 0, 500);
     expect(asked).toBe(1);
-    await new Promise((done) => setTimeout(done, 1));
+    await new Promise((done) => setTimeout(done, 0));
     expect(levels(mesh).full).toBe(true);
     expect(mesh.visible).toBe(true);
     expect(levels(mesh).coarse.visible).toBe(false);
@@ -137,7 +137,7 @@ describe('a block brought near from the kept tiles', () => {
     makeFar(mesh);
     lv.bring = () => Promise.resolve(null);
     makeNear(mesh);
-    await new Promise((done) => setTimeout(done, 1));
+    await new Promise((done) => setTimeout(done, 0));
     expect(levels(mesh).full).toBe(true);
     expect((mesh.geometry.getAttribute('position') as BufferAttribute).array.length).toBe(strip().positions.length);
   });
