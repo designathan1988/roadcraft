@@ -305,7 +305,8 @@ export interface SceneHandle {
   readonly pavedHeightAt: PavingSource;
   resize(): void;
   draw(net: Network, sim: SimClient, alpha: number, delta: number, options?: DrawOptions): void;
-  setQuality(level: QualityLevel | 'auto'): void;
+  /** A tier, or the player's own settings on it (the options panel: shadows, occlusion, smoothing). */
+  setQuality(level: QualityLevel | 'auto', settings?: QualitySettings): void;
   readonly quality: QualityLevel | 'auto';
   /** The inspection camera (`inspector.ts`); null outside development builds. */
   readonly inspect: Inspector | null;
@@ -348,6 +349,8 @@ export function createSceneRenderer(
   onAssetsReady: () => void = () => {},
   /** The engine the scene's products are registered with (`core/engine.ts`): the game's one, from `main.ts`. */
   engine: Engine = new Engine(),
+  /** The player's own settings on the tier (the options panel); the tier's own when absent. */
+  initialSettings?: QualitySettings,
 ): SceneHandle {
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
   onEcologyRead(onAssetsReady);
@@ -425,7 +428,7 @@ export function createSceneRenderer(
 
   let requested: QualityLevel | 'auto' = initialQuality;
   const governor = new QualityGovernor(requested === 'auto' ? 'high' : requested);
-  let quality: QualitySettings = QUALITY[governor.current];
+  let quality: QualitySettings = initialSettings ?? QUALITY[governor.current];
 
   const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
   const anisotropy = Math.min(quality.anisotropy, maxAnisotropy);
@@ -1638,8 +1641,8 @@ export function createSceneRenderer(
     }
   };
 
-  const applyQuality = (level: QualityLevel): void => {
-    quality = QUALITY[level];
+  const applyQuality = (level: QualityLevel, settings: QualitySettings = QUALITY[level]): void => {
+    quality = settings;
     buildings.setDetailBudget(quality.buildingDetailMB * 1e6);
     // The far woods as dense as the near ones, on the same budget (`farWoods.ts`).
     terrain.setVegetation?.(quality.vegetation);
@@ -2821,11 +2824,11 @@ export function createSceneRenderer(
 
       if (delta > 0) fps = fps * 0.9 + (1 / Math.min(1, delta)) * 0.1;
     },
-    setQuality(level) {
+    setQuality(level, settings) {
       requested = level;
       const resolved = level === 'auto' ? governor.current : level;
       governor.set(resolved);
-      applyQuality(resolved);
+      applyQuality(resolved, settings);
     },
     get quality() {
       return requested;

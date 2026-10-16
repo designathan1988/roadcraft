@@ -113,8 +113,9 @@ import {
   roadTypeName,
   vehicleCountLabel,
 } from '@ui/labels';
-import { QUALITY_LEVELS, isQualityLevel, type QualityLevel } from '@render/quality';
+import { QUALITY_LEVELS, isQualityLevel } from '@render/quality';
 import { createBuildingWiring } from './buildingsWiring';
+import { createGraphicsWiring } from './graphicsWiring';
 import { levelElevation, roofRise } from '@world/buildings/geometry';
 import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
@@ -558,24 +559,16 @@ canvas3d.id = 'game-scene';
 canvas3d.setAttribute('aria-hidden', 'true');
 canvas3d.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;';
 canvas.parentElement?.insertBefore(canvas3d, canvas);
-/** The quality the player last chose, or High: a level, never "automatic". */
-function savedQualityLevel(): QualityLevel {
-  try {
-    const saved = window.localStorage.getItem('roadcraft.quality');
-    return isQualityLevel(saved) ? saved : 'high';
-  } catch {
-    return 'high';
-  }
-}
-
-// The graphics are what the player chose (High until they choose): the game never lowers them on its own.
+/** The graphics options (`graphicsWiring.ts`): the tier the player chose, or the one this GPU holds at the first start, and their settings on it. */
+const graphics = createGraphicsWiring((level) => gameState.set('quality', level, 'quality menu'));
+// The graphics are what the player chose: the game lowers only the resolution, and only with "dynamic resolution" on.
 primeSurfaceBake(await surfaceBake);
 // The traffic's worker, given the map as it opened and the conflict zones measured in earlier sessions.
 const engineFlags = new URLSearchParams(location.search);
 await sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient') === 'view' ? 'view' : 'edges');
 /** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */
 const engine = new Engine();
-const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, savedQualityLevel(), requestDraw, engine);
+const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, graphics.level, requestDraw, engine, graphics.settings);
 // The surgical profiler (`core/profiler.ts`)
 const profileFrameEnd = wireProfiler();
 function wireProfiler(): () => void {
@@ -1702,6 +1695,7 @@ function mountInterface(): void {
     about: openAbout,
     qualityLevels: QUALITY_LEVELS,
     setQuality,
+    graphicsOptions: () => graphics.openPanel(),
     markingStyle: () => doc.markingStyle,
     setMarkingStyle,
     setSky,
@@ -2258,6 +2252,7 @@ window.addEventListener('blur', () => cameraMotion.releaseAll());
 // ------------------------------------------------------------- run loop
 /** The frame asked for, and the time between frames (`frameLoop.ts`). */
 const frameClock = new FrameClock(frame, () => booted && scene.opening);
+graphics.attach(scene, frameClock, requestDraw);
 /** The flat camera kept up with the view (what the tools measure their pixels with): ten times a second. */
 const flatCameraDue = new Periodic(0.1);
 /** The status bar, the inspector, the simulation's checks. */
@@ -2368,6 +2363,7 @@ function frame(now: number): void {
     : null);
   frameTimer.mark('poles');
   scene.draw(net, sim, alpha, wall, { holdRoads: terrainBrush.stroking });
+  graphics.frame();
   frameTimer.mark('drawing');
   drawnOnce = true;
   drawOverlayScreen();
@@ -3574,25 +3570,9 @@ function setMarkingStyle(value: string): void {
   requestDraw();
 }
 
-const QUALITY_STORAGE_KEY = 'roadcraft.quality';
-const savedQuality = (() => {
-  try {
-    return window.localStorage.getItem(QUALITY_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-})();
-gameState.set('quality', isQualityLevel(savedQuality) ? savedQuality : 'high', 'saved preference');
+gameState.set('quality', graphics.level, 'saved preference');
 function setQuality(value: string): void {
-  if (!isQualityLevel(value)) return;
-  gameState.set('quality', value, 'quality menu');
-  scene.setQuality(value);
-  try {
-    window.localStorage.setItem(QUALITY_STORAGE_KEY, value);
-  } catch {
-    // Not remembering the choice is not a reason to refuse it.
-  }
-  requestDraw();
+  if (isQualityLevel(value)) graphics.setPreset(value);
 }
 /** The game's state in the console (`core/gameState.ts`): `__state()` its values now and the last changes */
 (window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({

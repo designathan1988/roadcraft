@@ -27,11 +27,31 @@ export class FrameClock {
       this.channel.port2.postMessage(null);
       return;
     }
-    requestAnimationFrame((now) => {
-      this.pending = false;
-      this.frame(now);
-    });
+    requestAnimationFrame(this.shown);
   }
+
+  /** The player's frame cap, ms between frames (0 none): a display frame before it is due is let pass. */
+  private gap = 0;
+  /** When the next capped frame is due, on the display's clock. */
+  private due = 0;
+
+  /** At most `fps` frames a second (the options' frame limit); 0 lifts the cap. */
+  limit(fps: number): void {
+    this.gap = fps > 0 ? 1000 / fps : 0;
+    this.due = 0;
+  }
+
+  private readonly shown = (now: number): void => {
+    // Within a millisecond counts as due: the display's own clock jitters.
+    if (this.gap > 0 && now < this.due - 1) {
+      requestAnimationFrame(this.shown);
+      return;
+    }
+    // Due times step by the gap, so the rate holds on a display that does not divide it; after a pause it starts from now.
+    if (this.gap > 0) this.due = Math.max(this.due, now - this.gap / 2) + this.gap;
+    this.pending = false;
+    this.frame(now);
+  };
 
   /** Seconds since the last frame, read once at the start of each frame. */
   tick(now: number): number {

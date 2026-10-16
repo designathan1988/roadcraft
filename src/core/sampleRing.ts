@@ -3,6 +3,7 @@ export class SampleRing {
   private readonly values: Float32Array;
   private head = 0;
   private filled = 0;
+  private total = 0;
 
   constructor(readonly capacity: number) {
     this.values = new Float32Array(capacity);
@@ -12,10 +13,21 @@ export class SampleRing {
     return this.filled;
   }
 
+  /** Every sample ever pushed (cleared ones too): a reader tells the new ones by it. */
+  get pushed(): number {
+    return this.total;
+  }
+
+  /** The sample `back` places before the newest (0 the newest), `back` under `size`. */
+  newest(back = 0): number {
+    return this.values[(this.head - 1 - back + 2 * this.capacity) % this.capacity]!;
+  }
+
   push(value: number): void {
     this.values[this.head] = value;
     this.head = (this.head + 1) % this.capacity;
     if (this.filled < this.capacity) this.filled++;
+    this.total++;
   }
 
   clear(): void {

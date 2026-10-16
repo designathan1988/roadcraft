@@ -380,6 +380,8 @@ export interface ShellDeps {
   about(): void;
   readonly qualityLevels: readonly string[];
   setQuality(level: string): void;
+  /** Opens the graphics options (`ui/graphicsPanel.ts`). */
+  graphicsOptions(): void;
   markingStyle(): string;
   setMarkingStyle(style: string): void;
   setSky(mode: string): void;
@@ -696,6 +698,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
         row(t('action.saveMap'), () => deps.saveMap(), svg('m_save', 18)),
         el('hr'),
         seg(t('menu.quality'), deps.qualityLevels.map((q) => [q, t(`quality.${q}`)] as const), game.quality, (v) => deps.setQuality(v)),
+        row(t('menu.graphicsOptions'), () => deps.graphicsOptions(), svg('m_quality', 18)),
         seg(t('menu.language'), LANGUAGES.map((l) => [l.code, l.label] as const), language(), (v) => { if (v === 'en' || v === 'pt-BR') setLanguage(v); }),
         seg(t('menu.paint'), (['br', 'us', 'eu', 'classic'] as const).map((p) => [p, t(`paint.${p}`)] as const), deps.markingStyle(), (v) => deps.setMarkingStyle(v)),
         el('hr'),
