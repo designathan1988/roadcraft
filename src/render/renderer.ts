@@ -1,3 +1,4 @@
+import type { FarTiles } from './buildings/farLevels';
 import { jobPort } from '../jobs/jobPool';
 import { onEcologyRead } from './ecologyPool';
 import { GRID_CELL } from '@world/grid';
@@ -193,6 +194,8 @@ export interface SceneHandle {
   beginLoad(): void;
   /** What else the opening waits for besides the town drawn: the tiles round the camera come in (`worldStreamer.ts` settled); null: nothing. */
   holdOpening(until: (() => boolean) | null): void;
+  /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
+  readonly farBuildings: FarTiles;
   readonly backend: 'three-webgl';
   readonly viewport: Viewport;
   readonly scene: Scene;
@@ -2088,6 +2091,9 @@ export function createSceneRenderer(
     },
     holdOpening(until) {
       openingHeld = until;
+    },
+    get farBuildings() {
+      return buildings.far;
     },
     beginLoad() {
       reveal.begin();

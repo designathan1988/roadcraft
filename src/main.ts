@@ -1926,10 +1926,19 @@ function openStreamedWorld(options: WholeMapOptions, fresh: boolean): void {
   const generator = new TileGenerator(options);
   const store = new TileStore(`roadcraft.tiles.${options.seed}`, desktopStores ? storeTiles(desktopStores.parts) : portTiles(() => jobPort('save')),
     (i, j) => generator.generate(tileKey(i, j)));
-  const streamer = new WorldStreamer(doc, store,
-    (key, removedAt) => history.letGoTile((r) => tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt),
-    (why) => console.error('[world]', why),
-    () => requestDraw());
+  const far = scene.farBuildings;
+  const streamer = new WorldStreamer(doc, store, {
+    arrived: () => requestDraw(),
+    loaded: (key) => far.loadedChanged(key),
+    letGo: (key, removedAt) => {
+      history.letGoTile((r) => tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
+      far.loadedChanged(key);
+    },
+    written: (key, version) => far.stored(key, version),
+    failed: (why) => console.error('[world]', why),
+  });
+  // The buildings past the region drawn from the store, baked per tile in the workers (`buildings/farLevels.ts`).
+  far.setSource({ records: (key) => store.read(key) }, (key) => doc.hasTile(key));
   streamed = { store, generator, streamer };
   void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT });
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
@@ -3764,6 +3773,7 @@ const healthPanel = mountHealthPanel({
     if (streamed) {
       void streamed.streamer.flush();
       streamed.generator.dispose();
+      scene.farBuildings.setSource(null, () => false);
       streamed = null;
       persistence.paused = false;
       scene.holdOpening(null);

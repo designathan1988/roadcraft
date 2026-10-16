@@ -12,6 +12,10 @@ export const ACTIVE_RADIUS = 1;
 const KEEP_MARGIN = 1;
 /** Tiles asked of the store at once (each read, or made by the generator in a worker). */
 const IN_FLIGHT = 4;
+/** Tiles each way made ahead in the store (not put in the document): what the far levels draw from (`buildings/farLevels.ts`), ready when the camera comes. */
+export const AHEAD_RADIUS = 5;
+/** Tiles made ahead at once: behind the region's, one at a time. */
+const AHEAD_IN_FLIGHT = 1;
 /** Changed tiles are written this often (and always before they are let go). */
 const WRITE_EVERY_MS = 5_000;
 
@@ -22,6 +26,19 @@ export function tileOfRecord(part: string, id: number, value: unknown): number |
   if (v?.corners?.length) return OWNER.at(lotCentre(v as { corners: readonly { x: number; y: number }[] }));
   if (v?.points?.length) return OWNER.at(v.points[0]!);
   return id >= TILE_IDS && (part === 'segments' || part === 'poleSpans') ? Math.floor(id / TILE_IDS) - 1 : null;
+}
+
+/** What the streamer tells the game */
+export interface StreamerEvents {
+  /** A tile came from the store: a frame to put it in (the frames are drawn on demand, `frameLoop.ts`). */
+  arrived?(): void;
+  /** A tile put in the page's document. */
+  loaded?(key: number): void;
+  /** A tile let go, and the stretches of the lists it took (undo forgets what it named, `History.letGoTile`). */
+  letGo?(key: number, removedAt: ReadonlyMap<ListPart, readonly number[]>): void;
+  /** A tile written at a version (what is baked of it is stale). */
+  written?(key: number, version: number): void;
+  failed?(why: string): void;
 }
 
 /** Where tiles come from and go to: the store, which makes a tile it does not have (`editor/tileStore.ts`). */
@@ -44,14 +61,14 @@ export class WorldStreamer {
   private wanted: number[] = [];
   private around = { i: Number.NaN, j: Number.NaN };
   private lastWrite = 0;
+  /** Tiles known to be in the store (read or made this session), and those being made ahead now. */
+  private readonly known = new Set<number>();
+  private readonly ahead = new Set<number>();
+  /** The tiles to make ahead, nearest first, round the camera's tile. */
+  private aheadOrder: number[] = [];
   private writing: Promise<unknown> = Promise.resolve();
 
-  /** `letGo`: a tile let go, and the stretches of the lists it took (undo forgets what it named, `History.letGoTile`). */
-  constructor(private readonly doc: RoadDoc, private readonly source: TileSource,
-    private readonly letGo: (key: number, removedAt: ReadonlyMap<ListPart, readonly number[]>) => void = () => {},
-    private readonly failed: (why: string) => void = () => {},
-    /** A tile came: a frame to put it in (the frames are drawn on demand, `frameLoop.ts`). */
-    private readonly arrived: () => void = () => {}) {}
+  constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private readonly tell: StreamerEvents = {}) {}
 
   /** The camera's focus on the map (x, y): the tiles around it wanted, the nearest asked first. */
   focus(x: number, y: number): void {
@@ -59,6 +76,7 @@ export class WorldStreamer {
     if (i === this.around.i && j === this.around.j) { this.ask(); return; }
     this.around = { i, j };
     this.wanted = tilesAround(i, j, ACTIVE_RADIUS).map((t) => tileKey(t.i, t.j));
+    this.aheadOrder = tilesAround(i, j, AHEAD_RADIUS).map((t) => tileKey(t.i, t.j));
     this.ask();
   }
 
@@ -76,11 +94,12 @@ export class WorldStreamer {
       if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
       this.doc.loadTile(records);
       this.versions.set(key, records.version);
+      this.tell.loaded?.(key);
     }
     for (const key of [...this.doc.loadedTiles]) {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
       if (this.dirty.has(key)) this.write(key);
-      this.letGo(key, this.doc.unloadTile(key));
+      this.tell.letGo?.(key, this.doc.unloadTile(key));
       this.versions.delete(key);
     }
     if (now - this.lastWrite >= WRITE_EVERY_MS) {
@@ -102,22 +121,50 @@ export class WorldStreamer {
     return Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j)) <= radius;
   }
 
-  /** The nearest wanted tiles not here nor asked: asked of the store, a few at a time. */
+  /** The nearest wanted tiles not here nor asked: asked of the store, a few at a time; then the tiles ahead made in the store, one at a time. */
   private ask(): void {
+    this.askAhead();
     for (const key of this.wanted) {
       if (this.asked.size >= IN_FLIGHT) return;
       if (this.doc.hasTile(key) || this.asked.has(key) || this.ready.has(key)) continue;
       this.asked.add(key);
       this.source.load(key).then((records) => {
         this.asked.delete(key);
+        this.noteKnown(key, records.version);
         this.ready.set(key, records);
-        this.arrived();
+        this.tell.arrived?.();
         this.ask();
       }, (error: unknown) => {
         this.asked.delete(key);
-        this.failed(`tile ${key}: ${String(error)}`);
+        this.tell.failed?.(`tile ${key}: ${String(error)}`);
       });
     }
+  }
+
+  /** The tiles round the region made in the store ahead of the camera, behind the region's own asks (the far levels draw them, `written`). */
+  private askAhead(): void {
+    if (this.asked.size > 0) return;
+    for (const key of this.aheadOrder) {
+      if (this.ahead.size >= AHEAD_IN_FLIGHT) return;
+      if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key)) continue;
+      this.ahead.add(key);
+      this.source.load(key).then((records) => {
+        this.ahead.delete(key);
+        this.noteKnown(key, records.version);
+        this.ask();
+      }, (error: unknown) => {
+        this.ahead.delete(key);
+        this.known.add(key);
+        this.tell.failed?.(`tile ${key} ahead: ${String(error)}`);
+      });
+    }
+  }
+
+  /** A tile seen in the store: told once (the far levels bake it). */
+  private noteKnown(key: number, version: number): void {
+    if (this.known.has(key)) return;
+    this.known.add(key);
+    this.tell.written?.(key, version);
   }
 
   /** The tiles the edits since the last look reached: to be written (the loads and unloads of tiles are not edits, `isStreaming`). */
@@ -149,7 +196,7 @@ export class WorldStreamer {
     this.versions.set(key, version);
     const records = this.doc.tileRecords(key, version);
     this.writing = this.writing.then(() => this.source.write(records)).then((ok) => {
-      if (!ok) this.failed(`tile ${key} was not written`);
-    }, (error: unknown) => this.failed(`tile ${key} was not written: ${String(error)}`));
+      if (ok) this.tell.written?.(key, version); else this.tell.failed?.(`tile ${key} was not written`);
+    }, (error: unknown) => this.tell.failed?.(`tile ${key} was not written: ${String(error)}`));
   }
 }
