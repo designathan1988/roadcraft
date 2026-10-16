@@ -268,7 +268,7 @@ is hidden every frame (no overdraw).
 ## Commits, branches, agents
 - `git status` first; commit only your paths (`git commit --only <paths>`) after reading their
   `git diff`. Every file saved in the main folder reloads the game on 5300.
-- Agents: up to 5 running at once, to speed the work (player's order, 2026-10-16: what froze his PC was
+- Agents: up to 10 running at once, to speed the work (player's order, 2026-10-16: what froze his PC was
   each agent opening the 10 km city, not their number); the others wait their turn. Never open a window
   on the player's screen (no visible browser, Electron or console windows; headless only). Each one in
   its own worktree made from local `main` (check its first commit: the tool may cut it from an old one),
