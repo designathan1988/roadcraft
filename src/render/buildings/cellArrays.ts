@@ -91,6 +91,51 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
   return { shells, parts, furniture };
 }
 
+/** Numbers per vertex of the far level's window grid (`buildingMesh.ts` `FacadeStamp`): bay and level (u, v), bay width and storey height, kind, volume * 4 + side, the facade's direction along (world plan). */
+export const FACADE_FLOATS = 8;
+/** Bytes per vertex of the far level's opening (a0, a1, h0, h1, shares of the bay) its frames' colour (r, g, b) and whether its rooms are offices (255) or homes (0). */
+export const FACADE_BYTES = 8;
+
+/** One finish of a cell's far level (L1): the shell's arrays, and each vertex's window grid for the shader (`facadeLevel.ts`). */
+export interface FacadeArrays extends ShellArrays {
+  readonly facade: Float32Array;
+  readonly opening: Uint8Array;
+}
+
+/** A cell's far level (L1), by finish: its buildings emitted again as runs of bays (`emitChunk` `far`). */
+export type CellFacade = Readonly<Partial<Record<Finish, FacadeArrays>>>;
+
+/** The far level of `chunks` (emitted `far`) as one set of arrays per finish; null when none has a shell. */
+export function cellFacade(chunks: readonly BuildingChunk[]): CellFacade | null {
+  const out: Partial<Record<Finish, FacadeArrays>> = {};
+  let any = false;
+  for (const finish of FINISHES) {
+    const shell = shellArrays(chunks, finish);
+    if (!shell) continue;
+    const vertices = shell.position.length / 3;
+    const facade = new Float32Array(vertices * FACADE_FLOATS);
+    const opening = new Uint8Array(vertices * FACADE_BYTES);
+    let v = 0;
+    for (const chunk of chunks) {
+      const part = chunk.shells[finish];
+      if (!part) continue;
+      if (part.facade) facade.set(part.facade, v * FACADE_FLOATS);
+      if (part.opening) opening.set(part.opening, v * FACADE_BYTES);
+      v += part.position.length / 3;
+    }
+    out[finish] = { ...shell, bounds: shellBounds(shell.position), facade, opening };
+    any = true;
+  }
+  return any ? out : null;
+}
+
+/** Every buffer of a cell's far level: handed over, not copied. */
+export function cellFacadeBuffers(f: CellFacade): ArrayBuffer[] {
+  const out: ArrayBufferLike[] = [];
+  for (const s of Object.values(f)) if (s) out.push(s.position.buffer, s.normalDecay.buffer, s.colour.buffer, s.uv.buffer, s.index.buffer, s.bounds.buffer, s.facade.buffer, s.opening.buffer);
+  return out as ArrayBuffer[];
+}
+
 /** A cell's buildings from afar as one mesh's arrays (`massCells.ts`) */
 export interface CellMass {
   readonly position: Float32Array;

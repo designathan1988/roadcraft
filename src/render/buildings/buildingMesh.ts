@@ -335,7 +335,36 @@ class ShellPart {
   readonly index: number[] = [];
   /** The building's decay at each vertex (`Building.decay`), for the weathering shader. */
   readonly decay: number[] = [];
+  /** The far level only (`Shell.far`): each vertex's window grid, `FACADE_FLOATS` numbers (`cellArrays.ts`): u, v, W, H, kind, volume * 4 + side, tx, ty. */
+  readonly facade: number[] = [];
+  /** The far level only: each vertex's opening in its bay (a0, a1, h0, h1), its frames' colour (r, g, b) and office flag, `FACADE_BYTES` numbers 0..255. */
+  readonly opening: number[] = [];
 }
+
+/** What the windows of a run of bays are, for the far level's shader to draw them where the detail has them (`facadeLevel.ts`) */
+interface FacadeStamp {
+  /** `FACADE_KIND`. */
+  readonly kind: number;
+  readonly volume: number;
+  readonly side: number;
+  /** The run's direction along the facade, world plan. */
+  readonly tx: number;
+  readonly ty: number;
+  /** One bay's width and one storey's height. */
+  readonly W: number;
+  readonly H: number;
+  /** The opening in its bay, shares of W and H. */
+  readonly opening: readonly [number, number, number, number];
+  /** The frames' colour (the trim), linear 0..1. */
+  readonly trim: readonly [number, number, number];
+  /** Each point's bay (u) and level (v), whole numbers at the run's bay and storey lines. */
+  readonly uv: readonly (readonly [number, number])[];
+  /** Offices and shops: their lit rooms take the offices' lamps (`roomLamps.ts`). */
+  readonly office: boolean;
+}
+
+/** A share 0..1 as a byte. */
+const toByte = (x: number): number => Math.round(Math.max(0, Math.min(1, x)) * 255);
 
 /** Triangles in THREE's axes, one buffer set per finish; winding fixed per face. */
 /** The lattice value of `macroNoise` at (i, j, k), 0..1. */
@@ -368,6 +397,10 @@ class Shell {
   ground = Number.NaN;
   /** How run-down the building being emitted is (`Building.decay`): stains, peeling paint, grime. */
   decay = 0;
+  /** The far level being emitted (`emitChunk` `far`): every vertex carries a window grid (`kind` 0: none). */
+  far = false;
+  /** The windows of the face being laid (the far level's runs of bays). */
+  stamp: FacadeStamp | null = null;
 
   /** DO NOT lay only the first two triangles: a lantern's octagonal and 24-sided caps */
   face(points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], c: Paint, shades?: readonly number[]): void {
@@ -411,6 +444,17 @@ class Shell {
       colour.push(rgb[0] * tone, rgb[1] * tone, rgb[2] * tone);
       decay.push(this.decay);
       uv.push(x * tx + y * ty, x * bx + y * by + z * bz);
+      if (this.far) {
+        const st = this.stamp;
+        if (st) {
+          const [u, v] = st.uv[i]!;
+          part.facade.push(u, v, st.W, st.H, st.kind, st.volume * 4 + st.side, st.tx, st.ty);
+          part.opening.push(toByte(st.opening[0]), toByte(st.opening[1]), toByte(st.opening[2]), toByte(st.opening[3]), toByte(st.trim[0]), toByte(st.trim[1]), toByte(st.trim[2]), st.office ? 255 : 0);
+        } else {
+          part.facade.push(0, 0, 0, 0, 0, 0, 0, 0);
+          part.opening.push(0, 0, 0, 0, 0, 0, 0, 0);
+        }
+      }
     }
     // In three's axes (x, z, -y): the winding measured against the normal.
     const p0 = points[0]!, p1 = points[1]!, p2 = points[2]!;
@@ -555,6 +599,8 @@ class Emitter {
   room: ((a: number, h: number) => readonly number[]) | null = null;
 
   put(kind: PartKind, f: BayFace, a: number, h: number, depth: number, sx: number, sy: number, sz: number, colour?: Color, turn = 0): void {
+    // The far level has no parts: its windows are drawn on its walls (`facadeLevel.ts`).
+    if (this.shell.far) return;
     const p = this.P(f, a, h, depth);
     const n = this.N(f.nx, f.ny);
     const placement: Placement = { x: p[0], y: p[1], z: p[2], yaw: Math.atan2(n[0], -n[1]) + turn, sx, sy, sz };
@@ -568,6 +614,7 @@ class Emitter {
 
   /** An instance at a point of the building's plan (`L`), square to the building, its centre at height `z`. */
   putAt(kind: PartKind, lx: number, ly: number, z: number, sx: number, sy: number, sz: number): void {
+    if (this.shell.far) return;
     const p = this.L(lx, ly, z);
     const n = this.N(0, 1);
     this.parts[kind].push({ x: p[0], y: p[1], z: p[2], yaw: Math.atan2(n[0], -n[1]), sx, sy, sz });
@@ -689,6 +736,8 @@ function emitBuilding(
   // The rooms behind the windows, a storey of a block at a time: the interior the cut-open view draws.
   const interiors = new Map<number, FloorInterior>();
   const roomsOf = new Map<string, ReturnType<typeof roomsOfStorey>>();
+  // The far level's bays, laid as runs once all are known.
+  const farBays: FarBay[] = [];
   for (const bay of bays) {
     const v = volumes.get(bay.volume) as Volume;
     const face: BayFace = { ...sideFrame(v, bay.side, bay.start, bay.push), z0: floor + bay.z, W: bay.width, H: bay.height };
@@ -723,25 +772,30 @@ function emitBuilding(
       }
       e.rect(face, 0, face.W, 0, face.H, m(0.25), e.N(-face.nx, -face.ny), inner);
     }
-    e.slot = slotOfBay(b, v, bay, spacesOf, slots);
-    if (b.id >= 0 && b.cutaway === undefined) {
-      const key = `${v.id}:${bay.level}`;
-      let look = roomsOf.get(key);
-      if (!look) {
-        let inside = interiors.get(bay.level);
-        if (!inside) { inside = interiorAt(b, bay.level); interiors.set(bay.level, inside); }
-        look = roomsOfStorey(b, v, inside, bay.level);
-        roomsOf.set(key, look);
+    if (shell.far && bay.component !== 'pillar' && recess <= 0) {
+      // The far level: the bay's wall is laid with its storey's run (`emitFacadeRuns`), its opening drawn by the shader.
+      farBays.push({ bay, wall: wallOf(v, bay.side, bay.storey), opening: openingOf(bay.component, bay.width, bay.height, controls), ground: floor + volumeLift(v) });
+    } else {
+      e.slot = slotOfBay(b, v, bay, spacesOf, slots);
+      if (b.id >= 0 && b.cutaway === undefined) {
+        const key = `${v.id}:${bay.level}`;
+        let look = roomsOf.get(key);
+        if (!look) {
+          let inside = interiors.get(bay.level);
+          if (!inside) { inside = interiorAt(b, bay.level); interiors.set(bay.level, inside); }
+          look = roomsOfStorey(b, v, inside, bay.level);
+          roomsOf.set(key, look);
+        }
+        const behind = look;
+        e.room = (a, h) => behind(face.ax, face.ay, face.tx, face.ty, face.nx, face.ny, a, h, face.H - m(0.3));
       }
-      const behind = look;
-      e.room = (a, h) => behind(face.ax, face.ay, face.tx, face.ty, face.nx, face.ny, a, h, face.H - m(0.3));
+      // The base weathered at the block's own foot (a split level stands at its own floor).
+      shell.ground = floor + volumeLift(v);
+      emitBay(e, face, bay, wallOf(v, bay.side, bay.storey), frameTrim, awning, left, right, recess, controls);
+      shell.ground = floor;
+      e.slot = -1;
+      e.room = null;
     }
-    // The base weathered at the block's own foot (a split level stands at its own floor).
-    shell.ground = floor + volumeLift(v);
-    emitBay(e, face, bay, wallOf(v, bay.side, bay.storey), frameTrim, awning, left, right, recess, controls);
-    shell.ground = floor;
-    e.slot = -1;
-    e.room = null;
     const ribDepth = controls?.pierDepth ?? (grammar === 'artDecoCrown' ? m(.65) : grammar === 'artDeco' ? m(.3) : 0);
     if (ribDepth > 0 && bay.index % (controls?.pierEvery ?? 1) === 0) {
       // Shallow, continuous-looking stone pilasters give every mass a vertical rhythm while retaining individually editable
@@ -757,6 +811,7 @@ function emitBuilding(
       e.jamb(face, a1, foot, face.H, depth, 0, e.N(face.tx, face.ty), stone);
     }
   }
+  if (farBays.length > 0) emitFacadeRuns(e, volumes, floor, farBays, frameTrim);
 
   // ---- reliefs: the cheeks, head and sill of every face region pushed in or out
   for (const v of b.volumes) {
@@ -989,6 +1044,110 @@ function emitStreak(e: Emitter, f: BayFace, bay: FacadeBay, am: number, w: numbe
   const out = -m(0.012);
   e.shell.face([e.P(f, am - half, sill - reach, out), e.P(f, am + half, sill - reach, out), e.P(f, am + half, sill - m(0.02), out), e.P(f, am - half, sill - m(0.02), out)],
     e.N(f.nx, f.ny), wall, [1, 1, dark, dark]);
+}
+
+/** A bay of the far level: its wall's paint, its opening (none: a plain wall) and the foot its grime is measured from. */
+interface FarBay {
+  readonly bay: FacadeBay;
+  readonly wall: Paint;
+  readonly opening: Opening | null;
+  readonly ground: number;
+}
+
+/** How the far level's shader fills a bay's opening (`facadeLevel.ts` reads the same numbers), after `emitBay`'s panes */
+export const FACADE_KIND = { none: 0, window: 1, clear: 2, darkQuarter: 3, darkFifth: 4, door: 5, shutterDoor: 6 } as const;
+
+/** The far level's kind of a bay's opening: which panes, doors or shutters `emitBay` puts in it. */
+function facadeKind(c: BayComponent): number {
+  switch (c) {
+    // Dark one bay in four of twenty, a roller shutter part way down in four (`bayHash`).
+    case 'window': return FACADE_KIND.window;
+    case 'sashWindow': case 'wideWindow': case 'balcony': case 'shopfront': return FACADE_KIND.clear;
+    case 'loggia': case 'shutteredWindow': case 'gourmet': return FACADE_KIND.darkQuarter;
+    case 'brise': case 'frenchWindow': case 'bayWindow': case 'ribbon': return FACADE_KIND.darkFifth;
+    case 'door': case 'doubleDoor': return FACADE_KIND.door;
+    case 'loadingDoor': case 'garageDoor': return FACADE_KIND.shutterDoor;
+    default: return FACADE_KIND.none;
+  }
+}
+
+/** Two lengths the same to the emitter's sums. */
+const sameLength = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6;
+
+/** A run of bays the far level lays as one quad: its first bay, how many along, how many storeys up. */
+interface FarRun {
+  readonly first: FarBay;
+  readonly key: string;
+  readonly kind: number;
+  bays: number;
+  storeys: number;
+}
+
+/** DO NOT lay the far level bay by bay: a storey of like bays is one quad, like storeys over the base one quad, the windows drawn by the shader (`facadeLevel.ts`) */
+function emitFacadeRuns(e: Emitter, volumes: ReadonlyMap<number, Volume>, floor: number, list: readonly FarBay[], trim: Paint): void {
+  // Bays alike: same block, side, plane, bay and storey size, paint, opening and grime foot.
+  const keyOf = (x: FarBay, kind: number): string => {
+    const { bay, wall, opening: o } = x;
+    const open = o && kind !== FACADE_KIND.none ? `${o.a0.toFixed(4)},${o.a1.toFixed(4)},${o.h0.toFixed(4)},${o.h1.toFixed(4)}` : '-';
+    return `${bay.volume}|${bay.side}|${bay.push.toFixed(4)}|${bay.width.toFixed(4)}|${bay.height.toFixed(4)}|${wall.finish}|${wall.rgb.join(',')}|${kind}|${open}|${x.ground.toFixed(4)}`;
+  };
+  // Along each storey: bays side by side, each the next index, make one run.
+  const sorted = [...list].sort((a, b) => a.bay.volume - b.bay.volume || a.bay.side - b.bay.side || a.bay.level - b.bay.level || a.bay.push - b.bay.push || a.bay.start - b.bay.start);
+  const rows: FarRun[] = [];
+  let last: FarRun | null = null;
+  for (const x of sorted) {
+    const kind = x.opening ? facadeKind(x.bay.component) : FACADE_KIND.none;
+    const key = keyOf(x, kind);
+    const at = last ? last.first.bay : null;
+    if (last && at && last.key === key && at.level === x.bay.level && x.bay.index === at.index + last.bays
+      && sameLength(at.start + last.bays * at.width, x.bay.start)) {
+      last.bays++;
+      continue;
+    }
+    last = { first: x, key, kind, bays: 1, storeys: 1 };
+    rows.push(last);
+  }
+  // Up the facade: a run over another alike, the same bays, one storey higher, joins it, but never over the base storey the grime darkens.
+  const runs: FarRun[] = [];
+  const open = new Map<string, FarRun>();
+  rows.sort((a, b) => a.first.bay.level - b.first.bay.level);
+  for (const row of rows) {
+    const bay = row.first.bay;
+    const slot = `${row.key}|${bay.index}|${row.bays}|${bay.start.toFixed(4)}`;
+    const below = open.get(slot);
+    if (below) {
+      const base = below.first.bay;
+      const clear = floor + base.z - below.first.ground >= GRIME_REACH;
+      if (clear && bay.level === base.level + below.storeys && sameLength(base.z + below.storeys * base.height, bay.z)) {
+        below.storeys++;
+        continue;
+      }
+    }
+    open.set(slot, row);
+    runs.push(row);
+  }
+  const shell = e.shell;
+  const tc = trimColour(trim);
+  const ground = shell.ground;
+  for (const run of runs) {
+    const { bay, wall, opening: o, ground: foot } = run.first;
+    const v = volumes.get(bay.volume) as Volume;
+    const W = bay.width, H = bay.height;
+    const f: BayFace = { ...sideFrame(v, bay.side, bay.start, bay.push), z0: floor + bay.z, W: W * run.bays, H: H * run.storeys };
+    const along = e.N(f.tx, f.ty);
+    const u0 = bay.index, u1 = bay.index + run.bays, v0 = bay.level, v1 = bay.level + run.storeys;
+    shell.ground = foot;
+    shell.stamp = {
+      kind: run.kind, volume: bay.volume, side: bay.side, tx: along[0], ty: along[1], W, H,
+      opening: o && run.kind !== FACADE_KIND.none ? [o.a0 / W, o.a1 / W, o.h0 / H, o.h1 / H] : [0, 0, 0, 0],
+      trim: [tc.r, tc.g, tc.b],
+      uv: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]],
+      office: e.building.use === 'commercial' || e.building.use === 'industrial',
+    };
+    e.rect(f, 0, f.W, 0, f.H, 0, e.N(f.nx, f.ny), wall);
+    shell.stamp = null;
+  }
+  shell.ground = ground;
 }
 
 /** A stable number per bay, for choosing among window variants. */
@@ -3061,9 +3220,11 @@ export function signatureFloorOf(b: Building, naturalAt: GroundAt, pavedAt?: Pav
   return resolved.volumes.some((v) => !v.open) ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
 }
 
-export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed): BuildingChunk {
+/** `far`: the building's far level (L1) - walls as runs of bays with their windows drawn by the shader, no parts (`facadeLevel.ts`). */
+export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed, far = false): BuildingChunk {
   const shell = new Shell();
   shell.decay = b.decay ?? 0;
+  shell.far = far;
   const parts = Object.fromEntries(PART_KINDS.map((k) => [k, [] as Placement[]])) as Record<PartKind, Placement[]>;
   // The blocks as drawn: unions, cuts and intersections resolved, the stored blocks untouched (`world/buildings/blocks.ts`).
   const resolved = resolveBlocks(b);
@@ -3114,6 +3275,7 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
       uv: new Float32Array(part.uv),
       index: new Uint32Array(part.index),
       decay: new Float32Array(part.decay),
+      ...(far ? { facade: new Float32Array(part.facade), opening: new Uint8Array(part.opening) } : {}),
     };
   }
   let furniture: Partial<Record<FurnitureKind, PartBatch>> | undefined;

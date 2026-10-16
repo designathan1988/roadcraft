@@ -2,7 +2,9 @@ import type { Finish } from '@world/buildings/materials';
 import type { Building } from '@world/buildings/types';
 import { type PavingData, pavingReader } from '@world/paving';
 import { emitChunk } from './buildingMesh';
-import { type CellArrays, type CellMass, type CellSelection, type KitBoxes, cellArrays, cellBuffers, cellMass, cellMassBuffers } from './cellArrays';
+import {
+  type CellArrays, type CellFacade, type CellMass, type CellSelection, type KitBoxes, cellArrays, cellBuffers, cellFacade, cellFacadeBuffers, cellMass, cellMassBuffers,
+} from './cellArrays';
 import type { BuildingChunk, CellJobEntry, LotGroundRecipe } from './chunk';
 import type { FlagInstance } from './flagLayer';
 import { PART_KINDS } from './kit';
@@ -19,8 +21,8 @@ export const PAVED = 2;
 
 export type { CellEntry,  } from './chunk';
 
-/** What a job makes: a cell's detail (its coarse batch and its detail cells'), a cell's buildings faded */
-export type JobKind = 'cell' | 'mass' | 'summary';
+/** What a job makes: a cell's detail (its coarse batch and its detail cells'), a cell's buildings faded, its far level (`facade`: L1, `emitChunk` `far`) */
+export type JobKind = 'cell' | 'mass' | 'summary' | 'facade';
 
 export interface CellJob {
   readonly id: number;
@@ -51,6 +53,8 @@ export interface CellResult {
   readonly summaries: readonly ChunkSummary[];
   /** The cell's masses ('mass'): null when none of its buildings has any. */
   readonly mass?: CellMass | null;
+  /** The cell's far level ('facade'): null when none of its buildings has a shell. */
+  readonly facade?: CellFacade | null;
 }
 
 export type WorkReply =
@@ -64,6 +68,7 @@ export function replyBuffers(reply: WorkReply): ArrayBuffer[] {
   const out = reply.result.batch ? cellBuffers(reply.result.batch) : [];
   for (const [, arrays] of reply.result.details) out.push(...cellBuffers(arrays));
   if (reply.result.mass) out.push(...cellMassBuffers(reply.result.mass));
+  if (reply.result.facade) out.push(...cellFacadeBuffers(reply.result.facade));
   return out;
 }
 
@@ -150,7 +155,7 @@ export class CellWork {
       };
       const paved = job.paved ? reading(PAVED) : undefined;
       if (job.kind === 'mass') e.mass = emitMassing(e.building, reading(GROUND), paved, reading(NATURAL), drawsSignature(e.building), this.tone);
-      else e.chunk = emitChunk(e.building, reading(GROUND), paved, reading(NATURAL));
+      else e.chunk = emitChunk(e.building, reading(GROUND), paved, reading(NATURAL), undefined, job.kind === 'facade');
       e.asked = points;
       if (points.length) { need.push(...points); continue; }
       e.done = true;
@@ -171,6 +176,8 @@ export class CellWork {
       return { kind: 'done', job: job.id, result: { batch: null, details: [], summaries: [], mass: cellMass(masses) } };
     }
     const chunks = state.emitting.map((e) => e.chunk!);
+    // The far level: its walls and windows only, the page keeps nothing else of it.
+    if (job.kind === 'facade') return { kind: 'done', job: job.id, result: { batch: null, details: [], summaries: [], facade: cellFacade(chunks) } };
     const summaries: ChunkSummary[] = state.emitting.map((e) => {
       const { flags, lotGround, signatureFloor } = e.chunk!;
       return { key: e.entry.key, ...(flags ? { flags } : {}), lot: lotGround?.recipe ?? null, ...(signatureFloor !== undefined ? { signatureFloor } : {}) };

@@ -38,6 +38,10 @@ export interface ShellChunk {
   readonly colour: Float32Array;
   readonly uv: Float32Array;
   readonly index: Uint32Array;
+  /** The far level only (`emitChunk` `far`): each vertex's window grid, `FACADE_FLOATS` numbers (`cellArrays.ts`). */
+  readonly facade?: Float32Array;
+  /** The far level only: each vertex's opening and frame colour, `FACADE_BYTES` bytes. */
+  readonly opening?: Uint8Array;
 }
 
 export interface BuildingChunk {

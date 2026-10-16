@@ -37,7 +37,7 @@ const MOST_LANES = 4;
 /** DO NOT post every job at once: a worker reads its messages in order */
 const ACTIVE_PER_LANE = 1;
 /** Which jobs a lane begins first (lower first). */
-const PRIORITY: Readonly<Record<JobKind, number>> = { cell: 0, mass: 1, summary: 2 };
+const PRIORITY: Readonly<Record<JobKind, number>> = { cell: 0, facade: 0.5, mass: 1, summary: 2 };
 
 export class CellPool {
   private lanes: Lane[] | null = null;
