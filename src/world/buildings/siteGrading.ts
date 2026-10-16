@@ -15,7 +15,7 @@ export interface SiteGrading {
   readonly pads: TownPads | null;
   /** What changed among the buildings since the ground was graded: the box of each site added, removed or changed */
   changedSites(buildings: BuildingStore): SiteBox[] | null;
-  /** A building's platform worked out again (the roads round it moved). */
+  /** A building's platform worked out again (the roads round it moved), on its floor as the floors keep it (follow them first). */
   refresh(b: Building): void;
   /** The town's platforms put together from each building's (`pads`); null for a town with none. */
   rebuild(buildings: BuildingStore): void;
@@ -103,7 +103,7 @@ export function siteGrading(
     get pads() { return padsCache; },
     changedSites,
     refresh(b) {
-      floors?.forget(b);
+      // DO NOT forget its floor here: the floors follow the diary themselves (`floors.ts` `follow`, read before the platforms are), and a floor still right was worked out again for every building a road block reached.
       padsKnown.set(b, padOf(b, groundAt, pavedAt, apron, floorOf));
       refreshed.add(b.id);
     },
