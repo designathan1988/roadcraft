@@ -276,7 +276,9 @@ is hidden every frame (no overdraw).
 - Agents run NO process besides git and reading/writing files (player's order, 2026-10-16, repeated: tests and
   typechecks running all the time froze his PC): no tsc, no vitest, no eslint, no check-code, no Vite, no browser.
   They write the code and its unit tests and commit. The coordinator runs the typecheck and the touched tests once
-  per merge, through `run-limited`, and opens the game only once at the end of a block.
+  per merge, through `run-limited`, and opens the game only once at the end of a block — with a SMALL city
+  (`{ "city": { "size": "small" } }`): enough to see that it works and looks right. The 10 km city only proves scale
+  (memory, worst-case frame, opening time): once, at the phase gate, never per merge.
 - Effort high for normal work; xhigh only to decide architecture and at phase gates. Grep before
   Read; in a file over 800 lines read only the part that matters. During a block only the
   typecheck and the tests of what was touched; the full check and the route at the end of the
