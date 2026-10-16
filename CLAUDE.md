@@ -271,6 +271,11 @@ incremental path (`setActive`); the near road surfaces skip a road tile whose ce
 roads draw every tile not active (`isLoaded = hasTile && isActive`; a changed ring tile is written at once); the
 simulation's worker holds the active tiles' roads, lots and buildings alone (`SimClient.setActive`/`activeChanged`:
 the ring's traffic is the meso's from the store's tables; a node a held road ends on is sent with the held legs alone).
+ALSO DONE 2026-10-16 (bf52d9a, 965a9a0, a9de236): a road block brought back to full detail copies its arrays from the kept
+tiles off the page (`BlockLevels.bring`, `roadResidency.ts` makeNear; was: cut and triangulated on the page, 3 blocks every
+6 frames while moving); a fresh opening generates as many tiles at once as the pool holds less three (`tileLanes`, was 4:
+three rounds of 2-25 s); a plate's paint keeps what a tile that left the page laid (`flatAtlas.ts` plateDabs; was: every
+shown plate's layers rastered and sent again and the ecology read again at each tile let go).
 Still open from the solution's parts: 5.2 roads per pixel (the coarse level resident for every block of the active
 region), 5.4 for the other near products of the active region (gardens, furniture, poles, structure details: by the
 diary over the 3 x 3, not the ring: not yet filtered), 5.5 pixel cost on the integrated GPU (the player's call, with
@@ -370,7 +375,7 @@ O(map) per edit
   `'utilities'` without ids. 28 `JSON.stringify` comparisons in `doc.ts` `replaceContents`.
 - Terrain: a stamp discards the worker-built mesh (`terrain.ts:3125`); `new TerrainIndex` of every
   stamp per revision (`:3102`); textures and buffers re-uploaded whole (no `addUpdateRange`).
-- `flatAtlas.ts`: each plate filters every paint dab (`:435-444`) and every terrain stamp (`sync`,
+- `flatAtlas.ts`: each plate filters every paint dab at each paint change (`takePaint`; the plate's list is kept, a9de236) and every terrain stamp (`sync`,
   `doc.terrainStamps.filter`); `letGo` throws a plate away and it is rebuilt when it returns (`:299-307`).
 - The rivers' stones are swept again over the whole water box at each water rebuild (`renderer.ts`
   `resweepShore`): it follows `terrain.ts` `rebuildWater`, which rebuilds all the water at any stamp.
