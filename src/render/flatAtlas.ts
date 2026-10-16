@@ -2,7 +2,7 @@ import { BufferAttribute, BufferGeometry, Group, Mesh, MeshStandardMaterial, typ
 import type { CoverKind, GeologyKind, PaintDab } from '@world/terrainPaint';
 import { reliefHeight, type ReliefVersion, type TerrainStamp } from '@world/terrain';
 import type { RoadDoc } from '@world/doc';
-import { PLATE_SIZE, plateIJ, plateOf, plateRegion, platesAround, platesOver } from '@world/bounds';
+import { PLATE_SIZE, plateOf, plateRegion, platesAround, platesOver } from '@world/bounds';
 import { type ChangeKind, type ChangeRect, isStreaming } from '@world/changes';
 import { plateDabs, sameList } from './platePaint';
 import { JournalCursor } from '@world/derived';
@@ -33,6 +33,7 @@ import type { Aabb } from '@core/aabb';
 import type { NaturalPlate } from './groundShape';
 import { GroundShare, type SharedGroundAt } from './sharedGround';
 import { setJobFocus } from '../jobs/jobPool';
+import { MAP_HALF } from '@world/cityGen/wholeMap';
 
 /** THE WORLD'S GROUND, plate by plate of the unbounded grid (`world/bounds.ts`): the plates near the view made in full, a ring of far patches round it, nothing beyond */
 
@@ -50,12 +51,10 @@ const CONTENT_KINDS: readonly ChangeKind[] = ['roads', 'buildings', 'lots', 'uti
 /** A load or an unload of a tile (CLAUDE.md, "Streaming world"): what a plate holds is read again from the document. */
 const TILE_UNLOADED = 'tile unloaded';
 
-/** THE FAR RING: plates each way from the ring's centre plate drawn as far patches (7 x 7 plates, about 14 km), its cut sides round it */
-const FAR_RING = 3;
+/** THE MAP'S GROUND (`wholeMap.ts` MAP_HALF, the player's order: never a world without an edge): every plate of the map drawn as far patches round the origin's plate (5 x 5 plates, 10 km; the map's edge lies on the plates' edges), its cut sides on the map's edge, nothing past it */
+const FAR_RING = Math.round(MAP_HALF / PLATE_SIZE - 0.5);
 /** Far plates there are at once: the ring's square, each in its own slot of the far mesh and of the far woods. */
 const FAR_SLOTS = (2 * FAR_RING + 1) ** 2;
-/** How far the view's focus goes from the ring's centre plate before the ring follows it: a quarter plate past its edge, so a focus on an edge does not swap a row of plates back and forth. */
-const RING_HOLD = PLATE_SIZE * 0.75;
 
 class PlateSource implements TerrainSource {
   changes!: RoadDoc['changes'];
@@ -165,29 +164,6 @@ export function writeFarPatch(far: FlatFar, slot: number, cx: number, cy: number
   }
 }
 
-/** How far past the ring the ground is drawn, each way: past any view's far plane. */
-const HORIZON = m(131_072);
-/** DO NOT leave the void past the far ring: the relief ends within `RELIEF_HALF + RELIEF_BLEND` of the origin (`world/terrain.ts`), far inside the ring, so past it the land is flat at the base - one frame of four quads from the ring's square out to `horizon`, at `TERRAIN_BASE`, facing up, drawn with the far land's material (the far levels and the plan's city stood over nothing there, `farTree.ts`) */
-export function horizonGeometry(x0: number, x1: number, y0: number, y1: number, horizon: number): BufferGeometry {
-  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-  const X0 = cx - horizon, X1 = cx + horizon, Y0 = cy - horizon, Y1 = cy + horizon;
-  // The inner square's corners then the outer's, each counter-clockwise on the plan (three's z is -y).
-  const corners: readonly (readonly [number, number])[] = [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]];
-  const position = new Float32Array(corners.length * 3), normal = new Float32Array(corners.length * 3);
-  corners.forEach(([x, y], k) => { position[k * 3] = x; position[k * 3 + 1] = TERRAIN_BASE; position[k * 3 + 2] = -y; normal[k * 3 + 1] = 1; });
-  // Each band between an inner edge and the outer one: outer a, outer b, inner b, inner a (front face up).
-  const index: number[] = [];
-  for (let e = 0; e < 4; e++) {
-    const a = 4 + e, b = 4 + (e + 1) % 4, c = (e + 1) % 4, d = e;
-    index.push(a, b, c, a, c, d);
-  }
-  const g = new BufferGeometry();
-  g.setAttribute('position', new BufferAttribute(position, 3));
-  g.setAttribute('normal', new BufferAttribute(normal, 3));
-  g.setIndex(index);
-  return g;
-}
-
 /** A far patch to draw: its slot, and which of its edges (south, north, west, east) are the ring's rim (no skirt: the cut side stands there). */
 export interface FarPatchDrawn { readonly slot: number; readonly rim: readonly [boolean, boolean, boolean, boolean] }
 
@@ -253,14 +229,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   slab.receiveShadow = true;
   slab.visible = false;
   root.add(slab);
-  // THE GROUND PAST THE RING, out to the horizon (`horizonGeometry`): the world has no edge.
-  const horizon = new Mesh(new BufferGeometry(), farGround.material);
-  horizon.matrixAutoUpdate = false;
-  horizon.name = 'flat-world-horizon';
-  horizon.frustumCulled = false;
-  horizon.receiveShadow = true;
-  horizon.visible = false;
-  root.add(horizon);
   // THE WOODS OF THE FAR PLATES (`farForest.ts`)
   const farForest = createFarForest(FAR_SLOTS, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
   root.add(farForest.object);
@@ -269,28 +237,22 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   let keepReach = Infinity;
   let farRelief: ReliefVersion | null = null;
 
-  // The far ring: its centre plate, its plates by key, the slots free.
+  // The map's far plates by key, the slots free.
   const farPlates = new Map<number, FarPlate>();
   const freeSlots: number[] = Array.from({ length: FAR_SLOTS }, (_, i) => FAR_SLOTS - 1 - i);
-  let ringI = 0, ringJ = 0;
   let ringSet = false;
   const writeFar = (fp: FarPlate): void => {
     const relief = farRelief;
     if (relief === null) return;
     writeFarPatch(far, fp.slot, fp.cx, fp.cy, (x, y) => reliefHeight(relief, x, y));
   };
-  /** The cut sides round the ring's square, along the far patches' own edge (their quads' step). */
+  /** The cut sides on the map's edge, along the far patches' own edge (their quads' step): where the land ends. */
   const buildSlab = (): void => {
     const relief = farRelief;
     if (relief === null || !ringSet) return;
-    const reach = (FAR_RING + 0.5) * PLATE_SIZE;
-    const cx = ringI * PLATE_SIZE, cy = ringJ * PLATE_SIZE;
     slab.geometry.dispose();
-    slab.geometry = slabGeometry(cx - reach, cx + reach, cy - reach, cy + reach, PLATE_SIZE / FAR_QUADS, (x, y) => TERRAIN_BASE + reliefHeight(relief, x, y));
+    slab.geometry = slabGeometry(-MAP_HALF, MAP_HALF, -MAP_HALF, MAP_HALF, PLATE_SIZE / FAR_QUADS, (x, y) => TERRAIN_BASE + reliefHeight(relief, x, y));
     slab.visible = true;
-    horizon.geometry.dispose();
-    horizon.geometry = horizonGeometry(cx - reach, cx + reach, cy - reach, cy + reach, HORIZON);
-    horizon.visible = true;
   };
   const neighbour = (fp: FarPlate, di: number, dj: number): boolean => farPlates.has(plateOf(fp.cx + di * PLATE_SIZE, fp.cy + dj * PLATE_SIZE));
   /** The far patches of the plates not drawn in full, their rims where the ring ends. */
@@ -302,12 +264,11 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     }
     farIndexInto(far, patches);
   };
-  /** The ring follows the focus once it is `RING_HOLD` off the centre plate: the plates that left it let go, those come in written; true when it moved. */
-  const moveRing = (x: number, y: number): boolean => {
-    if (ringSet && Math.abs(x - ringI * PLATE_SIZE) <= RING_HOLD && Math.abs(y - ringJ * PLATE_SIZE) <= RING_HOLD) return false;
-    ({ pi: ringI, pj: ringJ } = plateIJ(x, y));
+  /** The map's plates, written once (they never follow the view: the map has an edge); true the first time. */
+  const moveRing = (): boolean => {
+    if (ringSet) return false;
     ringSet = true;
-    const want = platesAround(ringI, ringJ, FAR_RING);
+    const want = platesAround(0, 0, FAR_RING);
     const kept = new Set(want);
     for (const [key, fp] of farPlates) {
       if (kept.has(key)) continue;
@@ -622,7 +583,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   const bareAt = (x: number, y: number): number => TERRAIN_BASE + bare(x, y);
 
   ensure(home);
-  moveRing(0, 0);
+  moveRing();
   refresh();
   const firstSurface = home.surface!;
   return {
@@ -637,7 +598,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       setJobFocus(x, y);
       focusX = x;
       focusY = y;
-      const ringMoved = moveRing(x, y);
+      const ringMoved = moveRing();
       const radius = reach < NEAR_VIEW ? Math.max(TERRAIN_HALF, reach * 1.6) + TERRAIN_HALF : -1;
       keepReach = radius > 0 ? radius * KEEP_MARGIN : 0;
       const key = `${plateOf(x, y)}:${Math.round(radius / TERRAIN_HALF)}`;
@@ -648,6 +609,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
           // The plates whose centre is within the radius: those under its square, never a walk over the world's.
           for (const k of platesOver([x - radius, y - radius, x + radius, y + radius])) {
             const r = plateRegion(k);
+            // Nothing past the map's edge: a plate off the map is never made.
+            if (Math.abs(r.cx) > MAP_HALF || Math.abs(r.cy) > MAP_HALF) continue;
             if (Math.abs(r.cx - x) <= radius && Math.abs(r.cy - y) <= radius) wantedNear.push(plateFor(k));
           }
           wantedNear.sort((a, b) => Math.hypot(a.cx - x, a.cy - y) - Math.hypot(b.cx - x, b.cy - y));
@@ -832,7 +795,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       farGround.dispose();
       farForest.dispose();
       far.geometry.dispose();
-      horizon.geometry.dispose();
       slab.geometry.dispose();
       (slab.material as MeshStandardMaterial).map?.dispose();
       (slab.material as MeshStandardMaterial).dispose();
