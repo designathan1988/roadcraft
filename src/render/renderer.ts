@@ -106,7 +106,7 @@ import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/
 import { buildingFloors } from '@world/buildings/floors';
 import { FLOOR_READ_REACH } from '@world/buildings/foundation';
 import { RoomLamps } from './roomLamps';
-import { TUNED_UNIT, m, perM } from '@world/units';
+import { TUNED_UNIT, m } from '@world/units';
 /** Room lights kept in the scene for the floors cut open (`roomLamps.ts`). */
 const ROOM_LIGHTS = 6;
 declare const __ROAD_TILES_HASH__: string | undefined;
