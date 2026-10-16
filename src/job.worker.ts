@@ -29,6 +29,7 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   peopleLod: () => import('./render/people/lodWorker'),
   roadTiles: () => import('./render/roadTile.worker'),
   farRoads: () => import('./render/farRoads.worker'),
+  roadStations: () => import('./render/roadStations.worker'),
   terrainLight: () => import('./render/terrainLight.worker'),
   derivedWriter: () => import('./render/derivedWriter.worker'),
   // A tile written here has its simulation's sections baked with it (`sim/tileSections.ts`): the editor's layer does not import the simulation.

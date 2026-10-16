@@ -42,7 +42,8 @@ import type { ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
-import { GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, type RoadElevation } from '@world/elevation';
+import { GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, roadsToRead, type RoadElevation } from '@world/elevation';
+import { RoadStations } from './roadStations';
 import { FOOTWAY_RISE, sidewalkHalf } from '@world/roadTypes';
 import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
 import { type PavingData, type PavingSource, pavedHeightFrom } from '@world/paving';
@@ -750,6 +751,8 @@ export function createSceneRenderer(
   };
   let networkRevision = -1;
   let terrainRevision = -1;
+  /** The ground under the roads a solve will read, read off the page (`roadStations.ts`): the solve waits for it, the world standing as it was. */
+  const roadStations = new RoadStations(() => onAssetsReady());
   /** The streamed world's active tiles (`setActiveTiles`): where the near roads are built; how many times they changed, and for which the world was built. */
   let activeAt: ((x: number, y: number) => boolean) | null = null;
   let activeSerial = 0;
@@ -1509,6 +1512,10 @@ export function createSceneRenderer(
     const started = performance.now();
     // Only the roads changed (the land did not): the ground is cut and filled again only where the solve of the roads differs.
     const landStill = terrainRevision === net.doc.terrainRevision && elevation !== null;
+    // DO NOT read the ground under a tile's hundreds of new roads in this frame: a job reads it off the shared plates, the solve waits for it.
+    const solvedAhead = offeredElevation !== null && offeredElevation.revision === net.revision && offeredElevation.terrain === net.doc.terrainRevision;
+    if (!solvedAhead && roadStations.waiting(roadsToRead(net, builtGroundAt, landStill ? elevation : null),
+      (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision)) return;
     const previousElevation = elevation;
     networkRevision = net.revision;
     terrainRevision = net.doc.terrainRevision;
@@ -1520,7 +1527,8 @@ export function createSceneRenderer(
     elevation = offered && offered.revision === net.revision && offered.terrain === terrainRevision
       ? offered.elevation
       // On land that has not moved, from the last solve
-      : buildRoadElevation(net, builtGroundAt, landStill ? previousElevation : null);
+      : buildRoadElevation(net, builtGroundAt, landStill ? previousElevation : null, roadStations.current);
+    roadStations.used();
     performance.measure('hitch:road-edit/elevation', { start: started, end: performance.now() });
     // Now the ground comes to meet the roads
     const land = landDirty;

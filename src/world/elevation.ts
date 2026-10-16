@@ -1,6 +1,6 @@
 import { Digest } from '@core/digest';
 import { type Aabb, expand as expandBox } from '@core/aabb';
-import type { Polyline } from '@core/polyline';
+import { Polyline } from '@core/polyline';
 import type { NodeId, SegmentId } from './ids';
 import type { Network } from './network';
 import type { NetworkDelta } from './networkDelta';
@@ -177,12 +177,53 @@ const BESIDE_DROP = m(0.1);
 /** The work of the solves, counted (`tests/scale`): profiles made and nodes whose inputs were read. */
 export const elevationWork = { profiles: 0, nodes: 0 };
 
+/** A road's ground read off the page (`roadStations`, the job system's `roadStations`), for the solve that reads it next: its line and casing as read, so the solve takes it only for the same road on the same ground. */
+export interface StationHint {
+  readonly xy: Float64Array;
+  readonly half: number;
+  readonly ceil: readonly number[];
+  readonly base: readonly number[];
+}
+
+/** The ground under a road at its stations, read as the solve reads it (`readStations`): what a worker reads off the shared ground for the page. */
+export function roadStations(xy: Float64Array, half: number, terrainAt: (x: number, y: number) => number): { ceil: number[]; base: number[] } {
+  const line = Polyline.fromFlat(xy);
+  const length = Math.max(1e-3, line.length);
+  const count = Math.max(2, Math.min(MAX_STATIONS, Math.ceil(length / STATION) + 1));
+  return readStations(line, half, count, length / (count - 1), terrainAt);
+}
+
+/** The roads the next solve of `net` from `previous` reads the ground under (new, moved or widened: those `buildRoadElevation` cannot keep), with their lines and casings; null `previous`: every road. */
+export function roadsToRead(net: Network, terrainAt: (x: number, y: number) => number, previous: RoadElevation | null): { readonly id: SegmentId; readonly xy: Float64Array; readonly half: number }[] {
+  const flat = terrainAt === FLAT_GROUND;
+  const memo = previous ? memos.get(previous) : undefined;
+  const from = memo && (memo.terrainAt === FLAT_GROUND) === flat ? memo : null;
+  const delta = from && net.isBuilt() ? net.changesSince(from.state) : null;
+  const touched = new Set<SegmentId>();
+  if (delta) {
+    for (const id of delta.segments) touched.add(id);
+    for (const node of delta.nodes) for (const id of net.doc.node(node)?.incident ?? []) touched.add(id);
+  } else for (const id of net.ribbons.keys()) touched.add(id);
+  const out: { id: SegmentId; xy: Float64Array; half: number }[] = [];
+  for (const id of touched) {
+    const ribbon = net.ribbons.get(id);
+    if (!ribbon || !net.doc.segment(id)) continue;
+    const half = casingHalf(ribbon.road);
+    const known = from?.profiles.get(id);
+    if (known !== undefined && known.half === half && sameLine(known.line, ribbon.full)) continue;
+    out.push({ id, xy: ribbon.full.xy, half });
+  }
+  return out;
+}
+
 /** Solves the height of every road surface in the network: from nothing, or from a solve before it, where the network changed. */
 export function buildRoadElevation(
   net: Network,
   terrainAt: (x: number, y: number) => number,
   /** A solve of this network on the SAME ground (`terrainAt` answering the same heights, through whatever function) */
   previous?: RoadElevation | null,
+  /** The ground under some roads read off the page on this same ground (`roadStations`): taken for a road whose line and casing are the hint's. */
+  hints?: ReadonlyMap<SegmentId, StationHint>,
 ): RoadElevation {
   const started = performance.now();
   const flat = terrainAt === FLAT_GROUND;
@@ -256,7 +297,9 @@ export function buildRoadElevation(
     // The ground under a road is read at 7 points across every 4 units of it, and its grade line smoothed: most of a solve.
     const known = stationsFrom?.profiles.get(id);
     const kept = known !== undefined && known.half === half && sameLine(known.line, line);
-    const { ceil, base } = kept ? known : readStations(line, half, stationCount, step, terrainAt);
+    const hint = kept ? undefined : hints?.get(id);
+    const hinted = hint !== undefined && hint.half === half && sameXY(hint.xy, line.xy);
+    const { ceil, base } = kept ? known : hinted ? { ceil: hint.ceil as number[], base: hint.base as number[] } : readStations(line, half, stationCount, step, terrainAt);
 
     const trims = net.trims.get(id);
     // A taper where one road carries on at another width is not a junction plate.
@@ -968,8 +1011,11 @@ class ProfileIndex {
 }
 
 function sameLine(a: Polyline, b: Polyline): boolean {
-  if (a === b) return true;
-  const x = a.xy, y = b.xy;
+  return a === b || sameXY(a.xy, b.xy);
+}
+
+function sameXY(x: Float64Array, y: Float64Array): boolean {
+  if (x === y) return true;
   if (x.length !== y.length) return false;
   for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
   return true;
