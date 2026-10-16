@@ -67,13 +67,36 @@ type Rgb = readonly [number, number, number];
 interface Facade { readonly bay: number; readonly storey: number; readonly z0: number; readonly share: number }
 const NO_FACADE: Facade = { bay: 0, storey: 1, z0: 0, share: 0 };
 
+/** A typed array written at its end, its room doubled as it fills: DO NOT gather numbers in a `number[]` (8 bytes each and its copies as it grows) for a typed array made at the end. */
+class Grown<T extends Float32Array | Uint32Array> {
+  length = 0;
+  constructor(private array: T, private readonly make: (n: number) => T) {}
+  private room(n: number): T {
+    if (this.length + n > this.array.length) {
+      const bigger = this.make(Math.max(this.array.length * 2, this.length + n));
+      bigger.set(this.array.subarray(0, this.length) as never);
+      this.array = bigger;
+    }
+    return this.array;
+  }
+  push2(a: number, b: number): void { const t = this.room(2); t[this.length++] = a; t[this.length++] = b; }
+  push3(a: number, b: number, c: number): void { const t = this.room(3); t[this.length++] = a; t[this.length++] = b; t[this.length++] = c; }
+  push4(a: number, b: number, c: number, d: number): void { const t = this.room(4); t[this.length++] = a; t[this.length++] = b; t[this.length++] = c; t[this.length++] = d; }
+  /** What was written, in an array of its own size. */
+  done(): T {
+    return this.array.slice(0, this.length) as T;
+  }
+}
+const floats = (n: number): Float32Array => new Float32Array(n);
+const uints = (n: number): Uint32Array => new Uint32Array(n);
+
 class MassWriter {
-  readonly position: number[] = [];
-  readonly normal: number[] = [];
-  readonly colour: number[] = [];
-  readonly facade: number[] = [];
-  readonly glazing: number[] = [];
-  readonly index: number[] = [];
+  readonly position = new Grown(floats(96), floats);
+  readonly normal = new Grown(floats(96), floats);
+  readonly colour = new Grown(floats(96), floats);
+  readonly facade = new Grown(floats(128), floats);
+  readonly glazing = new Grown(floats(64), floats);
+  readonly index = new Grown(uints(96), uints);
   /** The tallest thing left out so far (`leaves`). */
   error = 0;
 
@@ -105,30 +128,30 @@ class MassWriter {
     const base = this.position.length / 3;
     for (let i = 0; i < points.length; i++) {
       const p = points[i]!;
-      this.position.push(p[0], p[1], p[2]);
-      this.normal.push(n[0], n[1], n[2]);
-      this.colour.push(rgb[0], rgb[1], rgb[2]);
-      this.facade.push(along?.[i] ?? 0, f.bay, f.storey, f.z0);
-      this.glazing.push(f.share, this.seed);
+      this.position.push3(p[0], p[1], p[2]);
+      this.normal.push3(n[0], n[1], n[2]);
+      this.colour.push3(rgb[0], rgb[1], rgb[2]);
+      this.facade.push4(along?.[i] ?? 0, f.bay, f.storey, f.z0);
+      this.glazing.push2(f.share, this.seed);
     }
     // Wound to face its normal (three's axes mirror the plan's y).
     const a = points[0]!, b = points[1]!, c = points[2]!;
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
     const forward = (uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2] >= 0;
     for (let i = 1; i + 1 < points.length; i++) {
-      if (forward) this.index.push(base, base + i, base + i + 1);
-      else this.index.push(base, base + i + 1, base + i);
+      if (forward) this.index.push3(base, base + i, base + i + 1);
+      else this.index.push3(base, base + i + 1, base + i);
     }
   }
 
   chunk(): MassingChunk {
     return {
-      position: new Float32Array(this.position),
-      normal: new Float32Array(this.normal),
-      colour: new Float32Array(this.colour),
-      facade: new Float32Array(this.facade),
-      glazing: new Float32Array(this.glazing),
-      index: new Uint32Array(this.index),
+      position: this.position.done(),
+      normal: this.normal.done(),
+      colour: this.colour.done(),
+      facade: this.facade.done(),
+      glazing: this.glazing.done(),
+      index: this.index.done(),
       error: this.error,
     };
   }
