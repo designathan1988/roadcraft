@@ -3,8 +3,8 @@ import type { FromJob, JobService, ToJob } from './jobScope';
 /** THE JOB SYSTEM: one pool of workers (hardwareConcurrency - 2, within the machine's memory) for every kind of work off the page, in place of a pool per kind */
 /** DO NOT make every worker at the start nor give a kind's job to any free worker: each worker is a whole JS heap with the code and state of every service it ran, so 22 of them each running every service took the page's process past 6 GB on a 3 x 3 tile region (2026-10-16, Chrome memory-infra: 2.8 GB of V8 in the workers, out of memory at 8 GB) - workers are made as work waits, and a kind's jobs go first to the workers that already run it */
 
-/** What one worker costs the page's process: its V8 heap with its services' code and state, its garbage and the answer it holds for the page (about 115 MB of V8 a job worker after an opening, 2026-10-16). */
-const WORKER_BYTES = 256 * 2 ** 20;
+/** What one busy worker costs the page's process at its peak: its V8 heap with its services' code and state (about 110 MB), its young generation grown to its most under a fast allocator (about 56 MB) and the arrays it hands the page (2026-10-16, memory-infra of a streamed opening: 16 workers, 1.77 GB of V8 and 1.2 GB of array buffers). */
+const WORKER_BYTES = 512 * 2 ** 20;
 /** The share of the machine's memory the pool may take: the page, the GPU's process and the system keep the rest. */
 const POOL_SHARE = 1 / 8;
 
