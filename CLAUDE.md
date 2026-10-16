@@ -263,10 +263,18 @@ Traversed 10 km (seed 3, district zoom 1.2, 8 drags of 1.3 km, CPU free): no cra
 (heap 478-717 MB, geometry 620-960 MB as tiles come and go), the renderer process 5.9-6.5 GB in all (page, 8 worker
 isolates, GPU staging, Blink) and rising slowly; under a 12 GB job cap on the whole browser the renderer was killed
 mid-way, so a traversal needs ~8 GB free. What the player's machine pays per 10 km is this 6.5 GB, not a crash.
-Still open from the solution's parts: 5.2 roads per pixel (700 MB of road video memory, coarse level resident for
-every block of the region), 5.4 derived products by the view (masses 341 MB, draw calls 1,500-2,400; the kept ring of
-tiles gets near products too), 5.5 pixel cost on the integrated GPU (the player's call, with shots), 5.6 renderer memory
-outside the heap (page heap ~1.4 GB with 11,518 buildings in the document after a move).
+DONE 2026-10-16 (5.4, the kept ring; commits 9f4f18b, 2993f10, 1e66fc8): the ring of tiles kept round the
+active 3 x 3 (`KEEP_MARGIN`) has its records only. The streamer tells `activeChanged` (the loaded tiles that came into
+the 3 x 3 or left it, with their rectangles); the building layer takes in or lets go those tiles' buildings by its
+incremental path (`setActive`); the near road surfaces skip a road tile whose centre is not on an active tile
+(`SurfaceReuse.within`, `rebuildWorld` run again on an active change with the kept digests); the far buildings and far
+roads draw every tile not active (`isLoaded = hasTile && isActive`; a changed ring tile is written at once); the
+simulation's worker holds the active tiles' roads, lots and buildings alone (`SimClient.setActive`/`activeChanged`:
+the ring's traffic is the meso's from the store's tables; a node a held road ends on is sent with the held legs alone).
+Still open from the solution's parts: 5.2 roads per pixel (the coarse level resident for every block of the active
+region), 5.4 for the other near products of the active region (gardens, furniture, poles, structure details: by the
+diary over the 3 x 3, not the ring: not yet filtered), 5.5 pixel cost on the integrated GPU (the player's call, with
+shots), 5.6 renderer memory outside the heap.
 Read whole by the coordinator on 2026-10-16 (main `0c7b15e`: every file of the opening and edit paths, sim and jobs;
 agent behaviour, effects and UI only scanned). Why the whole city dies of memory before drawing:
 - Root: a building record is the whole authored model (the lot's furniture inside it, 133 JS objects a building), kept per tile
