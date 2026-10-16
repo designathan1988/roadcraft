@@ -5,7 +5,7 @@ import {
   MeshStandardMaterial,
   SphereGeometry,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type FurnitureKind } from '@world/buildings/interior';
 
@@ -35,14 +35,14 @@ const BOARD = hex(0x2c4a3a);
 const BOOKS: readonly RGB[] = [hex(0x8b2c2c), hex(0x2c4f8b), hex(0x2e6b3f), hex(0xc49a3c), hex(0x5a3b6b), hex(0xd8d2c0)];
 const GOODS: readonly RGB[] = [hex(0xd9483b), hex(0xf2b33d), hex(0x3d8ad9), hex(0x5fb34a), hex(0xe8e3d6), hex(0x8b5a2b)];
 
-/** Paints a geometry one colour (as a vertex attribute) and moves it into place. */
+/** Paints a geometry one colour (as a vertex attribute) and moves it into place: kept indexed (DO NOT `toNonIndexed` it: every instance behind every window drew each corner once per triangle; a loose part is indexed, three `BufferGeometryUtils.mergeVertices`). */
 function paint(g: BufferGeometry, c: RGB, x = 0, y = 0, z = 0): BufferGeometry {
   g.translate(x, y, z);
   const n = g.getAttribute('position').count;
   const colours = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) colours.set(c, i * 3);
   g.setAttribute('color', new BufferAttribute(colours, 3));
-  return g.index ? g.toNonIndexed() : g;
+  return g.index ? g : mergeVertices(g);
 }
 
 /** A box with rounded edges, its bottom at `y`. */
