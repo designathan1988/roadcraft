@@ -143,6 +143,14 @@ export interface Vehicle {
   free: FreePose | null;
 }
 
+/** A car standing in a bay as its readers see it (`AmbientWorld.parked`): a vehicle, or a scenery's row that is none (`SceneryCar`). */
+export interface StandingCar {
+  readonly id: VehicleId;
+  readonly archetype: Archetype;
+  readonly color: string;
+  readonly free: FreePose | null;
+}
+
 /** A body centre and heading, now and at the previous tick (for interpolation). */
 export interface FreePose {
   x: number;

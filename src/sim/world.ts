@@ -316,6 +316,7 @@ export class SimWorld {
     this.ghostCandidates.clear();
     this.asleep.clear();
     this.awake.clear();
+    this.signalsStepped.clear();
     this.signalClock.passes = 0;
     this.crossingStates.clear();
     this.pedViews.length = 0;
@@ -563,6 +564,22 @@ export class SimWorld {
     if (!c) return;
     this.asleep.delete(node);
     this.awake.set(node, c);
+  }
+
+  /** The junctions whose signal stage 1 stepped since a reader last took them (`takeSignalsStepped`): only their lights may have changed (with those the signals' log names). */
+  private readonly signalsStepped = new Set<NodeId>();
+
+  /** A signal stepped by stage 1 (`pipeline.ts`). */
+  noteSignalStepped(c: SignalController): void {
+    this.signalsStepped.add(c.node);
+  }
+
+  /** The junctions whose signal was stepped since the last call, into `out`, and forgotten. */
+  takeSignalsStepped(out: NodeId[]): NodeId[] {
+    out.length = 0;
+    for (const node of this.signalsStepped) out.push(node);
+    this.signalsStepped.clear();
+    return out;
   }
 
   /** A signal rested with nobody near (`stepController`): not stepped until something wakes it. */

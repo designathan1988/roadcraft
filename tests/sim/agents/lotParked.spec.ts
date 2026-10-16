@@ -9,7 +9,10 @@ import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 import type { Bay } from '@sim/agents/parking';
-import type { Vehicle } from '@sim/vehicles/state';
+import type { StandingCar, Vehicle } from '@sim/vehicles/state';
+import type { SceneryCar } from '@sim/ambient/ambient';
+import { Rng } from '@core/rng';
+import { makeDriver } from '@sim/vehicles/driver';
 
 /** The lots' traffic asks the scenery who stands where */
 
@@ -56,7 +59,7 @@ interface LotsInside {
   leftBy: number;
   bays: Map<string, Bay>;
   freeBays(w: SimWorld): Bay[];
-  sceneryInBays(w: SimWorld): { bay: Bay; body: Vehicle }[];
+  sceneryInBays(w: SimWorld): { bay: Bay; body: StandingCar }[];
 }
 
 describe('the cars standing in bays, asked by the lots', () => {
@@ -103,7 +106,7 @@ describe('the cars standing in bays, asked by the lots', () => {
       freeSeen += oldFree.length;
       // The scenery's cars in gated bays: the old walk over every parked car (the oracle).
       const byKey = new Map([...lots.bays.values()].map((b) => [bayKey(b), b] as const));
-      const oldPool: { bay: Bay; body: Vehicle }[] = [];
+      const oldPool: { bay: Bay; body: StandingCar }[] = [];
       for (const body of parked) {
         if (!body.free || lots.cars.has(body.id)) continue;
         const bay = byKey.get(bayKey(body.free));
@@ -134,4 +137,31 @@ describe('the cars standing in bays, asked by the lots', () => {
     expect(freeSeen).toBeGreaterThan(0);
     expect(sceneryPooled).toBeGreaterThan(0);
   }, 10_000);
+
+  it('are rows of the scenery\'s, never vehicles, until the lots drive one out: then the vehicle it stood for', () => {
+    const doc = closedTown();
+    const net = new Network(doc);
+    net.rebuild();
+    const w = new SimWorld(doc, net, 0x0be9);
+    w.rebuildTopology();
+    w.usePedestrianEngine(createAgentWalkEngine());
+    w.trafficCount = 40;
+    w.pedestrianCount = 0;
+    w.ambient.enabled = true;
+    w.ambient.source = 'edges';
+    for (let i = 0; i < Math.round(5 / DT); i++) step(w, { traffic: true, pedestrians: true });
+    const rows = w.ambient.parked.filter((car) => !w.ambient.movers.has(car as Vehicle)) as SceneryCar[];
+    expect(rows.length).toBeGreaterThan(10);
+    // A row holds its place and look, nothing of a vehicle's.
+    for (const row of rows) expect(Object.keys(row).sort()).toEqual(['archetype', 'color', 'free', 'id', 'lanelet', 'seed', 'spot']);
+    const row = rows[0]!;
+    const v = w.ambient.release(w, row);
+    expect([v.id, v.archetype, v.color, v.free, v.lanelet, v.seats]).toEqual([row.id, row.archetype, row.color, row.free, row.lanelet, 0]);
+    // Its driver drawn as the scenery drew it with the car, before the rows: the bay's seed after the share parked, the kind and the colour.
+    const r = new Rng(row.seed);
+    r.float(); r.float(); r.float();
+    expect(v.driver).toEqual(makeDriver(row.archetype, () => r.float()));
+    expect(w.ambient.isParked(row)).toBe(false);
+    expect(w.ambient.sceneryCarAt(row.spot)).toBeUndefined();
+  });
 });

@@ -61,6 +61,7 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   const audited = audit && w.doLess ? [...stepping] : undefined;
   for (const c of stepping) {
     tickWork.controllers++;
+    w.noteSignalStepped(c);
     if (stepController(c, deps) && w.doLess) w.restSignal(c);
   }
   lap('1 signals');

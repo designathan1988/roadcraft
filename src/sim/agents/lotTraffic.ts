@@ -10,6 +10,8 @@ import { chooseVehicleDestination } from '../routing/destination';
 import { bayChangesSince, baySources, baysOfSource, stallFits, type Bay } from './parking';
 import { trafficTarget } from '../vehicles/spawn';
 import { flows, kindOf } from '../ambient/demand';
+import { spotKey } from '../ambient/ambientIndex';
+import type { SceneryCar } from '../ambient/ambient';
 import { arrival, departure, type Manoeuvre } from './manoeuvre';
 import { LorryTraffic } from './lorryTraffic';
 
@@ -205,11 +207,11 @@ export class LotTraffic {
       }
       return f;
     };
-    const pool: { bay: Bay; car: LotCar | null; body: Vehicle; weight: number }[] = [];
+    const pool: { bay: Bay; car: LotCar | null; scenery: SceneryCar | null; weight: number }[] = [];
     for (const car of this.cars.values()) {
-      if (car.phase === 'parked' && !car.go && this.time >= car.until && car.body) pool.push({ bay: car.bay, car, body: car.body, weight: weight(car.bay) });
+      if (car.phase === 'parked' && !car.go && this.time >= car.until && car.body) pool.push({ bay: car.bay, car, scenery: null, weight: weight(car.bay) });
     }
-    for (const { bay, body } of this.sceneryInBays(w)) pool.push({ bay, car: null, body, weight: weight(bay) });
+    for (const { bay, body } of this.sceneryInBays(w)) pool.push({ bay, car: null, scenery: body, weight: weight(bay) });
     for (let k = 0; k < short && pool.length; k++) {
       let total = 0;
       for (const p of pool) total += p.weight;
@@ -218,11 +220,11 @@ export class LotTraffic {
       for (let i = 0; i < pool.length; i++) { roll -= pool[i]!.weight; if (roll < 0) { at = i; break; } }
       const pick = pool.splice(at, 1)[0]!;
       if (pick.car) { pick.car.go = true; this.active.add(pick.car); continue; }
-      // The scenery's car: the lots' from now on, its bay left empty when the scenery makes its bays again.
-      w.ambient.release(pick.body);
-      this.track({ id: pick.body.id, bay: pick.bay, phase: 'parked', body: pick.body, path: null, t: 0, until: 0, go: true, waited: 0, reserved: false });
+      // The scenery's car: the lots' from now on, a vehicle made of its row, its bay left empty when the scenery makes its bays again.
+      const body = w.ambient.release(w, pick.scenery!);
+      this.track({ id: body.id, bay: pick.bay, phase: 'parked', body, path: null, t: 0, until: 0, go: true, waited: 0, reserved: false });
       // Drawn with the cars standing in bays again, now as the lots' (`isParked`).
-      w.ambient.addParked(pick.body);
+      w.ambient.addParked(body);
     }
   }
 
@@ -311,11 +313,11 @@ export class LotTraffic {
   }
 
   /** DO NOT walk `ambient.parked` for them: every parked car of the map, each look. */
-  private sceneryInBays(w: SimWorld): { bay: Bay; body: Vehicle }[] {
-    const out: { bay: Bay; body: Vehicle }[] = [];
-    const pooled = new Set<Vehicle>();
+  private sceneryInBays(w: SimWorld): { bay: Bay; body: SceneryCar }[] {
+    const out: { bay: Bay; body: SceneryCar }[] = [];
+    const pooled = new Set<SceneryCar>();
     for (const bay of this.bays.values()) {
-      const body = w.ambient.sceneryCarAt(bayKey(bay));
+      const body = w.ambient.sceneryCarAt(spotKey(bay.x, bay.y));
       if (!body || this.cars.has(body.id) || pooled.has(body)) continue;
       pooled.add(body);
       out.push({ bay, body });
@@ -332,7 +334,7 @@ export class LotTraffic {
     }
     for (const lorry of this.lorries.view()) if (Number.isFinite(lorry.x)) taken.add(bayKey(lorry));
     const out: Bay[] = [];
-    for (const b of this.bays.values()) if (!taken.has(bayKey(b)) && !w.ambient.sceneryCarAt(bayKey(b))) out.push(b);
+    for (const b of this.bays.values()) if (!taken.has(bayKey(b)) && !w.ambient.sceneryCarAt(spotKey(b.x, b.y))) out.push(b);
     return out;
   }
 

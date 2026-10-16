@@ -12,6 +12,7 @@ import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { createAgentWalkEngine } from '@sim/agents/walk';
 import { collectBays } from '@sim/agents/parking';
+import type { Vehicle } from '@sim/vehicles/state';
 
 /** A CAR PARKED IN A LOT STANDS IN THE LOT */
 const ZONES = [
@@ -81,7 +82,8 @@ describe('a car parked in a lot', () => {
     const wrong: string[] = [];
     for (const car of w.ambient.parked) {
       const f = car.free;
-      if (!f || f.lot === null || car.v > 0) continue;
+      // The scenery's rows stand; a vehicle of the lots' may be moving.
+      if (!f || f.lot === null || ((car as Partial<Vehicle>).v ?? 0) > 0) continue;
       if (!stalls.some((bay) => Math.hypot(bay.x - f.x, bay.y - f.y) < m(0.05))) continue;
       const b = doc.buildings.get(f.lot as Building['id']);
       const lot = doc.lots.find((l) => l.building === f.lot);

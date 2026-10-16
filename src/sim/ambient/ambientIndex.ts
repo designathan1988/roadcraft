@@ -1,7 +1,7 @@
 import type { ChangeJournal } from '@world/changes';
 import { NetworkLength } from '@world/networkLength';
 import type { Network, SegmentRibbon } from '@world/network';
-import { m } from '@world/units';
+import { m, stepsIn } from '@world/units';
 import type { TrafficBuilding, TrafficBuildings } from '../agents/trafficBuildings';
 import { kindOf, type Mix } from './demand';
 
@@ -25,6 +25,11 @@ export function buildingsChangedSince(journal: ChangeJournal, serial: number): S
 
 /** A cell's key from its column and row (both within ±32 767), as `world/cells.ts`. */
 export const cellKey = (cx: number, cy: number): number => (cx + 32768) * 65536 + (cy + 32768);
+
+/** The rows of `spotKey`: a place's step across times this, plus its step along (under half of it either way). */
+const SPOT_ROW = 2 ** 26;
+/** DO NOT key a bay by text: its place as one number, in steps of 0.1 m, one to a place within 3,355 km of the origin (6,710 km across) */
+export const spotKey = (x: number, y: number): number => Math.round(stepsIn(x, 0.1)) * SPOT_ROW + Math.round(stepsIn(y, 0.1));
 
 // ------------------------------------------------------------ the walls
 

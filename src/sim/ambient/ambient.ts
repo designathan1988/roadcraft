@@ -6,7 +6,8 @@ import { ARCHETYPES, bodyClassOfArchetype, type Archetype } from '../vehicles/ar
 import { chooseVehicleDestination } from '../routing/destination';
 import { planFrom } from '../routing/router';
 import { makeDriver } from '../vehicles/driver';
-import { createVehicle, type Vehicle } from '../vehicles/state';
+import { createVehicle, type FreePose, type StandingCar, type Vehicle } from '../vehicles/state';
+import type { LaneletId } from '@world/lanelets';
 import { spawnVehicleAt, trafficTarget } from '../vehicles/spawn';
 import { vehiclePose } from '../pose';
 import { joinsFootway, onLastStretch, removeWalker, walkerAlive, walkerOf, walkOn, walkThrough } from '../agents/walk';
@@ -15,7 +16,7 @@ import { bayChangesSince, baySources, baysOfSource, lanesInBox, stallFits, type 
 import { type DoorWay, doorWay, personGates } from '../agents/lotDoors';
 import type { PersonAgeClass } from '../people/view';
 import { busy, CARS, outShare, PEOPLE, type Mix } from './demand';
-import { BuildingMix, SightWalls, StreetLength, atRoll } from './ambientIndex';
+import { BuildingMix, SightWalls, StreetLength, atRoll, spotKey } from './ambientIndex';
 import { LotPlaces, PLACE_KINDS } from './lotPlaces';
 
 
@@ -47,28 +48,41 @@ export const TRAFFIC: readonly (readonly [Archetype, number])[] = ARCHETYPES
   .map((a) => [a, a.id === 'truck' ? a.weight * 0.4 : a.weight] as const);
 const PARKED_KINDS = ARCHETYPES.filter((a) => a.id === 'hatch' || a.id === 'sedan' || a.id === 'suv' || a.id === 'van');
 
+/** DO NOT stand a vehicle in every bay of the region: the scenery's car in a bay is this row of its place and look, a vehicle only when the lots drive it out (`release`) */
+export interface SceneryCar extends StandingCar {
+  free: FreePose;
+  /** Its bay's place (`spotKey`). */
+  readonly spot: number;
+  /** The seed its look was drawn from (`stand`): its driver is drawn from it when it is driven out. */
+  readonly seed: number;
+  /** The lane its bay opened on when it was stood: the vehicle's first. */
+  readonly lanelet: LaneletId;
+}
+
 export class AmbientWorld {
   /** On in the game (`main.ts`); off under test. */
   enabled = false;
   /** Where people and cars come from: round the view (GTA's way) or the ends of the roads. */
   source: 'view' | 'edges' = 'edges';
-  /** The cars standing in bays near the view: drawn, solid to walkers, never stepped. */
-  readonly parked: Vehicle[] = [];
+  /** The cars standing in bays: drawn, solid to walkers, never stepped; the scenery's as rows (`SceneryCar`). */
+  readonly parked: StandingCar[] = [];
   /** The members of `parked` put there by the scenery or through `addParked` (`isParked`). */
-  private readonly standing = new Set<Vehicle>();
+  private readonly standing = new Set<StandingCar>();
   /** Each car's place in `parked`, for its removal in one step (`removeParked`). */
-  private readonly parkedAt = new Map<Vehicle, number>();
-  /** The cars of `parked` that may move while they stand in it: those put there through `addParked` */
+  private readonly parkedAt = new Map<StandingCar, number>();
+  /** The cars of `parked` that may move while they stand in it: the vehicles put there through `addParked` (the scenery's rows never move) */
   readonly movers = new Set<Vehicle>();
   /** DO NOT make a reader compare the whole list every tick to find what changed: every parked car of the map, each tick. */
-  private parkedLog: { readonly car: Vehicle; readonly added: boolean }[] = [];
+  private parkedLog: { readonly car: StandingCar; readonly added: boolean }[] = [];
   private parkedBase = 0;
   parkedSerial = 0;
   /** The scenery's own cars standing in bays, by the bay's place (`spotKey`). */
-  private readonly sceneryAt = new Map<string, Vehicle>();
+  private readonly sceneryAt = new Map<number, SceneryCar>();
+  /** Told the bay's place each time a scenery's car comes into a bay or leaves it (the lots' free bays, `lotTraffic.ts`); null: nobody. */
+  sceneryWatch: ((spot: number) => void) | null = null;
   /** The scenery's cars by the source of their bays */
-  private readonly carsBySource = new Map<string, Vehicle[]>();
-  private readonly sourceOf = new Map<Vehicle, string>();
+  private readonly carsBySource = new Map<string, SceneryCar[]>();
+  private readonly sourceOf = new Map<SceneryCar, string>();
   /** The serial of the bays' changes last taken in (`bayChangesSince`); -1: none yet. */
   private baysSerial = -1;
 
@@ -709,22 +723,29 @@ export class AmbientWorld {
 
   // ------------------------------------------------------------ parked cars
 
-  /** Bays whose scenery car the lots drove out: left empty when the bays are made again. */
-  private readonly vacated = new Set<string>();
+  /** Bays whose scenery car the lots drove out (`spotKey`): left empty when the bays are made again. */
+  private readonly vacated = new Set<number>();
 
-  /** A parked car handed to the lots' traffic (`agents/lotTraffic.ts`), which drives it out of its bay */
-  release(car: Vehicle): void {
+  /** A scenery's car handed to the lots' traffic (`agents/lotTraffic.ts`), which drives it out of its bay: the vehicle it stood for, made now */
+  release(w: SimWorld, car: SceneryCar): Vehicle {
     this.leaveSource(car);
-    if (car.free) {
-      const spot = spotKey(car.free);
-      this.vacated.add(spot);
-      if (this.sceneryAt.get(spot) === car) this.sceneryAt.delete(spot);
+    this.vacated.add(car.spot);
+    if (this.sceneryAt.get(car.spot) === car) {
+      this.sceneryAt.delete(car.spot);
+      this.sceneryWatch?.(car.spot);
     }
     this.removeParked(car);
+    // Its driver drawn from the bay's seed after its look (`stand`: the share parked, the kind, the colour), as when it was stood.
+    const r = new Rng(car.seed);
+    r.float(); r.float(); r.float();
+    const body = createVehicle(car.id, car.archetype, makeDriver(car.archetype, () => r.float()), car.color, car.lanelet, 0, w.clock.tick);
+    body.seats = 0;
+    body.free = { ...car.free };
+    return body;
   }
 
   /** DO NOT ask `parked.includes` per car per tick: the list holds every parked car of the map. */
-  isParked(body: Vehicle): boolean {
+  isParked(body: StandingCar): boolean {
     return this.standing.has(body);
   }
 
@@ -739,9 +760,9 @@ export class AmbientWorld {
   }
 
   /** DO NOT `indexOf` and `splice` it out: every parked car of the map, for each car of the lots that drives out */
-  removeParked(body: Vehicle): void {
+  removeParked(body: StandingCar): void {
     this.standing.delete(body);
-    this.movers.delete(body);
+    this.movers.delete(body as Vehicle);
     const at = this.parkedAt.get(body);
     if (at === undefined) return;
     const last = this.parked.pop()!;
@@ -756,12 +777,12 @@ export class AmbientWorld {
   }
 
   /** The cars that came into `parked` (`added`) and went since `serial`, oldest first; null: read it whole. */
-  parkedSince(serial: number): readonly { readonly car: Vehicle; readonly added: boolean }[] | null {
+  parkedSince(serial: number): readonly { readonly car: StandingCar; readonly added: boolean }[] | null {
     if (serial < this.parkedBase || serial > this.parkedSerial) return null;
     return this.parkedLog.slice(serial - this.parkedBase);
   }
 
-  private logParked(car: Vehicle, added: boolean): void {
+  private logParked(car: StandingCar, added: boolean): void {
     this.parkedLog.push({ car, added });
     this.parkedSerial++;
     // Longer than the list itself, reading the list whole is no dearer: forgotten.
@@ -775,7 +796,7 @@ export class AmbientWorld {
   }
 
   /** The scenery's own car standing in the bay at `spot` (`spotKey` of the bay), if one stands there. */
-  sceneryCarAt(spot: string): Vehicle | undefined {
+  sceneryCarAt(spot: number): SceneryCar | undefined {
     return this.sceneryAt.get(spot);
   }
 
@@ -794,15 +815,15 @@ export class AmbientWorld {
 
   /** The scenery's cars of one source of bays stood again: those there now off, a car in each of its bays now (`stand`) */
   private standSource(w: SimWorld, source: string, fill: boolean): void {
-    const was = new Map<string, Vehicle>();
+    const was = new Map<number, SceneryCar>();
     for (const car of [...(this.carsBySource.get(source) ?? [])]) {
-      if (car.free) was.set(spotKey(car.free), car);
+      was.set(car.spot, car);
       this.takeScenery(car);
     }
     if (!fill) return;
-    const cars: Vehicle[] = [];
+    const cars: SceneryCar[] = [];
     for (const bay of baysOfSource(w, source)) {
-      const car = this.stand(w, bay, was.get(spotKey(bay)));
+      const car = this.stand(w, bay, was.get(spotKey(bay.x, bay.y)));
       if (!car) continue;
       cars.push(car);
       this.sourceOf.set(car, source);
@@ -810,13 +831,15 @@ export class AmbientWorld {
     if (cars.length) this.carsBySource.set(source, cars);
   }
 
-  /** A scenery car in a bay, or none (the bay left empty): the same body in the same bay each time. */
-  private stand(w: SimWorld, bay: Bay, was: Vehicle | undefined): Vehicle | null {
+  /** A scenery car in a bay, or none (the bay left empty): the same row in the same bay each time, its look drawn from where the bay is. */
+  private stand(w: SimWorld, bay: Bay, was: SceneryCar | undefined): SceneryCar | null {
+    const spot = spotKey(bay.x, bay.y);
     // Left empty by a car the lots drove out (`release`), or held by one of theirs.
-    if (this.vacated.has(spotKey(bay))) return null;
+    if (this.vacated.has(spot)) return null;
     for (const car of this.movers) if (car.free && Math.hypot(car.free.x - bay.x, car.free.y - bay.y) < m(1.5)) return null;
     // Seeded by where the bay is, in steps of 0.4 m: the same car in it at any world unit.
-    const r = new Rng(0x9e3779b9 ^ Math.imul(Math.round(stepsIn(bay.x, 0.4) * 7) + Math.round(stepsIn(bay.y, 0.4) * 13) * 4099, 2654435761));
+    const seed = 0x9e3779b9 ^ Math.imul(Math.round(stepsIn(bay.x, 0.4) * 7) + Math.round(stepsIn(bay.y, 0.4) * 13) * 4099, 2654435761);
+    const r = new Rng(seed);
     if (r.float() >= PARKED) return null;
     // A body the stall holds whole (`stallFits`): a van's nose stood through the fence at the back of a car's stall.
     const fits = PARKED_KINDS.filter((kind) => stallFits(bay, kind.length));
@@ -826,11 +849,16 @@ export class AmbientWorld {
     const colour = arch.palette[Math.floor(r.float() * arch.palette.length)]!;
     // A bay that was there before keeps its car (same place, same body).
     const angle = Math.atan2(-bay.oy, -bay.ox);
-    const car = was && was.free && was.free.x === bay.x && was.free.y === bay.y ? was
-      : createVehicle(w.nextVehicleId++, arch, makeDriver(arch, () => r.float()), colour, bay.lane?.lanelet ?? '', 0, w.clock.tick);
-    car.seats = 0;
-    car.free = { x: bay.x, y: bay.y, angle, px: bay.x, py: bay.y, pangle: angle, lot: bay.building };
-    this.sceneryAt.set(spotKey(bay), car);
+    const free: FreePose = { x: bay.x, y: bay.y, angle, px: bay.x, py: bay.y, pangle: angle, lot: bay.building };
+    let car: SceneryCar;
+    if (was && was.free.x === bay.x && was.free.y === bay.y) {
+      car = was;
+      car.free = free;
+    } else {
+      car = { id: w.nextVehicleId++, archetype: arch, color: colour, free, spot, seed, lanelet: bay.lane?.lanelet ?? '' };
+    }
+    this.sceneryAt.set(spot, car);
+    this.sceneryWatch?.(spot);
     this.standing.add(car);
     this.parkedAt.set(car, this.parked.length);
     this.parked.push(car);
@@ -839,14 +867,17 @@ export class AmbientWorld {
   }
 
   /** A scenery car taken out of its bay (the bays changed): off the cars standing, and out of its source. */
-  private takeScenery(car: Vehicle): void {
+  private takeScenery(car: SceneryCar): void {
     this.leaveSource(car);
-    if (car.free && this.sceneryAt.get(spotKey(car.free)) === car) this.sceneryAt.delete(spotKey(car.free));
+    if (this.sceneryAt.get(car.spot) === car) {
+      this.sceneryAt.delete(car.spot);
+      this.sceneryWatch?.(car.spot);
+    }
     this.removeParked(car);
   }
 
   /** A scenery car no longer counted with its source of bays. */
-  private leaveSource(car: Vehicle): void {
+  private leaveSource(car: SceneryCar): void {
     const source = this.sourceOf.get(car);
     if (source === undefined) return;
     this.sourceOf.delete(car);
@@ -879,8 +910,6 @@ export class AmbientWorld {
 const WALK_DECAY = m(470);
 /** The buildings people walk into, by the lot's way (`lotDoors.ts`). */
 const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay, gatesOf: personGates });
-/** A bay's place as a key (a quarter of a unit), as the lots' traffic keys its bays. */
-const spotKey = (p: { x: number; y: number }): string => `${Math.round(stepsIn(p.x, 0.1))},${Math.round(stepsIn(p.y, 0.1))}`;
 const NO_WAY: readonly { x: number; y: number }[] = [];
 const REVERSED = new WeakMap<DoorWay, readonly { x: number; y: number }[]>();
 /** A lot's way the other way round: from the gate's foot on the footway in to the door. */

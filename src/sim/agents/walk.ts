@@ -16,7 +16,7 @@ import type { SidewalkEdge } from '../peds/sidewalk';
 import { type BodyPart, type GestureKind, personHash, type PedView, type PersonAgeClass, type PersonGender, type Severable } from '../people/view';
 import type { PedestrianEngine, PeopleBridge, ResidentWalk } from '../people/engine';
 import { recordCasualty, recordWound } from '../people/casualties';
-import type { FreePose, Vehicle } from '../vehicles/state';
+import type { FreePose, StandingCar } from '../vehicles/state';
 
 /** The agents' walking: people on lanes of the footways, as SUMO's striping model walks them */
 
@@ -109,7 +109,7 @@ interface CarZone {
 const NO_POINTS: readonly Vec2[] = [];
 
 /** A car's body as a zone: three discs along its length, half its width round. */
-function parkedZone(car: Vehicle, f: FreePose): CarZone {
+function parkedZone(car: StandingCar, f: FreePose): CarZone {
   const r = car.archetype.width / 2;
   const reach = Math.max(0, car.archetype.length / 2 - r);
   const discs = [-1, 0, 1].map((k) => ({ x: f.x + Math.cos(f.angle) * reach * k, y: f.y + Math.sin(f.angle) * reach * k, r }));
@@ -121,18 +121,18 @@ function parkedZone(car: Vehicle, f: FreePose): CarZone {
 /** The work of the walkers' derived products, counted (counts, not times: the same on every machine), for the scale specs */
 export const walkWork = { hailLooked: 0, routeNodes: 0, parkedFiled: 0 };
 
-interface ParkedEntry { readonly car: Vehicle; x: number; y: number; angle: number; zone: CarZone | null; readonly cells: number[]; seen: number }
+interface ParkedEntry { readonly car: StandingCar; x: number; y: number; angle: number; zone: CarZone | null; readonly cells: number[]; seen: number }
 
 /** The parked cars as their keeper tells their changes (`ambient/ambient.ts` AmbientWorld). */
 export interface ParkedSource {
   /** The cars standing now. */
-  readonly parked: readonly Vehicle[];
+  readonly parked: readonly StandingCar[];
   /** The serial of the latest change of `parked`. */
   readonly parkedSerial: number;
   /** The cars that came (`added`) and went since `serial`, oldest first; null: `parked` is to be read whole. */
-  parkedSince(serial: number): readonly { readonly car: Vehicle; readonly added: boolean }[] | null;
+  parkedSince(serial: number): readonly { readonly car: StandingCar; readonly added: boolean }[] | null;
   /** The cars of `parked` that may move while standing in it. */
-  readonly movers: ReadonlySet<Vehicle>;
+  readonly movers: ReadonlySet<StandingCar>;
 }
 
 /** DO NOT file every parked car again when one of them changes */
@@ -141,7 +141,7 @@ export class ParkedZoneIndex {
   readonly cells = new Map<number, CarZone[]>();
   /** What was seen, in the list's order. */
   private readonly list: ParkedEntry[] = [];
-  private readonly byCar = new Map<Vehicle, ParkedEntry>();
+  private readonly byCar = new Map<StandingCar, ParkedEntry>();
   private pass = 0;
   /** The serial of the source last followed (`follow`); -1: never. */
   private serial = -1;
@@ -176,7 +176,7 @@ export class ParkedZoneIndex {
   }
 
   /** A car filed where it stands, if it is not, or again if it moved. */
-  private keep(car: Vehicle): void {
+  private keep(car: StandingCar): void {
     let e = this.byCar.get(car);
     if (!e) {
       e = { car, x: 0, y: 0, angle: 0, zone: null, cells: [], seen: 0 };
@@ -186,7 +186,7 @@ export class ParkedZoneIndex {
   }
 
   /** Brings the cells up to `cars`, the cars standing now (`AmbientWorld.parked`). */
-  sync(cars: readonly Vehicle[]): void {
+  sync(cars: readonly StandingCar[]): void {
     const list = this.list;
     const n = Math.min(cars.length, list.length);
     let i = 0;

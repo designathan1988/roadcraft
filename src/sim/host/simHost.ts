@@ -56,8 +56,12 @@ export class SimHost {
   private control: Int32Array | null = null;
   private tick = 0;
   /** What each vehicle and person was last told with (`VehicleRich`, `PedRich`), by id: told again only when it changes. */
-  private readonly vehicleSent = new Map<number, readonly unknown[]>();
-  private readonly pedSent = new Map<number, readonly unknown[]>();
+  private readonly vehicleSent = new Map<number, ToldVehicle>();
+  private readonly pedSent = new Map<number, ToldPed>();
+  /** The frames published so far: what each vehicle and person told was last written in (`ToldVehicle.seen`). */
+  private published = 0;
+  /** The junctions whose signal was stepped since the last frame (`SimWorld.takeSignalsStepped`), a list kept for it. */
+  private readonly stepped: NodeId[] = [];
   private readonly odometer = new WheelOdometer();
   private readonly frames: VehicleFrames = { bx: 0, by: 0, bangle: 0, x: 0, y: 0, angle: 0, yawBefore: 0, yawNow: 0, jump: false };
   /** The signals' log read so far (`SimWorld.signalChangesSince`), and each junction's lights as last told. */
@@ -221,9 +225,9 @@ export class SimHost {
     while (slot === latest || slot === reading) slot++;
     const vehicles: [number, VehicleRich][] = [];
     const peds: [number, PedRich][] = [];
+    const frame = ++this.published;
     let n = 0;
     const vb = vehicleBase(slot);
-    const seen = new Set<number>();
     const writeVehicle = (v: Vehicle, parked: boolean): void => {
       if (n >= MAX_VEHICLES || !vehicleFramesInto(sim, v, this.frames)) return;
       const f = this.frames, at = vb + n * VEHICLE_STRIDE;
@@ -243,26 +247,27 @@ export class SimHost {
       data[at + V.slain] = v.slain ? 1 : 0;
       data[at + V.lot] = v.free?.lot ?? -1;
       n++;
-      seen.add(v.id);
-      const now = [v.color, v.archetype.id, v.doors.length ? [...v.doors] : null, v.kerbStop ? { ...v.kerbStop } : null, v.people.length, v.people.join(','), v.peopleAge.join(',')];
+      // Doors and a kerb stop move every tick while they last: told each tick then. DO NOT make a key a vehicle a frame to compare.
+      const busy = v.doors.length > 0 || v.kerbStop !== null;
       const was = this.vehicleSent.get(v.id);
-      // Doors and a kerb stop move every tick while they last: told each tick then.
-      if (!was || now[2] !== null || now[3] !== null || was[2] !== null || was[3] !== null || now.some((x, i) => i !== 2 && i !== 3 && x !== was[i])) {
-        this.vehicleSent.set(v.id, now);
-        vehicles.push([v.id, { color: v.color, archetype: v.archetype.id, doors: v.doors.slice(), kerbStop: v.kerbStop ? structuredClone(v.kerbStop) : null,
-          people: v.people.slice(), peopleAge: v.peopleAge.slice(), freeLot: v.free?.lot ?? null }]);
+      if (was && !busy && !was.busy && was.color === v.color && was.archetype === v.archetype.id && sameList(was.people, v.people) && sameList(was.peopleAge, v.peopleAge)) {
+        was.seen = frame;
+        return;
       }
+      const rich: VehicleRich = { color: v.color, archetype: v.archetype.id, doors: v.doors.slice(), kerbStop: v.kerbStop ? structuredClone(v.kerbStop) : null,
+        people: v.people.slice(), peopleAge: v.peopleAge.slice(), freeLot: v.free?.lot ?? null };
+      this.vehicleSent.set(v.id, { color: rich.color, archetype: rich.archetype, busy, people: rich.people, peopleAge: rich.peopleAge, seen: frame });
+      vehicles.push([v.id, rich]);
     };
     for (const v of sim.vehiclesInIdOrder()) writeVehicle(v, false);
-    // The parked cars that moved this tick (driven in or out of a bay); those standing are told once (`parked`).
-    for (const v of sim.ambient.parked) {
+    // The parked cars that moved this tick (driven in or out of a bay): only the movers can (the scenery's rows stand); those standing are told once (`parked`).
+    for (const v of sim.ambient.movers) {
       const f = v.free;
       if (f && (f.px !== f.x || f.py !== f.y || f.pangle !== f.angle)) writeVehicle(v, true);
     }
-    for (const id of this.vehicleSent.keys()) if (!seen.has(id)) this.vehicleSent.delete(id);
+    for (const [id, told] of this.vehicleSent) if (told.seen !== frame) this.vehicleSent.delete(id);
     let m = 0;
     const pb = pedBase(slot);
-    const pedSeen = new Set<number>();
     for (const p of sim.pedViews) {
       if (m >= MAX_PEDS) break;
       const at = pb + m * PED_STRIDE;
@@ -271,15 +276,13 @@ export class SimHost {
       data[at + P.v] = p.v; data[at + P.turnV] = p.turnV; data[at + P.age] = p.age;
       data[at + P.segment] = p.segment ?? -1; data[at + P.walking] = p.walking ? 1 : 0; data[at + P.kerbWait] = p.kerbWait; data[at + P.rank] = p.rank;
       m++;
-      pedSeen.add(p.id);
-      const now = pedRichKey(p);
+      // DO NOT make a key a person a frame to compare: the fields read against what was told, a key made only when one changed.
       const was = this.pedSent.get(p.id);
-      if (!was || now.some((x, i) => x !== was[i])) {
-        this.pedSent.set(p.id, now);
-        peds.push([p.id, pedRich(p)]);
-      }
+      if (was && !pedDiffers(p, was.key)) { was.seen = frame; continue; }
+      this.pedSent.set(p.id, { key: pedRichKey(p), seen: frame });
+      peds.push([p.id, pedRich(p)]);
     }
-    for (const id of this.pedSent.keys()) if (!pedSeen.has(id)) this.pedSent.delete(id);
+    for (const [id, told] of this.pedSent) if (told.seen !== frame) this.pedSent.delete(id);
     const h = headBase(slot);
     data[h + H.tick] = ++this.tick; data[h + H.time] = sim.clock.time; data[h + H.vehicles] = n; data[h + H.peds] = m;
     data[h + H.alpha] = alpha; data[h + H.steps] = sim.clock.lastSteps; data[h + H.stepMs] = sim.clock.lastStepMs; data[h + H.minutes] = sim.city.minutes(sim);
@@ -303,16 +306,33 @@ export class SimHost {
     };
     const layout = log.nodes === null ? { all: true, junctions: sim.junctionNodesInOrder().map(layoutOf) }
       : log.nodes.length ? { all: false, junctions: [...new Set(log.nodes)].map(layoutOf) } : null;
-    if (log.nodes === null) this.lightsSent.clear();
     const signals: SignalLights[] = [];
-    for (const [node, controller] of sim.controllers) {
+    const tell = (node: NodeId, controller: SignalController): void => {
       const stage = `${this.planId(controller)}|${controller.stageIndex}|${controller.sub}`;
-      if (this.lightsSent.get(node) === stage) continue;
+      if (this.lightsSent.get(node) === stage) return;
       this.lightsSent.set(node, stage);
       const junction = sim.graph.junctions.get(node);
       signals.push({ node, stage, states: (junction?.groups ?? []).map((g) => [g.id, signalStateFor(controller, g.id)] as const) });
+    };
+    // DO NOT read every junction's lights a frame: a light changes only where a signal was stepped or planned again (the signals' log).
+    const stepped = sim.takeSignalsStepped(this.stepped);
+    if (log.nodes === null) {
+      this.lightsSent.clear();
+      this.tellEvery(tell);
+      return { layout, signals };
+    }
+    for (const list of [log.nodes, stepped]) {
+      for (const node of list) {
+        const controller = sim.controller(node);
+        if (controller) tell(node, controller);
+      }
     }
     return { layout, signals };
+  }
+
+  /** @rebuild Every junction's lights told: the first frame, another map, or the signals' log forgotten. */
+  private tellEvery(tell: (node: NodeId, controller: SignalController) => void): void {
+    for (const [node, controller] of this.sim!.controllers) tell(node, controller);
   }
 
   private planId(c: SignalController): number {
@@ -391,9 +411,41 @@ export class SimHost {
   }
 }
 
+/** What a vehicle was last told with (`VehicleRich`), and the frame it was last written in. */
+interface ToldVehicle {
+  readonly color: string;
+  readonly archetype: string;
+  /** Doors open or a kerb stop under way: told each frame while they last, and once after. */
+  readonly busy: boolean;
+  readonly people: readonly number[];
+  readonly peopleAge: readonly string[];
+  seen: number;
+}
+
+/** What a person was last told with (`pedRichKey`), and the frame it was last written in. */
+interface ToldPed {
+  readonly key: readonly unknown[];
+  seen: number;
+}
+
+/** Two lists the same, item by item. */
+function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 /** What a person is told with, by reference: told again when any of these changes. */
+const PED_RICH = ['panic', 'maimed', 'lost', 'bleeding', 'wound', 'style', 'hand', 'carry', 'ageClass', 'gender', 'party', 'ground', 'stretch', 'waitingFor', 'gesture'] as const satisfies readonly (keyof PedView)[];
+
 function pedRichKey(p: PedView): readonly unknown[] {
-  return [p.panic, p.maimed, p.lost, p.bleeding, p.wound, p.style, p.hand, p.carry, p.ageClass, p.gender, p.party, p.ground, p.stretch, p.waitingFor, p.gesture];
+  return PED_RICH.map((field) => p[field]);
+}
+
+/** Whether a person differs from its key (`pedRichKey`), field by field, with no key made. */
+function pedDiffers(p: PedView, key: readonly unknown[]): boolean {
+  for (let i = 0; i < PED_RICH.length; i++) if (p[PED_RICH[i]!] !== key[i]) return true;
+  return false;
 }
 
 function pedRich(p: PedView): PedRich {
