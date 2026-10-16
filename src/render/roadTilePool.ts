@@ -99,7 +99,7 @@ export class RoadTilePool implements RoadTiler {
     try {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
-        const worker = jobPort('roadTiles', k);
+        const worker = jobPort('roadTiles');
         const lane: Lane = { worker, waiting: new Map(), coarsening: new Map(), heard: performance.now(), told: false };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; need?: Float64Array; tiles?: TileMeshes[]; error?: string; coarse?: BlockArrays | null }>) => {
           if (this.lanes !== lanes) return;

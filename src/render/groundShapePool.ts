@@ -70,7 +70,7 @@ export class GroundShapePool implements GroundWorkers {
     try {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
-        const worker = jobPort('groundShape', k);
+        const worker = jobPort('groundShape');
         const lane: Lane = { worker, waiting: new Map(), heard: performance.now() };
         worker.onmessage = (event: MessageEvent<{ id: number; answer?: GroundJobAnswer; error?: string }>) => {
           if (this.lanes !== lanes) return;

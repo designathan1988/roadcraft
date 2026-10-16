@@ -33,7 +33,7 @@ function start(): Worker | null {
   if (worker || broken) return worker;
   if (typeof Worker === 'undefined') { broken = true; return null; }
   try {
-    worker = jobPort('ecology', 0);
+    worker = jobPort('ecology');
     worker.onmessage = (event: MessageEvent<{ id: number; field?: EcologyField; woods?: FarWoods; error?: string }>) => {
       const job = busy;
       busy = null;

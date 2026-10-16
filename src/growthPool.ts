@@ -55,7 +55,7 @@ export class GrowthPool implements GrowthLane {
   private start(): void {
     if (typeof Worker === 'undefined') { this.local = new GrowthReplica(); return; }
     try {
-      const worker = jobPort('growth', 0);
+      const worker = jobPort('growth');
       worker.onmessage = (event: MessageEvent<GrowAnswer>) => {
         if (this.worker !== worker) return;
         this.postedAt = null;

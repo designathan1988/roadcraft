@@ -34,7 +34,7 @@ function start(): Lane[] | null {
   try {
     lanes = [];
     for (let k = 0; k < LANES; k++) {
-      const worker = jobPort('flatGround', k);
+      const worker = jobPort('flatGround');
       const lane: Lane = { worker, busy: null };
       worker.onmessage = (event: MessageEvent<{ id: number; mesh?: PlateMesh; error?: string }>) => {
         const job = lane.busy;

@@ -67,7 +67,7 @@ function startWorker(): Worker | null {
   if (worker || unavailable) return worker;
   if (typeof Worker === 'undefined') return null;
   try {
-    const created = jobPort('garmentPadding', 0);
+    const created = jobPort('garmentPadding');
     created.onmessage = ({ data }: MessageEvent<GarmentPadResponse>) => {
       const job = waiting.get(data.id);
       if (!job) return;

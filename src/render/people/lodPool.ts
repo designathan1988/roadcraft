@@ -12,7 +12,7 @@ let pool: Pool | null | undefined;
 export function lodPool(): Pool | null {
   if (pool !== undefined) return pool;
   if (typeof Worker === 'undefined' || typeof window === 'undefined') return (pool = null);
-  const worker = jobPort('peopleLod', 0);
+  const worker = jobPort('peopleLod');
   type Answer = { id: number; levels?: LodLevel[]; index?: Uint32Array | null; ladder?: Uint32Array[]; error?: string };
   const waiting = new Map<number, { resolve: (answer: Answer) => void; reject: (error: Error) => void }>();
   let next = 1;

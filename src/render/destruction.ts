@@ -92,7 +92,7 @@ export function createDestruction(
   const workerOf = (): Worker => {
     const size = Math.max(1, Math.min(4, (navigator.hardwareConcurrency ?? 4) - 1));
     if (workers.length < size) {
-      const worker = jobPort('fracture', workers.length);
+      const worker = jobPort('fracture');
       workers.push(worker);
       const failAll = (why: string): void => { for (const [id, job] of [...jobs]) if (job.worker === worker) fail(id, why); };
       worker.onerror = (e) => { e.preventDefault(); failAll(e.message || 'worker error'); };

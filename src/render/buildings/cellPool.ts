@@ -151,7 +151,7 @@ export class CellPool {
       const boxes = this.boxes();
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
-        const worker = jobPort('cells', k);
+        const worker = jobPort('cells');
         const lane: Lane = { worker, jobs: new Map(), queue: [] };
         worker.onmessage = (event: MessageEvent<WorkReply | { kind: 'error'; job: number; message: string }>) => this.answer(lane, event.data);
         worker.onerror = (event) => {

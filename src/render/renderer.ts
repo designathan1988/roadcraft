@@ -579,7 +579,7 @@ export function createSceneRenderer(
   const storedKeys = new Set<string>();
   /** Where the road tiles are kept for a later session, off the page (`derivedWriter.worker.ts`); none in tests. */
   const tileWriter = tilesPrefix && typeof Worker !== 'undefined'
-    ? jobPort('derivedWriter', 0) : null;
+    ? jobPort('derivedWriter') : null;
   /** Where the camera looks and how far the roads are at full detail round it (`mesh/roadResidency.ts`). */
   const roadFocus = { x: initialCentre.x, y: initialCentre.y, reach: 700, frames: 0 };
   const surfaceReuse: SurfaceReuse = {

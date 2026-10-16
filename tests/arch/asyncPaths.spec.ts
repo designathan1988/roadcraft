@@ -129,7 +129,7 @@ describe('the growth of the buildings', () => {
 
   it('the pool posts to the growth worker, and the page writes only what it answers', () => {
     const pool = read('src/growthPool.ts');
-    expect(pool).toMatch(/jobPort\('growth', 0\)/);
+    expect(pool).toMatch(/jobPort\('growth'\)/);
     const feed = read('src/editor/growthFeed.ts');
     expect(feed).not.toMatch(/(designOnLot|growOnLot)\(/);
     // Asked again when the document moved: checked against it before it is written.
@@ -184,7 +184,7 @@ describe('the bays of the lots', () => {
   it('are asked of the workers in the game, worked out on the page only by a world without them', () => {
     // The simulation's worker has the pool (`bayPool.ts`, the job system's `bays` lanes).
     expect(read('src/sim/host/simHost.ts')).toMatch(/useBayWorkers\(sim, new BayPool\(\)\);/);
-    expect(read('src/bayPool.ts')).toMatch(/jobPort\('bays', k\)/);
+    expect(read('src/bayPool.ts')).toMatch(/jobPort\('bays'\)/);
     const parking = read('src/sim/agents/parking.ts');
     // A lot looked at is asked of the workers when the world has them; `bayRows` on the page only without.
     expect(bodyOf(parking, 'baysNow')).toMatch(/lookAtLot\([^;]*workers \? asked : null\);/);

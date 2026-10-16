@@ -213,7 +213,7 @@ export class ConflictPool implements PairMeasurer {
     try {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
-        const worker = jobPort('conflicts', k);
+        const worker = jobPort('conflicts');
         const lane: Lane = { worker, waiting: new Map(), watchdog: null };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; finished?: FinishedPair[]; corners?: (Float64Array | null)[][]; junctions?: JunctionAnswer[]; error?: string }>) => {
           if (this.lanes !== lanes) return;

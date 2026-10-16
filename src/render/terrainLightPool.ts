@@ -26,8 +26,8 @@ function start(grid: LightGrid): Lane[] | null {
   if (lanes || broken) return lanes;
   if (typeof Worker === 'undefined') { broken = true; return null; }
   try {
-    lanes = Array.from({ length: POOL_SIZE }, (_, index) => {
-      const worker = jobPort('terrainLight', index);
+    lanes = Array.from({ length: POOL_SIZE }, () => {
+      const worker = jobPort('terrainLight');
       worker.postMessage({ grid });
       const lane: Lane = { worker, queue: [], busy: null };
       worker.onmessage = (event: MessageEvent<(LightResult & { key: number }) | { error: string; key: number }>) => {

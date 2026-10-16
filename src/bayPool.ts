@@ -62,7 +62,7 @@ export class BayPool implements BayWorkers {
     try {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
-        const worker = jobPort('bays', k);
+        const worker = jobPort('bays');
         const lane: Lane = { worker, waiting: new Map(), heard: performance.now(), told: false };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; bays?: Bay[][]; error?: string }>) => {
           if (this.lanes !== lanes) return;
