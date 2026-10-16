@@ -292,23 +292,8 @@
       "count": 1
     }
   },
-  "src/render/materials.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
-  "src/render/mesh/detailLayer.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/render/mesh/simplify.ts": {
     "roadcraft/no-silent-catch": {
-      "count": 1
-    }
-  },
-  "src/render/mesh/textureBaker.ts": {
-    "roadcraft/no-module-state": {
       "count": 1
     }
   },
@@ -434,20 +419,12 @@
       "count": 4
     }
   },
-  "src/render/surfaceBake.worker.ts": {
-    "roadcraft/no-silent-catch": {
-      "count": 1
-    }
-  },
   "src/render/terrain.ts": {
     "max-lines": {
       "count": 1
     },
     "roadcraft/no-global-revision": {
       "count": 7
-    },
-    "roadcraft/no-module-state": {
-      "count": 1
     }
   },
   "src/render/terrainLight.worker.ts": {

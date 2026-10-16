@@ -1,103 +1,4 @@
-import {
-  CanvasTexture, DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace,
-  RepeatWrapping, RGBAFormat, SRGBColorSpace, UnsignedByteType, type Texture,
-} from 'three';
-
-/** Procedural texture baking. */
-
-const cache = new Map<string, Texture>();
-
-/** Transferable pixels produced by the same canvas recipes in a worker. */
-export interface BakedPixels {
-  readonly key: string;
-  readonly width: number;
-  readonly height: number;
-  readonly rgba: ArrayBuffer;
-}
-
-export function canvasPixels(key: string, texture: Texture): BakedPixels {
-  const canvas = texture.image as HTMLCanvasElement | OffscreenCanvas;
-  const context = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-  const image = context?.getImageData(0, 0, canvas.width, canvas.height);
-  if (!image) throw new Error(`Cannot read baked texture ${key}`);
-  return { key, width: canvas.width, height: canvas.height, rgba: image.data.buffer };
-}
-
-/** Baked textures whose texels are let go once on the GPU, by key: given back by `refillBakedTexels` (a lost context, a new anisotropy). */
-const gpuOnlyTexels = new Map<string, DataTexture>();
-/** What reads the texels again from the bake's cache (`surfaceBakeClient.ts`), set by the renderer; null: none, the texels are kept. */
-let texelSource: (() => void) | null = null;
-let texelsWanted = false;
-
-/** DO NOT keep a baked texture's texels once uploaded: some 250 MB of the page's heap were copies of what the GPU holds. */
-function letTexelsGo(texture: Texture): void {
-  if (!texelSource) return;
-  (texture.image as { data: Uint8Array | null }).data = null;
-}
-
-/** The baked textures' texels asked again (a texture must be uploaded anew); once until they come. */
-function wantTexels(): void {
-  if (texelsWanted || !texelSource) return;
-  texelsWanted = true;
-  texelSource();
-}
-
-/** Where the texels are read again from, once the textures may let theirs go. */
-export function setTexelSource(source: () => void): void {
-  texelSource = source;
-}
-
-/** Texels read again: each let-go texture given its own and uploaded anew (it lets them go again after). */
-export function refillBakedTexels(pixels: readonly BakedPixels[]): void {
-  texelsWanted = false;
-  for (const item of pixels) {
-    const texture = gpuOnlyTexels.get(item.key);
-    const image = texture?.image as { data: Uint8Array | null } | undefined;
-    if (!texture || !image || image.data) continue;
-    image.data = new Uint8Array(item.rgba);
-    texture.needsUpdate = true;
-  }
-}
-
-/** Every baked texture let go, its texels needed again (the WebGL context restored). */
-export function wantAllTexels(): void {
-  wantTexels();
-}
-
-/** The worker sends raw texels, preserving the original canvas pixels exactly. */
-export function bakedTextureFromPixels(pixels: BakedPixels, srgb: boolean): Texture {
-  const value = new DataTexture(new Uint8Array(pixels.rgba), pixels.width, pixels.height, RGBAFormat, UnsignedByteType);
-  value.onUpdate = letTexelsGo;
-  gpuOnlyTexels.set(pixels.key, value);
-  value.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
-  value.wrapS = RepeatWrapping;
-  value.wrapT = RepeatWrapping;
-  value.magFilter = LinearFilter;
-  value.minFilter = LinearMipmapLinearFilter;
-  value.flipY = true;
-  value.generateMipmaps = true;
-  value.needsUpdate = true;
-  return value;
-}
-
-export function takeBakedSurfacePixels(): BakedPixels[] {
-  return [...cache].map(([key, value]) => canvasPixels(key, value));
-}
-
-export function primeBakedSurfacePixels(pixels: readonly BakedPixels[]): void {
-  for (const item of pixels) cache.set(item.key, bakedTextureFromPixels(item, item.key.endsWith(':map')));
-}
-
-export function bakedTexture(key: string): Texture | undefined { return cache.get(key); }
-export function rememberBakedTexture(key: string, value: Texture): void { cache.set(key, value); }
-
-function setAnisotropy(value: Texture, anisotropy: number): void {
-  if (value.anisotropy >= anisotropy) return;
-  value.anisotropy = anisotropy;
-  // Texels let go: uploaded anew only once they are read back (an upload of none would draw it black).
-  if ((value.image as { data?: unknown } | null)?.data === null) { wantTexels(); return; }
-  value.needsUpdate = true;
-}
+/** Procedural texture recipes and the texels they bake: pure, run at build time (`scripts/vite/surface-bake-plugin.ts`), nothing baked during play. */
 
 /** Deterministic 2D value noise with a positive integer period, so the result tiles. */
 export function makeNoise(seed: number): (x: number, y: number, period: number) => number {
@@ -150,42 +51,8 @@ export function fbm(
   return sum / total;
 }
 
-export interface SurfaceBake {
-  readonly map: Texture;
-  readonly normalMap: Texture;
-  readonly roughnessMap: Texture;
-}
-
-function texture(canvas: HTMLCanvasElement, srgb: boolean, repeat: number, anisotropy: number): Texture {
-  const value = new CanvasTexture(canvas);
-  if (srgb) value.colorSpace = SRGBColorSpace;
-  value.wrapS = RepeatWrapping;
-  value.wrapT = RepeatWrapping;
-  value.repeat.set(repeat, repeat);
-  value.anisotropy = anisotropy;
-  value.needsUpdate = true;
-  return value;
-}
-
-function canvasOf(size: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D | null } {
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  return { canvas, ctx: canvas.getContext('2d') };
-}
-
-/** Derives a tangent-space normal map from a height field, by central difference. */
-export function normalMapFrom(height: Float32Array, size: number, strength: number): HTMLCanvasElement {
-  const { canvas, ctx } = canvasOf(size);
-  if (!ctx) return canvas;
-  const image = ctx.createImageData(size, size);
-  normalTexels(height, size, strength, image.data);
-  ctx.putImageData(image, 0, 0);
-  return canvas;
-}
-
-/** The RGBA texels of `normalMapFrom`, written into `out` (size * size * 4). */
-export function normalTexels(height: Float32Array, size: number, strength: number, out: Uint8ClampedArray): void {
+/** The RGBA texels of a tangent-space normal map derived from a height field by central difference, written into `out` (size * size * 4). */
+export function normalTexels(height: Float32Array, size: number, strength: number, out: Uint8Array | Uint8ClampedArray): void {
   for (let y = 0; y < size; y++) {
     const row = y * size;
     const above = (y === 0 ? size - 1 : y - 1) * size;
@@ -208,21 +75,8 @@ export function normalTexels(height: Float32Array, size: number, strength: numbe
   }
 }
 
-/** Roughness in red and green and, when `metal` is given, metalness in blue */
-function grayscaleCanvas(values: Float32Array, size: number, metal?: Float32Array): HTMLCanvasElement {
-  const { canvas, ctx } = canvasOf(size);
-  if (!ctx) return canvas;
-  const image = ctx.createImageData(size, size);
-  for (let i = 0; i < values.length; i++) {
-    const v = Math.round(Math.min(1, Math.max(0, values[i] as number)) * 255);
-    image.data[i * 4] = v;
-    image.data[i * 4 + 1] = v;
-    image.data[i * 4 + 2] = metal ? Math.round(Math.min(1, Math.max(0, metal[i] as number)) * 255) : v;
-    image.data[i * 4 + 3] = 255;
-  }
-  ctx.putImageData(image, 0, 0);
-  return canvas;
-}
+/** A value in 0..1 as a texel byte. */
+const byte = (value: number): number => Math.round(Math.min(1, Math.max(0, value)) * 255);
 
 export interface SurfaceRecipe {
   readonly size: number;
@@ -240,58 +94,48 @@ export interface SurfaceRecipe {
   readonly metallic?: boolean;
 }
 
-/** Bakes one material's colour, normal and roughness maps in a single sweep. */
-export function bakeSurface(key: string, recipe: SurfaceRecipe, anisotropy: number): SurfaceBake {
-  const cached = cache.get(`${key}:map`);
-  if (cached) {
-    const normalMap = cache.get(`${key}:normal`) as Texture;
-    const roughnessMap = cache.get(`${key}:rough`) as Texture;
-    setAnisotropy(cached, anisotropy);
-    setAnisotropy(normalMap, anisotropy);
-    setAnisotropy(roughnessMap, anisotropy);
-    return {
-      map: cached,
-      normalMap,
-      roughnessMap,
-    };
-  }
-
-  const size = recipe.size;
-  const { canvas, ctx } = canvasOf(size);
-  const height = new Float32Array(size * size);
-  const rough = new Float32Array(size * size);
-  const metal = recipe.metallic ? new Float32Array(size * size) : undefined;
-  const out = { r: 0, g: 0, b: 0, h: 0, rough: 0.9, metal: 0 };
-
-  if (ctx) {
-    const image = ctx.createImageData(size, size);
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        out.metal = 0;
-        recipe.shade(x, y, out);
-        const index = y * size + x;
-        image.data[index * 4] = Math.round(Math.min(1, Math.max(0, out.r)) * 255);
-        image.data[index * 4 + 1] = Math.round(Math.min(1, Math.max(0, out.g)) * 255);
-        image.data[index * 4 + 2] = Math.round(Math.min(1, Math.max(0, out.b)) * 255);
-        image.data[index * 4 + 3] = 255;
-        height[index] = out.h;
-        rough[index] = out.rough;
-        if (metal) metal[index] = out.metal;
-      }
-    }
-    ctx.putImageData(image, 0, 0);
-  }
-
-  const map = texture(canvas, true, 1, anisotropy);
-  const normalMap = texture(normalMapFrom(height, size, recipe.relief), false, 1, anisotropy);
-  const roughnessMap = texture(grayscaleCanvas(rough, size, metal), false, 1, anisotropy);
-  cache.set(`${key}:map`, map);
-  cache.set(`${key}:normal`, normalMap);
-  cache.set(`${key}:rough`, roughnessMap);
-  return { map, normalMap, roughnessMap };
+/** One recipe's colour, normal and roughness texels (RGBA, rows top first as a canvas holds them). */
+interface SurfaceTexels {
+  readonly size: number;
+  readonly map: Uint8Array;
+  readonly normal: Uint8Array;
+  /** Roughness in red and green and, for a `metallic` recipe, metalness in blue */
+  readonly rough: Uint8Array;
 }
 
-export function disposeBakedTextures(): void {
-  for (const value of cache.values()) value.dispose();
-  cache.clear();
+/** Bakes one recipe's colour, normal and roughness texels in a single sweep. */
+export function surfaceTexels(recipe: SurfaceRecipe): SurfaceTexels {
+  const size = recipe.size;
+  const n = size * size;
+  const map = new Uint8Array(n * 4);
+  // Float32, as the canvas bake kept them: the same bytes come out
+  const height = new Float32Array(n);
+  const rough = new Float32Array(n);
+  const metal = recipe.metallic ? new Float32Array(n) : undefined;
+  const out = { r: 0, g: 0, b: 0, h: 0, rough: 0.9, metal: 0 };
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      out.metal = 0;
+      recipe.shade(x, y, out);
+      const index = y * size + x;
+      map[index * 4] = byte(out.r);
+      map[index * 4 + 1] = byte(out.g);
+      map[index * 4 + 2] = byte(out.b);
+      map[index * 4 + 3] = 255;
+      height[index] = out.h;
+      rough[index] = out.rough;
+      if (metal) metal[index] = out.metal;
+    }
+  }
+  const normal = new Uint8Array(n * 4);
+  normalTexels(height, size, recipe.relief, normal);
+  const roughTexels = new Uint8Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const v = byte(rough[i] as number);
+    roughTexels[i * 4] = v;
+    roughTexels[i * 4 + 1] = v;
+    roughTexels[i * 4 + 2] = metal ? byte(metal[i] as number) : v;
+    roughTexels[i * 4 + 3] = 255;
+  }
+  return { size, map, normal, rough: roughTexels };
 }

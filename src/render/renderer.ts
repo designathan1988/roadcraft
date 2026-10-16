@@ -119,7 +119,7 @@ const KEPT_TILES_WAIT_MS = 3000;
 import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
-import { wantAllTexels } from './mesh/textureBaker';
+import { wantAllTexels } from './surfaceTextures';
 import { BLUEPRINTS, instantiate } from '@world/buildings/blueprints';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { QUALITY, QualityGovernor, type QualityLevel, type QualitySettings } from './quality';

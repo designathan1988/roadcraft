@@ -14,7 +14,6 @@ type CookDir = typeof COOKS[number]['dir'];
 /** The derived data kept in the player's browser (`src/render/derivedCache.ts`) */
 const DERIVED = [
   { entry: 'src/render/buildings/parts.ts', also: [] as string[], define: '__BUILDING_KIT_HASH__' },
-  { entry: 'src/render/surfaceBake.worker.ts', also: [] as string[], define: '__SURFACE_BAKE_HASH__' },
   // The procedural crowd's levels of each piece (`proceduralCrowd.ts` lodPlan).
   { entry: 'src/render/people/crowdLod.ts', also: [] as string[], define: '__CROWD_LOD_HASH__' },
   // The conflict zones of each pair of movements (`world/conflictPoints.ts`, kept by `main.ts`).

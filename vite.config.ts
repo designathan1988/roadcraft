@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from 'node:url';
 import { buildStampPlugin } from './scripts/vite/build-stamp';
 import { cookPlugin } from './scripts/vite/cook-plugin';
 import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin';
+import { surfaceBakePlugin } from './scripts/vite/surface-bake-plugin';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 // The page cross-origin isolated (MDN, crossOriginIsolated): what SharedArrayBuffer needs, for the simulation's worker.
@@ -11,7 +12,8 @@ const ISOLATED = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Em
 export default defineConfig({
   root: '.',
   // `modelUrlsPlugin`: the model files' URLs, a module per folder, never inlined (`model-urls-plugin.ts`).
-  plugins: [buildStampPlugin(), cookPlugin(), modelUrlsPlugin()],
+  // `surfaceBakePlugin`: the procedural surfaces baked at build time into KTX2 (`surface-bake-plugin.ts`); before `cookPlugin`, whose middleware serves them once baked.
+  plugins: [buildStampPlugin(), surfaceBakePlugin(), cookPlugin(), modelUrlsPlugin()],
   publicDir: false,
   // The dependencies are found from the game's own pages only.
   optimizeDeps: { entries: ['*.html'] },
