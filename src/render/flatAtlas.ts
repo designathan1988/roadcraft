@@ -706,7 +706,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     geologyAt: (x, y) => ask(x, y, (s, lx, ly) => s.geologyAt(lx, ly), (): GeologyKind => firstSurface.geologyAt(0, 0)),
     ecology: () => firstSurface.ecology(),
     get ecologyRevision() { return sum((s) => s.ecologyRevision) + shownVersion * 1_000_003; },
-    ecologyTexture: firstSurface.ecologyTexture,
     geologyChanges,
     shoreLevelAt: (x, y) => ask(x, y, (s, lx, ly) => s.shoreLevelAt(lx, ly), () => null),
     waterArea() {

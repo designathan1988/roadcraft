@@ -24,7 +24,7 @@ vi.mock('@render/terrain', async (load) => {
       const material = new MeshStandardMaterial();
       let gone = false;
       return {
-        meshes: [new Mesh()], parts: [], ground: new Mesh(), vergeMaterial: material, meshMaterial: material, ecologyTexture: null,
+        meshes: [new Mesh()], parts: [], ground: new Mesh(), vergeMaterial: material, meshMaterial: material,
         highest: () => 0, update: () => false, updatePaint: () => {}, setSun: () => {}, setWaterLook: () => {}, lookFrom: () => {},
         ecology: () => null, geologyAt: () => 'granite',
         dispose: () => { if (!gone && key >= 0) seen.live.delete(id); gone = true; },
