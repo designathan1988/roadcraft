@@ -99,6 +99,31 @@ describe('road surface tiles', () => {
     expect(warm.triangles).toBe(fresh.triangles);
   });
 
+  it('builds only the tiles within the active region, and takes the rest back when it widens', () => {
+    const bounded = reuseFor(() => elevation);
+    // The fixture spans about -1,700..1,600 by -1,300..1,950: the west half kept out.
+    bounded.within = (rect) => (rect[0] + rect[2]) / 2 >= 0;
+    const half = buildRoadSurfaces(net, elevation, materials, ground, bounded);
+    const whole = buildRoadSurfaces(net, elevation, materials, ground, reuseFor(() => elevation));
+    expect(half.built).toBeGreaterThan(0);
+    expect(half.built).toBeLessThan(whole.built);
+    expect(half.triangles).toBeLessThan(whole.triangles);
+    // Every block it has is east of the line; nothing of the west is kept or on the GPU.
+    for (const { mesh } of bounded.chunks.values()) expect(mesh.geometry.boundingBox === null || mesh.geometry.boundingBox.max.x >= -80).toBe(true);
+    // Widened: the west tiles are built now, the east ones kept as they were (by digest).
+    bounded.within = () => true;
+    const widened = buildRoadSurfaces(net, elevation, materials, ground, bounded);
+    expect(widened.built).toBe(whole.built - half.built);
+    expect(widened.reused).toBe(half.built);
+    expect(widened.triangles).toBe(whole.triangles);
+    expect(fingerprint(widened.group)).toBe(fingerprint(whole.group));
+    // Narrowed again: the west blocks let go, nothing built.
+    bounded.within = (rect) => (rect[0] + rect[2]) / 2 >= 0;
+    const narrowed = buildRoadSurfaces(net, elevation, materials, ground, bounded);
+    expect(narrowed.built).toBe(0);
+    expect(narrowed.triangles).toBe(half.triangles);
+  });
+
   it('forgets a structural level that is no longer built', () => {
     for (const segment of [...doc.segments.values()]) {
       if (segment.structure !== 'ground') doc.setSegmentStructure(segment.id, 'ground');

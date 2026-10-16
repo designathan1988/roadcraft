@@ -67,6 +67,8 @@ export interface SurfaceReuse {
   readonly retired?: Mesh[];
   /** Whether a block at (x, y), world units, is near the camera: made at full detail, its far level hidden */
   readonly near?: (x: number, y: number) => boolean;
+  /** Whether a tile of the roads is built here at all (the streamed world's active tiles, `renderer.ts` setActiveTiles): a tile left out is the far roads' to draw (`farRoads.ts`), its blocks let go. None: every tile. */
+  within?: (rect: TileRect) => boolean;
   /** Tiles kept from earlier builds and sessions (`derivedCache.ts`), by `storedKey`: what is kept is known, a tile read only when a build uses it */
   readonly stored?: StoredTiles;
   /** The passes' inputs, kept road by road and node by node between builds (`roadSurfaceInputs.ts`) */
@@ -360,12 +362,14 @@ export function* roadSurfaceSteps(
     const fromStore: number[] = [];
     // In tile order, so a mesh is laid out the same however it was reached.
     for (const key of inputs.tileKeys(pass.id)) {
-      const { reach: into, digest: read, colours } = inputs.reachOf(pass.id, key);
       const ix = Math.floor(key / 0x1_0000) - TILE_BIAS;
       const iy = (key % 0x1_0000) - TILE_BIAS;
       const rect: TileRect = [
         ix * TILE + TILE_ORIGIN, iy * TILE + TILE_ORIGIN, (ix + 1) * TILE + TILE_ORIGIN, (iy + 1) * TILE + TILE_ORIGIN,
       ];
+      // A tile of the kept ring: not built, not digested; the far roads draw it (its block loses it, or goes).
+      if (reuse?.within && !reuse.within(rect)) continue;
+      const { reach: into, digest: read, colours } = inputs.reachOf(pass.id, key);
       // A paint colour's constants in the keys of the tiles that hold lines of that colour alone.
       const digest = new Digest().add(saltValue).add(key).add(read);
       for (const color of colours) digest.add(paintSalt.get(color) ?? 0);

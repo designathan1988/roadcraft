@@ -205,7 +205,7 @@ export interface SceneHandle {
   beginLoad(): void;
   /** What else the opening waits for besides the town drawn: the tiles round the camera come in (`worldStreamer.ts` settled); null: nothing. */
   holdOpening(until: (() => boolean) | null): void;
-  /** The streamed world's active tiles (`worldStreamer.ts` isActive): the buildings of the kept ring beyond are not put together here, the far levels draw them (`BuildingLayer.setActive`). */
+  /** The streamed world's active tiles (`worldStreamer.ts` isActive): the buildings and the roads of the kept ring beyond are not put together here, the far levels draw them (`BuildingLayer.setActive`, `SurfaceReuse.within`). */
   setActiveTiles(at: ((x: number, y: number) => boolean) | null, rects: readonly ChangeRect[]): void;
   /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
   readonly farBuildings: FarTiles;
@@ -660,6 +660,8 @@ export function createSceneRenderer(
     paint: paintCatalogue(),
     // A block of road is made at full detail only near the camera (`mesh/roadLod.ts`).
     near: (x, y) => isNear(x, y, roadFocus.x, roadFocus.y, roadFocus.reach),
+    // The near roads stop at the streamed world's active tiles (by the tile's centre: a tile astride the edge is built; the far roads of the ring cover the strip twice, never a gap).
+    within: (rect) => activeAt === null || activeAt((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2),
     chunks: new Map(),
     inputs: new SurfaceInputs(),
     retired: [],
@@ -748,6 +750,10 @@ export function createSceneRenderer(
   };
   let networkRevision = -1;
   let terrainRevision = -1;
+  /** The streamed world's active tiles (`setActiveTiles`): where the near roads are built; how many times they changed, and for which the world was built. */
+  let activeAt: ((x: number, y: number) => boolean) | null = null;
+  let activeSerial = 0;
+  let activeBuilt = 0;
   let builtTriangles = 0;
   let rebuildMs = 0;
   let rebuilds = 0;
@@ -1487,7 +1493,7 @@ export function createSceneRenderer(
   let worldNet: Network | null = null;
   const rebuildWorld = (net: Network): void => {
     worldNet = net;
-    if (networkRevision === net.revision && terrainRevision === net.doc.terrainRevision) {
+    if (networkRevision === net.revision && terrainRevision === net.doc.terrainRevision && activeBuilt === activeSerial) {
       // A world being built builds the poles too (`worldSteps`)
       if (worldJob === null && (utilityRevision !== net.doc.utilityRevision || poleSerial !== net.doc.changes.serialOf(...POLE_KINDS))) {
         const atUtilities = performance.now();
@@ -1506,6 +1512,7 @@ export function createSceneRenderer(
     const previousElevation = elevation;
     networkRevision = net.revision;
     terrainRevision = net.doc.terrainRevision;
+    activeBuilt = activeSerial;
 
     // ONE solve for the whole network, shared by every consumer below.
     const offered = offeredElevation;
@@ -2148,6 +2155,9 @@ export function createSceneRenderer(
     },
     setActiveTiles(at, rects) {
       buildings.setActive(at, rects);
+      // The near roads built again for the tiles that came in or left (`rebuildWorld`: the kept tiles' digests stand, only the flipped tiles are made or let go).
+      if (rects.length || at === null) activeSerial++;
+      activeAt = at;
       if (rects.length) onAssetsReady();
     },
     holdOpening(until) {
