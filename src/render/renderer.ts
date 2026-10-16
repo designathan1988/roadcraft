@@ -654,6 +654,9 @@ export function createSceneRenderer(
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
     depends: new Map(),
+    // Each pass as the last build left it: a tile put in visits its own road tiles, not the region's (`roadSurfaces.ts` PassState).
+    passes: new Map(),
+    withinMoved: [],
     dependsOn: (minX, minY, maxX, maxY) => new Digest()
       .add(elevation?.digest(minX, minY, maxX, maxY, SURFACE_READ_REACH) ?? 0)
       .add(terrain.digest(minX, minY, maxX, maxY))
@@ -750,6 +753,8 @@ export function createSceneRenderer(
     else onAssetsReady();
   };
   let networkRevision = -1;
+  /** The blocks the roads' heights or ground changed in since the road surfaces were last built to the end (null: not known, every tile): kept across a world build replaced halfway. */
+  let surfaceBlocks: (readonly [number, number, number, number])[] | null = null;
   let terrainRevision = -1;
   /** The ground under the roads a solve will read, read off the page (`roadStations.ts`): the solve waits for it, the world standing as it was. */
   const roadStations = new RoadStations(() => onAssetsReady());
@@ -1574,8 +1579,11 @@ export function createSceneRenderer(
     }
     // Sliced, the tiles are shaped by the workers while the frames go on (`roadTilePool.ts`); built in one go
     // On land that did not move, only the tiles the differing blocks reach are digested again (`roadSurfaces.ts` `depends`).
+    // The blocks every build since the last finished one changed (a build replaced halfway left its own for this one).
+    surfaceBlocks = landStill && blocks !== null && surfaceBlocks !== null ? [...surfaceBlocks, ...blocks] : null;
     const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
-      sliced ? roadTiles : null, landStill && blocks !== null ? blocks : null);
+      sliced ? roadTiles : null, surfaceBlocks);
+    surfaceBlocks = [];
     derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
       { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
@@ -2176,6 +2184,9 @@ export function createSceneRenderer(
       // The near roads built again for the tiles that came in or left (`rebuildWorld`: the kept tiles' digests stand, only the flipped tiles are made or let go).
       if (rects.length || at === null) activeSerial++;
       activeAt = at;
+      // Where the near roads start or stop: the next finished build visits those road tiles (none known when the region goes: every tile).
+      if (at === null) surfaceReuse.withinMoved = null;
+      else surfaceReuse.withinMoved?.push(...rects);
       if (rects.length) onAssetsReady();
     },
     holdOpening(until) {

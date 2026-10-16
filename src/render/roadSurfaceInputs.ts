@@ -107,6 +107,10 @@ interface PassInputs {
   /** Whether it reads the junctions' paint (`DETAILS`): a pass at ground level. */
   readonly ground: boolean;
   readonly tiles: Map<number, TileInputs>;
+  /** When it was made (`births`): a pass let go and made again is another pass to the build. */
+  readonly born: number;
+  /** The tiles whose inputs changed (or that went) since the build last took them (`settle`). */
+  readonly dirty: Set<number>;
 }
 
 /** A pass of the surfaces as the build walks it: a structural level, or an alignment raised by hand. */
@@ -145,6 +149,8 @@ export class SurfaceInputs {
   private readonly details = new Map<number, Map<string, Set<Entry>>>();
   /** Every paint colour met (a handful: the catalogue's, `PAINT_COLOURS`, and any it lacks). */
   private readonly met = new Set<string>();
+  /** Passes made so far: each pass's birth number. */
+  private births = 0;
 
   /** @rebuild Brings the inputs up to `net`: the items its change since the last refresh names, and the roads round them, made again */
   refresh(net: Network): void {
@@ -435,7 +441,7 @@ export class SurfaceInputs {
         continue;
       }
       let pass = this.passes.get(entry.pass);
-      if (!pass) this.passes.set(entry.pass, pass = { id: entry.pass, ground: isGroundPass(entry.pass), tiles: new Map() });
+      if (!pass) this.passes.set(entry.pass, pass = { id: entry.pass, ground: isGroundPass(entry.pass), tiles: new Map(), born: this.births++, dirty: new Set() });
       for (const key of entry.tiles) {
         let tile = pass.tiles.get(key);
         if (!tile) pass.tiles.set(key, tile = { key, slots: new Map(), own: 0, ribbons: 0, reach: null, digest: 0, colours: [] });
@@ -445,6 +451,7 @@ export class SurfaceInputs {
         tile.own++;
         if (entry.slot === 'ribbons') tile.ribbons++;
         tile.reach = null;
+        pass.dirty.add(key);
       }
     }
   }
@@ -474,6 +481,7 @@ export class SurfaceInputs {
         tile.own--;
         if (entry.slot === 'ribbons') tile.ribbons--;
         tile.reach = null;
+        pass.dirty.add(key);
         if (tile.own === 0) pass.tiles.delete(key);
       }
       if (pass.tiles.size === 0) this.passes.delete(pass.id);
@@ -485,8 +493,26 @@ export class SurfaceInputs {
     for (const pass of this.passes.values()) {
       if (!pass.ground) continue;
       const tile = pass.tiles.get(key);
-      if (tile) tile.reach = null;
+      if (tile) { tile.reach = null; pass.dirty.add(key); }
     }
+  }
+
+  /** A pass's birth and the tiles whose inputs changed since the build last settled them; null when the pass is not there. */
+  dirtyOf(pass: string): { readonly born: number; readonly keys: ReadonlySet<number> } | null {
+    const p = this.passes.get(pass);
+    return p ? { born: p.born, keys: p.dirty } : null;
+  }
+
+  /** The build that took these tiles of a pass finished: they are no longer dirty (a pass made again since keeps its own). */
+  settle(pass: string, born: number, keys: Iterable<number>): void {
+    const p = this.passes.get(pass);
+    if (!p || p.born !== born) return;
+    for (const key of keys) p.dirty.delete(key);
+  }
+
+  /** Whether a pass has a tile at `key`. */
+  hasTile(pass: string, key: number): boolean {
+    return this.passes.get(pass)?.tiles.has(key) ?? false;
   }
 
   /** The passes of the surfaces: every structural level, then each alignment raised by hand, by its lowest road. */

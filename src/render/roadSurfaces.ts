@@ -69,6 +69,10 @@ export interface SurfaceReuse {
   readonly near?: (x: number, y: number) => boolean;
   /** Whether a tile of the roads is built here at all (the streamed world's active tiles, `renderer.ts` setActiveTiles): a tile left out is the far roads' to draw (`farRoads.ts`), its blocks let go. None: every tile. */
   within?: (rect: TileRect) => boolean;
+  /** Where `within`'s answer changed since the last build finished (tiles that came into or left the active region); null: it cannot say (every tile visited). */
+  withinMoved?: (readonly [number, number, number, number])[] | null;
+  /** Each pass as the last build left it (`PassState`): a build visits only what changed. None: every tile at every build. */
+  readonly passes?: Map<string, PassState>;
   /** Tiles kept from earlier builds and sessions (`derivedCache.ts`), by `storedKey`: what is kept is known, a tile read only when a build uses it */
   readonly stored?: StoredTiles;
   /** The passes' inputs, kept road by road and node by node between builds (`roadSurfaceInputs.ts`) */
@@ -106,6 +110,11 @@ export interface StoredTiles {
 export function disposeSurfaceReuse(reuse: SurfaceReuse): void {
   for (const { mesh } of reuse.chunks?.values() ?? []) disposeMesh(mesh);
   reuse.chunks?.clear();
+  // What the passes and tiles stood at goes with the blocks: a later build visits every tile again.
+  reuse.passes?.clear();
+  reuse.tiles.clear();
+  reuse.depends?.clear();
+  if (reuse.withinMoved !== undefined) reuse.withinMoved = null;
   for (const mesh of reuse.retired?.splice(0) ?? []) disposeMesh(mesh);
   for (const material of reuse.paint.values()) material.dispose();
 }
@@ -117,6 +126,8 @@ type KeptTile = readonly string[];
 
 /** One tile of a pass in a build: its digest and block, its rings, its surfaces and arrays once known. */
 interface PassTile {
+  /** Its key among the pass's tiles (`roadSurfaceInputs.ts` tileKey). */
+  readonly key: number;
   readonly value: number;
   /** Its name in the store (`storedKey`). */
   readonly stored: string;
@@ -125,6 +136,17 @@ interface PassTile {
   readonly into: Reach;
   surfaces: KeptTile | null;
   bundle: TileBundle | null;
+}
+
+/** A pass of the surfaces as the last build left it (`roadSurfaceSteps`): the constants it was built with, its inputs' birth, its tiles by key (no arrays), the tiles of each block and, for each surface, its blocks by the first tile holding it (the order a fresh build draws them in). */
+export interface PassState {
+  readonly salt: number;
+  readonly born: number;
+  readonly tiles: Map<number, PassTile>;
+  readonly chunkTiles: Map<string, Set<number>>;
+  readonly blocks: Map<string, Map<string, number>>;
+  /** Blocks whose tiles changed and that a build replaced halfway did not merge yet: merged by the next. */
+  readonly pending: Set<string>;
 }
 
 /** Whether a block's tiles are the ones its mesh was merged from, by digest. */
@@ -272,12 +294,17 @@ export function* roadSurfaceSteps(
   }
   // Every pass may paint in every colour of the catalogue: a colour with no line in a tile draws nothing there
   const paintColours = inputs.paintColours();
+  /** The tiles of the active region's edge that moved, as read now: taken off `withinMoved` only once this build is over (a build replaced halfway leaves them for the next). */
+  const moved = reuse?.withinMoved === undefined ? [] : reuse.withinMoved === null ? null : reuse.withinMoved.slice();
+  /** The dirty tiles each pass was visited with: settled once this build is over, for the same reason. */
+  const settleLater: { pass: string; born: number; keys: number[] }[] = [];
   for (const pass of passes) {
     yield;
     const structure = roadStructure(pass.structure);
     const present = pass.chain !== undefined || inputs.present(structure.id);
     if (!present) {
       reuse?.tiles.delete(pass.id);
+      reuse?.passes?.delete(pass.id);
       continue;
     }
 
@@ -348,27 +375,62 @@ export function* roadSurfaceSteps(
       else salt.add(specSalt(spec));
     }
     const saltValue = salt.value();
+    // What the pass's blocks are kept under besides their tiles: each surface's name, material and order (`keyOf`). DO NOT keep a pass's state across a change of them: its standing blocks would be looked for under keys no longer made.
+    const passSalt = new Digest().add(saltValue);
+    for (const spec of specs) passSalt.addText(spec.options.name).addText(spec.options.material.uuid).add(spec.renderOrder ?? -1);
+    const passSaltValue = passSalt.value();
 
     const previous = reuse?.tiles.get(pass.id);
-    const kept = new Map<number, KeptTile>();
+    // THE PASS AS IT STOOD (`PassState`): DO NOT walk every road tile of the region at each build (a tile put in made every pass digest, sort and regroup every tile, a slice a frame). Only the tiles whose inputs changed (`SurfaceInputs.dirtyOf`), those a changed block reaches and those that came into or left the active region (`withinMoved`) are visited, and only their blocks merged again; the first build, a pass made again, new constants or a change that cannot say where visits them all.
+    const dirtyNow = inputs.dirtyOf(pass.id);
+    const before = reuse?.passes?.get(pass.id);
+    const incremental = before !== undefined && dirtyNow !== null && before.salt === passSaltValue && before.born === dirtyNow.born
+      && changed !== null && moved !== null;
+    const state: PassState = incremental ? before : { salt: passSaltValue, born: dirtyNow?.born ?? -1, tiles: new Map(), chunkTiles: new Map(), blocks: new Map(), pending: new Set() };
+    if (dirtyNow) settleLater.push({ pass: pass.id, born: dirtyNow.born, keys: [...dirtyNow.keys] });
+    const kept = incremental && previous ? previous : new Map<number, KeptTile>();
     const knownDepends = reuse?.depends?.get(pass.id);
-    const depends = new Map<number, number>();
+    const depends = incremental && knownDepends ? knownDepends : new Map<number, number>();
     const reach = SURFACE_READ_REACH + 1;
     const reached = (rect: TileRect): boolean => changed === null
       || changed.some((b) => b[0] <= rect[2] + reach && b[2] >= rect[0] - reach && b[1] <= rect[3] + reach && b[3] >= rect[1] - reach);
-    /** The tiles in tile order: kept from before (its surfaces known, its arrays not), read from the store, or to build. */
+    /** The tiles to look at, in tile order (a mesh is laid out the same however it was reached). */
+    let visit: number[];
+    if (incremental) {
+      const keys = new Set<number>(dirtyNow!.keys);
+      const over = (r: readonly number[], grow: number): void => {
+        for (let ix = Math.floor((r[0]! - grow - TILE_ORIGIN) / TILE); ix <= Math.floor((r[2]! + grow - TILE_ORIGIN) / TILE); ix++) {
+          for (let iy = Math.floor((r[1]! - grow - TILE_ORIGIN) / TILE); iy <= Math.floor((r[3]! + grow - TILE_ORIGIN) / TILE); iy++) {
+            const key = (ix + TILE_BIAS) * 0x1_0000 + (iy + TILE_BIAS);
+            if (state.tiles.has(key) || inputs.hasTile(pass.id, key)) keys.add(key);
+          }
+        }
+      };
+      for (const b of changed!) over(b, reach);
+      for (const r of moved!) over(r, 0);
+      visit = [...keys].sort((p, q) => p - q);
+    } else visit = inputs.tileKeys(pass.id);
+    /** The blocks a visited tile came into, changed in or left: merged again; every other block stands as it is. */
+    const affected = new Set<string>();
+    /** The visited tiles that are new, changed (the tile) or gone (null): put in the pass's state only once built (DO NOT write them in as they are visited: a build replaced before building them left them as kept, never built). */
+    const changes = new Map<number, PassTile | null>();
+    /** The tiles visited and new or changed: kept from before (its surfaces known, its arrays not), read from the store, or to build. */
     const tiles: PassTile[] = [];
     /** The tiles to read from the store, by their place in `tiles`. */
     const fromStore: number[] = [];
-    // In tile order, so a mesh is laid out the same however it was reached.
-    for (const key of inputs.tileKeys(pass.id)) {
+    for (const key of visit) {
       const ix = Math.floor(key / 0x1_0000) - TILE_BIAS;
       const iy = (key % 0x1_0000) - TILE_BIAS;
       const rect: TileRect = [
         ix * TILE + TILE_ORIGIN, iy * TILE + TILE_ORIGIN, (ix + 1) * TILE + TILE_ORIGIN, (iy + 1) * TILE + TILE_ORIGIN,
       ];
-      // A tile of the kept ring: not built, not digested; the far roads draw it (its block loses it, or goes).
-      if (reuse?.within && !reuse.within(rect)) continue;
+      const old = state.tiles.get(key);
+      // A tile gone, or of the kept ring: not built, not digested; the far roads draw it (its block loses it, or goes).
+      if (!inputs.hasTile(pass.id, key) || (reuse?.within && !reuse.within(rect))) {
+        if (old) { changes.set(key, null); affected.add(old.chunk); }
+        depends.delete(key);
+        continue;
+      }
       const { reach: into, digest: read, colours } = inputs.reachOf(pass.id, key);
       // A paint colour's constants in the keys of the tiles that hold lines of that colour alone.
       const digest = new Digest().add(saltValue).add(key).add(read);
@@ -380,16 +442,16 @@ export function* roadSurfaceSteps(
         digest.add(depend);
       }
       const value = digest.value();
+      if (old && old.value === value) continue;
       const surfaces = previous?.get(value);
       const stored = storedKey(pass.id, key, value);
       const chunk = `${Math.floor(ix / CHUNK)},${Math.floor(iy / CHUNK)}`;
       if (!surfaces && reuse?.stored?.has(stored)) fromStore.push(tiles.length);
-      tiles.push({ value, stored, chunk, rect, into, surfaces: surfaces ?? null, bundle: null });
-      if (surfaces) {
-        reused++;
-        // A step too: the digests of every tile kept, back to back, were a slice of 20-30 ms after a road edit
-        yield;
-      }
+      const tile: PassTile = { key, value, stored, chunk, rect, into, surfaces: surfaces ?? null, bundle: null };
+      tiles.push(tile);
+      changes.set(key, tile);
+      affected.add(chunk);
+      if (surfaces) yield;
     }
     // The kept tiles this build uses, read off the store now (one transaction), never the whole store at the opening.
     if (fromStore.length && reuse?.stored) {
@@ -403,7 +465,6 @@ export function* roadSurfaceSteps(
         if (!bundle) continue;
         tile.bundle = bundle;
         tile.surfaces = [...bundle.keys()];
-        reused++;
       }
     }
     /** The roads a share of the tiles reads, for a worker (`roadTileMesh.ts`) */
@@ -485,30 +546,50 @@ export function* roadSurfaceSteps(
     };
     /** The tiles built afresh this pass: kept for a later session once merged (below). */
     const fresh: PassTile[] = [];
+    let builtHere = 0;
     yield* buildAll(tiles.filter((t) => t.surfaces === null), (tile) => {
       built++;
+      builtHere++;
       rebuilt.push(tile.rect);
       fresh.push(tile);
     });
-    for (const tile of tiles) kept.set(tile.value, tile.surfaces!);
+    // Built: the changes into the pass's state, their blocks to merge (with those a build replaced halfway left unmerged) until merged.
+    for (const chunk of state.pending) affected.add(chunk);
+    for (const [key, tile] of changes) {
+      const old = state.tiles.get(key);
+      if (old) { state.chunkTiles.get(old.chunk)?.delete(key); if (incremental) kept.delete(old.value); }
+      if (!tile) { state.tiles.delete(key); continue; }
+      state.tiles.set(key, tile);
+      let inChunk = state.chunkTiles.get(tile.chunk);
+      if (!inChunk) state.chunkTiles.set(tile.chunk, inChunk = new Set());
+      inChunk.add(key);
+      kept.set(tile.value, tile.surfaces!);
+    }
+    for (const chunk of affected) state.pending.add(chunk);
+    if (reuse?.passes) reuse.passes.set(pass.id, state);
     reuse?.tiles.set(pass.id, kept);
     reuse?.depends?.set(pass.id, depends);
+    reused += state.tiles.size - builtHere;
 
-    /** Each surface's tiles, by block of tiles, in tile order. */
-    const parts = new Map<string, Map<string, PassTile[]>>();
-    for (const spec of specs) parts.set(spec.options.name, new Map());
-    for (const tile of tiles) {
-      for (const name of tile.surfaces!) {
-        const blocks = parts.get(name);
-        if (!blocks) continue;
-        const list = blocks.get(tile.chunk);
-        if (list) list.push(tile);
-        else blocks.set(tile.chunk, [tile]);
-      }
-    }
     // A block keeps its mesh while its tiles are the same (by digest).
     const keyOf = (spec: SurfaceSpec, chunk: string): string =>
       `${pass.id}|${spec.options.name}|${chunk}|${spec.options.material.uuid}|${spec.renderOrder ?? ''}`;
+    /** Each surface's tiles in each block a visited tile touched, in tile order. */
+    const parts = new Map<string, Map<string, PassTile[]>>();
+    for (const spec of specs) parts.set(spec.options.name, new Map());
+    for (const chunk of affected) {
+      const inChunk = [...(state.chunkTiles.get(chunk) ?? [])].sort((p, q) => p - q).map((key) => state.tiles.get(key)!);
+      if (inChunk.length === 0) state.chunkTiles.delete(chunk);
+      for (const spec of specs) {
+        const name = spec.options.name;
+        const list = inChunk.filter((tile) => tile.surfaces!.includes(name));
+        if (list.length) { parts.get(name)!.set(chunk, list); continue; }
+        // No tile of the block has this surface any more: its mesh goes.
+        state.blocks.get(name)?.delete(chunk);
+        const gone = chunks?.get(keyOf(spec, chunk));
+        if (gone) { retire(gone.mesh); chunks!.delete(keyOf(spec, chunk)); }
+      }
+    }
     const again = new Set<PassTile>();
     for (const spec of specs) {
       for (const [chunk, list] of parts.get(spec.options.name) ?? []) {
@@ -519,6 +600,8 @@ export function* roadSurfaceSteps(
     }
     yield* buildAll([...again], () => { remade++; });
 
+    /** The blocks merged here without a cache to keep them (`buildRoadSurfaces` with no reuse). */
+    const own = new Map<string, Mesh>();
     const mergeAt = performance.now();
     for (const spec of specs) {
       for (const [chunk, list] of parts.get(spec.options.name) ?? []) {
@@ -538,12 +621,10 @@ export function* roadSurfaceSteps(
           const coarsen = reuse?.near && tiler?.coarsen ? tiler.coarsen.bind(tiler) : null;
           const lock = coarsen ? blockBox(list.map((tile) => tile.rect)) : null;
           const near = lock ? reuse!.near!((lock[0] + lock[2]) / 2, (lock[1] + lock[3]) / 2) : true;
-          let started: Mesh | null = null;
           mesh = mergeTiles(list.map((tile) => tile.bundle!.get(spec.options.name)!), spec.options, source,
             lock ? {
               lock, near,
               start: (block, arrays) => {
-                started = block;
                 coarsening++;
                 coarsen!(cloneBlock(arrays), lock).then((made) => {
                   // The block may have been built again meanwhile: its far level is of the one it was made for.
@@ -559,20 +640,19 @@ export function* roadSurfaceSteps(
                 }).finally(() => { coarsening--; });
               },
             } : undefined);
-          void started;
           // Its full level, when it comes back near, copied from the kept tiles (`reuse.stored`): DO NOT cut and triangulate the block's tiles on the page again (`roadResidency.ts` makeNear).
           const levels = mesh && lock ? levelsOf(mesh) : undefined;
           if (mesh && levels && reuse?.stored) {
             const stored = reuse.stored, keys = list.map((tile) => tile.stored), name = spec.options.name, material = spec.options.material;
             levels.bring = async (): Promise<BlockArrays | null> => {
               const got = await stored.fetch(keys);
-              const tiles: Tile[] = [];
-              for (const key of keys) {
-                const tile = got.get(key)?.get(name);
+              const read: Tile[] = [];
+              for (const k of keys) {
+                const tile = got.get(k)?.get(name);
                 if (!tile) return null;
-                tiles.push(tile);
+                read.push(tile);
               }
-              return blockArraysOf(tiles, material);
+              return blockArraysOf(read, material);
             };
           }
           if (mesh && spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
@@ -583,6 +663,21 @@ export function* roadSurfaceSteps(
           chunksMerged++;
           yield;
         }
+        let order = state.blocks.get(spec.options.name);
+        if (!order) state.blocks.set(spec.options.name, order = new Map());
+        if (!mesh) { order.delete(chunk); continue; }
+        // Where a fresh build draws it: by its first tile holding the surface.
+        order.set(chunk, list[0]!.key);
+        if (!chunks) own.set(key, mesh);
+      }
+    }
+    // Every block of the pass, the ones merged now and the ones standing, in the order a fresh build draws them.
+    for (const spec of specs) {
+      const order = state.blocks.get(spec.options.name);
+      if (!order) continue;
+      for (const [chunk] of [...order].sort((p, q) => p[1] - q[1])) {
+        const key = keyOf(spec, chunk);
+        const mesh = chunks?.get(key)?.mesh ?? own.get(key);
         if (!mesh) continue;
         usedChunks.add(key);
         // A kept block stays where it is drawn until the swap (`adopt`).
@@ -591,13 +686,22 @@ export function* roadSurfaceSteps(
         triangles += (mesh.geometry.index?.count ?? 0) / 3;
       }
     }
-    // The tiles' arrays go with `tiles` here: copied into the blocks, which send them to the GPU.
+    // Every block it touched merged: none left for the next build.
+    for (const chunk of affected) state.pending.delete(chunk);
+    // The tiles' arrays go with this build: copied into the blocks, which send them to the GPU (the pass's state keeps none).
     mergeMs += performance.now() - mergeAt;
     // Kept for a later session only now, every block merged
     for (const tile of fresh) reuse?.keep?.(tile.stored, tile.bundle!);
+    for (const tile of tiles) tile.bundle = null;
   }
   // Blocks no surface has any more.
   if (chunks) for (const [key, { mesh }] of chunks) if (!usedChunks.has(key)) { retire(mesh); chunks.delete(key); }
+  // Over: what it was asked to visit is visited.
+  for (const { pass, born, keys } of settleLater) inputs.settle(pass, born, keys);
+  if (reuse && reuse.withinMoved !== undefined) {
+    if (moved === null) { if (reuse.withinMoved === null) reuse.withinMoved = []; }
+    else reuse.withinMoved?.splice(0, moved.length);
+  }
   // DO NOT wait without a deadline: `check` fails the pool when a worker is silent.
   while (coarsening > 0) { tiler?.check(); yield 'wait'; }
   // Where an edit's time went (`hitch:` entries).

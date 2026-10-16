@@ -82,8 +82,8 @@ desktop path still post Building objects; the sim worker keeps a second RoadDoc 
   `massing.ts`, `foundation.ts`); `interiorAt` furnishes whole floors for one window (`buildingMesh.ts`);
   lot bays and kerb bays (`parking.ts` `baysNow`) at every tile load. Fix: baked with the tile as sections
   (`sim/tileSections.ts` pattern).
-- Every tile load records 'roads' (`doc.ts`, the network revision) and runs `buildWorld`: elevation solve on
-  the page, block compares, every road tile digested (`roadSurfaces.ts`). Fix: per-tile records in the diary.
+- Every tile load records 'roads' and runs `buildWorld`: the road surfaces now visit only the tiles that changed
+  (`roadSurfaces.ts` PassState); left on the page: the block compares (`compareSolves`) and the world job's other steps.
 - `flatAtlas.ts` `ecologyRevision` adds `shownVersion`: each plate shown walks `natureSweep` (per-plate keys kept).
 - Sim: `lorryDocks.ts` `yardNeighbours` keyed by the global `doc.lotRevision`; `lotTraffic.ts` `freeBays`/
   `sceneryInBays` walk every gated bay with a string key each, every second; parked cars stand a whole
