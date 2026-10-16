@@ -175,42 +175,53 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
 
 /** Meshes whose geometry must be on the GPU before they are first drawn. three.js sends a geometry's buffers */
 const WARM_LAYER = 31;
-const toWarm: { mesh: Mesh; geometries: readonly BufferGeometry[]; done: () => void; loose?: boolean }[] = [];
+const toWarm: { mesh: Mesh; geometries: readonly BufferGeometry[]; done: () => void }[] = [];
+/** DO NOT queue loose meshes behind the scene's: one FIFO stopped at a scene job at its head, and the masses behind it kept their CPU arrays (110 MB, 2026-10-16). */
+interface LooseJob { readonly mesh: Mesh; readonly done: () => void; readonly priority: () => number; rank: number }
+const toWarmLoose: LooseJob[] = [];
 let warmer = false;
 const lightsOf = new WeakMap<Scene, Light[]>();
 export function warmAhead(mesh: Mesh, geometries: readonly BufferGeometry[]): Promise<void> {
   if (!warmer) return Promise.resolve();
   return new Promise((done) => toWarm.push({ mesh, geometries, done }));
 }
-/** Meshes not in the scene yet (a batch of buildings put together to replace the one drawn) */
-export function warmLooseAhead(meshes: readonly Mesh[]): Promise<void> | null {
+/** Meshes not in the scene yet (a batch of buildings put together to replace the one drawn); `priority`: the pixels of error their absence leaves on the screen, the largest sent first. */
+export function warmLooseAhead(meshes: readonly Mesh[], priority: () => number = () => 0): Promise<void> | null {
   // Nothing to wait for where no frame warms (tests, before the first frame).
   if (!warmer || meshes.length === 0) return null;
-  return Promise.all(meshes.map((mesh) => new Promise<void>((done) => toWarm.push({ mesh, geometries: [mesh.geometry], done, loose: true })))).then(() => {});
+  return Promise.all(meshes.map((mesh) => new Promise<void>((done) => toWarmLoose.push({ mesh, done, priority, rank: 0 })))).then(() => {});
 }
 /** DO NOT dispose a mesh still waiting here without this */
 export function cancelWarm(meshes: Iterable<Mesh>): void {
   const gone = new Set(meshes);
-  for (let i = toWarm.length - 1; i >= 0; i--) {
-    const job = toWarm[i]!;
-    if (!gone.has(job.mesh)) continue;
-    toWarm.splice(i, 1);
-    job.done();
+  for (const queue of [toWarm, toWarmLoose] as { mesh: Mesh; done: () => void }[][]) {
+    for (let i = queue.length - 1; i >= 0; i--) {
+      const job = queue[i]!;
+      if (!gone.has(job.mesh)) continue;
+      queue.splice(i, 1);
+      job.done();
+    }
   }
 }
-/** Sends one waiting mesh's geometry to the GPU, after the frame (`renderer.ts`). */
+/** Sends one waiting scene mesh's geometry to the GPU, after the frame (`renderer.ts`), and loose meshes by their error on the screen within a few milliseconds (one at least, so the queue always moves). */
 export function drainWarm(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   warmer = true;
-  // Loose meshes (a batch of buildings) several a frame within a few milliseconds; one at least, so the queue always moves.
+  warmOne(renderer, camera, scene, target);
+  if (toWarmLoose.length === 0) return;
   const until = performance.now() + WARM_SLICE_MS;
-  do warmOne(renderer, camera, scene, target);
-  while (toWarm.length > 0 && toWarm[0]!.loose && performance.now() < until);
+  // Ranked once a frame, the largest error last (popped first); the eye moved since they were queued.
+  for (const job of toWarmLoose) job.rank = job.priority();
+  toWarmLoose.sort((a, b) => a.rank - b.rank);
+  do {
+    const job = toWarmLoose.pop()!;
+    try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { job.done(); }
+  } while (toWarmLoose.length > 0 && performance.now() < until);
 }
 /** Milliseconds a frame for loose meshes (`drainWarm`). */
 const WARM_SLICE_MS = 6;
 /** Whether meshes still wait to go to the GPU: the renderer asks for another frame meanwhile. */
 export function warmPending(): boolean {
-  return toWarm.length > 0;
+  return toWarm.length > 0 || toWarmLoose.length > 0;
 }
 
 /** A loose mesh's buffers sent up in a scene of its own (`warmLoose`) */
@@ -251,11 +262,7 @@ function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly Buf
 function warmOne(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   const job = toWarm.shift();
   if (!job) return;
-  const { mesh, geometries, done, loose } = job;
-  if (loose) {
-    try { warmLoose(renderer, mesh, geometries); } finally { done(); }
-    return;
-  }
+  const { mesh, geometries, done } = job;
   let lights = lightsOf.get(scene);
   if (!lights) {
     lights = [];
