@@ -620,6 +620,9 @@ export function createBuildingLayer(): BuildingLayer {
         }
       }
     },
+    castInto(texel) {
+      for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible) cell.castInto(texel);
+    },
     setCutaway(next) {
       cutaway = next;
     },

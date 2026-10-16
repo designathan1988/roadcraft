@@ -55,6 +55,8 @@ interface Band {
   /** The level each sub-cell was last chosen at (hysteresis). */
   readonly held: Uint8Array;
   casts: boolean;
+  /** Its widest piece as drawn now, m (`choose`): what a cascade's texel is measured against (`castInto`). */
+  width: number;
 }
 
 /** The error a band's instances are grouped by starts at this, m, each band four times the last's. */
@@ -213,7 +215,7 @@ export class PartCell {
       out.push({
         kind, screen, start, box, scale,
         matrices: new InstancedInterleavedBuffer(matrices, 16), colours: colours ? new InstancedInterleavedBuffer(colours, 3) : null,
-        meshes: new Map(), drawn: new Map(), held: new Uint8Array(LEAVES), casts: false,
+        meshes: new Map(), drawn: new Map(), held: new Uint8Array(LEAVES), casts: false, width: 0,
       });
     }
     return out;
@@ -228,6 +230,7 @@ export class PartCell {
       const runs = this.runsOf(band, view);
       let width = 0;
       for (const piece of band.screen.pieces) width = Math.max(width, middle(piece, band.scale, LEAVES * 3));
+      band.width = width;
       const casts = this.kit.castsShadow.has(band.kind) && width >= view.shadowTexel * (band.casts ? COARSEN : 1);
       const recast = casts !== band.casts;
       band.casts = casts;
@@ -291,6 +294,14 @@ export class PartCell {
       kept++;
     }
     return kept;
+  }
+
+  /** Before a sun cascade is drawn: each band drawn casts into it only where its widest piece spans the cascade's texel. */
+  castInto(texel: number): void {
+    for (const band of this.bands) {
+      const casts = this.kit.castsShadow.has(band.kind) && band.width >= texel;
+      for (const key of band.drawn.keys()) band.meshes.get(key)!.castShadow = casts;
+    }
   }
 
   /** Every kind drawn faded ("Ocultar outros") or not. */

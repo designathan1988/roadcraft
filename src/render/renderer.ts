@@ -786,6 +786,8 @@ export function createSceneRenderer(
   const buildings = createBuildingLayer();
   buildings.setDetailBudget(quality.buildingDetailMB * 1e6);
   scene.add(buildings.group);
+  // Each sun cascade draws the parts wider than its own texel only, not every part the finest one draws.
+  environment.setCasters((texel) => buildings.castInto(texel));
   // The town's meshes keep their arrays only until they are on the GPU (`mesh/gpuOnly.ts`)
   renderer.domElement.addEventListener('webglcontextrestored', () => {
     refillArrays(scene);

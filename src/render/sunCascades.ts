@@ -76,6 +76,8 @@ export interface SunCascades {
   /** Cascade 0 is the sun the rest of the game reads (its colour, intensity and direction). */
   readonly lights: readonly DirectionalLight[];
   setMovers(movers: readonly Movers[]): void;
+  /** What chooses its casters by size, told each cascade's texel (m) before that cascade is drawn: a piece narrower than it is a smudge PCF spreads away. */
+  setCasters(casters: ((texel: number) => void) | null): void;
   /** Fits the cascades to what the camera sees of the ground and what stands on it */
   follow(camera: Camera, sunDirection: Vector3, groundAt: (x: number, y: number) => number, target: Vector3, top: number): boolean;
   /** Marks the cascades that must be drawn this frame; true when any is (the renderer's `shadowMap.needsUpdate`). */
@@ -134,6 +136,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   const hold = new SunHold();
   let sunStepped = true;
   let movers: readonly Movers[] = [];
+  let casters: ((texel: number) => void) | null = null;
   let enabled = true;
   /** The roots hidden in this frame's shadow pass, put back after it (`restore`). */
   const hidden: Object3D[] = [];
@@ -177,6 +180,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           hidden.push(root);
         }
       }
+      casters?.(texelOf(i));
     };
   });
   function restore(): void {
@@ -235,6 +239,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   return {
     lights,
     setMovers(next) { movers = next; },
+    setCasters(next) { casters = next; },
     follow(camera, sunDirection, groundAt, target, top) {
       if (!enabled) return false;
       sunStepped = hold.take(sunDirection);
