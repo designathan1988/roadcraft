@@ -17,6 +17,7 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   garmentPadding: () => import('../render/people/garmentPadding.worker'),
   peopleLod: () => import('../render/people/lodWorker'),
   roadTiles: () => import('../render/roadTile.worker'),
+  farRoads: () => import('../render/farRoads.worker'),
   terrainLight: () => import('../render/terrainLight.worker'),
   derivedWriter: () => import('../render/derivedWriter.worker'),
   save: () => import('../editor/save.worker'),

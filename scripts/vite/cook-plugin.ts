@@ -22,6 +22,8 @@ const DERIVED = [
   { entry: 'src/render/roadSurfaces.ts', also: [] as string[], define: '__ROAD_TILES_HASH__' },
   // The buildings' far levels baked per tile (`render/buildings/farTiles.ts`, kept by `farLevels.ts`).
   { entry: 'src/render/buildings/farTiles.ts', also: [] as string[], define: '__FAR_MASS_HASH__' },
+  // The roads' far levels baked per tile (`render/farRoadTiles.ts`, kept by `farRoads.ts`).
+  { entry: 'src/render/farRoadTiles.ts', also: [] as string[], define: '__FAR_ROADS_HASH__' },
 ] as const;
 /** The path aliases of `tsconfig.json`. */
 const ALIASES: readonly [string, string][] = [

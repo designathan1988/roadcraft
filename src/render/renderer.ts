@@ -105,6 +105,8 @@ import { createBarriers } from './barriers';
 import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview } from './transit';
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
+import { FarRoads } from './farRoads';
+import type { SharedGroundAt } from './sharedGround';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
@@ -196,6 +198,8 @@ export interface SceneHandle {
   holdOpening(until: (() => boolean) | null): void;
   /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
   readonly farBuildings: FarTiles;
+  /** The roads of the tiles not in the page's document, baked per tile from the tile store (`farRoads.ts`). */
+  readonly farRoads: FarTiles;
   readonly backend: 'three-webgl';
   readonly viewport: Viewport;
   readonly scene: Scene;
@@ -539,6 +543,9 @@ export function createSceneRenderer(
   // Roads, plants, poles, furniture, forests: placed once, never moved (`stillTree.ts`).
   holdStill(world);
   scene.add(world);
+  /** The roads of the tiles not in the page's document (`farRoads.ts`), on the ground shared with the workers. */
+  const farRoads = new FarRoads(() => (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null);
+  world.add(farRoads.group);
 
   let roads: RoadSurfaces | null = null;
   /** The roads' structures, cell by cell (`structureCells.ts`), made with the first world. */
@@ -812,6 +819,7 @@ export function createSceneRenderer(
     refillArrays(scene);
     for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
     buildings.refill();
+    farRoads.refill();
     wantAllTexels();
   });
   /** The buildings' garden plants, and the buildings and ground they were planted for. */
@@ -2105,6 +2113,9 @@ export function createSceneRenderer(
     get farBuildings() {
       return buildings.far;
     },
+    get farRoads() {
+      return farRoads;
+    },
     beginLoad() {
       reveal.begin();
       programs.begin();
@@ -2484,6 +2495,7 @@ export function createSceneRenderer(
           reach = Math.hypot(halfW, halfH / Math.max(0.3, Math.sin(rig.viewport.elevation))) * 1.25 + m(120);
         }
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach);
+        farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;
         const texel = environment.sun.castShadow ? (shadow.camera.right - shadow.camera.left) / shadow.camera.zoom / shadow.mapSize.x : Infinity;
@@ -2882,6 +2894,7 @@ export function createSceneRenderer(
       agents.dispose();
       signals.dispose();
       buildings.dispose();
+      farRoads.dispose();
       blinkMaterial.dispose();
       worldJob = null;
       roads?.dispose();

@@ -20,6 +20,7 @@ import { TERRAIN_CELL } from './terrain';
 import { attachFarLevel, cloneBlock, mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
 import { levelsOf } from './mesh/roadLod';
+import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR } from './roadTones';
 import { type TilePolys, type TileSource, tileShapes } from './roadTileShape';
 import type { RoadTiler, TileJob } from './roadTilePool';
 import type { SurfaceData } from './roadTileMesh';
@@ -162,11 +163,11 @@ const CLASS_TINT: readonly Color[] = ROAD_TYPES.map((type) =>
   new Color(type.color),
 );
 /** The tint the asphalt material is authored against, so 1.0 means "as baked". */
-const TINT_REFERENCE = new Color(0x3a3d3f);
+const TINT_REFERENCE = new Color(ASPHALT_REFERENCE);
 /** A carriageway's tone by what it is paved with; asphalt keeps its class's. */
 const CARRIAGEWAY_TINT: Readonly<Record<Exclude<CarriagewayMaterial, 'asphalt'>, Color>> = {
-  concrete: new Color(0x8f8d88),
-  cobble: new Color(0x6a5f52),
+  concrete: new Color(CARRIAGEWAY_COLOUR.concrete),
+  cobble: new Color(CARRIAGEWAY_COLOUR.cobble),
 };
 /** A colour against the reference, channel by channel: the multiplier a vertex is tinted with. */
 const againstReference = (tint: Color): [number, number, number] =>

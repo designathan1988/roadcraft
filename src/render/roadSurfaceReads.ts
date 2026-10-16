@@ -8,6 +8,7 @@ import { roadStructure, type RoadStructure } from '@world/structures';
 import { m } from '@world/units';
 import type { HeightFn, TileMeshOptions, TintFn, UvFn, UvFrameFn } from './mesh/tileMesh';
 import type { TileSource, TileSpec } from './roadTileShape';
+import { FOOTWAY_TINT } from './roadTones';
 
 /** WHAT EACH SURFACE OF A ROAD PASS READS PER VERTEX (`roadSurfaces.ts`) */
 
@@ -27,12 +28,6 @@ const RAMP_MAX_EDGE = m(0.75);
 const MEDIAN_KERB = FOOTWAY_RISE;
 /** Height of the planting inside it: the soil a hair over the kerb's top, so the two are never one plane. */
 const MEDIAN_PLANTING = FOOTWAY_RISE + m(0.02);
-/** A footway's tone over the baked pavers, by material, linear multipliers. */
-const FOOTWAY_TINT: Readonly<Record<FootwayMaterial, readonly [number, number, number]>> = {
-  pavers: [1, 1, 1],
-  concrete: [1.08, 1.08, 1.1],
-  stone: [1, 0.84, 0.66],
-};
 /** Slabs in a footway panel along a bend: a joint every this many tiles (`surfaceFrameAt`). */
 const FOOTWAY_PANEL_TILES = 2;
 /** The grid the footways' outer edges are filed by for the verge's fall (`fromFootway`). */
