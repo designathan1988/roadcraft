@@ -52,8 +52,8 @@ interface LotCar {
   path: Manoeuvre | null;
   /** Seconds in the phase. */
   t: number;
-  /** Seconds it stays parked at least. */
-  stay: number;
+  /** The lots' time (`LotTraffic.time`) its least stay parked is over at. */
+  until: number;
   /** Sent out (`depart`): it leaves once its stay is over. */
   go: boolean;
   /** Seconds waited for people on the way. */
@@ -80,11 +80,42 @@ export class LotTraffic {
   parkedIn = 0;
   leftBy = 0;
 
+  /** DO NOT step every car of the lots a tick: those parked and not sent out stand still and are left out until `depart` sends them. */
+  private readonly active = new Set<LotCar>();
+  /** Seconds the lots have run: what a parked car's least stay is counted against (`LotCar.until`). */
+  private time = 0;
+  /** The cars on their way, and those driving into or out of a bay, in all and by building: kept by each change of phase (`enter`, `track`, `untrack`). */
+  private comingCount = 0;
+  private movingCount = 0;
+  private readonly movingIn = new Map<number, number>();
+
   /** Cars driving off the road, into a bay or out of one: off the lanes */
   moving(): number {
-    let n = this.lorries.moving();
-    for (const car of this.cars.values()) if (car.phase === 'parking' || car.phase === 'leaving') n++;
-    return n;
+    return this.lorries.moving() + this.movingCount;
+  }
+
+  /** A car taken into the lots' list, in its phase. */
+  private track(car: LotCar): void {
+    this.cars.set(car.id, car);
+    this.active.add(car);
+    this.count(car, 1);
+  }
+
+  /** A car taken out of the lots' list. */
+  private untrack(car: LotCar): void {
+    if (this.cars.get(car.id) !== car) return;
+    this.cars.delete(car.id);
+    this.active.delete(car);
+    this.count(car, -1);
+  }
+
+  private count(car: LotCar, by: 1 | -1): void {
+    if (car.phase === 'coming') this.comingCount += by;
+    else if (car.phase === 'parking' || car.phase === 'leaving') {
+      this.movingCount += by;
+      const n = (this.movingIn.get(car.bay.building) ?? 0) + by;
+      if (n > 0) this.movingIn.set(car.bay.building, n); else this.movingIn.delete(car.bay.building);
+    }
   }
 
   /** The cars of the lots, for probes: id, phase, the bay's building, where the body stands. */
@@ -96,6 +127,11 @@ export class LotTraffic {
   reset(w?: SimWorld): void {
     this.lorries.reset(w);
     this.cars.clear();
+    this.active.clear();
+    this.time = 0;
+    this.comingCount = 0;
+    this.movingCount = 0;
+    this.movingIn.clear();
     this.owed = 0;
     this.clock = 0;
     this.baysRead = -1;
@@ -111,7 +147,8 @@ export class LotTraffic {
   /** Stage 2 (`sim/city/city.ts`): with the scenery on, cars go in and out of the lots. */
   step(w: SimWorld): void {
     if (!w.ambient.enabled) return;
-    for (const car of [...this.cars.values()]) {
+    this.time += DT;
+    for (const car of [...this.active]) {
       switch (car.phase) {
         case 'coming': this.coming(w, car); break;
         case 'parking': this.parking(w, car); break;
@@ -120,8 +157,6 @@ export class LotTraffic {
       }
       car.t += DT;
     }
-    // DO NOT ask `parked.includes` here: that walked every parked car of the map for each car of the lots, each tick.
-    for (const car of this.cars.values()) if (car.body && !w.ambient.isParked(car.body)) w.ambient.addParked(car.body);
     // The lorries, one in a yard at a time, and never while the lot's own cars are moving there.
     this.lorries.step(w, (building) => this.carsMoving(building));
     this.clock += DT;
@@ -132,8 +167,7 @@ export class LotTraffic {
     const target = trafficTarget(w);
     this.depart(w, target);
     // Trips ending in a lot, at the rate a trip ends; never more owed than can be on their way at once.
-    let coming = 0;
-    for (const car of this.cars.values()) if (car.phase === 'coming') coming++;
+    let coming = this.comingCount;
     // As many on their way as the rate brings in over the minute or so a car takes to reach its lot.
     const most = Math.max(MAX_COMING, Math.ceil((target * COMING_SECONDS) / TRIP_SECONDS));
     this.owed = Math.min(most, this.owed + (target / TRIP_SECONDS) * LOOK);
@@ -142,8 +176,7 @@ export class LotTraffic {
 
   /** Whether a lot's cars are driving in or out of it now. */
   private carsMoving(building: number): boolean {
-    for (const car of this.cars.values()) if (car.bay.building === building && (car.phase === 'parking' || car.phase === 'leaving')) return true;
-    return false;
+    return this.movingIn.has(building);
   }
 
   /** Trips owed to the lots (`TRIP_SECONDS`), fractions carried from look to look. */
@@ -157,8 +190,9 @@ export class LotTraffic {
   /** While fewer cars drive than the panel asks for, cars standing in the lots' bays drive out (a few a look) */
   private depart(w: SimWorld, target: number): void {
     // The cars driving in and out of the bays are driving too (`moving`), and those sent out will be
-    let leaving = 0;
-    for (const car of this.cars.values()) if (car.phase === 'parking' || car.phase === 'leaving' || car.go) leaving++;
+    // A car sent out stays stepped (`active`) until it is on the lane again.
+    let leaving = this.movingCount;
+    for (const car of this.active) if (car.phase === 'parked' && car.go) leaving++;
     const short = Math.min(DEPART_PER_LOOK, target - w.vehicles.size - leaving);
     if (short <= 0) return;
     const hour = this.hour(w);
@@ -173,7 +207,7 @@ export class LotTraffic {
     };
     const pool: { bay: Bay; car: LotCar | null; body: Vehicle; weight: number }[] = [];
     for (const car of this.cars.values()) {
-      if (car.phase === 'parked' && !car.go && car.stay <= 0 && car.body) pool.push({ bay: car.bay, car, body: car.body, weight: weight(car.bay) });
+      if (car.phase === 'parked' && !car.go && this.time >= car.until && car.body) pool.push({ bay: car.bay, car, body: car.body, weight: weight(car.bay) });
     }
     for (const { bay, body } of this.sceneryInBays(w)) pool.push({ bay, car: null, body, weight: weight(bay) });
     for (let k = 0; k < short && pool.length; k++) {
@@ -183,10 +217,12 @@ export class LotTraffic {
       let roll = w.rng.lots.float() * total, at = pool.length - 1;
       for (let i = 0; i < pool.length; i++) { roll -= pool[i]!.weight; if (roll < 0) { at = i; break; } }
       const pick = pool.splice(at, 1)[0]!;
-      if (pick.car) { pick.car.go = true; continue; }
+      if (pick.car) { pick.car.go = true; this.active.add(pick.car); continue; }
       // The scenery's car: the lots' from now on, its bay left empty when the scenery makes its bays again.
       w.ambient.release(pick.body);
-      this.cars.set(pick.body.id, { id: pick.body.id, bay: pick.bay, phase: 'parked', body: pick.body, path: null, t: 0, stay: 0, go: true, waited: 0, reserved: false });
+      this.track({ id: pick.body.id, bay: pick.bay, phase: 'parked', body: pick.body, path: null, t: 0, until: 0, go: true, waited: 0, reserved: false });
+      // Drawn with the cars standing in bays again, now as the lots' (`isParked`).
+      w.ambient.addParked(pick.body);
     }
   }
 
@@ -214,7 +250,7 @@ export class LotTraffic {
       const key = bayKey(car.bay);
       if (!gone.has(key)) continue;
       const now = this.bays.get(key);
-      if (now) { car.bay = now; continue; }
+      if (now) { this.count(car, -1); car.bay = now; this.count(car, 1); continue; }
       if (car.phase === 'coming') this.release(w, car);
       else if (car.phase === 'parked') this.drop(w, car);
     }
@@ -269,7 +305,7 @@ export class LotTraffic {
       planFrom(w, v);
       return false;
     }
-    this.cars.set(v.id, { id: v.id, bay, phase: 'coming', body: null, path: null, t: 0, stay: 0, go: false, waited: 0, reserved: false });
+    this.track({ id: v.id, bay, phase: 'coming', body: null, path: null, t: 0, until: 0, go: false, waited: 0, reserved: false });
     this.called++;
     return true;
   }
@@ -304,7 +340,7 @@ export class LotTraffic {
 
   private coming(w: SimWorld, car: LotCar): void {
     const v = w.vehicles.get(car.id);
-    if (!v) { this.cars.delete(car.id); return; }
+    if (!v) { this.untrack(car); return; }
     const c = v.commute;
     if (!c || car.t > CALL_TIMEOUT || (v.destination !== c.lanelet && v.lanelet !== c.lanelet)) { this.release(w, car); return; }
     // Stopped before the gate (or just past it: a lane change can carry it on, and the stop then holds it there).
@@ -315,6 +351,8 @@ export class LotTraffic {
     const body = offRoad(w, v, pose.p.x, pose.p.y, pose.angle, car.bay.building);
     body.seats = 1;
     car.body = body;
+    // DO NOT ask every car of the lots each tick: drawn with the cars standing in bays as it comes off the road (`isParked`).
+    w.ambient.addParked(body);
     car.path = arrival({ x: pose.p.x, y: pose.p.y, angle: pose.angle }, car.bay);
     this.enter(car, 'parking');
   }
@@ -330,7 +368,7 @@ export class LotTraffic {
     if (!path.done) return;
     body.seats = 0;
     car.path = null;
-    car.stay = STAY_MIN + w.rng.lots.float() * (STAY_MAX - STAY_MIN);
+    car.until = this.time + STAY_MIN + w.rng.lots.float() * (STAY_MAX - STAY_MIN);
     this.parkedIn++;
     this.enter(car, 'parked');
   }
@@ -340,9 +378,10 @@ export class LotTraffic {
     const f = body.free!;
     body.v = 0;
     setFree(body, { x: f.x, y: f.y, angle: f.angle });
-    car.stay -= DT;
+    // Standing, and not sent out: still from now on, left out of the steps until `depart` sends it.
+    if (!car.go) { this.active.delete(car); return; }
     // Out only when sent (`depart`: fewer cars drive than the panel asks for), its least stay over.
-    if (car.stay > 0 || !car.go || !car.bay.lane) return;
+    if (this.time < car.until || !car.bay.lane) return;
     body.seats = 1;
     car.path = departure(car.bay, car.bay.lane);
     this.enter(car, 'leaving');
@@ -382,7 +421,9 @@ export class LotTraffic {
   // ------------------------------------------------------------ helpers
 
   private enter(car: LotCar, phase: Phase): void {
+    this.count(car, -1);
     car.phase = phase;
+    this.count(car, 1);
     car.t = 0;
     car.waited = 0;
     car.reserved = false;
@@ -390,7 +431,7 @@ export class LotTraffic {
 
   /** A car sent to a bay that will not reach it: on to a road end like the rest. */
   private release(w: SimWorld, car: LotCar): void {
-    this.cars.delete(car.id);
+    this.untrack(car);
     const v = w.vehicles.get(car.id);
     if (!v) return;
     v.commute = null;
@@ -400,7 +441,7 @@ export class LotTraffic {
 
   /** A car off the road taken out of the lots' list and of the drawn ones. */
   private drop(w: SimWorld, car: LotCar): void {
-    this.cars.delete(car.id);
+    this.untrack(car);
     if (car.body) w.ambient.removeParked(car.body);
   }
 

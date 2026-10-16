@@ -48,7 +48,12 @@ const bayKey = (b: { x: number; y: number }): string => `${Math.round(stepsIn(b.
 
 /** The lots' traffic's own state, read for the oracle. */
 interface LotsInside {
-  cars: Map<number, { bay: Bay; body: Vehicle | null }>;
+  cars: Map<number, { bay: Bay; body: Vehicle | null; phase: string; go: boolean }>;
+  active: Set<unknown>;
+  comingCount: number;
+  movingCount: number;
+  movingIn: Map<number, number>;
+  leftBy: number;
   bays: Map<string, Bay>;
   freeBays(w: SimWorld): Bay[];
   sceneryInBays(w: SimWorld): { bay: Bay; body: Vehicle }[];
@@ -68,7 +73,7 @@ describe('the cars standing in bays, asked by the lots', () => {
     w.ambient.enabled = true;
     w.ambient.source = 'edges';
     const lots = w.city.lots as unknown as LotsInside;
-    let checked = 0, bodies = 0, freeSeen = 0, sceneryPooled = 0;
+    let checked = 0, bodies = 0, freeSeen = 0, sceneryPooled = 0, resting = 0;
     const removed: Parameters<typeof doc.buildings.restore>[1][] = [];
     const ticks = Math.round(40 / DT);
     for (let i = 0; i < ticks; i++) {
@@ -109,8 +114,22 @@ describe('the cars standing in bays, asked by the lots', () => {
       oldPool.sort((p, q) => rank.get(p.bay)! - rank.get(q.bay)!);
       expect(lots.sceneryInBays(w)).toEqual(oldPool);
       sceneryPooled += oldPool.length;
+      // The counts kept by each change of phase: as a count over every car; the cars stepped: all but those parked and not sent out.
+      let coming = 0, moving = 0;
+      const movingIn = new Map<number, number>();
+      for (const car of lots.cars.values()) {
+        if (car.phase === 'coming') coming++;
+        if (car.phase === 'parking' || car.phase === 'leaving') { moving++; movingIn.set(car.bay.building, (movingIn.get(car.bay.building) ?? 0) + 1); }
+        if (car.phase !== 'parked' || car.go) expect(lots.active.has(car)).toBe(true);
+        else if (!lots.active.has(car)) resting++;
+      }
+      for (const car of lots.active) expect([...lots.cars.values()]).toContain(car);
+      expect([lots.comingCount, lots.movingCount, [...lots.movingIn].sort()]).toEqual([coming, moving, [...movingIn].sort()]);
       checked++;
     }
+    // Cars stood still unstepped, and cars sent out of the bays still drove out.
+    expect(resting).toBeGreaterThan(0);
+    expect(lots.leftBy).toBeGreaterThan(0);
     expect(checked).toBeGreaterThan(400);
     // The lots did work: cars of theirs off the road, bays free, scenery cars to send out.
     expect(bodies).toBeGreaterThan(0);
