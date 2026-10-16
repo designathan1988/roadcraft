@@ -1,13 +1,14 @@
-import { jobLanes, jobPort } from '../../jobs/jobPool';
+import { canQueueJobs, focusDistance, type JobTicket, submitJob, warmJobWorkers } from '../../jobs/jobPool';
 import type { GroundAt } from '@world/buildings/foundation';
 import type { Finish } from '@world/buildings/materials';
 import type { PavingSource } from '@world/paving';
 import { m } from '@world/units';
+import type { SharedGroundAt } from '../sharedGround';
 import { BATCH_CELL } from './layerCells';
 import type { KitBoxes } from './cellArrays';
-import { type CellEntry, type CellJob, type CellResult, CellWork, GROUND, type JobKind, NATURAL, PAVED, type WorkReply } from './cellWork';
+import { type CellEntry, type CellJob, type CellResult, type JobKind, type WorkReply, runCellJob } from './cellWork';
 
-/** THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`, `cell.worker.ts`) */
+/** THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`, `cell.worker.ts`), through the job system's one queue (`jobPool.ts` `submitJob`) */
 
 /** What a job reads on the page: the ground as drawn and as it was, and the paving (with `pack`: read by the worker itself). */
 export interface CellEnv {
@@ -18,207 +19,181 @@ export interface CellEnv {
 
 /** How far past its cell a job's buildings read the paving off the roads handed to its worker (`PavingData`) */
 const PAVING_REACH = m(64);
+/** Which jobs go first, a band each, nearest the eye first within a band: the detail, its far level, the masses, the summaries. */
+const TIER: Readonly<Record<JobKind, number>> = { cell: 0, facade: 1, mass: 2, summary: 3 };
+/** A band: farther than any cell of any map is from the eye. */
+const TIER_SPAN = m(10_000_000);
+/** Times a job is asked again over wider roads (`wider`) before the page puts it together. */
+const MOST_WIDER = 2;
 
-/** The rectangle a cell's worker reads the paving in: the cell (`BATCH_CELL`, key "x,y") and `PAVING_REACH` round it. */
-function pavingRect(cell: string): [number, number, number, number] | null {
+/** A cell's place from its key ("x,y" in `BATCH_CELL`s), null when it is not one. */
+function cellIndex(cell: string): readonly [number, number] | null {
   const [cx, cy] = cell.split(',').map(Number) as [number, number];
-  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+  return Number.isFinite(cx) && Number.isFinite(cy) ? [cx, cy] : null;
+}
+
+/** The rectangle a cell's worker reads the paving in: the cell and `PAVING_REACH` round it. */
+function pavingRect(cell: string): [number, number, number, number] | null {
+  const at = cellIndex(cell);
+  if (!at) return null;
+  const [cx, cy] = at;
   return [cx * BATCH_CELL - PAVING_REACH, cy * BATCH_CELL - PAVING_REACH, (cx + 1) * BATCH_CELL + PAVING_REACH, (cy + 1) * BATCH_CELL + PAVING_REACH];
 }
 
-/** Its message is written when it is handed to a worker (`job()`), not when asked */
-interface Running { readonly id: number; readonly job: (worker: boolean) => { readonly job: CellJob; readonly transfer: ArrayBuffer[] }; readonly env: CellEnv; readonly done: (result: CellResult) => void; readonly lane: Lane | null; readonly rank: number }
-
-/** A worker, the jobs it is working on, and those waiting their turn, in the order asked. */
-interface Lane { readonly worker: Worker; readonly jobs: Map<number, Running>; readonly queue: Running[] }
-
-/** Most workers the pool opens. */
-const MOST_LANES = 4;
-/** DO NOT post every job at once: a worker reads its messages in order */
-const ACTIVE_PER_LANE = 1;
-/** Which jobs a lane begins first (lower first). */
-const PRIORITY: Readonly<Record<JobKind, number>> = { cell: 0, facade: 0.5, mass: 1, summary: 2 };
+/** A job asked: what it is written from when a worker takes it (`write`), and where it stands. */
+interface Asked {
+  readonly id: number;
+  readonly kind: JobKind;
+  readonly cell: string;
+  readonly entries: readonly CellEntry[];
+  /** Each record taken when asked, written as text only for the message (the page keeps none: `CellJobEntry`). */
+  readonly writers: readonly (() => string)[];
+  readonly env: CellEnv;
+  readonly done: (result: CellResult) => void;
+  readonly key: string | null;
+  readonly priority: number;
+  /** The roads handed with it: the cell and its reach, wider once the worker said so. */
+  rect: [number, number, number, number] | null;
+  widened: number;
+  ticket: JobTicket | null;
+}
 
 export class CellPool {
-  private lanes: Lane[] | null = null;
-  private broken = false;
-  private local: CellWork | null = null;
+  private readonly asked = new Map<number, Asked>();
+  /** Each key's job asked: a newer one replaces it (the queue drops it too). */
+  private readonly byKey = new Map<string, Asked>();
   private nextId = 1;
-  /** Begun jobs whose results nobody wants any more (`supersede`). */
-  private readonly abandoned = new Set<number>();
+  private warned = false;
 
   /** `workers`: false does every job on the page (tests). `tone`: each finish's colour from afar, for the masses (`kit.ts`). */
   /** `text`: an entry's record, taken when asked, written as text for the job's message when it is sent (the page keeps none). */
   constructor(private readonly boxes: () => KitBoxes, private readonly text: (entry: CellEntry) => () => string, private readonly workers = true,
     private readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>) {}
 
-  /** Jobs handed out or waiting their turn, not done yet. */
+  /** Jobs asked and not answered. */
   get running(): number {
-    let n = 0;
-    for (const lane of this.lanes ?? []) n += lane.jobs.size + lane.queue.length;
-    return n;
+    return this.asked.size;
   }
 
-  /** A cell's job: its batches ('cell'), its masses ('mass') or its buildings' summaries */
-  run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void): number {
-    // Each record taken now and written as text for this job's message alone, when it is sent (`CellJobEntry`).
-    const id = this.nextId++;
-    const writers = entries.map((e) => this.text(e));
-    const paved = env.pavedAt !== undefined;
-    // DO NOT ask the page for each point of the paving: a 2,560 m city's cells asked it 2.3 s of the page's time
-    const job = (worker: boolean): { job: CellJob; transfer: ArrayBuffer[] } => {
-      const base = { id, kind, cell, entries: entries.map((e, i) => ({ ...e, record: writers[i]!() })), paved };
-      const rect = worker && paved && env.pavedAt?.pack ? pavingRect(cell) : null;
-      const packed = rect ? env.pavedAt!.pack!(rect) : null;
-      return packed ? { job: { ...base, paving: packed.data }, transfer: packed.transfer } : { job: base, transfer: [] };
-    };
-    const lanes = this.start();
-    const lane = lanes ? lanes[laneOf(cell, lanes.length)]! : null;
+  /** A cell's job: its batches ('cell'), its far level ('facade'), its masses ('mass') or its buildings' summaries; `key`, what a newer job replaces */
+  run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void, key: string | null = null): number {
+    if (key !== null) { const older = this.byKey.get(key); if (older) this.cancel(older.id); }
+    const at = cellIndex(cell);
+    const away = at ? focusDistance((at[0] + 0.5) * BATCH_CELL, (at[1] + 0.5) * BATCH_CELL) : 0;
     // A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
-    const rank = entries.some((e) => e.key.includes('|')) ? -1 : PRIORITY[kind];
-    const running: Running = { id, job, env, done, lane, rank };
-    if (!lane) { this.onPage(running); return id; }
-    lane.queue.push(running);
-    this.pump(lane);
-    return id;
+    const priority = entries.some((e) => e.key.includes('|')) ? -TIER_SPAN : TIER[kind] * TIER_SPAN + away;
+    const asked: Asked = {
+      id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority,
+      rect: env.pavedAt ? pavingRect(cell) : null, widened: 0, ticket: null,
+    };
+    if (!this.offPage(env)) { this.onPage(asked); return asked.id; }
+    this.asked.set(asked.id, asked);
+    if (key !== null) this.byKey.set(key, asked);
+    this.submit(asked);
+    return asked.id;
   }
 
-  /** DO NOT take them only in the order asked */
-  private pump(lane: Lane): void {
-    while (lane.jobs.size < ACTIVE_PER_LANE && lane.queue.length) {
-      let at = 0;
-      for (let i = 1; i < lane.queue.length && lane.queue[at]!.rank > -1; i++) if (lane.queue[i]!.rank < lane.queue[at]!.rank) at = i;
-      const next = lane.queue.splice(at, 1)[0]!;
-      lane.jobs.set(next.id, next);
-      const { job, transfer } = next.job(true);
-      lane.worker.postMessage({ type: 'start', job }, transfer);
-    }
-  }
-
-  /** The workers made now, ahead of the first job */
+  /** The job system's workers made now, ahead of the first job. */
   warm(): void {
-    this.start();
+    if (this.workers && canQueueJobs()) warmJobWorkers();
   }
 
-  /** DO NOT only mark it: the worker went through every round of a cell nobody wanted, and the cells behind it waited. */
+  /** A job no longer wanted: never sent if waiting, its answer dropped if begun (a worker runs a job through, one message). */
   cancel(id: number): void {
-    for (const lane of this.lanes ?? []) {
-      const waiting = lane.queue.findIndex((r) => r.id === id);
-      if (waiting >= 0) { lane.queue.splice(waiting, 1); return; }
-      if (lane.jobs.delete(id)) {
-        this.abandoned.delete(id);
-        lane.worker.postMessage({ type: 'cancel', job: id });
-        this.pump(lane);
-        return;
-      }
-    }
+    const asked = this.asked.get(id);
+    if (!asked) return;
+    this.forget(asked);
+    asked.ticket?.cancel();
   }
 
-  /** A job a newer one for its cell replaces: dropped, waiting or begun (`cancel`). */
+  /** A job a newer one for its cell replaces (`cancel`). */
   supersede(id: number): void {
     this.cancel(id);
   }
 
   /** Whether a job is still waiting or being worked on (one done on the page never is). */
   isRunning(id: number): boolean {
-    return (this.lanes ?? []).some((lane) => lane.jobs.has(id) || lane.queue.some((r) => r.id === id));
+    return this.asked.has(id);
   }
 
   dispose(): void {
-    for (const lane of this.lanes ?? []) lane.worker.terminate();
-    this.lanes = null;
-    this.local = null;
+    for (const id of [...this.asked.keys()]) this.cancel(id);
   }
 
-  /** The job done here, every round answered at once. */
-  private onPage(running: Running): void {
-    this.local ??= new CellWork(this.boxes(), this.tone);
-    const work = this.local;
-    let reply = work.start(running.job(false).job);
-    while (reply.kind !== 'done') reply = work.readings(reply.job, readingsOf(reply.points, running.env));
-    this.finish(running, reply.result);
+  /** DO NOT hand a worker a job it would have to ask the page about: only with the ground shared and the paving packable (`sharedGround.ts`, `PavingSource.pack`) */
+  private offPage(env: CellEnv): boolean {
+    if (!this.workers || !canQueueJobs()) return false;
+    if (!(env.groundAt as SharedGroundAt).share?.current) return false;
+    return env.pavedAt === undefined || env.pavedAt.pack !== undefined;
   }
 
-  private finish(running: Running, result: CellResult): void {
-    running.done(result);
+  private submit(asked: Asked): void {
+    asked.ticket = submitJob({
+      service: 'cells',
+      key: asked.key === null ? null : `cells:${asked.key}`,
+      priority: asked.priority,
+      write: () => this.write(asked),
+      done: (answer) => this.answer(asked, answer as WorkReply),
+      failed: (message) => this.failed(asked, message),
+    });
   }
 
-  private start(): Lane[] | null {
-    if (this.lanes || this.broken || !this.workers) return this.lanes;
-    if (typeof Worker === 'undefined') { this.broken = true; return null; }
-    const count = jobLanes(MOST_LANES);
-    try {
-      const boxes = this.boxes();
-      const lanes: Lane[] = [];
-      for (let k = 0; k < count; k++) {
-        const worker = jobPort('cells');
-        const lane: Lane = { worker, jobs: new Map(), queue: [] };
-        worker.onmessage = (event: MessageEvent<WorkReply | { kind: 'error'; job: number; message: string }>) => this.answer(lane, event.data);
-        worker.onerror = (event) => {
-          // A worker that cannot run: its jobs, and every one from now on, are done on the page.
-          console.warn('[buildings] the cell workers failed; cells are put together on the page', event.message);
-          this.giveUp();
-        };
-        worker.postMessage({ type: 'init', boxes, tone: this.tone });
-        lanes.push(lane);
-      }
-      this.lanes = lanes;
-    } catch (error) {
-      console.warn('[buildings] no cell workers; cells are put together on the page', error);
-      this.broken = true;
-    }
-    return this.lanes;
+  /** The job as its worker reads it: the records written now, the plates' shared buffers, the roads near the cell (MDN, transfer). */
+  private write(asked: Asked): { data: CellJob; transfer: ArrayBuffer[] } {
+    const ground = (asked.env.groundAt as SharedGroundAt).share?.current;
+    if (!ground) throw new Error('[buildings] the ground is not shared any more');
+    const packed = asked.env.pavedAt && asked.rect ? asked.env.pavedAt.pack!(asked.rect) : null;
+    if (asked.env.pavedAt && asked.rect && !packed) throw new Error('[buildings] the paving cannot be handed to a worker');
+    const job: CellJob = {
+      ...this.base(asked), ground,
+      ...(asked.env.naturalAt === asked.env.groundAt ? { naturalIsGround: true } : {}),
+      ...(packed ? { paving: packed.data } : {}),
+    };
+    return { data: job, transfer: packed?.transfer ?? [] };
   }
 
-  /** A worker's reply: the readings or slots it asks answered, or its result handed on. */
-  private answer(lane: Lane, reply: WorkReply | { kind: 'error'; job: number; message: string }): void {
-    const running = lane.jobs.get(reply.job);
-    if (!running) return;
-    if (this.abandoned.has(reply.job) && (reply.kind === 'error' || reply.kind === 'done')) {
-      this.abandoned.delete(reply.job);
-      lane.jobs.delete(reply.job);
-      this.pump(lane);
+  /** What every job carries, on the page or off it. */
+  private base(asked: Asked): CellJob {
+    return {
+      id: asked.id, kind: asked.kind, cell: asked.cell, paved: asked.env.pavedAt !== undefined, boxes: this.boxes(),
+      entries: asked.entries.map((e, i) => ({ ...e, record: asked.writers[i]!() })),
+      ...(this.tone ? { tone: this.tone } : {}),
+    };
+  }
+
+  /** A worker's answer: the result handed on, the job asked again over wider roads, or put together here. */
+  private answer(asked: Asked, reply: WorkReply): void {
+    if (this.asked.get(asked.id) !== asked) return;
+    if (reply.kind === 'wider' && asked.widened < MOST_WIDER) {
+      asked.widened++;
+      asked.rect = [reply.rect[0], reply.rect[1], reply.rect[2], reply.rect[3]];
+      this.submit(asked);
       return;
     }
-    if (reply.kind === 'error') {
-      console.warn('[buildings] a cell worker failed on a cell; put together on the page', reply.message);
-      lane.jobs.delete(reply.job);
-      this.onPage({ ...running, lane: null });
-      this.pump(lane);
-      return;
-    }
-    if (reply.kind === 'done') {
-      lane.jobs.delete(reply.job);
-      this.finish(running, reply.result);
-      this.pump(lane);
-      return;
-    }
-    // The readings answered on the page, the buffer handed back (MDN, transfer).
-    const values = readingsOf(reply.points, running.env);
-    lane.worker.postMessage({ type: 'readings', job: reply.job, values }, [values.buffer]);
+    this.forget(asked);
+    if (reply.kind === 'done') { asked.done(reply.result); return; }
+    if (reply.kind === 'error') console.warn('[buildings] a cell worker failed on a cell; put together on the page', reply.message);
+    this.onPage(asked);
   }
 
-  private giveUp(): void {
-    const waiting = (this.lanes ?? []).flatMap((lane) => [...lane.jobs.values(), ...lane.queue]);
-    this.broken = true;
-    this.dispose();
-    for (const running of waiting) this.onPage({ ...running, lane: null });
+  /** The worker failed, or none runs: put together here. */
+  private failed(asked: Asked, message: string): void {
+    if (this.asked.get(asked.id) !== asked) return;
+    if (!this.warned) { this.warned = true; console.warn('[buildings] a cell job could not run in a worker; put together on the page', message); }
+    this.forget(asked);
+    this.onPage(asked);
   }
-}
 
-/** A cell's worker: the same one each time, by a hash of its key. */
-function laneOf(cell: string, lanes: number): number {
-  let h = 0;
-  for (let i = 0; i < cell.length; i++) h = (h * 31 + cell.charCodeAt(i)) | 0;
-  return Math.abs(h) % lanes;
-}
-
-/** The page's readings of kind, x, y threes. */
-function readingsOf(points: Float64Array, env: CellEnv): Float64Array {
-  const out = new Float64Array(points.length / 3);
-  for (let i = 0, at = 0; i < points.length; i += 3, at++) {
-    const kind = points[i]!, x = points[i + 1]!, y = points[i + 2]!;
-    out[at] = kind === GROUND ? env.groundAt(x, y) : kind === NATURAL ? env.naturalAt(x, y) : kind === PAVED ? env.pavedAt!(x, y) : NaN;
+  private forget(asked: Asked): void {
+    this.asked.delete(asked.id);
+    if (asked.key !== null && this.byKey.get(asked.key) === asked) this.byKey.delete(asked.key);
   }
-  return out;
+
+  /** The job done here, every height read off the page's own ground. */
+  private onPage(asked: Asked): void {
+    const { groundAt, naturalAt, pavedAt } = asked.env;
+    const reply = runCellJob(this.base(asked), { groundAt, naturalAt, ...(pavedAt ? { pavedAt } : {}) });
+    if (reply.kind !== 'done') throw new Error(`[buildings] a cell put together on the page did not finish (${asked.cell})`);
+    asked.done(reply.result);
+  }
 }

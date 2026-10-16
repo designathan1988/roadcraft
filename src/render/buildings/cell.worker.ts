@@ -1,31 +1,18 @@
-import type { Finish } from '@world/buildings/materials';
-import type { KitBoxes } from './cellArrays';
-import { type CellJob, CellWork, replyBuffers } from './cellWork';
+import { type CellJob, type WorkReply, replyBuffers, runCellJob, workerReads } from './cellWork';
 import type { JobScope } from '../../jobs/jobScope';
 
-/** One worker of the buildings' cells (`cellPool.ts`): the page's messages */
-type Message =
-  | { readonly type: 'init'; readonly boxes: KitBoxes; readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>> }
-  | { readonly type: 'start'; readonly job: CellJob }
-  | { readonly type: 'readings'; readonly job: number; readonly values: Float64Array }
-  | { readonly type: 'cancel'; readonly job: number };
-
-/** The worker's messages answered by the one `CellWork` it makes on `init`. */
+/** THE BUILDINGS' CELLS IN THE JOB SYSTEM'S QUEUE (`cellPool.ts`): each job carries all it reads, the ground read off shared memory; one answer a job */
 export function serve(scope: JobScope): void {
-  let work: CellWork | null = null;
-  scope.onmessage = (event: MessageEvent<Message>) => {
-    const message = event.data;
-    if (message.type === 'init') { work = new CellWork(message.boxes, message.tone); return; }
-    if (message.type === 'cancel') { work!.cancel(message.job); return; }
-    const job = message.type === 'start' ? message.job.id : message.job;
+  scope.onmessage = (event: MessageEvent<CellJob>) => {
+    const job = event.data;
+    let reply: WorkReply;
     try {
-      const reply = message.type === 'start' ? work!.start(message.job) : work!.readings(message.job, message.values);
-      scope.postMessage(reply, replyBuffers(reply));
+      reply = runCellJob(job, workerReads(job));
     } catch (error) {
       // Reported to the page, which puts this cell together itself (`cellPool.ts`).
       console.error('[buildings] cell worker', error);
-      scope.postMessage({ kind: 'error', job, message: String((error as Error)?.stack ?? error) });
+      reply = { kind: 'error', job: job.id, message: String((error as Error)?.stack ?? error) };
     }
+    scope.postMessage(reply, replyBuffers(reply));
   };
 }
-

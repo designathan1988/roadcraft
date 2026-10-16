@@ -63,6 +63,7 @@ import type { GullyDab } from '@world/gullies';
 import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sampleCorners, shapeCorners } from './terrainShaping';
 import { type NaturalPlate, type PlateShapeAnswer, type PlateShapeAsk, askPlate } from './groundShape';
 import type { Aabb } from '@core/aabb';
+import type { PlateHeights } from './sharedGround';
 
 /** Side of one terrain plate, in world units: the map is laid in square plates */
 const TERRAIN_SIZE = PLATE_SIZE;
@@ -1316,8 +1317,9 @@ export function wallMaterial(anisotropy: number): MeshStandardMaterial {
   return material;
 }
 
-/** One plate of the ground (`flatAtlas.ts`). */
-export function createTerrainSurface(anisotropy: number, origin: { readonly x: number; readonly y: number }, plate: number, prebuilt: PlateMesh | null = null): TerrainSurface {
+/** One plate of the ground (`flatAtlas.ts`); `heights`, the shared arrays it keeps its corners in, read by the workers (`sharedGround.ts`). */
+export function createTerrainSurface(anisotropy: number, origin: { readonly x: number; readonly y: number }, plate: number, prebuilt: PlateMesh | null = null,
+  heights: PlateHeights | null = null): TerrainSurface {
   const bakes = terrainBakes(anisotropy);
   const data = terrainData(bakes);
   /** The land's material on an ordinary mesh of the ground: the verges' (`vergeMaterial`) and the far patches' (`flatAtlas.ts`). */
@@ -1393,14 +1395,14 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     TERRAIN_BASE + sampleTerrainHeight(index, x, y);
 
   // The heights the mesh actually carries, one per grid corner
-  const grid = new Float64Array(GRID * GRID);
+  const grid: Float64Array = heights?.rendered ?? new Float64Array(GRID * GRID);
   {
     // The ground reads its grids from where it stands.
     const own = material.userData['terrainUniforms'] as { uTileOrigin: { value: Vector3 } };
     own.uTileOrigin.value.set(origin.x, 0, -origin.y);
   }
   /** The same corners before any road shaped them, so shaping is idempotent. */
-  const natural = new Float64Array(GRID * GRID);
+  const natural: Float64Array = heights?.natural ?? new Float64Array(GRID * GRID);
   /** Corners a road has moved (1), so an unshaped one can be restored cheaply */
   const shapedCorners = new Uint8Array(GRID * GRID);
   /** The drawn corners of a box (inclusive) moved: their heights, the diagonals and normals round them and the levels over them, sent to the GPU. */
@@ -1447,9 +1449,9 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   waterSurface.setGround(groundTexture, TERRAIN_HALF, TERRAIN_CELL, GRID, origin);
 
   /** Which diagonal each cell is drawn with: 0 the plane's own (b-d), 1 the other (a-c). */
-  const flip = new Uint8Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS);
+  const flip: Uint8Array = heights?.flip ?? new Uint8Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS);
   /** The diagonals the land would be drawn with before any road shaped it, by the same rule on the natural corners */
-  const naturalFlip = new Uint8Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS);
+  const naturalFlip: Uint8Array = heights?.naturalFlip ?? new Uint8Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS);
   /** The cells round a box of corners (inclusive) and the diagonal `corners` gives each. */
   const chooseDiagonals = (corners: Float64Array, into: Uint8Array, x0: number, x1: number, y0: number, y1: number): void => {
     const cx0 = Math.max(0, x0 - 1), cx1 = Math.min(TERRAIN_SEGMENTS - 1, x1);

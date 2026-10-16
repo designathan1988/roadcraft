@@ -34,15 +34,17 @@ export interface PavingSource {
   readonly pack?: (rect: readonly [number, number, number, number]) => { data: PavingData; transfer: ArrayBuffer[] } | null;
 }
 
-/** The paving's height over `PavingData` */
-export function pavingReader(data: PavingData): (x: number, y: number) => number | undefined {
+/** The paving's height over `PavingData`; undefined outside its rectangle, or where the field needs the ground and `naturalAt` is not given */
+export function pavingReader(data: PavingData, naturalAt?: (x: number, y: number) => number): (x: number, y: number) => number | undefined {
   const [x0, y0, x1, y1] = data.rect;
   const inside = (x: number, y: number): boolean => x >= x0 && x <= x1 && y >= y0 && y <= y1;
-  if (!data.field) return (x, y) => (inside(x, y) ? NaN : undefined);
+  // No road at grade anywhere: the page reads NaN at every point.
+  if (!data.field) return () => NaN;
   /** The roads at grade: the paving's filter, as the page's (`GROUND_ONLY`). */
   const ground: ReadonlySet<RoadStructure> = new Set<RoadStructure>(['ground']);
   let missed = false;
-  const field = fieldOf(data.field, () => { missed = true; return NaN; });
+  // The roads were solved on the natural ground (`renderer.ts` `buildRoadElevation(net, builtGroundAt)`): read where the page reads it.
+  const field = fieldOf(data.field, naturalAt ?? (() => { missed = true; return NaN; }));
   const share = data.flush ? flushShareOf(data.flush) : null;
   const riseAt = (x: number, y: number): number => (share ? FOOTWAY_RISE * share(x, y) : FOOTWAY_RISE);
   /** Points whose reading needed the ground: the field remembers their NaN (`roadField.ts` `last`), so never read here again. */

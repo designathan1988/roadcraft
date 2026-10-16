@@ -52,7 +52,7 @@ export class CellRequests {
     if (got) { disposeLanded(got); this.landed.delete(key); }
     const asked = this.asked.get(key);
     if (asked && sameEntries(asked.entries, entries)) return null;
-    // Replaced by the cell as it is now: begun, it finishes into the worker's cache (`supersede`).
+    // Replaced by the cell as it is now: never sent if waiting, its answer dropped if begun (the queue's key does the same).
     if (asked) this.pool.supersede(asked.id);
     const ask = { entries, id: 0 };
     this.asked.set(key, ask);
@@ -61,7 +61,7 @@ export class CellRequests {
       this.asked.delete(key);
       this.onSummaries(result.summaries, entries, env);
       this.landed.set(key, this.land(cell, entries, result, upload));
-    });
+    }, key);
     // Where no worker runs the job is done by now.
     const now = this.landed.get(key);
     return now && now.entries === entries && now.uploads === 0 ? now : null;
@@ -93,7 +93,9 @@ export class CellRequests {
 
   /** What the page keeps of these far buildings (their flags), with no batch made. */
   summarize(cell: string, entries: readonly CellEntry[], env: CellEnv): void {
-    const id = this.pool.run('summary', cell, entries, env, (result) => {
+    // DO NOT read `id` in the answer before it is given: on the page the answer comes inside `run`.
+    let id = -1;
+    id = this.pool.run('summary', cell, entries, env, (result) => {
       this.summaries.delete(id);
       this.onSummaries(result.summaries, entries, env);
     });
@@ -109,7 +111,7 @@ export class CellRequests {
     id = this.pool.run('mass', cell, entries, env, (result) => {
       if (this.masses.get(cell) === id) this.masses.delete(cell);
       done(result.mass ?? null);
-    });
+    }, `mass|${cell}`);
     if (this.pool.isRunning(id)) this.masses.set(cell, id);
   }
 

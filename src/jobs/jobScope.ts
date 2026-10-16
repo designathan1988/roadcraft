@@ -8,7 +8,7 @@ export interface JobScope {
 export type JobService = 'growth' | 'cityTiles' | 'bays' | 'conflicts' | 'cells' | 'fracture' | 'citizenBake' | 'ecology' | 'flatGround' | 'groundShape'
   | 'garmentPadding' | 'peopleLod' | 'roadTiles' | 'terrainLight' | 'derivedWriter' | 'save';
 
-/** Page to job worker: a message for a service's port (the service made on the port's first message). */
-export interface ToJob { readonly port: number; readonly service: JobService; readonly data: unknown }
-/** Job worker to page: a port's answer, or its failure. */
-export interface FromJob { readonly port: number; readonly data?: unknown; readonly error?: string }
+/** Page to job worker: a message for a service's port (the service made on the port's first message); `seq`, a queued job's number (`jobPool.ts` `submitJob`). */
+export interface ToJob { readonly port: number; readonly service: JobService; readonly data: unknown; readonly seq?: number }
+/** Job worker to page: a port's answer, or its failure; `seq`, the queued job it answers. */
+export interface FromJob { readonly port: number; readonly data?: unknown; readonly error?: string; readonly seq?: number }

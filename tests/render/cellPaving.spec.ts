@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
 import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
-import { type CellJob, CellWork, GROUND, NATURAL, PAVED, type WorkReply } from '@render/buildings/cellWork';
+import { type CellJob, type WorkReply, runCellJob } from '@render/buildings/cellWork';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, COARSE_PARTS } from '@render/buildings/layerCells';
 import { growOnLot } from '@editor/zoning';
@@ -68,15 +68,17 @@ describe('the paving read by a building cell worker', () => {
         data: { rect, field: elevation.fieldFor!([rect], []).data, flush: packFlush(net, [rect]).data }, transfer: [] }) });
     expect(FOOTWAY_RISE).toBeGreaterThan(0);
 
-    // Point by point, over a cell and past its edge: the worker's number where it has one, the page asked elsewhere.
+    // Point by point, over a cell and past its edge: the worker's number inside the roads handed over (reading the ground the roads were solved on), none past them.
     const rect: [number, number, number, number] = [-m(130), -m(130), m(10), m(10)];
-    const here = pavingReader(structuredClone(paved.pack!(rect)!.data));
+    const here = pavingReader(structuredClone(paved.pack!(rect)!.data), ground);
     let read = 0, onRoad = 0, flushRise = 0;
     for (let x = -m(150); x <= m(30); x += m(0.73)) {
       for (let y = -m(150); y <= m(30); y += m(0.91)) {
         const local = here(x, y);
         const page = paved(x, y);
-        if (local === undefined) { expect(x < rect[0] || x > rect[2] || y < rect[1] || y > rect[3]).toBe(true); continue; }
+        const outside = x < rect[0] || x > rect[2] || y < rect[1] || y > rect[3];
+        expect(local === undefined, `${x}, ${y}`).toBe(outside);
+        if (local === undefined) continue;
         read++;
         expect(Object.is(local, page), `${x}, ${y}`).toBe(true);
         if (Number.isFinite(page)) onRoad++;
@@ -89,36 +91,31 @@ describe('the paving read by a building cell worker', () => {
 
     // A cell put together as a worker does, the paving read there
     const kit = createBuildingKit();
-    const work = new CellWork(kitBoxes(kit));
     const buildings = [...doc.buildings.all()].filter((b) => Math.floor(b.x / BATCH_CELL) === -1 && Math.floor(b.y / BATCH_CELL) === -1);
     expect(buildings.length).toBeGreaterThan(3);
     const cellRect: [number, number, number, number] = [-BATCH_CELL - m(64), -BATCH_CELL - m(64), m(64), m(64)];
-    const job: CellJob = structuredClone({ id: 1, kind: 'cell', cell: '-1,-1', paved: true,
+    const job: CellJob = structuredClone({ id: 1, kind: 'cell', cell: '-1,-1', paved: true, boxes: kitBoxes(kit),
       entries: buildings.map((b) => ({ key: String(b.id), sig: b.id, digest: 0, record: JSON.stringify(b) })),
       paving: paved.pack!(cellRect)!.data });
-    /** The job's rounds answered as the pool does; the paving points asked of the page counted. */
-    const run = (asked: CellJob): { reply: WorkReply & { kind: 'done' }; paved: number } => {
-      let pavedAsked = 0;
-      let reply: WorkReply = work.start(asked);
-      while (reply.kind !== 'done') {
-        const values = new Float64Array(reply.points.length / 3);
-        for (let i = 0; i < reply.points.length; i += 3) {
-          const kind = reply.points[i]!, x = reply.points[i + 1]!, y = reply.points[i + 2]!;
-          if (kind === PAVED) { pavedAsked++; if (asked.paving) expect(x < cellRect[0] || x > cellRect[2] || y < cellRect[1] || y > cellRect[3]).toBe(true); }
-          values[i / 3] = kind === GROUND ? ground(x, y) : kind === NATURAL ? naturalAt(x, y) : paved(x, y);
-        }
-        reply = work.readings(asked.id, values);
-      }
-      return { reply, paved: pavedAsked };
-    };
-    // Without the roads handed over the page is asked the paving; with them, never inside the rectangle.
+    /** The job's reads as a worker has them: the ground, and the paving off the roads handed over. */
+    const reads = (asked: CellJob) => ({ groundAt: ground, naturalAt, ...(asked.paving ? { pavedAt: pavingReader(asked.paving, ground) } : {}) });
+    // Without the roads handed over the job asks for them, once, over every point it read; with them it is done in one pass.
     const { paving: _, ...bare } = job;
-    expect(run({ ...bare, id: 2 }).paved).toBeGreaterThan(20);
-    const { reply, paved: pavedAsked } = run(job);
-    expect(pavedAsked).toBe(0);
+    let pass: WorkReply = runCellJob({ ...bare, id: 2 }, reads(bare));
+    expect(pass.kind).toBe('wider');
+    // As the pool asks it again (`cellPool.ts` `MOST_WIDER`).
+    for (let k = 0; k < 2 && pass.kind === 'wider'; k++) {
+      const paving = paved.pack!(pass.rect)!.data;
+      pass = runCellJob({ ...bare, id: 3, paving }, reads({ ...bare, paving }));
+    }
+    expect(pass.kind).toBe('done');
+    const reply = runCellJob(job, reads(job));
+    expect(reply.kind).toBe('done');
+    if (reply.kind !== 'done' || pass.kind !== 'done') return;
     const chunks = buildings.map((b) => emitChunk(b, ground, paved, naturalAt));
     const coarse = cellArrays(chunks, { parts: PART_KINDS.filter((k) => COARSE_PARTS.has(k)), shells: true, furniture: true, ghost: false, dim: false }, kitBoxes(kit));
     expect(bytes(reply.result.batch)).toBe(bytes(coarse));
+    expect(bytes(pass.result.batch)).toBe(bytes(coarse));
     for (const s of reply.result.summaries) {
       const b = buildings.find((x) => String(x.id) === s.key)! as Building;
       const chunk = emitChunk(b, ground, paved, naturalAt);

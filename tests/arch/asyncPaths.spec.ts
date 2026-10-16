@@ -211,13 +211,20 @@ describe('the road tiles made off the page', () => {
   });
 });
 
-describe('the paving a building cell reads', () => {
-  it('is read by the cell workers off the roads handed to them, not asked of the page point by point', () => {
-    expect([...reach('src/render/buildings/cell.worker.ts')]).toEqual(expect.arrayContaining(['src/world/paving.ts', 'src/world/roadField.ts']));
+describe('the ground and the paving a building cell reads', () => {
+  it('are read by the cell workers off shared memory and the roads handed to them, never asked of the page', () => {
+    expect([...reach('src/render/buildings/cell.worker.ts')]).toEqual(expect.arrayContaining(['src/world/paving.ts', 'src/world/roadField.ts', 'src/render/sharedGround.ts']));
     const pool = read('src/render/buildings/cellPool.ts');
-    expect(pool).toMatch(/const \{ job, transfer \} = next\.job\(true\);/);
-    expect(pool).toMatch(/env\.pavedAt!\.pack!\(rect\)/);
-    expect(read('src/render/buildings/cellWork.ts')).toMatch(/kind === PAVED && state\.pavedHere/);
+    // One queue for the pool's workers, the job written when a worker takes it, the roads near the cell packed with it.
+    expect(pool).toMatch(/asked\.ticket = submitJob\(\{/);
+    expect(pool).toMatch(/write: \(\) => this\.write\(asked\)/);
+    expect(pool).toMatch(/asked\.env\.pavedAt\.pack!\(asked\.rect\)/);
+    expect(pool).not.toMatch(/readings|'need'/);
+    expect(read('src/render/buildings/cell.worker.ts')).toMatch(/runCellJob\(job, workerReads\(job\)\)/);
+    // The plates keep their corners in the shared buffers themselves, and the drawn ground carries them.
+    const atlas = read('src/render/flatAtlas.ts');
+    expect(atlas).toMatch(/createTerrainSurface\(anisotropy, \{ x: p\.cx, y: p\.cy \}, p\.index, p\.mesh, share\.open\(p\.index\)\)/);
+    expect(atlas).toMatch(/renderedHeightAt: Object\.assign\([^\n]*\{ share \}\)/);
     // The renderer's paving packs its roads for a cell.
     expect(read('src/render/renderer.ts')).toMatch(/const pavedHeightAt: PavingSource = Object\.assign\(/);
   });

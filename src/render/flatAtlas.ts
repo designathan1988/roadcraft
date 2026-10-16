@@ -28,6 +28,8 @@ import {
 import { m } from '@world/units';
 import type { Aabb } from '@core/aabb';
 import type { NaturalPlate } from './groundShape';
+import { GroundShare, type SharedGroundAt } from './sharedGround';
+import { setJobFocus } from '../jobs/jobPool';
 
 /** THE MAP'S GROUND, 10 km on a side (`world/bounds.ts`) */
 
@@ -180,6 +182,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     ({ index, cx: c.cx, cy: c.cy, source: new PlateSource(), surface: null, shown: false, used: -1, heights: null, mesh: null, asked: false, top: -Infinity }));
   const root = new Group();
   root.name = 'flat-world-ground';
+  /** The plates' corners in shared memory, each plate's own arrays: what the workers read the ground from (`sharedGround.ts`). */
+  const share = new GroundShare(SIDE, TERRAIN_CELL, TERRAIN_HALF, TERRAIN_BASE);
 
   // The far ground: a surface of its own lends the terrain's material
   const farSurface = createTerrainSurface(anisotropy, { x: 0, y: 0 }, PLATES);
@@ -244,7 +248,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (p.surface) return p.surface;
     // Each step of a plate's making measured (F9 and the probes read hitch: measures).
     const t0 = performance.now();
-    const s = createTerrainSurface(anisotropy, { x: p.cx, y: p.cy }, p.index, p.mesh);
+    const s = createTerrainSurface(anisotropy, { x: p.cx, y: p.cy }, p.index, p.mesh, share.open(p.index));
     // The surface keeps what it copied; the plate keeps only its corners (its land's field).
     p.mesh = null;
     const t1 = performance.now();
@@ -273,6 +277,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     show(p, false);
     p.surface.dispose();
     p.surface = null;
+    // Read off the relief from now on, as `ask` reads it.
+    share.close(p.index);
     // Its corners go too (725 kB a plate): read again if it comes back.
     p.heights = null;
     p.mesh = null;
@@ -372,7 +378,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       const relief = doc.terrainRelief;
       const reliefMoved = seenRelief !== relief;
       seenRelief = relief;
-      if (reliefMoved) bare = (x, y) => reliefHeight(relief, x, y);
+      if (reliefMoved) { bare = (x, y) => reliefHeight(relief, x, y); share.setRelief(relief); }
       buildFar(relief);
       const entries = terrainCursor.read(doc.changes);
       const rects = entries && entries.every((e) => e.rects !== null) ? entries.flatMap((e) => e.rects!) : null;
@@ -484,6 +490,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     focus(x, y, reach) {
       // In full within some times the ground the view takes in (Proland's split rule), none from far out: the far mesh alone.
       setFlatGroundFocus(x, y);
+      // The queued jobs ranked by their distance to it (`jobPool.ts`).
+      setJobFocus(x, y);
       focusX = x;
       focusY = y;
       const radius = reach < NEAR_VIEW ? Math.max(TERRAIN_HALF, reach * 1.6) + TERRAIN_HALF : -1;
@@ -548,7 +556,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     },
     heightAt: (x, y) => ask(x, y, (s, lx, ly) => s.heightAt(lx, ly), bareAt),
     naturalRenderedHeightAt: (x, y) => ask(x, y, (s, lx, ly) => s.naturalRenderedHeightAt(lx, ly), bareAt),
-    renderedHeightAt: (x, y) => ask(x, y, (s, lx, ly) => s.renderedHeightAt(lx, ly), bareAt),
+    // With the shared plates it reads, for a worker to read the same ground (`cellPool.ts`).
+    renderedHeightAt: Object.assign((x: number, y: number): number => ask(x, y, (s, lx, ly) => s.renderedHeightAt(lx, ly), bareAt), { share }) satisfies SharedGroundAt,
     wetAt: (x, y) => ask(x, y, (s, lx, ly) => s.wetAt(lx, ly), () => false),
     digest(minX, minY, maxX, maxY) {
       const p = plates[plateOf((minX + maxX) / 2, (minY + maxY) / 2)]!;
