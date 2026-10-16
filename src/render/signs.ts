@@ -205,7 +205,6 @@ const CELL_HEIGHTS = [80, CELL] as const;
 /** Rows a new sheet starts with; it doubles up to the rows `PAGE` holds. */
 const FIRST_ROWS = 4;
 export interface Sheet {
-  canvas: HTMLCanvasElement;
   texture: CanvasTexture;
   /** One material per sheet, made with the sheet and kept while it is (never per build of the signs). */
   readonly material: MeshStandardMaterial;
@@ -214,22 +213,29 @@ export interface Sheet {
   readonly free: number[];
   /** Cells holding a plate. */
   used: number;
+  /** The sheet's size in pixels: its canvas is let go once on the GPU (`SignSheets.flush`). */
+  width: number;
+  height: number;
+  /** Each cell's plate (type and words): what the sheet is painted again from, never a picture kept. */
+  readonly plates: Map<number, { readonly type: SignType; readonly text: string }>;
+  /** Plates placed since it was last painted. */
+  dirty: boolean;
 }
 /** A plate on a sheet: its cell, the height its picture takes in it, and the last build that read it. */
 export interface Placed { readonly sheet: Sheet; readonly cell: number; readonly h: number; build: number }
 const pitchOf = (sheet: Sheet): number => sheet.cellHeight + 2 * GUTTER;
 const maxRows = (cellHeight: number): number => Math.floor(PAGE / (cellHeight + 2 * GUTTER));
 const range = (a: number, b: number): number[] => Array.from({ length: Math.max(0, b - a) }, (_, i) => a + i);
-function sheetCanvas(rows: number, cellHeight: number): HTMLCanvasElement {
+/** A sheet's texture on a canvas of its size, given no context yet (no backing store until painted). */
+function sheetTexture(width: number, height: number): CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = COLUMNS * PITCH;
-  canvas.height = rows * (cellHeight + 2 * GUTTER);
-  return canvas;
-}
-function sheetTexture(canvas: HTMLCanvasElement): CanvasTexture {
+  canvas.width = width;
+  canvas.height = height;
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   texture.anisotropy = 4;
+  // DO NOT keep the canvas once uploaded: its pixels are on the GPU; a canvas of no size holds no backing store.
+  texture.onUpdate = () => { canvas.width = 0; canvas.height = 0; };
   return texture;
 }
 
@@ -241,6 +247,8 @@ export class SignSheets {
   private builds = 0;
   /** How many standing plates read each picture (`take`/`drop`): the sign layer kept sign by sign. */
   private readonly counts = new Map<string, number>();
+  /** The pictures painted for plates placed since the last `flush`, by key: drawn onto their sheet then, and let go. */
+  private readonly pending = new Map<string, HTMLCanvasElement>();
 
   /** `watch`: told when a sheet grew (its cells' uv moved) and when one was let go. */
   constructor(private readonly watch?: { grown?(sheet: Sheet): void; gone?(sheet: Sheet): void }) {}
@@ -262,6 +270,9 @@ export class SignSheets {
     const kept = this.placed.get(key);
     if (!kept) return;
     this.placed.delete(key);
+    this.pending.delete(key);
+    // The cell freed keeps its old picture on the GPU until painted over: no plate's uv reads it.
+    kept.sheet.plates.delete(kept.cell);
     kept.sheet.free.push(kept.cell);
     kept.sheet.used--;
     if (kept.sheet.used > 0) return;
@@ -277,7 +288,7 @@ export class SignSheets {
     this.builds++;
   }
 
-  /** The cell of a plate on its sheet (painted there the first time), and the height its picture takes. */
+  /** The cell of a plate on its sheet (painted there at the next `flush`), and the height its picture takes. */
   plateCell(type: SignType, text: string): Placed {
     const key = `${type}|${text}`;
     let known = this.placed.get(key);
@@ -285,13 +296,10 @@ export class SignSheets {
       const picture = plateCanvas(type, text);
       const sheet = this.sheetWithRoom(CELL_HEIGHTS.find((c) => c >= picture.height) ?? CELL);
       const cell = sheet.free.shift()!;
-      const pitch = pitchOf(sheet);
-      const g = sheet.canvas.getContext('2d')!;
-      const x = (cell % COLUMNS) * PITCH + GUTTER, y = Math.floor(cell / COLUMNS) * pitch + GUTTER;
-      g.clearRect(x - GUTTER, y - GUTTER, PITCH, pitch);
-      g.drawImage(picture, x, y);
-      sheet.texture.needsUpdate = true;
+      sheet.plates.set(cell, { type, text });
+      sheet.dirty = true;
       sheet.used++;
+      this.pending.set(key, picture);
       known = { sheet, cell, h: Math.min(picture.height, sheet.cellHeight), build: this.builds };
       this.placed.set(key, known);
     }
@@ -299,39 +307,67 @@ export class SignSheets {
     return known;
   }
 
+  /** Every sheet with new plates painted whole from its plates and handed to the GPU; its canvas let go after the upload */
+  flush(): void {
+    for (const sheet of this.sheets) if (sheet.dirty) this.paint(sheet);
+    for (const picture of this.pending.values()) { picture.width = 0; picture.height = 0; }
+    this.pending.clear();
+  }
+
+  /** The WebGL context restored: every sheet painted again from its plates (their pixels were only on the GPU). */
+  refill(): void {
+    for (const sheet of this.sheets) sheet.dirty = true;
+    this.flush();
+  }
+
   /** The size of each sheet now (a check that none passes what a card takes). */
   sizes(): { width: number; height: number }[] {
-    return this.sheets.map((sheet) => ({ width: sheet.canvas.width, height: sheet.canvas.height }));
+    return this.sheets.map((sheet) => ({ width: sheet.width, height: sheet.height }));
   }
 
   dispose(): void {
     for (const sheet of this.sheets) { sheet.texture.dispose(); sheet.material.dispose(); }
     this.sheets.length = 0;
     this.placed.clear();
+    this.pending.clear();
+  }
+
+  private paint(sheet: Sheet): void {
+    const canvas = sheet.texture.image as HTMLCanvasElement;
+    // Sized again (a size set clears it): its backing store lives until three has uploaded it.
+    canvas.width = sheet.width;
+    canvas.height = sheet.height;
+    const g = canvas.getContext('2d')!;
+    const pitch = pitchOf(sheet);
+    for (const [cell, { type, text }] of sheet.plates) {
+      const picture = this.pending.get(`${type}|${text}`) ?? plateCanvas(type, text);
+      g.drawImage(picture, (cell % COLUMNS) * PITCH + GUTTER, Math.floor(cell / COLUMNS) * pitch + GUTTER);
+    }
+    sheet.texture.needsUpdate = true;
+    sheet.dirty = false;
   }
 
   private newSheet(cellHeight: number): Sheet {
     const rows = Math.min(FIRST_ROWS, maxRows(cellHeight));
-    const canvas = sheetCanvas(rows, cellHeight);
-    const texture = sheetTexture(canvas);
+    const width = COLUMNS * PITCH, height = rows * (cellHeight + 2 * GUTTER);
+    const texture = sheetTexture(width, height);
     const material = plateMaterial(texture);
-    const sheet: Sheet = { canvas, texture, material, cellHeight, rows, free: range(0, rows * COLUMNS), used: 0 };
+    const sheet: Sheet = { texture, material, cellHeight, rows, free: range(0, rows * COLUMNS), used: 0, width, height, plates: new Map(), dirty: true };
     this.sheets.push(sheet);
     return sheet;
   }
 
-  /** The sheet twice as tall, up to `PAGE`: the same material on the larger canvas (no new program). */
+  /** The sheet twice as tall, up to `PAGE`: the same material on a larger texture (no new program), painted at the next `flush`. */
   private growSheet(sheet: Sheet): void {
     const rows = Math.min(maxRows(sheet.cellHeight), sheet.rows * 2);
-    const canvas = sheetCanvas(rows, sheet.cellHeight);
-    canvas.getContext('2d')!.drawImage(sheet.canvas, 0, 0);
+    sheet.height = rows * (sheet.cellHeight + 2 * GUTTER);
     sheet.texture.dispose();
-    sheet.texture = sheetTexture(canvas);
-    sheet.canvas = canvas;
+    sheet.texture = sheetTexture(sheet.width, sheet.height);
     sheet.material.map = sheet.texture;
     sheet.material.needsUpdate = true;
     sheet.free.push(...range(sheet.rows * COLUMNS, rows * COLUMNS));
     sheet.rows = rows;
+    sheet.dirty = true;
     this.watch?.grown?.(sheet);
   }
 
@@ -352,7 +388,7 @@ export function plateMaterial(texture: Texture): MeshStandardMaterial {
 
 /** A cell's corners on its sheet as it stands, uv. */
 export function cellUv({ sheet, cell, h }: Placed): { u0: number; v0: number; u1: number; v1: number } {
-  const W = sheet.canvas.width, H = sheet.canvas.height;
+  const W = sheet.width, H = sheet.height;
   const x = (cell % COLUMNS) * PITCH + GUTTER, y = Math.floor(cell / COLUMNS) * pitchOf(sheet) + GUTTER;
   // A canvas texture is flipped (`flipY`): v runs up from the sheet's bottom.
   return { u0: x / W, u1: (x + CELL) / W, v0: 1 - (y + h) / H, v1: 1 - y / H };

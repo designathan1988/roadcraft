@@ -80,6 +80,24 @@ describe('parked cars drawn by copying their first frame', () => {
     agents.dispose();
   });
 
+  it('hold instance buffers sized to what is drawn, not to the fleet ceiling', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const all = meshesOf(agents, /^(car-|vehicle-(wheels|hubs|lamps)|bicycle-|bike-|rider-)/);
+    expect(all.length).toBeGreaterThan(100);
+    // Before anything is drawn: every part's buffers are a few instances, not the ceiling's.
+    for (const mesh of all) expect(mesh.instanceMatrix.count).toBeLessThanOrEqual(16);
+    const cars: VehicleView[] = [];
+    for (let i = 0; i < 40; i++) cars.push(parkedCar(i + 1, (i % 10) * m(8), Math.floor(i / 10) * m(8)));
+    agents.sync(worldWith(cars), netWith(), 0, true);
+    const wheels = meshesOf(agents, /^vehicle-(wheels|hubs|lamps)|bicycle-wheels$/)[0]!;
+    expect(wheels.count).toBe(160);
+    // Doubled to hold them, no further.
+    expect(wheels.instanceMatrix.count).toBeGreaterThanOrEqual(160);
+    expect(wheels.instanceMatrix.count).toBeLessThan(320);
+    expect(wheels.instanceColor!.count).toBe(wheels.instanceMatrix.count);
+    agents.dispose();
+  });
+
   it('are all drawn past the fleet ceiling', () => {
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
     const count = FLEET_CEILING + 300;
@@ -87,7 +105,7 @@ describe('parked cars drawn by copying their first frame', () => {
     for (let i = 0; i < count; i++) cars.push(parkedCar(i + 1, (i % 60) * m(8), Math.floor(i / 60) * m(8)));
     const world = worldWith(cars);
     const bodies = meshesOf(agents, /^car-.*-(shell|shell-lite|far)$/);
-    const wheels = meshesOf(agents, /^vehicle-wheels$/);
+    const wheels = meshesOf(agents, /^vehicle-(wheels|hubs|lamps)|bicycle-wheels$/);
     agents.sync(world, netWith(), 0, true);
     expect(drawn(bodies)).toBe(count);
     expect(drawn(wheels)).toBe(count * 4);

@@ -55,6 +55,14 @@ export interface SignalFeed {
   nodes(): Iterable<NodeId>;
 }
 
+/** Wall seconds an answer is kept with nobody asking it again: the panels ask every 0.4 s (`main.ts` panelsDue), five rounds missed. */
+const ANSWER_KEPT = 2;
+
+/** A panel's question as a key: its kind and the one id it names (never its JSON). */
+function askKey(ask: SimAsk): string {
+  return `${ask.kind}:${ask.kind === 'segment' ? ask.id : ask.node}`;
+}
+
 /** The kinds of the diary the worker's copy of the map follows, and what each carries. */
 const RECORD_KINDS: Readonly<Partial<Record<DocChangeKind, readonly RecordPart[]>>> = {
   roads: ['nodes', 'segments'], traffic: ['nodes', 'segments'], lots: ['lots'],
@@ -87,7 +95,11 @@ export class SimClient implements JournalReader {
   private workerReadsTiles = false;
   private readonly pending = new Map<number, (value: unknown) => void>();
   private nextAsk = 1;
-  private readonly answers = new Map<string, unknown>();
+  /** The panels' last answers by question (`askKey`), each with the page's clock it was last asked at: dropped once nobody asks (`frame`). */
+  private readonly answers = new Map<string, { value: unknown; asked: number }>();
+  /** Wall seconds of the page's frames (`frame`), for the answers' age. */
+  private askClock = 0;
+  private sweptAt = 0;
 
   readonly vehicles = new Map<number, VehicleView>();
   /** The traffic and the cars parked in bays, whole; DO NOT walk them per frame or per query: ask by place (`vehiclesIn`). */
@@ -258,6 +270,12 @@ export class SimClient implements JournalReader {
   frame(wall: number, hold: boolean, run: { readonly traffic: boolean; readonly pedestrians: boolean; readonly maxShare: number }): void {
     this.sendChanges();
     this.wallOwed += wall;
+    this.askClock += wall;
+    if (this.askClock - this.sweptAt >= ANSWER_KEPT) {
+      // DO NOT keep every question ever asked: an answer no panel asked for over `ANSWER_KEPT` is let go.
+      this.sweptAt = this.askClock;
+      for (const [key, answer] of this.answers) if (this.askClock - answer.asked > ANSWER_KEPT) this.answers.delete(key);
+    }
     if (this.inFlight || !this.worker) return;
     this.inFlight = true;
     const controls: SimControls = {
@@ -277,11 +295,16 @@ export class SimClient implements JournalReader {
 
   /** A panel's question: the last answer to it now (null before the first), a fresh one asked for the next refresh. */
   asked(ask: SimAsk): unknown {
-    const key = JSON.stringify(ask);
+    const key = askKey(ask);
+    let answer = this.answers.get(key);
+    if (!answer) this.answers.set(key, answer = { value: null, asked: this.askClock });
+    answer.asked = this.askClock;
+    const kept = answer;
     const id = this.nextAsk++;
-    this.pending.set(id, (value) => { this.answers.set(key, value); });
+    // An answer to a question let go meanwhile is not kept.
+    this.pending.set(id, (value) => { if (this.answers.get(key) === kept) kept.value = value; });
     this.send({ type: 'ask', id, ask });
-    return this.answers.get(key) ?? null;
+    return answer.value ?? null;
   }
 
   /** A question answered when the worker has (the green wave). */

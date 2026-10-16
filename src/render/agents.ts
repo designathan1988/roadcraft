@@ -68,8 +68,6 @@ const MAX_VEHICLES = FLEET_CEILING;
 const MAX_PEDS = PED_CEILING;
 /** What a car off the road stands on (`offRoadDeck`): the terrain and the ground as cut and filled, the roads' heights */
 const OFF_ROAD_GROUND: readonly ChangeKind[] = ['terrain', 'ground', 'elevation', 'roads', 'lots', 'buildings'];
-/** Two-wheeler riders' own batches (frames, wheels, helmets). */
-const MAX_RIDERS = 400;
 
 /** Zoom at which the closest band switches on. */
 const NEAR_DETAIL_ZOOM = perM(1.375);
@@ -85,8 +83,8 @@ const VEHICLE_HYSTERESIS = 0.1;
 const CAR_LENGTH = m(4.5);
 /** At most this many vehicles whole at once: past it, the smallest on the screen are drawn a level down. */
 const VEHICLE_NEAR_CAP = 200;
-/** A coarser level's first instance buffers (`Ladder`): they grow with what is drawn (`growPart`). */
-const LADDER_CAPACITY = 16;
+/** DO NOT size a part by the fleet's ceiling: 8 bodies x ~25 parts x 1,200 x 76 B was 15-22 MB of CPU and GPU; every part starts here and doubles with what is drawn (`growPart`). */
+const PART_CAPACITY = 16;
 
 const SIDES = [1, -1] as const;
 
@@ -414,9 +412,9 @@ function instanced(
   name: string,
   geometry: BufferGeometry,
   material: Material,
-  count: number,
   castShadow = true,
 ): Part {
+  const count = PART_CAPACITY;
   const mesh = new InstancedMesh(geometry, material, count);
   mesh.name = name;
   mesh.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -504,18 +502,18 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const spokedGeometry = spokedRimGeometry();
   const headGeometry = new SphereGeometry(0.5, 10, 7);
 
-  const wheels = instanced('vehicle-wheels', wheelGeometry, rubber, MAX_VEHICLES * 6);
-  const hubs = instanced('vehicle-hubs', hubGeometry, trim, MAX_VEHICLES * 6, false);
-  const thinWheels = instanced('bicycle-wheels', thinTyreGeometry, rubber, MAX_RIDERS * 2);
-  const spokes = instanced('bicycle-spokes', spokedGeometry, trim, MAX_RIDERS * 2, false);
-  const lamps = instanced('vehicle-lamps', unitBox, lampMaterial, MAX_VEHICLES * 9, false);
+  const wheels = instanced('vehicle-wheels', wheelGeometry, rubber);
+  const hubs = instanced('vehicle-hubs', hubGeometry, trim, false);
+  const thinWheels = instanced('bicycle-wheels', thinTyreGeometry, rubber);
+  const spokes = instanced('bicycle-spokes', spokedGeometry, trim, false);
+  const lamps = instanced('vehicle-lamps', unitBox, lampMaterial, false);
   /** Each lamp's glow (`LAMP_GAIN`): a per-instance attribute of the lamps' box, replaced when they grow (`growPart`). */
-  let lampGlow = new InstancedBufferAttribute(new Float32Array(MAX_VEHICLES * 9), 1);
+  let lampGlow = new InstancedBufferAttribute(new Float32Array(PART_CAPACITY), 1);
   lampGlow.setUsage(DynamicDrawUsage);
   unitBox.setAttribute('glow', lampGlow);
   // A motorcyclist's helmet: a smooth shell, glossy like paint.
   const helmetGeometry = merge([new SphereGeometry(0.5, HELMET_SEGMENTS.width, HELMET_SEGMENTS.height)]);
-  const helmets = instanced('rider-helmets', helmetGeometry, paint, MAX_RIDERS);
+  const helmets = instanced('rider-helmets', helmetGeometry, paint);
 
   const parts: readonly Part[] = [wheels, hubs, thinWheels, spokes, lamps, helmets];
   /** One set of instanced meshes per car class, built from its own model (`vehicleModels.ts`) */
@@ -562,7 +560,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const ladder = (base: Part, weld: Weld): Ladder => {
     const parts = [base];
     for (let k = 1; k < LEVELS; k++) {
-      const part = instanced(`${base.mesh.name}@${k}`, base.mesh.geometry, base.mesh.material as Material, LADDER_CAPACITY, base.mesh.castShadow);
+      const part = instanced(`${base.mesh.name}@${k}`, base.mesh.geometry, base.mesh.material as Material, base.mesh.castShadow);
       parts.push(part);
       ladderParts.push(part);
     }
@@ -606,25 +604,25 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     modelGeometries.push(...own);
     carParts.set(key, {
       model,
-      shell: ladder(instanced(`car-${id}-shell`, model.shell, paint, MAX_VEHICLES), 'smooth'),
-      glass: ladder(instanced(`car-${id}-glass`, model.glass, glassMaterial, MAX_VEHICLES, false), 'smooth'),
-      interior: ladder(instanced(`car-${id}-interior`, model.interior, cabinMaterial, MAX_VEHICLES, false), 'boxes'),
-      openShell: instanced(`car-${id}-openshell`, model.openShell, paint, MAX_VEHICLES),
-      openGlass: instanced(`car-${id}-openglass`, model.openGlass, glassMaterial, MAX_VEHICLES, false),
-      openInterior: instanced(`car-${id}-openinterior`, model.openInterior, cabinMaterial, MAX_VEHICLES, false),
-      doors: model.doors.map((d, i) => instanced(`car-${id}-door${i}`, d.panel, paint, MAX_VEHICLES)),
-      doorGlass: model.doors.map((d, i) => instanced(`car-${id}-doorglass${i}`, d.glass, glassMaterial, MAX_VEHICLES, false)),
-      doorCards: model.doors.map((d, i) => d.card ? instanced(`car-${id}-doorcard${i}`, d.card, cabinMaterial, MAX_VEHICLES, false) : null),
-      trim: ladder(instanced(`car-${id}-trim`, model.trim, trim, MAX_VEHICLES, false), 'boxes'),
-      roof: model.roof ? ladder(instanced(`car-${id}-roof`, model.roof, paint, MAX_VEHICLES), 'smooth') : null,
-      roofGlass: model.roof ? instanced(`car-${id}-roofglass`, model.roof, glassMaterial, MAX_VEHICLES, false) : null,
-      accent: model.accent ? ladder(instanced(`car-${id}-accent`, model.accent, paint, MAX_VEHICLES), 'smooth') : null,
-      shellLite: ladder(instanced(`car-${id}-shell-lite`, model.shell, paint, MAX_VEHICLES, false), 'smooth'),
-      roofLite: model.roof ? ladder(instanced(`car-${id}-roof-lite`, model.roof, paint, MAX_VEHICLES, false), 'smooth') : null,
-      accentLite: model.accent ? ladder(instanced(`car-${id}-accent-lite`, model.accent, paint, MAX_VEHICLES, false), 'smooth') : null,
+      shell: ladder(instanced(`car-${id}-shell`, model.shell, paint), 'smooth'),
+      glass: ladder(instanced(`car-${id}-glass`, model.glass, glassMaterial, false), 'smooth'),
+      interior: ladder(instanced(`car-${id}-interior`, model.interior, cabinMaterial, false), 'boxes'),
+      openShell: instanced(`car-${id}-openshell`, model.openShell, paint),
+      openGlass: instanced(`car-${id}-openglass`, model.openGlass, glassMaterial, false),
+      openInterior: instanced(`car-${id}-openinterior`, model.openInterior, cabinMaterial, false),
+      doors: model.doors.map((d, i) => instanced(`car-${id}-door${i}`, d.panel, paint)),
+      doorGlass: model.doors.map((d, i) => instanced(`car-${id}-doorglass${i}`, d.glass, glassMaterial, false)),
+      doorCards: model.doors.map((d, i) => d.card ? instanced(`car-${id}-doorcard${i}`, d.card, cabinMaterial, false) : null),
+      trim: ladder(instanced(`car-${id}-trim`, model.trim, trim, false), 'boxes'),
+      roof: model.roof ? ladder(instanced(`car-${id}-roof`, model.roof, paint), 'smooth') : null,
+      roofGlass: model.roof ? instanced(`car-${id}-roofglass`, model.roof, glassMaterial, false) : null,
+      accent: model.accent ? ladder(instanced(`car-${id}-accent`, model.accent, paint), 'smooth') : null,
+      shellLite: ladder(instanced(`car-${id}-shell-lite`, model.shell, paint, false), 'smooth'),
+      roofLite: model.roof ? ladder(instanced(`car-${id}-roof-lite`, model.roof, paint, false), 'smooth') : null,
+      accentLite: model.accent ? ladder(instanced(`car-${id}-accent-lite`, model.accent, paint, false), 'smooth') : null,
       // A car under twelve pixels: its shadow is the soft disc under it.
-      far: instanced(`car-${id}-far`, model.far, paint, MAX_VEHICLES, false),
-      steering: model.steering ? instanced(`car-${id}-wheel`, model.steering.geometry, cabinMaterial, MAX_VEHICLES, false) : null,
+      far: instanced(`car-${id}-far`, model.far, paint, false),
+      steering: model.steering ? instanced(`car-${id}-wheel`, model.steering.geometry, cabinMaterial, false) : null,
     });
   }
   // The far proxy is drawn under FAR_BODY_ZOOM, a car under nine pixels long
@@ -659,10 +657,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     modelGeometries.push(model.body, model.trim, model.steering, ...(model.cranks ? [model.cranks] : []));
     twoWheelerParts.set(id, {
       model,
-      body: instanced(`bike-${id}-body`, model.body, paint, MAX_RIDERS),
-      trim: instanced(`bike-${id}-trim`, model.trim, trim, MAX_RIDERS),
-      steering: instanced(`bike-${id}-steering`, model.steering, trim, MAX_RIDERS, false),
-      cranks: model.cranks ? instanced(`bike-${id}-cranks`, model.cranks, trim, MAX_RIDERS, false) : null,
+      body: instanced(`bike-${id}-body`, model.body, paint),
+      trim: instanced(`bike-${id}-trim`, model.trim, trim),
+      steering: instanced(`bike-${id}-steering`, model.steering, trim, false),
+      cranks: model.cranks ? instanced(`bike-${id}-cranks`, model.cranks, trim, false) : null,
     });
   }
   const twoWheelerPartList: Part[] = [...twoWheelerParts.values()].flatMap((t) =>

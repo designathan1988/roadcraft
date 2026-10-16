@@ -223,6 +223,8 @@ export interface SignLayerKept {
   warm(): Mesh[];
   /** The posts the camera can see (`InstanceRuns.cull`), every frame. */
   cull(frustum: Frustum, view: Matrix4): void;
+  /** A WebGL context restored: the plates' sheets painted again (their pixels were only on the GPU). */
+  refill(): void;
   dispose(): void;
 }
 
@@ -389,7 +391,12 @@ export function createSignLayer(): SignLayerKept {
         if (value) { const run = stand(key, value); if (run) added.push(run); }
       }
       if (removed.length || added.length) posts.update({ removed, added });
+      // The sheets with new plates painted and sent, before the frame draws them.
+      sheets.flush();
       return product.work.last;
+    },
+    refill() {
+      sheets.refill();
     },
     warm() {
       const geometry = new BufferGeometry();
