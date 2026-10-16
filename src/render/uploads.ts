@@ -1,4 +1,4 @@
-import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, MeshDepthMaterial, Object3D, OrthographicCamera, Scene as ThreeScene, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
+import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, Group, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, MeshDepthMaterial, Object3D, OrthographicCamera, Scene as ThreeScene, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
 
 /** Textures waiting to be sent to the GPU ahead of their first use. three.js uploads a texture the first time something */
 const queue: Texture[] = [];
@@ -43,29 +43,80 @@ let compiler = false;
 /** DO NOT give the stand-in RGBA packing: the packing is part of the program's key */
 const SHADOW_SIDE: Record<Side, Side> = { [FrontSide]: BackSide, [BackSide]: FrontSide, [DoubleSide]: DoubleSide };
 const plainDepth = new MeshDepthMaterial();
-/** What a stand-in's plain depth material is set to (`userData`), at the moment it is compiled (`drainCompiles`). */
-interface DepthVariant { readonly side: Side; readonly alphaTest: number; readonly map: Texture | null; readonly alphaMap: Texture | null }
+/** What three's shadow pass sets a caster's depth material to from the material it is drawn with (r186 `WebGLShadowMap` getDepthMaterial). */
+interface DepthVariant {
+  readonly side: Side; readonly alphaTest: number; readonly map: Texture | null; readonly alphaMap: Texture | null;
+  readonly displacementMap: Texture | null;
+}
 const DEPTH_VARIANT = 'roadcraftDepthVariant';
-type DepthMaterial = Material & { map?: Texture | null; alphaMap?: Texture | null };
+type DepthMaterial = Material & { map?: Texture | null; alphaMap?: Texture | null; displacementMap?: Texture | null };
+type CasterMaterial = DepthMaterial & { shadowSide?: Side | null };
 const setDepth = (depth: DepthMaterial, v: DepthVariant): void => {
   depth.side = v.side;
   depth.alphaTest = v.alphaTest;
   depth.map = v.map;
   depth.alphaMap = v.alphaMap;
+  depth.displacementMap = v.displacementMap;
 };
-export function shadowStandIn(mesh: Mesh): Mesh | null {
-  if (!mesh.castShadow || Array.isArray(mesh.material)) return null;
-  const material = mesh.material as Material & { map?: Texture | null; alphaMap?: Texture | null; shadowSide?: Side | null };
+const depthVariantOf = (material: CasterMaterial): DepthVariant => ({
+  side: material.shadowSide ?? SHADOW_SIDE[material.side],
+  alphaTest: material.alphaToCoverage ? 0.5 : material.alphaTest,
+  map: material.map ?? null, alphaMap: material.alphaMap ?? null, displacementMap: material.displacementMap ?? null,
+});
+/** What of a variant is in the depth program's key (three's `getProgramCacheKey`: the side, the cut, which maps). */
+const variantKey = (v: DepthVariant): string => `${v.side}|${v.alphaTest > 0}|${!!v.map}|${!!v.alphaMap}|${!!v.displacementMap}`;
+/** A caster as the shadow pass draws it: on its own depth material (or three's plain one) */
+export function shadowStandIn(mesh: Mesh): Object3D | null {
+  if (!mesh.castShadow) return null;
   const custom = (mesh as Mesh & { customDepthMaterial?: Material }).customDepthMaterial as DepthMaterial | undefined;
-  const variant: DepthVariant = { side: material.shadowSide ?? SHADOW_SIDE[material.side], alphaTest: material.alphaToCoverage ? 0.5 : material.alphaTest,
-    map: material.map ?? null, alphaMap: material.alphaMap ?? null };
-  setDepth(custom ?? plainDepth, variant);
-  const copy = compileCopy(mesh) as Mesh;
-  copy.material = custom ?? plainDepth;
-  // DO NOT compile them with the material as the last one left it: a sign's plate (a map, cut by its alpha) and a bench
-  if (!custom) copy.userData[DEPTH_VARIANT] = variant;
-  copy.visible = true;
-  return copy;
+  const depth = custom ?? plainDepth;
+  const standIns: Mesh[] = [];
+  const seen = new Set<string>();
+  // A mesh of several materials is drawn into the shadow a group at a time, each group's material setting the depth's variant.
+  for (const material of (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) as CasterMaterial[]) {
+    const variant = depthVariantOf(material);
+    const key = variantKey(variant);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const copy = compileCopy(mesh) as Mesh;
+    copy.material = depth;
+    // DO NOT compile them with the material as the last one left it: a sign's plate (a map, cut by its alpha) and a bench
+    copy.userData[DEPTH_VARIANT] = variant;
+    copy.visible = true;
+    standIns.push(copy);
+  }
+  if (standIns.length === 1) return standIns[0]!;
+  const group = new Group();
+  for (const standIn of standIns) group.add(standIn);
+  return group;
+}
+
+/** What of a caster is in its depth program's key: one stand-in compiles every caster alike (`shadowStandIns`). */
+function casterKey(mesh: Mesh): string {
+  const custom = (mesh as Mesh & { customDepthMaterial?: Material }).customDepthMaterial;
+  const materials = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) as CasterMaterial[];
+  const instanced = mesh as Mesh & { isInstancedMesh?: boolean; instanceColor?: unknown; morphTexture?: unknown };
+  const geometry = mesh.geometry;
+  const morph = geometry.morphAttributes['position'] ?? geometry.morphAttributes['normal'] ?? geometry.morphAttributes['color'];
+  return [custom?.uuid ?? 'plain', materials.map((m) => variantKey(depthVariantOf(m))).join(';'),
+    !!instanced.isInstancedMesh, !!instanced.instanceColor, !!instanced.morphTexture, !!(mesh as { isSkinnedMesh?: boolean }).isSkinnedMesh,
+    Object.keys(geometry.attributes).sort().join(','), Object.keys(geometry.morphAttributes).sort().join(','), morph?.length ?? 0].join('/');
+}
+
+/** The casters under `root`, one stand-in for each depth program they are drawn with (`shadowStandIn`). Once, at load. */
+export function shadowStandIns(root: Object3D): Group {
+  const group = new Group();
+  const seen = new Set<string>();
+  root.traverse((object) => {
+    const mesh = object as Mesh;
+    if (!mesh.isMesh || !mesh.castShadow) return;
+    const key = casterKey(mesh);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const standIn = shadowStandIn(mesh);
+    if (standIn) group.add(standIn);
+  });
+  return group;
 }
 
 /** A copy of `object` to build its programs with: the same geometry, material and variant */
@@ -91,26 +142,35 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   if (!toCompile.length) return;
   // For the target the scene is really drawn into: its colour space and tone mapping are part of every program.
   const previous = renderer.getRenderTarget();
-  renderer.setRenderTarget(target);
-  while (toCompile.length) {
-    const { object, shadow, done } = toCompile.shift()!;
-    if (shadow) renderer.setRenderTarget(shadowTarget ??= new WebGLRenderTarget(1, 1));
-    // Each stand-in on the plain depth material with its own variant (`shadowStandIn`), then the whole
-    const units: { readonly object: Object3D; readonly variant?: DepthVariant }[] = [];
-    object.traverse((o) => {
-      const variant = o.userData[DEPTH_VARIANT] as DepthVariant | undefined;
-      if (variant) units.push({ object: o, variant });
-    });
-    units.push({ object });
-    const compiled: Promise<unknown>[] = [];
-    for (const unit of units) {
-      if (unit.variant) setDepth(plainDepth, unit.variant);
-      compiled.push(renderer.compileAsync(unit.object, camera, scene));
+  try {
+    while (toCompile.length) {
+      const { object, shadow, done } = toCompile.shift()!;
+      renderer.setRenderTarget(shadow ? shadowTarget ??= new WebGLRenderTarget(1, 1) : target);
+      // Each stand-in on its depth material set to its own variant (`shadowStandIn`), then the whole if anything else is in it
+      const units: { readonly object: Object3D; readonly variant?: DepthVariant }[] = [];
+      let others = false;
+      object.traverse((o) => {
+        const variant = o.userData[DEPTH_VARIANT] as DepthVariant | undefined;
+        if (variant) units.push({ object: o, variant });
+        else if ((o as Mesh).isMesh) others = true;
+      });
+      // DO NOT compile the stand-ins again with the whole: a depth material shared by several is left at the last one's variant.
+      if (others || units.length === 0) units.push({ object });
+      const compiled: Promise<unknown>[] = [];
+      for (const unit of units) {
+        if (unit.variant) setDepth((unit.object as Mesh).material as DepthMaterial, unit.variant);
+        // DO NOT let one program that cannot be built stop the others, nor the frame: said, and the promise still settles.
+        try {
+          compiled.push(renderer.compileAsync(unit.object, camera, scene));
+        } catch (error) {
+          console.error('[uploads] a program could not be compiled ahead', error);
+        }
+      }
+      Promise.all(compiled).then(() => done(), () => done());
     }
-    Promise.all(compiled).then(() => done(), () => done());
-    if (shadow) renderer.setRenderTarget(target);
+  } finally {
+    renderer.setRenderTarget(previous);
   }
-  renderer.setRenderTarget(previous);
 }
 
 /** Meshes whose geometry must be on the GPU before they are first drawn. three.js sends a geometry's buffers */

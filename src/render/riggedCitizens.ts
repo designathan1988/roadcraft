@@ -16,7 +16,7 @@ import type { CitizenModel } from './citizenCasting';
 import { loadPeopleAssets } from '@people/body/assets';
 import { Morpher } from '@people/body/morph';
 import { createPersonRig, personSimplifier } from './people/personRig';
-import { cancelUploads, compileAhead, warmAhead } from './uploads';
+import { cancelUploads, compileAhead, shadowStandIn, warmAhead } from './uploads';
 import { bakeInWorker, releaseIdleBakeWorkers } from './bakePool';
 import { cookPerson, loadCookedPerson, peopleCookHash } from './people/cookedPerson';
 import { HELD, createHeldProps } from './people/heldProps';
@@ -511,6 +511,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       }
       // Its shaders built before it is drawn (`uploads.ts`) - the programs it is really drawn with: a body far off has no face
       const warm = new Group();
+      const shadows = new Group();
       const temporary: InstancedMesh[] = [];
       batch.meshes.forEach((mesh, i) => {
         const variants = batch.lods[i]!;
@@ -518,25 +519,28 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         const forms = [variants[Math.min(1, variants.length - 1)]!, variants[0]!];
         for (const geometry of new Set(forms)) {
           const face = !!geometry.morphAttributes.position;
-          for (const material of [mesh.material, mesh.customDepthMaterial]) {
-            if (!material) continue;
-            const stand = new InstancedMesh(geometry, material as MeshStandardMaterial, 1);
-            stand.frustumCulled = false;
-            // Every body is drawn with a colour per instance (burnt or not): `instancingColor` is part of three's program key
-            stand.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
-            stand.receiveShadow = mesh.receiveShadow;
-            if (face && source.morphTargetInfluences) {
-              stand.morphTargetInfluences = [...source.morphTargetInfluences];
-              stand.setMorphAt(0, source);
-            }
-            temporary.push(stand);
-            warm.add(stand);
+          const stand = new InstancedMesh(geometry, mesh.material, 1);
+          stand.frustumCulled = false;
+          // Every body is drawn with a colour per instance (burnt or not): `instancingColor` is part of three's program key
+          stand.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
+          stand.receiveShadow = mesh.receiveShadow;
+          if (face && source.morphTargetInfluences) {
+            stand.morphTargetInfluences = [...source.morphTargetInfluences];
+            stand.setMorphAt(0, source);
           }
+          temporary.push(stand);
+          warm.add(stand);
+          // DO NOT compile the depth material as it was made: the shadow pass sets its side and cut from each garment's material
+          stand.castShadow = mesh.castShadow;
+          if (mesh.customDepthMaterial) stand.customDepthMaterial = mesh.customDepthMaterial;
+          const cast = shadowStandIn(stand);
+          if (cast) shadows.add(cast);
         }
       });
-      await compileAhead(warm);
+      await Promise.all([compileAhead(warm), compileAhead(shadows, true)]);
       for (const stand of temporary) stand.morphTexture?.dispose();
       warm.clear();
+      shadows.clear();
       if (abandonIfUnwanted()) return;
       // And its geometry on the GPU, every level of it (`uploads.ts`).
       await Promise.all(batch.meshes.map((mesh, i) => warmAhead(mesh, batch.lods[i]!.slice(1))));
