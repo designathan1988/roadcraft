@@ -63,7 +63,18 @@ class JobQueue {
     }
     this.count++;
     this.push(job);
+    // DO NOT let the jobs over (replaced or cancelled) pile up in the heap: they are left in it and skipped when popped, and a camera moving replaces thousands a second (the far nodes and the cells asked again under their keys), each dispatch popping them one by one (500 ms of a 16 s drag, 2026-10-16); compacted once they outnumber the waiting.
+    if (this.heap.length > this.count * 2 + 64) this.compact();
     return job;
+  }
+
+  /** The heap made again of the waiting jobs alone (Floyd's build-heap, O(n)). */
+  private compact(): void {
+    const a = this.heap;
+    let n = 0;
+    for (const job of a) if (job.state === 'waiting') a[n++] = job;
+    a.length = n;
+    for (let i = (n >> 1) - 1; i >= 0; i--) this.sink(i);
   }
 
   /** The waiting job that would run next, left waiting; null when none waits. */
@@ -133,16 +144,22 @@ class JobQueue {
     const last = a.pop();
     if (top === undefined || last === undefined || a.length === 0) return top;
     a[0] = last;
-    for (let i = 0; ;) {
+    this.sink(0);
+    return top;
+  }
+
+  /** The job at `i` moved down until both children are after it. */
+  private sink(i: number): void {
+    const a = this.heap;
+    for (;;) {
       const l = i * 2 + 1, r = l + 1;
       let m = i;
       if (l < a.length && this.less(a[l]!, a[m]!)) m = l;
       if (r < a.length && this.less(a[r]!, a[m]!)) m = r;
-      if (m === i) break;
+      if (m === i) return;
       [a[i], a[m]] = [a[m]!, a[i]!];
       i = m;
     }
-    return top;
   }
 }
 
