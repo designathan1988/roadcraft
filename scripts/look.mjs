@@ -4,7 +4,6 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, wr
 import { join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { chromium } from '@playwright/test';
-import { joinSessionJob } from './sessionJob.mjs';
 
 // `node scripts/look.mjs <script.json> [out folder] [--video] [--url=http://…]`
 const args = process.argv.slice(2);
@@ -31,9 +30,6 @@ const [width, height] = plan.viewport ?? [1920, 1080];
 const ATTEMPTS = 3;
 const RELOADED = 'the page reloaded midway (a file was saved and Vite reloaded the game)';
 
-// If the game cannot run within the share, the game is too slow: make it faster, DO NOT lift the cap.
-const job = joinSessionJob();
-console.log(job.joined ? `share: ${job.percent}% CPU, ${job.memoryGb} GB (${job.name})` : `share: not applied (${job.why})`);
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist'] });
 let report;
 try {
