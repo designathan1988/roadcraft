@@ -45,6 +45,31 @@ export function macroNoise(x: number, y: number, z: number): number {
   return plane0 + (plane1 - plane0) * fz;
 }
 
+/** A shell vertex's planar uv, metres along its face and up it, from its place and its face's normal in three's axes (x, y up, -z north): `SHELL_UV_GLSL` to the formula, as `Shell.face` once laid it. */
+export function shellUv(px: number, py: number, pz: number, nx: number, ny: number, nz: number): [number, number] {
+  // The map's axes: x, y north, z up.
+  const x = px, y = -pz, z = py;
+  const length = Math.hypot(nx, ny, nz) || 1;
+  const wx = nx / length, wy = -nz / length, wz = ny / length;
+  const flat = Math.hypot(wx, wy);
+  const tx = flat > 1e-6 ? -wy / flat : 1;
+  const ty = flat > 1e-6 ? wx / flat : 0;
+  // n x t: straight up on a wall, up the slope on a roof, +y on a flat.
+  const bx = -wz * ty, by = wz * tx, bz = wx * ty - wy * tx;
+  return [x * tx + y * ty, x * bx + y * by + z * bz];
+}
+
+/** GLSL: `shellUv`, from the vertex in the world and its normal there (three's axes). */
+export const SHELL_UV_GLSL = `
+vec2 shellPlanarUv(vec3 at, vec3 out) {
+  vec3 p = vec3(at.x, -at.z, at.y);
+  vec3 n = vec3(out.x, -out.z, out.y);
+  float across = length(n.xy);
+  vec2 t = across > 1e-6 ? vec2(-n.y, n.x) / across : vec2(1.0, 0.0);
+  vec3 b = vec3(-n.z * t.y, n.z * t.x, n.x * t.y - n.y * t.x);
+  return vec2(dot(p.xy, t), dot(p, b));
+}`;
+
 /** A point of a shell part's model in its own plan: along (u, the building's x), across (v, its y) and up (w), each -0.5..0.5. */
 type Unit = readonly [number, number, number];
 
@@ -120,15 +145,11 @@ export const shellPartVertex = (rows: number): string => `
 {
   vec3 shellAt = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
   vec3 shellOut = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal);
+  vShellUv = shellPlanarUv(shellAt, shellOut) * shellLooks[vShellFinish * ${rows}].x;
   // The map's axes: x, y north, z up (three's x, -z, y).
   vec3 p = vec3(shellAt.x, -shellAt.z, shellAt.y);
-  vec3 n = vec3(shellOut.x, -shellOut.z, shellOut.y);
-  float across = length(n.xy);
-  vec2 t = across > 1e-6 ? vec2(-n.y, n.x) / across : vec2(1.0, 0.0);
-  vec3 b = vec3(-n.z * t.y, n.z * t.x, n.x * t.y - n.y * t.x);
-  vShellUv = vec2(dot(p.xy, t), dot(p, b)) * shellLooks[vShellFinish * ${rows}].x;
   float tone = 0.97 + shellMacroNoise(p / ${glsl(MACRO_SCALE)}) * 0.06;
-  if (abs(n.z) < 0.5) {
+  if (abs(shellOut.y) < 0.5) {
     float g = clamp((p.z - ${GROUND_ATTRIBUTE}) / ${glsl(GRIME_REACH)}, 0.0, 1.0);
     tone *= 0.8 + 0.2 * g * g * (3.0 - 2.0 * g);
   }

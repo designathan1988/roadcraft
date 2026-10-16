@@ -1633,7 +1633,7 @@ export function createSceneRenderer(
     tiny.setAttribute('uv', new Float32BufferAttribute([0, 0, 1, 0, 0, 1], 2));
     tiny.setAttribute('aDecay', new Float32BufferAttribute([0, 0, 0], 1));
     const group = new Group();
-    const mats = [kit.shellMaterial, kit.facade, ...Object.values(kit.material), kit.furniture().material, kit.massing];
+    const mats = [kit.shellMaterial, kit.ruinShell, kit.facade, ...Object.values(kit.material), kit.furniture().material, kit.massing];
     for (const mat of mats) {
       const mesh = new Mesh(tiny, mat);
       mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;

@@ -11,7 +11,8 @@ import {
 import type { Finish } from '@world/buildings/materials';
 import { m } from '@world/units';
 import type { BuildingChunk } from './buildingMesh';
-import { FINISH_ATTRIBUTE, finishId } from './cellArrays';
+import { COLOUR_RANGE, FINISH_ATTRIBUTE, NORMAL_UNIT, PAINT_UNIT, SHELL_SHORTS, finishId } from './cellArrays';
+import { shellUv } from './shellParts';
 import type { BuildingKit, PartKind } from './kit';
 
 /** Pre-fracturing a building's own meshes */
@@ -75,7 +76,8 @@ function subdivide(v: number[], max: number, out: number[][]): void {
 /** The fragments of one building, from its drawn chunk. */
 /** What a fracture needs, as plain arrays (so it can run in a worker, `fracture.worker.ts`). */
 export interface FractureInput {
-  readonly shells: readonly { mat: number; finish: number; position: Float32Array; normal: Float32Array; colour: Float32Array; uv: Float32Array; index: Uint32Array; decay: Float32Array }[];
+  /** The shell as it is drawn (`ShellChunk`): its normal, wear and paint in shorts, its uv worked out from them (`shellUv`). */
+  readonly shells: readonly { mat: number; finish: number; position: Float32Array; normalDecay: Int16Array; paint: Uint16Array; index: Uint32Array }[];
   /** Instanced parts (windows, doors, furniture): their model, non-indexed, and each instance's matrix. */
   readonly parts: readonly { mat: number; position: Float32Array; normal: Float32Array; uv: Float32Array | null; colour: Float32Array | null;
     instColours: Float32Array | null; matrices: Float32Array; count: number }[];
@@ -127,10 +129,10 @@ export function prepareFracture(
     return i;
   };
   const shells: FractureInput['shells'][number][] = [];
-  // Every finish in the shell's one material, each vertex its finish id (`finishes.ts`).
-  const shellMat = materialIndex(kit.shellMaterial);
+  // Every finish in the ruin's one material, each vertex its finish id, uv and colour carried as its piece moves (`finishes.ts`).
+  const shellMat = materialIndex(kit.ruinShell);
   for (const [finish, part] of Object.entries(chunk.shells) as [Finish, NonNullable<BuildingChunk['shells'][Finish]>][]) {
-    shells.push({ mat: shellMat, finish: finishId(finish), position: part.position, normal: part.normal, colour: part.colour, uv: part.uv, index: part.index, decay: part.decay });
+    shells.push({ mat: shellMat, finish: finishId(finish), position: part.position, normalDecay: part.normalDecay, paint: part.paint, index: part.index });
   }
   const parts: FractureInput['parts'][number][] = [];
   const model = (source: BufferGeometry, mat: number, batch: { matrices: Float32Array; count: number; colours?: Float32Array | null }): void => {
@@ -232,12 +234,19 @@ export function mergeFragments(data: readonly FragmentData[]): StillData {
 export function fractureData(input: FractureInput): FragmentData[] {
   const tris: Tri[] = [];
   let wear = 0, wearN = 0;
-  for (const part of input.shells) for (const d of part.decay) { wear += d; wearN++; }
+  for (const part of input.shells) for (let i = 3; i < part.normalDecay.length; i += SHELL_SHORTS) { wear += part.normalDecay[i]! / NORMAL_UNIT; wearN++; }
   const bDecay = wearN ? wear / wearN : 0;
   for (const part of input.shells) {
     const { mat, finish } = part;
-    const { position: p, normal: n, colour: c, uv, index: idx, decay: dk } = part;
-    const vert = (i: number): number[] => [p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!, n[i * 3]!, n[i * 3 + 1]!, n[i * 3 + 2]!, c[i * 3]!, c[i * 3 + 1]!, c[i * 3 + 2]!, uv[i * 2]!, uv[i * 2 + 1]!, dk[i] ?? 0];
+    const { position: p, normalDecay: nd, paint: c, index: idx } = part;
+    // Each vertex as the shell draws it: its normal and wear read back as the GPU reads them, its paint, its uv as the shader works it out (`shellUv`).
+    const vert = (i: number): number[] => {
+      const o = i * SHELL_SHORTS;
+      const nx = nd[o]! / NORMAL_UNIT, ny = nd[o + 1]! / NORMAL_UNIT, nz = nd[o + 2]! / NORMAL_UNIT;
+      const [u, v] = shellUv(p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!, nx, ny, nz);
+      const k = COLOUR_RANGE / PAINT_UNIT;
+      return [p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!, nx, ny, nz, c[o]! * k, c[o + 1]! * k, c[o + 2]! * k, u, v, nd[o + 3]! / NORMAL_UNIT];
+    };
     for (let t = 0; t < idx.length; t += 3) {
       const out: number[][] = [];
       subdivide([...vert(idx[t]!), ...vert(idx[t + 1]!), ...vert(idx[t + 2]!)], MAX_EDGE, out);

@@ -145,6 +145,8 @@ export interface BuildingKit {
   readonly material: Readonly<Record<PartKind, Material>>;
   /** The merged shell - walls, plinths, bands, roofs, steps - of every finish: one material, vertex coloured, each vertex's finish picking its maps (`finishes.ts`). */
   readonly shellMaterial: MeshStandardMaterial;
+  /** A broken building's pieces (`destruction.ts`): the shell's look, each vertex carrying its uv, colour and finish as its piece moves. */
+  readonly ruinShell: MeshStandardMaterial;
   /** Ghost materials for the placement / drag preview, tinted by validity. */
   readonly ghostShell: MeshStandardMaterial;
   readonly ghostParts: MeshStandardMaterial;
@@ -533,6 +535,7 @@ export function createBuildingKit(): BuildingKit {
   const tones = furnitureTones(furnitureGeometry);
   for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(own[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight, tvClock });
   const shell = createShellMaterial();
+  const ruinShell = createShellMaterial({ carried: true });
   // The shell's parts are the shell drawn instanced (`shellParts.ts`): its own material, not pulled towards the eye, not renamed.
   const material: Record<PartKind, Material> = { ...own, ...{ lotBox: shell, lotRail: shell, lotSlab: shell } satisfies Record<ShellPartKind, Material> };
   const ghostShell = new MeshStandardMaterial({
@@ -567,7 +570,7 @@ export function createBuildingKit(): BuildingKit {
   // The facade level's walls: the shell's every finish, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
   const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
   const facade = createFacadeMaterial(shell, panes, { roomsAwake, massingNight });
-  const unique = new Set<Material>([...Object.values(material), shell, dimShell, facade, ghostShell, ghostParts, dimParts, massing]);
+  const unique = new Set<Material>([...Object.values(material), shell, ruinShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;
   for (const kind of PART_KINDS) levels[kind] = [{ geometry: geometry[kind], triangles: trianglesOf(geometry[kind]), error: [0, 0, 0] }];
@@ -615,6 +618,7 @@ export function createBuildingKit(): BuildingKit {
     screen,
     material,
     shellMaterial: shell,
+    ruinShell,
     ghostShell,
     ghostParts,
     dimShell,

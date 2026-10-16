@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BufferGeometry, Material } from 'three';
 import { emitChunk, withShellParts } from '@render/buildings/buildingMesh';
+import { COLOUR_RANGE, PAINT_UNIT } from '@render/buildings/cellArrays';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { SHELL_PARTS } from '@render/buildings/shellParts';
 import { m } from '@world/units';
@@ -136,11 +137,13 @@ function facesOf(b: Building, kit: ReturnType<typeof createBuildingKit>): Face[]
   const chunk = withShellParts(emitChunk(b, ROLLING));
   for (const [finish, shell] of Object.entries(chunk.shells)) {
     if (!shell) continue;
-    const pos = shell.position, index = shell.index, colour = shell.colour;
+    const pos = shell.position, index = shell.index, paint = shell.paint;
     const v = (i: number): V3 => [pos[i * 3]!, pos[i * 3 + 1]!, pos[i * 3 + 2]!];
+    // The paint as the GPU reads it back (`cellArrays.ts` `paintShort`).
+    const unit = COLOUR_RANGE / PAINT_UNIT;
     for (let t = 0; t + 2 < index.length; t += 3) {
       const i0 = index[t]!, i1 = index[t + 1]!, i2 = index[t + 2]!;
-      const rgb: V3 = [0, 1, 2].map((k) => (colour[i0 * 3 + k]! + colour[i1 * 3 + k]! + colour[i2 * 3 + k]!) / 3) as V3;
+      const rgb: V3 = [0, 1, 2].map((k) => ((paint[i0 * 4 + k]! + paint[i1 * 4 + k]! + paint[i2 * 4 + k]!) / 3) * unit) as V3;
       face(v(i0), v(i1), v(i2), 'casca', finish, rgb, faces);
     }
   }

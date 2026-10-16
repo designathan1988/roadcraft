@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { InstancedMesh, InterleavedBufferAttribute } from 'three';
 import { type BuildingChunk, assembleBuildingMeshes, emitChunk, withShellParts } from '@render/buildings/buildingMesh';
-import { FACADE_BYTES, FACADE_FLOATS, FINISH_ATTRIBUTE, cellArrays } from '@render/buildings/cellArrays';
+import {
+  COLOUR_RANGE, FACADE_BYTES, FACADE_FLOATS, FACADE_GRID, FINISH_ATTRIBUTE, NORMAL_UNIT, PAINT_UNIT, cellArrays, cellBytes, paintShort,
+} from '@render/buildings/cellArrays';
+import { FACADE_FLIP } from '@render/buildings/facadeLevel';
+import { shellUv } from '@render/buildings/shellParts';
 import { PART_KINDS, type PartKind, createBuildingKit } from '@render/buildings/kit';
 import { GROUND_ATTRIBUTE, LOOK_FLOATS, SHELL_PARTS, SHELL_PART_KINDS } from '@render/buildings/shellParts';
 import { FINISHES } from '@world/buildings/materials';
@@ -56,12 +60,14 @@ function farAt(far: BuildingChunk, px: number, py: number, pz: number, nx: numbe
   let best: { inside: boolean; kind: number; dark: boolean } | null = null;
   let bestGap = Infinity;
   for (const s of Object.values(far.shells)) {
-    const { position: p, normal: n, index, facade, opening } = s;
-    if (!facade || !opening) continue;
+    const { position: p, normalDecay, index, facade, grid, opening } = s;
+    if (!facade || !grid || !opening) continue;
     for (let t = 0; t < index.length; t += 3) {
       const a = index[t]!, b = index[t + 1]!, c = index[t + 2]!;
+      // The face's normal as the GPU reads it.
+      const wx = normalDecay[a * 4]! / NORMAL_UNIT, wy = normalDecay[a * 4 + 1]! / NORMAL_UNIT, wz = normalDecay[a * 4 + 2]! / NORMAL_UNIT;
       // A wall facing the pane's way, the pane at or a little behind it.
-      if (n[a * 3]! * nx + n[a * 3 + 2]! * nz < 0.99 || Math.abs(n[a * 3 + 1]!) > 0.01) continue;
+      if (wx * nx + wz * nz < 0.99 || Math.abs(wy) > 0.01) continue;
       const gap = (px - p[a * 3]!) * nx + (pz - p[a * 3 + 2]!) * nz;
       // A loggia's glazed wall stands a room's edge behind the facade.
       if (gap > 0.02 || gap < -1.6 || Math.abs(gap) >= bestGap) continue;
@@ -77,9 +83,12 @@ function farAt(far: BuildingChunk, px: number, py: number, pz: number, nx: numbe
       const wc = ((u(b) - u(a)) * (qh - h(a)) - (qu - u(a)) * (h(b) - h(a))) / d;
       const wa = 1 - wb - wc;
       if (wa < -1e-6 || wb < -1e-6 || wc < -1e-6) continue;
-      const at = (k: number): number => wa * facade[a * FACADE_FLOATS + k]! + wb * facade[b * FACADE_FLOATS + k]! + wc * facade[c * FACADE_FLOATS + k]!;
-      const gu = at(0), gv = at(1), W = facade[a * FACADE_FLOATS + 2]!, kind = Math.round(facade[a * FACADE_FLOATS + 4]!);
-      const key = Math.round(facade[a * FACADE_FLOATS + 5]!), tx = facade[a * FACADE_FLOATS + 6]!, ty = facade[a * FACADE_FLOATS + 7]!;
+      const at = (k: number): number => wa * grid[a * FACADE_GRID + k]! + wb * grid[b * FACADE_GRID + k]! + wc * grid[c * FACADE_GRID + k]!;
+      const gu = at(0), gv = at(1), W = facade[a * FACADE_FLOATS]!;
+      const raw = grid[a * FACADE_GRID + 2]!, kind = raw & (FACADE_FLIP - 1), key = grid[a * FACADE_GRID + 3]!;
+      // The run's direction as the shader works it out: the face's own horizontal on the plan, turned round where flagged.
+      const across = Math.hypot(wx, wz), turn = raw & FACADE_FLIP ? -1 : 1;
+      const tx = (turn * wz) / across, ty = (turn * wx) / across;
       const o = [0, 1, 2, 3].map((k) => opening[a * FACADE_BYTES + k]! / 255);
       const fu = gu - Math.floor(gu), fv = gv - Math.floor(gv);
       const inside = kind > 0 && fu > o[0]! && fu < o[1]! && fv > o[2]! && fv < o[3]!;
@@ -111,6 +120,7 @@ describe('the buildings\' far level', () => {
       // Every vertex of the far level has its window grid, and only the far level has one.
       for (const s of Object.values(l1.shells)) {
         expect(s.facade!.length).toBe((s.position.length / 3) * FACADE_FLOATS);
+        expect(s.grid!.length).toBe((s.position.length / 3) * FACADE_GRID);
         expect(s.opening!.length).toBe((s.position.length / 3) * FACADE_BYTES);
       }
       for (const s of Object.values(detail.shells)) expect(s.facade).toBeUndefined();
@@ -158,8 +168,9 @@ describe('the buildings\' far level', () => {
     const s = cell.shell!;
     const vertices = s.position.length / 3;
     expect(s.facade!.length).toBe(vertices * FACADE_FLOATS);
+    expect(s.grid!.length).toBe(vertices * FACADE_GRID);
     expect(s.opening!.length).toBe(vertices * FACADE_BYTES);
-    expect(s.finish.length).toBe(vertices);
+    expect(s.paint.length).toBe(vertices * 4);
     let made = 0;
     for (const c of chunks) for (const part of Object.values(c.shells)) made += part.position.length / 3;
     expect(vertices).toBe(made);
@@ -172,13 +183,16 @@ interface Tri { finish: string; c: number[]; n: number[]; rgb: number[]; uv: num
 function trianglesOf(c: BuildingChunk): Tri[] {
   const out: Tri[] = [];
   for (const [finish, s] of Object.entries(c.shells)) {
-    const { position: p, normal: n, colour, uv, decay, index } = s;
+    const { position: p, normalDecay: nd, paint, index } = s;
     for (let t = 0; t < index.length; t += 3) {
       const v = [index[t]!, index[t + 1]!, index[t + 2]!];
-      const mean = (a: ArrayLike<number>, size: number, k: number): number => v.reduce((sum, i) => sum + a[i * size + k]!, 0) / 3;
+      const mean = (a: ArrayLike<number>, size: number, k: number, unit = 1): number => v.reduce((sum, i) => sum + a[i * size + k]!, 0) / 3 * unit;
+      // The uv as the shader works it out from each vertex's place and normal (`shellUv`).
+      const uvs = v.map((i) => shellUv(p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!, nd[i * 4]! / NORMAL_UNIT, nd[i * 4 + 1]! / NORMAL_UNIT, nd[i * 4 + 2]! / NORMAL_UNIT));
       out.push({
-        finish, c: [0, 1, 2].map((k) => mean(p, 3, k)), n: [0, 1, 2].map((k) => n[v[0]! * 3 + k]!), rgb: [0, 1, 2].map((k) => mean(colour, 3, k)),
-        uv: [0, 1].map((k) => mean(uv, 2, k)), decay: mean(decay, 1, 0),
+        finish, c: [0, 1, 2].map((k) => mean(p, 3, k)), n: [0, 1, 2].map((k) => nd[v[0]! * 4 + k]! / NORMAL_UNIT),
+        rgb: [0, 1, 2].map((k) => mean(paint, 4, k, COLOUR_RANGE / PAINT_UNIT)),
+        uv: [0, 1].map((k) => uvs.reduce((sum, u) => sum + u[k]!, 0) / 3), decay: mean(nd, 4, 3, 1 / NORMAL_UNIT),
       });
     }
   }
@@ -204,7 +218,7 @@ function unmatched(a: readonly Tri[], b: readonly Tri[]): Tri[] {
       const list = grid.get(key(i + di, j + dj, k + dk));
       if (!list) continue;
       const at = list.findIndex((u) => u.finish === t.finish && close(u.c, t.c, m(0.001)) && close(u.n, t.n, 1e-4) && close(u.rgb, t.rgb, 2e-3)
-        && close(u.uv, t.uv, 2e-3) && Math.abs(u.decay - t.decay) <= 1 / 254 + 1e-6);
+        && close(u.uv, t.uv, 2e-3) && Math.abs(u.decay - t.decay) <= 1 / 65534 + 1e-6);
       if (at < 0) continue;
       list.splice(at, 1);
       found = true;
@@ -289,5 +303,84 @@ describe('the lots\' boxes, the shell\'s parts', () => {
       meshes.dispose();
     }
     kit.dispose();
+  });
+});
+
+/** `SHELL_UV_GLSL` as the GPU runs it: every operation rounded to a 32-bit float, from the place and the normal it reads. */
+function glslUv(px: number, py: number, pz: number, nx: number, ny: number, nz: number): [number, number] {
+  const f = Math.fround;
+  const l = f(Math.sqrt(f(f(f(nx * nx) + f(ny * ny)) + f(nz * nz))));
+  const ox = f(nx / l), oy = f(ny / l), oz = f(nz / l);
+  const p0 = f(px), p1 = f(-pz), p2 = f(py), n0 = ox, n1 = f(-oz), n2 = oy;
+  const across = f(Math.sqrt(f(f(n0 * n0) + f(n1 * n1))));
+  const t0 = across > 1e-6 ? f(-n1 / across) : 1, t1 = across > 1e-6 ? f(n0 / across) : 0;
+  const b0 = f(-n2 * t1), b1 = f(n2 * t0), b2 = f(f(n0 * t1) - f(n1 * t0));
+  return [f(f(p0 * t0) + f(p1 * t1)), f(f(f(p0 * b0) + f(p1 * b1)) + f(p2 * b2))];
+}
+
+describe('the shell\'s compact vertex', () => {
+  // A sample of the town: every kind of face, within a test's 10 s.
+  const town = grownTown().slice(0, 24);
+  const take = { parts: [] as PartKind[], shells: true, furniture: false, ghost: false, dim: false };
+
+  it('gets from the shader the planar uv `Shell.face` laid: the same orientation and scale on every face, a phase under float error', () => {
+    let checked = 0, offPlane = 0;
+    for (const far of [false, true]) {
+      const chunks = town.map((b) => emitChunk(b, groundAt, undefined, groundAt, undefined, far));
+      const s = cellArrays(chunks, take, unitBoxes).shell!;
+      const { position: p, normalDecay: nd, index } = s;
+      for (let t = 0; t < index.length; t += 3) {
+        const v = [index[t]!, index[t + 1]!, index[t + 2]!];
+        const at = (i: number): number[] => [p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!];
+        const [a, b, c] = v.map(at) as [number[], number[], number[]];
+        const u = [b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!], w = [c[0]! - a[0]!, c[1]! - a[1]!, c[2]! - a[2]!];
+        const g = [u[1]! * w[2]! - u[2]! * w[1]!, u[2]! * w[0]! - u[0]! * w[2]!, u[0]! * w[1]! - u[1]! * w[0]!];
+        const area = Math.hypot(g[0]!, g[1]!, g[2]!) / 2;
+        const edge = Math.max(Math.hypot(u[0]!, u[1]!, u[2]!), Math.hypot(w[0]!, w[1]!, w[2]!));
+        // Its plane's own normal, the reference `Shell.face` laid the uv by; thin slivers read it too roughly from 32-bit corners.
+        if (area < 0.02 || edge < 0.2) continue;
+        const n = [nd[v[0]! * 4]! / NORMAL_UNIT, nd[v[0]! * 4 + 1]! / NORMAL_UNIT, nd[v[0]! * 4 + 2]! / NORMAL_UNIT];
+        const len = Math.hypot(g[0]!, g[1]!, g[2]!), sign = g[0]! * n[0]! + g[1]! * n[1]! + g[2]! * n[2]! < 0 ? -1 : 1;
+        const exact = g.map((x) => (x / len) * sign);
+        if (Math.hypot(exact[0]! - n[0]!, exact[1]! - n[1]!, exact[2]! - n[2]!) > 1e-3) { offPlane++; continue; }
+        checked++;
+        const diffs = v.map((i) => {
+          const [x, y, z] = at(i) as [number, number, number];
+          const was = shellUv(x, y, z, exact[0]!, exact[1]!, exact[2]!);
+          const now = glslUv(x, y, z, n[0]!, n[1]!, n[2]!);
+          const phase = Math.hypot(x, y, z) * 1e-4 + 1e-3;
+          expect(Math.abs(now[0] - was[0]), `uv u at ${x}, ${y}, ${z}`).toBeLessThan(phase);
+          expect(Math.abs(now[1] - was[1]), `uv v at ${x}, ${y}, ${z}`).toBeLessThan(phase);
+          return [now[0] - was[0], now[1] - was[1]] as const;
+        });
+        // Across the face the difference is one constant: the texture neither turned nor stretched.
+        for (const d of diffs) {
+          expect(Math.abs(d[0] - diffs[0]![0])).toBeLessThan(2e-4 * edge + 1e-4);
+          expect(Math.abs(d[1] - diffs[0]![1])).toBeLessThan(2e-4 * edge + 1e-4);
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(1000);
+    // A face laid with a normal off its plane (a softened roof, a turned sliver) took its uv from that normal before as now: the shader reads it in 16 bits.
+    expect(offPlane).toBeGreaterThanOrEqual(0);
+  });
+
+  it('holds its paint in 16 bits a channel, none past the range, and its finish id whole', () => {
+    for (const x of [0, 1e-4, 3e-4, 0.0123, 0.2, 0.5, 0.97, 1, 1.19]) {
+      expect(Math.abs((paintShort(x) * COLOUR_RANGE) / PAINT_UNIT - Math.fround(x))).toBeLessThanOrEqual(COLOUR_RANGE / PAINT_UNIT / 2 + 1e-9);
+    }
+    const s = cellArrays(town.map((b) => emitChunk(b, groundAt)), take, unitBoxes).shell!;
+    for (let i = 0; i < s.paint.length; i += 4) {
+      for (let k = 0; k < 3; k++) expect(s.paint[i + k]!).toBeLessThan(PAINT_UNIT);
+      expect(s.paint[i + 3]!).toBeLessThan(FINISHES.length);
+    }
+  });
+
+  it('is 28 bytes, 52 at the far level (37 and 77 before)', () => {
+    for (const far of [false, true]) {
+      const s = cellArrays(town.map((b) => emitChunk(b, groundAt, undefined, groundAt, undefined, far)), take, unitBoxes);
+      const vertices = s.shell!.position.length / 3;
+      expect((cellBytes(s) - s.shell!.index.byteLength) / vertices).toBe(far ? 52 : 28);
+    }
   });
 });

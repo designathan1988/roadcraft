@@ -33,7 +33,7 @@ function wrongWinding(chunk: BuildingChunk): number {
   let wrong = 0;
   for (const part of Object.values(chunk.shells)) {
     const p = part.position;
-    const n = part.normal;
+    const n = part.normalDecay;
     for (let t = 0; t < part.index.length; t += 3) {
       const a = part.index[t]! * 3;
       const b = part.index[t + 1]! * 3;
@@ -43,7 +43,8 @@ function wrongWinding(chunk: BuildingChunk): number {
       const gx = uy * vz - uz * vy;
       const gy = uz * vx - ux * vz;
       const gz = ux * vy - uy * vx;
-      if (gx * n[a]! + gy * n[a + 1]! + gz * n[a + 2]! < 0) wrong++;
+      const q = (a / 3) * 4;
+      if (gx * n[q]! + gy * n[q + 1]! + gz * n[q + 2]! < 0) wrong++;
     }
   }
   return wrong;
@@ -96,8 +97,8 @@ describe('building shell', () => {
         expect(wrongWinding(chunk), `${BLUEPRINTS[i]!.key} at ${rotation}`).toBe(0);
         expect(positions(chunk).every(Number.isFinite)).toBe(true);
         for (const part of Object.values(chunk.shells)) {
-          expect(part.uv.length / 2).toBe(part.position.length / 3);
-          expect([...part.uv].every(Number.isFinite)).toBe(true);
+          expect(part.normalDecay.length / 4).toBe(part.position.length / 3);
+          expect(part.paint.length / 4).toBe(part.position.length / 3);
         }
       }
     }
