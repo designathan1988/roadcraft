@@ -14,6 +14,7 @@ import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { createMassCells } from './massCells';
+import { MassLevels } from './massLevels';
 import { type BuildingKit, createBuildingKit } from './kit';
 import { type CellEnv, CellPool } from './cellPool';
 import { type BatchKind, CellRequests, sameEntries } from './cellRequests';
@@ -248,6 +249,8 @@ export function createBuildingLayer(): BuildingLayer {
   const pool = new CellPool(() => kitBoxes(kit), (entry) => textOf(entry), true, kit.finishTone);
   pool.warm();
   const requests = new CellRequests(pool, kit, keep);
+  /** The tiles' (L2) and plates' (L3) masses, asked again only where a cell's buildings changed (`massLevels.ts`). */
+  const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key));
   /** The far buildings flying a flag not emitted yet: their summaries asked of the workers in the frames' spare slices */
   let backlog: Building[] = [];
   /** The buildings shown, as last put together (`update`): the flags are read from what is kept of them. */
@@ -263,13 +266,15 @@ export function createBuildingLayer(): BuildingLayer {
   /** DO NOT mass the buildings on the page */
   const askMass = (cell: string, env: CellEnv, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): void => {
     const list = massTown.get(cell);
-    if (!list?.length) { requests.dropMass(cell); massCells.remove(cell); return; }
+    if (!list?.length) { requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null); return; }
     massCells.plan(cell);
     const entries = list.map((b): CellEntry => {
       const sig = sigOf(b);
       sent.set(String(b.id), b);
       return { key: String(b.id), sig, digest: digestFor(b, sig, groundKey, groundAt, pavedAt) };
     });
+    // Its tile and plate asked again once every cell changed is touched (`levels.flush`).
+    levels.touch(cell, entries);
     requests.mass(cell, entries, env, (mass) => {
       massCells.land(cell, mass);
       chooseNow();
@@ -405,7 +410,7 @@ export function createBuildingLayer(): BuildingLayer {
       return Math.max(massCells.top(), signatures.top(), ghostTop, soloTop);
     },
     get pending() {
-      return pendingCells.size > 0 || requests.massing > 0;
+      return pendingCells.size > 0 || requests.massing > 0 || levels.asking > 0;
     },
     hidden: false,
     kit,
@@ -457,6 +462,7 @@ export function createBuildingLayer(): BuildingLayer {
           forcedNear = forcedCells(doc);
           // Some buildings changed: their cells' masses asked again and their detail made again, each shown as it lands
           for (const cell of dirty) { askMass(cell, env, groundAt, groundKey, pavedAt); pendingCells.add(cell); }
+          levels.flush(env);
           chooseNow();
           for (const id of ids) {
             const b = doc.buildings.get(id);
@@ -488,6 +494,7 @@ export function createBuildingLayer(): BuildingLayer {
           massTown = town.byCell;
           for (const cell of [...massCells.keys()]) if (!massTown.has(cell)) askMass(cell, env, groundAt, groundKey, pavedAt);
           for (const cell of massTown.keys()) askMass(cell, env, groundAt, groundKey, pavedAt);
+          levels.flush(env);
           cutCells = cutCellsOf(doc, cutaway);
           forcedNear = forcedCells(doc);
           chooseNow();
@@ -663,13 +670,15 @@ export function createBuildingLayer(): BuildingLayer {
         map.clear();
       }
       partRoot.clear();
-      // The masses too: asked again whole by the next update.
+      // The masses too, the tiles' and plates' with them: asked again whole by the next update.
+      levels.clear();
       massCells.dispose();
       storedKey = '';
       townDoc = null;
     },
     dispose() {
       requests.clear();
+      levels.clear();
       pool.dispose();
       flagLayer.dispose();
       massCells.dispose();

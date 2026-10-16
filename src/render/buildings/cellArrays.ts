@@ -110,6 +110,8 @@ export interface CellMass {
   readonly index: Uint16Array | Uint32Array;
   readonly bounds: Bounds;
   readonly top: number;
+  /** The tallest thing its level left out, m (`MassingChunk.error`): 0 for a cell's, what a tile's or a plate's choice reads (`massCells.ts`). */
+  readonly error: number;
 }
 
 /** The index array a cell's mesh needs: 16 bits where its vertices fit (a cell of 240 m mostly does), else 32. */
@@ -117,10 +119,10 @@ export function indexArray(vertices: number, indices: number): Uint16Array | Uin
   return vertices > 0xffff ? new Uint32Array(indices) : new Uint16Array(indices);
 }
 
-/** The masses of a cell's buildings as one set of arrays; null when none has any. */
+/** The masses of a cell's buildings, or a tile's or a plate's (`massLevels.ts`), merged as one set of arrays; null when none has any. */
 export function cellMass(masses: readonly MassingChunk[]): CellMass | null {
-  let vertices = 0, indices = 0;
-  for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; }
+  let vertices = 0, indices = 0, error = 0;
+  for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; error = Math.max(error, c.error); }
   if (indices === 0) return null;
   const position = new Float32Array(vertices * 3), normal = new Int8Array(vertices * 4), color = new Float32Array(vertices * 3);
   const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = indexArray(vertices, indices);
@@ -138,7 +140,7 @@ export function cellMass(masses: readonly MassingChunk[]): CellMass | null {
     v += c.position.length / 3;
     n += c.index.length;
   }
-  return { position, normal, color, facade, glazing, index, bounds: shellBounds(position), top };
+  return { position, normal, color, facade, glazing, index, bounds: shellBounds(position), top, error };
 }
 
 /** Every buffer of a cell's masses: handed over, not copied. */

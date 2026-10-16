@@ -26,7 +26,22 @@ export interface MassingChunk {
   /** Per vertex: the share of a bay its windows take across (1: a curtain wall), and the building's seed */
   readonly glazing: Float32Array;
   readonly index: Uint32Array;
+  /** The tallest thing this level left out or laid flat, m (`MassDetail`): 0 at the cell's level. */
+  readonly error: number;
 }
+
+/** WHAT A LEVEL OF THE MASSES LEAVES OUT: the cell's (all of it), a tile's (L2) and a plate's (L3, `massLevels.ts`) */
+export interface MassDetail {
+  /** The tallest thing left out or laid flat, m: a relief and its cheeks, a parapet, a box on the roof, a machine room. */
+  readonly drop: number;
+  /** Each block a box: its pitched roof under `drop` laid flat at its eaves (L3). */
+  readonly boxes: boolean;
+}
+export const CELL_DETAIL: MassDetail = { drop: 0, boxes: false };
+/** A tile's: under 3 m (a machine room, `MACHINE_ROOM_H`; a parapet; an arcade's set-back, `ARCADE`). */
+export const TILE_DETAIL: MassDetail = { drop: m(3), boxes: false };
+/** A plate's: under 8 m, the pitched roofs of houses and low blocks flattened too. */
+export const PLATE_DETAIL: MassDetail = { drop: m(8), boxes: true };
 
 /** Where the wall of a block on the ground starts: below the lowest ground under it, as the detailed plinth does. */
 const BURY = m(1.5);
@@ -59,8 +74,17 @@ class MassWriter {
   readonly facade: number[] = [];
   readonly glazing: number[] = [];
   readonly index: number[] = [];
+  /** The tallest thing left out so far (`leaves`). */
+  error = 0;
 
-  constructor(private readonly b: Building, private readonly seed: number) {}
+  constructor(private readonly b: Building, private readonly seed: number, readonly detail: MassDetail = CELL_DETAIL) {}
+
+  /** Whether a thing `size` m tall or deep is left out at this level; its size kept as the level's error when it is. */
+  leaves(size: number): boolean {
+    if (!(size > 0) || size > this.detail.drop) return false;
+    this.error = Math.max(this.error, size);
+    return true;
+  }
 
   /** A point of the building's plan at height z, in three's axes. */
   P(lx: number, ly: number, z: number): [number, number, number] {
@@ -105,6 +129,7 @@ class MassWriter {
       facade: new Float32Array(this.facade),
       glazing: new Float32Array(this.glazing),
       index: new Uint32Array(this.index),
+      error: this.error,
     };
   }
 }
@@ -117,11 +142,13 @@ export function emitMassing(
   b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, signature = false,
   /** Each finish's colour from afar (`finishes.ts` `finishAlbedo`): the detailed walls' tint times their texture's mean; none, the bare tint. */
   tone?: Readonly<Record<Finish, readonly [number, number, number]>>,
+  /** What the level leaves out (a tile's, a plate's); the cell's keeps all. */
+  detail: MassDetail = CELL_DETAIL,
 ): MassingChunk | null {
   const resolved = resolveBlocks(b);
   const closed = resolved.volumes.filter((v) => !v.open);
   const office = b.use === 'commercial' || b.use === 'industrial' ? 2 : 0;
-  const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296 + office);
+  const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296 + office, detail);
   // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`)
   const floor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
   if (floor !== undefined && !signature) {
@@ -200,7 +227,11 @@ function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (
     row.sort((p, q) => p.start - q.start);
     const side = row[0]!.side;
     // The run's outward offset: a relief's push, an arcade's wall set back.
-    const offsetOf = (bay: FacadeBay): number => (bay.component === 'pillar' ? -ARCADE : bay.push);
+    // Laid flat where the level leaves it out: the wall then runs on with its neighbours (one quad where they were coplanar).
+    const offsetOf = (bay: FacadeBay): number => {
+      const d = bay.component === 'pillar' ? -ARCADE : bay.push;
+      return w.leaves(Math.abs(d)) ? 0 : d;
+    };
     const shareOf = (bay: FacadeBay): number => GLASS_SHARE[bay.component] ?? 0;
     let i = 0;
     while (i < row.length) {
@@ -245,7 +276,7 @@ function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (
   }
   const flat = v.roof === 'flat';
   const crown = flat ? (v.dress?.crown === 'attic' ? ATTIC_H : PARAPET_H) : 0;
-  if (crown > 0) {
+  if (crown > 0 && !w.leaves(crown)) {
     // The parapet only where the roof really ends: not against a neighbour as tall or taller (`buildingMesh.ts` `emitRoof`).
     const top = volumeTop(v);
     for (const side of volumeSides(v)) {
@@ -270,7 +301,9 @@ function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (
 function emitRoof(w: MassWriter, b: Building, v: Volume, floor: number, eaves: number, rgb: (spec: MaterialSpec) => Rgb): void {
   const roof = v.roof === 'terrace' ? TERRACE_RGB : rgb(roofMaterial(b, v));
   const up = w.N(0, 0, 1);
-  if (v.roof === 'flat' || v.roof === 'terrace') {
+  // A plate's box: a pitched roof whose rise the level leaves out, laid flat at its eaves (its gables gone with it).
+  const flatten = v.roof !== 'flat' && v.roof !== 'terrace' && w.detail.boxes && w.leaves(roofRise(b, v));
+  if (v.roof === 'flat' || v.roof === 'terrace' || flatten) {
     // The slab at the roof's own level (its parapet is the walls'), and what stands on it - as the detailed roof has them.
     const ring = localFootprint(v);
     const flatRing = ring.flatMap((p) => [p.x, p.y]);
@@ -278,11 +311,13 @@ function emitRoof(w: MassWriter, b: Building, v: Volume, floor: number, eaves: n
     for (let i = 0; i < tris.length; i += 3) {
       w.face([0, 1, 2].map((k) => w.P(flatRing[2 * tris[i + k]!]!, flatRing[2 * tris[i + k]! + 1]!, eaves)), up, roof);
     }
+    if (flatten) return;
     const built = b.volumes.some((o) => o !== v && !o.open && o.base === volumeTop(v));
     if (v.roof === 'flat') emitRoofPlant(w, b, v, eaves, rgb);
     else if (!built) {
+      const parasols = terraceParasols(b, v);
       const parasol = rgbOf(ROOF_COLOURS.parasol);
-      for (const p of terraceParasols(b, v)) box(w, p.x - PARASOL_HALF, p.y - PARASOL_HALF, p.x + PARASOL_HALF, p.y + PARASOL_HALF, eaves + PARASOL_LOW, eaves + PARASOL_HIGH, parasol, parasol);
+      if (parasols.length && !w.leaves(PARASOL_HIGH)) for (const p of parasols) box(w, p.x - PARASOL_HALF, p.y - PARASOL_HALF, p.x + PARASOL_HALF, p.y + PARASOL_HALF, eaves + PARASOL_LOW, eaves + PARASOL_HIGH, parasol, parasol);
     }
     return;
   }
@@ -427,6 +462,9 @@ function box(w: MassWriter, x0: number, y0: number, x1: number, y1: number, z0: 
   w.face([w.P(x0, y0, z1), w.P(x1, y0, z1), w.P(x1, y1, z1), w.P(x0, y1, z1)], w.N(0, 0, 1), top);
 }
 
+/** The roof plant drawn from afar (`emitRoofPlant`): the rest is under a metre across. */
+const DRAWN_PLANT: ReadonlySet<string> = new Set(['liftRoom', 'tankBox', 'airHandler', 'skylight', 'solar', 'tank', 'chimney']);
+
 /** The plant on a flat roof a metre or more across (`roofPlan.ts`, the plan the detailed roof draws) */
 function emitRoofPlant(w: MassWriter, b: Building, v: Volume, z: number, rgb: (spec: MaterialSpec) => Rgb): void {
   const plant = rgbOf(ROOF_COLOURS.plant);
@@ -434,6 +472,8 @@ function emitRoofPlant(w: MassWriter, b: Building, v: Volume, z: number, rgb: (s
   // The trim as the detailed building has it: metal frames' mouldings are the skin a shade lighter.
   const trim = trimSpec.finish === 'metal' && b.materials?.wall ? rgbOf(b.materials.wall.colour, shadeOf(b) * 1.1) : rgb(trimSpec);
   for (const it of roofPlantOf(b, v)) {
+    // Left out where the level leaves a thing that tall (a panel's 0.32 m, a tank's or a lift room's height); the kinds never drawn here count for nothing.
+    if (DRAWN_PLANT.has(it.kind) && w.leaves(it.kind === 'solar' ? m(0.32) : it.h)) continue;
     const cx = (it.x0 + it.x1) / 2, cy = (it.y0 + it.y1) / 2, half = Math.min(it.x1 - it.x0, it.y1 - it.y0) / 2;
     switch (it.kind) {
       case 'liftRoom': case 'tankBox': box(w, it.x0, it.y0, it.x1, it.y1, z, z + it.h, trim, plant); break;
@@ -457,6 +497,7 @@ function emitRoofPlant(w: MassWriter, b: Building, v: Volume, z: number, rgb: (s
 function emitMachineRooms(w: MassWriter, b: Building, floor: number, rgb: (spec: MaterialSpec) => Rgb): void {
   const trim = rgb(trimMaterial(b));
   for (const { volume: best, x0, y0, x1, y1 } of machineRooms(b)) {
+    if (w.leaves(MACHINE_ROOM_H)) continue;
     const z = floor + volumeHeight(b, best);
     const skin = best.dress ? rgb(wallMaterial(b, best, 0)) : trim;
     box(w, x0, y0, x1, y1, z, z + MACHINE_ROOM_H, skin, rgbOf(ROOF_COLOURS.plant));

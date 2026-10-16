@@ -8,7 +8,7 @@ import type { BuildingChunk, CellJobEntry, LotGroundRecipe } from './chunk';
 import type { FlagInstance } from './flagLayer';
 import { PART_KINDS } from './kit';
 import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
-import { emitMassing, type MassingChunk } from './massing';
+import { CELL_DETAIL, type MassDetail, PLATE_DETAIL, TILE_DETAIL, emitMassing, type MassingChunk } from './massing';
 import { drawsSignature } from './signature';
 
 /** DO NOT send the page a chunk per building */
@@ -16,7 +16,11 @@ import { drawsSignature } from './signature';
 export type { CellEntry } from './chunk';
 
 /** What a job makes: a cell's detail (its coarse batch and its detail cells'), the same at the far level (`facade`: L1, `emitChunk` `far`), a cell's buildings faded */
-export type JobKind = 'cell' | 'mass' | 'summary' | 'facade';
+/** 'massTile' and 'massPlate': the masses of a 1,024 m tile (L2) and a 2,048 m plate (L3) merged, simplified to their level (`massLevels.ts`). */
+export type JobKind = 'cell' | 'mass' | 'summary' | 'facade' | 'massTile' | 'massPlate';
+
+/** What each kind of masses leaves out (`massing.ts` `MassDetail`). */
+const MASS_DETAIL: Partial<Readonly<Record<JobKind, MassDetail>>> = { mass: CELL_DETAIL, massTile: TILE_DETAIL, massPlate: PLATE_DETAIL };
 
 export interface CellJob {
   readonly id: number;
@@ -106,10 +110,11 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
     }
     : undefined;
   const { groundAt, naturalAt } = reads;
-  if (job.kind === 'mass') {
+  const detail = MASS_DETAIL[job.kind];
+  if (detail) {
     const masses: MassingChunk[] = [];
     for (const b of buildings) {
-      const mass = emitMassing(b, groundAt, paved, naturalAt, drawsSignature(b), job.tone);
+      const mass = emitMassing(b, groundAt, paved, naturalAt, drawsSignature(b), job.tone, detail);
       if (mass) masses.push(mass);
     }
     return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, details: [], summaries: [], mass: cellMass(masses) } };
