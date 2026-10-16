@@ -207,8 +207,9 @@ O(map) per edit
 - `Network.adopt` copies the whole network (`network.ts:270-300`), twice per road drawn. Fix: a
   layered fork, adopting only the delta.
 - `elevation.ts` walks every ribbon per solve (`:448`) and digests with `JSON.stringify` (`:1177`).
-- Autosave: `dirtyHead` rewrites the whole head (`chunkedSave.ts:133, 179`); under 3,000 buildings
-  `persistence.ts:188` writes the whole document. Fix: head in parts by the diary, written in a worker.
+- Autosave by tiles: an ordered list whose kind changed (stamps, dabs, trees, elements, zones) is walked once per save
+  by reference to keep its order (`chunkedSave.ts` `walk`); `lotKeys`, people and transit are each one blob. Fix: ids or
+  per-cell storage for those lists (block B data).
 - Undo: `DocImage` `structuredClone`s nodes, segments, poles, landscape and barriers
   (`docImage.ts:83, 117`), compares lists by prefix/suffix (`:186`); `doc.ts:2086` logs
   `'utilities'` without ids. 28 `JSON.stringify` comparisons in `doc.ts` `replaceContents`.

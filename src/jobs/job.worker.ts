@@ -19,6 +19,7 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   roadTiles: () => import('../render/roadTile.worker'),
   terrainLight: () => import('../render/terrainLight.worker'),
   derivedWriter: () => import('../render/derivedWriter.worker'),
+  save: () => import('../editor/save.worker'),
 };
 
 const host = self as unknown as { onmessage: ((e: MessageEvent<ToJob>) => void) | null; postMessage(message: FromJob, transfer?: Transferable[]): void };

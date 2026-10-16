@@ -8,7 +8,9 @@ import { readEconomy } from '@world/economy';
 import { isSerializedBuildings } from '@world/buildings/serialize';
 import { unitFactor } from '@world/rescale';
 import { METERS_PER_UNIT, m, perM } from '@world/units';
-import { type PartStore, PartedSaves, indexedDbParts } from './chunkedSave';
+import { type SavedLayout, TiledSaves } from './chunkedSave';
+import { type PartStore, SAVES_STORE, indexedDbParts, openSaves, portWriter } from './save.worker';
+import { jobPort } from '../jobs/jobPool';
 
 /** Where the map is kept. */
 const KEY = 'roadcraft.world.v7';
@@ -21,9 +23,6 @@ const MAX_WAIT_MS = 3000;
 const SETTINGS_KEY = 'roadcraft.settings.v1';
 /** The largest session text written to `localStorage`, characters. */
 const LOCAL_LIMIT_CHARS = 2_400_000;
-/** The IndexedDB database and store of the large autosaves. */
-const SAVES_DB = 'roadcraft-saves';
-const SAVES_STORE = 'sessions';
 
 export interface SavedSettings {
   readonly camera: {
@@ -65,13 +64,13 @@ export class Persistence {
   /** Called when a write fails (storage full or refused). */
   onSaveFailed: (() => void) | null = null;
 
-  /** The map's parts (`chunkedSave.ts`): what the diary says changed, never one text of the map; null without IndexedDB (the whole text). */
-  private readonly parted: PartedSaves | null;
-  /** The parts the opening read the map from (`loadSessionAsync`), for `adoptLoaded`. */
-  private loadedParts: readonly number[] | null = null;
+  /** The map by tiles (`chunkedSave.ts`): what the diary says changed, written off the page; null without IndexedDB (the whole text). */
+  private readonly parted: TiledSaves | null;
+  /** How the map the opening read was stored (`loadSessionAsync`), for `adoptLoaded`. */
+  private loadedParts: SavedLayout | null = null;
 
   constructor(private readonly storageKey = KEY, private readonly store: LargeStore = indexedDbStore, parts: PartStore | null = defaultParts()) {
-    this.parted = parts ? new PartedSaves(parts, storageKey) : null;
+    this.parted = parts ? new TiledSaves(parts, storageKey) : null;
   }
 
   /** The document just restored from `loadSessionAsync`: read from the parts, they are it, and the next save writes only what changes. */
@@ -173,13 +172,13 @@ export class Persistence {
     let best = local, bestAt = localAt;
     this.loadedParts = null;
     const parted = this.parted ? await this.parted.read().catch((error: unknown) => { console.warn('[save] the parts of the map could not be read', error); return null; }) : null;
-    let bestParts: readonly number[] | null = null;
+    let bestParts: SavedLayout | null = null;
     if (parted && parted.savedAt > bestAt) {
       const session = { version: 2, document: parted.document, settings: parted.settings };
       if (isSavedSession(session)) {
         best = { document: session.document, settings: this.readSettings() ?? normalizeSettings(session.settings) };
         bestAt = parted.savedAt;
-        bestParts = parted.parts;
+        bestParts = parted.layout;
       }
     }
     this.loadedParts = bestParts;
@@ -601,26 +600,12 @@ export interface LargeStore {
   delete(key: string): Promise<boolean>;
 }
 const indexedDbStore: LargeStore = { get: (key) => storeGet(key), put: (key, text) => storePut(key, text), delete: (key) => storeDelete(key) };
-/** The map's parts in IndexedDB where the browser has it and gzip streams (MDN, `CompressionStream`); none elsewhere. */
+/** The map's tiles in IndexedDB where the browser has it and gzip streams (MDN, `CompressionStream`), written by the job system's `save` lane; none elsewhere. */
 function defaultParts(): PartStore | null {
-  return typeof indexedDB !== 'undefined' && typeof CompressionStream !== 'undefined' ? indexedDbParts(openSaves, SAVES_STORE) : null;
-}
-/** The large autosaves' database (`LOCAL_LIMIT_CHARS`); null where IndexedDB is missing or refused. */
-let savesDb: Promise<IDBDatabase | null> | null = null;
-function openSaves(): Promise<IDBDatabase | null> {
-  savesDb ??= new Promise((resolve) => {
-    try {
-      if (typeof indexedDB === 'undefined') { resolve(null); return; }
-      const request = indexedDB.open(SAVES_DB, 1);
-      request.onupgradeneeded = () => { request.result.createObjectStore(SAVES_STORE); };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => resolve(null);
-      request.onblocked = () => resolve(null);
-    } catch {
-      resolve(null);
-    }
-  });
-  return savesDb;
+  if (typeof indexedDB === 'undefined' || typeof CompressionStream === 'undefined') return null;
+  // DO NOT encode and write the save on the page: the page hands the worker the changed squares' records, the worker does the rest.
+  const writer = typeof Worker !== 'undefined' ? portWriter(() => jobPort('save')) : undefined;
+  return indexedDbParts(openSaves, SAVES_STORE, writer);
 }
 async function storeRequest<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest): Promise<T | null> {
   const db = await openSaves();

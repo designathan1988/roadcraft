@@ -2051,9 +2051,24 @@ export class RoadDoc {
     return `${JSON.stringify(head).slice(0, -1)},"buildings":${this.buildings.toText()}${after === '{}' ? '' : `,${after.slice(1, -1)}`}}`;
   }
 
-  /** `toJSON` without the buildings: the head of a map saved in parts (`editor/chunkedSave.ts`). */
-  withoutBuildings(): SerializedDoc {
-    return this.serialized(false);
+  /** One part of what a map saved by tiles keeps outside its tiles (`editor/chunkedSave.ts`): only that part copied. */
+  savedGlobals(part: GlobalPart): Partial<SavedGlobals> {
+    switch (part) {
+      case 'values': return {
+        version: 1,
+        unit: METERS_PER_UNIT,
+        ...(this.terrainRelief !== RELIEF_LEGACY ? { relief: this.terrainRelief } : {}),
+        ...(this.markingStyle !== 'classic' ? { markingStyle: this.markingStyle } : {}),
+        ...(this.nature ? { nature: { ...this.nature } } : {}),
+        ...(!samePlain(this.weather, DEFAULT_WEATHER) ? { weather: { ...this.weather } } : {}),
+        fogSettings: { ...this.fogSettings },
+        gullyAuto: this.gullyAuto,
+        ...(this.economy.balance !== DEFAULT_ECONOMY.balance ? { economy: { balance: this.economy.balance } } : {}),
+      };
+      case 'lotKeys': return this.lotStore.keys.length > 0 ? { lotKeys: [...this.lotStore.keys] } : {};
+      case 'people': return this.people.length > 0 ? { people: this.people.map((p) => structuredClone(p)) } : {};
+      case 'transit': return hasTransit(this.transit) ? { transit: structuredClone(this.transit) } : {};
+    }
   }
 
   /** `toJSON`, the buildings left out when `withBuildings` is false (`clone` shares them). */
@@ -2061,31 +2076,8 @@ export class RoadDoc {
     return {
       version: 1,
       unit: METERS_PER_UNIT,
-      nodes: [...this.nodes.values()].map((n) => ({
-        // Copied, never aliased.
-        id: n.id, x: n.x, y: n.y, heightOffset: n.heightOffset, smooth: n.smooth,
-        control: n.control, blockedMovements: [...n.blockedMovements],
-        ...(n.crossing ? { crossing: { kind: n.crossing.kind, segment: n.crossing.segment } } : {}),
-        ...(n.laneLinks ? { laneLinks: n.laneLinks.map((l) => ({ ...l })) } : {}),
-        ...(n.approachRules ? { approachRules: n.approachRules.map((e) => ({ ...e })) } : {}),
-        ...(n.signal ? { signal: { ...n.signal, ...(n.signal.greens ? { greens: [...n.signal.greens] } : {}) } } : {}),
-        ...(n.end ? { end: n.end } : {}),
-        ...(n.uturn !== undefined ? { uturn: n.uturn as number } : {}),
-      })),
-      segments: [...this.segments.values()].map((s) => ({
-        id: s.id,
-        a: s.a,
-        b: s.b,
-        type: s.type,
-        curve: s.curve ? { ...s.curve } : null,
-        dashOrigin: s.dashOrigin,
-        direction: s.direction,
-        lanes: s.lanes,
-        structure: s.structure,
-        ...(s.section ? { section: cloneRoadSection(s.section) } : {}),
-        ...(s.parking ? { parking: { ...s.parking } } : {}),
-        ...(s.cutWalls ? { cutWalls: true as const } : {}),
-      })),
+      nodes: [...this.nodes.values()].map(savedNode),
+      segments: [...this.segments.values()].map(savedSegment),
       terrain: this.terrainStamps.map((stamp) => ({ ...stamp })),
       // Only for the natural land: a legacy map serialises as before.
       ...(this.terrainRelief !== RELIEF_LEGACY ? { relief: this.terrainRelief } : {}),
@@ -2101,17 +2093,11 @@ export class RoadDoc {
       ...(this.trees.length > 0 ? { trees: this.trees.map((t) => ({ ...t })) } : {}),
       ...(JSON.stringify(this.weather) !== JSON.stringify(DEFAULT_WEATHER) ? { weather: { ...this.weather } } : {}),
       ...(this.treeClearings.length > 0 ? { treeClearings: this.treeClearings.map((c) => ({ ...c })) } : {}),
-      poles: [...this.poles.values()].map((p) => ({ id: p.id, x: p.x, y: p.y, lamp: p.lamp })),
-      poleSpans: [...this.poleSpans.values()].map((s) => ({ id: s.id, a: s.a, b: s.b })),
-      ...(this.landscape.size > 0 ? {
-        landscape: [...this.landscape.values()].map((item) => ({ id: item.id, kind: item.kind, x: item.x, y: item.y,
-          ...(item.signType ? { signType: item.signType } : {}), ...(item.text ? { text: item.text } : {}),
-          ...(item.planted !== undefined ? { planted: item.planted } : {}) })),
-      } : {}),
+      poles: [...this.poles.values()].map(savedPole),
+      poleSpans: [...this.poleSpans.values()].map(savedSpan),
+      ...(this.landscape.size > 0 ? { landscape: [...this.landscape.values()].map(savedLandscape) } : {}),
       // Only when there are any, so a map without them serialises as before.
-      ...(this.barriers.size > 0 ? {
-        barriers: [...this.barriers.values()].map((b) => ({ id: b.id, kind: b.kind, points: b.points.map((p) => ({ x: p.x, y: p.y })) })),
-      } : {}),
+      ...(this.barriers.size > 0 ? { barriers: [...this.barriers.values()].map(savedBarrier) } : {}),
       // Only when there are any, so a map without buildings serialises exactly as it did before buildings existed.
       ...(withBuildings && this.buildings.size > 0 ? { buildings: this.buildings.toJSON() } : {}),
       ...(this.zones.length > 0 ? { zones: this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })) } : {}),
@@ -2848,3 +2834,63 @@ function copyRecord(part: RecordPart, value: unknown): unknown {
 }
 
 const copyItem = <T>(value: T): T => (value === undefined ? value : structuredClone(value));
+
+/** The parts of what a map saved by tiles keeps outside its tiles, each written again only when its kinds change: the single values, the land's keys, the people, the transport. */
+export const GLOBAL_PARTS = ['values', 'lotKeys', 'people', 'transit'] as const;
+export type GlobalPart = (typeof GLOBAL_PARTS)[number];
+
+/** What a map saved by tiles keeps outside its tiles (`RoadDoc.savedGlobals`): what has no place on the map. */
+export interface SavedGlobals {
+  readonly version: 1;
+  readonly unit?: number;
+  readonly relief?: number;
+  readonly markingStyle?: string;
+  readonly nature?: { readonly region: string; readonly seed: number };
+  readonly weather?: unknown;
+  readonly fogSettings?: unknown;
+  readonly gullyAuto?: number;
+  readonly lotKeys?: readonly string[];
+  readonly people?: readonly unknown[];
+  readonly transit?: unknown;
+  readonly economy?: { readonly balance: number };
+}
+
+/** A node as the file holds it (`toJSON`, a map saved by tiles): copied, never aliased. */
+export function savedNode(n: RoadNode): SerializedDoc['nodes'][number] {
+  return {
+    id: n.id, x: n.x, y: n.y, heightOffset: n.heightOffset, smooth: n.smooth,
+    control: n.control, blockedMovements: [...n.blockedMovements],
+    ...(n.crossing ? { crossing: { kind: n.crossing.kind, segment: n.crossing.segment } } : {}),
+    ...(n.laneLinks ? { laneLinks: n.laneLinks.map((l) => ({ ...l })) } : {}),
+    ...(n.approachRules ? { approachRules: n.approachRules.map((e) => ({ ...e })) } : {}),
+    ...(n.signal ? { signal: { ...n.signal, ...(n.signal.greens ? { greens: [...n.signal.greens] } : {}) } } : {}),
+    ...(n.end ? { end: n.end } : {}),
+    ...(n.uturn !== undefined ? { uturn: n.uturn as number } : {}),
+  };
+}
+
+/** A segment as the file holds it. */
+export function savedSegment(s: RoadSegment): SerializedDoc['segments'][number] {
+  return {
+    id: s.id,
+    a: s.a,
+    b: s.b,
+    type: s.type,
+    curve: s.curve ? { ...s.curve } : null,
+    dashOrigin: s.dashOrigin,
+    direction: s.direction,
+    lanes: s.lanes,
+    structure: s.structure,
+    ...(s.section ? { section: cloneRoadSection(s.section) } : {}),
+    ...(s.parking ? { parking: { ...s.parking } } : {}),
+    ...(s.cutWalls ? { cutWalls: true as const } : {}),
+  };
+}
+
+/** A pole, a span, a landscaping item and a barrier as the file holds them. */
+export const savedPole = (p: UtilityPole): NonNullable<SerializedDoc['poles']>[number] => ({ id: p.id, x: p.x, y: p.y, lamp: p.lamp });
+export const savedSpan = (s: UtilitySpan): NonNullable<SerializedDoc['poleSpans']>[number] => ({ id: s.id, a: s.a, b: s.b });
+export const savedLandscape = (item: LandscapeItem): NonNullable<SerializedDoc['landscape']>[number] => ({ id: item.id, kind: item.kind, x: item.x, y: item.y,
+  ...(item.signType ? { signType: item.signType } : {}), ...(item.text ? { text: item.text } : {}),
+  ...(item.planted !== undefined ? { planted: item.planted } : {}) });
+export const savedBarrier = (b: Barrier): NonNullable<SerializedDoc['barriers']>[number] => ({ id: b.id, kind: b.kind, points: b.points.map((p) => ({ x: p.x, y: p.y })) });
