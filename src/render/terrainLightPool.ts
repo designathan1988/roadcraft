@@ -69,7 +69,8 @@ function next(lane: Lane): void {
 export function submitLight(grid: LightGrid, key: number, request: LightRequest, done: Job['done'], failed: Job['failed']): boolean {
   const pool = start(grid);
   if (!pool) return false;
-  const lane = pool[key % pool.length]!;
+  // A plate's key is negative west and south of the origin (the world has no edge): the remainder taken positive.
+  const lane = pool[((key % pool.length) + pool.length) % pool.length]!;
   lane.queue.push({ key, request, done, failed });
   next(lane);
   return true;
