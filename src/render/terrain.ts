@@ -42,7 +42,7 @@ import { landNormalsInto, type PlateMesh } from './plateMesh';
 import { LOD_LEVELS, LandLevels } from './terrainLevels';
 import { LandLod, lodFragmentGlsl, lodVertexGlsl, type LandGrid } from './terrainLod';
 import type { ChangeJournal } from '@world/changes';
-import { MAP_HALF, PLATE_SIZE } from '@world/bounds';
+import { PLATE_SIZE } from '@world/bounds';
 import {
   MAX_TERRAIN_STAMPS,
   RIVER_BED_FLOOR,
@@ -101,7 +101,7 @@ const LAND_GRID: LandGrid = { seg: TERRAIN_SEGMENTS, cell: TERRAIN_CELL, half: T
 /** Where the grass field stands this frame (`grassField.ts`): world x, y, how far it reaches, and 1 when it is drawn. */
 const GRASS_FIELD: { value: [number, number, number, number] } = { value: [0, 0, 0, 0] };
 /** The universal grid drawn by the ground itself (`SceneHandle.setGrid`): the cell (world units), the strength */
-export const TERRAIN_GRID: { value: [number, number, number] } = { value: [m(10), 0, MAP_HALF] };
+export const TERRAIN_GRID: { value: [number, number] } = { value: [m(10), 0] };
 /** How far into the dry season the land is, 0 (the rains: everything green) to 1 */
 const SEASON_DRY: { value: number } = { value: 0.4 };
 
@@ -577,7 +577,7 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          uniform float uPaintHalf;
          uniform float uPaintSize;
          uniform vec4 uGrassField; // world x, y, reach, on
-         uniform vec3 uGrid; // cell, strength, map half
+         uniform vec2 uGrid; // cell, strength
          uniform sampler2D uShore;
          float terrainHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
          float ecoHash(vec2 p) {
@@ -1017,10 +1017,9 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            blended.rgb = blended.rgb * keep + layered / max(1.0, painted);
          }
          diffuseColor *= blended;
-         // The grid: a line a pixel wide at every cell, on the map only.
+         // The grid: a line a pixel wide at every cell, on any ground.
          if (uGrid.y > 0.0) {
            vec2 g = vec2(vTerrainAtlas.x, -vTerrainAtlas.z) / uGrid.x;
-           float onMap = step(abs(vTerrainAtlas.x), uGrid.z) * step(abs(vTerrainAtlas.z), uGrid.z);
            vec2 gw = fwidth(g);
            vec2 toLine = abs(fract(g - 0.5) - 0.5) / max(gw, vec2(1e-4));
            float line = 1.0 - min(min(toLine.x, toLine.y), 1.0);
@@ -1029,7 +1028,7 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            // White over the land, dark over snow and sand: seen on any ground.
            float bright = smoothstep(0.45, 0.7, dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114)));
            vec3 ink = mix(vec3(1.0), vec3(0.08, 0.1, 0.12), bright);
-           diffuseColor.rgb = mix(diffuseColor.rgb, ink, line * uGrid.y * onMap * (1.0 + 1.5 * bright));
+           diffuseColor.rgb = mix(diffuseColor.rgb, ink, line * uGrid.y * (1.0 + 1.5 * bright));
          }`,
       )
       .replace(
@@ -1146,7 +1145,7 @@ function strataTexture(anisotropy: number): DataTexture {
   return texture;
 }
 
-/** THE WORLD'S SLAB: the cut sides round a whole rectangle of land (the map's, `flatAtlas.ts`) */
+/** THE WORLD'S SLAB: the cut sides round a whole rectangle of land (the far ring's, `flatAtlas.ts`) */
 export function slabGeometry(minX: number, maxX: number, minY: number, maxY: number, step: number, topAt: (x: number, y: number) => number): BufferGeometry {
   // Each side from corner to corner (three's x, z: z = -y), with its outward normal.
   const sides: readonly (readonly [number, number, number, number, number, number])[] = [
@@ -1346,12 +1345,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
   /** Its levels' bounds and errors, measured again where the ground moves (`terrainLevels.ts`). */
   const levels = new LandLevels(TERRAIN_SEGMENTS);
-  // A skirt where the plate meets another plate, none on the map's own rim (the slab's cut side stands there, `slabGeometry`).
-  const rimOf = {
-    west: origin.x - TERRAIN_HALF > -MAP_HALF + 1e-6, east: origin.x + TERRAIN_HALF < MAP_HALF - 1e-6,
-    north: origin.y + TERRAIN_HALF < MAP_HALF - 1e-6, south: origin.y - TERRAIN_HALF > -MAP_HALF + 1e-6,
-  };
-  const lod = new LandLod(levels, LAND_GRID, origin, rimOf);
+  // A skirt on every side: the world goes on past each edge (a far patch or another plate meets it there).
+  const lod = new LandLod(levels, LAND_GRID, origin, { west: true, east: true, north: true, south: true });
   const lodUniforms = { uLand: { value: land as Texture }, uLodMorph: { value: lod.morph }, uLodSkirt: { value: lod.skirt } };
   const groundMaterial = terrainMaterial(bakes, data, { grid: LAND_GRID, uniforms: lodUniforms });
   /** The plate's patches (`lod.geometry`) and its rim's (`lod.rimGeometry`), placed each frame by `lookFrom`. */

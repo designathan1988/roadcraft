@@ -10,6 +10,8 @@ export const TILE = m(1_024);
 
 /** Tiles each way from the origin a key can name (2^15): about 33,000 km, far past any map, so a key and an id stay exact doubles. */
 const TILE_REACH = 1 << 15;
+/** How far from the origin a tile's key reaches, each way: the world's only edge (`bounds.ts` WORLD_HALF keeps a plate inside it). */
+export const WORLD_REACH = TILE_REACH * TILE;
 
 /** A tile's column and row. */
 export interface TileIJ {

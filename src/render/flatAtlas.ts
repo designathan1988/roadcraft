@@ -2,8 +2,8 @@ import { BufferAttribute, BufferGeometry, Group, Mesh, MeshStandardMaterial, typ
 import type { CoverKind, GeologyKind, PaintDab } from '@world/terrainPaint';
 import { reliefHeight, type ReliefVersion, type TerrainStamp } from '@world/terrain';
 import type { RoadDoc } from '@world/doc';
-import { MAP_HALF, MAP_REGIONS, PLATE_SIZE, plateOf } from '@world/bounds';
-import type { ChangeKind, ChangeRect } from '@world/changes';
+import { PLATE_SIZE, plateIJ, plateOf, plateRegion, platesAround, platesOver } from '@world/bounds';
+import type { ChangeKind } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import { GroundChanges } from './groundChanges';
 import { cancelFlatGround, flatGroundOffPage, readFlatGround, setFlatGroundFocus } from './flatGroundPool';
@@ -31,7 +31,7 @@ import type { NaturalPlate } from './groundShape';
 import { GroundShare, type SharedGroundAt } from './sharedGround';
 import { setJobFocus } from '../jobs/jobPool';
 
-/** THE MAP'S GROUND, 10 km on a side (`world/bounds.ts`) */
+/** THE WORLD'S GROUND, plate by plate of the unbounded grid (`world/bounds.ts`): the plates near the view made in full, a ring of far patches round it, nothing beyond */
 
 const REGION_STRIDE = 1000;
 /** DO NOT cap the plates by count: the six newest were kept wherever the view stood */
@@ -42,9 +42,19 @@ const NEAR_MOST = 9;
 const NEAR_VIEW = m(1400);
 /** Corners along a plate's side (the terrain's grid). */
 const SIDE = Math.round((2 * TERRAIN_HALF) / TERRAIN_CELL) + 1;
-const PLATES = MAP_REGIONS.length;
 /** The kinds of change that put content on a plate (`readContent`): what the whole read marks. */
 const CONTENT_KINDS: readonly ChangeKind[] = ['roads', 'buildings', 'lots', 'utilities', 'landscape', 'trees', 'barriers', 'terrain', 'paint'];
+/** A load or an unload of a tile (CLAUDE.md, "Streaming world"): what a plate holds is read again from the document. */
+const TILE_UNLOADED = 'tile unloaded';
+
+/** THE FAR RING: plates each way from the ring's centre plate drawn as far patches (7 x 7 plates, about 14 km), its cut sides round it */
+const FAR_RING = 3;
+/** Far plates there are at once: the ring's square, each in its own slot of the far mesh and of the far woods. */
+const FAR_SLOTS = (2 * FAR_RING + 1) ** 2;
+/** How far the view's focus goes from the ring's centre plate before the ring follows it: a quarter plate past its edge, so a focus on an edge does not swap a row of plates back and forth. */
+const RING_HOLD = PLATE_SIZE * 0.75;
+/** The far ground stands in for no surface of its own: no plate has this key. */
+const FAR_SURFACE_KEY = -1;
 
 class PlateSource implements TerrainSource {
   changes!: RoadDoc['changes'];
@@ -61,13 +71,16 @@ class PlateSource implements TerrainSource {
 }
 
 interface Plate {
-  readonly index: number;
+  /** Its key (`world/bounds.ts` `plateOf`) and centre. */
+  readonly key: number;
   readonly cx: number;
   readonly cy: number;
   readonly source: PlateSource;
+  /** The document's stamps and dabs that reach it, moved to its map (about its centre). */
+  readonly stampCopies: WeakMap<TerrainStamp, TerrainStamp | null>;
+  readonly dabCopies: WeakMap<PaintDab, PaintDab | null>;
   surface: TerrainSurface | null;
   shown: boolean;
-  used: number;
   /** The land at the plate's grid corners, the base level added, read off the page (`flatGroundPool.ts`), rows from the north edge; null until then. */
   heights: Float64Array | null;
   /** Its first build made off the page, until the plate is made from it (`plateMesh.ts`). */
@@ -78,49 +91,88 @@ interface Plate {
   top: number;
 }
 
+/** A plate of the far ring: where it stands and its slot. */
+interface FarPlate {
+  readonly key: number;
+  readonly cx: number;
+  readonly cy: number;
+  readonly slot: number;
+}
+
 const sameList = (a: readonly unknown[], b: readonly unknown[]): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
 /** Whether a disc reaches a plate (its square grown by the disc). */
-const reaches = (p: Plate, x: number, y: number, radius: number): boolean =>
+const reaches = (p: { readonly cx: number; readonly cy: number }, x: number, y: number, radius: number): boolean =>
   Math.abs(x - p.cx) <= TERRAIN_HALF + radius && Math.abs(y - p.cy) <= TERRAIN_HALF + radius;
 
-/** The map's far ground: a coarse patch of `FAR_QUADS` x `FAR_QUADS` quads per plate, in world coordinates */
+/** The far ground: a coarse patch of `FAR_QUADS` x `FAR_QUADS` quads per far plate, in world coordinates, each in its slot */
 const FAR_QUADS = 32;
 const FAR_SIDE = FAR_QUADS + 1;
 const SKIRT = m(30);
 const FAR_VERTS = FAR_SIDE * FAR_SIDE + 4 * FAR_SIDE;
 const FAR_INDICES = FAR_QUADS * FAR_QUADS * 6 + 4 * FAR_QUADS * 12;
-export interface FlatFar { readonly geometry: BufferGeometry; readonly all: Uint32Array; readonly high: Float32Array }
-export function buildFlatFar(ground: (x: number, y: number) => number): FlatFar {
-  const positions = new Float32Array(PLATES * FAR_VERTS * 3);
-  const normals = new Float32Array(PLATES * FAR_VERTS * 3);
-  const all = new Uint32Array(PLATES * FAR_INDICES);
-  const high = new Float32Array(PLATES);
+/** The far mesh's room: `slots` patches, written one slot at a time (`writeFarPatch`), drawn by the index (`farIndexInto`). */
+export interface FlatFar { readonly geometry: BufferGeometry; readonly slots: number }
+export function createFlatFar(slots: number): FlatFar {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(slots * FAR_VERTS * 3), 3));
+  geometry.setAttribute('normal', new BufferAttribute(new Float32Array(slots * FAR_VERTS * 3), 3));
+  geometry.setIndex(new BufferAttribute(new Uint32Array(slots * FAR_INDICES), 1));
+  geometry.setDrawRange(0, 0);
+  return { geometry, slots };
+}
+
+/** Writes plate (cx, cy)'s patch into `slot` from the land `ground` (the base added here), and marks only that slot to be sent. */
+export function writeFarPatch(far: FlatFar, slot: number, cx: number, cy: number, ground: (x: number, y: number) => number): void {
+  const position = far.geometry.getAttribute('position') as BufferAttribute;
+  const normal = far.geometry.getAttribute('normal') as BufferAttribute;
+  const positions = position.array as Float32Array, normals = normal.array as Float32Array;
   const step = PLATE_SIZE / FAR_QUADS;
   // Heights on a ring one cell wider than the patch, for its normals.
   const RING = FAR_SIDE + 2;
   const h = new Float64Array(RING * RING);
-  let v = 0, w = 0;
-  for (let plate = 0; plate < PLATES; plate++) {
-    const c = MAP_REGIONS[plate]!;
-    const x0 = c.cx - TERRAIN_HALF, y0 = c.cy - TERRAIN_HALF;
-    for (let j = 0; j < RING; j++) for (let i = 0; i < RING; i++) h[j * RING + i] = TERRAIN_BASE + ground(x0 + (i - 1) * step, y0 + (j - 1) * step);
-    const first = v;
-    let top = -Infinity;
-    for (let j = 0; j < FAR_SIDE; j++) {
-      for (let i = 0; i < FAR_SIDE; i++) {
-        const y = h[(j + 1) * RING + i + 1]!;
-        if (y > top) top = y;
-        positions[v * 3] = x0 + i * step; positions[v * 3 + 1] = y; positions[v * 3 + 2] = -(y0 + j * step);
-        // three's axes: x east, y up, z south.
-        const nx = h[(j + 1) * RING + i]! - h[(j + 1) * RING + i + 2]!;
-        const nz = h[(j + 2) * RING + i + 1]! - h[j * RING + i + 1]!;
-        const ny = 2 * step;
-        const len = Math.hypot(nx, ny, nz);
-        normals[v * 3] = nx / len; normals[v * 3 + 1] = ny / len; normals[v * 3 + 2] = nz / len;
-        v++;
-      }
+  const x0 = cx - TERRAIN_HALF, y0 = cy - TERRAIN_HALF;
+  for (let j = 0; j < RING; j++) for (let i = 0; i < RING; i++) h[j * RING + i] = TERRAIN_BASE + ground(x0 + (i - 1) * step, y0 + (j - 1) * step);
+  const first = slot * FAR_VERTS;
+  let v = first;
+  for (let j = 0; j < FAR_SIDE; j++) {
+    for (let i = 0; i < FAR_SIDE; i++) {
+      const y = h[(j + 1) * RING + i + 1]!;
+      positions[v * 3] = x0 + i * step; positions[v * 3 + 1] = y; positions[v * 3 + 2] = -(y0 + j * step);
+      // three's axes: x east, y up, z south.
+      const nx = h[(j + 1) * RING + i]! - h[(j + 1) * RING + i + 2]!;
+      const nz = h[(j + 2) * RING + i + 1]! - h[j * RING + i + 1]!;
+      const ny = 2 * step;
+      const len = Math.hypot(nx, ny, nz);
+      normals[v * 3] = nx / len; normals[v * 3 + 1] = ny / len; normals[v * 3 + 2] = nz / len;
+      v++;
     }
-    high[plate] = top;
+  }
+  // The skirts' corners: each edge's hung below it (drawn or not by `farIndexInto`).
+  const corner = (i: number, j: number): number => first + j * FAR_SIDE + i;
+  for (let e = 0; e < 4; e++) {
+    for (let k = 0; k < FAR_SIDE; k++) {
+      const t = e === 0 ? corner(k, 0) : e === 1 ? corner(k, FAR_QUADS) : e === 2 ? corner(0, k) : corner(FAR_QUADS, k);
+      positions[v * 3] = positions[t * 3]!; positions[v * 3 + 1] = positions[t * 3 + 1]! - SKIRT; positions[v * 3 + 2] = positions[t * 3 + 2]!;
+      normals[v * 3] = normals[t * 3]!; normals[v * 3 + 1] = normals[t * 3 + 1]!; normals[v * 3 + 2] = normals[t * 3 + 2]!;
+      v++;
+    }
+  }
+  for (const attribute of [position, normal]) {
+    attribute.addUpdateRange(first * 3, FAR_VERTS * 3);
+    attribute.needsUpdate = true;
+  }
+}
+
+/** A far patch to draw: its slot, and which of its edges (south, north, west, east) are the ring's rim (no skirt: the cut side stands there). */
+export interface FarPatchDrawn { readonly slot: number; readonly rim: readonly [boolean, boolean, boolean, boolean] }
+
+/** Writes into the far ground's index the patches given (the far plates not drawn in full); returns how many indices. */
+export function farIndexInto(far: FlatFar, patches: Iterable<FarPatchDrawn>): number {
+  const index = far.geometry.getIndex()!;
+  const all = index.array as Uint32Array;
+  let w = 0;
+  for (const { slot, rim } of patches) {
+    const first = slot * FAR_VERTS;
     const corner = (i: number, j: number): number => first + j * FAR_SIDE + i;
     for (let j = 0; j < FAR_QUADS; j++) {
       for (let i = 0; i < FAR_QUADS; i++) {
@@ -130,21 +182,13 @@ export function buildFlatFar(ground: (x: number, y: number) => number): FlatFar 
         all[w++] = p10; all[w++] = p11; all[w++] = p01;
       }
     }
-    // An edge on the map's own rim hangs no skirt: the slab's cut side stands there (`slabGeometry`).
-    const onRim = [c.cy - TERRAIN_HALF <= -MAP_HALF + 1e-6, c.cy + TERRAIN_HALF >= MAP_HALF - 1e-6, c.cx - TERRAIN_HALF <= -MAP_HALF + 1e-6, c.cx + TERRAIN_HALF >= MAP_HALF - 1e-6];
     for (let e = 0; e < 4; e++) {
-      const hung = v;
-      for (let k = 0; k < FAR_SIDE; k++) {
-        const t = e === 0 ? corner(k, 0) : e === 1 ? corner(k, FAR_QUADS) : e === 2 ? corner(0, k) : corner(FAR_QUADS, k);
-        positions[v * 3] = positions[t * 3]!; positions[v * 3 + 1] = positions[t * 3 + 1]! - SKIRT; positions[v * 3 + 2] = positions[t * 3 + 2]!;
-        normals[v * 3] = normals[t * 3]!; normals[v * 3 + 1] = normals[t * 3 + 1]!; normals[v * 3 + 2] = normals[t * 3 + 2]!;
-        v++;
-      }
+      if (rim[e]) continue;
+      const hung = first + FAR_SIDE * FAR_SIDE + e * FAR_SIDE;
       for (let k = 0; k < FAR_QUADS; k++) {
         const t0 = e === 0 ? corner(k, 0) : e === 1 ? corner(k, FAR_QUADS) : e === 2 ? corner(0, k) : corner(FAR_QUADS, k);
         const t1 = e === 0 ? corner(k + 1, 0) : e === 1 ? corner(k + 1, FAR_QUADS) : e === 2 ? corner(0, k + 1) : corner(FAR_QUADS, k + 1);
         const h0 = hung + k, h1 = hung + k + 1;
-        if (onRim[e]) { for (let q = 0; q < 12; q++) all[w++] = t0; continue; }
         // Both ways round: the skirt is seen from either side.
         all[w++] = t0; all[w++] = h0; all[w++] = t1;
         all[w++] = t1; all[w++] = h0; all[w++] = h1;
@@ -153,76 +197,110 @@ export function buildFlatFar(ground: (x: number, y: number) => number): FlatFar 
       }
     }
   }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new BufferAttribute(normals, 3));
-  geometry.setIndex(new BufferAttribute(new Uint32Array(all.length), 1));
-  geometry.computeBoundingSphere();
-  return { geometry, all, high };
-}
-/** Writes into the far ground's index the patches of the plates not drawn in full; returns how many indices. */
-export function farIndexInto(far: FlatFar, full: (plate: number) => boolean): number {
-  const index = far.geometry.getIndex()!;
-  const out = index.array as Uint32Array;
-  let n = 0;
-  for (let plate = 0; plate < PLATES; plate++) {
-    if (full(plate)) continue;
-    out.set(far.all.subarray(plate * FAR_INDICES, (plate + 1) * FAR_INDICES), n);
-    n += FAR_INDICES;
-  }
   index.needsUpdate = true;
   index.clearUpdateRanges();
-  index.addUpdateRange(0, n);
-  far.geometry.setDrawRange(0, n);
-  return n;
+  index.addUpdateRange(0, w);
+  far.geometry.setDrawRange(0, w);
+  return w;
 }
 
 export function createFlatAtlas(anisotropy: number): TerrainSurface {
-  const plates: Plate[] = MAP_REGIONS.map((c, index) =>
-    ({ index, cx: c.cx, cy: c.cy, source: new PlateSource(), surface: null, shown: false, used: -1, heights: null, mesh: null, asked: false, top: -Infinity }));
+  /** The plates there are: made, being read off the page, or holding the document's share; never one per plate of a map (it has none). */
+  const plates = new Map<number, Plate>();
   const root = new Group();
   root.name = 'flat-world-ground';
   /** The plates' corners in shared memory, each plate's own arrays: what the workers read the ground from (`sharedGround.ts`). */
   const share = new GroundShare(SIDE, TERRAIN_CELL, TERRAIN_HALF, TERRAIN_BASE);
 
   // The far ground: a surface of its own lends the terrain's material
-  const farSurface = createTerrainSurface(anisotropy, { x: 0, y: 0 }, PLATES);
-  const farMesh = new Mesh(new BufferGeometry(), farSurface.meshMaterial);
+  const farSurface = createTerrainSurface(anisotropy, { x: 0, y: 0 }, FAR_SURFACE_KEY);
+  const far = createFlatFar(FAR_SLOTS);
+  const farMesh = new Mesh(far.geometry, farSurface.meshMaterial);
   farMesh.matrixAutoUpdate = false;
   farMesh.name = 'flat-world-far';
   farMesh.frustumCulled = false;
   farMesh.receiveShadow = true;
   farMesh.visible = false;
   root.add(farMesh);
-  // THE SLAB under the whole map (SimCity 4's): its cut sides all round, the strata from the land down to the bedrock.
+  // THE SLAB round the far ring (SimCity 4's): its cut sides, the strata from the land down to the bedrock.
   const slab = new Mesh(new BufferGeometry(), wallMaterial(anisotropy));
   slab.name = 'flat-world-slab';
   slab.receiveShadow = true;
   slab.visible = false;
   root.add(slab);
-  // THE WOODS OF THE PLATES NOT IN FULL (`farForest.ts`)
-  const farForest = createFarForest(MAP_REGIONS, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
+  // THE WOODS OF THE FAR PLATES (`farForest.ts`)
+  const farForest = createFarForest(FAR_SLOTS, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
   root.add(farForest.object);
   let focusX = 0, focusY = 0;
   /** How far from the view a made plate not drawn is kept (`KEEP_MARGIN`); set with the view (`focus`). */
   let keepReach = Infinity;
   let farRelief: ReliefVersion | null = null;
-  let far: FlatFar | null = null;
+
+  // The far ring: its centre plate, its plates by key, the slots free.
+  const farPlates = new Map<number, FarPlate>();
+  const freeSlots: number[] = Array.from({ length: FAR_SLOTS }, (_, i) => FAR_SLOTS - 1 - i);
+  let ringI = 0, ringJ = 0;
+  let ringSet = false;
+  const writeFar = (fp: FarPlate): void => {
+    const relief = farRelief;
+    if (relief === null) return;
+    writeFarPatch(far, fp.slot, fp.cx, fp.cy, (x, y) => reliefHeight(relief, x, y));
+  };
+  /** The cut sides round the ring's square, along the far patches' own edge (their quads' step). */
+  const buildSlab = (): void => {
+    const relief = farRelief;
+    if (relief === null || !ringSet) return;
+    const reach = (FAR_RING + 0.5) * PLATE_SIZE;
+    const cx = ringI * PLATE_SIZE, cy = ringJ * PLATE_SIZE;
+    slab.geometry.dispose();
+    slab.geometry = slabGeometry(cx - reach, cx + reach, cy - reach, cy + reach, PLATE_SIZE / FAR_QUADS, (x, y) => TERRAIN_BASE + reliefHeight(relief, x, y));
+    slab.visible = true;
+  };
+  const neighbour = (fp: FarPlate, di: number, dj: number): boolean => farPlates.has(plateOf(fp.cx + di * PLATE_SIZE, fp.cy + dj * PLATE_SIZE));
+  /** The far patches of the plates not drawn in full, their rims where the ring ends. */
+  const drawFar = (): void => {
+    const patches: FarPatchDrawn[] = [];
+    for (const fp of farPlates.values()) {
+      if (plates.get(fp.key)?.shown) continue;
+      patches.push({ slot: fp.slot, rim: [!neighbour(fp, 0, -1), !neighbour(fp, 0, 1), !neighbour(fp, -1, 0), !neighbour(fp, 1, 0)] });
+    }
+    farIndexInto(far, patches);
+  };
+  /** The ring follows the focus once it is `RING_HOLD` off the centre plate: the plates that left it let go, those come in written; true when it moved. */
+  const moveRing = (x: number, y: number): boolean => {
+    if (ringSet && Math.abs(x - ringI * PLATE_SIZE) <= RING_HOLD && Math.abs(y - ringJ * PLATE_SIZE) <= RING_HOLD) return false;
+    ({ pi: ringI, pj: ringJ } = plateIJ(x, y));
+    ringSet = true;
+    const want = platesAround(ringI, ringJ, FAR_RING);
+    const kept = new Set(want);
+    for (const [key, fp] of farPlates) {
+      if (kept.has(key)) continue;
+      farPlates.delete(key);
+      freeSlots.push(fp.slot);
+      farForest.book.drop(key);
+    }
+    // Nearest first: the woods asked in that order.
+    for (const key of want) {
+      if (farPlates.has(key)) continue;
+      const r = plateRegion(key);
+      const fp: FarPlate = { key, cx: r.cx, cy: r.cy, slot: freeSlots.pop()! };
+      farPlates.set(key, fp);
+      writeFar(fp);
+      farForest.book.add(key, fp.slot, fp.cx, fp.cy);
+    }
+    buildSlab();
+    drawFar();
+    return true;
+  };
   const buildFar = (relief: ReliefVersion): void => {
     if (relief === farRelief) return;
     farRelief = relief;
-    const land = (x: number, y: number): number => reliefHeight(relief, x, y);
-    far = buildFlatFar(land);
-    slab.geometry.dispose();
-    slab.geometry = slabGeometry(-MAP_HALF, MAP_HALF, -MAP_HALF, MAP_HALF, TERRAIN_CELL, (x, y) => TERRAIN_BASE + land(x, y));
-    slab.visible = true;
-    farMesh.geometry.dispose();
-    farMesh.geometry = far.geometry;
+    for (const fp of farPlates.values()) writeFar(fp);
+    buildSlab();
     farMesh.visible = true;
-    farIndexInto(far, (i) => plates[i]!.shown);
+    drawFar();
   };
 
-  let frame = 0;
   let content = new Set<number>();
   let near: number[] = [];
   const shownList: Plate[] = [];
@@ -233,7 +311,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   let lookGiven = false;
   let lastDoc: TerrainSource | null = null;
   let highest = 0;
-
+  /** The map's own land before any stamp, world coordinates (`reliefHeight`). */
+  let bare: (x: number, y: number) => number = () => 0;
+  let seenRelief: ReliefVersion | null = null;
 
   /** A plate's highest drawn corner, read each time its ground moved (its levels keep it, `terrainLevels.ts`). */
   const measureTop = (p: Plate): void => {
@@ -244,11 +324,60 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     for (const p of shownList) if (p.top > highest) highest = p.top;
   };
 
+  const copyOn = <T extends { readonly x: number; readonly y: number; readonly radius: number; readonly ox?: number; readonly oy?: number }>(copies: WeakMap<T, T | null>, p: Plate, item: T): T | null => {
+    let local = copies.get(item);
+    if (local === undefined) {
+      copies.set(item, local = reaches(p, item.x, item.y, item.radius)
+        ? { ...item, x: item.x - p.cx, y: item.y - p.cy, ...(item.ox !== undefined && item.oy !== undefined ? { ox: item.ox - p.cx, oy: item.oy - p.cy } : {}) }
+        : null);
+    }
+    return local;
+  };
+  /** A plate's stamps from the document: those that reach it, moved to its map; true when they changed. */
+  const takeStamps = (p: Plate, doc: TerrainSource): boolean => {
+    const sources = doc.terrainStamps.filter((s) => copyOn(p.stampCopies, p, s) !== null);
+    if (p.source.terrainRevision !== 0 && sameList(sources, p.source.stampSources)) return false;
+    p.source.stampSources = sources;
+    p.source.terrainStamps = sources.map((s) => p.stampCopies.get(s) as TerrainStamp);
+    p.source.terrainRevision = doc.terrainRevision;
+    return true;
+  };
+  const takePaint = (p: Plate, doc: TerrainSource): void => {
+    const sources = doc.terrainPaint.filter((d) => copyOn(p.dabCopies, p, d) !== null);
+    if (sameList(sources, p.source.paintSources)) return;
+    p.source.paintSources = sources;
+    p.source.terrainPaint = sources.map((d) => p.dabCopies.get(d) as PaintDab);
+    p.source.paintRevision = doc.paintRevision;
+  };
+  /** A plate come into being: its share of the document read at once (each later change reaches it by `sync`). */
+  const fill = (p: Plate, doc: TerrainSource): void => {
+    p.source.changes = doc.changes;
+    p.source.natureRevision = doc.natureRevision;
+    p.source.nature = doc.nature;
+    p.source.terrainRelief = doc.terrainRelief;
+    p.source.terrainGround = (lx, ly) => groundOn(p, lx, ly);
+    takeStamps(p, doc);
+    takePaint(p, doc);
+  };
+  /** The plate of `key`, made a record (not a surface) the first time it is asked for. */
+  const plateFor = (key: number): Plate => {
+    let p = plates.get(key);
+    if (p) return p;
+    const r = plateRegion(key);
+    p = {
+      key, cx: r.cx, cy: r.cy, source: new PlateSource(), stampCopies: new WeakMap(), dabCopies: new WeakMap(),
+      surface: null, shown: false, heights: null, mesh: null, asked: false, top: -Infinity,
+    };
+    plates.set(key, p);
+    if (lastDoc) fill(p, lastDoc);
+    return p;
+  };
+
   const ensure = (p: Plate): TerrainSurface => {
     if (p.surface) return p.surface;
     // Each step of a plate's making measured (F9 and the probes read hitch: measures).
     const t0 = performance.now();
-    const s = createTerrainSurface(anisotropy, { x: p.cx, y: p.cy }, p.index, p.mesh, share.open(p.index));
+    const s = createTerrainSurface(anisotropy, { x: p.cx, y: p.cy }, p.key, p.mesh, share.open(p.key));
     // The surface keeps what it copied; the plate keeps only its corners (its land's field).
     p.mesh = null;
     const t1 = performance.now();
@@ -272,67 +401,69 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const s = p.surface!;
     if (on) root.add(...s.meshes); else root.remove(...s.meshes);
   };
+  const geologySeen = new Map<Plate, number>();
   const letGo = (p: Plate): void => {
     if (!p.surface) return;
     show(p, false);
     p.surface.dispose();
     p.surface = null;
     // Read off the relief from now on, as `ask` reads it.
-    share.close(p.index);
+    share.close(p.key);
     // Its corners go too (725 kB a plate): read again if it comes back.
     p.heights = null;
     p.mesh = null;
+    geologySeen.delete(p);
   };
-  const home = plateOf(0, 0);
+  // The first plate made, at the origin: its materials are the ones the verges and the far ground lend (`vergeMaterial`), so it is never let go.
+  const home = plateFor(plateOf(0, 0));
+  const outOfReach = (p: Plate): boolean => Math.abs(p.cx - focusX) > keepReach || Math.abs(p.cy - focusY) > keepReach;
   const refresh = (): void => {
-    frame++;
-    const wanted = new Set<number>([home, ...content]);
-    for (const i of wanted) { const p = plates[i]!; ensure(p); p.used = frame; }
-    for (const i of near) { const p = plates[i]!; ensure(p); p.used = frame; wanted.add(i); }
+    const wanted = new Set<number>(content);
+    for (const key of near) wanted.add(key);
+    for (const key of wanted) ensure(plateFor(key));
     shownList.length = 0;
     const cached: Plate[] = [];
-    for (const p of plates) {
+    for (const p of plates.values()) {
       if (!p.surface) continue;
-      const want = wanted.has(p.index);
+      const want = wanted.has(p.key);
       show(p, want);
       if (want) shownList.push(p); else cached.push(p);
     }
-    for (const p of cached) {
-      if (Math.abs(p.cx - focusX) > keepReach || Math.abs(p.cy - focusY) > keepReach) letGo(p);
+    for (const p of cached) if (p !== home && outOfReach(p)) letGo(p);
+    // A plate holding nothing any more (not made, not asked, out of reach) forgotten: made again from the document if it comes back.
+    for (const p of plates.values()) {
+      if (p !== home && !p.surface && !p.asked && !wanted.has(p.key) && !wantedNear.includes(p) && outOfReach(p)) plates.delete(p.key);
     }
     if (shownList.length !== partsShown.length || shownList.some((p, k) => partsShown[k]!.surface !== p.surface)) shownVersion++;
     partsShown = shownList.map((p) => ({ surface: p.surface!, cx: p.cx, cy: p.cy }));
-    if (far) farIndexInto(far, (i) => plates[i]!.shown);
+    drawFar();
     measureHighest();
   };
 
   let contentKey = '';
   /** DO NOT walk every node, building, lot, pole, plant and wall of the map at each change */
   const contentCursor = new JournalCursor(CONTENT_KINDS);
-  const plateCountOf = (rect: ChangeRect, into: Set<number>): void => {
-    const kx0 = Math.round(rect[0] / PLATE_SIZE), kx1 = Math.round(rect[2] / PLATE_SIZE);
-    const ky0 = Math.round(rect[1] / PLATE_SIZE), ky1 = Math.round(rect[3] / PLATE_SIZE);
-    for (let kx = kx0; kx <= kx1; kx++) for (let ky = ky0; ky <= ky1; ky++) into.add(plateOf(kx * PLATE_SIZE, ky * PLATE_SIZE));
-  };
   const readContent = (doc: TerrainSource): boolean => {
     const d = doc as Partial<RoadDoc>;
     const key = [d.revision, d.buildings?.revision, d.lotRevision, d.utilityRevision, d.treeRevision, doc.terrainRevision, doc.paintRevision].join(':');
     if (key === contentKey) return false;
     contentKey = key;
     const entries = contentCursor.read(doc.changes);
-    if (entries && entries.every((e) => e.rects !== null)) {
+    // An unloaded tile takes its records away: what each plate still holds is only known from the document (the active region's).
+    if (entries && entries.every((e) => e.rects !== null) && !entries.some((e) => e.cause === TILE_UNLOADED)) {
       // Marked in place: the plates the changes reach (a stamp or paint has its rects too).
       const before = content.size;
-      for (const e of entries) for (const rect of e.rects!) plateCountOf(rect, content);
+      for (const e of entries) for (const rect of e.rects!) for (const k of platesOver(rect)) content.add(k);
       return content.size !== before;
     }
     return readWholeContent(doc);
   };
-  /** @rebuild Every plate's content read from the whole document: the first time, or when the diary cannot say where. */
+  /** @rebuild Every plate's content read from the whole document (the page's: the active region): the first time, an unload, or when the diary cannot say where. */
   const readWholeContent = (doc: TerrainSource): boolean => {
     const d = doc as Partial<RoadDoc>;
     const next = new Set<number>();
     const mark = (x: number, y: number): void => { next.add(plateOf(x, y)); };
+    const disc = (x: number, y: number, r: number): void => { for (const k of platesOver([x - r, y - r, x + r, y + r])) next.add(k); };
     for (const n of d.nodes?.values() ?? []) mark(n.x, n.y);
     for (const b of d.buildings?.all() ?? []) mark(b.x, b.y);
     for (const l of d.lots ?? []) for (const c of l.corners) mark(c.x, c.y);
@@ -340,34 +471,21 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     for (const item of d.landscape?.values() ?? []) mark(item.x, item.y);
     for (const tree of d.trees ?? []) mark(tree.x, tree.y);
     for (const barrier of d.barriers?.values() ?? []) for (const q of barrier.points) mark(q.x, q.y);
-    for (const p of plates) if (p.source.terrainStamps.length || p.source.terrainPaint.length) next.add(p.index);
+    // A stamp or a dab puts content on every plate its disc reaches (`copyOn`).
+    for (const s of doc.terrainStamps) disc(s.x, s.y, s.radius);
+    for (const dab of doc.terrainPaint) disc(dab.x, dab.y, dab.radius);
     const changed = next.size !== content.size || [...next].some((i) => !content.has(i));
     content = next;
     return changed;
   };
 
-  // The document's stamps and dabs on each plate they reach, moved to its map (about its centre).
-  const stampCopies = plates.map(() => new WeakMap<TerrainStamp, TerrainStamp | null>());
-  const dabCopies = plates.map(() => new WeakMap<PaintDab, PaintDab | null>());
-  const copyOn = <T extends { readonly x: number; readonly y: number; readonly radius: number; readonly ox?: number; readonly oy?: number }>(copies: WeakMap<T, T | null>, p: Plate, item: T): T | null => {
-    let local = copies.get(item);
-    if (local === undefined) {
-      copies.set(item, local = reaches(p, item.x, item.y, item.radius)
-        ? { ...item, x: item.x - p.cx, y: item.y - p.cy, ...(item.ox !== undefined && item.oy !== undefined ? { ox: item.ox - p.cx, oy: item.oy - p.cy } : {}) }
-        : null);
-    }
-    return local;
-  };
   let seenTerrain = -1;
   /** DO NOT filter the map's every stamp for every plate at each change: stamps times plates for one dab of the brush. */
   const terrainCursor = new JournalCursor(['terrain']);
-  let seenRelief: ReliefVersion | null = null;
   let seenPaint = -1;
-  /** The map's own land before any stamp, world coordinates (`reliefHeight`). */
-  let bare: (x: number, y: number) => number = () => 0;
   const sync = (doc: TerrainSource): void => {
     lastDoc = doc;
-    for (const p of plates) {
+    for (const p of plates.values()) {
       p.source.changes = doc.changes;
       p.source.natureRevision = doc.natureRevision;
       p.source.nature = doc.nature;
@@ -382,38 +500,26 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       buildFar(relief);
       const entries = terrainCursor.read(doc.changes);
       const rects = entries && entries.every((e) => e.rects !== null) ? entries.flatMap((e) => e.rects!) : null;
-      plates.forEach((p, i) => {
+      for (const p of plates.values()) {
         // A plate no change reached keeps its stamps as they were (the relief moved: every plate).
         if (!reliefMoved && rects && p.source.terrainRevision !== 0
-          && !rects.some((r) => reaches(p, (r[0] + r[2]) / 2, (r[1] + r[3]) / 2, Math.hypot(r[2] - r[0], r[3] - r[1]) / 2))) return;
-        const copies = stampCopies[i]!;
-        const sources = doc.terrainStamps.filter((s) => copyOn(copies, p, s) !== null);
+          && !rects.some((r) => reaches(p, (r[0] + r[2]) / 2, (r[1] + r[3]) / 2, Math.hypot(r[2] - r[0], r[3] - r[1]) / 2))) continue;
         p.source.terrainRelief = relief;
         if (reliefMoved || !p.source.terrainGround) {
           if (reliefMoved) { p.heights = null; p.mesh = null; p.asked = false; }
           // Read over the plate's own corners (off the page), not the field again at each.
           p.source.terrainGround = (lx, ly) => groundOn(p, lx, ly);
         }
-        if (!reliefMoved && p.source.terrainRevision !== 0 && sameList(sources, p.source.stampSources)) return;
-        p.source.stampSources = sources;
-        p.source.terrainStamps = sources.map((s) => copies.get(s) as TerrainStamp);
-        p.source.terrainRevision = doc.terrainRevision;
-      });
+        if (reliefMoved) p.source.terrainRevision = 0;
+        takeStamps(p, doc);
+      }
     }
     if (doc.paintRevision !== seenPaint) {
       seenPaint = doc.paintRevision;
-      plates.forEach((p, i) => {
-        const copies = dabCopies[i]!;
-        const sources = doc.terrainPaint.filter((d) => copyOn(copies, p, d) !== null);
-        if (sameList(sources, p.source.paintSources)) return;
-        p.source.paintSources = sources;
-        p.source.terrainPaint = sources.map((d) => copies.get(d) as PaintDab);
-        p.source.paintRevision = doc.paintRevision;
-      });
+      for (const p of plates.values()) takePaint(p, doc);
     }
     if (readContent(doc)) refresh();
   };
-  const bareAt = (p: Plate, lx: number, ly: number): number => TERRAIN_BASE + bare(p.cx + lx, p.cy + ly);
   /** A plate's land at a point of its map: its corners as the workers read them */
   function groundOn(p: Plate, lx: number, ly: number): number {
     const h = p.heights;
@@ -434,11 +540,11 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     p.asked = true;
     const relief = seenRelief;
     readFlatGround({
-      key: p.index, relief, at: { x: p.cx, y: p.cy }, cx: p.cx, cy: p.cy, half: TERRAIN_HALF, cell: TERRAIN_CELL, side: SIDE, base: TERRAIN_BASE,
+      key: p.key, relief, at: { x: p.cx, y: p.cy }, cx: p.cx, cy: p.cy, half: TERRAIN_HALF, cell: TERRAIN_CELL, side: SIDE, base: TERRAIN_BASE,
       done: (mesh) => {
         p.asked = false;
-        // A plate made meanwhile keeps the field it was made on; a relief changed meanwhile, the new one.
-        if (relief === seenRelief && !p.surface) { p.heights = mesh.heights; p.mesh = mesh; }
+        // A plate made meanwhile keeps the field it was made on; a relief changed meanwhile, the new one; a plate forgotten meanwhile, nothing.
+        if (relief === seenRelief && !p.surface && plates.get(p.key) === p) { p.heights = mesh.heights; p.mesh = mesh; }
         focusKey = '';
       },
       failed: () => { p.asked = false; p.heights = null; p.mesh = null; failedOffPage = true; focusKey = ''; },
@@ -451,12 +557,12 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   const nextNear: number[] = [];
 
   const decode = (region: TerrainRegion): { plate: Plate; local: TerrainRegion } => {
-    const index = Math.floor(region[0] / REGION_STRIDE);
-    const off = index * REGION_STRIDE;
-    return { plate: plates[index]!, local: [region[0] - off, region[1] - off, region[2], region[3]] };
+    const key = Math.floor(region[0] / REGION_STRIDE);
+    const off = key * REGION_STRIDE;
+    return { plate: plateFor(key), local: [region[0] - off, region[1] - off, region[2], region[3]] };
   };
   const encode = (p: Plate, region: TerrainRegion): TerrainRegion => {
-    const off = p.index * REGION_STRIDE;
+    const off = p.key * REGION_STRIDE;
     return [region[0] + off, region[1] + off, region[2], region[3]];
   };
   /** A road field asked in a plate's own coordinates. */
@@ -467,21 +573,22 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
 
   let lastPlate: Plate | null = null;
   const geologyChanges = new GroundChanges();
-  const geologySeen = new Map<Plate, number>();
   const sum = (read: (s: TerrainSurface) => number): number => {
     let total = 0;
     for (const p of shownList) total += read(p.surface!);
     return total;
   };
-  const ask = <T>(x: number, y: number, read: (s: TerrainSurface, lx: number, ly: number) => T, bareRead: (p: Plate, lx: number, ly: number) => T): T => {
-    const p = plates[plateOf(x, y)]!;
-    return p.surface ? read(p.surface, x - p.cx, y - p.cy) : bareRead(p, x - p.cx, y - p.cy);
+  /** A point read off its plate's surface where the plate is made, otherwise off the land (`bareRead`, world coordinates): no plate made for a read. */
+  const ask = <T>(x: number, y: number, read: (s: TerrainSurface, lx: number, ly: number) => T, bareRead: (x: number, y: number) => T): T => {
+    const p = plates.get(plateOf(x, y));
+    return p?.surface ? read(p.surface, x - p.cx, y - p.cy) : bareRead(x, y);
   };
+  const bareAt = (x: number, y: number): number => TERRAIN_BASE + bare(x, y);
 
-  const first = plates[home]!;
-  ensure(first);
+  ensure(home);
+  moveRing(0, 0);
   refresh();
-  const firstSurface = first.surface!;
+  const firstSurface = home.surface!;
   return {
     meshes: [root],
     highest: () => highest,
@@ -494,6 +601,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       setJobFocus(x, y);
       focusX = x;
       focusY = y;
+      const ringMoved = moveRing(x, y);
       const radius = reach < NEAR_VIEW ? Math.max(TERRAIN_HALF, reach * 1.6) + TERRAIN_HALF : -1;
       keepReach = radius > 0 ? radius * KEEP_MARGIN : 0;
       const key = `${plateOf(x, y)}:${Math.round(radius / TERRAIN_HALF)}`;
@@ -501,11 +609,15 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         focusKey = key;
         wantedNear.length = 0;
         if (radius > 0) {
-          for (const p of plates) if (Math.abs(p.cx - x) <= radius && Math.abs(p.cy - y) <= radius) wantedNear.push(p);
+          // The plates whose centre is within the radius: those under its square, never a walk over the world's.
+          for (const k of platesOver([x - radius, y - radius, x + radius, y + radius])) {
+            const r = plateRegion(k);
+            if (Math.abs(r.cx - x) <= radius && Math.abs(r.cy - y) <= radius) wantedNear.push(plateFor(k));
+          }
           wantedNear.sort((a, b) => Math.hypot(a.cx - x, a.cy - y) - Math.hypot(b.cx - x, b.cy - y));
           if (wantedNear.length > NEAR_MOST) wantedNear.length = NEAR_MOST;
         }
-        for (const p of plates) if (p.asked && !wantedNear.includes(p) && !content.has(p.index)) { cancelFlatGround(p.index); p.asked = false; }
+        for (const p of plates.values()) if (p.asked && !wantedNear.includes(p) && !content.has(p.key)) { cancelFlatGround(p.key); p.asked = false; }
       }
       // One plate made this frame: the nearest whose corners are in (or, with no workers, the nearest at all).
       const offPage = !failedOffPage && flatGroundOffPage();
@@ -519,8 +631,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       }
       // Drawn: the wanted plates that are made.
       nextNear.length = 0;
-      for (const p of wantedNear) if (p.surface) nextNear.push(p.index);
-      if (nextNear.length === near.length && nextNear.every((v, k) => v === near[k]) && nextNear.every((i) => plates[i]!.shown)) return;
+      for (const p of wantedNear) if (p.surface) nextNear.push(p.key);
+      if (!ringMoved && nextNear.length === near.length && nextNear.every((v, k) => v === near[k]) && nextNear.every((k) => plates.get(k)?.shown)) return;
       near = nextNear.slice();
       refresh();
     },
@@ -530,9 +642,12 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       farSurface.setSun(direction);
     },
     bakeRelief(renderer: WebGLRenderer) {
-      // The far woods: each plate's fade from whether it is in full and its own trees can grow.
+      // The far woods: each far plate's fade from whether it is in full and its own trees can grow.
       const now = performance.now() / 1000;
-      for (const p of plates) farForest.book.setFull(p.index, p.shown, p.surface?.ecology() != null, now);
+      for (const fp of farPlates.values()) {
+        const p = plates.get(fp.key);
+        farForest.book.setFull(fp.key, p?.shown ?? false, p?.surface?.ecology() != null, now);
+      }
       farForest.update(renderer, now);
     },
     setWaterLook(look: WaterLook) {
@@ -541,7 +656,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         && was.windX === look.windX && was.windZ === look.windZ && was.windSpeed === look.windSpeed) return;
       Object.assign(was, look);
       lookGiven = true;
-      for (const p of plates) p.surface?.setWaterLook(look);
+      for (const p of plates.values()) p.surface?.setWaterLook(look);
     },
     // The gullies were drawn by the fine relief alone, which nothing the ground draws read (`terrain.ts` `bakeRelief`).
     setGullies() {},
@@ -560,9 +675,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     renderedHeightAt: Object.assign((x: number, y: number): number => ask(x, y, (s, lx, ly) => s.renderedHeightAt(lx, ly), bareAt), { share }) satisfies SharedGroundAt,
     wetAt: (x, y) => ask(x, y, (s, lx, ly) => s.wetAt(lx, ly), () => false),
     digest(minX, minY, maxX, maxY) {
-      const p = plates[plateOf((minX + maxX) / 2, (minY + maxY) / 2)]!;
-      if (!p.surface) return p.index * 7919 + (seenRelief ?? 0) * 31 + 1;
-      return p.surface.digest(minX - p.cx, minY - p.cy, maxX - p.cx, maxY - p.cy) + p.index;
+      const key = plateOf((minX + maxX) / 2, (minY + maxY) / 2);
+      const p = plates.get(key);
+      if (!p?.surface) return key * 7919 + (seenRelief ?? 0) * 31 + 1;
+      return p.surface.digest(minX - p.cx, minY - p.cy, maxX - p.cx, maxY - p.cy) + p.key;
     },
     update(doc, stroking) {
       sync(doc);
@@ -667,16 +783,16 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       const out = new Map<number, NaturalPlate>();
       for (const box of boxes) {
         for (const [x, y] of [[box[0], box[1]], [box[2], box[1]], [box[0], box[3]], [box[2], box[3]]] as const) {
-          const p = plates[plateOf(x, y)]!;
-          const corners = p.surface?.naturalCorners?.();
-          if (!corners || out.has(p.index)) continue;
-          out.set(p.index, { index: p.index, cx: p.cx, cy: p.cy, n: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, ...corners });
+          const p = plates.get(plateOf(x, y));
+          const corners = p?.surface?.naturalCorners?.();
+          if (!p || !corners || out.has(p.key)) continue;
+          out.set(p.key, { index: p.key, cx: p.cx, cy: p.cy, n: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, ...corners });
         }
       }
       return [...out.values()];
     },
     regionOf(box) {
-      const p = plates[plateOf((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)]!;
+      const p = plateFor(plateOf((box[0] + box[2]) / 2, (box[1] + box[3]) / 2));
       return encode(p, ensure(p).regionOf([box[0] - p.cx, box[1] - p.cy, box[2] - p.cx, box[3] - p.cy]));
     },
     rectOf(region) {
@@ -685,9 +801,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       return [r[0] + plate.cx, r[1] + plate.cy, r[2] + plate.cx, r[3] + plate.cy];
     },
     dispose() {
-      for (const p of plates) p.surface?.dispose();
+      for (const p of plates.values()) p.surface?.dispose();
       farSurface.dispose();
       farForest.dispose();
+      far.geometry.dispose();
       slab.geometry.dispose();
       (slab.material as MeshStandardMaterial).map?.dispose();
       (slab.material as MeshStandardMaterial).dispose();

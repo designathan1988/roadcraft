@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MAP_REGIONS } from '@world/bounds';
+import { platesOver, plateRegion } from '@world/bounds';
 import { keepCellsOver } from '@render/cellKeeps';
 import { COVER_SWEEP_PAD, SHORE_SWEEP_PAD, cellHash, forestIn, rocksIn, scrubIn, shoreIn, type Candidate, type CoverField } from '@render/coverSweep';
 import { TERRAIN_HALF } from '@render/terrain';
@@ -32,7 +32,7 @@ function wholeForest(discs: readonly Disc[], field: CoverField): Candidate[] {
   }, null);
   const out: Candidate[] = [];
   if (!area) return out;
-  for (const plate of MAP_REGIONS) {
+  for (const plate of platesOver(area).map(plateRegion)) {
     const first = Math.ceil((plate.cx - plate.half + TERRAIN_HALF) / spacing);
     const last = Math.floor((plate.cx + plate.half + TERRAIN_HALF) / spacing) - 1;
     const firstY = Math.ceil((plate.cy - plate.half + TERRAIN_HALF) / spacing);

@@ -1,7 +1,9 @@
 /** PLACED CLOUDS: cumulus the player puts in the sky, moves and takes away, each its own size, height and thickness */
 
-import { MAP_SIZE } from './bounds';
 import { m } from './units';
+
+/** The sky's period: the placed clouds repeat every this much each way, so over any part of the unbounded world there are clouds (a sky the size of the old map). */
+export const CLOUD_SPAN = m(10_240);
 
 export interface PlacedCloud {
   readonly id: number;
@@ -95,12 +97,14 @@ export function undriftedCloud(seen: { readonly x: number; readonly y: number },
   return { x: seen.x - drift.x, y: seen.y - drift.y };
 }
 
-/** Where a cloud is now, carried by the wind (`world/weather.ts`) */
-export function driftedCloud(cloud: PlacedCloud, drift: { readonly x: number; readonly y: number }): { x: number; y: number; show: number } {
-  const span = MAP_SIZE;
+/** Where a cloud is now, carried by the wind (`world/weather.ts`): its repeat nearest `about` (where the view looks), thinning away towards the edge of the period round it */
+export function driftedCloud(cloud: PlacedCloud, drift: { readonly x: number; readonly y: number },
+  about: { readonly x: number; readonly y: number } = { x: 0, y: 0 }): { x: number; y: number; show: number } {
+  const span = CLOUD_SPAN;
   const wrap = (v: number): number => ((((v + span / 2) % span) + span) % span) - span / 2;
-  const x = wrap(cloud.x + drift.x), y = wrap(cloud.y + drift.y);
-  const out = (Math.max(Math.abs(x), Math.abs(y)) - span * 0.36) / (span * 0.12);
+  const dx = wrap(cloud.x + drift.x - about.x), dy = wrap(cloud.y + drift.y - about.y);
+  const x = about.x + dx, y = about.y + dy;
+  const out = (Math.max(Math.abs(dx), Math.abs(dy)) - span * 0.36) / (span * 0.12);
   const t = Math.min(1, Math.max(0, out));
   return { x, y, show: 1 - t * t * (3 - 2 * t) };
 }

@@ -1,10 +1,10 @@
 import {
-  DataTexture, NearestFilter, RGBAIntegerFormat, UnsignedIntType, Vector4,
+  DataTexture, NearestFilter, RGBAIntegerFormat, UnsignedIntType, Vector2, Vector4,
   type Material, type WebGLProgramParametersWithUniforms,
 } from 'three';
 import type { Vec2 } from '@core/vec2';
 import type { ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
-import { MAP_HALF } from '@world/bounds';
+import { PLATE_SIZE, plateOf, plateRegion } from '@world/bounds';
 import {
   DASH, GAP, FLAG_BUTT, FLAG_DASHED, FLAG_LEVEL, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, LotLattice, TEXTURE_WIDTH, TILE_CELLS, type LatticeShape,
 } from './lotLattice';
@@ -58,11 +58,19 @@ const EMPTY = new DataTexture(new Uint32Array(4), 1, 1, RGBAIntegerFormat, Unsig
 EMPTY.internalFormat = 'RGBA32UI';
 EMPTY.needsUpdate = true;
 
+/** Half the lattice's frame: 10,240 m a side (the old map's), stood over the lots drawn - the page's, round the view - wherever they are */
+const FRAME_HALF = PLATE_SIZE * 2.5;
+/** The world's lattice cells each way a level's key holds (`createLotOverlay` `cellKey`): past the world's reach (`world/bounds.ts` WORLD_HALF, 2^25 m) in cells of 8 m. */
+const CELL_SHIFT = 2 ** 23;
+const CELL_SIDE = 2 * CELL_SHIFT;
+
 /** Shared by every ground material (`applyLotOverlay`), set by the overlay: the lattice's texture and its frame */
 const UNIFORMS = {
   uLots: { value: EMPTY },
-  uLotsGrid: { value: new Vector4(MAP_HALF, LOT_CELL, Math.ceil((2 * MAP_HALF) / LOT_CELL), 0) },
-  uLotsTiles: { value: Math.ceil(Math.ceil((2 * MAP_HALF) / LOT_CELL) / TILE_CELLS) },
+  uLotsGrid: { value: new Vector4(0, LOT_CELL, Math.ceil((2 * FRAME_HALF) / LOT_CELL), 0) },
+  // The lattice's frame's low corner (world x, y): it stands where the lots are (`createLotOverlay`), anywhere on the world.
+  uLotsCorner: { value: new Vector2(-FRAME_HALF, -FRAME_HALF) },
+  uLotsTiles: { value: Math.ceil(Math.ceil((2 * FRAME_HALF) / LOT_CELL) / TILE_CELLS) },
 };
 
 /** How far above or below a built lot's ground level a building's level surface is still its yard (metres) */
@@ -74,6 +82,7 @@ const LOT_PARS = /* glsl */ `
   uniform highp usampler2D uLots;
   uniform vec4 uLotsGrid;
   uniform float uLotsTiles;
+  uniform vec2 uLotsCorner;
   uvec4 lotTexel(uint a) { return texelFetch(uLots, ivec2(int(a & ${TEXTURE_WIDTH - 1}u), int(a >> ${Math.log2(TEXTURE_WIDTH)}u)), 0); }
   float lotCross(vec2 u, vec2 v) { return u.x * v.y - u.y * v.x; }
   vec3 lotLinear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
@@ -86,7 +95,7 @@ const LOT_PARS = /* glsl */ `
   // \`building\`: a building's level surface at world height \`height\`: only
   // the built lots whose ground level is within LEVEL_REACH of it draw there (the yard's paving, not a flat roof).
   vec3 lotOver(vec3 base, vec2 w, vec2 dx, vec2 dy, float height, bool building) {
-    vec2 g = (w + uLotsGrid.x) / uLotsGrid.y;
+    vec2 g = (w - uLotsCorner) / uLotsGrid.y;
     if (any(lessThan(g, vec2(0.0))) || any(greaterThanEqual(g, vec2(uLotsGrid.z)))) return base;
     ivec2 c = ivec2(g);
     ivec2 t = c / ${TILE_CELLS};
@@ -99,8 +108,8 @@ const LOT_PARS = /* glsl */ `
     if (count == 0u) return base;
     uint at = entry >> 8u;
     if (count == 255u) { count = lotTexel(at).x; at += 1u; }
-    // Cell-local, as the edges are stored: the cell's centre is (c + 0.5) cells from the map's corner.
-    vec2 p = (w + uLotsGrid.x) - (vec2(c) + 0.5) * uLotsGrid.y;
+    // Cell-local, as the edges are stored: the cell's centre is (c + 0.5) cells from the frame's corner.
+    vec2 p = (w - uLotsCorner) - (vec2(c) + 0.5) * uLotsGrid.y;
     // Premultiplied, each over the ones before: every fill under every stroke.
     vec4 fills = vec4(0.0), strokes = vec4(0.0);
     for (uint r = 0u; r < count; r++) {
@@ -279,7 +288,8 @@ const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'ground', 'elev
 
 /** `groundAt`: the ground's height (`surfaceHeightAt`), read once for each built lot, at its middle. */
 export function createLotOverlay(groundAt: (x: number, y: number) => number = () => 0) {
-  const lattice = new LotLattice(MAP_HALF);
+  /** The lattice, its frame over the lots drawn (`frameFor`): stood again only when they leave it. */
+  let lattice = new LotLattice(FRAME_HALF);
   let texture: DataTexture | null = null;
   /** The input drawn now, and this overlay's place in its changes (`LotOverlayInput.changedFor`). */
   let shown: LotOverlayInput | null = null;
@@ -293,8 +303,9 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
   /** The levels read, and the groups that read them, by the lattice cell of the point they were read at: found by place. */
   const levelsByCell = new Map<number, Set<string>>();
   const groupsByCell = new Map<number, Set<string>>();
-  const cellOf = (x: number, y: number): number =>
-    Math.floor((y + MAP_HALF) / LOT_CELL) * lattice.cellsPerSide + Math.floor((x + MAP_HALF) / LOT_CELL);
+  /** A lattice cell's key on the world's own grid of `LOT_CELL` (not the frame's: a level read stays filed when the frame moves). */
+  const cellKey = (ix: number, iy: number): number => (ix + CELL_SHIFT) * CELL_SIDE + (iy + CELL_SHIFT);
+  const cellOf = (x: number, y: number): number => cellKey(Math.floor(x / LOT_CELL), Math.floor(y / LOT_CELL));
   /** The group whose shapes are being made (`remake`): the one a level read belongs to. */
   let making = '';
   /** A shape's ground level: the ground at its points' mean (a built lot's: under its building, its pad), to the centimetre. */
@@ -327,19 +338,23 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
     }
     for (const { rects } of entries) {
       for (const [x0, y0, x1, y1] of rects!) {
-        const n = lattice.cellsPerSide;
-        const cx0 = Math.max(0, Math.floor((x0 + MAP_HALF) / LOT_CELL)), cx1 = Math.min(n - 1, Math.floor((x1 + MAP_HALF) / LOT_CELL));
-        const cy0 = Math.max(0, Math.floor((y0 + MAP_HALF) / LOT_CELL)), cy1 = Math.min(n - 1, Math.floor((y1 + MAP_HALF) / LOT_CELL));
-        for (let cy = cy0; cy <= cy1; cy++) {
-          for (let cx = cx0; cx <= cx1; cx++) {
-            const set = levelsByCell.get(cy * n + cx);
-            if (!set) continue;
-            for (const where of set) levels.delete(where);
-            levelsByCell.delete(cy * n + cx);
-            for (const name of groupsByCell.get(cy * n + cx) ?? []) groups.add(name);
-            groupsByCell.delete(cy * n + cx);
+        const cx0 = Math.floor(x0 / LOT_CELL), cx1 = Math.floor(x1 / LOT_CELL);
+        const cy0 = Math.floor(y0 / LOT_CELL), cy1 = Math.floor(y1 / LOT_CELL);
+        const forget = (cell: number): void => {
+          const set = levelsByCell.get(cell);
+          if (set) { for (const where of set) levels.delete(where); levelsByCell.delete(cell); }
+          for (const name of groupsByCell.get(cell) ?? []) groups.add(name);
+          groupsByCell.delete(cell);
+        };
+        if ((cx1 - cx0 + 1) * (cy1 - cy0 + 1) > groupsByCell.size) {
+          // A rectangle of more cells than cells read: the cells read looked at, not its every cell.
+          for (const cell of [...groupsByCell.keys()]) {
+            const cx = Math.floor(cell / CELL_SIDE) - CELL_SHIFT, cy = (cell % CELL_SIDE) - CELL_SHIFT;
+            if (cx >= cx0 && cx <= cx1 && cy >= cy0 && cy <= cy1) forget(cell);
           }
+          continue;
         }
+        for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) forget(cellKey(cx, cy));
       }
     }
     return groups;
@@ -392,9 +407,29 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
     texture.needsUpdate = true;
   };
 
+  /** The frame stood again over the lots drawn when they left it, on the plate under their middle (`world/bounds.ts`): every shape laid anew in it. */
+  const standFrame = (input: LotOverlayInput): boolean => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const grow = (q: Vec2): void => { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); };
+    for (const g of input.groups.values()) {
+      for (const p of g.polygons) for (const q of p.corners) grow(q);
+      for (const l of g.lines) { grow(l.a); grow(l.b); }
+      for (const d of g.points) grow(d.p);
+    }
+    if (!(x0 <= x1)) return false;
+    const side = 2 * lattice.half;
+    if (x0 >= lattice.x0 && y0 >= lattice.y0 && x1 <= lattice.x0 + side && y1 <= lattice.y0 + side) return false;
+    const centre = plateRegion(plateOf((x0 + x1) / 2, (y0 + y1) / 2));
+    lattice.clear();
+    lattice = new LotLattice(FRAME_HALF, 16, centre.cx, centre.cy);
+    held = new Map();
+    UNIFORMS.uLotsCorner.value.set(lattice.x0, lattice.y0);
+    return true;
+  };
+
   return {
     /** The lattice: for the tests, the work an edit cost. */
-    lattice,
+    get lattice() { return lattice; },
     /** Draws `input` (null: no lots) into the ground from the next frame. */
     set(input: LotOverlayInput | null, changes?: ChangeJournal): void {
       let moved: Set<string> | 'all' = new Set();
@@ -413,8 +448,10 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
         return;
       }
       const changed = input.changedFor(reader);
+      // The frame stood again over lots that left it: every group laid anew in it.
+      const restood = standFrame(input);
       // Another input than the one drawn, or one that cannot say what changed: every group, a shape with the same key kept.
-      if (input !== shown || changed === null || moved === 'all') {
+      if (restood || input !== shown || changed === null || moved === 'all') {
         shown = input;
         for (const name of [...held.keys()]) if (!input.groups.has(name)) remake(name, undefined);
         for (const [name, group] of input.groups) remake(name, group);

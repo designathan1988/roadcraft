@@ -8,15 +8,15 @@ import {
 } from 'three';
 
 import type { Vec2 } from '@core/vec2';
-import { MAP_HALF, MAP_SIZE } from '@world/bounds';
+import { WORLD_HALF } from '@world/bounds';
 import { m } from '@world/units';
 import type { Facing, Viewport } from '@view/viewport';
 import { FAR_TILT, eyeLift, fieldOfView, minTilt, profileTilt, pullWeight, viewDistance } from '@view/cameraProfile';
 
 /** Close inspection of pedestrian faces, gaits and the people inside vehicles. */
 export const MIN_HALF_HEIGHT = m(0.8);
-/** Out to the whole map (`world/bounds.ts`): its side and a tenth more. */
-export const MAX_HALF_HEIGHT = Math.round(MAP_SIZE * 0.55);
+/** Out to some 11 km of ground in view (the old map's side and a tenth more): within the far ground's ring round the view (`flatAtlas.ts`, 7 plates). */
+export const MAX_HALF_HEIGHT = m(5_632);
 
 /** The zoom range the iso rig can represent at a given viewport height. */
 export function isoZoomBounds(height: number): { min: number; max: number } {
@@ -112,8 +112,8 @@ export function createIsoRig(
   const apply = (): void => {
     const aspect = Math.max(0.1, width / Math.max(1, height));
     elevation = tiltNow();
-    // The view's centre stays over the map: dragged off it, the view showed nothing but sky - a white screen.
-    const edge = MAP_HALF + m(80);
+    // The view's centre goes anywhere on the world: only its reach holds it (`world/bounds.ts` WORLD_HALF; the ground goes on under it, `flatAtlas.ts`).
+    const edge = WORLD_HALF;
     target.x = Math.max(-edge, Math.min(edge, target.x));
     target.z = Math.max(-edge, Math.min(edge, target.z));
     let distance = DISTANCE;

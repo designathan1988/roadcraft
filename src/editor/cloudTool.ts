@@ -43,7 +43,9 @@ export class CloudTool {
     const size = brush.size * UNITS_PER_METER;
     const height = brush.height * UNITS_PER_METER;
     const drift = host.drift();
-    const seen = doc.clouds.map((c) => ({ ...c, ...driftedCloud(c, drift) }));
+    // Each cloud's repeat under the pointer's part of the sky (the sky repeats, `CLOUD_SPAN`), as it is drawn there.
+    const about = host.rayAt(px, py, height);
+    const seen = doc.clouds.map((c) => ({ ...c, ...driftedCloud(c, drift, about) }));
     const picked = cloudUnder(seen, (h) => host.rayAt(px, py, h));
     if (mode === 'add') {
       // Under the pointer at the height it is drawn at.

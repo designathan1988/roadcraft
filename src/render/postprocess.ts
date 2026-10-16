@@ -4,7 +4,6 @@ import {
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { CopyShader } from 'three/examples/jsm/shaders/CopyShader.js';
-import { MAP_HALF } from '@world/bounds';
 import { m, perM } from '@world/units';
 import { driftedCloud, type PlacedCloud } from '@world/clouds';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -47,7 +46,7 @@ export interface PostChain {
   /** How far the wind has carried the clouds, on the map (`world/clouds.ts` driftedCloud). */
   setCloudDrift(x: number, y: number): void;
   /** The painted fog (`render/fogLayer.ts`): its map, the slab of ground it lies over, and the map's settings - or none. */
-  setGroundFog(fog: { texture: Texture; low: number; high: number; density: number } | null): void;
+  setGroundFog(fog: { texture: Texture; low: number; high: number; density: number; window: readonly [number, number, number] } | null): void;
   dispose(): void;
 }
 
@@ -251,6 +250,9 @@ export function createPostChain(
   let cloudClock = 0;
   let placedClouds: readonly PlacedCloud[] = [];
   const cloudDrift = { x: 0, y: 0 };
+  /** Where the view looks on the ground (world x, y) and the camera's forward, reused each frame. */
+  const cloudAbout = { x: 0, y: 0 };
+  const cloudLook = new Vector3();
   /** The clouds' bodies at a quarter of the pixels (`CLOUD_BODIES_MAIN`), drawn just before the pass that blends them in. */
   const bodiesSize = (n: number): number => Math.max(1, Math.ceil(n / 2));
   // Two, one written each frame while the other is read as its history (`uHistory`).
@@ -374,7 +376,12 @@ export function createPostChain(
         cloudClock += delta;
         (clouds.uniforms['uTime'] as { value: number }).value = cloudClock;
         const u = clouds.uniforms as Record<string, { value: unknown }>;
-        const count = layClouds(u['uCloud']!.value as Vector4[], u['uPuff']!.value as Vector4[], u['uLife']!.value as number[], u['uBase']!.value as number[], u['uShow']!.value as number[], placedClouds, cloudDrift);
+        // The sky repeats (`CLOUD_SPAN`): each cloud's repeat nearest the ground the camera looks at.
+        camera.getWorldDirection(cloudLook);
+        const ahead = cloudLook.y < -1e-3 ? -camera.position.y / cloudLook.y : 0;
+        cloudAbout.x = camera.position.x + cloudLook.x * ahead;
+        cloudAbout.y = -(camera.position.z + cloudLook.z * ahead);
+        const count = layClouds(u['uCloud']!.value as Vector4[], u['uPuff']!.value as Vector4[], u['uLife']!.value as number[], u['uBase']!.value as number[], u['uShow']!.value as number[], placedClouds, cloudDrift, cloudAbout);
         u['uCloudCount']!.value = count;
         const plane = cloudShadowFrame(u['uCloud']!.value as Vector4[], u['uBase']!.value as number[], count,
           u['uSunDir']!.value as Vector3, u['uShadowRect']!.value as Vector4);
@@ -419,6 +426,7 @@ export function createPostChain(
       u['tGroundFog']!.value = fog.texture;
       (u['uGroundFog']!.value as Vector4).set(fog.density, 0, 0, 1);
       (u['uGroundFogSlab']!.value as Vector2).set(fog.low - 2, fog.high);
+      (u['uFogWindow']!.value as Vector3).set(fog.window[0], fog.window[1], fog.window[2]);
     },
     followTown(cx, cy, solids, changed) {
       canyon?.follow(cx, cy, solids, changed);
@@ -499,12 +507,13 @@ function cloudHash(i: number, salt: number): number {
 }
 
 /** Lays the clouds out: the map's own, each where the player put it or the sky's spreader laid it */
-function layClouds(bounds: Vector4[], puffs: Vector4[], lives: number[], bases: number[], shows: number[], placed: readonly PlacedCloud[], drift: { x: number; y: number }): number {
+function layClouds(bounds: Vector4[], puffs: Vector4[], lives: number[], bases: number[], shows: number[], placed: readonly PlacedCloud[], drift: { x: number; y: number },
+  about: { x: number; y: number }): number {
   let slot = 0;
   for (const cloud of placed) {
     if (slot >= MAX_CLOUDS) break;
-    // Where the wind has carried it, thinning away near the edge it wraps round.
-    const at = driftedCloud(cloud, drift);
+    // Where the wind has carried it, its repeat round the view, thinning away near the edge it wraps round.
+    const at = driftedCloud(cloud, drift, about);
     const height = cloud.height;
     layOne(slot, 1_000_003 + cloud.id * 7919, at.x, -at.y, height, cloud.size, cloud.yaw, cloud.density, 1, bounds, puffs, lives);
     shows[slot] = at.show;
@@ -557,7 +566,8 @@ const CLOUD_SHADOWS = {
     tGroundFog: { value: null as Texture | null },
     uGroundFog: { value: new Vector4() },
     uGroundFogSlab: { value: new Vector2() },
-    uMapHalf: { value: MAP_HALF },
+    // The fog's window (`fogLayer.ts`): its low corner (world x, y) and side; the texture repeats over it.
+    uFogWindow: { value: new Vector3(0, 0, 1) },
     // How far in front of the camera the view's equivalent eye stands, units (`setAtmosphere`): 0 in perspective
     uEyeShift: { value: 0 },
     // The void round the map: its deep blue, the paler air towards the horizon, and the abyss below
@@ -612,7 +622,7 @@ const CLOUD_SHADOWS = {
     uniform sampler2D tGroundFog;
     uniform vec4 uGroundFog;
     uniform vec2 uGroundFogSlab;
-    uniform float uMapHalf;
+    uniform vec3 uFogWindow;
     uniform float uEyeShift;
     // Height over the ground's base level.
     float altitude(vec3 p) {
@@ -824,8 +834,10 @@ const CLOUD_SHADOWS = {
           for (int i = 0; i < FOG_STEPS; i++) {
             float t = t0 + (float(i) + jitterF) * stepLen;
             vec3 q = ro + rd * t;
-            vec2 uv = vec2(q.x + uMapHalf, -q.z + uMapHalf) / (2.0 * uMapHalf);
-            if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) continue;
+            vec2 fogAt = vec2(q.x, -q.z);
+            vec2 fogLocal = (fogAt - uFogWindow.xy) / uFogWindow.z;
+            if (fogLocal.x < 0.0 || fogLocal.y < 0.0 || fogLocal.x > 1.0 || fogLocal.y > 1.0) continue;
+            vec2 uv = fogAt / uFogWindow.z;
             vec4 m = texture2D(tGroundFog, uv);
             if (m.r < 0.003) continue;
             float over = q.y - m.g;

@@ -78,7 +78,8 @@ export const IMPOSTOR_VERTEX_PARS = /* glsl */ `
   ${IMPOSTOR_FRAMES_GLSL}
   attribute vec4 aSpot;
   attribute vec4 aLook;
-  uniform float uFade[FAR_PLATES];
+  // Each far plate's fade by its slot, four a vector (a float array spends a whole vector on each).
+  uniform vec4 uFade[FAR_FADES];
   uniform float uScale;
   uniform vec4 uThin;
   uniform vec3 uCentre[FAR_MODELS];
@@ -102,7 +103,10 @@ export const IMPOSTOR_VERTEX = /* glsl */ `
   {
     float plateFloat = floor(aLook.x / 8.0 + 0.01);
     int model = int(aLook.x - plateFloat * 8.0 + 0.5);
-    float fade = uFade[int(plateFloat)];
+    int slot = int(plateFloat);
+    vec4 fades = uFade[slot / 4];
+    int lane = slot - (slot / 4) * 4;
+    float fade = lane == 0 ? fades.x : lane == 1 ? fades.y : lane == 2 ? fades.z : fades.w;
     float size = aSpot.w;
     // How big the tree is on the screen (a share of its height), in either camera.
     vec4 clip = projectionMatrix * viewMatrix * vec4(aSpot.xyz, 1.0);

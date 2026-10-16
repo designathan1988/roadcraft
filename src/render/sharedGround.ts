@@ -1,4 +1,4 @@
-import { MAP_REGIONS, plateOf } from '@world/bounds';
+import { PLATE_SIZE, plateOf } from '@world/bounds';
 import { type ReliefVersion, reliefHeight } from '@world/terrain';
 import { sampleCorners } from './terrainShaping';
 
@@ -20,8 +20,8 @@ export interface SharedGroundData {
   readonly half: number;
   readonly base: number;
   readonly relief: ReliefVersion | null;
-  /** By plate (`world/bounds.ts` `MAP_REGIONS`). */
-  readonly plates: readonly (SharedArrayBuffer | null)[];
+  /** The plates made, by key (`world/bounds.ts` `plateOf`); a plate not in it is read off the relief. */
+  readonly plates: ReadonlyMap<number, SharedArrayBuffer>;
 }
 
 /** The ground as a building reads it: as drawn, and as it was before the roads cut it. */
@@ -58,7 +58,8 @@ function viewsOf(buffer: SharedArrayBuffer, n: number): PlateHeights {
 
 /** DO NOT copy the plates' heights for the workers: the plate writes its corners into the shared buffer itself, a stroke or a road reaching the workers as it lands, no message */
 export class GroundShare {
-  private readonly buffers: (SharedArrayBuffer | null)[] = MAP_REGIONS.map(() => null);
+  /** The plates made only: the world has no list of plates to hold a slot for each. */
+  private readonly buffers = new Map<number, SharedArrayBuffer>();
   private relief: ReliefVersion | null = null;
   /** What jobs are handed, made again only when a plate is made or let go, or the relief changes. */
   private data: SharedGroundData | null = null;
@@ -67,18 +68,17 @@ export class GroundShare {
   constructor(private readonly n: number, private readonly cell: number, private readonly half: number, private readonly base: number) {}
 
   /** A plate made: the arrays it keeps its corners in, shared (null where memory cannot be shared: the plate makes its own). */
-  open(index: number): PlateHeights | null {
-    if (!this.shared || index < 0 || index >= this.buffers.length) return null;
+  open(key: number): PlateHeights | null {
+    if (!this.shared) return null;
     const buffer = new SharedArrayBuffer(plateBytes(this.n));
-    this.buffers[index] = buffer;
+    this.buffers.set(key, buffer);
     this.data = null;
     return viewsOf(buffer, this.n);
   }
 
   /** A plate let go: read off the relief from now on, as the page reads it. */
-  close(index: number): void {
-    if (!this.buffers[index]) return;
-    this.buffers[index] = null;
+  close(key: number): void {
+    if (!this.buffers.delete(key)) return;
     this.data = null;
   }
 
@@ -91,31 +91,31 @@ export class GroundShare {
   /** What a job reads the ground from; null where memory cannot be shared. */
   get current(): SharedGroundData | null {
     if (!this.shared) return null;
-    return this.data ??= { n: this.n, cell: this.cell, half: this.half, base: this.base, relief: this.relief, plates: this.buffers.slice() };
+    return this.data ??= { n: this.n, cell: this.cell, half: this.half, base: this.base, relief: this.relief, plates: new Map(this.buffers) };
   }
 }
 
 /** The ground read off the shared plates, point for point as `flatAtlas.ts` `ask` and `terrain.ts` `sampleGrid` read it on the page */
 export function sharedGroundReaders(data: SharedGroundData): GroundReaders {
   const grid = { n: data.n, cell: data.cell, half: data.half };
-  const views: (PlateHeights | null | undefined)[] = data.plates.map(() => undefined);
-  const viewOf = (index: number): PlateHeights | null => {
-    let v = views[index];
+  const views = new Map<number, PlateHeights | null>();
+  const viewOf = (key: number): PlateHeights | null => {
+    let v = views.get(key);
     if (v === undefined) {
-      const buffer = data.plates[index];
-      views[index] = v = buffer ? viewsOf(buffer, data.n) : null;
+      const buffer = data.plates.get(key);
+      views.set(key, v = buffer ? viewsOf(buffer, data.n) : null);
     }
     return v;
   };
   /** A plate not made: the base and the map's own relief (`flatAtlas.ts` `bareAt`). */
   const bare = (x: number, y: number): number => data.base + (data.relief === null ? 0 : reliefHeight(data.relief, x, y));
   const read = (natural: boolean) => (x: number, y: number): number => {
-    const index = plateOf(x, y);
-    const c = MAP_REGIONS[index]!;
-    const lx = x - c.cx, ly = y - c.cy;
-    const v = viewOf(index);
-    // Off the map the page reads the edge plate's stamps; here its relief (no building stands there).
-    if (!v || !(lx >= -data.half && lx <= data.half && ly >= -data.half && ly <= data.half)) return bare(c.cx + lx, c.cy + ly);
+    // The plate and its centre without an object a read: a building's emission reads the ground thousands of times.
+    const pi = Math.floor(x / PLATE_SIZE + 0.5), pj = Math.floor(y / PLATE_SIZE + 0.5);
+    const cx = pi * PLATE_SIZE, cy = pj * PLATE_SIZE;
+    const lx = x - cx, ly = y - cy;
+    const v = viewOf(plateOf(x, y));
+    if (!v || !(lx >= -data.half && lx <= data.half && ly >= -data.half && ly <= data.half)) return bare(cx + lx, cy + ly);
     return natural ? sampleCorners(grid, v.natural, v.naturalFlip, lx, ly) : sampleCorners(grid, v.rendered, v.flip, lx, ly);
   };
   return { groundAt: read(false), naturalAt: read(true) };

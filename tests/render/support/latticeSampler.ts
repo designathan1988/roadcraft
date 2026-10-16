@@ -24,7 +24,7 @@ export function sampleLattice(lattice: LotLattice, x: number, y: number): Lattic
   const data = lattice.data;
   const texel = (a: number, k: number): number => data[a * 4 + k]!;
   void TEXTURE_WIDTH;
-  const gx = (x + lattice.half) / LOT_CELL, gy = (y + lattice.half) / LOT_CELL;
+  const gx = (x - lattice.x0) / LOT_CELL, gy = (y - lattice.y0) / LOT_CELL;
   if (gx < 0 || gy < 0 || gx >= lattice.cellsPerSide || gy >= lattice.cellsPerSide) return null;
   const cx = Math.floor(gx), cy = Math.floor(gy);
   const tx = Math.floor(cx / TILE_CELLS), ty = Math.floor(cy / TILE_CELLS);
@@ -37,7 +37,7 @@ export function sampleLattice(lattice: LotLattice, x: number, y: number): Lattic
   if (count === 0) return null;
   let at = entry >>> 8;
   if (count === 255) { count = texel(at, 0); at += 1; }
-  const px = fround(x + lattice.half - (cx + 0.5) * LOT_CELL), py = fround(y + lattice.half - (cy + 0.5) * LOT_CELL);
+  const px = fround(x - lattice.x0 - (cx + 0.5) * LOT_CELL), py = fround(y - lattice.y0 - (cy + 0.5) * LOT_CELL);
   const records: LatticeHit['records'] = [];
   for (let r = 0; r < count; r++) {
     const hz = texel(at, 2), hw = texel(at, 3);

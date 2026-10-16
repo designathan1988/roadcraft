@@ -162,7 +162,7 @@ export class LandLod {
   readonly rimGeometry = new InstancedBufferGeometry();
   /** Per level, where its morph starts and 1 / its length (the shader's `uLodMorph`). */
   readonly morph = new Float32Array(LOD_LEVELS * 2);
-  /** How far the rim hangs on the west, east, north and south (0: the map's own rim, where the slab stands). */
+  /** How far the rim hangs on the west, east, north and south (0: a side that hangs none). */
   readonly skirt: Vector4;
   private readonly reach = new Float64Array(LOD_LEVELS);
   private readonly patches: InstancedBufferAttribute;

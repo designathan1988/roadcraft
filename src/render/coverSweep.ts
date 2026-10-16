@@ -1,4 +1,4 @@
-import { regionAt } from '@world/bounds';
+import { PLATE_SIZE } from '@world/bounds';
 import type { ChangeRect } from '@world/changes';
 import { m } from '@world/units';
 import { keepCellAt, keepCellRect } from './cellKeeps';
@@ -73,9 +73,11 @@ function scrubClump(x: number, y: number): number {
 /** Whether lattice cell (i, j) of `spacing` lies whole inside one plate: the painted covers' lattice stops at each plate's edge. */
 function insidePlate(i: number, j: number, spacing: number): boolean {
   const x0 = -TERRAIN_HALF + i * spacing, y0 = -TERRAIN_HALF + j * spacing;
-  const plate = regionAt(x0 + spacing / 2, y0 + spacing / 2);
-  return x0 >= plate.cx - plate.half && x0 + spacing <= plate.cx + plate.half
-    && y0 >= plate.cy - plate.half && y0 + spacing <= plate.cy + plate.half;
+  // The plate under the cell's middle (`world/bounds.ts`): its centre worked out, no object a cell.
+  const cx = Math.floor((x0 + spacing / 2) / PLATE_SIZE + 0.5) * PLATE_SIZE, cy = Math.floor((y0 + spacing / 2) / PLATE_SIZE + 0.5) * PLATE_SIZE;
+  const half = PLATE_SIZE / 2;
+  return x0 >= cx - half && x0 + spacing <= cx + half
+    && y0 >= cy - half && y0 + spacing <= cy + half;
 }
 
 /** The lattice cells of `spacing` (anchored at -TERRAIN_HALF) a rectangle reaches: [i0, i1, j0, j1]. */

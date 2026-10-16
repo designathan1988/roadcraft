@@ -52,10 +52,9 @@ import {
 } from '@editor/poles';
 import { blockGridChoice, onRoadGridChange, roadGridShown, signChoice, strikeChoice, zoneColoursShown, paintKind, poleLampMode, poleToolMode, roadWidth, streetscapeKind, fogErase, fogBrush, setFogBrush, gullyErase, treeMode, treeKind, treeBrush, setTreeBrush, cloudMode, cloudBrush, setCloudBrush, elementKind, elementMode, elementBrush, setElementBrush } from '@ui/toolChoices';
 import { TERRAIN_MIN_MS, TerrainBrush, type DabSettings } from '@editor/terrainBrush';
-import { scatterClouds } from '@world/clouds';
+import { CLOUD_SPAN, scatterClouds } from '@world/clouds';
 import { CloudTool } from '@editor/cloudTool';
 import { playThunder } from '@ui/thunder';
-import { MAP_HALF, MAP_SIZE } from '@world/bounds';
 import { blockGridLines, commitBlockGrid } from '@editor/blocks';
 import { m, stepsIn } from '@world/units';
 import { GRID_CELL } from '@world/grid';
@@ -1548,7 +1547,7 @@ if (atmosphere.atmoClouds > 0) {
   if (doc.clouds.length === 0) {
     doc.addClouds(scatterClouds(Math.round((atmosphere.atmoClouds / 100) * 12), {
       size: Math.max(40, atmosphere.atmoCloudThickness * UNITS_PER_METER), height: atmosphere.atmoCloudBase * UNITS_PER_METER, density: 0.8,
-    }, 0.3, MAP_SIZE / 2, [], editRandom(doc, 0, 0)));
+    }, 0.3, CLOUD_SPAN / 2, [], editRandom(doc, 0, 0)));
     persistence.saveSessionSoon(doc, sessionSettings);
   }
   atmosphere.atmoClouds = 0;
@@ -1650,7 +1649,7 @@ const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
     const brush = cloudBrush();
     const laid = scatterClouds(cloudScatter.count, {
       size: brush.size * UNITS_PER_METER, height: brush.height * UNITS_PER_METER, density: brush.density / 100,
-    }, cloudScatter.variation / 100, MAP_SIZE / 2, doc.clouds, editRandom(doc, 0, 0));
+    }, cloudScatter.variation / 100, CLOUD_SPAN / 2, doc.clouds, editRandom(doc, 0, 0));
     if (doc.addClouds(laid) < cloudScatter.count) flashHint('hint.cloud.full');
   }),
 };
@@ -2486,7 +2485,14 @@ function simShowsMotion(): boolean {
 
 /** The same hints as `drawOverlay`, projected instead of transformed. */
 /** Draws a planned pole run onto the overlay. */
-/** The map's rectangle the screen can show */
+/** How far from the view's centre the screen's ground is read, each way: the far ground's ring (`flatAtlas.ts`, 7 plates), the world having no edge to stop at. */
+const SCREEN_REACH = m(7_168);
+/** The square round the view's centre the screen's ground is held to. */
+function screenReach(): ChangeRect {
+  const c = view.centre;
+  return [c.x - SCREEN_REACH, c.y - SCREEN_REACH, c.x + SCREEN_REACH, c.y + SCREEN_REACH];
+}
+/** The world's rectangle the screen can show */
 function groundOnScreen(w: number, h: number): ChangeRect {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const top = surfaceTop();
@@ -2497,13 +2503,14 @@ function groundOnScreen(w: number, h: number): ChangeRect {
       let p: Vec2;
       if (ray) {
         const t = (z - ray.oz) / ray.dz;
-        if (!(ray.dz < 0) || !(t >= 0) || !Number.isFinite(t)) return [-MAP_HALF, -MAP_HALF, MAP_HALF, MAP_HALF];
+        if (!(ray.dz < 0) || !(t >= 0) || !Number.isFinite(t)) return screenReach();
         p = { x: ray.ox + ray.dx * t, y: ray.oy + ray.dy * t };
       } else p = view.toWorldAt(px, py, z, w, h);
       x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
     }
   }
-  return [Math.max(-MAP_HALF, x0), Math.max(-MAP_HALF, y0), Math.min(MAP_HALF, x1), Math.min(MAP_HALF, y1)];
+  const [rx0, ry0, rx1, ry1] = screenReach();
+  return [Math.max(rx0, x0), Math.max(ry0, y0), Math.min(rx1, x1), Math.min(ry1, y1)];
 }
 
 /** Pick radius for a barrier under a shift-click, screen pixels. */

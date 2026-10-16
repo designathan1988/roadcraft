@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type LargeStore, MAX_INTENSITY, Persistence, QUARANTINE_KEY, isSerializedDoc, normalizeSettings } from '@editor/persistence';
 import { RoadDoc } from '@world/doc';
-import { insideMap } from '@world/bounds';
+import { insideWorld } from '@world/bounds';
 import { RELIEF_FLAT, RELIEF_LEGACY, RELIEF_NATURAL } from '@world/terrain';
 
 /** The boundary where data from OUTSIDE enters the model: the autosave and imported files. */
@@ -65,9 +65,9 @@ describe('the load boundary', () => {
     expect(isSerializedDoc(doc)).toBe(false);
   });
 
-  it('loads a file position back onto the map', () => {
+  it('loads a broken file position back within the world\'s reach', () => {
     const doc = RoadDoc.fromJSON({ ...base(), nodes: [{ id: 1, x: 1e9, y: -1e9 }, { id: 2, x: 0, y: 0 }] } as never);
-    for (const node of doc.nodes.values()) expect(insideMap(node)).toBe(true);
+    for (const node of doc.nodes.values()) expect(insideWorld(node)).toBe(true);
   });
 });
 
@@ -189,14 +189,14 @@ describe('loaded settings', () => {
 });
 
 describe('buildings from a file', () => {
-  it('are pulled onto the map and their base kept below the top storey', () => {
+  it('are pulled within the world\'s reach and their base kept below the top storey', () => {
     const doc = RoadDoc.fromJSON({ ...base(), buildings: [{
       schema: 2, id: 1, x: 1e12, y: -5, rotation: 0, use: 'residential', module: 7.5, groundHeight: 9, storeyHeight: 7.75,
       palette: 0, volumes: [{ id: 1, x: 0, y: 0, w: 20, d: 20, base: 99_999, roof: 'flat', storeys: [{ facade: { fill: 'window' } }] }],
       cores: [], nextVolumeId: 2,
     }] } as never);
     const building = [...doc.buildings.all()][0]!;
-    expect(insideMap(building)).toBe(true);
+    expect(insideWorld(building)).toBe(true);
     expect(building.volumes[0]!.base).toBeLessThan(60);
   });
 });

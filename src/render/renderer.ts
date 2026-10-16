@@ -87,7 +87,7 @@ import { buildStructureDetails } from './structures';
 import { type StructureCells, createStructureCells } from './structureCells';
 import { createExhaust } from './exhaust';
 import { applyWear, createWearField } from './wear';
-import { MAP_HALF, MAP_REGIONS, MAP_SIZE, regionAt } from '@world/bounds';
+import { PLATE_SIZE, platesOver, plateRegion } from '@world/bounds';
 import { createSignLayer } from './signLayer';
 import { type PlantCells, createCoverCells, createTreeCells } from './plantCells';
 import { paintCatalogue } from './markings';
@@ -517,10 +517,10 @@ export function createSceneRenderer(
   });
   const materials: SceneMaterials = createMaterials(anisotropy);
   // Streets and footways wear with use (`wear.ts`).
-  const wear = createWearField(MAP_SIZE);
+  const wear = createWearField();
   let lastWall = -1;
-  applyWear(materials.asphalt, wear, MAP_SIZE, 0, 'asphalt');
-  applyWear(materials.footway, wear, MAP_SIZE, 1, 'footway');
+  applyWear(materials.asphalt, wear, 0, 'asphalt');
+  applyWear(materials.footway, wear, 1, 'footway');
   materials.setDetail(quality.surfaceDetail);
   // Every prop model and material, built once.
   const sceneryKit: SceneryKit = createSceneryKit();
@@ -1122,6 +1122,14 @@ export function createSceneRenderer(
     known.set(key, value);
     return value;
   };
+  /** The plates whose blocks a comparison reads: those the boxes reach, or (no boxes) the plates drawn in full. */
+  const platesUnder = (where: readonly { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number }[] | null):
+    { readonly cx: number; readonly cy: number; readonly half: number }[] => {
+    if (!where) return terrain.parts.map((p) => ({ cx: p.cx, cy: p.cy, half: TERRAIN_HALF }));
+    const keys = new Set<number>();
+    for (const r of where) for (const k of platesOver([r.minX, r.minY, r.maxX, r.maxY])) keys.add(k);
+    return [...keys].map(plateRegion);
+  };
   /** Two solves compared block by block (`compareSolves`): `blocks` once `ready`, with the page's time it took. */
   interface BlockCompare { blocks: [number, number, number, number][]; ready: boolean; ms: number }
   /** The blocks whose ground two solves of the roads shape differently, or whose decks differ */
@@ -1132,8 +1140,8 @@ export function createSceneRenderer(
     // Only blocks a road that differs reaches can differ (`differences`)
     const where = after.differences?.(before) ?? null;
     if (!where || where.length) {
-      // Every plate's own blocks.
-      for (const plate of MAP_REGIONS) {
+      // The blocks of the plates the differences reach; not knowing where, of the plates drawn in full (only their ground is shaped, `shapeToRoads`), never of a world's plates.
+      for (const plate of platesUnder(where)) {
         for (let x = plate.cx - plate.half; x < plate.cx + plate.half; x += SHAPE_BLOCK) {
           for (let y = plate.cy - plate.half; y < plate.cy + plate.half; y += SHAPE_BLOCK) {
             const x1 = x + SHAPE_BLOCK, y1 = y + SHAPE_BLOCK;
@@ -1412,7 +1420,8 @@ export function createSceneRenderer(
   /** The shaping blocks a world box reaches, on the grid `changedBlocks` uses. */
   const blocksOver = (box: Rect): [number, number, number, number][] => {
     const out: [number, number, number, number][] = [];
-    for (const plate of MAP_REGIONS) {
+    for (const key of platesOver(box)) {
+      const plate = plateRegion(key);
       const left = plate.cx - plate.half, right = plate.cx + plate.half;
       const bottom = plate.cy - plate.half, top = plate.cy + plate.half;
       if (box[2] <= left || box[0] >= right || box[3] <= bottom || box[1] >= top) continue;
@@ -1490,7 +1499,7 @@ export function createSceneRenderer(
       { ms: solved.elevationMs + (own?.ms ?? 0), detail: changed ? `${changed.length} blocks of ${SHAPE_BLOCK} u` : 'whole map' }) || solved.cause;
     const joined = compares.includes(null) ? null : compares.flatMap((c) => c!.blocks);
     // The roads' own heights (the footway, the carriageway) moved where the solve did
-    const blocks = joined !== null && joined.length * SHAPE_BLOCK * SHAPE_BLOCK < MAP_SIZE * MAP_SIZE * 0.25 ? joined : null;
+    const blocks = joined !== null && joined.length * SHAPE_BLOCK * SHAPE_BLOCK < terrain.parts.length * PLATE_SIZE * PLATE_SIZE * 0.25 ? joined : null;
     if (blocks === null) {
       const shaping = shapeGround(net);
       while (!shaping.landed) { landShapes(); if (shaping.landed) break; yield 'wait'; }
@@ -1883,8 +1892,9 @@ export function createSceneRenderer(
   };
   /** Water, a cliff, a road or a building: nothing of the ecosystem grows there. */
   const natureOpen = (net: Network, x: number, y: number, z: number): boolean => {
-    const plate = regionAt(x, y);
-    if (Math.abs(x - plate.cx) > plate.half - m(2) || Math.abs(y - plate.cy) > plate.half - m(2)) return false;
+    // Off its plate's edge strip (the plate's centre worked out, no object a candidate).
+    const cx = Math.floor(x / PLATE_SIZE + 0.5) * PLATE_SIZE, cy = Math.floor(y / PLATE_SIZE + 0.5) * PLATE_SIZE;
+    if (Math.abs(x - cx) > PLATE_SIZE / 2 - m(2) || Math.abs(y - cy) > PLATE_SIZE / 2 - m(2)) return false;
     const level = terrain.shoreLevelAt(x, y);
     if (level !== null && level > z - m(0.3)) return false;
     const g = m(2);
@@ -2022,8 +2032,8 @@ export function createSceneRenderer(
       onAssetsReady();
     },
     setGrid(on) {
-      // Drawn by the ground's own material (`TERRAIN_GRID`): always on it, over the whole map, in world units.
-      TERRAIN_GRID.value = [GRID_CELL, on ? 0.08 : 0, MAP_HALF];
+      // Drawn by the ground's own material (`TERRAIN_GRID`): always on it, over any ground, in world units.
+      TERRAIN_GRID.value = [GRID_CELL, on ? 0.08 : 0];
       if (on !== gridWanted) { gridWanted = on; onAssetsReady(); }
     },
     shootBody: (a, b) => fx?.shootBody(a, b) ?? null,
@@ -2581,6 +2591,7 @@ export function createSceneRenderer(
       exhaust.tick(windClock, renderer.domElement.height / 2);
       fx?.update(wallDt, fxDt);
       for (const ped of sim.pedViews) if (ped.v > 0.05) wear.feet(ped.x, ped.y, wallDt);
+      wear.follow(rig.viewport.centre.x, rig.viewport.centre.y);
       wear.tick(wallDt);
       // The rooms cut open are lit from inside: brighter as the day goes.
       const key = cutSpec ? `${cutSpec.level}@${cutSpec.x},${cutSpec.y}:${net.doc.buildings.revision}` : '';
@@ -2757,6 +2768,11 @@ export function createSceneRenderer(
           fogTerrainSeen = doc.terrainRevision;
           performance.measure('hitch:fog', { start: startedAt, end: performance.now() });
         }
+        if (!landHeld) {
+          // The fog's window kept round where the view looks (`fogLayer.ts`): only the texels that came in written.
+          const followed = fogField.follow(rig.viewport.centre.x, rig.viewport.centre.y, doc.fogDabs, (x, y) => terrain.renderedHeightAt(x, y));
+          if (followed) fogLayer = followed.any ? followed : null;
+        }
         const f = doc.fogSettings;
         post.setPlacedClouds(doc.clouds);
         // The elements: again only in the cells where they or the ground under them changed (`elements.ts`).
@@ -2780,7 +2796,7 @@ export function createSceneRenderer(
           performance.measure('hitch:elements', { start: startedAt, end: performance.now() });
         }
         elementLayer?.emit(Math.min(0.1, Math.max(0, delta)), rig.camera.position, exhaust);
-        post.setGroundFog(fogLayer?.any ? { texture: fogLayer.texture, low: fogLayer.low, high: fogLayer.high, density: f.density } : null);
+        post.setGroundFog(fogLayer?.any ? { texture: fogLayer.texture, low: fogLayer.low, high: fogLayer.high, density: f.density, window: fogLayer.window } : null);
         fogMoving = !!fogLayer?.any;
         placedCloudsShown = doc.clouds.length > 0 || !!elementLayer?.hasEffects;
       }

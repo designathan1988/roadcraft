@@ -3,7 +3,7 @@ import type { Aabb } from '@core/aabb';
 import type { Polyline } from '@core/polyline';
 import type { Vec2 } from '@core/vec2';
 import { pointInPolygon } from '@core/polygon';
-import { insideMap } from '../bounds';
+import { insideWorld } from '../bounds';
 import type { ChangeRect } from '../changes';
 import type { RoadDoc } from '../doc';
 import type { NodeId, SegmentId } from '../ids';
@@ -110,8 +110,8 @@ export function siteOf(ctx: SiteContext): SiteReads {
   return { neighbours: storeNeighbours(ctx.doc.buildings), net: ctx.net, groundAt: ctx.groundAt, ...(ctx.pavedAt ? { pavedAt: ctx.pavedAt } : {}) };
 }
 
-/** Nothing the player builds may come closer than this to the map's rim. */
-const BUILDING_MAP_MARGIN = m(3.2);
+/** Nothing the player builds may come closer than this to the world's reach (`bounds.ts` WORLD_HALF): there is no map rim. */
+const BUILDING_WORLD_MARGIN = m(3.2);
 /** Gap kept between a footprint and the back of a footway: next to nothing. */
 export const ROAD_CLEARANCE = m(0.008);
 /** How far two buildings' volumes may run into each other at a shared party wall, world units (20 cm). */
@@ -211,7 +211,7 @@ export function validateOn(
 
   const box = buildingBounds(b);
   // On the world: the plates of the ground are one plane, so a building may stand across the line between two of them.
-  if (!insideMap({ x: box.minX, y: box.minY }, BUILDING_MAP_MARGIN) || !insideMap({ x: box.maxX, y: box.maxY }, BUILDING_MAP_MARGIN)) return 'bounds';
+  if (!insideWorld({ x: box.minX, y: box.minY }, BUILDING_WORLD_MARGIN) || !insideWorld({ x: box.maxX, y: box.maxY }, BUILDING_WORLD_MARGIN)) return 'bounds';
 
   const rects = [...footprintRects(b, -TOUCH), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
   const party = [...footprintRects(b, -PARTY_WALL), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];

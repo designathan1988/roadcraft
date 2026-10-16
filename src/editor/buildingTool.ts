@@ -17,7 +17,6 @@ import { BuildingFloors } from './buildingFloors';
 import { edgeFrame, localFootprint, overlapArea } from '@world/buildings/footprints';
 import { GRID } from '@world/buildings/geometry';
 import { METERS_PER_UNIT, m } from '@world/units';
-import { MAP_HALF } from '@world/bounds';
 import { MIN_SIZE, topLevel, baysOn, footprintBox, levelElevation, levelHeight, liftAt, localDirToWorld, localToWorld, reliefAt, volumeElevation, volumeLift, worldToLocal, worldToLocalAt } from '@world/buildings/geometry';
 import { opSetLift, snapLift } from '@world/buildings/splitLevel';
 import { type Handle, buildingHandles } from '@world/buildings/handles';
@@ -2645,6 +2644,8 @@ function stripId(b: Building & { id?: BuildingId }): Omit<Building, 'id'> {
 const PICK_STEP = m(64);
 /** How far round the ray's track a step looks: a building is picked on its own volumes, inside its stored box. */
 const PICK_PAD = m(2);
+/** How far along the ground the ray is walked: the deepest ground a view takes in (a low view zoomed out, `isoViewport.ts`), the world having no edge to stop it. */
+const PICK_REACH = m(16_384);
 
 /** DO NOT copy `buildings.all()` here: every move of the pointer over the map copied and tested the whole city (audit A9). */
 export function pickAlongRay(
@@ -2664,18 +2665,8 @@ export function pickAlongRay(
   const speed = Math.hypot(ray.dx, ray.dy);
   // Looking straight down: the ray's track is a point.
   if (speed < 1e-9) return pickBuilding(fresh([ray.ox - PICK_PAD, ray.oy - PICK_PAD, ray.ox + PICK_PAD, ray.oy + PICK_PAD]), ray, floorOf);
-  // The stretch of the ray (t >= 0) over the map, slab by slab.
-  let t0 = 0, t1 = Infinity;
-  for (const [o, d] of [[ray.ox, ray.dx], [ray.oy, ray.dy]] as const) {
-    if (Math.abs(d) < 1e-12) {
-      if (o < -MAP_HALF - PICK_PAD || o > MAP_HALF + PICK_PAD) return null;
-      continue;
-    }
-    const a = (-MAP_HALF - PICK_PAD - o) / d, b = (MAP_HALF + PICK_PAD - o) / d;
-    t0 = Math.max(t0, Math.min(a, b));
-    t1 = Math.min(t1, Math.max(a, b));
-  }
-  if (!(t0 <= t1)) return null;
+  // The stretch of the ray (t >= 0) the view can show: no map edge to stop it, the farthest ground a view takes in.
+  const t0 = 0, t1 = PICK_REACH / speed;
   const step = PICK_STEP / speed;
   let best: BuildingHit | null = null;
   for (let ta = t0; ta <= t1; ta += step) {

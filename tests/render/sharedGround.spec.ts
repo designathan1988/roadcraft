@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MAP_REGIONS, PLATE_SIZE, plateOf } from '@world/bounds';
+import { PLATE_SIZE, plateOf, plateRegion } from '@world/bounds';
 import { cellDiagonal } from '@world/groundPatch';
 import { RELIEF_NATURAL, reliefHeight } from '@world/terrain';
 import { GroundShare, sharedGroundReaders } from '@render/sharedGround';
@@ -37,7 +37,7 @@ describe('the ground in shared memory', () => {
     /** The page's reads: the plate's surface where it is made, the base and the relief elsewhere. */
     const page = (natural: boolean, x: number, y: number): number => {
       const p = plateOf(x, y);
-      const r = MAP_REGIONS[p]!;
+      const r = plateRegion(p);
       const lx = x - r.cx, ly = y - r.cy;
       if (p !== centre) return BASE + reliefHeight(RELIEF_NATURAL, r.cx + lx, r.cy + ly);
       return natural ? sampleCorners(grid, plate.natural, plate.naturalFlip, lx, ly) : sampleCorners(grid, plate.rendered, plate.flip, lx, ly);
@@ -63,11 +63,29 @@ describe('the ground in shared memory', () => {
     expect(sharedGroundReaders(share.current!).groundAt(10, 20)).toBe(BASE + reliefHeight(RELIEF_NATURAL, 10, 20));
   });
 
-  it('is only handed out where memory can be shared', () => {
+  it('is only handed out where memory can be shared, and holds only the plates made', () => {
     const share = new GroundShare(N, CELL, HALF, BASE);
-    expect(share.current?.plates).toHaveLength(MAP_REGIONS.length);
+    // No slot per plate of a map: the world has none.
+    expect(share.current?.plates.size).toBe(0);
     expect(share.current).toBe(share.current);
-    share.open(0);
-    expect(share.current?.plates[0]).toBeInstanceOf(SharedArrayBuffer);
+    const far = plateOf(PLATE_SIZE * 300, -PLATE_SIZE * 700);
+    share.open(far);
+    expect(share.current?.plates.get(far)).toBeInstanceOf(SharedArrayBuffer);
+    expect(share.current?.plates.size).toBe(1);
+  });
+
+  it('reads a plate made far from the origin off its own corners', () => {
+    const share = new GroundShare(N, CELL, HALF, BASE);
+    share.setRelief(RELIEF_NATURAL);
+    const key = plateOf(PLATE_SIZE * 1200, PLATE_SIZE * -900);
+    const r = plateRegion(key);
+    const plate = share.open(key)!;
+    fill(plate.rendered, plate.flip, 3);
+    fill(plate.natural, plate.naturalFlip, 1);
+    const reads = sharedGroundReaders(share.current!);
+    for (const [lx, ly] of [[0, 0], [-300.5, 200.25], [HALF - 1, -HALF + 1]] as const) {
+      expect(reads.groundAt(r.cx + lx, r.cy + ly)).toBe(sampleCorners(grid, plate.rendered, plate.flip, lx, ly));
+      expect(reads.naturalAt(r.cx + lx, r.cy + ly)).toBe(sampleCorners(grid, plate.natural, plate.naturalFlip, lx, ly));
+    }
   });
 });

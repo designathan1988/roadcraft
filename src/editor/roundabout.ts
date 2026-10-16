@@ -1,6 +1,6 @@
 import { shapeFromControl } from '@core/bezier';
 import type { Vec2 } from '@core/vec2';
-import { insideMap, MAP_MARGIN } from '@world/bounds';
+import { insideWorld } from '@world/bounds';
 import type { RoadDoc } from '@world/doc';
 import type { NodeId, SegmentId } from '@world/ids';
 import { Network } from '@world/network';
@@ -28,8 +28,9 @@ export function commitRoundabout(
     return { committed: false, reason: 'size' };
   }
   const reach = radius + ROUNDABOUT_APPROACH_LENGTH;
-  if (!insideMap({ x: centre.x - reach, y: centre.y - reach }, MAP_MARGIN) ||
-      !insideMap({ x: centre.x + reach, y: centre.y + reach }, MAP_MARGIN)) {
+  // Only the world's reach holds it (`world/bounds.ts`): no map edge.
+  if (!insideWorld({ x: centre.x - reach, y: centre.y - reach }) ||
+      !insideWorld({ x: centre.x + reach, y: centre.y + reach })) {
     return { committed: false, reason: 'bounds' };
   }
   // Refuse instead of silently burying existing roads or leaving unconnected geometric crossings.

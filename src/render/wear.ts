@@ -1,35 +1,45 @@
 import {
-  ClampToEdgeWrapping,
   DataTexture,
   LinearFilter,
+  RepeatWrapping,
   RGBAFormat,
   UnsignedByteType,
+  Vector3,
   type Material,
   type Texture,
   type WebGLProgramParametersWithUniforms,
 } from 'three';
+import { m } from '@world/units';
+import { TorusWindow } from './torusWindow';
 
 /** Wear: streets and footways that age with use (the player's order of 2026-10-05). */
 
-/** Texels across the map: about 0.94 m each on the 4 800-unit map. */
+/** Texels across the window round the view: 5 m each over its 10,240 m (the old map's, so the same wear where it was). */
 const RES = 2048;
+const CELL = m(5);
+/** How far the view goes from the window's middle before it follows (texels): an eighth of it, the texels that leave cleared. */
+const HOLD = RES / 8;
 /** Seconds between uploads of the field to the GPU. */
 const UPLOAD_EVERY = 2;
 
 export interface WearField {
   readonly texture: Texture;
+  /** The window's low corner (world x, y) and side, for the shader (`applyWear`). */
+  readonly window: { readonly value: Vector3 };
   /** A vehicle at (x, y) heading `angle`, `width` across its wheels, for `dt` seconds. */
   wheels(x: number, y: number, angle: number, width: number, dt: number): void;
   /** A walker at (x, y), for `dt` seconds. */
   feet(x: number, y: number, dt: number): void;
+  /** The window kept round where the view looks: wear is only kept near it (the traffic it shows is the micro window's). */
+  follow(x: number, y: number): void;
   /** Uploads the field when it is due. */
   tick(dt: number): void;
   dispose(): void;
 }
 
-export function createWearField(mapSize: number): WearField {
-  const half = mapSize / 2;
-  const cell = mapSize / RES;
+/** DO NOT hold a texture over a map: the world has none; the wear lives in a window that wraps round (`torusWindow.ts`) */
+export function createWearField(): WearField {
+  const view = new TorusWindow(RES, CELL);
   const wheels = new Float32Array(RES * RES);
   const feet = new Float32Array(RES * RES);
   // RGBA though only red (wheels) and green (feet) are read: three uploads part of a texture
@@ -40,22 +50,27 @@ export function createWearField(mapSize: number): WearField {
   const rowTo = new Int32Array(RES).fill(-1);
   texture.magFilter = LinearFilter;
   texture.minFilter = LinearFilter;
-  texture.wrapS = ClampToEdgeWrapping;
-  texture.wrapT = ClampToEdgeWrapping;
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
   texture.needsUpdate = true;
+  const frame = { value: new Vector3(view.ox * CELL, view.oy * CELL, view.span) };
   let since = 0;
   let dirty = false;
-  const add = (field: Float32Array, x: number, y: number, amount: number): void => {
-    const gx = Math.floor((x + half) / cell), gy = Math.floor((y + half) / cell);
-    if (gx < 0 || gy < 0 || gx >= RES || gy >= RES) return;
-    const i = gy * RES + gx;
-    field[i] = Math.min(1, field[i]! + amount);
-    if (gx < rowFrom[gy]!) rowFrom[gy] = gx;
-    if (gx > rowTo[gy]!) rowTo[gy] = gx;
+  const touch = (row: number, from: number, to: number): void => {
+    if (from < rowFrom[row]!) rowFrom[row] = from;
+    if (to > rowTo[row]!) rowTo[row] = to;
     dirty = true;
+  };
+  const add = (field: Float32Array, x: number, y: number, amount: number): void => {
+    const i = view.indexAt(x, y);
+    if (i < 0) return;
+    field[i] = Math.min(1, field[i]! + amount);
+    const gx = i % RES;
+    touch((i - gx) / RES, gx, gx);
   };
   return {
     texture,
+    window: frame,
     wheels(x, y, angle, width, dt) {
       // Rubber on the two tracks: a busy lane darkens in a few minutes of traffic, and keeps darkening towards potholes.
       const nx = -Math.sin(angle), ny = Math.cos(angle);
@@ -65,6 +80,22 @@ export function createWearField(mapSize: number): WearField {
     },
     feet(x, y, dt) {
       add(feet, x, y, dt * 0.02);
+    },
+    follow(x, y) {
+      const bands = view.follow(x, y, HOLD);
+      if (!bands) return;
+      frame.value.set(view.ox * CELL, view.oy * CELL, view.span);
+      // The texels that came in held the place that left: cleared, and sent with the next upload.
+      for (const [gx0, gx1, gy0, gy1] of bands) {
+        const c0 = view.texel(gx0), c1 = view.texel(gx1);
+        const wraps = c0 > c1;
+        for (let gy = gy0; gy <= gy1; gy++) {
+          const row = view.texel(gy) * RES;
+          if (wraps) { wheels.fill(0, row + c0, row + RES); feet.fill(0, row + c0, row + RES); wheels.fill(0, row, row + c1 + 1); feet.fill(0, row, row + c1 + 1); }
+          else { wheels.fill(0, row + c0, row + c1 + 1); feet.fill(0, row + c0, row + c1 + 1); }
+          touch(row / RES, wraps ? 0 : c0, wraps ? RES - 1 : c1);
+        }
+      }
     },
     tick(dt) {
       since += dt;
@@ -93,12 +124,12 @@ export function createWearField(mapSize: number): WearField {
 }
 
 /** Makes a road surface material show the wear field: `channel` 0 reads the wheels */
-export function applyWear(material: Material, field: WearField, mapSize: number, channel: 0 | 1, key: string): void {
+export function applyWear(material: Material, field: WearField, channel: 0 | 1, key: string): void {
   const previous = material.onBeforeCompile.bind(material);
   const previousKey = material.customProgramCacheKey.bind(material);
   material.onBeforeCompile = (shader: WebGLProgramParametersWithUniforms, renderer) => {
     previous(shader, renderer);
-    Object.assign(shader.uniforms, { uWear: { value: field.texture }, uWearHalf: { value: mapSize / 2 }, uWearSize: { value: mapSize } });
+    Object.assign(shader.uniforms, { uWear: { value: field.texture }, uWearWindow: field.window });
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWearWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWearWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -106,8 +137,7 @@ export function applyWear(material: Material, field: WearField, mapSize: number,
       .replace('#include <common>', `#include <common>
         varying vec3 vWearWorld;
         uniform sampler2D uWear;
-        uniform float uWearHalf;
-        uniform float uWearSize;
+        uniform vec3 uWearWindow; // low corner x, y and side, world
         float wearHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float wearNoise(vec2 p) {
           vec2 i = floor(p), f = fract(p);
@@ -116,8 +146,11 @@ export function applyWear(material: Material, field: WearField, mapSize: number,
         }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         {
-          vec2 wearUv = vec2((vWearWorld.x + uWearHalf) / uWearSize, (uWearHalf - vWearWorld.z) / uWearSize);
-          float wear = texture2D(uWear, wearUv)[${channel}];
+          // World (x, y) over the window's side: the texture repeats, the window's texels where it wraps (\`torusWindow.ts\`); none off it.
+          vec2 wearAt = vec2(vWearWorld.x, -vWearWorld.z);
+          vec2 wearLocal = (wearAt - uWearWindow.xy) / uWearWindow.z;
+          float wearOn = step(0.0, wearLocal.x) * step(wearLocal.x, 1.0) * step(0.0, wearLocal.y) * step(wearLocal.y, 1.0);
+          float wear = texture2D(uWear, wearAt / uWearWindow.z)[${channel}] * wearOn;
           ${channel === 0 ? `
           // Tyre rubber darkens the tracks; hard-used, the surface breaks up.
           diffuseColor.rgb *= 1.0 - 0.38 * smoothstep(0.0, 0.8, wear);

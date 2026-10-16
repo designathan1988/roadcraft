@@ -223,7 +223,7 @@ describe('the ground and the paving a building cell reads', () => {
     expect(read('src/render/buildings/cell.worker.ts')).toMatch(/runCellJob\(job, workerReads\(job\)\)/);
     // The plates keep their corners in the shared buffers themselves, and the drawn ground carries them.
     const atlas = read('src/render/flatAtlas.ts');
-    expect(atlas).toMatch(/createTerrainSurface\(anisotropy, \{ x: p\.cx, y: p\.cy \}, p\.index, p\.mesh, share\.open\(p\.index\)\)/);
+    expect(atlas).toMatch(/createTerrainSurface\(anisotropy, \{ x: p\.cx, y: p\.cy \}, p\.key, p\.mesh, share\.open\(p\.key\)\)/);
     expect(atlas).toMatch(/renderedHeightAt: Object\.assign\([^\n]*\{ share \}\)/);
     // The renderer's paving packs its roads for a cell.
     expect(read('src/render/renderer.ts')).toMatch(/const pavedHeightAt: PavingSource = Object\.assign\(/);

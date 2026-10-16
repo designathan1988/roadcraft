@@ -26,7 +26,7 @@ import { structuralProblem, validateBuilding } from '@world/buildings/validate';
 import { type Building, asBuildingId, componentAt } from '@world/buildings/types';
 import { isSerializedDoc } from '@editor/persistence';
 import { TUNED_UNIT } from '@world/units';
-import { MAP_HALF } from '@world/bounds';
+import { WORLD_HALF } from '@world/bounds';
 
 /** `n` default modules, world units. */
 const bays = (n: number): number => n * DEFAULT_MODULE;
@@ -228,9 +228,10 @@ describe('validation', () => {
     expect(neighbours).toMatch(/export const neighbourOf = identityMemo\(/);
   });
 
-  it('rejects a building off the map', () => {
+  it('rejects a building past the world\'s reach, and none for being off the old 10 km map', () => {
     const doc = new RoadDoc();
-    expect(validateBuilding({ doc, net: null, groundAt: null }, building({ x: MAP_HALF + 35, y: 0 }))).toBe('bounds');
+    expect(validateBuilding({ doc, net: null, groundAt: null }, building({ x: WORLD_HALF + 35, y: 0 }))).toBe('bounds');
+    expect(validateBuilding({ doc, net: null, groundAt: null }, building({ x: 40_000, y: -250_000 }))).not.toBe('bounds');
   });
 
   it('keeps every built-in preset valid on flat open ground', () => {

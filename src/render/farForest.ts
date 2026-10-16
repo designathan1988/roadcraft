@@ -52,7 +52,9 @@ export interface FarForestStats {
 export type FarWoodsReader = (key: number, ask: FarWoodsAsk, done: (woods: FarWoods) => void, failed: () => void) => void;
 
 interface PlateState {
-  readonly index: number;
+  /** The plate's key (`world/bounds.ts`) and its slot among the far plates (its fade's place in the shader). */
+  readonly key: number;
+  readonly slot: number;
   readonly cx: number;
   readonly cy: number;
   /** What its woods were asked for (land and ecosystem); empty when not asked. */
@@ -64,50 +66,76 @@ interface PlateState {
   fade: number;
 }
 
-/** The far woods' bookkeeping, no `three`: which plates' woods to ask, which are in, each plate's fade. */
+/** The far woods' bookkeeping, no `three`: which plates' woods to ask, which are in, each plate's fade */
 export class FarWoodsBook {
-  readonly plates: PlateState[];
+  /** The far plates there are now, by key (`add`, `drop`): those round the view, never a list of the world's. */
+  readonly plates = new Map<number, PlateState>();
   private landKey = '';
   private asks = 0;
   private land: { relief: ReliefVersion; nature: NatureSettings | null } | null = null;
-  /** Bumped when a plate's woods come in: the instances to write. */
+  /** The keys of the plates whose woods came in (or went with the land): the instances to write. */
   arrived: number[] = [];
+  /** The keys of the plates let go: their meshes to drop. */
+  gone: number[] = [];
   scale = 1;
   /** The trees per 1920 m square the quality tier allows (`setVegetation`). */
   private budget = FAR_WOODS_BUDGET;
 
-  constructor(regions: readonly { readonly cx: number; readonly cy: number }[], private readonly grid: FarWoodsGrid, private readonly read: FarWoodsReader) {
-    this.plates = regions.map((r, index) => ({ index, cx: r.cx, cy: r.cy, asked: '', woods: null, full: false, nearSince: NaN, fade: 1 }));
+  constructor(private readonly grid: FarWoodsGrid, private readonly read: FarWoodsReader) {}
+
+  /** A far plate come into the view's ring, in `slot`: its woods asked once the land is known. */
+  add(key: number, slot: number, cx: number, cy: number): void {
+    if (this.plates.has(key)) return;
+    const p: PlateState = { key, slot, cx, cy, asked: '', woods: null, full: false, nearSince: NaN, fade: 1 };
+    this.plates.set(key, p);
+    this.ask(p);
   }
 
-  /** The land and the ecosystem: when either changed, every plate's woods asked again (in the background, the nearest first). */
+  /** A far plate gone out of the ring: its woods let go (asked again if it comes back). */
+  drop(key: number): void {
+    const p = this.plates.get(key);
+    if (!p) return;
+    // An answer still on its way finds the plate gone.
+    p.asked = '';
+    this.plates.delete(key);
+    this.arrived = this.arrived.filter((k) => k !== key);
+    this.gone.push(key);
+    if (p.woods) this.rescale();
+  }
+
+  /** The land and the ecosystem: when either changed, every far plate's woods asked again (in the background, the nearest first). */
   sync(relief: ReliefVersion, nature: NatureSettings | null, focusX: number, focusY: number): void {
     const key = nature ? `${relief}:${nature.region}:${nature.seed}` : '';
     if (key === this.landKey) return;
     this.landKey = key;
     this.land = { relief, nature };
-    for (const p of this.plates) { p.woods = null; p.asked = ''; }
-    this.arrived = this.plates.map((p) => p.index);
-    if (!nature) return;
-    const order = [...this.plates].sort((a, b) => Math.hypot(a.cx - focusX, a.cy - focusY) - Math.hypot(b.cx - focusX, b.cy - focusY));
-    for (const p of order) {
-      p.asked = key;
-      this.asks++;
-      this.read(p.index, { relief, nature, cx: p.cx, cy: p.cy, grid: this.grid }, (woods) => {
-        if (p.asked !== this.landKey) return;
-        p.woods = woods;
-        this.arrived.push(p.index);
-        this.rescale();
-      }, () => {
-        console.warn('[nature] the far woods of a plate could not be worked out; it stands bare from afar', p.index);
-      });
-    }
+    for (const p of this.plates.values()) { p.woods = null; p.asked = ''; }
+    this.arrived = [...this.plates.keys()];
+    const order = [...this.plates.values()].sort((a, b) => Math.hypot(a.cx - focusX, a.cy - focusY) - Math.hypot(b.cx - focusX, b.cy - focusY));
+    for (const p of order) this.ask(p);
+  }
+
+  /** Asks plate `p`'s woods of the worker for the land known, once. */
+  private ask(p: PlateState): void {
+    const land = this.land;
+    if (!land?.nature || p.asked === this.landKey) return;
+    const key = this.landKey;
+    p.asked = key;
+    this.asks++;
+    this.read(p.key, { relief: land.relief, nature: land.nature, cx: p.cx, cy: p.cy, grid: this.grid }, (woods) => {
+      if (p.asked !== key || this.plates.get(p.key) !== p) return;
+      p.woods = woods;
+      this.arrived.push(p.key);
+      this.rescale();
+    }, () => {
+      console.warn('[nature] the far woods of a plate could not be worked out; it stands bare from afar', p.key);
+    });
   }
 
   /** The woods' scale, as the near sweep's: the budget over the plates' average density. */
   private rescale(): void {
     let sum = 0, n = 0;
-    for (const p of this.plates) if (p.woods) { sum += p.woods.planned; n++; }
+    for (const p of this.plates.values()) if (p.woods) { sum += p.woods.planned; n++; }
     this.scale = n ? woodsScale(sum / n, this.grid.half, this.budget) : 1;
   }
 
@@ -120,9 +148,10 @@ export class FarWoodsBook {
     if (budget === 0) this.scale = 0;
   }
 
-  /** Whether plate `index` is drawn in full, and whether its own ecosystem is in (its near trees can grow). */
-  setFull(index: number, full: boolean, nearReady: boolean, now: number): void {
-    const p = this.plates[index]!;
+  /** Whether plate `key` is drawn in full, and whether its own ecosystem is in (its near trees can grow); a plate not in the ring has no far woods to fade. */
+  setFull(key: number, full: boolean, nearReady: boolean, now: number): void {
+    const p = this.plates.get(key);
+    if (!p) return;
     p.full = full;
     if (!full || !nearReady) p.nearSince = NaN;
     else if (Number.isNaN(p.nearSince)) p.nearSince = now;
@@ -131,7 +160,7 @@ export class FarWoodsBook {
   /** Moves the fades to `now`, seconds; true when any changed. */
   step(now: number): boolean {
     let moved = false;
-    for (const p of this.plates) {
+    for (const p of this.plates.values()) {
       const next = !p.full || Number.isNaN(p.nearSince) ? 1 : 1 - Math.min(1, Math.max(0, (now - p.nearSince - NEAR_GROWS) / DISSOLVE));
       if (next !== p.fade) { p.fade = next; moved = true; }
     }
@@ -140,7 +169,7 @@ export class FarWoodsBook {
 
   get stats(): FarForestStats {
     let ready = 0, trees = 0, drawn = 0;
-    for (const p of this.plates) {
+    for (const p of this.plates.values()) {
       if (p.woods) { ready++; trees += Math.min(SLOT, p.woods.count); }
       if (p.woods && p.fade > 0) drawn++;
     }
@@ -189,8 +218,9 @@ function variants(): Variant[] {
   });
 }
 
-export function createFarForest(regions: readonly { readonly cx: number; readonly cy: number }[], grid: FarWoodsGrid, read: FarWoodsReader): FarForest {
-  const book = new FarWoodsBook(regions, grid, read);
+/** `slots`: the most far plates there are at once (`flatAtlas.ts` the far ring), each fading by its slot. */
+export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWoodsReader): FarForest {
+  const book = new FarWoodsBook(grid, read);
   const models = variants();
   const blocksX = 3, blocksY = Math.ceil(models.length / blocksX);
   const block = FRAMES * FRAME_PX;
@@ -199,7 +229,7 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
   for (const t of atlas.textures) { t.minFilter = LinearMipmapLinearFilter; t.magFilter = LinearFilter; }
   const bake = bakeMaterials();
 
-  const plates = regions.length;
+  const fades = Math.ceil(slots / 4);
   /** How far a tree's picture reaches from its foot, over its height: the model's sphere */
   let reachPerSize = 0;
   for (const v of models) reachPerSize = Math.max(reachPerSize, v.centre.length() + 2 * Math.SQRT2 * v.radius);
@@ -207,7 +237,7 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
   const uniforms = {
     uAlbedo: { value: atlas.textures[0]! },
     uNormals: { value: atlas.textures[1]! },
-    uFade: { value: new Float32Array(plates).fill(1) },
+    uFade: { value: new Float32Array(fades * 4).fill(1) },
     uScale: { value: 1 },
     uThin: { value: new Vector4(THIN_SHARE, THIN_LEAST, blocksX, blocksY) },
     uCentre: { value: models.map((v) => v.centre) },
@@ -216,7 +246,7 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
   const material = new MeshStandardMaterial({ roughness: 0.85, metalness: 0, envMapIntensity: 0.35, alphaToCoverage: true });
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
-    shader.defines = { ...shader.defines, FAR_PLATES: plates, FAR_MODELS: models.length };
+    shader.defines = { ...shader.defines, FAR_FADES: fades, FAR_MODELS: models.length };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${IMPOSTOR_VERTEX_PARS}`)
       .replace('#include <begin_vertex>', IMPOSTOR_VERTEX);
@@ -228,8 +258,8 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
   material.customProgramCacheKey = () => 'far-forest-impostor';
   const object = new Group();
   object.name = 'far-forest-group';
-  /** Each plate's mesh of its trees; null while it has none. */
-  const meshes: (Mesh<InstancedBufferGeometry> | null)[] = regions.map(() => null);
+  /** Each far plate's mesh of its trees, by key, while it has trees. */
+  const meshes = new Map<number, Mesh<InstancedBufferGeometry>>();
   /** A quad drawn once a tree: the instances' corners. */
   const quadOf = (spot: InstancedBufferAttribute, look: InstancedBufferAttribute): InstancedBufferGeometry => {
     const geometry = new InstancedBufferGeometry();
@@ -306,10 +336,11 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
     for (const v of models) { v.body.dispose(); v.cards?.dispose(); }
   };
 
-  /** A plate's trees as its instances: x, height, three's z, size; the model and the plate, the pick, the yaw, the tint. */
-  const arraysOf = (index: number): { aSpot: Float32Array; aLook: Float32Array } | null => {
-    const woods = book.plates[index]!.woods;
-    if (!woods || woods.count === 0 || models.length === 0) return null;
+  /** A plate's trees as its instances: x, height, three's z, size; the model and the plate's slot, the pick, the yaw, the tint. */
+  const arraysOf = (key: number): { aSpot: Float32Array; aLook: Float32Array } | null => {
+    const plate = book.plates.get(key);
+    const woods = plate?.woods;
+    if (!plate || !woods || woods.count === 0 || models.length === 0) return null;
     // More than a plate draws: the lowest picks, the trees that stand first.
     let order: number[] | null = null;
     if (woods.count > SLOT) order = Array.from({ length: woods.count }, (_, i) => i).sort((a, b) => woods.pick[a]! - woods.pick[b]!).slice(0, SLOT);
@@ -322,16 +353,23 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
       const seed = woods.seed[i]!;
       const variety = Math.min(models.length - 1, Math.floor(seed * models.length));
       // The near trees' own tint (`natureTrees.ts`): a little lighter or darker per tree.
-      l[o] = index * 8 + variety; l[o + 1] = woods.pick[i]!; l[o + 2] = woods.yaw[i]!; l[o + 3] = 0.9 + ((seed * 3.77) % 1) * 0.2;
+      l[o] = plate.slot * 8 + variety; l[o + 1] = woods.pick[i]!; l[o + 2] = woods.yaw[i]!; l[o + 3] = 0.9 + ((seed * 3.77) % 1) * 0.2;
     }
     return { aSpot: s, aLook: l };
   };
 
-  /** Plate `index`'s mesh made again from its woods (or let go). */
-  const write = (index: number): void => {
-    const was = meshes[index];
-    if (was) { object.remove(was); was.geometry.dispose(); meshes[index] = null; }
-    const arrays = arraysOf(index);
+  /** Plate `key`'s mesh let go. */
+  const unwrite = (key: number): void => {
+    const was = meshes.get(key);
+    if (!was) return;
+    object.remove(was);
+    was.geometry.dispose();
+    meshes.delete(key);
+  };
+  /** Plate `key`'s mesh made again from its woods (or let go). */
+  const write = (key: number): void => {
+    unwrite(key);
+    const arrays = arraysOf(key);
     if (!arrays) return;
     const count = arrays.aSpot.length / 4;
     const spot = new InstancedBufferAttribute(arrays.aSpot, 4), look = new InstancedBufferAttribute(arrays.aLook, 4);
@@ -352,10 +390,10 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     mesh.matrixAutoUpdate = false;
-    mesh.visible = book.plates[index]!.fade > 0;
+    mesh.visible = (book.plates.get(key)?.fade ?? 0) > 0;
     // The instances live on the GPU only, made again from the plate's woods (`mesh/gpuOnly.ts`).
-    gpuOnlyAttributes(mesh, { aSpot: spot, aLook: look }, () => arraysOf(index) ?? {});
-    meshes[index] = mesh;
+    gpuOnlyAttributes(mesh, { aSpot: spot, aLook: look }, () => arraysOf(key) ?? {});
+    meshes.set(key, mesh);
     object.add(mesh);
   };
 
@@ -366,22 +404,27 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
       if (!baked) takePictures(renderer);
       // The near plants' pictures too, the same way: between draws (`plantImpostors.ts`).
       takeWaitingPictures(renderer);
+      if (book.gone.length) {
+        for (const key of book.gone) unwrite(key);
+        book.gone = [];
+      }
       if (book.arrived.length) {
-        for (const index of book.arrived) write(index);
+        for (const key of book.arrived) write(key);
         book.arrived = [];
       }
       uniforms.uScale.value = book.scale;
-      if (book.step(now)) {
-        for (const p of book.plates) {
-          uniforms.uFade.value[p.index] = p.fade;
-          // Faded out (drawn in full, its own trees grown): not drawn at all.
-          const mesh = meshes[p.index];
-          if (mesh) mesh.visible = p.fade > 0;
-        }
+      book.step(now);
+      // Every far plate's fade into its slot each frame (a few dozen numbers): a slot handed on starts from its new plate's.
+      const fade = uniforms.uFade.value;
+      for (const p of book.plates.values()) {
+        fade[p.slot] = p.fade;
+        // Faded out (drawn in full, its own trees grown): not drawn at all.
+        const mesh = meshes.get(p.key);
+        if (mesh) mesh.visible = p.fade > 0;
       }
     },
     dispose() {
-      for (const mesh of meshes) mesh?.geometry.dispose();
+      for (const mesh of meshes.values()) mesh.geometry.dispose();
       program.geometry.dispose();
       object.clear();
       material.dispose();

@@ -162,7 +162,7 @@ export function blockDigest(solve: BlockRoads, naturalAt: (x: number, y: number)
 
 /** A plate's natural ground as `naturalRenderedHeightAt` reads it: its corners and the diagonals they are drawn with. */
 export interface NaturalPlate {
-  /** The plate's index (`world/bounds.ts` `plateOf`) and centre. */
+  /** The plate's key (`world/bounds.ts` `plateOf`) and centre. */
   readonly index: number;
   readonly cx: number;
   readonly cy: number;

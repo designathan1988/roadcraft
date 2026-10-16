@@ -28,4 +28,31 @@ describe('fog field', () => {
     expect(step.low).toBeCloseTo(whole.low, 6);
     expect(step.high).toBeCloseTo(whole.high, 6);
   });
+
+  it('follows the view anywhere on the world, writing only the texels that came in, as a whole window laid there', () => {
+    const ground = (x: number, y: number): number => Math.sin(x / m(300)) * m(10) + y / m(500);
+    const far = m(250_000);
+    const dabs = [dab(far + m(2600), m(300), m(180)), dab(m(-800), m(400), m(150))];
+    const kept = createFogTexture();
+    const field = createFogField(kept);
+    field.whole(dabs, ground);
+    // A step under its hold: the window stays.
+    expect(field.follow(m(500), 0, dabs, ground)).toBeNull();
+    // Far out, then on a little: the second move writes the bands that came in only.
+    field.follow(far, 0, dabs, ground);
+    const moved = field.follow(far + m(2000), m(-1500), dabs, ground)!;
+    expect(moved.window[0]).toBeLessThan(far + m(2000));
+    expect(moved.window[0] + moved.window[2]).toBeGreaterThan(far + m(2000));
+
+    // A fresh field: the same window laid whole (a jump past its side writes all of it).
+    const fresh = createFogTexture();
+    const other = createFogField(fresh);
+    const laid = other.follow(far + m(2000), m(-1500), dabs, ground)!;
+    expect(laid.window).toEqual(moved.window);
+    expect(Array.from(kept.image.data as Uint16Array)).toEqual(Array.from(fresh.image.data as Uint16Array));
+    expect(moved.any).toBe(true);
+    // A row written in part reads the rest of its slab back from the half floats: to their step.
+    expect(moved.low).toBeCloseTo(laid.low, 1);
+    expect(moved.high).toBeCloseTo(laid.high, 1);
+  });
 });

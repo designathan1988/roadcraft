@@ -135,7 +135,13 @@ export class LotLattice {
   /** The whole texture to send (it grew, or was compacted). */
   private wholeChanged = true;
 
-  constructor(readonly half: number, initialRows = 16) {
+  /** The frame's low corner (world x, y): a square of `2 half` centred on (`cx`, `cy`), anywhere on the world. */
+  readonly x0: number;
+  readonly y0: number;
+
+  constructor(readonly half: number, initialRows = 16, cx = 0, cy = 0) {
+    this.x0 = cx - half;
+    this.y0 = cy - half;
     this.cellsPerSide = Math.ceil((2 * half) / LOT_CELL);
     this.tilesPerSide = Math.ceil(this.cellsPerSide / TILE_CELLS);
     this.tableTexels = Math.ceil((this.tilesPerSide * this.tilesPerSide) / 4);
@@ -233,14 +239,14 @@ export class LotLattice {
       if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
     const n = this.cellsPerSide;
-    const cx0 = Math.max(0, Math.floor((x0 - reach + this.half) / LOT_CELL));
-    const cy0 = Math.max(0, Math.floor((y0 - reach + this.half) / LOT_CELL));
-    const cx1 = Math.min(n - 1, Math.floor((x1 + reach + this.half) / LOT_CELL));
-    const cy1 = Math.min(n - 1, Math.floor((y1 + reach + this.half) / LOT_CELL));
+    const cx0 = Math.max(0, Math.floor((x0 - reach - this.x0) / LOT_CELL));
+    const cy0 = Math.max(0, Math.floor((y0 - reach - this.y0) / LOT_CELL));
+    const cx1 = Math.min(n - 1, Math.floor((x1 + reach - this.x0) / LOT_CELL));
+    const cy1 = Math.min(n - 1, Math.floor((y1 + reach - this.y0) / LOT_CELL));
     const near: number[] = [];
     for (let cy = cy0; cy <= cy1; cy++) {
       for (let cx = cx0; cx <= cx1; cx++) {
-        const bx0 = cx * LOT_CELL - this.half, by0 = cy * LOT_CELL - this.half;
+        const bx0 = cx * LOT_CELL + this.x0, by0 = cy * LOT_CELL + this.y0;
         const bx1 = bx0 + LOT_CELL, by1 = by0 + LOT_CELL;
         near.length = 0;
         for (let i = 0; i < edges.length; i += 4) {
