@@ -1,7 +1,7 @@
 import { FINISHES, type Finish } from '@world/buildings/materials';
 import { FURNITURE_KINDS, type FurnitureKind } from '@world/buildings/interior';
 import { FACADE_PROP_KINDS } from './facadeProps';
-import type { BuildingChunk, PartBatch, PartKind } from './chunk';
+import type { BuildingChunk, PartBatch, PartKind, RunChunk, ShellChunk } from './chunk';
 import type { MassingChunk } from './massing';
 import { ROOM_FLOATS } from './roomBehind';
 import { LOOK_FLOATS, SHELL_PARTS, SHELL_PART_KINDS } from './shellParts';
@@ -49,16 +49,17 @@ export const snorm16 = (x: number): number => Math.round(Math.max(-1, Math.min(1
 /** Numbers a shell vertex carries in its normal and wear (`normalDecay`) and in its paint (`paint`): four shorts each. */
 export const SHELL_SHORTS = 4;
 
-/** A batch's shells of every finish, one geometry drawn in one call: 28 bytes a vertex, 52 at the far level */
+/** A piece of a batch's shells of every finish, one geometry drawn in one call: 28 bytes a vertex, 52 on the far level's runs of bays with openings */
 interface ShellArrays {
   readonly position: Float32Array;
   /** The normal (x, y, z) and the wear (w), each a signed short over 32767: the uv is worked out from it and the place (`shellParts.ts` `shellUv`), so it needs more than a byte. */
   readonly normalDecay: Int16Array;
   /** The paint's linear rgb (tone and grime in it) over `COLOUR_RANGE` and the finish id (`PAINT_ATTRIBUTE`), unsigned shorts. */
   readonly paint: Uint16Array;
+  /** 16 bits: a piece's vertices fit them (`SHELL_PIECE`), but for a single building larger than that. */
   readonly index: Uint16Array | Uint32Array;
   readonly bounds: Bounds;
-  /** The far level only (`emitChunk` `far`): each vertex's bay width and storey height (`FACADE_FLOATS`), its grid (`FACADE_GRID` shorts) and its opening (`FACADE_BYTES`, `facadeLevel.ts`). */
+  /** The far level's runs of bays with openings only (`RunChunk`): each vertex's bay width and storey height (`FACADE_FLOATS`), its grid (`FACADE_GRID` shorts) and its opening (`FACADE_BYTES`, `facadeLevel.ts`). */
   readonly facade?: Float32Array;
   readonly grid?: Int16Array;
   readonly opening?: Uint8Array;
@@ -77,8 +78,8 @@ interface InstanceArrays {
 }
 
 export interface CellArrays {
-  /** Every finish's shells as one set of arrays; null when the batch takes none or has none. */
-  readonly shell: ShellArrays | null;
+  /** Every finish's shells in pieces of whole buildings whose vertices fit 16-bit indices, then the far level's runs of bays with openings in pieces of their own; none when the batch takes none or has none. */
+  readonly shells: readonly ShellArrays[];
   readonly parts: Readonly<Partial<Record<PartKind, InstanceArrays>>>;
   readonly furniture: Readonly<Partial<Record<FurnitureKind, InstanceArrays>>>;
 }
@@ -92,8 +93,7 @@ export interface KitBoxes {
 /** The batch of `chunks` that `selection` takes, as arrays. */
 export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSelection, boxes: KitBoxes): CellArrays {
   const { ghost, dim } = selection;
-  const merged = selection.shells ? shellArrays(chunks) : null;
-  const shell = merged ? { ...merged, bounds: shellBounds(merged.position) } : null;
+  const shells = selection.shells ? [...shellPieces(chunks, (c) => c.shells), ...shellPieces(chunks, (c) => c.runs)] : [];
   const parts: Partial<Record<PartKind, InstanceArrays>> = {};
   for (const kind of selection.parts) {
     // A lantern's light on the wall is light, not a part: no ghost or faded copy of it.
@@ -121,7 +121,7 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
       furniture[kind] = { count, instanceMatrix, bounds: instanceBounds(instanceMatrix, count, box) };
     }
   }
-  return { shell, parts, furniture };
+  return { shells, parts, furniture };
 }
 
 /** Floats per vertex of the far level's window grid (`buildingMesh.ts` `FacadeStamp`): one bay's width and one storey's height. */
@@ -182,8 +182,7 @@ export const cellMassBuffers = (c: CellMass): ArrayBuffer[] =>
 /** What a batch sends to the GPU, in bytes: every array but the bounds (kept on the page), the kit's shared geometry not counted. */
 export function cellBytes(arrays: CellArrays): number {
   let bytes = 0;
-  const s = arrays.shell;
-  if (s) bytes += s.position.byteLength + s.normalDecay.byteLength + s.paint.byteLength + s.index.byteLength + (s.facade?.byteLength ?? 0) + (s.grid?.byteLength ?? 0) + (s.opening?.byteLength ?? 0);
+  for (const s of arrays.shells) bytes += s.position.byteLength + s.normalDecay.byteLength + s.paint.byteLength + s.index.byteLength + (s.facade?.byteLength ?? 0) + (s.grid?.byteLength ?? 0) + (s.opening?.byteLength ?? 0);
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
@@ -197,8 +196,7 @@ export function cellBytes(arrays: CellArrays): number {
 /** Every array buffer of a batch: handed over, not copied (MDN, `postMessage` transfer). */
 export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
   const out: ArrayBufferLike[] = [];
-  const s = arrays.shell;
-  if (s) {
+  for (const s of arrays.shells) {
     out.push(s.position.buffer, s.normalDecay.buffer, s.paint.buffer, s.index.buffer, s.bounds.buffer);
     if (s.facade) out.push(s.facade.buffer);
     if (s.grid) out.push(s.grid.buffer);
@@ -214,19 +212,53 @@ export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
   return out as ArrayBuffer[];
 }
 
-/** Every finish's shells of every chunk in one set of arrays, finish by finish in `FINISHES` order (the chunks' arrays, already in the GPU's layout, concatenated; the indices shifted), or null when none has any. */
-function shellArrays(chunks: readonly BuildingChunk[]): Omit<ShellArrays, 'bounds'> | null {
+/** The most vertices a shell piece holds: every index of it fits 16 bits (meshoptimizer's advice: half the index memory and fetch), 65535 left out (WebGL 2.0 spec, "PRIMITIVE_RESTART_FIXED_INDEX is always enabled"). */
+export const SHELL_PIECE = 0xffff;
+
+/** A chunk's shell fragments as a piece reads them: the plain ones, or the far level's runs (with their window grid). */
+type FragmentsOf = (chunk: BuildingChunk) => Readonly<Partial<Record<Finish, ShellChunk | RunChunk>>> | undefined;
+
+/** The vertices of a chunk's fragments, every finish. */
+function chunkVertices(chunk: BuildingChunk, of: FragmentsOf): number {
+  let n = 0;
+  const fragments = of(chunk);
+  if (fragments) for (const finish of FINISHES) n += (fragments[finish]?.position.length ?? 0) / 3;
+  return n;
+}
+
+/** Every chunk's fragments in pieces, the chunks in order, a piece closed before a chunk would take it past `SHELL_PIECE` vertices (a chunk is never cut: a larger one is a piece alone, with 32-bit indices). */
+function shellPieces(chunks: readonly BuildingChunk[], of: FragmentsOf): ShellArrays[] {
+  const pieces: ShellArrays[] = [];
+  let from = 0, vertices = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    const n = chunkVertices(chunks[i]!, of);
+    if (vertices > 0 && vertices + n > SHELL_PIECE) {
+      const piece = shellArrays(chunks.slice(from, i), of);
+      if (piece) pieces.push(piece);
+      from = i;
+      vertices = 0;
+    }
+    vertices += n;
+  }
+  const last = shellArrays(chunks.slice(from), of);
+  if (last) pieces.push(last);
+  return pieces;
+}
+
+/** The fragments of every finish of `chunks` in one set of arrays, finish by finish in `FINISHES` order (the chunks' arrays, already in the GPU's layout, concatenated; the indices shifted), or null when none has any. */
+function shellArrays(chunks: readonly BuildingChunk[], of: FragmentsOf): ShellArrays | null {
   let vertices = 0;
   let indices = 0;
-  let far = false;
+  let runs = false;
   for (const chunk of chunks) {
+    const fragments = of(chunk);
+    if (!fragments) continue;
     for (const finish of FINISHES) {
-      const part = chunk.shells[finish];
+      const part = fragments[finish];
       if (!part) continue;
       vertices += part.position.length / 3;
       indices += part.index.length;
-      // The far level's chunks carry their window grid (every one of them, `emitChunk` `far`).
-      if (part.facade) far = true;
+      if ('facade' in part) runs = true;
     }
   }
   if (indices === 0) return null;
@@ -234,27 +266,30 @@ function shellArrays(chunks: readonly BuildingChunk[]): Omit<ShellArrays, 'bound
   const normalDecay = new Int16Array(vertices * SHELL_SHORTS);
   const paint = new Uint16Array(vertices * SHELL_SHORTS);
   const index = indexArray(vertices, indices);
-  const facade = far ? new Float32Array(vertices * FACADE_FLOATS) : undefined;
-  const grid = far ? new Int16Array(vertices * FACADE_GRID) : undefined;
-  const opening = far ? new Uint8Array(vertices * FACADE_BYTES) : undefined;
+  const facade = runs ? new Float32Array(vertices * FACADE_FLOATS) : undefined;
+  const grid = runs ? new Int16Array(vertices * FACADE_GRID) : undefined;
+  const opening = runs ? new Uint8Array(vertices * FACADE_BYTES) : undefined;
   let v = 0;
   let n = 0;
   for (const finish of FINISHES) {
     for (const chunk of chunks) {
-      const part = chunk.shells[finish];
+      const part = of(chunk)?.[finish];
       if (!part) continue;
       position.set(part.position, v * 3);
       normalDecay.set(part.normalDecay, v * SHELL_SHORTS);
       paint.set(part.paint, v * SHELL_SHORTS);
-      if (facade && part.facade) facade.set(part.facade, v * FACADE_FLOATS);
-      if (grid && part.grid) grid.set(part.grid, v * FACADE_GRID);
-      if (opening && part.opening) opening.set(part.opening, v * FACADE_BYTES);
+      if ('facade' in part) {
+        facade?.set(part.facade, v * FACADE_FLOATS);
+        grid?.set(part.grid, v * FACADE_GRID);
+        opening?.set(part.opening, v * FACADE_BYTES);
+      }
       for (let i = 0; i < part.index.length; i++) index[n + i] = (part.index[i] as number) + v;
       v += part.position.length / 3;
       n += part.index.length;
     }
   }
-  return { position, normalDecay, paint, index, ...(facade && grid && opening ? { facade, grid, opening } : {}) };
+  const bounds = shellBounds(position);
+  return { position, normalDecay, paint, index, bounds, ...(facade && grid && opening ? { facade, grid, opening } : {}) };
 }
 
 /** A number in [-1, 1] as a signed byte the GPU reads back normalised (x / 127, WebGL 2 `vertexAttribPointer`). */

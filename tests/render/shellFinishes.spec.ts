@@ -54,7 +54,9 @@ describe("a cell's shells", () => {
   const take = { parts: [] as PartKind[], shells: true, furniture: false, ghost: false, dim: false };
 
   it('are one set of arrays, each vertex tagged with its own finish', () => {
-    const shell = cellArrays(chunks, take, kitBoxes(kit)).shell!;
+    const pieces = cellArrays(chunks, take, kitBoxes(kit)).shells;
+    expect(pieces).toHaveLength(1);
+    const shell = pieces[0]!;
     const finish = finishesOf(shell.paint);
     expect(shell.position.length / 3).toBe(6 * 4);
     expect(finish.length).toBe(6 * 4);
@@ -83,7 +85,7 @@ describe("a cell's shells", () => {
       const mesh = shells[0]!;
       expect(mesh.material).toBe(dim ? kit.dimShell : kit.shellMaterial);
       expect(mesh.geometry.groups).toHaveLength(0);
-      expect(finishesOf(mesh.geometry.getAttribute(PAINT_ATTRIBUTE).array as Uint16Array)).toEqual(finishesOf(arrays.shell!.paint));
+      expect(finishesOf(mesh.geometry.getAttribute(PAINT_ATTRIBUTE).array as Uint16Array)).toEqual(finishesOf(arrays.shells[0]!.paint));
       meshes.dispose();
     }
   });

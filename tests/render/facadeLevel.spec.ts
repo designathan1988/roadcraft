@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { InstancedMesh, InterleavedBufferAttribute } from 'three';
-import { type BuildingChunk, assembleBuildingMeshes, emitChunk, withShellParts } from '@render/buildings/buildingMesh';
+import { type BuildingChunk, type PartBatch, assembleBuildingMeshes, emitChunk, shellPartFaces, withShellParts } from '@render/buildings/buildingMesh';
+import type { ShellChunk } from '@render/buildings/chunk';
 import {
   COLOUR_RANGE, FACADE_BYTES, FACADE_FLOATS, FACADE_GRID, FINISH_ATTRIBUTE, NORMAL_UNIT, PAINT_UNIT, cellArrays, cellBytes, paintShort,
 } from '@render/buildings/cellArrays';
 import { FACADE_FLIP } from '@render/buildings/facadeLevel';
 import { shellUv } from '@render/buildings/shellParts';
 import { PART_KINDS, type PartKind, createBuildingKit } from '@render/buildings/kit';
-import { GROUND_ATTRIBUTE, LOOK_FLOATS, SHELL_PARTS, SHELL_PART_KINDS } from '@render/buildings/shellParts';
+import { GROUND_ATTRIBUTE, LOOK_FLOATS, NO_GROUND, SHELL_PARTS, SHELL_PART_KINDS } from '@render/buildings/shellParts';
 import { FINISHES } from '@world/buildings/materials';
 import { growOnLot } from '@editor/zoning';
 import type { Building } from '@world/buildings/types';
@@ -53,15 +54,16 @@ function bayHash(volume: number, level: number, side: number, index: number, x: 
 /** Every part a unit box: the batch's bounds only, not read here. */
 const unitBoxes = { parts: Object.fromEntries(PART_KINDS.map((k) => [k, [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5]])) as Record<PartKind, number[]>, furniture: {} };
 
-const triangles = (c: BuildingChunk): number => Object.values(c.shells).reduce((n, s) => n + s.index.length / 3, 0);
+/** A chunk's shell fragments, the far level's runs of bays with them. */
+const fragments = (c: BuildingChunk): ShellChunk[] => [...Object.values(c.shells), ...Object.values(c.runs ?? {})];
+const triangles = (c: BuildingChunk): number => fragments(c).reduce((n, s) => n + s.index.length / 3, 0);
 
 /** What the far level shows at a pane of the detail: the window grid there, read as the shader reads it, or null where no wall of it lies. */
 function farAt(far: BuildingChunk, px: number, py: number, pz: number, nx: number, nz: number): { inside: boolean; kind: number; dark: boolean } | null {
   let best: { inside: boolean; kind: number; dark: boolean } | null = null;
   let bestGap = Infinity;
-  for (const s of Object.values(far.shells)) {
+  for (const s of Object.values(far.runs ?? {})) {
     const { position: p, normalDecay, index, facade, grid, opening } = s;
-    if (!facade || !grid || !opening) continue;
     for (let t = 0; t < index.length; t += 3) {
       const a = index[t]!, b = index[t + 1]!, c = index[t + 2]!;
       // The face's normal as the GPU reads it.
@@ -117,13 +119,15 @@ describe('the buildings\' far level', () => {
       for (const kind of ['railing', 'awning', 'louvre', 'brise', 'glassRail', 'column'] as const) expect(l1.parts[kind].count).toBe(detail.parts[kind].count);
       // What is set into a flattened opening is drawn by the shader.
       for (const kind of ['glass', 'glassDark', 'frame', 'door', 'shutter'] as const) expect(l1.parts[kind].count).toBeLessThanOrEqual(detail.parts[kind].count);
-      // Every vertex of the far level has its window grid, and only the far level has one.
-      for (const s of Object.values(l1.shells)) {
-        expect(s.facade!.length).toBe((s.position.length / 3) * FACADE_FLOATS);
-        expect(s.grid!.length).toBe((s.position.length / 3) * FACADE_GRID);
-        expect(s.opening!.length).toBe((s.position.length / 3) * FACADE_BYTES);
+      // Every vertex of a run of bays with openings has its window grid; no other face pays for one, and the detail has none.
+      for (const s of Object.values(l1.runs ?? {})) {
+        expect(s.facade.length).toBe((s.position.length / 3) * FACADE_FLOATS);
+        expect(s.grid.length).toBe((s.position.length / 3) * FACADE_GRID);
+        expect(s.opening.length).toBe((s.position.length / 3) * FACADE_BYTES);
+        for (let i = 2; i < s.grid.length; i += FACADE_GRID) expect(s.grid[i]! & (FACADE_FLIP - 1)).toBeGreaterThan(0);
       }
-      for (const s of Object.values(detail.shells)) expect(s.facade).toBeUndefined();
+      for (const s of [...Object.values(l1.shells), ...Object.values(detail.shells)]) expect('facade' in s).toBe(false);
+      expect(detail.runs).toBeUndefined();
       near += triangles(detail);
       far += triangles(l1);
     }
@@ -162,18 +166,30 @@ describe('the buildings\' far level', () => {
     expect(same / picked).toBeGreaterThan(0.99);
   });
 
-  it('puts a cell\'s far level together as one set of arrays, every finish', () => {
+  it('puts a cell\'s far level together as a plain piece and a piece of runs with their window grid, every finish', () => {
     const chunks = town.slice(0, 6).map((b) => emitChunk(b, groundAt, undefined, groundAt, undefined, true));
     const cell = cellArrays(chunks, { parts: PART_KINDS, shells: true, furniture: false, ghost: false, dim: false }, unitBoxes);
-    const s = cell.shell!;
-    const vertices = s.position.length / 3;
-    expect(s.facade!.length).toBe(vertices * FACADE_FLOATS);
-    expect(s.grid!.length).toBe(vertices * FACADE_GRID);
-    expect(s.opening!.length).toBe(vertices * FACADE_BYTES);
-    expect(s.paint.length).toBe(vertices * 4);
-    let made = 0;
-    for (const c of chunks) for (const part of Object.values(c.shells)) made += part.position.length / 3;
-    expect(vertices).toBe(made);
+    const plain = cell.shells.filter((s) => !s.facade), runs = cell.shells.filter((s) => s.facade);
+    expect(plain.length).toBeGreaterThan(0);
+    expect(runs.length).toBeGreaterThan(0);
+    for (const s of runs) {
+      const vertices = s.position.length / 3;
+      expect(s.facade!.length).toBe(vertices * FACADE_FLOATS);
+      expect(s.grid!.length).toBe(vertices * FACADE_GRID);
+      expect(s.opening!.length).toBe(vertices * FACADE_BYTES);
+      expect(s.paint.length).toBe(vertices * 4);
+    }
+    for (const s of plain) expect(s.grid).toBeUndefined();
+    let made = 0, ran = 0;
+    for (const c of chunks) {
+      for (const part of Object.values(c.shells)) made += part.position.length / 3;
+      for (const part of Object.values(c.runs ?? {})) ran += part.position.length / 3;
+    }
+    const count = (list: typeof plain): number => list.reduce((n, s) => n + s.position.length / 3, 0);
+    expect(count(runs)).toBe(ran);
+    expect(count(plain)).toBe(made);
+    // The runs are a few quads a facade: most of the far level pays no window grid.
+    expect(ran).toBeLessThan(made);
   });
 });
 
@@ -182,7 +198,7 @@ interface Tri { finish: string; c: number[]; n: number[]; rgb: number[]; uv: num
 
 function trianglesOf(c: BuildingChunk): Tri[] {
   const out: Tri[] = [];
-  for (const [finish, s] of Object.entries(c.shells)) {
+  for (const [finish, s] of [...Object.entries(c.shells), ...Object.entries(c.runs ?? {})]) {
     const { position: p, normalDecay: nd, paint, index } = s;
     for (let t = 0; t < index.length; t += 3) {
       const v = [index[t]!, index[t + 1]!, index[t + 2]!];
@@ -228,7 +244,7 @@ function unmatched(a: readonly Tri[], b: readonly Tri[]): Tri[] {
   return out;
 }
 
-const shellTriangles = (c: BuildingChunk): number => Object.values(c.shells).reduce((n, s) => n + s.index.length / 3, 0);
+const shellTriangles = triangles;
 
 describe('the lots\' boxes, the shell\'s parts', () => {
   const town = grownTown();
@@ -327,9 +343,7 @@ describe('the shell\'s compact vertex', () => {
     let checked = 0, offPlane = 0;
     for (const far of [false, true]) {
       const chunks = town.map((b) => emitChunk(b, groundAt, undefined, groundAt, undefined, far));
-      const s = cellArrays(chunks, take, unitBoxes).shell!;
-      const { position: p, normalDecay: nd, index } = s;
-      for (let t = 0; t < index.length; t += 3) {
+      for (const { position: p, normalDecay: nd, index } of cellArrays(chunks, take, unitBoxes).shells) for (let t = 0; t < index.length; t += 3) {
         const v = [index[t]!, index[t + 1]!, index[t + 2]!];
         const at = (i: number): number[] => [p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!];
         const [a, b, c] = v.map(at) as [number[], number[], number[]];
@@ -369,18 +383,63 @@ describe('the shell\'s compact vertex', () => {
     for (const x of [0, 1e-4, 3e-4, 0.0123, 0.2, 0.5, 0.97, 1, 1.19]) {
       expect(Math.abs((paintShort(x) * COLOUR_RANGE) / PAINT_UNIT - Math.fround(x))).toBeLessThanOrEqual(COLOUR_RANGE / PAINT_UNIT / 2 + 1e-9);
     }
-    const s = cellArrays(town.map((b) => emitChunk(b, groundAt)), take, unitBoxes).shell!;
-    for (let i = 0; i < s.paint.length; i += 4) {
-      for (let k = 0; k < 3; k++) expect(s.paint[i + k]!).toBeLessThan(PAINT_UNIT);
-      expect(s.paint[i + 3]!).toBeLessThan(FINISHES.length);
+    for (const s of cellArrays(town.map((b) => emitChunk(b, groundAt)), take, unitBoxes).shells) {
+      for (let i = 0; i < s.paint.length; i += 4) {
+        for (let k = 0; k < 3; k++) expect(s.paint[i + k]!).toBeLessThan(PAINT_UNIT);
+        expect(s.paint[i + 3]!).toBeLessThan(FINISHES.length);
+      }
     }
   });
 
-  it('is 28 bytes, 52 at the far level (37 and 77 before)', () => {
+  it('is 28 bytes, 52 only on the far level\'s runs of bays with openings (37 and 77 before)', () => {
     for (const far of [false, true]) {
       const s = cellArrays(town.map((b) => emitChunk(b, groundAt, undefined, groundAt, undefined, far)), take, unitBoxes);
-      const vertices = s.shell!.position.length / 3;
-      expect((cellBytes(s) - s.shell!.index.byteLength) / vertices).toBe(far ? 52 : 28);
+      if (far) expect(s.shells.some((p) => p.facade)).toBe(true);
+      for (const piece of s.shells) {
+        const one = { shells: [piece], parts: {}, furniture: {} };
+        expect((cellBytes(one) - piece.index.byteLength) / (piece.position.length / 3)).toBe(piece.facade ? 52 : 28);
+      }
     }
+  });
+
+  it('shares a vertex between faces alike in every number: a wall\'s pieces round its windows meet in one', () => {
+    let wallTriangles = 0, wallVertices = 0;
+    for (const b of town) {
+      for (const s of fragments(emitChunk(b, groundAt))) {
+        const { position: p, normalDecay: nd, paint, index } = s;
+        const vertices = p.length / 3;
+        // None left twice: the weld found every vertex alike in place, normal, wear, paint and finish.
+        const seen = new Set<string>();
+        for (let v = 0; v < vertices; v++) {
+          seen.add([...p.subarray(v * 3, v * 3 + 3), ...nd.subarray(v * 4, v * 4 + 4), ...paint.subarray(v * 4, v * 4 + 4)].join());
+        }
+        expect(seen.size).toBe(vertices);
+        // The walls (normal level): their triangles and the vertices they use.
+        const used = new Set<number>();
+        for (let t = 0; t < index.length; t += 3) {
+          for (let k = 0; k < 3; k++) expect(index[t + k]!).toBeLessThan(vertices);
+          if (Math.abs(nd[index[t]! * 4 + 1]!) > NORMAL_UNIT * 0.01) continue;
+          wallTriangles++;
+          for (let k = 0; k < 3; k++) used.add(index[t + k]!);
+        }
+        wallVertices += used.size;
+      }
+    }
+    expect(wallTriangles).toBeGreaterThan(1000);
+    // A loose quad takes 4 vertices for its 2 triangles; welded, a wall cut round its windows shares its corners.
+    expect(wallVertices / wallTriangles).toBeLessThan(1.8);
+  });
+
+  it('welds two boxes side by side where their faces meet alike, never across faces turned another way', () => {
+    const none: PartBatch = { matrices: new Float32Array(0), colours: null, count: 0 };
+    const parts = Object.fromEntries(PART_KINDS.map((k) => [k, none])) as Record<PartKind, PartBatch>;
+    // Two unit boxes on the ground, the second one metre along x: they touch at x = 1.
+    const matrices = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.5, 0.5, 0.5, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.5, 0.5, 0.5, 1);
+    const id = FINISHES.indexOf('plaster');
+    parts.lotBox = { matrices, colours: Float32Array.of(0.6, 0.5, 0.4, 0.6, 0.5, 0.4), count: 2, looks: Float32Array.of(id, 0, NO_GROUND, id, 0, NO_GROUND) };
+    const laid = shellPartFaces(parts).plaster!;
+    // Five faces of four corners each (no bottom); the fronts, backs and tops of the two share their edge at x = 1, the end faces there face apart.
+    expect(laid.index.length / 3).toBe(2 * 5 * 2);
+    expect(laid.position.length / 3).toBe(2 * 5 * 4 - 3 * 2);
   });
 });
