@@ -116,6 +116,8 @@ interface Profile {
   readonly base: number[];
   /** For a raised structure, the ground under it plus its clearance */
   readonly deck: number[];
+  /** Where each station lies, x and y (`stationsAt`): measured once, kept with the profile (its line and step do not change). */
+  points?: Float64Array;
   readonly a: NodeId;
   readonly b: NodeId;
   /** Arc length at the `a` end over which the profile is flat (junction plate). */
@@ -190,7 +192,7 @@ export function buildRoadElevation(
   // DO NOT compare every road of the map with the solve before: the network's diary says what changed since (`changesSince`).
   let reuse: SolveMemo | null = null;
   let delta: NetworkDelta | null = null;
-  if (net.revision === net.doc.revision) {
+  if (net.isBuilt()) {
     for (const memo of asked) {
       delta = net.changesSince(memo.state);
       if (delta) { reuse = memo; break; }
@@ -831,19 +833,15 @@ function flatSolvesOf(net: Network): (SolveMemo | undefined)[] {
 }
 
 /** Where each station of a profile lies (`h[i]` at arc `i * step`), measured once per profile (a profile is shared by solves). */
-const stationPoints = new WeakMap<Profile, Float64Array>();
 function stationsAt(profile: Profile): Float64Array {
-  let xy = stationPoints.get(profile);
-  if (!xy) {
-    xy = new Float64Array(profile.h.length * 2);
-    for (let i = 0; i < profile.h.length; i++) {
-      const p = profile.line.sampleAt(Math.min(profile.length, i * profile.step)).p;
-      xy[i * 2] = p.x;
-      xy[i * 2 + 1] = p.y;
-    }
-    stationPoints.set(profile, xy);
+  if (profile.points) return profile.points;
+  const xy = new Float64Array(profile.h.length * 2);
+  for (let i = 0; i < profile.h.length; i++) {
+    const p = profile.line.sampleAt(Math.min(profile.length, i * profile.step)).p;
+    xy[i * 2] = p.x;
+    xy[i * 2 + 1] = p.y;
   }
-  return xy;
+  return (profile.points = xy);
 }
 
 const NO_PROFILES: readonly never[] = Object.freeze([]);

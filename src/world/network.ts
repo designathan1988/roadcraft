@@ -147,6 +147,11 @@ export class Network {
   }
 
   /** DO NOT copy the network for an edit (`adopt`, twice per road drawn): `work`'s network, layered over this one, holding only what it writes. */
+  /** Whether the network is rebuilt up to its document: its derived maps answer for what the document holds. */
+  isBuilt(): boolean {
+    return this.revision === this.doc.revision;
+  }
+
   fork(work: RoadDoc): Network {
     const copy = new Network(work);
     const own = copy as unknown as Record<string, unknown>;
@@ -164,7 +169,7 @@ export class Network {
     copy.build.forkFrom(this.build);
     copy.log.takeFrom(this.log);
     copy.forkedFrom = this;
-    const upToDate = this.revision === this.doc.revision;
+    const upToDate = this.isBuilt();
     copy.revision = upToDate ? work.revision : -1;
     copy.trafficRevision = upToDate ? work.trafficRevision : -1;
     return copy;

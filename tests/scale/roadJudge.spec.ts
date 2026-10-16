@@ -81,7 +81,7 @@ function solveWork(n: number): { judged: number; solved: number } {
   const judged = elevationWork.profiles + elevationWork.nodes - before;
   const from = elevationWork.profiles + elevationWork.nodes;
   // The game's solve on its ground, from the one before the edit.
-  elevation = buildRoadElevation(net, ground, elevation);
+  buildRoadElevation(net, ground, elevation);
   return { judged, solved: elevationWork.profiles + elevationWork.nodes - from };
 }
 

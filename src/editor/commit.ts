@@ -146,24 +146,23 @@ export function commitRoadPath(
 }
 
 /** Turns the roads just laid at grade into tunnels wherever their profile would run deeper than `AUTO_TUNNEL_COVER` under */
-/** The terrain's index as last built; a road edit does not move the land, so the next one reuses it. */
-let terrainIndex: TerrainIndex | null = null;
+/** The terrain's index as last built, and the last solve on it (no ground handed in): a road edit does not move the land, so the next reuses both. */
+let onTerrain: { readonly index: TerrainIndex; solve: RoadElevation | null } | null = null;
 function terrainIndexOf(doc: RoadDoc): TerrainIndex {
-  if (!terrainIndex || terrainIndex.relief !== doc.terrainRelief || !sameStamps(terrainIndex.stamps, doc.terrainStamps)) {
-    terrainIndex = new TerrainIndex(doc.terrainStamps, 0, doc.terrainRelief);
+  if (!onTerrain || onTerrain.index.relief !== doc.terrainRelief || !sameStamps(onTerrain.index.stamps, doc.terrainStamps)) {
+    onTerrain = { index: new TerrainIndex(doc.terrainStamps, 0, doc.terrainRelief), solve: null };
   }
-  return terrainIndex;
+  return onTerrain.index;
 }
 
-/** The last solve on the terrain's index (no ground handed in): the next one on the same index starts from it. */
-let indexSolve: { readonly index: TerrainIndex; readonly elevation: RoadElevation } | null = null;
 /** A solve of `net` over `ground`: from the game's last on the same natural ground, or from the last on the same index */
 function solveOver(net: Network, ground: (x: number, y: number) => number, sampled: boolean, index: TerrainIndex | null,
   previous: RoadElevation | null): RoadElevation {
   if (sampled) return buildRoadElevation(net, ground, previous);
   // DO NOT solve every road of the map for each road laid without the game's ground (the blocks tool).
-  const elevation = buildRoadElevation(net, ground, indexSolve?.index === index ? indexSolve!.elevation : null);
-  indexSolve = { index: index!, elevation };
+  const same = onTerrain !== null && onTerrain.index === index ? onTerrain : null;
+  const elevation = buildRoadElevation(net, ground, same?.solve ?? null);
+  if (same) same.solve = elevation;
   return elevation;
 }
 
