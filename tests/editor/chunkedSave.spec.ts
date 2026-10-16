@@ -74,18 +74,18 @@ describe('a map saved by tiles', () => {
     expect(store.writes[0]).toContain('map:G:values');
     // Nothing changed: the manifest alone.
     await saves.save(doc, {});
-    expect(store.writes[1]).toEqual(['map:manifest']);
+    expect(store.writes[1]).toEqual(['map:tiles']);
     // One building changed: its square alone (records and wears), nothing else.
     const one = [...doc.buildings.all()][3]!;
     doc.buildings.put({ ...one, decay: 0.5 });
     await saves.save(doc, {});
     const at = square(one.x, one.y, CELL);
-    expect(store.writes[2]).toEqual([`map:L:buildings:${at}`, `map:W:${at}`, 'map:manifest']);
+    expect(store.writes[2]).toEqual([`map:L:buildings:${at}`, `map:W:${at}`, 'map:tiles']);
     // A road changed: road squares alone, no building and nothing kept outside the tiles.
     const node = [...doc.nodes.values()][0]!;
     doc.setNodeHeightOffset(node.id, node.heightOffset + 1);
     await saves.save(doc, {});
-    const written = store.writes[3]!.filter((k) => k !== 'map:manifest');
+    const written = store.writes[3]!.filter((k) => k !== 'map:tiles');
     expect(written.length).toBeGreaterThan(0);
     expect(written.every((k) => k.startsWith('map:L:nodes:') || k.startsWith('map:L:segments:'))).toBe(true);
     expect(written).toContain(`map:L:nodes:${square(node.x, node.y, SAVE_TILE)}`);
@@ -121,7 +121,7 @@ describe('a map saved by tiles', () => {
     expect(await saves.save(doc, {})).toBe(false);
     await saves.save(doc, {});
     const at = square(one.x, one.y, CELL);
-    expect(store.writes.at(-1)).toEqual([`map:L:buildings:${at}`, `map:W:${at}`, 'map:manifest']);
+    expect(store.writes.at(-1)).toEqual([`map:L:buildings:${at}`, `map:W:${at}`, 'map:tiles']);
     same(await saves.read(), doc);
   });
 
@@ -136,7 +136,7 @@ describe('a map saved by tiles', () => {
     doc.buildings.put({ ...one, decay: 0.75 });
     await reader.save(doc, {});
     const at = square(one.x, one.y, CELL);
-    expect(store.writes.at(-1)).toEqual([`map:L:buildings:${at}`, `map:W:${at}`, 'map:manifest']);
+    expect(store.writes.at(-1)).toEqual([`map:L:buildings:${at}`, `map:W:${at}`, 'map:tiles']);
     same(await reader.read(), doc);
   });
 
@@ -192,7 +192,7 @@ describe('an edit in one tile writes that tile, whatever the size of the map', (
     expect(small.records).toBe(22);
     expect(big.records).toBe(small.records);
     const origin = square(0, 0, SAVE_TILE);
-    expect(big.keys).toEqual([`map:L:poles:${origin}`, `map:L:trees:${origin}`, 'map:manifest']);
+    expect(big.keys).toEqual([`map:L:poles:${origin}`, `map:L:trees:${origin}`, 'map:tiles']);
   });
 
   it('keeps the order of a list spread over tiles through cuts and plantings', async () => {
@@ -235,7 +235,7 @@ describe('a map saved before the tiles', () => {
     await store.write(put, []);
   }
 
-  it('opens, and its next save writes it by tiles and lets the old keys go', async () => {
+  it('opens, and its next save writes it by tiles and keeps the old save for an older build', async () => {
     const store = memoryStore();
     const original = town();
     await oldSave(store, original, 55);
@@ -245,11 +245,12 @@ describe('a map saved before the tiles', () => {
     expect(read?.settings).toEqual({ camera: 2 });
     expect(read?.layout.old).toContain('map:head');
     same(read, original);
-    // The player's map opened, then saved: by tiles, the old keys gone in the same write.
+    // The player's map opened, then saved: by tiles; the old save left as it was (the player's, an older build's only copy).
     const doc = RoadDoc.fromJSON(read!.document);
     saves.adopt(doc, read!.layout);
+    const before = new Map(store.blobs);
     await saves.save(doc, { camera: 3 }, 66);
-    expect([...store.blobs.keys()].some((k) => k === 'map:head' || k.startsWith('map:part:') || k.startsWith('map:wear:'))).toBe(false);
+    for (const k of ['map:head', 'map:manifest', ...[...before.keys()].filter((k) => k.startsWith('map:part:'))]) expect(store.blobs.get(k)).toBe(before.get(k));
     expect([...store.blobs.keys()].some((k) => k.startsWith('map:L:buildings:'))).toBe(true);
     const again = await new TiledSaves(store, 'map').read();
     expect(again?.layout.old).toBeNull();

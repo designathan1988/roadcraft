@@ -304,7 +304,9 @@ export class TiledSaves {
   private blobKey(layer: LayerName, square: string): string { return `${this.key}:L:${layer}:${square}`; }
   private wearKey(square: string): string { return `${this.key}:W:${square}`; }
   private globalKey(part: GlobalPart): string { return `${this.key}:G:${part}`; }
-  private get manifestKey(): string { return `${this.key}:manifest`; }
+  /** The tiles' manifest; the manifest before them (`:manifest`, version 3) is never written or removed here: an older build still opens the map it holds. */
+  private get manifestKey(): string { return `${this.key}:tiles`; }
+  private get oldManifestKey(): string { return `${this.key}:manifest`; }
 
   save(doc: RoadDoc, settings: unknown, savedAt = Date.now()): Promise<boolean> {
     return this.queued(() => this.write(doc, settings, savedAt));
@@ -447,7 +449,8 @@ export class TiledSaves {
     this.take(doc);
     for (const name of LIST_NAMES) if (this.lists[name].changed) this.walk(doc, name);
     const put: SaveEntry[] = [];
-    const remove: string[] = [...this.oldKeys];
+    // DO NOT remove the map saved before the tiles: it is the player's, and an older build reads only it.
+    const remove: string[] = [];
     // Taken now; put back if the write fails (with whatever came meanwhile).
     const takenKeyed = new Map<KeyedName, { readonly dirty: Set<string>; readonly wear: Set<string> }>();
     const takenLists = new Map<ListName, Set<string>>();
@@ -543,11 +546,11 @@ export class TiledSaves {
 
   /** The map saved here (by tiles, or in the format before them), or null when there is none or it cannot be read. */
   async read(): Promise<TiledSession | null> {
-    const [manifestBlob] = await this.store.get([this.manifestKey]);
-    if (!manifestBlob) return null;
-    const manifest: unknown = JSON.parse(await manifestBlob.text());
-    if (isTiledManifest(manifest)) return this.readTiles(manifest);
-    if (isOldManifest(manifest)) return this.readOld(manifest);
+    const [tilesBlob, oldBlob] = await this.store.get([this.manifestKey, this.oldManifestKey]);
+    const tiles: unknown = tilesBlob ? JSON.parse(await tilesBlob.text()) : null;
+    if (isTiledManifest(tiles)) return this.readTiles(tiles);
+    const old: unknown = oldBlob ? JSON.parse(await oldBlob.text()) : null;
+    if (isOldManifest(old)) return this.readOld(old);
     return null;
   }
 
@@ -665,8 +668,6 @@ export class TiledSaves {
       for (const name of LAYER_NAMES) for (const square of manifest.squares[name] ?? []) keys.push(this.blobKey(name, square));
       for (const square of manifest.squares.buildings ?? []) keys.push(this.wearKey(square));
       for (const part of manifest.globals) keys.push(this.globalKey(part));
-    } else if (isOldManifest(manifest)) {
-      keys.push(...this.oldKeysOf(manifest));
     }
     return [...keys, this.manifestKey];
   }
