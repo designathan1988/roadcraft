@@ -241,6 +241,16 @@ ring with a zero-width spike (tile -5,-2 of seed 1, `tests/fixtures/clipper-unio
 way and allocates points for ever, in the tile worker's `planLots` → `pavingNear`. Fix: the engine patched as the
 library's open pull request 36 (`scripts/patches/clipper2-ts+2.0.1-18.patch`, applied by `npm install`); the memory-cage
 mechanics (one 4 GB V8 cage for the page and every worker, `jobPool.ts`) stay as they are.
+ALSO DONE 2026-10-16 (commits ca41aaf, 6cbd918, 062dc0e, 9eb9f9a and the budgets' commit): levels by the frame's budget
+(error scale that fits the view's triangles, time governor only past 2.5x the budget and only while a step pays); the
+opening in two steps (curtain down with roads built so far, masses and far levels; detail, remaining tiles and later
+world builds land after); `cityTiles` long-running on its own workers, pool at two fifths of the cage; `AHEAD_RADIUS` 2;
+"Mundo sem borda" in the menu. Measured with the CPU free (RTX 3060, 1080p, seed 1): the whole city opens in 16 s (was:
+tab dead at ~70 s, or 150-280 s under 25% CPU), district view with facade detail on every building at 48 fps (GPU p95
+20-30 ms: the pixel pipeline, 5.5), street view 50 fps. Still open from the solution's parts: 5.2 roads per pixel (700
+MB of road video memory, coarse level resident for every block of the region), 5.4 derived products by the view (masses
+341 MB, draw calls 1,500-2,100), 5.5 pixel cost on the integrated GPU (the player's call, with shots), 5.6 renderer memory
+outside the heap (page heap ~1.4 GB with 11,518 buildings in the document after a move).
 Read whole by the coordinator on 2026-10-16 (main `0c7b15e`: every file of the opening and edit paths, sim and jobs;
 agent behaviour, effects and UI only scanned). Why the whole city dies of memory before drawing:
 - Root: a building record is the whole authored model (the lot's furniture inside it, 133 JS objects a building), kept per tile
