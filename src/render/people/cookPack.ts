@@ -43,6 +43,10 @@ export function unpackRecord(buffer: ArrayBuffer): Record<string, PackValue> {
   };
   const start = Math.ceil((8 + length) / 8) * 8;
   const out: Record<string, PackValue> = { ...header };
-  for (const { name, kind, offset, length: n } of layout) out[name] = new KINDS[kind](buffer, start + offset, n);
+  // Each array copied out of the file: a view would pin the whole file for as long as any one array is kept.
+  for (const { name, kind, offset, length: n } of layout) {
+    const at = start + offset;
+    out[name] = new KINDS[kind](buffer.slice(at, at + n * KINDS[kind].BYTES_PER_ELEMENT));
+  }
   return out;
 }
