@@ -208,9 +208,19 @@ export class LorryTraffic {
   /** A yard with no lorry, a dock of it drawn; planned, it is sent the nearest passing lorry. */
   private call(w: SimWorld): void {
     this.readYards(w);
-    const free = this.yards.filter((y) => ![...this.lorries.values()].some((l) => l.building === y.building));
-    if (!free.length) return;
-    const pick = free[Math.floor(w.rng.lorries.float() * free.length)]!;
+    const yards = this.yards;
+    if (!yards.length) return;
+    const busy = new Set<number>();
+    for (const l of this.lorries.values()) busy.add(l.building);
+    // DO NOT filter every yard of the map a look: drawn among them all until a free one (as many lorries as yards at most half, a draw or two).
+    let pick: (typeof yards)[number];
+    if (busy.size * 2 >= yards.length) {
+      const free = yards.filter((y) => !busy.has(y.building));
+      if (!free.length) return;
+      pick = free[Math.floor(w.rng.lorries.float() * free.length)]!;
+    } else {
+      do { pick = yards[Math.floor(w.rng.lorries.float() * yards.length)]!; } while (busy.has(pick.building));
+    }
     const dock = Math.floor(w.rng.lorries.float() * pick.docks);
     // DO NOT call `yardFor` to begin a yard here while `planning` names another building
     const yard = this.yardFor(w, pick.building, this.planning === null || this.planning.building === pick.building);
