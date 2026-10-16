@@ -34,7 +34,7 @@ const turns = async (n: number): Promise<void> => { for (let k = 0; k < n; k++) 
 const ring = (key: number): number => { const { i, j } = tileOfKey(key); return Math.max(Math.abs(i), Math.abs(j)); };
 
 describe('the streamer', () => {
-  it('makes nothing ahead before the region is in, then the ring several at once, then one at a time', async () => {
+  it('makes nothing ahead before the region is in, then the ring several at once, nothing past it', async () => {
     const doc = new RoadDoc();
     const store = source();
     const streamer = new WorldStreamer(doc, store);
@@ -57,12 +57,8 @@ describe('the streamer', () => {
       await turns(2);
     }
     expect(store.ensures.filter((key) => ring(key) === 2)).toHaveLength(16);
-    // Past the ring: one at a time.
-    const past = store.ensures.filter((key) => ring(key) > 2);
-    expect(past).toHaveLength(1);
-    store.finish(past[0]!);
-    await turns(2);
-    expect(store.ensures.filter((key) => ring(key) > 2)).toHaveLength(2);
+    // Past the ring: nothing is made ahead (AHEAD_RADIUS is the ring: the generator's plan draws the city beyond it).
+    expect(store.ensures.filter((key) => ring(key) > 2)).toHaveLength(0);
     expect(store.ensures.some((key) => ring(key) <= 1)).toBe(false);
   });
 });

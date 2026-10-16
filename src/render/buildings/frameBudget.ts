@@ -1,5 +1,3 @@
-import type { BatchKind } from './cellRequests';
-
 /** THE ERROR SCALE THAT FITS THE FRAME: the levels are chosen by their error on the screen (`massCells.ts` `measureSeen`, 2 px at scale 1); when what they add up to passes the view's budget of triangles, the scale rises until it fits, and it comes back down a step at a time while there is room (Cesium's `maximumScreenSpaceError` adjusted to memory and time) */
 
 /** Each step of the scale: a quarter coarser or finer. */
@@ -47,7 +45,7 @@ export class FrameScale {
 }
 
 /** What a cell's level is reckoned to draw before any of its kind landed: a dense cell's detail and facade level, from the district view measured 2026-10-16 (13 M triangles over ~30 near cells). */
-export const TYPICAL_LEVEL_TRIANGLES: Readonly<Record<BatchKind, number>> = { cell: 600_000, facade: 300_000 };
+export const TYPICAL_LEVEL_TRIANGLES: Readonly<Record<'cell' | 'facade', number>> = { cell: 600_000, facade: 300_000 };
 
 /** WHAT A LEVEL DRAWS, reckoned before it lands (`layer.ts` `chosenTriangles`): as it measured when it last landed, else the mean of its kind's landed, else `typical`. */
 export class LandedTriangles<K extends string> {

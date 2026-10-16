@@ -30,7 +30,7 @@ describe("the city plan's budgets", () => {
 
   it('lists the rows furthest over first, by how many times over', () => {
     const rows = cityBudgetTable(measure({
-      triangles: 30_000_000, // 3× the street's 10 M
+      triangles: 48_000_000, // 3× the street's 16 M
       bytesByName: new Map([['building-shell', 1_800e6], ['building-massing', 60e6]]), // 6× the shells' 300 MB
     }));
     expect(rows[0]).toMatchObject({ item: 'video memory: L0 shells', status: 'over', times: 6 });
