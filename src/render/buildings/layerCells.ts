@@ -9,6 +9,7 @@ import { m } from '@world/units';
 import { CELL } from '@world/cells';
 import type { BuildingMeshes } from './buildingMesh';
 import type { CellEntry } from './chunk';
+import type { BatchKind } from './cellRequests';
 import { PART_KINDS, type PartKind } from './kit';
 
 /** THE CELLS OF THE BUILDINGS LAYER (`layer.ts`) */
@@ -190,6 +191,44 @@ export function createCoverIndex(): CoverIndex {
 
 
 /** A cell's batch out of its cache and its group, disposed. */
+/** A cell key's centre from a point, m (`layer.ts` `keepToBudget`). */
+export function cellDistance(key: string, x: number, y: number): number {
+  const comma = key.indexOf(',');
+  return Math.hypot((Number(key.slice(0, comma)) + 0.5) * BATCH_CELL - x, (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL - y);
+}
+
+/** THE BYTES THE CELLS' LEVELS HOLD ON THE GPU (`layer.ts` `counted`, `keepToBudget`), by level, and what each level measured when it last landed, kept or not: the cap reckons with it before asking again (no level refused and asked again for ever). */
+export class ResidentBytes {
+  /** What the levels hold now, bytes. */
+  total = 0;
+  private readonly resident = new Map<string, number>();
+  private readonly measured = new Map<string, number>();
+  /** A level come (`bytes` over 0) or gone (0). */
+  count(kind: BatchKind, key: string, bytes: number): void {
+    const at = `${kind}|${key}`;
+    this.total += bytes - (this.resident.get(at) ?? 0);
+    if (bytes) this.resident.set(at, bytes); else this.resident.delete(at);
+  }
+  /** A level landed, uploaded or not: what it measured. */
+  landed(kind: BatchKind, key: string, bytes: number): void {
+    this.measured.set(`${kind}|${key}`, bytes);
+  }
+  /** A cell's buildings changed: what its levels measured no longer holds. */
+  forget(key: string): void {
+    this.measured.delete(`cell|${key}`);
+    this.measured.delete(`facade|${key}`);
+  }
+  /** What a level holds or would hold, bytes: resident, else as measured when it last landed, else `typical`. */
+  of(kind: BatchKind, key: string, typical: number): number {
+    const at = `${kind}|${key}`;
+    return this.resident.get(at) ?? this.measured.get(at) ?? typical;
+  }
+  /** The resident levels' mean, else `fallback`: what a cell never landed counts as. */
+  typical(fallback: number): number {
+    return this.resident.size ? this.total / this.resident.size : fallback;
+  }
+}
+
 export function dropCell(cache: CellCache, key: string, owner: BuildingMeshes | null): void {
   const known = cache.get(key);
   if (!known) return;

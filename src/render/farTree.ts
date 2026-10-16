@@ -32,6 +32,8 @@ export interface FarTiles {
   stored(tileKey: number, version: number | null): void;
   /** A tile loaded into the page's document or unloaded from it: `isLoaded` read again for it. */
   loadedChanged(tileKey: number): void;
+  /** The frame's error scale for the next `choose` (`buildings/frameBudget.ts`), as the cells' (`massCells.ts` `setErrorScale`). */
+  setErrorScale(scale: number): void;
 }
 
 /** A job of the tree: a node at the version of the tiles under it, from the cache, its tile's records (level 0) or its children's bakes (above). */
@@ -234,6 +236,10 @@ export class FarTree<P> implements FarTiles {
     if (now === leaf.inDoc) return;
     leaf.inDoc = now;
     for (let n: FarNode | null = leaf; n; n = n.parent) n.loaded += now ? 1 : -1;
+  }
+
+  setErrorScale(scale: number): void {
+    this.seen.scale = scale;
   }
 
   /** THE NODES DRAWN, from the roots down: a node is drawn in place of its children while what it leaves out spans under the pixels allowed; `reach`, an orthographic view's (Infinity in perspective) */

@@ -114,7 +114,8 @@ import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/
 import { buildingFloors } from '@world/buildings/floors';
 import { FLOOR_READ_REACH } from '@world/buildings/foundation';
 import { RoomLamps } from './roomLamps';
-import { TUNED_UNIT, m } from '@world/units';
+import { TUNED_UNIT, m, perM } from '@world/units';
+import { VIEW_BUDGETS, type CityView } from '@core/perfBudget';
 /** Room lights kept in the scene for the floors cut open (`roomLamps.ts`). */
 const ROOM_LIGHTS = 6;
 declare const __ROAD_TILES_HASH__: string | undefined;
@@ -122,8 +123,15 @@ declare const __ROAD_TILES_HASH__: string | undefined;
 const ROAD_TILES_HASH = typeof __ROAD_TILES_HASH__ !== 'undefined' && __ROAD_TILES_HASH__ ? __ROAD_TILES_HASH__ : null;
 /** How long the opening's roads wait for the kept tiles to be read, ms: past it they are built. */
 const KEPT_TILES_WAIT_MS = 3000;
+/** The view a zoom belongs to, for its budgets (`core/perfBudget.ts` `VIEW_BUDGETS`): the street from 8 px a metre, the district from 0.8, the map under. */
+const STREET_ZOOM = perM(8);
+const DISTRICT_ZOOM = perM(0.8);
+const viewOf = (zoom: number): CityView => (zoom >= STREET_ZOOM ? 'street' : zoom >= DISTRICT_ZOOM ? 'district' : 'map');
+/** Frames in a window of the GPU's time read by the governor (`buildings/frameBudget.ts` `TimeGovernor`). */
+const GOVERN_FRAMES = 30;
 
 import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
+import { TimeGovernor } from './buildings/frameBudget';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
 import { wantAllTexels } from './surfaceTextures';
@@ -624,6 +632,20 @@ export function createSceneRenderer(
     ? jobPort('derivedWriter') : null;
   /** Where the camera looks and how far the roads are at full detail round it (`mesh/roadResidency.ts`). */
   const roadFocus = { x: initialCentre.x, y: initialCentre.y, reach: 700, frames: 0 };
+  /** THE GPU'S TIME GOVERNS THE ERROR SCALE'S FLOOR: every `GOVERN_FRAMES` frames, the window's p95 against the view's budget (`VIEW_BUDGETS` gpuMs) asks the floor a step up or down (`BuildingLayer.pressTime`), a step up kept only if it paid (`TimeGovernor`). */
+  let governFrames = 0;
+  let governView: CityView | null = null;
+  const timeGovernor = new TimeGovernor();
+  const governFrame = (): void => {
+    if (!gpuTimer.supported || ++governFrames < GOVERN_FRAMES) return;
+    governFrames = 0;
+    const last = gpuTimer.samples.toArray().slice(-GOVERN_FRAMES).sort((a, b) => a - b);
+    if (last.length < GOVERN_FRAMES) return;
+    const p95 = last[Math.ceil(last.length * 0.95) - 1]!;
+    const view = viewOf(rig.viewport.zoom);
+    if (view !== governView) { governView = view; timeGovernor.reset(); }
+    timeGovernor.read(p95, VIEW_BUDGETS[view].gpuMs, (up) => buildings.frame.press(up));
+  };
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
     dependsOn: (minX, minY, maxX, maxY) => new Digest()
@@ -2510,6 +2532,8 @@ export function createSceneRenderer(
         detailFrustum.setFromProjectionMatrix(detailProjection, rig.camera.coordinateSystem, rig.camera.reversedDepth);
         // The sun's cascades are made by three at their first draw: counted as they stand before the detail is chosen.
         gpuLedger.set('shadow maps', 'shadow maps', renderTargetsBytes(environment.shadowMaps()));
+        // The view's budget of triangles (`core/perfBudget.ts`): the levels' error scale rises until they fit (`buildings/frameBudget.ts`).
+        buildings.frame.budget = VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles;
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
@@ -2768,7 +2792,8 @@ export function createSceneRenderer(
         terrain.lookFrom?.(rig.camera, renderer.domElement.height);
         // The roads at full detail within reach of what the view takes in, the far level beyond: a few frames apart
         roadFocus.x = centre.x; roadFocus.y = centre.y;
-        roadFocus.reach = Math.min(900, Math.max(320, halfHeight * 1.8));
+        // Shortened by the frame's error scale: a frame that cannot afford the buildings' detail cannot afford the roads' either.
+        roadFocus.reach = Math.min(900, Math.max(320, halfHeight * 1.8)) / buildings.frame.scale;
         if (roadFocus.frames++ % 6 === 0) {
           const blocks: Mesh[] = [];
           for (const { mesh } of surfaceReuse.chunks.values()) blocks.push(mesh);
@@ -2865,6 +2890,7 @@ export function createSceneRenderer(
         gpuTimer.begin();
         post.render(delta);
         gpuTimer.end();
+        governFrame();
       } else onAssetsReady();
       performance.measure('hitch:draw/Render', { start: atRender, end: performance.now() });
       if (shake > 0) { rig.camera.position.sub(shakeOffset); rig.camera.updateMatrixWorld(); }

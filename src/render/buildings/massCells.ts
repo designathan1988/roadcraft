@@ -118,6 +118,8 @@ export interface MassCells {
   top(): number;
   /** The pixels `metres` spans at a cell from the last eye (`choose`): what its upload is ranked by (`uploads.ts`). */
   pixels(key: string, metres: number): number;
+  /** The frame's error scale for the next `choose` (`frameBudget.ts`): every error is allowed this many times the pixels it is allowed at 1. */
+  setErrorScale(scale: number): void;
   dispose(): void;
 }
 
@@ -131,20 +133,21 @@ function sendUp(mesh: Mesh, cls: GpuClass, priority: () => number): void {
   void warmLooseAhead([mesh], priority);
 }
 
-/** What the eye reads of a box (`measureSeen`): a metre's pixels there, the pixels allowed, its distance across the plan. */
-export interface Seen { perMetre: number; allowed: number; across: number }
+/** What the eye reads of a box (`measureSeen`): a metre's pixels there, the pixels allowed, its distance across the plan; `scale`, the frame's error scale (`frameBudget.ts`: 1 draws for 2 px, 2 for 4 px...). */
+export interface Seen { perMetre: number; allowed: number; across: number; scale?: number }
 
-/** What the eye reads of a box (plan x/y, top), as Cesium measures to a tile's bounding volume; the eye low, the farther the box the more error it may make (`HORIZON_HALF`). */
+/** What the eye reads of a box (plan x/y, top), as Cesium measures to a tile's bounding volume; the eye low, the farther the box the more error it may make (`HORIZON_HALF`); the pixels allowed scaled by the frame's budget (`Seen.scale`). */
 export function measureSeen(seen: Seen, eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, x0: number, y0: number, x1: number, y1: number, top: number): void {
   const dx = Math.max(x0 - eyeX, 0, eyeX - x1);
   const dy = Math.max(y0 - eyeY, 0, eyeY - y1);
   seen.across = Math.hypot(dx, dy);
-  seen.allowed = NEAR_PIXELS;
+  const scale = seen.scale ?? 1;
+  seen.allowed = NEAR_PIXELS * scale;
   if (orthoPx !== null) { seen.perMetre = orthoPx; return; }
   const d = Math.max(Math.hypot(dx, dy, Math.max(eyeZ - top, 0)), 1);
   seen.perMetre = pxAtMetre / d;
   const street = Math.max(0, 1 - eyeZ / STREET_EYE);
-  seen.allowed = NEAR_PIXELS * (1 + (street * d) / HORIZON_HALF);
+  seen.allowed = NEAR_PIXELS * scale * (1 + (street * d) / HORIZON_HALF);
 }
 
 /** A cell's mesh from its masses' arrays, taken as they came */
@@ -501,10 +504,11 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       // Those near now may go far; those named stay near.
       for (const key of [...nearKeys]) decide(key, cells.get(key)!);
       if (allNear !== true && allNear !== false) for (const key of allNear) { const cell = cells.get(key); if (cell && !cell.near) decide(key, cell); }
-      // A far cell comes near only within the farthest a near cell may be on the map
+      // A far cell comes near only within the farthest a near cell may be on the map (at the frame's error scale)
+      const nearPixels = NEAR_PIXELS * (seen.scale ?? 1);
       const within = allNear === true ? Infinity
-        : orthoPx !== null ? (FAR_ERROR * orthoPx >= NEAR_PIXELS ? reach : 0)
-          : Math.min(reach, (FAR_ERROR * pxAtMetre) / NEAR_PIXELS);
+        : orthoPx !== null ? (FAR_ERROR * orthoPx >= nearPixels ? reach : 0)
+          : Math.min(reach, (FAR_ERROR * pxAtMetre) / nearPixels);
       if (within <= 0) return;
       const r = within + overhang;
       const i0 = Math.floor((eyeX - r) / cellSize), i1 = Math.floor((eyeX + r) / cellSize);
@@ -577,6 +581,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       const [i, j] = cellIndex(key);
       const { x0, y0, x1, y1 } = square(i, j);
       return metres * perMetreAt(x0, y0, x1, y1, 0);
+    },
+    setErrorScale(scale) {
+      seen.scale = scale;
     },
     dispose() {
       for (const cell of cells.values()) drop(cell);

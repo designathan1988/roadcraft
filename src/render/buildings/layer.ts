@@ -8,12 +8,13 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { cutOpen } from '@world/buildings/interior';
 import { CellFiling } from '@world/cells';
 import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
-import { BATCH_CELL, type CellCache, watchedCells, STREAM_AHEAD, cellGroup, createCoverIndex, dropCell, groundDigest } from './layerCells';
+import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellDistance, cellGroup, createCoverIndex, dropCell, groundDigest } from './layerCells';
 import { type PartCell, type PartView, dropParts } from './partCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { FAR_ERROR, createMassCells } from './massCells';
+import { FrameScale, LandedTriangles, TYPICAL_LEVEL_TRIANGLES } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
 import { FarLevels, farRunner } from './farLevels';
@@ -79,24 +80,18 @@ export function createBuildingLayer(): BuildingLayer {
   /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds what the GPU ledger's cap leaves once every other owner is counted (`room`), and draws no more than that (`MassCells.cap`). */
   let budget = Infinity;
   const room = (): number => Math.min(budget, gpuLedger.roomFor(DETAIL_CLASSES));
-  let resident = 0;
-  const residentBytes = new Map<string, number>();
-  /** What each cell's level was measured to hold when it last landed, kept or not: the cap reckons with it before asking again (no level refused and asked again for ever). */
-  const landedBytes = new Map<string, number>();
+  /** The bytes the cells' levels hold on the GPU, and what each level measured when it last landed (`layerCells.ts`). */
+  const resident = new ResidentBytes();
+  /** THE FRAME'S SCALE (`frameBudget.ts`): the view's budget of triangles, the error scale that fits it and the floor the GPU's time sets (`renderer.ts` `governFrame`). */
+  const frame = new FrameScale();
+  /** What each cell's level drew when it last landed (`show`): what a level not landed yet is reckoned at. */
+  const landedTriangles = new LandedTriangles<BatchKind>(TYPICAL_LEVEL_TRIANGLES);
   /** A cell's level come or gone: its bytes counted (here and in the ledger), the level shown chosen again. */
   const counted = (kind: BatchKind, key: string, has: boolean): void => {
-    const at = `${kind}|${key}`;
     const part = has ? (kind === 'cell' ? cells : facades).get(key)! : null;
-    const now = part ? part.bytes : 0;
-    resident += now - (residentBytes.get(at) ?? 0);
-    if (now) residentBytes.set(at, now); else residentBytes.delete(at);
-    if (part) gpuLedger.set(`buildings|${at}`, detailClass(kind), now, part.part.triangles); else gpuLedger.remove(`buildings|${at}`);
+    resident.count(kind, key, part ? part.bytes : 0);
+    if (part) gpuLedger.set(`buildings|${kind}|${key}`, detailClass(kind), part.bytes, part.part.triangles); else gpuLedger.remove(`buildings|${kind}|${key}`);
     present(key);
-  };
-  /** What a cell's level holds or would hold on the GPU, bytes: resident, else as measured when it last landed, else a typical cell's. */
-  const bytesOf = (key: string, fine: boolean, typical: number): number => {
-    const at = `${fine ? 'cell' : 'facade'}|${key}`;
-    return residentBytes.get(at) ?? landedBytes.get(at) ?? typical;
   };
   /** DO NOT set that for every cell of the town every frame (`levelOfDetail` did): it changes only here. */
   const cells: CellCache = watchedCells((key, has) => counted('cell', key, has));
@@ -166,11 +161,22 @@ export function createBuildingLayer(): BuildingLayer {
   /** The detail drawn within the room the ledger leaves (`MassCells.cap`): a cell never landed counts as the cells landed do on average. */
   const capNow = (): void => {
     if (!eye) return;
-    const typical = residentBytes.size > 0 ? resident / residentBytes.size : TYPICAL_CELL_BYTES;
-    massCells.cap(eye.x, eye.y, room(), (key, fine) => bytesOf(key, fine, typical), forcedNear);
+    const typical = resident.typical(TYPICAL_CELL_BYTES);
+    massCells.cap(eye.x, eye.y, room(), (key, fine) => resident.of(fine ? 'cell' : 'facade', key, typical), forcedNear);
   };
   /** The shown buildings by coarse cell, as last put together (`update`): what a cell streamed in is made of. */
   let townCells = new Map<string, Building[]>();
+  /** What the levels chosen draw, triangles: each near cell's level (shown, or as its kind is reckoned until it lands), and every mass resident (the cells', tiles' and plates': those hidden under a cell's detail counted too, so never under what is drawn). */
+  const chosenTriangles = (): number => {
+    let n = gpuLedger.triangles('cell masses') + gpuLedger.triangles('tile masses') + gpuLedger.triangles('plate masses');
+    for (const key of massCells.nearKeys()) {
+      const level = levelShown(key);
+      if (level === 'cell') n += cells.get(key)!.part.triangles + (partCells.get(key)?.triangles ?? 0);
+      else if (level === 'facade') n += facades.get(key)!.part.triangles + (facadeParts.get(key)?.triangles ?? 0);
+      else if (townCells.has(key)) n += landedTriangles.of(massCells.fine(key) ? 'cell' : 'facade', key);
+    }
+    return n;
+  };
   /** The cells whose batches must be made for the town as it is now, shown as they land (`landCells`). */
   const pendingCells = new Set<string>();
   /** DO NOT let a far cell's detail go */
@@ -178,18 +184,14 @@ export function createBuildingLayer(): BuildingLayer {
   /** Over the budget, the cells drawn far let go, the farthest first: their masses, on the GPU already, stand for them */
   const keepToBudget = (): void => {
     const budget = room();
-    if (resident <= budget || !eye || !stored) return;
+    if (resident.total <= budget || !eye || !stored) return;
     const at = eye;
-    const away = (key: string): number => {
-      const comma = key.indexOf(',');
-      return Math.hypot((Number(key.slice(0, comma)) + 0.5) * BATCH_CELL - at.x, (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL - at.y);
-    };
     // The levels not shown, the detail first: a cell drawn at its facade level lets its detail go before any facade level goes.
     for (const kind of ['cell', 'facade'] as const) {
       const cache = kind === 'cell' ? cells : facades;
-      const far = [...cache.keys()].filter((key) => levelShown(key) !== kind && !pendingCells.has(key)).sort((a, b) => away(b) - away(a));
+      const far = [...cache.keys()].filter((key) => levelShown(key) !== kind && !pendingCells.has(key)).sort((a, b) => cellDistance(b, at.x, at.y) - cellDistance(a, at.x, at.y));
       for (const key of far) {
-        if (resident <= budget) return;
+        if (resident.total <= budget) return;
         if (kind === 'cell') { dropCell(cells, key, stored); dropParts(partCells, key, partRoot); }
         else { dropCell(facades, key, facadeStored); dropParts(facadeParts, key, partRoot); }
       }
@@ -290,7 +292,7 @@ export function createBuildingLayer(): BuildingLayer {
   pool.warm();
   /** A cell's level landed: uploaded only if the view still wants it at that level within the room (the cap worked out again with its measured bytes). */
   const admit = (kind: BatchKind, cell: string, bytes: number): boolean => {
-    landedBytes.set(`${kind}|${cell}`, bytes);
+    resident.landed(kind, cell, bytes);
     if (forcedNear.has(cell) || !eye) return true;
     capNow();
     return massCells.near(cell) && (massCells.fine(cell) ? 'cell' : 'facade') === kind;
@@ -333,7 +335,7 @@ export function createBuildingLayer(): BuildingLayer {
     const list = massTown.get(cell);
     if (!list?.length) {
       requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null); massEntries.delete(cell); massAsked.delete(cell);
-      landedBytes.delete(`cell|${cell}`); landedBytes.delete(`facade|${cell}`);
+      resident.forget(cell);
       return;
     }
     // Its height till its masses come: the ground under its buildings to the highest roof (the view's frustum, `MassCells.choose`).
@@ -387,6 +389,7 @@ export function createBuildingLayer(): BuildingLayer {
     const part = (kind === 'cell' ? cells : facades).get(key)?.part;
     if (!part) return;
     const parts = (kind === 'cell' ? partCells : facadeParts).get(key);
+    landedTriangles.set(kind, key, part.triangles + (parts?.triangles ?? 0));
     // Landed while the others are faded: faded as the rest (`fadeMeshes`), its parts too.
     if (dimmed !== undefined) {
       fadeMeshes(part.group, kit, true);
@@ -681,9 +684,8 @@ export function createBuildingLayer(): BuildingLayer {
       eye = eyeNow;
       viewKnown = view !== null;
       if (view) eyeView.copy(view);
-      // The building cut open and the one being edited stay in detail whatever the eye says.
-      massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach, view ? eyeView : null);
-      capNow();
+      // The levels chosen at the frame's error scale, the scale raised until what they draw fits the view's budget of triangles (`frameBudget.ts`); the building cut open and the one being edited stay in detail whatever the eye says.
+      frame.fit((scale) => { massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseNow(); capNow(); return chosenTriangles(); });
       farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach);
       // The room shrinks when another owner grows (a resize, the far levels): the hidden levels go first.
       keepToBudget();
@@ -698,8 +700,9 @@ export function createBuildingLayer(): BuildingLayer {
       budget = bytes;
       keepToBudget();
     },
+    frame,
     get residentBytes() {
-      return resident;
+      return resident.total;
     },
     cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, shadowTexel) {
       partView.x = eyeX; partView.y = eyeY; partView.z = eyeZ; partView.pxAtMetre = pxAtMetre; partView.orthoPx = orthoPx; partView.shadowTexel = shadowTexel;

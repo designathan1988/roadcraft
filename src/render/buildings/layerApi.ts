@@ -3,6 +3,7 @@ import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import type { Building, BuildingId } from '@world/buildings/types';
 import type { BuildingChunk } from './buildingMesh';
 import type { FarTiles } from './farLevels';
+import type { FrameScale } from './frameBudget';
 import type { BuildingKit } from './kit';
 import type { Frustum, Group } from 'three';
 
@@ -43,6 +44,8 @@ export interface BuildingLayer {
   levelOfDetail(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach?: number, view?: Frustum | null): void;
   /** The most the cells' detail may hold on the GPU, bytes: past it the cells drawn far go first (their masses stand for them). */
   setDetailBudget(bytes: number): void;
+  /** The frame's scale (`frameBudget.ts`): the view's budget of triangles (`core/perfBudget.ts` `VIEW_BUDGETS`), the error scale that fits it (1 draws for 2 px of error, 2 for 4 px...; the roads' reach follows it, `renderer.ts`) and the floor the GPU's time sets (`governFrame`). */
+  readonly frame: FrameScale;
   /** What the cells' detail holds on the GPU now, bytes. */
   readonly residentBytes: number;
   /** "Ocultar outros": undefined draws every building solid, null fades them all */
