@@ -247,9 +247,19 @@ opening in two steps (curtain down with roads built so far, masses and far level
 world builds land after); `cityTiles` long-running on its own workers, pool at two fifths of the cage; `AHEAD_RADIUS` 2;
 "Mundo sem borda" in the menu. Measured with the CPU free (RTX 3060, 1080p, seed 1): the whole city opens in 16 s (was:
 tab dead at ~70 s, or 150-280 s under 25% CPU), district view with facade detail on every building at 48 fps (GPU p95
-20-30 ms: the pixel pipeline, 5.5), street view 50 fps. Still open from the solution's parts: 5.2 roads per pixel (700
-MB of road video memory, coarse level resident for every block of the region), 5.4 derived products by the view (masses
-341 MB, draw calls 1,500-2,100), 5.5 pixel cost on the integrated GPU (the player's call, with shots), 5.6 renderer memory
+20-30 ms: the pixel pipeline, 5.5), street view 50 fps. Seed 3 opens in 17 s too.
+Moving (seed 3, district view, 2 km drags profiled by `scripts/look.mjs` `profile`; commits d5a3ccf, 07da24c, a22cfe7,
+e38eab8): the record text per building made once (was JSON.stringify per job), `world` group and road blocks without
+matrix auto-update (three forced every descendant's matrix every frame in every pass), the job queue's heap compacted
+(dead entries popped one by one), road tiles' digests only where the changed blocks reach (was every tile of the region
+per build). Long frames of a 16 s drag 5.4 s → 4.5 s, frames over 25 ms 158 → 107, p95 70 → 54 ms. What is left in the
+long frames, by the game's step: three's per-object work (1,500-2,400 objects × 4 passes: `projectObject`,
+`renderObject`, `bindVertexArray`: the draw-call count, 5.4), `pumpWorld` steps, a dense tile put in the document in one
+frame (`worldStreamer.apply` ~100 ms a tile: records interned and filed on the page), `layer.update` after it, road
+levels refilled on the page (`updateRoadLevels` `makeNear`).
+Still open from the solution's parts: 5.2 roads per pixel (700 MB of road video memory, coarse level resident for
+every block of the region), 5.4 derived products by the view (masses 341 MB, draw calls 1,500-2,400; the kept ring of
+tiles gets near products too), 5.5 pixel cost on the integrated GPU (the player's call, with shots), 5.6 renderer memory
 outside the heap (page heap ~1.4 GB with 11,518 buildings in the document after a move).
 Read whole by the coordinator on 2026-10-16 (main `0c7b15e`: every file of the opening and edit paths, sim and jobs;
 agent behaviour, effects and UI only scanned). Why the whole city dies of memory before drawing:
