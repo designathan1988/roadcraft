@@ -102,8 +102,6 @@ desktop path still post Building objects; the sim worker keeps a second RoadDoc 
 - Slicing still in the code (amortization): `main.ts` `GROW_SLICE_MS` (the fixed-size city's lot layout on
   the page: goes with one generation path, the tile generator's); `renderer.ts` `HIDDEN_SLICE_MS`/
   `WORLD_SLICE_MS` (the world job on the page: goes with per-tile road records).
-- `color`/`roadSection` attributes on every road strip (`mesh/surfaceMesh.ts`, `tileMesh.ts`) unused by
-  most specs. Fix: the `SurfaceSpec` declares what it reads.
 - Texture units over 16: terrain program and the cooked citizen with morph. Fix: terrain to <= 13, people
   garments as a texture array.
 - Terrain: a stamp discards the worker-built mesh and rebuilds `TerrainIndex` (`terrain.ts`); textures

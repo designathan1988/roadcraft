@@ -38,8 +38,13 @@ function tileArrays(parts: readonly Tile[], reads: SurfaceReads): BlockArrays | 
     position.set(tile.positions, v * 3);
     normal.set(tile.normals, v * 3);
     uv.set(tile.uvs, v * 2);
-    color?.set(tile.colors, v * 3);
-    roadSection?.set(tile.sections, v * 3);
+    const n = tile.positions.length / 3;
+    // A tile with no tint is white, one with no section has none (`tileMesh.ts` meshPiece): what it would have carried.
+    if (color) { if (tile.colors.length) color.set(tile.colors, v * 3); else color.fill(1, v * 3, (v + n) * 3); }
+    if (roadSection) {
+      if (tile.sections.length) roadSection.set(tile.sections, v * 3);
+      else for (let i = v; i < v + n; i++) { roadSection[i * 3] = 0; roadSection[i * 3 + 1] = -1; roadSection[i * 3 + 2] = 0; }
+    }
     const local = tile.indices;
     for (let i = 0; i < local.length; i++) index[k++] = (local[i] as number) + v;
     v += tile.positions.length / 3;

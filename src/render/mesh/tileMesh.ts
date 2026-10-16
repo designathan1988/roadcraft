@@ -65,10 +65,9 @@ export function meshPiece(piece: PieceShape, context: Context, out: Streams): vo
     uv(x, y, scratch);
     uvs.push(scratch[0], scratch[1]);
     normals.push(0, 1, 0);
-    if (tint) tint(x, y, rgb);
-    colors.push(rgb[0], rgb[1], rgb[2]);
-    if (section) section(x, y, cut);
-    sections.push(cut[0], cut[1], cut[2]);
+    // A surface with no tint nor section carries neither: one value everywhere, filled where a material reads it (`surfaceTiles.ts` tileArrays).
+    if (tint) { tint(x, y, rgb); colors.push(rgb[0], rgb[1], rgb[2]); }
+    if (section) { section(x, y, cut); sections.push(cut[0], cut[1], cut[2]); }
   }
   // World Y is mirrored into three's Z.
   for (let i = 0; i < tris.length; i += 3) {
@@ -86,8 +85,8 @@ export function meshPiece(piece: PieceShape, context: Context, out: Streams): vo
         options.uvFrame(x, y, cx, cy, scratch);
         uvs.push(scratch[0], scratch[1]);
         normals.push(0, 1, 0);
-        colors.push(colors[v * 3]!, colors[v * 3 + 1]!, colors[v * 3 + 2]!);
-        sections.push(sections[v * 3]!, sections[v * 3 + 1]!, sections[v * 3 + 2]!);
+        if (tint) colors.push(colors[v * 3]!, colors[v * 3 + 1]!, colors[v * 3 + 2]!);
+        if (section) sections.push(sections[v * 3]!, sections[v * 3 + 1]!, sections[v * 3 + 2]!);
         fresh.push(positions.length / 3 - 1);
       }
       [a, b, c] = fresh as [number, number, number];
@@ -100,7 +99,7 @@ export function meshPiece(piece: PieceShape, context: Context, out: Streams): vo
 /** The walls hung from a surface's outline down to `bottom`, along the edges of its shape (`tileShape.ts` `skirtShape`). */
 export function meshSkirts(skirts: readonly SkirtRing[], context: Context, out: Streams): void {
   const { options, rgb } = context;
-  const { top, tint } = options;
+  const { top, tint, section } = options;
   const bottom = options.bottom;
   if (!bottom) return;
   const { positions, normals, uvs, colors, sections, indices } = out;
@@ -122,10 +121,9 @@ export function meshSkirts(skirts: readonly SkirtRing[], context: Context, out: 
       const lowB = bottom(bx, by);
       const side = positions.length / 3;
       positions.push(ax, topA, -ay, bx, topB, -by, bx, lowB, -by, ax, lowA, -ay);
-      if (tint) tint((ax + bx) / 2, (ay + by) / 2, rgb);
-      for (let n = 0; n < 4; n++) colors.push(rgb[0], rgb[1], rgb[2]);
-      // A skirt has no place in the section: none.
-      for (let n = 0; n < 4; n++) sections.push(0, -1, 0);
+      if (tint) { tint((ax + bx) / 2, (ay + by) / 2, rgb); for (let n = 0; n < 4; n++) colors.push(rgb[0], rgb[1], rgb[2]); }
+      // A skirt has no place in the section: none (written only for a surface whose top carries one).
+      if (section) for (let n = 0; n < 4; n++) sections.push(0, -1, 0);
       // Written rather than averaged, so a kerb keeps its hard edge instead of smearing into the surface above it.
       for (let n = 0; n < 4; n++) normals.push(nx, 0, nz);
       const u0 = run / scale;
@@ -146,6 +144,7 @@ export interface Tile {
   readonly positions: Float32Array;
   readonly normals: Float32Array;
   readonly uvs: Float32Array;
+  /** Empty for a surface with no tint (one colour, white) or no section (none: 0, -1, 0): filled where a material reads it (`surfaceTiles.ts` tileArrays). */
   readonly colors: Float32Array;
   readonly sections: Float32Array;
   /** Local to the tile. */
@@ -173,6 +172,8 @@ export function weldVertices(out: { positions: number[]; normals: number[]; uvs:
   // Every attribute as the float32 the mesh stores, so equal means equal as drawn.
   const p = new Float32Array(out.positions), n = new Float32Array(out.normals), u = new Float32Array(out.uvs);
   const c = new Float32Array(out.colors), q = new Float32Array(out.sections);
+  // A surface with no tint or no section carries none of it (`meshPiece`): welded by what it has.
+  const hasC = c.length > 0, hasQ = q.length > 0;
   const bits = (a: Float32Array): Uint32Array => new Uint32Array(a.buffer, a.byteOffset, a.length);
   const pb = bits(p), nb = bits(n), ub = bits(u), cb = bits(c), qb = bits(q);
   // Open addressing over the vertices' hash: the table holds the index of the first vertex of each tuple.
@@ -186,14 +187,15 @@ export function weldVertices(out: { positions: number[]; normals: number[]; uvs:
     pb[i * 3] === pb[j * 3] && pb[i * 3 + 1] === pb[j * 3 + 1] && pb[i * 3 + 2] === pb[j * 3 + 2]
     && nb[i * 3] === nb[j * 3] && nb[i * 3 + 1] === nb[j * 3 + 1] && nb[i * 3 + 2] === nb[j * 3 + 2]
     && ub[i * 2] === ub[j * 2] && ub[i * 2 + 1] === ub[j * 2 + 1]
-    && cb[i * 3] === cb[j * 3] && cb[i * 3 + 1] === cb[j * 3 + 1] && cb[i * 3 + 2] === cb[j * 3 + 2]
-    && qb[i * 3] === qb[j * 3] && qb[i * 3 + 1] === qb[j * 3 + 1] && qb[i * 3 + 2] === qb[j * 3 + 2];
+    && (!hasC || (cb[i * 3] === cb[j * 3] && cb[i * 3 + 1] === cb[j * 3 + 1] && cb[i * 3 + 2] === cb[j * 3 + 2]))
+    && (!hasQ || (qb[i * 3] === qb[j * 3] && qb[i * 3 + 1] === qb[j * 3 + 1] && qb[i * 3 + 2] === qb[j * 3 + 2]));
   const first: number[] = [];
   for (let i = 0; i < count; i++) {
     let h = 0x811c9dc5;
     for (let k = 0; k < 3; k++) { h = Math.imul(h ^ pb[i * 3 + k]!, 0x01000193); h = Math.imul(h ^ nb[i * 3 + k]!, 0x01000193); }
     h = Math.imul(h ^ ub[i * 2]!, 0x01000193); h = Math.imul(h ^ ub[i * 2 + 1]!, 0x01000193);
-    for (let k = 0; k < 3; k++) { h = Math.imul(h ^ cb[i * 3 + k]!, 0x01000193); h = Math.imul(h ^ qb[i * 3 + k]!, 0x01000193); }
+    if (hasC) for (let k = 0; k < 3; k++) h = Math.imul(h ^ cb[i * 3 + k]!, 0x01000193);
+    if (hasQ) for (let k = 0; k < 3; k++) h = Math.imul(h ^ qb[i * 3 + k]!, 0x01000193);
     let slot = (h ^ (h >>> 15)) & mask;
     for (;;) {
       const at = table[slot]!;
@@ -209,7 +211,7 @@ export function weldVertices(out: { positions: number[]; normals: number[]; uvs:
   };
   const indices = new Uint32Array(out.indices.length);
   for (let i = 0; i < indices.length; i++) indices[i] = remap[out.indices[i]!]!;
-  return { positions: take(p, 3), normals: take(n, 3), uvs: take(u, 2), colors: take(c, 3), sections: take(q, 3), indices };
+  return { positions: take(p, 3), normals: take(n, 3), uvs: take(u, 2), colors: hasC ? take(c, 3) : new Float32Array(0), sections: hasQ ? take(q, 3) : new Float32Array(0), indices };
 }
 
 /** The box of a tile's positions, [minX, minY, minZ, maxX, maxY, maxZ], as three's `Box3.setFromBufferAttribute` gives it. */
