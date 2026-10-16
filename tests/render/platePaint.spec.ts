@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { plateDabs } from '@render/flatAtlas';
+import { plateDabs } from '@render/platePaint';
 import type { PaintDab } from '@world/terrainPaint';
 
-/** THE DABS A PLATE LAYS (`flatAtlas.ts` plateDabs): a tile that left the page keeps its paint on the ground, one come back is laid once, a stroke takes off only what it undid */
+/** THE DABS A PLATE LAYS (`platePaint.ts`): a tile that left the page keeps its paint on the ground, one come back is laid once, a stroke takes off only what it undid */
 
 const dab = (x: number): PaintDab => ({ kind: 'soil', x, y: 0, radius: 5, strength: 1 });
 
