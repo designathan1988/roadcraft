@@ -4,7 +4,7 @@ import { packArrays, packedArray, packedNumber, unpackArrays } from '@core/array
 /** THE ARRAY PACK (`arrayPack.ts`): numbers and typed arrays in one buffer, read back as views on it. */
 describe('an array pack', () => {
   it('reads back every number and array, each of its kind, as views on the one buffer', () => {
-    const f64 = Float64Array.from([1.5, -2 ** 40, 3]);
+    const f64 = Float64Array.from([1.5, -(2 ** 40), 3]);
     const u8 = Uint8Array.from([1, 2, 3, 4, 5]);
     const f32 = Float32Array.from([0.25, 7]);
     const u32 = Uint32Array.from([0, 4_000_000_000]);
