@@ -87,10 +87,10 @@ a second RoadDoc + Network of the active region.
 - `renderer.ts` `natureSweep`: the trees' scale is the average over the shown plates, so a plate shown re-picks
   every plate's lattice on the page (`farForest.ts` keeps each tree's pick and moves a uniform). Fix: picks kept
   per plate (changes near forest density: the player's call).
-- Sim: `lorryDocks.ts` `yardNeighbours` keyed by the global `doc.lotRevision`; `lotTraffic.ts` `freeBays`/
-  `sceneryInBays` walk every gated bay with a string key each, every second; parked cars stand a whole
-  Vehicle in most bays of the region and `simHost.ts` `publish` walks them each tick; `invariants.ts` audit
-  walks every controller each second.
+- Sim parked cars: the scenery's are rows (`ambient.ts` `SceneryCar`), but every row of the region is still
+  told to the page, which keeps a view each (`simClient.ts` `parked`), and the walkers file a zone for each
+  (`walk.ts` `ParkedZoneIndex`). Fix: the page told the rows near the view only (by place), the walkers'
+  zones made for the cells walkers are in.
 - L1 lot furniture modelled face by face into the shell (`emitLots` -> `emitElement`, `emitLotPart`): the
   bulk of L1 triangles. Fix: instanced parts per kind (quality decision: ask the player).
 - Building shells cannot be simplified: each `Shell.face` is a loose quad, T-junctions round windows. Fix:
