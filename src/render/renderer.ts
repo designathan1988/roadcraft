@@ -762,11 +762,11 @@ export function createSceneRenderer(
   /** The tiles put in whose near products are not all drawn yet (`tileLoaded`): the far level stands for each until they are (as Cidade's `cellLayer.ts` cellsReady: a tile draws by cells only once every cell is ready). */
   const nearPending = new Map<number, { readonly rect: ChangeRect; readonly revision: number }>();
   let onNearDrawn: ((key: number) => void) | null = null;
-  const settleNearTiles = (net: Network): void => {
+  const settleNearTiles = (): void => {
     if (nearPending.size === 0) return;
-    const roadsIn = worldJob === null && landedRevision >= 0;
+    // The roads drawn are the last build that landed: a tile put in at or before its revision has its near roads on screen, whatever build runs now (DO NOT wait for a frame with no job: with tiles coming one after another only a landing frame had none).
     for (const [key, p] of nearPending) {
-      if (!roadsIn || landedRevision < p.revision || networkRevision !== net.revision) continue;
+      if (landedRevision < 0 || landedRevision < p.revision) continue;
       if (!buildings.drawnOver(p.rect)) continue;
       nearPending.delete(key);
       onNearDrawn?.(key);
@@ -2390,7 +2390,7 @@ export function createSceneRenderer(
       if (roads !== null && (reveal.opened || !worldJob)) {
         buildings.hidden = !reveal.opened;
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
-        settleNearTiles(net);
+        settleNearTiles();
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
           (b, since) => groundChanges.touches(Number(since), bankBox(b)),
           (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;
