@@ -3,7 +3,7 @@ import { TileStore, portTiles } from '@editor/tileStore';
 import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
 import { WorldStreamer } from './worldStreamer';
 import { TileGenerator, tileLanes } from './tileGenerator';
-import { OWNER, tileKey, tileKeyAt, tileOfRecord } from '@world/tiles';
+import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
 import { mountProfilerHud } from '@ui/profilerHud';
@@ -1972,6 +1972,9 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   const streamer = new WorldStreamer(doc, store, {
     arrived: () => requestDraw(),
     loaded: (key) => {
+      // Its far level stands until its near roads and buildings are drawn (`scene.onNearDrawn`): no hole while they are made.
+      const t = tileOfKey(key);
+      scene.tileLoaded(key, tileRect(t.i, t.j), doc.revision);
       for (const f of far) f.loadedChanged(key);
       sim.tile('loaded', key);
       // Its junctions and ribbons as the worker solved them, for the frame's rebuild (`NetworkBuild.takeBakes`).
@@ -1980,18 +1983,23 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
     },
     letGo: (key, removedAt) => {
       history.letGoTile((r) => tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
+      scene.tileLetGo(key);
       for (const f of far) f.loadedChanged(key);
       sim.tile('letGo', key);
     },
     written: (key, version) => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); },
     // The kept ring's buildings and roads are the far levels' to draw, not the near products' (the solution's 5.4): the layer, the roads and the far levels told when a tile's standing changes.
-    activeChanged: (keys, rects) => { for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); sim.activeChanged(keys, (nodes, segments) => net.exportBake(nodes, segments)); },
+    activeChanged: (keys, rects) => {
+      // A tile come into the region has its near products made now: its far level stands until they are drawn; one gone to the ring is the far levels' at once.
+      keys.forEach((key, k) => { if (streamer.isActive(key)) scene.tileLoaded(key, rects[k]!, doc.revision); else scene.tileLetGo(key); });
+      for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); sim.activeChanged(keys, (nodes, segments) => net.exportBake(nodes, segments)); },
     writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
   }, tileLanes());
   const activeAt = (x: number, y: number): boolean => streamer.isActive(tileKeyAt(x, y));
   // The far levels stand in for every tile not in the active region, the kept ring's too (its records are on the page for the edits and the simulation, its products are the far levels').
-  for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, workersRead: mapName }, (key) => doc.hasTile(key) && streamer.isActive(key));
+  for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, workersRead: mapName }, (key) => doc.hasTile(key) && streamer.isActive(key) && scene.nearDrawn(key));
+  scene.onNearDrawn = (key) => { for (const f of far) f.loadedChanged(key); requestDraw(); };
   scene.setActiveTiles(activeAt, []);
   // The simulation's worker holds the active region's records only: the ring's traffic is the meso's, from the store's tables.
   sim.setActive((key) => streamer.isActive(key));

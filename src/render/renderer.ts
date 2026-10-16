@@ -209,6 +209,11 @@ export interface SceneHandle {
   holdOpening(until: (() => boolean) | null): void;
   /** The streamed world's active tiles (`worldStreamer.ts` isActive): the buildings and the roads of the kept ring beyond are not put together here, the far levels draw them (`BuildingLayer.setActive`, `SurfaceReuse.within`). */
   setActiveTiles(at: ((x: number, y: number) => boolean) | null, rects: readonly ChangeRect[]): void;
+  /** A tile put in the document or come into the active region: its near products not drawn yet (`nearDrawn` false) until its roads are built and its buildings' cells have something drawn; then `onNearDrawn` (DO NOT let its far level go before: holes with shadows). */
+  tileLoaded(key: number, rect: ChangeRect, revision: number): void;
+  tileLetGo(key: number): void;
+  nearDrawn(key: number): boolean;
+  onNearDrawn: ((key: number) => void) | null;
   /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
   readonly farBuildings: FarTiles;
   /** The roads of the tiles not in the page's document, baked per tile from the tile store (`farRoads.ts`). */
@@ -749,6 +754,21 @@ export function createSceneRenderer(
   let builtTriangles = 0;
   let rebuildMs = 0;
   let rebuilds = 0;
+  /** The network revision the last world build that landed was of (`worldSteps`): the near roads stand for it. */
+  let landedRevision = -1;
+  /** The tiles put in whose near products are not all drawn yet (`tileLoaded`): the far level stands for each until they are (as Cidade's `cellLayer.ts` cellsReady: a tile draws by cells only once every cell is ready). */
+  const nearPending = new Map<number, { readonly rect: ChangeRect; readonly revision: number }>();
+  let onNearDrawn: ((key: number) => void) | null = null;
+  const settleNearTiles = (net: Network): void => {
+    if (nearPending.size === 0) return;
+    const roadsIn = worldJob === null && landedRevision >= 0;
+    for (const [key, p] of nearPending) {
+      if (!roadsIn || landedRevision < p.revision || networkRevision !== net.revision) continue;
+      if (!buildings.drawnOver(p.rect)) continue;
+      nearPending.delete(key);
+      onNearDrawn?.(key);
+    }
+  };
   let terrainMs = 0;
 
   const deckHeight = (
@@ -1544,6 +1564,8 @@ export function createSceneRenderer(
   function* worldSteps(net: Network, compares: readonly (BlockCompare | null)[], solved: { readonly cause: number; readonly elevationMs: number },
     started: number, sliced: boolean): Generator<'wait' | void, void, void> {
     const solve = elevation!;
+    // The revision this build is of: what its landing says the near roads are built for (`settleNearTiles`).
+    const builtOf = networkRevision;
     // The blocks the solves differ in, once the worker has digested them (`compareSolves`).
     while (compares.some((c) => c && !c.ready)) { groundWorkers.check(); yield 'wait'; }
     const own = compares[compares.length - 1] ?? null;
@@ -1618,6 +1640,7 @@ export function createSceneRenderer(
     rebuildMs = performance.now() - started;
     performance.measure('hitch:road-edit/world rebuilt', { start: started, end: performance.now() });
     rebuilds++;
+    landedRevision = builtOf;
     onAssetsReady();
   }
 
@@ -2146,6 +2169,17 @@ export function createSceneRenderer(
     get programsReady() {
       return programs.ready;
     },
+    tileLoaded(key, rect, revision) {
+      nearPending.set(key, { rect, revision });
+    },
+    tileLetGo(key) {
+      nearPending.delete(key);
+    },
+    nearDrawn(key) {
+      return !nearPending.has(key);
+    },
+    get onNearDrawn() { return onNearDrawn; },
+    set onNearDrawn(fn) { onNearDrawn = fn; },
     setActiveTiles(at, rects) {
       buildings.setActive(at, rects);
       // The other near products (gardens, furniture, signs, walls, poles, structures, planted trees, covers, elements, lots) take in or let go the tiles that came or left (`activeTiles.ts`).
@@ -2349,6 +2383,7 @@ export function createSceneRenderer(
       if (roads !== null && (reveal.opened || !worldJob)) {
         buildings.hidden = !reveal.opened;
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
+        settleNearTiles(net);
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
           (b, since) => groundChanges.touches(Number(since), bankBox(b)),
           (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;

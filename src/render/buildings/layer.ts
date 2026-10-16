@@ -15,7 +15,7 @@ import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { FAR_ERROR, createMassCells } from './massCells';
-import { FrameScale, LandedTriangles, TYPICAL_LEVEL_TRIANGLES } from './frameBudget';
+import { FrameScale, LandedTriangles, TYPICAL_LEVEL_TRIANGLES, SLACK } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
 import { FarLevels, farRunner } from './farLevels';
@@ -183,10 +183,28 @@ export function createBuildingLayer(): BuildingLayer {
     return n;
   };
   /** DO NOT fit the view's budget of triangles by raising one error scale for the whole view: every cell coarsened at once, the ones at the eye fell to their facade level; the farthest go first (`MassCells.cap`, as the bytes' budget), detail to facade level to masses, the nearest kept in detail */
+  /** The cells the budget held back, remembered (`MassCells.hold`): a cell capped stays capped until there is room, then ONE comes back a frame, the nearest first (let all back at once, the view passed the budget again and they were capped again: the city blinked, cells loaded and unloaded by turns). */
+  const heldFar = new Set<string>(), heldCoarse = new Set<string>();
+  const nearestHeld = (held: ReadonlySet<string>): string | null => {
+    let best: string | null = null, bestD = Infinity;
+    for (const key of held) { const d = cellDistance(key, eye!.x, eye!.y); if (d < bestD) { bestD = d; best = key; } }
+    return best;
+  };
   const capTriangles = (): void => {
     if (!eye || !Number.isFinite(frame.budget)) return;
     const masses = gpuLedger.triangles('cell masses') + gpuLedger.triangles('tile masses') + gpuLedger.triangles('plate masses');
+    const fineBefore = new Map<string, boolean>();
+    for (const key of massCells.nearKeys()) fineBefore.set(key, massCells.fine(key));
     massCells.cap(eye.x, eye.y, frame.budget - masses, (key, fine) => landedTriangles.of(fine ? 'cell' : 'facade', key), forcedNear);
+    for (const [key, wasFine] of fineBefore) {
+      if (!massCells.near(key)) heldFar.add(key);
+      else if (wasFine && !massCells.fine(key)) heldCoarse.add(key);
+    }
+    if ((heldFar.size || heldCoarse.size) && chosenTriangles() < frame.budget * SLACK) {
+      const key = nearestHeld(heldCoarse) ?? nearestHeld(heldFar);
+      if (key !== null) { heldCoarse.delete(key); heldFar.delete(key); }
+    }
+    massCells.hold(heldFar, heldCoarse);
   };
   /** The cells whose batches must be made for the town as it is now, shown as they land (`landCells`). */
   const pendingCells = new Set<string>();
@@ -709,6 +727,16 @@ export function createBuildingLayer(): BuildingLayer {
     setDetailBudget(bytes) {
       budget = bytes;
       keepToBudget();
+    },
+    drawnOver(rect) {
+      const i0 = Math.floor(rect[0] / BATCH_CELL), j0 = Math.floor(rect[1] / BATCH_CELL), i1 = Math.ceil(rect[2] / BATCH_CELL), j1 = Math.ceil(rect[3] / BATCH_CELL);
+      for (const key of townCells.keys()) {
+        const comma = key.indexOf(',');
+        const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
+        if (i < i0 || i >= i1 || j < j0 || j >= j1) continue;
+        if (levelShown(key) === null && !massCells.drawn(key)) return false;
+      }
+      return true;
     },
     setActive(at, rects) {
       activeAt = at;

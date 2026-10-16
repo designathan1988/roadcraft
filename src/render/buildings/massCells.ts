@@ -120,6 +120,10 @@ export interface MassCells {
   pixels(key: string, metres: number): number;
   /** The frame's error scale for the next `choose` (`frameBudget.ts`): every error is allowed this many times the pixels it is allowed at 1. */
   setErrorScale(scale: number): void;
+  /** Whether a cell has its masses on the GPU, or a tile or plate drawn in its place (`layer.ts` drawnOver): what stands for it before its detail. */
+  drawn(key: string): boolean;
+  /** The cells the frame's budget holds back (`layer.ts` capTriangles): `far` never drawn near, `coarse` never at full detail, until let go there. DO NOT decide them by the eye again next frame: they blinked, capped and brought back by turns. */
+  hold(far: ReadonlySet<string>, coarse: ReadonlySet<string>): void;
   dispose(): void;
 }
 
@@ -186,6 +190,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
   /** DO NOT walk every cell of the town each frame to choose */
   const nearKeys = new Set<string>();
   const detailed = new Set<string>();
+  /** Held back by the frame's budget (`hold`). */
+  let heldFar: ReadonlySet<string> = new Set(), heldCoarse: ReadonlySet<string> = new Set();
   /** How far a cell's box reaches past its square (a building over its edge), the most of any: the eye's search is grown by it. */
   let overhang = 0;
   /** DO NOT walk the cells' meshes for it (`Box3.setFromObject` at every cell landed): the highest cell top, walked again only when that cell went or fell. */
@@ -487,6 +493,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
         let near: boolean, fine = true;
         const forced = allNear === true || (allNear !== false && allNear.has(key));
         if (forced) near = true;
+        else if (heldFar.has(key)) near = false;
         // A cell of lots alone has its detail only: drawn while the view meets it.
         else if (cell.massless) near = inView(view, cell, cell.near ? VIEW_KEEP : VIEW_COME);
         else if (cell.covered) near = false;
@@ -497,7 +504,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
           near = FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) && across <= reach * (cell.near ? 1.25 : 1)
             && inView(view, cell, cell.near ? VIEW_KEEP : VIEW_COME);
           // Its facade level once what that leaves out is under the pixels the detail is drawn for.
-          fine = FACADE_ERROR * perMetre >= allowed * (cell.fine ? HYSTERESIS : 1);
+          fine = !heldCoarse.has(key) && FACADE_ERROR * perMetre >= allowed * (cell.fine ? HYSTERESIS : 1);
         }
         if (near !== cell.near || (near && fine) !== cell.fine) setNear(key, cell, near, fine);
       };
@@ -584,6 +591,17 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     },
     setErrorScale(scale) {
       seen.scale = scale;
+    },
+    hold(far, coarse) {
+      heldFar = far;
+      heldCoarse = coarse;
+    },
+    drawn(key) {
+      const cell = cells.get(key);
+      if (!cell) return false;
+      if (cell.mesh || cell.massless) return true;
+      const [i, j] = cellIndex(key);
+      return coveredAt(i, j);
     },
     dispose() {
       for (const cell of cells.values()) drop(cell);
