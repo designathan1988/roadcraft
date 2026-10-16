@@ -92,7 +92,7 @@ export function wallMaterial(b: Building, v: Volume, side: FaceId, storey?: numb
 export const GENERIC_SLAB = 0x8a8a86;
 
 /** Flat roofs as a town has them: tar-dark membrane, grey membrane, white reflective sheet, beige gravel */
-const FLAT_ROOFS: readonly MaterialSpec[] = [
+export const FLAT_ROOFS: readonly MaterialSpec[] = [
   FLAT_ROOF_MATERIAL,
   spec('roofing', 0x4f4d49),
   spec('roofing', 0x8f8c84),

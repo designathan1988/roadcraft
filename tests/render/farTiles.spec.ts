@@ -74,7 +74,7 @@ function world(): Map<number, TileRecords> {
 }
 
 /** The tile store as the coordinator wires it. */
-const storeOf = (tiles: ReadonlyMap<number, TileRecords>): FarTileSource => ({ records: (key) => Promise.resolve(tiles.get(key) ?? null) });
+const storeOf = (tiles: ReadonlyMap<number, TileRecords>): FarTileSource => ({ records: (key) => Promise.resolve(tiles.get(key) ?? null), plan: null });
 
 /** How many nodes drawn stand for each tile of the world. */
 function coverage(keys: readonly string[], tiles: Iterable<number>): Map<number, number> {

@@ -630,7 +630,7 @@ export function createBuildingLayer(): BuildingLayer {
       eye = eyeNow;
       // The building cut open and the one being edited stay in detail whatever the eye says.
       massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach);
-      farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx);
+      farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach);
       const now = new Set<string>(massCells.nearKeys());
       for (const key of forcedNear) now.add(key);
       // Those gone far, and every one near: a cell near may have changed between its detail and its facade level.

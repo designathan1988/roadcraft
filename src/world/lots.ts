@@ -25,7 +25,7 @@ import { insideLot, type Lot } from './lotRecord';
 /** Lots: the land cut into plots the player zones and buildings grow on, as a town's cadastre is. - A closed block */
 
 /** Depth of a lot along an open street. */
-const LOT_DEPTH = m(32);
+export const LOT_DEPTH = m(32);
 /** The frontage a lot aims at: a block's rows and a street's strip are cut into equal lots of about this width */
 const LOT_FRONTAGE = m(22);
 /** A block deeper than this is cut in two rows, back to back. */
