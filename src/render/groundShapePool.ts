@@ -69,8 +69,8 @@ export class GroundShapePool implements GroundWorkers {
     if (this.lanes || this.broken) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
     const count = jobLanes(MOST_LANES);
+    const lanes: Lane[] = [];
     try {
-      const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
         const worker = jobPort('groundShape');
         const lane: Lane = { worker, waiting: new Map(), heard: performance.now(), told: false };
@@ -91,6 +91,8 @@ export class GroundShapePool implements GroundWorkers {
       this.lanes = lanes;
     } catch (error) {
       console.warn('[ground] the ground workers are unavailable; the ground is shaped on the page', error);
+      // The lanes made before the one that failed let go: none is left holding its place on a worker of the job pool.
+      for (const lane of lanes) lane.worker.terminate();
       this.broken = true;
       this.lanes = null;
     }

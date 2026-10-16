@@ -96,8 +96,8 @@ export class RoadTilePool implements RoadTiler {
     if (this.lanes || this.broken) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
     const count = jobLanes(MOST_LANES);
+    const lanes: Lane[] = [];
     try {
-      const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
         const worker = jobPort('roadTiles');
         const lane: Lane = { worker, waiting: new Map(), coarsening: new Map(), heard: performance.now(), told: false };
@@ -134,6 +134,8 @@ export class RoadTilePool implements RoadTiler {
       this.lanes = lanes;
     } catch (error) {
       console.warn('[roads] the road tile workers are unavailable; the tiles are built on the page', error);
+      // The lanes made before the one that failed let go: none is left holding its place on a worker of the job pool.
+      for (const lane of lanes) lane.worker.terminate();
       this.broken = true;
       this.lanes = null;
     }

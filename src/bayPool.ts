@@ -59,8 +59,8 @@ export class BayPool implements BayWorkers {
     if (this.lanes || this.broken) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
     const count = jobLanes(MOST_LANES);
+    const lanes: Lane[] = [];
     try {
-      const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
         const worker = jobPort('bays');
         const lane: Lane = { worker, waiting: new Map(), heard: performance.now(), told: false };
@@ -82,6 +82,8 @@ export class BayPool implements BayWorkers {
       this.lanes = lanes;
     } catch (error) {
       console.warn('[parking] the bays workers are unavailable; the lots are worked out on the page', error);
+      // The lanes made before the one that failed let go: none is left holding its place on a worker of the job pool.
+      for (const lane of lanes) lane.worker.terminate();
       this.broken = true;
       this.lanes = null;
     }
