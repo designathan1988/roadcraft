@@ -28,7 +28,7 @@ function frames(shapes: readonly (readonly [number, number, number, number])[], 
   return { count, instanceMatrix, instanceColor: new Float32Array(count * 3).fill(1), bounds };
 }
 
-const arrays = (part: NonNullable<CellArrays['parts']['frame']>): CellArrays => ({ shell: null, parts: { frame: part }, furniture: {} });
+const arrays = (part: NonNullable<CellArrays['parts']['frame']>): CellArrays => ({ shells: [], parts: { frame: part }, furniture: {} });
 const view = (x: number, y: number, z: number, shadowTexel = Infinity): PartView => ({ x, y, z, pxAtMetre: 1000, orthoPx: null, shadowTexel });
 const drawn = (cell: PartCell): InstancedMesh[] => cell.group.children.filter((o): o is InstancedMesh => o instanceof InstancedMesh && o.visible);
 

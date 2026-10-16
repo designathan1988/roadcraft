@@ -105,7 +105,7 @@ import { facadeProps } from './facadeProps';
 import { LOT_COLOURS } from './massing';
 import { PARASOL_HALF, PARASOL_HIGH, PARASOL_LOW, ROOF_COLOURS, TANK_COLOURS, machineRooms, roofPlantOf, terraceDeck, terraceParasols, terraceSeed } from './roofPlan';
 import type { FlagInstance } from './flagLayer';
-import type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch, ShellChunk } from './chunk';
+import type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch, RunChunk, ShellChunk } from './chunk';
 export type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch,  } from './chunk';
 import { drawsSignature } from './signature';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
@@ -366,6 +366,32 @@ class Grow<T extends Typed> {
   view(): T {
     return this.array.subarray(0, this.length) as T;
   }
+
+  /** The array's bytes as 32-bit words (a new view only once it grew): what the vertex weld hashes and compares. */
+  bits(): Int32Array {
+    const a = this.array;
+    let w = this.words;
+    if (!w || w.buffer !== a.buffer) w = this.words = new Int32Array(a.buffer, a.byteOffset, a.byteLength >> 2);
+    return w;
+  }
+
+  private words: Int32Array | null = null;
+}
+
+/** One of a part's arrays as a vertex fills it: its numbers and its 32-bit words a vertex (every vertex whole words, so the weld reads them as words). */
+interface Stream {
+  readonly grow: Grow<Typed>;
+  readonly size: number;
+  readonly words: number;
+}
+
+/** A 32-bit word into a running hash (MurmurHash3's block step, A. Appleby). */
+function hashWord(h: number, w: number): number {
+  let k = Math.imul(w, 0xcc9e2d51);
+  k = Math.imul((k << 15) | (k >>> 17), 0x1b873593);
+  h ^= k;
+  h = (h << 13) | (h >>> 19);
+  return (Math.imul(h, 5) + 0xe6546b64) | 0;
 }
 
 /** One finish's share of a shell, written as laid in the GPU's layout (`ShellChunk`): flat-shaded, painted triangles, the uv worked out on the GPU. */
@@ -377,17 +403,85 @@ class ShellPart {
   /** The paint, its tone and grime in it, and the finish id. */
   readonly paint = new Grow((n) => new Uint16Array(n), SHELL_SHORTS * 64);
   readonly index = new Grow((n) => new Uint32Array(n), 96);
-  /** The far level only (`Shell.far`): each vertex's bay width and storey height (`FACADE_FLOATS`), its grid (`FACADE_GRID`), its opening in its bay (a0, a1, h0, h1), its frames' colour (r, g, b) and office flag (`FACADE_BYTES`, 0..255). */
+  /** A run of bays only (`RunChunk`): each vertex's bay width and storey height (`FACADE_FLOATS`), its grid (`FACADE_GRID`), its opening in its bay (a0, a1, h0, h1), its frames' colour (r, g, b) and office flag (`FACADE_BYTES`, 0..255). */
   readonly facade: Grow<Float32Array> | null;
   readonly grid: Grow<Int16Array> | null;
   readonly opening: Grow<Uint8Array> | null;
+  /** Every array a vertex is written in: two vertices alike in all of them, bit for bit, are drawn as one. */
+  private readonly streams: readonly Stream[];
+  /** The weld's table, open addressing with linear probing: each slot a vertex + 1, 0 empty; never more than half full. */
+  private slots = new Int32Array(256);
 
-  constructor(readonly finish: number, far: boolean) {
-    this.facade = far ? new Grow((n) => new Float32Array(n), FACADE_FLOATS * 64) : null;
-    this.grid = far ? new Grow((n) => new Int16Array(n), FACADE_GRID * 64) : null;
-    this.opening = far ? new Grow((n) => new Uint8Array(n), FACADE_BYTES * 64) : null;
+  constructor(readonly finish: number, run: boolean) {
+    this.facade = run ? new Grow((n) => new Float32Array(n), FACADE_FLOATS * 64) : null;
+    this.grid = run ? new Grow((n) => new Int16Array(n), FACADE_GRID * 64) : null;
+    this.opening = run ? new Grow((n) => new Uint8Array(n), FACADE_BYTES * 64) : null;
+    const streams: Stream[] = [
+      { grow: this.position, size: 3, words: 3 },
+      { grow: this.normalDecay, size: SHELL_SHORTS, words: SHELL_SHORTS / 2 },
+      { grow: this.paint, size: SHELL_SHORTS, words: SHELL_SHORTS / 2 },
+    ];
+    if (this.facade && this.grid && this.opening) {
+      streams.push({ grow: this.facade, size: FACADE_FLOATS, words: FACADE_FLOATS }, { grow: this.grid, size: FACADE_GRID, words: FACADE_GRID / 2 }, { grow: this.opening, size: FACADE_BYTES, words: FACADE_BYTES / 4 });
+    }
+    this.streams = streams;
+  }
+
+  /** Room in every array for `count` vertices written from `vertices` on. */
+  room(count: number): void {
+    for (const s of this.streams) s.grow.room(count * s.size);
+  }
+
+  /** The vertex just written at `vertices`: kept as a new one, or the one laid before with every number alike; its index. */
+  weld(): number {
+    const v = this.vertices;
+    if ((v + 1) * 2 > this.slots.length) this.rehash();
+    const mask = this.slots.length - 1;
+    for (let s = this.hash(v) & mask; ; s = (s + 1) & mask) {
+      const at = this.slots[s]!;
+      if (at === 0) {
+        this.slots[s] = v + 1;
+        this.vertices = v + 1;
+        for (const st of this.streams) st.grow.length = this.vertices * st.size;
+        return v;
+      }
+      if (this.same(at - 1, v)) return at - 1;
+    }
+  }
+
+  private hash(v: number): number {
+    let h = 0x2545f491;
+    for (const { grow, words } of this.streams) {
+      const bits = grow.bits();
+      for (let k = v * words, end = k + words; k < end; k++) h = hashWord(h, bits[k]!);
+    }
+    // MurmurHash3's finaliser: every bit of the words reaches the low bits the table reads.
+    h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
+    return h ^ (h >>> 16);
+  }
+
+  private same(a: number, b: number): boolean {
+    for (const { grow, words } of this.streams) {
+      const bits = grow.bits();
+      for (let k = 0; k < words; k++) if (bits[a * words + k] !== bits[b * words + k]) return false;
+    }
+    return true;
+  }
+
+  /** A table twice the size, every vertex kept put in it again. */
+  private rehash(): void {
+    this.slots = new Int32Array(this.slots.length * 2);
+    const mask = this.slots.length - 1;
+    for (let v = 0; v < this.vertices; v++) {
+      let s = this.hash(v) & mask;
+      while (this.slots[s] !== 0) s = (s + 1) & mask;
+      this.slots[s] = v + 1;
+    }
   }
 }
+
+/** Each corner of the face being laid: the vertex it was welded to (grown for a lantern's 24-sided cap). */
+let faceIds = new Int32Array(32);
 
 /** What the windows of a run of bays are, for the far level's shader to draw them where the detail has them (`facadeLevel.ts`) */
 interface FacadeStamp {
@@ -417,11 +511,13 @@ const toByte = (x: number): number => Math.round(Math.max(0, Math.min(1, x)) * 2
 /** Triangles in THREE's axes, one buffer set per finish; winding fixed per face. */
 class Shell {
   readonly parts = new Map<Finish, ShellPart>();
+  /** The far level's runs of bays with openings, apart (`RunChunk`): only their vertices pay for the window grid. */
+  readonly runs = new Map<Finish, ShellPart>();
   /** The ground floor's height for the building being emitted: walls darken towards it */
   ground = Number.NaN;
   /** How run-down the building being emitted is (`Building.decay`): stains, peeling paint, grime. */
   decay = 0;
-  /** The far level being emitted (`emitChunk` `far`): every vertex carries a window grid (`kind` 0: none). */
+  /** The far level being emitted (`emitChunk` `far`): its bays laid as runs, the runs with openings in `runs`. */
   far = false;
   /** The windows of the face being laid (the far level's runs of bays). */
   stamp: FacadeStamp | null = null;
@@ -430,12 +526,14 @@ class Shell {
 
   /** DO NOT lay only the first two triangles: a lantern's octagonal and 24-sided caps */
   face(points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], c: Paint, shades?: readonly number[]): void {
-    let part = this.parts.get(c.finish);
+    // A run of bays with no opening (kind 0) draws as a wall: it needs no window grid.
+    const st = this.stamp && this.stamp.kind !== FACADE_KIND.none ? this.stamp : null;
+    const parts = st ? this.runs : this.parts;
+    let part = parts.get(c.finish);
     if (!part) {
-      part = new ShellPart(finishId(c.finish), this.far);
-      this.parts.set(c.finish, part);
+      part = new ShellPart(finishId(c.finish), st !== null);
+      parts.set(c.finish, part);
     }
-    const base = part.vertices;
     const count = points.length;
     const length = Math.hypot(n[0], n[1], n[2]) || 1;
     const wx = n[0] / length;
@@ -447,17 +545,22 @@ class Shell {
     const wall = Math.abs(wz) < 0.5;
     const grime = wall && Number.isFinite(this.ground);
     // Every vertex of every shell passes here (a town's opening: 2.5-3 s of its 6 s of buildings): straight into the GPU's layout, its uv worked out there (`shellUv`).
-    const position = part.position.room(count * 3);
-    const normalDecay = part.normalDecay.room(count * SHELL_SHORTS);
-    const paint = part.paint.room(count * SHELL_SHORTS);
-    let p3 = part.position.length, p4 = part.paint.length;
+    part.room(count);
+    const position = part.position.array, normalDecay = part.normalDecay.array, paint = part.paint.array;
     const qx = snorm16(nx), qy = snorm16(ny), qz = snorm16(nz), qd = snorm16(this.decay);
     const rgb = c.rgb;
     const id = part.finish;
+    if (faceIds.length < count) faceIds = new Int32Array(count * 2);
+    const ids = faceIds;
+    const bytes = st ? this.runBytes(st) : null;
+    const flip = st ? this.runFlip(st, wx, wy) : 0;
     for (let i = 0; i < count; i++) {
       const p = points[i]!;
       const x = p[0], y = p[1], z = p[2];
-      position[p3++] = x; position[p3++] = z; position[p3++] = -y;
+      // Written past the vertices kept: the weld keeps it, or finds it laid already and the next one writes over it.
+      const v = part.vertices, p3 = v * 3, p4 = v * SHELL_SHORTS;
+      // Each -0 written +0 (x + 0, 0 - y), so the two weld: the GPU draws them alike.
+      position[p3] = x + 0; position[p3 + 1] = z + 0; position[p3 + 2] = 0 - y;
       // No two stretches of wall quite the same tone, and the base weathered.
       // A vertex's own shade (a streak under a sill darker at its foot, `emitStreak`).
       let tone = (0.97 + macroNoise(x / MACRO_SCALE, y / MACRO_SCALE, z / MACRO_SCALE) * 0.06) * (shades?.[i] ?? 1);
@@ -467,12 +570,9 @@ class Shell {
       }
       normalDecay[p4] = qx; normalDecay[p4 + 1] = qy; normalDecay[p4 + 2] = qz; normalDecay[p4 + 3] = qd;
       paint[p4] = paintShort(rgb[0] * tone); paint[p4 + 1] = paintShort(rgb[1] * tone); paint[p4 + 2] = paintShort(rgb[2] * tone); paint[p4 + 3] = id;
-      p4 += SHELL_SHORTS;
+      if (st && bytes) this.stampRun(part, v, st, i, flip, bytes);
+      ids[i] = part.weld();
     }
-    part.position.length = p3;
-    part.normalDecay.length = p4;
-    part.paint.length = p4;
-    if (part.facade) this.stampFar(part, count, wx, wy);
     // In three's axes (x, z, -y): the winding measured against the normal.
     const p0 = points[0]!, p1 = points[1]!, p2 = points[2]!;
     const ux = p1[0] - p0[0], uy = p1[2] - p0[2], uz = p0[1] - p1[1];
@@ -484,44 +584,36 @@ class Shell {
     const index = part.index.room((count - 2) * 3);
     let k3 = part.index.length;
     for (let k = 1; k + 1 < count; k++) {
-      index[k3++] = base;
-      index[k3++] = forward ? base + k : base + k + 1;
-      index[k3++] = forward ? base + k + 1 : base + k;
+      index[k3++] = ids[0]!;
+      index[k3++] = forward ? ids[k]! : ids[k + 1]!;
+      index[k3++] = forward ? ids[k + 1]! : ids[k]!;
     }
     part.index.length = k3;
-    part.vertices = base + count;
   }
 
-  /** The far level's window grid of the face being laid, `count` vertices (kind 0 where no run of bays is stamped); (wx, wy): its normal's plan, world axes. */
-  private stampFar(part: ShellPart, count: number, wx: number, wy: number): void {
-    const facade = part.facade!.room(count * FACADE_FLOATS), grid = part.grid!.room(count * FACADE_GRID), opening = part.opening!.room(count * FACADE_BYTES);
-    let f = part.facade!.length, g = part.grid!.length, o = part.opening!.length;
-    const st = this.stamp;
-    if (st) {
-      // The run's bays go along the face's own horizontal (`shellUv`'s t, as the shader works it out) or against it: the shader turns it round.
-      const flat = Math.hypot(wx, wy);
-      const flip = flat > 1e-6 && -wy * st.tx + wx * st.ty < 0 ? FACADE_FLIP : 0;
-      const bytes = [toByte(st.opening[0]), toByte(st.opening[1]), toByte(st.opening[2]), toByte(st.opening[3]), toByte(st.trim[0]), toByte(st.trim[1]), toByte(st.trim[2]), st.office ? 255 : 0];
-      for (let i = 0; i < count; i++) {
-        const [u, v] = st.uv[i]!;
-        facade[f++] = st.W; facade[f++] = st.H;
-        grid[g++] = u; grid[g++] = v; grid[g++] = st.kind + flip; grid[g++] = st.volume * 4 + st.side;
-        for (const b of bytes) opening[o++] = b;
-      }
-    } else {
-      facade.fill(0, f, f + count * FACADE_FLOATS);
-      grid.fill(0, g, g + count * FACADE_GRID);
-      opening.fill(0, o, o + count * FACADE_BYTES);
-      f += count * FACADE_FLOATS; g += count * FACADE_GRID; o += count * FACADE_BYTES;
-    }
-    part.facade!.length = f;
-    part.grid!.length = g;
-    part.opening!.length = o;
+  /** The run's bays go along the face's own horizontal (`shellUv`'s t, as the shader works it out) or against it: the shader turns it round; (wx, wy): the face's normal on the plan, world axes. */
+  private runFlip(st: FacadeStamp, wx: number, wy: number): number {
+    return Math.hypot(wx, wy) > 1e-6 && -wy * st.tx + wx * st.ty < 0 ? FACADE_FLIP : 0;
+  }
+
+  /** A run's opening and frames as bytes, the same on each of its vertices. */
+  private runBytes(st: FacadeStamp): readonly number[] {
+    return [toByte(st.opening[0]), toByte(st.opening[1]), toByte(st.opening[2]), toByte(st.opening[3]), toByte(st.trim[0]), toByte(st.trim[1]), toByte(st.trim[2]), st.office ? 255 : 0];
+  }
+
+  /** The window grid of the run's corner `i`, written at vertex `v` before it is welded. */
+  private stampRun(part: ShellPart, v: number, st: FacadeStamp, i: number, flip: number, bytes: readonly number[]): void {
+    const facade = part.facade!.array, grid = part.grid!.array, opening = part.opening!.array;
+    const [u, w] = st.uv[i]!;
+    const f = v * FACADE_FLOATS, g = v * FACADE_GRID, o = v * FACADE_BYTES;
+    facade[f] = st.W; facade[f + 1] = st.H;
+    grid[g] = u; grid[g + 1] = w; grid[g + 2] = st.kind + flip; grid[g + 3] = st.volume * 4 + st.side;
+    for (let k = 0; k < FACADE_BYTES; k++) opening[o + k] = bytes[k]!;
   }
 
   get triangles(): number {
     let n = 0;
-    for (const part of this.parts.values()) n += part.index.length / 3;
+    for (const parts of [this.parts, this.runs]) for (const part of parts.values()) n += part.index.length / 3;
     return n;
   }
 }
@@ -3381,26 +3473,33 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
     list.forEach((p, i) => writeMatrix(matrices, i * 16, p));
     (furniture ??= {})[kind] = { matrices, colours: null, count: list.length };
   }
-  const out = furniture ? { shells, parts: batches, furniture } : { shells, parts: batches };
+  const runs = runChunks(shell);
+  const laid = runs ? { shells, runs } : { shells };
+  const out = furniture ? { ...laid, parts: batches, furniture } : { ...laid, parts: batches };
   const withGround = lotGround ? { ...out, lotGround } : out;
   const withSignature = signature && floor !== undefined ? { ...withGround, signatureFloor: floor } : withGround;
   return flags.length ? { ...withSignature, flags } : withSignature;
 }
 
-/** A shell's fragments by finish: the arrays it was laid in, viewed at their length, no copy (the far level's with each vertex's window grid). */
+/** A part's arrays viewed at their length, no copy. */
+const shellChunkOf = (part: ShellPart): ShellChunk =>
+  ({ position: part.position.view(), normalDecay: part.normalDecay.view(), paint: part.paint.view(), index: part.index.view() });
+
+/** A shell's fragments by finish: the arrays it was laid in (every face but the far level's runs with openings). */
 function shellChunks(shell: Shell): Partial<Record<Finish, ShellChunk>> {
   const shells: Partial<Record<Finish, ShellChunk>> = {};
-  for (const [finish, part] of shell.parts) {
-    if (part.index.length === 0) continue;
-    shells[finish] = {
-      position: part.position.view(),
-      normalDecay: part.normalDecay.view(),
-      paint: part.paint.view(),
-      index: part.index.view(),
-      ...(part.facade && part.grid && part.opening ? { facade: part.facade.view(), grid: part.grid.view(), opening: part.opening.view() } : {}),
-    };
-  }
+  for (const [finish, part] of shell.parts) if (part.index.length > 0) shells[finish] = shellChunkOf(part);
   return shells;
+}
+
+/** The far level's runs of bays with openings by finish, each vertex with its window grid; undefined when none was laid. */
+function runChunks(shell: Shell): Partial<Record<Finish, RunChunk>> | undefined {
+  let runs: Partial<Record<Finish, RunChunk>> | undefined;
+  for (const [finish, part] of shell.runs) {
+    if (part.index.length === 0 || !part.facade || !part.grid || !part.opening) continue;
+    (runs ??= {})[finish] = { ...shellChunkOf(part), facade: part.facade.view(), grid: part.grid.view(), opening: part.opening.view() };
+  }
+  return runs;
 }
 
 /** The shell's parts of a chunk laid as the shell's faces again, as `Emitter.box`, `slab` and `emitFence` laid them, from the instances alone (`shellParts.ts`) */
@@ -3445,27 +3544,22 @@ export function withShellParts(chunk: BuildingChunk): BuildingChunk {
   for (const [finish, add] of Object.entries(laid) as [Finish, ShellChunk][]) {
     const was = shells[finish];
     if (!was) { shells[finish] = add; continue; }
-    const base = was.position.length / 3, count = add.position.length / 3;
-    // `b` after `a`; a far level's window grid none on a part (`b` left out: kind 0, as `Shell.face` lays a face with no stamp).
-    const joined = <T extends Float32Array | Int16Array | Uint16Array | Uint8Array>(a: T, b: T | null, make: (n: number) => T, size: number): T => {
-      const out = make(a.length + count * size);
+    const base = was.position.length / 3;
+    // `b` after `a` (a part's faces are never a run of bays: the runs stay as they were).
+    const joined = <T extends Float32Array | Int16Array | Uint16Array>(a: T, b: T, make: (n: number) => T): T => {
+      const out = make(a.length + b.length);
       out.set(a);
-      if (b) out.set(b, a.length);
+      out.set(b, a.length);
       return out;
     };
     const index = new Uint32Array(was.index.length + add.index.length);
     index.set(was.index);
     for (let k = 0; k < add.index.length; k++) index[was.index.length + k] = add.index[k]! + base;
     shells[finish] = {
-      position: joined(was.position, add.position, (n) => new Float32Array(n), 3),
-      normalDecay: joined(was.normalDecay, add.normalDecay, (n) => new Int16Array(n), SHELL_SHORTS),
-      paint: joined(was.paint, add.paint, (n) => new Uint16Array(n), SHELL_SHORTS),
+      position: joined(was.position, add.position, (n) => new Float32Array(n)),
+      normalDecay: joined(was.normalDecay, add.normalDecay, (n) => new Int16Array(n)),
+      paint: joined(was.paint, add.paint, (n) => new Uint16Array(n)),
       index,
-      ...(was.facade && was.grid && was.opening ? {
-        facade: joined(was.facade, null, (n) => new Float32Array(n), FACADE_FLOATS),
-        grid: joined(was.grid, null, (n) => new Int16Array(n), FACADE_GRID),
-        opening: joined(was.opening, null, (n) => new Uint8Array(n), FACADE_BYTES),
-      } : {}),
     };
   }
   const none: PartBatch = { matrices: new Float32Array(0), colours: new Float32Array(0), count: 0, looks: new Float32Array(0) };
@@ -3520,9 +3614,17 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
   const meshes: (Mesh | InstancedMesh)[] = [];
   let triangles = 0;
 
-  // Every finish in one geometry, one draw: each vertex's finish picks its layer of the maps (`finishes.ts`).
-  const shell = arrays.shell;
-  if (shell) {
+  // A restored context refills every piece from one batch made again, not one per piece (`gpuOnly.ts` `refillArrays` runs them in one go).
+  let again: CellArrays | null = null;
+  const refilled = (): CellArrays | null => {
+    if (!again && refill) {
+      again = refill();
+      queueMicrotask(() => { again = null; });
+    }
+    return again;
+  };
+  // Every finish of a piece in one geometry, one draw: each vertex's finish picks its layer of the maps (`finishes.ts`).
+  arrays.shells.forEach((shell, piece) => {
     const g = new BufferGeometry();
     // DO NOT wrap them in a Float32BufferAttribute or Uint32BufferAttribute: those copy the array they are given
     g.setAttribute('position', new BufferAttribute(shell.position, 3));
@@ -3543,7 +3645,7 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       g.setAttribute('facadeTrim', new InterleavedBufferAttribute(opening, 4, 4, true));
     }
     g.setIndex(new BufferAttribute(shell.index, 1));
-    // One Mesh a cell, its arrays let go once on the GPU (below).
+    // One Mesh a piece, its arrays let go once on the GPU (below).
     g.boundingBox = boxOf(shell.bounds);
     g.boundingSphere = sphereOf(shell.bounds);
     const mesh = new Mesh(g, ghost ? kit.ghostShell : dim ? kit.dimShell : far ? kit.facade : kit.shellMaterial);
@@ -3553,10 +3655,11 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
         position: g.attributes.position as BufferAttribute, normalDecay, paint: g.attributes[PAINT_ATTRIBUTE] as BufferAttribute, index: g.index!, ...(far ?? {}),
       };
       gpuOnlyAttributes(mesh, kept, () => {
-        const again = refill?.().shell;
-        return again ? {
-          position: again.position, normalDecay: again.normalDecay, paint: again.paint, index: again.index,
-          ...(again.facade && again.grid && again.opening ? { facade: again.facade, grid: again.grid, opening: again.opening } : {}),
+        // The same chunks make the same pieces in the same order.
+        const same = refilled()?.shells[piece];
+        return same ? {
+          position: same.position, normalDecay: same.normalDecay, paint: same.paint, index: same.index,
+          ...(same.facade && same.grid && same.opening ? { facade: same.facade, grid: same.grid, opening: same.opening } : {}),
         } : {};
       });
     }
@@ -3565,7 +3668,7 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     mesh.receiveShadow = !ghost;
     meshes.push(mesh);
     triangles += shell.index.length / 3;
-  }
+  });
 
   for (const kind of PART_KINDS) {
     const part = arrays.parts[kind];

@@ -61,7 +61,7 @@ export interface PartBatch {
 }
 
 /** Everything one building contributes, in typed arrays: a shell fragment with local indices and its instance batches. */
-/** A shell's vertices are written in the GPU's layout as they are laid (`cellArrays.ts` `ShellArrays`): a cell's arrays are these concatenated. */
+/** A shell's vertices are written in the GPU's layout as they are laid (`cellArrays.ts` `ShellArrays`), each one once: faces alike in every number share it (`buildingMesh.ts` `ShellPart.weld`). */
 export interface ShellChunk {
   readonly position: Float32Array;
   /** The normal (three's axes) and the wear, `SHELL_SHORTS` signed shorts a vertex over `NORMAL_UNIT`. */
@@ -69,17 +69,23 @@ export interface ShellChunk {
   /** The paint's linear rgb over `COLOUR_RANGE` and the finish id, `SHELL_SHORTS` unsigned shorts a vertex over `PAINT_UNIT`. */
   readonly paint: Uint16Array;
   readonly index: Uint32Array;
-  /** The far level only (`emitChunk` `far`): each vertex's bay width and storey height, `FACADE_FLOATS` numbers (`cellArrays.ts`). */
-  readonly facade?: Float32Array;
-  /** The far level only: each vertex's bay, level, kind and volume * 4 + side, `FACADE_GRID` shorts. */
-  readonly grid?: Int16Array;
-  /** The far level only: each vertex's opening and frame colour, `FACADE_BYTES` bytes. */
-  readonly opening?: Uint8Array;
+}
+
+/** The far level's runs of bays with openings (`emitChunk` `far`): a shell fragment whose every vertex carries its window grid (`facadeLevel.ts`). */
+export interface RunChunk extends ShellChunk {
+  /** Each vertex's bay width and storey height, `FACADE_FLOATS` numbers (`cellArrays.ts`). */
+  readonly facade: Float32Array;
+  /** Each vertex's bay, level, kind and volume * 4 + side, `FACADE_GRID` shorts. */
+  readonly grid: Int16Array;
+  /** Each vertex's opening and frame colour, `FACADE_BYTES` bytes. */
+  readonly opening: Uint8Array;
 }
 
 export interface BuildingChunk {
-  /** The shell, one fragment per finish it uses. */
+  /** The shell, one fragment per finish it uses; at the far level every face but the runs of bays with openings. */
   readonly shells: Readonly<Partial<Record<Finish, ShellChunk>>>;
+  /** The far level only: its runs of bays with openings, one fragment per finish, drawn by the facade's material; none on the detail. */
+  readonly runs?: Readonly<Partial<Record<Finish, RunChunk>>>;
   readonly parts: Readonly<Record<PartKind, PartBatch>>;
   /** Furniture of a cut-open interior, by kind; absent when none is drawn. */
   readonly furniture?: Readonly<Partial<Record<FurnitureKind, PartBatch>>>;
