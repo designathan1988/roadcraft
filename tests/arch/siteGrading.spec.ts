@@ -26,7 +26,9 @@ describe('the sites graded', () => {
   it('do not floor the camera\'s solids again', () => {
     const renderer = code('src/render/renderer.ts');
     expect(renderer).toMatch(/cameraSolidsKept\.follow\(net\.doc\.buildings, floorGroundSince\)/);
-    expect(renderer).toMatch(/if \(sites && serial\) sitesGradedSerials\.add\(serial\);/);
+    // The floors follow what they read (the natural ground, the roads' heights), never the ground shaped to the roads and the sites.
+    expect(renderer).toMatch(/const FLOOR_KINDS: readonly ChangeKind\[\] = \['elevation', 'terrain'\];/);
+    expect(renderer).toMatch(/groundDiary\?\.since\(since, FLOOR_KINDS\)/);
   });
 
   it('work each platform out alone, each building\'s frame turned once', () => {

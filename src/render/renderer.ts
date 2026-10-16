@@ -992,18 +992,16 @@ export function createSceneRenderer(
     get version() { return groundChanges.version; },
     rectsSince: (since) => groundRectsSince(since),
   };
-  /** The diary's serials of the ground graded round the sites that changed (`shapeGround` with `sites`) */
-  const sitesGradedSerials = new Set<number>();
-  /** DO NOT re-floor the buildings round a graded site */
+  /** What a building's floor reads (`floors.ts` on `builtGroundAt` and `pavedHeightAt`): the natural ground and the roads' heights, never the ground cut and filled to them
+   *  - DO NOT re-floor the buildings for the diary's 'ground' (the ground shaped to the roads and the sites): it is not what the floor reads, and every block shaped in an opening re-floored the buildings round it again (3.7 floors a building, 2026-10-16). */
+  const FLOOR_KINDS: readonly ChangeKind[] = ['elevation', 'terrain'];
   const floorGroundSince: GroundSince = {
-    get version() { return groundChanges.version; },
+    get version() { return groundDiary?.serialOf(...FLOOR_KINDS) ?? 0; },
     rectsSince: (since) => {
-      for (const serial of sitesGradedSerials) if (serial <= since) sitesGradedSerials.delete(serial);
-      const entries = groundDiary?.since(since, GROUND_KINDS);
+      const entries = groundDiary?.since(since, FLOOR_KINDS);
       if (!entries) return null;
       const rects: ChangeRect[] = [];
       for (const entry of entries) {
-        if (sitesGradedSerials.has(entry.serial)) continue;
         if (entry.rects === null) return null;
         rects.push(...entry.rects);
       }
@@ -1294,8 +1292,7 @@ export function createSceneRenderer(
     const parent = net.doc.changes.version;
     const told = (): void => {
       if (padsReady) return;
-      const serial = derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'lot ground levelled' : 'ground cut and filled', parent);
-      if (sites && serial) sitesGradedSerials.add(serial);
+      derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'lot ground levelled' : 'ground cut and filled', parent);
     };
     const roads = net.doc.segments.size > 0 ? elevation : null;
     followFloors(net);
