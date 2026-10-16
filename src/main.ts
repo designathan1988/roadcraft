@@ -1916,7 +1916,7 @@ const itemInTile = (item: unknown, key: number): boolean => {
   return !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && OWNER.at(p as { x: number; y: number }) === key;
 };
 /** A world of the generator's options opened: the document emptied, the tiles round the camera streamed in (made the first time, read after). */
-function openStreamedWorld(options: WholeMapOptions): void {
+function openStreamedWorld(options: WholeMapOptions, fresh: boolean): void {
   streamed?.generator.dispose();
   persistence.paused = true;
   history.clear();
@@ -1935,6 +1935,8 @@ function openStreamedWorld(options: WholeMapOptions): void {
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
   // The opening shows the town once the tiles round the camera are in.
   scene.holdOpening(() => streamer.settled);
+  // A new world opens over its first city, at the origin (`cityGen/wholeMap.ts`); one opened again where the camera was left.
+  if (fresh) { camera.x = 0; camera.y = 0; view.moveTo({ x: 0, y: 0 }); }
   streamer.focus(camera.x, camera.y);
   requestDraw();
 }
@@ -3599,7 +3601,7 @@ window.addEventListener('beforeunload', saveOnClose());
 window.addEventListener('pagehide', () => { void streamed?.streamer.flush(); });
 // The streamed world open at the last close opened again (its tiles are in the store).
 try {
-  if (streamedAtBoot) openStreamedWorld(JSON.parse(streamedAtBoot) as WholeMapOptions);
+  if (streamedAtBoot) openStreamedWorld(JSON.parse(streamedAtBoot) as WholeMapOptions, false);
 } catch (error) {
   console.error('[world] the streamed world could not be opened again', error);
 }
@@ -3755,7 +3757,7 @@ const healthPanel = mountHealthPanel({
     if (size === 'whole') {
       // A city of any size: the streamed world, made tile by tile round the camera as it goes (CLAUDE.md, "Streaming world").
       const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
-      openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked });
+      openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked }, true);
       return { tiles: 0 };
     }
     // A round city: the streamed world closed, the document the whole map again.
