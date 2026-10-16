@@ -10,7 +10,7 @@ import { MesoMemory } from '../meso/memory';
 import { type TileReader, TileLinkFeed } from '../meso/tileFeed';
 import { storeTileReader } from '../../tileReader';
 import { laneGrid } from '../agents/laneGrid';
-import { useBayWorkers } from '../agents/parking';
+import { tileBaysGone, tileBaysRead, tileBaysWanted, useBayWorkers } from '../agents/parking';
 import { BayPool } from '../../bayPool';
 import { ConflictPool } from '../../conflictPool';
 import { TopologyCatchUp } from '../topologyCatchUp';
@@ -42,6 +42,7 @@ export class SimHost {
   /** The streamed world's tile store as this worker reads it (`tiles`), and the read under way for each tile put in the page's document. */
   private reader: TileReader | null = null;
   private readonly tileReads = new Map<number, number>();
+  private readSerial = 0;
   private sim: SimWorld | null = null;
   /** The meso traffic and its micro window: made before the world, so a window told early is kept for it. */
   private readonly meso = new Meso();
@@ -132,17 +133,35 @@ export class SimHost {
   /** A tile put in the page's document: its buildings as the traffic reads them read here from the store (`trafficBuilding`, baked with the tile), never on the page (`SimClient.sendChanges`)
    *  - one let go before its read lands is not placed; a building the page already told (an edit since) keeps the page's. */
   private tileBuildings(event: TileEvent, key: number): void {
-    if (event === 'letGo') { this.tileReads.delete(key); return; }
+    const sim = this.sim;
+    if (event === 'letGo') {
+      this.tileReads.delete(key);
+      if (sim) tileBaysGone(sim, key);
+      return;
+    }
     if (event !== 'loaded' || !this.reader) return;
-    const read = (this.tileReads.get(key) ?? 0) + 1;
+    // Numbered across tiles: a tile let go and loaded again does not take a read of before for its own.
+    const read = ++this.readSerial;
     this.tileReads.set(key, read);
+    // Its parking bays as baked with it (`sim/tileBays.ts`), read with its buildings: its streets wait for them, DO NOT lay them out before they land.
+    const reader = this.reader;
+    const bays = sim && reader.bays ? reader.bays(key).catch((error: unknown) => {
+      console.warn(`[sim] tile ${key}'s bays could not be read from the store: worked out here`, error);
+      return null;
+    }) : Promise.resolve(null);
+    if (sim && reader.bays) tileBaysWanted(sim, key, read);
     // Its traffic section alone, baked where the tile was written (`sim/tileSections.ts`): DO NOT parse the whole tile here a second time.
-    this.reader.traffic(key).then((traffic) => {
+    Promise.all([reader.traffic(key), bays]).then(([traffic, baked]) => {
+      // The bays offered before the buildings are put: their lots take them at the next look (`parking.ts` lookAtLot).
+      if (sim) tileBaysRead(sim, key, read, this.tileReads.get(key) === read ? baked : null);
       if (this.tileReads.get(key) !== read || !traffic) return;
       const changes: BuildingChange[] = [];
       for (const t of traffic) if (!this.buildings.get(t.id)) changes.push({ id: t.id, value: t });
       this.buildings.apply(changes);
-    }, (error: unknown) => console.warn(`[sim] tile ${key}'s buildings could not be read from the store`, error));
+    }, (error: unknown) => {
+      if (sim) tileBaysRead(sim, key, read, null);
+      console.warn(`[sim] tile ${key}'s buildings could not be read from the store`, error);
+    });
   }
 
   /** Another map: the replica made whole again, and nothing of the old simulation carried over. */

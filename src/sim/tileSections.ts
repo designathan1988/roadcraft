@@ -3,8 +3,9 @@ import { migrateBuilding } from '@world/buildings/serialize';
 import type { TileRecords } from '@world/doc';
 import { type TrafficBuilding, trafficBuilding } from './agents/trafficBuildings';
 import { TILE_LINKS_FORMAT, type TileLinks, bakeTileLinks } from './meso/tileLinks';
+import { BAYS_SECTION, bakeTileBays } from './tileBays';
 
-/** THE TILE'S SECTIONS THE SIMULATION READS (CLAUDE.md "Streaming world"): its meso link table and its buildings as traffic reads them, baked once where the tile is written (the generator's worker, the save worker: `editor/tileStore.ts` TileBaker) and stored with it; the simulation's worker reads each alone, never the whole tile */
+/** THE TILE'S SECTIONS THE SIMULATION READS (CLAUDE.md "Streaming world"): its meso link table, its buildings as traffic reads them and its parking bays (`tileBays.ts`), baked once where the tile is written (the generator's worker, the save worker: `editor/tileStore.ts` TileBaker) and stored with it; the simulation's worker reads each alone, never the whole tile */
 
 /** The link table, a typed-array pack (`core/arrayPack.ts`). */
 export const LINKS_SECTION = 'links';
@@ -73,8 +74,17 @@ export function trafficOfSection(value: unknown): TrafficBuilding[] | null {
 
 /** DO NOT derive these again where the tile is read: baked here once per version of the tile, where it is written */
 export function bakeTileSections(records: TileRecords): Readonly<Record<string, Section>> {
-  return {
+  const traffic = trafficJson(tileTraffic(records.buildings));
+  const sections: Record<string, Section> = {
     [LINKS_SECTION]: { bin: packLinks(bakeTileLinks(records)) },
-    [TRAFFIC_SECTION]: { json: trafficJson(tileTraffic(records.buildings)) },
+    [TRAFFIC_SECTION]: { json: traffic },
   };
+  try {
+    // From the buildings as the simulation reads them back (the JSON's numbers: no -0, no Infinity), so their digests are the ones it makes there.
+    sections[BAYS_SECTION] = { bin: bakeTileBays(records, trafficOfSection(JSON.parse(JSON.stringify(traffic)))!) };
+  } catch (error) {
+    // Stored without them: the simulation works them out where the tile is loaded, as before.
+    console.error(`[save] tile ${records.key}'s bays could not be baked`, error);
+  }
+  return sections;
 }

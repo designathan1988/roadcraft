@@ -1,6 +1,7 @@
 import { TILE, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
 import { m } from '@world/units';
 import type { TrafficBuilding } from '../agents/trafficBuildings';
+import type { BakedBays } from '../agents/parking';
 import type { TileLinks } from './tileLinks';
 
 /** THE FAR TILES' LINK TABLES, READ BY THE SIMULATION'S WORKER STRAIGHT FROM THE TILE STORE: every stored tile within the meso's reach of the camera, its table baked where the tile was written (`tileSections.ts`), the page out of the way */
@@ -18,6 +19,8 @@ export interface TileReader {
   links(key: number): Promise<TileLinks | null>;
   /** Its buildings as traffic reads them. */
   traffic(key: number): Promise<readonly TrafficBuilding[] | null>;
+  /** Its parking bays as baked with it (`tileBays.ts`); null, or no such reader (a port: records only): worked out where the tile is loaded. */
+  bays?(key: number): Promise<BakedBays | null>;
 }
 
 /** The tiles in reach read once, again when the page says one was written, never while the page's document holds it (the live network covers it) */

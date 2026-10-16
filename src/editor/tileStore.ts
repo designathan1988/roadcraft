@@ -247,6 +247,18 @@ export async function readTilePart(store: PartStore, map: string, key: number, n
   if (!stored) return null;
   const part = stored.read ? partOf(stored.blob, stored.read, name) : null;
   if (!part) return { records: parseTileText(await textOf(stored, map, key), key) };
+  return partValue(part);
+}
+
+/** A section a reader does not derive from the records where the tile has none (the simulation's bays, `sim/tileBays.ts`): that part alone, the records never parsed; null: no tile stored, or stored without it. */
+export async function readTileSection(store: PartStore, map: string, key: number, name: string): Promise<{ readonly value: unknown } | { readonly bytes: ArrayBuffer } | null> {
+  const stored = await storedBlob(store, map, key);
+  const part = stored?.read ? partOf(stored.blob, stored.read, name) : null;
+  return part ? partValue(part) : null;
+}
+
+/** A part as its reader takes it: a binary part's bytes, a JSON part's value. */
+async function partValue(part: NonNullable<ReturnType<typeof partOf>>): Promise<{ readonly value: unknown } | { readonly bytes: ArrayBuffer }> {
   if (part.kind === 'bin') return { bytes: await part.data.arrayBuffer() };
   return { value: JSON.parse(new TextDecoder().decode(await gunzipBytes(part.data))) as unknown };
 }

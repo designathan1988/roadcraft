@@ -10,9 +10,7 @@
  [
   "src/sim/agents/lorryDocks.ts",
   "src/sim/agents/lorryTraffic.ts",
-  "src/sim/agents/lotDoors.ts",
   "src/sim/agents/lotTraffic.ts",
-  "src/sim/agents/parking.ts",
   "src/sim/agents/walk.ts",
   "src/sim/ambient/ambient.ts",
   "src/sim/city/city.ts",

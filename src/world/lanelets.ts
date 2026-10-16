@@ -712,6 +712,16 @@ export class LaneletGraph {
     this.place(nodeId, node, input, key, junctionMovements(input, surfaceOf, turns), turns, next);
   }
 
+  /** @rebuild The link lanelets of every segment ALONE (no junction), made as the whole graph's build makes them: what a tile's bays bake reads (`sim/tileBays.ts`). */
+  static linksOnly(doc: RoadDoc, net: Network): LaneletGraph {
+    const graph = new LaneletGraph();
+    const next = new Map<string, Lanelet[]>();
+    for (const segId of [...doc.segments.keys()].sort((a, b) => a - b)) graph.buildSegmentLinks(doc, net, segId, next, next);
+    graph.linkCache = next;
+    graph.brought(net);
+    return graph;
+  }
+
   /** @perInput The connectors of the junction at `node` ALONE, made as the whole graph's build makes them (`buildJunction`) */
   static junctionConnectors(doc: RoadDoc, net: Network, nodeId: NodeId): { readonly connectors: readonly Connector[]; readonly centres: ReadonlyMap<ConnectorId, Polyline> } {
     const node = doc.node(nodeId);

@@ -1,4 +1,5 @@
 import type { ChangeLog } from '@core/changeLog';
+import { Digest } from '@core/digest';
 import type { Vec2 } from '@core/vec2';
 import type { BuildingId } from '@world/buildings/types';
 import type { RoadDoc } from '@world/doc';
@@ -6,10 +7,10 @@ import type { SegmentId } from '@world/ids';
 import type { GraphChange } from '@world/lanelets';
 import type { Network } from '@world/network';
 import { PARKING_PITCH } from '@world/parking';
-import { parkingLayout } from '@world/parkingLayout';
+import { parkingDigest, parkingLayout } from '@world/parkingLayout';
 import { m } from '@world/units';
 import type { BuildingDelta } from './buildingOrder';
-import type { Bay, BayLane } from './bay';
+import { type Bay, type BayLane, bayWork } from './bay';
 import type { TrafficBuildings } from './trafficBuildings';
 
 /** THE BAYS ALONG THE KERBS, KEPT BY STREET (`parking.ts` `collectBays` hands them out after the lots' stalls). */
@@ -23,8 +24,19 @@ export interface KerbWorld {
   readonly buildings: TrafficBuildings;
 }
 
-/** The lane beside a point of a street, on its kerb side (`parking.ts` `laneBeside`). */
-type LaneAt = (x: number, y: number, segment: SegmentId) => BayLane | null;
+/** What a street's kerb bays read besides the network and the entrances, and what else is asked for them (`parking.ts`). */
+export interface KerbReads {
+  /** A building's place in the store's order: the entrances facing a street are read in it. */
+  readonly rank: (id: BuildingId) => number;
+  /** The lane beside a point of a street, on its kerb side (`parking.ts` `laneBeside`). */
+  readonly laneAt: (x: number, y: number, segment: SegmentId) => BayLane | null;
+  /** A street's link lanes as `laneAt` reads them, digested. */
+  readonly linksKey: (segment: SegmentId) => number;
+  /** The street's bays baked with its tile (`sim/tileBays.ts`) when they were worked out from the very same (`key`); null: none. */
+  readonly baked?: (segment: SegmentId, key: number) => readonly Bay[] | null;
+  /** Whether the street's tile's baked bays are on their way (`parking.ts` tileBaysWanted): it waits for them, as a lot waits for the workers. */
+  readonly waits?: (segment: SegmentId) => boolean;
+}
 
 /** Ahead of a kerb bay, the place on the lane a car stops at to back in, and leaves for. */
 const KERB_AHEAD = m(7);
@@ -49,15 +61,22 @@ export interface KerbBook {
   /** The streets that park: each one's reach (its line's box, grown), and the streets by cell. */
   readonly reach: Map<SegmentId, { x0: number; y0: number; x1: number; y1: number }>;
   readonly streets: Map<number, SegmentId[]>;
-  /** Each street's bays (ids from 0). */
+  /** Each street's bays (ids from 0), and what they were worked out from (`kerbKey`). */
   readonly bays: Map<SegmentId, readonly Bay[]>;
+  readonly keys: Map<SegmentId, number>;
+  /** Streets waiting for their tile's baked bays (`KerbReads.waits`); streets to look at again at the next follow (their tile's bays landed). */
+  readonly held: Set<SegmentId>;
+  readonly redo: Set<SegmentId>;
   /** The entrances of each building that has any, and the entrances by cell. */
   readonly entrances: Map<BuildingId, readonly Entrance[]>;
   readonly entranceCells: Map<number, Set<BuildingId>>;
 }
 
 export function newKerbBook(): KerbBook {
-  return { net: null, netSeen: null, lanesSeen: null, reach: new Map(), streets: new Map(), bays: new Map(), entrances: new Map(), entranceCells: new Map() };
+  return {
+    net: null, netSeen: null, lanesSeen: null, reach: new Map(), streets: new Map(), bays: new Map(), keys: new Map(), held: new Set(), redo: new Set(),
+    entrances: new Map(), entranceCells: new Map(),
+  };
 }
 
 function entranceBox(list: readonly Entrance[]): { x0: number; y0: number; x1: number; y1: number } {
@@ -99,7 +118,7 @@ function fileEntrances(book: KerbBook, id: BuildingId, list: readonly Entrance[]
 }
 
 /** DO NOT lay out every street of the town when the roads move: every road drawn laid out the town's kerbs again. */
-export function followKerbs(w: KerbWorld, book: KerbBook, delta: BuildingDelta | null, rank: (id: BuildingId) => number, laneAt: LaneAt): Set<SegmentId> {
+export function followKerbs(w: KerbWorld, book: KerbBook, delta: BuildingDelta | null, reads: KerbReads): Set<SegmentId> {
   const dirty = new Set<SegmentId>();
   // The roads: what the network and the lane graph changed since the streets were read (null: read them all).
   const net = book.net === w.net && book.netSeen !== null ? w.net.changesSince(book.netSeen) : null;
@@ -128,16 +147,22 @@ export function followKerbs(w: KerbWorld, book: KerbBook, delta: BuildingDelta |
   }
   const whole = net === null || lanes === null;
   const before = whole ? new Map(book.bays) : book.bays;
+  const keysBefore = whole ? new Map(book.keys) : book.keys;
   const changed = new Set<SegmentId>();
   if (whole) readStreets(w, book);
   else {
     for (const id of streets) {
       unfileStreet(book, id);
+      book.keys.delete(id);
+      book.held.delete(id);
       if (book.bays.delete(id)) changed.add(id);
       fileStreet(w, book, id);
       if (book.reach.has(id)) dirty.add(id);
     }
   }
+  // The streets whose tile's baked bays landed: looked at again, with them.
+  for (const id of book.redo) if (book.reach.has(id)) dirty.add(id);
+  book.redo.clear();
   if (whole || delta === null) {
     for (const id of book.reach.keys()) dirty.add(id);
   } else {
@@ -154,8 +179,21 @@ export function followKerbs(w: KerbWorld, book: KerbBook, delta: BuildingDelta |
   }
   for (const id of [...dirty].sort((a, b) => a - b)) {
     const was = before.get(id);
-    const now = kerbBaysOf(w, book, id, rank, laneAt);
+    if (reads.waits?.(id)) {
+      // No bays until its tile's land (`parking.ts` tileBaysRead): DO NOT lay it out before them only to lay it out again after.
+      book.held.add(id);
+      book.bays.delete(id);
+      book.keys.delete(id);
+      if (was?.length) changed.add(id);
+      continue;
+    }
+    book.held.delete(id);
+    const entrances = entrancesFacing(book, book.reach.get(id)!, reads.rank);
+    const key = kerbKey(w, id, entrances, reads);
+    // Worked out from the same: the same bays; else its tile's baked bays when baked from the same; else laid out here.
+    const now = was && keysBefore.get(id) === key ? was : reads.baked?.(id, key) ?? kerbBaysOf(w, id, entrances, reads.laneAt);
     book.bays.set(id, now);
+    book.keys.set(id, key);
     if (!was || !sameBays(was, now)) changed.add(id);
   }
   // Streets that no longer park (or are gone): their bays went with them.
@@ -197,6 +235,8 @@ function readStreets(w: KerbWorld, book: KerbBook): void {
   book.reach.clear();
   book.streets.clear();
   book.bays.clear();
+  book.keys.clear();
+  book.held.clear();
   for (const id of w.net.ribbons.keys()) fileStreet(w, book, id);
 }
 
@@ -244,17 +284,32 @@ function entrancesFacing(book: KerbBook, r: { x0: number; y0: number; x1: number
     }
   }
   const out: Entrance[] = [];
-  for (const id of [...ids].sort((a, b) => rank(a) - rank(b))) out.push(...book.entrances.get(id)!);
+  for (const id of [...ids].sort((a, b) => rank(a) - rank(b))) {
+    // Those `frontagesOn` passes over (the same test on the same box) left out: a lot of the next tile in the cell is no part of the street's key.
+    for (const e of book.entrances.get(id)!) {
+      const [p, q] = e;
+      if (Math.max(p.x, q.x) < r.x0 || Math.min(p.x, q.x) > r.x1 || Math.max(p.y, q.y) < r.y0 || Math.min(p.y, q.y) > r.y1) continue;
+      out.push(e);
+    }
+  }
   return out;
 }
 
+/** DO NOT leave out anything `kerbBaysOf` reads: what one street's kerb bays are worked out from, digested (its lay out's own reads, the entrances facing it, its lanes). */
+function kerbKey(w: KerbWorld, id: SegmentId, entrances: readonly Entrance[], reads: KerbReads): number {
+  const digest = parkingDigest(w.net, w.net.ribbons.get(id)!, new Digest().add(id));
+  for (const [p, q] of entrances) digest.add(p.x).add(p.y).add(q.x).add(q.y);
+  return digest.add(entrances.length).add(reads.linksKey(id)).value();
+}
+
 /** One street's kerb bays: laid out alone (`parkingLayout` over a network of this one street), against the entrances in front of it. */
-function kerbBaysOf(w: KerbWorld, book: KerbBook, id: SegmentId, rank: (id: BuildingId) => number, laneAt: LaneAt): Bay[] {
+function kerbBaysOf(w: KerbWorld, id: SegmentId, entrances: readonly Entrance[], laneAt: KerbReads['laneAt']): Bay[] {
+  bayWork.kerbs++;
   const ribbon = w.net.ribbons.get(id)!;
   // The network as it is, with only this street in `ribbons`
   const one = Object.create(w.net, { ribbons: { value: new Map([[id, ribbon]]) } }) as Network;
   const out: Bay[] = [];
-  for (const bay of parkingLayout(one, entrancesFacing(book, book.reach.get(id)!, rank)).bays) {
+  for (const bay of parkingLayout(one, entrances).bays) {
     const f = bay.facing;
     const ahead = { x: bay.centre.x + f.x * KERB_AHEAD, y: bay.centre.y + f.y * KERB_AHEAD };
     const lane = laneAt(ahead.x, ahead.y, bay.segment);

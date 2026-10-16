@@ -1,14 +1,15 @@
 import { Digest } from '@core/digest';
 import type { BuildingId } from '@world/buildings/types';
 import type { ChangeRect } from '@world/changes';
-import type { SimWorld } from '../world';
 import type { SegmentId } from '@world/ids';
-import type { Bay, BayLane } from './bay';
+import type { LaneletId } from '@world/lanelets';
+import { OWNER } from '@world/tiles';
+import { type Bay, type BayLane, bayWork } from './bay';
 import { LOT_READS, type TrafficBuilding, type TrafficBuildings } from './trafficBuildings';
 import { BuildingsInOrder } from './buildingOrder';
-import { laneChangesSince, laneGrid, lanesInBox, lanesNear } from './laneGrid';
+import { type LaneGridWorld, laneChangesSince, laneGrid, lanesInBox, lanesNear } from './laneGrid';
 export { laneChangesSince, lanesInBox };
-import { type KerbBook, followKerbs, newKerbBook } from './kerbBays';
+import { type KerbBook, type KerbReads, type KerbWorld, followKerbs, newKerbBook } from './kerbBays';
 import {
   type BayReads, type LotAsk, type LotExit, type WallRing, LANE_REACH, bayRows, baysOfShare, gateExits as lotGateExits, laneFor, shareOf,
 } from './lotBays';
@@ -21,8 +22,14 @@ export const LANE_BESIDE_REACH = LANE_REACH;
 
 export type { Bay, BayLane } from './bay';
 
+/** DO NOT import `SimWorld`: what the bays read of a world (the simulation's, or a tile's own roads and buildings where it is baked, `sim/tileBays.ts`). */
+export interface BayWorld extends KerbWorld, LaneGridWorld {
+  /** A lane's runtime now (`SimWorld.rt`): whether it is a ghost. */
+  rt(id: LaneletId): { readonly ghost: boolean };
+}
+
 /** Every stall of every parking element, with the way out of its lot and the lane it is reached from */
-export function collectBays(w: SimWorld): Bay[] {
+export function collectBays(w: BayWorld): Bay[] {
   return townBays(baysNow(w)).map((bay) => ({ ...bay, car: null }));
 }
 /** How far round a change a lot's box grown by `LOT_READS` (`TrafficBuilding.reach`) may reach */
@@ -58,8 +65,27 @@ export interface BayWorkers {
   check?(): void;
 }
 /** The workers a world's lots are worked out by (the game's, `main.ts`). */
-export function useBayWorkers(w: SimWorld, workers: BayWorkers): void {
+export function useBayWorkers(w: BayWorld, workers: BayWorkers): void {
   bookOf(w).workers = workers;
+}
+
+/** A tile's bays as baked where it was written (`sim/tileBays.ts` TileBays): each lot's and street's, with what they were worked out from. */
+export interface BakedBays {
+  /** The lots and the streets it holds bays of. */
+  lots(): Iterable<BuildingId>;
+  kerbs(): Iterable<SegmentId>;
+  /** A lot's bays, when baked from this very record (`lotKey`) and these lanes and walls (`lookAtLot`); null else. */
+  lot(id: BuildingId, record: number, sources: number): readonly Bay[] | null;
+  /** A street's bays, when baked from the very same (`kerbBays.ts` kerbKey); null else. */
+  kerb(id: SegmentId, sources: number): readonly Bay[] | null;
+}
+
+/** One lot's or street's bays as a bake keeps them (`bakeBays`): the record's digest (0 for a street) and the sources'. */
+export interface BakedSource {
+  readonly id: number;
+  readonly record: number;
+  readonly sources: number;
+  readonly bays: readonly Bay[];
 }
 
 /** The bays of a world as last worked out, and what they were worked out from. */
@@ -82,25 +108,119 @@ interface BayBook {
   lanesSeen: object | null;
   /** The town's list, ids in order. */
   out: readonly Bay[];
+  /** The bays baked with the tiles held (`tileBaysRead`), by tile, and the tile's bake each lot and street is in: taken where worked out from the same. */
+  readonly bakedTiles: Map<number, BakedBays>;
+  readonly bakedLots: Map<BuildingId, BakedBays>;
+  readonly bakedKerbs: Map<SegmentId, BakedBays>;
+  /** The tiles whose baked bays are being read, with the read (`tileBaysWanted`): their streets wait for them. */
+  readonly reading: Map<number, number>;
+  /** What the kerbs read of this world (`kerbReads`), made once. */
+  reads: KerbReads | null;
 }
-const BOOKS = new WeakMap<SimWorld, BayBook>();
+const BOOKS = new WeakMap<BayWorld, BayBook>();
 
 /** A world's book, made empty the first time. */
-function bookOf(w: SimWorld): BayBook {
+function bookOf(w: BayWorld): BayBook {
   let book = BOOKS.get(w);
   if (!book) {
     book = { lots: new BuildingsInOrder(hasParking), known: new Map(), waiting: new Map(), kerb: newKerbBook(), workers: null, lanesSeen: null,
-      out: [], log: [], logBase: 0, serial: 0, outStale: true };
+      out: [], log: [], logBase: 0, serial: 0, outStale: true, bakedTiles: new Map(), bakedLots: new Map(), bakedKerbs: new Map(), reading: new Map(),
+      reads: null };
     BOOKS.set(w, book);
   }
   return book;
+}
+
+/** A tile's baked bays are being read (`simHost.ts` tileBuildings): its own streets wait for them (`KerbReads.waits`), as a lot waits for the workers. */
+export function tileBaysWanted(w: BayWorld, tile: number, read: number): void {
+  bookOf(w).reading.set(tile, read);
+}
+
+/** A tile's read landed: its baked bays (null: none stored, of another format, or not read) offered while that read is the tile's last, its streets looked at again. */
+export function tileBaysRead(w: BayWorld, tile: number, read: number, bays: BakedBays | null): void {
+  const book = bookOf(w);
+  if (book.reading.get(tile) !== read) return;
+  book.reading.delete(tile);
+  if (bays) {
+    dropBaked(book, tile);
+    book.bakedTiles.set(tile, bays);
+    for (const id of bays.lots()) book.bakedLots.set(id, bays);
+    for (const id of bays.kerbs()) book.bakedKerbs.set(id, bays);
+  }
+  release(book);
+}
+
+/** A tile let go: its baked bays dropped, its streets no longer wait. */
+export function tileBaysGone(w: BayWorld, tile: number): void {
+  const book = bookOf(w);
+  dropBaked(book, tile);
+  if (book.reading.delete(tile)) release(book);
+}
+
+function dropBaked(book: BayBook, tile: number): void {
+  const was = book.bakedTiles.get(tile);
+  if (!was) return;
+  book.bakedTiles.delete(tile);
+  for (const id of was.lots()) if (book.bakedLots.get(id) === was) book.bakedLots.delete(id);
+  for (const id of was.kerbs()) if (book.bakedKerbs.get(id) === was) book.bakedKerbs.delete(id);
+}
+
+/** The streets held for a tile's bays looked at again at the next follow (those whose tile still waits held again). */
+function release(book: BayBook): void {
+  for (const id of book.kerb.held) book.kerb.redo.add(id);
+  book.kerb.held.clear();
+}
+
+/** What a street's kerb bays read of the world, and its tile's bake (`kerbBays.ts` KerbReads). */
+function kerbReads(w: BayWorld, book: BayBook): KerbReads {
+  return {
+    rank: (id) => book.lots.rank(id),
+    laneAt: (x, y, segment) => laneBeside(w, x, y, segment),
+    linksKey: (segment) => {
+      // Every link lane of the street (`laneFor` reads no other for it), in id order.
+      const grid = laneGrid(w);
+      const digest = new Digest();
+      for (const id of [...w.graph.linksOfSegment(segment)].sort(byText)) {
+        const lane = w.graph.lanelet(id);
+        if (lane) digest.add(grid.digest(lane)).add(w.rt(id).ghost ? 1 : 0);
+      }
+      return digest.value();
+    },
+    baked: (segment, key) => book.bakedKerbs.get(segment)?.kerb(segment, key) ?? null,
+    waits: (segment) => book.reading.size > 0 && book.reading.has(streetTile(w, segment)),
+  };
+}
+
+const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** The tile a street belongs to (`OWNER`: by the middle of its ends); NaN when it cannot be said. */
+function streetTile(w: BayWorld, segment: SegmentId): number {
+  const s = w.doc.segment(segment);
+  const a = s && w.doc.node(s.a), b = s && w.doc.node(s.b);
+  return a && b ? OWNER.segment(a, b) : Number.NaN;
+}
+
+/** @rebuild Every lot's and street's bays of a world worked out here and now (no workers), each with what it was worked out from: what a tile's bake keeps (`sim/tileBays.ts`). */
+export function bakeBays(w: BayWorld): { readonly lots: readonly BakedSource[]; readonly kerbs: readonly BakedSource[] } {
+  const book = baysNow(w);
+  const lots: BakedSource[] = [];
+  for (const id of book.lots.ids) {
+    const known = book.known.get(id);
+    if (known) lots.push({ id, record: known.lot, sources: known.key, bays: known.bays });
+  }
+  const kerbs: BakedSource[] = [];
+  for (const id of streetsInOrder(book)) {
+    const bays = book.kerb.bays.get(id), key = book.kerb.keys.get(id);
+    if (bays && key !== undefined) kerbs.push({ id, record: 0, sources: key, bays });
+  }
+  return { lots, kerbs };
 }
 
 /** A lot asked of the workers, with what it is worked out from. */
 interface Asked { readonly id: BuildingId; readonly sources: LotSources; readonly ask: LotAsk }
 
 /** The bays brought up to date, from the diary: the lots a building change reaches worked out again, the others kept */
-function baysNow(w: SimWorld): BayBook {
+function baysNow(w: BayWorld): BayBook {
   const book = bookOf(w);
   // A worker silent too long with lots waiting fails its pool: they are worked out on the page.
   if (book.waiting.size) book.workers?.check?.();
@@ -110,9 +230,7 @@ function baysNow(w: SimWorld): BayBook {
   book.lanesSeen = grid.changes.state;
   const roadsMoved = lanes === null || lanes.length > 0;
   const delta = book.lots.update(w);
-  for (const seg of followKerbs(w, book.kerb, delta, (id) => book.lots.rank(id), (x, y, segment) => laneBeside(w, x, y, segment))) {
-    noteBays(book, `K${seg}`);
-  }
+  for (const seg of followKerbs(w, book.kerb, delta, book.reads ??= kerbReads(w, book))) noteBays(book, `K${seg}`);
   if (!roadsMoved && delta !== null && delta.ids.length === 0) return book;
 
   // A lot whose reach neither a building change nor a lane that changed touched keeps its bays without reading anything
@@ -184,14 +302,14 @@ function townBays(book: BayBook): readonly Bay[] {
 }
 
 /** DO NOT read the town's list (`collectBays`) at every change: every bay of the town, for each building grown. */
-export function bayChangesSince(w: SimWorld, serial: number): { readonly serial: number; readonly changed: readonly string[] | null } {
+export function bayChangesSince(w: BayWorld, serial: number): { readonly serial: number; readonly changed: readonly string[] | null } {
   const book = baysNow(w);
   if (serial < 0 || serial < book.logBase || serial > book.serial) return { serial: book.serial, changed: null };
   return { serial: book.serial, changed: book.log.slice(serial - book.logBase) };
 }
 
 /** @rebuild Every source of bays, in the town's order (the lots in the store's, then the streets by id): read whole. */
-export function baySources(w: SimWorld): string[] {
+export function baySources(w: BayWorld): string[] {
   const book = baysNow(w);
   const out: string[] = [];
   for (const id of book.lots.ids) if (book.known.has(id)) out.push(`L${id}`);
@@ -200,7 +318,7 @@ export function baySources(w: SimWorld): string[] {
 }
 
 /** A source's bays now (`bayChangesSince`), as fresh copies (ids within the source); none when it has none. */
-export function baysOfSource(w: SimWorld, source: string): Bay[] {
+export function baysOfSource(w: BayWorld, source: string): Bay[] {
   const book = baysNow(w);
   const id = Number(source.slice(1));
   const bays = source[0] === 'L' ? book.known.get(id as BuildingId)?.bays : book.kerb.bays.get(id as SegmentId);
@@ -208,7 +326,7 @@ export function baysOfSource(w: SimWorld, source: string): Bay[] {
 }
 
 /** The lots whose reach (`LOT_READS`) meets one of the rectangles, and the lots named; found by place. */
-function lotsReached(w: SimWorld, lots: BuildingsInOrder, rects: readonly ChangeRect[], named: readonly BuildingId[]): Set<BuildingId> {
+function lotsReached(w: BayWorld, lots: BuildingsInOrder, rects: readonly ChangeRect[], named: readonly BuildingId[]): Set<BuildingId> {
   const out = new Set<BuildingId>();
   for (const id of named) if (lots.has(id)) out.add(id);
   // Every change in one look (`nearAny`): a change at a time read the cells they share again for each.
@@ -220,7 +338,7 @@ const meets = (r: ChangeRect, box: { minX: number; minY: number; maxX: number; m
   r[0] <= box.maxX && r[2] >= box.minX && r[1] <= box.maxY && r[3] >= box.minY;
 
 /** A lot looked at: kept as it is (or as it is being worked out) when its record and its reach are untouched */
-function lookAtLot(w: SimWorld, book: BayBook, b: TrafficBuilding, rects: readonly ChangeRect[] | null, walls: Walls, asked: Asked[] | null): void {
+function lookAtLot(w: BayWorld, book: BayBook, b: TrafficBuilding, rects: readonly ChangeRect[] | null, walls: Walls, asked: Asked[] | null): void {
   const was = book.known.get(b.id);
   const waiting = book.waiting.get(b.id);
   // What the lot's bays are, or will be once the workers answer.
@@ -232,13 +350,23 @@ function lookAtLot(w: SimWorld, book: BayBook, b: TrafficBuilding, rects: readon
   // DO NOT digest a lane's line or a wall's ring here
   const digest = new Digest();
   const grid = laneGrid(w);
-  const near = grid.near(cx, cy, Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2);
-  for (const lane of near) digest.add(grid.digest(lane)).add(w.rt(lane.id).ghost ? 1 : 0);
+  // The link lanes alone: a lot's bays read no other (`lotBays.ts` laneFor, gateLane), and a junction's turns are no part of its key.
+  const near = grid.near(cx, cy, Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2).filter((lane) => lane.kind === 'link');
+  for (const lane of near) digest.add(grid.digest(lane)).add(w.rt(lane.id).ghost ? 1 : 0).add(bothWays(w, lane.segment) ? 1 : 0);
   const reached = walls.inBox(box.minX, box.minY, box.maxX, box.maxY);
   for (const wall of reached) digest.add(wall.digest);
   const key = digest.value();
   if (was && was.lot === lot && was.key === key) { book.waiting.delete(b.id); return; }
   if (waiting && waiting.lot === lot && waiting.key === key) return;
+  // Its tile's baked bays, worked out from this very record, these lanes and walls (`sim/tileBays.ts`): taken, nothing worked out.
+  const baked = book.bakedLots.get(b.id)?.lot(b.id, lot, key);
+  if (baked) {
+    book.waiting.delete(b.id);
+    book.known.set(b.id, { lot, key, bays: baked });
+    noteBays(book, `L${b.id}`);
+    return;
+  }
+  bayWork.lots++;
   if (!asked) {
     book.known.set(b.id, { lot, key, bays: bayRows(pageReads(w, walls), b) });
     noteBays(book, `L${b.id}`);
@@ -255,11 +383,11 @@ function lookAtLot(w: SimWorld, book: BayBook, b: TrafficBuilding, rects: readon
 }
 
 /** Whether a street runs both ways (a gate onto a one-way street may face either kerb, `lotBays.ts` gateLane). */
-const bothWays = (w: SimWorld, segment: SegmentId | undefined): boolean =>
+const bothWays = (w: BayWorld, segment: SegmentId | undefined): boolean =>
   w.doc.segment(segment as SegmentId)?.direction === 'both';
 
 /** The world as a lot's bays read it (`lotBays.ts` `BayReads`), on the page. */
-function pageReads(w: SimWorld, walls: Walls): BayReads {
+function pageReads(w: BayWorld, walls: Walls): BayReads {
   return {
     lanesNear: (x, y, reach) => lanesNear(w, x, y, reach),
     ghost: (id) => w.rt(id).ghost,
@@ -269,7 +397,7 @@ function pageReads(w: SimWorld, walls: Walls): BayReads {
 }
 
 /** The ways out of a gated lot (`lotBays.ts` `gateExits`), read on the page. */
-export function gateExits(w: SimWorld, b: TrafficBuilding, property: { x: number; y: number; w: number; d: number }, walls: Walls): LotExit[] {
+export function gateExits(w: BayWorld, b: TrafficBuilding, property: { x: number; y: number; w: number; d: number }, walls: Walls): LotExit[] {
   return lotGateExits(pageReads(w, walls), b, property);
 }
 
@@ -312,11 +440,11 @@ export class Walls {
 }
 
 /** The town's walls, by place. */
-export function wallsOf(w: SimWorld): Walls {
+export function wallsOf(w: BayWorld): Walls {
   return new Walls(w.buildings);
 }
 
 /** The lane beside a point of a street (a bus stop): the nearest on the kerb side of that road, its point there. */
-export function laneBeside(w: SimWorld, x: number, y: number, segment?: SegmentId): BayLane | null {
+export function laneBeside(w: BayWorld, x: number, y: number, segment?: SegmentId): BayLane | null {
   return laneFor(pageReads(w, wallsOf(w)), x, y, undefined, segment);
 }

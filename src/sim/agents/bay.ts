@@ -39,3 +39,6 @@ export interface Bay {
   /** A bay along a street's kerb (`world/parkingLayout.ts`), not in a lot */
   readonly kerb?: true;
 }
+
+/** The bays worked out here, counted (`tests/sim/tileBays.spec.ts`): lots worked out or asked of the workers, streets laid out. */
+export const bayWork = { lots: 0, kerbs: 0 };

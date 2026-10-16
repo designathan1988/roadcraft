@@ -1,3 +1,4 @@
+import type { Digest } from '@core/digest';
 import type { Vec2 } from '@core/vec2';
 import type { Polyline } from '@core/polyline';
 import type { RoadDoc } from './doc';
@@ -101,6 +102,17 @@ export function parkingLinesOf(net: Network, ribbon: SegmentRibbon): ParkingLine
 export function parksAlong(net: Network, ribbon: SegmentRibbon): boolean {
   const rt = ribbon.road;
   return (rt.parkingLeft > 0 || rt.parkingRight > 0) && net.doc.segment(ribbon.id)?.structure === 'ground';
+}
+
+/** DO NOT read anything in `parkingOf` without adding it here: what one street's bays are laid out from besides the entrances it is handed, into `digest` (a tile's baked kerb bays are taken where it is the same, `sim/tileBays.ts`). */
+export function parkingDigest(net: Network, ribbon: SegmentRibbon, digest: Digest): Digest {
+  const segment = net.doc.segment(ribbon.id);
+  if (!segment || !parksAlong(net, ribbon)) return digest.add(0);
+  const rt = ribbon.road;
+  return digest.add(1).add(rt.width).add(rt.parkingLeft).add(rt.parkingRight).addText(rt.parkingLeftKind).addText(rt.parkingRightKind)
+    .addText(segment.direction).addAll(ribbon.full.xy)
+    .add(endClear(net, ribbon.id, segment.a)).add(endClear(net, ribbon.id, segment.b))
+    .add(net.mouthDistance(ribbon.id, segment.a)).add(net.mouthDistance(ribbon.id, segment.b));
 }
 
 /** One street's bays and lines, onto `bays` and `lines`. */
