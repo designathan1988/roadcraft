@@ -155,7 +155,7 @@ describe('a tile stored', () => {
       const records = { ...emptyTile(i, j, { trees: [{ x: i, y: j }] }), version: after + 1 };
       // As `cityTile.worker.ts` does: written in the worker, its texts the ones it stored.
       const written = await writeTile(store, 'map', records);
-      return { version: written.ok ? records.version : null, ...(text ? { records: prepareTile(records) } : {}) };
+      return { version: written.ok ? records.version : null, ...(text ? { prepared: prepareTile(records) } : {}) };
     };
     const generate = vi.fn(never);
     const tiles = new TileStore('map', storeTiles(store), generate, makeStored);
@@ -177,7 +177,7 @@ describe('a tile stored', () => {
     const makeStored = async (i: number, j: number, after: number): Promise<MadeTile> => {
       const records = { ...emptyTile(i, j), version: after + 1 };
       await writeTile(memoryStore(), 'other', records);
-      return { version: null, records: prepareTile(records) };
+      return { version: null, prepared: prepareTile(records) };
     };
     const tiles = new TileStore('map', storeTiles(store), never, makeStored);
     expect((await tiles.load(tileKey(1, 2))).version).toBe(1);

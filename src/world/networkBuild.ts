@@ -1,4 +1,6 @@
 import { Digest } from '@core/digest';
+import { Polyline } from '@core/polyline';
+import { Ring, type RingEdge } from '@core/ring';
 import { ForkMap, ForkSet } from '@core/forkMap';
 import { samePlain } from '@core/plain';
 import { MIN_RIBBON } from '@core/scalar';
@@ -49,6 +51,71 @@ interface RibbonMemo {
   readonly trims: SegmentTrims;
   readonly bendA: number;
   readonly bendB: number;
+}
+
+/** A TILE'S JUNCTIONS AND RIBBONS SOLVED OFF THE PAGE (`editor/tileStore.ts` prepareTile, the save worker or the generator's): each node's passes with the key of what they were solved from (`nodeBakeKey`), each road's ribbon with what it was made from; the page's build takes them where its inputs are the same (`takeBakes`) and solves only the nodes with a road of a tile not here. Plain data and typed arrays, cloned by the message. */
+export interface NetworkBake {
+  readonly nodes: BakedNode[];
+  readonly segments: BakedSegment[];
+}
+export interface BakedNode {
+  readonly id: NodeId;
+  readonly key: number;
+  readonly j1: BakedMemo | null;
+  readonly j2: BakedMemo | null;
+  readonly j3: BakedMemo | null;
+}
+/** A ring as its data (`Ring` is a class: the message's clone keeps its fields, not its methods, `structuredClone`). */
+interface BakedRing { readonly start: { readonly x: number; readonly y: number }; readonly edges: readonly RingEdge[] }
+type BakedJunction = Omit<Junction, 'ring' | 'tongues' | 'rings'> & { readonly ring: BakedRing; readonly tongues: readonly BakedRing[]; readonly rings: readonly BakedRing[] };
+interface BakedMemo { readonly key: number; readonly byLevel: ReadonlyMap<SurfaceLevel, BakedJunction>; readonly plate: MemoEntry['plate'] }
+/** A ribbon with its polylines as their flat arrays (`Polyline.xy`) and its rings as data, made whole again on the page (`ribbonFromBake`). */
+export type BakedRibbon = Omit<SegmentRibbon, 'centre' | 'full' | 'rings'> & {
+  readonly centre: Record<number, Float64Array>; readonly full: Float64Array; readonly rings: Record<number, BakedRing>;
+};
+
+const ringData = (r: Ring): BakedRing => ({ start: r.start, edges: r.edges });
+const ringOf = (r: BakedRing): Ring => new Ring(r.start, r.edges);
+
+function memoData(entry: MemoEntry | undefined): BakedMemo | null {
+  if (!entry) return null;
+  const byLevel = new Map<SurfaceLevel, BakedJunction>();
+  for (const [level, j] of entry.byLevel) byLevel.set(level, { ...j, ring: ringData(j.ring), tongues: j.tongues.map(ringData), rings: j.rings.map(ringData) });
+  return { key: entry.key, byLevel, plate: entry.plate };
+}
+
+function memoOf(baked: BakedMemo): MemoEntry {
+  const byLevel = new Map<SurfaceLevel, Junction>();
+  for (const [level, j] of baked.byLevel) byLevel.set(level, { ...j, ring: ringOf(j.ring), tongues: j.tongues.map(ringOf), rings: j.rings.map(ringOf) });
+  return { key: baked.key, byLevel, plate: baked.plate };
+}
+export interface BakedSegment {
+  readonly id: SegmentId;
+  /** `segmentSourceKey` of the road the ribbon was made from. */
+  readonly source: number;
+  readonly trims: SegmentTrims;
+  readonly bendA: number;
+  readonly bendB: number;
+  readonly ribbon: BakedRibbon;
+}
+
+function ribbonFromBake(r: BakedRibbon): SegmentRibbon {
+  const centre: Record<number, Polyline> = {};
+  for (const [level, xy] of Object.entries(r.centre)) centre[Number(level)] = Polyline.fromFlat(xy);
+  const rings: Record<number, Ring> = {};
+  for (const [level, ring] of Object.entries(r.rings)) rings[Number(level)] = ringOf(ring);
+  return { ...r, centre, rings, full: Polyline.fromFlat(r.full) };
+}
+
+/** What a node's junctions are solved from, whichever thread solves them: its record and its roads' (where their ends stand too), the roads in id order (a road of a tile not on that thread changes it: the page then solves the node itself). */
+export function nodeBakeKey(doc: RoadDoc, n: RoadNode): number {
+  const incident = n.incident.slice().sort((p, q) => p - q);
+  const digest = nodeSourceDigest({ ...n, incident });
+  for (const id of incident) {
+    const s = doc.segment(id);
+    digest.add(s ? segmentSourceKey(doc, s) : NaN);
+  }
+  return digest.value();
 }
 
 // DO NOT keep a road's or a node's inputs as JSON text: a number per record (`Digest`), not a string per record of the map.
@@ -104,8 +171,57 @@ export class NetworkBuild {
   /** The largest id the ribbons and the junctions may hold (`insertionWatch`): an upper bound. */
   private ribbonMax = -Infinity;
   private junctionMax = -Infinity;
+  /** The tiles' bakes offered since the last rebuild (`offerBake`), taken by it (`takeBakes`). */
+  private readonly bakes: NetworkBake[] = [];
 
   constructor(private readonly net: Network) {}
+
+  /** A tile's junctions and ribbons solved off the page, for the next rebuild (the tile's records just loaded). */
+  offerBake(bake: NetworkBake): void {
+    this.bakes.push(bake);
+  }
+
+  /** The junctions and ribbons of `nodes` and `segments` as this build solved them, for another thread's build (`NetworkBake`). */
+  exportBake(nodes: Iterable<NodeId>, segments: Iterable<SegmentId>): NetworkBake {
+    const doc = this.net.doc;
+    const out: NetworkBake = { nodes: [], segments: [] };
+    for (const id of nodes) {
+      const node = doc.node(id);
+      if (!node) continue;
+      out.nodes.push({ id, key: nodeBakeKey(doc, node), j1: memoData(this.j1.get(id)), j2: memoData(this.j2.get(id)), j3: memoData(this.j3.get(id)) });
+    }
+    for (const id of segments) {
+      const memo = this.ribbonMemo.get(id), source = this.segmentSource.get(id);
+      if (!memo || source === undefined) continue;
+      const centre: Record<number, Float64Array> = {};
+      for (const [level, line] of Object.entries(memo.ribbon.centre)) centre[Number(level)] = line.xy;
+      const rings: Record<number, BakedRing> = {};
+      for (const [level, ring] of Object.entries(memo.ribbon.rings)) rings[Number(level)] = ringData(ring);
+      out.segments.push({ id, source, trims: memo.trims, bendA: memo.bendA, bendB: memo.bendB, ribbon: { ...memo.ribbon, centre, rings, full: memo.ribbon.full.xy } });
+    }
+    return out;
+  }
+
+  /** The bakes offered: a changed node whose inputs are a bake's takes its passes as solved there (DO NOT solve a tile's thousand junctions on the page at each tile put in: the key tells a node with a road of a tile not here, solved here), a changed road its ribbon (`buildRibbon` still checks the trims and the bends). */
+  private takeBakes(nodes: ReadonlySet<NodeId>, segments: ReadonlySet<SegmentId>): void {
+    if (this.bakes.length === 0) return;
+    const doc = this.net.doc;
+    for (const bake of this.bakes.splice(0)) {
+      for (const b of bake.nodes) {
+        const node = doc.node(b.id);
+        if (!node || !nodes.has(b.id) || nodeBakeKey(doc, node) !== b.key) continue;
+        if (b.j1) this.j1.set(b.id, memoOf(b.j1));
+        if (b.j2) this.j2.set(b.id, memoOf(b.j2));
+        if (b.j3) this.j3.set(b.id, memoOf(b.j3));
+        networkWork.taken++;
+      }
+      for (const s of bake.segments) {
+        const seg = doc.segment(s.id);
+        if (!seg || !segments.has(s.id) || segmentSourceKey(doc, seg) !== s.source) continue;
+        this.ribbonMemo.set(s.id, { ribbon: ribbonFromBake(s.ribbon), trims: s.trims, bendA: s.bendA, bendB: s.bendB });
+      }
+    }
+  }
 
   /** Forgets everything: the next rebuild builds every piece (a map loaded). */
   forget(): void {
@@ -128,6 +244,7 @@ export class NetworkBuild {
     this.ribbonMemo = new Map();
     this.ribbonMax = -Infinity;
     this.junctionMax = -Infinity;
+    // The bakes offered stay: they are for the next rebuild, from nothing or not.
   }
 
   /** DO NOT copy every map (`copyFrom`, twice per road drawn): a working copy over `other`'s state that keeps only what it writes */
@@ -200,6 +317,8 @@ export class NetworkBuild {
       this.j2.delete(id);
       this.j3.delete(id);
     }
+    // The tiles just put in: their junctions and ribbons as a worker solved them, where the inputs are the same.
+    this.takeBakes(changedNodes, changedSegs);
 
     // ---- pass 1 -----------------------------------------------------------
     const n1 = changedNodes;
@@ -491,6 +610,7 @@ export class NetworkBuild {
     const key = this.junctionKey(node, scales, capped);
     if (known && known.key === key) return known;
     for (const entry of [this.j1.get(node), this.j2.get(node), this.j3.get(node)]) if (entry?.key === key) return entry;
+    networkWork.built++;
     const plate: [SegmentId, number][] = [];
     const byLevel = new Map<SurfaceLevel, Junction>();
     const build = (level: SurfaceLevel): Junction | null => {

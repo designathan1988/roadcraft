@@ -72,7 +72,7 @@ export class TileGenerator {
       if (waiting) {
         const answer = event.data;
         if ('error' in answer) waiting.failed(answer.error);
-        else if ('stored' in answer) waiting.done({ version: answer.stored, ...(answer.records ? { records: answer.records } : {}) });
+        else if ('stored' in answer) waiting.done({ version: answer.stored, ...(answer.prepared ? { prepared: answer.prepared } : {}) });
         else waiting.done(answer.records);
       }
       this.pump();

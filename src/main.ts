@@ -1,6 +1,6 @@
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { TileStore, portTiles, storeTiles } from '@editor/tileStore';
-import { jobPort } from './jobs/jobPool';
+import { jobLanes, jobPort } from './jobs/jobPool';
 import { WorldStreamer } from './worldStreamer';
 import { TileGenerator, tileLanes } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord } from '@world/tiles';
@@ -1925,7 +1925,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   history.clear();
   const generator = new TileGenerator(options);
   const mapName = `roadcraft.tiles.${options.seed}`;
-  const store = new TileStore(mapName, desktopStores ? storeTiles(desktopStores.parts) : portTiles(() => jobPort('save')),
+  const store = new TileStore(mapName, desktopStores ? storeTiles(desktopStores.parts) : portTiles(() => jobPort('save'), jobLanes(3)),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page (the desktop's store is the shell's).
     desktopStores ? undefined : (i, j, after, text) => generator.makeStored(tileKey(i, j), mapName, after, text));
@@ -1944,7 +1944,13 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   const far = [scene.farBuildings, scene.farRoads];
   const streamer = new WorldStreamer(doc, store, {
     arrived: () => requestDraw(),
-    loaded: (key) => { for (const f of far) f.loadedChanged(key); sim.tile('loaded', key); },
+    loaded: (key) => {
+      for (const f of far) f.loadedChanged(key);
+      sim.tile('loaded', key);
+      // Its junctions and ribbons as the worker solved them, for the frame's rebuild (`NetworkBuild.takeBakes`).
+      const bake = store.takeBake(key);
+      if (bake) net.offerBake(bake);
+    },
     letGo: (key, removedAt) => {
       history.letGoTile((r) => tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
       for (const f of far) f.loadedChanged(key);

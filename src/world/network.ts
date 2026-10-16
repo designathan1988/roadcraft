@@ -21,7 +21,7 @@ import {
 import { CellFiling } from './cells';
 import { m } from './units';
 import type { ChangeRect } from './changes';
-import { NetworkBuild } from './networkBuild';
+import { type NetworkBake, NetworkBuild } from './networkBuild';
 import type { SegmentRibbon, SegmentTrims } from './ribbons';
 import { DeltaLog, type NetworkDelta } from './networkDelta';
 import type { PoleLineState } from './poleLines';
@@ -34,6 +34,7 @@ function measureHitch(name: string, start: number): void {
 }
 
 export type { SegmentRibbon, SegmentTrims } from './ribbons';
+export type { NetworkBake } from './networkBuild';
 
 /** All geometry derived from the authoring document. */
 /** A crossing's landing on the footways (`Network.crossingLandingAt`): kept clear of everything. */
@@ -118,6 +119,16 @@ export class Network {
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
     measureHitch(options.full ? 'hitch:network/full' : 'hitch:network/rebuild', started);
+  }
+
+  /** The junctions and ribbons of `nodes` and `segments` as this build solved them, for another thread's build (`NetworkBuild.exportBake`). */
+  exportBake(nodes: Iterable<NodeId>, segments: Iterable<SegmentId>): NetworkBake {
+    return this.build.exportBake(nodes, segments);
+  }
+
+  /** A tile's junctions and ribbons solved off the page, taken by the next rebuild where the inputs are the same (`NetworkBuild.takeBakes`). */
+  offerBake(bake: NetworkBake): void {
+    this.build.offerBake(bake);
   }
 
   /** What changed since the network was in `state` (a token it handed out, `state`), or null: everything */

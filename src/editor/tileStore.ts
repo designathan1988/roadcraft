@@ -3,7 +3,9 @@ import type { SerializedDoc } from '@world/doc';
 import { lotCentre } from '@world/lotRings';
 import { rescaleSerializedDoc } from '@world/rescale';
 import { OWNER, TILE_COUNTED, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
-import { type TileRecords, preparedTiles } from '@world/doc';
+import type { NodeId, SegmentId } from '@world/ids';
+import { RoadDoc, type TileRecords, preparedTiles } from '@world/doc';
+import { Network, type NetworkBake } from '@world/network';
 import { internMembers } from '@world/buildings/intern';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
@@ -67,7 +69,8 @@ interface MigrationReport {
 
 /** A call of the tile store, as the page hands it to the save worker (`save.worker.ts` `serve`). */
 export type TileOp =
-  | { readonly op: 'read'; readonly map: string; readonly key: number }
+  /** The stored tile prepared for the page (`prepareTile`): with `network`, its junctions and ribbons solved here too (a tile of the region). */
+  | { readonly op: 'read'; readonly map: string; readonly key: number; readonly network?: boolean }
   /** The stored tile's records as texts (`TileText`), or null: what the page parses once, the bytes handed over, never cloned. */
   | { readonly op: 'readText'; readonly map: string; readonly key: number }
   /** The stored tile's version alone, or null: what the tiles made ahead are known by, their records never handed to the page. */
@@ -235,7 +238,7 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
   switch (op.op) {
     case 'read': {
       const records = await readTile(store, op.map, op.key);
-      return records ? prepareTile(records) : null;
+      return records ? prepareTile(records, op.network ?? false) : null;
     }
     case 'readText': {
       const stored = await storedBlob(store, op.map, op.key);
@@ -264,42 +267,55 @@ export function tileOpTransfer(op: TileOp, value: unknown): ArrayBuffer[] {
 }
 
 /** The calls run in the job system's `save` lane (`port`): the page posts the call and is handed the answer. */
-export function portTiles(port: () => Worker): TileBackend {
-  let worker: Worker | null = null;
+/** `readLanes`: the reads of whole tiles spread over this many lanes of the pool (each reads and prepares a tile, its network solved there: the region's nine tiles at the opening, not one after the other); every other call on the first. */
+export function portTiles(port: () => Worker, readLanes = 1): TileBackend {
+  const workers: Worker[] = [];
   let next = 1;
+  let reads = 0;
   const waiting = new Map<number, { readonly done: (value: unknown) => void; readonly fail: (error: Error) => void }>();
   const failAll = (): void => { for (const w of waiting.values()) w.fail(new Error('the save worker stopped')); waiting.clear(); };
+  const lane = (k: number): Worker => {
+    while (workers.length <= k) {
+      const worker = port();
+      worker.onmessage = (event: MessageEvent<{ readonly id: number; readonly ok: boolean; readonly value?: unknown }>) => {
+        const w = waiting.get(event.data.id);
+        waiting.delete(event.data.id);
+        if (event.data.ok) w?.done(event.data.value ?? null);
+        else w?.fail(new Error('the save worker could not run a call of the tile store'));
+      };
+      worker.onerror = failAll;
+      worker.onmessageerror = failAll;
+      workers.push(worker);
+    }
+    return workers[k]!;
+  };
   return {
     run(op) {
-      if (!worker) {
-        worker = port();
-        worker.onmessage = (event: MessageEvent<{ readonly id: number; readonly ok: boolean; readonly value?: unknown }>) => {
-          const w = waiting.get(event.data.id);
-          waiting.delete(event.data.id);
-          if (event.data.ok) w?.done(event.data.value ?? null);
-          else w?.fail(new Error('the save worker could not run a call of the tile store'));
-        };
-        worker.onerror = failAll;
-        worker.onmessageerror = failAll;
-      }
+      const worker = lane(op.op === 'read' && op.network ? reads++ % Math.max(1, readLanes) : 0);
       const id = next++;
       return new Promise<unknown>((done, fail) => {
         waiting.set(id, { done, fail });
-        try { worker!.postMessage({ id, tiles: op }); } catch (error) { waiting.delete(id); fail(error instanceof Error ? error : new Error(String(error))); }
+        try { worker.postMessage({ id, tiles: op }); } catch (error) { waiting.delete(id); fail(error instanceof Error ? error : new Error(String(error))); }
       });
     },
   };
 }
 
-/** A tile made and stored by the generator's own worker: the version stored (null: not stored), and its records' texts when they were asked for. */
+/** A tile made and stored by the generator's own worker: the version stored (null: not stored), and the tile prepared when it was asked for. */
 export interface MadeTile {
   readonly version: number | null;
-  /** The tile's records, prepared (`prepareTile`), when the page asked for them (a tile of the region). */
-  readonly records?: TileRecords;
+  /** The tile prepared (`prepareTile`), when the page asked for it (a tile of the region). */
+  readonly prepared?: PreparedTile;
 }
 
-/** A TILE'S BUILDINGS MADE READY FOR THE PAGE where the tile is read or made (the save worker, the generator's): each record migrated and its members interned (`intern.ts`: a tile's records share their shapes, kept through the message's clone), so the page only files them (`BuildingStore.loadPrepared`). */
-export function prepareTile(records: TileRecords): TileRecords {
+/** A tile as the page takes it in: its records (the buildings prepared) and its network's bake (null when not asked for: a far tile's read). */
+export interface PreparedTile {
+  readonly records: TileRecords;
+  readonly network: NetworkBake | null;
+}
+
+/** A TILE MADE READY FOR THE PAGE where it is read or made (the save worker, the generator's): each building migrated and its members interned (`intern.ts`: a tile's records share their shapes, kept through the message's clone), so the page only files them (`BuildingStore.loadPrepared`); with `network`, the tile's junctions and ribbons solved here from its roads (`bakeTileNetwork`), so the page's build takes them instead of solving a thousand junctions in the frame the tile is put in. */
+export function prepareTile(records: TileRecords, network = true): PreparedTile {
   const buildings: Building[] = [];
   for (const raw of records.buildings) {
     const b = migrateBuilding(raw);
@@ -307,13 +323,28 @@ export function prepareTile(records: TileRecords): TileRecords {
     internMembers(b as unknown as Record<string, unknown>);
     buildings.push(b);
   }
-  return { ...records, buildings: buildings as unknown as TileRecords['buildings'] };
+  const prepared = { ...records, buildings: buildings as unknown as TileRecords['buildings'] };
+  return { records: prepared, network: network ? bakeTileNetwork(prepared) : null };
+}
+
+/** The tile's roads built as a network of their own (the tile's nodes, its roads' foreign ends as borrowed nodes), its junctions and ribbons exported (`Network.exportBake`): the page takes a node's where its roads are the same there (a node with a neighbour's road is solved on the page). */
+export function bakeTileNetwork(records: TileRecords): NetworkBake {
+  const owned = new Set(records.nodes.map((n) => n.id));
+  const doc = RoadDoc.fromJSON({
+    version: 1, unit: METERS_PER_UNIT,
+    nodes: [...records.nodes, ...records.borrowedNodes.filter((n) => !owned.has(n.id))], segments: records.segments,
+  }, { repair: false });
+  const net = new Network(doc);
+  net.rebuild();
+  return net.exportBake(records.nodes.map((n) => n.id as NodeId), records.segments.map((s) => s.id as SegmentId));
 }
 
 /** THE WORLD'S TILES AS THE PAGE ASKS FOR THEM: one tile read, written, or made and stored; a write bumps the tile's version */
 export class TileStore {
   /** The version each tile was last read or written at: one number a tile touched, never its records. */
   private readonly versions = new Map<number, number>();
+  /** The network bakes of the tiles read for the page (`load`), by key, until taken (`takeBake`). */
+  private readonly bakes = new Map<number, NetworkBake>();
   /** The calls under way on each tile (and on the world's values): a tile's calls run one after another, other tiles' alongside. */
   private readonly chains = new Map<number | 'world', Promise<unknown>>();
   /** A migration under way: every call waits for it. */
@@ -347,7 +378,7 @@ export class TileStore {
 
   /** The stored tile, or null when the store has none (a stored tile unreadable rejects). */
   read(key: number): Promise<TileRecords | null> {
-    return this.chained(key, () => this.readNow(key));
+    return this.chained(key, () => this.readNow(key, false));
   }
 
   /** Stores a tile, its version one past the last the store knows: the version written, or null when it was not (what is baked of it is keyed by that version). */
@@ -360,7 +391,7 @@ export class TileStore {
 
   /** The stored tile, or the tile generated and stored: generated only when the store has none (stored by the generator's worker where it can, as a tile made ahead is). */
   load(key: number): Promise<TileRecords> {
-    return this.chained(key, async () => (await this.readNow(key)) ?? (this.makeStored ? this.madeThere(key) : this.made(key)));
+    return this.chained(key, async () => (await this.readNow(key, true)) ?? (this.makeStored ? this.madeThere(key) : this.made(key)));
   }
 
   meta(): Promise<WorldMeta | null> {
@@ -385,23 +416,33 @@ export class TileStore {
 
   /** DO NOT have the save worker parse a tile and clone it to the page: its texts are handed over and parsed here, once. */
   /** The stored tile read and prepared where the store is (`runTileOp` 'read', the save worker): the page files its records as they come. */
-  private async readNow(key: number): Promise<TileRecords | null> {
-    const records = (await this.backend.run({ op: 'read', map: this.map, key })) as TileRecords | null;
-    if (!records) return null;
+  private async readNow(key: number, network: boolean): Promise<TileRecords | null> {
+    const prepared = (await this.backend.run({ op: 'read', map: this.map, key, network })) as PreparedTile | null;
+    if (!prepared) return null;
+    const { records } = prepared;
     preparedTiles.add(records);
+    if (prepared.network) this.bakes.set(key, prepared.network);
     this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
     return records;
+  }
+
+  /** The network bake read with the tile (`load`), once: offered to the page's network as the tile is put in (`main.ts`). */
+  takeBake(key: number): NetworkBake | undefined {
+    const bake = this.bakes.get(key);
+    this.bakes.delete(key);
+    return bake;
   }
 
   /** DO NOT post a tile the generator made back to the store from the page: its worker stores it and hands the page its records prepared; kept for the page even when the write fails. */
   private async madeThere(key: number): Promise<TileRecords> {
     const { i, j } = tileOfKey(key);
     const made = await this.makeStored!(i, j, this.versions.get(key) ?? 0, true);
-    if (!made.records) throw new Error(`tile ${key} was made and not handed back`);
+    if (!made.prepared) throw new Error(`tile ${key} was made and not handed back`);
     if (made.version === null) console.warn(`[save] tile ${key} was made and not stored`);
-    const records = made.records;
+    const { records } = made.prepared;
     if (records.key !== key) throw new Error(`the generator made tile ${records.key} for tile ${key}`);
     preparedTiles.add(records);
+    if (made.prepared.network) this.bakes.set(key, made.prepared.network);
     this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
     return records;
   }

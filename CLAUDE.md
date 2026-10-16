@@ -87,6 +87,8 @@ pasted in the session that started this; these are its binding decisions.
   Chrome memory, the world not shown 4 min after; a medium city lost its WebGL context (GL_OUT_OF_MEMORY) in a
   8 GB job: 28 workers in the page's process (14 pools) and ~1 GB of geometry.
 - Still asks the player: graphics-quality changes (shots), migrating his saved map, pushing.
+- Player's order 2026-10-16: do every architecture change the goal needs (fast opening, 10 km+ cities without stalls, same
+  quality and features) WITHOUT asking for authorization; the road network and its elevation per tile in workers included.
 - Adopted from "Cidade" (a 20 k-line game on the same brief that opens the whole large city; source extracted
   in the session scratchpad, read-only reference, never run; player's order 2026-10-16 to take its architecture ideas):
   one job queue with priority dispatching to any free worker, a key that cancels the older job and drops its result,

@@ -4,7 +4,7 @@ import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 import { SAVES_STORE, indexedDbParts, openSaves } from '@editor/saveStore';
-import { prepareTile, writeTile } from '@editor/tileStore';
+import { type PreparedTile, prepareTile, writeTile } from '@editor/tileStore';
 import { bakeTileSections } from '@sim/tileSections';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
@@ -20,7 +20,7 @@ export interface StreamTileAsk {
 }
 
 /** The streamed tile built (its key and records), stored here (its version, and its records prepared when asked for), or why it could not be. */
-export type StreamTileAnswer = { readonly key: number; readonly records: TileRecords } | { readonly key: number; readonly stored: number | null; readonly records?: TileRecords }
+export type StreamTileAnswer = { readonly key: number; readonly records: TileRecords } | { readonly key: number; readonly stored: number | null; readonly prepared?: PreparedTile }
   | { readonly i: number; readonly j: number; readonly error: string };
 
 /** The tile store's parts in this worker's IndexedDB, opened on the first tile stored. */
@@ -39,7 +39,7 @@ export function serve(self: JobScope): void {
       void writeTile(stored(), store.map, records, bakeTileSections).then(
         ({ ok }) => {
           // The records handed back prepared (migrated and interned here, `prepareTile`: the page only files them); kept for the page even when the write failed.
-          const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { records: prepareTile(records) } : {}) };
+          const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(records) } : {}) };
           self.postMessage(answer);
         },
         (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} was made and not stored: ${String(error)}` } satisfies StreamTileAnswer));
