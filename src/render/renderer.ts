@@ -187,6 +187,8 @@ export interface SceneHandle {
   readonly programsReady: Promise<void>;
   /** A map is being opened (a file, the autosave): nothing is shown until its whole world is in */
   beginLoad(): void;
+  /** What else the opening waits for besides the town drawn: the tiles round the camera come in (`worldStreamer.ts` settled); null: nothing. */
+  holdOpening(until: (() => boolean) | null): void;
   readonly backend: 'three-webgl';
   readonly viewport: Viewport;
   readonly scene: Scene;
@@ -660,6 +662,8 @@ export function createSceneRenderer(
   /** Every program the game draws with, compiled before the town is shown (`shaderCatalogue.ts`). */
   const programs = createShaderCatalogue(personProgramStandIns);
   let openingSince: number | null = null;
+  /** The streamed world's tiles round the camera (`holdOpening`): the opening shows the town once they are in. */
+  let openingHeld: (() => boolean) | null = null;
   /** While nothing is shown (`opened` false) the world is built this much a frame */
   const HIDDEN_SLICE_MS = 250;
 
@@ -2071,6 +2075,9 @@ export function createSceneRenderer(
     get programsReady() {
       return programs.ready;
     },
+    holdOpening(until) {
+      openingHeld = until;
+    },
     beginLoad() {
       reveal.begin();
       programs.begin();
@@ -2770,7 +2777,7 @@ export function createSceneRenderer(
       // The opening's town is shown whole
       openingSince ??= performance.now();
       if (!reveal.opened) {
-        const whole = roads !== null && !worldJob && !buildings.pending && natureTreesStarted && !natureTreesPending;
+        const whole = roads !== null && !worldJob && !buildings.pending && natureTreesStarted && !natureTreesPending && (openingHeld?.() ?? true);
         const next = reveal.step(whole, performance.now());
         if (next === 'warm') {
           // One frame drawn unseen first: the new meshes go to the GPU
