@@ -32,6 +32,7 @@ import {
 } from './ragdoll';
 import { createBlast } from './blast';
 import { createDestruction } from './destruction';
+import { createGroundCorners } from './ragdollGround';
 import { compileAhead } from './uploads';
 
 /** What shots and blows leave behind: the bodies they throw */
@@ -181,21 +182,13 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
   /** Who is down (a `fall` pause) this frame. */
   const ragdollDown = new Set<number>();
   const isDown = (id: number): boolean => ragdollDown.has(id);
-  /** The ground found under the bodies (the lots' raised yards are ground too), by small cells. */
-  const ragdollGround = new Map<number, number>();
-  /** The document's serial of what the ground found is read from (`wallsNear`). */
-  let ragdollGroundSerial = '';
   /** DO NOT file the town's buildings again here */
   const LOT_GROW = m(2);
   const lotsAt = (x: number, y: number): readonly Building[] =>
     ragdollSim?.doc.buildings.near(x - LOT_GROW, y - LOT_GROW, x + LOT_GROW, y + LOT_GROW) ?? [];
-  /** The ground at a corner of the bodies' ground grid (0.2 units a cell): a lot's yard as drawn, else the paving (a footway stands over the terrain), else the terrain. */
-  const ragdollCorner = (ix: number, iy: number): number => {
-    const key = ix * 100003 + iy;
-    const known = ragdollGround.get(key);
-    if (known !== undefined) return known;
-    const cx = ix / 5, cy = iy / 5;
-    // Only the lots whose box covers this cell of the grid (`lotsAt`)
+  /** The ground found under the bodies, by small cells, kept while something on it moves (`ragdollGround.ts`) */
+  const ragdollGround = createGroundCorners((cx, cy) => {
+    // A lot's yard as drawn (only the lots whose box covers this corner, `lotsAt`), else the paving over the terrain, else the terrain.
     let h = NaN;
     for (const b of lotsAt(cx, cy)) {
       h = buildings.lotHeightAt(b.id, cx, cy);
@@ -203,9 +196,20 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
     }
     if (!Number.isFinite(h)) h = ctx.pavedHeightAt(cx, cy);
     if (!Number.isFinite(h)) h = ctx.renderedHeightAt(cx, cy);
-    if (ragdollGround.size > 60000) ragdollGround.clear();
-    ragdollGround.set(key, h);
     return h;
+  });
+  /** What the heights found stand on: the document, its ground's serial, its buildings and ruins; `version` moves with them. */
+  const groundSeen = { doc: null as object | null, serial: -1, built: -1, ruined: -1, version: 0 };
+  /** The heights found forgotten once the ground under them changed (an edit, a building put up or knocked down). */
+  const groundChanged = (): void => {
+    const land = ragdollSim?.doc ?? null;
+    const serial = land ? land.changes.serialOf('roads', 'terrain', 'lots') : -1;
+    const built = land ? land.buildings.size : -1;
+    const ruined = destruction.ruined.size;
+    if (land === groundSeen.doc && serial === groundSeen.serial && built === groundSeen.built && ruined === groundSeen.ruined) return;
+    groundSeen.doc = land; groundSeen.serial = serial; groundSeen.built = built; groundSeen.ruined = ruined;
+    groundSeen.version++;
+    ragdollGround.forget();
   };
   /** A vehicle as a body sees it: where it stands and the box it fills. */
   interface VehicleBox { x: number; y: number; angle: number; hl: number; hw: number; height: number }
@@ -229,22 +233,14 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
     return list;
   };
   const ragdollWorld: RagdollWorld = {
-    groundAt(x, y) {
-      // Between the heights at the corners of its cell, as a physics engine's heightfield is a surface between its samples
-      const gx = x * 5, gy = y * 5, ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
-      const a = ragdollCorner(ix, iy), b = ragdollCorner(ix + 1, iy), c = ragdollCorner(ix, iy + 1), d = ragdollCorner(ix + 1, iy + 1);
-      return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
-    },
+    groundAt: (x, y) => ragdollGround.at(x, y),
+    groundSerial: () => groundSeen.version,
     wallsNear(x, y, reach) {
       // The buildings standing (not a ruin) and the walls, fences and hedges of their lots.
       const out: RagdollWall[] = [];
       // The heights found stand until the ground under them changes
+      groundChanged();
       const land = ragdollSim?.doc;
-      const serial = land ? `${land.changes.serialOf('roads', 'terrain', 'lots')}:${land.buildings.size}:${destruction.ruined.size}` : '';
-      if (serial !== ragdollGroundSerial) {
-        ragdollGround.clear();
-        ragdollGroundSerial = serial;
-      }
       // Those near, from the store's index: DO NOT walk every building of the town per body.
       const near = reach + m(40);
       for (const b of land?.buildings.near(x - near, y - near, x + near, y + near) ?? []) {
@@ -325,6 +321,8 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
     stepEffects(seconds) { fxStep += Math.max(0, seconds); onAssetsReady(); },
     frame(citizens, sim, wallDt, fxDt) {
       ragdollSim = sim;
+      // The ground read since the last frame kept, the rest let go: what lies still reads none (`ragdollGround.ts`).
+      ragdollGround.sweep();
       // Bullet holes on the people shot, alive or not (`recordWound`).
       for (const wd of sim.takeWounds()) citizens.wound?.(-1 - wd.id, wd.part, wd.fromX, wd.fromY);
       ragdolls.absorb(sim.casualties(wallDt), citizens, ragdollWorld);

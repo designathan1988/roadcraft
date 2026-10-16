@@ -64,6 +64,8 @@ export interface RagdollWorld {
   groundAt(x: number, y: number): number;
   /** The walls near a world point. */
   wallsNear(x: number, y: number, reach: number): RagdollWall[];
+  /** Moves when the ground changes (an edit): the physics' ground made before is not given to a body that falls after. */
+  groundSerial?(): number;
 }
 
 /** Somebody alive getting up at world (x, y) facing `heading`, taking `seconds` (`PeopleEngine.getUp`). */
@@ -184,6 +186,15 @@ interface Stick { readonly a: number; readonly b: number; readonly min: number; 
 
 interface Wall extends RagdollWall { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
 
+/** The physics' ground in tiles every body over them shares: samples along a tile's side (a power of two blocks of 4) and apart, metres. */
+const GROUND_SAMPLES = 64, GROUND_SPACING = 0.1;
+/** A tile's side, metres: its last samples are the next tile's first. */
+const GROUND_TILE = (GROUND_SAMPLES - 1) * GROUND_SPACING;
+/** Tile indices shifted by this much into a tile's key: 2^20 tiles either way. */
+const TILE_SHIFT = 1 << 20;
+/** One tile of the physics' ground, the ground's serial it was made at, and the bodies on it. */
+interface GroundTile { readonly key: number; readonly serial: number; readonly collider: JoltStatic; users: number }
+
 /** Somebody alive on the ground: falling, lying a moment, then getting up. */
 interface Survivor {
   readonly id: number;
@@ -273,7 +284,7 @@ interface Body {
   pooled: boolean;
   /** Simulated by Jolt (`ragdollJolt.ts`): its parts; the colliders made for it */
   jolt?: JoltRagdoll | undefined;
-  colliders?: { list: JoltStatic[]; users: number } | undefined;
+  colliders?: { list: JoltStatic[]; tiles: GroundTile[]; users: number } | undefined;
   synced?: { p: Vector3[]; o: Vector3[] } | undefined;
   splats: number;
   spray: number;
@@ -391,6 +402,8 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
   const bodies: Body[] = [];
   // Jolt (some 3.5 MB of WebAssembly) is loaded when the Actions are taken up (`warmPhysics`), not in every session
   let separated = false;
+  /** The physics' ground tiles bodies lie on now, by tile (`groundTile`). */
+  const groundTiles = new Map<number, GroundTile>();
   const decals: BloodDecal[] = [];
   /** The casualty records already turned into bodies (`absorb`). */
   const taken = new WeakSet<Casualty>();
@@ -770,7 +783,16 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     body.jolt?.destroy();
     body.jolt = undefined;
     const c = body.colliders;
-    if (c && --c.users <= 0) joltWorld()?.release(c.list);
+    if (c && --c.users <= 0) {
+      const physics = joltWorld();
+      physics?.release(c.list);
+      // The ground's tiles once no body lies on them any more (`groundTile`).
+      for (const tile of c.tiles) {
+        if (--tile.users > 0) continue;
+        physics?.release([tile.collider]);
+        if (groundTiles.get(tile.key) === tile) groundTiles.delete(tile.key);
+      }
+    }
     body.colliders = undefined;
   };
 
@@ -1343,7 +1365,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       body.jolt.pull(LK, CHE, k * 0.8); body.jolt.pull(RK, CHE, k * 0.8);
     }
     if (!body.jolt) {
-      body.colliders ??= { list: colliders(physics, body, world), users: 1 };
+      body.colliders ??= { ...colliders(physics, body, world), users: 1 };
       body.jolt = physics.ragdoll(joltSpec(body));
       body.synced = undefined;
     }
@@ -1413,14 +1435,20 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     }
   }
 
-  /** The ground under a body and round it */
-  function colliders(physics: JoltWorld, body: Body, world: RagdollWorld): JoltStatic[] {
+  /** The ground under a body and round it (tiles shared with every body over them), and its walls */
+  function colliders(physics: JoltWorld, body: Body, world: RagdollWorld): { list: JoltStatic[]; tiles: GroundTile[] } {
     const pel = body.p[PEL]!;
     const fast = body.p.some((v, k) => v.distanceTo(body.o[k]!) / STEP > m(6));
-    const n = fast ? 256 : 128, cell = fast ? 0.12 : 0.1;
-    const half = ((n - 1) * cell) / 2;
+    // As far round as a body's own field reached (12.7 m; 30.6 m for one thrown fast)
+    const half = fast ? 15.3 : 6.35;
     const cx = pel.x / METRE, cz = pel.z / METRE;
-    const list: JoltStatic[] = [physics.ground(cx - half, cz - half, n, cell, (x, z) => world.groundAt(x * METRE, -z * METRE) / METRE)];
+    const serial = world.groundSerial?.() ?? 0;
+    const tiles: GroundTile[] = [];
+    const tx1 = Math.floor((cx + half) / GROUND_TILE), tz1 = Math.floor((cz + half) / GROUND_TILE);
+    for (let tz = Math.floor((cz - half) / GROUND_TILE); tz <= tz1; tz++) {
+      for (let tx = Math.floor((cx - half) / GROUND_TILE); tx <= tx1; tx++) tiles.push(groundTile(physics, world, tx, tz, serial));
+    }
+    const list: JoltStatic[] = [];
     for (const w of body.walls) {
       const ring = w.ring.map((q) => ({ x: q.x / METRE, z: -q.y / METRE }));
       if (ring.every((q) => Math.abs(q.x - cx) > half || Math.abs(q.z - cz) > half)) continue;
@@ -1428,7 +1456,21 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       const s = physics.prism(ring, bottom, w.top / METRE);
       if (s) list.push(s);
     }
-    return list;
+    return { list, tiles };
+  }
+
+  /** DO NOT make a heightfield per body: tile (tx, tz) of the physics' ground, taken by one more body (made when none has it). */
+  function groundTile(physics: JoltWorld, world: RagdollWorld, tx: number, tz: number, serial: number): GroundTile {
+    const key = (tx + TILE_SHIFT) * 2 * TILE_SHIFT + (tz + TILE_SHIFT);
+    const known = groundTiles.get(key);
+    // Made before the ground changed: left to the bodies on it, a new one made for this body.
+    if (known && known.serial === serial) { known.users++; return known; }
+    const step = GROUND_SAMPLES - 1;
+    const collider = physics.ground(tx * step * GROUND_SPACING, tz * step * GROUND_SPACING, GROUND_SAMPLES, GROUND_SPACING,
+      (x, z) => world.groundAt(x * METRE, -z * METRE) / METRE);
+    const tile: GroundTile = { key, serial, collider, users: 1 };
+    groundTiles.set(key, tile);
+    return tile;
   }
 
   /** A body as Jolt parts and joints, from where its particles are (metres) */
