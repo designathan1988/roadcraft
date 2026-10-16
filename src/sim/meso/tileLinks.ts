@@ -14,7 +14,7 @@ import { linkCapacity } from './model';
 // The same numbers `meso.ts` reads off the lane graph for a loaded tile (lanes, free speed, the signal's share), its length the centreline's (the live link's is trimmed to the stop lines).
 
 /** Bumped when what a table holds or how it is baked changes. */
-const TILE_LINKS_FORMAT = 1;
+export const TILE_LINKS_FORMAT = 1;
 
 /** A link's flags: into a signal or a stop line (its capacity the green's share), a crossing at its end, its road one-way. */
 const LINK_CONTROLLED = 1;

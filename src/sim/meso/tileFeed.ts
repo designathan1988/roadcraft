@@ -1,9 +1,11 @@
 import { TILE, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
+import type { TrafficBuilding } from '../agents/trafficBuildings';
+import { tileTraffic } from '../tileSections';
 import { type TileLinks, bakeTileLinks } from './tileLinks';
 
-/** THE FAR TILES' LINK TABLES, READ BY THE SIMULATION'S WORKER STRAIGHT FROM THE TILE STORE: every stored tile within the meso's reach of the camera, baked here, the page out of the way */
+/** THE FAR TILES' LINK TABLES, READ BY THE SIMULATION'S WORKER STRAIGHT FROM THE TILE STORE: every stored tile within the meso's reach of the camera, its table baked where the tile was written (`tileSections.ts`), the page out of the way */
 
 /** How far round the camera the meso runs over the stored tiles. */
 export const MESO_REACH = m(10_000);
@@ -12,12 +14,15 @@ const READS_IN_FLIGHT = 4;
 /** A table is let go only this many tiles past the reach: a camera on a tile's edge does not read and drop it in turn. */
 const REACH_MARGIN = 1;
 
-/** Where a tile's records are read: the store's IndexedDB opened in the worker, or a port to whoever holds it (`simHost.ts`); null: none stored. */
+/** DO NOT read a whole tile for one product of it: where a stored tile's sections are read (`tileSections.ts`), each alone - the store's IndexedDB opened in the worker (`tileReader.ts`), or a port to whoever holds it (`simHost.ts`); null: none stored. */
 export interface TileReader {
-  read(key: number): Promise<TileRecords | null>;
+  /** Its meso link table. */
+  links(key: number): Promise<TileLinks | null>;
+  /** Its buildings as traffic reads them. */
+  traffic(key: number): Promise<readonly TrafficBuilding[] | null>;
 }
 
-/** A reader over a port that answers `{ id, key }` with `{ id, records }` (the desktop's store is the shell's, not IndexedDB). */
+/** A reader over a port that answers `{ id, key }` with `{ id, records }` (the desktop's store is the shell's, not IndexedDB): the sections derived here from the records. */
 export function portReader(port: MessagePort): TileReader {
   let next = 1;
   const waiting = new Map<number, { readonly done: (r: TileRecords | null) => void; readonly fail: (e: Error) => void }>();
@@ -27,14 +32,16 @@ export function portReader(port: MessagePort): TileReader {
     if (event.data.error !== undefined) w?.fail(new Error(event.data.error));
     else w?.done(event.data.records ?? null);
   };
+  const read = (key: number): Promise<TileRecords | null> => {
+    const id = next++;
+    return new Promise((done, fail) => {
+      waiting.set(id, { done, fail });
+      port.postMessage({ id, key });
+    });
+  };
   return {
-    read(key) {
-      const id = next++;
-      return new Promise((done, fail) => {
-        waiting.set(id, { done, fail });
-        port.postMessage({ id, key });
-      });
-    },
+    links: async (key) => { const records = await read(key); return records ? bakeTileLinks(records) : null; },
+    traffic: async (key) => { const records = await read(key); return records ? tileTraffic(records.buildings) : null; },
   };
 }
 
@@ -140,7 +147,7 @@ export class TileLinkFeed {
       this.queued.delete(key);
       if (this.live.has(key) || this.reading.has(key)) continue;
       this.reading.add(key);
-      this.reader.read(key).then((records) => this.arrived(key, records), (error: unknown) => {
+      this.reader.links(key).then((links) => this.arrived(key, links), (error: unknown) => {
         this.reading.delete(key);
         this.again.delete(key);
         if (!this.warned) { this.warned = true; console.warn('[meso] a tile could not be read from the store', error); }
@@ -149,13 +156,13 @@ export class TileLinkFeed {
     }
   }
 
-  /** A tile read: baked here (none stored: nothing until it is written), unless the page took it in or it left the reach meanwhile. */
-  private arrived(key: number, records: TileRecords | null): void {
+  /** A tile's table read (none stored: nothing until it is written), unless the page took it in or it left the reach meanwhile. */
+  private arrived(key: number, links: TileLinks | null): void {
     this.reading.delete(key);
     const stale = this.again.delete(key);
     if (!this.live.has(key) && this.near(key, this.radius + REACH_MARGIN)) {
-      this.versions.set(key, records ? records.version : -1);
-      if (records) this.ready.push(bakeTileLinks(records));
+      this.versions.set(key, links ? links.version : -1);
+      if (links) this.ready.push(links);
       if (stale) { this.versions.delete(key); this.want(key, true); }
     }
     this.pump();

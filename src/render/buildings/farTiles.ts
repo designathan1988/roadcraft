@@ -290,7 +290,7 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
   if (k === 0) {
     let entry = keeps ? await kept<TileEntry>(node, sig) : undefined;
     if (!entry) {
-      const records = job.records ?? await readStored(job.store, tileKey(i, j));
+      const records = job.records ?? await readStored(job.store, tileKey(i, j), 'buildings');
       if (!records) return { kind: 'farRecords', node, sig };
       entry = bakeTile(records, sig, readsOf(job), job.tone);
       if (keeps) await cache.put(`${prefix}${node}`, entry);

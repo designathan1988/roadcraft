@@ -1,6 +1,8 @@
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import { tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
+import type { MadeTile } from '@editor/tileStore';
+import type { StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
 import { jobLanes, jobPort } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
@@ -8,23 +10,13 @@ import { jobLanes, jobPort } from './jobs/jobPool';
 /** Workers making tiles at once: as many as the region asks at a time (`worldStreamer.ts` IN_FLIGHT), never more than the pool has. */
 const MOST_LANES = 4;
 
-/** A tile asked of the generator's worker (`cityTile.worker.ts`). */
-interface StreamAsk {
-  readonly stream: true;
-  readonly options: WholeMapOptions;
-  readonly i: number;
-  readonly j: number;
-  readonly store?: { readonly map: string; readonly after: number };
-}
-
-/** Its answer: the tile's records, the version it was stored at in the worker, or why it could not be made. */
-type StreamAnswer = { readonly key: number; readonly records: TileRecords } | { readonly key: number; readonly stored: number | null }
-  | { readonly i: number; readonly j: number; readonly error: string };
+/** Where a tile made is stored by the worker, and whether its texts come back with its version. */
+type StoreAsk = NonNullable<StreamTileAsk['store']>;
 
 interface Waiting {
   readonly key: number;
-  readonly store?: { readonly map: string; readonly after: number };
-  readonly done: (answer: TileRecords | number | null) => void;
+  readonly store?: StoreAsk;
+  readonly done: (answer: TileRecords | MadeTile) => void;
   readonly failed: (why: string) => void;
 }
 
@@ -42,10 +34,10 @@ export class TileGenerator {
     });
   }
 
-  /** Tile `key` made and stored by the worker in the tile store's `map` at a version past `after`: the version, or null when it was not stored. */
-  makeStored(key: number, map: string, after: number): Promise<number | null> {
+  /** Tile `key` made and stored by the worker in the tile store's `map` at a version past `after`: the version (null: not stored), and with `text` its records' texts, handed over (DO NOT post them to the store again from the page). */
+  makeStored(key: number, map: string, after: number, text: boolean): Promise<MadeTile> {
     return new Promise((done, failed) => {
-      this.queue.push({ key, store: { map, after }, done: (answer) => done(answer as number | null), failed: (why) => failed(new Error(why)) });
+      this.queue.push({ key, store: { map, after, text }, done: (answer) => done(answer as MadeTile), failed: (why) => failed(new Error(why)) });
       this.pump();
     });
   }
@@ -68,18 +60,20 @@ export class TileGenerator {
       if (!next) return;
       lane.busy = next;
       const { i, j } = tileOfKey(next.key);
-      lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: next.store } : {}) } satisfies StreamAsk);
+      lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: next.store } : {}) } satisfies StreamTileAsk);
     }
   }
 
   private lane(): { readonly port: Worker; busy: Waiting | null } {
     const lane: { readonly port: Worker; busy: Waiting | null } = { port: jobPort('cityTiles'), busy: null };
-    lane.port.onmessage = (event: MessageEvent<StreamAnswer>) => {
+    lane.port.onmessage = (event: MessageEvent<StreamTileAnswer>) => {
       const waiting = lane.busy;
       lane.busy = null;
       if (waiting) {
         const answer = event.data;
-        if ('error' in answer) waiting.failed(answer.error); else waiting.done('stored' in answer ? answer.stored : answer.records);
+        if ('error' in answer) waiting.failed(answer.error);
+        else if ('stored' in answer) waiting.done({ version: answer.stored, ...(answer.text ? { text: answer.text } : {}) });
+        else waiting.done(answer.records);
       }
       this.pump();
     };

@@ -4,7 +4,8 @@ import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 import { SAVES_STORE, indexedDbParts, openSaves } from '@editor/saveStore';
-import { runTileOp } from '@editor/tileStore';
+import { type TileText, writeTile } from '@editor/tileStore';
+import { bakeTileSections } from '@sim/tileSections';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
 
@@ -14,12 +15,12 @@ export interface StreamTileAsk {
   readonly options: WholeMapOptions;
   readonly i: number;
   readonly j: number;
-  /** Stored here in the tile store's map (the browser's IndexedDB) at a version past `after`, and only that version answered: the page never holds a tile it only needs made. */
-  readonly store?: { readonly map: string; readonly after: number };
+  /** Stored here in the tile store's map (the browser's IndexedDB) at a version past `after`: the page never posts a tile it was handed back to the store; `text`, its records' texts handed back too (a tile of the region), else its version alone (a tile made ahead). */
+  readonly store?: { readonly map: string; readonly after: number; readonly text: boolean };
 }
 
-/** The streamed tile built (its key and records), stored here (its version), or why it could not be. */
-export type StreamTileAnswer = { readonly key: number; readonly records: TileRecords } | { readonly key: number; readonly stored: number | null }
+/** The streamed tile built (its key and records), stored here (its version, and its texts when asked for), or why it could not be. */
+export type StreamTileAnswer = { readonly key: number; readonly records: TileRecords } | { readonly key: number; readonly stored: number | null; readonly text?: TileText }
   | { readonly i: number; readonly j: number; readonly error: string };
 
 /** The tile store's parts in this worker's IndexedDB, opened on the first tile stored. */
@@ -30,11 +31,16 @@ export function serve(self: JobScope): void {
   self.onmessage = (event: MessageEvent<StreamTileAsk>) => {
     const { options, i, j, store } = event.data;
     try {
-      const records = buildStreamTile(options, i, j);
-      if (!store) { self.postMessage({ key: tileKey(i, j), records } satisfies StreamTileAnswer); return; }
-      const version = Math.max(records.version, store.after) + 1;
-      void runTileOp(stored(), { op: 'write', map: store.map, records: { ...records, version } }).then(
-        (ok) => self.postMessage({ key: tileKey(i, j), stored: ok === true ? version : null } satisfies StreamTileAnswer),
+      const fresh = buildStreamTile(options, i, j);
+      if (!store) { self.postMessage({ key: tileKey(i, j), records: fresh } satisfies StreamTileAnswer); return; }
+      const version = Math.max(fresh.version, store.after) + 1;
+      // Its sections baked here with it, once (`sim/tileSections.ts`); the records made text once, for the store and for the page.
+      void writeTile(stored(), store.map, { ...fresh, version }, bakeTileSections).then(
+        ({ ok, text }) => {
+          const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.text ? { text } : {}) };
+          // The texts handed over, not copied (MDN, `postMessage` transfer); kept for the page even when the write failed.
+          self.postMessage(answer, store.text ? text.map((t) => t.buffer) : []);
+        },
         (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} was made and not stored: ${String(error)}` } satisfies StreamTileAnswer));
     } catch (error) {
       // Told and answered: the asker decides (`tileGenerator.ts`).

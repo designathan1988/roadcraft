@@ -1,17 +1,18 @@
 import { readStoredTilesWith } from '@core/storedTiles';
-import type { TileReader } from '@sim/meso/tileFeed';
+import type { TilePartName } from '@editor/tileStore';
 import type { FromJob, JobScope, JobService, ToJob } from './jobs/jobScope';
+import type { StoredTileReader } from './tileReader';
 
 /** ONE WORKER OF THE JOB SYSTEM (`jobs/jobPool.ts`): at the root with the other entries, since it puts every service together: every service's ports in it, each service's module loaded on its first message */
 
 type Serve = (scope: JobScope) => void;
 
-// The tile store read here by the far levels' bakes (`core/storedTiles.ts`): its IndexedDB opened once per map, on the first read.
-const readers = new Map<string, Promise<TileReader>>();
-readStoredTilesWith(async (map, key) => {
+// The tile store read here by the far levels' bakes (`core/storedTiles.ts`), each its own part of a tile: its IndexedDB opened once per map, on the first read.
+const readers = new Map<string, Promise<StoredTileReader>>();
+readStoredTilesWith(async (map, key, part) => {
   let reader = readers.get(map);
   if (!reader) readers.set(map, reader = import('./tileReader').then((m) => m.storeTileReader(map)));
-  return (await reader).read(key);
+  return (await reader).part(key, part as TilePartName);
 });
 const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   growth: () => import('./growth.worker'),
@@ -30,7 +31,9 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   farRoads: () => import('./render/farRoads.worker'),
   terrainLight: () => import('./render/terrainLight.worker'),
   derivedWriter: () => import('./render/derivedWriter.worker'),
-  save: () => import('./editor/save.worker'),
+  // A tile written here has its simulation's sections baked with it (`sim/tileSections.ts`): the editor's layer does not import the simulation.
+  save: () => Promise.all([import('./editor/save.worker'), import('./sim/tileSections')])
+    .then(([save, sections]) => ({ serve: (scope: JobScope) => save.serve(scope, sections.bakeTileSections) })),
 };
 
 const host = self as unknown as { onmessage: ((e: MessageEvent<ToJob>) => void) | null; postMessage(message: FromJob, transfer?: Transferable[]): void };

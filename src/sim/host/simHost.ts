@@ -3,12 +3,11 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import type { NodeId } from '@world/ids';
 import { SimWorld } from '../world';
-import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap, trafficBuilding } from '../agents/trafficBuildings';
+import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
 import { Meso, type TileEvent } from '../meso/meso';
 import { MesoMemory } from '../meso/memory';
 import { type TileReader, TileLinkFeed, portReader } from '../meso/tileFeed';
-import { migrateBuilding } from '@world/buildings/serialize';
 import { storeTileReader } from '../../tileReader';
 import { laneGrid } from '../agents/laneGrid';
 import { useBayWorkers } from '../agents/parking';
@@ -129,20 +128,18 @@ export class SimHost {
     this.post({ type: 'ready' });
   }
 
-  /** A tile put in the page's document: its buildings as the traffic reads them worked out here from the store (`trafficBuilding`), never on the page (`SimClient.sendChanges`)
+  /** A tile put in the page's document: its buildings as the traffic reads them read here from the store (`trafficBuilding`, baked with the tile), never on the page (`SimClient.sendChanges`)
    *  - one let go before its read lands is not placed; a building the page already told (an edit since) keeps the page's. */
   private tileBuildings(event: TileEvent, key: number): void {
     if (event === 'letGo') { this.tileReads.delete(key); return; }
     if (event !== 'loaded' || !this.reader) return;
     const read = (this.tileReads.get(key) ?? 0) + 1;
     this.tileReads.set(key, read);
-    this.reader.read(key).then((records) => {
-      if (this.tileReads.get(key) !== read || !records) return;
+    // Its traffic section alone, baked where the tile was written (`sim/tileSections.ts`): DO NOT parse the whole tile here a second time.
+    this.reader.traffic(key).then((traffic) => {
+      if (this.tileReads.get(key) !== read || !traffic) return;
       const changes: BuildingChange[] = [];
-      for (const raw of records.buildings) {
-        const b = migrateBuilding(raw);
-        if (b && !this.buildings.get(b.id)) changes.push({ id: b.id, value: trafficBuilding(b) });
-      }
+      for (const t of traffic) if (!this.buildings.get(t.id)) changes.push({ id: t.id, value: t });
       this.buildings.apply(changes);
     }, (error: unknown) => console.warn(`[sim] tile ${key}'s buildings could not be read from the store`, error));
   }
