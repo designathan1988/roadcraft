@@ -53,10 +53,8 @@ describe("the town's shells", () => {
     const own = (p: InstancedMesh): { array: ArrayLike<number> | null; onUploadCallback(): void }[] => {
       const list: { array: ArrayLike<number> | null; onUploadCallback(): void }[] = [p.instanceMatrix];
       if (p.instanceColor) list.push(p.instanceColor);
-      if (p.userData['ownGeometry']) {
-        for (const name of ['position', 'normal', 'uv', 'litSlot']) list.push(p.geometry.getAttribute(name) as BufferAttribute);
-        list.push((p.geometry.getAttribute('roomA') as InterleavedBufferAttribute).data);
-      }
+      // A batch's own copy of its model (the panes' with their rooms, the shell's parts' with their looks): every attribute, an interleaved one by its buffer.
+      if (p.userData['ownGeometry']) for (const a of uploads(p, false)) list.push(a);
       return list;
     };
     const before = parts.map((p) => own(p).map((a) => Array.from(a.array!)));

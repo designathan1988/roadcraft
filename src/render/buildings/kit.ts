@@ -29,6 +29,7 @@ import { acFarGeometry, createFacadePropGeometries } from './facadePropModels';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { m } from '@world/units';
 import { pullTowardEye } from '../depthConvention';
+import { SHELL_PART_FACES, SHELL_PART_KINDS, type ShellPartFace, type ShellPartKind } from './shellParts';
 
 /** Share of people awake, by hour from midnight: 100 % less the share asleep in the American Time Use Survey 2007-11 */
 const AWAKE_BY_HOUR = [
@@ -74,6 +75,7 @@ export const PART_KINDS: readonly PartKind[] = [
   'glassRail',
   'brise',
   ...FACADE_PROP_KINDS,
+  ...SHELL_PART_KINDS,
 ];
 
 /** The lantern beside a front door: a warm lamp behind frosted glass. */
@@ -132,6 +134,8 @@ export interface PartScreen {
   readonly extent: Axes;
   /** The pieces its shadow is made of (a frame's rails and stiles, a brise's blades): under a shadow texel across the middle side of each it casts none. */
   readonly pieces: readonly Axes[];
+  /** Drawn and casting at any size, as the shell it was laid in drew it (the shell's parts, `shellParts.ts`). */
+  readonly whole?: boolean;
 }
 
 export interface BuildingKit {
@@ -407,6 +411,39 @@ function awningGeometry(): BufferGeometry {
   return merged;
 }
 
+/** A shell part's model (`shellParts.ts`) in three's axes (plan x, up, -plan y): each face's corners in its order, fanned and wound as `Shell.face` winds it; white, its uv.x marking a paving's inset sides. */
+function shellPartGeometry(faces: readonly ShellPartFace[]): BufferGeometry {
+  const position: number[] = [], normal: number[] = [], uv: number[] = [], colour: number[] = [], index: number[] = [];
+  for (const f of faces) {
+    const base = position.length / 3;
+    const n = [f.n[0], f.n[2], -f.n[1]] as const;
+    for (const [u, v, w] of f.points) {
+      position.push(u, w, -v);
+      normal.push(n[0], n[1], n[2]);
+      uv.push(f.inset ? 1 : 0, 0);
+      colour.push(1, 1, 1);
+    }
+    const p = (k: number): readonly [number, number, number] => [f.points[k]![0], f.points[k]![2], -f.points[k]![1]];
+    const p0 = p(0), p1 = p(1), p2 = p(2);
+    const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uz = p1[2] - p0[2];
+    const vx = p2[0] - p0[0], vy = p2[1] - p0[1], vz = p2[2] - p0[2];
+    const forward = (uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2] >= 0;
+    for (let k = 1; k + 1 < f.points.length; k++) {
+      if (forward) index.push(base, base + k, base + k + 1);
+      else index.push(base, base + k + 1, base + k);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(new Float32Array(position), 3));
+  g.setAttribute('normal', new BufferAttribute(new Float32Array(normal), 3));
+  g.setAttribute('uv', new BufferAttribute(new Float32Array(uv), 2));
+  g.setAttribute('color', new BufferAttribute(new Float32Array(colour), 3));
+  g.setIndex(index);
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
+}
+
 export function createBuildingKit(): BuildingKit {
   const unitBox = new BoxGeometry(1, 1, 1);
   const glassPlane = new PlaneGeometry(1, 1);
@@ -430,11 +467,12 @@ export function createBuildingKit(): BuildingKit {
     glassRail: glassRailGeometry(),
     brise: briseGeometry(),
     ...createFacadePropGeometries(),
+    ...(Object.fromEntries(SHELL_PART_KINDS.map((kind) => [kind, shellPartGeometry(SHELL_PART_FACES[kind])])) as Record<ShellPartKind, BufferGeometry>),
   };
 
   const concrete = new MeshStandardMaterial({ color: 0xcfc9bd, roughness: 0.82, metalness: 0 });
   const metal = new MeshStandardMaterial({ color: 0x33373a, roughness: 0.45, metalness: 0.55 });
-  const material: Record<PartKind, Material> = {
+  const own: Record<Exclude<PartKind, ShellPartKind>, Material> = {
     // Both sides in the shadow pass: a pane is one-sided, and three draws a front-sided material's BACK faces for shadows
     glass: new MeshStandardMaterial({ color: 0x7c8e98, roughness: 0.06, metalness: 0, envMapIntensity: 1.6, shadowSide: DoubleSide }),
     // White: each frame takes its building's trim as an instance colour (`buildingMesh.ts` COLOURED_PARTS)
@@ -484,17 +522,19 @@ export function createBuildingKit(): BuildingKit {
       depthWrite: false, visible: false,
     }),
   };
-  for (const [kind, m] of Object.entries(material)) m.name = `building-part-${kind}`;
+  for (const [kind, m] of Object.entries(own)) m.name = `building-part-${kind}`;
   // A part laid on the shell in its plane - a balcony's slab on the roof of the block beside it, a sill on its wall
-  for (const m of Object.values(material)) pullTowardEye(m, 1, 4);
-  prefilterThinParts(material, THIN_PROPS);
-  scheduleOutsideLight(material.lamp, 'outside-lamp-lot', '#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(vLampLot, outsideOn);');
-  scheduleOutsideLight(material.wash, 'outside-wash-lot', '#include <color_fragment>', 'diffuseColor.a *= step(vLampLot, outsideOn);');
+  for (const m of Object.values(own)) pullTowardEye(m, 1, 4);
+  prefilterThinParts(own, THIN_PROPS);
+  scheduleOutsideLight(own.lamp, 'outside-lamp-lot', '#include <emissivemap_fragment>', 'totalEmissiveRadiance *= step(vLampLot, outsideOn);');
+  scheduleOutsideLight(own.wash, 'outside-wash-lot', '#include <color_fragment>', 'diffuseColor.a *= step(vLampLot, outsideOn);');
   // The furniture's models, made once
   const furnitureGeometry = createFurnitureGeometries();
   const tones = furnitureTones(furnitureGeometry);
-  for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(material[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight, tvClock });
+  for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(own[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight, tvClock });
   const shell = createShellMaterial();
+  // The shell's parts are the shell drawn instanced (`shellParts.ts`): its own material, not pulled towards the eye, not renamed.
+  const material: Record<PartKind, Material> = { ...own, ...{ lotBox: shell, lotRail: shell, lotSlab: shell } satisfies Record<ShellPartKind, Material> };
   const ghostShell = new MeshStandardMaterial({
     color: 0x65e5c3,
     emissive: new Color(0x1d5a4a),
@@ -559,6 +599,7 @@ export function createBuildingKit(): BuildingKit {
     const extent = extentOf(geometry[kind]);
     screen[kind] = { levels: levels[kind], extent, pieces: pieces[kind] ?? [extent] };
   }
+  for (const kind of SHELL_PART_KINDS) screen[kind] = { ...screen[kind], whole: true };
   const geometries = new Set<BufferGeometry>(Object.values(levels).flatMap((list) => list.map((l) => l.geometry)));
   // The small props' simplified levels, made off the frame's path once the simplifier has loaded.
   void Promise.all(SIMPLIFIED.map(async (kind) => {
@@ -582,7 +623,8 @@ export function createBuildingKit(): BuildingKit {
     facade,
     finishTone: finishAlbedo(),
     // Glass, doors and shutters close the openings for the sun
-    castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise', ...SHADOWED_PROPS]),
+    // And the shell's parts, as the shell they were laid in casts.
+    castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise', ...SHADOWED_PROPS, ...SHELL_PART_KINDS]),
     furniture() {
       if (!furniture) {
         furniture = { geometry: furnitureGeometry, material: createFurnitureMaterial() };

@@ -1,6 +1,7 @@
 import type { InstancedMesh, Material, Mesh, Object3D } from 'three';
 import { SHELL_MESH } from './cellArrays';
 import { type BuildingKit, PART_KINDS, type PartKind } from './kit';
+import { SHELL_PARTS } from './shellParts';
 
 /** DO NOT emit the town again to fade it */
 const FURNITURE = 'building-furniture-';
@@ -8,7 +9,9 @@ const FURNITURE = 'building-furniture-';
 /** How a part kind is drawn faded ("Ocultar outros") or not: its material, its order and whether it is drawn at all (a lantern's light is not). */
 export function partLook(kit: BuildingKit, kind: PartKind, faded: boolean): { material: Material; renderOrder: number; visible: boolean } {
   if (kind === 'wash') return { material: kit.material.wash, renderOrder: 0, visible: !faded };
-  return { material: faded ? kit.dimParts : kit.material[kind], renderOrder: faded ? 1 : 0, visible: true };
+  // The shell's parts fade as the shell they were laid in (`shellParts.ts`).
+  const dim = SHELL_PARTS.has(kind) ? kit.dimShell : kit.dimParts;
+  return { material: faded ? dim : kit.material[kind], renderOrder: faded ? 1 : 0, visible: true };
 }
 
 export function fadeMeshes(root: Object3D, kit: BuildingKit, faded: boolean): void {

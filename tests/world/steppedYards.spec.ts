@@ -10,7 +10,7 @@ import { localFootprint } from '@world/buildings/footprints';
 import { LOT_PLATE, buildingPads } from '@world/buildings/pads';
 import { validateBuilding } from '@world/buildings/validate';
 import { elementRect } from '@world/buildings/geometry';
-import { emitChunk } from '@render/buildings/buildingMesh';
+import { emitChunk, withShellParts } from '@render/buildings/buildingMesh';
 import { TERRAIN_CELL, TERRAIN_HALF } from '@render/terrain';
 import { buildRoadElevation } from '@world/elevation';
 import type { Building } from '@world/buildings/types';
@@ -199,7 +199,8 @@ describe('car parks and loading yards stepped on a hillside', () => {
       const floor = floorHeight(h, hill, paved);
       const lifted = lotSurfaces(h, floor, paved).filter((s) => s.volume.open !== 'grass' && s.volume.open !== 'water' && (s.volume.ramp ?? s.volume.terrace ?? 0) !== 0);
       if (!lifted.length) continue;
-      const wood = emitChunk(h, hill, paved).shells.wood;
+      // The crates are the shell's parts (`shellParts.ts`): laid in the shell again, as they are drawn.
+      const wood = withShellParts(emitChunk(h, hill, paved)).shells.wood;
       if (!wood) continue;
       for (const el of h.elements ?? []) {
         if (el.kind !== 'slab' || el.material?.finish !== 'wood') continue;

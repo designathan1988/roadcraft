@@ -25,8 +25,12 @@ import {
   Box3,
 } from 'three';
 import {
-  type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, FINISH_ATTRIBUTE, type KitBoxes, SHELL_MESH, cellArrays,
+  type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, FINISH_ATTRIBUTE, type KitBoxes, SHELL_MESH, cellArrays, finishId,
 } from './cellArrays';
+import {
+  COVER_INSET, GRIME_REACH, GROUND_ATTRIBUTE, LOOK_FLOATS, MACRO_SCALE, NO_GROUND, SHELL_PARTS, SHELL_PART_FACES, SHELL_PART_KINDS, type ShellPartKind, macroNoise,
+} from './shellParts';
+import { partLook } from './fade';
 
 import type { Vec2 } from '@core/vec2';
 import { m } from '@world/units';
@@ -67,6 +71,7 @@ import {
   volumeLift,
 } from '@world/buildings/geometry';
 import {
+  FINISHES,
   type Finish,
   type MaterialSpec,
   paletteOf,
@@ -141,6 +146,8 @@ interface Placement {
   slot?: number;
   /** A window pane's room behind it (`roomBehind.ts`, ROOM_FLOATS numbers). */
   room?: readonly number[];
+  /** A shell's part (`shellParts.ts`): its paint, and the shell's wear and ground where it was laid (`Shell.decay`, `Shell.ground`). */
+  look?: { readonly paint: Paint; readonly decay: number; readonly ground: number };
 }
 
 type Rgb = readonly [number, number, number];
@@ -373,30 +380,6 @@ interface FacadeStamp {
 const toByte = (x: number): number => Math.round(Math.max(0, Math.min(1, x)) * 255);
 
 /** Triangles in THREE's axes, one buffer set per finish; winding fixed per face. */
-/** The lattice value of `macroNoise` at (i, j, k), 0..1. */
-function noiseHash(i: number, j: number, k: number): number {
-  let h = Math.imul(i | 0, 0x27d4eb2d) ^ Math.imul(j | 0, 0x165667b1) ^ Math.imul(k | 0, 0x3c6ef372);
-  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
-  return ((h ^ (h >>> 13)) >>> 0) / 4_294_967_296;
-}
-/** Smooth 3D value noise, 0..1, for tone that drifts over a whole facade. */
-function macroNoise(x: number, y: number, z: number): number {
-  const x0 = Math.floor(x), y0 = Math.floor(y), z0 = Math.floor(z);
-  let fx = x - x0, fy = y - y0, fz = z - z0;
-  fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
-  const p0a = noiseHash(x0, y0, z0), p0b = noiseHash(x0 + 1, y0, z0), p0c = noiseHash(x0, y0 + 1, z0), p0d = noiseHash(x0 + 1, y0 + 1, z0);
-  const p1a = noiseHash(x0, y0, z0 + 1), p1b = noiseHash(x0 + 1, y0, z0 + 1), p1c = noiseHash(x0, y0 + 1, z0 + 1), p1d = noiseHash(x0 + 1, y0 + 1, z0 + 1);
-  const ab0 = p0a + (p0b - p0a) * fx, cd0 = p0c + (p0d - p0c) * fx;
-  const ab1 = p1a + (p1b - p1a) * fx, cd1 = p1c + (p1d - p1c) * fx;
-  const plane0 = ab0 + (cd0 - ab0) * fy, plane1 = ab1 + (cd1 - ab1) * fy;
-  return plane0 + (plane1 - plane0) * fz;
-}
-
-/** World units over which a facade's tone drifts. */
-const MACRO_SCALE = m(12);
-/** How far above the ground floor a wall's weathering at the base reaches. */
-const GRIME_REACH = m(1.2);
-
 class Shell {
   readonly parts = new Map<Finish, ShellPart>();
   /** The ground floor's height for the building being emitted: walls darken towards it */
@@ -407,6 +390,8 @@ class Shell {
   far = false;
   /** The windows of the face being laid (the far level's runs of bays). */
   stamp: FacadeStamp | null = null;
+  /** The elements' boxes as instances of the shell's parts (`shellParts.ts`, `emitChunk` `apart`); false lays them here face by face. */
+  apart = true;
 
   /** DO NOT lay only the first two triangles: a lantern's octagonal and 24-sided caps */
   face(points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], c: Paint, shades?: readonly number[]): void {
@@ -568,6 +553,11 @@ class Emitter {
 
   box(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, c: Paint, top: Paint = c): void {
     if (z1 - z0 < 1e-4) return;
+    // An element's box of one paint: an instance of the shell's box, its look laid as these faces' (`shellParts.ts`).
+    if (this.apart && top === c && x1 - x0 > 1e-6 && y1 - y0 > 1e-6) {
+      this.shellPart('lotBox', (x0 + x1) / 2, (y0 + y1) / 2, z0, z1, x1 - x0, y1 - y0, 0, c);
+      return;
+    }
     const sh = this.shell;
     sh.face([this.L(x0, y0, z0), this.L(x1, y0, z0), this.L(x1, y0, z1), this.L(x0, y0, z1)], this.N(0, -1), c);
     sh.face([this.L(x1, y1, z0), this.L(x0, y1, z0), this.L(x0, y1, z1), this.L(x1, y1, z1)], this.N(0, 1), c);
@@ -579,6 +569,11 @@ class Emitter {
   /** A box whose sides stand `inset` in from the edges of its top. */
   slab(x0: number, y0: number, x1: number, y1: number, z0: number, z1: number, inset: number, c: Paint): void {
     if (z1 - z0 < 1e-4 || x1 - x0 <= 2 * inset || y1 - y0 <= 2 * inset) return;
+    // An element's paving: an instance of the shell's, its sides stood in by its program (`shellParts.ts` `COVER_INSET`).
+    if (this.apart && inset === COVER_INSET) {
+      this.shellPart('lotSlab', (x0 + x1) / 2, (y0 + y1) / 2, z0, z1, x1 - x0, y1 - y0, 0, c);
+      return;
+    }
     const sh = this.shell;
     const [a0, b0, a1, b1] = [x0 + inset, y0 + inset, x1 - inset, y1 - inset];
     sh.face([this.L(a0, b0, z0), this.L(a1, b0, z0), this.L(a1, b0, z1), this.L(a0, b0, z1)], this.N(0, -1), c);
@@ -618,6 +613,19 @@ class Emitter {
       if (this.room) placement.room = this.room(a, h);
     }
     this.parts[kind].push(placement);
+  }
+
+  /** An element being emitted (`emitElement`): its boxes are the shell's parts where the shell lets them be (`Shell.apart`). */
+  inElement = false;
+  get apart(): boolean {
+    return this.inElement && this.shell.apart;
+  }
+
+  /** A shell's part (`shellParts.ts`) centred at plan point (lx, ly), from z0 to z1, `along` its own x turned `turn` from the building's and `across` it. */
+  shellPart(kind: ShellPartKind, lx: number, ly: number, z0: number, z1: number, along: number, across: number, turn: number, c: Paint): void {
+    const p = this.L(lx, ly, (z0 + z1) / 2);
+    const look = { paint: c, decay: this.shell.decay, ground: this.shell.ground };
+    this.parts[kind].push({ x: p[0], y: p[1], z: p[2], yaw: this.b.rotation + turn, sx: along, sy: z1 - z0, sz: across, look });
   }
 
   /** An instance at a point of the building's plan (`L`), square to the building, its centre at height `z`. */
@@ -1677,8 +1685,7 @@ const LOT_PAINT: Readonly<Record<LotSurface, Paint>> = {
   tiles: paint({ finish: 'ceramic', colour: LOT_COLOURS.tiles }),
 };
 const LOT_KERB = paint({ finish: 'stone', colour: 0xb3ada0 });
-/** Layers at a lot's edge, so no two faces there share a plane */
-const COVER_INSET = m(0.006);
+/** Layers at a lot's edge, so no two faces there share a plane (a paving's `COVER_INSET` in `shellParts.ts`, its program stands its sides in by it) */
 const KERB_INSET = m(0.012);
 const POOL_TILE = paint({ finish: 'ceramic', colour: 0x9fd0dc });
 /** A pool's floor, under the water: pale blue plaster. */
@@ -1975,8 +1982,19 @@ function looseParts(b: Building): Set<number> | null {
   return loose.size ? loose : null;
 }
 
-/** One free element. */
+/** One free element: its boxes, its pavings and its fences' rails the shell's parts, instanced (`shellParts.ts`); the rest laid in the shell. */
 function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: number, c: Paint,
+  surface?: (lx: number, ly: number) => number): void {
+  const was = e.inElement;
+  e.inElement = true;
+  try {
+    layElement(e, el, floor, bottom, c, surface);
+  } finally {
+    e.inElement = was;
+  }
+}
+
+function layElement(e: Emitter, el: BuildingElement, floor: number, bottom: number, c: Paint,
   surface?: (lx: number, ly: number) => number): void {
   const [x0, y0, x1, y1] = elementRect(el);
   const zb = onGround(el) ? bottom : floor + el.z;
@@ -2493,6 +2511,11 @@ function emitFence(e: Emitter, el: BuildingElement, z0: number, z1: number, c: P
   const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
   const r = m(0.02);
   for (const [z, tall] of [[railMid, m(0.06)], [railTop, m(0.07)]] as const) {
+    // An instance of the shell's rail, turned along the run (`shellParts.ts`).
+    if (e.apart && Math.hypot(b.x - a.x, b.y - a.y) > 1e-6) {
+      e.shellPart('lotRail', a.x + (ux * len) / 2, a.y + (uy * len) / 2, z, z + tall, len, 2 * r, Math.atan2(uy, ux), c);
+      continue;
+    }
     const q = (u: number, v: number, h: number): V3 => e.L(a.x + ux * u - uy * v, a.y + uy * u + ux * v, h);
     e.shell.face([q(0, -r, z), q(len, -r, z), q(len, -r, z + tall), q(0, -r, z + tall)], e.N(uy, -ux), c);
     e.shell.face([q(len, r, z), q(0, r, z), q(0, r, z + tall), q(len, r, z + tall)], e.N(-uy, ux), c);
@@ -3234,11 +3257,16 @@ export function signatureFloorOf(b: Building, naturalAt: GroundAt, pavedAt?: Pav
   return resolved.volumes.some((v) => !v.open) ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
 }
 
+/** A wear as the shell's vertices carry it to the GPU: a signed byte over 127 (`cellArrays.ts` `normalDecay`). */
+const wearByte = (x: number): number => Math.round(Math.max(-1, Math.min(1, x)) * 127) / 127;
+
 /** `far`: the building's far level (L1) - walls as runs of bays with their windows drawn by the shader, no parts (`facadeLevel.ts`). */
-export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed, far = false): BuildingChunk {
+/** `apart`: the elements' boxes, pavings and rails as instances of the shell's parts (`shellParts.ts`); false lays them in the shell face by face, as the parts draw them (the specs compare). */
+export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed, far = false, apart = true): BuildingChunk {
   const shell = new Shell();
   shell.decay = b.decay ?? 0;
   shell.far = far;
+  shell.apart = apart;
   const parts = Object.fromEntries(PART_KINDS.map((k) => [k, [] as Placement[]])) as Record<PartKind, Placement[]>;
   // The blocks as drawn: unions, cuts and intersections resolved, the stored blocks untouched (`world/buildings/blocks.ts`).
   const resolved = resolveBlocks(b);
@@ -3266,19 +3294,44 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
     const coloured = COLOURED_PARTS.has(kind);
     const colours = coloured ? new Float32Array(list.length * 3) : null;
     const fallback = PART_DEFAULT_COLOUR[kind] ?? WHITE_RGB;
+    // A shell's part: its finish, its wear as the shell's vertices carry it and its ground (none: `NO_GROUND`).
+    const looks = SHELL_PARTS.has(kind) ? new Float32Array(list.length * LOOK_FLOATS) : null;
     list.forEach((p, i) => {
       writeMatrix(matrices, i * 16, p);
       if (colours) {
-        colours[i * 3] = p.colour ? p.colour.r : fallback[0];
-        colours[i * 3 + 1] = p.colour ? p.colour.g : fallback[1];
-        colours[i * 3 + 2] = p.colour ? p.colour.b : fallback[2];
+        const rgb = p.look?.paint.rgb;
+        colours[i * 3] = rgb ? rgb[0] : p.colour ? p.colour.r : fallback[0];
+        colours[i * 3 + 1] = rgb ? rgb[1] : p.colour ? p.colour.g : fallback[1];
+        colours[i * 3 + 2] = rgb ? rgb[2] : p.colour ? p.colour.b : fallback[2];
+      }
+      if (looks && p.look) {
+        looks[i * LOOK_FLOATS] = finishId(p.look.paint.finish);
+        looks[i * LOOK_FLOATS + 1] = wearByte(p.look.decay);
+        looks[i * LOOK_FLOATS + 2] = Number.isFinite(p.look.ground) ? p.look.ground : NO_GROUND;
       }
     });
     const glassy = kind === 'glass' || kind === 'glassDark';
     batches[kind] = glassy
       ? { matrices, colours, count: list.length, slots: Float32Array.from(list, (p) => p.slot ?? -1), rooms: roomsOfPanes(list) }
-      : { matrices, colours, count: list.length };
+      : looks ? { matrices, colours, count: list.length, looks } : { matrices, colours, count: list.length };
   }
+  const shells = shellChunks(shell, far);
+  let furniture: Partial<Record<FurnitureKind, PartBatch>> | undefined;
+  for (const kind of FURNITURE_KINDS) {
+    const list = furnished[kind];
+    if (!list || list.length === 0) continue;
+    const matrices = new Float32Array(list.length * 16);
+    list.forEach((p, i) => writeMatrix(matrices, i * 16, p));
+    (furniture ??= {})[kind] = { matrices, colours: null, count: list.length };
+  }
+  const out = furniture ? { shells, parts: batches, furniture } : { shells, parts: batches };
+  const withGround = lotGround ? { ...out, lotGround } : out;
+  const withSignature = signature && floor !== undefined ? { ...withGround, signatureFloor: floor } : withGround;
+  return flags.length ? { ...withSignature, flags } : withSignature;
+}
+
+/** A shell's fragments by finish, as typed arrays (`far`: with each vertex's window grid). */
+function shellChunks(shell: Shell, far: boolean): Partial<Record<Finish, ShellChunk>> {
   const shells: Partial<Record<Finish, ShellChunk>> = {};
   for (const [finish, part] of shell.parts) {
     if (part.index.length === 0) continue;
@@ -3292,18 +3345,69 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
       ...(far ? { facade: new Float32Array(part.facade), opening: new Uint8Array(part.opening) } : {}),
     };
   }
-  let furniture: Partial<Record<FurnitureKind, PartBatch>> | undefined;
-  for (const kind of FURNITURE_KINDS) {
-    const list = furnished[kind];
-    if (!list || list.length === 0) continue;
-    const matrices = new Float32Array(list.length * 16);
-    list.forEach((p, i) => writeMatrix(matrices, i * 16, p));
-    (furniture ??= {})[kind] = { matrices, colours: null, count: list.length };
+  return shells;
+}
+
+/** The shell's parts of a chunk laid as the shell's faces again, as `Emitter.box`, `slab` and `emitFence` laid them, from the instances alone (`shellParts.ts`) */
+export function shellPartFaces(parts: Readonly<Record<PartKind, PartBatch>>): Partial<Record<Finish, ShellChunk>> {
+  const shell = new Shell();
+  for (const kind of SHELL_PART_KINDS) {
+    const batch = parts[kind];
+    if (!batch?.count || !batch.looks || !batch.colours) continue;
+    const { matrices: e, colours, looks } = batch;
+    for (let i = 0; i < batch.count; i++) {
+      const o = i * 16;
+      const sx = Math.hypot(e[o]!, e[o + 1]!, e[o + 2]!), sz = Math.hypot(e[o + 8]!, e[o + 9]!, e[o + 10]!);
+      // A model point (three's axes) through the matrix, then into the map's (x, y north, z up).
+      const at = (x: number, y: number, z: number, w: number): V3 => {
+        const X = e[o]! * x + e[o + 4]! * y + e[o + 8]! * z + e[o + 12]! * w;
+        const Y = e[o + 1]! * x + e[o + 5]! * y + e[o + 9]! * z + e[o + 13]! * w;
+        const Z = e[o + 2]! * x + e[o + 6]! * y + e[o + 10]! * z + e[o + 14]! * w;
+        return [X, -Z, Y];
+      };
+      const ground = looks[i * LOOK_FLOATS + 2]!;
+      shell.decay = looks[i * LOOK_FLOATS + 1]!;
+      shell.ground = ground > NO_GROUND / 2 ? ground : Number.NaN;
+      const paint: Paint = { rgb: [colours[i * 3]!, colours[i * 3 + 1]!, colours[i * 3 + 2]!], finish: FINISHES[looks[i * LOOK_FLOATS]!]! };
+      for (const f of SHELL_PART_FACES[kind]) {
+        const points = f.points.map(([u, v, w]): V3 => {
+          // A paving's side stands in from its top's edge by `COVER_INSET`, whatever its size.
+          const x = f.inset ? Math.sign(u) * Math.max(0.5 - COVER_INSET / sx, 0) : u;
+          const z = f.inset ? Math.sign(-v) * Math.max(0.5 - COVER_INSET / sz, 0) : -v;
+          return at(x, w, z, 1);
+        });
+        shell.face(points, at(f.n[0], f.n[2], -f.n[1], 0), paint);
+      }
+    }
   }
-  const out = furniture ? { shells, parts: batches, furniture } : { shells, parts: batches };
-  const withGround = lotGround ? { ...out, lotGround } : out;
-  const withSignature = signature && floor !== undefined ? { ...withGround, signatureFloor: floor } : withGround;
-  return flags.length ? { ...withSignature, flags } : withSignature;
+  return shellChunks(shell, false);
+}
+
+/** A chunk with its shell's parts laid in its shell again (`shellPartFaces`): what a ruin breaks (`destruction.ts`), and what the specs compare with the shell as it was. */
+export function withShellParts(chunk: BuildingChunk): BuildingChunk {
+  const laid = shellPartFaces(chunk.parts);
+  const shells: Partial<Record<Finish, ShellChunk>> = { ...chunk.shells };
+  for (const [finish, add] of Object.entries(laid) as [Finish, ShellChunk][]) {
+    const was = shells[finish];
+    if (!was) { shells[finish] = add; continue; }
+    const base = was.position.length / 3, count = add.position.length / 3;
+    const floats = (a: Float32Array, b: Float32Array): Float32Array => { const out = new Float32Array(a.length + b.length); out.set(a); out.set(b, a.length); return out; };
+    const index = new Uint32Array(was.index.length + add.index.length);
+    index.set(was.index);
+    for (let k = 0; k < add.index.length; k++) index[was.index.length + k] = add.index[k]! + base;
+    // The far level's window grid: none on a part (kind 0, as `Shell.face` lays a face with no stamp).
+    const opening = was.opening ? new Uint8Array(was.opening.length + count * FACADE_BYTES) : undefined;
+    opening?.set(was.opening!);
+    shells[finish] = {
+      position: floats(was.position, add.position), normal: floats(was.normal, add.normal), colour: floats(was.colour, add.colour),
+      uv: floats(was.uv, add.uv), decay: floats(was.decay, add.decay), index,
+      ...(was.facade && opening ? { facade: floats(was.facade, new Float32Array(count * FACADE_FLOATS)), opening } : {}),
+    };
+  }
+  const none: PartBatch = { matrices: new Float32Array(0), colours: new Float32Array(0), count: 0, looks: new Float32Array(0) };
+  const parts = { ...chunk.parts } as Record<PartKind, PartBatch>;
+  for (const kind of SHELL_PART_KINDS) parts[kind] = none;
+  return { ...chunk, shells, parts };
 }
 
 /** Each part's and piece of furniture's geometry box as the kit draws them (`cellArrays.ts` works the batches' bounds from them). */
@@ -3407,7 +3511,9 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const { count } = part;
     // Window panes carry their room's light slot, per instance, on their own copy of the pane geometry
     const glassy = part.litSlot !== undefined;
-    const geometry = glassy ? kit.geometry[kind].clone() : kit.geometry[kind];
+    // And the shell's parts their finish, wear and ground (`shellParts.ts`).
+    const looked = part.looks !== undefined;
+    const geometry = glassy || looked ? kit.geometry[kind].clone() : kit.geometry[kind];
     let roomBuffer: InstancedInterleavedBuffer | null = null;
     if (glassy) {
       geometry.setAttribute('litSlot', new InstancedBufferAttribute(part.litSlot!, 1));
@@ -3417,8 +3523,15 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       geometry.setAttribute('roomB', new InterleavedBufferAttribute(roomBuffer, 4, 4));
       geometry.setAttribute('roomC', new InterleavedBufferAttribute(roomBuffer, 4, 8));
     }
-    const mesh = new InstancedMesh(geometry, ghost ? kit.ghostParts : dim ? kit.dimParts : kit.material[kind], count);
-    if (glassy) mesh.userData['ownGeometry'] = true;
+    const lookBuffer = looked ? new InstancedInterleavedBuffer(part.looks!, LOOK_FLOATS) : null;
+    if (lookBuffer) {
+      geometry.setAttribute(FINISH_ATTRIBUTE, new InterleavedBufferAttribute(lookBuffer, 1, 0));
+      geometry.setAttribute('aDecay', new InterleavedBufferAttribute(lookBuffer, 1, 1));
+      geometry.setAttribute(GROUND_ATTRIBUTE, new InterleavedBufferAttribute(lookBuffer, 1, 2));
+    }
+    // Faded, each kind as `fade.ts` fades it: the shell's parts with the shell.
+    const mesh = new InstancedMesh(geometry, ghost ? kit.ghostParts : partLook(kit, kind, dim).material, count);
+    if (glassy || looked) mesh.userData['ownGeometry'] = true;
     mesh.name = `building-${kind}${ghost ? '-preview' : ''}`;
     mesh.castShadow = !ghost && kit.castsShadow.has(kind);
     mesh.receiveShadow = !ghost;
@@ -3430,23 +3543,32 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     if (!ghost) {
       const own: Record<string, BufferAttribute | InstancedInterleavedBuffer> = { instanceMatrix: mesh.instanceMatrix };
       if (mesh.instanceColor) own.instanceColor = mesh.instanceColor;
-      if (glassy) {
-        for (const name of ['position', 'normal', 'uv', 'litSlot'] as const) own[name] = geometry.getAttribute(name) as BufferAttribute;
+      // The copy's model: what the kit's has (a shell's part also its white colours).
+      const model = looked ? (['position', 'normal', 'uv', 'color'] as const) : (['position', 'normal', 'uv'] as const);
+      if (glassy || looked) {
+        for (const name of model) own[name] = geometry.getAttribute(name) as BufferAttribute;
         if (geometry.index) own.index = geometry.index;
+      }
+      if (glassy) {
+        own.litSlot = geometry.getAttribute('litSlot') as BufferAttribute;
         own.rooms = roomBuffer!;
       }
+      if (lookBuffer) own.looks = lookBuffer;
       const base = kit.geometry[kind];
       gpuOnlyAttributes(mesh, own, () => {
         const again = refill?.().parts[kind];
         if (!again) return {};
         const out: Record<string, ArrayLike<number>> = { instanceMatrix: again.instanceMatrix };
         if (again.instanceColor) out.instanceColor = again.instanceColor;
+        if (glassy || looked) {
+          for (const name of model) out[name] = (base.getAttribute(name) as BufferAttribute).array.slice();
+          if (base.index) out.index = base.index.array.slice();
+        }
         if (glassy) {
           out.litSlot = again.litSlot!;
           out.rooms = again.rooms!;
-          for (const name of ['position', 'normal', 'uv'] as const) out[name] = (base.getAttribute(name) as BufferAttribute).array.slice();
-          if (base.index) out.index = base.index.array.slice();
         }
+        if (looked) out.looks = again.looks!;
         return out;
       });
     }
