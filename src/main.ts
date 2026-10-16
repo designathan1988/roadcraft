@@ -2331,8 +2331,23 @@ loadingCurtain.style.cssText = 'position:fixed;inset:0;z-index:60;display:flex;a
   + 'background:rgba(10,16,18,.92);color:#fff;font:600 16px system-ui,sans-serif;letter-spacing:.02em';
 loadingCurtain.textContent = t('map.loading');
 document.body.appendChild(loadingCurtain);
+/** The opening's programs the curtain waits for (`SceneHandle.programsReady`), and whether they are compiled. */
+let programsWaited: Promise<void> | null = null;
+let programsCompiled = false;
 function syncLoadingCurtain(): void {
-  const show = scene.opening;
+  const ready = scene.programsReady;
+  if (ready !== programsWaited) {
+    programsWaited = ready;
+    programsCompiled = false;
+    // Nothing may be drawing then (the frame loop rests): the curtain is taken down by the promise itself.
+    void ready.then(() => {
+      if (programsWaited !== ready) return;
+      programsCompiled = true;
+      syncLoadingCurtain();
+      requestDraw();
+    });
+  }
+  const show = scene.opening || !programsCompiled;
   if ((loadingCurtain.style.display !== 'none') !== show) loadingCurtain.style.display = show ? 'flex' : 'none';
 }
 /** A frame has been drawn, and the first world has been put in place (the opening builds it in parts). */

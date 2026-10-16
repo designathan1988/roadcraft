@@ -12,7 +12,8 @@ import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
 import { wornItems, type PersonLook, type PersonSpec } from '@people/spec';
 import { FEMALE_HAIR, HAIR_STYLES, MALE_HAIR, generateHairStrands, generateHeadband } from '@people/hair/procedural';
 import { hairStrandTexture } from './hairTexture';
-import { compileAhead } from '../uploads';
+import { compileAhead, shadowStandIn } from '../uploads';
+import { PERSON_SHADOW_VARIANTS, PERSON_VARIANTS, castsAt, personDepthKey, personProgramKey, type Kind, type Variant } from './personVariants';
 import { forgetOtherDerived, readDerived, writeDerived } from '../derivedCache';
 import { pullTowardEye } from '../depthConvention';
 import { loadProcedural } from './proceduralCook';
@@ -89,8 +90,6 @@ function bandOf(years: number): AgeBand {
 
 /** A garment that hides the skin under it (as `dressedGeometry` decides). */
 const COVERING = new Set(['clothes', 'shoes', 'top', 'bottom', 'skirt', 'dress', 'suit', 'gloves']);
-
-type Kind = 'skin' | 'cloth' | 'hair' | 'face';
 
 /** The attributes a piece has an entry of per person drawn. */
 const INSTANCED = new Set(['aPerson', 'aDye', 'aWorn', 'aSkin', 'aOut', 'aShoe']);
@@ -286,14 +285,10 @@ function proceduralLook(spec: PersonSpec, hair = true): PersonLook {
   });
 }
 
-/** What a program draws: the kind of piece (or the far mesh), its level, and whether its cards are widened. */
-interface Variant {
-  readonly kind: Kind | 'far';
-  readonly level: number;
-  readonly widen: boolean;
-  readonly grown: boolean;
-  readonly lash: boolean;
-}
+/** What a person's programs read of their class (`uniformsInto`): its textures and its bind matrices. */
+type ClassShading = Pick<BodyClass, 'uniforms'> & {
+  readonly rig: { readonly mesh: { readonly bindMatrix: Matrix4; readonly bindMatrixInverse: Matrix4 } };
+};
 
 /** The vertex half every program shares: the person's row of the palette pass (`procBones`), their baked body */
 function vertexPars(v: Variant): string {
@@ -388,7 +383,7 @@ ${cover ? 'transformed -= normalize(normal) * ' + SINK.toFixed(4) + ' * max(max(
 `);
 }
 
-function uniformsInto(shader: { uniforms: Record<string, unknown> }, cls: BodyClass, widen?: number): void {
+function uniformsInto(shader: { uniforms: Record<string, unknown> }, cls: ClassShading, widen?: number): void {
   Object.assign(shader.uniforms, cls.uniforms, {
     bindMatrix: { value: cls.rig.mesh.bindMatrix },
     bindMatrixInverse: { value: cls.rig.mesh.bindMatrixInverse },
@@ -420,7 +415,7 @@ const WOUND_BLOCK = `
   }`;
 
 /** `grown`: a procedural hair item, its texture a strand atlas */
-function pieceMaterial(cls: BodyClass, v: Variant, map: Texture | null, eyes: Texture | null, widen: number): Material {
+function pieceMaterial(cls: ClassShading, v: Variant, map: Texture | null, eyes: Texture | null, widen: number): Material {
   const { level, grown, lash } = v;
   const kind = v.kind as Kind;
   const material = new MeshStandardMaterial({ roughness: kind === 'skin' ? 0.5 : grown ? 0.6 : 0.85, metalness: 0, side: DoubleSide });
@@ -521,12 +516,12 @@ if (vSkinMask < 0.5) {
   reflectedLight.directSpecular += vec3(glint);
 }` : ''}`);
   };
-  material.customProgramCacheKey = () => `procedural-person-${kind}-L${level}${v.widen ? '-w' : ''}${grown ? '-grown' : ''}${lash ? '-lash' : ''}`;
+  material.customProgramCacheKey = () => personProgramKey(v);
   return material;
 }
 
 /** The far mesh's program (level 3): a colour a vertex from its region and the person's colours. */
-function farMaterial(cls: BodyClass): Material {
+function farMaterial(cls: ClassShading): Material {
   const material = new MeshStandardMaterial({ roughness: 0.8, metalness: 0, side: DoubleSide });
   material.defines = { USE_SKINNING: '' };
   const v: Variant = { kind: 'far', level: 3, widen: false, grown: false, lash: false };
@@ -569,19 +564,54 @@ roughnessFactor = mix(0.85, 0.5, vSkinMask);`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
 reflectedLight.indirectSpecular *= personIndirect();`);
   };
-  material.customProgramCacheKey = () => 'procedural-person-far';
+  material.customProgramCacheKey = () => personProgramKey(v);
   return material;
 }
 
-function depthMaterial(cls: BodyClass, v: Variant, widen: number): MeshDepthMaterial {
+function depthMaterial(cls: ClassShading, v: Variant, widen: number): MeshDepthMaterial {
   const material = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
   material.defines = { USE_SKINNING: '' };
   material.onBeforeCompile = (shader) => {
     uniformsInto(shader, cls, v.widen ? widen : undefined);
     patchVertex(shader, v);
   };
-  material.customProgramCacheKey = () => `procedural-person-depth-${v.kind}-L${v.level}${v.widen ? '-w' : ''}`;
+  material.customProgramCacheKey = () => personDepthKey(v);
   return material;
+}
+
+/** Every program a procedural person can be drawn with (`PERSON_VARIANTS`) and cast into the shadow with */
+export function personProgramStandIns(): { readonly lit: Group; readonly shadow: Group } {
+  const blank = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
+  const shading: ClassShading = {
+    uniforms: {
+      procBones: { value: blank }, procBodies: { value: blank }, procBodyStride: { value: 0 }, procCover: { value: blank },
+      procCoverRows: { value: 0 }, procFace: { value: blank }, procFaceIndex: { value: blank }, procFaceRows: { value: 0 },
+      procExpr: { value: blank }, procExprW: { value: blank }, procWounds: { value: blank }, procTime: { value: 0 }, procWoundUnit: { value: 1 },
+    },
+    rig: { mesh: { bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4() } },
+  };
+  // A position and a normal, as every piece has (`farMesh`, `computeVertexNormals`): `vertexNormals` is part of three's key.
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(9), 3));
+  geometry.setAttribute('normal', new BufferAttribute(new Float32Array(9), 3));
+  const standIn = (material: Material): InstancedMesh => {
+    // Instanced without a colour or a morph a person, as `makePiece` makes them.
+    const mesh = new InstancedMesh(geometry, material, 1);
+    mesh.frustumCulled = false;
+    return mesh;
+  };
+  const lit = new Group();
+  for (const v of PERSON_VARIANTS) lit.add(standIn(v.kind === 'far' ? farMaterial(shading) : pieceMaterial(shading, v, null, null, 1)));
+  const shadow = new Group();
+  for (const v of PERSON_SHADOW_VARIANTS) {
+    // The depth's side and cut come from the piece's own material, as the shadow pass takes them (`shadowStandIn`).
+    const mesh = standIn(pieceMaterial(shading, v, null, null, 1));
+    mesh.castShadow = true;
+    mesh.customDepthMaterial = depthMaterial(shading, v, 1);
+    const cast = shadowStandIn(mesh);
+    if (cast) shadow.add(cast);
+  }
+  return { lit, shadow };
 }
 
 function kindOf(item: ProxyItem): Kind {
@@ -1101,10 +1131,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     mesh.receiveShadow = true;
     mesh.castShadow = !!(proxy && depth);
     if (proxy && depth) {
-      // As the shadow pass sets it on every draw (three's WebGLShadowMap getDepthMaterial)
-      const main = material as MeshStandardMaterial;
-      depth.alphaTest = main.alphaToCoverage ? 0.5 : main.alphaTest;
-      depth.side = main.side;
+      // Its side and cut set by the shadow pass on every draw, from the piece's material (`uploads.ts` shadowStandIn)
       mesh.customDepthMaterial = depth;
       const own = geometry.index, shadowIndex: BufferAttribute = proxy;
       mesh.onBeforeShadow = () => { geometry.index = shadowIndex; };
@@ -1114,7 +1141,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     mesh.userData['cls'] = cls.key;
     // Into the scene only once its shaders are built, in parallel and off the frame (`uploads.ts` compileAhead)
     const jobs: Promise<void>[] = [compileAhead(mesh)];
-    if (mesh.customDepthMaterial) jobs.push(compileAhead(new InstancedMesh(geometry, mesh.customDepthMaterial, 1), true));
+    const shadow = shadowStandIn(mesh);
+    if (shadow) jobs.push(compileAhead(shadow, true));
     const piece: Piece = {
       item: owner, level: v.level, mesh, attrs: map, capacity, people: [], dirty: false, triangles,
       ready: Promise.all(jobs).then(() => { group.add(mesh); }),
@@ -1252,8 +1280,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       for (const [attribute, value] of Object.entries(source.attributes)) if (!INSTANCED.has(attribute)) geometry.setAttribute(attribute, value);
       geometry.setIndex(index);
       geometry.boundingSphere = source.boundingSphere;
-      // Real shadows close up only, cast by the next level's triangles; not the brows', lashes' or mouth's.
-      const proxy = level <= 1 && kind !== 'face' && role !== 'mouth' ? indexAt(level + 1) : null;
+      // Cast by the next level's triangles (`castsAt`).
+      const proxy = castsAt(kind, role, level) ? indexAt(level + 1) : null;
       const depth = proxy ? depthMaterial(cls, v, plan.widen[level + 1] ?? 1) : null;
       const piece = makePiece(cls, own, v, geometry, pieceMaterial(cls, v, map, eyes, plan.widen[level] ?? 1),
         kind === 'skin' && level <= 2 ? ENTRIES_SKIN : ENTRIES, proxy, depth, plan.triangles[level] ?? 0);

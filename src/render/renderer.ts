@@ -93,6 +93,8 @@ import { JournalCursor } from '@world/derived';
 import { Engine } from '@core/engine';
 import { fadeMeshes } from './buildings/fade';
 import { RevealGate } from './revealGate';
+import { createShaderCatalogue } from './shaderCatalogue';
+import { personProgramStandIns } from './people/proceduralCrowd';
 import { createGpuTimer, type GpuTimer } from './gpuTimer';
 import { poleGroundAt, type Utilities } from './utilities';
 import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
@@ -179,6 +181,8 @@ export interface SceneHandle {
   readonly worldBusy: boolean;
   /** The opening's town (or a map being opened) is still being put together, nothing of it shown yet (`opened` in `draw`). */
   readonly opening: boolean;
+  /** Settles once the programs of this opening are compiled (`shaderCatalogue.ts`): the curtain stays up until then. */
+  readonly programsReady: Promise<void>;
   /** A map is being opened (a file, the autosave): nothing is shown until its whole world is in */
   beginLoad(): void;
   readonly backend: 'three-webgl';
@@ -636,6 +640,8 @@ export function createSceneRenderer(
   let worldJobGround = false;
   /** The opening's town (or a map opened) is held until it is whole (`revealGate.ts`). */
   const reveal = new RevealGate();
+  /** Every program the game draws with, compiled before the town is shown (`shaderCatalogue.ts`). */
+  const programs = createShaderCatalogue(personProgramStandIns);
   let openingSince: number | null = null;
   /** While nothing is shown (`opened` false) the world is built this much a frame */
   const HIDDEN_SLICE_MS = 250;
@@ -2107,8 +2113,12 @@ export function createSceneRenderer(
     get opening() {
       return !reveal.opened;
     },
+    get programsReady() {
+      return programs.ready;
+    },
     beginLoad() {
       reveal.begin();
+      programs.begin();
       openingSince = null;
       onAssetsReady();
     },
@@ -2793,8 +2803,11 @@ export function createSceneRenderer(
             renderer.render(scene, rig.camera);
             renderer.setRenderTarget(null);
           }
+          programs.compile(scene);
           onAssetsReady();
         } else if (next === 'show') {
+          // Shown however far it got (`REVEAL_LIMIT_MS`): its programs compiled all the same.
+          programs.compile(scene);
           performance.mark('opening:shown', { detail: { waitedMs: performance.now() - openingSince, workedMs: reveal.worked, whole } });
         }
       }
