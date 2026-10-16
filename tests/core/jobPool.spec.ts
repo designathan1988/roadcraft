@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToJob } from '@/jobs/jobScope';
 
-/** Where the job system puts a lane: never behind a long-running service, a kind's lanes apart, the least busy worker */
+/** Where the job system puts a lane: the long-running services on workers of their own, a kind's lanes apart, the least busy worker; a queued job never behind a tile */
 class FakeWorker {
   static made: FakeWorker[] = [];
   onmessage: ((event: { data: unknown }) => void) | null = null;
@@ -32,16 +32,25 @@ describe('the job system', () => {
     vi.restoreAllMocks();
   });
 
-  it('gives growth a worker no other lane shares, and spreads a kind\'s lanes over different workers', async () => {
-    const { jobPort, jobWorkers } = await import('@/jobs/jobPool');
+  it('keeps the long-running services and every other kind on workers apart, the lanes of a kind spread over its side', async () => {
+    const { jobChannel, jobPort, jobWorkers, longWorkers, shortWorkers } = await import('@/jobs/jobPool');
     expect(jobWorkers()).toBe(4);
+    expect([longWorkers(), shortWorkers()]).toEqual([2, 2]);
+    // The traffic's lanes first (as the page opens), the tiles' and the growth's after: never on the traffic's workers.
+    const conflicts = [0, 1].map(() => jobChannel('conflicts', () => {}));
+    const traffic = FakeWorker.made.filter((w) => w.asked.some((m) => (m as unknown as { adopt?: string }).adopt === 'conflicts')).map((w) => FakeWorker.made.indexOf(w));
+    // The adopt messages read: `hostOf` finds a worker by what it was last sent.
+    for (const w of FakeWorker.made) w.asked.length = 0;
+    const tiles = [0, 1].map(() => hostOf(jobPort('cityTiles')));
     const growth = hostOf(jobPort('growth'));
-    const roads = [0, 1, 2].map(() => hostOf(jobPort('roadTiles')));
-    const cells = [0, 1, 2].map(() => hostOf(jobPort('cells')));
-    expect(roads).not.toContain(growth);
-    expect(cells).not.toContain(growth);
-    expect(new Set(roads).size).toBe(3);
-    expect(new Set(cells).size).toBe(3);
+    const roads = [0, 1].map(() => hostOf(jobPort('roadTiles')));
+    expect(new Set(traffic).size).toBe(2);
+    for (const t of [...tiles, growth]) expect(traffic).not.toContain(t);
+    for (const r of roads) expect([...tiles, growth]).not.toContain(r);
+    expect(new Set(tiles).size).toBe(2);
+    expect(new Set(roads).size).toBe(2);
+    expect(FakeWorker.made).toHaveLength(4);
+    for (const port of conflicts) port.close();
   });
 
   it('runs queued jobs nearest first on any free worker, never behind growth, a newer job of a key replacing the older', async () => {
@@ -78,21 +87,25 @@ describe('the job system', () => {
     expect(done).toEqual(['b done', 'a done', 'c done']);
   });
 
-  it('sends a queued job to a worker whose lanes have nothing in flight, and to a busy one only when no other is free', async () => {
+  it('sends a queued job to a worker whose lanes have nothing in flight, to an idle tile worker before a busy one, never behind a tile', async () => {
     const { jobPort, submitJob } = await import('@/jobs/jobPool');
-    // Four lanes on the four workers; three of them with a request in flight.
-    const lanes = [0, 1, 2, 3].map(() => jobPort('roadTiles'));
+    // Two lanes on the two workers of the other kinds, one with a request in flight; a tile lane with a tile being made, another idle.
+    const lanes = [0, 1].map(() => jobPort('roadTiles'));
+    const tiles = [0, 1].map(() => jobPort('cityTiles'));
     expect(FakeWorker.made).toHaveLength(4);
     const workerOf = (lane: Worker): FakeWorker => (lane as unknown as { worker: FakeWorker }).worker;
-    for (const lane of lanes.slice(0, 3)) lane.postMessage({ tiles: [] });
+    lanes[0]!.postMessage({ tiles: [] });
+    tiles[0]!.postMessage({ stream: true });
     const job = (name: string): void => { submitJob({ service: 'cells', key: null, priority: 1, write: () => ({ data: name, transfer: [] }), done: () => {}, failed: () => {} }); };
     const queuedOn = (name: string): number => FakeWorker.made.findIndex((w) => w.asked.some((m) => m.data === name && m.seq !== undefined));
     job('first');
-    expect(queuedOn('first')).toBe(FakeWorker.made.indexOf(workerOf(lanes[3]!)));
-    // Every worker without lane work busy with a job: the next goes to a worker with lane work rather than waiting.
+    expect(queuedOn('first')).toBe(FakeWorker.made.indexOf(workerOf(lanes[1]!)));
+    // The other kinds' free workers busy: the idle tile worker, never the one making a tile.
     job('second');
-    expect(queuedOn('second')).toBeGreaterThanOrEqual(0);
-    expect(queuedOn('second')).not.toBe(queuedOn('first'));
+    expect(queuedOn('second')).toBe(FakeWorker.made.indexOf(workerOf(tiles[1]!)));
+    // Only a worker with lane work left: it takes the next rather than waiting, still not the tile worker.
+    job('third');
+    expect(queuedOn('third')).toBe(FakeWorker.made.indexOf(workerOf(lanes[0]!)));
   });
 
   it('drops the answer of a job cancelled while it ran', async () => {

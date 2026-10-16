@@ -3,12 +3,12 @@ import { tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
-import { jobLanes, jobPort, jobWorkers } from './jobs/jobPool';
+import { jobPort, longWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
-/** Workers making tiles at once, and how many the region asks at a time (`worldStreamer.ts` inFlight): the pool's less three kept free for the world's own jobs (the cells, the road tiles, the ground, the far levels: the region's build would wait behind nine tiles), four at least where the pool is small, never more than the pool has. A fresh opening is nine tiles of 2-25 s each: on one round of lanes it takes one tile's time, on three rounds three. */
-export const tileLanes = (): number => jobLanes(Math.max(4, jobWorkers() - 3));
+/** Workers making tiles at once, and how many the region asks at a time (`worldStreamer.ts` inFlight): the long-running side of the pool (`longWorkers`) less the growth's, one at least; never on the workers of the traffic's lanes, the cells or the far levels (`jobPool.ts` place). */
+export const tileLanes = (): number => Math.max(1, longWorkers() - 1);
 
 /** Where a tile made is stored by the worker, and whether its texts come back with its version. */
 type StoreAsk = NonNullable<StreamTileAsk['store']>;

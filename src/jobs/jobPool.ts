@@ -13,8 +13,17 @@ const CAGE_BYTES = 4 * 2 ** 30;
 const POOL_CAGE_SHARE = 2 / 5;
 const WORKER_HEAP_BYTES = 170 * 2 ** 20;
 
-/** Services whose one job runs for seconds: each gets a worker of its own, so no other lane waits behind it (a streamed tile is 2-25 s of generation and growth, `cityTile.worker.ts`: the roads', the ground's and the cells' lanes waited behind it at the opening, 2026-10-16). */
+/** Services whose one job runs for seconds: kept on workers of their own, never beside another kind's lane or a queued job (a streamed tile is 2-25 s, `cityTile.worker.ts`: the traffic's conflict pairs waited behind tile after tile and the city's clock stood still). */
 const LONG_RUNNING: readonly JobService[] = ['growth', 'cityTiles'];
+
+/** Workers set apart for the long-running services: the pool less two kept for every other kind, one at least. */
+export function longWorkers(): number {
+  const n = jobWorkers();
+  return n >= 3 ? n - 2 : 1;
+}
+
+/** Workers for every other kind (the traffic's lanes, the cells, the far levels, the roads, the ground): the rest of the pool, one at least. */
+export const shortWorkers = (): number => Math.max(1, jobWorkers() - longWorkers());
 
 /** A job of the central queue (Cidade's job pool, `submit`): its message written when a worker takes it, answered once. */
 interface JobSpec {
@@ -166,6 +175,8 @@ class JobQueue {
 /** A worker of the pool: the lanes it hosts (`place`), its port per service for queued jobs, the queued job it runs, whether it failed. */
 interface Host {
   readonly worker: Worker;
+  /** A worker of the long-running services (`longWorkers`) or of every other kind: never both. */
+  readonly long: boolean;
   ports: number;
   readonly services: Map<JobService, number>;
   readonly queuePorts: Map<JobService, number>;
@@ -208,21 +219,16 @@ export function jobWorkers(): number {
   return Math.max(1, Math.min(cores - 2, byMemory, byCage));
 }
 
-/** How many lanes a kind of work may have: never more than the pool's workers (a lane per worker, `jobPort`). */
-export const jobLanes = (most: number): number => Math.max(1, Math.min(most, jobWorkers()));
+/** How many lanes a kind of work may have: never more than the workers its side has (a lane per worker, `jobPort`; the long-running services' are `tileLanes`). */
+export const jobLanes = (most: number): number => Math.max(1, Math.min(most, shortWorkers()));
 
-/** Whether a worker hosts a long-running service's lane. */
-function hostsLong(host: Host): boolean {
-  for (const service of host.services.keys()) if (LONG_RUNNING.includes(service)) return true;
-  return false;
-}
-
-/** One more worker, while the pool has room (`jobWorkers`); null when full. */
-function grow(): Host | null {
+/** One more worker of its side (`long`), while the pool and that side have room (`longWorkers`, `shortWorkers`); null when full. */
+function grow(long: boolean): Host | null {
   if (system.workers.length >= jobWorkers()) return null;
+  if (system.workers.filter((h) => h.long === long).length >= (long ? longWorkers() : shortWorkers())) return null;
   const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
   system.setup?.(worker);
-  const host: Host = { worker, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [] };
+  const host: Host = { worker, long, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [] };
   worker.onmessage = (event: MessageEvent<FromJob>) => {
     const port = system.ports.get(event.data.port);
     if (port) {
@@ -270,14 +276,13 @@ function queuePort(host: Host, service: JobService): number {
 }
 
 /** The worker a queued job of `service` goes to: a free one already running the kind, else a new one while the pool has room, else any free one
- *  - DO NOT give it to a worker running growth while another worker could take it: it waited seconds behind it.
+ *  - a long-running service's worker only while its lanes have nothing in flight: a tile asked after it waits one job, never a job behind a tile (only a pool of one worker shares it otherwise).
  *  - DO NOT give it to a worker whose lanes have messages in flight while one with none is free: it waited behind a tile read or a batch of road tiles (`JobPort` posts straight to its worker); such a worker only when no other is free. */
 function hostFor(service: JobService): Host | null {
-  const all = system.workers;
-  const short = all.some((h) => !h.failed && !hostsLong(h)) || all.length < jobWorkers();
-  let cold: Host | null = null, warmBusy: Host | null = null, coldBusy: Host | null = null;
-  for (const host of all) {
-    if (host.job || host.failed || (short && hostsLong(host))) continue;
+  let cold: Host | null = null, idleLong: Host | null = null, warmBusy: Host | null = null, coldBusy: Host | null = null;
+  for (const host of system.workers) {
+    if (host.job || host.failed) continue;
+    if (host.long && system.workers.length > 1) { if (host.laneWork === 0) idleLong ??= host; continue; }
     const warm = host.queuePorts.has(service);
     if (host.laneWork > 0) {
       if (warm) warmBusy ??= host; else coldBusy ??= host;
@@ -286,7 +291,7 @@ function hostFor(service: JobService): Host | null {
     if (warm) return host;
     cold ??= host;
   }
-  return grow() ?? cold ?? warmBusy ?? coldBusy;
+  return grow(false) ?? cold ?? idleLong ?? grow(true) ?? warmBusy ?? coldBusy;
 }
 
 /** Each waiting job, nearest first, to a worker free for it (Cidade's `pump`): one queued job at a time on a worker. */
@@ -330,7 +335,7 @@ export const canQueueJobs = (): boolean => typeof Worker !== 'undefined';
 
 /** A worker of the pool made now, ahead of the first job (its modules load meanwhile); the others as work waits. */
 export function warmJobWorkers(): void {
-  if (system.workers.length === 0) grow();
+  if (system.workers.length === 0) grow(false);
 }
 
 /** The point the view looks at, each frame (`flatAtlas.ts` `focus`): what the queue's jobs are ranked by. */
@@ -342,18 +347,21 @@ export function setJobFocus(x: number, y: number): void {
 /** How far a point is from where the view looks (`setJobFocus`): a queued job's priority. */
 export const focusDistance = (x: number, y: number): number => Math.hypot(x - system.focusX, y - system.focusY);
 
-/** DO NOT pin a lane by a hash of its service: two kinds landed on one worker and a lane waited seconds behind growth */
+/** DO NOT pin a lane by a hash of its service, nor put a long-running service's lane on a worker of the other kinds (or the other way round): the traffic's conflict pairs waited behind tile after tile and the city's clock stood still (the long lanes were placed last, on the workers the traffic's lanes already held) */
 function place(service: JobService): Host {
-  const all = system.workers;
+  const long = LONG_RUNNING.includes(service);
   let best: Host | null = null;
   let bestScore = Infinity;
-  for (const w of all) {
-    // A long-running service alone on its worker, and nothing else beside one; lanes of a kind on different workers.
-    const score = (LONG_RUNNING.includes(service) ? w.ports * 1000 : 0) + (hostsLong(w) ? 100_000 : 0) + (w.services.get(service) ?? 0) * 10_000 + w.ports;
+  for (const w of system.workers) {
+    if (w.long !== long) continue;
+    // Lanes of a kind on different workers, then the least loaded.
+    const score = (w.services.get(service) ?? 0) * 10_000 + w.ports;
     if (score < bestScore) { bestScore = score; best = w; }
   }
-  // A worker with nothing on it scores 0: one is made for the lane while the pool has room, as if every worker were there.
-  if (best === null || bestScore > 0) best = grow() ?? best;
+  // A worker with nothing on it scores 0: one is made for the lane while its side has room, as if every worker were there.
+  if (best === null || bestScore > 0) best = grow(long) ?? best;
+  // A pool of one worker: the two sides share it.
+  if (!best) best = system.workers.reduce<Host | null>((a, w) => (a === null || w.ports < a.ports ? w : a), null);
   if (!best) throw new Error('no job worker could be made');
   return best;
 }
