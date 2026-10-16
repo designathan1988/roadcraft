@@ -92,6 +92,8 @@ export interface MassCells {
   keys(): IterableIterator<string>;
   /** Which cells are drawn near (their detail) and which far (their masses), from the eye (map x/y, height) and the screen */
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number): void;
+  /** DO NOT draw more detail than the budget holds (the brief: detail residency capped in bytes, falling back to L1): the farthest near cells fall back to their facade level, then to their masses, until `bytesOf` the cells left near fits `budget`; those forced near stay */
+  cap(eyeX: number, eyeY: number, budget: number, bytesOf: (key: string, fine: boolean) => number, forced: boolean | ReadonlySet<string>): void;
   /** Whether a cell is drawn near; a cell with no mass (lawns only), or none known, always is. */
   near(key: string): boolean;
   /** Whether a cell is drawn at full detail (L0) rather than its facade level (L1); a cell not near is not. */
@@ -405,6 +407,32 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
           const cell = cells.get(key);
           if (cell && !cell.near) decide(key, cell);
         }
+      }
+    },
+    cap(eyeX, eyeY, budget, bytesOf, forced) {
+      if (!Number.isFinite(budget) || forced === true) return;
+      let total = 0;
+      const movable: { readonly key: string; readonly cell: Cell; readonly away: number }[] = [];
+      for (const key of nearKeys) {
+        const cell = cells.get(key);
+        if (!cell) continue;
+        total += bytesOf(key, cell.fine);
+        if (cell.massless || (forced !== false && forced.has(key))) continue;
+        movable.push({ key, cell, away: Math.hypot(Math.max(cell.x0 - eyeX, 0, eyeX - cell.x1), Math.max(cell.y0 - eyeY, 0, eyeY - cell.y1)) });
+      }
+      if (total <= budget) return;
+      movable.sort((a, b) => b.away - a.away);
+      // The farthest first: their detail for their facade level, then their facade level for their masses.
+      for (const { key, cell } of movable) {
+        if (total <= budget) return;
+        if (!cell.fine) continue;
+        total += bytesOf(key, false) - bytesOf(key, true);
+        setNear(key, cell, true, false);
+      }
+      for (const { key, cell } of movable) {
+        if (total <= budget) return;
+        total -= bytesOf(key, false);
+        setNear(key, cell, false);
       }
     },
     near(key) {

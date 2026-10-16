@@ -31,6 +31,9 @@ import type { CellEntry, ChunkSummary } from './cellWork';
 interface Kept { readonly sig: number; readonly digest: number; readonly b: Building; readonly summary: ChunkSummary; readonly pavedAt?: PavedAt; lot?: LotGround | null }
 
 
+/** What a cell's detail is reckoned to hold before any has landed (`MassCells.cap`): a dense 256 m cell's facade level, ~70 MB measured 2026-10-16. */
+const TYPICAL_CELL_BYTES = 64 * 2 ** 20;
+
 export function createBuildingLayer(): BuildingLayer {
   const kit: BuildingKit = createBuildingKit();
   const group = new Group();
@@ -66,7 +69,7 @@ export function createBuildingLayer(): BuildingLayer {
     tone: kit.finishTone,
   })));
   group.add(farTiles.group);
-  /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds `budget` bytes at most. */
+  /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds `budget` bytes at most, and draws no more than that (`MassCells.cap`). */
   let budget = Infinity;
   let resident = 0;
   const residentBytes = new Map<string, number>();
@@ -631,6 +634,9 @@ export function createBuildingLayer(): BuildingLayer {
       eye = eyeNow;
       // The building cut open and the one being edited stay in detail whatever the eye says.
       massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach);
+      // Within the detail's bytes (`setDetailBudget`): a cell not landed yet counts as the cells landed do on average.
+      const typical = residentBytes.size > 0 ? resident / residentBytes.size : TYPICAL_CELL_BYTES;
+      massCells.cap(eyeX, eyeY, budget, (key, fine) => (fine ? cells : facades).get(key)?.bytes ?? typical, forcedNear);
       farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach);
       const now = new Set<string>(massCells.nearKeys());
       for (const key of forcedNear) now.add(key);
