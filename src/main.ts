@@ -1928,6 +1928,12 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
   const empty = new RoadDoc();
   applySnapshot({ ...empty.toJSON(), relief: NEW_RELIEF, ...(meta?.values ?? {}) }, 'import');
+  // The zones and their marks as written, their buildings named though not here yet (a map's load keeps only the links to buildings it holds).
+  const lists = (['zones', 'zoneMarks'] as const).flatMap((part) => {
+    const items = meta?.values?.[part];
+    return items?.length ? [{ part, start: 0, remove: doc.listOf(part).length, items }] : [];
+  });
+  if (lists.length) doc.restore({ records: [], lists, values: [] });
   updateHistoryButtons();
   // The buildings and the roads past the region, baked per tile in the workers from the store (`buildings/farLevels.ts`, `farRoads.ts`).
   const far = [scene.farBuildings, scene.farRoads];

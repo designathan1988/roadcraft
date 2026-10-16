@@ -111,8 +111,7 @@ pasted in the session that started this; these are its binding decisions.
 - Work in flight: meso link tables per tile (af931600); far city past the made tiles from the generator's plan, and
   `FarLevels` on the generic `farTree.ts` (afd03c54). Kept for the player's yes on shots: far roads painted into the
   terrain and terrain at 13 texture units (af56964b, cf05005).
-- Open on the streaming world: zones' and zone marks' building links are dropped when the world opens (`fromJSON` on an
-  empty document); city statistics read the region only; growth runs in the region only; the joins between near and
+- Open on the streaming world: city statistics read the region only; growth runs in the region only; the joins between near and
   far roads at the region's edge do not match exactly (far junctions only on owned nodes, heights differ).
 
 ## Streaming world (2026-10-16, the player's order: cities far larger than 10 km; the root fix)
