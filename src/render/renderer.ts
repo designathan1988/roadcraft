@@ -88,7 +88,6 @@ import { createSignLayer } from './signLayer';
 import { type PlantCells, createCoverCells, createTreeCells } from './plantCells';
 import { paintCatalogue } from './markings';
 import { isNear, updateRoadLevels } from './mesh/roadResidency';
-import { CandidateKeep } from './candidateKeep';
 import { JournalCursor } from '@world/derived';
 import { Engine } from '@core/engine';
 import { fadeMeshes } from './buildings/fade';
@@ -810,13 +809,13 @@ export function createSceneRenderer(
   let cameraEasing = false;
   /** The town's solids as filed for the camera, for the light shut out of the streets (`canyonLight.ts`). */
   let townSolids: (() => CameraSolids) | null = null;
-  /** The placements' two steps (`natureSweep`/`natureKeep`, `coverSweep`/ `coverKeep`) */
+  /** The placements' two steps (`natureSweep`/`natureKeeps`, `coverSweep.ts`/`coverKeeps`) */
   let natureSweepState: NatureSweep | null = null;
   /** The sweep being worked towards (its key), whether plates still wait for it, and a count of the sweeps the trees were kept from. */
   let natureSweepWant = '';
   let natureSweepPending = false;
-  /** Which of the ecosystem's swept trees stand, kept tree by tree (`candidateKeep.ts`). */
-  let natureKeep: CandidateKeep<Candidate> | null = null;
+  /** The sweep the ecosystem's trees were last filed from (`fileNature`). */
+  let natureFiledFrom: NatureSweep | null = null;
   /** The card trees the cover cells were last drawn for (moved: every cell drawn again), and the geology serial their stones' colours read. */
   let coverStandIns: boolean | null = null;
   let coverGeologySeen = -1;
@@ -1719,7 +1718,7 @@ export function createSceneRenderer(
     room: number[] | null;
     /** Plates left to sweep (one is swept a frame): the sweep runs again next frame while any is. */
     readonly pending?: number;
-    /** Each plate's run of `trees` (kept plate by plate, `natureKeep`). */
+    /** Each plate's run of `trees` (filed plate by plate, `fileNature`). */
     readonly slices?: readonly { readonly plate: NaturePlate; readonly start: number; readonly count: number }[];
   }
   /** One plate's tree density as last swept, and what it was swept for (`natureSweep`), by surface. */
@@ -1880,6 +1879,36 @@ export function createSceneRenderer(
     const net = keepNet!;
     const at = terrain.renderedHeightAt(c.x, c.y);
     return natureOpen(net, c.x, c.y, at) && !clearingsOf(net.doc)(c.x, c.y) ? at : null;
+  };
+  /** Which of the ecosystem's swept trees stand, cell by cell (`cellKeeps.ts`), and the trees each plate's cells were filled from. */
+  const natureKeeps = new CellKeeps<Candidate>(natureStands);
+  const natureFiled = new Map<object, { readonly trees: readonly Candidate[]; readonly cells: readonly number[] }>();
+  /** DO NOT test and draw every tree of the ecosystem again for one plate swept again: the cells of the plates whose trees changed */
+  const fileNature = (sweep: NatureSweep): void => {
+    const swept = new Set<object>();
+    for (const { plate } of sweep.slices ?? []) {
+      const surface = plate.part.surface;
+      swept.add(surface);
+      const trees = plate.picked?.trees ?? [];
+      const was = natureFiled.get(surface);
+      if (was?.trees === trees) continue;
+      const byCell = new Map<number, Candidate[]>();
+      for (const t of trees) {
+        const key = keepCellAt(t.x, t.y);
+        const list = byCell.get(key);
+        if (list) list.push(t); else byCell.set(key, [t]);
+      }
+      for (const key of was?.cells ?? []) if (!byCell.has(key)) natureKeeps.fill(key, []);
+      // A cell whose trees came out the same keeps them standing as they are: neither tested nor drawn again.
+      for (const [key, list] of byCell) natureKeeps.fill(key, list, sameCandidate);
+      natureFiled.set(surface, { trees, cells: [...byCell.keys()] });
+    }
+    // The plates no longer swept (no ecosystem, or no vegetation): their cells let go.
+    for (const [surface, was] of natureFiled) {
+      if (swept.has(surface)) continue;
+      for (const key of was.cells) natureKeeps.fill(key, []);
+      natureFiled.delete(surface);
+    }
   };
   /** A cover's place: never on a road or under a building. */
   const coverFree = (x: number, y: number): boolean => !onCarriageway(keepNet!, { x, y }) && !buildings.covers(x, y);
@@ -2243,7 +2272,7 @@ export function createSceneRenderer(
         for (const mesh of swapped.removed) world.remove(mesh);
         for (const mesh of swapped.added) world.add(mesh);
       }
-      // THE PLANTS AND STONES (`coverSweep`/`coverKeep`, `natureSweep`/ `natureKeep`, the planted trees)
+      // THE PLANTS AND STONES (`coverSweep.ts`/`coverKeeps`, `natureSweep`/`natureKeeps`, the planted trees)
       if (!stroking && !worldJob) {
         keepNet = net;
         // What the tests read that changed since the last look, and where (null: the diary cannot say).
@@ -2253,7 +2282,6 @@ export function createSceneRenderer(
           if (entry.rects === null) { rects = null; break; }
           rects!.push(...entry.rects);
         }
-        const moved = rects === null || rects.length > 0;
         // The stones, the scrub and the painted woods: swept again only in the cells the paint reached (`coverSweep.ts`).
         {
           const at = performance.now();
@@ -2330,22 +2358,25 @@ export function createSceneRenderer(
         }
         if (natureSweepState) {
           const sweep = natureSweepState;
-          const fresh = natureKeep?.list !== sweep.trees;
-          if (fresh) natureKeep = new CandidateKeep(sweep.trees, natureStands);
-          const keep = natureKeep!;
           const at = performance.now();
-          if (fresh || moved) keep.refresh(fresh ? null : rects, KEEP_REACH);
-          const cells = keep.takeChangedCells();
+          // A new sweep fills again the cells of the plates swept again only (`fileNature`).
+          if (natureFiledFrom !== sweep) {
+            natureFiledFrom = sweep;
+            fileNature(sweep);
+          }
+          if (rects === null) natureKeeps.refreshAll();
+          else if (rects.length) natureKeeps.refresh(rects, KEEP_REACH);
+          const cells = natureKeeps.takeChangedCells();
           const whole = cells === null || vegetationRedraw;
           if (whole || cells!.size) {
             const changed = whole ? null : cells;
             if (natureTreeKit) {
               natureForest ??= (() => {
-                const made = createTreeCells(natureTreeKit, 'nature-forest', (cell) => natureKeep!.standingIn(cell).map(({ c, z }) => ({ ...c, z })));
+                const made = createTreeCells(natureTreeKit, 'nature-forest', (cell) => natureKeeps.standingIn(cell).map(({ c, z }) => ({ ...c, z })));
                 world.add(made.group);
                 return made;
               })();
-              natureForest.sync(changed, keep.cellKeys());
+              natureForest.sync(changed, whole ? natureKeeps.cellKeys() : []);
               // Grown (or nothing to grow): no longer drawing while waiting for them.
               natureTreesPending = false;
             }
@@ -2353,12 +2384,12 @@ export function createSceneRenderer(
             natureCards ??= (() => {
               const made = createCoverCells(coverKit, 'nature-cards', {
                 rocksIn: () => [], scrubIn: () => [],
-                treesIn: (cell) => (!natureTreeKit && !natureTreesPending ? natureKeep!.standingIn(cell).map(({ c, z }) => ({ ...c, z })) : []),
+                treesIn: (cell) => (!natureTreeKit && !natureTreesPending ? natureKeeps.standingIn(cell).map(({ c, z }) => ({ ...c, z })) : []),
               });
               world.add(made.group);
               return made;
             })();
-            natureCards.sync(changed, keep.cellKeys());
+            natureCards.sync(changed, whole ? natureKeeps.cellKeys() : []);
           }
           performance.measure('hitch:nature', { start: at, end: performance.now() });
         }
