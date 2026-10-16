@@ -86,7 +86,8 @@ export class WorldStreamer {
 
   /** Whether every tile the camera wants is in the document (the opening shows the town once it is). */
   get settled(): boolean {
-    return this.wanted.every((key) => this.doc.hasTile(key));
+    // A tile that failed does not hold the opening (told, and asked again later).
+    return this.wanted.every((key) => this.doc.hasTile(key) || this.failedAt.has(key));
   }
 
   /** At a moment with no edit open (the frame's start): the tiles come put in, those far let go (written first when changed), the changed ones written now and then. */
