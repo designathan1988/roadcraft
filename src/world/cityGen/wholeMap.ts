@@ -2,6 +2,7 @@ import { Rng } from '@core/rng';
 import type { Vec2 } from '@core/vec2';
 import { Level, ROAD_TYPES, halfWidth, roadType } from '../roadTypes';
 import { TILE } from '../tiles';
+import { LOT_PLAN_VERSION } from '../growth/version';
 import { m } from '../units';
 import type { ZoneDensity, ZoneUse } from '../zones';
 import { valueNoise } from './field';
@@ -12,7 +13,7 @@ export const MAP_TILES = 10;
 /** Bumped when what the plan puts where changes (the map's edge, the city's spread): a world's stored tiles and far bakes are kept under it, so a city of an older plan is never shown for a new one. */
 export const PLAN_VERSION = 3;
 /** The key a world is stored and baked under: the seed, the map's size and the plan's version. */
-export const worldKey = (seed: number): string => `${seed}.m${MAP_TILES}.p${PLAN_VERSION}`;
+export const worldKey = (seed: number): string => `${seed}.m${MAP_TILES}.p${PLAN_VERSION}.g${LOT_PLAN_VERSION}`;
 /** The map's half side, world units. */
 export const MAP_HALF = (MAP_TILES / 2) * TILE;
 /** Whether tile (i, j) is on the map (-5..4 each way at 10). */

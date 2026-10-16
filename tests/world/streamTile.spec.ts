@@ -5,6 +5,7 @@ import { lotCentre } from '@world/lots';
 import { OWNER, TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { buildStreamTile } from '@editor/wholeMapTile';
+import { tileBuildingsOf } from '@world/growth/grownRows';
 import type { JobScope } from '@/jobs/jobScope';
 import { type StreamTileAnswer, type StreamTileAsk, serve } from '@/cityTile.worker';
 
@@ -85,11 +86,14 @@ function checkTile(r: TileRecords, i: number, j: number): void {
     }
   }
 
-  // ---- what stands on the land: by its anchor, ids counted, a lot's building found in the tile
-  const buildings = r.buildings as readonly { readonly id: number; readonly x: number; readonly y: number }[];
+  // ---- what stands on the land: by its anchor, ids counted, a lot's building found in the tile; the grown ones as rows, each made again on the lot that names it
+  const buildings = tileBuildingsOf(r) as readonly { readonly id: number; readonly x: number; readonly y: number }[];
+  expect(buildings.length).toBe(r.buildings.length + (r.grown?.id.length ?? 0));
   const buildingIds = ids('building', buildings);
   for (const b of buildings) expect(OWNER.at(b)).toBe(key);
   ids('lot', r.lots);
+  const named = new Map(r.lots.flatMap((l) => (l.building !== undefined ? [[l.building, l.id] as const] : [])));
+  r.grown?.id.forEach((id, k) => expect(named.get(id), `grown building ${id} on the lot that names it`).toBe(r.grown!.lot[k]));
   for (const l of r.lots) {
     expect(OWNER.at(lotCentre(l))).toBe(key);
     if (l.building !== undefined) expect(buildingIds.has(l.building), `lot ${l.id} names building ${l.building}`).toBe(true);

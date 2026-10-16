@@ -15,6 +15,7 @@ import { type TilePlan, planTile } from '@world/cityGen/tile';
 import { type WholeMapOptions, planWholeMap, tileOnMap } from '@world/cityGen/wholeMap';
 import { greenCity, layCity, widenCityFootways, zoneCity } from './cityGenerator';
 import { type GrownChoice, LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
+import { packGrown } from '@world/growth/grownRows';
 
 /** ONE TILE OF THE WORLD BUILT (`world/cityGen/tile.ts`), in a worker of the job pool (`cityTile.worker.ts`): the steps a generated city takes on the page (`main.ts` `generateCity`) - its roads, footways, lots, squares, power lines, furniture, names, zones and every building grown (`growOnLot`, as `growthReplica.ts` grows them) - taken here on the tile alone, on the flat ground a new map has. Handed back as the streamed world's tile (`buildStreamTile`, `world/tiles.ts`). A pure function of the options and the tile's place: the same tile comes out the same in any worker, at any time. */
 
@@ -73,17 +74,26 @@ export function emptyTileRecords(key: number): TileRecords {
   };
 }
 
-/** Builds tile (i, j) as the tile store keeps it (`tiles.ts` `TileRecords`): what it owns, ids in its own range; a tile past the map's edge is empty (`tileOnMap`: no road, no lot). */
+/** Builds tile (i, j) as the tile store keeps it (`tiles.ts` `TileRecords`): what it owns, ids in its own range, the buildings it grew as rows (`grown`); a tile past the map's edge is empty (`tileOnMap`: no road, no lot). */
 export function buildStreamTile(options: WholeMapOptions, i: number, j: number): TileRecords {
-  if (!tileOnMap(i, j)) return emptyTileRecords(tileKey(i, j));
-  return tileRecordsOf(tileKey(i, j), buildTileMap(options, i, j).data);
+  return buildStreamTilePair(options, i, j).records;
+}
+
+/** Tile (i, j) as stored (its grown buildings as rows) and whole (every building a record as it was just grown: for the write's bakes and the page, without making them again). */
+export function buildStreamTilePair(options: WholeMapOptions, i: number, j: number): { readonly records: TileRecords; readonly full: TileRecords } {
+  if (!tileOnMap(i, j)) {
+    const empty = emptyTileRecords(tileKey(i, j));
+    return { records: empty, full: empty };
+  }
+  const built = buildTileMap(options, i, j);
+  return tileRecordsOf(tileKey(i, j), built.data, built.choices);
 }
 
 type NodeRecord = SerializedDoc['nodes'][number];
 type Counted = keyof TileRecords['next'];
 
 /** A tile's document made the tile store's record of tile `key` (`tiles.ts`): every record the tile OWNS (`OWNER`), the foreign ends of its roads as borrowed nodes, and every id remapped - a node on a tile edge to `edgeNodeId` (the neighbour that lays it names it alike), every other record to the tile's range counted per kind, and every reference with it. */
-function tileRecordsOf(key: number, data: SerializedDoc): TileRecords {
+function tileRecordsOf(key: number, data: SerializedDoc, choices: ReadonlyMap<number, GrownChoice>): { readonly records: TileRecords; readonly full: TileRecords } {
   const base = tileIdBase(key);
   const counts: Record<Counted, number> = { node: 0, segment: 0, pole: 0, span: 0, building: 0, lot: 0, landscape: 0, barrier: 0 };
   const take = (kind: Counted): number => {
@@ -164,9 +174,13 @@ function tileRecordsOf(key: number, data: SerializedDoc): TileRecords {
 
   // ---- buildings by their anchor, then the lots (by their middle, as the tile cut them) naming them
   const buildingId = new Map<number, number>();
+  /** Each building's choices (`GrownChoice`), by its id here. */
+  const choiceOf = new Map<number, GrownChoice>();
   const buildings = (data.buildings ?? []).filter((b) => mine(b)).map((b) => {
     const id = take('building');
     buildingId.set(b.id, id);
+    const choice = choices.get(b.id);
+    if (choice) choiceOf.set(id, choice);
     return { ...b, id };
   });
   const lots = (data.lots ?? []).filter((l) => mine(lotCentre(l))).map((l): Lot => {
@@ -193,9 +207,20 @@ function tileRecordsOf(key: number, data: SerializedDoc): TileRecords {
   const barriers = (data.barriers ?? []).filter((w) => w.points.length > 0 && mine(w.points[0]!)).map((w) => ({ ...w, id: take('barrier') }));
   const placed = (item: unknown): boolean => mine(item as Vec2);
 
+  // ---- the buildings it grew on its own lots kept as rows (`growth/rows.ts`), made again where they are read; any other building a record
+  const lotOf = new Map<number, number>();
+  for (const l of lots) if (l.building !== undefined) lotOf.set(l.building, l.id);
+  const rows: { id: number; lot: number; choice: GrownChoice }[] = [];
+  const records = buildings.filter((b) => {
+    const choice = choiceOf.get(b.id), lot = lotOf.get(b.id);
+    if (!choice || lot === undefined) return true;
+    rows.push({ id: b.id, lot, choice });
+    return false;
+  });
+
   const next = {} as Record<Counted, number>;
   for (const kind of Object.keys(counts) as Counted[]) next[kind] = base + counts[kind];
-  return {
+  const full: TileRecords = {
     key, version: 1,
     nodes, borrowedNodes: [...borrowed.values()], segments,
     poles, borrowedPoles: [], poleSpans,
@@ -207,4 +232,5 @@ function tileRecordsOf(key: number, data: SerializedDoc): TileRecords {
     elements: (data.elements ?? []).filter(placed),
     next,
   };
+  return { records: rows.length ? { ...full, buildings: records, grown: packGrown(rows) } : full, full };
 }

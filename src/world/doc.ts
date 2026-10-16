@@ -44,6 +44,7 @@ import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from '
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, rectAround, type ChangeRect, type DocChangeKind } from './changes';
 import { OWNER, TILE_COUNTED, tileIdBase, tileOfKey, tileRect } from './tiles';
+import type { GrownRows } from './growth/rows';
 import { PoleIndex } from './poleIndex';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
@@ -2773,6 +2774,8 @@ export interface TileRecords {
   readonly borrowedPoles: NonNullable<SerializedDoc['poles']>;
   readonly poleSpans: NonNullable<SerializedDoc['poleSpans']>;
   readonly buildings: readonly unknown[];
+  /** The buildings its generator grew, as rows (`growth/rows.ts`): made records again by whoever reads them (`growth/grownRows.ts` `tileBuildingsOf`). */
+  readonly grown?: GrownRows;
   readonly lots: readonly Lot[];
   readonly lotKeys: readonly string[];
   readonly landscape: NonNullable<SerializedDoc['landscape']>;

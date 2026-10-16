@@ -1,4 +1,4 @@
-import { buildStreamTile } from '@editor/wholeMapTile';
+import { buildStreamTilePair } from '@editor/wholeMapTile';
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
@@ -31,15 +31,16 @@ export function serve(self: JobScope): void {
   self.onmessage = (event: MessageEvent<StreamTileAsk>) => {
     const { options, i, j, store } = event.data;
     try {
-      const fresh = buildStreamTile(options, i, j);
-      if (!store) { self.postMessage({ key: tileKey(i, j), records: fresh } satisfies StreamTileAnswer); return; }
-      const version = Math.max(fresh.version, store.after) + 1;
-      const records = { ...fresh, version };
+      // Stored with its grown buildings as rows (`world/growth/rows.ts`); baked and handed to the page whole, as just grown (never made again here).
+      const pair = buildStreamTilePair(options, i, j);
+      if (!store) { self.postMessage({ key: tileKey(i, j), records: pair.records } satisfies StreamTileAnswer); return; }
+      const version = Math.max(pair.records.version, store.after) + 1;
+      const records = { ...pair.records, version }, full = { ...pair.full, version };
       // Its sections baked here with it, once (`sim/tileSections.ts`).
-      void writeTile(stored(), store.map, records, bakeTileSections).then(
+      void writeTile(stored(), store.map, records, bakeTileSections, full).then(
         ({ ok }) => {
           // The records handed back prepared (migrated and interned here, `prepareTile`: the page only files them); kept for the page even when the write failed.
-          const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(records) } : {}) };
+          const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full) } : {}) };
           self.postMessage(answer);
         },
         (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} was made and not stored: ${String(error)}` } satisfies StreamTileAnswer));

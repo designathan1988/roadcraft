@@ -4,6 +4,7 @@ import {
 } from '@world/bounds';
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
+import { MAP_HALF } from '@world/cityGen/wholeMap';
 import type { FarWoodsBook } from '@render/farForest';
 import { createFlatAtlas } from '@render/flatAtlas';
 
@@ -106,52 +107,57 @@ describe('the plates of an unbounded world', () => {
   });
 });
 
-describe('the ground of an unbounded world', () => {
+describe('the ground of the map', () => {
   const near = (key: string, x: number, y: number, reach: number): boolean => {
     const [cx, cy] = key.split(',').map(Number) as [number, number];
     return Math.abs(cx - x) <= reach && Math.abs(cy - y) <= reach;
   };
+  /** A plate's centre on the map (`wholeMap.ts` MAP_HALF: the map's edge on the plates' edges). */
+  const onMap = (cx: number, cy: number): boolean => Math.abs(cx) < MAP_HALF && Math.abs(cy) < MAP_HALF;
 
-  it('makes plates for a far camera, one a frame, round it only, and lets them go when it leaves', () => {
+  it('makes plates round the camera, one a frame, on the map only, and lets them go when it leaves', () => {
     seen.live.clear();
     seen.made = 0;
     const atlas = createFlatAtlas(1);
     // The first plate, at the origin (its materials lent to the verges), and nothing else.
     expect([...seen.live]).toEqual(['0,0']);
-    const x = PLATE_SIZE * 400 + m(300), y = -PLATE_SIZE * 150 - m(200);
+    // At the map's north-east corner: the plates round it on the map, none past its edge.
+    const x = MAP_HALF - m(300), y = MAP_HALF - m(200);
     for (let frame = 0; frame < 12; frame++) atlas.focus!(x, y, m(300));
-    const under = `${PLATE_SIZE * 400},${-PLATE_SIZE * 150}`;
+    const under = `${PLATE_SIZE * 2},${PLATE_SIZE * 2}`;
     expect(seen.live.has(under)).toBe(true);
-    expect(atlas.parts.some((p) => p.cx === PLATE_SIZE * 400 && p.cy === -PLATE_SIZE * 150)).toBe(true);
-    // Round the camera only: within its reach, a few plates (`NEAR_MOST`), and the first.
     const far = [...seen.live].filter((k) => k !== '0,0');
     expect(far.length).toBeGreaterThan(0);
     expect(far.length).toBeLessThanOrEqual(9);
-    for (const k of far) expect(near(k, x, y, PLATE_SIZE * 2)).toBe(true);
-    // The far ring follows the camera: 7 x 7 plates round it, none at the origin any more.
+    for (const k of far) {
+      expect(near(k, x, y, PLATE_SIZE * 2)).toBe(true);
+      const [cx, cy] = k.split(',').map(Number) as [number, number];
+      expect(onMap(cx, cy), `plate ${k} past the map's edge`).toBe(true);
+    }
+    // The far ground is the map's 5 x 5 plates, wherever the camera.
     const ring = [...seen.book!.plates.values()];
-    expect(ring).toHaveLength(49);
-    for (const p of ring) expect(near(`${p.cx},${p.cy}`, x, y, PLATE_SIZE * 3.5)).toBe(true);
+    expect(ring).toHaveLength(25);
+    for (const p of ring) expect(onMap(p.cx, p.cy)).toBe(true);
     // A read far away makes no plate.
     const made = seen.made;
     atlas.heightAt(m(9_000_000), m(-4_000_000));
     expect(seen.made).toBe(made);
-    // The camera back home: the far plates let go.
+    // The camera back home: the corner's plates let go.
     for (let frame = 0; frame < 12; frame++) atlas.focus!(m(100), m(-50), m(300));
     for (const k of seen.live) expect(near(k, 0, 0, PLATE_SIZE * 2)).toBe(true);
-    for (const p of seen.book!.plates.values()) expect(near(`${p.cx},${p.cy}`, 0, 0, PLATE_SIZE * 3.5)).toBe(true);
+    expect(seen.book!.plates.size).toBe(25);
     atlas.dispose();
   });
 
-  it('makes none for the whole world at once: zoomed far out, the far patches alone', () => {
+  it('makes none for the whole map at once: zoomed far out, the far patches alone', () => {
     seen.live.clear();
     seen.made = 0;
     const atlas = createFlatAtlas(1);
-    for (let frame = 0; frame < 30; frame++) atlas.focus!(PLATE_SIZE * -2_000, PLATE_SIZE * 3_000, m(5_000));
-    // Nothing in full but the first plate; the far ring is a fixed 49 plates, wherever the view.
+    for (let frame = 0; frame < 30; frame++) atlas.focus!(0, 0, m(5_000));
+    // Nothing in full but the first plate; the far ground the map's 25 plates.
     expect([...seen.live]).toEqual(['0,0']);
     expect(seen.made).toBe(1);
-    expect(seen.book!.plates.size).toBe(49);
+    expect(seen.book!.plates.size).toBe(25);
     atlas.dispose();
   });
 });

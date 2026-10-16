@@ -1,4 +1,5 @@
 import { migrateBuilding } from '@world/buildings/serialize';
+import { tileBuildingsOf } from '@world/growth/grownRows';
 import type { Finish } from '@world/buildings/materials';
 import { type RecordRef, readRecords, refOf } from '@world/buildings/recordTable';
 import type { Building } from '@world/buildings/types';
@@ -138,10 +139,10 @@ function readsOf(job: FarJob): GroundReaders {
   return job.naturalIsGround ? { groundAt: shared.groundAt, naturalAt: shared.groundAt } : shared;
 }
 
-/** A stored tile's buildings as the document loads them (`BuildingStore.load`): each record read by the document's own reader, those it cannot read left out. */
+/** A stored tile's buildings as the document loads them (`BuildingStore.load`), its grown rows made again on their lots (`world/growth/grownRows.ts`): each record read by the document's own reader, those it cannot read left out. */
 function tileBuildings(records: TileRecords): Building[] {
   const out: Building[] = [];
-  for (const raw of records.buildings) {
+  for (const raw of tileBuildingsOf(records)) {
     const b = migrateBuilding(raw);
     if (b) out.push(b);
   }

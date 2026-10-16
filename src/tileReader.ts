@@ -1,4 +1,5 @@
 import { type StoredPart, type TilePartName, readTile, readTilePart, readTileSection } from '@editor/tileStore';
+import { tileBuildingsOf, withGrownBuildings } from '@world/growth/grownRows';
 import { portParts, workerParts } from '@editor/workerParts';
 import type { TileRecords } from '@world/doc';
 import type { TileReader } from '@sim/meso/tileFeed';
@@ -17,7 +18,7 @@ export interface StoredTileReader extends TileReader {
 /** The fields of the records a part holds. */
 const PART_FIELDS: Readonly<Record<TilePartName, readonly (keyof TileRecords)[]>> = {
   roads: ['nodes', 'borrowedNodes', 'segments'],
-  buildings: ['buildings'],
+  buildings: ['buildings', 'grown', 'lots'],
 };
 
 /** `port`: the desktop's saves writer, a port of this worker's own (`desktopSaves.ts` `connect`); none: this worker's store (`workerParts`). */
@@ -33,7 +34,7 @@ export function storeTileReader(map: string, port?: MessagePort | null): StoredT
       const links = 'bytes' in got ? unpackLinks(got.bytes) : null;
       if (links) return links;
       const records = await recordsOf(key, got);
-      return records ? bakeTileLinks(records) : null;
+      return records ? bakeTileLinks(withGrownBuildings(records)) : null;
     },
     async traffic(key) {
       const got = await readTilePart(store, map, key, TRAFFIC_SECTION);
@@ -41,7 +42,7 @@ export function storeTileReader(map: string, port?: MessagePort | null): StoredT
       const traffic = 'value' in got ? trafficOfSection(got.value) : null;
       if (traffic) return traffic;
       const records = await recordsOf(key, got);
-      return records ? tileTraffic(records.buildings) : null;
+      return records ? tileTraffic(tileBuildingsOf(records)) : null;
     },
     async bays(key) {
       // DO NOT bake them here from the records of a tile stored without them (a network, its lanes and every lot's grid on the simulation's thread): the simulation works them out as it always did.

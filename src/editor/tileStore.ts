@@ -11,6 +11,7 @@ import { internMembers } from '@world/buildings/intern';
 import { encodeRecords, readRecords, refOf, tableRecords } from '@world/buildings/recordTable';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
+import { tileBuildingsOf, withGrownBuildings } from '@world/growth/grownRows';
 import { METERS_PER_UNIT, m } from '@world/units';
 import { type PartStore, type SaveEntry, storeWriter } from './saveStore';
 import { type HeadRead, type TilePartIn, gunzipBytes, gzipBytes, partOf, readHead, tileBlob } from './tileBlob';
@@ -89,7 +90,7 @@ interface TileBackend { run(op: TileOp): Promise<unknown> }
 const tileBlobKey = (map: string, key: number): string => `${map}:T:${key}`;
 const metaKey = (map: string): string => `${map}:world`;
 
-type ListField = Exclude<keyof TileRecords, 'key' | 'version' | 'next'>;
+type ListField = Exclude<keyof TileRecords, 'key' | 'version' | 'next' | 'grown'>;
 type NextKind = keyof TileRecords['next'];
 /** Every list of a tile and every kind it counts ids for (a `Record`: a field added to `TileRecords` and not here does not compile). */
 const LIST_FIELDS = Object.keys({
@@ -120,8 +121,9 @@ const RECORD_PARTS: readonly RecordPart[] = ['rest', 'roads', 'buildings'];
 export type TilePartName = 'roads' | 'buildings';
 
 function splitRecords(records: TileRecords): Record<RecordPart, object> {
-  const { nodes, borrowedNodes, segments, buildings, ...rest } = records;
-  return { rest, roads: { nodes, borrowedNodes, segments }, buildings: { buildings } };
+  const { nodes, borrowedNodes, segments, buildings, grown, lots, ...rest } = records;
+  // The grown rows with the lots they are made again on (`world/growth/grownRows.ts`): the part the far bakes read alone holds both.
+  return { rest, roads: { nodes, borrowedNodes, segments }, buildings: { buildings, lots, ...(grown ? { grown } : {}) } };
 }
 
 /** A tile's records as UTF-8 JSON texts, each an object of some of its fields (format 1: one, the whole): merged, the tile. */
@@ -146,7 +148,7 @@ type TileSection = { readonly json: unknown } | { readonly bin: Uint8Array<Array
 export type TileBaker = (records: TileRecords) => Readonly<Record<string, TileSection>>;
 
 /** A tile's blob, and its records' texts (handed to whoever asked for the tile): the records made text once, for both. */
-async function encodeTile(records: TileRecords, bake: TileBaker | undefined): Promise<{ readonly blob: Blob; readonly text: TileText }> {
+async function encodeTile(records: TileRecords, bake: TileBaker | undefined, full?: TileRecords): Promise<{ readonly blob: Blob; readonly text: TileText }> {
   const encoder = new TextEncoder();
   const json = (value: unknown): Uint8Array<ArrayBuffer> => encoder.encode(JSON.stringify(value)) as Uint8Array<ArrayBuffer>;
   const split = splitRecords(records);
@@ -155,7 +157,8 @@ async function encodeTile(records: TileRecords, bake: TileBaker | undefined): Pr
   for (let n = 0; n < RECORD_PARTS.length; n++) parts.push({ name: RECORD_PARTS[n]!, kind: 'json', data: await gzipBytes(text[n]!) });
   let sections: Readonly<Record<string, TileSection>> = {};
   try {
-    if (bake) sections = bake(records);
+    // From every building: the grown rows made again where the caller has not the records whole (`full`).
+    if (bake) sections = bake(full ?? withGrownBuildings(records));
   } catch (error) {
     // Stored without them: each reader derives its own from the records (`readTilePart`).
     console.error(`[save] tile ${records.key}'s sections could not be baked`, error);
@@ -202,8 +205,8 @@ export function writtenRecords(write: TileWrite): TileRecords {
 }
 
 /** A tile written in one transaction of its one key, its sections baked with it: whether it was stored, and its records' texts. */
-export async function writeTile(store: PartStore, map: string, records: TileRecords, bake?: TileBaker): Promise<{ readonly ok: boolean; readonly text: TileText }> {
-  const { blob, text } = await encodeTile(records, bake);
+export async function writeTile(store: PartStore, map: string, records: TileRecords, bake?: TileBaker, full?: TileRecords): Promise<{ readonly ok: boolean; readonly text: TileText }> {
+  const { blob, text } = await encodeTile(records, bake, full);
   return { ok: await store.write([[tileBlobKey(map, records.key), blob]], []), text };
 }
 
@@ -368,14 +371,15 @@ export interface PreparedTile {
 /** A TILE MADE READY FOR THE PAGE where it is read or made (the save worker, the generator's): each building migrated and its members interned (`intern.ts`: a tile's records share their shapes, kept through the message's clone), so the page only files them (`BuildingStore.loadPrepared`); with `network`, the tile's junctions and ribbons solved here from its roads (`bakeTileNetwork`), so the page's build takes them instead of solving a thousand junctions in the frame the tile is put in. */
 export function prepareTile(records: TileRecords, network = true): PreparedTile {
   const buildings: Building[] = [];
-  for (const raw of records.buildings) {
+  for (const raw of tileBuildingsOf(records)) {
     const b = migrateBuilding(raw);
     if (!b) continue;
     internMembers(b as unknown as Record<string, unknown>);
     buildings.push(b);
   }
   // DO NOT post the buildings as objects (cloned by every message, hash-consed again by every thread): one table, its shared members written once.
-  return { records: { ...records, buildings: [] }, buildings: encodeRecords(buildings).buffer, network: network ? bakeTileNetwork(records) : null };
+  const { grown: _grown, ...rest } = records;
+  return { records: { ...rest, buildings: [] }, buildings: encodeRecords(buildings).buffer, network: network ? bakeTileNetwork(records) : null };
 }
 
 /** A prepared tile's records as the page files them: its buildings read from its table, each knowing its row (`tableRecords`). */

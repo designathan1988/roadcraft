@@ -60,8 +60,8 @@ function placed(site: GrowthSite, record: Omit<Building, 'id'>): Omit<Building, 
   return validateOn(site, { ...again, id: site.nextId } as Building) === null ? again : null;
 }
 
-/** The version of the lot generator (`lotPlan.ts`, the yards, walls and facades of grown buildings), stamped on each building grown (`main.ts`). Bumped when it changes. */
-export const LOT_PLAN_VERSION = 13;
+/** The growth's version (`version.ts`). */
+export { LOT_PLAN_VERSION } from './version';
 
 /** The ground floor a grown building on a lot will have: its street's paving along the lot's front (`street`, a try's points, `trySites`), and a threshold over it (`foundation.ts` `floorOver`). With no paving to read, the land at the front less the drop the roads shape it by. */
 function streetFloor(pavedAt: ((x: number, y: number) => number) | undefined, street: readonly Vec2[], local: (lx: number, ly: number) => Vec2, ground: (x: number, y: number) => number): number {

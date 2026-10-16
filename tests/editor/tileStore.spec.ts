@@ -70,7 +70,7 @@ describe('a tile stored', () => {
     const tile = emptyTile(0, 0, { nodes: [node(1, m(5), m(5))], buildings: [building as never] });
     await new TileStore('map', storeTiles(store), never).write(tile);
     expect(await readTilePart(store, 'map', tile.key, 'roads')).toEqual({ value: { nodes: tile.nodes, borrowedNodes: [], segments: [] } });
-    expect(await readTilePart(store, 'map', tile.key, 'buildings')).toEqual({ value: { buildings: [building] } });
+    expect(await readTilePart(store, 'map', tile.key, 'buildings')).toEqual({ value: { buildings: [building], lots: [] } });
     // A section it was not written with: the records, for its reader to derive it from.
     expect(await readTilePart(store, 'map', tile.key, 'links')).toEqual({ records: { ...tile, version: 1 } });
     expect(await readTilePart(store, 'map', tileKey(5, 5), 'roads')).toBeNull();
