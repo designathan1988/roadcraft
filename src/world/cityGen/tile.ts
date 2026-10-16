@@ -1,13 +1,13 @@
 import { Rng } from '@core/rng';
 import type { Vec2 } from '@core/vec2';
-import { MAP_HALF } from '../bounds';
+import { TILE } from '../tiles';
 import { m } from '../units';
 import { type BasisField, TensorField } from './field';
 import type { CityPlan } from './plan';
 import { type ForcedSeed, type StreetEdge, type StreetGraph, type StreetLevel, planarize, traceStreets } from './streets';
-import { type Gate, type TileCharacter, type WholeMapPlan, TILE, TILES, borderLine, gatesOf, mix } from './wholeMap';
+import { type Gate, type TileCharacter, type WholeMapPlan, borderLine, gatesOf, mix } from './wholeMap';
 
-/** ONE TILE OF THE WHOLE MAP (`wholeMap.ts`): its border avenues, a street from each gate, and its own streets inside, laid as a generated city's plan (`CityPlan`) the city's own steps read (`editor/wholeMapTile.ts`). Everything here reads the seed and the tile's place only. */
+/** ONE TILE OF THE WORLD (`wholeMap.ts`, any column and row): its border avenues, a street from each gate, and its own streets inside, laid as a generated city's plan (`CityPlan`) the city's own steps read (`editor/wholeMapTile.ts`). Everything here reads the seed and the tile's place only. */
 
 /** A gate's street runs this far straight in from the avenue's middle before it turns or meets another: the neighbour's tile holds the same piece on its side (its first road), so the junction at the gate is the same seen from either tile. */
 export const STUB = m(40);
@@ -35,22 +35,22 @@ export interface TilePlan {
   readonly city: CityPlan;
   /** The tile's own stream for what is drawn on it (squares, growth). */
   readonly seed: number;
-  /** Whether a place is this tile's: what stands there (lots, buildings, poles, furniture) is kept by it alone. */
+  /** Whether a place is this tile's (`tiles.ts` `OWNER`: its square, low edges in): what stands there (lots, buildings, poles, furniture) is kept by it alone. */
   owns(p: Vec2): boolean;
   /** Whether a node is on the tile or its border (the pieces of the neighbours' gate streets it holds are not). */
   keepsNode(p: Vec2): boolean;
 }
 
-/** One side of the tile: its line, its gates, which way is in, and whether a tile lies beyond. */
-interface Side { readonly from: Vec2; readonly to: Vec2; readonly gates: readonly Gate[]; readonly inward: Vec2; readonly beyond: 'none' | 'rural' | 'town'; readonly axis: 'x' | 'y' }
+/** One side of the tile: its line, its gates, which way is in, and what kind of tile lies beyond. */
+interface Side { readonly from: Vec2; readonly to: Vec2; readonly gates: readonly Gate[]; readonly inward: Vec2; readonly beyond: 'rural' | 'town'; readonly axis: 'x' | 'y' }
 
 export function planTile(map: WholeMapPlan, i: number, j: number): TilePlan {
   const seed = map.options.seed;
   const character = map.tile(i, j);
   const x0 = borderLine(i), x1 = borderLine(i + 1), y0 = borderLine(j), y1 = borderLine(j + 1);
   const rows = gatesOf(seed, 0, j), cols = gatesOf(seed, 1, i);
-  // What lies beyond each side: no tile (the rim), the countryside (its avenue gates' streets only) or a town.
-  const beyond = (ni: number, nj: number): Side['beyond'] => (ni < 0 || nj < 0 || ni >= TILES || nj >= TILES ? 'none' : map.tile(ni, nj).style === 'rural' ? 'rural' : 'town');
+  // What lies beyond each side (always a tile: the world has no rim): the countryside (its avenue gates' streets only) or a town.
+  const beyond = (ni: number, nj: number): Side['beyond'] => (map.tile(ni, nj).style === 'rural' ? 'rural' : 'town');
   const sides: Side[] = [
     { from: { x: x0, y: y0 }, to: { x: x1, y: y0 }, gates: cols, inward: { x: 0, y: 1 }, beyond: beyond(i, j - 1), axis: 'x' },
     { from: { x: x0, y: y1 }, to: { x: x1, y: y1 }, gates: cols, inward: { x: 0, y: -1 }, beyond: beyond(i, j + 1), axis: 'x' },
@@ -90,16 +90,14 @@ export function planTile(map: WholeMapPlan, i: number, j: number): TilePlan {
     ? gridInterior(character, gateEnds, nodes, edges, { x0, y0, x1, y1 })
     : tracedInterior(character, gateEnds, nodes, edges, { x0, y0, x1, y1 }, seed, rng);
   const graph: StreetGraph = { nodes, edges };
-  const ox0 = i === 0 ? -MAP_HALF : x0, oy0 = j === 0 ? -MAP_HALF : y0;
-  const ox1 = i === TILES - 1 ? Infinity : x1, oy1 = j === TILES - 1 ? Infinity : y1;
   const city: CityPlan = {
     // The steps read the plan's graph and zones; its options stand for the whole map's (no size of its own).
     options: { ...map.options, size: 'large', radius: TILE / 2 },
-    field, radius: TILE / 2, centres: map.centres, graph, zoneAt: map.zoneAt,
+    field, radius: TILE / 2, centres: map.centresNear({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }), graph, zoneAt: map.zoneAt,
   };
   return {
     i, j, character, city, seed: mix(seed, 0x711e, i, j),
-    owns: (p) => p.x >= ox0 && p.x < ox1 && p.y >= oy0 && p.y < oy1,
+    owns: (p) => p.x >= x0 && p.x < x1 && p.y >= y0 && p.y < y1,
     keepsNode: (p) => p.x >= x0 - ON_LINE && p.x <= x1 + ON_LINE && p.y >= y0 - ON_LINE && p.y <= y1 + ON_LINE,
   };
 }

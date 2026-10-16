@@ -1,6 +1,6 @@
 import type { SerializedDoc } from '@world/doc';
-import { type TilePiece, assembleWholeMap } from '@world/cityGen/assemble';
-import { TILES, type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
+import { type TilePiece, WHOLE_MAP_FIRST, WHOLE_MAP_TILES as TILES, assembleWholeMap } from '@world/cityGen/assemble';
+import { type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
 import type { TileAnswer, TileAsk } from './cityTile.worker';
 import { jobLanes, jobPort } from './jobs/jobPool';
 import { internMembers } from '@world/buildings/intern';
@@ -23,7 +23,7 @@ export class WholeMapRun {
   ) {
     const plan = planWholeMap(options);
     const all: { ask: TileAsk; heat: number }[] = [];
-    for (let j = 0; j < TILES; j++) for (let i = 0; i < TILES; i++) all.push({ ask: { options: this.options, i, j }, heat: plan.tile(i, j).heat });
+    for (let j = WHOLE_MAP_FIRST; j < WHOLE_MAP_FIRST + TILES; j++) for (let i = WHOLE_MAP_FIRST; i < WHOLE_MAP_FIRST + TILES; i++) all.push({ ask: { options: this.options, i, j }, heat: plan.tile(i, j).heat });
     this.queue = all.sort((a, b) => b.heat - a.heat).map((t) => t.ask);
   }
 

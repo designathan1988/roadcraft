@@ -1,9 +1,16 @@
 import type { SerializedDoc } from '../doc';
 import type { Lot } from '../lots';
+import { MAP_HALF, MAP_MARGIN } from '../bounds';
+import { TILE } from '../tiles';
 import { METERS_PER_UNIT } from '../units';
-import { TILES, borderLine } from './wholeMap';
+import { borderLine } from './wholeMap';
 
 /** THE WHOLE MAP JOINED (`wholeMap.ts`): the tiles' records (`TilePiece`, each with ids of its own) made one map, as a saved map holds it. The tiles are taken in their order on the map whatever order they came in, and the nodes on the border lines - corners and gates, which both tiles either side lay at the same place by the same rule - become one node, the border avenue between two of them one road; so the map is the same, byte for byte, however many workers made the tiles and in whatever order they finished. */
+
+/** The fixed map's tiles (the route before the streamed world, `wholeMapRun.ts`): those wholly inside its margin (`bounds.ts`), `WHOLE_MAP_TILES` each way from column and row `WHOLE_MAP_FIRST`. */
+export const WHOLE_MAP_TILES = 2 * Math.floor((MAP_HALF - MAP_MARGIN) / TILE);
+export const WHOLE_MAP_FIRST = -WHOLE_MAP_TILES / 2;
+const TILES = WHOLE_MAP_TILES;
 
 /** A tile's records, as a saved map holds them, ids the tile's own (`editor/wholeMapTile.ts` `buildTile`). */
 export interface TilePiece {
@@ -30,10 +37,11 @@ type SegmentRecord = Mutable<SerializedDoc['segments'][number]>;
 /** The tiles joined into one map; every tile must be there. */
 export function assembleWholeMap(pieces: readonly TilePiece[]): SerializedDoc {
   const byPlace = new Map<number, TilePiece>();
-  for (const piece of pieces) byPlace.set(piece.j * TILES + piece.i, piece);
+  const inRange = (k: number): boolean => k >= WHOLE_MAP_FIRST && k < WHOLE_MAP_FIRST + TILES;
+  for (const piece of pieces) if (inRange(piece.i) && inRange(piece.j)) byPlace.set((piece.j - WHOLE_MAP_FIRST) * TILES + (piece.i - WHOLE_MAP_FIRST), piece);
   if (byPlace.size !== TILES * TILES) throw new Error(`the whole map needs ${TILES * TILES} tiles, ${byPlace.size} came`);
   const lines = new Set<number>();
-  for (let k = 0; k <= TILES; k++) lines.add(borderLine(k));
+  for (let k = 0; k <= TILES; k++) lines.add(borderLine(WHOLE_MAP_FIRST + k));
   const onBorder = (p: { readonly x: number; readonly y: number }): boolean => lines.has(p.x) || lines.has(p.y);
   const nodes: NodeRecord[] = [];
   const segments: SegmentRecord[] = [];

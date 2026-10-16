@@ -1,11 +1,14 @@
 import type { Vec2 } from '@core/vec2';
 import { GROUND_ONLY, buildRoadElevation } from '@world/elevation';
-import { applyLots, lotCentre, planLots } from '@world/lots';
+import { type Lot, applyLots, lotCentre, planLots } from '@world/lots';
 import { Network } from '@world/network';
 import { pavedHeightFrom } from '@world/paving';
+import { movementKey } from '@world/roads/connectors';
 import { footwayRiseAt } from '@world/roads/footwayRise';
+import { OWNER, TILE_COUNTED, type TileRecords, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
 import { m } from '@world/units';
 import type { BuildingId } from '@world/buildings/types';
+import { asSegmentId } from '@world/ids';
 import type { TilePiece } from '@world/cityGen/assemble';
 import type { SerializedDoc } from '@world/doc';
 import { type TilePlan, planTile } from '@world/cityGen/tile';
@@ -13,7 +16,7 @@ import { type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
 import { greenCity, layCity, widenCityFootways, zoneCity } from './cityGenerator';
 import { LOT_PLAN_VERSION, growOnLot } from './zoning';
 
-/** ONE TILE OF THE WHOLE MAP BUILT (`world/cityGen/tile.ts`), in a worker of the job pool (`cityTile.worker.ts`): the steps a generated city takes on the page (`main.ts` `generateCity`) - its roads, footways, lots, squares, power lines, furniture, names, zones and every building grown (`growOnLot`, as `growthReplica.ts` grows them) - taken here on the tile alone, on the flat ground a new map has. What the tile owns is handed back as a map's own records (`SerializedDoc`), ids its own; the page joins the tiles (`world/cityGen/assemble.ts`). A pure function of the options and the tile's place: the same tile comes out the same in any worker, at any time. */
+/** ONE TILE OF THE WORLD BUILT (`world/cityGen/tile.ts`), in a worker of the job pool (`cityTile.worker.ts`): the steps a generated city takes on the page (`main.ts` `generateCity`) - its roads, footways, lots, squares, power lines, furniture, names, zones and every building grown (`growOnLot`, as `growthReplica.ts` grows them) - taken here on the tile alone, on the flat ground a new map has. Handed back either as a piece of the fixed whole map (`buildTile`, joined by `world/cityGen/assemble.ts`) or as the streamed world's tile (`buildStreamTile`, `world/tiles.ts`). A pure function of the options and the tile's place: the same tile comes out the same in any worker, at any time. */
 
 /** The seed the buildings' streams are drawn from, as the page grows a city (`main.ts` `askCity`). */
 const GROWTH_SEED = 0x5eed;
@@ -24,8 +27,8 @@ function keyPlace(key: string): Vec2 | null {
   return Number.isFinite(x) && Number.isFinite(y) ? { x: x! * m(4), y: y! * m(4) } : null;
 }
 
-/** Builds tile (i, j) of the whole map. */
-export function buildTile(options: WholeMapOptions, i: number, j: number): TilePiece {
+/** Tile (i, j) built whole: its plan and its document as a saved map holds it (ids the document's own; the neighbours' gate pieces and border corners in it too). */
+function buildTileMap(options: WholeMapOptions, i: number, j: number): { tile: TilePlan; data: SerializedDoc; ms: number } {
   const started = performance.now();
   const tile = planTile(planWholeMap(options), i, j);
   const doc = layCity(tile.city);
@@ -54,7 +57,18 @@ export function buildTile(options: WholeMapOptions, i: number, j: number): TileP
       doc.buildings.put({ ...fresh, builtAt: 0, decay: 0, lotPlan: LOT_PLAN_VERSION });
     } else if (doc.openLots.count(refused) === 0) break;
   }
-  return pieceOf(tile, doc.toJSON(), performance.now() - started);
+  return { tile, data: doc.toJSON(), ms: performance.now() - started };
+}
+
+/** Builds tile (i, j) of the fixed whole map, as a piece to join (`assemble.ts`). */
+export function buildTile(options: WholeMapOptions, i: number, j: number): TilePiece {
+  const { tile, data, ms } = buildTileMap(options, i, j);
+  return pieceOf(tile, data, ms);
+}
+
+/** Builds tile (i, j) of the unbounded world as the tile store keeps it (`tiles.ts` `TileRecords`): what it owns, ids in its own range. */
+export function buildStreamTile(options: WholeMapOptions, i: number, j: number): TileRecords {
+  return tileRecordsOf(tileKey(i, j), buildTileMap(options, i, j).data);
 }
 
 /** What of a tile's document is the tile's: its nodes and the border's (not the neighbours' gate pieces), the roads between them, and what stands on its own land. */
@@ -75,5 +89,135 @@ export function pieceOf(tile: TilePlan, data: SerializedDoc, ms: number): TilePi
     paint: (data.paint ?? []).filter((dab) => tile.owns(dab)),
     trees: (data.trees ?? []).filter((t) => tile.owns(t as Vec2)),
     ms,
+  };
+}
+
+type NodeRecord = SerializedDoc['nodes'][number];
+type Counted = keyof TileRecords['next'];
+
+/** A tile's document made the tile store's record of tile `key` (`tiles.ts`): every record the tile OWNS (`OWNER`), the foreign ends of its roads as borrowed nodes, and every id remapped - a node on a tile edge to `edgeNodeId` (the neighbour that lays it names it alike), every other record to the tile's range counted per kind, and every reference with it. */
+function tileRecordsOf(key: number, data: SerializedDoc): TileRecords {
+  const base = tileIdBase(key);
+  const counts: Record<Counted, number> = { node: 0, segment: 0, pole: 0, span: 0, building: 0, lot: 0, landscape: 0, barrier: 0 };
+  const take = (kind: Counted): number => {
+    if (counts[kind] >= TILE_COUNTED) throw new Error(`tile ${key}: more than ${TILE_COUNTED} ${kind} records`);
+    return base + counts[kind]++;
+  };
+  const mine = (p: { readonly x: number; readonly y: number }): boolean => OWNER.at(p) === key;
+
+  // ---- the nodes: an edge's by its place, the others counted; two nodes one edge id is two tiles disagreeing, never let through
+  const nodeOf = new Map<number, NodeRecord>(data.nodes.map((n) => [n.id, n]));
+  const nodeId = new Map<number, number>();
+  const edgeOwner = new Map<number, number>();
+  const name = (n: NodeRecord, own: boolean): number => {
+    const had = nodeId.get(n.id);
+    if (had !== undefined) return had;
+    const edge = edgeNodeId(n.x, n.y);
+    if (edge === null && !own) throw new Error(`tile ${key}: a road ends at (${n.x}, ${n.y}) in another tile off its edge`);
+    if (edge !== null) {
+      const other = edgeOwner.get(edge);
+      if (other !== undefined && other !== n.id) throw new Error(`tile ${key}: two nodes on an edge at (${n.x}, ${n.y}) within a centimetre`);
+      edgeOwner.set(edge, n.id);
+    }
+    const id = edge ?? take('node');
+    nodeId.set(n.id, id);
+    return id;
+  };
+  const ownedNodes = data.nodes.filter((n) => OWNER.node(n) === key);
+  for (const n of ownedNodes) name(n, true);
+
+  // ---- the roads by the middle of their ends; a foreign end kept as a borrowed node (always on an edge: the generator's roads cross tiles only at its gates)
+  const segmentId = new Map<number, number>();
+  const borrowed = new Map<number, NodeRecord>();
+  const segments = data.segments.flatMap((s) => {
+    const a = nodeOf.get(s.a), b = nodeOf.get(s.b);
+    if (!a || !b || OWNER.segment(a, b) !== key) return [];
+    for (const end of [a, b]) {
+      if (OWNER.node(end) === key) continue;
+      const id = name(end, false);
+      // As the tile saw it: its place and height; the junction's rules are its own tile's to keep.
+      if (!borrowed.has(id)) {
+        borrowed.set(id, { id, x: end.x, y: end.y, ...(end.heightOffset !== undefined ? { heightOffset: end.heightOffset } : {}), ...(end.smooth !== undefined ? { smooth: end.smooth } : {}) });
+      }
+    }
+    const id = take('segment');
+    segmentId.set(s.id, id);
+    return [{ ...s, id, a: nodeId.get(s.a)!, b: nodeId.get(s.b)! }];
+  });
+
+  // ---- a node's references to roads: the tile's own roads remapped, any other dropped (a neighbour's road has no id here)
+  const seg = (old: number): number | undefined => segmentId.get(old);
+  const nodes = ownedNodes.map((n): NodeRecord => {
+    const { crossing, laneLinks, approachRules, uturn, blockedMovements, ...rest } = n;
+    const out: NodeRecord = { ...rest, id: nodeId.get(n.id)! };
+    if (blockedMovements) {
+      out.blockedMovements = blockedMovements.flatMap((movement) => {
+        const cut = movement.indexOf('>');
+        const from = seg(Number(movement.slice(0, cut))), to = seg(Number(movement.slice(cut + 1)));
+        return from !== undefined && to !== undefined ? [movementKey(asSegmentId(from), asSegmentId(to))] : [];
+      });
+    }
+    const crossed = crossing ? seg(crossing.segment) : undefined;
+    if (crossing && crossed !== undefined) out.crossing = { kind: crossing.kind, segment: crossed };
+    if (laneLinks) {
+      const links = laneLinks.flatMap((l) => {
+        const from = seg(l.from), to = seg(l.to);
+        return from !== undefined && to !== undefined ? [{ ...l, from, to }] : [];
+      });
+      if (links.length) out.laneLinks = links;
+    }
+    if (approachRules) {
+      const rules = approachRules.flatMap((r) => { const s = seg(r.segment); return s !== undefined ? [{ ...r, segment: s }] : []; });
+      if (rules.length) out.approachRules = rules;
+    }
+    const turned = uturn !== undefined ? seg(uturn) : undefined;
+    if (turned !== undefined) out.uturn = turned;
+    return out;
+  });
+
+  // ---- buildings by their anchor, then the lots (by their middle, as the tile cut them) naming them
+  const buildingId = new Map<number, number>();
+  const buildings = (data.buildings ?? []).filter((b) => mine(b)).map((b) => {
+    const id = take('building');
+    buildingId.set(b.id, id);
+    return { ...b, id };
+  });
+  const lots = (data.lots ?? []).filter((l) => mine(lotCentre(l))).map((l): Lot => {
+    const { building: on, ...rest } = l;
+    const id = take('lot');
+    const stands = on !== undefined ? buildingId.get(on) : undefined;
+    return stands !== undefined ? { ...rest, id, building: stands } : { ...rest, id };
+  });
+
+  // ---- the utility network: poles by their place; a span only between two of the tile's poles (a neighbour's pole has no id here)
+  const poleId = new Map<number, number>();
+  const poles = (data.poles ?? []).filter((p) => mine(p)).map((p) => {
+    const id = take('pole');
+    poleId.set(p.id, id);
+    return { ...p, id };
+  });
+  const poleSpans = (data.poleSpans ?? []).flatMap((s) => {
+    const a = poleId.get(s.a), b = poleId.get(s.b);
+    return a !== undefined && b !== undefined ? [{ ...s, id: take('span'), a, b }] : [];
+  });
+
+  // ---- what stands on the land, by its anchor
+  const landscape = (data.landscape ?? []).filter((item) => mine(item)).map((item) => ({ ...item, id: take('landscape') }));
+  const barriers = (data.barriers ?? []).filter((w) => w.points.length > 0 && mine(w.points[0]!)).map((w) => ({ ...w, id: take('barrier') }));
+  const placed = (item: unknown): boolean => mine(item as Vec2);
+
+  const next = {} as Record<Counted, number>;
+  for (const kind of Object.keys(counts) as Counted[]) next[kind] = base + counts[kind];
+  return {
+    key, version: 1,
+    nodes, borrowedNodes: [...borrowed.values()], segments,
+    poles, borrowedPoles: [], poleSpans,
+    buildings, lots,
+    lotKeys: (data.lotKeys ?? []).filter((k) => { const p = keyPlace(k); return p !== null && mine(p); }),
+    landscape, barriers,
+    paint: (data.paint ?? []).filter((dab) => mine(dab)),
+    trees: (data.trees ?? []).filter(placed),
+    elements: (data.elements ?? []).filter(placed),
+    next,
   };
 }
