@@ -30,8 +30,12 @@ describe('the matrix of a plant turned about the up axis', () => {
     const pack = source.slice(source.indexOf('const pack = (key'), source.indexOf('const pack = (key') + 900);
     expect(pack).toMatch(/poses\[at\] = placement\.x/);
     expect(pack).not.toMatch(/updateMatrix|new Object3D|\.set\(\[/);
-    // The matrix made only for a plant drawn at a new position (`visit`).
-    const visit = source.slice(source.indexOf('const visit = '), source.indexOf('const live = '));
-    expect(visit).toMatch(/yawMatrixInto\(target, n \* 16/);
+    // The matrix made from the pose (`POSE_FORMAT`), only for a plant drawn at a new position (`cellInstances.ts` `write`).
+    const format = source.slice(source.indexOf('const POSE_FORMAT = '), source.indexOf('/** The buildings\' garden lists'));
+    expect(format).toMatch(/yawMatrixInto\(out, outAt/);
+    const cells = readFileSync('src/render/cellInstances.ts', 'utf8');
+    const write = cells.slice(cells.indexOf('const write = '), cells.indexOf('const visit = '));
+    expect(write).toMatch(/if \(n < s\.capacity && s\.shown\[n\] !== i\)/);
+    expect(write).toMatch(/format\.matrixInto\(k\.data, i \* stride, mesh\.instanceMatrix\.array as Float32Array, n \* 16\)/);
   });
 });

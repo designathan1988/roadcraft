@@ -1,7 +1,7 @@
 import { DoubleSide, GLSL3, ShaderMaterial, Vector3 } from 'three';
 import { foliageAtlas } from './lowPolyTrees';
 
-/** THE OCTAHEDRAL IMPOSTOR'S SHADERS (`farForest.ts`). */
+/** THE OCTAHEDRAL IMPOSTOR'S SHADERS (`farForest.ts`, `plantImpostors.ts`). */
 
 /** Pictures along each side of a model's square. */
 export const FRAMES = 8;
@@ -21,36 +21,14 @@ export function frameBasis(n: Vector3, tangent: Vector3, bitangent: Vector3): vo
   bitangent.crossVectors(n, tangent);
 }
 
-const GLSL_COMMON = /* glsl */ `
+/** The pictures' directions and their planes, for a vertex shader: the far woods' and the near plants' (`plantImpostors.ts`). */
+export const IMPOSTOR_FRAMES_GLSL = /* glsl */ `
   #define FRAMES ${FRAMES.toFixed(1)}
   void frameBasis(vec3 n, out vec3 t, out vec3 b) {
     vec3 up = n.y > 0.999 ? vec3(-1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
     t = normalize(cross(up, n));
     b = cross(n, t);
   }
-`;
-
-export const IMPOSTOR_VERTEX_PARS = /* glsl */ `
-  ${GLSL_COMMON}
-  attribute vec4 aSpot;
-  attribute vec4 aLook;
-  uniform float uFade[FAR_PLATES];
-  uniform float uScale;
-  uniform vec4 uThin;
-  uniform vec3 uCentre[FAR_MODELS];
-  uniform float uRadius[FAR_MODELS];
-  varying vec2 vFrameUv1;
-  varying vec2 vFrameUv2;
-  varying vec2 vFrameUv3;
-  flat varying vec2 vFrame1;
-  flat varying vec2 vFrame2;
-  flat varying vec2 vFrame3;
-  flat varying vec3 vWeights;
-  flat varying vec2 vBlock;
-  flat varying vec2 vYaw;
-  flat varying float vFade;
-  flat varying float vTint;
-
   vec2 hemiOctaEncode(vec3 d) {
     vec3 o = d / dot(d, sign(d));
     return vec2(1.0 + o.x + o.z, 1.0 + o.z - o.x) * 0.5;
@@ -69,6 +47,53 @@ export const IMPOSTOR_VERTEX_PARS = /* glsl */ `
     vec3 hit = eye + ray * along;
     return vec2(dot(t, hit), dot(b, hit)) / (2.0 * radius) + 0.5;
   }
+`;
+
+/** A picture read off an atlas `blocks` models wide and high, for a fragment shader: the far woods' and the near plants'. */
+export const IMPOSTOR_READ_GLSL = /* glsl */ `
+  #define FRAMES ${FRAMES.toFixed(1)}
+  #define FRAME_PX ${FRAME_PX.toFixed(1)}
+  /**
+   * A picture's place on the atlas, held half a texel of mip level \`level\` inside its frame: the
+   * filter never reads the next picture's texels (the pictures sit edge to edge with no margin; read
+   * up to the frame's edge, the mips blended the neighbours' leaves into the tree's outline).
+   */
+  vec2 atlasUv(vec2 uv, vec2 frame, vec2 block, vec2 blocks, float level) {
+    float h = min(0.5 * exp2(level) / FRAME_PX, 0.5);
+    return (block * FRAMES + frame + clamp(uv, h, 1.0 - h)) / (FRAMES * blocks);
+  }
+  /**
+   * A picture read with the raw uv's change across the pixel (\`dx\`, \`dy\`, on the atlas): the level is
+   * the picture's scale on the screen, the uv held inside its frame at the coarser of the two levels
+   * the filter blends.
+   */
+  vec4 impostorRead(sampler2D atlas, vec2 uv, vec2 frame, vec2 block, vec2 blocks, vec2 dx, vec2 dy) {
+    vec2 texels = vec2(textureSize(atlas, 0));
+    float lod = 0.5 * log2(max(max(dot(dx * texels, dx * texels), dot(dy * texels, dy * texels)), 1e-8));
+    return textureGrad(atlas, atlasUv(uv, frame, block, blocks, clamp(ceil(lod), 0.0, log2(FRAME_PX))), dx, dy);
+  }
+`;
+
+export const IMPOSTOR_VERTEX_PARS = /* glsl */ `
+  ${IMPOSTOR_FRAMES_GLSL}
+  attribute vec4 aSpot;
+  attribute vec4 aLook;
+  uniform float uFade[FAR_PLATES];
+  uniform float uScale;
+  uniform vec4 uThin;
+  uniform vec3 uCentre[FAR_MODELS];
+  uniform float uRadius[FAR_MODELS];
+  varying vec2 vFrameUv1;
+  varying vec2 vFrameUv2;
+  varying vec2 vFrameUv3;
+  flat varying vec2 vFrame1;
+  flat varying vec2 vFrame2;
+  flat varying vec2 vFrame3;
+  flat varying vec3 vWeights;
+  flat varying vec2 vBlock;
+  flat varying vec2 vYaw;
+  flat varying float vFade;
+  flat varying float vTint;
 `;
 
 /** In place of three's \`begin_vertex\`: \`transformed\` is the corner in the world (the mesh stands at the origin). */
@@ -129,8 +154,7 @@ export const IMPOSTOR_VERTEX = /* glsl */ `
 `;
 
 export const IMPOSTOR_FRAGMENT_PARS = /* glsl */ `
-  #define FRAMES ${FRAMES.toFixed(1)}
-  #define FRAME_PX ${FRAME_PX.toFixed(1)}
+  ${IMPOSTOR_READ_GLSL}
   uniform sampler2D uAlbedo;
   uniform sampler2D uNormals;
   uniform vec4 uThin;
@@ -145,25 +169,6 @@ export const IMPOSTOR_FRAGMENT_PARS = /* glsl */ `
   flat varying vec2 vYaw;
   flat varying float vFade;
   flat varying float vTint;
-  /**
-   * A picture's place on the atlas, held half a texel of mip level \`level\` inside its frame: the
-   * filter never reads the next picture's texels (the pictures sit edge to edge with no margin; read
-   * up to the frame's edge, the mips blended the neighbours' leaves into the tree's outline).
-   */
-  vec2 atlasUv(vec2 uv, vec2 frame, float level) {
-    float h = min(0.5 * exp2(level) / FRAME_PX, 0.5);
-    return (vBlock * FRAMES + frame + clamp(uv, h, 1.0 - h)) / (FRAMES * uThin.zw);
-  }
-  /**
-   * A picture read with the raw uv's change across the pixel (\`dx\`, \`dy\`, on the atlas): the level is
-   * the picture's scale on the screen, the uv held inside its frame at the coarser of the two levels
-   * the filter blends.
-   */
-  vec4 impostorRead(sampler2D atlas, vec2 uv, vec2 frame, vec2 dx, vec2 dy) {
-    vec2 texels = vec2(textureSize(atlas, 0));
-    float lod = 0.5 * log2(max(max(dot(dx * texels, dx * texels), dot(dy * texels, dy * texels)), 1e-8));
-    return textureGrad(atlas, atlasUv(uv, frame, clamp(ceil(lod), 0.0, log2(FRAME_PX))), dx, dy);
-  }
 `;
 
 /** In place of three's \`map_fragment\`: the three pictures' colour, blended; the cover kept; the fade dissolved by alpha to coverage. */
@@ -173,9 +178,9 @@ export const IMPOSTOR_FRAGMENT_MAP = /* glsl */ `
   vec2 impostorDx1 = dFdx(vFrameUv1) / impostorAtlas, impostorDy1 = dFdy(vFrameUv1) / impostorAtlas;
   vec2 impostorDx2 = dFdx(vFrameUv2) / impostorAtlas, impostorDy2 = dFdy(vFrameUv2) / impostorAtlas;
   vec2 impostorDx3 = dFdx(vFrameUv3) / impostorAtlas, impostorDy3 = dFdy(vFrameUv3) / impostorAtlas;
-  vec4 impostorColour = impostorRead(uAlbedo, vFrameUv1, vFrame1, impostorDx1, impostorDy1) * vWeights.x
-    + impostorRead(uAlbedo, vFrameUv2, vFrame2, impostorDx2, impostorDy2) * vWeights.y
-    + impostorRead(uAlbedo, vFrameUv3, vFrame3, impostorDx3, impostorDy3) * vWeights.z;
+  vec4 impostorColour = impostorRead(uAlbedo, vFrameUv1, vFrame1, vBlock, uThin.zw, impostorDx1, impostorDy1) * vWeights.x
+    + impostorRead(uAlbedo, vFrameUv2, vFrame2, vBlock, uThin.zw, impostorDx2, impostorDy2) * vWeights.y
+    + impostorRead(uAlbedo, vFrameUv3, vFrame3, vBlock, uThin.zw, impostorDx3, impostorDy3) * vWeights.z;
   {
     vec2 texel = vec2(textureSize(uAlbedo, 0));
     float lod = max(0.0, 0.5 * log2(max(dot(impostorDx1 * texel, impostorDx1 * texel), dot(impostorDy1 * texel, impostorDy1 * texel))));
@@ -191,9 +196,9 @@ export const IMPOSTOR_FRAGMENT_MAP = /* glsl */ `
 /** After three's \`normal_fragment_begin\`: the pictures' normal, from the model's frame to the view's. */
 export const IMPOSTOR_FRAGMENT_NORMAL = /* glsl */ `
   {
-    vec4 packed = impostorRead(uNormals, vFrameUv1, vFrame1, impostorDx1, impostorDy1) * vWeights.x
-      + impostorRead(uNormals, vFrameUv2, vFrame2, impostorDx2, impostorDy2) * vWeights.y
-      + impostorRead(uNormals, vFrameUv3, vFrame3, impostorDx3, impostorDy3) * vWeights.z;
+    vec4 packed = impostorRead(uNormals, vFrameUv1, vFrame1, vBlock, uThin.zw, impostorDx1, impostorDy1) * vWeights.x
+      + impostorRead(uNormals, vFrameUv2, vFrame2, vBlock, uThin.zw, impostorDx2, impostorDy2) * vWeights.y
+      + impostorRead(uNormals, vFrameUv3, vFrame3, vBlock, uThin.zw, impostorDx3, impostorDy3) * vWeights.z;
     vec3 n = normalize(packed.rgb / max(packed.a, 1e-4) * 2.0 - 1.0);
     vec3 world = vec3(vYaw.x * n.x + vYaw.y * n.z, n.y, -vYaw.y * n.x + vYaw.x * n.z);
     normal = normalize(mat3(viewMatrix) * world);
@@ -260,6 +265,45 @@ export function bakeMaterials(): { body: ShaderMaterial; cards: ShaderMaterial }
         if (leaf.a < 0.5) discard;
         gColour = vec4(pow(max(vColour * leaf.rgb, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
         gNormal = vec4(normalize(vNormalLocal) * 0.5 + 0.5, 1.0);
+      }`,
+  });
+  return { body, cards };
+}
+
+/** The materials a model's shadow outline is taken with: its body, and the cards of a plant whose cards throw its shadow (a palm's fronds). */
+export function bakeShadowMaterials(): { body: ShaderMaterial; cards: ShaderMaterial } {
+  const body = new ShaderMaterial({
+    glslVersion: GLSL3,
+    vertexShader: /* glsl */ `
+      void main() {
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      layout(location = 0) out vec4 gCover;
+      void main() {
+        gCover = vec4(1.0);
+      }`,
+  });
+  const cards = new ShaderMaterial({
+    glslVersion: GLSL3,
+    side: DoubleSide,
+    uniforms: { uLeaves: { value: foliageAtlas() } },
+    vertexShader: /* glsl */ `
+      attribute vec2 aCorner;
+      varying vec2 vLeafUv;
+      void main() {
+        vLeafUv = uv;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        mv.xy += aCorner;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `
+      layout(location = 0) out vec4 gCover;
+      uniform sampler2D uLeaves;
+      varying vec2 vLeafUv;
+      void main() {
+        if (texture(uLeaves, vLeafUv).a < 0.5) discard;
+        gCover = vec4(1.0);
       }`,
   });
   return { body, cards };

@@ -69,8 +69,16 @@ describe('garden cull', () => {
     // Every plant, with its sphere as the per-plant test would make it.
     gardens.cull(everything, new Matrix4().makeTranslation(-1, 0, 0));
     const all = new Map<string, { key: string; sphere: Sphere }[]>();
+    // A plant is culled by the sphere round all its kind's meshes (body, cards, picture: `cellInstances.ts`).
+    const kindOf = (name: string): string => name.replace(/-(cards|far)$/, '');
+    const union = new Map<string, Sphere>();
     for (const mesh of gardens.meshes as InstancedMesh[]) {
-      const model = mesh.geometry.boundingSphere!;
+      const s = mesh.geometry.boundingSphere!, was = union.get(kindOf(mesh.name));
+      if (!was) union.set(kindOf(mesh.name), s.clone());
+      else was.radius = Math.max(was.radius, was.center.distanceTo(s.center) + s.radius);
+    }
+    for (const mesh of gardens.meshes as InstancedMesh[]) {
+      const model = union.get(kindOf(mesh.name))!;
       const matrix = new Matrix4();
       all.set(mesh.name, [...drawn(gardens).get(mesh.name)!].map((key) => {
         matrix.fromArray(key.split('|')[0]!.split(',').map(Number));

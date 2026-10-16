@@ -7,6 +7,7 @@ import {
 } from 'three';
 import type { TreePlacement } from './groundCover';
 import { leafCardMaterials, lowPolyTreeParts } from './lowPolyTrees';
+import { PICTURE_WIND, createPlantImpostors, type PlantImpostors } from './plantImpostors';
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 import { m } from '@world/units';
 
@@ -43,6 +44,8 @@ export interface NatureTreeKit {
   readonly cardMaterial: MeshStandardMaterial;
   /** The cards' shadow pass (a palm's fronds only). */
   readonly cardDepth: MeshDepthMaterial;
+  /** Each variety's far picture (`plantImpostors.ts`). */
+  readonly pictures: PlantImpostors;
   dispose(): void;
 }
 
@@ -57,6 +60,8 @@ export async function loadNatureTrees(_anisotropy: number): Promise<NatureTreeKi
   applyWind(material, FOREST_WIND, 'nature-trees-lowpoly');
   const depth = windDepthMaterial(FOREST_WIND, 'nature-trees-lowpoly-depth');
   const cardKit = leafCardMaterials(FOREST_WIND, 'nature-trees');
+  // A palm's fronds throw its shadow; the others' crown hearts do.
+  const pictures = createPlantImpostors(variants.map((v, i) => ({ body: v.levels[0], cards: v.cards, cardsCast: TREE_MODELS[i] === 'palm' })), PICTURE_WIND, 'nature');
   console.info('[nature] trees (triangles, body + cards):', variants.map((v, i) => `${TREE_MODELS[i]} ${v.levels[0].getAttribute('position').count / 3} + ${(v.cards?.getAttribute('position').count ?? 0) / 3}`).join(', '));
   return {
     variants,
@@ -64,12 +69,14 @@ export async function loadNatureTrees(_anisotropy: number): Promise<NatureTreeKi
     depth,
     cardMaterial: cardKit.material,
     cardDepth: cardKit.depth,
+    pictures,
     dispose() {
       for (const v of variants) { v.levels[0].dispose(); v.cards?.dispose(); }
       material.dispose();
       depth.dispose();
       cardKit.material.dispose();
       cardKit.depth.dispose();
+      pictures.dispose();
     },
   };
 }
@@ -165,6 +172,8 @@ export function buildNatureForest(trees: readonly TreePlacement[], kit: NatureTr
     readonly mesh: InstancedMesh;
     /** The variety's foliage cards: the same instances, written with the body's. */
     readonly cards: InstancedMesh | null;
+    /** The variety's far picture, on the same instances. */
+    readonly far: InstancedMesh;
     readonly capacity: number;
     count: number;
   }
@@ -197,7 +206,18 @@ export function buildNatureForest(trees: readonly TreePlacement[], kit: NatureTr
       cards.count = 0;
       meshes.push(cards);
     }
-    return { mesh, cards, capacity, count: 0 };
+    // Its far picture as the cells draw it (`plantCells.ts`): what builds the picture's programs ahead.
+    const far = new InstancedMesh(kit.pictures.quads[k]!, kit.pictures.material, capacity);
+    far.name = `nature-tree-${TREE_MODELS[k] ?? k}-${k}-far`;
+    far.castShadow = true;
+    far.customDepthMaterial = kit.pictures.depth;
+    far.receiveShadow = false;
+    far.frustumCulled = false;
+    far.instanceMatrix = mesh.instanceMatrix;
+    far.instanceColor = mesh.instanceColor;
+    far.count = 0;
+    meshes.push(far);
+    return { mesh, cards, far, capacity, count: 0 };
   });
 
   const place = (list: readonly TreePlacement[]): boolean => {
@@ -218,6 +238,7 @@ export function buildNatureForest(trees: readonly TreePlacement[], kit: NatureTr
       g.count = indices.length;
       g.mesh.count = g.count;
       if (g.cards) g.cards.count = g.count;
+      g.far.count = g.count;
       // Only the instances drawn go to the GPU (`addUpdateRange`).
       if (g.count === 0) return;
       g.mesh.instanceMatrix.clearUpdateRanges();

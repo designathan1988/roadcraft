@@ -15,6 +15,7 @@ import { m } from '@world/units';
 import { CLUMP_READ_REACH, grassClump, type Tuft } from './grass';
 import { RunBuilder, createInstanceRuns, sameRun, warmMeshes, type Run, type RunStore } from './instanceRuns';
 import { BUSH_KINDS, TREE_SPECIES, type BushKind, type TreeSpecies } from './propGeometry';
+import { PICTURE_PX, sceneryPictures, type SceneryPictures } from './plantImpostors';
 import { LAMP_BEAM_RADIUS, LAMP_HEIGHT, LAMP_OUTREACH, LAMP_POOL_RADIUS, POOL_ALONG, SHADOW_REACH, foliageTint, type SceneryKit } from './scenery';
 
 /** DO NOT go back to that: one bench placed paid for every bench of the city. */
@@ -65,9 +66,11 @@ interface FurnitureSource {
 }
 
 /** The meshes of the furniture and the street plants: the stores, and where each plant's body and cards are. */
-function furnitureStores(kit: SceneryKit): { stores: RunStore[]; trees: Record<TreeSpecies, readonly number[]>; bushes: Record<BushKind, readonly number[]> } {
-  const prop = (name: string, geometry: RunStore['geometry'], material: RunStore['material'], castShadow = true, receiveShadow = true, renderOrder?: number): RunStore =>
-    ({ name, geometry, material, castShadow, receiveShadow, ...(renderOrder !== undefined ? { renderOrder } : {}), tinted: false, cards: false });
+function furnitureStores(kit: SceneryKit, pictures: SceneryPictures): RunStore[] {
+  /** A prop; `small`: one a pixel across or less is not drawn (a lamp's glow and its pools are seen from afar). */
+  const prop = (name: string, geometry: RunStore['geometry'], material: RunStore['material'], castShadow = true, receiveShadow = true, renderOrder?: number, small = false): RunStore =>
+    ({ name, geometry, material, castShadow, receiveShadow, ...(renderOrder !== undefined ? { renderOrder } : {}), tinted: false, cards: false,
+      ...(small ? { levels: { reach: radiusOf(geometry), least: 1 } } : {}) });
   const f = kit.furniture;
   const stores: RunStore[] = [
     prop('street-lights', f.lamp, kit.props),
@@ -75,30 +78,44 @@ function furnitureStores(kit: SceneryKit): { stores: RunStore[]; trees: Record<T
     prop('street-light-lamps', kit.lampLens, kit.glow, false),
     prop('street-light-pools', kit.pool, kit.poolGlow, false, false, 3),
     prop('street-light-beams', kit.beam, kit.beamGlow, false, false, 4),
-    prop('street-bins', f.bin, kit.props),
-    prop('benches', f.bench, kit.props),
-    prop('hydrants', f.hydrant, kit.props),
-    prop('post-boxes', f.postbox, kit.props),
-    prop('phones', f.phone, kit.props),
-    prop('drains', f.drain, kit.props),
-    prop('tree-pits', kit.treePit, kit.props, false),
+    prop('street-bins', f.bin, kit.props, true, true, undefined, true),
+    prop('benches', f.bench, kit.props, true, true, undefined, true),
+    prop('hydrants', f.hydrant, kit.props, true, true, undefined, true),
+    prop('post-boxes', f.postbox, kit.props, true, true, undefined, true),
+    prop('phones', f.phone, kit.props, true, true, undefined, true),
+    prop('drains', f.drain, kit.props, true, true, undefined, true),
+    prop('tree-pits', kit.treePit, kit.props, false, true, undefined, true),
   ];
+  const far = pictures.set;
+  /** A street plant: its body and its leaf cards near, its picture far (`plantImpostors.ts`), chosen by its size on the screen. */
   const plant = (name: string, body: RunStore['geometry'], material: RunStore['material'], depth: MeshDepthMaterial,
-    cards: RunStore['geometry'] | undefined, cardMaterial: RunStore['material'], cardDepth: MeshDepthMaterial): number[] => {
-    const at = [stores.length];
-    stores.push({ name, geometry: body, material, depth, castShadow: true, receiveShadow: true, tinted: true, cards: false });
-    if (cards) {
-      at.push(stores.length);
-      // The crown's heart throws the plant's shadow; alpha-cut cards in the shadow pass cost 70 ms a frame.
-      stores.push({ name: `${name}-cards`, geometry: cards, material: cardMaterial, depth: cardDepth, castShadow: false, receiveShadow: true, tinted: true, cards: true });
-    }
-    return at;
-  };
-  const trees = Object.fromEntries(TREE_SPECIES.map((s) => [s,
-    plant(`street-trees-${s}`, kit.trees[s], kit.foliage, kit.foliageDepth, kit.cards[s], kit.treeCards, kit.treeCardsDepth)])) as Record<TreeSpecies, number[]>;
-  const bushes = Object.fromEntries(BUSH_KINDS.map((k) => [k,
-    plant(`street-bushes-${k}`, kit.bushes[k], kit.shrubs, kit.shrubsDepth, kit.cards[k], kit.shrubCards, kit.shrubCardsDepth)])) as Record<BushKind, number[]>;
-  return { stores, trees, bushes };
+    cards: RunStore['geometry'] | undefined, cardMaterial: RunStore['material'], cardDepth: MeshDepthMaterial, picture: number): number =>
+    stores.push({
+      name, geometry: body, material, depth, castShadow: true, receiveShadow: true, tinted: true, cards: false,
+      levels: { reach: far.reach[picture]!, far: PICTURE_PX, view: far.setView, ready: () => far.ready() },
+      with: [
+        // The crown's heart throws the plant's shadow; alpha-cut cards in the shadow pass cost 70 ms a frame.
+        ...(cards ? [{ name: `${name}-cards`, geometry: cards, material: cardMaterial, depth: cardDepth, castShadow: false, receiveShadow: true, cards: true, far: false }] : []),
+        { name: `${name}-far`, geometry: far.quads[picture]!, material: far.material, depth: far.depth, castShadow: true, receiveShadow: true, cards: false, far: true, made: far.attach },
+      ],
+    }) - 1;
+  for (const s of TREE_SPECIES) {
+    plant(`street-trees-${s}`, kit.trees[s], kit.foliage, kit.foliageDepth, kit.cards[s], kit.treeCards, kit.treeCardsDepth, pictures.treeAt(s));
+  }
+  for (const k of BUSH_KINDS) {
+    plant(`street-bushes-${k}`, kit.bushes[k], kit.shrubs, kit.shrubsDepth, kit.cards[k], kit.shrubCards, kit.shrubCardsDepth, pictures.bushAt(k));
+  }
+  return stores;
+}
+
+/** Each street plant's store (`furnitureStores`): the props', then the trees' by species, then the bushes'. */
+const treeStore = (species: TreeSpecies): number => FURNITURE_MODELS.length + TREE_SPECIES.indexOf(species);
+const bushStore = (kind: BushKind): number => FURNITURE_MODELS.length + TREE_SPECIES.length + BUSH_KINDS.indexOf(kind);
+
+/** A model's bounding sphere's radius (computed once here when its maker did not). */
+function radiusOf(geometry: RunStore['geometry']): number {
+  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+  return geometry.boundingSphere?.radius ?? 1;
 }
 
 /** Picks a species for a street tree: mostly planes, some flowering ipês. */
@@ -109,8 +126,7 @@ function streetSpecies(roll: number): TreeSpecies {
 }
 
 /** Where a placed item's instances stand, or undefined when it draws nothing */
-function furniturePlace(net: Network, elevation: RoadElevation, placed: LandscapeItem, kit: SceneryKit,
-  trees: Record<TreeSpecies, readonly number[]>, bushes: Record<BushKind, readonly number[]>): FurniturePlace | undefined {
+function furniturePlace(net: Network, elevation: RoadElevation, placed: LandscapeItem, kit: SceneryKit): FurniturePlace | undefined {
   const item = furnitureOf(net, placed);
   if (!item) return undefined;
   const out: Placed[] = [];
@@ -162,7 +178,7 @@ function furniturePlace(net: Network, elevation: RoadElevation, placed: Landscap
       const species = streetSpecies(rng.float());
       const tree = { x: item.x, y: item.y, z: base + m(0.03), yaw: rng.float() * Math.PI * 2,
         sx: 0.85 + rng.float() * 0.2, sy: 1, sz: 0.85 + rng.float() * 0.2, tint: foliageTint(rng), h: STREET_TREE_MIN + item.seed * STREET_TREE_RANGE };
-      for (const store of trees[species]) put(store, tree);
+      put(treeStore(species), tree);
       break;
     }
     case 'shrub': {
@@ -170,7 +186,7 @@ function furniturePlace(net: Network, elevation: RoadElevation, placed: Landscap
       const h = m(0.8) + rng.float() * m(0.4);
       const kind: BushKind = rng.float() < 0.4 ? 'bushFlowering' : 'bush';
       const shrub = { x: item.x, y: item.y, z: base - m(0.05), yaw: rng.float() * Math.PI * 2, sx: 1.05, sy: 1, sz: 1.05, tint: foliageTint(rng), h };
-      for (const store of bushes[kind]) put(store, shrub);
+      put(bushStore(kind), shrub);
       break;
     }
   }
@@ -254,11 +270,10 @@ interface MeadowPlace {
 
 /** The furniture's product: where each placed item stands (a product of the diary), proved against one made from nothing. */
 export function furnitureProduct(kit: SceneryKit): Derived<FurnitureSource, number, FurniturePlace> {
-  const { trees, bushes } = furnitureStores(kit);
   return new Derived(new PlacedProduct<FurniturePlace>('street furniture', {
     landscape: 0, roads: ROAD_REACH, elevation: DECK_REACH,
   }, (item) => item.kind !== 'meadow' && item.kind !== 'sign' && item.kind !== 'streetname',
-  (item, source) => furniturePlace(source.net, source.elevation, item, kit, trees, bushes), samePlace));
+  (item, source) => furniturePlace(source.net, source.elevation, item, kit), samePlace));
 }
 
 const MEADOW_STORES = (kit: SceneryKit): RunStore[] => [
@@ -311,7 +326,8 @@ const stillGrowing = (planted: number | undefined, minutes: number): boolean =>
   planted !== undefined && !(Number.isFinite(minutes) && minutes - planted >= GROW_MINUTES);
 
 export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
-  const { stores } = furnitureStores(kit);
+  const pictures = sceneryPictures(kit);
+  const stores = furnitureStores(kit, pictures);
   const furniture = createInstanceRuns('street-furniture', stores, SHADOW_REACH);
   // The grass throws no shadow: only what the view itself takes.
   const meadowStores = MEADOW_STORES(kit);
@@ -398,6 +414,7 @@ export function createStreetFurniture(kit: SceneryKit): StreetFurnitureLayer {
     dispose() {
       furniture.dispose();
       meadow.dispose();
+      pictures.release();
     },
   };
 }

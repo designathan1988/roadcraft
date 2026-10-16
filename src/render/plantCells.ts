@@ -5,6 +5,7 @@ import { m } from '@world/units';
 import { COVER_STANCE, FOREST_SPECIES, coverMatrixInto, coverVariant, rockTint, scrubTint, treeTint, type CoverPlacement, type GroundCoverKit, type TreePlacement } from './groundCover';
 import { createInstanceRuns, RunBuilder, type Run, type RunStore } from './instanceRuns';
 import { TREE_MODELS, type NatureTreeKit, standsAmong, treeColourInto, treeMatrixInto, varietyOf } from './natureTrees';
+import { PICTURE_PX } from './plantImpostors';
 
 /** How far off the view a tree (up to 19 m tall) and a stone or bush still throw a shadow into it, low sun. */
 const TREE_SHADOW_REACH = m(48);
@@ -67,23 +68,25 @@ function treesRound(cell: number, treesIn: (cell: number) => TreePlacement[]): {
   return { own, among };
 }
 
-/** The countryside's low-poly trees (`natureTrees.ts`), a body and its leaf cards each, cell by cell. */
+/** The countryside's low-poly trees (`natureTrees.ts`), cell by cell: a body and its leaf cards near, its picture far (`plantImpostors.ts`). */
 export function createTreeCells(kit: NatureTreeKit, name: string, treesIn: (cell: number) => TreePlacement[]): PlantCells {
-  const stores: RunStore[] = [];
-  /** Each variety's body store and cards store (-1: none). */
-  const storeOf = kit.variants.map((variant, k) => {
-    const body = stores.push({
-      name: `nature-tree-${TREE_MODELS[k] ?? k}-${k}`, geometry: variant.levels[0]!, material: kit.material, depth: kit.depth,
-      // The upper leaves shading the lower is what gives a crown its depth.
-      castShadow: true, receiveShadow: true, tinted: true, cards: false,
-    }) - 1;
-    const cards = variant.cards ? stores.push({
-      name: `nature-tree-${TREE_MODELS[k] ?? k}-${k}-cards`, geometry: variant.cards, material: kit.cardMaterial, depth: kit.cardDepth,
-      // The crown's heart throws the tree's shadow; a palm's few fronds are its crown, and throw it.
-      castShadow: TREE_MODELS[k] === 'palm', receiveShadow: false, tinted: true, cards: true,
-    }) - 1 : -1;
-    return { body, cards };
-  });
+  const far = kit.pictures;
+  const stores: RunStore[] = kit.variants.map((variant, k) => ({
+    name: `nature-tree-${TREE_MODELS[k] ?? k}-${k}`, geometry: variant.levels[0]!, material: kit.material, depth: kit.depth,
+    // The upper leaves shading the lower is what gives a crown its depth.
+    castShadow: true, receiveShadow: true, tinted: true, cards: false,
+    levels: { reach: far.reach[k]!, far: PICTURE_PX, view: far.setView, ready: () => far.ready() },
+    with: [
+      ...(variant.cards ? [{
+        name: `nature-tree-${TREE_MODELS[k] ?? k}-${k}-cards`, geometry: variant.cards, material: kit.cardMaterial, depth: kit.cardDepth,
+        // The crown's heart throws the tree's shadow; a palm's few fronds are its crown, and throw it.
+        castShadow: TREE_MODELS[k] === 'palm', receiveShadow: false, cards: true, far: false,
+      }] : []),
+      // Its picture takes no shadow, as its cards take none.
+      { name: `nature-tree-${TREE_MODELS[k] ?? k}-${k}-far`, geometry: far.quads[k]!, material: far.material, depth: far.depth,
+        castShadow: true, receiveShadow: false, cards: false, far: true, made: far.attach },
+    ],
+  }));
   const m = new Float32Array(16), col = new Float32Array(3), tint = { r: 1, g: 1, b: 1 };
   return plantLayer(name, stores, (cell, builder) => {
     const { own, among } = treesRound(cell, treesIn);
@@ -93,9 +96,7 @@ export function createTreeCells(kit: NatureTreeKit, name: string, treesIn: (cell
       treeMatrixInto(tree, stand.crowd[i]!, stand.openX[i]!, stand.openY[i]!, m, 0);
       treeColourInto(tree, col, 0);
       tint.r = col[0]!; tint.g = col[1]!; tint.b = col[2]!;
-      const { body, cards } = storeOf[varietyOf(tree, kit.variants.length)]!;
-      builder.add(body, m, tree.size * 1.2, tint);
-      if (cards >= 0) builder.add(cards, m, tree.size * 1.2, tint);
+      builder.add(varietyOf(tree, kit.variants.length), m, tree.size * 1.2, tint);
     });
   }, true, TREE_SHADOW_REACH);
 }

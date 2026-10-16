@@ -21,6 +21,7 @@ import {
 import type { NatureSettings } from '@world/ecology';
 import type { ReliefVersion } from '@world/terrain';
 import { lowPolyTreeParts } from './lowPolyTrees';
+import { takeWaitingPictures } from './plantImpostors';
 import { TREE_MODELS } from './natureTrees';
 import { FAR_WOODS_BUDGET, woodsScale, type FarWoods, type FarWoodsAsk, type FarWoodsGrid } from './farWoods';
 import { bakeMaterials, IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTOR_VERTEX, IMPOSTOR_VERTEX_PARS, IMPOSTOR_FRAGMENT_PARS, FRAMES, FRAME_PX, hemiOctaDirection, frameBasis } from './impostorShaders';
@@ -363,6 +364,8 @@ export function createFarForest(regions: readonly { readonly cx: number; readonl
     book,
     update(renderer, now) {
       if (!baked) takePictures(renderer);
+      // The near plants' pictures too, the same way: between draws (`plantImpostors.ts`).
+      takeWaitingPictures(renderer);
       if (book.arrived.length) {
         for (const index of book.arrived) write(index);
         book.arrived = [];

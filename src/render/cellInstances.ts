@@ -1,0 +1,589 @@
+import {
+  DynamicDrawUsage,
+  InstancedBufferAttribute,
+  InstancedMesh,
+  Matrix4,
+  Sphere,
+  Vector2,
+  Vector3,
+  type BufferGeometry,
+  type Frustum,
+  type Material,
+  type MeshDepthMaterial,
+} from 'three';
+import { m } from '@world/units';
+import { type Bounds, enclose, markRange, planeMask } from './instanceCull';
+import { impostorPick, thinWant } from './plantImpostors';
+import { trianglesOf } from './propGeometry';
+
+/**
+ * INSTANCES KEPT CELL BY CELL, DRAWN AT THE LEVEL THEIR SIZE ON THE SCREEN CALLS FOR: the gardens'
+ * (`gardens.ts`) and every layer kept thing by thing (`instanceRuns.ts`). A kind's placements are kept
+ * once for all its meshes (a plant's body, its cards, its far picture); a cull walks only the 64 m
+ * cells the view takes in, and writes each instance into the meshes of the level its size on the
+ * screen picks, with hysteresis, so a plant never flickers between two. DO NOT go back to drawing
+ * every plant in view with its whole model: a flowering bush two pixels wide cost 112 triangles.
+ */
+
+/** One mesh a kind's instances are drawn with. */
+export interface KindMesh {
+  readonly name: string;
+  /** Its bounding sphere computed: the kind's instances are culled by the sphere round all its meshes'. */
+  readonly geometry: BufferGeometry;
+  readonly material: Material;
+  /** The shadow pass's material (the wind's sway). */
+  readonly depth?: MeshDepthMaterial;
+  readonly castShadow: boolean;
+  readonly receiveShadow: boolean;
+  readonly renderOrder?: number;
+  /** Leaf cards: left out at the map zoom (a kind with no far pictures). */
+  readonly cards: boolean;
+  /** Draws the instances small enough to be far pictures (`KindLevels.far`); else the near ones. */
+  readonly far: boolean;
+  /** Called on the mesh once it is made (the pictures' hooks, `plantImpostors.ts`). */
+  readonly made?: (mesh: InstancedMesh) => void;
+}
+
+/** How a kind's level is chosen by its size on the screen: its bounding diameter, device pixels. */
+export interface KindLevels {
+  /** The radius a size is measured by, model units: the diameter times the instance's largest scale. */
+  readonly reach: number;
+  /** Pixels across under which the far meshes draw it, thinned under `THIN_PX` (`plantImpostors.ts`). */
+  readonly far?: number;
+  /** Pixels across under which it is not drawn at all (a kind with no far pictures). */
+  readonly least?: number;
+  /** Whether the far pictures can be drawn (taken, `plantImpostors.ts`): until then every size is drawn near. */
+  readonly ready?: () => boolean;
+  /** Told each view culled for and half the screen's height, device pixels (the far pictures' uniforms). */
+  readonly view?: (view: Matrix4, halfHeight: number) => void;
+}
+
+export interface KindSpec {
+  readonly meshes: readonly KindMesh[];
+  /** A colour per instance (white where a thing gives none): one program variant for its materials. */
+  readonly tinted: boolean;
+  readonly levels?: KindLevels;
+}
+
+/** How a layer keeps a placement: `stride` floats, written out as three's 16-float matrix. */
+export interface SlotFormat {
+  readonly stride: number;
+  matrixInto(data: Float32Array, at: number, out: Float32Array, outAt: number): void;
+}
+
+/** A thing's instances of one kind: placements (`stride` floats each), tints, each one's largest scale. */
+export interface Pack {
+  readonly data: Float32Array;
+  readonly colours: Float32Array | null;
+  readonly scales: Float32Array;
+  readonly count: number;
+}
+
+export interface CellChange {
+  readonly removed: readonly object[];
+  /** Each thing's key (taken away by the same object later) and its packs, by kind. */
+  readonly added: readonly { readonly key: object; readonly packs: ReadonlyMap<number, Pack> }[];
+}
+
+export interface CellInstances {
+  readonly meshes: readonly InstancedMesh[];
+  /** Triangles of the near meshes, every live instance counted. */
+  readonly triangles: number;
+  /** The things that came and went; the meshes made for kinds that had none. */
+  update(change: CellChange): InstancedMesh[];
+  /** The map zoom: every plant with far pictures drawn as one, the other kinds' leaf cards left out. Only a change does anything. */
+  setMap(map: boolean): void;
+  /** Writes each kind with a mesh shown the instances the view (or its margin) takes in, each at its level. */
+  cull(frustum: Frustum, view: Matrix4): void;
+  dispose(): void;
+}
+
+/** The smallest store worth a mesh. */
+const MIN_CAPACITY = 64;
+/** Side of a leaf cell. */
+const CELL = m(64);
+/** Levels above the leaves: a root spans CELL * 2^LEVELS (65 km), so a town of any size has a handful of roots. */
+const LEVELS = 10;
+/** Slack on a node's radius over float rounding: a node test may only keep more than its instances' tests would, never less. */
+const PAD = m(0.001);
+const ALL_PLANES = 0b111111;
+/** Integer cell coordinates as one key (exact while |cell| < 2^24). */
+const cellKey = (ix: number, iz: number): number => (ix + 0x1000000) * 0x2000000 + (iz + 0x1000000);
+/** The band round a level's threshold, as a share of it, an instance keeps the level it had in. */
+const HYSTERESIS = 0.15;
+/** A pick at most this far over the share kept is still written: the GPU, in float32, shrinks it away (`impostorThin`). */
+const PICK_SLACK = 1e-4;
+/** Levels an instance was drawn at. */
+const NEAR = 0, FAR = 1, NONE = 2, UNKNOWN = 255;
+
+/** Half the drawing buffer's height, device pixels, as the meshes last drew (`onBeforeRender`): the screen sizes are in it. */
+const screen = { half: 540 };
+const bufferSize = new Vector2();
+
+interface MeshState {
+  readonly spec: KindMesh;
+  mesh: InstancedMesh | null;
+  /** Instances its buffers hold: the most ever in view, not the kind's. */
+  capacity: number;
+  /** Per drawn position: the slot the GPU buffer holds there since the last cull (-1: unknown). */
+  shown: Int32Array;
+  /** Whether it was drawn (shown, not left out) when its kind was last culled. */
+  wasDrawn: boolean;
+  drawn: number;
+  firstChanged: number;
+}
+
+interface Kind {
+  readonly index: number;
+  readonly spec: KindSpec;
+  readonly meshes: MeshState[];
+  /** The sphere round every mesh's, model units: what an instance is culled by. */
+  readonly centre: Vector3;
+  readonly reach: number;
+  capacity: number;
+  used: number;
+  dead: number;
+  data: Float32Array;
+  colours: Float32Array;
+  /** Per slot: centre x, y, z and radius, scene frame (radius -Infinity: dead). */
+  spheres: Float32Array;
+  /** Per slot: where it stands (its matrix's translation) and its size, world units across (`KindLevels.reach`). */
+  feet: Float32Array;
+  sizes: Float32Array;
+  /** Per slot: its pick (`impostorPick`), the cull it was last in view at, the level it was drawn at. */
+  picks: Float32Array;
+  seen: Uint32Array;
+  level: Uint8Array;
+  bounds: Bounds | null;
+  runs: Map<object, { start: number; count: number }>;
+  /** Culls of this kind so far; culled for the current view; culled by the walk in progress. */
+  serial: number;
+  /** Whether its far pictures could be drawn at its last cull. */
+  pictured: boolean;
+  current: boolean;
+  active: boolean;
+}
+
+interface CellNode {
+  /** Bounds of everything under it, scene frame; radius < 0 while empty. Grown, never shrunk. */
+  x: number; y: number; z: number; r: number;
+  readonly children: (CellNode | null)[] | null;
+  /** Leaf: per kind, its slots (in pick order for a kind with far pictures: the walk stops at the first one thinned out). */
+  readonly slots: number[][] | null;
+  /** Leaf: per kind, the largest size of a slot in it, world units across. */
+  readonly big: Float32Array | null;
+}
+
+export function createCellInstances(kindSpecs: readonly KindSpec[], format: SlotFormat, margin: number): CellInstances {
+  const stride = format.stride;
+  const kinds: Kind[] = kindSpecs.map((spec, index) => {
+    // The sphere round every mesh's (each model's sphere computed by its maker).
+    let centre: Vector3 | null = null, reach = 0;
+    for (const mesh of spec.meshes) {
+      if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+      const s = mesh.geometry.boundingSphere;
+      if (!s) continue;
+      if (!centre) { centre = s.center.clone(); reach = s.radius; } else reach = Math.max(reach, centre.distanceTo(s.center) + s.radius);
+    }
+    return {
+      index, spec, centre: centre ?? new Vector3(), reach: centre ? reach : 1,
+      meshes: spec.meshes.map((m) => ({ spec: m, mesh: null, capacity: 0, shown: new Int32Array(0), wasDrawn: false, drawn: 0, firstChanged: 0 })),
+      capacity: 0, used: 0, dead: 0,
+      data: new Float32Array(0), colours: new Float32Array(0), spheres: new Float32Array(0), feet: new Float32Array(0), sizes: new Float32Array(0),
+      picks: new Float32Array(0), seen: new Uint32Array(0), level: new Uint8Array(0),
+      bounds: null, runs: new Map(), serial: 1, pictured: false, current: false, active: false,
+    };
+  });
+  /** Kinds whose leaves are kept in pick order. */
+  const sorted = kinds.map((k) => k.spec.levels?.far !== undefined);
+
+  const roots = new Map<number, CellNode>();
+  let rootOrder: CellNode[] = [];
+  const leaves = new Map<number, CellNode>();
+  /** Leaves grown since the last `update`: their ancestors grown, their slots put in order, once at its end. */
+  const grown = new Set<number>();
+  const emptyNode = (leaf: boolean): CellNode => ({
+    x: 0, y: 0, z: 0, r: -1,
+    children: leaf ? null : [null, null, null, null],
+    slots: leaf ? kinds.map(() => []) : null,
+    big: leaf ? new Float32Array(kinds.length) : null,
+  });
+  const leafAt = (ix: number, iz: number): CellNode => {
+    const key = cellKey(ix, iz);
+    const leaf = leaves.get(key);
+    if (leaf) return leaf;
+    const rootKey = cellKey(ix >> LEVELS, iz >> LEVELS);
+    let node: CellNode | undefined = roots.get(rootKey);
+    if (!node) {
+      roots.set(rootKey, node = emptyNode(false));
+      rootOrder = [...roots.keys()].sort((a, b) => a - b).map((k) => roots.get(k)!);
+    }
+    for (let level = LEVELS; level > 0; level--) {
+      const quadrant = ((ix >> (level - 1)) & 1) | (((iz >> (level - 1)) & 1) << 1);
+      const children: (CellNode | null)[] = node.children!;
+      node = children[quadrant] ??= emptyNode(level === 1);
+    }
+    leaves.set(key, node);
+    return node;
+  };
+  const growNode = (node: CellNode, x: number, y: number, z: number, r: number): void => {
+    const b = enclose(node.r < 0 ? null : node, { x, y, z, r });
+    node.x = b.x; node.y = b.y; node.z = b.z; node.r = b.r;
+  };
+  /** Slot `i` of the kind put in its cell. */
+  const file = (k: Kind, i: number): void => {
+    const sp = k.spheres;
+    const x = sp[i * 4]!, y = sp[i * 4 + 1]!, z = sp[i * 4 + 2]!, r = sp[i * 4 + 3]!;
+    // Scene z is the world's -y: the cell is found on the ground plane, x and z.
+    const ix = Math.floor(x / CELL), iz = Math.floor(z / CELL);
+    const leaf = leafAt(ix, iz);
+    leaf.slots![k.index]!.push(i);
+    leaf.big![k.index] = Math.max(leaf.big![k.index]!, k.sizes[i]!);
+    growNode(leaf, x, y, z, r);
+    grown.add(cellKey(ix, iz));
+  };
+  const settle = (): void => {
+    for (const key of grown) {
+      const leaf = leaves.get(key)!;
+      for (const k of kinds) if (sorted[k.index]) { const picks = k.picks; leaf.slots![k.index]!.sort((a, b) => picks[a]! - picks[b]! || a - b); }
+      const ix = Math.floor(key / 0x2000000) - 0x1000000, iz = (key % 0x2000000) - 0x1000000;
+      let node = roots.get(cellKey(ix >> LEVELS, iz >> LEVELS))!;
+      for (let level = LEVELS; level > 0; level--) {
+        growNode(node, leaf.x, leaf.y, leaf.z, leaf.r);
+        node = node.children![((ix >> (level - 1)) & 1) | (((iz >> (level - 1)) & 1) << 1)]!;
+      }
+    }
+    grown.clear();
+  };
+  /** The kind's slots filed again after a repack moved them. */
+  const refile = (k: Kind): void => {
+    for (const leaf of leaves.values()) leaf.slots![k.index]!.length = 0;
+    for (let i = 0; i < k.used; i++) if (k.spheres[i * 4 + 3] !== -Infinity) file(k, i);
+  };
+
+  /** The mesh's instance buffers made for `capacity` instances in view (DO NOT size them by the kind: a GPU buffer and its CPU copy of every plant of the map). */
+  const sizeBuffers = (k: Kind, s: MeshState, capacity: number): void => {
+    const mesh = s.mesh!;
+    mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
+    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    if (k.spec.tinted) {
+      mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+      mesh.instanceColor.setUsage(DynamicDrawUsage);
+    }
+    s.capacity = capacity;
+    s.shown = new Int32Array(capacity).fill(-1);
+  };
+  /** More in view than the buffers hold: new ones twice as large, the old let go (three r186 `WebGLObjects` frees an instanced mesh's buffers on `dispose`). */
+  const growBuffers = (k: Kind, s: MeshState, needed: number): void => {
+    let capacity = s.capacity;
+    while (capacity < needed) capacity *= 2;
+    s.mesh!.dispose();
+    sizeBuffers(k, s, capacity);
+  };
+  const makeMesh = (k: Kind, s: MeshState): InstancedMesh => {
+    const spec = s.spec;
+    const mesh = new InstancedMesh(spec.geometry, spec.material, MIN_CAPACITY);
+    mesh.name = spec.name;
+    mesh.castShadow = spec.castShadow;
+    mesh.receiveShadow = spec.receiveShadow;
+    if (spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
+    // Culled instance by instance (`cull`): a sphere round the whole map rejects nothing.
+    mesh.frustumCulled = false;
+    if (spec.depth) mesh.customDepthMaterial = spec.depth;
+    s.mesh = mesh;
+    sizeBuffers(k, s, MIN_CAPACITY);
+    mesh.count = 0;
+    // The screen's size, device pixels, as it draws.
+    const before = mesh.onBeforeRender.bind(mesh);
+    mesh.onBeforeRender = (renderer, ...rest) => {
+      const half = renderer.getDrawingBufferSize(bufferSize).y / 2;
+      if (half > 0) screen.half = half;
+      before(renderer, ...rest);
+    };
+    spec.made?.(mesh);
+    return mesh;
+  };
+
+  const scratch = new Float32Array(16), point = new Vector3(), matrix = new Matrix4();
+  /** The kind's arrays sized for `capacity`; packed (`pack`), its live runs from slot 0 in the order they stood. */
+  const repack = (k: Kind, capacity: number, pack: boolean): void => {
+    const data = new Float32Array(capacity * stride), colours = new Float32Array(k.spec.tinted ? capacity * 3 : 0).fill(1);
+    const spheres = new Float32Array(capacity * 4), feet = new Float32Array(capacity * 3), sizes = new Float32Array(capacity);
+    const picks = new Float32Array(capacity), seen = new Uint32Array(capacity), level = new Uint8Array(capacity).fill(UNKNOWN);
+    const move = (from: number, to: number, count: number): void => {
+      data.set(k.data.subarray(from * stride, (from + count) * stride), to * stride);
+      if (k.spec.tinted) colours.set(k.colours.subarray(from * 3, (from + count) * 3), to * 3);
+      spheres.set(k.spheres.subarray(from * 4, (from + count) * 4), to * 4);
+      feet.set(k.feet.subarray(from * 3, (from + count) * 3), to * 3);
+      sizes.set(k.sizes.subarray(from, from + count), to);
+      picks.set(k.picks.subarray(from, from + count), to);
+      seen.set(k.seen.subarray(from, from + count), to);
+      level.set(k.level.subarray(from, from + count), to);
+    };
+    if (pack) {
+      const runs = new Map<object, { start: number; count: number }>();
+      let at = 0;
+      for (const [key, run] of [...k.runs].sort((a, b) => a[1].start - b[1].start)) {
+        move(run.start, at, run.count);
+        runs.set(key, { start: at, count: run.count });
+        at += run.count;
+      }
+      k.runs = runs;
+      k.used = at;
+      k.dead = 0;
+    } else move(0, 0, k.used);
+    k.data = data; k.colours = colours; k.spheres = spheres; k.feet = feet; k.sizes = sizes;
+    k.picks = picks; k.seen = seen; k.level = level; k.capacity = capacity;
+    if (pack) {
+      k.bounds = null;
+      for (let i = 0; i < k.used; i++) k.bounds = enclose(k.bounds, { x: spheres[i * 4]!, y: spheres[i * 4 + 1]!, z: spheres[i * 4 + 2]!, r: spheres[i * 4 + 3]! });
+      // The slots moved: the cells hold them anew.
+      refile(k);
+    }
+  };
+  const append = (k: Kind, key: object, one: Pack): void => {
+    const start = k.used;
+    k.data.set(one.data.subarray(0, one.count * stride), start * stride);
+    if (k.spec.tinted) {
+      if (one.colours) k.colours.set(one.colours.subarray(0, one.count * 3), start * 3);
+      else k.colours.fill(1, start * 3, (start + one.count) * 3);
+    }
+    const measure = k.spec.levels?.reach ?? 0;
+    let bounds: Bounds | null = null;
+    for (let i = 0; i < one.count; i++) {
+      const slot = start + i;
+      format.matrixInto(k.data, slot * stride, scratch, 0);
+      matrix.fromArray(scratch);
+      point.copy(k.centre).applyMatrix4(matrix);
+      const r = k.reach * one.scales[i]!;
+      k.spheres[slot * 4] = point.x; k.spheres[slot * 4 + 1] = point.y; k.spheres[slot * 4 + 2] = point.z; k.spheres[slot * 4 + 3] = r;
+      bounds = enclose(bounds, { x: point.x, y: point.y, z: point.z, r });
+      // Where it stands and how big it is, as the far pictures' shader reads its matrix (`plantImpostors.ts`).
+      k.feet[slot * 3] = scratch[12]!; k.feet[slot * 3 + 1] = scratch[13]!; k.feet[slot * 3 + 2] = scratch[14]!;
+      const largest = Math.max(Math.hypot(scratch[0]!, scratch[1]!, scratch[2]!), Math.hypot(scratch[4]!, scratch[5]!, scratch[6]!), Math.hypot(scratch[8]!, scratch[9]!, scratch[10]!));
+      k.sizes[slot] = 2 * measure * largest;
+      // Its pick from its translation as the GPU reads it (float32, the same bits).
+      k.picks[slot] = impostorPick(scratch[12]!, scratch[13]!, scratch[14]!);
+      k.seen[slot] = 0;
+      k.level[slot] = UNKNOWN;
+    }
+    if (bounds) k.bounds = enclose(k.bounds, bounds);
+    k.runs.set(key, { start, count: one.count });
+    k.used += one.count;
+    for (let i = start; i < k.used; i++) file(k, i);
+  };
+
+  let culledFor: Matrix4 | null = null;
+  let culledHalf = 0;
+  /** The map zoom as the last `setMap` gave it (null: never told). */
+  let mapMode: boolean | null = null;
+  /** Whether a mesh is drawn at all now: a kind with no far pictures (or none taken yet) leaves its cards out at the map zoom. */
+  const drawnNow = (k: Kind, s: MeshState): boolean => s.mesh !== null && s.mesh.visible && !(s.spec.cards && mapMode === true && !k.pictured);
+  const probe = new Sphere();
+  let cullFrustum: Frustum | null = null;
+  /** The view's numbers for a size on the screen: row 1's length times half the height (pixels a unit at w = 1), and row 3 (w). */
+  let perUnitAtOne = 0, w0 = 0, w1 = 0, w2 = 0, w3 = 1, wReach = 0;
+  const wOf = (x: number, y: number, z: number): number => w0 * x + w1 * y + w2 * z + w3;
+
+  /** Writes slot `i` of the kind at the meshes of `level`. */
+  const write = (k: Kind, i: number, level: number): void => {
+    const far = level === FAR;
+    for (const s of k.meshes) {
+      if (s.spec.far !== far || !drawnNow(k, s)) continue;
+      const n = s.drawn;
+      // Written only when this position held another slot; past the buffers' room only counted (`growBuffers`, after the walk).
+      if (n < s.capacity && s.shown[n] !== i) {
+        s.shown[n] = i;
+        if (n < s.firstChanged) s.firstChanged = n;
+        const mesh = s.mesh!;
+        format.matrixInto(k.data, i * stride, mesh.instanceMatrix.array as Float32Array, n * 16);
+        if (k.spec.tinted) {
+          const tints = mesh.instanceColor!.array as Float32Array, c = k.colours;
+          tints[n * 3] = c[i * 3]!; tints[n * 3 + 1] = c[i * 3 + 1]!; tints[n * 3 + 2] = c[i * 3 + 2]!;
+        }
+      }
+      s.drawn = n + 1;
+    }
+  };
+
+  /** The node and what it holds against the planes of `mask` still unsettled for it. */
+  const visit = (node: CellNode, mask: number): void => {
+    if (node.r < 0) return;
+    let inner = mask;
+    if (mask !== 0) {
+      inner = planeMask(cullFrustum!, node.x, node.y, node.z, node.r + PAD + margin, mask);
+      if (inner < 0) return;
+    }
+    if (node.children) {
+      for (const child of node.children) if (child) visit(child, inner);
+      return;
+    }
+    // The nearest the leaf comes to the eye (w), for the largest size in it.
+    const wNear = wOf(node.x, node.y, node.z) - node.r * wReach;
+    for (const k of kinds) {
+      if (!k.active) continue;
+      const slots = node.slots![k.index]!;
+      if (slots.length === 0) continue;
+      const levels = k.spec.levels;
+      const sp = k.spheres, feet = k.feet, sizes = k.sizes, picks = k.picks, seen = k.seen, lv = k.level;
+      const was = k.serial - 1, now = k.serial;
+      const far = levels?.far === undefined || !k.pictured ? -1 : mapMode === true ? Infinity : levels.far;
+      const least = levels?.least ?? -1;
+      // Past the first slot whose pick is over the share the leaf's largest keeps, nothing more is drawn (`sorted`).
+      const stopAt = far < 0 ? Infinity : thinWant(node.big![k.index]! * (wNear > 1e-4 ? perUnitAtOne / wNear : Infinity)) + PICK_SLACK;
+      for (const i of slots) {
+        const r = sp[i * 4 + 3]!;
+        if (r === -Infinity) continue;
+        if (picks[i]! > stopAt) break;
+        if (inner !== 0) {
+          // A cell across the view's edge: its slots one by one.
+          probe.center.set(sp[i * 4]!, sp[i * 4 + 1]!, sp[i * 4 + 2]!);
+          probe.radius = r + margin;
+          if (!cullFrustum!.intersectsSphere(probe)) continue;
+        }
+        if (!levels) { write(k, i, NEAR); continue; }
+        const w = wOf(feet[i * 3]!, feet[i * 3 + 1]!, feet[i * 3 + 2]!);
+        const across = sizes[i]! * (w > 1e-4 ? perUnitAtOne / w : Infinity);
+        const prev = seen[i] === was ? lv[i]! : UNKNOWN;
+        seen[i] = now;
+        let level: number;
+        if (far >= 0) {
+          const bar = far * (prev === NEAR ? 1 - HYSTERESIS : prev === FAR ? 1 + HYSTERESIS : 1);
+          level = across >= bar ? NEAR : FAR;
+        } else if (least >= 0) {
+          const bar = least * (prev === NEAR ? 1 - HYSTERESIS : prev === NONE ? 1 + HYSTERESIS : 1);
+          level = across >= bar ? NEAR : NONE;
+        } else level = NEAR;
+        lv[i] = level;
+        // A far picture past the share its size keeps is thinned out (the GPU grows the ones kept, `impostorThin`).
+        if (level === FAR && picks[i]! > thinWant(across) + PICK_SLACK) continue;
+        if (level !== NONE) write(k, i, level);
+      }
+    }
+  };
+
+  const meshes = (): InstancedMesh[] => kinds.flatMap((k) => k.meshes.flatMap((s) => (s.mesh ? [s.mesh] : [])));
+  return {
+    get meshes() { return meshes(); },
+    get triangles() {
+      let n = 0;
+      for (const k of kinds) for (const s of k.meshes) if (s.mesh && !s.spec.far) n += trianglesOf(s.spec.geometry) * (k.used - k.dead);
+      return n;
+    },
+    update(change) {
+      const made: InstancedMesh[] = [];
+      for (const k of kinds) {
+        let left = 0;
+        // A thing changed or gone: its run is never drawn again.
+        for (const key of change.removed) {
+          const run = k.runs.get(key);
+          if (!run) continue;
+          for (let i = run.start; i < run.start + run.count; i++) k.spheres[i * 4 + 3] = -Infinity;
+          k.dead += run.count;
+          left += run.count;
+          k.runs.delete(key);
+        }
+        let coming = 0;
+        for (const { packs } of change.added) coming += packs.get(k.index)?.count ?? 0;
+        // A kind none of whose things came or went: nothing of it is touched.
+        if (left === 0 && coming === 0) continue;
+        let moved = false;
+        if (k.dead > 0 && k.dead * 2 >= k.used + coming) {
+          // Half the kind dead: packed again in the order the runs stood, the new ones after.
+          repack(k, Math.max(k.capacity, MIN_CAPACITY), true);
+          moved = true;
+        }
+        if (k.used + coming > k.capacity) repack(k, Math.max(MIN_CAPACITY, (k.used + coming) * 2), false);
+        for (const { key, packs } of change.added) {
+          const one = packs.get(k.index);
+          if (one && one.count > 0) append(k, key, one);
+        }
+        for (const s of k.meshes) {
+          if (!s.mesh && k.capacity > 0) made.push(makeMesh(k, s));
+          if (s.mesh && k.bounds) s.mesh.boundingSphere = new Sphere(new Vector3(k.bounds.x, k.bounds.y, k.bounds.z), k.bounds.r);
+          // DO NOT forget every kind's positions at every edit: one thing more sent every instance in view to the GPU again.
+          if (moved) s.shown.fill(-1);
+        }
+        // Its slots came or went: culled again at the next frame.
+        k.current = false;
+      }
+      settle();
+      return made;
+    },
+    setMap(map) {
+      if (mapMode === map) return;
+      mapMode = map;
+      for (const k of kinds) {
+        if (k.spec.levels?.far === undefined && !k.spec.meshes.some((s) => s.cards)) continue;
+        k.current = false;
+        if (k.pictured || !map) continue;
+        for (const s of k.meshes) if (s.spec.cards && s.mesh) s.mesh.count = 0;
+      }
+    },
+    cull(frustum, view) {
+      if (!culledFor || !culledFor.equals(view) || culledHalf !== screen.half) {
+        culledFor = (culledFor ?? new Matrix4()).copy(view);
+        culledHalf = screen.half;
+        for (const k of kinds) k.current = false;
+      }
+      // DO NOT cull every kind at every move whatever is shown.
+      let any = false;
+      for (const k of kinds) {
+        // A mesh shown or hidden since, or its pictures taken: its kind culled again.
+        const pictured = k.spec.levels?.far !== undefined && (k.spec.levels.ready?.() ?? true);
+        if (pictured !== k.pictured) { k.pictured = pictured; k.current = false; }
+        for (const s of k.meshes) if (s.wasDrawn !== drawnNow(k, s)) k.current = false;
+        k.active = !k.current && k.meshes.some((s) => drawnNow(k, s));
+        if (!k.active) continue;
+        any = true;
+        k.serial++;
+        for (const s of k.meshes) { s.drawn = 0; s.firstChanged = Infinity; }
+        k.spec.levels?.view?.(view, culledHalf);
+      }
+      if (!any) return;
+      const e = view.elements;
+      perUnitAtOne = Math.hypot(e[1]!, e[5]!, e[9]!) * culledHalf;
+      w0 = e[3]!; w1 = e[7]!; w2 = e[11]!; w3 = e[15]!;
+      wReach = Math.hypot(w0, w1, w2);
+      cullFrustum = frustum;
+      for (const root of rootOrder) visit(root, ALL_PLANES);
+      // More in view than the buffers hold: grown, and the walk run again into them (no frame drawn short).
+      let grew = false;
+      for (const k of kinds) {
+        if (!k.active) continue;
+        for (const s of k.meshes) if (s.mesh && s.drawn > s.capacity) { growBuffers(k, s, s.drawn); grew = true; }
+      }
+      if (grew) {
+        // DO NOT forget where the first walk wrote (`firstChanged` kept): the same walk lays the same positions again.
+        for (const k of kinds) {
+          if (!k.active) continue;
+          // The second walk sees the levels the first chose as the ones before: the same levels again.
+          k.serial++;
+          for (const s of k.meshes) s.drawn = 0;
+        }
+        for (const root of rootOrder) visit(root, ALL_PLANES);
+      }
+      cullFrustum = null;
+      for (const k of kinds) {
+        if (!k.active) continue;
+        k.active = false;
+        k.current = true;
+        for (const s of k.meshes) {
+          const mesh = s.mesh;
+          s.wasDrawn = drawnNow(k, s);
+          if (!mesh) continue;
+          if (!s.wasDrawn) { mesh.count = 0; continue; }
+          // Only the positions whose slot changed go to the GPU.
+          if (s.firstChanged < s.drawn) {
+            markRange(mesh.instanceMatrix, s.firstChanged * 16, (s.drawn - s.firstChanged) * 16);
+            if (k.spec.tinted) markRange(mesh.instanceColor!, s.firstChanged * 3, (s.drawn - s.firstChanged) * 3);
+          }
+          mesh.count = s.drawn;
+        }
+      }
+    },
+    dispose() {
+      for (const mesh of meshes()) mesh.dispose();
+    },
+  };
+}
