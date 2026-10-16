@@ -263,6 +263,8 @@ interface Body {
   /** Which piece each particle is on: the body itself, or a limb torn off. */
   comp: number[];
   palettes: Float32Array[];
+  /** The body's own palettes, one a piece, written again every frame it moves (`palettes`, `risePalette`). */
+  readonly palettePool: Float32Array[];
   readonly anchor: Matrix4;
   still: number;
   asleep: boolean;
@@ -304,6 +306,30 @@ function frameOf(x: Vector3, ref: Vector3, out: Matrix4): Matrix4 {
 }
 
 const smooth = (t: number): number => { const k = Math.min(1, Math.max(0, t)); return k * k * (3 - 2 * k); };
+
+/** DO NOT allocate while posing: a frame poses its bodies in these (`bonesWorld`, `palettes`, `risePalette`, `step`). */
+const poseSide = new Vector3(), poseAxis = new Vector3(), posePos = new Vector3(), poseQ = new Quaternion();
+const poseFrame = new Matrix4(), poseRest = new Matrix4(), poseBack = new Matrix4(), poseAnchor = new Matrix4(), poseSkin = new Matrix4();
+const partTurn = Object.fromEntries(PART_NAMES.map((n) => [n, new Quaternion()])) as Record<PartName, Quaternion>;
+const partOrigin = Object.fromEntries(PART_NAMES.map((n) => [n, new Vector3()])) as Record<PartName, Vector3>;
+/** Bone world matrices of the body being posed, the get-up clip's, and the two blended. */
+const boneWorld: Matrix4[] = [], riseTarget: Matrix4[] = [], riseWorld: Matrix4[] = [];
+let boneOn = new Uint8Array(64), riseSolved = new Uint8Array(64);
+const riseA = new Matrix4(), riseB = new Matrix4(), riseOwn = new Matrix4();
+const riseP0 = new Vector3(), riseQ0 = new Quaternion(), riseS0 = new Vector3(), riseP1 = new Vector3(), riseQ1 = new Quaternion(), riseS1 = new Vector3();
+const stepVelocity = new Vector3();
+/** The walls within reach of the body stepped now (`step`). */
+const nearWalls: Wall[] = [];
+/** The nearest point of a ring's edge (`nearestEdge`): read before the next call. */
+const edgePoint = { x: 0, y: 0 };
+/** Each knee's pull while somebody writhes: knee, hip, phase. */
+const WRITHE_LEGS: readonly (readonly [number, number, number])[] = [[LK, LH, 0], [RK, RH, 2.4]];
+
+/** `list` with at least `n` matrices, the ones there kept. */
+function matrices(list: Matrix4[], n: number): Matrix4[] {
+  while (list.length < n) list.push(new Matrix4());
+  return list;
+}
 
 /** One body as the weapons lab measures it (`Ragdolls.probe`). Distances in metres. */
 export interface RagdollProbe {
@@ -351,6 +377,8 @@ export interface Ragdolls {
   readonly decals: BloodDecal[];
   /** Bodies drawn, still moving, pieces, and the living among them (for probes). */
   stats(): { bodies: number; moving: number; pieces: number; living: number };
+  /** Whether a body still moves or somebody alive is on the ground (`stats` moving or living), asked every frame. */
+  active(): boolean;
   /** Each body's pelvis, phase and fate (for probes). */
   debug(): { pelvis: number[]; head: number[]; asleep: boolean; phase: string; torn: boolean }[];
   /** Everything about each body for a test bench (the weapons lab): its particles */
@@ -481,7 +509,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       front, ankle: { lleg: { pitch: 0, yaw: 0 }, rleg: { pitch: 0, yaw: 0 } },
       inverses: sk.inverses, binds, rebind, unbind, walls, torn: fate === 'torn', lostParts: new Set<PartName>(),
       survivor: living ? { id, phase: 'fall', t: 0, lie: fate === 'trip' ? 0.6 + Math.random() * 0.8 : 1.5 + Math.random() * 1.5, clip: RISE_CLIP } : undefined,
-      comp: p.map(() => 0), palettes: [], anchor: new Matrix4(), still: 0, asleep: false, age: 0, flying: 0, pooled: false, splats: 0, spray: 0,
+      comp: p.map(() => 0), palettes: [], palettePool: [], anchor: new Matrix4(), still: 0, asleep: false, age: 0, flying: 0, pooled: false, splats: 0, spray: 0,
     };
     components(body);
     // The frames at rest, that each part's turn is measured from.
@@ -764,7 +792,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       normals: { larm: body.normals.larm.clone(), rarm: body.normals.rarm.clone(), lleg: body.normals.lleg.clone(), rleg: body.normals.rleg.clone() },
       lostParts: new Set(PART_NAMES.filter((part) => !parts.includes(part))),
       survivor: undefined, pin: { root, keep }, drop: index !== body.index ? () => citizens.untwin?.(index) : undefined,
-      comp: [], palettes: [], anchor: new Matrix4(), still: 0, asleep: false, age: 0, flying: 0, pooled: false, splats: 0, spray: 0, torn: true,
+      comp: [], palettes: [], palettePool: [], anchor: new Matrix4(), still: 0, asleep: false, age: 0, flying: 0, pooled: false, splats: 0, spray: 0, torn: true,
     };
     components(piece);
     if (body.jolt) {
@@ -802,10 +830,20 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
 
   return {
     decals,
-    stats: () => ({
-      bodies: bodies.length, moving: bodies.filter((b) => !b.asleep).length,
-      pieces: bodies.reduce((n, b) => n + new Set(b.comp).size, 0), living: bodies.filter((b) => b.survivor).length,
-    }),
+    stats: () => {
+      let moving = 0, pieces = 0, living = 0;
+      for (const b of bodies) {
+        if (!b.asleep) moving++;
+        if (b.survivor) living++;
+        // Each piece's particles name its root, the one particle naming itself (`components`).
+        for (let k = 0; k < b.comp.length; k++) if (b.comp[k] === k) pieces++;
+      }
+      return { bodies: bodies.length, moving, pieces, living };
+    },
+    active() {
+      for (const b of bodies) if (!b.asleep || b.survivor) return true;
+      return false;
+    },
     clear() {
       for (const b of bodies) { b.drop?.(); release(b); }
       bodies.length = 0;
@@ -842,7 +880,10 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     debug: () => bodies.map((b) => ({
       pelvis: b.p[PEL]!.toArray(), head: b.p[HEA]!.toArray(), asleep: b.asleep, phase: `${b.survivor?.phase ?? 'dead'}${b.survivor ? `#${b.survivor.id}/${b.survivor.lie.toFixed(1)}${b.survivor.crawl ? 'c' : ''}` : b.pin ? '/piece' : ''}`, torn: b.torn,
     })),
-    hides: (id) => bodies.some((b) => b.survivor?.id === id),
+    hides(id) {
+      for (const b of bodies) if (b.survivor?.id === id) return true;
+      return false;
+    },
     release(down) {
       // Up: stood on the clip's last frame until the simulation lets them go too
       for (let i = bodies.length - 1; i >= 0; i--) {
@@ -1022,16 +1063,18 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
         if (alive && alive.phase === 'lie' && alive.t >= alive.lie && (alive.ready || alive.t > alive.lie + 3)) rise(body, alive, citizens, world);
         if (alive?.phase === 'rise' && alive.keys && alive.t < (alive.pre ?? 0)) {
           keyPose(body, alive, world);
-          body.palettes = palettes(body, bonesWorld(body));
+          palettes(body, bonesWorld(body));
         } else if (alive?.phase === 'rise' && alive.keys && !alive.from) {
           // Into the crouch: the clip takes over from the pose reached.
           keyPose(body, alive, world);
-          alive.from = bonesWorld(body);
-          body.palettes = [risePalette(body, alive, citizens)];
+          alive.from = keptBones(body);
+          body.palettes.length = 0;
+          body.palettes.push(risePalette(body, alive, citizens));
         } else if (alive?.phase === 'rise' && alive.from && alive.root) {
-          body.palettes = [risePalette(body, alive, citizens)];
+          body.palettes.length = 0;
+          body.palettes.push(risePalette(body, alive, citizens));
         } else if (!body.asleep || !body.palettes.length || body.age > LIE) {
-          body.palettes = palettes(body, bonesWorld(body));
+          palettes(body, bonesWorld(body));
         }
         for (const palette of body.palettes) citizens.drawPalette(body.index, palette, body.anchor, body.charred === true, body.survivor !== undefined);
       }
@@ -1064,7 +1107,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     alive.t = 0;
     const crouch = clip ? particlesOf(body, clip.palette, alive.root) : null;
     if (!crouch) {
-      alive.from = bonesWorld(body);
+      alive.from = keptBones(body);
       alive.pre = 0; alive.blend = RISE_BLEND;
       getUp(alive.id, x, y, heading, RISE_BLEND + alive.clip);
       return;
@@ -1123,7 +1166,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     alive.clip = first.duration * upTo / 1.15;
     alive.phase = 'rise';
     alive.t = 0;
-    alive.from = bonesWorld(body);
+    alive.from = keptBones(body);
     alive.pre = 0;
     alive.blend = crawl ? CRAWL_UP : 0.35;
     body.asleep = true;
@@ -1203,24 +1246,32 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
         a.addScaledVector(d, wa * diff);
         b.addScaledVector(d, -wb * diff);
       }
-      if (world) p.forEach((v, k) => { const floor = world.groundAt(v.x, -v.z) + body.radius[k]!; if (v.y < floor) v.y = floor; });
+      if (world) {
+        for (let k = 0; k < p.length; k++) {
+          const v = p[k]!;
+          const floor = world.groundAt(v.x, -v.z) + body.radius[k]!;
+          if (v.y < floor) v.y = floor;
+        }
+      }
     }
   }
 
   /** The body at time `t` of its getting up from lying (`Survivor.keys`): key poses eased into one another, the body kept a body. */
   function keyPose(body: Body, alive: Survivor, world: RagdollWorld): void {
-    const keys = alive.keys!;
-    const stage = keys.stages.find((k) => alive.t < k.end) ?? keys.stages[keys.stages.length - 1]!;
+    const stages = alive.keys!.stages;
+    let stage = stages[stages.length - 1]!;
+    for (const k of stages) if (alive.t < k.end) { stage = k; break; }
     const u = smooth((alive.t - stage.start) / (stage.end - stage.start));
-    body.p.forEach((v, k) => {
+    for (let k = 0; k < body.p.length; k++) {
+      const v = body.p[k]!;
       if (stage.roll) {
         const r = stage.roll;
         v.copy(stage.from[k]!).sub(r.at).applyAxisAngle(r.axis, Math.PI * u).add(r.at);
         v.y += Math.sin(Math.PI * u) * r.lift;
       } else v.lerpVectors(stage.from[k]!, stage.to[k]!, u);
-    });
+    }
     settle(body, body.p, world);
-    body.o.forEach((o, k) => o.copy(body.p[k]!));
+    for (let k = 0; k < body.o.length; k++) body.o[k]!.copy(body.p[k]!);
   }
 
   /** A getting-up body: the lying pose blended into the get-up clip's first frame, then the clip. */
@@ -1232,47 +1283,52 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     const clip = citizens.clipPose(body.index, alive.riseKey ?? RISE_KEY, phase);
     const bones = body.pos0.length;
     const from = alive.from!;
-    let world: Matrix4[];
+    let world: readonly Matrix4[];
     if (!clip) world = from;
     else {
-      const w = new Matrix4();
-      const target = from.map((_, i) => {
-        w.fromArray(clip.palette, i * 16).multiply(body.binds[i]!);
-        return new Matrix4().multiplyMatrices(alive.root!, body.rebind).multiply(w);
-      });
+      const target = matrices(riseTarget, bones);
+      for (let i = 0; i < bones; i++) {
+        poseSkin.fromArray(clip.palette, i * 16).multiply(body.binds[i]!);
+        target[i]!.multiplyMatrices(alive.root!, body.rebind).multiply(poseSkin);
+      }
       // Blended in, the clip's own matrix exactly: a bone of these rigs is scaled unevenly
       if (blend >= 0.999) world = target;
       else {
         // Before that, blended as animation systems blend poses
-        world = new Array<Matrix4>(bones);
-        const p0 = new Vector3(), q0 = new Quaternion(), s0 = new Vector3();
-        const p1 = new Vector3(), q1 = new Quaternion(), s1 = new Vector3();
-        const local = (list: readonly Matrix4[], i: number, out: Matrix4): Matrix4 => {
-          const parent = body.parents[i]!;
-          return parent >= 0 ? out.copy(list[parent]!).invert().multiply(list[i]!) : out.copy(list[i]!);
-        };
-        const a = new Matrix4(), b = new Matrix4();
-        const solve = (i: number): Matrix4 => {
-          const known = world[i];
-          if (known) return known;
-          local(from, i, a).decompose(p0, q0, s0);
-          local(target, i, b).decompose(p1, q1, s1);
-          p0.lerp(p1, blend); q0.slerp(q1, blend); s0.lerp(s1, blend);
-          const own = new Matrix4().compose(p0, q0, s0);
-          const parent = body.parents[i]!;
-          const out = parent >= 0 ? new Matrix4().multiplyMatrices(solve(parent), own) : own;
-          world[i] = out;
-          return out;
-        };
-        for (let i = 0; i < bones; i++) solve(i);
+        const blended = matrices(riseWorld, bones);
+        if (riseSolved.length < bones) riseSolved = new Uint8Array(bones * 2);
+        riseSolved.fill(0, 0, bones);
+        for (let i = 0; i < bones; i++) riseBone(body, from, target, blended, i, blend);
+        world = blended;
       }
     }
-    const w = new Matrix4();
     body.anchor.copy(alive.root!);
-    const back = body.unbind.clone().multiply(body.anchor.clone().invert());
-    const out = new Float32Array(bones * 16);
-    for (let i = 0; i < bones; i++) w.multiplyMatrices(back, world[i]!).multiply(body.inverses[i]!).toArray(out, i * 16);
+    const back = poseBack.copy(body.unbind).multiply(poseAnchor.copy(body.anchor).invert());
+    const out = body.palettePool[0] ??= new Float32Array(bones * 16);
+    for (let i = 0; i < bones; i++) poseSkin.multiplyMatrices(back, world[i]!).multiply(body.inverses[i]!).toArray(out, i * 16);
     return out;
+  }
+
+  /** Bone `i` of a get-up blended from the lying pose into the clip's, its parent first (into `out`, marked in `riseSolved`). */
+  function riseBone(body: Body, from: readonly Matrix4[], target: readonly Matrix4[], out: Matrix4[], i: number, blend: number): Matrix4 {
+    if (riseSolved[i]) return out[i]!;
+    const parent = body.parents[i]!;
+    // The parent before this bone's own turn is worked out: the scratch below is shared down the chain.
+    const parentWorld = parent >= 0 ? riseBone(body, from, target, out, parent, blend) : null;
+    localBone(body, from, i, riseA).decompose(riseP0, riseQ0, riseS0);
+    localBone(body, target, i, riseB).decompose(riseP1, riseQ1, riseS1);
+    riseP0.lerp(riseP1, blend); riseQ0.slerp(riseQ1, blend); riseS0.lerp(riseS1, blend);
+    riseOwn.compose(riseP0, riseQ0, riseS0);
+    if (parentWorld) out[i]!.multiplyMatrices(parentWorld, riseOwn);
+    else out[i]!.copy(riseOwn);
+    riseSolved[i] = 1;
+    return out[i]!;
+  }
+
+  /** Bone `i`'s matrix in its parent's frame, of a list of world matrices. */
+  function localBone(body: Body, list: readonly Matrix4[], i: number, out: Matrix4): Matrix4 {
+    const parent = body.parents[i]!;
+    return parent >= 0 ? out.copy(list[parent]!).invert().multiply(list[i]!) : out.copy(list[i]!);
   }
 
   /** A body into Jolt, or a change since its last step passed on: made the first time */
@@ -1305,7 +1361,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
         }
       }
     }
-    const dv = new Vector3();
+    const dv = stepVelocity;
     for (let k = 0; k < body.p.length; k++) {
       if (body.pin && !body.pin.keep.has(k)) continue;
       const p = body.p[k]!, o = body.o[k]!;
@@ -1339,7 +1395,10 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
       for (let k = 0; k < body.p.length; k++) if (!keep.has(k)) { body.p[k]!.copy(body.p[root]!); body.o[k]!.copy(body.o[root]!); }
     }
     if (!body.synced) body.synced = { p: body.p.map((v) => v.clone()), o: body.o.map((v) => v.clone()) };
-    else body.p.forEach((v, k) => { body.synced!.p[k]!.copy(v); body.synced!.o[k]!.copy(body.o[k]!); });
+    else {
+      const kept = body.synced;
+      for (let k = 0; k < body.p.length; k++) { kept.p[k]!.copy(body.p[k]!); kept.o[k]!.copy(body.o[k]!); }
+    }
     body.flying += STEP;
     body.still = moved < m(0.0025) ? body.still + STEP : 0;
     // Asleep a moment after Jolt has put its parts to sleep (or when it lies still)
@@ -1438,7 +1497,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     crawl.since += dt;
     const t = crawl.since;
     const strength = Math.min(1, t / 1.5) * Math.max(0.3, 1 - t / 40);
-    for (const [knee, hip, phase] of [[LK, LH, 0], [RK, RH, 2.4]] as const) {
+    for (const [knee, hip, phase] of WRITHE_LEGS) {
       const s = Math.sin(t * 1.3 + phase);
       if (s <= 0) continue;
       // In Jolt, a muscle's pull between the knee and the belly (the body as a whole unmoved)
@@ -1491,7 +1550,9 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const v of p) { x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, -v.z); y1 = Math.max(y1, -v.z); }
     const pad = m(0.3);
-    const near = body.walls.filter((w) => w.x0 < x1 + pad && w.x1 > x0 - pad && w.y0 < y1 + pad && w.y1 > y0 - pad);
+    const near = nearWalls;
+    near.length = 0;
+    for (const w of body.walls) if (w.x0 < x1 + pad && w.x1 > x0 - pad && w.y0 < y1 + pad && w.y1 > y0 - pad) near.push(w);
     for (let it = 0; it < ITERATIONS; it++) {
       for (const s of body.sticks) {
         if (s.broken) continue;
@@ -1753,7 +1814,7 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
 
   function partFrame(body: Body, part: PartName, side: Vector3, out: Matrix4): Matrix4 {
     const def = PARTS[part];
-    const x = new Vector3().subVectors(body.p[def.to]!, body.p[def.origin]!);
+    const x = poseAxis.subVectors(body.p[def.to]!, body.p[def.origin]!);
     return frameOf(x, def.ref === 'side' ? side : body.normals[def.ref], out);
   }
 
@@ -1765,63 +1826,86 @@ export function createRagdolls(exhaust: Exhaust, getUp: GetUp, gore: Gore | null
     body.comp = body.p.map((_, k) => find(k));
   }
 
-  /** Every bone's world matrix, turned and placed from the particles. */
-  function bonesWorld(body: Body): Matrix4[] {
-    const side = torsoSide(body, new Vector3()).clone();
+  /** Every bone's world matrix, turned and placed from the particles: the shared scratch, read before the next body is posed. */
+  function bonesWorld(body: Body): readonly Matrix4[] {
+    const side = torsoSide(body, poseSide);
     updateNormals(body, side, 0.5);
-    const turn: Partial<Record<PartName, Quaternion>> = {};
-    const f = new Matrix4(), f0t = new Matrix4();
     for (const part of PART_NAMES) {
-      partFrame(body, part, side, f);
-      f0t.copy(body.frame0[part]).transpose();
-      turn[part] = new Quaternion().setFromRotationMatrix(f.multiply(f0t));
+      partFrame(body, part, side, poseFrame);
+      poseRest.copy(body.frame0[part]).transpose();
+      partTurn[part].setFromRotationMatrix(poseFrame.multiply(poseRest));
     }
     // Each part placed from its parent part, at its rest distance turned with the parent
-    const origin: Partial<Record<PartName, Vector3>> = {};
     for (const part of PART_NAMES) {
       const parent = PART_PARENT[part];
       const own = body.p[PARTS[part].origin]!;
-      if (!parent || body.comp[PARTS[part].origin] !== body.comp[PARTS[parent].origin]) { origin[part] = own; continue; }
-      origin[part] = tmpE.subVectors(body.origin0[part], body.origin0[parent]).applyQuaternion(turn[parent]!).add(origin[parent]!).clone();
+      if (!parent || body.comp[PARTS[part].origin] !== body.comp[PARTS[parent].origin]) { partOrigin[part].copy(own); continue; }
+      partOrigin[part].subVectors(body.origin0[part], body.origin0[parent]).applyQuaternion(partTurn[parent]).add(partOrigin[parent]);
     }
-    const world: Matrix4[] = [];
-    const pos = new Vector3(), q = new Quaternion();
-    for (let i = 0; i < body.pos0.length; i++) {
+    const bones = body.pos0.length;
+    const world = matrices(boneWorld, bones);
+    for (let i = 0; i < bones; i++) {
       const part = body.bonePart[i]!;
-      const r = turn[part]!;
-      pos.subVectors(body.pos0[i]!, body.origin0[part]).applyQuaternion(r).add(origin[part]!);
-      q.multiplyQuaternions(r, body.rot0[i]!);
-      world.push(new Matrix4().compose(pos, q, body.scl0[i]!));
+      const r = partTurn[part];
+      posePos.subVectors(body.pos0[i]!, body.origin0[part]).applyQuaternion(r).add(partOrigin[part]);
+      poseQ.multiplyQuaternions(r, body.rot0[i]!);
+      world[i]!.compose(posePos, poseQ, body.scl0[i]!);
     }
     return world;
   }
 
-  /** The skin matrices of the body (one palette per piece) from its bones' world matrices. */
+  /** The bones as they are now, kept: the lying pose a get-up blends from (`Survivor.from`). */
+  function keptBones(body: Body): Matrix4[] {
+    const world = bonesWorld(body);
+    const kept: Matrix4[] = [];
+    for (let i = 0; i < body.pos0.length; i++) kept.push(world[i]!.clone());
+    return kept;
+  }
+
+  /** The skin matrices of the body (one palette per piece) from its bones' world matrices, into its own palettes. */
   function palettes(body: Body, world: readonly Matrix4[]): Float32Array[] {
     const anchor = body.anchor.makeScale(body.scale, body.scale, body.scale).setPosition(body.p[PEL]!);
     // bind * local^-1 * anchor^-1: from the world back into a bone's matrix.
-    const back = body.unbind.clone().multiply(anchor.clone().invert());
+    const back = poseBack.copy(body.unbind).multiply(poseAnchor.copy(anchor).invert());
     const bones = body.pos0.length;
-    const m4 = new Matrix4();
-    const out: Float32Array[] = [];
-    for (const piece of new Set(body.comp)) {
-      const on = body.bonePart.map((part) => body.comp[PARTS[part].origin] === piece && !body.lostParts.has(part));
-      if (!on.some(Boolean)) continue;
-      const palette = new Float32Array(bones * 16);
+    if (boneOn.length < bones) boneOn = new Uint8Array(bones * 2);
+    const on = boneOn;
+    const out = body.palettes;
+    out.length = 0;
+    const comp = body.comp;
+    // Each piece once, in the order its first particle comes.
+    for (let k = 0; k < comp.length; k++) {
+      const piece = comp[k]!;
+      let before = false;
+      for (let j = 0; j < k && !before; j++) before = comp[j] === piece;
+      if (before) continue;
+      let any = false;
+      for (let i = 0; i < bones; i++) {
+        const part = body.bonePart[i]!;
+        const own = comp[PARTS[part].origin] === piece && !body.lostParts.has(part);
+        on[i] = own ? 1 : 0;
+        if (own) any = true;
+      }
+      if (!any) continue;
+      const palette = body.palettePool[out.length] ??= new Float32Array(bones * 16);
       // The piece's own root: its topmost bone (the shoulder of an arm, the hip of a leg).
-      let root = on.findIndex((own, i) => own && !(body.parents[i]! >= 0 && on[body.parents[i]!]));
+      let root = -1;
+      for (let i = 0; i < bones && root < 0; i++) {
+        const parent = body.parents[i]!;
+        if (on[i] && !(parent >= 0 && on[parent])) root = i;
+      }
       if (root < 0) root = 0;
       for (let i = 0; i < bones; i++) {
         if (on[i]) {
-          m4.multiplyMatrices(back, world[i]!).multiply(body.inverses[i]!);
+          poseSkin.multiplyMatrices(back, world[i]!).multiply(body.inverses[i]!);
         } else {
           // Not on this piece: shrunk to the joint it was torn from
           let j = body.parents[i]!;
           while (j >= 0 && !on[j]) j = body.parents[j]!;
           const t = tmpB.setFromMatrixPosition(world[j >= 0 ? j : root]!).applyMatrix4(back);
-          m4.set(0, 0, 0, t.x, 0, 0, 0, t.y, 0, 0, 0, t.z, 0, 0, 0, 1);
+          poseSkin.set(0, 0, 0, t.x, 0, 0, 0, t.y, 0, 0, 0, t.z, 0, 0, 0, 1);
         }
-        m4.toArray(palette, i * 16);
+        poseSkin.toArray(palette, i * 16);
       }
       out.push(palette);
     }
@@ -1838,7 +1922,8 @@ function inside(ring: readonly { x: number; y: number }[], x: number, y: number)
   return c;
 }
 
-function nearestEdge(ring: readonly { x: number; y: number }[], x: number, y: number): { x: number; y: number } {
+/** The nearest point of a ring's edge, in the shared `edgePoint` (read it before the next call). */
+function nearestEdge(ring: readonly { x: number; y: number }[], x: number, y: number): Readonly<{ x: number; y: number }> {
   let bx = x, by = y, bd = Infinity;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const a = ring[j]!, b = ring[i]!;
@@ -1847,5 +1932,7 @@ function nearestEdge(ring: readonly { x: number; y: number }[], x: number, y: nu
     const px = a.x + dx * t, py = a.y + dy * t, d = (px - x) ** 2 + (py - y) ** 2;
     if (d < bd) { bd = d; bx = px; by = py; }
   }
-  return { x: bx, y: by };
+  edgePoint.x = bx;
+  edgePoint.y = by;
+  return edgePoint;
 }

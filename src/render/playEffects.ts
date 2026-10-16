@@ -180,6 +180,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
   (globalThis as Record<string, unknown>)['__ragdolls'] = ragdolls;
   /** Who is down (a `fall` pause) this frame. */
   const ragdollDown = new Set<number>();
+  const isDown = (id: number): boolean => ragdollDown.has(id);
   /** The ground found under the bodies (the lots' raised yards are ground too), by small cells. */
   const ragdollGround = new Map<number, number>();
   /** The document's serial of what the ground found is read from (`wallsNear`). */
@@ -341,7 +342,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
           ragdolls.trip(ped.id, ped.heading, citizens, ragdollWorld, away);
         }
       }
-      ragdolls.release((id) => ragdollDown.has(id));
+      ragdolls.release(isDown);
       ragdolls.update(fxDt, ragdollWorld);
       gore.update(fxDt, ragdollWorld.groundAt);
       ragdolls.draw(citizens, ragdollWorld);
@@ -356,7 +357,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
       muzzle.intensity = lit ? muzzle.intensity * Math.pow(0.02, wallDt * 8) : 0;
     },
     shake: () => blast.shake(),
-    busy: () => blast.active() || ragdolls.stats().living > 0 || ragdolls.stats().moving > 0,
+    busy: () => blast.active() || ragdolls.active(),
     shootBody(a, b) {
       const hit = ragdolls.shootBody(new Vector3(a[0], a[2], -a[1]), new Vector3(b[0], b[2], -b[1]));
       if (hit) onAssetsReady();
