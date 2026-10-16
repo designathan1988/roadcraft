@@ -1,4 +1,4 @@
-import { baysOn, levelHeight } from './geometry';
+import { type Rhythm, baysOn, levelHeight, rhythmOf, sameRhythm } from './geometry';
 import { m } from '../units';
 import type { Building, BuildingUse, Space, SpaceKind, Volume } from './types';
 import { identityMemo } from '@core/identityMemo';
@@ -20,8 +20,17 @@ const KIND: Readonly<Record<BuildingUse, SpaceKind>> = {
   mixed: 'unit',
 };
 
-/** Each record's spaces, worked out once (a stored record is never changed in place, `BuildingStore` OWNERSHIP) */
-export const deriveSpaces: (b: Building) => StoreySpaces[] = identityMemo(workOutSpaces);
+/** Each blocks list's spaces, one per use and rhythm it was asked with (`workOutSpaces` reads the blocks, the use, the module and the storey heights alone). */
+const spacesOf = identityMemo((_volumes: readonly Volume[]): { readonly use: BuildingUse; readonly rhythm: Rhythm; readonly spaces: StoreySpaces[] }[] => []);
+
+/** A building's spaces, worked out once for its blocks list, use and rhythm: DO NOT key them by the record (every emission's body is a new record, `emitChunk`; records alike share their blocks, `intern.ts`) nor cap them */
+export function deriveSpaces(b: Building): StoreySpaces[] {
+  const known = spacesOf(b.volumes);
+  for (const k of known) if (k.use === b.use && sameRhythm(k.rhythm, b)) return k.spaces;
+  const spaces = workOutSpaces(b);
+  known.push({ use: b.use, rhythm: rhythmOf(b), spaces });
+  return spaces;
+}
 
 function workOutSpaces(b: Building): StoreySpaces[] {
   const out: StoreySpaces[] = [];
