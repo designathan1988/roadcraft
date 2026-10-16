@@ -87,11 +87,15 @@ export interface FarKind<P> {
   readonly planFrom?: number;
 }
 
-/** HOW FAR THE PLAN IS DRAWN ROUND THE EYE: in perspective as far as the camera's far plane reaches for an eye this high (`isoViewport.ts`: four times its distance and 2.4 km), never under 16 km; an orthographic view's own reach; never past a top-level node's side (3 x 3 roots at most) */
+/** HOW FAR THE TREE IS DRAWN ROUND THE EYE (its stored tiles and the plan): the view's reach as the renderer gives it (the far plane in perspective, the frame from above); asked with none, as the far plane stands for an eye this high (`isoViewport.ts`: four times its distance and 2.4 km); never past a top-level node's side (3 x 3 roots at most)
+ *  - DO NOT draw to a fixed 16 km whatever the camera: an eye at 340 m clips at 4.3 km, and 60 nodes past it were baked and uploaded for nothing (2026-10-16). */
 const PLAN_PER_HEIGHT = 4;
 const PLAN_MARGIN = m(2_400);
-const PLAN_MIN_REACH = m(16_000);
 const PLAN_MAX_REACH = nodeSide(TOP_LEVEL);
+
+/** How far round the eye the view reaches (`PLAN_PER_HEIGHT`). */
+const viewReach = (e: { readonly z: number; readonly reach: number }): number =>
+  Math.min(PLAN_MAX_REACH, Number.isFinite(e.reach) ? e.reach : PLAN_PER_HEIGHT * e.z + PLAN_MARGIN);
 
 /** Tiles under a node of level `k` when every one is there. */
 const tilesUnder = (k: number): number => 4 ** k;
@@ -140,10 +144,11 @@ export class FarTree<P> implements FarTiles {
   readonly group = new Group();
   private source: FarTileSource | null = null;
   private isLoaded: (tileKey: number) => boolean = () => false;
-  /** The world's plan (null: only the stored tiles drawn), its fingerprint in the bakes' keys (one world's bakes never read for another's), how far round the eye it is drawn now. */
+  /** The world's plan (null: only the stored tiles drawn) and its fingerprint in the bakes' keys (one world's bakes never read for another's). */
   private plan: WholeMapOptions | null = null;
   private world = '';
-  private planReach = 0;
+  /** How far round the eye anything of the tree is drawn now (`viewReach`). */
+  private reach = 0;
   private readonly nodes = new Map<string, FarNode>();
   private readonly roots = new Map<string, FarNode>();
   private readonly leaves = new Map<number, FarNode>();
@@ -237,6 +242,7 @@ export class FarTree<P> implements FarTiles {
     this.drawing.length = 0;
     this.desired.length = 0;
     this.wanting = 0;
+    this.reach = viewReach(eye);
     if (this.planning && !this.cacheless) this.plantRoots();
     for (const root of this.roots.values()) this.visit(root);
     const now = new Set(this.drawing), wanted = new Set(this.desired);
@@ -297,7 +303,7 @@ export class FarTree<P> implements FarTiles {
   /** The top-level nodes over the plan's reach round the eye made (those of the plan alone past it let go, their bakes kept: they never change). */
   private plantRoots(): void {
     const e = this.eyeNow;
-    const r = this.planReach = Math.min(PLAN_MAX_REACH, Number.isFinite(e.reach) ? e.reach : Math.max(PLAN_MIN_REACH, PLAN_PER_HEIGHT * e.z + PLAN_MARGIN));
+    const r = this.reach;
     const side = nodeSide(TOP_LEVEL);
     const i0 = Math.floor((e.x - r) / side), i1 = Math.floor((e.x + r) / side), j0 = Math.floor((e.y - r) / side), j1 = Math.floor((e.y + r) / side);
     for (const root of [...this.roots.values()]) if (root.tiles === 0 && (root.i < i0 || root.i > i1 || root.j < j0 || root.j > j1)) this.forget(root);
@@ -379,9 +385,9 @@ export class FarTree<P> implements FarTiles {
     return this.planning && !this.cacheless && n.k - 1 >= this.planFrom;
   }
 
-  /** A node of the plan alone wholly past its reach: nothing of it drawn. */
+  /** A node wholly past what the view reaches: nothing of it drawn nor asked. */
   private outOfReach(n: FarNode): boolean {
-    const e = this.eyeNow, r = this.planReach;
+    const e = this.eyeNow, r = this.reach;
     return n.x1 < e.x - r || n.x0 > e.x + r || n.y1 < e.y - r || n.y0 > e.y + r;
   }
 
@@ -395,7 +401,8 @@ export class FarTree<P> implements FarTiles {
 
   /** A node chosen: drawn whole, or its children; whether all it stands for is drawn (or none of it is the tree's). */
   private visit(n: FarNode): boolean {
-    if (n.tiles === 0 && this.planning && this.outOfReach(n)) return true;
+    // DO NOT draw a stored tile the view does not reach: the street view drew every tile made ahead (11 km) at its finest, 4.9 M vertices (2026-10-16); culled as Cesium culls a tile out of the frustum.
+    if (this.outOfReach(n)) return true;
     if (this.covered(n)) return true;
     const whole = n.loaded === 0 && this.drawable(n) && (n.k === 0 || (!this.cacheless && (this.fine(n) || !this.refinable(n))));
     if (whole) {

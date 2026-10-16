@@ -2487,15 +2487,15 @@ export function createSceneRenderer(
         const ex = t.x + (eye.x - t.x) * k, ey = -(t.z + (eye.z - t.z) * k), ez = t.y + (eye.y - t.y) * k;
         // The far level of the buildings by the error on the screen, in CSS pixels
         const pxAtMetre = canvas.clientHeight / (2 * Math.tan(((rig.perspective ? (rig.camera as PerspectiveCamera).fov : PERSPECTIVE_FOV) * Math.PI) / 360));
-        // In the view from above a metre spans the same pixels wherever it stands
-        let reach = Infinity;
+        // In the view from above a metre spans the same pixels wherever it stands; in perspective nothing past the far plane is seen
+        let reach = rig.perspective ? (rig.camera as PerspectiveCamera).far : Infinity;
         if (!rig.perspective) {
           const halfH = canvas.clientHeight / Math.max(1e-3, 2 * rig.viewport.zoom);
           const halfW = (halfH * canvas.clientWidth) / Math.max(1, canvas.clientHeight);
           reach = Math.hypot(halfW, halfH / Math.max(0.3, Math.sin(rig.viewport.elevation))) * 1.25 + m(120);
         }
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach);
-        farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom);
+        farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;
         const texel = environment.sun.castShadow ? (shadow.camera.right - shadow.camera.left) / shadow.camera.zoom / shadow.mapSize.x : Infinity;
