@@ -156,6 +156,27 @@ describe('a tile\'s link table', () => {
     expect([...table.link].map((link) => meso.slotOfLink(link))).toEqual(slots);
     expect(meso.model.vehicles()).toBeCloseTo(before, 6);
   });
+
+  it('frees the slots of a tile gone out of reach and gives them to the next tile\'s links', () => {
+    const a = bakeTileLinks(west()), b = bakeTileLinks(east());
+    const { w, meso } = world();
+    // A feed of the test's: the tables it is handed, and the tiles it says went out of reach.
+    const gone: number[] = [], come: TileLinks[] = [a];
+    const feed = { loaded: () => {}, letGo: () => {}, written: () => {}, focus: () => {}, gone: () => gone.splice(0), take: () => come.splice(0) };
+    meso.useTiles(feed as never);
+    meso.step(w, true);
+    const top = meso.model.slots;
+    expect(top).toBe(a.count);
+    gone.push(a.key);
+    come.push(b);
+    meso.step(w, true);
+    for (const link of a.link) expect(meso.slotOfLink(link), `link ${link}`).toBeUndefined();
+    for (const link of b.link) expect(meso.slotOfLink(link)!).toBeLessThan(top);
+    let present = 0;
+    for (let slot = 0; slot < meso.model.slots; slot++) if (meso.model.has(slot)) present++;
+    expect(present).toBe(b.count);
+    expect(meso.model.slots).toBe(top);
+  });
 });
 
 /** A link lane of the slot in the lane graph. */

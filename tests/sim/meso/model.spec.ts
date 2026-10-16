@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { Rng } from '@core/rng';
 import { m } from '@world/units';
 import { JAM_SPACING, MesoModel, WAVE_SPEED, laneCapacity } from '@sim/meso/model';
+import { ObjectModel } from './support/objectModel';
+
+/** The model's public face, as both the tables by slot and the object model have it. */
+type Model = Omit<MesoModel, 'bytes'>;
 
 /** THE MESO MODEL (Link Transmission Model, equal-priority node model): vehicles kept, capacities respected, queues spilling back */
 
@@ -10,18 +15,18 @@ const V = m(14);
 const STORAGE = L / JAM_SPACING;
 
 /** A link of the spec's shape into `to`. */
-function link(model: MesoModel, slot: number, to: number, extra: { lanes?: number; capacity?: number; exit?: boolean } = {}): void {
+function link(model: Model, slot: number, to: number, extra: { lanes?: number; capacity?: number; exit?: boolean } = {}): void {
   model.setLink(slot, { to, lanes: extra.lanes ?? 1, length: L, vFree: V, exit: extra.exit ?? false,
     ...(extra.capacity !== undefined ? { capacity: extra.capacity } : {}) });
 }
 
 /** What the model holds equals what came in less what left, at every step. */
-function balance(model: MesoModel, start: number): number {
+function balance(model: Model, start: number): number {
   return start + model.generated - model.lost - model.sunk + model.handedIn - model.handedOut - model.vehicles();
 }
 
 /** A ring road of 3 x 3 nodes, each joined both ways to its neighbours, two entries and two exits at the corners. */
-function grid(model: MesoModel): number[] {
+function grid(model: Model): number[] {
   const node = (i: number, j: number): number => i * 3 + j;
   const slots: number[] = [];
   const ends = new Map<number, { from: number; to: number }>();
@@ -174,5 +179,103 @@ describe('the meso model', () => {
     }
     expect(model.handedOut).toBeGreaterThan(10);
     expect(model.handedIn).toBeGreaterThan(5);
+  });
+});
+
+/** Every number the model answers: its totals, the links it handed, and each slot's state, flows and turns. */
+function reading(model: Model): number[] {
+  const out = [model.slots, model.generated, model.lost, model.sunk, model.handedIn, model.handedOut, model.vehicles(), ...model.handed];
+  for (let s = 0; s < model.slots; s++) {
+    out.push(model.has(s) ? 1 : 0, model.isInside(s) ? 1 : 0, model.count(s), model.queued(s), model.speed(s), model.pending(s),
+      model.outflowOf(s), model.inflowOf(s), model.lengthAt(s), model.lanesAt(s), model.capacityAt(s), model.freeSpeedAt(s), model.toAt(s),
+      -1, ...model.turnsAt(s));
+  }
+  return out;
+}
+
+describe('the meso model in tables by slot', () => {
+  it('gives the object model\'s numbers exactly, step by step, through links made, changed, dropped, taken again and handed to the window', () => {
+    const a = new MesoModel(1), b = new ObjectModel(1);
+    const models: Model[] = [a, b];
+    const slots = grid(a);
+    grid(b);
+    const toOf = slots.map((s) => a.toAt(s)), turnsOf = slots.map((s) => [...a.turnsAt(s)]);
+    const nodes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 100, 101, 102, 103];
+    const micro = new Map<Model, Map<number, number>>(models.map((model) => [model, new Map()]));
+    for (const model of models) for (const s of slots) model.seed(s, (s % 4) * 2);
+    const rng = new Rng(0x5eed);
+    for (let t = 0; t < 1200; t++) {
+      // The same draws for both models.
+      const gen = slots.map(() => rng.float() * 0.6), sink = slots.map(() => rng.float() * 0.2);
+      const act = rng.int(0, 9), k = rng.int(0, slots.length - 1), x = rng.float();
+      const s = slots[k]!;
+      for (const model of models) {
+        slots.forEach((o, i) => { model.setGeneration(o, gen[i]!); model.setSinkShare(o, sink[i]!); });
+        const mine = micro.get(model)!;
+        const held = mine.get(s) ?? 0;
+        switch (act) {
+          case 0: if (!model.isInside(s)) model.dropLink(s); break;
+          case 1:
+            if (!model.has(s)) {
+              model.setLink(s, { to: toOf[k]!, lanes: 1 + (s % 2), length: L * (0.5 + x), vFree: V, exit: false });
+              model.setTurns(s, turnsOf[k]!, turnsOf[k]!.map(() => 1));
+            }
+            break;
+          case 2: if (model.has(s)) model.setLink(s, { to: toOf[k]!, lanes: 1 + (s % 2), length: L * (0.6 + x), vFree: V * (0.8 + x / 2), exit: false }); break;
+          case 3: model.enterWindow(s); break;
+          case 4: if (model.isInside(s)) { model.leaveWindow(s, held); mine.delete(s); } break;
+          case 5:
+            if (model.isInside(s)) {
+              const take = Math.floor(model.pending(s));
+              model.takePending(s, take);
+              mine.set(s, held + take);
+              model.setMicro(s, held + take);
+            }
+            break;
+          case 6: {
+            const onto = turnsOf[k]![0];
+            if (model.isInside(s) && held > 0 && onto !== undefined && model.has(onto) && !model.isInside(onto)) {
+              mine.set(s, held - 1);
+              model.setMicro(s, held - 1);
+              model.microExit(onto);
+            }
+            break;
+          }
+          case 7: model.seed(s, x * 5); break;
+          case 8: if (model.has(s)) model.setTurns(s, turnsOf[k]!, turnsOf[k]!.map((_, i) => x + i)); break;
+        }
+        // A link past the first tables' room, fed by one of the grid's: the tables grow mid-run.
+        if (t === 600) {
+          model.setLink(70, { to: 4, lanes: 2, length: L, vFree: V, exit: true });
+          model.setTurns(slots[1]!, [70, ...turnsOf[1]!], [2, ...turnsOf[1]!.map(() => 1)]);
+        }
+      }
+      a.step();
+      b.step();
+      expect(reading(a), `step ${t}`).toEqual(reading(b));
+      for (const n of nodes) expect([...a.inLinks(n)]).toEqual([...b.inLinks(n)]);
+    }
+    expect(a.generated).toBeGreaterThan(100);
+    expect(a.handedOut).toBeGreaterThan(0);
+  });
+
+  it('holds a link in a few hundred bytes of typed arrays, and takes back the blocks of the links let go', () => {
+    const model = new MesoModel(1);
+    const n = 10_000;
+    const fill = (): void => {
+      for (let s = 0; s < n; s++) {
+        model.setLink(s, { to: s % 2500, lanes: 1 + (s % 2), length: m(100), vFree: m(14), exit: false });
+        model.setTurns(s, [(s + 1) % n, (s + 7) % n, (s + 13) % n], [1, 2, 3]);
+      }
+    };
+    fill();
+    const once = model.bytes;
+    expect(once / n).toBeLessThan(1000);
+    // A tile's links gone and others come: the same room again, nothing new.
+    for (let s = 0; s < n; s++) model.dropLink(s);
+    fill();
+    expect(model.bytes).toBe(once);
+    for (let t = 0; t < 30; t++) model.step();
+    expect(model.vehicles()).toBe(0);
   });
 });

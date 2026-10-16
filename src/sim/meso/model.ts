@@ -1,4 +1,5 @@
 import { kmh, m } from '@world/units';
+import { BlockArena, Threads, grown } from './slots';
 
 /** THE MESO TRAFFIC OF THE WHOLE MAP: each directed road a link of the Link Transmission Model, flows between them at the nodes */
 // LTM (Yperman 2007 §4.6; Boyles et al., Transportation Network Analysis I §9.5.2): S = min(N_up(t+dt-L/v) - N_down(t), C dt), R = min(N_down(t+dt-L/w) + k_jam L - N_up(t), C dt).
@@ -41,9 +42,10 @@ export interface MesoLinkSpec {
   readonly exit: boolean;
 }
 
-/** The model over links by slot (a slot is a directed road: `segment * 2 + direction`, `meso.ts`), all in typed arrays. */
+/** The model over links by slot (a slot is a directed road, `meso.ts`), all in typed arrays: no object, list or Map entry a link. */
 export class MesoModel {
   private size = 0;
+  private cap = 0;
   private present = new Uint8Array(0);
   private exitOf = new Uint8Array(0);
   private insideOf = new Uint8Array(0);
@@ -71,14 +73,18 @@ export class MesoModel {
   /** A node's round of the node model: the demand on each exit (cleared after each round). */
   private exitDemand = new Float64Array(0);
   private live = new Uint8Array(0);
-  /** Cumulative counts at each end, back in time a step a cell (rings): entries upstream, exits downstream. */
-  private up: (Float64Array | null)[] = [];
-  private down: (Float64Array | null)[] = [];
-  /** Each link's turns: the links it feeds and the share going to each (summing to 1). */
-  private outs: (Int32Array | null)[] = [];
-  private betas: (Float64Array | null)[] = [];
-  /** The links into each node. */
-  private readonly into = new Map<number, number[]>();
+  /** Cumulative counts at each end, back in time a step a cell (rings): entries upstream, exits downstream; each a block of `rings` (-1: none). */
+  private readonly rings = new BlockArena();
+  private upAt = new Int32Array(0);
+  private upLen = new Int32Array(0);
+  private downAt = new Int32Array(0);
+  private downLen = new Int32Array(0);
+  /** Each link's turns: a block of `turns`, the links it feeds then the share going to each (summing to 1); none when `turnLen` is 0. */
+  private readonly turns = new BlockArena();
+  private turnAt = new Int32Array(0);
+  private turnLen = new Int32Array(0);
+  /** The links into each node, in the order they came. */
+  private readonly into = new Threads();
   private tick = 0;
 
   /** Since the start: vehicles generated, lost at a full origin, arrived (sunk or off the map), handed in by the micro simulation and out to it. */
@@ -95,6 +101,11 @@ export class MesoModel {
     return this.size;
   }
 
+  /** Bytes the model holds: its tables by slot, the rings' and turns' arenas, the nodes' lists. */
+  get bytes(): number {
+    return this.cap * (3 + 17 * 8 + 6 * 4 + 1) + this.rings.bytes + this.turns.bytes + this.into.bytes;
+  }
+
   has(slot: number): boolean {
     return slot < this.size && this.present[slot] === 1;
   }
@@ -103,9 +114,9 @@ export class MesoModel {
     return this.has(slot) && this.insideOf[slot] === 1;
   }
 
-  /** The links into `node`. */
+  /** The links into `node`, in the order they came. */
   inLinks(node: number): readonly number[] {
-    return this.into.get(node) ?? NONE;
+    return this.into.list(node);
   }
 
   /** A link made or changed: its vehicles kept (spread along it again when its length or speed changed). */
@@ -113,11 +124,7 @@ export class MesoModel {
     this.reserve(slot + 1);
     const had = this.has(slot);
     const keep = had ? this.count(slot) : 0;
-    if (had && this.toOf[slot] !== spec.to) this.unfileNode(slot);
-    if (!had || this.toOf[slot] !== spec.to) {
-      const list = this.into.get(spec.to);
-      if (list) list.push(slot); else this.into.set(spec.to, [slot]);
-    }
+    if (!had || this.toOf[slot] !== spec.to) this.into.add(slot, spec.to);
     const lanes = Math.max(1, spec.lanes);
     const changed = !had || this.lengthOf[slot] !== spec.length || this.vFreeOf[slot] !== spec.vFree;
     this.present[slot] = 1;
@@ -131,21 +138,19 @@ export class MesoModel {
     if (changed && this.insideOf[slot] === 0) this.spread(slot, keep);
   }
 
-  /** A link gone: what was on it and waiting for it leaves the model (counted as arrived). */
+  /** A link gone: what was on it and waiting for it leaves the model (counted as arrived); its blocks given back. */
   dropLink(slot: number): void {
     if (!this.has(slot)) return;
     this.sunk += this.count(slot) + this.origin[slot]!;
     if (this.insideOf[slot]) this.sunk -= this.microOf[slot]!;
-    this.unfileNode(slot);
+    this.into.remove(slot);
     this.present[slot] = 0;
     this.insideOf[slot] = 0;
     this.pendingOf[slot] = 0;
     this.microOf[slot] = 0;
     this.origin[slot] = 0;
-    this.up[slot] = null;
-    this.down[slot] = null;
-    this.outs[slot] = null;
-    this.betas[slot] = null;
+    this.dropRings(slot);
+    this.dropTurns(slot);
   }
 
   /** The links `slot` feeds, each with its weight (normalised here); none: everything reaching its end leaves the network. */
@@ -153,9 +158,15 @@ export class MesoModel {
     if (!this.has(slot)) return;
     let sum = 0;
     for (const w of weights) sum += Math.max(0, w);
-    if (!to.length || sum <= 0) { this.outs[slot] = null; this.betas[slot] = null; return; }
-    this.outs[slot] = Int32Array.from(to);
-    this.betas[slot] = Float64Array.from(weights, (w) => Math.max(0, w) / sum);
+    this.dropTurns(slot);
+    if (!to.length || sum <= 0) return;
+    const n = to.length, at = this.turns.alloc(2 * n), d = this.turns.data;
+    for (let k = 0; k < n; k++) {
+      d[at + k] = to[k]! | 0;
+      d[at + n + k] = Math.max(0, weights[k]!) / sum;
+    }
+    this.turnAt[slot] = at;
+    this.turnLen[slot] = n;
   }
 
   setGeneration(slot: number, perSecond: number): void {
@@ -170,14 +181,14 @@ export class MesoModel {
   count(slot: number): number {
     if (!this.has(slot)) return 0;
     if (this.insideOf[slot]) return this.microOf[slot]! + this.pendingOf[slot]!;
-    return Math.max(0, this.cum(this.up[slot]!, 0) - this.cum(this.down[slot]!, 0));
+    return Math.max(0, this.cum(this.upAt[slot]!, this.upLen[slot]!, 0) - this.cum(this.downAt[slot]!, this.downLen[slot]!, 0));
   }
 
   /** Vehicles standing in the link's queue: those that have had the time to reach its end and not left. */
   queued(slot: number): number {
     if (!this.has(slot) || this.insideOf[slot]) return 0;
     const L = this.lengthOf[slot]!, v = this.vFreeOf[slot]!;
-    const reached = this.cum(this.up[slot]!, L / v / this.dt) - this.cum(this.down[slot]!, 0);
+    const reached = this.cum(this.upAt[slot]!, this.upLen[slot]!, L / v / this.dt) - this.cum(this.downAt[slot]!, this.downLen[slot]!, 0);
     return Math.min(this.count(slot), Math.max(0, reached));
   }
 
@@ -219,8 +230,11 @@ export class MesoModel {
 
   /** The links `slot` feeds (`setTurns`). */
   turnsAt(slot: number): readonly number[] {
-    const outs = this.has(slot) ? this.outs[slot] : null;
-    return outs ? [...outs] : NONE;
+    const n = this.has(slot) ? this.turnLen[slot]! : 0;
+    if (!n) return NONE;
+    const at = this.turnAt[slot]!, d = this.turns.data, out: number[] = [];
+    for (let k = 0; k < n; k++) out.push(d[at + k]!);
+    return out;
   }
 
   pending(slot: number): number {
@@ -253,8 +267,7 @@ export class MesoModel {
     this.insideOf[slot] = 1;
     this.pendingOf[slot] = n;
     this.microOf[slot] = 0;
-    this.up[slot] = null;
-    this.down[slot] = null;
+    this.dropRings(slot);
     return n;
   }
 
@@ -285,8 +298,8 @@ export class MesoModel {
   /** A vehicle of the micro simulation drove out of the window onto `slot`: it enters the link now. */
   microExit(slot: number): void {
     if (!this.has(slot) || this.insideOf[slot]) return;
-    const up = this.up[slot]!;
-    up[this.ringAt(up, 0)] = up[this.ringAt(up, 0)]! + 1;
+    const at = this.upAt[slot]! + this.ringAt(this.upLen[slot]!, 0), d = this.rings.data;
+    d[at] = d[at]! + 1;
     this.handedIn++;
   }
 
@@ -308,11 +321,11 @@ export class MesoModel {
       if (this.insideOf[s]) {
         this.room[s] = Math.max(0, Math.min(cdt, storage - this.microOf[s]! - this.pendingOf[s]!));
       } else {
-        const up = this.up[s]!, down = this.down[s]!;
-        const up0 = this.cum(up, 0), down0 = this.cum(down, 0);
-        const free = this.cum(up, Math.max(0, L / this.vFreeOf[s]! / dt - 1));
+        const ua = this.upAt[s]!, ul = this.upLen[s]!, da = this.downAt[s]!, dl = this.downLen[s]!;
+        const up0 = this.cum(ua, ul, 0), down0 = this.cum(da, dl, 0);
+        const free = this.cum(ua, ul, Math.max(0, L / this.vFreeOf[s]! / dt - 1));
         this.sending[s] = Math.max(0, Math.min(free - down0, cdt, up0 - down0));
-        const back = this.cum(down, Math.max(0, L / WAVE_SPEED / dt - 1));
+        const back = this.cum(da, dl, Math.max(0, L / WAVE_SPEED / dt - 1));
         this.room[s] = Math.max(0, Math.min(back + storage - up0, cdt));
       }
       // The origin: what wants to start, up to its queue; the rest is lost.
@@ -324,7 +337,7 @@ export class MesoModel {
         if (next > most) { this.lost += next - most; this.origin[s] = most; } else this.origin[s] = next;
       }
     }
-    for (const ins of this.into.values()) this.node(ins);
+    for (const g of this.into.allGroups()) this.node(g);
     // Starting from the street (a driveway, the map's edge) gives way to the through traffic: what room is left.
     for (let s = 0; s < this.size; s++) {
       if (!this.present[s] || this.origin[s]! <= 0) continue;
@@ -334,6 +347,7 @@ export class MesoModel {
       this.room[s] = this.room[s]! - go;
       this.inflow[s] = this.inflow[s]! + go;
     }
+    const d = this.rings.data;
     for (let s = 0; s < this.size; s++) {
       if (!this.present[s]) continue;
       if (this.insideOf[s]) {
@@ -341,72 +355,77 @@ export class MesoModel {
         if (this.inflow[s]! > 0 && this.pendingOf[s]! >= 1) this.handed.push(s);
         continue;
       }
-      const up = this.up[s]!, down = this.down[s]!;
-      const up0 = this.cum(up, 0), down0 = this.cum(down, 0);
-      up[this.ringAt(up, -1)] = up0 + this.inflow[s]!;
-      down[this.ringAt(down, -1)] = down0 + this.outflow[s]!;
+      const ua = this.upAt[s]!, ul = this.upLen[s]!, da = this.downAt[s]!, dl = this.downLen[s]!;
+      const up0 = this.cum(ua, ul, 0), down0 = this.cum(da, dl, 0);
+      d[ua + this.ringAt(ul, -1)] = up0 + this.inflow[s]!;
+      d[da + this.ringAt(dl, -1)] = down0 + this.outflow[s]!;
     }
     this.tick++;
   }
 
-  /** One node: the approaches' sending flows to their turns, by equal-priority movements, up to each exit's room. */
-  private node(ins: readonly number[]): void {
+  /** One node (its group of links in): the approaches' sending flows to their turns, by equal-priority movements, up to each exit's room. */
+  private node(g: number): void {
+    const ins = this.into, T = this.turns.data, turnAt = this.turnAt, turnLen = this.turnLen;
     let anyLive = false;
-    for (const i of ins) {
+    for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
       this.live[i] = 0;
-      const sink = this.exitOf[i] || !this.outs[i] ? 1 : this.sinkOf[i]!;
+      const sink = this.exitOf[i] || !turnLen[i] ? 1 : this.sinkOf[i]!;
       this.wanted[i] = this.sending[i]! * (1 - sink);
       this.left[i] = this.wanted[i]!;
       if (this.left[i]! > EPS) { this.live[i] = 1; anyLive = true; }
     }
     // Each round ends an approach or fills an exit: at most as many rounds as both.
-    for (let round = 0; anyLive && round <= 2 * ins.length + 1; round++) {
+    const approaches = ins.count(g);
+    for (let round = 0; anyLive && round <= 2 * approaches + 1; round++) {
       // The exits' demand this round: each live approach at its capacity, split by its turns.
       let theta = Infinity;
-      for (const i of ins) {
+      for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
         if (!this.live[i]) continue;
-        const c = this.priority(i), outs = this.outs[i]!, betas = this.betas[i]!;
+        const c = this.priority(i), at = turnAt[i]!, n = turnLen[i]!;
         theta = Math.min(theta, this.left[i]! / c);
-        for (let k = 0; k < outs.length; k++) this.exitDemand[outs[k]!] = this.exitDemand[outs[k]!]! + c * betas[k]!;
+        for (let k = 0; k < n; k++) { const j = T[at + k]!; this.exitDemand[j] = this.exitDemand[j]! + c * T[at + n + k]!; }
       }
-      for (const i of ins) {
+      for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
         if (!this.live[i]) continue;
-        for (const j of this.outs[i]!) {
-          const a = this.exitDemand[j]!;
+        const at = turnAt[i]!, n = turnLen[i]!;
+        for (let k = 0; k < n; k++) {
+          const j = T[at + k]!, a = this.exitDemand[j]!;
           if (a > EPS) theta = Math.min(theta, this.roomOf(j) / a);
         }
       }
       theta = Number.isFinite(theta) ? Math.max(0, theta) : 0;
-      for (const i of ins) {
+      for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
         if (!this.live[i]) continue;
-        const c = this.priority(i), outs = this.outs[i]!, betas = this.betas[i]!;
-        for (let k = 0; k < outs.length; k++) {
-          const j = outs[k]!;
-          if (this.has(j)) this.inflow[j] = this.inflow[j]! + c * betas[k]! * theta;
+        const c = this.priority(i), at = turnAt[i]!, n = turnLen[i]!;
+        for (let k = 0; k < n; k++) {
+          const j = T[at + k]!;
+          if (this.has(j)) this.inflow[j] = this.inflow[j]! + c * T[at + n + k]! * theta;
         }
         this.left[i] = this.left[i]! - c * theta;
       }
       // Each exit's room taken once, by its whole demand of the round, and its demand cleared for the next.
-      for (const i of ins) {
+      for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
         if (!this.live[i]) continue;
-        for (const j of this.outs[i]!) {
-          const a = this.exitDemand[j]!;
+        const at = turnAt[i]!, n = turnLen[i]!;
+        for (let k = 0; k < n; k++) {
+          const j = T[at + k]!, a = this.exitDemand[j]!;
           if (a <= 0) continue;
           if (this.has(j)) this.room[j] = Math.max(0, this.room[j]! - a * theta);
           this.exitDemand[j] = 0;
         }
       }
       anyLive = false;
-      for (const i of ins) {
+      for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
         if (!this.live[i]) continue;
         if (this.left[i]! <= EPS * this.priority(i)) { this.live[i] = 0; continue; }
         // FIFO: an approach with a full exit among its turns waits whole.
-        for (const j of this.outs[i]!) if (this.roomOf(j) <= EPS) { this.live[i] = 0; break; }
+        const at = turnAt[i]!, n = turnLen[i]!;
+        for (let k = 0; k < n; k++) if (this.roomOf(T[at + k]!) <= EPS) { this.live[i] = 0; break; }
         if (this.live[i]) anyLive = true;
       }
     }
     // What left each approach: its share served at the node, and its trips ending in the same proportion (FIFO).
-    for (const i of ins) {
+    for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
       const S = this.sending[i]!, want = this.wanted[i]!;
       const served = Math.min(want, Math.max(0, want - this.left[i]!));
       const total = want > EPS ? S * (served / want) : S;
@@ -429,54 +448,60 @@ export class MesoModel {
   private spread(slot: number, n: number): void {
     const L = this.lengthOf[slot]!, v = this.vFreeOf[slot]!, dt = this.dt;
     const hu = Math.ceil(L / (v * dt)) + 2, hd = Math.ceil(L / (WAVE_SPEED * dt)) + 2;
-    const up = new Float64Array(hu), down = new Float64Array(hd);
-    this.up[slot] = up;
-    this.down[slot] = down;
-    for (let k = 0; k < hu; k++) up[this.ringAt(up, k)] = n * Math.max(0, 1 - (k * dt * v) / L);
+    this.dropRings(slot);
+    const ua = this.rings.alloc(hu), da = this.rings.alloc(hd), d = this.rings.data;
+    this.upAt[slot] = ua; this.upLen[slot] = hu;
+    this.downAt[slot] = da; this.downLen[slot] = hd;
+    d.fill(0, da, da + hd);
+    for (let k = 0; k < hu; k++) d[ua + this.ringAt(hu, k)] = n * Math.max(0, 1 - (k * dt * v) / L);
   }
 
-  /** The cumulative count `back` steps ago (fractional: between the two steps either side). */
-  private cum(ring: Float64Array, back: number): number {
-    const b = Math.min(ring.length - 1, Math.max(0, back));
-    const k0 = Math.floor(b), k1 = Math.min(ring.length - 1, k0 + 1), f = b - k0;
-    const a = ring[this.ringAt(ring, k0)]!;
-    return f > 0 ? a + (ring[this.ringAt(ring, k1)]! - a) * f : a;
+  private dropRings(slot: number): void {
+    if (this.upAt[slot]! >= 0) this.rings.release(this.upAt[slot]!, this.upLen[slot]!);
+    if (this.downAt[slot]! >= 0) this.rings.release(this.downAt[slot]!, this.downLen[slot]!);
+    this.upAt[slot] = -1; this.upLen[slot] = 0;
+    this.downAt[slot] = -1; this.downLen[slot] = 0;
   }
 
-  /** The ring's cell for `back` steps ago (-1: the next step). */
-  private ringAt(ring: Float64Array, back: number): number {
-    const h = ring.length;
+  private dropTurns(slot: number): void {
+    if (this.turnLen[slot]! > 0) this.turns.release(this.turnAt[slot]!, 2 * this.turnLen[slot]!);
+    this.turnAt[slot] = -1;
+    this.turnLen[slot] = 0;
+  }
+
+  /** The cumulative count `back` steps ago in the ring at `at` of `h` (fractional: between the two steps either side). */
+  private cum(at: number, h: number, back: number): number {
+    const ring = this.rings.data;
+    const b = Math.min(h - 1, Math.max(0, back));
+    const k0 = Math.floor(b), k1 = Math.min(h - 1, k0 + 1), f = b - k0;
+    const a = ring[at + this.ringAt(h, k0)]!;
+    return f > 0 ? a + (ring[at + this.ringAt(h, k1)]! - a) * f : a;
+  }
+
+  /** A ring of `h`'s cell for `back` steps ago (-1: the next step). */
+  private ringAt(h: number, back: number): number {
     return (((this.tick - back) % h) + h) % h;
-  }
-
-  private unfileNode(slot: number): void {
-    const list = this.into.get(this.toOf[slot]!);
-    if (!list) return;
-    const at = list.indexOf(slot);
-    if (at >= 0) list.splice(at, 1);
-    if (!list.length) this.into.delete(this.toOf[slot]!);
   }
 
   /** Room for slots below `n`, doubling. */
   private reserve(n: number): void {
     if (n <= this.size) return;
-    const cap = this.present.length;
-    if (n > cap) {
-      const next = Math.max(n, cap * 2, 64);
-      const grow = <T extends Float64Array | Uint8Array | Int32Array>(a: T): T => {
-        const b = new (a.constructor as unknown as new (n: number) => T)(next);
-        b.set(a);
-        return b;
-      };
-      this.present = grow(this.present); this.exitOf = grow(this.exitOf);
-      this.insideOf = grow(this.insideOf); this.toOf = grow(this.toOf); this.lanesOf = grow(this.lanesOf);
-      this.lengthOf = grow(this.lengthOf); this.vFreeOf = grow(this.vFreeOf); this.capOf = grow(this.capOf);
-      this.sinkOf = grow(this.sinkOf); this.genOf = grow(this.genOf); this.origin = grow(this.origin);
-      this.pendingOf = grow(this.pendingOf); this.microOf = grow(this.microOf); this.sending = grow(this.sending);
-      this.room = grow(this.room); this.inflow = grow(this.inflow); this.outflow = grow(this.outflow);
-      this.left = grow(this.left); this.wanted = grow(this.wanted); this.exitDemand = grow(this.exitDemand); this.live = grow(this.live);
+    if (n > this.cap) {
+      const next = Math.max(n, this.cap * 2, 64);
+      this.present = grown(this.present, next); this.exitOf = grown(this.exitOf, next);
+      this.insideOf = grown(this.insideOf, next); this.toOf = grown(this.toOf, next); this.lanesOf = grown(this.lanesOf, next);
+      this.lengthOf = grown(this.lengthOf, next); this.vFreeOf = grown(this.vFreeOf, next); this.capOf = grown(this.capOf, next);
+      this.sinkOf = grown(this.sinkOf, next); this.genOf = grown(this.genOf, next); this.origin = grown(this.origin, next);
+      this.pendingOf = grown(this.pendingOf, next); this.microOf = grown(this.microOf, next); this.sending = grown(this.sending, next);
+      this.room = grown(this.room, next); this.inflow = grown(this.inflow, next); this.outflow = grown(this.outflow, next);
+      this.left = grown(this.left, next); this.wanted = grown(this.wanted, next); this.exitDemand = grown(this.exitDemand, next);
+      this.live = grown(this.live, next);
+      this.upAt = grown(this.upAt, next, -1); this.upLen = grown(this.upLen, next);
+      this.downAt = grown(this.downAt, next, -1); this.downLen = grown(this.downLen, next);
+      this.turnAt = grown(this.turnAt, next, -1); this.turnLen = grown(this.turnLen, next);
+      this.into.reserve(next);
+      this.cap = next;
     }
-    while (this.up.length < n) { this.up.push(null); this.down.push(null); this.outs.push(null); this.betas.push(null); }
     this.size = n;
   }
 }

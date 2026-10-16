@@ -1,5 +1,5 @@
 import { m } from '@world/units';
-import { CellFiling } from '@world/cells';
+import { CELL } from '@world/cells';
 import type { LaneletId } from '@world/lanelets';
 import { segmentLine } from '@world/geometry';
 import { OWNER } from '@world/tiles';
@@ -12,6 +12,7 @@ import { DemandCells } from './demand';
 import { MC, MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS, ML, type MesoMemory } from './memory';
 import { LINK_CROSSING, LINK_ONE_WAY, NODE_BULB, type TileLinks, linkId, linkSegment, reverseLink } from './tileLinks';
 import type { TileLinkFeed } from './tileFeed';
+import { SlotIndex, Threads, grown } from './slots';
 
 /** THE MESO TRAFFIC IN THE SIMULATION: the world's flows (`model.ts`) over the page's tiles (the lane graph) and the stored tiles round them (`tileLinks.ts`), and the micro window they hand their cars to and take them back from */
 
@@ -25,15 +26,14 @@ const ADMIT_PER_TICK = 4;
 const ENTRY_CLEARANCE = m(0.6);
 /** The serial of a slot's line wraps here: a Float32 holds it whole (`memory.ts` ML.shape). */
 const SHAPE_WRAP = (1 << 24) - 1;
+/** A node's word (`nodes`): a turning circle, a crossing at it, then the roads meeting at it counted in steps of `ROAD`. */
+const BULB = 1;
+const CROSSING = 2;
+const ROAD = 4;
 
-/** What one directed road is made of in the lane graph: its link lanes the cars may take (not the buses' own). */
-interface SlotLanes { readonly lanes: LaneletId[] }
-/** A slot filed by its middle (`CellFiling` holds objects). */
-interface Filed { readonly x: number; readonly y: number }
-/** Where a slot's road runs: the nodes it joins and its segment. */
-interface Ends { readonly from: number; readonly to: number; readonly segment: number }
-/** A link of a tile's table behind a slot. */
-interface Backing { readonly table: TileLinks; readonly index: number }
+/** The world's 256 m cell holding a point, as `CellFiling` keys it: the window finds its links by it. */
+const cellOfPoint = (x: number, y: number): number => (Math.floor(x / CELL) + 32768) * 65536 + (Math.floor(y / CELL) + 32768);
+
 /** A change of the page's tiles, as the streamer tells it (`worldStreamer.ts` StreamerEvents). */
 export type TileEvent = 'loaded' | 'letGo' | 'written';
 
@@ -41,37 +41,45 @@ export class Meso {
   model = new MesoModel(MESO_DT);
   private demand = new DemandCells();
   private memory: MesoMemory | null = null;
-  /** The buffer the lines were last written to whole. */
   /** The slots of the buffer the lines were last written to whole (the page only ever makes a bigger one; a message's buffer is a new object each time, never the same one). */
   private published = 0;
   private clock = 0;
   private graphSeen: object | null = null;
   /** DO NOT index the model by a link's id: a tile's ids pass 2^51. Each link its dense slot, the slots freed taken again. */
-  private readonly slotOf = new Map<number, number>();
-  private readonly linkAt: number[] = [];
-  private readonly freeSlots: number[] = [];
-  /** Each link lane's slot, and each live slot's lanes (the page's tiles). */
-  private readonly laneSlot = new Map<LaneletId, number>();
-  private readonly slotLanes = new Map<number, SlotLanes>();
-  /** Each slot's middle and its demand cell, its ends, its tile; the table link behind it (a tile the page does not hold). */
-  private readonly middle = new Map<number, Filed>();
-  private readonly cellOf = new Map<number, number>();
-  private readonly ends = new Map<number, Ends>();
-  private readonly tileOf = new Map<number, number>();
-  private readonly slotsOfTile = new Map<number, Set<number>>();
-  private readonly backing = new Map<number, Backing>();
-  private readonly filing = new CellFiling<number, Filed>();
-  /** The links leaving each node, the roads meeting at it (counted by their links), and the nodes that are turning circles or carry a crossing. */
-  private readonly outAt = new Map<number, Set<number>>();
-  private readonly roadsAt = new Map<number, Map<number, number>>();
-  private readonly bulbs = new Set<number>();
-  private readonly crossings = new Set<number>();
+  private index = new SlotIndex();
+  private slotTop = 0;
+  private freeSlots: number[] = [];
+  /** Room for slots below it in every table by slot. */
+  private cap = 0;
+  /** Each slot's link (NaN: none). */
+  private linkAt = new Float64Array(0);
+  /** Each link lane's slot, and each live slot's lanes (the page's tiles only: undefined for a table's link). */
+  private laneSlot = new Map<LaneletId, number>();
+  private laneLists: (LaneletId[] | undefined)[] = [];
+  /** Each slot's middle (x, y) and its demand cell. */
+  private mid = new Float64Array(0);
+  private cellOf = new Float64Array(0);
+  /** Each slot's road: the nodes it joins and its segment, when `placed`. */
+  private endFrom = new Float64Array(0);
+  private endTo = new Float64Array(0);
+  private endSeg = new Float64Array(0);
+  private placed = new Uint8Array(0);
+  /** The table link behind a slot (null: none), and its index there. */
+  private backTable: (TileLinks | null)[] = [];
+  private backIndex = new Int32Array(0);
+  /** The slots by tile, by the 256 m cell of their middle (the window's), by the node they leave and the node they reach. */
+  private tiles = new Threads();
+  private cells = new Threads();
+  private outAt = new Threads();
+  private inAt = new Threads();
+  /** Each node's word (`BULB`, `CROSSING`, `ROAD`s), while a road meets it or it is flagged. */
+  private nodes = new Map<number, number>();
   /** Nodes whose links came or went since the last `settle`: their links' exits, signals and turns worked out again. */
   private touchedNodes = new Set<number>();
-  /** Each slot's line (start, middle, end: x, y), whether its road is one-way, and the slots whose line the page has not had. */
+  /** Each slot's line (start, middle, end: x, y), whether its road is one-way, and whether the page has not had its line. */
   private lines = new Float32Array(0);
   private oneWay = new Uint8Array(0);
-  private readonly linesDirty = new Set<number>();
+  private dirty = new Uint8Array(0);
   private shapeSerial = 0;
   /** The tiles the page's document holds; those it let go whose table has not come; the tables of the others; the tables come and not applied yet. */
   private readonly live = new Set<number>();
@@ -100,24 +108,30 @@ export class Meso {
     this.demand = new DemandCells();
     this.clock = 0;
     this.graphSeen = null;
-    this.slotOf.clear();
-    this.linkAt.length = 0;
-    this.freeSlots.length = 0;
-    this.laneSlot.clear();
-    this.slotLanes.clear();
-    this.middle.clear();
-    this.cellOf.clear();
-    this.ends.clear();
-    this.tileOf.clear();
-    this.slotsOfTile.clear();
-    this.backing.clear();
-    for (const id of [...this.filing.ids()]) this.filing.remove(id);
-    this.outAt.clear();
-    this.roadsAt.clear();
-    this.bulbs.clear();
-    this.crossings.clear();
+    this.index = new SlotIndex();
+    this.slotTop = 0;
+    this.freeSlots = [];
+    this.cap = 0;
+    this.linkAt = new Float64Array(0);
+    this.laneSlot = new Map();
+    this.laneLists = [];
+    this.mid = new Float64Array(0);
+    this.cellOf = new Float64Array(0);
+    this.endFrom = new Float64Array(0);
+    this.endTo = new Float64Array(0);
+    this.endSeg = new Float64Array(0);
+    this.placed = new Uint8Array(0);
+    this.backTable = [];
+    this.backIndex = new Int32Array(0);
+    this.tiles = new Threads();
+    this.cells = new Threads();
+    this.outAt = new Threads();
+    this.inAt = new Threads();
+    this.nodes = new Map();
     this.touchedNodes.clear();
-    this.linesDirty.clear();
+    this.lines = new Float32Array(0);
+    this.oneWay = new Uint8Array(0);
+    this.dirty = new Uint8Array(0);
     this.published = 0;
     this.sweep.clear();
     this.owned.clear();
@@ -213,113 +227,142 @@ export class Meso {
 
   /** The slot of a link (`tileLinks.ts` linkId), if it is in the model. */
   slotOfLink(link: number): number | undefined {
-    return this.slotOf.get(link);
+    const slot = this.index.get(link);
+    return slot >= 0 ? slot : undefined;
   }
 
   /** The link a slot holds (NaN: none). */
   linkOfSlot(slot: number): number {
-    return this.linkAt[slot] ?? Number.NaN;
+    return slot < this.cap ? this.linkAt[slot]! : Number.NaN;
   }
 
   // ------------------------------------------------------------ slots
 
   private slotFor(link: number): number {
-    let slot = this.slotOf.get(link);
-    if (slot !== undefined) return slot;
-    slot = this.freeSlots.pop() ?? this.linkAt.length;
-    this.slotOf.set(link, slot);
+    let slot = this.index.get(link);
+    if (slot >= 0) return slot;
+    slot = this.freeSlots.pop() ?? this.slotTop++;
+    this.reserve(slot + 1);
+    this.index.set(link, slot);
     this.linkAt[slot] = link;
     return slot;
   }
 
+  /** Room for slots below `n` in every table by slot, doubling. */
+  private reserve(n: number): void {
+    if (n <= this.cap) return;
+    const next = Math.max(n, this.cap * 2, 64);
+    this.linkAt = grown(this.linkAt, next, Number.NaN);
+    this.mid = grown(this.mid, next * 2);
+    this.cellOf = grown(this.cellOf, next);
+    this.endFrom = grown(this.endFrom, next);
+    this.endTo = grown(this.endTo, next);
+    this.endSeg = grown(this.endSeg, next);
+    this.placed = grown(this.placed, next);
+    this.backIndex = grown(this.backIndex, next);
+    this.lines = grown(this.lines, next * 6);
+    this.oneWay = grown(this.oneWay, next);
+    this.dirty = grown(this.dirty, next);
+    while (this.laneLists.length < next) { this.laneLists.push(undefined); this.backTable.push(null); }
+    for (const t of [this.tiles, this.cells, this.outAt, this.inAt]) t.reserve(next);
+    this.cap = next;
+  }
+
   private isLive(slot: number): boolean {
-    return this.slotLanes.has(slot);
+    return this.laneLists[slot] !== undefined;
+  }
+
+  /** The roads meeting at `node` (distinct segments), and whether it is a turning circle or carries a crossing. */
+  private roadsAt(node: number): number {
+    return Math.floor((this.nodes.get(node) ?? 0) / ROAD);
+  }
+
+  private flagged(node: number, flag: number): boolean {
+    return ((this.nodes.get(node) ?? 0) & flag) !== 0;
+  }
+
+  private flag(node: number, flag: number): void {
+    this.nodes.set(node, (this.nodes.get(node) ?? 0) | flag);
+  }
+
+  /** A road more or fewer at `node`; with none left, the node's flags go with it. */
+  private addRoads(node: number, d: number): void {
+    const v = (this.nodes.get(node) ?? 0) + d * ROAD;
+    if (v < ROAD) this.nodes.delete(node); else this.nodes.set(node, v);
+  }
+
+  /** Whether a placed slot of `segment` leaves or reaches `node`. */
+  private segmentAt(node: number, segment: number): boolean {
+    for (const t of [this.outAt, this.inAt]) {
+      for (let s = t.head(t.group(node)); s >= 0; s = t.after(s)) if (this.endSeg[s] === segment) return true;
+    }
+    return false;
   }
 
   /** A slot's road filed at its nodes (the joins, the turns), its tile noted. */
-  private placeEnds(slot: number, ends: Ends, tile: number): void {
-    const was = this.ends.get(slot);
-    if (!was || was.from !== ends.from || was.to !== ends.to || was.segment !== ends.segment) {
-      if (was) this.unplaceEnds(slot, was);
-      this.ends.set(slot, ends);
-      let outs = this.outAt.get(ends.from);
-      if (!outs) this.outAt.set(ends.from, outs = new Set());
-      outs.add(slot);
-      for (const node of [ends.from, ends.to]) {
-        let roads = this.roadsAt.get(node);
-        if (!roads) this.roadsAt.set(node, roads = new Map());
-        roads.set(ends.segment, (roads.get(ends.segment) ?? 0) + 1);
-        this.touchedNodes.add(node);
-      }
+  private placeEnds(slot: number, from: number, to: number, segment: number, tile: number): void {
+    const same = this.placed[slot] === 1 && this.endFrom[slot] === from && this.endTo[slot] === to && this.endSeg[slot] === segment;
+    if (!same) {
+      if (this.placed[slot]) this.unplaceEnds(slot);
+      const newFrom = !this.segmentAt(from, segment);
+      const newTo = to !== from && !this.segmentAt(to, segment);
+      this.endFrom[slot] = from;
+      this.endTo[slot] = to;
+      this.endSeg[slot] = segment;
+      this.placed[slot] = 1;
+      this.outAt.add(slot, from);
+      this.inAt.add(slot, to);
+      if (newFrom) this.addRoads(from, 1);
+      if (newTo) this.addRoads(to, 1);
+      this.touchedNodes.add(from);
+      this.touchedNodes.add(to);
     }
-    const tileWas = this.tileOf.get(slot);
-    if (tileWas === tile) return;
-    if (tileWas !== undefined) this.slotsOfTile.get(tileWas)?.delete(slot);
-    this.tileOf.set(slot, tile);
-    let set = this.slotsOfTile.get(tile);
-    if (!set) this.slotsOfTile.set(tile, set = new Set());
-    set.add(slot);
+    if (this.tiles.keyOf(slot) !== tile) this.tiles.add(slot, tile);
   }
 
-  private unplaceEnds(slot: number, ends: Ends): void {
-    this.ends.delete(slot);
-    const outs = this.outAt.get(ends.from);
-    outs?.delete(slot);
-    if (outs && !outs.size) this.outAt.delete(ends.from);
-    for (const node of [ends.from, ends.to]) {
-      const roads = this.roadsAt.get(node);
-      if (roads) {
-        const n = (roads.get(ends.segment) ?? 0) - 1;
-        if (n > 0) roads.set(ends.segment, n); else roads.delete(ends.segment);
-        if (!roads.size) { this.roadsAt.delete(node); this.bulbs.delete(node); this.crossings.delete(node); }
-      }
-      this.touchedNodes.add(node);
-    }
+  private unplaceEnds(slot: number): void {
+    const from = this.endFrom[slot]!, to = this.endTo[slot]!, segment = this.endSeg[slot]!;
+    this.placed[slot] = 0;
+    this.outAt.remove(slot);
+    this.inAt.remove(slot);
+    if (!this.segmentAt(from, segment)) this.addRoads(from, -1);
+    if (to !== from && !this.segmentAt(to, segment)) this.addRoads(to, -1);
+    this.touchedNodes.add(from);
+    this.touchedNodes.add(to);
   }
 
   private touchEnds(slot: number): void {
-    const ends = this.ends.get(slot);
-    if (ends) { this.touchedNodes.add(ends.from); this.touchedNodes.add(ends.to); }
+    if (!this.placed[slot]) return;
+    this.touchedNodes.add(this.endFrom[slot]!);
+    this.touchedNodes.add(this.endTo[slot]!);
   }
 
-  /** A slot's place: its middle filed for the window, its demand cell, its line for the page. */
-  private placeLine(slot: number, line: readonly number[], oneWay: boolean): void {
-    const filed = { x: line[2]!, y: line[3]! };
-    this.middle.set(slot, filed);
-    this.cellOf.set(slot, this.demand.cellOf(filed.x, filed.y));
-    this.filing.file(slot, filed, [filed.x, filed.y, filed.x, filed.y]);
-    if (this.lines.length < (slot + 1) * 6) {
-      const grown = new Float32Array(Math.max((slot + 1) * 6, this.lines.length * 2, 6 * 64));
-      grown.set(this.lines);
-      this.lines = grown;
-      const flags = new Uint8Array(grown.length / 6);
-      flags.set(this.oneWay);
-      this.oneWay = flags;
-    }
-    this.lines.set(line, slot * 6);
+  /** A slot's place: its middle filed for the window, its demand cell, its line (six numbers of `line` from `at`) for the page. */
+  private placeLine(slot: number, line: ArrayLike<number>, at: number, oneWay: boolean): void {
+    const x = line[at + 2]!, y = line[at + 3]!;
+    this.mid[2 * slot] = x;
+    this.mid[2 * slot + 1] = y;
+    this.cellOf[slot] = this.demand.cellOf(x, y);
+    this.cells.add(slot, cellOfPoint(x, y));
+    for (let k = 0; k < 6; k++) this.lines[slot * 6 + k] = line[at + k]!;
     this.oneWay[slot] = oneWay ? 1 : 0;
-    this.linesDirty.add(slot);
+    this.dirty[slot] = 1;
   }
 
   /** A link gone from the world (or out of the meso's reach): what was on it leaves the model, its slot free. */
   private dropSlot(slot: number): void {
-    const ends = this.ends.get(slot);
-    if (ends) this.unplaceEnds(slot, ends);
+    if (this.placed[slot]) this.unplaceEnds(slot);
     this.model.dropLink(slot);
-    for (const id of this.slotLanes.get(slot)?.lanes ?? []) this.laneSlot.delete(id);
-    this.slotLanes.delete(slot);
-    this.backing.delete(slot);
-    const tile = this.tileOf.get(slot);
-    if (tile !== undefined) this.slotsOfTile.get(tile)?.delete(slot);
-    this.tileOf.delete(slot);
-    this.middle.delete(slot);
-    this.cellOf.delete(slot);
-    this.filing.remove(slot);
+    for (const id of this.laneLists[slot] ?? []) this.laneSlot.delete(id);
+    this.laneLists[slot] = undefined;
+    this.backTable[slot] = null;
+    this.tiles.remove(slot);
+    this.cells.remove(slot);
     this.pendingSlots.delete(slot);
     this.fill.delete(slot);
-    this.linesDirty.delete(slot);
-    const link = this.linkAt[slot];
-    if (link !== undefined && !Number.isNaN(link)) this.slotOf.delete(link);
+    this.dirty[slot] = 0;
+    const link = this.linkAt[slot]!;
+    if (!Number.isNaN(link)) this.index.delete(link);
     this.linkAt[slot] = Number.NaN;
     this.freeSlots.push(slot);
   }
@@ -351,8 +394,8 @@ export class Meso {
       if (was !== undefined) {
         touched.add(was);
         this.laneSlot.delete(id);
-        const list = this.slotLanes.get(was);
-        if (list) { const at = list.lanes.indexOf(id); if (at >= 0) list.lanes.splice(at, 1); }
+        const list = this.laneLists[was];
+        if (list) { const at = list.indexOf(id); if (at >= 0) list.splice(at, 1); }
       }
       const lane = w.graph.lanelets.get(id);
       if (!lane || lane.kind !== 'link' || lane.segment === undefined || lane.use === 'bus') continue;
@@ -360,9 +403,9 @@ export class Meso {
       if (!seg) continue;
       const slot = this.slotFor(linkId(lane.segment, seg.a === lane.from ? 0 : 1));
       this.laneSlot.set(id, slot);
-      let list = this.slotLanes.get(slot);
-      if (!list) this.slotLanes.set(slot, list = { lanes: [] });
-      list.lanes.push(id);
+      let list = this.laneLists[slot];
+      if (!list) this.laneLists[slot] = list = [];
+      list.push(id);
       touched.add(slot);
     }
     for (const slot of [...touched].sort((a, b) => a - b)) this.relink(w, slot);
@@ -372,49 +415,47 @@ export class Meso {
 
   /** One slot made again from its lanes; with none left, its tile's table link takes it (the tile let go) or it goes. */
   private relink(w: SimWorld, slot: number): void {
-    const list = this.slotLanes.get(slot);
-    const lanes = list?.lanes.filter((id) => w.graph.lanelets.has(id)) ?? [];
+    const lanes = this.laneLists[slot]?.filter((id) => w.graph.lanelets.has(id)) ?? [];
     // Its ends' turns and exits worked out again (`settle`): a road of the page's roads or of a table's meets them now.
     this.touchEnds(slot);
     if (!lanes.length) {
-      this.slotLanes.delete(slot);
+      this.laneLists[slot] = undefined;
       this.pendingSlots.delete(slot);
       this.fill.delete(slot);
       // Its micro cars went with the lanes: what was handed to it and not made is the model's again.
       if (this.model.isInside(slot)) this.model.leaveWindow(slot, 0);
-      const back = this.backing.get(slot);
-      if (back && !this.live.has(back.table.key)) { this.placeTableLink(slot, back); return; }
-      const tile = this.tileOf.get(slot);
+      const back = this.backTable[slot];
+      if (back && !this.live.has(back.key)) { this.placeTableLink(slot, back, this.backIndex[slot]!); return; }
+      const tile = this.tiles.keyOf(slot);
       // DO NOT drop the links of a tile let go before its table comes: their vehicles would be lost; held as they are.
-      if (tile !== undefined && this.awaiting.has(tile) && this.model.has(slot)) return;
+      if (this.awaiting.has(tile) && this.model.has(slot)) return;
       this.dropSlot(slot);
       return;
     }
     lanes.sort();
-    this.slotLanes.set(slot, { lanes });
+    this.laneLists[slot] = lanes;
     const first = w.graph.lanelets.get(lanes[0]!)!;
     const segment = first.segment as number;
     const seg = w.doc.segment(first.segment!)!;
     const a = w.doc.node(seg.a)!, b = w.doc.node(seg.b)!;
     const tile = OWNER.segment(a, b);
     // A table link of a tile now held by the page: the live link takes its slot and its vehicles (a tile let go keeps its table link for when the lanes go).
-    if (this.live.has(tile) && this.backing.delete(slot)) this.sweep.add(tile);
-    this.placeEnds(slot, { from: first.from as number, to: first.to as number, segment }, tile);
-    for (const end of [a, b]) if (end.end === 'bulb') this.bulbs.add(end.id);
+    if (this.live.has(tile) && this.backTable[slot]) { this.backTable[slot] = null; this.sweep.add(tile); }
+    this.placeEnds(slot, first.from as number, first.to as number, segment, tile);
+    for (const end of [a, b]) if (end.end === 'bulb') this.flag(end.id, BULB);
     const line = segmentLine({ x: a.x, y: a.y }, { x: b.x, y: b.y }, seg.curve);
     const mid = line.sampleAt(line.length / 2).p;
-    this.placeLine(slot, [a.x, a.y, mid.x, mid.y, b.x, b.y], seg.direction !== 'both');
+    this.placeLine(slot, [a.x, a.y, mid.x, mid.y, b.x, b.y], 0, seg.direction !== 'both');
     this.setSpec(w, slot);
-    const filed = this.middle.get(slot)!;
-    const inside = this.inWindow(filed);
+    const inside = this.inWindow(mid.x, mid.y);
     if (inside && !this.model.isInside(slot)) this.enter(slot);
     else if (!inside && this.model.isInside(slot)) this.leave(w, slot);
   }
 
-  /** The table links of a tile the page now holds that the lane graph will not take (their road is not in the document): gone. */
+  /** The table links of a tile now held by the page that the lane graph will not take (their road is not in the document): gone. */
   private sweepTile(w: SimWorld, key: number): void {
-    for (const slot of [...this.slotsOfTile.get(key) ?? []]) {
-      if (this.isLive(slot) || !this.backing.has(slot)) continue;
+    for (const slot of this.tiles.list(key)) {
+      if (this.isLive(slot) || !this.backTable[slot]) continue;
       if (!w.doc.segment(linkSegment(this.linkAt[slot]!) as never)) this.dropSlot(slot);
     }
   }
@@ -441,17 +482,17 @@ export class Meso {
     this.tables.set(key, table);
     this.awaiting.delete(key);
     this.demand.setFar(key, table.cells);
-    for (let k = 0; k < table.nodes.length; k++) if (table.nodeFlags[k]! & NODE_BULB) this.bulbs.add(table.nodes[k]!);
+    for (let k = 0; k < table.nodes.length; k++) if (table.nodeFlags[k]! & NODE_BULB) this.flag(table.nodes[k]!, BULB);
     const kept = new Set<number>();
     for (let k = 0; k < table.count; k++) {
       const slot = this.slotFor(table.link[k]!);
       kept.add(slot);
-      const back = { table, index: k };
-      this.backing.set(slot, back);
+      this.backTable[slot] = table;
+      this.backIndex[slot] = k;
       // Still in the lane graph (the page let the tile go, the graph not caught up): the table takes it when its lanes go (`relink`).
-      if (!this.isLive(slot)) this.placeTableLink(slot, back);
+      if (!this.isLive(slot)) this.placeTableLink(slot, table, k);
     }
-    for (const slot of [...this.slotsOfTile.get(key) ?? []]) if (!kept.has(slot) && !this.isLive(slot)) this.dropSlot(slot);
+    for (const slot of this.tiles.list(key)) if (!kept.has(slot) && !this.isLive(slot)) this.dropSlot(slot);
   }
 
   /** A tile out of the meso's reach: its links and their vehicles leave the model. */
@@ -460,16 +501,15 @@ export class Meso {
     this.awaiting.delete(key);
     this.demand.dropFar(key);
     if (this.live.has(key)) return;
-    for (const slot of [...this.slotsOfTile.get(key) ?? []]) if (!this.isLive(slot)) this.dropSlot(slot);
+    for (const slot of this.tiles.list(key)) if (!this.isLive(slot)) this.dropSlot(slot);
   }
 
   /** A slot made from its table link: its ends, its line, its numbers; a new one starts as its street stands at this hour. */
-  private placeTableLink(slot: number, back: Backing): void {
-    const { table, index: k } = back;
-    const ends = { from: table.from[k]!, to: table.to[k]!, segment: linkSegment(table.link[k]!) };
-    this.placeEnds(slot, ends, table.key);
-    if (table.flags[k]! & LINK_CROSSING) this.crossings.add(ends.to);
-    this.placeLine(slot, Array.from(table.shape.subarray(k * 6, k * 6 + 6)), (table.flags[k]! & LINK_ONE_WAY) !== 0);
+  private placeTableLink(slot: number, table: TileLinks, k: number): void {
+    const to = table.to[k]!;
+    this.placeEnds(slot, table.from[k]!, to, linkSegment(table.link[k]!), table.key);
+    if (table.flags[k]! & LINK_CROSSING) this.flag(to, CROSSING);
+    this.placeLine(slot, table.shape, k * 6, (table.flags[k]! & LINK_ONE_WAY) !== 0);
     // Never in the micro window: it has no lanes to make its cars on.
     if (this.model.isInside(slot)) this.model.leaveWindow(slot, 0);
     this.pendingSlots.delete(slot);
@@ -484,22 +524,22 @@ export class Meso {
 
   /** A node where the world ends: one road, not a turning circle (`RoadDoc.mapEdge`), counted over the page's roads and the tables'. */
   private edgeAt(node: number): boolean {
-    return (this.roadsAt.get(node)?.size ?? 0) === 1 && !this.bulbs.has(node);
+    return this.roadsAt(node) === 1 && !this.flagged(node, BULB);
   }
 
   private tableSpec(table: TileLinks, k: number): MesoLinkSpec {
     const to = table.to[k]!;
     // Its stop line by the roads met at its end over every tile there (a junction on a tile's edge counts both tiles' roads).
-    const controlled = (this.roadsAt.get(to)?.size ?? 0) >= 3 || (table.flags[k]! & LINK_CROSSING) !== 0;
+    const controlled = this.roadsAt(to) >= 3 || (table.flags[k]! & LINK_CROSSING) !== 0;
     return { to, lanes: table.lanes[k]!, length: table.length[k]!, vFree: table.vFree[k]!, controlled, exit: this.edgeAt(to) };
   }
 
   /** A live slot's numbers from its lanes (`lanelets.ts`); its exit over the roads met at its end in every tile. */
   private setSpec(w: SimWorld, slot: number): void {
-    const lanes = this.slotLanes.get(slot)?.lanes;
+    const lanes = this.laneLists[slot];
     if (!lanes?.length) {
-      const back = this.backing.get(slot);
-      if (back && this.model.has(slot)) this.model.setLink(slot, this.tableSpec(back.table, back.index));
+      const back = this.backTable[slot];
+      if (back && this.model.has(slot)) this.model.setLink(slot, this.tableSpec(back, this.backIndex[slot]!));
       return;
     }
     let length = 0, vFree = 0, controlled = false;
@@ -517,7 +557,7 @@ export class Meso {
 
   /** A new link starts as a street of its land use stands at this hour (in free flow): the map is full from its first step. */
   private seedNew(slot: number, length: number): void {
-    const n = this.demand.carsPer100m(this.cellOf.get(slot)!) * (length / m(100)) * this.scale;
+    const n = this.demand.carsPer100m(this.cellOf[slot]!) * (length / m(100)) * this.scale;
     if (n > 0) this.model.seed(slot, n);
   }
 
@@ -539,9 +579,9 @@ export class Meso {
   private returns(w: SimWorld, slot: number): void {
     if (!this.model.has(slot)) return;
     const node = this.model.toAt(slot);
-    const outs = [...this.outAt.get(node) ?? []].filter((o) => this.model.has(o));
-    const lanes = this.slotLanes.get(slot)?.lanes;
-    const back = this.slotOf.get(reverseLink(this.linkAt[slot]!));
+    const outs = this.outAt.list(node).filter((o) => this.model.has(o));
+    const lanes = this.laneLists[slot];
+    const back = this.index.get(reverseLink(this.linkAt[slot]!));
     const weight = new Map<number, number>();
     if (lanes?.length && outs.every((o) => this.isLive(o))) {
       for (const id of lanes) {
@@ -553,19 +593,19 @@ export class Meso {
         }
       }
     } else {
-      const own = this.backing.get(slot);
-      if (own && !lanes?.length && this.onlyTable(own.table, node, outs)) {
+      const own = this.backTable[slot];
+      if (own && !lanes?.length && this.onlyTable(own, node, outs)) {
         // A node of one table's roads only: its turns as baked.
-        const { table, index: k } = own;
-        for (let t = table.turnStart[k]!; t < table.turnStart[k + 1]!; t++) {
-          const j = this.slotOf.get(table.link[table.turnTo[t]!]!);
-          if (j !== undefined) weight.set(j, table.turnWeight[t]!);
+        const k = this.backIndex[slot]!;
+        for (let t = own.turnStart[k]!; t < own.turnStart[k + 1]!; t++) {
+          const j = this.index.get(own.link[own.turnTo[t]!]!);
+          if (j >= 0) weight.set(j, own.turnWeight[t]!);
         }
       } else {
         for (const o of outs) weight.set(o, this.model.lanesAt(o));
       }
     }
-    if (weight.size > 1 && back !== undefined) weight.delete(back);
+    if (weight.size > 1 && back >= 0) weight.delete(back);
     const to = [...weight.keys()].sort((a, b) => a - b);
     this.model.setTurns(slot, to, to.map((j) => weight.get(j)!));
   }
@@ -573,16 +613,30 @@ export class Meso {
   /** Whether every link into and out of `node` is a link of `table` held by no lanes. */
   private onlyTable(table: TileLinks, node: number, outs: readonly number[]): boolean {
     for (const s of [...this.model.inLinks(node), ...outs]) {
-      if (this.isLive(s) || this.backing.get(s)?.table !== table) return false;
+      if (this.isLive(s) || this.backTable[s] !== table) return false;
     }
     return true;
   }
 
   // ------------------------------------------------------------ the micro window
 
-  private inWindow(p: Filed): boolean {
+  private inWindow(x: number, y: number): boolean {
     const win = this.micro;
-    return win.r > 0 && Math.hypot(p.x - win.x, p.y - win.y) < win.r;
+    return win.r > 0 && Math.hypot(x - win.x, y - win.y) < win.r;
+  }
+
+  /** The slots whose middle is in the rectangle, by the cells it covers, added to `out`. */
+  private slotsIn(x0: number, y0: number, x1: number, y1: number, out: Set<number>): void {
+    const cx0 = Math.floor(x0 / CELL), cx1 = Math.floor(x1 / CELL), cy0 = Math.floor(y0 / CELL), cy1 = Math.floor(y1 / CELL);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const cells = this.cells;
+        for (let s = cells.head(cells.group((cx + 32768) * 65536 + (cy + 32768))); s >= 0; s = cells.after(s)) {
+          const x = this.mid[2 * s]!, y = this.mid[2 * s + 1]!;
+          if (x >= x0 && x <= x1 && y >= y0 && y <= y1) out.add(s);
+        }
+      }
+    }
   }
 
   /** DO NOT look at every link of the map: only those filed where the window was or will be. */
@@ -590,14 +644,13 @@ export class Meso {
     this.wanted = null;
     const was = this.micro;
     const look = new Set<number>();
-    if (was.r > 0) for (const id of this.filing.idsMeeting([was.x - was.r, was.y - was.r, was.x + was.r, was.y + was.r])) look.add(id);
-    if (to.r > 0) for (const id of this.filing.idsMeeting([to.x - to.r, to.y - to.r, to.x + to.r, to.y + to.r])) look.add(id);
+    if (was.r > 0) this.slotsIn(was.x - was.r, was.y - was.r, was.x + was.r, was.y + was.r, look);
+    if (to.r > 0) this.slotsIn(to.x - to.r, to.y - to.r, to.x + to.r, to.y + to.r, look);
     this.micro = { ...to };
     for (const slot of [...look].sort((a, b) => a - b)) {
-      const p = this.middle.get(slot);
-      if (!p || !this.model.has(slot)) continue;
+      if (!this.model.has(slot)) continue;
       // Only the page's roads come into the window: a table's link has no lanes to make its cars on.
-      const inside = this.inWindow(p) && this.isLive(slot);
+      const inside = this.inWindow(this.mid[2 * slot]!, this.mid[2 * slot + 1]!) && this.isLive(slot);
       if (inside === this.model.isInside(slot)) continue;
       if (inside) this.enter(slot); else this.leave(w, slot);
     }
@@ -614,7 +667,7 @@ export class Meso {
   /** A link leaves the window: the micro simulation's cars on it (those the meso made) taken off and counted on it again. */
   private leave(w: SimWorld, slot: number): void {
     let k = 0;
-    for (const id of this.slotLanes.get(slot)?.lanes ?? []) {
+    for (const id of this.laneLists[slot] ?? []) {
       for (const vid of [...w.rt(id).order]) {
         const v = w.vehicles.get(vid);
         if (!v || !this.owned.has(vid) || v.lanelet !== id) continue;
@@ -636,7 +689,7 @@ export class Meso {
     let tries = ADMIT_PER_TICK;
     for (const slot of this.pendingSlots) {
       if (tries <= 0 || w.vehicles.size >= ceiling) return;
-      const lanes = this.slotLanes.get(slot)?.lanes;
+      const lanes = this.laneLists[slot];
       if (!lanes?.length || !this.model.isInside(slot)) { this.pendingSlots.delete(slot); this.fill.delete(slot); continue; }
       while (tries > 0 && this.model.pending(slot) >= 1 && w.vehicles.size < ceiling) {
         tries--;
@@ -695,10 +748,9 @@ export class Meso {
     const model = this.model;
     for (let slot = 0; slot < model.slots; slot++) {
       if (!model.has(slot)) continue;
-      const L = model.lengthAt(slot), lanes = model.lanesAt(slot), cell = this.cellOf.get(slot)!;
+      const L = model.lengthAt(slot), lanes = model.lanesAt(slot), cell = this.cellOf[slot]!;
       const vFree = model.freeSpeedAt(slot);
-      const from = this.ends.get(slot)?.from;
-      const entry = from !== undefined && this.edgeAt(from) ? ENTRY_RATE * lanes : 0;
+      const entry = this.placed[slot] && this.edgeAt(this.endFrom[slot]!) ? ENTRY_RATE * lanes : 0;
       // Balanced with the share ending here: the street holds the ambient's density in free flow.
       const local = this.demand.carsPer100m(cell) * (L / m(100)) * vFree / TRIP_LENGTH;
       model.setGeneration(slot, (entry + local) * this.scale);
@@ -726,7 +778,7 @@ export class Meso {
       links[at + ML.length] = model.lengthAt(slot);
       links[at + ML.lanes] = model.lanesAt(slot);
       links[at + ML.flags] = MESO_PRESENT | (inside ? MESO_INSIDE : 0) | (this.oneWay[slot] ? MESO_ONE_WAY : 0);
-      if (!whole && !this.linesDirty.has(slot)) continue;
+      if (!whole && !this.dirty[slot]) continue;
       memory.ids[slot] = this.linkAt[slot]!;
       for (let k = 0; k < 6; k++) links[at + ML.ax + k] = this.lines[slot * 6 + k]!;
       this.shapeSerial = (this.shapeSerial % SHAPE_WRAP) + 1;
@@ -734,7 +786,7 @@ export class Meso {
     }
     for (let slot = n; slot < memory.capacity; slot++) links[slot * MESO_RECORD + ML.flags] = 0;
     // The slots past the buffer keep their lines owed: the page makes a bigger buffer (`wanted`), written whole.
-    for (const slot of this.linesDirty) if (slot < n) this.linesDirty.delete(slot);
+    this.dirty.fill(0, 0, n);
     memory.head[MH.time] = w.clock.time;
     memory.head[MH.windowX] = this.micro.x;
     memory.head[MH.windowY] = this.micro.y;
