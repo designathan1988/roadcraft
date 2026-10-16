@@ -29,6 +29,9 @@ export function finish(geometry: BufferGeometry,
   if (!geometry.boundingBox) geometry.computeBoundingBox();
   const mesh = new Mesh(geometry, options.material);
   mesh.name = options.name;
+  // Still where it was made (the world's origin): DO NOT compose and multiply its matrix every frame in every pass, as three does by default for each of thousands of blocks.
+  mesh.matrixAutoUpdate = false;
+  mesh.updateMatrix();
   mesh.castShadow = options.castShadow ?? false;
   mesh.receiveShadow = options.receiveShadow ?? true;
   return mesh;

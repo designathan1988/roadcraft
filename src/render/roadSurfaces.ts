@@ -243,6 +243,7 @@ export function* roadSurfaceSteps(
   // A block let go before its upload came is taken out of the queue first (`uploads.ts` `cancelWarm`)
   const retire = (mesh: Mesh): void => { cancelWarm(levelsOf(mesh)?.coarse ? [mesh, levelsOf(mesh)!.coarse!] : [mesh]); if (reuse?.retired) reuse.retired.push(mesh); else disposeMesh(mesh); };
   const group = new Group();
+  group.matrixAutoUpdate = false;
   group.name = 'road-network';
   const meshes: Mesh[] = [];
   let triangles = 0;

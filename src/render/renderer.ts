@@ -549,6 +549,8 @@ export function createSceneRenderer(
 
   const world = new Group();
   world.name = 'world';
+  // DO NOT let the world's group compose its matrix every frame: three then forces every descendant (thousands of blocks, cells and far meshes) to multiply its world matrix again in every pass (`Object3D.updateMatrixWorld` force).
+  world.matrixAutoUpdate = false;
   // Roads, plants, poles, furniture, forests: placed once, never moved (`stillTree.ts`).
   holdStill(world);
   scene.add(world);

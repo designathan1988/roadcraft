@@ -422,6 +422,7 @@ export function buildStructureDetails(
   shapes?: { readonly pier: BufferGeometry; readonly box: BufferGeometry },
 ): StructureDetails {
   const group = new Group();
+  group.matrixAutoUpdate = false;
   group.name = 'road-structure-details';
 
   const { raised, tunnels, walled } = structureRibbons(net, elevation, terrainAt, undefined, only);
