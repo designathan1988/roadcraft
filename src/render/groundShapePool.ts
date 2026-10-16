@@ -1,15 +1,17 @@
 import { jobLanes, jobPort } from '../jobs/jobPool';
 import type { BlockDigestAsk, GroundJob, GroundJobAnswer, GroundShapeAsk, PlateShapeAnswer } from './groundShape';
 
-/** DO NOT wait without a deadline: whoever waits calls `check`. */
+/** DO NOT take a silent worker for a dead one: it shares the job pool's workers and the CPU share (a failure comes as an error). */
 interface Lane {
   readonly worker: Worker;
   readonly waiting: Map<number, { resolve(answer: GroundJobAnswer): void; reject(error: Error): void }>;
   /** When the worker last answered, or was handed a job (`performance.now()`). */
   heard: number;
+  /** Whether this stretch of silence was already said. */
+  told: boolean;
 }
 
-/** Longest a worker with jobs waiting may stay silent: a city's whole ground is seconds of work. */
+/** Silence past which a worker with jobs waiting is reported: a city's whole ground is seconds of work. */
 const SILENCE_MS = 20_000;
 /** Most workers the pool opens. */
 const MOST_LANES = 2;
@@ -20,7 +22,7 @@ interface GroundWorkers {
   readonly available: boolean;
   shape(ask: GroundShapeAsk): Promise<PlateShapeAnswer[]>;
   digest(ask: BlockDigestAsk): Promise<Float64Array[]>;
-  /** Called while waiting: fails the pool if a worker with jobs waiting has been silent too long. */
+  /** Called while waiting: reports a worker with jobs waiting silent too long (queued behind other work or without CPU, still waited for). */
   check(now?: number): void;
 }
 
@@ -43,10 +45,10 @@ export class GroundShapePool implements GroundWorkers {
 
   check(now = performance.now()): void {
     for (const lane of this.lanes ?? []) {
-      if (lane.waiting.size && now - lane.heard > SILENCE_MS) {
-        this.fail(`a ground worker was silent for ${SILENCE_MS} ms with jobs waiting`);
-        return;
-      }
+      if (lane.told || !lane.waiting.size || now - lane.heard <= SILENCE_MS) continue;
+      // Said once a stretch, and waited for: the page shaping the ground itself would stall every frame after it.
+      lane.told = true;
+      console.warn(`[ground] a ground worker has been silent for ${Math.round(now - lane.heard)} ms with jobs waiting (busy or without CPU); still waiting`);
     }
   }
 
@@ -57,7 +59,7 @@ export class GroundShapePool implements GroundWorkers {
     for (const other of lanes) if (other.waiting.size < lane.waiting.size) lane = other;
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      if (lane.waiting.size === 0) lane.heard = performance.now();
+      if (lane.waiting.size === 0) { lane.heard = performance.now(); lane.told = false; }
       lane.waiting.set(id, { resolve, reject });
       lane.worker.postMessage({ id, job });
     });
@@ -71,10 +73,11 @@ export class GroundShapePool implements GroundWorkers {
       const lanes: Lane[] = [];
       for (let k = 0; k < count; k++) {
         const worker = jobPort('groundShape');
-        const lane: Lane = { worker, waiting: new Map(), heard: performance.now() };
+        const lane: Lane = { worker, waiting: new Map(), heard: performance.now(), told: false };
         worker.onmessage = (event: MessageEvent<{ id: number; answer?: GroundJobAnswer; error?: string }>) => {
           if (this.lanes !== lanes) return;
           lane.heard = performance.now();
+          lane.told = false;
           const job = lane.waiting.get(event.data.id);
           if (!job) return;
           lane.waiting.delete(event.data.id);
