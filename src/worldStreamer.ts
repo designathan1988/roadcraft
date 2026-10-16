@@ -1,4 +1,4 @@
-import { tileOnMap } from '@world/cityGen/wholeMap';
+import { MAP_TILES, tileOnMap } from '@world/cityGen/wholeMap';
 import { type ChangeRect, DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import type { ListPart, RoadDoc } from '@world/doc';
@@ -16,12 +16,8 @@ export const ACTIVE_RADIUS = 1;
 const KEEP_MARGIN = 1;
 /** Tiles asked of the store at once (each read, or made by the generator in a worker). */
 const IN_FLIGHT = 4;
-/** Tiles each way made ahead in the store (not put in the document): the ring the region loads next, what the far levels draw real masses and roads from (`buildings/farLevels.ts`, `farRoads.ts`); past it the generator's plan draws the city (`farPlan.ts`). DO NOT make 121 tiles ahead (radius 5) at an opening: 11 x 11 km generated, stored and baked before the player moved, 2026-10-16. */
-export const AHEAD_RADIUS = 2;
 /** The ring the region loads next as the camera moves (the tiles it keeps past its radius): made ahead first, as many at once as the region asks. */
 const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
-/** Tiles made ahead at once past the ring: behind the region's and the ring's, one at a time. */
-const AHEAD_IN_FLIGHT = 1;
 /** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
 const RETRY_MS = 30_000;
 /** Changed tiles are written this often (and always before they are let go). */
@@ -74,7 +70,7 @@ export class WorldStreamer {
   /** Tiles known to be in the store (read or made this session), and those being made ahead now. */
   private readonly known = new Set<number>();
   private readonly ahead = new Set<number>();
-  /** The tiles to make ahead, nearest first, round the camera's tile. */
+  /** The tiles to make ahead: every tile of the map, nearest the camera's tile first. */
   private aheadOrder: number[] = [];
   private writing: Promise<unknown> = Promise.resolve();
 
@@ -93,7 +89,7 @@ export class WorldStreamer {
     const flipped: number[] = [];
     for (const key of this.doc.loadedTiles) if (wasActive.has(key) !== this.wanted.includes(key)) flipped.push(key);
     if (flipped.length) this.tell.activeChanged?.(flipped, flipped.map((key) => { const t = tileOfKey(key); return tileRect(t.i, t.j); }));
-    this.aheadOrder = tilesAround(i, j, AHEAD_RADIUS).filter((t) => tileOnMap(t.i, t.j)).map((t) => tileKey(t.i, t.j));
+    this.aheadOrder = mapTilesFrom(i, j);
     this.ask();
   }
 
@@ -181,12 +177,12 @@ export class WorldStreamer {
     }
   }
 
-  /** DO NOT make tiles ahead while the region waits for its own: once every tile it wants is in, the ring it loads next (several at once), then the far levels' tiles nearest first, one at a time (the far levels draw them, `written`). */
+  /** DO NOT make tiles ahead while the region waits for its own: once every tile it wants is in, the ring it loads next (several at once), then every other tile of the map nearest first (the far levels draw them, `written`). */
   private askAhead(): void {
     if (this.asked.size > 0 || this.ready.size > 0 || !this.settled) return;
     for (const key of this.aheadOrder) {
-      // Nearest first: past the ring, the bound drops to one.
-      if (this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : AHEAD_IN_FLIGHT)) return;
+      // Nearest first: past the ring, one lane kept free for the tiles the camera moves onto.
+      if (this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, this.inFlight - 1))) return;
       if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key) || this.wantedNear(key, ACTIVE_RADIUS)) continue;
       this.ahead.add(key);
       // DO NOT bring a tile made ahead onto the page: only its version is wanted here (the far levels and the meso read it from the store).
@@ -252,4 +248,14 @@ export class WorldStreamer {
       this.tell.written?.(key, version);
     }, (error: unknown) => this.tell.failed?.(`tile ${key} was not written: ${String(error)}`));
   }
+}
+
+/** DO NOT leave the far city to the plan's stand-ins (`farPlan.ts`: boxes on a lattice and the avenues alone, the "city only in the middle" of 2026-10-16): every tile of the map, nearest (i, j) first, made once and stored, so the far levels draw the tiles themselves (the map is bounded, `wholeMap.ts` MAP_TILES). */
+export function mapTilesFrom(i: number, j: number): number[] {
+  const half = MAP_TILES / 2, out: { key: number; ring: number; d: number }[] = [];
+  for (let a = -half; a < half; a++) {
+    for (let b = -half; b < half; b++) out.push({ key: tileKey(a, b), ring: Math.max(Math.abs(a - i), Math.abs(b - j)), d: Math.hypot(a - i, b - j) });
+  }
+  out.sort((p, q) => p.ring - q.ring || p.d - q.d);
+  return out.map((t) => t.key);
 }

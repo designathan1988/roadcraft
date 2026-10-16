@@ -12,7 +12,7 @@ import { geometryCost, gpuLedger } from './gpuLedger';
 
 /** A QUADTREE OF LEVELS BAKED PER TILE IN WORKERS FROM THE TILE STORE (CLAUDE.md "Streaming world"), for any kind of thing drawn from afar: the buildings (`buildings/farLevels.ts`), the roads (`farRoads.ts`) */
 /** Chosen top down by their error on the screen (Cesium's replacement refinement, `selectTiles`); the tiles the page's document holds are drawn near, never here */
-/** NOT GENERATED YET: only the tiles round the camera are ever made (`worldStreamer.ts` `AHEAD_RADIUS`); a kind that can bake from the world's plan (`FarKind.planFrom`) is drawn there from it - a node no tile is stored under baked as `PLAN_SIG`, a node with some its stored tiles' and the plan's for the rest (its quarters with no tile sent as `PLAN_SIG` children) */
+/** NOT GENERATED YET: every tile of the map is made once, nearest the camera first (`worldStreamer.ts` `mapTilesFrom`); until then a kind that can bake from the world's plan (`FarKind.planFrom`) is drawn there from it - a node no tile is stored under baked as `PLAN_SIG`, a node with some its stored tiles' and the plan's for the rest (its quarters with no tile sent as `PLAN_SIG` children) */
 
 /** Where the far levels read the tile store (the coordinator wires it) */
 export interface FarTileSource {

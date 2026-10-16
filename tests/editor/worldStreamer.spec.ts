@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import type { TileRecords } from '@world/doc';
 import { tileIdBase, tileKey, tileOfKey } from '@world/tiles';
+import { MAP_TILES, tileOnMap } from '@world/cityGen/wholeMap';
 import { WorldStreamer } from '@/worldStreamer';
 
-/** THE ACTIVE REGION'S STREAMER (`worldStreamer.ts`): the region's tiles first, then the ring it loads next, then the far levels' tiles one at a time. */
+/** THE ACTIVE REGION'S STREAMER (`worldStreamer.ts`): the region's tiles first, then the ring it loads next, then every other tile of the map. */
 
 function emptyTile(key: number): TileRecords {
   const base = tileIdBase(key);
@@ -34,7 +35,7 @@ const turns = async (n: number): Promise<void> => { for (let k = 0; k < n; k++) 
 const ring = (key: number): number => { const { i, j } = tileOfKey(key); return Math.max(Math.abs(i), Math.abs(j)); };
 
 describe('the streamer', () => {
-  it('makes nothing ahead before the region is in, then the ring several at once, nothing past it', async () => {
+  it('makes nothing ahead before the region is in, then the ring several at once, then the rest of the map nearest first', async () => {
     const doc = new RoadDoc();
     const store = source();
     const streamer = new WorldStreamer(doc, store);
@@ -57,9 +58,19 @@ describe('the streamer', () => {
       await turns(2);
     }
     expect(store.ensures.filter((key) => ring(key) === 2)).toHaveLength(16);
-    // Past the ring: nothing is made ahead (AHEAD_RADIUS is the ring: the generator's plan draws the city beyond it).
-    expect(store.ensures.filter((key) => ring(key) > 2)).toHaveLength(0);
+    // Past the ring: every other tile of the map, nearest first, one lane kept free for the camera's next tiles.
+    const past = (): number[] => store.ensures.filter((key) => ring(key) > 2);
+    expect(past().length).toBeLessThanOrEqual(3);
+    for (let round = 0; round < 40; round++) {
+      for (const key of [...store.ensures]) store.finish(key);
+      await turns(2);
+    }
+    expect(new Set(store.ensures).size).toBe(MAP_TILES * MAP_TILES - 9);
+    expect(store.ensures.every((key) => { const { i, j } = tileOfKey(key); return tileOnMap(i, j); })).toBe(true);
     expect(store.ensures.some((key) => ring(key) <= 1)).toBe(false);
+    // Nearest first: no tile asked before one nearer the camera.
+    const rings = store.ensures.map(ring);
+    for (let k = 1; k < rings.length; k++) expect(rings[k]!).toBeGreaterThanOrEqual(rings[k - 1]!);
   });
 });
 
