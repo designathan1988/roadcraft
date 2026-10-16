@@ -33,23 +33,40 @@ export interface ClassAnimation {
   /** A clip's first row in the atlas. */
   rowOf(clip: string): number;
   readonly bones: number;
+  /** The atlas's bytes on the GPU. */
+  readonly bytes: number;
+  /** The atlas's texels made again from the clips and sent up (a WebGL context restored); only for a `gpuOnly` atlas. */
+  refill(): void;
 }
 
-/** The class's clips in one texture, in the order given. */
-export function buildClassAnimation(clips: Readonly<Record<string, ClipFrames>>, bones: number): ClassAnimation {
+/** The class's clips in one texture, in the order given; `gpuOnly` lets the texels go once they are on the GPU (the clips keep them). */
+export function buildClassAnimation(clips: Readonly<Record<string, ClipFrames>>, bones: number, gpuOnly = false): ClassAnimation {
   const packed = bones * PACKED_BONE_FLOATS;
   const rowsOf = (clip: ClipFrames): number => Math.round(clip.data.length / packed);
   let rows = 0;
   const start = new Map<string, number>();
   for (const [name, clip] of Object.entries(clips)) { start.set(name, rows); rows += rowsOf(clip); }
   const width = bones * ATLAS_TEXELS;
+  const height = Math.max(1, rows);
   // Twelve floats a bone are exactly three RGBA texels: each row is the clip's frame as baked.
-  const pixels = new Float32Array(width * 4 * Math.max(1, rows));
-  for (const [name, clip] of Object.entries(clips)) pixels.set(clip.data.subarray(0, rowsOf(clip) * packed), start.get(name)! * width * 4);
-  const atlas = new DataTexture(pixels, width, Math.max(1, rows), RGBAFormat, FloatType);
+  const texels = (): Float32Array => {
+    const pixels = new Float32Array(width * 4 * height);
+    for (const [name, clip] of Object.entries(clips)) pixels.set(clip.data.subarray(0, rowsOf(clip) * packed), start.get(name)! * width * 4);
+    return pixels;
+  };
+  const atlas = new DataTexture(texels(), width, height, RGBAFormat, FloatType);
   atlas.minFilter = atlas.magFilter = NearestFilter;
   atlas.needsUpdate = true;
-  return { atlas, rowOf: (clip) => start.get(clip) ?? 0, bones };
+  // DO NOT keep the texels: three uploads them once (WebGLTextures.js uploadTexture, then onUpdate), a restore refills them.
+  if (gpuOnly) atlas.onUpdate = () => { (atlas.image as { data: Float32Array | null }).data = null; };
+  return {
+    atlas, rowOf: (clip) => start.get(clip) ?? 0, bones, bytes: width * height * 16,
+    refill() {
+      if (!gpuOnly) return;
+      (atlas.image as { data: Float32Array | null }).data = texels();
+      atlas.needsUpdate = true;
+    },
+  };
 }
 
 /** A packed bone of row `row` as a mat4 (GLSL), from a sampler named `atlas`. */
