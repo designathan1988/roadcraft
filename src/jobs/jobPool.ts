@@ -3,10 +3,6 @@ import type { AdoptLane, FromJob, JobService, ToJob } from './jobScope';
 /** THE JOB SYSTEM: one pool of workers (hardwareConcurrency - 2, within the machine's memory) for every kind of work off the page, in place of a pool per kind */
 /** DO NOT make every worker at the start nor give a kind's job to any free worker: each worker is a whole JS heap with the code and state of every service it ran, so 22 of them each running every service took the page's process past 6 GB on a 3 x 3 tile region (2026-10-16, Chrome memory-infra: 2.8 GB of V8 in the workers, out of memory at 8 GB) - workers are made as work waits, and a kind's jobs go first to the workers that already run it */
 
-/** What one busy worker costs the page's process at its peak: its V8 heap with its services' code and state (about 110 MB), its young generation grown to its most under a fast allocator (about 56 MB) and the arrays it hands the page (2026-10-16, memory-infra of a streamed opening: 16 workers, 1.77 GB of V8 and 1.2 GB of array buffers). */
-const WORKER_BYTES = 512 * 2 ** 20;
-/** The share of the machine's memory the pool may take, at a worker's peak (`WORKER_BYTES`): the page, the GPU's process and the system keep the rest. A half: 8 workers where the browser tells 8 GB (it tells no more, 32 GB included: `navigator.deviceMemory`), 4 at 4 GB, the cage (`POOL_CAGE_SHARE`) and the cores bounding it too; at an eighth a 24-thread machine made the map's 100 tiles on 2 workers (the tiles' buildings are rows now, `world/growth/rows.ts`: a tile's worker holds a fraction of what it did). */
-const POOL_SHARE = 1 / 2;
 /** DO NOT size the pool by the machine alone: the page and every worker of its process share ONE V8 heap cage of 4 GB (pointer compression's shared cage, V8 9.2; the V8 sandbox needs it), and a streamed opening died "out of memory" with 3.4 GB of V8 across 24 workers (2026-10-16) - the pool takes a fifth of it, at a busy worker's V8 heap and young generation (~170 MB). */
 const CAGE_BYTES = 4 * 2 ** 30;
 /** Two fifths of the cage for the pool (2026-10-16: the worker that took it down was a Clipper2 union that never ended, fixed in `scripts/patches`; a busy worker holds 100-250 MB): 9 workers at most by the cage, the page's heap and the simulation's keep the rest. */
@@ -207,16 +203,13 @@ export function setJobWorkerSetup(setup: (worker: Worker) => void): void {
   for (const host of system.workers) setup(host.worker);
 }
 
-/** The most workers the pool holds: the cores less the page's and the simulation's, and no more than `POOL_SHARE` of the machine's memory holds (at least one). */
+/** The most workers the pool holds: the cores less the page's and the simulation's (the city-game's pool), within the V8 cage the page and its workers share (at least one). DO NOT size it by `navigator.deviceMemory`: the browser tells 8 GB at most, 32 GB included, and a 24-thread machine made the map's 100 tiles on 2 workers (2026-10-16). */
 export function jobWorkers(): number {
-  const nav = typeof navigator !== 'undefined' ? navigator as Navigator & { readonly deviceMemory?: number } : undefined;
-  const cores = nav?.hardwareConcurrency || 2;
+  const cores = (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 0) || 2;
   // Inside the simulation's worker (no document): its own few, for the lots' bays and the junctions' pairs.
   if (typeof document === 'undefined') return Math.max(1, Math.min(2, cores - 2));
-  // `navigator.deviceMemory`: the machine's memory in GB, rounded by the browser; unknown, the cores alone.
-  const byMemory = nav?.deviceMemory ? Math.floor((nav.deviceMemory * 2 ** 30 * POOL_SHARE) / WORKER_BYTES) : Infinity;
   const byCage = Math.floor((CAGE_BYTES * POOL_CAGE_SHARE) / WORKER_HEAP_BYTES);
-  return Math.max(1, Math.min(cores - 2, byMemory, byCage));
+  return Math.max(1, Math.min(cores - 2, byCage));
 }
 
 /** How many lanes a kind of work may have: never more than the workers its side has (a lane per worker, `jobPort`; the long-running services' are `tileLanes`). */
