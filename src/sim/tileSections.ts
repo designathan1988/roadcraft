@@ -22,7 +22,7 @@ const LINK_ARRAYS = [
 ] as const satisfies readonly (keyof TileLinks)[];
 
 /** A link table as one buffer. */
-export function packLinks(links: TileLinks): Uint8Array<ArrayBuffer> {
+function packLinks(links: TileLinks): Uint8Array<ArrayBuffer> {
   const arrays: Record<string, TileLinks[(typeof LINK_ARRAYS)[number]]> = {};
   for (const name of LINK_ARRAYS) arrays[name] = links[name];
   return packArrays({ key: links.key, version: links.version, format: links.format, count: links.count }, arrays);

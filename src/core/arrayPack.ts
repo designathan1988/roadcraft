@@ -7,10 +7,10 @@ const KINDS = {
 type Kind = keyof typeof KINDS;
 
 /** Any typed array a pack can hold. */
-export type PackableArray = Float64Array | Float32Array | Uint32Array | Int32Array | Uint16Array | Int16Array | Uint8Array | Int8Array;
+type PackableArray = Float64Array | Float32Array | Uint32Array | Int32Array | Uint16Array | Int16Array | Uint8Array | Int8Array;
 
 /** What a pack holds: its numbers and its arrays by name (the arrays views on the pack's buffer). */
-export interface ArrayPack {
+interface ArrayPack {
   readonly numbers: Readonly<Record<string, number>>;
   readonly arrays: Readonly<Record<string, PackableArray>>;
 }

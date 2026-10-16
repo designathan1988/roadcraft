@@ -119,7 +119,7 @@ function splitRecords(records: TileRecords): Record<RecordPart, object> {
 export type TileText = readonly Uint8Array<ArrayBuffer>[];
 
 /** The records' texts merged and checked: the tile, or a throw (DO NOT generate over the player's tile). */
-export function parseTileText(text: TileText, key: number): TileRecords {
+function parseTileText(text: TileText, key: number): TileRecords {
   const decoder = new TextDecoder();
   const value: Record<string, unknown> = {};
   try {
@@ -132,7 +132,7 @@ export function parseTileText(text: TileText, key: number): TileRecords {
 }
 
 /** A tile's derived product kept with it: a JSON value, or a typed-array pack (`core/arrayPack.ts`). */
-export type TileSection = { readonly json: unknown } | { readonly bin: Uint8Array<ArrayBuffer> };
+type TileSection = { readonly json: unknown } | { readonly bin: Uint8Array<ArrayBuffer> };
 /** What bakes a tile's sections where it is written (`sim/tileSections.ts`, handed in by the thread that writes: the generator's worker, the save worker). */
 export type TileBaker = (records: TileRecords) => Readonly<Record<string, TileSection>>;
 
@@ -169,8 +169,8 @@ interface Stored { readonly blob: Blob; readonly read: HeadRead | null }
 async function storedBlob(store: PartStore, map: string, key: number): Promise<Stored | null> {
   const [blob] = await store.get([tileBlobKey(map, key)]);
   if (!blob) return null;
-  // A head that cannot be read is format 1's or garbage: its gunzip says which (`textOf`).
-  return { blob, read: await readHead(blob).catch(() => null) };
+  // No magic: format 1's or garbage, its gunzip says which (`textOf`); a head with the magic and unreadable throws.
+  return { blob, read: await readHead(blob) };
 }
 
 /** A stored blob's records as texts: its three parts, or the one gzip of format 1. */

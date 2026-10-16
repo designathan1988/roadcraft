@@ -4,7 +4,7 @@ import { TiledSaves } from '@editor/chunkedSave';
 import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
 import {
-  type MadeTile, type TileText, TileStore, type WorldMeta, parseTileText, readTile, readTilePart, storeTiles, tileOpTransfer, writeTile,
+  type MadeTile, type TileText, TileStore, type WorldMeta, readTile, readTilePart, storeTiles, tileOpTransfer, writeTile,
 } from '@editor/tileStore';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
 import { TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
@@ -119,8 +119,10 @@ describe('a tile stored', () => {
     const text = (await storeTiles(store).run(op)) as TileText;
     expect(text).toHaveLength(3);
     expect(tileOpTransfer(op, text)).toEqual(text.map((t) => t.buffer));
-    expect(parseTileText(text, tile.key)).toEqual({ ...tile, version: 1 });
-    expect(() => parseTileText(text, tileKey(0, 1))).toThrow();
+    // Each text an object of some of the tile's fields: merged, the tile.
+    const merged: Record<string, unknown> = {};
+    for (const part of text) Object.assign(merged, JSON.parse(new TextDecoder().decode(part)) as object);
+    expect(merged).toEqual({ ...tile, version: 1 });
     expect(tileOpTransfer({ op: 'read', map: 'map', key: tile.key }, text)).toEqual([]);
   });
 

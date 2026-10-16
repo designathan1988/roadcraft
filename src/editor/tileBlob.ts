@@ -6,7 +6,7 @@ const MAGIC = 0x32544352;
 const PREFIX = 8;
 
 /** A part's kind: gzip of a JSON text, or raw bytes (a typed-array pack, `core/arrayPack.ts`). */
-export type PartKind = 'json' | 'bin';
+type PartKind = 'json' | 'bin';
 
 /** A part to write: its name, its kind, its bytes as stored. */
 export interface TilePartIn {
@@ -16,7 +16,7 @@ export interface TilePartIn {
 }
 
 /** What the head says: the tile, its version, each part's name, kind, offset past the head and size; `baked`, whether its derived sections were baked when written. */
-export interface TileHead {
+interface TileHead {
   readonly key: number;
   readonly version: number;
   readonly baked: boolean;
