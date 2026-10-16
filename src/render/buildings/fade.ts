@@ -19,7 +19,9 @@ export function fadeMeshes(root: Object3D, kit: BuildingKit, faded: boolean): vo
       const finish = name.slice(SHELL.length);
       if (!(FINISHES as readonly string[]).includes(finish)) return;
       const mesh = o as Mesh;
-      mesh.material = faded ? kit.dimShell[finish as Finish] : kit.shell[finish as Finish];
+      // The facade level's shells (their window grid) back to their own material (`facadeLevel.ts`).
+      const solid = mesh.geometry.hasAttribute('facadeGrid') ? kit.facade : kit.shell;
+      mesh.material = faded ? kit.dimShell[finish as Finish] : solid[finish as Finish];
       mesh.renderOrder = faded ? 1 : 0;
       return;
     }

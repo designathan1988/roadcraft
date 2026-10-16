@@ -20,6 +20,7 @@ import { createFurnitureGeometries, createFurnitureMaterial, furnitureTones } fr
 import type { FurnitureKind } from '@world/buildings/interior';
 import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
 import { createMassingMaterial } from './massingMaterial';
+import { type FacadePanes, createFacadeMaterials } from './facadeLevel';
 import { prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
 import { FACADE_PROP_KINDS, type FacadePropKind, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
@@ -167,6 +168,8 @@ export interface BuildingKit {
   readonly finishTone: Readonly<Record<Finish, readonly [number, number, number]>>;
   /** Buildings seen from afar, their windows drawn by the shader (`massing.ts`, `massingMaterial.ts`). */
   readonly massing: MeshStandardMaterial;
+  /** The facade level (L1): the shells with their openings drawn by the shader, one per finish (`facadeLevel.ts`). */
+  readonly facade: Readonly<Record<Finish, MeshStandardMaterial>>;
   /** Parts that cast shadows; the small ones do not, to spare the shadow pass. */
   readonly castsShadow: ReadonlySet<PartKind>;
   /** The furniture models, built the first time an interior is drawn. */
@@ -538,7 +541,10 @@ export function createBuildingKit(): BuildingKit {
   // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
   const massingNight = { value: 0 };
   const massing = createMassingMaterial({ roomsAwake, massingNight });
-  const unique = new Set<Material>([...Object.values(material), ...Object.values(shell), ...Object.values(dimShell), ghostShell, ghostParts, dimParts, massing]);
+  // The facade level's walls: each finish's own, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
+  const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
+  const facade = createFacadeMaterials(shell, panes, { roomsAwake, massingNight });
+  const unique = new Set<Material>([...Object.values(material), ...Object.values(shell), ...Object.values(dimShell), ...Object.values(facade), ghostShell, ghostParts, dimParts, massing]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;
   for (const kind of PART_KINDS) levels[kind] = [{ geometry: geometry[kind], triangles: trianglesOf(geometry[kind]), error: [0, 0, 0] }];
@@ -590,6 +596,7 @@ export function createBuildingKit(): BuildingKit {
     dimShell,
     dimParts,
     massing,
+    facade,
     finishTone: finishAlbedo(),
     // Glass, doors and shutters close the openings for the sun
     castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise', ...SHADOWED_PROPS]),

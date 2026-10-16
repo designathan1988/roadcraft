@@ -1,13 +1,13 @@
-import { Box3, BufferAttribute, BufferGeometry, Group, InterleavedBuffer, InterleavedBufferAttribute, Mesh, type MeshStandardMaterial, Sphere, Vector3 } from 'three';
+import type { MeshStandardMaterial } from 'three';
 import { FINISHES, type Finish } from '@world/buildings/materials';
 import { m } from '@world/units';
-import { gpuOnlyAttributes } from '../mesh/gpuOnly';
-import { FACADE_KIND } from './buildingMesh';
-import { type Bounds, type CellFacade, FACADE_BYTES, FACADE_FLOATS } from './cellArrays';
 import type { MassingUniforms } from './massingMaterial';
 import { ROOM_LAMP_GLSL } from './roomLamps';
 
 /** THE BUILDINGS' FAR LEVEL (L1): the same building emitted again with its walls as runs of bays (`emitChunk` `far`) */
+
+/** How the far level's shader fills a bay's opening (`buildingMesh.ts` `facadeKind` writes the same numbers), after `emitBay`'s panes */
+export const FACADE_KIND = { none: 0, window: 1, clear: 2, darkQuarter: 3, darkFifth: 4, door: 5, shutterDoor: 6 } as const;
 
 /** How wide a window's frame reads round its pane, m: the frame part's border (`kit.ts`), with the reveal beside it. */
 const FRAME = m(0.08);
@@ -177,49 +177,4 @@ totalEmissiveRadiance += facadeLamp * massingNight * facadeLit * facadeGlass * m
 /** Made once with the kit: each finish's far level material (`kit.ts` `shell`, its panes' looks, the massing's night uniforms) */
 export function createFacadeMaterials(shell: Readonly<Record<Finish, MeshStandardMaterial>>, panes: FacadePanes, uniforms: MassingUniforms): Record<Finish, MeshStandardMaterial> {
   return Object.fromEntries(FINISHES.map((finish) => [finish, facadeMaterial(shell[finish], finish, panes, uniforms)])) as Record<Finish, MeshStandardMaterial>;
-}
-
-const boxOf = (b: Bounds): Box3 => new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));
-const sphereOf = (b: Bounds): Sphere => new Sphere(new Vector3(b[6], b[7], b[8]), b[9]);
-
-/** A cell's far level as meshes, one per finish, their arrays let go once on the GPU (`refill` brings them back on a lost context) */
-export function facadeMeshes(arrays: CellFacade, materials: Readonly<Record<Finish, MeshStandardMaterial>>, refill?: () => CellFacade | null): { group: Group; triangles: number } {
-  const group = new Group();
-  group.name = 'buildings-far';
-  group.matrixAutoUpdate = false;
-  group.updateMatrix();
-  let triangles = 0;
-  for (const finish of FINISHES) {
-    const shell = arrays[finish];
-    if (!shell) continue;
-    const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(shell.position, 3));
-    // As the detail's shells (`buildingMesh.ts` `meshesOf`): the normal and the wear in four signed bytes.
-    const normalDecay = new InterleavedBuffer(shell.normalDecay, 4);
-    g.setAttribute('normal', new InterleavedBufferAttribute(normalDecay, 4, 0, true));
-    g.setAttribute('aDecay', new InterleavedBufferAttribute(normalDecay, 1, 3, true));
-    g.setAttribute('color', new BufferAttribute(shell.colour, 3));
-    g.setAttribute('uv', new BufferAttribute(shell.uv, 2));
-    const facade = new InterleavedBuffer(shell.facade, FACADE_FLOATS);
-    g.setAttribute('facadeGrid', new InterleavedBufferAttribute(facade, 4, 0));
-    g.setAttribute('facadeKey', new InterleavedBufferAttribute(facade, 4, 4));
-    const opening = new InterleavedBuffer(shell.opening, FACADE_BYTES);
-    g.setAttribute('facadeOpening', new InterleavedBufferAttribute(opening, 4, 0, true));
-    g.setAttribute('facadeTrim', new InterleavedBufferAttribute(opening, 4, 4, true));
-    g.setIndex(new BufferAttribute(shell.index, 1));
-    g.boundingBox = boxOf(shell.bounds);
-    g.boundingSphere = sphereOf(shell.bounds);
-    const mesh = new Mesh(g, materials[finish]);
-    gpuOnlyAttributes(mesh, { position: g.attributes.position as BufferAttribute, normalDecay, color: g.attributes.color as BufferAttribute, uv: g.attributes.uv as BufferAttribute, facade, opening, index: g.index! }, () => {
-      const again = refill?.()?.[finish];
-      return again ? { position: again.position, normalDecay: again.normalDecay, color: again.colour, uv: again.uv, facade: again.facade, opening: again.opening, index: again.index } : {};
-    });
-    mesh.name = `building-far-${finish}`;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    mesh.matrixAutoUpdate = false;
-    group.add(mesh);
-    triangles += shell.index.length / 3;
-  }
-  return { group, triangles };
 }

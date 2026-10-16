@@ -24,7 +24,7 @@ import {
   Vector3,
   Box3,
 } from 'three';
-import { type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, type KitBoxes, cellArrays } from './cellArrays';
+import { type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, type KitBoxes, cellArrays } from './cellArrays';
 
 import type { Vec2 } from '@core/vec2';
 import { m } from '@world/units';
@@ -93,6 +93,7 @@ import {
   type LotSurface,
 } from '@world/buildings/types';
 import { type BuildingKit, PART_KINDS, PORCH_LAMP, type PartKind } from './kit';
+import { FACADE_KIND } from './facadeLevel';
 import { gpuOnlyAttributes } from '../mesh/gpuOnly';
 import { facadeProps } from './facadeProps';
 import { LOT_COLOURS } from './massing';
@@ -176,6 +177,10 @@ const trimColour = (p: Paint): Color => {
 
 // ------------------------------------------------------------------ dimensions
 const REVEAL = m(0.2);
+/** The deepest opening the far level lays flat (its error, `massCells.ts` `FACADE_ERROR`): a loggia's deeper recess keeps its geometry. */
+export const FLAT_DEPTH = m(0.3);
+/** What a flattened bay's shader draws in its opening (`facadeLevel.ts`): the parts set into it are left out. */
+const SHADER_DRAWN: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter']));
 const BAND_OUT = m(0.07);
 const BAND_H = m(0.22);
 const CORNICE_OUT = m(0.16);
@@ -597,10 +602,12 @@ class Emitter {
   slot = -1;
   /** The room behind a pane centred `a` along the bay and `h` up it, for the bay being emitted (`roomBehind.ts`). */
   room: ((a: number, h: number) => readonly number[]) | null = null;
+  /** The bay being emitted is flattened (the far level, `emitChunk` `far`): its wall and opening laid by `emitFacadeRuns`. */
+  flat = false;
 
   put(kind: PartKind, f: BayFace, a: number, h: number, depth: number, sx: number, sy: number, sz: number, colour?: Color, turn = 0): void {
-    // The far level has no parts: its windows are drawn on its walls (`facadeLevel.ts`).
-    if (this.shell.far) return;
+    // A flattened bay of the far level: what is set into its opening is drawn by the shader (`facadeLevel.ts`).
+    if (this.flat && depth > 0 && SHADER_DRAWN.has(kind)) return;
     const p = this.P(f, a, h, depth);
     const n = this.N(f.nx, f.ny);
     const placement: Placement = { x: p[0], y: p[1], z: p[2], yaw: Math.atan2(n[0], -n[1]) + turn, sx, sy, sz };
@@ -614,7 +621,6 @@ class Emitter {
 
   /** An instance at a point of the building's plan (`L`), square to the building, its centre at height `z`. */
   putAt(kind: PartKind, lx: number, ly: number, z: number, sx: number, sy: number, sz: number): void {
-    if (this.shell.far) return;
     const p = this.L(lx, ly, z);
     const n = this.N(0, 1);
     this.parts[kind].push({ x: p[0], y: p[1], z: p[2], yaw: Math.atan2(n[0], -n[1]), sx, sy, sz });
@@ -772,9 +778,16 @@ function emitBuilding(
       }
       e.rect(face, 0, face.W, 0, face.H, m(0.25), e.N(-face.nx, -face.ny), inner);
     }
-    if (shell.far && bay.component !== 'pillar' && recess <= 0) {
-      // The far level: the bay's wall is laid with its storey's run (`emitFacadeRuns`), its opening drawn by the shader.
-      farBays.push({ bay, wall: wallOf(v, bay.side, bay.storey), opening: openingOf(bay.component, bay.width, bay.height, controls), ground: floor + volumeLift(v) });
+    const opening = shell.far && bay.component !== 'pillar' && recess <= 0 ? openingOf(bay.component, bay.width, bay.height, controls) : undefined;
+    if (opening !== undefined && (opening === null || opening.depth <= FLAT_DEPTH)) {
+      // The far level: the bay's wall is laid with its storey's run (`emitFacadeRuns`), its opening drawn by the shader;
+      // what stands out of it (balconies, awnings, canopies, sills, shutters' leaves) is put as in the detail.
+      farBays.push({ bay, wall: wallOf(v, bay.side, bay.storey), opening, ground: floor + volumeLift(v) });
+      shell.ground = floor + volumeLift(v);
+      e.flat = true;
+      emitBay(e, face, bay, wallOf(v, bay.side, bay.storey), frameTrim, awning, left, right, recess, controls);
+      e.flat = false;
+      shell.ground = floor;
     } else {
       e.slot = slotOfBay(b, v, bay, spacesOf, slots);
       if (b.id >= 0 && b.cutaway === undefined) {
@@ -1054,8 +1067,6 @@ interface FarBay {
   readonly ground: number;
 }
 
-/** How the far level's shader fills a bay's opening (`facadeLevel.ts` reads the same numbers), after `emitBay`'s panes */
-export const FACADE_KIND = { none: 0, window: 1, clear: 2, darkQuarter: 3, darkFifth: 4, door: 5, shutterDoor: 6 } as const;
 
 /** The far level's kind of a bay's opening: which panes, doors or shutters `emitBay` puts in it. */
 function facadeKind(c: BayComponent): number {
@@ -1197,23 +1208,25 @@ function emitBay(
   const tc = trimColour(trim);
   const found = openingOf(bay.component, W, H, geometry);
   if (!found) {
-    e.rect(f, 0, W, 0, H, 0, out, wall);
+    if (!e.flat) e.rect(f, 0, W, 0, H, 0, out, wall);
     return;
   }
   // A porch runs down to the floor and back to the door; its floor is the top of the flight, so it has no sill of its own.
   const o = recess > 0 ? { ...found, h0: 0, depth: recess } : found;
-  // The wall around the hole, then the four reveals into it.
-  e.rect(f, 0, o.a0, 0, H, 0, out, wall);
-  e.rect(f, o.a1, W, 0, H, 0, out, wall);
-  e.rect(f, o.a0, o.a1, 0, o.h0, 0, out, wall);
-  e.rect(f, o.a0, o.a1, o.h1, H, 0, out, wall);
-  // The reveals are in the wall's shadow
-  const reveal = shaded(recess > 0 ? wall : trim, REVEAL_SHADE);
-  e.jamb(f, o.a0, o.h0, o.h1, 0, o.depth, along, reveal);
-  e.jamb(f, o.a1, o.h0, o.h1, 0, o.depth, back, reveal);
-  // A sill; at the floor, a threshold as high as the plinth's ledge
-  if (recess <= 0) e.strip(f, o.a0, o.a1, o.h0 > 1e-6 ? o.h0 : PLINTH_RISE, 0, o.depth, [0, 0, 1], shaded(trim, 0.92));
-  e.strip(f, o.a0, o.a1, o.h1, 0, o.depth, [0, 0, -1], shaded(reveal, 0.8));
+  // The wall around the hole, then the four reveals into it (a flattened bay's wall is its run's, `emitFacadeRuns`).
+  if (!e.flat) {
+    e.rect(f, 0, o.a0, 0, H, 0, out, wall);
+    e.rect(f, o.a1, W, 0, H, 0, out, wall);
+    e.rect(f, o.a0, o.a1, 0, o.h0, 0, out, wall);
+    e.rect(f, o.a0, o.a1, o.h1, H, 0, out, wall);
+    // The reveals are in the wall's shadow
+    const reveal = shaded(recess > 0 ? wall : trim, REVEAL_SHADE);
+    e.jamb(f, o.a0, o.h0, o.h1, 0, o.depth, along, reveal);
+    e.jamb(f, o.a1, o.h0, o.h1, 0, o.depth, back, reveal);
+    // A sill; at the floor, a threshold as high as the plinth's ledge
+    if (recess <= 0) e.strip(f, o.a0, o.a1, o.h0 > 1e-6 ? o.h0 : PLINTH_RISE, 0, o.depth, [0, 0, 1], shaded(trim, 0.92));
+    e.strip(f, o.a0, o.a1, o.h1, 0, o.depth, [0, 0, -1], shaded(reveal, 0.8));
+  }
 
   const w = o.a1 - o.a0;
   const h = o.h1 - o.h0;
@@ -3350,16 +3363,29 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     g.setAttribute('color', new BufferAttribute(shell.colour, 3));
     g.setAttribute('uv', new BufferAttribute(shell.uv, 2));
     g.setAttribute('aDecay', new InterleavedBufferAttribute(normalDecay, 1, 3, true));
+    // The far level's window grid and openings, for its shader (`facadeLevel.ts`).
+    const facade = shell.facade ? new InterleavedBuffer(shell.facade, FACADE_FLOATS) : null;
+    const opening = shell.opening ? new InterleavedBuffer(shell.opening, FACADE_BYTES) : null;
+    if (facade && opening) {
+      g.setAttribute('facadeGrid', new InterleavedBufferAttribute(facade, 4, 0));
+      g.setAttribute('facadeKey', new InterleavedBufferAttribute(facade, 4, 4));
+      g.setAttribute('facadeOpening', new InterleavedBufferAttribute(opening, 4, 0, true));
+      g.setAttribute('facadeTrim', new InterleavedBufferAttribute(opening, 4, 4, true));
+    }
     g.setIndex(new BufferAttribute(shell.index, 1));
     // A Mesh a finish a cell, its arrays let go once on the GPU (below).
     g.boundingBox = boxOf(shell.bounds);
     g.boundingSphere = sphereOf(shell.bounds);
-    const mesh = new Mesh(g, ghost ? kit.ghostShell : dim ? kit.dimShell[finish] : kit.shell[finish]);
+    const mesh = new Mesh(g, ghost ? kit.ghostShell : dim ? kit.dimShell[finish] : facade ? kit.facade[finish] : kit.shell[finish]);
     // The town's shells live on the GPU only: their arrays are let go once uploaded
     if (!ghost) {
-      gpuOnlyAttributes(mesh, { position: g.attributes.position as BufferAttribute, normalDecay, color: g.attributes.color as BufferAttribute, uv: g.attributes.uv as BufferAttribute, index: g.index! }, () => {
+      const kept = { position: g.attributes.position as BufferAttribute, normalDecay, color: g.attributes.color as BufferAttribute, uv: g.attributes.uv as BufferAttribute, index: g.index!, ...(facade && opening ? { facade, opening } : {}) };
+      gpuOnlyAttributes(mesh, kept, () => {
         const again = refill?.().shells[finish];
-        return again ? { position: again.position, normalDecay: again.normalDecay, color: again.colour, uv: again.uv, index: again.index } : {};
+        return again ? {
+          position: again.position, normalDecay: again.normalDecay, color: again.colour, uv: again.uv, index: again.index,
+          ...(again.facade && again.opening ? { facade: again.facade, opening: again.opening } : {}),
+        } : {};
       });
     }
     mesh.name = ghost ? `building-preview-shell-${finish}` : `building-shell-${finish}`;

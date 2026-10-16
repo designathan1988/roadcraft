@@ -24,7 +24,8 @@ export interface LandedCell {
 
 interface Landing extends LandedCell { uploads: number }
 
-type BatchKind = 'cell';
+/** A cell's detail (L0) or its facade level (L1, `emitChunk` `far`). */
+export type BatchKind = 'cell' | 'facade';
 
 export class CellRequests {
   private readonly asked = new Map<string, { readonly entries: readonly CellEntry[]; id: number }>();

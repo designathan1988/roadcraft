@@ -4,11 +4,14 @@ import { cancelWarm, warmLooseAhead } from '../uploads';
 import { m } from '@world/units';
 import type { CellMass } from './cellArrays';
 import type { BuildingKit } from './kit';
+import { FLAT_DEPTH } from './buildingMesh';
 
 /** THE BUILDINGS' FAR LEVEL, cell by cell: each cell of the buildings' grid */
 
 /** The largest thing the far level leaves out, m: a balcony's slab (1.3 m) or a sill and its frame stand out of the wall */
 const FAR_ERROR = m(1.5);
+/** The largest thing the facade level (L1, `emitChunk` `far`) leaves out, m: the deepest reveal it lays flat. */
+const FACADE_ERROR = FLAT_DEPTH;
 /** The detail is drawn while what the far level leaves out spans this many pixels or more. */
 const NEAR_PIXELS = 2;
 /** A cell drawn near stays near down to this share of `NEAR_PIXELS`. */
@@ -27,6 +30,8 @@ interface Cell {
   /** Its box in the plan (map x/y) and its highest point, for the distance to the eye. */
   x0: number; y0: number; x1: number; y1: number; top: number;
   near: boolean;
+  /** Drawn near and at full detail (L0); near and not fine: its facade level (L1). */
+  fine: boolean;
 }
 
 export interface MassCells {
@@ -43,6 +48,8 @@ export interface MassCells {
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number): void;
   /** Whether a cell is drawn near; a cell with no mass (lawns only), or none known, always is. */
   near(key: string): boolean;
+  /** Whether a cell is drawn at full detail (L0) rather than its facade level (L1); a cell not near is not. */
+  fine(key: string): boolean;
   /** The cells drawn near now (what the streaming of the detail reads, `layer.ts` `landCells`). */
   nearKeys(): Iterable<string>;
   /** Whether a cell's detail is shown (`layer.ts` streaming): a near cell keeps its mass shown until its detail lands */
@@ -93,8 +100,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
   const showMass = (key: string, cell: Cell): void => {
     if (cell.mesh) cell.mesh.visible = !cell.near || !detailed.has(key);
   };
-  const setNear = (key: string, cell: Cell, near: boolean): void => {
+  const setNear = (key: string, cell: Cell, near: boolean, fine = near): void => {
     cell.near = near;
+    cell.fine = near && fine;
     if (near) nearKeys.add(key); else nearKeys.delete(key);
     showMass(key, cell);
   };
@@ -116,14 +124,14 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     plan(key) {
       if (cells.has(key)) return;
       // Near until the eye says otherwise (`choose`), as a cell made before the eye is known.
-      const cell: Cell = { mesh: null, massless: false, ...square(key), top: 0, near: true };
+      const cell: Cell = { mesh: null, massless: false, ...square(key), top: 0, near: true, fine: true };
       cells.set(key, cell);
       setNear(key, cell, true);
     },
     land(key, mass) {
       const known = cells.get(key);
       if (known) drop(known);
-      const cell: Cell = { mesh: null, massless: mass === null, ...square(key), top: 0, near: known?.near ?? true };
+      const cell: Cell = { mesh: null, massless: mass === null, ...square(key), top: 0, near: known?.near ?? true, fine: known?.fine ?? true };
       if (known) lowered(known.top);
       if (mass) {
         const mesh = cellMesh(mass, kit);
@@ -142,7 +150,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       }
       cells.set(key, cell);
       // A cell with no mass is always near (its detail is all it has).
-      setNear(key, cell, cell.massless || cell.near);
+      setNear(key, cell, cell.massless || cell.near, cell.massless || cell.fine);
     },
     remove(key) {
       const cell = cells.get(key);
@@ -157,28 +165,31 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     },
     choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity) {
       const decide = (key: string, cell: Cell): void => {
-        let near: boolean;
+        let near: boolean, fine = true;
         const forced = allNear === true || (allNear !== false && allNear.has(key));
         if (forced || cell.massless) near = true;
         else {
           // To the cell's nearest point (Cesium measures to the tile's bounding volume).
           const dx = Math.max(cell.x0 - eyeX, 0, eyeX - cell.x1);
           const dy = Math.max(cell.y0 - eyeY, 0, eyeY - cell.y1);
-          let pixels: number;
+          // What a metre of error spans on the screen there.
+          let perMetre: number;
           let allowed = NEAR_PIXELS;
-          if (orthoPx !== null) pixels = FAR_ERROR * orthoPx;
+          if (orthoPx !== null) perMetre = orthoPx;
           else {
             const dz = Math.max(eyeZ - cell.top, 0);
             const d = Math.max(Math.hypot(dx, dy, dz), 1);
-            pixels = (FAR_ERROR * pxAtMetre) / d;
+            perMetre = pxAtMetre / d;
             // The eye low: the farther the cell, the more error it may make (`HORIZON_HALF`).
             const street = Math.max(0, 1 - eyeZ / STREET_EYE);
             allowed = NEAR_PIXELS * (1 + (street * d) / HORIZON_HALF);
           }
           // Within reach, with a margin for a cell already near (hysteresis).
-          near = pixels >= allowed * (cell.near ? HYSTERESIS : 1) && Math.hypot(dx, dy) <= reach * (cell.near ? 1.25 : 1);
+          near = FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) && Math.hypot(dx, dy) <= reach * (cell.near ? 1.25 : 1);
+          // Its facade level once what that leaves out is under the pixels the detail is drawn for.
+          fine = FACADE_ERROR * perMetre >= allowed * (cell.fine ? HYSTERESIS : 1);
         }
-        if (near !== cell.near) setNear(key, cell, near);
+        if (near !== cell.near || (near && fine) !== cell.fine) setNear(key, cell, near, fine);
       };
       // Those near now may go far; those named stay near.
       for (const key of [...nearKeys]) decide(key, cells.get(key)!);
@@ -207,6 +218,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     },
     near(key) {
       return cells.get(key)?.near ?? true;
+    },
+    fine(key) {
+      return cells.get(key)?.fine ?? true;
     },
     nearKeys() {
       return nearKeys;

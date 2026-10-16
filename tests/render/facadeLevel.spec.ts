@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { type BuildingChunk, emitChunk } from '@render/buildings/buildingMesh';
-import { FACADE_BYTES, FACADE_FLOATS, cellFacade } from '@render/buildings/cellArrays';
+import { FACADE_BYTES, FACADE_FLOATS, cellArrays } from '@render/buildings/cellArrays';
+import { PART_KINDS, type PartKind } from '@render/buildings/kit';
 import { growOnLot } from '@editor/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
@@ -42,6 +43,9 @@ function bayHash(volume: number, level: number, side: number, index: number, x: 
   return (h ^ (h >>> 13)) >>> 0;
 }
 
+/** Every part a unit box: the batch's bounds only, not read here. */
+const unitBoxes = { parts: Object.fromEntries(PART_KINDS.map((k) => [k, [-0.5, -0.5, -0.5, 0.5, 0.5, 0.5]])) as Record<PartKind, number[]>, furniture: {} };
+
 const triangles = (c: BuildingChunk): number => Object.values(c.shells).reduce((n, s) => n + s.index.length / 3, 0);
 
 /** What the far level shows at a pane of the detail: the window grid there, read as the shader reads it, or null where no wall of it lies. */
@@ -77,9 +81,9 @@ function farAt(far: BuildingChunk, px: number, py: number, pz: number, nx: numbe
       const fu = gu - Math.floor(gu), fv = gv - Math.floor(gv);
       const inside = kind > 0 && fu > o[0]! && fu < o[1]! && fv > o[2]! && fv < o[3]!;
       // The bay's centre on the plan, as the shader finds it.
-      const index = Math.floor(gu), level = Math.floor(gv);
-      const cx = qx + tx * W * (index + 0.5 - gu), cy = -qz + ty * W * (index + 0.5 - gu);
-      const hash = bayHash(Math.floor(key / 4), level, key % 4, index, cx, cy);
+      const bay = Math.floor(gu), level = Math.floor(gv);
+      const cx = qx + tx * W * (bay + 0.5 - gu), cy = -qz + ty * W * (bay + 0.5 - gu);
+      const hash = bayHash(Math.floor(key / 4), level, key % 4, bay, cx, cy);
       const dark = kind === 1 ? hash % 20 < 5 : kind === 3 ? hash % 4 === 0 : kind === 4 ? hash % 5 === 0 : false;
       best = { inside, kind, dark };
       bestGap = Math.abs(gap);
@@ -91,13 +95,16 @@ function farAt(far: BuildingChunk, px: number, py: number, pz: number, nx: numbe
 describe('the buildings\' far level', () => {
   const town = grownTown();
 
-  it('is the same building with no parts and far fewer triangles', () => {
+  it('is the same building with what stands out of its walls, its openings drawn, far fewer triangles', () => {
     expect(town.length).toBeGreaterThan(20);
     let near = 0, far = 0;
     for (const b of town) {
       const detail = emitChunk(b, groundAt);
       const l1 = emitChunk(b, groundAt, undefined, groundAt, undefined, true);
-      for (const batch of Object.values(l1.parts)) expect(batch.count).toBe(0);
+      // Balconies, awnings, canopies and shutters' leaves stand out of the wall: the far level keeps every one.
+      for (const kind of ['railing', 'awning', 'louvre', 'brise', 'glassRail', 'column'] as const) expect(l1.parts[kind].count).toBe(detail.parts[kind].count);
+      // What is set into a flattened opening is drawn by the shader.
+      for (const kind of ['glass', 'glassDark', 'frame', 'door', 'shutter'] as const) expect(l1.parts[kind].count).toBeLessThanOrEqual(detail.parts[kind].count);
       // Every vertex of the far level has its window grid, and only the far level has one.
       for (const s of Object.values(l1.shells)) {
         expect(s.facade!.length).toBe((s.position.length / 3) * FACADE_FLOATS);
@@ -144,13 +151,12 @@ describe('the buildings\' far level', () => {
 
   it('puts a cell\'s far level together as one set of arrays per finish', () => {
     const chunks = town.slice(0, 6).map((b) => emitChunk(b, groundAt, undefined, groundAt, undefined, true));
-    const cell = cellFacade(chunks)!;
-    expect(cell).not.toBeNull();
+    const cell = cellArrays(chunks, { parts: PART_KINDS, shells: true, furniture: false, ghost: false, dim: false }, unitBoxes);
     let vertices = 0, made = 0;
-    for (const s of Object.values(cell)) {
+    for (const s of Object.values(cell.shells)) {
       vertices += s!.position.length / 3;
-      expect(s!.facade.length).toBe((s!.position.length / 3) * FACADE_FLOATS);
-      expect(s!.opening.length).toBe((s!.position.length / 3) * FACADE_BYTES);
+      expect(s!.facade!.length).toBe((s!.position.length / 3) * FACADE_FLOATS);
+      expect(s!.opening!.length).toBe((s!.position.length / 3) * FACADE_BYTES);
     }
     for (const c of chunks) for (const s of Object.values(c.shells)) made += s.position.length / 3;
     expect(vertices).toBe(made);

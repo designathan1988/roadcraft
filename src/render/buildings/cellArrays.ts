@@ -31,6 +31,9 @@ interface ShellArrays {
   readonly uv: Float32Array;
   readonly index: Uint16Array | Uint32Array;
   readonly bounds: Bounds;
+  /** The far level only (`emitChunk` `far`): each vertex's window grid, `FACADE_FLOATS` numbers, and its opening, `FACADE_BYTES` bytes (`facadeLevel.ts`). */
+  readonly facade?: Float32Array;
+  readonly opening?: Uint8Array;
 }
 
 interface InstanceArrays {
@@ -96,46 +99,6 @@ export const FACADE_FLOATS = 8;
 /** Bytes per vertex of the far level's opening (a0, a1, h0, h1, shares of the bay) its frames' colour (r, g, b) and whether its rooms are offices (255) or homes (0). */
 export const FACADE_BYTES = 8;
 
-/** One finish of a cell's far level (L1): the shell's arrays, and each vertex's window grid for the shader (`facadeLevel.ts`). */
-export interface FacadeArrays extends ShellArrays {
-  readonly facade: Float32Array;
-  readonly opening: Uint8Array;
-}
-
-/** A cell's far level (L1), by finish: its buildings emitted again as runs of bays (`emitChunk` `far`). */
-export type CellFacade = Readonly<Partial<Record<Finish, FacadeArrays>>>;
-
-/** The far level of `chunks` (emitted `far`) as one set of arrays per finish; null when none has a shell. */
-export function cellFacade(chunks: readonly BuildingChunk[]): CellFacade | null {
-  const out: Partial<Record<Finish, FacadeArrays>> = {};
-  let any = false;
-  for (const finish of FINISHES) {
-    const shell = shellArrays(chunks, finish);
-    if (!shell) continue;
-    const vertices = shell.position.length / 3;
-    const facade = new Float32Array(vertices * FACADE_FLOATS);
-    const opening = new Uint8Array(vertices * FACADE_BYTES);
-    let v = 0;
-    for (const chunk of chunks) {
-      const part = chunk.shells[finish];
-      if (!part) continue;
-      if (part.facade) facade.set(part.facade, v * FACADE_FLOATS);
-      if (part.opening) opening.set(part.opening, v * FACADE_BYTES);
-      v += part.position.length / 3;
-    }
-    out[finish] = { ...shell, bounds: shellBounds(shell.position), facade, opening };
-    any = true;
-  }
-  return any ? out : null;
-}
-
-/** Every buffer of a cell's far level: handed over, not copied. */
-export function cellFacadeBuffers(f: CellFacade): ArrayBuffer[] {
-  const out: ArrayBufferLike[] = [];
-  for (const s of Object.values(f)) if (s) out.push(s.position.buffer, s.normalDecay.buffer, s.colour.buffer, s.uv.buffer, s.index.buffer, s.bounds.buffer, s.facade.buffer, s.opening.buffer);
-  return out as ArrayBuffer[];
-}
-
 /** A cell's buildings from afar as one mesh's arrays (`massCells.ts`) */
 export interface CellMass {
   readonly position: Float32Array;
@@ -185,7 +148,7 @@ export const cellMassBuffers = (c: CellMass): ArrayBuffer[] =>
 /** What a batch sends to the GPU, in bytes: every array but the bounds (kept on the page), the kit's shared geometry not counted. */
 export function cellBytes(arrays: CellArrays): number {
   let bytes = 0;
-  for (const s of Object.values(arrays.shells)) if (s) bytes += s.position.byteLength + s.normalDecay.byteLength + s.colour.byteLength + s.uv.byteLength + s.index.byteLength;
+  for (const s of Object.values(arrays.shells)) if (s) bytes += s.position.byteLength + s.normalDecay.byteLength + s.colour.byteLength + s.uv.byteLength + s.index.byteLength + (s.facade?.byteLength ?? 0) + (s.opening?.byteLength ?? 0);
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
@@ -199,7 +162,12 @@ export function cellBytes(arrays: CellArrays): number {
 /** Every array buffer of a batch: handed over, not copied (MDN, `postMessage` transfer). */
 export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
   const out: ArrayBufferLike[] = [];
-  for (const s of Object.values(arrays.shells)) if (s) out.push(s.position.buffer, s.normalDecay.buffer, s.colour.buffer, s.uv.buffer, s.index.buffer, s.bounds.buffer);
+  for (const s of Object.values(arrays.shells)) {
+    if (!s) continue;
+    out.push(s.position.buffer, s.normalDecay.buffer, s.colour.buffer, s.uv.buffer, s.index.buffer, s.bounds.buffer);
+    if (s.facade) out.push(s.facade.buffer);
+    if (s.opening) out.push(s.opening.buffer);
+  }
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
@@ -227,12 +195,18 @@ function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): Omit<She
   const colour = new Float32Array(vertices * 3);
   const uv = new Float32Array(vertices * 2);
   const index = indexArray(vertices, indices);
+  // The far level's chunks carry their window grid (every one of them, `emitChunk` `far`).
+  const far = chunks.some((c) => c.shells[finish]?.facade);
+  const facade = far ? new Float32Array(vertices * FACADE_FLOATS) : undefined;
+  const opening = far ? new Uint8Array(vertices * FACADE_BYTES) : undefined;
   let v = 0;
   let n = 0;
   for (const chunk of chunks) {
     const part = chunk.shells[finish];
     if (!part) continue;
     position.set(part.position, v * 3);
+    if (facade && part.facade) facade.set(part.facade, v * FACADE_FLOATS);
+    if (opening && part.opening) opening.set(part.opening, v * FACADE_BYTES);
     const count = part.position.length / 3;
     for (let k = 0; k < count; k++) {
       const at = (v + k) * 4;
@@ -245,7 +219,7 @@ function shellArrays(chunks: readonly BuildingChunk[], finish: Finish): Omit<She
     v += part.position.length / 3;
     n += part.index.length;
   }
-  return { position, normalDecay, colour, uv, index };
+  return { position, normalDecay, colour, uv, index, ...(facade && opening ? { facade, opening } : {}) };
 }
 
 /** A number in [-1, 1] as a signed byte the GPU reads back normalised (x / 127, WebGL 2 `vertexAttribPointer`). */
