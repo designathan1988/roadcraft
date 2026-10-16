@@ -29,6 +29,7 @@ import {
   type VehicleShape,
 } from '@sim/vehicles/archetypes';
 import type { SimClient, VehicleView as SimVehicle } from '@sim/host/simClient';
+import type { GroundBox } from '@sim/host/fleetGrid';
 import type { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
 import type { ChangeKind } from '@world/changes';
@@ -109,6 +110,8 @@ interface AgentRenderOptions {
   readonly pedestrianVisible?: (x: number, y: number, height: number) => boolean;
   /** Whether a vehicle of this reach, centred here, can be on screen or cast a shadow onto it. */
   readonly vehicleVisible?: (x: number, y: number, height: number, radius: number) => boolean;
+  /** The ground where a vehicle `vehicleVisible` can pass stands (`frustumGround.ts`): only the vehicles there are asked of the client's grid; none given, every one. */
+  readonly vehicleBox?: Readonly<GroundBox>;
   /** Zoom from which vehicle cabins and occupants are drawn. */
   readonly occupantZoom?: number;
   /** Each motor vehicle drawn: where its tail smoke leaves from (`exhaust.ts`). */
@@ -392,6 +395,10 @@ const PLANS: ReadonlyMap<string, BodyPlan> = new Map(
 );
 const FALLBACK_PLAN = bodyPlan(archetypeById('sedan'));
 const planOf = (a: Archetype): BodyPlan => PLANS.get(a.id) ?? FALLBACK_PLAN;
+/** The widest reach a vehicle is tested with (`vehicleVisible`'s radius): the view's ground box is grown by it. */
+export const VEHICLE_REACH = Math.max(...[...PLANS.values(), FALLBACK_PLAN].map((plan) => plan.length * 0.5 + plan.height * 2));
+/** The vehicles asked of the client's grid for this frame's view (`SimClient.vehiclesIn`), reused. */
+const VEHICLES_IN_VIEW: SimVehicle[] = [];
 
 // ---------------------------------------------------------------- meshes
 
@@ -1695,8 +1702,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       let bikesWholeNow = false, carsWheeled = false;
       vehicleBlobs.begin();
       if (suspensionFrame % 600 === 0) for (const [id, entry] of parkedDraws) if (suspensionFrame - entry.seen > 120) parkedDraws.delete(id);
-      // The traffic, then the scenery's cars parked in their bays, on the ground of the lot.
-      for (const list of [world.traffic, world.parked]) for (const vehicle of list) {
+      // The traffic, then the scenery's cars parked in their bays, on the ground of the lot: DO NOT walk the whole fleet, only those standing on the view's ground.
+      const lists = options.vehicleBox ? [world.vehiclesIn(options.vehicleBox, VEHICLES_IN_VIEW)] : [world.traffic, world.parked];
+      for (const list of lists) for (const vehicle of list) {
         // Off the road and not moving (the town's parked cars): where it is, with none of the interpolation's sums.
         const at = vehicle.free;
         const pose = POSE;

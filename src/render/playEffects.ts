@@ -13,7 +13,8 @@ import {
 } from 'three';
 import type { BodyPart, Severable } from '@sim/people/view';
 import type { Archetype } from '@sim/vehicles/archetypes';
-import type { SimClient } from '@sim/host/simClient';
+import type { SimClient, VehicleView } from '@sim/host/simClient';
+import type { GroundBox } from '@sim/host/fleetGrid';
 import { framesPoseInto, newPose } from '@sim/pose';
 import { solidsOf } from '@world/solids';
 import { floorHeight } from '@world/buildings/foundation';
@@ -211,27 +212,10 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
     groundSeen.version++;
     ragdollGround.forget();
   };
-  /** A vehicle as a body sees it: where it stands and the box it fills. */
-  interface VehicleBox { x: number; y: number; angle: number; hl: number; hw: number; height: number }
-  /** DO NOT walk and pose the whole fleet for every body that falls */
-  const vehicleBoxes = { sim: null as SimClient | null, tick: -1, list: [] as VehicleBox[] };
+  /** DO NOT walk and pose the whole fleet for every body that falls: the vehicles within reach, asked of the client's grid (`SimClient.vehiclesIn`). */
   const poseScratch = newPose();
-  const boxesAtThisTick = (sim: SimClient): readonly VehicleBox[] => {
-    if (vehicleBoxes.sim === sim && vehicleBoxes.tick === sim.tick) return vehicleBoxes.list;
-    const list: VehicleBox[] = [];
-    for (const v of sim.traffic) {
-      framesPoseInto(v.frames, 1, poseScratch);
-      list.push({ x: poseScratch.p.x, y: poseScratch.p.y, angle: poseScratch.angle, hl: v.archetype.length / 2, hw: v.archetype.width / 2, height: v.archetype.height });
-    }
-    for (const v of sim.parked) {
-      if (!v.free) continue;
-      list.push({ x: v.free.x, y: v.free.y, angle: v.free.angle, hl: v.archetype.length / 2, hw: v.archetype.width / 2, height: v.archetype.height });
-    }
-    vehicleBoxes.sim = sim;
-    vehicleBoxes.tick = sim.tick;
-    vehicleBoxes.list = list;
-    return list;
-  };
+  const nearBox: GroundBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  const nearVehicles: VehicleView[] = [];
   const ragdollWorld: RagdollWorld = {
     groundAt: (x, y) => ragdollGround.at(x, y),
     groundSerial: () => groundSeen.version,
@@ -275,11 +259,18 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
       }
       // The traffic, and the cars parked off the road.
       if (ragdollSim) {
-        for (const v of boxesAtThisTick(ragdollSim)) {
-          if (Math.hypot(v.x - x, v.y - y) > reach) continue;
-          const c = Math.cos(v.angle), sn = Math.sin(v.angle);
-          const ring = [[v.hl, v.hw], [v.hl, -v.hw], [-v.hl, -v.hw], [-v.hl, v.hw]].map(([u, w]) => ({ x: v.x + c * u! - sn * w!, y: v.y + sn * u! + c * w! }));
-          out.push({ ring, top: ragdollWorld.groundAt(v.x, v.y) + v.height * 0.85 });
+        nearBox.x0 = x - reach; nearBox.y0 = y - reach; nearBox.x1 = x + reach; nearBox.y1 = y + reach;
+        for (const which of ['traffic', 'parked'] as const) for (const v of ragdollSim.vehiclesIn(nearBox, nearVehicles, which)) {
+          // The traffic where its last tick left it, a parked car where it stands.
+          if (which === 'traffic') framesPoseInto(v.frames, 1, poseScratch);
+          else if (v.free) { poseScratch.p.x = v.free.x; poseScratch.p.y = v.free.y; poseScratch.angle = v.free.angle; }
+          else continue;
+          const vx = poseScratch.p.x, vy = poseScratch.p.y;
+          if (Math.hypot(vx - x, vy - y) > reach) continue;
+          const hl = v.archetype.length / 2, hw = v.archetype.width / 2;
+          const c = Math.cos(poseScratch.angle), sn = Math.sin(poseScratch.angle);
+          const ring = [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw]].map(([u, w]) => ({ x: vx + c * u! - sn * w!, y: vy + sn * u! + c * w! }));
+          out.push({ ring, top: ragdollWorld.groundAt(vx, vy) + v.archetype.height * 0.85 });
         }
       }
       return out.filter((w) => w.ring.length >= 3);

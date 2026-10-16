@@ -46,10 +46,13 @@ import { FOOTWAY_RISE, sidewalkHalf } from '@world/roadTypes';
 import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
 import { type PavingData, type PavingSource, pavedHeightFrom } from '@world/paving';
 import type { RoadStructure } from '@world/structures';
+import { TERRAIN_MAX_HEIGHT, TERRAIN_MIN_HEIGHT } from '@world/terrain';
 import type { SimClient, VehicleView } from '@sim/host/simClient';
+import type { GroundBox } from '@sim/host/fleetGrid';
 import type { Viewport } from '@view/viewport';
 
-import { createAgentMeshes, type AgentMeshes } from './agents';
+import { VEHICLE_REACH, createAgentMeshes, type AgentMeshes } from './agents';
+import { frustumGroundBox } from './frustumGround';
 import { createEnvironment, sunShadowChunks } from './environment';
 import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
@@ -778,6 +781,10 @@ export function createSceneRenderer(
     vehicleBounds.radius = radius;
     return crowdFrustum.intersectsSphere(vehicleBounds);
   };
+  /** The ground every vehicle `vehicleVisible` passes stands on, set each frame (`frustumGroundBox`): its sphere's centre between the deepest land and the highest deck. */
+  const vehicleBox: GroundBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  // A raised deck over the highest land, and room for decks stacked on it; a cut below the deepest.
+  const VEHICLE_LOW = TERRAIN_MIN_HEIGHT - m(16), VEHICLE_HIGH = TERRAIN_MAX_HEIGHT + m(64) + VEHICLE_REACH * 0.3;
   scene.add(...agents.meshes);
   // What moves and casts: each sun cascade it is drawn into is drawn again while it moves (`sunCascades.ts`).
   environment.setMovers([
@@ -2539,6 +2546,7 @@ export function createSceneRenderer(
       elementLayer?.cull(crowdFrustum, crowdProjection);
       gardens?.cull(crowdFrustum, crowdProjection);
       transit.update(sim.trains, terrain.renderedHeightAt);
+      frustumGroundBox(crowdFrustum, VEHICLE_REACH, VEHICLE_LOW, VEHICLE_HIGH, vehicleBox);
       agents.sync(sim, net, alpha, detailed, rig.viewport.zoom, {
         pedestrianDetail: quality.pedestrianDetail,
         pedestrianVisible,
@@ -2548,6 +2556,7 @@ export function createSceneRenderer(
         shadows: renderer.shadowMap.enabled,
         eye: cullCamera.position,
         vehicleVisible,
+        vehicleBox,
         occupantZoom: quality.occupantZoom,
         exhaust: (x, y, z, angle, length, speed, dusty) => {
           exhaust.emit(x, y, z, angle, length, speed, dusty);

@@ -10,6 +10,7 @@ import type { VehicleFrames } from '../pose';
 import type { SignalState } from '../signals/query';
 import type { JunctionAnswer, TrafficCount } from './simAnswers';
 import type { Casualty } from '../people/casualties';
+import { FleetGrid, type GroundBox } from './fleetGrid';
 import {
   C, H, P, PED_STRIDE, V, VEHICLE_STRIDE, headBase, makeSharedFrames, pedBase, vehicleBase,
   type FromSim, type SignalLayout, type SimAct, type SimAsk, type SimControls, type SimStats, type ToSim, type TrainState, type Wound,
@@ -84,16 +85,64 @@ export class SimClient implements JournalReader {
   private readonly answers = new Map<string, unknown>();
 
   readonly vehicles = new Map<number, VehicleView>();
-  /** The traffic and the cars parked in bays, as the renderer walks them (`render/agents.ts`). */
+  /** The traffic and the cars parked in bays, whole; DO NOT walk them per frame or per query: ask by place (`vehiclesIn`). */
   readonly traffic: VehicleView[] = [];
   readonly parked: VehicleView[] = [];
   private readonly parkedById = new Map<number, VehicleView>();
+  /** Each parked view's place in `parked` (taken out by swapping the last in, not by listing them all again). */
+  private readonly parkedAt = new Map<VehicleView, number>();
+  /** The traffic and the parked cars by 64 m cell, filed as the tick is decoded (`fleetGrid.ts`). */
+  private readonly trafficGrid = new FleetGrid<VehicleView>();
+  private readonly parkedGrid = new FleetGrid<VehicleView>();
+  /** The longest step of the last tick (each axis): a pose drawn between the two ticks stands that far from the one filed at most. */
+  private trafficSlack = 0;
+  private parkedSlack = 0;
+  /** The parked cars whose two poses differ (moved by the slot): settled on the next tick that tells no parked change, as before. */
+  private readonly settling = new Set<VehicleView>();
+  /** The traffic's speeds summed and how many stand (under 0.5), as the last tick's decode found them (the status, `main.ts`). */
+  trafficSpeed = 0;
+  trafficQueued = 0;
   readonly pedViews: PedView[] = [];
   /** Moves whenever a vehicle came or went (the casting forgets the people of those gone, `render/agents.ts`). */
   fleet = 0;
   /** Whether a view is one of the cars parked in their bays now. */
   isParked(view: VehicleView): boolean {
     return this.parkedById.get(view.id) === view;
+  }
+
+  /** The views that may be drawn in the box this frame, appended to `out` after clearing it: the traffic, then the parked cars (`which` keeps one of them). */
+  vehiclesIn(box: Readonly<GroundBox>, out: VehicleView[], which: 'all' | 'traffic' | 'parked' = 'all'): VehicleView[] {
+    out.length = 0;
+    // Grown by the tick's longest step: the pose drawn lies between the two the frames hold (`framesPoseInto`).
+    if (which !== 'parked') { const s = this.trafficSlack; this.trafficGrid.near(box.x0 - s, box.y0 - s, box.x1 + s, box.y1 + s, out); }
+    if (which !== 'traffic') { const s = this.parkedSlack; this.parkedGrid.near(box.x0 - s, box.y0 - s, box.x1 + s, box.y1 + s, out); }
+    return out;
+  }
+
+  private addParked(view: VehicleView): void {
+    this.parkedById.set(view.id, view);
+    this.parkedAt.set(view, this.parked.push(view) - 1);
+  }
+
+  private dropParked(view: VehicleView): void {
+    this.parkedById.delete(view.id);
+    const at = this.parkedAt.get(view);
+    if (at !== undefined) {
+      const last = this.parked.pop()!;
+      if (at < this.parked.length) { this.parked[at] = last; this.parkedAt.set(last, at); }
+      this.parkedAt.delete(view);
+    }
+    this.parkedGrid.remove(view);
+    this.settling.delete(view);
+  }
+
+  private clearParked(): void {
+    this.parked.length = 0;
+    this.parkedById.clear();
+    this.parkedAt.clear();
+    this.parkedGrid.clear();
+    this.settling.clear();
+    this.parkedSlack = 0;
   }
   private readonly pedById = new Map<number, PedView>();
   trains: readonly TrainState[] = [];
@@ -337,31 +386,33 @@ export class SimClient implements JournalReader {
     const rich = new Map(message.vehicles);
     // The cars parked in bays, as told: come, gone, or the whole list.
     if (message.parked) {
-      if (message.parked.some((p) => p.whole)) { this.parked.length = 0; this.parkedById.clear(); }
+      if (message.parked.some((p) => p.whole)) this.clearParked();
       for (const p of message.parked) {
         this.fleet++;
-        if (p.gone) { this.parkedById.delete(p.id); continue; }
-        const view = this.parkedById.get(p.id) ?? newView(p.id);
+        if (p.gone) { const gone = this.parkedById.get(p.id); if (gone) this.dropParked(gone); continue; }
+        const known = this.parkedById.get(p.id);
+        const view = known ?? newView(p.id);
         view.archetype = archetypeById(p.archetype);
         view.color = p.color;
         view.free = { px: p.x, py: p.y, pangle: p.angle, x: p.x, y: p.y, angle: p.angle, lot: p.lot };
         view.v = 0; view.prev.v = 0; view.seats = 0;
         setFrames(view.frames, p.x, p.y, p.angle, p.x, p.y, p.angle);
-        this.parkedById.set(p.id, view);
+        if (!known) this.addParked(view);
+        this.parkedGrid.place(view);
       }
-      this.parked.length = 0;
-      for (const view of this.parkedById.values()) this.parked.push(view);
     } else {
-      // The parked cars that moved last tick and not this one stand where they stopped.
-      for (const view of this.parked) {
+      // The parked cars that moved last tick and not this one stand where they stopped: DO NOT walk every parked car for them.
+      for (const view of this.settling) {
         const f = view.free;
         if (f && (f.px !== f.x || f.py !== f.y)) { f.px = f.x; f.py = f.y; f.pangle = f.angle; setFrames(view.frames, f.x, f.y, f.angle, f.x, f.y, f.angle); }
       }
+      this.settling.clear();
     }
     const n = data[h + H.vehicles]!;
     const vb = vehicleBase(slot);
     this.traffic.length = 0;
     const seen = new Set<number>();
+    let speed = 0, queued = 0, slack = 0;
     for (let k = 0; k < n; k++) {
       const at = vb + k * VEHICLE_STRIDE;
       const id = data[at + V.id]!;
@@ -370,7 +421,7 @@ export class SimClient implements JournalReader {
       if (!view) {
         view = newView(id);
         this.fleet++;
-        if (parked) { this.parkedById.set(id, view); this.parked.push(view); } else this.vehicles.set(id, view);
+        if (parked) this.addParked(view); else this.vehicles.set(id, view);
       }
       const r = rich.get(id);
       if (r) {
@@ -396,9 +447,30 @@ export class SimClient implements JournalReader {
       view.odometer = data[at + V.odometer]!;
       view.seats = data[at + V.seats]!;
       view.slain = data[at + V.slain] === 1;
-      if (!parked) { this.traffic.push(view); seen.add(id); }
+      if (parked) {
+        this.parkedGrid.place(view);
+        if (f.bx !== f.x || f.by !== f.y) this.settling.add(view);
+        continue;
+      }
+      this.traffic.push(view);
+      seen.add(id);
+      this.trafficGrid.place(view);
+      const step = f.jump ? 0 : Math.max(Math.abs(f.x - f.bx), Math.abs(f.y - f.by));
+      if (step > slack) slack = step;
+      speed += view.v;
+      if (view.v < 0.5) queued++;
     }
-    for (const id of this.vehicles.keys()) if (!seen.has(id)) { this.vehicles.delete(id); this.fleet++; }
+    for (const [id, view] of this.vehicles) if (!seen.has(id)) { this.vehicles.delete(id); this.trafficGrid.remove(view); this.fleet++; }
+    this.trafficSpeed = speed;
+    this.trafficQueued = queued;
+    this.trafficSlack = slack;
+    // The parked cars between two poses are the moved ones, still settling.
+    let parkedSlack = 0;
+    for (const view of this.settling) {
+      const fr = view.frames;
+      if (!fr.jump) parkedSlack = Math.max(parkedSlack, Math.abs(fr.x - fr.bx), Math.abs(fr.y - fr.by));
+    }
+    this.parkedSlack = parkedSlack;
     // The people: their numbers from the slot, what they carry from the message (kept from the last time it changed).
     const pedRich = new Map(message.peds);
     const m = data[h + H.peds]!;
@@ -455,8 +527,11 @@ export class SimClient implements JournalReader {
   private clearViews(): void {
     this.vehicles.clear();
     this.traffic.length = 0;
-    this.parked.length = 0;
-    this.parkedById.clear();
+    this.trafficGrid.clear();
+    this.trafficSlack = 0;
+    this.trafficSpeed = 0;
+    this.trafficQueued = 0;
+    this.clearParked();
     this.pedViews.length = 0;
     this.pedById.clear();
     this.layouts.clear();

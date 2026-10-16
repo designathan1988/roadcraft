@@ -258,9 +258,9 @@ O(map) per edit
   `resweepShore`): it follows `terrain.ts` `rebuildWater`, which rebuilds all the water at any stamp.
 - Lot tool: `lotAt` is `doc.lots.find`, up to 400 times per move (`lotTool.ts:359, 552`); the
   overlay recomposes every lot; the proposal key uses `net.revision` (`:259`). Fix: `doc.lotsIn(box)`.
-- Fleet copied or scanned: per tick in `lotTraffic.ts:156, 269, 309`, `lorryTraffic.ts:136, 247`;
-  per frame in `render/agents.ts:2120`; per body in `wallsNear` (`playEffects.ts:307`); per status in
-  `main.ts` `currentStatus` (fix: `SimClient`'s pose decode, which reads every car anyway, sums speed and queue).
+- Fleet scanned, left: the worker writes and the page decodes the whole fleet each tick (the micro window, block E);
+  per tick `simHost.ts` walks every parked car (`ambient.parked`) for the few that moved and compares each vehicle's
+  rich parts by joined strings; `removeVehiclesNear` walks every vehicle per act.
 - Effects left (2026-10-16): `JoltRagdoll.push` allocates two Vector3 per call (`ragdollJolt.ts`); the procedural
   crowd's `ragdoll.hold` slices a palette per held body per frame; `clipPose` makes a palette per frame while a body
   gets up; `GPU_PLAYS` copies `crowdAnimation.ts` `PLAYS` (export it).

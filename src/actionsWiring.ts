@@ -3,6 +3,8 @@ import type { Occupant } from '@render/ragdoll';
 import type { BlastHit, SceneHandle } from '@render/renderer';
 import { framesPoseInto, newPose } from '@sim/pose';
 import type { SimClient, VehicleView } from '@sim/host/simClient';
+import type { GroundBox } from '@sim/host/fleetGrid';
+import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import type { Viewport } from '@view/viewport';
 import type { Vec2 } from '@core/vec2';
 import { closestOnSegment } from '@core/intersect';
@@ -22,6 +24,8 @@ import { MAX_STOREYS, MAX_STOREY_HEIGHT } from '@world/buildings/types';
 const RAY_ABOVE = MAX_STOREYS * MAX_STOREY_HEIGHT + m(40);
 /** How far under the ground under the pointer a building can stand (one in a valley seen over a ridge). */
 const RAY_BELOW = m(120);
+/** The farthest a vehicle's box reaches from its centre on the ground (a rider's shoulders over a two-wheeler's frame, `shootVehicle`). */
+const VEHICLE_HALF_SPAN = Math.max(...ARCHETYPES.map((a) => Math.hypot(a.length / 2, Math.max(a.width / 2, m(0.35)))));
 /** How often the fires flare on, seconds of the simulation's time. */
 const FIRE_STEP = 0.5;
 
@@ -144,7 +148,12 @@ export function createActions(deps: ActionsDeps): Actions {
   /** A shot along the line of sight from `a` (height `hi`) to `b` */
   function shootVehicle(a: Vec2, b: Vec2, hi: number, lo: number): boolean {
     let best: { v: VehicleView; t: number; x: number; y: number; z: number; up: number; angle: number } | null = null;
-    for (const v of sim.traffic) {
+    // DO NOT test the whole fleet: only the traffic whose box can reach the shot's line (`SimClient.vehiclesIn`).
+    const reach: GroundBox = {
+      x0: Math.min(a.x, b.x) - VEHICLE_HALF_SPAN, y0: Math.min(a.y, b.y) - VEHICLE_HALF_SPAN,
+      x1: Math.max(a.x, b.x) + VEHICLE_HALF_SPAN, y1: Math.max(a.y, b.y) + VEHICLE_HALF_SPAN,
+    };
+    for (const v of sim.vehiclesIn(reach, [], 'traffic')) {
       const pose = poseOf(v);
       const g = ground(pose.p);
       const c = Math.cos(pose.angle), s = Math.sin(pose.angle);
@@ -347,9 +356,11 @@ export function createActions(deps: ActionsDeps): Actions {
         blastX: world.x, blastY: world.y, power: Math.max(0.3, 1 - d / (radius * 1.1)),
         kind: close && Math.random() < 0.5 ? 'torn' : 'dead', charred: !rider || close, index });
     };
-    for (const v of [...sim.traffic]) {
+    // The traffic within reach, asked by place (`SimClient.vehiclesIn`), not the whole fleet copied.
+    const blown = radius * 1.1;
+    for (const v of sim.vehiclesIn({ x0: world.x - blown, y0: world.y - blown, x1: world.x + blown, y1: world.y + blown }, [], 'traffic')) {
       const pose = poseOf(v);
-      if (!near(pose.p.x, pose.p.y, radius * 1.1)) continue;
+      if (!near(pose.p.x, pose.p.y, blown)) continue;
       const css = String(v.color ?? '#777777');
       const p = pose.p;
       hit.vehicles.push({ x: p.x, y: p.y, angle: pose.angle, length: v.archetype.length, width: v.archetype.width,

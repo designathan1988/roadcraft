@@ -1,0 +1,152 @@
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Sphere, Vector3, WebGLCoordinateSystem, type InstancedMesh } from 'three';
+import { Rng } from '@core/rng';
+import { VEHICLE_REACH, createAgentMeshes } from '@render/agents';
+import { frustumGroundBox } from '@render/frustumGround';
+import { FleetGrid, type GroundBox } from '@sim/host/fleetGrid';
+import type { SimClient, VehicleView } from '@sim/host/simClient';
+import { archetypeById } from '@sim/vehicles/archetypes';
+import type { Network } from '@world/network';
+import { ChangeJournal } from '@world/changes';
+import { m } from '@world/units';
+
+/** Only the vehicles on the view's ground are walked (`frustumGround.ts`, `SimClient.vehiclesIn`): the same drawn as walking them all */
+
+type Camera = PerspectiveCamera | OrthographicCamera;
+
+/** The view's frustum as the renderer makes it (`renderer.ts` `crowdFrustum`), in either depth convention. */
+function frustumOf(camera: Camera, reversed: boolean): Frustum {
+  camera.updateMatrixWorld();
+  const projection = new Matrix4();
+  if (camera instanceof PerspectiveCamera) {
+    const top = camera.near * Math.tan((camera.fov * Math.PI) / 360), right = top * camera.aspect;
+    projection.makePerspective(-right, right, top, -top, camera.near, camera.far, WebGLCoordinateSystem, reversed);
+  } else projection.makeOrthographic(camera.left, camera.right, camera.top, camera.bottom, camera.near, camera.far, WebGLCoordinateSystem, reversed);
+  return new Frustum().setFromProjectionMatrix(projection.multiply(camera.matrixWorldInverse), WebGLCoordinateSystem, reversed);
+}
+
+function cameraAt(rng: Rng): Camera {
+  if (rng.bool(0.3)) {
+    const half = m(40) + rng.float() * m(800);
+    const camera = new OrthographicCamera(-half, half, half * 0.6, -half * 0.6, m(0.4), m(5600));
+    camera.position.set(rng.range(-m(2000), m(2000)), m(300) + rng.float() * m(1500), rng.range(-m(2000), m(2000)));
+    camera.lookAt(camera.position.x + rng.range(-m(600), m(600)), 0, camera.position.z + rng.range(-m(600), m(600)));
+    return camera;
+  }
+  const camera = new PerspectiveCamera(30 + rng.float() * 50, 1.2 + rng.float(), m(0.4), m(300) + rng.float() * m(3000));
+  camera.position.set(rng.range(-m(2000), m(2000)), m(2) + rng.float() * m(400), rng.range(-m(2000), m(2000)));
+  camera.lookAt(rng.range(-m(2000), m(2000)), 0, rng.range(-m(2000), m(2000)));
+  return camera;
+}
+
+describe("the view's ground box", () => {
+  it('holds every centre a sphere of the reach can stand at and be seen, between the two heights', () => {
+    const rng = new Rng(11);
+    const grow = m(12), low = -m(60), high = m(180);
+    const point = new Vector3();
+    let seen = 0;
+    for (let view = 0; view < 40; view++) {
+      const camera = cameraAt(rng);
+      const frustum = frustumOf(camera, view % 2 === 0);
+      const box = frustumGroundBox(frustum, grow, low, high, { x0: 0, y0: 0, x1: 0, y1: 0 });
+      const reach = camera.far + m(100);
+      for (let k = 0; k < 6000; k++) {
+        point.set(camera.position.x + rng.range(-reach, reach), rng.range(low, high), camera.position.z + rng.range(-reach, reach));
+        // `Frustum.intersectsSphere`'s own test: no plane farther than the radius behind.
+        if (!frustum.planes.every((p) => p.distanceToPoint(point) >= -grow)) continue;
+        seen++;
+        const eps = m(0.01);
+        expect(point.x).toBeGreaterThanOrEqual(box.x0 - eps);
+        expect(point.x).toBeLessThanOrEqual(box.x1 + eps);
+        expect(-point.z).toBeGreaterThanOrEqual(box.y0 - eps);
+        expect(-point.z).toBeLessThanOrEqual(box.y1 + eps);
+      }
+    }
+    // Enough centres seen for the test to mean something.
+    expect(seen).toBeGreaterThan(500);
+  });
+
+  it('is the rectangle under a camera looking straight down, grown by the reach', () => {
+    const camera = new OrthographicCamera(-m(300), m(300), m(200), -m(200), m(1), m(2000));
+    camera.position.set(m(100), m(500), -m(200));
+    camera.up.set(0, 0, -1);
+    camera.lookAt(m(100), 0, -m(200));
+    for (const reversed of [false, true]) {
+      const box = frustumGroundBox(frustumOf(camera, reversed), m(10), -m(150), m(300), { x0: 0, y0: 0, x1: 0, y1: 0 });
+      expect(box.x0).toBeCloseTo(m(100) - m(310), 4);
+      expect(box.x1).toBeCloseTo(m(100) + m(310), 4);
+      expect(box.y0).toBeCloseTo(m(200) - m(210), 4);
+      expect(box.y1).toBeCloseTo(m(200) + m(210), 4);
+    }
+  });
+
+  it('is empty where the heights lie outside the view', () => {
+    const camera = new OrthographicCamera(-m(300), m(300), m(200), -m(200), m(1), m(400));
+    camera.position.set(0, m(1000), 0);
+    camera.up.set(0, 0, -1);
+    camera.lookAt(0, 0, 0);
+    const box = frustumGroundBox(frustumOf(camera, false), 0, -m(50), m(50), { x0: 0, y0: 0, x1: 0, y1: 0 });
+    expect(box.x0 > box.x1 || box.y0 > box.y1).toBe(true);
+  });
+});
+
+/** A car standing in its bay with nobody in it. */
+function parkedCar(id: number, x: number, y: number): VehicleView {
+  return {
+    id, archetype: archetypeById(id % 3 === 0 ? 'suv' : 'sedan'), color: '#a83a2c', doors: [], kerbStop: null, people: [], peopleAge: [], seats: 0, slain: false, age: 0, v: 0,
+    prev: { v: 0 }, free: { x, y, angle: 0.3, px: x, py: y, pangle: 0.3, lot: null },
+    frames: { bx: x, by: y, bangle: 0.3, x, y, angle: 0.3, yawBefore: 0, yawNow: 0, jump: false },
+    segment: undefined, inSegment: undefined, indicator: 0, curvature: 0, odometer: 0,
+  };
+}
+
+/** The client `sync` reads: the parked cars as a list and by place (`SimClient.vehiclesIn`, none of them moving). */
+function worldWith(parked: readonly VehicleView[]): SimClient {
+  const grid = new FleetGrid<VehicleView>();
+  for (const car of parked) grid.place(car);
+  const vehiclesIn = (box: GroundBox, out: VehicleView[]): VehicleView[] => { out.length = 0; return grid.near(box.x0, box.y0, box.x1, box.y1, out); };
+  return { time: 0, traffic: [], vehicles: new Map(), parked, isParked: (v: VehicleView) => parked.includes(v), pedViews: [], fleet: 0, vehiclesIn } as unknown as SimClient;
+}
+
+const netWith = (): Network => ({ doc: { changes: new ChangeJournal() } }) as unknown as Network;
+const bodiesOf = (agents: ReturnType<typeof createAgentMeshes>): InstancedMesh[] =>
+  agents.meshes.filter((o): o is InstancedMesh => (o as InstancedMesh).isInstancedMesh === true && /^car-.*-(shell|shell-lite|far)$/.test(o.name));
+const drawn = (meshes: readonly InstancedMesh[]): number => meshes.reduce((n, mesh) => n + (mesh.visible ? mesh.count : 0), 0);
+
+describe('vehicles drawn from the grid', () => {
+  beforeAll(() => { vi.stubGlobal('window', { setInterval: () => 0, clearInterval: () => {} }); vi.stubGlobal('location', { search: '?bodies=cooked' }); });
+  afterAll(() => { vi.unstubAllGlobals(); });
+
+  it('are those a walk of every vehicle draws, through the same frustum', () => {
+    const cars: VehicleView[] = [];
+    for (let i = 0; i < 60; i++) for (let j = 0; j < 60; j++) cars.push(parkedCar(i * 60 + j + 1, (i - 30) * m(12), (j - 30) * m(12)));
+    const world = worldWith(cars);
+    const net = netWith();
+    // One walking every vehicle, one asking the grid: each frame of each the same view.
+    const all = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const grid = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const rng = new Rng(3);
+    for (let view = 0; view < 4; view++) {
+      const camera = new PerspectiveCamera(40 + rng.float() * 30, 1.6, m(0.4), m(250) + rng.float() * m(250));
+      camera.position.set(rng.range(-m(100), m(100)), m(20) + rng.float() * m(80), rng.range(-m(100), m(100)));
+      camera.lookAt(camera.position.x + rng.range(-m(120), m(120)), 0, camera.position.z + rng.range(-m(120), m(120)));
+      const frustum = frustumOf(camera, view % 2 === 1);
+      const sphere = new Sphere(new Vector3(), 1);
+      // The renderer's own test (`renderer.ts` `vehicleVisible`).
+      const vehicleVisible = (x: number, y: number, height: number, radius: number): boolean => {
+        sphere.center.set(x, height + radius * 0.3, -y);
+        sphere.radius = radius;
+        return frustum.intersectsSphere(sphere);
+      };
+      const vehicleBox = frustumGroundBox(frustum, VEHICLE_REACH, -m(160), m(300), { x0: 0, y0: 0, x1: 0, y1: 0 });
+      all.sync(world, net, 0, true, undefined, { vehicleVisible });
+      grid.sync(world, net, 0, true, undefined, { vehicleVisible, vehicleBox });
+      const walked = drawn(bodiesOf(all));
+      expect(walked).toBeGreaterThan(0);
+      expect(walked).toBeLessThan(cars.length);
+      expect(drawn(bodiesOf(grid))).toBe(walked);
+    }
+    all.dispose();
+    grid.dispose();
+  });
+});

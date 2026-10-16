@@ -3542,12 +3542,9 @@ const statusListeners: ((status: ShellStatus) => void)[] = [];
 function currentStatus(): ShellStatus {
   // The time of day and the residents' day (`sim/city`).
   const minutes = sim.minutes % 1440;
-  let speedSum = 0;
-  let queued = 0;
-  for (const v of sim.vehicles.values()) {
-    speedSum += v.v;
-    if (v.v < 0.5) queued++;
-  }
+  // Summed while the tick was decoded (`SimClient.readTick`): DO NOT walk the fleet per status.
+  const speedSum = sim.trafficSpeed;
+  const queued = sim.trafficQueued;
   return {
     clock: `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(Math.floor(minutes % 60)).padStart(2, '0')}`,
     // The cars driving into and out of the lots' bays are cars driving too (`sim/agents/lotTraffic.ts`).
