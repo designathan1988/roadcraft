@@ -7,6 +7,7 @@ import type { SharedGroundAt } from '../sharedGround';
 import { BATCH_CELL } from './layerCells';
 import type { KitBoxes } from './cellArrays';
 import { type CellEntry, type CellJob, type CellResult, type JobKind, type WorkReply, runCellJob } from './cellWork';
+import { levelCells } from './massLevels';
 
 /** THE PAGE'S SIDE OF THE CELLS PUT TOGETHER IN WORKERS (`cellWork.ts`, `cell.worker.ts`), through the job system's one queue (`jobPool.ts` `submitJob`) */
 
@@ -26,18 +27,19 @@ const TIER_SPAN = m(10_000_000);
 /** Times a job is asked again over wider roads (`wider`) before the page puts it together. */
 const MOST_WIDER = 2;
 
-/** A cell's place from its key ("x,y" in `BATCH_CELL`s), null when it is not one. */
-function cellIndex(cell: string): readonly [number, number] | null {
+/** A job's square in `BATCH_CELL`s from its key: a cell ("x,y") or a tile or plate of masses ("t:i,j", "p:i,j", `massLevels.ts`); null when it is none. */
+function squareOf(cell: string): { readonly i0: number; readonly j0: number; readonly n: number } | null {
+  if (cell[1] === ':') { const { i0, j0, n } = levelCells(cell); return { i0, j0, n }; }
   const [cx, cy] = cell.split(',').map(Number) as [number, number];
-  return Number.isFinite(cx) && Number.isFinite(cy) ? [cx, cy] : null;
+  return Number.isFinite(cx) && Number.isFinite(cy) ? { i0: cx, j0: cy, n: 1 } : null;
 }
 
-/** The rectangle a cell's worker reads the paving in: the cell and `PAVING_REACH` round it. */
+/** The rectangle a job's worker reads the paving in: its square and `PAVING_REACH` round it. */
 function pavingRect(cell: string): [number, number, number, number] | null {
-  const at = cellIndex(cell);
+  const at = squareOf(cell);
   if (!at) return null;
-  const [cx, cy] = at;
-  return [cx * BATCH_CELL - PAVING_REACH, cy * BATCH_CELL - PAVING_REACH, (cx + 1) * BATCH_CELL + PAVING_REACH, (cy + 1) * BATCH_CELL + PAVING_REACH];
+  const { i0, j0, n } = at;
+  return [i0 * BATCH_CELL - PAVING_REACH, j0 * BATCH_CELL - PAVING_REACH, (i0 + n) * BATCH_CELL + PAVING_REACH, (j0 + n) * BATCH_CELL + PAVING_REACH];
 }
 
 /** A job asked: what it is written from when a worker takes it (`write`), and where it stands. */
@@ -78,8 +80,8 @@ export class CellPool {
   /** A cell's job: its batches ('cell'), its far level ('facade'), its masses ('mass') or its buildings' summaries; `key`, what a newer job replaces */
   run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void, key: string | null = null): number {
     if (key !== null) { const older = this.byKey.get(key); if (older) this.cancel(older.id); }
-    const at = cellIndex(cell);
-    const away = at ? focusDistance((at[0] + 0.5) * BATCH_CELL, (at[1] + 0.5) * BATCH_CELL) : 0;
+    const at = squareOf(cell);
+    const away = at ? focusDistance((at.i0 + at.n / 2) * BATCH_CELL, (at.j0 + at.n / 2) * BATCH_CELL) : 0;
     // A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
     const priority = entries.some((e) => e.key.includes('|')) ? -TIER_SPAN : TIER[kind] * TIER_SPAN + away;
     const asked: Asked = {
