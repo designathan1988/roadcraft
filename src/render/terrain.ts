@@ -483,6 +483,26 @@ function terrainData(bakes: TerrainBakes, paint: DataArrayTexture, shore: DataAr
   return { userData, uniforms };
 }
 
+/** The land's material for the far patches (`flatAtlas.ts`), made without a plate: a far plate holds no paint, no water and no ecology, so its textures are one texel of none. */
+export function farLandMaterial(anisotropy: number): { readonly material: Material; dispose(): void } {
+  const bakes = terrainBakes(anisotropy);
+  const paint = paintLayers(1);
+  paint.image.data = new Uint8Array(4 * PAINT_LAYERS);
+  // 2 x 2 corners, the fewest the shore's bilinear reads (`terrainShoreSample`): no water at any.
+  const corners = new Float32Array(2 * 2 * 4 * 2);
+  for (let k = 0; k < 4; k++) corners[k * 4] = NO_WATER;
+  const shore = shoreLayers(2, corners);
+  const material = terrainMaterial(bakes, terrainData(bakes, paint, shore, 2), null);
+  return {
+    material,
+    dispose() {
+      material.dispose();
+      paint.dispose();
+      shore.dispose();
+    },
+  };
+}
+
 /** Replaces `chunk` in a shader, or throws: a three upgrade that renamed it must not leave the land drawn wrong in silence. */
 function swap(source: string, chunk: string, by: string): string {
   if (!source.includes(chunk)) throw new Error(`terrain shader: no ${chunk}`);

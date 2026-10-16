@@ -18,9 +18,13 @@ vi.mock('@render/terrain', async (load) => {
   const { Mesh, MeshStandardMaterial } = await import('three');
   return {
     ...real,
+    // The far patches' material, made without a plate.
+    farLandMaterial: () => ({ material: new MeshStandardMaterial(), dispose: () => {} }),
     createTerrainSurface: (_anisotropy: number, origin: { readonly x: number; readonly y: number }, key: number) => {
       const id = `${origin.x},${origin.y}`;
-      if (key >= 0) { seen.live.add(id); seen.made++; }
+      // Every plate made is counted: the far ground makes none of its own.
+      seen.made++;
+      if (key >= 0) seen.live.add(id);
       const material = new MeshStandardMaterial();
       let gone = false;
       return {
