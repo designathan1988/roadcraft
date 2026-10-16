@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Sphere, type Camera, type InstancedMesh } from 'three';
 import { Rng } from '@core/rng';
+import { drawnMatrices, posesOf } from '@render/cellInstances';
 import { createGardens, type GardenPlant, type Gardens } from '@render/gardens';
 import { SHADOW_REACH, createSceneryKit } from '@render/scenery';
 import { m } from '@world/units';
@@ -47,7 +48,7 @@ function drawn(gardens: Gardens): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
   for (const mesh of gardens.meshes as InstancedMesh[]) {
     const rows = new Set<string>();
-    const mats = mesh.instanceMatrix.array, tints = mesh.instanceColor!.array;
+    const mats = drawnMatrices(mesh), tints = mesh.instanceColor!.array;
     for (let i = 0; i < mesh.count; i++) rows.add(`${Array.from(mats.slice(i * 16, i * 16 + 16)).join(',')}|${Array.from(tints.slice(i * 3, i * 3 + 3)).join(',')}`);
     out.set(mesh.name, rows);
   }
@@ -121,14 +122,14 @@ describe('garden cull', () => {
     const meshes = (gardens.meshes as InstancedMesh[]).filter((mesh) => mesh.count > 0);
     expect(meshes.length).toBeGreaterThan(0);
     // As if three uploaded them.
-    for (const mesh of meshes) { mesh.instanceMatrix.clearUpdateRanges(); mesh.instanceColor!.clearUpdateRanges(); }
-    const versions = meshes.map((mesh) => [mesh.instanceMatrix.version, mesh.instanceColor!.version]);
+    for (const mesh of meshes) { posesOf(mesh).buffer.clearUpdateRanges(); mesh.instanceColor!.clearUpdateRanges(); }
+    const versions = meshes.map((mesh) => [posesOf(mesh).buffer.version, mesh.instanceColor!.version]);
     const counts = meshes.map((mesh) => mesh.count);
     // Another view matrix, the same frustum: culled again, the same plants.
     gardens.cull(frustum, view.clone().multiply(new Matrix4().makeTranslation(0, 0, 0.5)));
-    expect(meshes.map((mesh) => [mesh.instanceMatrix.version, mesh.instanceColor!.version])).toEqual(versions);
+    expect(meshes.map((mesh) => [posesOf(mesh).buffer.version, mesh.instanceColor!.version])).toEqual(versions);
     expect(meshes.map((mesh) => mesh.count)).toEqual(counts);
-    expect(meshes.every((mesh) => mesh.instanceMatrix.updateRanges.length === 0)).toBe(true);
+    expect(meshes.every((mesh) => posesOf(mesh).buffer.updateRanges.length === 0)).toBe(true);
   });
 
   it('keeps at most one pending upload range while a mesh is not drawn', () => {
@@ -140,7 +141,7 @@ describe('garden cull', () => {
       gardens.cull(frustum, view);
     }
     for (const mesh of gardens.meshes as InstancedMesh[]) {
-      expect(mesh.instanceMatrix.updateRanges.length).toBeLessThanOrEqual(1);
+      expect(posesOf(mesh).buffer.updateRanges.length).toBeLessThanOrEqual(1);
       expect(mesh.instanceColor!.updateRanges.length).toBeLessThanOrEqual(1);
     }
   });

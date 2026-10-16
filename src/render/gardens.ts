@@ -156,7 +156,7 @@ export function createGardens(kit: SceneryKit): Gardens {
     ...TREE_SPECIES.map((s) => kind(`garden-trees-${s}`, kit.trees[s], kit.foliage, kit.foliageDepth, kit.cards[s], kit.treeCards, kit.treeCardsDepth, pictures.treeAt(s))),
     ...BUSH_KINDS.map((k) => kind(`garden-bushes-${k}`, kit.bushes[k], kit.shrubs, kit.shrubsDepth, kit.cards[k], kit.shrubCards, kit.shrubCardsDepth, pictures.bushAt(k))),
   ];
-  // A plant's pose written as three's matrix only for a plant drawn at a new position (`YAW_POSE`).
+  // A plant's pose (`YAW_POSE`) goes to the GPU as it is, for a plant drawn at a new position; the vertex shader makes its matrix.
   const cells = createCellInstances(kinds, YAW_POSE, SHADOW_REACH);
   return {
     get meshes() { return cells.meshes; },

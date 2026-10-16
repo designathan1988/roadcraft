@@ -9,6 +9,7 @@ import { snapLandscape, GROW_MINUTES, type LandscapeKind } from '@world/landscap
 import type { ChangeRect } from '@world/changes';
 import type { SegmentId } from '@world/ids';
 import { m } from '@world/units';
+import { drawnMatrices, posesOf } from '@render/cellInstances';
 import { createSceneryKit } from '@render/scenery';
 import { createStreetFurniture, furnitureProduct, meadowProduct } from '@render/streetFurnitureLayer';
 import { proveIncremental } from '../support/derivedEquivalence';
@@ -87,7 +88,7 @@ function drawn(layer: ReturnType<typeof createStreetFurniture>): Map<string, str
   const out = new Map<string, string[]>();
   for (const mesh of [...layer.meshes, ...(layer.grass.children as InstancedMesh[])]) {
     const rows: string[] = [];
-    const matrices = mesh.instanceMatrix.array, colours = mesh.instanceColor?.array;
+    const matrices = drawnMatrices(mesh), colours = mesh.instanceColor?.array;
     for (let i = 0; i < mesh.count; i++) {
       rows.push([...matrices.subarray(i * 16, i * 16 + 16), ...(colours ? colours.subarray(i * 3, i * 3 + 3) : [])].join(','));
     }
@@ -156,11 +157,13 @@ describe('the street furniture kept from the diary', () => {
     const warm = new Map(layer.warm().map((mesh) => [mesh.name, mesh]));
     const drawn = [...layer.meshes, ...(layer.grass.children as InstancedMesh[])];
     expect(drawn.length).toBeGreaterThan(8);
-    // What three keys a program by: the geometry, the material, the instancing and its colours, the shadow's depth material.
+    // What three keys a program by: the geometry's attributes (the model's and the poses'), the material, the instancing and its colours, the shadow's depth material.
     for (const mesh of drawn) {
       const ahead = warm.get(mesh.name);
       expect(ahead, mesh.name).toBeDefined();
-      expect(ahead!.geometry, mesh.name).toBe(mesh.geometry);
+      expect(Object.keys(ahead!.geometry.attributes).sort(), mesh.name).toEqual(Object.keys(mesh.geometry.attributes).sort());
+      expect(ahead!.geometry.getAttribute('position'), mesh.name).toBe(mesh.geometry.getAttribute('position'));
+      expect(posesOf(ahead!).format, mesh.name).toBe(posesOf(mesh).format);
       expect(ahead!.material, mesh.name).toBe(mesh.material);
       expect(ahead!.customDepthMaterial, mesh.name).toBe(mesh.customDepthMaterial);
       expect(!!ahead!.instanceColor, mesh.name).toBe(!!mesh.instanceColor);

@@ -75,9 +75,9 @@ function furnitureStores(kit: SceneryKit, pictures: SceneryPictures): RunStore[]
   const stores: RunStore[] = [
     prop('street-lights', f.lamp, kit.props),
     // The lens is lit from inside; it neither casts nor takes a shadow.
-    prop('street-light-lamps', kit.lampLens, kit.glow, false),
-    prop('street-light-pools', kit.pool, kit.poolGlow, false, false, 3),
-    prop('street-light-beams', kit.beam, kit.beamGlow, false, false, 4),
+    prop('street-light-lamps', kit.lampLens, kit.posedGlow, false),
+    prop('street-light-pools', kit.pool, kit.posedPoolGlow, false, false, 3),
+    prop('street-light-beams', kit.beam, kit.posedBeamGlow, false, false, 4),
     prop('street-bins', f.bin, kit.props, true, true, undefined, true),
     prop('benches', f.bench, kit.props, true, true, undefined, true),
     prop('hydrants', f.hydrant, kit.props, true, true, undefined, true),

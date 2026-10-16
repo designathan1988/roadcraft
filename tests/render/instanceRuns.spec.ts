@@ -4,20 +4,27 @@ import {
   Frustum,
   Matrix4,
   MeshBasicMaterial,
+  MeshStandardMaterial,
   Object3D,
   OrthographicCamera,
   PerspectiveCamera,
   Quaternion,
+  ShaderLib,
   Sphere,
   Vector3,
   type BufferAttribute,
   type Camera,
+  type InterleavedBuffer,
+  type WebGLProgramParametersWithUniforms,
+  type WebGLRenderer,
 } from 'three';
 import { Rng } from '@core/rng';
+import { drawnMatrices, posedMaterial, posesOf } from '@render/cellInstances';
 import { COVER_POSE, coverPoseInto, type CoverPlacement, type TreePlacement } from '@render/groundCover';
 import { RunBuilder, YAW_POSE, createInstanceRuns, type PoseFormat, type Run, type RunStore } from '@render/instanceRuns';
 import { TREE_POSE, treePoseInto } from '@render/natureTrees';
 import { SHADOW_REACH } from '@render/scenery';
+import { applyWind } from '@render/wind';
 import { m } from '@world/units';
 
 /** THE LAYER KEPT THING BY THING (`instanceRuns.ts`) */
@@ -75,11 +82,11 @@ function cameraAt(rng: Rng, spread: number): Camera {
   return camera;
 }
 
-/** What the GPU holds of an attribute, updated as `WebGLAttributes` does when the mesh is drawn. */
+/** What the GPU holds of an attribute or an interleaved buffer, updated as `WebGLAttributes` does when the mesh is drawn. */
 class GpuCopy {
   private data: Float32Array | null = null;
   private version = -1;
-  constructor(readonly attribute: BufferAttribute) {}
+  constructor(readonly attribute: BufferAttribute | InterleavedBuffer) {}
   draw(): Float32Array {
     const a = this.attribute, array = a.array as Float32Array;
     if (!this.data) {
@@ -100,7 +107,7 @@ describe('instances kept thing by thing', () => {
     const rng = new Rng(2026);
     const layer = createInstanceRuns('test', specs, SHADOW_REACH);
     const live: ReturnType<typeof thing>[] = [];
-    const gpu = new Map<object, { matrix: GpuCopy; colour: GpuCopy | null }>();
+    const gpu = new Map<object, { poses: GpuCopy; colour: GpuCopy | null }>();
     const spread = m(3000);
     let compared = 0;
     const tolerance = m(0.01);
@@ -128,16 +135,19 @@ describe('instances kept thing by thing', () => {
         for (const mesh of layer.meshes) {
           if (!mesh.visible) continue;
           const store = specs.findIndex((s) => s.name === mesh.name);
-          // Kept by attribute, as `WebGLAttributes` keeps a buffer: buffers grown for more in view are new attributes.
-          let copy = gpu.get(mesh.instanceMatrix);
-          if (!copy) gpu.set(mesh.instanceMatrix, copy = { matrix: new GpuCopy(mesh.instanceMatrix), colour: mesh.instanceColor ? new GpuCopy(mesh.instanceColor) : null });
-          const on = copy.matrix.draw(), tints = copy.colour?.draw() ?? null;
+          // Kept by buffer, as `WebGLAttributes` keeps one: buffers grown or shrunk for what is in view are new buffers.
+          const { buffer } = posesOf(mesh), stride = buffer.stride, poses = buffer.array as Float32Array;
+          let copy = gpu.get(buffer);
+          if (!copy) gpu.set(buffer, copy = { poses: new GpuCopy(buffer), colour: mesh.instanceColor ? new GpuCopy(mesh.instanceColor) : null });
+          const on = copy.poses.draw(), tints = copy.colour?.draw() ?? null;
+          const matrices = drawnMatrices(mesh);
           const got: string[] = [];
           for (let i = 0; i < mesh.count; i++) {
-            const row = [...(mesh.instanceMatrix.array as Float32Array).subarray(i * 16, i * 16 + 16), ...(tints ? (mesh.instanceColor!.array as Float32Array).subarray(i * 3, i * 3 + 3) : [])];
+            const row = [...matrices.subarray(i * 16, i * 16 + 16), ...(tints ? (mesh.instanceColor!.array as Float32Array).subarray(i * 3, i * 3 + 3) : [])];
             got.push(row.join(','));
-            // The GPU's copy is the mesh's.
-            expect([...on.subarray(i * 16, i * 16 + 16)].join(',')).toBe(row.slice(0, 16).join(','));
+            // The GPU's copy is the mesh's: its poses, and its tints.
+            expect([...on.subarray(i * stride, i * stride + stride)].join(',')).toBe([...poses.subarray(i * stride, i * stride + stride)].join(','));
+            if (tints) expect([...tints.subarray(i * 3, i * 3 + 3)].join(',')).toBe(row.slice(16).join(','));
           }
           expect(new Set(got).size, 'each instance once').toBe(got.length);
           const drawnSet = new Set(got);
@@ -152,7 +162,7 @@ describe('instances kept thing by thing', () => {
             });
           }
           compared += got.length;
-          expect(mesh.instanceMatrix.updateRanges.length).toBeLessThanOrEqual(1);
+          expect(buffer.updateRanges.length).toBeLessThanOrEqual(1);
         }
       }
     }
@@ -173,11 +183,13 @@ describe('instances kept thing by thing', () => {
     layer.cull(frustum, view);
     const mesh = layer.meshes.find((x) => x.name === 'tinted')!;
     expect(mesh.count).toBeGreaterThan(0);
-    mesh.instanceMatrix.clearUpdateRanges();
-    const version = mesh.instanceMatrix.version, count = mesh.count;
+    const { buffer } = posesOf(mesh);
+    buffer.clearUpdateRanges();
+    const version = buffer.version, count = mesh.count;
     // Another view, then this one again: only what moved is written; the same view itself writes nothing.
     layer.cull(frustum, view.clone());
-    expect(mesh.instanceMatrix.version).toBe(version);
+    expect(posesOf(mesh).buffer).toBe(buffer);
+    expect(buffer.version).toBe(version);
     expect(mesh.count).toBe(count);
     layer.dispose();
   });
@@ -267,5 +279,132 @@ describe('a thing kept as a pose, not a matrix', () => {
     expect(pack.data.length).toBe(10 * YAW_POSE.stride);
     expect(YAW_POSE.stride).toBe(7);
     expect(() => new RunBuilder(specs, COVER_POSE).turned(0, 0, 0, 0, 0, 1, 1, 1, 1)).toThrow();
+  });
+});
+
+type Vec4 = { readonly x: number; readonly y: number; readonly z: number; readonly w: number };
+
+/** `SlotFormat.glsl` run as JavaScript: its `float`s as constants, `sin` and `cos` as Math's, `mat4(...)` as its 16 numbers in the constructor's order (column by column: three's `elements`). */
+function glslMatrix(glsl: string): (a: Vec4, b: Vec4) => number[] {
+  const js = glsl.trim()
+    .replace(/\bfloat\s+/g, 'const ')
+    .replace(/\b(sin|cos)\(/g, 'Math.$1(')
+    .replace(/return\s+mat4\(([\s\S]*)\);$/, 'return [$1];');
+  // Nothing of GLSL left that JavaScript would read another way.
+  expect(js).not.toMatch(/\b(vec[234]|mat[234]|float|int|uniform|attribute)\b/);
+  expect(js).toMatch(/return \[/);
+  return new Function('a', 'b', js) as (a: Vec4, b: Vec4) => number[];
+}
+
+describe('a pose made a matrix by the GPU (`cellInstances.ts` `posedMaterial`)', () => {
+  let seed = 31;
+  const rand = (): number => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32);
+
+  it('is the matrix the CPU makes of it (`matrixInto`), for every format', () => {
+    // The numbers after x, y, z and yaw, by format: scales, a tree's width, height and lean, a cover's lean and scales.
+    const ranges: Record<string, readonly (readonly [number, number])[]> = {
+      yaw: [[0.05, 30], [0.05, 30], [0.05, 30]],
+      tree: [[0.5, 25], [0.5, 25], [-0.3, 0.3], [-0.3, 0.3]],
+      cover: [[-0.3, 0.3], [0.05, 30], [0.05, 30], [0.05, 30]],
+    };
+    for (const format of [YAW_POSE, TREE_POSE, COVER_POSE]) {
+      const gpu = glslMatrix(format.glsl), range = ranges[format.key]!;
+      expect(range.length).toBe(format.stride - 4);
+      const pose = new Float32Array(format.stride), cpu = new Float32Array(16);
+      for (let k = 0; k < 5_000; k++) {
+        pose[0] = (rand() - 0.5) * 20_000; pose[1] = rand() * 300; pose[2] = (rand() - 0.5) * 20_000; pose[3] = (rand() - 0.5) * 16;
+        range.forEach(([lo, hi], i) => { pose[4 + i] = lo + rand() * (hi - lo); });
+        format.matrixInto(pose, 0, cpu, 0);
+        // As the vertex shader reads the pose: its floats, b.w 1 where it has 7 (a vec4 attribute fed 3 numbers).
+        const mine = gpu({ x: pose[0]!, y: pose[1]!, z: pose[2]!, w: pose[3]! }, { x: pose[4]!, y: pose[5]!, z: pose[6]!, w: format.stride > 7 ? pose[7]! : 1 });
+        expect(mine.length).toBe(16);
+        const scale = Math.max(1, ...Array.from(pose.subarray(4), Math.abs));
+        for (let i = 0; i < 16; i++) {
+          // The place to the bit (the far pictures' pick hashes it, `impostorPick`); the rest within float rounding.
+          if (i >= 12) expect(Math.fround(mine[i]!) === cpu[i], `${format.key} ${k}: element ${i}`).toBe(true);
+          else expect(Math.abs(mine[i]! - cpu[i]!), `${format.key} ${k}: element ${i}`).toBeLessThanOrEqual(1e-6 * scale);
+        }
+      }
+    }
+  });
+
+  it("puts the pose's matrix where three's instancing reads its own, the material's patches kept", () => {
+    const material = new MeshStandardMaterial();
+    applyWind(material, { sway: 0.05, flutter: 0.01 }, 'pose-test');
+    expect(posedMaterial(material, TREE_POSE)).toBe(material);
+    expect(posedMaterial(material, TREE_POSE)).toBe(material);
+    // One format a material: its program is one variant.
+    expect(() => posedMaterial(material, YAW_POSE)).toThrow();
+    expect(material.customProgramCacheKey()).toBe('wind-pose-test-nearfade|pose-tree');
+    const shader = { vertexShader: ShaderLib.standard.vertexShader, fragmentShader: ShaderLib.standard.fragmentShader, uniforms: {} } as unknown as WebGLProgramParametersWithUniforms;
+    material.onBeforeCompile(shader, {} as WebGLRenderer);
+    const vertex = shader.vertexShader;
+    // The macro before any chunk that reads three's matrix; the matrix made first thing in main.
+    expect(vertex.indexOf('#define instanceMatrix posedInstanceMatrix')).toBeGreaterThanOrEqual(0);
+    expect(vertex.indexOf('#define instanceMatrix posedInstanceMatrix')).toBeLessThan(vertex.indexOf('#include <common>'));
+    expect(vertex).toMatch(/void main\(\) \{\n#ifdef USE_INSTANCING\n {2}posedInstanceMatrix = poseMatrixOf\(instancePoseA, instancePoseB\);/);
+    expect(vertex).toContain(TREE_POSE.glsl);
+    expect(vertex).toContain('windOffset');
+    // A material with no key of its own: its patch's source, then the format.
+    expect(posedMaterial(new MeshBasicMaterial(), COVER_POSE).customProgramCacheKey()).toMatch(/\|pose-cover$/);
+  });
+});
+
+describe('the buffers a layer draws from', () => {
+  const body = new BoxGeometry(1, 1, 1);
+  body.computeBoundingSphere();
+  const leaves = new BoxGeometry(1, 2, 1);
+  leaves.computeBoundingSphere();
+  const plants: RunStore[] = [{
+    name: 'plant', geometry: body, material, castShadow: true, receiveShadow: true, tinted: true, cards: false,
+    with: [{ name: 'plant-cards', geometry: leaves, material, castShadow: false, receiveShadow: true, cards: true, far: false }],
+  }];
+  const everything = new Frustum().setFromProjectionMatrix(new Matrix4().makeOrthographic(-1e7, 1e7, 1e7, -1e7, -1e7, 1e7));
+
+  it("are one buffer of poses and one of tints for a plant's body and its cards", () => {
+    const layer = createInstanceRuns('test', plants, 0);
+    const builder = new RunBuilder(plants);
+    for (let i = 0; i < 200; i++) builder.turned(0, i * 2, 0, -i, i * 0.1, 1, 1, 1, 1, { r: 0.5, g: 0.6, b: 0.7 });
+    layer.update({ added: [builder.build()], removed: [] });
+    layer.cull(everything, new Matrix4().makeTranslation(-1, 0, 0));
+    const [plant, cards] = layer.meshes;
+    expect([plant!.name, cards!.name]).toEqual(['plant', 'plant-cards']);
+    expect([plant!.count, cards!.count]).toEqual([200, 200]);
+    expect(posesOf(plant!).buffer).toBe(posesOf(cards!).buffer);
+    expect(plant!.instanceColor).toBe(cards!.instanceColor);
+    // The model's own attributes, not a copy.
+    expect(plant!.geometry.getAttribute('position')).toBe(body.getAttribute('position'));
+    layer.dispose();
+  });
+
+  it('follow what is in view: grown for a wide view, shrunk again for a narrow one', () => {
+    const layer = createInstanceRuns('test', plants, 0);
+    const builder = new RunBuilder(plants);
+    for (let i = 0; i < 5_000; i++) builder.turned(0, (i % 100) * m(10), 0, -Math.floor(i / 100) * m(10), 0, 1, 1, 1, 1);
+    layer.update({ added: [builder.build()], removed: [] });
+    layer.cull(everything, new Matrix4().makeTranslation(-1, 0, 0));
+    const [plant, cards] = layer.meshes;
+    expect(plant!.count).toBe(5_000);
+    expect(posesOf(plant!).buffer.count).toBeGreaterThanOrEqual(5_000);
+    // A view of a corner: a few in it.
+    const camera = new OrthographicCamera(-m(15), m(15), m(15), -m(15), 1, m(1000));
+    camera.position.set(0, m(100), 0);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const view = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    layer.cull(new Frustum().setFromProjectionMatrix(view), view);
+    expect(plant!.count).toBeGreaterThan(0);
+    expect(plant!.count).toBeLessThan(50);
+    const { buffer } = posesOf(plant!);
+    expect(buffer.count).toBeLessThanOrEqual(64);
+    expect(posesOf(cards!).buffer).toBe(buffer);
+    expect(cards!.instanceColor).toBe(plant!.instanceColor);
+    // Each one drawn is one of the corner's.
+    const matrices = drawnMatrices(plant!);
+    for (let i = 0; i < plant!.count; i++) {
+      expect(Math.abs(matrices[i * 16 + 12]!)).toBeLessThanOrEqual(m(20));
+      expect(Math.abs(matrices[i * 16 + 14]!)).toBeLessThanOrEqual(m(20));
+    }
+    layer.dispose();
   });
 });

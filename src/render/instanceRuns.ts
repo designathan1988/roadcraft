@@ -1,18 +1,17 @@
 import {
   Group,
-  InstancedBufferAttribute,
-  InstancedMesh,
   type BufferGeometry,
   type Frustum,
+  type InstancedMesh,
   type Material,
   type Matrix4,
   type MeshDepthMaterial,
 } from 'three';
-import { createCellInstances, type KindLevels, type KindMesh, type KindSpec, type Pack, type SlotFormat } from './cellInstances';
+import { createCellInstances, warmMesh, type KindLevels, type KindMesh, type KindSpec, type Pack, type SlotFormat } from './cellInstances';
 
 /** The same design as the buildings' gardens (`gardens.ts`, which keeps a run per garden list), on the same cells (`cellInstances.ts`) */
 
-/** DO NOT keep a matrix per thing: a pose of `stride` floats, written out as three's matrix only for an instance drawn at a new position (`cellInstances.ts` `write`). */
+/** DO NOT keep a matrix per thing, on the CPU or the GPU: a pose of `stride` floats, made three's matrix by the vertex shader (`cellInstances.ts` `posedMaterial`). */
 export type PoseFormat = SlotFormat;
 
 /** DO NOT go through an `Object3D` for each instance: three's `compose` of a turn about the up axis (r186 `Matrix4.compose`, `Quaternion.setFromEuler` with x = z = 0) */
@@ -29,6 +28,15 @@ export function yawMatrixInto(out: Float32Array | number[], at: number, px: numb
 /** A thing turned about the up axis: its place in the scene's frame (x, y, z), its yaw and its scale on three axes (7 floats, not 12). */
 export const YAW_POSE: PoseFormat = {
   stride: 7,
+  key: 'yaw',
+  // `yawMatrixInto`: a = x, y, z, yaw; b = the scale on three axes.
+  glsl: /* glsl */ `
+  float y = sin(a.w / 2.0);
+  float w = cos(a.w / 2.0);
+  float y2 = y + y;
+  float yy = y * y2;
+  float wy = w * y2;
+  return mat4((1.0 - yy) * b.x, 0.0, -wy * b.x, 0.0, 0.0, b.y, 0.0, 0.0, wy * b.z, 0.0, (1.0 - yy) * b.z, 0.0, a.x, a.y, a.z, 1.0);`,
   matrixInto(data, at, out, outAt) {
     yawMatrixInto(out, outAt, data[at]!, data[at + 1]!, data[at + 2]!, data[at + 3]!, data[at + 4]!, data[at + 5]!, data[at + 6]!);
   },
@@ -39,6 +47,7 @@ export interface RunStore {
   readonly name: string;
   /** Its bounding sphere computed (each slot's sphere is grown from it). */
   readonly geometry: BufferGeometry;
+  /** Drawn from the layer's poses (`cellInstances.ts` `posedMaterial`): never shared with a mesh that reads three's own `instanceMatrix`. */
   readonly material: Material;
   /** The shadow pass's material (the wind's sway). */
   readonly depth?: MeshDepthMaterial;
@@ -153,23 +162,9 @@ const kindOf = (spec: RunStore): KindSpec => ({
   }, ...(spec.with ?? [])],
 });
 
-/** A mesh of one slot, none drawn but that one, as the layer draws it: what compiles its program ahead. */
-function warmMesh(mesh: KindMesh, tinted: boolean): InstancedMesh {
-  const out = new InstancedMesh(mesh.geometry, mesh.material, 1);
-  out.name = mesh.name;
-  out.castShadow = mesh.castShadow;
-  out.receiveShadow = mesh.receiveShadow;
-  if (mesh.renderOrder !== undefined) out.renderOrder = mesh.renderOrder;
-  out.frustumCulled = false;
-  if (mesh.depth) out.customDepthMaterial = mesh.depth;
-  if (tinted) out.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
-  out.count = 1;
-  return out;
-}
-
-/** Meshes of each of these stores (and the ones drawn with them), one slot each, as the layer draws them: what compiles the layer's programs ahead */
-export function warmMeshes(specs: readonly RunStore[]): InstancedMesh[] {
-  return specs.flatMap((spec) => kindOf(spec).meshes.map((mesh) => warmMesh(mesh, spec.tinted)));
+/** Meshes of each of these stores (and the ones drawn with them), one slot each, as the layer of `format` draws them: what compiles the layer's programs ahead */
+export function warmMeshes(specs: readonly RunStore[], format: PoseFormat = YAW_POSE): InstancedMesh[] {
+  return specs.flatMap((spec) => kindOf(spec).meshes.map((mesh) => warmMesh(mesh, spec.tinted, format)));
 }
 
 /** The layer over these stores, its runs built in `format`'s poses (`RunBuilder`). */

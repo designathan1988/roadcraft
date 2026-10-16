@@ -1,15 +1,17 @@
 import {
+  BufferGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
+  InstancedInterleavedBuffer,
   InstancedMesh,
+  InterleavedBufferAttribute,
+  Material,
   Matrix4,
+  MeshDepthMaterial,
   Sphere,
   Vector2,
   Vector3,
-  type BufferGeometry,
   type Frustum,
-  type Material,
-  type MeshDepthMaterial,
 } from 'three';
 import { m } from '@world/units';
 import { type Bounds, enclose, markRange, planeMask } from './instanceCull';
@@ -20,9 +22,10 @@ import { trianglesOf } from './propGeometry';
  * INSTANCES KEPT CELL BY CELL, DRAWN AT THE LEVEL THEIR SIZE ON THE SCREEN CALLS FOR: the gardens'
  * (`gardens.ts`) and every layer kept thing by thing (`instanceRuns.ts`). A kind's placements are kept
  * once for all its meshes (a plant's body, its cards, its far picture); a cull walks only the 64 m
- * cells the view takes in, and writes each instance into the meshes of the level its size on the
+ * cells the view takes in, and writes each instance into the buffers of the level its size on the
  * screen picks, with hysteresis, so a plant never flickers between two. DO NOT go back to drawing
  * every plant in view with its whole model: a flowering bush two pixels wide cost 112 triangles.
+ * The GPU gets each instance's pose, not its matrix: the vertex shader makes the matrix (`posedMaterial`).
  */
 
 /** One mesh a kind's instances are drawn with. */
@@ -30,8 +33,9 @@ export interface KindMesh {
   readonly name: string;
   /** Its bounding sphere computed: the kind's instances are culled by the sphere round all its meshes'. */
   readonly geometry: BufferGeometry;
+  /** Drawn from poses (`posedMaterial`): never shared with a mesh that reads three's own `instanceMatrix`. */
   readonly material: Material;
-  /** The shadow pass's material (the wind's sway). */
+  /** The shadow pass's material (the wind's sway); none: three's own depth material, drawn from poses (`poseDepthOf`). */
   readonly depth?: MeshDepthMaterial;
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
@@ -65,9 +69,13 @@ export interface KindSpec {
   readonly levels?: KindLevels;
 }
 
-/** How a layer keeps a placement: `stride` floats, written out as three's 16-float matrix. */
+/** How a layer keeps a placement: a pose of `stride` floats (5 to 8), made three's matrix by the GPU (`glsl`) and by the CPU (`matrixInto`) with the same math. */
 export interface SlotFormat {
   readonly stride: number;
+  /** Names its programs (`posedMaterial`): one program variant per format. */
+  readonly key: string;
+  /** The body of GLSL `mat4 poseMatrixOf(vec4 a, vec4 b)`: `matrixInto` written in GLSL, the pose's floats being a.xyzw then b (b.w is 1 for a 7-float pose). */
+  readonly glsl: string;
   matrixInto(data: Float32Array, at: number, out: Float32Array, outAt: number): void;
 }
 
@@ -98,6 +106,123 @@ export interface CellInstances {
   dispose(): void;
 }
 
+/** The pose's instanced attributes: its first four floats, and the rest. */
+const POSE_A = 'instancePoseA';
+const POSE_B = 'instancePoseB';
+const MAIN = /\bvoid\s+main\s*\(\s*\)\s*\{/;
+
+/**
+ * A vertex shader drawn from poses: three's `instanceMatrix` (r186 `WebGLProgram` declares it in the prefix,
+ * `project_vertex`, `worldpos_vertex` and `defaultnormal_vertex` read it, as do the wind and the far pictures)
+ * becomes the matrix made from the pose at the top of `main`; the attribute itself is left unread.
+ */
+export function poseVertexShader(source: string, format: SlotFormat): string {
+  if (!MAIN.test(source)) throw new Error(`poseVertexShader: no main() to make the ${format.key} matrix in`);
+  return `#ifdef USE_INSTANCING
+attribute vec4 ${POSE_A};
+attribute vec4 ${POSE_B};
+mat4 posedInstanceMatrix;
+#define instanceMatrix posedInstanceMatrix
+mat4 poseMatrixOf(vec4 a, vec4 b) {
+${format.glsl}
+}
+#endif
+${source.replace(MAIN, (open) => `${open}
+#ifdef USE_INSTANCING
+  posedInstanceMatrix = poseMatrixOf(${POSE_A}, ${POSE_B});
+#endif`)}`;
+}
+
+/** On a material drawn from poses: their format; on a caster with no depth material of its own: the one made for it (`poseDepthOf`). Not copied by `clone`. */
+const POSED = Symbol('posed');
+const POSE_DEPTH = Symbol('poseDepth');
+type Posed = Material & { [POSED]?: SlotFormat; [POSE_DEPTH]?: MeshDepthMaterial };
+
+/** The material drawn from `format`'s poses, patched once and for good (after its own patches: the wind, the cards); a material can be drawn from one format only. */
+export function posedMaterial<M extends Material>(material: M, format: SlotFormat): M {
+  const marked = material as M & Posed, was = marked[POSED];
+  if (was === format) return material;
+  if (was) throw new Error(`${material.name || material.type}: drawn from ${was.key} poses, not ${format.key}`);
+  marked[POSED] = format;
+  const compile = material.onBeforeCompile, key = material.customProgramCacheKey;
+  // three's own key is the patch's source (r186 `Material.customProgramCacheKey`): the one before this patch.
+  const source = key === Material.prototype.customProgramCacheKey ? compile.toString() : null;
+  material.onBeforeCompile = (shader, renderer) => {
+    compile.call(material, shader, renderer);
+    shader.vertexShader = poseVertexShader(shader.vertexShader, format);
+  };
+  material.customProgramCacheKey = () => `${source ?? key.call(material)}|pose-${format.key}`;
+  material.needsUpdate = true;
+  return material;
+}
+
+/** The shadow pass's material of a caster with none of its own: three's (r186 `WebGLShadowMap` `_depthMaterial`, one per caster as its `_materialCache`), drawn from the poses. */
+export function poseDepthOf(material: Material, format: SlotFormat): MeshDepthMaterial {
+  const caster = material as Posed;
+  return posedMaterial(caster[POSE_DEPTH] ??= new MeshDepthMaterial(), format);
+}
+
+/** A mesh the cells draw: its level's poses (one buffer for the level's meshes) and their format. */
+export function posesOf(mesh: InstancedMesh): { readonly buffer: InstancedInterleavedBuffer; readonly format: SlotFormat } {
+  const poses = mesh.geometry.getAttribute(POSE_A) as InterleavedBufferAttribute | undefined;
+  const format = (mesh.material as Posed)[POSED];
+  if (!poses || !format) throw new Error(`${mesh.name}: not drawn from poses`);
+  return { buffer: poses.data as InstancedInterleavedBuffer, format };
+}
+
+/** The matrices of the instances a mesh draws, as the GPU makes them from their poses (`matrixInto`, the same math): what a probe reads. */
+export function drawnMatrices(mesh: InstancedMesh): Float32Array {
+  const { buffer, format } = posesOf(mesh);
+  const poses = buffer.array as Float32Array, out = new Float32Array(mesh.count * 16);
+  for (let i = 0; i < mesh.count; i++) format.matrixInto(poses, i * buffer.stride, out, i * 16);
+  return out;
+}
+
+/** The model with a level's poses as its instanced attributes: its own attributes and index shared (three r186 `WebGLAttributes` keeps one buffer per attribute). */
+function posedGeometry(model: BufferGeometry, poses: InstancedInterleavedBuffer): BufferGeometry {
+  const g = new BufferGeometry();
+  g.name = model.name;
+  g.setIndex(model.index);
+  for (const name of Object.keys(model.attributes)) g.setAttribute(name, model.attributes[name]!);
+  for (const group of model.groups) g.addGroup(group.start, group.count, group.materialIndex);
+  g.setDrawRange(model.drawRange.start, model.drawRange.count);
+  g.boundingSphere = model.boundingSphere;
+  g.boundingBox = model.boundingBox;
+  g.setAttribute(POSE_A, new InterleavedBufferAttribute(poses, 4, 0));
+  g.setAttribute(POSE_B, new InterleavedBufferAttribute(poses, poses.stride - 4, 4));
+  return g;
+}
+
+/** A posed geometry let go: the model's attributes and index taken off first, so three frees the poses' buffer and the vertex arrays only (r186 `WebGLGeometries` frees every attribute a disposed geometry holds). */
+function letGo(g: BufferGeometry): void {
+  for (const name of Object.keys(g.attributes)) if (name !== POSE_A && name !== POSE_B) g.deleteAttribute(name);
+  g.setIndex(null);
+  g.dispose();
+}
+
+/** A new mesh of `spec` on `geometry`, as the cells draw it: its shadow's material, no sphere of its own (culled instance by instance). */
+function dressedMesh(spec: KindMesh, geometry: BufferGeometry, format: SlotFormat): InstancedMesh {
+  // One slot of three's matrices, never read: the poses are the instances (`posedMaterial`).
+  const mesh = new InstancedMesh(geometry, posedMaterial(spec.material, format), 1);
+  mesh.name = spec.name;
+  mesh.castShadow = spec.castShadow;
+  mesh.receiveShadow = spec.receiveShadow;
+  if (spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
+  // Culled instance by instance (`cull`): a sphere round the whole map rejects nothing.
+  mesh.frustumCulled = false;
+  const depth = spec.depth ? posedMaterial(spec.depth, format) : spec.castShadow ? poseDepthOf(spec.material, format) : undefined;
+  if (depth) mesh.customDepthMaterial = depth;
+  return mesh;
+}
+
+/** A mesh of one slot, none drawn but that one, as the cells draw `spec`: what compiles its programs ahead. */
+export function warmMesh(spec: KindMesh, tinted: boolean, format: SlotFormat): InstancedMesh {
+  const mesh = dressedMesh(spec, posedGeometry(spec.geometry, new InstancedInterleavedBuffer(new Float32Array(format.stride), format.stride)), format);
+  if (tinted) mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
+  mesh.count = 1;
+  return mesh;
+}
+
 /** The smallest store worth a mesh. */
 const MIN_CAPACITY = 64;
 /** Side of a leaf cell. */
@@ -120,23 +245,35 @@ const NEAR = 0, FAR = 1, NONE = 2, UNKNOWN = 255;
 const screen = { half: 540 };
 const bufferSize = new Vector2();
 
-interface MeshState {
-  readonly spec: KindMesh;
-  mesh: InstancedMesh | null;
-  /** Instances its buffers hold: the most ever in view, not the kind's. */
+/** The instances a kind draws at one level (near or far): ONE buffer of poses and one of tints for all the level's meshes (a plant's body and its cards). */
+interface Level {
+  readonly meshes: MeshState[];
+  poses: InstancedInterleavedBuffer | null;
+  tints: InstancedBufferAttribute | null;
+  /** Instances its buffers hold: what is in view, grown twice over and shrunk under a quarter, never the kind's. */
   capacity: number;
-  /** Per drawn position: the slot the GPU buffer holds there since the last cull (-1: unknown). */
+  /** Per drawn position: the slot the buffers hold there since the last cull (-1: unknown). */
   shown: Int32Array;
-  /** Whether it was drawn (shown, not left out) when its kind was last culled. */
-  wasDrawn: boolean;
+  /** Whether a mesh of it is drawn at the cull in progress. */
+  live: boolean;
   drawn: number;
   firstChanged: number;
+}
+
+interface MeshState {
+  readonly spec: KindMesh;
+  readonly level: Level;
+  mesh: InstancedMesh | null;
+  /** Whether it was drawn (shown, not left out) when its kind was last culled. */
+  wasDrawn: boolean;
 }
 
 interface Kind {
   readonly index: number;
   readonly spec: KindSpec;
   readonly meshes: MeshState[];
+  /** Near, far. */
+  readonly levels: readonly [Level, Level];
   /** The sphere round every mesh's, model units: what an instance is culled by. */
   readonly centre: Vector3;
   readonly reach: number;
@@ -176,18 +313,29 @@ interface CellNode {
 
 export function createCellInstances(kindSpecs: readonly KindSpec[], format: SlotFormat, margin: number): CellInstances {
   const stride = format.stride;
+  if (stride < 5 || stride > 8) throw new Error(`createCellInstances: a pose of ${stride} floats (5 to 8 fit two vec4s)`);
   const kinds: Kind[] = kindSpecs.map((spec, index) => {
     // The sphere round every mesh's (each model's sphere computed by its maker).
     let centre: Vector3 | null = null, reach = 0;
     for (const mesh of spec.meshes) {
+      // Its programs drawn from poses from the start: the ones compiled ahead are the ones drawn.
+      posedMaterial(mesh.material, format);
+      if (mesh.depth) posedMaterial(mesh.depth, format);
+      else if (mesh.castShadow) poseDepthOf(mesh.material, format);
       if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
       const s = mesh.geometry.boundingSphere;
       if (!s) continue;
       if (!centre) { centre = s.center.clone(); reach = s.radius; } else reach = Math.max(reach, centre.distanceTo(s.center) + s.radius);
     }
+    const level = (): Level => ({ meshes: [], poses: null, tints: null, capacity: 0, shown: new Int32Array(0), live: false, drawn: 0, firstChanged: 0 });
+    const levels = [level(), level()] as const;
     return {
-      index, spec, centre: centre ?? new Vector3(), reach: centre ? reach : 1,
-      meshes: spec.meshes.map((m) => ({ spec: m, mesh: null, capacity: 0, shown: new Int32Array(0), wasDrawn: false, drawn: 0, firstChanged: 0 })),
+      index, spec, centre: centre ?? new Vector3(), reach: centre ? reach : 1, levels,
+      meshes: spec.meshes.map((m) => {
+        const s: MeshState = { spec: m, level: levels[m.far ? 1 : 0], mesh: null, wasDrawn: false };
+        s.level.meshes.push(s);
+        return s;
+      }),
       capacity: 0, used: 0, dead: 0,
       data: new Float32Array(0), colours: new Float32Array(0), spheres: new Float32Array(0), feet: new Float32Array(0), sizes: new Float32Array(0),
       picks: new Float32Array(0), seen: new Uint32Array(0), level: new Uint8Array(0),
@@ -261,37 +409,42 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     for (let i = 0; i < k.used; i++) if (k.spheres[i * 4 + 3] !== -Infinity) file(k, i);
   };
 
-  /** The mesh's instance buffers made for `capacity` instances in view (DO NOT size them by the kind: a GPU buffer and its CPU copy of every plant of the map). */
-  const sizeBuffers = (k: Kind, s: MeshState, capacity: number): void => {
-    const mesh = s.mesh!;
-    mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
-    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+  /**
+   * The level's buffers made for `capacity` instances in view, the first `keep` positions carried over, and its meshes
+   * drawn from them. DO NOT size them by the kind: a GPU buffer and its CPU copy of every plant of the map. three cannot
+   * resize a buffer: the old ones are let go (r186 `WebGLObjects` frees an instanced mesh's tints on `dispose`, `WebGLGeometries` a geometry's poses).
+   */
+  const sizeLevel = (k: Kind, b: Level, capacity: number, keep: number): void => {
+    const poses = new InstancedInterleavedBuffer(new Float32Array(capacity * stride), stride);
+    poses.setUsage(DynamicDrawUsage);
+    let tints: InstancedBufferAttribute | null = null;
     if (k.spec.tinted) {
-      mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
-      mesh.instanceColor.setUsage(DynamicDrawUsage);
+      tints = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+      tints.setUsage(DynamicDrawUsage);
     }
-    s.capacity = capacity;
-    s.shown = new Int32Array(capacity).fill(-1);
-  };
-  /** More in view than the buffers hold: new ones twice as large, the old let go (three r186 `WebGLObjects` frees an instanced mesh's buffers on `dispose`). */
-  const growBuffers = (k: Kind, s: MeshState, needed: number): void => {
-    let capacity = s.capacity;
-    while (capacity < needed) capacity *= 2;
-    s.mesh!.dispose();
-    sizeBuffers(k, s, capacity);
+    const shown = new Int32Array(capacity).fill(-1);
+    if (b.poses && keep > 0) {
+      (poses.array as Float32Array).set((b.poses.array as Float32Array).subarray(0, keep * stride));
+      if (tints && b.tints) (tints.array as Float32Array).set((b.tints.array as Float32Array).subarray(0, keep * 3));
+      shown.set(b.shown.subarray(0, keep));
+    }
+    for (const s of b.meshes) {
+      const mesh = s.mesh;
+      if (!mesh) continue;
+      mesh.dispose();
+      letGo(mesh.geometry);
+      mesh.geometry = posedGeometry(s.spec.geometry, poses);
+      mesh.instanceColor = tints;
+    }
+    b.poses = poses; b.tints = tints; b.capacity = capacity; b.shown = shown;
   };
   const makeMesh = (k: Kind, s: MeshState): InstancedMesh => {
-    const spec = s.spec;
-    const mesh = new InstancedMesh(spec.geometry, spec.material, MIN_CAPACITY);
-    mesh.name = spec.name;
-    mesh.castShadow = spec.castShadow;
-    mesh.receiveShadow = spec.receiveShadow;
-    if (spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
-    // Culled instance by instance (`cull`): a sphere round the whole map rejects nothing.
-    mesh.frustumCulled = false;
-    if (spec.depth) mesh.customDepthMaterial = spec.depth;
+    const spec = s.spec, b = s.level;
+    if (!b.poses) sizeLevel(k, b, MIN_CAPACITY, 0);
+    // The level's buffers, not a copy each: a plant's body and its cards draw the same instances.
+    const mesh = dressedMesh(spec, posedGeometry(spec.geometry, b.poses!), format);
+    mesh.instanceColor = b.tints;
     s.mesh = mesh;
-    sizeBuffers(k, s, MIN_CAPACITY);
     mesh.count = 0;
     // Made at the map zoom: its cards left out as the others' (`setMap`).
     if (spec.cards && mapMode === true && !k.pictured) mesh.visible = false;
@@ -364,7 +517,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       k.feet[slot * 3] = scratch[12]!; k.feet[slot * 3 + 1] = scratch[13]!; k.feet[slot * 3 + 2] = scratch[14]!;
       const largest = Math.max(Math.hypot(scratch[0]!, scratch[1]!, scratch[2]!), Math.hypot(scratch[4]!, scratch[5]!, scratch[6]!), Math.hypot(scratch[8]!, scratch[9]!, scratch[10]!));
       k.sizes[slot] = 2 * measure * largest;
-      // Its pick from its translation as the GPU reads it (float32, the same bits).
+      // Its pick from its translation as the GPU reads it (the pose's own floats, the same bits).
       k.picks[slot] = impostorPick(scratch[12]!, scratch[13]!, scratch[14]!);
       k.seen[slot] = 0;
       k.level[slot] = UNKNOWN;
@@ -387,25 +540,24 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
   let perUnitAtOne = 0, w0 = 0, w1 = 0, w2 = 0, w3 = 1, wReach = 0;
   const wOf = (x: number, y: number, z: number): number => w0 * x + w1 * y + w2 * z + w3;
 
-  /** Writes slot `i` of the kind at the meshes of `level`. */
+  /** Writes slot `i` of the kind into the buffers of `level`, once for all the level's meshes. */
   const write = (k: Kind, i: number, level: number): void => {
-    const far = level === FAR;
-    for (const s of k.meshes) {
-      if (s.spec.far !== far || !drawnNow(k, s)) continue;
-      const n = s.drawn;
-      // Written only when this position held another slot; past the buffers' room only counted (`growBuffers`, after the walk).
-      if (n < s.capacity && s.shown[n] !== i) {
-        s.shown[n] = i;
-        if (n < s.firstChanged) s.firstChanged = n;
-        const mesh = s.mesh!;
-        format.matrixInto(k.data, i * stride, mesh.instanceMatrix.array as Float32Array, n * 16);
-        if (k.spec.tinted) {
-          const tints = mesh.instanceColor!.array as Float32Array, c = k.colours;
-          tints[n * 3] = c[i * 3]!; tints[n * 3 + 1] = c[i * 3 + 1]!; tints[n * 3 + 2] = c[i * 3 + 2]!;
-        }
+    const b = k.levels[level === FAR ? 1 : 0];
+    if (!b.live) return;
+    const n = b.drawn;
+    // Written only when this position held another slot; past the buffers' room only counted (`sizeLevel`, after the walk).
+    if (n < b.capacity && b.shown[n] !== i) {
+      b.shown[n] = i;
+      if (n < b.firstChanged) b.firstChanged = n;
+      // The pose as kept: the vertex shader makes its matrix (`posedMaterial`).
+      const poses = b.poses!.array as Float32Array, data = k.data;
+      for (let j = 0, to = n * stride, from = i * stride; j < stride; j++) poses[to + j] = data[from + j]!;
+      if (b.tints) {
+        const tints = b.tints.array as Float32Array, c = k.colours;
+        tints[n * 3] = c[i * 3]!; tints[n * 3 + 1] = c[i * 3 + 1]!; tints[n * 3 + 2] = c[i * 3 + 2]!;
       }
-      s.drawn = n + 1;
     }
+    b.drawn = n + 1;
   };
 
   /** The node and what it holds against the planes of `mask` still unsettled for it. */
@@ -491,8 +643,9 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         if (left === 0 && coming === 0) continue;
         let moved = false;
         if (k.dead > 0 && k.dead * 2 >= k.used + coming) {
-          // Half the kind dead: packed again in the order the runs stood, the new ones after.
-          repack(k, Math.max(k.capacity, MIN_CAPACITY), true);
+          // Half the kind dead: packed again in the order the runs stood, the new ones after; its arrays shrunk when under a quarter is used.
+          const live = k.used - k.dead + coming;
+          repack(k, live * 4 < k.capacity ? Math.max(MIN_CAPACITY, live * 2) : Math.max(k.capacity, MIN_CAPACITY), true);
           moved = true;
         }
         if (k.used + coming > k.capacity) repack(k, Math.max(MIN_CAPACITY, (k.used + coming) * 2), false);
@@ -503,9 +656,9 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         for (const s of k.meshes) {
           if (!s.mesh && k.capacity > 0) made.push(makeMesh(k, s));
           if (s.mesh && k.bounds) s.mesh.boundingSphere = new Sphere(new Vector3(k.bounds.x, k.bounds.y, k.bounds.z), k.bounds.r);
-          // DO NOT forget every kind's positions at every edit: one thing more sent every instance in view to the GPU again.
-          if (moved) s.shown.fill(-1);
         }
+        // DO NOT forget every kind's positions at every edit: one thing more sent every instance in view to the GPU again.
+        if (moved) for (const b of k.levels) b.shown.fill(-1);
         // Its slots came or went: culled again at the next frame.
         k.current = false;
       }
@@ -544,7 +697,11 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         if (!k.active) continue;
         any = true;
         k.serial++;
-        for (const s of k.meshes) { s.drawn = 0; s.firstChanged = Infinity; }
+        for (const b of k.levels) {
+          b.live = b.meshes.some((s) => drawnNow(k, s));
+          b.drawn = 0;
+          b.firstChanged = Infinity;
+        }
         k.spec.levels?.view?.(view, culledHalf);
       }
       if (!any) return;
@@ -554,11 +711,17 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       wReach = Math.hypot(w0, w1, w2);
       cullFrustum = frustum;
       for (const root of rootOrder) visit(root, ALL_PLANES);
-      // More in view than the buffers hold: grown, and the walk run again into them (no frame drawn short).
+      // More in view than the buffers hold: grown, the first walk's writes kept, and the walk run again into them (no frame drawn short).
       let grew = false;
       for (const k of kinds) {
         if (!k.active) continue;
-        for (const s of k.meshes) if (s.mesh && s.drawn > s.capacity) { growBuffers(k, s, s.drawn); grew = true; }
+        for (const b of k.levels) {
+          if (!b.live || b.drawn <= b.capacity) continue;
+          let capacity = b.capacity;
+          while (capacity < b.drawn) capacity *= 2;
+          sizeLevel(k, b, capacity, b.capacity);
+          grew = true;
+        }
       }
       if (grew) {
         // DO NOT forget where the first walk wrote (`firstChanged` kept): the same walk lays the same positions again.
@@ -566,7 +729,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
           if (!k.active) continue;
           // The second walk sees the levels the first chose as the ones before: the same levels again.
           k.serial++;
-          for (const s of k.meshes) s.drawn = 0;
+          for (const b of k.levels) b.drawn = 0;
         }
         for (const root of rootOrder) visit(root, ALL_PLANES);
       }
@@ -575,22 +738,27 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         if (!k.active) continue;
         k.active = false;
         k.current = true;
-        for (const s of k.meshes) {
-          const mesh = s.mesh;
-          s.wasDrawn = drawnNow(k, s);
-          if (!mesh) continue;
-          if (!s.wasDrawn) { mesh.count = 0; continue; }
+        for (const b of k.levels) {
+          if (!b.live || !b.poses) continue;
+          // A quarter of the buffers in use or less: shrunk to twice what is drawn, so they follow the view, not the most it ever held.
+          if (b.capacity > MIN_CAPACITY && b.drawn * 4 < b.capacity) sizeLevel(k, b, Math.max(MIN_CAPACITY, b.drawn * 2), b.drawn);
           // Only the positions whose slot changed go to the GPU.
-          if (s.firstChanged < s.drawn) {
-            markRange(mesh.instanceMatrix, s.firstChanged * 16, (s.drawn - s.firstChanged) * 16);
-            if (k.spec.tinted) markRange(mesh.instanceColor!, s.firstChanged * 3, (s.drawn - s.firstChanged) * 3);
+          if (b.firstChanged < b.drawn) {
+            markRange(b.poses, b.firstChanged * stride, (b.drawn - b.firstChanged) * stride);
+            if (b.tints) markRange(b.tints, b.firstChanged * 3, (b.drawn - b.firstChanged) * 3);
           }
-          mesh.count = s.drawn;
+        }
+        for (const s of k.meshes) {
+          s.wasDrawn = drawnNow(k, s);
+          if (s.mesh) s.mesh.count = s.wasDrawn ? s.level.drawn : 0;
         }
       }
     },
     dispose() {
-      for (const mesh of meshes()) mesh.dispose();
+      for (const mesh of meshes()) {
+        mesh.dispose();
+        letGo(mesh.geometry);
+      }
     },
   };
 }

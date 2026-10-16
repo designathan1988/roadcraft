@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Frustum, Matrix4, PerspectiveCamera, type InstancedMesh } from 'three';
+import { drawnMatrices } from '@render/cellInstances';
 import { createGardens, type GardenPlant } from '@render/gardens';
 import { PICTURE_PX, THIN_PX, impostorPick, sceneryPictures, thinWant } from '@render/plantImpostors';
 import { createSceneryKit } from '@render/scenery';
@@ -50,7 +51,7 @@ describe('the near plants by their size on the screen', () => {
     expect(drawn['garden-trees-broadleaf-far']).toBeGreaterThan(0);
     expect(drawn['garden-trees-broadleaf-cards']).toBe(drawn['garden-trees-broadleaf']);
     // Each tree at one level: the near ones' and the far ones' translations never meet.
-    const feet = (mesh: InstancedMesh): Set<string> => new Set(Array.from({ length: mesh.count }, (_, i) => `${mesh.instanceMatrix.array[i * 16 + 12]},${mesh.instanceMatrix.array[i * 16 + 14]}`));
+    const feet = (mesh: InstancedMesh): Set<string> => { const at = drawnMatrices(mesh); return new Set(Array.from({ length: mesh.count }, (_, i) => `${at[i * 16 + 12]},${at[i * 16 + 14]}`)); };
     const meshes = gardens.meshes as InstancedMesh[];
     const near = feet(meshes.find((x) => x.name === 'garden-trees-broadleaf')!), far = feet(meshes.find((x) => x.name === 'garden-trees-broadleaf-far')!);
     for (const foot of near) expect(far.has(foot)).toBe(false);

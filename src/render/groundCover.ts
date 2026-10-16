@@ -282,6 +282,33 @@ function leanedMatrixInto(out: { [i: number]: number }, at: number, px: number, 
 /** A cover kept as its pose (`coverPoseInto`): place in the scene's frame, yaw, lean and scale on three axes (8 floats, not 12). */
 export const COVER_POSE: SlotFormat = {
   stride: 8,
+  key: 'cover',
+  // `leanedMatrixInto`: a = x, y, z, yaw; b = lean, then the scale on three axes.
+  glsl: /* glsl */ `
+  float ty = sin(a.w / 2.0);
+  float tw = cos(a.w / 2.0);
+  float lx = sin(b.x / 2.0);
+  float lw = cos(b.x / 2.0);
+  float x = tw * lx;
+  float y = ty * lw;
+  float z = -(ty * lx);
+  float w = tw * lw;
+  float x2 = x + x;
+  float y2 = y + y;
+  float z2 = z + z;
+  float xx = x * x2;
+  float xy = x * y2;
+  float xz = x * z2;
+  float yy = y * y2;
+  float yz = y * z2;
+  float zz = z * z2;
+  float wx = w * x2;
+  float wy = w * y2;
+  float wz = w * z2;
+  return mat4((1.0 - (yy + zz)) * b.y, (xy + wz) * b.y, (xz - wy) * b.y, 0.0,
+    (xy - wz) * b.z, (1.0 - (xx + zz)) * b.z, (yz + wx) * b.z, 0.0,
+    (xz + wy) * b.w, (yz - wx) * b.w, (1.0 - (xx + yy)) * b.w, 0.0,
+    a.x, a.y, a.z, 1.0);`,
   matrixInto(data, at, out, outAt) {
     leanedMatrixInto(out, outAt, data[at]!, data[at + 1]!, data[at + 2]!, data[at + 3]!, data[at + 4]!, data[at + 5]!, data[at + 6]!, data[at + 7]!);
   },

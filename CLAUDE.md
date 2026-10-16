@@ -176,8 +176,6 @@ GPU memory and drawing
 - Texture units (measured 2026-10-16, ANGLE D3D11, 16 per stage): the 3 sun cascades take 3; the terrain program uses
   16 and one variant fails to link; the cooked citizen with morph uses 18 and fails ("program not valid", not drawn).
   Fix in flight: terrain to <= 13 (rock/dirt into the detail arrays), people to <= 12 (garments as a texture array).
-- `cellInstances.ts`: a kind's CPU arrays and GPU buffers only grow; body and cards meshes of a level each keep the same
-  matrices (fix in flight: one shared pose attribute, matrices built in the shader).
 - Non-indexed geometry: `structures.ts:414`, `vehicleModels.ts:298` (`toNonIndexed`).
 - Worst case still crashes the tab in the 8 GB job: a 2x2 city (19,635 buildings) holds ~3.2 GB in the page, ~1 GB in
   the sim worker, 0.34 GB in the pool (2026-10-15, `measureUserAgentSpecificMemory`). Not found yet: ~120 KB of page heap

@@ -11,9 +11,10 @@ import type { TrainState } from '@sim/host/protocol';
 
 /** The materials of the transport, made once and shared by every rebuild: one made afresh on each rebuild */
 const sharedMaterials = new Map<string, MeshStandardMaterial>();
+/** `plain`: the trains' and the preview's, apart from the pieces': they draw with three's matrices, the pieces from poses (`cellInstances.ts` `posedMaterial`). */
 function sharedMaterial(colour: number, roughness: number, metalness: number, opacity: number,
-  transparent = opacity < 1, depthTest = true, order = 0): MeshStandardMaterial {
-  const key = `${colour}:${roughness}:${metalness}:${opacity}:${transparent}:${depthTest}:${order}`;
+  transparent = opacity < 1, depthTest = true, order = 0, plain = false): MeshStandardMaterial {
+  const key = `${colour}:${roughness}:${metalness}:${opacity}:${transparent}:${depthTest}:${order}:${plain}`;
   let mat = sharedMaterials.get(key);
   if (!mat) {
     mat = new MeshStandardMaterial({ color: colour, roughness, metalness, transparent, opacity });
@@ -370,7 +371,7 @@ export function createTransit(): TransitMeshes & {
     o.scale.set(b.length, b.height, b.width);
     o.updateMatrix();
   };
-  const cars = new InstancedMesh(unit, material(0xffffff, 0.45, 0.3), MAX_CARS);
+  const cars = new InstancedMesh(unit, sharedMaterial(0xffffff, 0.45, 0.3, 1, false, true, 0, true), MAX_CARS);
   cars.name = 'transit-trains';
   // Its colour per car from the start: one program and one shadow depth variant (`renderer.ts` `watchShadowDepth`), not a second on first use.
   cars.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX_CARS * 3).fill(1), 3);
@@ -486,7 +487,7 @@ export function createTrackPreview(): TrackPreview {
   const unit = new BoxGeometry(1, 1, 1);
   const o = new Object3D();
   const meshes = PREVIEW_LAYERS.map((layer) => {
-    const mesh = new InstancedMesh(unit, sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, true), 16);
+    const mesh = new InstancedMesh(unit, sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, true, 0, true), 16);
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.renderOrder = 30 + layer.order;
     mesh.frustumCulled = false;
@@ -516,7 +517,7 @@ export function createTrackPreview(): TrackPreview {
           meshes[k] = mesh = grown;
         }
         // The metro's is seen through the ground; the train's is not.
-        mesh.material = sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, mode !== 'metro');
+        mesh.material = sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, mode !== 'metro', 0, true);
         boxes.forEach((b, i) => {
           o.position.set(b.x, b.z + b.height / 2, -b.y); o.rotation.set(0, b.yaw, 0); o.scale.set(b.length, b.height, b.width); o.updateMatrix();
           mesh.setMatrixAt(i, o.matrix);

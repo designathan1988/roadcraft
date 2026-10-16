@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Frustum, Matrix4, type InstancedMesh } from 'three';
 import { createSceneryKit, type SceneryKit } from '@render/scenery';
+import { drawnMatrices } from '@render/cellInstances';
 import { createGardens, type GardenPlant, type Gardens } from '@render/gardens';
 import { m } from '@world/units';
 import { townChanges } from '../support/gardenChange';
@@ -28,7 +29,7 @@ function drawn(gardens: Gardens): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const mesh of gardens.meshes as InstancedMesh[]) {
     const rows: string[] = [];
-    const mats = mesh.instanceMatrix.array, tints = mesh.instanceColor?.array;
+    const mats = drawnMatrices(mesh), tints = mesh.instanceColor?.array;
     for (let i = 0; i < mesh.count; i++) rows.push(`${Array.from(mats.slice(i * 16, i * 16 + 16)).join(',')}|${tints ? Array.from(tints.slice(i * 3, i * 3 + 3)).join(',') : ''}`);
     out.set(mesh.name, rows);
   }

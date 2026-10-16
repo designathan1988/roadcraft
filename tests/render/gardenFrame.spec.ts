@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Frustum, Matrix4, PerspectiveCamera, type InstancedMesh } from 'three';
 import { Rng } from '@core/rng';
+import { drawnMatrices, posesOf } from '@render/cellInstances';
 import { createGardens, type GardenPlant, type Gardens } from '@render/gardens';
 import { createSceneryKit } from '@render/scenery';
 import { m } from '@world/units';
@@ -40,7 +41,7 @@ function drawn(gardens: Gardens): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
   for (const mesh of gardens.meshes as InstancedMesh[]) {
     const rows = new Set<string>();
-    const mats = mesh.instanceMatrix.array, tints = mesh.instanceColor!.array;
+    const mats = drawnMatrices(mesh), tints = mesh.instanceColor!.array;
     for (let i = 0; i < mesh.count; i++) rows.add(`${Array.from(mats.slice(i * 16, i * 16 + 16)).join(',')}|${Array.from(tints.slice(i * 3, i * 3 + 3)).join(',')}`);
     out.set(mesh.name, rows);
   }
@@ -96,7 +97,7 @@ describe('the gardens per frame', () => {
     gardens.setMap(false);
     gardens.cull(frustum, matrix);
     // As if three uploaded them.
-    for (const mesh of gardens.meshes as InstancedMesh[]) { mesh.instanceMatrix.clearUpdateRanges(); mesh.instanceColor!.clearUpdateRanges(); }
+    for (const mesh of gardens.meshes as InstancedMesh[]) { posesOf(mesh).buffer.clearUpdateRanges(); mesh.instanceColor!.clearUpdateRanges(); }
     const known = new Set((gardens.meshes as InstancedMesh[]).map((mesh) => mesh.name));
     // A bed of flowers in view: only the flowering bushes' stores change.
     const bed: GardenPlant[] = [{ kind: 'flowers', x: 0, y: 0, z: 0, w: m(3), d: m(2), h: m(0.5), yaw: 0, seed: 0.3 }];
@@ -104,7 +105,7 @@ describe('the gardens per frame', () => {
     gardens.update(change(more));
     gardens.cull(frustum, matrix);
     const uploaded = (gardens.meshes as InstancedMesh[])
-      .filter((mesh) => known.has(mesh.name) && mesh.instanceMatrix.updateRanges.length > 0)
+      .filter((mesh) => known.has(mesh.name) && posesOf(mesh).buffer.updateRanges.length > 0)
       .map((mesh) => mesh.name);
     expect(uploaded.every((name) => name.startsWith('garden-bushes-bushFlowering'))).toBe(true);
     const fresh = createGardens(kit);

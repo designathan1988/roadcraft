@@ -5,7 +5,7 @@ import {
   MeshStandardMaterial,
   type MeshDepthMaterial,
 } from 'three';
-import type { SlotFormat } from './cellInstances';
+import { posedMaterial, type SlotFormat } from './cellInstances';
 import type { TreePlacement } from './groundCover';
 import { leafCardMaterials, lowPolyTreeParts } from './lowPolyTrees';
 import { PICTURE_WIND, createPlantImpostors, type PlantImpostors } from './plantImpostors';
@@ -63,6 +63,8 @@ export async function loadNatureTrees(_anisotropy: number): Promise<NatureTreeKi
   const cardKit = leafCardMaterials(FOREST_WIND, 'nature-trees');
   // A palm's fronds throw its shadow; the others' crown hearts do.
   const pictures = createPlantImpostors(variants.map((v, i) => ({ body: v.levels[0], cards: v.cards, cardsCast: TREE_MODELS[i] === 'palm' })), PICTURE_WIND, 'nature');
+  // Drawn from the trees' poses (`plantCells.ts`): the sample compiled ahead (`buildNatureForest`) builds the programs drawn.
+  for (const made of [material, depth, cardKit.material, cardKit.depth, pictures.material, pictures.depth]) posedMaterial(made, TREE_POSE);
   console.info('[nature] trees (triangles, body + cards):', variants.map((v, i) => `${TREE_MODELS[i]} ${v.levels[0].getAttribute('position').count / 3} + ${(v.cards?.getAttribute('position').count ?? 0) / 3}`).join(', '));
   return {
     variants,
@@ -164,6 +166,12 @@ function leaningMatrixInto(m: { [i: number]: number }, o: number, px: number, py
 /** A tree kept as its pose (`treePoseInto`): place in the scene's frame, yaw, width, height and lean (8 floats, not 12). */
 export const TREE_POSE: SlotFormat = {
   stride: 8,
+  key: 'tree',
+  // `leaningMatrixInto`: a = x, y, z, yaw; b = width, height, lean in x and z.
+  glsl: /* glsl */ `
+  float c = cos(a.w);
+  float s = sin(a.w);
+  return mat4(c * b.x, 0.0, -s * b.x, 0.0, b.z * b.y, b.y, b.w * b.y, 0.0, s * b.x, 0.0, c * b.x, 0.0, a.x, a.y, a.z, 1.0);`,
   matrixInto(data, at, out, outAt) {
     leaningMatrixInto(out, outAt, data[at]!, data[at + 1]!, data[at + 2]!, data[at + 3]!, data[at + 4]!, data[at + 5]!, data[at + 6]!, data[at + 7]!);
   },

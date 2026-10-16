@@ -24,6 +24,8 @@ import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 import { leafCardMaterials } from './lowPolyTrees';
 import { lightPoolTexture } from './lightLevels';
 import { pullTowardEye } from './depthConvention';
+import { posedMaterial } from './cellInstances';
+import { YAW_POSE } from './instanceRuns';
 import {
   BUSH_KINDS,
   TREE_SPECIES,
@@ -153,6 +155,10 @@ export interface SceneryKit {
   /** The cone of light from a street lamp's lens down to its pool, seen only after dark: a unit cone, apex */
   readonly beam: BufferGeometry;
   readonly beamGlow: ShaderMaterial;
+  /** `glow`, `poolGlow` and `beamGlow` for the street furniture, drawn from its poses (`cellInstances.ts`): the poles draw the others with three's matrices. */
+  readonly posedGlow: MeshBasicMaterial;
+  readonly posedPoolGlow: MeshBasicMaterial;
+  readonly posedBeamGlow: ShaderMaterial;
   /** Where a street lamp's lens is, from its column's foot: out over the road and up. */
   readonly lens: { readonly reach: number; readonly height: number };
   /** Lamps lit as night falls: 0 by day, 1 at night. */
@@ -201,28 +207,40 @@ export function createSceneryKit(): SceneryKit {
   const flowers = new MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, side: DoubleSide });
   applyWind(flowers, GRASS_WIND, 'flower');
   const props = new MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.28 });
+  // The lamps' light twice: the poles' with three's matrices, the street furniture's from its poses (`posedMaterial`).
   const glow = new MeshBasicMaterial({ color: 0xffeec0, toneMapped: false });
+  const posedGlow = new MeshBasicMaterial({ color: 0xffeec0, toneMapped: false });
   const pool = new CircleGeometry(1, 28);
   pool.rotateX(-Math.PI / 2);
-  const poolGlow = new MeshBasicMaterial({
-    map: lightPoolTexture(), color: STREET_LED, transparent: true, opacity: 0, blending: AdditiveBlending,
-    depthWrite: false, toneMapped: false,
-  });
-  pullTowardEye(poolGlow, 4, 4);
+  const poolMap = lightPoolTexture();
+  const poolMaterial = (): MeshBasicMaterial => {
+    const made = new MeshBasicMaterial({
+      map: poolMap, color: STREET_LED, transparent: true, opacity: 0, blending: AdditiveBlending,
+      depthWrite: false, toneMapped: false,
+    });
+    pullTowardEye(made, 4, 4);
+    return made;
+  };
+  const poolGlow = poolMaterial(), posedPoolGlow = poolMaterial();
   const beam = new CylinderGeometry(BEAM_SOURCE, 1, 1, BEAM_SIDES, BEAM_SEGMENTS, true);
   beam.translate(0, -0.5, 0);
   // Their bounds once, here: the layers that instance them read them (`render/poleLayer.ts`).
   pool.computeBoundingSphere();
   beam.computeBoundingSphere();
-  const beamGlow = beamMaterial();
+  const beamGlow = beamMaterial(), posedBeamGlow = beamMaterial();
+  // One set of uniforms: the night and the haze written once.
+  posedBeamGlow.uniforms = beamGlow.uniforms;
   let night = 0;
   let haze = 0;
   const lightBeams = (): void => {
     (beamGlow.uniforms['uIntensity'] as { value: number }).value = BEAM_INTENSITY * night * haze;
-    beamGlow.visible = night * haze > 0.02;
+    beamGlow.visible = posedBeamGlow.visible = night * haze > 0.02;
   };
   const foliageDepth = windDepthMaterial(TREE_WIND, 'tree');
   const shrubsDepth = windDepthMaterial(BUSH_WIND, 'bush');
+  // Drawn from the gardens' and the street's poses (`cellInstances.ts`): the samples compiled ahead (`plantSamples`) build the programs drawn.
+  for (const material of [foliage, shrubs, foliageDepth, shrubsDepth, treeCardKit.material, treeCardKit.depth, shrubCardKit.material, shrubCardKit.depth,
+    grass, flowers, props, posedGlow, posedPoolGlow, posedBeamGlow]) posedMaterial(material, YAW_POSE);
   const geometries: BufferGeometry[] = [
     ...Object.values(trees),
     ...Object.values(bushes),
@@ -236,7 +254,7 @@ export function createSceneryKit(): SceneryKit {
     beam,
   ];
   const materials: Material[] = [foliage, shrubs, grass, flowers, props, glow, foliageDepth, shrubsDepth, poolGlow, beamGlow,
-    treeCardKit.material, treeCardKit.depth, shrubCardKit.material, shrubCardKit.depth];
+    posedGlow, posedPoolGlow, posedBeamGlow, treeCardKit.material, treeCardKit.depth, shrubCardKit.material, shrubCardKit.depth];
   return {
     trees,
     bushes,
@@ -262,14 +280,18 @@ export function createSceneryKit(): SceneryKit {
     poolGlow,
     beam,
     beamGlow,
+    posedGlow,
+    posedPoolGlow,
+    posedBeamGlow,
     lens,
     setNight(dark) {
       night = dark;
       // The lens burns brighter than white at night, so it blooms.
       glow.color.setHex(0xffeec0).multiplyScalar(1 + 2.6 * dark);
+      posedGlow.color.copy(glow.color);
       // Overlapping pools add up (additive): each one fainter, the road evenly lit.
-      poolGlow.opacity = 0.32 * dark;
-      poolGlow.visible = dark > 0.02;
+      poolGlow.opacity = posedPoolGlow.opacity = 0.32 * dark;
+      poolGlow.visible = posedPoolGlow.visible = dark > 0.02;
       lightBeams();
     },
     setHaze(next) {
