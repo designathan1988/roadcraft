@@ -126,6 +126,15 @@ pasted in the session that started this; these are its binding decisions.
   solids); the opening's warm frame uploads ~13 M triangles at once. Fix: per-building derived data (floor, pads, doors,
   traffic) worked out once in workers with the tile, and the page's per-building memory found by a snapshot on a machine
   without the cap.
+- Later on 2026-10-16 (c9b7ada-f815328): floors follow the natural ground and the roads only (1.39 floors a building in an
+  opening, from 5.1), the page no longer spins while the world's job waits on workers, the sim worker projects a tile's
+  buildings for traffic from the store, `intern` hashes numbers by their bits, tiles made ahead are stored by the generator's
+  worker (the page gets the version). The opening now gets to drawing and runs out of GPU memory (`GL_OUT_OF_MEMORY`): the
+  district view's near cells are L1 (facade level) at ~570 k vertices a 256 m cell (9.8 k a building, `facadeLevel.spec.ts`
+  town: L1 has 76% of L0's shell triangles), 1.2-3.3 GB of shells. 47% of L1's shell triangles are thin metal (lot fences
+  and railing posts every 0.45 m, roof drains and vents, gates, lamp posts, grilles: 4-8 cm wide, under half a pixel at
+  L1's zoom). Needs the player's call (shots): drop or merge thin parts in L1, or instance them; and the detail budget only
+  lets go of cells not shown (17 shown cells pass `buildingDetailMB`).
 - Also open: city statistics read the region only; growth runs in the region only; the joins between near and
   far roads at the region's edge do not match exactly (far junctions only on owned nodes, heights differ).
 
