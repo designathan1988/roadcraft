@@ -1929,20 +1929,20 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   const empty = new RoadDoc();
   applySnapshot({ ...empty.toJSON(), relief: NEW_RELIEF, ...(meta?.values ?? {}) }, 'import');
   updateHistoryButtons();
-  const far = scene.farBuildings;
+  // The buildings and the roads past the region, baked per tile in the workers from the store (`buildings/farLevels.ts`, `farRoads.ts`).
+  const far = [scene.farBuildings, scene.farRoads];
   const streamer = new WorldStreamer(doc, store, {
     arrived: () => requestDraw(),
-    loaded: (key) => far.loadedChanged(key),
+    loaded: (key) => { for (const f of far) f.loadedChanged(key); },
     letGo: (key, removedAt) => {
       history.letGoTile((r) => tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
-      far.loadedChanged(key);
+      for (const f of far) f.loadedChanged(key);
     },
-    written: (key, version) => far.stored(key, version),
+    written: (key, version) => { for (const f of far) f.stored(key, version); },
     writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
   });
-  // The buildings past the region drawn from the store, baked per tile in the workers (`buildings/farLevels.ts`).
-  far.setSource({ records: (key) => store.read(key) }, (key) => doc.hasTile(key));
+  for (const f of far) f.setSource({ records: (key) => store.read(key) }, (key) => doc.hasTile(key));
   streamed = { store, generator, streamer };
   if (fresh) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
@@ -3786,6 +3786,7 @@ const healthPanel = mountHealthPanel({
       void streamed.streamer.flush();
       streamed.generator.dispose();
       scene.farBuildings.setSource(null, () => false);
+      scene.farRoads.setSource(null, () => false);
       streamed = null;
       persistence.paused = false;
       scene.holdOpening(null);
