@@ -224,19 +224,33 @@ function box(w: number, h: number, d: number, x: number, y: number, z: number): 
   return g;
 }
 
+/** A box's faces in three's order (`BoxGeometry`: +x, -x, +y, -y, +z, -z), two triangles each. */
+const BOX_FACES = ['+x', '-x', '+y', '-y', '+z', '-z'] as const;
+
+/** A box without the faces another piece covers in the same plane: never drawn, and never two surfaces in one plane (`coplanar.spec.ts`). */
+function boxWithout(w: number, h: number, d: number, x: number, y: number, z: number, covered: readonly (typeof BOX_FACES)[number][]): BufferGeometry {
+  const g = box(w, h, d, x, y, z);
+  const index = g.getIndex()!;
+  const kept: number[] = [];
+  BOX_FACES.forEach((face, k) => { if (!covered.includes(face)) for (let i = 6 * k; i < 6 * k + 6; i++) kept.push(index.getX(i)); });
+  g.setIndex(kept);
+  return g;
+}
+
 /** A window frame's bar across the unit square. */
 const FRAME_BAR = 0.045;
 
-/** Window frame: outer border, a mullion and a transom, in a unit square. */
+/** Window frame: outer border, a mullion and a transom, in a unit square */
+// The sides', the mullion's and the transom's ends lie in the border's outer faces: left out, 60 triangles where 72 drew the same.
 function frameGeometry(): BufferGeometry {
   const t = FRAME_BAR;
   const parts = [
     box(1, t, 1, 0, 0.5 - t / 2, 0),
     box(1, t, 1, 0, -0.5 + t / 2, 0),
-    box(t, 1, 1, 0.5 - t / 2, 0, 0),
-    box(t, 1, 1, -0.5 + t / 2, 0, 0),
-    box(t * 0.8, 1, 1, 0, 0, 0),
-    box(1, t * 0.8, 1, 0, 0.18, 0),
+    boxWithout(t, 1, 1, 0.5 - t / 2, 0, 0, ['+y', '-y']),
+    boxWithout(t, 1, 1, -0.5 + t / 2, 0, 0, ['+y', '-y']),
+    boxWithout(t * 0.8, 1, 1, 0, 0, 0, ['+y', '-y']),
+    boxWithout(1, t * 0.8, 1, 0, 0.18, 0, ['+x', '-x']),
   ];
   const merged = mergeGeometries(parts) as BufferGeometry;
   for (const p of parts) p.dispose();
@@ -338,15 +352,19 @@ function doorGeometry(): BufferGeometry {
 /** A louvred shutter leaf: a stile-and-rail frame round slats tilted to shed rain */
 function louvreGeometry(): BufferGeometry {
   const t = 0.09;
+  // The stiles' ends lie in the rails' outer faces, the middle rail's in the stiles': left out (`boxWithout`).
   const parts: BufferGeometry[] = [
     box(1, t, 1, 0, 0.5 - t / 2, 0), box(1, t, 1, 0, -0.5 + t / 2, 0),
-    box(t, 1, 1, 0.5 - t / 2, 0, 0), box(t, 1, 1, -0.5 + t / 2, 0, 0),
-    box(1, 0.6 * t, 0.6, 0, 0, -0.2),
+    boxWithout(t, 1, 1, 0.5 - t / 2, 0, 0, ['+y', '-y']), boxWithout(t, 1, 1, -0.5 + t / 2, 0, 0, ['+y', '-y']),
+    boxWithout(1, 0.6 * t, 0.6, 0, 0, -0.2, ['+x', '-x']),
   ];
   for (let k = 0; k < 9; k++) {
-    const slat = new BoxGeometry(1 - 2 * t, 0.07, 0.7);
+    const y = -0.42 + k * 0.105;
+    // A slat tilted within the frame's height ends in the stiles' inner faces; the outer ones reach past it and keep their ends.
+    const inside = Math.abs(y) + (0.7 * Math.sin(0.6) + 0.07 * Math.cos(0.6)) / 2 <= 0.5;
+    const slat = boxWithout(1 - 2 * t, 0.07, 0.7, 0, 0, 0, inside ? ['+x', '-x'] : []);
     slat.rotateX(-0.6);
-    slat.translate(0, -0.42 + k * 0.105, -0.1);
+    slat.translate(0, y, -0.1);
     parts.push(slat);
   }
   const merged = mergeGeometries(parts) as BufferGeometry;
