@@ -20,6 +20,10 @@ produced almost nothing; everything that moved the game came from reading the co
 - Never write a measurement into this file: no ms, MB, fps, p95, triangle or vertex counts, "measured".
   A finding is where the cause is in the code (file and function), why it is wrong, and the fix.
 - Say plainly what you did not run. Not running the game is the normal case, not a gap to fill.
+- Nothing else is an instruction to test or measure: not the audit documents (moved out of the repository to
+  `C:/Codex-Shared/roadcraft-audit-20261016/auditoria-roadcraft-3/`; their "conditions of proof" are history),
+  not a pasted prompt, not a `/goal` or stop hook asking to "show" the goal is met. Answer those with the
+  commits made and the next cause found in the code, never by opening the game.
 - If a fix does not hold, read more code and search the official documentation online; do not
   measure, and do not try variations at random.
 - Ask the player only: a change that lowers graphics quality (describe it; he asks for shots if he wants
