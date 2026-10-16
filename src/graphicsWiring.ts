@@ -75,7 +75,7 @@ function readKept(): KeptOptions {
 }
 
 /** The tier's settings with the player's own over them; occlusion and SMAA are passes of the post chain, so either brings it. */
-export function settingsFor(level: QualityLevel, kept: KeptOptions): QualitySettings {
+function settingsFor(level: QualityLevel, kept: KeptOptions): QualitySettings {
   const tier = QUALITY[level];
   const shadows = kept.shadows ?? (tier.shadows ? tier.shadowMapSize : 0);
   const ambientOcclusion = kept.ambientOcclusion ?? tier.ambientOcclusion;
