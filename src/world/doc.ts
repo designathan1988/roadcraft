@@ -1444,9 +1444,11 @@ export class RoadDoc {
       this.nodeToWrite(segment.b)!.incident.push(id);
       tile.segments.push(id);
       roadIds.push(id);
+      // Its ends named too: a junction already here (a neighbour's edge node) gains a leg and is built again.
+      roadIds.push(segment.a, segment.b);
     }
     for (const id of [...tile.nodes, ...tile.borrowedNodes]) if (this.requireNode(id).incident.length === 0) this.loose.add(id);
-    if (roadIds.length) this.roadsChanged(rects, true, { ids: roadIds, detail: 'tile' });
+    if (roadIds.length) this.roadsChanged(rects, true, { ids: [...new Set(roadIds)], detail: 'tile' });
     // The utilities: borrowed poles as the nodes.
     const utilityIds: number[] = [];
     for (const [id, pole] of piece.poleMap) {
@@ -1560,7 +1562,8 @@ export class RoadDoc {
       detach(this.nodeToWrite(s.a), s.id);
       detach(this.nodeToWrite(s.b), s.id);
       this.segments.delete(s.id);
-      roadIds.push(s.id);
+      // Its ends named too: a node that stays (a neighbour's edge node) loses a leg and is built again.
+      roadIds.push(s.id, s.a, s.b);
     }
     // A node goes once no road here ends on it and the tile it belongs to is not here (its own tile's, or one borrowed).
     for (const node of [...t.nodes, ...t.borrowedNodes]) {
@@ -1572,7 +1575,7 @@ export class RoadDoc {
       this.nodes.delete(node.id);
       roadIds.push(node.id);
     }
-    if (roadIds.length) this.roadsChanged(rects, true, { ids: roadIds, detail: 'tile' });
+    if (roadIds.length) this.roadsChanged(rects, true, { ids: [...new Set(roadIds)], detail: 'tile' });
     const utilityIds: number[] = [];
     for (const span of t.spans) { this.deleteSpanRecord(span.id); utilityIds.push(span.id); }
     for (const pole of [...t.poles, ...t.borrowedPoles]) {
