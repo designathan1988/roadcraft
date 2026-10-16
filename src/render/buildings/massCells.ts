@@ -1,6 +1,7 @@
 import { Box3, BufferAttribute, BufferGeometry, type Frustum, Group, Mesh, Sphere, Vector3 } from 'three';
 import { gpuOnly } from '../mesh/gpuOnly';
 import { cancelWarm, warmLooseAhead } from '../uploads';
+import { type GpuClass, geometryCost, gpuLedger } from '../gpuLedger';
 import { m } from '@world/units';
 import type { CellMass } from './cellArrays';
 import type { BuildingKit } from './kit';
@@ -34,6 +35,8 @@ interface Cell {
   mesh: Mesh | null;
   /** Its buildings have no mass (lots only): drawn by its detail alone, always near. */
   massless: boolean;
+  /** Its masses came and are held (a mesh, or none to have): what its tile waits for before it gives way (`choose`). */
+  landed: boolean;
   readonly i: number;
   readonly j: number;
   /** Its box in the plan (map x/y) and its highest point, for the distance to the eye. */
@@ -70,6 +73,9 @@ interface Level {
   /** A tile refined too: its cells drawn one by one, each cell's masses wanted (`exposedCells`). */
   exposed: boolean;
 }
+
+/** The ledger's class of a level's mesh. */
+const levelClass = (key: string): GpuClass => (key[0] === 't' ? 'tile masses' : 'plate masses');
 
 export interface MassCells {
   readonly group: Group;
@@ -110,11 +116,20 @@ export interface MassCells {
   setDetailed(key: string, detailed: boolean): void;
   /** The highest point of any cell's masses (the shadow's reach over the view, `renderer.ts`); -Infinity with none. */
   top(): number;
+  /** The pixels `metres` spans at a cell from the last eye (`choose`): what its upload is ranked by (`uploads.ts`). */
+  pixels(key: string, metres: number): number;
   dispose(): void;
 }
 
 const boxOf = (b: Float64Array): Box3 => new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));
 const sphereOf = (b: Float64Array): Sphere => new Sphere(new Vector3(b[6], b[7], b[8]), b[9]);
+
+/** A mesh put on the GPU: registered in the ledger, sent ahead ranked by `priority` (never uploaded mid-frame; a cell of masses out of view kept its copy on the CPU). */
+function sendUp(mesh: Mesh, cls: GpuClass, priority: () => number): void {
+  const cost = geometryCost(mesh.geometry);
+  gpuLedger.set(mesh, cls, cost.bytes, cost.triangles);
+  void warmLooseAhead([mesh], priority);
+}
 
 /** What the eye reads of a box (`measureSeen`): a metre's pixels there, the pixels allowed, its distance across the plan. */
 export interface Seen { perMetre: number; allowed: number; across: number }
@@ -152,7 +167,8 @@ export function cellMesh(mass: CellMass, kit: BuildingKit, name = 'building-mass
   return mesh;
 }
 
-export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
+/** `released`: a cell's or a level's masses let go, neither drawn nor wanted (or refused as they came): to be asked again once wanted (`layer.ts`). */
+export function createMassCells(kit: BuildingKit, cellSize: number, released: (key: string) => void = () => {}): MassCells {
   const group = new Group();
   group.name = 'buildings-far';
   group.matrixAutoUpdate = false;
@@ -192,12 +208,14 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     else showMass(key, cell);
   };
   const dropMesh = (mesh: Mesh): void => {
+    gpuLedger.remove(mesh);
     cancelWarm([mesh]);
     mesh.parent?.remove(mesh);
     mesh.geometry.dispose();
   };
   const drop = (cell: Cell): void => {
     if (!cell.mesh) return;
+    gpuLedger.remove(cell.mesh);
     cancelWarm([cell.mesh]);
     group.remove(cell.mesh);
     cell.mesh.geometry.dispose();
@@ -249,6 +267,48 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     if (level !== plate) { tiles.delete(level.key); exposedTiles.delete(level.key); }
     if (plate && !plate.mesh && !plate.tiles.some((k) => tiles.has(k))) plates.delete(plate.key);
   };
+  /** A tile no longer refined (its plate or itself drawn whole): its cells' masses let go, neither drawn nor wanted (farTree.ts does the same with its nodes). */
+  const setExposed = (tile: Level, exposed: boolean): void => {
+    if (exposed) exposedTiles.add(tile.key); else exposedTiles.delete(tile.key);
+    if (tile.exposed === exposed) return;
+    tile.exposed = exposed;
+    if (exposed) return;
+    for (let i = tile.i0; i < tile.i0 + tile.n; i++) {
+      for (let j = tile.j0; j < tile.j0 + tile.n; j++) {
+        const key = keyOf(i, j);
+        const cell = cells.get(key);
+        if (!cell?.mesh) continue;
+        drop(cell);
+        cell.landed = false;
+        released(key);
+      }
+    }
+  };
+  /** A tile no longer wanted (its plate drawn whole): its masses let go, asked again once its plate refines (`massLevels.ts` `release`). */
+  const setWanted = (tile: Level, wanted: boolean): void => {
+    if (tile.wanted === wanted) return;
+    tile.wanted = wanted;
+    if (wanted || !tile.mesh) return;
+    setCoarse(tile, false);
+    dropMesh(tile.mesh);
+    tile.mesh = null;
+    tile.error = Infinity;
+    released(tile.key);
+  };
+  /** Whether every cell of a tile has its masses: until then the tile drawn before stands for them (Cesium keeps a parent until its children load). */
+  const cellsLanded = (tile: Level): boolean => {
+    for (let i = tile.i0; i < tile.i0 + tile.n; i++) {
+      for (let j = tile.j0; j < tile.j0 + tile.n; j++) {
+        const cell = cells.get(keyOf(i, j));
+        if (cell && !cell.landed) return false;
+      }
+    }
+    return true;
+  };
+  /** Each tile's state as `choose` works it out, one array for every plate. */
+  const tileState: { tile: Level; coarse: boolean }[] = [];
+  /** The last eye (`choose`), for `pixels`. */
+  const lastEye = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null as number | null, known: false };
   /** The tiles and plates holding a cell held near (`choose`'s `allNear`): never drawn in its place. */
   const forcedLevels = new Set<string>();
   /** What the eye reads of a box, one object for every box measured (`measureSeen`). */
@@ -264,6 +324,15 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
   };
   const measure = (eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, x0: number, y0: number, x1: number, y1: number, top: number): void =>
     measureSeen(seen, eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, x0, y0, x1, y1, top);
+  /** A metre's pixels at a box from the last eye (1 before any). */
+  const ranked: Seen = { perMetre: 0, allowed: 0, across: 0 };
+  const perMetreAt = (x0: number, y0: number, x1: number, y1: number, top: number): number => {
+    if (!lastEye.known) return 1;
+    measureSeen(ranked, lastEye.x, lastEye.y, lastEye.z, lastEye.pxAtMetre, lastEye.orthoPx, x0, y0, x1, y1, top);
+    return ranked.perMetre;
+  };
+  const pixelsAt = (cell: Cell): number => perMetreAt(cell.x0, cell.y0, cell.x1, cell.y1, cell.top);
+  const levelPixels = (level: Level): number => perMetreAt(level.x0, level.y0, level.x1, level.y1, level.top);
   return {
     group,
     plan(key, bottom = 0, top = 0) {
@@ -275,7 +344,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       const [i, j] = cellIndex(key);
       // Near until the eye says otherwise (`choose`), as a cell made before the eye is known; far under a tile or plate drawn.
       const covered = coveredAt(i, j);
-      const cell: Cell = { mesh: null, massless: false, i, j, ...square(i, j), top, bottom, near: !covered, fine: !covered, covered };
+      const cell: Cell = { mesh: null, massless: false, landed: false, i, j, ...square(i, j), top, bottom, near: !covered, fine: !covered, covered };
       cells.set(key, cell);
       setNear(key, cell, !covered);
     },
@@ -284,10 +353,14 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       if (known) drop(known);
       const [i, j] = cellIndex(key);
       const covered = coveredAt(i, j);
-      const cell: Cell = { mesh: null, massless: mass === null, i, j, ...square(i, j), top: known?.top ?? 0, bottom: known?.bottom ?? 0,
+      // DO NOT upload what came for a tile no longer refined: neither drawn nor wanted, asked again once it is.
+      const tile = tiles.get(tileOf(i, j));
+      const refused = mass !== null && tile !== undefined && !tile.exposed;
+      const cell: Cell = { mesh: null, massless: mass === null, landed: !refused, i, j, ...square(i, j), top: known?.top ?? 0, bottom: known?.bottom ?? 0,
         near: known?.near ?? !covered, fine: known?.fine ?? !covered, covered };
       if (known) lowered(known.top);
-      if (mass) {
+      if (refused) released(key);
+      else if (mass) {
         const mesh = cellMesh(mass, kit);
         const box = mesh.geometry.boundingBox!;
         cell.mesh = mesh;
@@ -301,7 +374,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
         overhang = Math.max(overhang, x0 - cell.x0, cell.x1 - x1, y0 - cell.y0, cell.y1 - y1);
         group.add(mesh);
         // DO NOT wait for the camera to frame it: a cell of masses out of view was never uploaded and kept its copy on the CPU
-        void warmLooseAhead([mesh]);
+        sendUp(mesh, 'cell masses', () => cell.top * pixelsAt(cell));
       }
       cells.set(key, cell);
       // A cell with no mass is always near (its detail is all it has); one under its tile or plate far.
@@ -324,6 +397,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       // None of its buildings has a mass: its cells stand for it, whatever the eye says.
       level.empty = !mass;
       if (!mass) { setCoarse(level, false); return; }
+      // DO NOT upload a tile its plate stands for now: asked again once the plate refines.
+      if (!level.wanted) { released(key); return; }
       const mesh = cellMesh(mass, kit, key[0] === 't' ? 'building-massing-tile' : 'building-massing-plate');
       const box = mesh.geometry.boundingBox!;
       level.mesh = mesh;
@@ -334,7 +409,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       mesh.visible = level.coarse;
       levelGroup.add(mesh);
       // Sent ahead as the cells' are: shown from far off the first time the eye pulls back, never uploaded mid-frame.
-      void warmLooseAhead([mesh]);
+      sendUp(mesh, levelClass(key), () => level.top * levelPixels(level));
     },
     removeLevel(key) {
       const level = levelsOf(key).get(key);
@@ -363,6 +438,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       return cells.keys();
     },
     choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity, view = null) {
+      Object.assign(lastEye, { x: eyeX, y: eyeY, z: eyeZ, pxAtMetre, orthoPx, known: true });
       // THE LEVELS FIRST, from the plates down (Cesium `selectTiles`): a level is drawn in place of its children while what it leaves out spans under the pixels the cells' masses are drawn for
       forcedLevels.clear();
       if (allNear !== true && allNear !== false) for (const key of allNear) { const [i, j] = cellIndex(key); forcedLevels.add(tileOf(i, j)); forcedLevels.add(plateOf(i, j)); }
@@ -373,22 +449,36 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
         // Refined while its error spans the pixels, down to `HYSTERESIS` of them once refined (as a cell near stays near).
         return (level.mesh ? level.error : level.bound) * seen.perMetre < seen.allowed * (level.coarse ? 1 : HYSTERESIS);
       };
-      // DO NOT ask what a coarser level stands for (Cesium's selection, top down): a plate wanted whole needs neither its tiles nor its cells.
+      // DO NOT ask what a coarser level stands for (Cesium's selection, top down): a plate drawn whole needs neither its tiles nor its cells, which are let go.
       waiting = 0;
       for (const plate of plates.values()) {
         const plateWhole = coarseWanted(plate);
-        setCoarse(plate, plateWhole && plate.mesh !== null);
+        const plateDrawn = plateWhole && plate.mesh !== null;
         if (plateWhole && !plate.mesh) waiting++;
+        const plateHeld = forcedLevels.has(plate.key) || allNear === true;
+        let covered = true;
+        tileState.length = 0;
         for (const key of plate.tiles) {
           const tile = tiles.get(key);
           if (!tile) continue;
-          tile.wanted = !plateWhole;
-          const tileWhole = !plateWhole && coarseWanted(tile);
-          setCoarse(tile, tileWhole && tile.mesh !== null);
+          if (plateDrawn) { tileState.push({ tile, coarse: false }); setWanted(tile, false); setExposed(tile, false); continue; }
+          setWanted(tile, true);
+          const tileWhole = coarseWanted(tile);
+          const tileDrawn = tileWhole && tile.mesh !== null;
           if (tileWhole && !tile.mesh) waiting++;
-          tile.exposed = !plateWhole && !tileWhole;
-          if (tile.exposed) exposedTiles.add(key); else exposedTiles.delete(key);
+          // Refining from a tile drawn: it stands until its cells' masses come (refinement without a hole).
+          const hold = !tileWhole && tile.coarse && tile.mesh !== null && !forcedLevels.has(key) && allNear !== true && !cellsLanded(tile);
+          if (hold) waiting++;
+          if (!tileDrawn && !hold && plate.coarse && !cellsLanded(tile)) covered = false;
+          tileState.push({ tile, coarse: tileDrawn || hold });
+          // Wanted whole and not come: its cells stay as they are (kept if held, not asked if not: coarsening without a hole).
+          setExposed(tile, tileWhole && !tile.mesh ? tile.exposed : !tileDrawn);
         }
+        // Refining from the plate drawn: it stands until every tile under it is drawn or has its cells.
+        const plateStays = !plateWhole && plate.coarse && plate.mesh !== null && !plateHeld && !covered;
+        if (plateStays) waiting++;
+        for (const { tile, coarse } of tileState) setCoarse(tile, coarse && !plateStays);
+        setCoarse(plate, plateDrawn || plateStays);
       }
       const decide = (key: string, cell: Cell): void => {
         let near: boolean, fine = true;
@@ -481,6 +571,13 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       }
       return highest;
     },
+    pixels(key, metres) {
+      const cell = cells.get(key);
+      if (cell) return metres * pixelsAt(cell);
+      const [i, j] = cellIndex(key);
+      const { x0, y0, x1, y1 } = square(i, j);
+      return metres * perMetreAt(x0, y0, x1, y1, 0);
+    },
     dispose() {
       for (const cell of cells.values()) drop(cell);
       cells.clear();
@@ -490,6 +587,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       }
       exposedTiles.clear();
       waiting = 0;
+      lastEye.known = false;
       highest = -Infinity;
       highestStale = false;
       nearKeys.clear();

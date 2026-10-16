@@ -58,6 +58,7 @@ import { createEnvironment, sunShadowChunks } from './environment';
 import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { renderTargetsBytes } from './targetBytes';
+import { deviceGpuCap, gpuLedger, readGpuDevice } from './gpuLedger';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
@@ -254,7 +255,7 @@ export interface SceneHandle {
   drifting(): boolean;
   /** The bytes of the render targets and shadow maps alive (an estimate, `targetBytes.ts`): not in the scene, so not in `countMemory`. */
   targetBytes(): number;
-  /** The bytes the buildings' detail holds on the GPU now (under the quality's `buildingDetailMB`). */
+  /** The bytes the buildings' detail holds on the GPU now (within the room the GPU ledger's cap leaves, `gpuLedger.ts`). */
   buildingDetailBytes(): number;
   /** Forgets a building's ruin (it was removed). */
   forgetRuin(id: number): void;
@@ -821,7 +822,6 @@ export function createSceneRenderer(
 
   // Modular buildings: their own layer, behind their own gate
   const buildings = createBuildingLayer();
-  buildings.setDetailBudget(quality.buildingDetailMB * 1e6);
   scene.add(buildings.group);
   // Each sun cascade draws the parts wider than its own texel only, not every part the finest one draws.
   environment.setCasters((texel) => buildings.castInto(texel));
@@ -1705,7 +1705,6 @@ export function createSceneRenderer(
 
   const applyQuality = (level: QualityLevel, settings: QualitySettings = QUALITY[level]): void => {
     quality = settings;
-    buildings.setDetailBudget(quality.buildingDetailMB * 1e6);
     // The far woods as dense as the near ones, on the same budget (`farWoods.ts`).
     terrain.setVegetation?.(quality.vegetation);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.pixelRatio));
@@ -1729,6 +1728,9 @@ export function createSceneRenderer(
     renderer.setSize(width, height, false);
     rig.resize(width, height);
     post.setSize(width, height, renderer.getPixelRatio());
+    // The GPU's cap from the device and the drawing buffer's pixels, and the frame's targets in the ledger (`gpuLedger.ts`).
+    gpuLedger.cap = deviceGpuCap(readGpuDevice(renderer.getContext(), canvas.width * canvas.height));
+    gpuLedger.set('render targets', 'render targets', renderTargetsBytes(post.targets()));
   }
   resize();
 
@@ -2506,6 +2508,8 @@ export function createSceneRenderer(
         rig.camera.updateMatrixWorld();
         detailProjection.multiplyMatrices(rig.camera.projectionMatrix, rig.camera.matrixWorldInverse);
         detailFrustum.setFromProjectionMatrix(detailProjection, rig.camera.coordinateSystem, rig.camera.reversedDepth);
+        // The sun's cascades are made by three at their first draw: counted as they stand before the detail is chosen.
+        gpuLedger.set('shadow maps', 'shadow maps', renderTargetsBytes(environment.shadowMaps()));
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.

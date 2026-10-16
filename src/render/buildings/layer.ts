@@ -13,7 +13,8 @@ import { type PartCell, type PartView, dropParts } from './partCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
-import { createMassCells } from './massCells';
+import { FAR_ERROR, createMassCells } from './massCells';
+import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
 import { FarLevels, farRunner } from './farLevels';
 import type { SharedGroundAt } from '../sharedGround';
@@ -33,6 +34,9 @@ interface Kept { readonly sig: number; readonly digest: number; readonly b: Buil
 
 /** What a cell's detail is reckoned to hold before any has landed (`MassCells.cap`): a dense 256 m cell's facade level, ~70 MB measured 2026-10-16. */
 const TYPICAL_CELL_BYTES = 64 * 2 ** 20;
+/** The ledger's classes of the cells' detail (L0) and facade level (L1): what the room left under the cap is shared by. */
+const DETAIL_CLASSES: readonly GpuClass[] = ['building detail', 'building facade'];
+const detailClass = (kind: BatchKind): GpuClass => (kind === 'cell' ? 'building detail' : 'building facade');
 
 export function createBuildingLayer(): BuildingLayer {
   const kit: BuildingKit = createBuildingKit();
@@ -41,8 +45,11 @@ export function createBuildingLayer(): BuildingLayer {
   // Every flag in the city, waving: one instanced draw (`flagLayer.ts`).
   const flagLayer = createFlagLayer();
   group.add(flagLayer.group);
-  /** The buildings from afar, a mesh a cell (`massCells.ts`). */
-  const massCells = createMassCells(kit, BATCH_CELL);
+  /** The buildings from afar, a mesh a cell (`massCells.ts`); what it lets go is asked again once wanted (a tile by its levels, a cell by `askExposed`). */
+  const massCells = createMassCells(kit, BATCH_CELL, (key) => {
+    if (key[0] === 't' || key[0] === 'p') levels.release(key);
+    else massAsked.delete(key);
+  });
   group.add(massCells.group);
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
@@ -69,17 +76,27 @@ export function createBuildingLayer(): BuildingLayer {
     tone: kit.finishTone,
   })));
   group.add(farTiles.group);
-  /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds `budget` bytes at most, and draws no more than that (`MassCells.cap`). */
+  /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds what the GPU ledger's cap leaves once every other owner is counted (`room`), and draws no more than that (`MassCells.cap`). */
   let budget = Infinity;
+  const room = (): number => Math.min(budget, gpuLedger.roomFor(DETAIL_CLASSES));
   let resident = 0;
   const residentBytes = new Map<string, number>();
-  /** A cell's level come or gone: its bytes counted, the level shown chosen again. */
+  /** What each cell's level was measured to hold when it last landed, kept or not: the cap reckons with it before asking again (no level refused and asked again for ever). */
+  const landedBytes = new Map<string, number>();
+  /** A cell's level come or gone: its bytes counted (here and in the ledger), the level shown chosen again. */
   const counted = (kind: BatchKind, key: string, has: boolean): void => {
     const at = `${kind}|${key}`;
-    const now = has ? (kind === 'cell' ? cells : facades).get(key)!.bytes : 0;
+    const part = has ? (kind === 'cell' ? cells : facades).get(key)! : null;
+    const now = part ? part.bytes : 0;
     resident += now - (residentBytes.get(at) ?? 0);
     if (now) residentBytes.set(at, now); else residentBytes.delete(at);
+    if (part) gpuLedger.set(`buildings|${at}`, detailClass(kind), now, part.part.triangles); else gpuLedger.remove(`buildings|${at}`);
     present(key);
+  };
+  /** What a cell's level holds or would hold on the GPU, bytes: resident, else as measured when it last landed, else a typical cell's. */
+  const bytesOf = (key: string, fine: boolean, typical: number): number => {
+    const at = `${fine ? 'cell' : 'facade'}|${key}`;
+    return residentBytes.get(at) ?? landedBytes.get(at) ?? typical;
   };
   /** DO NOT set that for every cell of the town every frame (`levelOfDetail` did): it changes only here. */
   const cells: CellCache = watchedCells((key, has) => counted('cell', key, has));
@@ -146,6 +163,12 @@ export function createBuildingLayer(): BuildingLayer {
   const chooseNow = (): void => {
     if (eye) massCells.choose(eye.x, eye.y, eye.z, eye.pxAtMetre, eye.orthoPx, forcedNear, eye.reach, viewKnown ? eyeView : null);
   };
+  /** The detail drawn within the room the ledger leaves (`MassCells.cap`): a cell never landed counts as the cells landed do on average. */
+  const capNow = (): void => {
+    if (!eye) return;
+    const typical = residentBytes.size > 0 ? resident / residentBytes.size : TYPICAL_CELL_BYTES;
+    massCells.cap(eye.x, eye.y, room(), (key, fine) => bytesOf(key, fine, typical), forcedNear);
+  };
   /** The shown buildings by coarse cell, as last put together (`update`): what a cell streamed in is made of. */
   let townCells = new Map<string, Building[]>();
   /** The cells whose batches must be made for the town as it is now, shown as they land (`landCells`). */
@@ -154,6 +177,7 @@ export function createBuildingLayer(): BuildingLayer {
   let shownNear = new Set<string>();
   /** Over the budget, the cells drawn far let go, the farthest first: their masses, on the GPU already, stand for them */
   const keepToBudget = (): void => {
+    const budget = room();
     if (resident <= budget || !eye || !stored) return;
     const at = eye;
     const away = (key: string): number => {
@@ -264,7 +288,16 @@ export function createBuildingLayer(): BuildingLayer {
   };
   const pool = new CellPool(() => kitBoxes(kit), (entry) => textOf(entry), true, kit.finishTone);
   pool.warm();
-  const requests = new CellRequests(pool, kit, keep);
+  /** A cell's level landed: uploaded only if the view still wants it at that level within the room (the cap worked out again with its measured bytes). */
+  const admit = (kind: BatchKind, cell: string, bytes: number): boolean => {
+    landedBytes.set(`${kind}|${cell}`, bytes);
+    if (forcedNear.has(cell) || !eye) return true;
+    capNow();
+    return massCells.near(cell) && (massCells.fine(cell) ? 'cell' : 'facade') === kind;
+  };
+  /** A landing's upload ranked by the pixels the masses standing for it leave out (`uploads.ts`). */
+  const rank = (_kind: BatchKind, cell: string): number => massCells.pixels(cell, FAR_ERROR);
+  const requests = new CellRequests(pool, kit, keep, admit, rank);
   /** The tiles' (L2) and plates' (L3) masses, asked again only where a cell's buildings changed (`massLevels.ts`). */
   const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key),
     (key) => massCells.planLevel(key), (key) => massCells.wanted(key));
@@ -298,7 +331,11 @@ export function createBuildingLayer(): BuildingLayer {
   /** DO NOT mass the buildings on the page */
   const askMass = (cell: string, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): void => {
     const list = massTown.get(cell);
-    if (!list?.length) { requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null); massEntries.delete(cell); massAsked.delete(cell); return; }
+    if (!list?.length) {
+      requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null); massEntries.delete(cell); massAsked.delete(cell);
+      landedBytes.delete(`cell|${cell}`); landedBytes.delete(`facade|${cell}`);
+      return;
+    }
     // Its height till its masses come: the ground under its buildings to the highest roof (the view's frustum, `MassCells.choose`).
     let bottom = Infinity, top = -Infinity;
     for (const b of list) {
@@ -646,10 +683,10 @@ export function createBuildingLayer(): BuildingLayer {
       if (view) eyeView.copy(view);
       // The building cut open and the one being edited stay in detail whatever the eye says.
       massCells.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, forcedNear, reach, view ? eyeView : null);
-      // Within the detail's bytes (`setDetailBudget`): a cell not landed yet counts as the cells landed do on average.
-      const typical = residentBytes.size > 0 ? resident / residentBytes.size : TYPICAL_CELL_BYTES;
-      massCells.cap(eyeX, eyeY, budget, (key, fine) => (fine ? cells : facades).get(key)?.bytes ?? typical, forcedNear);
+      capNow();
       farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach);
+      // The room shrinks when another owner grows (a resize, the far levels): the hidden levels go first.
+      keepToBudget();
       const now = new Set<string>(massCells.nearKeys());
       for (const key of forcedNear) now.add(key);
       // Those gone far, and every one near: a cell near may have changed between its detail and its facade level.

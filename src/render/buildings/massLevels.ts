@@ -68,6 +68,11 @@ export class MassLevels {
     }
   }
 
+  /** A tile whose masses were let go, neither drawn nor wanted (`massCells.ts`): asked again once a view wants it (`pump`). */
+  release(key: string): void {
+    if (key[0] === 't' && this.listOf(key).length) this.stale.add(key);
+  }
+
   /** A level's buildings, its cells' in order. */
   private listOf(key: string): CellEntry[] {
     const { i0, j0, n } = levelCells(key);

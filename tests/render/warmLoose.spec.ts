@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
 
-import { drainWarm, warmLooseAhead, warmPending } from '@render/uploads';
+import { drainWarm, warmAhead, warmLooseAhead, warmPending } from '@render/uploads';
 import { buildRoadSurfaces } from '@render/roadSurfaces';
 import type { SceneMaterials } from '@render/materials';
 import { Network } from '@world/network';
@@ -62,6 +62,30 @@ describe('a loose mesh sent to the GPU', () => {
     expect(group.children).toEqual([a, b, c]);
     expect(b.parent).toBe(group);
     expect(b.matrixWorld.equals(before)).toBe(true);
+    expect(warmPending()).toBe(false);
+  });
+
+  it('sends the loose meshes by their error on the screen, the largest first, never held behind a scene mesh waiting', async () => {
+    const order: Object3D[] = [];
+    const renderer = {
+      ...fakeRenderer([]),
+      render: (scene: Scene) => { order.push(scene.children.length === 1 ? scene.children[0]! : scene); },
+    } as unknown as WebGLRenderer;
+    const world = new Scene();
+    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    const inScene = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    world.add(inScene, new Group());
+    const small = new Mesh(new BoxGeometry(), new MeshBasicMaterial()), big = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    const first = warmAhead(inScene, [inScene.geometry]);
+    const second = warmAhead(inScene, [inScene.geometry]);
+    const sent = Promise.all([warmLooseAhead([small], () => 1), warmLooseAhead([big], () => 40)]);
+    order.length = 0;
+    // One frame: one scene mesh, and every loose one behind it, the largest error first.
+    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    await sent;
+    expect(order).toEqual([world, big, small]);
+    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    await Promise.all([first, second]);
     expect(warmPending()).toBe(false);
   });
 

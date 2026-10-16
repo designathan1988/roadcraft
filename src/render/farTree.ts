@@ -8,6 +8,7 @@ import { forgetDerivedKeys } from './derivedCache';
 import { PLAN_SIG, TOP_LEVEL, emptyRecords, farKey, nodeSide } from './buildings/farTiles';
 import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
 import { cancelWarm, warmLooseAhead } from './uploads';
+import { geometryCost, gpuLedger } from './gpuLedger';
 
 /** A QUADTREE OF LEVELS BAKED PER TILE IN WORKERS FROM THE TILE STORE (CLAUDE.md "Streaming world"), for any kind of thing drawn from afar: the buildings (`buildings/farLevels.ts`), the roads (`farRoads.ts`) */
 /** Chosen top down by their error on the screen (Cesium's replacement refinement, `selectTiles`); the tiles the page's document holds are drawn near, never here */
@@ -164,6 +165,7 @@ export class FarTree<P> implements FarTiles {
   private fetching = 0;
   private readonly resident = new Set<FarNode>();
   private readonly seen: Seen = { perMetre: 0, allowed: 0, across: 0 };
+  private readonly ranked: Seen = { perMetre: 0, allowed: 0, across: 0 };
   private readonly eyeNow: Eye = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null, reach: Infinity };
   private eye: Eye | null = null;
   private scheduled = false;
@@ -599,12 +601,22 @@ export class FarTree<P> implements FarTiles {
     landed.mesh.visible = false;
     this.group.add(landed.mesh);
     this.resident.add(n);
-    // Sent ahead: never uploaded mid-frame.
-    void warmLooseAhead([landed.mesh]);
+    const cost = geometryCost(landed.mesh.geometry);
+    gpuLedger.set(landed.mesh, `far ${this.kind.name}`, cost.bytes, cost.triangles);
+    // Sent ahead, the node covering most of the screen first: never uploaded mid-frame.
+    void warmLooseAhead([landed.mesh], () => this.pixelsOf(n));
+  }
+
+  /** The pixels a node's height spans from the last eye: its upload's rank (`uploads.ts`). */
+  private pixelsOf(n: FarNode): number {
+    const e = this.eyeNow;
+    measureSeen(this.ranked, e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, n.x0, n.y0, n.x1, n.y1, n.top);
+    return n.top * this.ranked.perMetre;
   }
 
   private dropMesh(n: FarNode): void {
     if (!n.mesh) return;
+    gpuLedger.remove(n.mesh);
     this.resident.delete(n);
     cancelWarm([n.mesh]);
     this.group.remove(n.mesh);
