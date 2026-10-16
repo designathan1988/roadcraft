@@ -7,6 +7,7 @@ import { LAND, NEAR, PAVED } from '@world/rasterGrid';
 import { layCity } from '@editor/cityGenerator';
 import { DEFAULT_CITY, planCity, type CityOptions } from '@world/cityGen/plan';
 import { m } from '@world/units';
+import type { ChangeRect } from '@world/changes';
 import { planLots as planLotsOld } from './oracle/lotsOld';
 
 /** The lots' raster scan-converted */
@@ -20,19 +21,48 @@ function city(options: Partial<CityOptions>): { doc: RoadDoc; net: Network } {
 
 const run = (steps: Generator<void, void>): void => { while (!steps.next().done) { /* to the end */ } };
 
+/** Lists compared whatever their order: the oracle plans group by group of streets, the planner the whole plane in one order. */
+const sorted = <T>(list: readonly T[]): string[] => list.map((item) => JSON.stringify(item)).sort();
+
 function samePlans(doc: RoadDoc, net: Network): LotPlan {
+  // The keys the document knows are left out of a plan (`LotPlan.keys`).
+  const fresh = (key: string): boolean => !doc.lotStore.hasKey(key);
   const now = planLots(doc, net);
   const before = planLotsOld(doc, net);
-  expect(now.add.length).toBe(before.add.length);
-  expect(now.keys).toEqual(before.keys);
+  const keyed = (plan: { keys: string[]; keyRects?: ChangeRect[] }) => plan.keys.map((key, i) => ({ key, rect: plan.keyRects![i] })).filter((k) => fresh(k.key));
+  expect(sorted(keyed(now))).toEqual(sorted(keyed(before)));
   expect(now.drop).toEqual(before.drop);
-  expect(now.keyRects).toEqual(before.keyRects);
-  for (let i = 0; i < now.add.length; i++) {
-    expect(now.add[i]!.key).toBe(before.add[i]!.key);
-    expect(now.add[i]!.corners).toEqual(before.add[i]!.corners);
-  }
+  expect(sorted(now.add)).toEqual(sorted(before.add));
   return now;
 }
+
+describe('lots planned again', () => {
+  it('plans again only where the roads and the lots changed, as a plan of the whole map would', () => {
+    const { doc, net } = city({ seed: 7, size: 'small', style: 'organic' });
+    // The same document planned whole by a planner of its own.
+    const whole = (): LotPlan => {
+      const other = new Network(doc);
+      other.rebuild();
+      return planLots(doc, other);
+    };
+    applyLots(doc, planLots(doc, net));
+    expect(planLots(doc, net)).toEqual(whole());
+    // A street taken out: new land, lots dropped where the paving moved.
+    const ids = [...doc.segments.keys()].sort((a, b) => a - b);
+    doc.removeSegment(ids[Math.floor(ids.length / 3)]!);
+    net.rebuild();
+    const plan = planLots(doc, net);
+    expect(plan).toEqual(whole());
+    // Part of that land cut, then a street far out drawn.
+    applyLots(doc, { add: plan.add.slice(0, Math.ceil(plan.add.length / 2)), keys: [], drop: [] });
+    expect(planLots(doc, net)).toEqual(whole());
+    const a = doc.addNode({ x: m(3000), y: m(0) });
+    const b = doc.addNode({ x: m(3080), y: m(10) });
+    doc.addSegment(a.id, b.id, 1);
+    net.rebuild();
+    expect(planLots(doc, net)).toEqual(whole());
+  });
+});
 
 describe('lot raster', () => {
   const cities: Partial<CityOptions>[] = [

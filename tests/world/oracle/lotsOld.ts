@@ -1,4 +1,4 @@
-// The lots as planned before 2026-10-15 (src/world/lots.ts at 8434df1)
+// The lots as planned before 2026-10-15 (src/world/lots.ts at 8434df1), cell by cell, on the world's raster with the block bound of 2026-10-16
 import type { Vec2 } from '@core/vec2';
 import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
@@ -37,6 +37,8 @@ const LOT_FRONTAGE = m(22);
 const TWO_ROWS = m(44);
 const MIN_LOT = m(10);
 const RASTER = m(2);
+/** Land wider or deeper than this is open land, never a block. */
+const MAX_BLOCK = m(1024);
 /** An outline edge at least this long is a straight back of a footway; shorter ones are a corner's curve. */
 const STRAIGHT_BACK = m(2);
 
@@ -191,13 +193,15 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
       const b = boxes[i]!;
       minX = Math.min(minX, b[0]); minY = Math.min(minY, b[1]); maxX = Math.max(maxX, b[2]); maxY = Math.max(maxY, b[3]);
     }
+    // The raster laid on the world's: its cells where any plan puts them, whatever the streets' extent (2026-10-16)
+    minX = Math.floor(minX / RASTER) * RASTER;
+    minY = Math.floor(minY / RASTER) * RASTER;
     const W = Math.ceil((maxX - minX) / RASTER), H = Math.ceil((maxY - minY) / RASTER);
     const label = new Int32Array(W * H).fill(-1);
     const isPaved = new Uint8Array(W * H);
     // Only the cells within a street's box (grown by a lot's depth) can be paved: those are tested, the rest is land.
     const near = new Uint8Array(W * H);
-    for (const k of members) {
-      const b = boxes[k]!;
+    for (const b of boxes) {
       const i0 = Math.max(0, Math.floor((b[0] - minX) / RASTER)), i1 = Math.min(W - 1, Math.floor((b[2] - minX) / RASTER));
       const j0 = Math.max(0, Math.floor((b[1] - minY) / RASTER)), j1 = Math.min(H - 1, Math.floor((b[3] - minY) / RASTER));
       for (let j = j0; j <= j1; j++) near.fill(1, j * W + i0, j * W + i1 + 1);
@@ -228,6 +232,13 @@ function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
           stack.push(n);
         }
       }
+      // Land wider or deeper than a block may be is open land (2026-10-16)
+      let i0 = W, i1 = -1, j0 = H, j1 = -1;
+      for (const c of piece.cells) {
+        const i = c % W, j = (c - i) / W;
+        i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j);
+      }
+      if ((i1 - i0 + 1) * RASTER > MAX_BLOCK || (j1 - j0 + 1) * RASTER > MAX_BLOCK) piece.open = true;
     }
     const land: Land = { minX, minY, W, H, label, pieces };
     for (const i of members) landOf.set(ribbons[i]!.id, land);
