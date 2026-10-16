@@ -14,14 +14,17 @@ interface StreamAsk {
   readonly options: WholeMapOptions;
   readonly i: number;
   readonly j: number;
+  readonly store?: { readonly map: string; readonly after: number };
 }
 
-/** Its answer: the tile's records, or why it could not be made. */
-type StreamAnswer = { readonly key: number; readonly records: TileRecords } | { readonly i: number; readonly j: number; readonly error: string };
+/** Its answer: the tile's records, the version it was stored at in the worker, or why it could not be made. */
+type StreamAnswer = { readonly key: number; readonly records: TileRecords } | { readonly key: number; readonly stored: number | null }
+  | { readonly i: number; readonly j: number; readonly error: string };
 
 interface Waiting {
   readonly key: number;
-  readonly done: (records: TileRecords) => void;
+  readonly store?: { readonly map: string; readonly after: number };
+  readonly done: (answer: TileRecords | number | null) => void;
   readonly failed: (why: string) => void;
 }
 
@@ -34,7 +37,15 @@ export class TileGenerator {
   /** Tile `key` made in a worker. */
   generate(key: number): Promise<TileRecords> {
     return new Promise((done, failed) => {
-      this.queue.push({ key, done, failed: (why) => failed(new Error(why)) });
+      this.queue.push({ key, done: (answer) => done(answer as TileRecords), failed: (why) => failed(new Error(why)) });
+      this.pump();
+    });
+  }
+
+  /** Tile `key` made and stored by the worker in the tile store's `map` at a version past `after`: the version, or null when it was not stored. */
+  makeStored(key: number, map: string, after: number): Promise<number | null> {
+    return new Promise((done, failed) => {
+      this.queue.push({ key, store: { map, after }, done: (answer) => done(answer as number | null), failed: (why) => failed(new Error(why)) });
       this.pump();
     });
   }
@@ -57,7 +68,7 @@ export class TileGenerator {
       if (!next) return;
       lane.busy = next;
       const { i, j } = tileOfKey(next.key);
-      lane.port.postMessage({ stream: true, options: this.options, i, j } satisfies StreamAsk);
+      lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: next.store } : {}) } satisfies StreamAsk);
     }
   }
 
@@ -68,7 +79,7 @@ export class TileGenerator {
       lane.busy = null;
       if (waiting) {
         const answer = event.data;
-        if ('error' in answer) waiting.failed(answer.error); else waiting.done(answer.records);
+        if ('error' in answer) waiting.failed(answer.error); else waiting.done('stored' in answer ? answer.stored : answer.records);
       }
       this.pump();
     };

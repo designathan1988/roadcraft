@@ -64,6 +64,8 @@ interface MigrationReport {
 /** A call of the tile store, as the page hands it to the save worker (`save.worker.ts` `serve`). */
 export type TileOp =
   | { readonly op: 'read'; readonly map: string; readonly key: number }
+  /** The stored tile's version alone, or null: what the tiles made ahead are known by, their records never handed to the page. */
+  | { readonly op: 'version'; readonly map: string; readonly key: number }
   | { readonly op: 'write'; readonly map: string; readonly records: TileRecords }
   | { readonly op: 'meta'; readonly map: string }
   | { readonly op: 'setMeta'; readonly map: string; readonly meta: WorldMeta }
@@ -121,6 +123,7 @@ export async function runTileOp(store: PartStore, op: TileOp): Promise<unknown> 
   const writer = store.writer ?? storeWriter(store);
   switch (op.op) {
     case 'read': return readTile(store, op.map, op.key);
+    case 'version': return (await readTile(store, op.map, op.key))?.version ?? null;
     case 'write': return writer.write({ put: [{ key: tileBlobKey(op.map, op.records.key), value: op.records, packed: true }], remove: [] });
     case 'meta': return readMeta(store, op.map);
     case 'setMeta': return writer.write({ put: [{ key: metaKey(op.map), value: op.meta, packed: false }], remove: [] });
@@ -173,7 +176,26 @@ export class TileStore {
     private readonly backend: TileBackend,
     /** Builds a tile the store does not have (the whole-map generator's worker): a pure function of the seed and its place. */
     private readonly generate: (i: number, j: number) => Promise<TileRecords>,
+    /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`: the version stored, or null when it was not; none where the store is not the worker's to write (the desktop's). */
+    private readonly makeStored?: (i: number, j: number, after: number) => Promise<number | null>,
   ) {}
+
+  /** The tile in the store, made and stored when it is not, and its version: DO NOT hand its records to the page for a tile it only needs to know is there (the tiles made ahead, `worldStreamer.ts`). */
+  ensure(key: number): Promise<number> {
+    return this.chained(key, async () => {
+      const known = (await this.backend.run({ op: 'version', map: this.map, key })) as number | null;
+      if (known !== null) {
+        this.versions.set(key, Math.max(this.versions.get(key) ?? 0, known));
+        return known;
+      }
+      if (!this.makeStored) return (await this.made(key)).version;
+      const { i, j } = tileOfKey(key);
+      const version = await this.makeStored(i, j, this.versions.get(key) ?? 0);
+      if (version === null) throw new Error(`tile ${key} was made and not stored`);
+      this.versions.set(key, version);
+      return version;
+    });
+  }
 
   /** The stored tile, or null when the store has none (a stored tile unreadable rejects). */
   read(key: number): Promise<TileRecords | null> {

@@ -1925,7 +1925,9 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   const generator = new TileGenerator(options);
   const mapName = `roadcraft.tiles.${options.seed}`;
   const store = new TileStore(mapName, desktopStores ? storeTiles(desktopStores.parts) : portTiles(() => jobPort('save')),
-    (i, j) => generator.generate(tileKey(i, j)));
+    (i, j) => generator.generate(tileKey(i, j)),
+    // The tiles made ahead stored by the generator's worker itself, never through the page (the desktop's store is the shell's).
+    desktopStores ? undefined : (i, j, after) => generator.makeStored(tileKey(i, j), mapName, after));
   // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
   const empty = new RoadDoc();

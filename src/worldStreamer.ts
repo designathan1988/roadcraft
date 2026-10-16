@@ -52,6 +52,8 @@ export interface StreamerEvents {
 /** Where tiles come from and go to: the store, which makes a tile it does not have (`editor/tileStore.ts`). */
 export interface TileSource {
   load(key: number): Promise<TileRecords>;
+  /** The tile in the store (made there when it is not) and its version, its records not handed over (`TileStore.ensure`); none: `load`. */
+  ensure?(key: number): Promise<number>;
   /** The version written, or null when it was not. */
   write(records: TileRecords): Promise<number | null>;
 }
@@ -174,9 +176,11 @@ export class WorldStreamer {
       if (this.ahead.size >= AHEAD_IN_FLIGHT) return;
       if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key)) continue;
       this.ahead.add(key);
-      this.source.load(key).then((records) => {
+      // DO NOT bring a tile made ahead onto the page: only its version is wanted here (the far levels and the meso read it from the store).
+      const made = this.source.ensure ? this.source.ensure(key) : this.source.load(key).then((records) => records.version);
+      made.then((version) => {
         this.ahead.delete(key);
-        this.noteKnown(key, records.version);
+        this.noteKnown(key, version);
         this.ask();
       }, (error: unknown) => {
         this.ahead.delete(key);

@@ -57,6 +57,28 @@ describe('a tile stored', () => {
     expect(await tiles.read(tileKey(0, 0))).toBeNull();
   });
 
+  it('knows a tile made ahead by its version alone: one stored is read for it, one missing is made and stored by the worker', async () => {
+    const store = memoryStore();
+    const kept = emptyTile(1, 1);
+    await new TileStore('map', storeTiles(store), never).write(kept);
+    const asked: [number, number, number][] = [];
+    const makeStored = async (i: number, j: number, after: number): Promise<number | null> => {
+      asked.push([i, j, after]);
+      // As `cityTile.worker.ts` does: the tile written straight into the store, its version past `after`.
+      await storeTiles(store).run({ op: 'write', map: 'map', records: { ...emptyTile(i, j), version: after + 1 } });
+      return after + 1;
+    };
+    const tiles = new TileStore('map', storeTiles(store), never, makeStored);
+    expect(await tiles.ensure(kept.key)).toBe(1);
+    expect(asked).toEqual([]);
+    expect(await tiles.ensure(tileKey(4, -2))).toBe(1);
+    expect(asked).toEqual([[4, -2, 0]]);
+    // Asked again: read from the store, not made again; and a later write goes past it.
+    expect(await tiles.ensure(tileKey(4, -2))).toBe(1);
+    expect(asked).toHaveLength(1);
+    expect(await tiles.write(emptyTile(4, -2))).toBe(2);
+  });
+
   it('each write one past the last version the store knows', async () => {
     const store = memoryStore();
     const tiles = new TileStore('map', storeTiles(store), never);
