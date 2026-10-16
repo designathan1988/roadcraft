@@ -23,7 +23,7 @@ import { HELD, createHeldProps } from './people/heldProps';
 import { attachFacialMorphs } from './people/facialMorphs';
 import { applyFace, channelShapes, faceAt, type FaceWeights } from './people/faceExpression';
 import { expressionShapes } from '@people/body/expressions';
-import { applySkinAppearance, createFaceCardAtlas, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from './people/skinAppearance';
+import { applySkinAppearance, createPersonLayers, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from './people/skinAppearance';
 import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
 import { wornItems } from '@people/spec';
 import { captureBind, captureBindRotations, loadRocketboxClips } from './citizenWalk';
@@ -189,7 +189,7 @@ function markChildShirt(mesh: SkinnedMesh): void {
   geometry.setAttribute('clothingMask', new BufferAttribute(mask, 1));
 }
 
-function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial, uniform: { value: Texture },
+export function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial, uniform: { value: Texture },
   mesh: SkinnedMesh, look = 0): void {
   material.defines = { ...material.defines, USE_SKINNING: '' };
   material.onBeforeCompile = shader => {
@@ -235,9 +235,9 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   let visualFrame = 0;
   let activeLoads = 0;
   const resources = new Set<{ dispose(): void }>();
-  // The brows and lashes of every body's materials, in one array of layers (`FaceCardAtlas`).
-  const faceCards = createFaceCardAtlas();
-  resources.add(faceCards);
+  // The eyes, cards and garments of every body's materials, in two arrays of layers (`PersonLayers`).
+  const personLayers = createPersonLayers();
+  resources.add(personLayers);
   const disposeOwned = (owned: Set<{ dispose(): void }>): void => {
     cancelUploads([...owned].filter((resource): resource is Texture => resource instanceof Texture));
     for (const resource of owned) resource.dispose();
@@ -508,7 +508,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           material.metalness = 0;
           skinMaterial(material, uniform, o, materialIndex === 0 ? (CROWD[index]?.look ?? 0) : 0);
           const skin = o.geometry.userData['skinAppearance'] as SkinAppearance | undefined;
-          if (skin) applySkinAppearance(material, o.geometry, skin, faceCards);
+          if (skin) applySkinAppearance(material, o.geometry, skin, personLayers);
           owned.add(material);
           return material;
         });

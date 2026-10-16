@@ -17,9 +17,9 @@ import { bakeLibraryClip, bakeWalk, breathe, restRig, type ClipFrames } from '..
 /** Principal components carried per body: 16 keep a body within about 1.5 cm of the full model. */
 export const SHAPES = 16;
 const SHAPE_WIDTH = 4096;
-/** Rows of a person's own face (`procFace`) are this wide; the vertex-to-face index (`procFaceIndex`) this wide. */
+/** Rows of `procFace` (the vertex-to-face index four a texel, the expressions, each person's face) are this wide; the index's own rows this wide. */
 export const FACE_WIDTH = 2048;
-export const FACE_INDEX_WIDTH = 4096;
+const FACE_INDEX_WIDTH = 4096;
 /** The face's expression channels (`faceExpression.ts`: blink, joy, sadness, anger, surprise, brows, visemes), padded to 12. */
 export const EXPR = Object.keys(CHANNELS).slice(0, 12);
 export const EXPR_SLOTS = 12;

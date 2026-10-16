@@ -10,23 +10,55 @@ import urls from 'virtual:model-urls/people/skins?ext=webp';
 
 export interface SkinAppearance { texture: Texture; eyeTexture: Texture; tint: Color; hair: Color; hairTexture?: Texture; browTexture?: Texture; lashTexture?: Texture; beardTexture?: Texture; garments: (Texture | null)[]; outfitTint: Color | null; beard: number; makeup: number }
 
-/** The face's small cards - brows and lashes, 256 px each - share one array texture, a layer per item */
-const FACE_CARD_SIZE = 256;
-const FACE_CARD_BYTES = FACE_CARD_SIZE * FACE_CARD_SIZE * 4;
-/** Layers the array starts with: the catalogue's textured brows and lashes (16) fit with room to spare. */
-const FACE_CARD_LAYERS = 24;
+// A dressed person's eyes, brows, lashes, hair, beard and garments are layers of two arrays (256 and 512 px, the catalogue's sizes): two texture units for all, not one each (ANGLE D3D11 has 16; three r186 `allocateTextureUnit` counts both stages).
+const SMALL_LAYER = 256;
+const LARGE_LAYER = 512;
+/** Layers each array starts with: the catalogue's textured brows and lashes (16) fit the small one with room to spare. */
+const SMALL_LAYERS = 24;
+const LARGE_LAYERS = 16;
 
-/** The face cards' array and who holds which layer, owned by whoever makes the materials */
-export interface FaceCardAtlas {
-  /** The layer a card's texture is drawn in (copied there when first asked for); -1 without a texture. */
+/** One array of same-sized layers and who holds which layer, owned by whoever makes the materials */
+interface CardAtlas {
+  /** Width and height of every layer, pixels. */
+  readonly size: number;
+  /** The layer a texture is copied into (when first asked for); -1 without a picture to copy. */
   layerOf(texture: Texture | undefined): number;
   /** The array, ONE uniform for every material: when the array grows, every program reads the new one */
   readonly uniform: { value: DataArrayTexture | null };
   dispose(): void;
 }
 
-function newFaceCardArray(depth: number): DataArrayTexture {
-  const array = new DataArrayTexture(new Uint8Array(FACE_CARD_BYTES * depth), FACE_CARD_SIZE, FACE_CARD_SIZE, depth);
+/** A person's two arrays (`SMALL_LAYER`, `LARGE_LAYER`): a texture goes in the one of its own size */
+export interface PersonLayers {
+  readonly small: CardAtlas;
+  readonly large: CardAtlas;
+  /** Where a texture is drawn from: [0, 0] without one, else [1 small or 2 large, its layer]. */
+  place(texture: Texture | undefined | null): Place;
+  dispose(): void;
+}
+
+export function createPersonLayers(): PersonLayers {
+  const small = createCardAtlas(SMALL_LAYER, SMALL_LAYERS);
+  const large = createCardAtlas(LARGE_LAYER, LARGE_LAYERS);
+  return {
+    small, large,
+    place(texture) {
+      if (!texture) return [0, 0];
+      const width = (texture.image as { width?: number } | undefined)?.width ?? 0;
+      const atlas = width > SMALL_LAYER ? 2 : 1;
+      const layer = (atlas === 2 ? large : small).layerOf(texture);
+      return layer < 0 ? [0, 0] : [atlas, layer];
+    },
+    dispose() {
+      small.dispose();
+      large.dispose();
+    },
+  };
+}
+
+function newLayerArray(size: number, depth: number): DataArrayTexture {
+  const array = new DataArrayTexture(new Uint8Array(size * size * 4 * depth), size, size, depth);
+  // As each texture it holds was sampled on its own: sRGB, trilinear, edges clamped, no flip
   array.colorSpace = SRGBColorSpace;
   array.magFilter = LinearFilter;
   array.minFilter = LinearMipmapLinearFilter;
@@ -36,18 +68,27 @@ function newFaceCardArray(depth: number): DataArrayTexture {
   return array;
 }
 
-export function createFaceCardAtlas(): FaceCardAtlas {
+/** A texture's own bytes when they are already a layer's (a padded garment, `paddedGarment`): copied as they are. */
+function ownBytes(texture: Texture, size: number): ArrayLike<number> | null {
+  const image = texture.image as { data?: unknown; width?: number; height?: number } | undefined;
+  const data = image?.data;
+  if (!(data instanceof Uint8Array || data instanceof Uint8ClampedArray)) return null;
+  return image!.width === size && image!.height === size && data.length === size * size * 4 && !texture.flipY ? data : null;
+}
+
+function createCardAtlas(size: number, layers: number): CardAtlas {
+  const bytes = size * size * 4;
   const uniform: { value: DataArrayTexture | null } = { value: null };
-  /** Each held card's layer, and how it gives it back. */
+  /** Each held texture's layer, and how it gives it back. */
   const held = new Map<Texture, { layer: number; release: () => void }>();
-  /** Layers given back by cards let go, reused before the array grows. */
+  /** Layers given back by textures let go, reused before the array grows. */
   const free: number[] = [];
   /** Layers ever handed out: the next new one. */
   let used = 0;
   let canvas: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null = null;
   /** DO NOT list a layer on an array not yet uploaded */
   let whole = true;
-  const array = (): DataArrayTexture => uniform.value ??= fresh(newFaceCardArray(FACE_CARD_LAYERS));
+  const array = (): DataArrayTexture => uniform.value ??= fresh(newLayerArray(size, layers));
   /** A new array: sent whole on its first upload (three calls `onUpdate` once it has been). */
   const fresh = (texture: DataArrayTexture): DataArrayTexture => {
     whole = true;
@@ -60,33 +101,54 @@ export function createFaceCardAtlas(): FaceCardAtlas {
     if (reused !== undefined) return reused;
     const current = array();
     if (used >= current.image.depth) {
-      const grown = fresh(newFaceCardArray(current.image.depth * 2));
+      const grown = fresh(newLayerArray(size, current.image.depth * 2));
       (grown.image.data as Uint8Array).set(current.image.data as Uint8Array);
+      cancelUploads([current]);
       current.dispose();
       uniform.value = grown;
     }
     return used++;
   };
+  /** A picture's pixels at the layer's size, top row first as three uploads an image with `flipY` off. */
+  const drawn = (texture: Texture): ArrayLike<number> | null => {
+    const source = texture.image as { data?: unknown; width?: number; height?: number } | undefined;
+    if (!source) return null;
+    canvas ??= typeof OffscreenCanvas === 'function'
+      ? new OffscreenCanvas(size, size).getContext('2d', { willReadFrequently: true })
+      : document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    const ctx = canvas;
+    if (!ctx) return null;
+    if (ctx.canvas.width !== size || ctx.canvas.height !== size) { ctx.canvas.width = size; ctx.canvas.height = size; }
+    let image = source as CanvasImageSource;
+    if (source.data instanceof Uint8Array || source.data instanceof Uint8ClampedArray) {
+      // Raw pixels of another size: through a canvas of their own, then drawn to the layer's size.
+      if (typeof ImageData !== 'function' || typeof OffscreenCanvas !== 'function') return null;
+      const w = source.width ?? 0, h = source.height ?? 0;
+      if (w * h * 4 !== source.data.length) return null;
+      const own = new OffscreenCanvas(w, h);
+      own.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(source.data), w, h), 0, 0);
+      image = own;
+    }
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    if (texture.flipY) ctx.setTransform(1, 0, 0, -1, 0, size);
+    ctx.drawImage(image, 0, 0, size, size);
+    ctx.restore();
+    return ctx.getImageData(0, 0, size, size).data;
+  };
   return {
+    size,
     uniform,
     /** DO NOT keep layers by texture for good */
     layerOf(texture) {
       if (!texture) return -1;
       const known = held.get(texture);
       if (known) return known.layer;
-      const image = texture.image as CanvasImageSource | undefined;
-      if (!image) return -1;
-      canvas ??= typeof OffscreenCanvas === 'function'
-        ? new OffscreenCanvas(FACE_CARD_SIZE, FACE_CARD_SIZE).getContext('2d', { willReadFrequently: true })
-        : document.createElement('canvas').getContext('2d', { willReadFrequently: true });
-      const ctx = canvas;
-      if (!ctx) return -1;
-      if (ctx.canvas.width !== FACE_CARD_SIZE) { ctx.canvas.width = FACE_CARD_SIZE; ctx.canvas.height = FACE_CARD_SIZE; }
-      ctx.clearRect(0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE);
-      ctx.drawImage(image, 0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE);
+      const pixels = ownBytes(texture, size) ?? drawn(texture);
+      if (!pixels) return -1;
       const layer = take();
       const target = array();
-      (target.image.data as Uint8Array).set(ctx.getImageData(0, 0, FACE_CARD_SIZE, FACE_CARD_SIZE).data, layer * FACE_CARD_BYTES);
+      (target.image.data as Uint8Array).set(pixels, layer * bytes);
       if (!whole) target.addLayerUpdate(layer);
       target.needsUpdate = true;
       const release = (): void => {
@@ -103,6 +165,7 @@ export function createFaceCardAtlas(): FaceCardAtlas {
       held.clear();
       free.length = 0;
       used = 0;
+      if (uniform.value) cancelUploads([uniform.value]);
       uniform.value?.dispose();
       uniform.value = null;
     },
@@ -256,8 +319,8 @@ export async function loadSkinAppearance(person: PersonSpec): Promise<SkinAppear
     if (failed?.status === 'rejected') throw failed.reason;
     if (!texture || !eyeTexture) throw new Error(`Missing loaded skin or eye texture: ${skinName}, ${eyeFile}`);
     const garments = loaded.slice(1, cardStart).map((map) => map ?? null);
-    // Sent to the GPU ahead of the first frame this person is drawn in.
-    queueUpload(texture, eyeTexture, ...garments, hairTexture, beardTexture);
+    // The skin sent to the GPU ahead of the first frame this person is drawn in; the rest is copied into `PersonLayers`.
+    queueUpload(texture);
     const appearance: SkinAppearance = { texture, eyeTexture, tint, hair: new Color(person.look.hair), garments,
       outfitTint: person.look.outfitTint == null ? null : new Color(person.look.outfitTint),
       ...(hairTexture ? { hairTexture } : {}),
@@ -284,7 +347,7 @@ export function releaseSkinAppearance(appearance: SkinAppearance): void {
 }
 
 /** Extends the crowd shader after its bone-palette hook, preserving one draw batch. */
-export function applySkinAppearance(material: MeshStandardMaterial, geometry: BufferGeometry, skin: SkinAppearance, faceCards: FaceCardAtlas): void {
+export function applySkinAppearance(material: MeshStandardMaterial, geometry: BufferGeometry, skin: SkinAppearance, layers: PersonLayers): void {
   if (!geometry.hasAttribute('skinMask')) return;
   const before = material.onBeforeCompile;
   const key = material.customProgramCacheKey();
@@ -294,9 +357,13 @@ export function applySkinAppearance(material: MeshStandardMaterial, geometry: Bu
   const texturedHair = geometry.hasAttribute('hairMask');
   const texturedGarments = geometry.hasAttribute('garmentSlot');
   const texturedEyes = geometry.hasAttribute('eyeMask');
-  // Which cards and garments have a texture is told by uniforms, never by the code
-  const cards = [skin.hairTexture, skin.browTexture, skin.lashTexture, skin.beardTexture];
-  const cardNames = ['personHair', 'personBrow', 'personLash', 'personBeard'];
+  const layered = texturedHair || texturedGarments || texturedEyes;
+  // Which cards and garments have a texture, and where it is, is told by uniforms, never by the code: [array, layer]
+  const eye: Place = texturedEyes ? layers.place(skin.eyeTexture) : NO_LAYER;
+  const garments: Place[] = texturedGarments ? Array.from({ length: GARMENT_SLOTS }, (_, i) => layers.place(skin.garments[i])) : [];
+  const cards: Place[] = texturedHair ? [skin.hairTexture, skin.browTexture, skin.lashTexture, skin.beardTexture].map((card) => layers.place(card)) : [];
+  // The arrays these were copied into, sent ahead of the first frame this person is drawn in
+  if (layered) queueUpload(layers.small.uniform.value, layers.large.uniform.value);
   if (texturedHair) { material.alphaToCoverage = true; material.alphaTest = 0.35; }
   material.onBeforeCompile = (shader, renderer) => {
     before.call(material, shader, renderer);
@@ -308,20 +375,20 @@ export function applySkinAppearance(material: MeshStandardMaterial, geometry: Bu
     shader.uniforms.beardColour = { value: skin.hair };
     shader.uniforms.beardStyle = { value: skin.beard };
     shader.uniforms.makeupAmount = { value: skin.makeup };
-    if (texturedEyes) shader.uniforms.personEyes = { value: skin.eyeTexture };
+    if (layered) {
+      shader.uniforms.personLayersSmall = layers.small.uniform;
+      shader.uniforms.personLayersLarge = layers.large.uniform;
+    }
+    if (texturedEyes) shader.uniforms.personEye = { value: new Vector2(eye[0], eye[1]) };
     if (texturedGarments) {
       shader.uniforms.outfitDye = { value: skin.outfitTint ?? new Color(0xffffff) };
       shader.uniforms.outfitDyed = { value: skin.outfitTint ? 1 : 0 };
-      for (let i = 0; i < GARMENT_SLOTS; i++) shader.uniforms[`garment${i}`] = { value: skin.garments[i] ?? BLANK };
-      shader.uniforms.garmentTextures = { value: Array.from({ length: GARMENT_SLOTS }, (_, i) => (skin.garments[i] ? 1 : 0)) };
+      shader.uniforms.garmentTextures = { value: garments.map((g) => g[0]) };
+      shader.uniforms.garmentLayers = { value: garments.map((g) => g[1]) };
     }
     if (texturedHair) {
-      shader.uniforms.personHair = { value: cards[0] ?? BLANK };
-      shader.uniforms.personBeard = { value: cards[3] ?? BLANK };
-      const brow = faceCards.layerOf(cards[1]), lash = faceCards.layerOf(cards[2]);
-      shader.uniforms.faceCards = faceCards.uniform;
-      shader.uniforms.faceCardLayer = { value: new Vector2(Math.max(0, brow), Math.max(0, lash)) };
-      shader.uniforms.cardTextures = { value: [cards[0] ? 1 : 0, brow >= 0 ? 1 : 0, lash >= 0 ? 1 : 0, cards[3] ? 1 : 0] };
+      shader.uniforms.cardTextures = { value: cards.map((c) => c[0]) };
+      shader.uniforms.cardLayers = { value: cards.map((c) => c[1]) };
     }
     shader.vertexShader = `attribute float skinMask; uniform vec3 faceOrigin; uniform float faceScale; varying float vSkinMask; varying vec2 vSkinUv; varying vec3 vFace;\n${shader.vertexShader}`
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSkinMask = skinMask; vSkinUv = uv; vFace = (position - faceOrigin) / faceScale;');
@@ -356,18 +423,15 @@ export function applySkinAppearance(material: MeshStandardMaterial, geometry: Bu
       shader.vertexShader = `attribute float eyeMask; varying float vEyeMask;\n${shader.vertexShader}`
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEyeMask = eyeMask;');
       // The cornea's atlas pixels are transparent black
-      shader.fragmentShader = `uniform sampler2D personEyes; varying float vEyeMask;\n${shader.fragmentShader}`
-        .replace('#include <color_fragment>', '#include <color_fragment>\nif (vEyeMask > 0.5) { vec4 eyeTexel = texture2D(personEyes, vSkinUv); diffuseColor.rgb = eyeTexel.rgb; diffuseColor.a = eyeTexel.a; }')
+      shader.fragmentShader = `uniform vec2 personEye; varying float vEyeMask;\n${shader.fragmentShader}`
+        .replace('#include <color_fragment>', '#include <color_fragment>\nif (vEyeMask > 0.5 && personEye.x > 0.5) { vec4 eyeTexel = personLayer(personEye.x, personEye.y, vSkinUv); diffuseColor.rgb = eyeTexel.rgb; diffuseColor.a = eyeTexel.a; }')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nif (vEyeMask > 0.5) roughnessFactor = 0.08;');
     }
     if (texturedHair) {
-      // Hair and beard from their own textures; brows (1) and lashes (2) from the face cards' array.
-      const declarations = 'uniform sampler2D personHair; uniform sampler2D personBeard; uniform sampler2DArray faceCards; uniform vec2 faceCardLayer;';
-      const read = (i: number): string => i === 1 ? 'texture(faceCards, vec3(vSkinUv, faceCardLayer.x))'
-        : i === 2 ? 'texture(faceCards, vec3(vSkinUv, faceCardLayer.y))' : `texture2D(${cardNames[i]}, vSkinUv)`;
-      const sample = (i: number): string => `(cardTextures[${i}] > 0.5 ? ${read(i)} : ${
+      // Hair (0), brows (1), lashes (2) and beard (3), each from its layer.
+      const sample = (i: number): string => `(cardTextures[${i}] > 0.5 ? personLayer(cardTextures[${i}], cardLayers[${i}], vSkinUv) : ${
         i === 2 ? 'vec4(0.2, 0.2, 0.2, 1.0)' : 'vec4(0.5, 0.5, 0.5, 1.0)'})`;
-      const size = (i: number): string => `(cardTextures[${i}] > 0.5 ? vec2(${i === 1 || i === 2 ? 'textureSize(faceCards, 0).xy' : `textureSize(${cardNames[i]}, 0)`}) : vec2(1.0))`;
+      const size = (i: number): string => `(cardTextures[${i}] > 0.5 ? personLayerSize(cardTextures[${i}]) : vec2(1.0))`;
       // Brows and lashes are cards laid on the skin.
       shader.vertexShader = `attribute float hairMask; varying float vHairMask;\n${shader.vertexShader}`
         .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -384,7 +448,7 @@ if (faceCard) {
   mvPosition.z += 0.004 * bodyScale;
   gl_Position = projectionMatrix * mvPosition;
 }`);
-      shader.fragmentShader = `${declarations} uniform float cardTextures[4]; varying float vHairMask;\n${shader.fragmentShader}`
+      shader.fragmentShader = `uniform float cardTextures[4]; uniform float cardLayers[4]; varying float vHairMask;\n${shader.fragmentShader}`
         .replace('#include <alphatest_fragment>', `
           // A card: hair (1), brows (2), lashes (3) or a beard (4), each from its own texture.
           vec2 cardDx = dFdx(vSkinUv), cardDy = dFdy(vSkinUv);
@@ -423,11 +487,10 @@ if (faceCard) {
     if (texturedGarments) {
       shader.vertexShader = `attribute float garmentSlot; varying float vGarmentSlot;\n${shader.vertexShader}`
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGarmentSlot = garmentSlot;');
-      const uniforms = Array.from({ length: GARMENT_SLOTS }, (_, i) => `uniform sampler2D garment${i};`).join('\n');
-      shader.fragmentShader = `uniform vec3 outfitDye; uniform float outfitDyed; uniform float garmentTextures[${GARMENT_SLOTS}]; varying float vGarmentSlot; ${uniforms}\n${shader.fragmentShader}`;
+      shader.fragmentShader = `uniform vec3 outfitDye; uniform float outfitDyed; uniform float garmentTextures[${GARMENT_SLOTS}]; uniform float garmentLayers[${GARMENT_SLOTS}]; varying float vGarmentSlot;\n${shader.fragmentShader}`;
       const sample = Array.from({ length: GARMENT_SLOTS }, (_, i) => `
         if (appearanceDetail > 0.5 && abs(vGarmentSlot - ${i + 1}.0) < 0.1) {
-          vec3 cloth = garmentTextures[${i}] > 0.5 ? texture2D(garment${i}, vSkinUv).rgb : vec3(128.0 / 255.0);
+          vec3 cloth = garmentTextures[${i}] > 0.5 ? personLayer(garmentTextures[${i}], garmentLayers[${i}], vSkinUv).rgb : vec3(128.0 / 255.0);
           ${i === 0 ? 'float shade = 0.3 + 1.15 * dot(cloth, vec3(0.3, 0.59, 0.11)); cloth = mix(cloth, min(vec3(1.0), outfitDye * shade), outfitDyed * 0.8);' : ''}
           diffuseColor.rgb = cloth;
         }`).join('\n');
@@ -435,9 +498,24 @@ if (faceCard) {
         // Woven cloth is rough: no glossy highlight on a T-shirt.
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nif (vGarmentSlot > 0.5 && appearanceDetail > 0.5) roughnessFactor = max(roughnessFactor, 0.9);');
     }
+    if (layered) shader.fragmentShader = `${LAYER_READ}\n${shader.fragmentShader}`;
   };
-  material.customProgramCacheKey = () => `${key}-textured-skin-v7-hair${texturedHair}-garments${texturedGarments}-eyes${texturedEyes}`;
+  material.customProgramCacheKey = () => `${key}-textured-skin-v8-hair${texturedHair}-garments${texturedGarments}-eyes${texturedEyes}`;
 }
+
+/** Where a picture is drawn from: [0 none, 1 the small array or 2 the large one, its layer]. */
+type Place = readonly [number, number];
+/** No texture: drawn in the slot's plain colour. */
+const NO_LAYER: Place = [0, 0];
+
+/** A layer of a person's arrays (`PersonLayers`): `atlas` 1 the small one, 2 the large; same filtering as each texture had alone */
+const LAYER_READ = `uniform sampler2DArray personLayersSmall; uniform sampler2DArray personLayersLarge;
+vec4 personLayer(float atlas, float layer, vec2 uv) {
+  return atlas > 1.5 ? texture(personLayersLarge, vec3(uv, layer)) : texture(personLayersSmall, vec3(uv, layer));
+}
+vec2 personLayerSize(float atlas) {
+  return atlas > 1.5 ? vec2(textureSize(personLayersLarge, 0).xy) : vec2(textureSize(personLayersSmall, 0).xy);
+}`;
 
 /** three's physical lighting, with a person's own terms */
 export function personLighting(hair: boolean, garments: boolean): string {
@@ -585,7 +663,3 @@ function paddedGarment(name: string, item: ProxyItem): TextureLease {
 
 /** Maximum garment slots authored by `garmentSlots.ts`; empty slots use a constant in the shader. */
 const GARMENT_SLOTS = MAX_TEXTURED;
-
-/** What an empty card or garment slot is bound to: never read (its flag is 0), but a sampler must have a texture. */
-const BLANK = new DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1);
-BLANK.needsUpdate = true;

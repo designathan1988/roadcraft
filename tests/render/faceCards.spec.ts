@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry, Color, MeshStandardMaterial, Texture, type WebGLProgramParametersWithUniforms, type WebGLRenderer } from 'three';
-import { applySkinAppearance, createFaceCardAtlas, type FaceCardAtlas, type SkinAppearance } from '@render/people/skinAppearance';
+import { applySkinAppearance, createPersonLayers, type PersonLayers, type SkinAppearance } from '@render/people/skinAppearance';
 
-/** The face's brows and lashes are copied into layers of one array texture (`skinAppearance.ts` `createFaceCardAtlas`). */
+/** The face's brows and lashes are copied into layers of the person's small array texture (`skinAppearance.ts` `createPersonLayers`). */
 
 const SIZE = 256;
 let saved: unknown;
@@ -16,7 +16,7 @@ beforeAll(() => {
     getContext() {
       return {
         canvas: this,
-        clearRect() {}, drawImage() {},
+        clearRect() {}, drawImage() {}, save() {}, restore() {}, setTransform() {},
         getImageData: () => ({ data: new Uint8ClampedArray(SIZE * SIZE * 4) }),
       };
     }
@@ -45,7 +45,7 @@ function appearance(brow: Texture, lash: Texture): SkinAppearance {
 }
 
 /** The uniforms a material's program is built with, as three hands them to `onBeforeCompile`. */
-function compile(atlas: FaceCardAtlas, skin: SkinAppearance): Record<string, { value: unknown }> {
+function compile(atlas: PersonLayers, skin: SkinAppearance): Record<string, { value: unknown }> {
   const material = new MeshStandardMaterial();
   applySkinAppearance(material, faceGeometry(), skin, atlas);
   const shader = { uniforms: {}, vertexShader: '#include <begin_vertex>\n#include <project_vertex>',
@@ -57,7 +57,7 @@ function compile(atlas: FaceCardAtlas, skin: SkinAppearance): Record<string, { v
 describe('face cards', () => {
   it('gives a released card layer back: a long session of people coming and going never runs out', () => {
     // Each person's brow and lash textures are released when the person leaves (`releaseSkinAppearance` disposes them)
-    const atlas = createFaceCardAtlas();
+    const atlas = createPersonLayers();
     for (let person = 0; person < 200; person++) {
       const brow = card(), lash = card();
       const uniforms = compile(atlas, appearance(brow, lash));
@@ -66,12 +66,12 @@ describe('face cards', () => {
       lash.dispose();
     }
     // The layers were given back and reused: the array never had to grow.
-    expect(atlas.uniform.value!.image.depth).toBe(24);
+    expect(atlas.small.uniform.value!.image.depth).toBe(24);
     atlas.dispose();
   });
 
   it('holds every card alive at once, each in a layer of its own, however many there are', () => {
-    const atlas = createFaceCardAtlas();
+    const atlas = createPersonLayers();
     const live: Texture[] = [];
     const layers = new Set<number>();
     let array: unknown = null;
@@ -80,9 +80,9 @@ describe('face cards', () => {
       live.push(brow, lash);
       const uniforms = compile(atlas, appearance(brow, lash));
       expect(uniforms['cardTextures']!.value, `person ${person}`).toEqual([0, 1, 1, 0]);
-      const at = uniforms['faceCardLayer']!.value as { x: number; y: number };
-      layers.add(at.x); layers.add(at.y);
-      array = uniforms['faceCards']!.value;
+      const at = uniforms['cardLayers']!.value as number[];
+      layers.add(at[1]!); layers.add(at[2]!);
+      array = uniforms['personLayersSmall']!.value;
     }
     expect(layers.size).toBe(80);
     const depth = (array as { image: { depth: number } }).image.depth;
@@ -93,14 +93,14 @@ describe('face cards', () => {
 
   it('sends a grown array whole on its first upload, then only the layers written after', () => {
     // three allocates a new array texture and, with layer updates listed, uploads only those layers
-    const atlas = createFaceCardAtlas();
+    const atlas = createPersonLayers();
     const live: Texture[] = [];
-    let array = atlas.uniform.value;
+    let array = atlas.small.uniform.value;
     for (let person = 0; person < 13; person++) {
       const brow = card(), lash = card();
       live.push(brow, lash);
       compile(atlas, appearance(brow, lash));
-      array = atlas.uniform.value;
+      array = atlas.small.uniform.value;
     }
     // 26 cards: grown past 24 and never uploaded since.
     expect(array!.image.depth).toBe(48);
@@ -110,7 +110,7 @@ describe('face cards', () => {
     const brow = card(), lash = card();
     live.push(brow, lash);
     compile(atlas, appearance(brow, lash));
-    expect(atlas.uniform.value).toBe(array);
+    expect(atlas.small.uniform.value).toBe(array);
     expect(array!.layerUpdates.size).toBe(2);
     for (const texture of live) texture.dispose();
     atlas.dispose();
