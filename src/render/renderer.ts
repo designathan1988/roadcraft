@@ -130,7 +130,7 @@ import { clearingIndex, type PlantedTree } from '@world/trees';
 import { natureDensity } from './natureNoise';
 import { buildNatureForest, loadNatureTrees, seedOfKind, type NatureTreeKit } from './natureTrees';
 import { createFogField, createFogTexture, type FogLayer } from './fogLayer';
-import { buildElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
+import { createElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
 import { isCoverKind } from '@world/terrainPaint';
 import { CellKeeps, keepCellAt, keepCellRect, keepCellsOver } from './cellKeeps';
 import { COVER_SWEEP_PAD, SHORE_SWEEP_PAD, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate, type WaterBox } from './coverSweep';
@@ -833,8 +833,9 @@ export function createSceneRenderer(
   /** The elements laid with the brush (`elements.ts`): their models, loaded once, and the layer built for the map. */
   let elementKit: ElementKit | null = null;
   let elementLayer: ElementLayer | null = null;
-  let elementsFor = '';
-  void loadElementKit(anisotropy).then((kit) => { elementKit = kit; elementsFor = ''; }, (error: unknown) => {
+  /** What the elements stand on and are, from the diary: a dab lays its own cells again, not the map's. */
+  const elementRead = new JournalCursor(['elements', 'terrain', 'ground']);
+  void loadElementKit(anisotropy).then((kit) => { elementKit = kit; }, (error: unknown) => {
     console.warn('[elements] models not loaded', error);
   });
   /** The weather drawn (`world/weather.ts`) */
@@ -2492,6 +2493,7 @@ export function createSceneRenderer(
       barriers.cull(crowdFrustum, crowdProjection);
       transit.cull(crowdFrustum, crowdProjection);
       for (const plants of [coverCells, natureCards, natureForest, paintedForest, plantedForest]) plants?.cull(crowdFrustum, crowdProjection);
+      elementLayer?.cull(crowdFrustum, crowdProjection);
       gardens?.cull(crowdFrustum, crowdProjection);
       transit.update(sim.trains, terrain.renderedHeightAt);
       agents.sync(sim, net, alpha, detailed, rig.viewport.zoom, {
@@ -2693,19 +2695,23 @@ export function createSceneRenderer(
         }
         const f = doc.fogSettings;
         post.setPlacedClouds(doc.clouds);
-        // The elements: again when they or the land under them change.
-        const elementKey = `${doc.elementRevision}:${doc.terrainRevision}`;
-        if (elementKit && elementKey !== elementsFor && !landHeld) {
-          elementsFor = elementKey;
-          if (elementLayer) {
-            for (const mesh of elementLayer.meshes) world.remove(mesh);
-            elementLayer.dispose();
-            elementLayer = null;
-          }
+        // The elements: again only in the cells where they or the ground under them changed (`elements.ts`).
+        if (elementKit && !landHeld) {
           const startedAt = performance.now();
-          if (doc.elements.length > 0) {
-            elementLayer = buildElementLayer(doc.elements, elementKit, (x, y) => terrain.renderedHeightAt(x, y));
-            for (const mesh of elementLayer.meshes) world.add(mesh);
+          if (!elementLayer) {
+            elementLayer = createElementLayer(elementKit);
+            world.add(elementLayer.group);
+          }
+          const entries = elementRead.read(doc.changes);
+          let cells: Set<number> | null = null;
+          if (entries !== null && entries.every((e) => e.rects !== null)) {
+            cells = new Set();
+            // A prop stands on the ground drawn under its point: a terrain cell round a change of the ground.
+            for (const e of entries) for (const r of e.rects!) keepCellsOver(r, TERRAIN_CELL, cells);
+          }
+          if ((cells === null || cells.size > 0) && elementLayer.sync(cells, doc, (x, y) => terrain.renderedHeightAt(x, y))) {
+            elementLayer.cull(crowdFrustum, crowdProjection);
+            shadowMoved = true;
           }
           performance.measure('hitch:elements', { start: startedAt, end: performance.now() });
         }
