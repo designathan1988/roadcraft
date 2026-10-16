@@ -107,6 +107,28 @@ pasted in the session that started this; these are its binding decisions.
   12 texture units (a5184644), cellInstances poses expanded in the shader (a6bbc65b), meso traffic and density cars
   (aa10da2b), building L2 per tile and L3 per plate (ae14f86a).
 
+## Streaming world (2026-10-16, the player's order: cities far larger than 10 km; the root fix)
+Measured before it: the page held every record of the map as JS objects in one document (~75 KB of live heap per
+building with its derived copies), every product walked it, and the opening waited for the whole map; the page's V8 heap
+is 4.4 GB, so no tuning fits a city much past 10 km. Binding decisions:
+- The page never holds the whole map. The world is an unbounded grid of 1,024 m tiles (`world/tiles.ts`); every record
+  belongs to one tile (`OWNER`: a node where it stands, a road by its end `a`, everything else by its anchor).
+- Ids per tile: tile k hands out ids from `tileIdBase(k)`; ids under `TILE_IDS` are a pre-tile map's, kept as they are.
+- The tile store is the save (`editor/chunkedSave.ts` layout, written in a worker): every tile ever made. A tile not in it
+  is generated on demand, a pure function of the seed and its place (`cityGen/wholeMap.ts`, `editor/wholeMapTile.ts`),
+  then stored. Generating a city is choosing a seed and options: nothing is generated up front.
+- The page document holds the active region only: the tiles within `ACTIVE_RADIUS` of the camera's focus, loaded ahead
+  and unloaded behind (with hysteresis). A load or an unload is a diary entry per kind with the tile's rectangle and ids
+  (causes `'tile loaded'`, `'tile unloaded'`); every derived product follows the diary and drops what an unload names.
+  A road across a tile edge keeps its foreign end as a borrowed node in its own tile; a borrowed node stays while a
+  loaded road uses it.
+- Far from the camera nothing of the records is on the page: far products are baked per tile in workers from the store
+  and cached by the tile's version (building masses L2 per tile, L3 per 2x2 tiles, coarser quadtree levels beyond;
+  roads painted into the terrain; terrain by CDLOD; ecology); the GPU holds them.
+- Simulation: meso over every tile from per-tile link tables baked from the store; micro in the active region.
+- No fixed map: `bounds.ts` (5x5 plates), `clampToMap`, `MAP_HALF` users and the whole-map generator's rim go; terrain,
+  plates and generation work on any tile.
+
 ## How to work
 - Find the cause by reading the whole part of the code: file by file, each caller followed up to
   the frame, the edit or the pointer, and the siblings of the same shape in the project. Fix the
