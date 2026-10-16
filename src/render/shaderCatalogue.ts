@@ -57,9 +57,10 @@ export function createShaderCatalogue(people: () => FamilyStandIns): ShaderCatal
     }
     const lit = meshesIn(standIns.lit), shadow = meshesIn(standIns.shadow);
     counts[name] = { lit, shadow, compiled: false };
+    // DO NOT let a failed compile hold the curtain for ever: said, and the family left counted as not compiled.
     return Promise.all([compileAhead(standIns.lit), compileAhead(standIns.shadow, true)]).then(() => {
       counts[name] = { lit, shadow, compiled: true };
-    });
+    }, (error: unknown) => { console.error(`[programs] the ${name} family did not compile`, error); });
   };
 
   return {
