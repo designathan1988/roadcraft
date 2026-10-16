@@ -14,7 +14,7 @@ import {
   Vector2,
   Vector3,
 } from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import type { Archetype } from '@sim/vehicles/archetypes';
 import { m } from '@world/units';
@@ -216,23 +216,30 @@ function tint<T extends BufferGeometry>(g: T, hex: number): T {
   return g;
 }
 
-/** Merges parts into one non-indexed geometry with position, normal and colour. */
+/** Merges parts into one indexed geometry with position, normal and colour: corners equal in all three shared, so a hard edge stays split. */
 export function merge(parts: BufferGeometry[]): BufferGeometry {
-  const ready = parts.map((g) => {
-    const n = g.index ? g.toNonIndexed() : g;
-    if (!n.getAttribute('normal')) n.computeVertexNormals();
-    if (!n.getAttribute('color')) tint(n, WHITE);
-    for (const name of Object.keys(n.attributes)) {
-      if (name !== 'position' && name !== 'normal' && name !== 'color') n.deleteAttribute(name);
-    }
-    n.clearGroups();
-    return n;
-  });
+  const ready = parts.map((g) => weldPart(g));
   const merged = mergeGeometries(ready, false);
   for (const g of parts) g.dispose();
   for (const g of ready) g.dispose();
   if (!merged) throw new Error('vehicle model: parts could not be merged');
   return merged;
+}
+
+/** A part with only position, normal and colour, indexed: a loose triangle list welded where position, normal and colour agree (three `mergeVertices`). */
+function weldPart(g: BufferGeometry): BufferGeometry {
+  // An indexed part is copied, never changed in place; one without normals is split first, for per-face normals as before.
+  const n = g.index ? (g.getAttribute('normal') ? g.clone() : g.toNonIndexed()) : g;
+  if (!n.getAttribute('normal')) n.computeVertexNormals();
+  if (!n.getAttribute('color')) tint(n, WHITE);
+  for (const name of Object.keys(n.attributes)) {
+    if (name !== 'position' && name !== 'normal' && name !== 'color') n.deleteAttribute(name);
+  }
+  n.clearGroups();
+  if (n.index) return n;
+  const welded = mergeVertices(n);
+  if (n !== g) n.dispose();
+  return welded;
 }
 
 /** Points of a polyline monotone in x, clipped to [xa, xb]. */

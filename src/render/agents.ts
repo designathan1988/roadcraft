@@ -1640,7 +1640,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           }
         }
       }
-      const merged = merge(pieces);
+      const welded = merge(pieces);
+      // A wreck is drawn faceted (a loose triangle list's `computeVertexNormals`), as before `merge` was indexed: one geometry a wreck
+      const merged = welded.toNonIndexed();
+      welded.dispose();
       // Each wreck its own: the panels buckled and the roof sagged by the heat and the blast, by a pattern of its own (its id).
       merged.computeBoundingBox();
       const box = merged.boundingBox!;

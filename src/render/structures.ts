@@ -253,11 +253,12 @@ function boxAlong(frame: Frame, along: number, across: number, height: number, c
   };
 }
 
-/** Flat-shaded triangles, built in world coordinates and mapped into three's frame once. */
+/** Flat-shaded quads, indexed, built in world coordinates and mapped into three's frame once. */
 class Extrusion {
   readonly positions: number[] = [];
   readonly normals: number[] = [];
   readonly uvs: number[] = [];
+  readonly indices: number[] = [];
 
   /** One quad `a b c d` (counter-clockwise seen from `normal`), in world `(x, y, height)`. */
   quad(
@@ -313,13 +314,16 @@ class Extrusion {
     this.push(pa, pb, pc, pd, uv(a), ub, uv(c), ud, n3);
   }
 
+  /** A quad's four corners, shared by its two triangles (one normal a quad: it stays flat). */
   private push(pa: readonly number[], pb: readonly number[], pc: readonly number[], pd: readonly number[],
     uvA: readonly number[], uvB: readonly number[], uvC: readonly number[], uvD: readonly number[], n3: readonly number[]): void {
-    for (const [p, t] of [[pa, uvA], [pb, uvB], [pc, uvC], [pa, uvA], [pc, uvC], [pd, uvD]] as const) {
+    const first = this.positions.length / 3;
+    for (const [p, t] of [[pa, uvA], [pb, uvB], [pc, uvC], [pd, uvD]] as const) {
       this.positions.push(p[0] as number, p[1] as number, p[2] as number);
       this.normals.push(n3[0] as number, n3[1] as number, n3[2] as number);
       this.uvs.push(t[0] as number, t[1] as number);
     }
+    this.indices.push(first, first + 1, first + 2, first, first + 2, first + 3);
   }
 
   mesh(name: string, material: Material): Mesh | null {
@@ -328,6 +332,8 @@ class Extrusion {
     geometry.setAttribute('position', new Float32BufferAttribute(this.positions, 3));
     geometry.setAttribute('normal', new Float32BufferAttribute(this.normals, 3));
     geometry.setAttribute('uv', new Float32BufferAttribute(this.uvs, 2));
+    // 16-bit while the corners fit, 32 past (three `setIndex` of an array)
+    geometry.setIndex(this.indices);
     geometry.computeBoundingSphere();
     const mesh = new Mesh(geometry, material);
     mesh.name = name;

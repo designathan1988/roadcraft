@@ -35,7 +35,7 @@ export interface InteriorSolid {
   readonly kind: InteriorSolidKind;
   /** The seats (indices into `VehicleModel.seats`) it belongs to: a seat's own shell, a bench's two places, the driver's pedals; empty for the cabin's. */
   readonly seats: readonly number[];
-  /** Its vertices in the merged interior (non-indexed: three to a triangle). */
+  /** Its range of the merged interior's index (three to a triangle). */
   readonly start: number;
   readonly count: number;
 }
@@ -50,12 +50,12 @@ export class CabinParts {
     const list = typeof seats === 'number' ? (seats < 0 ? [] : [seats]) : seats;
     for (const g of parts) {
       this.geometries.push(g);
-      // The vertices it takes once merged: `merge` makes every part non-indexed.
+      // The indices it takes once merged: `merge` keeps every part's triangles, in order, welded or not.
       this.named.push({ kind, seats: list, count: g.index ? g.index.count : g.getAttribute('position').count });
     }
   }
 
-  /** The solids as vertex ranges of the merge of `geometries` and then `after` (a closed interior's door cards): one a piece. */
+  /** The solids as index ranges of the merge of `geometries` and then `after` (a closed interior's door cards): one a piece. */
   solids(after: readonly { kind: InteriorSolidKind; seats: readonly number[]; geometry: BufferGeometry }[] = []): InteriorSolid[] {
     const out: InteriorSolid[] = [];
     let start = 0;

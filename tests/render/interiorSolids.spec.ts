@@ -101,11 +101,13 @@ interface Piece { readonly solid: InteriorSolid; readonly box: Box3; readonly tr
 /** Each named piece: its bounds, its triangles, and for a sheet (not closed) its rim. */
 function pieces(model: VehicleModel): Piece[] {
   const pos = model.interior.getAttribute('position');
+  const index = model.interior.index;
+  const corner = (i: number): Vector3 => new Vector3().fromBufferAttribute(pos, index ? index.getX(i) : i);
   return model.solids.map((solid) => {
     const tris: Triangle[] = [];
     const box = new Box3();
     for (let v = solid.start; v < solid.start + solid.count; v += 3) {
-      const t = new Triangle(new Vector3().fromBufferAttribute(pos, v), new Vector3().fromBufferAttribute(pos, v + 1), new Vector3().fromBufferAttribute(pos, v + 2));
+      const t = new Triangle(corner(v), corner(v + 1), corner(v + 2));
       box.expandByPoint(t.a).expandByPoint(t.b).expandByPoint(t.c);
       tris.push(t);
     }
@@ -201,7 +203,7 @@ function contacts(model: VehicleModel): Contact[] {
 describe('the interior\'s solids', () => {
   it('name every vertex of every cabin, in pieces, and every seat its own shell', () => {
     for (const [id, model] of models()) {
-      const count = model.interior.getAttribute('position').count;
+      const count = model.interior.index?.count ?? model.interior.getAttribute('position').count;
       let next = 0;
       for (const s of model.solids) {
         expect(s.start, id).toBe(next);

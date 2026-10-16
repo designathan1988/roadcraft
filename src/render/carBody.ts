@@ -2,7 +2,7 @@ import {
   BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, ExtrudeGeometry, Float32BufferAttribute, Quaternion,
   Shape, TorusGeometry, Vector2, Vector3,
 } from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import type { Archetype } from '@sim/vehicles/archetypes';
 import { m } from '@world/units';
@@ -156,17 +156,22 @@ function tint<T extends BufferGeometry>(g: T, hex: number): T {
   return g;
 }
 
-/** Merges parts into one non-indexed geometry with position, normal and colour (white where none). */
+/** Merges parts into one indexed geometry with position, normal and colour (white where none): corners equal in all three shared, so a hard edge stays split. */
 function merge(parts: BufferGeometry[]): BufferGeometry {
   const ready = parts.map((g) => {
-    const n = g.index ? g.toNonIndexed() : g;
+    // An indexed part is copied, never changed in place; one without normals is split first, for per-face normals as before.
+    const n = g.index ? (g.getAttribute('normal') ? g.clone() : g.toNonIndexed()) : g;
     if (!n.getAttribute('normal')) n.computeVertexNormals();
     if (!n.getAttribute('color')) tint(n, WHITE);
     for (const name of Object.keys(n.attributes)) {
       if (name !== 'position' && name !== 'normal' && name !== 'color') n.deleteAttribute(name);
     }
     n.clearGroups();
-    return n;
+    if (n.index) return n;
+    // A loose triangle list welded where position, normal and colour agree (three `mergeVertices`)
+    const welded = mergeVertices(n);
+    if (n !== g) n.dispose();
+    return welded;
   });
   const merged = ready.length ? mergeGeometries(ready, false) : null;
   for (const g of parts) g.dispose();
