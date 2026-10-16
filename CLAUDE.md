@@ -96,10 +96,11 @@ pasted in the session that started this; these are its binding decisions.
   save per tile in binary, compressed, in a worker, only dirty tiles; steamworks.js in the Electron main process only.
   Not taken: its WebGPU-only look (post, CSM, GPU-culled props are off in its WebGL2 mode), its simpler buildings,
   its 500-step undo cap.
-- Work in flight (2026-10-16), each in `.claude/worktrees/agent-<id>`: running wires/poles (aa91207f),
-  simulation scans (a8a1fc47), whole-map generator F7 (a6521f41); waiting, partial work kept: building L1 by the
-  generator (ac1805fc), building parts (a3ae02c2), terrain CDLOD (ae1e1d82), vegetation (ad130cd5), world walks
-  (a64389c6), light F6 (a6bf0567), Steam F8 (aed0c028). Next new: the job queue above.
+- Work in flight (2026-10-16), each in `.claude/worktrees/agent-<id>`, all paused with partial work kept, resumed
+  one at a time: wires/poles (aa91207f), simulation scans (a8a1fc47), whole-map generator F7 (a6521f41), building
+  L1 by the generator (ac1805fc), building parts (a3ae02c2), terrain CDLOD (ae1e1d82), vegetation (ad130cd5), world
+  walks (a64389c6), light F6 (a6bf0567), Steam F8 (aed0c028). Job lanes now go to the least busy worker, growth
+  alone (1237f74); next: the priority queue with keys, once heights live in shared memory.
 
 ## How to work
 - Find the cause by reading the whole part of the code: file by file, each caller followed up to
@@ -267,8 +268,9 @@ is hidden every frame (no overdraw).
 ## Commits, branches, agents
 - `git status` first; commit only your paths (`git commit --only <paths>`) after reading their
   `git diff`. Every file saved in the main folder reloads the game on 5300.
-- Agents: at most 3 running at once (player's order, 2026-10-16: 10 at once overloaded CPU and
-  memory); the others wait their turn. Each one in its own worktree made from local `main` (check its
+- Agents: at most 1 running at once while the player uses the PC (player's order, 2026-10-16: 10 at
+  once overloaded CPU and memory, 3 still froze his PC); the others wait their turn. Never open a window
+  on the player's screen (no visible browser, Electron or console windows; headless only). Each one in its own worktree made from local `main` (check its
   first commit: the tool may cut it from an old one), one part each, no two on the same files; heavy
   commands through `run-limited`, one headless Chrome at a time, vitest only on touched files with
   `--maxWorkers=2`, its Vite stopped when done; read its diff whole before merging. Keep progress here.
@@ -279,7 +281,9 @@ is hidden every frame (no overdraw).
 - A worktree, when one is needed, is made from local `main` (`node_modules` and `cooked` by
   junction). To remove it, undo the junctions with `rmdir`, never `rm -rf` (it would delete the
   main folder's `node_modules`); delete the branch once it is merged.
-- Never push to GitHub without the player's yes. The player's ports and folders, never touch:
+- Push only to `roadcraft4` (https://github.com/designathan1988/roadcraft-4.0.git, the player's order on
+  2026-10-16, which is his yes for it); NEVER push to `origin` or `roadcraft3`: another Claude instance works there.
+  The player's ports and folders, never touch:
   4180-4183, 5173, 5175-5178, `C:/Codex-Shared/backup-mapa-jogador`.
 
 ## Traps by area
