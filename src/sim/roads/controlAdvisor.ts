@@ -18,6 +18,9 @@ export function warrantedControl(major: number, minorMax: number, minorTotal: nu
 
 const rank = (c: AutoControl): number => (c === 'signal' ? 2 : c === 'stop' ? 1 : 0);
 
+/** Vehicles an hour into a junction below which `warrantedControl` is 'priority' whatever it has now (the least major flow of a step up, with the hysteresis). */
+export const QUIET_FLOW = Math.min(F.stopMajor, F.signalMajor, F.signalMajorB) * Math.min(1, F.stepDown);
+
 export class ControlAdvisor {
   readonly choices = new Map<NodeId, AutoControl>();
   private readonly changedAt = new Map<NodeId, number>();

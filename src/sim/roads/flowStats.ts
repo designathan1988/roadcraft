@@ -22,7 +22,15 @@ export class FlowStats {
     let legs = this.counts.get(node);
     if (!legs) this.counts.set(node, legs = new Map());
     legs.set(from, (legs.get(from) ?? 0) + 1);
+    this.counted.add(node);
   }
+
+  /** The junctions counted at since the last call, added to `into` (the advisor's, `SimWorld.stepControlAdvisor`). */
+  takeCounted(into: Set<NodeId>): void {
+    for (const node of this.counted) into.add(node);
+    this.counted.clear();
+  }
+  private readonly counted = new Set<NodeId>();
 
   step(dt: number): void {
     this.carry += dt;

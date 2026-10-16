@@ -48,7 +48,7 @@ import { AmbientWorld } from './ambient/ambient';
 import { Walkways, type WalkGraph } from '@world/walkways';
 import { mainRoadLegs, type SignalSettings } from '@world/roads/rules';
 import { FlowStats } from './roads/flowStats';
-import { type AutoControl, ControlAdvisor } from './roads/controlAdvisor';
+import { type AutoControl, ControlAdvisor, QUIET_FLOW } from './roads/controlAdvisor';
 import { rebuildWork } from '@world/rebuildWork';
 /** The body class a signal plan is protected for: an ordinary car. */const CAR_CLASS: BodyClass = 1;
 
@@ -317,6 +317,7 @@ export class SimWorld {
     // DO NOT keep them: the advisor turned the new map's junctions to signals it had measured on the old one
     this.flowStats = new FlowStats();
     this.controlAdvisor = new ControlAdvisor();
+    this.advised.clear();
     this.streams = forkStreams(this.seed);
     this.forgetSignals();
     this.pedEngine.reset(this);
@@ -703,9 +704,11 @@ export class SimWorld {
       rebuildWork.lanes += nodes.size;
       this.flow.keepOnly(nodes);
       this.advisor.forget(nodes);
+      for (const node of nodes) this.advised.add(node);
     } else {
       const gone = new Set([...changed.junctions].filter((node) => !this.graph.junctions.has(node)));
       if (gone.size) { this.flow.drop(gone); this.advisor.drop(gone); }
+      for (const node of changed.junctions) this.advised.add(node);
     }
     // DO NOT forget the log here: every road drawn anywhere had every junction's posts and heads placed again.
     this.noteJunctionsReached();
@@ -777,14 +780,19 @@ export class SimWorld {
     return changed;
   }
 
-  /** Stage 0's measuring of the junctions */
+  /** The junctions the advisor still looks at (`stepControlAdvisor`): built again, counted, or not yet at rest; the others cannot change. */
+  private readonly advised = new Set<NodeId>();
+
+  /** Stage 0's measuring of the junctions: DO NOT evaluate every junction of the map, only those whose control the flows can still change */
   stepControlAdvisor(dt: number): void {
     this.flow.step(dt);
+    this.flow.takeCounted(this.advised);
     if (!this.advisor.tick(dt)) return;
-    let changed = false;
-    for (const [node, junction] of this.graph.junctions) {
+    const changed = new Set<NodeId>();
+    for (const node of this.advised) {
+      const junction = this.graph.junctions.get(node);
       const n = this.doc.node(node);
-      if (!n || n.control !== 'auto' || n.incident.length < 3) continue;
+      if (!junction || !n || n.control !== 'auto' || n.incident.length < 3) { this.advised.delete(node); continue; }
       const main = mainRoadLegs(this.doc, node);
       let major = 0, minorMax = 0, minorTotal = 0;
       for (const seg of n.incident) {
@@ -793,9 +801,11 @@ export class SimWorld {
         else { minorMax = Math.max(minorMax, rate); minorTotal += rate; }
       }
       const initial: AutoControl = junction.signalised ? 'signal' : 'priority';
-      changed = this.advisor.evaluate(node, major, minorMax, minorTotal, initial, this.flow.measured) || changed;
+      if (this.advisor.evaluate(node, major, minorMax, minorTotal, initial, this.flow.measured)) changed.add(node);
+      // At rest and too quiet for any other control: the rates only fall until a vehicle is counted there again (`FlowStats.takeCounted`).
+      if (this.advisor.choice(node) === 'priority' && major + minorTotal < QUIET_FLOW) this.advised.delete(node);
     }
-    if (changed && this.applyAutoControl()) this.syncControllers();
+    if (changed.size && this.applyAutoControl(changed)) this.syncControllers(changed);
   }
 
   /** The second half: the footway graph and its crossings, and the controllers again */
