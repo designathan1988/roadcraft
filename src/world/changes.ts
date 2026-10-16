@@ -26,6 +26,12 @@ export const DOC_CHANGE_KINDS = Object.keys(DOC_KINDS) as DocChangeKind[];
 export type DerivedChangeKind = 'elevation' | 'ground' | 'light' | 'surfaces';
 export type ChangeKind = DocChangeKind | DerivedChangeKind;
 
+/** The causes of a tile put in or taken out of the page's document (`RoadDoc.loadTile`): its records came or went from the page, not from the world
+ *  - what keeps the world (the save, the economy, undo) reads past these entries; what is drawn or simulated of the page follows them as any other. */
+export const TILE_LOADED = 'tile loaded';
+export const TILE_UNLOADED = 'tile unloaded';
+export const isStreaming = (entry: { readonly cause: string }): boolean => entry.cause === TILE_LOADED || entry.cause === TILE_UNLOADED;
+
 export interface Change {
   /** Order of writing; every entry has its own. */
   readonly serial: number;

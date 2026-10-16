@@ -6,6 +6,7 @@ import { CellFiling } from './cells';
 import { JournalCursor } from './derived';
 import { IdAllocator } from './ids';
 import { insideLot, type Lot } from './lotRecord';
+import { lotCentre } from './lotRings';
 import { m } from './units';
 
 /** Where a lot lies: the box round its corners. */
@@ -36,6 +37,8 @@ export class LotStore {
   private order = new Map<number, number>();
   private nextOrder = 0;
   private ids = new IdAllocator(1);
+  /** The id a lot made at a place takes from its loaded tile's range (`RoadDoc.tileIdAt`); null: this store's allocator. */
+  idAt: ((at: { readonly x: number; readonly y: number }) => number | null) | null = null;
   /** The lots by place, kept by the writers below; null after a whole-store change (a load, a copy), filed again when first asked. */
   private filing: CellFiling<number, Lot> | null = null;
   /** The land already cut into lots (`lots.ts` `planLots`), in the order it was cut, and the same as a set. */
@@ -177,7 +180,7 @@ export class LotStore {
     }
     const added: Lot[] = [];
     for (const value of edit.add ?? []) {
-      const lot = { ...value, id: this.ids.take() } as Lot;
+      const lot = { ...value, id: this.idAt?.(lotCentre(value)) ?? this.ids.take() } as Lot;
       this.append(lot);
       added.push(lot);
       ids.push(lot.id);
@@ -204,6 +207,19 @@ export class LotStore {
     }
     if (added) this.journal.record('lotKeys', placeless ? null : where, { cause });
     return added;
+  }
+
+  /** A tile's keys taken out of the page's document (`RoadDoc.unloadTile`): one entry over its square. */
+  dropKeys(keys: readonly string[], square: ChangeRect, cause: string): void {
+    if (!keys.length) return;
+    this.beforeKeys?.();
+    this.ownKeys();
+    this.keysRewritten++;
+    const gone = new Set(keys);
+    let k = 0;
+    for (const key of this.keyList) if (!gone.has(key)) this.keyList[k++] = key; else this.keySet.delete(key);
+    this.keyList.length = k;
+    this.journal.record('lotKeys', [square], { cause });
   }
 
   /** A stretch of the keys put back as it was (undo, `RoadDoc.restore`): `list.splice`, the set kept with it. */

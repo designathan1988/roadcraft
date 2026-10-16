@@ -2,7 +2,7 @@ import { type MarkingStyleId, isMarkingStyle } from './roads/markingStyle';
 import { type ApproachRuleEntry, type SignalSettings, normalizeApproachRules, normalizeSignalSettings, rulesDigest, signalDigest } from './roads/rules';
 import { type LaneLink, linksDigest, movementKey, normalizeLaneLinks } from './roads/connectors';
 import { cloneRoadSection, normalizeRoadSection, sameRoadSection, type RoadSection } from './roadSection';
-import { isLot, type Lot } from './lots';
+import { isLot, lotCentre, type Lot } from './lots';
 import { OpenLots } from './openLots';
 import { LotStore } from './lotStore';
 import type { Vec2 } from '@core/vec2';
@@ -23,7 +23,6 @@ import { type Barrier, type BarrierKind, isBarrierKind } from './barriers';
 // Runtime imports, and safe: `geometry` and `legAngles` take `RoadDoc` as a TYPE only
 import { TUNNEL_HEADROOM, type RoadStructure, migrateStructure } from './structures';
 import { MAX_TERRAIN_STAMPS, RELIEF_LEGACY, readRelief, type ReliefVersion, type TerrainStamp } from './terrain';
-import { clampToMap } from './bounds';
 import { normalizeParking, sameParking, type SegmentParking } from './parking';
 import { type LandscapeItem, type LandscapeKind, type SignType, SIGN_TEXT_MAX, isLandscapeKind, isSignType } from './landscape';
 import { MAX_PAINT_DABS, type PaintDab, isPaintKind } from './terrainPaint';
@@ -39,10 +38,11 @@ import { type TransitData, emptyTransit, hasTransit, normalizeTransit } from './
 import { type SegmentDirection, casingHalf, roadProfile } from './roadTypes';
 import { BuildingStore } from './buildings/store';
 import type { SerializedBuilding } from './buildings/serialize';
-import type { Building, BuildingId } from './buildings/types';
+import { type Building, type BuildingId, cloneBuilding } from './buildings/types';
 import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from './zones';
 import { normalizePerson, type PersonSpec } from '@people/spec';
-import { ChangeJournal, rectAround, type ChangeRect, type DocChangeKind } from './changes';
+import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, rectAround, type ChangeRect, type DocChangeKind } from './changes';
+import { OWNER, TILE_COUNTED, type TileRecords, tileIdBase, tileOfKey, tileRect } from './tiles';
 import { PoleIndex } from './poleIndex';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
@@ -287,6 +287,12 @@ export class RoadDoc {
   readonly zoneMarks: ZoneMark[] = [];
   /** The land's lots (`world/lots.ts`): the cadastre the player zones and edits, with its owner (`lotStore.ts`) */
   readonly lotStore = new LotStore(this.changes);
+
+  constructor() {
+    // A building or a lot made in a loaded tile takes its id from the tile's range, as every other record (`tileIdAt`).
+    this.buildings.idAt = (at) => this.tileIdAt('building', at);
+    this.lotStore.idAt = (at) => this.tileIdAt('lot', at);
+  }
   /** @deprecated The lots as an array, in their order: made again after each change, for the readers that still walk the whole list */
   get lots(): readonly Lot[] {
     return this.lotStore.list();
@@ -424,8 +430,8 @@ export class RoadDoc {
   }
 
   addPole(at: { x: number; y: number }, lamp = false): UtilityPole {
-    const on = clampToMap(at);
-    const id = asPoleId(this.poleIds.take());
+    const on = onWorld(at);
+    const id = asPoleId(this.takeId('pole', on, this.poleIds));
     const pole: UtilityPole = { id, x: on.x, y: on.y, lamp };
     this.putPoleRecord(pole);
     this.changes.record('utilities', [rectAround([pole], ITEM_PAD)!], { ids: [id] });
@@ -487,7 +493,7 @@ export class RoadDoc {
     for (const existing of this.spansAt(a)) {
       if (existing.a === b || existing.b === b) return existing;
     }
-    const id = asSpanId(this.spanIds.take());
+    const id = asSpanId(this.takeId('span', this.poles.get(a)!, this.spanIds));
     const span: UtilitySpan = { id, a, b };
     this.putSpanRecord(span);
     this.changes.record('utilities', rectsAlong([this.poles.get(a)!, this.poles.get(b)!], ITEM_PAD), { ids: [a, b, id] });
@@ -496,9 +502,9 @@ export class RoadDoc {
 
   /** Draws a barrier along `points` (two or more, on the map). */
   addBarrier(kind: BarrierKind, points: readonly { x: number; y: number }[]): Barrier | null {
-    const path = points.map((p) => clampToMap(p));
+    const path = points.map((p) => onWorld(p));
     if (path.length < 2) return null;
-    const barrier: Barrier = { id: this.barrierIds.take(), kind, points: path.map((p) => ({ x: p.x, y: p.y })) };
+    const barrier: Barrier = { id: this.takeId('barrier', path[0]!, this.barrierIds), kind, points: path.map((p) => ({ x: p.x, y: p.y })) };
     this.putBarrierRecord(barrier);
     this.changes.record('barriers', rectsAlong(barrier.points, ITEM_PAD), { ids: [barrier.id] });
     return barrier;
@@ -567,9 +573,9 @@ export class RoadDoc {
   addLandscapeMany(list: readonly { readonly kind: LandscapeKind; readonly at: { x: number; y: number };
     readonly extra?: { signType?: SignType; text?: string; planted?: number } }[]): LandscapeItem[] {
     const items = list.map(({ kind, at, extra = {} }) => {
-      const on = clampToMap(at);
+      const on = onWorld(at);
       const text = extra.text?.slice(0, SIGN_TEXT_MAX);
-      const item: LandscapeItem = { id: this.landscapeIds.take(), kind, x: on.x, y: on.y,
+      const item: LandscapeItem = { id: this.takeId('landscape', on, this.landscapeIds), kind, x: on.x, y: on.y,
         ...(extra.signType ? { signType: extra.signType } : {}), ...(text ? { text } : {}),
         ...(extra.planted !== undefined && Number.isFinite(extra.planted) ? { planted: extra.planted } : {}) };
       this.putLandscapeRecord(item);
@@ -680,8 +686,8 @@ export class RoadDoc {
 
   /** Adds a node, ON THE MAP. */
   addNode(p: Vec2, heightOffset = 0, smooth = false): RoadNode {
-    const at = clampToMap(p);
-    const id = asNodeId(this.nodeIds.take());
+    const at = onWorld(p);
+    const id = asNodeId(this.takeId('node', at, this.nodeIds));
     const n: RoadNode = { id, x: at.x, y: at.y, heightOffset, smooth,
       incident: [], control: 'auto', blockedMovements: [] };
     this.nodes.set(id, n);
@@ -716,7 +722,8 @@ export class RoadDoc {
     if (!this.nodes.has(a) || !this.nodes.has(b)) return null;
     const authoredSection = normalizeRoadSection(section);
     const authoredParking = normalizeParking(parking);
-    const id = asSegmentId(this.segIds.take());
+    const na = this.nodes.get(a)!, nb = this.nodes.get(b)!;
+    const id = asSegmentId(this.takeId('segment', { x: (na.x + nb.x) / 2, y: (na.y + nb.y) / 2 }, this.segIds));
     const s: RoadSegment = {
       id, a, b, curve, type, dashOrigin, direction,
       lanes: normaliseLaneCount(lanes, direction),
@@ -833,7 +840,7 @@ export class RoadDoc {
     const was = this.nodes.get(id);
     if (!was) return false;
     // Dragging a node off the plate is the same offence as building one there, and is caught in the same place.
-    const p = clampToMap(to);
+    const p = onWorld(to);
     if (was.x === p.x && was.y === p.y) return true;
 
     // DO NOT write only the rectangle after the move: whatever is derived where the node was
@@ -1353,12 +1360,252 @@ export class RoadDoc {
     if (traffic) this.changes.record('traffic', rects, { ...extra, parent: roads });
   }
 
+  // ------------------------------------------------------------ tiles (CLAUDE.md, "Streaming world")
+
+  /** The tiles in this document (the active region, CLAUDE.md "Streaming world"): the page holds the tiles near the camera, never the world. */
+  private tileContents = new Set<number>();
+  /** Each loaded tile's next ids, by kind (`TileRecords.next`): a record made in a tile takes its id from the tile's range. */
+  private tileNext = new Map<number, TileNext>();
+
+  /** The tiles in this document now. */
+  get loadedTiles(): ReadonlySet<number> {
+    return this.tileContents;
+  }
+
+  /** Whether a tile is in this document. */
+  hasTile(key: number): boolean {
+    return this.tileContents.has(key);
+  }
+
+  /** A new record's id: from the range of the loaded tile it stands in (`tileIdBase`), so it never meets an id of a tile not on the page; a map's own allocator where no tile is loaded (a map from before the tiles). */
+  private takeId(kind: keyof TileNext, at: { readonly x: number; readonly y: number }, legacy: IdAllocator): number {
+    const key = OWNER.at(at);
+    const next = this.tileContents.has(key) ? this.tileNext.get(key) : undefined;
+    if (!next) return legacy.take();
+    const id = next[kind]++;
+    if (id >= tileIdBase(key) + TILE_COUNTED) throw new Error(`tile ${key} has no ${kind} id left`);
+    return id;
+  }
+
+  /** The id a building or a lot made at a place takes (`BuildingStore`, `LotStore`): a loaded tile's, or null for the store's own allocator. */
+  tileIdAt(kind: 'building' | 'lot', at: { readonly x: number; readonly y: number }): number | null {
+    const key = OWNER.at(at);
+    const next = this.tileContents.has(key) ? this.tileNext.get(key) : undefined;
+    return next ? next[kind]++ : null;
+  }
+
+  /** A tile's records put in (`world/tiles.ts` TileRecords): read and checked as a map is (`fromJSON`), moved in, one diary entry per kind with the tile's square and the ids (cause `TILE_LOADED`)
+   *  - its roads join the nodes already here (a neighbour's on the edge), its borrowed ends come in only while their own tile is not here. Never during an edit (`beginEdit`). */
+  loadTile(records: TileRecords): void {
+    if (this.tileContents.has(records.key)) return;
+    if (this.recorder) throw new Error('a tile cannot come in during an edit');
+    const owned = new Set(records.nodes.map((n) => n.id));
+    const ownedPoles = new Set(records.poles.map((p) => p.id));
+    const piece = RoadDoc.fromJSON({
+      version: 1, unit: METERS_PER_UNIT,
+      nodes: [...records.nodes, ...records.borrowedNodes.filter((n) => !owned.has(n.id))],
+      segments: records.segments,
+      poles: [...records.poles, ...records.borrowedPoles.filter((p) => !ownedPoles.has(p.id))],
+      poleSpans: records.poleSpans, landscape: records.landscape, barriers: records.barriers,
+      paint: records.paint, trees: records.trees, elements: records.elements,
+      buildings: records.buildings as NonNullable<SerializedDoc['buildings']>, lots: records.lots, lotKeys: records.lotKeys,
+    }, { repair: false });
+    const { i, j } = tileOfKey(records.key);
+    const square = tileRect(i, j);
+    const tile = { nodes: [] as NodeId[], borrowedNodes: [] as NodeId[], segments: [] as SegmentId[] };
+    const cause = this.changes.cause;
+    this.changes.causeNext(TILE_LOADED);
+    const roadIds: number[] = [];
+    const rects: ChangeRect[] = [square];
+    // The nodes: an owner's record takes the place of a borrowed copy (its incident roads kept); a borrowed one comes in only if absent.
+    for (const [id, node] of piece.nodes) {
+      const here = this.nodes.get(id);
+      if (owned.has(id)) {
+        tile.nodes.push(id);
+        this.nodes.set(id, { ...node, incident: here ? here.incident : [] });
+      } else {
+        tile.borrowedNodes.push(id);
+        if (here) continue;
+        this.nodes.set(id, { ...node, incident: [] });
+      }
+      roadIds.push(id);
+      const r = this.nodeRect(id);
+      if (r) rects.push(r);
+    }
+    for (const [id, segment] of piece.segments) {
+      if (this.segments.has(id)) continue;
+      this.segments.set(id, segment);
+      this.nodeToWrite(segment.a)!.incident.push(id);
+      this.nodeToWrite(segment.b)!.incident.push(id);
+      tile.segments.push(id);
+      roadIds.push(id);
+    }
+    for (const id of [...tile.nodes, ...tile.borrowedNodes]) if (this.requireNode(id).incident.length === 0) this.loose.add(id);
+    if (roadIds.length) this.roadsChanged(rects, true, { ids: roadIds, detail: 'tile' });
+    // The utilities: borrowed poles as the nodes.
+    const utilityIds: number[] = [];
+    for (const [id, pole] of piece.poleMap) {
+      if (ownedPoles.has(id) || !this.poleMap.has(id)) { this.putPoleRecord(pole); utilityIds.push(id); }
+    }
+    for (const [id, span] of piece.spanMap) {
+      if (this.spanMap.has(id)) continue;
+      this.putSpanRecord(span);
+      utilityIds.push(id);
+    }
+    if (utilityIds.length) this.changes.record('utilities', [square], { ids: utilityIds });
+    for (const item of piece.landscapeMap.values()) this.putLandscapeRecord(item);
+    if (piece.landscapeMap.size) this.changes.record('landscape', [square], { ids: [...piece.landscapeMap.keys()] });
+    for (const barrier of piece.barrierMap.values()) this.putBarrierRecord(barrier);
+    if (piece.barrierMap.size) this.changes.record('barriers', [square], { ids: [...piece.barrierMap.keys()] });
+    // The buildings and the lots, each in one entry of its own store.
+    const buildings = [...piece.buildings.all()];
+    this.buildings.placeAll(buildings);
+    const lots = [...piece.lotStore.all()];
+    this.lotStore.restore(lots.map((lot) => ({ id: lot.id, value: lot })), TILE_LOADED);
+    this.lotStore.addKeys(records.lotKeys, records.lotKeys.map(() => square), TILE_LOADED);
+    // The lists: put after the rest, each item kept to be found again.
+    if (piece.terrainPaint.length) { this.ownList('terrainPaint'); for (const dab of piece.terrainPaint) this.terrainPaint.push(dab); this.changes.record('paint', [square]); }
+    if (piece.trees.length) {
+      this.ownList('trees');
+      for (const t of piece.trees) { this.trees.push(t); this.treeGrid?.add(t); }
+      this.changes.record('trees', [square]);
+    }
+    if (piece.elements.length) {
+      this.ownList('elements');
+      for (const e of piece.elements) { this.elements.push(e); this.elementGrid?.add(e); }
+      this.changes.record('elements', [square]);
+    }
+    this.tileContents.add(records.key);
+    this.tileNext.set(records.key, { ...records.next });
+    this.changes.causeNext(cause);
+  }
+
+  /** What a tile holds now, by `OWNER` (what the player added or moved there included): read off the page's document, which holds the active region only, so bounded by it, never by the world */
+  private tileMembers(key: number): TileMembers {
+    const { i, j } = tileOfKey(key);
+    const square = tileRect(i, j);
+    const mine = (p: { readonly x: number; readonly y: number }): boolean => OWNER.at(p) === key;
+    const nodes: RoadNode[] = [], segments: RoadSegment[] = [], borrowed = new Map<NodeId, RoadNode>();
+    for (const node of this.nodes.values()) if (OWNER.node(node) === key) nodes.push(node);
+    for (const s of this.segments.values()) {
+      const a = this.nodes.get(s.a), b = this.nodes.get(s.b);
+      if (!a || !b || OWNER.segment(a, b) !== key) continue;
+      segments.push(s);
+      for (const end of [a, b]) if (OWNER.node(end) !== key) borrowed.set(end.id, end);
+    }
+    const poles = this.polesIn(square).filter(mine);
+    const spans: UtilitySpan[] = [];
+    const borrowedPoles = new Map<PoleId, UtilityPole>();
+    for (const pole of poles) {
+      for (const span of this.spansAt(pole.id)) {
+        if (span.a !== pole.id) continue;
+        spans.push(span);
+        const other = this.poleMap.get(span.b);
+        if (other && !mine(other)) borrowedPoles.set(other.id, other);
+      }
+    }
+    return {
+      square, nodes, segments, borrowedNodes: [...borrowed.values()], poles, borrowedPoles: [...borrowedPoles.values()], spans,
+      landscape: this.landscapeIn(square).filter(mine),
+      barriers: this.barriersIn(square).filter((b) => b.points.length > 0 && mine(b.points[0]!)),
+      buildings: this.buildings.near(square[0], square[1], square[2], square[3]).filter(mine),
+      lots: this.lotStore.in(square).filter((lot) => mine(lotCentre(lot))),
+      lotKeys: this.lotStore.keys.filter((k) => { const at = lotKeyPlace(k); return at !== null && mine(at); }),
+      paint: this.terrainPaint.filter(mine),
+      trees: this.treesIn(square).filter(mine),
+      elements: this.elementsIn(square).filter(mine),
+    };
+  }
+
+  /** A tile as the store keeps it (`world/tiles.ts` TileRecords), from what the page's document holds of it now: written when it changed, before it goes out. */
+  tileRecords(key: number, version: number): TileRecords {
+    const t = this.tileMembers(key);
+    const next = this.tileNext.get(key) ?? freshTileNext(key);
+    return {
+      key, version,
+      nodes: t.nodes.map(savedNode), borrowedNodes: t.borrowedNodes.map(savedNode), segments: t.segments.map(savedSegment),
+      poles: t.poles.map(savedPole), borrowedPoles: t.borrowedPoles.map(savedPole), poleSpans: t.spans.map(savedSpan),
+      buildings: t.buildings.map((b) => cloneBuilding(b)),
+      lots: t.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) })),
+      lotKeys: [...t.lotKeys],
+      landscape: t.landscape.map(savedLandscape), barriers: t.barriers.map(savedBarrier),
+      paint: t.paint.map((dab) => ({ ...dab })), trees: t.trees.map((tree) => ({ ...tree })), elements: t.elements.map((e) => ({ ...e })),
+      next: { ...next },
+    };
+  }
+
+  /** A tile taken out of the page's document (cause `TILE_UNLOADED`): what it holds now (`tileMembers`); a node at its edge stays while a road of a tile still here ends on it */
+  unloadTile(key: number): void {
+    if (!this.tileContents.has(key)) return;
+    if (this.recorder) throw new Error('a tile cannot go out during an edit');
+    const t = this.tileMembers(key);
+    this.tileContents.delete(key);
+    const cause = this.changes.cause;
+    this.changes.causeNext(TILE_UNLOADED);
+    const roadIds: number[] = [];
+    const rects: ChangeRect[] = [t.square];
+    for (const s of t.segments) {
+      const r = this.segmentRect(s.id);
+      if (r) rects.push(r);
+      detach(this.nodeToWrite(s.a), s.id);
+      detach(this.nodeToWrite(s.b), s.id);
+      this.segments.delete(s.id);
+      roadIds.push(s.id);
+    }
+    // A node goes once no road here ends on it and the tile it belongs to is not here (its own tile's, or one borrowed).
+    for (const node of [...t.nodes, ...t.borrowedNodes]) {
+      if (node.incident.length > 0) continue;
+      const owner = OWNER.node(node);
+      if (owner !== key && this.tileContents.has(owner)) continue;
+      const r = this.nodeRect(node.id);
+      if (r) rects.push(r);
+      this.nodes.delete(node.id);
+      roadIds.push(node.id);
+    }
+    if (roadIds.length) this.roadsChanged(rects, true, { ids: roadIds, detail: 'tile' });
+    const utilityIds: number[] = [];
+    for (const span of t.spans) { this.deleteSpanRecord(span.id); utilityIds.push(span.id); }
+    for (const pole of [...t.poles, ...t.borrowedPoles]) {
+      if (this.spansAt(pole.id).length > 0) continue;
+      const owner = OWNER.at(pole);
+      if (owner !== key && this.tileContents.has(owner)) continue;
+      this.deletePoleRecord(pole.id);
+      utilityIds.push(pole.id);
+    }
+    if (utilityIds.length) this.changes.record('utilities', [t.square], { ids: utilityIds });
+    for (const item of t.landscape) this.deleteLandscapeRecord(item.id);
+    if (t.landscape.length) this.changes.record('landscape', [t.square], { ids: t.landscape.map((x) => x.id) });
+    for (const b of t.barriers) this.deleteBarrierRecord(b.id);
+    if (t.barriers.length) this.changes.record('barriers', [t.square], { ids: t.barriers.map((x) => x.id) });
+    this.buildings.dropAll(t.buildings.map((b) => b.id));
+    this.lotStore.restore(t.lots.map((lot) => ({ id: lot.id, value: undefined })), TILE_UNLOADED);
+    this.lotStore.dropKeys(t.lotKeys, t.square, TILE_UNLOADED);
+    const without = <T>(part: DocListPart, list: T[], gone: readonly T[], kind: 'paint' | 'trees' | 'elements'): void => {
+      if (!gone.length) return;
+      this.ownList(part);
+      const set = new Set<T>(gone);
+      let k = 0;
+      for (const item of list) if (!set.has(item)) list[k++] = item;
+      list.length = k;
+      this.changes.record(kind, [t.square]);
+    };
+    without('terrainPaint', this.terrainPaint, t.paint, 'paint');
+    for (const tree of t.trees) this.treeGrid?.remove(tree);
+    without('trees', this.trees, t.trees, 'trees');
+    for (const e of t.elements) this.elementGrid?.remove(e);
+    without('elements', this.elements, t.elements, 'elements');
+    this.changes.causeNext(cause);
+  }
+
   // ------------------------------------------------------------ working copy
 
   /** DO NOT go back to copying the document for an edit (CLAUDE.md, "Rebuilding everything when one part changes"). */
   fork(): RoadDoc {
     const copy = new RoadDoc();
     this.layOver(copy);
+    // The same tiles, and the same counters: an id a draft took is never handed out again, kept or not.
+    copy.tileContents = this.tileContents;
+    copy.tileNext = this.tileNext;
     return copy;
   }
 
@@ -2141,7 +2388,7 @@ export class RoadDoc {
       }
       const id = asNodeId(n.id);
       // Nothing may leave the map (`addNode`/`moveNode` clamp); a file can.
-      const at = repair ? clampToMap(n) : n;
+      const at = repair ? onWorld(n) : n;
       const node: RoadNode = {
         id, x: at.x, y: at.y, heightOffset, smooth: n.smooth ?? false,
         incident: [], control: n.control ?? 'auto',
@@ -2266,7 +2513,7 @@ export class RoadDoc {
     // The utility network, if the map has one.
     for (const p of data.poles ?? []) {
       const id = asPoleId(p.id);
-      const at = repair ? clampToMap(p) : p;
+      const at = repair ? onWorld(p) : p;
       doc.putPoleRecord({ id, x: at.x, y: at.y, lamp: p.lamp ?? false });
       doc.poleIds.reserve(p.id);
     }
@@ -2287,7 +2534,7 @@ export class RoadDoc {
     // The player's landscaping, if the map has any; anything malformed is dropped.
     for (const raw of data.landscape ?? []) {
       if (!isLandscapeKind(raw?.kind) || !Number.isFinite(raw.x) || !Number.isFinite(raw.y) || !Number.isInteger(raw.id)) continue;
-      const at = repair ? clampToMap(raw) : { x: raw.x, y: raw.y };
+      const at = repair ? onWorld(raw) : { x: raw.x, y: raw.y };
       doc.putLandscapeRecord({ id: raw.id, kind: raw.kind, x: at.x, y: at.y,
         ...(isSignType(raw.signType) ? { signType: raw.signType } : {}),
         ...(typeof raw.text === 'string' && raw.text ? { text: raw.text.slice(0, SIGN_TEXT_MAX) } : {}),
@@ -2298,7 +2545,7 @@ export class RoadDoc {
     for (const raw of data.barriers ?? []) {
       if (!isBarrierKind(raw.kind) || !Array.isArray(raw.points)) continue;
       const points = raw.points.filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
-        .map((p) => (repair ? clampToMap(p) : { x: p.x, y: p.y }));
+        .map((p) => (repair ? onWorld(p) : { x: p.x, y: p.y }));
       if (points.length < 2) continue;
       doc.putBarrierRecord({ id: raw.id, kind: raw.kind, points });
       doc.barrierIds.reserve(raw.id);
@@ -2417,6 +2664,43 @@ export const LIST_KINDS: Readonly<Record<ListPart, DocChangeKind>> = {
   treeClearings: 'clearings', elements: 'elements', zones: 'zones', zoneMarks: 'zones', lotKeys: 'lotKeys', people: 'people',
 };
 /** What undo or redo puts back: records (undefined: none), stretches of lists (`splice`), values. */
+/** What a tile holds in the page's document now (`RoadDoc.tileMembers`). */
+interface TileMembers {
+  readonly square: ChangeRect;
+  readonly nodes: RoadNode[];
+  readonly borrowedNodes: RoadNode[];
+  readonly segments: RoadSegment[];
+  readonly poles: UtilityPole[];
+  readonly borrowedPoles: UtilityPole[];
+  readonly spans: UtilitySpan[];
+  readonly landscape: LandscapeItem[];
+  readonly barriers: Barrier[];
+  readonly buildings: Building[];
+  readonly lots: Lot[];
+  readonly lotKeys: string[];
+  readonly paint: PaintDab[];
+  readonly trees: PlantedTree[];
+  readonly elements: ElementItem[];
+}
+
+/** A tile's next ids, by kind (`TileRecords.next`). */
+type TileNext = { -readonly [K in keyof TileRecords['next']]: number };
+
+/** A tile never written yet counts from the start of its range. */
+const freshTileNext = (key: number): TileNext => {
+  const base = tileIdBase(key);
+  return { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base };
+};
+
+/** A place on the world, copied: the world has no edge to hold it to (CLAUDE.md, "Streaming world"). */
+const onWorld = (p: { readonly x: number; readonly y: number }): { x: number; y: number } => ({ x: p.x, y: p.y });
+
+/** Where a lot key says its land lies (`lots.ts` keys: `b:` a block's middle, `s:` a strip's, in steps of 4 m). */
+function lotKeyPlace(key: string): { x: number; y: number } | null {
+  const [x, y] = key.slice(2).split(',').map(Number);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x: x! * m(4), y: y! * m(4) } : null;
+}
+
 export interface Restoration {
   readonly records: readonly { readonly part: RecordPart; readonly id: number; readonly value: unknown }[];
   /** The whole map, when the edit replaced it whole (`RoadDoc.replaceWith`): put back as it is, nothing else. */

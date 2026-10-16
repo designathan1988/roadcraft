@@ -115,9 +115,12 @@ export class BuildingStore {
     return asBuildingId(this.ids.peek);
   }
 
+  /** The id a building made at a place takes from its loaded tile's range (`RoadDoc.tileIdAt`); null: this store's allocator. */
+  idAt: ((at: { readonly x: number; readonly y: number }) => number | null) | null = null;
+
   /** @perItem Stores a new building under a fresh id. */
   add(value: Omit<Building, 'id'>): Building {
-    const id = asBuildingId(this.ids.take());
+    const id = asBuildingId(this.idAt?.(value) ?? this.ids.take());
     const building = settleBuilding({ ...value, id } as Building, this.settled);
     this.leaveBelow();
     this.items.set(id, building);
@@ -167,6 +170,34 @@ export class BuildingStore {
     if (was) this.grid?.update(now); else this.grid?.insert(now);
     this.ids.reserve(id);
     this.changed(was ? [was, now] : [now], 'restored');
+  }
+
+  /** A tile's buildings put in the page's document, or taken out (`RoadDoc.loadTile`): one diary entry for all of them. */
+  placeAll(list: readonly Building[]): void {
+    const placed: Building[] = [];
+    this.leaveBelow();
+    for (const value of list) {
+      if (this.items.has(value.id)) continue;
+      const now = settleBuilding(value, this.settled, undefined);
+      this.items.set(now.id, now);
+      this.grid?.insert(now);
+      placed.push(now);
+    }
+    if (placed.length) this.changed(placed, 'tile');
+  }
+
+  /** The buildings of a tile taken out of the page's document (`RoadDoc.unloadTile`): one diary entry. */
+  dropAll(ids: readonly BuildingId[]): void {
+    const gone: Building[] = [];
+    this.leaveBelow();
+    for (const id of ids) {
+      const was = this.items.get(id);
+      if (!was) continue;
+      this.items.delete(id);
+      this.grid?.delete(id);
+      gone.push(was);
+    }
+    if (gone.length) this.changed(gone, 'tile');
   }
 
   /** The id the allocator hands out next, set back by undo. */
