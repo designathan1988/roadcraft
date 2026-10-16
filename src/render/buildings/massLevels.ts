@@ -39,11 +39,15 @@ export class MassLevels {
   /** Each cell's entries as last asked for its masses (`layer.ts` `askMass`): what its tile and plate are made of. */
   private readonly entries = new Map<string, readonly CellEntry[]>();
   private readonly dirty = new Set<string>();
+  /** Tiles changed and not asked: no view wants them yet (their plate stands for them, `wanted`). */
+  private readonly stale = new Set<string>();
   /** Each level's job asked and not answered. */
   private readonly asked = new Map<string, number>();
 
-  /** `land`: a level's masses come (null: none of its buildings has any); `remove`: a level with no building left. */
-  constructor(private readonly pool: CellPool, private readonly land: (key: string, mass: CellMass | null) => void, private readonly remove: (key: string) => void) {}
+  /** `land`: a level's masses come (null: none of its buildings has any); `remove`: a level with no building left; `plan`: a level that has buildings (its place known before its masses);
+   *  `wanted`: whether a tile is wanted now (its plate refined for the view) - DO NOT ask every tile of the map: a plate stands for them from afar (Cesium asks a tile's children only when it refines). */
+  constructor(private readonly pool: CellPool, private readonly land: (key: string, mass: CellMass | null) => void, private readonly remove: (key: string) => void,
+    private readonly plan: (key: string) => void, private readonly wanted: (key: string) => boolean) {}
 
   /** A cell's buildings asked again (`entries`), or gone (null): its tile and plate to be asked again at `flush`. */
   touch(cell: string, entries: readonly CellEntry[] | null): void {
@@ -57,30 +61,64 @@ export class MassLevels {
     this.dirty.add(plateOf(i, j));
   }
 
-  /** Every level touched asked once, made of its cells' entries; a level with none left removed. */
+  /** Every plate touched asked once, made of its cells' entries; a tile touched asked once it is wanted (`pump`); a level with none left removed. */
   flush(env: CellEnv): void {
     for (const key of this.dirty) {
-      const { level, i0, j0, n } = levelCells(key);
-      const list: CellEntry[] = [];
-      for (let i = i0; i < i0 + n; i++) {
-        for (let j = j0; j < j0 + n; j++) {
-          const some = this.entries.get(`${i},${j}`);
-          if (some) for (const e of some) list.push(e);
-        }
+      const list = this.listOf(key);
+      if (list.length === 0) {
+        const was = this.asked.get(key);
+        if (was !== undefined) { this.pool.cancel(was); this.asked.delete(key); }
+        this.stale.delete(key);
+        this.remove(key);
+        continue;
       }
-      const was = this.asked.get(key);
-      if (was !== undefined) { this.pool.cancel(was); this.asked.delete(key); }
-      if (list.length === 0) { this.remove(key); continue; }
-      const kind = KIND[level];
-      // DO NOT read `id` in the answer before it is given: on the page the answer comes inside `run`.
-      let id = -1;
-      id = this.pool.run(kind, key, list, env, (result) => {
-        if (this.asked.get(key) === id) this.asked.delete(key);
-        this.land(key, result.mass ?? null);
-      }, `${kind}|${key}`);
-      if (this.pool.isRunning(id)) this.asked.set(key, id);
+      this.plan(key);
+      if (key[0] === 'p' || this.wanted(key)) this.ask(key, list, env);
+      else {
+        // Its old masses, if any, are no longer its buildings': asked again once a view wants it.
+        const was = this.asked.get(key);
+        if (was !== undefined) { this.pool.cancel(was); this.asked.delete(key); }
+        this.stale.add(key);
+      }
     }
     this.dirty.clear();
+  }
+
+  /** The tiles changed since last asked that a view now wants (a plate refined): asked (each frame, `layer.ts`; as many as tiles changed, never the map). */
+  pump(env: CellEnv): void {
+    for (const key of this.stale) {
+      if (!this.wanted(key)) continue;
+      this.stale.delete(key);
+      const list = this.listOf(key);
+      if (list.length) this.ask(key, list, env);
+    }
+  }
+
+  /** A level's buildings, its cells' in order. */
+  private listOf(key: string): CellEntry[] {
+    const { i0, j0, n } = levelCells(key);
+    const list: CellEntry[] = [];
+    for (let i = i0; i < i0 + n; i++) {
+      for (let j = j0; j < j0 + n; j++) {
+        const some = this.entries.get(`${i},${j}`);
+        if (some) for (const e of some) list.push(e);
+      }
+    }
+    return list;
+  }
+
+  /** A level asked of the workers, the older ask of it cancelled. */
+  private ask(key: string, list: readonly CellEntry[], env: CellEnv): void {
+    const was = this.asked.get(key);
+    if (was !== undefined) { this.pool.cancel(was); this.asked.delete(key); }
+    const kind = KIND[levelCells(key).level];
+    // DO NOT read `id` in the answer before it is given: on the page the answer comes inside `run`.
+    let id = -1;
+    id = this.pool.run(kind, key, list, env, (result) => {
+      if (this.asked.get(key) === id) this.asked.delete(key);
+      this.land(key, result.mass ?? null);
+    }, `${kind}|${key}`);
+    if (this.pool.isRunning(id)) this.asked.set(key, id);
   }
 
   /** Levels asked and not come. */
@@ -94,5 +132,6 @@ export class MassLevels {
     this.asked.clear();
     this.entries.clear();
     this.dirty.clear();
+    this.stale.clear();
   }
 }

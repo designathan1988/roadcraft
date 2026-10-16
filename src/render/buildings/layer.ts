@@ -250,7 +250,23 @@ export function createBuildingLayer(): BuildingLayer {
   pool.warm();
   const requests = new CellRequests(pool, kit, keep);
   /** The tiles' (L2) and plates' (L3) masses, asked again only where a cell's buildings changed (`massLevels.ts`). */
-  const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key));
+  const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key),
+    (key) => massCells.planLevel(key), (key) => massCells.wanted(key));
+  /** Each cell's buildings as last filed (`askMass`), and as last asked of the workers for its own masses: asked only while the view draws the cell one by one (`askExposed`). */
+  const massEntries = new Map<string, readonly CellEntry[]>();
+  const massAsked = new Map<string, readonly CellEntry[]>();
+  /** DO NOT ask every cell's masses of the map at the opening: only the cells the view draws one by one (their tile refined, `massCells.exposedCells`), their plate or tile standing for the rest */
+  const askExposed = (env: CellEnv): void => {
+    for (const cell of massCells.exposedCells()) {
+      const entries = massEntries.get(cell);
+      if (!entries || massAsked.get(cell) === entries) continue;
+      massAsked.set(cell, entries);
+      requests.mass(cell, entries, env, (mass) => {
+        massCells.land(cell, mass);
+        chooseNow();
+      });
+    }
+  };
   /** The far buildings flying a flag not emitted yet: their summaries asked of the workers in the frames' spare slices */
   let backlog: Building[] = [];
   /** The buildings shown, as last put together (`update`): the flags are read from what is kept of them. */
@@ -264,21 +280,18 @@ export function createBuildingLayer(): BuildingLayer {
   /** The buildings by coarse cell whose masses stand for them from afar: the shown ones (`update`), the faded included. */
   let massTown = new Map<string, Building[]>();
   /** DO NOT mass the buildings on the page */
-  const askMass = (cell: string, env: CellEnv, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): void => {
+  const askMass = (cell: string, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): void => {
     const list = massTown.get(cell);
-    if (!list?.length) { requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null); return; }
+    if (!list?.length) { requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null); massEntries.delete(cell); massAsked.delete(cell); return; }
     massCells.plan(cell);
     const entries = list.map((b): CellEntry => {
       const sig = sigOf(b);
       sent.set(String(b.id), b);
       return { key: String(b.id), sig, digest: digestFor(b, sig, groundKey, groundAt, pavedAt) };
     });
-    // Its tile and plate asked again once every cell changed is touched (`levels.flush`).
+    // Its tile and plate asked again once every cell changed is touched (`levels.flush`); its own masses once the view draws it alone (`askExposed`).
     levels.touch(cell, entries);
-    requests.mass(cell, entries, env, (mass) => {
-      massCells.land(cell, mass);
-      chooseNow();
-    });
+    massEntries.set(cell, entries);
   };
   /** The cells a cut-open view reaches */
   const cutCellsOf = (doc: RoadDoc, spec: CutawaySpec | null): Set<string> => {
@@ -410,7 +423,8 @@ export function createBuildingLayer(): BuildingLayer {
       return Math.max(massCells.top(), signatures.top(), ghostTop, soloTop);
     },
     get pending() {
-      return pendingCells.size > 0 || requests.massing > 0 || levels.asking > 0;
+      // What the view draws, not the whole map: the cells near, the cells drawn one by one, the tiles and plates standing for the rest.
+      return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0;
     },
     hidden: false,
     kit,
@@ -461,7 +475,7 @@ export function createBuildingLayer(): BuildingLayer {
           cutCells = cutCellsOf(doc, cutaway);
           forcedNear = forcedCells(doc);
           // Some buildings changed: their cells' masses asked again and their detail made again, each shown as it lands
-          for (const cell of dirty) { askMass(cell, env, groundAt, groundKey, pavedAt); pendingCells.add(cell); }
+          for (const cell of dirty) { askMass(cell, groundAt, groundKey, pavedAt); pendingCells.add(cell); }
           levels.flush(env);
           chooseNow();
           for (const id of ids) {
@@ -492,8 +506,8 @@ export function createBuildingLayer(): BuildingLayer {
           [townSeen, townDoc] = [doc.changes.version, doc];
           // The far level: every cell's masses asked, the cells with no building left gone.
           massTown = town.byCell;
-          for (const cell of [...massCells.keys()]) if (!massTown.has(cell)) askMass(cell, env, groundAt, groundKey, pavedAt);
-          for (const cell of massTown.keys()) askMass(cell, env, groundAt, groundKey, pavedAt);
+          for (const cell of [...massCells.keys()]) if (!massTown.has(cell)) askMass(cell, groundAt, groundKey, pavedAt);
+          for (const cell of massTown.keys()) askMass(cell, groundAt, groundKey, pavedAt);
           levels.flush(env);
           cutCells = cutCellsOf(doc, cutaway);
           forcedNear = forcedCells(doc);
@@ -552,6 +566,9 @@ export function createBuildingLayer(): BuildingLayer {
         rebuilt = true;
         keepToBudget();
       }
+      // The tiles and cells the view refined to since: their masses asked (top down, `massLevels.ts`, `askExposed`).
+      levels.pump(env);
+      askExposed(env);
       const left = typeof dimmed === 'number' ? doc.buildings.get(dimmed) : undefined;
       const soloWanted = left && left.id !== hides && !ruined.has(left.id) ? `${sigOf(left)}|${groundKey}` : '';
       if (soloWanted !== soloKey) {
@@ -672,6 +689,8 @@ export function createBuildingLayer(): BuildingLayer {
       partRoot.clear();
       // The masses too, the tiles' and plates' with them: asked again whole by the next update.
       levels.clear();
+      massEntries.clear();
+      massAsked.clear();
       massCells.dispose();
       storedKey = '';
       townDoc = null;
@@ -679,6 +698,8 @@ export function createBuildingLayer(): BuildingLayer {
     dispose() {
       requests.clear();
       levels.clear();
+      massEntries.clear();
+      massAsked.clear();
       pool.dispose();
       flagLayer.dispose();
       massCells.dispose();

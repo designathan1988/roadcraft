@@ -169,7 +169,7 @@ describe('the tiles and plates asked of the workers', () => {
   it('a change in one cell asks again its tile and its plate only, once for every cell touched', () => {
     const { pool, asked, answer } = fakePool();
     const landed: string[] = [], removed: string[] = [];
-    const levels = new MassLevels(pool, (key) => landed.push(key), (key) => removed.push(key));
+    const levels = new MassLevels(pool, (key) => landed.push(key), (key) => removed.push(key), () => {}, () => true);
     levels.touch('0,0', entries('a', 'b'));
     levels.touch('1,1', entries('c'));
     levels.touch('5,0', entries('d'));
@@ -204,5 +204,28 @@ describe('the tiles and plates asked of the workers', () => {
     expect(asked).toEqual([]);
     expect(removed.sort()).toEqual(['p:1,0', 't:1,0']);
     expect(levels.asking).toBe(0);
+  });
+
+  it('asks a tile only once the view wants it (its plate refined), and every plate at once', () => {
+    const { pool, asked, answer } = fakePool();
+    const planned: string[] = [];
+    const wanted = new Set<string>();
+    const levels = new MassLevels(pool, () => {}, () => {}, (key) => planned.push(key), (key) => wanted.has(key));
+    levels.touch('0,0', entries('a'));
+    levels.touch('5,0', entries('b'));
+    levels.flush(env);
+    // The plates asked, the tiles only planned: a plate stands for them from afar.
+    expect(asked.map((a) => a.key).sort()).toEqual(['p:0,0', 'p:1,0']);
+    expect(planned.sort()).toEqual(['p:0,0', 'p:1,0', 't:0,0', 't:1,0']);
+    answer();
+    asked.length = 0;
+    levels.pump(env);
+    expect(asked).toEqual([]);
+    // The eye comes near one plate: its tile asked, the other still not.
+    wanted.add('t:0,0');
+    levels.pump(env);
+    expect(asked.map((a) => a.key)).toEqual(['t:0,0']);
+    levels.pump(env);
+    expect(asked.length).toBe(1);
   });
 });

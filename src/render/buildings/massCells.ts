@@ -6,6 +6,7 @@ import type { CellMass } from './cellArrays';
 import type { BuildingKit } from './kit';
 import { FLAT_DEPTH } from './buildingMesh';
 import { cellIndex, levelCells, plateOf, TILE_CELLS, tileOf } from './massLevels';
+import { PLATE_DETAIL, TILE_DETAIL } from './massing';
 
 /** THE BUILDINGS' FAR LEVEL, cell by cell: each cell of the buildings' grid */
 /** Above the cells, a tile (L2, 16 cells) and a plate (L3, 64 cells) of masses, one mesh each, chosen as Cesium's HLOD does (`massLevels.ts`) */
@@ -54,6 +55,14 @@ interface Level {
   coarse: boolean;
   /** A plate's four tiles' keys (none for a tile). */
   readonly tiles: readonly string[];
+  /** What its level may leave out before its masses come (`massing.ts` `TILE_DETAIL`, `PLATE_DETAIL`): the error the view is judged by meanwhile. */
+  readonly bound: number;
+  /** Its masses came and none of its buildings has any: its children stand for it. */
+  empty: boolean;
+  /** A tile: wanted by the view (its plate refined), so asked of the workers (`massLevels.ts` `wanted`); a plate always is. */
+  wanted: boolean;
+  /** A tile refined too: its cells drawn one by one, each cell's masses wanted (`exposedCells`). */
+  exposed: boolean;
 }
 
 export interface MassCells {
@@ -68,6 +77,14 @@ export interface MassCells {
   landLevel(key: string, mass: CellMass | null): void;
   /** A tile or a plate with no building left: gone. */
   removeLevel(key: string): void;
+  /** A tile or a plate that has buildings, its masses asked or not yet (`massLevels.ts` `plan`). */
+  planLevel(key: string): void;
+  /** Whether the view wants a tile's masses (its plate refined); a plate's always. */
+  wanted(key: string): boolean;
+  /** The cells drawn one by one now (their tile refined, `choose`): the only cells whose own masses are asked (`layer.ts`). */
+  exposedCells(): Iterable<string>;
+  /** Levels the view would draw and whose masses have not come: the town is not shown whole before they do (`layer.ts` `pending`). */
+  readonly waiting: number;
   /** Whether a tile or a plate is drawn in place of its cells. */
   coarse(key: string): boolean;
   /** Every cell there is (the whole town filed again, `layer.ts`). */
@@ -180,6 +197,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     }
   };
   const levelsOf = (key: string): Map<string, Level> => (key[0] === 't' ? tiles : plates);
+  /** The tiles refined to their cells now (`choose`). */
+  const exposedTiles = new Set<string>();
+  let waiting = 0;
   /** A plate is kept while it has a mesh or a tile of its own: its tiles are found through it (`choose`), so a tile makes its plate. */
   const ensure = (key: string): Level => {
     const map = levelsOf(key);
@@ -188,7 +208,11 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     const { i0, j0, n } = levelCells(key);
     const children: string[] = [];
     if (key[0] === 'p') for (let i = i0; i < i0 + n; i += TILE_CELLS) for (let j = j0; j < j0 + n; j += TILE_CELLS) children.push(tileOf(i, j));
-    level = { key, mesh: null, i0, j0, n, x0: i0 * cellSize, y0: j0 * cellSize, x1: (i0 + n) * cellSize, y1: (j0 + n) * cellSize, top: 0, error: Infinity, coarse: false, tiles: children };
+    const bound = Math.max(FAR_ERROR, (key[0] === 't' ? TILE_DETAIL : PLATE_DETAIL).drop);
+    level = {
+      key, mesh: null, i0, j0, n, x0: i0 * cellSize, y0: j0 * cellSize, x1: (i0 + n) * cellSize, y1: (j0 + n) * cellSize, top: 0, error: Infinity, coarse: false,
+      tiles: children, bound, empty: false, wanted: key[0] === 'p', exposed: false,
+    };
     map.set(key, level);
     if (key[0] === 't') ensure(plateOf(i0, j0));
     return level;
@@ -197,7 +221,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
     setCoarse(level, false);
     if (level.mesh) { dropMesh(level.mesh); level.mesh = null; }
     const plate = level.key[0] === 't' ? plates.get(plateOf(level.i0, level.j0)) : level;
-    if (level !== plate) tiles.delete(level.key);
+    if (level !== plate) { tiles.delete(level.key); exposedTiles.delete(level.key); }
     if (plate && !plate.mesh && !plate.tiles.some((k) => tiles.has(k))) plates.delete(plate.key);
   };
   /** The tiles and plates holding a cell held near (`choose`'s `allNear`): never drawn in its place. */
@@ -269,6 +293,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       const { i0, j0, n } = level;
       Object.assign(level, { x0: i0 * cellSize, y0: j0 * cellSize, x1: (i0 + n) * cellSize, y1: (j0 + n) * cellSize, top: 0, error: Infinity });
       // None of its buildings has a mass: its cells stand for it, whatever the eye says.
+      level.empty = !mass;
       if (!mass) { setCoarse(level, false); return; }
       const mesh = cellMesh(mass, kit, key[0] === 't' ? 'building-massing-tile' : 'building-massing-plate');
       const box = mesh.geometry.boundingBox!;
@@ -286,6 +311,22 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       const level = levelsOf(key).get(key);
       if (level) forget(level);
     },
+    planLevel(key) {
+      ensure(key);
+    },
+    wanted(key) {
+      return key[0] === 'p' || (tiles.get(key)?.wanted ?? false);
+    },
+    *exposedCells() {
+      for (const key of exposedTiles) {
+        const tile = tiles.get(key);
+        if (!tile) continue;
+        for (let i = tile.i0; i < tile.i0 + tile.n; i++) for (let j = tile.j0; j < tile.j0 + tile.n; j++) { const cell = keyOf(i, j); if (cells.has(cell)) yield cell; }
+      }
+    },
+    get waiting() {
+      return waiting;
+    },
     coarse(key) {
       return levelsOf(key).get(key)?.coarse ?? false;
     },
@@ -296,18 +337,28 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
       // THE LEVELS FIRST, from the plates down (Cesium `selectTiles`): a level is drawn in place of its children while what it leaves out spans under the pixels the cells' masses are drawn for
       forcedLevels.clear();
       if (allNear !== true && allNear !== false) for (const key of allNear) { const [i, j] = cellIndex(key); forcedLevels.add(tileOf(i, j)); forcedLevels.add(plateOf(i, j)); }
-      const coarseNow = (level: Level, may: boolean): boolean => {
-        if (!may || !level.mesh || allNear === true || forcedLevels.has(level.key)) return false;
+      /** Whether the view wants a level drawn in place of its children: judged by its error once its masses came, by what its level may leave out before. */
+      const coarseWanted = (level: Level): boolean => {
+        if (level.empty || allNear === true || forcedLevels.has(level.key)) return false;
         measure(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, level.x0, level.y0, level.x1, level.y1, level.top);
         // Refined while its error spans the pixels, down to `HYSTERESIS` of them once refined (as a cell near stays near).
-        return level.error * seen.perMetre < seen.allowed * (level.coarse ? 1 : HYSTERESIS);
+        return (level.mesh ? level.error : level.bound) * seen.perMetre < seen.allowed * (level.coarse ? 1 : HYSTERESIS);
       };
+      // DO NOT ask what a coarser level stands for (Cesium's selection, top down): a plate wanted whole needs neither its tiles nor its cells.
+      waiting = 0;
       for (const plate of plates.values()) {
-        setCoarse(plate, coarseNow(plate, true));
-        // Its tiles only under a plate refined: a plate drawn hides them.
+        const plateWhole = coarseWanted(plate);
+        setCoarse(plate, plateWhole && plate.mesh !== null);
+        if (plateWhole && !plate.mesh) waiting++;
         for (const key of plate.tiles) {
           const tile = tiles.get(key);
-          if (tile) setCoarse(tile, coarseNow(tile, !plate.coarse));
+          if (!tile) continue;
+          tile.wanted = !plateWhole;
+          const tileWhole = !plateWhole && coarseWanted(tile);
+          setCoarse(tile, tileWhole && tile.mesh !== null);
+          if (tileWhole && !tile.mesh) waiting++;
+          tile.exposed = !plateWhole && !tileWhole;
+          if (tile.exposed) exposedTiles.add(key); else exposedTiles.delete(key);
         }
       }
       const decide = (key: string, cell: Cell): void => {
@@ -379,6 +430,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number): MassCells {
         for (const level of map.values()) if (level.mesh) dropMesh(level.mesh);
         map.clear();
       }
+      exposedTiles.clear();
+      waiting = 0;
       highest = -Infinity;
       highestStale = false;
       nearKeys.clear();
