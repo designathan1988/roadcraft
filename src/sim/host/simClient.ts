@@ -1,6 +1,7 @@
 import type { RoadDoc, Restoration, RecordPart, ValuePart } from '@world/doc';
 import { type DocChangeKind, type JournalReader, TILE_LOADED } from '@world/changes';
 import type { NodeId, SegmentId } from '@world/ids';
+import { OWNER, tileOfRecord } from '@world/tiles';
 import type { BuildingId } from '@world/buildings/types';
 import { buildingChangesOf, trafficMapOf } from '../agents/trafficBuildings';
 import { archetypeById, type Archetype } from '../vehicles/archetypes';
@@ -93,6 +94,10 @@ export class SimClient implements JournalReader {
   private tileStore: { readonly map: string; readonly reach: number; readonly port: MessagePort | null } | null = null;
   /** Whether the worker reads the streamed world's tiles itself (`tiles`): a tile's buildings are not worked out here when it comes in. */
   private workerReadsTiles = false;
+  /** THE WORKER'S COPY HOLDS THE ACTIVE REGION ONLY (CLAUDE.md "Streaming world": micro in the active region, meso everywhere from the store's tables): `isActive`, the streamed world's active tiles (`worldStreamer.ts`); null, every tile of the document (a round city). */
+  private isActive: ((key: number) => boolean) | null = null;
+  /** The tiles whose records the worker's copy holds now, while `isActive` is set. */
+  private readonly held = new Set<number>();
   private readonly pending = new Map<number, (value: unknown) => void>();
   private nextAsk = 1;
   /** The panels' last answers by question (`askKey`), each with the page's clock it was last asked at: dropped once nobody asks (`frame`). */
@@ -226,6 +231,7 @@ export class SimClient implements JournalReader {
     this.markSent();
     this.send({ type: 'init', frames: this.frames, map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles], seed, zones, zonesPrefix, ambient });
     this.sendTiles();
+    this.trimToActive();
     return ready;
   }
 
@@ -234,6 +240,7 @@ export class SimClient implements JournalReader {
     this.markSent();
     this.send({ type: 'load', map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles] });
     this.clearViews();
+    this.trimToActive();
   }
 
   /** The streamed world's tile store the worker reads the meso's far tiles from itself (`meso/tileFeed.ts`): by its map's name in IndexedDB, or over `port` (the desktop's store); sent once the worker is up. */
@@ -243,9 +250,81 @@ export class SimClient implements JournalReader {
     this.sendTiles();
   }
 
-  /** A tile of the page taken in, let go or written (`worldStreamer.ts` StreamerEvents): the meso hands its links between the lane graph and the tables. */
+  /** A tile of the page taken in, let go or written (`worldStreamer.ts` StreamerEvents): the meso hands its links between the lane graph and the tables. A tile taken in outside the active region is not the worker's (`setActive`). */
   tile(event: TileEvent, key: number, version = 0): void {
+    if (this.isActive && event === 'loaded') { if (!this.isActive(key)) return; this.held.add(key); }
+    if (this.isActive && event === 'letGo' && !this.held.delete(key)) return;
     this.send({ type: 'tile', event, key, version });
+  }
+
+  /** The streamed world's active tiles: the worker's copy follows them alone (its records, the traffic's buildings, the meso's live tiles); null: every tile of the document. */
+  setActive(isActive: ((key: number) => boolean) | null): void {
+    this.isActive = isActive;
+    if (!isActive) this.held.clear();
+  }
+
+  /** The loaded tiles that came into the active region or left it (`worldStreamer.ts` activeChanged): the worker's copy takes in their roads, lots and buildings, or lets them go to the meso's tables. */
+  activeChanged(keys: readonly number[]): void {
+    if (!this.isActive || !this.worker) return;
+    // The diary up to now first: a tile's records go once, in order.
+    this.sendChanges();
+    for (const key of keys) {
+      const active = this.isActive(key) && this.doc.hasTile(key);
+      if (active === this.held.has(key)) continue;
+      const t = this.doc.tileIds(key);
+      const records: Restoration['records'][number][] = [];
+      if (active) {
+        this.held.add(key);
+        for (const id of [...t.nodes, ...t.borrowedNodes]) records.push({ part: 'nodes', id, value: this.nodeRecord(id) });
+        for (const id of t.segments) records.push({ part: 'segments', id, value: recordOf(this.doc, 'segments', id) });
+        for (const id of t.lots) records.push({ part: 'lots', id, value: recordOf(this.doc, 'lots', id) });
+        // Its buildings: the worker reads the tile's traffic section from the store itself on 'loaded' (`SimHost.tileBuildings`); sent here only when it does not read tiles.
+        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: this.workerReadsTiles ? [] : buildingChangesOf(this.doc, t.buildings) });
+        this.send({ type: 'tile', event: 'loaded', key, version: 0 });
+      } else {
+        this.held.delete(key);
+        this.send({ type: 'tile', event: 'letGo', key, version: 0 });
+        for (const id of t.segments) records.push({ part: 'segments', id, value: undefined });
+        for (const id of t.lots) records.push({ part: 'lots', id, value: undefined });
+        // A node stays while a road of a held tile ends on it (the page keeps a borrowed node the same way, `RoadDoc.unloadTile`), sent again without the roads let go.
+        for (const id of [...t.nodes, ...t.borrowedNodes]) records.push({ part: 'nodes', id, value: this.usedByHeld(id) ? this.nodeRecord(id) : undefined });
+        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: t.buildings.map((id) => ({ id, value: null })) });
+      }
+    }
+  }
+
+  /** A node's record for the worker's copy: among its roads, those of the tiles the worker holds alone (DO NOT send a leg of the kept ring: the worker's junction asks for a road it does not have). */
+  private nodeRecord(id: NodeId): unknown {
+    const node = this.doc.nodes.get(id);
+    if (!node || !this.isActive) return node;
+    const incident = node.incident.filter((sid) => { const t = this.tileOf('segments', sid, this.doc.segments.get(sid)); return t === null || this.held.has(t); });
+    return incident.length === node.incident.length ? node : { ...node, incident };
+  }
+
+  /** Whether a road of a tile the worker holds ends on the node. */
+  private usedByHeld(id: NodeId): boolean {
+    const node = this.doc.nodes.get(id);
+    if (!node) return false;
+    for (const sid of node.incident) { const t = this.tileOf('segments', sid, this.doc.segments.get(sid)); if (t !== null && this.held.has(t)) return true; }
+    return false;
+  }
+
+  /** The tile a record belongs to (`OWNER`): a road's by its ends as the page holds them; null when it cannot be said. */
+  private tileOf(part: RecordPart, id: number, value: unknown): number | null {
+    if (part === 'segments') {
+      const s = value as { readonly a: NodeId; readonly b: NodeId } | undefined;
+      const a = s && this.doc.nodes.get(s.a), b = s && this.doc.nodes.get(s.b);
+      if (a && b) return OWNER.segment(a, b);
+    }
+    return tileOfRecord(part, id, value);
+  }
+
+  /** After the whole map was sent (`start`, `load`): the worker's copy holds every loaded tile; those outside the active region let go. */
+  private trimToActive(): void {
+    if (!this.isActive) return;
+    this.held.clear();
+    for (const key of this.doc.loadedTiles) this.held.add(key);
+    this.activeChanged([...this.doc.loadedTiles]);
   }
 
   private sendTiles(): void {
@@ -392,7 +471,26 @@ export class SimClient implements JournalReader {
       if (e.kind === 'lotKeys') keys = true;
     }
     const records: Restoration['records'][number][] = [];
-    for (const [part, ids] of named) for (const id of ids) records.push({ part, id, value: recordOf(this.doc, part, id) });
+    // The worker's copy holds the active tiles only: a record standing in another tile is not sent (one gone is: harmless); a road sent brings its ends, and a node a held road ends on stays.
+    const keep = (part: RecordPart, id: number, value: unknown): boolean => {
+      if (!this.isActive || value === undefined) return true;
+      const tile = this.tileOf(part, id, value);
+      return tile === null || this.held.has(tile);
+    };
+    const ends = new Set<number>();
+    for (const part of ['segments', 'lots'] as const) {
+      for (const id of named.get(part) ?? []) {
+        const value = recordOf(this.doc, part, id);
+        if (!keep(part, id, value)) continue;
+        records.push({ part, id, value });
+        if (part === 'segments' && value) { const s = value as { readonly a: NodeId; readonly b: NodeId }; ends.add(s.a); ends.add(s.b); }
+      }
+    }
+    for (const id of named.get('nodes') ?? []) {
+      const value = this.nodeRecord(id as NodeId);
+      if (ends.has(id) || keep('nodes', id, value) || this.usedByHeld(id as NodeId)) records.push({ part: 'nodes', id, value });
+    }
+    const buildingList = [...buildings].filter((id) => { const b = this.doc.buildings.get(id); return !b || !this.isActive || this.held.has(OWNER.at(b)); });
     const lists: Restoration['lists'][number][] = [];
     if (keys) {
       const store = this.doc.lotStore, all = store.keys;
@@ -404,7 +502,7 @@ export class SimClient implements JournalReader {
     }
     this.send({
       type: 'delta', delta: { records, lists, values: [...values].map((part) => ({ part, value: this.doc.valueOf(part) })) },
-      buildings: buildingChangesOf(this.doc, buildings),
+      buildings: buildingChangesOf(this.doc, buildingList),
     });
   }
 

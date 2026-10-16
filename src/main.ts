@@ -1,9 +1,9 @@
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { TileStore, portTiles, storeTiles } from '@editor/tileStore';
 import { jobPort } from './jobs/jobPool';
-import { WorldStreamer, tileOfRecord } from './worldStreamer';
+import { WorldStreamer } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
-import { OWNER, tileKey, tileKeyAt } from '@world/tiles';
+import { OWNER, tileKey, tileKeyAt, tileOfRecord } from '@world/tiles';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
 import { mountProfilerHud } from '@ui/profilerHud';
@@ -1952,7 +1952,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
     },
     written: (key, version) => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); },
     // The kept ring's buildings and roads are the far levels' to draw, not the near products' (the solution's 5.4): the layer, the roads and the far levels told when a tile's standing changes.
-    activeChanged: (keys, rects) => { for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); },
+    activeChanged: (keys, rects) => { for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); sim.activeChanged(keys); },
     writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
   });
@@ -1960,6 +1960,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   // The far levels stand in for every tile not in the active region, the kept ring's too (its records are on the page for the edits and the simulation, its products are the far levels').
   for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, ...(desktopStores ? {} : { workersRead: mapName }) }, (key) => doc.hasTile(key) && streamer.isActive(key));
   scene.setActiveTiles(activeAt, []);
+  // The simulation's worker holds the active region's records only: the ring's traffic is the meso's, from the store's tables.
+  sim.setActive((key) => streamer.isActive(key));
   // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`);
   // on the desktop the store is the main process's, read for it through a port.
   let port: MessagePort | null = null;
@@ -3825,6 +3827,7 @@ const healthPanel = mountHealthPanel({
       scene.farBuildings.setSource(null, () => false);
       scene.farRoads.setSource(null, () => false);
       scene.setActiveTiles(null, []);
+      sim.setActive(null);
       streamed = null;
       persistence.paused = false;
       scene.holdOpening(null);

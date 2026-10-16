@@ -1531,6 +1531,15 @@ export class RoadDoc {
     };
   }
 
+  /** The ids of what a tile holds now (`tileMembers`), the parts another copy of the document follows: what that copy takes in or lets go with the tile (`sim/host/simClient.ts`). */
+  tileIds(key: number): { readonly nodes: readonly NodeId[]; readonly borrowedNodes: readonly NodeId[]; readonly segments: readonly SegmentId[]; readonly lots: readonly number[]; readonly buildings: readonly BuildingId[] } {
+    const t = this.tileMembers(key);
+    return {
+      nodes: t.nodes.map((n) => n.id), borrowedNodes: t.borrowedNodes.map((n) => n.id), segments: t.segments.map((s) => s.id),
+      lots: t.lots.map((lot) => lot.id), buildings: t.buildings.map((b) => b.id),
+    };
+  }
+
   /** A tile as the store keeps it (`world/tiles.ts` TileRecords), from what the page's document holds of it now: written when it changed, before it goes out. */
   tileRecords(key: number, version: number): TileRecords {
     const t = this.tileMembers(key);
