@@ -2336,38 +2336,44 @@ export class RoadDoc {
     }
   }
 
+  /** The map's parts no tile holds (CLAUDE.md, "Streaming world"): its terrain stamps, fog, gullies, clouds, clearings, zones, people, transit, economy, weather and the like, as `toJSON` writes them - the streamed world's values (`editor/tileStore.ts` WorldMeta). */
+  worldValues(): Omit<SerializedDoc, 'version' | 'nodes' | 'segments' | 'poles' | 'poleSpans' | 'landscape' | 'barriers' | 'buildings' | 'lots' | 'lotKeys' | 'paint' | 'trees' | 'elements'> {
+    const { version: _v, nodes: _n, segments: _s, poles: _p, poleSpans: _ps, landscape: _l, barriers: _b, buildings: _bu, lots: _lo, lotKeys: _k, paint: _pa, trees: _t, elements: _e, ...rest } = this.serialized(false, false);
+    return rest;
+  }
+
   /** `toJSON`, the buildings left out when `withBuildings` is false (`clone` shares them). */
-  private serialized(withBuildings: boolean): SerializedDoc {
+  private serialized(withBuildings: boolean, withRecords = true): SerializedDoc {
     return {
       version: 1,
       unit: METERS_PER_UNIT,
-      nodes: inIdOrder(this.nodes.values()).map(savedNode),
-      segments: inIdOrder(this.segments.values()).map(savedSegment),
+      nodes: withRecords ? inIdOrder(this.nodes.values()).map(savedNode) : [],
+      segments: withRecords ? inIdOrder(this.segments.values()).map(savedSegment) : [],
       terrain: this.terrainStamps.map((stamp) => ({ ...stamp })),
       // Only for the natural land: a legacy map serialises as before.
       ...(this.terrainRelief !== RELIEF_LEGACY ? { relief: this.terrainRelief } : {}),
       ...(this.markingStyle !== 'classic' ? { markingStyle: this.markingStyle } : {}),
       ...(this.nature ? { nature: { ...this.nature } } : {}),
-      ...(this.terrainPaint.length > 0 ? { paint: this.terrainPaint.map((dab) => ({ ...dab })) } : {}),
+      ...(withRecords && this.terrainPaint.length > 0 ? { paint: this.terrainPaint.map((dab) => ({ ...dab })) } : {}),
       ...(this.fogDabs.length > 0 || JSON.stringify(this.fogSettings) !== JSON.stringify(DEFAULT_FOG)
         ? { fog: { dabs: this.fogDabs.map((dab) => ({ ...dab })), settings: { ...this.fogSettings } } } : {}),
       ...(this.gullyDabs.length > 0 || this.gullyAuto !== DEFAULT_GULLY_AUTO
         ? { gullies: { dabs: this.gullyDabs.map((dab) => ({ ...dab })), auto: this.gullyAuto } } : {}),
       ...(this.clouds.length > 0 ? { clouds: this.clouds.map((c) => ({ ...c })) } : {}),
-      ...(this.elements.length > 0 ? { elements: this.elements.map((e) => ({ ...e })) } : {}),
-      ...(this.trees.length > 0 ? { trees: this.trees.map((t) => ({ ...t })) } : {}),
+      ...(withRecords && this.elements.length > 0 ? { elements: this.elements.map((e) => ({ ...e })) } : {}),
+      ...(withRecords && this.trees.length > 0 ? { trees: this.trees.map((t) => ({ ...t })) } : {}),
       ...(JSON.stringify(this.weather) !== JSON.stringify(DEFAULT_WEATHER) ? { weather: { ...this.weather } } : {}),
       ...(this.treeClearings.length > 0 ? { treeClearings: this.treeClearings.map((c) => ({ ...c })) } : {}),
-      poles: inIdOrder(this.poles.values()).map(savedPole),
-      poleSpans: inIdOrder(this.poleSpans.values()).map(savedSpan),
-      ...(this.landscape.size > 0 ? { landscape: inIdOrder(this.landscape.values()).map(savedLandscape) } : {}),
+      poles: withRecords ? inIdOrder(this.poles.values()).map(savedPole) : [],
+      poleSpans: withRecords ? inIdOrder(this.poleSpans.values()).map(savedSpan) : [],
+      ...(withRecords && this.landscape.size > 0 ? { landscape: inIdOrder(this.landscape.values()).map(savedLandscape) } : {}),
       // Only when there are any, so a map without them serialises as before.
-      ...(this.barriers.size > 0 ? { barriers: inIdOrder(this.barriers.values()).map(savedBarrier) } : {}),
+      ...(withRecords && this.barriers.size > 0 ? { barriers: inIdOrder(this.barriers.values()).map(savedBarrier) } : {}),
       // Only when there are any, so a map without buildings serialises exactly as it did before buildings existed.
       ...(withBuildings && this.buildings.size > 0 ? { buildings: this.buildings.toJSON() } : {}),
       ...(this.zones.length > 0 ? { zones: this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })) } : {}),
       ...(this.zoneMarks.length > 0 ? { zoneMarks: this.zoneMarks.map((mark) => ({ ...mark })) } : {}),
-      ...(this.lotStore.size > 0 || this.lotStore.keys.length > 0 ? {
+      ...(withRecords && (this.lotStore.size > 0 || this.lotStore.keys.length > 0) ? {
         lots: this.lotStore.toJSON(),
         lotKeys: [...this.lotStore.keys],
       } : {}),

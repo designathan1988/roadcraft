@@ -30,6 +30,8 @@ export interface WorldMeta {
   readonly generator: WholeMapOptions | null;
   /** Metres per world unit the tiles' records are in (`world/units.ts`). */
   readonly unit: number;
+  /** The streamed world's parts no tile holds, as the page's document writes them (`RoadDoc.worldValues`): read back into it when the world opens. */
+  readonly values?: Partial<SerializedDoc>;
   readonly relief?: number;
   readonly markingStyle?: string;
   readonly nature?: SerializedDoc['nature'];

@@ -1916,16 +1916,19 @@ const itemInTile = (item: unknown, key: number): boolean => {
   return !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && OWNER.at(p as { x: number; y: number }) === key;
 };
 /** A world of the generator's options opened: the document emptied, the tiles round the camera streamed in (made the first time, read after). */
-function openStreamedWorld(options: WholeMapOptions, fresh: boolean): void {
+async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Promise<void> {
   streamed?.generator.dispose();
+  streamed = null;
   persistence.paused = true;
   history.clear();
-  const empty = new RoadDoc();
-  applySnapshot({ ...empty.toJSON(), relief: NEW_RELIEF }, 'import');
-  updateHistoryButtons();
   const generator = new TileGenerator(options);
   const store = new TileStore(`roadcraft.tiles.${options.seed}`, desktopStores ? storeTiles(desktopStores.parts) : portTiles(() => jobPort('save')),
     (i, j) => generator.generate(tileKey(i, j)));
+  // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
+  const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
+  const empty = new RoadDoc();
+  applySnapshot({ ...empty.toJSON(), relief: NEW_RELIEF, ...(meta?.values ?? {}) }, 'import');
+  updateHistoryButtons();
   const far = scene.farBuildings;
   const streamer = new WorldStreamer(doc, store, {
     arrived: () => requestDraw(),
@@ -1935,12 +1938,13 @@ function openStreamedWorld(options: WholeMapOptions, fresh: boolean): void {
       far.loadedChanged(key);
     },
     written: (key, version) => far.stored(key, version),
+    writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
   });
   // The buildings past the region drawn from the store, baked per tile in the workers (`buildings/farLevels.ts`).
   far.setSource({ records: (key) => store.read(key) }, (key) => doc.hasTile(key));
   streamed = { store, generator, streamer };
-  void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT });
+  if (fresh) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
   // The opening shows the town once the tiles round the camera are in.
   scene.holdOpening(() => streamer.settled);
@@ -3618,7 +3622,7 @@ window.addEventListener('beforeunload', saveOnClose());
 window.addEventListener('pagehide', () => { void streamed?.streamer.flush(); });
 // The streamed world open at the last close opened again (its tiles are in the store).
 try {
-  if (streamedAtBoot) openStreamedWorld(JSON.parse(streamedAtBoot) as WholeMapOptions, false);
+  if (streamedAtBoot) void openStreamedWorld(JSON.parse(streamedAtBoot) as WholeMapOptions, false);
 } catch (error) {
   console.error('[world] the streamed world could not be opened again', error);
 }
@@ -3774,7 +3778,7 @@ const healthPanel = mountHealthPanel({
     if (size === 'whole') {
       // A city of any size: the streamed world, made tile by tile round the camera as it goes (CLAUDE.md, "Streaming world").
       const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
-      openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked }, true);
+      void openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked }, true);
       return { tiles: 0 };
     }
     // A round city: the streamed world closed, the document the whole map again.

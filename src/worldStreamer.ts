@@ -6,6 +6,9 @@ import { OWNER, TILE, TILE_IDS, type TileRecords, tileIJ, tileKey, tileOfKey, ti
 
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
 
+/** The kinds of the map's parts no tile holds (`RoadDoc.worldValues`): their changes are written with the world, not with a tile. */
+const WORLD_KINDS: ReadonlySet<string> = new Set(['terrain', 'fog', 'gullies', 'clouds', 'clearings', 'zones', 'people', 'transit', 'economy', 'weather', 'markingStyle', 'nature']);
+
 /** Tiles each way from the camera's tile held in the document: 3 x 3 tiles, 3 km - the editing and the detail's reach; past it the buildings, roads and land are drawn from what is baked of the store (a dense downtown tile holds ~1,500 buildings: 9 of them stay a fraction of the page's heap). */
 export const ACTIVE_RADIUS = 1;
 /** A tile is let go only this many tiles past the radius: a camera on a tile's edge does not load and unload it in turn. */
@@ -40,6 +43,8 @@ export interface StreamerEvents {
   letGo?(key: number, removedAt: ReadonlyMap<ListPart, readonly number[]>): void;
   /** A tile written at a version (what is baked of it is stale). */
   written?(key: number, version: number): void;
+  /** The map's parts no tile holds changed (zones, fog, transit, economy...): to be written (`RoadDoc.worldValues`). */
+  writeWorld?(): Promise<unknown>;
   failed?(why: string): void;
 }
 
@@ -56,8 +61,9 @@ export class WorldStreamer {
   private readonly ready = new Map<number, TileRecords>();
   /** Each loaded tile's version as last written or read. */
   private readonly versions = new Map<number, number>();
-  /** Tiles changed by the player (or the game) since last written. */
+  /** Tiles changed by the player (or the game) since last written, and whether the map's parts no tile holds did. */
   private readonly dirty = new Set<number>();
+  private worldDirty = false;
   private readonly edits = new JournalCursor(DOC_CHANGE_KINDS);
   /** The tiles wanted now, nearest first, and the camera's tile they were worked out for. */
   private wanted: number[] = [];
@@ -119,6 +125,7 @@ export class WorldStreamer {
     if (now - this.lastWrite >= WRITE_EVERY_MS) {
       this.lastWrite = now;
       for (const key of [...this.dirty]) this.write(key);
+      this.writeWorld();
     }
   }
 
@@ -126,6 +133,7 @@ export class WorldStreamer {
   flush(): Promise<unknown> {
     this.noteEdits();
     for (const key of [...this.dirty]) this.write(key);
+    this.writeWorld();
     return this.writing;
   }
 
@@ -192,6 +200,7 @@ export class WorldStreamer {
     }
     for (const entry of entries) {
       if (isStreaming(entry)) continue;
+      if (WORLD_KINDS.has(entry.kind)) { this.worldDirty = true; continue; }
       if (entry.rects === null) { for (const key of this.doc.loadedTiles) this.dirty.add(key); continue; }
       for (const [x0, y0, x1, y1] of entry.rects) {
         // A rectangle reaches every tile it overlaps (a road's box on two tiles marks both: either may own a piece of it).
@@ -203,6 +212,14 @@ export class WorldStreamer {
         }
       }
     }
+  }
+
+  /** The map's parts no tile holds written when they changed, after the tiles queued before. */
+  private writeWorld(): void {
+    if (!this.worldDirty || !this.tell.writeWorld) return;
+    this.worldDirty = false;
+    const write = this.tell.writeWorld;
+    this.writing = this.writing.then(() => write()).catch((error: unknown) => this.tell.failed?.(`the world's values were not written: ${String(error)}`));
   }
 
   /** A tile written as the document holds it now, its version moved on; written in order, never two of one tile at once. */
