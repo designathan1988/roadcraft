@@ -4,6 +4,7 @@ import { pointInPolygon } from '@core/polygon';
 import type { Vec2 } from '@core/vec2';
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { footprintRects, solidFootprints, storedBounds } from '@world/buildings/geometry';
+import { cutOpen } from '@world/buildings/interior';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
 import { CELL } from '@world/cells';
@@ -191,6 +192,20 @@ export function createCoverIndex(): CoverIndex {
 
 
 /** A cell's batch out of its cache and its group, disposed. */
+/** A building's record as the workers are sent it (`layer.ts` `textOf`): its text, made once per record into `texts` (a record is replaced, never edited, `intern.ts`), so every level's job of a cell reads the same text and a cell asked again as the camera moves does not serialise its buildings again (867 ms of `JSON.stringify` in the frames of a 16 s drag, 2026-10-16); cut open (a key with a level and a direction), the opened record's text, never kept (DO NOT keep the texts cut open in a map with a cap: a cache that drops and remakes). */
+export function recordText(texts: WeakMap<Building, string>, b: Building, key: string): string {
+  if (!key.includes('|')) {
+    let text = texts.get(b);
+    if (text === undefined) texts.set(b, text = JSON.stringify(b));
+    return text;
+  }
+  const [, level, dir] = key.split('|').map(Number) as [number, number, number];
+  const turn = dir * (Math.PI / 4);
+  // Opened, a signature building is drawn by the shared kit with its rooms and furniture.
+  const { blueprint: _sig, ...plain } = cutOpen(b, level, { x: Math.cos(turn), y: Math.sin(turn) });
+  return JSON.stringify(plain);
+}
+
 /** A cell key's centre from a point, m (`layer.ts` `keepToBudget`). */
 export function cellDistance(key: string, x: number, y: number): number {
   const comma = key.indexOf(',');

@@ -5,10 +5,9 @@ import type { RoadDoc } from '@world/doc';
 import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import { buildingHeight, storedBounds } from '@world/buildings/geometry';
 import type { Building, BuildingId } from '@world/buildings/types';
-import { cutOpen } from '@world/buildings/interior';
 import { CellFiling } from '@world/cells';
 import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
-import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellDistance, cellGroup, createCoverIndex, dropCell, groundDigest } from './layerCells';
+import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellDistance, cellGroup, createCoverIndex, dropCell, groundDigest, recordText } from './layerCells';
 import { type PartCell, type PartView, dropParts } from './partCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
@@ -233,18 +232,11 @@ export function createBuildingLayer(): BuildingLayer {
     sent.set(key, b);
     return { key, sig: new Digest().add(sig).add(cutaway.level).add(dir).value(), digest };
   };
-  /** DO NOT keep the texts cut open in a map with a cap: a cache that drops and remakes. */
+  /** Each record's text, made once per record (`layerCells.ts` `recordText`). */
+  const recordTexts = new WeakMap<Building, string>();
   const textOf = (entry: CellEntry): () => string => {
     const b = sent.get(entry.key)!;
-    return () => recordText(b, entry.key);
-  };
-  const recordText = (b: Building, key: string): string => {
-    if (!key.includes('|')) return JSON.stringify(b);
-    const [, level, dir] = key.split('|').map(Number) as [number, number, number];
-    const turn = dir * (Math.PI / 4);
-    // Opened, a signature building is drawn by the shared kit with its rooms and furniture.
-    const { blueprint: _sig, ...plain } = cutOpen(b, level, { x: Math.cos(turn), y: Math.sin(turn) });
-    return JSON.stringify(plain);
+    return () => recordText(recordTexts, b, entry.key);
   };
   const entriesOf = (list: readonly Building[], groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt): CellEntry[] =>
     list.map((b) => entryFor(b, groundAt, groundKey, pavedAt));
