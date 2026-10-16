@@ -1,6 +1,7 @@
 import type { RoadDoc } from '@world/doc';
 import type { ChangeKind, ChangeRect, JournalReader } from '@world/changes';
-import type { Building, BuildingId } from '@world/buildings/types';
+import type { BuildingId } from '@world/buildings/types';
+import type { BuildingSource, TrafficBuilding } from './trafficBuildings';
 
 /** THE BUILDINGS A READER KEEPS, IN THE STORE'S ORDER, FROM THE DIARY. */
 
@@ -19,14 +20,14 @@ class StoreOrder {
   }
 
   /** Brought up to the diary's latest entry. */
-  follow(doc: RoadDoc): void {
-    const journal = doc.changes;
+  follow(w: BuildingSource): void {
+    const doc = w.doc, journal = doc.changes;
     if (this.doc === doc && journal.serialOf('buildings') <= this.serial) { this.serial = journal.version; return; }
     const entries = this.doc === doc ? journal.since(this.serial, ['buildings']) : null;
     this.doc = doc;
     this.serial = journal.version;
     if (entries && entries.every((entry) => this.apply(entry.detail, entry.ids as readonly BuildingId[] | undefined))) return;
-    this.reread(doc);
+    this.reread(w);
   }
 
   /** One entry of the diary applied to the ranks; false when its effect on the order is not known. */
@@ -59,10 +60,10 @@ class StoreOrder {
   }
 
   /** @rebuild The order read whole: at the first look, or when the diary cannot say. */
-  private reread(doc: RoadDoc): void {
+  private reread(w: BuildingSource): void {
     this.ranks.clear();
     this.next = 0;
-    for (const b of doc.buildings.all()) this.ranks.set(b.id, this.next++);
+    for (const b of w.buildings.all()) this.ranks.set(b.id, this.next++);
     this.epoch++;
   }
 }
@@ -93,7 +94,7 @@ export class BuildingsInOrder implements JournalReader {
   private list: BuildingId[] = [];
   private epoch = -1;
 
-  constructor(private readonly keep: (b: Building) => boolean) {}
+  constructor(private readonly keep: (b: TrafficBuilding) => boolean) {}
 
   /** The kept buildings' ids, in the store's order. */
   get ids(): readonly BuildingId[] {
@@ -110,10 +111,10 @@ export class BuildingsInOrder implements JournalReader {
   }
 
   /** Up to date with the store. */
-  update(doc: RoadDoc): BuildingDelta | null {
+  update(w: BuildingSource): BuildingDelta | null {
     const order = this.order;
-    order.follow(doc);
-    const journal = doc.changes;
+    order.follow(w);
+    const doc = w.doc, journal = doc.changes;
     if (this.doc === doc && journal.serialOf('buildings') <= this.serial && order.epoch === this.epoch) {
       this.serial = journal.version;
       return NOTHING;
@@ -131,7 +132,7 @@ export class BuildingsInOrder implements JournalReader {
       for (const id of entry.ids) ids.add(id as BuildingId);
     }
     if (!known) {
-      this.reread(doc);
+      this.reread(w);
       this.epoch = order.epoch;
       return null;
     }
@@ -139,7 +140,7 @@ export class BuildingsInOrder implements JournalReader {
     for (const id of ids) this.unfile(id);
     if (order.epoch !== this.epoch) this.resort();
     for (const id of ids) {
-      const b = doc.buildings.get(id);
+      const b = w.buildings.get(id);
       if (b && this.keep(b)) this.file(id, order.rank(id)!);
     }
     return { ids: [...ids], rects };
@@ -176,10 +177,10 @@ export class BuildingsInOrder implements JournalReader {
   }
 
   /** @rebuild The kept buildings read whole from the store. */
-  private reread(doc: RoadDoc): void {
+  private reread(w: BuildingSource): void {
     this.filedAt.clear();
     this.list = [];
-    for (const b of doc.buildings.all()) {
+    for (const b of w.buildings.all()) {
       if (!this.keep(b)) continue;
       this.filedAt.set(b.id, this.order.rank(b.id)!);
       this.list.push(b.id);

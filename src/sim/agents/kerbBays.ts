@@ -6,10 +6,11 @@ import type { SegmentId } from '@world/ids';
 import type { GraphChange } from '@world/lanelets';
 import type { Network } from '@world/network';
 import { PARKING_PITCH } from '@world/parking';
-import { entrancesOf, parkingLayout } from '@world/parkingLayout';
+import { parkingLayout } from '@world/parkingLayout';
 import { m } from '@world/units';
 import type { BuildingDelta } from './buildingOrder';
 import type { Bay, BayLane } from './bay';
+import type { TrafficBuildings } from './trafficBuildings';
 
 /** THE BAYS ALONG THE KERBS, KEPT BY STREET (`parking.ts` `collectBays` hands them out after the lots' stalls). */
 
@@ -18,6 +19,8 @@ export interface KerbWorld {
   readonly doc: RoadDoc;
   readonly net: Network;
   readonly topologyLog: ChangeLog<GraphChange>;
+  /** The buildings' entrances (`TrafficBuilding.entrances`). */
+  readonly buildings: TrafficBuildings;
 }
 
 /** The lane beside a point of a street, on its kerb side (`parking.ts` `laneBeside`). */
@@ -113,8 +116,8 @@ export function followKerbs(w: KerbWorld, book: KerbBook, delta: BuildingDelta |
   if (delta === null) readEntrances(w, book);
   const touched: { x0: number; y0: number; x1: number; y1: number }[] = [];
   for (const id of delta?.ids ?? []) {
-    const b = w.doc.buildings.get(id);
-    const now = b ? entrancesOf(b) : [];
+    const b = w.buildings.get(id);
+    const now = b ? b.entrances : [];
     const was = book.entrances.get(id) ?? [];
     if (sameEntrances(was, now)) continue;
     fileEntrances(book, id, was, false);
@@ -181,8 +184,8 @@ function sameBays(a: readonly Bay[], b: readonly Bay[]): boolean {
 function readEntrances(w: KerbWorld, book: KerbBook): void {
   book.entrances.clear();
   book.entranceCells.clear();
-  for (const b of w.doc.buildings.all()) {
-    const list = entrancesOf(b);
+  for (const b of w.buildings.all()) {
+    const list = b.entrances;
     if (!list.length) continue;
     book.entrances.set(b.id, list);
     fileEntrances(book, b.id, list, true);

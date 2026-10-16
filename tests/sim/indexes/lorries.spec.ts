@@ -14,6 +14,7 @@ import type { Waypoint } from '@sim/agents/hybridAStar';
 import { gatedProperty } from '@sim/agents/parking';
 import { buildYard, lorryOf, type Yard, yardKey, yardNeighbours } from '@sim/agents/lorryDocks';
 import { closures, YardList } from '@sim/agents/lorryTraffic';
+import { trafficBuilding } from '@sim/agents/trafficBuildings';
 import { buildYard as oldBuildYard, yardNeighbours as oldYardNeighbours, type Yard as OldYard } from './oracle/lorryDocksOld';
 
 /** THE LORRIES READ WHAT IS NEAR, AND FIND WHAT THE OLD LOOPS FOUND. - The yards a lorry may be sent to */
@@ -120,12 +121,11 @@ describe('the lorries read what is near', () => {
         const { id, record } = gone.splice(rng.int(0, gone.length - 1), 1)[0]!;
         doc.buildings.restore(id, record);
       }
-      const now = list.read(doc);
+      const now = list.read(w);
       expect(now).toEqual(oldYards(doc));
       most = Math.max(most, now.length);
     }
     expect(most).toBeGreaterThan(2);
-    void w;
   });
 
   it('the lanes a lorry sweeps, from the lanes\' grid, are the old loop\'s, through road edits', () => {
@@ -161,7 +161,7 @@ describe('the lorries read what is near', () => {
     for (let round = 0; round < 2; round++) {
       // Two yards a round: each is a grid of a third of a million cells and its clearance, twice.
       for (const b of [...doc.buildings.all()].filter((o) => gatedProperty(o) && lorryDocks(o).length).slice(0, 2)) {
-        const now = made(buildYard(b, yardKey(w), w, LORRY, yardNeighbours(w, null)));
+        const now = made(buildYard(trafficBuilding(b), yardKey(w), w, LORRY, yardNeighbours(w, null)));
         const old = made(oldBuildYard(b, yardKey(w), w, LORRY, oldYardNeighbours(w, null)));
         expect(yardText(now)).toBe(yardText(old));
         yards++;

@@ -200,7 +200,7 @@ export class LotTraffic {
     const weight = (bay: Bay): number => {
       let f = outOf.get(bay.building);
       if (f === undefined) {
-        const b = w.doc.buildings.get(bay.building);
+        const b = w.buildings.get(bay.building);
         outOf.set(bay.building, f = b ? flows(kindOf(b), hour).out : 0);
       }
       return f;
@@ -266,7 +266,7 @@ export class LotTraffic {
     const weights = pool.map((bay) => {
       let f = into.get(bay.building);
       if (f === undefined) {
-        const b = w.doc.buildings.get(bay.building);
+        const b = w.buildings.get(bay.building);
         into.set(bay.building, f = b ? flows(kindOf(b), hour).in : 0);
       }
       return f;

@@ -68,7 +68,7 @@ describe('the lot grid', () => {
     seen.calls.length = 0;
     collectBays(w);
     const cars = seen.calls.length;
-    for (const b of doc.buildings.all()) doorWay(b);
+    for (const b of w.buildings.all()) doorWay(b);
     const people = seen.calls.length - cars;
     expect(cars).toBeGreaterThan(50);
     expect(people).toBeGreaterThan(50);

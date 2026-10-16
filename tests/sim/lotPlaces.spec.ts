@@ -14,6 +14,7 @@ import { type DoorWay, doorWay, personGates } from '@sim/agents/lotDoors';
 import { busy, kindOf, outShare, PEOPLE, type Mix } from '@sim/ambient/demand';
 import { ambientIndexWork } from '@sim/ambient/ambientIndex';
 import { LotPlaces, PLACE_KINDS } from '@sim/ambient/lotPlaces';
+import type { TrafficBuilding } from '@sim/agents/trafficBuildings';
 
 /** The lots people walk into (`sim/ambient/lotPlaces.ts`), drawn in O(log n) and worked out only when drawn */
 
@@ -61,9 +62,9 @@ const WALK_DECAY = m(470);
 const newPlaces = (): LotPlaces<DoorWay> => new LotPlaces<DoorWay>({ wayOf: doorWay, gatesOf: personGates });
 
 /** The old `AmbientWorld.refreshPlaces` with every way worked out (no time budget): the oracle's places. */
-function oldPlaces(w: SimWorld): { b: Building; kind: keyof Mix; way: DoorWay | null }[] {
-  const out: { b: Building; kind: keyof Mix; way: DoorWay | null }[] = [];
-  for (const b of w.doc.buildings.all()) {
+function oldPlaces(w: SimWorld): { b: TrafficBuilding; kind: keyof Mix; way: DoorWay | null }[] {
+  const out: { b: TrafficBuilding; kind: keyof Mix; way: DoorWay | null }[] = [];
+  for (const b of w.buildings.all()) {
     const way = doorWay(b);
     const footless = !!way?.street && !joinsFootway(w, way.out[way.out.length - 1]!);
     out.push({ b, kind: kindOf(b), way: footless ? null : way });
@@ -127,7 +128,7 @@ describe('the lots people walk into', () => {
     const removed: Building[] = [];
     let streetDoors = 0, nulls = 0, flips = 0;
     /** Whether each street door's foot was on a footway, by record: one that changes with the roads is a flip. */
-    const footOn = new Map<Building, boolean>();
+    const footOn = new Map<TrafficBuilding, boolean>();
     for (let round = 0; round < 12; round++) {
       if (round) {
         // Buildings removed, moved, aged, put back; a road node moved (footways move with it).
@@ -153,7 +154,7 @@ describe('the lots people walk into', () => {
         w.net.rebuild();
         w.rebuildTopology();
       }
-      places.sync(doc.buildings, doc.changes);
+      places.sync(w.buildings, doc.changes);
       // Ways asked about before every one is known, a few only, as the draws do.
       for (const p of oldPlaces(w).slice(0, round)) places.wayOf(p.b.id, joins);
       const oracle = oldPlaces(w);
@@ -191,7 +192,7 @@ describe('the lots people walk into', () => {
     // Lots whose way fronts less than its bound (a gate other than the widest one)
     const cut = (id: number): number => 0.3 + 0.7 * new Rng(id * 7919).float();
     const shrunk = new WeakMap<DoorWay, DoorWay>();
-    const narrower = (b: Building): DoorWay | null => {
+    const narrower = (b: TrafficBuilding): DoorWay | null => {
       const way = doorWay(b);
       if (!way) return null;
       let small = shrunk.get(way);
@@ -201,7 +202,7 @@ describe('the lots people walk into', () => {
     for (const [hour, out, cutting] of [[8.5, true, false], [18, false, false], [12, true, true]] as const) {
       const fresh = (): LotPlaces<DoorWay> => {
         const made = cutting ? new LotPlaces<DoorWay>({ wayOf: narrower, gatesOf: personGates }) : newPlaces();
-        made.sync(doc.buildings, doc.changes);
+        made.sync(w.buildings, doc.changes);
         return made;
       };
       let places = fresh();
@@ -236,7 +237,7 @@ describe('the lots people walk into', () => {
     const froms = oracle.filter((p) => p.way).map((p) => p.way!);
     for (const [hour, out, from] of [[9, false, froms[0]!], [13, true, froms[Math.floor(froms.length / 2)]!]] as const) {
       const places = newPlaces();
-      places.sync(doc.buildings, doc.changes);
+      places.sync(w.buildings, doc.changes);
       const coef = coefOf(hour, out);
       const counts = new Map<number, number>();
       let none = 0;

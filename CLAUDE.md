@@ -183,8 +183,8 @@ GPU memory and drawing
   the sim worker, 0.34 GB in the pool (2026-10-15, `measureUserAgentSpecificMemory`). Not found yet: ~120 KB of page heap
   per building (the medium city's live JS is ~68 KB, spread; the rest typed arrays). Heap snapshots of a big city do not
   finish under the job's 25% CPU: measure on a machine without the cap.
-- The sim worker keeps a whole copy of the map (`SimClient.load` sends `doc.toJSON()`): it reads buildings only for
-  parking, kerb bays, docks and entrances. Fix with the micro window (block E): the worker gets what traffic reads, near.
+- The sim worker holds the traffic record of every building of the map (`sim/agents/trafficBuildings.ts`, by 256 m cell),
+  not only those near. Fix with the micro window (block E): the worker gets what traffic reads, near.
 - Terrain plates keep their editing arrays on the page (~6 MB geometry + paint layers each; 154 MB of CPU geometry at
   2x2).
 - KTX2 (20d18f7): UASTC (BC7, a quarter of the memory) waits for the player's yes on shots

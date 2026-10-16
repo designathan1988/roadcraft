@@ -1,4 +1,4 @@
-import type { Building, BuildingId } from '@world/buildings/types';
+import type { BuildingId } from '@world/buildings/types';
 import type { LaneletId } from '@world/lanelets';
 import { m } from '@world/units';
 import { DRIVER_NOISE, DT } from '../params';
@@ -15,8 +15,7 @@ import { Shunt } from './manoeuvre';
 import { buildYard, forgetYard, forgetYardsBut, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, type YardNeighbours, yardNeighbours, yardOf } from './lorryDocks';
 import { gatedProperty, lanesInBox } from './parking';
 import { BuildingsInOrder } from './buildingOrder';
-import type { RoadDoc } from '@world/doc';
-import { lorryDocks } from '@world/buildings/docks';
+import type { BuildingSource, TrafficBuilding } from './trafficBuildings';
 import type { Waypoint } from './hybridAStar';
 
 /** Lorries to the works' loading docks: a lorry of the passing traffic is sent to a dock that has a way in and out */
@@ -136,7 +135,7 @@ export class LorryTraffic {
 
   /** Sends a lorry to a dock now, standing on its lane at the stop before the gate (for probes and specs) */
   sendNow(w: SimWorld, building: BuildingId, dock: number): boolean {
-    const b = w.doc.buildings.get(building);
+    const b = w.buildings.get(building);
     const truck = ARCHETYPES.find((a) => a.id === 'truck')!;
     const yard = b ? yardOf(w, b, lorryOf(truck)) : null;
     if (!yard || !yard.docks[dock]) return false;
@@ -163,7 +162,7 @@ export class LorryTraffic {
 
   /** Only which buildings have docks: a yard is worked out */
   private readYards(w: SimWorld): void {
-    this.yards = this.yardList.read(w.doc);
+    this.yards = this.yardList.read(w);
     // The yards of buildings gone, or with no yard now, forgotten with them.
     const gone = this.yardList.gone;
     if (gone === null) forgetYardsBut(w, (id) => this.yardList.has(id as BuildingId));
@@ -171,13 +170,13 @@ export class LorryTraffic {
   }
 
   /** The yard being made, a slice a call */
-  private making: { building: Building; key: string; steps: Generator<void, Yard, void> } | null = null;
+  private making: { building: TrafficBuilding; key: string; steps: Generator<void, Yard, void> } | null = null;
   /** The lots and buildings near each yard (`yardNeighbours`), kept while they stand. */
   private neighbours: YardNeighbours | null = null;
 
   /** A building's yard, made a slice a call (`buildYard`): undefined while it is being made. */
   private yardFor(w: SimWorld, building: BuildingId, begin = true): Yard | null | undefined {
-    const b = w.doc.buildings.get(building);
+    const b = w.buildings.get(building);
     if (!b) return null;
     const known = knownYard(w, b);
     if (known !== undefined) return known;
@@ -443,7 +442,7 @@ export function closures(w: SimWorld, poses: readonly Waypoint[], owner: number,
 }
 
 /** A building with a yard a lorry is sent to: a car-gated property with loading docks. */
-const hasYard = (b: Building): boolean => gatedProperty(b) !== null && lorryDocks(b).length > 0;
+const hasYard = (b: TrafficBuilding): boolean => gatedProperty(b) !== null && b.docks.length > 0;
 
 /** The town's yards and their docks, in the store's order (the lorries' draw follows it), kept from the diary */
 export class YardList {
@@ -458,14 +457,14 @@ export class YardList {
     return this.kept.has(id);
   }
 
-  read(doc: RoadDoc): readonly { building: BuildingId; docks: number }[] {
-    const delta = this.kept.update(doc);
+  read(w: BuildingSource): readonly { building: BuildingId; docks: number }[] {
+    const delta = this.kept.update(w);
     this.gone = delta === null ? null : [];
     if (delta !== null && delta.ids.length === 0) return this.list;
     if (delta === null) this.docks.clear();
     for (const id of delta === null ? this.kept.ids : delta.ids) {
-      const b = doc.buildings.get(id);
-      if (b && this.kept.has(id)) this.docks.set(id, lorryDocks(b).length);
+      const b = w.buildings.get(id);
+      if (b && this.kept.has(id)) this.docks.set(id, b.docks.length);
       else { this.docks.delete(id); this.gone?.push(id); }
     }
     this.list = this.kept.ids.map((building) => ({ building, docks: this.docks.get(building)! }));

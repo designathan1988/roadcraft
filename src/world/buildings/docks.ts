@@ -20,7 +20,7 @@ export interface LorryDock {
 const LORRY_DOCK = m(3.2);
 const STALL = m(2.5);
 
-export const isDock = (el: BuildingElement): boolean =>
+export const isDock = (el: Pick<BuildingElement, 'kind' | 'w'>): boolean =>
   el.kind === 'parking' && el.w / Math.max(1, Math.floor(el.w / STALL)) > LORRY_DOCK;
 
 /** Each record's docks, once (a stored record is never changed in place); shared: read only. */

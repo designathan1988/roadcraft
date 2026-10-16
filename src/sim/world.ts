@@ -52,6 +52,7 @@ import { mainRoadLegs, type SignalSettings } from '@world/roads/rules';
 import { FlowStats } from './roads/flowStats';
 import { type AutoControl, ControlAdvisor, QUIET_FLOW } from './roads/controlAdvisor';
 import { rebuildWork } from '@world/rebuildWork';
+import { type TrafficBuildings, docBuildings } from './agents/trafficBuildings';
 /** The body class a signal plan is protected for: an ordinary car. */const CAR_CLASS: BodyClass = 1;
 
 /** Nobody walks until an engine is installed (`SimWorld.usePedestrianEngine`). */
@@ -267,6 +268,8 @@ export class SimWorld {
     readonly doc: RoadDoc,
     readonly net: Network,
     private readonly seed = 0x5eed,
+    /** The buildings as traffic reads them: the document's own (a spec), or the worker's table of traffic records (`simHost.ts`). */
+    readonly buildings: TrafficBuildings = docBuildings(doc),
   ) {
     this.streams = forkStreams(seed);
   }

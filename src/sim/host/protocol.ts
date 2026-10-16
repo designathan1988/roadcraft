@@ -1,4 +1,5 @@
-import type { Restoration, SerializedDoc } from '@world/doc';
+import type { Restoration } from '@world/doc';
+import type { BuildingChange, TrafficMap } from '../agents/trafficBuildings';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { BodyPart, PedView, PersonAgeClass } from '../people/view';
 import type { Casualty } from '../people/casualties';
@@ -80,11 +81,12 @@ export interface SignalLights {
 export interface TrainCar { readonly x: number; readonly y: number; readonly heading: number }
 export interface TrainState { readonly colour: string; readonly metro: boolean; readonly cars: readonly TrainCar[] }
 
-/** The page to the worker. */
+/** The page to the worker: never the whole map nor a building's record, only what traffic reads (`agents/trafficBuildings.ts`). */
 export type ToSim =
-  | { readonly type: 'init'; readonly frames: SharedFrames; readonly doc: SerializedDoc; readonly seed: number; readonly zones: ReadonlyMap<string, Float64Array | null>; readonly zonesPrefix: string | null; readonly ambient: 'view' | 'edges' }
-  | { readonly type: 'load'; readonly doc: SerializedDoc }
-  | { readonly type: 'delta'; readonly delta: Restoration }
+  | { readonly type: 'init'; readonly frames: SharedFrames; readonly map: TrafficMap; readonly seed: number; readonly zones: ReadonlyMap<string, Float64Array | null>; readonly zonesPrefix: string | null; readonly ambient: 'view' | 'edges' }
+  | { readonly type: 'load'; readonly map: TrafficMap }
+  /** The roads', lots' and transit's records the diary named (`delta`), and the buildings it named as traffic records. */
+  | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingChange[] }
   | { readonly type: 'frame'; readonly wall: number; readonly hold: boolean; readonly controls: SimControls }
   | { readonly type: 'reset' }
   | { readonly type: 'act'; readonly id: number; readonly act: SimAct }

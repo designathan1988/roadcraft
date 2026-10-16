@@ -1,6 +1,8 @@
 import type { RoadDoc, Restoration, RecordPart, ValuePart } from '@world/doc';
 import type { DocChangeKind, JournalReader } from '@world/changes';
 import type { NodeId, SegmentId } from '@world/ids';
+import type { BuildingId } from '@world/buildings/types';
+import { buildingChangesOf, trafficMapOf } from '../agents/trafficBuildings';
 import { archetypeById, type Archetype } from '../vehicles/archetypes';
 import type { KerbStop } from '../vehicles/kerbStops';
 import type { PedView, PersonAgeClass } from '../people/view';
@@ -53,10 +55,11 @@ export interface SignalFeed {
 
 /** The kinds of the diary the worker's copy of the map follows, and what each carries. */
 const RECORD_KINDS: Readonly<Partial<Record<DocChangeKind, readonly RecordPart[]>>> = {
-  roads: ['nodes', 'segments'], traffic: ['nodes', 'segments'], buildings: ['buildings'], buildingWear: ['buildings'], lots: ['lots'],
+  roads: ['nodes', 'segments'], traffic: ['nodes', 'segments'], lots: ['lots'],
 };
 const VALUE_KINDS: Readonly<Partial<Record<DocChangeKind, ValuePart>>> = { transit: 'transit' };
-const FOLLOWED: readonly DocChangeKind[] = [...Object.keys(RECORD_KINDS), ...Object.keys(VALUE_KINDS), 'lotKeys'] as DocChangeKind[];
+/** DO NOT send a building's record (nor its wear): the worker is sent its traffic record (`agents/trafficBuildings.ts`). */
+const FOLLOWED: readonly DocChangeKind[] = [...Object.keys(RECORD_KINDS), ...Object.keys(VALUE_KINDS), 'lotKeys', 'buildings'] as DocChangeKind[];
 
 export class SimClient implements JournalReader {
   /** The kinds the worker's copy follows: the diary keeps them until this client has sent them (`changes.follow`). */
@@ -155,14 +158,14 @@ export class SimClient implements JournalReader {
       };
     });
     this.markSent();
-    this.send({ type: 'init', frames: this.frames, doc: this.doc.toJSON(), seed, zones, zonesPrefix, ambient });
+    this.send({ type: 'init', frames: this.frames, map: trafficMapOf(this.doc), seed, zones, zonesPrefix, ambient });
     return ready;
   }
 
-  /** Another map (opened, generated, new): the worker's copy made whole again, the simulation started over. */
+  /** Another map (opened, generated, new): the worker's copy made whole again (only what traffic reads), the simulation started over. */
   load(): void {
     this.markSent();
-    this.send({ type: 'load', doc: this.doc.toJSON() });
+    this.send({ type: 'load', map: trafficMapOf(this.doc) });
     this.clearViews();
   }
 
@@ -259,9 +262,16 @@ export class SimClient implements JournalReader {
     this.seen = changes.version;
     if (!entries.length) return;
     const named = new Map<RecordPart, Set<number>>();
+    const buildings = new Set<BuildingId>();
     const values = new Set<ValuePart>();
     let keys = false;
     for (const e of entries) {
+      if (e.kind === 'buildings') {
+        // A change of buildings that does not say which: the worker's copy made whole again.
+        if (!e.ids) { this.load(); return; }
+        for (const id of e.ids) buildings.add(id as BuildingId);
+        continue;
+      }
       const parts = RECORD_KINDS[e.kind as DocChangeKind];
       if (parts) {
         // A change of records that does not say which: the worker's copy made whole again.
@@ -287,7 +297,10 @@ export class SimClient implements JournalReader {
       this.lotKeysSent = all.length;
       this.lotKeysRewritten = store.keysRewritten;
     }
-    this.send({ type: 'delta', delta: { records, lists, values: [...values].map((part) => ({ part, value: this.doc.valueOf(part) })) } });
+    this.send({
+      type: 'delta', delta: { records, lists, values: [...values].map((part) => ({ part, value: this.doc.valueOf(part) })) },
+      buildings: buildingChangesOf(this.doc, buildings),
+    });
   }
 
   private receive(message: FromSim): void {
@@ -467,12 +480,11 @@ function setFrames(f: VehicleFrames, bx: number, by: number, bangle: number, x: 
   f.bx = bx; f.by = by; f.bangle = bangle; f.x = x; f.y = y; f.angle = angle; f.yawBefore = 0; f.yawNow = 0; f.jump = false;
 }
 
-/** A record of the map by its part, for the worker's copy. */
+/** A record of the map by its part, for the worker's copy (never a building's: `buildingChangesOf`). */
 function recordOf(doc: RoadDoc, part: RecordPart, id: number): unknown {
   switch (part) {
     case 'nodes': return doc.nodes.get(id as NodeId);
     case 'segments': return doc.segments.get(id as SegmentId);
-    case 'buildings': return doc.buildings.get(id as never);
     case 'lots': return doc.lotStore.get(id);
     default: return undefined;
   }

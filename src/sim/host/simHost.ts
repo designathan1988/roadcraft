@@ -1,7 +1,8 @@
-import { RoadDoc, type SerializedDoc } from '@world/doc';
+import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import type { NodeId } from '@world/ids';
 import { SimWorld } from '../world';
+import { TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
 import { laneGrid } from '../agents/laneGrid';
 import { useBayWorkers } from '../agents/parking';
@@ -28,8 +29,11 @@ import {
 const STEP_BUDGET_MS = 14;
 
 export class SimHost {
+  /** The worker's copy of the map: the roads, the lots, the transit (no building records: `buildings`). */
   private doc = new RoadDoc();
   private net = new Network(this.doc);
+  /** The buildings as traffic reads them, by the world's cells, written in the copy's diary. */
+  private readonly buildings = new TrafficBuildingTable(this.doc.changes);
   private sim: SimWorld | null = null;
   private topology: TopologyCatchUp | null = null;
   private readonly governor = new PopulationGovernor(1);
@@ -56,10 +60,11 @@ export class SimHost {
 
   async handle(message: ToSim): Promise<void> {
     switch (message.type) {
-      case 'init': await this.init(message.doc, message.seed, message.zones, message.frames.data, message.frames.control, message.zonesPrefix, message.ambient); return;
-      case 'load': this.load(message.doc); return;
+      case 'init': await this.init(message.map, message.seed, message.zones, message.frames.data, message.frames.control, message.zonesPrefix, message.ambient); return;
+      case 'load': this.load(message.map); return;
       case 'delta':
         this.doc.restore(message.delta);
+        this.buildings.apply(message.buildings);
         return;
       case 'reset': this.sim?.reset(); this.sim?.ambient.reset(this.sim); return;
       case 'frame': this.frame(message.wall, message.hold, message.controls); return;
@@ -68,13 +73,13 @@ export class SimHost {
     }
   }
 
-  private async init(doc: SerializedDoc, seed: number, zones: ReadonlyMap<string, Float64Array | null>, data: SharedArrayBuffer, control: SharedArrayBuffer,
+  private async init(map: TrafficMap, seed: number, zones: ReadonlyMap<string, Float64Array | null>, data: SharedArrayBuffer, control: SharedArrayBuffer,
     prefix: string | null, ambient: 'view' | 'edges'): Promise<void> {
     this.data = new Float64Array(data);
     this.control = new Int32Array(control);
-    this.doc.replaceFromJSON(doc, { repair: false });
+    takeTrafficMap(this.doc, this.buildings, map);
     this.net.rebuild({ full: true });
-    const sim = new SimWorld(this.doc, this.net, seed);
+    const sim = new SimWorld(this.doc, this.net, seed, this.buildings);
     // Conflicts only where traffic is (the micro window), not every junction of the map.
     sim.useMicroWindow();
     useBayWorkers(sim, new BayPool());
@@ -92,8 +97,8 @@ export class SimHost {
   }
 
   /** Another map: the replica made whole again, and nothing of the old simulation carried over. */
-  private load(doc: SerializedDoc): void {
-    this.doc.replaceFromJSON(doc, { repair: false });
+  private load(map: TrafficMap): void {
+    takeTrafficMap(this.doc, this.buildings, map);
     this.net.rebuild({ full: true });
     this.sim?.reset();
     if (this.sim) this.sim.ambient.reset(this.sim);

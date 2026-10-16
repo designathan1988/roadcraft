@@ -51,8 +51,8 @@ export function outShare(kind: keyof Mix, hour: number): number {
 export const PEOPLE: Mix = { home: 7, shop: 24, work: 9, civic: 15 };
 export const CARS: Mix = { home: 2.6, shop: 6, work: 4.8, civic: 3.6 };
 
-/** What kind of place a building is, from its function or its zone. */
-export function kindOf(b: Building): keyof Mix {
+/** What kind of place a building is, from its function or its zone (a record, or its traffic record). */
+export function kindOf(b: Pick<Building, 'use' | 'function'>): keyof Mix {
   const fn = b.function ?? '';
   if (/house|apartment|residential|townhouse|flat/i.test(fn)) return 'home';
   if (/shop|market|mall|restaurant|cafe|bar|bakery|pharmacy|bank|hotel|cinema/i.test(fn)) return 'shop';

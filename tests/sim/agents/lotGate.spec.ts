@@ -10,6 +10,7 @@ import { growOnLot } from '@editor/zoning';
 import { SimWorld } from '@sim/world';
 import { type Bay, carGates, collectBays, gateExits, gatedProperty, wallsOf } from '@sim/agents/parking';
 import { arrival, departure } from '@sim/agents/manoeuvre';
+import { trafficBuilding } from '@sim/agents/trafficBuildings';
 
 /** A lot with a car park behind its building is entered and left by its car gate */
 
@@ -110,7 +111,7 @@ describe('a lot car park reached through its car gate', () => {
     expect(parks.length).toBeGreaterThan(2);
     for (const b of parks) expect(carGates(b).length).toBeGreaterThan(0);
     // Every one but a lot at the very end of the street, whose gate is short of the lane's end.
-    const out = parks.filter((b) => gateExits(w, b, gatedProperty(b)!, wallsOf(w)).length > 0).length;
+    const out = parks.filter((b) => gateExits(w, trafficBuilding(b), gatedProperty(b)!, wallsOf(w)).length > 0).length;
     expect(out / parks.length).toBeGreaterThan(0.85);
   });
 
@@ -119,7 +120,7 @@ describe('a lot car park reached through its car gate', () => {
     const reached = bays.filter((bay) => bay.lane?.entryAt !== undefined && bay.via.length > 0);
     // A lot with a way out through its gate reaches every one of its stalls
     for (const b of parks) {
-      if (!gateExits(w, b, gatedProperty(b)!, wallsOf(w)).length) continue;
+      if (!gateExits(w, trafficBuilding(b), gatedProperty(b)!, wallsOf(w)).length) continue;
       const mine = bays.filter((bay) => bay.building === b.id);
       expect(mine.filter((bay) => reached.includes(bay)).length, `lot ${b.id}`).toBe(mine.length);
     }

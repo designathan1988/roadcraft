@@ -1,12 +1,10 @@
-import { storedBounds, solidFootprints } from '@world/buildings/geometry';
 import { Digest } from '@core/digest';
-import type { Building, BuildingId } from '@world/buildings/types';
+import type { BuildingId } from '@world/buildings/types';
 import type { ChangeRect } from '@world/changes';
 import type { SimWorld } from '../world';
 import type { SegmentId } from '@world/ids';
-import { m } from '@world/units';
 import type { Bay, BayLane } from './bay';
-import type { BuildingStore } from '@world/buildings/store';
+import { LOT_READS, type TrafficBuilding, type TrafficBuildings } from './trafficBuildings';
 import { BuildingsInOrder } from './buildingOrder';
 import { laneChangesSince, laneGrid, lanesInBox, lanesNear } from './laneGrid';
 export { laneChangesSince, lanesInBox };
@@ -27,27 +25,26 @@ export type { Bay, BayLane } from './bay';
 export function collectBays(w: SimWorld): Bay[] {
   return townBays(baysNow(w)).map((bay) => ({ ...bay, car: null }));
 }
-/** How far a lot's bays read lanes and walls (`LANE_REACH`, the exits' reach), with a margin. */
-const LOT_READS = LANE_REACH + m(12);
-/** How far round a change a lot's box grown by `LOT_READS` may reach */
+/** How far round a change a lot's box grown by `LOT_READS` (`TrafficBuilding.reach`) may reach */
 const LOT_REACHED = LOT_READS * 2;
 /** What a building's bays are worked out from, as text, once per record */
-const RECORD_READS = new WeakMap<Building, { lot?: number; walls?: readonly Wall[] }>();
-function recordReads(b: Building): { lot?: number; walls?: readonly Wall[] } {
+const RECORD_READS = new WeakMap<TrafficBuilding, { lot?: number; walls?: readonly Wall[] }>();
+function recordReads(b: TrafficBuilding): { lot?: number; walls?: readonly Wall[] } {
   let reads = RECORD_READS.get(b);
   if (!reads) RECORD_READS.set(b, reads = {});
   return reads;
 }
-/** What of a record its bays are worked out from: all of it but its age, name and plan version. */
-const notOfTheLot = (key: string): boolean => key === 'decay' || key === 'builtAt' || key === 'name' || key === 'lotPlan';
+/** What of a record its bays are worked out from (`lotBays.ts` LotRecord): its frame, its blocks and its parts. */
+const OF_THE_LOT: ReadonlySet<string> = new Set(['id', 'x', 'y', 'rotation', 'volumes', 'elements']);
+const notOfTheLot = (key: string): boolean => !OF_THE_LOT.has(key);
 /** DO NOT key it by its JSON text: a string the size of the record held for every building with parking. */
-function lotKey(b: Building): number {
+function lotKey(b: TrafficBuilding): number {
   const reads = recordReads(b);
   reads.lot ??= new Digest().addPlain(b, notOfTheLot).value();
   return reads.lot;
 }
 
-const hasParking = (b: Building): boolean => (b.elements ?? []).some((el) => el.kind === 'parking');
+const hasParking = (b: TrafficBuilding): boolean => (b.elements ?? []).some((el) => el.kind === 'parking');
 
 /** What a lot's bays are worked out from: its record (`lotKey`), and the lanes and walls within reach, digested. */
 interface LotSources { readonly lot: number; readonly key: number }
@@ -112,7 +109,7 @@ function baysNow(w: SimWorld): BayBook {
   const lanes = grid.changes.since(book.lanesSeen);
   book.lanesSeen = grid.changes.state;
   const roadsMoved = lanes === null || lanes.length > 0;
-  const delta = book.lots.update(w.doc);
+  const delta = book.lots.update(w);
   for (const seg of followKerbs(w, book.kerb, delta, (id) => book.lots.rank(id), (x, y, segment) => laneBeside(w, x, y, segment))) {
     noteBays(book, `K${seg}`);
   }
@@ -136,7 +133,7 @@ function baysNow(w: SimWorld): BayBook {
   const workers = book.workers;
   const asked: Asked[] = [];
   const look = rects === null ? book.lots.ids : lotsReached(w, book.lots, rects, delta!.ids);
-  for (const id of look) lookAtLot(w, book, w.doc.buildings.get(id)!, rects, walls, workers ? asked : null);
+  for (const id of look) lookAtLot(w, book, w.buildings.get(id)!, rects, walls, workers ? asked : null);
   // The game's lots off the page; a world without workers worked them out above, on the page.
   if (workers && asked.length) {
     const asks = asked.map((a) => a.ask);
@@ -215,7 +212,7 @@ function lotsReached(w: SimWorld, lots: BuildingsInOrder, rects: readonly Change
   const out = new Set<BuildingId>();
   for (const id of named) if (lots.has(id)) out.add(id);
   // Every change in one look (`nearAny`): a change at a time read the cells they share again for each.
-  for (const b of w.doc.buildings.nearAny(rects, LOT_REACHED, (b, r) => lots.has(b.id) && meets(r, storedBounds(b, LOT_READS)))) out.add(b.id);
+  for (const b of w.buildings.nearAny(rects, LOT_REACHED, (b, r) => lots.has(b.id) && meets(r, b.reach))) out.add(b.id);
   return out;
 }
 
@@ -223,12 +220,12 @@ const meets = (r: ChangeRect, box: { minX: number; minY: number; maxX: number; m
   r[0] <= box.maxX && r[2] >= box.minX && r[1] <= box.maxY && r[3] >= box.minY;
 
 /** A lot looked at: kept as it is (or as it is being worked out) when its record and its reach are untouched */
-function lookAtLot(w: SimWorld, book: BayBook, b: Building, rects: readonly ChangeRect[] | null, walls: Walls, asked: Asked[] | null): void {
+function lookAtLot(w: SimWorld, book: BayBook, b: TrafficBuilding, rects: readonly ChangeRect[] | null, walls: Walls, asked: Asked[] | null): void {
   const was = book.known.get(b.id);
   const waiting = book.waiting.get(b.id);
   // What the lot's bays are, or will be once the workers answer.
   const aim = waiting ?? was;
-  const box = storedBounds(b, LOT_READS);
+  const box = b.reach;
   const lot = lotKey(b);
   if (rects && aim && aim.lot === lot && !rects.some((r) => meets(r, box))) return;
   const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
@@ -272,7 +269,7 @@ function pageReads(w: SimWorld, walls: Walls): BayReads {
 }
 
 /** The ways out of a gated lot (`lotBays.ts` `gateExits`), read on the page. */
-export function gateExits(w: SimWorld, b: Building, property: { x: number; y: number; w: number; d: number }, walls: Walls): LotExit[] {
+export function gateExits(w: SimWorld, b: TrafficBuilding, property: { x: number; y: number; w: number; d: number }, walls: Walls): LotExit[] {
   return lotGateExits(pageReads(w, walls), b, property);
 }
 
@@ -282,11 +279,11 @@ export interface Wall extends WallRing {
 }
 
 /** A record's solid footprints, with their bounds and digests, made once (`recordReads`) */
-function recordWalls(b: Building): readonly Wall[] {
+function recordWalls(b: TrafficBuilding): readonly Wall[] {
   const reads = recordReads(b);
   if (!reads.walls) {
     const made: Wall[] = [];
-    for (const ring of solidFootprints(b)) {
+    for (const ring of b.footprints) {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       const digest = new Digest().add(b.id);
       for (const p of ring) {
@@ -302,7 +299,7 @@ function recordWalls(b: Building): readonly Wall[] {
 
 /** DO NOT go back to a list of every building's walls: one change of one building made it again. */
 export class Walls {
-  constructor(private readonly store: BuildingStore) {}
+  constructor(private readonly store: TrafficBuildings) {}
 
   /** The walls whose bounds meet a box, in the store's order. */
   inBox(x0: number, y0: number, x1: number, y1: number): Wall[] {
@@ -316,7 +313,7 @@ export class Walls {
 
 /** The town's walls, by place. */
 export function wallsOf(w: SimWorld): Walls {
-  return new Walls(w.doc.buildings);
+  return new Walls(w.buildings);
 }
 
 /** The lane beside a point of a street (a bus stop): the nearest on the kerb side of that road, its point there. */

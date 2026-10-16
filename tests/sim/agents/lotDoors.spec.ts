@@ -11,6 +11,7 @@ import { step } from '@sim/pipeline';
 import { DT } from '@sim/params';
 import { createAgentWalkEngine, inspectAgentWalkers } from '@sim/agents/walk';
 import { doorWay, personGates } from '@sim/agents/lotDoors';
+import { trafficBuilding } from '@sim/agents/trafficBuildings';
 import { streetDoors } from '@world/buildings/streetDoors';
 
 /** People use the lots' people's gates (the player, 2026-10-09: every lot has one, nobody walked through it) */
@@ -69,10 +70,10 @@ describe('the way from a lot door out through its people gate', () => {
     const missing: string[] = [];
     for (const b of doc.buildings.all()) {
       // A gate in front of the building (`lotPlan.ts`: on the path to the door)
-      const front = personGates(b).some((g) => b.volumes.some((v) => !v.open && v.base === 0 && g.x > v.x && g.x < v.x + v.w && v.y > g.y + m(1)));
+      const front = personGates(trafficBuilding(b)).some((g) => b.volumes.some((v) => !v.open && v.base === 0 && g.x > v.x && g.x < v.x + v.w && v.y > g.y + m(1)));
       if (!front) continue;
       gated++;
-      const way = doorWay(b);
+      const way = doorWay(trafficBuilding(b));
       if (!way) {
         missing.push(`${b.id}:${b.function}`);
         continue;
@@ -105,9 +106,9 @@ describe('a shop on the footway', () => {
   it('is walked into by its street door: the way is the step out of it onto the footway', () => {
     let shops = 0;
     for (const b of doc.buildings.all()) {
-      if (personGates(b).length || !streetDoors(b).length) continue;
+      if (personGates(trafficBuilding(b)).length || !streetDoors(b).length) continue;
       shops++;
-      const way = doorWay(b);
+      const way = doorWay(trafficBuilding(b));
       expect(way, `building ${b.id} (${b.function}): a way from its street door`).not.toBeNull();
       const local = way!.out.map((p) => worldToLocal(b, p));
       const rings = solidFootprints(b).map((r) => r.map((p) => worldToLocal(b, p)));

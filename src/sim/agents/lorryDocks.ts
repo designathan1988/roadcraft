@@ -1,8 +1,10 @@
 import { pointInPolygon } from '@core/polygon';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
-import { isDock, lorryDocks, type LorryDock } from '@world/buildings/docks';
-import type { Building, BuildingElement, ElementKind } from '@world/buildings/types';
+import { isDock, type LorryDock } from '@world/buildings/docks';
+import type { ElementKind } from '@world/buildings/types';
 import type { Lot } from '@world/lots';
+import type { TrafficBuilding, TrafficPart } from './trafficBuildings';
+import type { LotPart } from './lotNav';
 import { levelRingsOf } from '@world/surfaces';
 import { Level } from '@world/roadTypes';
 import type { MultiPoly } from '@core/clipper';
@@ -103,7 +105,7 @@ export class Yard {
   readonly inputs: number;
 
   /** Made by `buildYard`, whose grid and clearance it takes; here its gates and docks are worked out. */
-  constructor(readonly building: Building, public key: string, w: SimWorld, body: Steered, made: YardGrid) {
+  constructor(readonly building: TrafficBuilding, public key: string, w: SimWorld, body: Steered, made: YardGrid) {
     this.body = body;
     this.inputs = made.inputs;
     const b = building;
@@ -128,7 +130,7 @@ export class Yard {
       };
       this.gates.push({ exit, lane: exit.lane, stop: pose(stopAt), stopAt, join: pose(joinAt), joinAt });
     }
-    for (const dock of lorryDocks(b)) {
+    for (const dock of b.docks) {
       const door = worldToLocal(b, dock.door), open = worldToLocal(b, dock.open);
       const ol = Math.hypot(open.x - door.x, open.y - door.y);
       const ox = (open.x - door.x) / ol, oy = (open.y - door.y) / ol;
@@ -293,18 +295,18 @@ export function yardNeighbours(w: SimWorld, known: YardNeighbours | null): YardN
 }
 
 /** The lots filed in the cells over a box of the world, each once, and the buildings the store's index has there. */
-function near(index: YardNeighbours, w: SimWorld, x0: number, y0: number, x1: number, y1: number): { lots: Set<Lot>; buildings: readonly Building[] } {
+function near(index: YardNeighbours, w: SimWorld, x0: number, y0: number, x1: number, y1: number): { lots: Set<Lot>; buildings: readonly TrafficBuilding[] } {
   const lots = new Set<Lot>();
   for (let i = Math.floor(x0 / NEIGHBOUR_CELL); i <= Math.floor(x1 / NEIGHBOUR_CELL); i++) {
     for (let j = Math.floor(y0 / NEIGHBOUR_CELL); j <= Math.floor(y1 / NEIGHBOUR_CELL); j++) {
       for (const lot of index.cells.get(neighbourCell(i, j)) ?? []) lots.add(lot);
     }
   }
-  return { lots, buildings: w.doc.buildings.near(x0, y0, x1, y1) };
+  return { lots, buildings: w.buildings.near(x0, y0, x1, y1) };
 }
 
 /** Makes a yard a slice at a time: what is solid to a lorry filled in its grid - from what is near the yard only */
-export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered, index: YardNeighbours): Generator<void, Yard, void> {
+export function* buildYard(b: TrafficBuilding, key: string, w: SimWorld, body: Steered, index: YardNeighbours): Generator<void, Yard, void> {
   const prop = gatedProperty(b)!;
   const inputs = yardInputs(w, b, index);
   const lot = index.lotOf.get(b.id);
@@ -373,7 +375,7 @@ export function* buildYard(b: Building, key: string, w: SimWorld, body: Steered,
 }
 
 /** A yard's grid (local frame: its corner, cells across and down, its box) and the grid's box in the world. */
-function yardBox(b: Building, prop: { x: number; y: number; w: number; d: number }) {
+function yardBox(b: TrafficBuilding, prop: { x: number; y: number; w: number; d: number }) {
   const x0 = prop.x - STREET_REACH, y0 = prop.y - STREET_REACH;
   const nx = Math.ceil((prop.w + 2 * STREET_REACH) / CELL), ny = Math.ceil((prop.d + 2 * STREET_REACH) / CELL);
   const box = { x0: x0, y0: y0, x1: x0 + nx * CELL, y1: y0 + ny * CELL };
@@ -387,7 +389,7 @@ function yardBox(b: Building, prop: { x: number; y: number; w: number; d: number
 const GATE_LANES_READ = m(45) + m(5);
 
 /** What a yard is made from, near it, as one number: the lanes its gates may be joined to */
-function yardInputs(w: SimWorld, b: Building, index: YardNeighbours): number {
+function yardInputs(w: SimWorld, b: TrafficBuilding, index: YardNeighbours): number {
   const prop = gatedProperty(b);
   if (!prop) return 0;
   const { wx0, wy0, wx1, wy1 } = yardBox(b, prop);
@@ -420,8 +422,8 @@ function yardsOf(w: SimWorld): WorldYards {
 export const yardKey = (w: SimWorld): string => `${w.topologyRevision}:${w.graph.revision}:${w.net.revision}`;
 
 /** DO NOT throw a yard away on `yardKey` alone: a road drawn anywhere in the town made every yard again */
-export function knownYard(w: SimWorld, b: Building): Yard | null | undefined {
-  if (!gatedProperty(b) || !lorryDocks(b).length) return null;
+export function knownYard(w: SimWorld, b: TrafficBuilding): Yard | null | undefined {
+  if (!gatedProperty(b) || !b.docks.length) return null;
   const known = YARDS.get(w)?.byBuilding.get(b.id);
   if (!known || known.building !== b) return undefined;
   const key = yardKey(w);
@@ -455,7 +457,7 @@ export function keepYard(w: SimWorld, yard: Yard): void {
 }
 
 /** The yard of a building as it stands now, made to the end at once if it must be (probes and specs). */
-export function yardOf(w: SimWorld, b: Building, body: Steered): Yard | null {
+export function yardOf(w: SimWorld, b: TrafficBuilding, body: Steered): Yard | null {
   const known = knownYard(w, b);
   if (known !== undefined) return known;
   const steps = buildYard(b, yardKey(w), w, body, yardNeighbours(w, null));
@@ -492,8 +494,8 @@ function gateDistance(gate: YardGate, open: { x: number; y: number }): number {
   return Math.hypot(gate.exit.inner.x - open.x, gate.exit.inner.y - open.y);
 }
 
-function nearestGate(gates: readonly BuildingElement[], x: number, y: number): BuildingElement | undefined {
-  let best: BuildingElement | undefined, bestD = Infinity;
+function nearestGate(gates: readonly TrafficPart[], x: number, y: number): TrafficPart | undefined {
+  let best: TrafficPart | undefined, bestD = Infinity;
   for (const g of gates) {
     const d = Math.hypot(g.x - x, g.y - y);
     if (d < bestD) { bestD = d; best = g; }
@@ -501,14 +503,14 @@ function nearestGate(gates: readonly BuildingElement[], x: number, y: number): B
   return best;
 }
 
-function elementRing(el: BuildingElement): { x: number; y: number }[] {
+function elementRing(el: LotPart): { x: number; y: number }[] {
   const alongY = el.facing === 0 || el.facing === 2;
   const hx = (alongY ? el.w : el.d) / 2, hy = (alongY ? el.d : el.w) / 2;
   const c = Math.cos(el.angle ?? 0), s = Math.sin(el.angle ?? 0);
   return [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]].map(([u, v]) => ({ x: el.x + u! * c - v! * s, y: el.y + u! * s + v! * c }));
 }
 
-function localDir(b: Building, dx: number, dy: number): { x: number; y: number } {
+function localDir(b: TrafficBuilding, dx: number, dy: number): { x: number; y: number } {
   const c = Math.cos(b.rotation), s = Math.sin(b.rotation);
   return { x: dx * c + dy * s, y: -dx * s + dy * c };
 }

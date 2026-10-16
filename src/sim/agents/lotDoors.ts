@@ -1,10 +1,10 @@
 import type { Vec2 } from '@core/vec2';
-import { localToWorld, solidFootprints, worldToLocal } from '@world/buildings/geometry';
-import type { Building, BuildingElement, BuildingId } from '@world/buildings/types';
+import { localToWorld, worldToLocal } from '@world/buildings/geometry';
+import type { BuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
-import { streetDoors } from '@world/buildings/streetDoors';
 import { carGates } from './parking';
 import { PEOPLE_GRID, buildLotGrid, sees, wayOut } from './lotNav';
+import type { TrafficBuilding, TrafficPart } from './trafficBuildings';
 
 /** The way on foot between a lot's front door and the footway */
 
@@ -20,7 +20,7 @@ export interface DoorWay {
 }
 
 /** A gate narrower than a car's is a person's (`parking.ts` CAR_GATE). */
-export function personGates(b: Building): BuildingElement[] {
+export function personGates(b: TrafficBuilding): TrafficPart[] {
   const cars = new Set(carGates(b));
   return (b.elements ?? []).filter((el) => el.kind === 'gate' && !cars.has(el));
 }
@@ -35,10 +35,10 @@ const GATE_OUT = m(0.6);
 /** Room round the gate and the door the grid covers. */
 const MARGIN = m(3);
 
-const DOORS = new WeakMap<Building, DoorWay | null>();
+const DOORS = new WeakMap<TrafficBuilding, DoorWay | null>();
 
 /** The building's way from its door out through its people's gate; null when it has none that is walkable. */
-export function doorWay(b: Building): DoorWay | null {
+export function doorWay(b: TrafficBuilding): DoorWay | null {
   const known = DOORS.get(b);
   if (known !== undefined) return known;
   const way = workOut(b);
@@ -46,10 +46,10 @@ export function doorWay(b: Building): DoorWay | null {
   return way;
 }
 
-function workOut(b: Building): DoorWay | null {
+function workOut(b: TrafficBuilding): DoorWay | null {
   const gates = personGates(b);
   if (!gates.length) return streetWay(b);
-  const rings = solidFootprints(b).map((ring) => ring.map((p) => worldToLocal(b, p)));
+  const rings = b.footprints.map((ring) => ring.map((p) => worldToLocal(b, p)));
   if (!rings.length) return null;
   // The building's middle, for which way is into the lot.
   let cx = 0, cy = 0, n = 0;
@@ -96,8 +96,8 @@ function workOut(b: Building): DoorWay | null {
 }
 
 /** A shop or a bar built up to the footway, with no people's gate: its front door opens onto the street */
-function streetWay(b: Building): DoorWay | null {
-  const d = streetDoors(b)[0];
+function streetWay(b: TrafficBuilding): DoorWay | null {
+  const d = b.doors[0];
   if (!d) return null;
   const out = [
     { x: d.x + d.nx * DOOR_OFF, y: d.y + d.ny * DOOR_OFF },

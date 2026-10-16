@@ -9,6 +9,7 @@ import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@editor/zoning';
 import { BuildingMix, SightWalls, ambientIndexWork, crosses, StreetLength, atRoll } from '@sim/ambient/ambientIndex';
 import { kindOf, type Mix } from '@sim/ambient/demand';
+import { docBuildings } from '@sim/agents/trafficBuildings';
 
 /** The scenery's indexes (`sim/ambient/ambientIndex.ts`) answer as the walks over the whole map they replace */
 
@@ -99,7 +100,7 @@ describe('the walls between the eye and a point', () => {
     let hits = 0, asked = 0;
     for (let round = 0; round < 40; round++) {
       if (round) for (let k = 0; k < 3; k++) editBuildings(doc, rng, removed);
-      walls.sync(doc.buildings, doc.changes);
+      walls.sync(docBuildings(doc), doc.changes);
       for (let q = 0; q < 60; q++) {
         // Lines of sight of every length and slope, some along a cell's edge (32 m).
         const ax = m(rng.range(-160, 160)), ay = m(rng.range(-160, 160));
@@ -142,7 +143,7 @@ describe('the mix of the buildings round a place', () => {
     const full = ambientIndexWork.full;
     for (let round = 0; round < 40; round++) {
       if (round) for (let k = 0; k < 3; k++) editBuildings(doc, rng, removed);
-      mix.sync(doc.buildings, doc.changes);
+      mix.sync(docBuildings(doc), doc.changes);
       expect(mix.around(0, 0, Infinity)).toEqual(oldMix(doc, 0, 0, Infinity));
       for (let q = 0; q < 40; q++) {
         const x = m(rng.range(-250, 250)), y = m(rng.range(-250, 250));

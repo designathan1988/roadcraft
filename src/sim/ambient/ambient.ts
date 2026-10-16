@@ -222,7 +222,7 @@ export class AmbientWorld {
 
   /** True when a wall stands between the eye and (x, y), and between the eye and each side of it `pad` across. */
   private behindWall(w: SimWorld, ex: number, ey: number, x: number, y: number, pad: number): boolean {
-    this.walls.sync(w.doc.buildings, w.doc.changes);
+    this.walls.sync(w.buildings, w.doc.changes);
     const dx = x - ex, dy = y - ey, d = Math.hypot(dx, dy) || 1;
     const sx = (-dy / d) * pad, sy = (dx / d) * pad;
     return this.walls.blocked(ex, ey, x + sx, y + sy) && this.walls.blocked(ex, ey, x - sx, y - sy);
@@ -556,7 +556,7 @@ export class AmbientWorld {
 
   /** The buildings people walk into, taken in from the diary */
   private refreshPlaces(w: SimWorld): void {
-    this.places.sync(w.doc.buildings, w.doc.changes);
+    this.places.sync(w.buildings, w.doc.changes);
   }
 
   /** Whether a lot may be walked to: one whose way is known to be walkable, or not yet worked out. */
@@ -862,7 +862,7 @@ export class AmbientWorld {
   private readonly buildingMix = new BuildingMix();
 
   private mixAround(w: SimWorld, x: number, y: number, r: number): Mix {
-    this.buildingMix.sync(w.doc.buildings, w.doc.changes);
+    this.buildingMix.sync(w.buildings, w.doc.changes);
     return this.buildingMix.around(x, y, r);
   }
 

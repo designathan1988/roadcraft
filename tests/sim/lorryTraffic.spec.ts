@@ -48,8 +48,8 @@ function works(): { doc: RoadDoc; w: SimWorld } {
 
 describe('the lorries to the docks', () => {
   it('make each yard once: the yard in hand is not thrown away for another', () => {
-    const { doc, w } = works();
-    const list = new YardList().read(doc);
+    const { w } = works();
+    const list = new YardList().read(w);
     expect(list.length).toBeGreaterThan(1);
     yards.begun.length = 0;
     yards.made.length = 0;
@@ -63,7 +63,7 @@ describe('the lorries to the docks', () => {
   });
 
   it('draw again from their seed when the world is reset', () => {
-    const { doc, w } = works();
+    const { w } = works();
     const lorries = new LorryTraffic();
     const driverOf = (building: BuildingId): Driver => {
       const kept = (lorries as unknown as { lorries: Map<number, { building: BuildingId; body: { driver: Driver } | null }> }).lorries;
@@ -72,7 +72,7 @@ describe('the lorries to the docks', () => {
     };
     // The first dock of the town with a way in and out.
     let sent: { building: BuildingId; dock: number } | null = null;
-    for (const y of new YardList().read(doc)) {
+    for (const y of new YardList().read(w)) {
       for (let dock = 0; dock < y.docks && !sent; dock++) if (lorries.sendNow(w, y.building, dock)) sent = { building: y.building, dock };
       if (sent) break;
     }

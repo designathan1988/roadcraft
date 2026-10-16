@@ -1,8 +1,7 @@
 import type { ChangeJournal, ChangeRect } from '@world/changes';
-import type { BuildingStore } from '@world/buildings/store';
-import type { Building, BuildingElement } from '@world/buildings/types';
-import { storedBounds } from '@world/buildings/geometry';
 import { m } from '@world/units';
+import type { TrafficBuilding, TrafficBuildings } from '../agents/trafficBuildings';
+import type { LotPart } from '../agents/lotNav';
 import { kindOf } from './demand';
 import { ambientIndexWork, atRoll, cellKey, type Kind } from './ambientIndex';
 
@@ -80,12 +79,12 @@ export interface PlaceWay {
 
 /** What the places are worked out with: the lot's way (`lotDoors.ts` doorWay) and its people's gates (`personGates`). */
 export interface PlaceDeps<W extends PlaceWay> {
-  readonly wayOf: (b: Building) => W | null;
-  readonly gatesOf: (b: Building) => readonly BuildingElement[];
+  readonly wayOf: (b: TrafficBuilding) => W | null;
+  readonly gatesOf: (b: TrafficBuilding) => readonly LotPart[];
 }
 
 interface Place<W extends PlaceWay> {
-  readonly b: Building;
+  readonly b: TrafficBuilding;
   readonly k: number;
   /** The most frontage its way can have, as a weight: what it is drawn by until its way is worked out. */
   readonly bound: number;
@@ -126,7 +125,7 @@ export class LotPlaces<W extends PlaceWay> {
   constructor(private readonly deps: PlaceDeps<W>) {}
 
   /** Takes in the buildings and the roads the diary says changed since the last call. */
-  sync(store: BuildingStore, journal: ChangeJournal): void {
+  sync(store: TrafficBuildings, journal: ChangeJournal): void {
     if (this.serial >= journal.version) return;
     const entries = journal.since(this.serial, ['buildings', 'roads']);
     this.serial = journal.version;
@@ -313,17 +312,17 @@ export class LotPlaces<W extends PlaceWay> {
   }
 
   /** @rebuild The whole store read again: a load, a clear, or a diary that forgot. */
-  private fileAll(store: BuildingStore): void {
+  private fileAll(store: TrafficBuildings): void {
     ambientIndexWork.full++;
     for (const id of [...this.byBuilding.keys()]) this.unfile(id);
     for (const b of store.all()) this.file(b);
   }
 
-  private file(b: Building): void {
+  private file(b: TrafficBuilding): void {
     ambientIndexWork.filed++;
     const k = KIND_INDEX[kindOf(b)];
     const bound = weightOf(this.frontageBound(b));
-    const box = storedBounds(b);
+    const box = b.bounds;
     const placed = Number.isFinite(box.minX) && Number.isFinite(box.maxX) && Number.isFinite(box.minY) && Number.isFinite(box.maxY);
     const fx0 = box.minX - FEET_PAD, fy0 = box.minY - FEET_PAD, fx1 = box.maxX + FEET_PAD, fy1 = box.maxY + FEET_PAD;
     const cell = placed ? cellKey(Math.floor((fx0 + fx1) / 2 / PLACE_CELL), Math.floor((fy0 + fy1) / 2 / PLACE_CELL)) : null;
@@ -359,7 +358,7 @@ export class LotPlaces<W extends PlaceWay> {
   }
 
   /** The most frontage the building's way can have (`lotDoors.ts`) */
-  private frontageBound(b: Building): number {
+  private frontageBound(b: TrafficBuilding): number {
     const gates = this.deps.gatesOf(b);
     if (!gates.length) {
       let lo = Infinity, hi = -Infinity;

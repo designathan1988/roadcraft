@@ -1,10 +1,8 @@
 import type { ChangeJournal } from '@world/changes';
 import { NetworkLength } from '@world/networkLength';
-import type { BuildingStore } from '@world/buildings/store';
-import type { Building } from '@world/buildings/types';
 import type { Network, SegmentRibbon } from '@world/network';
-import { solidFootprints } from '@world/buildings/geometry';
 import { m } from '@world/units';
+import type { TrafficBuilding, TrafficBuildings } from '../agents/trafficBuildings';
 import { kindOf, type Mix } from './demand';
 
 /** DO NOT key any of these by `doc.buildings.revision` */
@@ -50,7 +48,7 @@ export class SightWalls {
   private query = 0;
 
   /** Takes in what the diary says changed since the last call. */
-  sync(store: BuildingStore, journal: ChangeJournal): void {
+  sync(store: TrafficBuildings, journal: ChangeJournal): void {
     const changed = buildingsChangedSince(journal, this.serial);
     this.serial = journal.version;
     if (changed === null) { this.fileAll(store); return; }
@@ -62,16 +60,16 @@ export class SightWalls {
   }
 
   /** @rebuild The whole store read again: a load, a clear, or a diary that forgot. */
-  private fileAll(store: BuildingStore): void {
+  private fileAll(store: TrafficBuildings): void {
     ambientIndexWork.full++;
     this.byBuilding.clear();
     this.cells.clear();
     for (const b of store.all()) this.file(b);
   }
 
-  private file(b: Building): void {
+  private file(b: TrafficBuilding): void {
     const walls: Wall[] = [];
-    for (const ring of solidFootprints(b)) {
+    for (const ring of b.footprints) {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const p of ring) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
       if (!(x0 <= x1 && y0 <= y1)) continue;
@@ -175,7 +173,7 @@ export class BuildingMix {
   private readonly all = noCounts();
 
   /** Takes in what the diary says changed since the last call. */
-  sync(store: BuildingStore, journal: ChangeJournal): void {
+  sync(store: TrafficBuildings, journal: ChangeJournal): void {
     const changed = buildingsChangedSince(journal, this.serial);
     this.serial = journal.version;
     if (changed === null) { this.fileAll(store); return; }
@@ -187,7 +185,7 @@ export class BuildingMix {
   }
 
   /** @rebuild The whole store read again: a load, a clear, or a diary that forgot. */
-  private fileAll(store: BuildingStore): void {
+  private fileAll(store: TrafficBuildings): void {
     ambientIndexWork.full++;
     this.byBuilding.clear();
     this.cells.clear();
@@ -196,7 +194,7 @@ export class BuildingMix {
     for (const b of store.all()) this.file(b);
   }
 
-  private file(b: Building): void {
+  private file(b: TrafficBuilding): void {
     ambientIndexWork.filed++;
     const placed = Number.isFinite(b.x) && Number.isFinite(b.y);
     const cell = placed ? cellKey(Math.floor(b.x / MIX_CELL), Math.floor(b.y / MIX_CELL)) : null;

@@ -38,7 +38,7 @@ describe('a works yard', () => {
     net.rebuild();
     const w = new SimWorld(doc, net, 0x0be9);
     w.rebuildTopology();
-    const b = [...doc.buildings.all()].find((x) => knownYard(w, x) !== null);
+    const b = [...w.buildings.all()].find((x) => knownYard(w, x) !== null);
     expect(b).toBeDefined();
     const steps = buildYard(b!, yardKey(w), w, lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!), yardNeighbours(w, null));
     let slices = 0;
