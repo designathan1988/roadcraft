@@ -39,6 +39,10 @@ cause, technique and source). Git history is the archive.
 - Do not trust your own knowledge: look up the official documentation and proper sources online.
 - No trial and error. If you do not know how to solve something, or it fails the first time,
   RESEARCH ON THE INTERNET.
+- NO MORE MEASURING (player's order, 2026-10-16, repeated many times): no probes, no traces, no memory
+  dumps, no heap profiles, no "diagnosis" reports, no numbers the player did not ask for. Weeks of
+  measuring produced no progress. The problem is the code: read it, find the cause, EDIT THE CODE,
+  fix it. A measurement that does not end in a code change the same hour is waste of the player's money.
 
 ## Architecture rewrite (authorized by the player on 2026-10-15)
 The player authorized replacing the architecture where it blocks scale: "extremely fast, with
@@ -230,6 +234,13 @@ is 4.4 GB, so no tuning fits a city much past 10 km. Binding decisions:
 - The fixed map today: 5 × 5 plates of 2,048 m (`world/bounds.ts`).
 
 ## Open findings
+FIXED 2026-10-16 (the whole city's opening died "Out of Memory" ~70 s after the request with the CPU free): a job worker
+grew to 2.9 GB of live heap and the page's shared V8 cage (4 GB) overflowed. Cause: `clipper2-ts` 2.0.1-18 `doHorizontal`
+reads `isLeftToRight` once and never again when consecutive horizontal edges reverse direction, so a union over a footway
+ring with a zero-width spike (tile -5,-2 of seed 1, `tests/fixtures/clipper-union-seed1-tile-5-2.json`) sweeps the wrong
+way and allocates points for ever, in the tile worker's `planLots` → `pavingNear`. Fix: the engine patched as the
+library's open pull request 36 (`scripts/patches/clipper2-ts+2.0.1-18.patch`, applied by `npm install`); the memory-cage
+mechanics (one 4 GB V8 cage for the page and every worker, `jobPool.ts`) stay as they are.
 Read whole by the coordinator on 2026-10-16 (main `0c7b15e`: every file of the opening and edit paths, sim and jobs;
 agent behaviour, effects and UI only scanned). Why the whole city dies of memory before drawing:
 - Root: a building record is the whole authored model (the lot's furniture inside it, 133 JS objects a building), kept per tile

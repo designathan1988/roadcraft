@@ -26,7 +26,8 @@
     "desktop": "electron desktop/main.cjs",
     "package:desktop": "npm run build && node scripts/package-desktop.mjs",
     "test:scale:raw": "vitest run -c vitest.scale.config.ts",
-    "test:scale": "node scripts/run-limited.mjs npm run test:scale:raw"
+    "test:scale": "node scripts/run-limited.mjs npm run test:scale:raw",
+    "postinstall": "patch-package --patch-dir scripts/patches"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
@@ -40,6 +41,7 @@
     "happy-dom": "^20.11.6",
     "knip": "6.38.0",
     "meshoptimizer": "1.2.0",
+    "patch-package": "^8.0.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.67.0",
     "vite": "^8.2.2",

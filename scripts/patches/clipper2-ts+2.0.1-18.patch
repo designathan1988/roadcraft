@@ -1,0 +1,80 @@
+diff --git a/node_modules/clipper2-ts/dist/Engine.js b/node_modules/clipper2-ts/dist/Engine.js
+index 84ab400..80f4f60 100644
+--- a/node_modules/clipper2-ts/dist/Engine.js
++++ b/node_modules/clipper2-ts/dist/Engine.js
+@@ -999,7 +999,8 @@ export class ClipperBase {
+         const vertexMax = horzIsOpen ?
+             this.getCurrYMaximaVertexOpen(horz) :
+             this.getCurrYMaximaVertex(horz);
+-        const { isLeftToRight, leftX, rightX } = this.resetHorzDirection(horz, vertexMax);
++        const { isLeftToRight: initialDirection, leftX, rightX } = this.resetHorzDirection(horz, vertexMax);
++        let isLeftToRight = initialDirection;
+         let leftX2 = leftX;
+         let rightX2 = rightX;
+         if (ClipperBase.isHotEdge(horz)) {
+@@ -1098,6 +1099,7 @@ export class ClipperBase {
+             }
+             this.updateEdgeIntoAEL(horz);
+             const resetResult = this.resetHorzDirection(horz, vertexMax);
++            isLeftToRight = resetResult.isLeftToRight;
+             leftX2 = resetResult.leftX;
+             rightX2 = resetResult.rightX;
+         }
+@@ -1111,7 +1113,8 @@ export class ClipperBase {
+     doHorizontalClosed(horz) {
+         const y = horz.bot.y;
+         const vertexMax = this.getCurrYMaximaVertex(horz);
+-        const { isLeftToRight, leftX, rightX } = this.resetHorzDirection(horz, vertexMax);
++        const { isLeftToRight: initialDirection, leftX, rightX } = this.resetHorzDirection(horz, vertexMax);
++        let isLeftToRight = initialDirection;
+         let leftX2 = leftX;
+         let rightX2 = rightX;
+         if (ClipperBase.isHotEdge(horz)) {
+@@ -1180,6 +1183,7 @@ export class ClipperBase {
+             }
+             this.updateEdgeIntoAEL(horz);
+             const resetResult = this.resetHorzDirection(horz, vertexMax);
++            isLeftToRight = resetResult.isLeftToRight;
+             leftX2 = resetResult.leftX;
+             rightX2 = resetResult.rightX;
+         }
+diff --git a/node_modules/clipper2-ts/src/Engine.ts b/node_modules/clipper2-ts/src/Engine.ts
+index 0540307..362d95d 100644
+--- a/node_modules/clipper2-ts/src/Engine.ts
++++ b/node_modules/clipper2-ts/src/Engine.ts
+@@ -1077,7 +1077,8 @@ protected executeInternal(ct: ClipType, fillRule: FillRule): void {
+       this.getCurrYMaximaVertexOpen(horz) :
+       this.getCurrYMaximaVertex(horz);
+ 
+-    const { isLeftToRight, leftX, rightX } = this.resetHorzDirection(horz, vertexMax);
++    const { isLeftToRight: initialDirection, leftX, rightX } = this.resetHorzDirection(horz, vertexMax);
++    let isLeftToRight = initialDirection;
+     let leftX2 = leftX;
+     let rightX2 = rightX;
+ 
+@@ -1183,6 +1184,7 @@ protected executeInternal(ct: ClipType, fillRule: FillRule): void {
+       this.updateEdgeIntoAEL(horz);
+ 
+       const resetResult = this.resetHorzDirection(horz, vertexMax);
++      isLeftToRight = resetResult.isLeftToRight;
+       leftX2 = resetResult.leftX;
+       rightX2 = resetResult.rightX;
+     }
+@@ -1200,7 +1202,8 @@ protected executeInternal(ct: ClipType, fillRule: FillRule): void {
+     const y = horz.bot.y;
+     const vertexMax = this.getCurrYMaximaVertex(horz);
+ 
+-    const { isLeftToRight, leftX, rightX } = this.resetHorzDirection(horz, vertexMax);
++    const { isLeftToRight: initialDirection, leftX, rightX } = this.resetHorzDirection(horz, vertexMax);
++    let isLeftToRight = initialDirection;
+     let leftX2 = leftX;
+     let rightX2 = rightX;
+ 
+@@ -1277,6 +1280,7 @@ protected executeInternal(ct: ClipType, fillRule: FillRule): void {
+       this.updateEdgeIntoAEL(horz);
+ 
+       const resetResult = this.resetHorzDirection(horz, vertexMax);
++      isLeftToRight = resetResult.isLeftToRight;
+       leftX2 = resetResult.leftX;
+       rightX2 = resetResult.rightX;
+     }
