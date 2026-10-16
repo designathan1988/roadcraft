@@ -9,6 +9,7 @@ export type GeometryArrays = Readonly<Record<string, ArrayLike<number> | undefin
 type Uploaded = BufferAttribute | InterleavedBuffer;
 
 const REFILL = 'refillArrays';
+const FILL = 'fillArrays';
 
 function letGo(this: Uploaded): void {
   const self = this as { array: (ArrayLike<number> & { byteLength?: number }) | null };
@@ -20,8 +21,7 @@ function letGo(this: Uploaded): void {
 /** Lets the arrays of `own` (a mesh's own attributes by name) go once each is on the GPU */
 export function gpuOnlyAttributes(holder: Object3D, own: Readonly<Record<string, Uploaded>>, arrays: () => GeometryArrays): void {
   for (const uploaded of Object.values(own)) uploaded.onUpload(letGo);
-  holder.userData[REFILL] = (): void => {
-    const again = arrays();
+  const fill = (again: GeometryArrays): void => {
     for (const [name, uploaded] of Object.entries(own)) {
       const array = again[name];
       if (!array) continue;
@@ -29,6 +29,16 @@ export function gpuOnlyAttributes(holder: Object3D, own: Readonly<Record<string,
       uploaded.needsUpdate = true;
     }
   };
+  holder.userData[FILL] = fill;
+  holder.userData[REFILL] = (): void => fill(arrays());
+}
+
+/** A GPU-only mesh given arrays made elsewhere (the stored tiles, a worker) in place of its own source's; false where the mesh is not GPU-only. */
+export function fillArrays(holder: Object3D, arrays: GeometryArrays): boolean {
+  const fill = holder.userData[FILL] as ((again: GeometryArrays) => void) | undefined;
+  if (!fill) return false;
+  fill(arrays);
+  return true;
 }
 
 /** `gpuOnlyAttributes` for every attribute and the index of a geometry the mesh owns. */

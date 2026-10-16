@@ -6,7 +6,7 @@ import { coarseArrays } from '@render/mesh/roadLod';
 import { marksRoadSection } from '@render/mesh/roadEdges';
 import { COARSE_ERROR } from '@render/mesh/roadLodPure';
 import { FAR_MARGIN, makeFar, makeNear, updateRoadLevels } from '@render/mesh/roadResidency';
-import { attachFarLevel, cloneBlock, mergeTiles } from '@render/mesh/surfaceTiles';
+import { attachFarLevel, blockArraysOf, cloneBlock, mergeTiles } from '@render/mesh/surfaceTiles';
 import type { Tile } from '@render/mesh/tileMesh';
 
 /** THE FAR LEVEL OF A BLOCK OF ROAD (`mesh/roadLod.ts`, `mesh/roadResidency.ts`) */
@@ -111,6 +111,35 @@ describe('a block of road with a far level', () => {
     expect(mesh.visible).toBe(false);
     expect(levels(mesh).coarse.visible).toBe(true);
     expect((mesh.geometry.getAttribute('position') as { array: unknown }).array).toBeNull();
+  });
+});
+
+describe('a block brought near from the kept tiles', () => {
+  it('asks its arrays off the page once and shows the full level when they land; cut on the page only when they are not kept', async () => {
+    const mesh = make(false);
+    const lv = levels(mesh) as unknown as { bring: (() => Promise<unknown>) | null };
+    let asked = 0;
+    lv.bring = () => { asked++; return new Promise((done) => setTimeout(() => done(blockArraysOf([strip()], options.material)), 0)); };
+    makeNear(mesh);
+    expect(asked).toBe(1);
+    expect(levels(mesh).full).toBe(false);
+    expect(mesh.visible).toBe(false);
+    // Asked again while it is under way: nothing more.
+    makeNear(mesh);
+    updateRoadLevels([mesh], (mesh.userData.lod as { x: number }).x, 0, 500);
+    expect(asked).toBe(1);
+    await new Promise((done) => setTimeout(done, 1));
+    expect(levels(mesh).full).toBe(true);
+    expect(mesh.visible).toBe(true);
+    expect(levels(mesh).coarse.visible).toBe(false);
+    expect((mesh.geometry.getAttribute('position') as BufferAttribute).array.length).toBe(strip().positions.length);
+    // Not kept: cut again on the page.
+    makeFar(mesh);
+    lv.bring = () => Promise.resolve(null);
+    makeNear(mesh);
+    await new Promise((done) => setTimeout(done, 1));
+    expect(levels(mesh).full).toBe(true);
+    expect((mesh.geometry.getAttribute('position') as BufferAttribute).array.length).toBe(strip().positions.length);
   });
 });
 

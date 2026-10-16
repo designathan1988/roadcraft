@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry, type Mesh } from 'three';
 import type { BlockArrays } from './roadLodPure';
+import type { GeometryArrays } from './gpuOnly';
 
 export { blockBuffers, coarseArrays, type BlockArrays } from './roadLodPure';
 
@@ -24,8 +25,12 @@ export interface BlockLevels {
   /** The block's centre in the scene (x, z), for the distance to the camera. */
   readonly x: number;
   readonly z: number;
-  /** Whether the full level is on the GPU (its arrays given back by `refillArrays` when it comes). */
+  /** Whether the full level is on the GPU (its arrays given back when it comes near: `bring`, else `refillArrays`). */
   full: boolean;
+  /** The full level's arrays made off the page when the block comes near (the kept tiles read from the store, `roadSurfaces.ts`); null: not kept, cut again on the page. Unset: no such source (tests). */
+  bring?: (() => Promise<GeometryArrays | null>) | null;
+  /** Whether `bring` is under way: the block shows the full level when it lands. */
+  bringing?: boolean;
 }
 
 export const LOD_KEY = 'lod';

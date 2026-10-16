@@ -17,9 +17,9 @@ import { type Reach, SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadS
 import type { Input } from './roadSurfaceRings';
 import type { SceneMaterials } from './materials';
 import { TERRAIN_CELL } from './terrainGrid';
-import { attachFarLevel, cloneBlock, mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
+import { attachFarLevel, blockArraysOf, cloneBlock, mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
-import { levelsOf } from './mesh/roadLod';
+import { type BlockArrays, levelsOf } from './mesh/roadLod';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR } from './roadTones';
 import { type TilePolys, type TileSource, tileShapes } from './roadTileShape';
 import type { RoadTiler, TileJob } from './roadTilePool';
@@ -560,6 +560,21 @@ export function* roadSurfaceSteps(
               },
             } : undefined);
           void started;
+          // Its full level, when it comes back near, copied from the kept tiles (`reuse.stored`): DO NOT cut and triangulate the block's tiles on the page again (`roadResidency.ts` makeNear).
+          const levels = mesh && lock ? levelsOf(mesh) : undefined;
+          if (mesh && levels && reuse?.stored) {
+            const stored = reuse.stored, keys = list.map((tile) => tile.stored), name = spec.options.name, material = spec.options.material;
+            levels.bring = async (): Promise<BlockArrays | null> => {
+              const got = await stored.fetch(keys);
+              const tiles: Tile[] = [];
+              for (const key of keys) {
+                const tile = got.get(key)?.get(name);
+                if (!tile) return null;
+                tiles.push(tile);
+              }
+              return blockArraysOf(tiles, material);
+            };
+          }
           if (mesh && spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
           // DO NOT wait for the camera to frame it: a block out of view was never uploaded and kept its copy on the CPU
           if (mesh && !(lock && !near)) void warmLooseAhead([mesh]);

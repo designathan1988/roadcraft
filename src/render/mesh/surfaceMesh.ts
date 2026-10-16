@@ -40,6 +40,8 @@ export function finish(geometry: BufferGeometry,
 export function disposeMesh(mesh: Mesh): void {
   mesh.geometry.dispose();
   // The far level of a block of road (`roadLod.ts`) goes with it.
-  const coarse = (mesh.userData.lod as { coarse: Mesh | null } | undefined)?.coarse;
-  if (coarse) { coarse.geometry.dispose(); coarse.removeFromParent(); }
+  const levels = mesh.userData.lod as { coarse: Mesh | null } | undefined;
+  if (levels?.coarse) { levels.coarse.geometry.dispose(); levels.coarse.removeFromParent(); }
+  // Let go: a full level brought back later finds no far level and shows nothing (`roadResidency.ts` makeNear).
+  if (levels) levels.coarse = null;
 }

@@ -101,6 +101,11 @@ export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<Su
   return level;
 }
 
+/** A block's arrays from its tiles as kept (the store's), for the attributes its material reads: a copy end to end, nothing cut (`roadResidency.ts` makeNear). */
+export function blockArraysOf(tiles: readonly Tile[], material: Material): BlockArrays | null {
+  return tileArrays(tiles, readsOf(material));
+}
+
 /** A merged mesh's arrays let go once on the GPU, and made again from `source`'s tiles when asked (`gpuOnly`). */
 export function tilesOnGpu(mesh: Mesh, source: () => readonly Tile[]): void {
   const reads = readsOf(mesh.material);

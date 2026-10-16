@@ -1,4 +1,5 @@
 import type { BufferAttribute, BufferGeometry, Mesh } from 'three';
+import { fillArrays } from './gpuOnly';
 import { type BlockLevels, levelsOf } from './roadLod';
 
 /** DO NOT keep a far block's full mesh: no pixel of it is resolved from there. */
@@ -32,16 +33,36 @@ export function makeFar(mesh: Mesh): void {
   mesh.geometry.dispose();
 }
 
-/** The block's full mesh made again and shown; the coarse one is hidden. */
-export function makeNear(mesh: Mesh): void {
-  const levels = levelsOf(mesh);
-  if (!levels?.coarse || levels.full) return;
+/** The block's full mesh shown, the coarse one hidden. */
+function showFull(mesh: Mesh, levels: BlockLevels): void {
+  levels.full = true;
+  mesh.visible = true;
+  levels.coarse!.visible = false;
+}
+
+/** The block's full mesh made again on the page from its tiles' rings (`refillArrays`) and shown. */
+function refillNow(mesh: Mesh, levels: BlockLevels): void {
   const refill = mesh.userData.refillArrays as (() => void) | undefined;
   if (!refill) return;
   refill();
-  levels.full = true;
-  mesh.visible = true;
-  levels.coarse.visible = false;
+  showFull(mesh, levels);
+}
+
+/** The block's full mesh brought back and shown; the coarse one is hidden. */
+export function makeNear(mesh: Mesh): void {
+  const levels = levelsOf(mesh);
+  if (!levels?.coarse || levels.full || levels.bringing) return;
+  const bring = levels.bring;
+  if (!bring) { refillNow(mesh, levels); return; }
+  // DO NOT cut and triangulate the block's tiles on the page again (3 blocks every 6 frames while the camera moves): its arrays come from the kept tiles, shown when they land.
+  levels.bringing = true;
+  void bring().then((arrays) => {
+    levels.bringing = false;
+    // Made near by hand or let go meanwhile (`disposeMesh` drops the far level): nothing to show.
+    if (levels.full || !levels.coarse) return;
+    if (arrays && fillArrays(mesh, arrays)) showFull(mesh, levels);
+    else refillNow(mesh, levels);
+  }, () => { levels.bringing = false; });
 }
 
 /** The levels brought up to the camera at (`focusX`, `focusY`) in world units */
@@ -55,7 +76,7 @@ export function updateRoadLevels(blocks: Iterable<Mesh>, focusX: number, focusY:
     const d = distance(levels, focusX, focusY);
     if (levels.full) {
       if (d > farFrom) { makeFar(mesh); changed++; }
-    } else if (d < reach) wanted.push({ mesh, d });
+    } else if (d < reach && !levels.bringing) wanted.push({ mesh, d });
   }
   wanted.sort((a, b) => a.d - b.d);
   for (const { mesh } of wanted.slice(0, BRING_PER_LOOK)) { makeNear(mesh); changed++; }
