@@ -60,9 +60,9 @@ import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { renderTargetsBytes } from './targetBytes';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
-import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, storedKey, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
+import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { SurfaceInputs } from './roadSurfaceInputs';
-import { forgetDerivedKeys, forgetOtherDerived, readDerivedAll, writeDerivedMany } from './derivedCache';
+import { forgetDerivedKeys, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
 import { disposeMesh } from './mesh/surfaceMesh';
 import { RoadTilePool } from './roadTilePool';
 import { GroundShapePool } from './groundShapePool';
@@ -600,8 +600,17 @@ export function createSceneRenderer(
   const tilesPrefix = ROAD_TILES_HASH ? `roadtiles:${ROAD_TILES_HASH}:` : null;
   /** The kept tiles have been read (or there are none to read). */
   let storedRead = tilesPrefix === null;
-  /** What the store holds now, by `storedKey`. */
+  /** What the store holds now, by `storedKey`, and by place (`pass|tile`): a tile built again at its place replaces what was kept of it. */
   const storedKeys = new Set<string>();
+  const storedAt = new Map<string, string>();
+  const placeOf = (key: string): string => key.slice(0, key.lastIndexOf('|'));
+  const noteStored = (key: string): void => {
+    const place = placeOf(key);
+    const was = storedAt.get(place);
+    if (was && was !== key && tilesPrefix) { storedKeys.delete(was); forgetDerivedKeys(tilesPrefix, [was]); }
+    storedAt.set(place, key);
+    storedKeys.add(key);
+  };
   /** Where the road tiles are kept for a later session, off the page (`derivedWriter.worker.ts`); none in tests. */
   const tileWriter = tilesPrefix && typeof Worker !== 'undefined'
     ? jobPort('derivedWriter') : null;
@@ -619,11 +628,15 @@ export function createSceneRenderer(
     chunks: new Map(),
     inputs: new SurfaceInputs(),
     retired: [],
-    stored: new Map(),
+    // DO NOT read the whole store at the opening: it grows with every place the camera went (CLAUDE.md, "Streaming world").
+    stored: {
+      has: (key) => storedKeys.has(key),
+      fetch: (keys) => (tilesPrefix ? readDerivedSome<TileBundle>(tilesPrefix, keys) : Promise.resolve(new Map())),
+    },
     // DO NOT hold the built tiles for idle writes
     keep: (key, bundle) => {
       if (!tilesPrefix || storedKeys.has(key)) return;
-      storedKeys.add(key);
+      noteStored(key);
       // The tile's arrays handed to the writer, not copied: nothing reads them once its blocks are merged (`SurfaceReuse.keep`).
       if (tileWriter) {
         const buffers: ArrayBuffer[] = [];
@@ -636,23 +649,11 @@ export function createSceneRenderer(
   };
   if (tilesPrefix && ROAD_TILES_HASH) {
     forgetOtherDerived('roadtiles', ROAD_TILES_HASH);
-    void readDerivedAll<TileBundle>(tilesPrefix).then((kept) => {
-      for (const [key, bundle] of kept) {
-        surfaceReuse.stored!.set(key, bundle);
-        storedKeys.add(key);
-      }
+    void readDerivedKeys(tilesPrefix).then((kept) => {
+      for (const key of kept) noteStored(key);
     }).finally(() => { storedRead = true; });
   }
-  /** After a build: the store made to hold the network just built - its new tiles written as they were built */
-  const keepTiles = (): void => {
-    surfaceReuse.stored!.clear();
-    if (!tilesPrefix) return;
-    const current = new Set<string>();
-    for (const [pass, tiles] of surfaceReuse.tiles) for (const digest of tiles.keys()) current.add(storedKey(pass, digest));
-    const gone = [...storedKeys].filter((key) => !current.has(key));
-    for (const key of gone) storedKeys.delete(key);
-    forgetDerivedKeys(tilesPrefix, gone);
-  };
+
 
   /** The world being rebuilt for the last edit (`rebuildWorld`), a slice a frame. */
   let worldJob: Generator<'wait' | void, void, void> | null = null;
@@ -1505,7 +1506,6 @@ export function createSceneRenderer(
     // Sliced, the tiles are shaped by the workers while the frames go on (`roadTilePool.ts`); built in one go
     const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
       sliced ? roadTiles : null);
-    keepTiles();
     derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
       { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none

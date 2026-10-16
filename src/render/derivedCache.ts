@@ -59,6 +59,44 @@ export async function readDerived<T>(key: string): Promise<T | undefined> {
   });
 }
 
+/** The keys that start with `prefix`, without it: what is kept, never the values (a store that grows with the places visited). */
+export async function readDerivedKeys(prefix: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  const db = await database();
+  if (!db) return out;
+  return new Promise((resolve) => {
+    try {
+      const keys = db.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys(prefixRange(prefix));
+      keys.onsuccess = () => { for (const key of keys.result ?? []) out.add(String(key).slice(prefix.length)); resolve(out); };
+      keys.onerror = () => resolve(out);
+    } catch {
+      resolve(out);
+    }
+  });
+}
+
+/** The entries of these keys (under `prefix`), in one transaction: only what a build will use. */
+export async function readDerivedSome<T>(prefix: string, keys: readonly string[]): Promise<Map<string, T>> {
+  const out = new Map<string, T>();
+  const db = await database();
+  if (!db || !keys.length) return out;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readonly');
+      const store = tx.objectStore(STORE);
+      for (const key of keys) {
+        const request = store.get(prefix + key);
+        request.onsuccess = () => { if (request.result !== undefined) out.set(key, request.result as T); };
+      }
+      tx.oncomplete = () => resolve(out);
+      tx.onerror = () => resolve(out);
+      tx.onabort = () => resolve(out);
+    } catch {
+      resolve(out);
+    }
+  });
+}
+
 /** Every entry whose key starts with `prefix`, by the rest of its key. */
 export async function readDerivedAll<T>(prefix: string): Promise<Map<string, T>> {
   const out = new Map<string, T>();
