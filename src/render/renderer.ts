@@ -1810,16 +1810,13 @@ export function createSceneRenderer(
   const NATURE_SPACING = WOODS_SPACING;
   /** Trees the ecosystem grows at full vegetation quality (the forests take most). */
   const NATURE_TREES = 2_500;
-  /** The ecosystem's sweep: where a tree may grow, the budget the tier allows, and the room a forest of them needs. */
+  /** The ecosystem's sweep: each plate's trees as picked (DO NOT join every plate's into one list: nothing reads it, and it was made again at each sweep). */
   interface NatureSweep {
     readonly key: string;
-    readonly trees: readonly Candidate[];
-    readonly budget: number;
-    room: number[] | null;
     /** Plates left to sweep (one is swept a frame): the sweep runs again next frame while any is. */
     readonly pending?: number;
-    /** Each plate's run of `trees` (filed plate by plate, `fileNature`). */
-    readonly slices?: readonly { readonly plate: NaturePlate; readonly start: number; readonly count: number }[];
+    /** The plates swept, each filed with its own trees (`fileNature`). */
+    readonly slices?: readonly { readonly plate: NaturePlate }[];
   }
   /** One plate's tree density as last swept, and what it was swept for (`natureSweep`), by surface. */
   interface NaturePlate {
@@ -1844,8 +1841,7 @@ export function createSceneRenderer(
     }
   };
   const natureSweep = (key: string): NatureSweep => {
-    const trees: Candidate[] = [];
-    if (quality.vegetation <= 0 || !terrain.parts.some((p) => p.surface.ecology())) return { key, trees, budget: 0, room: null };
+    if (quality.vegetation <= 0 || !terrain.parts.some((p) => p.surface.ecology())) return { key };
     // One plate's density swept a frame at most while the game is seen (each was some 35 ms)
     let sweptNew = false, pending = 0;
     const sweepFrom = performance.now();
@@ -1907,18 +1903,16 @@ export function createSceneRenderer(
       plates.push(plate);
       treeSum += plateSum;
     }
-    // As many plates' budgets as the plates in full cover, the woods as thick on each: the budget shared by area.
+    // The woods as thick on each plate: the plates' trees scaled to the budget by their mean.
     const plateArea = (2 * TERRAIN_HALF) ** 2;
     const base = NATURE_TREES * Math.min(1, quality.vegetation / 2_600);
-    const budget = base * Math.max(1, (plates.length * plateArea) / m(1_920) ** 2);
     const plannedSum = (treeSum / Math.max(1, plates.length)) * (m(1_920) ** 2 / plateArea);
     // In steps of 2 %: a plate brought in nudges the average
     const treeScale = Math.min(1, Math.exp(Math.round(Math.log(base / Math.max(1, plannedSum)) / 0.02) * 0.02));
-    const slices: { plate: NaturePlate; start: number; count: number }[] = [];
+    const slices: { plate: NaturePlate }[] = [];
     for (const plate of plates) {
       if (plate.picked && plate.picked.scale === treeScale) {
-        slices.push({ plate, start: trees.length, count: plate.picked.trees.length });
-        for (const t of plate.picked.trees) trees.push(t);
+        slices.push({ plate });
         continue;
       }
       const { part, odds, band, di, dj } = plate;
@@ -1942,10 +1936,9 @@ export function createSceneRenderer(
         }
       }
       plate.picked = { scale: treeScale, trees: mine };
-      slices.push({ plate, start: trees.length, count: mine.length });
-      for (const t of mine) trees.push(t);
+      slices.push({ plate });
     }
-    return { key, trees, budget, room: null, pending, slices };
+    return { key, pending, slices };
   };
   /** DO NOT make it at every keep - a keep runs at every road, building and terrain edit */
   let clearingsFor = -1;
