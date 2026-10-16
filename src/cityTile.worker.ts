@@ -5,6 +5,7 @@ import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 import { SAVES_STORE, indexedDbParts, openSaves } from '@editor/saveStore';
 import { runTileOp } from '@editor/tileStore';
+import { bakeTileSections } from '@sim/tileSections';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
 
@@ -33,7 +34,8 @@ export function serve(self: JobScope): void {
       const records = buildStreamTile(options, i, j);
       if (!store) { self.postMessage({ key: tileKey(i, j), records } satisfies StreamTileAnswer); return; }
       const version = Math.max(records.version, store.after) + 1;
-      void runTileOp(stored(), { op: 'write', map: store.map, records: { ...records, version } }).then(
+      // Its simulation's sections baked here with it, once (`sim/tileSections.ts`).
+      void runTileOp(stored(), { op: 'write', map: store.map, records: { ...records, version } }, bakeTileSections).then(
         (ok) => self.postMessage({ key: tileKey(i, j), stored: ok === true ? version : null } satisfies StreamTileAnswer),
         (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} was made and not stored: ${String(error)}` } satisfies StreamTileAnswer));
     } catch (error) {

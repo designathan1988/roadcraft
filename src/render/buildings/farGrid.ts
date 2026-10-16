@@ -30,9 +30,11 @@ export function emptyRecords(key: number, version: number): TileRecords {
   };
 }
 
-/** A tile read from the store by this worker (`core/storedTiles.ts`); undefined where it cannot read it (the page asked for it), empty when the store no longer has it. */
-export async function readStored(store: string | undefined, key: number): Promise<TileRecords | undefined> {
+/** DO NOT read a whole tile for a bake that reads one part of it: the part alone (its roads, its buildings), the other lists left empty
+ *  - read from the store by this worker (`core/storedTiles.ts`); undefined where it cannot read it (the page asked for it), empty when the store no longer has it. */
+export async function readStored(store: string | undefined, key: number, part: 'roads' | 'buildings'): Promise<TileRecords | undefined> {
   const read = store === undefined ? null : storedTileReader();
   if (!read || store === undefined) return undefined;
-  return (await read(store, key) as TileRecords | null) ?? emptyRecords(key, 0);
+  const fields = await read(store, key, part) as Partial<TileRecords> | null;
+  return { ...emptyRecords(key, 0), ...(fields ?? {}) };
 }

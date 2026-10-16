@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { TiledSaves } from '@editor/chunkedSave';
-import { type PartStore, gunzip } from '@editor/saveStore';
-import { TileStore, type WorldMeta, storeTiles } from '@editor/tileStore';
+import type { PartStore } from '@editor/saveStore';
+import { readHead } from '@editor/tileBlob';
+import { type TileText, TileStore, type WorldMeta, parseTileText, readTile, readTilePart, storeTiles, tileOpTransfer } from '@editor/tileStore';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
 import { TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
@@ -44,17 +45,81 @@ const node = (id: number, x: number, y: number): SerializedDoc['nodes'][number] 
 const never = (): Promise<TileRecords> => Promise.reject(new Error('no tile should be generated'));
 
 describe('a tile stored', () => {
-  it('reads back the tile it wrote, compressed under its own key', async () => {
+  it('reads back the tile it wrote, in parts under its own key', async () => {
     const store = memoryStore();
     const tiles = new TileStore('map', storeTiles(store), never);
     const tile = emptyTile(2, -3, { nodes: [node(7, m(2_100), m(-3_000))], lotKeys: ['b:1,2,3,4'] });
     expect(await tiles.write(tile)).toBe(1);
     const blob = store.blobs.get(`map:T:${tile.key}`)!;
-    // gzip's magic bytes (RFC 1952).
-    expect([...new Uint8Array(await blob.arrayBuffer()).slice(0, 2)]).toEqual([0x1f, 0x8b]);
-    expect(JSON.parse(await gunzip(blob))).toEqual({ ...tile, version: 1 });
+    // Format 2's magic, "RCT2" (`tileBlob.ts`).
+    expect(new TextDecoder().decode(new Uint8Array(await blob.arrayBuffer()).slice(0, 4))).toBe('RCT2');
+    const read = (await readHead(blob))!;
+    expect(read.head.version).toBe(1);
+    expect(read.head.parts.map((p) => p[0])).toEqual(['rest', 'roads', 'buildings']);
     expect(await new TileStore('map', storeTiles(store), never).read(tile.key)).toEqual({ ...tile, version: 1 });
     expect(await tiles.read(tileKey(0, 0))).toBeNull();
+  });
+
+  it('a part read alone: the roads with no building, the buildings with no road', async () => {
+    const store = memoryStore();
+    const building = { id: tileIdBase(tileKey(0, 0)), x: m(10), y: m(10) };
+    const tile = emptyTile(0, 0, { nodes: [node(1, m(5), m(5))], buildings: [building as never] });
+    await new TileStore('map', storeTiles(store), never).write(tile);
+    expect(await readTilePart(store, 'map', tile.key, 'roads')).toEqual({ value: { nodes: tile.nodes, borrowedNodes: [], segments: [] } });
+    expect(await readTilePart(store, 'map', tile.key, 'buildings')).toEqual({ value: { buildings: [building] } });
+    // A section it was not written with: the records, for its reader to derive it from.
+    expect(await readTilePart(store, 'map', tile.key, 'links')).toEqual({ records: { ...tile, version: 1 } });
+    expect(await readTilePart(store, 'map', tileKey(5, 5), 'roads')).toBeNull();
+  });
+
+  it('a tile\'s sections baked where it is written, each read alone', async () => {
+    const store = memoryStore();
+    const bake = vi.fn((records: TileRecords) => ({ count: { json: { n: records.nodes.length } }, bytes: { bin: Uint8Array.from([records.version, 9]) } }));
+    const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5)), node(2, m(1_200), m(5))] });
+    await new TileStore('map', storeTiles(store, bake), never).write(tile);
+    expect(bake).toHaveBeenCalledTimes(1);
+    expect(await readTilePart(store, 'map', tile.key, 'count')).toEqual({ value: { n: 2 } });
+    const bytes = await readTilePart(store, 'map', tile.key, 'bytes');
+    expect([...new Uint8Array((bytes as { bytes: ArrayBuffer }).bytes)]).toEqual([1, 9]);
+    // The records read whole as they were, the sections apart.
+    expect(await readTile(store, 'map', tile.key)).toEqual({ ...tile, version: 1 });
+    // Known by its head alone: no section baked again.
+    expect(await storeTiles(store, bake).run({ op: 'version', map: 'map', key: tile.key })).toBe(1);
+    expect(bake).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tile of format 1 (one gzip of its records) is read, and written again in parts once when its version is asked', async () => {
+    const store = memoryStore();
+    const tile = { ...emptyTile(-1, 2, { nodes: [node(3, m(-500), m(2_500))] }), version: 3 };
+    const old = await new Response(new Blob([JSON.stringify(tile)]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+    store.blobs.set(`map:T:${tile.key}`, old);
+    expect(await new TileStore('map', storeTiles(store), never).read(tile.key)).toEqual(tile);
+    expect(await readTilePart(store, 'map', tile.key, 'roads')).toEqual({ records: tile });
+    // No baker: read as it is, never written.
+    expect(await storeTiles(store).run({ op: 'version', map: 'map', key: tile.key })).toBe(3);
+    expect(store.writes).toHaveLength(0);
+    const bake = vi.fn(() => ({ mark: { json: 1 } }));
+    expect(await storeTiles(store, bake).run({ op: 'version', map: 'map', key: tile.key })).toBe(3);
+    expect(store.writes).toEqual([[`map:T:${tile.key}`]]);
+    // In parts now, at its own version, its section with it; asked again, nothing written.
+    expect((await readHead(store.blobs.get(`map:T:${tile.key}`)!))?.head.version).toBe(3);
+    expect(await readTilePart(store, 'map', tile.key, 'mark')).toEqual({ value: 1 });
+    expect(await readTile(store, 'map', tile.key)).toEqual(tile);
+    await storeTiles(store, bake).run({ op: 'version', map: 'map', key: tile.key });
+    expect(store.writes).toHaveLength(1);
+  });
+
+  it('a tile\'s texts handed over by their buffers, parsed once into the tile', async () => {
+    const store = memoryStore();
+    const tile = emptyTile(3, 3, { trees: [{ x: m(3_100), y: m(3_100) }] });
+    await new TileStore('map', storeTiles(store), never).write(tile);
+    const op = { op: 'readText', map: 'map', key: tile.key } as const;
+    const text = (await storeTiles(store).run(op)) as TileText;
+    expect(text).toHaveLength(3);
+    expect(tileOpTransfer(op, text)).toEqual(text.map((t) => t.buffer));
+    expect(parseTileText(text, tile.key)).toEqual({ ...tile, version: 1 });
+    expect(() => parseTileText(text, tileKey(0, 1))).toThrow();
+    expect(tileOpTransfer({ op: 'read', map: 'map', key: tile.key }, text)).toEqual([]);
   });
 
   it('knows a tile made ahead by its version alone: one stored is read for it, one missing is made and stored by the worker', async () => {

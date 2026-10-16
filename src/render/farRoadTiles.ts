@@ -413,7 +413,7 @@ export async function runFarRoadJob(job: FarRoadJob, cache: FarRoadCache): Promi
   let entry = keeps ? await kept(node, sig) : undefined;
   if (k === 0) {
     if (!entry) {
-      const records = job.records ?? await readStored(job.store, tileKey(i, j));
+      const records = job.records ?? await readStored(job.store, tileKey(i, j), 'roads');
       if (!records) return { kind: 'farRecords', node, sig };
       const ground = job.ground ? sharedGroundReaders(job.ground).groundAt : FLAT;
       entry = { sig, mesh: bakeTileRoads(records, ground) };

@@ -5,7 +5,8 @@ import { rescaleSerializedDoc } from '@world/rescale';
 import { OWNER, TILE_COUNTED, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { METERS_PER_UNIT, m } from '@world/units';
-import { type PartStore, type SaveEntry, gunzip, storeWriter } from './saveStore';
+import { type PartStore, type SaveEntry, storeWriter } from './saveStore';
+import { type HeadRead, type TilePartIn, gunzipBytes, gzipBytes, partOf, readHead, tileBlob } from './tileBlob';
 
 /** THE TILE STORE: the save of a world of tiles (CLAUDE.md, "Streaming world"), each tile read and written alone, off the page */
 
@@ -64,6 +65,8 @@ interface MigrationReport {
 /** A call of the tile store, as the page hands it to the save worker (`save.worker.ts` `serve`). */
 export type TileOp =
   | { readonly op: 'read'; readonly map: string; readonly key: number }
+  /** The stored tile's records as texts (`TileText`), or null: what the page parses once, the bytes handed over, never cloned. */
+  | { readonly op: 'readText'; readonly map: string; readonly key: number }
   /** The stored tile's version alone, or null: what the tiles made ahead are known by, their records never handed to the page. */
   | { readonly op: 'version'; readonly map: string; readonly key: number }
   | { readonly op: 'write'; readonly map: string; readonly records: TileRecords }
@@ -101,13 +104,118 @@ function isWorldMeta(value: unknown): value is WorldMeta {
   return isObject(value) && value['version'] === 1 && finite(value['unit']) && (value['generator'] === null || isObject(value['generator']));
 }
 
-/** A stored tile, or null when the store has none; a tile stored and unreadable throws (DO NOT generate over the player's tile); read by the save worker and by the simulation's (`tileReader.ts`). */
-export async function readTile(store: PartStore, map: string, key: number): Promise<TileRecords | null> {
+/** THE PARTS A TILE IS STORED IN (format 2, `tileBlob.ts`): its records in three - the far roads read the roads alone, the far buildings the buildings, the region's load all three - then the sections baked from them where the tile is written (`TileBaker`) */
+type RecordPart = 'rest' | 'roads' | 'buildings';
+const RECORD_PARTS: readonly RecordPart[] = ['rest', 'roads', 'buildings'];
+/** The parts of the records the far bakes read alone. */
+export type TilePartName = 'roads' | 'buildings';
+
+function splitRecords(records: TileRecords): Record<RecordPart, object> {
+  const { nodes, borrowedNodes, segments, buildings, ...rest } = records;
+  return { rest, roads: { nodes, borrowedNodes, segments }, buildings: { buildings } };
+}
+
+/** A tile's records as UTF-8 JSON texts, each an object of some of its fields (format 1: one, the whole): merged, the tile. */
+export type TileText = readonly Uint8Array<ArrayBuffer>[];
+
+/** The records' texts merged and checked: the tile, or a throw (DO NOT generate over the player's tile). */
+export function parseTileText(text: TileText, key: number): TileRecords {
+  const decoder = new TextDecoder();
+  const value: Record<string, unknown> = {};
+  try {
+    for (const part of text) Object.assign(value, JSON.parse(decoder.decode(part)) as object);
+  } catch {
+    throw new Error(`tile ${key} is stored and cannot be read`);
+  }
+  if (!isTileRecords(value) || value.key !== key) throw new Error(`tile ${key} is stored and cannot be read`);
+  return value;
+}
+
+/** A tile's derived product kept with it: a JSON value, or a typed-array pack (`core/arrayPack.ts`). */
+export type TileSection = { readonly json: unknown } | { readonly bin: Uint8Array<ArrayBuffer> };
+/** What bakes a tile's sections where it is written (`sim/tileSections.ts`, handed in by the thread that writes: the generator's worker, the save worker). */
+export type TileBaker = (records: TileRecords) => Readonly<Record<string, TileSection>>;
+
+/** A tile's blob, and its records' texts (handed to whoever asked for the tile): the records made text once, for both. */
+async function encodeTile(records: TileRecords, bake: TileBaker | undefined): Promise<{ readonly blob: Blob; readonly text: TileText }> {
+  const encoder = new TextEncoder();
+  const json = (value: unknown): Uint8Array<ArrayBuffer> => encoder.encode(JSON.stringify(value)) as Uint8Array<ArrayBuffer>;
+  const split = splitRecords(records);
+  const text = RECORD_PARTS.map((name) => json(split[name]));
+  const parts: TilePartIn[] = [];
+  for (let n = 0; n < RECORD_PARTS.length; n++) parts.push({ name: RECORD_PARTS[n]!, kind: 'json', data: await gzipBytes(text[n]!) });
+  let sections: Readonly<Record<string, TileSection>> = {};
+  try {
+    if (bake) sections = bake(records);
+  } catch (error) {
+    // Stored without them: each reader derives its own from the records (`readTilePart`).
+    console.error(`[save] tile ${records.key}'s sections could not be baked`, error);
+  }
+  for (const [name, section] of Object.entries(sections)) {
+    parts.push('bin' in section ? { name, kind: 'bin', data: new Blob([section.bin]) } : { name, kind: 'json', data: await gzipBytes(json(section.json)) });
+  }
+  return { blob: tileBlob(records.key, records.version, bake !== undefined, parts), text };
+}
+
+/** A tile written in one transaction of its one key, its sections baked with it: whether it was stored, and its records' texts. */
+export async function writeTile(store: PartStore, map: string, records: TileRecords, bake?: TileBaker): Promise<{ readonly ok: boolean; readonly text: TileText }> {
+  const { blob, text } = await encodeTile(records, bake);
+  return { ok: await store.write([[tileBlobKey(map, records.key), blob]], []), text };
+}
+
+/** A stored tile's blob and its head (null: format 1). */
+interface Stored { readonly blob: Blob; readonly read: HeadRead | null }
+
+async function storedBlob(store: PartStore, map: string, key: number): Promise<Stored | null> {
   const [blob] = await store.get([tileBlobKey(map, key)]);
   if (!blob) return null;
-  const value: unknown = JSON.parse(await gunzip(blob));
-  if (!isTileRecords(value) || value.key !== key) throw new Error(`tile ${key} of ${map} is stored and cannot be read`);
-  return value;
+  // A head that cannot be read is format 1's or garbage: its gunzip says which (`textOf`).
+  return { blob, read: await readHead(blob).catch(() => null) };
+}
+
+/** A stored blob's records as texts: its three parts, or the one gzip of format 1. */
+async function textOf(stored: Stored, map: string, key: number): Promise<TileText> {
+  try {
+    if (!stored.read) return [await gunzipBytes(stored.blob)];
+    const out: Uint8Array<ArrayBuffer>[] = [];
+    for (const name of RECORD_PARTS) {
+      const part = partOf(stored.blob, stored.read, name);
+      if (!part) throw new Error(`no ${name}`);
+      out.push(await gunzipBytes(part.data));
+    }
+    return out;
+  } catch {
+    throw new Error(`tile ${key} of ${map} is stored and cannot be read`);
+  }
+}
+
+/** A stored tile, or null when the store has none; a tile stored and unreadable throws (DO NOT generate over the player's tile). */
+export async function readTile(store: PartStore, map: string, key: number): Promise<TileRecords | null> {
+  const stored = await storedBlob(store, map, key);
+  return stored ? parseTileText(await textOf(stored, map, key), key) : null;
+}
+
+/** One part of a stored tile as its reader takes it: a JSON part's value, a binary part's bytes, or the whole records where the tile has no such part (format 1, or written with no baker: the reader derives it); null: no tile stored. */
+export type StoredPart = { readonly value: unknown } | { readonly bytes: ArrayBuffer } | { readonly records: TileRecords } | null;
+
+/** DO NOT parse a whole tile for one product of it: the part alone is read (the far bakes, the simulation's meso and traffic) */
+export async function readTilePart(store: PartStore, map: string, key: number, name: string): Promise<StoredPart> {
+  const stored = await storedBlob(store, map, key);
+  if (!stored) return null;
+  const part = stored.read ? partOf(stored.blob, stored.read, name) : null;
+  if (!part) return { records: parseTileText(await textOf(stored, map, key), key) };
+  if (part.kind === 'bin') return { bytes: await part.data.arrayBuffer() };
+  return { value: JSON.parse(new TextDecoder().decode(await gunzipBytes(part.data))) as unknown };
+}
+
+/** A tile of format 1, or written with no baker, written again in parts with its sections at its own version, once: the next reads take their part alone (run on the page's chain of the tile, `TileStore`: no write of it runs between). */
+async function upgraded(store: PartStore, map: string, key: number, stored: Stored, bake: TileBaker | undefined): Promise<TileText> {
+  const text = await textOf(stored, map, key);
+  if (bake && !stored.read?.head.baked) {
+    const { blob } = await encodeTile(parseTileText(text, key), bake);
+    if (!(await store.write([[tileBlobKey(map, key), blob]], []))) console.warn(`[save] tile ${key} of ${map} was not written again in parts`);
+  }
+  return text;
 }
 
 async function readMeta(store: PartStore, map: string): Promise<WorldMeta | null> {
@@ -118,13 +226,23 @@ async function readMeta(store: PartStore, map: string): Promise<WorldMeta | null
   return value;
 }
 
-/** Runs one call of the tile store against `store`: in the save worker on IndexedDB, or in the thread that asks (tests). */
-export async function runTileOp(store: PartStore, op: TileOp): Promise<unknown> {
+/** Runs one call of the tile store against `store`: in the save worker on IndexedDB, or in the thread that asks (tests); `bake`, the sections baked with a tile written (none: stored without them). */
+export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker): Promise<unknown> {
   const writer = store.writer ?? storeWriter(store);
   switch (op.op) {
     case 'read': return readTile(store, op.map, op.key);
-    case 'version': return (await readTile(store, op.map, op.key))?.version ?? null;
-    case 'write': return writer.write({ put: [{ key: tileBlobKey(op.map, op.records.key), value: op.records, packed: true }], remove: [] });
+    case 'readText': {
+      const stored = await storedBlob(store, op.map, op.key);
+      return stored ? upgraded(store, op.map, op.key, stored, bake) : null;
+    }
+    case 'version': {
+      // The head alone: DO NOT parse a tile to know it is there (format 1 parsed once, and written again in parts).
+      const stored = await storedBlob(store, op.map, op.key);
+      if (!stored) return null;
+      if (stored.read && (stored.read.head.baked || !bake)) return stored.read.head.version;
+      return parseTileText(await upgraded(store, op.map, op.key, stored, bake), op.key).version;
+    }
+    case 'write': return (await writeTile(store, op.map, op.records, bake)).ok;
     case 'meta': return readMeta(store, op.map);
     case 'setMeta': return writer.write({ put: [{ key: metaKey(op.map), value: op.meta, packed: false }], remove: [] });
     case 'migrate': return migrate(store, op.map, op.local);
@@ -132,7 +250,12 @@ export async function runTileOp(store: PartStore, op: TileOp): Promise<unknown> 
 }
 
 /** The calls run where they are asked (the tests; a store whose own writer is off the page). */
-export const storeTiles = (store: PartStore): TileBackend => ({ run: (op) => runTileOp(store, op) });
+export const storeTiles = (store: PartStore, bake?: TileBaker): TileBackend => ({ run: (op) => runTileOp(store, op, bake) });
+
+/** What an answer of `runTileOp` hands over rather than copies: a tile's texts' buffers (MDN, `postMessage` transfer). */
+export function tileOpTransfer(op: TileOp, value: unknown): ArrayBuffer[] {
+  return op.op === 'readText' && Array.isArray(value) ? (value as TileText).map((t) => t.buffer) : [];
+}
 
 /** The calls run in the job system's `save` lane (`port`): the page posts the call and is handed the answer. */
 export function portTiles(port: () => Worker): TileBackend {
@@ -235,9 +358,12 @@ export class TileStore {
     return run;
   }
 
+  /** DO NOT have the save worker parse a tile and clone it to the page: its texts are handed over and parsed here, once. */
   private async readNow(key: number): Promise<TileRecords | null> {
-    const records = (await this.backend.run({ op: 'read', map: this.map, key })) as TileRecords | null;
-    if (records) this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
+    const text = (await this.backend.run({ op: 'readText', map: this.map, key })) as TileText | null;
+    if (!text) return null;
+    const records = parseTileText(text, key);
+    this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
     return records;
   }
 

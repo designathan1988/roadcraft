@@ -1,7 +1,7 @@
 /** THE TILE STORE AS A WORKER READS IT ITSELF (CLAUDE.md "Streaming world"): installed by the job worker (`job.worker.ts`, `tileReader.ts`), read by the bakes of the far levels, so a tile's records never cross the page to reach them */
 
-/** A stored tile's records (`world/doc.ts` TileRecords), or null when the store has none. */
-type Read = (map: string, key: number) => Promise<unknown>;
+/** One part of a stored tile's records (`editor/tileStore.ts` TilePartName: its roads, its buildings) as an object of those fields, or null when the store has none. */
+type Read = (map: string, key: number, part: string) => Promise<unknown>;
 
 let reader: Read | null = null;
 
