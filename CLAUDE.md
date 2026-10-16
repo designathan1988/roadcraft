@@ -259,6 +259,10 @@ frame (`worldStreamer.apply` ~100 ms a tile even with its buildings prepared by 
 lots and the network's incremental rebuild), `layer.update` after it, road levels refilled on the page
 (`updateRoadLevels` `makeNear`), and `agents.sync` (`agents.ts` ~1678: the vehicles near the view, 600+ at the
 district zoom, written per frame: 1.4 s of a 16 s drag's long frames) with `replay` (`agents.ts` ~1072).
+Traversed 10 km (seed 3, district zoom 1.2, 8 drags of 1.3 km, CPU free): no crash, the page's counters bounded
+(heap 478-717 MB, geometry 620-960 MB as tiles come and go), the renderer process 5.9-6.5 GB in all (page, 8 worker
+isolates, GPU staging, Blink) and rising slowly; under a 12 GB job cap on the whole browser the renderer was killed
+mid-way, so a traversal needs ~8 GB free. What the player's machine pays per 10 km is this 6.5 GB, not a crash.
 Still open from the solution's parts: 5.2 roads per pixel (700 MB of road video memory, coarse level resident for
 every block of the region), 5.4 derived products by the view (masses 341 MB, draw calls 1,500-2,400; the kept ring of
 tiles gets near products too), 5.5 pixel cost on the integrated GPU (the player's call, with shots), 5.6 renderer memory
