@@ -1505,9 +1505,9 @@ export function createSceneRenderer(
     // In the diary: the roads' heights solved again where they differ, after the edit that moved them.
     worldCause = derived(net, 'elevation', changed, 'road heights solved', solved.cause,
       { ms: solved.elevationMs + (own?.ms ?? 0), detail: changed ? `${changed.length} blocks of ${SHAPE_BLOCK} u` : 'whole map' }) || solved.cause;
-    const joined = compares.includes(null) ? null : compares.flatMap((c) => c!.blocks);
     // The roads' own heights (the footway, the carriageway) moved where the solve did
-    const blocks = joined !== null && joined.length * SHAPE_BLOCK * SHAPE_BLOCK < terrain.parts.length * PLATE_SIZE * PLATE_SIZE * 0.25 ? joined : null;
+    // DO NOT shape the whole map when the blocks are known, however many: past a quarter of the plates loaded it re-floored and re-graded every building of the region at each tile the streamed world put in (5 floors a building in an opening, 2026-10-16); the blocks' work follows what moved.
+    const blocks = compares.includes(null) ? null : compares.flatMap((c) => c!.blocks);
     if (blocks === null) {
       const shaping = shapeGround(net);
       while (!shaping.landed) { landShapes(); if (shaping.landed) break; yield 'wait'; }
