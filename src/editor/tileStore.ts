@@ -3,7 +3,10 @@ import type { SerializedDoc } from '@world/doc';
 import { lotCentre } from '@world/lotRings';
 import { rescaleSerializedDoc } from '@world/rescale';
 import { OWNER, TILE_COUNTED, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
-import type { TileRecords } from '@world/doc';
+import { type TileRecords, preparedTiles } from '@world/doc';
+import { internMembers } from '@world/buildings/intern';
+import { migrateBuilding } from '@world/buildings/serialize';
+import type { Building } from '@world/buildings/types';
 import { METERS_PER_UNIT, m } from '@world/units';
 import { type PartStore, type SaveEntry, storeWriter } from './saveStore';
 import { type HeadRead, type TilePartIn, gunzipBytes, gzipBytes, partOf, readHead, tileBlob } from './tileBlob';
@@ -230,7 +233,10 @@ async function readMeta(store: PartStore, map: string): Promise<WorldMeta | null
 export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker): Promise<unknown> {
   const writer = store.writer ?? storeWriter(store);
   switch (op.op) {
-    case 'read': return readTile(store, op.map, op.key);
+    case 'read': {
+      const records = await readTile(store, op.map, op.key);
+      return records ? prepareTile(records) : null;
+    }
     case 'readText': {
       const stored = await storedBlob(store, op.map, op.key);
       return stored ? upgraded(store, op.map, op.key, stored, bake) : null;
@@ -288,7 +294,20 @@ export function portTiles(port: () => Worker): TileBackend {
 /** A tile made and stored by the generator's own worker: the version stored (null: not stored), and its records' texts when they were asked for. */
 export interface MadeTile {
   readonly version: number | null;
-  readonly text?: TileText;
+  /** The tile's records, prepared (`prepareTile`), when the page asked for them (a tile of the region). */
+  readonly records?: TileRecords;
+}
+
+/** A TILE'S BUILDINGS MADE READY FOR THE PAGE where the tile is read or made (the save worker, the generator's): each record migrated and its members interned (`intern.ts`: a tile's records share their shapes, kept through the message's clone), so the page only files them (`BuildingStore.loadPrepared`). */
+export function prepareTile(records: TileRecords): TileRecords {
+  const buildings: Building[] = [];
+  for (const raw of records.buildings) {
+    const b = migrateBuilding(raw);
+    if (!b) continue;
+    internMembers(b as unknown as Record<string, unknown>);
+    buildings.push(b);
+  }
+  return { ...records, buildings: buildings as unknown as TileRecords['buildings'] };
 }
 
 /** THE WORLD'S TILES AS THE PAGE ASKS FOR THEM: one tile read, written, or made and stored; a write bumps the tile's version */
@@ -305,8 +324,8 @@ export class TileStore {
     private readonly backend: TileBackend,
     /** Builds a tile the store does not have (the whole-map generator's worker): a pure function of the seed and its place. */
     private readonly generate: (i: number, j: number) => Promise<TileRecords>,
-    /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`, its texts handed back with `text`; none where the store is not the worker's to write (the desktop's). */
-    private readonly makeStored?: (i: number, j: number, after: number, text: boolean) => Promise<MadeTile>,
+    /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`, its records handed back prepared with `records`; none where the store is not the worker's to write (the desktop's). */
+    private readonly makeStored?: (i: number, j: number, after: number, records: boolean) => Promise<MadeTile>,
   ) {}
 
   /** The tile in the store, made and stored when it is not, and its version: DO NOT hand its records to the page for a tile it only needs to know is there (the tiles made ahead, `worldStreamer.ts`). */
@@ -365,21 +384,24 @@ export class TileStore {
   }
 
   /** DO NOT have the save worker parse a tile and clone it to the page: its texts are handed over and parsed here, once. */
+  /** The stored tile read and prepared where the store is (`runTileOp` 'read', the save worker): the page files its records as they come. */
   private async readNow(key: number): Promise<TileRecords | null> {
-    const text = (await this.backend.run({ op: 'readText', map: this.map, key })) as TileText | null;
-    if (!text) return null;
-    const records = parseTileText(text, key);
+    const records = (await this.backend.run({ op: 'read', map: this.map, key })) as TileRecords | null;
+    if (!records) return null;
+    preparedTiles.add(records);
     this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
     return records;
   }
 
-  /** DO NOT post a tile the generator made back to the store from the page: its worker stores it, the page is handed its texts once and parses them; kept for the page even when the write fails. */
+  /** DO NOT post a tile the generator made back to the store from the page: its worker stores it and hands the page its records prepared; kept for the page even when the write fails. */
   private async madeThere(key: number): Promise<TileRecords> {
     const { i, j } = tileOfKey(key);
     const made = await this.makeStored!(i, j, this.versions.get(key) ?? 0, true);
-    if (!made.text) throw new Error(`tile ${key} was made and not handed back`);
+    if (!made.records) throw new Error(`tile ${key} was made and not handed back`);
     if (made.version === null) console.warn(`[save] tile ${key} was made and not stored`);
-    const records = parseTileText(made.text, key);
+    const records = made.records;
+    if (records.key !== key) throw new Error(`the generator made tile ${records.key} for tile ${key}`);
+    preparedTiles.add(records);
     this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
     return records;
   }

@@ -4,8 +4,7 @@ import { TiledSaves } from '@editor/chunkedSave';
 import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
 import {
-  type MadeTile, type TileText, TileStore, type WorldMeta, readTile, readTilePart, storeTiles, tileOpTransfer, writeTile,
-} from '@editor/tileStore';
+  type MadeTile, type TileText, TileStore, type WorldMeta, readTile, readTilePart, storeTiles, tileOpTransfer, writeTile, prepareTile } from '@editor/tileStore';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
 import { TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
@@ -156,7 +155,7 @@ describe('a tile stored', () => {
       const records = { ...emptyTile(i, j, { trees: [{ x: i, y: j }] }), version: after + 1 };
       // As `cityTile.worker.ts` does: written in the worker, its texts the ones it stored.
       const written = await writeTile(store, 'map', records);
-      return { version: written.ok ? records.version : null, ...(text ? { text: written.text } : {}) };
+      return { version: written.ok ? records.version : null, ...(text ? { records: prepareTile(records) } : {}) };
     };
     const generate = vi.fn(never);
     const tiles = new TileStore('map', storeTiles(store), generate, makeStored);
@@ -177,7 +176,8 @@ describe('a tile stored', () => {
     const store = memoryStore();
     const makeStored = async (i: number, j: number, after: number): Promise<MadeTile> => {
       const records = { ...emptyTile(i, j), version: after + 1 };
-      return { version: null, text: (await writeTile(memoryStore(), 'other', records)).text };
+      await writeTile(memoryStore(), 'other', records);
+      return { version: null, records: prepareTile(records) };
     };
     const tiles = new TileStore('map', storeTiles(store), never, makeStored);
     expect((await tiles.load(tileKey(1, 2))).version).toBe(1);
@@ -246,9 +246,10 @@ describe('a tile stored', () => {
 });
 
 /** Every tile a migration wrote, read back. */
-async function readAll(tiles: TileStore, keys: readonly number[]): Promise<TileRecords[]> {
+/** Every tile as the store holds it (raw, `readTile`): `TileStore.read` would hand the records prepared, the buildings the page cannot read dropped. */
+async function readAll(store: PartStore, keys: readonly number[]): Promise<TileRecords[]> {
   const out: TileRecords[] = [];
-  for (const key of keys) out.push((await tiles.read(key))!);
+  for (const key of keys) out.push((await readTile(store, 'map', key))!);
   return out;
 }
 
@@ -325,7 +326,7 @@ describe('a map saved before the tiles', () => {
     // One transaction: every tile and the world's values, the values last.
     expect(store.writes).toHaveLength(1);
     expect(store.writes[0]!.at(-1)).toBe('map:world');
-    const read = await readAll(tiles, report.keys);
+    const read = await readAll(store, report.keys);
     expectUnion(read, doc);
     const east = read.find((t) => t.key === tileKey(1, 0))!;
     // The road from tile (0,0) to (1,0) is (1,0)'s (its middle), its west end borrowed.
@@ -366,7 +367,7 @@ describe('a map saved before the tiles', () => {
     expect(report.outcome).toBe('migrated');
     expect(report.from).toBe('tiles');
     expect(report.keys.length).toBeGreaterThan(1);
-    expectUnion(await readAll(tiles, report.keys), saved);
+    expectUnion(await readAll(store, report.keys), saved);
     // The old keys untouched: the same blobs, none removed; only tiles and the world's values added.
     for (const [key, blob] of before) expect(store.blobs.get(key)).toBe(blob);
     for (const key of store.blobs.keys()) if (!before.has(key)) expect(key === 'map:world' || key.startsWith('map:T:')).toBe(true);

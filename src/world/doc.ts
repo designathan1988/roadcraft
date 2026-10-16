@@ -1417,7 +1417,7 @@ export class RoadDoc {
       poleSpans: records.poleSpans, landscape: records.landscape, barriers: records.barriers,
       paint: records.paint, trees: records.trees, elements: records.elements,
       buildings: records.buildings as NonNullable<SerializedDoc['buildings']>, lots: records.lots, lotKeys: records.lotKeys,
-    }, { repair: false });
+    }, { repair: false, preparedBuildings: preparedTiles.has(records) });
     const { i, j } = tileOfKey(records.key);
     const square = tileRect(i, j);
     const tile = { nodes: [] as NodeId[], borrowedNodes: [] as NodeId[], segments: [] as SegmentId[] };
@@ -2389,7 +2389,7 @@ export class RoadDoc {
   }
 
   /** Builds a document from its serialized form. */
-  static fromJSON(saved: SerializedDoc, options: { readonly repair?: boolean; readonly shareBuildings?: BuildingStore } = {}): RoadDoc {
+  static fromJSON(saved: SerializedDoc, options: { readonly repair?: boolean; readonly shareBuildings?: BuildingStore; readonly preparedBuildings?: boolean } = {}): RoadDoc {
     // A map saved in another world unit (every map before 2026-10-10: 0.4 m) in this build's.
     const data = rescaleSerializedDoc(saved);
     const repair = options.repair ?? true;
@@ -2578,6 +2578,7 @@ export class RoadDoc {
     }
     // Buildings, if the map has any; each one through `migrateBuilding`.
     if (options.shareBuildings) doc.buildings.shareFrom(options.shareBuildings);
+    else if (data.buildings && options.preparedBuildings) doc.buildings.loadPrepared(data.buildings as unknown as readonly Building[]);
     else if (data.buildings) doc.buildings.load(data.buildings);
     // The ids already read by a set, NOT `doc.lots.some(...)` per record
     const zoneIds = new Set<number>();
@@ -2747,6 +2748,9 @@ function lotKeyPlace(key: string): { x: number; y: number } | null {
 }
 
 /** A tile as the store keeps it (`TileStore`): the records it owns, as a saved map holds them, and the ends of its roads and spans that are its neighbours' */
+/** The tiles whose buildings a worker prepared (`editor/tileStore.ts` `prepareTile`: migrated and interned there): `loadTile` files them as they are. A set beside the records, never a field of them: every list field of `TileRecords` is a list. */
+export const preparedTiles = new WeakSet<TileRecords>();
+
 export interface TileRecords {
   readonly key: number;
   /** Written again at each change of the tile (the store's), for what is baked from it (far levels, link tables) to know it is stale. */

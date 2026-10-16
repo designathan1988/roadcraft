@@ -235,6 +235,19 @@ export class BuildingStore {
     return `[${parts.join(',')}]`;
   }
 
+  /** Loads buildings a worker prepared (`editor/tileStore.ts` `prepareTile`: each migrated and interned there, the tile's shapes shared through the message's clone): filed as they are, nothing read again (DO NOT migrate and intern 900 records in the page's frame: 100-300 ms a dense tile, 2026-10-16). */
+  loadPrepared(data: readonly Building[]): void {
+    this.leaveBelow();
+    this.items.clear();
+    this.grid = null;
+    for (const building of data) {
+      if (this.items.has(building.id)) continue;
+      this.items.set(building.id, building);
+      this.ids.reserve(building.id);
+    }
+    this.changed(null, 'loaded');
+  }
+
   /** Loads stored buildings, repairing or dropping what cannot be read. */
   load(data: readonly unknown[] | undefined): void {
     this.leaveBelow();
