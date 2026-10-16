@@ -28,6 +28,7 @@ import {
 } from './proceduralBake';
 import { buildClassAnimation, createPalettePass, type ClassAnimation, type PalettePass } from './crowdAnimation';
 import { BODY_WIDTH, createClassBodies, type ClassBodies } from './crowdBodies';
+import { createGpuRows, type GpuRows } from './gpuRows';
 import {
   EYE_TRIANGLES, FAR_TRIANGLES, LEVELS, LEVEL_CAPS, LEVEL_TRIANGLES, REGION, cardCentres, cardSelections, farMesh, filterTriangles,
   levelFor, lodReady, simplifiedIndexAway, sortSkinWeights, type FarPart, type PieceRole,
@@ -151,12 +152,12 @@ interface BodyClass {
   readonly pass: PalettePass;
   readonly uniforms: {
     procBones: { value: Texture };
-    procBodies: { value: DataTexture };
+    procBodies: { value: Texture };
     procBodyStride: { value: number };
     procCover: { value: DataTexture };
     procCoverRows: { value: number };
     /** The face index (four vertices a texel), the expressions' shapes from `procExprHead`, each person's face from `procFaceHead`. */
-    procFace: { value: DataTexture };
+    procFace: { value: Texture };
     procFaceRows: { value: number };
     procFaceHead: { value: number };
     procExprHead: { value: number };
@@ -170,8 +171,12 @@ interface BodyClass {
   personData: Float32Array;
   /** Palette rows worked out here: those held, bent, jolted or maimed, and the ragdolls' questions. */
   palette: Float32Array;
-  /** Each person's own face (their regional sliders: nose, jaw, eyes, mouth...) as moves of the head's vertices, `faceRows` rows each: `procFace` past its head. */
-  face: Float32Array;
+  /** `procFace` on the GPU only: the head (index, expressions), then each person's own face (their regional sliders) as moves of the head's vertices, `faceRows` rows each. */
+  readonly faces: GpuRows;
+  /** The sliders each row's face was made from (null: none), to make it again on a restore. */
+  readonly faceOf: (Readonly<Record<string, number>> | null)[];
+  /** The head's rows read again from the cook (or baked again), for a restore. */
+  readonly reloadHead: () => Promise<Float32Array>;
   readonly faceVerts: Int32Array;
   rows: number;
   capacity: number;
@@ -987,7 +992,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     // Read from the cook (`proceduralCook.ts`); built here only when it is missing or stale.
     const cooked = await loadProcedural(`class-${sex}-${band}`);
     const data = cooked ? classFromRecord(cooked) : await classData(env, sex, rig, shape);
-    const { shapePixels, jointBasis, faceIndexPixels, faceList, exprPixels } = data;
+    const { shapePixels, jointBasis, faceIndexPixels, faceList } = data;
     const clips: Record<ProcClip, ClipFrames> = {
       walk: data.walk, idle: data.idle, run: data.run, cower: data.cower, sprint: data.sprint, photo: data.photo, getUp: data.getUp,
       duck: data.duck, hurtWalk: data.hurtWalk, hurtRun: data.hurtRun, nervous: data.nervous, hit: data.hit,
@@ -1022,17 +1027,27 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     for (let i = 0; i < bones; i++) if (parent[i] === -1) visit(i);
     // The bodies baked from the shape basis
     const bodies = createClassBodies(shapePixels, vertexCount, SHAPES, jointBasis, bones);
-    const anim = buildClassAnimation(clips, bones);
+    // The atlas's texels let go once on the GPU: the clips keep the same frames for the CPU's own palettes.
+    const anim = buildClassAnimation(clips, bones, true);
     const pass = createPalettePass(anim, parent, () => bodies.joints, ROW_START);
     await breathe();
     const faceRows = Math.ceil(faceList.length / FACE_WIDTH);
     // One texture for the face: the index (a vertex a float, four a texel), the expressions' shapes, then each person's face
     const indexRows = Math.ceil(faceIndexPixels.length / (FACE_WIDTH * 4));
     const faceHead = indexRows + faceRows * EXPR_SLOTS;
-    const faceAll = new Float32Array(FACE_WIDTH * 4 * (faceHead + faceRows * ROW_START));
-    faceAll.set(faceIndexPixels);
-    faceAll.set(exprPixels, indexRows * FACE_WIDTH * 4);
-    const face = faceAll.subarray(faceHead * FACE_WIDTH * 4);
+    const headOf = (d: Pick<typeof data, 'faceIndexPixels' | 'exprPixels'>): Float32Array => {
+      const head = new Float32Array(FACE_WIDTH * 4 * faceHead);
+      head.set(d.faceIndexPixels);
+      head.set(d.exprPixels, indexRows * FACE_WIDTH * 4);
+      return head;
+    };
+    // DO NOT keep the faces on the CPU: the head goes up once, each person's face as they are made (`gpuRows.ts`).
+    const faces = createGpuRows(FACE_WIDTH, faceHead + faceRows * ROW_START);
+    faces.write(0, headOf(data));
+    const reloadHead = async (): Promise<Float32Array> => {
+      const again = await loadProcedural(`class-${sex}-${band}`);
+      return headOf(again ? classFromRecord(again) : await classData(env, sex, rig, shape));
+    };
     const personData = personRows(ROW_START);
     const palette = new Float32Array(bones * SKIN_BONE_FLOATS * ROW_START);
     const coverPixels = new Uint8Array(COVER_WIDTH);
@@ -1054,7 +1069,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         procBodyStride: { value: bodies.stride },
         procCover: { value: cover },
         procCoverRows: { value: Math.ceil(vertexCount / COVER_WIDTH) },
-        procFace: { value: rowTexture(faceAll, FACE_WIDTH * 4, faceHead + faceRows * ROW_START) },
+        procFace: { value: faces.texture },
         procFaceRows: { value: faceRows },
         procFaceHead: { value: faceHead },
         procExprHead: { value: indexRows },
@@ -1062,7 +1077,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         procTime: { value: 0 },
         procWoundUnit: { value: unit },
       },
-      personData, face, faceVerts: faceList, palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
+      personData, faces, faceOf: [], reloadHead, faceVerts: faceList, palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
       skins: new Map(), items: new Map(), far: new Map(), pieces: [], people: [], ankle, drawn: 0,
     };
     ready.push(cls);
@@ -1105,12 +1120,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     cls.uniforms.procBones.value = cls.pass.texture;
     const faceRows = cls.uniforms.procFaceRows.value;
     const head = cls.uniforms.procFaceHead.value;
-    const old = cls.uniforms.procFace.value;
-    const all = new Float32Array(FACE_WIDTH * 4 * (head + faceRows * capacity));
-    all.set(old.image.data as Float32Array);
-    cls.face = all.subarray(head * FACE_WIDTH * 4);
-    old.dispose();
-    cls.uniforms.procFace.value = rowTexture(all, FACE_WIDTH * 4, head + faceRows * capacity);
+    // The rows on the GPU are carried into the bigger texture there, at the next flush.
+    cls.faces.grow(head + faceRows * capacity);
+    cls.uniforms.procFace.value = cls.faces.texture;
     cls.personData = personRows(capacity, cls.personData);
     cls.uniforms.procPerson.value.dispose();
     cls.uniforms.procPerson.value = rowTexture(cls.personData, PERSON_FLOATS, capacity);
@@ -1802,6 +1814,37 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return cls.rows++;
   };
 
+  /** Row `row`'s own face: the regional sliders on the class body, posed as it is (zero: none), sent up at the next flush. */
+  const setFace = (cls: BodyClass, row: number, features: Readonly<Record<string, number>> | null): void => {
+    const faceRows = cls.uniforms.procFaceRows.value;
+    const face = new Float32Array(faceRows * FACE_WIDTH * 4);
+    const mo = env.loaded?.morpher;
+    if (features && mo) {
+      const offset = new Float32Array(mo.vertexCount * 3);
+      mo.addRegional(offset, features);
+      const moved = cls.rig.deltasAt!(offset, cls.faceVerts);
+      for (let i = 0; i < cls.faceVerts.length; i++) {
+        face[i * 4] = moved[i * 3]!;
+        face[i * 4 + 1] = moved[i * 3 + 1]!;
+        face[i * 4 + 2] = moved[i * 3 + 2]!;
+      }
+    }
+    cls.faceOf[row] = features;
+    cls.faces.write(cls.uniforms.procFaceHead.value + row * faceRows, face);
+  };
+
+  /** The GPU's copies made again after a WebGL context restored: what each class let go (atlas, bodies, faces) rebuilt. */
+  let restoreHooked = false;
+  const restore = (): void => {
+    for (const cls of ready) {
+      cls.anim.refill();
+      cls.bodies.restore();
+      cls.faces.reset();
+      for (let r = 0; r < cls.rows; r++) setFace(cls, r, cls.faceOf[r] ?? null);
+      void cls.reloadHead().then((head) => cls.faces.write(0, head), () => {});
+    }
+  };
+
   const play = { row: 0, t: 0, weight: 1 };
   const plays = [play];
   /** The clip being left in a cross-fade (`ProceduralPerson.fade`), played under `play`. */
@@ -1843,22 +1886,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const coef = new Float32Array(SHAPES);
       for (let k = 0; k < SHAPES; k++) coef[k] = (c[k] ?? 0) - (cls.coefficients[k] ?? 0);
       const body = cls.bodies.pick(coef);
-      // Their own face: the regional sliders on the class body, posed as it is
-      const faceRows = cls.uniforms.procFaceRows.value;
-      // A reused row holds the last person's face: theirs replaces it, or none.
-      cls.face.fill(0, row * faceRows * FACE_WIDTH * 4, (row + 1) * faceRows * FACE_WIDTH * 4);
-      touchRows(cls.uniforms.procFace.value, cls.uniforms.procFaceHead.value + row * faceRows, faceRows);
-      if (Object.keys(spec.features).length) {
-        const offset = new Float32Array(mo.vertexCount * 3);
-        mo.addRegional(offset, spec.features);
-        const moved = cls.rig.deltasAt!(offset, cls.faceVerts);
-        const at = row * faceRows * FACE_WIDTH * 4;
-        for (let i = 0; i < cls.faceVerts.length; i++) {
-          cls.face[at + i * 4] = moved[i * 3]!;
-          cls.face[at + i * 4 + 1] = moved[i * 3 + 1]!;
-          cls.face[at + i * 4 + 2] = moved[i * 3 + 2]!;
-        }
-      }
+      // Their own face; a reused row holds the last person's face: theirs replaces it, or none.
+      setFace(cls, row, Object.keys(spec.features).length ? spec.features : null);
       // Heights from the vertices' Y alone (MakeHuman's `getHeightCm`).
       const tall = mo.height(spec.body, a.bodyRange);
       const level0 = mo.height(level, a.bodyRange);
@@ -1948,9 +1977,10 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         if (!cls || !st) return null;
         const row = takeRow(cls, true);
         const faceRows = cls.uniforms.procFaceRows.value;
-        const faceRow = faceRows * FACE_WIDTH * 4;
-        cls.face.copyWithin(row * faceRow, person.row * faceRow, person.row * faceRow + faceRow);
-        touchRows(cls.uniforms.procFace.value, cls.uniforms.procFaceHead.value + row * faceRows, faceRows);
+        // Their face copied on the GPU (`gpuRows.ts`), and what it was made from, for a restore.
+        const head = cls.uniforms.procFaceHead.value;
+        cls.faces.copy(head + person.row * faceRows, head + row * faceRows, faceRows);
+        cls.faceOf[row] = cls.faceOf[person.row] ?? null;
         // Their wounds; DO NOT send the whole texture: its rows also carry the faces' expressions, sent a row at a time
         cls.personData.copyWithin(row * PERSON_FLOATS, person.row * PERSON_FLOATS, person.row * PERSON_FLOATS + EXPR_AT);
         touchRows(cls.uniforms.procPerson.value, row, 1);
@@ -2142,7 +2172,11 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       blobs.finish();
     },
     renderPalettes(renderer) {
+      if (!restoreHooked) { restoreHooked = true; renderer.domElement.addEventListener('webglcontextrestored', restore); }
       for (const cls of ready) {
+        // The bodies and faces made since the last frame, up before anybody draws them.
+        cls.bodies.flush(renderer);
+        cls.faces.flush(renderer);
         if (!cls.drawn) continue;
         cls.pass.render(renderer, cls.rows);
         cls.uniforms.procBones.value = cls.pass.texture;
@@ -2160,6 +2194,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         }
         cls.people.length = 0;
         cls.rows = 0;
+        cls.faceOf.length = 0;
         cls.drawn = 0;
       }
       states.clear();
@@ -2243,9 +2278,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
           pieces++;
           if (piece.mesh.visible) draws++;
         }
-        for (const t of [cls.uniforms.procBodies.value, cls.uniforms.procFace.value, cls.anim.atlas]) {
-          textureBytes += (t.image.data as Float32Array).byteLength;
-        }
+        textureBytes += cls.bodies.bytes + cls.faces.bytes + cls.anim.bytes;
         textureBytes += (cls.uniforms.procCover.value.image.data as Uint8Array).byteLength;
       }
       return { classes: ready.length, people: people.length, pieces, draws, items: names.size, vertices, textureBytes, bakeMs,

@@ -13,4 +13,14 @@ describe('a cooked record', () => {
     expect(back['weights']).toBeInstanceOf(Float32Array);
     expect(back['refs']).toBeInstanceOf(Uint32Array);
   });
+
+  it('owns its arrays: none is a view that keeps the whole file alive', () => {
+    const file = packRecord({ a: new Float32Array(1000), b: Uint8Array.from([1, 2, 3]) });
+    const back = unpackRecord(file);
+    const a = back['a'] as Float32Array, b = back['b'] as Uint8Array;
+    expect(a.buffer).not.toBe(file);
+    expect(a.buffer.byteLength).toBe(a.byteLength);
+    expect(b.buffer.byteLength).toBe(3);
+    expect(a.buffer).not.toBe(b.buffer);
+  });
 });
