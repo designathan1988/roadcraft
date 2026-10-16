@@ -285,6 +285,12 @@ export function portTiles(port: () => Worker): TileBackend {
   };
 }
 
+/** A tile made and stored by the generator's own worker: the version stored (null: not stored), and its records' texts when they were asked for. */
+export interface MadeTile {
+  readonly version: number | null;
+  readonly text?: TileText;
+}
+
 /** THE WORLD'S TILES AS THE PAGE ASKS FOR THEM: one tile read, written, or made and stored; a write bumps the tile's version */
 export class TileStore {
   /** The version each tile was last read or written at: one number a tile touched, never its records. */
@@ -299,8 +305,8 @@ export class TileStore {
     private readonly backend: TileBackend,
     /** Builds a tile the store does not have (the whole-map generator's worker): a pure function of the seed and its place. */
     private readonly generate: (i: number, j: number) => Promise<TileRecords>,
-    /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`: the version stored, or null when it was not; none where the store is not the worker's to write (the desktop's). */
-    private readonly makeStored?: (i: number, j: number, after: number) => Promise<number | null>,
+    /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`, its texts handed back with `text`; none where the store is not the worker's to write (the desktop's). */
+    private readonly makeStored?: (i: number, j: number, after: number, text: boolean) => Promise<MadeTile>,
   ) {}
 
   /** The tile in the store, made and stored when it is not, and its version: DO NOT hand its records to the page for a tile it only needs to know is there (the tiles made ahead, `worldStreamer.ts`). */
@@ -313,7 +319,7 @@ export class TileStore {
       }
       if (!this.makeStored) return (await this.made(key)).version;
       const { i, j } = tileOfKey(key);
-      const version = await this.makeStored(i, j, this.versions.get(key) ?? 0);
+      const { version } = await this.makeStored(i, j, this.versions.get(key) ?? 0, false);
       if (version === null) throw new Error(`tile ${key} was made and not stored`);
       this.versions.set(key, version);
       return version;
@@ -333,9 +339,9 @@ export class TileStore {
     });
   }
 
-  /** The stored tile, or the tile generated and stored: generated only when the store has none. */
+  /** The stored tile, or the tile generated and stored: generated only when the store has none (stored by the generator's worker where it can, as a tile made ahead is). */
   load(key: number): Promise<TileRecords> {
-    return this.chained(key, async () => (await this.readNow(key)) ?? this.made(key));
+    return this.chained(key, async () => (await this.readNow(key)) ?? (this.makeStored ? this.madeThere(key) : this.made(key)));
   }
 
   meta(): Promise<WorldMeta | null> {
@@ -363,6 +369,17 @@ export class TileStore {
     const text = (await this.backend.run({ op: 'readText', map: this.map, key })) as TileText | null;
     if (!text) return null;
     const records = parseTileText(text, key);
+    this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
+    return records;
+  }
+
+  /** DO NOT post a tile the generator made back to the store from the page: its worker stores it, the page is handed its texts once and parses them; kept for the page even when the write fails. */
+  private async madeThere(key: number): Promise<TileRecords> {
+    const { i, j } = tileOfKey(key);
+    const made = await this.makeStored!(i, j, this.versions.get(key) ?? 0, true);
+    if (!made.text) throw new Error(`tile ${key} was made and not handed back`);
+    if (made.version === null) console.warn(`[save] tile ${key} was made and not stored`);
+    const records = parseTileText(made.text, key);
     this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
     return records;
   }

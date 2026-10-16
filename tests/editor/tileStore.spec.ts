@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { TiledSaves } from '@editor/chunkedSave';
 import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
-import { type TileText, TileStore, type WorldMeta, parseTileText, readTile, readTilePart, storeTiles, tileOpTransfer } from '@editor/tileStore';
+import {
+  type MadeTile, type TileText, TileStore, type WorldMeta, parseTileText, readTile, readTilePart, storeTiles, tileOpTransfer, writeTile,
+} from '@editor/tileStore';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
 import { TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
@@ -127,11 +129,11 @@ describe('a tile stored', () => {
     const kept = emptyTile(1, 1);
     await new TileStore('map', storeTiles(store), never).write(kept);
     const asked: [number, number, number][] = [];
-    const makeStored = async (i: number, j: number, after: number): Promise<number | null> => {
+    const makeStored = async (i: number, j: number, after: number): Promise<MadeTile> => {
       asked.push([i, j, after]);
       // As `cityTile.worker.ts` does: the tile written straight into the store, its version past `after`.
       await storeTiles(store).run({ op: 'write', map: 'map', records: { ...emptyTile(i, j), version: after + 1 } });
-      return after + 1;
+      return { version: after + 1 };
     };
     const tiles = new TileStore('map', storeTiles(store), never, makeStored);
     expect(await tiles.ensure(kept.key)).toBe(1);
@@ -142,6 +144,42 @@ describe('a tile stored', () => {
     expect(await tiles.ensure(tileKey(4, -2))).toBe(1);
     expect(asked).toHaveLength(1);
     expect(await tiles.write(emptyTile(4, -2))).toBe(2);
+  });
+
+  it('a region tile not stored is made and stored by the generator\'s worker, the page handed its texts and never writing it', async () => {
+    const store = memoryStore();
+    const asked: [number, number, number, boolean][] = [];
+    const makeStored = async (i: number, j: number, after: number, text: boolean): Promise<MadeTile> => {
+      asked.push([i, j, after, text]);
+      const records = { ...emptyTile(i, j, { trees: [{ x: i, y: j }] }), version: after + 1 };
+      // As `cityTile.worker.ts` does: written in the worker, its texts the ones it stored.
+      const written = await writeTile(store, 'map', records);
+      return { version: written.ok ? records.version : null, ...(text ? { text: written.text } : {}) };
+    };
+    const generate = vi.fn(never);
+    const tiles = new TileStore('map', storeTiles(store), generate, makeStored);
+    const key = tileKey(-2, 6);
+    const tile = await tiles.load(key);
+    expect(asked).toEqual([[-2, 6, 0, true]]);
+    expect(generate).not.toHaveBeenCalled();
+    expect(tile).toEqual({ ...emptyTile(-2, 6, { trees: [{ x: -2, y: 6 }] }), version: 1 });
+    // One write, the worker's: the page posted nothing to the store.
+    expect(store.writes).toEqual([[`map:T:${key}`]]);
+    // Loaded again: read, not made; a later write goes past it.
+    expect(await tiles.load(key)).toEqual(tile);
+    expect(asked).toHaveLength(1);
+    expect(await tiles.write(tile)).toBe(2);
+  });
+
+  it('a region tile made and not stored is still handed to the page', async () => {
+    const store = memoryStore();
+    const makeStored = async (i: number, j: number, after: number): Promise<MadeTile> => {
+      const records = { ...emptyTile(i, j), version: after + 1 };
+      return { version: null, text: (await writeTile(memoryStore(), 'other', records)).text };
+    };
+    const tiles = new TileStore('map', storeTiles(store), never, makeStored);
+    expect((await tiles.load(tileKey(1, 2))).version).toBe(1);
+    expect(store.blobs.size).toBe(0);
   });
 
   it('each write one past the last version the store knows', async () => {
