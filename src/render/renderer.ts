@@ -1,3 +1,4 @@
+import { onMap } from '@world/cityGen/wholeMap';
 import type { FarTiles } from './buildings/farLevels';
 import { jobPort } from '../jobs/jobPool';
 import { onEcologyRead } from './ecologyPool';
@@ -1892,6 +1893,8 @@ export function createSceneRenderer(
           const k = iy * field.side + ix;
           const ecology = Math.min(1, (field.canopy[k] ?? 0) * 0.9 + (field.trees[k] ?? 0) * 0.5 + (field.emergent[k] ?? 0) * 0.3);
           const o = j * cells + i;
+          // Nothing grows past the map's edge (`wholeMap.ts`).
+          if (!onMap(x + part.cx, y + part.cy)) { odds[o] = 0; band[o] = 0; continue; }
           let density: number;
           if (base) density = base[o]! + ecology * 0.3;
           else {

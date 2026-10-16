@@ -4,7 +4,7 @@ import { RoadDoc } from '@world/doc';
 import type { NodeId, SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
 import { FOOTWAY_RISE, Level, ROAD_TYPES, type SurfaceLevel, halfWidth, roadType } from '@world/roadTypes';
-import { type WholeMapOptions, gatesOf, planWholeMap } from '@world/cityGen/wholeMap';
+import { MAP_HALF, MAP_TILES, type WholeMapOptions, gatesOf, planWholeMap } from '@world/cityGen/wholeMap';
 import { PLAN_SIG } from './buildings/farTiles';
 import { levelRingsOf } from '@world/surfaces';
 import { TILE, tileKey, tileOfKey } from '@world/tiles';
@@ -304,21 +304,26 @@ export function bakePlanRoads(plan: WholeMapOptions, k: number, i: number, j: nu
   const error = farLevelError(k);
   if (error > 2 * halfWidth(roadType(AVENUE), Level.Asphalt)) return null;
   const side = TILE * 2 ** k, x0 = i * side, y0 = j * side, x1 = x0 + side, y1 = y0 + side;
+  // Nothing past the map's edge (`wholeMap.ts` MAP_HALF): the node clipped to it, none outside.
+  if (x0 >= MAP_HALF || x1 <= -MAP_HALF || y0 >= MAP_HALF || y1 <= -MAP_HALF) return null;
+  const mx0 = Math.max(x0, -MAP_HALF), my0 = Math.max(y0, -MAP_HALF), mx1 = Math.min(x1, MAP_HALF), my1 = Math.min(y1, MAP_HALF);
   const first = { i: i * 2 ** k, j: j * 2 ** k }, count = 2 ** k;
   const lines: PlanLine[] = [];
   const map = k === 0 ? planWholeMap(plan) : null;
   for (let c = 0; c < count; c++) {
     const ci = first.i + c, rj = first.j + c;
+    // A tile's low borders as its generator lays them (`tileOnMap`): only a tile on the map has them.
+    const onMap = (t: number): boolean => t >= -MAP_TILES / 2 && t < MAP_TILES / 2;
     // Across the node: a column's low border and its avenue gates' streets (the same for every row of it); a row's likewise.
-    lines.push({ along: 'y', at: ci * TILE, from: y0, to: y1, type: AVENUE });
-    lines.push({ along: 'x', at: rj * TILE, from: x0, to: x1, type: AVENUE });
+    if (onMap(ci)) lines.push({ along: 'y', at: ci * TILE, from: my0, to: my1, type: AVENUE });
+    if (onMap(rj)) lines.push({ along: 'x', at: rj * TILE, from: mx0, to: mx1, type: AVENUE });
     // A tile's collectors too, unless it is the countryside (its avenue gates' streets alone, `tile.ts`).
     const rural = map !== null && map.tile(first.i, first.j).style === 'rural';
     for (const gate of gatesOf(plan.seed, 1, ci)) {
-      if (gate.level === 0 || (map !== null && !rural)) lines.push({ along: 'y', at: gate.at, from: y0, to: y1, type: gate.level === 0 ? AVENUE : COLLECTOR });
+      if (gate.level === 0 || (map !== null && !rural)) lines.push({ along: 'y', at: gate.at, from: my0, to: my1, type: gate.level === 0 ? AVENUE : COLLECTOR });
     }
     for (const gate of gatesOf(plan.seed, 0, rj)) {
-      if (gate.level === 0 || (map !== null && !rural)) lines.push({ along: 'x', at: gate.at, from: x0, to: x1, type: gate.level === 0 ? AVENUE : COLLECTOR });
+      if (gate.level === 0 || (map !== null && !rural)) lines.push({ along: 'x', at: gate.at, from: mx0, to: mx1, type: gate.level === 0 ? AVENUE : COLLECTOR });
     }
   }
   const tones = farRoadTones();

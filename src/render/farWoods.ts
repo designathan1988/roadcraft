@@ -1,3 +1,4 @@
+import { onMap } from '@world/cityGen/wholeMap';
 import { computeEcology, type NatureSettings } from '@world/ecology';
 import { reliefHeight, type ReliefVersion } from '@world/terrain';
 import { m } from '@world/units';
@@ -120,8 +121,10 @@ export function farWoods(ask: FarWoodsAsk): FarWoods {
       const ecology = Math.min(1, (field.canopy[k] ?? 0) * 0.9 + (field.trees[k] ?? 0) * 0.5 + (field.emergent[k] ?? 0) * 0.3);
       const slope = Math.hypot(natural(x + d, y) - natural(x - d, y), natural(x, y + d) - natural(x, y - d)) / (2 * d);
       const hillside = Math.min(1, Math.max(0, (slope - 0.06) / 0.35));
-      const density = natureDensity(x + cx, y + cy, m(1), hillside, ecology);
       const o = j * cells + i;
+      // Nothing grows past the map's edge (`wholeMap.ts`): bare land there.
+      if (!onMap(x + cx, y + cy)) { odds[o] = 0; band[o] = 0; continue; }
+      const density = natureDensity(x + cx, y + cy, m(1), hillside, ecology);
       // The bands (`natureSweep`): inner forest, its edge, scattered trees, a rare lone one.
       if (density > 0.62) { odds[o] = 0.92; band[o] = 3; }
       else if (density > 0.5) { odds[o] = 0.25 + (density - 0.5) / 0.12 * 0.6; band[o] = 2; }
