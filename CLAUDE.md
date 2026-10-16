@@ -73,11 +73,11 @@ produced almost nothing; everything that moved the game came from reading the co
   G whole-map generator, H Steam. Current: D/E on the streaming world.
 
 ## Work list (causes found by reading the code; re-read the line before fixing)
-Root: a building record is the whole authored model (lot furniture inside, many JS objects a building), kept
-per tile as gzip JSON, parsed and migrated by every reader, sent as JSON text per cell job per level
-(`cellPool.ts`) or by structured clone (growth, sim), hash-consed per thread (`intern.ts`). The sim worker
-keeps a second RoadDoc + Network. Fix: per-tile typed tables in a SharedArrayBuffer read by stateless jobs,
-as `sim/meso` already does.
+Root: a building record is the whole authored model (lot furniture inside, many JS objects a building).
+Done: a tile's buildings are one typed table in a SharedArrayBuffer (`world/buildings/recordTable.ts`), made
+where the tile is prepared; the page reads its records from it and cell jobs get the buffer and rows, never
+JSON text. Left: growth, the tile write-back (`doc.tileRecords` clones every building), far levels on the
+desktop path still post Building objects; the sim worker keeps a second RoadDoc + Network.
 - Per-building derived data redone per emission and per load: `facadeBays` unmemoised (`buildingMesh.ts`,
   `massing.ts`, `foundation.ts`); `interiorAt` furnishes whole floors for one window (`buildingMesh.ts`);
   lot bays and kerb bays (`parking.ts` `baysNow`) at every tile load. Fix: baked with the tile as sections
@@ -99,10 +99,9 @@ as `sim/meso` already does.
   bulk of L1 triangles. Fix: instanced parts per kind (quality decision: ask the player).
 - Building shells cannot be simplified: each `Shell.face` is a loose quad, T-junctions round windows. Fix:
   each wall as one welded grid with the windows' holes sharing its vertices; then meshoptimizer.
-- Slicing still in the code (amortization): `main.ts` `GROW_SLICE_MS`; `renderer.ts` `HIDDEN_SLICE_MS`/
-  `WORLD_SLICE_MS`; `sim/params.ts` `SIM_FRAME_BUDGET_MS`.
-- `history.ts` and `simHost.ts`: `net.rebuild({ full: true })`.
-- `toNonIndexed` in `agents.ts`, `facadePropModels.ts`, `fracture.ts`.
+- Slicing still in the code (amortization): `main.ts` `GROW_SLICE_MS` (the fixed-size city's lot layout on
+  the page: goes with one generation path, the tile generator's); `renderer.ts` `HIDDEN_SLICE_MS`/
+  `WORLD_SLICE_MS` (the world job on the page: goes with per-tile road records).
 - `color`/`roadSection` attributes on every road strip (`mesh/surfaceMesh.ts`, `tileMesh.ts`) unused by
   most specs. Fix: the `SurfaceSpec` declares what it reads.
 - Texture units over 16: terrain program and the cooked citizen with morph. Fix: terrain to <= 13, people
