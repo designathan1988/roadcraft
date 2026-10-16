@@ -300,7 +300,7 @@ describe('a map by tiles among the other copies', () => {
     const parts = memoryStore();
     const large = largeStore();
     new Persistence(undefined, large, parts).saveSession(small(), settings);
-    await vi.waitFor(() => expect(parts.blobs.has(`${KEY}:manifest`)).toBe(true));
+    await vi.waitFor(() => expect(parts.blobs.has(`${KEY}:tiles`)).toBe(true));
     expect(large.items.size).toBe(0);
     expect(localStorage.getItem(KEY)).toContain('"stored":"parts"');
     expect((await new Persistence(undefined, large, parts).loadSessionAsync())?.document.nodes?.length).toBe(2);
