@@ -3,6 +3,7 @@ import { type TilePiece, assembleWholeMap } from '@world/cityGen/assemble';
 import { TILES, type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
 import type { TileAnswer, TileAsk } from './cityTile.worker';
 import { jobLanes, jobPort } from './jobs/jobPool';
+import { internMembers } from '@world/buildings/intern';
 
 /** THE WHOLE MAP GENERATED, FROM THE PAGE (rewrite F7): every tile built in the job pool (`cityTile.worker.ts`), a lane per worker, each lane given the next tile when it answers; the page only counts them and, once all are in, joins them (`assembleWholeMap`) into the map it opens. Nothing of a tile is built on the page: a tile that fails gives the whole map up (the map left as it was). */
 
@@ -56,11 +57,16 @@ export class WholeMapRun {
   private answered(port: Worker, answer: TileAnswer): void {
     if (this.over) return;
     if ('error' in answer) { this.fail(`tile ${answer.i},${answer.j}: ${answer.error}`); return; }
+    // DO NOT hold a tile's buildings as they came (a structured clone shares nothing, ~3x the record): their members made the map's shared ones now (`intern.ts`).
+    for (const b of answer.piece.buildings) internMembers(b as Record<string, unknown>);
     this.pieces.push(answer.piece);
     this.progress(this.pieces.length, this.total);
     if (this.pieces.length < this.total) { this.next(port); return; }
     this.dispose();
-    this.done(assembleWholeMap(this.pieces), this.pieces.reduce((s, p) => s + p.ms, 0));
+    const ms = this.pieces.reduce((s, p) => s + p.ms, 0);
+    // The tiles let go before the map is opened: only the joined map's records stand while it is read.
+    const map = assembleWholeMap(this.pieces.splice(0));
+    this.done(map, ms);
   }
 
   private fail(why: string): void {
