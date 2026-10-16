@@ -12,7 +12,7 @@ import { chooseVehicleDestination } from '../routing/destination';
 import { closeLane, laneClear, openLanes, type Closure } from '../vehicles/laneClosures';
 import { CLOSURE_STOP } from '../vehicles/obstacles';
 import { Shunt } from './manoeuvre';
-import { buildYard, forgetYard, forgetYardsBut, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, type YardNeighbours, yardNeighbours, yardOf } from './lorryDocks';
+import { buildYard, forgetYard, forgetYardsBut, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, yardOf } from './lorryDocks';
 import { gatedProperty, lanesInBox } from './parking';
 import { BuildingsInOrder } from './buildingOrder';
 import type { BuildingSource, TrafficBuilding } from './trafficBuildings';
@@ -85,7 +85,6 @@ export class LorryTraffic {
     this.lorries.clear();
     this.planning = null;
     this.making = null;
-    this.neighbours = null;
     this.clock = 0;
   }
 
@@ -171,8 +170,6 @@ export class LorryTraffic {
 
   /** The yard being made, a slice a call */
   private making: { building: TrafficBuilding; key: string; steps: Generator<void, Yard, void> } | null = null;
-  /** The lots and buildings near each yard (`yardNeighbours`), kept while they stand. */
-  private neighbours: YardNeighbours | null = null;
 
   /** A building's yard, made a slice a call (`buildYard`): undefined while it is being made. */
   private yardFor(w: SimWorld, building: BuildingId, begin = true): Yard | null | undefined {
@@ -183,8 +180,7 @@ export class LorryTraffic {
     if (!begin && this.making?.building !== b) return undefined;
     const key = yardKey(w);
     if (!this.making || this.making.building !== b || this.making.key !== key) {
-      this.neighbours = yardNeighbours(w, this.neighbours);
-      this.making = { building: b, key, steps: buildYard(b, key, w, lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!), this.neighbours) };
+      this.making = { building: b, key, steps: buildYard(b, key, w, lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!)) };
     }
     const next = this.making.steps.next();
     if (!next.done) return undefined;

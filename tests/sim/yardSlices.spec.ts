@@ -7,7 +7,7 @@ import { growOnLot } from '@editor/zoning';
 import { SimWorld } from '@sim/world';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import { clearanceOf } from '@sim/agents/hybridAStar';
-import { buildYard, knownYard, lorryOf, yardKey, yardNeighbours } from '@sim/agents/lorryDocks';
+import { buildYard, knownYard, lorryOf, yardKey } from '@sim/agents/lorryDocks';
 
 /** A WORKS' YARD IS MADE A SLICE A TICK. */
 function works(): RoadDoc {
@@ -40,7 +40,7 @@ describe('a works yard', () => {
     w.rebuildTopology();
     const b = [...w.buildings.all()].find((x) => knownYard(w, x) !== null);
     expect(b).toBeDefined();
-    const steps = buildYard(b!, yardKey(w), w, lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!), yardNeighbours(w, null));
+    const steps = buildYard(b!, yardKey(w), w, lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!));
     let slices = 0;
     let next = steps.next();
     while (!next.done) { slices++; next = steps.next(); }

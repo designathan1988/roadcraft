@@ -477,7 +477,7 @@
   },
   "src/sim/agents/lorryDocks.ts": {
     "roadcraft/no-global-revision": {
-      "count": 4
+      "count": 3
     },
     "roadcraft/no-module-state": {
       "count": 2

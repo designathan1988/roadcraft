@@ -192,7 +192,6 @@
  "whole-map-on-revision  src/render/renderer.ts rebuildWorld  rebuildUtilities → rebuildFurniture → buildStreetFurniture: spread RoadDoc.landscape": 1,
  "whole-map-on-revision  src/render/renderer.ts worldSteps  shapeBlocksSteps: for BuildingStore.all": 1,
  "whole-map-on-revision  src/render/terrain.ts paintStep  for dabs(RoadDoc.terrainPaint)": 1,
- "whole-map-on-revision  src/sim/agents/lorryDocks.ts yardNeighbours  for RoadDoc.lots": 1,
  "whole-map-on-revision  src/sim/agents/lotTraffic.ts LotTraffic.readBays  LotTraffic.release → planFrom → chooseExit → routeCost → trapLanes: for LaneletGraph.lanelets": 1,
  "whole-map-on-revision  src/sim/agents/lotTraffic.ts LotTraffic.readBays  collectBays → baysNow → BuildingsInOrder.update → StoreOrder.follow → StoreOrder.reread: for BuildingStore.all": 1,
  "whole-map-on-revision  src/sim/agents/parking.ts laneGrid  forEach lanes(LaneletGraph.lanelets)": 1,

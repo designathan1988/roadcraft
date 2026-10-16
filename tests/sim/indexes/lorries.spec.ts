@@ -12,7 +12,7 @@ import { SimWorld } from '@sim/world';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
 import type { Waypoint } from '@sim/agents/hybridAStar';
 import { gatedProperty } from '@sim/agents/parking';
-import { buildYard, lorryOf, type Yard, yardKey, yardNeighbours } from '@sim/agents/lorryDocks';
+import { buildYard, knownYard, lorryOf, type Yard, yardKey, yardOf } from '@sim/agents/lorryDocks';
 import { closures, YardList } from '@sim/agents/lorryTraffic';
 import { trafficBuilding } from '@sim/agents/trafficBuildings';
 import { buildYard as oldBuildYard, yardNeighbours as oldYardNeighbours, type Yard as OldYard } from './oracle/lorryDocksOld';
@@ -161,7 +161,7 @@ describe('the lorries read what is near', () => {
     for (let round = 0; round < 2; round++) {
       // Two yards a round: each is a grid of a third of a million cells and its clearance, twice.
       for (const b of [...doc.buildings.all()].filter((o) => gatedProperty(o) && lorryDocks(o).length).slice(0, 2)) {
-        const now = made(buildYard(trafficBuilding(b), yardKey(w), w, LORRY, yardNeighbours(w, null)));
+        const now = made(buildYard(trafficBuilding(b), yardKey(w), w, LORRY));
         const old = made(oldBuildYard(b, yardKey(w), w, LORRY, oldYardNeighbours(w, null)));
         expect(yardText(now)).toBe(yardText(old));
         yards++;
@@ -170,5 +170,31 @@ describe('the lorries read what is near', () => {
       for (let k = 0; k < 6; k++) growOnLot({ doc, net, groundAt: () => 0 }, refused, 31 * k + round);
     }
     expect(yards).toBeGreaterThan(1);
+  });
+
+  it('a yard reads its lots again for a lot laid on its grid, never for one laid elsewhere', () => {
+    const { doc, w } = works(0x0be9);
+    const b = [...w.buildings.all()].find((o) => gatedProperty(o) && o.docks.length);
+    expect(b).toBeDefined();
+    const yard = yardOf(w, b!, LORRY)!;
+    expect(knownYard(w, b!)).toBe(yard);
+    // The lots a yard's check reads, counted.
+    const lotsIn = doc.lotsIn.bind(doc);
+    let asked = 0;
+    doc.lotsIn = (rect) => { asked++; return lotsIn(rect); };
+    const square = (x: number, y: number, side: number) => [{ x, y }, { x: x + side, y }, { x: x + side, y: y + side }, { x, y: y + side }];
+    // Far off: the yard stands without a look at its inputs, and has read the diary up to now.
+    doc.lotStore.apply({ add: [{ corners: square(m(5000), m(5000), m(20)) }] }, 'test: a lot far off');
+    expect(knownYard(w, b!)).toBe(yard);
+    expect(asked).toBe(0);
+    expect(yard.seen).toBe(doc.changes.version);
+    // Asked again with nothing new: no look either.
+    expect(knownYard(w, b!)).toBe(yard);
+    expect(asked).toBe(0);
+    // On its grid: its inputs read again, and they changed.
+    const [x0, y0] = yard.reach;
+    doc.lotStore.apply({ add: [{ corners: square(x0 + m(1), y0 + m(1), m(3)) }] }, 'test: a lot on the yard');
+    expect(knownYard(w, b!)).toBeUndefined();
+    expect(asked).toBe(1);
   });
 });

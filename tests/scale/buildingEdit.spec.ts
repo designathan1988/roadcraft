@@ -12,7 +12,6 @@ import type { Area, GroundRecord, Rect } from '@render/groundChanges';
 import { Network } from '@world/network';
 import { SimWorld } from '@sim/world';
 import { collectBays } from '@sim/agents/parking';
-import { yardNeighbours } from '@sim/agents/lorryDocks';
 import { type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { gardenLists } from '@render/gardenLists';
@@ -124,7 +123,6 @@ function addWork(n: number): Record<string, number> {
   net.rebuild();
   const w = new SimWorld(doc, net, 0x5ca1e);
   collectBays(w);
-  const yards = yardNeighbours(w, null);
   // The renderer's products of the buildings, out of it in modules of their own: the camera's solids
   const solids = cameraSolidsKeeper(() => 0, bankBox, m(40));
   const solidsGround = groundSince(doc);
@@ -153,7 +151,6 @@ function addWork(n: number): Record<string, number> {
   const out = {
     layer: layerReads,
     bays: work(() => collectBays(w)),
-    yards: work(() => yardNeighbours(w, yards)),
     // As the renderer asks them a frame (`draw`): the solids filed again when the camera asks
     solids: work(() => { if (solids.follow(doc.buildings, solidsGround)) solids.solids(); }),
     pads: work(() => { if (sites.changedSites(doc.buildings)) sites.rebuild(doc.buildings); }),
