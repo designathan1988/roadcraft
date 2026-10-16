@@ -118,7 +118,7 @@ is 4.4 GB, so no tuning fits a city much past 10 km. Binding decisions:
 - The tile store is the save (`editor/chunkedSave.ts` layout, written in a worker): every tile ever made. A tile not in it
   is generated on demand, a pure function of the seed and its place (`cityGen/wholeMap.ts`, `editor/wholeMapTile.ts`),
   then stored. Generating a city is choosing a seed and options: nothing is generated up front.
-- The page document holds the active region only: the tiles within `ACTIVE_RADIUS` of the camera's focus, loaded ahead
+- The page document holds the active region only: the tiles within `ACTIVE_RADIUS` (1: 3 x 3 tiles) of the camera's focus, loaded ahead
   and unloaded behind (with hysteresis). A load or an unload is a diary entry per kind with the tile's rectangle and ids
   (causes `'tile loaded'`, `'tile unloaded'`); every derived product follows the diary and drops what an unload names.
   A road across a tile edge keeps its foreign end as a borrowed node in its own tile; a borrowed node stays while a

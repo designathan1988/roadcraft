@@ -6,8 +6,8 @@ import { OWNER, TILE, TILE_IDS, type TileRecords, tileIJ, tileKey, tileOfKey, ti
 
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
 
-/** Tiles each way from the camera's tile held in the document: 5 x 5 tiles, 5 km, the editing and the near drawing's whole reach. */
-export const ACTIVE_RADIUS = 2;
+/** Tiles each way from the camera's tile held in the document: 3 x 3 tiles, 3 km - the editing and the detail's reach; past it the buildings, roads and land are drawn from what is baked of the store (a dense downtown tile holds ~1,500 buildings: 9 of them stay a fraction of the page's heap). */
+export const ACTIVE_RADIUS = 1;
 /** A tile is let go only this many tiles past the radius: a camera on a tile's edge does not load and unload it in turn. */
 const KEEP_MARGIN = 1;
 /** Tiles asked of the store at once (each read, or made by the generator in a worker). */
