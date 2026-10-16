@@ -1,6 +1,6 @@
 import { DT, JAM_GAP, STUCK_SECONDS } from './params';
 import type { SimWorld } from './world';
-import { restController, stepController } from './signals/fsm';
+import { stepController } from './signals/fsm';
 import { longitudinalConstraints } from './vehicles/obstacles';
 import {
   compactReservationChain,
@@ -52,13 +52,12 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   for (const v of w.vehicles.values()) snapshotInto(v);
   w.pedEngine.beginTick(w);
 
-  // 1. signals: the sole mutator of phase state.
+  // 1. signals: the sole mutator of phase state. Their clock passes first: every controller's time moves on, the asleep's too.
+  w.signalClock.passes++;
   const deps = w.signalDeps();
-  const asleep = w.signalsAsleep(deps);
-  for (const c of w.signalisedControllers()) {
-    if (asleep.get(c.node) === c) { restController(c); continue; }
+  for (const c of w.signalsToStep(deps)) {
     tickWork.controllers++;
-    if (stepController(c, deps) && w.doLess) asleep.set(c.node, c);
+    if (stepController(c, deps) && w.doLess) w.restSignal(c);
   }
   lap('1 signals');
 

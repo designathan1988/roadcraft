@@ -15,7 +15,7 @@ import type { PairMeasurer } from '@world/conflictTable';
 import { SimClock } from './clock';
 import { ClaimTable } from './intersections/claims';
 import type { Vehicle, VehicleId } from './vehicles/state';
-import { type SignalController, type SignalDeps, createController, rebuildController, seekFixed } from './signals/fsm';
+import { type SignalClock, type SignalController, type SignalDeps, createController, rebuildController, seekFixed } from './signals/fsm';
 import { type CrossingId, makeCrossingId } from './signals/plan';
 import type { AuditIssue } from './audit';
 import { SidewalkGraph } from './peds/sidewalk';
@@ -38,7 +38,7 @@ const WINDOW_EVERY = 0.5;
 /** What the filing holds for a junction: its id is the whole of it. */
 const JUNCTION_FILED = {};
 
-/** What the signals read of the world (`SignalDeps`), and the reservations by node, which wake a sleeping one (`SimWorld.signalsAsleep`). */
+/** What the signals read of the world (`SignalDeps`), and the reservations by node, which wake a sleeping one (`SimWorld.signalsToStep`). */
 export type WorldSignalDeps = SignalDeps & { readonly reserved: () => ReadonlyMap<NodeId, ReadonlySet<number>> };
 import type { CrossingStates } from './crossings/state';
 import type { PedView } from './people/view';
@@ -177,8 +177,10 @@ export class SimWorld {
   private readonly maybeHolders = new Set<Vehicle>();
   /** Runtime lanes no longer in the graph (an edit took them): stage 7's work list (`collectGhosts`). */
   readonly ghostCandidates = new Set<LaneletId>();
-  /** Signals asleep (`signalsAsleep`), by node: rested in green with nobody near on their last step. */
+  /** Signals asleep (`signalsToStep`), by node: rested in green with nobody near on their last step. */
   private readonly asleep = new Map<NodeId, SignalController>();
+  /** The passes of stage 1, one a tick (`pipeline.ts`): the clock every controller's time is read against (`SignalClock`). */
+  readonly signalClock: SignalClock = { passes: 0 };
 
   /** @mapWide What vehicles, signals and the audit may know about the people at each crossing (`crossings/state.ts`). */
   readonly crossingStates: CrossingStates = new Map();
@@ -297,6 +299,8 @@ export class SimWorld {
     this.occupied.clear();
     this.ghostCandidates.clear();
     this.asleep.clear();
+    this.awake.clear();
+    this.signalClock.passes = 0;
     this.crossingStates.clear();
     this.pedViews.length = 0;
     this.pedViewById.clear();
@@ -420,6 +424,7 @@ export class SimWorld {
 
   /** DO NOT sort and map every junction of the map for an edit: kept null by `junctionsChanged` until a reader of every junction asks. */
   private ordered: { readonly nodes: readonly NodeId[]; readonly signalised: readonly SignalController[] } | null = null;
+  /** @rebuild The junctions and signals in node order, made again after a change when a reader of every one asks. */
   private inNodeOrder(): { readonly nodes: readonly NodeId[]; readonly signalised: readonly SignalController[] } {
     if (this.ordered) return this.ordered;
     const nodes = [...this.graph.junctions.keys()].sort((a, b) => a - b);
@@ -464,34 +469,77 @@ export class SimWorld {
   private readonly approached: NodeId[] = [];
   private readonly approachedSeen = new Set<NodeId>();
 
-  /** The roads' and controls' changes the sleeping signals were woken by (`signalsAsleep`). */
+  /** The roads' and controls' changes the sleeping signals were woken by (`signalsToStep`). */
   private readonly signalRoadsSeen = new JournalCursor(['roads', 'traffic']);
 
-  /** DO NOT wake every one on an edit: only those of the junctions it built again and where the diary says it reached */
-  signalsAsleep(deps: WorldSignalDeps): Map<NodeId, SignalController> {
-    const asleep = this.asleep;
+  /** DO NOT walk every signal of the map a tick to pass over those asleep: their time keeps itself (`SignalClock`), only the awake are stepped */
+  signalsToStep(deps: WorldSignalDeps): readonly SignalController[] {
+    const asleep = this.asleep, awake = this.awake;
     const entries = this.signalRoadsSeen.read(this.doc.changes);
-    if (!this.doLess || this.wakeAll || entries === null || entries.some((e) => e.rects === null)) asleep.clear();
+    if (!this.doLess) {
+      this.wake.clear();
+      this.wakeAll = true;
+      return this.signalisedControllers();
+    }
+    // DO NOT wake every one on an edit: only those of the junctions it built again, and where the diary says it reached.
+    if (this.wakeAll || entries === null || entries.some((e) => e.rects === null)) this.wakeEverySignal();
     else {
-      for (const node of this.wake) asleep.delete(node);
+      for (const node of this.wake) {
+        asleep.delete(node);
+        awake.delete(node);
+        const c = this.controllers.get(node);
+        if (c && this.graph.junctions.get(node)?.signalised) awake.set(node, c);
+      }
       for (const entry of entries) {
-        for (const rect of entry.rects!) for (const node of this.junctionFiling.idsMeeting(rect)) asleep.delete(node);
+        for (const rect of entry.rects!) for (const node of this.junctionFiling.idsMeeting(rect)) this.wakeSignal(node);
       }
     }
     this.wake.clear();
     this.wakeAll = false;
-    if (asleep.size === 0) return asleep;
-    for (const lane of this.occupied) {
-      const node = this.junctionOfLane(lane);
-      if (node !== undefined) asleep.delete(node);
+    // Somebody near: on an approach or holding a reservation there (those at its crossings woke it as they were published, `signalAtCrossing`).
+    if (asleep.size) {
+      for (const lane of this.occupied) {
+        const node = this.junctionOfLane(lane);
+        if (node !== undefined) this.wakeSignal(node);
+      }
+      for (const node of deps.reserved().keys()) this.wakeSignal(node);
     }
-    for (const x of this.crossingStates.keys()) {
-      const node = crossingNode(x);
-      const c = asleep.get(node);
-      if (c && c.plan.stages.some((stage) => stage.pedWalk.includes(x))) asleep.delete(node);
-    }
-    for (const node of deps.reserved().keys()) asleep.delete(node);
-    return asleep;
+    const out = this.stepping;
+    out.length = 0;
+    for (const c of awake.values()) out.push(c);
+    return out.sort((a, b) => a.node - b.node);
+  }
+  private readonly stepping: SignalController[] = [];
+
+  /** The signalised controllers not asleep: those stage 1 steps (`signalsToStep`). */
+  private readonly awake = new Map<NodeId, SignalController>();
+
+  /** @rebuild Every signalised controller awake: a whole build, or changes the diary cannot place. */
+  private wakeEverySignal(): void {
+    this.asleep.clear();
+    this.awake.clear();
+    for (const c of this.signalisedControllers()) this.awake.set(c.node, c);
+  }
+
+  /** Somebody at a crossing (`crossingStates`, as the walkers are published): the signal whose plan walks it woken. */
+  signalAtCrossing(x: CrossingId): void {
+    const node = crossingNode(x);
+    const c = this.asleep.get(node);
+    if (c && c.plan.stages.some((stage) => stage.pedWalk.includes(x))) this.wakeSignal(node);
+  }
+
+  private wakeSignal(node: NodeId): void {
+    const c = this.asleep.get(node);
+    if (!c) return;
+    this.asleep.delete(node);
+    this.awake.set(node, c);
+  }
+
+  /** A signal rested with nobody near (`stepController`): not stepped until something wakes it. */
+  restSignal(c: SignalController): void {
+    if (this.awake.get(c.node) !== c) return;
+    this.awake.delete(c.node);
+    this.asleep.set(c.node, c);
   }
 
   // -------------------------------------------------------------- topology
@@ -951,7 +999,7 @@ export class SimWorld {
         rebuildWork.signals++;
         // A deterministic per-node offset so neighbouring junctions do not all switch together.
         const offset = (node * 7.317) % 60;
-        const created = createController(junction, crossings, deps, offset);
+        const created = createController(junction, crossings, deps, offset, this.signalClock);
         if (settings?.mode === 'fixed') seekFixed(created, settings, this.tickCount() * DT);
         this.controllers.set(node, created);
         this.noteSignal(node);

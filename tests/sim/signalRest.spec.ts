@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { asNodeId } from '@world/ids';
 import { DT } from '@sim/params';
-import { stepController, type SignalController, type SignalDeps } from '@sim/signals/fsm';
+import { stepController, timedController, type SignalController, type SignalDeps } from '@sim/signals/fsm';
 
 describe('actuated signal rest', () => {
   it('keeps the empty junction green and transfers right of way when another approach calls', () => {
@@ -20,17 +20,20 @@ describe('actuated signal rest', () => {
       pedestrianDemandOn: () => false,
       reservationDemandOn: () => false,
     };
-    const controller: SignalController = {
+    const clock = { passes: 0 };
+    const controller: SignalController = timedController({
       node: asNodeId(1), plan: { stages: [stage(1), stage(2)], groups: [1, 2], crossings: [], cycle: 20 },
-      stageIndex: 0, sub: 'GREEN', elapsed: 0,
+      stageIndex: 0, sub: 'GREEN', clock, base: 0, since: 0,
       lastServed: new Map([[1, 0], [2, 0]]), stageServed: new Map([[0, 0], [1, 0]]),
       offsetApplied: 0, degraded: false,
-    };
-    for (let i = 0; i < Math.round(30 / DT); i++) { tick++; stepController(controller, deps); }
+    });
+    // A pass of the signals' clock, then the step: as stage 1 runs it (`pipeline.ts`).
+    const pass = (): void => { tick++; clock.passes++; stepController(controller, deps); };
+    for (let i = 0; i < Math.round(30 / DT); i++) pass();
     expect([controller.stageIndex, controller.sub]).toEqual([0, 'GREEN']);
 
     calls.add(2);
-    for (let i = 0; i < Math.round(4 / DT); i++) { tick++; stepController(controller, deps); }
+    for (let i = 0; i < Math.round(4 / DT); i++) pass();
     expect([controller.stageIndex, controller.sub]).toEqual([1, 'GREEN']);
   });
 });

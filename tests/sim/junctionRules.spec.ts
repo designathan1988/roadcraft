@@ -165,7 +165,7 @@ describe('signals', () => {
     const other = c.plan.stages[1]!.greenGroups;
     const deps: SignalDeps = { ...sim.signalDeps(), busNear: (_n, groups) => groups === other };
     let t = 0;
-    while (c.sub === 'GREEN' && t < 60) { stepController(c, deps); t += DT; }
+    while (c.sub === 'GREEN' && t < 60) { c.clock.passes++; stepController(c, deps); t += DT; }
     expect(t).toBeLessThanOrEqual(c.plan.stages[0]!.minGreen + 0.5);
   });
 

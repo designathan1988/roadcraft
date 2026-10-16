@@ -1880,7 +1880,7 @@ function publish(w: SimWorld): void {
     const edge = report?.edge;
     if (report && edge) {
       let state = w.crossingStates.get(report.id);
-      if (!state) { state = emptyCrossingState(edge.length); w.crossingStates.set(report.id, state); }
+      if (!state) { state = emptyCrossingState(edge.length); w.crossingStates.set(report.id, state); w.signalAtCrossing(report.id); }
       const hit = edge.path.closestPoint({ x: p.x, y: p.y });
       if (on) {
         const t = edge.path.sampleAt(hit.s).t;

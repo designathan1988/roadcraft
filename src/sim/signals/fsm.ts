@@ -14,14 +14,20 @@ import {
 
 type SubPhase = 'GREEN' | 'AMBER' | 'ALL_RED';
 
+/** The signals' passes (stage 1, `pipeline.ts`), one a tick: the clock every controller's time is read against, asleep or not. */
+export interface SignalClock { passes: number }
+
 /** Per-junction signal state. */
 export interface SignalController {
   readonly node: NodeId;
   plan: SignalPlan;
   stageIndex: number;
   sub: SubPhase;
-  /** Seconds spent in the current sub-phase. */
+  /** Seconds spent in the current sub-phase: `base` plus a step a pass of `clock` since `since` (an accessor; written, it starts again from now). */
   elapsed: number;
+  base: number;
+  since: number;
+  readonly clock: SignalClock;
   /** Tick at which each group last received green. */
   lastServed: Map<GroupId, number>;
   /** Tick at which each stage last ended its green. */
@@ -70,19 +76,36 @@ export function createController(
   crossings: readonly CrossingId[],
   deps: SignalDeps,
   offset: number,
+  clock: SignalClock,
 ): SignalController {
   const { plan, degraded } = safePlan(junction, crossings, deps);
-  return {
+  // stageIndex / sub / elapsed come from the phase seek.
+  const phase = seekPhase(plan, offset);
+  return timedController({
     node: junction.node,
     plan,
-    // stageIndex / sub / elapsed come from the phase seek below.
-    ...seekPhase(plan, offset),
+    stageIndex: phase.stageIndex,
+    sub: phase.sub,
+    clock,
+    base: phase.elapsed,
+    since: clock.passes,
     lastServed: new Map(plan.groups.map((g) => [g, deps.tick()])),
     stageServed: new Map(plan.stages.map((_, i) => [i, deps.tick()])),
     // Neighbouring junctions start out of phase so platoons do not all stop together.
     offsetApplied: offset,
     degraded,
-  };
+  });
+}
+
+/** What makes `elapsed` read the clock: nothing to do a tick for a controller, asleep or not. */
+const TIMED: ThisType<SignalController> & { elapsed: number } = {
+  get elapsed(): number { return this.base + (this.clock.passes - this.since) * DT; },
+  set elapsed(s: number) { this.base = s; this.since = this.clock.passes; },
+};
+
+/** A controller from its fields, its `elapsed` kept by its clock (`base` seconds at pass `since`). */
+export function timedController(fields: Omit<SignalController, 'elapsed'>): SignalController {
+  return Object.assign(Object.create(TIMED) as { elapsed: number }, fields);
 }
 
 /** Where in its own cycle a plan sits `seconds` after the start of stage 0. */
@@ -138,17 +161,11 @@ function safePlan(
 const isStrict = (): boolean =>
   typeof process !== 'undefined' && process.env?.['SIM_STRICT'] === '1';
 
-/** A tick of a controller asleep (`SimWorld.signalsAsleep`) */
-export function restController(c: SignalController): void {
-  c.elapsed += DT;
-}
-
 /** Longest a green is held past its maximum for people still on its crossings, seconds. */
 const PED_HOLD_LIMIT = 30;
 
-/** One tick of a controller. */
+/** One tick of a controller, after its clock's pass (`SignalClock`): the time it read has moved on a step. */
 export function stepController(c: SignalController, deps: SignalDeps): boolean {
-  c.elapsed += DT;
   const st = c.plan.stages[c.stageIndex];
   if (!st) {
     c.stageIndex = 0;

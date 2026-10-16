@@ -20,6 +20,8 @@ describe('a signal stage with somebody stuck on its crossing', () => {
     const start = controller.stageIndex;
     let seconds = 0;
     while (controller.stageIndex === start && controller.sub === 'GREEN' && seconds < 600) {
+      // A pass of the signals' clock, then the step: as stage 1 runs it (`pipeline.ts`).
+      controller.clock.passes++;
       stepController(controller, deps);
       seconds += DT;
     }
