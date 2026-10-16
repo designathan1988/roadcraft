@@ -20,6 +20,11 @@ export function laneCapacity(vFree: number): number {
   return (v * WAVE_SPEED) / ((v + WAVE_SPEED) * JAM_SPACING);
 }
 
+/** A link's capacity, vehicles a second: its lanes', times the green's share into a signal or a stop line. */
+export function linkCapacity(vFree: number, lanes: number, controlled: boolean): number {
+  return laneCapacity(vFree) * Math.max(1, lanes) * (controlled ? GREEN_SHARE : 1);
+}
+
 /** One directed road: what the model needs of it. */
 export interface MesoLinkSpec {
   /** The node it runs into: the node model groups its links by it. */
@@ -42,7 +47,8 @@ export class MesoModel {
   private present = new Uint8Array(0);
   private exitOf = new Uint8Array(0);
   private insideOf = new Uint8Array(0);
-  private toOf = new Int32Array(0);
+  /** Node ids: a tile's pass 2^31 (`tileIdBase`), so doubles. */
+  private toOf = new Float64Array(0);
   private lanesOf = new Float64Array(0);
   private lengthOf = new Float64Array(0);
   private vFreeOf = new Float64Array(0);
@@ -119,7 +125,7 @@ export class MesoModel {
     this.lanesOf[slot] = lanes;
     this.lengthOf[slot] = Math.max(m(1), spec.length);
     this.vFreeOf[slot] = Math.max(m(0.5), spec.vFree);
-    this.capOf[slot] = Math.max(0, spec.capacity ?? laneCapacity(spec.vFree) * lanes * (spec.controlled ? GREEN_SHARE : 1));
+    this.capOf[slot] = Math.max(0, spec.capacity ?? linkCapacity(spec.vFree, lanes, spec.controlled ?? false));
     this.exitOf[slot] = spec.exit ? 1 : 0;
     if (!had) { this.insideOf[slot] = 0; this.pendingOf[slot] = 0; this.microOf[slot] = 0; this.origin[slot] = 0; }
     if (changed && this.insideOf[slot] === 0) this.spread(slot, keep);
@@ -204,6 +210,17 @@ export class MesoModel {
 
   capacityAt(slot: number): number {
     return this.has(slot) ? this.capOf[slot]! : 0;
+  }
+
+  /** The node the link runs into (NaN: no link). */
+  toAt(slot: number): number {
+    return this.has(slot) ? this.toOf[slot]! : Number.NaN;
+  }
+
+  /** The links `slot` feeds (`setTurns`). */
+  turnsAt(slot: number): readonly number[] {
+    const outs = this.has(slot) ? this.outs[slot] : null;
+    return outs ? [...outs] : NONE;
   }
 
   pending(slot: number): number {

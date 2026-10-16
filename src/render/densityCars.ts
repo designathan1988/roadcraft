@@ -18,18 +18,20 @@ import type { SegmentId } from '@world/ids';
 import { laneOffset } from '@world/roadTypes';
 import { m } from '@world/units';
 import type { SimClient } from '@sim/host/simClient';
-import { MESO_INSIDE, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS, ML, MesoMemory } from '@sim/meso/memory';
+import { MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS, ML, MesoMemory } from '@sim/meso/memory';
 import { JAM_SPACING } from '@sim/meso/model';
+import { linkDirection, linkSegment } from '@sim/meso/tileLinks';
 
 /** THE FAR TRAFFIC: the meso model's cars on every road outside the micro window, as Cidade's density cars, in one draw */
-// Each car an instance (its road, place, lane, speed); the vertex shader places it on the road's centreline in a float texture (`texelFetch`).
+// Each car an instance (its link's slot, place, lane, speed); the vertex shader places it on the link's road in a float texture (`texelFetch`):
+// the page's roads by their centreline, the far tiles' straight through the start, middle and end their link tables give (`meso/tileLinks.ts`).
 
 /** Points of a road's centreline in the texture, evenly spaced along it (a bend between two of them is a straight chord). */
 const LINK_POINTS = 8;
 /** Texels a row of the centreline texture: a whole number of roads a row. */
 const TEX_WIDTH = 1024;
 const ROADS_PER_ROW = TEX_WIDTH / LINK_POINTS;
-/** Slots the page's first buffer holds (two a segment); a bigger one is made when the worker asks for more (`MesoMemory.wanted`). */
+/** Slots the page's first buffer holds; a bigger one is made when the worker asks for more (`MesoMemory.wanted`). */
 const FIRST_CAPACITY = 1 << 15;
 /** How far the view's centre moves from the window's before the window is moved. */
 const RECENTRE = MICRO_RADIUS * 0.3;
@@ -39,6 +41,8 @@ const RESEND_MS = 2000;
 const MOST_CARS = 1 << 18;
 /** The shader's clock wraps here (seconds): a float keeps a car's place to a few centimetres. */
 const TIME_WRAP = 4096;
+/** A far road's lane, for its cars' places across it (its profile is the store's, not on the page). */
+const FAR_LANE = m(3.5);
 
 /** The car: a body and a cabin, 4.3 m by 1.8 m, its length along x, its width along z, standing on y = 0. */
 function carGeometry(): BufferGeometry {
@@ -58,13 +62,13 @@ uniform vec3 uWindow;
 attribute vec4 aLink;
 attribute vec4 aMove;
 varying vec3 vCarColour;
-vec4 linkPoint(float segment, int k) {
-  int i = int(segment) * ${LINK_POINTS} + k;
+vec4 linkPoint(float slot, int k) {
+  int i = int(slot) * ${LINK_POINTS} + k;
   return texelFetch(uLinks, ivec2(i % ${TEX_WIDTH}, i / ${TEX_WIDTH}), 0);
 }
 `;
 
-// aLink: segment, place along its travel (m), lateral offset to the right of travel (m), direction (1: from b to a).
+// aLink: the link's slot, place along its travel (m), lateral offset to the right of travel (m), direction (1: from the road's b to its a).
 // aMove: speed (m/s), the stretch it moves round (0: standing in the queue), seed.
 const VERTEX_PLACE = /* glsl */ `
 float roadLength = linkPoint(aLink.x, 0).w;
@@ -96,19 +100,27 @@ vec3 transformed = carHidden ? carAt : carAt + carX * position.x + vec3(0.0, pos
 
 export interface DensityCars {
   readonly object: Mesh;
-  /** Each frame: the window told the worker, the roads' centrelines the network changed written, the cars of a new meso step written. */
+  /** Each frame: the window told the worker, the roads' lines the network or the meso changed written, the cars of a new meso step written. */
   update(net: Network, sim: SimClient, focusX: number, focusY: number): void;
   dispose(): void;
 }
 
-/** `heightAt`: the road's deck at a point (`renderer.ts` deckHeight). */
-export function createDensityCars(heightAt: (x: number, y: number, segment: SegmentId) => number): DensityCars {
+/** A far road's car across it, to the right of its travel (`laneOffset` without the road's profile: a two-way road's lanes right of its centre, a one-way's about it). */
+const farLateral = (lane: number, lanes: number, oneWay: boolean): number =>
+  oneWay ? FAR_LANE * (lane - (lanes - 1) / 2) : FAR_LANE * (lane + 0.5);
+
+/** `heightAt`: the road's deck at a point, or the ground's for a road not on the page (`renderer.ts` deckHeight). */
+export function createDensityCars(heightAt: (x: number, y: number, segment: SegmentId | undefined) => number): DensityCars {
   let memory = MesoMemory.make(FIRST_CAPACITY);
   let sent: { x: number; y: number; at: number; buffer: SharedArrayBuffer } | null = null;
   let serial = 0;
   let netState: object | null = null;
+  /** Each slot's link as its line was written (NaN: none), the worker's serial of that line, and the slots by their segment (the network's delta names segments). */
+  let slotLink = new Float64Array(0);
+  let seenShape = new Float32Array(0);
+  const bySegment = new Map<number, Set<number>>();
 
-  // The centrelines, a road a run of `LINK_POINTS` texels: x, height, -y (three's axes) and the road's length.
+  // The lines, a link's slot a run of `LINK_POINTS` texels: x, height, -y (three's axes) and the road's length; in the road's own order (a to b).
   let rows = 1;
   let lines = new Float32Array(TEX_WIDTH * rows * 4);
   let texture = makeTexture(lines, rows);
@@ -159,9 +171,9 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     return g;
   }
 
-  /** Room in the texture for segment `id`: rows doubled, what was written kept. */
-  function roomFor(id: number): void {
-    const need = Math.floor(id / ROADS_PER_ROW) + 1;
+  /** Room in the texture for slot `slot`: rows doubled, what was written kept. */
+  function roomFor(slot: number): void {
+    const need = Math.floor(slot / ROADS_PER_ROW) + 1;
     if (need <= rows) return;
     let next = rows;
     while (next < need) next *= 2;
@@ -175,41 +187,91 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     whole = true;
   }
 
-  /** One segment's centreline into the texture, its range marked for upload (none: length 0, its cars hidden). */
-  function writeLine(net: Network, id: SegmentId): void {
-    roomFor(id);
-    const at = id * LINK_POINTS * 4;
-    const ribbon = net.ribbons.get(id);
-    const line = ribbon?.full;
-    if (!line || line.length <= 0) lines.fill(0, at, at + LINK_POINTS * 4);
-    else {
+  /** Room to note `n` slots' links. */
+  function track(n: number): void {
+    if (slotLink.length >= n) return;
+    const links = new Float64Array(n).fill(Number.NaN);
+    links.set(slotLink);
+    slotLink = links;
+    const shapes = new Float32Array(n);
+    shapes.set(seenShape);
+    seenShape = shapes;
+  }
+
+  /** One slot's line into the texture, its range marked for upload: the page's road by its centreline and deck, a far one straight through its table's points on the ground (none: its cars hidden). */
+  function writeLine(net: Network, slot: number): void {
+    roomFor(slot);
+    const at = slot * LINK_POINTS * 4;
+    const id = slotLink[slot] ?? Number.NaN;
+    const segment = linkSegment(id) as SegmentId;
+    const line = Number.isNaN(id) ? undefined : net.ribbons.get(segment)?.full;
+    if (line && line.length > 0) {
       for (let k = 0; k < LINK_POINTS; k++) {
         const f = line.sampleAt((line.length * k) / (LINK_POINTS - 1)).p;
         lines[at + k * 4] = f.x;
-        lines[at + k * 4 + 1] = heightAt(f.x, f.y, id);
+        lines[at + k * 4 + 1] = heightAt(f.x, f.y, segment);
         lines[at + k * 4 + 2] = -f.y;
         lines[at + k * 4 + 3] = line.length;
+      }
+    } else {
+      const r = slot * MESO_RECORD, recs = memory.links;
+      const ax = recs[r + ML.ax]!, ay = recs[r + ML.ay]!, mx = recs[r + ML.mx]!, my = recs[r + ML.my]!, bx = recs[r + ML.bx]!, by = recs[r + ML.by]!;
+      const first = Math.hypot(mx - ax, my - ay), second = Math.hypot(bx - mx, by - my), L = first + second;
+      if (Number.isNaN(id) || !(L > 0)) lines.fill(0, at, at + LINK_POINTS * 4);
+      else {
+        for (let k = 0; k < LINK_POINTS; k++) {
+          const d = (L * k) / (LINK_POINTS - 1);
+          const onFirst = d <= first;
+          const t = onFirst ? (first > 0 ? d / first : 0) : (second > 0 ? (d - first) / second : 1);
+          const x = onFirst ? ax + (mx - ax) * t : mx + (bx - mx) * t;
+          const y = onFirst ? ay + (my - ay) * t : my + (by - my) * t;
+          lines[at + k * 4] = x;
+          lines[at + k * 4 + 1] = heightAt(x, y, undefined);
+          lines[at + k * 4 + 2] = -y;
+          lines[at + k * 4 + 3] = L;
+        }
       }
     }
     if (!whole) texture.addUpdateRange(at, LINK_POINTS * 4);
     texture.needsUpdate = true;
   }
 
-  /** DO NOT write every road again for an edit: only those the network's delta names. */
+  /** DO NOT write every line again for an edit or a tile come or gone: only the slots of the segments the network's delta names (a road on the page now drawn by its centreline, or gone back to its table's line). */
   function syncLines(net: Network): void {
     if (netState === net.state) return;
     const delta = netState === null ? null : net.changesSince(netState);
     netState = net.state;
     if (delta === null) {
-      // @rebuild A map opened: every road's line.
-      lines.fill(0);
-      texture.clearUpdateRanges();
-      whole = true;
-      for (const id of net.ribbons.keys()) writeLine(net, id);
-      texture.needsUpdate = true;
+      // @rebuild A map opened: every known slot's line.
+      for (const slots of bySegment.values()) for (const slot of slots) writeLine(net, slot);
       return;
     }
-    for (const id of delta.segments) writeLine(net, id);
+    for (const id of delta.segments) for (const slot of bySegment.get(id) ?? []) writeLine(net, slot);
+  }
+
+  /** The slots whose link or line the worker changed (`ML.shape`): their link noted and their line written. */
+  function readLines(net: Network, slots: number): void {
+    track(slots);
+    const recs = memory.links;
+    const changed: number[] = [];
+    for (let slot = 0; slot < slots; slot++) {
+      const r = slot * MESO_RECORD;
+      if ((recs[r + ML.flags]! & MESO_PRESENT) !== 0 && recs[r + ML.shape]! !== seenShape[slot]) changed.push(slot);
+    }
+    // Many rows changed (a buffer or a reach filled): one upload of the whole texture, not a range a row (`WebGLTextures.updateTexture`).
+    if (changed.length > ROADS_PER_ROW * 4) { texture.clearUpdateRanges(); whole = true; }
+    for (const slot of changed) {
+      seenShape[slot] = recs[slot * MESO_RECORD + ML.shape]!;
+      const was = slotLink[slot]!, now = memory.ids[slot]!;
+      if (was !== now) {
+        if (!Number.isNaN(was)) bySegment.get(linkSegment(was))?.delete(slot);
+        slotLink[slot] = now;
+        let set = bySegment.get(linkSegment(now));
+        if (!set) bySegment.set(linkSegment(now), set = new Set());
+        set.add(slot);
+      }
+      writeLine(net, slot);
+    }
   }
 
   /** The window told the worker (again when the view moved far enough, the buffer changed, or nobody answered). */
@@ -217,6 +279,7 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     if (memory.wanted > memory.capacity) {
       let next = memory.capacity;
       while (next < memory.wanted) next *= 2;
+      // The worker writes every line into a new buffer: each slot's read again from it.
       memory = MesoMemory.make(next);
       serial = 0;
     }
@@ -230,10 +293,10 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
   }
 
   /** The cars of the meso step just written: each road's count, its queue packed at its end, the rest moving round the free stretch. */
-  function writeCars(net: Network): void {
+  function writeCars(net: Network, slots: number): void {
     const recs = memory.links;
     let n = 0;
-    const put = (segment: number, s: number, lateral: number, dir: number, speed: number, wrap: number, seed: number): void => {
+    const put = (slot: number, s: number, lateral: number, dir: number, speed: number, wrap: number, seed: number): void => {
       if (n >= capacity) {
         const old = geometry;
         const keepLink = link, keepMove = move;
@@ -244,32 +307,36 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
         old.dispose();
       }
       const at = n * 4;
-      link[at] = segment; link[at + 1] = s; link[at + 2] = lateral; link[at + 3] = dir;
+      link[at] = slot; link[at + 1] = s; link[at + 2] = lateral; link[at + 3] = dir;
       move[at] = speed; move[at + 1] = wrap; move[at + 2] = seed; move[at + 3] = 0;
       n++;
     };
-    const slots = Math.min(memory.capacity, memory.wanted);
     for (let slot = 0; slot < slots && n < MOST_CARS; slot++) {
       const r = slot * MESO_RECORD;
       const flags = recs[r + ML.flags]!;
       if (!(flags & MESO_PRESENT) || flags & MESO_INSIDE) continue;
       const count = Math.round(recs[r + ML.count]!);
-      if (count <= 0) continue;
-      const segment = slot >> 1, dir = slot & 1;
-      const ribbon = net.ribbons.get(segment as SegmentId);
-      const L = ribbon?.full.length ?? 0;
-      if (!ribbon || L <= 0) continue;
+      const id = slotLink[slot]!;
+      if (count <= 0 || Number.isNaN(id)) continue;
+      const dir = linkDirection(id);
+      const ribbon = net.ribbons.get(linkSegment(id) as SegmentId);
+      // The road's length as its line was written (the page's centreline, or the table's points).
+      const L = lines[slot * LINK_POINTS * 4 + 3]!;
+      if (!(L > 0)) continue;
       const lanes = Math.max(1, Math.round(recs[r + ML.lanes]!));
+      const oneWay = (flags & MESO_ONE_WAY) !== 0;
       const cars = Math.min(count, Math.floor((L * lanes) / JAM_SPACING));
       const queued = Math.min(cars, Math.round(recs[r + ML.queued]!));
-      const lateral = (k: number): number => -laneOffset(ribbon.road, k % lanes, ribbon.direction, dir === 0);
+      const lateral = (k: number): number => ribbon
+        ? -laneOffset(ribbon.road, k % lanes, ribbon.direction, dir === 0)
+        : farLateral(k % lanes, lanes, oneWay);
       for (let k = 0; k < queued && n < MOST_CARS; k++) {
-        put(segment, L - (Math.floor(k / lanes) + 0.5) * JAM_SPACING, lateral(k), dir, 0, 0, slot * 31 + k);
+        put(slot, L - (Math.floor(k / lanes) + 0.5) * JAM_SPACING, lateral(k), dir, 0, 0, slot * 31 + k);
       }
       const free = cars - queued, stretch = Math.max(0, L - Math.ceil(queued / lanes) * JAM_SPACING);
       const speed = recs[r + ML.speed]!;
       for (let k = 0; k < free && stretch > 0 && n < MOST_CARS; k++) {
-        put(segment, ((k + 0.5) / free) * stretch, lateral(queued + k), dir, speed, stretch, slot * 31 + queued + k);
+        put(slot, ((k + 0.5) / free) * stretch, lateral(queued + k), dir, speed, stretch, slot * 31 + queued + k);
       }
     }
     for (const attribute of [linkAttribute!, moveAttribute!]) {
@@ -294,7 +361,9 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
       const now = memory.serial;
       if (now === serial) return;
       serial = now;
-      writeCars(net);
+      const slots = Math.min(memory.capacity, memory.wanted);
+      readLines(net, slots);
+      writeCars(net, slots);
     },
     dispose() {
       geometry.dispose();

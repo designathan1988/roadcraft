@@ -98,8 +98,8 @@ function isWorldMeta(value: unknown): value is WorldMeta {
   return isObject(value) && value['version'] === 1 && finite(value['unit']) && (value['generator'] === null || isObject(value['generator']));
 }
 
-/** A stored tile, or null when the store has none; a tile stored and unreadable throws (DO NOT generate over the player's tile). */
-async function readTile(store: PartStore, map: string, key: number): Promise<TileRecords | null> {
+/** A stored tile, or null when the store has none; a tile stored and unreadable throws (DO NOT generate over the player's tile); read by the save worker and by the simulation's (`tileReader.ts`). */
+export async function readTile(store: PartStore, map: string, key: number): Promise<TileRecords | null> {
   const [blob] = await store.get([tileBlobKey(map, key)]);
   if (!blob) return null;
   const value: unknown = JSON.parse(await gunzip(blob));

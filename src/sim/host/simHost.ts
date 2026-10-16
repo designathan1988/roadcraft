@@ -7,6 +7,8 @@ import { TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents
 import { step } from '../pipeline';
 import { Meso } from '../meso/meso';
 import { MesoMemory } from '../meso/memory';
+import { TileLinkFeed, portReader } from '../meso/tileFeed';
+import { storeTileReader } from '../../tileReader';
 import { laneGrid } from '../agents/laneGrid';
 import { useBayWorkers } from '../agents/parking';
 import { BayPool } from '../../bayPool';
@@ -65,8 +67,18 @@ export class SimHost {
 
   async handle(message: ToSim): Promise<void> {
     switch (message.type) {
-      case 'init': await this.init(message.map, message.seed, message.zones, message.frames.data, message.frames.control, message.zonesPrefix, message.ambient); return;
-      case 'load': this.load(message.map); return;
+      case 'init':
+        this.meso.setLive(message.live);
+        await this.init(message.map, message.seed, message.zones, message.frames.data, message.frames.control, message.zonesPrefix, message.ambient);
+        return;
+      case 'load': this.meso.setLive(message.live); this.load(message.map); return;
+      case 'tiles': {
+        // The store read here, never through the page: IndexedDB opened in this worker (read only), or the port the page was handed for the desktop's.
+        const reader = message.port ? portReader(message.port) : storeTileReader(message.map);
+        this.meso.useTiles(new TileLinkFeed(reader, message.reach));
+        return;
+      }
+      case 'tile': this.meso.tileEvent(message.event, message.key, message.version); return;
       case 'delta':
         this.doc.restore(message.delta);
         this.buildings.apply(message.buildings);

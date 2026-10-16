@@ -6,6 +6,7 @@ import type { Casualty } from '../people/casualties';
 import type { KerbStop } from '../vehicles/kerbStops';
 import { FLEET_CEILING, PED_CEILING } from '../params';
 import type { SignalState } from '../signals/query';
+import type { TileEvent } from '../meso/meso';
 
 /** THE SIMULATION'S WORKER AND THE PAGE (`simHost.ts` there, `simClient.ts` here): what goes between them */
 
@@ -83,8 +84,13 @@ export interface TrainState { readonly colour: string; readonly metro: boolean; 
 
 /** The page to the worker: never the whole map nor a building's record, only what traffic reads (`agents/trafficBuildings.ts`). */
 export type ToSim =
-  | { readonly type: 'init'; readonly frames: SharedFrames; readonly map: TrafficMap; readonly seed: number; readonly zones: ReadonlyMap<string, Float64Array | null>; readonly zonesPrefix: string | null; readonly ambient: 'view' | 'edges' }
-  | { readonly type: 'load'; readonly map: TrafficMap }
+  /** `live`: the tiles the page's document holds (`world/tiles.ts`): the meso takes the others from their link tables. */
+  | { readonly type: 'init'; readonly frames: SharedFrames; readonly map: TrafficMap; readonly live: readonly number[]; readonly seed: number; readonly zones: ReadonlyMap<string, Float64Array | null>; readonly zonesPrefix: string | null; readonly ambient: 'view' | 'edges' }
+  | { readonly type: 'load'; readonly map: TrafficMap; readonly live: readonly number[] }
+  /** The streamed world's tile store the meso reads its far tiles from (`meso/tileFeed.ts`), in IndexedDB by `map`, or over `port` (the desktop's), within `reach` of the camera. */
+  | { readonly type: 'tiles'; readonly map: string; readonly reach: number; readonly port: MessagePort | null }
+  /** A tile of the page taken in, let go, or written at `version` (`worldStreamer.ts` StreamerEvents). */
+  | { readonly type: 'tile'; readonly event: TileEvent; readonly key: number; readonly version: number }
   /** The roads', lots' and transit's records the diary named (`delta`), and the buildings it named as traffic records. */
   | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingChange[] }
   | { readonly type: 'frame'; readonly wall: number; readonly hold: boolean; readonly controls: SimControls }

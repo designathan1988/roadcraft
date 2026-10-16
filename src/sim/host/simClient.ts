@@ -10,6 +10,7 @@ import type { VehicleFrames } from '../pose';
 import type { SignalState } from '../signals/query';
 import type { JunctionAnswer, TrafficCount } from './simAnswers';
 import type { Casualty } from '../people/casualties';
+import type { TileEvent } from '../meso/meso';
 import { FleetGrid, type GroundBox } from './fleetGrid';
 import {
   C, H, P, PED_STRIDE, V, VEHICLE_STRIDE, headBase, makeSharedFrames, pedBase, vehicleBase,
@@ -80,6 +81,8 @@ export class SimClient implements JournalReader {
   /** The worker's last failure (`failed`), null while none. */
   failure: string | null = null;
   private wallOwed = 0;
+  /** The tile store told to the worker once it is up (`tiles`). */
+  private tileStore: { readonly map: string; readonly reach: number; readonly port: MessagePort | null } | null = null;
   private readonly pending = new Map<number, (value: unknown) => void>();
   private nextAsk = 1;
   private readonly answers = new Map<string, unknown>();
@@ -207,15 +210,35 @@ export class SimClient implements JournalReader {
       };
     });
     this.markSent();
-    this.send({ type: 'init', frames: this.frames, map: trafficMapOf(this.doc), seed, zones, zonesPrefix, ambient });
+    this.send({ type: 'init', frames: this.frames, map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles], seed, zones, zonesPrefix, ambient });
+    this.sendTiles();
     return ready;
   }
 
   /** Another map (opened, generated, new): the worker's copy made whole again (only what traffic reads), the simulation started over. */
   load(): void {
     this.markSent();
-    this.send({ type: 'load', map: trafficMapOf(this.doc) });
+    this.send({ type: 'load', map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles] });
     this.clearViews();
+  }
+
+  /** The streamed world's tile store the worker reads the meso's far tiles from itself (`meso/tileFeed.ts`): by its map's name in IndexedDB, or over `port` (the desktop's store); sent once the worker is up. */
+  tiles(map: string, reach: number, port: MessagePort | null = null): void {
+    this.tileStore = { map, reach, port };
+    this.sendTiles();
+  }
+
+  /** A tile of the page taken in, let go or written (`worldStreamer.ts` StreamerEvents): the meso hands its links between the lane graph and the tables. */
+  tile(event: TileEvent, key: number, version = 0): void {
+    this.send({ type: 'tile', event, key, version });
+  }
+
+  private sendTiles(): void {
+    const t = this.tileStore;
+    if (!t || !this.worker) return;
+    this.tileStore = null;
+    const message: ToSim = { type: 'tiles', map: t.map, reach: t.reach, port: t.port };
+    this.worker.postMessage(message, t.port ? [t.port] : []);
   }
 
   /** The simulation started over on the same map. */
