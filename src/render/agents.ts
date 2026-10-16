@@ -152,7 +152,7 @@ export interface AgentMeshes {
   setBleed(fn: (id: number, x: number, y: number, z: number) => void): void;
   /** Lamps burn brighter than white after dark, so headlights and tail lights glow. */
   setNight(dark: number): void;
-  /** The procedural people's skeletons, worked out on the GPU: once a frame, after `sync`, before the scene is drawn. */
+  /** The people's skeletons (procedural and cooked), worked out on the GPU: once a frame, after `sync`, before the scene is drawn. */
   renderPalettes(renderer: WebGLRenderer): void;
   dispose(): void;
 }
@@ -1657,7 +1657,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     setNight: (dark) => {
       lampDark.value = dark;
     },
-    renderPalettes: (renderer) => procedural?.renderPalettes(renderer),
+    renderPalettes(renderer) { procedural?.renderPalettes(renderer); pedestrians.renderPalettes(renderer); },
     sync(world, net, alpha, detailed, zoom = Number.POSITIVE_INFINITY, options = {}) {
       // A new document has a journal of its own: the sweep follows the one the world stands on.
       if (offRoadSweep?.journal !== net.doc.changes) offRoadSweep = new ChangeSweep(net.doc.changes, OFF_ROAD_GROUND);

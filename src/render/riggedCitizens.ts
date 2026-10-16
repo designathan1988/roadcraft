@@ -2,7 +2,7 @@ import type { Severable } from '@sim/people/view';
 import {
   BufferAttribute, BufferGeometry, Color, DataTexture, DynamicDrawUsage, FloatType, Group, InstancedBufferAttribute, InstancedMesh,
   Matrix4, MeshDepthMaterial, MeshStandardMaterial, Object3D, Quaternion, RGBAFormat,
-  RGBADepthPacking, SkinnedMesh, Texture, Vector3,
+  RGBADepthPacking, SkinnedMesh, Texture, Vector3, type WebGLRenderer,
 } from 'three';
 import { PIXAR, REALISTIC, cartoonBody, styleFor, type CartoonStyle } from './people/cartoon';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
@@ -28,7 +28,9 @@ import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
 import { wornItems } from '@people/spec';
 import { captureBind, captureBindRotations, loadRocketboxClips } from './citizenWalk';
 import { type Gradient, shearMatrix } from './groundShear';
-import { PACKED_BONE_FLOATS, SKIN_BONE_FLOATS, blendPackedFrames, copyPackedFrame } from './citizenPalette';
+import { PACKED_BONE_FLOATS, SKIN_BONE_FLOATS, blendPackedFrames } from './citizenPalette';
+import { GPU_PLAYS, citizenAtlas, cpuPose, gpuPlays, type CitizenAtlas, type Play } from './citizenPlays';
+import { createPalettePass, type PalettePass } from './people/crowdAnimation';
 import { createGait, gaitHeading, gaitPlays, stepGait, type Gait, type GaitClips, type GaitPlay } from './citizenGait';
 import {
   CARRY_AT, GAIT_AT, LIBRARY_AT, RIDER_AT, WALK, WALK_ELDER, afterFrame, bake, gaitClips,
@@ -46,8 +48,15 @@ interface CitizenBatch {
   meshes: InstancedMesh[]; sources: SkinnedMesh[]; local: Matrix4[]; clips: ClipFrames[];
   /** The same baked clips, by the name the gait plays them by. */
   gait: GaitClips;
-  texture: DataTexture; pixels: Float32Array; width: number; count: number;
-  rows: number; uniform: { value: DataTexture };
+  /** Floats of a body's palette (16 a bone), and the bodies written this frame. */
+  width: number; count: number;
+  /** The skeletons blended on the GPU (`people/crowdAnimation.ts`): the clips' atlas, the pass, its rows; the skinning reads `uniform`. */
+  atlas: CitizenAtlas; pass: PalettePass; rows: number; uniform: { value: Texture };
+  /** A body's palette worked out on the CPU (held by a ragdoll, maimed, more plays than the pass takes). */
+  readonly scratch: Float32Array;
+  /** Rest joints for the pass's refit, all at the origin: the cooked bodies are drawn on their own joints. */
+  readonly joints: DataTexture;
+  readonly parents: Int16Array;
   lods: BufferGeometry[][];
   /** Each mesh's per-instance morph texture, kept aside while its level has no face (lod > 0). */
   parkedMorph: (DataTexture | null)[];
@@ -56,6 +65,24 @@ interface CitizenBatch {
   /** Clips still to bake, on first use (`Deferred`), one at a time. */
   deferred: Deferred;
   baking: Promise<void>;
+}
+
+/** A walker's last pose as played (`capturedPose`): the clips, phases and weights, whether one frame was copied, the limbs lost. */
+interface KeptPose {
+  index: number;
+  readonly palette: Float32Array;
+  readonly transform: Matrix4;
+  frame: number;
+  readonly clips: ClipFrames[];
+  readonly phases: number[];
+  readonly weights: number[];
+  single: boolean;
+  lost: readonly Severable[] | null;
+}
+
+/** Bytes of a body's palettes: the CPU's override rows and the GPU's target, a row a body, and the clips' atlas. */
+function paletteBytes(batch: CitizenBatch): number {
+  return batch.rows * batch.width * 4 * 2 + (batch.atlas.anim.atlas.image.data as Float32Array).byteLength;
 }
 
 /** The company a walker is dressed with (`citizenCasting.codesFor`): their party's kind, or alone. */
@@ -162,7 +189,7 @@ function markChildShirt(mesh: SkinnedMesh): void {
   geometry.setAttribute('clothingMask', new BufferAttribute(mask, 1));
 }
 
-function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial, uniform: { value: DataTexture },
+function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial, uniform: { value: Texture },
   mesh: SkinnedMesh, look = 0): void {
   material.defines = { ...material.defines, USE_SKINNING: '' };
   material.onBeforeCompile = shader => {
@@ -221,7 +248,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   /** A limb lost: its lower half's bones */
   const maimBones = new WeakMap<CitizenBatch, Record<string, { bones: number[]; parent: number; joint: Vector3 } | null>>();
   const maimTmp = new Matrix4(), maimP = new Vector3();
-  const maim = (batch: CitizenBatch, offset: number, limb: Severable): void => {
+  const maim = (batch: CitizenBatch, px: Float32Array, offset: number, limb: Severable): void => {
     let info = maimBones.get(batch);
     if (!info) {
       const source = batch.sources[0];
@@ -246,7 +273,6 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     }
     const which = info[limb];
     if (!which || which.parent < 0) return;
-    const px = batch.pixels;
     maimTmp.fromArray(px, offset + which.parent * SKIN_BONE_FLOATS);
     maimP.copy(which.joint).applyMatrix4(maimTmp);
     for (const i of which.bones) {
@@ -257,7 +283,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   };
   /** Somebody drawn bleeding (a limb lost): the caller drips blood where they walk. */
   let onBleed: ((id: number, x: number, y: number, z: number) => void) | null = null;
-  const lastPose = new Map<number, { index: number; palette: Float32Array; transform: Matrix4; frame: number }>();
+  /** What each walker played when last drawn, the palette blended from it only when a ragdoll asks (`capturedPose`). */
+  const lastPose = new Map<number, KeptPose>();
   const plays: GaitPlay[] = [];
   const transform = new Object3D();
   // What people hold while they stop to do something (`heldProps.ts`).
@@ -284,8 +311,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       batch.disposed = true;
       for (const mesh of batch.meshes) group.remove(mesh);
       for (const texture of batch.parkedMorph) texture?.dispose();
+      group.userData.paletteBytes -= paletteBytes(batch);
       disposeOwned(batch.resources);
-      group.userData.paletteBytes -= batch.pixels.byteLength;
       group.userData.animationBytes -= batch.animationBytes;
       batches.delete(index);
       loading.delete(index);
@@ -421,19 +448,24 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       asset.scene.updateMatrixWorld(true);
       asset.scene.traverse(o => { if (o instanceof SkinnedMesh && !reference) reference = o; });
       if (!reference) throw new Error('Citizen model has no mesh');
-      const width = reference.skeleton.bones.length * 16;
+      const bones = reference.skeleton.bones.length;
+      const width = bones * SKIN_BONE_FLOATS;
       const rows = 16;
-      const pixels = new Float32Array(rows * width);
-      group.userData.paletteBytes = (group.userData.paletteBytes ?? 0) + pixels.byteLength;
-      paletteAdded = pixels.byteLength;
-      const texture = new DataTexture(pixels, width / 4, rows, RGBAFormat, FloatType);
-      texture.needsUpdate = true;
-      owned.add(texture);
-      const uniform = { value: texture };
-      const batch: CitizenBatch = { meshes: [], sources: [], local: [], clips, gait: gaitClips(clips), texture, pixels, width, rows,
-        uniform, count: 0, lods: [], parkedMorph: [], helmet, resources: owned, animationBytes: 0,
+      // The pass blends each body's plays on the GPU (GPU Gems 3, ch. 2); on their own joints: no parent to refit through.
+      const atlas = citizenAtlas(clips, bones);
+      const joints = new DataTexture(new Float32Array(bones * 4), bones, 1, RGBAFormat, FloatType);
+      joints.needsUpdate = true;
+      const parents = new Int16Array(bones).fill(-1);
+      const pass = createPalettePass(atlas.anim, parents, () => joints, rows);
+      const uniform: { value: Texture } = { value: pass.texture };
+      const batch: CitizenBatch = { meshes: [], sources: [], local: [], clips, gait: gaitClips(clips), width, rows,
+        atlas, pass, uniform, scratch: new Float32Array(width), joints, parents,
+        count: 0, lods: [], parkedMorph: [], helmet, resources: owned, animationBytes: 0,
         lastUsed: performance.now(), disposed: false,
         deferred, baking: Promise.resolve() };
+      owned.add({ dispose: () => { batch.pass.dispose(); batch.atlas.anim.atlas.dispose(); batch.joints.dispose(); } });
+      paletteAdded = paletteBytes(batch);
+      group.userData.paletteBytes = (group.userData.paletteBytes ?? 0) + paletteAdded;
       const parts: SkinnedMesh[] = [];
       asset.scene.traverse(o => { if (o instanceof SkinnedMesh) parts.push(o); });
       for (const o of parts) {
@@ -559,7 +591,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     } catch (error) {
       if (committed) {
         batches.delete(index);
-        group.userData.paletteBytes -= committed.pixels.byteLength;
+        group.userData.paletteBytes -= paletteBytes(committed);
         group.userData.animationBytes -= committed.animationBytes;
         group.userData.loadedModels = batches.size;
       }
@@ -666,46 +698,37 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       if (disposed || batch.disposed) return;
       batch.clips[at] = clip;
       batch.gait = gaitClips(batch.clips);
+      relayAtlas(batch);
       batch.animationBytes += clip.data.byteLength;
       group.userData.animationBytes = (group.userData.animationBytes ?? 0) + clip.data.byteLength;
     }).catch(() => {});
   }
 
-  /** Writes one citizen: blended bone palette plus instance transform. */
+  /** The plays handed to the palette pass for one body (`gpuPlays`), the same objects every time. */
+  const passPlays: Play[] = Array.from({ length: GPU_PLAYS }, () => ({ row: 0, t: 0, weight: 0 }));
+  /** DO NOT hand the pass a longer list than a body plays (it reads each entry given): the first n of them, made once. */
+  const passLists: readonly Play[][] = Array.from({ length: GPU_PLAYS + 1 }, (_, n) => passPlays.slice(0, n));
+
+  /** Body `row`'s palette for the pass: its plays blended on the GPU, or blended (and maimed) here when the pass cannot. */
+  function pose(batch: CitizenBatch, row: number, clips: readonly ClipFrames[], phases: readonly number[],
+    weights: readonly number[], lost: readonly Severable[] | null): void {
+    const single = band >= 2;
+    const n = lost ? -1 : gpuPlays(passPlays, batch.atlas, clips, phases, weights, single);
+    if (n >= 0) {
+      batch.pass.setPlays(row, passLists[n]!, 0);
+      return;
+    }
+    cpuPose(batch.scratch, 0, clips, phases, weights, batch.width, single);
+    for (const limb of lost ?? []) maim(batch, batch.scratch, 0, limb);
+    batch.pass.setOverride(row, batch.scratch);
+    batch.pass.setPlays(row, null, 0);
+  }
+
+  /** Writes one citizen: its bone palette (`pose`) plus instance transform. */
   function emit(batch: CitizenBatch, clips: readonly ClipFrames[], phases: readonly number[],
     weights: readonly number[], x: number, height: number, y: number, heading: number, scale: number,
-    lean = 0, ground: Gradient | null = null, expression?: FaceWeights): void {
-    const offset = batch.count * batch.width;
-    const bones = batch.width / SKIN_BONE_FLOATS;
-    const packedWidth = bones * PACKED_BONE_FLOATS;
-    // Far off (`band` 2, a body a few pixels tall), the pose is the frame of the clip that weighs most, copied as it is
-    if (band >= 2) {
-      let best = -1;
-      for (let c = 0; c < clips.length; c++) if (best < 0 || weights[c]! > weights[best]!) best = c;
-      if (best >= 0) {
-        const clip = clips[best]!;
-        const start = Math.round(Math.min(clip.frames, Math.max(0, phases[best]!))) * packedWidth;
-        copyPackedFrame(batch.pixels, offset, clip.data, start, bones);
-      } else batch.pixels.fill(0, offset, offset + batch.width);
-    } else {
-      const pixels = batch.pixels;
-      const width = batch.width;
-      pixels.fill(0, offset, offset + width);
-      let total = 0;
-      for (let c = 0; c < clips.length; c++) total += Math.max(0, weights[c]!);
-      for (let c = 0; c < clips.length; c++) {
-        const weight = Math.max(0, weights[c]!) / (total || 1);
-        if (weight < 0.001) continue;
-        const clip = clips[c]!;
-        const data = clip.data;
-        const f = Math.min(clip.frames, Math.max(0, phases[c]!));
-        const fraction = f % 1;
-        const start = Math.floor(f) * packedWidth;
-        const a = weight * (1 - fraction);
-        const b = weight * fraction;
-        blendPackedFrames(pixels, offset, data, start, packedWidth, bones, a, b);
-      }
-    }
+    lean = 0, ground: Gradient | null = null, expression?: FaceWeights, lost: readonly Severable[] | null = null): void {
+    pose(batch, batch.count, clips, phases, weights, lost);
     transform.position.set(x, height, -y);
     // Yaw, then a roll about the body's own forward axis
     transform.rotation.set(0, heading + Math.PI / 2, -lean, 'YXZ');
@@ -723,18 +746,25 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     batch.lastUsed = frameNow;
   }
 
+  /** Room for twice the bodies in the pass (its rows written so far kept); the skinning reads its new target. */
   function grow(batch: CitizenBatch): void {
-    const rows = Math.min(CAPACITY, batch.rows * 2);
-    const pixels = new Float32Array(rows * batch.width);
-    pixels.set(batch.pixels);
-    group.userData.paletteBytes += pixels.byteLength - batch.pixels.byteLength;
-    const texture = new DataTexture(pixels, batch.width / 4, rows, RGBAFormat, FloatType);
-    texture.needsUpdate = true;
-    batch.resources.delete(batch.texture);
-    batch.texture.dispose();
-    batch.rows = rows; batch.pixels = pixels; batch.texture = texture;
-    batch.uniform.value = texture;
-    batch.resources.add(texture);
+    const before = paletteBytes(batch);
+    batch.rows = Math.min(CAPACITY, batch.rows * 2);
+    batch.pass.grow(batch.rows);
+    batch.uniform.value = batch.pass.texture;
+    group.userData.paletteBytes += paletteBytes(batch) - before;
+  }
+
+  /** A clip baked since the atlas was laid: the atlas laid again with it, and a pass reading it (an event, not a frame). */
+  function relayAtlas(batch: CitizenBatch): void {
+    const before = paletteBytes(batch);
+    const old = batch.atlas, oldPass = batch.pass;
+    batch.atlas = citizenAtlas(batch.clips, batch.width / SKIN_BONE_FLOATS);
+    batch.pass = createPalettePass(batch.atlas.anim, batch.parents, () => batch.joints, batch.rows);
+    batch.uniform.value = batch.pass.texture;
+    oldPass.dispose();
+    old.anim.atlas.dispose();
+    group.userData.paletteBytes += paletteBytes(batch) - before;
   }
 
   return {
@@ -797,22 +827,24 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         mixPhases.push(play.frame);
         mixWeights.push(play.weight);
       }
-      emit(batch, mixClips, mixPhases, mixWeights, x, deck, y, gaitHeading(gait), m(scale), lean, ground,
-        lod === 0 ? faceAt(ped.id, time, ped.panic ? (ped.gesture?.kind === 'crouch' ? 'cry' : 'panic') : ped.gesture?.kind, CROWD[index]?.person?.mood) : undefined);
       // Every limb lost (shots take more than one), the stump closed at its joint.
       const lost = ped.lost ?? (ped.maimed ? [ped.maimed] : null);
-      if (lost) {
-        for (const limb of lost) maim(batch, (batch.count - 1) * batch.width, limb);
-        onBleed?.(ped.id, x, y, deck);
-      }
+      emit(batch, mixClips, mixPhases, mixWeights, x, deck, y, gaitHeading(gait), m(scale), lean, ground,
+        lod === 0 ? faceAt(ped.id, time, ped.panic ? (ped.gesture?.kind === 'crouch' ? 'cry' : 'panic') : ped.gesture?.kind, CROWD[index]?.person?.mood) : undefined,
+        lost);
+      if (lost) onBleed?.(ped.id, x, y, deck);
       {
+        // What they play, kept: the palette is blended from it only if a ragdoll takes them (`capturedPose`).
         let kept = lastPose.get(ped.id);
         if (!kept || kept.palette.length !== batch.width) {
-          kept = { index, palette: new Float32Array(batch.width), transform: new Matrix4(), frame: 0 };
+          kept = { index, palette: new Float32Array(batch.width), transform: new Matrix4(), frame: 0, clips: [], phases: [], weights: [], single: false, lost: null };
           lastPose.set(ped.id, kept);
         }
         kept.index = index;
-        kept.palette.set(batch.pixels.subarray((batch.count - 1) * batch.width, batch.count * batch.width));
+        kept.clips.length = 0; kept.phases.length = 0; kept.weights.length = 0;
+        for (let i = 0; i < mixClips.length; i++) { kept.clips.push(mixClips[i]!); kept.phases.push(mixPhases[i]!); kept.weights.push(mixWeights[i]!); }
+        kept.single = band >= 2;
+        kept.lost = lost;
         kept.transform.copy(transform.matrix);
         kept.frame = visualFrame;
       }
@@ -932,16 +964,6 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       casting = false;
       if (visualFrame % 300 === 0) for (const [id, kept] of lastPose) if (visualFrame - kept.frame > 600) lastPose.delete(id);
       for (const batch of batches.values()) {
-        if (batch.count > 0) {
-          batch.texture.clearUpdateRanges();
-          // three.js uploads each DataTexture update range as one image row.
-          if (batch.count * 2 < batch.rows) {
-            for (let i = 0; i < batch.count; i++) {
-              batch.texture.addUpdateRange(i * batch.width, batch.width);
-            }
-          }
-          batch.texture.needsUpdate = true;
-        }
         for (const mesh of batch.meshes) {
           mesh.count = batch.count;
           // An empty batch is still a program bind and its uniforms in every pass
@@ -969,10 +991,23 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         }
       }
     },
-    /** The pose a person was last drawn in, if within the last few seconds (`ragdoll.ts`). */
+    /** The skeletons of the bodies written this frame, blended on the GPU before anybody draws them (`agents.renderPalettes`). */
+    renderPalettes(renderer: WebGLRenderer): void {
+      for (const batch of batches.values()) {
+        if (batch.count === 0) continue;
+        batch.pass.render(renderer, batch.count);
+        batch.uniform.value = batch.pass.texture;
+      }
+    },
+    /** The pose a person was last drawn in, if within the last few seconds (`ragdoll.ts`): blended now, from what they played. */
     capturedPose(id: number): { index: number; palette: Float32Array; transform: Matrix4 } | null {
       const kept = lastPose.get(id);
-      return kept && visualFrame - kept.frame < 240 ? kept : null;
+      if (!kept || visualFrame - kept.frame >= 240) return null;
+      const batch = batches.get(kept.index);
+      if (!batch || batch.width !== kept.palette.length) return null;
+      cpuPose(kept.palette, 0, kept.clips, kept.phases, kept.weights, batch.width, kept.single);
+      for (const limb of kept.lost ?? []) maim(batch, kept.palette, 0, limb);
+      return kept;
     },
     /** A loaded body's skeleton: bone names, parents, inverse binds, and part 0's local and bind matrices. */
     skeletonOf(index: number): { names: string[]; parents: number[]; inverses: Matrix4[]; local: Matrix4; bind: Matrix4 } | null {
@@ -1028,7 +1063,9 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       const batch = batches.get(index);
       if (!batch || batch.count >= CAPACITY || palette.length !== batch.width) return;
       if (batch.count >= batch.rows) grow(batch);
-      batch.pixels.set(palette, batch.count * batch.width);
+      // Worked out by the ragdoll: the pass copies it as it is.
+      batch.pass.setOverride(batch.count, palette);
+      batch.pass.setPlays(batch.count, null, 0);
       for (let i = 0; i < batch.meshes.length; i++) {
         matrix.multiplyMatrices(instance, batch.local[i]!);
         batch.meshes[i]!.setMatrixAt(batch.count, matrix);
