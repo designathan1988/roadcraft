@@ -44,7 +44,12 @@ export interface VehicleView {
   indicator: -1 | 0 | 1;
   curvature: number;
   odometer: number;
+  /** The client's own: the tick it was last read in (`readTick`), those not read in a tick being gone. */
+  tickRead: number;
 }
+
+/** A walker's view as the page makes it (`readTick`): the tick it was last read in, as a vehicle's. */
+type PedRead = PedView & { tickRead: number };
 
 /** A junction's signal heads and their lights as the worker last told them (`render/signals.ts`). */
 export interface SignalFeed {
@@ -167,7 +172,7 @@ export class SimClient implements JournalReader {
     this.settling.clear();
     this.parkedSlack = 0;
   }
-  private readonly pedById = new Map<number, PedView>();
+  private readonly pedById = new Map<number, PedRead>();
   trains: readonly TrainState[] = [];
   /** The simulation's clock as last told: seconds, the city's minutes, the tick's share gone by (`alpha`). */
   time = 0;
@@ -557,7 +562,10 @@ export class SimClient implements JournalReader {
     this.alpha = data[h + H.alpha]!;
     this.lastSteps = data[h + H.steps]!;
     this.lastStepMs = data[h + H.stepMs]!;
-    const rich = new Map(message.vehicles);
+    // What the vehicles carry, told for those whose changed: no map made a tick none did.
+    const rich = message.vehicles.length ? new Map(message.vehicles) : null;
+    // This tick's stamp (`tick` once read): a view not stamped by it was not in it (DO NOT gather the tick's ids in a set to find them).
+    const stamp = this.tick + 1;
     // The cars parked in bays, as told: come, gone, or the whole list.
     if (message.parked) {
       if (message.parked.some((p) => p.whole)) this.clearParked();
@@ -568,7 +576,7 @@ export class SimClient implements JournalReader {
         const view = known ?? newView(p.id);
         view.archetype = archetypeById(p.archetype);
         view.color = p.color;
-        view.free = { px: p.x, py: p.y, pangle: p.angle, x: p.x, y: p.y, angle: p.angle, lot: p.lot };
+        setFree(view, p.x, p.y, p.angle, p.x, p.y, p.angle, p.lot);
         view.v = 0; view.prev.v = 0; view.seats = 0;
         setFrames(view.frames, p.x, p.y, p.angle, p.x, p.y, p.angle);
         if (!known) this.addParked(view);
@@ -585,7 +593,7 @@ export class SimClient implements JournalReader {
     const n = data[h + H.vehicles]!;
     const vb = vehicleBase(slot);
     this.traffic.length = 0;
-    const seen = new Set<number>();
+    let read = 0;
     let speed = 0, queued = 0, slack = 0;
     for (let k = 0; k < n; k++) {
       const at = vb + k * VEHICLE_STRIDE;
@@ -597,7 +605,7 @@ export class SimClient implements JournalReader {
         this.fleet++;
         if (parked) this.addParked(view); else this.vehicles.set(id, view);
       }
-      const r = rich.get(id);
+      const r = rich?.get(id);
       if (r) {
         view.archetype = archetypeById(r.archetype);
         view.color = r.color;
@@ -609,9 +617,9 @@ export class SimClient implements JournalReader {
       const f = view.frames;
       setFrames(f, data[at + V.bx]!, data[at + V.by]!, data[at + V.bangle]!, data[at + V.x]!, data[at + V.y]!, data[at + V.angle]!);
       f.yawBefore = data[at + V.yawBefore]!; f.yawNow = data[at + V.yawNow]!; f.jump = data[at + V.jump] === 1;
-      const free = data[at + V.free]! > 0;
       const lot = data[at + V.lot]!;
-      view.free = free ? { px: f.bx, py: f.by, pangle: f.bangle, x: f.x, y: f.y, angle: f.angle, lot: lot < 0 ? null : lot } : null;
+      if (data[at + V.free]! > 0) setFree(view, f.bx, f.by, f.bangle, f.x, f.y, f.angle, lot < 0 ? null : lot);
+      else view.free = null;
       view.v = data[at + V.v]!; view.prev.v = data[at + V.prevV]!; view.age = data[at + V.age]!;
       const segment = data[at + V.segment]!, inSegment = data[at + V.inSegment]!;
       view.segment = segment < 0 ? undefined : segment as SegmentId;
@@ -627,14 +635,17 @@ export class SimClient implements JournalReader {
         continue;
       }
       this.traffic.push(view);
-      seen.add(id);
+      if (view.tickRead !== stamp) { view.tickRead = stamp; read++; }
       this.trafficGrid.place(view);
       const step = f.jump ? 0 : Math.max(Math.abs(f.x - f.bx), Math.abs(f.y - f.by));
       if (step > slack) slack = step;
       speed += view.v;
       if (view.v < 0.5) queued++;
     }
-    for (const [id, view] of this.vehicles) if (!seen.has(id)) { this.vehicles.delete(id); this.trafficGrid.remove(view); this.fleet++; }
+    // Every traffic view read this tick: none gone, and none walked to find out.
+    if (read !== this.vehicles.size) {
+      for (const [id, view] of this.vehicles) if (view.tickRead !== stamp) { this.vehicles.delete(id); this.trafficGrid.remove(view); this.fleet++; }
+    }
     this.trafficSpeed = speed;
     this.trafficQueued = queued;
     this.trafficSlack = slack;
@@ -646,21 +657,21 @@ export class SimClient implements JournalReader {
     }
     this.parkedSlack = parkedSlack;
     // The people: their numbers from the slot, what they carry from the message (kept from the last time it changed).
-    const pedRich = new Map(message.peds);
+    const pedRich = message.peds.length ? new Map(message.peds) : null;
     const m = data[h + H.peds]!;
     const pb = pedBase(slot);
     this.pedViews.length = 0;
-    const pedSeen = new Set<number>();
+    let pedRead = 0;
     for (let k = 0; k < m; k++) {
       const at = pb + k * PED_STRIDE;
       const id = data[at + P.id]!;
-      const r = pedRich.get(id);
+      const r = pedRich?.get(id);
       let view = this.pedById.get(id);
       if (!view || r) {
         const base = r ?? view;
         if (!base) continue;
         const { id: _i, x: _x, y: _y, heading: _h, prev: _p, v: _v, turnV: _t, age: _a, segment: _s, walking: _w, kerbWait: _k, rank: _r, ...carried } = base as PedView;
-        view = { ...carried, id, x: 0, y: 0, heading: 0, prev: { x: 0, y: 0, heading: 0 }, v: 0, turnV: 0, age: 0, segment: undefined, walking: false, kerbWait: 0, rank: 0 } as PedView;
+        view = { ...carried, id, x: 0, y: 0, heading: 0, prev: { x: 0, y: 0, heading: 0 }, v: 0, turnV: 0, age: 0, segment: undefined, walking: false, kerbWait: 0, rank: 0, tickRead: -1 } as PedRead;
         this.pedById.set(id, view);
       }
       const w = view as { -readonly [K in keyof PedView]: PedView[K] };
@@ -672,9 +683,9 @@ export class SimClient implements JournalReader {
       w.segment = segment < 0 ? undefined : segment as SegmentId;
       w.walking = data[at + P.walking] === 1; w.kerbWait = data[at + P.kerbWait]!; w.rank = data[at + P.rank]!;
       this.pedViews.push(view);
-      pedSeen.add(id);
+      if (view.tickRead !== stamp) { view.tickRead = stamp; pedRead++; }
     }
-    for (const id of this.pedById.keys()) if (!pedSeen.has(id)) this.pedById.delete(id);
+    if (pedRead !== this.pedById.size) for (const [id, view] of this.pedById) if (view.tickRead !== stamp) this.pedById.delete(id);
     Atomics.store(this.control, C.reading, -1);
     this.trains = message.trains;
     this.tick++;
@@ -721,8 +732,14 @@ function newView(id: number): VehicleView {
   return {
     id, archetype: archetypeById('car'), color: '#888888', doors: [], kerbStop: null, people: [], peopleAge: [], seats: 0, slain: false, age: 0, v: 0, prev: { v: 0 },
     free: null, frames: { bx: 0, by: 0, bangle: 0, x: 0, y: 0, angle: 0, yawBefore: 0, yawNow: 0, jump: false },
-    segment: undefined, inSegment: undefined, indicator: 0, curvature: 0, odometer: 0,
+    segment: undefined, inSegment: undefined, indicator: 0, curvature: 0, odometer: 0, tickRead: -1,
   };
+}
+
+/** A view off the road: its two poses and its lot, into the pose it already has (DO NOT make one a vehicle a tick). */
+function setFree(view: VehicleView, px: number, py: number, pangle: number, x: number, y: number, angle: number, lot: number | null): void {
+  const free = view.free ?? (view.free = { px, py, pangle, x, y, angle, lot });
+  free.px = px; free.py = py; free.pangle = pangle; free.x = x; free.y = y; free.angle = angle; free.lot = lot;
 }
 
 function setFrames(f: VehicleFrames, bx: number, by: number, bangle: number, x: number, y: number, angle: number): void {

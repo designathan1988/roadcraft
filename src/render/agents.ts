@@ -58,7 +58,7 @@ import {
 import { HELMET_SEGMENTS, STEER_FULL } from './riderPoses';
 import { NIGHT_LUMINANCE, nightGain } from './lightLevels';
 import { DOOR_SWING, createKerbFigure, kerbFigure, occupantPlays, type Play } from './occupants';
-import { createBlobShadows } from './blobShadows';
+import { blobInto, blobMesh } from './blobShadows';
 import { LEVELS, levelFor, partLevels, type Weld } from './vehicleLevels';
 
 /** Vehicles and riders use the original instanced batches. */
@@ -88,11 +88,19 @@ const PART_CAPACITY = 16;
 
 const SIDES = [1, -1] as const;
 
+/** A tint as the instance colours hold it (the working colour space), and a lamp's glow by it (`LAMP_GAIN`): worked out once a colour. */
+interface Tint {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+  readonly glow: number;
+}
+
 /** Lamp state for the vehicle currently being drawn. */
 interface LampState {
   /** Headlamp colour: lit, or the unlit lens of a parked car. */
-  head: number;
-  tail: number;
+  head: Tint;
+  tail: Tint;
   /** Lit indicator side: +1 left, -1 right, 0 none. Already includes the flash. */
   indicate: number;
   /** Front-wheel steering angle, radians, positive to the left. */
@@ -200,6 +208,8 @@ const CHROME = 0xb9bec4;
 const PLATE = 0xf0efe6;
 /** A bus's destination blind: amber on black, read as lit amber. */
 const DESTINATION = 0xffb13b;
+/** A contrasting black roof panel (`VehicleLook.blackRoof`). */
+const BLACK_ROOF = 0x15171a;
 
 /** Seconds a change of a person's clip cross-fades over: about half a step at a walk */
 const CLIP_FADE = 0.3;
@@ -249,14 +259,16 @@ export interface VehicleLook {
   readonly blackRoof: boolean;
 }
 
-/** How a door's window is drawn with a share `drop` of it lowered (0 shut, 1 fully down) */
-export function windowPane(door: { glass: BufferGeometry }, drop: number): { visible: boolean; up: number; sy: number } {
-  if (drop >= 0.98) return { visible: false, up: 0, sy: 0 };
-  if (drop <= 0) return { visible: true, up: 0, sy: 1 };
+/** How a door's window is drawn with a share `drop` of it lowered (0 shut, 1 fully down), written into `out` (the frame's own, `drawCar`). */
+export function windowPane(door: { glass: BufferGeometry }, drop: number,
+  out: { visible: boolean; up: number; sy: number } = { visible: true, up: 0, sy: 1 }): { visible: boolean; up: number; sy: number } {
+  if (drop >= 0.98) { out.visible = false; out.up = 0; out.sy = 0; return out; }
+  if (drop <= 0) { out.visible = true; out.up = 0; out.sy = 1; return out; }
   if (!door.glass.boundingBox) door.glass.computeBoundingBox();
   const bottom = door.glass.boundingBox?.min.y ?? 0;
   const sy = 1 - drop;
-  return { visible: true, up: bottom * (1 - sy), sy };
+  out.visible = true; out.up = bottom * (1 - sy); out.sy = sy;
+  return out;
 }
 
 /** Everything about how one vehicle's occupants and windows look, from its id. */
@@ -290,30 +302,30 @@ const MAX_LEAN = 0.6;
 const GRAVITY = m(9.81);
 /** How fast a lean follows the bend, per second. */
 const LEAN_RATE = 6;
-const leans = new WeakMap<SimVehicle, { lean: number; age: number }>();
 
 /** A vehicle's pose and its frame on the road, written in place for each vehicle drawn */
 const POSE = newPose();
 const WANT = { deck: 0, pitch: 0, roll: 0 };
 
+/** A two-wheeler's lean as last drawn (`VehicleDraw`): known for the view it was drawn for. */
+interface LeanState { leanKnown: boolean; lean: number; leanAge: number }
+
 /** How far a two-wheeler leans into the bend it is on */
-function leanOf(v: SimVehicle): number {
+function leanOf(v: SimVehicle, state: LeanState): number {
   const target = Math.max(-MAX_LEAN, Math.min(MAX_LEAN, Math.atan((v.v * v.v * v.curvature) / GRAVITY)));
-  const state = leans.get(v);
-  if (!state) {
-    leans.set(v, { lean: target, age: v.age });
+  if (!state.leanKnown) {
+    state.leanKnown = true;
+    state.lean = target;
+    state.leanAge = v.age;
     return target;
   }
-  const dt = Math.max(0, Math.min(0.2, v.age - state.age));
-  state.age = v.age;
+  const dt = Math.max(0, Math.min(0.2, v.age - state.leanAge));
+  state.leanAge = v.age;
   state.lean += (target - state.lean) * (1 - Math.exp(-dt * LEAN_RATE));
   return state.lean;
 }
 
 // ---------------------------------------------------------------- people in vehicles
-
-const riderPlays: { key: CitizenClipKey; phase: number; weight: number }[] = [];
-
 
 const smooth01 = (x: number): number => {
   const t = Math.min(1, Math.max(0, x));
@@ -395,17 +407,43 @@ const FALLBACK_PLAN = bodyPlan(archetypeById('sedan'));
 const planOf = (a: Archetype): BodyPlan => PLANS.get(a.id) ?? FALLBACK_PLAN;
 /** The widest reach a vehicle is tested with (`vehicleVisible`'s radius): the view's ground box is grown by it. */
 export const VEHICLE_REACH = Math.max(...[...PLANS.values(), FALLBACK_PLAN].map((plan) => plan.length * 0.5 + plan.height * 2));
-/** The vehicles asked of the client's grid for this frame's view (`SimClient.vehiclesIn`), reused. */
-const VEHICLES_IN_VIEW: SimVehicle[] = [];
 
 // ---------------------------------------------------------------- meshes
 
+/** Who holds kept instances (`VehicleDraw`): each one's place in a part, moved when another kept one leaves. */
+interface KeptHolder {
+  readonly keptSlots: number[];
+}
+
+/** DO NOT write every vehicle's every instance each frame again: a parked car's stay where they were written (`kept`), only the frame's own are written and sent. */
 interface Part {
   readonly mesh: InstancedMesh;
-  /** Write cursor, reset at the top of every sync. */
+  /** Instances [0, kept) are the parked cars' standing still, written once; [kept, n) this frame's. */
+  kept: number;
+  /** Write cursor: back to `kept` at the top of every sync. */
   n: number;
-  /** Whether this sync wrote a colour, so the colours need uploading. */
+  /** The holder of each kept instance and its place in the holder's list (`holders.length === kept`). */
+  readonly holders: KeptHolder[];
+  readonly holderAt: number[];
+  /** Whether its instances are tinted (a part always is or never is): their colours go to the GPU with their matrices. */
   tinted: boolean;
+  /** Instances changed since the GPU last took them, [lo, hi) (none while hi <= lo); the upload clears it (`onUpload`). */
+  lo: number;
+  hi: number;
+  /** In the frame's list of parts drawn (`live`). */
+  listed: boolean;
+}
+
+/** A part over `mesh`: nothing drawn, every upload clearing what was waiting to go. */
+function partOf(mesh: InstancedMesh): Part {
+  const part: Part = { mesh, kept: 0, n: 0, holders: [], holderAt: [], tinted: false, lo: 0, hi: 0, listed: false };
+  watchUploads(part);
+  return part;
+}
+
+/** The GPU took the part's instances (three calls it once a matrix buffer is sent): nothing waits now. */
+function watchUploads(part: Part): void {
+  part.mesh.instanceMatrix.onUpload(() => { part.lo = 0; part.hi = 0; });
 }
 
 function instanced(
@@ -426,7 +464,9 @@ function instanced(
   // Instances move every frame, so a bounding sphere computed once is wrong
   mesh.frustumCulled = false;
   mesh.count = 0;
-  return { mesh, n: 0, tinted: false };
+  // Shown once something is written in it (`sync`); its programs are still built at load (`compileAsync` walks hidden meshes too).
+  mesh.visible = false;
+  return partOf(mesh);
 }
 
 /** A part at each level (`vehicleLevels.ts`): `parts[k]` within `LEVEL_ERRORS[k - 1]`, `route[k]` the part drawn at level k (-1: none), the model's own until made. */
@@ -553,7 +593,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const modelGeometries: BufferGeometry[] = [];
   /** Each source geometry's levels, made once (off the main thread) and shared by every ladder drawn from it. */
   const levelsOf = new Map<BufferGeometry, Promise<(BufferGeometry | null)[]>>();
-  /** Moves when levels arrive: a parked car's copied writes name the parts it was drawn with (`parkedDraws`). */
+  /** Moves when levels arrive: a parked car's kept instances name the parts it was drawn with (`VehicleDraw` kept). */
   let levelsVersion = 0;
   const ladderParts: Part[] = [];
   /** `base` and a part per coarser level, empty until drawn (they grow, `growPart`), routed to `base` until the levels are made. */
@@ -990,9 +1030,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       if (person && procedural) procedural.ragdoll.drench(person);
     },
   };
-  /** The soft shadow under a vehicle below the whole level (`blobShadows.ts`). */
-  const vehicleBlobs = createBlobShadows('vehicle-shadows', MAX_VEHICLES, 0.4);
-  const meshes = [...allParts.map((part) => part.mesh), vehicleBlobs.mesh, pedestrians.group, ...(procedural ? [procedural.group] : [])];
+  /** The soft shadow under a vehicle below the whole level (`blobShadows.ts`): a part like the others, a parked car's kept with it. */
+  const blobs = partOf(blobMesh('vehicle-shadows', MAX_VEHICLES, 0.4));
+  const meshes = [...allParts.map((part) => part.mesh), blobs.mesh, pedestrians.group, ...(procedural ? [procedural.group] : [])];
 
   const object = new Object3D();
   // Yaw outermost, so the third Euler component becomes a rotation about the agent's own lateral axis
@@ -1010,6 +1050,21 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     }
     return hex;
   };
+  /** DO NOT convert a tint at every instance written: three sRGB-to-linear powers a write; each colour once (`setHex`, as `setColorAt` was given). */
+  const tints = new Map<number, Tint>();
+  const tintOf = (hex: number): Tint => {
+    let tint = tints.get(hex);
+    if (!tint) {
+      colour.setHex(hex);
+      tint = { r: colour.r, g: colour.g, b: colour.b, glow: LAMP_GAIN.get(hex) ?? 0 };
+      tints.set(hex, tint);
+    }
+    return tint;
+  };
+  const T_RUBBER = tintOf(RUBBER), T_HUB = tintOf(HUB), T_TRIM = tintOf(TRIM), T_CHROME = tintOf(CHROME);
+  const T_PLATE = tintOf(PLATE), T_DESTINATION = tintOf(DESTINATION), T_BLACK_ROOF = tintOf(BLACK_ROOF);
+  const T_HEADLAMP = tintOf(HEADLAMP), T_TAILLAMP = tintOf(TAILLAMP), T_HEADLAMP_OFF = tintOf(HEADLAMP_OFF), T_TAILLAMP_OFF = tintOf(TAILLAMP_OFF);
+  const T_BRAKELAMP = tintOf(BRAKELAMP), T_INDICATOR = tintOf(INDICATOR);
 
   // Frame of the agent currently being written.
   let occupantBand = 0;
@@ -1027,9 +1082,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const fq = new Quaternion();
   const qPitch = new Quaternion();
   const qRoll = new Quaternion();
-  const qPart = new Quaternion();
   const qLocal = new Quaternion();
-  const vOffset = new Vector3();
+  /** The same as a matrix, its origin at the vehicle's (three's axes): every part's instance is this times the part's own place, turn and size. */
+  const frameMatrix = new Matrix4();
+  const F = frameMatrix.elements;
   const AXIS_Y = new Vector3(0, 1, 0);
   const AXIS_Z = new Vector3(0, 0, 1);
   const AXIS_X = new Vector3(1, 0, 0);
@@ -1050,22 +1106,23 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     qPitch.setFromAxisAngle(AXIS_Z, pitch);
     qRoll.setFromAxisAngle(AXIS_X, roadRoll - roll);
     fq.multiply(qPitch).multiply(qRoll);
+    // (`compose` of the origin, `fq` and a unit scale: what `place` composed for a part at the origin.)
+    frameMatrix.makeRotationFromQuaternion(fq);
+    F[12] = x; F[13] = deck; F[14] = -y;
   };
 
   /** A point in the current frame (forward, up, left) to world (x, y) and height. */
   const toWorld = (along: number, up: number, side: number, out: { x: number; y: number; h: number }): void => {
-    vOffset.set(along, up, -side).applyQuaternion(fq);
-    out.x = fx + vOffset.x;
-    out.y = fy - vOffset.z;
-    out.h = fdeck + vOffset.y;
+    const z = -side;
+    out.x = F[0] * along + F[4] * up + F[8] * z + F[12];
+    out.h = F[1] * along + F[5] * up + F[9] * z + F[13];
+    out.y = -(F[2] * along + F[6] * up + F[10] * z + F[14]);
   };
   const partPoint = { x: 0, y: 0, h: 0 };
 
-  /** Per-vehicle suspension state: the frame eases towards the road, never snaps. And the level it was drawn at. */
-  const suspension = new Map<number, { deck: number; pitch: number; roll: number; seen: number; lod: number }>();
-  const blobMatrix = new Matrix4();
-  /** This frame's whole-level candidates' lengths on the screen, and the least one may have (last frame's cap). */
-  const nearCandidates: number[] = [];
+  /** This frame's whole-level candidates' lengths on the screen (sorted natively, no comparator), and the least one may have (last frame's cap). */
+  let nearCandidates = new Float64Array(VEHICLE_NEAR_CAP * 2);
+  let nearCount = 0;
   let nearFloor = 0;
   /** Whether a two-wheeler was drawn whole last frame: then they all cast into the shadow map */
   let bikesWhole = false;
@@ -1078,7 +1135,89 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   let gaitDt = 0;
   let suspensionFrame = 0;
 
-  /** Writes one instance, positioned in the current agent's frame. */
+  /** The parts written this frame or drawn last frame: DO NOT walk every part of every body and level each frame (a thousand of them) to reset and send them. */
+  const live: Part[] = [];
+  /** The parked cars whose instances are kept (`Part.kept`), and the one being written now into the kept instances (null: this frame's). */
+  const keptList: VehicleDraw[] = [];
+  let recording: VehicleDraw | null = null;
+  /** Pixels a metre where the vehicle being drawn stands (`screenScale`): its parts' levels (`vehicleLevels.ts`). */
+  let drawPixels = Number.POSITIVE_INFINITY;
+
+  /** Instances [from, to) of a part changed: sent at the end of the frame, with whatever the GPU has not taken yet. */
+  const touch = (part: Part, from: number, to: number): void => {
+    if (part.hi <= part.lo) { part.lo = from; part.hi = to; return; }
+    if (from < part.lo) part.lo = from;
+    if (to > part.hi) part.hi = to;
+  };
+  /** One instance moved within a part: its matrix, its tint, a lamp's glow. */
+  const moveInstance = (part: Part, from: number, to: number): void => {
+    const m = part.mesh.instanceMatrix.array as Float32Array;
+    for (let i = 0, a = from * 16, b = to * 16; i < 16; i++) m[b + i] = m[a + i]!;
+    if (part.tinted) {
+      const c = part.mesh.instanceColor!.array as Float32Array;
+      c[to * 3] = c[from * 3]!; c[to * 3 + 1] = c[from * 3 + 1]!; c[to * 3 + 2] = c[from * 3 + 2]!;
+    }
+    if (part === lamps) { const g = lampGlow.array as Float32Array; g[to] = g[from]!; }
+    touch(part, to, to + 1);
+  };
+  const listed = (part: Part): void => {
+    if (part.listed) return;
+    part.listed = true;
+    live.push(part);
+  };
+  /** The next instance of the part: this frame's, or, while a parked car is written to be kept, one more of the kept ones (the frame's there moved to the end). */
+  const slotOf = (part: Part): number => {
+    if (part.n >= part.mesh.instanceMatrix.count) growPart(part, part.n + 1);
+    listed(part);
+    const holder = recording;
+    if (!holder) return part.n++;
+    const at = part.kept;
+    if (part.n > at) moveInstance(part, at, part.n);
+    part.holders.push(holder);
+    part.holderAt.push(holder.keptSlots.length);
+    holder.keptParts.push(part);
+    holder.keptSlots.push(at);
+    part.kept++;
+    part.n++;
+    touch(part, at, at + 1);
+    return at;
+  };
+  /** A parked car's kept instances let go: the last kept one of each part takes each one's place, and this frame's last the place it left. */
+  const dropKept = (s: VehicleDraw): void => {
+    const parts = s.keptParts, slots = s.keptSlots;
+    for (let j = 0; j < parts.length; j++) {
+      const part = parts[j]!, at = slots[j]!, last = part.kept - 1;
+      if (at !== last) {
+        moveInstance(part, last, at);
+        const holder = part.holders[last]!, k = part.holderAt[last]!;
+        part.holders[at] = holder;
+        part.holderAt[at] = k;
+        holder.keptSlots[k] = at;
+      }
+      part.holders.pop();
+      part.holderAt.pop();
+      part.kept = last;
+      const end = part.n - 1;
+      if (end > last) moveInstance(part, end, last);
+      part.n = end;
+    }
+    parts.length = 0;
+    slots.length = 0;
+    const tail = keptList.pop()!;
+    if (tail !== s) { keptList[s.keptAt] = tail; tail.keptAt = s.keptAt; }
+    s.keptAt = -1;
+  };
+  /** The tint (none: left white) and a lamp's glow of instance `at`. */
+  const tintAt = (part: Part, at: number, tint: Tint | null): void => {
+    if (tint) {
+      const c = part.mesh.instanceColor!.array as Float32Array;
+      c[at * 3] = tint.r; c[at * 3 + 1] = tint.g; c[at * 3 + 2] = tint.b;
+      part.tinted = true;
+    }
+    if (part === lamps) (lampGlow.array as Float32Array)[at] = tint ? tint.glow : 0;
+  };
+
+  /** Writes one instance in the current vehicle's frame: the frame times the part's place, its turn (Euler y then z, `YXZ`) and its size, straight into the buffer. */
   const place = (
     part: Part,
     along: number,
@@ -1087,33 +1226,48 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     sx: number,
     sy: number,
     sz: number,
-    tint: number,
+    tint: Tint | null,
     rake = 0,
     yaw = 0,
   ): void => {
-    // Through the vehicle's one transform (`fq`)
-    toWorld(along, up, side, partPoint);
-    object.position.set(partPoint.x, partPoint.h, -partPoint.y);
-    eulerScratch.rotation.set(0, yaw, rake);
-    qLocal.setFromEuler(eulerScratch.rotation);
-    qPart.copy(fq).multiply(qLocal);
-    object.quaternion.copy(qPart);
-    object.scale.set(sx, sy, sz);
-    object.updateMatrix();
-    write(part, object.matrix, tint);
-  };
-  /** DO NOT write `setMatrixAt` on a part anywhere else: a parked car's copied frames show only what passed through here. */
-  const write = (part: Part, matrix: Matrix4, tint: number): void => {
-    if (part.n >= part.mesh.instanceMatrix.count) growPart(part, part.n + 1);
-    part.mesh.setMatrixAt(part.n, matrix);
-    if (tint >= 0) {
-      colour.setHex(tint);
-      part.mesh.setColorAt(part.n, colour);
-      part.tinted = true;
+    // The part's own turn, its columns scaled: `makeRotationFromEuler` (`YXZ`, no x) by hand.
+    let a0 = sx, a1 = 0, a2 = 0, b0 = 0, b1 = sy, b2 = 0, c0 = 0, c2 = sz;
+    if (rake !== 0 || yaw !== 0) {
+      const cy = Math.cos(yaw), sY = Math.sin(yaw), cr = Math.cos(rake), sr = Math.sin(rake);
+      a0 = cy * cr * sx; a1 = sr * sx; a2 = -sY * cr * sx;
+      b0 = -cy * sr * sy; b1 = cr * sy; b2 = sY * sr * sy;
+      c0 = sY * sz; c2 = cy * sz;
     }
-    if (part === lamps) lampGlow.setX(part.n, LAMP_GAIN.get(tint) ?? 0);
-    if (recording) recording.push({ part, m: new Float32Array(matrix.elements), tint, linear: tint >= 0 ? colour.clone() : null });
-    part.n++;
+    const z = -side;
+    const at = slotOf(part);
+    const m = part.mesh.instanceMatrix.array as Float32Array, o = at * 16;
+    m[o] = F[0] * a0 + F[4] * a1 + F[8] * a2; m[o + 1] = F[1] * a0 + F[5] * a1 + F[9] * a2; m[o + 2] = F[2] * a0 + F[6] * a1 + F[10] * a2; m[o + 3] = 0;
+    m[o + 4] = F[0] * b0 + F[4] * b1 + F[8] * b2; m[o + 5] = F[1] * b0 + F[5] * b1 + F[9] * b2; m[o + 6] = F[2] * b0 + F[6] * b1 + F[10] * b2; m[o + 7] = 0;
+    m[o + 8] = F[0] * c0 + F[8] * c2; m[o + 9] = F[1] * c0 + F[9] * c2; m[o + 10] = F[2] * c0 + F[10] * c2; m[o + 11] = 0;
+    m[o + 12] = F[0] * along + F[4] * up + F[8] * z + F[12];
+    m[o + 13] = F[1] * along + F[5] * up + F[9] * z + F[13];
+    m[o + 14] = F[2] * along + F[6] * up + F[10] * z + F[14];
+    m[o + 15] = 1;
+    tintAt(part, at, tint);
+  };
+  /** A part that does not move on the vehicle (its body, glass, trim): the vehicle's own frame, copied. */
+  const placeWhole = (part: Part, tint: Tint | null): void => {
+    const at = slotOf(part);
+    const m = part.mesh.instanceMatrix.array as Float32Array, o = at * 16;
+    for (let i = 0; i < 16; i++) m[o + i] = F[i]!;
+    tintAt(part, at, tint);
+  };
+  /** DO NOT write `setMatrixAt` on a part anywhere else: a parked car's kept instances are only what passed through `slotOf`. */
+  const write = (part: Part, matrix: Matrix4, tint: Tint | null): void => {
+    const at = slotOf(part);
+    const m = part.mesh.instanceMatrix.array as Float32Array, o = at * 16, e = matrix.elements;
+    for (let i = 0; i < 16; i++) m[o + i] = e[i]!;
+    tintAt(part, at, tint);
+  };
+  /** The soft disc under a vehicle (`blobShadows.ts` blobInto). */
+  const placeBlob = (x: number, y: number, deck: number, angle: number, radius: number, length: number): void => {
+    const at = slotOf(blobs);
+    blobInto(blobs.mesh.instanceMatrix.array as Float32Array, at * 16, x, deck, -y, angle, radius, length);
   };
   /** DO NOT go back to dropping what passes the capacity: the town's parked cars past the fleet's ceiling were not drawn. */
   const growPart = (part: Part, needed: number): void => {
@@ -1123,12 +1277,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const matrices = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
     matrices.array.set(mesh.instanceMatrix.array);
     matrices.setUsage(DynamicDrawUsage);
-    const colours = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
-    if (mesh.instanceColor) colours.array.set(mesh.instanceColor.array);
-    colours.setUsage(DynamicDrawUsage);
+    // DO NOT give a colour to a mesh made without one (the discs): another program, built during play.
+    const colours = mesh.instanceColor ? new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3) : null;
+    if (colours && mesh.instanceColor) { colours.array.set(mesh.instanceColor.array); colours.setUsage(DynamicDrawUsage); }
     mesh.dispose();
     mesh.instanceMatrix = matrices;
     mesh.instanceColor = colours;
+    // A new buffer is sent whole the first time it is drawn.
+    watchUploads(part);
     if (part === lamps) {
       const glow = new InstancedBufferAttribute(new Float32Array(capacity), 1);
       glow.array.set(lampGlow.array);
@@ -1138,25 +1294,11 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       lampGlow = glow;
     }
   };
-  /** A parked car's instances as written (`place`), kept while it stands where it stood */
-  /** `linear`: the tint as the working colour space holds it, worked out once */
-  interface Written { readonly part: Part; readonly m: Float32Array; readonly tint: number; readonly linear: Color | null }
-  let recording: Written[] | null = null;
-  const parkedDraws = new Map<number, { x: number; y: number; angle: number; deck: number; band: number; levels: number; version: number; paint: number; writes: Written[]; seen: number; blob: Matrix4 | null }>();
-  /** Pixels a metre where the vehicle being drawn stands (`screenScale`): its parts' levels (`vehicleLevels.ts`). */
-  let drawPixels = Number.POSITIVE_INFINITY;
-  const replay = (writes: readonly Written[]): void => {
-    for (const rec of writes) {
-      const part = rec.part;
-      if (part.n >= part.mesh.instanceMatrix.count) growPart(part, part.n + 1);
-      (part.mesh.instanceMatrix.array as Float32Array).set(rec.m, part.n * 16);
-      if (rec.linear) {
-        part.mesh.setColorAt(part.n, rec.linear);
-        part.tinted = true;
-      }
-      if (part === lamps) lampGlow.setX(part.n, LAMP_GAIN.get(rec.tint) ?? 0);
-      part.n++;
-    }
+  /** An attribute's instances [from, to) sent at the next draw (the ranges of three's `WebGLAttributes.updateBuffer`). */
+  const send = (attribute: InstancedBufferAttribute, from: number, to: number, size: number): void => {
+    attribute.clearUpdateRanges();
+    attribute.addUpdateRange(from * size, (to - from) * size);
+    attribute.needsUpdate = true;
   };
 
   /** Road wheels, plus their hubs at the closest band. */
@@ -1165,23 +1307,25 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // Each at the level its size on the screen allows: the unit tyre and rim scaled by the wheel (its largest scale).
     const wheels = rung(wheelLevels, levelFor(drawPixels * tyreSize(plan)));
     const hubs = rung(hubLevels, levelFor(drawPixels * rimSize(plan)));
-    plan.axleAlong.forEach((along, axle) => {
+    const axles = plan.axleAlong;
+    for (let axle = 0; axle < axles.length; axle++) {
+      const along = axles[axle]!;
       // Only the front axle steers; every hub turns with the distance driven
       const steer = axle === 0 ? lamp.steer : 0;
       if (plan.shape === 'bicycle') {
-        place(thinWheels, along, 0, plan.wheelRadius, d, d, plan.tread, RUBBER, 0, steer);
-        place(spokes, along, 0, plan.wheelRadius, d, d, plan.tread, CHROME, lamp.spin, steer);
-        return;
+        place(thinWheels, along, 0, plan.wheelRadius, d, d, plan.tread, T_RUBBER, 0, steer);
+        place(spokes, along, 0, plan.wheelRadius, d, d, plan.tread, T_CHROME, lamp.spin, steer);
+        continue;
       }
       if (plan.axleSide === 0) {
-        if (wheels) place(wheels, along, 0, plan.wheelRadius, d, d, plan.tread, RUBBER, 0, steer);
+        if (wheels) place(wheels, along, 0, plan.wheelRadius, d, d, plan.tread, T_RUBBER, 0, steer);
         if (band >= 1 && hubs) {
-          place(hubs, along, 0, plan.wheelRadius, d * 0.45, d * 0.45, plan.tread * 1.1, HUB, lamp.spin, steer);
+          place(hubs, along, 0, plan.wheelRadius, d * 0.45, d * 0.45, plan.tread * 1.1, T_HUB, lamp.spin, steer);
         }
-        return;
+        continue;
       }
       for (const side of SIDES) {
-        if (wheels) place(wheels, along, side * plan.axleSide, plan.wheelRadius, d, d, plan.tread, RUBBER, 0, steer);
+        if (wheels) place(wheels, along, side * plan.axleSide, plan.wheelRadius, d, d, plan.tread, T_RUBBER, 0, steer);
         if (band >= 1 && hubs) {
           place(
             hubs,
@@ -1191,96 +1335,106 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
             d * 0.52,
             d * 0.52,
             plan.tread * 0.5,
-            HUB,
+            T_HUB,
             lamp.spin,
             steer,
           );
         }
       }
-    });
+    }
   };
 
+  /** A part that does not move on the vehicle (`drawCar`), at the level `detail` its size allows: the vehicle's own frame. */
+  const wholeAt = (l: Ladder | null, detail: number, tint: Tint | null): void => {
+    const part = l ? rung(l, detail) : null;
+    if (part) placeWhole(part, tint);
+  };
+  /** A door's lowered window this frame (`windowPane`), written in place. */
+  const pane = { visible: true, up: 0, sy: 1 };
+
   /** Hatchback, sedan, SUV and van, from the class's model (`vehicleModels.ts`) */
-  const drawCar = (vehicle: SimVehicle, plan: BodyPlan, paintHex: number, look: VehicleLook, band: number): void => {
-    const car = carParts.get(bodyKey(vehicle));
+  const drawCar = (vehicle: SimVehicle, s: VehicleDraw, band: number): void => {
+    const car = s.car;
     if (!car) return;
     const model = car.model;
+    const paint = s.paintTint;
     if (band < 1) {
       // Far away: one opaque, low-poly body, glass and wheels painted on.
-      place(car.far, 0, 0, 0, 1, 1, 1, paintHex);
+      placeWhole(car.far, paint);
       for (const l of model.taillamps) place(lamps, l.x, -l.z, l.y, l.sx, l.sy, l.sz, lamp.tail);
       return;
     }
+    const look = s.look;
     const doorsMoving = vehicle.doors.length > 0;
     // The parts that do not move, each at the level whose error is under half a pixel at this car's size (`vehicleLevels.ts`).
     const detail = levelFor(drawPixels);
-    const whole = (l: Ladder | null, tint: number): void => {
-      const part = l ? rung(l, detail) : null;
-      if (part) place(part, 0, 0, 0, 1, 1, 1, tint);
-    };
     // Real shadows from the whole vehicle only; the middle level's is a soft disc (`sync`).
     const shell = band >= 2 ? car.shell : car.shellLite;
+    const doors = model.doors;
     if (!doorsMoving && look.windowsDown === 0) {
-      whole(shell, paintHex);
-      whole(car.glass, -1);
+      wholeAt(shell, detail, paint);
+      wholeAt(car.glass, detail, null);
     } else if (!doorsMoving) {
       // A window down: the fixed glazing, then each door's window, lowered into its door
-      whole(shell, paintHex);
-      place(car.openGlass, 0, 0, 0, 1, 1, 1, -1);
-      model.doors.forEach((door, i) => {
+      wholeAt(shell, detail, paint);
+      placeWhole(car.openGlass, null);
+      for (let i = 0; i < doors.length; i++) {
+        const door = doors[i]!;
         const down = (look.windowsDown & (door.side === -1 ? 1 : 2)) !== 0 && door.kind === 'hinge';
-        const pane = windowPane(door, down ? look.windowDrop : 0);
-        if (pane.visible) place(car.doorGlass[i]!, door.hingeX, -door.hingeZ, pane.up, 1, pane.sy, 1, -1);
-      });
+        windowPane(door, down ? look.windowDrop : 0, pane);
+        if (pane.visible) place(car.doorGlass[i]!, door.hingeX, -door.hingeZ, pane.up, 1, pane.sy, 1, null);
+      }
     } else {
-      place(car.openShell, 0, 0, 0, 1, 1, 1, paintHex);
-      place(car.openGlass, 0, 0, 0, 1, 1, 1, -1);
-      model.doors.forEach((door, i) => {
+      placeWhole(car.openShell, paint);
+      placeWhole(car.openGlass, null);
+      for (let i = 0; i < doors.length; i++) {
+        const door = doors[i]!;
         const open = doorOpening(vehicle, door.index);
         if (door.kind === 'slide') {
           // A plug door: out a little, then along the body.
           const out = Math.min(1, open * 4) * m(0.07);
           const along = door.hingeX + door.slide * smooth01((open - 0.15) / 0.85);
           const across = -(door.hingeZ + door.side * out);
-          place(car.doors[i]!, along, across, 0, 1, 1, 1, paintHex);
-          place(car.doorGlass[i]!, along, across, 0, 1, 1, 1, -1);
-          return;
+          place(car.doors[i]!, along, across, 0, 1, 1, 1, paint);
+          place(car.doorGlass[i]!, along, across, 0, 1, 1, 1, null);
+          continue;
         }
         // Swung about the hinge, outwards on its own side.
         const swing = open * DOOR_SWING;
-        place(car.doors[i]!, door.hingeX, -door.hingeZ, 0, 1, 1, 1, paintHex, 0, door.side * swing);
-        place(car.doorGlass[i]!, door.hingeX, -door.hingeZ, 0, 1, 1, 1, -1, 0, door.side * swing);
-      });
+        place(car.doors[i]!, door.hingeX, -door.hingeZ, 0, 1, 1, 1, paint, 0, door.side * swing);
+        place(car.doorGlass[i]!, door.hingeX, -door.hingeZ, 0, 1, 1, 1, null, 0, door.side * swing);
+      }
     }
     const roof = band >= 2 ? car.roof : car.roofLite;
     const accent = band >= 2 ? car.accent : car.accentLite;
     if (roof && car.roofGlass) {
-      if (look.glassRoof) place(car.roofGlass, 0, 0, 0, 1, 1, 1, -1);
-      else whole(roof, look.blackRoof ? 0x15171a : paintHex);
+      if (look.glassRoof) placeWhole(car.roofGlass, null);
+      else wholeAt(roof, detail, look.blackRoof ? T_BLACK_ROOF : paint);
     }
-    whole(accent, look.accent);
-    placeWheels(plan, band);
+    wholeAt(accent, detail, s.accent);
+    placeWheels(s.plan, band);
 
-    whole(car.trim, -1);
+    wholeAt(car.trim, detail, null);
     for (const l of model.headlamps) place(lamps, l.x, -l.z, l.y, l.sx, l.sy, l.sz, lamp.head);
     for (const l of model.taillamps) place(lamps, l.x, -l.z, l.y, l.sx, l.sy, l.sz, lamp.tail);
     for (const l of model.indicators) {
       // `lamp.indicate` is +1 for left, and the model's left is -Z.
       if (lamp.indicate !== 0 && lamp.indicate === -l.side) {
-        place(lamps, l.x, -l.z, l.y, l.sx * 1.2, l.sy, l.sz, INDICATOR);
+        place(lamps, l.x, -l.z, l.y, l.sx * 1.2, l.sy, l.sz, T_INDICATOR);
       }
     }
     if (band < 2) return;
-    if (!doorsMoving) whole(car.interior, -1);
+    if (!doorsMoving) wholeAt(car.interior, detail, null);
     else {
-      place(car.openInterior, 0, 0, 0, 1, 1, 1, -1);
-      model.doors.forEach((door, i) => {
-        const card = car.doorCards[i];
-        if (!card || door.kind !== 'hinge') return;
-        place(card, door.hingeX, -door.hingeZ, 0, 1, 1, 1, -1, 0, door.side * doorOpening(vehicle, door.index) * DOOR_SWING);
-      });
+      placeWhole(car.openInterior, null);
+      for (let i = 0; i < doors.length; i++) {
+        const door = doors[i]!, card = car.doorCards[i];
+        if (!card || door.kind !== 'hinge') continue;
+        place(card, door.hingeX, -door.hingeZ, 0, 1, 1, 1, null, 0, door.side * doorOpening(vehicle, door.index) * DOOR_SWING);
+      }
     }
-    model.plates.forEach((l, i) => place(lamps, l.x, -l.z, l.y, l.sx, l.sy, l.sz, i < 2 ? PLATE : DESTINATION));
+    const plates = model.plates;
+    for (let i = 0; i < plates.length; i++) { const l = plates[i]!; place(lamps, l.x, -l.z, l.y, l.sx, l.sy, l.sz, i < 2 ? T_PLATE : T_DESTINATION); }
     placeCarOccupants(vehicle, car);
   };
 
@@ -1330,10 +1484,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // Only the seats the simulation can fill: `Vehicle.seats` is a 32-bit mask, and `1 << 32` is 1 again in JavaScript.
     const seatCount = Math.min(model.seats.length, vehicle.archetype.seats);
     const hasChild = carriesChild(vehicle);
-    // A person picked up from the street already has a visible identity.
-    for (const pickedFirst of [true, false]) for (let index = 0; index < seatCount; index++) {
+    // A person picked up from the street already has a visible identity (two rounds, no list made a car).
+    for (let round = 0; round < 2; round++) for (let index = 0; index < seatCount; index++) {
       if ((vehicle.seats & (1 << index)) === 0 || index === moving) continue;
-      if ((vehicle.people[index] !== undefined) !== pickedFirst) continue;
+      if ((vehicle.people[index] !== undefined) !== (round === 0)) continue;
       const seat = model.seats[index]!;
       if (seat.row > rowsDrawn) continue;
       seatWorldInto(seat, seatPoint, seat.hipY);
@@ -1377,8 +1531,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // The rim at the driver's size too, so the hands on it are on it.
     object.scale.set(size, size, size);
     object.updateMatrix();
-    // Through `write`, so a parked car's copied frames keep its wheel.
-    write(part, object.matrix, -1);
+    // Through `write`, so a parked car's kept instances keep its wheel.
+    write(part, object.matrix, null);
   };
 
   const seatWorld = (seat: { x: number; z: number }): { x: number; y: number } =>
@@ -1449,25 +1603,36 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   };
 
   /** A motorcycle or a bicycle from its model */
-  const drawTwoWheeler = (vehicle: SimVehicle, plan: BodyPlan, paintHex: number, look: VehicleLook, band: number): void => {
-    const bike = twoWheelerParts.get(vehicle.archetype.id);
+  const drawTwoWheeler = (vehicle: SimVehicle, s: VehicleDraw, band: number): void => {
+    const bike = s.bike;
     if (!bike) return;
     const model = bike.model;
-    place(bike.body, 0, 0, 0, 1, 1, 1, paintHex);
-    place(bike.steering, model.headX, 0, model.headY, 1, 1, 1, CHROME, 0, lamp.steer);
-    placeWheels(plan, band);
+    placeWhole(bike.body, s.paintTint);
+    place(bike.steering, model.headX, 0, model.headY, 1, 1, 1, T_CHROME, 0, lamp.steer);
+    placeWheels(s.plan, band);
     if (band < 1) return;
-    place(bike.trim, 0, 0, 0, 1, 1, 1, TRIM);
-    if (bike.cranks) place(bike.cranks, model.bracketX, 0, model.bracketY, 1, 1, 1, CHROME, -lamp.crank);
+    placeWhole(bike.trim, T_TRIM);
+    if (bike.cranks) place(bike.cranks, model.bracketX, 0, model.bracketY, 1, 1, 1, T_CHROME, -lamp.crank);
     const h = model.headlamp;
-    place(lamps, h.x, 0, h.y, h.sx, h.sy, h.sz, HEADLAMP, 0, lamp.steer);
+    place(lamps, h.x, 0, h.y, h.sx, h.sy, h.sz, T_HEADLAMP, 0, lamp.steer);
     const t = model.taillamp;
     place(lamps, t.x, 0, t.y, t.sx, t.sy, t.sz, lamp.tail);
-    placeRiderFigure(vehicle, model, plan.shape === 'bicycle', look);
+    placeRiderFigure(vehicle, model, s.plan.shape === 'bicycle', s);
+  };
+
+  /** What a rider plays this frame: the same few plays filled in again for every rider, none made a frame. */
+  const riderPlays: { key: CitizenClipKey; phase: number; weight: number }[] = [];
+  const riderPool = [0, 1, 2, 3].map(() => ({ key: 'bikeStop' as CitizenClipKey, phase: 0, weight: 0 }));
+  const riderPlay = (key: CitizenClipKey, phase: number, weight: number): void => {
+    const play = riderPool[riderPlays.length]!;
+    play.key = key;
+    play.phase = phase;
+    play.weight = weight;
+    riderPlays.push(play);
   };
 
   /** The person astride: a baked IK pose */
-  const placeRiderFigure = (vehicle: SimVehicle, model: TwoWheelerModel, cyclist: boolean, look: VehicleLook): void => {
+  const placeRiderFigure = (vehicle: SimVehicle, model: TwoWheelerModel, cyclist: boolean, s: VehicleDraw): void => {
     if (occupantBand < 1) return;
     const pelvisUp = model.seatY;
     // The seat point rolled about the road-level forward axis (`place`).
@@ -1477,61 +1642,137 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const height = fdeck + pelvisUp * fcos;
     const moving = riderMoving(vehicle);
     const steer = Math.max(-1, Math.min(1, lamp.steer / STEER_FULL));
-    const plays = riderPlays;
-    plays.length = 0;
+    riderPlays.length = 0;
     if (cyclist) {
       const phase = (-lamp.crank - Math.PI) / (2 * Math.PI);
-      plays.push({ key: 'bikePedal', phase, weight: moving * (1 - Math.abs(steer) * 0.4) });
-      if (steer > 0) plays.push({ key: 'bikeLeft', phase: 0, weight: moving * steer * 0.4 });
-      if (steer < 0) plays.push({ key: 'bikeRight', phase: 0, weight: moving * -steer * 0.4 });
-      plays.push({ key: 'bikeStop', phase: 0, weight: 1 - moving });
+      riderPlay('bikePedal', phase, moving * (1 - Math.abs(steer) * 0.4));
+      if (steer > 0) riderPlay('bikeLeft', 0, moving * steer * 0.4);
+      if (steer < 0) riderPlay('bikeRight', 0, moving * -steer * 0.4);
+      riderPlay('bikeStop', 0, 1 - moving);
     } else {
-      plays.push({ key: 'motoRide', phase: 0, weight: moving * (1 - Math.abs(steer)) });
-      if (steer > 0) plays.push({ key: 'motoLeft', phase: 0, weight: moving * steer });
-      if (steer < 0) plays.push({ key: 'motoRight', phase: 0, weight: moving * -steer });
-      plays.push({ key: 'motoStop', phase: 0, weight: 1 - moving });
+      riderPlay('motoRide', 0, moving * (1 - Math.abs(steer)));
+      if (steer > 0) riderPlay('motoLeft', 0, moving * steer);
+      if (steer < 0) riderPlay('motoRight', 0, moving * -steer);
+      riderPlay('motoStop', 0, 1 - moving);
     }
     // At the size the pose was solved at: the hands are on the grips and the feet on the pegs or pedals only there.
-    const drawn = pedestrians.drawClip(seatIdentity(vehicle, seatPerson(vehicle, 0), false), x, y, height, fyaw, plays, froll, Infinity, false, 1,
+    const drawn = pedestrians.drawClip(seatIdentity(vehicle, seatPerson(vehicle, 0), false), x, y, height, fyaw, riderPlays, froll, Infinity, false, 1,
       cyclist ? null : helmetMatrix);
     if (!cyclist && drawn > 0) {
       // A motorcyclist's helmet, fitted to this body's head (`riderPoses.helmetShape`) and put where the pose just drawn has it.
-      write(helmets, helmetMatrix, look.helmet);
+      write(helmets, helmetMatrix, s.helmet);
     }
   };
 
   /** The helmet of the rider just drawn (`drawClip`). */
   const helmetMatrix = new Matrix4();
 
-
-
   /** Refreshed for every vehicle, read by whichever body builder runs. */
-  const lamp: LampState = { head: HEADLAMP, tail: TAILLAMP, indicate: 0, steer: 0, spin: 0, crank: 0 };
+  const lamp: LampState = { head: T_HEADLAMP, tail: T_TAILLAMP, indicate: 0, steer: 0, spin: 0, crank: 0 };
   // One elevation callback for every vehicle and pedestrian drawn this frame.
   let currentSegment: SegmentId | undefined;
   const elevationOnCurrent = (x: number, y: number): number => elevationAt(x, y, currentSegment);
-  /** DO NOT key it by position alone: a parked car kept the height it was first asked at and floated over */
-  const offRoadDecks = new WeakMap<SimVehicle, { x: number; y: number; deck: number; seen: number }>();
   /** DO NOT ask the diary per car (`touches`): every car read every entry since its serial, cars x entries a frame */
   let offRoadSweep: ChangeSweep | null = null;
   let offRoadSerial = 0;
-  const offRoadDeck = (v: SimVehicle, x: number, y: number): number => {
-    const known = offRoadDecks.get(v);
-    if (known && known.x === x && known.y === y) {
-      if (known.seen >= offRoadSerial) return known.deck;
-      if (!offRoadSweep!.touches(known.seen, x, y)) {
-        known.seen = offRoadSerial;
-        return known.deck;
+  /** DO NOT key it by position alone: a parked car kept the height it was first asked at and floated over (kept for the view it was asked for, `drawOf`). */
+  const offRoadDeck = (s: VehicleDraw, v: SimVehicle, x: number, y: number): number => {
+    if (s.deckKnown && s.deckX === x && s.deckY === y) {
+      if (s.deckSeen >= offRoadSerial) return s.deckValue;
+      if (!offRoadSweep!.touches(s.deckSeen, x, y)) {
+        s.deckSeen = offRoadSerial;
+        return s.deckValue;
       }
     }
     const lot = v.free?.lot ?? null;
     const onLot = lot !== null && lotAt ? lotAt(lot, x, y) : NaN;
     const deck = Number.isFinite(onLot) ? onLot : elevationAt(x, y, undefined);
-    offRoadDecks.set(v, { x, y, deck, seen: offRoadSerial });
+    s.deckKnown = true; s.deckX = x; s.deckY = y; s.deckValue = deck; s.deckSeen = offRoadSerial;
     return deck;
   };
-  // `vehicleLook` by id: it is a pure function of the id and the seat count
-  const looks = new Map<number, { seats: number; look: VehicleLook; seen: number }>();
+
+  /** DO NOT look a vehicle up in a map for each thing drawn (its ride, its look, its parked copy, its body by a joined string, its paint by its CSS): one record by id holds them, refreshed when they change. */
+  interface VehicleDraw extends KeptHolder, LeanState {
+    /** The view it was last drawn for: another view of the same id asks its lean and its ground again. */
+    view: SimVehicle | null;
+    archetype: Archetype | null;
+    plan: BodyPlan;
+    car: CarParts | null;
+    bike: TwoWheelerParts | null;
+    /** `vehicleLook`, a pure function of the id and the seat count, and its two tints. */
+    look: VehicleLook;
+    lookSeats: number;
+    accent: Tint;
+    helmet: Tint;
+    color: string | null;
+    paint: number;
+    paintTint: Tint;
+    /** Suspension: the frame eases towards the road, never snaps; and the level it was drawn at (-1: none yet). */
+    rideSet: boolean;
+    deck: number;
+    pitch: number;
+    roll: number;
+    lod: number;
+    /** The frame it was last drawn in. */
+    seen: number;
+    /** The ground under it off the road (`offRoadDeck`): where it was asked and the diary's serial then. */
+    deckKnown: boolean;
+    deckX: number;
+    deckY: number;
+    deckValue: number;
+    deckSeen: number;
+    /** Standing still in its bay: its place in `keptList` (-1: none), the frame it was last drawn kept, its kept instances and what they were written for. */
+    keptAt: number;
+    keptSeen: number;
+    readonly keptParts: Part[];
+    keptX: number;
+    keptY: number;
+    keptAngle: number;
+    keptDeck: number;
+    keptBand: number;
+    keptLevels: number;
+    keptVersion: number;
+    keptPaint: number;
+    keptShadows: boolean;
+  }
+  const T_WHITE = tintOf(0xffffff);
+  const BLANK_LOOK = vehicleLook(0, 1);
+  const draws = new Map<number, VehicleDraw>();
+  /** The vehicles asked of the client's grid for this frame's view (`SimClient.vehiclesIn`), reused. */
+  const inView: SimVehicle[] = [];
+  const drawOf = (vehicle: SimVehicle): VehicleDraw => {
+    let s = draws.get(vehicle.id);
+    if (!s) {
+      s = {
+        keptSlots: [], leanKnown: false, lean: 0, leanAge: 0, view: null, archetype: null, plan: FALLBACK_PLAN, car: null, bike: null,
+        look: BLANK_LOOK, lookSeats: -1, accent: T_WHITE, helmet: T_WHITE, color: null, paint: 0, paintTint: T_WHITE,
+        rideSet: false, deck: 0, pitch: 0, roll: 0, lod: -1, seen: 0, deckKnown: false, deckX: 0, deckY: 0, deckValue: 0, deckSeen: 0,
+        keptAt: -1, keptSeen: -1, keptParts: [], keptX: 0, keptY: 0, keptAngle: 0, keptDeck: 0, keptBand: 0, keptLevels: 0, keptVersion: 0,
+        keptPaint: 0, keptShadows: false,
+      };
+      draws.set(vehicle.id, s);
+    }
+    if (s.view !== vehicle) { s.view = vehicle; s.deckKnown = false; s.leanKnown = false; }
+    const a = vehicle.archetype;
+    if (s.archetype !== a) {
+      s.archetype = a;
+      s.plan = planOf(a);
+      s.car = a.shape === 'car' || a.shape === 'bus' || a.shape === 'truck' ? carParts.get(bodyKey(vehicle)) ?? null : null;
+      s.bike = a.shape === 'motorcycle' || a.shape === 'bicycle' ? twoWheelerParts.get(a.id) ?? null : null;
+      if (s.lookSeats !== s.plan.seats) {
+        s.lookSeats = s.plan.seats;
+        s.look = vehicleLook(vehicle.id, s.lookSeats);
+        s.accent = tintOf(s.look.accent);
+        s.helmet = tintOf(s.look.helmet);
+      }
+    }
+    if (s.color !== vehicle.color) {
+      s.color = vehicle.color;
+      s.paint = hexOf(vehicle.color);
+      s.paintTint = tintOf(s.paint);
+    }
+    return s;
+  };
 
   return {
     meshes,
@@ -1678,14 +1919,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       gaitDt = gaitClock < 0 ? 0 : Math.min(0.5, Math.max(0, simNow - gaitClock));
       gaitClock = simNow;
       suspensionFrame++;
-      if (suspensionFrame % 600 === 0) {
-        for (const [id, ride] of suspension) if (suspensionFrame - ride.seen > 120) suspension.delete(id);
-        for (const [id, entry] of looks) if (suspensionFrame - entry.seen > 120) looks.delete(id);
-      }
+      // A vehicle not drawn for two seconds: its record let go (a kept one's instances went the frame it was not drawn).
+      if (suspensionFrame % 600 === 0) for (const [id, s] of draws) if (suspensionFrame - s.seen > 120 && s.keptAt < 0) draws.delete(id);
       forgetCast(world);
       pedestrians.begin(options.pedestrianDetail ?? 2, zoom);
       procPixels = options.personPixels ?? null;
-      for (const part of allParts) part.n = 0;
+      // This frame's instances start after the parked cars' kept ones.
+      for (const part of live) part.n = part.kept;
       const band = !detailed ? 0 : zoom >= NEAR_DETAIL_ZOOM ? 2 : 1;
       // Vehicles have their own bands: the far proxy below FAR_BODY_ZOOM, the whole body above it
       const occupantZoom = options.occupantZoom ?? OCCUPANT_ZOOM;
@@ -1697,30 +1937,28 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const pixelRatio = options.pixelRatio ?? 1;
       const softShadows = options.shadows !== false;
       let whole = 0;
-      nearCandidates.length = 0;
+      nearCount = 0;
       // Last frame's answer: this frame's discs and casting agree with each other.
       const bikesCast = bikesWhole;
       let bikesWholeNow = false, carsWheeled = false;
-      vehicleBlobs.begin();
-      if (suspensionFrame % 600 === 0) for (const [id, entry] of parkedDraws) if (suspensionFrame - entry.seen > 120) parkedDraws.delete(id);
       // The traffic, then the scenery's cars parked in their bays, on the ground of the lot: DO NOT walk the whole fleet, only those standing on the view's ground.
-      const lists = options.vehicleBox ? [world.vehiclesIn(options.vehicleBox, VEHICLES_IN_VIEW)] : [world.traffic, world.parked];
+      const lists = options.vehicleBox ? [world.vehiclesIn(options.vehicleBox, inView)] : [world.traffic, world.parked];
       for (const list of lists) for (const vehicle of list) {
+        const s = drawOf(vehicle);
         // Off the road and not moving (the town's parked cars): where it is, with none of the interpolation's sums.
         const at = vehicle.free;
         const pose = POSE;
         if (at && at.px === at.x && at.py === at.y && at.pangle === at.angle) { pose.p.x = at.x; pose.p.y = at.y; pose.angle = at.angle; }
         else framesPoseInto(vehicle.frames, alpha, pose);
         const free = vehicle.free !== null;
-        const plan = planOf(vehicle.archetype);
+        const plan = s.plan;
         const twoWheeled = plan.shape === 'motorcycle' || plan.shape === 'bicycle';
-        const deck = free ? offRoadDeck(vehicle, pose.p.x, pose.p.y) : elevationAt(pose.p.x, pose.p.y, vehicle.segment);
+        const deck = free ? offRoadDeck(s, vehicle, pose.p.x, pose.p.y) : elevationAt(pose.p.x, pose.p.y, vehicle.segment);
         // Off screen, and too far from it for its shadow to fall on it: nothing of this vehicle is written this frame.
         if (options.vehicleVisible && !options.vehicleVisible(pose.p.x, pose.p.y, deck, plan.length * 0.5 + plan.height * 2)) continue;
         // Its own level, by the screen's scale where it stands (a tenth of hysteresis going up).
-        let ride = suspension.get(vehicle.id);
         const pixels = screenScale ? screenScale(pose.p.x, pose.p.y, deck) : Infinity;
-        const was = ride?.lod ?? -1;
+        const was = s.lod;
         let own = -1;
         for (let level = 2; level >= 0; level--) {
           const edge = level === 2 ? occupantZoom : level === 1 ? FAR_BODY_ZOOM : 2 / CAR_LENGTH;
@@ -1729,7 +1967,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if (own < 0) continue;
         // Whole: at most `VEHICLE_NEAR_CAP`, the biggest on the screen (last frame's floor).
         if (own === 2) {
-          nearCandidates.push(pixels);
+          if (nearCount === nearCandidates.length) { const grown = new Float64Array(nearCount * 2); grown.set(nearCandidates); nearCandidates = grown; }
+          nearCandidates[nearCount++] = pixels;
           if (pixels < nearFloor || whole >= VEHICLE_NEAR_CAP) own = 1;
           else whole++;
         }
@@ -1738,23 +1977,22 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if (!twoWheeled && level >= 1) carsWheeled = true;
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
         drawPixels = pixels * pixelRatio;
-        // Standing where it stood, drawn as it was: its instances copied, none of the sums.
-        const still = parked && !twoWheeled && vehicle.doors.length === 0 && !vehicle.kerbStop;
+        // Standing where it stood, drawn as it was: its instances kept where they were written, nothing written or sent.
+        let still = parked && !twoWheeled && vehicle.doors.length === 0 && !vehicle.kerbStop;
         const levels = still ? levelsKey(plan, drawPixels) : 0;
         if (still) {
-          const kept = parkedDraws.get(vehicle.id);
-          if (kept && kept.x === pose.p.x && kept.y === pose.p.y && kept.angle === pose.angle && kept.deck === deck
-            && kept.band === level && kept.levels === levels && kept.version === levelsVersion && kept.paint === hexOf(vehicle.color)) {
-            replay(kept.writes);
-            kept.seen = suspensionFrame;
-            if (ride) { ride.seen = suspensionFrame; ride.lod = own; }
-            if (level < 2 && softShadows) {
-              // Its shadow where it stands, worked out once.
-              kept.blob ??= new Matrix4().makeRotationY(pose.angle).setPosition(pose.p.x, deck, -pose.p.y);
-              vehicleBlobs.add(kept.blob, plan.length * 0.55, plan.width * 0.62);
-            }
+          if (s.keptAt >= 0 && s.keptX === pose.p.x && s.keptY === pose.p.y && s.keptAngle === pose.angle && s.keptDeck === deck
+            && s.keptBand === level && s.keptLevels === levels && s.keptVersion === levelsVersion && s.keptPaint === s.paint
+            && s.keptShadows === softShadows) {
+            s.keptSeen = suspensionFrame;
+            s.seen = suspensionFrame;
+            s.lod = own;
             continue;
           }
+          // Its kept instances already drawn this frame by another view of the id: this one drawn with the frame's.
+          if (s.keptSeen === suspensionFrame) still = false;
+          // Moved, levelled, repainted: what was kept of it goes before it is written again.
+          else if (s.keptAt >= 0) dropKept(s);
         }
         // A parked car's engine is off; a bicycle has none. Far off (the proxy), no smoke drawn.
         if (options.exhaust && level >= 1 && plan.shape !== 'bicycle' && !parked) {
@@ -1762,51 +2000,42 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           options.exhaust(pose.p.x, pose.p.y, deck, pose.angle, plan.length, vehicle.v, free);
         }
         // A two-wheeler leans into its bend and, stopped, tilts onto the rider's foot on the road (`TwoWheelerFit.stopTilt`).
-        const fit = twoWheeled ? twoWheelerParts.get(vehicle.archetype.id)?.model.fit : undefined;
+        const fit = twoWheeled ? s.bike?.model.fit : undefined;
         // The road under each axle and each side
         const front = plan.axleAlong[0] ?? plan.length * 0.35;
         const rear = plan.axleAlong[plan.axleAlong.length - 1] ?? -plan.length * 0.35;
         const seg = free ? undefined : vehicle.inSegment;
         currentSegment = seg;
         // A car off the road stands level on its lot (lots are laid near flat).
-        const slope = !free && (level >= 2 || twoWheeled || !ride || (level === 1 && ((suspensionFrame + vehicle.id) & 1) === 0));
+        const slope = !free && (level >= 2 || twoWheeled || !s.rideSet || (level === 1 && ((suspensionFrame + vehicle.id) & 1) === 0));
         const want = WANT;
         if (free || (level === 0 && !twoWheeled)) { want.deck = deck; want.pitch = 0; want.roll = 0; }
         else if (slope) roadFrameInto(elevationOnCurrent, pose.p.x, pose.p.y, pose.angle, front, rear, twoWheeled ? 0 : plan.axleSide, deck, want);
-        else { want.deck = deck; want.pitch = ride!.pitch; want.roll = ride!.roll; }
-        const wantDeck = want.deck;
-        const wantPitch = want.pitch;
-        const wantRoll = want.roll;
+        else { want.deck = deck; want.pitch = s.pitch; want.roll = s.roll; }
         // Suspension: pitch and roll ease towards the road over a few hundredths of a second, so a change of grade is ridden
-        if (!ride || Math.abs(ride.pitch - wantPitch) > 0.2) {
-          ride = { deck: wantDeck, pitch: wantPitch, roll: wantRoll, seen: suspensionFrame, lod: own };
-          suspension.set(vehicle.id, ride);
+        if (!s.rideSet || Math.abs(s.pitch - want.pitch) > 0.2) {
+          s.rideSet = true;
+          s.pitch = want.pitch;
+          s.roll = want.roll;
         } else {
           const k = 1 - Math.exp(-suspensionDt / SUSPENSION_TAU);
-          ride.pitch += (wantPitch - ride.pitch) * k;
-          ride.roll += (wantRoll - ride.roll) * k;
-          ride.deck = wantDeck;
-          ride.seen = suspensionFrame;
-          ride.lod = own;
+          s.pitch += (want.pitch - s.pitch) * k;
+          s.roll += (want.roll - s.roll) * k;
         }
-        frameAt(pose.p.x, pose.p.y, pose.angle, ride.deck,
-          twoWheeled ? leanOf(vehicle) + (fit ? fit.stopTilt * (1 - riderMoving(vehicle)) : 0) : 0,
-          ride.pitch, ride.roll);
-        const paintHex = hexOf(vehicle.color);
-        let lookEntry = looks.get(vehicle.id);
-        if (!lookEntry || lookEntry.seats !== plan.seats) {
-          lookEntry = { seats: plan.seats, look: vehicleLook(vehicle.id, plan.seats), seen: suspensionFrame };
-          looks.set(vehicle.id, lookEntry);
-        } else lookEntry.seen = suspensionFrame;
-        const look = lookEntry.look;
+        s.deck = want.deck;
+        s.seen = suspensionFrame;
+        s.lod = own;
+        frameAt(pose.p.x, pose.p.y, pose.angle, s.deck,
+          twoWheeled ? leanOf(vehicle, s) + (fit ? fit.stopTilt * (1 - riderMoving(vehicle)) : 0) : 0,
+          s.pitch, s.roll);
         occupantBand = twoWheeled ? vehicleBand : level;
         frameClock = vehicle.age;
 
         // Brakes and indicators, straight off the simulation.
         const decel = (vehicle.prev.v - vehicle.v) / DT;
         // A car standing in its bay with nobody in it has its lamps off.
-        lamp.head = parked ? HEADLAMP_OFF : HEADLAMP;
-        lamp.tail = parked ? TAILLAMP_OFF : decel >= BRAKE_DECEL ? BRAKELAMP : TAILLAMP;
+        lamp.head = parked ? T_HEADLAMP_OFF : T_HEADLAMP;
+        lamp.tail = parked ? T_TAILLAMP_OFF : decel >= BRAKE_DECEL ? T_BRAKELAMP : T_TAILLAMP;
         // `lateral` is the unfinished part of a lane change, signed towards the lane being left
         if (level >= 1 || twoWheeled) {
           const side = free ? 0 : vehicle.indicator;
@@ -1818,40 +2047,39 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           // A bicycle's cranks turn a little over half a turn per turn of the wheel: about 80 rpm at a city cyclist's 18 km/h.
           lamp.crank = (driven / (2 * Math.PI * Math.max(plan.wheelRadius, 1e-3))) * CRANK_RATIO * 2 * Math.PI;
         } else { lamp.indicate = 0; lamp.steer = 0; }
-        if (still) recording = [];
+        // Standing still: written into the kept instances, to stay there while it stands as it is.
+        if (still) { recording = s; s.keptAt = keptList.push(s) - 1; }
         switch (plan.shape) {
           case 'motorcycle':
           case 'bicycle':
-            drawTwoWheeler(vehicle, plan, paintHex, look, Math.max(1, vehicleBand));
+            drawTwoWheeler(vehicle, s, Math.max(1, vehicleBand));
             break;
           case 'car':
           case 'bus':
           case 'truck':
-            drawCar(vehicle, plan, paintHex, look, level);
+            drawCar(vehicle, s, level);
             break;
         }
-        if (still && recording) {
-          parkedDraws.set(vehicle.id, { x: pose.p.x, y: pose.p.y, angle: pose.angle, deck, band: level, levels, version: levelsVersion, paint: paintHex, writes: recording, seen: suspensionFrame, blob: null });
-          recording = null;
-        }
         // Below the whole level, its shadow is a soft disc (the body casts none); a two-wheeler's too while none is drawn whole
-        if ((twoWheeled ? !bikesCast : level < 2) && softShadows) {
-          blobMatrix.makeRotationY(pose.angle).setPosition(pose.p.x, ride.deck, -pose.p.y);
-          vehicleBlobs.add(blobMatrix, plan.length * 0.55, plan.width * 0.62);
+        if ((twoWheeled ? !bikesCast : level < 2) && softShadows) placeBlob(pose.p.x, pose.p.y, s.deck, pose.angle, plan.length * 0.55, plan.width * 0.62);
+        if (still) {
+          recording = null;
+          s.keptSeen = suspensionFrame;
+          s.keptX = pose.p.x; s.keptY = pose.p.y; s.keptAngle = pose.angle; s.keptDeck = deck;
+          s.keptBand = level; s.keptLevels = levels; s.keptVersion = levelsVersion; s.keptPaint = s.paint; s.keptShadows = softShadows;
         }
       }
-      vehicleBlobs.finish();
+      // The parked cars kept and not drawn this frame (gone, out of view, under two pixels, moving off): let go before the frame is drawn.
+      for (let i = keptList.length - 1; i >= 0; i--) { const s = keptList[i]!; if (s.keptSeen !== suspensionFrame) dropKept(s); }
       // The two-wheelers cast only while one is drawn whole; the shared tyres also while a car is drawn with its wheels.
       castersChanged = thinWheels.mesh.castShadow !== bikesCast;
       for (const t of twoWheelerParts.values()) { t.body.mesh.castShadow = bikesCast; t.trim.mesh.castShadow = bikesCast; }
       thinWheels.mesh.castShadow = bikesCast;
       for (const part of wheelLevels.parts) part.mesh.castShadow = bikesCast || carsWheeled;
       bikesWhole = bikesWholeNow;
-      // Next frame's floor for the whole level: the cap's smallest of this frame.
-      if (nearCandidates.length > VEHICLE_NEAR_CAP) {
-        nearCandidates.sort((a, b) => b - a);
-        nearFloor = nearCandidates[VEHICLE_NEAR_CAP - 1]!;
-      } else nearFloor = 0;
+      // Next frame's floor for the whole level: the cap's smallest of this frame (the cap-th largest, sorted ascending).
+      if (nearCount > VEHICLE_NEAR_CAP) nearFloor = nearCandidates.subarray(0, nearCount).sort()[nearCount - VEHICLE_NEAR_CAP]!;
+      else nearFloor = 0;
 
       // Pedestrians start at band 1: zoomed out past it a whole person is smaller than a car's wing mirror
       if (band >= 1) {
@@ -1871,7 +2099,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           const rise = open ? m(0.04) : footwayRiseAt(net, pose.p.x, pose.p.y) * walkingRise(net, pose.p.x, pose.p.y, ped.ground !== 'crossing',
             segment === undefined ? 'ground' : net.doc.segment(segment)?.structure ?? 'ground');
           const deck = (open && roughGroundAt ? land(pose.p.x, pose.p.y) : below) + rise;
-          frameAt(pose.p.x, pose.p.y, pose.angle, deck);
+          // (No vehicle frame worked out for a walker: both bodies are drawn from the pose and the deck alone.)
           if (procedural && ped.id !== PLAYER_ID) {
             // What they are doing shows before the fright on their face (a photo held up, a crouch, a fall).
             const doing = ped.gesture?.kind;
@@ -1913,35 +2141,31 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       }
       pedestrians.finish();
 
-      // Upload only what was written this frame.
+      // Send only what changed: this frame's instances, and the kept ones moved or written since the GPU last took them.
       casting = pedestrians.casting || (procedural ? procedural.casting : false);
-      for (const part of allParts) {
-        part.mesh.count = part.n;
-        if (part.n > 0 && part.mesh.castShadow) casting = true;
+      let drawn = 0;
+      for (let i = 0; i < live.length; i++) {
+        const part = live[i]!, mesh = part.mesh, n = part.n;
+        mesh.count = n;
         // An empty instanced mesh still costs a program bind, its uniforms and a state change in every pass
-        part.mesh.visible = part.n > 0;
-        const matrix = part.mesh.instanceMatrix;
-        matrix.clearUpdateRanges();
-        if (part.n > 0) matrix.addUpdateRange(0, part.n * 16);
-        matrix.needsUpdate = true;
-
-        const colour = part.mesh.instanceColor;
-        if (colour && part.tinted) {
-          colour.clearUpdateRanges();
-          if (part.n > 0) colour.addUpdateRange(0, part.n * 3);
-          colour.needsUpdate = true;
-        }
-        if (part === lamps) {
-          lampGlow.clearUpdateRanges();
-          if (part.n > 0) lampGlow.addUpdateRange(0, part.n);
-          lampGlow.needsUpdate = true;
-        }
-        part.tinted = false;
+        mesh.visible = n > 0;
+        if (n === 0) { part.listed = false; part.lo = 0; part.hi = 0; continue; }
+        live[drawn++] = part;
+        if (mesh.castShadow) casting = true;
+        if (n > part.kept) touch(part, part.kept, n);
+        const hi = Math.min(part.hi, n);
+        if (hi <= part.lo) continue;
+        send(mesh.instanceMatrix, part.lo, hi, 16);
+        if (part.tinted) send(mesh.instanceColor!, part.lo, hi, 3);
+        if (part === lamps) send(lampGlow, part.lo, hi, 1);
       }
+      live.length = drawn;
     },
     dispose() {
       pedestrians.dispose();
-      vehicleBlobs.dispose();
+      blobs.mesh.dispose();
+      blobs.mesh.geometry.dispose();
+      (blobs.mesh.material as Material).dispose();
       for (const part of allParts) part.mesh.dispose();
       for (const geometry of [
         unitBox,

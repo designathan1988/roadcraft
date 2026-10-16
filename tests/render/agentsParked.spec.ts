@@ -9,22 +9,32 @@ import { ChangeJournal } from '@world/changes';
 import { FLEET_CEILING } from '@sim/params';
 import { m } from '@world/units';
 
-/** Parked cars as the renderer draws them: written once, then copied each frame (`parkedDraws`). */
+/** Parked cars as the renderer draws them: written once into instances kept where they are, never written or sent again while they stand (`Part.kept`). */
 
 /** A car standing in its bay with nobody in it: what `sync` takes as parked. */
 function parkedCar(id: number, x: number, y: number, lot: number | null = 1): VehicleView {
-  // Nobody aboard: its engine off and its instances copied from frame to frame (`sync` `still`).
+  // Nobody aboard: its engine off and its instances kept from frame to frame (`sync` `still`).
   return {
     id, archetype: archetypeById('sedan'), color: '#a83a2c', doors: [], kerbStop: null, people: [], peopleAge: [], seats: 0, slain: false, age: 0, v: 0,
     prev: { v: 0 }, free: { x, y, angle: 0.3, px: x, py: y, pangle: 0.3, lot },
     frames: { bx: x, by: y, bangle: 0.3, x, y, angle: 0.3, yawBefore: 0, yawNow: 0, jump: false },
-    segment: undefined, inSegment: undefined, indicator: 0, curvature: 0, odometer: 0,
+    segment: undefined, inSegment: undefined, indicator: 0, curvature: 0, odometer: 0, tickRead: 0,
   };
 }
 
-/** The simulation's view `sync` reads (`SimClient`): no traffic, the parked cars, nobody walking. */
-function worldWith(parked: readonly VehicleView[]): SimClient {
-  return { time: 0, traffic: [], vehicles: new Map(), parked, isParked: (v: VehicleView) => parked.includes(v), pedViews: [], fleet: 0 } as unknown as SimClient;
+/** A car driving along x on its lane, nobody drawn in it (no seat taken). */
+function movingCar(id: number, x: number, y: number): VehicleView {
+  return {
+    id, archetype: archetypeById('sedan'), color: '#2f5f92', doors: [], kerbStop: null, people: [], peopleAge: [], seats: 0, slain: false, age: 0, v: m(5),
+    prev: { v: m(5) }, free: null, frames: { bx: x, by: y, bangle: 0, x, y, angle: 0, yawBefore: 0, yawNow: 0, jump: false },
+    segment: undefined, inSegment: undefined, indicator: 0, curvature: 0, odometer: 0, tickRead: 0,
+  };
+}
+
+/** The simulation's view `sync` reads (`SimClient`): the traffic, the parked cars, nobody walking. */
+function worldWith(parked: readonly VehicleView[], traffic: readonly VehicleView[] = []): SimClient {
+  const vehicles = new Map<number, VehicleView>(traffic.map((v) => [v.id, v] as const));
+  return { time: 0, traffic, vehicles, parked, isParked: (v: VehicleView) => parked.includes(v), pedViews: [], fleet: 0 } as unknown as SimClient;
 }
 
 /** The network `sync` reads: only its document's diary of changes. */
@@ -34,12 +44,25 @@ const meshesOf = (agents: ReturnType<typeof createAgentMeshes>, test: RegExp): I
   agents.meshes.filter((o): o is InstancedMesh => (o as InstancedMesh).isInstancedMesh === true && test.test(o.name));
 const drawn = (meshes: readonly InstancedMesh[]): number => meshes.reduce((n, mesh) => n + (mesh.visible ? mesh.count : 0), 0);
 
-describe('parked cars drawn by copying their first frame', () => {
+/** The GPU takes what was sent, as three does (`WebGLAttributes.updateBuffer`): the ranges cleared, the upload told. */
+function uploaded(meshes: readonly InstancedMesh[]): void {
+  for (const mesh of meshes) {
+    mesh.instanceMatrix.clearUpdateRanges();
+    mesh.instanceMatrix.onUploadCallback();
+  }
+}
+
+/** Each drawn body's place along x (its instance's translation), in order. */
+const centres = (agents: ReturnType<typeof createAgentMeshes>): number[] => meshesOf(agents, /^car-.*-shell$/)
+  .flatMap((mesh) => (mesh.visible ? Array.from({ length: mesh.count }, (_, i) => mesh.instanceMatrix.array[i * 16 + 12]!) : []))
+  .sort((a, b) => a - b);
+
+describe('parked cars drawn from instances kept where they were written', () => {
   // The page the meshes are made in: the cooked bodies only (`?bodies=cooked`), no procedural crowd.
   beforeAll(() => { vi.stubGlobal('window', { setInterval: () => 0, clearInterval: () => {} }); vi.stubGlobal('location', { search: '?bodies=cooked' }); });
   afterAll(() => { vi.unstubAllGlobals(); });
 
-  it('keep their steering wheel in the copied frames', () => {
+  it('keep their steering wheel in the kept instances', () => {
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
     const world = worldWith([parkedCar(1, 0, 0), parkedCar(2, m(10), 0)]);
     const wheels = meshesOf(agents, /^car-.*-wheel$/);
@@ -47,7 +70,7 @@ describe('parked cars drawn by copying their first frame', () => {
     agents.sync(world, netWith(), 0, true);
     const first = drawn(wheels);
     expect(first).toBe(2);
-    // The second frame copies what the first wrote (`replay`).
+    // The second frame draws what the first wrote, where it wrote it.
     agents.sync(world, netWith(), 0, true);
     expect(drawn(wheels)).toBe(first);
     agents.dispose();
@@ -84,8 +107,9 @@ describe('parked cars drawn by copying their first frame', () => {
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
     const all = meshesOf(agents, /^(car-|vehicle-(wheels|hubs|lamps)|bicycle-|bike-|rider-)/);
     expect(all.length).toBeGreaterThan(100);
-    // Before anything is drawn: every part's buffers are a few instances, not the ceiling's.
+    // Before anything is drawn: every part's buffers are a few instances, not the ceiling's, and none is shown.
     for (const mesh of all) expect(mesh.instanceMatrix.count).toBeLessThanOrEqual(16);
+    expect(drawn(all)).toBe(0);
     const cars: VehicleView[] = [];
     for (let i = 0; i < 40; i++) cars.push(parkedCar(i + 1, (i % 10) * m(8), Math.floor(i / 10) * m(8)));
     agents.sync(worldWith(cars), netWith(), 0, true);
@@ -110,10 +134,73 @@ describe('parked cars drawn by copying their first frame', () => {
     agents.sync(world, netWith(), 0, true);
     expect(drawn(bodies)).toBe(count);
     expect(drawn(wheels)).toBe(count * 4);
-    // And copied in the next frame.
+    // And kept in the next frame.
     agents.sync(world, netWith(), 0, true);
     expect(drawn(bodies)).toBe(count);
     expect(drawn(wheels)).toBe(count * 4);
+    agents.dispose();
+  });
+
+  it('are neither written nor sent again in a frame where nothing of them changed', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const world = worldWith([parkedCar(1, 0, 0), parkedCar(2, m(10), 0), parkedCar(3, m(20), m(10))]);
+    const net = netWith();
+    agents.sync(world, net, 0, true);
+    const shown = meshesOf(agents, /./).filter((mesh) => mesh.visible);
+    expect(shown.length).toBeGreaterThan(5);
+    uploaded(shown);
+    const versions = shown.map((mesh) => mesh.instanceMatrix.version);
+    const matrices = (mesh: InstancedMesh): number[] => Array.from((mesh.instanceMatrix.array as Float32Array).subarray(0, mesh.count * 16));
+    const before = shown.map(matrices);
+    agents.sync(world, net, 0, true);
+    shown.forEach((mesh, i) => {
+      // Nothing to send: the buffer not marked, and the same numbers in it.
+      expect(mesh.visible).toBe(true);
+      expect(mesh.instanceMatrix.version, mesh.name).toBe(versions[i]);
+      expect(matrices(mesh)).toEqual(before[i]);
+    });
+    agents.dispose();
+  });
+
+  it('let one go with its instances: the last kept ones take their places, and only those places are sent', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const cars = [parkedCar(1, 0, 0), parkedCar(2, m(10), 0), parkedCar(3, m(20), 0)];
+    const net = netWith();
+    agents.sync(worldWith(cars), net, 0, true);
+    expect(centres(agents)).toEqual([0, m(10), m(20)]);
+    const wheels = meshesOf(agents, /^vehicle-wheels$/)[0]!;
+    expect(wheels.count).toBe(12);
+    uploaded(meshesOf(agents, /./));
+    // The middle car driven off: its four wheels' places taken by the last car's.
+    agents.sync(worldWith([cars[0]!, cars[2]!]), net, 0, true);
+    expect(centres(agents)).toEqual([0, m(20)]);
+    expect(wheels.count).toBe(8);
+    expect(wheels.instanceMatrix.updateRanges).toEqual([{ start: 4 * 16, count: 4 * 16 }]);
+    // Gone from the view altogether: nothing of it left drawn.
+    agents.sync(worldWith([]), net, 0, true);
+    expect(centres(agents)).toEqual([]);
+    expect(wheels.visible).toBe(false);
+    agents.dispose();
+  });
+
+  it('draw a car on the move after the kept ones, its own instances sent each frame and nothing else', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const parked = [parkedCar(1, 0, 0), parkedCar(2, m(10), 0)];
+    const car = movingCar(9, m(30), m(20));
+    const net = netWith();
+    agents.sync(worldWith(parked, [car]), net, 0, true);
+    const wheels = meshesOf(agents, /^vehicle-wheels$/)[0]!;
+    expect(wheels.count).toBe(12);
+    expect(centres(agents)).toEqual([0, m(10), m(30)]);
+    uploaded(meshesOf(agents, /./));
+    // A tick later it has gone on 2 m.
+    car.frames.bx = car.frames.x = m(32);
+    agents.sync(worldWith(parked, [car]), net, 0, true);
+    expect(centres(agents)).toEqual([0, m(10), m(32)]);
+    // Its four wheels after the parked cars' eight, the only ones sent.
+    expect(wheels.instanceMatrix.updateRanges).toEqual([{ start: 8 * 16, count: 4 * 16 }]);
+    const moved = Array.from({ length: 4 }, (_, i) => wheels.instanceMatrix.array[(8 + i) * 16 + 12]!);
+    for (const x of moved) expect(Math.abs(x - m(32))).toBeLessThan(m(3));
     agents.dispose();
   });
 });
