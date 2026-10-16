@@ -416,20 +416,22 @@ const CASCADE_PARS = /* glsl */ `
 			float e0 = sunCascadeRim( vDirectionalShadowCoord[ 0 ], directionalLightShadows[ 0 ].shadowMapSize, directionalLightShadows[ 0 ].shadowRadius );
 			float e1 = sunCascadeRim( vDirectionalShadowCoord[ 1 ], directionalLightShadows[ 1 ].shadowMapSize, directionalLightShadows[ 1 ].shadowRadius );
 			float e2 = sunCascadeRim( vDirectionalShadowCoord[ 2 ], directionalLightShadows[ 2 ].shadowMapSize, directionalLightShadows[ 2 ].shadowRadius );
+			// One return, every path assigned (fxc warns X4000 on the early returns through ANGLE).
+			float shadow = 1.0;
 			if ( e0 > 0.0 ) {
 				float near = SUN_CASCADE_SHADOW( 0 );
-				if ( e0 >= BAND ) return near;
-				float next = e1 > 0.0 ? SUN_CASCADE_SHADOW( 1 ) : e2 > 0.0 ? SUN_CASCADE_SHADOW( 2 ) : near;
-				return mix( next, near, e0 / BAND );
-			}
-			if ( e1 > 0.0 ) {
+				float next = near;
+				if ( e0 < BAND ) next = e1 > 0.0 ? SUN_CASCADE_SHADOW( 1 ) : e2 > 0.0 ? SUN_CASCADE_SHADOW( 2 ) : near;
+				shadow = mix( next, near, min( 1.0, e0 / BAND ) );
+			} else if ( e1 > 0.0 ) {
 				float near = SUN_CASCADE_SHADOW( 1 );
-				if ( e1 >= BAND ) return near;
-				float next = e2 > 0.0 ? SUN_CASCADE_SHADOW( 2 ) : near;
-				return mix( next, near, e1 / BAND );
+				float next = near;
+				if ( e1 < BAND ) next = e2 > 0.0 ? SUN_CASCADE_SHADOW( 2 ) : near;
+				shadow = mix( next, near, min( 1.0, e1 / BAND ) );
+			} else if ( e2 > 0.0 ) {
+				shadow = mix( 1.0, SUN_CASCADE_SHADOW( 2 ), min( 1.0, e2 / BAND ) );
 			}
-			if ( e2 > 0.0 ) return mix( 1.0, SUN_CASCADE_SHADOW( 2 ), min( 1.0, e2 / BAND ) );
-			return 1.0;
+			return shadow;
 		}
 	#endif
 `;
