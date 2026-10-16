@@ -112,14 +112,20 @@ pasted in the session that started this; these are its binding decisions.
   it opened are made (a224f62); far city past the made tiles drawn from the generator's plan, `FarLevels` on the generic
   `farTree.ts` (7d7320e). Kept for the player's yes on shots: far roads painted into the terrain and terrain at 13
   texture units (af56964b, cf05005).
-- Open on the streaming world, measured 2026-10-16 (headless, build and dev, under `run-limited`): the opening of
-  `generateCity({ size: 'whole' })` still dies out of memory at ~55 s in the 8 GB job. The page allocates ~270 MB/s
-  (8 GB in 30 s; ~360 MB live): each building's floor is worked out 5 times on the page during the opening (40,074
-  `floorHeight` for 7,843 buildings), ~70 KB of garbage each (`pavedHeightFrom` -> `roadAt` allocates its answer and a
-  frame per sample; `lotFront` scans at 0.1 m), through the camera solids, the site grading/pads and the sim's
-  `trafficBuildings.project` on the page; the shared `floors` cache is cleared by every ground change of the opening
-  (`floorGroundSince`, plates and roads landing tile by tile). Fix: floors once per building per ground that really
-  changed under it, and the per-building derived data (floor, pads, doors, traffic) worked out in workers.
+- Open on the streaming world, measured 2026-10-16 (build on `vite preview` 5310 and dev, headless, under `run-limited`,
+  district view): the opening of `generateCity({ size: 'whole' })` still does not show in the 8 GB / 25% CPU job; the page's
+  process reaches 6.6 GB at ~60 s and dies. Fixed on the way (9729f1f-781fab5): the frame threw on negative plate keys;
+  22 job workers made at the start, each loading every service (now made as work waits, a kind on the workers that run it,
+  8 on 32 GB); far boxes 1.6 px wide over 16 km and stored tiles drawn past the camera's far plane (now 4 px boxes, culled
+  by the far plane); far tiles' records through the page (now read by the worker); the ground re-shaped and every floor
+  re-done at each tile (5 -> 3.7 floors a building); 70 KB of garbage a floor (`roadAtInto`). Left, by measure: the page
+  holds 1.37 GB after a GC for a 3 x 3 region (296 MB at boot; ~140 KB a building), of which typed arrays of 256 KB or more
+  are 334 MB (people classes ~130 MB of CPU copies, terrain paint layers ~66 MB, wear field 48 MB, ~50 MB a terrain
+  plate); the rest is small arrays and objects not yet attributed (heap snapshots do not finish under the cap). The page
+  still allocates ~5 GB in 30 s of opening (floors 3.7 times a building, the sim's `trafficBuildings.project`, the camera
+  solids); the opening's warm frame uploads ~13 M triangles at once. Fix: per-building derived data (floor, pads, doors,
+  traffic) worked out once in workers with the tile, and the page's per-building memory found by a snapshot on a machine
+  without the cap.
 - Also open: city statistics read the region only; growth runs in the region only; the joins between near and
   far roads at the region's edge do not match exactly (far junctions only on owned nodes, heights differ).
 
