@@ -1,5 +1,4 @@
 import type { Vec2 } from '@core/vec2';
-import { identityMemo } from '@core/identityMemo';
 import type { Polyline } from '@core/polyline';
 import type { RoadDoc } from './doc';
 import type { NodeId, SegmentId } from './ids';
@@ -56,8 +55,8 @@ const ENTRANCE_MARGIN = m(1);
 /** Step of the paint along a run, so a line follows a curve. */
 const RUN_STEP = m(1);
 
-/** One building's entrances: its car gates and the edges of its parking, once per record. */
-export const entrancesOf: (b: Building) => readonly [Vec2, Vec2][] = identityMemo(workOutEntrances);
+/** One building's entrances: its car gates and the edges of its parking, worked out when its traffic record is sent (the worker keeps them, the page does not). */
+export const entrancesOf = (b: Building): readonly [Vec2, Vec2][] => workOutEntrances(b);
 
 /** Each record's entrances, worked out once (`entrancesOf`: records are never changed, only replaced). */
 function workOutEntrances(b: Building): readonly [Vec2, Vec2][] {

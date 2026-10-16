@@ -1,5 +1,4 @@
 import type { Vec2 } from '@core/vec2';
-import { identityMemo } from '@core/identityMemo';
 import { type RoadDoc, type SerializedDoc, savedNode, savedSegment } from '@world/doc';
 import type { ChangeJournal, ChangeRect } from '@world/changes';
 import { CellFiling, grow } from '@world/cells';
@@ -71,8 +70,8 @@ function project(b: Building): TrafficBuilding {
   };
 }
 
-/** A record's traffic record, worked out once (a stored record is never changed in place, only replaced). */
-export const trafficBuilding: (b: Building) => TrafficBuilding = identityMemo(project);
+/** DO NOT keep it per record on the page (`identityMemo`): a copy of every building of the map held for as long as the map, ~6 KB each; worked out when it is sent, kept by the worker alone. */
+export const trafficBuilding: (b: Building) => TrafficBuilding = project;
 
 /** The buildings as the simulation asks for them: by id, all in the store's order, by place in the store's order. */
 export interface TrafficBuildings {
@@ -93,6 +92,13 @@ export interface BuildingSource {
 
 /** A document's own buildings as traffic reads them (a world on the page or in a spec): each record's traffic record. */
 export function docBuildings(doc: RoadDoc): TrafficBuildings {
+  // Each record's traffic record kept for as long as this world reads it (a spec's world on the page), as the worker's table keeps its own.
+  const known = new WeakMap<Building, TrafficBuilding>();
+  const trafficBuilding = (b: Building): TrafficBuilding => {
+    let t = known.get(b);
+    if (!t) known.set(b, t = project(b));
+    return t;
+  };
   return {
     get: (id) => {
       const b = doc.buildings.get(id);
