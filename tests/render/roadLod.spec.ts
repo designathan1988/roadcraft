@@ -155,7 +155,7 @@ describe('the wiring', () => {
     expect(readFileSync('src/render/roadTile.worker.ts', 'utf8')).toMatch(/coarseArrays\(data\.coarse\.arrays, data\.coarse\.lock\)/);
     // The masses of the far buildings are sent ahead too, so their arrays go (`gpuOnly`): 157 MB of a 2,560 m city.
     const masses = readFileSync('src/render/buildings/massCells.ts', 'utf8');
-    expect(masses).toMatch(/void warmLooseAhead\(\[mesh\]\);/);
+    expect(masses).toMatch(/void warmLooseAhead\(\[mesh\], priority\);/);
     expect(masses).toMatch(/cancelWarm\(\[cell\.mesh\]\);/);
   });
 });

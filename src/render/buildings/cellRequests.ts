@@ -32,7 +32,9 @@ export class CellRequests {
   /** Each cell's masses asked and not answered, by the job's id. */
   private readonly masses = new Map<string, number>();
 
-  constructor(private readonly pool: CellPool, private readonly kit: BuildingKit, private readonly onSummaries: (summaries: readonly ChunkSummary[], entries: readonly CellEntry[], env: CellEnv) => void) {}
+  /** `admit`: whether a level landed is still wanted within the GPU's room, its bytes measured (refused: disposed, never uploaded); `rank`: its upload's pixels of error (`uploads.ts`). */
+  constructor(private readonly pool: CellPool, private readonly kit: BuildingKit, private readonly onSummaries: (summaries: readonly ChunkSummary[], entries: readonly CellEntry[], env: CellEnv) => void,
+    private readonly admit: (kind: BatchKind, cell: string, bytes: number) => boolean = () => true, private readonly rank: (kind: BatchKind, cell: string) => number = () => 0) {}
 
   /** Cells asked and not landed, or landed and still on their way to the GPU. */
   get waiting(): number {
@@ -57,7 +59,8 @@ export class CellRequests {
       if (this.asked.get(key) !== ask) return;
       this.asked.delete(key);
       this.onSummaries(result.summaries, entries, env);
-      this.landed.set(key, this.land(cell, entries, result, upload));
+      const landing = this.land(kind, cell, entries, result, upload);
+      if (landing) this.landed.set(key, landing);
     }, key);
     // Where no worker runs the job is done by now.
     const now = this.landed.get(key);
@@ -137,15 +140,16 @@ export class CellRequests {
     this.landed.clear();
   }
 
-  /** The batches wrapped in meshes, and sent to the GPU ahead (`warmLooseAhead`) when `upload`. */
-  private land(cell: string, entries: readonly CellEntry[], result: CellResult, upload: boolean): Landing {
-    const batch = result.batch ? meshesOf(result.batch, this.kit, false, false) : null;
+  /** The batches wrapped in meshes, and sent to the GPU ahead (`warmLooseAhead`) when `upload` and admitted; null when refused (DO NOT upload a level the room has no place for: it was sent before the layer chose to show it). */
+  private land(kind: BatchKind, cell: string, entries: readonly CellEntry[], result: CellResult, upload: boolean): Landing | null {
     let bytes = result.batch ? cellBytes(result.batch) : 0;
     for (const [, arrays] of result.details) bytes += cellBytes(arrays);
+    if (upload && !this.admit(kind, cell, bytes)) return null;
+    const batch = result.batch ? meshesOf(result.batch, this.kit, false, false) : null;
     const parts = result.details.length ? new PartCell(cell, result.details, this.kit) : null;
     const landing: Landing = { entries, batch, parts, bytes, uploads: 0 };
     if (!upload) return landing;
-    const sent = warmLooseAhead(meshesIn(landing));
+    const sent = warmLooseAhead(meshesIn(landing), () => this.rank(kind, cell));
     if (sent) { landing.uploads++; void sent.then(() => { landing.uploads--; }); }
     return landing;
   }

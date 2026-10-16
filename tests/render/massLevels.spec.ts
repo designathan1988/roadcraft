@@ -38,16 +38,20 @@ const meshNamed = (root: Object3D, name: string): Mesh[] => {
 describe('a tile or a plate of masses drawn in place of its cells', () => {
   it('is chosen by what it leaves out on the screen, hides its cells, and gives way to them near', () => {
     const kit = createBuildingKit();
-    const far = createMassCells(kit, CELL);
+    const released: string[] = [];
+    const far = createMassCells(kit, CELL, (key) => released.push(key));
     far.land('0,0', masses(m(10), m(10)));
     far.land('1,0', masses(CELL + m(10), m(10)));
+    far.planLevel(tileOf(0, 0));
+    const look = (orthoPx: number, near: boolean | ReadonlySet<string> = false): void => far.choose(m(128), m(128), m(500), 1000, orthoPx, near);
+    // Close first: the plate refined, so its tile is wanted and its masses taken.
+    look(2);
     far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));
     far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
-    // The cells' meshes in the order they landed.
-    const cellMesh = (key: string): Mesh => meshNamed(far.group, 'building-massing')[key === '0,0' ? 0 : 1]!;
+    // A cell's mesh by where it stands.
+    const cellMesh = (key: string): Mesh | undefined => meshNamed(far.group, 'building-massing').find((mesh) => (mesh.geometry.boundingBox!.min.x < CELL) === (key === '0,0'));
     const tile = meshNamed(far.group, 'building-massing-tile')[0]!;
     const plate = meshNamed(far.group, 'building-massing-plate')[0]!;
-    const look = (orthoPx: number, near: boolean | ReadonlySet<string> = false): void => far.choose(m(128), m(128), m(500), 1000, orthoPx, near);
 
     // Close: the cells, near; no level drawn.
     look(2);
@@ -56,7 +60,7 @@ describe('a tile or a plate of masses drawn in place of its cells', () => {
     expect(far.near('0,0')).toBe(true);
     expect(tile.visible).toBe(false);
     expect(plate.visible).toBe(false);
-    // A tile's 4 m under 2 px (0.3 px a metre): the tile, its cells hidden and far.
+    // A tile's 4 m under 2 px (0.3 px a metre): the tile, its cells far and their masses let go (neither drawn nor wanted).
     look(0.3);
     expect(far.coarse(tileOf(0, 0))).toBe(true);
     expect(far.coarse(plateOf(0, 0))).toBe(false);
@@ -64,38 +68,79 @@ describe('a tile or a plate of masses drawn in place of its cells', () => {
     expect(plate.visible).toBe(false);
     for (const key of ['0,0', '1,0']) {
       expect(far.near(key)).toBe(false);
-      expect(cellMesh(key).visible).toBe(false);
+      expect(cellMesh(key)).toBeUndefined();
     }
+    expect(released.sort()).toEqual(['0,0', '1,0']);
     expect([...far.nearKeys()]).toEqual([]);
     // Hysteresis: a tile drawn stays drawn up to its 2 px (4 m at 0.45 px is 1.8 px).
     look(0.45);
     expect(far.coarse(tileOf(0, 0))).toBe(true);
-    // The plate's 10 m under 2 px: the plate alone, the tile hidden under it.
+    // The plate's 10 m under 2 px: the plate alone, the tile under it let go.
+    released.length = 0;
     look(0.1);
     expect(far.coarse(plateOf(0, 0))).toBe(true);
     expect(far.coarse(tileOf(0, 0))).toBe(false);
     expect(plate.visible).toBe(true);
-    expect(tile.visible).toBe(false);
-    expect(cellMesh('0,0').visible).toBe(false);
+    expect(meshNamed(far.group, 'building-massing-tile')).toEqual([]);
+    expect(released).toEqual([tileOf(0, 0)]);
+    expect(far.wanted(tileOf(0, 0))).toBe(false);
+    // A tile coming while its plate stands for it: never uploaded.
+    released.length = 0;
+    far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));
+    expect(meshNamed(far.group, 'building-massing-tile')).toEqual([]);
+    expect(released).toEqual([tileOf(0, 0)]);
     // A cell held near (cut open, edited): neither its tile nor its plate stands in for it.
     look(0.1, new Set(['0,0']));
     expect(far.coarse(plateOf(0, 0))).toBe(false);
     expect(far.coarse(tileOf(0, 0))).toBe(false);
     expect(far.near('0,0')).toBe(true);
-    // Back close: the cells again, their masses shown (no detail landed for them).
+    // Back close: the cells again, their masses asked again and shown (no detail landed for them).
     look(2);
     expect(plate.visible).toBe(false);
-    expect(tile.visible).toBe(false);
     expect(far.near('1,0')).toBe(true);
-    expect(cellMesh('1,0').visible).toBe(true);
+    expect([...far.exposedCells()].sort()).toEqual(['0,0', '1,0']);
+    far.land('0,0', masses(m(10), m(10)));
+    far.land('1,0', masses(CELL + m(10), m(10)));
+    look(2);
+    expect(cellMesh('1,0')!.visible).toBe(true);
     // Refined from a tile not drawn: hysteresis the other way (4 m at 0.45 px is 1.8 px, over 0.85 of 2).
+    far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));
     look(0.45);
     expect(far.coarse(tileOf(0, 0))).toBe(false);
     // A level with no mass never stands in for its cells.
     far.landLevel(tileOf(0, 0), null);
     look(0.3);
     expect(far.coarse(tileOf(0, 0))).toBe(false);
-    expect(cellMesh('1,0').visible).toBe(true);
+    expect(cellMesh('1,0')!.visible).toBe(true);
+    far.dispose();
+    kit.dispose();
+  });
+
+  it('refining, the plate drawn stands until its tile has come, and the tile until its cells have (no hole)', () => {
+    const kit = createBuildingKit();
+    const far = createMassCells(kit, CELL);
+    far.planLevel(tileOf(0, 0));
+    far.plan('0,0', 0, m(30));
+    const look = (orthoPx: number): void => far.choose(m(128), m(128), m(500), 1000, orthoPx, false);
+    far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
+    look(0.1);
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    // Nearer: the tile is wanted and has not come; the plate stays drawn meanwhile.
+    look(0.3);
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    expect(far.waiting).toBeGreaterThan(0);
+    far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));
+    look(0.3);
+    expect(far.coarse(plateOf(0, 0))).toBe(false);
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
+    // Close: the cell's masses not come, the tile stands; once come, the cell.
+    look(2);
+    expect(far.coarse(tileOf(0, 0))).toBe(true);
+    expect([...far.exposedCells()]).toEqual(['0,0']);
+    far.land('0,0', masses(m(10), m(10)));
+    look(2);
+    expect(far.coarse(tileOf(0, 0))).toBe(false);
+    expect(far.near('0,0')).toBe(true);
     far.dispose();
     kit.dispose();
   });
@@ -228,5 +273,15 @@ describe('the tiles and plates asked of the workers', () => {
     expect(asked.map((a) => a.key)).toEqual(['t:0,0']);
     levels.pump(env);
     expect(asked.length).toBe(1);
+    // Its masses let go (its plate drawn whole again, `massCells.ts`): asked again only once wanted again.
+    answer();
+    asked.length = 0;
+    wanted.delete('t:0,0');
+    levels.release('t:0,0');
+    levels.pump(env);
+    expect(asked).toEqual([]);
+    wanted.add('t:0,0');
+    levels.pump(env);
+    expect(asked.map((a) => a.key)).toEqual(['t:0,0']);
   });
 });
