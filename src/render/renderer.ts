@@ -126,7 +126,8 @@ import type { Building, BuildingId } from '@world/buildings/types';
 import { QUALITY, QualityGovernor, type QualityLevel, type QualitySettings } from './quality';
 import { type GroundRecord, type Rect, unionRect } from './groundChanges';
 import { FOREST_SPECIES, createGroundCoverKit } from './groundCover';
-import { clearingIndex, type PlantedTree } from '@world/trees';
+import type { PlantedTree } from '@world/trees';
+import { ClearingCells } from './clearingCells';
 import { natureDensity } from './natureNoise';
 import { buildNatureForest, loadNatureTrees, seedOfKind, type NatureTreeKit } from './natureTrees';
 import { createFogField, createFogTexture, type FogLayer } from './fogLayer';
@@ -1850,14 +1851,16 @@ export function createSceneRenderer(
   /** DO NOT make it at every keep - a keep runs at every road, building and terrain edit */
   let clearingsFor = -1;
   let clearingsDoc: RoadDoc | null = null;
-  let clearings: ((x: number, y: number) => boolean) | null = null;
+  /** The clearings by place, filed one cut at a time (`clearingCells.ts`). */
+  const clearingCells = new ClearingCells();
+  const inClearing = (x: number, y: number): boolean => clearingCells.has(x, y);
   const clearingsOf = (doc: RoadDoc): ((x: number, y: number) => boolean) => {
-    if (!clearings || clearingsDoc !== doc || clearingsFor !== doc.clearingRevision) {
+    if (clearingsDoc !== doc || clearingsFor !== doc.clearingRevision) {
       clearingsDoc = doc;
       clearingsFor = doc.clearingRevision;
-      clearings = clearingIndex(doc.treeClearings);
+      clearingCells.follow(doc, doc.treeClearings);
     }
-    return clearings;
+    return inClearing;
   };
   /** Water, a cliff, a road or a building: nothing of the ecosystem grows there. */
   const natureOpen = (net: Network, x: number, y: number, z: number): boolean => {

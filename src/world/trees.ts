@@ -86,26 +86,3 @@ export function oneTree(kind: TreeKind, brush: TreeBrush, x: number, y: number, 
   const vary = (brush.variation / 100) * (random() * 2 - 1);
   return { x, y, height: brush.height * unitsPerMetre * Math.max(0.3, 1 + vary), yaw: random() * Math.PI * 2, seed: treeSeed(kind, random) };
 }
-
-/** Whether a point lies in a clearing. */
-function inClearing(clearings: readonly TreeClearing[], x: number, y: number): boolean {
-  for (const c of clearings) if (Math.abs(c.x - x) < c.radius && Math.abs(c.y - y) < c.radius && Math.hypot(c.x - x, c.y - y) < c.radius) return true;
-  return false;
-}
-
-/** A lookup of the clearings for many points at once (the woods are tens of thousands of trees) */
-export function clearingIndex(clearings: readonly TreeClearing[], cell = 64): (x: number, y: number) => boolean {
-  if (clearings.length === 0) return () => false;
-  const cells = new Map<number, TreeClearing[]>();
-  const key = (i: number, j: number): number => (i + 32_768) * 65_536 + (j + 32_768);
-  for (const c of clearings) {
-    for (let j = Math.floor((c.y - c.radius) / cell); j <= Math.floor((c.y + c.radius) / cell); j++) {
-      for (let i = Math.floor((c.x - c.radius) / cell); i <= Math.floor((c.x + c.radius) / cell); i++) {
-        const k = key(i, j);
-        const list = cells.get(k);
-        if (list) list.push(c); else cells.set(k, [c]);
-      }
-    }
-  }
-  return (x, y) => inClearing(cells.get(key(Math.floor(x / cell), Math.floor(y / cell))) ?? [], x, y);
-}

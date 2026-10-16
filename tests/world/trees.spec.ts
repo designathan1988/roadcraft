@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Rng } from '@core/rng';
 import { RoadDoc } from '@world/doc';
-import { DEFAULT_TREE_BRUSH, clearingIndex, plantTrees, treeSeed } from '@world/trees';
+import { DEFAULT_TREE_BRUSH, plantTrees, treeSeed } from '@world/trees';
+import { ClearingCells } from '@render/clearingCells';
 
 const random = (seed: number): (() => number) => { const rng = new Rng(seed); return () => rng.float(); };
 
@@ -29,9 +30,10 @@ describe('planted trees', () => {
     doc.plantTrees([{ x: 0, y: 0, height: 12, yaw: 0, seed: 0.1 }, { x: 200, y: 0, height: 12, yaw: 0, seed: 0.5 }]);
     doc.cutTrees(0, 0, 30);
     expect(doc.trees.map((t) => t.x)).toEqual([200]);
-    const cleared = clearingIndex(doc.treeClearings);
-    expect(cleared(10, 10)).toBe(true);
-    expect(cleared(200, 0)).toBe(false);
+    const cleared = new ClearingCells();
+    cleared.follow(doc, doc.treeClearings);
+    expect(cleared.has(10, 10)).toBe(true);
+    expect(cleared.has(200, 0)).toBe(false);
     const loaded = RoadDoc.fromJSON(doc.toJSON());
     expect(loaded.trees).toEqual(doc.trees);
     expect(loaded.treeClearings).toEqual(doc.treeClearings);
