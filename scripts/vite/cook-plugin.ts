@@ -42,6 +42,8 @@ export function importClosure(root: string, entry: string): string[] {
   const seen = new Set<string>();
   const visit = (file: string): void => {
     if (seen.has(file)) return;
+    // A file deleted while the server runs (the watcher's event) is no longer part of any closure.
+    if (!fs.existsSync(file)) return;
     seen.add(file);
     if (!file.endsWith('.ts')) return;
     const text = fs.readFileSync(file, 'utf8');
@@ -60,6 +62,7 @@ const DIR = 'cooked';
 function derivedHash(root: string, entry: string, also: readonly string[] = []): string {
   const hash = createHash('sha256');
   for (const file of importClosure(root, entry)) {
+    if (!fs.existsSync(file)) continue;
     hash.update(path.relative(root, file).replace(/\\/g, '/'));
     hash.update(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'));
   }
