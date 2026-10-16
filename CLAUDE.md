@@ -273,10 +273,10 @@ is hidden every frame (no overdraw).
   on the player's screen (no visible browser, Electron or console windows; headless only). Each one in
   its own worktree made from local `main` (check its first commit: the tool may cut it from an old one),
   one part each, no two on the same files; read its diff whole before merging. Keep progress here.
-- Agents run NO heavy test (player's order, 2026-10-16: a 10 km city opened every minute froze his PC):
-  no Vite, no `look.mjs`, no city generated, no route, no whole suite. Only `npx tsc --noEmit -p .` and
-  the unit tests of the files they touched (`--maxWorkers=1`). The game is opened by the coordinator
-  only, once at the end of a block, to check what was merged.
+- Agents run NO process besides git and reading/writing files (player's order, 2026-10-16, repeated: tests and
+  typechecks running all the time froze his PC): no tsc, no vitest, no eslint, no check-code, no Vite, no browser.
+  They write the code and its unit tests and commit. The coordinator runs the typecheck and the touched tests once
+  per merge, through `run-limited`, and opens the game only once at the end of a block.
 - Effort high for normal work; xhigh only to decide architecture and at phase gates. Grep before
   Read; in a file over 800 lines read only the part that matters. During a block only the
   typecheck and the tests of what was touched; the full check and the route at the end of the
