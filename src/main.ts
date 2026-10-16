@@ -118,6 +118,7 @@ import { QUALITY_LEVELS, isQualityLevel } from '@render/quality';
 import { createBuildingWiring } from './buildingsWiring';
 import { createGraphicsWiring } from './graphicsWiring';
 import { createSteamAchievements } from './steamAchievements';
+import { desktopSaves } from './desktopSaves';
 import { levelElevation, roofRise } from '@world/buildings/geometry';
 import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
@@ -176,7 +177,9 @@ const camera = new Camera();
 let booted = false;
 const surface = new CanvasSurface(canvas, () => { if (booted) requestDraw(); });
 const history = new History();
-const persistence = new Persistence();
+/** On the desktop the map is kept as files Steam Cloud syncs (`desktopSaves.ts`); in a browser, IndexedDB. */
+const desktopStores = desktopSaves();
+const persistence = desktopStores ? new Persistence(undefined, desktopStores.store, desktopStores.parts) : new Persistence();
 
 surface.observe();
 

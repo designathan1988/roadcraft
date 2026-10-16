@@ -1,8 +1,17 @@
 /** ROADCRAFT ON THE DESKTOP: the production build */
-const { app, BrowserWindow, ipcMain, protocol, net, shell } = require('electron');
+const { app, BrowserWindow, MessageChannelMain, ipcMain, protocol, net, shell, utilityProcess } = require('electron');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const ISOLATED = require('./isolation.cjs');
+
+// The player's folder named here, not by the package's name: the saves' place is what Steam Auto-Cloud is told (`scripts/package-desktop.mjs`).
+app.setPath('userData', path.join(app.getPath('appData'), 'Roadcraft'));
+/** XDG data home (XDG Base Directory spec: ignored unless absolute), the Linux root Steam Auto-Cloud offers (`LinuxXdgDataHome`). */
+const xdgDataHome = () => (path.isAbsolute(process.env.XDG_DATA_HOME ?? '') ? process.env.XDG_DATA_HOME : path.join(os.homedir(), '.local', 'share'));
+/** The map's files, synced by Steam Auto-Cloud: `%APPDATA%/Roadcraft/saves` (root `WinAppDataRoaming`), `$XDG_DATA_HOME/Roadcraft/saves` on Linux (Electron's userData there is the config home, which Auto-Cloud has no root for). */
+const SAVES = process.platform === 'linux' ? path.join(xdgDataHome(), 'Roadcraft', 'saves') : path.join(app.getPath('userData'), 'saves');
 
 app.commandLine.appendSwitch('force_high_performance_gpu');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
@@ -48,7 +57,7 @@ function appIdBesideExe() {
   }
 }
 
-/** Steam, when the game was started by it (steamworks.js, optional): achievements, cloud, overlay. Without it the game runs as it is. */
+/** Steam, when the game was started by it (steamworks.js, optional, in this process only): achievements and overlay; the saves reach Steam Cloud by Auto-Cloud (`SAVES`). Without it the game runs as it is. */
 const steam = (() => {
   if (process.env.ROADCRAFT_NO_STEAM === '1') return null;
   let steamworks;
@@ -58,7 +67,7 @@ const steam = (() => {
     return null;
   }
   try {
-    // `steam_appid.txt` beside the executable (the packer writes it); without it, the id Steam starts the game with (steamworks.js README).
+    // `steam_appid.txt` beside the executable outside Steam (the packer writes it, the depots leave it out); under Steam, the id Steam starts the game with (steamworks.js README).
     const client = steamworks.init(appIdBesideExe());
     // The overlay draws into the window: steamworks.js adds `in-process-gpu` and `disable-direct-composition` and repaints each frame.
     if (process.env.ROADCRAFT_NO_OVERLAY !== '1') steamworks.electronEnableSteamOverlay();
@@ -70,7 +79,8 @@ const steam = (() => {
 })();
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+  // `codeCache`: V8 keeps the compiled scripts between runs (Electron `CustomScheme`, needs `standard`).
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, codeCache: true } },
 ]);
 
 /** The built game: beside the executable when packaged, `dist/` when run from the project. */
@@ -148,14 +158,28 @@ function serveIpc() {
     if (!fromGame(event) || !steam || typeof id !== 'string' || !NAME.test(id)) return false;
     return safe(() => steam.achievement.isActivated(id) || steam.achievement.activate(id), false);
   });
-  ipcMain.handle('steam:cloud-write', (event, name, text) => {
-    if (!fromGame(event) || !steam || typeof name !== 'string' || !NAME.test(name) || typeof text !== 'string') return false;
-    return safe(() => steam.cloud.isEnabledForApp() && steam.cloud.writeFile(name, text), false);
+  // The page's own line to the saves' writer (Electron, "MessagePorts": a `MessageChannelMain` between the page and a utility process; nothing of a save passes through here).
+  ipcMain.on('saves:connect', (event) => {
+    if (!fromGame(event) || !event.senderFrame) return;
+    const { port1, port2 } = new MessageChannelMain();
+    savesWriter().postMessage(null, [port2]);
+    event.senderFrame.postMessage('saves:port', null, [port1]);
   });
-  ipcMain.handle('steam:cloud-read', (event, name) => {
-    if (!fromGame(event) || !steam || typeof name !== 'string' || !NAME.test(name)) return null;
-    return safe(() => (steam.cloud.isEnabledForApp() && steam.cloud.fileExists(name) ? steam.cloud.readFile(name) : null), null);
+}
+
+/** The saves' writer (`saves.cjs`): a Node utility process, so a big map's encoding and disk writes stop neither this process nor the page. */
+let saves = null;
+function savesWriter() {
+  if (saves) return saves;
+  const child = utilityProcess.fork(path.join(__dirname, 'saves.cjs'), [SAVES], { serviceName: 'Roadcraft saves' });
+  // Gone (a crash): each page drops its waiting requests and connects again (`src/desktopSaves.ts`).
+  child.once('exit', (code) => {
+    console.error('the saves writer stopped', code);
+    if (saves === child) saves = null;
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('saves:lost');
   });
+  saves = child;
+  return child;
 }
 
 function safe(run, fallback) {
@@ -170,16 +194,19 @@ function safe(run, fallback) {
 app.whenReady().then(() => {
   protocol.handle('app', async (request) => {
     const { pathname } = new URL(request.url);
-    const relative = decodeURIComponent(pathname).replace(/^\/+/, '') || 'index.html';
-    const file = path.normalize(path.join(GAME, relative));
-    // Nothing outside the game's folder.
-    if (!file.startsWith(GAME)) return new Response('forbidden', { status: 403 });
-    const response = await net.fetch(pathToFileURL(file).toString());
-    // Cross-origin isolated, as the Vite server serves it: SharedArrayBuffer for the simulation's worker.
+    const file = path.resolve(GAME, decodeURIComponent(pathname).replace(/^\/+/, '') || 'index.html');
+    // Nothing outside the game's folder (Electron `protocol.handle` example: the path relative to the bundle, never `..` nor absolute).
+    const inside = path.relative(GAME, file);
+    if (!inside || inside.startsWith('..') || path.isAbsolute(inside)) return new Response('forbidden', { status: 403 });
+    let response;
+    try {
+      response = await net.fetch(pathToFileURL(file).toString());
+    } catch {
+      return new Response('not found', { status: 404, headers: ISOLATED });
+    }
+    // Cross-origin isolated with the Vite server's own headers (`isolation.cjs`): SharedArrayBuffer for the simulation's worker.
     const headers = new Headers(response.headers);
-    headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-    headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
-    headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+    for (const [name, value] of Object.entries(ISOLATED)) headers.set(name, value);
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   });
   serveIpc();

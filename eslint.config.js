@@ -198,6 +198,9 @@ export default tseslint.config(
         Buffer: 'readonly',
         // Node's fetch API, which Electron's `protocol.handle` answers with.
         Response: 'readonly',
+        Headers: 'readonly',
+        // The page's window, which the preload hands the saves' port to (`desktop/preload.cjs`).
+        window: 'readonly',
       },
     },
     rules: {

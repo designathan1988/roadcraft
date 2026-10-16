@@ -62,6 +62,7 @@
       "scripts/**/*.mjs",
       "desktop/main.cjs",
       "desktop/preload.cjs",
+      "desktop/saves.cjs",
       "eslint-rules/*.js"
     ],
     "project": [

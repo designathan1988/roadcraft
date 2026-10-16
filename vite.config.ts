@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { createRequire } from 'node:module';
 import { fileURLToPath, URL } from 'node:url';
 import { buildStampPlugin } from './scripts/vite/build-stamp';
 import { cookPlugin } from './scripts/vite/cook-plugin';
@@ -6,8 +7,8 @@ import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin';
 import { surfaceBakePlugin } from './scripts/vite/surface-bake-plugin';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
-// The page cross-origin isolated (MDN, crossOriginIsolated): what SharedArrayBuffer needs, for the simulation's worker.
-const ISOLATED = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
+// The page cross-origin isolated: the same headers the desktop's `app://` sends (`desktop/isolation.cjs`; Vite replaces `import.meta.url` in its config with the file's own).
+const ISOLATED = createRequire(import.meta.url)('./desktop/isolation.cjs') as Record<string, string>;
 
 export default defineConfig({
   root: '.',
