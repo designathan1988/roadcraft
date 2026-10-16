@@ -595,18 +595,31 @@ function wireProfiler(): () => void {
   // DO NOT show it (and take a stack per upload) by default in dev: every measure of a frame paid for it. `?profiler`, or Shift+F9.
   mountProfilerHud(profiler, { visible: new URLSearchParams(location.search).has('profiler') });
   const supported = typeof PerformanceObserver !== 'undefined' ? PerformanceObserver.supportedEntryTypes : [];
-  if (supported.includes('longtask')) {
-    new PerformanceObserver((list) => { for (const entry of list.getEntries()) profiler.longTask(entry.duration); }).observe({ type: 'longtask', buffered: false });
-  }
-  if (supported.includes('measure')) {
-    new PerformanceObserver((list) => {
-      for (const m of list.getEntries()) if (m.name.startsWith('hitch:')) profiler.step(`passo ${m.name.slice(6)}`, m.duration);
-    }).observe({ type: 'measure', buffered: false });
-  }
+  // DO NOT observe while the HUD is closed: every measure of every frame was handed to this callback too (the health monitor keeps its own, `healthWatch.ts`).
+  let observers: PerformanceObserver[] = [];
+  profiler.onToggle((on) => {
+    for (const observer of observers) observer.disconnect();
+    observers = [];
+    if (!on) return;
+    if (supported.includes('longtask')) {
+      const observer = new PerformanceObserver((list) => { for (const entry of list.getEntries()) profiler.longTask(entry.duration); });
+      observer.observe({ type: 'longtask', buffered: false });
+      observers.push(observer);
+    }
+    if (supported.includes('measure')) {
+      const observer = new PerformanceObserver((list) => {
+        for (const m of list.getEntries()) if (m.name.startsWith('hitch:')) profiler.step(`passo ${m.name.slice(6)}`, m.duration);
+      });
+      observer.observe({ type: 'measure', buffered: false });
+      observers.push(observer);
+    }
+  });
   /** The diary's serial the profiler last read: each frame tells it the changes since. */
   let profiledSerial = doc.changes.version;
   return (): void => {
     const serial = doc.changes.version;
+    // Closed: nothing read for it (the diary's entries made keys, the heap, the gauges).
+    if (!profiler.enabled) { profiledSerial = serial; return; }
     if (serial > profiledSerial) {
       for (const c of doc.changes.latest(Math.min(serial - profiledSerial, 64))) profiler.change({ kind: c.kind, cause: c.cause, ids: c.ids?.length ?? 0 });
     }
@@ -2517,7 +2530,7 @@ function frame(now: number): void {
   frameTimer.mark('panels');
   const timed = frameTimer.end();
   healthWatch.frameEnded(timed.start, timed.end);
-  for (const [system, ms] of timed.systems) profiler.step(`frame ${system}`, ms);
+  if (profiler.enabled) for (const [system, ms] of timed.systems) profiler.step(`frame ${system}`, ms);
   profileFrameEnd();
 
   // Keep animating while anything is moving; otherwise settle.

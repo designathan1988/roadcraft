@@ -72,7 +72,22 @@ export interface ChangeSeen {
 }
 
 export class Profiler {
-  enabled = true;
+  private on = true;
+  private readonly toggles: ((enabled: boolean) => void)[] = [];
+  /** Whether it records (the HUD shown): closed, the default, every method returns at once and its observers are off (`onToggle`). */
+  get enabled(): boolean {
+    return this.on;
+  }
+  set enabled(value: boolean) {
+    if (value === this.on) return;
+    this.on = value;
+    for (const toggle of this.toggles) toggle(value);
+  }
+  /** Told now and at each opening or closing: what records only while it is open (the browser's observers, `main.ts`) follows it. */
+  onToggle(toggle: (enabled: boolean) => void): void {
+    this.toggles.push(toggle);
+    toggle(this.on);
+  }
   private readonly tallies = new Map<ProfiledEvent, Tally>();
   private frameCalls = 0;
   private windowStart = 0;
@@ -141,23 +156,26 @@ export class Profiler {
 
   /** A diary entry the frame saw. */
   change(seen: ChangeSeen): void {
+    if (!this.on) return;
     const key = `${seen.kind} ← ${seen.cause}`;
     this.changesWindow.set(key, (this.changesWindow.get(key) ?? 0) + Math.max(1, seen.ids));
   }
 
   /** An engine product's refresh. */
   product(timing: ProductTiming): void {
+    if (!this.on) return;
     this.products.set(timing.name, timing);
     if (timing.idle) this.idleProducts.set(timing.name, (this.idleProducts.get(timing.name) ?? 0) + 1);
   }
 
   longTask(ms: number): void {
+    if (!this.on) return;
     this.longTasks.unshift({ ms, at: performance.now() });
     if (this.longTasks.length > 8) this.longTasks.pop();
   }
 
   heap(bytes: number | undefined, now = performance.now()): void {
-    if (bytes === undefined) return;
+    if (!this.on || bytes === undefined) return;
     const mb = bytes / 1e6;
     if (this.heapMB !== null && mb < this.heapMB) this.gcDropMB = Math.max(this.gcDropMB, this.heapMB - mb);
     this.heapMB = mb;
@@ -165,11 +183,12 @@ export class Profiler {
   }
 
   beginFrame(now = performance.now()): void {
-    this.frameStart = now;
+    if (this.on) this.frameStart = now;
   }
 
   /** Closes the frame: the frame's counts into the window; every `WINDOW_MS`, the window into the HUD's numbers. */
   endFrame(now = performance.now()): void {
+    if (!this.on) return;
     this.frames++;
     this.framesInWindow++;
     if (this.frameStart) this.frameMs.push(now - this.frameStart);

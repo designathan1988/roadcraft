@@ -18,7 +18,8 @@ export function hookProfiler(renderer: WebGLRenderer): void {
   const built = new WeakSet<BufferGeometry>();
   const setAttribute = BufferGeometry.prototype.setAttribute;
   BufferGeometry.prototype.setAttribute = function (this: BufferGeometry, name, attribute) {
-    if (name === 'position' && !built.has(this)) { built.add(this); profiler.count('build.geometry'); }
+    // Closed (the default): no geometry filed, nothing counted.
+    if (profiler.enabled && name === 'position' && !built.has(this)) { built.add(this); profiler.count('build.geometry'); }
     return setAttribute.call(this, name, attribute);
   } as typeof setAttribute;
 
