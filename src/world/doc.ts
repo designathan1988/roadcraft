@@ -39,7 +39,7 @@ import { type TransitData, emptyTransit, hasTransit, normalizeTransit } from './
 import { type SegmentDirection, casingHalf, roadProfile } from './roadTypes';
 import { BuildingStore } from './buildings/store';
 import type { SerializedBuilding } from './buildings/serialize';
-import { type Building, type BuildingId, cloneBuilding } from './buildings/types';
+import type { Building, BuildingId } from './buildings/types';
 import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from './zones';
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, rectAround, type ChangeRect, type DocChangeKind } from './changes';
@@ -1548,7 +1548,8 @@ export class RoadDoc {
       key, version,
       nodes: t.nodes.map(savedNode), borrowedNodes: t.borrowedNodes.map(savedNode), segments: t.segments.map(savedSegment),
       poles: t.poles.map(savedPole), borrowedPoles: t.borrowedPoles.map(savedPole), poleSpans: t.spans.map(savedSpan),
-      buildings: t.buildings.map((b) => cloneBuilding(b)),
+      // DO NOT copy a building (a record is replaced, never edited, `BuildingStore`): the write posts each as its table's row (`tileStore.ts` tileWrite).
+      buildings: t.buildings,
       lots: t.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) })),
       lotKeys: [...t.lotKeys],
       landscape: t.landscape.map(savedLandscape), barriers: t.barriers.map(savedBarrier),

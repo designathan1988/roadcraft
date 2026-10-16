@@ -7,7 +7,7 @@ import type { NodeId, SegmentId } from '@world/ids';
 import { RoadDoc, type TileRecords, preparedTiles } from '@world/doc';
 import { Network, type NetworkBake } from '@world/network';
 import { internMembers } from '@world/buildings/intern';
-import { encodeRecords, tableRecords } from '@world/buildings/recordTable';
+import { encodeRecords, readRecords, refOf, tableRecords } from '@world/buildings/recordTable';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
 import { METERS_PER_UNIT, m } from '@world/units';
@@ -76,7 +76,8 @@ export type TileOp =
   | { readonly op: 'readText'; readonly map: string; readonly key: number }
   /** The stored tile's version alone, or null: what the tiles made ahead are known by, their records never handed to the page. */
   | { readonly op: 'version'; readonly map: string; readonly key: number }
-  | { readonly op: 'write'; readonly map: string; readonly records: TileRecords }
+  /** The tile written, its buildings as rows of tables (`tileWrite`): read back where it is stored (`writtenRecords`). */
+  | { readonly op: 'write'; readonly map: string; readonly records: TileWrite }
   | { readonly op: 'meta'; readonly map: string }
   | { readonly op: 'setMeta'; readonly map: string; readonly meta: WorldMeta }
   | { readonly op: 'migrate'; readonly map: string; readonly local: string | null };
@@ -162,6 +163,45 @@ async function encodeTile(records: TileRecords, bake: TileBaker | undefined): Pr
     parts.push('bin' in section ? { name, kind: 'bin', data: new Blob([section.bin]) } : { name, kind: 'json', data: await gzipBytes(json(section.json)) });
   }
   return { blob: tileBlob(records.key, records.version, bake !== undefined, parts), text };
+}
+
+/** DO NOT post a tile's buildings as objects to be written (each copied by a JSON round trip, then cloned by the message, every few seconds a changed tile): each is a row of a table in shared memory */
+/** A tile's buildings as a write posts them: each a row of one of `tables` (its tile's, `tableRecords`, or one of its own, `refOf`), in the tile's order; each table listed once, a SharedArrayBuffer posted as a handle (MDN "SharedArrayBuffer"). */
+interface BuildingRows {
+  readonly tables: readonly ArrayBufferLike[];
+  /** Each building's table: its index in `tables`. */
+  readonly table: Uint32Array;
+  /** Each building's row in its table. */
+  readonly row: Uint32Array;
+}
+
+/** A tile as a write hands it to the store: its records, its buildings as rows (`BuildingRows`), never as objects. */
+type TileWrite = Omit<TileRecords, 'buildings'> & { readonly buildings: BuildingRows };
+
+/** A tile's records as a write posts them - `fresh`: buildings none of which has a row (a tile the generator just made), one table for them all; else each building's row (`refOf`: its tile's, or a table of its own made once per record and kept with it). */
+export function tileWrite(records: TileRecords, fresh = false): TileWrite {
+  const buildings = records.buildings as readonly Building[];
+  const n = buildings.length;
+  const table = new Uint32Array(n), row = new Uint32Array(n);
+  if (fresh) {
+    for (let k = 0; k < n; k++) row[k] = k;
+    return { ...records, buildings: { tables: n ? [encodeRecords(buildings).buffer] : [], table, row } };
+  }
+  const tables: ArrayBufferLike[] = [], index = new Map<ArrayBufferLike, number>();
+  for (let k = 0; k < n; k++) {
+    const ref = refOf(buildings[k]!);
+    let t = index.get(ref.buffer);
+    if (t === undefined) { index.set(ref.buffer, t = tables.length); tables.push(ref.buffer); }
+    table[k] = t;
+    row[k] = ref.row;
+  }
+  return { ...records, buildings: { tables, table, row } };
+}
+
+/** A write's records as the store keeps them: each building read from its row (`readRecords`, one reader a table), where the tile is written (the save worker; the page itself on the desktop, `storeTiles`). */
+export function writtenRecords(write: TileWrite): TileRecords {
+  const { tables, table, row } = write.buildings;
+  return { ...write, buildings: readRecords(Array.from(row, (r, k) => ({ buffer: tables[table[k]!]!, row: r }))) };
 }
 
 /** A tile written in one transaction of its one key, its sections baked with it: whether it was stored, and its records' texts. */
@@ -252,7 +292,7 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
       if (stored.read && (stored.read.head.baked || !bake)) return stored.read.head.version;
       return parseTileText(await upgraded(store, op.map, op.key, stored, bake), op.key).version;
     }
-    case 'write': return (await writeTile(store, op.map, op.records, bake)).ok;
+    case 'write': return (await writeTile(store, op.map, writtenRecords(op.records), bake)).ok;
     case 'meta': return readMeta(store, op.map);
     case 'setMeta': return writer.write({ put: [{ key: metaKey(op.map), value: op.meta, packed: false }], remove: [] });
     case 'migrate': return migrate(store, op.map, op.local);
@@ -394,7 +434,7 @@ export class TileStore {
   write(records: TileRecords): Promise<number | null> {
     return this.chained(records.key, async () => {
       const stamped = this.stamped(records);
-      return (await this.put(stamped)) ? stamped.version : null;
+      return (await this.put(tileWrite(stamped))) ? stamped.version : null;
     });
   }
 
@@ -460,7 +500,8 @@ export class TileStore {
     const fresh = await this.generate(i, j);
     if (fresh.key !== key) throw new Error(`the generator made tile ${fresh.key} for tile ${key}`);
     const stamped = this.stamped(fresh);
-    if (!(await this.put(stamped))) console.warn(`[save] tile ${key} was made and not stored`);
+    // Its buildings have no row yet: one table for them all, never one a building.
+    if (!(await this.put(tileWrite(stamped, true)))) console.warn(`[save] tile ${key} was made and not stored`);
     return stamped;
   }
 
@@ -470,11 +511,11 @@ export class TileStore {
     return { ...records, version };
   }
 
-  private async put(records: TileRecords): Promise<boolean> {
+  private async put(write: TileWrite): Promise<boolean> {
     try {
-      return (await this.backend.run({ op: 'write', map: this.map, records })) === true;
+      return (await this.backend.run({ op: 'write', map: this.map, records: write })) === true;
     } catch (error) {
-      console.error(`[save] tile ${records.key} could not be written`, error);
+      console.error(`[save] tile ${write.key} could not be written`, error);
       return false;
     }
   }

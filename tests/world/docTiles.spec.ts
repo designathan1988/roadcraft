@@ -3,6 +3,8 @@ import { RoadDoc } from '@world/doc';
 import { TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { isStreaming } from '@world/changes';
+import { generateBody } from '@world/buildings/blueprints';
+import type { Building } from '@world/buildings/types';
 import { m } from '@world/units';
 
 /** THE PAGE'S DOCUMENT HOLDS TILES, NOT THE WORLD (`RoadDoc.loadTile`, `unloadTile`, `tileRecords`) */
@@ -81,6 +83,16 @@ describe('the page\'s document by tiles', () => {
     other.loadTile(written);
     expect(other.nodes.size).toBe(4);
     expect(other.segments.size).toBe(2);
+  });
+
+  it('hands a tile\'s buildings out as the records it holds, never copies (a record is replaced, never edited)', () => {
+    const { a } = twoTiles();
+    const doc = new RoadDoc();
+    doc.loadTile(a);
+    const b = doc.buildings.add({ ...generateBody('residential', m(20), m(20), 2), x: m(400), y: m(400), rotation: 0 } as unknown as Building);
+    const written = doc.tileRecords(a.key, 2);
+    expect(written.buildings).toHaveLength(1);
+    expect(written.buildings[0]).toBe(doc.buildings.get(b.id));
   });
 
   it('says in the diary that the tiles came and went, apart from the edits', () => {

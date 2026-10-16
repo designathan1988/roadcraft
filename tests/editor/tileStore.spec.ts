@@ -4,7 +4,10 @@ import { TiledSaves } from '@editor/chunkedSave';
 import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
 import {
-  type MadeTile, type TileText, TileStore, type WorldMeta, readTile, readTilePart, storeTiles, tileOpTransfer, writeTile, prepareTile } from '@editor/tileStore';
+  type MadeTile, type TileText, TileStore, type WorldMeta, readTile, readTilePart, storeTiles, tileOpTransfer, writeTile, prepareTile,
+  preparedRecords, tileWrite, writtenRecords } from '@editor/tileStore';
+import { generateBody } from '@world/buildings/blueprints';
+import type { Building } from '@world/buildings/types';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
 import { TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
@@ -133,7 +136,7 @@ describe('a tile stored', () => {
     const makeStored = async (i: number, j: number, after: number): Promise<MadeTile> => {
       asked.push([i, j, after]);
       // As `cityTile.worker.ts` does: the tile written straight into the store, its version past `after`.
-      await storeTiles(store).run({ op: 'write', map: 'map', records: { ...emptyTile(i, j), version: after + 1 } });
+      await storeTiles(store).run({ op: 'write', map: 'map', records: tileWrite({ ...emptyTile(i, j), version: after + 1 }) });
       return { version: after + 1 };
     };
     const tiles = new TileStore('map', storeTiles(store), never, makeStored);
@@ -242,6 +245,42 @@ describe('a tile stored', () => {
     expect(await tiles.setMeta(meta)).toBe(true);
     expect(store.writes.at(-1)).toEqual(['map:world']);
     expect(await new TileStore('map', storeTiles(store), never).meta()).toEqual(meta);
+  });
+});
+
+/** A house of the parametric generator in tile (0,0), as the generator writes it. */
+const house = (id: number, x: number): Building => ({ ...generateBody('residential', m(20), m(20), 2), id, x, y: m(100), rotation: 0 }) as unknown as Building;
+
+describe('a tile written', () => {
+  it('posts its buildings as rows of their tables: an unchanged one its tile\'s row, a replaced one a table of its own made once', async () => {
+    const base = tileIdBase(tileKey(0, 0));
+    const prepared = prepareTile(emptyTile(0, 0, { buildings: [house(base, m(100)), house(base + 1, m(300)), house(base + 2, m(500))] }), false);
+    const loaded = preparedRecords(prepared);
+    const page = loaded.buildings as readonly Building[];
+    // The player replaced the second: a new record, in no table yet.
+    const now = { ...loaded, buildings: [page[0]!, { ...page[1]!, rotation: 1 }, page[2]!] };
+    const write = tileWrite(now);
+    expect(write.buildings.tables).toHaveLength(2);
+    expect(write.buildings.tables[0]).toBe(prepared.buildings);
+    expect([...write.buildings.table]).toEqual([0, 1, 0]);
+    expect([...write.buildings.row]).toEqual([0, 0, 2]);
+    // Written again: the replaced record's table is the one made the first time.
+    expect(tileWrite(now).buildings.tables[1]).toBe(write.buildings.tables[1]);
+    // Stored as JSON keeps the records, in the tile's order: the save's format unchanged.
+    const store = memoryStore();
+    expect(await storeTiles(store).run({ op: 'write', map: 'map', records: write })).toBe(true);
+    expect((await readTile(store, 'map', now.key))!.buildings).toEqual(JSON.parse(JSON.stringify(now.buildings)));
+  });
+
+  it('a tile the generator just made: its buildings one table for them all', () => {
+    const base = tileIdBase(tileKey(0, 0));
+    const fresh = emptyTile(0, 0, { buildings: [house(base, m(100)), house(base + 1, m(300))] });
+    const write = tileWrite(fresh, true);
+    expect(write.buildings.tables).toHaveLength(1);
+    expect([...write.buildings.table]).toEqual([0, 0]);
+    expect([...write.buildings.row]).toEqual([0, 1]);
+    expect(JSON.parse(JSON.stringify(writtenRecords(write)))).toEqual(JSON.parse(JSON.stringify(fresh)));
+    expect(tileWrite(emptyTile(0, 0), true).buildings.tables).toEqual([]);
   });
 });
 
