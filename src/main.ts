@@ -194,8 +194,11 @@ const ZONES_PREFIX = typeof __CONFLICT_ZONES_HASH__ !== 'undefined' && __CONFLIC
 if (ZONES_PREFIX) forgetOtherDerived('zones', ZONES_PREFIX.slice('zones:'.length, -1));
 const keptZones = ZONES_PREFIX ? readDerivedAll<Float64Array | null>(ZONES_PREFIX) : Promise.resolve(new Map<string, Float64Array | null>());
 clearOldMapsOnce();
-// The autosave: the small key, or IndexedDB for a map too large for it (`Persistence.loadSessionAsync`)
-const savedSession = await persistence.loadSessionAsync();
+/** The streamed world open at the last close (CLAUDE.md, "Streaming world"): its options, opened again from its tile store at the end of the boot. */
+const STREAMED_MARK = 'roadcraft.streamedWorld';
+const streamedAtBoot = ((): string | null => { try { return window.localStorage.getItem(STREAMED_MARK); } catch { return null; } })();
+// The autosave: the small key, or IndexedDB for a map too large for it (`Persistence.loadSessionAsync`); not read under a streamed world (its tiles are its save).
+const savedSession = streamedAtBoot ? null : await persistence.loadSessionAsync();
 // The game opens on an empty map - zoning starts from nothing - unless the player has a map of their own.
 const saved = savedSession?.document && !isUntouchedStarter(savedSession.document)
   ? savedSession.document
@@ -252,12 +255,14 @@ function bootZoomBounds(): { min: number; max: number } {
   return isoZoomBounds(Math.max(1, canvas.clientHeight || window.innerHeight));
 }
 
-if (savedSession && saved) {
-  camera.x = savedSession.settings.camera.x;
-  camera.y = savedSession.settings.camera.y;
+// A streamed world's camera, where the player left it (its map is its tiles, read round it).
+const bootSettings = savedSession && saved ? savedSession.settings : streamedAtBoot ? persistence.readSettings() : null;
+if (bootSettings) {
+  camera.x = bootSettings.camera.x;
+  camera.y = bootSettings.camera.y;
   // Clamped against the ACTIVE renderer's range, not always the flat camera's.
   const limits = bootZoomBounds();
-  camera.zoom = clamp(savedSession.settings.camera.zoom, limits.min, limits.max);
+  camera.zoom = clamp(bootSettings.camera.zoom, limits.min, limits.max);
 } else {
   camera.fit(worldBounds(), surface.cssW, surface.cssH);
 }
@@ -1904,7 +1909,6 @@ const GROW_SLICE_MS = 100;
 let cityBuiltIn = 0;
 
 /** THE STREAMED WORLD (CLAUDE.md, "Streaming world"): a city of any size - the page's document holds the tiles round the camera (`worldStreamer.ts`), the tile store (`editor/tileStore.ts`) every tile ever made and is the save, a tile never made is generated on demand in a worker (`tileGenerator.ts`) */
-const STREAMED_MARK = 'roadcraft.streamedWorld';
 let streamed: { readonly store: TileStore; readonly generator: TileGenerator; readonly streamer: WorldStreamer } | null = null;
 /** A place of an item of a list (a dab, a tree, an element) in tile `key`. */
 const itemInTile = (item: unknown, key: number): boolean => {
@@ -3595,8 +3599,7 @@ window.addEventListener('beforeunload', saveOnClose());
 window.addEventListener('pagehide', () => { void streamed?.streamer.flush(); });
 // The streamed world open at the last close opened again (its tiles are in the store).
 try {
-  const mark = window.localStorage.getItem(STREAMED_MARK);
-  if (mark) openStreamedWorld(JSON.parse(mark) as WholeMapOptions);
+  if (streamedAtBoot) openStreamedWorld(JSON.parse(streamedAtBoot) as WholeMapOptions);
 } catch (error) {
   console.error('[world] the streamed world could not be opened again', error);
 }

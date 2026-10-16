@@ -247,8 +247,8 @@ export class Persistence {
     }
   }
 
-  /** The separately stored settings, when present and readable. */
-  private readSettings(): SavedSettings | null {
+  /** The separately stored settings, when present and readable (a streamed world's camera, its map being its tiles). */
+  readSettings(): SavedSettings | null {
     if (this.storageKey !== KEY) return null;
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
