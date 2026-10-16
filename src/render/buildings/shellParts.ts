@@ -61,9 +61,9 @@ export function shellUv(px: number, py: number, pz: number, nx: number, ny: numb
 
 /** GLSL: `shellUv`, from the vertex in the world and its normal there (three's axes). */
 export const SHELL_UV_GLSL = `
-vec2 shellPlanarUv(vec3 at, vec3 out) {
+vec2 shellPlanarUv(vec3 at, vec3 facing) {
   vec3 p = vec3(at.x, -at.z, at.y);
-  vec3 n = vec3(out.x, -out.z, out.y);
+  vec3 n = vec3(facing.x, -facing.z, facing.y);
   float across = length(n.xy);
   vec2 t = across > 1e-6 ? vec2(-n.y, n.x) / across : vec2(1.0, 0.0);
   vec3 b = vec3(-n.z * t.y, n.z * t.x, n.x * t.y - n.y * t.x);
