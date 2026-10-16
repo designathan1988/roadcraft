@@ -582,7 +582,8 @@ function wireProfiler(): () => void {
   hookProfiler(scene.gl);
   engine.watch(() => doc.changes.version);
   engine.onRefresh = (name, phase, ms, keys, idle) => profiler.product({ name, phase, ms, keys, idle });
-  mountProfilerHud(profiler, { visible: import.meta.env.DEV });
+  // DO NOT show it (and take a stack per upload) by default in dev: every measure of a frame paid for it. `?profiler`, or Shift+F9.
+  mountProfilerHud(profiler, { visible: new URLSearchParams(location.search).has('profiler') });
   const supported = typeof PerformanceObserver !== 'undefined' ? PerformanceObserver.supportedEntryTypes : [];
   if (supported.includes('longtask')) {
     new PerformanceObserver((list) => { for (const entry of list.getEntries()) profiler.longTask(entry.duration); }).observe({ type: 'longtask', buffered: false });
