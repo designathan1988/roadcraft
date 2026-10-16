@@ -17,7 +17,7 @@ import { assignOccupancy } from './kerbStops';
 import { curveSpeedCap } from './curvature';
 
 /** Arrival rate at one boundary entry lane, vehicles per second, at traffic intensity and demand 1 */
-const ENTRY_RATE = 0.05;
+export const ENTRY_RATE = 0.05;
 /** Vehicles an entry holds outside the map before further arrivals are lost. */
 const ENTRY_QUEUE = 6;
 /** Arrivals a second at one entry with a number of cars chosen (`SimWorld.trafficCount`) once the map holds it */
@@ -95,6 +95,8 @@ function nextGap(w: SimWorld, rate: number): number {
 export function stepDispatch(w: SimWorld, enabled: boolean): void {
   // A city with residents drives its own cars (`sim/city`): none come in.
   if (!w.edgeTraffic) return;
+  // With the meso traffic (`meso/meso.ts`) the map's entries feed its links; the micro window gets its cars from them.
+  if (w.meso) return;
   if (!enabled) return;
   w.vehicleSpawnClock += DT;
   const now = w.vehicleSpawnClock;

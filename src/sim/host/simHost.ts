@@ -4,6 +4,8 @@ import type { NodeId } from '@world/ids';
 import { SimWorld } from '../world';
 import { TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
+import { Meso } from '../meso/meso';
+import { MesoMemory } from '../meso/memory';
 import { laneGrid } from '../agents/laneGrid';
 import { useBayWorkers } from '../agents/parking';
 import { BayPool } from '../../bayPool';
@@ -35,6 +37,8 @@ export class SimHost {
   /** The buildings as traffic reads them, by the world's cells, written in the copy's diary. */
   private readonly buildings = new TrafficBuildingTable(this.doc.changes);
   private sim: SimWorld | null = null;
+  /** The meso traffic and its micro window: made before the world, so a window told early is kept for it. */
+  private readonly meso = new Meso();
   private topology: TopologyCatchUp | null = null;
   private readonly governor = new PopulationGovernor(1);
   private data: Float64Array | null = null;
@@ -67,6 +71,10 @@ export class SimHost {
         this.buildings.apply(message.buildings);
         return;
       case 'reset': this.sim?.reset(); this.sim?.ambient.reset(this.sim); return;
+      case 'window':
+        this.meso.attach(new MesoMemory(message.meso));
+        this.meso.want(message.x, message.y, message.r);
+        return;
       case 'frame': this.frame(message.wall, message.hold, message.controls); return;
       case 'act': this.post({ type: 'acted', id: message.id, result: this.act(message.act) }); return;
       case 'ask': this.post({ type: 'answer', id: message.id, answer: this.ask(message.ask) }); return;
@@ -91,6 +99,8 @@ export class SimHost {
     sim.followCity = true;
     sim.ambient.enabled = true;
     sim.ambient.source = ambient;
+    // The whole map's traffic in the meso model; the micro simulation only in its window round the view (`meso/meso.ts`).
+    sim.meso = this.meso;
     this.sim = sim;
     this.topology = new TopologyCatchUp(new ConflictPool(prefix));
     this.post({ type: 'ready' });

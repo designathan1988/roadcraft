@@ -136,6 +136,7 @@ import { createFogField, createFogTexture, type FogLayer } from './fogLayer';
 import { createElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
 import { isCoverKind } from '@world/terrainPaint';
 import { CellKeeps, keepCellAt, keepCellRect, keepCellsOver } from './cellKeeps';
+import { createDensityCars } from './densityCars';
 import { COVER_SWEEP_PAD, SHORE_SWEEP_PAD, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate, type WaterBox } from './coverSweep';
 
 /** The scene renderer. ## The rebuild contract Everything derived from the road network or the terrain is rebuilt in */
@@ -786,6 +787,9 @@ export function createSceneRenderer(
   // A raised deck over the highest land, and room for decks stacked on it; a cut below the deepest.
   const VEHICLE_LOW = TERRAIN_MIN_HEIGHT - m(16), VEHICLE_HIGH = TERRAIN_MAX_HEIGHT + m(64) + VEHICLE_REACH * 0.3;
   scene.add(...agents.meshes);
+  // The far traffic: the meso model's cars on every road outside the micro window, in one draw (`densityCars.ts`).
+  const densityCars = createDensityCars(deckHeight);
+  scene.add(densityCars.object);
   // What moves and casts: each sun cascade it is drawn into is drawn again while it moves (`sunCascades.ts`).
   environment.setMovers([
     { roots: agents.meshes, moving: () => simRunning && agents.casting },
@@ -2566,6 +2570,8 @@ export function createSceneRenderer(
         ...(fx ? { ragdolls: (citizens: Parameters<PlayEffects['frame']>[0]) => fx!.frame(citizens, sim, wallDt, fxDt) } : {}),
         hiddenPed: (id) => fx?.hides(id) ?? false,
       });
+      // The micro window follows the view's centre; the far cars of the meso step drawn round it.
+      densityCars.update(net, sim, rig.target.x, -rig.target.z);
       exhaust.tick(windClock, renderer.domElement.height / 2);
       fx?.update(wallDt, fxDt);
       for (const ped of sim.pedViews) if (ped.v > 0.05) wear.feet(ped.x, ped.y, wallDt);
@@ -2841,6 +2847,7 @@ export function createSceneRenderer(
       tileWriter?.terminate();
       // Everything the renderer made, the GPU's included: the layers, the previews and the effects too
       fx?.dispose();
+      densityCars.dispose();
       exhaust.dispose();
       wear.dispose();
       barriers.dispose();

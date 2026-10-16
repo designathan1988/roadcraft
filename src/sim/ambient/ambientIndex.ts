@@ -11,7 +11,7 @@ import { kindOf, type Mix } from './demand';
 export const ambientIndexWork = { filed: 0, cells: 0, rings: 0, full: 0, verified: 0, proposals: 0, boundBroken: 0 };
 
 /** The buildings the diary names as changed after `serial`; null when they must all be read again */
-function buildingsChangedSince(journal: ChangeJournal, serial: number): Set<number> | null {
+export function buildingsChangedSince(journal: ChangeJournal, serial: number): Set<number> | null {
   if (serial >= journal.version) return new Set();
   const entries = journal.since(serial, ['buildings']);
   if (!entries) return null;

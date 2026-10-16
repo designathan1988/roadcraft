@@ -223,6 +223,11 @@ export class SimClient implements JournalReader {
     this.send({ type: 'reset' });
   }
 
+  /** The micro window round (x, y), and the buffer the worker writes the meso traffic into (`render/densityCars.ts`). */
+  window(x: number, y: number, r: number, meso: SharedArrayBuffer): void {
+    this.send({ type: 'window', x, y, r, meso });
+  }
+
   /** A frame of the page: the map's changes since the last sent, then the wall time and the controls (one frame asked at a time). */
   frame(wall: number, hold: boolean, run: { readonly traffic: boolean; readonly pedestrians: boolean; readonly maxShare: number }): void {
     this.sendChanges();

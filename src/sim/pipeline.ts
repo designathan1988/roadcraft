@@ -68,6 +68,8 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   w.city.step(w);
   // The scenery's people and traffic, made and taken away out of sight (`sim/ambient`).
   w.ambient.step(w);
+  // The whole map's meso traffic: its cars made in the micro window and taken back out of it (`meso/meso.ts`).
+  w.meso?.step(w, traffic);
   ensureVehicleRoutes(w);
   // The micro window moved with the focus and the vehicles: conflicts where traffic is, before the admission reads them (5).
   w.keepMicroWindow();

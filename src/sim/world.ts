@@ -47,6 +47,7 @@ import type { PedView } from './people/view';
 import type { PedestrianEngine } from './people/engine';
 import { City } from './city/city';
 import { AmbientWorld } from './ambient/ambient';
+import type { Meso } from './meso/meso';
 import { Walkways, type WalkGraph } from '@world/walkways';
 import { mainRoadLegs, type SignalSettings } from '@world/roads/rules';
 import { FlowStats } from './roads/flowStats';
@@ -102,6 +103,8 @@ export interface SimStreams {
   readonly lots: Rng;
   readonly lorries: Rng;
   readonly ambient: Rng;
+  /** The meso traffic's cars made in the micro window (`meso/meso.ts`). */
+  readonly meso: Rng;
 }
 
 /** The streams of a world seeded `seed`: what a new world starts with, and a reset starts again from. */
@@ -122,6 +125,7 @@ function forkStreams(seed: number): SimStreams {
     lots: root.fork('lots'),
     lorries: root.fork('lorries'),
     ambient: root.fork('ambient'),
+    meso: root.fork('meso'),
   };
 }
 
@@ -245,6 +249,8 @@ export class SimWorld {
   readonly city = new City();
   /** The life of the scenery: people and traffic made round the view (`sim/ambient`). */
   readonly ambient = new AmbientWorld();
+  /** The meso traffic of the whole map and its micro window (`meso/meso.ts`): the game's (`simHost.ts`); off in the specs, the micro simulation everywhere. */
+  meso: Meso | null = null;
   /** Share of the population ceilings this device carries (1, or `NARROW_SCREEN_SHARE` on a narrow screen). */
   populationShare = 1;
   /** Where the player is looking, world units */
@@ -326,6 +332,7 @@ export class SimWorld {
     this.streams = forkStreams(this.seed);
     this.forgetSignals();
     this.pedEngine.reset(this);
+    this.meso?.reset();
   }
 
   // ------------------------------------------------------------- accessors

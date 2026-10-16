@@ -89,6 +89,8 @@ export type ToSim =
   | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingChange[] }
   | { readonly type: 'frame'; readonly wall: number; readonly hold: boolean; readonly controls: SimControls }
   | { readonly type: 'reset' }
+  /** The micro window's centre and radius (`meso/meso.ts`), and the page's buffer the meso traffic is written into (`meso/memory.ts`). */
+  | { readonly type: 'window'; readonly x: number; readonly y: number; readonly r: number; readonly meso: SharedArrayBuffer }
   | { readonly type: 'act'; readonly id: number; readonly act: SimAct }
   | { readonly type: 'ask'; readonly id: number; readonly ask: SimAsk };
 

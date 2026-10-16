@@ -42,7 +42,7 @@ const OPEN_TICKS = 600;
 const PARKED = 0.62;
 
 /** The kinds of car that stand in bays and join the traffic (buses run their lines, `sim/transit`). */
-const TRAFFIC: readonly (readonly [Archetype, number])[] = ARCHETYPES
+export const TRAFFIC: readonly (readonly [Archetype, number])[] = ARCHETYPES
   .filter((a) => a.id !== 'bus')
   .map((a) => [a, a.id === 'truck' ? a.weight * 0.4 : a.weight] as const);
 const PARKED_KINDS = ARCHETYPES.filter((a) => a.id === 'hatch' || a.id === 'sedan' || a.id === 'suv' || a.id === 'van');
@@ -171,7 +171,8 @@ export class AmbientWorld {
     const wantDrivers = Math.min(focus.detail ? MAX_DRIVERS : MAX_DRIVERS_FAR,
       Math.round(stepsIn(carRoad, 100) * Math.max(0.25, density(CARS))));
     this.people(w, focus, reach, wantWalkers);
-    this.traffic(w, focus, carReach, wantDrivers);
+    // With the meso traffic the cars round the view are its micro window's (`meso/meso.ts`).
+    if (!w.meso) this.traffic(w, focus, carReach, wantDrivers);
     this.parking(w);
   }
 
@@ -485,7 +486,7 @@ export class AmbientWorld {
   private open(w: SimWorld): void {
     // A map with no road (a new map): nothing to fill, and nothing filled later in sight
     if (!this.openingLanes(w).length) { this.endOpening(); return; }
-    const cars = w.edgeTraffic ? trafficTarget(w) - w.vehicles.size : 0;
+    const cars = w.edgeTraffic && !w.meso ? trafficTarget(w) - w.vehicles.size : 0;
     const people = this.peopleTarget(w) - this.walkers.size;
     if (cars > 0) this.openCars(w, Math.min(cars, OPEN_CARS));
     if (people > 0) this.openPeople(w, Math.min(people, OPEN_PEOPLE));
