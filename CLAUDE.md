@@ -102,16 +102,25 @@ pasted in the session that started this; these are its binding decisions.
   (bb95c88); ragdolls without per-frame allocation, cooked crowd palettes on the GPU (a01320e-06ac47d); renderer
   derivatives by cell and diary (5d8fc21-5895df9); instance layers keep poses (3db1344); KTX2 surfaces baked at build,
   rgba8 (20d18f7); Steam saves as files for Auto-Cloud, Windows and Linux depots (7a49aaa).
-- Streaming world in main (2026-10-16, not yet run in the game or the tests): tiles and ids (`world/tiles.ts`), tile
+- Streaming world in main (2026-10-16; tests of the block pass, import cycles undone b6f87db): tiles and ids (`world/tiles.ts`), tile
   store as the save (`editor/tileStore.ts`), generator per tile (`editor/wholeMapTile.ts` buildStreamTile, unbounded
   plan), `RoadDoc.loadTile`/`unloadTile`/`tileRecords`/`worldValues`, `worldStreamer.ts` (3x3 region, 5-tile ring made
   ahead, one tile put in a frame, undo forgetting what a tile took), no fixed map (`bounds.ts` plates without end,
   terrain on demand), far buildings (`buildings/farLevels.ts`) and far roads (`farRoads.ts`) baked per tile from the
   store, road and conflict caches read by key (never whole), `generateCity({ size: 'whole' })` opens it.
-- Work in flight: meso link tables per tile (af931600); far city past the made tiles from the generator's plan, and
-  `FarLevels` on the generic `farTree.ts` (afd03c54). Kept for the player's yes on shots: far roads painted into the
-  terrain and terrain at 13 texture units (af56964b, cf05005).
-- Open on the streaming world: city statistics read the region only; growth runs in the region only; the joins between near and
+- Merged: meso link tables per tile read by the sim worker (8c9d3bc, 789cea6); meso cars handed to the micro window after
+  it opened are made (a224f62); far city past the made tiles drawn from the generator's plan, `FarLevels` on the generic
+  `farTree.ts` (7d7320e). Kept for the player's yes on shots: far roads painted into the terrain and terrain at 13
+  texture units (af56964b, cf05005).
+- Open on the streaming world, measured 2026-10-16 (headless, build and dev, under `run-limited`): the opening of
+  `generateCity({ size: 'whole' })` still dies out of memory at ~55 s in the 8 GB job. The page allocates ~270 MB/s
+  (8 GB in 30 s; ~360 MB live): each building's floor is worked out 5 times on the page during the opening (40,074
+  `floorHeight` for 7,843 buildings), ~70 KB of garbage each (`pavedHeightFrom` -> `roadAt` allocates its answer and a
+  frame per sample; `lotFront` scans at 0.1 m), through the camera solids, the site grading/pads and the sim's
+  `trafficBuildings.project` on the page; the shared `floors` cache is cleared by every ground change of the opening
+  (`floorGroundSince`, plates and roads landing tile by tile). Fix: floors once per building per ground that really
+  changed under it, and the per-building derived data (floor, pads, doors, traffic) worked out in workers.
+- Also open: city statistics read the region only; growth runs in the region only; the joins between near and
   far roads at the region's edge do not match exactly (far junctions only on owned nodes, heights differ).
 
 ## Streaming world (2026-10-16, the player's order: cities far larger than 10 km; the root fix)
