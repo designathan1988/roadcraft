@@ -165,6 +165,29 @@ export function writeFarPatch(far: FlatFar, slot: number, cx: number, cy: number
   }
 }
 
+/** How far past the ring the ground is drawn, each way: past any view's far plane. */
+const HORIZON = m(131_072);
+/** DO NOT leave the void past the far ring: the relief ends within `RELIEF_HALF + RELIEF_BLEND` of the origin (`world/terrain.ts`), far inside the ring, so past it the land is flat at the base - one frame of four quads from the ring's square out to `horizon`, at `TERRAIN_BASE`, facing up, drawn with the far land's material (the far levels and the plan's city stood over nothing there, `farTree.ts`) */
+export function horizonGeometry(x0: number, x1: number, y0: number, y1: number, horizon: number): BufferGeometry {
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const X0 = cx - horizon, X1 = cx + horizon, Y0 = cy - horizon, Y1 = cy + horizon;
+  // The inner square's corners then the outer's, each counter-clockwise on the plan (three's z is -y).
+  const corners: readonly (readonly [number, number])[] = [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [X0, Y0], [X1, Y0], [X1, Y1], [X0, Y1]];
+  const position = new Float32Array(corners.length * 3), normal = new Float32Array(corners.length * 3);
+  corners.forEach(([x, y], k) => { position[k * 3] = x; position[k * 3 + 1] = TERRAIN_BASE; position[k * 3 + 2] = -y; normal[k * 3 + 1] = 1; });
+  // Each band between an inner edge and the outer one: outer a, outer b, inner b, inner a (front face up).
+  const index: number[] = [];
+  for (let e = 0; e < 4; e++) {
+    const a = 4 + e, b = 4 + (e + 1) % 4, c = (e + 1) % 4, d = e;
+    index.push(a, b, c, a, c, d);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(position, 3));
+  g.setAttribute('normal', new BufferAttribute(normal, 3));
+  g.setIndex(index);
+  return g;
+}
+
 /** A far patch to draw: its slot, and which of its edges (south, north, west, east) are the ring's rim (no skirt: the cut side stands there). */
 export interface FarPatchDrawn { readonly slot: number; readonly rim: readonly [boolean, boolean, boolean, boolean] }
 
@@ -230,6 +253,14 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   slab.receiveShadow = true;
   slab.visible = false;
   root.add(slab);
+  // THE GROUND PAST THE RING, out to the horizon (`horizonGeometry`): the world has no edge.
+  const horizon = new Mesh(new BufferGeometry(), farGround.material);
+  horizon.matrixAutoUpdate = false;
+  horizon.name = 'flat-world-horizon';
+  horizon.frustumCulled = false;
+  horizon.receiveShadow = true;
+  horizon.visible = false;
+  root.add(horizon);
   // THE WOODS OF THE FAR PLATES (`farForest.ts`)
   const farForest = createFarForest(FAR_SLOTS, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
   root.add(farForest.object);
@@ -257,6 +288,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     slab.geometry.dispose();
     slab.geometry = slabGeometry(cx - reach, cx + reach, cy - reach, cy + reach, PLATE_SIZE / FAR_QUADS, (x, y) => TERRAIN_BASE + reliefHeight(relief, x, y));
     slab.visible = true;
+    horizon.geometry.dispose();
+    horizon.geometry = horizonGeometry(cx - reach, cx + reach, cy - reach, cy + reach, HORIZON);
+    horizon.visible = true;
   };
   const neighbour = (fp: FarPlate, di: number, dj: number): boolean => farPlates.has(plateOf(fp.cx + di * PLATE_SIZE, fp.cy + dj * PLATE_SIZE));
   /** The far patches of the plates not drawn in full, their rims where the ring ends. */
@@ -798,6 +832,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       farGround.dispose();
       farForest.dispose();
       far.geometry.dispose();
+      horizon.geometry.dispose();
       slab.geometry.dispose();
       (slab.material as MeshStandardMaterial).map?.dispose();
       (slab.material as MeshStandardMaterial).dispose();
