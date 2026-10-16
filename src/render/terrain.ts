@@ -89,6 +89,9 @@ const NO_WATER = -100_000;
 
 /** Corners per side of the terrain grid — one more than its cells. */
 const GRID = TERRAIN_SEGMENTS + 1;
+/** Corners visited by the current shaping pass, by pass, so regions and boxes that overlap visit each once: one for every plate, the passes run one at a time. */
+let shapeVisited: Int32Array | null = null;
+let shapePasses = 0;
 /** A plate's grid of corners as the shaping and the sampling read it (`terrainShaping.ts`). */
 const plateGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 /** A plate's grid as its patches read it (`terrainLod.ts`). */
@@ -1466,9 +1469,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
 
   /** Pulls the ground towards the roads */
-  /** Corners visited by the current shaping pass, by stamp, so regions and boxes that overlap visit each once. */
-  const visited = new Int32Array(GRID * GRID);
-  let pass = 0;
   /** The plate's corners as `shapeCorners` reads them: where the mesh stands them. */
   const corners: CornerGrid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF, x: cornerX, y: cornerY };
 
@@ -1480,7 +1480,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const regions = regionList(region);
     // Only the corners of the regions, or of the boxes some road or platform could shape (`shapeCorners`)
     return shapePass(regions, shape && ((take) => {
-      pass++;
+      const visited = shapeVisited ??= new Int32Array(GRID * GRID);
+      const pass = ++shapePasses;
       shapeCorners(corners, natural, shape, regions, visited, pass, take);
     }));
   };
