@@ -336,10 +336,10 @@ export function buildRoadElevation(
     }
     return list;
   };
-  /** A node's inputs as text: where it stands, its authored height, its roads. */
-  const keyOf = (node: NodeId): string => {
+  /** A node's inputs as a digest (no text per node of the map): where it stands, its authored height, its roads. */
+  const keyOf = (node: NodeId): number => {
     const point = net.doc.node(node);
-    return `${point?.x},${point?.y}|${point?.heightOffset}|${incident(node).join(',')}`;
+    return new Digest().addPlain(point ? [point.x, point.y, point.heightOffset] : null).addAll(incident(node)).value();
   };
 
   // ------------------------------------------------- what is solved again
@@ -789,7 +789,7 @@ interface SolveMemo {
   /** The network's state the solve was made from (`Network.changesSince`). */
   readonly state: object;
   readonly profiles: RerootMap<SegmentId, Profile>;
-  /** Each node's inputs as text, and what it settled with. */
+  /** Each node's inputs as a digest, and what it settled with. */
   readonly nodes: RerootMap<NodeId, SettledNode>;
   /** Each road's summary (`RoadElevation.summaries`): a road kept whole keeps its own. */
   readonly summaries: RerootMap<SegmentId, Summary>;
@@ -802,8 +802,8 @@ interface SolveMemo {
 
 /** What a node settled with: kept whole while its inputs (`key`) are the same. */
 interface SettledNode {
-  /** Where it stands, its authored height, its roads, as text. */
-  readonly key: string;
+  /** Where it stands, its authored height, its roads, as a digest. */
+  readonly key: number;
   /** The height it settled at, and the one it started the rounds from (equal: no road carried it up). */
   readonly height: number;
   readonly start: number;
@@ -987,7 +987,7 @@ function sameProfile(a: Profile, b: Profile): boolean {
 /** A digest of what a road looks like beyond its widths (materials, flush footways); 0 for the class's own. */
 function lookDigest(rt: RoadType): number {
   if (!rt.materials && !rt.flushLeft && !rt.flushRight && !rt.medianFlush) return 0;
-  return new Digest().addText(JSON.stringify(rt.materials ?? null)).add(rt.flushLeft ? 1 : 0).add(rt.flushRight ? 1 : 0)
+  return new Digest().addPlain(rt.materials ?? null).add(rt.flushLeft ? 1 : 0).add(rt.flushRight ? 1 : 0)
     .add(rt.medianFlush ? 1 : 0).value() || 1;
 }
 

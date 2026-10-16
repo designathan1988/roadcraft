@@ -1,4 +1,6 @@
+import { Digest } from '@core/digest';
 import { ForkMap, ForkSet } from '@core/forkMap';
+import { samePlain } from '@core/plain';
 import { MIN_RIBBON } from '@core/scalar';
 import type { RoadDoc, RoadNode, RoadSegment } from './doc';
 import type { NodeId, SegmentId } from './ids';
@@ -36,36 +38,42 @@ const SQUEEZE_NOISE = m(0.4);
 
 /** A junction solved for one pass, with what the pass handed it (`junctionKey`) and the plate it reaches. */
 interface MemoEntry {
-  readonly key: string;
+  readonly key: number;
   readonly byLevel: Map<SurfaceLevel, Junction>;
   readonly plate: readonly (readonly [SegmentId, number])[];
 }
 
 interface RibbonMemo {
   readonly ribbon: SegmentRibbon;
-  readonly trims: string;
+  /** The trims it was made with (compared as numbers, `samePlain`). */
+  readonly trims: SegmentTrims;
   readonly bendA: number;
   readonly bendB: number;
 }
 
+// DO NOT keep a road's or a node's inputs as JSON text: a number per record (`Digest`), not a string per record of the map.
 /** Everything a segment's polyline, ribbon and junction legs are built from: its record and where its two ends stand. */
-function segmentSourceKey(doc: RoadDoc, s: RoadSegment): string {
+function segmentSourceKey(doc: RoadDoc, s: RoadSegment): number {
   const a = doc.node(s.a), b = doc.node(s.b);
-  return `${s.a}>${s.b}|${s.type}|${s.curve ? `${s.curve.t},${s.curve.h}` : '-'}|${s.dashOrigin}|${s.direction}|${s.lanes}|` +
-    `${s.structure}|${s.section ? JSON.stringify(s.section) : '-'}|${s.parking ? JSON.stringify(s.parking) : '-'}|` +
-    `${a ? `${a.x},${a.y}` : '-'}|${b ? `${b.x},${b.y}` : '-'}${s.cutWalls ? '|walls' : ''}`;
+  return new Digest().add(s.a).add(s.b).add(s.type).addPlain(s.curve ? [s.curve.t, s.curve.h] : null).add(s.dashOrigin)
+    .addText(s.direction).addPlain(s.lanes).addText(s.structure).addPlain(s.section ?? null).addPlain(s.parking ?? null)
+    .addPlain(a ? [a.x, a.y] : null).addPlain(b ? [b.x, b.y] : null).add(s.cutWalls ? 1 : 0).value();
 }
 
 /** Everything of a node a junction there is built from: its place, height, roads by id, control, crossing and end. */
-function nodeSourceKey(n: RoadNode): string {
-  return `${n.x},${n.y}|${n.heightOffset}|${n.smooth ? 1 : 0}|${n.incident.join(',')}|${n.control}|` +
-    `${n.blockedMovements.join(',')}|${n.crossing ? `${n.crossing.kind}:${n.crossing.segment}` : '-'}|${n.end ?? '-'}|${n.uturn ?? '-'}`;
+function nodeSourceKey(n: RoadNode): number {
+  return nodeSourceDigest(n).value();
+}
+
+function nodeSourceDigest(n: RoadNode): Digest {
+  return new Digest().add(n.x).add(n.y).add(n.heightOffset).add(n.smooth ? 1 : 0).addAll(n.incident).addText(n.control)
+    .addPlain(n.blockedMovements).addPlain(n.crossing ? [n.crossing.kind, n.crossing.segment] : null)
+    .addPlain(n.end ?? null).addPlain(n.uturn ?? null);
 }
 
 /** The whole record of a node: what the traffic reads of it besides the geometry (lane links, signal settings, approach rules). */
-function nodeRecordKey(n: RoadNode): string {
-  return `${nodeSourceKey(n)}|${n.laneLinks ? JSON.stringify(n.laneLinks) : '-'}|${n.signal ? JSON.stringify(n.signal) : '-'}|` +
-    `${n.approachRules ? JSON.stringify(n.approachRules) : '-'}`;
+function nodeRecordKey(n: RoadNode): number {
+  return nodeSourceDigest(n).addPlain(n.laneLinks ?? null).addPlain(n.signal ?? null).addPlain(n.approachRules ?? null).value();
 }
 
 /** A point's rectangle, for filing a node by where it stands. */
@@ -75,10 +83,10 @@ const pointRect = (x: number, y: number): ChangeRect => [x, y, x, y];
 export class NetworkBuild {
   /** The diary's serial the last rebuild read up to; -1: never built. */
   private seen = -1;
-  private segmentSource = new Map<SegmentId, string>();
+  private segmentSource = new Map<SegmentId, number>();
   private segmentEnds = new Map<SegmentId, readonly [NodeId, NodeId]>();
-  private nodeSource = new Map<NodeId, string>();
-  private nodeRecord = new Map<NodeId, string>();
+  private nodeSource = new Map<NodeId, number>();
+  private nodeRecord = new Map<NodeId, number>();
   private nodeIncident = new Map<NodeId, readonly SegmentId[]>();
   private nodePlaces = new CellFiling<NodeId, object>();
 
@@ -246,7 +254,7 @@ export class NetworkBuild {
       networkWork.segments++;
       const { trims, scale } = this.reconcileSegment(id, (n) => this.junction2(n));
       const oldTrims = this.trims2.get(id);
-      if (!oldTrims || JSON.stringify(oldTrims) !== JSON.stringify(trims) || scale !== (this.scale2.get(id) ?? 1)) retrimmed.add(id);
+      if (!oldTrims || !samePlain(oldTrims, trims) || scale !== (this.scale2.get(id) ?? 1)) retrimmed.add(id);
       this.trims2.set(id, trims);
       if (scale < 1) this.scale2.set(id, scale); else this.scale2.delete(id);
     }
@@ -311,7 +319,7 @@ export class NetworkBuild {
       if (!seg) continue;
       const trims = this.finalTrims(id, seg);
       const old = net.trims.get(id);
-      if (!old || JSON.stringify(old) !== JSON.stringify(trims)) retrimmedFinal.add(id);
+      if (!old || !samePlain(old, trims)) retrimmedFinal.add(id);
       net.trims.set(id, trims);
       this.writePlate(id, seg);
       const before = net.ribbons.get(id);
@@ -506,21 +514,22 @@ export class NetworkBuild {
   }
 
   /** What a pass hands a node's junction beyond the node and its roads */
-  private junctionKey(node: NodeId, scales: ReadonlyMap<SegmentId, number>, capped: boolean): string {
+  private junctionKey(node: NodeId, scales: ReadonlyMap<SegmentId, number>, capped: boolean): number {
     const doc = this.net.doc;
     const source = doc.node(node);
-    if (!source) return 'gone';
-    const parts: string[] = [capped ? 'capped' : 'free'];
+    const digest = new Digest();
+    if (!source) return digest.add(-1).value();
+    digest.add(capped ? 1 : 0);
     for (const id of source.incident) {
       const segment = doc.segment(id);
-      if (!segment) { parts.push('gone'); continue; }
-      parts.push(String(scales.get(id) ?? 1));
+      if (!segment) { digest.add(NaN); continue; }
+      digest.add(scales.get(id) ?? 1);
       if (capped) {
         const trims = this.trims2.get(id);
-        parts.push(JSON.stringify(trims ? (segment.a === node ? trims.a : trims.b) : null));
+        digest.addPlain(trims ? (segment.a === node ? trims.a : trims.b) : null);
       }
     }
-    return parts.join('|');
+    return digest.add(source.incident.length).value();
   }
 
   /** Final per-leg caps for one junction after segment-end reconciliation. */
@@ -650,13 +659,12 @@ export class NetworkBuild {
   /** A road's ribbon: the one it had when its road, its trims and the bends at its ends are the same. */
   private buildRibbon(id: SegmentId, seg: RoadSegment, t: SegmentTrims): SegmentRibbon {
     const net = this.net;
-    const trimsKey = JSON.stringify(t);
     const bendA = bendAt(net.doc, net.polylines, seg.a, id);
     const bendB = bendAt(net.doc, net.polylines, seg.b, id);
     const known = this.ribbonMemo.get(id);
-    if (known && known.trims === trimsKey && known.bendA === bendA && known.bendB === bendB) return known.ribbon;
+    if (known && samePlain(known.trims, t) && known.bendA === bendA && known.bendB === bendB) return known.ribbon;
     const ribbon = makeRibbon(net.doc, net.polylines, id, seg, t, bendA, bendB);
-    this.ribbonMemo.set(id, { ribbon, trims: trimsKey, bendA, bendB });
+    this.ribbonMemo.set(id, { ribbon, trims: t, bendA, bendB });
     return ribbon;
   }
 }
