@@ -77,7 +77,8 @@ export class WorldStreamer {
   private aheadOrder: number[] = [];
   private writing: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private readonly tell: StreamerEvents = {}) {}
+  /** `inFlight`: how many tiles are asked of the store at once (the generator's lanes, `tileGenerator.ts` tileLanes). */
+  constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private readonly tell: StreamerEvents = {}, private readonly inFlight = IN_FLIGHT) {}
 
   /** The camera's focus on the map (x, y): the tiles around it wanted, the nearest asked first. */
   focus(x: number, y: number): void {
@@ -160,7 +161,7 @@ export class WorldStreamer {
   private ask(): void {
     this.askAhead();
     for (const key of this.wanted) {
-      if (this.asked.size >= IN_FLIGHT) return;
+      if (this.asked.size >= this.inFlight) return;
       if (this.doc.hasTile(key) || this.asked.has(key) || this.ready.has(key)) continue;
       if (performance.now() - (this.failedAt.get(key) ?? -Infinity) < RETRY_MS) continue;
       this.asked.add(key);
@@ -183,7 +184,7 @@ export class WorldStreamer {
     if (this.asked.size > 0 || this.ready.size > 0 || !this.settled) return;
     for (const key of this.aheadOrder) {
       // Nearest first: past the ring, the bound drops to one.
-      if (this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? IN_FLIGHT : AHEAD_IN_FLIGHT)) return;
+      if (this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : AHEAD_IN_FLIGHT)) return;
       if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key) || this.wantedNear(key, ACTIVE_RADIUS)) continue;
       this.ahead.add(key);
       // DO NOT bring a tile made ahead onto the page: only its version is wanted here (the far levels and the meso read it from the store).

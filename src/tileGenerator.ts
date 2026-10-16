@@ -3,12 +3,12 @@ import { tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
-import { jobLanes, jobPort } from './jobs/jobPool';
+import { jobLanes, jobPort, jobWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
-/** Workers making tiles at once: as many as the region asks at a time (`worldStreamer.ts` IN_FLIGHT), never more than the pool has. */
-const MOST_LANES = 4;
+/** Workers making tiles at once, and how many the region asks at a time (`worldStreamer.ts` inFlight): the pool's less three kept free for the world's own jobs (the cells, the road tiles, the ground, the far levels: the region's build would wait behind nine tiles), four at least where the pool is small, never more than the pool has. A fresh opening is nine tiles of 2-25 s each: on one round of lanes it takes one tile's time, on three rounds three. */
+export const tileLanes = (): number => jobLanes(Math.max(4, jobWorkers() - 3));
 
 /** Where a tile made is stored by the worker, and whether its texts come back with its version. */
 type StoreAsk = NonNullable<StreamTileAsk['store']>;
@@ -52,7 +52,7 @@ export class TileGenerator {
 
   /** Each free lane given the next tile asked. */
   private pump(): void {
-    const lanes = jobLanes(MOST_LANES);
+    const lanes = tileLanes();
     while (this.lanes.length < lanes && this.queue.length > this.lanes.filter((l) => !l.busy).length) this.lanes.push(this.lane());
     for (const lane of this.lanes) {
       if (lane.busy) continue;

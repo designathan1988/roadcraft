@@ -2,7 +2,7 @@ import { MESO_REACH } from '@sim/meso/tileFeed';
 import { TileStore, portTiles, storeTiles } from '@editor/tileStore';
 import { jobPort } from './jobs/jobPool';
 import { WorldStreamer } from './worldStreamer';
-import { TileGenerator } from './tileGenerator';
+import { TileGenerator, tileLanes } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord } from '@world/tiles';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
@@ -1955,7 +1955,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
     activeChanged: (keys, rects) => { for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); sim.activeChanged(keys); },
     writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
-  });
+  }, tileLanes());
   const activeAt = (x: number, y: number): boolean => streamer.isActive(tileKeyAt(x, y));
   // The far levels stand in for every tile not in the active region, the kept ring's too (its records are on the page for the edits and the simulation, its products are the far levels').
   for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, ...(desktopStores ? {} : { workersRead: mapName }) }, (key) => doc.hasTile(key) && streamer.isActive(key));
