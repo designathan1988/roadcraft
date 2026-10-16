@@ -1,4 +1,5 @@
 import type { JobScope } from '../jobs/jobScope';
+import type { TileOp } from './tileStore';
 
 /** THE AUTOSAVE'S WRITER: the text, the compression and the IndexedDB write of what the page found changed, off the page */
 
@@ -108,7 +109,8 @@ export function indexedDbParts(open: () => Promise<IDBDatabase | null>, storeNam
     async get(keys) {
       const out = await transact('readonly', (store) => {
         const requests = keys.map((key) => store.get(key));
-        return () => requests.map((r) => (r.result instanceof Blob ? r.result : null));
+        // A text (the whole-map save `persistence.ts` keeps under the map's own key) handed on as a blob, for the tile store's migration.
+        return () => requests.map((r) => (r.result instanceof Blob ? r.result : typeof r.result === 'string' ? new Blob([r.result]) : null));
       });
       return out ?? keys.map(() => null);
     },
@@ -123,11 +125,24 @@ export function indexedDbParts(open: () => Promise<IDBDatabase | null>, storeNam
   };
 }
 
-/** This service of the job system (`jobs/job.worker.ts`): each batch encoded and written, answered by its id. */
+/** What the page asks of this service: a save's batch, or a call of the tile store (`tileStore.ts`). */
+type SaveMessage = { readonly id: number; readonly batch: SaveBatch } | { readonly id: number; readonly tiles: TileOp };
+
+/** This service of the job system (`jobs/job.worker.ts`): each batch encoded and written, each tile call run, answered by its id. */
 export function serve(self: JobScope): void {
   const store = indexedDbParts(openSaves, SAVES_STORE);
-  self.onmessage = (event: MessageEvent<{ readonly id: number; readonly batch: SaveBatch }>) => {
-    const { id, batch } = event.data;
+  self.onmessage = (event: MessageEvent<SaveMessage>) => {
+    const message = event.data;
+    if ('tiles' in message) {
+      const { id, tiles } = message;
+      // The tile store's module loaded on its first call: a save of the whole-map format never loads it.
+      void import('./tileStore').then(({ runTileOp }) => runTileOp(store, tiles)).then(
+        (value) => self.postMessage({ id, ok: true, value }),
+        (error: unknown) => { console.error('[save] the worker could not reach the tiles', error); self.postMessage({ id, ok: false }); },
+      );
+      return;
+    }
+    const { id, batch } = message;
     void writeBatch(store, batch).then(
       (ok) => self.postMessage({ id, ok }),
       (error: unknown) => { console.error('[save] the worker could not write the save', error); self.postMessage({ id, ok: false }); },

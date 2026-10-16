@@ -1,0 +1,465 @@
+import type { WholeMapOptions } from '@world/cityGen/wholeMap';
+import type { SerializedDoc } from '@world/doc';
+import { lotCentre } from '@world/lotRings';
+import { rescaleSerializedDoc } from '@world/rescale';
+import { OWNER, TILE_COUNTED, type TileRecords, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
+import { METERS_PER_UNIT, m } from '@world/units';
+import { type PartStore, type SaveEntry, gunzip, storeWriter } from './save.worker';
+
+/** THE TILE STORE: the save of a world of tiles (CLAUDE.md, "Streaming world"), each tile read and written alone, off the page */
+
+/** DO NOT read or write the map whole: a tile is one blob and its write one transaction; the page hands the save worker the call, nothing else */
+
+/** The lists of a map the tiles have no field for yet (`TileRecords`): kept whole, in the map's order, never dropped. */
+interface HeldLists {
+  readonly terrain: readonly unknown[];
+  readonly fog: readonly unknown[];
+  readonly gullies: readonly unknown[];
+  readonly clouds: readonly unknown[];
+  readonly treeClearings: readonly unknown[];
+  readonly zones: readonly unknown[];
+  readonly zoneMarks: readonly unknown[];
+  /** Land keys whose place cannot be told (`lotKeyPlace`). */
+  readonly lotKeys: readonly string[];
+}
+
+/** What the world keeps outside its tiles: the values with no place on the map, small. */
+export interface WorldMeta {
+  readonly version: 1;
+  /** The whole-map generator's options with its seed (`cityGen/wholeMap.ts`); null: a map not generated, or saved before the tiles. */
+  readonly generator: WholeMapOptions | null;
+  /** Metres per world unit the tiles' records are in (`world/units.ts`). */
+  readonly unit: number;
+  readonly relief?: number;
+  readonly markingStyle?: string;
+  readonly nature?: SerializedDoc['nature'];
+  readonly weather?: unknown;
+  /** The fog's settings (its dabs are the map's). */
+  readonly fog?: unknown;
+  readonly gullyAuto?: unknown;
+  readonly economy?: SerializedDoc['economy'];
+  readonly transit?: unknown;
+  readonly people?: readonly unknown[];
+  /** A map saved before the tiles: what of it no tile holds. */
+  readonly held?: HeldLists;
+  /** A map saved before the tiles: its camera and simulation settings, and when it was saved. */
+  readonly settings?: unknown;
+  readonly savedAt?: number;
+}
+
+/** Where the migrated map came from: the tiles' manifest (5), the parts' (3), the whole text in IndexedDB or in `localStorage`. */
+type SaveSource = 'tiles' | 'parts' | 'large' | 'local';
+
+/** What a migration did: nothing (a world already stored, or no map saved), the map distributed into its tiles, or a write refused. */
+interface MigrationReport {
+  readonly outcome: 'present' | 'none' | 'migrated' | 'failed';
+  readonly from: SaveSource | null;
+  /** The tiles written. */
+  readonly keys: readonly number[];
+}
+
+/** A call of the tile store, as the page hands it to the save worker (`save.worker.ts` `serve`). */
+export type TileOp =
+  | { readonly op: 'read'; readonly map: string; readonly key: number }
+  | { readonly op: 'write'; readonly map: string; readonly records: TileRecords }
+  | { readonly op: 'meta'; readonly map: string }
+  | { readonly op: 'setMeta'; readonly map: string; readonly meta: WorldMeta }
+  | { readonly op: 'migrate'; readonly map: string; readonly local: string | null };
+
+/** Who runs the tile store's calls: the save worker (`portTiles`), or the thread that asks (`storeTiles`). */
+interface TileBackend { run(op: TileOp): Promise<unknown> }
+
+const tileBlobKey = (map: string, key: number): string => `${map}:T:${key}`;
+const metaKey = (map: string): string => `${map}:world`;
+
+type ListField = Exclude<keyof TileRecords, 'key' | 'version' | 'next'>;
+type NextKind = keyof TileRecords['next'];
+/** Every list of a tile and every kind it counts ids for (a `Record`: a field added to `TileRecords` and not here does not compile). */
+const LIST_FIELDS = Object.keys({
+  nodes: 0, borrowedNodes: 0, segments: 0, poles: 0, borrowedPoles: 0, poleSpans: 0, buildings: 0, lots: 0, lotKeys: 0,
+  landscape: 0, barriers: 0, paint: 0, trees: 0, elements: 0,
+} satisfies Record<ListField, 0>) as ListField[];
+const NEXT_KINDS = Object.keys({
+  node: 0, segment: 0, pole: 0, span: 0, building: 0, lot: 0, landscape: 0, barrier: 0,
+} satisfies Record<NextKind, 0>) as NextKind[];
+
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+function isTileRecords(value: unknown): value is TileRecords {
+  if (!isObject(value) || !Number.isInteger(value['key']) || !finite(value['version'])) return false;
+  const next = value['next'];
+  return LIST_FIELDS.every((field) => Array.isArray(value[field])) && isObject(next) && NEXT_KINDS.every((kind) => finite(next[kind]));
+}
+
+function isWorldMeta(value: unknown): value is WorldMeta {
+  return isObject(value) && value['version'] === 1 && finite(value['unit']) && (value['generator'] === null || isObject(value['generator']));
+}
+
+/** A stored tile, or null when the store has none; a tile stored and unreadable throws (DO NOT generate over the player's tile). */
+async function readTile(store: PartStore, map: string, key: number): Promise<TileRecords | null> {
+  const [blob] = await store.get([tileBlobKey(map, key)]);
+  if (!blob) return null;
+  const value: unknown = JSON.parse(await gunzip(blob));
+  if (!isTileRecords(value) || value.key !== key) throw new Error(`tile ${key} of ${map} is stored and cannot be read`);
+  return value;
+}
+
+async function readMeta(store: PartStore, map: string): Promise<WorldMeta | null> {
+  const [blob] = await store.get([metaKey(map)]);
+  if (!blob) return null;
+  const value: unknown = JSON.parse(await blob.text());
+  if (!isWorldMeta(value)) throw new Error(`the world of ${map} is stored and cannot be read`);
+  return value;
+}
+
+/** Runs one call of the tile store against `store`: in the save worker on IndexedDB, or in the thread that asks (tests). */
+export async function runTileOp(store: PartStore, op: TileOp): Promise<unknown> {
+  const writer = store.writer ?? storeWriter(store);
+  switch (op.op) {
+    case 'read': return readTile(store, op.map, op.key);
+    case 'write': return writer.write({ put: [{ key: tileBlobKey(op.map, op.records.key), value: op.records, packed: true }], remove: [] });
+    case 'meta': return readMeta(store, op.map);
+    case 'setMeta': return writer.write({ put: [{ key: metaKey(op.map), value: op.meta, packed: false }], remove: [] });
+    case 'migrate': return migrate(store, op.map, op.local);
+  }
+}
+
+/** The calls run where they are asked (the tests; a store whose own writer is off the page). */
+export const storeTiles = (store: PartStore): TileBackend => ({ run: (op) => runTileOp(store, op) });
+
+/** The calls run in the job system's `save` lane (`port`): the page posts the call and is handed the answer. */
+export function portTiles(port: () => Worker): TileBackend {
+  let worker: Worker | null = null;
+  let next = 1;
+  const waiting = new Map<number, { readonly done: (value: unknown) => void; readonly fail: (error: Error) => void }>();
+  const failAll = (): void => { for (const w of waiting.values()) w.fail(new Error('the save worker stopped')); waiting.clear(); };
+  return {
+    run(op) {
+      if (!worker) {
+        worker = port();
+        worker.onmessage = (event: MessageEvent<{ readonly id: number; readonly ok: boolean; readonly value?: unknown }>) => {
+          const w = waiting.get(event.data.id);
+          waiting.delete(event.data.id);
+          if (event.data.ok) w?.done(event.data.value ?? null);
+          else w?.fail(new Error('the save worker could not run a call of the tile store'));
+        };
+        worker.onerror = failAll;
+        worker.onmessageerror = failAll;
+      }
+      const id = next++;
+      return new Promise<unknown>((done, fail) => {
+        waiting.set(id, { done, fail });
+        try { worker!.postMessage({ id, tiles: op }); } catch (error) { waiting.delete(id); fail(error instanceof Error ? error : new Error(String(error))); }
+      });
+    },
+  };
+}
+
+/** THE WORLD'S TILES AS THE PAGE ASKS FOR THEM: one tile read, written, or made and stored; a write bumps the tile's version */
+export class TileStore {
+  /** The version each tile was last read or written at: one number a tile touched, never its records. */
+  private readonly versions = new Map<number, number>();
+  /** The calls under way on each tile (and on the world's values): a tile's calls run one after another, other tiles' alongside. */
+  private readonly chains = new Map<number | 'world', Promise<unknown>>();
+  /** A migration under way: every call waits for it. */
+  private gate: Promise<unknown> = Promise.resolve();
+
+  constructor(
+    private readonly map: string,
+    private readonly backend: TileBackend,
+    /** Builds a tile the store does not have (the whole-map generator's worker): a pure function of the seed and its place. */
+    private readonly generate: (i: number, j: number) => Promise<TileRecords>,
+  ) {}
+
+  /** The stored tile, or null when the store has none (a stored tile unreadable rejects). */
+  read(key: number): Promise<TileRecords | null> {
+    return this.chained(key, () => this.readNow(key));
+  }
+
+  /** Stores a tile, its version one past the last the store knows; false when it was not written. */
+  write(records: TileRecords): Promise<boolean> {
+    return this.chained(records.key, () => this.put(this.stamped(records)));
+  }
+
+  /** The stored tile, or the tile generated and stored: generated only when the store has none. */
+  load(key: number): Promise<TileRecords> {
+    return this.chained(key, async () => (await this.readNow(key)) ?? this.made(key));
+  }
+
+  meta(): Promise<WorldMeta | null> {
+    return this.chained('world', () => this.backend.run({ op: 'meta', map: this.map }) as Promise<WorldMeta | null>);
+  }
+
+  setMeta(meta: WorldMeta): Promise<boolean> {
+    return this.chained('world', () => this.backend.run({ op: 'setMeta', map: this.map, meta }).then((ok) => ok === true, (error: unknown) => {
+      console.error('[save] the world could not be written', error);
+      return false;
+    }));
+  }
+
+  /** A map saved before the tiles distributed into its tiles and the world's values, in the save worker, its keys left as they are
+   *  - `local`: the map's `localStorage` text (a worker cannot read it); nothing is done when the world is already stored. */
+  migrate(local: string | null = null): Promise<MigrationReport> {
+    const before = Promise.all([this.gate, ...this.chains.values()]);
+    const run = before.then(() => this.backend.run({ op: 'migrate', map: this.map, local }) as Promise<MigrationReport>);
+    this.gate = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async readNow(key: number): Promise<TileRecords | null> {
+    const records = (await this.backend.run({ op: 'read', map: this.map, key })) as TileRecords | null;
+    if (records) this.versions.set(key, Math.max(this.versions.get(key) ?? 0, records.version));
+    return records;
+  }
+
+  /** A tile generated and stored; kept for the page even when the write fails (the same tile comes out again next time). */
+  private async made(key: number): Promise<TileRecords> {
+    const { i, j } = tileOfKey(key);
+    const fresh = await this.generate(i, j);
+    if (fresh.key !== key) throw new Error(`the generator made tile ${fresh.key} for tile ${key}`);
+    const stamped = this.stamped(fresh);
+    if (!(await this.put(stamped))) console.warn(`[save] tile ${key} was made and not stored`);
+    return stamped;
+  }
+
+  private stamped(records: TileRecords): TileRecords {
+    const version = Math.max(records.version, this.versions.get(records.key) ?? 0) + 1;
+    this.versions.set(records.key, version);
+    return { ...records, version };
+  }
+
+  private async put(records: TileRecords): Promise<boolean> {
+    try {
+      return (await this.backend.run({ op: 'write', map: this.map, records })) === true;
+    } catch (error) {
+      console.error(`[save] tile ${records.key} could not be written`, error);
+      return false;
+    }
+  }
+
+  private chained<T>(key: number | 'world', run: () => Promise<T>): Promise<T> {
+    const before = this.chains.get(key);
+    const gate = this.gate;
+    const done = (before ? before.then(() => gate) : gate).then(run);
+    const tail = done.then(() => undefined, () => undefined);
+    this.chains.set(key, tail);
+    void tail.then(() => { if (this.chains.get(key) === tail) this.chains.delete(key); });
+    return done;
+  }
+}
+
+/** A map saved before the tiles, as found. */
+interface Found {
+  readonly document: SerializedDoc;
+  readonly settings: unknown;
+  readonly savedAt: number;
+  readonly from: SaveSource;
+}
+
+const isDocShape = (value: unknown): value is SerializedDoc =>
+  isObject(value) && value['version'] === 1 && Array.isArray(value['nodes']) && Array.isArray(value['segments']);
+
+/** A whole-map text (`persistence.ts`): a session (version 2) or a bare document; `missingAt` when it says no time, as `loadSessionAsync` reads it. */
+function wholeText(text: string, from: SaveSource, missingAt: number): Found | null {
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return null; }
+  if (isDocShape(parsed)) return { document: parsed, settings: null, savedAt: missingAt, from };
+  if (!isObject(parsed) || parsed['version'] !== 2) return null;
+  const document = parsed['document'], savedAt = parsed['savedAt'];
+  if (!isDocShape(document)) return null;
+  return { document, settings: parsed['settings'] ?? null, savedAt: finite(savedAt) ? savedAt : missingAt, from };
+}
+
+/** The newest of the map's saved copies, as `Persistence.loadSessionAsync` chooses: the `localStorage` text, the parts (`chunkedSave.ts`), the IndexedDB text. */
+async function newestSave(store: PartStore, map: string, local: string | null): Promise<Found | null> {
+  const found: Found[] = [];
+  const own = local !== null ? wholeText(local, 'local', -1) : null;
+  if (own) found.push(own);
+  // Loaded only to migrate: the parts' reader brings the document's module.
+  const { TiledSaves } = await import('./chunkedSave');
+  const parted = await new TiledSaves(store, map).read();
+  if (parted && isDocShape(parted.document)) {
+    found.push({ document: parted.document, settings: parted.settings, savedAt: parted.savedAt, from: parted.layout.old ? 'parts' : 'tiles' });
+  }
+  const [large] = await store.get([map]);
+  const text = large ? wholeText(await large.text(), 'large', 0) : null;
+  if (text) found.push(text);
+  // A later copy wins only when strictly newer (the order above is `loadSessionAsync`'s).
+  let best: Found | null = null;
+  for (const f of found) if (!best || f.savedAt > best.savedAt) best = f;
+  return best;
+}
+
+/** A map saved before the tiles, distributed into its tiles and its values and written in one transaction; its own keys are never written or removed */
+async function migrate(store: PartStore, map: string, local: string | null): Promise<MigrationReport> {
+  const [held] = await store.get([metaKey(map)]);
+  if (held) return { outcome: 'present', from: null, keys: [] };
+  const found = await newestSave(store, map, local);
+  if (!found) return { outcome: 'none', from: null, keys: [] };
+  // In this build's unit: a record's tile is told by its place.
+  const data = rescaleSerializedDoc(found.document);
+  const { tiles, kept } = distribute(data);
+  const put: SaveEntry[] = tiles.map((t) => ({ key: tileBlobKey(map, t.key), value: t, packed: true }));
+  // The world's values last in the batch: their key says the world is stored.
+  put.push({ key: metaKey(map), value: metaOf(data, kept, found), packed: false });
+  const ok = await (store.writer ?? storeWriter(store)).write({ put, remove: [] });
+  return ok ? { outcome: 'migrated', from: found.from, keys: tiles.map((t) => t.key) } : { outcome: 'failed', from: found.from, keys: [] };
+}
+
+function metaOf(data: SerializedDoc, held: HeldLists, found: Found): WorldMeta {
+  const fog = data.fog?.settings, gullyAuto = data.gullies?.auto;
+  return {
+    version: 1, generator: null, unit: METERS_PER_UNIT,
+    ...(data.relief !== undefined ? { relief: data.relief } : {}),
+    ...(data.markingStyle !== undefined ? { markingStyle: data.markingStyle } : {}),
+    ...(data.nature !== undefined ? { nature: data.nature } : {}),
+    ...(data.weather !== undefined ? { weather: data.weather } : {}),
+    ...(fog !== undefined ? { fog } : {}),
+    ...(gullyAuto !== undefined ? { gullyAuto } : {}),
+    ...(data.economy !== undefined ? { economy: data.economy } : {}),
+    ...(data.transit !== undefined ? { transit: data.transit } : {}),
+    ...(data.people !== undefined ? { people: data.people } : {}),
+    held, settings: found.settings, savedAt: found.savedAt,
+  };
+}
+
+interface Place { readonly x: number; readonly y: number }
+function placeOf(value: unknown): Place | null {
+  if (!isObject(value)) return null;
+  const x = value['x'], y = value['y'];
+  return finite(x) && finite(y) ? { x, y } : null;
+}
+function idOf(record: unknown): number {
+  const id = isObject(record) ? record['id'] : undefined;
+  return finite(id) ? id : Number.NaN;
+}
+
+/** Where a record with no place, or a place past the world's reach, is filed: the tile at the origin (as `chunkedSave.ts` files it). */
+const NOWHERE = tileKey(0, 0);
+function filed(file: () => number): number {
+  try {
+    const key = file();
+    return Number.isInteger(key) ? key : NOWHERE;
+  } catch {
+    return NOWHERE;
+  }
+}
+function tileAt(p: Place | null): number {
+  if (!p) return NOWHERE;
+  const at: Place = p;
+  return filed(() => OWNER.at(at));
+}
+/** A road or a span: by its two ends (`OWNER.segment`), by the one end with a place, or nowhere. */
+function tileBetween(a: unknown, b: unknown): number {
+  const pa = placeOf(a), pb = placeOf(b);
+  if (!pa || !pb) return tileAt(pa ?? pb);
+  const from: Place = pa, to: Place = pb;
+  return filed(() => OWNER.segment(from, to));
+}
+
+/** Where a land key says its land lies (`lots.ts` keys: `b:` a block's middle, `s:` a strip's, in steps of 4 m). */
+function lotKeyPlace(key: string): Place | null {
+  if (!key.startsWith('b:') && !key.startsWith('s:')) return null;
+  const [x, y] = key.slice(2).split(',').map(Number);
+  return finite(x) && finite(y) ? { x: x * m(4), y: y * m(4) } : null;
+}
+
+type Draft = { -readonly [K in ListField]: TileRecords[K][number][] } & { readonly key: number };
+
+/** The next id of a kind in a tile's counted range: past every id of the tile's records in it (a pre-tile map's ids lie under `TILE_IDS`, outside every range). */
+function counted(base: number, records: readonly unknown[]): number {
+  let next = base;
+  for (const record of records) {
+    const id = idOf(record);
+    if (id >= base && id < base + TILE_COUNTED && id >= next) next = id + 1;
+  }
+  return next;
+}
+
+/** DO NOT renumber a record: every record goes to the one tile `OWNER` names, ids as they are; a road's or a span's end of another tile goes with it as a borrowed copy */
+function distribute(data: SerializedDoc): { readonly tiles: TileRecords[]; readonly kept: HeldLists } {
+  const drafts = new Map<number, Draft>();
+  const lentNodes = new Map<number, Set<number>>(), lentPoles = new Map<number, Set<number>>();
+  const tile = (key: number): Draft => {
+    let d = drafts.get(key);
+    if (!d) {
+      d = {
+        key, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [], lotKeys: [],
+        landscape: [], barriers: [], paint: [], trees: [], elements: [],
+      };
+      drafts.set(key, d);
+    }
+    return d;
+  };
+  const lend = (lent: Map<number, Set<number>>, key: number, id: number): boolean => {
+    let ids = lent.get(key);
+    if (!ids) lent.set(key, ids = new Set());
+    if (ids.has(id)) return false;
+    ids.add(id);
+    return true;
+  };
+
+  const nodes = new Map<number, SerializedDoc['nodes'][number]>(), nodeTile = new Map<number, number>();
+  for (const n of data.nodes) {
+    const key = tileAt(placeOf(n));
+    nodes.set(n.id, n);
+    nodeTile.set(n.id, key);
+    tile(key).nodes.push(n);
+  }
+  for (const s of data.segments) {
+    const a = nodes.get(s.a), b = nodes.get(s.b);
+    const key = tileBetween(a, b);
+    const d = tile(key);
+    d.segments.push(s);
+    for (const end of [a, b]) if (end && nodeTile.get(end.id) !== key && lend(lentNodes, key, end.id)) d.borrowedNodes.push(end);
+  }
+
+  const poles = new Map<number, NonNullable<SerializedDoc['poles']>[number]>(), poleTile = new Map<number, number>();
+  for (const p of data.poles ?? []) {
+    const key = tileAt(placeOf(p));
+    poles.set(p.id, p);
+    poleTile.set(p.id, key);
+    tile(key).poles.push(p);
+  }
+  for (const s of data.poleSpans ?? []) {
+    const a = poles.get(s.a), b = poles.get(s.b);
+    const key = tileBetween(a, b);
+    const d = tile(key);
+    d.poleSpans.push(s);
+    for (const end of [a, b]) if (end && poleTile.get(end.id) !== key && lend(lentPoles, key, end.id)) d.borrowedPoles.push(end);
+  }
+
+  for (const b of data.buildings ?? []) tile(tileAt(placeOf(b))).buildings.push(b);
+  // In the store's order (the first lot holds a point): each tile keeps the map's order of its own.
+  for (const lot of data.lots ?? []) tile(tileAt(lot.corners.length ? placeOf(lotCentre(lot)) : null)).lots.push(lot);
+  const homeless: string[] = [];
+  for (const key of data.lotKeys ?? []) {
+    const p = lotKeyPlace(key);
+    if (p) tile(tileAt(p)).lotKeys.push(key);
+    else homeless.push(key);
+  }
+  for (const item of data.landscape ?? []) tile(tileAt(placeOf(item))).landscape.push(item);
+  for (const barrier of data.barriers ?? []) tile(tileAt(placeOf(barrier.points[0]))).barriers.push(barrier);
+  for (const dab of data.paint ?? []) tile(tileAt(placeOf(dab))).paint.push(dab);
+  for (const tree of data.trees ?? []) tile(tileAt(placeOf(tree))).trees.push(tree);
+  for (const element of data.elements ?? []) tile(tileAt(placeOf(element))).elements.push(element);
+
+  const tiles: TileRecords[] = [];
+  for (const d of [...drafts.values()].sort((a, b) => a.key - b.key)) {
+    const base = tileIdBase(d.key);
+    tiles.push({
+      ...d,
+      version: 1,
+      next: {
+        node: counted(base, d.nodes), segment: counted(base, d.segments), pole: counted(base, d.poles), span: counted(base, d.poleSpans),
+        building: counted(base, d.buildings), lot: counted(base, d.lots), landscape: counted(base, d.landscape), barrier: counted(base, d.barriers),
+      },
+    });
+  }
+  const kept: HeldLists = {
+    terrain: data.terrain ?? [], fog: data.fog?.dabs ?? [], gullies: data.gullies?.dabs ?? [], clouds: data.clouds ?? [],
+    treeClearings: data.treeClearings ?? [], zones: data.zones ?? [], zoneMarks: data.zoneMarks ?? [], lotKeys: homeless,
+  };
+  return { tiles, kept };
+}
