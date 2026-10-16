@@ -19,6 +19,8 @@ export interface FarTileSource {
   records(key: number): Promise<TileRecords | null>;
   /** The world's generator options: what stands where no tile was made yet (drawn from the plan, `farPlan.ts`); null: nothing past the stored tiles. */
   readonly plan: WholeMapOptions | null;
+  /** The store's map when the workers can read it themselves (`core/storedTiles.ts`, the browser's IndexedDB): a tile's records then never cross the page. */
+  readonly workersRead?: string;
 }
 
 /** What the coordinator tells the buildings' far levels (`BuildingLayer.far`). */
@@ -45,6 +47,8 @@ interface FarTreeJob {
   /** Its quarters; `PLAN_SIG` where no tile is stored under one (the plan's), null where none and no plan. */
   readonly children?: readonly ({ readonly key: string; readonly sig: string } | null)[];
   readonly records?: TileRecords;
+  /** The store's map the worker reads the tile from itself (`core/storedTiles.ts`), when it can (`FarTileSource.workersRead`). */
+  readonly store?: string;
   /** The world's generator options, for a kind that bakes from the plan. */
   readonly plan?: WholeMapOptions;
 }
@@ -77,6 +81,8 @@ export interface FarKind<P> {
   readonly name: string;
   land(payload: P): FarLanded;
   levelError(k: number): number;
+  /** The least pixels a level's error may span before it gives way to its quarters (none: the near levels' own, `massCells.ts` `measureSeen`): what a level draws never smaller on the screen than this asks. */
+  levelPixels?(k: number): number;
   /** The finest level its worker bakes from the world's plan where no tile was made (`PLAN_SIG`); the levels under it only from tiles. None: nothing drawn where no tile is. */
   readonly planFrom?: number;
 }
@@ -383,7 +389,8 @@ export class FarTree<P> implements FarTiles {
   private fine(n: FarNode): boolean {
     const e = this.eyeNow;
     measureSeen(this.seen, e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, n.x0, n.y0, n.x1, n.y1, n.top);
-    return n.error * this.seen.perMetre < this.seen.allowed * (this.shown.has(n) ? 1 : HYSTERESIS);
+    const allowed = Math.max(this.seen.allowed, this.kind.levelPixels?.(n.k) ?? 0);
+    return n.error * this.seen.perMetre < allowed * (this.shown.has(n) ? 1 : HYSTERESIS);
   }
 
   /** A node chosen: drawn whole, or its children; whether all it stands for is drawn (or none of it is the tree's). */
@@ -457,6 +464,8 @@ export class FarTree<P> implements FarTiles {
       node: n.key, k: n.k, i: n.i, j: n.j, sig, want: n.askedWant, prefix: this.keyPrefix,
       ...(n.k > 0 && sig !== PLAN_SIG ? { children: this.childrenOf(n) } : {}),
       ...(records ? { records } : {}),
+      // DO NOT carry a tile's records through the page when the worker can read the store: the page held every tile read while it waited for a worker.
+      ...(!records && n.k === 0 && this.source?.workersRead ? { store: this.source.workersRead } : {}),
       ...(this.planning && this.plan ? { plan: this.plan } : {}),
     };
     let settled = false;

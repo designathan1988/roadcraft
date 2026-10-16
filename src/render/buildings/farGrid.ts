@@ -1,6 +1,8 @@
+import { storedTileReader } from '@core/storedTiles';
+import type { TileRecords } from '@world/doc';
 import { TILE } from '@world/tiles';
 
-/** THE FAR LEVELS' QUADTREE OVER THE TILES (`farTiles.ts`, `farPlan.ts`, `../farTree.ts`): its nodes' keys and sides alone, read by the bakes of the tiles and of the plan without either importing the other */
+/** THE FAR LEVELS' QUADTREE OVER THE TILES (`farTiles.ts`, `farPlan.ts`, `../farTree.ts`): its nodes' keys and sides and a tile as a bake reads it, read by the bakes of the tiles and of the plan without either importing the other */
 
 /** The coarsest level: 2^7 tiles a side (131 km); a bigger world has more roots. */
 export const TOP_LEVEL = 7;
@@ -18,3 +20,19 @@ export function farNode(key: string): { readonly k: number; readonly i: number; 
 
 /** A node's side, m: a tile's at level 0, doubled each level up. */
 export const nodeSide = (k: number): number => TILE * 2 ** k;
+
+/** A tile's records with nothing in them (a tile the store no longer has): baked as empty, so its parents are not held waiting. */
+export function emptyRecords(key: number, version: number): TileRecords {
+  return {
+    key, version, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [], lotKeys: [],
+    landscape: [], barriers: [], paint: [], trees: [], elements: [],
+    next: { node: 0, segment: 0, pole: 0, span: 0, building: 0, lot: 0, landscape: 0, barrier: 0 },
+  };
+}
+
+/** A tile read from the store by this worker (`core/storedTiles.ts`); undefined where it cannot read it (the page asked for it), empty when the store no longer has it. */
+export async function readStored(store: string | undefined, key: number): Promise<TileRecords | undefined> {
+  const read = store === undefined ? null : storedTileReader();
+  if (!read || store === undefined) return undefined;
+  return (await read(store, key) as TileRecords | null) ?? emptyRecords(key, 0);
+}

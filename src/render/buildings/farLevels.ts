@@ -18,6 +18,9 @@ const FAR_HASH = typeof __FAR_MASS_HASH__ !== 'undefined' && __FAR_MASS_HASH__ ?
 const FAR_PREFIX = FAR_HASH ? `farMass:${FAR_HASH}:` : null;
 /** The far jobs' band in the queue: after the cells' tiles and plates, before the summaries (`cellPool.ts` `TIER`). */
 const FAR_TIER = 2.9;
+/** DO NOT draw a box level's merged boxes smaller than this on the screen, px: at 2 px of error the plan's 32 m squares came out 1.6 px wide in the map view, a million boxes and five triangles a pixel over 16 km (2026-10-16); a level whose squares would span less gives way to its parent, so the boxes drawn are bounded by the screen, not by the world. */
+const BOX_PIXELS = 4;
+
 /** The finest level drawn from the plan: the boxes' (levels 0 and 1, a tile's and a plate's masses, only from made tiles). */
 const PLAN_LEVEL = 2;
 
@@ -85,6 +88,8 @@ export class FarLevels extends FarTree<CellMass> {
         return { mesh, x0: box.min.x, x1: box.max.x, y0: -box.max.z, y1: -box.min.z, top: mass.top, error: Math.max(FAR_ERROR, mass.error) };
       },
       levelError: (k) => Math.max(FAR_ERROR, levelDrop(k)),
+      // A box level's error is its square's diagonal (`levelDrop`): a square `BOX_PIXELS` wide on the screen at the least.
+      levelPixels: (k) => (k >= PLAN_LEVEL ? BOX_PIXELS * Math.SQRT2 : 0),
       planFrom: PLAN_LEVEL,
     };
     super(kind, asTreeRun(run), prefix, lanes);

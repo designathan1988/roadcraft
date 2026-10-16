@@ -5,12 +5,13 @@ import type { NodeId, SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
 import { FOOTWAY_RISE, Level, ROAD_TYPES } from '@world/roadTypes';
 import { levelRingsOf } from '@world/surfaces';
-import { TILE, tileOfKey } from '@world/tiles';
+import { TILE, tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { METERS_PER_UNIT, m } from '@world/units';
 import { roadRecipes } from './bake/roadRecipes';
 import { derivedCacheOpen, keepDerivedDurably, readDerived } from './derivedCache';
 import { surfaceShape } from './mesh/tileShape';
+import { readStored } from './buildings/farGrid';
 import { medianOf } from './roadSurfaceRings';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR, FOOTWAY_TINT } from './roadTones';
 import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
@@ -373,6 +374,8 @@ export interface FarRoadJob {
   readonly children?: readonly ({ readonly key: string; readonly sig: string } | null)[];
   /** Level 0, once the cache said it did not have it: the tile as the store keeps it. */
   readonly records?: TileRecords;
+  /** Level 0: the store's map this worker reads the tile from itself (`core/storedTiles.ts`), in place of `records`. */
+  readonly store?: string;
   /** The ground shared with the workers (`sharedGround.ts`); none: flat at 0. */
   readonly ground?: SharedGroundData | null;
 }
@@ -410,9 +413,10 @@ export async function runFarRoadJob(job: FarRoadJob, cache: FarRoadCache): Promi
   let entry = keeps ? await kept(node, sig) : undefined;
   if (k === 0) {
     if (!entry) {
-      if (!job.records) return { kind: 'farRecords', node, sig };
+      const records = job.records ?? await readStored(job.store, tileKey(i, j));
+      if (!records) return { kind: 'farRecords', node, sig };
       const ground = job.ground ? sharedGroundReaders(job.ground).groundAt : FLAT;
-      entry = { sig, mesh: bakeTileRoads(job.records, ground) };
+      entry = { sig, mesh: bakeTileRoads(records, ground) };
       if (keeps) await cache.put(`${prefix}${node}`, entry);
     }
     return { kind: 'far', node, sig, payload: job.want ? entry.mesh : null };

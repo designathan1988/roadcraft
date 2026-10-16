@@ -146,8 +146,8 @@ describe('the far levels chosen top down', () => {
     expect([...coverage(afar, tiles.keys()).values()].every((c) => c === 1)).toBe(true);
     expect(far.top()).toBeGreaterThan(0);
 
-    // From 20 km up: the boxes' levels' error spans the pixels, the plates' (level 1) do not.
-    const fromHigh = (): void => far.choose(0, 0, m(20_000), 1000, null);
+    // From 6 km up: the boxes' levels' squares would be drawn wider than their least pixels (`farLevels.ts` BOX_PIXELS), so they refine; the plates' error (level 1) spans under the pixels.
+    const fromHigh = (): void => far.choose(0, 0, m(6_000), 1000, null);
     await until(fromHigh, () => far.waiting === 0);
     const high = far.shownKeys();
     expect(high.length).toBe(16);

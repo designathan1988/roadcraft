@@ -1,8 +1,18 @@
+import { readStoredTilesWith } from '@core/storedTiles';
+import type { TileReader } from '@sim/meso/tileFeed';
 import type { FromJob, JobScope, JobService, ToJob } from './jobs/jobScope';
 
 /** ONE WORKER OF THE JOB SYSTEM (`jobs/jobPool.ts`): at the root with the other entries, since it puts every service together: every service's ports in it, each service's module loaded on its first message */
 
 type Serve = (scope: JobScope) => void;
+
+// The tile store read here by the far levels' bakes (`core/storedTiles.ts`): its IndexedDB opened once per map, on the first read.
+const readers = new Map<string, Promise<TileReader>>();
+readStoredTilesWith(async (map, key) => {
+  let reader = readers.get(map);
+  if (!reader) readers.set(map, reader = import('./tileReader').then((m) => m.storeTileReader(map)));
+  return (await reader).read(key);
+});
 const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   growth: () => import('./growth.worker'),
   cityTiles: () => import('./cityTile.worker'),

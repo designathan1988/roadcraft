@@ -3,14 +3,15 @@ import type { Finish } from '@world/buildings/materials';
 import type { Building } from '@world/buildings/types';
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import type { TileRecords } from '@world/doc';
+import { tileKey } from '@world/tiles';
 import { derivedCacheOpen, keepDerivedDurably, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { type CellMass, cellMass, cellMassBuffers, indexArray, shellBounds } from './cellArrays';
 import { planBoxes } from './farPlan';
-import { AGGREGATE, farNode, nodeSide } from './farGrid';
+import { AGGREGATE, farNode, nodeSide, readStored } from './farGrid';
 import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing } from './massing';
 
-export { AGGREGATE, TOP_LEVEL, farKey, farNode, nodeSide } from './farGrid';
+export { AGGREGATE, TOP_LEVEL, emptyRecords, farKey, farNode, nodeSide } from './farGrid';
 
 /** THE BUILDINGS FAR FROM THE CAMERA, BAKED PER TILE IN WORKERS FROM THE TILE STORE (CLAUDE.md "Streaming world"): nothing of their records on the page */
 /** A quadtree over the tiles (`farLevels.ts` chooses it): level 0 a tile's masses (L2), level 1 its 2x2's (L3, the plate's masses), levels 2 and up 2^k tiles a side of footprint boxes - the stored tiles' where they are, the generator's plan's where no tile was made (`farPlan.ts`) */
@@ -80,6 +81,8 @@ export interface FarJob {
   readonly plan?: WholeMapOptions;
   /** Level 0, once the cache said it did not have it: the tile as the store keeps it. */
   readonly records?: TileRecords;
+  /** Level 0: the store's map this worker reads the tile from itself (`core/storedTiles.ts`), in place of `records`. */
+  readonly store?: string;
   /** The ground shared with the workers (`sharedGround.ts`); none: flat at 0. */
   readonly ground?: SharedGroundData | null;
   readonly naturalIsGround?: boolean;
@@ -261,14 +264,6 @@ function joinMasses(list: readonly (CellMass | null)[]): CellMass | null {
   return { position, normal, color, facade, glazing, index, bounds: shellBounds(position), top, error };
 }
 
-/** A tile's records with nothing in them (a tile the store no longer has): baked as empty, so its parents are not held waiting. */
-export function emptyRecords(key: number, version: number): TileRecords {
-  return {
-    key, version, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [], lotKeys: [],
-    landscape: [], barriers: [], paint: [], trees: [], elements: [],
-    next: { node: 0, segment: 0, pole: 0, span: 0, building: 0, lot: 0, landscape: 0, barrier: 0 },
-  };
-}
 
 /** The world's plan a job reads where no tile is stored. */
 function planOf(job: FarJob): WholeMapOptions {
@@ -295,8 +290,9 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
   if (k === 0) {
     let entry = keeps ? await kept<TileEntry>(node, sig) : undefined;
     if (!entry) {
-      if (!job.records) return { kind: 'farRecords', node, sig };
-      entry = bakeTile(job.records, sig, readsOf(job), job.tone);
+      const records = job.records ?? await readStored(job.store, tileKey(i, j));
+      if (!records) return { kind: 'farRecords', node, sig };
+      entry = bakeTile(records, sig, readsOf(job), job.tone);
       if (keeps) await cache.put(`${prefix}${node}`, entry);
     }
     return { kind: 'far', node, sig, mass: job.want ? entry.tile : null };

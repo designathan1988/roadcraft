@@ -1951,7 +1951,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
     writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
   });
-  for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options }, (key) => doc.hasTile(key));
+  for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, ...(desktopStores ? {} : { workersRead: mapName }) }, (key) => doc.hasTile(key));
   // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`);
   // on the desktop the store is the main process's, read for it through a port.
   let port: MessagePort | null = null;
