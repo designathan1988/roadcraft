@@ -592,7 +592,7 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            vec4 w = bilinear * has;
            float sum = w.x + w.y + w.z + w.w;
            terrainShoreCover = sum;
-           // G and B carry two bytes each (`groundCornersInto`)
+           // G and B carry two bytes each (groundCornersInto)
            vec4 gPair = vec4(c00.y, c10.y, c01.y, c11.y);
            vec4 bPair = vec4(c00.z, c10.z, c01.z, c11.z);
            vec4 gHigh = floor(gPair / 256.0);
@@ -1656,7 +1656,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         sandstone: Float32Array.from(sand), basalt: Float32Array.from(basalt),
         painted: biomeCorners ? Float32Array.from(biomeCorners) : null, settings: nature,
       };
-      const transfer: ArrayBuffer[] = [input.heights.buffer, wet.buffer, input.sandstone.buffer, input.basalt.buffer];
+      const transfer: ArrayBuffer[] = [input.heights.buffer, wet.buffer as ArrayBuffer, input.sandstone.buffer, input.basalt.buffer];
       if (input.painted) transfer.push(input.painted.buffer);
       ecologyInFlight = true;
       readEcology(plate, input, transfer, (field) => {
@@ -2145,7 +2145,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         naturalFlip.set(made.flip);
         lastRegion = null;
         // The workers' texels sent as they are, then let go: never worked out again on the page.
-        landTexels.hold(made.texels);
+        landTexels.hold(made.texels as Float32Array<ArrayBuffer>);
         levels.take(made.levels);
         sendAllLand();
         landTexels.letGoWhenSent();
