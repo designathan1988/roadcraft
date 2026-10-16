@@ -249,7 +249,7 @@
       "count": 1
     }
   },
-  "src/render/derivedCache.ts": {
+  "src/core/derivedCache.ts": {
     "roadcraft/no-module-state": {
       "count": 1
     },

@@ -11,7 +11,7 @@ const COOKS = [
   { dir: 'procedural', stamp: CAST.procedural, define: '__PROCEDURAL_COOK_HASH__' },
 ] as const;
 type CookDir = typeof COOKS[number]['dir'];
-/** The derived data kept in the player's browser (`src/render/derivedCache.ts`) */
+/** The derived data kept in the player's browser (`src/core/derivedCache.ts`) */
 const DERIVED = [
   { entry: 'src/render/buildings/parts.ts', also: [] as string[], define: '__BUILDING_KIT_HASH__' },
   // The procedural crowd's levels of each piece (`proceduralCrowd.ts` lodPlan).
