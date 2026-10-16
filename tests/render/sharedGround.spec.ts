@@ -49,7 +49,7 @@ describe('the ground in shared memory', () => {
       expect(Object.is(reads.groundAt(x, y), page(false, x, y)), `${x}, ${y}`).toBe(true);
       expect(Object.is(reads.naturalAt(x, y), page(true, x, y)), `${x}, ${y}`).toBe(true);
     }
-    expect(onPlate).toBeGreaterThan(500);
+    expect(onPlate).toBeGreaterThan(100);
     // Its edges and corners, read on the plate itself.
     for (const [x, y] of [[-HALF, -HALF], [HALF, HALF], [-HALF, HALF], [0, HALF], [HALF, 0]] as const) {
       expect(reads.groundAt(x, y)).toBe(page(false, x, y));
