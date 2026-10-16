@@ -102,11 +102,18 @@ pasted in the session that started this; these are its binding decisions.
   (bb95c88); ragdolls without per-frame allocation, cooked crowd palettes on the GPU (a01320e-06ac47d); renderer
   derivatives by cell and diary (5d8fc21-5895df9); instance layers keep poses (3db1344); KTX2 surfaces baked at build,
   rgba8 (20d18f7); Steam saves as files for Auto-Cloud, Windows and Linux depots (7a49aaa).
-- Work in flight (2026-10-16, streaming world), each in `.claude/worktrees/agent-<id>`: unbounded plates and terrain on
-  demand, `bounds.ts` gone (a550a349); far building levels baked per tile from the store, quadtree past plates
-  (a60e719a); far roads baked per tile from the store (a5222159); meso link tables per tile from the store (af931600).
-  Kept for the player's yes on shots: far roads painted into the terrain and terrain at 13 texture units (af56964b,
-  cf05005: dirt resampled 256->512, detail maps through sRGB).
+- Streaming world in main (2026-10-16, not yet run in the game or the tests): tiles and ids (`world/tiles.ts`), tile
+  store as the save (`editor/tileStore.ts`), generator per tile (`editor/wholeMapTile.ts` buildStreamTile, unbounded
+  plan), `RoadDoc.loadTile`/`unloadTile`/`tileRecords`/`worldValues`, `worldStreamer.ts` (3x3 region, 5-tile ring made
+  ahead, one tile put in a frame, undo forgetting what a tile took), no fixed map (`bounds.ts` plates without end,
+  terrain on demand), far buildings (`buildings/farLevels.ts`) and far roads (`farRoads.ts`) baked per tile from the
+  store, road and conflict caches read by key (never whole), `generateCity({ size: 'whole' })` opens it.
+- Work in flight: meso link tables per tile (af931600); far city past the made tiles from the generator's plan, and
+  `FarLevels` on the generic `farTree.ts` (afd03c54). Kept for the player's yes on shots: far roads painted into the
+  terrain and terrain at 13 texture units (af56964b, cf05005).
+- Open on the streaming world: zones' and zone marks' building links are dropped when the world opens (`fromJSON` on an
+  empty document); city statistics read the region only; growth runs in the region only; the joins between near and
+  far roads at the region's edge do not match exactly (far junctions only on owned nodes, heights differ).
 
 ## Streaming world (2026-10-16, the player's order: cities far larger than 10 km; the root fix)
 Measured before it: the page held every record of the map as JS objects in one document (~75 KB of live heap per
