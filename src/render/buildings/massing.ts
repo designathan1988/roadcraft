@@ -5,7 +5,7 @@ import { resolveBlocks } from '@world/buildings/blocks';
 import { floorHeight, type GroundAt, type PavedAt } from '@world/buildings/foundation';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
-  bayWidth, coveredSpans, exposedParts, type FacadeBay, facadeBays, localToWorld, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
+  type LocalBay, bayLayout, bayWidth, closedBlocks, coveredSpans, exposedParts, localToWorld, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
   sawtoothRun, shedFall, sideLength, sideStart, volumeElevation, volumeHeight,
 } from '@world/buildings/geometry';
 import { type Finish, type MaterialSpec, roofMaterial, trimMaterial, wallMaterial } from '@world/buildings/materials';
@@ -169,7 +169,8 @@ export function emitMassing(
   detail: MassDetail = CELL_DETAIL,
 ): MassingChunk | null {
   const resolved = resolveBlocks(b);
-  const closed = resolved.volumes.filter((v) => !v.open);
+  // One list for the blocks (`closedBlocks`, as `buildingMesh.ts` `emitChunk`): every block of the body reads one layout of its bays (`bayLayout`).
+  const closed = closedBlocks(resolved.volumes);
   const office = b.use === 'commercial' || b.use === 'industrial' ? 2 : 0;
   const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296 + office, detail);
   // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`)
@@ -197,7 +198,7 @@ export function emitBoxes(
   b: Building, pavedAt: PavedAt | undefined, naturalAt: GroundAt, tone: Readonly<Record<Finish, readonly [number, number, number]>> | undefined, out: number[],
 ): void {
   const resolved = resolveBlocks(b);
-  const closed = resolved.volumes.filter((v) => !v.open);
+  const closed = closedBlocks(resolved.volumes);
   if (closed.length === 0) return;
   // The floor as the mass's (`emitMassing`).
   const floor = floorHeight(resolved, naturalAt, pavedAt);
@@ -211,7 +212,7 @@ export function emitBoxes(
   const body = { ...resolved, volumes: closed };
   // The glass share of each block: its bays' mean (`GLASS_SHARE`), as the mass's walls have it.
   const glass = new Map<number, { sum: number; n: number }>();
-  for (const bay of facadeBays(body)) {
+  for (const bay of bayLayout(body)) {
     const g = glass.get(bay.volume) ?? { sum: 0, n: 0 };
     g.sum += GLASS_SHARE[bay.component] ?? 0;
     g.n++;
@@ -286,11 +287,11 @@ export const GLASS_SHARE: Partial<Record<BayComponent, number>> = {
 /** How far an arcade's wall steps back behind its columns (`buildingMesh.ts` ARCADE). */
 const ARCADE = m(1.8);
 
-/** A block's walls from its bays as the detailed building lays them (`facadeBays`) */
+/** A block's walls from its bays as the detailed building lays them (`facadeBays`), off the layout every block of the body reads (`bayLayout`, worked out once) */
 function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (spec: MaterialSpec) => Rgb): void {
   const eaves = floor + volumeHeight(b, v);
-  const rows = new Map<string, FacadeBay[]>();
-  for (const bay of facadeBays(b)) {
+  const rows = new Map<string, LocalBay[]>();
+  for (const bay of bayLayout(b)) {
     if (bay.volume !== v.id) continue;
     const key = `${bay.side}:${bay.level}`;
     const list = rows.get(key);
@@ -304,11 +305,11 @@ function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (
     const side = row[0]!.side;
     // The run's outward offset: a relief's push, an arcade's wall set back.
     // Laid flat where the level leaves it out: the wall then runs on with its neighbours (one quad where they were coplanar).
-    const offsetOf = (bay: FacadeBay): number => {
+    const offsetOf = (bay: LocalBay): number => {
       const d = bay.component === 'pillar' ? -ARCADE : bay.push;
       return w.leaves(Math.abs(d)) ? 0 : d;
     };
-    const shareOf = (bay: FacadeBay): number => GLASS_SHARE[bay.component] ?? 0;
+    const shareOf = (bay: LocalBay): number => GLASS_SHARE[bay.component] ?? 0;
     let i = 0;
     while (i < row.length) {
       const first = row[i]!;

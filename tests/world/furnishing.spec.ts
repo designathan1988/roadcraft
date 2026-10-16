@@ -48,6 +48,18 @@ describe('furnishing', () => {
     expect(kinds(of('restaurant'), 0)).toEqual(expect.arrayContaining(['counter', 'table', 'chair']));
   });
 
+  it('furnishes a floor once for the records on the same blocks, and again for another arrangement, function or height', () => {
+    // Another record on the same blocks: a like building of the same tile, a draft moved.
+    const moved = { ...b, id: asBuildingId(4), x: 250, y: -80, rotation: 1.2 } as Building;
+    const floor = interiorAt(moved, 2);
+    expect(interiorAt(b, 2)).toBe(floor);
+    // As furnished from scratch: a deep copy has blocks of its own.
+    expect(interiorAt(structuredClone(b), 2)).toEqual(floor);
+    expect(interiorAt({ ...b, furnishing: { '2': [{ kind: 'sofa', x: 4, y: 4, angle: 0 }] } } as Building, 2)).not.toBe(floor);
+    expect(interiorAt({ ...b, function: 'office' } as Building, 2)).not.toBe(floor);
+    expect(interiorAt({ ...b, storeyHeight: b.storeyHeight + 1 } as Building, 2)).not.toBe(floor);
+  });
+
   it('uses the arrangement the player made, and keeps it when saved', () => {
     const mine = furnishingOf(b, 2).filter((f) => f.kind !== 'tv');
     mine.push({ kind: 'floorLamp', x: 10, y: 10, angle: 0 });

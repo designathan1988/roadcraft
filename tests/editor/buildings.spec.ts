@@ -13,7 +13,7 @@ import { Network } from '@world/network';
 import { BLUEPRINTS, blueprintByKey, generateBody } from '@world/buildings/blueprints';
 import { facadeBays, footprintRects, levelElevation, volumeHeight } from '@world/buildings/geometry';
 import { touchesRoad } from '@world/buildings/validate';
-import { type Building, type BuildingId, componentAt, volumeById } from '@world/buildings/types';
+import { type Building, type BuildingId, cloneBuilding, componentAt, volumeById } from '@world/buildings/types';
 import {
   type BuildingContext,
   type EditResult,
@@ -116,7 +116,8 @@ describe('building operations', () => {
   it('grows a volume on its negative side and keeps each bay override on its bay', () => {
     const b = { ...generateBody('residential', bays(3), bays(3), 1), id: 1, x: 0, y: 0, rotation: 0 } as unknown as Building;
     const v = b.volumes[0]!;
-    const doorBefore = facadeBays(b).find((bay) => bay.component === 'door')!;
+    // Asked of a copy: the draft is edited in place below, and its bays are kept by its blocks list (`bayLayout`).
+    const doorBefore = facadeBays(cloneBuilding(b)).find((bay) => bay.component === 'door')!;
     expect(opResize(b, 1, 3, bays(2))).toBe(true);
     expect(v.x).toBe(-bays(2));
     expect(v.w).toBe(bays(5));

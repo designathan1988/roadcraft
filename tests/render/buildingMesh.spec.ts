@@ -8,6 +8,7 @@ import { BLUEPRINTS, generateBody } from '@world/buildings/blueprints';
 import { foundationOf } from '@world/buildings/foundation';
 import { type Building, asBuildingId } from '@world/buildings/types';
 import { type BuildingChunk, assembleBuildingMeshes, emitChunk } from '@render/buildings/buildingMesh';
+import { emitBoxes, emitMassing } from '@render/buildings/massing';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { createBuildingLayer } from '@render/buildings/layer';
 import { beginFrameWork } from '@core/frameWork';
@@ -101,6 +102,26 @@ describe('building shell', () => {
           expect(part.paint.length / 4).toBe(part.position.length / 3);
         }
       }
+    }
+  });
+
+  it('emits a building the same whether its bays and floors were worked out for it or for another record on its blocks', () => {
+    // What a chunk draws (its lot ground's height is a function, made anew each time).
+    const drawn = (c: BuildingChunk) => ({ shells: c.shells, runs: c.runs, parts: c.parts, furniture: c.furniture, flags: c.flags, lot: c.lotGround?.recipe });
+    const boxes = (b: Building): number[] => { const out: number[] = []; emitBoxes(b, undefined, slope, undefined, out); return out; };
+    for (let i = 0; i < BLUEPRINTS.length; i++) {
+      const a = placed(i, 0.7);
+      // A like building of the same tile (the same blocks), emitted first: `a` then reads what was worked out for it.
+      const other = { ...a, id: asBuildingId(a.id + 100), x: a.x + 300, y: a.y - 90, rotation: -1.1 } as Building;
+      emitChunk(other, slope);
+      emitChunk(other, slope, undefined, slope, undefined, true);
+      emitMassing(other, slope);
+      const key = BLUEPRINTS[i]!.key;
+      // Against the same building worked out from scratch: a deep copy has blocks of its own.
+      expect(drawn(emitChunk(a, slope)), key).toEqual(drawn(emitChunk(structuredClone(a), slope)));
+      expect(drawn(emitChunk(a, slope, undefined, slope, undefined, true)), key).toEqual(drawn(emitChunk(structuredClone(a), slope, undefined, slope, undefined, true)));
+      expect(emitMassing(a, slope), key).toEqual(emitMassing(structuredClone(a), slope));
+      expect(boxes(a), key).toEqual(boxes(structuredClone(a)));
     }
   });
 

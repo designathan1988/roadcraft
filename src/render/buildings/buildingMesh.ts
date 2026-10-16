@@ -6,7 +6,7 @@ import { POOL_SINK } from '@world/buildings/pads';
 import { deriveSpaces } from '@world/buildings/spaces';
 import { spaceSeed } from './lightSlots';
 import { localToWorld, worldToLocal } from '@world/buildings/geometry';
-import { FURNITURE_KINDS, FURNITURE_SIZE, type FloorInterior, type Furniture, type FurnitureKind, interiorAt, levelFlights } from '@world/buildings/interior';
+import { FURNITURE_KINDS, FURNITURE_SIZE, type Furniture, type FurnitureKind, interiorAt, levelFlights } from '@world/buildings/interior';
 import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
@@ -51,6 +51,7 @@ import {
   SIDE_NORMAL,
   bayWidth,
   baysOn,
+  closedBlocks,
   coveredSpans,
   exposedParts,
   facadeBays,
@@ -832,6 +833,7 @@ function emitBuilding(
   slots: SlotAllocator = spaceSeed,
 ): number {
   const e = new Emitter(b, shell, parts, furniture);
+  // Put in the world off the layout kept for the blocks (`bayLayout`): the flights' feet and the like buildings of the job read the same one.
   const bays = facadeBays(b);
   const f: Foundation = foundationOf(b, groundAt, bays, pavedAt, designedFloor);
   const floor = f.floor;
@@ -897,8 +899,7 @@ function emitBuilding(
   const componentAt = new Map<string, BayComponent>();
   for (const bay of bays) componentAt.set(`${bay.volume}:${bay.level}:${bay.side}:${bay.index}`, bay.component);
   const volumes = new Map(b.volumes.map((v) => [v.id, v]));
-  // The rooms behind the windows, a storey of a block at a time: the interior the cut-open view draws.
-  const interiors = new Map<number, FloorInterior>();
+  // The rooms behind the windows, a storey of a block at a time: the interior the cut-open view draws (`interiorAt`, furnished once for the blocks).
   const roomsOf = new Map<string, ReturnType<typeof roomsOfStorey>>();
   // The far level's bays, laid as runs once all are known.
   const farBays: FarBay[] = [];
@@ -952,9 +953,7 @@ function emitBuilding(
         const key = `${v.id}:${bay.level}`;
         let look = roomsOf.get(key);
         if (!look) {
-          let inside = interiors.get(bay.level);
-          if (!inside) { inside = interiorAt(b, bay.level); interiors.set(bay.level, inside); }
-          look = roomsOfStorey(b, v, inside, bay.level);
+          look = roomsOfStorey(b, v, interiorAt(b, bay.level), bay.level);
           roomsOf.set(key, look);
         }
         const behind = look;
@@ -2338,7 +2337,8 @@ type PlanRect = readonly [number, number, number, number];
 
 /** The ground the doors' flights of steps stand on, in the plan (local rectangles) */
 function flightFeet(b: Building, groundAt: GroundAt, pavedAt: PavedAt | undefined, floor: number): PlanRect[] {
-  const closed = b.volumes.filter((v) => !v.open);
+  // The body's own list (`emitChunk`): its doors read off the bays it laid out (`bayLayout`), not worked out again.
+  const closed = closedBlocks(b.volumes);
   if (closed.length === 0) return [];
   const built = { ...b, volumes: closed };
   const out: PlanRect[] = [];
@@ -3421,7 +3421,8 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   const resolved = resolveBlocks(b);
   // Open blocks are lots: laid on the ground, not built.
   const lots = resolved.volumes.filter((v) => v.open);
-  const closed = resolved.volumes.filter((v) => !v.open);
+  // One list for the blocks: their bays laid out and their floors furnished once (`bayLayout`, `interiorAt`) for every reader and like building.
+  const closed = closedBlocks(resolved.volumes);
   const furnished: Partial<Record<FurnitureKind, Placement[]>> = {};
   const inLot = (el: BuildingElement): boolean =>
     lots.some((v) => el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);

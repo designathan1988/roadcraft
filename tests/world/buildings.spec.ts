@@ -9,7 +9,9 @@ import { Network } from '@world/network';
 import { BLUEPRINTS, blueprintByKey, generateBody } from '@world/buildings/blueprints';
 import { MAX_PLINTH, PLINTH_MIN, THRESHOLD, floorHeight, foundationOf } from '@world/buildings/foundation';
 import {
+  bayLayout,
   buildingHeight,
+  closedBlocks,
   facadeBays,
   footprintRects,
   levelElevation,
@@ -485,5 +487,45 @@ describe('free dimensions', () => {
     expect(first[0]!.width).toBeCloseTo(bays(0.5), 9);
     // Above the block the whole bay is outside again.
     expect(facadeBays(b).filter((bay) => bay.volume === v.id && bay.side === 1 && bay.level === 1 && bay.index === 0)[0]!.width).toBeCloseTo(bays(1), 9);
+  });
+});
+
+describe('bays laid out once for the blocks', () => {
+  it('lays out every preset once for the records on its blocks, each put in the world exactly where it stands', () => {
+    for (const bp of BLUEPRINTS) {
+      const a = { ...structuredClone(bp.body), id: asBuildingId(1), x: 120, y: -35, rotation: 0.7 } as Building;
+      // Another record on the same blocks: a like building of the same tile, a draft moved.
+      const b = { ...a, id: asBuildingId(2), x: -410, y: 260, rotation: -2.2 } as Building;
+      expect(bayLayout(b), bp.key).toBe(bayLayout(a));
+      // As worked out from scratch: a deep copy has blocks of its own.
+      expect(facadeBays(b), bp.key).toEqual(facadeBays(structuredClone(b)));
+      expect(facadeBays(a, 0), bp.key).toEqual(facadeBays(structuredClone(a)).filter((bay) => bay.level === 0));
+    }
+  });
+
+  it('lays them out again for another bay module or other storey heights on the same blocks', () => {
+    const a = building();
+    const taller = { ...a, levels: [null, a.storeyHeight * 2] } as Building;
+    const wider = { ...a, module: a.module * 1.5 } as Building;
+    expect(bayLayout(taller)).not.toBe(bayLayout(a));
+    expect(bayLayout(wider)).not.toBe(bayLayout(a));
+    expect(bayLayout(wider)).not.toBe(bayLayout(taller));
+    expect(facadeBays(taller)).toEqual(facadeBays(structuredClone(taller)));
+    expect(facadeBays(wider)).toEqual(facadeBays(structuredClone(wider)));
+    // The same heights in a list of their own are the same rhythm.
+    expect(bayLayout({ ...a, levels: [null, a.storeyHeight * 2] } as Building)).toBe(bayLayout(taller));
+  });
+
+  it('keeps one list of closed blocks for the records on the same blocks, the blocks themselves when none is open', () => {
+    const plain = building();
+    expect(closedBlocks(plain.volumes)).toBe(plain.volumes);
+    const yard = building();
+    yard.volumes.push({ id: 2, x: 0, y: bays(3), w: bays(4), d: bays(2), base: 0, roof: 'flat', storeys: [{ facade: { fill: 'wall' } }], open: 'grass' });
+    const closed = closedBlocks(yard.volumes);
+    expect(closed.map((v) => v.id)).toEqual([1]);
+    // Asked again (the masses, the flights' feet, a like building): the same list, so the same layout.
+    const again = { ...yard, id: asBuildingId(2), x: 300 } as Building;
+    expect(closedBlocks(again.volumes)).toBe(closed);
+    expect(bayLayout({ ...again, volumes: closedBlocks(again.volumes) })).toBe(bayLayout({ ...yard, volumes: closed }));
   });
 });

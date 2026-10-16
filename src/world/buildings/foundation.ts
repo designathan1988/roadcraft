@@ -186,7 +186,8 @@ export function foundationOf(
   anyPaving: PavedAt = NO_PAVING,
   designedFloor?: number,
 ): Foundation {
-  const all = bays ?? facadeBays(b);
+  // Only the ground storey's ways in are read: its bays alone put in the world, off the layout kept for the blocks (`bayLayout`).
+  const all = bays ?? facadeBays(b, 0);
   const { lowest, highest, levelLowest, levelHighest } = sampleFootprint(b, groundAt);
   const pavedAt = atLevel(anyPaving, highest, lowest);
   const groundFloor = designedFloor ?? floorOver(highest, groundBays(b), pavedAt, lotFront(b, pavedAt));

@@ -2,7 +2,7 @@ import { pointInPolygon } from '@core/polygon';
 import type { Vec2 } from '@core/vec2';
 import { m, stepsIn } from '../units';
 import { localFootprint } from './footprints';
-import { EPS, baysOn, isMass, levelHeight, volumeElevation } from './geometry';
+import { EPS, type Rhythm, baysOn, isMass, levelHeight, rhythmOf, sameRhythm, volumeElevation } from './geometry';
 import { deriveSpaces, flatPlan } from './spaces';
 import { type Building, type BuildingFunction, type Volume, volumeTop, type PlacedFurniture } from './types';
 import { identityMemo } from '@core/identityMemo';
@@ -141,10 +141,31 @@ function flightBox(f: LevelFlight): [number, number, number, number] {
     : [f.foot.x - h, Math.min(f.foot.y, f.top.y) - m(0.2), f.foot.x + h, Math.max(f.foot.y, f.top.y) + m(0.2)];
 }
 
-/** Each record's floors as furnished, by level, worked out once */
-const floorsOf = identityMemo((_b: Building) => new Map<number, FloorInterior>());
+/** What a building's floors are furnished from besides its blocks (`furnishFloor`, `deriveSpaces`, `flatPlan`, `levelFlights`), and its floors furnished so far by level */
+interface Furnished {
+  readonly rhythm: Rhythm;
+  readonly cores: Building['cores'];
+  readonly use: Building['use'];
+  readonly fn: Building['function'];
+  readonly furnishing: Building['furnishing'];
+  readonly floors: Map<number, FloorInterior>;
+}
 
-/** One floor of a building, inside. */
+/** Each blocks list's furnished floors, one set per rest of the building it was asked with. */
+const furnishedOf = identityMemo((_volumes: readonly Volume[]): Furnished[] => []);
+
+/** DO NOT key them by the record (each emission's body is a new one on the same blocks, `emitChunk`) nor cap them: kept on the blocks list, let go with it */
+function floorsOf(b: Building): Map<number, FloorInterior> {
+  const known = furnishedOf(b.volumes);
+  for (const k of known) {
+    if (k.cores === b.cores && k.use === b.use && k.fn === b.function && k.furnishing === b.furnishing && sameRhythm(k.rhythm, b)) return k.floors;
+  }
+  const floors = new Map<number, FloorInterior>();
+  known.push({ rhythm: rhythmOf(b), cores: b.cores, use: b.use, fn: b.function, furnishing: b.furnishing, floors });
+  return floors;
+}
+
+/** One floor of a building, inside: furnished once for its blocks and the rest it reads (the records sharing them share it; a building emitted, its windows' rooms and the cut-open view alike). */
 export function interiorAt(b: Building, level: number): FloorInterior {
   const floors = floorsOf(b);
   let floor = floors.get(level);

@@ -1,3 +1,4 @@
+import { identityMemo } from '@core/identityMemo';
 import { steadyRatio } from '@core/scalar';
 import type { Vec2 } from '@core/vec2';
 import { pointInPolygon } from '@core/polygon';
@@ -468,8 +469,8 @@ export function bayCentreLocal(b: Building, v: Volume, side: FaceId, index: numb
   return { x: s.x + s.tx * a, y: s.y + s.ty * a };
 }
 
-/** One exposed bay (or piece of one) of one storey: everything a mesh builder or a picker needs. */
-export interface FacadeBay {
+/** What one exposed bay (or piece of one) of one storey is wherever its building stands. */
+interface BayOf {
   readonly volume: number;
   /** Storey index within the volume. */
   readonly storey: number;
@@ -477,12 +478,6 @@ export interface FacadeBay {
   readonly side: FaceId;
   readonly index: number;
   readonly component: BayComponent;
-  /** World point at the bottom centre of the bay (of the piece), on the facade line. */
-  readonly x: number;
-  readonly y: number;
-  /** Outward normal, world. */
-  readonly nx: number;
-  readonly ny: number;
   /** Height of the bay's floor above the building's ground floor. */
   readonly z: number;
   /** Where the piece starts along the side, local units from the side's start. */
@@ -493,9 +488,89 @@ export interface FacadeBay {
   readonly height: number;
 }
 
-/** DO NOT keep this list by record again, nor put a cap on such a cache */
-export function facadeBays(b: Building): FacadeBay[] {
-  return workOutFacadeBays(b);
+/** One exposed bay (or piece of one) of one storey: everything a mesh builder or a picker needs. */
+export interface FacadeBay extends BayOf {
+  /** World point at the bottom centre of the bay (of the piece), on the facade line. */
+  readonly x: number;
+  readonly y: number;
+  /** Outward normal, world. */
+  readonly nx: number;
+  readonly ny: number;
+}
+
+/** The same bay in the building's own frame (`bayLayout`): its point and normal local. */
+export interface LocalBay extends BayOf {
+  readonly lx: number;
+  readonly ly: number;
+  readonly lnx: number;
+  readonly lny: number;
+}
+
+/** What a building's bays and floors are laid by besides its blocks: the bay module across, the storey heights up (`levelHeight`). */
+export interface Rhythm {
+  readonly module: number;
+  readonly groundHeight: number;
+  readonly storeyHeight: number;
+  /** A copy of `Building.levels`: a draft's list changed in place does not change what was keyed by it. */
+  readonly levels: readonly (number | null)[] | undefined;
+}
+
+export const rhythmOf = (b: Building): Rhythm =>
+  ({ module: b.module, groundHeight: b.groundHeight, storeyHeight: b.storeyHeight, levels: b.levels?.slice() });
+
+/** Whether a building has this rhythm: every number the same (`Object.is`), level by level. */
+export function sameRhythm(r: Rhythm, b: Building): boolean {
+  if (!Object.is(r.module, b.module) || !Object.is(r.groundHeight, b.groundHeight) || !Object.is(r.storeyHeight, b.storeyHeight)) return false;
+  const a = r.levels, c = b.levels;
+  // None given, however it was written (a save may hold null): the defaults alike.
+  if (!a || !c) return !a && !c;
+  if (a.length !== c.length) return false;
+  for (let i = 0; i < a.length; i++) if (!Object.is(a[i], c[i])) return false;
+  return true;
+}
+
+/** A building's closed blocks (an open one is a lot, laid on the ground): one list for every record with the same blocks, the blocks themselves when none is open */
+export const closedBlocks: (volumes: Volume[]) => Volume[] = identityMemo((volumes: Volume[]): Volume[] =>
+  (volumes.some((v) => v.open) ? volumes.filter((v) => !v.open) : volumes));
+
+/** Each blocks list's layouts, one per rhythm it was asked with: what `bayLayout` keeps. */
+const layoutsOf = identityMemo((_volumes: readonly Volume[]): { readonly rhythm: Rhythm; readonly bays: readonly LocalBay[] }[] => []);
+
+/** A building's bays in its own frame, worked out once for its blocks list and rhythm: the records sharing them (`intern.ts`, a tile's decoded members, a draft moved) share it; asked by emission alone (a job's records, the page's few), let go with the list; DO NOT key it by the record nor cap it */
+export function bayLayout(b: Building): readonly LocalBay[] {
+  const known = layoutsOf(b.volumes);
+  for (const k of known) if (sameRhythm(k.rhythm, b)) return k.bays;
+  const bays = workOutLayout(b);
+  known.push({ rhythm: rhythmOf(b), bays });
+  return bays;
+}
+
+/** A building's bays in the world (`level`: that storey's alone), from its layout turned and moved to where it stands; a new list each time, kept by no one. */
+export function facadeBays(b: Building, level?: number): FacadeBay[] {
+  const f = buildingFrame(b);
+  const out: FacadeBay[] = [];
+  for (const bay of bayLayout(b)) {
+    if (level !== undefined && bay.level !== level) continue;
+    out.push({
+      volume: bay.volume,
+      storey: bay.storey,
+      level: bay.level,
+      side: bay.side,
+      index: bay.index,
+      component: bay.component,
+      // As `localToWorld` and `localDirToWorld` turn them.
+      x: frameX(f, bay.lx, bay.ly),
+      y: frameY(f, bay.lx, bay.ly),
+      nx: bay.lnx * f.c - bay.lny * f.s,
+      ny: bay.lnx * f.s + bay.lny * f.c,
+      z: bay.z,
+      start: bay.start,
+      push: bay.push,
+      width: bay.width,
+      height: bay.height,
+    });
+  }
+  return out;
 }
 
 /** Numbers per bay in a `GroundBays` table, and where each lies. */
@@ -511,14 +586,16 @@ const GROUND_BAYS = new WeakMap<Building, GroundBays>();
 export function groundBays(b: Building): GroundBays {
   let known = GROUND_BAYS.get(b);
   if (!known) {
-    const bays = workOutFacadeBays(b, 0);
+    // DO NOT read them off `bayLayout`: the page asks this of every building it holds, and would keep every storey's bays.
+    const bays = workOutLayout(b, 0);
+    const f = buildingFrame(b);
     known = new Float64Array(bays.length * GROUND_BAY_STRIDE);
     bays.forEach((bay, i) => {
       const o = i * GROUND_BAY_STRIDE;
-      known![o + GB_X] = bay.x;
-      known![o + GB_Y] = bay.y;
-      known![o + GB_NX] = bay.nx;
-      known![o + GB_NY] = bay.ny;
+      known![o + GB_X] = frameX(f, bay.lx, bay.ly);
+      known![o + GB_Y] = frameY(f, bay.lx, bay.ly);
+      known![o + GB_NX] = bay.lnx * f.c - bay.lny * f.s;
+      known![o + GB_NY] = bay.lnx * f.s + bay.lny * f.c;
       known![o + GB_Z] = bay.z;
       known![o + GB_SIDE] = bay.side;
       known![o + GB_WIDTH] = bay.width;
@@ -533,9 +610,9 @@ export function groundBays(b: Building): GroundBays {
 export const groundBayComponent = (table: GroundBays, i: number): BayComponent =>
   BAY_COMPONENTS[table[i * GROUND_BAY_STRIDE + GB_COMPONENT]!]!;
 
-/** Every bay that is an OUTSIDE wall. */
-function workOutFacadeBays(b: Building, onlyLevel?: number): FacadeBay[] {
-  const out: FacadeBay[] = [];
+/** Every bay that is an OUTSIDE wall, in the building's own frame: its blocks and rhythm alone decide it. */
+function workOutLayout(b: Building, onlyLevel?: number): LocalBay[] {
+  const out: LocalBay[] = [];
   const elevations: number[] = [];
   const top = topLevel(b);
   for (let level = 0; level <= top; level++) elevations.push(levelElevation(b, level));
@@ -550,7 +627,6 @@ function workOutFacadeBays(b: Building, onlyLevel?: number): FacadeBay[] {
       for (const side of volumeSides(v)) {
         const frame = edgeFrame(v, side);
         const n = { x: frame.nx, y: frame.ny };
-        const normal = localDirToWorld(b, n.x, n.y);
         const count = baysOn(b, v, side);
         const width = bayWidth(b, v, side);
         const spans = coveredSpans(b, v, side, level);
@@ -567,7 +643,6 @@ function workOutFacadeBays(b: Building, onlyLevel?: number): FacadeBay[] {
           const push = reliefAt(v, side, index, k)?.depth ?? 0;
           for (const [p0, p1] of parts) {
             const mid = (p0 + p1) / 2;
-            const world = localToWorld(b, s.x + s.tx * mid + n.x * push, s.y + s.ty * mid + n.y * push);
             out.push({
               volume: v.id,
               storey: k,
@@ -575,10 +650,10 @@ function workOutFacadeBays(b: Building, onlyLevel?: number): FacadeBay[] {
               side,
               index,
               component: whole ? componentAt(storey.facade, side, index) : 'wall',
-              x: world.x,
-              y: world.y,
-              nx: normal.x,
-              ny: normal.y,
+              lx: s.x + s.tx * mid + n.x * push,
+              ly: s.y + s.ty * mid + n.y * push,
+              lnx: n.x,
+              lny: n.y,
               z,
               start: p0,
               push,
