@@ -1,7 +1,8 @@
 import { DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
-import type { RoadDoc } from '@world/doc';
-import { TILE, type TileRecords, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
+import type { ListPart, RoadDoc } from '@world/doc';
+import { lotCentre } from '@world/lots';
+import { OWNER, TILE, TILE_IDS, type TileRecords, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
 
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
 
@@ -13,6 +14,15 @@ const KEEP_MARGIN = 1;
 const IN_FLIGHT = 4;
 /** Changed tiles are written this often (and always before they are let go). */
 const WRITE_EVERY_MS = 5_000;
+
+/** The tile a record of an undo step stands in (`editor/history.ts` letGoTile): by its place, or by its id's range for a road or a span. */
+export function tileOfRecord(part: string, id: number, value: unknown): number | null {
+  const v = value as { x?: number; y?: number; corners?: readonly { x: number; y: number }[]; points?: readonly { x: number; y: number }[] } | undefined;
+  if (v && Number.isFinite(v.x) && Number.isFinite(v.y)) return OWNER.at(v as { x: number; y: number });
+  if (v?.corners?.length) return OWNER.at(lotCentre(v as { corners: readonly { x: number; y: number }[] }));
+  if (v?.points?.length) return OWNER.at(v.points[0]!);
+  return id >= TILE_IDS && (part === 'segments' || part === 'poleSpans') ? Math.floor(id / TILE_IDS) - 1 : null;
+}
 
 /** Where tiles come from and go to: the store, which makes a tile it does not have (`editor/tileStore.ts`). */
 export interface TileSource {
@@ -36,7 +46,10 @@ export class WorldStreamer {
   private lastWrite = 0;
   private writing: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private readonly failed: (why: string) => void = () => {}) {}
+  /** `letGo`: a tile let go, and the stretches of the lists it took (undo forgets what it named, `History.letGoTile`). */
+  constructor(private readonly doc: RoadDoc, private readonly source: TileSource,
+    private readonly letGo: (key: number, removedAt: ReadonlyMap<ListPart, readonly number[]>) => void = () => {},
+    private readonly failed: (why: string) => void = () => {}) {}
 
   /** The camera's focus on the map (x, y): the tiles around it wanted, the nearest asked first. */
   focus(x: number, y: number): void {
@@ -65,7 +78,7 @@ export class WorldStreamer {
     for (const key of [...this.doc.loadedTiles]) {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
       if (this.dirty.has(key)) this.write(key);
-      this.doc.unloadTile(key);
+      this.letGo(key, this.doc.unloadTile(key));
       this.versions.delete(key);
     }
     if (now - this.lastWrite >= WRITE_EVERY_MS) {

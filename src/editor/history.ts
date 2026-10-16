@@ -1,4 +1,4 @@
-import { RoadDoc, type SerializedDoc } from '@world/doc';
+import { type ListPart, RoadDoc, type SerializedDoc } from '@world/doc';
 import { sideOf, type DocPatch } from '@world/docImage';
 import type { Network } from '@world/network';
 import { repairNearConnections } from './repair';
@@ -63,6 +63,35 @@ export class History {
     this.undoStack.push(patch);
     this.trim();
     return true;
+  }
+
+  /** A tile let go of the page (`worldStreamer.ts`): a step naming a record or an item of it can no longer be undone or redone
+   *  - such an undo step is dropped with every older one, the redo steps all; the steps kept have their stretches of the lists shifted past the items that went (`removedAt`, indices before they went). */
+  letGoTile(touches: (record: { readonly part: string; readonly id: number; readonly value: unknown }) => boolean, itemIn: (item: unknown) => boolean,
+    removedAt: ReadonlyMap<ListPart, readonly number[]>): void {
+    this.settle();
+    const named = (p: DocPatch): boolean => p.whole !== undefined
+      || p.records.some((r) => touches({ part: r.part, id: r.id, value: r.before }) || touches({ part: r.part, id: r.id, value: r.after }))
+      || p.lists.some((l) => l.before.some(itemIn) || l.after.some(itemIn));
+    for (let k = this.undoStack.length - 1; k >= 0; k--) {
+      if (!named(this.undoStack[k]!)) continue;
+      this.undoStack.splice(0, k + 1);
+      break;
+    }
+    if (this.redoStack.some(named)) this.redoStack.length = 0;
+    if (!removedAt.size) return;
+    const shift = (p: DocPatch): DocPatch => (p.lists.length === 0 ? p : {
+      ...p,
+      lists: p.lists.map((l) => {
+        const gone = removedAt.get(l.part);
+        if (!gone?.length) return l;
+        let before = 0;
+        for (const at of gone) if (at < l.start) before++;
+        return before ? { ...l, start: l.start - before } : l;
+      }),
+    });
+    for (let k = 0; k < this.undoStack.length; k++) this.undoStack[k] = shift(this.undoStack[k]!);
+    for (let k = 0; k < this.redoStack.length; k++) this.redoStack[k] = shift(this.redoStack[k]!);
   }
 
   clear(): void {

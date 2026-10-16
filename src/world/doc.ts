@@ -1540,8 +1540,9 @@ export class RoadDoc {
   }
 
   /** A tile taken out of the page's document (cause `TILE_UNLOADED`): what it holds now (`tileMembers`); a node at its edge stays while a road of a tile still here ends on it */
-  unloadTile(key: number): void {
-    if (!this.tileContents.has(key)) return;
+  unloadTile(key: number): ReadonlyMap<ListPart, readonly number[]> {
+    const removedAt = new Map<ListPart, number[]>();
+    if (!this.tileContents.has(key)) return removedAt;
     if (this.recorder) throw new Error('a tile cannot go out during an edit');
     const t = this.tileMembers(key);
     this.tileContents.delete(key);
@@ -1584,14 +1585,17 @@ export class RoadDoc {
     if (t.barriers.length) this.changes.record('barriers', [t.square], { ids: t.barriers.map((x) => x.id) });
     this.buildings.dropAll(t.buildings.map((b) => b.id));
     this.lotStore.restore(t.lots.map((lot) => ({ id: lot.id, value: undefined })), TILE_UNLOADED);
-    this.lotStore.dropKeys(t.lotKeys, t.square, TILE_UNLOADED);
-    const without = <T>(part: DocListPart, list: T[], gone: readonly T[], kind: 'paint' | 'trees' | 'elements'): void => {
+    const keysAt = this.lotStore.dropKeys(t.lotKeys, t.square, TILE_UNLOADED);
+    if (keysAt.length) removedAt.set('lotKeys', keysAt);
+    const without = <T>(part: DocListPart & ListPart, list: T[], gone: readonly T[], kind: 'paint' | 'trees' | 'elements'): void => {
       if (!gone.length) return;
       this.ownList(part);
       const set = new Set<T>(gone);
+      const at: number[] = [];
       let k = 0;
-      for (const item of list) if (!set.has(item)) list[k++] = item;
+      for (let n = 0; n < list.length; n++) { const item = list[n]!; if (!set.has(item)) list[k++] = item; else at.push(n); }
       list.length = k;
+      removedAt.set(part, at);
       this.changes.record(kind, [t.square]);
     };
     without('terrainPaint', this.terrainPaint, t.paint, 'paint');
@@ -1600,6 +1604,7 @@ export class RoadDoc {
     for (const e of t.elements) this.elementGrid?.remove(e);
     without('elements', this.elements, t.elements, 'elements');
     this.changes.causeNext(cause);
+    return removedAt;
   }
 
   // ------------------------------------------------------------ working copy

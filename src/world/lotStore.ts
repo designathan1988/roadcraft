@@ -210,16 +210,21 @@ export class LotStore {
   }
 
   /** A tile's keys taken out of the page's document (`RoadDoc.unloadTile`): one entry over its square. */
-  dropKeys(keys: readonly string[], square: ChangeRect, cause: string): void {
-    if (!keys.length) return;
+  dropKeys(keys: readonly string[], square: ChangeRect, cause: string): number[] {
+    if (!keys.length) return [];
     this.beforeKeys?.();
     this.ownKeys();
     this.keysRewritten++;
     const gone = new Set(keys);
+    const at: number[] = [];
     let k = 0;
-    for (const key of this.keyList) if (!gone.has(key)) this.keyList[k++] = key; else this.keySet.delete(key);
+    for (let n = 0; n < this.keyList.length; n++) {
+      const key = this.keyList[n]!;
+      if (!gone.has(key)) this.keyList[k++] = key; else { this.keySet.delete(key); at.push(n); }
+    }
     this.keyList.length = k;
     this.journal.record('lotKeys', [square], { cause });
+    return at;
   }
 
   /** A stretch of the keys put back as it was (undo, `RoadDoc.restore`): `list.splice`, the set kept with it. */
