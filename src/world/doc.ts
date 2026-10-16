@@ -1367,6 +1367,11 @@ export class RoadDoc {
   /** Each loaded tile's next ids, by kind (`TileRecords.next`): a record made in a tile takes its id from the tile's range. */
   private tileNext = new Map<number, TileNext>();
 
+  /** Whether an edit is open (`beginEdit`..`endEdit`): no tile comes in or goes out then. */
+  get editing(): boolean {
+    return this.recorder !== null;
+  }
+
   /** The tiles in this document now. */
   get loadedTiles(): ReadonlySet<number> {
     return this.tileContents;

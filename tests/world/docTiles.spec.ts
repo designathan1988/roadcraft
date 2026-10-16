@@ -1,0 +1,103 @@
+import { describe, expect, it } from 'vitest';
+import { RoadDoc } from '@world/doc';
+import { TILE, TILE_COUNTED, type TileRecords, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
+import { isStreaming } from '@world/changes';
+import { m } from '@world/units';
+
+/** THE PAGE'S DOCUMENT HOLDS TILES, NOT THE WORLD (`RoadDoc.loadTile`, `unloadTile`, `tileRecords`) */
+
+const empty = (key: number): TileRecords => ({
+  key, version: 1, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [],
+  lotKeys: [], landscape: [], barriers: [], paint: [], trees: [], elements: [],
+  next: { node: tileIdBase(key), segment: tileIdBase(key), pole: tileIdBase(key), span: tileIdBase(key), building: tileIdBase(key), lot: tileIdBase(key), landscape: tileIdBase(key), barrier: tileIdBase(key) },
+});
+
+/** Two tiles side by side (0,0) and (1,0), a road from the middle of each to their shared edge, and an edge node both name alike. */
+function twoTiles(): { a: TileRecords; b: TileRecords; edge: number } {
+  const ka = tileKey(0, 0), kb = tileKey(1, 0);
+  const edge = edgeNodeId(TILE, m(500))!;
+  const edgeNode = { id: edge, x: TILE, y: m(500) };
+  const na = { id: tileIdBase(ka), x: m(500), y: m(500) };
+  const nb = { id: tileIdBase(kb), x: TILE + m(500), y: m(500) };
+  // The road of tile a ends on the edge node, tile b's: its middle is in a, so a owns it and borrows the edge node (b's own).
+  const a: TileRecords = { ...empty(ka), nodes: [na], borrowedNodes: [edgeNode], segments: [{ id: tileIdBase(ka) + 1, a: na.id, b: edge, type: 1, curve: null }] };
+  const b: TileRecords = { ...empty(kb), nodes: [nb, edgeNode], segments: [{ id: tileIdBase(kb) + 1, a: edge, b: nb.id, type: 1, curve: null }] };
+  return { a, b, edge };
+}
+
+describe('the page\'s document by tiles', () => {
+  it('joins two tiles on their edge node, whichever comes first, and lets one go without the other\'s roads', () => {
+    for (const order of [['a', 'b'], ['b', 'a']] as const) {
+      const { a, b, edge } = twoTiles();
+      const doc = new RoadDoc();
+      const tiles = { a, b };
+      for (const k of order) doc.loadTile(tiles[k]);
+      expect(doc.nodes.size).toBe(3);
+      expect(doc.segments.size).toBe(2);
+      expect([...doc.node(edge as never)!.incident].sort()).toEqual([a.segments[0]!.id, b.segments[0]!.id].sort());
+      // Tile a goes: its road and node go, the edge node (b's, still used by b's road) stays.
+      doc.unloadTile(a.key);
+      expect(doc.segments.size).toBe(1);
+      expect(doc.nodes.has(edge as never)).toBe(true);
+      expect(doc.nodes.has(a.nodes[0]!.id as never)).toBe(false);
+      expect(doc.node(edge as never)!.incident).toEqual([b.segments[0]!.id]);
+      // Tile b goes too: nothing is left.
+      doc.unloadTile(b.key);
+      expect(doc.nodes.size).toBe(0);
+      expect(doc.segments.size).toBe(0);
+    }
+  });
+
+  it('keeps an edge node a road of a loaded tile ends on when its own tile goes', () => {
+    const { a, b, edge } = twoTiles();
+    const doc = new RoadDoc();
+    doc.loadTile(a);
+    doc.loadTile(b);
+    doc.unloadTile(b.key);
+    expect(doc.nodes.has(edge as never)).toBe(true);
+    expect(doc.segments.size).toBe(1);
+  });
+
+  it('writes a tile back as it holds it now, what the player built in it included, ids from its range', () => {
+    const { a } = twoTiles();
+    const doc = new RoadDoc();
+    doc.loadTile(a);
+    const p = doc.addNode({ x: m(200), y: m(200) });
+    const q = doc.addNode({ x: m(300), y: m(200) });
+    const s = doc.addSegment(p.id, q.id, 1)!;
+    const base = tileIdBase(a.key);
+    for (const id of [p.id, q.id, s.id]) {
+      expect(id).toBeGreaterThanOrEqual(base);
+      expect(id).toBeLessThan(base + TILE_COUNTED);
+    }
+    const written = doc.tileRecords(a.key, 2);
+    expect(written.version).toBe(2);
+    expect(written.nodes.map((n) => n.id).sort()).toEqual([a.nodes[0]!.id, p.id, q.id].sort());
+    expect(written.segments.map((x) => x.id).sort()).toEqual([a.segments[0]!.id, s.id].sort());
+    expect(written.borrowedNodes.map((n) => n.id)).toEqual([a.borrowedNodes[0]!.id]);
+    // Read again elsewhere, the tile is the same.
+    const other = new RoadDoc();
+    other.loadTile(written);
+    expect(other.nodes.size).toBe(4);
+    expect(other.segments.size).toBe(2);
+  });
+
+  it('says in the diary that the tiles came and went, apart from the edits', () => {
+    const { a } = twoTiles();
+    const doc = new RoadDoc();
+    const from = doc.changes.version;
+    doc.loadTile(a);
+    doc.unloadTile(a.key);
+    const entries = doc.changes.since(from)!;
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.every(isStreaming)).toBe(true);
+  });
+
+  it('never takes a tile in or out during an edit', () => {
+    const { a } = twoTiles();
+    const doc = new RoadDoc();
+    doc.beginEdit();
+    expect(() => doc.loadTile(a)).toThrow();
+    doc.endEdit();
+  });
+});
