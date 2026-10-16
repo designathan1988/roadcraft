@@ -83,7 +83,9 @@ a second RoadDoc + Network of the active region.
   `deriveSpaces`) and lot/kerb bays baked with the tile (`sim/tileBays.ts`); a worker job still decodes its records
   fresh, so the layouts are redone once per job and level. Fix: bake them into the tile's table as sections.
 - Every tile load records 'roads' and runs `buildWorld`: the road surfaces now visit only the tiles that changed
-  (`roadSurfaces.ts` PassState); left on the page: the block compares (`compareSolves`) and the world job's other steps.
+  (`roadSurfaces.ts` PassState); the world job (`renderer.ts` `worldSteps`, one step a frame in `pumpWorld`) still runs
+  on the page: the blocks' tiles joined (`surfaceTiles.ts` tileArrays), `details.prepare` (structure cells), `syncUtilities`,
+  `roads.adopt`. Fix: each step's product built in a job from the changed blocks, the page only uploading it.
 - `renderer.ts` `natureSweep`: the trees' scale is the average over the shown plates, so a plate shown re-picks
   every plate's lattice on the page (`farForest.ts` keeps each tree's pick and moves a uniform). Fix: picks kept
   per plate (changes near forest density: the player's call).

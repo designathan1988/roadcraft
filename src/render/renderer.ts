@@ -727,11 +727,11 @@ export function createSceneRenderer(
     if (!worldJob) return;
     // Not in the frame of the edit itself, which has already paid for the edit and the roads' heights
     if (worldJobFresh) { worldJobFresh = false; onAssetsReady(); return; }
-    // DO NOT slice it by time (amortization: the cost came back with a bigger region): it does what the change named (the blocks, `roadSurfaces.ts` PassState) and stops only to wait on its workers.
-    let step = worldJob.next();
-    while (!step.done && step.value !== 'wait') step = worldJob.next();
+    // DO NOT slice it by time (amortization: the cost came back with a bigger region), and DO NOT run it whole in one frame either: one step a frame, each a product of the change (the ground's blocks, the surfaces, the details), so the page is not held for the whole job of every tile put in (it was, b4938f9: the camera stood still). What remains is the cause: those steps run on the page (CLAUDE.md, work list).
+    const step = worldJob.next();
     if (step.done) { worldJob = null; shadowMoved = true; }
-    else lookAgain();
+    else if (step.value === 'wait') lookAgain();
+    else onAssetsReady();
   };
   let networkRevision = -1;
   /** The blocks the roads' heights or ground changed in since the road surfaces were last built to the end (null: not known, every tile): kept across a world build replaced halfway. */
