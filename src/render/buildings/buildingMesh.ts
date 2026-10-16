@@ -831,7 +831,7 @@ function emitBuilding(
   onLot?: (el: BuildingElement) => boolean,
   designedFloor?: number,
   slots: SlotAllocator = spaceSeed,
-): number {
+): Foundation {
   const e = new Emitter(b, shell, parts, furniture);
   // Put in the world off the layout kept for the blocks (`bayLayout`): the flights' feet and the like buildings of the job read the same one.
   const bays = facadeBays(b);
@@ -1077,7 +1077,7 @@ function emitBuilding(
     const skin = best.dress ? wallOf(best, 0) : trim;
     e.box(x0, y0, x1, y1, z, z + m(3), skin.finish === 'glass' ? MACHINE_ROOM : skin, ROOF_PLANT);
   }
-  return floor;
+  return f;
 }
 
 const FLOOR_FINISH = paint({ finish: 'stone', colour: 0xb9b2a5 });
@@ -1847,9 +1847,10 @@ const POOL_WATER_DROP = m(0.12);
 /** The grid the terrain is drawn on, whose triangles a lawn's parts are seated over (`lawnGround.ts`). */
 const LAWN_LATTICE = { cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 
+/** `entrances`: the building's ways in as its body's emission worked them out (`emitBuilding`): DO NOT work its foundation out again for the flights' feet. */
 function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, groundAt: GroundAt, shell: Shell,
   parts: Record<PartKind, Placement[]>, buildingFloor?: number, pavedAt?: PavedAt,
-  onLot?: (el: BuildingElement) => boolean): LotGround | undefined {
+  onLot?: (el: BuildingElement) => boolean, entrances?: readonly Entrance[]): LotGround | undefined {
   if (lots.length === 0) return lotGroundOf(b, [], buildingFloor, false);
   const e = new Emitter(b, shell, parts);
   const at = (lx: number, ly: number): number => {
@@ -1865,7 +1866,7 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
   const level = buildingFloor !== undefined ? buildingFloor : floor + m(0.12);
   const surfaces = lotSurfaces(b, level, pavedAt);
   // Where the doors' flights stand: a path laid to a door stops at the foot of its steps.
-  const feet = buildingFloor !== undefined ? flightFeet(b, groundAt, pavedAt, buildingFloor) : [];
+  const feet = buildingFloor !== undefined ? flightFeet(b, groundAt, pavedAt, buildingFloor, entrances) : [];
   let low = Infinity;
   for (const v of lots) for (const p of localFootprint(v)) low = Math.min(low, at(p.x, p.y));
   const heightOf = new Map<Volume, (lx: number, ly: number) => number>();
@@ -2336,13 +2337,14 @@ function flightSpan(b: Building, v: Volume, x: Entrance): [number, number] {
 type PlanRect = readonly [number, number, number, number];
 
 /** The ground the doors' flights of steps stand on, in the plan (local rectangles) */
-function flightFeet(b: Building, groundAt: GroundAt, pavedAt: PavedAt | undefined, floor: number): PlanRect[] {
+function flightFeet(b: Building, groundAt: GroundAt, pavedAt: PavedAt | undefined, floor: number, entrances?: readonly Entrance[]): PlanRect[] {
   // The body's own list (`emitChunk`): its doors read off the bays it laid out (`bayLayout`), not worked out again.
   const closed = closedBlocks(b.volumes);
   if (closed.length === 0) return [];
   const built = { ...b, volumes: closed };
   const out: PlanRect[] = [];
-  for (const x of foundationOf(built, groundAt, undefined, pavedAt, floor).entrances) {
+  // The body's own (`emitBuilding`, the same floor and ground storey); worked out here only for a signature body, drawn by its own parts.
+  for (const x of entrances ?? foundationOf(built, groundAt, undefined, pavedAt, floor).entrances) {
     if (x.steps <= 0 || x.recess > 0) continue;
     const v = closed.find((w) => w.id === x.volume);
     if (!v) continue;
@@ -3432,11 +3434,12 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   flagSink = flags;
   // A signature building's body is drawn with its own parts (`signature.ts`).
   const signature = closed.length > 0 && drawsSignature(b);
-  const floor = signature ? designedFloor : closed.length > 0
+  const body = !signature && closed.length > 0
     ? emitBuilding({ ...resolved, volumes: closed }, groundAt, shell, parts, pavedAt, furnished, inLot, designedFloor, slots)
     : undefined;
+  const floor = signature ? designedFloor : body?.floor;
   flagSink = null;
-  const lotGround = emitLots(resolved, lots, closed.length === 0, groundAt, shell, parts, floor, pavedAt, inLot);
+  const lotGround = emitLots(resolved, lots, closed.length === 0, groundAt, shell, parts, floor, pavedAt, inLot, body?.entrances);
   const batches = {} as Record<PartKind, PartBatch>;
   for (const kind of PART_KINDS) {
     const list = parts[kind];
