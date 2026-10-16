@@ -194,8 +194,9 @@ Main thread
   worker fed by diary deltas, poses in shared memory, COOP/COEP in Vite and Electron.
 - City growth and power-line layout are sliced (`main.ts:2200-2273` `GROW_SLICE_MS`,
   `roads/powerLine.ts:39`): amortization. The worker version is on `fix/growth-worker`.
-- Nature: one plate swept per frame (`renderer.ts:2359-2393`) and `new CandidateKeep` with every
-  tree (`:3045`).
+- Nature: one plate swept per frame (`renderer.ts` `natureSweep`, `HIDDEN_SLICE_MS`).
+- Road blocks' levels: every block of the map scanned every 6 frames (`renderer.ts` `updateRoadLevels`,
+  `mesh/roadResidency.ts:48`). Fix: the blocks filed by place in `roadSurfaces.ts`, the near ones kept.
 - Scene scan for shader variants every 2 s, compiling during play (`renderer.ts:3112`). Fix: a
   closed variant catalogue compiled at load.
 - Opening: `net.rebuild({ full: true })` (`history.ts:155`); `readDerivedAll` reads the whole cache
@@ -215,10 +216,10 @@ O(map) per edit
   `'utilities'` without ids. 28 `JSON.stringify` comparisons in `doc.ts` `replaceContents`.
 - Terrain: a stamp discards the worker-built mesh (`terrain.ts:3125`); `new TerrainIndex` of every
   stamp per revision (`:3102`); textures and buffers re-uploaded whole (no `addUpdateRange`).
-- `flatAtlas.ts`: each plate filters every paint dab (`:435-444`); `letGo` throws a plate away and
-  it is rebuilt when it returns (`:299-307`).
-- Global-revision derivatives in `renderer.ts`: `coverSweep` (`:2547, 2982`), elements rebuilt
-  whole (`:3535`), planted trees (`:3086`), `watchRoads` copies every ribbon each second (`:1314`).
+- `flatAtlas.ts`: each plate filters every paint dab (`:435-444`) and every terrain stamp (`sync`,
+  `doc.terrainStamps.filter`); `letGo` throws a plate away and it is rebuilt when it returns (`:299-307`).
+- The rivers' stones are swept again over the whole water box at each water rebuild (`renderer.ts`
+  `resweepShore`): it follows `terrain.ts` `rebuildWater`, which rebuilds all the water at any stamp.
 - Lot tool: `lotAt` is `doc.lots.find`, up to 400 times per move (`lotTool.ts:359, 552`); the
   overlay recomposes every lot; the proposal key uses `net.revision` (`:259`). Fix: `doc.lotsIn(box)`.
 - Simulation: `refreshJunctionOrder` sorts every junction per edit (`sim/world.ts:534`);
@@ -226,7 +227,8 @@ O(map) per edit
   tick (`pipeline.ts:92`); control advisor every 10 s (`controlAdvisor.ts:37`); all stops scanned
   (`transit/transit.ts:268`); `trainZones` built each tick (`walk.ts:1952`).
 - Fleet copied or scanned: per tick in `lotTraffic.ts:156, 269, 309`, `lorryTraffic.ts:136, 247`;
-  per frame in `render/agents.ts:2120`; per body in `wallsNear` (`playEffects.ts:307`).
+  per frame in `render/agents.ts:2120`; per body in `wallsNear` (`playEffects.ts:307`); per status in
+  `main.ts` `currentStatus` (fix: `SimClient`'s pose decode, which reads every car anyway, sums speed and queue).
 - Ragdoll allocates per frame (`ragdoll.ts:2027-2034, 1421`), one height field per body (`:1526`),
   `ragdollGround` cleared whole above a cap (`playEffects.ts:240`). Baked crowd blends palettes on
   the CPU (`riggedCitizens.ts:793, 911, 1143`).
