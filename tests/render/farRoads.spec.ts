@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { roadRecipes } from '@render/bake/roadRecipes';
 import { TOP_LEVEL, emptyRecords, farKey, farNode } from '@render/buildings/farTiles';
 import type { FarTileSource } from '@render/buildings/farLevels';
-import { FarRoads } from '@render/farRoads';
+import { FarRoads, farRoadJob } from '@render/farRoads';
 import { type FarRoadCache, type FarRoadMesh, bakeTileRoads, farRoadTones, runFarRoadJob, tileNetwork } from '@render/farRoadTiles';
 import type { FarTreeRun } from '@render/farTree';
 import { surfaceTexels } from '@render/mesh/textureBaker';
@@ -63,10 +63,10 @@ function memoryCache(): FarRoadCache & { readonly puts: string[] } {
   };
 }
 
-/** The far jobs run here, as a worker runs them. */
+/** The far jobs run here, as a worker runs them: posted as the runner posts them (`farRoadJob`). */
 const runner = (cache: FarRoadCache): FarTreeRun<FarRoadMesh> => (job, done) => {
   let live = true;
-  void runFarRoadJob(job, cache).then((reply) => { if (live) done(reply); });
+  void runFarRoadJob(farRoadJob(job), cache).then((reply) => { if (live) done(reply); });
   return () => { live = false; };
 };
 
@@ -153,6 +153,18 @@ describe('a tile of roads baked from the store', () => {
     if (again.kind !== 'far') throw new Error(again.kind);
     expect(again.payload!.index).toEqual(made.payload!.index);
     expect(cache.puts).toEqual([`test:${node}`]);
+  });
+
+  it('is posted, when the page read the tile, its roads alone: never its buildings', () => {
+    const records: TileRecords = { ...crossTile(0, 0), buildings: [{ id: 1, x: 0, y: 0, volumes: [] }] };
+    const tree = { node: farKey(0, 0, 0), k: 0, i: 0, j: 0, sig: '1', want: true, prefix: null } as const;
+    const job = farRoadJob({ ...tree, records });
+    expect(Object.keys(job.records!).sort()).toEqual(['borrowedNodes', 'key', 'nodes', 'segments']);
+    expect(job.records).toEqual({ key: records.key, nodes: records.nodes, borrowedNodes: records.borrowedNodes, segments: records.segments });
+    // The same mesh as from the whole records.
+    expect(bakeTileRoads(job.records!)!.index).toEqual(bakeTileRoads(records)!.index);
+    // The store's map kept for a worker that reads the store itself.
+    expect(farRoadJob({ ...tree, store: 'map' }).store).toBe('map');
   });
 });
 

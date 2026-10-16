@@ -241,8 +241,15 @@ function tileBands(net: Network, owned: ReadonlySet<number>): Band[] {
   return [...bands.values()].sort((a, b) => a.order - b.order);
 }
 
+/** What a far road bake reads of a tile: its key, its nodes, the ends it borrows and its roads (the store's `roads` part, `tileReader.ts`). */
+export type TileRoads = Pick<TileRecords, 'key' | 'nodes' | 'borrowedNodes' | 'segments'>;
+
+/** DO NOT post a tile's records whole to a road bake (its buildings above all, which no road reads): its roads alone. */
+export const tileRoads = (records: TileRoads): TileRoads =>
+  ({ key: records.key, nodes: records.nodes, borrowedNodes: records.borrowedNodes, segments: records.segments });
+
 /** The tile's roads built alone: its segments and the ends it borrows, as the page's document would load it (`RoadDoc.loadTile`), with no neighbour. */
-export function tileNetwork(records: TileRecords): Network {
+export function tileNetwork(records: TileRoads): Network {
   const owned = new Set(records.nodes.map((n) => n.id));
   const doc = RoadDoc.fromJSON({
     version: 1, unit: METERS_PER_UNIT,
@@ -257,7 +264,7 @@ export function tileNetwork(records: TileRecords): Network {
 const FLAT = (): number => 0;
 
 /** A TILE'S ROADS FROM ITS RECORDS ALONE, as one mesh simplified to a tile's error; null with no road seen */
-export function bakeTileRoads(records: TileRecords, groundAt: (x: number, y: number) => number = FLAT): FarRoadMesh | null {
+export function bakeTileRoads(records: TileRoads, groundAt: (x: number, y: number) => number = FLAT): FarRoadMesh | null {
   if (records.segments.length === 0) return null;
   const net = tileNetwork(records);
   const out = new Builder();
@@ -372,8 +379,8 @@ export interface FarRoadJob {
   readonly prefix: string | null;
   /** Its four quarters (level 1 and up), null where no tile is. */
   readonly children?: readonly ({ readonly key: string; readonly sig: string } | null)[];
-  /** Level 0, once the cache said it did not have it: the tile as the store keeps it. */
-  readonly records?: TileRecords;
+  /** Level 0, once the cache said it did not have it and no worker reads the store (the desktop's): the tile's roads the page read (`tileRoads`). */
+  readonly records?: TileRoads;
   /** Level 0: the store's map this worker reads the tile from itself (`core/storedTiles.ts`), in place of `records`. */
   readonly store?: string;
   /** The ground shared with the workers (`sharedGround.ts`); none: flat at 0. */
@@ -383,7 +390,7 @@ export interface FarRoadJob {
 export type FarRoadReply =
   /** Baked and kept: its mesh when wanted (null: no road seen under it). */
   | { readonly kind: 'far'; readonly node: string; readonly sig: string; readonly payload: FarRoadMesh | null }
-  /** A tile not kept at that version: its records wanted. */
+  /** A tile not kept at that version and no store this worker reads: its roads wanted from the page. */
   | { readonly kind: 'farRecords'; readonly node: string; readonly sig: string }
   /** Children not kept at their versions: baked first. */
   | { readonly kind: 'farChildren'; readonly node: string; readonly sig: string; readonly missing: readonly string[] }

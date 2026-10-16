@@ -2,8 +2,8 @@ import { Box3, BufferAttribute, BufferGeometry, FrontSide, Group, Mesh, MeshStan
 import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../jobs/jobPool';
 import { forgetOtherDerived } from './derivedCache';
 import { pullTowardEye } from './depthConvention';
-import { type FarRoadMesh, type FarRoadReply, derivedRoadCache, farLevelError, runFarRoadJob } from './farRoadTiles';
-import { type FarKind, type FarLanded, FarTree, type FarTreeRun } from './farTree';
+import { type FarRoadJob, type FarRoadMesh, type FarRoadReply, derivedRoadCache, farLevelError, runFarRoadJob, tileRoads } from './farRoadTiles';
+import { type FarKind, type FarLanded, FarTree, type FarTreeJob, type FarTreeRun } from './farTree';
 import { nodeSide } from './buildings/farTiles';
 import { TIER_SPAN } from './buildings/cellPool';
 import { gpuOnly } from './mesh/gpuOnly';
@@ -76,13 +76,19 @@ function farRoadMesh(data: FarRoadMesh, material: MeshStandardMaterial): FarLand
   return { mesh, x0, y0, x1, y1, top: h1, error: data.error };
 }
 
+/** A tree's job as the far roads' job: the tile the page read (the desktop's store) cut to its roads (`tileRoads`), its buildings never posted; the store's map kept for the worker to read the tile itself. */
+export function farRoadJob(tree: FarTreeJob): FarRoadJob {
+  const { records, plan: _plan, ...job } = tree;
+  return records ? { ...job, records: tileRoads(records) } : job;
+}
+
 /** DO NOT bake on the page: the far jobs go to the job system's queue (`farRoads` service), the page only when no worker can run (tests) */
 function farRoadsRunner(ground: () => SharedGroundData | null): FarTreeRun<FarRoadMesh> {
-  return (job, done) => {
-    const full = { ...job, ground: ground() };
+  return (tree, done) => {
+    const job = farRoadJob(tree);
     if (!canQueueJobs()) {
       let live = true;
-      void runFarRoadJob(full, derivedRoadCache).then(
+      void runFarRoadJob({ ...job, ground: ground() }, derivedRoadCache).then(
         (reply) => { if (live) done(reply); },
         (error: unknown) => { if (live) done({ kind: 'farError', node: job.node, sig: job.sig, message: String(error) }); },
       );

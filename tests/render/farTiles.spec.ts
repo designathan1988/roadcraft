@@ -1,10 +1,12 @@
 import { refOf } from '@world/buildings/recordTable';
 import { describe, expect, it } from 'vitest';
 
+import { readStoredTilesWith } from '@core/storedTiles';
+import { prepareTile, preparedRecords } from '@editor/tileStore';
 import type { CellMass } from '@render/buildings/cellArrays';
 import { type CellJob, runCellJob } from '@render/buildings/cellWork';
-import { FarLevels, type FarRun, type FarTileSource } from '@render/buildings/farLevels';
-import { type FarCache, TOP_LEVEL, bakeTileMasses, emptyRecords, farKey, farNode, runFarJob } from '@render/buildings/farTiles';
+import { FarLevels, type FarRun, type FarTileSource, farJobOf } from '@render/buildings/farLevels';
+import { type FarCache, type FarJob, TOP_LEVEL, bakeTileMasses, emptyRecords, farKey, farNode, runFarJob, tileRows } from '@render/buildings/farTiles';
 import { createBuildingKit } from '@render/buildings/kit';
 import { PLATE_DETAIL, TILE_DETAIL } from '@render/buildings/massing';
 import { drawsSignature } from '@render/buildings/signature';
@@ -113,18 +115,35 @@ describe('a tile baked from the store', () => {
       expect(baked).not.toBeNull();
       expect(difference(baked, reply.result.mass ?? null)).toBe('');
     }
-    // In a worker's job: the same, kept by the tile's version, its records asked only when not kept.
+    // In a worker's job: the same, kept by the tile's version, its buildings asked only when not kept.
     const cache = memoryCache();
     const node = farKey(0, 0, 0);
     const asked = await runFarJob({ far: true, node, sig: '1', want: true, prefix: 'test:' }, cache);
     expect(asked.kind).toBe('farRecords');
-    const made = await runFarJob({ far: true, node, sig: '1', want: true, prefix: 'test:', records }, cache);
+    const made = await runFarJob({ far: true, node, sig: '1', want: true, prefix: 'test:', buildings: tileRows(buildings) }, cache);
     if (made.kind !== 'far') throw new Error(made.kind);
     expect(difference(made.mass, bakeTileMasses(records, TILE_DETAIL))).toBe('');
     const again = await runFarJob({ far: true, node, sig: '1', want: true, prefix: 'test:' }, cache);
     if (again.kind !== 'far') throw new Error(again.kind);
     expect(difference(again.mass, made.mass)).toBe('');
     expect(cache.puts).toEqual([`test:${node}`]);
+  });
+
+  it("is posted, when the page read the tile, as its shared table's rows, no record of it", async () => {
+    const buildings = [0, 1, 2, 3].map((n) => building(n, m(150) + n * m(80), m(300) + (n % 2) * m(60)));
+    const stored: TileRecords = { ...emptyRecords(tileKey(0, 0), 1), buildings: buildings.map((b) => JSON.parse(JSON.stringify(b)) as unknown) };
+    // As the desktop's store hands the page a tile (`TileStore.read`): prepared where it is read, its buildings read from its table.
+    const prepared = prepareTile(stored, false);
+    const job = farJobOf({ node: farKey(0, 0, 0), k: 0, i: 0, j: 0, sig: '1', want: true, prefix: null, records: preparedRecords(prepared) });
+    expect('records' in job).toBe(false);
+    expect(job.buildings).toHaveLength(1);
+    expect(job.buildings![0]!.buffer).toBe(prepared.buildings);
+    expect([...job.buildings![0]!.rows]).toEqual([0, 1, 2, 3]);
+    // The worker's masses are the stored records' own.
+    const made = await runFarJob(job, memoryCache());
+    if (made.kind !== 'far') throw new Error(made.kind);
+    expect(made.mass).not.toBeNull();
+    expect(difference(made.mass, bakeTileMasses(stored, TILE_DETAIL))).toBe('');
   });
 });
 
@@ -196,6 +215,32 @@ describe('the far levels chosen top down', () => {
     // A few more turns: nothing else is baked.
     for (let turn = 0; turn < 5; turn++) { fromAfar(); await new Promise((resolve) => setTimeout(resolve, 0)); }
     expect([...cache.puts].sort()).toEqual([...chain].sort());
+    far.dispose();
+    kit.dispose();
+  });
+
+  it("hands the worker the store's map: a worker that reads the store bakes the tile with nothing of it through the page", async () => {
+    const tiles = world();
+    const key = tileKey(0, 0);
+    // The job worker's reader of the store (`job.worker.ts`): the buildings' part as stored.
+    readStoredTilesWith((map, at, part) => Promise.resolve(map === 'map' && part === 'buildings' && tiles.has(at) ? { buildings: tiles.get(at)!.buildings } : null));
+    const kit = createBuildingKit();
+    const cache = memoryCache();
+    const jobs: FarJob[] = [];
+    const run = runner(cache);
+    const far = new FarLevels(kit, (job, done) => { jobs.push(job); return run(job, done); }, 'test:');
+    let read = 0;
+    far.setSource({ records: (at) => { read++; return Promise.resolve(tiles.get(at) ?? null); }, plan: null, workersRead: 'map' }, () => false);
+    far.stored(key, 1);
+    const over = (): void => far.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    await until(over, () => far.waiting === 0);
+    expect(far.shownKeys()).toContain(farKey(0, 0, 0));
+    expect(far.top()).toBeGreaterThan(0);
+    const leaf = jobs.filter((job) => job.node === farKey(0, 0, 0));
+    expect(leaf.length).toBeGreaterThan(0);
+    for (const job of leaf) expect(job.store).toBe('map');
+    expect(jobs.some((job) => job.buildings !== undefined)).toBe(false);
+    expect(read).toBe(0);
     far.dispose();
     kit.dispose();
   });

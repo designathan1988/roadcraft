@@ -16,7 +16,7 @@ import { geometryCost, gpuLedger } from './gpuLedger';
 
 /** Where the far levels read the tile store (the coordinator wires it) */
 export interface FarTileSource {
-  /** A tile as the store keeps it; null when it has none. */
+  /** A tile as the page's document files it (`editor/tileStore.ts` `preparedRecords`: its buildings migrated, each a row of its tile's shared table); null when the store has none. */
   records(key: number): Promise<TileRecords | null>;
   /** The world's generator options: what stands where no tile was made yet (drawn from the plan, `farPlan.ts`); null: nothing past the stored tiles. */
   readonly plan: WholeMapOptions | null;
@@ -37,7 +37,7 @@ export interface FarTiles {
 }
 
 /** A job of the tree: a node at the version of the tiles under it, from the cache, its tile's records (level 0) or its children's bakes (above). */
-interface FarTreeJob {
+export interface FarTreeJob {
   readonly node: string;
   readonly k: number;
   readonly i: number;
@@ -49,8 +49,9 @@ interface FarTreeJob {
   readonly prefix: string | null;
   /** Its quarters; `PLAN_SIG` where no tile is stored under one (the plan's), null where none and no plan. */
   readonly children?: readonly ({ readonly key: string; readonly sig: string } | null)[];
+  /** The tile the page read (no worker reads the store): DO NOT post it whole, each kind's runner posts what its bake reads of it (the buildings' rows in their shared tables, `buildings/farLevels.ts` `farJobOf`; the roads alone, `farRoads.ts` `farRoadJob`). */
   readonly records?: TileRecords;
-  /** The store's map the worker reads the tile from itself (`core/storedTiles.ts`), when it can (`FarTileSource.workersRead`). */
+  /** The store's map the worker reads the tile from itself (`core/storedTiles.ts`), when it can (`FarTileSource.workersRead`): DO NOT drop it on the way to the worker. */
   readonly store?: string;
   /** The world's generator options, for a kind that bakes from the plan. */
   readonly plan?: WholeMapOptions;
@@ -484,11 +485,13 @@ export class FarTree<P> implements FarTiles {
       ...(this.planning && this.plan ? { plan: this.plan } : {}),
     };
     let settled = false;
+    // DO NOT close over the records: the page would hold the tile read until its worker answered.
+    const carried = records !== undefined;
     // A job that carried records frees its place for the next tile's once answered or cancelled.
     const settle = (): void => {
       if (settled) return;
       settled = true;
-      if (records) { this.fetching--; this.pump(); }
+      if (carried) { this.fetching--; this.pump(); }
     };
     const cancel = this.run(job, (reply) => { settle(); this.answer(n, reply); });
     n.cancel = () => { cancel(); settle(); };

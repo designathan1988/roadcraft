@@ -1,11 +1,11 @@
 import type { Finish } from '@world/buildings/materials';
 import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../../jobs/jobPool';
 import { forgetOtherDerived } from '../derivedCache';
-import { type FarKind, FarTree, type FarTreeRun } from '../farTree';
+import { type FarKind, FarTree, type FarTreeJob, type FarTreeRun } from '../farTree';
 import type { SharedGroundData } from '../sharedGround';
 import type { CellMass } from './cellArrays';
 import { TIER_SPAN } from './cellPool';
-import { type FarJob, type FarReply, derivedFarCache, farNode, levelDrop, nodeSide, runFarJob } from './farTiles';
+import { type FarJob, type FarReply, derivedFarCache, farNode, levelDrop, nodeSide, runFarJob, tileRows } from './farTiles';
 import type { BuildingKit } from './kit';
 import { FAR_ERROR, cellMesh } from './massCells';
 
@@ -65,14 +65,20 @@ export function farRunner(env: () => FarEnv): FarRun {
   };
 }
 
-/** The tree's jobs as the buildings' far jobs (`farTiles.ts` `runFarJob`), their masses its payload. */
-function asTreeRun(run: FarRun): FarTreeRun<CellMass> {
-  return (job, done) => run({
+/** A tree's job as the buildings' far job (`farTiles.ts` `runFarJob`): DO NOT drop the store's map (dropped here, every far tile's buildings went store -> page -> worker though the worker reads the store itself), nor post the tile the page read (the desktop's store) but its buildings' rows in their shared tables (`tileRows`). */
+export function farJobOf(job: FarTreeJob): FarJob {
+  return {
     far: true, node: job.node, sig: job.sig, want: job.want, prefix: job.prefix,
     ...(job.children ? { children: job.children } : {}),
-    ...(job.records ? { records: job.records } : {}),
+    ...(job.records ? { buildings: tileRows(job.records.buildings) } : {}),
+    ...(job.store !== undefined ? { store: job.store } : {}),
     ...(job.plan ? { plan: job.plan } : {}),
-  }, (reply) => done(reply.kind === 'far' ? { kind: 'far', node: reply.node, sig: reply.sig, payload: reply.mass } : reply));
+  };
+}
+
+/** The tree's jobs as the buildings' far jobs, their masses its payload. */
+function asTreeRun(run: FarRun): FarTreeRun<CellMass> {
+  return (job, done) => run(farJobOf(job), (reply) => done(reply.kind === 'far' ? { kind: 'far', node: reply.node, sig: reply.sig, payload: reply.mass } : reply));
 }
 
 /** THE BUILDINGS' FAR LEVELS: the shared tree (`farTree.ts`) over their masses, drawn from the plan from the boxes' levels up */

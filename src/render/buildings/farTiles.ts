@@ -1,5 +1,6 @@
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Finish } from '@world/buildings/materials';
+import { type RecordRef, readRecords, refOf } from '@world/buildings/recordTable';
 import type { Building } from '@world/buildings/types';
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import type { TileRecords } from '@world/doc';
@@ -65,7 +66,32 @@ interface FarChild {
   readonly sig: string;
 }
 
-/** A far job (`cell.worker.ts`): a node's masses, from the cache, its tile's records (level 0) or its children's bakes (above) */
+/** Rows of one shared table of buildings (`recordTable.ts`): the table posted as a handle, never copied, each row a building migrated where the table was written. */
+export interface RecordRows {
+  readonly buffer: ArrayBufferLike;
+  readonly rows: Uint32Array;
+}
+
+/** DO NOT post a tile's buildings as objects (cloned by the message, migrated again by the worker): each building's row in its table (`refOf`; a tile the page read from the store is one table, `preparedRecords`), grouped by table */
+export function tileRows(buildings: readonly unknown[]): RecordRows[] {
+  const byTable = new Map<ArrayBufferLike, number[]>();
+  for (const b of buildings) {
+    const ref = refOf(b as Building);
+    let rows = byTable.get(ref.buffer);
+    if (!rows) byTable.set(ref.buffer, rows = []);
+    rows.push(ref.row);
+  }
+  return [...byTable].map(([buffer, rows]) => ({ buffer, rows: Uint32Array.from(rows) }));
+}
+
+/** A tile's buildings read from their tables' rows, one reader a table (`readRecords`): never migrated again. */
+function rowsBuildings(groups: readonly RecordRows[]): Building[] {
+  const refs: RecordRef[] = [];
+  for (const { buffer, rows } of groups) for (const row of rows) refs.push({ buffer, row });
+  return readRecords(refs);
+}
+
+/** A far job (`cell.worker.ts`): a node's masses, from the cache, its tile's buildings (level 0) or its children's bakes (above) */
 export interface FarJob {
   readonly far: true;
   readonly node: string;
@@ -79,9 +105,9 @@ export interface FarJob {
   readonly children?: readonly (FarChild | null)[];
   /** The world's generator options (`cityGen/wholeMap.ts`): what stands where no tile was made. */
   readonly plan?: WholeMapOptions;
-  /** Level 0, once the cache said it did not have it: the tile as the store keeps it. */
-  readonly records?: TileRecords;
-  /** Level 0: the store's map this worker reads the tile from itself (`core/storedTiles.ts`), in place of `records`. */
+  /** Level 0, once the cache said it did not have it and no worker reads the store (the desktop's, the main process's): the tile's buildings the page read, as rows of their shared tables (`tileRows`). */
+  readonly buildings?: readonly RecordRows[];
+  /** Level 0: the store's map this worker reads the tile from itself (`core/storedTiles.ts`), in place of `buildings`. */
   readonly store?: string;
   /** The ground shared with the workers (`sharedGround.ts`); none: flat at 0. */
   readonly ground?: SharedGroundData | null;
@@ -92,7 +118,7 @@ export interface FarJob {
 export type FarReply =
   /** Baked and kept: its mesh when wanted (null: none of its buildings has a mass). */
   | { readonly kind: 'far'; readonly node: string; readonly sig: string; readonly mass: CellMass | null }
-  /** A tile not kept at that version: its records wanted. */
+  /** A tile not kept at that version and no store this worker reads: its buildings wanted from the page. */
   | { readonly kind: 'farRecords'; readonly node: string; readonly sig: string }
   /** Children not kept at their versions: baked first. */
   | { readonly kind: 'farChildren'; readonly node: string; readonly sig: string; readonly missing: readonly string[] }
@@ -112,7 +138,7 @@ function readsOf(job: FarJob): GroundReaders {
   return job.naturalIsGround ? { groundAt: shared.groundAt, naturalAt: shared.groundAt } : shared;
 }
 
-/** A tile's buildings as the document loads them (`BuildingStore.load`): each record read by the document's own reader, those it cannot read left out. */
+/** A stored tile's buildings as the document loads them (`BuildingStore.load`): each record read by the document's own reader, those it cannot read left out. */
 function tileBuildings(records: TileRecords): Building[] {
   const out: Building[] = [];
   for (const raw of records.buildings) {
@@ -137,9 +163,8 @@ export function bakeTileMasses(records: TileRecords, detail: MassDetail, reads: 
   return massesOf(tileBuildings(records), detail, reads, tone);
 }
 
-/** A tile's bake: its masses at its level and its plate's, its blocks as boxes. */
-function bakeTile(records: TileRecords, sig: string, reads: GroundReaders, tone?: FarJob['tone']): TileEntry {
-  const buildings = tileBuildings(records);
+/** A tile's bake from its buildings: its masses at its level and its plate's, its blocks as boxes. */
+function bakeTile(buildings: readonly Building[], sig: string, reads: GroundReaders, tone?: FarJob['tone']): TileEntry {
   const boxes: number[] = [];
   for (const b of buildings) emitBoxes(b, undefined, reads.naturalAt, tone, boxes);
   return { sig, tile: massesOf(buildings, TILE_DETAIL, reads, tone), plate: massesOf(buildings, PLATE_DETAIL, reads, tone), boxes: new Float32Array(boxes) };
@@ -277,7 +302,7 @@ function planEntry(plan: WholeMapOptions, k: number, i: number, j: number, reads
   return { sig: PLAN_SIG, mass: k >= 2 ? boxMass(boxes, levelDrop(k)) : null, boxes };
 }
 
-/** DO NOT bake what is kept: a node is baked once per version of its tiles (kept under its key with that version), from its tile's records or its children's bakes, never from the page's document */
+/** DO NOT bake what is kept: a node is baked once per version of its tiles (kept under its key with that version), from its tile's buildings or its children's bakes, never from the page's document */
 export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply> {
   const { node, sig, prefix } = job;
   const { k, i, j } = farNode(node);
@@ -290,9 +315,11 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
   if (k === 0) {
     let entry = keeps ? await kept<TileEntry>(node, sig) : undefined;
     if (!entry) {
-      const records = job.records ?? await readStored(job.store, tileKey(i, j), 'buildings');
-      if (!records) return { kind: 'farRecords', node, sig };
-      entry = bakeTile(records, sig, readsOf(job), job.tone);
+      // The rows the page posted (migrated where their table was written), or the stored part read here and migrated.
+      const stored = job.buildings ? undefined : await readStored(job.store, tileKey(i, j), 'buildings');
+      const buildings = job.buildings ? rowsBuildings(job.buildings) : stored ? tileBuildings(stored) : null;
+      if (!buildings) return { kind: 'farRecords', node, sig };
+      entry = bakeTile(buildings, sig, readsOf(job), job.tone);
       if (keeps) await cache.put(`${prefix}${node}`, entry);
     }
     return { kind: 'far', node, sig, mass: job.want ? entry.tile : null };
