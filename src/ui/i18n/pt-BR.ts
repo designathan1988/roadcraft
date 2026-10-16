@@ -87,6 +87,7 @@ export const PT_BR: Dictionary = {
 
   'hint.sampleTown': 'Vila construída · o mapa anterior volta com Ctrl+Z',
   'action.newMap': 'Novo mapa',
+  'action.newWorld': 'Mundo sem borda',
   'action.saveMap': 'Salvar mapa',
   'action.openMap': 'Abrir mapa',
   'action.undo': 'Desfazer (Ctrl+Z)',
@@ -219,6 +220,7 @@ export const PT_BR: Dictionary = {
 
   'confirm.clearTerrain': 'Aplainar todo o terreno? Esta ação pode ser desfeita.',
   'confirm.newMap': 'Criar um novo mapa? O mapa atual já foi salvo automaticamente.',
+  'confirm.newWorld': 'Abrir um mundo sem borda? Uma cidade de qualquer tamanho, feita ao seu redor conforme você anda. O mapa atual já foi salvo automaticamente.',
 
   'tool.road': 'Via',
   'tool.draw': 'Desenhar',

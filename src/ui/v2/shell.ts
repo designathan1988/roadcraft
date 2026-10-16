@@ -375,6 +375,8 @@ export interface ShellDeps {
   undo(): void;
   redo(): void;
   newMap(): void;
+  /** The world without an edge: generated tile by tile round the camera as it goes (CLAUDE.md "Streaming world"). */
+  newWorld(): void;
   openMap(): void;
   saveMap(): void;
   about(): void;
@@ -694,6 +696,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     if (id === 'menu') {
       body.append(
         row(t('action.newMap'), () => deps.newMap(), svg('m_new', 18)),
+        row(t('action.newWorld'), () => deps.newWorld(), svg('m_new', 18)),
         row(t('action.openMap'), () => deps.openMap(), svg('m_open', 18)),
         row(t('action.saveMap'), () => deps.saveMap(), svg('m_save', 18)),
         el('hr'),

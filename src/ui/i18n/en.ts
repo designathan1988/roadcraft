@@ -88,6 +88,7 @@ export const EN: Dictionary = {
 
   'hint.sampleTown': 'The town built · the previous map comes back with Ctrl+Z',
   'action.newMap': 'New map',
+  'action.newWorld': 'World without an edge',
   'action.saveMap': 'Save map',
   'action.openMap': 'Open map',
   'action.undo': 'Undo (Ctrl+Z)',
@@ -220,6 +221,7 @@ export const EN: Dictionary = {
 
   'confirm.clearTerrain': 'Flatten the whole terrain? This can be undone.',
   'confirm.newMap': 'Start a new map? The current one has already been saved automatically.',
+  'confirm.newWorld': 'Open a world without an edge? A city of any size, made round you as you go. The current map has already been saved automatically.',
 
   // ------------------------------------------------------------------ tools
   'tool.road': 'Road',

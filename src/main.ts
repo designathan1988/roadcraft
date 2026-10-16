@@ -1708,6 +1708,7 @@ function mountInterface(): void {
     undo,
     redo,
     newMap,
+    newWorld,
     openMap: () => void openMap(),
     saveMap,
     about: openAbout,
@@ -2016,6 +2017,12 @@ function newMap(): void {
   roadTool.reset();
   fitView();
   flashHint('hint.newMap');
+}
+/** THE WORLD WITHOUT AN EDGE from the menu: a fresh seed, the streamed world opened round the camera (`openStreamedWorld`, as `generateCity({ size: 'whole' })`). */
+function newWorld(): void {
+  if (!window.confirm(t('confirm.newWorld'))) return;
+  const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
+  void openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, seed: (Math.floor(Math.random() * 0x7fff_ffff) || 1) }, true);
 }
 // The sky: always day (the default), always night, or the residents' clock; kept.
 const SKY_KEY = 'roadcraft.sky';
