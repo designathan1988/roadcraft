@@ -44,7 +44,7 @@ export const TILE_DETAIL: MassDetail = { drop: m(3), boxes: false };
 export const PLATE_DETAIL: MassDetail = { drop: m(8), boxes: true };
 
 /** Where the wall of a block on the ground starts: below the lowest ground under it, as the detailed plinth does. */
-const BURY = m(1.5);
+export const BURY = m(1.5);
 /** The parapet round a flat roof, and the attic band of the 'attic' dress (`buildingMesh.ts`). */
 const PARAPET_H = m(0.85);
 const ATTIC_H = m(1.5);
@@ -57,7 +57,7 @@ const MACHINE_ROOM_H = m(3);
 const TERRACE_RGB = rgbOf(0xb0a595);
 const SAW_GLASS_RGB = rgbOf(0x3c5360);
 
-function rgbOf(hex: number, shade = 1): [number, number, number] {
+export function rgbOf(hex: number, shade = 1): [number, number, number] {
   const c = new Color().setHex(hex);
   return [c.r * shade, c.g * shade, c.b * shade];
 }
@@ -254,7 +254,7 @@ function emitLotPlates(w: MassWriter, b: Building, buildingFloor: number | undef
 }
 
 /** The share of a bay its window takes across, by what the bay holds (a curtain wall is all glass). */
-const GLASS_SHARE: Partial<Record<BayComponent, number>> = {
+export const GLASS_SHARE: Partial<Record<BayComponent, number>> = {
   window: 0.5, sashWindow: 0.5, shutteredWindow: 0.5, brise: 0.5,
   wideWindow: 0.75, ribbon: 0.8, bayWindow: 0.75,
   frenchWindow: 0.6, balcony: 0.6, gourmet: 0.7, loggia: 0.7,

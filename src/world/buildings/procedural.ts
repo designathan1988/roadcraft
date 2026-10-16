@@ -103,7 +103,9 @@ const ROOF_TILES: readonly MaterialSpec[] = [
   mat('metal', 0x4f6b55), mat('metal', 0x6e3b32), mat('tile', 0x6b5f57),
 ];
 /** The clay tile roofs alone: a colonial or a bungalow roof is ceramic. */
-const CLAY: readonly MaterialSpec[] = ROOF_TILES.filter((r) => r.finish === 'tile');
+export const CLAY: readonly MaterialSpec[] = ROOF_TILES.filter((r) => r.finish === 'tile');
+/** A works hall's panel roofs (`works`). */
+export const WORKS_ROOFS: readonly number[] = [0x6d7378, 0x8a8f86, 0x5d6870, 0x9a9890, 0x7a4a3a, 0x4f6b55];
 const AWNINGS = [0xb8382e, 0x2f6b4f, 0x2f4f7a, 0xd9a43a, 0x6b3f6b, 0x3d3d3d, 0xc7652f, 0x1f5f6b, 0x8a2f3c, 0x3f7f8f, 0x5c6b2f, 0xd06d8a];
 
 /** A roof material, nudged. */
@@ -636,7 +638,7 @@ function works(rng: Rng, env: Envelope, density: 'low' | 'medium' | 'high'): Mad
   // A hall's one tall storey, 6-10 m to the eaves (racking and a lorry's door), taller the denser the district.
   const hallH = density === 'high' ? between(rng, 8, 10) : density === 'medium' ? between(rng, 7, 9) : between(rng, 6, 7.5);
   const model = new Model(fn, 'industrial', rng.int(0, 7)).heights(hallH, 3.4)
-    .look(paints.wall, mat('panel', pickOf(rng, [0x6d7378, 0x8a8f86, 0x5d6870, 0x9a9890, 0x7a4a3a, 0x4f6b55])), paints.trim);
+    .look(paints.wall, mat('panel', pickOf(rng, WORKS_ROOFS)), paints.trim);
   const w = half(W), d = half(D);
   const roof = pickOf(rng, ['sawtooth', 'shed', 'flat', 'gable', 'sawtooth'] as const satisfies readonly RoofKind[]);
   const free: Rect[] = [];

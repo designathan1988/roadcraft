@@ -1,32 +1,23 @@
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Finish } from '@world/buildings/materials';
 import type { Building } from '@world/buildings/types';
-import { TILE } from '@world/tiles';
+import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import type { TileRecords } from '@world/doc';
 import { derivedCacheOpen, keepDerivedDurably, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { type CellMass, cellMass, cellMassBuffers, indexArray, shellBounds } from './cellArrays';
+import { planBoxes } from './farPlan';
+import { AGGREGATE, farNode, nodeSide } from './farGrid';
 import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing } from './massing';
 
+export { AGGREGATE, TOP_LEVEL, farKey, farNode, nodeSide } from './farGrid';
+
 /** THE BUILDINGS FAR FROM THE CAMERA, BAKED PER TILE IN WORKERS FROM THE TILE STORE (CLAUDE.md "Streaming world"): nothing of their records on the page */
-/** A quadtree over the tiles (`farLevels.ts` chooses it): level 0 a tile's masses (L2), level 1 its 2x2's (L3, the plate's masses), levels 2 and up 2^k tiles a side of footprint boxes */
+/** A quadtree over the tiles (`farLevels.ts` chooses it): level 0 a tile's masses (L2), level 1 its 2x2's (L3, the plate's masses), levels 2 and up 2^k tiles a side of footprint boxes - the stored tiles' where they are, the generator's plan's where no tile was made (`farPlan.ts`) */
 
-/** The coarsest level: 2^7 tiles a side (131 km); a bigger world has more roots. */
-export const TOP_LEVEL = 7;
-/** Squares a side a box level merges its small boxes in: its error is one square's diagonal (`levelDrop`). */
-const AGGREGATE = 128;
 
-/** A node's key: its level and its column and row at that level ("f2:-1,3"). */
-export const farKey = (k: number, i: number, j: number): string => `f${k}:${i},${j}`;
 
-/** A node's level, column and row from its key. */
-export function farNode(key: string): { readonly k: number; readonly i: number; readonly j: number } {
-  const colon = key.indexOf(':'), comma = key.indexOf(',');
-  return { k: Number(key.slice(1, colon)), i: Number(key.slice(colon + 1, comma)), j: Number(key.slice(comma + 1)) };
-}
 
-/** A node's side, m: a tile's at level 0, doubled each level up. */
-export const nodeSide = (k: number): number => TILE * 2 ** k;
 
 /** The most a level leaves out, m: a tile's and a plate's masses' (`massing.ts`); past them, a square's diagonal (its small boxes merged in one). */
 export function levelDrop(k: number): number {
@@ -64,7 +55,10 @@ export const derivedFarCache: FarCache = {
   put: async (key, value) => { await (await keepDerivedDurably(key, value)).committed; },
 };
 
-/** A child of a node as its job reads it: its key and the version of the tiles under it. */
+/** The version of a node no tile is stored under: the plan's alone (`farPlan.ts`), the same for ever in one world. */
+export const PLAN_SIG = 'plan';
+
+/** A child of a node as its job reads it: its key and the version of the tiles under it (`PLAN_SIG`: none stored, the plan's). */
 interface FarChild {
   readonly key: string;
   readonly sig: string;
@@ -80,8 +74,10 @@ export interface FarJob {
   readonly want: boolean;
   /** The cache's prefix (this build's fingerprint of the masses' code); null: nothing kept, the levels past the tiles not made. */
   readonly prefix: string | null;
-  /** Its four quarters (level 1 and up), null where no tile is. */
+  /** Its four quarters (level 1 and up), null where no tile is and no plan says what stands there. */
   readonly children?: readonly (FarChild | null)[];
+  /** The world's generator options (`cityGen/wholeMap.ts`): what stands where no tile was made. */
+  readonly plan?: WholeMapOptions;
   /** Level 0, once the cache said it did not have it: the tile as the store keeps it. */
   readonly records?: TileRecords;
   /** The ground shared with the workers (`sharedGround.ts`); none: flat at 0. */
@@ -160,7 +156,7 @@ function joined(lists: readonly Float32Array[]): Float32Array {
 const WEIGHED = [0, 1, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] as const;
 
 /** A LEVEL'S BOXES, simplified to its error (generalisation into block models, as LOD1 city models are made): a box as wide as a square or wider stands alone; the smaller ones in a square, of a height band, become one box of their plan area, area-weighted */
-function aggregateBoxes(boxes: Float32Array, k: number, i: number, j: number): Float32Array {
+export function aggregateBoxes(boxes: Float32Array, k: number, i: number, j: number): Float32Array {
   const side = nodeSide(k) / AGGREGATE, ox = i * nodeSide(k), oy = j * nodeSide(k);
   const out: number[] = [];
   /** Per square and band: area; x, y, top, floor, wall rgb, roof rgb, bay, storey, share, each times the area (`WEIGHED`); the lowest foot; the first seed. */
@@ -274,6 +270,18 @@ export function emptyRecords(key: number, version: number): TileRecords {
   };
 }
 
+/** The world's plan a job reads where no tile is stored. */
+function planOf(job: FarJob): WholeMapOptions {
+  if (!job.plan) throw new Error(`far node ${job.node}: a part with no tile and no plan`);
+  return job.plan;
+}
+
+/** A node's bake from the plan alone: its boxes, and its mesh at the box levels (level 1 is drawn only from its tiles). */
+function planEntry(plan: WholeMapOptions, k: number, i: number, j: number, reads: GroundReaders, tone: FarJob['tone']): NodeEntry {
+  const boxes = aggregateBoxes(planBoxes(plan, i, j, k, reads, tone), k, i, j);
+  return { sig: PLAN_SIG, mass: k >= 2 ? boxMass(boxes, levelDrop(k)) : null, boxes };
+}
+
 /** DO NOT bake what is kept: a node is baked once per version of its tiles (kept under its key with that version), from its tile's records or its children's bakes, never from the page's document */
 export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply> {
   const { node, sig, prefix } = job;
@@ -297,21 +305,42 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
   let entry = await kept<NodeEntry>(node, sig);
   // A level-1 node keeps no mesh of its own: its tiles' plate masses are read and merged whenever it is drawn.
   if (entry && !(k === 1 && job.want)) return { kind: 'far', node, sig, mass: job.want ? entry.mass : null };
+  const reads = readsOf(job);
+  // A node no tile is stored under: the plan's boxes alone, baked once per world (it never changes).
+  if (sig === PLAN_SIG) {
+    entry = planEntry(planOf(job), k, i, j, reads, job.tone);
+    await cache.put(`${prefix}${node}`, entry);
+    return { kind: 'far', node, sig, mass: job.want ? entry.mass : null };
+  }
   const children = job.children ?? [];
-  const got = await Promise.all(children.map((c) => (c ? kept<TileEntry | NodeEntry>(c.key, c.sig) : Promise.resolve(null))));
+  // A quarter some tile is stored under (not the plan's alone).
+  const stored = (c: FarChild): boolean => c.sig !== PLAN_SIG;
+  const got = await Promise.all(children.map((c) => (c && stored(c) ? kept<TileEntry | NodeEntry>(c.key, c.sig) : Promise.resolve(null))));
   const missing: string[] = [];
-  children.forEach((c, n) => { if (c && !got[n]) missing.push(c.key); });
+  children.forEach((c, n) => { if (c && stored(c) && !got[n]) missing.push(c.key); });
   if (missing.length) return { kind: 'farChildren', node, sig, missing };
-  const present = got.filter((e): e is TileEntry | NodeEntry => !!e);
+  // MIXING: the quarters no tile is stored under take the plan's boxes (a tile's in its plate's squares, kept by its plate alone; a node's kept as its own bake would be).
+  const planned = await Promise.all(children.map(async (c) => {
+    if (!c || stored(c)) return null;
+    const at = farNode(c.key);
+    // A tile's boxes in its plate's squares, as a stored tile's are merged there (`aggregateBoxes` of level 1).
+    if (at.k === 0) return aggregateBoxes(planBoxes(planOf(job), at.i, at.j, 0, reads, job.tone, 1), 1, at.i >> 1, at.j >> 1);
+    const known = await kept<NodeEntry>(c.key, PLAN_SIG);
+    if (known) return known.boxes;
+    const made = planEntry(planOf(job), at.k, at.i, at.j, reads, job.tone);
+    await cache.put(`${prefix}${c.key}`, made);
+    return made.boxes;
+  }));
+  const lists = children.flatMap((_, n) => { const b = got[n]?.boxes ?? planned[n]; return b ? [b] : []; });
   if (k === 1) {
-    const tiles = present as TileEntry[];
+    const tiles = got.filter((e): e is TileEntry => !!e);
     if (!entry) {
-      entry = { sig, mass: null, boxes: joined(tiles.map((e) => e.boxes)) };
+      entry = { sig, mass: null, boxes: joined(lists) };
       await cache.put(`${prefix}${node}`, entry);
     }
     return { kind: 'far', node, sig, mass: job.want ? joinMasses(tiles.map((e) => e.plate)) : null };
   }
-  const boxes = aggregateBoxes(joined(present.map((e) => e.boxes)), k, i, j);
+  const boxes = aggregateBoxes(joined(lists), k, i, j);
   entry = { sig, mass: boxMass(boxes, levelDrop(k)), boxes };
   await cache.put(`${prefix}${node}`, entry);
   return { kind: 'far', node, sig, mass: job.want ? entry.mass : null };
