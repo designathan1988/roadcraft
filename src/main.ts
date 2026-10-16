@@ -2473,7 +2473,8 @@ function frame(now: number): void {
     const held = clampToMap(camera.x, camera.y);
     if (held.x !== camera.x || held.y !== camera.y) { camera.x = held.x; camera.y = held.y; view.moveTo(held); }
     streamed.streamer.focus(camera.x, camera.y);
-    streamed.streamer.apply(now);
+    // A tile put in (or let go) only between two world builds: DO NOT change the network under a running one, it started again at every tile and never landed (the near roads never drawn, the far level standing for them).
+    if (!scene.worldBusy) streamed.streamer.apply(now);
   }
   // A flatten held still levels on, a dab when its interval allows (`terrainBrush.ts` tick).
   if (terrainBrush.tick(performance.now())) requestDraw();

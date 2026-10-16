@@ -713,6 +713,8 @@ export function createSceneRenderer(
   const roadTiles = new RoadTilePool();
   /** The job was started in this frame (`pumpWorld` waits for the next). */
   let worldJobFresh = false;
+  /** The next build waits for the ground under its roads (`roadStations.ts`): the world is busy as while its job runs. */
+  let stationsWait = false;
   /** DO NOT hold the grading for the whole job */
   let worldJobGround = false;
   /** The opening's town (or a map opened) is held until it is whole (`revealGate.ts`). */
@@ -1510,6 +1512,7 @@ export function createSceneRenderer(
   const rebuildWorld = (net: Network): void => {
     worldNet = net;
     if (networkRevision === net.revision && terrainRevision === net.doc.terrainRevision && activeBuilt === activeSerial) {
+      stationsWait = false;
       // A world being built builds the poles too (`worldSteps`)
       if (worldJob === null && (utilityRevision !== net.doc.utilityRevision || poleSerial !== net.doc.changes.serialOf(...POLE_KINDS))) {
         const atUtilities = performance.now();
@@ -1533,8 +1536,9 @@ export function createSceneRenderer(
     const from = landStill || groundMoved ? elevation : null;
     // DO NOT read the ground under a tile's hundreds of new roads in this frame: a job reads it off the shared plates, the solve waits for it.
     const solvedAhead = offeredElevation !== null && offeredElevation.revision === net.revision && offeredElevation.terrain === net.doc.terrainRevision;
-    if (!solvedAhead && roadStations.waiting(roadsToRead(net, builtGroundAt, from, groundMoved),
-      (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision)) return;
+    stationsWait = !solvedAhead && roadStations.waiting(roadsToRead(net, builtGroundAt, from, groundMoved),
+      (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision);
+    if (stationsWait) return;
     const previousElevation = elevation;
     networkRevision = net.revision;
     terrainRevision = net.doc.terrainRevision;
@@ -2164,7 +2168,7 @@ export function createSceneRenderer(
       return builtGroundAt(x, y);
     },
     get worldBusy() {
-      return worldJob !== null;
+      return worldJob !== null || stationsWait;
     },
     get opening() {
       return !reveal.opened;
