@@ -1,6 +1,12 @@
 import type { FromJob, JobService, ToJob } from './jobScope';
 
-/** THE JOB SYSTEM: one pool of workers (hardwareConcurrency - 2) for every kind of work off the page, in place of a pool per kind */
+/** THE JOB SYSTEM: one pool of workers (hardwareConcurrency - 2, within the machine's memory) for every kind of work off the page, in place of a pool per kind */
+/** DO NOT make every worker at the start nor give a kind's job to any free worker: each worker is a whole JS heap with the code and state of every service it ran, so 22 of them each running every service took the page's process past 6 GB on a 3 x 3 tile region (2026-10-16, Chrome memory-infra: 2.8 GB of V8 in the workers, out of memory at 8 GB) - workers are made as work waits, and a kind's jobs go first to the workers that already run it */
+
+/** What one worker costs the page's process: its V8 heap with its services' code and state, its garbage and the answer it holds for the page (about 115 MB of V8 a job worker after an opening, 2026-10-16). */
+const WORKER_BYTES = 256 * 2 ** 20;
+/** The share of the machine's memory the pool may take: the page, the GPU's process and the system keep the rest. */
+const POOL_SHARE = 1 / 8;
 
 /** Services whose one job runs for seconds: each gets a worker of its own, so no other lane waits behind it. */
 const LONG_RUNNING: readonly JobService[] = ['growth'];
@@ -53,6 +59,12 @@ class JobQueue {
     this.count++;
     this.push(job);
     return job;
+  }
+
+  /** The waiting job that would run next, left waiting; null when none waits. */
+  peek(): Queued | null {
+    while (this.heap.length > 0 && this.heap[0]!.state !== 'waiting') this.pop();
+    return this.heap[0] ?? null;
   }
 
   /** The waiting job to run next, marked running; null when none waits. */
@@ -139,9 +151,9 @@ interface Host {
   failed: boolean;
 }
 
-/** The pool of this thread: its workers (made when first needed), its lanes by port, its queue and the point the view looks at. */
+/** The pool of this thread: its workers (made as work waits, `grow`), its lanes by port, its queue and the point the view looks at. */
 class JobSystem {
-  workers: Host[] | null = null;
+  readonly workers: Host[] = [];
   readonly ports = new Map<number, JobPort>();
   nextPort = 1;
   readonly queue = new JobQueue();
@@ -150,12 +162,15 @@ class JobSystem {
 }
 const system = new JobSystem();
 
-/** How many workers the pool holds: the cores less the page's and the simulation's (at least one). */
+/** The most workers the pool holds: the cores less the page's and the simulation's, and no more than `POOL_SHARE` of the machine's memory holds (at least one). */
 export function jobWorkers(): number {
-  const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
+  const nav = typeof navigator !== 'undefined' ? navigator as Navigator & { readonly deviceMemory?: number } : undefined;
+  const cores = nav?.hardwareConcurrency || 2;
   // Inside the simulation's worker (no document): its own few, for the lots' bays and the junctions' pairs.
   if (typeof document === 'undefined') return Math.max(1, Math.min(2, cores - 2));
-  return Math.max(1, cores - 2);
+  // `navigator.deviceMemory`: the machine's memory in GB, rounded by the browser; unknown, the cores alone.
+  const byMemory = nav?.deviceMemory ? Math.floor((nav.deviceMemory * 2 ** 30 * POOL_SHARE) / WORKER_BYTES) : Infinity;
+  return Math.max(1, Math.min(cores - 2, byMemory));
 }
 
 /** How many lanes a kind of work may have: never more than the pool's workers (a lane per worker, `jobPort`). */
@@ -167,37 +182,36 @@ function hostsLong(host: Host): boolean {
   return false;
 }
 
-function pool(): Host[] {
-  if (system.workers) return system.workers;
-  system.workers = Array.from({ length: jobWorkers() }, () => {
-    const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
-    const host: Host = { worker, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false };
-    worker.onmessage = (event: MessageEvent<FromJob>) => {
-      const port = system.ports.get(event.data.port);
-      if (port) {
-        if (event.data.error !== undefined) port.onerror?.(new ErrorEvent('error', { message: event.data.error }));
-        else port.onmessage?.(new MessageEvent('message', { data: event.data.data }));
-        return;
-      }
-      const job = host.job;
-      // The answer of a job already given up (its worker's error came first) changes nothing.
-      if (!job || event.data.seq !== job.seq) return;
-      host.job = null;
-      if (event.data.error !== undefined) system.queue.fail(job, event.data.error);
-      else system.queue.answer(job, event.data.data);
-      dispatch();
-    };
-    worker.onerror = (event) => {
-      for (const port of system.ports.values()) if (port.worker === worker) port.onerror?.(event);
-      failHost(host, event.message || 'a job worker failed', true);
-    };
-    worker.onmessageerror = () => {
-      for (const port of system.ports.values()) if (port.worker === worker) port.onmessageerror?.(new MessageEvent('messageerror'));
-      failHost(host, 'a job worker\'s answer could not be read', false);
-    };
-    return host;
-  });
-  return system.workers;
+/** One more worker, while the pool has room (`jobWorkers`); null when full. */
+function grow(): Host | null {
+  if (system.workers.length >= jobWorkers()) return null;
+  const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
+  const host: Host = { worker, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false };
+  worker.onmessage = (event: MessageEvent<FromJob>) => {
+    const port = system.ports.get(event.data.port);
+    if (port) {
+      if (event.data.error !== undefined) port.onerror?.(new ErrorEvent('error', { message: event.data.error }));
+      else port.onmessage?.(new MessageEvent('message', { data: event.data.data }));
+      return;
+    }
+    const job = host.job;
+    // The answer of a job already given up (its worker's error came first) changes nothing.
+    if (!job || event.data.seq !== job.seq) return;
+    host.job = null;
+    if (event.data.error !== undefined) system.queue.fail(job, event.data.error);
+    else system.queue.answer(job, event.data.data);
+    dispatch();
+  };
+  worker.onerror = (event) => {
+    for (const port of system.ports.values()) if (port.worker === worker) port.onerror?.(event);
+    failHost(host, event.message || 'a job worker failed', true);
+  };
+  worker.onmessageerror = () => {
+    for (const port of system.ports.values()) if (port.worker === worker) port.onmessageerror?.(new MessageEvent('messageerror'));
+    failHost(host, 'a job worker\'s answer could not be read', false);
+  };
+  system.workers.push(host);
+  return host;
 }
 
 /** A worker's queued job failed with it; a worker that failed whole (`dead`) is given no queued job again. */
@@ -216,32 +230,42 @@ function queuePort(host: Host, service: JobService): number {
   return port;
 }
 
-/** DO NOT give a queued job to a worker running growth while another worker could take it: it waited seconds behind it */
-function dispatch(): void {
-  if (system.queue.waiting === 0) return;
-  let all: Host[];
-  try {
-    all = pool();
-  } catch (error) {
-    system.queue.failAll(`no job workers: ${String(error)}`);
-    return;
-  }
-  if (all.every((h) => h.failed)) { system.queue.failAll('every job worker failed'); return; }
-  const short = all.some((h) => !h.failed && !hostsLong(h));
+/** The worker a queued job of `service` goes to: a free one already running the kind, else a new one while the pool has room, else any free one
+ *  - DO NOT give it to a worker running growth while another worker could take it: it waited seconds behind it. */
+function hostFor(service: JobService): Host | null {
+  const all = system.workers;
+  const short = all.some((h) => !h.failed && !hostsLong(h)) || all.length < jobWorkers();
+  let cold: Host | null = null;
   for (const host of all) {
-    if (short && hostsLong(host)) continue;
-    // One queued job at a time on a worker: the next goes to whichever worker is free first (Cidade's `pump`).
-    while (!host.job && !host.failed) {
-      const job = system.queue.take();
-      if (!job) return;
-      try {
-        const { data, transfer } = job.spec.write();
-        const message: ToJob = { port: queuePort(host, job.spec.service), service: job.spec.service, data, seq: job.seq };
-        host.worker.postMessage(message, transfer);
-        host.job = job;
-      } catch (error) {
-        system.queue.fail(job, String(error));
-      }
+    if (host.job || host.failed || (short && hostsLong(host))) continue;
+    if (host.queuePorts.has(service)) return host;
+    cold ??= host;
+  }
+  return grow() ?? cold;
+}
+
+/** Each waiting job, nearest first, to a worker free for it (Cidade's `pump`): one queued job at a time on a worker. */
+function dispatch(): void {
+  for (let job = system.queue.peek(); job; job = system.queue.peek()) {
+    let host: Host | null;
+    try {
+      host = hostFor(job.spec.service);
+    } catch (error) {
+      system.queue.failAll(`no job workers: ${String(error)}`);
+      return;
+    }
+    if (!host) {
+      if (system.workers.length > 0 && system.workers.every((h) => h.failed)) system.queue.failAll('every job worker failed');
+      return;
+    }
+    system.queue.take();
+    try {
+      const { data, transfer } = job.spec.write();
+      const message: ToJob = { port: queuePort(host, job.spec.service), service: job.spec.service, data, seq: job.seq };
+      host.worker.postMessage(message, transfer);
+      host.job = job;
+    } catch (error) {
+      system.queue.fail(job, String(error));
     }
   }
 }
@@ -259,9 +283,9 @@ export function submitJob(spec: JobSpec): JobTicket {
 /** Whether this thread can run queued jobs at all (Node's tests have no `Worker`): the asker does them itself otherwise. */
 export const canQueueJobs = (): boolean => typeof Worker !== 'undefined';
 
-/** The pool's workers made now, ahead of the first job (their modules load meanwhile). */
+/** A worker of the pool made now, ahead of the first job (its modules load meanwhile); the others as work waits. */
 export function warmJobWorkers(): void {
-  pool();
+  if (system.workers.length === 0) grow();
 }
 
 /** The point the view looks at, each frame (`flatAtlas.ts` `focus`): what the queue's jobs are ranked by. */
@@ -275,7 +299,7 @@ export const focusDistance = (x: number, y: number): number => Math.hypot(x - sy
 
 /** DO NOT pin a lane by a hash of its service: two kinds landed on one worker and a lane waited seconds behind growth */
 function place(service: JobService): Host {
-  const all = pool();
+  const all = system.workers;
   let best: Host | null = null;
   let bestScore = Infinity;
   for (const w of all) {
@@ -283,7 +307,10 @@ function place(service: JobService): Host {
     const score = (LONG_RUNNING.includes(service) ? w.ports * 1000 : 0) + (hostsLong(w) ? 100_000 : 0) + (w.services.get(service) ?? 0) * 10_000 + w.ports;
     if (score < bestScore) { bestScore = score; best = w; }
   }
-  return best!;
+  // A worker with nothing on it scores 0: one is made for the lane while the pool has room, as if every worker were there.
+  if (best === null || bestScore > 0) best = grow() ?? best;
+  if (!best) throw new Error('no job worker could be made');
+  return best;
 }
 
 /** A kind of work's lane in the pool: answers as a `Worker` does (`onmessage`, `onerror`, `postMessage`, `terminate`). */
