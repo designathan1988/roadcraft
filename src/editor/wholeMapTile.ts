@@ -9,14 +9,13 @@ import { OWNER, TILE_COUNTED, type TileRecords, edgeNodeId, tileIdBase, tileKey 
 import { m } from '@world/units';
 import type { BuildingId } from '@world/buildings/types';
 import { asSegmentId } from '@world/ids';
-import type { TilePiece } from '@world/cityGen/assemble';
 import type { SerializedDoc } from '@world/doc';
 import { type TilePlan, planTile } from '@world/cityGen/tile';
 import { type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
 import { greenCity, layCity, widenCityFootways, zoneCity } from './cityGenerator';
 import { LOT_PLAN_VERSION, growOnLot } from './zoning';
 
-/** ONE TILE OF THE WORLD BUILT (`world/cityGen/tile.ts`), in a worker of the job pool (`cityTile.worker.ts`): the steps a generated city takes on the page (`main.ts` `generateCity`) - its roads, footways, lots, squares, power lines, furniture, names, zones and every building grown (`growOnLot`, as `growthReplica.ts` grows them) - taken here on the tile alone, on the flat ground a new map has. Handed back either as a piece of the fixed whole map (`buildTile`, joined by `world/cityGen/assemble.ts`) or as the streamed world's tile (`buildStreamTile`, `world/tiles.ts`). A pure function of the options and the tile's place: the same tile comes out the same in any worker, at any time. */
+/** ONE TILE OF THE WORLD BUILT (`world/cityGen/tile.ts`), in a worker of the job pool (`cityTile.worker.ts`): the steps a generated city takes on the page (`main.ts` `generateCity`) - its roads, footways, lots, squares, power lines, furniture, names, zones and every building grown (`growOnLot`, as `growthReplica.ts` grows them) - taken here on the tile alone, on the flat ground a new map has. Handed back as the streamed world's tile (`buildStreamTile`, `world/tiles.ts`). A pure function of the options and the tile's place: the same tile comes out the same in any worker, at any time. */
 
 /** The seed the buildings' streams are drawn from, as the page grows a city (`main.ts` `askCity`). */
 const GROWTH_SEED = 0x5eed;
@@ -60,36 +59,9 @@ function buildTileMap(options: WholeMapOptions, i: number, j: number): { tile: T
   return { tile, data: doc.toJSON(), ms: performance.now() - started };
 }
 
-/** Builds tile (i, j) of the fixed whole map, as a piece to join (`assemble.ts`). */
-export function buildTile(options: WholeMapOptions, i: number, j: number): TilePiece {
-  const { tile, data, ms } = buildTileMap(options, i, j);
-  return pieceOf(tile, data, ms);
-}
-
 /** Builds tile (i, j) of the unbounded world as the tile store keeps it (`tiles.ts` `TileRecords`): what it owns, ids in its own range. */
 export function buildStreamTile(options: WholeMapOptions, i: number, j: number): TileRecords {
   return tileRecordsOf(tileKey(i, j), buildTileMap(options, i, j).data);
-}
-
-/** What of a tile's document is the tile's: its nodes and the border's (not the neighbours' gate pieces), the roads between them, and what stands on its own land. */
-export function pieceOf(tile: TilePlan, data: SerializedDoc, ms: number): TilePiece {
-  const kept = new Set<number>();
-  const nodes = data.nodes.filter((n) => tile.keepsNode(n) && kept.add(n.id));
-  const poles = (data.poles ?? []).filter((p) => tile.owns(p));
-  const poleIds = new Set(poles.map((p) => p.id));
-  return {
-    i: tile.i, j: tile.j, nodes,
-    segments: data.segments.filter((s) => kept.has(s.a) && kept.has(s.b)),
-    lots: data.lots ?? [],
-    lotKeys: (data.lotKeys ?? []).filter((key) => { const p = keyPlace(key); return p !== null && tile.owns(p); }),
-    buildings: data.buildings ?? [],
-    poles,
-    poleSpans: (data.poleSpans ?? []).filter((s) => poleIds.has(s.a) && poleIds.has(s.b)),
-    landscape: (data.landscape ?? []).filter((item) => tile.owns(item)),
-    paint: (data.paint ?? []).filter((dab) => tile.owns(dab)),
-    trees: (data.trees ?? []).filter((t) => tile.owns(t as Vec2)),
-    ms,
-  };
 }
 
 type NodeRecord = SerializedDoc['nodes'][number];

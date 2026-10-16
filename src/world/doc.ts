@@ -1,3 +1,4 @@
+import { clampToWorld } from './bounds';
 import { type MarkingStyleId, isMarkingStyle } from './roads/markingStyle';
 import { type ApproachRuleEntry, type SignalSettings, normalizeApproachRules, normalizeSignalSettings, rulesDigest, signalDigest } from './roads/rules';
 import { type LaneLink, linksDigest, movementKey, normalizeLaneLinks } from './roads/connectors';
@@ -2712,8 +2713,8 @@ const freshTileNext = (key: number): TileNext => {
 /** How far a span reaches past its pole: the longest a wire runs (`roads/powerLine.ts` spans are tens of metres; a margin). */
 const SPAN_REACH = m(200);
 
-/** A place on the world, copied: the world has no edge to hold it to (CLAUDE.md, "Streaming world"). */
-const onWorld = (p: { readonly x: number; readonly y: number }): { x: number; y: number } => ({ x: p.x, y: p.y });
+/** A place on the world, copied and held within the world's reach (`bounds.ts` WORLD_HALF, thousands of km: no map edge, only numbers kept finite). */
+const onWorld = (p: { readonly x: number; readonly y: number }): { x: number; y: number } => clampToWorld(p);
 
 /** Where a lot key says its land lies (`lots.ts` keys: `b:` a block's middle, `s:` a strip's, in steps of 4 m). */
 function lotKeyPlace(key: string): { x: number; y: number } | null {

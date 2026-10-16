@@ -90,8 +90,4 @@ export const clampToWorld = (p: Vec2, margin = 0): Vec2 => ({
   y: clamp(p.y, -WORLD_HALF + margin, WORLD_HALF - margin),
 });
 
-/** `doc.ts`' name for `clampToWorld` until its calls go (the coordinator's: doc.ts is not this change's). */
-export const clampToMap = (p: Vec2): Vec2 => clampToWorld(p);
 
-/** The whole-map generator's 10 km map (`cityGen`, until it makes any tile, F7): nothing else may read it. */
-export const MAP_HALF = m(5_120);

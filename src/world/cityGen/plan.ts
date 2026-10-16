@@ -1,6 +1,5 @@
 import { Rng } from '@core/rng';
 import type { Vec2 } from '@core/vec2';
-import { MAP_HALF } from '../bounds';
 import { m } from '../units';
 import type { ZoneDensity, ZoneUse } from '../zones';
 import { TensorField, valueNoise, type BasisField } from './field';
@@ -68,11 +67,13 @@ export interface CityPlan {
   zoneAt(p: Vec2, onMain: boolean): { use: ZoneUse; density: ZoneDensity } | 'park';
 }
 
+/** How far a round city may reach from the origin (the map it was made for, 10 km across): the streamed world has no such edge. */
+const ROUND_REACH = m(5_120);
 const RADIUS: Record<CitySize, number> = { small: m(420), medium: m(640), large: m(880) };
 
 export function planCity(options: CityOptions): CityPlan {
   const rng = new Rng((options.seed * 2_654_435_761) >>> 0 || 1);
-  const R = Math.min(options.radius ?? RADIUS[options.size], MAP_HALF - m(60));
+  const R = Math.min(options.radius ?? RADIUS[options.size], ROUND_REACH - m(60));
   // ---- the centres
   const centres: Vec2[] = [{ x: rng.range(-R, R) * 0.08, y: rng.range(-R, R) * 0.08 }];
   for (let i = 1; i < Math.max(1, Math.min(4, options.centres)); i++) {
@@ -116,7 +117,7 @@ export function planCity(options: CityOptions): CityPlan {
   const inside = (p: Vec2): boolean => {
     const a = Math.atan2(p.y, p.x);
     const edge = R * (1 + 0.16 * valueNoise(Math.cos(a) * 2.2 + options.seed * 0.1, Math.sin(a) * 2.2));
-    return Math.hypot(p.x, p.y) < edge && Math.abs(p.x) < MAP_HALF - m(40) && Math.abs(p.y) < MAP_HALF - m(40);
+    return Math.hypot(p.x, p.y) < edge && Math.abs(p.x) < ROUND_REACH - m(40) && Math.abs(p.y) < ROUND_REACH - m(40);
   };
   // ---- the streets: avenues, collectors, local streets (metres, as planners count them)
   const levels: StreetLevel[] = [
