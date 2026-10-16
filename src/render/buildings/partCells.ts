@@ -13,6 +13,7 @@ import { BATCH_CELL, DETAIL_CELL } from './layerCells';
 // nothing is emitted again, and the choice reads sub-cells, never instances.
 // DO NOT give a kind one buffer whatever its instances' shapes: a frame is also a gourmet balcony's post (1 m deep), and the
 // largest scale over a sub-cell held every window at full detail; instances are banded by their error, each band its own buffer.
+// A shell's part (`whole`) is one band: one level, drawn and casting at any size, so its bands only added draws, each one in every cascade too.
 
 /** Sub-cells a side of a cell: four, as `morton` is made for. */
 const SIDE = Math.round(BATCH_CELL / DETAIL_CELL);
@@ -145,7 +146,8 @@ export class PartCell {
         const sy = Math.sqrt(e[o + 4]! * e[o + 4]! + e[o + 5]! * e[o + 5]! + e[o + 6]! * e[o + 6]!);
         const sz = Math.sqrt(e[o + 8]! * e[o + 8]! + e[o + 9]! * e[o + 9]! + e[o + 10]! * e[o + 10]!);
         const metres = first ? Math.max(first[0] * sx, first[1] * sy, first[2] * sz) : Math.sqrt((screen.extent[0] * sx) ** 2 + (screen.extent[1] * sy) ** 2 + (screen.extent[2] * sz) ** 2);
-        const b = bandOf(metres);
+        // A shell's part is drawn whatever its size (`levelAt`, `choose`): every instance in one band, one draw a cell.
+        const b = screen.whole ? 0 : bandOf(metres);
         bands[i] = b;
         only = only === -2 || only === b ? b : -1;
         if (b !== lastBand || !into) {
