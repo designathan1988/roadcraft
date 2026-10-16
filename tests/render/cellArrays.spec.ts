@@ -16,10 +16,9 @@ describe('a batch as arrays', () => {
   const chunks = BLUEPRINTS.map((bp, i) => emitChunk({ ...JSON.parse(JSON.stringify(bp.body)), id: i + 1, x: (i % 7) * m(70), y: Math.floor(i / 7) * m(70), rotation: 0.3 * i } as Building, groundAt));
   const arrays = cellArrays(chunks, { parts: PART_KINDS, shells: true, furniture: true, ghost: false, dim: false }, kitBoxes(kit));
 
-  it("has three's bounds for every shell", () => {
-    const shells = Object.values(arrays.shells);
-    expect(shells.length).toBeGreaterThan(3);
-    for (const shell of shells) {
+  it("has three's bounds for its shell", () => {
+    expect(arrays.shell).not.toBeNull();
+    for (const shell of [arrays.shell]) {
       const g = new BufferGeometry();
       g.setAttribute('position', new BufferAttribute(shell!.position, 3));
       g.computeBoundingBox();

@@ -17,10 +17,10 @@ const measure = (over: Partial<CityMeasure> = {}): CityMeasure => ({
 
 describe("the city plan's budgets", () => {
   it('puts each object in its level by name', () => {
-    expect(memoryGroup('building-shell-metal')).toBe('L0 shells');
+    expect(memoryGroup('building-shell')).toBe('L0 shells');
     expect(memoryGroup('building-massing')).toBe('L1 masses');
     expect(memoryGroup('building-frame')).toBe('L0 building parts');
-    expect(memoryGroup('building-preview-shell-metal')).toBe('other');
+    expect(memoryGroup('building-preview-shell')).toBe('other');
     expect(memoryGroup('curb-ramp')).toBe('roads');
     expect(memoryGroup('utility-wires')).toBe('poles and wires');
     expect(memoryGroup('terrain-ground')).toBe('terrain');
@@ -31,7 +31,7 @@ describe("the city plan's budgets", () => {
   it('lists the rows furthest over first, by how many times over', () => {
     const rows = cityBudgetTable(measure({
       triangles: 30_000_000, // 3× the street's 10 M
-      bytesByName: new Map([['building-shell-metal', 1_800e6], ['building-shell-stone', 0], ['building-massing', 60e6]]), // 6× the shells' 300 MB
+      bytesByName: new Map([['building-shell', 1_800e6], ['building-massing', 60e6]]), // 6× the shells' 300 MB
     }));
     expect(rows[0]).toMatchObject({ item: 'video memory: L0 shells', status: 'over', times: 6 });
     expect(rows[1]).toMatchObject({ item: 'triangles drawn (street)', status: 'over', times: 3 });

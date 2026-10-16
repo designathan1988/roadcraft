@@ -219,8 +219,8 @@ GPU memory and drawing
   index-only levels (0.25 m / 0.6 m, `ErrorAbsolute`+`Prune`): -13% triangles in the district view, plaster not reduced
   at all, and the cells' detail landed later (weld + simplify in the worker); undone. Fix: the emitter builds each wall
   as one welded grid with the windows' holes sharing its vertices; then simplify.
-- About 43 draw calls per building cell: a mesh per finish and an `InstancedMesh` per part kind
-  (`buildingMesh.ts:3531, 3573`).
+- About 30 draw calls per building cell: an `InstancedMesh` per part kind (`buildingMesh.ts` `meshesOf`); the
+  shells of every finish are one draw (one material, texture arrays, a finish byte a vertex, `finishes.ts`).
 - Needs shots and the player's yes: signature buildings without a far level (`massing.ts:157`);
   terrain plates with content have no LOD (`flatAtlas.ts:104`).
 

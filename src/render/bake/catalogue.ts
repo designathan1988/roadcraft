@@ -1,7 +1,7 @@
 import { FINISHES } from '@world/buildings/materials';
 import { surfaceTexels, type SurfaceRecipe } from '../mesh/textureBaker';
 import { detailTexels } from './detailRecipes';
-import { LOOKS } from './finishRecipes';
+import { FINISH_LAYER_SIZE, LOOKS, finishTiles } from './finishRecipes';
 import { roadRecipes } from './roadRecipes';
 import { terrainRecipes } from './terrainRecipes';
 
@@ -30,15 +30,38 @@ function* surface(key: string, recipe: SurfaceRecipe, mapOnly = false): Generato
   yield { name: `${key}:rough`, use: 'data', size: texels.size, layers: [texels.rough] };
 }
 
-/** One texture at a time, so the build holds one recipe's texels at once. */
-export function* bakeCatalogue(): Generator<BakedTexture> {
-  for (const { key, recipe, mapOnly } of roadRecipes()) yield* surface(key, recipe, mapOnly === true);
-  for (const finish of FINISHES) {
+/** A square of texels repeated `tiles` times each way: its mip chain is its own chain repeated, level by level (a 2 x 2 box never straddles two copies). */
+export function tiledTexels(texels: Uint8Array, size: number, tiles: number): Uint8Array {
+  if (tiles === 1) return texels;
+  const row = size * 4;
+  const out = new Uint8Array(texels.length * tiles * tiles);
+  for (let y = 0; y < size * tiles; y++) {
+    const source = texels.subarray((y % size) * row, ((y % size) + 1) * row);
+    for (let t = 0; t < tiles; t++) out.set(source, (y * tiles + t) * row);
+  }
+  return out;
+}
+
+/** The finishes as one texture array per map, a layer per finish in `FINISHES` order (`buildings/finishes.ts`): a cell's shells in one draw. */
+function* finishArrays(): Generator<BakedTexture> {
+  const layers = FINISHES.map((finish) => {
     const look = LOOKS[finish];
-    yield* surface(`building-${finish}`, {
+    const texels = surfaceTexels({
       size: look.size, worldSize: look.worldSize, relief: look.relief, shade: look.shade(look.size), ...(look.metallic ? { metallic: true } : {}),
     });
-  }
+    // A smaller finish repeated in its layer: the same texels a metre, its uv scaled by as much (`finishes.ts` `finishLookTable`).
+    const tiles = finishTiles(finish);
+    return { map: tiledTexels(texels.map, look.size, tiles), normal: tiledTexels(texels.normal, look.size, tiles), rough: tiledTexels(texels.rough, look.size, tiles) };
+  });
+  yield { name: 'building-finishes:map', use: 'color', size: FINISH_LAYER_SIZE, layers: layers.map((l) => l.map) };
+  yield { name: 'building-finishes:normal', use: 'normal', size: FINISH_LAYER_SIZE, layers: layers.map((l) => l.normal) };
+  yield { name: 'building-finishes:rough', use: 'data', size: FINISH_LAYER_SIZE, layers: layers.map((l) => l.rough) };
+}
+
+/** One texture at a time, so the build holds one recipe's texels at once (the finishes' arrays: their layers). */
+export function* bakeCatalogue(): Generator<BakedTexture> {
+  for (const { key, recipe, mapOnly } of roadRecipes()) yield* surface(key, recipe, mapOnly === true);
+  yield* finishArrays();
   // The land reads the grass's colour and relief, the dirt's colour, the rocks' colour and relief as arrays (`terrain.ts` `terrainBakes`)
   const land = terrainRecipes();
   const grass = surfaceTexels(land.grass);

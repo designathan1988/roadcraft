@@ -17,8 +17,8 @@ describe("the town's shells", () => {
     const kit = createBuildingKit();
     const chunks = [emitChunk(placed(0), () => 0), emitChunk(placed(1), () => 0)];
     const meshes = assembleBuildingMeshes(chunks, kit);
-    const shells = meshes.group.children.filter((m) => m.name.startsWith('building-shell-')) as Mesh[];
-    expect(shells.length).toBeGreaterThan(0);
+    const shells = meshes.group.children.filter((m) => m.name === 'building-shell') as Mesh[];
+    expect(shells.length).toBe(1);
     const before = shells.map((m) => [...Object.values(m.geometry.attributes), m.geometry.index!].map((a) => Array.from((a as BufferAttribute).array)));
     // The renderer's upload (WebGLAttributes calls it after bufferData).
     for (const m of shells) for (const a of [...Object.values(m.geometry.attributes), m.geometry.index!]) (a as BufferAttribute).onUploadCallback();
@@ -67,7 +67,7 @@ describe("the town's shells", () => {
   it('keeps the preview\'s arrays (it is redrawn as the player moves it)', () => {
     const kit = createBuildingKit();
     const meshes = assembleBuildingMeshes([emitChunk(placed(2), () => 0)], kit, true);
-    const shells = meshes.group.children.filter((m) => m.name.startsWith('building-preview-shell-')) as Mesh[];
+    const shells = meshes.group.children.filter((m) => m.name === 'building-preview-shell') as Mesh[];
     expect(shells.length).toBeGreaterThan(0);
     for (const m of shells) for (const a of Object.values(m.geometry.attributes)) { (a as BufferAttribute).onUploadCallback(); expect((a as BufferAttribute).array).not.toBeNull(); }
     meshes.dispose();

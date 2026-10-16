@@ -1,9 +1,8 @@
 import type { InstancedMesh, Material, Mesh, Object3D } from 'three';
-import { FINISHES, type Finish } from '@world/buildings/materials';
+import { SHELL_MESH } from './cellArrays';
 import { type BuildingKit, PART_KINDS, type PartKind } from './kit';
 
 /** DO NOT emit the town again to fade it */
-const SHELL = 'building-shell-';
 const FURNITURE = 'building-furniture-';
 
 /** How a part kind is drawn faded ("Ocultar outros") or not: its material, its order and whether it is drawn at all (a lantern's light is not). */
@@ -15,13 +14,11 @@ export function partLook(kit: BuildingKit, kind: PartKind, faded: boolean): { ma
 export function fadeMeshes(root: Object3D, kit: BuildingKit, faded: boolean): void {
   root.traverse((o) => {
     const name = o.name;
-    if (name.startsWith(SHELL)) {
-      const finish = name.slice(SHELL.length);
-      if (!(FINISHES as readonly string[]).includes(finish)) return;
+    if (name === SHELL_MESH) {
       const mesh = o as Mesh;
       // The facade level's shells (their window grid) back to their own material (`facadeLevel.ts`).
-      const solid = mesh.geometry.hasAttribute('facadeGrid') ? kit.facade : kit.shell;
-      mesh.material = faded ? kit.dimShell[finish as Finish] : solid[finish as Finish];
+      const solid = mesh.geometry.hasAttribute('facadeGrid') ? kit.facade : kit.shellMaterial;
+      mesh.material = faded ? kit.dimShell : solid;
       mesh.renderOrder = faded ? 1 : 0;
       return;
     }

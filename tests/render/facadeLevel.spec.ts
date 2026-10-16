@@ -149,16 +149,16 @@ describe('the buildings\' far level', () => {
     expect(same / picked).toBeGreaterThan(0.99);
   });
 
-  it('puts a cell\'s far level together as one set of arrays per finish', () => {
+  it('puts a cell\'s far level together as one set of arrays, every finish', () => {
     const chunks = town.slice(0, 6).map((b) => emitChunk(b, groundAt, undefined, groundAt, undefined, true));
     const cell = cellArrays(chunks, { parts: PART_KINDS, shells: true, furniture: false, ghost: false, dim: false }, unitBoxes);
-    let vertices = 0, made = 0;
-    for (const s of Object.values(cell.shells)) {
-      vertices += s!.position.length / 3;
-      expect(s!.facade!.length).toBe((s!.position.length / 3) * FACADE_FLOATS);
-      expect(s!.opening!.length).toBe((s!.position.length / 3) * FACADE_BYTES);
-    }
-    for (const c of chunks) for (const s of Object.values(c.shells)) made += s.position.length / 3;
+    const s = cell.shell!;
+    const vertices = s.position.length / 3;
+    expect(s.facade!.length).toBe(vertices * FACADE_FLOATS);
+    expect(s.opening!.length).toBe(vertices * FACADE_BYTES);
+    expect(s.finish.length).toBe(vertices);
+    let made = 0;
+    for (const c of chunks) for (const part of Object.values(c.shells)) made += part.position.length / 3;
     expect(vertices).toBe(made);
   });
 });

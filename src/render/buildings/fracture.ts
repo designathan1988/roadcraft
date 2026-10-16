@@ -11,6 +11,7 @@ import {
 import type { Finish } from '@world/buildings/materials';
 import { m } from '@world/units';
 import type { BuildingChunk } from './buildingMesh';
+import { FINISH_ATTRIBUTE, finishId } from './cellArrays';
 import type { BuildingKit, PartKind } from './kit';
 
 /** Pre-fracturing a building's own meshes */
@@ -44,6 +45,8 @@ interface Tri {
   readonly solid: boolean;
   /** For a part: the id of its instance, so it stays whole. */
   readonly group: number;
+  /** Its finish id (`cellArrays.ts` `finishId`): the shell's material draws its layer (`finishes.ts`); 0 for a part. */
+  readonly finish: number;
 }
 
 const STRIDE = 12;
@@ -72,11 +75,13 @@ function subdivide(v: number[], max: number, out: number[][]): void {
 /** The fragments of one building, from its drawn chunk. */
 /** What a fracture needs, as plain arrays (so it can run in a worker, `fracture.worker.ts`). */
 export interface FractureInput {
-  readonly shells: readonly { mat: number; position: Float32Array; normal: Float32Array; colour: Float32Array; uv: Float32Array; index: Uint32Array; decay: Float32Array }[];
+  readonly shells: readonly { mat: number; finish: number; position: Float32Array; normal: Float32Array; colour: Float32Array; uv: Float32Array; index: Uint32Array; decay: Float32Array }[];
   /** Instanced parts (windows, doors, furniture): their model, non-indexed, and each instance's matrix. */
   readonly parts: readonly { mat: number; position: Float32Array; normal: Float32Array; uv: Float32Array | null; colour: Float32Array | null;
     instColours: Float32Array | null; matrices: Float32Array; count: number }[];
   readonly slabMat: number;
+  /** The slabs' finish id: concrete. */
+  readonly slabFinish: number;
   readonly slabs: readonly { corners: readonly (readonly [number, number, number])[]; y: number }[];
   readonly seed: number;
 }
@@ -85,6 +90,7 @@ export interface FractureInput {
 export interface FragmentData {
   readonly centre: readonly [number, number, number];
   readonly position: Float32Array; readonly normal: Float32Array; readonly colour: Float32Array; readonly uv: Float32Array; readonly decay: Float32Array;
+  readonly finish: Float32Array;
   readonly groups: readonly { material: number; start: number; count: number }[];
   readonly radius: number;
   readonly low: number;
@@ -121,8 +127,10 @@ export function prepareFracture(
     return i;
   };
   const shells: FractureInput['shells'][number][] = [];
+  // Every finish in the shell's one material, each vertex its finish id (`finishes.ts`).
+  const shellMat = materialIndex(kit.shellMaterial);
   for (const [finish, part] of Object.entries(chunk.shells) as [Finish, NonNullable<BuildingChunk['shells'][Finish]>][]) {
-    shells.push({ mat: materialIndex(kit.shell[finish]), position: part.position, normal: part.normal, colour: part.colour, uv: part.uv, index: part.index, decay: part.decay });
+    shells.push({ mat: shellMat, finish: finishId(finish), position: part.position, normal: part.normal, colour: part.colour, uv: part.uv, index: part.index, decay: part.decay });
   }
   const parts: FractureInput['parts'][number][] = [];
   const model = (source: BufferGeometry, mat: number, batch: { matrices: Float32Array; count: number; colours?: Float32Array | null }): void => {
@@ -142,7 +150,7 @@ export function prepareFracture(
     }
   }
   return {
-    input: { shells, parts, slabMat: materialIndex(kit.shell.concrete), seed,
+    input: { shells, parts, slabMat: shellMat, slabFinish: finishId('concrete'), seed,
       slabs: slabs.map((sl) => ({ corners: sl.corners.map((c) => [c.x, c.y, c.z] as const), y: sl.y })) },
     materials,
   };
@@ -151,6 +159,7 @@ export function prepareFracture(
 /** Every fragment of a building in one buffer, in world space (three's, y up), one draw group per material */
 export interface StillData {
   readonly position: Float32Array; readonly normal: Float32Array; readonly colour: Float32Array; readonly uv: Float32Array; readonly decay: Float32Array;
+  readonly finish: Float32Array;
   readonly groups: readonly { material: number; start: number; count: number }[];
   readonly slots: readonly Int32Array[];
   readonly fragments: readonly Fragment[];
@@ -163,7 +172,7 @@ export function fragmentGeometry(data: StillData, index: number): BufferGeometry
   let total = 0;
   for (let s = 0; s < slots.length; s += 3) total += slots[s + 1]!;
   const position = new Float32Array(total * 3), normal = new Float32Array(total * 3), colour = new Float32Array(total * 3);
-  const uv = new Float32Array(total * 2), decay = new Float32Array(total);
+  const uv = new Float32Array(total * 2), decay = new Float32Array(total), finish = new Float32Array(total);
   const g = new BufferGeometry();
   let at = 0;
   for (let s = 0; s < slots.length; s += 3) {
@@ -175,6 +184,7 @@ export function fragmentGeometry(data: StillData, index: number): BufferGeometry
     colour.set(data.colour.subarray(start * 3, (start + count) * 3), (at - count) * 3);
     uv.set(data.uv.subarray(start * 2, (start + count) * 2), (at - count) * 2);
     decay.set(data.decay.subarray(start, start + count), at - count);
+    finish.set(data.finish.subarray(start, start + count), at - count);
     g.addGroup(at - count, count, slots[s + 2]!);
   }
   g.setAttribute('position', new BufferAttribute(position, 3));
@@ -182,6 +192,7 @@ export function fragmentGeometry(data: StillData, index: number): BufferGeometry
   g.setAttribute('color', new BufferAttribute(colour, 3));
   g.setAttribute('uv', new BufferAttribute(uv, 2));
   g.setAttribute('aDecay', new BufferAttribute(decay, 1));
+  g.setAttribute(FINISH_ATTRIBUTE, new BufferAttribute(finish, 1));
   g.boundingSphere = new Sphere(new Vector3(), data.fragments[index]!.radius);
   return g;
 }
@@ -190,7 +201,7 @@ export function mergeFragments(data: readonly FragmentData[]): StillData {
   let total = 0, materials = 0;
   for (const f of data) for (const g of f.groups) { total += g.count; materials = Math.max(materials, g.material + 1); }
   const position = new Float32Array(total * 3), normal = new Float32Array(total * 3), colour = new Float32Array(total * 3);
-  const uv = new Float32Array(total * 2), decay = new Float32Array(total);
+  const uv = new Float32Array(total * 2), decay = new Float32Array(total), finish = new Float32Array(total);
   const slots = data.map(() => [] as number[]);
   const groups: { material: number; start: number; count: number }[] = [];
   let at = 0;
@@ -207,12 +218,13 @@ export function mergeFragments(data: readonly FragmentData[]): StillData {
           colour[at * 3] = f.colour[i * 3]!; colour[at * 3 + 1] = f.colour[i * 3 + 1]!; colour[at * 3 + 2] = f.colour[i * 3 + 2]!;
           uv[at * 2] = f.uv[i * 2]!; uv[at * 2 + 1] = f.uv[i * 2 + 1]!;
           decay[at] = f.decay[i]!;
+          finish[at] = f.finish[i]!;
         }
       }
     });
     if (at > first) groups.push({ material, start: first, count: at - first });
   }
-  return { position, normal, colour, uv, decay, groups, slots: slots.map((s) => Int32Array.from(s)),
+  return { position, normal, colour, uv, decay, finish, groups, slots: slots.map((s) => Int32Array.from(s)),
     fragments: data.map((f) => ({ centre: f.centre, radius: f.radius, low: f.low, neighbours: f.neighbours })) };
 }
 
@@ -223,13 +235,13 @@ export function fractureData(input: FractureInput): FragmentData[] {
   for (const part of input.shells) for (const d of part.decay) { wear += d; wearN++; }
   const bDecay = wearN ? wear / wearN : 0;
   for (const part of input.shells) {
-    const mat = part.mat;
+    const { mat, finish } = part;
     const { position: p, normal: n, colour: c, uv, index: idx, decay: dk } = part;
     const vert = (i: number): number[] => [p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!, n[i * 3]!, n[i * 3 + 1]!, n[i * 3 + 2]!, c[i * 3]!, c[i * 3 + 1]!, c[i * 3 + 2]!, uv[i * 2]!, uv[i * 2 + 1]!, dk[i] ?? 0];
     for (let t = 0; t < idx.length; t += 3) {
       const out: number[][] = [];
       subdivide([...vert(idx[t]!), ...vert(idx[t + 1]!), ...vert(idx[t + 2]!)], MAX_EDGE, out);
-      for (const v of out) tris.push({ v, material: mat, solid: true, group: -1 });
+      for (const v of out) tris.push({ v, material: mat, solid: true, group: -1, finish });
     }
   }
   let group = 0;
@@ -250,7 +262,7 @@ export function fractureData(input: FractureInput): FragmentData[] {
           const col = ic ?? (gc ? [gc[i * 3]!, gc[i * 3 + 1]!, gc[i * 3 + 2]!] : [1, 1, 1]);
           v.push(a.x, a.y, a.z, nv.x, nv.y, nv.z, col[0]!, col[1]!, col[2]!, guv ? guv[i * 2]! : 0, guv ? guv[i * 2 + 1]! : 0, bDecay);
         }
-        tris.push({ v, material: mat, solid: false, group });
+        tris.push({ v, material: mat, solid: false, group, finish: 0 });
       }
       group++;
     }
@@ -265,7 +277,7 @@ export function fractureData(input: FractureInput): FragmentData[] {
       for (const [p0, p1, p2] of quad) {
         const out: number[][] = [];
         subdivide([...vtx(p0!), ...vtx(p1!), ...vtx(p2!)], MAX_EDGE, out);
-        for (const v of out) tris.push({ v, material: slabMat, solid: false, group: -1 });
+        for (const v of out) tris.push({ v, material: slabMat, solid: false, group: -1, finish: input.slabFinish });
       }
     }
   }
@@ -321,20 +333,26 @@ export function fractureData(input: FractureInput): FragmentData[] {
   const fragments: FragmentData[] = [];
   keys.forEach((cell, fi) => {
     const list = cells.get(cell)!;
-    const pos: number[] = [], nor: number[] = [], col: number[] = [], uvs: number[] = [], dec: number[] = [];
+    const pos: number[] = [], nor: number[] = [], col: number[] = [], uvs: number[] = [], dec: number[] = [], fin: number[] = [];
     const groups: { material: number; start: number; count: number }[] = [];
     let cx = 0, cy = 0, cz = 0, nverts = 0;
     for (const t of list) for (let q = 0; q < 3; q++) { cx += t.v[q * STRIDE]!; cy += t.v[q * STRIDE + 1]!; cz += t.v[q * STRIDE + 2]!; nverts++; }
     cx /= nverts; cy /= nverts; cz /= nverts;
-    let radius = 0, low = Infinity;
+    let radius = 0, low = Infinity, finish = 0;
     const push = (x: number, y: number, z: number, n: readonly number[], c: readonly number[], u: number, w: number, d = bDecay): void => {
-      pos.push(x - cx, y - cy, z - cz); nor.push(n[0]!, n[1]!, n[2]!); col.push(c[0]!, c[1]!, c[2]!); uvs.push(u, w); dec.push(d);
+      pos.push(x - cx, y - cy, z - cz); nor.push(n[0]!, n[1]!, n[2]!); col.push(c[0]!, c[1]!, c[2]!); uvs.push(u, w); dec.push(d); fin.push(finish);
       radius = Math.max(radius, Math.hypot(x - cx, y - cy, z - cz)); low = Math.min(low, y);
     };
-    // Grouped by material, for the mesh's draw groups.
+    // Grouped by material and finish: a draw group per material (`mergeFragments` joins a material's), the cut edges found within a finish as they were with a material each.
     const byMat = new Map<number, Tri[]>();
-    for (const t of list) { const l = byMat.get(t.material); if (l) l.push(t); else byMat.set(t.material, [t]); }
-    for (const [mat, mtris] of byMat) {
+    for (const t of list) {
+      const key = t.material * 256 + t.finish;
+      const l = byMat.get(key);
+      if (l) l.push(t); else byMat.set(key, [t]);
+    }
+    for (const mtris of byMat.values()) {
+      const mat = mtris[0]!.material;
+      finish = mtris[0]!.finish;
       const start = pos.length / 3;
       // Edges used once inside the fragment: the cut, which gets a side.
       const edges = new Map<string, number>();
@@ -373,7 +391,7 @@ export function fractureData(input: FractureInput): FragmentData[] {
       groups.push({ material: mat, start, count: pos.length / 3 - start });
     }
     fragments.push({ centre: [cx, cy, cz], position: Float32Array.from(pos), normal: Float32Array.from(nor), colour: Float32Array.from(col),
-      uv: Float32Array.from(uvs), decay: Float32Array.from(dec), groups, radius, low, neighbours: [] });
+      uv: Float32Array.from(uvs), decay: Float32Array.from(dec), finish: Float32Array.from(fin), groups, radius, low, neighbours: [] });
   });
   // Joined where they share a vertex of the original surface.
   const links = fragments.map(() => new Set<number>());

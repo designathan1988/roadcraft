@@ -24,7 +24,9 @@ import {
   Vector3,
   Box3,
 } from 'three';
-import { type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, type KitBoxes, cellArrays } from './cellArrays';
+import {
+  type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, FINISH_ATTRIBUTE, type KitBoxes, SHELL_MESH, cellArrays,
+} from './cellArrays';
 
 import type { Vec2 } from '@core/vec2';
 import { m } from '@world/units';
@@ -67,7 +69,6 @@ import {
 import {
   type Finish,
   type MaterialSpec,
-  FINISHES,
   paletteOf,
   plinthMaterial,
   roofMaterial,
@@ -3351,9 +3352,9 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
   const meshes: (Mesh | InstancedMesh)[] = [];
   let triangles = 0;
 
-  for (const finish of FINISHES) {
-    const shell = arrays.shells[finish];
-    if (!shell) continue;
+  // Every finish in one geometry, one draw: each vertex's finish picks its layer of the maps (`finishes.ts`).
+  const shell = arrays.shell;
+  if (shell) {
     const g = new BufferGeometry();
     // DO NOT wrap them in a Float32BufferAttribute or Uint32BufferAttribute: those copy the array they are given
     g.setAttribute('position', new BufferAttribute(shell.position, 3));
@@ -3363,6 +3364,8 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     g.setAttribute('color', new BufferAttribute(shell.colour, 3));
     g.setAttribute('uv', new BufferAttribute(shell.uv, 2));
     g.setAttribute('aDecay', new InterleavedBufferAttribute(normalDecay, 1, 3, true));
+    // A byte a vertex, read as a float (not normalised): its finish id.
+    g.setAttribute(FINISH_ATTRIBUTE, new BufferAttribute(shell.finish, 1));
     // The far level's window grid and openings, for its shader (`facadeLevel.ts`).
     const facade = shell.facade ? new InterleavedBuffer(shell.facade, FACADE_FLOATS) : null;
     const opening = shell.opening ? new InterleavedBuffer(shell.opening, FACADE_BYTES) : null;
@@ -3373,22 +3376,25 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       g.setAttribute('facadeTrim', new InterleavedBufferAttribute(opening, 4, 4, true));
     }
     g.setIndex(new BufferAttribute(shell.index, 1));
-    // A Mesh a finish a cell, its arrays let go once on the GPU (below).
+    // One Mesh a cell, its arrays let go once on the GPU (below).
     g.boundingBox = boxOf(shell.bounds);
     g.boundingSphere = sphereOf(shell.bounds);
-    const mesh = new Mesh(g, ghost ? kit.ghostShell : dim ? kit.dimShell[finish] : facade ? kit.facade[finish] : kit.shell[finish]);
+    const mesh = new Mesh(g, ghost ? kit.ghostShell : dim ? kit.dimShell : facade ? kit.facade : kit.shellMaterial);
     // The town's shells live on the GPU only: their arrays are let go once uploaded
     if (!ghost) {
-      const kept = { position: g.attributes.position as BufferAttribute, normalDecay, color: g.attributes.color as BufferAttribute, uv: g.attributes.uv as BufferAttribute, index: g.index!, ...(facade && opening ? { facade, opening } : {}) };
+      const kept = {
+        position: g.attributes.position as BufferAttribute, normalDecay, color: g.attributes.color as BufferAttribute, uv: g.attributes.uv as BufferAttribute,
+        finish: g.attributes[FINISH_ATTRIBUTE] as BufferAttribute, index: g.index!, ...(facade && opening ? { facade, opening } : {}),
+      };
       gpuOnlyAttributes(mesh, kept, () => {
-        const again = refill?.().shells[finish];
+        const again = refill?.().shell;
         return again ? {
-          position: again.position, normalDecay: again.normalDecay, color: again.colour, uv: again.uv, index: again.index,
+          position: again.position, normalDecay: again.normalDecay, color: again.colour, uv: again.uv, finish: again.finish, index: again.index,
           ...(again.facade && again.opening ? { facade: again.facade, opening: again.opening } : {}),
         } : {};
       });
     }
-    mesh.name = ghost ? `building-preview-shell-${finish}` : `building-shell-${finish}`;
+    mesh.name = ghost ? 'building-preview-shell' : SHELL_MESH;
     mesh.castShadow = !ghost;
     mesh.receiveShadow = !ghost;
     meshes.push(mesh);

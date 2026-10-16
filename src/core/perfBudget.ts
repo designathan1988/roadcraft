@@ -71,7 +71,7 @@ const HEAP_BUDGET_MB = 1500;
 /** The plan's group of a scene object, by its name (`mesh.name`, as `buildingMesh.ts` and the others set it). */
 export function memoryGroup(name: string): MemoryGroup {
   if (name.startsWith('building-preview')) return 'other';
-  if (name.startsWith('building-shell-')) return 'L0 shells';
+  if (name.startsWith('building-shell')) return 'L0 shells';
   if (name.startsWith('building-massing')) return 'L1 masses';
   if (name.startsWith('building-')) return 'L0 building parts';
   if (/^(asphalt|footway|kerb|verge|curb-ramp|median-|markings-|road)/.test(name)) return 'roads';

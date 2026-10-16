@@ -370,3 +370,13 @@ export const LOOKS: Readonly<Record<Finish, FinishLook>> = {
     },
   },
 };
+
+/** The side of the finishes' texture arrays (`catalogue.ts`): the largest finish's; a smaller one is tiled in its layer. */
+export const FINISH_LAYER_SIZE = Math.max(...Object.values(LOOKS).map((look) => look.size));
+
+/** How many times a finish's own texture repeats across its layer of the arrays, each way. */
+export function finishTiles(finish: Finish): number {
+  const tiles = FINISH_LAYER_SIZE / LOOKS[finish].size;
+  if (!Number.isInteger(tiles) || (tiles & (tiles - 1)) !== 0) throw new Error(`Finish ${finish}: ${LOOKS[finish].size} texels do not tile ${FINISH_LAYER_SIZE}`);
+  return tiles;
+}

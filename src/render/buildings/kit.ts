@@ -15,12 +15,12 @@ import {
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import type { Finish } from '@world/buildings/materials';
-import { createFinishMaterials, finishAlbedo } from './finishes';
+import { createShellMaterial, finishAlbedo } from './finishes';
 import { createFurnitureGeometries, createFurnitureMaterial, furnitureTones } from './furnitureKit';
 import type { FurnitureKind } from '@world/buildings/interior';
 import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
 import { createMassingMaterial } from './massingMaterial';
-import { type FacadePanes, createFacadeMaterials } from './facadeLevel';
+import { type FacadePanes, createFacadeMaterial } from './facadeLevel';
 import { prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
 import { FACADE_PROP_KINDS, type FacadePropKind, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
@@ -156,20 +156,20 @@ export interface BuildingKit {
   /** Each part kind's levels of detail, its size and its shadow's (`partCells.ts`). */
   readonly screen: Readonly<Record<PartKind, PartScreen>>;
   readonly material: Readonly<Record<PartKind, Material>>;
-  /** The merged shell - walls, plinths, bands, roofs, steps - one material per finish, vertex coloured. */
-  readonly shell: Readonly<Record<Finish, MeshStandardMaterial>>;
+  /** The merged shell - walls, plinths, bands, roofs, steps - of every finish: one material, vertex coloured, each vertex's finish picking its maps (`finishes.ts`). */
+  readonly shellMaterial: MeshStandardMaterial;
   /** Ghost materials for the placement / drag preview, tinted by validity. */
   readonly ghostShell: MeshStandardMaterial;
   readonly ghostParts: MeshStandardMaterial;
   /** "Ocultar outros": the same shells, faded, for every building but the edited one. */
-  readonly dimShell: Readonly<Record<Finish, MeshStandardMaterial>>;
+  readonly dimShell: MeshStandardMaterial;
   readonly dimParts: MeshStandardMaterial;
   /** Each finish's colour from afar (`finishes.ts` `finishAlbedo`), for the far level of the buildings. */
   readonly finishTone: Readonly<Record<Finish, readonly [number, number, number]>>;
   /** Buildings seen from afar, their windows drawn by the shader (`massing.ts`, `massingMaterial.ts`). */
   readonly massing: MeshStandardMaterial;
-  /** The facade level (L1): the shells with their openings drawn by the shader, one per finish (`facadeLevel.ts`). */
-  readonly facade: Readonly<Record<Finish, MeshStandardMaterial>>;
+  /** The facade level (L1): the shells with their openings drawn by the shader, every finish (`facadeLevel.ts`). */
+  readonly facade: MeshStandardMaterial;
   /** Parts that cast shadows; the small ones do not, to spare the shadow pass. */
   readonly castsShadow: ReadonlySet<PartKind>;
   /** The furniture models, built the first time an interior is drawn. */
@@ -511,7 +511,7 @@ export function createBuildingKit(): BuildingKit {
   const furnitureGeometry = createFurnitureGeometries();
   const tones = furnitureTones(furnitureGeometry);
   for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(material[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight, tvClock });
-  const shell = createFinishMaterials();
+  const shell = createShellMaterial();
   const ghostShell = new MeshStandardMaterial({
     color: 0x65e5c3,
     emissive: new Color(0x1d5a4a),
@@ -524,16 +524,16 @@ export function createBuildingKit(): BuildingKit {
   const ghostParts = ghostShell.clone();
 
   // The faded copies: same colour and maps, a fraction of the presence, and no depth write
-  const dim = (m: MeshStandardMaterial): MeshStandardMaterial => {
-    const faded = m.clone();
+  const fade = (faded: MeshStandardMaterial): MeshStandardMaterial => {
     faded.transparent = true;
     faded.opacity = 0.22;
     faded.depthWrite = false;
     faded.color.multiplyScalar(0.75);
     return faded;
   };
-  const dimShell = Object.fromEntries(Object.entries(shell).map(([finish, mat]) => [finish, dim(mat)])) as Record<Finish, MeshStandardMaterial>;
-  const dimParts = dim(material['concrete'] as MeshStandardMaterial);
+  // The shell's: its finishes' maps and scalars, no wear and no lots (a copy keeps no `onBeforeCompile`: its own program, `finishes.ts`).
+  const dimShell = fade(createShellMaterial({ plain: true }));
+  const dimParts = fade((material['concrete'] as MeshStandardMaterial).clone());
   dimParts.opacity = 0.16;
   // A copy does not keep the pull towards the eye (`depthConvention.ts`).
   pullTowardEye(dimParts, 1, 4);
@@ -541,10 +541,10 @@ export function createBuildingKit(): BuildingKit {
   // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
   const massingNight = { value: 0 };
   const massing = createMassingMaterial({ roomsAwake, massingNight });
-  // The facade level's walls: each finish's own, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
+  // The facade level's walls: the shell's every finish, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
   const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
-  const facade = createFacadeMaterials(shell, panes, { roomsAwake, massingNight });
-  const unique = new Set<Material>([...Object.values(material), ...Object.values(shell), ...Object.values(dimShell), ...Object.values(facade), ghostShell, ghostParts, dimParts, massing]);
+  const facade = createFacadeMaterial(shell, panes, { roomsAwake, massingNight });
+  const unique = new Set<Material>([...Object.values(material), shell, dimShell, facade, ghostShell, ghostParts, dimParts, massing]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;
   for (const kind of PART_KINDS) levels[kind] = [{ geometry: geometry[kind], triangles: trianglesOf(geometry[kind]), error: [0, 0, 0] }];
@@ -590,7 +590,7 @@ export function createBuildingKit(): BuildingKit {
     geometry,
     screen,
     material,
-    shell,
+    shellMaterial: shell,
     ghostShell,
     ghostParts,
     dimShell,

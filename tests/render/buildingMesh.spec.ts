@@ -9,7 +9,6 @@ import { foundationOf } from '@world/buildings/foundation';
 import { type Building, asBuildingId } from '@world/buildings/types';
 import { type BuildingChunk, assembleBuildingMeshes, emitChunk } from '@render/buildings/buildingMesh';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
-import { FINISHES } from '@world/buildings/materials';
 import { createBuildingLayer } from '@render/buildings/layer';
 import { beginFrameWork } from '@core/frameWork';
 import { shapeBody } from '@editor/buildingPlans';
@@ -163,8 +162,9 @@ describe('building shell', () => {
     const meshes = assembleBuildingMeshes([a, b], kit);
     const glass = meshes.group.children.find((m) => m.name === 'building-glass') as unknown as { count: number };
     expect(glass.count).toBe(a.parts.glass.count + b.parts.glass.count);
-    // At most one shell per finish and one batch per part: the draw calls do not grow with the number of buildings.
-    expect(meshes.group.children.length).toBeLessThanOrEqual(FINISHES.length + PART_KINDS.length);
+    // One shell for every finish and one batch per part: the draw calls do not grow with the number of buildings.
+    expect(meshes.group.children.length).toBeLessThanOrEqual(1 + PART_KINDS.length);
+    expect(meshes.group.children.filter((m) => m.name === 'building-shell')).toHaveLength(1);
     meshes.dispose();
     kit.dispose();
   });
@@ -200,7 +200,7 @@ describe('buildings layer', () => {
 describe('building materials', () => {
   it('never draws a building part with a default or unassigned material', () => {
     const kit = createBuildingKit();
-    const all = [...Object.entries(kit.material), ...Object.entries(kit.shell)];
+    const all = [...Object.entries(kit.material), ['shell', kit.shellMaterial], ['facade', kit.facade], ['dim shell', kit.dimShell]] as const;
     for (const [kind, material] of all) {
       const m = material as MeshStandardMaterial;
       expect(m.name, kind).toMatch(/^building-/);
@@ -208,8 +208,6 @@ describe('building materials', () => {
       const white = m.color.getHex() === 0xffffff;
       if (white && !m.map) expect(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise'].includes(kind) || m.vertexColors, kind).toBe(true);
     }
-    // Every finish the shell can be drawn in has its material.
-    for (const finish of FINISHES) expect(kit.shell[finish], finish).toBeDefined();
     kit.dispose();
   });
 });

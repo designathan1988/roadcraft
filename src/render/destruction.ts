@@ -9,6 +9,7 @@ import type { Exhaust } from './exhaust';
 import type { BuildingChunk } from './buildings/buildingMesh';
 import type { BuildingKit } from './buildings/kit';
 import { fragmentGeometry, prepareFracture, type Fragment, type StillData } from './buildings/fracture';
+import { FINISH_ATTRIBUTE } from './buildings/cellArrays';
 import { interiorFurniture } from './buildings/buildingMesh';
 
 /** Buildings that break for real (the player's order of 2026-10-05) */
@@ -126,6 +127,8 @@ export function createDestruction(
     geometry.setAttribute('color', new BufferAttribute(data.colour, 3));
     geometry.setAttribute('uv', new BufferAttribute(data.uv, 2));
     geometry.setAttribute('aDecay', new BufferAttribute(data.decay, 1));
+    // The shell's pieces in its one material, each vertex its finish (`finishes.ts`).
+    geometry.setAttribute(FINISH_ATTRIBUTE, new BufferAttribute(data.finish, 1));
     for (const g of data.groups) geometry.addGroup(g.start, g.count, g.material);
     const bounds = new Sphere();
     for (const f of fragments) {

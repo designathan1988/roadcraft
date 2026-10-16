@@ -1,5 +1,4 @@
 import type { MeshStandardMaterial } from 'three';
-import { FINISHES, type Finish } from '@world/buildings/materials';
 import { m } from '@world/units';
 import type { MassingUniforms } from './massingMaterial';
 import { ROOM_LAMP_GLSL } from './roomLamps';
@@ -121,10 +120,10 @@ if (facadeKind > ${K.none}) {
 `;
 }
 
-/** The far level's material of one finish: the finish's own (maps, weathering, lots), its openings drawn from the window grid */
-function facadeMaterial(base: MeshStandardMaterial, finish: Finish, p: FacadePanes, uniforms: MassingUniforms): MeshStandardMaterial {
+/** Made once with the kit: the far level's material, the shell's own (`finishes.ts`: every finish's maps, weathering, lots), its openings drawn from the window grid with the panes' looks and the massing's night uniforms */
+export function createFacadeMaterial(base: MeshStandardMaterial, p: FacadePanes, uniforms: MassingUniforms): MeshStandardMaterial {
   const material = base.clone();
-  material.name = `building-facade-${finish}`;
+  material.name = 'building-facade';
   const baseCompile = base.onBeforeCompile.bind(base);
   const baseKey = base.customProgramCacheKey.bind(base);
   const solid = (k: 'roughness' | 'metalness' | 'envMapIntensity'): string =>
@@ -132,7 +131,6 @@ function facadeMaterial(base: MeshStandardMaterial, finish: Finish, p: FacadePan
   const glass = (k: 'roughness' | 'metalness' | 'envMapIntensity'): string =>
     `mix(${num(p.glass[k])}, ${num(p.glassDark[k])}, facadeDark)`;
   material.onBeforeCompile = (shader, renderer) => {
-    baseCompile(shader, renderer);
     shader.uniforms['roomsAwake'] = uniforms.roomsAwake;
     shader.uniforms['massingNight'] = uniforms.massingNight;
     shader.vertexShader = shader.vertexShader
@@ -164,17 +162,14 @@ metalnessFactor = metalnessFactor * facadeWall + ${num(p.frame.metalness)} * fac
 normal = normalize(mix(normal, nonPerturbedNormal, 1.0 - facadeWall));`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 totalEmissiveRadiance += facadeLamp * massingNight * facadeLit * facadeGlass * mix(1.0, 0.64, facadeDark);`)
-      // The panes reflect the sky as the detail's do (their own envMapIntensity, not the wall's).
+      // The panes reflect the sky as the detail's do (their own envMapIntensity, not the wall's finish's, `shellEnvScale`).
       .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
 #if defined( RE_IndirectSpecular ) && defined( USE_ENVMAP )
-  radiance *= facadeWall + (${num(p.frame.envMapIntensity)} * facadeFrame + ${glass('envMapIntensity')} * facadeGlass + ${solid('envMapIntensity')} * facadeSolid) / max(envMapIntensity, 1e-3);
+  radiance *= facadeWall + (${num(p.frame.envMapIntensity)} * facadeFrame + ${glass('envMapIntensity')} * facadeGlass + ${solid('envMapIntensity')} * facadeSolid) / max(envMapIntensity * shellEnvScale, 1e-3);
 #endif`);
+    // The shell's own after: each of its additions lands right after its chunk, so before these (its finish's map, roughness, metalness and relief first).
+    baseCompile(shader, renderer);
   };
-  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v1`;
+  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v2`;
   return material;
-}
-
-/** Made once with the kit: each finish's far level material (`kit.ts` `shell`, its panes' looks, the massing's night uniforms) */
-export function createFacadeMaterials(shell: Readonly<Record<Finish, MeshStandardMaterial>>, panes: FacadePanes, uniforms: MassingUniforms): Record<Finish, MeshStandardMaterial> {
-  return Object.fromEntries(FINISHES.map((finish) => [finish, facadeMaterial(shell[finish], finish, panes, uniforms)])) as Record<Finish, MeshStandardMaterial>;
 }
