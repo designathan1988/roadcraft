@@ -85,6 +85,26 @@ describe("a tile's network baked off the page", () => {
     expect(fingerprint(net)).toBe(fingerprint(fresh));
   });
 
+  it('is taken for a tile of lower key loaded after the higher one, and the network is the one built from nothing', () => {
+    const { a, b, edge } = twoTiles();
+    const doc = new RoadDoc();
+    doc.loadTile(b);
+    const net = new Network(doc);
+    net.rebuild();
+    const ribbons = [...net.ribbons.keys()];
+    doc.loadTile(a);
+    net.offerBake(structuredClone(bakeTileNetwork(a)));
+    const taken = networkWork.taken;
+    net.rebuild();
+    expect(networkWork.taken - taken).toBe(a.nodes.length);
+    expect(doc.node(edge as never)!.incident).toHaveLength(2);
+    // The higher tile's ribbons stay first: the lower ids are filed after them, never laid out again in id order.
+    expect([...net.ribbons.keys()].slice(0, ribbons.length)).toEqual(ribbons);
+    const fresh = new Network(doc.clone());
+    fresh.rebuild();
+    expect(fingerprint(net)).toBe(fingerprint(fresh));
+  });
+
   it('solves on the page a node whose key is not the bake\'s (a road of another tile on it, an older bake)', () => {
     const { a, crossing } = twoTiles();
     const bake = bakeTileNetwork(a);

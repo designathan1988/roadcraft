@@ -11,6 +11,7 @@ import type { SimWorld } from '@sim/world';
 import type { VehicleId } from '@sim/vehicles/state';
 import type { SegmentId } from '@world/ids';
 import { parkingLayout } from '@world/parkingLayout';
+import type { Network } from '@world/network';
 import { PARKING_PITCH } from '@world/parking';
 
 /** The parking bays of the city: where a resident's car stands when it is not on the road. */
@@ -340,7 +341,9 @@ const NO_LOT = -1 as BuildingId;
 /** Every bay along the kerbs of the streets that park (`RoadSegment.parking`). */
 function kerbBays(w: SimWorld, first: number): Bay[] {
   const out: Bay[] = [];
-  for (const bay of parkingLayout(w.net).bays) {
+  // The streets in id order, as the network kept its ribbons then (it now keeps them in the order its rebuilds filed them).
+  const byId = Object.create(w.net, { ribbons: { value: new Map([...w.net.ribbons].sort((p, q) => p[0] - q[0])) } }) as Network;
+  for (const bay of parkingLayout(byId).bays) {
     const f = bay.facing;
     const ahead = { x: bay.centre.x + f.x * KERB_AHEAD, y: bay.centre.y + f.y * KERB_AHEAD };
     const lane = laneFor(w, ahead.x, ahead.y, undefined, bay.segment);

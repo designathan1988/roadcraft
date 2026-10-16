@@ -84,7 +84,6 @@ desktop path still post Building objects; the sim worker keeps a second RoadDoc 
   (`sim/tileSections.ts` pattern).
 - Every tile load records 'roads' (`doc.ts`, the network revision) and runs `buildWorld`: elevation solve on
   the page, block compares, every road tile digested (`roadSurfaces.ts`). Fix: per-tile records in the diary.
-- `networkBuild.ts` re-sorts every ribbon and junction when a lower id arrives.
 - `flatAtlas.ts` `ecologyRevision` adds `shownVersion`: each plate shown walks `natureSweep` (per-plate keys kept).
 - Sim: `lorryDocks.ts` `yardNeighbours` keyed by the global `doc.lotRevision`; `lotTraffic.ts` `freeBays`/
   `sceneryInBays` walk every gated bay with a string key each, every second; parked cars stand a whole

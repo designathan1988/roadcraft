@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { RoadDoc } from '@world/doc';
+import { RoadDoc, type TileRecords } from '@world/doc';
 import { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
-import { laneletLines, networkLines } from './support/roadDigest';
+import { TILE, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
+import { m } from '@world/units';
+import { derivedLines, laneletLines, networkLines } from './support/roadDigest';
 import { FLAT_GROUND, type RoadElevation, buildRoadElevation } from '@world/elevation';
 import { TerrainIndex, sampleTerrainHeight } from '@world/terrain';
 import { commitRoadPath, moveNodeChecked } from '@editor/commit';
@@ -40,6 +42,27 @@ function expectSameAsFull(doc: RoadDoc, net: Network, elevation: RoadElevation, 
   expect(crossingLines(net), `crossings after ${where}`).toEqual(crossingLines(fresh));
   expect(laneletLines(doc, net), `lanelets after ${where}`).toEqual(laneletLines(fresh.doc, fresh));
   expect(elevationLines(doc, elevation), `heights after ${where}`).toEqual(elevationLines(doc, buildRoadElevation(fresh, ground)));
+}
+
+/** A tile of three by three streets 256 m apart, its middle row out to a node on each side edge: the west one its own, the east one its neighbour's (`edgeNodeId`). */
+function gridTile(i: number): TileRecords {
+  const key = tileKey(i, 0), base = tileIdBase(key), x0 = i * TILE;
+  const at = (c: number, r: number): number => base + r * 3 + c;
+  const nodes: TileRecords['nodes'][number][] = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) nodes.push({ id: at(c, r), x: x0 + m(256) * (c + 1), y: m(256) * (r + 1) });
+  const west = { id: edgeNodeId(x0, m(512))!, x: x0, y: m(512) };
+  const east = { id: edgeNodeId(x0 + TILE, m(512))!, x: x0 + TILE, y: m(512) };
+  const segments: TileRecords['segments'][number][] = [];
+  const road = (a: number, b: number): void => { segments.push({ id: base + 100 + segments.length, a, b, type: 1, curve: null }); };
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 2; c++) road(at(c, r), at(c + 1, r));
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) road(at(c, r), at(c, r + 1));
+  road(west.id, at(0, 1));
+  road(at(2, 1), east.id);
+  return {
+    key, version: 1, nodes: [...nodes, west], borrowedNodes: [east], segments, poles: [], borrowedPoles: [], poleSpans: [],
+    buildings: [], lots: [], lotKeys: [], landscape: [], barriers: [], paint: [], trees: [], elements: [],
+    next: { node: base + 9, segment: base + 100 + segments.length, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base },
+  };
 }
 
 describe('incremental network and height rebuild', () => {
@@ -120,5 +143,28 @@ describe('incremental network and height rebuild', () => {
     const raised = [...doc.nodes.values()].find((n) => n.incident.length === 2)!;
     doc.setNodeHeightOffset(raised.id, raised.heightOffset + 10);
     settle(`node ${raised.id} raised`);
+  });
+
+  it('equals a full rebuild with tiles loaded from the highest key down, and leaves what it filed before where it was', () => {
+    const doc = new RoadDoc();
+    const net = new Network(doc);
+    net.rebuild();
+    let elevation = buildRoadElevation(net, FLAT_GROUND);
+    for (const i of [2, 1, 0]) {
+      const ribbons = [...net.ribbons.keys()], junctions = [...net.junctions.keys()];
+      doc.loadTile(gridTile(i));
+      net.rebuild();
+      // Lower ids come after: the ribbons and junctions already filed stay first, in their order (the region is not laid out again).
+      expect([...net.ribbons.keys()].slice(0, ribbons.length), `ribbons after tile ${i}`).toEqual(ribbons);
+      const kept = junctions.filter((id) => net.junctions.has(id));
+      expect([...net.junctions.keys()].slice(0, kept.length), `junctions after tile ${i}`).toEqual(kept);
+      elevation = buildRoadElevation(net, FLAT_GROUND, elevation);
+      expectSameAsFull(doc, net, elevation, FLAT_GROUND, `tile ${i} loaded`);
+      const fresh = new Network(doc.clone());
+      fresh.rebuild({ full: true });
+      expect(derivedLines(net), `derived after tile ${i} loaded`).toEqual(derivedLines(fresh));
+    }
+    expect(net.ribbons.size).toBe(3 * 14);
+    expect(net.junctions.size).toBeGreaterThan(9);
   });
 });

@@ -54,6 +54,7 @@ export class Network {
   private readonly crossingDistances = new Map<SegmentId, Map<NodeId, number>>();
   /** DO NOT work a landing out again for each asker. */
   private readonly crossingLandings = new Map<SegmentId, Map<NodeId, CrossingLanding | null>>();
+  /** The junctions and ribbons by id, in the order the rebuilds filed them, never id order: a reader that needs id order sorts what it takes (`CellFiling.idsMeeting`). */
   readonly junctions = new Map<NodeId, Map<SurfaceLevel, Junction>>();
   readonly ribbons = new Map<SegmentId, SegmentRibbon>();
   /** The ribbons and the junctions filed by the cells their surfaces reach (`world/cells.ts`) */

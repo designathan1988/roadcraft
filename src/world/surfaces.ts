@@ -71,7 +71,10 @@ function ownsJunction(net: SurfaceNet, nodeId: NodeId, include: SurfaceSegmentFi
 
 /** Every ring of one level, as clipper input, before they are merged (`levelPolygons`). */
 function levelRings(net: SurfaceNet, level: SurfaceLevel, include?: SurfaceSegmentFilter): MultiPoly {
-  return levelRingsOf(net, level, net.ribbons.values(), net.junctions, include);
+  // In id order (the network's maps are in the order its rebuilds filed them): the same union whatever edits made the network.
+  const ribbons = [...net.ribbons.values()].sort((p, q) => p.id - q.id);
+  const junctions = [...net.junctions].sort((p, q) => p[0] - q[0]);
+  return levelRingsOf(net, level, ribbons, junctions, include);
 }
 
 /** `levelRings` of the given ribbons and junctions only: the rings round one place */

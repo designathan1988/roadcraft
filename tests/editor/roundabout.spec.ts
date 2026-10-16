@@ -68,7 +68,8 @@ describe('roundabout command', () => {
     }
     const fresh = new Network(doc);
     fresh.rebuild();
-    const geometry = (network: Network) => [...network.ribbons].map(([id, ribbon]) => ({
+    // By id: the network's maps are in the order its rebuilds filed them, never laid out again (`networkBuild.ts`).
+    const geometry = (network: Network) => [...network.ribbons].sort((p, q) => p[0] - q[0]).map(([id, ribbon]) => ({
       id,
       road: ribbon.road,
       full: ribbon.full.toPoints(),

@@ -168,9 +168,6 @@ export class NetworkBuild {
   /** The plate keys each road wrote (`node:segment`), to take them out when it changes. */
   private plateKeys = new Map<SegmentId, readonly string[]>();
   private ribbonMemo = new Map<SegmentId, RibbonMemo>();
-  /** The largest id the ribbons and the junctions may hold (`insertionWatch`): an upper bound. */
-  private ribbonMax = -Infinity;
-  private junctionMax = -Infinity;
   /** The tiles' bakes offered since the last rebuild (`offerBake`), taken by it (`takeBakes`). */
   private readonly bakes: NetworkBake[] = [];
 
@@ -242,8 +239,6 @@ export class NetworkBuild {
     this.plateRaw = new Map();
     this.plateKeys = new Map();
     this.ribbonMemo = new Map();
-    this.ribbonMax = -Infinity;
-    this.junctionMax = -Infinity;
     // The bakes offered stay: they are for the next rebuild, from nothing or not.
   }
 
@@ -266,8 +261,6 @@ export class NetworkBuild {
     this.plateRaw = new ForkMap(other.plateRaw);
     this.plateKeys = new ForkMap(other.plateKeys);
     this.ribbonMemo = new ForkMap(other.ribbonMemo);
-    this.ribbonMax = other.ribbonMax;
-    this.junctionMax = other.junctionMax;
   }
 
   /** A working copy's state (`forkFrom`) written into this one, up to its document as it stands now: only what the copy wrote. */
@@ -284,8 +277,6 @@ export class NetworkBuild {
     }
     this.nodePlaces.takeBack(fork.nodePlaces);
     (fork.active as ForkSet<NodeId>).applyTo(this.active);
-    this.ribbonMax = fork.ribbonMax;
-    this.junctionMax = fork.junctionMax;
     this.seen = this.net.doc.changes.version;
   }
 
@@ -302,8 +293,7 @@ export class NetworkBuild {
     this.seen = doc.changes.version;
 
     const oldRects: ChangeRect[] = [];
-    const ribbonOrder = insertionWatch(net.ribbons, this.ribbonMax);
-    const junctionOrder = insertionWatch(net.junctions, this.junctionMax);
+    // DO NOT lay the ribbons and junctions out in id order again when a lower id comes (a tile of lower key loaded after): every tile load re-sorted the region; a reader in id order sorts what it takes.
     const ribbonBefore = new Map<SegmentId, SegmentRibbon | undefined>();
     const junctionBefore = new Map<NodeId, ReadonlyMap<SurfaceLevel, Junction> | undefined>();
 
@@ -393,7 +383,7 @@ export class NetworkBuild {
         this.j3.delete(node);
       }
       const after = this.junction3(node);
-      if (after) junctionOrder.set(node, after); else net.junctions.delete(node);
+      if (after) net.junctions.set(node, after); else net.junctions.delete(node);
       if (after !== before) moved3.add(node);
     }
 
@@ -446,16 +436,13 @@ export class NetworkBuild {
       const ribbon = this.buildRibbon(id, seg, trims);
       if (ribbon !== before) {
         if (before) oldRects.push(ribbonBounds(before));
-        ribbonOrder.set(id, ribbon);
+        net.ribbons.set(id, ribbon);
       }
       const bounds = ribbonBounds(ribbon);
       net.segmentCells.file(id, ribbon, bounds);
       if (flushOn(ribbon.road, 'left') || flushOn(ribbon.road, 'right')) net.flushCells.file(id, ribbon, bounds);
       else net.flushCells.remove(id);
     }
-
-    this.ribbonMax = ribbonOrder.done();
-    this.junctionMax = junctionOrder.done();
 
     // ---- the nodes: transitions, cells, squeezes ---------------------------
     for (const node of n3) {
@@ -511,7 +498,7 @@ export class NetworkBuild {
       for (const id of this.nodePlaces.idsMeetingAny(entry.rects)) candNodes.add(id);
     }
     if (everything) {
-      // In increasing id order: what is built from nothing is filed in the order an edit files what it adds (`keepInIdOrder`).
+      // In increasing id order: a build from nothing files in one order whatever order the document holds them in (no reader depends on it).
       for (const id of [...new Set([...doc.segments.keys(), ...this.segmentSource.keys()])].sort((p, q) => p - q)) candSegs.add(id);
       for (const id of [...new Set([...doc.nodes.keys(), ...this.nodeSource.keys()])].sort((p, q) => p - q)) candNodes.add(id);
     } else {
@@ -787,29 +774,6 @@ export class NetworkBuild {
     this.ribbonMemo.set(id, { ribbon, trims: t, bendA, bendB });
     return ribbon;
   }
-}
-
-/** Sets entries of a map kept in increasing key order */
-function insertionWatch<V>(map: Map<number, V>, largest: number): { set(id: number, value: V): void; done(): number } {
-  let max = largest;
-  let unordered = false;
-  return {
-    set(id: number, value: V): void {
-      if (!map.has(id)) {
-        if (id < max) unordered = true;
-        else max = id;
-      }
-      map.set(id, value);
-    },
-    /** Lays the map out in order when needed; returns the largest key it may hold (an upper bound). */
-    done(): number {
-      if (!unordered) return max;
-      const entries = [...map].sort((p, q) => p[0] - q[0]);
-      map.clear();
-      for (const [id, value] of entries) map.set(id, value);
-      return entries.length ? entries[entries.length - 1]![0] : -Infinity;
-    },
-  };
 }
 
 function samePlate(a: ReadonlyMap<SegmentId, number>, b: ReadonlyMap<SegmentId, number>): boolean {

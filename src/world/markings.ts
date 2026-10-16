@@ -334,7 +334,8 @@ function zebraBars(frameAt: (along: number) => { p: Vec2; nrm: Vec2 }, rt: RoadT
 export function junctionDetail(net: Network): { stops: Bar[]; zebras: Bar[] } {
   const stops: Bar[] = [];
   const zebras: Bar[] = [];
-  for (const node of net.junctions.keys()) junctionDetailAt(net, node, stops, zebras);
+  // In id order: the network's junctions are in the order its rebuilds filed them.
+  for (const node of [...net.junctions.keys()].sort((p, q) => p - q)) junctionDetailAt(net, node, stops, zebras);
   for (const node of net.doc.nodes.keys()) midBlockDetailAt(net, node, stops, zebras);
   return { stops, zebras };
 }
