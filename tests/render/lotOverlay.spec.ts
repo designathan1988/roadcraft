@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createLotOverlay, type LotOverlayGroup, type LotOverlayInput } from '@render/lotOverlay';
+import { createLotOverlay, frameHalfFor, type LotOverlayGroup, type LotOverlayInput } from '@render/lotOverlay';
+import { PLATE_SIZE } from '@world/bounds';
 import { ChangeJournal } from '@world/changes';
 import { sampleLattice } from './support/latticeSampler';
 
@@ -138,5 +139,32 @@ describe('lot overlay', () => {
     overlay.set(null);
     expect(overlay.lattice.size).toBe(0);
     overlay.dispose();
+  });
+
+  it('stands its frame where the lots are on an unbounded world, grown by plates to hold them all', () => {
+    const square = (x: number, y: number): LotOverlayGroup => ({
+      rank: 0,
+      polygons: [{ corners: [{ x, y }, { x: x + 20, y }, { x: x + 20, y: y + 20 }, { x, y: y + 20 }], fill: 0x56bb73, fillAlpha: 0.5, line: 0xffffff, lineAlpha: 1, width: 0.4 }],
+      lines: [], points: [],
+    });
+    // Two lots 9 km apart, 300 km out: wider than the smallest frame.
+    const far = 300_000;
+    const groups = new Map<string, LotOverlayGroup>([['a', square(far, far)], ['b', square(far + 9_000, far + 400)]]);
+    const overlay = createLotOverlay();
+    overlay.set({ groups, changedFor: () => null });
+    const lattice = overlay.lattice;
+    expect(sampleLattice(lattice, far + 10, far + 10)?.records.some((r) => r.fill && r.inside)).toBe(true);
+    expect(sampleLattice(lattice, far + 9_010, far + 410)?.records.some((r) => r.fill && r.inside)).toBe(true);
+    // Drawn again with nothing moved: the frame stays.
+    overlay.set({ groups, changedFor: () => [] });
+    expect(overlay.lattice).toBe(lattice);
+    overlay.dispose();
+  });
+
+  it('sizes the frame by whole plates round its centre, never under a plate and its ring', () => {
+    expect(frameHalfFor(0, 0, -100, -100, 100, 100)).toBe(PLATE_SIZE * 1.5);
+    expect(frameHalfFor(0, 0, -100, -100, PLATE_SIZE * 1.5, 100)).toBe(PLATE_SIZE * 1.5);
+    expect(frameHalfFor(0, 0, -100, -100, PLATE_SIZE * 1.5 + 1, 100)).toBe(PLATE_SIZE * 2.5);
+    expect(frameHalfFor(PLATE_SIZE * 10, 0, PLATE_SIZE * 6, 0, PLATE_SIZE * 10, 0)).toBe(PLATE_SIZE * 4.5);
   });
 });

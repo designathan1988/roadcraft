@@ -58,8 +58,15 @@ const EMPTY = new DataTexture(new Uint32Array(4), 1, 1, RGBAIntegerFormat, Unsig
 EMPTY.internalFormat = 'RGBA32UI';
 EMPTY.needsUpdate = true;
 
-/** Half the lattice's frame: 10,240 m a side (the old map's), stood over the lots drawn - the page's, round the view - wherever they are */
-const FRAME_HALF = PLATE_SIZE * 2.5;
+/** Half the lattice's smallest frame: a plate and the ring round it (6,144 m a side), over the active region's 3 x 3 tiles wherever its middle is on the plate */
+const FRAME_HALF = PLATE_SIZE * 1.5;
+
+/** Half the frame stood on a plate's centre (cx, cy) that holds [x0, y0, x1, y1]: the smallest by whole plates, never one sized to a map */
+export function frameHalfFor(cx: number, cy: number, x0: number, y0: number, x1: number, y1: number): number {
+  const reach = Math.max(cx - x0, x1 - cx, cy - y0, y1 - cy);
+  return Math.max(FRAME_HALF, PLATE_SIZE * (Math.ceil(reach / PLATE_SIZE - 0.5) + 0.5));
+}
+
 /** The world's lattice cells each way a level's key holds (`createLotOverlay` `cellKey`): past the world's reach (`world/bounds.ts` WORLD_HALF, 2^25 m) in cells of 8 m. */
 const CELL_SHIFT = 2 ** 23;
 const CELL_SIDE = 2 * CELL_SHIFT;
@@ -72,6 +79,13 @@ const UNIFORMS = {
   uLotsCorner: { value: new Vector2(-FRAME_HALF, -FRAME_HALF) },
   uLotsTiles: { value: Math.ceil(Math.ceil((2 * FRAME_HALF) / LOT_CELL) / TILE_CELLS) },
 };
+
+/** The shader's frame set to a lattice's: its corner, its cells and its tiles a side. */
+function frameUniforms(lattice: LotLattice): void {
+  UNIFORMS.uLotsCorner.value.set(lattice.x0, lattice.y0);
+  UNIFORMS.uLotsGrid.value.z = lattice.cellsPerSide;
+  UNIFORMS.uLotsTiles.value = lattice.tilesPerSide;
+}
 
 /** How far above or below a built lot's ground level a building's level surface is still its yard (metres) */
 const LEVEL_REACH = 0.75;
@@ -290,6 +304,7 @@ const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'ground', 'elev
 export function createLotOverlay(groundAt: (x: number, y: number) => number = () => 0) {
   /** The lattice, its frame over the lots drawn (`frameFor`): stood again only when they leave it. */
   let lattice = new LotLattice(FRAME_HALF);
+  frameUniforms(lattice);
   let texture: DataTexture | null = null;
   /** The input drawn now, and this overlay's place in its changes (`LotOverlayInput.changedFor`). */
   let shown: LotOverlayInput | null = null;
@@ -421,9 +436,9 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
     if (x0 >= lattice.x0 && y0 >= lattice.y0 && x1 <= lattice.x0 + side && y1 <= lattice.y0 + side) return false;
     const centre = plateRegion(plateOf((x0 + x1) / 2, (y0 + y1) / 2));
     lattice.clear();
-    lattice = new LotLattice(FRAME_HALF, 16, centre.cx, centre.cy);
+    lattice = new LotLattice(frameHalfFor(centre.cx, centre.cy, x0, y0, x1, y1), 16, centre.cx, centre.cy);
     held = new Map();
-    UNIFORMS.uLotsCorner.value.set(lattice.x0, lattice.y0);
+    frameUniforms(lattice);
     return true;
   };
 
