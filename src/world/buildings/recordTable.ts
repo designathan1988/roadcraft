@@ -13,8 +13,10 @@ const T_NULL = 0, T_FALSE = 1, T_TRUE = 2, T_U8 = 3, T_I32 = 4, T_F64 = 5, T_STR
 const align8 = (n: number): number => Math.ceil(n / 8) * 8;
 
 /** Shared memory where the page is cross-origin isolated (and in workers and tests); a plain buffer otherwise (only read on its own thread). */
+/** DO NOT trust the constructor alone: a context not isolated may still define it, and posting its buffer throws (MDN "crossOriginIsolated"; Node's tests have no such flag). */
 function allocate(bytes: number): ArrayBufferLike {
-  return typeof SharedArrayBuffer !== 'undefined' ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
+  const isolated = (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated !== false;
+  return isolated && typeof SharedArrayBuffer !== 'undefined' ? new SharedArrayBuffer(bytes) : new ArrayBuffer(bytes);
 }
 
 /** Where each section starts, from the header's counts. */
