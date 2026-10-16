@@ -1469,7 +1469,7 @@ export class RoadDoc {
     if (piece.barrierMap.size) this.changes.record('barriers', [square], { ids: [...piece.barrierMap.keys()] });
     // The buildings and the lots, each in one entry of its own store.
     const buildings = [...piece.buildings.all()];
-    this.buildings.placeAll(buildings);
+    this.buildings.placeAll(buildings, preparedTiles.has(records));
     const lots = [...piece.lotStore.all()];
     this.lotStore.restore(lots.map((lot) => ({ id: lot.id, value: lot })), TILE_LOADED);
     this.lotStore.addKeys(records.lotKeys, records.lotKeys.map(() => square), TILE_LOADED);
