@@ -1,4 +1,4 @@
-import { jobLanes, jobPort } from './jobs/jobPool';
+import { jobLanes, jobPort, portWorker } from './jobs/jobPool';
 import type { Bay } from '@sim/agents/bay';
 import { type LotAsk, shareOf } from '@sim/agents/lotBays';
 import type { BayWorkers } from '@sim/agents/parking';
@@ -20,6 +20,9 @@ const SILENCE_MS = 10_000;
 const MOST_LANES = 4;
 
 export class BayPool implements BayWorkers {
+  /** `ports`: the page's lanes for this thread (`jobPool.ts` jobChannel, the simulation's worker): DO NOT open a pool here when given them. None: lanes of this thread's own pool (the page). */
+  constructor(private readonly ports: readonly MessagePort[] | null = null) {}
+
   private lanes: Lane[] | null = null;
   private broken = false;
   private nextId = 1;
@@ -58,14 +61,15 @@ export class BayPool implements BayWorkers {
   private start(): Lane[] | null {
     if (this.lanes || this.broken) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
-    const count = jobLanes(MOST_LANES);
+    const count = this.ports ? this.ports.length : jobLanes(MOST_LANES);
     const lanes: Lane[] = [];
     try {
       for (let k = 0; k < count; k++) {
-        const worker = jobPort('bays');
+        const worker = this.ports ? portWorker(this.ports[k]!) : jobPort('bays');
         const lane: Lane = { worker, waiting: new Map(), heard: performance.now(), told: false };
-        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; bays?: Bay[][]; error?: string }>) => {
+        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; bays?: Bay[][]; error?: string; laneFailed?: string }>) => {
           if (this.lanes !== lanes) return;
+          if (event.data.laneFailed !== undefined) { this.fail(`a bays lane could not load: ${event.data.laneFailed}`); return; }
           // Any word from the worker, a beat or an answer: it is alive.
           lane.heard = performance.now();
           lane.told = false;
@@ -96,6 +100,11 @@ export class BayPool implements BayWorkers {
     console.warn(`[parking] ${why}; the lots are worked out on the page`);
     this.broken = true;
     this.end(new Error(why));
+  }
+
+  /** The worker serving the page's lanes failed (`jobPool.ts` jobChannel's `lost`): every job waiting on them rejected, the lots worked out here. */
+  lanesLost(why: string): void {
+    this.fail(why);
   }
 
   /** Ends the workers, every job still waiting rejected. */

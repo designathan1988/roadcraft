@@ -220,9 +220,15 @@ export class SimClient implements JournalReader {
   }
 
   /** The worker made and given the map; resolved once it stands. */
-  start(seed: number, zones: ReadonlyMap<string, Float64Array | null>, zonesPrefix: string | null, ambient: 'view' | 'edges'): Promise<void> {
+  /** `lanes`: the page's job lanes for the worker's bays and conflict pairs (`main.ts`, `jobPool.ts` jobChannel), handed before `init`; none: it opens its own. */
+  start(seed: number, zones: ReadonlyMap<string, Float64Array | null>, zonesPrefix: string | null, ambient: 'view' | 'edges',
+    lanes: { readonly bays: readonly MessagePort[]; readonly conflicts: readonly MessagePort[] } | null = null): Promise<void> {
     const worker = new Worker(new URL('../sim.worker.ts', import.meta.url), { type: 'module' });
     this.worker = worker;
+    if (lanes) {
+      const message: ToSim = { type: 'lanes', bays: lanes.bays, conflicts: lanes.conflicts };
+      worker.postMessage(message, [...lanes.bays, ...lanes.conflicts]);
+    }
     const ready = new Promise<void>((done) => {
       worker.onmessage = (event: MessageEvent<FromSim>) => {
         if (event.data.type === 'ready') { worker.onmessage = (e: MessageEvent<FromSim>) => this.receive(e.data); done(); return; }
@@ -234,6 +240,11 @@ export class SimClient implements JournalReader {
     this.sendTiles();
     this.trimToActive();
     return ready;
+  }
+
+  /** The page's worker serving the worker's lanes of `service` failed: that pool falls back to working in the worker. */
+  laneLost(service: 'bays' | 'conflicts'): void {
+    this.send({ type: 'laneLost', service, why: `the job worker serving the ${service} lanes failed` });
   }
 
   /** Another map (opened, generated, new): the worker's copy made whole again (only what traffic reads), the simulation started over. */

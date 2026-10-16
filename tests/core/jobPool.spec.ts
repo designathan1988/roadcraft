@@ -107,6 +107,23 @@ describe('the job system', () => {
     expect(ticket.pending).toBe(false);
   });
 
+  it('hands a lane to another thread as a port its worker serves, and tells that thread when the worker fails', async () => {
+    const { jobChannel, portWorker } = await import('@/jobs/jobPool');
+    const lost: string[] = [];
+    const port = jobChannel('bays', () => lost.push('bays'));
+    const serving = FakeWorker.made.find((w) => w.asked.some((m) => (m as unknown as { adopt?: string }).adopt === 'bays'))!;
+    expect(serving).toBeDefined();
+    const adopted = serving.asked.find((m) => (m as unknown as { adopt?: string }).adopt === 'bays') as unknown as { port: MessagePort };
+    // The thread and the worker talk straight over the channel.
+    const heard = new Promise<unknown>((done) => { adopted.port.onmessage = (event) => done(event.data); });
+    portWorker(port).postMessage({ id: 1 });
+    expect(await heard).toEqual({ id: 1 });
+    serving.onerror!({ message: 'crashed' });
+    expect(lost).toEqual(['bays']);
+    port.close();
+    adopted.port.close();
+  });
+
   it('puts a lane let go back in the count: the next lane takes the worker it freed', async () => {
     const { jobPort } = await import('@/jobs/jobPool');
     const lanes = [0, 1, 2, 3].map(() => jobPort('bays'));

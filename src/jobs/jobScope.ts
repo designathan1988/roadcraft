@@ -10,5 +10,7 @@ export type JobService = 'growth' | 'cityTiles' | 'bays' | 'conflicts' | 'cells'
 
 /** Page to job worker: a message for a service's port (the service made on the port's first message); `seq`, a queued job's number (`jobPool.ts` `submitJob`). */
 export interface ToJob { readonly port: number; readonly service: JobService; readonly data: unknown; readonly seq?: number }
+/** Page to job worker: serve `adopt` on `port`, one end of a channel whose other end another thread holds (`jobPool.ts` jobChannel): that thread talks to this worker straight, no page in between. */
+export interface AdoptLane { readonly adopt: JobService; readonly port: MessagePort }
 /** Job worker to page: a port's answer, or its failure; `seq`, the queued job it answers. */
 export interface FromJob { readonly port: number; readonly data?: unknown; readonly error?: string; readonly seq?: number }

@@ -91,8 +91,6 @@ a second RoadDoc + Network of the active region.
   `sceneryInBays` walk every gated bay with a string key each, every second; parked cars stand a whole
   Vehicle in most bays of the region and `simHost.ts` `publish` walks them each tick; `invariants.ts` audit
   walks every controller each second.
-- Jobs: the sim worker opens 2 job workers of its own (`jobWorkers` in a worker): all isolates share one V8
-  cage. Fix: its bays and conflicts jobs through the page's queue (a port to the pool), no pool of its own.
 - `farRoads.ts` has no plan source (far masses have `farPlan.ts`): tiles made ahead only feed far roads.
 - L1 lot furniture modelled face by face into the shell (`emitLots` -> `emitElement`, `emitLotPart`): the
   bulk of L1 triangles. Fix: instanced parts per kind (quality decision: ask the player).

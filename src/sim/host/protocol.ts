@@ -90,6 +90,10 @@ export type ToSim =
   | { readonly type: 'load'; readonly map: TrafficMap; readonly live: readonly number[] }
   /** The streamed world's tile store the meso reads its far tiles from (`meso/tileFeed.ts`), in IndexedDB by `map`, or over `port` (the desktop's), within `reach` of the camera. */
   | { readonly type: 'tiles'; readonly map: string; readonly reach: number; readonly port: MessagePort | null }
+  /** The page's job lanes for the lots' bays and the conflict pairs (`jobPool.ts` jobChannel), before `init`: the worker opens no pool of its own. */
+  | { readonly type: 'lanes'; readonly bays: readonly MessagePort[]; readonly conflicts: readonly MessagePort[] }
+  /** The page's worker serving those lanes failed: their pool falls back to working here. */
+  | { readonly type: 'laneLost'; readonly service: 'bays' | 'conflicts'; readonly why: string }
   /** A tile of the page taken in, let go, or written at `version` (`worldStreamer.ts` StreamerEvents). */
   | { readonly type: 'tile'; readonly event: TileEvent; readonly key: number; readonly version: number }
   /** The roads', lots' and transit's records the diary named (`delta`), and the buildings it named as traffic records. */

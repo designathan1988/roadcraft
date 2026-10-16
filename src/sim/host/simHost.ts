@@ -47,6 +47,10 @@ export class SimHost {
   /** The meso traffic and its micro window: made before the world, so a window told early is kept for it. */
   private readonly meso = new Meso();
   private topology: TopologyCatchUp | null = null;
+  /** The page's job lanes for the bays and the conflict pairs (`lanes`, before `init`), and the pools made on them. */
+  private lanes: { readonly bays: readonly MessagePort[]; readonly conflicts: readonly MessagePort[] } | null = null;
+  private bayPool: BayPool | null = null;
+  private conflictPool: ConflictPool | null = null;
   private readonly governor = new PopulationGovernor(1);
   private data: Float64Array | null = null;
   private control: Int32Array | null = null;
@@ -76,6 +80,8 @@ export class SimHost {
         await this.init(message.map, message.seed, message.zones, message.frames.data, message.frames.control, message.zonesPrefix, message.ambient);
         return;
       case 'load': this.meso.setLive(message.live); this.load(message.map); return;
+      case 'lanes': this.lanes = { bays: message.bays, conflicts: message.conflicts }; return;
+      case 'laneLost': (message.service === 'bays' ? this.bayPool : this.conflictPool)?.lanesLost(message.why); return;
       case 'tiles': {
         // The store read here, never through the page: IndexedDB opened in this worker, or the desktop's saves writer through a port of this worker's own.
         const reader = storeTileReader(message.map, message.port);
@@ -112,7 +118,9 @@ export class SimHost {
     const sim = new SimWorld(this.doc, this.net, seed, this.buildings);
     // Conflicts only where traffic is (the micro window), not every junction of the map.
     sim.useMicroWindow();
-    useBayWorkers(sim, new BayPool());
+    // On the page's lanes when it handed them: DO NOT open a pool in this worker (`jobPool.ts` jobChannel).
+    this.bayPool = new BayPool(this.lanes?.bays.length ? this.lanes.bays : null);
+    useBayWorkers(sim, this.bayPool);
     sim.auditEnabled = true;
     sim.auditLevel = 'cheap';
     sim.auditEvery = 60;
@@ -126,7 +134,8 @@ export class SimHost {
     // The whole map's traffic in the meso model; the micro simulation only in its window round the view (`meso/meso.ts`).
     sim.meso = this.meso;
     this.sim = sim;
-    this.topology = new TopologyCatchUp(new ConflictPool(prefix));
+    this.conflictPool = new ConflictPool(prefix, this.lanes?.conflicts.length ? this.lanes.conflicts : null);
+    this.topology = new TopologyCatchUp(this.conflictPool);
     this.post({ type: 'ready' });
   }
 

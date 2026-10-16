@@ -1,6 +1,6 @@
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { TileStore, portTiles } from '@editor/tileStore';
-import { jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
+import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
 import { WorldStreamer } from './worldStreamer';
 import { TileGenerator, tileLanes } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord } from '@world/tiles';
@@ -592,7 +592,10 @@ const achievements = createSteamAchievements();
 primeSurfaceBake(await surfaceBake);
 // The traffic's worker, given the map as it opened and the conflict zones measured in earlier sessions.
 const engineFlags = new URLSearchParams(location.search);
-await sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient') === 'view' ? 'view' : 'edges');
+// Its lots' bays and conflict pairs on this page's pool, talked to straight (DO NOT let the worker open a pool of its own: more isolates in the one V8 cage).
+const simLanes = (service: 'bays' | 'conflicts'): MessagePort[] => Array.from({ length: jobLanes(4) }, () => jobChannel(service, () => sim.laneLost(service)));
+await sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient') === 'view' ? 'view' : 'edges',
+  typeof MessageChannel === 'undefined' || typeof Worker === 'undefined' ? null : { bays: simLanes('bays'), conflicts: simLanes('conflicts') });
 /** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */
 const engine = new Engine();
 const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, graphics.level, requestDraw, engine, graphics.settings);

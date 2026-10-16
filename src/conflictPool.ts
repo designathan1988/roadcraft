@@ -1,4 +1,4 @@
-import { jobLanes, jobPort } from './jobs/jobPool';
+import { jobLanes, jobPort, portWorker } from './jobs/jobPool';
 import { type FinishAsk, type FinishedPair, type PairMeasurer, type SampledSweep, type SweepAsk, type SweepSamples, TABLE_SIZE } from '@world/conflictTable';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from '@world/junctionTurns';
 import type { CornerAsk } from '@world/walkingLines';
@@ -20,7 +20,8 @@ const MOST_LANES = 4;
 
 export class ConflictPool implements PairMeasurer {
   /** `keepPrefix`: the key prefix the tables are kept under for the next session */
-  constructor(private readonly keepPrefix: string | null = null) {}
+  /** `ports`: the page's lanes for this thread (`jobPool.ts` jobChannel, the simulation's worker): DO NOT open a pool here when given them. None: lanes of this thread's own pool. */
+  constructor(private readonly keepPrefix: string | null = null, private readonly ports: readonly MessagePort[] | null = null) {}
 
   get keeps(): boolean {
     return this.keepPrefix !== null;
@@ -209,14 +210,15 @@ export class ConflictPool implements PairMeasurer {
   private start(): Lane[] | null {
     if (this.lanes || this.broken) return this.lanes;
     if (typeof Worker === 'undefined') { this.broken = true; return null; }
-    const count = jobLanes(MOST_LANES);
+    const count = this.ports ? this.ports.length : jobLanes(MOST_LANES);
     const lanes: Lane[] = [];
     try {
       for (let k = 0; k < count; k++) {
-        const worker = jobPort('conflicts');
+        const worker = this.ports ? portWorker(this.ports[k]!) : jobPort('conflicts');
         const lane: Lane = { worker, waiting: new Map(), watchdog: null };
-        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; finished?: FinishedPair[]; corners?: (Float64Array | null)[][]; junctions?: JunctionAnswer[]; error?: string }>) => {
+        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; finished?: FinishedPair[]; corners?: (Float64Array | null)[][]; junctions?: JunctionAnswer[]; error?: string; laneFailed?: string }>) => {
           if (this.lanes !== lanes) return;
+          if (event.data.laneFailed !== undefined) { this.fail(`a conflict lane could not load: ${event.data.laneFailed}`); return; }
           const job = event.data.beat ? undefined : lane.waiting.get(event.data.id);
           if (job) lane.waiting.delete(event.data.id);
           // Any word from the worker, a beat or an answer: it is alive.
@@ -252,6 +254,11 @@ export class ConflictPool implements PairMeasurer {
     console.warn(`[traffic] ${why}; the pairs are measured on the page`);
     this.broken = true;
     this.end(new Error(why));
+  }
+
+  /** The worker serving the page's lanes failed (`jobPool.ts` jobChannel's `lost`): every job waiting on them rejected, the pairs measured here. */
+  lanesLost(why: string): void {
+    this.fail(why);
   }
 
   /** Ends the workers, every job still waiting rejected (`fail`; the page going away). */

@@ -1,4 +1,4 @@
-import type { FromJob, JobService, ToJob } from './jobScope';
+import type { AdoptLane, FromJob, JobService, ToJob } from './jobScope';
 
 /** THE JOB SYSTEM: one pool of workers (hardwareConcurrency - 2, within the machine's memory) for every kind of work off the page, in place of a pool per kind */
 /** DO NOT make every worker at the start nor give a kind's job to any free worker: each worker is a whole JS heap with the code and state of every service it ran, so 22 of them each running every service took the page's process past 6 GB on a 3 x 3 tile region (2026-10-16, Chrome memory-infra: 2.8 GB of V8 in the workers, out of memory at 8 GB) - workers are made as work waits, and a kind's jobs go first to the workers that already run it */
@@ -173,6 +173,8 @@ interface Host {
   failed: boolean;
   /** Messages its lanes posted and not yet answered (`JobPort`): a queued job sent there waits behind them. */
   laneWork: number;
+  /** Told when it fails: the lanes it serves for another thread (`jobChannel`), whose ports say nothing of it. */
+  readonly channelLost: (() => void)[];
 }
 
 /** The pool of this thread: its workers (made as work waits, `grow`), its lanes by port, its queue and the point the view looks at. */
@@ -220,7 +222,7 @@ function grow(): Host | null {
   if (system.workers.length >= jobWorkers()) return null;
   const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
   system.setup?.(worker);
-  const host: Host = { worker, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0 };
+  const host: Host = { worker, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [] };
   worker.onmessage = (event: MessageEvent<FromJob>) => {
     const port = system.ports.get(event.data.port);
     if (port) {
@@ -240,6 +242,7 @@ function grow(): Host | null {
   };
   worker.onerror = (event) => {
     for (const port of system.ports.values()) if (port.worker === worker) port.onerror?.(event);
+    for (const lost of host.channelLost.splice(0)) lost();
     failHost(host, event.message || 'a job worker failed', true);
   };
   worker.onmessageerror = () => {
@@ -404,4 +407,26 @@ export class JobPort {
 /** A port of the pool for one of `service`'s lanes (`jobLanes` lanes at most), typed as the `Worker` its pool was written for. */
 export function jobPort(service: JobService): Worker {
   return new JobPort(service) as unknown as Worker;
+}
+
+/** A LANE OF THIS PAGE'S POOL HANDED TO ANOTHER THREAD (the simulation's worker): a channel, one end served by a worker of the pool (`job.worker.ts` adopt), the other returned to be transferred; that thread and the worker talk straight. DO NOT let another thread open a pool of its own: its workers were more isolates in the one V8 cage every worker of the page shares. `lost`: told if the serving worker fails (a port says nothing of it). */
+export function jobChannel(service: JobService, lost: () => void): MessagePort {
+  const host = place(service);
+  host.ports++;
+  host.services.set(service, (host.services.get(service) ?? 0) + 1);
+  host.channelLost.push(lost);
+  const channel = new MessageChannel();
+  host.worker.postMessage({ adopt: service, port: channel.port1 } satisfies AdoptLane, [channel.port1]);
+  return channel.port2;
+}
+
+/** A lane's port (`jobChannel`) as the `Worker` a pool was written for: its messages both ways, `terminate` closing it. */
+export function portWorker(port: MessagePort): Worker {
+  return {
+    postMessage: (message: unknown, transfer?: Transferable[]) => port.postMessage(message, transfer ?? []),
+    set onmessage(handler: ((event: MessageEvent) => void) | null) { port.onmessage = handler; },
+    set onmessageerror(handler: ((event: MessageEvent) => void) | null) { port.onmessageerror = handler; },
+    onerror: null,
+    terminate: () => port.close(),
+  } as unknown as Worker;
 }
