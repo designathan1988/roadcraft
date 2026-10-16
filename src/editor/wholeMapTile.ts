@@ -14,7 +14,7 @@ import type { SerializedDoc } from '@world/doc';
 import { type TilePlan, planTile } from '@world/cityGen/tile';
 import { type WholeMapOptions, planWholeMap, tileOnMap } from '@world/cityGen/wholeMap';
 import { greenCity, layCity, widenCityFootways, zoneCity } from './cityGenerator';
-import { LOT_PLAN_VERSION, growOnLot } from './zoning';
+import { type GrownChoice, LOT_PLAN_VERSION, growOnLot } from './zoning';
 
 /** ONE TILE OF THE WORLD BUILT (`world/cityGen/tile.ts`), in a worker of the job pool (`cityTile.worker.ts`): the steps a generated city takes on the page (`main.ts` `generateCity`) - its roads, footways, lots, squares, power lines, furniture, names, zones and every building grown (`growOnLot`, as `growthReplica.ts` grows them) - taken here on the tile alone, on the flat ground a new map has. Handed back as the streamed world's tile (`buildStreamTile`, `world/tiles.ts`). A pure function of the options and the tile's place: the same tile comes out the same in any worker, at any time. */
 
@@ -27,8 +27,8 @@ function keyPlace(key: string): Vec2 | null {
   return Number.isFinite(x) && Number.isFinite(y) ? { x: x! * m(4), y: y! * m(4) } : null;
 }
 
-/** Tile (i, j) built whole: its plan and its document as a saved map holds it (ids the document's own; the neighbours' gate pieces and border corners in it too). */
-function buildTileMap(options: WholeMapOptions, i: number, j: number): { tile: TilePlan; data: SerializedDoc; ms: number } {
+/** Tile (i, j) built whole: its plan, its document as a saved map holds it (ids the document's own; the neighbours' gate pieces and border corners in it too) and what makes each building grown again (`replayOnLot`, by the document's id), on the flat ground it was grown on. */
+export function buildTileMap(options: WholeMapOptions, i: number, j: number): { tile: TilePlan; data: SerializedDoc; choices: Map<number, GrownChoice>; ms: number } {
   const started = performance.now();
   const tile = planTile(planWholeMap(options), i, j);
   const doc = layCity(tile.city);
@@ -49,15 +49,18 @@ function buildTileMap(options: WholeMapOptions, i: number, j: number): { tile: T
   const pavedAt = (x: number, y: number): number => (elevation.has(GROUND_ONLY) ? pavedHeightFrom(elevation, GROUND_ONLY, (px, py) => footwayRiseAt(net, px, py), x, y) : NaN);
   const refused = new Set<number>();
   const open = doc.openLots.count(refused);
+  const choices = new Map<number, GrownChoice>();
   for (let guard = 0; guard < open * 3 + 50; guard++) {
-    const id = growOnLot({ doc, net, groundAt: ground, pavedAt }, refused, GROWTH_SEED);
+    const choice: { value?: GrownChoice } = {};
+    const id = growOnLot({ doc, net, groundAt: ground, pavedAt }, refused, GROWTH_SEED, choice);
     if (id !== null) {
+      choices.set(id, choice.value!);
       // Stamped as the page stamps a building grown (`main.ts` `growthAnswered`), at the city's first minute.
       const fresh = doc.buildings.get(id as BuildingId)!;
       doc.buildings.put({ ...fresh, builtAt: 0, decay: 0, lotPlan: LOT_PLAN_VERSION });
     } else if (doc.openLots.count(refused) === 0) break;
   }
-  return { tile, data: doc.toJSON(), ms: performance.now() - started };
+  return { tile, data: doc.toJSON(), choices, ms: performance.now() - started };
 }
 
 /** A tile with nothing on it: past the map's edge (`tileOnMap`). */

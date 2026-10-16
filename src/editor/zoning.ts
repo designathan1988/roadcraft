@@ -1,6 +1,7 @@
-import { Rng } from '@core/rng';
+import { Rng, type RngState } from '@core/rng';
 import type { Vec2 } from '@core/vec2';
 import { type Signature, bodySignature, madeToMeasure, signatureDistance } from '@world/buildings/procedural';
+import type { BlueprintBody } from '@world/buildings/blueprints';
 import type { Era } from '@world/buildings/architecture';
 import { METERS_PER_UNIT } from '@world/units';
 import { driveSide as driveSideOf, furnishLot, garageRamp, lotKind, planLot, yardRamp } from './lotPlan';
@@ -251,95 +252,158 @@ export function pickLot(doc: RoadDoc, refused: Set<number>, seed: number): LotPi
   return { lot, rng };
 }
 
-/** The building grown on a lot (`pickLot`), checked on its site, or null when nothing fits it. Writes nothing: it reads the site (`GrowthSite`) - the document's on the page, the growth's worker's off it (`editor/growthReplica.ts`) - and the same site and stream make the same record on either side. @perItem Runs once a building grown: nothing it reaches may walk the map. */
-export function designOnLot(site: GrowthSite, lot: Lot, rng: Rng): Omit<Building, 'id'> | null {
+/** WHAT A GROWN BUILDING IS (the city-game's rule: a building is a few numbers and a versioned generator, `LOT_PLAN_VERSION`): the choices `designOnLot` made for it on its lot, from which `replayOnLot` makes the very same record again without its neighbours, its roads or its paving. */
+export interface GrownChoice {
+  /** The stream at the start of the try that stood (`Rng.state`). */
+  readonly state: RngState;
+  /** Of the lot's densities (its own, then each lower) and of `TRIES`. */
+  readonly density: number;
+  readonly attempt: number;
+  /** A street along a side (`cornerOf`): 0 none, 1 left, 2 right. */
+  readonly corner: 0 | 1 | 2;
+  /** Candidates made and the one kept (`unlikeness` against the buildings round it). */
+  readonly made: number;
+  readonly kept: number;
+  /** The storeys beside the lot's front its envelope read (`neighbourStoreys`). */
+  readonly neighbours: readonly number[];
+  /** Its ground floor over the street (`streetFloor`), world units; NaN when its try read none. */
+  readonly floor: number;
+  /** 1 when its front was carried out to the street (`reachStreet`), 0 when the plan as laid stood. */
+  readonly reach: 0 | 1;
+  /** The boundary pieces left out against a neighbour's (`placed`), by their place in its elements. */
+  readonly dropped: readonly number[];
+}
+
+/** A try's body as made: its parts, the plan as laid before it was carried to the street, the lot in its frame, the candidates made and kept, the floor read. */
+interface Tried {
+  readonly body: BlueprintBody;
+  readonly bare: { volumes: Volume[]; elements: BuildingElement[] | undefined } | null;
+  readonly ring: Vec2[];
+  readonly made: number;
+  readonly kept: number;
+  readonly floor: number;
+}
+
+/** One try on a lot made whole (`designOnLot`): the plan laid, the candidates made and one kept, the yards furnished, carried to the street and fitted to the lot; null when the try has no room or its yards cannot be furnished. Unchecked against the site: the same inputs make the same body. */
+function tryOnLot(lot: Lot, frame: ReturnType<typeof frameOf>, density: ZoneDensity, at: TrySite, rng: Rng, corner: 'left' | 'right' | undefined, neighbours: readonly number[],
+  ground: ((x: number, y: number) => number) | null | undefined, floorOf: (street: readonly Vec2[], local: (lx: number, ly: number) => Vec2) => number,
+  pick: { readonly near: readonly { signature: Signature; distance: number }[] } | { readonly made: number; readonly kept: number }): Tried | null {
   const use = lot.use!;
+  const { u, n } = frame;
+  const { t, lotW, W, D, anchor, local, street } = at;
+  if (W < 4 || D < 4) return null;
+  const plan = planLot(lotKind(use, density), W, D, rng, corner);
+  const env = plan.building;
+  const driveSide = plan.left.use === 'drive' || plan.left.use === 'drivePath' ? 'left' as const
+    : plan.right.use === 'drive' || plan.right.use === 'drivePath' ? 'right' as const : undefined;
+  const envelope = {
+    W: env.x1 - env.x0, D: env.y1 - env.y0,
+    backDoor: plan.back.use !== 'none' && plan.back.use !== 'loading',
+    ...quarterOf(frame.anchor, n),
+    ...(driveSide ? { driveSide } : {}),
+    neighbours: [...neighbours],
+  };
+  // Of a few candidates, the one least like the buildings round it (Mitchell's best candidate, in the space of what a building looks like): drawn at random, a street still came out with twins side by side. Replayed: as many made, the same kept.
+  let made = madeToMeasure(use, density, envelope, rng);
+  let count = 1, kept = 0;
+  if ('near' in pick) {
+    if (pick.near.length) {
+      let score = unlikeness(made.body, pick.near);
+      for (let k = 1; k < CANDIDATES; k++) {
+        const other = madeToMeasure(use, density, envelope, rng);
+        const s = unlikeness(other.body, pick.near);
+        if (s > score) { score = s; made = other; kept = k; }
+      }
+      count = CANDIDATES;
+    }
+  } else {
+    for (let k = 1; k < pick.made; k++) {
+      const other = madeToMeasure(use, density, envelope, rng);
+      if (k === pick.kept) made = other;
+    }
+    count = pick.made;
+    kept = pick.kept;
+  }
+  const body = made.body;
+  const dx = m(env.x0 - W / 2), dy = m(env.y0);
+  for (const v of body.volumes) { v.x += dx; v.y += dy; }
+  for (const e of body.elements ?? []) { e.x += dx; e.y += dy; }
+  for (const c of body.cores ?? []) { c.x += dx; c.y += dy; }
+  for (const v of body.volumes) {
+    if (v.outline) continue;
+    const x0 = Math.max(v.x, -lotW / 2), x1 = Math.min(v.x + v.w, lotW / 2);
+    if (x1 - x0 > m(1)) { v.x = x0; v.w = x1 - x0; }
+  }
+  // How the land falls or rises from the street to the middle of the back yard, metres: a yard on a hillside is terraced (`furnishLot`).
+  const yardY = m(D - plan.back.depth / 2);
+  // The building follows its hillside (`splitLevel.ts`): its back a half or a whole storey from the street floor where the ground under it calls for it, as CityEngine moves each footprint to the terrain before the ground is graded round it. A car park or a loading yard behind goes to the back's level with it, its ground counted in the choice, and only as far as its drive can reach as a ramp (`yardRamp`): the drive from the street is level behind the gate, then a ramp no steeper than its traffic takes.
+  let split: { y: number; lift: number } | undefined;
+  let garage: { x: number; y: number; w: number } | undefined;
+  let landAt: ((x: number, y: number) => number) | undefined;
+  let floorRead = Number.NaN;
+  const yardBack = plan.back.use === 'parking' || plan.back.use === 'loading';
+  const ramp = yardBack ? yardRamp(plan) : null;
+  if (ground && (!yardBack || ramp)) {
+    const floor = floorRead = floorOf(street, local);
+    // The natural ground about the street floor at a point of the lot (metres, the lot's frame).
+    landAt = (x, y) => { const p = local(m(x - W / 2), m(y)); return (ground(p.x, p.y) - floor) * METERS_PER_UNIT; };
+    const step = stepToSlope(body, {
+      groundAt: (lx, ly) => { const p = local(lx, ly); return ground(p.x, p.y); },
+      floor, x0: m(env.x0 - W / 2), x1: m(env.x1 - W / 2),
+      ...(ramp ? { yard: { x0: m(-W / 2), y0: m(ramp.end), x1: m(W / 2), y1: m(D) }, maxLift: m(ramp.grade * (ramp.end - ramp.start)) } : {}),
+    });
+    if (step) split = { y: step.y / m(1), lift: step.lift / m(1) };
+    // A house a whole storey down its hillside, with a drive: its garage in the lower ground floor, on the drive's side (`garageUnder`), when the drive can go down that far as a ramp (`garageRamp`) and the garden has room for the apron before the door.
+    const way = step && step.steps === -2 ? garageRamp(plan) : null;
+    const side = driveSideOf(plan);
+    const hasGarage = body.volumes.some((v) => v.storeys.some((s) => Object.values(s.facade.bays ?? {}).includes('garageDoor') || s.facade.fill === 'garageDoor'));
+    if (step && way && side && !hasGarage && plan.back.depth >= 7 && -step.lift <= m(way.grade * (way.end - way.start))) {
+      const door = garageUnder(body, side);
+      if (door) garage = { x: door.x / m(1) + W / 2, y: door.y / m(1), w: door.w / m(1) };
+    }
+  }
+  // How the land falls across the back zone, from its front to the lot's back (a car park keeps a little of it).
+  const backFall = ground && plan.back.depth > 0
+    ? (ground(local(0, m(D - 0.5)).x, local(0, m(D - 0.5)).y) - ground(local(0, m(D - plan.back.depth)).x, local(0, m(D - plan.back.depth)).y)) * METERS_PER_UNIT
+    : undefined;
+  const hill = ground && plan.back.depth > 0
+    ? { yard: (ground(anchor.x + n.x * yardY, anchor.y + n.y * yardY) - ground(anchor.x + n.x * m(0.5), anchor.y + n.y * m(0.5))) * METERS_PER_UNIT, ...(split ? { split } : {}), ...(backFall !== undefined ? { backFall } : {}), ...(garage ? { garage } : {}), ...(landAt ? { landAt } : {}) }
+    : split ? { yard: split.lift, split } : undefined;
+  if (!furnishLot(body, plan, made, rng, hill)) return null;
+  // The lot in the building's frame: x along the front, y back into it.
+  const ring = lot.corners.map((c) => ({ x: (c.x - anchor.x) * u.x + (c.y - anchor.y) * u.y, y: (c.x - anchor.x) * n.x + (c.y - anchor.y) * n.y }));
+  // Set back from the street (a try's margin), its front still reaches the street (`reachStreet`); the plan as laid is kept in case that is refused.
+  const bare = t.front > 0 ? structuredClone({ volumes: body.volumes, elements: body.elements }) : null;
+  if (bare) reachStreet(body, t.front, lotW);
+  fitToLot(body, ring);
+  return { body, bare, ring, made: count, kept, floor: floorRead };
+}
+
+/** The lot's densities tried in turn: its own, then each lower. */
+const densitiesOf = (lot: Lot): ZoneDensity[] => (lot.density === 'high' ? ['high', 'medium', 'low'] : lot.density === 'medium' ? ['medium', 'low'] : ['low']);
+
+/** The building grown on a lot (`pickLot`), checked on its site, or null when nothing fits it. Writes nothing: it reads the site (`GrowthSite`) - the document's on the page, the growth's worker's off it (`editor/growthReplica.ts`) - and the same site and stream make the same record on either side. `choice`, when given, is filled with what makes it again (`replayOnLot`). @perItem Runs once a building grown: nothing it reaches may walk the map. */
+export function designOnLot(site: GrowthSite, lot: Lot, rng: Rng, choice?: { value?: GrownChoice }): Omit<Building, 'id'> | null {
   const frame = frameOf(lot);
   // Every zoned lot gets a building, whatever its size or shape (the player, 2026-10-05: "tem que aparecer sempre"). The building first made for the whole lot; refused (its front over a corner's curved footway, a side over a neighbour, a slope), it is made again set back from the front and the sides, then narrower and shallower, then a density lower - until one fits.
   const { u, n } = frame;
   // A corner lot: a street along one of its sides too (the building then looks onto it, `planLot`).
   const corner = cornerOf(site.net, frame.anchor, u, n, frame.width, frame.depth);
-  const densities: ZoneDensity[] = lot.density === 'high' ? ['high', 'medium', 'low'] : lot.density === 'medium' ? ['medium', 'low'] : ['low'];
+  const densities = densitiesOf(lot);
   const sites = trySites(frame);
   // Read once, not a try: a try writes to the document only when it succeeds, and then returns, so the buildings round the lot are the same for all.
   const neighbours = neighbourStoreys(site.neighbours, frame.anchor, frame.width);
   const near = nearSignatures(site.neighbours, frame.anchor);
-  for (const density of densities) for (const { t, lotW, W, D, anchor, local, street } of sites) {
-    if (W < 4 || D < 4) continue;
-    const plan = planLot(lotKind(use, density), W, D, rng, corner);
-    const env = plan.building;
-    const driveSide = plan.left.use === 'drive' || plan.left.use === 'drivePath' ? 'left' as const
-      : plan.right.use === 'drive' || plan.right.use === 'drivePath' ? 'right' as const : undefined;
-    const envelope = {
-      W: env.x1 - env.x0, D: env.y1 - env.y0,
-      backDoor: plan.back.use !== 'none' && plan.back.use !== 'loading',
-      ...quarterOf(frame.anchor, n),
-      ...(driveSide ? { driveSide } : {}),
-      neighbours: [...neighbours],
-    };
-    // Of a few candidates, the one least like the buildings round it (Mitchell's best candidate, in the space of what a building looks like): drawn at random, a street still came out with twins side by side.
-    let made = madeToMeasure(use, density, envelope, rng);
-    if (near.length) {
-      let score = unlikeness(made.body, near);
-      for (let k = 1; k < CANDIDATES; k++) {
-        const other = madeToMeasure(use, density, envelope, rng);
-        const s = unlikeness(other.body, near);
-        if (s > score) { score = s; made = other; }
-      }
-    }
-    const body = made.body;
-    const dx = m(env.x0 - W / 2), dy = m(env.y0);
-    for (const v of body.volumes) { v.x += dx; v.y += dy; }
-    for (const e of body.elements ?? []) { e.x += dx; e.y += dy; }
-    for (const c of body.cores ?? []) { c.x += dx; c.y += dy; }
-    for (const v of body.volumes) {
-      if (v.outline) continue;
-      const x0 = Math.max(v.x, -lotW / 2), x1 = Math.min(v.x + v.w, lotW / 2);
-      if (x1 - x0 > m(1)) { v.x = x0; v.w = x1 - x0; }
-    }
-    // How the land falls or rises from the street to the middle of the back yard, metres: a yard on a hillside is terraced (`furnishLot`).
-    const ground = site.groundAt;
-    const yardY = m(D - plan.back.depth / 2);
-    // The building follows its hillside (`splitLevel.ts`): its back a half or a whole storey from the street floor where the ground under it calls for it, as CityEngine moves each footprint to the terrain before the ground is graded round it. A car park or a loading yard behind goes to the back's level with it, its ground counted in the choice, and only as far as its drive can reach as a ramp (`yardRamp`): the drive from the street is level behind the gate, then a ramp no steeper than its traffic takes.
-    let split: { y: number; lift: number } | undefined;
-    let garage: { x: number; y: number; w: number } | undefined;
-    let landAt: ((x: number, y: number) => number) | undefined;
-    const yardBack = plan.back.use === 'parking' || plan.back.use === 'loading';
-    const ramp = yardBack ? yardRamp(plan) : null;
-    if (ground && (!yardBack || ramp)) {
-      const floor = streetFloor(site.pavedAt, street, local, ground);
-      // The natural ground about the street floor at a point of the lot (metres, the lot's frame).
-      landAt = (x, y) => { const p = local(m(x - W / 2), m(y)); return (ground(p.x, p.y) - floor) * METERS_PER_UNIT; };
-      const step = stepToSlope(body, {
-        groundAt: (lx, ly) => { const p = local(lx, ly); return ground(p.x, p.y); },
-        floor, x0: m(env.x0 - W / 2), x1: m(env.x1 - W / 2),
-        ...(ramp ? { yard: { x0: m(-W / 2), y0: m(ramp.end), x1: m(W / 2), y1: m(D) }, maxLift: m(ramp.grade * (ramp.end - ramp.start)) } : {}),
-      });
-      if (step) split = { y: step.y / m(1), lift: step.lift / m(1) };
-      // A house a whole storey down its hillside, with a drive: its garage in the lower ground floor, on the drive's side (`garageUnder`), when the drive can go down that far as a ramp (`garageRamp`) and the garden has room for the apron before the door.
-      const way = step && step.steps === -2 ? garageRamp(plan) : null;
-      const side = driveSideOf(plan);
-      const hasGarage = body.volumes.some((v) => v.storeys.some((s) => Object.values(s.facade.bays ?? {}).includes('garageDoor') || s.facade.fill === 'garageDoor'));
-      if (step && way && side && !hasGarage && plan.back.depth >= 7 && -step.lift <= m(way.grade * (way.end - way.start))) {
-        const door = garageUnder(body, side);
-        if (door) garage = { x: door.x / m(1) + W / 2, y: door.y / m(1), w: door.w / m(1) };
-      }
-    }
-    // How the land falls across the back zone, from its front to the lot's back (a car park keeps a little of it).
-    const backFall = ground && plan.back.depth > 0
-      ? (ground(local(0, m(D - 0.5)).x, local(0, m(D - 0.5)).y) - ground(local(0, m(D - plan.back.depth)).x, local(0, m(D - plan.back.depth)).y)) * METERS_PER_UNIT
-      : undefined;
-    const hill = ground && plan.back.depth > 0
-      ? { yard: (ground(anchor.x + n.x * yardY, anchor.y + n.y * yardY) - ground(anchor.x + n.x * m(0.5), anchor.y + n.y * m(0.5))) * METERS_PER_UNIT, ...(split ? { split } : {}), ...(backFall !== undefined ? { backFall } : {}), ...(garage ? { garage } : {}), ...(landAt ? { landAt } : {}) }
-      : split ? { yard: split.lift, split } : undefined;
-    if (!furnishLot(body, plan, made, rng, hill)) continue;
-    // The lot in the building's frame: x along the front, y back into it.
-    const ring = lot.corners.map((c) => ({ x: (c.x - anchor.x) * u.x + (c.y - anchor.y) * u.y, y: (c.x - anchor.x) * n.x + (c.y - anchor.y) * n.y }));
-    // Set back from the street (a try's margin), its front still reaches the street (`reachStreet`); the plan as laid is kept in case that is refused.
-    const bare = t.front > 0 ? structuredClone({ volumes: body.volumes, elements: body.elements }) : null;
-    if (bare) reachStreet(body, t.front, lotW);
-    fitToLot(body, ring);
+  const ground = site.groundAt;
+  const floorOf = (street: readonly Vec2[], local: (lx: number, ly: number) => Vec2): number => streetFloor(site.pavedAt, street, local, ground!);
+  for (let di = 0; di < densities.length; di++) for (let ti = 0; ti < sites.length; ti++) {
+    const state = choice ? rng.state() : null;
+    const tried = tryOnLot(lot, frame, densities[di]!, sites[ti]!, rng, corner, neighbours, ground, floorOf, { near });
+    if (!tried) continue;
+    const { body, bare, ring } = tried;
+    const anchor = sites[ti]!.anchor;
     const atLot = (): Omit<Building, 'id'> => ({ ...body, x: anchor.x, y: anchor.y, rotation: frame.rotation }) as Omit<Building, 'id'>;
+    let reach: 0 | 1 = 1;
     let stands = placed(site, atLot());
     if (!stands && bare) {
       // Refused with it (over a curved footway, a neighbour's yard): the plan alone, as before.
@@ -347,11 +411,43 @@ export function designOnLot(site: GrowthSite, lot: Lot, rng: Rng): Omit<Building
       if (bare.elements) body.elements = bare.elements;
       else delete body.elements;
       fitToLot(body, ring);
+      reach = 0;
       stands = placed(site, atLot());
     }
-    if (stands) return stands;
+    if (!stands) continue;
+    if (choice) {
+      const left = new Set(stands.elements ?? []);
+      choice.value = {
+        state: state!, density: di, attempt: ti, corner: corner === 'left' ? 1 : corner === 'right' ? 2 : 0, made: tried.made, kept: tried.kept,
+        neighbours: [...neighbours], floor: tried.floor, reach,
+        dropped: (body.elements ?? []).flatMap((e, k) => (left.has(e) ? [] : [k])),
+      };
+    }
+    return stands;
   }
   return null;
+}
+
+/** The record `designOnLot` made on a lot, made again from its choices (`GrownChoice`) alone: the same try with the same stream, the same candidate kept, the same pieces left out - no neighbour, road or paving read. `ground`: the land it was made on (a generated tile's is flat). Null when the choices do not make a building on this lot (another lot, another generator). */
+export function replayOnLot(lot: Lot, choice: GrownChoice, ground: (x: number, y: number) => number): Omit<Building, 'id'> | null {
+  const frame = frameOf(lot);
+  const density = densitiesOf(lot)[choice.density];
+  const at = trySites(frame)[choice.attempt];
+  if (!density || !at) return null;
+  const tried = tryOnLot(lot, frame, density, at, Rng.fromState(choice.state), choice.corner === 1 ? 'left' : choice.corner === 2 ? 'right' : undefined,
+    choice.neighbours, ground, () => choice.floor, { made: choice.made, kept: choice.kept });
+  if (!tried) return null;
+  const { body, bare, ring } = tried;
+  if (bare && choice.reach === 0) {
+    body.volumes = bare.volumes;
+    if (bare.elements) body.elements = bare.elements;
+    else delete body.elements;
+    fitToLot(body, ring);
+  }
+  const record = { ...body, x: at.anchor.x, y: at.anchor.y, rotation: frame.rotation } as Omit<Building, 'id'>;
+  if (!choice.dropped.length) return record;
+  const gone = new Set(choice.dropped);
+  return { ...record, elements: (record.elements ?? []).filter((_, k) => !gone.has(k)) };
 }
 
 /** A building grown on its lot written in the document: the record added (as checked, `designOnLot`), the lot naming it (`OpenLots.grew`). Returns its id. @perItem Runs once a building grown: nothing it reaches may walk the map. */
@@ -363,10 +459,10 @@ export function commitGrown(doc: RoadDoc, lot: Lot, record: Omit<Building, 'id'>
 }
 
 /** Grows one building on a zoned lot without one (`world/lots.ts`), here on the page: the lot picked (`pickLot`), the building designed for it on the document's own site (`designOnLot`) and written (`commitGrown`); the lot set aside when nothing fits it. The city's growth and the zones' run the same steps with the design in a worker (`editor/growthFeed.ts`); this is the same growth in one call, for a probe and the specs. @perItem Runs once a building grown: nothing it reaches may walk the map. */
-export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number): number | null {
+export function growOnLot(ctx: SiteContext, refused: Set<number>, seed: number, choice?: { value?: GrownChoice }): number | null {
   const pick = pickLot(ctx.doc, refused, seed);
   if (!pick) return null;
-  const record = designOnLot(growthSiteOf(ctx), pick.lot, pick.rng);
+  const record = designOnLot(growthSiteOf(ctx), pick.lot, pick.rng, choice);
   if (record) return commitGrown(ctx.doc, pick.lot, record);
   ctx.doc.openLots.refuse(pick.lot, refused);
   return null;
