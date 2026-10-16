@@ -99,6 +99,8 @@ function preprocess(source: string, defines: Map<string, string>): string {
     } else if (active && name === 'define') {
       const macro = /^(\w+)(\([^)]*\))?\s*(.*)$/.exec(rest);
       if (macro) defines.set(macro[1]!, macro[2] ? '' : macro[3]!.trim());
+      // A function-like macro's body reads what it names wherever it is used (the cascades' `SUN_CASCADE_SHADOW` reads the shadow maps).
+      if (macro?.[2]) kept.push(macro[3]!);
     } else if (active && name === 'undef') {
       defines.delete(rest.trim());
     }
