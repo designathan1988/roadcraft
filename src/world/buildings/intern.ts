@@ -19,10 +19,14 @@ function hashString(h: number, s: string): number {
   return mix(h, 0x1f);
 }
 
+/** A number's bits, to hash it without making its text (DO NOT `String(v)`: a string for every number of every building loaded). */
+const BITS = new Float64Array(1);
+const WORDS = new Uint32Array(BITS.buffer);
+
 function hashValue(h: number, v: unknown): number {
   if (v === null) return mix(h, 1);
   switch (typeof v) {
-    case 'number': return hashString(mix(h, 2), String(v));
+    case 'number': BITS[0] = v; return mix(mix(mix(h, 2), WORDS[0]!), WORDS[1]!);
     case 'string': return hashString(mix(h, 3), v);
     case 'boolean': return mix(h, v ? 4 : 5);
     case 'object': return mix(mix(h, 6), ids.get(v as object) ?? 0);
