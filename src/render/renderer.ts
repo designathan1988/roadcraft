@@ -105,7 +105,7 @@ import { poleGroundAt, type Utilities } from './utilities';
 import { type PoleLayer, buildPolePreview, buildUtilities, docPoles, type PolePreviewInput } from './poleLayer';
 import { createBarriers } from './barriers';
 import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview } from './transit';
-import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
+import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface, type WaterPart } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { FarRoads } from './farRoads';
 import type { SharedGroundAt } from './sharedGround';
@@ -150,7 +150,7 @@ import { createElementLayer, loadElementKit, type ElementKit, type ElementLayer 
 import { isCoverKind } from '@world/terrainPaint';
 import { CellKeeps, keepCellAt, keepCellRect, keepCellsOver } from './cellKeeps';
 import { createDensityCars } from './densityCars';
-import { COVER_SWEEP_PAD, SHORE_SWEEP_PAD, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate, type WaterBox } from './coverSweep';
+import { COVER_SWEEP_PAD, SHORE_SWEEP_PAD, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
 
 /** The scene renderer. ## The rebuild contract Everything derived from the road network or the terrain is rebuilt in */
 
@@ -899,7 +899,8 @@ export function createSceneRenderer(
   /** The paint the covers were swept for, read from the diary (`coverPaintRead`), and the water the rivers' stones were. */
   const coverPaintRead = new JournalCursor(['paint']);
   let coverWaterSeen = -1;
-  let coverWaterBox: WaterBox | null = null;
+  /** Each plate's water as the shore was last swept for (`resweepShore`). */
+  let shoreSeen = new Map<number, WaterPart>();
   /** The trees the player planted, cell by cell as the diary says they were planted or cut (`plantedRead`). */
   const plantedRead = new JournalCursor(['trees']);
   /** What the plants' and stones' tests read, from the diary: a change there tests again only the places it reached */
@@ -2061,15 +2062,24 @@ export function createSceneRenderer(
     }
     resweepCovers(cells);
   };
-  /** The rivers' stones swept again over the water's box as it was and as it is (`terrain.waterRevision`) */
+  /** The rivers' stones swept again where a plate's water changed (`terrain.waterParts`): its box as it was and as it is; a plate shown or let go, its own (DO NOT sweep the box of every plate's water when one plate changes: each plate shown swept the whole region's shore again). */
   const resweepShore = (): void => {
-    const water = terrain.waterArea();
+    const now = new Map<number, WaterPart>();
+    for (const part of terrain.waterParts()) now.set(part.key, part);
     const cells = new Set<number>();
-    for (const box of [coverWaterBox, water]) {
-      if (box) keepCellsOver([box.minX, box.minY, box.maxX, box.maxY], SHORE_SWEEP_PAD, cells);
+    const over = (box: WaterPart['box']): void => { if (box) keepCellsOver([box.minX, box.minY, box.maxX, box.maxY], SHORE_SWEEP_PAD, cells); };
+    for (const [key, was] of shoreSeen) {
+      const is = now.get(key);
+      if (is && is.token === was.token && is.revision === was.revision) continue;
+      over(was.box);
+      over(is?.box ?? null);
     }
+    for (const [key, is] of now) if (!shoreSeen.has(key)) over(is.box);
+    shoreSeen = now;
+    if (!cells.size) return;
+    // The box of all the water only bounds each cell's lattice (a river across a plate's edge is read whole).
+    const water = terrain.waterArea();
     for (const key of cells) coverKeeps.shore.fill(key, shoreIn(key, coverField, water), sameShore);
-    coverWaterBox = water;
   };
   const handle: SceneHandle = {
     // Asked for by the Actions (a shot, a bomb) and the weapons lab: the effects, and now the physics the bodies fall with

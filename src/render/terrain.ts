@@ -110,6 +110,14 @@ export type TerrainSource = Pick<RoadDoc, 'changes' | 'terrainRevision' | 'terra
   readonly terrainGround?: (x: number, y: number) => number;
 };
 
+/** One plate's water as it stands (`TerrainSurface.waterParts`): the plate, the surface it is drawn by, its water's revision and box (world, null for none). */
+export interface WaterPart {
+  readonly key: number;
+  readonly token: object;
+  readonly revision: number;
+  readonly box: { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number } | null;
+}
+
 export interface TerrainSurface {
   readonly meshes: readonly Object3D[];
   readonly ground: Mesh;
@@ -163,8 +171,10 @@ export interface TerrainSurface {
   shoreLevelAt(x: number, y: number): number | null;
   /** Where water is, world (x, y), or null when there is none. */
   waterArea(): { minX: number; maxX: number; minY: number; maxY: number } | null;
-  /** Moves whenever the water is rebuilt. */
+  /** Moves whenever the water is rebuilt (and, over plates, whenever the plates shown change). */
   readonly waterRevision: number;
+  /** Each plate's water as it stands: what a change of one plate's water re-sweeps (`renderer.ts` resweepShore), never the water of every plate. */
+  waterParts(): readonly WaterPart[];
   /** The grid cells (x0, x1, y0, y1) the last `update` rewrote, or null when it rewrote the whole plate */
   readonly lastRegion: TerrainRegion | null;
   /** After a stroke: what was deferred while it was held (the water) is brought up to date. */
@@ -2061,6 +2071,9 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     waterArea: () => waterBox,
     get waterRevision() {
       return waterRevision;
+    },
+    waterParts() {
+      return [{ key: 0, token: this, revision: waterRevision, box: waterBox }];
     },
     heightAt,
     naturalRenderedHeightAt,

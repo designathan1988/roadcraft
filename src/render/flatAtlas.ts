@@ -724,7 +724,14 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       }
       return box;
     },
-    get waterRevision() { return sum((s) => s.waterRevision); },
+    // The plates shown in it too: a plate shown or let go brings its shore in or takes it out (`waterParts`).
+    get waterRevision() { return sum((s) => s.waterRevision) + shownVersion * 1_000_003; },
+    waterParts() {
+      return shownList.map((p) => {
+        const s = p.surface!, w = s.waterArea();
+        return { key: p.key, token: s, revision: s.waterRevision, box: w ? { minX: w.minX + p.cx, maxX: w.maxX + p.cx, minY: w.minY + p.cy, maxY: w.maxY + p.cy } : null };
+      });
+    },
     get lastRegion() {
       const region = lastPlate?.surface?.lastRegion ?? null;
       return region && lastPlate ? encode(lastPlate, region) : null;
