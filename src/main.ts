@@ -2718,7 +2718,7 @@ function drawOverlayScreen(): void {
   const showLots = game.tool === 'zone' || (lotTool.anyZoned() && zoneColoursShown());
   if (showLots) {
     // What the Zoning tool draws (`editor/lotTool.ts`), in the scene; its labels on the 2D layer.
-    const overlay = lotTool.overlayKeyed(game.tool === 'zone');
+    const overlay = lotTool.overlay(game.tool === 'zone');
     const labels = overlay.labels;
     // All of them from the next frame: the ground's shaders draw them (`lotOverlay.ts`); the diary for the built lots' levels.
     scene.setLotOverlay(overlay, doc.changes);

@@ -1,21 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { createLotOverlay, type LotOverlayInput } from '@render/lotOverlay';
+import { createLotOverlay, type LotOverlayGroup, type LotOverlayInput } from '@render/lotOverlay';
 import { ChangeJournal } from '@world/changes';
 import { sampleLattice } from './support/latticeSampler';
 
 /** THE LOTS COLOURED INTO THE GROUND (`render/lotOverlay.ts`). */
 
-function lots(n: number, zonedAt = -1, hovered = -1): LotOverlayInput {
-  const polygons = Array.from({ length: n }, (_, i) => {
+/** n lots in rows of 20, each its own group (its outline and its front), as the Zoning tool hands them; a new input each call. */
+function lots(n: number, zonedAt = -1, hovered = -1, builtAt = -1): LotOverlayInput {
+  const groups = new Map<string, LotOverlayGroup>();
+  for (let i = 0; i < n; i++) {
     const x = (i % 20) * 24, y = Math.floor(i / 20) * 32;
-    return {
-      corners: [{ x, y }, { x: x + 22, y }, { x: x + 22, y: y + 30 }, { x, y: y + 30 }],
-      fill: i === zonedAt ? 0x56bb73 : null, fillAlpha: i === zonedAt ? 0.45 : 0,
-      line: i === hovered ? 0xffd25e : 0xffffff, lineAlpha: 0.85, width: i === hovered ? 0.7 : 0.35,
-    };
-  });
-  const lines = polygons.map((p) => ({ a: p.corners[0]!, b: p.corners[1]!, colour: 0x5ee0ff, dashed: false, width: 0.8 }));
-  return { key: `${n}:${zonedAt}:${hovered}`, polygons, lines, points: [] };
+    const corners = [{ x, y }, { x: x + 22, y }, { x: x + 22, y: y + 30 }, { x, y: y + 30 }];
+    groups.set(`l${i}`, {
+      rank: i,
+      polygons: [{
+        corners, fill: i === zonedAt ? 0x56bb73 : null, fillAlpha: i === zonedAt ? 0.45 : 0,
+        line: i === hovered ? 0xffd25e : 0xffffff, lineAlpha: 0.85, width: i === hovered ? 0.7 : 0.35, ...(i === builtAt ? { built: true } : {}),
+      }],
+      lines: [{ a: corners[0]!, b: corners[1]!, colour: 0x5ee0ff, dashed: false, width: 0.8 }],
+      points: [],
+    });
+  }
+  return { groups, changedFor: () => null };
 }
 
 describe('lot overlay', () => {
@@ -54,13 +60,13 @@ describe('lot overlay', () => {
     let asked = 0;
     const overlay = createLotOverlay(() => { asked++; return ground; });
     const changes = new ChangeJournal();
-    const built = (input: LotOverlayInput): LotOverlayInput => ({ ...input, polygons: input.polygons.map((p, i) => (i === 5 ? { ...p, built: true } : p)) });
-    overlay.set(built(lots(40, 5)), changes);
+    const built = (): LotOverlayInput => lots(40, 5, -1, 5);
+    overlay.set(built(), changes);
     // The built lot and the 40 front lines ask the ground, once each; of the lots, only the built one carries a level.
     expect(asked).toBe(41);
     // The pointer moved (a new input, the same shapes): nothing asked again.
     asked = 0;
-    overlay.set({ ...built(lots(40, 5)), key: 'moved pointer' }, changes);
+    overlay.set(built(), changes);
     expect(asked).toBe(0);
     const yard = sampleLattice(overlay.lattice, 5 * 24 + 11, 15);
     expect(yard?.records.some((r) => r.level === 2)).toBe(true);
@@ -71,16 +77,55 @@ describe('lot overlay', () => {
     // A building elsewhere moves no ground: nothing read again.
     asked = 0;
     changes.record('buildings', [[0, 0, 10, 10]]);
-    overlay.set(built(lots(40, 5)), changes);
+    overlay.set(built(), changes);
     expect(asked).toBe(0);
     // The ground levelled: the level read again, and redrawn.
     ground = 3.5;
     changes.record('ground', [[100, 0, 160, 40]]);
-    overlay.set(built(lots(40, 5)), changes);
+    overlay.set(built(), changes);
     // Only what lies where it moved: the built lot and the front lines near it, not the 40.
     expect(asked).toBeGreaterThan(0);
     expect(asked).toBeLessThan(8);
     expect(sampleLattice(overlay.lattice, 5 * 24 + 11, 15)?.records.some((r) => r.level === 3.5)).toBe(true);
+    overlay.dispose();
+  });
+
+  it('reads only the groups its input says changed, and those where the ground moved', () => {
+    let asked = 0;
+    const overlay = createLotOverlay(() => { asked++; return 2; });
+    const changes = new ChangeJournal();
+    const whole = lots(400, -1, -1, 5);
+    let changed: string[] = [];
+    // The same input, its groups changed in place and named, as the Zoning tool hands them.
+    let seen: object | null = null;
+    const input: LotOverlayInput = {
+      groups: whole.groups,
+      changedFor: (reader) => {
+        if (reader !== seen) { seen = reader; return null; }
+        return changed.splice(0);
+      },
+    };
+    overlay.set(input, changes);
+    const all = overlay.lattice.cellsWritten;
+    overlay.lattice.cellsWritten = 0;
+    // Lot 37 zoned: its group put again, and named.
+    const zoned = lots(400, 37).groups.get('l37')!;
+    (whole.groups as Map<string, LotOverlayGroup>).set('l37', zoned);
+    changed = ['l37'];
+    overlay.set(input, changes);
+    expect(overlay.lattice.cellsWritten).toBeGreaterThan(0);
+    expect(overlay.lattice.cellsWritten).toBeLessThan(all / 20);
+    expect(sampleLattice(overlay.lattice, 37 % 20 * 24 + 11, Math.floor(37 / 20) * 32 + 15)?.records.some((r) => r.fill && r.inside)).toBe(true);
+    // Nothing named, nothing moved: nothing written.
+    overlay.lattice.cellsWritten = 0;
+    overlay.set(input, changes);
+    expect(overlay.lattice.cellsWritten).toBe(0);
+    // The ground moved under the built lot: its group and its neighbours' made again, not the 400.
+    asked = 0;
+    changes.record('ground', [[100, 0, 160, 40]]);
+    overlay.set(input, changes);
+    expect(asked).toBeGreaterThan(0);
+    expect(asked).toBeLessThan(8);
     overlay.dispose();
   });
 

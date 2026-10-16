@@ -9,10 +9,28 @@ import {
   DASH, GAP, FLAG_BUTT, FLAG_DASHED, FLAG_LEVEL, FLAG_FILL, FLAG_INSIDE, FLAG_STROKE, LOT_CELL, LotLattice, TEXTURE_WIDTH, TILE_CELLS, type LatticeShape,
 } from './lotLattice';
 
-/** DO NOT go back to geometry laid on the ground per lot */
+/** DO NOT go back to geometry laid on the ground per lot; DO NOT hand every lot over again when one changes */
 export interface LotOverlayInput {
-  /** Changes whenever anything drawn changes. */
-  readonly key: string;
+  /** The shapes by group (a lot's, a proposed lot's, the gesture's). */
+  readonly groups: ReadonlyMap<string, LotOverlayGroup>;
+  /** The groups made, changed or dropped (no longer in `groups`) since `reader` last asked; null: all of them (its first time). */
+  changedFor(reader: object): Iterable<string> | null;
+}
+
+/** One group's shapes and its place in the drawing order: in each of the polygons, the lines and the dots, a higher rank over a lower. */
+export interface LotOverlayGroup extends LotOverlayShapes {
+  /** Under `MAX_RANK` (2^29; one over is drawn as the last under it). */
+  readonly rank: number;
+}
+
+/** A group's rank stays under this: every shape's order is then an exact double. */
+const MAX_RANK = 2 ** 29;
+/** A shape's order: its band (polygons, lines, dots), its group's rank, its place in the group. */
+const BAND = 2 ** 45;
+const RANK = 2 ** 16;
+
+/** What is drawn of one group. */
+interface LotOverlayShapes {
   readonly polygons: readonly {
     readonly corners: readonly Vec2[];
     readonly fill: number | null;
@@ -209,11 +227,11 @@ export function applyLotOverlay(material: Material, key: string, options: { read
   material.customProgramCacheKey = () => `${previousKey()}-lots-${key}`;
 }
 
-/** What one shape of the input is, its key: the same key, the same shape. */
-type Keyed = { key: string; make(order: number): LatticeShape };
+/** What one shape of a group is, its key: the same key, the same shape; `band` 0 polygons, 1 lines, 2 dots. */
+type Keyed = { key: string; band: number; make(order: number): LatticeShape };
 
-/** The input's shapes, keyed, in drawing order: the polygons, then the lines, then the dots. */
-function shapesOf(input: LotOverlayInput, levelOf: (where: string, points: readonly Vec2[]) => number): Keyed[] {
+/** A group's shapes, keyed, in drawing order: the polygons, then the lines, then the dots. */
+function shapesOf(input: LotOverlayShapes, levelOf: (where: string, points: readonly Vec2[]) => number): Keyed[] {
   const out: Keyed[] = [];
   for (const poly of input.polygons) {
     const ring = poly.corners;
@@ -224,7 +242,7 @@ function shapesOf(input: LotOverlayInput, levelOf: (where: string, points: reado
     const where = ring.map((q) => `${q.x},${q.y}`).join(';');
     const level = poly.built ? levelOf(where, ring) : undefined;
     out.push({
-      key: `p|${fill}|${line}|${poly.width}|${level ?? ''}|${where}`,
+      key: `p|${fill}|${line}|${poly.width}|${level ?? ''}|${where}`, band: 0,
       make: (order) => {
         const edges = new Float64Array(ring.length * 4);
         ring.forEach((q, i) => { const r = ring[(i + 1) % ring.length]!; edges.set([q.x, q.y, r.x, r.y], i * 4); });
@@ -240,7 +258,7 @@ function shapesOf(input: LotOverlayInput, levelOf: (where: string, points: reado
     const where = `${l.a.x},${l.a.y};${l.b.x},${l.b.y}`;
     const level = levelOf(where, [l.a, l.b]);
     out.push({
-      key: `l|${line}|${l.width}|${l.dashed ? 1 : 0}|${level}|${where}`,
+      key: `l|${line}|${l.width}|${l.dashed ? 1 : 0}|${level}|${where}`, band: 1,
       make: (order) => ({ edges: Float64Array.of(l.a.x, l.a.y, l.b.x, l.b.y), fill: 0, line, halfWidth: l.width / 2, dashed: l.dashed, butt: true, order, level }),
     });
   }
@@ -249,7 +267,7 @@ function shapesOf(input: LotOverlayInput, levelOf: (where: string, points: reado
     const where = `${d.p.x},${d.p.y}`;
     const level = levelOf(where, [d.p]);
     out.push({
-      key: `o|${line}|${d.radius}|${level}|${where}`,
+      key: `o|${line}|${d.radius}|${level}|${where}`, band: 2,
       make: (order) => ({ edges: Float64Array.of(d.p.x, d.p.y, d.p.x, d.p.y), fill: 0, line, halfWidth: d.radius, dashed: false, butt: false, order, level }),
     });
   }
@@ -263,41 +281,50 @@ const GROUND_KINDS: readonly ChangeKind[] = ['terrain', 'roads', 'ground', 'elev
 export function createLotOverlay(groundAt: (x: number, y: number) => number = () => 0) {
   const lattice = new LotLattice(MAP_HALF);
   let texture: DataTexture | null = null;
-  let key = '';
-  /** The shapes in the lattice by key (a list: the same shape twice is two). */
-  let held = new Map<string, LatticeShape[]>();
+  /** The input drawn now, and this overlay's place in its changes (`LotOverlayInput.changedFor`). */
+  let shown: LotOverlayInput | null = null;
+  const reader = {};
+  /** The shapes in the lattice by group, then by key (a list: the same shape twice is two). */
+  let held = new Map<string, Map<string, LatticeShape[]>>();
   /** The diary's serial the levels were read at. */
   let groundSeen = -1;
   /** The ground levels read, by where the shape is: each read once, not on every pointer move of the Zoning tool */
   const levels = new Map<string, number>();
-  /** The levels read, by the lattice cell of the point they were read at: those a ground change reaches, found by place. */
+  /** The levels read, and the groups that read them, by the lattice cell of the point they were read at: found by place. */
   const levelsByCell = new Map<number, Set<string>>();
+  const groupsByCell = new Map<number, Set<string>>();
   const cellOf = (x: number, y: number): number =>
     Math.floor((y + MAP_HALF) / LOT_CELL) * lattice.cellsPerSide + Math.floor((x + MAP_HALF) / LOT_CELL);
+  /** The group whose shapes are being made (`remake`): the one a level read belongs to. */
+  let making = '';
   /** A shape's ground level: the ground at its points' mean (a built lot's: under its building, its pad), to the centimetre. */
   const levelOf = (where: string, points: readonly Vec2[]): number => {
-    const known = levels.get(where);
-    if (known !== undefined) return known;
     let x = 0, y = 0;
     for (const q of points) { x += q.x; y += q.y; }
     x /= points.length; y /= points.length;
+    const cell = cellOf(x, y);
+    let groups = groupsByCell.get(cell);
+    if (!groups) groupsByCell.set(cell, groups = new Set());
+    groups.add(making);
+    const known = levels.get(where);
+    if (known !== undefined) return known;
     const level = Math.round(groundAt(x, y) * 100) / 100;
     levels.set(where, level);
-    const cell = cellOf(x, y);
     let set = levelsByCell.get(cell);
     if (!set) levelsByCell.set(cell, set = new Set());
     set.add(where);
     return level;
   };
-  /** The levels read where the ground moved, forgotten (all, with no rectangles); true when any was. */
-  const forgetLevels = (entries: readonly { readonly rects: readonly ChangeRect[] | null }[] | null): boolean => {
-    if (levels.size === 0) return false;
+  /** The levels read where the ground moved, forgotten: the groups that read them ('all' with no rectangles). */
+  const forgetLevels = (entries: readonly { readonly rects: readonly ChangeRect[] | null }[] | null): Set<string> | 'all' => {
+    const groups = new Set<string>();
+    if (levels.size === 0) return groups;
     if (entries === null || entries.some((e) => e.rects === null)) {
       levels.clear();
       levelsByCell.clear();
-      return true;
+      groupsByCell.clear();
+      return 'all';
     }
-    let forgot = false;
     for (const { rects } of entries) {
       for (const [x0, y0, x1, y1] of rects!) {
         const n = lattice.cellsPerSide;
@@ -309,12 +336,37 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
             if (!set) continue;
             for (const where of set) levels.delete(where);
             levelsByCell.delete(cy * n + cx);
-            forgot = true;
+            for (const name of groupsByCell.get(cy * n + cx) ?? []) groups.add(name);
+            groupsByCell.delete(cy * n + cx);
           }
         }
       }
     }
-    return forgot;
+    return groups;
+  };
+
+  /** A group's shapes laid again (gone when `group` is undefined): a shape with the same key kept as it is. */
+  const remake = (name: string, group: LotOverlayGroup | undefined): void => {
+    const old = held.get(name);
+    if (!group) {
+      if (old) for (const list of old.values()) for (const shape of list) lattice.remove(shape);
+      held.delete(name);
+      return;
+    }
+    making = name;
+    const kept = new Map<string, LatticeShape[]>();
+    shapesOf(group, levelOf).forEach((s, i) => {
+      const order = s.band * BAND + Math.min(group.rank, MAX_RANK - 1) * RANK + i;
+      let shape = old?.get(s.key)?.pop();
+      // A kept shape in another place of the order: its cells written again, in the new order.
+      if (shape && shape.order !== order) { lattice.remove(shape); shape.order = order; lattice.add(shape); }
+      if (!shape) { shape = s.make(order); lattice.add(shape); }
+      let list = kept.get(s.key);
+      if (!list) kept.set(s.key, list = []);
+      list.push(shape);
+    });
+    if (old) for (const list of old.values()) for (const shape of list) lattice.remove(shape);
+    if (kept.size) held.set(name, kept); else held.delete(name);
   };
 
   /** The lattice's writes sent to its texture: in place, or a texture of the new size. */
@@ -345,35 +397,34 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
     lattice,
     /** Draws `input` (null: no lots) into the ground from the next frame. */
     set(input: LotOverlayInput | null, changes?: ChangeJournal): void {
-      let moved = false;
+      let moved: Set<string> | 'all' = new Set();
       if (changes && changes.version !== groundSeen) {
         const entries = groundSeen < 0 ? null : changes.since(groundSeen, GROUND_KINDS);
         groundSeen = changes.version;
         moved = forgetLevels(entries);
       }
-      const next = input?.key ?? '';
-      if (next === key && !moved) return;
-      key = next;
       if (!input) {
+        if (!shown && held.size === 0) return;
+        shown = null;
         lattice.clear();
         held = new Map();
         UNIFORMS.uLotsGrid.value.w = 0;
         upload();
         return;
       }
-      const shapes = shapesOf(input, levelOf);
-      const kept = new Map<string, LatticeShape[]>();
-      shapes.forEach((s, order) => {
-        const old = held.get(s.key);
-        let shape = old?.pop();
-        if (shape) shape.order = order;
-        else { shape = s.make(order); lattice.add(shape); }
-        let list = kept.get(s.key);
-        if (!list) kept.set(s.key, list = []);
-        list.push(shape);
-      });
-      for (const list of held.values()) for (const shape of list) lattice.remove(shape);
-      held = kept;
+      const changed = input.changedFor(reader);
+      // Another input than the one drawn, or one that cannot say what changed: every group, a shape with the same key kept.
+      if (input !== shown || changed === null || moved === 'all') {
+        shown = input;
+        for (const name of [...held.keys()]) if (!input.groups.has(name)) remake(name, undefined);
+        for (const [name, group] of input.groups) remake(name, group);
+      } else {
+        // DO NOT walk every group: only those the input or the ground say changed.
+        const names = new Set(changed);
+        for (const name of moved) names.add(name);
+        if (names.size === 0) return;
+        for (const name of names) remake(name, input.groups.get(name));
+      }
       lattice.flush();
       UNIFORMS.uLotsGrid.value.w = lattice.size > 0 ? 1 : 0;
       upload();
