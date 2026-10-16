@@ -270,10 +270,13 @@ is hidden every frame (no overdraw).
   `git diff`. Every file saved in the main folder reloads the game on 5300.
 - Agents: at most 1 running at once while the player uses the PC (player's order, 2026-10-16: 10 at
   once overloaded CPU and memory, 3 still froze his PC); the others wait their turn. Never open a window
-  on the player's screen (no visible browser, Electron or console windows; headless only). Each one in its own worktree made from local `main` (check its
-  first commit: the tool may cut it from an old one), one part each, no two on the same files; heavy
-  commands through `run-limited`, one headless Chrome at a time, vitest only on touched files with
-  `--maxWorkers=2`, its Vite stopped when done; read its diff whole before merging. Keep progress here.
+  on the player's screen (no visible browser, Electron or console windows; headless only). Each one in
+  its own worktree made from local `main` (check its first commit: the tool may cut it from an old one),
+  one part each, no two on the same files; read its diff whole before merging. Keep progress here.
+- Agents run NO heavy test (player's order, 2026-10-16: a 10 km city opened every minute froze his PC):
+  no Vite, no `look.mjs`, no city generated, no route, no whole suite. Only `npx tsc --noEmit -p .` and
+  the unit tests of the files they touched (`--maxWorkers=1`). The game is opened by the coordinator
+  only, once at the end of a block, to check what was merged.
 - Effort high for normal work; xhigh only to decide architecture and at phase gates. Grep before
   Read; in a file over 800 lines read only the part that matters. During a block only the
   typecheck and the tests of what was touched; the full check and the route at the end of the
