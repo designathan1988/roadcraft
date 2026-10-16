@@ -101,8 +101,7 @@ as `sim/meso` already does.
   each wall as one welded grid with the windows' holes sharing its vertices; then meshoptimizer.
 - Slicing still in the code (amortization): `main.ts` `GROW_SLICE_MS`; `renderer.ts` `HIDDEN_SLICE_MS`/
   `WORLD_SLICE_MS`; `sim/params.ts` `SIM_FRAME_BUDGET_MS`.
-- `history.ts` and `simHost.ts`: `net.rebuild({ full: true })`. `core/profiler.ts`: `new Error().stack` per
-  upload, always installed.
+- `history.ts` and `simHost.ts`: `net.rebuild({ full: true })`.
 - `toNonIndexed` in `agents.ts`, `facadePropModels.ts`, `fracture.ts`.
 - `color`/`roadSection` attributes on every road strip (`mesh/surfaceMesh.ts`, `tileMesh.ts`) unused by
   most specs. Fix: the `SurfaceSpec` declares what it reads.
