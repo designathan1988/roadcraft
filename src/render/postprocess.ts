@@ -211,9 +211,9 @@ export function createPostChain(
   }
 
   // The light the town shuts out of its streets, and the sun's contact shadows (`canyonLight.ts`)
-  let sunLight: DirectionalLight | null = null;
+  let sunLights: DirectionalLight[] | null = null;
   const canyon = quality.ambientOcclusion
-    ? createCanyonLight(camera, () => sceneDepth, () => (sunLight ??= (scene.getObjectByName('sun') as DirectionalLight | undefined) ?? null))
+    ? createCanyonLight(camera, () => sceneDepth, () => (sunLights ??= ['sun', 'sun-cascade-1'].map((name) => scene.getObjectByName(name) as DirectionalLight | undefined).filter((light): light is DirectionalLight => light !== undefined)))
     : null;
   if (canyon) {
     composer.addPass(canyon.pass);

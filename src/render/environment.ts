@@ -11,9 +11,12 @@ import {
   ShaderMaterial,
   SphereGeometry,
   Vector3,
+  type Camera,
   type WebGLRenderer,
+  type WebGLRenderTarget,
 } from 'three';
 import { m } from '@world/units';
+import { cascadedSunChunks, createSunCascades, SUN_CASCADES, type Movers, type ShadowPassInput } from './sunCascades';
 
 /** Sky, sun and atmosphere. */
 
@@ -22,24 +25,25 @@ import { m } from '@world/units';
 const SUN_ELEVATION = (47 * Math.PI) / 180;
 /** Sun bearing — and the one number that decides whether shadows are VISIBLE. */
 const SUN_AZIMUTH = (-87 * Math.PI) / 180;
-const SUN_DISTANCE = m(640);
-/** Depth offset of the shadow test, WORLD units (4 cm) */
-const SHADOW_BIAS_WORLD = m(0.04);
-/** Smallest half-width of the shadow frustum, world units (5 m). */
-const SHADOW_SPAN_MIN = m(4.8);
-const WORLD_UP = new Vector3(0, 1, 0);
 
 export interface EnvironmentQuality {
-  /** Side of the sun's shadow map. */
+  /** Side of each of the sun's cascade maps (`sunCascades.ts`). */
   readonly shadowMapSize: number;
   readonly shadows: boolean;
 }
 
 export interface SceneEnvironment {
+  /** The sun as the game reads it (colour, intensity, direction): the first of its cascades. */
   readonly sun: DirectionalLight;
   readonly skyColor: Color;
-  /** Points the shadow frustum at what the camera is looking at. */
-  follow(target: Vector3, halfWidth: number, halfHeight: number, view?: Vector3, rise?: number, eyeDistance?: number): boolean;
+  /** Fits the sun's cascades to what the camera sees (`sunCascades.ts`). */
+  follow(camera: Camera, target: Vector3, top: number, groundAt: (x: number, y: number) => number): void;
+  /** Marks the cascades to draw this frame; true when any is (the renderer's `shadowMap.needsUpdate`). */
+  shadowPass(input: ShadowPassInput): boolean;
+  /** What moves and is drawn into the shadows (`sunCascades.ts` `Movers`). */
+  setMovers(movers: readonly Movers[]): void;
+  /** The cascades' maps, for the video memory count. */
+  shadowMaps(): (WebGLRenderTarget | null)[];
   setQuality(quality: EnvironmentQuality): void;
   /** The time of day, minutes after midnight: the sun's path, the sky, the light; the moon at night. */
   setTimeOfDay(minutes: number): number;
@@ -95,135 +99,6 @@ const NIGHT_HORIZON = new Color(0x1c2638);
 const DAY_SUN = new Color(0xfff0d2);
 const DUSK_SUN = new Color(0xffa860);
 const MOON = new Color(0x9fb4d8);
-
-/** How far the sun the shadows are cast by may drift from the true one before it is moved (rad): 0.1 degree. */
-const SUN_STEP = (0.1 * Math.PI) / 180;
-/** How far the view may go from the ground point the shadow grid hangs on before it is hung on another. */
-const GRID_REACH = m(100);
-
-/** THE SHADOW MAP MOVED IN WHOLE TEXELS OF THE GROUND */
-class GroundShadowGrid {
-  /** The map point the frame hangs on, and whether there is one. */
-  private ox = 0;
-  private oy = 0;
-  private hung = false;
-  /** The frame, three's space: origin and axes (east, up, south). */
-  private readonly o = new Vector3();
-  private readonly fx = new Vector3();
-  private readonly fy = new Vector3();
-  private readonly fz = new Vector3();
-  /** The grid's offset in the frame (light-space u, v), so a new hanging keeps the texels. */
-  private gu = 0;
-  private gv = 0;
-  /** The sun held, in the frame. */
-  private readonly held = new Vector3();
-  private holding = false;
-  /** How many times the sun was moved (`SUN_STEP`): the F9 monitor and the specs read it. */
-  steps = 0;
-  private readonly p = new Vector3();
-  private readonly s = new Vector3();
-  private readonly r = new Vector3();
-  private readonly u = new Vector3();
-  private readonly ref = new Vector3();
-  private readonly c = new Vector3();
-  /** The last rounded centre, in the frame (from its origin). */
-  private readonly last = new Vector3();
-
-  /** Where a point of the ground (map x, y, height) is drawn, three's space, into `out`. */
-  private drawn(x: number, y: number, h: number, out: Vector3): Vector3 {
-    return out.set(x, h, -y);
-  }
-
-  /** The frame at the map point (ox, oy), drawn now. */
-  private frame(): void {
-    this.drawn(this.ox, this.oy, 0, this.o);
-    this.drawn(this.ox + m(1), this.oy, 0, this.fx).sub(this.o);
-    this.drawn(this.ox, this.oy, m(1), this.fy).sub(this.o).normalize();
-    this.fx.addScaledVector(this.fy, -this.fx.dot(this.fy)).normalize();
-    this.fz.crossVectors(this.fx, this.fy);
-  }
-
-  /** A three's-space direction in the frame, into `out`. */
-  private toFrame(d: Vector3, out: Vector3): Vector3 {
-    return out.set(d.dot(this.fx), d.dot(this.fy), d.dot(this.fz));
-  }
-
-  /** A frame direction in three's space, into `out`. */
-  private fromFrame(d: Vector3, out: Vector3): Vector3 {
-    return out.set(0, 0, 0).addScaledVector(this.fx, d.x).addScaledVector(this.fy, d.y).addScaledVector(this.fz, d.z);
-  }
-
-  /** The light space for this frame. */
-  place(
-    centre: Vector3, mapX: number, mapY: number, sun: Vector3, texel: number,
-    outCentre: Vector3, outSun: Vector3, outRight: Vector3, outUp: Vector3,
-  ): void {
-    if (this.hung) this.frame();
-    if (!this.hung || this.o.distanceTo(centre) > GRID_REACH) {
-      // Carry the held sun, the last rounded centre and the light's axes over to the new frame as they are.
-      const hadGrid = this.hung;
-      if (hadGrid) {
-        this.fromFrame(this.held, this.s);
-        this.fromFrame(this.last, this.p).add(this.o);
-        this.fromFrame(this.r, this.ref);
-        this.fromFrame(this.u, this.c);
-      }
-      this.ox = mapX;
-      this.oy = mapY;
-      this.hung = true;
-      this.frame();
-      if (hadGrid) {
-        this.toFrame(this.s, this.held);
-        this.toFrame(this.ref, this.r);
-        this.toFrame(this.c, this.u);
-        // The last rounded centre stays a corner of the grid.
-        this.toFrame(this.p.sub(this.o), this.p);
-        this.gu = this.p.dot(this.r);
-        this.gv = this.p.dot(this.u);
-      } else {
-        this.gu = 0;
-        this.gv = 0;
-      }
-    }
-    // The centre in the frame.
-    this.toFrame(this.p.subVectors(centre, this.o), this.p);
-    // The sun, held in the ground's frame.
-    this.toFrame(sun, this.s);
-    if (!this.holding || this.held.angleTo(this.s) > SUN_STEP) {
-      if (this.holding) {
-        // Turned by the least turn taking the old sun to the new: the right kept, made square to the new sun
-        this.steps++;
-        const pu = this.p.dot(this.r) - this.gu, pv = this.p.dot(this.u) - this.gv;
-        this.held.copy(this.s);
-        this.r.addScaledVector(this.held, -this.r.dot(this.held)).normalize();
-        this.u.crossVectors(this.held, this.r).normalize();
-        this.gu = this.p.dot(this.r) - pu;
-        this.gv = this.p.dot(this.u) - pv;
-      } else {
-        this.held.copy(this.s);
-        this.holding = true;
-        this.axes(this.held);
-      }
-    }
-    // The centre rounded to the grid in the light's axes.
-    const cu = Math.round((this.p.dot(this.r) - this.gu) / texel) * texel + this.gu;
-    const cv = Math.round((this.p.dot(this.u) - this.gv) / texel) * texel + this.gv;
-    const cw = this.p.dot(this.held);
-    this.p.copy(this.r).multiplyScalar(cu).addScaledVector(this.u, cv).addScaledVector(this.held, cw);
-    this.last.copy(this.p);
-    this.fromFrame(this.p, outCentre).add(this.o);
-    this.fromFrame(this.held, outSun);
-    this.fromFrame(this.r, outRight);
-    this.fromFrame(this.u, outUp);
-  }
-
-  /** The light's first right and up (in the frame) for a sun (in the frame) */
-  private axes(sun: Vector3): void {
-    this.ref.set(0, Math.abs(sun.y) < 0.95 ? 1 : 0, Math.abs(sun.y) < 0.95 ? 0 : 1);
-    this.r.crossVectors(this.ref, sun).normalize();
-    this.u.crossVectors(sun, this.r).normalize();
-  }
-}
 
 export function createEnvironment(
   scene: Scene,
@@ -291,51 +166,26 @@ export function createEnvironment(
 
   const sun = new DirectionalLight(0xfff0cf, 3.6);
   sun.name = 'sun';
-  sun.castShadow = quality.shadows;
-  sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
+  // The sun's other cascades: the same light, each with a map of its own over a farther part of the view (`sunCascades.ts`)
+  const cascadeLights: DirectionalLight[] = [];
+  for (let i = 1; i < SUN_CASCADES; i++) {
+    const light = new DirectionalLight(0xfff0cf, 3.6);
+    light.name = `sun-cascade-${i}`;
+    cascadeLights.push(light);
+  }
   // The edge of a shadow filtered over two texels (three's PCF: a Vogel disc of `radius` texels)
-  sun.shadow.radius = 2;
-  // Shadow bias: enough to kill acne on the terrain
-  sun.shadow.normalBias = m(0.02); // then scaled to the texel in `fitDepth`
-  /** Height above the view's ground that the depth range last made room for. */
-  let depthRise = 0;
-  /** How far back along the sun the light stands (`fitDepth`). */
-  let sunDistance = SUN_DISTANCE;
-  const fitDepth = (halfSpan: number): void => {
-    // Room along the light for everything in the frustum, the tallest roof included
-    const reach = halfSpan * 1.6 + m(96) + depthRise;
-    // The light stands as far back as the frustum reaches
-    sunDistance = Math.max(SUN_DISTANCE, reach + m(20));
-    sun.shadow.camera.near = Math.max(m(0.4), sunDistance - reach);
-    sun.shadow.camera.far = sunDistance + reach;
-    // Bias in proportion to one shadow texel (world units across)
-    const texel = (2 * halfSpan) / Math.max(1, sun.shadow.mapSize.x);
-    sun.shadow.normalBias = Math.max(m(0.02), texel * 1.5);
-    sun.shadow.bias = -Math.max(SHADOW_BIAS_WORLD, texel * 1.2) / (sun.shadow.camera.far - sun.shadow.camera.near);
-  };
-  fitDepth(SHADOW_SPAN_MIN);
-  scene.add(sun, sun.target);
+  const cascades = createSunCascades(sun, cascadeLights, 2);
+  cascades.setEnabled(quality.shadows, quality.shadowMapSize);
+  // In this order: three draws the lights that cast shadows first, in the order it meets them, and the shader takes them as cascades 0, 1, 2
+  for (const light of cascades.lights) scene.add(light, light.target);
+  // What a cascade's pass hid (the movers too small for its texels) is put back once the frame is drawn.
+  scene.onAfterRender = () => cascades.restore();
 
   // THE FILL LIGHT, the second light of the standard rig
   const fill = new DirectionalLight(0xf2f2ee, 0);
   fill.name = 'fill';
   fill.castShadow = false;
   scene.add(fill);
-
-  let span = -1;
-  const lightRight = new Vector3();
-  const lightUp = new Vector3();
-  const snapped = new Vector3();
-  /** Where the light and the grid stood when `follow` was last called, so it can say whether they moved */
-  const wasSnapped = new Vector3();
-  const wasSun = new Vector3();
-  let placed = false;
-  /** The sun the light falls from: the true one, moved in steps (`GroundShadowGrid`). */
-  const castSun = new Vector3();
-  const grid = new GroundShadowGrid();
-  const top = new Vector3();
-  const offset = new Vector3();
-  const centre = new Vector3();
 
   /** Smoke in the air (`setSmog`), and the brown-grey it turns the fog. */
   let smog = 0;
@@ -348,55 +198,14 @@ export function createEnvironment(
   return {
     sun,
     skyColor: horizon,
-    follow(target, halfWidth, halfHeight, view, rise = 0, eyeDistance = Infinity) {
+    follow(camera, target, top, groundAt) {
       sky.position.copy(target);
       sky.scale.setScalar(m(3_600));
-      lightRight.crossVectors(WORLD_UP, sunDirection).normalize();
-      lightUp.crossVectors(sunDirection, lightRight).normalize();
-      // What the camera sees is not a patch of ground but a column
-      let du = 0;
-      let dv = 0;
-      // DO NOT drop the cap.
-      if (view && rise > 0 && view.y < -0.05) {
-        top.copy(target).addScaledVector(view, -Math.min(rise / -view.y, eyeDistance));
-        offset.subVectors(top, target);
-        du = offset.dot(lightRight);
-        dv = offset.dot(lightUp);
-      }
-      centre.copy(target)
-        .addScaledVector(lightRight, du / 2)
-        .addScaledVector(lightUp, dv / 2);
-      // The shadow frustum is fitted to what the camera can see.
-      const want = Math.max(SHADOW_SPAN_MIN, Math.max(halfWidth, halfHeight) * 1.25) +
-        Math.max(Math.abs(du), Math.abs(dv)) / 2;
-      let resized = false;
-      if (Math.abs(want - span) > span * 0.08 || Math.abs(rise - depthRise) > 20) {
-        span = want;
-        depthRise = rise;
-        sun.shadow.camera.left = -span;
-        sun.shadow.camera.right = span;
-        sun.shadow.camera.top = span;
-        sun.shadow.camera.bottom = -span;
-        fitDepth(span);
-        sun.shadow.camera.updateProjectionMatrix();
-        resized = true;
-      }
-      // Snap the frustum to whole shadow texels of the ground (`GroundShadowGrid`).
-      const texel = (2 * span) / sun.shadow.mapSize.x;
-      grid.place(centre, centre.x, -centre.z, sunDirection, texel, snapped, castSun, lightRight, lightUp);
-      sun.position.copy(snapped).addScaledVector(castSun, sunDistance);
-      sun.target.position.copy(snapped);
-      sun.target.updateMatrixWorld();
-      // The shadow camera's axes are the grid's (three's `LightShadow` looks at the target with the camera's `up`).
-      sun.shadow.camera.up.copy(lightUp);
-      // The light moved if any of the three things the shadow map hangs on did
-      const moved = resized || !placed
-        || !wasSnapped.equals(snapped) || !wasSun.equals(castSun);
-      wasSnapped.copy(snapped);
-      wasSun.copy(castSun);
-      placed = true;
-      return moved;
+      cascades.follow(camera, sunDirection, groundAt, target, top);
     },
+    shadowPass: (input) => cascades.pass(input),
+    setMovers: (movers) => cascades.setMovers(movers),
+    shadowMaps: () => cascades.maps(),
     setTimeOfDay(minutes) {
       const hour = (((minutes / 60) % 24) + 24) % 24;
       // The sun's day: up at six, highest at noon, down at six
@@ -451,6 +260,7 @@ export function createEnvironment(
       // No town-wide haze (the player: the smoke stays where the fire is).
       void smog; void SMOG;
       scene.environmentIntensity = 0.6 * (0.2 + 0.8 * light) * (1 - smog * 0.4);
+      cascades.syncLight();
       return dark;
     },
     directShare() {
@@ -463,28 +273,31 @@ export function createEnvironment(
     setSmog(k) { smog = Math.max(0, Math.min(1, k)); },
     setWeather(k, f) { overcast = Math.max(0, Math.min(1, k)); flash = Math.max(0, Math.min(1.5, f)); },
     setQuality(next) {
-      sun.castShadow = next.shadows;
-      if (sun.shadow.mapSize.x !== next.shadowMapSize) {
-        sun.shadow.mapSize.set(next.shadowMapSize, next.shadowMapSize);
-        sun.shadow.map?.dispose();
-        sun.shadow.map = null;
-      }
+      cascades.setEnabled(next.shadows, next.shadowMapSize);
     },
     dispose() {
-      scene.remove(sky, hemisphere, ambient, sun, sun.target, fill);
+      scene.onAfterRender = () => {};
+      for (const light of cascades.lights) scene.remove(light, light.target);
+      scene.remove(sky, hemisphere, ambient, fill);
       sky.geometry.dispose();
       skyMaterial.dispose();
       envTarget.dispose();
       scene.environment = null;
       hemisphere.dispose();
       ambient.dispose();
-      sun.dispose();
+      cascades.dispose();
     },
   };
 }
 
+/** The sun's shadow in three's shaders: its cascades (`sunCascades.ts`) and its normal offset by the slope of the receiver */
+export function sunShadowChunks(): void {
+  cascadedSunChunks();
+  slopeScaledShadowOffset();
+}
+
 /** The sun's normal offset by the slope of the receiver: as Unity's URP biases a shadow */
-export function slopeScaledShadowOffset(): void {
+function slopeScaledShadowOffset(): void {
   const chunk = ShaderChunk.shadowmap_vertex;
   const plain = 'shadowWorldPosition = worldPosition + vec4( shadowWorldNormal * directionalLightShadows[ i ].shadowNormalBias, 0 );';
   if (!chunk.includes(plain)) {

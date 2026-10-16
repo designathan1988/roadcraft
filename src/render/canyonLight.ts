@@ -52,10 +52,10 @@ const FRAGMENT = /* glsl */ `
   uniform float uSky;
   uniform float uContact;
   uniform float uContactLength;
-  uniform sampler2DShadow tSunShadow;
-  uniform mat4 uSunShadowMatrix;
+  uniform sampler2DShadow tSunShadow[2];
+  uniform mat4 uSunShadowMatrix[2];
   uniform float uSunShadowOn;
-  uniform vec2 uSunShadowBias;
+  uniform vec2 uSunShadowBias[2];
   varying vec2 vUv;
   ${DEPTH_GLSL}
 
@@ -93,18 +93,27 @@ const FRAGMENT = /* glsl */ `
   }
 
   // DO NOT darken what the shadow map has already shaded
+  // Where the sun's cascade k holds P, its coordinate (w = 1); else w = 0.
+  vec4 sunCoord(int k, vec3 P, vec3 N, float grazing) {
+    vec4 c = uSunShadowMatrix[k] * vec4(P + N * uSunShadowBias[k].y * (0.4 + 2.6 * grazing), 1.0);
+    c.xyz /= c.w;
+    if (c.x < 0.0 || c.y < 0.0 || c.x > 1.0 || c.y > 1.0 || c.z < 0.0 || c.z > 1.0) return vec4(0.0);
+    #ifdef USE_REVERSED_DEPTH_BUFFER
+      c.z -= uSunShadowBias[k].x;
+    #else
+      c.z += uSunShadowBias[k].x;
+    #endif
+    return vec4(c.xyz, 1.0);
+  }
+  // The sun's two nearest cascades (sunCascades.ts): the contact shadows reach no farther than they do.
   float sunReaches(vec3 P, vec3 N) {
     if (uSunShadowOn < 0.5) return 1.0;
     float grazing = 1.0 - clamp(dot(N, uSunDir), 0.0, 1.0);
-    vec4 c = uSunShadowMatrix * vec4(P + N * uSunShadowBias.y * (0.4 + 2.6 * grazing), 1.0);
-    c.xyz /= c.w;
-    if (c.x < 0.0 || c.y < 0.0 || c.x > 1.0 || c.y > 1.0 || c.z < 0.0 || c.z > 1.0) return 1.0;
-    #ifdef USE_REVERSED_DEPTH_BUFFER
-      c.z -= uSunShadowBias.x;
-    #else
-      c.z += uSunShadowBias.x;
-    #endif
-    return texture(tSunShadow, c.xyz);
+    vec4 c = sunCoord(0, P, N, grazing);
+    if (c.w > 0.5) return texture(tSunShadow[0], c.xyz);
+    if (uSunShadowOn < 1.5) return 1.0;
+    c = sunCoord(1, P, N, grazing);
+    return c.w > 0.5 ? texture(tSunShadow[1], c.xyz) : 1.0;
   }
 
   void main() {
@@ -166,7 +175,8 @@ const FRAGMENT = /* glsl */ `
   .replace('m_lift_lo', m(0.4).toFixed(2))
   .replace('m_lift_hi', m(1.5).toFixed(2));
 
-export function createCanyonLight(camera: Camera, depthOf: () => Texture | null, sunOf: () => DirectionalLight | null = () => null): CanyonLight {
+/** `sunsOf`: the sun's cascades, nearest first (`sunCascades.ts`); the two nearest are read. */
+export function createCanyonLight(camera: Camera, depthOf: () => Texture | null, sunsOf: () => readonly DirectionalLight[] = () => []): CanyonLight {
   const data = new Uint8Array(SIDE * SIDE * 4);
   const next = new Uint8Array(SIDE * SIDE * 4);
   const heights = new DataTexture(data, SIDE, SIDE, RGBAFormat, UnsignedByteType);
@@ -191,10 +201,10 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
       uSky: { value: 0.8 },
       uContact: { value: 0.5 },
       uContactLength: { value: m(1.2) },
-      tSunShadow: { value: null as Texture | null },
-      uSunShadowMatrix: { value: new Matrix4() },
+      tSunShadow: { value: [null, null] as (Texture | null)[] },
+      uSunShadowMatrix: { value: [new Matrix4(), new Matrix4()] },
       uSunShadowOn: { value: 0 },
-      uSunShadowBias: { value: new Vector2() },
+      uSunShadowBias: { value: [new Vector2(), new Vector2()] },
     },
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: FRAGMENT,
@@ -208,15 +218,21 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
     (u['uCameraWorld']!.value as Matrix4).copy(camera.matrixWorld);
     (u['uViewProjection']!.value as Matrix4).multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     (u['uCameraPos']!.value as Vector3).setFromMatrixPosition(camera.matrixWorld);
-    // The sun's shadow map as the scene was lit with it this frame.
-    const light = sunOf();
-    const map = light && light.castShadow ? light.shadow.map?.depthTexture ?? null : null;
-    u['tSunShadow']!.value = map;
-    u['uSunShadowOn']!.value = map ? 1 : 0;
-    if (light && map) {
-      (u['uSunShadowMatrix']!.value as Matrix4).copy(light.shadow.matrix);
-      (u['uSunShadowBias']!.value as Vector2).set(light.shadow.bias, light.shadow.normalBias);
+    // The sun's shadow maps as the scene was lit with them this frame, the nearest two cascades
+    const lights = sunsOf();
+    const maps = u['tSunShadow']!.value as (Texture | null)[];
+    let on = 0;
+    for (let k = 0; k < 2; k++) {
+      const light = lights[k];
+      const map = light && light.castShadow ? light.shadow.map?.depthTexture ?? null : null;
+      // Both samplers bound to something: a missing second cascade reads the first's map, never used
+      maps[k] = map ?? maps[0] ?? null;
+      if (!light || !map || on !== k) continue;
+      on = k + 1;
+      (u['uSunShadowMatrix']!.value as Matrix4[])[k]!.copy(light.shadow.matrix);
+      (u['uSunShadowBias']!.value as Vector2[])[k]!.set(light.shadow.bias, light.shadow.normalBias);
     }
+    u['uSunShadowOn']!.value = on;
     draw(...args);
   };
 

@@ -50,7 +50,7 @@ import type { SimClient, VehicleView } from '@sim/host/simClient';
 import type { Viewport } from '@view/viewport';
 
 import { createAgentMeshes, type AgentMeshes } from './agents';
-import { createEnvironment, slopeScaledShadowOffset } from './environment';
+import { createEnvironment, sunShadowChunks } from './environment';
 import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { renderTargetsBytes } from './targetBytes';
@@ -115,12 +115,6 @@ const ROAD_TILES_HASH = typeof __ROAD_TILES_HASH__ !== 'undefined' && __ROAD_TIL
 /** How long the opening's roads wait for the kept tiles to be read, ms: past it they are built. */
 const KEPT_TILES_WAIT_MS = 3000;
 
-/** The zoom above which the shadow map is drawn every frame (px per metre). */
-const SHADOW_FULL_ZOOM = perM(12);
-/** Frames between shadow passes where a shadow is smaller than a texel. */
-const SHADOW_FAR_EVERY = 3;
-/** Longest a caster that arrived without saying so can be absent from the map, in frames */
-const SHADOW_SAFETY_FRAMES = 30;
 import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
@@ -356,8 +350,8 @@ export function createSceneRenderer(
   onEcologyRead(onAssetsReady);
   /** The shadow map is drawn only when it can have changed. */
   let shadowMoved = true;
-  /** Frames since the shadow map was last drawn (`SHADOW_FAR_EVERY`). */
-  let shadowFrame = 0;
+  /** Whether the simulation runs: what it moves moves (`environment.setMovers`). */
+  let simRunning = false;
   /** DO NOT walk the scene for it each frame: whether anything that moves is drawn into the shadow map, as the layers that move it say */
   const movingCasters = (): boolean => agents.casting || transit.moving || (fx?.busy() ?? false);
   /** Moving casters in the last shadow frame: when they stop, the map is drawn once more with them at rest. */
@@ -385,7 +379,7 @@ export function createSceneRenderer(
   renderer.shadowMap.enabled = true;
   // PCFSoftShadowMap was REMOVED in three r186.
   renderer.shadowMap.type = PCFShadowMap;
-  slopeScaledShadowOffset();
+  sunShadowChunks();
   // Drawn once a frame, on request (see `post.render` below).
   renderer.shadowMap.autoUpdate = false;
 
@@ -758,6 +752,11 @@ export function createSceneRenderer(
     return crowdFrustum.intersectsSphere(vehicleBounds);
   };
   scene.add(...agents.meshes);
+  // What moves and casts: each sun cascade it is drawn into is drawn again while it moves (`sunCascades.ts`).
+  environment.setMovers([
+    { roots: agents.meshes, moving: () => simRunning && agents.casting },
+    { roots: [transit.group], moving: () => simRunning && transit.moving },
+  ]);
   const signals: SignalHeads = createSignalHeads(scene, deckHeight);
 
   // Modular buildings: their own layer, behind their own gate
@@ -910,7 +909,6 @@ export function createSceneRenderer(
   /** The sky's mesh (`environment.ts`), found once by name (`draw`). */
   let skyMesh: Object3D | null = null;
   let lastDark = -1;
-  const viewDirection = new Vector3();
   /** The building revision the ground was last graded for. */
   let gradedFor = -1;
   /** What the ground under the buildings is graded from (`buildingPads`) */
@@ -1690,7 +1688,6 @@ export function createSceneRenderer(
   const VIEW_SEEN = m(320);
   /** In perspective: radians added to each side of the camera's width (the camera turns). */
   const VIEW_MARGIN = 0.35;
-  const shadowCentre = new Vector3();
   /** The trees of the painted forest (`world/terrainPaint.ts` 'forest') */
   // A tree every twelve metres at the most where a wood is painted: the player wants few trees, not woods filling the map
   const FOREST_SPACING = m(12);
@@ -2160,7 +2157,7 @@ export function createSceneRenderer(
     onStrike(listener) { strikeListeners.push(listener); },
     cloudDrift: () => cloudDrift,
     busy: () => (fx?.busy() ?? false) || natureTreesPending || cameraEasing,
-    targetBytes: () => renderTargetsBytes([...post.targets(), environment.sun.shadow.map]),
+    targetBytes: () => renderTargetsBytes([...post.targets(), ...environment.shadowMaps()]),
     buildingDetailBytes: () => buildings.residentBytes,
     drifting: () => ((fogMoving || placedCloudsShown) && post.enabled && (quality.cloudShadows || quality.skyClouds)) || weatherActive,
     forgetRuin(id) { fx?.forgetRuin(id); },
@@ -2646,9 +2643,8 @@ export function createSceneRenderer(
       }
       // The windows every frame: how many rooms are lit follows the clock
       buildings.setNight(lastDark, clock / 60);
-      rig.camera.getWorldDirection(viewDirection);
-      // The shadows round the ground looked at.
-      const sunMoved = environment.follow(shadowCentre.copy(target), halfWidth, groundHalfDepth, viewDirection, Math.max(0, tallestTop - target.y), rig.camera.position.distanceTo(target));
+      // The sun's cascades fitted to what the camera sees, up to the tallest top.
+      environment.follow(rig.camera, target, tallestTop, builtGroundAt);
       // What the simulation must show in full: people step round each other only where they are seen, and big enough to see it
       {
         // In perspective, tilted towards the horizon, the camera sees far past the circle round the centre of the view
@@ -2679,19 +2675,18 @@ export function createSceneRenderer(
 
       // The shadow pass, drawn when the map can have changed.
       if (renderer.shadowMap.enabled) {
-        shadowFrame++;
         // The two-wheelers changed between casting and a soft disc: their shadows come or go now.
         if (agents.castersChanged) shadowMoved = true;
         // Moving only when something that moves is in the pass (`movingCasters`) or the wind bends the trees
-        const moving = net.doc.weather.wind > 0 || (!sim.paused && movingCasters());
+        simRunning = !sim.paused;
+        const moving = net.doc.weather.wind > 0 || (simRunning && movingCasters());
         if (castersMoved && !moving) shadowMoved = true;
         castersMoved = moving;
-        const every = rig.viewport.zoom >= SHADOW_FULL_ZOOM ? 1 : SHADOW_FAR_EVERY;
-        if (shadowMoved || sunMoved || (moving && shadowFrame >= every) || shadowFrame >= SHADOW_SAFETY_FRAMES) {
+        // Each cascade drawn when what it holds can have changed (`sunCascades.ts` `pass`)
+        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), wind: net.doc.weather.wind > 0 })) {
           renderer.shadowMap.needsUpdate = true;
-          shadowMoved = false;
-          shadowFrame = 0;
         }
+        shadowMoved = false;
       }
       // An explosion shakes the camera for a moment.
       const shake = fx?.shake() ?? 0;

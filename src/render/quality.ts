@@ -106,8 +106,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
   high: {
     pixelRatio: 1.5,
     shadows: true,
-    // Half the texel of 2048: a balcony's shadow stepped in squares of a hand's width at the middle distance
-    shadowMapSize: 4096,
+    // Three cascades of 2048: the nearest a few centimetres a texel round the street looked at
+    shadowMapSize: 2048,
     postProcessing: true,
     ambientOcclusion: true,
     smaa: true,
@@ -133,7 +133,7 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
   ultra: {
     pixelRatio: 2,
     shadows: true,
-    shadowMapSize: 4096,
+    shadowMapSize: 2048,
     postProcessing: true,
     ambientOcclusion: true,
     smaa: true,
