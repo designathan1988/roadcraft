@@ -3,7 +3,7 @@ import type { CoverKind, GeologyKind, PaintDab } from '@world/terrainPaint';
 import { reliefHeight, type ReliefVersion, type TerrainStamp } from '@world/terrain';
 import type { RoadDoc } from '@world/doc';
 import { PLATE_SIZE, plateIJ, plateOf, plateRegion, platesAround, platesOver } from '@world/bounds';
-import type { ChangeKind } from '@world/changes';
+import { type ChangeKind, type ChangeRect, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import { GroundChanges } from './groundChanges';
 import { cancelFlatGround, flatGroundOffPage, readFlatGround, setFlatGroundFocus } from './flatGroundPool';
@@ -66,6 +66,8 @@ class PlateSource implements TerrainSource {
   terrainPaint: PaintDab[] = [];
   stampSources: readonly TerrainStamp[] = [];
   paintSources: readonly PaintDab[] = [];
+  /** The identities of the dabs laid (`dabKey`): a tile come back lays none of its own again. */
+  laid = new Set<string>();
   terrainGround?: (x: number, y: number) => number;
 }
 
@@ -99,6 +101,35 @@ interface FarPlate {
 }
 
 const sameList = (a: readonly unknown[], b: readonly unknown[]): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
+/** A dab's identity on a plate: a tile come back brings its dabs as new objects of the same paint (a dab a player repeats exactly, at the same place and strength, counts once too). */
+const dabKey = (d: PaintDab): string => `${d.kind}:${d.x}:${d.y}:${d.radius}:${d.strength}`;
+const dabInRects = (d: PaintDab, rects: readonly ChangeRect[]): boolean =>
+  rects.some((r) => d.x + d.radius >= r[0] && d.x - d.radius <= r[2] && d.y + d.radius >= r[1] && d.y - d.radius <= r[3]);
+
+/** THE DABS A PLATE LAYS brought up to the document's (`reaching`: those reaching the plate now). What was laid stays as laid: a tile that left the page took its dabs off the document, not off the world's ground (DO NOT lay every plate again at each tile let go: every shown plate's paint rastered and sent again, and the ecology read again, at each kilometre moved). The dabs new to the plate go after it, so the surface lays only those (`terrain.ts` paintStep); a stroke's rectangles (`edited`) say where a dab gone from the document is taken off. `edited` null: the diary could not say, the document's dabs alone, laid again. Null back: nothing to change. */
+export function plateDabs(laid: readonly PaintDab[], keys: Set<string>, reaching: readonly PaintDab[], edited: readonly ChangeRect[] | null): PaintDab[] | null {
+  if (edited === null) {
+    if (sameList(reaching, laid)) return null;
+    keys.clear();
+    for (const d of reaching) keys.add(dabKey(d));
+    return [...reaching];
+  }
+  const here = new Set(reaching);
+  const kept = edited.length === 0 ? laid : laid.filter((d) => here.has(d) || !dabInRects(d, edited));
+  if (kept.length !== laid.length) { keys.clear(); for (const d of kept) keys.add(dabKey(d)); }
+  const known = new Set(kept);
+  const fresh: PaintDab[] = [];
+  for (const d of reaching) {
+    if (known.has(d)) continue;
+    const key = dabKey(d);
+    if (keys.has(key)) continue;
+    keys.add(key);
+    fresh.push(d);
+  }
+  if (kept.length === laid.length && fresh.length === 0) return null;
+  return [...kept, ...fresh];
+}
+
 /** Whether a disc reaches a plate (its square grown by the disc). */
 const reaches = (p: { readonly cx: number; readonly cy: number }, x: number, y: number, radius: number): boolean =>
   Math.abs(x - p.cx) <= TERRAIN_HALF + radius && Math.abs(y - p.cy) <= TERRAIN_HALF + radius;
@@ -341,11 +372,13 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     p.source.terrainRevision = doc.terrainRevision;
     return true;
   };
-  const takePaint = (p: Plate, doc: TerrainSource): void => {
-    const sources = doc.terrainPaint.filter((d) => copyOn(p.dabCopies, p, d) !== null);
-    if (sameList(sources, p.source.paintSources)) return;
-    p.source.paintSources = sources;
-    p.source.terrainPaint = sources.map((d) => p.dabCopies.get(d) as PaintDab);
+  /** The plate's dabs brought up to the document's (`plateDabs`); `edited`: where a stroke changed them since (empty: only tiles came or went), null: the diary could not say. */
+  const takePaint = (p: Plate, doc: TerrainSource, edited: readonly ChangeRect[] | null): void => {
+    const reaching = doc.terrainPaint.filter((d) => copyOn(p.dabCopies, p, d) !== null);
+    const next = plateDabs(p.source.paintSources, p.source.laid, reaching, edited);
+    if (!next) return;
+    p.source.paintSources = next;
+    p.source.terrainPaint = next.map((d) => p.dabCopies.get(d) as PaintDab);
     p.source.paintRevision = doc.paintRevision;
   };
   /** A plate come into being: its share of the document read at once (each later change reaches it by `sync`). */
@@ -356,7 +389,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     p.source.terrainRelief = doc.terrainRelief;
     p.source.terrainGround = (lx, ly) => groundOn(p, lx, ly);
     takeStamps(p, doc);
-    takePaint(p, doc);
+    takePaint(p, doc, null);
   };
   /** The plate of `key`, made a record (not a surface) the first time it is asked for. */
   const plateFor = (key: number): Plate => {
@@ -481,6 +514,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   let seenTerrain = -1;
   /** DO NOT filter the map's every stamp for every plate at each change: stamps times plates for one dab of the brush. */
   const terrainCursor = new JournalCursor(['terrain']);
+  const paintCursor = new JournalCursor(['paint']);
   let seenPaint = -1;
   const sync = (doc: TerrainSource): void => {
     lastDoc = doc;
@@ -515,7 +549,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     }
     if (doc.paintRevision !== seenPaint) {
       seenPaint = doc.paintRevision;
-      for (const p of plates.values()) takePaint(p, doc);
+      // Tiles came or went (`isStreaming`): what each plate laid stays; a stroke: its rectangles say what to lay again (`plateDabs`).
+      const entries = paintCursor.read(doc.changes);
+      const edited = entries && entries.every((e) => e.rects !== null) ? entries.filter((e) => !isStreaming(e)).flatMap((e) => e.rects!) : null;
+      for (const p of plates.values()) takePaint(p, doc, edited);
     }
     if (readContent(doc)) refresh();
   };
