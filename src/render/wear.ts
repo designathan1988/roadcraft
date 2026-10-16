@@ -2,7 +2,7 @@ import {
   DataTexture,
   LinearFilter,
   RepeatWrapping,
-  RGBAFormat,
+  RGFormat,
   UnsignedByteType,
   Vector3,
   type Material,
@@ -14,13 +14,16 @@ import { TorusWindow } from './torusWindow';
 
 /** Wear: streets and footways that age with use (the player's order of 2026-10-05). */
 
-/** Texels across the window round the view: 5 m each over its 10,240 m (the old map's, so the same wear where it was). */
-const RES = 2048;
+/** Texels across the window round the view: 5 m each over 5,120 m, the micro window's 1,500 m (`sim/meso/memory.ts` MICRO_RADIUS: the only traffic that wears) and what it left round it. */
+export const WEAR_RES = 1024;
+const RES = WEAR_RES;
 const CELL = m(5);
 /** How far the view goes from the window's middle before it follows (texels): an eighth of it, the texels that leave cleared. */
 const HOLD = RES / 8;
 /** Seconds between uploads of the field to the GPU. */
 const UPLOAD_EVERY = 2;
+/** three r186 counts a data texture's update ranges in RGBA components whatever its format (`WebGLTextures.js` updateTexture, "only RGBA supported"): 4 a texel. */
+export const RANGE_STRIDE = 4;
 
 export interface WearField {
   readonly texture: Texture;
@@ -38,13 +41,11 @@ export interface WearField {
 }
 
 /** DO NOT hold a texture over a map: the world has none; the wear lives in a window that wraps round (`torusWindow.ts`) */
-export function createWearField(): WearField {
+export function createWearField(seed = 0x9e3779b9): WearField {
   const view = new TorusWindow(RES, CELL);
-  const wheels = new Float32Array(RES * RES);
-  const feet = new Float32Array(RES * RES);
-  // RGBA though only red (wheels) and green (feet) are read: three uploads part of a texture
-  const bytes = new Uint8Array(RES * RES * 4);
-  const texture = new DataTexture(bytes, RES, RES, RGBAFormat, UnsignedByteType);
+  // DO NOT keep the field in floats beside its texture: RG8 (red the wheels, green the feet) is both the field and what the GPU reads.
+  const bytes = new Uint8Array(RES * RES * 2);
+  const texture = new DataTexture(bytes, RES, RES, RGFormat, UnsignedByteType);
   /** Per row, the first and last cell changed since the last upload. */
   const rowFrom = new Int32Array(RES).fill(RES);
   const rowTo = new Int32Array(RES).fill(-1);
@@ -52,19 +53,34 @@ export function createWearField(): WearField {
   texture.minFilter = LinearFilter;
   texture.wrapS = RepeatWrapping;
   texture.wrapT = RepeatWrapping;
+  texture.generateMipmaps = false;
   texture.needsUpdate = true;
   const frame = { value: new Vector3(view.ox * CELL, view.oy * CELL, view.span) };
   let since = 0;
   let dirty = false;
+  // Xorshift32 (Marsaglia, "Xorshift RNGs", J. Stat. Softw. 2003) for the stochastic rounding of `add`.
+  let state = seed >>> 0 || 1;
+  const random = (): number => {
+    state = (state ^ (state << 13)) >>> 0;
+    state = (state ^ (state >>> 17)) >>> 0;
+    state = (state ^ (state << 5)) >>> 0;
+    return state / 4294967296;
+  };
   const touch = (row: number, from: number, to: number): void => {
     if (from < rowFrom[row]!) rowFrom[row] = from;
     if (to > rowTo[row]!) rowTo[row] = to;
     dirty = true;
   };
-  const add = (field: Float32Array, x: number, y: number, amount: number): void => {
+  const add = (channel: 0 | 1, x: number, y: number, amount: number): void => {
     const i = view.indexAt(x, y);
     if (i < 0) return;
-    field[i] = Math.min(1, field[i]! + amount);
+    // A frame's wear is a fraction of a byte's step: one step more with that fraction's chance, the sum keeping its mean (stochastic rounding, Gupta et al., ICML 2015).
+    const q = amount * 255;
+    const whole = Math.floor(q);
+    const step = whole + (random() < q - whole ? 1 : 0);
+    if (step <= 0) return;
+    const k = i * 2 + channel;
+    bytes[k] = Math.min(255, bytes[k]! + step);
     const gx = i % RES;
     touch((i - gx) / RES, gx, gx);
   };
@@ -75,11 +91,11 @@ export function createWearField(): WearField {
       // Rubber on the two tracks: a busy lane darkens in a few minutes of traffic, and keeps darkening towards potholes.
       const nx = -Math.sin(angle), ny = Math.cos(angle);
       const k = dt * 0.05;
-      add(wheels, x + nx * width / 2, y + ny * width / 2, k);
-      add(wheels, x - nx * width / 2, y - ny * width / 2, k);
+      add(0, x + nx * width / 2, y + ny * width / 2, k);
+      add(0, x - nx * width / 2, y - ny * width / 2, k);
     },
     feet(x, y, dt) {
-      add(feet, x, y, dt * 0.02);
+      add(1, x, y, dt * 0.02);
     },
     follow(x, y) {
       const bands = view.follow(x, y, HOLD);
@@ -90,10 +106,11 @@ export function createWearField(): WearField {
         const c0 = view.texel(gx0), c1 = view.texel(gx1);
         const wraps = c0 > c1;
         for (let gy = gy0; gy <= gy1; gy++) {
-          const row = view.texel(gy) * RES;
-          if (wraps) { wheels.fill(0, row + c0, row + RES); feet.fill(0, row + c0, row + RES); wheels.fill(0, row, row + c1 + 1); feet.fill(0, row, row + c1 + 1); }
-          else { wheels.fill(0, row + c0, row + c1 + 1); feet.fill(0, row + c0, row + c1 + 1); }
-          touch(row / RES, wraps ? 0 : c0, wraps ? RES - 1 : c1);
+          const row = view.texel(gy);
+          const at = row * RES * 2;
+          if (wraps) { bytes.fill(0, at + c0 * 2, at + RES * 2); bytes.fill(0, at, at + (c1 + 1) * 2); }
+          else bytes.fill(0, at + c0 * 2, at + (c1 + 1) * 2);
+          touch(row, wraps ? 0 : c0, wraps ? RES - 1 : c1);
         }
       }
     },
@@ -102,16 +119,11 @@ export function createWearField(): WearField {
       if (!dirty || since < UPLOAD_EVERY) return;
       since = 0;
       dirty = false;
-      // Only the stretches of rows that changed: converted and sent alone.
+      // Only the stretches of rows that changed, sent from the field itself.
       for (let gy = 0; gy < RES; gy++) {
         const from = rowFrom[gy]!, to = rowTo[gy]!;
         if (to < 0) continue;
-        for (let gx = from; gx <= to; gx++) {
-          const i = gy * RES + gx;
-          bytes[i * 4] = Math.round(wheels[i]! * 255);
-          bytes[i * 4 + 1] = Math.round(feet[i]! * 255);
-        }
-        texture.addUpdateRange((gy * RES + from) * 4, (to - from + 1) * 4);
+        texture.addUpdateRange((gy * RES + from) * RANGE_STRIDE, (to - from + 1) * RANGE_STRIDE);
         rowFrom[gy] = RES;
         rowTo[gy] = -1;
       }
