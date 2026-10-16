@@ -283,7 +283,18 @@ function birthSpeed(driver: ReturnType<typeof makeDriver>, v0: number, usual: nu
 
 /** Removes the vehicles that reached the end of a road and stopped there: the only place a car leaves the map */
 export function stepDespawn(w: SimWorld): void {
-  for (const v of w.vehiclesInIdOrder()) {
+  // DO NOT walk the fleet: only those on a lane the graph lost, or on one into a node at the map's edge, can go (in id order, as the walk took them).
+  const out: Vehicle[] = [];
+  for (const id of w.occupied) {
+    const on = w.lanelet(id);
+    if (on && (on.kind !== 'link' || on.to === undefined || !w.doc.mapEdge(on.to))) continue;
+    for (const vid of w.rt(id).order) {
+      const v = w.vehicles.get(vid);
+      if (v && v.lanelet === id) out.push(v);
+    }
+  }
+  out.sort((a, b) => a.id - b.id);
+  for (const v of out) {
     const lane = w.lanelet(v.lanelet);
     if (!lane) {
       w.removeVehicle(v);

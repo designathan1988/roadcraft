@@ -194,43 +194,52 @@ function collectGhosts(w: SimWorld): void {
   }
 }
 
-/** Accumulates, per tick, how long each vehicle has stood still with a green signal and nothing in its way. */
+/** Accumulates, per tick, how long each vehicle has stood still with a green signal and nothing in its way: DO NOT walk the fleet, only the lanes into a signal with somebody on them (off them both counters are nought, `SimWorld.enterLanelet`). */
 function updateStallCounters(w: SimWorld): void {
-  for (const v of w.vehicles.values()) {
-    const lane = w.lanelet(v.lanelet);
-    if (!lane || lane.kind !== 'link' || !lane.controlled || v.v >= m(0.04)) {
-      // BOTH counters reset here.
-      v.greenStall = 0;
-      v.greenDenied = 0;
-      continue;
+  for (const id of w.occupied) {
+    const on = w.lanelet(id);
+    if (!on || on.kind !== 'link' || !on.controlled) continue;
+    for (const vid of w.rt(id).order) {
+      const v = w.vehicles.get(vid);
+      if (v) stallCounters(w, v);
     }
-    const conn = nextConnector(w, v);
-    const c = conn && w.graph.junctions.get(conn.node)?.signalised ? w.controller(conn.node) : undefined;
-    const green = conn && c ? signalStateFor(c, conn.group) === 'green' : false;
-    const impeded = v.constraints.obstacles.some(
-      (o) =>
-        // The driver's standstill gap, as everywhere else that reads s0.
-        (o.kind === 'vehicle' && o.gap < v.driver.s0 + m(1.2)) ||
-        o.kind === 'yield' ||
-        o.kind === 'conflict' ||
-        o.kind === 'pedestrian' ||
-        o.kind === 'spillback' ||
-        // Stopped at the kerb on purpose, letting somebody out or in.
-        o.kind === 'kerbStop',
-    );
-    v.greenStall = green && !impeded ? v.greenStall + DT : 0;
-
-    // A second counter, deliberately blind to WHY the vehicle was refused.
-    const signalised = conn ? w.graph.junctions.get(conn.node)?.signalised === true : false;
-    // A car stopped at the kerb to let somebody out is not waiting for the green either.
-    const heldByDesign = v.constraints.obstacles.some((o) => o.kind === 'spillback' || o.kind === 'kerbStop');
-    v.greenDenied = green && signalised && !heldByDesign ? v.greenDenied + DT : 0;
   }
 }
 
-/** Diagnostic only. */
+/** One vehicle's stall counters, on a lane into a signal. */
+function stallCounters(w: SimWorld, v: Vehicle): void {
+  if (v.v >= m(0.04)) {
+    // BOTH counters reset here.
+    v.greenStall = 0;
+    v.greenDenied = 0;
+    return;
+  }
+  const conn = nextConnector(w, v);
+  const c = conn && w.graph.junctions.get(conn.node)?.signalised ? w.controller(conn.node) : undefined;
+  const green = conn && c ? signalStateFor(c, conn.group) === 'green' : false;
+  const impeded = v.constraints.obstacles.some(
+    (o) =>
+      // The driver's standstill gap, as everywhere else that reads s0.
+      (o.kind === 'vehicle' && o.gap < v.driver.s0 + m(1.2)) ||
+      o.kind === 'yield' ||
+      o.kind === 'conflict' ||
+      o.kind === 'pedestrian' ||
+      o.kind === 'spillback' ||
+      // Stopped at the kerb on purpose, letting somebody out or in.
+      o.kind === 'kerbStop',
+  );
+  v.greenStall = green && !impeded ? v.greenStall + DT : 0;
+
+  // A second counter, deliberately blind to WHY the vehicle was refused.
+  const signalised = conn ? w.graph.junctions.get(conn.node)?.signalised === true : false;
+  // A car stopped at the kerb to let somebody out is not waiting for the green either.
+  const heldByDesign = v.constraints.obstacles.some((o) => o.kind === 'spillback' || o.kind === 'kerbStop');
+  v.greenDenied = green && signalised && !heldByDesign ? v.greenDenied + DT : 0;
+}
+
+/** Diagnostic only: DO NOT walk the fleet, only those that may hold something at a junction (`junctionHolders`). */
 function runWatchdog(w: SimWorld): void {
-  for (const v of w.vehicles.values()) {
+  for (const v of w.junctionHolders().sort((a, b) => a.id - b.id)) {
     // Rear-clearance and ahead-of-route reservations can legitimately remain while a vehicle waits at another signal.
     if (!v.admittedConnector) continue;
     if (w.clock.since(v.lastMovedTick) > STUCK_SECONDS) {

@@ -1066,6 +1066,8 @@ export class SimWorld {
     v.lanelet = id;
     const lane = this.lanelet(id);
     if (lane?.kind === 'connector') this.noteHolder(v);
+    // Off a lane into a signal the stall counters are nought (stage 7 counts only on those, `updateStallCounters`).
+    if (lane?.kind !== 'link' || !lane.controlled) { v.greenStall = 0; v.greenDenied = 0; }
     // A vehicle entering a junction's movement: the flow from its leg (V5).
     if (recordVolume && lane?.kind === 'connector' && lane.node !== undefined) {
       const from = this.lanelet(lane.fromLane ?? '')?.segment;
