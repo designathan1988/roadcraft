@@ -1,27 +1,31 @@
 import { BufferAttribute, BufferGeometry, type Material, type MeshStandardMaterial } from 'three';
 
-/** A geometry seen from both sides: its faces and a copy of them turned the other way (winding and normals reversed). */
+/** A geometry seen from both sides: its faces and a copy of them turned the other way (winding and normals reversed), indexed (DO NOT `toNonIndexed` it first: each instance of a far railing or brise drew each corner once per triangle): its vertices once more with their normals turned, the back faces as indices in the other order. */
 export function twoSided(g: BufferGeometry): BufferGeometry {
-  const flat = g.index ? g.toNonIndexed() : g;
-  const position = flat.getAttribute('position'), normal = flat.getAttribute('normal');
+  const position = g.getAttribute('position'), normal = g.getAttribute('normal');
   const n = position.count;
+  const source = g.index;
+  const corners = source ? source.count : n;
   const p = new Float32Array(n * 6), q = new Float32Array(n * 6);
-  p.set(position.array as Float32Array);
-  q.set(normal.array as Float32Array);
-  for (let t = 0; t < n; t += 3) {
-    // Each triangle again, its corners in the other order, its normal turned round.
-    for (let k = 0; k < 3; k++) {
-      const from = t + (k === 0 ? 0 : 3 - k), to = n + t + k;
-      for (let c = 0; c < 3; c++) {
-        p[to * 3 + c] = position.getComponent(from, c);
-        q[to * 3 + c] = -normal.getComponent(from, c);
-      }
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < 3; c++) {
+      const v = position.getComponent(i, c), w = normal.getComponent(i, c);
+      p[i * 3 + c] = v; p[(n + i) * 3 + c] = v;
+      q[i * 3 + c] = w; q[(n + i) * 3 + c] = -w;
     }
+  }
+  const index = n * 2 > 0xffff ? new Uint32Array(corners * 2) : new Uint16Array(corners * 2);
+  const at = (k: number): number => (source ? source.getX(k) : k);
+  for (let k = 0; k + 2 < corners; k += 3) {
+    const a = at(k), b = at(k + 1), c = at(k + 2);
+    index[k] = a; index[k + 1] = b; index[k + 2] = c;
+    // The same triangle seen from behind: its corners in the other order, on the turned copy.
+    index[corners + k] = n + a; index[corners + k + 1] = n + c; index[corners + k + 2] = n + b;
   }
   const out = new BufferGeometry();
   out.setAttribute('position', new BufferAttribute(p, 3));
   out.setAttribute('normal', new BufferAttribute(q, 3));
-  if (flat !== g) flat.dispose();
+  out.setIndex(new BufferAttribute(index, 1));
   g.dispose();
   return out;
 }
