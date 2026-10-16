@@ -116,6 +116,7 @@ import {
 import { QUALITY_LEVELS, isQualityLevel } from '@render/quality';
 import { createBuildingWiring } from './buildingsWiring';
 import { createGraphicsWiring } from './graphicsWiring';
+import { createSteamAchievements } from './steamAchievements';
 import { levelElevation, roofRise } from '@world/buildings/geometry';
 import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
@@ -561,6 +562,8 @@ canvas3d.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;displ
 canvas.parentElement?.insertBefore(canvas3d, canvas);
 /** The graphics options (`graphicsWiring.ts`): the tier the player chose, or the one this GPU holds at the first start, and their settings on it. */
 const graphics = createGraphicsWiring((level) => gameState.set('quality', level, 'quality menu'));
+/** The city's milestones told to Steam when the desktop shell runs under it (`steamAchievements.ts`). */
+const achievements = createSteamAchievements();
 // The graphics are what the player chose: the game lowers only the resolution, and only with "dynamic resolution" on.
 primeSurfaceBake(await surfaceBake);
 // The traffic's worker, given the map as it opened and the conflict zones measured in earlier sessions.
@@ -2382,6 +2385,7 @@ function frame(now: number): void {
     // Safe while the player is using the panel
     refreshInspector();
     noteSimulationIssues();
+    achievements.roads(doc.segments.size);
   }
   syncLoadingCurtain();
   frameTimer.mark('panels');
