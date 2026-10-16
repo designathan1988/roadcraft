@@ -1,4 +1,5 @@
-import { DataTexture, FloatType, NearestFilter, RGBAFormat } from 'three';
+import { DataTexture, FloatType, NearestFilter, RGBAFormat, type Texture, type WebGLRenderer } from 'three';
+import { createGpuRows } from './gpuRows';
 
 /** The bodies of a class baked once (`proceduralCrowd.ts`) */
 const BODIES = 16;
@@ -7,13 +8,19 @@ export const BODY_WIDTH = 4096;
 const WIDTH = BODY_WIDTH;
 
 export interface ClassBodies {
-  readonly texture: DataTexture;
+  readonly texture: Texture;
   readonly joints: DataTexture;
   /** Texels between the first vertices of two bodies. */
   readonly stride: number;
   readonly count: number;
+  /** The bodies' bytes on the GPU. */
+  readonly bytes: number;
   /** The body to draw a person of these coefficients with (one made if room is left), and its joints. */
   pick(coefficients: Float32Array): { index: number; joints: Float32Array };
+  /** The bodies made since the last frame sent up: before anybody draws them. */
+  flush(renderer: WebGLRenderer): void;
+  /** Every body made baked and sent up again (a WebGL context restored). */
+  restore(): void;
   dispose(): void;
 }
 
@@ -22,10 +29,8 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
   jointBasis: Float32Array, bones: number): ClassBodies {
   const rowsPerBody = Math.ceil(vertexCount / WIDTH);
   const stride = rowsPerBody * WIDTH;
-  const pixels = new Float32Array(stride * 4 * BODIES);
-  const texture = new DataTexture(pixels, WIDTH, rowsPerBody * BODIES, RGBAFormat, FloatType);
-  texture.minFilter = texture.magFilter = NearestFilter;
-  texture.needsUpdate = true;
+  // DO NOT keep the bodies on the CPU: each is baked from the shape basis, sent up, and baked again only on a restore.
+  const rows = createGpuRows(WIDTH, rowsPerBody * BODIES);
   const jointPixels = new Float32Array(bones * 4 * BODIES);
   const joints = new DataTexture(jointPixels, bones, BODIES, RGBAFormat, FloatType);
   joints.minFilter = joints.magFilter = NearestFilter;
@@ -33,11 +38,10 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
   const coefficients: Float32Array[] = [];
   const jointsOf: Float32Array[] = [];
 
-  /** A body baked from coefficients `c`: every vertex's move, every joint's. */
-  const make = (c: Float32Array): number => {
-    const b = coefficients.length;
-    coefficients.push(c.slice());
-    const at = b * stride * 4;
+  /** Body `b`'s every vertex move, baked from its coefficients, sent up at the next flush. */
+  const bake = (b: number): void => {
+    const c = coefficients[b]!;
+    const pixels = new Float32Array(stride * 4);
     for (let v = 0; v < vertexCount; v++) {
       let x = 0, y = 0, z = 0;
       const base = v * shapes * 4;
@@ -47,9 +51,17 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
         const t = base + k * 4;
         x += w * shapePixels[t]!; y += w * shapePixels[t + 1]!; z += w * shapePixels[t + 2]!;
       }
-      const o = at + v * 4;
+      const o = v * 4;
       pixels[o] = x; pixels[o + 1] = y; pixels[o + 2] = z;
     }
+    rows.write(b * rowsPerBody, pixels);
+  };
+
+  /** A body made from coefficients `c`: its vertices baked, every joint's move. */
+  const make = (c: Float32Array): number => {
+    const b = coefficients.length;
+    coefficients.push(c.slice());
+    bake(b);
     const d = new Float32Array(bones * 3);
     for (let i = 0; i < bones; i++) for (let a = 0; a < 3; a++) {
       let s = 0;
@@ -58,19 +70,17 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
       jointPixels[(b * bones + i) * 4 + a] = s;
     }
     jointsOf.push(d);
-    // Only this body's rows go to the GPU - a range a row: three uploads each update range as one row of the image
-    for (let r = 0; r < rowsPerBody; r++) texture.addUpdateRange(at + r * WIDTH * 4, WIDTH * 4);
-    texture.needsUpdate = true;
     joints.addUpdateRange(b * bones * 4, bones * 4);
     joints.needsUpdate = true;
     return b;
   };
 
   return {
-    texture,
+    get texture() { return rows.texture; },
     joints,
     stride,
     get count() { return coefficients.length; },
+    get bytes() { return rows.bytes; },
     pick(c) {
       let best = -1, bestD = Infinity;
       for (let b = 0; b < coefficients.length; b++) {
@@ -83,8 +93,15 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
       if (coefficients.length < BODIES && (best < 0 || bestD > 1e-6)) best = make(c);
       return { index: best, joints: jointsOf[best]! };
     },
+    flush(renderer) { rows.flush(renderer); },
+    restore() {
+      rows.reset();
+      for (let b = 0; b < coefficients.length; b++) bake(b);
+      joints.clearUpdateRanges();
+      joints.needsUpdate = true;
+    },
     dispose() {
-      texture.dispose();
+      rows.dispose();
       joints.dispose();
     },
   };
