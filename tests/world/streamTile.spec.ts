@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CITY } from '@world/cityGen/plan';
-import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
+import { EDGE_INSET, MAP_HALF, WHOLE_MAP_DEFAULTS, type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
 import { lotCentre } from '@world/lots';
 import { OWNER, TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
@@ -146,11 +146,22 @@ describe('a tile of the streamed world, built alone', () => {
     for (const s of right.segments) expect(roads.has(pairKey(s.a, s.b)), `road ${s.a}-${s.b} in both tiles`).toBe(false);
   });
 
-  it("builds a tile at the map's far corner, and nothing past the map's edge", () => {
+  it("builds a tile at the map's far corner, closed by its edge avenues inside the map, and nothing past the map's edge", () => {
     const far = buildStreamTile(options, 4, -5);
     checkTile(far, 4, -5);
     expect(far.nodes.length).toBeGreaterThan(0);
     expect(far.segments.length).toBeGreaterThan(0);
+    // The east and south edges closed by an avenue `EDGE_INSET` inside the map; no node, nor a street's stub, past it.
+    const inside = MAP_HALF - EDGE_INSET;
+    const at = new Map([...far.nodes, ...far.borrowedNodes].map((n) => [n.id, n]));
+    for (const n of at.values()) {
+      expect(Math.abs(n.x), `node at x ${n.x}`).toBeLessThanOrEqual(inside + 1e-6);
+      expect(Math.abs(n.y), `node at y ${n.y}`).toBeLessThanOrEqual(inside + 1e-6);
+    }
+    const along = (pick: (n: { x: number; y: number }) => number, line: number): boolean =>
+      far.segments.some((sg) => { const a = at.get(sg.a), b = at.get(sg.b); return !!a && !!b && Math.abs(pick(a) - line) < 1e-6 && Math.abs(pick(b) - line) < 1e-6; });
+    expect(along((n) => n.x, inside), 'the east edge avenue').toBe(true);
+    expect(along((n) => n.y, -inside), 'the south edge avenue').toBe(true);
     const past = buildStreamTile(options, 40, -37);
     expect(past.nodes).toEqual([]);
     expect(past.segments).toEqual([]);

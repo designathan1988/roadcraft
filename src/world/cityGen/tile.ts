@@ -5,7 +5,7 @@ import { m } from '../units';
 import { type BasisField, TensorField } from './field';
 import type { CityPlan } from './plan';
 import { type ForcedSeed, type StreetEdge, type StreetGraph, type StreetLevel, planarize, traceStreets } from './streets';
-import { type Gate, type TileCharacter, type WholeMapPlan, borderLine, gatesOf, mix } from './wholeMap';
+import { type Gate, type TileCharacter, type WholeMapPlan, borderLine, gatesOf, mapLine, mix, tileOnMap } from './wholeMap';
 
 /** ONE TILE OF THE WORLD (`wholeMap.ts`, any column and row): its border avenues, a street from each gate, and its own streets inside, laid as a generated city's plan (`CityPlan`) the city's own steps read (`editor/wholeMapTile.ts`). Everything here reads the seed and the tile's place only. */
 
@@ -42,20 +42,22 @@ export interface TilePlan {
 }
 
 /** One side of the tile: its line, its gates, which way is in, and what kind of tile lies beyond. */
-interface Side { readonly from: Vec2; readonly to: Vec2; readonly gates: readonly Gate[]; readonly inward: Vec2; readonly beyond: 'rural' | 'town'; readonly axis: 'x' | 'y' }
+interface Side { readonly from: Vec2; readonly to: Vec2; readonly gates: readonly Gate[]; readonly inward: Vec2; readonly beyond: 'rural' | 'town' | 'edge'; readonly axis: 'x' | 'y' }
 
 export function planTile(map: WholeMapPlan, i: number, j: number): TilePlan {
   const seed = map.options.seed;
   const character = map.tile(i, j);
+  // The tile's square (what it owns), and the lines its border avenues run on: on the map's edge, inside it (`mapLine`), the avenue closing the map whole on the ground.
   const x0 = borderLine(i), x1 = borderLine(i + 1), y0 = borderLine(j), y1 = borderLine(j + 1);
+  const ax0 = mapLine(i), ax1 = mapLine(i + 1), ay0 = mapLine(j), ay1 = mapLine(j + 1);
   const rows = gatesOf(seed, 0, j), cols = gatesOf(seed, 1, i);
-  // What lies beyond each side (always a tile: the world has no rim): the countryside (its avenue gates' streets only) or a town.
-  const beyond = (ni: number, nj: number): Side['beyond'] => (map.tile(ni, nj).style === 'rural' ? 'rural' : 'town');
+  // What lies beyond each side: the countryside (its avenue gates' streets only), a town, or the map's edge (no street out of the map).
+  const beyond = (ni: number, nj: number): Side['beyond'] => (!tileOnMap(ni, nj) ? 'edge' : map.tile(ni, nj).style === 'rural' ? 'rural' : 'town');
   const sides: Side[] = [
-    { from: { x: x0, y: y0 }, to: { x: x1, y: y0 }, gates: cols, inward: { x: 0, y: 1 }, beyond: beyond(i, j - 1), axis: 'x' },
-    { from: { x: x0, y: y1 }, to: { x: x1, y: y1 }, gates: cols, inward: { x: 0, y: -1 }, beyond: beyond(i, j + 1), axis: 'x' },
-    { from: { x: x0, y: y0 }, to: { x: x0, y: y1 }, gates: rows, inward: { x: 1, y: 0 }, beyond: beyond(i - 1, j), axis: 'y' },
-    { from: { x: x1, y: y0 }, to: { x: x1, y: y1 }, gates: rows, inward: { x: -1, y: 0 }, beyond: beyond(i + 1, j), axis: 'y' },
+    { from: { x: ax0, y: ay0 }, to: { x: ax1, y: ay0 }, gates: cols, inward: { x: 0, y: 1 }, beyond: beyond(i, j - 1), axis: 'x' },
+    { from: { x: ax0, y: ay1 }, to: { x: ax1, y: ay1 }, gates: cols, inward: { x: 0, y: -1 }, beyond: beyond(i, j + 1), axis: 'x' },
+    { from: { x: ax0, y: ay0 }, to: { x: ax0, y: ay1 }, gates: rows, inward: { x: 1, y: 0 }, beyond: beyond(i - 1, j), axis: 'y' },
+    { from: { x: ax1, y: ay0 }, to: { x: ax1, y: ay1 }, gates: rows, inward: { x: -1, y: 0 }, beyond: beyond(i + 1, j), axis: 'y' },
   ];
   const nodes: Vec2[] = [];
   const edges: StreetEdge[] = [];
@@ -87,8 +89,8 @@ export function planTile(map: WholeMapPlan, i: number, j: number): TilePlan {
   }
   const rng = new Rng(mix(seed, 0x7113, i, j));
   const field = style === 'blocks' || rural
-    ? gridInterior(character, gateEnds, nodes, edges, { x0, y0, x1, y1 })
-    : tracedInterior(character, gateEnds, nodes, edges, { x0, y0, x1, y1 }, seed, rng);
+    ? gridInterior(character, gateEnds, nodes, edges, { x0: ax0, y0: ay0, x1: ax1, y1: ay1 })
+    : tracedInterior(character, gateEnds, nodes, edges, { x0: ax0, y0: ay0, x1: ax1, y1: ay1 }, seed, rng);
   const graph: StreetGraph = { nodes, edges };
   const city: CityPlan = {
     // The steps read the plan's graph and zones; its options stand for the whole map's (no size of its own).

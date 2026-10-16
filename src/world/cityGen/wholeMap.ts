@@ -1,5 +1,6 @@
 import { Rng } from '@core/rng';
 import type { Vec2 } from '@core/vec2';
+import { Level, ROAD_TYPES, halfWidth, roadType } from '../roadTypes';
 import { TILE } from '../tiles';
 import { m } from '../units';
 import type { ZoneDensity, ZoneUse } from '../zones';
@@ -9,7 +10,7 @@ import type { CityOptions, CityStyle } from './plan';
 /** THE MAP (the player's order, 2026-10-16): a square of `MAP_TILES` tiles each way round the origin, 10 km x 10 km, the city over the WHOLE of it; never a world without an edge. The size will be the player's choice; the rules below stay pure functions of the seed and the place, so a larger map is the same rules over more tiles. */
 export const MAP_TILES = 10;
 /** Bumped when what the plan puts where changes (the map's edge, the city's spread): a world's stored tiles and far bakes are kept under it, so a city of an older plan is never shown for a new one. */
-export const PLAN_VERSION = 2;
+export const PLAN_VERSION = 3;
 /** The key a world is stored and baked under: the seed, the map's size and the plan's version. */
 export const worldKey = (seed: number): string => `${seed}.m${MAP_TILES}.p${PLAN_VERSION}`;
 /** The map's half side, world units. */
@@ -39,6 +40,12 @@ export const WHOLE_MAP_DEFAULTS: Pick<WholeMapOptions, 'style' | 'centres' | 'pa
 
 /** The line of border `k` along either axis, for any integer `k`: the tiles' edges (`tiles.ts`), exact multiples of `TILE`. */
 export const borderLine = (k: number): number => k * TILE;
+
+/** How far in from the map's edge the avenues closing it run: half an avenue with its footways, so nothing of them stands past the ground, which ends at the edge (`flatAtlas.ts` slab). */
+export const EDGE_INSET = halfWidth(roadType(Math.max(0, ROAD_TYPES.findIndex((t) => t.id === 'avenue'))), Level.Sidewalk);
+
+/** Where border `k`'s avenue runs: on the border, or `EDGE_INSET` inside the map on its edges (west and south at -MAP_TILES / 2, east and north at MAP_TILES / 2). */
+export const mapLine = (k: number): number => (k <= -MAP_TILES / 2 ? -MAP_HALF + EDGE_INSET : k >= MAP_TILES / 2 ? MAP_HALF - EDGE_INSET : borderLine(k));
 
 /** A street's crossing of a border avenue; `level` 0 an avenue, 1 a collector (`LEVEL_ROAD`). */
 export interface Gate {
