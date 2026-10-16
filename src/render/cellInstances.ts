@@ -293,6 +293,8 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     s.mesh = mesh;
     sizeBuffers(k, s, MIN_CAPACITY);
     mesh.count = 0;
+    // Made at the map zoom: its cards left out as the others' (`setMap`).
+    if (spec.cards && mapMode === true && !k.pictured) mesh.visible = false;
     // The screen's size, device pixels, as it draws.
     const before = mesh.onBeforeRender.bind(mesh);
     mesh.onBeforeRender = (renderer, ...rest) => {
@@ -516,8 +518,13 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       for (const k of kinds) {
         if (k.spec.levels?.far === undefined && !k.spec.meshes.some((s) => s.cards)) continue;
         k.current = false;
-        if (k.pictured || !map) continue;
-        for (const s of k.meshes) if (s.spec.cards && s.mesh) s.mesh.count = 0;
+        // DO NOT leave the cards shown with no instance at the map zoom: a draw call each for nothing.
+        for (const s of k.meshes) {
+          if (!s.spec.cards || !s.mesh) continue;
+          const left = map && !k.pictured;
+          s.mesh.visible = !left;
+          if (left) s.mesh.count = 0;
+        }
       }
     },
     cull(frustum, view) {
