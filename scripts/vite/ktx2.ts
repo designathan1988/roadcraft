@@ -178,7 +178,9 @@ interface Ktx2Encoder {
 
 /** A UASTC file: each level and layer encoded on its own by Basis Universal (these mipmaps, not its own), the blocks put together and Zstandard per level. */
 export async function uastcKtx2(levels: readonly (readonly Uint8Array[])[], size: number, use: TextureUse): Promise<Uint8Array> {
-  const encoder = (await import('ktx2-encoder')) as unknown as Ktx2Encoder;
+  // Not a dependency until UASTC is the codec (the player's yes on shots): installed then, resolved only at that call.
+  const name = 'ktx2-encoder';
+  const encoder = (await import(/* @vite-ignore */ name)) as unknown as Ktx2Encoder;
   const blocks: Uint8Array[][] = [];
   let first: KTX2Container | null = null;
   for (let level = 0; level < levels.length; level++) {
