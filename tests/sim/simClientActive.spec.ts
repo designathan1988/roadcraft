@@ -87,4 +87,27 @@ describe("the worker's copy of the active region", () => {
     client.tile('loaded', tileKey(5, 5));
     expect(sent).toEqual([]);
   });
+  it("hands the worker the page's junctions and ribbons of a tile it takes in, before its records, and none of a tile it does not hold", () => {
+    const doc = new RoadDoc();
+    const sent: ToSim[] = [];
+    const client = new SimClient(doc);
+    (client as unknown as { worker: { postMessage(message: ToSim): void } }).worker = { postMessage: (message) => sent.push(message) };
+    const { a, b } = twoTiles();
+    const active = new Set([a.key]);
+    client.setActive((key) => active.has(key));
+    doc.loadTile(a); client.tile('loaded', a.key);
+    doc.loadTile(b); client.tile('loaded', b.key);
+    client.frame(0.1, false, RUN);
+    const bake = { nodes: [], segments: [] };
+    sent.length = 0;
+    client.offerBake(b.key, bake);
+    client.offerBake(a.key, bake);
+    expect(sent).toEqual([{ type: 'bake', bake }]);
+    sent.length = 0;
+    active.add(b.key);
+    const asked: number[][] = [];
+    client.activeChanged([b.key], (nodes, segments) => { asked.push([...nodes, ...segments]); return bake; });
+    expect(sent.map((message) => message.type)).toEqual(['bake', 'delta', 'tile']);
+    expect(asked.map((ids) => [...ids].sort((p, q) => p - q))).toEqual([[...b.nodes.map((n) => n.id), ...b.segments.map((s) => s.id)].sort((p, q) => p - q)]);
+  });
 });

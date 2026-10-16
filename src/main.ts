@@ -1973,7 +1973,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
       sim.tile('loaded', key);
       // Its junctions and ribbons as the worker solved them, for the frame's rebuild (`NetworkBuild.takeBakes`).
       const bake = store.takeBake(key);
-      if (bake) net.offerBake(bake);
+      if (bake) { net.offerBake(bake); sim.offerBake(key, bake); }
     },
     letGo: (key, removedAt) => {
       history.letGoTile((r) => tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
@@ -1982,7 +1982,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
     },
     written: (key, version) => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); },
     // The kept ring's buildings and roads are the far levels' to draw, not the near products' (the solution's 5.4): the layer, the roads and the far levels told when a tile's standing changes.
-    activeChanged: (keys, rects) => { for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); sim.activeChanged(keys); },
+    activeChanged: (keys, rects) => { for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); sim.activeChanged(keys, (nodes, segments) => net.exportBake(nodes, segments)); },
     writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
   }, tileLanes());

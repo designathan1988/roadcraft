@@ -1,6 +1,7 @@
 import type { RoadDoc, Restoration, RecordPart, ValuePart } from '@world/doc';
 import { type DocChangeKind, type JournalReader, TILE_LOADED } from '@world/changes';
 import type { NodeId, SegmentId } from '@world/ids';
+import type { NetworkBake } from '@world/networkBuild';
 import { OWNER, tileOfRecord } from '@world/tiles';
 import type { BuildingId } from '@world/buildings/types';
 import { buildingChangesOf, trafficMapOf } from '../agents/trafficBuildings';
@@ -263,8 +264,15 @@ export class SimClient implements JournalReader {
     if (!isActive) this.held.clear();
   }
 
+  /** DO NOT let the worker solve again the junctions and ribbons the page has solved: a tile's bake from its worker (`editor/tileStore.ts`), sent as it is put in, for a tile the worker's copy holds. */
+  offerBake(key: number, bake: NetworkBake): void {
+    if (!this.worker || (this.isActive && !this.held.has(key))) return;
+    this.send({ type: 'bake', bake });
+  }
+
   /** The loaded tiles that came into the active region or left it (`worldStreamer.ts` activeChanged): the worker's copy takes in their roads, lots and buildings, or lets them go to the meso's tables. */
-  activeChanged(keys: readonly number[]): void {
+  /** `bakeOf`: the page's junctions and ribbons of a tile coming in (`Network.exportBake`), sent before its records. */
+  activeChanged(keys: readonly number[], bakeOf?: (nodes: readonly NodeId[], segments: readonly SegmentId[]) => NetworkBake): void {
     if (!this.isActive || !this.worker) return;
     // The diary up to now first: a tile's records go once, in order.
     this.sendChanges();
@@ -275,6 +283,7 @@ export class SimClient implements JournalReader {
       const records: Restoration['records'][number][] = [];
       if (active) {
         this.held.add(key);
+        if (bakeOf) this.send({ type: 'bake', bake: bakeOf([...t.nodes, ...t.borrowedNodes], t.segments) });
         for (const id of [...t.nodes, ...t.borrowedNodes]) records.push({ part: 'nodes', id, value: this.nodeRecord(id) });
         for (const id of t.segments) records.push({ part: 'segments', id, value: recordOf(this.doc, 'segments', id) });
         for (const id of t.lots) records.push({ part: 'lots', id, value: recordOf(this.doc, 'lots', id) });

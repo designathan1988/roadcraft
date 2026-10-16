@@ -1,6 +1,7 @@
 import type { Restoration } from '@world/doc';
 import type { BuildingChange, TrafficMap } from '../agents/trafficBuildings';
 import type { NodeId, SegmentId } from '@world/ids';
+import type { NetworkBake } from '@world/networkBuild';
 import type { BodyPart, PedView, PersonAgeClass } from '../people/view';
 import type { Casualty } from '../people/casualties';
 import type { KerbStop } from '../vehicles/kerbStops';
@@ -93,6 +94,8 @@ export type ToSim =
   | { readonly type: 'tile'; readonly event: TileEvent; readonly key: number; readonly version: number }
   /** The roads', lots' and transit's records the diary named (`delta`), and the buildings it named as traffic records. */
   | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingChange[] }
+  /** A tile's junctions and ribbons as the page has them solved (`NetworkBake`): the worker's network takes them where its inputs are the same, never solving them again. */
+  | { readonly type: 'bake'; readonly bake: NetworkBake }
   | { readonly type: 'frame'; readonly wall: number; readonly hold: boolean; readonly controls: SimControls }
   | { readonly type: 'reset' }
   /** The micro window's centre and radius (`meso/meso.ts`), and the page's buffer the meso traffic is written into (`meso/memory.ts`). */

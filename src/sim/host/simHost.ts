@@ -90,6 +90,7 @@ export class SimHost {
         this.doc.restore(message.delta);
         this.buildings.apply(message.buildings);
         return;
+      case 'bake': this.net.offerBake(message.bake); return;
       case 'reset': this.sim?.reset(); this.sim?.ambient.reset(this.sim); return;
       case 'window':
         this.meso.attach(new MesoMemory(message.meso));
