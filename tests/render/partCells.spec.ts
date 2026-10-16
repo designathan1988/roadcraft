@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three';
-import type { CellArrays } from '@render/buildings/cellArrays';
-import { createBuildingKit } from '@render/buildings/kit';
+import { InstancedMesh, type InterleavedBufferAttribute, Matrix4, Quaternion, Vector3 } from 'three';
+import { type BuildingChunk, emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
+import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
+import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
+import { BATCH_CELL, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
 import { PartCell, type PartView } from '@render/buildings/partCells';
+import { SHELL_PART_KINDS } from '@render/buildings/shellParts';
+import { growOnLot } from '@editor/zoning';
+import type { Building } from '@world/buildings/types';
+import { RoadDoc } from '@world/doc';
+import { applyLots, planLots, zoneLots } from '@world/lots';
+import { Network } from '@world/network';
+import { m } from '@world/units';
 
 /** A CELL'S PARTS DRAWN BY THEIR ERROR ON THE SCREEN (`partCells.ts`) */
 const kit = createBuildingKit();
@@ -76,4 +85,96 @@ describe('the parts of a cell', () => {
   it('refuse a sub-cell outside its cell', () => {
     expect(() => new PartCell('0,0', [['4,0', arrays(frames([windows], 300, 10))]], kit)).toThrow();
   });
+});
+
+const groundAt = (x: number, y: number): number => x * 0.031 - y * 0.017 + Math.sin(x * 0.05) * m(0.4);
+
+/** A small town grown on its lots, every use and density: gates, fences, bins and pavings. */
+function grownTown(): Building[] {
+  const doc = new RoadDoc();
+  const ids: number[][] = [];
+  for (let i = 0; i <= 2; i++) { ids.push([]); for (let j = 0; j <= 2; j++) ids[i]!.push(doc.addNode({ x: m(120) * (i - 1), y: m(120) * (j - 1) }).id); }
+  for (let i = 0; i <= 2; i++) {
+    for (let j = 0; j <= 2; j++) {
+      if (i < 2) doc.addSegment(ids[i]![j]! as never, ids[i + 1]![j]! as never, 1);
+      if (j < 2) doc.addSegment(ids[i]![j]! as never, ids[i]![j + 1]! as never, 1);
+    }
+  }
+  const net = new Network(doc);
+  net.rebuild();
+  applyLots(doc, planLots(doc, net));
+  doc.lots.forEach((l, k) => zoneLots(doc, [l.id], { use: (['residential', 'commercial', 'industrial'] as const)[k % 3]!, density: (['low', 'medium', 'high'] as const)[(k >> 1) % 3]! }));
+  const refused = new Set<number>();
+  for (let k = 0; k < doc.lots.length * 3; k++) {
+    if (growOnLot({ doc, net, groundAt: () => 0 }, refused, 0x5eed) === null && refused.size >= doc.lots.length) break;
+  }
+  return [...doc.buildings.all()];
+}
+
+/** A cell's key, or a sub-cell's, from a point of the map. */
+const keyAt = (x: number, y: number, side: number): string => `${Math.floor(x / side)},${Math.floor(y / side)}`;
+
+/** Each instance's place (its matrix's translation), sorted: the instances a set of ranges draws, whatever their order. */
+function places(ranges: readonly { array: ArrayLike<number>; stride: number; offset: number; count: number }[]): string[] {
+  const out: string[] = [];
+  for (const { array, stride, offset, count } of ranges) {
+    for (let i = 0; i < count; i++) out.push([12, 13, 14].map((k) => array[i * stride + offset + k]!.toFixed(4)).join(' '));
+  }
+  return out.sort();
+}
+
+describe("the shell's parts of a grown town's cells", () => {
+  const town = grownTown();
+  const boxes = kitBoxes(kit);
+  const detailParts = PART_KINDS.filter((p) => DETAIL_PARTS.has(p));
+
+  for (const far of [false, true]) {
+    it(`draw each kind in one mesh a cell with every instance, near, far, under a pixel and into any cascade (${far ? 'facade level' : 'detail'})`, () => {
+      // The town by cell, then by sub-cell, as the workers file it (`cellWork.ts`).
+      const byCell = new Map<string, Map<string, BuildingChunk[]>>();
+      for (const b of town) {
+        const cell = keyAt(b.x, b.y, BATCH_CELL), sub = keyAt(b.x, b.y, DETAIL_CELL);
+        let subs = byCell.get(cell);
+        if (!subs) byCell.set(cell, subs = new Map());
+        const chunk = emitChunk(b, groundAt, undefined, groundAt, undefined, far);
+        const list = subs.get(sub);
+        if (list) list.push(chunk);
+        else subs.set(sub, [chunk]);
+      }
+      let seen = 0;
+      for (const [key, subs] of byCell) {
+        const details = [...subs].map(([sub, chunks]) => [sub, cellArrays(chunks, { parts: detailParts, shells: false, furniture: false, ghost: false, dim: false }, boxes)] as const);
+        const cell = new PartCell(key, details, kit);
+        const comma = key.indexOf(',');
+        const cx = (Number(key.slice(0, comma)) + 0.5) * BATCH_CELL, cy = (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL;
+        // Over the cell, beside it with shadows, far off, and from above at a tiny scale where every other part is under a pixel.
+        const eyes: PartView[] = [view(cx, cy, 2), view(cx + 300, cy, 50, 0.1), view(cx + 3000, cy + 3000, 400, 2), { ...view(cx, cy, 500), orthoPx: 0.02 }];
+        for (const eye of eyes) {
+          cell.choose(eye);
+          for (const kind of SHELL_PART_KINDS) {
+            const sources = details.flatMap(([, a]) => { const p = a.parts[kind]; return p ? [p] : []; });
+            const total = sources.reduce((n, p) => n + p.count, 0);
+            const meshes = drawn(cell).filter((mesh) => mesh.name === `building-${kind}`);
+            if (total === 0) { expect(meshes, `${key} ${kind}`).toHaveLength(0); continue; }
+            seen++;
+            expect(meshes, `${key} ${kind}`).toHaveLength(1);
+            const mesh = meshes[0]!;
+            expect(mesh.count).toBe(total);
+            expect(mesh.castShadow).toBe(Number.isFinite(eye.shadowTexel));
+            // The same instances as the sub-cells sent, every one.
+            const attribute = mesh.instanceMatrix as unknown as InterleavedBufferAttribute;
+            const got = places([{ array: attribute.data.array, stride: attribute.data.stride, offset: attribute.offset, count: mesh.count }]);
+            expect(got).toEqual(places(sources.map((p) => ({ array: p.instanceMatrix, stride: 16, offset: 0, count: p.count }))));
+          }
+          // Into the finest cascade and the coarsest: a shell's part casts at any size.
+          for (const texel of [0.05, 8]) {
+            cell.castInto(texel);
+            for (const mesh of drawn(cell)) if ((SHELL_PART_KINDS as readonly string[]).includes(mesh.name.slice('building-'.length))) expect(mesh.castShadow).toBe(true);
+          }
+        }
+        cell.dispose();
+      }
+      expect(seen).toBeGreaterThan(0);
+    });
+  }
 });
