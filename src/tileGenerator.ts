@@ -1,11 +1,11 @@
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import { type TileRecords, tileOfKey } from '@world/tiles';
-import { jobPort } from './jobs/jobPool';
+import { jobLanes, jobPort } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
-/** Workers making tiles at once: tiles are asked a few at a time (`worldStreamer.ts` IN_FLIGHT), nearest first. */
-const LANES = 2;
+/** Workers making tiles at once: as many as the region asks at a time (`worldStreamer.ts` IN_FLIGHT), never more than the pool has. */
+const MOST_LANES = 4;
 
 /** A tile asked of the generator's worker (`cityTile.worker.ts`). */
 interface StreamAsk {
@@ -47,7 +47,8 @@ export class TileGenerator {
 
   /** Each free lane given the next tile asked. */
   private pump(): void {
-    while (this.lanes.length < LANES && this.queue.length > this.lanes.filter((l) => !l.busy).length) this.lanes.push(this.lane());
+    const lanes = jobLanes(MOST_LANES);
+    while (this.lanes.length < lanes && this.queue.length > this.lanes.filter((l) => !l.busy).length) this.lanes.push(this.lane());
     for (const lane of this.lanes) {
       if (lane.busy) continue;
       const next = this.queue.shift();
