@@ -2076,8 +2076,8 @@ export class RoadDoc {
     return {
       version: 1,
       unit: METERS_PER_UNIT,
-      nodes: [...this.nodes.values()].map(savedNode),
-      segments: [...this.segments.values()].map(savedSegment),
+      nodes: inIdOrder(this.nodes.values()).map(savedNode),
+      segments: inIdOrder(this.segments.values()).map(savedSegment),
       terrain: this.terrainStamps.map((stamp) => ({ ...stamp })),
       // Only for the natural land: a legacy map serialises as before.
       ...(this.terrainRelief !== RELIEF_LEGACY ? { relief: this.terrainRelief } : {}),
@@ -2093,11 +2093,11 @@ export class RoadDoc {
       ...(this.trees.length > 0 ? { trees: this.trees.map((t) => ({ ...t })) } : {}),
       ...(JSON.stringify(this.weather) !== JSON.stringify(DEFAULT_WEATHER) ? { weather: { ...this.weather } } : {}),
       ...(this.treeClearings.length > 0 ? { treeClearings: this.treeClearings.map((c) => ({ ...c })) } : {}),
-      poles: [...this.poles.values()].map(savedPole),
-      poleSpans: [...this.poleSpans.values()].map(savedSpan),
-      ...(this.landscape.size > 0 ? { landscape: [...this.landscape.values()].map(savedLandscape) } : {}),
+      poles: inIdOrder(this.poles.values()).map(savedPole),
+      poleSpans: inIdOrder(this.poleSpans.values()).map(savedSpan),
+      ...(this.landscape.size > 0 ? { landscape: inIdOrder(this.landscape.values()).map(savedLandscape) } : {}),
       // Only when there are any, so a map without them serialises as before.
-      ...(this.barriers.size > 0 ? { barriers: [...this.barriers.values()].map(savedBarrier) } : {}),
+      ...(this.barriers.size > 0 ? { barriers: inIdOrder(this.barriers.values()).map(savedBarrier) } : {}),
       // Only when there are any, so a map without buildings serialises exactly as it did before buildings existed.
       ...(withBuildings && this.buildings.size > 0 ? { buildings: this.buildings.toJSON() } : {}),
       ...(this.zones.length > 0 ? { zones: this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })) } : {}),
@@ -2867,6 +2867,14 @@ export function savedNode(n: RoadNode): SerializedDoc['nodes'][number] {
     ...(n.end ? { end: n.end } : {}),
     ...(n.uturn !== undefined ? { uturn: n.uturn as number } : {}),
   };
+}
+
+/** DO NOT write records in the map's insertion order: an undo puts a removed record back at the end, and the map saved would not be the map it undid to. The file holds them by id (a load's order). */
+function inIdOrder<T extends { readonly id: number }>(records: Iterable<T>): T[] {
+  const list = [...records];
+  // Nearly always in order already (ids grow): sorted only when one came back.
+  for (let i = 1; i < list.length; i++) if (list[i - 1]!.id > list[i]!.id) return list.sort((a, b) => a.id - b.id);
+  return list;
 }
 
 /** A segment as the file holds it. */
