@@ -35,7 +35,8 @@ export const poleBaker: NearBaker<PoleBake | null, PoleExtra> = {
       stands: (pole) => own.has(pole.id) || doc.spansAt(pole.id).some((s) => strung.has(s.id)),
       strings: (span) => strung.has(span.id),
     };
-    const bake = bakePoles(net, groundAt, source, extra.shapes);
+    // DO NOT file a tile's poles in the world's cells of 256 m: sixteen cells of twelve meshes each, ~200 objects a tile walked by three's render and its shadow passes every frame (conf25's move, 2026-10-17); one cell, one mesh a part, a tile.
+    const bake = bakePoles(net, groundAt, source, extra.shapes, () => area.key);
     return bake.cells.length ? bake : null;
   },
   buffers: (bake) => (bake ? poleBakeBuffers(bake) : []),
