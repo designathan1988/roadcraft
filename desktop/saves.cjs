@@ -100,7 +100,7 @@ function createSaves(saves) {
     queue = result.catch(() => undefined);
     return result;
   }
-  /** Resolves once every request asked so far is done (the exit waits for it, `main.cjs` before-quit). */
+  /** Resolves once every request asked so far is done (the exit waits for it, `main.cjs` will-quit). */
   const drained = () => queue.then(() => true);
   return { run, drained };
 }
