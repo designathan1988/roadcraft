@@ -2,7 +2,7 @@ import type { SegmentId } from '@world/ids';
 import type { StationHint } from '@world/elevation';
 import { platesOver } from '@world/bounds';
 import { canQueueJobs, submitJob, type JobTicket } from '../jobs/jobPool';
-import type { SharedGroundData } from './sharedGround';
+import { type SharedGroundData, groundOver } from './sharedGround';
 import type { RoadStationsJob, RoadStationsReply } from './roadStations.worker';
 
 /** THE GROUND UNDER THE ROADS A SOLVE WILL READ, ASKED OF THE JOB SYSTEM (`roadStations.worker.ts`): the page's solve (`renderer.ts` buildWorld) waits for it instead of reading every new road's ground in the frame a tile is put in */
@@ -30,6 +30,18 @@ function platesUnder(xy: Float64Array, half: number, ground: SharedGroundData): 
   return platesOver([x0 - half, y0 - half, x1 + half, y1 + half]).map((k) => [k, ground.plates.get(k)]);
 }
 
+/** The box round every road asked, each by its casing's half. */
+function roadsBox(roads: readonly { readonly xy: Float64Array; readonly half: number }[]): [number, number, number, number] {
+  const box: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const { xy, half } of roads) {
+    for (let i = 0; i < xy.length; i += 2) {
+      box[0] = Math.min(box[0], xy[i]! - half); box[1] = Math.min(box[1], xy[i + 1]! - half);
+      box[2] = Math.max(box[2], xy[i]! + half); box[3] = Math.max(box[3], xy[i + 1]! + half);
+    }
+  }
+  return box;
+}
+
 export class RoadStations {
   private readonly hints = new Map<SegmentId, Hint>();
   private asked: JobTicket | null = null;
@@ -53,7 +65,8 @@ export class RoadStations {
       key: 'roadStations',
       // Before every other job: the world's build waits on it.
       priority: -1,
-      write: () => ({ data: { ground, roads: asked.map(({ id, xy, half }) => ({ id, xy, half })) } satisfies RoadStationsJob, transfer: [] }),
+      // The plates under the roads asked only (`groundOver`): each one's casing on them.
+      write: () => ({ data: { ground: groundOver(ground, roadsBox(asked)), roads: asked.map(({ id, xy, half }) => ({ id, xy, half })) } satisfies RoadStationsJob, transfer: [] }),
       done: (answer) => {
         const byId = new Map(asked.map((r) => [r.id, r]));
         for (const r of (answer as RoadStationsReply).roads) {

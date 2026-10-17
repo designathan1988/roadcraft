@@ -121,7 +121,7 @@ import { structureProduct } from './structureTiles';
 import { gardenProduct } from './gardenTiles';
 import { coverExtraFor, coverProduct } from './coverTiles';
 import { elementProduct } from './elementTiles';
-import type { SharedGroundAt, SharedGroundData } from './sharedGround';
+import { type SharedGroundAt, type SharedGroundData, groundOver } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
@@ -1405,7 +1405,8 @@ export function createSceneRenderer(
     }
     const paving = pavedHeightAt.pack([x0, y0, x1, y1]);
     if (!paving) return null;
-    return { buildings: list.map((b) => ({ record: refOf(b), floor: floors.floorOf(b) })), paving: paving.data, ground, apron: SITE_APRON };
+    // The plates under the banks only (`groundOver`), as the paving.
+    return { buildings: list.map((b) => ({ record: refOf(b), floor: floors.floorOf(b) })), paving: paving.data, ground: groundOver(ground, [x0, y0, x1, y1]), apron: SITE_APRON };
   };
   function* shapeBlocksSteps(net: Network, blocks: readonly [number, number, number, number][]): Generator<'wait' | void, void, void> {
     // DO NOT walk `buildings.all()` for them, nor every building for a platform not known yet (`ensure`, a building a step)

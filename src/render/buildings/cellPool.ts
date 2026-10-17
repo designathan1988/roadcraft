@@ -4,7 +4,7 @@ import type { Finish } from '@world/buildings/materials';
 import type { PavingSource } from '@world/paving';
 import type { RecordRef } from '@world/buildings/recordTable';
 import { m } from '@world/units';
-import type { SharedGroundAt } from '../sharedGround';
+import { type SharedGroundAt, groundOver } from '../sharedGround';
 import { BATCH_CELL } from './layerCells';
 import type { KitBoxes } from './cellArrays';
 import { type CellEntry, type CellJob, type CellResult, type JobKind, type WorkReply, runCellJob } from './cellWork';
@@ -167,8 +167,11 @@ export class CellPool {
 
   /** The job as its worker reads it: the records' shared tables and rows, the plates' shared buffers, the roads near the cell (MDN, transfer). */
   private write(asked: Asked): { data: CellJob; transfer: ArrayBuffer[] } {
-    const ground = (asked.env.groundAt as SharedGroundAt).share?.current;
-    if (!ground) throw new Error('[buildings] the ground is not shared any more');
+    const shared = (asked.env.groundAt as SharedGroundAt).share?.current;
+    if (!shared) throw new Error('[buildings] the ground is not shared any more');
+    // The plates under the cell and its roads only (`groundOver`): a read past them asks the job again wider (`cellWork.ts` wider).
+    const box = asked.rect ?? pavingRect(asked.cell);
+    const ground = box ? groundOver(shared, box) : shared;
     const packed = asked.env.pavedAt && asked.rect ? asked.env.pavedAt.pack!(asked.rect) : null;
     if (asked.env.pavedAt && asked.rect && !packed) throw new Error('[buildings] the paving cannot be handed to a worker');
     const job: CellJob = {

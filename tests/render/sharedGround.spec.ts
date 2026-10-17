@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { PLATE_SIZE, plateOf, plateRegion } from '@world/bounds';
 import { cellDiagonal } from '@world/groundPatch';
 import { RELIEF_NATURAL, reliefHeight } from '@world/terrain';
-import { GroundShare, sharedGroundReaders } from '@render/sharedGround';
+import { GROUND_MARGIN, GroundPastArea, GroundShare, groundOver, sharedGroundReaders } from '@render/sharedGround';
+import { m } from '@world/units';
 import { sampleCorners } from '@render/terrainShaping';
 
 /** THE GROUND A WORKER READS OFF SHARED MEMORY IS THE PAGE'S (`sharedGround.ts`; the page: `flatAtlas.ts` `ask`, `terrain.ts` `sampleGrid`) */
@@ -87,5 +88,38 @@ describe('the ground in shared memory', () => {
       expect(reads.groundAt(r.cx + lx, r.cy + ly)).toBe(sampleCorners(grid, plate.rendered, plate.flip, lx, ly));
       expect(reads.naturalAt(r.cx + lx, r.cy + ly)).toBe(sampleCorners(grid, plate.natural, plate.naturalFlip, lx, ly));
     }
+  });
+});
+
+describe('the ground handed to a job', () => {
+  it('holds the plates under its box only, reads them as the whole share does, and refuses a read past it', () => {
+    const share = new GroundShare(N, CELL, HALF, BASE);
+    share.setRelief(RELIEF_NATURAL);
+    // Five by five plates made round the origin (the map's ~1.6 MB each, here small).
+    for (let pj = -2; pj <= 2; pj++) for (let pi = -2; pi <= 2; pi++) {
+      const plate = share.open(plateOf(pi * PLATE_SIZE, pj * PLATE_SIZE))!;
+      fill(plate.rendered, plate.flip, pi + pj);
+      fill(plate.natural, plate.naturalFlip, pi - pj);
+    }
+    const whole = share.current!;
+    expect(whole.plates.size).toBe(25);
+    // A building cell's box inside one plate: that plate alone (DO NOT post the 25 with every job).
+    const box = [m(100), m(100), m(356), m(356)] as const;
+    const job = groundOver(whole, box);
+    expect(job.plates.size).toBe(1);
+    // Across a plate's edge (its margin too): the plates it touches.
+    expect(groundOver(whole, [HALF - m(50), -m(10), HALF + m(50), m(10)]).plates.size).toBe(2);
+    const all = sharedGroundReaders(whole), mine = sharedGroundReaders(structuredClone(job));
+    for (let k = 0; k < 2000; k++) {
+      const x = box[0] - GROUND_MARGIN + ((k * 7.31) % (box[2] - box[0] + 2 * GROUND_MARGIN)), y = box[1] - GROUND_MARGIN + ((k * 3.77) % (box[3] - box[1] + 2 * GROUND_MARGIN));
+      expect(mine.groundAt(x, y)).toBe(all.groundAt(x, y));
+      expect(mine.naturalAt(x, y)).toBe(all.naturalAt(x, y));
+    }
+    // Past the box and its margin a plate was never handed: its read would be the relief's, wrong, so it throws.
+    expect(() => mine.groundAt(box[2] + GROUND_MARGIN + 1, box[1])).toThrow(GroundPastArea);
+    // Told instead, where the job asks again over a wider box (`cellWork.ts`).
+    const missed: number[] = [];
+    sharedGroundReaders(job, (x, y) => missed.push(x, y)).naturalAt(-m(3000), m(10));
+    expect(missed).toEqual([-m(3000), m(10)]);
   });
 });
