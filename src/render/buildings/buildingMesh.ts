@@ -1,3 +1,4 @@
+import { identityMemo } from '@core/identityMemo';
 import earcut from 'earcut';
 import clipping from 'polygon-clipping';
 import { resolveBlocks } from '@world/buildings/blocks';
@@ -2124,12 +2125,12 @@ function emitClock(e: Emitter, el: BuildingElement, x0: number, y0: number, x1: 
   layer(ca, ca + r * 0.78, cz - w, cz + w, m(0.1), m(0.12), CLOCK_INK);
 }
 
-/** The parts of a grown lot nothing holds up (`unsupportedElements`) */
-function looseParts(b: Building): Set<number> | null {
+/** The parts of a grown lot nothing holds up (`unsupportedElements`): DO NOT work them out again for the building's lot after its body (`emitBuilding`, `emitLots`), each pair of parts clipped against each other: once a record (records are replaced, never changed). */
+const looseParts = identityMemo((b: Building): ReadonlySet<number> | null => {
   if (b.lotPlan === undefined || !b.elements?.length) return null;
   const loose = unsupportedElements(b);
   return loose.size ? loose : null;
-}
+});
 
 /** One free element: its boxes, its pavings and its fences' rails the shell's parts, instanced (`shellParts.ts`); the rest laid in the shell. */
 function emitElement(e: Emitter, el: BuildingElement, floor: number, bottom: number, c: Paint,
