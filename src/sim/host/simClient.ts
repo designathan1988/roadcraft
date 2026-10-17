@@ -238,7 +238,13 @@ export class SimClient implements JournalReader {
       worker.onmessage = (event: MessageEvent<FromSim>) => {
         if (event.data.type === 'ready') { worker.onmessage = (e: MessageEvent<FromSim>) => this.receive(e.data); done(); return; }
         this.receive(event.data);
+        // DO NOT wait for a ready that will never come: the game opens without its traffic, and says so.
+        if (event.data.type === 'failed') done();
       };
+      // A worker that cannot load or throws, or a message it cannot read: told as a failure, the opening let go (`main.ts` awaits it).
+      const lost = (what: string): void => { this.receive({ type: 'failed', message: what }); done(); };
+      worker.onerror = (event: ErrorEvent) => { event.preventDefault(); lost(`the worker stopped: ${event.message || 'it could not be loaded'}`); };
+      worker.onmessageerror = () => lost('a message from the worker could not be read');
     });
     this.markSent();
     this.send({ type: 'init', frames: this.frames, map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles], seed, zones, zonesPrefix, ambient });
