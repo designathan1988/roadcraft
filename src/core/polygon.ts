@@ -1,19 +1,26 @@
 import type { Vec2 } from './vec2';
 import { segSeg } from './intersect';
 
-/** True when a closed polygon has no self-intersections. */
+/** How far apart two edges' boxes must be, world units, before they are taken not to meet: well over what `segSeg` rounds (~1e-11 at the map's coordinates), so no pair it would find meeting is left out. */
+const BOX_GAP = 1e-6;
+
+/** True when a closed polygon has no self-intersections. DO NOT test every pair of edges with `segSeg` (it makes vectors each call: 21 s of the tile workers' junction rings in an opening, wprof5): each edge's box once, `segSeg` only where two boxes meet; the same answer. */
 export function isSimple(points: readonly Vec2[]): boolean {
   const n = points.length;
   if (n < 3) return false;
+  const x0 = new Float64Array(n), x1 = new Float64Array(n), y0 = new Float64Array(n), y1 = new Float64Array(n);
   for (let i = 0; i < n; i++) {
-    const a0 = points[i] as Vec2;
-    const a1 = points[(i + 1) % n] as Vec2;
+    const a = points[i] as Vec2, b = points[(i + 1) % n] as Vec2;
+    x0[i] = Math.min(a.x, b.x) - BOX_GAP; x1[i] = Math.max(a.x, b.x) + BOX_GAP;
+    y0[i] = Math.min(a.y, b.y) - BOX_GAP; y1[i] = Math.max(a.y, b.y) + BOX_GAP;
+  }
+  for (let i = 0; i < n; i++) {
+    const ax0 = x0[i]!, ax1 = x1[i]!, ay0 = y0[i]!, ay1 = y1[i]!;
     for (let j = i + 1; j < n; j++) {
       // Skip the shared-vertex neighbours of edge i.
-      if (j === i || (j + 1) % n === i || j === (i + 1) % n) continue;
-      const b0 = points[j] as Vec2;
-      const b1 = points[(j + 1) % n] as Vec2;
-      if (segSeg(a0, a1, b0, b1)) return false;
+      if ((j + 1) % n === i || j === (i + 1) % n) continue;
+      if (x0[j]! > ax1 || x1[j]! < ax0 || y0[j]! > ay1 || y1[j]! < ay0) continue;
+      if (segSeg(points[i] as Vec2, points[(i + 1) % n] as Vec2, points[j] as Vec2, points[(j + 1) % n] as Vec2)) return false;
     }
   }
   return true;
