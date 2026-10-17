@@ -3970,7 +3970,10 @@ if (import.meta.env.DEV) (window as unknown as { __roadcraft: unknown }).__roadc
   camera,
   surface,
   DT,
-  exportMap: () => exportToFile(doc, sessionSettings()),
+  /** The map to a file as Ctrl+S makes it: a streamed world whole (every stored tile, `saveWorldFile`), else the map; the hint it would show. */
+  exportMap: () => streamed
+    ? saveWorldFile(streamed, mapTilesFrom(0, 0), (blob) => offerFile(blob, 'roadcraft-city.json'))
+    : exportToFile(doc, sessionSettings()),
   /** The autosave written now, resolved once it is stored (the route's reopening step, `scripts/look/route.json`). */
   saved: () => { persistence.saveSessionSoon(doc, sessionSettings); persistence.flush(); return persistence.written(); },
   importMap: async () => openImported(await importFromFile()),
