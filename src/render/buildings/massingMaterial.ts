@@ -1,4 +1,4 @@
-import { Color, MeshStandardMaterial } from 'three';
+import { Color, MeshDepthMaterial, MeshStandardMaterial } from 'three';
 import { ROOM_LAMP_GLSL } from './roomLamps';
 import { applyLotOverlay } from '../lotOverlay';
 
@@ -17,16 +17,58 @@ export interface MassingUniforms {
   readonly massingNight: { value: number };
 }
 
-export function createMassingMaterial(uniforms: MassingUniforms): MeshStandardMaterial {
+/** GLSL: a box of a box level laid from its instance (`farTiles.ts` `boxMass`, `massBoxes.ts`): each vertex of the unit box its corner (0-3 counter-clockwise), up (0 foot, 1 top), face (0-3 the wall from that corner, 4 the roof) and end of its wall (0, 1), as the boxes' mesh of masses laid them. */
+const BOX_PARS = `
+attribute vec4 boxVertex;
+attribute vec4 boxA;
+attribute vec4 boxB;
+attribute vec4 boxC;
+attribute vec4 boxD;
+attribute vec2 boxE;
+vec2 massBoxTurn(vec2 v) { float c = cos(boxB.x), s = sin(boxB.x); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }
+vec3 massBoxPosition() {
+  int corner = int(boxVertex.x + 0.5);
+  vec2 toward = corner == 0 ? vec2(-1.0, -1.0) : corner == 1 ? vec2(1.0, -1.0) : corner == 2 ? vec2(1.0, 1.0) : vec2(-1.0, 1.0);
+  vec2 plan = boxA.xy + massBoxTurn(toward * boxA.zw);
+  // Three's axes: the plan's y is -z.
+  return vec3(plan.x, mix(boxB.y, boxB.z, boxVertex.y), -plan.y);
+}`;
+
+/** GLSL: the rest a box's vertex is laid with in the masses' material: its face and normal. */
+const BOX_LOOK = `
+int massBoxFace() { return int(boxVertex.z + 0.5); }
+vec3 massBoxNormal() {
+  int face = massBoxFace();
+  if (face == 4) return vec3(0.0, 1.0, 0.0);
+  vec2 n = massBoxTurn(face == 0 ? vec2(0.0, -1.0) : face == 1 ? vec2(1.0, 0.0) : face == 2 ? vec2(0.0, 1.0) : vec2(-1.0, 0.0));
+  return vec3(n.x, 0.0, -n.y);
+}`;
+
+/** The masses' material; `boxes`: the box levels' (`massBoxes.ts`), each box laid from its instance in place of its vertices. */
+export function createMassingMaterial(uniforms: MassingUniforms, boxes = false): MeshStandardMaterial {
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 });
-  material.name = 'building-massing';
+  material.name = boxes ? 'building-massing-boxes' : 'building-massing';
   const glass = `vec3(${GLASS.r.toFixed(5)}, ${GLASS.g.toFixed(5)}, ${GLASS.b.toFixed(5)})`;
   material.onBeforeCompile = (shader) => {
     shader.uniforms['roomsAwake'] = uniforms.roomsAwake;
     shader.uniforms['massingNight'] = uniforms.massingNight;
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nattribute vec2 glazing;\nvarying vec4 vFacade;\nvarying vec2 vGlazing;\nvarying float vHeight;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFacade = facade;\nvGlazing = glazing;\nvHeight = position.y;');
+    shader.vertexShader = boxes
+      ? shader.vertexShader
+        .replace('#include <common>', `#include <common>\n${BOX_PARS}\n${BOX_LOOK}\nvarying vec4 vFacade;\nvarying vec2 vGlazing;\nvarying float vHeight;`)
+        // A wall's colour, its facade (along it, bay, storey, its floor) and glass; the roof's colour, no windows (bay 0), its seed.
+        .replace('#include <color_vertex>', `#include <color_vertex>\nvColor = massBoxFace() == 4 ? boxD.rgb : boxC.rgb;`)
+        .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = massBoxNormal();')
+        .replace('#include <begin_vertex>', `vec3 transformed = massBoxPosition();
+{
+  int face = massBoxFace();
+  float side = face == 0 || face == 2 ? 2.0 * boxA.z : 2.0 * boxA.w;
+  vFacade = face == 4 ? vec4(0.0, 0.0, 1.0, 0.0) : vec4(boxVertex.w * side, boxC.w, boxD.w, boxB.w);
+  vGlazing = vec2(face == 4 ? 0.0 : boxE.x, boxE.y);
+  vHeight = transformed.y;
+}`)
+      : shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nattribute vec2 glazing;\nvarying vec4 vFacade;\nvarying vec2 vGlazing;\nvarying float vHeight;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFacade = facade;\nvGlazing = glazing;\nvHeight = position.y;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform float roomsAwake;
@@ -71,8 +113,21 @@ if (vFacade.y > 0.0) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.12, massGlass);')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += massLamp * massingNight * massLit * massGlass;`);
   };
-  material.customProgramCacheKey = () => 'building-massing-lamps-v2';
+  material.customProgramCacheKey = () => (boxes ? 'building-massing-boxes-v1' : 'building-massing-lamps-v2');
   // A built lot's yard, coloured from afar as up close (`lotOverlay.ts`).
   applyLotOverlay(material, 'massing', { building: true });
+  return material;
+}
+
+/** The box levels' shadow: each box laid from its instance, as the masses' material lays it (three's shadow pass takes a mesh's `customDepthMaterial`). */
+export function createMassBoxDepth(): MeshDepthMaterial {
+  const material = new MeshDepthMaterial();
+  material.name = 'building-massing-boxes-depth';
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${BOX_PARS}`)
+      .replace('#include <begin_vertex>', 'vec3 transformed = massBoxPosition();');
+  };
+  material.customProgramCacheKey = () => 'building-massing-boxes-depth-v1';
   return material;
 }
