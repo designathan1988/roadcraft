@@ -21,6 +21,8 @@ const STRUCTURES: Readonly<Record<string, (host: Inside) => number>> = {
   junctionCells: (h) => versions(at(h.net, 'junctionCells')),
   nodePlaces: (h) => versions(at(h.net, 'build.nodePlaces')),
   junctionFiling: (h) => versions(at(h.sim, 'junctionFiling')),
+  // The lights told the page, by junction (`simHost.ts` signals).
+  lightsSent: (h) => (at(h, 'lightsSent') as Map<number, string>).size,
 };
 const versions = (filing: unknown): number => (at(filing, 'versions') as Map<number, number>).size;
 
