@@ -223,4 +223,33 @@ describe('the tiles written', () => {
     expect(await streamer.flush()).toBe(true);
     expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 100 && n.y === 100)).toBe(true);
   });
+
+  it('writes an edit at the next frame, not seconds later, and an edit made during a write right after it', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    let worldWrites = 0;
+    const streamer = new WorldStreamer(doc, store, { writeWorld: () => { worldWrites++; return Promise.resolve(true); } });
+    await settle(streamer, 10, 10);
+    const before = store.writes;
+    doc.addNode({ x: 100, y: 100 });
+    doc.setBalance(doc.economy.balance - 1);
+    store.held = true;
+    // The next frame, a few milliseconds on: the tile posted (the world's values after it).
+    streamer.apply(1);
+    await turns(1);
+    expect(store.writes).toBe(before + 1);
+    // Another edit while the write is held: not posted beside it, written once it is in.
+    doc.addNode({ x: 200, y: 100 });
+    streamer.apply(2);
+    await turns(2);
+    expect(store.writes).toBe(before + 1);
+    store.held = false;
+    store.release();
+    await turns(3);
+    streamer.apply(3);
+    await turns(3);
+    expect(store.writes).toBe(before + 2);
+    expect(worldWrites).toBe(1);
+    expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 200 && n.y === 100)).toBe(true);
+  });
 });

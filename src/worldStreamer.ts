@@ -20,8 +20,8 @@ const IN_FLIGHT = 4;
 const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
 /** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
 const RETRY_MS = 30_000;
-/** Changed tiles are written this often (and always before they are let go). */
-const WRITE_EVERY_MS = 5_000;
+/** A write that failed is posted again after this (a store failing on it fails again at once). */
+const RETRY_WRITE_MS = 5_000;
 
 /** The tile a record of an undo step stands in (`editor/history.ts` letGoTile): by its place, or by its id's range for a road or a span. */
 /** What the streamer tells the game */
@@ -64,7 +64,7 @@ export class WorldStreamer {
   /** The tiles wanted now, nearest first, and the camera's tile they were worked out for. */
   private wanted: number[] = [];
   private around = { i: Number.NaN, j: Number.NaN };
-  private lastWrite = 0;
+  private lastRetry = 0;
   /** When a tile last failed to come (`RETRY_MS`). */
   private readonly failedAt = new Map<number, number>();
   /** Tiles known to be in the store (read or made this session), and those being made ahead now. */
@@ -74,8 +74,9 @@ export class WorldStreamer {
   private aheadOrder: number[] = [];
   /** Each tile's last write posted and not confirmed yet, its records as written: a tile asked again meanwhile is served them if the write failed; a failed one is written again (`retryFailed`). */
   private readonly unconfirmed = new Map<number, PendingWrite>();
-  /** The world's values written, one after another. */
+  /** The world's values written, one after another, and whether one is under way (the next waits for it). */
   private worldWriting: Promise<unknown> = Promise.resolve();
+  private worldPosting = false;
 
   /** `inFlight`: how many tiles are asked of the store at once (the generator's lanes, `tileGenerator.ts` `lanesWanted`: more while the map is made), read as they are asked. */
   constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private readonly tell: StreamerEvents = {},
@@ -157,14 +158,19 @@ export class WorldStreamer {
       this.tell.letGo?.(key, removedAt);
       this.versions.delete(key);
     }
-    // A changed tile kept in the ring is written at once: the far levels draw it from the store (`activeChanged`), never from the page.
-    for (const key of [...this.dirty]) if (!this.wanted.includes(key)) this.write(key);
-    if (now - this.lastWrite >= WRITE_EVERY_MS) {
-      this.lastWrite = now;
+    // DO NOT hold a changed tile for a timer: a page closed or reloaded meanwhile (a browser waits for nothing) lost the edits. Written as soon as its last write is in, so the store is one write behind the page at most.
+    for (const key of [...this.dirty]) if (!this.posting(key)) this.write(key);
+    if (now - this.lastRetry >= RETRY_WRITE_MS) {
+      this.lastRetry = now;
       this.retryFailed();
-      for (const key of [...this.dirty]) this.write(key);
-      this.writeWorld();
     }
+    this.writeWorld();
+  }
+
+  /** Whether a write of the tile is under way (not failed): the next waits for it, then takes every edit made meanwhile. */
+  private posting(key: number): boolean {
+    const pending = this.unconfirmed.get(key);
+    return pending !== undefined && !pending.failed;
   }
 
   /** Every changed tile written, and those that failed written again (the page going away, a map changed): true once the store confirmed every write, false when one failed. */
@@ -172,7 +178,7 @@ export class WorldStreamer {
     this.noteEdits();
     this.retryFailed();
     for (const key of [...this.dirty]) this.write(key);
-    this.writeWorld();
+    this.writeWorld(true);
     const tiles = [...this.unconfirmed.values()].map((w) => w.done);
     return Promise.all([...tiles, this.worldWriting.then(() => !this.worldDirty)]).then((ok) => ok.every(Boolean));
   }
@@ -269,15 +275,16 @@ export class WorldStreamer {
   }
 
   /** The map's parts no tile holds written when they changed, after the tiles posted before; changed again if the write failed. */
-  private writeWorld(): void {
-    if (!this.worldDirty || !this.tell.writeWorld) return;
+  private writeWorld(force = false): void {
+    if (!this.worldDirty || !this.tell.writeWorld || (this.worldPosting && !force)) return;
     this.worldDirty = false;
+    this.worldPosting = true;
     const write = this.tell.writeWorld;
     const before = [...this.unconfirmed.values()].map((w) => w.done);
     const failed = (why: string): void => { this.worldDirty = true; this.tell.failed?.(why); };
     this.worldWriting = this.worldWriting.then(() => Promise.all(before)).then(() => write()).then(
       (ok) => { if (ok === false) failed('the world\'s values were not written'); },
-      (error: unknown) => failed(`the world's values were not written: ${String(error)}`));
+      (error: unknown) => failed(`the world's values were not written: ${String(error)}`)).then(() => { this.worldPosting = false; });
   }
 
   /** A tile from the store; DO NOT read the store's older version of one whose last write failed: the records written are served (`apply` writes them again). */
