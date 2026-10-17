@@ -285,6 +285,81 @@ function mergeRoads(parts: readonly (FarRoadMesh | null)[], ox: number, oy: numb
   return finish(out, ox, oy, error);
 }
 
+/** The most vertices one call of the simplifier is given: its WebAssembly memory grows to the largest call's needs and never shrinks (WebAssembly `memory.grow`), in every worker that bakes a level. */
+export const SIMPLIFY_VERTICES = 1 << 15;
+
+/**
+ * `index` simplified to `error` (absolute, tiny islands pruned) in batches of whole pieces (triangles joined by their vertices) of at most
+ * `SIMPLIFY_VERTICES` vertices each. DO NOT give the simplifier a level's every vertex at once: its quarters are never welded (`mergeRoads`
+ * puts their vertices side by side), so a batch of whole pieces simplifies as they would together, and a level of 16 x 16 tiles grew each
+ * baking worker's WebAssembly memory by ~90 MB for good. A piece is never cut: no border made where there was none.
+ */
+export function simplifyInParts(index: Uint32Array, position: Float32Array, count: number, error: number): Uint32Array {
+  if (count <= SIMPLIFY_VERTICES) return MeshoptSimplifier.simplify(index, position, 3, 0, error, ['ErrorAbsolute', 'Prune'])[0];
+  // The pieces (union-find over each triangle's corners), numbered in the order their first triangle comes.
+  const parent = new Int32Array(count);
+  for (let v = 0; v < count; v++) parent[v] = v;
+  const root = (v: number): number => {
+    while (parent[v] !== v) { parent[v] = parent[parent[v]!]!; v = parent[v]!; }
+    return v;
+  };
+  for (let t = 0; t < index.length; t += 3) {
+    const a = root(index[t]!), b = root(index[t + 1]!), c = root(index[t + 2]!);
+    parent[b] = a; parent[root(c)] = a;
+  }
+  const pieceOf = new Int32Array(count).fill(-1);
+  const pieceVertices: number[] = [];
+  const pieceTriangles: number[] = [];
+  const pieceAt = new Int32Array(index.length / 3);
+  for (let t = 0; t < index.length; t += 3) {
+    const r = root(index[t]!);
+    if (pieceOf[r]! < 0) { pieceOf[r] = pieceVertices.length; pieceVertices.push(0); pieceTriangles.push(0); }
+    pieceAt[t / 3] = pieceOf[r]!;
+    pieceTriangles[pieceOf[r]!]!++;
+  }
+  for (let v = 0; v < count; v++) { const p = pieceOf[root(v)]!; if (p >= 0) pieceVertices[p]!++; }
+  // Each piece's triangles together, the pieces in order (a counting sort).
+  const start = new Int32Array(pieceTriangles.length + 1);
+  for (let p = 0; p < pieceTriangles.length; p++) start[p + 1] = start[p]! + pieceTriangles[p]!;
+  const order = new Int32Array(index.length / 3);
+  const fill = start.slice(0, pieceTriangles.length);
+  for (let t = 0; t < pieceAt.length; t++) order[fill[pieceAt[t]!]!++] = t;
+  const local = new Int32Array(count).fill(-1);
+  const kept: Uint32Array[] = [];
+  let total = 0;
+  for (let first = 0; first < pieceTriangles.length;) {
+    // As many whole pieces as fit the batch (a piece larger than it alone).
+    let last = first, vertices = pieceVertices[first]!;
+    while (last + 1 < pieceTriangles.length && vertices + pieceVertices[last + 1]! <= SIMPLIFY_VERTICES) vertices += pieceVertices[++last]!;
+    const from = start[first]!, to = start[last + 1]!;
+    const batchIndex = new Uint32Array((to - from) * 3);
+    const batchPosition = new Float32Array(vertices * 3);
+    const global = new Uint32Array(vertices);
+    let used = 0;
+    for (let n = from; n < to; n++) {
+      const t = order[n]! * 3;
+      for (let c = 0; c < 3; c++) {
+        const v = index[t + c]!;
+        if (local[v]! < 0) {
+          local[v] = used; global[used] = v;
+          batchPosition[used * 3] = position[v * 3]!; batchPosition[used * 3 + 1] = position[v * 3 + 1]!; batchPosition[used * 3 + 2] = position[v * 3 + 2]!;
+          used++;
+        }
+        batchIndex[(n - from) * 3 + c] = local[v]!;
+      }
+    }
+    const [simpler] = MeshoptSimplifier.simplify(batchIndex, batchPosition.subarray(0, used * 3), 3, 0, error, ['ErrorAbsolute', 'Prune']);
+    for (let i = 0; i < simpler.length; i++) simpler[i] = global[simpler[i]!]!;
+    kept.push(simpler);
+    total += simpler.length;
+    first = last + 1;
+  }
+  const out = new Uint32Array(total);
+  let at = 0;
+  for (const part of kept) { out.set(part, at); at += part.length; }
+  return out;
+}
+
 /** DO NOT draw a level whole: simplified to its error (meshoptimizer `simplify`, absolute error, tiny islands pruned, as `mesh/roadLodPure.ts`), its vertices compacted. */
 function finish(out: Builder, ox: number, oy: number, error: number): FarRoadMesh | null {
   const count = out.vertices;
@@ -294,10 +369,8 @@ function finish(out: Builder, ox: number, oy: number, error: number): FarRoadMes
     position[v * 3] = out.x[v]! - ox; position[v * 3 + 1] = out.h[v]!; position[v * 3 + 2] = -(out.y[v]! - oy);
   }
   let kept: Uint32Array = Uint32Array.from(out.tris);
-  if (MeshoptSimplifier.supported) {
-    // A colour's edge is the border of its band (its own vertices): kept as a border, never collapsed across.
-    [kept] = MeshoptSimplifier.simplify(kept, position, 3, 0, error, ['ErrorAbsolute', 'Prune']);
-  }
+  // A colour's edge is the border of its band (its own vertices): kept as a border, never collapsed across.
+  if (MeshoptSimplifier.supported) kept = simplifyInParts(kept, position, count, error);
   if (kept.length === 0) return null;
   const remap = new Int32Array(count).fill(-1);
   let used = 0;
