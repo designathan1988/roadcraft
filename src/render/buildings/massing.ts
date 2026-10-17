@@ -99,14 +99,22 @@ class MassWriter {
   readonly index = new Grown(uints(96), uints);
   /** The tallest thing left out so far (`leaves`). */
   error = 0;
+  /** The smallest thing asked about and kept so far (`leaves`; a box-less level's pitched roof too, `asks`): a coarser level whose `drop` is under it answers every question alike (`emitMassingLevels`). */
+  kept = Infinity;
 
   constructor(private readonly b: Building, private readonly seed: number, readonly detail: MassDetail = CELL_DETAIL) {}
 
   /** Whether a thing `size` m tall or deep is left out at this level; its size kept as the level's error when it is. */
   leaves(size: number): boolean {
-    if (!(size > 0) || size > this.detail.drop) return false;
+    if (!(size > 0)) return false;
+    if (size > this.detail.drop) { this.kept = Math.min(this.kept, size); return false; }
     this.error = Math.max(this.error, size);
     return true;
+  }
+
+  /** A question only a level of boxes asks (`MassDetail.boxes`), kept as one this level was asked: a size another level would answer. */
+  asks(size: number): void {
+    if (size > 0) this.kept = Math.min(this.kept, size);
   }
 
   /** A point of the building's plan at height z, in three's axes. */
@@ -196,6 +204,27 @@ export function emitMassing(
   /** Its floor already worked out (`massFloor`): a tile's bake reads it once for its two levels and its boxes. */
   known?: { readonly floor: number | undefined },
 ): MassingChunk | null {
+  const w = massWriter(b, groundAt, pavedAt, naturalAt, signature, tone, detail, known);
+  return w.position.length ? w.chunk() : null;
+}
+
+/** A building's masses at two levels, `coarse` leaving out at least what `fine` does: DO NOT walk the building again for the coarser where the finer's walk was asked nothing between their `drop`s (and no pitched roof a level of boxes lays flat): the same walk, the same chunk. */
+export function emitMassingLevels(
+  b: Building, groundAt: GroundAt, pavedAt: PavedAt | undefined, naturalAt: GroundAt,
+  tone: Readonly<Record<Finish, readonly [number, number, number]>> | undefined,
+  fine: MassDetail, coarse: MassDetail, known?: { readonly floor: number | undefined },
+): readonly [MassingChunk | null, MassingChunk | null] {
+  const w = massWriter(b, groundAt, pavedAt, naturalAt, false, tone, fine, known);
+  const chunk = w.position.length ? w.chunk() : null;
+  if (w.kept > coarse.drop) return [chunk, chunk];
+  return [chunk, emitMassing(b, groundAt, pavedAt, naturalAt, false, tone, coarse, known)];
+}
+
+/** A building's mass written out (`emitMassing`). */
+function massWriter(
+  b: Building, groundAt: GroundAt, pavedAt: PavedAt | undefined, naturalAt: GroundAt, signature: boolean,
+  tone: Readonly<Record<Finish, readonly [number, number, number]>> | undefined, detail: MassDetail, known: { readonly floor: number | undefined } | undefined,
+): MassWriter {
   const resolved = resolveBlocks(b);
   // One list for the blocks (`closedBlocks`, as `buildingMesh.ts` `emitChunk`): every block of the body reads one layout of its bays (`bayLayout`).
   const closed = closedBlocks(resolved.volumes);
@@ -215,7 +244,7 @@ export function emitMassing(
     emitMachineRooms(w, body, floor, rgb);
   }
   emitLotPlates(w, resolved, floor, groundAt, pavedAt);
-  return w.position.length ? w.chunk() : null;
+  return w;
 }
 
 /** Numbers per far box (`emitBoxes`): centre x, y; half sides along the building's x and y; its turn; the wall's foot, the top, the floor; the wall's and the roof's colour; bay, storey, glass share, seed; the block's plan area. */
@@ -409,7 +438,9 @@ function emitRoof(w: MassWriter, b: Building, v: Volume, floor: number, eaves: n
   const roof = v.roof === 'terrace' ? TERRACE_RGB : rgb(roofMaterial(b, v));
   const up = w.N(0, 0, 1);
   // A plate's box: a pitched roof whose rise the level leaves out, laid flat at its eaves (its gables gone with it).
-  const flatten = v.roof !== 'flat' && v.roof !== 'terrace' && w.detail.boxes && w.leaves(roofRise(b, v));
+  const pitched = v.roof !== 'flat' && v.roof !== 'terrace';
+  if (pitched && !w.detail.boxes) w.asks(roofRise(b, v));
+  const flatten = pitched && w.detail.boxes && w.leaves(roofRise(b, v));
   if (v.roof === 'flat' || v.roof === 'terrace' || flatten) {
     // The slab at the roof's own level (its parapet is the walls'), and what stands on it - as the detailed roof has them.
     const ring = localFootprint(v);
