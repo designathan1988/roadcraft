@@ -36,7 +36,6 @@ import {
   levelFor, lodReady, simplifiedIndexAway, sortSkinWeights, type FarPart, type PieceRole,
 } from './crowdLod';
 import { createBlobShadows } from '../blobShadows';
-import { pinned } from '../pinned';
 import { lodPool } from './lodPool';
 import { providePeopleLod } from './lodPort';
 
@@ -854,7 +853,7 @@ interface PersonState {
 }
 
 export function createProceduralCrowd(options: { hair?: boolean; /** World units per metre (the game's are 2.5). */ unit?: number } = {}): ProceduralCrowd {
-  const group = pinned(new Group());
+  const group = new Group();
   group.name = 'procedural-people';
   const classes = new Map<string, Promise<BodyClass>>();
   const ready: BodyClass[] = [];
@@ -868,7 +867,6 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const textures = new Map<string, Promise<Texture | null>>();
   const scaled = new Matrix4();
   const blobs = createBlobShadows('procedural-people-shadows', 1024);
-  pinned(blobs.mesh);
   group.add(blobs.mesh);
   /** How every item is drawn at each level, by item (the body: 'skin'): the same for every class, whose fits share their vertices' order. */
   const lodPlans = new Map<string, Promise<LodPlan>>();
@@ -1191,8 +1189,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     mesh.count = 0;
     mesh.visible = false;
     mesh.frustumCulled = false;
-    // Never moved (the people are placed by their rows, `procPlace`)
-    pinned(mesh);
+    // Never moved (the people are placed by their instances)
+    mesh.matrixAutoUpdate = false;
     mesh.receiveShadow = true;
     mesh.castShadow = !!(proxy && depth);
     if (proxy && depth) {
