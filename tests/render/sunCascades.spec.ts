@@ -168,20 +168,20 @@ describe('sun cascades', () => {
     camera.updateMatrixWorld();
     cascades.follow(camera, new Vector3(-0.5, 0.75, -0.3).normalize(), flat, new Vector3(), m(40));
     const frame = (): void => { renderer.shadowMap.render(cascades.lights as DirectionalLight[], town); cascades.restore(); };
-    // The first frame: every cascade drawn whole without the car, kept, and the car drawn over it without a clear.
-    expect(cascades.pass({ changed: false, effects: false, wind: false })).toBe(true);
-    let visibleInTown = true;
-    const shadow0 = cascades.lights[0]!.shadow;
-    const draw = shadow0.updateMatrices.bind(shadow0);
-    shadow0.updateMatrices = (light) => { draw(light); if (drawn.length === 0) visibleInTown = car.visible; };
+    // The first frame, the scene still: every cascade drawn whole; the far one without the car, kept, and the car drawn over it without a clear; the near two with the car in the same pass (they never draw over a store: the sway).
+    expect(cascades.pass({ changed: false, effects: false, wind: false, still: true })).toBe(true);
+    const inTown: boolean[] = [];
+    for (const light of cascades.lights) {
+      const shadow = light.shadow, draw = shadow.updateMatrices.bind(shadow);
+      shadow.updateMatrices = (l) => { draw(l); if (drawn.length < SUN_CASCADES) inTown.push(car.visible); };
+    }
     frame();
-    expect(visibleInTown).toBe(false);
+    expect(inTown).toEqual([true, true, false]);
     const still = drawn.filter((d) => !d.movers), over = drawn.filter((d) => d.movers);
     expect(still.length).toBe(SUN_CASCADES);
-    expect(over.length).toBeGreaterThan(0);
+    expect(over.length).toBe(1);
     expect(over.every((d) => !d.cleared)).toBe(true);
-    expect(copies.length).toBe(SUN_CASCADES);
-    expect(copies.every((c) => c.includes('.shadowMap>'))).toBe(true);
+    expect(copies).toEqual(['.shadowMap>']);
     // The car moves on, nothing else changed: the far cascade not drawn again, only put back from its copy and the car over it; the near two drawn whole (the plants sway in them, `wind.ts`).
     drawn.length = 0; copies.length = 0;
     expect(cascades.pass({ changed: false, effects: false, wind: false, still: true })).toBe(true);
@@ -190,11 +190,13 @@ describe('sun cascades', () => {
     expect(drawn.filter((d) => !d.movers).length).toBe(SUN_CASCADES - 1);
     expect(drawn.filter((d) => d.movers).every((d) => !d.cleared)).toBe(true);
     expect(copies.filter((c) => c.startsWith('>')).length).toBe(1);
-    // Something landed or the view moved (not still): the far cascade's store stands for nothing, drawn whole.
-    drawn.length = 0;
+    // Something landed or the view moved (not still): the far cascade's store stands for nothing, drawn whole, the car in the same pass: no copy kept, no second pass.
+    drawn.length = 0; copies.length = 0;
     cascades.pass({ changed: false, effects: false, wind: false, still: false });
     expect(cascades.lights[2]!.shadow.needsUpdate).toBe(true);
     frame();
+    expect(drawn.every((d) => !d.movers)).toBe(true);
+    expect(copies).toEqual([]);
     // The town changed: drawn whole again.
     drawn.length = 0;
     cascades.pass({ changed: true, effects: false, wind: false });
@@ -243,7 +245,7 @@ describe('sun cascades', () => {
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
     cascades.follow(camera, new Vector3(-0.5, 0.75, -0.3).normalize(), flat, new Vector3(), m(40));
-    cascades.pass({ changed: false, effects: false, wind: false });
+    cascades.pass({ changed: false, effects: false, wind: false, still: true });
     renderer.shadowMap.render(cascades.lights as DirectionalLight[], town);
     expect(over.length).toBeGreaterThan(0);
     for (const list of over) {
