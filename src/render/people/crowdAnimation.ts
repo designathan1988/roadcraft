@@ -121,13 +121,15 @@ export const BLEND_FRAGMENT = /* glsl */`
   precision highp sampler2D;
   uniform sampler2D uAtlas;
   uniform sampler2D uPlays;
+  uniform int uBase;
   out highp vec4 outColor;
   ${atlasBoneGlsl('atlasBone', 'uAtlas')}
   void main() {
     ivec2 at = ivec2(gl_FragCoord.xy);
     int bone = at.x / 4;
     int column = at.x - bone * 4;
-    int person = at.y;
+    // This pass's people from row uBase of the shared target (PaletteTargets).
+    int person = at.y - uBase;
     vec4 meta = texelFetch(uPlays, ivec2(PLAYS, person), 0);
     if (meta.z > 0.5 || meta.y > 0.5) { outColor = vec4(0.0); return; }
     mat4 m = mat4(0.0);
@@ -150,6 +152,7 @@ export const REFIT_FRAGMENT = /* glsl */`
   uniform sampler2D uOverride;
   uniform sampler2D uBlend;
   uniform int uParent[BONES];
+  uniform int uBase;
   out highp vec4 outColor;
   mat4 blendedAt(int person, int bone) {
     return mat4(texelFetch(uBlend, ivec2(bone * 4, person), 0), texelFetch(uBlend, ivec2(bone * 4 + 1, person), 0),
@@ -164,7 +167,9 @@ export const REFIT_FRAGMENT = /* glsl */`
     ivec2 at = ivec2(gl_FragCoord.xy);
     int bone = at.x / 4;
     int column = at.x - bone * 4;
-    int person = at.y;
+    // The person (their plays, their own palette) and their row in the shared targets (the blends read back).
+    int person = at.y - uBase;
+    int row = at.y;
     vec4 meta = texelFetch(uPlays, ivec2(PLAYS, person), 0);
     if (meta.z > 0.5) { outColor = vec4(0.0); return; }
     #ifdef PLACED
@@ -178,17 +183,17 @@ export const REFIT_FRAGMENT = /* glsl */`
       return;
     }
     #else
-    if (meta.y > 0.5) { outColor = texelFetch(uOverride, at, 0); return; }
+    if (meta.y > 0.5) { outColor = texelFetch(uOverride, ivec2(at.x, person), 0); return; }
     #endif
     int variant = int(meta.x + 0.5);
-    mat4 m = blendedAt(person, bone);
+    mat4 m = blendedAt(row, bone);
     // The bone moved to this body's joints (proceduralCrowd.ts refit): its head carried by every parent's turn up to the root.
     vec3 shift = vec3(0.0);
     int cur = bone;
     for (int s = 0; s < MAX_DEPTH; s++) {
       int p = uParent[cur];
       if (p < 0) break;
-      shift += turnAt(person, p) * (jointOf(variant, cur) - jointOf(variant, p));
+      shift += turnAt(row, p) * (jointOf(variant, cur) - jointOf(variant, p));
       cur = p;
     }
     shift += jointOf(variant, cur);
@@ -207,8 +212,8 @@ interface PalettePlay {
 }
 
 export interface PalettePass {
-  /** The bone palettes, a row a person (`bones * 4` texels: mat4 columns), for the skinning to read. */
-  readonly texture: Texture;
+  /** Texels across a person's palette (`bones * 4`: mat4 columns). */
+  readonly width: number;
   readonly capacity: number;
   /** Settles once its program is built (`uploads.ts` compilePassAhead): nobody draws with its palettes before. */
   readonly ready: Promise<void>;
@@ -220,8 +225,10 @@ export interface PalettePass {
   rest(row: number): void;
   /** A palette worked out on the CPU for a person (held by a ragdoll, wounded, a limb lost). */
   setOverride(row: number, palette: Float32Array): void;
-  /** Rows 0..`rows` worked out on the GPU. */
-  render(renderer: WebGLRenderer, rows: number): void;
+  /** Its plays and its own palettes sent up, and its people's rows of the shared targets from `base` (`renderPalettes`). */
+  prepare(base: number, blends: Texture): void;
+  readonly blendScene: Scene;
+  readonly refitScene: Scene;
   /** Room for `capacity` rows; the rows written so far are kept. */
   grow(capacity: number): void;
   dispose(): void;
@@ -243,9 +250,6 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
   let playTexture = rowsTexture(plays, rowTexels, rows);
   let override = new Float32Array(width * 4 * rows);
   let overrideTexture = rowsTexture(override, width, rows);
-  let target = makeTarget(width, rows);
-  /** Each bone's plays blended, before the refit (`BLEND_FRAGMENT`): the refit reads a parent's turn here instead of blending it again. */
-  let blendTarget = makeTarget(width, rows);
   /** Rows of plays written since the last upload; past a few, the whole (small) texture goes up at once. */
   const dirty = new Set<number>();
   let dirtyAll = false;
@@ -257,7 +261,8 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
     uJoints: { value: joints() },
     uOverride: { value: overrideTexture },
     uParent: { value: Array.from(parent) },
-    uBlend: { value: blendTarget.texture },
+    uBlend: { value: null as Texture | null },
+    uBase: { value: 0 },
   };
   const defines: Record<string, number | string> = { BONES: bones, MAX_DEPTH: Math.max(1, depth), PLAYS };
   if (placed) defines['PLACED'] = '';
@@ -277,13 +282,15 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
     return new Scene().add(mesh);
   };
   const blendScene = sceneOf(blend), refitScene = sceneOf(refit);
-  const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   // DO NOT build them at their first draw: a loop over every bone's parents, a second and more in the frame where the first person of a class came (2026-10-16).
-  const ready = Promise.all([compilePassAhead(blendScene, camera, blendTarget), compilePassAhead(refitScene, camera, target)]).then(() => {});
+  // Built for a float target as the shared ones are (`PaletteTargets`): a texel of its own, let go once built.
+  const compileTarget = makeTarget(1, 1);
+  const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const ready = Promise.all([compilePassAhead(blendScene, camera, compileTarget), compilePassAhead(refitScene, camera, compileTarget)])
+    .then(() => compileTarget.dispose());
 
   return {
-    ready,
-    get texture() { return target.texture; },
+    ready, width, blendScene, refitScene,
     get capacity() { return rows; },
     setPlace(row, matrix) {
       const o = (row * rowTexels + PLAY_TEXELS) * 4;
@@ -314,9 +321,9 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       override.set(palette.subarray(0, width * 4), row * width * 4);
       overrideRows.add(row);
     },
-    render(renderer, used) {
-      const n = Math.min(rows, Math.max(0, used));
-      if (n === 0) return;
+    prepare(base, blends) {
+      uniforms.uBase.value = base;
+      uniforms.uBlend.value = blends;
       uniforms.uJoints.value = joints();
       // The atlas a clip baked later may have doubled (`ClassAnimation.add`): the pass reads the one there is now.
       uniforms.uAtlas.value = anim.atlas;
@@ -334,17 +341,6 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
         overrideTexture.needsUpdate = true;
         overrideRows.clear();
       }
-      const previous = renderer.getRenderTarget();
-      const autoClear = renderer.autoClear;
-      renderer.autoClear = false;
-      blendTarget.viewport.set(0, 0, width, n);
-      renderer.setRenderTarget(blendTarget);
-      renderer.render(blendScene, camera);
-      target.viewport.set(0, 0, width, n);
-      renderer.setRenderTarget(target);
-      renderer.render(refitScene, camera);
-      renderer.setRenderTarget(previous);
-      renderer.autoClear = autoClear;
     },
     grow(capacity) {
       if (capacity <= rows) return;
@@ -358,19 +354,12 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       override = nextOverride;
       overrideTexture.dispose();
       overrideTexture = rowsTexture(override, width, capacity);
-      target.dispose();
-      target = makeTarget(width, capacity);
-      blendTarget.dispose();
-      blendTarget = makeTarget(width, capacity);
       uniforms.uPlays.value = playTexture;
       uniforms.uOverride.value = overrideTexture;
-      uniforms.uBlend.value = blendTarget.texture;
       rows = capacity;
       dirtyAll = true;
     },
     dispose() {
-      target.dispose();
-      blendTarget.dispose();
       playTexture.dispose();
       overrideTexture.dispose();
       blend.dispose();
@@ -378,6 +367,55 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       quad.dispose();
     },
   };
+}
+
+/** ONE TARGET FOR THE PALETTES OF EVERY PASS of a crowd, and one for their blends: each pass's people a band of rows of them, so a frame binds two targets, not two a class */
+export interface PaletteTargets {
+  /** The palettes, a person a row (each pass's from its base), for the skinning to read: a new texture when the targets grew. */
+  readonly texture: Texture;
+  dispose(): void;
+}
+
+interface TargetsInside extends PaletteTargets { main: WebGLRenderTarget; blend: WebGLRenderTarget; readonly camera: OrthographicCamera }
+
+export function createPaletteTargets(): PaletteTargets {
+  const targets: TargetsInside = {
+    main: makeTarget(1, 1), blend: makeTarget(1, 1), camera: new OrthographicCamera(-1, 1, 1, -1, 0, 1),
+    get texture() { return targets.main.texture; },
+    dispose() { targets.main.dispose(); targets.blend.dispose(); },
+  };
+  return targets;
+}
+
+/** Every pass's people worked out into the shared targets: their bases (each pass's first row), in the order given; both targets bound once, the blends then the refits. */
+export function renderPalettes(renderer: WebGLRenderer, shared: PaletteTargets, jobs: readonly { readonly pass: PalettePass; readonly rows: number }[], bases: number[]): void {
+  const targets = shared as TargetsInside;
+  bases.length = 0;
+  let rows = 0, width = 1;
+  for (const job of jobs) { bases.push(rows); rows += Math.min(job.pass.capacity, Math.max(0, job.rows)); width = Math.max(width, job.pass.width); }
+  if (rows === 0) return;
+  // Room for them all: made again bigger when too small (every texel is written again each frame: nothing to carry over).
+  if (targets.main.width < width || targets.main.height < rows) {
+    const w = Math.max(width, targets.main.width), h = Math.max(rows, targets.main.height * 2);
+    targets.main.dispose(); targets.blend.dispose();
+    targets.main = makeTarget(w, h); targets.blend = makeTarget(w, h);
+  }
+  const previous = renderer.getRenderTarget();
+  const autoClear = renderer.autoClear;
+  renderer.autoClear = false;
+  for (const [stage, target] of [['blend', targets.blend], ['refit', targets.main]] as const) {
+    for (let i = 0; i < jobs.length; i++) {
+      const job = jobs[i]!, n = Math.min(job.pass.capacity, Math.max(0, job.rows));
+      if (n === 0) continue;
+      if (stage === 'blend') job.pass.prepare(bases[i]!, targets.blend.texture);
+      target.viewport.set(0, bases[i]!, job.pass.width, n);
+      // The same target again: three only sets its viewport (WebGLRenderer setRenderTarget).
+      renderer.setRenderTarget(target);
+      renderer.render(stage === 'blend' ? job.pass.blendScene : job.pass.refitScene, targets.camera);
+    }
+  }
+  renderer.setRenderTarget(previous);
+  renderer.autoClear = autoClear;
 }
 
 function rowsTexture(pixels: Float32Array, texels: number, rows: number): DataTexture {
