@@ -9,7 +9,7 @@ import type { TilePolys } from './roadTileShape';
 /** DO NOT take a silent worker for a dead one: it shares the job pool's workers and the CPU share (a failure comes as an error). */
 interface Lane {
   readonly worker: Worker;
-  readonly waiting: Map<number, { readonly job: TileJob; resolve(tiles: TileMeshes[]): void; reject(error: Error): void }>;
+  readonly waiting: Map<number, { readonly job: TileJob; readonly first: number; resolve(tiles: TileMeshes[]): void; reject(error: Error): void }>;
   /** The blocks whose far level is being made here (`coarsen`). */
   readonly coarsening: Map<number, { resolve(arrays: BlockArrays | null): void; reject(error: Error): void }>;
   /** When the worker last spoke, or was handed a job (`performance.now()`). */
@@ -31,6 +31,10 @@ export interface TileJob {
   dataFor(rects: readonly TileRect[]): { data: SurfaceData; transfer: ArrayBuffer[] };
   /** The ground as drawn, read here at the points a worker asks. */
   terrainAt(x: number, y: number): number;
+  /** Where the workers keep the tiles they make for a later session (`derivedCache.ts`): the store's prefix and each tile's key, in the tiles' order (null: not to keep). */
+  readonly keep?: { readonly prefix: string; readonly keys: readonly (string | null)[] };
+  /** A tile (by its place in `tiles`) kept by its worker before its arrays came here: the page keeps nothing of it. */
+  onKept?(index: number): void;
 }
 
 /** What makes a road surface's tiles off the page (`roadSurfaceSteps`). */
@@ -72,12 +76,14 @@ export class RoadTilePool implements RoadTiler {
       const lane = lanes[k]!;
       const id = this.nextId++;
       const share = tiles.slice(k * per, (k + 1) * per);
+      const first = k * per;
+      const keep = job.keep ? { prefix: job.keep.prefix, keys: job.keep.keys.slice(first, first + share.length) } : undefined;
       parts.push(new Promise((resolve, reject) => {
-        lane.waiting.set(id, { job, resolve, reject });
+        lane.waiting.set(id, { job, first, resolve, reject });
         lane.heard = performance.now();
         // The roads' arrays made for this share alone and handed over, not copied (MDN, "Transferable objects").
         const { data, transfer } = job.dataFor(share.map((t) => t.rect));
-        lane.worker.postMessage({ id, ask: { pass: job.pass, tiles: share, data } }, transfer);
+        lane.worker.postMessage({ id, ask: { pass: job.pass, tiles: share, data, ...(keep ? { keep } : {}) } }, transfer);
       }));
     }
     return Promise.all(parts).then((answers) => answers.flat().map((made) => new Map(made)));
@@ -101,7 +107,7 @@ export class RoadTilePool implements RoadTiler {
       for (let k = 0; k < count; k++) {
         const worker = jobPort('roadTiles');
         const lane: Lane = { worker, waiting: new Map(), coarsening: new Map(), heard: performance.now(), told: false };
-        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; need?: Float64Array; tiles?: TileMeshes[]; error?: string; coarse?: BlockArrays | null }>) => {
+        worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; need?: Float64Array; tiles?: TileMeshes[]; kept?: number[]; error?: string; coarse?: BlockArrays | null }>) => {
           if (this.lanes !== lanes) return;
           lane.heard = performance.now();
           lane.told = false;
@@ -124,6 +130,8 @@ export class RoadTilePool implements RoadTiler {
             return;
           }
           lane.waiting.delete(id);
+          // Those its worker kept in the store: told by their place in the job.
+          for (const k of event.data.kept ?? []) waiting.job.onKept?.(waiting.first + k);
           if (tiles) waiting.resolve(tiles);
           else waiting.reject(new Error(error ?? 'road tile worker failed'));
         };
