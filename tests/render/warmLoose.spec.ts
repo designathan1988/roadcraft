@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
 
-import { drainCompiles, drainWarm, meshBytes, warmAhead, warmLooseAhead, warmPending } from '@render/uploads';
+import { WARM_CEILING, cancelWarm, drainCompiles, drainWarm, meshBytes, warmAhead, warmFull, warmLooseAhead, warmPending, warmQueuedBytes } from '@render/uploads';
 import { buildRoadSurfaces } from '@render/roadSurfaces';
 import type { SceneMaterials } from '@render/materials';
 import { Network } from '@world/network';
@@ -179,5 +179,34 @@ describe('a loose mesh sent to the GPU', () => {
     expect(compiled).toContain(mesh);
     // Its shadow's program too: a stand-in on a depth material.
     expect(compiled.some((o) => o !== mesh && ((o as Mesh).material as { isMeshDepthMaterial?: boolean }).isMeshDepthMaterial)).toBe(true);
+  });
+
+  it('counts the bytes waiting as they are queued, sent and let go, and is full past its ceiling until it drains', async () => {
+    // A frame's drains as the renderer runs them: the uploads, then the programs they wait for.
+    const renderer = { ...fakeRenderer([]), compileAsync: () => Promise.resolve() } as unknown as WebGLRenderer;
+    const scene = new Scene(), camera = new PerspectiveCamera();
+    drainWarm(renderer);
+    const before = warmQueuedBytes();
+    const block = (): Mesh => {
+      const g = new BufferGeometry();
+      g.setAttribute('position', new Float32BufferAttribute(new Float32Array((12 * 1024 * 1024) / 4), 3));
+      return new Mesh(g, new MeshBasicMaterial());
+    };
+    const meshes = Array.from({ length: 6 }, block);
+    const sent = warmLooseAhead(meshes.slice(0, 5))!;
+    expect(warmQueuedBytes() - before).toBe(5 * 12 * 1024 * 1024);
+    expect(warmFull()).toBe(false);
+    const more = warmLooseAhead([meshes[5]!])!;
+    expect(warmQueuedBytes()).toBeGreaterThan(WARM_CEILING);
+    expect(warmFull()).toBe(true);
+    // One let go: its bytes out of the count.
+    cancelWarm([meshes[5]!]);
+    await more;
+    expect(warmFull()).toBe(false);
+    // Sent, a frame at a time: nothing left counted.
+    for (let frame = 0; frame < 10 && warmQueuedBytes() > before; frame++) { drainWarm(renderer); drainCompiles(renderer, camera, scene, null); }
+    drainCompiles(renderer, camera, scene, null);
+    await sent;
+    expect(warmQueuedBytes()).toBe(before);
   });
 });
