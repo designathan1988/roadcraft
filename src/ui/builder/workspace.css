@@ -31,8 +31,6 @@
   background: color-mix(in srgb, var(--bw-panel) 92%, transparent);
   border: 1px solid var(--bw-border);
   border-radius: var(--bw-radius);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
 }
 .bw-inspector.collapsed { width: 34px; max-height: 34px; overflow: hidden; }
 .bw-inspector.collapsed .bw-inspector-title { display: none; }
