@@ -733,6 +733,8 @@ export function createSceneRenderer(
   /** Builds the world of the last edit up to its next wait on a worker; it puts itself in place once complete. */
   /** DO NOT ask the next frame at once while the world's job waits on a worker: the unseen opening's frames come without the display's pace (`frameLoop.ts`), and it spun the page at 2,000 frames a second, starving the workers it waited on (2026-10-16); looked at again a display frame later. */
   const WAIT_LOOK_MS = 16;
+  /** How long the unseen opening runs the world's job before letting the page take the workers' answers (`pumpWorld`). */
+  const HIDDEN_RUN_MS = 50;
   let waitLook: ReturnType<typeof setTimeout> | null = null;
   const lookAgain = (): void => {
     if (waitLook !== null) return;
@@ -743,10 +745,16 @@ export function createSceneRenderer(
     // Not in the frame of the edit itself, which has already paid for the edit and the roads' heights
     if (worldJobFresh) { worldJobFresh = false; onAssetsReady(); return; }
     // DO NOT slice it by time (amortization: the cost came back with a bigger region), and DO NOT run it whole in one frame either: one step a frame, each a product of the change (the ground's blocks, the surfaces, the details), so the page is not held for the whole job of every tile put in (it was, b4938f9: the camera stood still). What remains is the cause: those steps run on the page (CLAUDE.md, work list).
-    const step = worldJob.next();
-    if (step.done) { worldJob = null; shadowMoved = true; }
-    else if (step.value === 'wait') lookAgain();
-    else onAssetsReady();
+    // Behind the curtain no frame is seen: DO NOT spend a whole frame on each step there (a tile's platforms were a building a step, ~1,500 frames a tile of the opening's region, 2026-10-16): its steps run one after another until it waits on a worker, with a pause every `HIDDEN_RUN_MS` for the workers' answers to come in.
+    const job = worldJob;
+    const until = reveal.opened ? -Infinity : performance.now() + HIDDEN_RUN_MS;
+    for (;;) {
+      const step = job.next();
+      if (worldJob !== job) return;
+      if (step.done) { worldJob = null; shadowMoved = true; return; }
+      if (step.value === 'wait') { lookAgain(); return; }
+      if (performance.now() >= until) { onAssetsReady(); return; }
+    }
   };
   let networkRevision = -1;
   /** The blocks the roads' heights or ground changed in since the road surfaces were last built to the end (null: not known, every tile): kept across a world build replaced halfway. */
