@@ -739,7 +739,15 @@ export function createSceneRenderer(
   /** The opening's town (or a map opened) is held until it is whole (`revealGate.ts`). */
   const reveal = new RevealGate();
   /** Every program the game draws with, compiled before the town is shown (`shaderCatalogue.ts`). */
-  const programs = createShaderCatalogue(personProgramStandIns);
+  /** The sets of lights the room and effect lights and the fill make, on and off: each set's programs built ahead (`shaderCatalogue.ts`). */
+  const lightVariants = (): Object3D[][] => {
+    const points: Object3D[] = [...roomLights, fxLights.muzzle, fxLights.blast];
+    const fill = scene.getObjectByName('fill');
+    const base: Object3D[] = [];
+    scene.traverse((o) => { if ((o as PointLight).isLight && o.visible && o !== fill && !points.includes(o)) base.push(o); });
+    return [false, true].flatMap((lit) => [false, true].map((filled) => [...base, ...(lit ? points : []), ...(filled && fill ? [fill] : [])]));
+  };
+  const programs = createShaderCatalogue(personProgramStandIns, lightVariants);
   let openingSince: number | null = null;
   /** The opening's programs, asked of the driver all at once when the town is whole (`compileAsync`, built in parallel), and whether they are built: its unseen frame is drawn only then (`reveal` warm). */
   let openingPrograms: 'no' | 'asked' | 'built' = 'no';
@@ -2980,6 +2988,12 @@ export function createSceneRenderer(
       const atRender = performance.now();
       // The people's skeletons on the GPU (`people/crowdAnimation.ts`), before anybody draws them.
       agents.renderPalettes(renderer);
+      {
+        // DO NOT keep the eight point lights in the scene unlit (R18): three counts every visible light and each lit fragment evaluates it; shown together, so they make one variant (compiled ahead, `lightVariants`).
+        const pointsOn = fxLights.muzzle.intensity > 0 || fxLights.blast.intensity > 0 || roomLights.some((light) => light.intensity > 0);
+        for (const light of roomLights) light.visible = pointsOn;
+        fxLights.muzzle.visible = fxLights.blast.visible = pointsOn;
+      }
       // The world matrices of what moves, once for every pass of the frame.
       updateMoving(scene);
       // The opening's town is shown whole

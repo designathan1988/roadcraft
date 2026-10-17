@@ -36,7 +36,7 @@ export function drainUploads(renderer: WebGLRenderer, count = 1): void {
 /** A pass drawn into a target of its own, in a scene of its own: its programs are keyed by that scene's lights and that target (three's `WebGLPrograms` getParameters). */
 interface OwnPass { readonly camera: Camera; readonly target: WebGLRenderTarget }
 /** Objects whose shaders must be compiled before they are first drawn */
-const toCompile: { object: Object3D; shadow: boolean; done: () => void; pass?: OwnPass }[] = [];
+const toCompile: { object: Object3D; shadow: boolean; done: () => void; pass?: OwnPass; lights?: readonly Object3D[] }[] = [];
 /** What a shadow program is built for: a render target as a shadow map is (no colour space, no tone mapping). */
 let shadowTarget: WebGLRenderTarget | null = null;
 /** Whether a renderer is answering (none in tests: nothing is waited for there). */
@@ -138,6 +138,12 @@ export function compileAhead(object: Object3D, shadow = false): Promise<void> {
   return new Promise((done) => toCompile.push({ object, shadow, done }));
 }
 
+/** `object`'s programs as they are drawn under another set of the scene's lights (`lights`, every one counted lit or not): the variant a light switched on or off asks for, built before it is. */
+export function compileAheadWith(object: Object3D, lights: readonly Object3D[]): Promise<void> {
+  if (!compiler) return Promise.resolve();
+  return new Promise((done) => toCompile.push({ object, shadow: false, done, lights }));
+}
+
 /** DO NOT draw a pass of its own (`people/crowdAnimation.ts` palette pass) before its program is built: compiled on its first draw, in the frame (2026-10-16) */
 export function compilePassAhead(scene: Scene, camera: Camera, target: WebGLRenderTarget): Promise<void> {
   if (!compiler) return Promise.resolve();
@@ -154,7 +160,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   const lit = litScene(scene);
   try {
     while (toCompile.length) {
-      const { object, shadow, done, pass } = toCompile.shift()!;
+      const { object, shadow, done, pass, lights } = toCompile.shift()!;
       if (pass) {
         // Its own scene's lights (none) and its own target, as it is drawn.
         renderer.setRenderTarget(pass.target);
@@ -182,7 +188,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
         if (unit.variant) setDepth((unit.object as Mesh).material as DepthMaterial, unit.variant);
         // DO NOT let one program that cannot be built stop the others, nor the frame: said, and the promise still settles.
         try {
-          compiled.push(renderer.compileAsync(unit.object, camera, lit));
+          compiled.push(renderer.compileAsync(unit.object, camera, lights ? lightSet(scene, lights) : lit));
         } catch (error) {
           console.error('[uploads] a program could not be compiled ahead', error);
         }
@@ -211,6 +217,13 @@ function litScene(scene: Scene): Scene {
   lights.length = 0;
   scene.traverseVisible((o) => { if ((o as Light).isLight) lights.push(o); });
   return lit.scene;
+}
+
+/** `scene` as three's compile reads it with `lights` for its lights: the program variant those lights make. */
+function lightSet(scene: Scene, lights: readonly Object3D[]): Scene {
+  return Object.create(scene, {
+    traverseVisible: { value: (visit: (object: Object3D) => void) => { for (const light of lights) visit(light); } },
+  }) as Scene;
 }
 
 /** Meshes whose geometry must be on the GPU before they are first drawn. three.js sends a geometry's buffers */
