@@ -30,6 +30,7 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   groundShape: () => import('./render/groundShape.worker'),
   garmentPadding: () => import('./render/people/garmentPadding.worker'),
   peopleLod: () => import('./render/people/lodWorker'),
+  crowdBodies: () => import('./render/people/crowdBodies.worker'),
   roadTiles: () => import('./render/roadTile.worker'),
   farRoads: () => import('./render/farRoads.worker'),
   roadStations: () => import('./render/roadStations.worker'),

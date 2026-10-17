@@ -1,4 +1,6 @@
 import { DataTexture, FloatType, NearestFilter, RGBAFormat, type Texture, type WebGLRenderer } from 'three';
+import { canQueueJobs, submitJob } from '../../jobs/jobPool';
+import { type BodyBakeJob, bakeBodyPixels, isShared } from './bodyBake';
 import { createGpuRows } from './gpuRows';
 
 /** The bodies of a class baked once (`proceduralCrowd.ts`) */
@@ -15,8 +17,8 @@ export interface ClassBodies {
   readonly count: number;
   /** The bodies' bytes on the GPU. */
   readonly bytes: number;
-  /** The body to draw a person of these coefficients with (one made if room is left), and its joints. */
-  pick(coefficients: Float32Array): { index: number; joints: Float32Array };
+  /** The body to draw a person of these coefficients with (one made if room is left), its joints, and when its vertices are in the texture (baked in a job). */
+  pick(coefficients: Float32Array): { index: number; joints: Float32Array; ready: Promise<void> };
   /** The bodies made since the last frame sent up: before anybody draws them. */
   flush(renderer: WebGLRenderer): void;
   /** Every body made baked and sent up again (a WebGL context restored). */
@@ -24,7 +26,7 @@ export interface ClassBodies {
   dispose(): void;
 }
 
-/** `shapePixels`: the class's shape basis (`proceduralCrowd.ts` classData), component k of vertex v at texel v * shapes + k */
+/** `shapePixels`: the class's shape basis (`proceduralCrowd.ts` classData), component k of vertex v at texel v * shapes + k: in shared memory (`sharedShape`), a new body is baked in a job */
 export function createClassBodies(shapePixels: Float32Array, vertexCount: number, shapes: number,
   jointBasis: Float32Array, bones: number): ClassBodies {
   const rowsPerBody = Math.ceil(vertexCount / WIDTH);
@@ -37,31 +39,31 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
   joints.needsUpdate = true;
   const coefficients: Float32Array[] = [];
   const jointsOf: Float32Array[] = [];
+  /** Each body's vertices in the texture: settled once its bake was written (`bake`). */
+  const ready: Promise<void>[] = [];
+  let disposed = false;
 
-  /** Body `b`'s every vertex move, baked from its coefficients, sent up at the next flush. */
-  const bake = (b: number): void => {
-    const c = coefficients[b]!;
-    const pixels = new Float32Array(stride * 4);
-    for (let v = 0; v < vertexCount; v++) {
-      let x = 0, y = 0, z = 0;
-      const base = v * shapes * 4;
-      for (let k = 0; k < shapes; k++) {
-        const w = c[k] ?? 0;
-        if (w === 0) continue;
-        const t = base + k * 4;
-        x += w * shapePixels[t]!; y += w * shapePixels[t + 1]!; z += w * shapePixels[t + 2]!;
-      }
-      const o = v * 4;
-      pixels[o] = x; pixels[o + 1] = y; pixels[o + 2] = z;
-    }
-    rows.write(b * rowsPerBody, pixels);
+  const jobOf = (b: number): BodyBakeJob => ({ shape: shapePixels, vertexCount, shapes, stride, coefficients: coefficients[b]! });
+  /** Body `b`'s every vertex move, baked from its coefficients in a job reading the shared basis (here where none can), sent up at the next flush. */
+  const bake = (b: number): Promise<void> => {
+    const write = (pixels: Float32Array): void => { if (!disposed) rows.write(b * rowsPerBody, pixels); };
+    if (!canQueueJobs() || !isShared(shapePixels)) { write(bakeBodyPixels(jobOf(b))); return Promise.resolve(); }
+    return new Promise<void>((resolve) => {
+      submitJob({
+        service: 'crowdBodies', key: null, priority: -1,
+        write: () => ({ data: jobOf(b), transfer: [] }),
+        done: (answer) => { write(answer as Float32Array); resolve(); },
+        // The worker could not: baked here, as an event.
+        failed: () => { write(bakeBodyPixels(jobOf(b))); resolve(); },
+      });
+    });
   };
 
   /** A body made from coefficients `c`: its vertices baked, every joint's move. */
   const make = (c: Float32Array): number => {
     const b = coefficients.length;
     coefficients.push(c.slice());
-    bake(b);
+    ready[b] = bake(b);
     const d = new Float32Array(bones * 3);
     for (let i = 0; i < bones; i++) for (let a = 0; a < 3; a++) {
       let s = 0;
@@ -91,16 +93,17 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
       }
       // A new body while there is room and nobody this close is made yet.
       if (coefficients.length < BODIES && (best < 0 || bestD > 1e-6)) best = make(c);
-      return { index: best, joints: jointsOf[best]! };
+      return { index: best, joints: jointsOf[best]!, ready: ready[best]! };
     },
     flush(renderer) { rows.flush(renderer); },
     restore() {
       rows.reset();
-      for (let b = 0; b < coefficients.length; b++) bake(b);
+      for (let b = 0; b < coefficients.length; b++) ready[b] = bake(b);
       joints.clearUpdateRanges();
       joints.needsUpdate = true;
     },
     dispose() {
+      disposed = true;
       rows.dispose();
       joints.dispose();
     },

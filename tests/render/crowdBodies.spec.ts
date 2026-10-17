@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { DataTexture, WebGLRenderer } from 'three';
 import { BODY_WIDTH, createClassBodies } from '@render/people/crowdBodies';
+import { bakeBodyPixels, sharedShape } from '@render/people/bodyBake';
+import { serve } from '@render/people/crowdBodies.worker';
 
 /** A renderer that records the rows sent up (`copyTextureToTexture` from data). */
 function recorder(): { renderer: WebGLRenderer; sent: { row: number; data: Float32Array }[] } {
@@ -44,5 +46,22 @@ describe("a class's bodies", () => {
     bodies.restore();
     bodies.flush(renderer);
     expect(sent.map((s) => s.row)).toEqual([0, 1, 0, 1]);
+  });
+
+  it('bakes a new body in a job from the basis shared once, the same pixels as on the page, and says when it is in the texture', async () => {
+    const shared = sharedShape(shapePixels);
+    expect(shared.buffer instanceof SharedArrayBuffer).toBe(true);
+    expect([...shared]).toEqual([...shapePixels]);
+    // The job worker's service, as the pool would serve it.
+    let answer: Float32Array | null = null;
+    const scope = { onmessage: null as ((e: MessageEvent) => void) | null, postMessage: (data: unknown) => { answer = data as Float32Array; } };
+    serve(scope as unknown as Parameters<typeof serve>[0]);
+    const job = { shape: shared, vertexCount: 2, shapes: 2, stride: BODY_WIDTH, coefficients: Float32Array.from([0, 2]) };
+    scope.onmessage!(new MessageEvent('message', { data: job }));
+    expect([...answer!.subarray(0, 8)]).toEqual([0, 4, 0, 0, 8, 0, 0, 0]);
+    expect([...answer!]).toEqual([...bakeBodyPixels(job)]);
+    // Picked, its vertices are in the texture once `ready` settles (here at once: no job worker in the tests).
+    const bodies = createClassBodies(shared, 2, 2, jointBasis, 1);
+    await expect(bodies.pick(Float32Array.from([0, 2])).ready).resolves.toBeUndefined();
   });
 });

@@ -28,6 +28,7 @@ import {
 } from './proceduralBake';
 import { buildClassAnimation, createPalettePass, type ClassAnimation, type PalettePass } from './crowdAnimation';
 import { BODY_WIDTH, createClassBodies, type ClassBodies } from './crowdBodies';
+import { sharedShape } from './bodyBake';
 import { createGpuRows, type GpuRows } from './gpuRows';
 import {
   EYE_TRIANGLES, FAR_TRIANGLES, LEVELS, LEVEL_CAPS, LEVEL_TRIANGLES, REGION, cardCentres, cardSelections, farMesh, filterTriangles,
@@ -998,7 +999,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     // Read from the cook (`proceduralCook.ts`); built here only when it is missing or stale.
     const cooked = await loadProcedural(`class-${sex}-${band}`);
     const data = cooked ? classFromRecord(cooked) : await classData(env, sex, rig, shape);
-    const { shapePixels, jointBasis, faceIndexPixels, faceList } = data;
+    const { jointBasis, faceIndexPixels, faceList } = data;
+    // The shape basis in shared memory, once: a new body of the class is baked in a job reading it (`crowdBodies.ts`).
+    const shapePixels = sharedShape(data.shapePixels);
     const clips: Record<ProcClip, ClipFrames> = {
       walk: data.walk, idle: data.idle, run: data.run, cower: data.cower, sprint: data.sprint, photo: data.photo, getUp: data.getUp,
       duck: data.duck, hurtWalk: data.hurtWalk, hurtRun: data.hurtRun, nervous: data.nervous, hit: data.hit,
@@ -1889,6 +1892,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const coef = new Float32Array(SHAPES);
       for (let k = 0; k < SHAPES; k++) coef[k] = (c[k] ?? 0) - (cls.coefficients[k] ?? 0);
       const body = cls.bodies.pick(coef);
+      // Drawn only once their body's vertices are in the texture (baked in a job).
+      await body.ready;
+      if (epoch !== started) throw new Error('crowd cleared');
       // Their own face; a reused row holds the last person's face: theirs replaces it, or none.
       setFace(cls, row, Object.keys(spec.features).length ? spec.features : null);
       // Heights from the vertices' Y alone (MakeHuman's `getHeightCm`).
