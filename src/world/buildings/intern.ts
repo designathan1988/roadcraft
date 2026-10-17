@@ -9,6 +9,25 @@ let nextId = 1;
 /** The canonical objects by their shallow key's hash; held weakly, a shape no building uses any more goes. */
 const table = new Map<number, WeakRef<Plain>[]>();
 
+/** A canonical object collected: its entry let go, and its hash's bucket with it once empty. */
+function letGoInterned(h: number, ref: WeakRef<object>): void {
+  const bucket = table.get(h);
+  if (!bucket) return;
+  const at = bucket.indexOf(ref as WeakRef<Plain>);
+  if (at >= 0) bucket.splice(at, 1);
+  if (bucket.length === 0) table.delete(h);
+}
+
+/** DO NOT keep the entry of an object collected (its WeakRef, its bucket, its hash's key): a bucket was only swept when its own hash came again, so every thread that read buildings (the page, each job worker, the simulation) kept an entry for every shape it ever read - ~39,000 a dense tile - in the one V8 heap the page and its workers share (`jobs/jobPool.ts` CAGE_BYTES), and the page died at ~7.5 GB moving round the city (conferencia conf7-conf9, 2026-10-17). Let go when the collector takes the object (MDN, FinalizationRegistry). */
+const collected = new FinalizationRegistry<{ readonly h: number; readonly ref: WeakRef<Plain> }>(({ h, ref }) => letGoInterned(h, ref));
+
+/** Entries of the table now, and hashes: what the tests read. */
+export function internedEntries(): { readonly entries: number; readonly hashes: number } {
+  let entries = 0;
+  for (const bucket of table.values()) entries += bucket.length;
+  return { entries, hashes: table.size };
+}
+
 /** Inside the hash: 32-bit FNV-1a over the key's pieces. */
 function mix(h: number, n: number): number {
   return Math.imul(h ^ n, 16777619) >>> 0;
@@ -75,7 +94,9 @@ export function intern<T>(value: T): T {
       if (sameShallow(known, node)) return known as unknown as T;
     }
   } else table.set(h, bucket = []);
-  bucket.push(new WeakRef(node));
+  const ref = new WeakRef(node);
+  bucket.push(ref);
+  collected.register(node, { h, ref });
   ids.set(node, nextId++);
   // DO NOT write a shared object in place: every building sharing it would change (records are replaced, never edited).
   Object.freeze(node);
