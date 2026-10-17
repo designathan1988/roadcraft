@@ -22,11 +22,16 @@ const BAKERS: Readonly<Record<NearKind, NearBaker<unknown>>> = {
 
 /** The parts a kind reads (what the page posts of a tile it holds edited). */
 export const nearParts = (kind: NearKind): readonly NearPart[] => [...BAKERS[kind].parts, ...(BAKERS[kind].more ?? [])];
+/** The parts a kind always reads (not those it reads only where the tile has something of it, `more`): what an edited tile is named by for it. */
+export const nearReadParts = (kind: NearKind): readonly NearPart[] => BAKERS[kind].parts;
 /** Whether a kind reads the tiles round its tile. */
 export const nearReadsAround = (kind: NearKind): boolean => BAKERS[kind].around;
 
-/** A near job run by its kind's bake. */
-export const runNearJob = (job: NearTileJob, cache: NearTileCache): Promise<NearTileReply> => runNearTileJob(job, cache, BAKERS[job.kind]);
+/** A kind's bake. */
+const bakerOf = (kind: NearKind): NearBaker<unknown> => BAKERS[kind];
 
-/** An answer's buffers, by its kind's bake. */
-export const nearJobBuffers = (job: NearTileJob, reply: NearTileReply): ArrayBuffer[] => nearReplyBuffers(BAKERS[job.kind], reply);
+/** A near job run by its kinds' bakes. */
+export const runNearJob = (job: NearTileJob, cache: NearTileCache): Promise<NearTileReply> => runNearTileJob(job, cache, bakerOf);
+
+/** An answer's buffers, by its kinds' bakes. */
+export const nearJobBuffers = (reply: NearTileReply): ArrayBuffer[] => nearReplyBuffers(bakerOf, reply);
