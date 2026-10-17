@@ -427,6 +427,27 @@ describe("the world's values", () => {
     await turns(3);
     expect(written).toEqual([['economy']]);
   });
+
+  it("are posted in the frame of the edit, beside its tile's write, never after it is confirmed: a reload between them lost the balance (conf66)", async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    // The tile's write held by the store (a busy worker): it never confirms here.
+    const slow = { ...store, write: () => new Promise<number>(() => {}) };
+    const written: (readonly string[])[] = [];
+    const streamer = new WorldStreamer(doc, slow, { writeWorld: (parts) => { written.push([...parts]); return Promise.resolve(true); } });
+    streamer.focus(10, 10);
+    for (let frame = 0; frame < 30 && !streamer.settled; frame++) { await turns(1); streamer.focus(10, 10); streamer.apply(frame); }
+    await turns(2);
+    written.length = 0;
+    // A road paid for: its tile edited and the balance moved, in one edit.
+    const a = doc.addNode({ x: 100, y: 100 }), b = doc.addNode({ x: 300, y: 100 });
+    doc.addSegment(a.id, b.id, 1);
+    doc.setBalance(doc.economy.balance - 255_838);
+    streamer.apply(100);
+    await turns(2);
+    expect(streamer.storeBehind(tileKey(0, 0))).toBe(true);
+    expect(written).toEqual([['economy']]);
+  });
 });
 
 describe("the map's own allocators", () => {

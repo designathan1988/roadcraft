@@ -436,7 +436,7 @@ export class WorldStreamer {
     }
   }
 
-  /** The map's parts no tile holds written when they changed, after the tiles posted before; changed again if the write failed. */
+  /** The map's parts no tile holds written when they changed, one write after another (the store chains them), changed again if the write failed. DO NOT hold them for the tiles posted before: the balance left a round trip after the road's tile, and a reload in between kept the road and lost the balance (conf66); an allocator written after a tile that took its ids is the unsafe order anyway. */
   private writeWorld(force = false): void {
     if (this.readOnly) { this.worldDirty.clear(); return; }
     if (this.worldDirty.size === 0 || !this.tell.writeWorld || (this.worldPosting && !force)) return;
@@ -444,9 +444,9 @@ export class WorldStreamer {
     this.worldDirty.clear();
     this.worldPosting = true;
     const write = this.tell.writeWorld;
-    const before = this.posted();
     const failed = (why: string): void => { for (const part of parts) this.worldDirty.add(part); this.tell.failed?.(why); };
-    this.worldWriting = this.worldWriting.then(() => Promise.all(before)).then(() => write(parts)).then(
+    // Posted now, beside the tiles of the same frame: the store writes them as they come (`storeTurns.ts`).
+    this.worldWriting = this.worldWriting.then(() => write(parts)).then(
       (ok) => { if (ok === false) failed('the world\'s values were not written'); },
       (error: unknown) => failed(`the world's values were not written: ${String(error)}`)).then(() => { this.worldPosting = false; });
   }
