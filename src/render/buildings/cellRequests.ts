@@ -52,8 +52,8 @@ export class CellRequests {
     if (got) { disposeLanded(got); this.landed.delete(key); }
     const asked = this.asked.get(key);
     if (asked && sameEntries(asked.entries, entries)) return null;
-    // DO NOT ask a level to upload while the upload queue is full (`uploads.ts` warmFull): its arrays waited on the page behind every other one (the renderer at 7.3 GB in a re-bake, conf77, 2026-10-17). What is drawn stands, asked again next frame; a building cut open always goes.
-    if (upload && warmFull() && !edited && !entries.some((e) => e.key.includes('|'))) return null;
+    // DO NOT ask a level to upload while the upload queue is full before it (`uploads.ts` warmFull by its rank): its arrays waited on the page behind every other one (the renderer at 7.3 GB in a re-bake, conf77, 2026-10-17). What is drawn stands, asked again next frame; a building cut open always goes.
+    if (upload && warmFull(this.rank(kind, cell)) && !edited && !entries.some((e) => e.key.includes('|'))) return null;
     // Replaced by the cell as it is now: never sent if waiting, its answer dropped if begun (the queue's key does the same).
     if (asked) this.pool.supersede(asked.id);
     const ask = { entries, id: 0 };
