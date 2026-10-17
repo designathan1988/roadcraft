@@ -52,7 +52,7 @@ export interface TileSource {
   /** The tile in the store (made there when it is not) and its version, its records not handed over (`TileStore.ensure`); none: `load`. */
   ensure?(key: number): Promise<number>;
   /** The version written, or null when it was not. */
-  write(records: TileRecords): Promise<number | null>;
+  write(records: TileRecords, keep?: { readonly buildings: boolean }): Promise<number | null>;
   /** A stored tile's parking bays baked and added where it has none (`TileStore.addBays`); none: nothing to do. */
   addBays?(key: number): Promise<void>;
 }
@@ -66,6 +66,8 @@ export class WorldStreamer {
   private readonly versions = new Map<number, number>();
   /** Tiles changed by the player (or the game) since last written, and whether the map's parts no tile holds did. */
   private readonly dirty = new Set<number>();
+  /** Tiles whose buildings or lots changed since their last write (or could have: an entry with no place): the others' buildings part is kept as the store holds it (`TileSource.write` keep, D4). */
+  private readonly buildingsTouched = new Set<number>();
   /** The world's parts changed since written (`RoadDoc.worldPart`): DO NOT write them all for one. */
   private readonly worldDirty = new Set<WorldPart>();
   /** The map's own allocators as last written with the world's values (`RoadDoc.allocatorMarks`): a record made where no tile is loaded moves them. */
@@ -223,6 +225,8 @@ export class WorldStreamer {
         if (preparedTiles.has(was)) preparedTiles.set(records, preparedTiles.get(was) ?? null);
       }
       this.doc.loadTile(records);
+      // As read: its buildings the store's until an edit reaches them.
+      this.buildingsTouched.delete(best);
       if (strip.length) this.dirty.add(best);
       this.versions.set(best, records.version);
       // Put in from a write that failed (`load`): the page holds what the store does not, written again from here.
@@ -317,8 +321,10 @@ export class WorldStreamer {
   }
 
   /** A tile reached by an edit: to be written, and the store behind the page until it is. */
-  private touched(key: number, serial: number): void {
+  /** `kind`: what changed (null: not known) - its buildings or lots, or anything the write cannot place, and its buildings part is written again. */
+  private touched(key: number, serial: number, kind: string | null): void {
     this.dirty.add(key);
+    if (kind === null || kind === 'buildings' || kind === 'lots') this.buildingsTouched.add(key);
     const behind = this.unsaved.get(key);
     if (behind) behind.edit = serial;
     else this.unsaved.set(key, { edit: serial, write: null });
@@ -417,19 +423,19 @@ export class WorldStreamer {
     if (entries !== null && entries.length === 0) return;
     const serial = ++this.editSerial;
     if (entries === null) {
-      for (const key of this.doc.loadedTiles) this.touched(key, serial);
+      for (const key of this.doc.loadedTiles) this.touched(key, serial, null);
       return;
     }
     for (const entry of entries) {
       if (isStreaming(entry)) continue;
       if (WORLD_KINDS.includes(entry.kind)) { this.worldDirty.add(entry.kind as WorldPart); continue; }
-      if (entry.rects === null) { for (const key of this.doc.loadedTiles) this.touched(key, serial); continue; }
+      if (entry.rects === null) { for (const key of this.doc.loadedTiles) this.touched(key, serial, null); continue; }
       for (const [x0, y0, x1, y1] of entry.rects) {
         // A rectangle reaches every tile it overlaps (a road's box on two tiles marks both: either may own a piece of it).
         for (let i = Math.floor(x0 / TILE); i <= Math.floor(x1 / TILE); i++) {
           for (let j = Math.floor(y0 / TILE); j <= Math.floor(y1 / TILE); j++) {
             const key = tileKey(i, j);
-            if (this.doc.hasTile(key)) this.touched(key, serial);
+            if (this.doc.hasTile(key)) this.touched(key, serial, entry.kind);
           }
         }
       }
@@ -465,11 +471,14 @@ export class WorldStreamer {
     this.dirty.delete(key);
     if (this.readOnly) return;
     // The store says the version it wrote (one past what it knows): the far levels key their bakes by it.
-    this.post(key, this.doc.tileRecords(key, this.versions.get(key) ?? 0));
+    // Its buildings untouched since the last write: their part kept as stored, not encoded again (D4).
+    const buildings = !this.buildingsTouched.has(key);
+    this.buildingsTouched.delete(key);
+    this.post(key, this.doc.tileRecords(key, this.versions.get(key) ?? 0), buildings);
   }
 
   /** DO NOT queue a write behind every other tile's (one chain for all): a tile let go and asked again was read at its old version before its write went in. The store chains each tile's calls itself. */
-  private post(key: number, records: TileRecords): void {
+  private post(key: number, records: TileRecords, keepBuildings = false): void {
     // The edit this write holds: the store is behind the page until it is confirmed, and still behind if another came meanwhile.
     let behind = this.unsaved.get(key);
     if (!behind) this.unsaved.set(key, behind = { edit: 0, write: null });
@@ -481,7 +490,7 @@ export class WorldStreamer {
       this.tell.failed?.(why);
       return false;
     };
-    pending.done = this.source.write(records).then((version) => {
+    pending.done = this.source.write(records, keepBuildings ? { buildings: true } : undefined).then((version) => {
       if (version === null) return failed(`tile ${key} was not written`);
       const now = this.unsaved.get(key);
       if (now?.write === pending) {

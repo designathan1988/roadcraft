@@ -452,6 +452,26 @@ describe('a tile stored', () => {
     expect(back!.buildings.map((b) => (b as Building).id)).toEqual([base + 2]);
   });
 
+  it('keeps the buildings part as stored when the page did not touch them since that version: not decoded nor compressed again (D4)', async () => {
+    const store = memoryStore();
+    const key = tileKey(2, 2), base = tileIdBase(key);
+    const tile = { ...emptyTile(2, 2, { buildings: [house(base + 1, 2 * TILE + m(100))] }), version: 1 };
+    await writeTile(store, 'map', tile);
+    const tiles = new TileStore('map', storeTiles(store), never, async () => ({ version: null, existed: true }));
+    await tiles.read(key);
+    // A road laid, the buildings untouched: the page says so; what it sends of them is not read (here, another building, to show it).
+    const road = { ...tile, nodes: [node(base + 5, 2 * TILE + m(10), 2 * TILE + m(10))], buildings: [house(base + 9, 2 * TILE + m(300))] };
+    expect(await tiles.write(road, { buildings: true })).toBe(2);
+    let back = (await readTile(store, 'map', key))!;
+    expect(back.nodes.map((n) => n.id)).toEqual([base + 5]);
+    expect(back.buildings.map((b) => (b as Building).id)).toEqual([base + 1]);
+    // The store no longer at the version they came from (another write meanwhile): written whole, from what the page sends.
+    await writeTile(store, 'map', { ...road, version: 7, buildings: [house(base + 3, 2 * TILE + m(500))] });
+    expect(await tiles.write(road, { buildings: true })).toBe(3);
+    back = (await readTile(store, 'map', key))!;
+    expect(back.buildings.map((b) => (b as Building).id)).toEqual([base + 9]);
+  });
+
   it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {
     const store = memoryStore();
     const tiles = new TileStore('map', storeTiles(store), never);
