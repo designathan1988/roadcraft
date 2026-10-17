@@ -56,7 +56,7 @@ export interface PartBatch {
   /** Window panes: each one's light slot. */
   readonly slots?: Float32Array;
   /** Window panes: each one's room behind it, ROOM_FLOATS numbers (`roomBehind.ts`); a depth of 0 for none known. */
-  readonly rooms?: Float32Array;
+  readonly rooms?: Uint16Array;
   /** The shell's parts (`shellParts.ts`): each one's finish id, wear and ground, `LOOK_FLOATS` numbers. */
   readonly looks?: Float32Array;
 }
