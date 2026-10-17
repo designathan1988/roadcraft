@@ -194,17 +194,17 @@ describe('the job system', () => {
     expect(hostOf(jobPort('save'))).toBe(save);
   });
 
-  it("puts the tile store's reads beside the queue, never on the save's worker, within the pool's count", async () => {
+  it("puts the tile store's reads on the save's worker, where no queued job nor the rush's tiles run, within the pool's count (conf37)", async () => {
     const { jobPort, jobWorkers, submitJob } = await import('@/jobs/jobPool');
     const save = hostOf(jobPort('save'));
-    const reads = [0, 1].map(() => hostOf(jobPort('tileRead')));
-    for (const r of reads) expect(r).not.toBe(save);
-    const written: number[] = [];
-    for (let k = 0; k < 8; k++) {
-      submitJob({ service: 'cells', key: null, priority: k, write: () => { written.push(k); return { data: k, transfer: [] }; }, done: () => {}, failed: () => {} });
+    const reads = [0, 1, 2].map(() => hostOf(jobPort('tileRead')));
+    for (const r of reads) expect(r).toBe(save);
+    // The rush's lanes of tiles and the queue full of long jobs: elsewhere, the reads' worker never given one.
+    const aside = [0, 1].map(() => hostOf(jobPort('cityTilesAside')));
+    for (const a of aside) expect(a).not.toBe(save);
+    for (let k = 0; k < 12; k++) {
+      submitJob({ service: 'cells', key: null, priority: k, write: () => ({ data: k, transfer: [] }), done: () => {}, failed: () => {} });
     }
-    // DO NOT keep a worker for the reads apart: the short side's other worker still takes the queue's jobs.
-    expect(FakeWorker.made[reads[0]!]!.asked.some((m) => m.seq !== undefined)).toBe(true);
     expect(FakeWorker.made[save]!.asked.filter((m) => m.seq !== undefined)).toEqual([]);
     expect(FakeWorker.made.length).toBeLessThanOrEqual(jobWorkers());
   });

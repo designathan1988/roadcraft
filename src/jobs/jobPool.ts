@@ -12,9 +12,11 @@ const WORKER_HEAP_BYTES = 170 * 2 ** 20;
 /** Services whose one job runs for seconds: kept on workers of their own, never beside another kind's lane or a queued job (a streamed tile is 2-25 s, `cityTile.worker.ts`: the traffic's conflict pairs waited behind tile after tile and the city's clock stood still). */
 const LONG_RUNNING: readonly JobService[] = ['growth', 'cityTiles'];
 
-/** Services whose worker no queued job runs on (where another worker can take it); the tile store's reads (`tileRead`) are not one: DO NOT give them a worker of their own, the short side has two and the queue kept none (the V8 cage's count, `jobWorkers`) - they share one with the queue, never the save's. The save's writes are a few short awaits, and each waited for the job running on its worker - under load a tile's write took past a reload, the edit lost (conf15, conf22). */
-const KEPT_CLEAR: readonly JobService[] = ['save'];
+/** Services whose worker no queued job runs on (where another worker can take it), all on one worker (never one each: the short side has two, the V8 cage's count, `jobWorkers`): the save's writes are a few short awaits, and each waited for the job running on its worker - under load a tile's write took past a reload, the edit lost (conf15, conf22); the store's reads (`tileRead`) beside them, never beside the queue or the rush's tiles - a reopening's tiles waited behind far levels' bakes of seconds (conf37). No bake runs there (`tileStore.ts` upgraded, `TileStore.write`). */
+const KEPT_CLEAR: readonly JobService[] = ['save', 'tileRead'];
 const keptClear = (host: Host): boolean => KEPT_CLEAR.some((service) => host.services.has(service));
+/** How many kinds a worker hosts lanes of besides the kept-clear ones. */
+const otherKinds = (host: Host): number => { let n = 0; for (const service of host.services.keys()) if (!KEPT_CLEAR.includes(service)) n++; return n; };
 
 /** Workers set apart for the long-running services: the pool less two kept for every other kind, one at least. */
 export function longWorkers(): number {
@@ -374,16 +376,16 @@ function place(service: JobService): Host {
   let bestScore = Infinity;
   for (const w of system.workers) {
     if (w.long !== long) continue;
-    // Lanes of a kind on different workers, then the least loaded; the save's worker kept to the save, the save on a worker of its own where there is one.
-    // The save's lanes together on its worker (never a worker each: the pool's workers are the jobs').
+    // Lanes of a kind on different workers, then the least loaded; the kept-clear services' worker kept to them, on a worker of their own where there is one.
+    // The kept-clear lanes together on their worker (never a worker each: the pool's workers are the jobs').
     const clear = KEPT_CLEAR.includes(service);
-    const apart = clear ? (w.services.size > (w.services.has(service) ? 1 : 0) ? 1 : 0) : keptClear(w) ? 1 : 0;
-    const score = apart * 1_000_000 + (clear ? (w.services.has(service) ? 0 : 1) : (w.services.get(service) ?? 0) * 10_000) + w.ports;
+    const apart = clear ? (otherKinds(w) > 0 ? 1 : 0) : keptClear(w) ? 1 : 0;
+    const score = apart * 1_000_000 + (clear ? (keptClear(w) ? 0 : 1) : (w.services.get(service) ?? 0) * 10_000) + w.ports;
     if (score < bestScore) { bestScore = score; best = w; }
   }
   // A worker with nothing on it scores 0: one is made for the lane while its side has room, as if every worker were there.
-  // A lane of the save goes to the save's own worker once there is one, not to a new worker.
-  const own = best !== null && KEPT_CLEAR.includes(service) && best.services.has(service) && best.services.size === 1;
+  // A kept-clear lane goes to their own worker once there is one, not to a new worker.
+  const own = best !== null && KEPT_CLEAR.includes(service) && keptClear(best) && otherKinds(best) === 0;
   if (best === null || (bestScore > 0 && !own)) best = grow(long) ?? best;
   // A pool of one worker: the two sides share it.
   if (!best) best = system.workers.reduce<Host | null>((a, w) => (a === null || w.ports < a.ports ? w : a), null);
