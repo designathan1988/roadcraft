@@ -123,7 +123,7 @@ export class HealthLog {
 export const LONG_FRAME_MS = 50;
 
 /** DO NOT name a system by its words in one language */
-export type FrameSystem = 'panels' | 'camera' | 'growCity' | 'topology' | 'simulation' | 'roadNetwork' | 'buildings' | 'poles' | 'drawing' | 'overlay';
+export type FrameSystem = 'panels' | 'camera' | 'topology' | 'simulation' | 'roadNetwork' | 'buildings' | 'poles' | 'drawing' | 'overlay';
 
 /** The dictionary key of a system's name, as the monitor shows it. */
 export const systemKey = (system: string): string => `health.system.${system}`;

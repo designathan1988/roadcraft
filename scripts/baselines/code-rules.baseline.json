@@ -159,7 +159,6 @@
  "whole-map-on-revision  src/frameLoop.ts TopologyCatchUp.step  SimWorld.walkTopologySteps → SimWorld.rebuildVehicleTopology: for SimWorld.runtime": 1,
  "whole-map-on-revision  src/main.ts frame  Network.rebuild → NetworkBuild.rebuild → NetworkBuild.findChanges: spread RoadDoc.segments": 1,
  "whole-map-on-revision  src/main.ts frame  rebuildSimulationTopology → SimWorld.rebuildTopology → SimWorld.rebuildVehicleTopology: for SimWorld.runtime": 1,
- "whole-map-on-revision  src/main.ts generateCity  Network.rebuild → NetworkBuild.rebuild → NetworkBuild.findChanges: spread RoadDoc.segments": 1,
  "whole-map-on-revision  src/main.ts mutateBuilt  Network.rebuild → NetworkBuild.rebuild → NetworkBuild.findChanges: spread RoadDoc.segments": 1,
  "whole-map-on-revision  src/main.ts serializedDoc  serialize → RoadDoc.toText → RoadDoc.serialized: spread RoadDoc.nodes": 1,
  "whole-map-on-revision  src/main.ts settleTopology  rebuildSimulationTopology → SimWorld.rebuildTopology → SimWorld.rebuildVehicleTopology: for SimWorld.runtime": 1,
