@@ -93,14 +93,14 @@ describe('a loose mesh sent to the GPU', () => {
     const drawn: Scene[] = [];
     const renderer = fakeRenderer(drawn);
     drainWarm(renderer);
-    // Six meshes of 6 MiB of positions each: two fit under the cap, the third goes over it and is the last of the frame.
+    // Six meshes of 1.5 MiB of positions each: two fit under the 4 MiB cap, the third goes over it and is the last of the frame.
     const big = (): Mesh => {
       const g = new BufferGeometry();
-      g.setAttribute('position', new Float32BufferAttribute(new Float32Array((6 * 1024 * 1024) / 4), 3));
+      g.setAttribute('position', new Float32BufferAttribute(new Float32Array((1.5 * 1024 * 1024) / 4), 3));
       return new Mesh(g, new MeshBasicMaterial());
     };
     const meshes = Array.from({ length: 6 }, big);
-    expect(meshBytes(meshes[0]!)).toBe(6 * 1024 * 1024);
+    expect(meshBytes(meshes[0]!)).toBe(1.5 * 1024 * 1024);
     const sent = warmLooseAhead(meshes);
     drawn.length = 0;
     drainWarm(renderer);
@@ -111,7 +111,7 @@ describe('a loose mesh sent to the GPU', () => {
     expect(warmPending()).toBe(false);
     // One mesh over the whole cap still goes, alone.
     const huge = new BufferGeometry();
-    huge.setAttribute('position', new Float32BufferAttribute(new Float32Array((40 * 1024 * 1024) / 4), 3));
+    huge.setAttribute('position', new Float32BufferAttribute(new Float32Array((12 * 1024 * 1024) / 4), 3));
     // The same rank: the last queued goes first (`drainWarm` pops), here the one over the cap.
     const alone = warmLooseAhead([big(), new Mesh(huge, new MeshBasicMaterial())]);
     drawn.length = 0;

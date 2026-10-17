@@ -299,8 +299,8 @@ export function drainWarm(renderer: WebGLRenderer): void {
     try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { job.done(); }
   }
 }
-/** Buffers sent to the GPU a frame at most, bytes: what a frame takes in beside its own drawing (16 MiB at some GB/s through the GPU process is a few milliseconds). */
-const UPLOAD_BYTES = 16 * 1024 * 1024;
+/** Buffers sent to the GPU a frame at most, bytes: 16 MiB took the page up to 42 ms in one frame of the conf27 move (bufferData at ~2.6 ms a MiB): 4 MiB, ~10 ms there. */
+const UPLOAD_BYTES = 4 * 1024 * 1024;
 /** Whether meshes still wait to go to the GPU: the renderer asks for another frame meanwhile. */
 export function warmPending(): boolean {
   return toWarm.length > 0 || toWarmLoose.length > 0;
