@@ -9,6 +9,19 @@ let nextId = 1;
 /** The canonical objects by their shallow key's hash; held weakly, a shape no building uses any more goes. */
 const table = new Map<number, WeakRef<Plain>[]>();
 
+/** DO NOT leave a collected object's entry in its bucket until the same hash is asked again (most never are): the table would keep a bucket for every shape ever made. Let go when the object is collected (MDN "FinalizationRegistry"). */
+export function forgetCollected(entry: { readonly h: number; readonly ref: WeakRef<Plain> }): void {
+  const bucket = table.get(entry.h);
+  if (!bucket) return;
+  const at = bucket.indexOf(entry.ref);
+  if (at >= 0) bucket.splice(at, 1);
+  if (bucket.length === 0) table.delete(entry.h);
+}
+const collected = typeof FinalizationRegistry === 'undefined' ? null : new FinalizationRegistry(forgetCollected);
+
+/** How many hashes the table holds a bucket for (`forgetCollected`). */
+export const internBuckets = (): number => table.size;
+
 /** Inside the hash: 32-bit FNV-1a over the key's pieces. */
 function mix(h: number, n: number): number {
   return Math.imul(h ^ n, 16777619) >>> 0;
@@ -75,7 +88,9 @@ export function intern<T>(value: T): T {
       if (sameShallow(known, node)) return known as unknown as T;
     }
   } else table.set(h, bucket = []);
-  bucket.push(new WeakRef(node));
+  const ref = new WeakRef(node);
+  bucket.push(ref);
+  collected?.register(node, { h, ref });
   ids.set(node, nextId++);
   // DO NOT write a shared object in place: every building sharing it would change (records are replaced, never edited).
   Object.freeze(node);
