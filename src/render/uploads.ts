@@ -254,26 +254,53 @@ export function cancelWarm(meshes: Iterable<Mesh>): void {
     }
   }
 }
-/** Sends one waiting scene mesh's geometry to the GPU, after the frame (`renderer.ts`), and loose meshes by their error on the screen within a few milliseconds (one at least, so the queue always moves). */
+/** The bytes a mesh's buffers take on the GPU: every attribute (an interleaved buffer once), the index, an instanced mesh's matrices and colours. */
+export function meshBytes(mesh: Mesh, geometries: readonly BufferGeometry[] = [mesh.geometry]): number {
+  const seen = new Set<unknown>();
+  let bytes = 0;
+  const add = (array: { readonly byteLength: number } | null | undefined, owner: unknown): void => {
+    if (!array || seen.has(owner)) return;
+    seen.add(owner);
+    bytes += array.byteLength;
+  };
+  for (const g of geometries) {
+    for (const a of Object.values(g.attributes)) {
+      const interleaved = (a as { data?: { array: ArrayLike<number> & { byteLength: number } } }).data;
+      if (interleaved) add(interleaved.array, interleaved);
+      else add((a as { array: ArrayLike<number> & { byteLength: number } }).array, a);
+    }
+    if (g.index) add(g.index.array as ArrayLike<number> & { byteLength: number }, g.index);
+  }
+  const instanced = mesh as Mesh & { isInstancedMesh?: boolean; instanceMatrix?: { array: Float32Array }; instanceColor?: { array: Float32Array } | null };
+  if (instanced.isInstancedMesh) {
+    add(instanced.instanceMatrix?.array, instanced.instanceMatrix);
+    add(instanced.instanceColor?.array, instanced.instanceColor);
+  }
+  return bytes;
+}
+
+/** Sends waiting meshes to the GPU after the frame (`renderer.ts`): the scene's first, then the loose ones by their error on the screen, up to `UPLOAD_BYTES` of buffers a frame (one at least, so the queue always moves). */
 export function drainWarm(renderer: WebGLRenderer): void {
   warmer = true;
-  // One scene mesh's levels as the loose ones go: in a scene of its own, not by drawing the whole scene on a layer.
-  const one = toWarm.shift();
-  if (one) {
+  let budget = UPLOAD_BYTES;
+  // DO NOT measure the sending by the page's clock: `bufferData` returns once the browser has copied the arrays, the GPU process takes them in after, in the next frame; the bytes are what the GPU takes.
+  while (toWarm.length > 0 && (budget === UPLOAD_BYTES || budget > 0)) {
+    const one = toWarm.shift()!;
+    budget -= meshBytes(one.mesh, one.geometries);
     try { warmLoose(renderer, one.mesh, one.geometries); } finally { one.done(); }
   }
   if (toWarmLoose.length === 0) return;
-  const until = performance.now() + WARM_SLICE_MS;
   // Ranked once a frame, the largest error last (popped first); the eye moved since they were queued.
   for (const job of toWarmLoose) job.rank = job.priority();
   toWarmLoose.sort((a, b) => a.rank - b.rank);
-  do {
+  while (toWarmLoose.length > 0 && (budget === UPLOAD_BYTES || budget > 0)) {
     const job = toWarmLoose.pop()!;
+    budget -= meshBytes(job.mesh);
     try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { job.done(); }
-  } while (toWarmLoose.length > 0 && performance.now() < until);
+  }
 }
-/** Milliseconds a frame for loose meshes (`drainWarm`). */
-const WARM_SLICE_MS = 6;
+/** Buffers sent to the GPU a frame at most, bytes: what a frame takes in beside its own drawing (16 MiB at some GB/s through the GPU process is a few milliseconds). */
+const UPLOAD_BYTES = 16 * 1024 * 1024;
 /** Whether meshes still wait to go to the GPU: the renderer asks for another frame meanwhile. */
 export function warmPending(): boolean {
   return toWarm.length > 0 || toWarmLoose.length > 0;

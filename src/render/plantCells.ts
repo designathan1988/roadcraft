@@ -19,9 +19,6 @@ export interface PlantCells {
   cull(frustum: Frustum, view: Matrix4): void;
   /** The map zoom: the leaf cards left out (`InstanceRuns.setMap`). */
   setMap(map: boolean): void;
-  /** A run made elsewhere (a tile's, baked in a worker: `plantedTiles.ts`) drawn with the cells' own; taken away by `take` with the same run. */
-  put(run: Run): void;
-  take(run: Run): void;
   dispose(): void;
 }
 
@@ -57,8 +54,6 @@ function plantLayer(name: string, stores: readonly RunStore[], format: PoseForma
     },
     cull(frustum, view) { runs.cull(frustum, view); },
     setMap(map) { runs.setMap(map); },
-    put(run) { runs.update({ removed: [], added: [run] }); },
-    take(run) { runs.update({ removed: [run], added: [] }); },
     dispose() { runs.dispose(); drawn.clear(); },
   };
 }
@@ -92,22 +87,18 @@ export function createTreeCells(kit: NatureTreeKit, name: string, treesIn: (cell
         castShadow: true, receiveShadow: false, cards: false, far: true, made: far.attach },
     ],
   }));
+  const pose = new Float32Array(TREE_POSE.stride), col = new Float32Array(3), tint = { r: 1, g: 1, b: 1 };
   return plantLayer(name, stores, TREE_POSE, (cell, builder) => {
     const { own, among } = treesRound(cell, treesIn);
-    if (own.length) treesInto(builder, own, among, kit.variants.length);
+    if (!own.length) return;
+    const stand = standsAmong(own, among);
+    own.forEach((tree, i) => {
+      treePoseInto(tree, stand.crowd[i]!, stand.openX[i]!, stand.openY[i]!, pose, 0);
+      treeColourInto(tree, col, 0);
+      tint.r = col[0]!; tint.g = col[1]!; tint.b = col[2]!;
+      builder.add(varietyOf(tree, kit.variants.length), pose, tree.size * 1.2, tint);
+    });
   }, true, TREE_SHADOW_REACH);
-}
-
-/** A cell's trees put in a run of the woods' stores (`TREE_POSE`, a store a model): each shaped by the trees round it (`standsAmong`, `among` its cell's and its neighbours'), tinted, its model picked of `variants` (`varietyOf`); the page's cells and a tile's bake (`plantedTiles.ts`) alike. */
-export function treesInto(builder: RunBuilder, own: readonly TreePlacement[], among: readonly TreePlacement[], variants: number): void {
-  const pose = new Float32Array(TREE_POSE.stride), col = new Float32Array(3), tint = { r: 1, g: 1, b: 1 };
-  const stand = standsAmong(own, among);
-  own.forEach((tree, i) => {
-    treePoseInto(tree, stand.crowd[i]!, stand.openX[i]!, stand.openY[i]!, pose, 0);
-    treeColourInto(tree, col, 0);
-    tint.r = col[0]!; tint.g = col[1]!; tint.b = col[2]!;
-    builder.add(varietyOf(tree, variants), pose, tree.size * 1.2, tint);
-  });
 }
 
 /** The painted covers' stones and bushes, the rivers' stones, and the woods' card trees where the low-poly ones are not grown. */
@@ -131,41 +122,20 @@ export function createCoverCells(kit: GroundCoverKit, name: string, places: {
       with: cards ? [{ name: 'forest-cards', geometry: cards, material: kit.cardMaterial, castShadow: false, receiveShadow: false, cards: true, far: false }] : [],
     });
   })])) as Record<(typeof FOREST_SPECIES)[number], number[]>;
-  const layout: CoverLayout = { rocks, scrub, trees };
-  return plantLayer(name, stores, COVER_POSE, (cell, builder) => {
-    coverInto(builder, layout, places.rocksIn(cell), places.scrubIn(cell), places.treesIn(cell));
-  }, false, COVER_SHADOW_REACH);
-}
-
-/** Where each kind of cover is drawn among a cover layer's stores (`createCoverCells`): each rock model's store, each scrub model's, each forest species' models'. */
-export interface CoverLayout {
-  readonly rocks: readonly number[];
-  readonly scrub: readonly number[];
-  readonly trees: Readonly<Record<(typeof FOREST_SPECIES)[number], readonly number[]>>;
-}
-
-/** The layout of a cover layer of these many models (`createCoverCells` lays its stores in this order): what a tile's bake builds its runs in (`coverTiles.ts`). */
-export function coverLayout(rocks: number, scrub: number, trees: Readonly<Record<(typeof FOREST_SPECIES)[number], number>>): { readonly layout: CoverLayout; readonly stores: number } {
-  let next = 0;
-  const take = (n: number): number[] => Array.from({ length: n }, () => next++);
-  const layout: CoverLayout = { rocks: take(rocks), scrub: take(scrub), trees: Object.fromEntries(FOREST_SPECIES.map((species) => [species, take(trees[species])])) as unknown as CoverLayout['trees'] };
-  return { layout, stores: next };
-}
-
-/** Stones, scrub and card trees put in a run of a cover layer's stores: posed by their stance, tinted by their kind (a stone by its rock), the model picked by the seed; the page's cells and a tile's bake alike. */
-export function coverInto(builder: RunBuilder, layout: CoverLayout, rocks: readonly CoverPlacement[], scrub: readonly CoverPlacement[], trees: readonly TreePlacement[]): void {
   const pose = new Float32Array(COVER_POSE.stride), colour = new Color(), tint = { r: 1, g: 1, b: 1 };
-  const put = (store: number, item: CoverPlacement, stance: (typeof COVER_STANCE)[keyof typeof COVER_STANCE], paint: (item: CoverPlacement, out: Color) => Color): void => {
+  const put = (builder: RunBuilder, store: number, item: CoverPlacement, stance: (typeof COVER_STANCE)[keyof typeof COVER_STANCE], paint: (item: CoverPlacement, out: Color) => Color): void => {
     coverPoseInto(item, stance.sink, stance.tilt, stance.upright, pose, 0);
     paint(item, colour);
     tint.r = colour.r; tint.g = colour.g; tint.b = colour.b;
     builder.add(store, pose, item.size, tint);
   };
-  for (const item of rocks) put(layout.rocks[coverVariant(item, layout.rocks.length)]!, item, COVER_STANCE.rocks, rockTint);
-  for (const item of scrub) put(layout.scrub[coverVariant(item, layout.scrub.length)]!, item, COVER_STANCE.scrub, scrubTint);
-  for (const tree of trees) {
-    const models = layout.trees[tree.species];
-    if (!models?.length) continue;
-    put(models[coverVariant(tree, models.length)]!, tree, COVER_STANCE.trees, treeTint);
-  }
+  return plantLayer(name, stores, COVER_POSE, (cell, builder) => {
+    for (const item of places.rocksIn(cell)) put(builder, rocks[coverVariant(item, rocks.length)]!, item, COVER_STANCE.rocks, rockTint);
+    for (const item of places.scrubIn(cell)) put(builder, scrub[coverVariant(item, scrub.length)]!, item, COVER_STANCE.scrub, scrubTint);
+    for (const tree of places.treesIn(cell)) {
+      const models = trees[tree.species];
+      if (!models?.length) continue;
+      put(builder, models[coverVariant(tree, models.length)]!, tree, COVER_STANCE.trees, treeTint);
+    }
+  }, false, COVER_SHADOW_REACH);
 }

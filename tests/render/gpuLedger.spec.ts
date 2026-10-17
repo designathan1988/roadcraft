@@ -102,7 +102,7 @@ describe('the owners in the ledger', () => {
     const pool = {
       run(_kind: string, cell: string, _entries: readonly CellEntry[], _env: CellEnv, done: (r: CellResult) => void) {
         asked.push(cell);
-        done({ batch: null, details: [], summaries: [], mass: null });
+        done({ batch: null, parts: null, summaries: [], mass: null });
         return next++;
       },
       cancel() {},

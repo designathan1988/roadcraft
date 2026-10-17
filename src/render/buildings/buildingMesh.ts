@@ -113,6 +113,7 @@ export type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch,  } from './c
 import { drawsSignature } from './signature';
 import { type Cover, type PartyWalls, hiddenByCovers } from './partyWalls';
 import { POSE_FLOATS, letGoPosed, partPoseDepth, poseMatrixInto, posedCopy } from './partPose';
+import { partBandings } from './partFiling';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
 
 /** Where the flags of the building being emitted go (`emitChunk` sets it). */
@@ -3656,7 +3657,8 @@ export function kitBoxes(kit: BuildingKit): KitBoxes {
     };
     KIT_BOXES.set(kit, boxes);
   }
-  return boxes;
+  // The bandings as the kit's levels are now: a small prop's simplified levels come in once loaded.
+  return { ...boxes, bandings: partBandings(kit.screen) };
 }
 
 /** What a batch takes by default: every part, the shells and the furniture. */

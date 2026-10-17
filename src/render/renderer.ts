@@ -74,9 +74,10 @@ import { refOf } from '@world/buildings/recordTable';
 import { shapeBoth } from './terrainShaping';
 import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
 import { createStreetFurniture } from './streetFurnitureLayer';
-import { createGardens, gardenPlants, type Gardens } from './gardens';
+import { createGardens, type GardenPlant, type Gardens } from './gardens';
 import { gardenLists } from './gardenLists';
-import { solidFootprints, storedBounds } from '@world/buildings/geometry';
+import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
+import { followPieces } from '@world/buildings/elements';
 import { RoadDoc } from '@world/doc';
 import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
@@ -111,15 +112,6 @@ import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { FarRoads } from './farRoads';
-import { NearTiles } from './nearTiles';
-import { poleProduct } from './poleTiles';
-import { furnitureProduct } from './furnitureTiles';
-import { signProduct } from './signTiles';
-import { barrierProduct } from './barrierTiles';
-import { plantedProduct } from './plantedTiles';
-import { structureProduct } from './structureTiles';
-import { gardenProduct } from './gardenTiles';
-import { coverExtraFor, coverProduct } from './coverTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -383,6 +375,26 @@ function firstDrawnVertices(root: Object3D): number {
   return 0;
 }
 
+/** The plants of every building's garden, in the world, on the ground they stand on. */
+function gardenPlants(all: Iterable<Building>, groundAt: (x: number, y: number) => number): GardenPlant[] {
+  const out: GardenPlant[] = [];
+  for (const b of all) {
+    for (const el of b.elements ?? []) {
+      if (el.kind !== 'tree' && el.kind !== 'shrub' && el.kind !== 'hedge' && el.kind !== 'flowers') continue;
+      // `w` runs across the way the element faces.
+      const yaw = (b.rotation ?? 0) + (el.facing === 1 || el.facing === 3 ? Math.PI / 2 : 0) + (el.angle ?? 0);
+      // A long hedge in steps, each on the ground under it, not one box at its middle's height.
+      const kind = el.kind;
+      followPieces(el).forEach((piece, k) => {
+        const at = localToWorld(b, piece.x, piece.y);
+        out.push({ kind, x: at.x, y: at.y, z: groundAt(at.x, at.y), w: piece.w, d: piece.d, h: piece.h, yaw,
+          seed: ((b.id * 7919 + el.id * 104729 + k * 31) % 100003) / 100003 });
+      });
+    }
+  }
+  return out;
+}
+
 export function createSceneRenderer(
   canvas: HTMLCanvasElement,
   initialCentre: Vec2,
@@ -599,17 +611,6 @@ export function createSceneRenderer(
     dress: (source, raised) => surfaceLook(source, raised, materials, terrain.vergeMaterial, nearPaintFor),
   });
   world.add(farRoads.group);
-  /** The streamed world's near products per tile, chosen by the view and baked in workers from the store (`nearTiles.ts`): the poles and wires (`poleTiles.ts`). */
-  const nearTiles = new NearTiles();
-  nearTiles.add(poleProduct(sceneryKit, world));
-  /** The roads' tree and the near products' tiles, told the stored tiles as one (`main.ts` far levels). */
-  const roadsAndNear: FarTiles = {
-    setSource: (source, isLoaded) => { farRoads.setSource(source, isLoaded); nearTiles.setSource(source, isLoaded); },
-    stored: (key, version) => { farRoads.stored(key, version); nearTiles.stored(key, version); },
-    loadedChanged: (key) => { farRoads.loadedChanged(key); nearTiles.loadedChanged(key); },
-    setErrorScale: (scale) => { farRoads.setErrorScale(scale); nearTiles.setErrorScale(scale); },
-    get bakePrefix() { return farRoads.bakePrefix; },
-  };
   /** The streamed world's active tiles as the near products read them (`activeTiles.ts`, `setActiveTiles`): the kept ring's items are the far levels'. */
   const activeTiles = new ActiveTiles();
 
@@ -658,14 +659,9 @@ export function createSceneRenderer(
   let polePreview: Utilities | null = null;
   /** Placed signs, street name plates and the junctions' rule plates, kept sign by sign from the diary (`signLayer.ts`). */
   const signs = createSignLayer(activeTiles);
-  // The streamed world's furniture and signs per tile (`furnitureTiles.ts`, `signTiles.ts`), in the layers' own cells and sheets: the region makes none of them.
-  nearTiles.add(furnitureProduct(furniture, sceneryKit.lens, () => cityMinutes));
-  nearTiles.add(signProduct(signs, () => worldNet?.doc.markingStyle ?? 'classic'));
   let polePreviewKey = '';
   /** Walls, fences and hedges (`barriers.ts`), kept barrier by barrier from the diary. */
   const barriers = createBarriers(activeTiles);
-  // The streamed world's barriers per tile (`barrierTiles.ts`), in the layer's own cells: the region makes none.
-  nearTiles.add(barrierProduct(barriers));
   /** Public transport (`transit.ts`), kept track by track and stop by stop from the diary. */
   const transit = createTransit();
   let elevation: RoadElevation | null = null;
@@ -923,10 +919,11 @@ export function createSceneRenderer(
   const vehicleBox: GroundBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
   // A raised deck over the highest land, and room for decks stacked on it; a cut below the deepest.
   const VEHICLE_LOW = TERRAIN_MIN_HEIGHT - m(16), VEHICLE_HIGH = TERRAIN_MAX_HEIGHT + m(64) + VEHICLE_REACH * 0.3;
-  // The vehicles' instanced parts never move as objects (their instances do): a still tree; the people's groups move bones and stay outside.
+  // DO NOT leave the people's groups out of it: their figures are instanced meshes skinned on the GPU (`riggedCitizens.ts` citizenBones, the source SkinnedMesh never in the scene), each level a mesh, recomposed every frame for nothing.
+  // The vehicles' parts and the people's meshes never move as objects (their instances do): a still tree.
   const agentParts = new Group();
   agentParts.name = 'agent-parts';
-  for (const mesh of agents.meshes) ((mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh ? agentParts : scene).add(mesh);
+  agentParts.add(...agents.meshes);
   holdStill(agentParts);
   scene.add(agentParts);
   // The far traffic: the meso model's cars on every road outside the micro window, in one draw (`densityCars.ts`).
@@ -956,7 +953,6 @@ export function createSceneRenderer(
     for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
     buildings.refill();
     farRoads.refill();
-    nearTiles.refill();
     signs.refill();
     wantAllTexels();
   });
@@ -1125,21 +1121,6 @@ export function createSceneRenderer(
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
   const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt), activeTiles);
-  // The streamed world's gardens per tile (`gardenTiles.ts`), in the gardens' own cells: the region places none.
-  nearTiles.add(gardenProduct(() => (gardens ??= createGardens(sceneryKit)), world));
-  // The near products' bakes read the ground shared with the workers and the clearings; a tile the ground changed under (a stroke of the relief too) or a clearing cut in is asked again, its bake kept where what it reads did not change (`nearTileBake.ts` groundDigest, readKey).
-  const NEAR_GROUND_KINDS: readonly ChangeKind[] = ['elevation', 'ground', 'terrain', 'clearings'];
-  nearTiles.setGround(() => ({ ground: farRoadGround(), naturalIsGround: buildings.farEnv().naturalIsGround }), {
-    get version() { return groundDiary?.version ?? 0; },
-    touches: (since, area) => groundDiary?.touches(since, area, NEAR_GROUND_KINDS) ?? false,
-    rectsSince: (since) => {
-      const entries = groundDiary?.since(since, NEAR_GROUND_KINDS);
-      if (!entries) return null;
-      const rects: ChangeRect[] = [];
-      for (const entry of entries) { if (entry.rects === null) return null; rects.push(...entry.rects); }
-      return rects;
-    },
-  });
   /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
   const groundSince: GroundSince = {
     get version() { return groundChanges.version; },
@@ -1538,13 +1519,6 @@ export function createSceneRenderer(
   /** The pole layer brought up to the diary (`poleLayer.ts`) */
   const syncUtilities = (net: Network, groundAt: (x: number, y: number) => number): void => {
     const serial = net.doc.changes.serialOf(...POLE_KINDS);
-    // THE STREAMED WORLD'S POLES ARE THE TILES' (`poleTiles.ts`, each tile baked in a worker, an edited one from the page's records): the region places none. Its layer took in and let go three tiles of poles on the page at every tile's edge the camera crossed (plan 2.4.1).
-    if (activeAt !== null) {
-      if (utilities) { builtTriangles -= utilities.triangles; world.remove(utilities.group); utilities.dispose(); utilities = null; }
-      poleMoves.take();
-      poleSerial = serial;
-      return;
-    }
     if (utilities && serial === poleSerial && !poleMoves.pending) return;
     const entries = utilities ? net.doc.changes.since(poleSerial, POLE_KINDS) : null;
     const moved = poleMoves.entries('utilities');
@@ -1766,10 +1740,9 @@ export function createSceneRenderer(
         { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
     }
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
-    // A streamed world's structures are the tiles' (`structureTiles.ts`, baked in workers): the region builds none, its cells let go.
     const atdetails = performance.now();
-    if (byTile && details) { builtTriangles -= details.triangles; world.remove(details.group); details.dispose(); details = null; }
-    const freshDetails = byTile ? null : (details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles)).prepare(net, solve, terrain.renderedHeightAt, blocks);
+    details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles);
+    const freshDetails = details.prepare(net, solve, terrain.renderedHeightAt, blocks);
     performance.measure('hitch:road-edit/details', { start: atdetails, end: performance.now() });
     yield;
     // The overhead utility network.
@@ -1779,7 +1752,7 @@ export function createSceneRenderer(
     // The new pieces' shaders compiled before they are drawn - in parallel where the driver can
     if (sliced) {
       const stage = new Group();
-      for (const piece of [freshRoads.group, ...(freshDetails?.fresh ?? [])]) {
+      for (const piece of [freshRoads.group, ...freshDetails.fresh]) {
         if (piece.parent === null) stage.add(piece);
       }
       if (stage.children.length > 0) {
@@ -1794,15 +1767,15 @@ export function createSceneRenderer(
     if (roads && roads !== freshRoads) { triangles -= roads.triangles; world.remove(roads.group); roads.dispose(); }
     // The region's blocks of a world drawn by tiles now: let go once out of the picture.
     if (byTile && surfaceReuse.chunks.size) dropSurfaceBlocks(surfaceReuse);
-    triangles -= details?.triangles ?? 0;
+    triangles -= details.triangles;
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
     roads.adopt();
     world.add(roads.group);
-    freshDetails?.apply();
-    if (details && !details.group.parent) world.add(details.group);
+    freshDetails.apply();
+    if (!details.group.parent) world.add(details.group);
     utilityRevision = utilityBuilt;
-    builtTriangles = triangles + roads.triangles + (details?.triangles ?? 0);
+    builtTriangles = triangles + roads.triangles + details.triangles;
     // The poles the edit reached, on the ground just put in place (`syncUtilities`, from the diary).
     const atutilities = performance.now();
     syncUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net));
@@ -2214,23 +2187,6 @@ export function createSceneRenderer(
   const plantedKeeps = new CellKeeps<PlantedTree>((t) => (onCarriageway(keepNet!, t) || buildings.covers(t.x, t.y) ? null : terrain.renderedHeightAt(t.x, t.y)));
   /** The planted trees standing in a keep cell, from the document's filing by place (`RoadDoc.treesIn`); none in a cell of the kept ring (`ActiveTiles.keepsCell`). */
   const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => (activeTiles.keepsCell(key) ? doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key) : []);
-  /** The planted forest's cells, made once the woods' models are in: the region's keep draws in them, and a streamed world's tiles (`plantedTiles.ts`). */
-  /** The region's planted trees let go for the tiles' (a streamed world open). */
-  let plantedTiled = false;
-  const plantedForestOf = (): PlantCells | null => {
-    if (!natureTreeKit) return null;
-    const kit = natureTreeKit;
-    return plantedForest ??= (() => {
-      const made = createTreeCells(kit, 'planted-forest', (cell) => plantedKeeps.standingIn(cell)
-        .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.height, yaw: c.yaw, seed: c.seed, species: 'broadleaf' as const })));
-      world.add(made.group);
-      return made;
-    })();
-  };
-  // The streamed world's planted trees per tile, in the planted forest's cells.
-  nearTiles.add(plantedProduct(plantedForestOf, () => natureTreeKit?.variants.length ?? 0));
-  // The streamed world's road structures per tile (`structureTiles.ts`): piers, parapets, retaining walls, portals.
-  nearTiles.add(structureProduct(world, materials, terrain.vergeMaterial));
   /** @rebuild Every planted tree filed cell by cell: the map opened, or its trees replaced whole. */
   const plantAll = (doc: RoadDoc): void => {
     plantedKeeps.clear();
@@ -2269,36 +2225,6 @@ export function createSceneRenderer(
   };
   /** The rivers' stones plate by plate (`ShorePlates`): a plate come in, or whose water changed, sweeps its own cells; one gone lets them go. */
   const shorePlates = new ShorePlates((key, water) => coverKeeps.shore.fill(key, shoreIn(key, coverField, water), sameShore));
-  /** The cover layer's cells (stones, scrub, card trees), made once: the region's keeps draw in them, and a streamed world's tiles (`coverTiles.ts`). */
-  const coverCellsOf = (): PlantCells => coverCells ??= (() => {
-    const made = createCoverCells(coverKit, 'ground-cover', {
-      rocksIn: (cell) => [...coverKeeps.rocks.standingIn(cell), ...coverKeeps.shore.standingIn(cell)]
-        .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.size, yaw: c.yaw, seed: c.seed, rock: terrain.geologyAt(c.x, c.y) })),
-      scrubIn: (cell) => coverKeeps.scrub.standingIn(cell).map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.size, yaw: c.yaw, seed: c.seed })),
-      treesIn: (cell) => (!natureTreeKit && !natureTreesPending ? coverKeeps.forest.standingIn(cell).map(({ c, z }) => ({ ...c, z })) : []),
-    });
-    world.add(made.group);
-    return made;
-  })();
-  /** The painted woods' low-poly trees (`natureTrees.ts`), made once the woods' models are in. */
-  const paintedForestOf = (): PlantCells | null => {
-    if (!natureTreeKit) return null;
-    const kit = natureTreeKit;
-    return paintedForest ??= (() => {
-      const made = createTreeCells(kit, 'painted-forest', (cell) => coverKeeps.forest.standingIn(cell).map(({ c, z }) => ({ ...c, z })));
-      world.add(made.group);
-      return made;
-    })();
-  };
-  /** The region's painted cover let go for the tiles' (a streamed world open). */
-  let coverTiled = false;
-  // The streamed world's painted cover per tile (`coverTiles.ts`): its stones and scrub in the cover's cells, its woods in the painted forest's.
-  nearTiles.add(coverProduct({
-    coverCells: coverCellsOf,
-    forest: paintedForestOf,
-    version: () => `${!natureTreeKit && !natureTreesPending ? 'cards' : 'trees'}:${natureTreeKit?.variants.length ?? 0}`,
-    extra: (tile) => coverExtraFor(tile, coverKit, natureTreeKit?.variants.length ?? 0, !natureTreeKit && !natureTreesPending, worldNet?.doc.treeClearings ?? []),
-  }));
   const handle: SceneHandle = {
     // Asked for by the Actions (a shot, a bomb) and the weapons lab: the effects, and now the physics the bodies fall with
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
@@ -2402,11 +2328,6 @@ export function createSceneRenderer(
     set onNearDrawn(fn) { onNearDrawn = fn; },
     setActiveTiles(at, rects) {
       buildings.setActive(at, rects);
-      // The furniture and the signs of a streamed world are the tiles' (`nearTiles`): the page's own let go.
-      furniture.setTiled(at !== null);
-      signs.setTiled(at !== null);
-      barriers.setTiled(at !== null);
-      plantLists.setTiled(at !== null);
       // The other near products (gardens, furniture, signs, walls, poles, structures, planted trees, covers, elements, lots) take in or let go the tiles that came or left (`activeTiles.ts`).
       activeTiles.set(at, rects);
       // The near roads built again for the tiles that came in or left (`rebuildWorld`: the kept tiles' digests stand, only the flipped tiles are made or let go).
@@ -2424,7 +2345,7 @@ export function createSceneRenderer(
       return buildings.far;
     },
     get farRoads() {
-      return roadsAndNear;
+      return farRoads;
     },
     farBakeEnv() {
       return { ...buildings.farEnv(), massPrefix: buildings.far.bakePrefix, roadPrefix: farRoads.bakePrefix, roadGround: farRoadGround() };
@@ -2652,10 +2573,7 @@ export function createSceneRenderer(
         {
           const at = performance.now();
           const paint = activeTiles.read(coverPaintRead, net.doc.changes);
-          // A streamed world's painted cover is the tiles' (`coverTiles.ts`, baked in workers): the region sweeps none; the rivers' stones stay the plates'.
-          if (activeAt !== null) {
-            if (!coverTiled) { coverTiled = true; for (const keep of [coverKeeps.forest, coverKeeps.scrub, coverKeeps.rocks]) keep.clear(); }
-          } else if (paint === null || paint.some((e) => e.rects === null) || coverTiled) { coverTiled = false; sweepAllCovers(net.doc); }
+          if (paint === null || paint.some((e) => e.rects === null)) sweepAllCovers(net.doc);
           else if (paint.length) {
             const cells = new Set<number>();
             for (const e of paint) for (const r of e.rects!) keepCellsOver(r, COVER_SWEEP_PAD, cells);
@@ -2686,9 +2604,26 @@ export function createSceneRenderer(
             if (cells === null) coverWhole = true; else for (const cell of cells) changed.add(cell);
           }
           if (coverWhole || changed.size) {
+            coverCells ??= (() => {
+              const made = createCoverCells(coverKit, 'ground-cover', {
+                rocksIn: (cell) => [...coverKeeps.rocks.standingIn(cell), ...coverKeeps.shore.standingIn(cell)]
+                  .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.size, yaw: c.yaw, seed: c.seed, rock: terrain.geologyAt(c.x, c.y) })),
+                scrubIn: (cell) => coverKeeps.scrub.standingIn(cell).map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.size, yaw: c.yaw, seed: c.seed })),
+                treesIn: (cell) => (!natureTreeKit && !natureTreesPending ? coverKeeps.forest.standingIn(cell).map(({ c, z }) => ({ ...c, z })) : []),
+              });
+              world.add(made.group);
+              return made;
+            })();
             // DO NOT gather every cell of the map unless every cell is drawn again.
-            coverCellsOf().sync(coverWhole ? null : changed, coverWhole ? allCoverCells() : []);
-            paintedForestOf()?.sync(coverWhole ? null : changed, coverWhole ? coverKeeps.forest.cellKeys() : []);
+            coverCells.sync(coverWhole ? null : changed, coverWhole ? allCoverCells() : []);
+            if (natureTreeKit) {
+              paintedForest ??= (() => {
+                const made = createTreeCells(natureTreeKit, 'painted-forest', (cell) => coverKeeps.forest.standingIn(cell).map(({ c, z }) => ({ ...c, z })));
+                world.add(made.group);
+                return made;
+              })();
+              paintedForest.sync(coverWhole ? null : changed, coverWhole ? coverKeeps.forest.cellKeys() : []);
+            }
           }
           coverStandIns = standIns;
           performance.measure('hitch:cover', { start: at, end: performance.now() });
@@ -2743,16 +2678,7 @@ export function createSceneRenderer(
           performance.measure('hitch:nature', { start: at, end: performance.now() });
         }
         // The trees the player planted (`world/trees.ts`), with the woods' own models: filed again only in the cells planted or cut
-        // A streamed world's planted trees are the tiles' (`plantedTiles.ts`, baked in workers): the region files none.
-        if (natureTreeKit && activeAt !== null) {
-          activeTiles.read(plantedRead, net.doc.changes);
-          if (!plantedTiled) {
-            plantedTiled = true;
-            plantedKeeps.clear();
-            plantedForest?.sync(null, []);
-          }
-        } else if (natureTreeKit) {
-          plantedTiled = false;
+        if (natureTreeKit) {
           const planted = activeTiles.read(plantedRead, net.doc.changes);
           if (planted === null || planted.some((e) => e.rects === null)) plantAll(net.doc);
           else if (planted.length) {
@@ -2764,9 +2690,14 @@ export function createSceneRenderer(
           else if (rects.length) plantedKeeps.refresh(rects, KEEP_REACH);
           const cells = plantedKeeps.takeChangedCells();
           if (cells === null || cells.size || vegetationRedraw) {
-            const forest = plantedForestOf()!;
+            plantedForest ??= (() => {
+              const made = createTreeCells(natureTreeKit, 'planted-forest', (cell) => plantedKeeps.standingIn(cell)
+                .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.height, yaw: c.yaw, seed: c.seed, species: 'broadleaf' as const })));
+              world.add(made.group);
+              return made;
+            })();
             const whole = cells === null || vegetationRedraw;
-            forest.sync(whole ? null : cells, whole ? plantedKeeps.cellKeys() : []);
+            plantedForest.sync(whole ? null : cells, whole ? plantedKeeps.cellKeys() : []);
           }
         }
         vegetationRedraw = false;
@@ -2809,7 +2740,6 @@ export function createSceneRenderer(
         buildings.frame.budget = VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles;
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
-        nearTiles.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;
         const texel = environment.sun.castShadow ? (shadow.camera.right - shadow.camera.left) / shadow.camera.zoom / shadow.mapSize.x : Infinity;
@@ -3231,8 +3161,6 @@ export function createSceneRenderer(
       densityCars.dispose();
       exhaust.dispose();
       wear.dispose();
-      // The tiles' products first: they take their runs back from the layers below.
-      nearTiles.dispose();
       barriers.dispose();
       transit.dispose();
       transitPreview?.dispose();

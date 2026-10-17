@@ -241,7 +241,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
 
   shadows.forEach((shadow, i) => {
     shadow.beforeDraw = () => {
-      restore();
+      // The last cascade's hidden roots back; its casters left chosen, this cascade chooses them all again.
+      restore(false);
       // The movers alone over the store: nothing hidden, and the town's casters left as they are.
       if (drawingMovers) return;
       for (const mover of movers) {
@@ -253,6 +254,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         }
       }
       casters?.(texelOf(i));
+      castersChosen = casters !== null;
     };
   });
 
@@ -271,11 +273,25 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     }
   };
 
+  /** The meshes under a mover `root` drawn into a cascade of `texel`: each part that casts, holds instances, and is at least a texel wide (its model's sphere), not the root whole for its widest part (a group of people's levels, a car's parts with none drawn). */
+  const castersIn = (object: Object3D, texel: number, out: Object3D[]): void => {
+    if (!object.visible) return;
+    const mesh = object as Mesh & { isInstancedMesh?: boolean; count?: number };
+    if (mesh.isMesh && mesh.castShadow && !(mesh.isInstancedMesh && mesh.count === 0)) {
+      const geometry = mesh.geometry;
+      if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+      // Pushed whole (three draws its children with it), or its children looked at one by one.
+      if ((geometry.boundingSphere?.radius ?? 0) * mesh.matrixWorld.getMaxScaleOnAxis() >= texel) { out.push(mesh); return; }
+    }
+    for (const child of object.children) castersIn(child, texel, out);
+  };
+
   /** What moves drawn into cascade `i` over what its map holds, by three's own shadow pass (depth materials and all) with its clear left out. */
   const drawOver = (i: number, base: (lights: Light[], scene: Scene, camera: Camera) => void, camera: Camera): void => {
     if (!renderer) return;
     moverList.length = 0;
-    for (const mover of movers) for (const root of mover.roots) if (root.visible && drawnIn(root, i)) moverList.push(root);
+    const texel = texelOf(i);
+    for (const mover of movers) for (const root of mover.roots) if (root.visible && drawnIn(root, i)) castersIn(root, texel, moverList);
     if (moverList.length === 0) return;
     moverRoot.children = moverList;
     const clear = renderer.clear;
@@ -320,11 +336,13 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       renderer.setRenderTarget(target, face, level);
     };
   }
-  function restore(): void {
+  /** Whether the casters were chosen for a cascade since they were last given back (`restore`). */
+  let castersChosen = false;
+  /** What a cascade's pass hid put back; `settled`: the passes are over, the casters chosen by cascade given back too, once (DO NOT walk every caster between two cascades: the next one sets them all). */
+  function restore(settled = true): void {
     for (const root of hidden) root.visible = true;
     hidden.length = 0;
-    // The casters chosen by cascade back as their makers set them, between the passes.
-    casters?.(null);
+    if (settled && castersChosen) { castersChosen = false; casters?.(null); }
   }
 
   /** Writes a fit into its light: the light stands at the top of the depth range, looking down the sun. */

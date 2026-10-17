@@ -11,8 +11,6 @@ import type { GroundRecord, Rect } from './groundChanges';
 export interface GardenLists {
   /** The lists to place and to take away since the last call, null when none. */
   update(buildings: BuildingStore, settled: boolean): GardenChange | null;
-  /** The streamed world: the gardens are the tiles' (`gardenTiles.ts`), every list placed here taken away at the next update and none placed; off, every building taken in again. */
-  setTiled(tiled: boolean): void;
 }
 
 /** A planted building: its record, its plants digested, its bank, and its plants on the ground (once placed) with the ground change they follow. */
@@ -47,7 +45,6 @@ export function gardenLists(
   const gone: (readonly GardenPlant[])[] = [];
   let read = -1;
   let groundRead = -1;
-  let tiled = false;
   /** A building's record taken in. */
   const take = (id: BuildingId, b: Building | undefined): void => {
     // A building of the kept ring round the active tiles is the far levels' (as its cell's, `BuildingLayer.setActive`): no garden here.
@@ -117,16 +114,7 @@ export function gardenLists(
   };
 
   return {
-    setTiled(on) {
-      if (on === tiled) return;
-      tiled = on;
-      if (!on) { read = -1; return; }
-      for (const [id, site] of sites) { if (site.plants) gone.push(site.plants); banks.remove(id); }
-      sites.clear();
-      pending.clear();
-    },
     update(buildings, settled) {
-      if (tiled) return gone.length ? { added: [], removed: gone.splice(0) } : null;
       follow(buildings);
       followActive(buildings);
       groundMoved();

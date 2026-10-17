@@ -2,9 +2,8 @@ import {
   BoxGeometry,
   BufferGeometry,
   CylinderGeometry,
-  BufferAttribute,
+  Float32BufferAttribute,
   Group,
-  InstancedBufferAttribute,
   InstancedMesh,
   Mesh,
   Object3D,
@@ -17,7 +16,7 @@ import type { Network, SegmentRibbon } from '@world/network';
 import type { SegmentId } from '@world/ids';
 import { CUT_WALL_REACH, type RoadElevation } from '@world/elevation';
 import { buildModeAt } from '@world/roads/buildMode';
-import { TERRAIN_UV } from './roadSurfaceReads';
+import { TERRAIN_UV } from './roadSurfaces';
 import { ROAD_TUNING } from '@world/roads/tuning';
 import { Level, casingHalf, roadProfile, sidewalkHalf } from '@world/roadTypes';
 import {
@@ -217,30 +216,26 @@ export function onAnotherCasing(net: Network, self: SegmentId, x: number, y: num
   return false;
 }
 
-/** The instances' matrices of placements (16 floats each), as three's `Object3D` composes them (r186 `Object3D.updateMatrix`): what a bake hands the page. */
-function matricesOf(placements: readonly Placement[]): Float32Array<ArrayBuffer> {
-  const out = new Float32Array(placements.length * 16);
+function instanced(
+  name: string,
+  geometry: BufferGeometry,
+  material: Material,
+  placements: readonly Placement[],
+): InstancedMesh | null {
+  if (placements.length === 0) return null;
+  const mesh = new InstancedMesh(geometry, material, placements.length);
+  mesh.name = name;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   const object = new Object3D();
   placements.forEach((placement, index) => {
     object.position.set(placement.x, placement.cy, -placement.y);
     object.rotation.set(0, placement.yaw, 0);
     object.scale.set(placement.sx, placement.sy, placement.sz);
     object.updateMatrix();
-    object.matrix.toArray(out, index * 16);
+    mesh.setMatrixAt(index, object.matrix);
   });
-  return out;
-}
-
-/** A kind's instances drawn from their matrices, taken as they came (none: no mesh). */
-function instanced(name: string, geometry: BufferGeometry, material: Material, matrices: Float32Array<ArrayBuffer>): InstancedMesh | null {
-  const count = matrices.length / 16;
-  if (count === 0) return null;
-  const mesh = new InstancedMesh(geometry, material, 0);
-  mesh.instanceMatrix = new InstancedBufferAttribute(matrices, 16);
-  mesh.count = count;
-  mesh.name = name;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.instanceMatrix.needsUpdate = true;
   mesh.computeBoundingSphere();
   return mesh;
 }
@@ -331,31 +326,21 @@ class Extrusion {
     this.indices.push(first, first + 1, first + 2, first, first + 2, first + 3);
   }
 
-  /** Its quads' arrays (none: no quad); the index 16-bit while the corners fit, as three's `setIndex` of an array makes it. */
-  sheet(): StructureSheet | null {
+  mesh(name: string, material: Material): Mesh | null {
     if (this.positions.length === 0) return null;
-    const vertices = this.positions.length / 3;
-    return {
-      positions: Float32Array.from(this.positions), normals: Float32Array.from(this.normals), uvs: Float32Array.from(this.uvs),
-      index: vertices >= 0x10000 ? Uint32Array.from(this.indices) : Uint16Array.from(this.indices),
-    };
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(this.positions, 3));
+    geometry.setAttribute('normal', new Float32BufferAttribute(this.normals, 3));
+    geometry.setAttribute('uv', new Float32BufferAttribute(this.uvs, 2));
+    // 16-bit while the corners fit, 32 past (three `setIndex` of an array)
+    geometry.setIndex(this.indices);
+    geometry.computeBoundingSphere();
+    const mesh = new Mesh(geometry, material);
+    mesh.name = name;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
   }
-}
-
-/** A sheet's mesh. */
-function sheetMesh(sheet: StructureSheet | null, name: string, material: Material): Mesh | null {
-  if (!sheet) return null;
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(sheet.positions, 3));
-  geometry.setAttribute('normal', new BufferAttribute(sheet.normals, 3));
-  geometry.setAttribute('uv', new BufferAttribute(sheet.uvs, 2));
-  geometry.setIndex(new BufferAttribute(sheet.index, 1));
-  geometry.computeBoundingSphere();
-  const mesh = new Mesh(geometry, material);
-  mesh.name = name;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
 }
 
 /** 0 below `a`, 1 above `b`, smooth in between. */
@@ -424,35 +409,6 @@ function parapetRun(
   }
 }
 
-/** A sheet of a structure's quads (parapets, retaining walls, their backfill), as arrays. */
-export interface StructureSheet {
-  readonly positions: Float32Array<ArrayBuffer>;
-  readonly normals: Float32Array<ArrayBuffer>;
-  readonly uvs: Float32Array<ArrayBuffer>;
-  readonly index: Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer>;
-}
-
-/** THE STRUCTURES OF SOME ROADS MADE, WITH NO MATERIAL (a bake's, in a worker: `structureTiles.ts`; the page's, `buildStructureDetails`): each kind's instances' matrices, the sheets of quads, where they stand */
-export interface StructureParts {
-  readonly piers: Float32Array<ArrayBuffer>;
-  readonly caps: Float32Array<ArrayBuffer>;
-  readonly abutments: Float32Array<ArrayBuffer>;
-  readonly jambs: Float32Array<ArrayBuffer>;
-  readonly lintels: Float32Array<ArrayBuffer>;
-  readonly headwalls: Float32Array<ArrayBuffer>;
-  readonly parapets: StructureSheet | null;
-  readonly walls: StructureSheet | null;
-  readonly backfill: StructureSheet | null;
-  readonly spans: readonly (readonly [number, number, number, number])[];
-}
-
-/** Every buffer of structure parts: handed over, not copied. */
-export function structureBuffers(parts: StructureParts): ArrayBuffer[] {
-  const out: ArrayBuffer[] = [parts.piers.buffer, parts.caps.buffer, parts.abutments.buffer, parts.jambs.buffer, parts.lintels.buffer, parts.headwalls.buffer];
-  for (const sheet of [parts.parapets, parts.walls, parts.backfill]) if (sheet) out.push(sheet.positions.buffer, sheet.normals.buffer, sheet.uvs.buffer, sheet.index.buffer);
-  return out;
-}
-
 export function buildStructureDetails(
   net: Network,
   elevation: RoadElevation,
@@ -465,11 +421,10 @@ export function buildStructureDetails(
   /** The shapes the instances are drawn with, kept by the caller across builds; made here (and let go with these) without. */
   shapes?: { readonly pier: BufferGeometry; readonly box: BufferGeometry },
 ): StructureDetails {
-  return structureMeshes(structureParts(net, elevation, terrainAt, materials.scale.deck, only), materials, groundMaterial, shapes);
-}
+  const group = new Group();
+  group.matrixAutoUpdate = false;
+  group.name = 'road-structure-details';
 
-/** The roads' structures made (`only`: these roads'; all of the map without); `deckTile`, the deck's texture scale (`SceneMaterials.scale.deck`). */
-export function structureParts(net: Network, elevation: RoadElevation, terrainAt: (x: number, y: number) => number, deckTile: number, only?: readonly SegmentRibbon[]): StructureParts {
   const { raised, tunnels, walled } = structureRibbons(net, elevation, terrainAt, undefined, only);
   const spans = [...raised, ...tunnels, ...walled].map((ribbon) => {
     const bb = ribbon.full.bbox;
@@ -562,26 +517,49 @@ export function structureParts(net: Network, elevation: RoadElevation, terrainAt
     const centre = ribbon.centre[Level.Casing] ?? ribbon.full;
     const edge = casing - m(0.02);
     for (const side of [1, -1] as const) {
-      parapetRun(parapets, centre, side, edge, deckAt, terrainAt, deckTile);
+      parapetRun(parapets, centre, side, edge, deckAt, terrainAt, materials.scale.deck);
     }
   }
 
+  let triangles = 0;
+  const attach = (mesh: InstancedMesh | Mesh | null): void => {
+    if (!mesh) return;
+    group.add(mesh);
+    const count = mesh.geometry.index?.count ?? mesh.geometry.getAttribute('position').count;
+    triangles += (count / 3) * (mesh instanceof InstancedMesh ? mesh.count : 1);
+  };
+
+  const pierGeometry = shapes?.pier ?? new CylinderGeometry(1, PIER_FOOT_FLARE, 1, 16);
+  const capGeometry = shapes?.box ?? new BoxGeometry(1, 1, 1);
+  attach(instanced('structure-piers', pierGeometry, materials.concrete, piers));
+  attach(instanced('structure-pier-caps', capGeometry, materials.concrete, caps));
+  attach(instanced('structure-abutments', capGeometry, materials.concrete, abutments));
+  const parapetMesh = parapets.mesh('structure-parapets', materials.parapet);
+  attach(parapetMesh);
+
+  const owned: BufferGeometry[] = shapes ? [] : [pierGeometry, capGeometry];
+  if (parapetMesh) owned.push(parapetMesh.geometry);
+
   // ------------------------------------------------------- retaining walls
-  let walls: StructureSheet | null = null, backfill: StructureSheet | null = null;
   if (walled.length > 0) {
     const faces = new Extrusion();
     const lids = new Extrusion();
-    retainingWalls(net, walled, elevation, terrainAt, faces, lids, deckTile, TERRAIN_UV);
-    walls = faces.sheet();
-    backfill = lids.sheet();
+    retainingWalls(net, walled, elevation, terrainAt, faces, lids, materials.scale.deck, TERRAIN_UV);
+    const faceMesh = faces.mesh('retaining-walls', materials.parapet);
+    const lidMesh = groundMaterial ? lids.mesh('retaining-wall-backfill', groundMaterial) : null;
+    if (lidMesh) lidMesh.castShadow = false;
+    attach(faceMesh);
+    attach(lidMesh);
+    if (faceMesh) owned.push(faceMesh.geometry);
+    if (lidMesh) owned.push(lidMesh.geometry);
   }
-
-  const jambs: Placement[] = [];
-  const lintels: Placement[] = [];
-  const headwalls: Placement[] = [];
 
   // ---------------------------------------------------------------- portals A portal is NOT at the end of a tunnel segment.
   if (TUNNELS_DRAWN && tunnels.length > 0) {
+    const jambs: Placement[] = [];
+    const lintels: Placement[] = [];
+    const headwalls: Placement[] = [];
+
     for (const ribbon of tunnels) {
       const segment = net.doc.requireSegment(ribbon.id);
       const length = ribbon.full.length;
@@ -666,49 +644,17 @@ export function structureParts(net: Network, elevation: RoadElevation, terrainAt
       }
     }
 
+    const portalGeometry = shapes?.box ?? new BoxGeometry(1, 1, 1);
+    attach(instanced('tunnel-jambs', portalGeometry, materials.concrete, jambs));
+    attach(instanced('tunnel-lintels', portalGeometry, materials.concrete, lintels));
+    attach(instanced('tunnel-headwalls', portalGeometry, materials.concrete, headwalls));
+    if (!shapes) owned.push(portalGeometry);
   }
 
   return {
-    piers: matricesOf(piers), caps: matricesOf(caps), abutments: matricesOf(abutments),
-    jambs: matricesOf(jambs), lintels: matricesOf(lintels), headwalls: matricesOf(headwalls),
-    parapets: parapets.sheet(), walls, backfill, spans,
-  };
-}
-
-/** THE STRUCTURES' MESHES from their parts (`structureParts`, made here or baked in a worker): the instances and sheets taken as they came; `groundMaterial`, the backfill's (none: no backfill drawn) */
-export function structureMeshes(parts: StructureParts, materials: SceneMaterials, groundMaterial?: Material,
-  shapes?: { readonly pier: BufferGeometry; readonly box: BufferGeometry }): StructureDetails {
-  const group = new Group();
-  group.matrixAutoUpdate = false;
-  group.name = 'road-structure-details';
-  let triangles = 0;
-  const attach = (mesh: InstancedMesh | Mesh | null): void => {
-    if (!mesh) return;
-    group.add(mesh);
-    const count = mesh.geometry.index?.count ?? mesh.geometry.getAttribute('position').count;
-    triangles += (count / 3) * (mesh instanceof InstancedMesh ? mesh.count : 1);
-  };
-  const pierGeometry = shapes?.pier ?? new CylinderGeometry(1, PIER_FOOT_FLARE, 1, 16);
-  const boxGeometry = shapes?.box ?? new BoxGeometry(1, 1, 1);
-  attach(instanced('structure-piers', pierGeometry, materials.concrete, parts.piers));
-  attach(instanced('structure-pier-caps', boxGeometry, materials.concrete, parts.caps));
-  attach(instanced('structure-abutments', boxGeometry, materials.concrete, parts.abutments));
-  const owned: BufferGeometry[] = shapes ? [] : [pierGeometry, boxGeometry];
-  const parapetMesh = sheetMesh(parts.parapets, 'structure-parapets', materials.parapet);
-  attach(parapetMesh);
-  const faceMesh = sheetMesh(parts.walls, 'retaining-walls', materials.parapet);
-  const lidMesh = groundMaterial ? sheetMesh(parts.backfill, 'retaining-wall-backfill', groundMaterial) : null;
-  if (lidMesh) lidMesh.castShadow = false;
-  attach(faceMesh);
-  attach(lidMesh);
-  for (const mesh of [parapetMesh, faceMesh, lidMesh]) if (mesh) owned.push(mesh.geometry);
-  attach(instanced('tunnel-jambs', boxGeometry, materials.concrete, parts.jambs));
-  attach(instanced('tunnel-lintels', boxGeometry, materials.concrete, parts.lintels));
-  attach(instanced('tunnel-headwalls', boxGeometry, materials.concrete, parts.headwalls));
-  return {
     group,
     triangles,
-    spans: parts.spans,
+    spans,
     dispose() {
       for (const geometry of owned) geometry.dispose();
       // The instance buffers are let go only by the mesh's own dispose (three r186 WebGLObjects, 'dispose').
