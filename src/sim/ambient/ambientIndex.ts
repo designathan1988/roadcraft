@@ -1,5 +1,4 @@
 import type { ChangeJournal } from '@world/changes';
-import { JournalCursor } from '@world/derived';
 import { NetworkLength } from '@world/networkLength';
 import type { Network, SegmentRibbon } from '@world/network';
 import { m, stepsIn } from '@world/units';
@@ -15,18 +14,6 @@ export const ambientIndexWork = { filed: 0, cells: 0, rings: 0, full: 0, verifie
 export function buildingsChangedSince(journal: ChangeJournal, serial: number): Set<number> | null {
   if (serial >= journal.version) return new Set();
   const entries = journal.since(serial, ['buildings']);
-  if (!entries) return null;
-  const ids = new Set<number>();
-  for (const entry of entries) {
-    if (!entry.ids) return null;
-    for (const id of entry.ids) ids.add(id);
-  }
-  return ids;
-}
-
-/** The buildings the diary names as changed since `cursor` last read, read with it (it follows the diary: DO NOT read by a bare serial, past what the diary keeps the whole store was read again); null when they must all be read again. */
-export function buildingsChangedBy(cursor: JournalCursor, journal: ChangeJournal): Set<number> | null {
-  const entries = cursor.read(journal);
   if (!entries) return null;
   const ids = new Set<number>();
   for (const entry of entries) {
@@ -60,14 +47,16 @@ const WALL_SLACK = m(0.01);
 
 /** The buildings' solid rings in a fixed grid, kept by the diary: a sight line asks only the cells it crosses. */
 export class SightWalls {
-  private readonly seen = new JournalCursor(['buildings']);
+  /** DO NOT follow the diary from here (`JournalCursor`): a reader that stops reading (no view to look through) keeps every entry after it for ever. One entry a tile (`TrafficBuildingTable.apply`) keeps it within what the diary holds. */
+  private serial = -1;
   private readonly byBuilding = new Map<number, Wall[]>();
   private readonly cells = new Map<number, Set<Wall>>();
   private query = 0;
 
   /** Takes in what the diary says changed since the last call. */
   sync(store: TrafficBuildings, journal: ChangeJournal): void {
-    const changed = buildingsChangedBy(this.seen, journal);
+    const changed = buildingsChangedSince(journal, this.serial);
+    this.serial = journal.version;
     if (changed === null) { this.fileAll(store); return; }
     for (const id of changed) {
       this.unfile(id);
@@ -182,7 +171,8 @@ const MIX_SLACK = m(0.001);
 
 /** How many buildings of each kind (`demand.ts` kindOf) stand where */
 export class BuildingMix {
-  private readonly seen = new JournalCursor(['buildings']);
+  /** DO NOT follow the diary from here (`JournalCursor`): a reader that stops reading (no view to look through) keeps every entry after it for ever. One entry a tile (`TrafficBuildingTable.apply`) keeps it within what the diary holds. */
+  private serial = -1;
   private readonly byBuilding = new Map<number, Filed>();
   private readonly cells = new Map<number, { counts: Counts; members: Set<Filed> }>();
   /** Buildings whose place is not a number: within every circle, as `hypot(NaN) > r` is false. */
@@ -191,7 +181,8 @@ export class BuildingMix {
 
   /** Takes in what the diary says changed since the last call. */
   sync(store: TrafficBuildings, journal: ChangeJournal): void {
-    const changed = buildingsChangedBy(this.seen, journal);
+    const changed = buildingsChangedSince(journal, this.serial);
+    this.serial = journal.version;
     if (changed === null) { this.fileAll(store); return; }
     for (const id of changed) {
       this.unfile(id);

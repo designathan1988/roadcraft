@@ -1,5 +1,4 @@
 import type { ChangeJournal, ChangeRect } from '@world/changes';
-import { JournalCursor } from '@world/derived';
 import { m } from '@world/units';
 import type { TrafficBuilding, TrafficBuildings } from '../agents/trafficBuildings';
 import type { LotPart } from '../agents/lotNav';
@@ -112,8 +111,8 @@ interface PlaceCell<W extends PlaceWay> {
 
 /** DO NOT go back to working out lots' ways by a time budget a look */
 export class LotPlaces<W extends PlaceWay> {
-  /** The diary followed (it keeps what this has not read). */
-  private readonly seen = new JournalCursor(['buildings', 'roads']);
+  /** The diary read by serial, not followed (a reader that stops reading would keep every entry after it). */
+  private serial = -1;
   private readonly byBuilding = new Map<number, Place<W>>();
   private readonly trees = PLACE_KINDS.map(() => new Fenwick());
   private readonly slots: (Place<W> | undefined)[][] = PLACE_KINDS.map(() => []);
@@ -128,8 +127,9 @@ export class LotPlaces<W extends PlaceWay> {
 
   /** Takes in the buildings and the roads the diary says changed since the last call. */
   sync(store: TrafficBuildings, journal: ChangeJournal): void {
-    if (this.seen.seenSerial >= journal.version) return;
-    const entries = this.seen.read(journal);
+    if (this.serial >= journal.version) return;
+    const entries = journal.since(this.serial, ['buildings', 'roads']);
+    this.serial = journal.version;
     if (!entries) { this.fileAll(store); return; }
     const ids = new Set<number>();
     const rects: ChangeRect[] = [];
