@@ -116,6 +116,13 @@ const isRect = (area: ChangeRect | readonly ChangeRect[]): area is ChangeRect =>
 const overlaps = (r: ChangeRect, a: ChangeRect): boolean => r[0] <= a[2] && r[2] >= a[0] && r[1] <= a[3] && r[3] >= a[1];
 
 /** The rectangle round a set of points, grown by `pad`; null for none. */
+/** One rectangle round some rectangles. */
+export function rectsAround(rects: readonly ChangeRect[]): ChangeRect {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of rects) { x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]); }
+  return [x0, y0, x1, y1];
+}
+
 export function rectAround(points: Iterable<{ readonly x: number; readonly y: number }>, pad = 0): ChangeRect | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const p of points) {
