@@ -1,6 +1,6 @@
 import { poseMatrices } from '@render/buildings/partPose';
 import { describe, expect, it } from 'vitest';
-import { Box3, BufferAttribute, BufferGeometry, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, Sphere } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, DataUtils, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, Sphere } from 'three';
 
 import { emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
 import { SHELL_PIECE, cellArrays } from '@render/buildings/cellArrays';
@@ -16,6 +16,27 @@ describe('a batch as arrays', () => {
   const kit = createBuildingKit();
   const chunks = BLUEPRINTS.map((bp, i) => emitChunk({ ...JSON.parse(JSON.stringify(bp.body)), id: i + 1, x: (i % 7) * m(70), y: Math.floor(i / 7) * m(70), rotation: 0.3 * i } as Building, groundAt));
   const arrays = cellArrays(chunks, { parts: PART_KINDS, shells: true, furniture: true, ghost: false, dim: false }, kitBoxes(kit));
+
+  it("holds each instance's tint in half floats, 6 bytes, the chunks' tints to a part in a thousand", () => {
+    let tinted = 0;
+    for (const kind of PART_KINDS) {
+      const part = arrays.parts[kind];
+      if (!part?.instanceColor) continue;
+      expect(part.instanceColor, kind).toBeInstanceOf(Uint16Array);
+      expect(part.instanceColor.byteLength).toBe(part.count * 6);
+      let at = 0;
+      for (const chunk of chunks) {
+        const batch = chunk.parts[kind];
+        for (let k = 0; k < batch.count * 3; k++) {
+          const was = batch.colours ? batch.colours[k]! : 1;
+          expect(Math.abs(DataUtils.fromHalfFloat(part.instanceColor[at * 3 + k]!) - was)).toBeLessThanOrEqual(Math.max(was, 1e-3) / 1000);
+        }
+        at += batch.count;
+      }
+      tinted++;
+    }
+    expect(tinted).toBeGreaterThan(3);
+  });
 
   it("has three's bounds for its shell", () => {
     expect(arrays.shells.length).toBeGreaterThan(0);

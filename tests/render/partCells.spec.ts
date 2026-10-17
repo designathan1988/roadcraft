@@ -1,7 +1,7 @@
 import { POSE_FLOATS } from '@render/buildings/partPose';
 import { fileParts, partBandings } from '@render/buildings/partFiling';
 import { describe, expect, it } from 'vitest';
-import { type BufferGeometry, InstancedMesh, type InterleavedBufferAttribute } from 'three';
+import { type BufferGeometry, DataUtils, InstancedMesh, type InterleavedBufferAttribute } from 'three';
 import { type BuildingChunk, emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
 import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
 import { PART_KINDS, type PartKind, createBuildingKit } from '@render/buildings/kit';
@@ -28,7 +28,7 @@ function frames(shapes: readonly (readonly [number, number, number, number])[], 
     for (let i = 0; i < n; i++, at++) poses.set([x, 5 + i * 0.01, -y, 1, 0, sx, sy, sz], at * POSE_FLOATS);
   }
   const bounds = new Float64Array([x - 2, 0, -y - 2, x + 2, 10, -y + 2, x, 5, -y, 4]);
-  return { count, poses, instanceColor: new Float32Array(count * 3).fill(1), bounds };
+  return { count, poses, instanceColor: new Uint16Array(count * 3).fill(DataUtils.toHalfFloat(1)), bounds };
 }
 
 const arrays = (part: NonNullable<CellArrays['parts']['frame']>): CellArrays => ({ shells: [], parts: { frame: part }, furniture: {} });

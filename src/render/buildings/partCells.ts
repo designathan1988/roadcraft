@@ -89,7 +89,8 @@ export class PartCell {
     for (const f of filing.bands) {
       const band: Band = {
         kind: f.kind, screen: kit.screen[f.kind], start: f.start, box: f.box, scale: f.scale,
-        poses: new InstancedInterleavedBuffer(f.poses, POSE_FLOATS), colours: f.colours ? new InstancedInterleavedBuffer(f.colours, 3) : null,
+        // Tints in half floats: HALF_FLOAT where the buffer says so (r186 `WebGLAttributes.createBuffer`, an interleaved attribute by its buffer).
+        poses: new InstancedInterleavedBuffer(f.poses, POSE_FLOATS), colours: f.colours ? Object.assign(new InstancedInterleavedBuffer(f.colours, 3), { isFloat16BufferAttribute: true }) : null,
         looks: f.looks ? new InstancedInterleavedBuffer(f.looks, LOOK_FLOATS) : null,
         meshes: new Map(), drawn: new Map(), held: new Uint8Array(LEAVES), casts: false, width: 0,
       };

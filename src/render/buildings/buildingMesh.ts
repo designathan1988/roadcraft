@@ -3781,7 +3781,8 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     mesh.castShadow = !ghost && kit.castsShadow.has(kind);
     if (mesh.castShadow) mesh.customDepthMaterial = partPoseDepth(material);
     mesh.receiveShadow = !ghost;
-    if (part.instanceColor) mesh.instanceColor = new InstancedBufferAttribute(part.instanceColor, 3);
+    // Tints in half floats: HALF_FLOAT where the attribute says so (r186 `WebGLAttributes.createBuffer`).
+    if (part.instanceColor) mesh.instanceColor = Object.assign(new InstancedBufferAttribute(part.instanceColor, 3), { isFloat16BufferAttribute: true });
     mesh.boundingBox = boxOf(part.bounds);
     mesh.boundingSphere = sphereOf(part.bounds);
     // DO NOT let go of the kit's model it draws: it is shared by every batch of the kind; only its own instance buffers go.

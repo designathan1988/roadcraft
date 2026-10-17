@@ -71,7 +71,8 @@ interface ShellArrays {
 interface InstanceArrays {
   readonly count: number;
   readonly poses: Float32Array;
-  readonly instanceColor?: Float32Array;
+  /** Each instance's tint, linear rgb in half floats (`HALF_FLOAT`): 6 bytes, not 12. */
+  readonly instanceColor?: Uint16Array;
   /** Window panes: each one's light slot (-1: none) and the room behind it. */
   readonly litSlot?: Float32Array;
   readonly rooms?: Uint16Array;
@@ -327,15 +328,18 @@ function shellArrays(chunks: readonly BuildingChunk[], of: FragmentsOf): ShellAr
   return { position, normalDecay, paint, index, bounds, ...(facade && grid && opening ? { facade, grid, opening } : {}) };
 }
 
+/** 1 in half float: an instance with no tint of its own. */
+const HALF_ONE = DataUtils.toHalfFloat(1);
+
 /** A number in [-1, 1] as a signed byte the GPU reads back normalised (x / 127, WebGL 2 `vertexAttribPointer`). */
 const snorm = (x: number): number => Math.round(Math.max(-1, Math.min(1, x)) * 127);
 
 /** A batch's own instance arrays from its chunks, in order: the matrices, the colours of a coloured kind */
 function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: number, glassy: boolean, coloured: boolean, looked: boolean): {
-  poses: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Uint16Array; looks?: Float32Array;
+  poses: Float32Array; instanceColor?: Uint16Array; litSlot?: Float32Array; rooms?: Uint16Array; looks?: Float32Array;
 } {
   const poses = new Float32Array(count * POSE_FLOATS);
-  const instanceColor = coloured ? new Float32Array(count * 3).fill(1) : undefined;
+  const instanceColor = coloured ? new Uint16Array(count * 3).fill(HALF_ONE) : undefined;
   const litSlot = glassy ? new Float32Array(count) : undefined;
   const rooms = glassy ? new Uint16Array(count * ROOM_FLOATS) : undefined;
   const looks = looked ? new Float32Array(count * LOOK_FLOATS) : undefined;
@@ -344,7 +348,7 @@ function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: num
     const batch: PartBatch = chunk.parts[kind];
     if (batch.count === 0) continue;
     poses.set(batch.poses, at * POSE_FLOATS);
-    if (instanceColor && batch.colours) instanceColor.set(batch.colours, at * 3);
+    if (instanceColor && batch.colours) for (let k = 0; k < batch.count * 3; k++) instanceColor[at * 3 + k] = DataUtils.toHalfFloat(batch.colours[k]!);
     if (litSlot) {
       if (batch.slots) litSlot.set(batch.slots, at);
       else litSlot.fill(-1, at, at + batch.count);
