@@ -69,6 +69,8 @@ interface CitizenBatch {
   width: number; count: number;
   /** The skeletons blended on the GPU (`people/crowdAnimation.ts`): the clips' atlas, the pass, its rows; the skinning reads `uniform`. */
   atlas: CitizenAtlas; pass: PalettePass; rows: number; uniform: { value: Texture };
+  /** Its first row in the palettes' shared target, read by the skinning. */
+  readonly base: { value: number };
   /** A body's palette worked out on the CPU (held by a ragdoll, maimed, more plays than the pass takes). */
   readonly scratch: Float32Array;
   /** Rest joints for the pass's refit, all at the origin: the cooked bodies are drawn on their own joints. */
@@ -150,10 +152,11 @@ const SKINNING = `
 uniform sampler2D citizenBones;
 uniform mat4 bindMatrix;
 uniform mat4 bindMatrixInverse;
+uniform float citizenBase;
 attribute float citizenRow;
 mat4 getBoneMatrix(const in float i) {
   int x = int(i)*4;
-  int y = int(citizenRow);
+  int y = int(citizenRow) + int(citizenBase);
   return mat4(texelFetch(citizenBones,ivec2(x,y),0),
     texelFetch(citizenBones,ivec2(x+1,y),0),
     texelFetch(citizenBones,ivec2(x+2,y),0),
@@ -232,11 +235,13 @@ function markChildShirt(mesh: SkinnedMesh): void {
   geometry.setAttribute('clothingMask', new BufferAttribute(mask, 1));
 }
 
+/** `base`: the body's first row in the palettes' shared target (`paletteTargets.ts`). */
 export function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial, uniform: { value: Texture },
-  mesh: SkinnedMesh, look = 0): void {
+  mesh: SkinnedMesh, look = 0, base: { value: number } = { value: 0 }): void {
   material.defines = { ...material.defines, USE_SKINNING: '' };
   material.onBeforeCompile = shader => {
     shader.uniforms.citizenBones = uniform;
+    shader.uniforms.citizenBase = base;
     shader.uniforms.bindMatrix = { value: mesh.bindMatrix };
     shader.uniforms.bindMatrixInverse = { value: mesh.bindMatrixInverse };
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_pars_vertex>', SKINNING);
@@ -259,7 +264,7 @@ export function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial,
       `);
     }
   };
-  material.customProgramCacheKey = () => `citizen-skinning-v3-look${look}`;
+  material.customProgramCacheKey = () => `citizen-skinning-v4-look${look}`;
 }
 
 export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
@@ -473,8 +478,9 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       const parents = new Int16Array(bones).fill(-1);
       const pass = createPalettePass(atlas.anim, parents, () => joints, rows);
       const uniform: { value: Texture } = { value: pass.texture };
+      const base = { value: pass.base };
       const batch: CitizenBatch = { meshes: [], parts: [], sources: [], local: [], clips, gait: gaitClips(clips), width, rows,
-        atlas, pass, uniform, scratch: new Float32Array(width), joints, parents, sex, scene: asset.scene, rigNodes: null,
+        atlas, pass, uniform, base, scratch: new Float32Array(width), joints, parents, sex, scene: asset.scene, rigNodes: null,
         count: 0, helmet, resources: owned, animationBytes: 0,
         lastUsed: performance.now(), disposed: false,
         deferred, baking: Promise.resolve() };
@@ -521,7 +527,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           // A roster person's colours are its vertices' (`personRig.ts`).
           material.roughness = 0.88;
           material.metalness = 0;
-          skinMaterial(material, uniform, o, materialIndex === 0 ? (CROWD[index]?.look ?? 0) : 0);
+          skinMaterial(material, uniform, o, materialIndex === 0 ? (CROWD[index]?.look ?? 0) : 0, base);
           const skin = o.geometry.userData['skinAppearance'] as SkinAppearance | undefined;
           if (skin) applySkinAppearance(material, o.geometry, skin, personLayers);
           owned.add(material);
@@ -531,7 +537,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         const source = original[0] as MeshStandardMaterial;
         depth.map = source.map;
         depth.alphaTest = source.alphaTest;
-        skinMaterial(depth, uniform, o);
+        skinMaterial(depth, uniform, o, 0, base);
         owned.add(depth);
         // A mesh per distinct level: each figure is drawn at the level its own size on the screen allows (`levelOf`).
         const distinct = [...new Set(variants)];
@@ -805,6 +811,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     batch.rows = Math.min(CAPACITY, batch.rows * 2);
     batch.pass.grow(batch.rows);
     batch.uniform.value = batch.pass.texture;
+    batch.base.value = batch.pass.base;
     group.userData.paletteBytes += paletteBytes(batch) - before;
   }
 
@@ -1063,6 +1070,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         if (batch.count === 0) continue;
         batch.pass.render(renderer, batch.count);
         batch.uniform.value = batch.pass.texture;
+        batch.base.value = batch.pass.base;
       }
     },
     /** The pose a person was last drawn in, if within the last few seconds (`ragdoll.ts`): blended now, from what they played. */

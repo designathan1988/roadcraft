@@ -18,6 +18,7 @@ import {
 import type { ClipFrames } from '../citizenBake';
 import { PACKED_BONE_FLOATS } from '../citizenPalette';
 import { compilePassAhead } from '../uploads';
+import { freeSlab, growSlab, takeSlab } from './paletteTargets';
 
 /** A crowd's animation on the GPU, as GPU Gems 3, chapter 2 ("Animated Crowd Rendering") lays it out */
 
@@ -89,8 +90,9 @@ interface PalettePlay {
 }
 
 export interface PalettePass {
-  /** The bone palettes, a row a person (`bones * 4` texels: mat4 columns), for the skinning to read. */
+  /** The bone palettes, a row a person (`bones * 4` texels: mat4 columns), for the skinning to read: a target shared with other passes (`paletteTargets.ts`), this pass's rows from `base`. */
   readonly texture: Texture;
+  readonly base: number;
   readonly capacity: number;
   /** Settles once its program is built (`uploads.ts` compilePassAhead): nobody draws with its palettes before. */
   readonly ready: Promise<void>;
@@ -125,7 +127,8 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
   let playTexture = rowsTexture(plays, PLAY_TEXELS, rows);
   let override = new Float32Array(width * 4 * rows);
   let overrideTexture = rowsTexture(override, width, rows);
-  let target = makeTarget(width, rows);
+  // Its rows in a target shared with the other passes of its width.
+  const slab = takeSlab(width, rows);
   /** The bodies refit through their parents (any depth): the blended bones, before the refit. */
   const twoPass = depth > 0;
   let blendTarget = twoPass ? makeTarget(width, rows) : null;
@@ -143,6 +146,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       uniform sampler2D uJoints;
       uniform sampler2D uOverride;
       uniform sampler2D uBlend;
+      uniform int uBase;
       uniform int uParent[BONES];
       out highp vec4 outColor;
       ${atlasBoneGlsl('atlasBone', 'uAtlas')}
@@ -172,11 +176,12 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
         shift += jointOf(variant, cur);
         m[3].xyz += shift - mat3(m) * jointOf(variant, bone);
         outColor = m[column];`;
-  const where = /* glsl */`
+  /** The person and column a texel is; in the shared target (`shared`) its rows start at `uBase`, in the blends' own at 0. */
+  const where = (shared: boolean): string => /* glsl */`
         ivec2 at = ivec2(gl_FragCoord.xy);
         int bone = at.x / 4;
         int column = at.x - bone * 4;
-        int person = at.y;
+        int person = at.y${shared ? ' - uBase' : ''};
         vec4 meta = texelFetch(uPlays, ivec2(${PLAYS}, person), 0);`;
   const uniforms = {
     uAtlas: { value: anim.atlas },
@@ -184,6 +189,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
     uJoints: { value: joints() },
     uOverride: { value: overrideTexture },
     uBlend: { value: blendTarget?.texture ?? null },
+    uBase: { value: slab.base },
     uParent: { value: Array.from(parent) },
   };
   const passMaterial = (fragmentShader: string): ShaderMaterial => new ShaderMaterial({
@@ -204,19 +210,19 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
         return mat3(texelFetch(uBlend, ivec2(bone * 4, person), 0).xyz, texelFetch(uBlend, ivec2(bone * 4 + 1, person), 0).xyz,
           texelFetch(uBlend, ivec2(bone * 4 + 2, person), 0).xyz);
       }
-      void main() {${where}
+      void main() {${where(true)}
         if (meta.z > 0.5) { outColor = vec4(0.0); return; }
-        if (meta.y > 0.5) { outColor = texelFetch(uOverride, at, 0); return; }
+        if (meta.y > 0.5) { outColor = texelFetch(uOverride, ivec2(at.x, person), 0); return; }
         mat4 m = mat4(texelFetch(uBlend, ivec2(bone * 4, person), 0), texelFetch(uBlend, ivec2(bone * 4 + 1, person), 0),
           texelFetch(uBlend, ivec2(bone * 4 + 2, person), 0), texelFetch(uBlend, ivec2(bone * 4 + 3, person), 0));${refit('turnOf(person, p)')}
       }` : `${head}
-      void main() {${where}
+      void main() {${where(true)}
         if (meta.z > 0.5) { outColor = vec4(0.0); return; }
-        if (meta.y > 0.5) { outColor = texelFetch(uOverride, at, 0); return; }
+        if (meta.y > 0.5) { outColor = texelFetch(uOverride, ivec2(at.x, person), 0); return; }
         mat4 m = blended(person, bone);${refit('mat3(blended(person, p))')}
       }`);
   const blendMaterial = twoPass ? passMaterial(`${head}
-      void main() {${where}
+      void main() {${where(false)}
         if (meta.z > 0.5 || meta.y > 0.5) { outColor = vec4(0.0); return; }
         outColor = blended(person, bone)[column];
       }`) : null;
@@ -233,11 +239,14 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
   const scene = sceneOf(material);
   const blendScene = blendMaterial ? sceneOf(blendMaterial) : null;
   // DO NOT build it at its first draw: a loop over every bone's parents, a second and more in the frame where the first person of a class came (2026-10-16).
-  const ready = Promise.all([compilePassAhead(scene, camera, target), ...(blendScene && blendTarget ? [compilePassAhead(blendScene, camera, blendTarget)] : [])]).then(() => {});
+  // Built for a target of its own kind, not the shared page (another pass may make that page anew meanwhile).
+  const compileTarget = makeTarget(width, 1);
+  const ready = Promise.all([compilePassAhead(scene, camera, compileTarget), ...(blendScene && blendTarget ? [compilePassAhead(blendScene, camera, blendTarget)] : [])]).then(() => { compileTarget.dispose(); });
 
   return {
     ready,
-    get texture() { return target.texture; },
+    get texture() { return slab.page.target.texture; },
+    get base() { return slab.base; },
     get capacity() { return rows; },
     setPlays(row, list, variant) {
       const o = row * PLAY_TEXELS * 4;
@@ -289,7 +298,10 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
         renderer.setRenderTarget(blendTarget);
         renderer.render(blendScene, camera);
       }
-      target.viewport.set(0, 0, width, n);
+      // This pass's rows of the shared target, nothing else of it touched (no clear).
+      const target = slab.page.target;
+      uniforms.uBase.value = slab.base;
+      target.viewport.set(0, slab.base, width, n);
       renderer.setRenderTarget(target);
       renderer.render(scene, camera);
       renderer.setRenderTarget(previous);
@@ -307,8 +319,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       override = nextOverride;
       overrideTexture.dispose();
       overrideTexture = rowsTexture(override, width, capacity);
-      target.dispose();
-      target = makeTarget(width, capacity);
+      growSlab(slab, capacity);
       if (blendTarget) {
         blendTarget.dispose();
         blendTarget = makeTarget(width, capacity);
@@ -323,7 +334,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       uniforms.uAtlas.value = atlas as DataTexture;
     },
     dispose() {
-      target.dispose();
+      freeSlab(slab);
       blendTarget?.dispose();
       playTexture.dispose();
       overrideTexture.dispose();
