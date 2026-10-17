@@ -8,7 +8,7 @@ import { MeshBasicMaterial, type Mesh } from 'three';
 import type { SceneMaterials } from '@render/materials';
 import { marksRoadSection } from '@render/mesh/roadEdges';
 import { passLook, surfaceLook } from '@render/roadSurfaces';
-import { type FarRoadCache, type FarRoadMesh, bakeTileRoads, farRoadTones, runFarRoadJob, tileNetwork } from '@render/farRoadTiles';
+import { type FarRoadCache, type FarRoadMesh, STREET_MEANS, bakeTileRoads, farRoadTones, runFarRoadJob, tileNetwork } from '@render/farRoadTiles';
 import type { FarTreeJob, FarTreeRun } from '@render/farTree';
 import { surfaceTexels } from '@render/mesh/textureBaker';
 import { CURB_BAND, Level } from '@world/roadTypes';
@@ -121,6 +121,13 @@ async function until(look: () => void, done: () => boolean): Promise<void> {
 }
 
 describe('a tile of roads baked from the store', () => {
+  it('takes each street texture at its mean as the recipes bake it (the constants follow the recipes)', () => {
+    for (const key of ['asphalt', 'footway', 'kerb', 'verge'] as const) {
+      const mean = fullMean(key);
+      expect(STREET_MEANS[key].map((v, k) => Math.abs(v - mean[k]!) < 2e-6), `${key}: ${mean.map((v) => v.toFixed(6)).join(', ')}`).toEqual([true, true, true]);
+    }
+  });
+
   it("covers every carriageway and footway's ground, each in its near material's colour from afar", () => {
     const records = crossTile(0, 0);
     const mesh = bakeTileRoads(records);
