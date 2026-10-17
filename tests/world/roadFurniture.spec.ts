@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import type { SegmentId } from '@world/ids';
 import { footwayAt, LANDSCAPE_RADIUS, medianAt } from '@world/landscape';
+import { layCity, widenCityFootways } from '@editor/cityGenerator';
+import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 import { streetFurniture } from '@world/streetFurniture';
 import { Network } from '@world/network';
 import { furnitureFor, NBR9050_CLEAR_WALK } from '@world/roads/furnitureSets';
@@ -21,6 +23,21 @@ function street(type: number, length = 400): { doc: RoadDoc; net: Network; seg: 
 }
 
 describe('the furniture of a new road', () => {
+  it('files the landings of the crossings once for the roads drawn, never asking the roads round each piece for them', () => {
+    const doc = layCity(planCity({ ...DEFAULT_CITY, size: 'small' }));
+    widenCityFootways(doc);
+    const net = new Network(doc);
+    net.rebuild();
+    // Every landing worked out, counted: once for each end of a street at most, never again for each piece placed by it.
+    let landings = 0;
+    const landingAt = net.crossingLandingAt.bind(net);
+    net.crossingLandingAt = (segment, node) => { landings++; return landingAt(segment, node); };
+    const pieces = furnitureFor(net, doc.segments.keys(), 'complete', doc.landscape.values(), false, true).length;
+    expect(pieces).toBeGreaterThan(500);
+    expect(landings).toBeGreaterThan(0);
+    expect(landings).toBeLessThanOrEqual(2 * doc.segments.size);
+  });
+
   it('complete: lamps on both sides staggered, a hydrant, all on the service strip, none overlapping', () => {
     const { net, seg } = street(1);
     const pieces = furnitureFor(net, [seg], 'complete', []);
