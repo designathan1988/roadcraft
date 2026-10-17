@@ -63,4 +63,19 @@ describe('the conflicts kept in the micro window', () => {
     for (const p of index.points) if (p && inside.has(p.node)) expect(before.has(`${p.node}|${p.a}|${p.b}`)).toBe(true);
     expect(ids()).toBe(held());
   });
+
+  it('lets go of the zones kept for pairs it no longer holds when the window moves, not only at a whole build', () => {
+    const graph = graphOf();
+    const junctions = [...graph.junctions.keys()];
+    const inside = new Set(junctions.slice(0, Math.ceil(junctions.length / 2)));
+    const index = new ConflictIndex();
+    index.setWindow(graph, new Set());
+    index.build(graph);
+    // Zones of an earlier session for pairs this map does not have (`seed`).
+    index.seed(new Map(Array.from({ length: 6000 }, (_, k) => [`elsewhere:${k}`, null] as const)));
+    const kept = (): number => (index as unknown as { store: { kept: Map<string, unknown> } }).store.kept.size;
+    expect(kept()).toBeGreaterThanOrEqual(6000);
+    index.setWindow(graph, inside);
+    expect(kept()).toBeLessThan(6000);
+  });
 });

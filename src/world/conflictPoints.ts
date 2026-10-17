@@ -55,6 +55,12 @@ export class ConflictIndex {
   /** The keys of `idByKey` each junction made: DO NOT keep the ids of a junction the window left (no vehicle holds them), or the map grows with every junction ever passed. */
   private readonly keysOf = new Map<NodeId, Set<string>>();
 
+  /** The zones kept from other maps, from roads since undone and from junctions the window left stay in memory only while they are few next to those held (`pairCache`); a fresh one is kept until taken (`takeMeasured`). */
+  private pruneKept(): void {
+    if (this.store.kept.size <= 4 * this.pairCache.size + 4096) return;
+    for (const key of this.store.kept.keys()) if (!this.pairCache.has(key) && !this.store.fresh.has(key)) this.store.kept.delete(key);
+  }
+
   /** The ids of these junctions (every one known when none is named) let go when this index no longer holds them (`keysOf`). */
   private forgetIds(nodes: Iterable<NodeId> = [...this.keysOf.keys()]): void {
     for (const node of nodes) {
@@ -305,10 +311,7 @@ export class ConflictIndex {
     this.prepared.clear();
     this.pairCache = next;
     this.sweepCache = nextSweeps;
-    // The zones kept from other maps and from roads since undone stay in memory only while they are few next to this map's
-    if (this.store.kept.size > 4 * next.size + 4096) {
-      for (const key of this.store.kept.keys()) if (!next.has(key) && !this.store.fresh.has(key)) this.store.kept.delete(key);
-    }
+    this.pruneKept();
     for (const list of this.byConnector.values()) list.sort((p, q) => p.s - q.s);
     this.forgetIds();
   }
@@ -343,6 +346,8 @@ export class ConflictIndex {
     }
     // The ids of a junction let go and not built again (out of the window, or gone).
     this.forgetIds(junctions);
+    // The window moves by updates, not builds: the zones read for the junctions it passed are let go here too.
+    this.pruneKept();
     this.measured.build = pairsMeasured - measuredBefore;
     this.prepared.clear();
   }
