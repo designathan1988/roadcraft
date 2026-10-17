@@ -10,6 +10,7 @@ import { PART_KINDS } from './kit';
 import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
 import { CELL_DETAIL, type MassDetail, PLATE_DETAIL, TILE_DETAIL, emitMassing, type MassingChunk } from './massing';
 import { type PartFiling, fileParts, filingBuffers } from './partFiling';
+import { levelCells } from './levelKeys';
 import { PartyWalls } from './partyWalls';
 import { drawsSignature } from './signature';
 
@@ -119,7 +120,9 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
       const mass = emitMassing(b, groundAt, paved, naturalAt, drawsSignature(b), job.tone, detail);
       if (mass) masses.push(mass);
     }
-    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries: [], mass: cellMass(masses) } };
+    // On the square's grid (`cellArrays.ts` `massGrid`): a cell's, a tile's or a plate's.
+    const at = job.cell[1] === ':' ? levelCells(job.cell) : { i0: Number(job.cell.slice(0, job.cell.indexOf(','))), j0: Number(job.cell.slice(job.cell.indexOf(',') + 1)), n: 1 };
+    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries: [], mass: cellMass(masses, at) } };
   }
   // DO NOT parse a text per building: each record decoded from its tile's shared table, a tile's shared members once for the job.
   const buildings = readRecords(job.entries.map((entry) => entry.record));

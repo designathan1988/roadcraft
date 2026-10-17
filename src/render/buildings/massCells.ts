@@ -161,7 +161,9 @@ export function measureSeen(seen: Seen, eyeX: number, eyeY: number, eyeZ: number
 /** A cell's mesh from its masses' arrays, taken as they came */
 export function cellMesh(mass: CellMass, kit: BuildingKit, name = 'building-massing'): Mesh {
   const g = new BufferGeometry();
-  g.setAttribute('position', new BufferAttribute(mass.position, 3));
+  // Floats, or on the square's grid: four unsigned shorts read normalised, the mesh's matrix putting them in place (`cellArrays.ts` `massGrid`).
+  const place = mass.place;
+  g.setAttribute('position', place ? new BufferAttribute(mass.position, 4, true) : new BufferAttribute(mass.position, 3));
   g.setAttribute('normal', new BufferAttribute(mass.normal, 4, true));
   // Half floats where a vertex's numbers allow (`CellMass`): three uploads a Uint16Array as HALF_FLOAT where the attribute says so (r186 `WebGLAttributes.createBuffer`).
   const half = (array: Uint16Array, size: number): BufferAttribute => Object.assign(new BufferAttribute(array, size), { isFloat16BufferAttribute: true });
@@ -170,9 +172,18 @@ export function cellMesh(mass: CellMass, kit: BuildingKit, name = 'building-mass
   g.setAttribute('facadeGrid', half(mass.grid, MASS_GRID));
   g.setAttribute('glazingSeed', new BufferAttribute(mass.seed, 1));
   g.setIndex(new BufferAttribute(mass.index, 1));
+  // The box in the world, as the levels read it (`farLevels.ts`, `land`); the sphere in the mesh's own frame, as three culls by it.
   g.boundingBox = boxOf(mass.bounds);
   g.boundingSphere = sphereOf(mass.bounds);
   const mesh = new Mesh(g, kit.massing);
+  if (place) {
+    const span = place.step * 65535;
+    g.boundingSphere.center.set((g.boundingSphere.center.x - place.x) / span, (g.boundingSphere.center.y - place.y) / span, (g.boundingSphere.center.z - place.z) / span);
+    g.boundingSphere.radius /= span;
+    mesh.position.set(place.x, place.y, place.z);
+    mesh.scale.setScalar(span);
+    mesh.updateMatrix();
+  }
   gpuOnly(mesh, () => ({}));
   mesh.name = name;
   mesh.matrixAutoUpdate = false;

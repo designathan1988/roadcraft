@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DataUtils } from 'three';
 
-import { MASS_FACADE, MASS_GRID, cellMass } from '@render/buildings/cellArrays';
+import { MASS_FACADE, MASS_GRID, cellMass, massPlaces } from '@render/buildings/cellArrays';
 import { createBuildingKit } from '@render/buildings/kit';
 import { cellMesh } from '@render/buildings/massCells';
 import { emitMassing } from '@render/buildings/massing';
@@ -84,5 +84,30 @@ describe('a lot\'s plate in the masses', () => {
     const chunk = emitMassing(b, () => 0)!;
     expect(chunk.index.length / 3).toBe(2);
     expect(chunk.position.length / 3).toBe(4);
+  });
+});
+
+describe('masses on their square\'s grid', () => {
+  it('put every point within half a step of its float, a point laid twice the same point, in 8 bytes for 12', () => {
+    // A row of blocks back to back: corners shared between buildings.
+    const row = Array.from({ length: 12 }, (_, i) => ({ ...JSON.parse(JSON.stringify(BLUEPRINTS[3]!.body)), id: i + 1, x: 10 + (i % 6) * 18, y: 20 + Math.floor(i / 6) * 12, rotation: 0 }) as Building);
+    const chunks = row.map((b) => emitMassing(b, (x, y) => x * 0.01 + y * 0.02)!);
+    for (const square of [{ i0: 0, j0: 0, n: 1 }, { i0: 0, j0: 0, n: 4 }, { i0: -4, j0: -4, n: 8 }]) {
+      const floats = cellMass(chunks)!, onGrid = cellMass(chunks, square)!;
+      expect(onGrid.place, `square ${square.n}`).toBeDefined();
+      expect(onGrid.position.byteLength / (floats.position.length / 3)).toBe(8);
+      const f = floats.position as Float32Array, q = massPlaces(onGrid), step = onGrid.place!.step;
+      const seen = new Map<string, string>();
+      let shared = 0;
+      for (let v = 0; v < f.length / 3; v++) {
+        for (let c = 0; c < 3; c++) expect(Math.abs(q[v * 3 + c]! - f[v * 3 + c]!)).toBeLessThanOrEqual(step / 2 + 1e-4);
+        const key = [f[v * 3], f[v * 3 + 1], f[v * 3 + 2]].join(), got = [q[v * 3], q[v * 3 + 1], q[v * 3 + 2]].join();
+        const was = seen.get(key);
+        if (was !== undefined) { expect(got).toBe(was); shared++; } else seen.set(key, got);
+      }
+      expect(shared).toBeGreaterThan(50);
+      // A hundredth of the level's error: a cell's 2.9 mm, a tile's 8.8 mm, a plate's 16.6 mm.
+      expect(step / 2).toBeLessThan(square.n === 1 ? 0.003 : square.n === 4 ? 0.009 : 0.017);
+    }
   });
 });

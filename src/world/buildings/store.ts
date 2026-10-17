@@ -36,6 +36,9 @@ export class BuildingStore {
   /** The buildings by place (`near`), kept by the writers below; null after a whole-store change, made again when asked. */
   private grid: BuildingGrid<Building> | null = null;
 
+  /** Whether a record's members alike with other buildings' are shared with them (`intern.ts`): DO NOT for a store thrown away once written out (the tile generator's, whose tile is read and interned again where it is used: 0.28 s of a dense tile's 1.64 s for nothing). */
+  internShared = true;
+
   /** `journal`: the document's diary; a store on its own keeps one of its own. */
   constructor(private readonly journal: ChangeJournal = new ChangeJournal()) {}
 
@@ -122,7 +125,7 @@ export class BuildingStore {
   /** @perItem Stores a new building under a fresh id. */
   add(value: Omit<Building, 'id'>): Building {
     const id = asBuildingId(this.idAt?.(value) ?? this.ids.take());
-    const building = settleBuilding({ ...value, id } as Building, this.settled);
+    const building = settleBuilding({ ...value, id } as Building, this.settled, undefined, this.internShared);
     this.leaveBelow();
     this.items.set(id, building);
     this.grid?.insert(building);
@@ -134,7 +137,7 @@ export class BuildingStore {
   put(building: Building): void {
     const was = this.items.get(building.id);
     if (!was) return;
-    const now = settleBuilding(building, this.settled, was);
+    const now = settleBuilding(building, this.settled, was, this.internShared);
     this.leaveBelow();
     this.items.set(building.id, now);
     this.grid?.update(now);
@@ -146,7 +149,7 @@ export class BuildingStore {
   wear(id: BuildingId, decay: number): void {
     const was = this.items.get(id);
     if (!was || (was.decay ?? 0) === decay) return;
-    const now = settleBuilding({ ...was, decay }, this.settled, was);
+    const now = settleBuilding({ ...was, decay }, this.settled, was, this.internShared);
     this.leaveBelow();
     this.items.set(id, now);
     this.grid?.update(now);
@@ -164,7 +167,7 @@ export class BuildingStore {
       this.changed([was], 'restored');
       return;
     }
-    const now = settleBuilding(value, this.settled, was);
+    const now = settleBuilding(value, this.settled, was, this.internShared);
     this.leaveBelow();
     this.items.set(id, now);
     // A record put back where one stood keeps its place in the order; a new one goes last, as in `items`.
@@ -181,7 +184,7 @@ export class BuildingStore {
     for (const value of list) {
       if (this.items.has(value.id)) continue;
       if (plain) this.settled.add(value);
-      const now = plain ? value : settleBuilding(value, this.settled, undefined);
+      const now = plain ? value : settleBuilding(value, this.settled, undefined, this.internShared);
       this.items.set(now.id, now);
       this.grid?.insert(now);
       placed.push(now);
@@ -326,7 +329,7 @@ export class BuildingStore {
         return;
       }
       // The source's record itself, as `shareFrom` does: read-only once stored (OWNERSHIP above).
-      const kept = settleBuilding(now, this.settled);
+      const kept = settleBuilding(now, this.settled, undefined, this.internShared);
       this.items.set(id, kept);
       if (!was) {
         this.grid?.insert(kept);

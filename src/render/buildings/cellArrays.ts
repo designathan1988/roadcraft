@@ -216,7 +216,9 @@ export const FACADE_BYTES = 8;
 
 /** A cell's buildings from afar as one mesh's arrays (`massCells.ts`) */
 export interface CellMass {
-  readonly position: Float32Array;
+  /** Floats, or on its square's grid (`place`, `massGrid`): four unsigned shorts, read normalised and put in place by the mesh's matrix. */
+  readonly position: Float32Array | Uint16Array;
+  readonly place?: ShellGrid;
   /** Four signed bytes a vertex over 127 (x, y, z, and one left over: no 3-byte format in Direct3D 11): lighting only, no uv worked out from it (the shells' are shorts, `normal`). */
   readonly normal: Int8Array;
   /** Linear rgb and a fourth left over, half floats (`HALF_FLOAT`, `massCells.ts` `cellMesh`): 11 bits of mantissa, more than a colour shows. */
@@ -239,8 +241,51 @@ export function indexArray(vertices: number, indices: number): Uint16Array | Uin
   return vertices > 0xffff ? new Uint32Array(indices) : new Uint16Array(indices);
 }
 
-/** The masses of a cell's buildings, or a tile's or a plate's (`massLevels.ts`), merged as one set of arrays; null when none has any. */
-export function cellMass(masses: readonly MassingChunk[]): CellMass | null {
+/** A square of cells a level's masses stand in (`levelKeys.ts`): its first column and row and its side in cells. */
+export interface MassSquare { readonly i0: number; readonly j0: number; readonly n: number }
+
+/** A square's grid for its masses (as `cellShellGrid` for a cell's shells): the square and its margins in an unsigned short, every axis alike, its height from its lowest point; a cell's step 5.9 mm, a tile's 18 mm, a plate's 33 mm (a point within half of it, a hundredth of the level's error). */
+export function massGrid(square: MassSquare, lowest: number): ShellGrid {
+  const span = square.n * CELL + 2 * SHELL_GRID_MARGIN;
+  return { x: square.i0 * CELL - SHELL_GRID_MARGIN, y: lowest, z: -(square.j0 + square.n) * CELL - SHELL_GRID_MARGIN, step: span / 65535 };
+}
+
+/** A mass's places in floats, as the GPU reads them back (from its grid, if on one). */
+export function massPlaces(mass: CellMass): Float32Array {
+  const place = mass.place;
+  if (!place) return mass.position as Float32Array;
+  const q = mass.position as Uint16Array, n = q.length / 4, out = new Float32Array(n * 3), span = Math.fround(place.step * 65535);
+  for (let v = 0; v < n; v++) {
+    out[v * 3] = Math.fround(Math.fround(q[v * 4]! / 65535) * span) + Math.fround(place.x);
+    out[v * 3 + 1] = Math.fround(Math.fround(q[v * 4 + 1]! / 65535) * span) + Math.fround(place.y);
+    out[v * 3 + 2] = Math.fround(Math.fround(q[v * 4 + 2]! / 65535) * span) + Math.fround(place.z);
+  }
+  return out;
+}
+
+/** A mass's places in floats put on its square's grid; the mass as it was where a point falls off it. */
+export function massOnGrid(mass: CellMass, square: MassSquare): CellMass {
+  const p = massPlaces(mass), n = p.length / 3;
+  const grid = massGrid(square, mass.bounds[1]!);
+  const q = new Uint16Array(n * 4);
+  for (let v = 0; v < n; v++) {
+    for (let k = 0; k < 3; k++) {
+      const s = Math.round((p[v * 3 + k]! - (k === 0 ? grid.x : k === 1 ? grid.y : grid.z)) / grid.step);
+      if (!(s >= 0 && s <= 65535)) return mass;
+      q[v * 4 + k] = s;
+    }
+  }
+  return { ...mass, position: q, place: grid };
+}
+
+/** The masses of a cell's buildings, or a tile's or a plate's (`massLevels.ts`), merged as one set of arrays, on `square`'s grid when given (`massGrid`); null when none has any. */
+export function cellMass(masses: readonly MassingChunk[], square?: MassSquare): CellMass | null {
+  const merged = mergedMass(masses);
+  return merged && square ? massOnGrid(merged, square) : merged;
+}
+
+/** The masses merged, their places in floats. */
+function mergedMass(masses: readonly MassingChunk[]): CellMass | null {
   let vertices = 0, indices = 0, error = 0;
   for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; error = Math.max(error, c.error); }
   if (indices === 0) return null;
