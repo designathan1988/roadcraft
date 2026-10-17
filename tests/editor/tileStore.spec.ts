@@ -51,6 +51,14 @@ function memoryStore(): MemoryStore {
   return store;
 }
 
+/** A promise's outcome after `turns` turns of the task queue (each a task of its own, no time waited), or 'pending': whether it settles without waiting on anything else. */
+async function settledIn<T>(promise: Promise<T>, turns = 20): Promise<T | 'pending'> {
+  let outcome: { readonly value: T } | null = null;
+  void promise.then((value) => { outcome = { value }; });
+  for (let k = 0; k < turns && !outcome; k++) await new Promise((done) => setTimeout(done, 0));
+  return outcome ? (outcome as { readonly value: T }).value : 'pending';
+}
+
 /** A tile with nothing in it but what `extra` lays. */
 function emptyTile(i: number, j: number, extra: Partial<TileRecords> = {}): TileRecords {
   const key = tileKey(i, j), base = tileIdBase(key);
@@ -358,8 +366,8 @@ describe('a tile stored', () => {
     const reading = backend.run({ op: 'read', map: 'map', key: tileKey(4, 4), network: true });
     const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5)), node(2, m(1_200), m(5))] });
     const saved = Promise.all([tiles.write(tile), tiles.setMetaParts({ economy: { economy: { balance: 19_744_162 } } })]);
-    const outcome = await Promise.race([saved, new Promise((done) => setTimeout(() => done('held behind the read'), 200))]);
-    expect(outcome).toEqual([1, true]);
+    // Settled in a few turns of the queue, the read still held: not behind it.
+    expect(await settledIn(saved)).toEqual([1, true]);
     letGo();
     await reading;
     // Read again as a reload reads it: the road and the balance.
@@ -372,16 +380,18 @@ describe('a tile stored', () => {
     const worker = readFileSync('src/editor/save.worker.ts', 'utf8');
     expect(worker).toMatch(/writesOnly\(tiles\) \|\| tiles\.op === 'clearLists' \? turns\.write\(run\) : turns\.read\(run\)/);
     const store = memoryStore();
-    /** A read's decoding and preparing (`prepareTile`), synchronous: the worker's thread held meanwhile. */
-    const SYNC_READ_MS = 150;
+    /** What the worker's thread did, in order: a read's decoding and preparing (synchronous, `prepareTile`: the thread held), a write's commit. */
+    const done: string[] = [];
     const turns = new StoreTurns();
     const thread = {
       onmessage: null as ((e: MessageEvent) => void) | null, onerror: null, onmessageerror: null,
       postMessage(message: { id: number; tiles: TileOp }) {
         const op = message.tiles;
         const run = async (): Promise<unknown> => {
-          if (op.op === 'read') { const until = performance.now() + SYNC_READ_MS; while (performance.now() < until) { /* decoding, preparing */ } }
-          return runTileOp(store, op);
+          if (op.op === 'read') done.push('read');
+          const value = await runTileOp(store, op);
+          if (op.op === 'write') done.push('write');
+          return value;
         };
         void (writesOnly(op) ? turns.write(run) : turns.read(run)).then((value) => thread.onmessage?.({ data: { id: message.id, ok: true, value } } as MessageEvent));
       },
@@ -391,17 +401,16 @@ describe('a tile stored', () => {
     await tiles.setMeta({ version: 1, generator: null, unit: 1, values: { terrain: [], economy: { balance: 20_000_000 } } });
     for (let k = 0; k < 3; k++) await writeTile(store, 'map', { ...emptyTile(4, k), version: 1 });
     // The region's tiles being read (three lanes), the first already at work when the edit and the balance come.
-    const started = performance.now();
     const reads = [0, 1, 2].map((k) => backend.run({ op: 'read', map: 'map', key: tileKey(4, k), network: false }));
-    await new Promise((done) => setTimeout(done, 0));
+    await new Promise((next) => setTimeout(next, 0));
     const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5)), node(2, m(1_200), m(5))] });
     await Promise.all([tiles.write(tile), tiles.setMetaParts({ economy: { economy: { balance: 19_744_162 } } })]);
-    const waited = performance.now() - started;
     await Promise.all(reads);
     expect((await readTile(store, 'map', tile.key))?.nodes.map((n) => n.id)).toEqual([1, 2]);
     expect((await new TileStore('map', storeTiles(store), never).meta())?.values?.economy).toEqual({ balance: 19_744_162 });
-    // Behind the read at work at most, never the three (~460 ms on one worker without turns).
-    expect(waited).toBeLessThan(2 * SYNC_READ_MS);
+    // Behind the read at work at most, never the three (~460 ms on one worker without turns: three reads' work first).
+    expect(done.indexOf('write')).toBeLessThanOrEqual(1);
+    expect(done.filter((d) => d === 'read')).toHaveLength(3);
   });
 
   it("a tile edited, its page gone before the bake, reopened: the same records read, never made again (conf60)", async () => {
@@ -445,8 +454,8 @@ describe('a tile stored', () => {
     void tiles.addBays(key);
     // The road next door demolishes one of its buildings: the tile written.
     const edited = { ...loaded, buildings: [loaded.buildings[1]!] };
-    const outcome = await Promise.race([tiles.write(edited), new Promise((done) => setTimeout(() => done('held behind the queue'), 200))]);
-    expect(outcome).toBe(2);
+    // Written in a few turns of the queue, its bays still not begun: not behind them.
+    expect(await settledIn(tiles.write(edited))).toBe(2);
     // A reload right after: the building gone for good.
     const back = await new TileStore('map', storeTiles(store), never).read(key);
     expect(back!.buildings.map((b) => (b as Building).id)).toEqual([base + 2]);
