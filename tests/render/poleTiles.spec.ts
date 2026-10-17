@@ -6,14 +6,15 @@ import { applyLots, planLots } from '@world/lots';
 import { DEFAULT_CITY, planCity } from '@world/cityGen/plan';
 import { greenCity, layCity, widenCityFootways } from '@editor/cityGenerator';
 import { buildRoadElevation } from '@world/elevation';
-import type { RoadDoc, TileRecords } from '@world/doc';
+import type { RoadDoc } from '@world/doc';
 import { TILE, tileKey } from '@world/tiles';
 import { createSceneryKit } from '@render/scenery';
 import type { PoleBake } from '@render/poleBake';
 import { PoleLayer, buildUtilities } from '@render/poleLayer';
 import { poleGroundAt } from '@render/utilities';
-import type { NearTileCache } from '@render/nearTileBake';
-import { runNearJob as runNearTileJob } from '@render/nearBakers';
+import type { NearTileCache, NearTileJob } from '@render/nearTileBake';
+import { runNearJob } from '@render/nearBakers';
+import { bakeEveryTile } from '../support/nearTileBakes';
 import { poleProduct } from '@render/poleTiles';
 import { recordsFor } from '@render/nearTiles';
 
@@ -66,50 +67,41 @@ describe('a tile\'s poles baked in a worker', () => {
     const kit = createSceneryKit();
     const flat = (): number => 0;
     const page = buildUtilities(net, poleGroundAt(buildRoadElevation(net, flat), flat, net), kit);
-    // The tiles the town reaches, each as the store keeps it.
+    // The tiles the town reaches, each baked from the records of the 3 x 3 round it, as a worker bakes it.
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const n of doc.nodes.values()) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); }
-    const i0 = Math.floor(x0 / TILE) - 1, i1 = Math.floor(x1 / TILE) + 1, j0 = Math.floor(y0 / TILE) - 1, j1 = Math.floor(y1 / TILE) + 1;
-    const records = new Map<number, TileRecords>();
-    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) records.set(tileKey(i, j), doc.tileRecords(tileKey(i, j), 1));
     const product = poleProduct(kit, new Group());
+    const bakes = await bakeEveryTile(doc, [x0, y0, x1, y1], 'poles', product.extra!(0)) as PoleBake[];
     const drawn = new Group();
-    let baked = 0;
-    for (let i = i0 + 1; i < i1; i++) {
-      for (let j = j0 + 1; j < j1; j++) {
-        const tiles = [tileKey(i, j)];
-        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (di || dj) tiles.push(tileKey(i + di, j + dj));
-        const reply = await runNearTileJob({
-          kind: 'poles', node: `poles:${i},${j}`, sig: 's', want: 'w', shown: null, prefix: null,
-          tiles: tiles.map((key) => ({ key, version: 1 })), records: tiles.map((key) => recordsFor(records.get(key)!, ['roads', 'rest'])),
-          ground: { ground: null, naturalIsGround: true }, extra: product.extra!(0),
-        }, noCache);
-        expect(reply.kind).toBe('near');
-        if (reply.kind !== 'near' || reply.payload === null) continue;
-        baked++;
-        drawn.add(PoleLayer.fromBake(kit, reply.payload as PoleBake).group);
-      }
-    }
+    for (const bake of bakes) drawn.add(PoleLayer.fromBake(kit, bake).group);
+    const baked = bakes.length;
     expect(baked).toBeGreaterThan(1);
     expect(picture(drawn)).toEqual(picture(page.group));
     page.dispose();
   });
 
-  it('a bake the page draws comes back as the same, its arrays not sent again', async () => {
+  it('one job answers every kind asked of a tile, each as its own job would; a bake the page draws comes back as the same, its arrays not sent again', async () => {
     const { doc } = city();
     const kit = createSceneryKit();
     const product = poleProduct(kit, new Group());
     const pole = [...doc.poles.values()][0]!;
     const i = Math.floor(pole.x / TILE), j = Math.floor(pole.y / TILE);
-    const key = tileKey(i, j);
-    const job = {
-      kind: 'poles' as const, node: `poles:${i},${j}`, sig: 's', want: 'w', shown: null, prefix: null,
-      tiles: [{ key, version: 1 }], records: [recordsFor(doc.tileRecords(key, 1), ['roads', 'rest'])],
-      ground: { ground: null, naturalIsGround: true }, extra: product.extra!(0),
+    const tiles = [tileKey(i, j)];
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (di || dj) tiles.push(tileKey(i + di, j + dj));
+    const job: NearTileJob = {
+      node: `${i},${j}`, prefix: null, ground: { ground: null, naturalIsGround: true },
+      asks: [{ kind: 'poles', sig: 'p', want: 'w', shown: null, extra: product.extra!(0) }, { kind: 'signs', sig: 's', want: 'w', shown: null, extra: { markingStyle: 'classic' } }],
+      tiles: tiles.map((key) => ({ key, version: 1 })), records: tiles.map((key) => recordsFor(doc.tileRecords(key, 1), ['roads', 'rest'])),
     };
-    const first = await runNearTileJob(job, noCache);
-    expect(first.kind === 'near' && first.payload).toBeTruthy();
-    const again = await runNearTileJob({ ...job, shown: first.kind === 'near' ? first.bake : null }, noCache);
-    expect(again).toMatchObject({ kind: 'near', same: true, payload: null });
+    const both = await runNearJob(job, noCache);
+    if (both.kind !== 'near') throw new Error(both.kind);
+    expect(both.answers.map((a) => a.kind).sort()).toEqual(['poles', 'signs']);
+    for (const ask of job.asks) {
+      const alone = await runNearJob({ ...job, asks: [ask] }, noCache);
+      if (alone.kind !== 'near') throw new Error(alone.kind);
+      expect(both.answers.find((a) => a.kind === ask.kind)).toEqual(alone.answers[0]);
+    }
+    const again = await runNearJob({ ...job, asks: job.asks.map((ask) => ({ ...ask, shown: (both.answers.find((a) => a.kind === ask.kind) as { bake: string }).bake })) }, noCache);
+    expect(again).toMatchObject({ kind: 'near', answers: [{ same: true, payload: null }, { same: true, payload: null }] });
   });
 });
