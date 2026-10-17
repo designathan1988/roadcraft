@@ -3,15 +3,15 @@ import { tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { FarTileBake, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
-import { jobPort, longWorkers, shortWorkers } from './jobs/jobPool';
+import { jobPort, keptClearWorkers, longWorkers, shortWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
 /** Workers making tiles at once, and how many the region asks at a time (`worldStreamer.ts` inFlight): the long-running side of the pool (`longWorkers`), the growth beside them (it grows the player's zones, once the map is made); never on the workers of the traffic's lanes, the cells or the far levels (`jobPool.ts` place). */
 export const tileLanes = (): number => longWorkers();
 
-/** Lanes set aside on the other kinds' workers while the map is made (`setAside`): never on the save's (`jobPool.ts` KEPT_CLEAR), and one of them always left to the queue (conf39: the cells, the near roads and a building's detail waited behind tiles of 2-25 s on the one worker the queue could use). */
-export const asideLanes = (): number => Math.max(0, shortWorkers() - 2);
+/** Lanes set aside on the other kinds' workers while the map is made (`setAside`): never on the workers the save and the store's reads hold (`jobPool.ts` keptClearWorkers), and one of them always left to the queue (conf39: the cells, the near roads and a building's detail waited behind tiles of 2-25 s on the one worker the queue could use). */
+export const asideLanes = (): number => Math.max(0, shortWorkers() - keptClearWorkers() - 1);
 
 /** Where a tile made is stored by the worker, and whether its texts come back with its version. */
 type StoreAsk = NonNullable<StreamTileAsk['store']>;

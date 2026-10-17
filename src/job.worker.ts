@@ -38,6 +38,9 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   // A tile written here has its simulation's sections baked with it (`sim/tileSections.ts`): the editor's layer does not import the simulation.
   save: () => Promise.all([import('./editor/save.worker'), import('./sim/tileSections')])
     .then(([save, sections]) => ({ serve: (scope: JobScope) => save.serve(scope, sections.bakeTileSections) })),
+  // The tile store's reads on the save's worker, no queued job nor the rush's tiles beside them (`jobPool.ts` KEPT_CLEAR, `tileStore.ts` portTiles).
+  tileRead: () => Promise.all([import('./editor/save.worker'), import('./sim/tileSections')])
+    .then(([save, sections]) => ({ serve: (scope: JobScope) => save.serve(scope, sections.bakeTileSections) })),
 };
 
 const host = self as unknown as { onmessage: ((e: MessageEvent<ToJob | AdoptLane>) => void) | null; postMessage(message: FromJob, transfer?: Transferable[]): void };
