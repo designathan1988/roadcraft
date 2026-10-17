@@ -919,6 +919,7 @@ export const PT_BR: Dictionary = {
   'health.context.opening': 'abrindo o jogo',
   'status.impossible.one': '1 nó impossível de construir',
   'status.impossible.other': '{count} nós impossíveis de construir',
+  'status.region': 'Contados na região em volta da câmera, não na cidade inteira',
 
   'quality.auto': 'Automática',
   'quality.low': 'Baixa',

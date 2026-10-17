@@ -928,6 +928,7 @@ export const EN: Dictionary = {
   'health.context.opening': 'opening the game',
   'status.impossible.one': '1 node cannot be built',
   'status.impossible.other': '{count} nodes cannot be built',
+  'status.region': 'Counted in the region round the camera, not in the whole city',
 
   // ---------------------------------------------------------------- quality
   'quality.auto': 'Automatic',
