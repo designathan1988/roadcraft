@@ -262,19 +262,13 @@ interface LooseJob { readonly mesh: Mesh; readonly done: () => void; readonly pr
 let queuedBytes = 0;
 /** Past this the producers ask no new mesh with its arrays (`warmFull`): the queue drains `UPLOAD_BYTES` a frame, and its arrays live on the CPU until sent (the page's process reached 7.3 GB, ~3.7 GB native, at a re-bake: mu1, conf77). */
 export const WARM_CEILING = 64 * 1024 * 1024;
-/** Past this the queue is full whatever goes before what (`warmFull` by rank): asked in a rising rank, each with little before it, the queue grew without end; only the player's edit and a building cut open pass it (their callers). */
-export const WARM_MOST = 2 * WARM_CEILING;
 /** The bytes of the loose meshes waiting to go to the GPU (`toWarmLoose`), kept as they are queued and sent: what the producers hold back by. */
 export function warmQueuedBytes(): number {
   return queuedBytes;
 }
-/** Whether the queue holds more than it may: the producers (`farTree.ts`, `cellRequests.ts`, `massCells.ts`) ask no new mesh until it drains; never where no frame warms (tests). `rank`: for a mesh that would go up by it (its pixels of error), whether what goes up before it is past the ceiling. DO NOT hold the cell at the camera behind a queue it would go ahead of: it was not even asked until the reopening's far levels drained, and the building at the eye stood in its masses (conferencia 93, picture 51). */
-export function warmFull(rank?: number): boolean {
-  if (!warmer || queuedBytes <= WARM_CEILING) return false;
-  if (rank === undefined || queuedBytes > WARM_MOST) return true;
-  let ahead = 0;
-  for (const job of toWarmLoose) if (job.rank >= rank) ahead += job.bytes;
-  return ahead > WARM_CEILING;
+/** Whether the queue holds more than it may: the producers (`farTree.ts`, `cellRequests.ts`, `massCells.ts`) ask no new mesh until it drains; never where no frame warms (tests). */
+export function warmFull(): boolean {
+  return warmer && queuedBytes > WARM_CEILING;
 }
 const toWarmLoose: LooseJob[] = [];
 let warmer = false;
@@ -289,7 +283,7 @@ export function warmLooseAhead(meshes: readonly Mesh[], priority: () => number =
   return Promise.all(meshes.map((mesh) => new Promise<void>((done) => {
     const bytes = meshBytes(mesh);
     queuedBytes += bytes;
-    toWarmLoose.push({ mesh, done, priority, rank: priority(), bytes });
+    toWarmLoose.push({ mesh, done, priority, rank: 0, bytes });
   }))).then(() => {});
 }
 /** DO NOT dispose a mesh still waiting here without this */
