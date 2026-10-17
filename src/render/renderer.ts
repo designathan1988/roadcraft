@@ -733,6 +733,8 @@ export function createSceneRenderer(
   /** Every program the game draws with, compiled before the town is shown (`shaderCatalogue.ts`). */
   const programs = createShaderCatalogue(personProgramStandIns);
   let openingSince: number | null = null;
+  /** The opening's programs, asked of the driver all at once when the town is whole (`compileAsync`, built in parallel), and whether they are built: its unseen frame is drawn only then (`reveal` warm). */
+  let openingPrograms: 'no' | 'asked' | 'built' = 'no';
   /** The streamed world's tiles round the camera (`holdOpening`): the opening shows the town once they are in. */
   let openingHeld: (() => boolean) | null = null;
   /** While nothing is shown (`opened` false) the nature is swept this much a frame (`natureSweep`). */
@@ -2246,6 +2248,7 @@ export function createSceneRenderer(
       reveal.begin();
       programs.begin();
       openingSince = null;
+      openingPrograms = 'no';
       onAssetsReady();
     },
     offerElevation(solved, revision) {
@@ -2961,9 +2964,16 @@ export function createSceneRenderer(
         // THE OPENING IN TWO STEPS (CLAUDE.md "Streaming world"): shown once the roads built so far, the masses and the far levels are in; the near cells' detail, the tiles still coming and the world's later builds land after, as they do when the camera moves (DO NOT wait for `buildings.pending`, `worldJob` or every tile of the region: the whole city waited 2.5-4.5 min for them, 2026-10-16).
         const held = openingHeld?.() ?? true;
         const whole = roads !== null && !buildings.coarsePending && natureTreesStarted && !natureTreesPending && held;
-        const next = reveal.step(whole, performance.now(), !held);
+        // DO NOT draw the unseen frame before the town's programs are built: drawn first, each program was built at its first use, one after the other, in that one frame (4.5 s of the opening's 62, 2026-10-16); asked together, the driver builds them in parallel (KHR_parallel_shader_compile).
+        if (whole && openingPrograms === 'no') {
+          openingPrograms = 'asked';
+          programs.compile(scene);
+          const ready = programs.ready;
+          void ready.then(() => { if (programs.ready === ready) { openingPrograms = 'built'; onAssetsReady(); } });
+        }
+        const next = reveal.step(whole && openingPrograms === 'built', performance.now(), !held);
         if (next === 'warm') {
-          // One frame drawn unseen first: the new meshes go to the GPU
+          // One frame drawn unseen first, its programs built: the new meshes go to the GPU
           if (post.target) {
             renderer.setRenderTarget(post.target);
             renderer.render(scene, rig.camera);
