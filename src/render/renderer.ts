@@ -43,6 +43,7 @@ import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
 import { GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, roadsToRead, type RoadElevation } from '@world/elevation';
+import { RoadsRead } from './roadsRead';
 import { RoadStations } from './roadStations';
 import { FOOTWAY_RISE, LANE_LINE, sidewalkHalf } from '@world/roadTypes';
 import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
@@ -1704,6 +1705,8 @@ export function createSceneRenderer(
     }
     buildWorld(net);
   };
+  /** The roads the next solve reads the ground under, worked out once a state of the network and solve (`roadsRead.ts`): with no solve to start from every road is read whatever the ground, with one the land has not moved (`landStill`), and a moved region is never kept. */
+  const roadsRead = new RoadsRead<ReturnType<typeof roadsToRead>>();
   /** @rebuild The roads' heights solved again and the world's rebuild started (`worldSteps`). */
   const buildWorld = (net: Network): void => {
     const started = performance.now();
@@ -1717,7 +1720,7 @@ export function createSceneRenderer(
     const from = landStill || groundMoved ? elevation : null;
     // DO NOT read the ground under a tile's hundreds of new roads in this frame: a job reads it off the shared plates, the solve waits for it.
     const solvedAhead = offeredElevation !== null && offeredElevation.revision === net.revision && offeredElevation.terrain === net.doc.terrainRevision;
-    stationsWait = !solvedAhead && roadStations.waiting(roadsToRead(net, builtGroundAt, from, groundMoved),
+    stationsWait = !solvedAhead && roadStations.waiting(roadsRead.of(groundMoved ? null : [net.state, from], () => roadsToRead(net, builtGroundAt, from, groundMoved)),
       (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision);
     if (stationsWait) return;
     const previousElevation = elevation;
