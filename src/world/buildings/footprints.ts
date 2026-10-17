@@ -42,8 +42,21 @@ function polygonArea(poly: clipping.MultiPolygon): number {
 /** Two footprints overlapping by less than this area (a square of some 1.3 mm) only touch */
 export const AREA_EPS = 1e-5 * TUNED_UNIT * TUNED_UNIT;
 
-export const overlapArea = (a: readonly Vec2[], b: readonly Vec2[]): number =>
-  polygonArea(clipping.intersection(asPolygon(a), asPolygon(b)));
+/** The area two rings share. DO NOT clip two rings whose boxes are apart (a building's boundary piece against every ring of its neighbours, each a polygon clipping: 11.7 s of a tile maker's 89 s, 2026-10-16): no area in common, exactly. */
+export function overlapArea(a: readonly Vec2[], b: readonly Vec2[]): number {
+  if (boxesApart(a, b)) return 0;
+  return polygonArea(clipping.intersection(asPolygon(a), asPolygon(b)));
+}
+
+/** Whether two rings' boxes are strictly apart (touching boxes are clipped: their rings may share an edge). */
+function boxesApart(a: readonly Vec2[], b: readonly Vec2[]): boolean {
+  let ax0 = Infinity, ay0 = Infinity, ax1 = -Infinity, ay1 = -Infinity;
+  for (const p of a) { if (p.x < ax0) ax0 = p.x; if (p.x > ax1) ax1 = p.x; if (p.y < ay0) ay0 = p.y; if (p.y > ay1) ay1 = p.y; }
+  for (const p of b) if (p.x >= ax0 && p.x <= ax1 && p.y >= ay0 && p.y <= ay1) return false;
+  let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+  for (const p of b) { if (p.x < bx0) bx0 = p.x; if (p.x > bx1) bx1 = p.x; if (p.y < by0) by0 = p.y; if (p.y > by1) by1 = p.y; }
+  return ax1 < bx0 || bx1 < ax0 || ay1 < by0 || by1 < ay0;
+}
 
 /** The share (0..1) of `ring`'s area that lies over `supports`. */
 export function supportShare(ring: readonly Vec2[], supports: readonly Vec2[][]): number {
