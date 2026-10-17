@@ -44,6 +44,8 @@ export class SimHost {
   private reader: TileReader | null = null;
   private readonly tileReads = new Map<number, number>();
   private readSerial = 0;
+  /** Tiles' networks being read from the store (`tileBuildings`): the network is not built again until they land, so their junctions are taken, not solved here. */
+  private networkReads = 0;
   private sim: SimWorld | null = null;
   /** The meso traffic and its micro window: made before the world, so a window told early is kept for it. */
   private readonly meso = new Meso();
@@ -168,6 +170,13 @@ export class SimHost {
       return null;
     }) : Promise.resolve(null);
     if (sim && reader.bays) tileBaysWanted(sim, key, read);
+    // Its junctions and ribbons as baked with it, read from the store (DO NOT have the page post them: `SimClient.offerBake`); the network waits for them (`frame`).
+    if (reader.network) {
+      this.networkReads++;
+      reader.network(key).then((bake) => { if (bake && this.tileReads.get(key) === read) this.net.offerBake(bake); }, (error: unknown) => {
+        console.warn(`[sim] tile ${key}'s network could not be read from the store: solved here`, error);
+      }).finally(() => { this.networkReads--; });
+    }
     // Its traffic section alone, baked where the tile was written (`sim/tileSections.ts`): DO NOT parse the whole tile here a second time.
     Promise.all([reader.traffic(key), bays]).then(([traffic, baked]) => {
       // The bays offered before the buildings are put: their lots take them at the next look (`parking.ts` lookAtLot).
@@ -209,7 +218,8 @@ export class SimHost {
     sim.demandMultiplier = controls.demandMultiplier;
     if (controls.focus) sim.focus = controls.focus;
     this.governor.setMax(controls.maxShare);
-    if (this.net.revision !== this.doc.revision) this.net.rebuild();
+    // Not while a tile's network is being read: its junctions would be solved here, then handed.
+    if (this.net.revision !== this.doc.revision && this.networkReads === 0) this.net.rebuild();
     const held = hold;
     // DO NOT stop the clock while a tile's topology is prepared (its lanes, turns and conflict pairs, on the workers): the city runs on the graph it has meanwhile, and takes the new one when it is ready.
     const catching = this.topology.step(sim, this.net.trafficRevision, false);

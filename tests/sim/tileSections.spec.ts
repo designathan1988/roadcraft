@@ -4,7 +4,11 @@ import type { SerializedDoc, TileRecords } from '@world/doc';
 import { tileIdBase, tileKey } from '@world/tiles';
 import { m } from '@world/units';
 import { bakeTileLinks } from '@sim/meso/tileLinks';
-import { LINKS_SECTION, TRAFFIC_SECTION, bakeTileSections, tileTraffic, trafficOfSection, unpackLinks } from '@sim/tileSections';
+import { LINKS_SECTION, NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, networkOfSection, tileTraffic, trafficOfSection, unpackLinks } from '@sim/tileSections';
+import { tileNetworkBake } from '@world/tileNetwork';
+import { RoadDoc } from '@world/doc';
+import { Network } from '@world/network';
+import { METERS_PER_UNIT } from '@world/units';
 
 /** A TILE'S SIMULATION SECTIONS (`sim/tileSections.ts`): baked once where the tile is written, read back as the simulation derives them from the records. */
 
@@ -60,5 +64,23 @@ describe('a tile\'s simulation sections', () => {
   it('a section of another format is not read (derived again from the records)', () => {
     expect(trafficOfSection({ format: 999, buildings: [] })).toBeNull();
     expect(trafficOfSection(null)).toBeNull();
+  });
+
+  it("the network read back is the tile's bake as the page posts it (its maps and arrays too), and a network takes it as it takes the page's", () => {
+    const tile = townTile();
+    const section = bakeTileSections(tile)[NETWORK_SECTION] as { json: unknown };
+    const read = networkOfSection(jsonBack(section.json))!;
+    expect(read).toEqual(structuredClone(tileNetworkBake(tile)));
+    // A copy of the tile's roads given the read bake builds the same ribbons as one given the posted bake.
+    const built = (bake: ReturnType<typeof tileNetworkBake>): string[] => {
+      const doc = RoadDoc.fromJSON({ version: 1, unit: METERS_PER_UNIT, nodes: tile.nodes, segments: tile.segments }, { repair: false });
+      const net = new Network(doc);
+      net.offerBake(bake);
+      net.rebuild();
+      return [...doc.segments.keys()].map((id) => { const r = net.ribbons.get(id as never); return JSON.stringify(r ? Array.from(r.full.xy) : null); });
+    };
+    expect(built(read)).toEqual(built(structuredClone(tileNetworkBake(tile))));
+    // A tile made ahead has none (`bays` false): it takes it when it is loaded.
+    expect(bakeTileSections(tile, false)[NETWORK_SECTION]).toBeUndefined();
   });
 });

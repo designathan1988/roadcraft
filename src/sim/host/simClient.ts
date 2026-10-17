@@ -314,6 +314,8 @@ export class SimClient implements JournalReader {
   /** DO NOT let the worker solve again the junctions and ribbons the page has solved: a tile's bake from its worker (`editor/tileStore.ts`), sent as it is put in, for a tile the worker's copy holds. */
   offerBake(key: number, bake: NetworkBake): void {
     if (!this.worker || (this.isActive && !this.held.has(key))) return;
+    // DO NOT post it where the worker reads the tile itself: it reads the tile's network from the store (`SimHost.tileBuildings`), unless the store is behind the page.
+    if (this.workerReadsTiles && !this.storeBehind(key)) return;
     this.send({ type: 'bake', bake });
   }
 
@@ -330,7 +332,8 @@ export class SimClient implements JournalReader {
       const records: Restoration['records'][number][] = [];
       if (active) {
         this.held.add(key);
-        if (bakeOf) this.send({ type: 'bake', bake: bakeOf([...t.nodes, ...t.borrowedNodes], t.segments) });
+        // The page's own solved junctions only where the worker does not read the tile from the store (DO NOT export and post them for a tile it reads).
+        if (bakeOf && !(this.workerReadsTiles && !this.storeBehind(key))) this.send({ type: 'bake', bake: bakeOf([...t.nodes, ...t.borrowedNodes], t.segments) });
         for (const id of [...t.nodes, ...t.borrowedNodes]) records.push({ part: 'nodes', id, value: this.nodeRecord(id) });
         for (const id of t.segments) records.push({ part: 'segments', id, value: recordOf(this.doc, 'segments', id) });
         for (const id of t.lots) records.push({ part: 'lots', id, value: recordOf(this.doc, 'lots', id) });

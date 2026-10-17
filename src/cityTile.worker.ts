@@ -7,7 +7,7 @@ import { workerParts } from '@editor/workerParts';
 import { type PreparedTile, addTileSection, prepareTile, readTile, readTileSection, storedVersion, writeTile } from '@editor/tileStore';
 import { withGrownBuildings } from '@world/growth/grownRows';
 import { BAYS_SECTION } from '@sim/tileBays';
-import { TRAFFIC_SECTION, bakeTileSections, tileBaysSection } from '@sim/tileSections';
+import { NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, tileBaysSection, tileNetworkSection } from '@sim/tileSections';
 import { type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
 import { keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTiles';
 import type { SharedGroundData } from './render/sharedGround';
@@ -59,7 +59,20 @@ async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: numbe
   const records = await readTile(stored(), store.map, key);
   if (!records) return null;
   await addBays(store.map, records);
-  return { key, stored: records.version, prepared: prepareTile(records), existed: true };
+  const prepared = prepareTile(records);
+  await addNetwork(store.map, records, prepared);
+  return { key, stored: records.version, prepared, existed: true };
+}
+
+/** DO NOT let the page post a tile's junctions to the simulation's worker (read here, cloned to the page, cloned again to the worker): solved here for the page anyway (`prepareTile`), they are added to the stored tile, that section alone, and the worker reads them from the store (`tileReader.ts` network). Same chain as `addBays`. */
+async function addNetwork(map: string, records: TileRecords, prepared: PreparedTile): Promise<void> {
+  if (!prepared.network) return;
+  try {
+    if (await readTileSection(stored(), map, records.key, NETWORK_SECTION)) return;
+    if (!(await addTileSection(stored(), map, records.key, records.version, NETWORK_SECTION, tileNetworkSection(prepared.network)))) console.warn(`[city tile] tile ${records.key}'s network was not added`);
+  } catch (error) {
+    console.warn(`[city tile] tile ${records.key}'s network was not added`, error);
+  }
 }
 
 /** A stored tile's bays added (`addBays`): its version, null when none is stored (nothing is made). */

@@ -1,3 +1,4 @@
+import type { NetworkBake } from '@world/network';
 import { TILE, tileIJ, tileKey, tileOfKey, tilesAround } from '@world/tiles';
 import { m } from '@world/units';
 import type { TrafficBuilding } from '../agents/trafficBuildings';
@@ -21,6 +22,8 @@ export interface TileReader {
   traffic(key: number): Promise<readonly TrafficBuilding[] | null>;
   /** Its parking bays as baked with it (`tileBays.ts`); null, or no such reader (a port: records only): worked out where the tile is loaded. */
   bays?(key: number): Promise<BakedBays | null>;
+  /** Its junctions and ribbons as baked with it (`tileSections.ts` NETWORK_SECTION); null, or no such reader: solved where the tile is loaded. */
+  network?(key: number): Promise<NetworkBake | null>;
 }
 
 /** The tiles in reach read once, again when the page says one was written, never while the page's document holds it (the live network covers it) */
