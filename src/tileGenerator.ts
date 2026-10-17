@@ -2,7 +2,7 @@ import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import { tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
-import type { StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
+import type { FarTileBake, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
 import { jobPort, longWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
@@ -24,7 +24,8 @@ export class TileGenerator {
   private readonly lanes: { readonly port: Worker; busy: Waiting | null }[] = [];
   private readonly queue: Waiting[] = [];
 
-  constructor(private readonly options: WholeMapOptions) {}
+  /** `far`: what each tile stored is baked into its far levels with, read as the tile is asked (the ground as it stands then); none: no far level kept by the maker. */
+  constructor(private readonly options: WholeMapOptions, private readonly far: () => FarTileBake | null = () => null) {}
 
   /** Tile `key` made in a worker. */
   generate(key: number): Promise<TileRecords> {
@@ -60,7 +61,7 @@ export class TileGenerator {
       if (!next) return;
       lane.busy = next;
       const { i, j } = tileOfKey(next.key);
-      lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: next.store } : {}) } satisfies StreamTileAsk);
+      lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: { ...next.store, far: this.far() } } : {}) } satisfies StreamTileAsk);
     }
   }
 

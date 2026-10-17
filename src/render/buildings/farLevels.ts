@@ -1,11 +1,9 @@
-import type { Finish } from '@world/buildings/materials';
 import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../../jobs/jobPool';
 import { forgetOtherDerived } from '../derivedCache';
 import { type FarKind, FarTree, type FarTreeJob, type FarTreeRun } from '../farTree';
-import type { SharedGroundData } from '../sharedGround';
 import type { CellMass } from './cellArrays';
 import { TIER_SPAN } from './cellPool';
-import { type FarJob, type FarReply, derivedFarCache, farNode, levelDrop, nodeSide, runFarJob, tileRows } from './farTiles';
+import { type FarGroundEnv, type FarJob, type FarReply, derivedFarCache, farNode, levelDrop, nodeSide, runFarJob, tileRows } from './farTiles';
 import type { BuildingKit } from './kit';
 import { FAR_ERROR, cellMesh } from './massCells';
 
@@ -27,11 +25,8 @@ const BOX_LEVEL = 2;
 export type { FarTileSource, FarTiles } from '../farTree';
 
 /** What the far jobs read of the page: the shared ground, whether the natural ground is the drawn one, each finish's colour from afar. */
-interface FarEnv {
-  readonly ground: SharedGroundData | null;
-  readonly naturalIsGround: boolean;
-  readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>;
-}
+/** What the far jobs read besides the buildings (`farTiles.ts` `FarGroundEnv`). */
+type FarEnv = FarGroundEnv;
 
 /** Runs a far job and answers once; gives back its cancel (an answer cancelled is never given). */
 export type FarRun = (job: FarJob, done: (reply: FarReply) => void) => () => void;

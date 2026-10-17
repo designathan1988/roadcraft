@@ -19,6 +19,7 @@ import { FrameScale, LandedTriangles, TYPICAL_LEVEL_TRIANGLES, SLACK } from './f
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
 import { FarLevels, farRunner } from './farLevels';
+import type { FarGroundEnv } from './farTiles';
 import type { SharedGroundAt } from '../sharedGround';
 import { type BuildingKit, createBuildingKit } from './kit';
 import { type CellEnv, CellPool } from './cellPool';
@@ -72,11 +73,12 @@ export function createBuildingLayer(): BuildingLayer {
   let ruinedSerial = 0;
   let lastGround: { groundAt: GroundAt; groundKey: string; pavedAt: PavedAt | undefined; naturalAt: GroundAt } | null = null;
   /** The buildings of the tiles not in the document, baked in workers from the tile store (`farLevels.ts`): the ground they read is the one shared with the workers. */
-  const farTiles = new FarLevels(kit, farRunner(() => ({
+  const farEnv = (): FarGroundEnv => ({
     ground: (lastGround?.groundAt as SharedGroundAt | undefined)?.share?.current ?? null,
     naturalIsGround: !lastGround || lastGround.naturalAt === lastGround.groundAt,
     tone: kit.finishTone,
-  })));
+  });
+  const farTiles = new FarLevels(kit, farRunner(farEnv));
   group.add(farTiles.group);
   /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds what the GPU ledger's cap leaves once every other owner is counted (`room`), and draws no more than that (`MassCells.cap`). */
   let budget = Infinity;
@@ -514,6 +516,7 @@ export function createBuildingLayer(): BuildingLayer {
       return requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;
     },
     far: farTiles,
+    farEnv,
     hidden: false,
     kit,
     chunkOf(b) {

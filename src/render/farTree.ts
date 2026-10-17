@@ -34,6 +34,8 @@ export interface FarTiles {
   loadedChanged(tileKey: number): void;
   /** The frame's error scale for the next `choose` (`buildings/frameBudget.ts`), as the cells' (`massCells.ts` `setErrorScale`). */
   setErrorScale(scale: number): void;
+  /** The key prefix its bakes are kept under for the world set (`setSource`): what a tile's maker keeps its level 0 under (`cityTile.worker.ts`); null when nothing is kept. */
+  readonly bakePrefix: string | null;
 }
 
 /** A job of the tree: a node at the version of the tiles under it, from the cache, its tile's records (level 0) or its children's bakes (above). */
@@ -290,6 +292,10 @@ export class FarTree<P> implements FarTiles {
   /** The bakes' keys: the prefix, and the world's fingerprint when it has a plan. */
   private get keyPrefix(): string | null {
     return this.prefix === null ? null : this.world ? `${this.prefix}${this.world}:` : this.prefix;
+  }
+
+  get bakePrefix(): string | null {
+    return this.cacheless ? null : this.keyPrefix;
   }
 
   private ensure(k: number, i: number, j: number): FarNode {

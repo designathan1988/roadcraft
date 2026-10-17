@@ -4,7 +4,10 @@ import { EDGE_INSET, MAP_HALF, WHOLE_MAP_DEFAULTS, type WholeMapOptions, planWho
 import { lotCentre } from '@world/lots';
 import { OWNER, TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
-import { buildStreamTile } from '@editor/wholeMapTile';
+import { buildStreamTile, buildStreamTilePair } from '@editor/wholeMapTile';
+import { type FarCache, type FarJob, bakeTileMasses, farKey, keepTileFar, runFarJob } from '@render/buildings/farTiles';
+import { TILE_DETAIL } from '@render/buildings/massing';
+import { type FarRoadCache, type FarRoadJob, bakeTileRoads, keepTileFarRoads, runFarRoadJob, tileRoads } from '@render/farRoadTiles';
 import { tileBuildingsOf } from '@world/growth/grownRows';
 import type { JobScope } from '@/jobs/jobScope';
 import { type StreamTileAnswer, type StreamTileAsk, serve } from '@/cityTile.worker';
@@ -183,4 +186,50 @@ describe('a tile of the streamed world, built alone', () => {
     expect(answer.key).toBe(tileKey(i, j));
     expect(JSON.stringify(answer.records)).toBe(JSON.stringify(left));
   }, 10_000);
+});
+
+/** WHAT A TILE'S MAKER KEEPS OF ITS FAR LEVELS (`cityTile.worker.ts` keepFar): baked from the tile just made, under the key and version the page's level-0 job asks, so that job finds them and nothing reads the tile back nor grows its buildings again to bake them (the opening's two hundred far jobs, 2026-10-16). */
+describe("a tile's far levels kept where it is made", () => {
+  const [i, j] = coolPair();
+  const pair = buildStreamTilePair(options, i, j);
+  const version = 7;
+  const memory = (): FarCache & FarRoadCache => {
+    const kept = new Map<string, unknown>();
+    return { ready: async () => true, get: async (key) => kept.get(key), put: async (key, value) => { kept.set(key, value); } };
+  };
+  const env = { ground: null, naturalIsGround: true };
+  const prefix = 'test:far:';
+
+  it("the buildings' level 0 is found by the page's job, its masses those of the tile's buildings", async () => {
+    const cache = memory();
+    const job: FarJob = { far: true, node: farKey(0, i, j), sig: String(version), want: true, prefix };
+    // Not kept: the job (no records, no store) can only ask the page for them.
+    expect((await runFarJob(job, cache)).kind).toBe('farRecords');
+    expect(await keepTileFar({ ...pair.full, version }, version, env, prefix, cache)).toBe(true);
+    const reply = await runFarJob(job, cache);
+    expect(reply.kind).toBe('far');
+    if (reply.kind !== 'far') return;
+    const masses = bakeTileMasses(pair.records, TILE_DETAIL);
+    expect(reply.mass?.index.length).toBe(masses?.index.length);
+    expect(reply.mass?.position).toEqual(masses?.position);
+    // Another version is not this one's: asked again.
+    expect((await runFarJob({ ...job, sig: String(version + 1) }, cache)).kind).toBe('farRecords');
+  }, 20_000);
+
+  it("the roads' level 0 is found by the page's job, the mesh the stored roads bake to", async () => {
+    const cache = memory();
+    const job: FarRoadJob = { node: farKey(0, i, j), k: 0, i, j, sig: String(version), want: true, prefix };
+    expect((await runFarRoadJob(job, cache)).kind).toBe('farRecords');
+    expect(await keepTileFarRoads(tileRoads(pair.records), version, null, prefix, cache)).toBe(true);
+    const reply = await runFarRoadJob(job, cache);
+    expect(reply.kind).toBe('far');
+    if (reply.kind !== 'far') return;
+    expect(reply.payload).toEqual(bakeTileRoads(tileRoads(pair.records)));
+  }, 20_000);
+
+  it('keeps nothing where the far tree keeps nothing', async () => {
+    const cache = memory();
+    expect(await keepTileFar(pair.full, version, env, null, cache)).toBe(false);
+    expect(await keepTileFarRoads(tileRoads(pair.records), version, null, null, cache)).toBe(false);
+  });
 });

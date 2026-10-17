@@ -108,7 +108,8 @@ import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { FarRoads } from './farRoads';
-import type { SharedGroundAt } from './sharedGround';
+import type { SharedGroundAt, SharedGroundData } from './sharedGround';
+import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
@@ -219,6 +220,8 @@ export interface SceneHandle {
   readonly farBuildings: FarTiles;
   /** The roads of the tiles not in the page's document, baked per tile from the tile store (`farRoads.ts`). */
   readonly farRoads: FarTiles;
+  /** What a tile's maker bakes its far levels with (`cityTile.worker.ts`): the ground and tones the far trees' jobs read now and the keys they keep a tile's level 0 under. */
+  farBakeEnv(): FarTileBake;
   readonly backend: 'three-webgl';
   readonly viewport: Viewport;
   readonly scene: Scene;
@@ -565,7 +568,8 @@ export function createSceneRenderer(
   holdStill(world);
   scene.add(world);
   /** The roads of the tiles not in the page's document (`farRoads.ts`), on the ground shared with the workers. */
-  const farRoads = new FarRoads(() => (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null);
+  const farRoadGround = (): SharedGroundData | null => (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null;
+  const farRoads = new FarRoads(farRoadGround);
   world.add(farRoads.group);
   /** The streamed world's active tiles as the near products read them (`activeTiles.ts`, `setActiveTiles`): the kept ring's items are the far levels'. */
   const activeTiles = new ActiveTiles();
@@ -2207,6 +2211,9 @@ export function createSceneRenderer(
     },
     get farRoads() {
       return farRoads;
+    },
+    farBakeEnv() {
+      return { ...buildings.farEnv(), massPrefix: buildings.far.bakePrefix, roadPrefix: farRoads.bakePrefix, roadGround: farRoadGround() };
     },
     beginLoad() {
       reveal.begin();

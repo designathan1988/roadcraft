@@ -1949,7 +1949,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   streamed = null;
   persistence.paused = true;
   history.clear();
-  const generator = new TileGenerator(options);
+  // Each tile made has its far levels baked where it is made, with what the far trees' own jobs read (`SceneHandle.farBakeEnv`).
+  const generator = new TileGenerator(options, () => scene.farBakeEnv());
   // Under the plan's version and the map's size (`worldKey`): DO NOT reopen tiles an older plan made (a city of 5 km, land past the edge).
   const mapName = `roadcraft.tiles.${worldKey(options.seed)}`;
   // Read, written and made in the job workers, the desktop's as a browser's (each worker its own port to the shell's saves, `editor/workerParts.ts`).

@@ -3,6 +3,7 @@ import type { GroundAt, PavedAt } from '@world/buildings/foundation';
 import type { Building, BuildingId } from '@world/buildings/types';
 import type { BuildingChunk } from './buildingMesh';
 import type { FarTiles } from './farLevels';
+import type { FarGroundEnv } from './farTiles';
 import type { FrameScale } from './frameBudget';
 import type { BuildingKit } from './kit';
 import type { Frustum, Group } from 'three';
@@ -73,6 +74,8 @@ export interface BuildingLayer {
   anyLotHeightAt(x: number, y: number): number;
   /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`farLevels.ts`): the coordinator wires the store and the streamer's region here. */
   readonly far: FarTiles;
+  /** The ground and the finishes' tones the far levels' bakes read now (`farLevels.ts` `farRunner`): what a tile's maker bakes its far level with (`cityTile.worker.ts`), the same as the page's job would. */
+  farEnv(): FarGroundEnv;
   /** A WebGL context restored (`mesh/gpuOnly.ts`): every cell made again, its arrays having been let go. */
   refill(): void;
   dispose(): void;
