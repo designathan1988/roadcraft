@@ -20,6 +20,8 @@ import {
   snapRoadStart, type SnapResult,
 } from './snap';
 import { commitRoadPath } from './commit';
+import { DOC_CHANGE_KINDS } from '@world/changes';
+import { JournalCursor } from '@world/derived';
 import { applyProfileTo } from './roads/profile';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
 import type { RoadProfileSpec } from '@world/roads/profile';
@@ -364,7 +366,7 @@ export class RoadTool {
     return this.judged.reason;
   }
 
-  private judged: { key: string | null; reason: RefusalReason | null; cost: number | null; stations: readonly RoadStation[] | null } =
+  private judged: { key: DraftKey | null; reason: RefusalReason | null; cost: number | null; stations: readonly RoadStation[] | null } =
     { key: null, reason: null, cost: null, stations: null };
 
   /** The road in hand as it would be built: the dry run's stations */
@@ -381,14 +383,38 @@ export class RoadTool {
   /** When the draft in hand will have rested long enough to be judged (`verdict`); null: nothing waiting. */
   private judgeAt: number | null = null;
 
-  private draftKey(d: RoadDraft): string {
+  /** DO NOT key the draft on the whole map's revision (every tile that came in judged it again) nor make its key a text each frame: its numbers, compared as they are, and `mapAround` for the map. */
+  private draftKey(d: RoadDraft): DraftKey {
     const s = this.host.settings();
     const last = d.samples[d.samples.length - 1]?.at;
-    return JSON.stringify([d.start, d.startHeightOffset, d.snap.at, d.heightOffset, d.curveControl ?? null, d.samples.length,
-      last ?? null, s.typeIndex, s.lanes, s.alignment, this.host.doc.revision]);
+    const a = d.start;
+    const key: (string | number | null)[] = [a.kind, a.at.x, a.at.y, a.node ?? null, a.segment ?? null, a.s ?? null, d.startHeightOffset, d.snap.at.x, d.snap.at.y, d.heightOffset,
+      d.curveControl?.x ?? null, d.curveControl?.y ?? null, d.samples.length, last?.x ?? null, last?.y ?? null, s.typeIndex, s.lanes, s.alignment, this.mapAround(d)];
+    const was = this.lastKey;
+    if (was && was.length === key.length && was.every((v, k) => Object.is(v, key[k]))) return was;
+    this.lastKey = key;
+    return key;
   }
+  private lastKey: DraftKey | null = null;
 
-  private judge(key: string): void {
+  /** What the dry run reads of the map moved near the draft: a serial, moved by a change of the diary whose place meets the draft's box (or the balance, or the whole map). */
+  private mapAround(d: RoadDraft): number {
+    const entries = this.mapSeen.read(this.host.doc.changes);
+    if (entries === null) return ++this.mapSerial;
+    if (!entries.length) return this.mapSerial;
+    let x0 = Math.min(d.start.at.x, d.snap.at.x), y0 = Math.min(d.start.at.y, d.snap.at.y), x1 = Math.max(d.start.at.x, d.snap.at.x), y1 = Math.max(d.start.at.y, d.snap.at.y);
+    for (const p of [...d.samples.map((q) => q.at), ...(d.curveControl ? [d.curveControl] : [])]) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    // Past the draft by what a road's crossings, cuts and rules reach.
+    const pad = m(80);
+    for (const e of entries) {
+      if (e.kind === 'economy' || e.rects === null || e.rects.some((r) => r[0] <= x1 + pad && r[2] >= x0 - pad && r[1] <= y1 + pad && r[3] >= y0 - pad)) return ++this.mapSerial;
+    }
+    return this.mapSerial;
+  }
+  private readonly mapSeen = new JournalCursor(DOC_CHANGE_KINDS);
+  private mapSerial = 0;
+
+  private judge(key: DraftKey): void {
     const road = this.draft ?? this.chainPreview;
     if (!road || this.draftKey(road) !== key) return;
     const { host } = this;
@@ -542,3 +568,6 @@ function landscapeAlong(doc: RoadDoc, net: Network, laid: readonly SegmentId[]):
 
 /** The side of `furnitureFor`'s cells (`world/roads/furnitureSets.ts` CELL). */
 const FURNITURE_CELL = m(40);
+
+/** A draft's numbers as it is judged (`RoadTool.draftKey`): the same array while none of them moved. */
+type DraftKey = readonly (string | number | null)[];
