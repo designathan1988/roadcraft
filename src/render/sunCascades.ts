@@ -88,6 +88,8 @@ export interface ShadowPassInput {
 export interface SunCascades {
   /** Cascade 0 is the sun the rest of the game reads (its colour, intensity and direction). */
   readonly lights: readonly DirectionalLight[];
+  /** Towards the sun the cascades are cast by (unit; zero before the first `follow`): the held sun itself, never a light's position less its target (those move with every fit, and their difference by the last bits). */
+  readonly toSun: Vector3;
   setMovers(movers: readonly Movers[]): void;
   /** What chooses its casters by size, told each cascade's texel (m) before that cascade is drawn (a piece narrower than it is a smudge PCF spreads away), and null once the passes are done. */
   setCasters(casters: ((texel: number | null, cascade: number) => void) | null): void;
@@ -394,6 +396,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   };
 
   return {
+    toSun: hold.s,
     lights,
     setMovers(next) { movers = next; },
     setCasters(next) { casters = next; },

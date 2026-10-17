@@ -263,3 +263,23 @@ describe('sun cascades', () => {
     expect(ShaderChunk.lights_fragment_begin).toContain('#elif ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )');
   });
 });
+
+describe('the sun the layers cull their shadows by', () => {
+  it('stays the same bits while the cascades fit again under a sun that did not move', () => {
+    const { cascades, camera, sunDirection } = rig();
+    const told: string[] = [];
+    const subtracted: string[] = [];
+    // The ground coming in under a camera standing still, and the camera led along a street: each fit puts the lights elsewhere.
+    for (let i = 0; i < 24; i++) {
+      cascades.follow(camera, sunDirection, (x, y) => Math.sin(x * 0.01 + i) * m(3) + y * 0, new Vector3(m(37) * i, 0, m(-11) * i), m(40 + i * 7));
+      const light = cascades.lights[0]!;
+      told.push(cascades.toSun.toArray().join());
+      subtracted.push(light.position.clone().sub(light.target.position).toArray().join());
+    }
+    // The light's position less its target moved by its last bits (what every layer took for a sun moved, and culled again)
+    expect(new Set(subtracted).size).toBeGreaterThan(1);
+    expect(new Set(told).size).toBe(1);
+    expect(cascades.toSun.length()).toBeCloseTo(1, 12);
+    expect(cascades.toSun.dot(sunDirection)).toBeCloseTo(1, 9);
+  });
+});
