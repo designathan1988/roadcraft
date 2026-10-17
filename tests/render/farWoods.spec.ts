@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PLATE_SIZE, plateKey, plateRegion, platesAround } from '@world/bounds';
 import { RELIEF_NATURAL } from '@world/terrain';
 import { TERRAIN_BASE, TERRAIN_CELL, TERRAIN_HALF } from '@render/terrain';
-import { farWoods, type FarWoods, type FarWoodsAsk } from '@render/farWoods';
+import { FarWoodsWork, farWoods, type FarWoods, type FarWoodsAsk } from '@render/farWoods';
 import { FarWoodsBook, type FarWoodsReader } from '@render/farForest';
 
 /** THE WOODS OF THE FAR PLATES (`farWoods.ts`, `farForest.ts`) */
@@ -38,9 +38,10 @@ describe('a far plate\'s woods', () => {
     expect(Array.from(again.x.subarray(0, 50))).toEqual(Array.from(woods.x.subarray(0, 50)));
   });
 
-  it('is the same trees after other plates were worked out in the same arrays (`farWoods.ts` scratch)', () => {
-    for (const nature of [{ region: 'amazon' as const, seed: 7 }, NATURE]) farWoods({ relief: RELIEF_NATURAL, nature, cx: 0, cy: 0, grid: GRID });
-    const again = farWoods({ relief: RELIEF_NATURAL, nature: NATURE, cx: corner.cx, cy: corner.cy, grid: GRID });
+  it('is the same trees after other plates were worked out in the same arrays (`FarWoodsWork`, as a worker keeps it)', () => {
+    const work = new FarWoodsWork();
+    for (const nature of [{ region: 'amazon' as const, seed: 7 }, NATURE]) farWoods({ relief: RELIEF_NATURAL, nature, cx: 0, cy: 0, grid: GRID }, work);
+    const again = farWoods({ relief: RELIEF_NATURAL, nature: NATURE, cx: corner.cx, cy: corner.cy, grid: GRID }, work);
     expect(again.planned).toBe(woods.planned);
     for (const key of ['x', 'y', 'z', 'size', 'yaw', 'seed', 'pick'] as const) expect(Array.from(again[key])).toEqual(Array.from(woods[key]));
   });

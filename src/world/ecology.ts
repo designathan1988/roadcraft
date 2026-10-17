@@ -149,13 +149,16 @@ const smooth = (a: number, b: number, x: number): number => {
 /** A community's fields, listed once */
 let communityKeys: readonly (keyof Community)[] | null = null;
 
-/** The communities a corner mixes and their weights (`weigh`), as many as `blend` is told: DO NOT make an array of pairs a corner (a plate's ecology made seven arrays at each of its corners, region by region). */
-const partWeights = new Float64Array(8);
-const partCommunities: Community[] = [];
-const weigh = (i: number, w: number, c: Community): void => { partWeights[i] = w; partCommunities[i] = c; };
+/** The communities a corner mixes and their weights, as many as `blend` is told: made once a `computeEcology` (DO NOT make an array of pairs a corner: a plate's ecology made seven arrays at each of its corners, region by region). */
+class Mix {
+  readonly weights = new Float64Array(8);
+  readonly parts: Community[] = [];
+  weigh(i: number, w: number, c: Community): void { this.weights[i] = w; this.parts[i] = c; }
+}
 
-/** Mixes the first `count` communities weighed (`weigh`) into `out` (the weights need not sum to one). */
-function blend(out: Community, count: number): void {
+/** Mixes the first `count` communities of `mix` into `out` (the weights need not sum to one). */
+function blend(out: Community, mix: Mix, count: number): void {
+  const partWeights = mix.weights, partCommunities = mix.parts;
   let total = 0;
   for (let i = 0; i < count; i++) total += Math.max(0, partWeights[i]!);
   const keys = communityKeys ??= Object.keys(out) as (keyof Community)[];
@@ -170,7 +173,7 @@ function blend(out: Community, count: number): void {
 }
 
 /** One region's communities over one site. */
-function regionCommunity(region: RegionId, s: Site, out: Community): void {
+function regionCommunity(region: RegionId, s: Site, out: Community, mix: Mix): void {
   const F = FORMATIONS;
   // Along every river and lake a strip of forest, wider where the patch says.
   const riparian = 1 - smooth(m(10) + m(18) * s.patch, m(44) + m(28) * s.patch, s.waterDist);
@@ -184,60 +187,60 @@ function regionCommunity(region: RegionId, s: Site, out: Community): void {
       const dense = clamp01(smooth(0.1, 0.5, s.valley) * 0.8 + smooth(0.62, 0.85, s.patch) * 0.6);
       // Rocky fields on the ridges and the chapadas' sandstone tops.
       const rupestre = clamp01(s.ridge * 0.9 + s.sandstone * 0.45 * s.flat) * (1 - riparian);
-      weigh(0, riparian * open, F.galleryForest);
-      weigh(1, vereda * (1 - riparian) * open, F.vereda);
-      weigh(2, dense * (1 - riparian) * (1 - vereda) * open, F.cerradao);
-      weigh(3, rupestre * open, F.campoRupestre);
-      weigh(4, Math.max(0, 1 - riparian - vereda - dense - rupestre) * open + 0.05, F.cerrado);
-      weigh(5, cliff, F.outcrop);
-      blend(out, 6);
+      mix.weigh(0, riparian * open, F.galleryForest);
+      mix.weigh(1, vereda * (1 - riparian) * open, F.vereda);
+      mix.weigh(2, dense * (1 - riparian) * (1 - vereda) * open, F.cerradao);
+      mix.weigh(3, rupestre * open, F.campoRupestre);
+      mix.weigh(4, Math.max(0, 1 - riparian - vereda - dense - rupestre) * open + 0.05, F.cerrado);
+      mix.weigh(5, cliff, F.outcrop);
+      blend(out, mix, 6);
       break;
     }
     case 'atlantic': {
       // The high grasslands over the forest line, on the exposed tops.
       const high = smooth(m(68), m(104), s.altitude + s.ridge * m(24) + (s.patch - 0.5) * m(20));
-      weigh(0, (1 - high) * open + riparian, F.ombrophilous);
-      weigh(1, high * open * (1 - riparian), F.highGrassland);
-      weigh(2, cliff, F.outcrop);
-      blend(out, 3);
+      mix.weigh(0, (1 - high) * open + riparian, F.ombrophilous);
+      mix.weigh(1, high * open * (1 - riparian), F.highGrassland);
+      mix.weigh(2, cliff, F.outcrop);
+      blend(out, mix, 3);
       break;
     }
     case 'amazon': {
       // Várzea and igapó: the flooded forest of the low ground by the rivers.
       const varzea = (1 - smooth(m(16), m(88), s.waterDist)) * clamp01(0.4 + s.valley);
-      weigh(0, (1 - varzea) * open, F.terraFirme);
-      weigh(1, varzea * open, F.varzea);
-      weigh(2, cliff, F.outcrop);
-      blend(out, 3);
+      mix.weigh(0, (1 - varzea) * open, F.terraFirme);
+      mix.weigh(1, varzea * open, F.varzea);
+      mix.weigh(2, cliff, F.outcrop);
+      blend(out, mix, 3);
       break;
     }
     case 'caatinga': {
-      weigh(0, riparian * open, F.caatingaRiver);
-      weigh(1, (1 - riparian) * open, F.thornScrub);
-      weigh(2, cliff + s.ridge * 0.35, F.outcrop);
-      blend(out, 3);
+      mix.weigh(0, riparian * open, F.caatingaRiver);
+      mix.weigh(1, (1 - riparian) * open, F.thornScrub);
+      mix.weigh(2, cliff + s.ridge * 0.35, F.outcrop);
+      blend(out, mix, 3);
       break;
     }
     case 'pampa': {
       // Capões: islands of wood in the hollows, where the patch rises.
       const capao = smooth(0.62, 0.8, s.patch) * smooth(0.05, 0.4, s.valley);
-      weigh(0, riparian * open * 0.9, F.capao);
-      weigh(1, capao * (1 - riparian) * open, F.capao);
-      weigh(2, (1 - capao) * (1 - riparian) * open, F.campos);
-      weigh(3, cliff + s.ridge * 0.2 + s.basalt * 0.15, F.outcrop);
-      blend(out, 4);
+      mix.weigh(0, riparian * open * 0.9, F.capao);
+      mix.weigh(1, capao * (1 - riparian) * open, F.capao);
+      mix.weigh(2, (1 - capao) * (1 - riparian) * open, F.campos);
+      mix.weigh(3, cliff + s.ridge * 0.2 + s.basalt * 0.15, F.outcrop);
+      blend(out, mix, 4);
       break;
     }
     case 'pantanal': {
       // The flooded fields on the low flats; cordilheiras, forest on the slightly higher ground the floods leave dry.
       const low = Math.max(s.flat * clamp01(0.35 + s.valley * 1.2) * (1 - smooth(0.25, 0.6, s.ridge)), 1 - smooth(m(8), m(88), s.waterDist));
       const cordilheira = smooth(0.55, 0.75, s.patch) * (1 - low * 0.7);
-      weigh(0, riparian * open * 0.35, F.cordilheira);
-      weigh(1, low * (1 - cordilheira) * open, F.floodedField);
-      weigh(2, cordilheira * open, F.cordilheira);
-      weigh(3, Math.max(0, 1 - low - cordilheira) * open * 0.6, F.cerrado);
-      weigh(4, cliff, F.outcrop);
-      blend(out, 5);
+      mix.weigh(0, riparian * open * 0.35, F.cordilheira);
+      mix.weigh(1, low * (1 - cordilheira) * open, F.floodedField);
+      mix.weigh(2, cordilheira * open, F.cordilheira);
+      mix.weigh(3, Math.max(0, 1 - low - cordilheira) * open * 0.6, F.cerrado);
+      mix.weigh(4, cliff, F.outcrop);
+      blend(out, mix, 5);
       break;
     }
   }
@@ -378,6 +381,7 @@ export function computeEcology(input: EcologyInput, update?: EcologyUpdate, scra
   const total = community({});
   const keys = Object.keys(total) as (keyof Community)[];
   const weights = new Float32Array(REGIONS.length);
+  const mix = new Mix();
   for (let iy = y0; iy <= y1; iy++) {
     for (let ix = x0; ix <= x1; ix++) {
       const i = iy * side + ix;
@@ -414,7 +418,7 @@ export function computeEcology(input: EcologyInput, update?: EcologyUpdate, scra
         const w = weights[r] as number;
         if (w > bestW) { bestW = w; best = r; }
         if (w < 0.01) continue;
-        regionCommunity(REGIONS[r]!, site, part);
+        regionCommunity(REGIONS[r]!, site, part, mix);
         for (const key of keys) total[key] += part[key] * w;
         sum += w;
       }
