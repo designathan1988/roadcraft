@@ -43,9 +43,63 @@ function polygonArea(poly: clipping.MultiPolygon): number {
 export const AREA_EPS = 1e-5 * TUNED_UNIT * TUNED_UNIT;
 
 /** The area two rings share. DO NOT clip two rings whose boxes are apart (a building's boundary piece against every ring of its neighbours, each a polygon clipping: 11.7 s of a tile maker's 89 s, 2026-10-16): no area in common, exactly. */
+/** DO NOT sweep two convex rings with the general clipper (Martinez, `polygon-clipping`): nearly every block, lot and part is a rectangle, and the share of two convex rings is one ring clipped by the other's edges (Sutherland and Hodgman 1974). Only a ring that is not convex goes to the sweep. */
 export function overlapArea(a: readonly Vec2[], b: readonly Vec2[]): number {
   if (boxesApart(a, b)) return 0;
+  if (isConvex(a) && isConvex(b)) return convexOverlap(a, b);
   return polygonArea(clipping.intersection(asPolygon(a), asPolygon(b)));
+}
+
+/** Whether a ring turns one way only (collinear points allowed). */
+function isConvex(ring: readonly Vec2[]): boolean {
+  let sign = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!, b = ring[(i + 1) % ring.length]!, c = ring[(i + 2) % ring.length]!;
+    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+    if (cross === 0) continue;
+    const s = cross > 0 ? 1 : -1;
+    if (sign === 0) sign = s; else if (s !== sign) return false;
+  }
+  return sign !== 0;
+}
+
+/** The area two convex rings share: `a` clipped by each edge of `b` in turn, the area of what is left (either winding). */
+function convexOverlap(a: readonly Vec2[], b: readonly Vec2[]): number {
+  const turn = signedArea(b) >= 0 ? 1 : -1;
+  let poly: Vec2[] = [...a];
+  for (let i = 0; i < b.length && poly.length > 0; i++) {
+    const p = b[i]!, q = b[(i + 1) % b.length]!;
+    const ex = q.x - p.x, ey = q.y - p.y;
+    // Inside: on `b`'s side of the edge (left of it for a counter-clockwise ring).
+    const side = (v: Vec2): number => turn * (ex * (v.y - p.y) - ey * (v.x - p.x));
+    const out: Vec2[] = [];
+    for (let k = 0; k < poly.length; k++) {
+      const c = poly[k]!, d = poly[(k + 1) % poly.length]!;
+      const sc = side(c), sd = side(d);
+      if (sc >= 0) out.push(c);
+      if ((sc >= 0) !== (sd >= 0)) {
+        const t = sc / (sc - sd);
+        out.push({ x: c.x + (d.x - c.x) * t, y: c.y + (d.y - c.y) * t });
+      }
+    }
+    poly = out;
+  }
+  return poly.length < 3 ? 0 : Math.abs(signedArea(poly));
+}
+
+/** The area of `ring` that lies over `supports`, the supports' own overlaps counted once: summed one by one where `ring` and every support are convex and no two supports overlap, else swept. */
+function coveredArea(ring: readonly Vec2[], supports: readonly Vec2[][], area: number): number {
+  if (isConvex(ring) && supports.every(isConvex)) {
+    const near = supports.filter((s) => !boxesApart(ring, s));
+    let apart = true;
+    for (let i = 0; i < near.length && apart; i++) for (let j = i + 1; j < near.length && apart; j++) apart = overlapArea(near[i]!, near[j]!) === 0;
+    if (apart) {
+      let covered = 0;
+      for (const s of near) covered += convexOverlap(ring, s);
+      return Math.min(area, covered);
+    }
+  }
+  return area - polygonArea(clipping.difference(asPolygon(ring), ...supports.map(asPolygon)));
 }
 
 /** Whether two rings' boxes are strictly apart (touching boxes are clipped: their rings may share an edge). */
@@ -62,14 +116,13 @@ function boxesApart(a: readonly Vec2[], b: readonly Vec2[]): boolean {
 export function supportShare(ring: readonly Vec2[], supports: readonly Vec2[][]): number {
   const area = Math.abs(signedArea(ring));
   if (supports.length === 0 || area < 1e-9) return 0;
-  const remaining = clipping.difference(asPolygon(ring), ...supports.map(asPolygon));
-  return Math.max(0, 1 - polygonArea(remaining) / area);
+  return Math.max(0, 1 - (area - coveredArea(ring, supports, area)) / area);
 }
 
 export function supportedBy(ring: readonly Vec2[], supports: readonly Vec2[][]): boolean {
   if (supports.length === 0) return false;
-  const remaining = clipping.difference(asPolygon(ring), ...supports.map(asPolygon));
-  return polygonArea(remaining) < AREA_EPS;
+  const area = Math.abs(signedArea(ring));
+  return area - coveredArea(ring, supports, area) < AREA_EPS;
 }
 
 export function containsPoint(v: Volume, p: Vec2): boolean {
