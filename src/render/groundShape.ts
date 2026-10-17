@@ -3,6 +3,10 @@ import { plateOf } from '@world/bounds';
 import { type PadShapeCut, padShaper } from '@world/buildings/pads';
 import { type RoadElevation, type RoadShapeCut, roadShaper } from '@world/elevation';
 import { type CornerGrid, type TerrainRegion, sampleCorners, shapeBoth, shapeCorners } from './terrainShaping';
+import { type Pad, padOf } from '@world/buildings/pads';
+import { type RecordRef, eachRecord } from '@world/buildings/recordTable';
+import { type PavingData, pavingReader } from '@world/paving';
+import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
 
 /** THE GROUND'S CUT AND FILL WORKED OUT OFF THE PAGE (`groundShape.worker.ts`) */
 
@@ -211,10 +215,39 @@ function digestBlocks(ask: BlockDigestAsk): Float64Array[] {
 
 class OffTheCut extends Error {}
 
+/** The platforms of some buildings asked off the page (`renderer.ts` `shapeBlocksSteps`): each building's record and its floor as the page keeps it (`floors.ts`), the paving round them and the ground it was solved on. */
+export interface PadsAsk {
+  readonly buildings: readonly { readonly record: RecordRef; readonly floor: number }[];
+  /** The paving over a rectangle holding every bank (`world/paving.ts` `PavingSource.pack`). */
+  readonly paving: PavingData;
+  readonly ground: SharedGroundData;
+  readonly apron: number;
+}
+
+/** Each building's platform as the page works it out (`siteGrading.ts` `refresh`: `padOf` on its kept floor), in the ask's order */
+export function padsOfAsk(ask: PadsAsk): (Pad | null)[] {
+  const naturalAt = sharedGroundReaders(ask.ground).naturalAt;
+  const read = pavingReader(ask.paving, naturalAt);
+  const pavedAt = (x: number, y: number): number => {
+    const value = read(x, y);
+    // Past the paving handed over: the page works them out (`groundShapePool.ts` rejects, the page refreshes).
+    if (value === undefined) throw new Error(`a platform read the paving past the roads handed over at (${x}, ${y})`);
+    return value;
+  };
+  const out: (Pad | null)[] = [];
+  let k = 0;
+  // One record at a time (`eachRecord`): what is worked out of it goes with it.
+  for (const b of eachRecord(ask.buildings.map((entry) => entry.record))) {
+    const floor = ask.buildings[k++]!.floor;
+    out.push(padOf(b, naturalAt, pavedAt, ask.apron, () => floor));
+  }
+  return out;
+}
+
 /** What the page asks the ground's worker. */
-export type GroundJob = { readonly kind: 'shape'; readonly ask: GroundShapeAsk } | { readonly kind: 'blocks'; readonly ask: BlockDigestAsk };
+export type GroundJob = { readonly kind: 'shape'; readonly ask: GroundShapeAsk } | { readonly kind: 'blocks'; readonly ask: BlockDigestAsk } | { readonly kind: 'pads'; readonly ask: PadsAsk };
 /** What the worker answers each. */
-export type GroundJobAnswer = PlateShapeAnswer[] | Float64Array[];
+export type GroundJobAnswer = PlateShapeAnswer[] | Float64Array[] | (Pad | null)[];
 
 /** Runs a job as the worker does (`groundShape.worker.ts`; on the page when it fails), and the buffers its answer hands over. */
 export function runGroundJob(job: GroundJob, scratch?: ShapeScratch): { answer: GroundJobAnswer; transfer: ArrayBuffer[] } {
@@ -222,6 +255,7 @@ export function runGroundJob(job: GroundJob, scratch?: ShapeScratch): { answer: 
     const answer = shapeGroundAsk(job.ask, scratch);
     return { answer, transfer: answer.flatMap((a) => [a.corners.buffer as ArrayBuffer, a.heights.buffer as ArrayBuffer]) };
   }
+  if (job.kind === 'pads') return { answer: padsOfAsk(job.ask), transfer: [] };
   const answer = digestBlocks(job.ask);
   return { answer, transfer: answer.map((a) => a.buffer as ArrayBuffer) };
 }
