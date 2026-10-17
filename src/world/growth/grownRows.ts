@@ -12,6 +12,8 @@ const FLAT = (): number => 0;
 export function packGrown(grown: readonly { readonly id: number; readonly lot: number; readonly choice: GrownChoice }[]): GrownRows {
   const id: number[] = [], lot: number[] = [], state: number[] = [], pick: number[] = [], floor: (number | null)[] = [], reach: number[] = [];
   const nbEnd: number[] = [], nb: number[] = [], dropEnd: number[] = [], drop: number[] = [];
+  // The kept candidate's streams only when every row has them: a row without would read another's.
+  const streams: number[] | null = grown.every((g) => g.choice.keptState && g.choice.afterState) ? [] : null;
   for (const g of grown) {
     const c = g.choice;
     id.push(g.id); lot.push(g.lot);
@@ -21,8 +23,9 @@ export function packGrown(grown: readonly { readonly id: number; readonly lot: n
     reach.push(c.reach);
     nb.push(...c.neighbours); nbEnd.push(nb.length);
     drop.push(...c.dropped); dropEnd.push(drop.length);
+    if (streams) streams.push(...c.keptState!, ...c.afterState!);
   }
-  return { version: LOT_PLAN_VERSION, id, lot, state, pick, floor, reach, nbEnd, nb, dropEnd, drop };
+  return { version: LOT_PLAN_VERSION, id, lot, state, pick, floor, reach, nbEnd, nb, dropEnd, drop, ...(streams ? { streams } : {}) };
 }
 
 /** Row `k`'s choices. */
@@ -34,6 +37,10 @@ function choiceOf(rows: GrownRows, k: number): GrownChoice {
     density: p[k * 5]!, attempt: p[k * 5 + 1]!, corner: p[k * 5 + 2]! as 0 | 1 | 2, made: p[k * 5 + 3]!, kept: p[k * 5 + 4]!,
     neighbours: rows.nb.slice(nb0, rows.nbEnd[k]), floor: rows.floor[k] ?? Number.NaN, reach: rows.reach[k] as 0 | 1,
     dropped: rows.drop.slice(drop0, rows.dropEnd[k]),
+    ...(rows.streams ? {
+      keptState: [rows.streams[k * 8]!, rows.streams[k * 8 + 1]!, rows.streams[k * 8 + 2]!, rows.streams[k * 8 + 3]!] as const,
+      afterState: [rows.streams[k * 8 + 4]!, rows.streams[k * 8 + 5]!, rows.streams[k * 8 + 6]!, rows.streams[k * 8 + 7]!] as const,
+    } : {}),
   };
 }
 

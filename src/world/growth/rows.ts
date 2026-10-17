@@ -19,4 +19,6 @@ export interface GrownRows {
   /** The boundary pieces left out of each, the same way. */
   readonly dropEnd: readonly number[];
   readonly drop: readonly number[];
+  /** Eight words a row: the stream at the start of the candidate kept and after the candidates (`GrownChoice.keptState`, `afterState`); absent in a tile grown before them, whose rows are replayed candidate by candidate. */
+  readonly streams?: readonly number[];
 }

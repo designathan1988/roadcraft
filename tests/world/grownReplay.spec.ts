@@ -26,9 +26,14 @@ describe('a grown building made again from its choices', () => {
       const lot = lotOf.get(b.id);
       expect(choice, `building ${b.id} has its choices`).toBeDefined();
       expect(lot, `building ${b.id} stands on a lot`).toBeDefined();
+      // Made again from the kept candidate's own stream (`GrownChoice.keptState`), and as a tile grown before it is, candidate by candidate: the same record.
+      expect(choice!.keptState, `building ${b.id} keeps its candidate's stream`).toBeDefined();
       const again = replayOnLot(lot!, choice!, () => 0);
+      const { keptState: _k, afterState: _a, ...older } = choice!;
+      const olderAgain = replayOnLot(lot!, older, () => 0);
       const { id: _id, builtAt: _b, decay: _d, lotPlan: _l, ...written } = b as typeof b & { builtAt?: number; decay?: number; lotPlan?: number };
       expect(JSON.parse(JSON.stringify(again))).toEqual(JSON.parse(JSON.stringify(written)));
+      expect(JSON.parse(JSON.stringify(olderAgain))).toEqual(JSON.parse(JSON.stringify(written)));
       compared++;
     }
     expect(compared).toBe(buildings.length);

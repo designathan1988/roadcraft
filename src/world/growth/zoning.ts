@@ -272,6 +272,9 @@ export interface GrownChoice {
   readonly reach: 0 | 1;
   /** The boundary pieces left out against a neighbour's (`placed`), by their place in its elements. */
   readonly dropped: readonly number[];
+  /** The stream at the start of the candidate kept and after the last candidate made: with them a replay makes the kept one alone, not every candidate to bring the stream there (`replayOnLot`); a choice without them (an older tile) is replayed candidate by candidate. */
+  readonly keptState?: RngState;
+  readonly afterState?: RngState;
 }
 
 /** A try's body as made: its parts, the plan as laid before it was carried to the street, the lot in its frame, the candidates made and kept, the floor read. */
@@ -282,12 +285,15 @@ interface Tried {
   readonly made: number;
   readonly kept: number;
   readonly floor: number;
+  /** The stream at the start of the candidate kept and after the candidates (`GrownChoice.keptState`, `afterState`). */
+  readonly keptState: RngState;
+  readonly afterState: RngState;
 }
 
 /** One try on a lot made whole (`designOnLot`): the plan laid, the candidates made and one kept, the yards furnished, carried to the street and fitted to the lot; null when the try has no room or its yards cannot be furnished. Unchecked against the site: the same inputs make the same body. */
 function tryOnLot(lot: Lot, frame: ReturnType<typeof frameOf>, density: ZoneDensity, at: TrySite, rng: Rng, corner: 'left' | 'right' | undefined, neighbours: readonly number[],
   ground: ((x: number, y: number) => number) | null | undefined, floorOf: (street: readonly Vec2[], local: (lx: number, ly: number) => Vec2) => number,
-  pick: { readonly near: readonly { signature: Signature; distance: number }[] } | { readonly made: number; readonly kept: number }): Tried | null {
+  pick: { readonly near: readonly { signature: Signature; distance: number }[] } | { readonly made: number; readonly kept: number; readonly keptState?: RngState; readonly afterState?: RngState }): Tried | null {
   const use = lot.use!;
   const { u, n } = frame;
   const { t, lotW, W, D, anchor, local, street } = at;
@@ -304,19 +310,31 @@ function tryOnLot(lot: Lot, frame: ReturnType<typeof frameOf>, density: ZoneDens
     neighbours: [...neighbours],
   };
   // Of a few candidates, the one least like the buildings round it (Mitchell's best candidate, in the space of what a building looks like): drawn at random, a street still came out with twins side by side. Replayed: as many made, the same kept.
-  let made = madeToMeasure(use, density, envelope, rng);
+  // The stream at each candidate's start: the kept one's and the one after the last are what a replay needs (`GrownChoice.keptState`).
+  let keptState = rng.state();
+  let made: ReturnType<typeof madeToMeasure>;
   let count = 1, kept = 0;
   if ('near' in pick) {
+    made = madeToMeasure(use, density, envelope, rng);
     if (pick.near.length) {
       let score = unlikeness(made.body, pick.near);
       for (let k = 1; k < CANDIDATES; k++) {
+        const at = rng.state();
         const other = madeToMeasure(use, density, envelope, rng);
         const s = unlikeness(other.body, pick.near);
-        if (s > score) { score = s; made = other; kept = k; }
+        if (s > score) { score = s; made = other; kept = k; keptState = at; }
       }
       count = CANDIDATES;
     }
+  } else if (pick.keptState && pick.afterState) {
+    // DO NOT make every candidate again to reach the kept one: its own stream, then the stream as it stood after them all.
+    made = madeToMeasure(use, density, envelope, Rng.fromState(pick.keptState));
+    rng = Rng.fromState(pick.afterState);
+    keptState = pick.keptState;
+    count = pick.made;
+    kept = pick.kept;
   } else {
+    made = madeToMeasure(use, density, envelope, rng);
     for (let k = 1; k < pick.made; k++) {
       const other = madeToMeasure(use, density, envelope, rng);
       if (k === pick.kept) made = other;
@@ -324,6 +342,7 @@ function tryOnLot(lot: Lot, frame: ReturnType<typeof frameOf>, density: ZoneDens
     count = pick.made;
     kept = pick.kept;
   }
+  const afterState = rng.state();
   const body = made.body;
   const dx = m(env.x0 - W / 2), dy = m(env.y0);
   for (const v of body.volumes) { v.x += dx; v.y += dy; }
@@ -376,7 +395,7 @@ function tryOnLot(lot: Lot, frame: ReturnType<typeof frameOf>, density: ZoneDens
   const bare = t.front > 0 ? structuredClone({ volumes: body.volumes, elements: body.elements }) : null;
   if (bare) reachStreet(body, t.front, lotW);
   fitToLot(body, ring);
-  return { body, bare, ring, made: count, kept, floor: floorRead };
+  return { body, bare, ring, made: count, kept, floor: floorRead, keptState, afterState };
 }
 
 /** The lot's densities tried in turn: its own, then each lower. */
@@ -421,6 +440,7 @@ export function designOnLot(site: GrowthSite, lot: Lot, rng: Rng, choice?: { val
         state: state!, density: di, attempt: ti, corner: corner === 'left' ? 1 : corner === 'right' ? 2 : 0, made: tried.made, kept: tried.kept,
         neighbours: [...neighbours], floor: tried.floor, reach,
         dropped: (body.elements ?? []).flatMap((e, k) => (left.has(e) ? [] : [k])),
+        keptState: tried.keptState, afterState: tried.afterState,
       };
     }
     return stands;
@@ -435,7 +455,7 @@ export function replayOnLot(lot: Lot, choice: GrownChoice, ground: (x: number, y
   const at = trySites(frame)[choice.attempt];
   if (!density || !at) return null;
   const tried = tryOnLot(lot, frame, density, at, Rng.fromState(choice.state), choice.corner === 1 ? 'left' : choice.corner === 2 ? 'right' : undefined,
-    choice.neighbours, ground, () => choice.floor, { made: choice.made, kept: choice.kept });
+    choice.neighbours, ground, () => choice.floor, { made: choice.made, kept: choice.kept, ...(choice.keptState && choice.afterState ? { keptState: choice.keptState, afterState: choice.afterState } : {}) });
   if (!tried) return null;
   const { body, bare, ring } = tried;
   if (bare && choice.reach === 0) {
