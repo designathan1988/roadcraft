@@ -11,8 +11,8 @@ export interface BuildingFloors {
   forget(b: Building): void;
   /** Forgets every floor (the roads or the land moved everywhere). */
   forgetAll(): void;
-  /** Forgets the floors whose reach (`boxOf`) a change of the ground since the last `follow` touches. */
-  follow(buildings: BuildingStore, ground: GroundSince): void;
+  /** Forgets the floors whose reach (`boxOf`) a change of the ground since the last `follow` touches; where the diary cannot say, those the regions the caller is shaping (`shaped`) reach, or every one without them. */
+  follow(buildings: BuildingStore, ground: GroundSince, shaped?: readonly Rect[] | null): void;
 }
 
 /** `boxOf`: a building's bounds grown by how far its floor reads (`FLOOR_READ_REACH`), `reach` that growth. */
@@ -31,9 +31,10 @@ export function buildingFloors(groundAt: GroundAt, pavedAt: PavedAt | undefined,
     forgetAll() {
       known = new WeakMap();
     },
-    follow(buildings, ground) {
+    follow(buildings, ground, shaped) {
       if (ground.version === seen) return;
-      const rects = seen < 0 ? null : ground.rectsSince(seen);
+      // DO NOT forget every floor of the town where the diary cannot say: the regions the caller has just shaped hold the change it follows.
+      const rects = seen < 0 ? null : ground.rectsSince(seen) ?? shaped ?? null;
       seen = ground.version;
       if (rects === null) { known = new WeakMap(); return; }
       // Every change in one look (`BuildingStore.nearAny`).

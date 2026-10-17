@@ -2238,7 +2238,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       const previous = index;
       const before = revision;
       revision = doc.terrainRevision;
-      index = new TerrainIndex(doc.terrainStamps, revision, doc.terrainRelief, doc.terrainGround);
+      // A stamp appended on the same land: only its cells filed again (`TerrainIndex` `before`).
+      index = new TerrainIndex(doc.terrainStamps, revision, doc.terrainRelief, doc.terrainGround, previous);
 
       // Only the cells a new stamp reaches are rewritten.
       const added = doc.terrainStamps.length === previous.stamps.length + 1

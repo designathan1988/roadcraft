@@ -68,7 +68,9 @@ import { forgetDerivedKeys, forgetOtherDerived, readDerivedKeys, readDerivedSome
 import { disposeMesh } from './mesh/surfaceMesh';
 import { RoadTilePool } from './roadTilePool';
 import { GroundShapePool } from './groundShapePool';
-import { type BlockDigestAsk, type GroundShapeAsk, type PlateShapeAnswer, blockDigest, cornerBoxes, shapeGroundAsk } from './groundShape';
+import { type BlockDigestAsk, type GroundShapeAsk, type PadsAsk, type PlateShapeAnswer, blockDigest, cornerBoxes, shapeGroundAsk } from './groundShape';
+import type { Pad } from '@world/buildings/pads';
+import { refOf } from '@world/buildings/recordTable';
 import { shapeBoth } from './terrainShaping';
 import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
 import { createStreetFurniture } from './streetFurnitureLayer';
@@ -1190,7 +1192,8 @@ export function createSceneRenderer(
   };
   /** Each building's floor, once per record while what it reads stands (`floors.ts`) */
   const floors = buildingFloors(builtGroundAt, pavedHeightAt, floorBox, FLOOR_READ_REACH);
-  const followFloors = (net: Network): void => floors.follow(net.doc.buildings, floorGroundSince);
+  /** `shaped`: the regions the caller is shaping, where the diary cannot say what moved (`floors.ts` `follow`). */
+  const followFloors = (net: Network, shaped: readonly ChangeRect[] | null = null): void => floors.follow(net.doc.buildings, floorGroundSince, shaped);
   const cameraSolidsKept = cameraSolidsKeeper((b) => floors.floorOf(b), floorBox, FLOOR_READ_REACH);
   /** The roads watched for vanishing from the picture */
   let roadsWatchedAt = 0;
@@ -1234,7 +1237,9 @@ export function createSceneRenderer(
   };
   /** Cuts and fills the ground to the roads AND to the buildings */
   /** Each building's platform, the town's, and the sites as last graded (`world/buildings/siteGrading.ts`). */
-  const sitesGraded = siteGrading(builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, (b) => bankBox(b), floors);
+  /** The level ground round a platform before its bank, the page's and the ground worker's (`padsAskOf`). */
+  const SITE_APRON = TERRAIN_CELL * 1.5;
+  const sitesGraded = siteGrading(builtGroundAt, pavedHeightAt, SITE_APRON, (b) => bankBox(b), floors);
   /** The box a building's bank reaches, once per record (records are never changed in place) */
   const bankBoxes = new WeakMap<Building, readonly [number, number, number, number]>();
   /** How far a building's bank reaches past its own bounds. */
@@ -1375,26 +1380,54 @@ export function createSceneRenderer(
   /** `region`: a brush dab while the stroke is held */
   /** The ground cut and filled again only in `blocks` (the roads changed there, the land did not) */
   /** `shapeBlocks` in steps (`worldSteps`) */
+  /** The platforms of these buildings asked of the ground's worker: their records, their floors as kept, the paving over their banks and the shared ground; null where it cannot be handed over. */
+  const padsAskOf = (list: readonly Building[]): PadsAsk | null => {
+    const ground = (terrain.renderedHeightAt as SharedGroundAt).share?.current;
+    if (!ground || !pavedHeightAt.pack) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const b of list) {
+      const box = bankBox(b);
+      x0 = Math.min(x0, box[0]); y0 = Math.min(y0, box[1]); x1 = Math.max(x1, box[2]); y1 = Math.max(y1, box[3]);
+    }
+    const paving = pavedHeightAt.pack([x0, y0, x1, y1]);
+    if (!paving) return null;
+    return { buildings: list.map((b) => ({ record: refOf(b), floor: floors.floorOf(b) })), paving: paving.data, ground, apron: SITE_APRON };
+  };
   function* shapeBlocksSteps(net: Network, blocks: readonly [number, number, number, number][]): Generator<'wait' | void, void, void> {
     // DO NOT walk `buildings.all()` for them, nor every building for a platform not known yet (`ensure`, a building a step)
     const reached = net.doc.buildings.nearAny(blocks, BANK_REACH, (b, q) => {
       const box = bankBox(b);
       return box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1];
     });
-    followFloors(net);
-    // A step a square of the ground's blocks (`PADS_SQUARE` of them a side), each its buildings' platforms - a product of the change, as the ground's blocks are: DO NOT step a building at a time - a tile put in was ~1,000 steps, a step a frame, its near roads 16 s late once the town was shown (2026-10-16; the platforms themselves ~0.2 s a tile: ~16 steps of ~12 ms).
-    const side = SHAPE_BLOCK * PADS_SQUARE;
-    const bySquare = new Map<string, Building[]>();
-    for (const b of reached) {
-      const box = bankBox(b);
-      const k = `${Math.floor((box[0] + box[2]) / 2 / side)},${Math.floor((box[1] + box[3]) / 2 / side)}`;
-      let list = bySquare.get(k);
-      if (!list) bySquare.set(k, list = []);
-      list.push(b);
+    followFloors(net, blocks);
+    // The platforms worked out by the ground's worker, in one ask for the change (`groundShape.ts` `padsOfAsk`): DO NOT work them out on the page a square a frame - ~0.2 s of the page a tile, the tile's near roads waiting behind them.
+    const padsAsk = reached.length ? padsAskOf(reached) : null;
+    let padsTaken = false;
+    if (padsAsk && groundWorkers.available) {
+      let answer: (Pad | null)[] | null = null, failed = false;
+      groundWorkers.pads(padsAsk).then((pads) => { answer = pads; }, (error: unknown) => {
+        console.warn('[ground] the platforms are worked out on the page', error);
+        failed = true;
+      });
+      while (!answer && !failed) { groundWorkers.check(); yield 'wait'; }
+      const pads = answer as (Pad | null)[] | null;
+      if (pads) { reached.forEach((b, i) => sitesGraded.take(b, pads[i] ?? null)); padsTaken = true; }
     }
-    for (const list of bySquare.values()) {
-      for (const b of list) sitesGraded.refresh(b);
-      yield;
+    if (!padsTaken) {
+      // No worker (or it could not): a step a square of the ground's blocks (`PADS_SQUARE` of them a side), never a building a step.
+      const side = SHAPE_BLOCK * PADS_SQUARE;
+      const bySquare = new Map<string, Building[]>();
+      for (const b of reached) {
+        const box = bankBox(b);
+        const k = `${Math.floor((box[0] + box[2]) / 2 / side)},${Math.floor((box[1] + box[3]) / 2 / side)}`;
+        let list = bySquare.get(k);
+        if (!list) bySquare.set(k, list = []);
+        list.push(b);
+      }
+      for (const list of bySquare.values()) {
+        for (const b of list) sitesGraded.refresh(b);
+        yield;
+      }
     }
     gradedFor = net.doc.buildings.revision;
     // The sites that changed with the edit
@@ -1460,11 +1493,14 @@ export function createSceneRenderer(
       derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'lot ground levelled' : 'ground cut and filled', parent);
     };
     const roads = net.doc.segments.size > 0 ? elevation : null;
-    followFloors(net);
+    followFloors(net, list ? list.map(regionRect) : null);
     if (!padsReady && (!region || !sitesGraded.pads || sites)) {
       gradedFor = net.doc.buildings.revision;
-      // The roads or the land moved: every platform is worked out afresh.
-      if (!sites) sitesGraded.forget(net.doc.buildings);
+      // The roads or the land moved: the platforms whose banks the diary says they moved under worked out afresh (`siteGrading.ts` `follow`, the floors' own changes); every one only the first time, or where the diary cannot say.
+      if (!sites) {
+        if (sitesGraded.pads) sitesGraded.follow(net.doc.buildings, floorGroundSince, BANK_REACH);
+        else sitesGraded.forget(net.doc.buildings);
+      }
       sitesGraded.rebuild(net.doc.buildings);
     }
     const pads = net.doc.buildings.size > 0 ? sitesGraded.pads : null;

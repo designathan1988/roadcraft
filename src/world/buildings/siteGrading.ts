@@ -2,6 +2,7 @@ import type { GroundAt, PavedAt } from './foundation';
 import { Digest } from '@core/digest';
 import { type Pad, type TownPads, buildingPads, padLevelAt, padOf } from './pads';
 import type { BuildingFloors } from './floors';
+import type { GroundSince } from './cameraSolids';
 import { BuildingStore } from './store';
 import type { Building, BuildingId } from './types';
 
@@ -17,6 +18,10 @@ export interface SiteGrading {
   changedSites(buildings: BuildingStore): SiteBox[] | null;
   /** A building's platform worked out again (the roads round it moved), on its floor as the floors keep it (follow them first). */
   refresh(b: Building): void;
+  /** A building's platform as worked out elsewhere (the ground's worker, `groundShape.ts` `padsOfAsk`), on its floor as the floors keep it: as `refresh` would make it. */
+  take(b: Building, pad: Pad | null): void;
+  /** The platforms whose bank (`bankBox`, `reach` past the bounds) a change of what they read (the floor's ground, the paving) since the last `follow` reaches, forgotten (`ground`: the floors' changes); every one when the diary cannot say where. */
+  follow(buildings: BuildingStore, ground: GroundSince, reach: number): void;
   /** The town's platforms put together from each building's (`pads`); null for a town with none. */
   rebuild(buildings: BuildingStore): void;
   /** The roads or the land moved: every platform is worked out afresh, and every site read again as graded. */
@@ -65,6 +70,8 @@ export function siteGrading(
   /** The diary's revision the sites were last read at, and the town's platforms at; -1: read them all. */
   const sitesRead = BuildingStore.cursor();
   const padsBuilt = BuildingStore.cursor();
+  /** The ground's version the platforms were last brought to (`follow`); -1: never. */
+  let groundSeen = -1;
   /** Buildings whose platform was worked out again for the roads (`refresh`) since the town's platforms were put together. */
   const refreshed = new Set<BuildingId>();
   /** @rebuild The whole store read only the first time, after `forget`, or when the diary cannot say which buildings changed. */
@@ -106,6 +113,26 @@ export function siteGrading(
       // DO NOT forget its floor here: the floors follow the diary themselves (`floors.ts` `follow`, read before the platforms are), and a floor still right was worked out again for every building a road block reached.
       padsKnown.set(b, padOf(b, groundAt, pavedAt, apron, floorOf));
       refreshed.add(b.id);
+    },
+    take(b, pad) {
+      padsKnown.set(b, pad);
+      refreshed.add(b.id);
+    },
+    follow(buildings, ground, reach) {
+      if (ground.version === groundSeen) return;
+      const rects = groundSeen < 0 ? null : ground.rectsSince(groundSeen);
+      groundSeen = ground.version;
+      // DO NOT forget the whole town's platforms for a change the diary places: only those whose bank it reaches (`floors.ts` `follow`, the same changes).
+      if (rects === null) { this.forget(buildings); return; }
+      // `reach`: how far a bank reaches past its building's bounds (the store files the bounds).
+      for (const b of buildings.nearAny(rects, reach, (b, r) => {
+        const box = bankBox(b);
+        return box[0] <= r[2] && box[2] >= r[0] && box[1] <= r[3] && box[3] >= r[1];
+      })) {
+        padsKnown.delete(b);
+        siteKey.delete(b);
+        refreshed.add(b.id);
+      }
     },
     /** @rebuild The whole town's platforms filed only the first time, after `forget`, or when the diary cannot say which buildings changed. */
     rebuild(buildings) {
