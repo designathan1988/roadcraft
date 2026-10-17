@@ -588,20 +588,17 @@ export class FarTree<P> implements FarTiles {
   }
 
   /** Each edited tile's records as the near level reads them, by the edit they are of: DO NOT read the page's document again for every neighbour that reads the tile, nor for every frame (`tileMembers` walks the region's document). */
-  private readonly pageCuts = new Map<number, { readonly edit: number; readonly cut: { readonly records: TileRecords; readonly digest: string } | null; written?: number }>();
+  private readonly pageCuts = new Map<number, { readonly edit: number; readonly cut: { readonly records: TileRecords; readonly digest: string } | null; drawn?: boolean }>();
 
   /** A tile the page holds edited (`FarTileSource.pageEdit`), cut to what the near level reads and digested, once an edit; null for one the store holds as the page has it. */
   private pageCutOf(key: number): { readonly records: TileRecords; readonly digest: string } | null {
     const edit = this.source?.pageEdit?.(key) ?? 0;
     const known = this.pageCuts.get(key);
     if (!edit || !this.source?.pageRecords) {
-      // DO NOT let the edit's write being confirmed ask the near level again: the version the write stored holds what the cut holds, and the job of the cut, still waiting, was cancelled for one of the version in the cells' band, behind every building the road's edit had baked again (`conferencia` 40-road-4s, the road drawn only after a reload, 2026-10-17; found by the near-tiles session). The cut stands for the tile while the store holds the version its write made (`worldStreamer.ts` written: `stored` in the same turn as the edit let go).
-      const version = this.leaves.get(key)?.version;
-      if (edit === 0 && known?.cut && version !== undefined) {
-        known.written ??= version;
-        if (known.written === version) return known.cut;
-      }
+      // DO NOT let the edit's write being confirmed ask the near level again before the edit is drawn: the stored versions hold what the cut holds, and the job of the cut, still waiting, was cancelled for one of the version in the cells' band, behind every building the road's edit had baked again; a second write (a building grown next to it) cancelled it once more (`conferencia` 40-road-4s, the road drawn only after a reload, conf42-45, 2026-10-17; found by the near-tiles session). The cut stands for the tile until the tile's near level made of it is drawn (`markCutDrawn`); then the version's, of the same roads, is kept as drawn (`landNear` same content).
+      if (edit === 0 && known?.cut && !known.drawn && this.source?.pageRecords) return known.cut;
       this.pageCuts.delete(key);
+      this.cutAsked.delete(key);
       return null;
     }
     if (known && known.edit === edit) return known.cut;
@@ -610,6 +607,16 @@ export class FarTree<P> implements FarTiles {
     this.pageCuts.set(key, { edit, cut });
     return cut;
   }
+
+  /** A tile's near level drawn of what it read (`sig`): the tile's cut, if it was made of it, drawn - the edit is on the screen. */
+  private markCutDrawn(n: FarNode, sig: string): void {
+    const key = tileKey(n.i, n.j);
+    const known = this.pageCuts.get(key);
+    if (known?.cut && this.cutAsked.get(key)?.get(sig) === known.cut.digest) known.drawn = true;
+  }
+
+  /** The cut of its own tile each tile's near level was asked of, by the signature asked (the signature is a digest: it does not say). */
+  private readonly cutAsked = new Map<number, Map<string, string>>();
 
   /** A tile's near level asked of the workers at the versions of the tiles it reads and at the level the view wants; once. */
   private askNear(n: FarNode): void {
@@ -621,6 +628,13 @@ export class FarTree<P> implements FarTiles {
     if (n.nearLanded === sig || n.nearAsked === sig || n.nearFailed === sig) return;
     n.nearCancel?.();
     n.nearAsked = sig;
+    const own = tiles[0]!.cut;
+    if (own) {
+      const key = tileKey(n.i, n.j);
+      let asked = this.cutAsked.get(key);
+      if (!asked) { asked = new Map(); this.cutAsked.set(key, asked); }
+      asked.set(sig, own.digest);
+    }
     // The edited tiles as the page holds them: drawn from the edit, not from its write.
     const edited = tiles.some((t) => t.cut) ? tiles.map((t) => t.cut?.records ?? null) : undefined;
     this.submitNear(n, sig, bake, variant, tiles, edited, tiles[0]!.cut !== null);
@@ -690,6 +704,7 @@ export class FarTree<P> implements FarTiles {
       }
       if (!coming && n.near && n.near.bake === same.bake && n.near.variant === same.variant) {
         n.nearLanded = sig;
+        this.markCutDrawn(n, sig);
         if (n.nearAsked === sig) n.nearAsked = null;
         this.again();
         return;
@@ -699,6 +714,7 @@ export class FarTree<P> implements FarTiles {
     if (payload === null) {
       this.dropNear(n);
       n.nearLanded = sig;
+      this.markCutDrawn(n, sig);
       if (n.nearAsked === sig) n.nearAsked = null;
       return;
     }
@@ -720,6 +736,7 @@ export class FarTree<P> implements FarTiles {
       }
       n.near = landed;
       n.nearLanded = done;
+      this.markCutDrawn(n, done);
       if (n.nearAsked === done) n.nearAsked = null;
       this.nearResident.add(n);
       this.again();

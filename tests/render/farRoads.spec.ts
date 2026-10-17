@@ -333,15 +333,19 @@ describe('the far roads chosen top down', () => {
     tiles.set(edited, crossTile(0, 0, 2));
     roads.stored(edited, 2);
     for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    // A second write of the tile meanwhile (a building grown beside the road), its roads the same.
+    tiles.set(edited, { ...crossTile(0, 0, 2), version: 3 });
+    roads.stored(edited, 3);
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
     expect(cancelled.filter((job) => job.near && job.i === 0 && job.j === 0)).toEqual([]);
     expect(asked.filter((job) => job.near && job.i === 0 && job.j === 0)).toEqual([]);
     // Its job let go: the edit drawn.
-    for (const go of held.splice(0)) go();
-    await until(over, () => roads.waiting === 0);
+    // (an answer built on another level drawn is asked again, held again: let go each time)
+    for (let k = 0; k < 200; k++) { over(); for (const go of held.splice(0)) go(); await new Promise((resolve) => setTimeout(resolve, 0)); }
     expect(roads.nearKeys()).toContain(farKey(0, 0, 0));
-    // A later write of the tile by another (a new version): asked again.
-    roads.stored(edited, 3);
-    tiles.set(edited, crossTile(0, 0, 3));
+    // A later write of the tile once the edit is drawn (a new version): asked again.
+    tiles.set(edited, crossTile(0, 0, 4));
+    roads.stored(edited, 4);
     await until(over, () => asked.some((job) => job.near && job.i === 0 && job.j === 0 && !job.near.edited));
     roads.dispose();
   });
