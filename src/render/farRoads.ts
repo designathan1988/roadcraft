@@ -180,7 +180,7 @@ export function farRoadsRunner(ground: () => SharedGroundData | null, kit: NearR
     const asked: WaitingNear = { tree, done: (reply) => done(reply), priority: farRoadPriority(tree, kit), sent: false, ticket: null };
     if (tree.near) waiting.add(asked);
     submit(asked);
-    return () => { waiting.delete(asked); asked.ticket?.cancel(); };
+    return Object.assign(() => { waiting.delete(asked); asked.ticket?.cancel(); }, { started: () => asked.sent });
   };
   const reband = (): void => {
     for (const asked of waiting) {

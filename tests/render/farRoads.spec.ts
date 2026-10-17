@@ -354,6 +354,47 @@ describe('the far roads chosen top down', () => {
     roads.dispose();
   });
 
+  it("does not cancel an edited tile's near level a worker is baking for a newer edit: it lands, then the newest is asked (conferencia 40: the road missing over the left lake while the town grew)", async () => {
+    const cache = memoryCache();
+    const tiles = world();
+    const asked: FarTreeJob[] = [];
+    const cancelled: FarTreeJob[] = [];
+    const held: (() => void)[] = [];
+    const run = runner(cache, kit);
+    // The edited tile's jobs taken by a worker at once (started) and answered only when let go.
+    const roads = new FarRoads(() => null, (job, done) => {
+      asked.push(job);
+      let live = true;
+      const go = (): void => { if (live) run(job, done); };
+      if (job.near?.edited) held.push(go); else go();
+      return Object.assign(() => { live = false; cancelled.push(job); }, { started: () => job.near?.edited === true });
+    }, 'test:', kit);
+    const edited = tileKey(0, 0);
+    let edit = 0;
+    roads.setSource({ ...storeOf(tiles), pageEdit: (key) => (key === edited ? edit : 0), pageRecords: (key) => (key === edited ? crossTile(0, 0, 1 + edit) : null) }, () => false);
+    for (const [key, records] of tiles) roads.stored(key, records.version);
+    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    // The player edits the tile: its job taken by a worker.
+    edit = 1;
+    await until(over, () => held.length > 0);
+    const first = asked.filter((job) => job.near?.edited).at(-1)!;
+    asked.length = 0;
+    cancelled.length = 0;
+    // Edits of what it reads while it is baked (buildings grown, their gates new): nothing cancelled, nothing asked.
+    for (const step of [2, 3, 4]) {
+      edit = step;
+      for (let k = 0; k < 20; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    }
+    expect(cancelled.filter((job) => job.near && job.i === 0 && job.j === 0)).toEqual([]);
+    expect(asked.filter((job) => job.near && job.i === 0 && job.j === 0)).toEqual([]);
+    // The bake under way lands; then the newest edit is asked.
+    for (const go of held.splice(0)) go();
+    await until(over, () => asked.some((job) => job.near?.edited && job.near.bake !== first.near!.bake));
+    roads.dispose();
+  });
+
   it("queues a near level as a cell's detail is, never behind the masses; an edited tile's before anything", () => {
     const job = (near?: { edited?: boolean }): FarTreeJob => ({
       node: 'n0:0,0', k: -1, i: 0, j: 0, sig: 's', want: true, prefix: null,

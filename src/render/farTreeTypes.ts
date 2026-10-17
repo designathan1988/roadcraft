@@ -69,7 +69,10 @@ export type FarTreeReply<P> =
   | { readonly kind: 'farError'; readonly node: string; readonly sig: string; readonly message: string };
 
 /** Runs a job and answers once; gives back its cancel (an answer cancelled is never given). */
-export type FarTreeRun<P> = (job: FarTreeJob, done: (reply: FarTreeReply<P>) => void) => () => void;
+export type FarTreeRun<P> = (job: FarTreeJob, done: (reply: FarTreeReply<P>) => void) => FarCancel;
+
+/** A job's cancel; `started`, where the runner knows it: whether a worker took the job (its work under way, lost if cancelled). */
+export type FarCancel = (() => void) & { readonly started?: () => boolean };
 
 /** A node's mesh made of its data: the mesh, its plan box and highest point (what the eye measures), what it leaves out, m. */
 export interface FarLanded {
@@ -168,7 +171,7 @@ export interface FarNode {
   nearComing: FarNearLanded | null;
   nearLanded: string | null;
   nearAsked: string | null;
-  nearCancel: (() => void) | null;
+  nearCancel: FarCancel | null;
   /** The version the level on its way to the GPU stands for now: a newer answer of the same content moves it here, never the upload (`landNear`). */
   nearComingSig: string | null;
   nearFailed: string | null;

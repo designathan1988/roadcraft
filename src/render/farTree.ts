@@ -435,6 +435,8 @@ export class FarTree<P> implements FarTiles {
     if (tiles[0]!.cut === null && warmFull()) { this.changed = true; return; }
     // DO NOT ask a near level before what it is baked from is known: behind a reopening's curtain the roads were asked on the ground taken as natural, missed every bake kept on the built one, and baked again (~17 s of the workers, rprof6).
     if (this.kind.near!.ready?.() === false) { this.changed = true; return; }
+    // DO NOT cancel a near level a worker is baking for a newer version of what it reads: an edited tile's cut holds its buildings' gates, every building grown in the tile or a neighbour made a new one, and each cancelled the bake under way and began it again; the edited tile's roads never landed while the town grew (`conferencia` 40-road-4s: the new road missing over the left lake 4 s on, in 4 of 6 runs, 2026-10-17). The bake under way lands, then the newest is asked.
+    if (n.nearAsked !== null && n.nearCancel?.started?.() === true) { this.changed = true; return; }
     n.nearCancel?.();
     n.nearAsked = sig;
     const own = tiles[0]!.cut;
