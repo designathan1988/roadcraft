@@ -42,4 +42,18 @@ describe('picking a building along the ray', () => {
     }
     expect(hits).toBeGreaterThan(10);
   });
+
+  it('walks the ray only where it can meet a roof: a few cells for a view from above, not sixteen kilometres', () => {
+    let asked = 0;
+    const store = { near: () => { asked++; return [] as Building[]; } };
+    // From 300 m up, looking down at 30 degrees: under the land well before a kilometre and a half.
+    const tilt = Math.PI / 6;
+    const ray: Ray3 = { ox: 0, oy: 0, oz: m(300), dx: Math.cos(tilt), dy: 0, dz: -Math.sin(tilt) };
+    expect(pickAlongRay(store, ray, null, () => 0)).toBeNull();
+    expect(asked).toBeLessThan(110);
+    // Looking up from the ground: nothing to walk past the highest roof.
+    asked = 0;
+    pickAlongRay(store, { ...ray, oz: m(2), dz: 0.5 }, null, () => 0);
+    expect(asked).toBeLessThan(110);
+  });
 });
