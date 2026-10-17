@@ -20,7 +20,6 @@ import {
   stopLineDistance as stopLine,
 } from './approach';
 import { CellFiling } from './cells';
-import { followRamps } from './curbRamps';
 import { m } from './units';
 import type { ChangeRect } from './changes';
 import { type NetworkBake, NetworkBuild } from './networkBuild';
@@ -92,6 +91,8 @@ export class Network {
   private readonly build: NetworkBuild;
   /** The states this network has been in and what changed between them (`changesSince`). */
   private readonly log = new DeltaLog();
+  /** What follows the network in the step that rebuilds or takes it back (`afterRebuild`): the dropped kerbs (`curbRamps.ts`). */
+  private readonly followers: ((net: Network) => void)[] = [];
 
   constructor(readonly doc: RoadDoc) {
     this.build = new NetworkBuild(this);
@@ -107,6 +108,11 @@ export class Network {
   }
 
   /** @rebuild Rebuilds every derived surface, INCREMENTALLY */
+  /** `follow` told every rebuild and take-back, in that step (what is kept from the network by its owner: the network never imports it). */
+  afterRebuild(follow: (net: Network) => void): void {
+    this.followers.push(follow);
+  }
+
   rebuild(options: { readonly full?: boolean } = {}): void {
     const started = performance.now();
     if (options.full || this.build.empty) this.clear();
@@ -115,8 +121,8 @@ export class Network {
     this.log.advance(delta);
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
-    // The dropped kerbs follow in this step, never in a walker's read (`curbRamps.ts` `walkingRise`).
-    followRamps(this);
+    // What follows the network (the dropped kerbs, `curbRamps.ts`) follows in this step, never in a walker's read (`walkingRise`).
+    for (const follow of this.followers) follow(this);
     measureHitch(options.full ? 'hitch:network/full' : 'hitch:network/rebuild', started);
   }
 
@@ -203,7 +209,7 @@ export class Network {
     this.forgetCrossings(this.log.since(before));
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
-    followRamps(this);
+    for (const follow of this.followers) follow(this);
   }
 
   /** Drops the crossing distances a change of the network may have moved */
