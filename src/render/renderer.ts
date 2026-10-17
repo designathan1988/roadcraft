@@ -444,10 +444,11 @@ export function createSceneRenderer(
   renderer.shadowMap.autoUpdate = false;
 
   // One shadow depth material per program variant. three draws every caster without a depth material of its own with ONE
+  // DO NOT write the colour: the sun's maps are read by their depth (PCF compares the depth texture, `sunCascades.ts`), nothing reads the packed colour.
   const depthVariants = {
-    plain: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
-    instanced: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
-    tinted: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
+    plain: new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false }),
+    instanced: new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false }),
+    tinted: new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false }),
   };
   const ownDepth = new Set<MeshDepthMaterial>(Object.values(depthVariants));
   const plainOpaque = (material: Material): boolean => {
