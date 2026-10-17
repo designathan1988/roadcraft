@@ -991,7 +991,7 @@ export class FarTree<P> implements FarTiles {
 }
 
 /** Whether two frusta (or none) are the same: every plane's normal and constant. */
-function sameView(a: Frustum | null, b: Frustum | null): boolean {
+export function sameView(a: Frustum | null, b: Frustum | null): boolean {
   if (a === null || b === null) return a === b;
   for (let i = 0; i < 6; i++) {
     const p = a.planes[i]!, q = b.planes[i]!;

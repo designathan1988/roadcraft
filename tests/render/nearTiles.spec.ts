@@ -73,6 +73,39 @@ describe('the near products chosen by tile', () => {
     expect(edit + far).toBeLessThan(cellPriority('cell', 0, false, false));
   });
 
+  it('chooses nothing again on the frames where the eye, the view, the stored tiles, the edits and the kinds stand as they were', () => {
+    const log: string[] = [];
+    const { run } = runs();
+    const near = new NearTiles(run, null);
+    // Every look the choice takes at a kind (its reach and height), counted.
+    let looks = 0;
+    const counted = product(log);
+    near.add(Object.defineProperties({ ...counted }, {
+      cover: { get: () => { looks++; return counted.cover; } },
+      top: { get: () => { looks++; return counted.top; } },
+    }) as NearProduct<string>);
+    for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) near.stored(tileKey(i, j), 1);
+    let edit = 0;
+    near.setSource({ records: async (key) => emptyRecords(key, 1), plan: null, pageEdit: () => edit, pageRecords: (key) => emptyRecords(key, 1) }, () => false);
+    near.choose(m(512), m(512), m(100), 1000, null);
+    expect(looks).toBeGreaterThan(0);
+    // The frames of a still camera: nothing walked.
+    looks = 0;
+    for (let f = 0; f < 60; f++) near.choose(m(512), m(512), m(100), 1000, null);
+    expect(looks).toBe(0);
+    // A tile written, an edit, the eye moved: chosen again each time.
+    near.stored(tileKey(2, 2), 2);
+    near.choose(m(512), m(512), m(100), 1000, null);
+    expect(looks).toBeGreaterThan(0);
+    looks = 0;
+    edit = 7;
+    near.choose(m(512), m(512), m(100), 1000, null);
+    expect(looks).toBeGreaterThan(0);
+    looks = 0;
+    near.choose(m(600), m(512), m(100), 1000, null);
+    expect(looks).toBeGreaterThan(0);
+  });
+
   it('asks the tiles where the kind spans a pixel, keeps a bake drawn until the next lands, and lets go what the view leaves', () => {
     const log: string[] = [];
     const { jobs, run } = runs();

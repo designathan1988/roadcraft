@@ -1,4 +1,4 @@
-import { Box3, type Frustum } from 'three';
+import { Box3, Frustum } from 'three';
 import { Digest } from '@core/digest';
 import { worldKey } from '@world/cityGen/wholeMap';
 import type { TileRecords } from '@world/doc';
@@ -9,7 +9,7 @@ import { EDIT_TIER, NEAR_TIER, TIER_SPAN } from './buildings/cellPool';
 import { emptyRecords } from './buildings/farGrid';
 import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
 import { forgetOtherDerived } from './derivedCache';
-import type { FarTileSource, FarTiles } from './farTree';
+import { type FarTileSource, type FarTiles, sameView } from './farTree';
 import type { GroundRecord } from './groundChanges';
 import { type NearGround, type NearKind, type NearLanded, type NearPart, type NearProduct, type NearTileCache, type NearTileJob, type NearTileReply, NEAR_GROUND_REACH, partsDigest } from './nearTileBake';
 import { nearParts, nearReadParts, nearReadsAround, nearReadsRoads, runNearJob } from './nearBakers';
@@ -207,6 +207,12 @@ export class NearTiles implements FarTiles {
   private readonly recordDigests = new WeakMap<object, number>();
   /** The tiles with a kind asked this choice: one job each once every kind is chosen (`submit`). */
   private readonly asking = new Set<Leaf>();
+  /** What the last choice was made for: the eye, the frustum, what it reads from outside (`outsideKey`), and whether anything it holds moved since (a tile stored, the ground, a kind, an answer). */
+  private changed = true;
+  private readonly chosenEye: Eye = { x: Number.NaN, y: 0, z: 0, pxAtMetre: 0, orthoPx: null, reach: Infinity };
+  private readonly chosenView = new Frustum();
+  private chosenHadView = false;
+  private chosenOutside = '';
 
   /** `run`, `prefix`: where the jobs go and the bakes are kept (tests give their own). */
   constructor(private readonly run: NearRun = nearRunner(), private readonly prefix: string | null = NEAR_PREFIX) {
@@ -216,12 +222,14 @@ export class NearTiles implements FarTiles {
 
   /** A kind drawn per tile from now on. */
   add(product: NearProduct): void {
+    this.changed = true;
     this.products.push(product);
     this.held.set(product.kind, new Set());
   }
 
   /** The ground the bakes read (`renderer.ts`: the terrain's shared plates) and where it changed. */
   setGround(ground: () => NearGround, record: GroundRecord | null): void {
+    this.changed = true;
     this.ground = ground;
     this.groundRecord = record;
     this.groundSeen = record?.version ?? 0;
@@ -241,6 +249,7 @@ export class NearTiles implements FarTiles {
   }
 
   setSource(source: FarTileSource | null, _isLoaded: (tileKey: number) => boolean): void {
+    this.changed = true;
     const plan = source?.plan ?? null;
     // The plan's version and the map's size in it (`worldKey`): bakes of an older plan never read for this one.
     const world = plan ? `${new Digest().addPlain(plan).value().toString(36)}.${worldKey(plan.seed)}` : '';
@@ -254,6 +263,8 @@ export class NearTiles implements FarTiles {
 
   stored(tile: number, version: number | null): void {
     const leaf = this.leaves.get(tile);
+    if (leaf?.version === version) return;
+    this.changed = true;
     if (version === null) {
       if (!leaf) return;
       for (const product of this.products) this.drop(leaf, product.kind);
@@ -269,6 +280,7 @@ export class NearTiles implements FarTiles {
   loadedChanged(_tile: number): void {}
 
   setErrorScale(scale: number): void {
+    if (scale !== this.scale) this.changed = true;
     this.scale = scale;
   }
 
@@ -283,6 +295,16 @@ export class NearTiles implements FarTiles {
     this.eye = e;
     this.view = view;
     if (!this.source) return;
+    // DO NOT walk every kind's tiles again, and read their versions and edits, for the frame that changed nothing the choice reads (it walked them every frame: ~1.9 s of the opening, wprof4 page-3, 2026-10-17).
+    const outside = this.outsideKey();
+    const c = this.chosenEye;
+    if (!this.changed && c.x === eyeX && c.y === eyeY && c.z === eyeZ && c.pxAtMetre === pxAtMetre && c.orthoPx === orthoPx && c.reach === reach
+      && outside === this.chosenOutside && sameView(this.chosenHadView ? this.chosenView : null, view)) return;
+    this.changed = false;
+    c.x = eyeX; c.y = eyeY; c.z = eyeZ; c.pxAtMetre = pxAtMetre; c.orthoPx = orthoPx; c.reach = reach;
+    this.chosenOutside = outside;
+    this.chosenHadView = view !== null;
+    if (view) this.chosenView.copy(view);
     this.groundMoved();
     this.reads.clear();
     for (const product of this.products) this.chooseKind(product);
@@ -291,8 +313,21 @@ export class NearTiles implements FarTiles {
     this.asking.clear();
   }
 
+  /** What the choice reads from outside that tells it nothing when it moves: the ground's record, the page's edits of the stored tiles, each kind's standing and its version at the tiles it holds. */
+  private outsideKey(): string {
+    const d = new Digest().add(this.groundRecord?.version ?? 0);
+    const edit = this.source?.pageEdit;
+    if (edit) for (const key of this.leaves.keys()) d.add(edit(key));
+    for (const product of this.products) {
+      d.add(product.enabled && !product.enabled() ? 0 : 1);
+      if (product.version) for (const leaf of this.held.get(product.kind)!) d.addText(product.version(leaf.key));
+    }
+    return String(d.value());
+  }
+
   /** A WebGL context restored: every bake landed again (their arrays were let go once on the GPU). */
   refill(): void {
+    this.changed = true;
     for (const leaf of this.leaves.values()) for (const product of this.products) this.drop(leaf, product.kind);
     this.again();
   }
@@ -541,6 +576,7 @@ export class NearTiles implements FarTiles {
     queueMicrotask(() => {
       this.scheduled = false;
       const e = this.eye;
+      this.changed = true;
       if (e) this.choose(e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, e.reach, this.view);
     });
   }
