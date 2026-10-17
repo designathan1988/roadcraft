@@ -34,6 +34,8 @@ export function buildTileMap(options: WholeMapOptions, i: number, j: number): { 
   const started = performance.now();
   const tile = planTile(planWholeMap(options), i, j);
   const doc = layCity(tile.city);
+  // Read once as text (`toJSON`) and thrown away: its buildings are not interned here (`BuildingStore.intern`), the tile's reader does.
+  doc.buildings.intern = false;
   widenCityFootways(doc);
   const net = new Network(doc);
   net.rebuild();
