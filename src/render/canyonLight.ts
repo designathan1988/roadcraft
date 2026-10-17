@@ -34,6 +34,8 @@ export interface CanyonLight {
   readonly pass: ShaderPass;
   /** @rebuild The view's centre (map x, y), the town's solids, and where they changed since the last call */
   follow(cx: number, cy: number, solids: (() => CameraSolids) | null, changed: readonly (readonly [number, number, number, number])[] | null): void;
+  /** The ambient occlusion multiplied into the picture first (GTAO's denoised target, its blend intensity), or none. */
+  setOcclusion(texture: Texture | null, intensity: number): void;
   /** The sun's direction (world, to the sun) and its share of the light on the ground. */
   setSun(direction: Vector3, directShare: number): void;
   dispose(): void;
@@ -41,6 +43,9 @@ export interface CanyonLight {
 
 const FRAGMENT = /* glsl */ `
   uniform sampler2D tDiffuse;
+  uniform sampler2D tAO;
+  uniform float uAO;
+  uniform float uAOOn;
   uniform sampler2D tDepth;
   uniform sampler2D uHeights;
   uniform mat4 uProjectionInverse;
@@ -118,6 +123,11 @@ const FRAGMENT = /* glsl */ `
 
   void main() {
     vec4 src = texture2D(tDiffuse, vUv);
+    // The occlusion as GTAO's own blend laid it (three's GTAOBlendShader: dst * mix(1, ao, intensity), alpha * ao.a).
+    if (uAOOn > 0.5) {
+      vec4 ao = texture2D(tAO, vUv);
+      src *= vec4(mix(vec3(1.0), ao.rgb, uAO), ao.a);
+    }
     float depth = texture2D(tDepth, vUv).r;
     if (depthIsBackground(depth)) { gl_FragColor = src; return; }
     vec3 P = worldAt(vUv, depth);
@@ -190,6 +200,9 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
     name: 'canyon-light',
     uniforms: {
       tDiffuse: { value: null },
+      tAO: { value: null },
+      uAO: { value: 0 },
+      uAOOn: { value: 0 },
       tDepth: { value: null },
       uHeights: { value: heights },
       uProjectionInverse: { value: new Matrix4() },
@@ -324,6 +337,11 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
       window.set(pending.ox, pending.oy, CELL, SIDE);
       laid = { cx: pending.cx, cy: pending.cy, ox: pending.ox, oy: pending.oy };
       pending = null;
+    },
+    setOcclusion(texture, intensity) {
+      u['tAO']!.value = texture;
+      u['uAO']!.value = intensity;
+      u['uAOOn']!.value = texture ? 1 : 0;
     },
     setSun(direction, directShare) {
       sun.copy(direction).normalize();

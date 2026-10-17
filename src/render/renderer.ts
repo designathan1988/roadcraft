@@ -412,9 +412,13 @@ export function createSceneRenderer(
   const movingCasters = (): boolean => agents.casting || transit.moving || (fx?.busy() ?? false);
   /** Moving casters in the last shadow frame: when they stop, the map is drawn once more with them at rest. */
   let castersMoved = false;
+  /** Whether the opening's quality draws through the post chain: its canvas then takes only the output pass, so it is made without multisampling or depth (the chain's scene target has its own). */
+  const canvasForChain = (initialSettings ?? QUALITY[initialQuality === 'auto' ? 'high' : initialQuality]).postProcessing;
   const renderer = new WebGLRenderer({
     canvas,
-    antialias: true,
+    // A quality without the chain chosen later draws through a multisampled target of its own (`postprocess.ts` plainChain).
+    antialias: !canvasForChain,
+    depth: !canvasForChain,
     alpha: false,
     powerPreference: 'high-performance',
     stencil: false,
