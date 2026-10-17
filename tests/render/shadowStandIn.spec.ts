@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BackSide, BoxGeometry, DoubleSide, FrontSide, Group, InstancedMesh, Mesh, MeshDepthMaterial, MeshStandardMaterial, RGBADepthPacking, Texture,
-  type Camera, type Object3D, type Scene, type WebGLRenderer,
+  Scene, type Camera, type Object3D, type WebGLRenderer,
 } from 'three';
 
 import { compileAhead, drainCompiles, shadowStandIn, shadowStandIns } from '@render/uploads';
@@ -20,7 +20,7 @@ function recorder(seen: string[]): WebGLRenderer {
     },
   } as unknown as WebGLRenderer;
 }
-const camera = {} as Camera, scene = {} as Scene;
+const camera = {} as Camera, scene = new Scene();
 
 /** THE SHADOWS COMPILED AHEAD (`uploads.ts` shadowStandIn) */
 describe('the shadow stand-ins compiled ahead', () => {
