@@ -37,7 +37,7 @@ import type { RoadDoc } from '@world/doc';
 import { BIOME_KINDS, COVER_KINDS, PAINT_KINDS, isBiomeKind, isGeologyKind, type CoverKind, type GeologyKind, type PaintDab } from '@world/terrainPaint';
 import { REGIONS, computeEcology, type EcologyField, type NatureSettings } from '@world/ecology';
 import { GroundChanges } from './groundChanges';
-import { createLandLighter, unionCorners, type CornerRect, type LightRequest, type LightResult } from './terrainLightCompute';
+import { landSlope, slopeRequest, unionCorners, type CornerRect, type LightResult } from './terrainLightCompute';
 import { submitLight } from './terrainLightPool';
 import { ecologyOffPage, readEcology } from './ecologyPool';
 import type { PlateMesh } from './plateMesh';
@@ -340,7 +340,7 @@ function rasterBiome(weights: Float32Array, dab: PaintDab): void {
 
 /** The painted ground's layers, as ONE texture array */
 const PAINT_LAYERS = 3;
-/** The array layer holding the land's own light and shape (`terrainLight`) */
+/** The array layer holding the corners' ecology (RGB) and the land's slope (A, `terrainLightCompute.ts`), corner by corner */
 const LIGHT_LAYER = 2;
 /** The side of the painted ground's array before anything is painted on it: the land's light layer */
 const PAINT_START_RES = Math.min(PAINT_RES, 2 ** Math.ceil(Math.log2(TERRAIN_SEGMENTS + 1)));
@@ -1928,31 +1928,29 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
   paintArray.addLayerUpdate(LIGHT_LAYER);
   paintArray.needsUpdate = true;
-  // The corners whose heights moved since the light was last asked for
+  // The corners whose heights moved since their slope was last asked for
   let landMoved: CornerRect | 'all' | null = 'all';
   const markLand = (rect: CornerRect | 'all'): void => {
     landMoved = rect === 'all' || landMoved === 'all' ? 'all' : landMoved ? unionCorners(landMoved, rect) : rect;
   };
-  const litSun = { x: 0, y: -1, z: 0 };
   // Worked out by the plates' few shared workers (`terrainLightPool.ts`), one request at a time
   const lightGrid = { n: GRID, cell: TERRAIN_CELL };
-  let lightLocal: ((request: LightRequest) => LightResult) | null = null;
   let lightBusy = false;
-  /** The document's diary (`world/changes.ts`), as the last `update` saw it, and the entry the light in flight follows from. */
+  /** The document's diary (`world/changes.ts`), as the last `update` saw it, and the entry the slope in flight follows from. */
   let diary: ChangeJournal | null = null;
   let lightCause = 0;
   const applyLight = (result: LightResult): void => {
     const startedAt = performance.now();
-    const { rect, rgba } = result;
+    const { rect, slope } = result;
     const width = rect.x1 - rect.x0 + 1;
     const held = paintTexels.held;
     const layer = held ? paintLayer(held, paintRes, LIGHT_LAYER) : null;
-    // The slope (A) only: the shader reads no other channel of the light, and the corner layer's RGB is the ecology's.
+    // The corner layer's A; its RGB is the ecology's.
     for (let iy = rect.y0; iy <= rect.y1; iy++) {
       for (let ix = rect.x0; ix <= rect.x1; ix++) {
-        const slope = rgba[((iy - rect.y0) * width + ix - rect.x0) * 4 + 3]!;
-        cornerBytes[(iy * GRID + ix) * 4 + 3] = slope;
-        if (layer) layer[(iy * paintRes + ix) * 4 + 3] = slope;
+        const s = slope[(iy - rect.y0) * width + ix - rect.x0]!;
+        cornerBytes[(iy * GRID + ix) * 4 + 3] = s;
+        if (layer) layer[(iy * paintRes + ix) * 4 + 3] = s;
       }
     }
     paintArray.addLayerUpdate(LIGHT_LAYER);
@@ -1961,16 +1959,14 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     performance.measure('terrain-light/worker', { start: startedAt - result.ms, end: startedAt, detail: `${width}x${rect.y1 - rect.y0 + 1} corners` });
     // Rows run from +y downwards.
     diary?.record('light', [[origin.x - TERRAIN_HALF + rect.x0 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y1 * TERRAIN_CELL, origin.x - TERRAIN_HALF + rect.x1 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y0 * TERRAIN_CELL]],
-      { cause: 'luz do terreno refeita', ...(lightCause ? { parent: lightCause } : {}), ms: result.ms, detail: `${width}×${rect.y1 - rect.y0 + 1} cantos, num worker` });
+      { cause: 'inclinação do terreno refeita', ...(lightCause ? { parent: lightCause } : {}), ms: result.ms, detail: `${width}×${rect.y1 - rect.y0 + 1} cantos, num worker` });
   };
-  const setSun = (sun: { readonly x: number; readonly y: number; readonly z: number }): void => {
+  /** Called each frame (the sun's direction is not read: the slope does not depend on it); the slope asked for where the land moved, once no stroke is held. */
+  const setSun = (): void => {
     // A stroke held: the water waits for its end, and so does this.
-    if (waterStale || lightBusy) return;
-    const len = Math.hypot(sun.x, sun.y, sun.z) || 1;
-    const turned = (sun.x * litSun.x + sun.y * litSun.y + sun.z * litSun.z) / len < Math.cos((2 * Math.PI) / 180);
-    if (!landMoved && !turned) return;
-    litSun.x = sun.x / len; litSun.y = sun.y / len; litSun.z = sun.z / len;
-    const request: LightRequest = { heights: grid.slice(), sun: { ...litSun }, moved: landMoved, relightAll: turned };
+    if (waterStale || lightBusy || !landMoved) return;
+    // DO NOT send the whole plate's heights for a dab: the box the moved corners' slope reads (`slopeRequest`).
+    const request = slopeRequest(lightGrid, grid, landMoved);
     landMoved = null;
     lightCause = diary?.version ?? 0;
     lightBusy = true;
@@ -1980,8 +1976,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       () => { lightBusy = false; landMoved = 'all'; });
     if (sent) return;
     lightBusy = false;
-    lightLocal ??= createLandLighter(lightGrid);
-    applyLight(lightLocal(request));
+    applyLight(landSlope(lightGrid, request));
   };
   let paintRevision = 0;
   let paintCount = 0;
