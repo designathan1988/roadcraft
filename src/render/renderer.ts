@@ -570,7 +570,9 @@ export function createSceneRenderer(
   /** The roads of the tiles not in the page's document (`farRoads.ts`), on the ground shared with the workers. */
   const farRoadGround = (): SharedGroundData | null => (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null;
   // Each tile's near level where the view wants its detail and the region does not draw it (`nearRoadTiles.ts`): the region's look of the roads, the same materials.
-  const nearPaintFor = (color: string): Material => surfaceReuse.paint.get(color) ?? surfaceReuse.paint.get(LANE_LINE) ?? materials.asphalt;
+  // DO NOT read it off `surfaceReuse`: the near level's programs are made with the far roads (`farRoads.ts` stand-ins), before it is declared (the page did not open, 2026-10-17).
+  const roadPaint = paintCatalogue();
+  const nearPaintFor = (color: string): Material => roadPaint.get(color) ?? roadPaint.get(LANE_LINE) ?? materials.asphalt;
   const farRoads = new FarRoads(farRoadGround, undefined, undefined, {
     look: () => passLook(materials, terrain.vergeMaterial),
     markingStyle: () => worldNet?.doc.markingStyle ?? 'classic',
@@ -681,7 +683,7 @@ export function createSceneRenderer(
       .add(elevation?.digest(minX, minY, maxX, maxY, SURFACE_READ_REACH) ?? 0)
       .add(terrain.digest(minX, minY, maxX, maxY))
       .value(),
-    paint: paintCatalogue(),
+    paint: roadPaint,
     // A block of road is made at full detail only near the camera (`mesh/roadLod.ts`).
     near: (x, y) => isNear(x, y, roadFocus.x, roadFocus.y, roadFocus.reach),
     // The near roads stop at the streamed world's active tiles (by the tile's centre: a tile astride the edge is built; the far roads of the ring cover the strip twice, never a gap).
