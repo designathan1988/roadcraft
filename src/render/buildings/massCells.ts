@@ -105,7 +105,11 @@ export interface MassCells {
   /** - DO NOT give detail to a cell out of `view` (Cesium's HLOD culls by the frustum before the screen error): in the view from above a metre spans the same pixels everywhere, and the whole region came in detail (2026-10-16: 45 cells, 981 MB, the GPU out of memory on the 10 km city) */
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number, view?: Frustum | null): void;
   /** DO NOT draw more detail than the budget holds (the brief: detail residency capped in bytes, falling back to L1): the farthest near cells fall back to their facade level, then to their masses, until `bytesOf` the cells left near fits `budget`; those forced near stay */
-  cap(eyeX: number, eyeY: number, budget: number, bytesOf: (key: string, fine: boolean) => number, forced: boolean | ReadonlySet<string>): void;
+  cap(eyeX: number, eyeY: number, budget: number, bytesOf: (key: string, fine: boolean) => number, forced: boolean | ReadonlySet<string>, farOf?: (key: string) => number): void;
+  /** The triangles drawn for what is not near: the tiles and plates shown and the far cells' masses (a near cell's masses, hidden under its detail or standing until it lands, are counted by its level: `layer.ts` chosenTriangles). */
+  farTriangles(): number;
+  /** The triangles of a cell's masses (0 before they came): what it costs sent far (`layer.ts` capTriangles). */
+  massTriangles(key: string): number;
   /** The bytes a cell's masses hold on the GPU (0 before they came): what a level of it never landed is reckoned at (`layer.ts` capNow). */
   massBytes(key: string): number;
   /** A far sun cascade being drawn (`layer.ts` castInto): the cells drawn in detail whose masses can stand for them shown for the pass, their keys given (the layer leaves their detail out); false: as they are drawn, none given. */
@@ -214,6 +218,20 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
   let heldFar: ReadonlySet<string> = new Set(), heldCoarse: ReadonlySet<string> = new Set();
   /** How far a cell's box reaches past its square (a building over its edge), the most of any: the eye's search is grown by it. */
   let overhang = 0;
+  /** The masses standing for what is not near (`farTriangles`), each with its triangles, and their sum: kept as they are shown and hidden, DO NOT count the ones hidden (the ledger's every mass: a cell in detail was counted twice, its masses under it, and the budget cut cells that fit). */
+  const standing = new Map<Mesh, number>();
+  let standingTriangles = 0;
+  const stand = (mesh: Mesh, on: boolean): void => {
+    const was = standing.get(mesh);
+    if (on && was === undefined) {
+      const n = geometryCost(mesh.geometry).triangles;
+      standing.set(mesh, n);
+      standingTriangles += n;
+    } else if (!on && was !== undefined) {
+      standing.delete(mesh);
+      standingTriangles -= was;
+    }
+  };
   /** DO NOT walk the cells' meshes for it (`Box3.setFromObject` at every cell landed): the highest cell top, walked again only when that cell went or fell. */
   let highest = -Infinity;
   let highestStale = false;
@@ -222,7 +240,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
   const coveredAt = (i: number, j: number): boolean => (tiles.get(tileOf(i, j))?.coarse ?? false) || (plates.get(plateOf(i, j))?.coarse ?? false);
   /** A cell's mass shown: far, or near with no detail to stand in for it; never under its tile or plate. */
   const showMass = (key: string, cell: Cell): void => {
-    if (cell.mesh) cell.mesh.visible = !cell.covered && (!cell.near || !detailed.has(key));
+    if (!cell.mesh) return;
+    cell.mesh.visible = !cell.covered && (!cell.near || !detailed.has(key));
+    stand(cell.mesh, !cell.covered && !cell.near);
   };
   const setNear = (key: string, cell: Cell, near: boolean, fine = near): void => {
     cell.near = near;
@@ -237,6 +257,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     else showMass(key, cell);
   };
   const dropMesh = (mesh: Mesh): void => {
+    stand(mesh, false);
     gpuLedger.remove(mesh);
     cancelWarm([mesh]);
     mesh.parent?.remove(mesh);
@@ -244,6 +265,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
   };
   const drop = (cell: Cell): void => {
     if (!cell.mesh) return;
+    stand(cell.mesh, false);
     gpuLedger.remove(cell.mesh);
     cancelWarm([cell.mesh]);
     group.remove(cell.mesh);
@@ -257,7 +279,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
   const setCoarse = (level: Level, coarse: boolean): void => {
     if (level.coarse === coarse) return;
     level.coarse = coarse;
-    if (level.mesh) level.mesh.visible = coarse;
+    if (level.mesh) { level.mesh.visible = coarse; stand(level.mesh, coarse); }
     for (let i = level.i0; i < level.i0 + level.n; i++) {
       for (let j = level.j0; j < level.j0 + level.n; j++) {
         const key = keyOf(i, j);
@@ -453,6 +475,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       level.error = Math.max(FAR_ERROR, mass.error);
       level.x0 = Math.min(level.x0, box.min.x); level.x1 = Math.max(level.x1, box.max.x); level.y0 = Math.min(level.y0, -box.max.z); level.y1 = Math.max(level.y1, -box.min.z);
       mesh.visible = level.coarse;
+      stand(mesh, level.coarse);
       levelGroup.add(mesh);
       // Sent ahead as the cells' are: shown from far off the first time the eye pulls back, never uploaded mid-frame.
       sendUp(mesh, levelClass(key), () => level.top * levelPixels(level));
@@ -573,7 +596,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
         }
       }
     },
-    cap(eyeX, eyeY, budget, bytesOf, forced) {
+    cap(eyeX, eyeY, budget, bytesOf, forced, farOf = () => 0) {
       if (!Number.isFinite(budget) || forced === true) return;
       let total = 0;
       // DO NOT coarsen by the distance to the eye's point on the plan: two cells as far from the camera on either side of it were drawn one in detail, one in masses (conferencia 30, 48). By the error on the screen, as `choose` picks: the cells whose step down shows least go first, ties the farthest from the eye first.
@@ -611,7 +634,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
           const { key, cell } = movable[k]!;
           // DO NOT send a cell far before its masses (or its tile's, its plate's) can stand for it: its facade level stays, never a hole.
           if (!this.drawn(key)) continue;
-          total -= bytesOf(key, false);
+          // What it costs far (its masses shown) comes in for what its facade level cost.
+          total += farOf(key) - bytesOf(key, false);
           setNear(key, cell, false);
         }
         at = end;
@@ -620,6 +644,13 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     massBytes(key) {
       const mesh = cells.get(key)?.mesh;
       return mesh ? meshBytes(mesh) : 0;
+    },
+    farTriangles() {
+      return standingTriangles;
+    },
+    massTriangles(key) {
+      const mesh = cells.get(key)?.mesh;
+      return mesh ? geometryCost(mesh.geometry).triangles : 0;
     },
     shadowMasses(on) {
       const swapped: string[] = [];
@@ -690,6 +721,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       lastEye.known = false;
       highest = -Infinity;
       highestStale = false;
+      standing.clear();
+      standingTriangles = 0;
       nearKeys.clear();
       detailed.clear();
     },
