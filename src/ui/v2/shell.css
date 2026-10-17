@@ -36,8 +36,6 @@
   background: var(--v-bg);
   border: 1px solid var(--v-line);
   box-shadow: var(--v-shadow);
-  backdrop-filter: blur(18px) saturate(130%);
-  -webkit-backdrop-filter: blur(18px) saturate(130%);
 }
 /* A name kept for screen readers and the tooltip, not drawn. */
 .v2-icon > span, .v2-pill > span, .v2-seg-b > span, .v2-tabs.compact .v2-tab.icon:not(.on) > span, .v2-tabs.tight .v2-tab.icon > span, .v2-choice.icon > span,
@@ -377,7 +375,6 @@
   position: absolute; right: 16px; bottom: 16px; width: 52px; height: 52px; padding: 0;
   pointer-events: auto; touch-action: none; border-radius: 50%;
   background: var(--v-bg); border: 1px solid var(--v-line); box-shadow: var(--v-shadow);
-  backdrop-filter: blur(18px) saturate(130%); -webkit-backdrop-filter: blur(18px) saturate(130%);
   cursor: grab; transition: border-color 120ms ease, transform 120ms ease;
 }
 .v2-compass:hover { border-color: var(--v-accent-line); transform: scale(1.06); }

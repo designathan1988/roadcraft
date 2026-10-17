@@ -822,6 +822,7 @@ export const PT_BR: Dictionary = {
   'hint.undone': 'Desfeito',
   'hint.redone': 'Refeito',
   'hint.saved': 'Mapa salvo em arquivo',
+  'hint.tileFull': 'Este trecho do mapa já tem o máximo que cabe: nada foi acrescentado e nada foi apagado',
   'hint.saveBehind': 'Algumas mudanças ainda não foram gravadas: nenhum arquivo foi feito, tente de novo em instantes',
   'hint.opened': 'Mapa aberto',
   'hint.worldReadOnly': 'Esta cidade está aberta em outra janela: aqui ela pode ser vista, as mudanças não são gravadas',

@@ -163,7 +163,7 @@ describe('an edit in one tile writes that tile, whatever the size of the map', (
   /** Ten poles and ten trees in the tile at the origin, and as many in each of `others` tiles south of it. */
   function field(others: number): RoadDoc {
     const doc = RoadDoc.fromJSON({ version: 1, nodes: [], segments: [] } as never);
-    const plant = (x: number, y: number): void => doc.plantTrees([{ x, y, height: 8, yaw: 0, seed: 0.5 }]);
+    const plant = (x: number, y: number): void => { doc.plantTrees([{ x, y, height: 8, yaw: 0, seed: 0.5 }]); };
     for (let i = 0; i < 10; i++) { doc.addPole({ x: 100 + i * 50, y: 100 }); plant(120 + i * 50, 200); }
     for (let t = 0; t < others; t++) {
       // South of the origin's tile (y < 0): never in it.

@@ -1,3 +1,4 @@
+import { measureHitch } from '@core/hitch';
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
 import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
@@ -530,6 +531,8 @@ const terrainBrush = new TerrainBrush({
   interval: (stroking) => Math.max(TERRAIN_MIN_MS, (stroking ? scene.stats.terrainMs : scene.stats.rebuildMs) * 1.4),
   record: () => { history.begin(doc); updateHistoryButtons(); },
   redraw: () => requestDraw(),
+  // Decision 5.1: a full tile refuses the new item, nothing of the player's taken away.
+  refused: () => flashHint('hint.tileFull'),
 });
 /** The brush in hand, as one dab reads it (`editor/terrainBrush.ts` `DabSettings`). */
 function dabSettings(): DabSettings {
@@ -602,7 +605,8 @@ await sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient'
 const engine = new Engine();
 const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, graphics.level, requestDraw, engine, graphics.settings);
 // The surgical profiler (`core/profiler.ts`)
-const profileFrameEnd = wireProfiler();
+// Decision 5.4: the profiler, the F9 monitor and the console's hooks in a development build only (`scripts/look.mjs` runs on the dev server).
+const profileFrameEnd = import.meta.env.DEV ? wireProfiler() : (): void => {};
 function wireProfiler(): () => void {
   hookProfiler(scene.gl);
   engine.watch(() => doc.changes.version);
@@ -786,7 +790,7 @@ function mutateBuilt(fn: () => boolean): boolean {
   followNetwork(doc, net);
   const roadsBefore = net.state;
   history.begin(doc);
-  performance.measure('hitch:mutate/before', { start: mutateAt, end: performance.now() });
+  measureHitch('hitch:mutate/before', mutateAt);
   // What the diary says this edit came from (`world/changes.ts`).
   doc.changes.causeNext(`tool ${game.tool}`);
   const changed = fn();
@@ -802,7 +806,7 @@ function mutateBuilt(fn: () => boolean): boolean {
   // An edit that reports success without changing anything
   const recorded = history.end(doc);
   if (!changed || !recorded) return false;
-  performance.measure('hitch:mutate/edit+after', { start: mutateAt, end: performance.now() });
+  measureHitch('hitch:mutate/edit+after', mutateAt);
   // The simulation catches up in the frame AFTER the one that draws the edit
   topologyAfterDraw = topologyAfterDraw || sim.topologyRevision !== net.trafficRevision;
   persistence.saveSessionSoon(doc, sessionSettings);
@@ -810,7 +814,7 @@ function mutateBuilt(fn: () => boolean): boolean {
   updateStatus();
   refreshInspector();
   requestDraw();
-  performance.measure('hitch:mutate/after edit', { start: mutateAt, end: performance.now() });
+  measureHitch('hitch:mutate/after edit', mutateAt);
   return true;
 }
 
@@ -1821,8 +1825,8 @@ function mountInterface(): void {
       return { roads: doc.segments.size, nodes: doc.nodes.size, zoom: view.zoom, x: centre.x, y: centre.y };
     },
   });
-  // F9's button in the top bar, before Help (`ui/healthPanel.ts`).
-  shell.addToBar(healthPanel.button);
+  // F9's button in the top bar, before Help (`ui/healthPanel.ts`): in a development build.
+  if (healthPanel) shell.addToBar(healthPanel.button);
   // The compass in a corner (`ui/v2/compass.ts`): a click faces north, a drag turns and tilts.
   if (view.kind !== '2d') {
     compass = mountCompass(document.querySelector<HTMLElement>('.v2') ?? document.body, {
@@ -2472,7 +2476,7 @@ const gameKeys = createGameKeys({
   // F8: what changed, where (`drawChanges`).
   toggleChanges: () => { showChanges = !showChanges; requestDraw(); },
   // F9: the monitor (`healthPanel`, mounted at the end of this file).
-  health: { toggle: () => healthPanel.toggle(), close: () => healthPanel.close() },
+  health: { toggle: () => healthPanel?.toggle() ?? false, close: () => healthPanel?.close() ?? false },
   toolKey: (next) => {
     pickTool(next);
     shell?.toolKeyed(next);
@@ -3881,15 +3885,15 @@ function setQuality(value: string): void {
   if (isQualityLevel(value)) graphics.setPreset(value);
 }
 /** The game's state in the console (`core/gameState.ts`): `__state()` its values now and the last changes */
-(window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({
+if (import.meta.env.DEV) (window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({
   now: gameState.snapshot(),
   changes: gameState.latest(count).map((c) => `#${c.serial} ${c.key}: ${String(c.from)} → ${String(c.to)} (${c.cause})`),
   toolMachine: tools.latest(count).map((r) => `#${r.serial} ${r.from} → ${r.to} (${r.event})`),
 });
 /** The game's health in the console (`core/health.ts`): what broke or was slow, newest first. */
-(window as unknown as { __health: unknown }).__health = (count = 30): unknown => health.latest(count);
+if (import.meta.env.DEV) (window as unknown as { __health: unknown }).__health = (count = 30): unknown => health.latest(count);
 /** The last frames per system (`core/health.ts` `frameStats`) */
-(window as unknown as { __frames: unknown }).__frames = (since = 0): unknown =>
+if (import.meta.env.DEV) (window as unknown as { __frames: unknown }).__frames = (since = 0): unknown =>
   frameStats(frameTimer.recent().filter((f) => f.start >= since));
 /** The GPU time of the frames drawn since the last `__gpu(true)` (or the last 40 s) */
 /** The F9 monitor's GPU lines (state tab, the whole width) */
@@ -3900,7 +3904,7 @@ function gpuLines(): string[] {
   const s = t.samples.stats(STUTTER_MS);
   return [`gpu: p50 ${s.p50} · p95 ${s.p95} · p99 ${s.p99} · max ${s.max} ms · n ${s.n}`, `gpuName: ${name}`];
 }
-(window as unknown as { __gpu: unknown }).__gpu = (reset = false): unknown => {
+if (import.meta.env.DEV) (window as unknown as { __gpu: unknown }).__gpu = (reset = false): unknown => {
   const t = scene.gpu;
   const out = { supported: t.supported, label: t.label, ...t.samples.stats(STUTTER_MS), skipped: t.skipped, disjoint: t.disjoint };
   if (reset) t.samples.clear();
@@ -3920,7 +3924,7 @@ function noteSimulationIssues(): void {
 }
 
 const valueText = (value: unknown): string => (value === null || value === undefined ? '—' : typeof value === 'number' ? String(Math.round(value * 100) / 100) : String(value));
-const healthPanel = mountHealthPanel({
+const healthPanel = !import.meta.env.DEV ? null : mountHealthPanel({
   log: health,
   world: (n) => doc.changes.latest(n).map((c) => {
     const where = c.rects === null ? t('health.world.whole') : t('health.world.rects', { count: c.rects.length });
@@ -3937,7 +3941,7 @@ const healthPanel = mountHealthPanel({
   }),
 });
 /** The diary of changes in the console (`world/changes.ts`): `__changes()` lists the last ones */
-(window as unknown as { __changes: unknown }).__changes = (count = 30, serial?: number): unknown => {
+if (import.meta.env.DEV) (window as unknown as { __changes: unknown }).__changes = (count = 30, serial?: number): unknown => {
   const row = (c: Change) => ({
     serial: c.serial, kind: c.kind, cause: c.cause, after: c.parent ?? '',
     where: c.rects === null ? 'whole map' : `${c.rects.length} rects ${Math.round(c.rects.reduce((a, r) => a + (r[2] - r[0]) * (r[3] - r[1]), 0) / 1e3)}k u²`,
@@ -3955,7 +3959,7 @@ const healthPanel = mountHealthPanel({
 };
 
 // Diagnostic surface for browser-driven checks.
-(window as unknown as { __roadcraft: unknown }).__roadcraft = {
+if (import.meta.env.DEV) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
   /** The surgical profiler's numbers (`core/profiler.ts`), as its HUD shows them. */
   profiler: () => profiler.view(),
   /** The engine's ledger: each product's computes, last refresh and in all (`core/engine.ts`). */
@@ -3966,7 +3970,10 @@ const healthPanel = mountHealthPanel({
   camera,
   surface,
   DT,
-  exportMap: () => exportToFile(doc, sessionSettings()),
+  /** The map to a file as Ctrl+S makes it: a streamed world whole (every stored tile, `saveWorldFile`), else the map; the hint it would show. */
+  exportMap: () => streamed
+    ? saveWorldFile(streamed, mapTilesFrom(0, 0), (blob) => offerFile(blob, 'roadcraft-city.json'))
+    : exportToFile(doc, sessionSettings()),
   /** The autosave written now, resolved once it is stored (the route's reopening step, `scripts/look/route.json`). */
   saved: () => { persistence.saveSessionSoon(doc, sessionSettings); persistence.flush(); return persistence.written(); },
   importMap: async () => openImported(await importFromFile()),

@@ -55,12 +55,13 @@ function noiseOrigin(stroke: { origin: Vec2 } | null, at: Vec2): Vec2 | null {
 }
 
 /** One dab at `at`, with no spacing or rate checks of its own */
-function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | null, s: DabSettings, origin: Vec2 | null = null): void {
+/** False: the dab's tile holds as many of its kind as it may (decision 5.1): nothing laid, the player told by the caller. */
+function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | null, s: DabSettings, origin: Vec2 | null = null): boolean {
   if (s.mode === 'elements') {
     // Elements move no height: a dab lays instances (or takes them away).
     if (s.element.mode !== 'lay') {
       doc.removeElements(at.x, at.y, s.radius, s.element.mode === 'eraseKind' ? s.element.kind : null);
-      return;
+      return true;
     }
     const { kind, brush } = s.element;
     const reach = s.radius + brush.spacing * UNITS_PER_METER;
@@ -68,14 +69,13 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     const nearby = doc.elementsIn([at.x - reach, at.y - reach, at.x + reach, at.y + reach])
       .filter((e) => e.kind === kind && Math.abs(e.x - at.x) < reach && Math.abs(e.y - at.y) < reach);
     // By chance seeded by the document and the dab (`editStream.ts`), never `Math.random`.
-    doc.addElements(scatter(kind, brush, at.x, at.y, s.radius, UNITS_PER_METER, editRandom(doc, at.x, at.y), nearby));
-    return;
+    const laid = scatter(kind, brush, at.x, at.y, s.radius, UNITS_PER_METER, editRandom(doc, at.x, at.y), nearby);
+    return doc.addElements(laid) === laid.length;
   }
   if (s.mode === 'trees') {
     // Trees move no height: a dab plants a stand (or one tree), or cuts the trees away there - the woods' own too
     if (s.tree.mode === 'cut') {
-      doc.cutTrees(at.x, at.y, s.radius);
-      return;
+      return doc.cutTrees(at.x, at.y, s.radius);
     }
     const { kind, brush } = s.tree;
     const reach = s.radius + brush.spacing * UNITS_PER_METER;
@@ -84,43 +84,40 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
       .filter((t) => Math.abs(t.x - at.x) < reach && Math.abs(t.y - at.y) < reach);
     if (s.tree.mode === 'one') {
       const spacing = brush.spacing * UNITS_PER_METER;
-      if (nearby.every((t) => Math.hypot(t.x - at.x, t.y - at.y) >= spacing)) doc.plantTrees([oneTree(kind, brush, at.x, at.y, UNITS_PER_METER, editRandom(doc, at.x, at.y))]);
-      return;
+      if (nearby.every((t) => Math.hypot(t.x - at.x, t.y - at.y) >= spacing)) return doc.plantTrees([oneTree(kind, brush, at.x, at.y, UNITS_PER_METER, editRandom(doc, at.x, at.y))]) === 1;
+      return true;
     }
-    doc.plantTrees(plantTrees(kind, brush, at.x, at.y, s.radius, UNITS_PER_METER, editRandom(doc, at.x, at.y), nearby));
-    return;
+    const stand = plantTrees(kind, brush, at.x, at.y, s.radius, UNITS_PER_METER, editRandom(doc, at.x, at.y), nearby);
+    return doc.plantTrees(stand) === stand.length;
   }
   if (s.mode === 'gully') {
     // Gullies move no height the roads read: the relief the light reads is cut there (or wiped), `render/terrainRelief.ts`.
-    doc.addGullyDab({
+    return doc.addGullyDab({
       x: at.x, y: at.y, radius: s.radius,
       strength: Math.max(0.05, Math.min(1, s.gully.strength / 100)),
       ...(s.gully.erase ? { erase: true } : {}),
     });
-    return;
   }
   if (s.mode === 'fog') {
     // Fog moves no height either: a dab of mist laid, or taken away.
-    doc.addFogDab({
+    return doc.addFogDab({
       x: at.x, y: at.y, radius: s.radius,
       strength: Math.max(0.02, Math.min(1, s.fog.strength / 100)),
       height: s.fog.height * UNITS_PER_METER,
       speed: s.fog.speed * UNITS_PER_METER,
       ...(s.fog.erase ? { erase: true } : {}),
     });
-    return;
   }
   if (s.mode === 'paint') {
     // Painting moves no height: a dab of the chosen ground, nothing re-solved.
-    doc.addPaintDab({
+    return doc.addPaintDab({
       kind: s.paint, x: at.x, y: at.y, radius: s.radius,
       strength: Math.max(0.05, Math.min(1, s.strength / 80)),
     });
-    return;
   }
   const landform = s.landform;
   const mode: TerrainMode = landform ? landform.mode : s.mode as TerrainMode;
-  doc.addTerrainStamp({
+  const stamp = doc.addTerrainStamp({
     x: at.x,
     y: at.y,
     radius: s.radius,
@@ -133,7 +130,9 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
     ...(landform?.profile ? { profile: landform.profile } : {}),
   });
   // The landform's rock, under the whole dab: a little wider than the dab, so the rock reaches the foot of its cliff.
+  if (!stamp) return false;
   if (landform) doc.addPaintDab({ kind: landform.rock, x: at.x, y: at.y, radius: s.radius * 1.15, strength: 1 });
+  return true;
 }
 
 /** What the stroke reads of the game and does to it. */
@@ -148,6 +147,8 @@ export interface TerrainBrushHost {
   /** The document as it is, kept for undo, at the start of a stroke. */
   record(): void;
   redraw(): void;
+  /** A dab refused: its tile holds as many of its kind as it may (decision 5.1). */
+  refused?(): void;
 }
 
 /** A stroke being painted. */
@@ -208,7 +209,7 @@ export class TerrainBrush {
     if (!this.repeat || !stroke) return false;
     const { host } = this;
     if (now - stroke.applied >= host.interval(true)) {
-      stampTerrain(host.doc, stroke.at, stroke.level, stroke.id, host.settings(), noiseOrigin(stroke, stroke.at));
+      if (!stampTerrain(host.doc, stroke.at, stroke.level, stroke.id, host.settings(), noiseOrigin(stroke, stroke.at))) host.refused?.();
       stroke.applied = now;
       host.redraw();
     }
@@ -221,7 +222,7 @@ export class TerrainBrush {
     const stroke = this.stroke;
     const settings = host.settings();
     if (!stroke) {
-      stampTerrain(host.doc, at, host.heightAt(at), null, settings);
+      if (!stampTerrain(host.doc, at, host.heightAt(at), null, settings)) host.refused?.();
       host.redraw();
       return;
     }
@@ -241,7 +242,7 @@ export class TerrainBrush {
     for (let i = 1; i <= steps; i++) {
       const t = steps === 1 && force ? 1 : i / steps;
       const dab = { x: stroke.last.x + dx * t, y: stroke.last.y + dy * t };
-      stampTerrain(host.doc, dab, stroke.level, stroke.id, settings, noiseOrigin(stroke, dab));
+      if (!stampTerrain(host.doc, dab, stroke.level, stroke.id, settings, noiseOrigin(stroke, dab))) host.refused?.();
     }
     stroke.last = at;
     stroke.applied = now;
