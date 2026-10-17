@@ -332,7 +332,7 @@ export function tileOpTransfer(op: TileOp, value: unknown): ArrayBuffer[] {
 }
 
 /** Whether a call only writes what the page hands it (records with no sections, the world's values, keys taken away): run on the save's worker, which does nothing else. */
-const writesOnly = (op: TileOp): boolean =>
+export const writesOnly = (op: TileOp): boolean =>
   (op.op === 'write' && op.unbaked === true) || op.op === 'setMeta' || op.op === 'setMetaParts' || op.op === 'removeTiles' || op.op === 'migrate';
 
 /** The calls run in the job system's lanes: the page posts the call and is handed the answer. DO NOT read or bake on the save's worker (`port`): a tile prepared with its network, or its sections baked, held that worker's event loop for seconds, and every write's commit and the world's values' with it - a reload meanwhile lost the edit and the balance (conf28). The writes alone go there; every other call goes to `readPort`'s lanes, `readLanes` of them (the region's nine tiles read at the opening, not one after the other). */
