@@ -9,7 +9,7 @@ import type { SceneMaterials } from '@render/materials';
 import { marksRoadSection } from '@render/mesh/roadEdges';
 import { passLook, surfaceLook } from '@render/roadSurfaces';
 import { type FarRoadCache, type FarRoadMesh, bakeTileRoads, farRoadTones, runFarRoadJob, tileNetwork } from '@render/farRoadTiles';
-import type { FarTreeRun } from '@render/farTree';
+import type { FarTreeJob, FarTreeRun } from '@render/farTree';
 import { surfaceTexels } from '@render/mesh/textureBaker';
 import { CURB_BAND, Level } from '@world/roadTypes';
 import { TILE, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
@@ -249,6 +249,33 @@ describe('the far roads chosen top down', () => {
     const puts = cache.puts.length;
     await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
     expect(cache.puts.slice(puts).filter((key) => key.includes('n0:'))).toEqual([]);
+    roads.dispose();
+  });
+
+  it("draws a tile the page holds edited from the page's records, its bake asked before anything", async () => {
+    const cache = memoryCache();
+    const tiles = world();
+    const asked: FarTreeJob[] = [];
+    const run = runner(cache, kit);
+    const roads = new FarRoads(() => null, (job, done) => { asked.push(job); return run(job, done); }, 'test:', kit);
+    const edited = tileKey(0, 0);
+    let edit = 0;
+    roads.setSource({ ...storeOf(tiles), pageEdit: (key) => (key === edited ? edit : 0), pageRecords: (key) => (key === edited ? crossTile(0, 0, 2) : null) }, () => false);
+    for (const [key, records] of tiles) roads.stored(key, records.version);
+    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
+    const before = asked.filter((job) => job.near);
+    expect(before.length).toBeGreaterThan(0);
+    for (const job of before) expect(job.near!.edited).toBeUndefined();
+    // The player edits the tile: the store still has the old one.
+    edit = 1;
+    asked.length = 0;
+    await until(over, () => asked.some((job) => job.near && job.i === 0 && job.j === 0));
+    const own = asked.find((job) => job.near && job.i === 0 && job.j === 0)!;
+    expect(own.near!.edited).toBe(true);
+    expect(own.near!.records![0]!.version).toBe(2);
+    // A neighbour that reads the edited tile reads it from the page too, but is not the player's edit.
+    for (const job of asked) if (job.near && (job.i !== 0 || job.j !== 0)) expect(job.near.edited).toBeUndefined();
     roads.dispose();
   });
 

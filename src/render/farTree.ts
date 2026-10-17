@@ -67,6 +67,8 @@ export interface FarTreeJob {
     readonly variant: string;
     readonly shown: string | null;
     readonly records?: readonly (TileRecords | null)[];
+    /** The tile itself held edited by the page: what the player just did, baked before anything (`cellPool.ts` EDIT_TIER). */
+    readonly edited?: boolean;
   };
 }
 
@@ -554,20 +556,21 @@ export class FarTree<P> implements FarTiles {
     n.nearAsked = sig;
     // The edited tiles as the page holds them: drawn from the edit, not from its write.
     const edited = tiles.some((t) => t.edit) && this.source?.pageRecords ? tiles.map((t) => (t.edit ? this.source!.pageRecords!(t.key) : null)) : undefined;
-    this.submitNear(n, sig, bake, variant, tiles, edited);
+    this.submitNear(n, sig, bake, variant, tiles, edited, tiles[0]!.edit > 0);
   }
 
-  private submitNear(n: FarNode, sig: string, bake: string, variant: string, tiles: readonly { key: number; version: number }[], records?: readonly (TileRecords | null)[]): void {
+  private submitNear(n: FarNode, sig: string, bake: string, variant: string, tiles: readonly { key: number; version: number }[], records?: readonly (TileRecords | null)[], edited = false): void {
     const shown = n.near && n.near.variant === variant ? n.near.bake : null;
     const job: FarTreeJob = {
       node: nearKeyOf(n), k: -1, i: n.i, j: n.j, sig, want: true, prefix: this.keyPrefix,
-      near: { tiles: tiles.map((t) => ({ key: t.key, version: t.version })), bake, variant, shown, ...(records ? { records } : {}) },
+      near: { tiles: tiles.map((t) => ({ key: t.key, version: t.version })), bake, variant, shown, ...(records ? { records } : {}), ...(edited ? { edited } : {}) },
       ...(this.source?.workersRead ? { store: this.source.workersRead } : {}),
     };
-    n.nearCancel = this.run(job, (reply) => this.answerNear(n, reply, { bake, variant, tiles, shown }));
+    n.nearCancel = this.run(job, (reply) => this.answerNear(n, reply, { bake, variant, tiles, shown, records, edited }));
   }
 
-  private answerNear(n: FarNode, reply: FarTreeReply<P>, asked: { readonly bake: string; readonly variant: string; readonly tiles: readonly { key: number; version: number }[]; readonly shown: string | null }): void {
+  private answerNear(n: FarNode, reply: FarTreeReply<P>, asked: { readonly bake: string; readonly variant: string; readonly tiles: readonly { key: number; version: number }[]; readonly shown: string | null;
+    readonly records: readonly (TileRecords | null)[] | undefined; readonly edited: boolean }): void {
     if (this.nodes.get(n.key) !== n || reply.sig !== n.nearAsked) return;
     n.nearCancel = null;
     switch (reply.kind) {
@@ -575,7 +578,8 @@ export class FarTree<P> implements FarTiles {
         // Built on the version drawn when asked: that version must still be the one drawn, else asked again whole.
         const base = reply.payload !== null ? this.kind.near!.baseOf(reply.payload) : null;
         if (base !== null && (!n.near || n.near.bake !== base || n.near.variant !== asked.variant)) {
-          this.submitNear(n, reply.sig, asked.bake, asked.variant, asked.tiles);
+          // DO NOT drop the page's records asking again: the store's older tile would be baked under the edit's version, the edit never drawn.
+          this.submitNear(n, reply.sig, asked.bake, asked.variant, asked.tiles, asked.records, asked.edited);
           return;
         }
         // Still asked while it goes to the GPU (`landNear`): DO NOT ask it again every frame meanwhile.
@@ -588,7 +592,7 @@ export class FarTree<P> implements FarTiles {
         if (!source) { n.nearAsked = null; break; }
         const sig = reply.sig;
         void Promise.all(asked.tiles.map((t) => source.records(t.key).then((r) => r ?? emptyRecords(t.key, t.version)))).then((records) => {
-          if (this.nodes.get(n.key) === n && n.nearAsked === sig) this.submitNear(n, sig, asked.bake, asked.variant, asked.tiles, records);
+          if (this.nodes.get(n.key) === n && n.nearAsked === sig) this.submitNear(n, sig, asked.bake, asked.variant, asked.tiles, records, asked.edited);
         }, (error: unknown) => {
           if (this.nodes.get(n.key) === n && n.nearAsked === sig) { n.nearAsked = null; n.nearFailed = sig; }
           if (!this.warned) { this.warned = true; console.warn(`[${this.kind.name}] a tile could not be read from the store`, error); }
