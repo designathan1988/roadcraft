@@ -87,4 +87,31 @@ describe('a city saved to a file', () => {
     expect(await saveWorldFile({ streamer: { flush: async () => true, readOnly: false }, store: from }, keys, offer)).toBe('hint.saved');
     expect(offered).toHaveLength(1);
   });
+
+  it('opened into a store: each tile above the version stored, the tiles of the map it lacks taken away, the values last', async () => {
+    const blobs = memoryStore();
+    const store = new TileStore('map', storeTiles(blobs), never);
+    // The store holds an older world: (0,0) at a high version, (2,2) the file does not have.
+    for (let k = 0; k < 4; k++) await store.write(tile(0, 0));
+    await store.write(tile(2, 2));
+    const before = (await store.read(tileKey(0, 0)))!.version;
+    const meta: WorldMeta = { version: 1, generator: { seed: 4, style: 'mixed', centres: 3, density: 0.5, parks: 0.05, industry: true }, unit: 1, values: {} };
+    const fresh = new TileStore('map', storeTiles(blobs), never);
+    expect(await fresh.importWorld(meta, [{ ...tile(0, 0), version: 1 }], [tileKey(0, 0), tileKey(2, 2), tileKey(3, 3)])).toBe(true);
+    expect((await fresh.read(tileKey(0, 0)))!.version).toBeGreaterThan(before);
+    expect(await fresh.read(tileKey(2, 2))).toBeNull();
+    expect((await fresh.meta())?.generator).toEqual(meta.generator);
+  });
+
+  it('refuses a file of another plan of the map: its tiles would be another city', async () => {
+    const from = new TileStore('map', storeTiles(memoryStore()), never);
+    await from.write(tile(0, 0));
+    await from.setMeta({ version: 1, generator: { seed: 4, style: 'mixed', centres: 3, density: 0.5, parks: 0.05, industry: true }, unit: 1, values: {} });
+    const file = JSON.parse(await new Blob(await worldFilePieces((await from.meta())!, [tileKey(0, 0)], (key) => from.readText(key))).text()) as { plan: { plan: number } };
+    expect(readWorldFile(file)).not.toBeNull();
+    file.plan.plan -= 1;
+    expect(readWorldFile(file)).toBeNull();
+    delete (file as { plan?: unknown }).plan;
+    expect(readWorldFile(file)).toBeNull();
+  });
 });

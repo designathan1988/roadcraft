@@ -53,6 +53,8 @@ export type TileOp =
   /** Some of the world's parts (`RoadDoc.worldPart`), each under a key of its own: read back over the world's values (`readMeta`). */
   | { readonly op: 'setMetaParts'; readonly map: string; readonly parts: Readonly<Partial<Record<WorldPart, Partial<SerializedDoc>>>> }
   | { readonly op: 'migrate'; readonly map: string; readonly local: string | null }
+  /** Stored tiles taken away (a world file opened lacks them): made again when asked. */
+  | { readonly op: 'removeTiles'; readonly map: string; readonly keys: readonly number[] }
   /** A stored tile's lists emptied (a "whole map" clear, `TileStore.clearLists`), its version past `after`: the version it stands at and whether it was written, null when none is stored or the write failed. */
   | { readonly op: 'clearLists'; readonly map: string; readonly key: number; readonly parts: readonly ClearablePart[]; readonly after: number };
 
@@ -283,6 +285,7 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
     case 'setMetaParts': return writer.write({
       put: (Object.entries(op.parts) as [WorldPart, Partial<SerializedDoc>][]).map(([part, value]) => ({ key: metaPartKey(op.map, part), value, packed: false })), remove: [] });
     case 'migrate': return migrate(store, op.map, op.local);
+    case 'removeTiles': return writer.write({ put: [], remove: op.keys.map((key) => tileBlobKey(op.map, key)) });
     case 'clearLists': {
       // Read, emptied and written where the store is: DO NOT bring the tile's buildings to the page for it.
       const records = await readTile(store, op.map, op.key);
@@ -448,6 +451,32 @@ export class TileStore {
     return this.chained(records.key, async () => {
       const stamped = this.stamped(records);
       return (await this.put(tileWrite(stamped))) ? stamped.version : null;
+    });
+  }
+
+  /** A world file opened (`main.ts` openStreamedWorld): its tiles in place of the stored ones, each written above the version stored (what was baked of the old tile not taken for it); every tile of the map the file lacks taken away, to be made again above it too; the values last (their key says the world is stored). False when any of it was not written. */
+  async importWorld(meta: WorldMeta, tiles: readonly TileRecords[], mapKeys: Iterable<number>): Promise<boolean> {
+    const given = new Set(tiles.map((t) => t.key));
+    const gone: number[] = [];
+    for (const key of mapKeys) {
+      if (given.has(key)) continue;
+      const known = await this.knownVersion(key);
+      if (known !== null) gone.push(key);
+    }
+    if (gone.length && (await this.backend.run({ op: 'removeTiles', map: this.map, keys: gone })) !== true) return false;
+    for (const tile of tiles) {
+      await this.knownVersion(tile.key);
+      if ((await this.write(tile)) === null) return false;
+    }
+    return this.setMeta(meta);
+  }
+
+  /** The version the store holds a tile at (null: none), kept as the least the next write of it goes past. */
+  private knownVersion(key: number): Promise<number | null> {
+    return this.chained(key, async () => {
+      const known = (await this.backend.run({ op: 'version', map: this.map, key })) as number | null;
+      if (known !== null) this.versions.set(key, Math.max(this.versions.get(key) ?? 0, known));
+      return known;
     });
   }
 
