@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import { createDecayWatch } from '@world/buildings/decayWatch';
-import { DECAY_GRACE, DECAY_SPAN, type Building, type BuildingId } from '@world/buildings/types';
+import { DECAY_GRACE, DECAY_SPAN, type Building, type BuildingId, generatedBuiltAt } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 
@@ -45,5 +45,32 @@ describe("the buildings' decay", () => {
     };
     expect(work(50)).toBe(1);
     expect(work(800)).toBe(1);
+  });
+});
+
+describe('a generated city ageing', () => {
+  it('spreads its buildings over one tenth of the ageing, the same for the same id: a look wears a few, never the whole city at once', () => {
+    const doc = new RoadDoc();
+    const ids: BuildingId[] = [];
+    for (let i = 0; i < 400; i++) {
+      const id = 2 ** 31 + 7919 * i;
+      expect(generatedBuiltAt(id)).toBe(generatedBuiltAt(id));
+      const b = doc.buildings.add(house(i, generatedBuiltAt(id)));
+      ids.push(b.id);
+    }
+    const stamps = new Set(ids.map((id) => doc.buildings.get(id)!.builtAt));
+    expect(stamps.size).toBeGreaterThan(350);
+    for (const t of stamps) { expect(t).toBeGreaterThanOrEqual(0); expect(t).toBeLessThan(DECAY_SPAN / 10); }
+    const { look, worn } = watched(doc);
+    // Looks every city hour past the grace: the first tenth reached a few at a time, every building once.
+    let most = 0, seen = 0;
+    for (let now = 0; now <= DECAY_GRACE + DECAY_SPAN / 10 + 1440 * 4; now += 60) {
+      const before = worn.length;
+      look(now);
+      most = Math.max(most, worn.length - before);
+      seen = worn.length;
+    }
+    expect(seen).toBeGreaterThanOrEqual(400);
+    expect(most).toBeLessThan(40);
   });
 });

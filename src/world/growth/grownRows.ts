@@ -1,6 +1,7 @@
 import type { Lot } from '@world/lots';
 import type { TileRecords } from '@world/doc';
 import type { GrownRows } from './rows';
+import { generatedBuiltAt } from '../buildings/types';
 import { type GrownChoice, LOT_PLAN_VERSION, replayOnLot } from './zoning';
 
 /** A TILE'S GROWN BUILDINGS PACKED AND MADE AGAIN (`rows.ts`): the generator packs what it grew (`packGrown`), every reader of a tile's buildings takes them made again from their lots (`tileBuildingsOf`) - the page's document, the far levels, the simulation's sections - and nothing holds the records of a tile it does not read */
@@ -59,7 +60,7 @@ export function grownRecords(rows: GrownRows | undefined, lots: readonly Lot[]):
       const lot = lotOf.get(rows.lot[k]!);
       const record = lot ? replayOnLot(lot, choiceOf(rows, k), FLAT) : null;
       if (!record) { lost++; continue; }
-      out.push({ ...record, id: rows.id[k]!, builtAt: 0, decay: 0, lotPlan: rows.version });
+      out.push({ ...record, id: rows.id[k]!, builtAt: generatedBuiltAt(rows.id[k]!), decay: 0, lotPlan: rows.version });
     }
   }
   if (lost && !warned) {

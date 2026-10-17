@@ -429,6 +429,13 @@ export const DECAY_GRACE = 5 * 1440;
 /** City minutes from the first stains to falling apart, without maintenance: thirty days. */
 export const DECAY_SPAN = 30 * 1440;
 
+/** DO NOT stamp every generated building at the same minute: the whole city would age at once (a diary entry and a tile write for every building, the same minute). Spread over one tenth of the ageing (`decayOf` steps in tenths), a pure function of the building's id so a building made again from its row (`growth/grownRows.ts`) gets the same. */
+export function generatedBuiltAt(id: number): number {
+  let h = Math.imul(id ^ 0x9e3779b9, 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) % (DECAY_SPAN / 10);
+}
+
 /** How run-down a building built at `builtAt` is at `now`, in tenths. */
 export function decayOf(builtAt: number | undefined, now: number): number {
   if (builtAt === undefined || !Number.isFinite(now)) return 0;
