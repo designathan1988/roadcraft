@@ -16,11 +16,10 @@ export const DRAW_TRIANGLES = 16384;
 /** A sub-cell's index in Morton order from its column and row in the cell. */
 export const morton = (u: number, v: number): number => (u & 1) | ((v & 1) << 1) | ((u & 2) << 1) | ((v & 2) << 2);
 
-/** What filing a kind reads of its screen (`kit.ts` `PartScreen`), sent with each job (`kitBoxes`): its first coarser level's error, its box, whether it is a shell's part, its finest level's triangles. */
+/** What filing a kind reads of its screen (`kit.ts` `PartScreen`), sent with each job (`kitBoxes`): its first coarser level's error, its box, its finest level's triangles. */
 export interface PartBanding {
   readonly first: Axes | null;
   readonly extent: Axes;
-  readonly whole: boolean;
   readonly triangles: number;
 }
 export type PartBandings = Readonly<Record<PartKind, PartBanding>>;
@@ -29,7 +28,7 @@ export type PartBandings = Readonly<Record<PartKind, PartBanding>>;
 export function partBandings(screens: Readonly<Record<PartKind, PartScreen>>): PartBandings {
   return Object.fromEntries(PART_KINDS.map((kind) => {
     const s = screens[kind];
-    return [kind, { first: s.levels.length > 1 ? s.levels[1]!.error : null, extent: s.extent, whole: s.whole === true, triangles: s.levels[0]!.triangles }];
+    return [kind, { first: s.levels.length > 1 ? s.levels[1]!.error : null, extent: s.extent, triangles: s.levels[0]!.triangles }];
   })) as Record<PartKind, PartBanding>;
 }
 
@@ -66,7 +65,7 @@ function bandOf(metres: number): number {
 /** `details`: the cell's sub-cells (`DETAIL_CELL`) as the job made them, by key "column,row"; every kind's instances by band, each laid out by sub-cell in Morton order, with each sub-cell's box and largest scales */
 // DO NOT give a kind one buffer whatever its instances' shapes: a frame is also a gourmet balcony's post (1 m deep), and the
 // largest scale over a sub-cell held every window at full detail; instances are banded by their error, each band its own buffer.
-// A shell's part (`whole`) is one band: one level, drawn and casting at any size, so its bands only added draws.
+// A shell's part is banded by its size as any: its small ones left out under a pixel (`partCells.ts` `levelAt`).
 export function fileParts(key: string, details: readonly (readonly [string, CellArrays])[], bandings: PartBandings): PartFiling {
   const comma = key.indexOf(',');
   const ci = Number(key.slice(0, comma)), cj = Number(key.slice(comma + 1));
@@ -103,8 +102,8 @@ function fileKind(kind: PartKind, slots: readonly (CellArrays | undefined)[], sc
       // The model's axes as the instance scales them: its pose's scale.
       const sx = e[o + 5]!, sy = e[o + 6]!, sz = e[o + 7]!;
       const metres = first ? Math.max(first[0] * sx, first[1] * sy, first[2] * sz) : Math.sqrt((screen.extent[0] * sx) ** 2 + (screen.extent[1] * sy) ** 2 + (screen.extent[2] * sz) ** 2);
-      // A shell's part is drawn whatever its size (`partCells.ts` `levelAt`): every instance in one band, one draw a cell.
-      const b = screen.whole ? 0 : bandOf(metres);
+      // A shell's part too, by its size: its small ones a band of their own, left out under a pixel (`partCells.ts` `levelAt`).
+      const b = bandOf(metres);
       bands[i] = b;
       only = only === -2 || only === b ? b : -1;
       if (b !== lastBand || !into) {

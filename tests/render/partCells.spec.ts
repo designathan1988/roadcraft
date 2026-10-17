@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { type BufferGeometry, DataUtils, InstancedMesh, type InterleavedBufferAttribute } from 'three';
 import { type BuildingChunk, emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
 import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
-import { PART_KINDS, type PartKind, createBuildingKit } from '@render/buildings/kit';
+import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
 import { PartCell, type PartView } from '@render/buildings/partCells';
 import { SHELL_PART_KINDS } from '@render/buildings/shellParts';
@@ -33,18 +33,6 @@ function frames(shapes: readonly (readonly [number, number, number, number])[], 
 
 const arrays = (part: NonNullable<CellArrays['parts']['frame']>): CellArrays => ({ shells: [], parts: { frame: part }, furniture: {} });
 const view = (x: number, y: number, z: number, shadowTexel = Infinity): PartView => ({ x, y, z, pxAtMetre: 1000, orthoPx: null, shadowTexel });
-/** A band's widest piece as `PartCell.choose` measures it: each piece's middle side at the largest scale of the instances. */
-function widest(kind: PartKind, sources: readonly { readonly poses: Float32Array; readonly count: number }[]): number {
-  const scale = [0, 0, 0];
-  for (const p of sources) for (let i = 0; i < p.count; i++) for (let k = 0; k < 3; k++) scale[k] = Math.max(scale[k]!, p.poses[i * POSE_FLOATS + 5 + k]!);
-  let width = 0;
-  for (const piece of kit.screen[kind].pieces) {
-    const x = piece[0] * scale[0]!, y = piece[1] * scale[1]!, z = piece[2] * scale[2]!;
-    width = Math.max(width, Math.max(Math.min(x, y), Math.min(Math.max(x, y), z)));
-  }
-  return width;
-}
-
 /** The level a mesh draws: its posed copy shares the level's model (`partPose.ts` `posedCopy`). */
 const levelOf = (levels: readonly { readonly geometry: BufferGeometry }[], mesh: InstancedMesh): number =>
   levels.findIndex((l) => l.geometry.getAttribute('position') === mesh.geometry.getAttribute('position'));
@@ -159,7 +147,7 @@ describe("the shell's parts of a grown town's cells", () => {
   const detailParts = PART_KINDS.filter((p) => DETAIL_PARTS.has(p));
 
   for (const far of [false, true]) {
-    it(`draw each kind in one mesh a cell with every instance, near, far, under a pixel and into any cascade (${far ? 'facade level' : 'detail'})`, () => {
+    it(`draw every instance of each kind that spans a pixel, none twice, and leave out those under one (${far ? 'facade level' : 'detail'})`, () => {
       // The town by cell, then by sub-cell, as the workers file it (`cellWork.ts`).
       const byCell = new Map<string, Map<string, BuildingChunk[]>>();
       for (const b of town) {
@@ -171,43 +159,52 @@ describe("the shell's parts of a grown town's cells", () => {
         if (list) list.push(chunk);
         else subs.set(sub, [chunk]);
       }
-      let seen = 0;
+      let seen = 0, left = 0;
       for (const [key, subs] of byCell) {
         const details = [...subs].map(([sub, chunks]) => [sub, cellArrays(chunks, { parts: detailParts, shells: false, furniture: false, ghost: false, dim: false }, boxes)] as const);
         const cell = new PartCell(key, fileParts(key, details, partBandings(kit.screen)), kit);
         const comma = key.indexOf(',');
         const cx = (Number(key.slice(0, comma)) + 0.5) * BATCH_CELL, cy = (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL;
-        // Over the cell, beside it with shadows, far off, and from above at a tiny scale where every other part is under a pixel.
+        // Over the cell, beside it with shadows, far off, and from above at a tiny scale where every lot part is under a pixel.
         const eyes: PartView[] = [view(cx, cy, 2), view(cx + 300, cy, 50, 0.1), view(cx + 3000, cy + 3000, 400, 2), { ...view(cx, cy, 500), orthoPx: 0.02 }];
         for (const eye of eyes) {
           cell.choose(eye);
-          // As a frame casts into the eye's cascade (`castInto`): the coarse cascades cast into before left their own choice.
           cell.castInto(eye.shadowTexel);
           for (const kind of SHELL_PART_KINDS) {
             const sources = details.flatMap(([, a]) => { const p = a.parts[kind]; return p ? [p] : []; });
-            const total = sources.reduce((n, p) => n + p.count, 0);
             const meshes = drawn(cell).filter((mesh) => mesh.name === `building-${kind}`);
-            if (total === 0) { expect(meshes, `${key} ${kind}`).toHaveLength(0); continue; }
-            seen++;
-            expect(meshes, `${key} ${kind}`).toHaveLength(1);
-            const mesh = meshes[0]!;
-            expect(mesh.count).toBe(total);
-            // Into a cascade whose texel its widest piece spans (`choose`): a shell's part's rail out of the coarse ones.
-            expect(mesh.castShadow).toBe(Number.isFinite(eye.shadowTexel) && widest(kind, sources) >= eye.shadowTexel);
-            // The same instances as the sub-cells sent, every one.
-            const attribute = mesh.geometry.getAttribute('instancePoseA') as InterleavedBufferAttribute;
-            const got = places([{ array: attribute.data.array, stride: attribute.data.stride, offset: attribute.offset, count: mesh.count }]);
-            expect(got).toEqual(places(sources.map((p) => ({ array: p.poses, stride: POSE_FLOATS, offset: 0, count: p.count }))));
+            const got = places(meshes.map((mesh) => {
+              const attribute = mesh.geometry.getAttribute('instancePoseA') as InterleavedBufferAttribute;
+              return { array: attribute.data.array, stride: attribute.data.stride, offset: attribute.offset, count: mesh.count };
+            }));
+            // None drawn twice, none but the sub-cells sent.
+            expect(new Set(got).size, `${key} ${kind}`).toBe(got.length);
+            const all = places(sources.map((p) => ({ array: p.poses, stride: POSE_FLOATS, offset: 0, count: p.count })));
+            const known = new Set(all);
+            for (const place of got) expect(known.has(place), `${key} ${kind}`).toBe(true);
+            // Every instance a pixel or more across its diagonal where it stands is drawn (`levelAt`).
+            const extent = kit.screen[kind].extent, drawnAt = new Set(got);
+            for (const p of sources) {
+              for (let i = 0; i < p.count; i++) {
+                const o = i * POSE_FLOATS, e = p.poses;
+                const across = Math.hypot(extent[0] * e[o + 5]!, extent[1] * e[o + 6]!, extent[2] * e[o + 7]!);
+                const perMetre = eye.orthoPx ?? eye.pxAtMetre / Math.max(Math.hypot(e[o]! - eye.x, -e[o + 2]! - eye.y, e[o + 1]! - eye.z), 1);
+                const at = [0, 1, 2].map((k) => e[o + k]!.toFixed(4)).join(' ');
+                if (across * perMetre >= 1) expect(drawnAt.has(at), `${key} ${kind} ${at}`).toBe(true);
+                else if (!drawnAt.has(at)) left++;
+                seen++;
+              }
+            }
           }
-          // Into the finest cascade a shell's part casts; into one whose texel is wider than its widest piece it does not (drawn all the same).
-          for (const [texel, casts] of [[0.05, true], [1e6, false]] as const) {
-            cell.castInto(texel);
-            for (const mesh of drawn(cell)) if ((SHELL_PART_KINDS as readonly string[]).includes(mesh.name.slice('building-'.length))) expect(mesh.castShadow).toBe(casts);
-          }
+          // Into no cascade whose texel is wider than its widest piece.
+          cell.castInto(1e6);
+          for (const mesh of drawn(cell)) if ((SHELL_PART_KINDS as readonly string[]).includes(mesh.name.slice('building-'.length))) expect(mesh.castShadow).toBe(false);
         }
         cell.dispose();
       }
       expect(seen).toBeGreaterThan(0);
+      // Some left out: those under a pixel.
+      expect(left).toBeGreaterThan(0);
     });
   }
 });
