@@ -10,6 +10,7 @@ import { planTrip } from '../drive/tactical';
 import { makeDriver } from '../vehicles/driver';
 import { createVehicle, snapshot, type Vehicle, type VehicleId } from '../vehicles/state';
 import { planFrom } from '../routing/router';
+import { vehiclePose } from '../pose';
 import { LANE_BESIDE_REACH, laneBeside, laneChangesSince, lanesInBox } from '../agents/parking';
 import type { BayLane } from '../agents/parking';
 
@@ -40,6 +41,17 @@ const CROSSING_WARN = m(160);
 const NONE: number[] = [];
 /** Cars of a train, length of one. */
 const TRAIN_CARS = 4, METRO_CARS = 3, CAR_LENGTH = m(18);
+
+/** How far past the view's reach a bus on the road is taken off it (`stepBus`): off and on again at the edge would be seen. */
+const AWAY_MARGIN = m(200);
+/** Streets driven over as the crow flies, times this; and the share of the limit a bus keeps between stops. */
+const DETOUR = 1.3;
+const BUS_PACE = 0.6;
+
+/** Seconds a bus takes between two points `distance` apart, on streets of `limit`. */
+function travelTime(distance: number, limit: number): number {
+  return (distance * DETOUR) / Math.max(m(2), limit * BUS_PACE);
+}
 
 interface Bus {
   readonly line: number;
@@ -296,9 +308,12 @@ export class TransitSim {
     if (!line) return;
     const v = bus.id !== null ? w.vehicles.get(bus.id) : undefined;
     if (!v) {
-      // Not on the road (not yet, or taken off it): put on at the stop it was going to, in its time.
+      // Not on the road (not yet, taken off it, or away from the view): put on at the stop it was going to, in its time.
       bus.wait -= DT;
       if (bus.wait > 0) return;
+      // DO NOT drive a bus on the lanes where nobody looks: its line's timetable moves it there (the meso's world), stop to stop, and it is put on the road at a stop within the view.
+      const stop = this.stopPoint(w, line.stops[bus.next]!);
+      if (stop && !w.inFocusReach(stop.x, stop.y)) { this.passStopAway(w, line, bus, stop); return; }
       bus.id = this.spawnBus(w, line, bus);
       // Somebody at the wheel (the residents who drove the buses are kept apart).
       const v2 = bus.id !== null ? w.vehicles.get(bus.id) : undefined;
@@ -308,6 +323,17 @@ export class TransitSim {
     }
     const c = v.commute;
     if (!c) { this.sendBus(w, line, bus, v); return; }
+    // Driven out of the view's reach (past a margin, between stops, its doors shut): taken off the road, on by the timetable to the stop it was going to.
+    if (bus.dwell === 0 && !v.kerbStop && v.doors.every((open) => open === 0)) {
+      const pose = vehiclePose(w, v, 1);
+      const goal = this.stopPoint(w, line.stops[bus.next]!);
+      if (pose && goal && !w.inFocusReach(pose.p.x, pose.p.y, AWAY_MARGIN)) {
+        w.removeVehicle(v);
+        bus.id = null;
+        bus.wait = travelTime(Math.hypot(goal.x - pose.p.x, goal.y - pose.p.y), goal.speed);
+        return;
+      }
+    }
     const at = v.lanelet === c.lanelet && v.v < STOPPED && v.s >= c.at - AT_STOP;
     if (!at) return;
     // At the stop, doors open.
@@ -320,6 +346,24 @@ export class TransitSim {
     if (bus.next + bus.dir < 0 || bus.next + bus.dir >= line.stops.length) bus.dir = bus.dir === 1 ? -1 : 1;
     bus.next += bus.dir;
     this.sendBus(w, line, bus, v);
+  }
+
+  /** Where a stop's bus stands (the point of its lane beside it) and the lane's speed; null when it has no lane. */
+  private stopPoint(w: SimWorld, stopId: number): { x: number; y: number; speed: number } | null {
+    const lane = this.stopLanes.get(stopId);
+    const l = lane ? w.lanelet(lane.lanelet) : undefined;
+    if (!lane || !l) return null;
+    const p = l.centre.sampleAt(Math.min(l.length, Math.max(0, lane.at))).p;
+    return { x: p.x, y: p.y, speed: l.speedLimit };
+  }
+
+  /** A bus away from the view at its stop by the timetable: its dwell there, on to the next stop (turning at the ends), and the time to drive there. */
+  private passStopAway(w: SimWorld, line: TransitLine, bus: Bus, here: { x: number; y: number; speed: number }): void {
+    const terminal = this.stops.get(line.stops[bus.next]!)?.terminal || bus.next === 0 || bus.next === line.stops.length - 1;
+    if (bus.next + bus.dir < 0 || bus.next + bus.dir >= line.stops.length) bus.dir = bus.dir === 1 ? -1 : 1;
+    bus.next += bus.dir;
+    const next = this.stopPoint(w, line.stops[bus.next]!);
+    bus.wait = (terminal ? TERMINAL_DWELL : BUS_DWELL) + (next ? travelTime(Math.hypot(next.x - here.x, next.y - here.y), next.speed) : BUS_SPACING);
   }
 
   /** A bus driven on to its next stop: the lane beside it as where it stops. */

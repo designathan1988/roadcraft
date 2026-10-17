@@ -1,4 +1,4 @@
-import type { NodeId } from '@world/ids';
+import type { NodeId, SegmentId } from '@world/ids';
 import type { Connector, JunctionTopology } from '@world/lanelets';
 import { CONVOY_ROLLING, CRITICAL_GAP, CRITICAL_GAP_FLOOR, IMPATIENCE_MAX, IMPATIENCE_RATE, JAM_GAP, REQUEST_MIN_DISTANCE, REQUEST_TIME, WAIT_CEILING } from '../params';
 import type { SimWorld } from '../world';
@@ -989,11 +989,22 @@ function stoppedForWalker(v: Vehicle, toLine: number): boolean {
 
 /** True when a pedestrian is on, or about to step onto, the stretch of a zebra this movement drives over (`CrossingSpans`). */
 function crossingBusy(w: SimWorld, conn: Connector): boolean {
-  for (const segment of w.doc.node(conn.node)?.incident ?? []) {
-    if (pedestrianInSpan(w, conn.id, `${conn.node}:${segment}`)) return true;
+  for (const leg of crossingLegs(w, conn.node)) {
+    if (pedestrianInSpan(w, conn.id, leg.id)) return true;
   }
   return false;
 }
+
+/** DO NOT spell a crossing's id (`node:segment`) per request per tick: a junction's, in the order of its legs, made once per node record (records are replaced, never edited). */
+const CROSSINGS_AT = new WeakMap<object, readonly { readonly segment: SegmentId; readonly id: string }[]>();
+function crossingLegs(w: SimWorld, node: NodeId): readonly { readonly segment: SegmentId; readonly id: string }[] {
+  const record = w.doc.node(node);
+  if (!record) return NO_LEGS;
+  let legs = CROSSINGS_AT.get(record);
+  if (!legs) CROSSINGS_AT.set(record, legs = record.incident.map((segment) => ({ segment, id: `${node}:${segment}` })));
+  return legs;
+}
+const NO_LEGS: readonly { readonly segment: SegmentId; readonly id: string }[] = [];
 
 /** Allowance over the estimated time for a front to reach a zebra it turns across. */
 const CLEAR_MARGIN = 1.2;
@@ -1014,8 +1025,8 @@ function crossingReachedFirst(w: SimWorld, r: Request): boolean {
   const lane = w.lanelet(r.conn.lanelet);
   if (!lane) return false;
   let top = 0;
-  for (const segment of w.doc.node(r.conn.node)?.incident ?? []) {
-    const crossing = `${r.conn.node}:${segment}`;
+  for (const leg of crossingLegs(w, r.conn.node)) {
+    const crossing = leg.id;
     const occupants = w.crossingStates.get(crossing)?.occupants;
     if (!occupants?.length) continue;
     const span = w.crossingSpans.span(r.conn.id, crossing);
@@ -1064,8 +1075,7 @@ function pedestrianHasPriority(w: SimWorld, r: Request): boolean {
   if (!canStopComfortably(r.v.driver, r.v.v, r.d)) return false;
   const controller = w.controller(r.conn.node);
   const signalised = !!controller && !!w.graph.junctions.get(r.conn.node)?.signalised;
-  for (const segment of w.doc.node(r.conn.node)?.incident ?? []) {
-    const id = `${r.conn.node}:${segment}`;
+  for (const { segment, id } of crossingLegs(w, r.conn.node)) {
     const state = w.crossingStates.get(id);
     if (!state || (state.waitingFrom === 0 && state.waitingTo === 0)) continue;
     // A car standing on the zebra itself is what keeps them at the kerb (nobody steps off with a body on it)

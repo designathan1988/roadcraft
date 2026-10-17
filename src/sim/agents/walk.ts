@@ -9,7 +9,7 @@ import { DT, PED } from '../params';
 import { newPose, vehiclePoseNowInto } from '../pose';
 import type { SimWorld } from '../world';
 import type { AuditIssue } from '../audit';
-import { emptyCrossingState } from '../crossings/state';
+import { type CrossingState, emptyCrossingState } from '../crossings/state';
 import { indexReservations, mayEnterCrossing } from '../crossings/permission';
 import { makeCrossingId, type CrossingId } from '../signals/plan';
 import type { SidewalkEdge } from '../peds/sidewalk';
@@ -371,6 +371,8 @@ interface State {
   /** The walkers by cell for the cars' questions */
   near: WalkerGrid;
   nearAt: number;
+  /** Each crossing's state of the last tick (`publish`), taken back if it has somebody again. */
+  crossingPool: Map<CrossingId, CrossingState>;
   /** The fastest vehicle's speed for `gapOpen`, read once a tick when somebody first asks. */
   trafficAt: number;
   fastest: number;
@@ -459,7 +461,7 @@ function stateOf(w: SimWorld): State {
   let s = STATES.get(w);
   if (!s) {
     s = { graph: null, graphState: null, wayIndex: new Map(), walkers: [], byId: new Map(), arrivals: [], onCarWay: new Map(),
-      shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, trafficAt: -1, fastest: 0,
+      shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, crossingPool: new Map(), trafficAt: -1, fastest: 0,
       grid: new WalkerGrid(), parked: new ParkedZoneIndex(), parties: new Map() };
     STATES.set(w, s);
   }
@@ -1854,6 +1856,9 @@ function stepWalkers(w: SimWorld): void {
 
 function publish(w: SimWorld): void {
   const s = stateOf(w);
+  // Last tick's states kept to be taken back: only those, never every crossing ever walked.
+  s.crossingPool.clear();
+  for (const [id, state] of w.crossingStates) s.crossingPool.set(id, state);
   w.crossingStates.clear();
   const views = w.pedViews;
   const byId = w.pedViewById;
@@ -1869,7 +1874,14 @@ function publish(w: SimWorld): void {
     const edge = report?.edge;
     if (report && edge) {
       let state = w.crossingStates.get(report.id);
-      if (!state) { state = emptyCrossingState(edge.length); w.crossingStates.set(report.id, state); w.signalAtCrossing(report.id); }
+      if (!state) {
+        // DO NOT make a crossing's state a tick: the one of the last tick taken back, emptied.
+        state = s.crossingPool.get(report.id);
+        if (!state || state.length !== edge.length) s.crossingPool.set(report.id, state = emptyCrossingState(edge.length));
+        else { state.occupants.length = 0; state.waitingFrom = 0; state.waitingTo = 0; state.demand = false; state.longestWait = 0; }
+        w.crossingStates.set(report.id, state);
+        w.signalAtCrossing(report.id);
+      }
       const hit = edge.path.closestPoint({ x: p.x, y: p.y });
       if (on) {
         const t = edge.path.sampleAt(hit.s).t;

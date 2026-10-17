@@ -698,6 +698,14 @@ export class SimWorld {
     if (this.conflicts.setWindow(this.graph, next)) this.claims.dropMissing(this.conflicts);
   }
 
+  /** Whether a point lies within the micro window's reach round the view (`keepMicroWindow`'s focus square), grown by `pad`; true with no window or no view (everything is micro then). */
+  inFocusReach(x: number, y: number, pad = 0): boolean {
+    const focus = this.focus;
+    if (!this.microWindow || !focus) return true;
+    const r = Math.min(FOCUS_WINDOW, Math.max(focus.r * 1.35, m(200)) * 1.15 + m(100)) + pad;
+    return Math.abs(x - focus.x) <= r && Math.abs(y - focus.y) <= r;
+  }
+
   /** Whether a window move is asked for. */
   get windowMoving(): boolean {
     return this.windowWanted !== null;
