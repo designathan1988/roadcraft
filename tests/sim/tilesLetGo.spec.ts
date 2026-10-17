@@ -13,7 +13,7 @@ const town = JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')
 /** The structures a tile fills, by name: what is read of the worker. */
 type Inside = { net: Record<string, unknown> & { segmentCells: unknown; junctionCells: unknown }; sim: Record<string, unknown> };
 const STRUCTURES: Readonly<Record<string, (host: Inside) => number>> = {
-  walkableCells: (h) => ((h.net as { crossingWalkable: { made: Map<number, unknown> } | null }).crossingWalkable?.made.size ?? 0),
+  walkableCells: (h) => ((h.net as unknown as { crossingWalkable: { made: Map<number, unknown> } | null }).crossingWalkable?.made.size ?? 0),
 };
 
 async function run(): Promise<Record<string, number>[]> {
