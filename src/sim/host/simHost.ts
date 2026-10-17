@@ -463,9 +463,10 @@ function pedDiffers(p: PedView, key: readonly unknown[]): boolean {
   return false;
 }
 
+/** DO NOT copy it a second time: posted in the same call (`publish`), the message copies it. */
 function pedRich(p: PedView): PedRich {
   const { id: _id, x: _x, y: _y, heading: _h, prev: _p, v: _v, turnV: _t, age: _a, segment: _s, walking: _w, kerbWait: _k, rank: _r, ...rich } = p;
-  return structuredClone(rich);
+  return rich;
 }
 
 /** Each kind of vehicle's place in `ARCHETYPES`, as the parked cars' numbers carry it (`PK.archetype`). */
