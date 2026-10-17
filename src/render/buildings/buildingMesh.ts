@@ -417,6 +417,8 @@ class ShellPart {
   private readonly streams: readonly Stream[];
   /** The weld's table, open addressing with linear probing: each slot a vertex + 1, 0 empty; never more than half full. */
   private slots = new Int32Array(256);
+  /** Each vertex's hash, kept as it is welded: DO NOT hash every vertex again each time the table doubles (`rehash`). */
+  private readonly hashes = new Grow((n) => new Uint32Array(n), 128);
 
   constructor(readonly finish: number, run: boolean) {
     this.facade = run ? new Grow((n) => new Uint16Array(n), FACADE_FLOATS * 64) : null;
@@ -443,10 +445,13 @@ class ShellPart {
     const v = this.vertices;
     if ((v + 1) * 2 > this.slots.length) this.rehash();
     const mask = this.slots.length - 1;
-    for (let s = this.hash(v) & mask; ; s = (s + 1) & mask) {
+    const h = this.hash(v);
+    for (let s = h & mask; ; s = (s + 1) & mask) {
       const at = this.slots[s]!;
       if (at === 0) {
         this.slots[s] = v + 1;
+        this.hashes.room(1)[v] = h;
+        this.hashes.length = v + 1;
         this.vertices = v + 1;
         for (const st of this.streams) st.grow.length = this.vertices * st.size;
         return v;
@@ -478,8 +483,9 @@ class ShellPart {
   private rehash(): void {
     this.slots = new Int32Array(this.slots.length * 2);
     const mask = this.slots.length - 1;
+    const hashes = this.hashes.array;
     for (let v = 0; v < this.vertices; v++) {
-      let s = this.hash(v) & mask;
+      let s = hashes[v]! & mask;
       while (this.slots[s] !== 0) s = (s + 1) & mask;
       this.slots[s] = v + 1;
     }
