@@ -2484,7 +2484,8 @@ export function createSceneRenderer(
     strikeAt: (x, y) => strikeAt(x, y),
     onStrike(listener) { strikeListeners.push(listener); },
     cloudDrift: () => cloudDrift,
-    busy: () => (fx?.busy() ?? false) || natureTreesPending || cameraEasing,
+    // A plate of the ground still on its way to the view (`flatAtlas.ts` waiting): drawn on until it is in, a still camera too.
+    busy: () => (fx?.busy() ?? false) || natureTreesPending || cameraEasing || (terrain.waiting?.() ?? false),
     targetBytes: () => renderTargetsBytes([...post.targets(), ...environment.shadowMaps()]),
     buildingDetailBytes: () => buildings.residentBytes,
     drifting: () => ((fogMoving || placedCloudsShown) && post.enabled && (quality.cloudShadows || quality.skyClouds)) || weatherActive,

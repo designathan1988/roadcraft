@@ -187,6 +187,8 @@ export interface TerrainSurface {
   highest?(): number;
   /** Where the view looks (world x, y) and how much ground it takes in (the screen's half height, world units) */
   focus?(x: number, y: number, reach: number): void;
+  /** Whether a plate the view wants still waits to be shown (its corners from the workers, its programs, the refresh that shows it): the frames must go on meanwhile, or a still camera keeps its far patch. */
+  waiting?(): boolean;
   /** The vegetation the quality tier allows (`quality.ts` vegetation, as the near trees' budget reads it) */
   setVegetation?(amount: number): void;
   /** The woods' density but the ecosystem's share per cell, made off the page with the plate's first build */
