@@ -268,8 +268,14 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       }
       casters?.(texelOf(i), i);
       castersChosen = casters !== null;
+      // TEMPORARY (DEV only, to be taken out): where each cascade's draw begins, its time and draw calls (`shadowLog`).
+      if (import.meta.env.DEV && renderer) { cascadeAt[i] = performance.now(); cascadeCalls[i] = (renderer.info?.render.calls ?? 0); }
     };
   });
+  // TEMPORARY (DEV only, to be taken out): each frame's shadow pass by cascade, read by the look scripts (`window.__shadowLog`).
+  const cascadeAt = lights.map(() => -1), cascadeCalls = lights.map(() => 0);
+  const shadowLog: { at: number; whole: number[]; over: number[]; calls: number[]; overCalls: number[]; kind: string[] }[] = [];
+  if (import.meta.env.DEV && typeof window !== 'undefined') Object.assign(window, { __shadowLog: shadowLog });
 
   /** Cascade `i`'s map as three made it, or ours: one byte of colour, its depth compared. */
   const ensureMap = (i: number): void => {
@@ -329,7 +335,24 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       // A render of another scene (its own lights): nothing of the cascades' here.
       if (!shadowLights.includes(sun)) { base(shadowLights, scene, camera); return; }
       for (let i = 0; i < lights.length; i++) if (whole[i] || over[i]) ensureMap(i);
+      const logging = import.meta.env.DEV && renderer !== null;
+      if (logging) { cascadeAt.fill(-1); cascadeCalls.fill(0); }
+      const kinds = logging ? lights.map((light, i) => (light.shadow.needsUpdate ? (whole[i] ? 'whole+store' : 'whole') : over[i] ? 'over' : '-')) : [];
       base(shadowLights, scene, camera);
+      const end = logging ? performance.now() : 0, endCalls = logging ? (renderer.info?.render.calls ?? 0) : 0;
+      const entry = logging ? { at: Math.round(end), whole: lights.map(() => 0), over: lights.map(() => 0), calls: lights.map(() => 0), overCalls: lights.map(() => 0), kind: kinds } : null;
+      if (entry) {
+        // A cascade drawn ends where the next drawn one begins, the last at the end of three's pass.
+        for (let i = 0; i < lights.length; i++) {
+          if (cascadeAt[i]! < 0) continue;
+          let next = -1;
+          for (let k = i + 1; k < lights.length; k++) if (cascadeAt[k]! >= 0) { next = k; break; }
+          entry.whole[i] = +((next < 0 ? end : cascadeAt[next]!) - cascadeAt[i]!).toFixed(2);
+          entry.calls[i] = (next < 0 ? endCalls : cascadeCalls[next]!) - cascadeCalls[i]!;
+        }
+        shadowLog.push(entry);
+        if (shadowLog.length > 4000) shadowLog.splice(0, 1000);
+      }
       if (!whole.includes(true) && !over.includes(true)) return;
       restore();
       const target = renderer.getRenderTarget(), face = renderer.getActiveCubeFace(), level = renderer.getActiveMipmapLevel();
@@ -338,9 +361,11 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         const map = lights[i]!.shadow.map, store = stores[i];
         if (map?.depthTexture && store?.depthTexture) {
           // Drawn whole: its still casters kept. Movers only: the still casters put back, as kept.
+          const t0 = entry ? performance.now() : 0, c0 = entry ? (renderer.info?.render.calls ?? 0) : 0;
           if (whole[i]) { renderer.copyTextureToTexture(map.depthTexture, store.depthTexture); storeValid[i] = true; }
           else renderer.copyTextureToTexture(store.depthTexture, map.depthTexture);
           drawOver(i, base, camera);
+          if (entry) { entry.over[i] = +(performance.now() - t0).toFixed(2); entry.overCalls[i] = (renderer.info?.render.calls ?? 0) - c0; }
         }
         whole[i] = false;
         over[i] = false;
