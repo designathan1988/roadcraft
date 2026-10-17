@@ -25,7 +25,12 @@ interface Landing extends LandedCell { uploads: number }
 /** A cell's detail (L0) or its facade level (L1, `emitChunk` `far`). */
 export type BatchKind = 'cell' | 'facade';
 
+/** The most holes (`want` with `hole`) asked past a full upload queue at once, until their meshes are on the GPU: what that queue grows by at a reopening. */
+export const MOST_HOLES = 4;
+
 export class CellRequests {
+  /** The levels asked past a full queue as a hole in the view: counted while asked or on their way to the GPU (`MOST_HOLES`). */
+  private readonly holes = new Set<string>();
   private readonly asked = new Map<string, { readonly entries: readonly CellEntry[]; id: number }>();
   private readonly landed = new Map<string, Landing>();
   /** Summary jobs asked and not answered: cancelled with the rest (`clear`). */
@@ -45,7 +50,7 @@ export class CellRequests {
   }
 
   /** `cell`'s batches made of `entries`, once landed and (with `upload`) on the GPU; null while they are made */
-  want(kind: BatchKind, cell: string, entries: readonly CellEntry[], env: CellEnv, upload: boolean, edited = false): LandedCell | null {
+  want(kind: BatchKind, cell: string, entries: readonly CellEntry[], env: CellEnv, upload: boolean, edited = false, hole = false): LandedCell | null {
     const key = `${kind}|${cell}`;
     const got = this.landed.get(key);
     if (got && sameEntries(got.entries, entries)) return got.uploads > 0 ? null : got;
@@ -53,7 +58,11 @@ export class CellRequests {
     const asked = this.asked.get(key);
     if (asked && sameEntries(asked.entries, entries)) return null;
     // DO NOT ask a level to upload while the upload queue is full (`uploads.ts` warmFull): its arrays waited on the page behind every other one (the renderer at 7.3 GB in a re-bake, conf77, 2026-10-17). What is drawn stands, asked again next frame; a building cut open always goes.
-    if (upload && warmFull() && !edited && !entries.some((e) => e.key.includes('|'))) return null;
+    // `hole`: a cell the view wants in detail with no level of it landed, the building at the camera in its masses: it goes too, `MOST_HOLES` at once (DO NOT hold it behind the reopening's far levels and masses: conferencia 93-108, picture 51).
+    if (upload && warmFull() && !edited && !entries.some((e) => e.key.includes('|'))) {
+      if (!hole || this.holesInFlight() >= MOST_HOLES) return null;
+      this.holes.add(key);
+    }
     // Replaced by the cell as it is now: never sent if waiting, its answer dropped if begun (the queue's key does the same).
     if (asked) this.pool.supersede(asked.id);
     const ask = { entries, id: 0 };
@@ -68,6 +77,16 @@ export class CellRequests {
     // Where no worker runs the job is done by now.
     const now = this.landed.get(key);
     return now && now.entries === entries && now.uploads === 0 ? now : null;
+  }
+
+  /** The holes asked past a full queue still asked or on their way to the GPU; the others forgotten. */
+  private holesInFlight(): number {
+    let n = 0;
+    for (const key of this.holes) {
+      if (this.asked.has(key) || (this.landed.get(key)?.uploads ?? 0) > 0) n++;
+      else this.holes.delete(key);
+    }
+    return n;
   }
 
   /** A cell's batches taken to be shown: the layer's to dispose from now on. */
