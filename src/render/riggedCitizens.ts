@@ -205,11 +205,7 @@ function growLevel(level: LevelMesh, needed: number): void {
   const colours = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
   if (mesh.instanceColor) colours.array.set(mesh.instanceColor.array);
   colours.setUsage(DynamicDrawUsage);
-  // DO NOT let `dispose` take the face's texture with the old buffers (`InstancedMesh.dispose`).
-  const morph = mesh.morphTexture;
-  mesh.morphTexture = null;
-  mesh.dispose();
-  mesh.morphTexture = morph;
+  // DO NOT `dispose` the mesh to let its old buffers go: three's releaseStatesOfObject walks every geometry the renderer knows (WebGLBindingStates), ms a call; the old buffers stay on the GPU till the context goes (less than the new one's size).
   mesh.instanceMatrix = matrices;
   mesh.instanceColor = colours;
   level.colourChanged = true;

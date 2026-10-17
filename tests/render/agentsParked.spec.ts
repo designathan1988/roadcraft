@@ -5,7 +5,7 @@ import { createAgentMeshes } from '@render/agents';
 import { archetypeById } from '@sim/vehicles/archetypes';
 import type { SimClient, VehicleView } from '@sim/host/simClient';
 import type { Network } from '@world/network';
-import { ChangeJournal } from '@world/changes';
+import { ChangeJournal, journalWork } from '@world/changes';
 import { FLEET_CEILING } from '@sim/params';
 import { m } from '@world/units';
 
@@ -177,6 +177,44 @@ describe('parked cars drawn from instances kept where they were written', () => 
     uploaded(meshesOf(agents, /./));
     agents.sync(worldWith([cars[0]!]), net, 0, true);
     expect(agents.casting).toBe(false);
+    agents.dispose();
+  });
+
+  it('ask the ground again, not the diary, of a car not asked the frame before', () => {
+    const changes = new ChangeJournal();
+    let asked = 0;
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => { asked++; return 0; });
+    const car = parkedCar(1, m(5), m(5));
+    const net = netWith(changes);
+    let seen = true;
+    const options = { vehicleVisible: () => seen };
+    agents.sync(worldWith([car]), net, 0, true, undefined, options);
+    // Off the view a while, the diary filling meanwhile far from it.
+    seen = false;
+    for (let i = 0; i < 200; i++) {
+      changes.record('ground', Array.from({ length: 20 }, (_, k) => [m(500 + k), m(500), m(501 + k), m(501)] as [number, number, number, number]));
+      agents.sync(worldWith([car]), net, 0, true, undefined, options);
+    }
+    seen = true;
+    const before = journalWork.entries;
+    asked = 0;
+    agents.sync(worldWith([car]), net, 0, true, undefined, options);
+    // Its ground asked once; not the 200 entries since it was last asked.
+    expect(asked).toBe(1);
+    expect(journalWork.entries - before).toBeLessThan(10);
+    agents.dispose();
+  });
+
+  it('grow a part without disposing its mesh (three walks every geometry it knows to release one)', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const wheels = meshesOf(agents, /^vehicle-wheels$/)[0]!;
+    let disposed = 0;
+    wheels.addEventListener('dispose', () => { disposed++; });
+    const cars: VehicleView[] = [];
+    for (let i = 0; i < 40; i++) cars.push(parkedCar(i + 1, (i % 10) * m(8), Math.floor(i / 10) * m(8)));
+    agents.sync(worldWith(cars), netWith(), 0, true);
+    expect(wheels.instanceMatrix.count).toBeGreaterThanOrEqual(160);
+    expect(disposed).toBe(0);
     agents.dispose();
   });
 

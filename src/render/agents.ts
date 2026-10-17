@@ -1296,7 +1296,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // DO NOT give a colour to a mesh made without one (the discs): another program, built during play.
     const colours = mesh.instanceColor ? new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3) : null;
     if (colours && mesh.instanceColor) { colours.array.set(mesh.instanceColor.array); colours.setUsage(DynamicDrawUsage); }
-    mesh.dispose();
+    // DO NOT `dispose` the mesh to let its old buffers go: three's releaseStatesOfObject walks every geometry the renderer knows (WebGLBindingStates), ms a call; the old buffers stay on the GPU till the context goes (less than the new one's size, a doubling at a time).
     mesh.instanceMatrix = matrices;
     mesh.instanceColor = colours;
     // A new buffer is sent whole the first time it is drawn.
@@ -1697,11 +1697,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** DO NOT ask the diary per car (`touches`): every car read every entry since its serial, cars x entries a frame */
   let offRoadSweep: ChangeSweep | null = null;
   let offRoadSerial = 0;
+  /** The serial the sweep stood at the frame before: only a car asked then is answered by the sweep's cells (`ChangeSweep.touches`). */
+  let offRoadBefore = 0;
   /** DO NOT key it by position alone: a parked car kept the height it was first asked at and floated over (kept for the view it was asked for, `drawOf`). */
   const offRoadDeck = (s: VehicleDraw, v: SimVehicle, x: number, y: number): number => {
     if (s.deckKnown && s.deckX === x && s.deckY === y) {
       if (s.deckSeen >= offRoadSerial) return s.deckValue;
-      if (!offRoadSweep!.touches(s.deckSeen, x, y)) {
+      // DO NOT ask the diary for a car not asked the frame before: every entry since and every rectangle of each (`journal.touches`) costs more than its ground.
+      if (s.deckSeen === offRoadBefore && !offRoadSweep!.touches(s.deckSeen, x, y)) {
         s.deckSeen = offRoadSerial;
         return s.deckValue;
       }
@@ -1955,6 +1958,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     sync(world, net, alpha, detailed, zoom = Number.POSITIVE_INFINITY, options = {}) {
       // A new document has a journal of its own: the sweep follows the one the world stands on.
       if (offRoadSweep?.journal !== net.doc.changes) offRoadSweep = new ChangeSweep(net.doc.changes, OFF_ROAD_GROUND);
+      offRoadBefore = offRoadSerial;
       offRoadSweep.advance();
       offRoadSerial = offRoadSweep.serial;
       const now = typeof performance !== 'undefined' ? performance.now() : suspensionClock + 16;
