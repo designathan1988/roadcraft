@@ -45,7 +45,7 @@ import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, rectAround, type ChangeRect, type DocChangeKind } from './changes';
 import { OWNER, TILE_COUNTED, tileIdBase, tileOfKey, tileRect } from './tiles';
 import { type GrownRows, selectRows } from './growth/rows';
-import { gatesOf } from './parkingLayout';
+import { gatesOf } from './buildingGates';
 import { PoleIndex } from './poleIndex';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';

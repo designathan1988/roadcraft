@@ -6,7 +6,7 @@ import { type LotSurface as LotPlane, lotSurfaces } from '@world/buildings/lots'
 import { POOL_SINK } from '@world/buildings/pads';
 import { deriveSpaces } from '@world/buildings/spaces';
 import { spaceSeed } from './lightSlots';
-import { localToWorld, worldToLocal } from '@world/buildings/geometry';
+import { buildingFrame, frameX, frameY, localToWorld, worldToLocal } from '@world/buildings/geometry';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type Furniture, type FurnitureKind, interiorAt, levelFlights } from '@world/buildings/interior';
 import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
@@ -101,7 +101,7 @@ import {
   type LotSurface,
 } from '@world/buildings/types';
 import { type BuildingKit, PART_KINDS, PORCH_LAMP, type PartKind } from './kit';
-import { FACADE_FLIP, FACADE_KIND } from './facadeLevel';
+import { FACADE_FLIP, FACADE_KIND, FACADE_STREAK, STREAK_SILL } from './facadeLevel';
 import { gpuOnlyAttributes } from '../mesh/gpuOnly';
 import { facadeProps } from './facadeProps';
 import { LOT_COLOURS } from './massing';
@@ -110,6 +110,7 @@ import type { FlagInstance } from './flagLayer';
 import type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch, RunChunk, ShellChunk } from './chunk';
 export type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch,  } from './chunk';
 import { drawsSignature } from './signature';
+import { type Cover, type PartyWalls, hiddenByCovers } from './partyWalls';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
 
 /** Where the flags of the building being emitted go (`emitChunk` sets it). */
@@ -832,6 +833,8 @@ function emitBuilding(
   onLot?: (el: BuildingElement) => boolean,
   designedFloor?: number,
   slots: SlotAllocator = spaceSeed,
+  /** The neighbours' blocks a party wall stands against (`partyWalls.ts`): a bay inside them is not laid. */
+  covers: readonly Cover[] = [],
 ): Foundation {
   const e = new Emitter(b, shell, parts, furniture);
   // Put in the world off the layout kept for the blocks (`bayLayout`): the flights' feet and the like buildings of the job read the same one.
@@ -900,13 +903,17 @@ function emitBuilding(
   const componentAt = new Map<string, BayComponent>();
   for (const bay of bays) componentAt.set(`${bay.volume}:${bay.level}:${bay.side}:${bay.index}`, bay.component);
   const volumes = new Map(b.volumes.map((v) => [v.id, v]));
-  // The rooms behind the windows, a storey of a block at a time: the interior the cut-open view draws (`interiorAt`, furnished once for the blocks).
-  const roomsOf = new Map<string, ReturnType<typeof roomsOfStorey>>();
+  // The rooms behind the windows, a type of floor of a block at a time: the interior the cut-open view draws (`interiorAt`, furnished once a type for the blocks).
+  const roomsOf = new Map<readonly Furniture[], Map<number, ReturnType<typeof roomsOfStorey>>>();
   // The far level's bays, laid as runs once all are known.
   const farBays: FarBay[] = [];
   for (const bay of bays) {
     const v = volumes.get(bay.volume) as Volume;
     const face: BayFace = { ...sideFrame(v, bay.side, bay.start, bay.push), z0: floor + bay.z, W: bay.width, H: bay.height };
+    if (covers.length > 0) {
+      const [x, y] = e.L(face.ax, face.ay, 0), [tx, ty] = e.N(face.tx, face.ty), [nx, ny] = e.N(face.nx, face.ny);
+      if (hiddenByCovers(covers, x, y, tx, ty, nx, ny, face.W, face.z0, face.z0 + face.H)) continue;
+    }
     const left = componentAt.get(`${bay.volume}:${bay.level}:${bay.side}:${bay.index - 1}`);
     const right = componentAt.get(`${bay.volume}:${bay.level}:${bay.side}:${bay.index + 1}`);
     const recess = bay.level === 0 ? entrances.get(entranceKey(bay.volume, bay.side, bay.index))?.recess ?? 0 : 0;
@@ -942,7 +949,8 @@ function emitBuilding(
     if (opening !== undefined && (opening === null || opening.depth <= FLAT_DEPTH)) {
       // The far level: the bay's wall is laid with its storey's run (`emitFacadeRuns`), its opening drawn by the shader;
       // what stands out of it (balconies, awnings, canopies, sills, shutters' leaves) is put as in the detail.
-      farBays.push({ bay, wall: wallOf(v, bay.side, bay.storey), opening, ground: floor + volumeLift(v) });
+      const wall = wallOf(v, bay.side, bay.storey);
+      farBays.push({ bay, wall, opening, ground: floor + volumeLift(v), streak: streakOf(bay.component, opening, wall) });
       shell.ground = floor + volumeLift(v);
       e.flat = true;
       emitBay(e, face, bay, wallOf(v, bay.side, bay.storey), frameTrim, awning, left, right, recess, controls);
@@ -951,12 +959,12 @@ function emitBuilding(
     } else {
       e.slot = slotOfBay(b, v, bay, spacesOf, slots);
       if (b.id >= 0 && b.cutaway === undefined) {
-        const key = `${v.id}:${bay.level}`;
-        let look = roomsOf.get(key);
-        if (!look) {
-          look = roomsOfStorey(b, v, interiorAt(b, bay.level), bay.level);
-          roomsOf.set(key, look);
-        }
+        // The levels of one type share their pieces (`interiorAt`), and so their rooms, a pane alike looked at once.
+        const inside = interiorAt(b, bay.level);
+        let byBlock = roomsOf.get(inside.furniture);
+        if (!byBlock) roomsOf.set(inside.furniture, byBlock = new Map());
+        let look = byBlock.get(v.id);
+        if (!look) byBlock.set(v.id, look = roomsOfStorey(b, v, inside, bay.level));
         const behind = look;
         e.room = (a, h) => behind(face.ax, face.ay, face.tx, face.ty, face.nx, face.ny, a, h, face.H - m(0.3));
       }
@@ -1206,7 +1214,8 @@ const shaded = (c: Paint, k: number): Paint => ({ rgb: [c.rgb[0] * k, c.rgb[1] *
 const STREAKED: ReadonlySet<Finish> = new Set<Finish>(['plaster', 'stucco', 'concrete', 'stone']);
 /** The rain streak under a sill: water off the sill runs down the wall and leaves a darker wash fading downwards */
 function emitStreak(e: Emitter, f: BayFace, bay: FacadeBay, am: number, w: number, sill: number, wall: Paint): void {
-  if (!STREAKED.has(wall.finish) || sill < m(0.5)) return;
+  // A flattened bay's streak is drawn by the far level's shader, from its run's streak (`streakOf`, `facadeLevel.ts`).
+  if (e.flat || !STREAKED.has(wall.finish) || sill < m(0.5)) return;
   const h = bayHash(bay);
   if (h % 3 === 0) return;
   const reach = Math.min(sill - m(0.05), m(0.7 + (h % 7) * 0.12));
@@ -1223,6 +1232,16 @@ interface FarBay {
   readonly wall: Paint;
   readonly opening: Opening | null;
   readonly ground: number;
+  /** Its rain streak (`streakOf`): 0 none, else which drop under the opening its sill is at (`STREAK_SILL`). */
+  readonly streak: number;
+}
+
+/** The streak `emitBay` puts under a bay's sill (`emitStreak`), as the far level's shader draws it: the components with a sill, on a wall that takes one, the sill high enough. */
+function streakOf(c: BayComponent, o: Opening | null, wall: Paint): number {
+  if (!o || !STREAKED.has(wall.finish)) return 0;
+  const code = c === 'window' || c === 'sashWindow' ? 1 : c === 'shutteredWindow' ? 2
+    : (c === 'frenchWindow' || c === 'bayWindow' || c === 'ribbon') && o.h0 > m(0.3) ? 1 : 0;
+  return code > 0 && o.h0 - STREAK_SILL[code]! >= m(0.5) ? code : 0;
 }
 
 
@@ -1265,7 +1284,7 @@ function emitFacadeRuns(e: Emitter, volumes: ReadonlyMap<number, Volume>, floor:
   const rows: FarRun[] = [];
   let last: FarRun | null = null;
   for (const x of sorted) {
-    const kind = x.opening ? facadeKind(x.bay.component) : FACADE_KIND.none;
+    const kind = x.opening ? facadeKind(x.bay.component) + FACADE_STREAK * x.streak : FACADE_KIND.none;
     const key = keyOf(x, kind);
     const at = last ? last.first.bay : null;
     if (last && at && last.key === key && at.level === x.bay.level && x.bay.index === at.index + last.bays
@@ -1678,7 +1697,9 @@ function emitRoofPlant(e: Emitter, b: Building, v: Volume, z: number, trim: Pain
   if (v.roofDetails?.length) return;
   // Drains in two opposite corners, where the roof's fall takes the water.
   if (v.outline) return;
-  for (const [dx, dy] of [[m(0.7), m(0.7)], [v.w - m(0.7), v.d - m(0.7)]] as const) {
+  // THE FAR LEVEL LEAVES OUT WHAT IS UNDER ITS ERROR (`FLAT_DEPTH`, 0.3 m): the drains and fittings a few centimetres proud, the masts and posts a few thick.
+  const far = e.shell.far;
+  for (const [dx, dy] of far ? [] : [[m(0.7), m(0.7)], [v.w - m(0.7), v.d - m(0.7)]] as const) {
     const x = v.x + dx;
     const y = v.y + dy;
     e.box(x - m(0.18), y - m(0.18), x + m(0.18), y + m(0.18), z, z + 0.02, DRAIN);
@@ -1694,12 +1715,13 @@ function emitRoofPlant(e: Emitter, b: Building, v: Volume, z: number, trim: Pain
         e.box(it.x0, it.y0, it.x1, it.y1, z, z + m(0.3), ROOF_PLANT);
         e.cylinder(cx, cy, r * 0.84, z + m(0.3), z + it.h - m(0.3), paint);
         e.cylinder(cx, cy, r * 0.94, z + it.h - m(0.3), z + it.h - m(0.05), paint, shaded(paint, 0.82));
-        e.cylinder(cx, cy, r * 0.4, z + it.h - m(0.05), z + it.h + m(0.05), shaded(paint, 0.75));
+        if (!far) e.cylinder(cx, cy, r * 0.4, z + it.h - m(0.05), z + it.h + m(0.05), shaded(paint, 0.75));
         break;
       }
       case 'tankBox':
         // A concrete water tank on a tall block, its lid and a ladder up its side.
         e.box(it.x0, it.y0, it.x1, it.y1, z, z + it.h, trim, ROOF_PLANT);
+        if (far) break;
         e.box(it.x0 + m(0.3), it.y0 + m(0.3), it.x0 + m(1.1), it.y0 + m(1.1), z + it.h, z + it.h + m(0.12), DRAIN);
         e.box(it.x1 - m(0.05), cy - m(0.25), it.x1 + m(0.05), cy + m(0.25), z, z + it.h + m(0.9), DRAIN);
         break;
@@ -1708,13 +1730,13 @@ function emitRoofPlant(e: Emitter, b: Building, v: Volume, z: number, trim: Pain
         break;
       case 'condenser':
         e.box(it.x0, it.y0, it.x1, it.y1, z + m(0.15), z + it.h, CONDENSER);
-        e.box(cx - m(0.28), cy - m(0.28), cx + m(0.28), cy + m(0.28), z + it.h, z + it.h + m(0.02), DRAIN);
+        if (!far) e.box(cx - m(0.28), cy - m(0.28), cx + m(0.28), cy + m(0.28), z + it.h, z + it.h + m(0.02), DRAIN);
         break;
       case 'airHandler': {
         // A rooftop air handler: a long metal casing, its fans on top.
         e.box(it.x0, it.y0, it.x1, it.y1, z + m(0.2), z + it.h, CONDENSER);
         const along = w >= d;
-        for (const k of [0.25, 0.75]) {
+        for (const k of far ? [] : [0.25, 0.75]) {
           const fx = along ? it.x0 + w * k : cx, fy = along ? cy : it.y0 + d * k;
           e.cylinder(fx, fy, Math.min(w, d) * 0.32, z + it.h, z + it.h + m(0.12), DRAIN);
         }
@@ -1727,19 +1749,20 @@ function emitRoofPlant(e: Emitter, b: Building, v: Volume, z: number, trim: Pain
           const py = it.y0 + r * (d / rows);
           for (let px = it.x0; px + m(1.05) <= it.x1 + 1e-6; px += m(1.15)) {
             e.box(px, py, px + m(1.05), py + Math.min(m(1.6), d / rows - m(0.1)), z + m(0.25), z + m(0.32), SOLAR, SOLAR);
-            e.box(px + m(0.45), py + m(1.2), px + m(0.6), py + m(1.35), z, z + m(0.25), DRAIN);
+            if (!far) e.box(px + m(0.45), py + m(1.2), px + m(0.6), py + m(1.35), z, z + m(0.25), DRAIN);
           }
         }
         break;
       }
       case 'mast':
+        if (far) break;
         e.box(cx - m(0.04), cy - m(0.04), cx + m(0.04), cy + m(0.04), z, z + it.h, DRAIN);
         e.box(cx - m(0.6), cy - m(0.02), cx + m(0.6), cy + m(0.02), z + it.h - m(0.4), z + it.h - m(0.36), DRAIN);
         if (it.variant % 2 === 1) e.box(cx - m(0.02), cy - m(0.45), cx + m(0.02), cy + m(0.45), z + it.h - m(0.9), z + it.h - m(0.86), DRAIN);
         break;
       case 'dish':
         // Its post thinner than the dish's plate, never in the plate's sides.
-        e.box(cx - m(0.04), cy - m(0.04), cx + m(0.04), cy + m(0.04), z, z + m(0.7), DRAIN);
+        if (!far) e.box(cx - m(0.04), cy - m(0.04), cx + m(0.04), cy + m(0.04), z, z + m(0.7), DRAIN);
         e.box(cx - m(0.4), cy - m(0.05), cx + m(0.4), cy + m(0.05), z + m(0.5), z + it.h, it.variant % 2 ? DRAIN : CONDENSER);
         break;
       case 'skylight':
@@ -1791,7 +1814,8 @@ function emitTerrace(e: Emitter, b: Building, v: Volume, z: number, trim: Paint)
   // Tables under parasols.
   for (const { x: tx, y: ty } of terraceParasols(b, v)) {
     e.box(tx - m(0.4), ty - m(0.4), tx + m(0.4), ty + m(0.4), z + m(0.7), z + m(0.75), trim);
-    e.box(tx - m(0.04), ty - m(0.04), tx + m(0.04), ty + m(0.04), z, z + PARASOL_LOW, DRAIN);
+    // Its pole, a few centimetres thick, under the far level's error (`FLAT_DEPTH`).
+    if (!e.shell.far) e.box(tx - m(0.04), ty - m(0.04), tx + m(0.04), ty + m(0.04), z, z + PARASOL_LOW, DRAIN);
     e.box(tx - PARASOL_HALF, ty - PARASOL_HALF, tx + PARASOL_HALF, ty + PARASOL_HALF, z + PARASOL_LOW, z + PARASOL_HIGH, PARASOL);
     for (const s of [-1, 1]) e.box(tx + s * m(0.7) - m(0.2), ty - m(0.2), tx + s * m(0.7) + m(0.2), ty + m(0.2), z, z + m(0.45), trim);
   }
@@ -1803,7 +1827,7 @@ function emitTerrace(e: Emitter, b: Building, v: Volume, z: number, trim: Paint)
   const bays = Math.max(1, Math.round(span / m(2.4)));
   const pergola = rnd(9) < 0.45;
   for (const px of pergola ? [lx - m(1.2), lx + m(1.2)] : []) {
-    for (let k = 0; k <= bays; k++) {
+    for (let k = 0; k <= bays && !e.shell.far; k++) {
       const py = dy0 + (span * k) / bays;
       e.box(px - m(0.07), py - m(0.07), px + m(0.07), py + m(0.07), z, z + m(2.4), DECK);
     }
@@ -2638,7 +2662,8 @@ function emitRailLine(
     const r1 = z0 + el.h + HANDRAIL;
     e.shell.face([P(0, v - rail, r0), P(0, v + rail, r0), P(el.d, v + rail, r1), P(el.d, v - rail, r1)], e.N(0, 0, 1), RAIL);
     const every = Math.max(1, Math.round(m(1.2) / tread));
-    for (let k = 0; k < n; k += every) postAt(e, P, k * tread + tread / 2, v, z0 + (k + 1) * riser, HANDRAIL);
+    // Its posts, 5 cm thick, under the far level's error (`FLAT_DEPTH`).
+    for (let k = 0; k < n && !e.shell.far; k += every) postAt(e, P, k * tread + tread / 2, v, z0 + (k + 1) * riser, HANDRAIL);
   }
 }
 
@@ -2676,7 +2701,8 @@ function emitFence(e: Emitter, el: BuildingElement, z0: number, z1: number, c: P
   }
   // Posts every couple of metres on a fence, closer together on a railing, at both ends
   const spacing = light ? m(0.45) : m(2);
-  const posts = Math.max(2, Math.round(el.w / spacing) + 1);
+  // A fence's posts, 12 cm thick two metres apart, under the far level's error (`FLAT_DEPTH`); a railing's close ones read together and stay.
+  const posts = light || !e.shell.far ? Math.max(2, Math.round(el.w / spacing) + 1) : 0;
   const reach = Math.max(0, half - t - PART_INSET);
   for (let k = 0; k < posts; k++) {
     const u = -reach + (2 * reach * k) / (posts - 1);
@@ -2838,11 +2864,12 @@ function emitLotPart(e: Emitter, el: BuildingElement, x0: number, y0: number, x1
     }
     case 'bollard': {
       e.box(x0, y0, x1, y1, zb, z1, c === ELEMENT_CONCRETE ? LAMP_POST : c);
-      e.box(x0 - m(0.01), y0 - m(0.01), x1 + m(0.01), y1 + m(0.01), z1 - m(0.25), z1 - m(0.15), BOLLARD_BAND);
+      if (!e.shell.far) e.box(x0 - m(0.01), y0 - m(0.01), x1 + m(0.01), y1 + m(0.01), z1 - m(0.25), z1 - m(0.15), BOLLARD_BAND);
       return;
     }
     default: {
-      // The drain: a frame and its slots, a hair over the paving.
+      // The drain: a frame and its slots, a hair over the paving (under the far level's error, `FLAT_DEPTH`).
+      if (e.shell.far) return;
       e.box(x0, y0, x1, y1, z0, z0 + m(0.02), DRAIN_GRATE);
       for (let k = 1; k < 5; k++) part(k / 5 - 0.03, k / 5 + 0.03, 0.1, 0.9, z0 + m(0.02), z0 + m(0.025), LAMP_POST);
     }
@@ -3414,7 +3441,9 @@ const wearShort = (x: number): number => snorm16(x) / NORMAL_UNIT;
 
 /** `far`: the building's far level (L1) - walls as runs of bays with their windows drawn by the shader, no parts (`facadeLevel.ts`). */
 /** `apart`: the elements' boxes, pavings and rails as instances of the shell's parts (`shellParts.ts`); false lays them in the shell face by face, as the parts draw them (the specs compare). */
-export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed, far = false, apart = true): BuildingChunk {
+/** `party`: the job's buildings as one another's neighbours (`partyWalls.ts`): the bays inside a neighbour are not laid, and each floor is worked out once. */
+export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed, far = false, apart = true,
+  party?: PartyWalls): BuildingChunk {
   const shell = new Shell();
   shell.decay = b.decay ?? 0;
   shell.far = far;
@@ -3430,13 +3459,13 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   const inLot = (el: BuildingElement): boolean =>
     lots.some((v) => el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
   // The terrain is graded from this natural-ground floor.
-  const designedFloor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+  const designedFloor = party ? party.floorOf(b) : closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
   const flags: FlagInstance[] = [];
   flagSink = flags;
   // A signature building's body is drawn with its own parts (`signature.ts`).
   const signature = closed.length > 0 && drawsSignature(b);
   const body = !signature && closed.length > 0
-    ? emitBuilding({ ...resolved, volumes: closed }, groundAt, shell, parts, pavedAt, furnished, inLot, designedFloor, slots)
+    ? emitBuilding({ ...resolved, volumes: closed }, groundAt, shell, parts, pavedAt, furnished, inLot, designedFloor, slots, party?.coversNear(b))
     : undefined;
   const floor = signature ? designedFloor : body?.floor;
   flagSink = null;
@@ -3484,6 +3513,34 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   const withGround = lotGround ? { ...out, lotGround } : out;
   const withSignature = signature && floor !== undefined ? { ...withGround, signatureFloor: floor } : withGround;
   return flags.length ? { ...withSignature, flags } : withSignature;
+}
+
+/** What the page keeps of a building (`cellWork.ts` `ChunkSummary`), as `emitChunk` makes it, without laying it: its lots' ground recipe and its signature floor; a building that flies a flag is laid whole, the flags being where its roof puts them. */
+export function chunkSummary(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, party?: PartyWalls): Pick<BuildingChunk, 'flags' | 'lotGround' | 'signatureFloor'> {
+  const resolved = resolveBlocks(b);
+  if (fliesFlag(resolved)) return emitChunk(b, groundAt, pavedAt, naturalAt, undefined, false, true, party);
+  const lots = resolved.volumes.filter((v) => v.open);
+  const closed = closedBlocks(resolved.volumes);
+  const floor = party ? party.floorOf(b) : closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+  const signature = closed.length > 0 && drawsSignature(b);
+  let lotGround: LotGround | undefined;
+  if (lots.length === 0) lotGround = lotGroundOf(resolved, [], floor, false);
+  else {
+    // The level `emitLots` lays the lots at: the building's floor, else the highest ground of the lots a little over.
+    let level = floor;
+    if (level === undefined) {
+      const f = buildingFrame(resolved);
+      let top = -Infinity;
+      for (const v of lots) {
+        for (const q of localFootprint(v)) top = Math.max(top, groundAt(frameX(f, q.x, q.y), frameY(f, q.x, q.y)));
+        top = Math.max(top, groundAt(frameX(f, v.x + v.w / 2, v.y + v.d / 2), frameY(f, v.x + v.w / 2, v.y + v.d / 2)));
+      }
+      level = top + m(0.12);
+    }
+    lotGround = lotGroundOf(resolved, lotSurfaces(resolved, level, pavedAt), level, true);
+  }
+  const out = lotGround ? { lotGround } : {};
+  return signature && floor !== undefined ? { ...out, signatureFloor: floor } : out;
 }
 
 /** A part's arrays viewed at their length, no copy. */

@@ -87,6 +87,37 @@ describe('the job system', () => {
     expect(done).toEqual(['b done', 'a done', 'c done']);
   });
 
+  it('ranks the waiting jobs by where the view looks now, not where it looked when they were asked', async () => {
+    const { jobPort, setJobFocus, submitJob } = await import('@/jobs/jobPool');
+    hostOf(jobPort('growth'));
+    const written: string[] = [];
+    const job = (name: string, priority: number, at?: readonly [number, number]) => submitJob({
+      service: 'cells', key: null, priority, ...(at ? { at } : {}),
+      write: () => { written.push(name); return { data: name, transfer: [] }; },
+      done: () => {}, failed: () => {},
+    });
+    setJobFocus(0, 0);
+    // Every worker but growth's taken by jobs of seconds (the idle tile worker too).
+    for (const name of ['busy1', 'busy2', 'busy3']) job(name, -1);
+    // Asked from the district view at (0, 0): its cells near it; one cell far off, where the street view will be.
+    job('district near', 0, [100, 0]);
+    job('district farther', 0, [600, 0]);
+    job('street', 0, [3000, 0]);
+    // A band before every distance stays before them.
+    job('far level', -1e9, [9000, 0]);
+    // The view goes down onto the street.
+    setJobFocus(3000, 0);
+    const answer = (name: string): void => {
+      const w = FakeWorker.made.find((x) => x.asked.some((m) => m.data === name))!;
+      const m = w.asked.find((x) => x.data === name)!;
+      w.onmessage!({ data: { port: m.port, data: name, seq: m.seq } });
+    };
+    answer('busy1');
+    answer('busy2');
+    answer('busy3');
+    expect(written).toEqual(['busy1', 'busy2', 'busy3', 'far level', 'street', 'district farther']);
+  });
+
   it('sends a queued job to a worker whose lanes have nothing in flight, to an idle tile worker before a busy one, never behind a tile', async () => {
     const { jobPort, submitJob } = await import('@/jobs/jobPool');
     // Two lanes on the two workers of the other kinds, one with a request in flight; a tile lane with a tile being made, another idle.

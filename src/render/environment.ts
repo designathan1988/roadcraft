@@ -263,6 +263,8 @@ export function createEnvironment(
       // No town-wide haze (the player: the smoke stays where the fire is).
       void smog; void SMOG;
       scene.environmentIntensity = 0.6 * (0.2 + 0.8 * light) * (1 - smog * 0.4);
+      // DO NOT leave the fill in the scene unlit: three counts every visible light, and each lit fragment evaluates it (its variant without it compiled ahead, `shaderCatalogue.ts`).
+      fill.visible = fill.intensity > 0;
       cascades.syncLight();
       return dark;
     },

@@ -80,7 +80,7 @@ import { RoadDoc } from '@world/doc';
 import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather } from './wind';
-import { holdStill } from './stillTree';
+import { holdStill, updateMoving } from './stillTree';
 import { createRain } from './rain';
 import { createLightning } from './lightning';
 import { windVector } from '@world/weather';
@@ -412,9 +412,13 @@ export function createSceneRenderer(
   const movingCasters = (): boolean => agents.casting || transit.moving || (fx?.busy() ?? false);
   /** Moving casters in the last shadow frame: when they stop, the map is drawn once more with them at rest. */
   let castersMoved = false;
+  /** Whether the opening's quality draws through the post chain: its canvas then takes only the output pass, so it is made without multisampling or depth (the chain's scene target has its own). */
+  const canvasForChain = (initialSettings ?? QUALITY[initialQuality === 'auto' ? 'high' : initialQuality]).postProcessing;
   const renderer = new WebGLRenderer({
     canvas,
-    antialias: true,
+    // A quality without the chain chosen later draws through a multisampled target of its own (`postprocess.ts` plainChain).
+    antialias: !canvasForChain,
+    depth: !canvasForChain,
     alpha: false,
     powerPreference: 'high-performance',
     stencil: false,
@@ -445,6 +449,8 @@ export function createSceneRenderer(
     instanced: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
     tinted: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
   };
+  // DO NOT write colour into the shadow map: it is sampled by its depth texture alone (three r186 `WebGLShadowMap`, PCF: `shadow.map.depthTexture` with a compare function), the RGBA target written for nothing every caster, every cascade.
+  for (const depth of Object.values(depthVariants)) depth.colorWrite = false;
   const ownDepth = new Set<MeshDepthMaterial>(Object.values(depthVariants));
   const plainOpaque = (material: Material): boolean => {
     const m = material as Material & { alphaTest: number; alphaMap?: unknown; map?: unknown; displacementMap?: unknown };
@@ -532,6 +538,8 @@ export function createSceneRenderer(
   // The root never moves.
   scene.matrixAutoUpdate = false;
   scene.updateMatrix();
+  // DO NOT let three walk the whole scene in every pass drawn (scene, normals, shadows): the frame updates what moves once (`updateMoving`), the still trees place what enters them.
+  scene.matrixWorldAutoUpdate = false;
   const initialHeight = Math.max(1, canvas.clientHeight || window.innerHeight);
   /** Where the relief's close window is centred (three's x, z; see `draw`). */
   const reliefFocus = { x: 0, z: 0 };
@@ -733,7 +741,15 @@ export function createSceneRenderer(
   /** The opening's town (or a map opened) is held until it is whole (`revealGate.ts`). */
   const reveal = new RevealGate();
   /** Every program the game draws with, compiled before the town is shown (`shaderCatalogue.ts`). */
-  const programs = createShaderCatalogue(personProgramStandIns);
+  /** The sets of lights the room and effect lights and the fill make, on and off: each set's programs built ahead (`shaderCatalogue.ts`). */
+  const lightVariants = (): Object3D[][] => {
+    const points: Object3D[] = [...roomLights, fxLights.muzzle, fxLights.blast];
+    const fill = scene.getObjectByName('fill');
+    const base: Object3D[] = [];
+    scene.traverse((o) => { if ((o as PointLight).isLight && o.visible && o !== fill && !points.includes(o)) base.push(o); });
+    return [false, true].flatMap((lit) => [false, true].map((filled) => [...base, ...(lit ? points : []), ...(filled && fill ? [fill] : [])]));
+  };
+  const programs = createShaderCatalogue(personProgramStandIns, lightVariants);
   let openingSince: number | null = null;
   /** The opening's programs, asked of the driver all at once when the town is whole (`compileAsync`, built in parallel), and whether they are built: its unseen frame is drawn only then (`reveal` warm). */
   let openingPrograms: 'no' | 'asked' | 'built' = 'no';
@@ -880,7 +896,12 @@ export function createSceneRenderer(
   const vehicleBox: GroundBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
   // A raised deck over the highest land, and room for decks stacked on it; a cut below the deepest.
   const VEHICLE_LOW = TERRAIN_MIN_HEIGHT - m(16), VEHICLE_HIGH = TERRAIN_MAX_HEIGHT + m(64) + VEHICLE_REACH * 0.3;
-  scene.add(...agents.meshes);
+  // The vehicles' instanced parts never move as objects (their instances do): a still tree; the people's groups move bones and stay outside.
+  const agentParts = new Group();
+  agentParts.name = 'agent-parts';
+  for (const mesh of agents.meshes) ((mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh ? agentParts : scene).add(mesh);
+  holdStill(agentParts);
+  scene.add(agentParts);
   // The far traffic: the meso model's cars on every road outside the micro window, in one draw (`densityCars.ts`).
   const densityCars = createDensityCars(deckHeight);
   scene.add(densityCars.object);
@@ -893,6 +914,8 @@ export function createSceneRenderer(
 
   // Modular buildings: their own layer, behind their own gate
   const buildings = createBuildingLayer();
+  // Buildings are placed once, never moved: a still tree.
+  holdStill(buildings.group);
   scene.add(buildings.group);
   // Each sun cascade draws the parts wider than its own texel only, not every part the finest one draws.
   environment.setCasters((texel) => buildings.castInto(texel));
@@ -2967,6 +2990,14 @@ export function createSceneRenderer(
       const atRender = performance.now();
       // The people's skeletons on the GPU (`people/crowdAnimation.ts`), before anybody draws them.
       agents.renderPalettes(renderer);
+      {
+        // DO NOT keep the eight point lights in the scene unlit (R18): three counts every visible light and each lit fragment evaluates it; shown together, so they make one variant (compiled ahead, `lightVariants`).
+        const pointsOn = fxLights.muzzle.intensity > 0 || fxLights.blast.intensity > 0 || roomLights.some((light) => light.intensity > 0);
+        for (const light of roomLights) light.visible = pointsOn;
+        fxLights.muzzle.visible = fxLights.blast.visible = pointsOn;
+      }
+      // The world matrices of what moves, once for every pass of the frame.
+      updateMoving(scene);
       // The opening's town is shown whole
       openingSince ??= performance.now();
       if (!reveal.opened) {
@@ -3014,7 +3045,7 @@ export function createSceneRenderer(
       warmBlastShaders();
       warmPreviewShaders();
       // One waiting body's geometry a frame to the GPU, before anybody draws it.
-      drainWarm(renderer, rig.camera, scene, post.target);
+      drainWarm(renderer);
       // Meshes still waiting to go up: another frame, so the queue never stands while the game is still.
       if (warmPending()) onAssetsReady();
 

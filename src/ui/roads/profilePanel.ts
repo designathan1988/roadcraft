@@ -2,7 +2,7 @@ import type { RoadSegment } from '@world/doc';
 import { type RoadProfileSpec, profileOf, profileWidth } from '@world/roads/profile';
 import { plural, t } from '../i18n';
 import { drawSection, metresText } from './crossSection';
-import { setDrawProfile } from './drawProfile';
+import { type DrawProfile, setDrawProfile } from './drawProfile';
 import { openProfileEditor } from './profileEditor';
 import './roads.css';
 
@@ -12,9 +12,11 @@ export function mountProfilePanel(
   segment: RoadSegment,
   apply: (profile: RoadProfileSpec, type?: number) => void,
   /** V8: this road's profile copied to the whole street it runs in */
-  more: { readonly chain?: number; readonly toStreet?: () => void; readonly drawWith?: () => void } = {},
+  more: { readonly chain?: number; readonly toStreet?: () => void; readonly drawWith?: (held: DrawProfile) => void } = {},
 ): void {
   const profile = profileOf(segment);
+  // The profile taken in hand, with its class: the host picks the class first, so the tool and its panel agree.
+  const hold = (held: DrawProfile): void => { if (more.drawWith) more.drawWith(held); else setDrawProfile(held); };
   const panel = document.createElement('section');
   panel.className = 'rp-summary road-profile-panel';
 
@@ -50,7 +52,7 @@ export function mountProfilePanel(
     profile,
     type: segment.type,
     apply: (next, type) => apply(next, type),
-    drawWith: (name, next, type) => setDrawProfile({ name, profile: next, type }),
+    drawWith: (name, next, type) => hold({ name, profile: next, type }),
   });
 
   const row = document.createElement('div');
@@ -63,10 +65,7 @@ export function mountProfilePanel(
     pick.textContent = t('profile.drawWith');
     pick.title = t('profile.drawWithTip');
     pick.dataset['action'] = 'eyedropper';
-    pick.onclick = () => {
-      setDrawProfile({ name: t('profile.copied'), profile, type: segment.type });
-      more.drawWith?.();
-    };
+    pick.onclick = () => hold({ name: t('profile.copied'), profile, type: segment.type });
     row.append(pick);
   }
   if (more.toStreet && (more.chain ?? 0) > 1) {

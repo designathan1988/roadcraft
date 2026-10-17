@@ -2,7 +2,8 @@ import type { ChangeJournal } from '@world/changes';
 import { m } from '@world/units';
 import type { TrafficBuilding, TrafficBuildings } from '../agents/trafficBuildings';
 import { CARS, busy, kindOf, type Mix } from '../ambient/demand';
-import { buildingsChangedSince, cellKey } from '../ambient/ambientIndex';
+import { buildingsChangedBy, cellKey } from '../ambient/ambientIndex';
+import { JournalCursor } from '@world/derived';
 
 /** WHAT THE LAND USE PUTS ON THE STREETS, BY THE WORLD'S 256 m CELL: the meso traffic's trips start and end where the buildings are */
 
@@ -16,7 +17,7 @@ const KINDS: readonly (keyof Mix)[] = ['home', 'shop', 'work', 'civic'];
 
 /** Each cell's buildings by kind (`kindOf`): the simulation's own (the page's tiles) kept by the diary, and the far tiles' as their link tables bring them. */
 export class DemandCells {
-  private serial = -1;
+  private readonly seen = new JournalCursor(['buildings']);
   private readonly byBuilding = new Map<number, { readonly cell: number; readonly kind: number }>();
   /** By cell: home, shop, work, civic, all. */
   private readonly cells = new Map<number, Float64Array>();
@@ -27,8 +28,7 @@ export class DemandCells {
   private readonly now = new Float64Array(4);
 
   sync(store: TrafficBuildings, journal: ChangeJournal): void {
-    const changed = buildingsChangedSince(journal, this.serial);
-    this.serial = journal.version;
+    const changed = buildingsChangedBy(this.seen, journal);
     if (changed === null) {
       // @rebuild A map opened, or a diary that forgot: every building read again.
       this.byBuilding.clear();

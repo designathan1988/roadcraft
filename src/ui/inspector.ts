@@ -17,6 +17,7 @@ import { type ConnectorPanelHost, mountConnectorPanel, refreshConnectorPanel } f
 import { mountJunctionPanel, refreshJunctionFlows } from './roads/junctionPanel';
 import type { ApproachRuleEntry, SignalSettings } from '@world/roads/rules';
 import type { LaneLink } from '@world/roads/connectors';
+import type { DrawProfile } from './roads/drawProfile';
 import type { RoadProfileSpec } from '@world/roads/profile';
 
 export interface InspectorSelection {
@@ -35,7 +36,7 @@ export interface InspectorActions {
   readonly onProfileToStreet?: (id: SegmentId) => void;
   readonly streetLength?: (id: SegmentId) => number;
   /** V8: the road tool taken up with this road's profile (the eyedropper). */
-  readonly onDrawWithProfile?: () => void;
+  readonly onDrawWithProfile?: (held: DrawProfile) => void;
   readonly onSetParking?: (id: SegmentId, parking: SegmentParking) => void;
   readonly onDelete: (id: SegmentId) => void;
   readonly onSetDirection?: (id: SegmentId, direction: SegmentDirection) => void;
@@ -268,7 +269,7 @@ function renderSegment(
     mountProfilePanel(body.querySelector<HTMLElement>('#inspectProfile')!, seg, (profile, type) => actions.onApplyProfile?.(id, profile, type), {
       chain: actions.streetLength?.(id) ?? 0,
       ...(actions.onProfileToStreet ? { toStreet: () => actions.onProfileToStreet?.(id) } : {}),
-      ...(actions.onDrawWithProfile ? { drawWith: () => actions.onDrawWithProfile?.() } : {}),
+      ...(actions.onDrawWithProfile ? { drawWith: (held: DrawProfile) => actions.onDrawWithProfile?.(held) } : {}),
     });
   }
   if (freeRoadsEnabled() && actions.onSetSection) {

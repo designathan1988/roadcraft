@@ -1,4 +1,4 @@
-import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../../jobs/jobPool';
+import { canQueueJobs, jobWorkers, submitJob } from '../../jobs/jobPool';
 import { forgetOtherDerived } from '../derivedCache';
 import { type FarKind, FarTree, type FarTreeJob, type FarTreeRun } from '../farTree';
 import type { CellMass } from './cellArrays';
@@ -49,7 +49,8 @@ export function farRunner(env: () => FarEnv): FarRun {
     const ticket = submitJob({
       service: 'cells',
       key: `far:${job.node}`,
-      priority: FAR_TIER * TIER_SPAN + focusDistance((i + 0.5) * side, (j + 0.5) * side),
+      priority: FAR_TIER * TIER_SPAN,
+      at: [(i + 0.5) * side, (j + 0.5) * side],
       write: () => ({ data: full(), transfer: [] }),
       done: (answer) => done(answer as FarReply),
       failed: (message) => done({ kind: 'farError', node: job.node, sig: job.sig, message }),

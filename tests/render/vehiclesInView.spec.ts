@@ -139,8 +139,10 @@ describe('vehicles drawn from the grid', () => {
         return frustum.intersectsSphere(sphere);
       };
       const vehicleBox = frustumGroundBox(frustum, VEHICLE_REACH, -m(160), m(300), { x0: 0, y0: 0, x1: 0, y1: 0 });
-      all.sync(world, net, 0, true, undefined, { vehicleVisible });
-      grid.sync(world, net, 0, true, undefined, { vehicleVisible, vehicleBox });
+      // Every car at the middle level: the whole level's cap (`VEHICLE_NEAR_CAP`) takes them in the order walked, and a car off the screen draws only what casts.
+      const screenScale = (): number => 2;
+      all.sync(world, net, 0, true, undefined, { vehicleVisible, screenScale });
+      grid.sync(world, net, 0, true, undefined, { vehicleVisible, vehicleBox, screenScale });
       const walked = drawn(bodiesOf(all));
       expect(walked).toBeGreaterThan(0);
       expect(walked).toBeLessThan(cars.length);
@@ -148,5 +150,25 @@ describe('vehicles drawn from the grid', () => {
     }
     all.dispose();
     grid.dispose();
+  });
+
+  it('off the screen and in the reach of the shadows, write only what casts', () => {
+    const world = worldWith([parkedCar(1, 0, 0)]);
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const named = (re: RegExp): number => drawn(agents.meshes.filter((o): o is InstancedMesh => (o as InstancedMesh).isInstancedMesh === true && re.test(o.name)));
+    const big = (): number => 50;
+    // Seen: the body, its glass and its lamps.
+    agents.sync(world, netWith(), 0, true, undefined, { vehicleVisible: () => true, screenScale: big });
+    expect(named(/^car-.*-shell$/)).toBe(1);
+    expect(named(/^car-.*-glass$/)).toBe(1);
+    expect(named(/^vehicle-lamps$/)).toBeGreaterThan(0);
+    // Only its shadow's sphere in the view: the body and the wheels, no glass, no lamps.
+    const reachOnly = (_x: number, _y: number, _h: number, radius: number): boolean => radius > m(4.5);
+    agents.sync(world, netWith(), 0, true, undefined, { vehicleVisible: reachOnly, screenScale: big });
+    expect(named(/^car-.*-shell$/)).toBe(1);
+    expect(named(/^vehicle-wheels$/)).toBe(4);
+    expect(named(/^car-.*-glass$/)).toBe(0);
+    expect(named(/^vehicle-lamps$/)).toBe(0);
+    agents.dispose();
   });
 });

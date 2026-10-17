@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
+import { BoxGeometry, Mesh, MeshBasicMaterial, type WebGLRenderer } from 'three';
 
 import type { KitBoxes } from '@render/buildings/cellArrays';
 import type { CellJob } from '@render/buildings/cellWork';
@@ -119,15 +119,13 @@ describe('a mesh let go while it waits for the GPU', () => {
       setRenderTarget: () => {},
       autoClear: true,
     } as unknown as WebGLRenderer;
-    const camera = new PerspectiveCamera();
-    const scene = new Scene();
-    drainWarm(renderer, camera, scene, null); // the frame loop is warming from now on
+    drainWarm(renderer); // the frame loop is warming from now on
     const mesh = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
     const sent = warmLooseAhead([mesh]);
     expect(sent).not.toBeNull();
     cancelWarm([mesh]);
     await sent;
-    drainWarm(renderer, camera, scene, null);
+    drainWarm(renderer);
     expect(draws).toBe(0);
   });
 });

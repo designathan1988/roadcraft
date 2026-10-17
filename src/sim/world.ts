@@ -787,7 +787,11 @@ export class SimWorld {
     return { serial: this.signalSerial, nodes: this.signalLog.slice(serial - this.signalLogBase) };
   }
 
+  /** The junctions signalised when last noted: one that stops being so is noted once more (its heads and posts taken away). */
+  private readonly signalised = new Set<NodeId>();
+
   private noteSignal(node: NodeId): void {
+    if (this.graph.junctions.get(node)?.signalised) this.signalised.add(node); else this.signalised.delete(node);
     this.signalLog.push(node);
     this.signalSerial++;
     // DO NOT forget the whole log here: a reader that had just read was sent to read every junction again.
@@ -802,23 +806,35 @@ export class SimWorld {
   /** The roads' changes since the last rebuild (`noteJunctionsReached`). */
   private readonly roadsSeen = new JournalCursor(['roads']);
 
-  /** The junctions at the ends of the segments the roads' changes reached, noted; the log forgotten when the diary cannot say. */
+  /** The signalised junctions (now, or when last noted) at the ends of the segments the roads' changes reached, noted once each; the log forgotten when the diary cannot say.
+   *  DO NOT note every junction a tile's square reaches: a junction with no signal has no heads nor posts, and one that gains or loses its controller is noted where that happens (`syncControllers`, `applyAutoControl`). */
   private noteJunctionsReached(): void {
     const entries = this.roadsSeen.read(this.doc.changes);
     if (entries === null || entries.some((e) => e.rects === null)) { this.forgetSignals(); return; }
+    const noted = new Set<NodeId>();
+    const note = (node: NodeId): void => {
+      if (noted.has(node) || !(this.signalised.has(node) || this.graph.junctions.get(node)?.signalised)) return;
+      noted.add(node);
+      this.noteSignal(node);
+    };
     for (const entry of entries) {
       for (const rect of entry.rects!) {
         for (const id of this.net.segmentCells.idsMeeting(rect)) {
           const segment = this.doc.segment(id);
-          if (segment) { this.noteSignal(segment.a); this.noteSignal(segment.b); }
+          if (segment) { note(segment.a); note(segment.b); }
         }
       }
     }
+    // A signalised junction whose roads all went: no segment reaches it, noted from what was signalised.
+    for (const node of this.signalised) if (!this.graph.junctions.has(node) && !noted.has(node)) { noted.add(node); this.noteSignal(node); }
   }
 
+  /** @rebuild The log forgotten (readers read every junction): the signalised ones listed again from the graph. */
   private forgetSignals(): void {
     this.signalLog = [];
     this.signalLogBase = ++this.signalSerial;
+    this.signalised.clear();
+    for (const [node, junction] of this.graph.junctions) if (junction.signalised) this.signalised.add(node);
   }
 
   /** The control a junction on "automatic" runs */
@@ -1258,20 +1274,15 @@ class VersionedMap<K extends number, V> extends Map<K, V> {
   }
   private orderedKeys: K[] = [];
   private ordered: V[] = [];
-  /** The list was handed out: the next change copies it first. */
-  private shared = false;
+  /** DO NOT copy and splice the handed-out list at each vehicle come or gone: the changes since it was made (a value, or undefined for one taken out), merged in when it is next asked for. */
+  private readonly pending = new Map<K, V | undefined>();
 
   override set(key: K, value: V): this {
     this.version++;
-    const had = super.has(key);
-    const was = had ? super.get(key) : undefined;
+    const was = super.has(key) ? super.get(key) : undefined;
     super.set(key, value);
     this.listener?.set(value, was);
-    this.own();
-    const keys = this.orderedKeys;
-    const at = had ? slotOf(keys, key) : keys.length && keys[keys.length - 1]! >= key ? slotOf(keys, key) : keys.length;
-    if (had) this.ordered[at] = value;
-    else { keys.splice(at, 0, key); this.ordered.splice(at, 0, value); }
+    this.pending.set(key, value);
     return this;
   }
   override delete(key: K): boolean {
@@ -1280,10 +1291,7 @@ class VersionedMap<K extends number, V> extends Map<K, V> {
     const had = super.delete(key);
     if (had) {
       this.listener?.delete(was as V);
-      this.own();
-      const at = slotOf(this.orderedKeys, key);
-      this.orderedKeys.splice(at, 1);
-      this.ordered.splice(at, 1);
+      this.pending.set(key, undefined);
     }
     return had;
   }
@@ -1293,29 +1301,31 @@ class VersionedMap<K extends number, V> extends Map<K, V> {
     this.listener?.clear();
     this.orderedKeys = [];
     this.ordered = [];
-    this.shared = false;
+    this.pending.clear();
   }
 
-  /** The values in the order of their keys; the array is never changed after it is handed out. */
+  /** The values in the order of their keys; the array is never changed after it is handed out (the changes since make a new one, in one merge). */
   inKeyOrder(): readonly V[] {
-    this.shared = true;
+    if (this.pending.size) this.merge();
     return this.ordered;
   }
 
-  private own(): void {
-    if (!this.shared) return;
-    this.orderedKeys = this.orderedKeys.slice();
-    this.ordered = this.ordered.slice();
-    this.shared = false;
+  /** The list made again from the last one and the changes since, in one walk. */
+  private merge(): void {
+    const pending = this.pending;
+    const come = [...pending.keys()].filter((k) => pending.get(k) !== undefined).sort((a, b) => a - b);
+    const keys = this.orderedKeys, values = this.ordered;
+    const outKeys: K[] = [], outValues: V[] = [];
+    let j = 0;
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i]!;
+      while (j < come.length && come[j]! < k) { outKeys.push(come[j]!); outValues.push(pending.get(come[j]!)!); j++; }
+      if (pending.has(k)) continue;
+      outKeys.push(k); outValues.push(values[i]!);
+    }
+    for (; j < come.length; j++) { outKeys.push(come[j]!); outValues.push(pending.get(come[j]!)!); }
+    this.orderedKeys = outKeys;
+    this.ordered = outValues;
+    pending.clear();
   }
-}
-
-/** Where `key` is, or would go, in ascending `keys` (the first not below it). */
-function slotOf<K extends number>(keys: readonly K[], key: K): number {
-  let lo = 0, hi = keys.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (keys[mid]! < key) lo = mid + 1; else hi = mid;
-  }
-  return lo;
 }

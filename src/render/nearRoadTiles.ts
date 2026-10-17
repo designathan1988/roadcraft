@@ -104,9 +104,11 @@ interface KeptBlock {
   readonly coarse: readonly NearRoadSurface[];
 }
 
-/** A tile's near roads as they are kept, at the version of what they read (`nearSig`). */
+/** A tile's near roads as they are kept, at the digest of what they read (`contentSig`): what the page draws is named by it. */
 export interface KeptNear {
   readonly sig: string;
+  /** The versions it was last asked at (`NearRoadWant.bake`): asked at them again, kept without reading the tiles. */
+  readonly asked?: string;
   readonly blocks: readonly KeptBlock[];
   readonly bounds: Float64Array;
 }
@@ -121,6 +123,18 @@ export interface NearRoadAsk {
   readonly tiles: readonly { readonly key: number; readonly version: number }[];
   /** The tiles' roads the page holds (edited, not written yet; all of them where no worker reads the store), in the order of `tiles`, null for one read here; none: all read here. */
   readonly records?: readonly (NearTileRoads | null)[];
+}
+
+/** What a tile's roads hold for a near bake (its nodes, borrowed nodes, roads and gates), digested: the same for the page's records and the store's of the same roads. */
+export function nearRoadsDigest(t: NearTileRoads): string {
+  return new Digest().add(t.key).addPlain(t.nodes).addPlain(t.borrowedNodes).addPlain(t.segments).addPlain(t.gates ?? []).value().toString(36);
+}
+
+/** What a near bake reads, digested: its tiles' roads (`nearRoadsDigest`) and the page's look of them. DO NOT key a bake by the tiles' versions alone: a tile is written again for every building grown on it, and each write baked again every tile round it, the same roads (2026-10-17). */
+function contentSig(tiles: readonly NearTileRoads[], ask: Pick<NearRoadAsk, 'look' | 'markingStyle' | 'naturalIsGround'>): string {
+  const d = new Digest().addText(ask.markingStyle).add(ask.naturalIsGround ? 1 : 0).addPlain(ask.look);
+  for (const t of tiles) d.addText(nearRoadsDigest(t));
+  return `c${d.value().toString(36)}`;
 }
 
 /** The version of what a near bake reads: its tile's and its neighbours'. */
@@ -486,17 +500,24 @@ export async function runNearRoadJob(job: NearRoadJob, cache: NearRoadCache): Pr
   const keeps = prefix !== null && await cache.ready();
   const last = keeps ? await cache.get(`${prefix}${node}`) as KeptNear | undefined : undefined;
   let kept: KeptNear | null;
-  if (last && last.sig === bake) kept = last.blocks.length ? last : null;
+  if (last && last.asked === bake) kept = last.blocks.length ? last : null;
   else {
     const tiles = await nearTilesOf(near, job.store, prefix, cache, keeps);
     if (!tiles || tiles.length === 0) return { kind: 'farRecords', node, sig };
-    const [tile, ...around] = tiles as [NearTileRoads, ...NearTileRoads[]];
-    kept = bakeNearRoads(tile, around, near, bake, last ?? null);
-    if (keeps) await cache.put(`${prefix}${node}`, kept ?? { sig: bake, blocks: [], bounds: new Float64Array(6) });
+    // The same roads read at other versions (a building grown, the tile written): kept as baked, nothing made nor written again.
+    const content = contentSig(tiles, near);
+    if (last && last.sig === content) kept = last.blocks.length ? last : null;
+    else {
+      const [tile, ...around] = tiles as [NearTileRoads, ...NearTileRoads[]];
+      const made = bakeNearRoads(tile, around, near, content, last ?? null);
+      const entry: KeptNear = made ? { ...made, asked: bake } : { sig: content, asked: bake, blocks: [], bounds: new Float64Array(6) };
+      if (keeps) await cache.put(`${prefix}${node}`, entry);
+      kept = made ? entry : null;
+    }
   }
   if (!job.want || !kept) return { kind: 'far', node, sig, payload: null };
-  // The page draws the last bake at this level: the blocks changed since alone.
-  const base = last && last.sig !== bake && near.shown === last.sig ? last : null;
+  // The page draws the last bake at this level: the draws changed since alone (none, where the roads read did not change).
+  const base = last && near.shown === last.sig ? last : null;
   return { kind: 'far', node, sig, payload: nearMeshOf(kept, near.variant, base) };
 }
 

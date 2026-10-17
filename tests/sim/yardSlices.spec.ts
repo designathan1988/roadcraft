@@ -53,4 +53,26 @@ describe('a works yard', () => {
     const whole = clearanceOf(yard.solid);
     expect(yard.field.clear).toEqual(whole.clear);
   });
+
+  it('goes on being made when the roads move far from it, and starts over only when they move on its grid', () => {
+    const doc = works();
+    const net = new Network(doc);
+    net.rebuild();
+    const w = new SimWorld(doc, net, 0x0be9);
+    w.rebuildTopology();
+    const b = [...w.buildings.all()].find((x) => knownYard(w, x) !== null)!;
+    const lorries = w.city.lots.lorries as unknown as { yardFor(w: SimWorld, building: number): unknown; making: { steps: unknown } | null };
+    expect(lorries.yardFor(w, b.id)).toBeUndefined();
+    const steps = lorries.making!.steps;
+    // A road laid 2 km off: the roads' key moves, the yard's grid does not.
+    doc.addSegment(doc.addNode({ x: m(2000), y: 0 }).id, doc.addNode({ x: m(2100), y: 0 }).id, 1);
+    net.rebuild();
+    w.rebuildTopology();
+    expect(lorries.yardFor(w, b.id)).toBeUndefined();
+    expect(lorries.making!.steps).toBe(steps);
+    let yard: unknown;
+    for (let k = 0; k < 10_000 && yard === undefined; k++) yard = lorries.yardFor(w, b.id);
+    expect(yard).toBeTruthy();
+    expect(knownYard(w, b)).toBe(yard);
+  });
 });

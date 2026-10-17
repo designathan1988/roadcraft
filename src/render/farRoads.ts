@@ -1,7 +1,7 @@
 import { Box3, BufferAttribute, BufferGeometry, FrontSide, Group, type Material, Mesh, MeshStandardMaterial, Sphere, Vector3 } from 'three';
 import type { Building } from '@world/buildings/types';
 import { gatesOf } from '@world/parkingLayout';
-import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../jobs/jobPool';
+import { canQueueJobs, jobWorkers, submitJob } from '../jobs/jobPool';
 import { forgetOtherDerived } from './derivedCache';
 import { pullTowardEye } from './depthConvention';
 import { type FarRoadJob, type FarRoadMesh, type FarRoadReply, derivedRoadCache, farLevelError, runFarRoadJob, tileRoads } from './farRoadTiles';
@@ -13,7 +13,9 @@ import { geometryCost } from './gpuLedger';
 import { gpuOnly } from './mesh/gpuOnly';
 import { readsRoadSection } from './mesh/roadEdges';
 import { finish } from './mesh/surfaceMesh';
-import type { NearRoadMesh, NearTileRoads, NearVariant } from './nearRoadTiles';
+import { type NearRoadMesh, type NearTileRoads, type NearVariant, nearRoadsDigest } from './nearRoadTiles';
+import { emptyRecords } from './buildings/farGrid';
+import type { TileRecords } from '@world/doc';
 import { COARSE_ERROR } from './mesh/roadLodPure';
 import type { PassLook } from './roadSurfacePass';
 import type { TileSource } from './roadTileShape';
@@ -140,7 +142,8 @@ function farRoadsRunner(ground: () => SharedGroundData | null, kit: NearRoadKit 
       service: 'farRoads',
       key: `farRoads:${tree.node}`,
       // A near level with the cells' detail, after every far level (`cellPool.ts` NEAR_TIER).
-      priority: tier * TIER_SPAN + focusDistance((tree.i + 0.5) * side, (tree.j + 0.5) * side),
+      priority: tier * TIER_SPAN,
+      at: [(tree.i + 0.5) * side, (tree.j + 0.5) * side],
       write: () => ({ data: { ...farRoadJob(tree, kit, ground()), ground: ground() }, transfer: [] }),
       done: (answer) => answered(answer as FarRoadReply),
       failed: (message) => done({ kind: 'farError', node: tree.node, sig: tree.sig, message }),
@@ -261,6 +264,10 @@ export class FarRoads extends FarTree<RoadPayload> {
           land: (data: RoadPayload, base: FarNearLanded | null) => new NearRoadLanded(data as NearRoadMesh, (data as NearRoadMesh).bake, near, base as NearRoadLanded | null),
           baseOf: (data: RoadPayload) => (data as NearRoadMesh).base,
           version: () => near.markingStyle(),
+          pageCut: (records: TileRecords) => {
+            const roads = nearRoadsOf(records)!;
+            return { records: { ...emptyRecords(records.key, records.version), ...roads }, digest: nearRoadsDigest(roads) };
+          },
         },
       } : {}),
     };

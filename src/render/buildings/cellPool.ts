@@ -1,4 +1,4 @@
-import { canQueueJobs, focusDistance, type JobTicket, submitJob, warmJobWorkers } from '../../jobs/jobPool';
+import { canQueueJobs, type JobTicket, submitJob, warmJobWorkers } from '../../jobs/jobPool';
 import type { GroundAt } from '@world/buildings/foundation';
 import type { Finish } from '@world/buildings/materials';
 import type { PavingSource } from '@world/paving';
@@ -70,6 +70,7 @@ interface Asked {
   readonly done: (result: CellResult) => void;
   readonly key: string | null;
   readonly priority: number;
+  readonly place: readonly [number, number] | null;
   /** The roads handed with it: the cell and its reach, wider once the worker said so. */
   rect: [number, number, number, number] | null;
   widened: number;
@@ -99,11 +100,11 @@ export class CellPool {
   run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void, key: string | null = null): number {
     if (key !== null) { const older = this.byKey.get(key); if (older) this.cancel(older.id); }
     const at = squareOf(cell);
-    const away = at ? focusDistance((at.i0 + at.n / 2) * BATCH_CELL, (at.j0 + at.n / 2) * BATCH_CELL) : 0;
-    // A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
-    const priority = cellPriority(kind, away, entries.some((e) => e.key.includes('|')), this.coarseFirst);
+    // Its band; its distance to the view is the queue's, as the view moves (`JobSpec.at`). A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
+    const place = at ? [(at.i0 + at.n / 2) * BATCH_CELL, (at.j0 + at.n / 2) * BATCH_CELL] as const : null;
+    const priority = cellPriority(kind, 0, entries.some((e) => e.key.includes('|')), this.coarseFirst);
     const asked: Asked = {
-      id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority,
+      id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority, place,
       rect: env.pavedAt ? pavingRect(cell) : null, widened: 0, ticket: null,
     };
     if (!this.offPage(env)) { this.onPage(asked); return asked.id; }
@@ -152,6 +153,7 @@ export class CellPool {
       service: 'cells',
       key: asked.key === null ? null : `cells:${asked.key}`,
       priority: asked.priority,
+      ...(asked.place ? { at: asked.place } : {}),
       write: () => this.write(asked),
       done: (answer) => this.answer(asked, answer as WorkReply),
       failed: (message) => this.failed(asked, message),

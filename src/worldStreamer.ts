@@ -185,6 +185,13 @@ export class WorldStreamer {
       this.tell.letGo?.(key, removedAt, gone);
       this.versions.delete(key);
     }
+    this.save(now);
+  }
+
+  /** The changed tiles and the world's values written: every frame, a world build running or not (a write reads the document, never changes it). */
+  save(now: number): void {
+    if (this.doc.editing) return;
+    this.noteEdits();
     // DO NOT hold a changed tile for a timer: a page closed or reloaded meanwhile (a browser waits for nothing) lost the edits. Written as soon as its last write is in, so the store is one write behind the page at most.
     for (const key of [...this.dirty]) if (!this.posting(key)) this.write(key);
     if (now - this.lastRetry >= RETRY_WRITE_MS) {

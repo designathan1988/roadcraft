@@ -38,9 +38,15 @@ function draw(): void {
   const { node, host, root } = open;
   const lanes = host.lanes();
   const links = host.links();
-  const stamp = `${lanes?.revision ?? -1}|${lanes ? lanes.built.map(linkKey).join(',') : '-'}|${links?.map(linkKey).join(',') ?? ''}|${picked ? `${picked.lane.segment}:${picked.lane.lane}` : ''}`;
+  // A lane picked before an undo or a rebuild that took it away is no longer picked.
+  if (picked && (picked.node !== node || !lanes?.ends.some((e) => e.arriving && e.segment === picked!.lane.segment && e.lane === picked!.lane.lane))) picked = null;
+  // In screen terms (y down): through the camera when the host gives it, else north up.
+  const view = (p: { x: number; y: number }): { x: number; y: number } => host.project ? host.project(p.x, p.y) : { x: p.x, y: -p.y };
+  const stamp = `${lanes?.revision ?? -1}|${lanes ? lanes.built.map(linkKey).join(',') : '-'}|${links?.map(linkKey).join(',') ?? ''}|${picked ? `${picked.lane.segment}:${picked.lane.lane}` : ''}|${lanes ? turnOf(view, lanes) : ''}`;
   if (stamp === open.drawn) return;
   open.drawn = stamp;
+  // The end the keyboard was on keeps the focus through the redraw.
+  const focused = root.contains(document.activeElement) ? document.activeElement?.getAttribute('data-end') ?? null : null;
   root.replaceChildren();
   const head = document.createElement('div');
   head.className = 'rp-summary-head';
@@ -62,8 +68,6 @@ function draw(): void {
   // The plan: every lane end in world coordinates, fitted to the picture.
   const ends = new Map<string, { x: number; y: number; dx: number; dy: number }>();
   const keyOf = (segment: SegmentId, lane: number, arriving: boolean): string => `${arriving ? 'a' : 'l'}${segment}:${lane}`;
-  // In screen terms (y down): through the camera when the host gives it, else north up.
-  const view = (p: { x: number; y: number }): { x: number; y: number } => host.project ? host.project(p.x, p.y) : { x: p.x, y: -p.y };
   for (const end of lanes.ends) {
     const p = view(end.at), q = view(end.next);
     ends.set(keyOf(end.segment, end.lane, end.arriving), end.arriving
@@ -105,9 +109,8 @@ function draw(): void {
   const art = document.createElement('div');
   art.className = 'rp-summary-art cn-art';
   art.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t('connectors.title')}">${parts.join('')}</svg>`;
-  art.addEventListener('click', (event) => {
-    const end = (event.target as Element).closest('[data-end]')?.getAttribute('data-end');
-    if (!end || !open) return;
+  const press = (end: string): void => {
+    if (!open) return;
     const [segment, lane] = end.slice(1).split(':').map(Number) as [number, number];
     if (end.startsWith('a')) {
       picked = lit && lit.segment === segment && lit.lane === lane ? null : { node, lane: { segment: segment as SegmentId, lane } };
@@ -118,8 +121,21 @@ function draw(): void {
     const next = toggleLaneLink(host.links(), lanes, { from: lit.segment, fromLane: lit.lane, to: segment as SegmentId, toLane: lane });
     if (next === null) { hint.textContent = t('connectors.lastExit'); return; }
     host.set(next);
+  };
+  art.addEventListener('click', (event) => {
+    const end = (event.target as Element).closest('[data-end]')?.getAttribute('data-end');
+    if (end) press(end);
+  });
+  // The ends are buttons: Enter and Space press them as a click does.
+  art.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const end = (event.target as Element).closest('[data-end]')?.getAttribute('data-end');
+    if (!end) return;
+    event.preventDefault();
+    press(end);
   });
   root.append(art);
+  if (focused) art.querySelector<SVGElement>(`[data-end="${focused}"]`)?.focus();
   const hint = document.createElement('div');
   hint.className = 'rp-sub';
   hint.setAttribute('role', 'status');
@@ -134,4 +150,13 @@ function draw(): void {
     reset.onclick = () => { picked = null; host.set(undefined); };
     root.append(reset);
   }
+}
+
+/** How the camera turns the junction: the screen direction of the world's x and y axes at its first lane end. */
+function turnOf(view: (p: { x: number; y: number }) => { x: number; y: number }, lanes: LaneEnds): string {
+  const at = lanes.ends[0]?.at;
+  if (!at) return '';
+  const o = view(at), ex = view({ x: at.x + 1, y: at.y }), ey = view({ x: at.x, y: at.y + 1 });
+  const dir = (p: { x: number; y: number }): string => (Math.round(Math.atan2(p.y - o.y, p.x - o.x) * 100) / 100).toString();
+  return `${dir(ex)},${dir(ey)}`;
 }

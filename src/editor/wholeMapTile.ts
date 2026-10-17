@@ -9,7 +9,7 @@ import { OWNER, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/til
 import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 import { type Building, type BuildingId, generatedBuiltAt } from '@world/buildings/types';
-import { gatesOf } from '@world/parkingLayout';
+import { gatesOf } from '@world/buildingGates';
 import { asSegmentId } from '@world/ids';
 import type { SerializedDoc } from '@world/doc';
 import { type TilePlan, planTile } from '@world/cityGen/tile';

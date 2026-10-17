@@ -53,19 +53,17 @@ if (vFacade.y > 0.0) {
   float across = share > 0.99 ? 1.0 : massPulse(cell.x, foot.x, 0.5 - 0.5 * share, 0.5 + 0.5 * share);
   float up = share > 0.99 ? 1.0 : massPulse(cell.y, foot.y, ${SILL.toFixed(2)}, ${HEAD.toFixed(2)});
   massGlass = across * up * step(0.0, cell.y);
-  // Which room is lit: its own lot near, the share awake once a window is under a pixel.
-  vec2 room = floor(cell);
-  float seed = fract(vGlazing.y), office = step(1.5, vGlazing.y);
-  float lot = fract(sin(dot(room, vec2(12.9898, 78.233)) + seed * 437.585) * 43758.5453);
-  float near = step(1.0 - roomsAwake, lot);
-  float sub = smoothstep(0.5, 1.5, max(foot.x, foot.y));
-  massLit = mix(near, roomsAwake, sub);
-  // Its lamp from the mix the detailed panes draw from (\`roomLamps.ts\`);
-  // under a pixel, the mix's mean, so a far block holds its colour.
-  vec3 meanLamp = office > 0.5
-    ? (roomLamp(0.1, 1.0) * 0.5 + roomLamp(0.6, 1.0) * 0.35 + roomLamp(0.95, 1.0) * 0.15)
-    : (roomLamp(0.1, 0.0) * 0.36 + roomLamp(0.45, 0.0) * 0.24 + roomLamp(0.65, 0.0) * 0.1 + roomLamp(0.9, 0.0) * 0.3);
-  massLamp = mix(roomLamp(fract(lot * 17.31), office), meanLamp, sub);
+  // Which room is lit: its own lot near, the share awake once a window is under a pixel; by day (\`massingNight\` 0, a uniform: one branch for every pixel) none glows, so none is worked out.
+  if (massingNight > 0.0) {
+    vec2 room = floor(cell);
+    float seed = fract(vGlazing.y), office = step(1.5, vGlazing.y);
+    float lot = fract(sin(dot(room, vec2(12.9898, 78.233)) + seed * 437.585) * 43758.5453);
+    float near = step(1.0 - roomsAwake, lot);
+    float sub = smoothstep(0.5, 1.5, max(foot.x, foot.y));
+    massLit = mix(near, roomsAwake, sub);
+    // Its lamp from the mix the detailed panes draw from (\`roomLamps.ts\`); under a pixel, the mix's mean, so a far block holds its colour.
+    massLamp = mix(roomLamp(fract(lot * 17.31), office), roomLampMean(office), sub);
+  }
   // A curtain wall is its own colour (its finish's mean, \`finishes.ts\` \`finishAlbedo\`):
   // painted the windows' glass it turned navy blue from afar while the detailed tower is near black
   if (share < 0.99) diffuseColor.rgb = mix(diffuseColor.rgb, ${glass}, massGlass);
@@ -73,7 +71,7 @@ if (vFacade.y > 0.0) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.12, massGlass);')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += massLamp * massingNight * massLit * massGlass;`);
   };
-  material.customProgramCacheKey = () => 'building-massing-lamps';
+  material.customProgramCacheKey = () => 'building-massing-lamps-v2';
   // A built lot's yard, coloured from afar as up close (`lotOverlay.ts`).
   applyLotOverlay(material, 'massing', { building: true });
   return material;

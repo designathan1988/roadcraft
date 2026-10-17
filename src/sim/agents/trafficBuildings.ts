@@ -8,8 +8,9 @@ import { METERS_PER_UNIT, m } from '@world/units';
 import { solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { streetDoors, type StreetDoor } from '@world/buildings/streetDoors';
 import { lorryDocks, type LorryDock } from '@world/buildings/docks';
-import { entrancesOf } from '@world/parkingLayout';
+import { entrancesOf } from '@world/buildingGates';
 import type { Building, BuildingElement, BuildingFunction, BuildingId, BuildingUse, Volume } from '@world/buildings/types';
+import { type RecordRef, eachRecord, refOf } from '@world/buildings/recordTable';
 import type { LotPart } from './lotNav';
 import { LANE_REACH } from './lotBays';
 
@@ -125,6 +126,12 @@ function fileRect(b: TrafficBuilding): ChangeRect | null {
   return r.every(Number.isFinite) ? r : null;
 }
 
+/** A batch of the buildings' changes in the diary (`TrafficBuildingTable.apply`): its detail is this, then one letter an id - gone, kept in its place, or new (put last). */
+export const BATCH_DETAIL = 'batch:';
+export const BATCH_GONE = 'g';
+export const BATCH_KEPT = 'k';
+export const BATCH_NEW = 'n';
+
 /** A building of the page changed, as the worker is told it: its traffic record now, null when it is gone. */
 export interface BuildingChange {
   readonly id: BuildingId;
@@ -159,8 +166,11 @@ export class TrafficBuildingTable implements TrafficBuildings {
     this.journal.record('buildings', null, { detail: 'loaded' });
   }
 
-  /** The page's changes, each written in the diary as `BuildingStore.restore` writes it (`buildingOrder.ts` reads `restored`). */
+  /** The page's changes, written in the diary as ONE entry (DO NOT write one a building: a tile's ~1,500 pushed every reader past what the diary keeps): each building's id once, in order, and what became of it (`BATCH_DETAIL`, `buildingOrder.ts`). */
   apply(changes: readonly BuildingChange[]): void {
+    const ids: BuildingId[] = [];
+    const rects: ChangeRect[] = [];
+    let ops = '';
     for (const { id, value } of changes) {
       const was = this.items.get(id);
       if (value === null) {
@@ -168,12 +178,16 @@ export class TrafficBuildingTable implements TrafficBuildings {
         this.items.delete(id);
         this.ranks.delete(id);
         this.cells.remove(id);
-        this.journal.record('buildings', [rectOf(was)], { ids: [id], detail: 'restored' });
+        ids.push(id); rects.push(rectOf(was)); ops += BATCH_GONE;
         continue;
       }
       this.place(value);
-      this.journal.record('buildings', was ? [rectOf(was), rectOf(value)] : [rectOf(value)], { ids: was ? [id, id] : [id], detail: 'restored' });
+      ids.push(id);
+      if (was) rects.push(rectOf(was));
+      rects.push(rectOf(value));
+      ops += was ? BATCH_KEPT : BATCH_NEW;
     }
+    if (ids.length) this.journal.record('buildings', rects, { ids, detail: `${BATCH_DETAIL}${ops}` });
   }
 
   near(minX: number, minY: number, maxX: number, maxY: number): TrafficBuilding[] {
@@ -203,12 +217,18 @@ export class TrafficBuildingTable implements TrafficBuildings {
   }
 }
 
-/** What the worker's copy of the map is made of: the roads and the transit, the lots and their keys, the buildings' traffic records. */
+/** A building of the page changed, as it is posted to the worker: where its record is read (`refOf`: its tile's shared table and row, or a table of its own), null when it is gone; DO NOT project it on the page. */
+export interface BuildingSent {
+  readonly id: BuildingId;
+  readonly ref: RecordRef | null;
+}
+
+/** What the worker's copy of the map is made of: the roads and the transit, the lots and their keys, where each building's record is read. */
 export interface TrafficMap {
   readonly doc: SerializedDoc;
   readonly lots: readonly Lot[];
   readonly lotKeys: readonly string[];
-  readonly buildings: readonly TrafficBuilding[];
+  readonly buildings: readonly RecordRef[];
 }
 
 /** The page's map as the worker is sent it whole (a map opened, generated, new): no terrain, paint or scenery, no building's record. */
@@ -222,24 +242,33 @@ export function trafficMapOf(doc: RoadDoc): TrafficMap {
     },
     lots: doc.lotStore.toJSON(),
     lotKeys: [...doc.lotStore.keys],
-    buildings: Array.from(doc.buildings.all(), trafficBuilding),
+    buildings: Array.from(doc.buildings.all(), (b) => refOf(b, false)),
   };
 }
 
-/** The buildings the diary named, as the worker is told them. */
-export function buildingChangesOf(doc: RoadDoc, ids: Iterable<BuildingId>): BuildingChange[] {
-  const out: BuildingChange[] = [];
+/** The buildings the diary named, as the worker is sent them: each record's place (`refOf`, not kept on the page), never its traffic record worked out here. */
+export function buildingChangesOf(doc: RoadDoc, ids: Iterable<BuildingId>): BuildingSent[] {
+  const out: BuildingSent[] = [];
   for (const id of ids) {
     const b = doc.buildings.get(id);
-    out.push({ id, value: b ? trafficBuilding(b) : null });
+    out.push({ id, ref: b ? refOf(b, false) : null });
   }
   return out;
 }
 
-/** The worker's copy made from a map sent whole (`trafficMapOf`). */
+/** In the worker: the buildings sent (`buildingChangesOf`) read from their rows and worked out as traffic reads them. */
+export function trafficChangesOf(sent: readonly BuildingSent[]): BuildingChange[] {
+  const there = sent.filter((s) => s.ref !== null);
+  const read = eachRecord(there.map((s) => s.ref!));
+  const values = new Map<BuildingSent, TrafficBuilding>();
+  for (const s of there) values.set(s, project(read.next().value as Building));
+  return sent.map((s) => ({ id: s.id, value: values.get(s) ?? null }));
+}
+
+/** The worker's copy made from a map sent whole (`trafficMapOf`), each building read from its row and worked out here. */
 export function takeTrafficMap(doc: RoadDoc, buildings: TrafficBuildingTable, map: TrafficMap): void {
   doc.replaceFromJSON(map.doc, { repair: false });
   // DO NOT leave the lots to `fromJSON`: it keeps a lot's building only when the document holds it, and this one holds none.
   doc.lotStore.load(map.lots, map.lotKeys);
-  buildings.load(map.buildings);
+  buildings.load(Array.from(eachRecord(map.buildings), project));
 }
