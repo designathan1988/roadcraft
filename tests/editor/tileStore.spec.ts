@@ -364,6 +364,44 @@ describe('a tile stored', () => {
     expect((await new TileStore('map', storeTiles(store), never).meta())?.values?.economy).toEqual({ balance: 19_744_162 });
   });
 
+  it("a tile and the balance written while the region's reads run: on a worker apart from the reads', they land behind no read's work (conf28)", async () => {
+    const store = memoryStore();
+    /** One worker's thread as a browser runs it: each call begun as it comes, its awaits let the next in, a read's decoding and preparing (`prepareTile`) synchronous - its thread held, nothing else run on it meanwhile (`turn`). */
+    const SYNC_READ_MS = 150;
+    const thread = (): Worker => {
+      let turn = Promise.resolve();
+      const w = { onmessage: null as ((e: MessageEvent) => void) | null, onerror: null, onmessageerror: null,
+        postMessage(message: { id: number; tiles: TileOp }) {
+          // The store's own wait (IndexedDB), then the call's work on the thread, after the work before it.
+          const hold = message.tiles.op === 'read' ? SYNC_READ_MS : 0;
+          const run = turn.then(() => new Promise((done) => setTimeout(done, hold)));
+          turn = run.then(() => undefined);
+          void run.then(async () => {
+            const value = await runTileOp(store, message.tiles);
+            w.onmessage?.({ data: { id: message.id, ok: true, value } } as MessageEvent);
+          });
+        } };
+      return w as unknown as Worker;
+    };
+    // The save's lane and the reads' on workers apart, as `jobPool.ts` places them where the pool has five or more (`keptClearWorkers`): on one, the edit waited ~460 ms behind three reads.
+    const saves = thread(), reading = thread();
+    const backend = portTiles(() => saves, 3, () => reading);
+    const tiles = new TileStore('map', backend, never, async () => ({ version: null, existed: true }));
+    await tiles.setMeta({ version: 1, generator: null, unit: 1, values: { terrain: [], economy: { balance: 20_000_000 } } });
+    for (let k = 0; k < 3; k++) await writeTile(store, 'map', { ...emptyTile(4, k), version: 1 });
+    // The region's tiles being read (three lanes), then the edit and the balance.
+    const reads = [0, 1, 2].map((k) => backend.run({ op: 'read', map: 'map', key: tileKey(4, k), network: false }));
+    const started = performance.now();
+    const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5)), node(2, m(1_200), m(5))] });
+    await Promise.all([tiles.write(tile), tiles.setMetaParts({ economy: { economy: { balance: 19_744_162 } } })]);
+    const waited = performance.now() - started;
+    await Promise.all(reads);
+    expect((await readTile(store, 'map', tile.key))?.nodes.map((n) => n.id)).toEqual([1, 2]);
+    expect((await new TileStore('map', storeTiles(store), never).meta())?.values?.economy).toEqual({ balance: 19_744_162 });
+    // Behind no read's synchronous work: the commits a reload may come after.
+    expect(waited).toBeLessThan(SYNC_READ_MS);
+  });
+
   it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {
     const store = memoryStore();
     const tiles = new TileStore('map', storeTiles(store), never);
