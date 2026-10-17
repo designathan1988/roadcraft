@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
 
-import { WARM_CEILING, cancelWarm, drainCompiles, drainWarm, meshBytes, warmAhead, warmFull, warmLooseAhead, warmPending, warmQueuedBytes } from '@render/uploads';
+import { WARM_CEILING, WARM_MOST, cancelWarm, drainCompiles, drainWarm, meshBytes, warmAhead, warmFull, warmLooseAhead, warmPending, warmQueuedBytes } from '@render/uploads';
 import { buildRoadSurfaces } from '@render/roadSurfaces';
 import type { SceneMaterials } from '@render/materials';
 import { Network } from '@world/network';
@@ -203,6 +203,29 @@ describe('a loose mesh sent to the GPU', () => {
     cancelWarm([meshes[5]!]);
     await more;
     expect(warmFull()).toBe(false);
+    // Full for what would go up behind the queue, not for what would go before it (the cell at the camera).
+    const low = warmLooseAhead([meshes[5]!], () => 1)!;
+    expect(warmFull()).toBe(true);
+    expect(warmFull(0)).toBe(true);
+    expect(warmFull(2)).toBe(false);
+    cancelWarm([meshes[5]!]);
+    await low;
+    // A thousand asked in a rising rank, each asked only while the queue before it is not full: the whole queue never past its most by more than the one asked last.
+    const piece = 1024 * 1024;
+    const rising: Mesh[] = [];
+    let most = 0;
+    for (let k = 0; k < 1000; k++) {
+      if (warmFull(10 + k)) continue;
+      const g = new BufferGeometry();
+      g.setAttribute('position', new Float32BufferAttribute(new Float32Array(piece / 4), 3));
+      const mesh = new Mesh(g, new MeshBasicMaterial());
+      rising.push(mesh);
+      void warmLooseAhead([mesh], () => 10 + k);
+      most = Math.max(most, warmQueuedBytes());
+    }
+    expect(most).toBeGreaterThan(WARM_CEILING);
+    expect(most).toBeLessThanOrEqual(WARM_MOST + piece);
+    cancelWarm(rising);
     // Sent, a frame at a time: nothing left counted.
     for (let frame = 0; frame < 10 && warmQueuedBytes() > before; frame++) { drainWarm(renderer); drainCompiles(renderer, camera, scene, null); }
     drainCompiles(renderer, camera, scene, null);
