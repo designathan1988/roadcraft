@@ -130,6 +130,25 @@ describe('TerrainIndex', () => {
     live.push(stamp({ id: 999 }));
     expect(index.stamps.length).toBe(60);
   });
+
+  it('takes a stamp appended from the index before, the same as one built from nothing, and leaves the one before as it was', () => {
+    const before = new TerrainIndex(stamps, 1);
+    const dab = stamp({ id: 100, x: -310, y: -160, radius: 95, strength: 2 });
+    const after = new TerrainIndex([...stamps, dab], 2, undefined, undefined, before);
+    const fresh = new TerrainIndex([...stamps, dab], 2);
+    for (let i = 0; i < 400; i++) {
+      const x = -650 + (i % 40) * 30, y = -350 + Math.floor(i / 40) * 70;
+      expect(after.near(x, y)).toEqual(fresh.near(x, y));
+      expect(sampleTerrainHeight(before, x, y)).toBeCloseTo(sampleTerrainHeight(stamps, x, y), 9);
+    }
+    // Not of the same history (a stamp taken off the middle): built from nothing.
+    const other = [...stamps.slice(0, 30), ...stamps.slice(31), dab];
+    const rebuilt = new TerrainIndex(other, 3, undefined, undefined, before);
+    for (let i = 0; i < 200; i++) {
+      const x = -600 + i * 6, y = -300 + ((i * 37) % 600);
+      expect(sampleTerrainHeight(rebuilt, x, y)).toBeCloseTo(sampleTerrainHeight(other, x, y), 9);
+    }
+  });
 });
 
 describe('levelling', () => {
