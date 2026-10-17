@@ -748,7 +748,8 @@ export function createBuildingLayer(): BuildingLayer {
         const comma = key.indexOf(',');
         const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
         if (i < i0 || i >= i1 || j < j0 || j >= j1) continue;
-        if (levelShown(key) === null && !massCells.drawn(key)) return false;
+        // A tile's or plate's mesh made before the tile's buildings came in stands for none of them (the plate of the map's centre: four tiles, the second to come handed to the cells under the first's plate, 2026-10-17).
+        if (levelShown(key) === null && !massCells.drawn(key, (level) => !levels.outdated(level))) return false;
       }
       return true;
     },

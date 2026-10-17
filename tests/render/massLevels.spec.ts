@@ -286,3 +286,42 @@ describe('the tiles and plates asked of the workers', () => {
     expect(asked.map((a) => a.key)).toEqual(['t:0,0']);
   });
 });
+
+describe('a tile or a plate drawn before some of its buildings came in', () => {
+  it('stands for none of them: its cells are not drawn by it until it is made again with them', () => {
+    const kit = createBuildingKit();
+    const far = createMassCells(kit, CELL, () => {});
+    far.land('0,0', masses(m(10), m(10)));
+    far.planLevel(plateOf(0, 0));
+    far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
+    // From afar: the plate drawn in place of its cells.
+    far.choose(m(128), m(128), m(500), 1000, 0.1, false);
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    // A cell come in under it (a tile loaded): no mesh of its own, the plate standing in its place.
+    far.plan('1,1');
+    expect(far.drawn('1,1')).toBe(true);
+    // The plate's mesh of older buildings (`MassLevels.outdated`): drawing nothing of the cell.
+    expect(far.drawn('1,1', (level) => level !== plateOf(0, 0))).toBe(false);
+    far.dispose();
+    kit.dispose();
+  });
+
+  it('is outdated from the change of a cell under it until its masses are made again', () => {
+    const answers: ((result: CellResult) => void)[] = [];
+    // A pool whose jobs wait for the test.
+    const pool = {
+      run: (_kind: JobKind, _key: string, _list: readonly CellEntry[], _env: CellEnv, done: (result: CellResult) => void) => answers.push(done),
+      isRunning: () => true,
+      cancel: () => {},
+    } as unknown as CellPool;
+    const levels = new MassLevels(pool, () => {}, () => {}, () => {}, () => false);
+    expect(levels.outdated(plateOf(0, 0))).toBe(false);
+    levels.touch('0,0', [{ key: '1', sig: 1, digest: 0 }]);
+    expect(levels.outdated(plateOf(0, 0))).toBe(true);
+    levels.flush({ groundAt: flat, naturalAt: flat });
+    expect(levels.outdated(plateOf(0, 0))).toBe(true);
+    answers.shift()!({ mass: null } as CellResult);
+    expect(levels.outdated(plateOf(0, 0))).toBe(false);
+  });
+});
+
