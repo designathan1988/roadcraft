@@ -114,3 +114,30 @@ describe('the page\'s document by tiles', () => {
     doc.endEdit();
   });
 });
+
+describe('a working copy over loaded tiles', () => {
+  it('takes no id of a tile for good when it is let go, and carries its ids on when it is taken back', () => {
+    const key = tileKey(0, 0), base = tileIdBase(key);
+    const doc = new RoadDoc();
+    doc.loadTile(empty(key));
+    const at = { x: m(300), y: m(500) };
+    // Many dry runs let go: the tile's counters do not move.
+    for (let k = 0; k < 50; k++) {
+      const work = doc.fork();
+      const a = work.addNode(at), b = work.addNode({ x: at.x + m(80), y: at.y });
+      expect(a.id).toBe(base);
+      work.addSegment(a.id, b.id, 1);
+    }
+    expect(doc.tileRecords(key, 2).next).toEqual(empty(key).next);
+    // One taken back: the next record after it takes the next id.
+    const work = doc.fork();
+    const a = work.addNode(at), b = work.addNode({ x: at.x + m(80), y: at.y });
+    const seg = work.addSegment(a.id, b.id, 1)!;
+    doc.takeBack(work);
+    expect([a.id, b.id, seg.id]).toEqual([base, base + 1, base]);
+    expect(doc.addNode({ x: at.x, y: at.y + m(40) }).id).toBe(base + 2);
+    expect(doc.tileRecords(key, 2).next).toMatchObject({ node: base + 3, segment: base + 1 });
+    // A copy made after it counts on from there.
+    expect(doc.fork().addNode({ x: at.x, y: at.y + m(80) }).id).toBe(base + 3);
+  });
+});

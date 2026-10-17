@@ -1634,9 +1634,6 @@ export class RoadDoc {
   fork(): RoadDoc {
     const copy = new RoadDoc();
     this.layOver(copy);
-    // The same tiles, and the same counters: an id a draft took is never handed out again, kept or not.
-    copy.tileContents = this.tileContents;
-    copy.tileNext = this.tileNext;
     return copy;
   }
 
@@ -1696,6 +1693,9 @@ export class RoadDoc {
     copy.barrierIds = new IdAllocator(this.barrierIds.peek);
     copy.landscapeIds = new IdAllocator(this.landscapeIds.peek);
     copy.nextTerrainId = this.nextTerrainId;
+    // The same tiles, their counters copied: a dry run that is let go takes no id of a tile for good (`takeFork` carries them on).
+    copy.tileContents = this.tileContents;
+    copy.tileNext = new Map([...this.tileNext].map(([key, next]) => [key, { ...next }]));
     copy.buildings.forkFrom(this.buildings);
     copy.lotStore.forkFrom(this.lotStore);
     copy.openLotsIndex = null;
@@ -1749,6 +1749,8 @@ export class RoadDoc {
     this.barrierIds = new IdAllocator(copy.barrierIds.peek);
     this.landscapeIds = new IdAllocator(copy.landscapeIds.peek);
     this.nextTerrainId = copy.nextTerrainId;
+    // The counters the copy moved carried on, tile by tile (a tile loaded meanwhile keeps its own).
+    for (const [key, next] of copy.tileNext) this.tileNext.set(key, next);
     this.changes.take(copy.changes);
     this.layOver(copy);
   }
