@@ -81,6 +81,8 @@ export interface ShadowPassInput {
   readonly effects: boolean;
   /** The wind sways the plants: the two near cascades, where a sway is wider than a texel. */
   readonly wind: boolean;
+  /** Nothing that casts and stands still changed since the last pass, as the caller knows it (the view, what landed, came or went): a cascade's store may stand for its town. Absent: it may not. */
+  readonly still?: boolean;
 }
 
 export interface SunCascades {
@@ -455,7 +457,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       }
       return any || sunStepped;
     },
-    pass({ changed, effects, wind }) {
+    pass({ changed, effects, wind, still = false }) {
       if (!enabled) return false;
       // DO NOT walk every mover's meshes for its radius once per cascade and draw: once a frame.
       radii.clear();
@@ -467,9 +469,12 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           for (const root of mover.roots) if (root.visible && drawnIn(root, i)) { moved = true; break; }
         }
         framesSince[i]!++;
-        // The town under the cascade drawn again: it changed, the cascade moved, the wind sways its plants, or a store not made yet.
+        // A store stands for its town only while nothing of it changed since it was taken.
+        if (!still) storeValid[i] = false;
+        // The town under the cascade drawn again: it changed, the cascade moved, the wind sways its plants, or no store stands for it.
+        // DO NOT draw a near cascade over its store: the plants and flags sway at every strength of the wind (`wind.ts` uWindStrength, never 0), wider than its texels; a frame of movers drew them swaying.
         const all = refitted[i]! || changed || effects || (wind && i < SUN_CASCADES - 1) || framesSince[i]! >= SAFETY_FRAMES
-          || (moved && (!renderer || !storeValid[i]));
+          || (moved && (!renderer || !storeValid[i] || i < SUN_CASCADES - 1));
         if (!fits[i]!.placed || !(all || moved)) continue;
         if (all) {
           lights[i]!.shadow.needsUpdate = true;

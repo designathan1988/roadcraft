@@ -164,15 +164,19 @@ describe('sun cascades', () => {
     expect(over.every((d) => !d.cleared)).toBe(true);
     expect(copies.length).toBe(SUN_CASCADES);
     expect(copies.every((c) => c.includes('.shadowMap>'))).toBe(true);
-    // The car moves on: the town is not drawn again, only put back from its copy and the car over it.
+    // The car moves on, nothing else changed: the far cascade not drawn again, only put back from its copy and the car over it; the near two drawn whole (the plants sway in them, `wind.ts`).
     drawn.length = 0; copies.length = 0;
-    expect(cascades.pass({ changed: false, effects: false, wind: false })).toBe(true);
-    expect(cascades.lights.every((light) => !light.shadow.needsUpdate)).toBe(true);
+    expect(cascades.pass({ changed: false, effects: false, wind: false, still: true })).toBe(true);
+    expect(cascades.lights.map((light) => light.shadow.needsUpdate)).toEqual([true, true, false]);
     frame();
-    expect(drawn.every((d) => d.movers && !d.cleared)).toBe(true);
-    expect(drawn.length).toBeGreaterThan(0);
-    expect(copies.length).toBe(SUN_CASCADES);
-    expect(copies.every((c) => c.startsWith('>'))).toBe(true);
+    expect(drawn.filter((d) => !d.movers).length).toBe(SUN_CASCADES - 1);
+    expect(drawn.filter((d) => d.movers).every((d) => !d.cleared)).toBe(true);
+    expect(copies.filter((c) => c.startsWith('>')).length).toBe(1);
+    // Something landed or the view moved (not still): the far cascade's store stands for nothing, drawn whole.
+    drawn.length = 0;
+    cascades.pass({ changed: false, effects: false, wind: false, still: false });
+    expect(cascades.lights[2]!.shadow.needsUpdate).toBe(true);
+    frame();
     // The town changed: drawn whole again.
     drawn.length = 0;
     cascades.pass({ changed: true, effects: false, wind: false });

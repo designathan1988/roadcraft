@@ -396,12 +396,15 @@ export function createSceneRenderer(
   initialCentre: Vec2,
   initialZoom: number,
   initialQuality: QualityLevel | 'auto' = 'auto',
-  onAssetsReady: () => void = () => {},
+  askDraw: () => void = () => {},
   /** The engine the scene's products are registered with (`core/engine.ts`): the game's one, from `main.ts`. */
   engine: Engine = new Engine(),
   /** The player's own settings on the tier (the options panel); the tier's own when absent. */
   initialSettings?: QualitySettings,
 ): SceneHandle {
+  /** Something landed or asked for a frame since the last shadow pass: the casters kept still in the sun's stores may have changed (`ShadowPassInput.still`). */
+  let castersStirred = true;
+  const onAssetsReady = (): void => { castersStirred = true; askDraw(); };
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
   onEcologyRead(onAssetsReady);
   /** The shadow map is drawn only when it can have changed. */
@@ -412,6 +415,9 @@ export function createSceneRenderer(
   const movingCasters = (): boolean => agents.casting || transit.moving || (fx?.busy() ?? false);
   /** Moving casters in the last shadow frame: when they stop, the map is drawn once more with them at rest. */
   let castersMoved = false;
+  /** The camera at the last shadow pass: a view moved re-culls the instanced layers, the casters kept still are not those (`ShadowPassInput.still`). */
+  const shadowView = new Matrix4(), shadowProjection = new Matrix4();
+  let shadowScale = Number.NaN;
   /** Whether the opening's quality draws through the post chain: its canvas then takes only the output pass, so it is made without multisampling or depth (the chain's scene target has its own). */
   const canvasForChain = (initialSettings ?? QUALITY[initialQuality === 'auto' ? 'high' : initialQuality]).postProcessing;
   const renderer = new WebGLRenderer({
@@ -477,9 +483,12 @@ export function createSceneRenderer(
       if ((object as Mesh).isMesh || watchedForDepth.has(object)) return;
       watchedForDepth.add(object);
       object.addEventListener('childadded', onChildAdded);
+      object.addEventListener('childremoved', onChildRemoved);
     });
   };
-  const onChildAdded = (event: { child: Object3D }): void => watchShadowDepth(event.child);
+  // What comes into the scene or leaves it changes what casts: the sun's stores are not used for that frame (`castersStirred`).
+  const onChildAdded = (event: { child: Object3D }): void => { castersStirred = true; watchShadowDepth(event.child); };
+  const onChildRemoved = (): void => { castersStirred = true; };
 
   let requested: QualityLevel | 'auto' = initialQuality;
   const governor = new QualityGovernor(requested === 'auto' ? 'high' : requested);
@@ -2906,7 +2915,16 @@ export function createSceneRenderer(
         if (castersMoved && !moving) shadowMoved = true;
         castersMoved = moving;
         // Each cascade drawn when what it holds can have changed (`sunCascades.ts` `pass`)
-        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), wind: net.doc.weather.wind > 0 })) {
+        // The still casters as they stood at the last pass: the same view (what the layers cull by it) and nothing landed, added or taken away since.
+        const viewStill = shadowView.equals(rig.camera.matrixWorld) && shadowProjection.equals(rig.camera.projectionMatrix);
+        shadowView.copy(rig.camera.matrixWorld);
+        shadowProjection.copy(rig.camera.projectionMatrix);
+        // The buildings' levels follow the frame's error scale too (`frameBudget.ts`): one moved, other levels cast.
+        const scaleStill = shadowScale === buildings.frame.scale;
+        shadowScale = buildings.frame.scale;
+        const still = viewStill && scaleStill && !castersStirred;
+        castersStirred = false;
+        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), wind: net.doc.weather.wind > 0, still })) {
           renderer.shadowMap.needsUpdate = true;
         }
         shadowMoved = false;
