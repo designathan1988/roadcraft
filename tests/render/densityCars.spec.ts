@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { InstancedBufferGeometry, Mesh } from 'three';
+import type { BufferAttribute, InstancedBufferGeometry, Mesh } from 'three';
 import { createDensityCars } from '@render/densityCars';
 import { MC, ML, MESO_PRESENT, MESO_RECORD, MesoMemory } from '@sim/meso/memory';
 import { linkId } from '@sim/meso/tileLinks';
@@ -42,7 +42,7 @@ describe('the far cars', () => {
       expect(mesh.frustumCulled).toBe(true);
       expect(Math.abs(sphere.center.x % TILE)).toBeCloseTo(TILE / 2, 3);
     }
-    const versions = (): number[] => meshes.map((mesh) => mesh.geometry.getAttribute('aLink').version);
+    const versions = (): number[] => meshes.map((mesh) => (mesh.geometry.getAttribute('aLink') as BufferAttribute).version);
     const before = versions();
     // A step with the second road's count changed: its tile written again, the first one's left as it was.
     memory.links[1 * MESO_RECORD + ML.count] = 3;
