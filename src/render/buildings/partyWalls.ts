@@ -35,8 +35,15 @@ export class PartyWalls {
   private readonly blocks = new Map<Building, readonly Cover[]>();
   private readonly boxes: { readonly b: Building; readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number }[];
 
-  constructor(buildings: readonly Building[], private readonly naturalAt: GroundAt, private readonly pavedAt?: PavedAt) {
+  /** `known`: each building's floor as an earlier job measured it (`CellEntry.floor`), not measured again. */
+  constructor(private readonly buildings: readonly Building[], private readonly naturalAt: GroundAt, private readonly pavedAt?: PavedAt, known?: readonly (number | null | undefined)[]) {
     this.boxes = buildings.map((b) => { const box = storedBounds(b); return { b, minX: box.minX, minY: box.minY, maxX: box.maxX, maxY: box.maxY }; });
+    if (known) buildings.forEach((b, i) => { const floor = known[i]; if (floor !== undefined) this.floors.set(b, floor ?? undefined); });
+  }
+
+  /** Each building's floor as the job knows it now, in the job's order: null with no closed block, undefined where none was asked. */
+  floorsKnown(): (number | null | undefined)[] {
+    return this.buildings.map((b) => (this.floors.has(b) ? this.floors.get(b) ?? null : undefined));
   }
 
   /** A building's ground floor as `emitChunk` lays it (its natural ground, `floorHeight`), worked out once for the job. */

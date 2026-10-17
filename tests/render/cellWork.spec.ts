@@ -9,6 +9,7 @@ import { fileParts } from '@render/buildings/partFiling';
 import type { CellEntry, CellResult } from '@render/buildings/cellWork';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
+import { tileOf } from '@render/buildings/levelKeys';
 import { growOnLot } from '@world/growth/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
@@ -125,6 +126,47 @@ describe('a cell put together off the page', () => {
       compare([...changed, ...town.slice(3)]);
     });
   }
+
+  it("measures each building's floor once among its jobs, the masses the same byte for byte, and again on other ground", () => {
+    const doc = grownTown();
+    const town = [...doc.buildings.all()];
+    const byCell = new Map<string, Building[]>();
+    for (const b of town) { const c = cellOf(b); byCell.set(c, [...byCell.get(c) ?? [], b]); }
+    const [cell, buildings] = [...byCell].sort((p, q) => q[1].length - p[1].length)[0]!;
+    const [ci, cj] = cell.split(',').map(Number) as [number, number];
+    // The natural ground read only for the floors (`floorHeight`): counted.
+    let reads = 0;
+    const counted = (x: number, y: number): number => { reads++; return naturalAt(x, y); };
+    const env = { groundAt, naturalAt: counted, pavedAt };
+    const masses = (pool: CellPool, kind: 'mass' | 'massTile', key: string, entries: readonly CellEntry[]): CellResult => {
+      let got: CellResult | null = null;
+      pool.run(kind, key, entries, env, (result) => { got = result; });
+      expect(got).not.toBeNull();
+      return got!;
+    };
+    const entries = buildings.map(entryOf);
+    const fresh = new CellPool(() => boxes, (e) => () => texts.get(e.key)!, false);
+    reads = 0;
+    const alone = masses(fresh, 'massTile', tileOf(ci, cj), entries);
+    expect(reads).toBeGreaterThan(0);
+    // Its cell's masses first: the floors measured there, handed to its tile's job.
+    const pool = new CellPool(() => boxes, (e) => () => texts.get(e.key)!, false);
+    masses(pool, 'mass', cell, entries);
+    for (const e of entries) expect(pool.floorKnown(e, true)).not.toBeUndefined();
+    reads = 0;
+    const after = masses(pool, 'massTile', tileOf(ci, cj), entries);
+    expect(reads).toBe(0);
+    expect(difference(after.mass as never, alone.mass as never)).toBe('');
+    expect(after.floors).toEqual(alone.floors);
+    // Other ground under the buildings (their digest changed): measured again, never the old floor handed.
+    const moved = entries.map((e) => ({ ...e, digest: e.digest + 1 }));
+    for (const e of moved) expect(pool.floorKnown(e, true)).toBeUndefined();
+    reads = 0;
+    masses(pool, 'massTile', tileOf(ci, cj), moved);
+    expect(reads).toBeGreaterThan(0);
+    // Without the paving, a floor measured on it is not handed.
+    for (const e of entries) expect(pool.floorKnown(e, false)).toBeUndefined();
+  });
 
   for (const paved of [pavedAt, undefined]) {
     it(`summarizes a cell as its buildings laid whole do, none laid (${paved ? 'with' : 'without'} paving)`, () => {

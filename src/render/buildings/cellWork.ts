@@ -8,7 +8,7 @@ import type { BuildingChunk, CellJobEntry, LotGroundRecipe } from './chunk';
 import type { FlagInstance } from './flagLayer';
 import { PART_KINDS } from './kit';
 import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
-import { CELL_DETAIL, type MassDetail, PLATE_DETAIL, TILE_DETAIL, emitMassing, type MassingChunk } from './massing';
+import { CELL_DETAIL, type MassDetail, PLATE_DETAIL, TILE_DETAIL, emitMassing, massFloor, type MassingChunk } from './massing';
 import { type PartFiling, fileParts, filingBuffers } from './partFiling';
 import { levelCells } from './levelKeys';
 import { PartyWalls } from './partyWalls';
@@ -61,6 +61,8 @@ export interface CellResult {
   readonly summaries: readonly ChunkSummary[];
   /** The cell's masses ('mass'): null when none of its buildings has any. */
   readonly mass?: CellMass | null;
+  /** Each entry's ground floor as the job stood it (`CellEntry.floor`): null with no closed block, undefined where it read none; kept by the page for the next jobs of the same buildings (`cellPool.ts`). */
+  readonly floors?: readonly (number | null | undefined)[];
 }
 
 export type WorkReply =
@@ -115,14 +117,21 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   const detail = MASS_DETAIL[job.kind];
   if (detail) {
     const masses: MassingChunk[] = [];
+    const floors: (number | null)[] = [];
     // One record at a time, let go once its masses are made: a plate's job is four tiles of buildings (`eachRecord`).
+    let n = 0;
     for (const b of eachRecord(job.entries.map((entry) => entry.record))) {
-      const mass = emitMassing(b, groundAt, paved, naturalAt, drawsSignature(b), job.tone, detail);
+      // DO NOT measure a floor an earlier job of the same building on the same ground measured (`CellEntry.floor`).
+      const given = job.entries[n]!.floor;
+      const floor = given !== undefined ? given ?? undefined : massFloor(b, naturalAt, paved);
+      floors.push(floor ?? null);
+      n++;
+      const mass = emitMassing(b, groundAt, paved, naturalAt, drawsSignature(b), job.tone, detail, { floor });
       if (mass) masses.push(mass);
     }
     // On the square's grid (`cellArrays.ts` `massGrid`): a cell's, a tile's or a plate's.
     const at = job.cell[1] === ':' ? levelCells(job.cell) : { i0: Number(job.cell.slice(0, job.cell.indexOf(','))), j0: Number(job.cell.slice(job.cell.indexOf(',') + 1)), n: 1 };
-    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries: [], mass: cellMass(masses, at) } };
+    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries: [], mass: cellMass(masses, at), floors } };
   }
   // DO NOT parse a text per building: each record decoded from its tile's shared table, a tile's shared members once for the job.
   const buildings = readRecords(job.entries.map((entry) => entry.record));
@@ -132,12 +141,15 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
     return { key: job.entries[i]!.key, ...(flags ? { flags } : {}), lot: lotGround?.recipe ?? null, ...(signatureFloor !== undefined ? { signatureFloor } : {}) };
   };
   // DO NOT lay a building for its summary: its lots' recipe and its floor alone (`chunkSummary`).
+  // Each floor once for the job, those an earlier job measured not again (`CellEntry.floor`).
+  const known = job.entries.map((entry) => entry.floor);
   if (job.kind === 'summary') {
-    const summaries = buildings.map((b, i) => summaryOf(chunkSummary(b, groundAt, paved, naturalAt), i));
-    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries } };
+    const floorsOf = new PartyWalls(buildings, naturalAt, paved, known);
+    const summaries = buildings.map((b, i) => summaryOf(chunkSummary(b, groundAt, paved, naturalAt, floorsOf), i));
+    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries, floors: floorsOf.floorsKnown() } };
   }
   // The detail and its far level: the buildings of the cell as one another's neighbours, a party wall's covered bays not laid (`partyWalls.ts`).
-  const party = new PartyWalls(buildings, naturalAt, paved);
+  const party = new PartyWalls(buildings, naturalAt, paved, known);
   const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade', true, party));
   if (missX0 <= missX1) return wider(job, missX0, missY0, missX1, missY1);
   const summaries = chunks.map(summaryOf);
@@ -156,7 +168,7 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   // DO NOT hand the page the instances to band: the parts filed here, by band and detail cell, their buffers ready (`partFiling.ts`).
   if (!job.boxes.bandings) throw new Error('[buildings] a cell job with no part bandings (`kitBoxes`)');
   const parts = details.length ? fileParts(job.cell, details, job.boxes.bandings) : null;
-  return { kind: 'done', job: job.id, result: { batch, parts, summaries } };
+  return { kind: 'done', job: job.id, result: { batch, parts, summaries, floors: party.floorsKnown() } };
 }
 
 /** The roads to hand the job again: those it was handed and every point it read past them, a metre round. */

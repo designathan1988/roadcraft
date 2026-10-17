@@ -37,6 +37,8 @@ export interface CellEntry {
   readonly sig: number;
   /** The ground under it, digested (`groundDigest`). */
   readonly digest: number;
+  /** Its ground floor as an earlier job measured it on the same record, ground and paving (`cellPool.ts` `floorKnown`): null with no closed block; absent, measured by the job. */
+  readonly floor?: number | null;
 }
 
 /** Whether two lists are the same buildings with the same records on the same ground (the strings compared by reference). */
