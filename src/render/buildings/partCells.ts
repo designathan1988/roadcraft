@@ -14,7 +14,7 @@ import { DRAW_TRIANGLES, LEAVES, type PartFiling } from './partFiling';
 // nothing is emitted again, and the choice reads sub-cells, never instances.
 // DO NOT give a kind one buffer whatever its instances' shapes: a frame is also a gourmet balcony's post (1 m deep), and the
 // largest scale over a sub-cell held every window at full detail; instances are banded by their error, each band its own buffer.
-// A shell's part (`whole`) is one band: one level, drawn and casting at any size, so its bands only added draws, each one in every cascade too.
+// A shell's part (`whole`, a lot's box, rail or slab) has one level: drawn at it, or not at all once its instances are under a pixel across (the player's call, plan 9.9 item 4: lot parts under a pixel out of the drawing).
 
 /** A level is left for a coarser one once that one's error is under this share of a pixel (a shadow under this share of a texel), and taken back at a whole one. */
 const COARSEN = 0.85;
@@ -251,8 +251,8 @@ export class PartCell {
       const metres = next < levels.length ? largest(levels[next]!.error, band.scale, m * 3) : diagonal(extent, band.scale, m * 3);
       if (metres * perMetre >= (next <= held ? 1 : COARSEN)) break;
     }
-    // A shell's part is drawn under a pixel too, as the shell it was laid in was.
-    return k === levels.length ? (band.screen.whole ? levels.length - 1 : NONE) : k;
+    // Under a pixel across its diagonal: not drawn, a shell's part too.
+    return k === levels.length ? NONE : k;
   }
 
   /** The pixels a metre spans at a sub-cell's nearest point to the eye. */

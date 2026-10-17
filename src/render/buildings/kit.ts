@@ -138,8 +138,6 @@ export interface PartScreen {
   readonly extent: Axes;
   /** The pieces its shadow is made of (a frame's rails and stiles, a brise's blades): under a shadow texel across the middle side of each it casts none. */
   readonly pieces: readonly Axes[];
-  /** Drawn and casting at any size, as the shell it was laid in drew it (the shell's parts, `shellParts.ts`). */
-  readonly whole?: boolean;
 }
 
 export interface BuildingKit {
@@ -627,7 +625,6 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
     const extent = extentOf(geometry[kind]);
     screen[kind] = { levels: levels[kind], extent, pieces: pieces[kind] ?? [extent] };
   }
-  for (const kind of SHELL_PART_KINDS) screen[kind] = { ...screen[kind], whole: true };
   const geometries = new Set<BufferGeometry>(Object.values(levels).flatMap((list) => list.map((l) => l.geometry)));
   geometries.add(massBox);
   // The small props' simplified levels, made off the frame's path once the simplifier has loaded.

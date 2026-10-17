@@ -205,12 +205,6 @@ export function recordRef(b: Building, key: string): RecordRef {
   return refOf(plain as Building, false);
 }
 
-/** A cell key's centre from a point, m (`layer.ts` `keepToBudget`). */
-export function cellDistance(key: string, x: number, y: number): number {
-  const comma = key.indexOf(',');
-  return Math.hypot((Number(key.slice(0, comma)) + 0.5) * BATCH_CELL - x, (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL - y);
-}
-
 /** A cell's level: its detail or its facade level (`cellRequests.ts` `BatchKind`, named here so the cells' module imports nothing of the requests). */
 type LevelKind = 'cell' | 'facade';
 
@@ -239,10 +233,6 @@ export class ResidentBytes {
   of(kind: LevelKind, key: string, typical: number): number {
     const at = `${kind}|${key}`;
     return this.resident.get(at) ?? this.measured.get(at) ?? typical;
-  }
-  /** The resident levels' mean, else `fallback`: what a cell never landed counts as. */
-  typical(fallback: number): number {
-    return this.resident.size ? this.total / this.resident.size : fallback;
   }
 }
 
