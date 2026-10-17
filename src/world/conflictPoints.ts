@@ -52,6 +52,18 @@ export class ConflictIndex {
   /** Conflict ids are resources held by live vehicles, so their meaning must survive a topology rebuild. */
   private readonly idByKey = new Map<string, number>();
   private nextId = 0;
+  /** The keys of `idByKey` each junction made: DO NOT keep the ids of a junction the window left (no vehicle holds them), or the map grows with every junction ever passed. */
+  private readonly keysOf = new Map<NodeId, Set<string>>();
+
+  /** The ids of these junctions (every one known when none is named) let go when this index no longer holds them (`keysOf`). */
+  private forgetIds(nodes: Iterable<NodeId> = [...this.keysOf.keys()]): void {
+    for (const node of nodes) {
+      const keys = this.keysOf.get(node);
+      if (!keys || this.ofJunction.has(node)) continue;
+      for (const key of keys) this.idByKey.delete(key);
+      this.keysOf.delete(node);
+    }
+  }
 
   /** The zones of every pair measured by the previous build, keyed by the two sweeps' sampled geometry. */
   private pairCache = new Map<string, CachedPair>();
@@ -298,6 +310,7 @@ export class ConflictIndex {
       for (const key of this.store.kept.keys()) if (!next.has(key) && !this.store.fresh.has(key)) this.store.kept.delete(key);
     }
     for (const list of this.byConnector.values()) list.sort((p, q) => p.s - q.s);
+    this.forgetIds();
   }
 
   /** DO NOT build the index of the whole map for an edit */
@@ -328,6 +341,8 @@ export class ConflictIndex {
       for (const key of made.pairs) unuse(this.pairUses, this.pairCache, key);
       for (const key of made.sweeps) unuse(this.sweepUses, this.sweepCache, key);
     }
+    // The ids of a junction let go and not built again (out of the window, or gone).
+    this.forgetIds(junctions);
     this.measured.build = pairsMeasured - measuredBefore;
     this.prepared.clear();
   }
@@ -418,6 +433,9 @@ export class ConflictIndex {
     if (id === undefined) {
       id = this.nextId++;
       this.idByKey.set(key, id);
+      let keys = this.keysOf.get(node);
+      if (!keys) this.keysOf.set(node, keys = new Set());
+      keys.add(key);
     }
 
     const { sA, sB } = facts;

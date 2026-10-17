@@ -42,4 +42,25 @@ describe('the conflicts kept in the micro window', () => {
     expect(pointsOf(windowed, inside)).toEqual([]);
     expect(pointsOf(windowed, outside)).toEqual(pointsOf(whole, outside));
   });
+
+  it('forgets the ids of the junctions it left, so walking the window back and forth does not grow them, and keeps those it holds', () => {
+    const graph = graphOf();
+    const junctions = [...graph.junctions.keys()];
+    const inside = new Set(junctions.slice(0, Math.ceil(junctions.length / 2)));
+    const outside = new Set(junctions.filter((n) => !inside.has(n)));
+    const index = new ConflictIndex();
+    index.setWindow(graph, new Set());
+    index.build(graph);
+    index.setWindow(graph, inside);
+    const ids = (): number => (index as unknown as { idByKey: Map<string, number> }).idByKey.size;
+    const held = (): number => index.points.filter((p) => p !== undefined).length;
+    expect(ids()).toBe(held());
+    // The pairs held before.
+    const before = new Map(index.points.filter((p) => p !== undefined).map((p) => [`${p.node}|${p.a}|${p.b}`, p.id]));
+    for (let k = 0; k < 5; k++) { index.setWindow(graph, outside); index.setWindow(graph, inside); }
+    expect(ids()).toBe(held());
+    index.setWindow(graph, new Set([...inside, ...outside]));
+    for (const p of index.points) if (p && inside.has(p.node)) expect(before.has(`${p.node}|${p.a}|${p.b}`)).toBe(true);
+    expect(ids()).toBe(held());
+  });
 });
