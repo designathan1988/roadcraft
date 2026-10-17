@@ -241,3 +241,72 @@ describe('a cell waiting for its level', () => {
     expect(keep).toMatch(/known\.groundKey === groundKey && known\.cutaway === cutaway && known\.list\.length === list\.length && known\.list\.every/);
   });
 });
+
+describe('the cells the budget of triangles held back', () => {
+  /** Nine cells round an eye over the middle one, each a building of its own. */
+  const town = (middle: number): RoadDoc => {
+    const doc = new RoadDoc();
+    for (let i = 0; i < 9; i++) doc.buildings.add(body(i === 4 ? middle : i, (i % 3) * m(256) + m(128), Math.floor(i / 3) * m(256) + m(128)));
+    return doc;
+  };
+  /** Frames as the renderer draws them on demand: stopped at the first with nothing pending; how many ran. */
+  const frames = (layer: ReturnType<typeof createBuildingLayer>, doc: RoadDoc, least = 1): number => {
+    for (let frame = 0; frame < 2000; frame++) {
+      beginFrameWork();
+      layer.update(doc, flat, 'g');
+      layer.levelOfDetail(m(384), m(384), m(300), 1000, null);
+      layer.cullDetails(m(384), m(384), m(300), 1000, null, m(1));
+      if (!layer.pending && frame >= least) return frame;
+    }
+    throw new Error('the layer never settled');
+  };
+  /** The meshes shown in detail and of masses. */
+  const shown = (layer: ReturnType<typeof createBuildingLayer>): { detail: number; masses: number } => {
+    let detail = 0, masses = 0;
+    const walk = (o: Object3D, path: string): void => {
+      if (!o.visible) return;
+      if ((o as Mesh).isMesh) {
+        if (path.includes('/buildings/buildings')) detail++;
+        if (`${path}/${o.name}`.includes('massing')) masses++;
+      }
+      for (const child of o.children) walk(child, `${path}/${o.name}`);
+    };
+    walk(layer.group, '');
+    return { detail, masses };
+  };
+
+  it('come back, still view, once a lighter level landed leaves room for them', () => {
+    const doc = town(4);
+    const layer = createBuildingLayer();
+    layer.frame.budget = 58_000;
+    frames(layer, doc);
+    // The heavy middle building: the cells spanning least held back in their masses.
+    expect(shown(layer).masses).toBeGreaterThan(0);
+    const middle = [...doc.buildings.all()][4]!;
+    doc.buildings.put({ ...middle, ...body(20, middle.x, middle.y), id: middle.id } as Building);
+    frames(layer, doc);
+    expect(shown(layer).masses).toBe(0);
+    expect(layer.triangles).toBeLessThanOrEqual(58_000);
+    layer.dispose();
+  });
+
+  it('ask no frame while none of them fits and nothing is measured anew', () => {
+    const doc = town(4);
+    const layer = createBuildingLayer();
+    layer.frame.budget = 40_000;
+    const ran = frames(layer, doc);
+    expect(ran).toBeLessThan(20);
+    const held = shown(layer);
+    expect(held.masses).toBeGreaterThan(0);
+    // Further frames of the same still view: nothing to wait for, nothing changes.
+    for (let frame = 0; frame < 5; frame++) {
+      beginFrameWork();
+      layer.update(doc, flat, 'g');
+      layer.levelOfDetail(m(384), m(384), m(300), 1000, null);
+      layer.cullDetails(m(384), m(384), m(300), 1000, null, m(1));
+      expect(layer.pending).toBe(false);
+    }
+    expect(shown(layer)).toEqual(held);
+    layer.dispose();
+  });
+});
