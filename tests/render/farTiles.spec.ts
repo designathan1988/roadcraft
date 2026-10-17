@@ -127,7 +127,8 @@ describe('a tile baked from the store', () => {
     const again = await runFarJob({ far: true, node, sig: '1', want: true, prefix: 'test:' }, cache);
     if (again.kind !== 'far') throw new Error(again.kind);
     expect(difference(again.mass, made.mass)).toBe('');
-    expect(cache.puts).toEqual([`test:${node}`]);
+    // Each reader's part under its own key: the tile's masses, its plate's, its boxes.
+    expect(cache.puts).toEqual([`test:${node}`, `test:${node}#plate`, `test:${node}#boxes`]);
   });
 
   it("a level-1 node keeps its tiles' plates merged: drawn again, its four tiles are not read", async () => {
@@ -263,7 +264,7 @@ describe('the far levels chosen top down', () => {
     const fromAfar = (): void => far.choose(0, 0, m(50_000), 1000, 0.0005);
     await until(fromAfar, () => far.waiting === 0);
     // Every tile baked once, and the levels above them.
-    expect(cache.puts.filter((key) => key.startsWith('test:f0:')).length).toBe(tiles.size);
+    expect(cache.puts.filter((key) => key.startsWith('test:f0:') && !key.includes('#')).length).toBe(tiles.size);
     expect(new Set(cache.puts).size).toBe(cache.puts.length);
 
     cache.puts.length = 0;
@@ -271,10 +272,11 @@ describe('the far levels chosen top down', () => {
     tiles.set(changed, { ...tiles.get(changed)!, version: 2, buildings: [...tiles.get(changed)!.buildings, building(999, 0.6 * TILE, 0.4 * TILE)] });
     far.stored(changed, 2);
     const chain = Array.from({ length: TOP_LEVEL + 1 }, (_, k) => `test:${farKey(k, 0, 0)}`);
-    await until(fromAfar, () => cache.puts.length >= chain.length);
+    const nodes = (): string[] => [...new Set(cache.puts.map((key) => key.split('#')[0]!))];
+    await until(fromAfar, () => nodes().length >= chain.length);
     // A few more turns: nothing else is baked.
     for (let turn = 0; turn < 5; turn++) { fromAfar(); await new Promise((resolve) => setTimeout(resolve, 0)); }
-    expect([...cache.puts].sort()).toEqual([...chain].sort());
+    expect(nodes().sort()).toEqual([...chain].sort());
     far.dispose();
     kit.dispose();
   });

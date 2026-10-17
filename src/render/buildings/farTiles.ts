@@ -8,7 +8,7 @@ import { tileKey, tileOfKey } from '@world/tiles';
 import { derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { type CellMass, cellMass, cellMassBuffers, indexArray, shellBounds } from './cellArrays';
-import { AGGREGATE, LEVEL_MASS_KEY as MASS_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
+import { AGGREGATE, LEVEL_MASS_KEY as MASS_KEY, NODE_BOX_KEY as BOX_KEY, TILE_PLATE_KEY as PLATE_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
 import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing, massFloor } from './massing';
 
 export { AGGREGATE, TOP_LEVEL, emptyRecords, farKey, farNode, nodeSide } from './farGrid';
@@ -27,18 +27,27 @@ export function levelDrop(k: number): number {
   return (nodeSide(k) / AGGREGATE) * Math.SQRT2;
 }
 
-/** What a tile's bake keeps (`FarCache`, one entry a node: a newer version takes the older's place): the version, its masses at the tile's level and at the plate's, its blocks as boxes. */
-interface TileEntry {
+/** What a tile's bake makes: the version, its masses at the tile's level and at the plate's, its blocks as boxes. */
+interface TileBake {
   readonly sig: string;
   readonly tile: CellMass | null;
   readonly plate: CellMass | null;
   readonly boxes: Float32Array;
 }
-/** What a node above the tiles keeps: the version, its mesh (none at level 1: its tiles' plate masses are kept merged apart, `MASS_KEY`), its boxes for its parent. */
-interface NodeEntry {
+/** DO NOT keep a node's mesh and its parent's reads in one entry: each reader takes its part alone - a node drawn its masses, a plate's node its tiles' plate masses (`PLATE_KEY`), every parent its children's boxes (`BOX_KEY`); each kept by node and version (a newer version takes the older's place). */
+interface MassEntry {
   readonly sig: string;
   readonly mass: CellMass | null;
+}
+interface BoxEntry {
+  readonly sig: string;
   readonly boxes: Float32Array;
+}
+
+/** A tile's bake kept, each reader's part under its own key, the boxes last (a parent asks for them first). */
+async function keepTile(cache: FarCache, at: string, bake: TileBake): Promise<void> {
+  await Promise.all([cache.put(at, { sig: bake.sig, mass: bake.tile }), cache.put(`${at}${PLATE_KEY}`, { sig: bake.sig, mass: bake.plate })]);
+  await cache.put(`${at}${BOX_KEY}`, { sig: bake.sig, boxes: bake.boxes });
 }
 
 /** Where bakes are kept by node and version (`derivedCache.ts` in the job workers; a map in tests). */
@@ -168,7 +177,7 @@ export function bakeTileMasses(records: TileRecords, detail: MassDetail, reads: 
 }
 
 /** A tile's bake from its buildings: its masses at its level and its plate's, its blocks as boxes. */
-function bakeTile(buildings: readonly Building[], sig: string, reads: GroundReaders, tone?: FarJob['tone']): TileEntry {
+function bakeTile(buildings: readonly Building[], sig: string, reads: GroundReaders, tone?: FarJob['tone']): TileBake {
   // DO NOT sample each building's ground three times: its floor once, for its boxes and its masses at both levels.
   const floors = buildings.map((b) => ({ floor: massFloor(b, reads.naturalAt) }));
   const boxes: number[] = [];
@@ -300,7 +309,7 @@ function joinMasses(list: readonly (CellMass | null)[]): CellMass | null {
 export async function keepTileFar(records: TileRecords, version: number, env: FarGroundEnv, prefix: string | null, cache: FarCache = derivedFarCache): Promise<boolean> {
   if (prefix === null || !(await cache.ready())) return false;
   const { i, j } = tileOfKey(records.key);
-  await cache.put(`${prefix}${farKey(0, i, j)}`, bakeTile(tileBuildings(records), String(version), readsOf(env), env.tone));
+  await keepTile(cache, `${prefix}${farKey(0, i, j)}`, bakeTile(tileBuildings(records), String(version), readsOf(env), env.tone));
   return true;
 }
 
@@ -315,43 +324,41 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
     return entry?.sig === version ? entry : undefined;
   };
   if (k === 0) {
-    let entry = keeps ? await kept<TileEntry>(node, sig) : undefined;
-    if (!entry) {
-      // The rows the page posted (migrated where their table was written), or the stored part read here and migrated.
-      const stored = job.buildings ? undefined : await readStored(job.store, tileKey(i, j), 'buildings');
-      const buildings = job.buildings ? rowsBuildings(job.buildings) : stored ? tileBuildings(stored) : null;
-      if (!buildings) return { kind: 'farRecords', node, sig };
-      entry = bakeTile(buildings, sig, readsOf(job), job.tone);
-      if (keeps) await cache.put(`${prefix}${node}`, entry);
-    }
-    return { kind: 'far', node, sig, mass: job.want ? entry.tile : null };
+    // Its masses alone when drawn; its boxes when baked for its parent (`BOX_KEY`).
+    const known = keeps ? await kept<MassEntry | BoxEntry>(job.want ? node : `${node}${BOX_KEY}`, sig) : undefined;
+    if (known) return { kind: 'far', node, sig, mass: job.want ? (known as MassEntry).mass : null };
+    // The rows the page posted (migrated where their table was written), or the stored part read here and migrated.
+    const stored = job.buildings ? undefined : await readStored(job.store, tileKey(i, j), 'buildings');
+    const buildings = job.buildings ? rowsBuildings(job.buildings) : stored ? tileBuildings(stored) : null;
+    if (!buildings) return { kind: 'farRecords', node, sig };
+    const bake = bakeTile(buildings, sig, readsOf(job), job.tone);
+    if (keeps) await keepTile(cache, `${prefix}${node}`, bake);
+    return { kind: 'far', node, sig, mass: job.want ? bake.tile : null };
   }
   if (!keeps) return { kind: 'farNoCache', node, sig };
-  let entry = await kept<NodeEntry>(node, sig);
-  // DO NOT read its four tiles' entries whole whenever a level-1 node is drawn (their tile masses read with the plates, merged again each time): its tiles' plate masses are kept merged under a key of their own (`MASS_KEY`), apart from the boxes its parent reads.
-  if (k === 1 && job.want) {
-    const merged = await kept<{ readonly sig: string; readonly mass: CellMass | null }>(`${node}${MASS_KEY}`, sig);
-    if (merged) return { kind: 'far', node, sig, mass: merged.mass };
-  } else if (entry) return { kind: 'far', node, sig, mass: job.want ? entry.mass : null };
+  // DO NOT read its four tiles' entries whole whenever a level-1 node is drawn: its tiles' plate masses are kept merged under a key of their own (`MASS_KEY`), apart from the boxes its parent reads.
+  const drawn = job.want ? await kept<MassEntry>(k === 1 ? `${node}${MASS_KEY}` : node, sig) : undefined;
+  if (drawn) return { kind: 'far', node, sig, mass: drawn.mass };
+  const boxed = await kept<BoxEntry>(`${node}${BOX_KEY}`, sig);
+  if (boxed && !job.want) return { kind: 'far', node, sig, mass: null };
   const children = job.children ?? [];
-  const got = await Promise.all(children.map((c) => (c ? kept<TileEntry | NodeEntry>(c.key, c.sig) : Promise.resolve(null))));
+  // Its children's boxes unless its own are kept; a plate's node drawn, its tiles' plate masses.
+  const got = boxed ? children.map(() => null) : await Promise.all(children.map((c) => (c ? kept<BoxEntry>(`${c.key}${BOX_KEY}`, c.sig) : Promise.resolve(null))));
+  const plates = k === 1 && job.want ? await Promise.all(children.map((c) => (c ? kept<MassEntry>(`${c.key}${PLATE_KEY}`, c.sig) : Promise.resolve(null)))) : null;
   const missing: string[] = [];
-  children.forEach((c, n) => { if (c && !got[n]) missing.push(c.key); });
+  children.forEach((c, n) => { if (c && ((!boxed && !got[n]) || (plates && !plates[n]))) missing.push(c.key); });
   if (missing.length) return { kind: 'farChildren', node, sig, missing };
-  const lists = children.flatMap((_, n) => { const b = got[n]?.boxes; return b ? [b] : []; });
+  const lists = got.flatMap((e) => (e ? [e.boxes] : []));
   if (k === 1) {
-    const tiles = got.filter((e): e is TileEntry => !!e);
-    if (!entry) {
-      entry = { sig, mass: null, boxes: joined(lists) };
-      await cache.put(`${prefix}${node}`, entry);
-    }
-    if (!job.want) return { kind: 'far', node, sig, mass: null };
-    const mass = joinMasses(tiles.map((e) => e.plate));
+    if (!boxed) await cache.put(`${prefix}${node}${BOX_KEY}`, { sig, boxes: joined(lists) });
+    if (!plates) return { kind: 'far', node, sig, mass: null };
+    const mass = joinMasses(plates.map((e) => e?.mass ?? null));
     await cache.put(`${prefix}${node}${MASS_KEY}`, { sig, mass });
     return { kind: 'far', node, sig, mass };
   }
-  const boxes = aggregateBoxes(joined(lists), k, i, j);
-  entry = { sig, mass: boxMass(boxes, levelDrop(k)), boxes };
-  await cache.put(`${prefix}${node}`, entry);
-  return { kind: 'far', node, sig, mass: job.want ? entry.mass : null };
+  const boxes = boxed ? boxed.boxes : aggregateBoxes(joined(lists), k, i, j);
+  const mass = boxMass(boxes, levelDrop(k));
+  await cache.put(`${prefix}${node}`, { sig, mass });
+  if (!boxed) await cache.put(`${prefix}${node}${BOX_KEY}`, { sig, boxes });
+  return { kind: 'far', node, sig, mass: job.want ? mass : null };
 }
