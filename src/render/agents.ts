@@ -2007,7 +2007,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         }
         const level = Math.min(vehicleBand, own);
         if (twoWheeled && level === 2) bikesWholeNow = true;
-        if (!twoWheeled && level >= 1) carsWheeled = true;
+        // A car's tyres cast only with its whole body (level 2): at level 1 its shadow is the soft disc, the tyres' dots under it were the player's to drop (2026-10-17).
+        if (!twoWheeled && level >= 2) carsWheeled = true;
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
         drawPixels = pixels * pixelRatio;
         // Standing where it stood, drawn as it was: its instances kept where they were written, nothing written or sent.
@@ -2106,7 +2107,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       }
       // The parked cars kept and not drawn this frame (gone, out of view, under two pixels, moving off): let go before the frame is drawn.
       for (let i = keptList.length - 1; i >= 0; i--) { const s = keptList[i]!; if (s.keptSeen !== suspensionFrame) dropKept(s); }
-      // The two-wheelers cast only while one is drawn whole; the shared tyres also while a car is drawn with its wheels.
+      // The two-wheelers cast only while one is drawn whole; the shared tyres also while a car is drawn whole.
       castersChanged = thinWheels.mesh.castShadow !== bikesCast;
       for (const t of twoWheelerParts.values()) {
         for (const part of t.body.parts) part.mesh.castShadow = bikesCast;
