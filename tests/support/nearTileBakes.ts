@@ -19,14 +19,12 @@ export async function bakeEveryTile(doc: RoadDoc, box: readonly [number, number,
       const tiles = [tileKey(i, j)];
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (di || dj) tiles.push(tileKey(i + di, j + dj));
       const reply: NearTileReply = await runNearJob({
-        node: `${i},${j}`, asks: [{ kind, sig: 's', want: 'w', shown: null, extra }], prefix: null,
+        kind, node: `${kind}:${i},${j}`, sig: 's', want: 'w', shown: null, prefix: null,
         tiles: tiles.map((key) => ({ key, version: 1 })), records: tiles.map((key) => recordsFor(doc.tileRecords(key, 1), parts)),
-        ground: { ground: null, naturalIsGround: true },
+        ground: { ground: null, naturalIsGround: true }, extra,
       }, noCache);
       expect(reply.kind).toBe('near');
-      const answer = reply.kind === 'near' ? reply.answers[0] : undefined;
-      expect(answer && 'error' in answer ? answer.error : '').toBe('');
-      if (answer && !('error' in answer) && answer.payload !== null) out.push(answer.payload);
+      if (reply.kind === 'near' && reply.payload !== null) out.push(reply.payload);
     }
   }
   return out;
