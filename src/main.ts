@@ -1909,7 +1909,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   const mapName = `roadcraft.tiles.${worldKey(options.seed)}`;
   // Read, written and made in the job workers, the desktop's as a browser's (each worker its own port to the shell's saves, `editor/workerParts.ts`).
   const release = await holdWorld(mapName);
-  const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
+  const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3), () => jobPort('tileRead')),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
     (i, j, after, text, ifMissing, baysOnly, sectionsOnly) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing, baysOnly, sectionsOnly));
