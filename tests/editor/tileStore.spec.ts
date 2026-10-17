@@ -3,8 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { TiledSaves } from '@editor/chunkedSave';
 import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
+import { StoreTurns } from '@editor/storeTurns';
 import {
-  type MadeTile, type TileOp, type TileText, TileStore, type WorldMeta, bakeStoredTile, portTiles, readTile, runTileOp, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
+  type MadeTile, type TileOp, type TileText, TileStore, type WorldMeta, bakeStoredTile, portTiles, readTile, runTileOp, writesOnly, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
   preparedRecords, storedVersionBaked, tileWrite, writtenRecords } from '@editor/tileStore';
 
 /** A maker as `cityTile.worker.ts` serves one: asked only if missing, it looks in the store first (`storedVersionBaked`: a tile in parts with no sections baked there), the tile read and prepared where it is there; `make` runs only for a tile the store has not. */
@@ -362,6 +363,43 @@ describe('a tile stored', () => {
     // Read again as a reload reads it: the road and the balance.
     expect((await readTile(store, 'map', tile.key))?.nodes.map((n) => n.id)).toEqual([1, 2]);
     expect((await new TileStore('map', storeTiles(store), never).meta())?.values?.economy).toEqual({ balance: 19_744_162 });
+  });
+
+  it("a tile and the balance written while the region's reads run on the save's worker: they go before every read not begun (conf28)", async () => {
+    // The save worker's own routing (`save.worker.ts`): the writes and the reads through its turns.
+    const worker = readFileSync('src/editor/save.worker.ts', 'utf8');
+    expect(worker).toMatch(/writesOnly\(tiles\) \|\| tiles\.op === 'clearLists' \? turns\.write\(run\) : turns\.read\(run\)/);
+    const store = memoryStore();
+    /** A read's decoding and preparing (`prepareTile`), synchronous: the worker's thread held meanwhile. */
+    const SYNC_READ_MS = 150;
+    const turns = new StoreTurns();
+    const thread = {
+      onmessage: null as ((e: MessageEvent) => void) | null, onerror: null, onmessageerror: null,
+      postMessage(message: { id: number; tiles: TileOp }) {
+        const op = message.tiles;
+        const run = async (): Promise<unknown> => {
+          if (op.op === 'read') { const until = performance.now() + SYNC_READ_MS; while (performance.now() < until) { /* decoding, preparing */ } }
+          return runTileOp(store, op);
+        };
+        void (writesOnly(op) ? turns.write(run) : turns.read(run)).then((value) => thread.onmessage?.({ data: { id: message.id, ok: true, value } } as MessageEvent));
+      },
+    };
+    const backend = portTiles(() => thread as unknown as Worker, 3);
+    const tiles = new TileStore('map', backend, never, async () => ({ version: null, existed: true }));
+    await tiles.setMeta({ version: 1, generator: null, unit: 1, values: { terrain: [], economy: { balance: 20_000_000 } } });
+    for (let k = 0; k < 3; k++) await writeTile(store, 'map', { ...emptyTile(4, k), version: 1 });
+    // The region's tiles being read (three lanes), the first already at work when the edit and the balance come.
+    const started = performance.now();
+    const reads = [0, 1, 2].map((k) => backend.run({ op: 'read', map: 'map', key: tileKey(4, k), network: false }));
+    await new Promise((done) => setTimeout(done, 0));
+    const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5)), node(2, m(1_200), m(5))] });
+    await Promise.all([tiles.write(tile), tiles.setMetaParts({ economy: { economy: { balance: 19_744_162 } } })]);
+    const waited = performance.now() - started;
+    await Promise.all(reads);
+    expect((await readTile(store, 'map', tile.key))?.nodes.map((n) => n.id)).toEqual([1, 2]);
+    expect((await new TileStore('map', storeTiles(store), never).meta())?.values?.economy).toEqual({ balance: 19_744_162 });
+    // Behind the read at work at most, never the three (~460 ms on one worker without turns).
+    expect(waited).toBeLessThan(2 * SYNC_READ_MS);
   });
 
   it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {
