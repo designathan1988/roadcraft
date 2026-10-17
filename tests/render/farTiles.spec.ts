@@ -218,6 +218,38 @@ describe('the far levels chosen top down', () => {
     kit.dispose();
   });
 
+  it('skips a choice that nothing it reads changed, and chooses again when a tile is stored or the eye moves', async () => {
+    const kit = createBuildingKit();
+    const cache = memoryCache();
+    const tiles = world();
+    const far = new FarLevels(kit, runner(cache), 'test:');
+    far.setSource(storeOf(tiles), () => false);
+    for (const [key, records] of tiles) far.stored(key, records.version);
+    const fromHigh = (): void => far.choose(0, 0, m(6_000), 1000, null);
+    await until(fromHigh, () => far.waiting === 0);
+    // Every answer in: the same eye walks nothing.
+    await new Promise((done) => setTimeout(done, 0));
+    fromHigh();
+    const walks = { n: 0 };
+    const tree = far as unknown as { visit: (n: unknown) => boolean };
+    const visit = tree.visit.bind(far);
+    tree.visit = (n) => { walks.n++; return visit(n); };
+    fromHigh();
+    expect(walks.n).toBe(0);
+    // The eye moved: walked again.
+    far.choose(m(10), 0, m(6_000), 1000, null);
+    expect(walks.n).toBeGreaterThan(0);
+    // A tile stored at a new version: walked again with the same eye.
+    walks.n = 0;
+    far.choose(m(10), 0, m(6_000), 1000, null);
+    expect(walks.n).toBe(0);
+    far.stored(tileKey(0, 0), 2);
+    far.choose(m(10), 0, m(6_000), 1000, null);
+    expect(walks.n).toBeGreaterThan(0);
+    far.dispose();
+    kit.dispose();
+  });
+
   it('waits only for the nodes in the view: those out of it are asked and drawn all the same, never waited for', async () => {
     const kit = createBuildingKit();
     const cache = memoryCache();

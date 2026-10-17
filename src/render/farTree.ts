@@ -1,4 +1,4 @@
-import { Box3, type Frustum, Group, type Mesh, type Object3D } from 'three';
+import { Box3, Frustum, Group, type Mesh, type Object3D } from 'three';
 import { Digest } from '@core/digest';
 import { type WholeMapOptions, worldKey } from '@world/cityGen/wholeMap';
 import { tileKey, tileOfKey } from '@world/tiles';
@@ -229,6 +229,13 @@ export class FarTree<P> implements FarTiles {
   /** The camera's frustum at the last `choose` (null: every node counts as seen). */
   private view: Frustum | null = null;
   private readonly viewBox = new Box3();
+  /** Whether anything the choice reads changed since the last whole one (a tile stored or loaded, an answer, the scale): with the same eye and frustum, `choose` is skipped. */
+  private changed = true;
+  /** The eye, frustum and outside versions (`outsideKey`) the last whole choice was made for. */
+  private readonly chosenEye: Eye = { x: Number.NaN, y: 0, z: 0, pxAtMetre: 0, orthoPx: null, reach: Infinity };
+  private readonly chosenView = new Frustum();
+  private chosenHadView = false;
+  private chosenOutside = '';
   private scheduled = false;
   private warned = false;
 
@@ -271,6 +278,7 @@ export class FarTree<P> implements FarTiles {
     }
     this.source = source;
     this.isLoaded = isLoaded;
+    this.changed = true;
     for (const key of this.leaves.keys()) this.loadedChanged(key);
     this.pump();
   }
@@ -278,7 +286,7 @@ export class FarTree<P> implements FarTiles {
   stored(tile: number, version: number | null): void {
     let leaf = this.leaves.get(tile);
     if (version === null) {
-      if (leaf) this.unstore(tile, leaf);
+      if (leaf) { this.unstore(tile, leaf); this.changed = true; }
       return;
     }
     if (!leaf) {
@@ -289,6 +297,7 @@ export class FarTree<P> implements FarTiles {
       for (let n: FarNode | null = leaf; n; n = n.parent) { n.tiles++; if (leaf.inDoc) n.loaded++; }
     } else if (leaf.version === version) return;
     leaf.version = version;
+    this.changed = true;
     // DO NOT bake anything but it and its ancestors again: the others' versions stand (a plan's node it falls under takes its tiles' and the plan's).
     for (let n: FarNode | null = leaf; n; n = n.parent) n.sig = null;
   }
@@ -299,15 +308,30 @@ export class FarTree<P> implements FarTiles {
     const now = this.isLoaded(tile);
     if (now === leaf.inDoc) return;
     leaf.inDoc = now;
+    this.changed = true;
     for (let n: FarNode | null = leaf; n; n = n.parent) n.loaded += now ? 1 : -1;
   }
 
   setErrorScale(scale: number): void {
+    if (this.seen.scale !== scale) this.changed = true;
     this.seen.scale = scale;
   }
 
   /** THE NODES DRAWN, from the roots down: a node is drawn in place of its children while what it leaves out spans under the pixels allowed; `reach`, an orthographic view's (Infinity in perspective) */
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach = Infinity, view: Frustum | null = null): void {
+    // DO NOT walk the tree again, and make its sets, for the frame that changed nothing it reads: the same eye, frustum and versions, nothing come or stored.
+    const outside = this.outsideKey();
+    const c = this.chosenEye;
+    if (!this.changed && c.x === eyeX && c.y === eyeY && c.z === eyeZ && c.pxAtMetre === pxAtMetre && c.orthoPx === orthoPx && c.reach === reach
+      && outside === this.chosenOutside && sameView(this.chosenHadView ? this.chosenView : null, view)) {
+      this.view = view;
+      return;
+    }
+    this.changed = false;
+    c.x = eyeX; c.y = eyeY; c.z = eyeZ; c.pxAtMetre = pxAtMetre; c.orthoPx = orthoPx; c.reach = reach;
+    this.chosenOutside = outside;
+    this.chosenHadView = view !== null;
+    if (view) this.chosenView.copy(view);
     this.view = view;
     const eye = this.eyeNow;
     eye.x = eyeX; eye.y = eyeY; eye.z = eyeZ; eye.pxAtMetre = pxAtMetre; eye.orthoPx = orthoPx; eye.reach = reach;
@@ -348,6 +372,7 @@ export class FarTree<P> implements FarTiles {
 
   /** A WebGL context restored: every mesh made again from the store, its arrays having been let go (`gpuOnly.ts`). */
   refill(): void {
+    this.changed = true;
     for (const n of this.nodes.values()) {
       n.cancel?.();
       n.cancel = null;
@@ -376,6 +401,18 @@ export class FarTree<P> implements FarTiles {
     this.leaves.clear();
     this.group.clear();
     this.eye = null;
+  }
+
+  /** What the choice reads from outside the tree that tells it nothing when it moves: the near level's version and the page's edits of the stored tiles (`nearTiles`). */
+  private outsideKey(): string {
+    const near = this.kind.near;
+    if (!near) return '';
+    const version = near.version?.() ?? '';
+    const edit = this.source?.pageEdit;
+    if (!edit) return version;
+    const d = new Digest();
+    for (const key of this.leaves.keys()) d.add(edit(key));
+    return `${version}|${d.value()}`;
   }
 
   /** The bakes' keys: the prefix, and the world's fingerprint when it has a plan. */
@@ -594,7 +631,7 @@ export class FarTree<P> implements FarTiles {
         void Promise.all(asked.tiles.map((t) => source.records(t.key).then((r) => r ?? emptyRecords(t.key, t.version)))).then((records) => {
           if (this.nodes.get(n.key) === n && n.nearAsked === sig) this.submitNear(n, sig, asked.bake, asked.variant, asked.tiles, records, asked.edited);
         }, (error: unknown) => {
-          if (this.nodes.get(n.key) === n && n.nearAsked === sig) { n.nearAsked = null; n.nearFailed = sig; }
+          if (this.nodes.get(n.key) === n && n.nearAsked === sig) { n.nearAsked = null; n.nearFailed = sig; this.changed = true; }
           if (!this.warned) { this.warned = true; console.warn(`[${this.kind.name}] a tile could not be read from the store`, error); }
         });
         break;
@@ -772,6 +809,7 @@ export class FarTree<P> implements FarTiles {
 
   /** A node that cannot be baked at this version: drawn empty, and so are its ancestors waiting for it. */
   private fail(n: FarNode, sig: string): void {
+    this.changed = true;
     this.dropMesh(n);
     n.asked = null;
     n.failed = sig;
@@ -866,6 +904,8 @@ export class FarTree<P> implements FarTiles {
 
   /** Chosen again with the last eye once the answers of this turn are in (one walk for many answers). */
   private again(): void {
+    // An answer came: the next choice is made whole.
+    this.changed = true;
     if (this.scheduled || !this.eye) return;
     this.scheduled = true;
     queueMicrotask(() => {
@@ -875,4 +915,14 @@ export class FarTree<P> implements FarTiles {
       if (e) this.choose(e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, e.reach, this.view);
     });
   }
+}
+
+/** Whether two frusta (or none) are the same: every plane's normal and constant. */
+function sameView(a: Frustum | null, b: Frustum | null): boolean {
+  if (a === null || b === null) return a === b;
+  for (let i = 0; i < 6; i++) {
+    const p = a.planes[i]!, q = b.planes[i]!;
+    if (p.constant !== q.constant || !p.normal.equals(q.normal)) return false;
+  }
+  return true;
 }
