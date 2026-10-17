@@ -2,7 +2,7 @@ import { BufferAttribute, BufferGeometry, Group, Mesh, MeshStandardMaterial, typ
 import type { CoverKind, GeologyKind, PaintDab } from '@world/terrainPaint';
 import { reliefHeight, type ReliefVersion, type TerrainStamp } from '@world/terrain';
 import type { RoadDoc } from '@world/doc';
-import { PLATE_SIZE, plateOf, plateRegion, platesAround, platesOver } from '@world/bounds';
+import { PLATE_SIZE, plateOf, plateRegion, platesOver } from '@world/bounds';
 import { type ChangeKind, type ChangeRect, isStreaming } from '@world/changes';
 import { plateDabs, sameList } from './platePaint';
 import { JournalCursor } from '@world/derived';
@@ -37,6 +37,7 @@ import { gpuLedger } from './gpuLedger';
 import { measureHitch } from '@core/hitch';
 import { compilesAhead, programsReady, queueUpload } from './uploads';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
+import { type FarNode, farNodesFor } from './farGround';
 import { TILE, tileOfKey } from '@world/tiles';
 
 /** THE WORLD'S GROUND, plate by plate of the unbounded grid (`world/bounds.ts`): the plates near the view made in full, a ring of far patches round it, nothing beyond */
@@ -55,10 +56,14 @@ const CONTENT_KINDS: readonly ChangeKind[] = ['roads', 'buildings', 'lots', 'uti
 /** A load or an unload of a tile (CLAUDE.md, "Streaming world"): what a plate holds is read again from the document. */
 const TILE_UNLOADED = 'tile unloaded';
 
-/** THE MAP'S GROUND (`wholeMap.ts` MAP_HALF, the player's order: never a world without an edge): every plate of the map drawn as far patches round the origin's plate (5 x 5 plates, 10 km; the map's edge lies on the plates' edges), its cut sides on the map's edge, nothing past it */
+/** THE MAP'S GROUND (`wholeMap.ts` MAP_HALF, the player's order: never a world without an edge): the plates of the map round the origin's plate (5 x 5 plates, 10 km; the map's edge lies on the plates' edges), drawn far as the quadtree's nodes the view asks (`farGround.ts`), its cut sides on the map's edge, nothing past it */
 const FAR_RING = Math.round(MAP_HALF / PLATE_SIZE - 0.5);
-/** Far plates there are at once: the ring's square, each in its own slot of the far mesh and of the far woods. */
-const FAR_SLOTS = (2 * FAR_RING + 1) ** 2;
+/** The far mesh's slots at first (grown twice over when the view asks more nodes, `growFar`): a 10 km map's 25 plates. */
+const FAR_SLOTS_FIRST = 32;
+/** The view moved this far: the far nodes chosen again (a node's choice moves with its distance, never by less than a quad). */
+const FAR_RESELECT = m(64);
+/** Plates' woods at most (the level-0 nodes the view can ask, `farGround.ts`, for a map of any size; the shader's fades are sized by it). */
+export const WOODS_MOST = 192;
 
 class PlateSource implements TerrainSource {
   changes!: RoadDoc['changes'];
@@ -99,12 +104,11 @@ interface Plate {
   top: number;
 }
 
-/** A plate of the far ring: where it stands and its slot. */
-interface FarPlate {
-  readonly key: number;
-  readonly cx: number;
-  readonly cy: number;
+/** A node of the far ground resident: what it is, its slot in the far mesh, and its woods' slot (level 0 only). */
+interface FarResident {
+  readonly node: FarNode;
   readonly slot: number;
+  readonly woods: number;
 }
 
 /** Whether a disc reaches a plate (its square grown by the disc). */
@@ -130,14 +134,17 @@ export function createFlatFar(slots: number): FlatFar {
 
 /** Writes plate (cx, cy)'s patch into `slot` from the land `ground` (the base added here), and marks only that slot to be sent. */
 export function writeFarPatch(far: FlatFar, slot: number, cx: number, cy: number, ground: (x: number, y: number) => number): void {
+  writeFarNode(far, slot, cx - TERRAIN_HALF, cy - TERRAIN_HALF, PLATE_SIZE / FAR_QUADS, SKIRT, ground);
+}
+
+/** Writes the patch of `FAR_QUADS` quads of `step` from (x0, y0) into `slot`, its skirts `skirt` deep (a coarser node's sampling misses more: deeper), from the land `ground` (the base added here); marks only that slot to be sent. */
+export function writeFarNode(far: FlatFar, slot: number, x0: number, y0: number, step: number, skirt: number, ground: (x: number, y: number) => number): void {
   const position = far.geometry.getAttribute('position') as BufferAttribute;
   const normal = far.geometry.getAttribute('normal') as BufferAttribute;
   const positions = position.array as Float32Array, normals = normal.array as Float32Array;
-  const step = PLATE_SIZE / FAR_QUADS;
   // Heights on a ring one cell wider than the patch, for its normals.
   const RING = FAR_SIDE + 2;
   const h = new Float64Array(RING * RING);
-  const x0 = cx - TERRAIN_HALF, y0 = cy - TERRAIN_HALF;
   for (let j = 0; j < RING; j++) for (let i = 0; i < RING; i++) h[j * RING + i] = TERRAIN_BASE + ground(x0 + (i - 1) * step, y0 + (j - 1) * step);
   const first = slot * FAR_VERTS;
   let v = first;
@@ -159,7 +166,7 @@ export function writeFarPatch(far: FlatFar, slot: number, cx: number, cy: number
   for (let e = 0; e < 4; e++) {
     for (let k = 0; k < FAR_SIDE; k++) {
       const t = e === 0 ? corner(k, 0) : e === 1 ? corner(k, FAR_QUADS) : e === 2 ? corner(0, k) : corner(FAR_QUADS, k);
-      positions[v * 3] = positions[t * 3]!; positions[v * 3 + 1] = positions[t * 3 + 1]! - SKIRT; positions[v * 3 + 2] = positions[t * 3 + 2]!;
+      positions[v * 3] = positions[t * 3]!; positions[v * 3 + 1] = positions[t * 3 + 1]! - skirt; positions[v * 3 + 2] = positions[t * 3 + 2]!;
       normals[v * 3] = normals[t * 3]!; normals[v * 3 + 1] = normals[t * 3 + 1]!; normals[v * 3 + 2] = normals[t * 3 + 2]!;
       v++;
     }
@@ -170,19 +177,19 @@ export function writeFarPatch(far: FlatFar, slot: number, cx: number, cy: number
   }
 }
 
-/** A far patch to draw: its slot, and which of its edges (south, north, west, east) are the ring's rim (no skirt: the cut side stands there). */
-export interface FarPatchDrawn { readonly slot: number; readonly rim: readonly [boolean, boolean, boolean, boolean] }
+/** A far patch to draw: its slot, which of its edges (south, north, west, east) are the ring's rim (no skirt: the cut side stands there), and how many of its quads lie on the map each way (all, `FAR_QUADS`, unless said). */
+export interface FarPatchDrawn { readonly slot: number; readonly rim: readonly [boolean, boolean, boolean, boolean]; readonly quadsX?: number; readonly quadsY?: number }
 
 /** Writes into the far ground's index the patches given (the far plates not drawn in full); returns how many indices. */
 export function farIndexInto(far: FlatFar, patches: Iterable<FarPatchDrawn>): number {
   const index = far.geometry.getIndex()!;
   const all = index.array as Uint32Array;
   let w = 0;
-  for (const { slot, rim } of patches) {
+  for (const { slot, rim, quadsX = FAR_QUADS, quadsY = FAR_QUADS } of patches) {
     const first = slot * FAR_VERTS;
     const corner = (i: number, j: number): number => first + j * FAR_SIDE + i;
-    for (let j = 0; j < FAR_QUADS; j++) {
-      for (let i = 0; i < FAR_QUADS; i++) {
+    for (let j = 0; j < quadsY; j++) {
+      for (let i = 0; i < quadsX; i++) {
         const p00 = corner(i, j), p10 = corner(i + 1, j), p01 = corner(i, j + 1), p11 = corner(i + 1, j + 1);
         // Counter-clockwise seen from above (east x north = up).
         all[w++] = p00; all[w++] = p10; all[w++] = p01;
@@ -192,7 +199,8 @@ export function farIndexInto(far: FlatFar, patches: Iterable<FarPatchDrawn>): nu
     for (let e = 0; e < 4; e++) {
       if (rim[e]) continue;
       const hung = first + FAR_SIDE * FAR_SIDE + e * FAR_SIDE;
-      for (let k = 0; k < FAR_QUADS; k++) {
+      // Along the edge: as many quads as lie on the map (a node the ring's edge cuts is the rim on that side).
+      for (let k = 0; k < (e < 2 ? quadsX : quadsY); k++) {
         const t0 = e === 0 ? corner(k, 0) : e === 1 ? corner(k, FAR_QUADS) : e === 2 ? corner(0, k) : corner(FAR_QUADS, k);
         const t1 = e === 0 ? corner(k + 1, 0) : e === 1 ? corner(k + 1, FAR_QUADS) : e === 2 ? corner(0, k + 1) : corner(FAR_QUADS, k + 1);
         const h0 = hung + k, h1 = hung + k + 1;
@@ -221,7 +229,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
 
   // The far ground: the terrain's material without a plate of its own (DO NOT make a whole plate, ~15 MB, for its material)
   const farGround = farLandMaterial(anisotropy);
-  const far = createFlatFar(FAR_SLOTS);
+  let far = createFlatFar(FAR_SLOTS_FIRST);
   const farMesh = new Mesh(far.geometry, farGround.material);
   farMesh.matrixAutoUpdate = false;
   farMesh.name = 'flat-world-far';
@@ -236,21 +244,36 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   slab.visible = false;
   root.add(slab);
   // THE WOODS OF THE FAR PLATES (`farForest.ts`)
-  const farForest = createFarForest(FAR_SLOTS, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
+  const farForest = createFarForest(WOODS_MOST, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
   root.add(farForest.object);
   let focusX = 0, focusY = 0;
   /** How far from the view a made plate not drawn is kept (`KEEP_MARGIN`); set with the view (`focus`). */
   let keepReach = Infinity;
   let farRelief: ReliefVersion | null = null;
 
-  // The map's far plates by key, the slots free.
-  const farPlates = new Map<number, FarPlate>();
-  const freeSlots: number[] = Array.from({ length: FAR_SLOTS }, (_, i) => FAR_SLOTS - 1 - i);
+  // The far ground's nodes resident, by key, the slots free (`farGround.ts`): what the view's distance asks, never every plate of the map.
+  const farNodes = new Map<string, FarResident>();
+  const freeSlots: number[] = Array.from({ length: FAR_SLOTS_FIRST }, (_, i) => FAR_SLOTS_FIRST - 1 - i);
+  const freeWoods: number[] = Array.from({ length: WOODS_MOST }, (_, i) => WOODS_MOST - 1 - i);
   let ringSet = false;
-  const writeFar = (fp: FarPlate): void => {
+  /** Where the nodes were last chosen for. */
+  let farAtX = NaN, farAtY = NaN;
+  const writeFar = (r: FarResident): void => {
     const relief = farRelief;
     if (relief === null) return;
-    writeFarPatch(far, fp.slot, fp.cx, fp.cy, (x, y) => reliefHeight(relief, x, y));
+    const n = r.node;
+    writeFarNode(far, r.slot, n.x0, n.y0, n.step, SKIRT * (1 << n.k), (x, y) => reliefHeight(relief, x, y));
+  };
+  /** The far mesh twice as roomy, every slot written kept (a new geometry: three r186 keeps a buffer's size). */
+  const growFar = (): void => {
+    const was = far;
+    const next = createFlatFar(was.slots * 2);
+    for (const name of ['position', 'normal'] as const) (next.geometry.getAttribute(name).array as Float32Array).set(was.geometry.getAttribute(name).array as Float32Array);
+    for (let slot = next.slots - 1; slot >= was.slots; slot--) freeSlots.unshift(slot);
+    far = next;
+    farMesh.geometry = next.geometry;
+    was.geometry.dispose();
+    farDrawn = '';
   };
   /** The cut sides on the map's edge, along the far patches' own edge (their quads' step): where the land ends. */
   const buildSlab = (): void => {
@@ -260,43 +283,49 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     slab.geometry = slabGeometry(-MAP_HALF, MAP_HALF, -MAP_HALF, MAP_HALF, PLATE_SIZE / FAR_QUADS, (x, y) => TERRAIN_BASE + reliefHeight(relief, x, y));
     slab.visible = true;
   };
-  const neighbour = (fp: FarPlate, di: number, dj: number): boolean => farPlates.has(plateOf(fp.cx + di * PLATE_SIZE, fp.cy + dj * PLATE_SIZE));
-  /** The far patches of the plates not drawn in full, their rims where the ring ends. */
-  /** The slots the far index was last written with (their rims follow the ring, set once). */
+  /** The slots the far index was last written with (their rims follow the ring). */
   let farDrawn = '';
+  /** The far patches of the nodes resident, but a plate drawn in full. */
   const drawFar = (): void => {
     const patches: FarPatchDrawn[] = [];
-    for (const fp of farPlates.values()) {
-      if (plates.get(fp.key)?.shown) continue;
-      patches.push({ slot: fp.slot, rim: [!neighbour(fp, 0, -1), !neighbour(fp, 0, 1), !neighbour(fp, -1, 0), !neighbour(fp, 1, 0)] });
+    for (const r of farNodes.values()) {
+      if (r.node.plate !== null && plates.get(r.node.plate)?.shown) continue;
+      patches.push({ slot: r.slot, rim: r.node.rim, quadsX: r.node.quadsX, quadsY: r.node.quadsY });
     }
-    // DO NOT write the whole far index again at each refresh (every edit of the content calls one): only when the plates it draws changed.
+    // DO NOT write the whole far index again at each refresh (every edit of the content calls one): only when the patches it draws changed.
     const key = patches.map((p) => p.slot).join(',');
     if (key === farDrawn) return;
     farDrawn = key;
     farIndexInto(far, patches);
   };
-  /** The map's plates, written once (they never follow the view: the map has an edge); true the first time. */
-  const moveRing = (): boolean => {
-    if (ringSet) return false;
+  /** The far nodes the view over (x, y) asks (`farNodesFor`): the ones it no longer asks let go, the new ones written; true when they changed. */
+  const followFar = (x: number, y: number): boolean => {
+    if (ringSet && Math.hypot(x - farAtX, y - farAtY) < FAR_RESELECT) return false;
     ringSet = true;
-    const want = platesAround(0, 0, FAR_RING);
-    const kept = new Set(want);
-    for (const [key, fp] of farPlates) {
+    farAtX = x; farAtY = y;
+    const want = farNodesFor(x, y, FAR_RING, FAR_QUADS);
+    const kept = new Set(want.map((n) => n.key));
+    let changed = false;
+    for (const [key, r] of farNodes) {
       if (kept.has(key)) continue;
-      farPlates.delete(key);
-      freeSlots.push(fp.slot);
-      farForest.book.drop(key);
+      farNodes.delete(key);
+      freeSlots.push(r.slot);
+      if (r.node.plate !== null) { farForest.book.drop(r.node.plate); freeWoods.push(r.woods); }
+      changed = true;
     }
     // Nearest first: the woods asked in that order.
-    for (const key of want) {
-      if (farPlates.has(key)) continue;
-      const r = plateRegion(key);
-      const fp: FarPlate = { key, cx: r.cx, cy: r.cy, slot: freeSlots.pop()! };
-      farPlates.set(key, fp);
-      writeFar(fp);
-      farForest.book.add(key, fp.slot, fp.cx, fp.cy);
+    want.sort((a, b) => Math.hypot(a.x0 + a.step * FAR_QUADS / 2 - x, a.y0 + a.step * FAR_QUADS / 2 - y) - Math.hypot(b.x0 + b.step * FAR_QUADS / 2 - x, b.y0 + b.step * FAR_QUADS / 2 - y));
+    for (const node of want) {
+      if (farNodes.has(node.key)) continue;
+      if (!freeSlots.length) growFar();
+      const woods = node.plate !== null ? freeWoods.pop() ?? -1 : -1;
+      const r: FarResident = { node, slot: freeSlots.pop()!, woods };
+      farNodes.set(node.key, r);
+      writeFar(r);
+      if (woods >= 0) farForest.book.add(node.plate!, woods, node.x0 + TERRAIN_HALF, node.y0 + TERRAIN_HALF);
+      changed = true;
     }
+    if (!changed) return false;
     buildSlab();
     drawFar();
     return true;
@@ -304,7 +333,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   const buildFar = (relief: ReliefVersion): void => {
     if (relief === farRelief) return;
     farRelief = relief;
-    for (const fp of farPlates.values()) writeFar(fp);
+    for (const r of farNodes.values()) writeFar(r);
     buildSlab();
     farMesh.visible = true;
     drawFar();
@@ -655,7 +684,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   const bareAt = (x: number, y: number): number => TERRAIN_BASE + bare(x, y);
 
   ensure(home);
-  moveRing();
+  followFar(0, 0);
   refresh();
   const firstSurface = home.surface!;
   return {
@@ -670,7 +699,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       setJobFocus(x, y);
       focusX = x;
       focusY = y;
-      const ringMoved = moveRing();
+      const ringMoved = followFar(x, y);
       const radius = reach < NEAR_VIEW ? Math.max(TERRAIN_HALF, reach * 1.6) + TERRAIN_HALF : -1;
       keepReach = radius > 0 ? radius * KEEP_MARGIN : 0;
       const key = `${plateOf(x, y)}:${Math.round(radius / TERRAIN_HALF)}`;
@@ -718,9 +747,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     bakeRelief(renderer: WebGLRenderer) {
       // The far woods: each far plate's fade from whether it is in full and its own trees can grow.
       const now = performance.now() / 1000;
-      for (const fp of farPlates.values()) {
-        const p = plates.get(fp.key);
-        farForest.book.setFull(fp.key, p?.shown ?? false, p?.surface?.ecology() != null, now);
+      for (const r of farNodes.values()) {
+        if (r.woods < 0) continue;
+        const p = plates.get(r.node.plate!);
+        farForest.book.setFull(r.node.plate!, p?.shown ?? false, p?.surface?.ecology() != null, now);
       }
       farForest.update(renderer, now);
       // Each plate drawn sends the paint a stroke laid since the last frame (`terrain.ts` flushPaint).
