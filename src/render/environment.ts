@@ -176,7 +176,8 @@ export function createEnvironment(
     cascadeLights.push(light);
   }
   // The edge of a shadow filtered over two texels (three's PCF: a Vogel disc of `radius` texels)
-  const cascades = createSunCascades(sun, cascadeLights, 2);
+  // Each cascade's still casters kept between their draws, what moves drawn over them (`sunCascades.ts`).
+  const cascades = createSunCascades(sun, cascadeLights, 2, renderer);
   cascades.setEnabled(quality.shadows, quality.shadowMapSize);
   // In this order: three draws the lights that cast shadows first, in the order it meets them, and the shader takes them as cascades 0, 1, 2
   for (const light of cascades.lights) scene.add(light, light.target);

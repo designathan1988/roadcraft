@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DirectionalLight, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, BoxGeometry, PerspectiveCamera, ShaderChunk, Vector3 } from 'three';
+import { DirectionalLight, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, BoxGeometry, Object3D, PerspectiveCamera, ShaderChunk, Vector3, type WebGLRenderer } from 'three';
 
 import { cascadedSunChunks, createSunCascades, SUN_CASCADES } from '@render/sunCascades';
 import { m } from '@world/units';
@@ -125,6 +125,81 @@ describe('sun cascades', () => {
     cascades.lights[2]!.shadow.updateMatrices(cascades.lights[2]!);
     expect(cars.visible).toBe(true);
     cascades.restore();
+  });
+
+  it('keeps each cascade\'s still casters: what moves is drawn over a copy of them, the town drawn again only when it changed', () => {
+    const drawn: { lights: number; movers: boolean; cleared: boolean }[] = [];
+    const town = new Object3D();
+    const copies: string[] = [];
+    let clears = 0;
+    const renderer = {
+      capabilities: { reversedDepthBuffer: false },
+      clear: () => { clears++; },
+      initRenderTarget: () => {},
+      copyTextureToTexture: (from: { name: string }, to: { name: string }) => { copies.push(`${from.name}>${to.name}`); },
+      getRenderTarget: () => null, getActiveCubeFace: () => 0, getActiveMipmapLevel: () => 0, setRenderTarget: () => {},
+      shadowMap: {
+        needsUpdate: false,
+        // As three's: each light asked for drawn (its map cleared, then the scene's casters), then no longer asked for.
+        render(lights: DirectionalLight[], scene: Object3D) {
+          for (const light of lights) {
+            if (!light.shadow.needsUpdate) continue;
+            light.shadow.updateMatrices(light);
+            const before = clears;
+            renderer.clear();
+            drawn.push({ lights: lights.indexOf(light), movers: scene !== town, cleared: clears > before });
+            light.shadow.needsUpdate = false;
+          }
+        },
+      },
+    };
+    const sun = new DirectionalLight(), others = [new DirectionalLight(), new DirectionalLight()];
+    sun.castShadow = true;
+    const cascades = createSunCascades(sun, others, 2, renderer as unknown as WebGLRenderer);
+    cascades.setEnabled(true, 512);
+    const car = new Mesh(new BoxGeometry(m(5), m(2), m(5)));
+    town.add(car);
+    car.updateMatrixWorld();
+    cascades.setMovers([{ roots: [car], moving: () => true }]);
+    const camera = new PerspectiveCamera(50, 16 / 9, m(0.4), m(2500));
+    camera.position.set(0, m(10), m(30));
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    cascades.follow(camera, new Vector3(-0.5, 0.75, -0.3).normalize(), flat, new Vector3(), m(40));
+    const frame = (): void => { renderer.shadowMap.render(cascades.lights as DirectionalLight[], town); cascades.restore(); };
+    // The first frame: every cascade drawn whole without the car, kept, and the car drawn over it without a clear.
+    expect(cascades.pass({ changed: false, effects: false, wind: false })).toBe(true);
+    let visibleInTown = true;
+    const shadow0 = cascades.lights[0]!.shadow;
+    const draw = shadow0.updateMatrices.bind(shadow0);
+    shadow0.updateMatrices = (light) => { draw(light); if (drawn.length === 0) visibleInTown = car.visible; };
+    frame();
+    expect(visibleInTown).toBe(false);
+    const still = drawn.filter((d) => !d.movers), over = drawn.filter((d) => d.movers);
+    expect(still.length).toBe(SUN_CASCADES);
+    expect(over.length).toBeGreaterThan(0);
+    expect(over.every((d) => !d.cleared)).toBe(true);
+    expect(copies.length).toBe(SUN_CASCADES);
+    expect(copies.every((c) => c.includes('.shadowMap>'))).toBe(true);
+    // The car moves on, nothing else changed: the far cascade not drawn again, only put back from its copy and the car over it; the near two drawn whole (the plants sway in them, `wind.ts`).
+    drawn.length = 0; copies.length = 0;
+    expect(cascades.pass({ changed: false, effects: false, wind: false, still: true })).toBe(true);
+    expect(cascades.lights.map((light) => light.shadow.needsUpdate)).toEqual([true, true, false]);
+    frame();
+    expect(drawn.filter((d) => !d.movers).length).toBe(SUN_CASCADES - 1);
+    expect(drawn.filter((d) => d.movers).every((d) => !d.cleared)).toBe(true);
+    expect(copies.filter((c) => c.startsWith('>')).length).toBe(1);
+    // Something landed or the view moved (not still): the far cascade's store stands for nothing, drawn whole.
+    drawn.length = 0;
+    cascades.pass({ changed: false, effects: false, wind: false, still: false });
+    expect(cascades.lights[2]!.shadow.needsUpdate).toBe(true);
+    frame();
+    // The town changed: drawn whole again.
+    drawn.length = 0;
+    cascades.pass({ changed: true, effects: false, wind: false });
+    frame();
+    expect(drawn.filter((d) => !d.movers).length).toBe(SUN_CASCADES);
+    expect(car.visible).toBe(true);
   });
 
   it('lights the sun once in three\'s shaders, by the finest cascade that holds the point', () => {
