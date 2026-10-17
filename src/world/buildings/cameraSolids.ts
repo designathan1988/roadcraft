@@ -246,7 +246,7 @@ class SolidFiling implements CameraSolids {
 
   forEachInAny(rects: readonly Rect[], visit: SolidVisit): void {
     this.pages.walk();
-    for (const r of rects) this.visitCells(r[0], r[1], r[2], r[3], visit);
+    for (let i = 0; i < rects.length; i++) { const box = rects[i]!; this.visitCells(box[0], box[1], box[2], box[3], visit); }
   }
 
   /** The slots filed over a rectangle not yet met in this walk. */
