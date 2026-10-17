@@ -1,6 +1,5 @@
 import { canQueueJobs, jobWorkers, submitJob } from '../../jobs/jobPool';
 import { forgetOtherDerived } from '../derivedCache';
-import { groundOver } from '../sharedGround';
 import { type FarKind, FarTree, type FarTreeJob, type FarTreeRun } from '../farTree';
 import { type FarMass, isBoxMass } from './cellArrays';
 import { FAR_TIER, TIER_SPAN } from './cellPool';
@@ -36,11 +35,7 @@ export function farRunner(env: () => FarEnv): FarRun {
   return (job, done) => {
     const full = (): FarJob => {
       const e = env();
-      // The plates under the node only (`groundOver`): its tiles' buildings stand on them.
-      const { k, i, j } = farNode(job.node);
-      const side = nodeSide(k);
-      const ground = e.ground ? groundOver(e.ground, [i * side, j * side, (i + 1) * side, (j + 1) * side]) : null;
-      return { ...job, ground, naturalIsGround: e.naturalIsGround, ...(e.tone ? { tone: e.tone } : {}) };
+      return { ...job, ground: e.ground, naturalIsGround: e.naturalIsGround, ...(e.tone ? { tone: e.tone } : {}) };
     };
     if (!canQueueJobs()) {
       let live = true;

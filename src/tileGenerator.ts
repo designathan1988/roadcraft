@@ -1,6 +1,5 @@
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
-import { TILE, tileOfKey } from '@world/tiles';
-import { groundOver } from './render/sharedGround';
+import { tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { FarTileBake, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
@@ -26,12 +25,6 @@ interface Waiting {
 
 /** A worker's lane of the generator: on a worker of the long-running side, or set aside on another kind's while the map is made (`setAside`). */
 interface Lane { readonly port: Worker; busy: Waiting | null; readonly aside: boolean }
-
-/** What tile (i, j) bakes its far levels with: its buildings' ground the plates under it only (`groundOver`); the roads' all of it (a road of the tile may run tiles past it). */
-function farOver(far: FarTileBake | null, i: number, j: number): FarTileBake | null {
-  if (!far?.ground) return far;
-  return { ...far, ground: groundOver(far.ground, [i * TILE, j * TILE, (i + 1) * TILE, (j + 1) * TILE]) };
-}
 
 export class TileGenerator {
   private readonly lanes: Lane[] = [];
@@ -119,7 +112,7 @@ export class TileGenerator {
       if (!next) continue;
       lane.busy = next;
       const { i, j } = tileOfKey(next.key);
-      lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: { ...next.store, far: farOver(this.far(), i, j) } } : {}) } satisfies StreamTileAsk);
+      lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: { ...next.store, far: this.far() } } : {}) } satisfies StreamTileAsk);
     }
     // The map's tiles waiting: the long side's workers kept for them, no queued job between two tiles (`jobPool.ts` setTilesWaiting).
     setTilesWaiting(this.aside && this.queue.length > 0);

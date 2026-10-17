@@ -4,9 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
 import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
-import { type CellJob, type WorkReply, runCellJob, workerReads } from '@render/buildings/cellWork';
-import { GroundShare, groundOver } from '@render/sharedGround';
-import { PLATE_SIZE, plateOf } from '@world/bounds';
+import { type CellJob, type WorkReply, runCellJob } from '@render/buildings/cellWork';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, COARSE_PARTS } from '@render/buildings/layerCells';
 import { growOnLot } from '@world/growth/zoning';
@@ -129,39 +127,5 @@ describe('the paving read by a building cell worker', () => {
       expect(s.flags ?? null).toEqual(chunk.flags ?? null);
       expect(JSON.stringify(s.lot)).toBe(JSON.stringify(chunk.lotGround?.recipe ?? null));
     }
-  });
-
-  it('asks again over a wider box when it reads the ground past the plates it was handed, then puts the cell together as with them all', () => {
-    const { doc, net } = town();
-    const elevation = buildRoadElevation(net, ground);
-    const rise = (x: number, y: number): number => footwayRiseAt(net, x, y);
-    const paved: PavingSource = Object.assign(
-      (x: number, y: number): number => (elevation.has(GROUND_ONLY) ? pavedHeightFrom(elevation, GROUND_ONLY, rise, x, y) : NaN),
-      { pack: (rect: readonly [number, number, number, number]) => ({
-        data: { rect, field: elevation.fieldFor!([rect], []).data, flush: packFlush(net, [rect]).data }, transfer: [] }) });
-    // The town's ground in shared plates, as the page shares it.
-    const share = new GroundShare(9, PLATE_SIZE / 8, PLATE_SIZE / 2, 0);
-    for (const at of [[0, 0], [-PLATE_SIZE, 0], [0, -PLATE_SIZE], [-PLATE_SIZE, -PLATE_SIZE]] as const) {
-      const plate = share.open(plateOf(at[0], at[1]))!;
-      for (let k = 0; k < 81; k++) { plate.rendered[k] = Math.sin(k) * 2; plate.natural[k] = Math.sin(k) * 2 - m(0.3); }
-    }
-    const kit = createBuildingKit();
-    const buildings = [...doc.buildings.all()].filter((b) => Math.floor(b.x / BATCH_CELL) === -1 && Math.floor(b.y / BATCH_CELL) === -1);
-    const cellRect: [number, number, number, number] = [-BATCH_CELL - m(64), -BATCH_CELL - m(64), m(64), m(64)];
-    const base = structuredClone({ id: 1, kind: 'cell' as const, cell: '-1,-1', paved: true, boxes: kitBoxes(kit),
-      entries: buildings.map((b) => ({ key: String(b.id), sig: b.id, digest: 0, record: refOf(b) })), paving: paved.pack!(cellRect)!.data });
-    const whole = runCellJob({ ...base, ground: share.current! }, workerReads({ ...base, ground: share.current! }));
-    expect(whole.kind).toBe('done');
-    // Handed the plates of a box far from the cell: every read past them, the job asks again over the box it read.
-    const far: CellJob = { ...base, id: 2, ground: structuredClone(groundOver(share.current!, [m(5000), m(5000), m(5001), m(5001)])) };
-    const pass = runCellJob(far, workerReads(far));
-    expect(pass.kind).toBe('wider');
-    if (pass.kind !== 'wider') return;
-    // As the pool asks it again (`cellPool.ts` write): the ground over that box.
-    const again: CellJob = { ...base, id: 3, paving: paved.pack!(pass.rect)!.data, ground: structuredClone(groundOver(share.current!, pass.rect)) };
-    const done = runCellJob(again, workerReads(again));
-    expect(done.kind).toBe('done');
-    if (done.kind !== 'done' || whole.kind !== 'done') return;
-    expect(bytes(done.result.batch)).toBe(bytes(whole.result.batch));
   });
 });

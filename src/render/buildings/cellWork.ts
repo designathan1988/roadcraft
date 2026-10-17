@@ -83,21 +83,15 @@ export function replyBuffers(reply: WorkReply): ArrayBuffer[] {
 /** What a job reads: the ground (shared, or the page's own), and the paving, undefined where it cannot be read here. */
 interface CellReads extends GroundReaders {
   readonly pavedAt?: (x: number, y: number) => number | undefined;
-  /** The box of the ground read past the plates handed (x0, y0, x1, y1; empty while x0 > x1): the job is asked again over it (`wider`). */
-  readonly groundMissed?: Float64Array;
 }
 
 /** A job's reads in a worker: the shared ground, the paving off the roads it was handed (reading the shared natural ground where they need it). */
 export function workerReads(job: CellJob): CellReads {
   if (!job.ground) throw new Error(`[buildings] a cell job with no shared ground (${job.cell})`);
-  const groundMissed = Float64Array.of(Infinity, Infinity, -Infinity, -Infinity);
-  const shared = sharedGroundReaders(job.ground, (x, y) => {
-    groundMissed[0] = Math.min(groundMissed[0]!, x); groundMissed[1] = Math.min(groundMissed[1]!, y);
-    groundMissed[2] = Math.max(groundMissed[2]!, x); groundMissed[3] = Math.max(groundMissed[3]!, y);
-  });
+  const shared = sharedGroundReaders(job.ground);
   const naturalAt = job.naturalIsGround ? shared.groundAt : shared.naturalAt;
   const pavedAt = job.paving ? pavingReader(job.paving, naturalAt) : undefined;
-  return { groundAt: shared.groundAt, naturalAt, groundMissed, ...(pavedAt ? { pavedAt } : {}) };
+  return { groundAt: shared.groundAt, naturalAt, ...(pavedAt ? { pavedAt } : {}) };
 }
 
 const COARSE: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS.filter((k) => COARSE_PARTS.has(k)), shells: true, furniture: true };
@@ -120,12 +114,6 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
     }
     : undefined;
   const { groundAt, naturalAt } = reads;
-  /** Whether anything was read past what was handed (the paving's roads, the ground's plates): its box joined into the misses. */
-  const groundMissed = (): boolean => {
-    const g = reads.groundMissed;
-    if (g && g[0]! <= g[2]!) { missX0 = Math.min(missX0, g[0]!); missY0 = Math.min(missY0, g[1]!); missX1 = Math.max(missX1, g[2]!); missY1 = Math.max(missY1, g[3]!); }
-    return missX0 <= missX1;
-  };
   const detail = MASS_DETAIL[job.kind];
   if (detail) {
     const masses: MassingChunk[] = [];
@@ -143,8 +131,7 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
     }
     // On the square's grid (`cellArrays.ts` `massGrid`): a cell's, a tile's or a plate's.
     const at = job.cell[1] === ':' ? levelCells(job.cell) : { i0: Number(job.cell.slice(0, job.cell.indexOf(','))), j0: Number(job.cell.slice(job.cell.indexOf(',') + 1)), n: 1 };
-    if (groundMissed()) return wider(job, missX0, missY0, missX1, missY1);
-    return { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries: [], mass: cellMass(masses, at), floors } };
+    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries: [], mass: cellMass(masses, at), floors } };
   }
   // DO NOT parse a text per building: each record decoded from its tile's shared table, a tile's shared members once for the job.
   const buildings = readRecords(job.entries.map((entry) => entry.record));
@@ -159,13 +146,12 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   if (job.kind === 'summary') {
     const floorsOf = new PartyWalls(buildings, naturalAt, paved, known);
     const summaries = buildings.map((b, i) => summaryOf(chunkSummary(b, groundAt, paved, naturalAt, floorsOf), i));
-    if (groundMissed()) return wider(job, missX0, missY0, missX1, missY1);
-    return { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries, floors: floorsOf.floorsKnown() } };
+    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries, floors: floorsOf.floorsKnown() } };
   }
   // The detail and its far level: the buildings of the cell as one another's neighbours, a party wall's covered bays not laid (`partyWalls.ts`).
   const party = new PartyWalls(buildings, naturalAt, paved, known);
   const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade', true, party));
-  if (groundMissed()) return wider(job, missX0, missY0, missX1, missY1);
+  if (missX0 <= missX1) return wider(job, missX0, missY0, missX1, missY1);
   const summaries = chunks.map(summaryOf);
   // The far level's shells on the cell's grid (`cellArrays.ts` `ShellGrid`); the detail's in floats (its millimetre steps).
   const comma = job.cell.indexOf(',');
@@ -185,7 +171,7 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   return { kind: 'done', job: job.id, result: { batch, parts, summaries, floors: party.floorsKnown() } };
 }
 
-/** The roads (and the ground's box, `cellPool.ts` groundArea) to hand the job again: those it was handed and every point it read past them, a metre round. */
+/** The roads to hand the job again: those it was handed and every point it read past them, a metre round. */
 function wider(job: CellJob, x0: number, y0: number, x1: number, y1: number): WorkReply {
   const was = job.paving?.rect;
   const rect: [number, number, number, number] = [x0 - 1, y0 - 1, x1 + 1, y1 + 1];

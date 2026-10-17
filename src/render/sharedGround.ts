@@ -1,5 +1,4 @@
-import { PLATE_SIZE, plateOf, platesOver } from '@world/bounds';
-import { m } from '@world/units';
+import { PLATE_SIZE, plateOf } from '@world/bounds';
 import { type ReliefVersion, reliefHeight } from '@world/terrain';
 import { sampleCorners } from './terrainShaping';
 
@@ -23,29 +22,6 @@ export interface SharedGroundData {
   readonly relief: ReliefVersion | null;
   /** The plates made, by key (`world/bounds.ts` `plateOf`); a plate not in it is read off the relief. */
   readonly plates: ReadonlyMap<number, SharedArrayBuffer>;
-  /** The box the job reads in (x0, y0, x1, y1; `groundOver`): its plates only were handed, a read past it throws. None: every plate made. */
-  readonly area?: readonly [number, number, number, number];
-}
-
-/** How far past the box a job names its ground is handed: a building, a lot's bank or a road's casing over its edge. */
-export const GROUND_MARGIN = m(256);
-
-/** A read of the ground past the box a job was handed it for (`groundOver`): the job is done again where every plate is read (the page). */
-export class GroundPastArea extends Error {}
-
-/**
- * The ground a job reads in `box` (and `GROUND_MARGIN` round it): the plates over it only. DO NOT post every plate made with every job (each
- * worker given a handle to each plate's buffer, ~1.6 MB each, job after job): only the job's own, as `roadStations.ts` keeps its hints by
- * the plates under its roads.
- */
-export function groundOver(data: SharedGroundData, box: readonly [number, number, number, number]): SharedGroundData {
-  const area = [box[0] - GROUND_MARGIN, box[1] - GROUND_MARGIN, box[2] + GROUND_MARGIN, box[3] + GROUND_MARGIN] as const;
-  const plates = new Map<number, SharedArrayBuffer>();
-  for (const key of platesOver(area)) {
-    const buffer = data.plates.get(key);
-    if (buffer) plates.set(key, buffer);
-  }
-  return { n: data.n, cell: data.cell, half: data.half, base: data.base, relief: data.relief, plates, area };
 }
 
 /** The ground as a building reads it: as drawn, and as it was before the roads cut it. */
@@ -119,8 +95,8 @@ export class GroundShare {
   }
 }
 
-/** The ground read off the shared plates, point for point as `flatAtlas.ts` `ask` and `terrain.ts` `sampleGrid` read it on the page; `missed`: told each read past the job's box (read off what was handed: the job asks again over a wider one), none: such a read throws */
-export function sharedGroundReaders(data: SharedGroundData, missed?: (x: number, y: number) => void): GroundReaders {
+/** The ground read off the shared plates, point for point as `flatAtlas.ts` `ask` and `terrain.ts` `sampleGrid` read it on the page */
+export function sharedGroundReaders(data: SharedGroundData): GroundReaders {
   const grid = { n: data.n, cell: data.cell, half: data.half };
   const views = new Map<number, PlateHeights | null>();
   const viewOf = (key: number): PlateHeights | null => {
@@ -133,13 +109,7 @@ export function sharedGroundReaders(data: SharedGroundData, missed?: (x: number,
   };
   /** A plate not made: the base and the map's own relief (`flatAtlas.ts` `bareAt`). */
   const bare = (x: number, y: number): number => data.base + (data.relief === null ? 0 : reliefHeight(data.relief, x, y));
-  const area = data.area;
   const read = (natural: boolean) => (x: number, y: number): number => {
-    // A plate past the box was never handed: read off the relief there, the ground would be wrong.
-    if (area && !(x >= area[0] && x <= area[2] && y >= area[1] && y <= area[3])) {
-      if (!missed) throw new GroundPastArea(`the ground read at (${x}, ${y}), past the box the job was handed it for`);
-      missed(x, y);
-    }
     // The plate and its centre without an object a read: a building's emission reads the ground thousands of times.
     const pi = Math.floor(x / PLATE_SIZE + 0.5), pj = Math.floor(y / PLATE_SIZE + 0.5);
     const cx = pi * PLATE_SIZE, cy = pj * PLATE_SIZE;
