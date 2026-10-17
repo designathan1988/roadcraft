@@ -231,6 +231,10 @@ export class NearTiles implements FarTiles {
     const e = this.eyeNow;
     const kind = product.kind;
     const held = this.held.get(kind)!;
+    if (product.enabled && !product.enabled()) {
+      for (const leaf of [...held]) this.drop(leaf, kind);
+      return;
+    }
     // As far as a piece of `cover` spans a pixel, from the eye (with the error scale and the hysteresis), and no farther than the view reaches.
     const far = e.orthoPx !== null ? e.reach : Math.min(e.reach, (Math.sqrt(product.cover) * e.pxAtMetre) / (this.scale * HYSTERESIS));
     const wanted = new Set<Leaf>();

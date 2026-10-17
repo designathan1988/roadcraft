@@ -14,7 +14,7 @@ import { TERRAIN_CELL } from './terrainGrid';
 /** Asked by the page's choice of tiles (`nearTiles.ts`), run by the job system (`nearTiles.worker.ts`); a tile the page holds edited is baked from the page's records, never from the store's older version. */
 
 /** The kinds of near products baked per tile (`nearBakers.ts`). */
-export type NearKind = 'poles' | 'furniture' | 'signs' | 'barriers';
+export type NearKind = 'poles' | 'furniture' | 'signs' | 'barriers' | 'planted';
 
 /** The parts a tile is stored in (`editor/tileStore.ts`): its roads, its buildings, and the rest (poles, placed things, barriers, trees). */
 export type NearPart = 'roads' | 'buildings' | 'rest';
@@ -40,6 +40,8 @@ export interface NearProduct<P = unknown> {
   version?(tile: number): string;
   /** What its bake reads from the page besides the tiles and the ground (`NearTileJob.extra`). */
   extra?(): unknown;
+  /** Whether it can be drawn now (its models loaded); none: always. Until then no tile of it is asked. */
+  enabled?(): boolean;
   /** A bake made drawable; `tile`, its tile's key. */
   land(payload: P, tile: number): NearLanded;
 }
@@ -55,6 +57,8 @@ export interface NearArea {
   readonly key: number;
   /** The tile's own records: what it draws is what these hold. */
   readonly tile: TileRecords;
+  /** The tiles read: the tile first, then its neighbours (where its kind reads them). */
+  readonly tiles: readonly TileRecords[];
   /** The tile and its neighbours in one document, as the page's region files them (`RoadDoc.loadTile`), and their roads' network and heights (on the natural ground, as the page solves them). */
   doc(): RoadDoc;
   net(): Network;
@@ -67,6 +71,10 @@ export interface NearArea {
 /** What a kind tells the bake: the parts it reads, whether it reads the neighbours, how far past the tile its ground is read, and its bake. */
 export interface NearBaker<P, E = unknown> {
   readonly parts: readonly NearPart[];
+  /** Parts read besides only where the tile has something of the kind (`has`, from `parts` alone): a kind that reads the buildings for a few tiles (the trees planted, what covers them) never reads them for the others. */
+  readonly more?: readonly NearPart[];
+  /** Whether a tile's own records (its `parts`) hold anything of the kind: none, its bake is null and nothing more is read. */
+  has?(tile: TileRecords): boolean;
   /** Reads the 8 tiles round it (a wire to a neighbour's pole, a junction on the edge); false: the tile alone. */
   readonly around: boolean;
   /** How far past the tile the ground it stands on is read (`groundDigest`). */
@@ -154,7 +162,7 @@ async function partsOf(key: number, version: number, parts: readonly NearPart[],
 function areaOf(tiles: readonly TileRecords[], groundAt: (x: number, y: number) => number, naturalAt: (x: number, y: number) => number): NearArea {
   let doc: RoadDoc | null = null, net: Network | null = null, elevation: RoadElevation | null = null;
   const area: NearArea = {
-    key: tiles[0]!.key, tile: tiles[0]!, groundAt, naturalAt,
+    key: tiles[0]!.key, tile: tiles[0]!, tiles, groundAt, naturalAt,
     doc() {
       if (!doc) {
         doc = new RoadDoc();
@@ -190,13 +198,17 @@ export async function runNearTileJob(job: NearTileJob, cache: NearTileCache, bak
   if (kept && kept.want === job.want && kept.ground === ground) return { kind: 'near', node, sig, bake, payload: kept.payload, same: false };
   const tiles: TileRecords[] = [];
   const reading = baker.around ? job.tiles : job.tiles.slice(0, 1);
-  for (let n = 0; n < reading.length; n++) {
+  const first = await partsOf(reading[0]!.key, reading[0]!.version, baker.parts, job.records?.[0], job.store);
+  if (!first) return { kind: 'nearRecords', node, sig };
+  const has = baker.has?.(first) ?? true;
+  const parts = has && baker.more ? [...baker.parts, ...baker.more] : baker.parts;
+  for (let n = 0; has && n < reading.length; n++) {
     const { key: tile, version } = reading[n]!;
-    const read = await partsOf(tile, version, baker.parts, job.records?.[n], job.store);
+    const read = n === 0 && parts === baker.parts ? first : await partsOf(tile, version, parts, job.records?.[n], job.store);
     if (!read) return { kind: 'nearRecords', node, sig };
     tiles.push(read);
   }
-  const payload = baker.bake(areaOf(tiles, groundAt, naturalAt), job.extra);
+  const payload = has ? baker.bake(areaOf(tiles, groundAt, naturalAt), job.extra) : null;
   // Kept before it is handed over: its buffers are the page's once posted.
   if (keeps) await cache.put(key, { want: job.want, ground, bake, payload } satisfies KeptNear);
   return { kind: 'near', node, sig, bake, payload, same: false };

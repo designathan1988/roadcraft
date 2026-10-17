@@ -3,7 +3,8 @@ import type { PoleId, SpanId } from '@world/ids';
 import { POLE_HEIGHT } from '@world/utilities';
 import { m } from '@world/units';
 import type { NearBaker, NearProduct } from './nearTileBake';
-import { type PartShape, type PoleBake, type PoleSource, PoleLayer, bakePoles, partShape, poleBakeBuffers } from './poleLayer';
+import { type PartShape, type PoleBake, type PoleSource, bakePoles, partShape, poleBakeBuffers } from './poleBake';
+import { PoleLayer } from './poleLayer';
 import type { SceneryKit } from './scenery';
 import { WIRE_FADE, WIRE_WIDTH, poleGroundAt, polePartSpecs } from './utilities';
 

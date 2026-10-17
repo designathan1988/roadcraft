@@ -113,6 +113,7 @@ import { poleProduct } from './poleTiles';
 import { furnitureProduct } from './furnitureTiles';
 import { signProduct } from './signTiles';
 import { barrierProduct } from './barrierTiles';
+import { plantedProduct } from './plantedTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -2132,6 +2133,21 @@ export function createSceneRenderer(
   const plantedKeeps = new CellKeeps<PlantedTree>((t) => (onCarriageway(keepNet!, t) || buildings.covers(t.x, t.y) ? null : terrain.renderedHeightAt(t.x, t.y)));
   /** The planted trees standing in a keep cell, from the document's filing by place (`RoadDoc.treesIn`); none in a cell of the kept ring (`ActiveTiles.keepsCell`). */
   const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => (activeTiles.keepsCell(key) ? doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key) : []);
+  /** The planted forest's cells, made once the woods' models are in: the region's keep draws in them, and a streamed world's tiles (`plantedTiles.ts`). */
+  /** The region's planted trees let go for the tiles' (a streamed world open). */
+  let plantedTiled = false;
+  const plantedForestOf = (): PlantCells | null => {
+    if (!natureTreeKit) return null;
+    const kit = natureTreeKit;
+    return plantedForest ??= (() => {
+      const made = createTreeCells(kit, 'planted-forest', (cell) => plantedKeeps.standingIn(cell)
+        .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.height, yaw: c.yaw, seed: c.seed, species: 'broadleaf' as const })));
+      world.add(made.group);
+      return made;
+    })();
+  };
+  // The streamed world's planted trees per tile, in the planted forest's cells.
+  nearTiles.add(plantedProduct(plantedForestOf, () => natureTreeKit?.variants.length ?? 0));
   /** @rebuild Every planted tree filed cell by cell: the map opened, or its trees replaced whole. */
   const plantAll = (doc: RoadDoc): void => {
     plantedKeeps.clear();
@@ -2623,7 +2639,16 @@ export function createSceneRenderer(
           performance.measure('hitch:nature', { start: at, end: performance.now() });
         }
         // The trees the player planted (`world/trees.ts`), with the woods' own models: filed again only in the cells planted or cut
-        if (natureTreeKit) {
+        // A streamed world's planted trees are the tiles' (`plantedTiles.ts`, baked in workers): the region files none.
+        if (natureTreeKit && activeAt !== null) {
+          activeTiles.read(plantedRead, net.doc.changes);
+          if (!plantedTiled) {
+            plantedTiled = true;
+            plantedKeeps.clear();
+            plantedForest?.sync(null, []);
+          }
+        } else if (natureTreeKit) {
+          plantedTiled = false;
           const planted = activeTiles.read(plantedRead, net.doc.changes);
           if (planted === null || planted.some((e) => e.rects === null)) plantAll(net.doc);
           else if (planted.length) {
@@ -2635,14 +2660,9 @@ export function createSceneRenderer(
           else if (rects.length) plantedKeeps.refresh(rects, KEEP_REACH);
           const cells = plantedKeeps.takeChangedCells();
           if (cells === null || cells.size || vegetationRedraw) {
-            plantedForest ??= (() => {
-              const made = createTreeCells(natureTreeKit, 'planted-forest', (cell) => plantedKeeps.standingIn(cell)
-                .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.height, yaw: c.yaw, seed: c.seed, species: 'broadleaf' as const })));
-              world.add(made.group);
-              return made;
-            })();
+            const forest = plantedForestOf()!;
             const whole = cells === null || vegetationRedraw;
-            plantedForest.sync(whole ? null : cells, whole ? plantedKeeps.cellKeys() : []);
+            forest.sync(whole ? null : cells, whole ? plantedKeeps.cellKeys() : []);
           }
         }
         vegetationRedraw = false;
