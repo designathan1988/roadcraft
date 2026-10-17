@@ -19,6 +19,7 @@ export interface StoredTileReader extends TileReader {
 const PART_FIELDS: Readonly<Record<TilePartName, readonly (keyof TileRecords)[]>> = {
   roads: ['nodes', 'borrowedNodes', 'segments', 'gates'],
   buildings: ['buildings', 'grown', 'lots'],
+  rest: ['poles', 'borrowedPoles', 'poleSpans', 'lotKeys', 'landscape', 'barriers', 'paint', 'trees', 'elements', 'next'],
 };
 
 /** `port`: the desktop's saves writer, a port of this worker's own (`desktopSaves.ts` `connect`); none: this worker's store (`workerParts`). */

@@ -108,6 +108,8 @@ import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { FarRoads } from './farRoads';
+import { NearTiles } from './nearTiles';
+import { poleProduct } from './poleTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -580,6 +582,17 @@ export function createSceneRenderer(
     dress: (source, raised) => surfaceLook(source, raised, materials, terrain.vergeMaterial, nearPaintFor),
   });
   world.add(farRoads.group);
+  /** The streamed world's near products per tile, chosen by the view and baked in workers from the store (`nearTiles.ts`): the poles and wires (`poleTiles.ts`). */
+  const nearTiles = new NearTiles();
+  nearTiles.add(poleProduct(sceneryKit, world));
+  /** The roads' tree and the near products' tiles, told the stored tiles as one (`main.ts` far levels). */
+  const roadsAndNear: FarTiles = {
+    setSource: (source, isLoaded) => { farRoads.setSource(source, isLoaded); nearTiles.setSource(source, isLoaded); },
+    stored: (key, version) => { farRoads.stored(key, version); nearTiles.stored(key, version); },
+    loadedChanged: (key) => { farRoads.loadedChanged(key); nearTiles.loadedChanged(key); },
+    setErrorScale: (scale) => { farRoads.setErrorScale(scale); nearTiles.setErrorScale(scale); },
+    get bakePrefix() { return farRoads.bakePrefix; },
+  };
   /** The streamed world's active tiles as the near products read them (`activeTiles.ts`, `setActiveTiles`): the kept ring's items are the far levels'. */
   const activeTiles = new ActiveTiles();
 
@@ -902,6 +915,7 @@ export function createSceneRenderer(
     for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
     buildings.refill();
     farRoads.refill();
+    nearTiles.refill();
     signs.refill();
     wantAllTexels();
   });
@@ -1070,6 +1084,19 @@ export function createSceneRenderer(
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
   const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt), activeTiles);
+  // The near products' bakes read the ground shared with the workers; a tile the ground changed under (a stroke of the relief too) is asked again, its bake kept where the ground it reads did not change (`nearTileBake.ts` groundDigest).
+  const NEAR_GROUND_KINDS: readonly ChangeKind[] = ['elevation', 'ground', 'terrain'];
+  nearTiles.setGround(() => ({ ground: farRoadGround(), naturalIsGround: buildings.farEnv().naturalIsGround }), {
+    get version() { return groundDiary?.version ?? 0; },
+    touches: (since, area) => groundDiary?.touches(since, area, NEAR_GROUND_KINDS) ?? false,
+    rectsSince: (since) => {
+      const entries = groundDiary?.since(since, NEAR_GROUND_KINDS);
+      if (!entries) return null;
+      const rects: ChangeRect[] = [];
+      for (const entry of entries) { if (entry.rects === null) return null; rects.push(...entry.rects); }
+      return rects;
+    },
+  });
   /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
   const groundSince: GroundSince = {
     get version() { return groundChanges.version; },
@@ -1434,6 +1461,13 @@ export function createSceneRenderer(
   /** The pole layer brought up to the diary (`poleLayer.ts`) */
   const syncUtilities = (net: Network, groundAt: (x: number, y: number) => number): void => {
     const serial = net.doc.changes.serialOf(...POLE_KINDS);
+    // THE STREAMED WORLD'S POLES ARE THE TILES' (`poleTiles.ts`, each tile baked in a worker, an edited one from the page's records): the region places none. Its layer took in and let go three tiles of poles on the page at every tile's edge the camera crossed (plan 2.4.1).
+    if (activeAt !== null) {
+      if (utilities) { builtTriangles -= utilities.triangles; world.remove(utilities.group); utilities.dispose(); utilities = null; }
+      poleMoves.take();
+      poleSerial = serial;
+      return;
+    }
     if (utilities && serial === poleSerial && !poleMoves.pending) return;
     const entries = utilities ? net.doc.changes.since(poleSerial, POLE_KINDS) : null;
     const moved = poleMoves.entries('utilities');
@@ -2248,7 +2282,7 @@ export function createSceneRenderer(
       return buildings.far;
     },
     get farRoads() {
-      return farRoads;
+      return roadsAndNear;
     },
     farBakeEnv() {
       return { ...buildings.farEnv(), massPrefix: buildings.far.bakePrefix, roadPrefix: farRoads.bakePrefix, roadGround: farRoadGround() };
@@ -2639,6 +2673,7 @@ export function createSceneRenderer(
         buildings.frame.budget = VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles;
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
+        nearTiles.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;
         const texel = environment.sun.castShadow ? (shadow.camera.right - shadow.camera.left) / shadow.camera.zoom / shadow.mapSize.x : Infinity;
@@ -3049,6 +3084,7 @@ export function createSceneRenderer(
       signals.dispose();
       buildings.dispose();
       farRoads.dispose();
+      nearTiles.dispose();
       blinkMaterial.dispose();
       worldJob = null;
       roads?.dispose();
