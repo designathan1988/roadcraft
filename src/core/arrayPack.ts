@@ -28,8 +28,8 @@ function kindOf(array: PackableArray): Kind {
   throw new Error('a pack holds typed arrays only');
 }
 
-/** The numbers and arrays laid in one buffer: a u32 head length, the head's JSON, then each array at an offset of 8. */
-export function packArrays(numbers: Readonly<Record<string, number>>, arrays: Readonly<Record<string, PackableArray>>): Uint8Array<ArrayBuffer> {
+/** A pack's layout: its head's text (a u32 length before it), where the arrays start, and the bytes in all. */
+function layoutOf(numbers: Readonly<Record<string, number>>, arrays: Readonly<Record<string, PackableArray>>): { readonly head: PackHead; readonly text: Uint8Array; readonly start: number; readonly bytes: number } {
   const head: PackHead = { n: { ...numbers }, a: [] };
   let at = 0;
   for (const [name, array] of Object.entries(arrays)) {
@@ -38,7 +38,13 @@ export function packArrays(numbers: Readonly<Record<string, number>>, arrays: Re
   }
   const text = new TextEncoder().encode(JSON.stringify(head));
   const start = align8(4 + text.byteLength);
-  const out = new Uint8Array(start + at);
+  return { head, text, start, bytes: start + at };
+}
+
+/** The numbers and arrays laid in one buffer: a u32 head length, the head's JSON, then each array at an offset of 8. */
+export function packArrays(numbers: Readonly<Record<string, number>>, arrays: Readonly<Record<string, PackableArray>>): Uint8Array<ArrayBuffer> {
+  const { head, text, start, bytes } = layoutOf(numbers, arrays);
+  const out = new Uint8Array(bytes);
   new DataView(out.buffer).setUint32(0, text.byteLength, true);
   out.set(text, 4);
   for (const [name, , offset] of head.a) {
@@ -46,6 +52,24 @@ export function packArrays(numbers: Readonly<Record<string, number>>, arrays: Re
     out.set(new Uint8Array(array.buffer, array.byteOffset, array.byteLength), start + offset);
   }
   return out;
+}
+
+/** `packArrays`'s very bytes as a Blob made straight from the arrays (MDN "Blob()": its parts copied once, into the Blob): DO NOT pack into a buffer to put it in a Blob, two copies of every array where one is kept (a tile's link table, written with the tile). */
+export function packArraysBlob(numbers: Readonly<Record<string, number>>, arrays: Readonly<Record<string, PackableArray>>): Blob {
+  const { head, text, start, bytes } = layoutOf(numbers, arrays);
+  const lead = new Uint8Array(start);
+  new DataView(lead.buffer).setUint32(0, text.byteLength, true);
+  lead.set(text, 4);
+  const parts: BlobPart[] = [lead];
+  let at = start;
+  for (const [name, , offset] of head.a) {
+    const array = arrays[name]!;
+    if (start + offset > at) parts.push(new Uint8Array(start + offset - at));
+    parts.push(new Uint8Array(array.buffer as ArrayBuffer, array.byteOffset, array.byteLength));
+    at = start + offset + array.byteLength;
+  }
+  if (bytes > at) parts.push(new Uint8Array(bytes - at));
+  return new Blob(parts);
 }
 
 /** A pack read back: its arrays views on `buffer` (the buffer's own, from its start). */

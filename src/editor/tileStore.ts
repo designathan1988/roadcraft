@@ -101,18 +101,16 @@ function parseTileText(text: TileText, key: number): TileRecords {
 }
 
 /** A tile's derived product kept with it: a JSON value, or a typed-array pack (`core/arrayPack.ts`). */
-export type TileSection = { readonly json: unknown } | { readonly bin: Uint8Array<ArrayBuffer> };
+export type TileSection = { readonly json: unknown } | { readonly bin: Uint8Array<ArrayBuffer> } | { readonly blob: Blob };
 /** What bakes a tile's sections where it is written (`sim/tileSections.ts`, handed in by the thread that writes: the generator's worker, the save worker). */
 export type TileBaker = (records: TileRecords) => Readonly<Record<string, TileSection>>;
 
-/** A tile's blob, and its records' texts (handed to whoever asked for the tile): the records made text once, for both. */
-async function encodeTile(records: TileRecords, bake: TileBaker | undefined, full?: TileRecords): Promise<{ readonly blob: Blob; readonly text: TileText }> {
+/** A tile's blob. DO NOT keep the records' texts past their gzip: no caller reads them, and they lived through the sections' bake (the generator's memory, 2026-10-17). */
+async function encodeTile(records: TileRecords, bake: TileBaker | undefined, full?: TileRecords): Promise<{ readonly blob: Blob }> {
   const encoder = new TextEncoder();
-  const json = (value: unknown): Uint8Array<ArrayBuffer> => encoder.encode(JSON.stringify(value)) as Uint8Array<ArrayBuffer>;
   const split = splitRecords(records);
-  const text = RECORD_PARTS.map((name) => json(split[name]));
   const parts: TilePartIn[] = [];
-  for (let n = 0; n < RECORD_PARTS.length; n++) parts.push({ name: RECORD_PARTS[n]!, kind: 'json', data: await gzipBytes(text[n]!) });
+  for (const name of RECORD_PARTS) parts.push({ name, kind: 'json', data: await gzipBytes(encoder.encode(JSON.stringify(split[name])) as Uint8Array<ArrayBuffer>) });
   let sections: Readonly<Record<string, TileSection>> = {};
   try {
     // From every building: the grown rows made again where the caller has not the records whole (`full`).
@@ -122,11 +120,12 @@ async function encodeTile(records: TileRecords, bake: TileBaker | undefined, ful
     console.error(`[save] tile ${records.key}'s sections could not be baked`, error);
   }
   for (const [name, section] of Object.entries(sections)) parts.push(await sectionPart(name, section));
-  return { blob: tileBlob(records.key, records.version, bake !== undefined, parts), text };
+  return { blob: tileBlob(records.key, records.version, bake !== undefined, parts) };
 }
 
 /** A section as a part of the tile's blob: a binary pack as it is, a JSON value gzipped. */
 async function sectionPart(name: string, section: TileSection): Promise<TilePartIn> {
+  if ('blob' in section) return { name, kind: 'bin', data: section.blob };
   if ('bin' in section) return { name, kind: 'bin', data: new Blob([section.bin]) };
   return { name, kind: 'json', data: await gzipBytes(new TextEncoder().encode(JSON.stringify(section.json)) as Uint8Array<ArrayBuffer>) };
 }
@@ -193,10 +192,10 @@ export function writtenRecords(write: TileWrite): TileRecords {
   return { ...write, buildings: readRecords(Array.from(row, (r, k) => ({ buffer: tables[table[k]!]!, row: r }))) };
 }
 
-/** A tile written in one transaction of its one key, its sections baked with it: whether it was stored, and its records' texts. */
-export async function writeTile(store: PartStore, map: string, records: TileRecords, bake?: TileBaker, full?: TileRecords): Promise<{ readonly ok: boolean; readonly text: TileText }> {
-  const { blob, text } = await encodeTile(records, bake, full);
-  return { ok: await store.write([[tileBlobKey(map, records.key), blob]], []), text };
+/** A tile written in one transaction of its one key, its sections baked with it: whether it was stored. */
+export async function writeTile(store: PartStore, map: string, records: TileRecords, bake?: TileBaker, full?: TileRecords): Promise<{ readonly ok: boolean }> {
+  const { blob } = await encodeTile(records, bake, full);
+  return { ok: await store.write([[tileBlobKey(map, records.key), blob]], []) };
 }
 
 /** A stored tile's blob and its head (null: format 1). */
