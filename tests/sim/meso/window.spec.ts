@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { m } from '@world/units';
@@ -108,5 +108,25 @@ describe('the micro window', () => {
     run(5);
     expect(windowR()).toBe(MICRO_RADIUS);
     expect(Math.abs(total() - narrow)).toBeLessThanOrEqual(4);
+  });
+
+  it('asks the demand of each cell once a step, not once for each of its links', () => {
+    const doc = town();
+    const net = new Network(doc);
+    net.rebuild();
+    const w = new SimWorld(doc, net, 0x3e51);
+    w.rebuildTopology();
+    const meso = new Meso();
+    w.meso = meso;
+    w.clock.paused = false;
+    meso.want(0, 0, MICRO_RADIUS);
+    for (let t = 0; t < Math.round(3 / DT); t++) step(w, { traffic: true, pedestrians: false });
+    const inner = meso as unknown as { demand: { carsPer100m(cell: number): number }; cellOf: ArrayLike<number> };
+    const asked = vi.spyOn(inner.demand, 'carsPer100m');
+    for (let t = 0; t < Math.round(2 / DT); t++) step(w, { traffic: true, pedestrians: false });
+    const cells = new Set(Array.from({ length: meso.model.slots }, (_, k) => inner.cellOf[k]!)).size;
+    expect(meso.model.slots).toBeGreaterThan(cells);
+    expect(asked.mock.calls.length).toBeGreaterThan(0);
+    expect(asked.mock.calls.length).toBeLessThanOrEqual(2 * cells);
   });
 });

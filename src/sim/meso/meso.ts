@@ -749,15 +749,15 @@ export class Meso {
     this.demand.sync(w.buildings, w.doc.changes);
     this.demand.atHour((w.city.minutes(w) % 1440) / 60);
     const model = this.model;
+    const ofCell = new Map<number, readonly [number, number]>(); // DO NOT ask a cell's demand for each of its links: once a cell
     for (let slot = 0; slot < model.slots; slot++) {
       if (!model.has(slot)) continue;
-      const L = model.lengthAt(slot), lanes = model.lanesAt(slot), cell = this.cellOf[slot]!;
-      const vFree = model.freeSpeedAt(slot);
-      const entry = this.placed[slot] && this.edgeAt(this.endFrom[slot]!) ? ENTRY_RATE * lanes : 0;
+      const L = model.lengthAt(slot), cell = this.cellOf[slot]!, d = ofCell.get(cell) ?? [this.demand.carsPer100m(cell), this.demand.weight(cell)] as const;
+      ofCell.set(cell, d);
+      const entry = this.placed[slot] && this.edgeAt(this.endFrom[slot]!) ? ENTRY_RATE * model.lanesAt(slot) : 0;
       // Balanced with the share ending here: the street holds the ambient's density in free flow.
-      const local = this.demand.carsPer100m(cell) * (L / m(100)) * vFree / TRIP_LENGTH;
-      model.setGeneration(slot, (entry + local) * this.scale);
-      model.setSinkShare(slot, Math.min(1, L / TRIP_LENGTH) * this.demand.weight(cell));
+      model.setGeneration(slot, (entry + d[0] * (L / m(100)) * model.freeSpeedAt(slot) / TRIP_LENGTH) * this.scale);
+      model.setSinkShare(slot, Math.min(1, L / TRIP_LENGTH) * d[1]);
     }
   }
 
