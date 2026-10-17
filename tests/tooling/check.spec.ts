@@ -45,11 +45,11 @@ describe('the steps of the check', () => {
   });
 
   it("keeps the turn's check to the barrier: lint and code rules; the tests run at the end of a block", async () => {
-    const { stepsFor, directSpecsFor, ALWAYS } = (await load('check.mjs')) as {
+    const { stepsFor, directSpecsFor } = (await load('check.mjs')) as {
       stepsFor: (files: string[] | null, fast?: boolean) => string[];
       directSpecsFor: (files: string[]) => string[];
-      ALWAYS: string[];
     };
+    const { ALWAYS } = (await import(pathToFileURL(join(ROOT, 'scripts', 'check.mjs')).href)) as { ALWAYS: string[] };
     expect(stepsFor(['src/sim/pipeline.ts'], true)).toEqual(['lint', 'code']);
     expect(stepsFor(['docs/PLAN.md'], true)).toEqual([]);
     // A file the whole game imports: the specs of its own area that import it, not every spec it reaches.
