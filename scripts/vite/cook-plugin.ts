@@ -24,8 +24,6 @@ const DERIVED = [
   { entry: 'src/render/buildings/farTiles.ts', also: [] as string[], define: '__FAR_MASS_HASH__' },
   // The roads' far levels baked per tile (`render/farRoadTiles.ts`, kept by `farRoads.ts`).
   { entry: 'src/render/farRoadTiles.ts', also: [] as string[], define: '__FAR_ROADS_HASH__' },
-  // The near products baked per tile (`render/nearBakers.ts`, kept by `nearTiles.ts`): poles, furniture, signs, barriers, trees, structures, gardens.
-  { entry: 'src/render/nearBakers.ts', also: [] as string[], define: '__NEAR_TILES_HASH__' },
 ] as const;
 /** The path aliases of `tsconfig.json`. */
 const ALIASES: readonly [string, string][] = [

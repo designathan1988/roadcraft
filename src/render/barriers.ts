@@ -17,11 +17,6 @@ export interface Barriers {
   sync(doc: RoadDoc, groundAt: (x: number, y: number) => number): number;
   /** The parts the camera can see (`InstanceRuns.cull`), every frame. */
   cull(frustum: Frustum, view: Matrix4): void;
-  /** The streamed world: the barriers are the tiles' (`barrierTiles.ts`, `put`), the page's own taken away and none made by `sync`; off, the page's own made again from the diary. */
-  setTiled(tiled: boolean): void;
-  /** A tile's bake drawn (`bakeBarriers`); taken away by `take` with the same bake. */
-  put(bake: BarrierBake): void;
-  take(bake: BarrierBake): void;
   dispose(): void;
 }
 
@@ -80,8 +75,17 @@ class BarrierProduct implements DerivedSpec<BarrierSource, number, BarrierPlace>
     const around = box!;
     // A barrier wholly on the kept ring round the active tiles is the far levels' (`activeTiles.ts`); one reaching into an active tile is made whole.
     if (this.active && !this.active.meets(around)) return undefined;
+    const parts = Object.fromEntries(KINDS.map((k) => [k, []])) as unknown as PartList;
+    placeBarrier(barrier, source.groundAt, parts);
     const builder = new RunBuilder(this.stores);
-    const boxes = barrierInto(builder, barrier, source.groundAt);
+    let boxes = 0;
+    KINDS.forEach((kind, store) => {
+      for (const b of parts[kind]) {
+        // World y is three's -z, as everywhere in the renderer.
+        builder.turned(store, b.x, b.z + b.height / 2, -b.y, b.yaw, b.length, b.height, b.width, Math.max(b.length, b.height, b.width));
+        boxes++;
+      }
+    });
     return { run: builder.build(), box: [around[0] - READ_REACH, around[1] - READ_REACH, around[2] + READ_REACH, around[3] + READ_REACH], boxes };
   }
 
@@ -95,35 +99,6 @@ class BarrierProduct implements DerivedSpec<BarrierSource, number, BarrierPlace>
   }
 }
 
-/** A barrier's pieces put in a run of the layer's stores (`KINDS` order); how many boxes. */
-function barrierInto(builder: RunBuilder, barrier: Barrier, groundAt: (x: number, y: number) => number): number {
-  const parts = Object.fromEntries(KINDS.map((k) => [k, []])) as unknown as PartList;
-  placeBarrier(barrier, groundAt, parts);
-  let boxes = 0;
-  KINDS.forEach((kind, store) => {
-    for (const b of parts[kind]) {
-      // World y is three's -z, as everywhere in the renderer.
-      builder.turned(store, b.x, b.z + b.height / 2, -b.y, b.yaw, b.length, b.height, b.width, Math.max(b.length, b.height, b.width));
-      boxes++;
-    }
-  });
-  return boxes;
-}
-
-/** A tile's barriers as a bake hands them (`barrierTiles.ts`): their pieces in one run, and how many boxes. */
-export interface BarrierBake {
-  readonly run: Run;
-  readonly boxes: number;
-}
-
-/** THE BARRIERS BAKED, IN A WORKER: each placed as the page's layer places it (`placeBarrier`) on the ground as drawn; none with two points or more: null */
-export function bakeBarriers(barriers: Iterable<Barrier>, groundAt: (x: number, y: number) => number): BarrierBake | null {
-  const builder = new RunBuilder(KINDS.map(() => ({ tinted: false })));
-  let boxes = 0;
-  for (const barrier of barriers) if (barrier.points.length >= 2) boxes += barrierInto(builder, barrier, groundAt);
-  return boxes ? { run: builder.build(), boxes } : null;
-}
-
 /** `active`: the streamed world's active tiles, the only ones whose barriers are made here (`activeTiles.ts`); none, every barrier. */
 export function createBarriers(active?: ActiveTiles): Barriers {
   const { unit, material } = PARTS;
@@ -131,8 +106,7 @@ export function createBarriers(active?: ActiveTiles): Barriers {
   const mats = [material.wall, material.coping, material.post, material.rail, material.hedge, material.guardrailPost, material.guardrailBeam, material.railingPost, material.railingBar];
   const stores: RunStore[] = names.map((name, i) => ({ name, geometry: unit, material: mats[i]!, castShadow: true, receiveShadow: true, tinted: false, cards: false }));
   const runs = createInstanceRuns('barriers', stores, m(4));
-  let product = new Derived(new BarrierProduct(stores, active));
-  let tiled = false;
+  const product = new Derived(new BarrierProduct(stores, active));
   /** Where the active tiles moved since the last sync: the barriers there made or let go, as a barrier entry there would. */
   const moves = active?.reader();
   const drawn = new Map<number, BarrierPlace>();
@@ -141,7 +115,6 @@ export function createBarriers(active?: ActiveTiles): Barriers {
     group: runs.group,
     get triangles() { return boxes * 12; },
     sync(doc, groundAt) {
-      if (tiled) return 0;
       const source: BarrierSource = { changes: doc.changes, doc, groundAt };
       const removed: Run[] = [], added: Run[] = [];
       for (const id of product.refresh(source, moves ? moves.entries('barriers') : [])) {
@@ -155,24 +128,6 @@ export function createBarriers(active?: ActiveTiles): Barriers {
     },
     cull(frustum, view) {
       runs.cull(frustum, view);
-    },
-    setTiled(on) {
-      if (on === tiled) return;
-      tiled = on;
-      // The page's own barriers taken away, and its product made from nothing: off again, `sync` makes every barrier afresh.
-      const removed = [...drawn.values()].map((place) => place.run);
-      if (removed.length) runs.update({ removed, added: [] });
-      for (const place of drawn.values()) boxes -= place.boxes;
-      drawn.clear();
-      product = new Derived(new BarrierProduct(stores, active));
-    },
-    put(bake) {
-      runs.update({ removed: [], added: [bake.run] });
-      boxes += bake.boxes;
-    },
-    take(bake) {
-      runs.update({ removed: [bake.run], added: [] });
-      boxes -= bake.boxes;
     },
     // The box and the materials are the module's (`PARTS`): only the instances are this layer's.
     dispose() {
