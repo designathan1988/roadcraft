@@ -72,6 +72,8 @@ interface Fit {
 export interface Movers {
   readonly roots: readonly Object3D[];
   moving(): boolean;
+  /** Its roots never change size (what the wind sways in place): each one's reach measured once, not every frame. */
+  readonly fixedSize?: boolean;
 }
 
 export interface ShadowPassInput {
@@ -79,8 +81,6 @@ export interface ShadowPassInput {
   readonly changed: boolean;
   /** Effects in play (`playEffects.ts`): their pieces are in every cascade. */
   readonly effects: boolean;
-  /** The wind sways the plants: the two near cascades, where a sway is wider than a texel. */
-  readonly wind: boolean;
   /** Nothing that casts and stands still changed since the last pass, as the caller knows it (the view, what landed, came or went): a cascade's store may stand for its town. Absent: it may not. */
   readonly still?: boolean;
 }
@@ -228,16 +228,27 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   };
   /** DO NOT walk a root's tree for every cascade and twice a frame: each root's radius once a frame (`pass` clears it). */
   const spheres = new Map<Object3D, number>();
-  const sphereOf = (object: Object3D): number => {
+  const sphereOf = (object: Object3D, fixed = false): number => {
+    if (fixed) {
+      // Measured again only when its instances changed in number (a tree planted, a cell's trees made again).
+      const count = (object as { count?: number }).count ?? -1;
+      const kept = fixedSpheres.get(object);
+      if (kept && kept.count === count) return kept.radius;
+      const radius = measureSphere(object);
+      fixedSpheres.set(object, { radius, count });
+      return radius;
+    }
     let radius = spheres.get(object);
     if (radius === undefined) spheres.set(object, radius = measureSphere(object));
     return radius;
   };
+  /** The reach of the roots that never change size (`Movers.fixedSize`), kept from frame to frame with the instances it was measured at. */
+  const fixedSpheres = new WeakMap<Object3D, { readonly radius: number; readonly count: number }>();
   const texelOf = (i: number): number => (2 * fits[i]!.half) / Math.max(1, lights[i]!.shadow.mapSize.x);
   /** A mover is drawn into cascade `i` only if it is wider than two of its texels: under that, its shadow is a smudge PCF spreads away. */
-  const drawnIn = (root: Object3D, i: number): boolean => {
+  const drawnIn = (root: Object3D, i: number, fixed = false): boolean => {
     let r = radii.get(root);
-    if (r === undefined) { r = sphereOf(root); radii.set(root, r); }
+    if (r === undefined) { r = sphereOf(root, fixed); radii.set(root, r); }
     return r >= texelOf(i);
   };
 
@@ -250,7 +261,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       for (const mover of movers) {
         for (const root of mover.roots) {
           // Kept in a store this frame (`whole`): every mover is drawn over it after the still casters (`drawOver`); else drawn with them, those too small for the texels left out.
-          if (!root.visible || (!whole[i] && drawnIn(root, i))) continue;
+          if (!root.visible || (!whole[i] && drawnIn(root, i, mover.fixedSize))) continue;
           root.visible = false;
           hidden.push(root);
         }
@@ -293,7 +304,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     if (!renderer) return;
     moverList.length = 0;
     const texel = texelOf(i);
-    for (const mover of movers) for (const root of mover.roots) if (root.visible && drawnIn(root, i)) castersIn(root, texel, moverList);
+    for (const mover of movers) for (const root of mover.roots) if (root.visible && drawnIn(root, i, mover.fixedSize)) castersIn(root, texel, moverList);
     if (moverList.length === 0) return;
     moverRoot.children = moverList;
     const clear = renderer.clear;
@@ -498,7 +509,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       }
       return any || sunStepped;
     },
-    pass({ changed, effects, wind, still = false }) {
+    pass({ changed, effects, still = false }) {
       if (!enabled) return false;
       // DO NOT walk every mover's meshes for its radius once per cascade and draw: once a frame.
       spheres.clear();
@@ -508,20 +519,18 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         let moved = false;
         for (const mover of movers) {
           if (moved || !mover.moving()) continue;
-          for (const root of mover.roots) if (root.visible && drawnIn(root, i)) { moved = true; break; }
+          for (const root of mover.roots) if (root.visible && drawnIn(root, i, mover.fixedSize)) { moved = true; break; }
         }
         framesSince[i]!++;
         // A store stands for its town only while nothing of it changed since it was taken.
         if (!still) storeValid[i] = false;
-        // The town under the cascade drawn again: it changed, the cascade moved, the wind sways its plants, or no store stands for it.
-        // DO NOT draw a near cascade over its store: the plants and flags sway at every strength of the wind (`wind.ts` uWindStrength, never 0), wider than its texels; a frame of movers drew them swaying.
-        const all = refitted[i]! || changed || effects || (wind && i < SUN_CASCADES - 1) || framesSince[i]! >= SAFETY_FRAMES
-          || (moved && (!renderer || !storeValid[i] || i < SUN_CASCADES - 1));
+        // The town under the cascade drawn again: it changed, the cascade moved, or no store stands for it. What the wind sways is a mover (`wind.ts` markSway, `renderer.ts`): drawn over the store each frame, never frozen in it (2cc436e0), and the town under a near cascade no longer drawn again every frame for it.
+        const all = refitted[i]! || changed || effects || framesSince[i]! >= SAFETY_FRAMES || (moved && (!renderer || !storeValid[i]));
         if (!fits[i]!.placed || !(all || moved)) continue;
         if (all) {
           lights[i]!.shadow.needsUpdate = true;
-          // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame), or a near cascade (drawn whole whenever anything moves, the sway): the movers drawn in the same pass, no copy, no second pass over them.
-          whole[i] = renderer !== null && still && i === SUN_CASCADES - 1;
+          // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame): the movers drawn in the same pass, no copy, no second pass over them.
+          whole[i] = renderer !== null && still;
           refitted[i] = false;
           framesSince[i] = 0;
         } else over[i] = true;
