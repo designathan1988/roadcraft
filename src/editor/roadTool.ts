@@ -668,30 +668,37 @@ interface RoadPart {
   readonly rect: ChangeRect;
 }
 
-/** Past a road's centreline by the widest road and its cut: the buildings it clears, the tiles it reaches. */
-const PART_PAD = m(40);
+/** Where a long road's pieces are cut (a cell, `TILE` / 4): a piece of it and its band (`PART_PAD`) reach two tiles by two at most, always within what may come at once (`HOLD_MOST`). */
+const CUT = TILE / 4;
 
-/** The box of pieces (a bend's control point within it), padded by what a road clears. */
+/** Past a road's centreline by the widest road and its cut, and by the reach of a large building from its anchor: the tiles whose buildings it may clear. DO NOT pad by the road alone: a wide tower of the tile next door, its anchor past the band and its footprint over the road, was not on the page and stood under it (conf73, conf77). */
+const PART_PAD = m(160);
+
+/** The box of pieces (a bend's points along it), padded by what a road clears. */
 function partRect(pieces: readonly RoadPathPiece[]): ChangeRect {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const take = (p: Vec2): void => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); };
   for (const piece of pieces) {
     take(piece.start.at);
     take(piece.end.at);
-    if (piece.curve) take(controlPoint(piece.start.at, piece.end.at, piece.curve));
+    // A bend by its own points, not its control's (off the curve, it reached tiles the road never does).
+    if (piece.curve) {
+      const c = controlPoint(piece.start.at, piece.end.at, piece.curve);
+      for (let k = 1; k < 16; k++) take(quadPoint(piece.start.at, c, piece.end.at, k / 16));
+    }
   }
   return [x0 - PART_PAD, y0 - PART_PAD, x1 + PART_PAD, y1 + PART_PAD];
 }
 
-/** A piece cut where it crosses the tiles' borders (`TILE`), its height shared out along it: a straight one at the borders' points, a bend split there as a quadratic Bezier is (de Casteljau). */
+/** A piece cut where it crosses the cells' borders (`CUT`, the tiles' among them), its height shared out along it: a straight one at the borders' points, a bend split there as a quadratic Bezier is (de Casteljau). */
 export function cutAtTiles(piece: RoadPathPiece): RoadPathPiece[] {
   if (piece.curve) return cutBendAtTiles(piece, piece.curve);
   const a = piece.start, b = piece.end;
   const ts: number[] = [];
   for (const [p, q] of [[a.at.x, b.at.x], [a.at.y, b.at.y]] as const) {
     if (p === q) continue;
-    for (let k = Math.ceil(Math.min(p, q) / TILE); k * TILE < Math.max(p, q); k++) {
-      const t = (k * TILE - p) / (q - p);
+    for (let k = Math.ceil(Math.min(p, q) / CUT); k * CUT < Math.max(p, q); k++) {
+      const t = (k * CUT - p) / (q - p);
       if (t > 1e-6 && t < 1 - 1e-6) ts.push(t);
     }
   }
@@ -702,15 +709,15 @@ export function cutAtTiles(piece: RoadPathPiece): RoadPathPiece[] {
   return points.slice(1).map((end, k) => ({ start: points[k]!, end, curve: null }));
 }
 
-/** A bend split at the parameters where it crosses the tiles' borders: each part the same curve between its points (`shapeFromControl` of de Casteljau's control); a cut whose part's control would fall off its chord (`controlPoint` clamps it) is left out, the bend kept whole there. */
+/** A bend split at the parameters where it crosses the cells' borders (`CUT`): each part the same curve between its points (`shapeFromControl` of de Casteljau's control); a cut whose part's control would fall off its chord (`controlPoint` clamps it) is left out, the bend kept whole there. */
 function cutBendAtTiles(piece: RoadPathPiece, curve: CurveShape): RoadPathPiece[] {
   const a = piece.start.at, b = piece.end.at, c = controlPoint(a, b, curve);
-  // Each axis: (1-u)^2 a + 2u(1-u) c + u^2 b = k * TILE, for u in (0, 1).
+  // Each axis: (1-u)^2 a + 2u(1-u) c + u^2 b = k * CUT, for u in (0, 1).
   const us: number[] = [];
   for (const [p0, p1, p2] of [[a.x, c.x, b.x], [a.y, c.y, b.y]] as const) {
     const lo = Math.min(p0, p1, p2), hi = Math.max(p0, p1, p2);
-    for (let k = Math.ceil(lo / TILE); k * TILE < hi; k++) {
-      const qa = p0 - 2 * p1 + p2, qb = 2 * (p1 - p0), qc = p0 - k * TILE;
+    for (let k = Math.ceil(lo / CUT); k * CUT < hi; k++) {
+      const qa = p0 - 2 * p1 + p2, qb = 2 * (p1 - p0), qc = p0 - k * CUT;
       const roots = Math.abs(qa) < 1e-12 ? (Math.abs(qb) < 1e-12 ? [] : [-qc / qb])
         : (() => { const d = qb * qb - 4 * qa * qc; if (d < 0) return []; const r = Math.sqrt(d); return [(-qb - r) / (2 * qa), (-qb + r) / (2 * qa)]; })();
       for (const u of roots) if (u > 1e-6 && u < 1 - 1e-6) us.push(u);

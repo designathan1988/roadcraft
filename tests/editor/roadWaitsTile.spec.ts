@@ -209,6 +209,59 @@ describe('a road let go over a tile not yet in the document', () => {
   });
 });
 
+describe('a road near the border of a tile', () => {
+  it('brings in the tile next door when a building of it reaches over the border to the road: demolished there too (conf73, conf77)', async () => {
+    const doc = new RoadDoc();
+    const net = new Network(doc);
+    net.rebuild();
+    // Two tiles past the camera's region: the road in A, 80 m from its western border; a wide building of B, its anchor 30 m west of it.
+    const tileB = tileKey(3, 1);
+    const house = { ...generateBody('residential', m(240), m(30), 8), id: tileIdBase(tileB) + 1, x: 4 * TILE - m(30), y: TILE + m(500), rotation: 0 } as unknown as Building;
+    const written = new Map<number, TileRecords>();
+    const streamer = new WorldStreamer(doc, {
+      load: (k) => Promise.resolve(written.get(k) ?? preparedRecords(prepareTile({ ...empty(k), buildings: k === tileB ? [house] : [] }, false))),
+      write: (records) => { written.set(records.key, records); return Promise.resolve(records.version + 1); },
+    });
+    const keysIn = (rect: readonly number[]): number[] => {
+      const keys: number[] = [];
+      for (let i = Math.floor(rect[0]! / TILE); i <= Math.floor(rect[2]! / TILE); i++) for (let j = Math.floor(rect[1]! / TILE); j <= Math.floor(rect[3]! / TILE); j++) keys.push(tileKey(i, j));
+      return keys;
+    };
+    const host: RoadToolHost = {
+      doc, net, zoom: () => 1, px: (n) => n,
+      settings: () => ({ typeIndex: 1, lanes: null, alignment: 'straight', heightOffset: 0, parking: undefined, width: null, grid: false }),
+      setHeight: () => {}, worldAtScreen: (x, y) => ({ x, y }), naturalHeightAt: () => 0, offerElevation: () => {},
+      flash: () => {}, hint: () => {}, redraw: () => {},
+      mutate: (fn) => { const before = net.state; fn(); net.rebuild(); clearBuildingsAfterEdit({ doc, net, groundAt: null }, before); },
+      tilesIn: (rect) => {
+        if (!rect) { streamer.hold([]); return true; }
+        const keys = keysIn(rect);
+        if (!streamer.hold(keys)) return 'tooFar';
+        return keys.every((k) => doc.hasTile(k));
+      },
+      tilesFit: (rect) => streamer.fits(keysIn(rect)),
+    };
+    const tool = new RoadTool(host);
+    const at = (y: number): { x: number; y: number } => ({ x: 4 * TILE + m(80), y: TILE + m(y) });
+    tool.draft = {
+      start: { kind: 'free', at: at(300) }, startHeightOffset: 0, chained: false, pressedAt: at(300),
+      snap: { at: at(700), guide: null, angleDeg: 0, length: m(400) } as never,
+      samples: [{ at: at(300), heightOffset: 0 }, { at: at(500), heightOffset: 0 }], heightOffset: 0,
+    };
+    tool.up(() => at(700), true);
+    for (let frame = 0; frame < 40 && doc.segments.size === 0; frame++) {
+      streamer.focus(0, 0);
+      streamer.apply(frame);
+      tool.layHeld();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(doc.segments.size).toBeGreaterThan(0);
+    // The building of B over the road demolished, on the page or in B as written.
+    const inB = doc.hasTile(tileB) ? doc.tileRecords(tileB, 1).buildings : written.get(tileB)?.buildings ?? [house];
+    expect(inB.map((b) => (b as Building).id)).not.toContain(house.id);
+  });
+});
+
 describe("a bend cut at the tiles' borders (`cutAtTiles`)", () => {
   it('is the same curve, each part within its tiles, joined end to end', () => {
     const start = { at: { x: -2 * TILE + m(100), y: m(500) }, heightOffset: 0 };
