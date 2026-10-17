@@ -59,4 +59,26 @@ describe('the far cars', () => {
     expect(versions()).toEqual(after);
     cars.dispose();
   });
+
+  it('hold a mesh only for the tiles their window has roads in, however far the camera has gone', () => {
+    const cars = createDensityCars(() => 0);
+    let buffer: SharedArrayBuffer | null = null;
+    const sim = { window: (_x: number, _y: number, _r: number, b: SharedArrayBuffer) => { buffer = b; }, clock: { time: 0 } } as unknown as SimClient;
+    const net = { state: {}, changesSince: () => ({ segments: [] }), ribbons: new Map() } as unknown as Network;
+    cars.update(net, sim, 0, 0);
+    const memory = new MesoMemory(buffer!);
+    // The worker's window walks 60 tiles east: its 8 slots hold the roads of the 2 x 2 tiles about it, each step other links.
+    let serial = 0, link = 0;
+    for (let step = 0; step < 60; step++) {
+      for (let slot = 0; slot < 8; slot++) {
+        road(memory, slot, TILE * (step + (slot % 2) + 0.5), TILE * ((slot >> 1) % 2 + 0.5), 3, ++serial);
+        memory.ids[slot] = linkId(++link, 0);
+      }
+      Atomics.store(memory.control, MC.wanted, 8);
+      Atomics.store(memory.control, MC.serial, ++serial);
+      cars.update(net, sim, TILE * step, 0);
+      expect(cars.object.children.length, `step ${step}`).toBeLessThanOrEqual(4);
+    }
+    cars.dispose();
+  });
 });
