@@ -5,7 +5,7 @@ import { resolveBlocks } from '@world/buildings/blocks';
 import { floorHeight, type GroundAt, type PavedAt } from '@world/buildings/foundation';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
-  type LocalBay, bayLayout, bayWidth, closedBlocks, coveredSpans, exposedParts, localToWorld, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
+  type BuildingFrame, type LocalBay, bayLayout, bayWidth, buildingFrame, closedBlocks, frameX, frameY, coveredSpans, exposedParts, localToWorld, ridgeAlongX, roofHeightAt, roofRise, roofSlope,
   sawtoothRun, shedFall, sideLength, sideStart, volumeElevation, volumeHeight,
 } from '@world/buildings/geometry';
 import { type Finish, type MaterialSpec, roofMaterial, trimMaterial, wallMaterial } from '@world/buildings/materials';
@@ -102,7 +102,9 @@ class MassWriter {
   /** The smallest thing asked about and kept so far (`leaves`; a box-less level's pitched roof too, `asks`): a coarser level whose `drop` is under it answers every question alike (`emitMassingLevels`). */
   kept = Infinity;
 
-  constructor(private readonly b: Building, private readonly seed: number, readonly detail: MassDetail = CELL_DETAIL) {}
+  constructor(b: Building, private readonly seed: number, readonly detail: MassDetail = CELL_DETAIL) {
+    this.f = buildingFrame(b);
+  }
 
   /** Whether a thing `size` m tall or deep is left out at this level; its size kept as the level's error when it is. */
   leaves(size: number): boolean {
@@ -117,15 +119,18 @@ class MassWriter {
     if (size > 0) this.kept = Math.min(this.kept, size);
   }
 
+  /** The building's frame, once: DO NOT turn its rotation into a cosine and a sine and a point object for each point (`localToWorld`, the same arithmetic). */
+  private readonly f: BuildingFrame;
+
   /** A point of the building's plan at height z, in three's axes. */
   P(lx: number, ly: number, z: number): [number, number, number] {
-    const w = localToWorld(this.b, lx, ly);
-    return [w.x, z, -w.y];
+    const f = this.f;
+    return [f.x + lx * f.c - ly * f.s, z, -(f.y + lx * f.s + ly * f.c)];
   }
 
   /** A plan direction (local) and up, as a three normal. */
   N(lx: number, ly: number, up = 0): [number, number, number] {
-    const c = Math.cos(this.b.rotation), s = Math.sin(this.b.rotation);
+    const c = this.f.c, s = this.f.s;
     const wx = lx * c - ly * s, wy = lx * s + ly * c;
     const l = Math.hypot(wx, wy, up) || 1;
     return [wx / l, up / l, -wy / l];
@@ -312,11 +317,12 @@ function emitLotPlates(w: MassWriter, b: Building, buildingFloor: number | undef
   const lots = b.volumes.filter((v) => v.open && v.open !== 'grass');
   if (lots.length === 0) return;
   let ground = -Infinity;
+  // The building's frame once (`localToWorld` point by point turns the rotation each time; the same arithmetic).
+  const f = buildingFrame(b);
   for (const v of b.volumes) {
     if (!v.open) continue;
-    for (const p of localFootprint(v)) { const q = localToWorld(b, p.x, p.y); ground = Math.max(ground, groundAt(q.x, q.y)); }
-    const c = localToWorld(b, v.x + v.w / 2, v.y + v.d / 2);
-    ground = Math.max(ground, groundAt(c.x, c.y));
+    for (const p of localFootprint(v)) ground = Math.max(ground, groundAt(frameX(f, p.x, p.y), frameY(f, p.x, p.y)));
+    ground = Math.max(ground, groundAt(frameX(f, v.x + v.w / 2, v.y + v.d / 2), frameY(f, v.x + v.w / 2, v.y + v.d / 2)));
   }
   const level = buildingFloor ?? ground + m(0.12);
   const up = w.N(0, 0, 1);
@@ -328,8 +334,8 @@ function emitLotPlates(w: MassWriter, b: Building, buildingFloor: number | undef
     const flatRing = ring.flatMap((p) => [p.x, p.y]);
     const tris = earcut(flatRing);
     const point = (k: number): [number, number, number] => {
-      const q = localToWorld(b, flatRing[2 * k]!, flatRing[2 * k + 1]!);
-      return [q.x, surface.heightAt(q.x, q.y), -q.y];
+      const x = frameX(f, flatRing[2 * k]!, flatRing[2 * k + 1]!), y = frameY(f, flatRing[2 * k]!, flatRing[2 * k + 1]!);
+      return [x, surface.heightAt(x, y), -y];
     };
     w.polygon(Array.from({ length: flatRing.length / 2 }, (_, k) => point(k)), tris, up, colour);
   }
