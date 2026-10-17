@@ -461,7 +461,8 @@ function planDepth(p: Footprint, q: Footprint): number {
 }
 
 /** The radius of a circle round every footprint of a part (`footprintOf`, its own or a trunk's). */
-const planReach = (e: BuildingElement): number => Math.hypot(Math.max(e.w, TRUNK), Math.max(e.d, TRUNK)) / 2;
+/** The radius round a part's centre its footprint stays within for any turn: two parts whose centres are farther apart than the sum never meet (`elementsMeet`'s first test). */
+export const planReach = (e: BuildingElement): number => Math.hypot(Math.max(e.w, TRUNK), Math.max(e.d, TRUNK)) / 2;
 
 /** Heights running into each other by more than a contact (a flush joint of two plates is a contact). */
 const heightsMeet = (a0: number, a1: number, b0: number, b1: number): boolean => Math.min(a1, b1) - Math.max(a0, b0) > MEET + m(0.001);
