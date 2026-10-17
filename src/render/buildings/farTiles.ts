@@ -7,7 +7,7 @@ import type { TileRecords } from '@world/doc';
 import { tileKey, tileOfKey } from '@world/tiles';
 import { derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
-import { BOX_INSTANCE, type BoxMass, type CellMass, type FarMass, cellMass, farMassBuffers, indexArray, shellBounds } from './cellArrays';
+import { BOX_INSTANCE, type BoxMass, type CellMass, type FarMass, MASS_FACADE, MASS_GRID, cellMass, farMassBuffers, indexArray, shellBounds } from './cellArrays';
 import { AGGREGATE, LEVEL_MASS_KEY as MASS_KEY, NODE_BOX_KEY as BOX_KEY, TILE_PLATE_KEY as PLATE_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
 import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing, massFloor } from './massing';
 
@@ -262,20 +262,21 @@ function joinMasses(list: readonly (CellMass | null)[]): CellMass | null {
   const some = list.filter((c): c is CellMass => c !== null);
   for (const c of some) { vertices += c.position.length / 3; indices += c.index.length; error = Math.max(error, c.error); top = Math.max(top, c.top); }
   if (indices === 0) return null;
-  const position = new Float32Array(vertices * 3), normal = new Int8Array(vertices * 4), color = new Float32Array(vertices * 3);
-  const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = indexArray(vertices, indices);
+  const position = new Float32Array(vertices * 3), normal = new Int8Array(vertices * 4), color = new Uint16Array(vertices * 4);
+  const facade = new Float32Array(vertices * MASS_FACADE), grid = new Uint16Array(vertices * MASS_GRID), seed = new Float32Array(vertices), index = indexArray(vertices, indices);
   let v = 0, n = 0;
   for (const c of some) {
     position.set(c.position, v * 3);
     normal.set(c.normal, v * 4);
-    color.set(c.color, v * 3);
-    facade.set(c.facade, v * 4);
-    glazing.set(c.glazing, v * 2);
+    color.set(c.color, v * 4);
+    facade.set(c.facade, v * MASS_FACADE);
+    grid.set(c.grid, v * MASS_GRID);
+    seed.set(c.seed, v);
     for (let i = 0; i < c.index.length; i++) index[n + i] = c.index[i]! + v;
     v += c.position.length / 3;
     n += c.index.length;
   }
-  return { position, normal, color, facade, glazing, index, bounds: shellBounds(position), top, error };
+  return { position, normal, color, facade, grid, seed, index, bounds: shellBounds(position), top, error };
 }
 
 
