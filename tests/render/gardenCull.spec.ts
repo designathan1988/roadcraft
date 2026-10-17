@@ -132,17 +132,23 @@ describe('garden cull', () => {
     expect(meshes.every((mesh) => posesOf(mesh).buffer.updateRanges.length === 0)).toBe(true);
   });
 
-  it('keeps at most one pending upload range while a mesh is not drawn', () => {
+  it('never lets the pending upload ranges grow while a mesh is not drawn: one cull\'s runs, then one range round them', () => {
     const gardens = createGardens(kit);
     gardens.update({ added: town(200, m(2000), 5), removed: [] });
     const rng = new Rng(4);
+    // Ranges waiting before the cull, by buffer: a cull that finds some waiting leaves one.
+    const waiting = new Map<object, number>();
     for (let c = 0; c < 30; c++) {
+      for (const mesh of gardens.meshes as InstancedMesh[]) for (const a of [posesOf(mesh).buffer, mesh.instanceColor!]) waiting.set(a, a.updateRanges.length);
       const { frustum, view } = viewOf(cameraAt(rng, m(2000)));
       gardens.cull(frustum, view);
-    }
-    for (const mesh of gardens.meshes as InstancedMesh[]) {
-      expect(posesOf(mesh).buffer.updateRanges.length).toBeLessThanOrEqual(1);
-      expect(mesh.instanceColor!.updateRanges.length).toBeLessThanOrEqual(1);
+      for (const mesh of gardens.meshes as InstancedMesh[]) {
+        for (const a of [posesOf(mesh).buffer, mesh.instanceColor!]) {
+          if ((waiting.get(a) ?? 0) > 0) expect(a.updateRanges.length, `cull ${c}`).toBeLessThanOrEqual(1);
+          // One cull's runs are within the buffer.
+          for (const r of a.updateRanges) expect(r.start + r.count).toBeLessThanOrEqual(a.array.length);
+        }
+      }
     }
   });
 });
