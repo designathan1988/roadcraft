@@ -2,7 +2,11 @@
 import type { JobScope } from '../jobs/jobScope';
 import { type ClipFrames, type RigNode, type ShuffleFacts, bake, bakeDeferred, rigFromData, setSliceMs } from './citizenBake';
 import { loadRocketboxClips, type RocketboxClips, type WalkSex } from './citizenWalk';
-import { decodeCookedPerson, type DecodedPerson } from './people/cookedPerson';
+import { cookPerson, decodeCookedPerson, type DecodedPerson } from './people/cookedPerson';
+import { buildPersonScene } from './people/personBuild';
+import { bodyPixels } from './people/bodyPixels';
+import type { CartoonStyle } from './people/cartoon';
+import type { PersonSpec } from '@people/spec';
 
 /** Nothing to yield to here: a bake runs to its end. */
 setSliceMs(Infinity);
@@ -15,11 +19,15 @@ interface Job {
   readonly at?: number;
   readonly facts?: ShuffleFacts;
   readonly uncook?: string;
+  /** A person not cooked for this build (`personBuild.ts`), built here and read back as a cooked one. */
+  readonly build?: { readonly person: PersonSpec; readonly gender: 'f' | 'm'; readonly style: CartoonStyle; readonly faces: boolean };
+  /** A procedural class's new body (`crowdBodies.ts`): its basis shared with the page, its coefficients. */
+  readonly body?: { readonly basis: Float32Array; readonly vertexCount: number; readonly shapes: number; readonly c: Float32Array; readonly stride: number };
 }
 
 export type BakedClip = Omit<ClipFrames, 'head'> & { head?: number[] };
 /** What a job answers: its clips, the person read, or why it failed. */
-export interface BakeReply { readonly id: number; readonly clips?: (BakedClip | null)[]; readonly person?: DecodedPerson; readonly error?: string }
+export interface BakeReply { readonly id: number; readonly clips?: (BakedClip | null)[]; readonly person?: DecodedPerson; readonly pixels?: Float32Array; readonly error?: string }
 
 // Reuse decoded clips across this worker's jobs.
 const libraries: Partial<Record<WalkSex, RocketboxClips>> = {};
@@ -37,8 +45,19 @@ function sent(clip: ClipFrames, transfer: Set<ArrayBuffer>): BakedClip {
 }
 
 async function bakeJob(scope: JobScope, e: MessageEvent<Job>): Promise<void> {
-  const { id, nodes, sex, at, facts, uncook } = e.data;
+  const { id, nodes, sex, at, facts, uncook, build, body } = e.data;
   try {
+    if (body) {
+      const pixels = bodyPixels(body.basis, body.vertexCount, body.shapes, body.c, body.stride);
+      scope.postMessage({ id, pixels } satisfies BakeReply, [pixels.buffer]);
+      return;
+    }
+    if (build) {
+      const scene = await buildPersonScene(build.person, build.gender, build.style, build.faces);
+      const { person, transfer } = decodeCookedPerson(cookPerson(scene));
+      scope.postMessage({ id, person } satisfies BakeReply, transfer);
+      return;
+    }
     if (uncook !== undefined) {
       const response = await fetch(uncook);
       if (!response.ok) throw new Error(`${uncook}: ${response.status}`);

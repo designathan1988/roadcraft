@@ -183,6 +183,31 @@ describe('parked cars drawn from instances kept where they were written', () => 
     agents.dispose();
   });
 
+  it('keep a car stopped in the traffic as a parked one, its smoke still leaving it, until it moves off', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    // Stopped at a light a whole tick: no speed now nor in the tick before, no indicator.
+    const car: VehicleView = { ...movingCar(9, m(30), m(20)), v: 0, prev: { v: 0 } };
+    const net = netWith();
+    let smoke = 0;
+    const options = { exhaust: () => { smoke++; } };
+    agents.sync(worldWith([], [car]), net, 0, true, undefined, options);
+    const shown = meshesOf(agents, /./).filter((mesh) => mesh.visible);
+    uploaded(shown);
+    const versions = shown.map((mesh) => mesh.instanceMatrix.version);
+    agents.sync(worldWith([], [car]), net, 0, true, undefined, options);
+    shown.forEach((mesh, i) => expect(mesh.instanceMatrix.version, mesh.name).toBe(versions[i]));
+    expect(centres(agents)).toEqual([m(30)]);
+    expect(smoke).toBe(2);
+    // Its indicator on: drawn each frame again (the lamp flashes).
+    const signalling: VehicleView = { ...car, indicator: 1 };
+    agents.sync(worldWith([], [signalling]), net, 0, true, undefined, options);
+    // Moving off: written where it is now.
+    const off: VehicleView = { ...car, v: m(2), frames: { ...car.frames, bx: m(30), x: m(31) } };
+    agents.sync(worldWith([], [off]), net, 1, true, undefined, options);
+    expect(centres(agents)).toEqual([m(31)]);
+    agents.dispose();
+  });
+
   it('draw a car on the move after the kept ones, its own instances sent each frame and nothing else', () => {
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
     const parked = [parkedCar(1, 0, 0), parkedCar(2, m(10), 0)];

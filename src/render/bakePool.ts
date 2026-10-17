@@ -5,6 +5,8 @@ import { type ClipFrames, type RigNode, type ShuffleFacts, rigData } from './cit
 import type { BakeReply, BakedClip } from './citizenBake.worker';
 import type { WalkSex } from './citizenWalk';
 import type { DecodedPerson } from './people/cookedPerson';
+import type { CartoonStyle } from './people/cartoon';
+import type { PersonSpec } from '@people/spec';
 
 /** The bake workers: a body's clips baked, and a cooked person read, on other cores while the game keeps drawing. */
 
@@ -134,6 +136,18 @@ export async function bakeDeferredInWorker(nodes: readonly RigNode[], sex: WalkS
 export async function uncookInWorker(url: string): Promise<DecodedPerson | null> {
   const reply = await run({ uncook: url });
   return reply?.person ?? null;
+}
+
+/** A person not cooked for this build, built in a worker (`personBuild.ts`) and read back as a cooked one; null when no worker can. */
+export async function buildPersonInWorker(person: PersonSpec, gender: 'f' | 'm', style: CartoonStyle, faces: boolean): Promise<DecodedPerson | null> {
+  const reply = await run({ build: { person, gender, style, faces } });
+  return reply?.person ?? null;
+}
+
+/** A procedural class's new body baked in a worker from its shared basis (`bodyPixels`); null when no worker can (baked here then). */
+export async function bakeBodyInWorker(basis: Float32Array, vertexCount: number, shapes: number, c: Float32Array, stride: number): Promise<Float32Array | null> {
+  const reply = await run({ body: { basis, vertexCount, shapes, c, stride } });
+  return reply?.pixels ?? null;
 }
 
 /** Releases decoded motion libraries held by idle workers after all visual bodies leave. */

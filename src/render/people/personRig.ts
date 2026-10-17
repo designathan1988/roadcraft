@@ -1,6 +1,6 @@
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { type LodLevel, simplifyLevels } from './lodWorker';
-import { lodPool } from './lodPool';
+import { peopleLod } from './lodPort';
 import {
   Bone,
   BufferAttribute,
@@ -741,7 +741,7 @@ function setLevels(geometry: BufferGeometry, positions: readonly number[], colou
     if (groups && groups.length) geometry.userData['lodGroups'] = levels.map((l) => l.groups);
   };
   // In the browser the work is done by a worker, and the body is shown when its levels are ready (\`lodReady\`); elsewhere
-  const worker = lodPool();
+  const worker = peopleLod();
   if (worker) {
     // A failure is said, and the body is drawn on its full level alone: DO NOT let it reject into the load
     geometry.userData['lodReady'] = worker.levels({ positions: pos, colours: col, index: all, ranges, levels: LOD_LEVELS }).then(store, (error: unknown) => {

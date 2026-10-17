@@ -34,8 +34,11 @@ import {
   levelFor, lodReady, simplifiedIndexAway, sortSkinWeights, type FarPart, type PieceRole,
 } from './crowdLod';
 import { createBlobShadows } from '../blobShadows';
+import { lodPool } from './lodPool';
+import { providePeopleLod } from './lodPort';
 
-;
+// The class bodies built on this page simplify their levels in the page's pool (`lodPort.ts`).
+providePeopleLod(lodPool);
 
 /** Procedural people (`people-lab.html`, then the game): one MakeHuman body per class - sex and age band */
 
@@ -1902,6 +1905,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const coef = new Float32Array(SHAPES);
       for (let k = 0; k < SHAPES; k++) coef[k] = (c[k] ?? 0) - (cls.coefficients[k] ?? 0);
       const body = cls.bodies.pick(coef);
+      // Shown only with their body's vertices written (a new body is baked in a worker).
+      await body.ready;
+      if (epoch !== started) throw new Error('crowd cleared');
       // Their own face; a reused row holds the last person's face: theirs replaces it, or none.
       setFace(cls, row, Object.keys(spec.features).length ? spec.features : null);
       // Heights from the vertices' Y alone (MakeHuman's `getHeightCm`).

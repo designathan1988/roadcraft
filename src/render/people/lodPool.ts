@@ -1,12 +1,8 @@
 import { jobPort } from '../../jobs/jobPool';
-import type { IndexRequest, LadderRequest, LodLevel, LodRequest } from './lodWorker';
+import type { LodLevel } from './lodWorker';
+import type { LodPool as Pool } from './lodPort';
 
 /** The simplifier worker (`lodWorker.ts`), started once and shared: a built person's levels, a vehicle part's */
-interface Pool {
-  levels(req: Omit<LodRequest, 'id'>): Promise<LodLevel[]>;
-  index(req: Omit<IndexRequest, 'id' | 'kind'>): Promise<Uint32Array | null>;
-  ladder(req: Omit<LadderRequest, 'id' | 'kind'>): Promise<Uint32Array[]>;
-}
 let pool: Pool | null | undefined;
 
 export function lodPool(): Pool | null {
