@@ -301,15 +301,24 @@ export function drainWarm(renderer: WebGLRenderer): void {
 }
 
 /** DO NOT let a mesh be drawn before its programs are built (a program first used in the frame's draw stalls it, three's onFirstUse): its own and its shadow's, compiled ahead at the next drain (`drainCompiles`, KHR_parallel_shader_compile); what waits for the mesh waits for them too. */
-function programsReady(mesh: Mesh): Promise<unknown> {
+export function programsReady(mesh: Mesh): Promise<unknown> {
+  // Nothing built ahead where no renderer answers (tests): nothing waited for.
+  if (!compiler) return Promise.resolve();
   const shadow = shadowStandIn(mesh);
-  return Promise.all([compileAhead(mesh), shadow ? compileAhead(shadow, true) : null]);
+  pendingPrograms++;
+  return Promise.all([compileAhead(mesh), shadow ? compileAhead(shadow, true) : null]).finally(() => { pendingPrograms--; });
+}
+/** Meshes whose programs are being built (`programsReady`): the renderer asks for frames meanwhile (`warmPending`). */
+let pendingPrograms = 0;
+/** Whether programs are built ahead here (a renderer answers; none in tests): a mesh waits for them only then. */
+export function compilesAhead(): boolean {
+  return compiler;
 }
 /** Buffers sent to the GPU a frame at most, bytes: 16 MiB took the page up to 42 ms in one frame of the conf27 move (bufferData at ~2.6 ms a MiB): 4 MiB, ~10 ms there. */
 const UPLOAD_BYTES = 4 * 1024 * 1024;
 /** Whether meshes still wait to go to the GPU: the renderer asks for another frame meanwhile. */
 export function warmPending(): boolean {
-  return toWarm.length > 0 || toWarmLoose.length > 0;
+  return toWarm.length > 0 || toWarmLoose.length > 0 || pendingPrograms > 0;
 }
 
 /** A loose mesh's buffers sent up in a scene of its own (`warmLoose`) */
