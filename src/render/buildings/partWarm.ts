@@ -1,15 +1,17 @@
-import { Color, InstancedMesh } from 'three';
+import { Color, InstancedMesh, Mesh } from 'three';
 import { FURNITURE_KINDS } from '@world/buildings/interior';
 import { COLOURED_PARTS } from './buildingMesh';
 import { type BuildingKit, PART_KINDS } from './kit';
+import { partPoseDepth } from './partPose';
 
-/** One instance of every part and piece of furniture as the buildings' layer draws them */
-export function partWarmMeshes(kit: BuildingKit): InstancedMesh[] {
-  const out: InstancedMesh[] = [];
+/** One instance of every part and piece of furniture as the buildings' layer draws them, each caster with its posed shadow (`partPose.ts` `partPoseDepth`: the renderer's stand-in takes a mesh's own depth material), and a box of the box levels (`massBoxes.ts`) */
+export function partWarmMeshes(kit: BuildingKit): Mesh[] {
+  const out: Mesh[] = [];
   for (const kind of PART_KINDS) {
     const mesh = new InstancedMesh(kit.geometry[kind], kit.material[kind], 1);
     if (COLOURED_PARTS.has(kind)) mesh.setColorAt(0, new Color(1, 1, 1));
     mesh.castShadow = kit.castsShadow.has(kind);
+    if (mesh.castShadow) mesh.customDepthMaterial = partPoseDepth(kit.material[kind]);
     out.push(mesh);
   }
   // The shell's parts faded with the shell ("Ocultar outros", `fade.ts`): its plain program drawn instanced, every kind of them one.
@@ -20,8 +22,14 @@ export function partWarmMeshes(kit: BuildingKit): InstancedMesh[] {
   for (const kind of FURNITURE_KINDS) {
     const mesh = new InstancedMesh(furniture.geometry[kind], furniture.material, 1);
     mesh.castShadow = true;
+    mesh.customDepthMaterial = partPoseDepth(furniture.material);
     out.push(mesh);
   }
+  // The box levels' boxes and their shadow: their own programs (`massingMaterial.ts` boxes, `createMassBoxDepth`).
+  const boxes = new Mesh(kit.massBox, kit.massingBoxes);
+  boxes.castShadow = true;
+  boxes.customDepthMaterial = kit.massBoxDepth;
+  out.push(boxes);
   for (const mesh of out) { mesh.receiveShadow = true; mesh.frustumCulled = false; }
   return out;
 }
