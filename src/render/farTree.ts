@@ -627,7 +627,7 @@ export class FarTree<P> implements FarTiles {
     const sig = `${bake}:${variant}`;
     if (n.nearLanded === sig || n.nearAsked === sig || n.nearFailed === sig) return;
     // The upload queue full: as `ask`; never the tile the player edits, which draws what was just done.
-    if (tiles[0]!.cut === null && warmFull()) { this.changed = true; return; }
+    if (tiles[0]!.cut === null && warmFull(this.nearPixelsOf(n))) { this.changed = true; return; }
     n.nearCancel?.();
     n.nearAsked = sig;
     const own = tiles[0]!.cut;
@@ -796,7 +796,7 @@ export class FarTree<P> implements FarTiles {
     if (n.asked === sig && (n.askedWant || !want)) return;
     if (n.blocked === sig) { if (want) n.blockedWant = true; return; }
     // DO NOT ask a mesh while the upload queue is full (`uploads.ts` warmFull): its arrays waited on the page with every other one baked again, the renderer at 7.3 GB in a re-bake and the page lost (conf74, conf75, conf77, 2026-10-17). What is drawn stands; asked again once it drains (the choice made again, `changed`).
-    if (want && warmFull()) { this.changed = true; return; }
+    if (want && warmFull(this.pixelsOf(n))) { this.changed = true; return; }
     n.cancel?.();
     n.asked = sig;
     n.askedWant = want;
