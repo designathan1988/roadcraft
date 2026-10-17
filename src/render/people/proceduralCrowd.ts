@@ -31,7 +31,7 @@ import { BODY_WIDTH, createClassBodies, type ClassBodies } from './crowdBodies';
 import { createGpuRows, type GpuRows } from './gpuRows';
 import { classRigInWorker, personFaceInWorker, wearInWorker } from '../bakePool';
 import type { WornPiece } from './personRig';
-import { rigFromMade } from './classRigMade';
+import { rigFromMade, sharedCopy } from './classRigMade';
 import type { PersonFaceJob } from '../citizenBake.worker';
 import {
   EYE_TRIANGLES, FAR_TRIANGLES, LEVELS, LEVEL_CAPS, LEVEL_TRIANGLES, REGION, cardCentres, cardSelections, farMesh, filterTriangles,
@@ -1022,20 +1022,26 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return t;
   };
 
+  /** A class's rig and how its items are fitted: made on the people's worker (its arrays shared, nothing of what it sent kept), or here where no worker can or no cook says what the class is. */
+  const classRigFor = async (sex: WalkSex, band: AgeBand, cooked: boolean): Promise<{ base: MacroParams; shape: Float32Array; rig: PersonRig; fit: (item: ProxyItem) => Promise<WornPiece>; eyes: ProxyItem }> => {
+    const { assets: a } = await env.setup();
+    const away = cooked ? await classRigInWorker(sex, band) : null;
+    if (away) {
+      const { rig, shape } = rigFromMade(away, a.mesh.weights, a.mesh.joints);
+      const fit = (it: ProxyItem): Promise<WornPiece> => wearInWorker(sex, band, it.pack).then((worn) => worn ?? Promise.reject(new Error(`${it.pack.name}: not fitted`)));
+      return { base: away.base, shape, rig, fit, eyes: await env.eyes() };
+    }
+    const made = await classRig(env, sex, band);
+    return { ...made, fit: (it) => Promise.resolve(made.rig.wear!(it, made.shape)) };
+  };
+
   const buildClass = async (sex: WalkSex, band: AgeBand): Promise<BodyClass> => {
     const { assets: a, morpher: mo } = await env.setup();
     const started = performance.now();
     // Read from the cook (`proceduralCook.ts`); built here only when it is missing or stale.
     const cooked = await loadProcedural(`class-${sex}-${band}`);
     // DO NOT build a class's rig on the page (`createPersonRig`, 50-100 ms each, while the map opens): made and kept on the people's worker, its body read back as a cooked person, its items fitted there (`fit`).
-    const away = cooked ? await classRigInWorker(sex, band) : null;
-    const made = away ? null : await classRig(env, sex, band);
-    const { base, shape } = away ?? made!;
-    const eyes = made?.eyes ?? await env.eyes();
-    const rig: PersonRig = made?.rig ?? rigFromMade(away!, a.mesh.weights, a.mesh.joints);
-    const fit = (it: ProxyItem): Promise<WornPiece> => (away
-      ? wearInWorker(sex, band, it.pack).then((worn) => worn ?? Promise.reject(new Error(`${it.pack.name}: not fitted`)))
-      : Promise.resolve(rig.wear!(it, shape)));
+    const { base, shape, rig, fit, eyes } = await classRigFor(sex, band, cooked !== null);
     const data = cooked ? classFromRecord(cooked) : await classData(env, sex, rig, shape);
     const { shapePixels, jointBasis, faceIndexPixels, faceList } = data;
     const clips: Record<ProcClip, ClipFrames> = {
@@ -1127,7 +1133,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         procTime: { value: 0 },
         procWoundUnit: { value: unit },
       },
-      fit, personData, placed: [], faces, faceOf: [], reloadHead, faceVerts: faceList, palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
+      fit, personData, placed: [], faces, faceOf: [], reloadHead, faceVerts: sharedCopy(faceList), palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
       skins: new Map(), items: new Map(), far: new Map(), pieces: [], people: [], ankle, drawn: 0,
     };
     ready.push(cls);
@@ -1878,14 +1884,10 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const faceShare = (cls: BodyClass): Pick<PersonFaceJob, 'deltas' | 'faceVerts' | 'faceFloats'> | null => {
     let share = faceShares.get(cls);
     if (share !== undefined) return share;
+    // DO NOT copy the class's posture for the worker: a class made there has it shared already, its only copy (`rigFromMade`); one made here is not sent (its rig's own closures hold it).
     const d = cls.rig.deltasData;
-    const shared = <T extends Float32Array | Float64Array | Int32Array>(a: T, make: (b: SharedArrayBuffer) => T): T => { const c = make(new SharedArrayBuffer(a.byteLength)); c.set(a as never); return c; };
-    share = d && typeof SharedArrayBuffer !== 'undefined' && (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true ? {
-      deltas: { positions: shared(d.positions, (b) => new Float32Array(b)), lowestDm: d.lowestDm, bodyRange: d.bodyRange.map(([x, y]) => [x, y] as const),
-        linear: shared(d.linear, (b) => new Float64Array(b)) },
-      faceVerts: shared(cls.faceVerts, (b) => new Int32Array(b)),
-      faceFloats: cls.uniforms.procFaceRows.value * FACE_WIDTH * 4,
-    } : null;
+    const sharedAlready = !!d && d.positions.buffer instanceof SharedArrayBuffer && d.linear.buffer instanceof SharedArrayBuffer && cls.faceVerts.buffer instanceof SharedArrayBuffer;
+    share = sharedAlready ? { deltas: d, faceVerts: cls.faceVerts, faceFloats: cls.uniforms.procFaceRows.value * FACE_WIDTH * 4 } : null;
     faceShares.set(cls, share);
     return share;
   };
