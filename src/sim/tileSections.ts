@@ -4,6 +4,8 @@ import type { TileRecords } from '@world/doc';
 import { type TrafficBuilding, trafficBuilding } from './agents/trafficBuildings';
 import { TILE_LINKS_FORMAT, type TileLinks, bakeTileLinks } from './meso/tileLinks';
 import { BAYS_SECTION, bakeTileBays } from './tileBays';
+import type { NetworkBake } from '@world/network';
+import { tileNetworkBake } from '@world/tileNetwork';
 
 /** THE TILE'S SECTIONS THE SIMULATION READS (CLAUDE.md "Streaming world"): its meso link table, its buildings as traffic reads them and its parking bays (`tileBays.ts`), baked once where the tile is written (the generator's worker, the save worker: `editor/tileStore.ts` TileBaker) and stored with it; the simulation's worker reads each alone, never the whole tile */
 
@@ -72,8 +74,55 @@ export function trafficOfSection(value: unknown): TrafficBuilding[] | null {
   return (v.buildings as TrafficBuilding[]).map((t) => ({ ...t, bounds: boxBack(t.bounds), reach: boxBack(t.reach) }));
 }
 
+/** The tile's junctions and ribbons solved from its roads (`tileNetworkBake`): the simulation's worker reads them from the store, never from the page. */
+export const NETWORK_SECTION = 'network';
+/** Bumped when the bake's shape changes (`world/networkBuild.ts` NetworkBake): an older one is not read. */
+const NETWORK_FORMAT = 1;
+/** The tags of what JSON cannot say as itself: a Map, a Float64Array, a number that is not finite or is -0, an undefined. */
+const MAP_TAG = '\u0000m', F64_TAG = '\u0000f', NUM_TAG = '\u0000n', UNDEF_TAG = '\u0000u';
+
+/** A value as JSON can hold it, the bake's own kinds tagged (`plainOf`); DO NOT use it for anything holding other classes (thrown). */
+function taggedOf(value: unknown): unknown {
+  if (value === undefined) return { [UNDEF_TAG]: 1 };
+  if (typeof value === 'number') return Number.isFinite(value) && !Object.is(value, -0) ? value : { [NUM_TAG]: Object.is(value, -0) ? '-0' : String(value) };
+  if (value === null || typeof value !== 'object') return value;
+  if (value instanceof Map) return { [MAP_TAG]: [...value].map(([k, v]) => [taggedOf(k), taggedOf(v)]) };
+  if (value instanceof Float64Array) return { [F64_TAG]: Array.from(value, taggedOf) };
+  if (Array.isArray(value)) return value.map(taggedOf);
+  const proto = Object.getPrototypeOf(value) as unknown;
+  if (proto !== Object.prototype && proto !== null) throw new Error(`a ${(value as object).constructor?.name ?? 'value'} cannot be kept as a section`);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) out[k] = taggedOf(v);
+  return out;
+}
+
+/** A value read back from its tagged JSON (`taggedOf`). */
+function plainOf(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(plainOf);
+  const o = value as Record<string, unknown>;
+  if (UNDEF_TAG in o) return undefined;
+  if (NUM_TAG in o) return o[NUM_TAG] === '-0' ? -0 : Number(o[NUM_TAG]);
+  if (MAP_TAG in o) return new Map((o[MAP_TAG] as [unknown, unknown][]).map(([k, v]) => [plainOf(k), plainOf(v)]));
+  if (F64_TAG in o) return Float64Array.from(o[F64_TAG] as unknown[], (x) => plainOf(x) as number);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) out[k] = plainOf(v);
+  return out;
+}
+
+/** The network section of a tile: its bake, tagged. */
+export function tileNetworkSection(bake: NetworkBake): Section {
+  return { json: { format: NETWORK_FORMAT, bake: taggedOf(bake) } };
+}
+
+/** The network section read back; null: of another format (the junctions are solved where the tile is loaded). */
+export function networkOfSection(value: unknown): NetworkBake | null {
+  const v = value as { format?: unknown; bake?: unknown } | null;
+  return v && v.format === NETWORK_FORMAT ? plainOf(v.bake) as NetworkBake : null;
+}
+
 /** DO NOT derive these again where the tile is read: baked here once per version of the tile, where it is written
- *  - `bays`: false for a tile made ahead of the region (the opening's rush): its bays are baked and added when it is loaded into the region (`tileBaysSection`, `cityTile.worker.ts`). */
+ *  - `bays`: false for a tile made ahead of the region (the opening's rush): its bays and its network are baked and added later (`tileBaysSection`, `tileNetworkSection`, `cityTile.worker.ts`). */
 export function bakeTileSections(records: TileRecords, bays = true): Readonly<Record<string, Section>> {
   const traffic = trafficJson(tileTraffic(records.buildings));
   const sections: Record<string, Section> = {
@@ -82,6 +131,8 @@ export function bakeTileSections(records: TileRecords, bays = true): Readonly<Re
   };
   const baked = bays ? tileBaysSection(records, traffic) : null;
   if (baked) sections[BAYS_SECTION] = baked;
+  // A tile of the region (or written by an edit): its junctions too, for the simulation's worker; a tile made ahead takes them when it is loaded (`cityTile.worker.ts`).
+  if (bays) sections[NETWORK_SECTION] = tileNetworkSection(tileNetworkBake(records));
   return sections;
 }
 

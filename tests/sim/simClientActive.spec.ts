@@ -131,4 +131,30 @@ describe("the worker's copy of the active region", () => {
     client.frame(0.1, false, RUN);
     expect(keyLists()).toEqual([{ part: 'lotKeys', start: 2, remove: 0, items: kb }]);
   });
+
+  it("posts no tile's junctions to a worker that reads the tiles itself, unless the store is behind the page", () => {
+    const doc = new RoadDoc();
+    const sent: ToSim[] = [];
+    const client = new SimClient(doc);
+    (client as unknown as { worker: { postMessage(message: ToSim): void } }).worker = { postMessage: (message) => sent.push(message) };
+    const { a, b } = twoTiles();
+    const active = new Set([a.key]);
+    client.setActive((key) => active.has(key));
+    client.tiles('map', 1000);
+    doc.loadTile(a); client.tile('loaded', a.key);
+    doc.loadTile(b); client.tile('loaded', b.key);
+    client.frame(0.1, false, RUN);
+    const bake = { nodes: [], segments: [] };
+    sent.length = 0;
+    client.offerBake(a.key, bake);
+    active.add(b.key);
+    let exported = 0;
+    client.activeChanged([b.key], () => { exported++; return bake; });
+    expect(sent.filter((m) => m.type === 'bake')).toEqual([]);
+    expect(exported).toBe(0);
+    // The store behind the page for a tile: its junctions come from the page.
+    client.storeBehind = (key) => key === a.key;
+    client.offerBake(a.key, bake);
+    expect(sent.filter((m) => m.type === 'bake')).toEqual([{ type: 'bake', bake }]);
+  });
 });

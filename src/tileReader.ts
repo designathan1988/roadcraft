@@ -4,7 +4,7 @@ import { portParts, workerParts } from '@editor/workerParts';
 import type { TileRecords } from '@world/doc';
 import type { TileReader } from '@sim/meso/tileFeed';
 import { bakeTileLinks } from '@sim/meso/tileLinks';
-import { LINKS_SECTION, TRAFFIC_SECTION, tileTraffic, trafficOfSection, unpackLinks } from '@sim/tileSections';
+import { LINKS_SECTION, NETWORK_SECTION, TRAFFIC_SECTION, networkOfSection, tileTraffic, trafficOfSection, unpackLinks } from '@sim/tileSections';
 import { BAYS_SECTION, unpackTileBays } from '@sim/tileBays';
 
 /** The tile store's tiles read where they are asked (the simulation's worker, the job workers' far bakes): its IndexedDB opened read only there, the page out of the way, and each product's own part read alone (`editor/tileStore.ts` layout) */
@@ -48,6 +48,11 @@ export function storeTileReader(map: string, port?: MessagePort | null): StoredT
       // DO NOT bake them here from the records of a tile stored without them (a network, its lanes and every lot's grid on the simulation's thread): the simulation works them out as it always did.
       const got = await readTileSection(store, map, key, BAYS_SECTION);
       return got && 'bytes' in got ? unpackTileBays(got.bytes) : null;
+    },
+    async network(key) {
+      // DO NOT solve them here from the records of a tile stored without them: the simulation's network solves what it is not handed.
+      const got = await readTileSection(store, map, key, NETWORK_SECTION);
+      return got && 'value' in got ? networkOfSection(got.value) : null;
     },
     async part(key, name) {
       const got = await readTilePart(store, map, key, name);
