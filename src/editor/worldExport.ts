@@ -1,5 +1,7 @@
 import type { TileRecords } from '@world/doc';
-import type { TileText } from './tileStore';
+import { tileOfKey } from '@world/tiles';
+import { tileOnMap } from '@world/cityGen/wholeMap';
+import { type TileText, isTileRecords } from './tileStore';
 import type { WorldMeta } from './worldMeta';
 
 /** THE STREAMED WORLD AS ONE FILE (Save map, Ctrl+S): its values and every stored tile, each tile as the texts it is stored in, joined in Blob pieces (no tile parsed or written again as text on the page), read back by `readWorldFile` */
@@ -33,8 +35,11 @@ export function readWorldFile(value: unknown): { readonly meta: WorldMeta; reado
   const tiles: TileRecords[] = [];
   for (const parts of file.tiles as unknown[]) {
     if (!Array.isArray(parts)) return null;
-    const records = Object.assign({}, ...parts.filter((p) => typeof p === 'object' && p !== null)) as TileRecords;
-    if (!Number.isInteger(records.key) || !Number.isFinite(records.version) || !Array.isArray(records.nodes) || !Array.isArray(records.buildings)) return null;
+    const records: unknown = Object.assign({}, ...parts.filter((p) => typeof p === 'object' && p !== null));
+    // Every list and counter a stored tile has, and a tile of this map: a file is the player's to give, not trusted as it is.
+    if (!isTileRecords(records)) return null;
+    const { i, j } = tileOfKey(records.key);
+    if (!tileOnMap(i, j)) return null;
     tiles.push(records);
   }
   return { meta, tiles };

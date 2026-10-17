@@ -55,4 +55,22 @@ describe('a city saved to a file', () => {
     expect(readWorldFile({ version: 2, document: {} })).toBeNull();
     expect(readWorldFile({ version: 3, world: { version: 1, unit: 1, generator: null }, tiles: [] })).toBeNull();
   });
+
+  it('refuses a file whose tile lacks a list or a counter, or lies off the map', async () => {
+    const from = new TileStore('map', storeTiles(memoryStore()), never);
+    await from.write(tile(0, 0));
+    const meta: WorldMeta = { version: 1, generator: { seed: 4, style: 'mixed', centres: 3, density: 0.5, parks: 0.05, industry: true }, unit: 1, values: {} };
+    await from.setMeta(meta);
+    const text = await new Blob(await worldFilePieces((await from.meta())!, [tileKey(0, 0)], (key) => from.readText(key))).text();
+    const good = JSON.parse(text) as { tiles: Record<string, unknown>[][] };
+    expect(readWorldFile(good)).not.toBeNull();
+    // A tile without its trees' list.
+    const holed = JSON.parse(text) as { tiles: Record<string, unknown>[][] };
+    for (const part of holed.tiles[0]!) delete part['trees'];
+    expect(readWorldFile(holed)).toBeNull();
+    // A tile far past the map's edge.
+    const off = JSON.parse(text) as { tiles: Record<string, unknown>[][] };
+    for (const part of off.tiles[0]!) if ('key' in part) part['key'] = tileKey(5000, 0);
+    expect(readWorldFile(off)).toBeNull();
+  });
 });

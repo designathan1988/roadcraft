@@ -78,7 +78,8 @@ const NEXT_KINDS = Object.keys({
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
-function isTileRecords(value: unknown): value is TileRecords {
+/** Whether a value is a tile's records as the store keeps them: its key and version, every list, every counter. */
+export function isTileRecords(value: unknown): value is TileRecords {
   if (!isObject(value) || !Number.isInteger(value['key']) || !finite(value['version'])) return false;
   const next = value['next'];
   return LIST_FIELDS.every((field) => Array.isArray(value[field])) && isObject(next) && NEXT_KINDS.every((kind) => finite(next[kind]));
