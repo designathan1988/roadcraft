@@ -123,13 +123,20 @@ export function shadowStandIns(root: Object3D): Group {
 
 /** A copy of `object` to build its programs with: the same geometry, material and variant */
 export function compileCopy(object: Object3D): Object3D {
-  const instanced = object as InstancedMesh;
-  if (!instanced.isInstancedMesh) return object.clone(false);
-  const copy = new InstancedMesh(instanced.geometry, instanced.material, 1);
-  Object3D.prototype.copy.call(copy, instanced, false);
-  if (instanced.instanceColor) copy.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
-  copy.morphTexture = instanced.morphTexture;
-  return copy;
+  // DO NOT let three copy the user data (r186 `Object3D.copy`: JSON.parse(JSON.stringify(userData))): a part's `posedFrom` is a geometry, serialized whole, and one whose arrays went to the GPU (`gpuOnly`) threw, leaving the job that asked unsettled (conferencia 31: no cell's detail, no new road).
+  const kept = object.userData;
+  object.userData = {};
+  try {
+    const instanced = object as InstancedMesh;
+    if (!instanced.isInstancedMesh) return object.clone(false);
+    const copy = new InstancedMesh(instanced.geometry, instanced.material, 1);
+    Object3D.prototype.copy.call(copy, instanced, false);
+    if (instanced.instanceColor) copy.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
+    copy.morphTexture = instanced.morphTexture;
+    return copy;
+  } finally {
+    object.userData = kept;
+  }
 }
 
 /** Every compile asked for and not settled, and the drains it has waited through: DO NOT let one wait for ever (a program that never says it is built, a mesh let go meanwhile): past `COMPILE_FRAMES` it settles, and the mesh is drawn as it was before (its program built in the draw at worst). */
