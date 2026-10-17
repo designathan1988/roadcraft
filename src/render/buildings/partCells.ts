@@ -160,6 +160,16 @@ export class PartCell {
         runFirst[runs] = m; runLast[runs] = m; runLevel[runs] = level; runCount[runs] = count;
         runs++;
       }
+      // Two drawn runs with a run under a pixel between are one draw at the finer level when drawing the gap's instances and the coarser one finer costs less than a draw.
+      if (runs >= 3 && runLevel[runs - 1] !== NONE && runLevel[runs - 2] === NONE && runLevel[runs - 3] !== NONE) {
+        const a = runs - 3, gap = runs - 2, b = runs - 1;
+        const fine = Math.min(runLevel[a]!, runLevel[b]!), coarse = Math.max(runLevel[a]!, runLevel[b]!);
+        const coarseCount = runLevel[a] === coarse ? runCount[a]! : runCount[b]!;
+        if (runCount[gap]! * triangles(fine) + coarseCount * (triangles(fine) - triangles(coarse)) <= DRAW_TRIANGLES) {
+          runLast[a] = runLast[b]!; runCount[a] = runCount[a]! + runCount[gap]! + runCount[b]!; runLevel[a] = fine;
+          runs -= 2;
+        }
+      }
       // Two drawn runs side by side are one draw at the finer level when drawing the coarser one finer costs less than a draw.
       while (runs >= 2 && runLevel[runs - 1] !== NONE && runLevel[runs - 2] !== NONE) {
         const a = runs - 2, b = runs - 1;

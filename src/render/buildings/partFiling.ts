@@ -10,8 +10,8 @@ import { LOOK_FLOATS } from './shellParts';
 export const SIDE = Math.round(BATCH_CELL / DETAIL_CELL);
 if (SIDE !== 4) throw new Error(`[buildings] a cell's parts are filed four sub-cells a side, not ${SIDE}`);
 export const LEAVES = SIDE * SIDE;
-/** What a draw is taken to cost in triangles: a band is kept apart only if it draws as much. */
-export const DRAW_TRIANGLES = 4096;
+/** What a draw is taken to cost in triangles: a band is kept apart only if it draws as much (three's per-object work on the page, `projectObject`/`renderObject`, outweighs this many triangles on the GPU). */
+export const DRAW_TRIANGLES = 16384;
 
 /** A sub-cell's index in Morton order from its column and row in the cell. */
 export const morton = (u: number, v: number): number => (u & 1) | ((v & 1) << 1) | ((u & 2) << 1) | ((v & 2) << 2);

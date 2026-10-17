@@ -52,7 +52,8 @@ const drawn = (cell: PartCell): InstancedMesh[] => cell.group.children.filter((o
 
 describe('the parts of a cell', () => {
   // A window's frame (6 cm deep) and a gourmet balcony's post, the same part 50 cm deep.
-  const windows = [100, 1.2, 1.5, 0.06] as const, posts = [100, 0.06, 0.3, 0.5] as const;
+  // Enough of each for its own band and draw (`partFiling.ts` `DRAW_TRIANGLES`).
+  const windows = [400, 1.2, 1.5, 0.06] as const, posts = [400, 0.06, 0.3, 0.5] as const;
 
   it('draw a window frame by its street faces once its depth is under a pixel, a deep post whole', () => {
     const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([windows, posts], 10, 10))]], partBandings(kit.screen)), kit);
@@ -61,8 +62,8 @@ describe('the parts of a cell', () => {
     const levels = kit.screen.frame.levels;
     const shown = drawn(cell);
     expect(shown.map((mesh) => levelOf(levels, mesh)).sort()).toEqual([0, 1]);
-    expect(shown.map((mesh) => mesh.count)).toEqual([100, 100]);
-    expect(cell.triangles).toBe(100 * levels[0]!.triangles + 100 * levels[1]!.triangles);
+    expect(shown.map((mesh) => mesh.count)).toEqual([400, 400]);
+    expect(cell.triangles).toBe(400 * levels[0]!.triangles + 400 * levels[1]!.triangles);
   });
 
   it('draw nothing where an instance is under a pixel, and come back without being made again', () => {
@@ -91,13 +92,24 @@ describe('the parts of a cell', () => {
 
   it('choose by sub-cell: the near sub-cell whole, the far one by its street faces', () => {
     // Two sub-cells 192 m apart in the same cell, the eye over the first: enough frames for a split to spare more than its draws.
-    const many = [300, 1.2, 1.5, 0.06] as const;
+    const many = [600, 1.2, 1.5, 0.06] as const;
     const near = frames([many], 10, 10), far = frames([many], 10, 202);
     const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(near)], ['0,3', arrays(far)]], partBandings(kit.screen)), kit);
     cell.choose(view(10, 10, 20));
     const levels = kit.screen.frame.levels;
     const shown = drawn(cell).map((mesh) => levelOf(levels, mesh)).sort();
     expect(shown).toEqual([0, 1]);
+  });
+
+  it('draw two runs at one level as one where the sub-cell between draws nothing and costs less than a draw', () => {
+    // Posts in the first and third sub-cells (Morton order), equally far from the eye; between them a few frames under a pixel.
+    const posts = [10, 0.06, 0.3, 0.5] as const, specks = [3, 0.001, 0.001, 0.001] as const;
+    const cell = new PartCell('0,0', fileParts('0,0', [
+      ['0,0', arrays(frames([posts], 10, 10))], ['1,0', arrays(frames([specks], 74, 10))], ['0,1', arrays(frames([posts], 10, 74))],
+    ], partBandings(kit.screen)), kit);
+    cell.choose(view(10, 42, 5));
+    const shown = drawn(cell);
+    expect(shown.map((mesh) => mesh.count)).toEqual([23]);
   });
 
   it('refuse a sub-cell outside its cell', () => {
