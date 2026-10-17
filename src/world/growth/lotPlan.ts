@@ -1,7 +1,7 @@
 import type { Rng } from '@core/rng';
 import type { BlueprintBody } from '@world/buildings/blueprints';
 import { RETAINING_STONE, mat } from '@world/buildings/cityBuildings';
-import { FOLLOWS_GROUND, elementClash, elementsMeet, isStructure, unsupportedElements } from '@world/buildings/elements';
+import { FOLLOWS_GROUND, elementClash, elementsMeet, isStructure, planReach, unsupportedElements } from '@world/buildings/elements';
 import type { MaterialSpec } from '@world/buildings/materials';
 import type { MadeBuilding, Rect } from '@world/buildings/procedural';
 import { type Building, type BuildingElement, type ElementKind, type LotSurface, MAX_ELEMENTS, MAX_TERRACE, type Side, type Volume, componentAt } from '@world/buildings/types';
@@ -258,6 +258,15 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   /** The x spans kept clear in front of the people's gates (`put`), filled once the door is known. */
   const gateWays: { x0: number; x1: number }[] = [];
   const probe = (): Building => ({ ...body, id: 0, x: 0, y: 0, rotation: 0 } as Building);
+  /** Each part's reach (`planReach`), worked out once: DO NOT ask `elementsMeet` of two parts its own first test sets apart, the part against every other of the lot for each one laid. */
+  const reaches = new WeakMap<BuildingElement, number>();
+  const reachOf = (e: BuildingElement): number => {
+    let r = reaches.get(e);
+    if (r === undefined) reaches.set(e, r = planReach(e));
+    return r;
+  };
+  /** Not set apart by the circles round their footprints: the test `elementsMeet` makes first, the same sum. */
+  const near = (a: BuildingElement, b: BuildingElement): boolean => !(Math.hypot(b.x - a.x, b.y - a.y) > reachOf(a) + reachOf(b));
 
   const lot: Lot = {
     surface(r, s) {
@@ -298,14 +307,14 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       const el: BuildingElement = { id: nextElement, kind, x: X(x), y: Y(y), facing, w: m(Math.min(w, 40)), d: m(d), z: m(z), h: m(h) };
       if (elementClash(probe(), el)) return false;
       // Nothing solid in another's footprint
-      return laying || isStructure(material ? { ...el, material } : el) || !elements.some((o) => elementsMeet(el, o));
+      return laying || isStructure(material ? { ...el, material } : el) || !elements.some((o) => near(el, o) && elementsMeet(el, o));
     },
     put(kind, x, y, facing, w, d, h, z = 0, material) {
       if (!lot.fits(kind, x, y, facing, w, d, h, z, material)) return false;
       const el: BuildingElement = { id: nextElement, kind, x: X(x), y: Y(y), facing, w: m(Math.min(w, 40)), d: m(d), z: m(z), h: m(h),
         ...(material ? { material } : {}) };
       if (laying || isStructure(el)) {
-        for (let i = elements.length - 1; i >= 0; i--) if (elementsMeet(el, elements[i]!)) elements.splice(i, 1);
+        for (let i = elements.length - 1; i >= 0; i--) if (near(el, elements[i]!) && elementsMeet(el, elements[i]!)) elements.splice(i, 1);
       }
       elements.push(el);
       nextElement++;
