@@ -9,7 +9,7 @@ import { createBuildingKit } from '@render/buildings/kit';
 import { createMassCells } from '@render/buildings/massCells';
 import { MassLevels } from '@render/buildings/massLevels';
 import { plateOf, tileOf } from '@render/buildings/levelKeys';
-import { CELL_DETAIL, PLATE_DETAIL, TILE_DETAIL, emitMassing } from '@render/buildings/massing';
+import { CELL_DETAIL, PLATE_DETAIL, TILE_DETAIL, emitMassing, emitMassingLevels } from '@render/buildings/massing';
 import { drawsSignature } from '@render/buildings/signature';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
@@ -166,6 +166,22 @@ describe('a tile or a plate of masses drawn in place of its cells', () => {
     expect(plate).toBeLessThan(tile);
     expect(tileError).toBeGreaterThan(0);
     expect(plateError).toBeGreaterThanOrEqual(tileError);
+  });
+
+  it("walks a building once for a tile's and a plate's masses where they answer alike, each the same as walked alone", () => {
+    let shared = 0, apart = 0;
+    for (let i = 0; i < BLUEPRINTS.length; i++) {
+      for (const turn of [0, 0.7]) {
+        const b = { ...building(i, 0, 0), rotation: turn };
+        const [t, p] = emitMassingLevels(b, flat, undefined, flat, undefined, TILE_DETAIL, PLATE_DETAIL);
+        expect(t).toEqual(emitMassing(b, flat, undefined, flat, false, undefined, TILE_DETAIL));
+        expect(p).toEqual(emitMassing(b, flat, undefined, flat, false, undefined, PLATE_DETAIL));
+        if (t && t === p) shared++; else apart++;
+      }
+    }
+    // Both ways met: some buildings' plate masses their tile's own, some walked again.
+    expect(shared).toBeGreaterThan(0);
+    expect(apart).toBeGreaterThan(0);
   });
 
   it("is made by the cells' job for its kind, merged, with its error", () => {

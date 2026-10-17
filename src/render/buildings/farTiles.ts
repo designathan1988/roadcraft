@@ -10,7 +10,7 @@ import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '
 import { BOX_INSTANCE, type BoxMass, type CellMass, type FarMass, MASS_FACADE, MASS_GRID, type MassSquare, cellMass, farMassBuffers, indexArray, massOnGrid, massPlaces, shellBounds } from './cellArrays';
 import { TILE_CELLS } from './levelKeys';
 import { AGGREGATE, LEVEL_MASS_KEY as MASS_KEY, NODE_BOX_KEY as BOX_KEY, TILE_PLATE_KEY as PLATE_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
-import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing, massFloor } from './massing';
+import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing, emitMassingLevels, massFloor } from './massing';
 
 export { AGGREGATE, TOP_LEVEL, emptyRecords, farKey, farNode, nodeSide } from './farGrid';
 
@@ -162,11 +162,11 @@ function tileBuildings(records: TileRecords): Building[] {
   return out;
 }
 
-/** The masses of buildings at a level, merged, as the cells' job emits them (`cellWork.ts`); a signature building by its blocks (no body of its own is drawn far off). `floors`: each one's floor worked out already (`bakeTile`). */
-function massesOf(buildings: readonly Building[], detail: MassDetail, reads: GroundReaders, tone?: FarJob['tone'], floors?: readonly { readonly floor: number | undefined }[], square?: MassSquare): CellMass | null {
+/** The masses of buildings at a level, merged, as the cells' job emits them (`cellWork.ts`); a signature building by its blocks (no body of its own is drawn far off). */
+function massesOf(buildings: readonly Building[], detail: MassDetail, reads: GroundReaders, tone?: FarJob['tone'], square?: MassSquare): CellMass | null {
   const chunks: MassingChunk[] = [];
   for (let n = 0; n < buildings.length; n++) {
-    const mass = emitMassing(buildings[n]!, reads.groundAt, undefined, reads.naturalAt, false, tone, detail, floors?.[n]);
+    const mass = emitMassing(buildings[n]!, reads.groundAt, undefined, reads.naturalAt, false, tone, detail);
     if (mass) chunks.push(mass);
   }
   return cellMass(chunks, square);
@@ -175,7 +175,7 @@ function massesOf(buildings: readonly Building[], detail: MassDetail, reads: Gro
 /** A TILE'S MASSES FROM ITS RECORDS ALONE: no page, no document, no paving (the floor on the natural ground) */
 /** `square`: the masses on its grid (`massGrid`), as a tile's job lays them; none: in floats. */
 export function bakeTileMasses(records: TileRecords, detail: MassDetail, reads: GroundReaders = FLAT, tone?: FarJob['tone'], square?: MassSquare): CellMass | null {
-  return massesOf(tileBuildings(records), detail, reads, tone, undefined, square);
+  return massesOf(tileBuildings(records), detail, reads, tone, square);
 }
 
 /** A tile's bake from its buildings: its masses at its level and its plate's, its blocks as boxes. */
@@ -184,8 +184,15 @@ function bakeTile(buildings: readonly Building[], sig: string, reads: GroundRead
   const floors = buildings.map((b) => ({ floor: massFloor(b, reads.naturalAt) }));
   const boxes: number[] = [];
   buildings.forEach((b, n) => emitBoxes(b, undefined, reads.naturalAt, tone, boxes, floors[n]));
+  // Each building walked once for both levels where they answer alike (`emitMassingLevels`).
+  const tile: MassingChunk[] = [], plate: MassingChunk[] = [];
+  buildings.forEach((b, n) => {
+    const [t, p] = emitMassingLevels(b, reads.groundAt, undefined, reads.naturalAt, tone, TILE_DETAIL, PLATE_DETAIL, floors[n]);
+    if (t) tile.push(t);
+    if (p) plate.push(p);
+  });
   // Its masses on its tile's grid (`massGrid`); its plate masses in floats, put on their plate's grid as its node joins them (`joinMasses`).
-  return { sig, tile: massesOf(buildings, TILE_DETAIL, reads, tone, floors, square), plate: massesOf(buildings, PLATE_DETAIL, reads, tone, floors), boxes: new Float32Array(boxes) };
+  return { sig, tile: cellMass(tile, square), plate: cellMass(plate), boxes: new Float32Array(boxes) };
 }
 
 /** Several box lists as one. */
