@@ -8,7 +8,7 @@ import { METERS_PER_UNIT, m } from '@world/units';
 import { emptyRecords } from './buildings/farGrid';
 import { nearRoadDoc } from './nearRoadTiles';
 import { type WriteBudget, derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from './derivedCache';
-import { type BuildingStage, buildingStage, stageKey } from './nearBuildings';
+import { type BuildingStage, STAGE_FORMAT, buildingStage, stageKey } from './nearBuildings';
 import { type NearPart, partsDigest } from './nearContent';
 import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
 import { TERRAIN_CELL } from './terrainGrid';
@@ -366,7 +366,9 @@ export async function runNearTileJob(job: NearTileJob, cache: NearTileCache, bak
 async function stageFor(job: NearTileJob, cache: NearTileCache, keeps: boolean, tile: { readonly key: number; readonly version: number },
   page: Partial<TileRecords> | null | undefined): Promise<BuildingStage | null> {
   const key = keeps && job.prefix !== null ? stageKey(job.prefix, tile.key) : null;
-  const kept = key ? await cache.get(key) as BuildingStage | undefined : undefined;
+  const got = key ? await cache.get(key) as BuildingStage | undefined : undefined;
+  // One kept in an older shape (its plants as objects): made again.
+  const kept = got?.format === STAGE_FORMAT ? got : undefined;
   if (!page && kept && kept.version === tile.version) return kept;
   const records = await partsOf(tile.key, tile.version, ['buildings'], page, job.store);
   if (!records) return null;

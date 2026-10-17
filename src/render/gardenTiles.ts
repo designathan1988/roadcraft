@@ -2,6 +2,7 @@ import type { InstancedMesh, Object3D } from 'three';
 import { m } from '@world/units';
 import type { Pack } from './cellInstances';
 import { type Gardens, gardenPack } from './gardens';
+import { stagePlants } from './nearBuildings';
 import type { NearBaker, NearProduct } from './nearTileBake';
 import { runBuffers } from './streetFurnitureLayer';
 
@@ -21,7 +22,7 @@ export const gardenBaker: NearBaker<GardenBake | null> = {
   // A lot's plants stand on the ground round its building (`renderer.ts` bankBox).
   groundReach: m(64),
   bake(area) {
-    const plants = area.buildings(0).plants.map((p) => ({ ...p, z: area.groundAt(p.x, p.y) }));
+    const plants = stagePlants(area.buildings(0)).map((p) => ({ ...p, z: area.groundAt(p.x, p.y) }));
     if (!plants.length) return null;
     const packs = gardenPack(plants);
     return packs.size ? { packs } : null;
