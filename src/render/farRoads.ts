@@ -5,7 +5,7 @@ import { pullTowardEye } from './depthConvention';
 import { type FarRoadJob, type FarRoadMesh, type FarRoadReply, derivedRoadCache, farLevelError, runFarRoadJob, tileRoads } from './farRoadTiles';
 import { type FarKind, type FarLanded, FarTree, type FarTreeJob, type FarTreeRun } from './farTree';
 import { nodeSide } from './buildings/farTiles';
-import { TIER_SPAN } from './buildings/cellPool';
+import { FAR_TIER, TIER_SPAN } from './buildings/cellPool';
 import { gpuOnly } from './mesh/gpuOnly';
 import type { SharedGroundData } from './sharedGround';
 
@@ -15,8 +15,6 @@ declare const __FAR_ROADS_HASH__: string | undefined;
 /** The fingerprint of the code the far roads are baked by (`cook-plugin.ts`): bakes are kept under it; none (tests): nothing kept. */
 const FAR_HASH = typeof __FAR_ROADS_HASH__ !== 'undefined' && __FAR_ROADS_HASH__ ? __FAR_ROADS_HASH__ : null;
 const FAR_PREFIX = FAR_HASH ? `farRoads:${FAR_HASH}:` : null;
-/** The far roads' band in the queue: with the buildings' far levels (`farLevels.ts` `FAR_TIER`). */
-const FAR_TIER = 2.9;
 
 /** The linear colour of an sRGB byte colour, in the vertex shader (IEC 61966-2-1). */
 const LINEAR_GLSL = /* glsl */ `

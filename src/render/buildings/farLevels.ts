@@ -2,7 +2,7 @@ import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../../jobs/j
 import { forgetOtherDerived } from '../derivedCache';
 import { type FarKind, FarTree, type FarTreeJob, type FarTreeRun } from '../farTree';
 import type { CellMass } from './cellArrays';
-import { TIER_SPAN } from './cellPool';
+import { FAR_TIER, TIER_SPAN } from './cellPool';
 import { type FarGroundEnv, type FarJob, type FarReply, derivedFarCache, farNode, levelDrop, nodeSide, runFarJob, tileRows } from './farTiles';
 import type { BuildingKit } from './kit';
 import { FAR_ERROR, cellMesh } from './massCells';
@@ -14,8 +14,6 @@ declare const __FAR_MASS_HASH__: string | undefined;
 /** The fingerprint of the code the far levels are baked by (`cook-plugin.ts`): bakes are kept under it; none (tests): nothing kept. */
 const FAR_HASH = typeof __FAR_MASS_HASH__ !== 'undefined' && __FAR_MASS_HASH__ ? __FAR_MASS_HASH__ : null;
 const FAR_PREFIX = FAR_HASH ? `farMass:${FAR_HASH}:` : null;
-/** The far jobs' band in the queue: after the cells' tiles and plates, before the summaries (`cellPool.ts` `TIER`). */
-const FAR_TIER = 2.9;
 /** DO NOT draw a box level's merged boxes smaller than this on the screen, px: at 2 px of error the plan's 32 m squares came out 1.6 px wide in the map view, a million boxes and five triangles a pixel over 16 km (2026-10-16); a level whose squares would span less gives way to its parent, so the boxes drawn are bounded by the screen, not by the world. */
 const BOX_PIXELS = 4;
 

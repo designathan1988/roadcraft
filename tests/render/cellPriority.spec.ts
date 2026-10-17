@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { TIER_SPAN, cellPriority } from '@render/buildings/cellPool';
+import { FAR_TIER, TIER_SPAN, cellPriority } from '@render/buildings/cellPool';
 import { m } from '@world/units';
 
 /** THE QUEUE'S ORDER FOR THE BUILDINGS' JOBS (`cellPool.ts` `cellPriority`): the detail near the eye first while the town is seen; behind the opening's curtain the coarse levels first, since they are what it shows (`renderer.ts` reveal) */
 describe("a building job's place in the queue", () => {
-  /** The far levels' band (`farLevels.ts` FAR_TIER): past the masses, before the summaries. */
-  const farLevel = (away: number): number => 2.9 * TIER_SPAN + away;
+  /** A far level's place (`farLevels.ts`, `farRoads.ts`): its band, nearest first. */
+  const farLevel = (away: number): number => FAR_TIER * TIER_SPAN + away;
   const near = m(50), far = m(9_000);
 
-  it('seen: the detail near the eye before any mass or far level', () => {
+  it('seen: the detail near the eye before any mass', () => {
     expect(cellPriority('cell', far, false, false)).toBeLessThan(cellPriority('mass', near, false, false));
     expect(cellPriority('facade', far, false, false)).toBeLessThan(cellPriority('massTile', near, false, false));
-    expect(cellPriority('cell', far, false, false)).toBeLessThan(farLevel(near));
+  });
+
+  it('a far level, a hole on the screen until it comes, before any detail, seen or not', () => {
+    for (const coarse of [false, true]) {
+      expect(farLevel(far)).toBeLessThan(cellPriority('cell', near, false, coarse));
+      expect(farLevel(far)).toBeLessThan(cellPriority('facade', near, false, coarse));
+    }
   });
 
   it('behind the curtain: every mass and far level before any detail, however near', () => {

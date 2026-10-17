@@ -25,8 +25,10 @@ const PAVING_REACH = m(64);
 const TIER: Readonly<Record<JobKind, number>> = { cell: 0, facade: 1, mass: 2, massTile: 2.5, massPlate: 2.75, summary: 3 };
 /** A band: farther than any cell of any map is from the eye (the far levels' jobs take a band of their own, `farLevels.ts`). */
 export const TIER_SPAN = m(10_000_000);
-/** The bands the detail is put back by while the town is unseen (`coarseFirst`): past the masses (2-2.75) and the far levels (2.9). */
+/** The bands the detail is put back by while the town is unseen (`coarseFirst`): past the masses (2-2.75). */
 const DETAIL_LATER = 4;
+/** THE FAR LEVELS' BAND (`farLevels.ts`, `farRoads.ts`): before every other kind - a far node the view wants and has not is a hole on the screen (nothing under it drawn), and a hole comes before any refinement of what is drawn (Cesium loads the coarse levels first). After the far levels in the band, the map view a moment after the opening showed the outer districts empty for seconds behind the region's detail (2026-10-16). */
+export const FAR_TIER = -0.5;
 /** A cell job's place in the queue (lower first): a building cut open before anything, else its kind's band (`TIER`, the detail put back past the coarse levels while the town is unseen, `coarseFirst`), nearest the eye first within it. */
 export function cellPriority(kind: JobKind, away: number, cutOpen: boolean, coarseFirst: boolean): number {
   if (cutOpen) return -TIER_SPAN;
