@@ -736,9 +736,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const PROC_CAP = PED_CEILING;
   /** Walkers waiting for a body of their own. */
   const procWaiting: number[] = [];
+  /** One body made at a time: its vertices baked in a worker (`crowdBodies.ts`), DO NOT space them out on a clock. */
   let procBuilding = false;
-  let procBuiltAt = 0;
-  const PROC_BUILD_GAP_MS = 120;
   // Two spare bodies built while the map opens, drawn hidden
   if (procedural) {
     for (const seed of [0x51a7e, 0x2b0d1]) {
@@ -752,8 +751,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   }
   const procBuildNext = (): void => {
     if (procBuilding || !procWaiting.length) return;
-    const now = performance.now();
-    if (now - procBuiltAt < PROC_BUILD_GAP_MS) return;
     // A walker who got a freed body meanwhile, or left, needs none.
     let id: number | undefined;
     while (procWaiting.length) {
@@ -774,7 +771,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const e = procPeople.get(target);
       if (e && !e.person) e.person = person;
       else { person.matrix.makeScale(0, 0, 0); procSpare.push(person); }
-    }, () => { procPeople.delete(target); }).finally(() => { procBuilding = false; procBuiltAt = performance.now(); });
+    }, () => { procPeople.delete(target); }).finally(() => { procBuilding = false; });
   };
   let procFrame = 0;
   /** This frame's measure of a person on the screen (`AgentRenderOptions.personPixels`). */

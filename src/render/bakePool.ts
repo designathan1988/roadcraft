@@ -144,6 +144,12 @@ export async function buildPersonInWorker(person: PersonSpec, gender: 'f' | 'm',
   return reply?.person ?? null;
 }
 
+/** A procedural class's new body baked in a worker from its shared basis (`bodyPixels`); null when no worker can (baked here then). */
+export async function bakeBodyInWorker(basis: Float32Array, vertexCount: number, shapes: number, c: Float32Array, stride: number): Promise<Float32Array | null> {
+  const reply = await run({ body: { basis, vertexCount, shapes, c, stride } });
+  return reply?.pixels ?? null;
+}
+
 /** Releases decoded motion libraries held by idle workers after all visual bodies leave. */
 export function releaseIdleBakeWorkers(): void {
   releaseRequested = true;
