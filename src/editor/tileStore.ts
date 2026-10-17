@@ -12,6 +12,7 @@ import { encodeRecords, readRecords, refOf, tableRecords } from '@world/building
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
 import { tileBuildingsOf, withGrownBuildings } from '@world/growth/grownRows';
+import { gatesOf } from '@world/parkingLayout';
 import { METERS_PER_UNIT, m } from '@world/units';
 import { type PartStore, type SaveEntry, storeWriter } from './saveStore';
 import { type HeadRead, type TilePartIn, gunzipBytes, gzipBytes, partOf, readHead, tileBlob } from './tileBlob';
@@ -90,7 +91,7 @@ interface TileBackend { run(op: TileOp): Promise<unknown> }
 const tileBlobKey = (map: string, key: number): string => `${map}:T:${key}`;
 const metaKey = (map: string): string => `${map}:world`;
 
-type ListField = Exclude<keyof TileRecords, 'key' | 'version' | 'next' | 'grown'>;
+type ListField = Exclude<keyof TileRecords, 'key' | 'version' | 'next' | 'grown' | 'gates'>;
 type NextKind = keyof TileRecords['next'];
 /** Every list of a tile and every kind it counts ids for (a `Record`: a field added to `TileRecords` and not here does not compile). */
 const LIST_FIELDS = Object.keys({
@@ -121,9 +122,10 @@ const RECORD_PARTS: readonly RecordPart[] = ['rest', 'roads', 'buildings'];
 export type TilePartName = 'roads' | 'buildings';
 
 function splitRecords(records: TileRecords): Record<RecordPart, object> {
-  const { nodes, borrowedNodes, segments, buildings, grown, lots, ...rest } = records;
+  const { nodes, borrowedNodes, segments, gates, buildings, grown, lots, ...rest } = records;
   // The grown rows with the lots they are made again on (`world/growth/grownRows.ts`): the part the far bakes read alone holds both.
-  return { rest, roads: { nodes, borrowedNodes, segments }, buildings: { buildings, lots, ...(grown ? { grown } : {}) } };
+  // The buildings' gates with the roads: a bake of the roads reads them without the buildings (`render/nearRoadTiles.ts`).
+  return { rest, roads: { nodes, borrowedNodes, segments, ...(gates ? { gates } : {}) }, buildings: { buildings, lots, ...(grown ? { grown } : {}) } };
 }
 
 /** A tile's records as UTF-8 JSON texts, each an object of some of its fields (format 1: one, the whole): merged, the tile. */
@@ -195,7 +197,8 @@ export function tileWrite(records: TileRecords): TileWrite {
     table[k] = t;
     row[k] = ref.row;
   }
-  return { ...records, buildings: { tables, table, row } };
+  // The gates of the buildings as they stand now, read from the records here (`entrancesOf` keeps each record's); a tile with no building has none to keep.
+  return { ...records, ...(n ? { gates: gatesOf(buildings) } : {}), buildings: { tables, table, row } };
 }
 
 /** A write's records as the store keeps them: each building read from its row (`readRecords`, one reader a table), where the tile is written (the save worker; the page itself on the desktop, `storeTiles`). */

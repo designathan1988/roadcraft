@@ -2770,6 +2770,8 @@ export interface TileRecords {
   /** The nodes of other tiles its roads end on, as they were when written: put in the document only while their own tile is not. */
   readonly borrowedNodes: SerializedDoc['nodes'];
   readonly segments: SerializedDoc['segments'];
+  /** Every car gate and parking edge of its buildings (`parkingLayout.ts` gatesOf), four numbers each: what its streets' parking keeps clear of, for a bake of its roads that does not read its buildings (`render/nearRoadTiles.ts`); none in a tile written before it was kept. */
+  readonly gates?: readonly number[];
   readonly poles: NonNullable<SerializedDoc['poles']>;
   readonly borrowedPoles: NonNullable<SerializedDoc['poles']>;
   readonly poleSpans: NonNullable<SerializedDoc['poleSpans']>;

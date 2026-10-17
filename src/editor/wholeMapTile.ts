@@ -8,7 +8,8 @@ import { footwayRiseAt } from '@world/roads/footwayRise';
 import { OWNER, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
-import type { BuildingId } from '@world/buildings/types';
+import type { Building, BuildingId } from '@world/buildings/types';
+import { gatesOf } from '@world/parkingLayout';
 import { asSegmentId } from '@world/ids';
 import type { SerializedDoc } from '@world/doc';
 import { type TilePlan, planTile } from '@world/cityGen/tile';
@@ -225,6 +226,8 @@ function tileRecordsOf(key: number, data: SerializedDoc, choices: ReadonlyMap<nu
     nodes, borrowedNodes: [...borrowed.values()], segments,
     poles, borrowedPoles: [], poleSpans,
     buildings, lots,
+    // What its streets' parking keeps clear of, kept with its roads (`TileRecords.gates`).
+    gates: gatesOf(buildings as unknown as readonly Building[]),
     lotKeys: (data.lotKeys ?? []).filter((k) => { const p = keyPlace(k); return p !== null && mine(p); }),
     landscape, barriers,
     paint: (data.paint ?? []).filter((dab) => mine(dab)),

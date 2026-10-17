@@ -17,7 +17,7 @@ export interface StoredTileReader extends TileReader {
 
 /** The fields of the records a part holds. */
 const PART_FIELDS: Readonly<Record<TilePartName, readonly (keyof TileRecords)[]>> = {
-  roads: ['nodes', 'borrowedNodes', 'segments'],
+  roads: ['nodes', 'borrowedNodes', 'segments', 'gates'],
   buildings: ['buildings', 'grown', 'lots'],
 };
 
