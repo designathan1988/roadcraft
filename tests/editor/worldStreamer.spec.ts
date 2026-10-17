@@ -291,6 +291,23 @@ describe('a whole map clear', () => {
   });
 });
 
+describe('a tile read before a clear', () => {
+  it('comes in without the lists even when it is put in after the clear is done', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const tree = { x: 100, y: 100, height: 8, yaw: 0, seed: 0.3 } as TileRecords['trees'][number];
+    store.stored.set(tileKey(0, 0), { ...emptyTile(tileKey(0, 0)), trees: [tree] });
+    const streamer = new WorldStreamer(doc, store);
+    // Asked (its read on its way, with the tree), then the clear begun and done before it is put in.
+    streamer.focus(10, 10);
+    const done = streamer.clearing(['trees']);
+    done();
+    await settle(streamer, 10, 10);
+    expect(doc.hasTile(tileKey(0, 0))).toBe(true);
+    expect(doc.trees).toHaveLength(0);
+  });
+});
+
 describe('two whole map clears at once', () => {
   it('empties each list until its own clear is done: a clear of another list does not end it', async () => {
     const doc = new RoadDoc();
