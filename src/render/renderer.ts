@@ -2631,6 +2631,7 @@ export function createSceneRenderer(
       // At the opening the buildings come once the first world (the roads, the ground cut and filled to them) is in
       if (roads !== null && (reveal.opened || !worldJob)) {
         buildings.hidden = !reveal.opened;
+        farRoads.coarseFirst(buildings.hidden);
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
         settleNearTiles();
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,

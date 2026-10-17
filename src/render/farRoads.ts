@@ -1,7 +1,7 @@
 import { Box3, BufferAttribute, BufferGeometry, FrontSide, Group, type Material, Mesh, MeshStandardMaterial, Sphere, Vector3 } from 'three';
 import type { Building } from '@world/buildings/types';
 import { gatesOf } from '@world/parkingLayout';
-import { canQueueJobs, jobWorkers, submitJob } from '../jobs/jobPool';
+import { canQueueJobs, jobWorkers, submitJob, type JobTicket } from '../jobs/jobPool';
 import { forgetOtherDerived } from './derivedCache';
 import { pullTowardEye } from './depthConvention';
 import { type FarRoadJob, type FarRoadMesh, type FarRoadReply, derivedRoadCache, farLevelError, runFarRoadJob, tileRoads } from './farRoadTiles';
@@ -131,32 +131,66 @@ export function farRoadPriority(tree: FarTreeJob, kit: NearRoadKit | null): numb
   return cellPriority('cell', 0, false, kit?.coarseFirst?.() ?? false);
 }
 
+/** A near level asked of the queue and not yet taken by a worker: asked again in its band when the curtain lifts (`FarRoadsRunner.reband`). */
+interface WaitingNear {
+  readonly tree: FarTreeJob;
+  readonly done: (reply: FarRoadReply) => void;
+  priority: number;
+  sent: boolean;
+  ticket: JobTicket | null;
+}
+
+/** The far roads' jobs, and what puts their waiting near levels back in their band. */
+interface FarRoadsRunner {
+  readonly run: FarTreeRun<RoadPayload>;
+  /** The town shown or hidden (`kit.coarseFirst`): the near levels no worker took are asked again in the band it gives them now. */
+  reband(): void;
+}
+
 /** DO NOT bake on the page: the far jobs go to the job system's queue (`farRoads` service), the page only when no worker can run (tests) */
-function farRoadsRunner(ground: () => SharedGroundData | null, kit: NearRoadKit | null): FarTreeRun<RoadPayload> {
-  return (tree, done) => {
-    const answered = (reply: FarRoadReply): void => done(reply);
+export function farRoadsRunner(ground: () => SharedGroundData | null, kit: NearRoadKit | null): FarRoadsRunner {
+  // DO NOT leave a near level asked behind the curtain in the detail's later band once the town shows: the queue ranks a job by the band it was asked in, and after a reload the street at the camera waited behind the whole re-bake (as the cells did, `CellPool.coarseFirst`, conferencia 97-98).
+  const waiting = new Set<WaitingNear>();
+  const submit = (asked: WaitingNear): void => {
+    const { tree } = asked;
+    const side = nodeSide(Math.max(0, tree.k));
+    asked.sent = false;
+    asked.ticket = submitJob({
+      service: 'farRoads',
+      key: `farRoads:${tree.node}`,
+      priority: asked.priority,
+      at: [(tree.i + 0.5) * side, (tree.j + 0.5) * side],
+      write: () => { asked.sent = true; waiting.delete(asked); return { data: { ...farRoadJob(tree, kit, ground()), ground: ground() }, transfer: [] }; },
+      done: (answer) => { waiting.delete(asked); asked.done(answer as FarRoadReply); },
+      failed: (message) => { waiting.delete(asked); asked.done({ kind: 'farError', node: tree.node, sig: tree.sig, message }); },
+    });
+  };
+  const run: FarTreeRun<RoadPayload> = (tree, done) => {
     if (!canQueueJobs()) {
       const job = farRoadJob(tree, kit, ground());
       let live = true;
       void runFarRoadJob({ ...job, ground: ground() }, derivedRoadCache).then(
-        (reply) => { if (live) answered(reply); },
+        (reply) => { if (live) done(reply); },
         (error: unknown) => { if (live) done({ kind: 'farError', node: job.node, sig: job.sig, message: String(error) }); },
       );
       return () => { live = false; };
     }
-    const side = nodeSide(Math.max(0, tree.k));
-    const priority = farRoadPriority(tree, kit);
-    const ticket = submitJob({
-      service: 'farRoads',
-      key: `farRoads:${tree.node}`,
-      priority,
-      at: [(tree.i + 0.5) * side, (tree.j + 0.5) * side],
-      write: () => ({ data: { ...farRoadJob(tree, kit, ground()), ground: ground() }, transfer: [] }),
-      done: (answer) => answered(answer as FarRoadReply),
-      failed: (message) => done({ kind: 'farError', node: tree.node, sig: tree.sig, message }),
-    });
-    return () => ticket.cancel();
+    const asked: WaitingNear = { tree, done: (reply) => done(reply), priority: farRoadPriority(tree, kit), sent: false, ticket: null };
+    if (tree.near) waiting.add(asked);
+    submit(asked);
+    return () => { waiting.delete(asked); asked.ticket?.cancel(); };
   };
+  const reband = (): void => {
+    for (const asked of waiting) {
+      if (asked.sent || !asked.ticket?.pending) { waiting.delete(asked); continue; }
+      const priority = farRoadPriority(asked.tree, kit);
+      if (priority === asked.priority) continue;
+      asked.ticket.cancel();
+      asked.priority = priority;
+      submit(asked);
+    }
+  };
+  return { run, reband };
 }
 
 /** Each vertex's place in no road's section (`tileMesh.ts`: a surface without one). */
@@ -257,6 +291,9 @@ const NEAR_SOURCES: readonly TileSource[] = [
 export class FarRoads extends FarTree<RoadPayload> {
   private readonly material: MeshStandardMaterial;
   private readonly standIn: Mesh;
+  /** The queue's runner (none when the tests give their own). */
+  private readonly queued: FarRoadsRunner | null;
+  private coarseSeen: boolean | null = null;
 
   /** `ground`: the ground shared with the workers (null: flat at 0); `run`, `prefix`: where the jobs go and the bakes are kept (tests give their own); `near`: the page's look of the roads, for each tile's near level where the view wants its detail (none: the far levels alone). */
   constructor(ground: () => SharedGroundData | null, run?: FarTreeRun<RoadPayload>, prefix: string | null = FAR_PREFIX, near: NearRoadKit | null = null) {
@@ -279,7 +316,9 @@ export class FarRoads extends FarTree<RoadPayload> {
         },
       } : {}),
     };
-    super(kind, run ?? farRoadsRunner(ground, near), prefix, canQueueJobs() ? jobWorkers() : 1);
+    const queued = run ? null : farRoadsRunner(ground, near);
+    super(kind, run ?? queued!.run, prefix, canQueueJobs() ? jobWorkers() : 1);
+    this.queued = queued;
     this.material = material;
     // The bakes of an older build of this code: let go.
     if (prefix !== null && prefix === FAR_PREFIX && FAR_HASH) forgetOtherDerived('farRoads', FAR_HASH);
@@ -327,6 +366,14 @@ export class FarRoads extends FarTree<RoadPayload> {
 
   /** The near level's program stand-ins (`constructor`). */
   private readonly nearStandIns: Mesh[] = [];
+
+  /** The town behind its curtain or shown (`kit.coarseFirst`, set each frame as the buildings' `hidden`): on a change, the near levels waiting are asked again in their band now. */
+  coarseFirst(on: boolean): void {
+    if (on === this.coarseSeen) return;
+    const first = this.coarseSeen === null;
+    this.coarseSeen = on;
+    if (!first) this.queued?.reband();
+  }
 
   override dispose(): void {
     super.dispose();
