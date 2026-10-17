@@ -25,13 +25,13 @@ describe('the far roads runner', () => {
   it('asks a near level waiting behind the curtain again in the detail band once the town shows, never one a worker took', async () => {
     const { farRoadsRunner } = await import('@render/farRoads');
     let hidden = true;
-    const kit = { coarseFirst: () => hidden } as unknown as Parameters<typeof farRoadsRunner>[1];
+    const kit = { coarseFirst: () => hidden, look: () => ({}), markingStyle: () => 'm', naturalIsGround: () => false } as unknown as Parameters<typeof farRoadsRunner>[1];
     const runner = farRoadsRunner(() => null, kit);
     runner.run(near('a'), () => {});
     runner.run(near('b'), () => {});
     const later = asked[0]!.priority;
     // A worker takes the second before the curtain lifts.
-    try { asked[1]!.write(); } catch { /* the job's message reads the kit: only its taking matters here */ }
+    asked[1]!.write();
     hidden = false;
     runner.reband();
     expect(asked).toHaveLength(3);
