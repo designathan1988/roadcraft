@@ -203,7 +203,12 @@ export interface PlanOptions {
   readonly arriveReversing?: boolean;
   /** A goal that is a region (through a gate, say) rather than a pose: whether a pose reached is in it. */
   readonly arrived?: (x: number, y: number, angle: number, reverse: boolean) => boolean;
+  /** The distance maps already worked out on this field, by goal place and body (`holonomicKey`): DO NOT work out the whole yard's again for each search to the same goal (a dock's every gate). */
+  readonly maps?: Map<string, Holonomic>;
 }
+
+/** The rear axle's shortest distance to a goal from every cell (`holonomic`). */
+export interface Holonomic { readonly nx: number; readonly ny: number; readonly cell: number; readonly dist: Float64Array }
 
 interface Node {
   x: number; y: number; a: number;
@@ -226,7 +231,7 @@ export class WaySearch {
   private readonly discs: Discs;
   private readonly reach: number;
   private readonly turn: number;
-  private readonly h: { nx: number; ny: number; cell: number; dist: Float64Array } | null;
+  private readonly h: Holonomic | null;
   private readonly nx: number;
   private readonly nodes: Node[] = [];
   private readonly byKey = new Map<number, number>();
@@ -251,7 +256,10 @@ export class WaySearch {
       this.h = null;
       return;
     }
-    this.h = holonomic(field, goal, body.width / 2);
+    const maps = options.maps, key = `${goal.x},${goal.y},${body.width / 2}`;
+    let h = maps?.get(key);
+    if (!h) { h = holonomic(field, goal, body.width / 2); maps?.set(key, h); }
+    this.h = h;
     this.push({ x: start.x, y: start.y, a: start.angle, g: 0, parent: -1, reverse: false, kappa: 0, closed: false });
   }
 
@@ -385,7 +393,7 @@ function trace(nodes: readonly Node[], id: number): Waypoint[] {
 }
 
 /** Shortest distance from every cell to the goal for the rear axle alone */
-function holonomic(field: Clearance, goal: AxlePose, half: number): { nx: number; ny: number; cell: number; dist: Float64Array } {
+function holonomic(field: Clearance, goal: AxlePose, half: number): Holonomic {
   const cell = XY_CELL;
   const nx = Math.ceil((field.nx * field.cell) / cell), ny = Math.ceil((field.ny * field.cell) / cell);
   const dist = new Float64Array(nx * ny).fill(Infinity);

@@ -17,7 +17,7 @@ import type { Archetype } from '../vehicles/archetypes';
 import { carGates, gatedProperty, gateExits, lanesInBox, wallsOf, type BayLane, type LotExit } from './parking';
 import {
   type AxlePose, bodyClear, bodyClearExact, type Clearance, clearanceSteps, discsOf, fillRing, fillRings,
-  type Solid, type Steered, type Waypoint, WaySearch,
+  type Holonomic, type Solid, type Steered, type Waypoint, WaySearch,
 } from './hybridAStar';
 
 /** A works' loading yard as a lorry drives it */
@@ -98,6 +98,8 @@ export class Yard {
   readonly docks: YardDock[] = [];
   /** The grid and its clearance, while a dock is still to be planned: DO NOT keep them for the yard's life (a works' grid is some 100 000 cells, ~0.5 MB with its clearance, a yard of the map each). */
   private grids: { readonly solid: Solid; readonly field: Clearance } | null;
+  /** The distance maps of the searches on this yard's field, by goal (a dock's ways in from every gate share one): let go with the grids. */
+  private maps = new Map<string, Holonomic>();
   readonly body: Steered;
   /** The lot's ring, local. */
   readonly ring: { x: number; y: number }[];
@@ -173,7 +175,7 @@ export class Yard {
   /** Plans on, up to `budget` poses expanded; how many it spent. Every dock planned, the grids are let go (the ways keep only poses). */
   plan(dockIndex: number, budget: number): number {
     const spent = this.planDock(dockIndex, budget);
-    if (this.grids && this.docks.every((_, k) => this.planned(k))) this.grids = null;
+    if (this.grids && this.docks.every((_, k) => this.planned(k))) { this.grids = null; this.maps = new Map(); }
     return spent;
   }
 
@@ -185,13 +187,13 @@ export class Yard {
       const gate = this.gates[g]!;
       const onto = dock.onto[g]!;
       spent += this.step(onto, budget - spent, () => new WaySearch(this.field, this.body, gate.stop, dock.pre,
-        { arriveReversing: true, reach: REACH, turn: TURN }));
+        { arriveReversing: true, reach: REACH, turn: TURN, maps: this.maps }));
       if (!onto.done) return spent;
       if (onto.way && !this.settles(last(onto.way), dock.pre, true)) onto.way = null;
       if (!onto.way) continue;
       const away = dock.away[g]!;
       spent += this.step(away, budget - spent, () => new WaySearch(this.field, this.body, dock.pre, gate.join,
-        { arriveReversing: false, reach: REACH, turn: TURN }));
+        { arriveReversing: false, reach: REACH, turn: TURN, maps: this.maps }));
       if (!away.done) return spent;
       if (away.way && !this.settles(last(away.way), gate.join, false)) away.way = null;
       if (!away.way) continue;
