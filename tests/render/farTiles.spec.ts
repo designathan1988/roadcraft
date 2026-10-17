@@ -7,7 +7,7 @@ import { prepareTile, preparedRecords } from '@editor/tileStore';
 import type { FarMass } from '@render/buildings/cellArrays';
 import { type CellJob, runCellJob } from '@render/buildings/cellWork';
 import { FarLevels, type FarRun, type FarTileSource, farJobOf } from '@render/buildings/farLevels';
-import { type FarCache, type FarJob, TOP_LEVEL, bakeTileMasses, emptyRecords, farKey, farNode, runFarJob, tileRows } from '@render/buildings/farTiles';
+import { type FarCache, type FarJob, TOP_LEVEL, bakeTileMasses, emptyRecords, farKey, farNode, runFarJob, tileRows, tileSquare } from '@render/buildings/farTiles';
 import { createBuildingKit } from '@render/buildings/kit';
 import { PLATE_DETAIL, TILE_DETAIL } from '@render/buildings/massing';
 import { drawsSignature } from '@render/buildings/signature';
@@ -112,7 +112,8 @@ describe('a tile baked from the store', () => {
       };
       const reply = runCellJob(job, { groundAt, naturalAt });
       if (reply.kind !== 'done') throw new Error(reply.kind);
-      const baked = bakeTileMasses(records, detail, { groundAt, naturalAt });
+      // On the tile's grid, as the job for 't:0,0' lays them (`massGrid`).
+      const baked = bakeTileMasses(records, detail, { groundAt, naturalAt }, undefined, tileSquare(0, 0));
       expect(baked).not.toBeNull();
       expect(difference(baked, reply.result.mass ?? null)).toBe('');
     }
@@ -123,7 +124,7 @@ describe('a tile baked from the store', () => {
     expect(asked.kind).toBe('farRecords');
     const made = await runFarJob({ far: true, node, sig: '1', want: true, prefix: 'test:', buildings: tileRows(buildings) }, cache);
     if (made.kind !== 'far') throw new Error(made.kind);
-    expect(difference(made.mass, bakeTileMasses(records, TILE_DETAIL))).toBe('');
+    expect(difference(made.mass, bakeTileMasses(records, TILE_DETAIL, undefined, undefined, tileSquare(0, 0)))).toBe('');
     const again = await runFarJob({ far: true, node, sig: '1', want: true, prefix: 'test:' }, cache);
     if (again.kind !== 'far') throw new Error(again.kind);
     expect(difference(again.mass, made.mass)).toBe('');
@@ -169,7 +170,7 @@ describe('a tile baked from the store', () => {
     const made = await runFarJob(job, memoryCache());
     if (made.kind !== 'far') throw new Error(made.kind);
     expect(made.mass).not.toBeNull();
-    expect(difference(made.mass, bakeTileMasses(stored, TILE_DETAIL))).toBe('');
+    expect(difference(made.mass, bakeTileMasses(stored, TILE_DETAIL, undefined, undefined, tileSquare(0, 0)))).toBe('');
   });
 });
 

@@ -7,7 +7,8 @@ import type { TileRecords } from '@world/doc';
 import { tileKey, tileOfKey } from '@world/tiles';
 import { derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
-import { BOX_INSTANCE, type BoxMass, type CellMass, type FarMass, MASS_FACADE, MASS_GRID, cellMass, farMassBuffers, indexArray, shellBounds } from './cellArrays';
+import { BOX_INSTANCE, type BoxMass, type CellMass, type FarMass, MASS_FACADE, MASS_GRID, type MassSquare, cellMass, farMassBuffers, indexArray, massOnGrid, massPlaces, shellBounds } from './cellArrays';
+import { TILE_CELLS } from './levelKeys';
 import { AGGREGATE, LEVEL_MASS_KEY as MASS_KEY, NODE_BOX_KEY as BOX_KEY, TILE_PLATE_KEY as PLATE_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
 import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing, massFloor } from './massing';
 
@@ -162,27 +163,29 @@ function tileBuildings(records: TileRecords): Building[] {
 }
 
 /** The masses of buildings at a level, merged, as the cells' job emits them (`cellWork.ts`); a signature building by its blocks (no body of its own is drawn far off). `floors`: each one's floor worked out already (`bakeTile`). */
-function massesOf(buildings: readonly Building[], detail: MassDetail, reads: GroundReaders, tone?: FarJob['tone'], floors?: readonly { readonly floor: number | undefined }[]): CellMass | null {
+function massesOf(buildings: readonly Building[], detail: MassDetail, reads: GroundReaders, tone?: FarJob['tone'], floors?: readonly { readonly floor: number | undefined }[], square?: MassSquare): CellMass | null {
   const chunks: MassingChunk[] = [];
   for (let n = 0; n < buildings.length; n++) {
     const mass = emitMassing(buildings[n]!, reads.groundAt, undefined, reads.naturalAt, false, tone, detail, floors?.[n]);
     if (mass) chunks.push(mass);
   }
-  return cellMass(chunks);
+  return cellMass(chunks, square);
 }
 
 /** A TILE'S MASSES FROM ITS RECORDS ALONE: no page, no document, no paving (the floor on the natural ground) */
-export function bakeTileMasses(records: TileRecords, detail: MassDetail, reads: GroundReaders = FLAT, tone?: FarJob['tone']): CellMass | null {
-  return massesOf(tileBuildings(records), detail, reads, tone);
+/** `square`: the masses on its grid (`massGrid`), as a tile's job lays them; none: in floats. */
+export function bakeTileMasses(records: TileRecords, detail: MassDetail, reads: GroundReaders = FLAT, tone?: FarJob['tone'], square?: MassSquare): CellMass | null {
+  return massesOf(tileBuildings(records), detail, reads, tone, undefined, square);
 }
 
 /** A tile's bake from its buildings: its masses at its level and its plate's, its blocks as boxes. */
-function bakeTile(buildings: readonly Building[], sig: string, reads: GroundReaders, tone?: FarJob['tone']): TileBake {
+function bakeTile(buildings: readonly Building[], sig: string, reads: GroundReaders, tone?: FarJob['tone'], square?: MassSquare): TileBake {
   // DO NOT sample each building's ground three times: its floor once, for its boxes and its masses at both levels.
   const floors = buildings.map((b) => ({ floor: massFloor(b, reads.naturalAt) }));
   const boxes: number[] = [];
   buildings.forEach((b, n) => emitBoxes(b, undefined, reads.naturalAt, tone, boxes, floors[n]));
-  return { sig, tile: massesOf(buildings, TILE_DETAIL, reads, tone, floors), plate: massesOf(buildings, PLATE_DETAIL, reads, tone, floors), boxes: new Float32Array(boxes) };
+  // Its masses on its tile's grid (`massGrid`); its plate masses in floats, put on their plate's grid as its node joins them (`joinMasses`).
+  return { sig, tile: massesOf(buildings, TILE_DETAIL, reads, tone, floors, square), plate: massesOf(buildings, PLATE_DETAIL, reads, tone, floors), boxes: new Float32Array(boxes) };
 }
 
 /** Several box lists as one. */
@@ -256,7 +259,10 @@ function boxMass(boxes: Float32Array, error: number): BoxMass | null {
   return { boxes: out, bounds, top, error };
 }
 
-/** Several masses as one (a level-1 node's tiles' plate masses). */
+/** A tile's square of cells (`levelKeys.ts`). */
+export const tileSquare = (i: number, j: number): MassSquare => ({ i0: i * TILE_CELLS, j0: j * TILE_CELLS, n: TILE_CELLS });
+
+/** Several masses as one (a level-1 node's tiles' plate masses), their places in floats (`massPlaces`). */
 function joinMasses(list: readonly (CellMass | null)[]): CellMass | null {
   let vertices = 0, indices = 0, error = 0, top = -Infinity;
   const some = list.filter((c): c is CellMass => c !== null);
@@ -266,7 +272,7 @@ function joinMasses(list: readonly (CellMass | null)[]): CellMass | null {
   const facade = new Float32Array(vertices * MASS_FACADE), grid = new Uint16Array(vertices * MASS_GRID), seed = new Float32Array(vertices), index = indexArray(vertices, indices);
   let v = 0, n = 0;
   for (const c of some) {
-    position.set(c.position, v * 3);
+    position.set(massPlaces(c), v * 3);
     normal.set(c.normal, v * 4);
     color.set(c.color, v * 4);
     facade.set(c.facade, v * MASS_FACADE);
@@ -284,7 +290,7 @@ function joinMasses(list: readonly (CellMass | null)[]): CellMass | null {
 export async function keepTileFar(records: TileRecords, version: number, env: FarGroundEnv, prefix: string | null, cache: FarCache = derivedFarCache): Promise<boolean> {
   if (prefix === null || !(await cache.ready())) return false;
   const { i, j } = tileOfKey(records.key);
-  await keepTile(cache, `${prefix}${farKey(0, i, j)}`, bakeTile(tileBuildings(records), String(version), readsOf(env), env.tone));
+  await keepTile(cache, `${prefix}${farKey(0, i, j)}`, bakeTile(tileBuildings(records), String(version), readsOf(env), env.tone, tileSquare(i, j)));
   return true;
 }
 
@@ -306,7 +312,7 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
     const stored = job.buildings ? undefined : await readStored(job.store, tileKey(i, j), 'buildings');
     const buildings = job.buildings ? rowsBuildings(job.buildings) : stored ? tileBuildings(stored) : null;
     if (!buildings) return { kind: 'farRecords', node, sig };
-    const bake = bakeTile(buildings, sig, readsOf(job), job.tone);
+    const bake = bakeTile(buildings, sig, readsOf(job), job.tone, tileSquare(i, j));
     if (keeps) await keepTile(cache, `${prefix}${node}`, bake);
     return { kind: 'far', node, sig, mass: job.want ? bake.tile : null };
   }
@@ -327,7 +333,9 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
   if (k === 1) {
     if (!boxed) await cache.put(`${prefix}${node}${BOX_KEY}`, { sig, boxes: joined(lists) });
     if (!plates) return { kind: 'far', node, sig, mass: null };
-    const mass = joinMasses(plates.map((e) => (e?.mass ?? null) as CellMass | null));
+    // On the node's grid: its two tiles a side (`massGrid`).
+    const merged = joinMasses(plates.map((e) => (e?.mass ?? null) as CellMass | null));
+    const mass = merged ? massOnGrid(merged, { i0: 2 * i * TILE_CELLS, j0: 2 * j * TILE_CELLS, n: 2 * TILE_CELLS }) : null;
     await cache.put(`${prefix}${node}${MASS_KEY}`, { sig, mass });
     return { kind: 'far', node, sig, mass };
   }

@@ -6,7 +6,7 @@ import { lotCentre } from '@world/lots';
 import { OWNER, TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { buildStreamTile, buildStreamTilePair } from '@editor/wholeMapTile';
-import { type FarCache, type FarJob, bakeTileMasses, farKey, keepTileFar, runFarJob } from '@render/buildings/farTiles';
+import { type FarCache, type FarJob, bakeTileMasses, farKey, keepTileFar, runFarJob, tileSquare } from '@render/buildings/farTiles';
 import { TILE_DETAIL } from '@render/buildings/massing';
 import { type FarRoadCache, type FarRoadJob, bakeTileRoads, keepTileFarRoads, runFarRoadJob, tileRoads } from '@render/farRoadTiles';
 import { tileBuildingsOf } from '@world/growth/grownRows';
@@ -210,7 +210,7 @@ describe("a tile's far levels kept where it is made", () => {
     const reply = await runFarJob(job, cache);
     expect(reply.kind).toBe('far');
     if (reply.kind !== 'far') return;
-    const masses = bakeTileMasses(pair.records, TILE_DETAIL);
+    const masses = bakeTileMasses(pair.records, TILE_DETAIL, undefined, undefined, tileSquare(i, j));
     const mass = reply.mass as CellMass | null;
     expect(mass?.index.length).toBe(masses?.index.length);
     expect(mass?.position).toEqual(masses?.position);
