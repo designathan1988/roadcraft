@@ -1,5 +1,5 @@
 import { onMap } from '@world/cityGen/wholeMap';
-import { computeEcology, type NatureSettings } from '@world/ecology';
+import { EcologyScratch, computeEcology, type NatureSettings } from '@world/ecology';
 import { reliefHeight, type ReliefVersion } from '@world/terrain';
 import { m } from '@world/units';
 import { natureDensity } from './natureNoise';
@@ -76,19 +76,33 @@ export function woodsScale(planned: number, half: number, budget = FAR_WOODS_BUD
   return Math.min(1, Math.exp(Math.round(Math.log(budget / Math.max(1, perArea)) / 0.02) * 0.02));
 }
 
+/** What a worker's far woods work in, plate after plate: grown, never made per plate (DO NOT make a plate's heights, its ecology's fifteen arrays and its list for one answer). */
+const woodsScratch = new EcologyScratch();
+let woodsHeights = new Float64Array(0);
+/** No rock painted and no water on a far plate: zeros, never written. */
+let woodsZeros = new Float32Array(0);
+let woodsDry = new Uint8Array(0);
+let woodsFar = new Float64Array(0);
+let woodsOdds = new Float32Array(0);
+let woodsBand = new Uint8Array(0);
+let woodsList = new Float64Array(6 * 1024);
+
 /** Works out one plate's far trees. */
 export function farWoods(ask: FarWoodsAsk): FarWoods {
   const { relief, nature, cx, cy } = ask;
   const { side, cell, half, base, farQuads } = ask.grid;
+  if (woodsHeights.length !== side * side) {
+    woodsHeights = new Float64Array(side * side); woodsZeros = new Float32Array(side * side); woodsDry = new Uint8Array(side * side);
+  }
   // The natural land at the terrain's corners, rows from the north edge (as `flatGround.worker.ts`).
-  const heights = new Float64Array(side * side);
+  const heights = woodsHeights;
   for (let j = 0; j < side; j++) {
     const y = cy + half - j * cell;
     for (let i = 0; i < side; i++) heights[j * side + i] = base + reliefHeight(relief, cx - half + i * cell, y);
   }
-  const zeros = new Float32Array(side * side);
+  const zeros = woodsZeros;
   // Its noise at the plate's place in the world, as the plate drawn in full reads it (`terrain.ts` refreshEcology): the far woods are its near ones.
-  const field = computeEcology({ side, cell, heights, water: new Uint8Array(side * side), sandstone: zeros, basalt: zeros, painted: null, settings: nature, centre: { x: cx, y: cy } });
+  const field = computeEcology({ side, cell, heights, water: woodsDry, sandstone: zeros, basalt: zeros, painted: null, settings: nature, centre: { x: cx, y: cy } }, undefined, woodsScratch);
   // The land between corners, bilinear (the woods' slope reads it as the near sweep reads the plate's).
   const seg = side - 1;
   const natural = (x: number, y: number): number => {
@@ -100,7 +114,8 @@ export function farWoods(ask: FarWoodsAsk): FarWoods {
   };
   // The far ground's patch the trees stand on (`flatAtlas.ts` buildFlatFar): the same heights, the same split of each quad.
   const farSide = farQuads + 1, step = (2 * half) / farQuads;
-  const far = new Float64Array(farSide * farSide);
+  if (woodsFar.length !== farSide * farSide) woodsFar = new Float64Array(farSide * farSide);
+  const far = woodsFar;
   for (let j = 0; j < farSide; j++) for (let i = 0; i < farSide; i++) far[j * farSide + i] = base + reliefHeight(relief, cx - half + i * step, cy - half + j * step);
   const farGround = (x: number, y: number): number => {
     const gx = Math.min(farQuads - 1e-6, Math.max(0, (x + half) / step)), gy = Math.min(farQuads - 1e-6, Math.max(0, (y + half) / step));
@@ -111,8 +126,8 @@ export function farWoods(ask: FarWoodsAsk): FarWoods {
 
   const spacing = WOODS_SPACING, d = WOODS_SLOPE_STEP;
   const cells = Math.floor((2 * half) / spacing);
-  const odds = new Float32Array(cells * cells);
-  const band = new Uint8Array(cells * cells);
+  if (woodsOdds.length !== cells * cells) { woodsOdds = new Float32Array(cells * cells); woodsBand = new Uint8Array(cells * cells); }
+  const odds = woodsOdds, band = woodsBand;
   let planned = 0;
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
@@ -136,7 +151,7 @@ export function farWoods(ask: FarWoodsAsk): FarWoods {
   }
   const cap = Math.min(1, HEADROOM * woodsScale(planned, half));
   const di = Math.round(cx / spacing), dj = Math.round(cy / spacing);
-  const list: number[] = [];
+  let length = 0;
   for (let j = 0; j < cells; j++) {
     for (let i = 0; i < cells; i++) {
       const o = j * cells + i, gi = i + di, gj = j + dj;
@@ -152,10 +167,13 @@ export function farWoods(ask: FarWoodsAsk): FarWoods {
       const size = inner ? m(11) + m(8) * cellHash(gi, gj, 45) : edge ? m(8) + m(6) * cellHash(gi, gj, 45) : m(5.5) + m(4) * cellHash(gi, gj, 45);
       const pick = cellHash(gi, gj, 49);
       const kind = pick < 0.55 ? 'oak' : pick < (inner ? 0.97 : 0.85) ? 'cypress' : 'palm';
-      list.push(x, y, size, cellHash(gi, gj, 47) * Math.PI * 2, seedOf(kind, cellHash(gi, gj, 48)), h / odds[o]!);
+      if (length + 6 > woodsList.length) { const grown = new Float64Array(woodsList.length * 2); grown.set(woodsList); woodsList = grown; }
+      const list = woodsList;
+      list[length++] = x; list[length++] = y; list[length++] = size;
+      list[length++] = cellHash(gi, gj, 47) * Math.PI * 2; list[length++] = seedOf(kind, cellHash(gi, gj, 48)); list[length++] = h / odds[o]!;
     }
   }
-  const count = list.length / 6;
+  const count = length / 6, list = woodsList;
   const out = {
     count, planned, work: cells * cells,
     x: new Float32Array(count), y: new Float32Array(count), z: new Float32Array(count), size: new Float32Array(count),

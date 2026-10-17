@@ -37,6 +37,13 @@ describe('a far plate\'s woods', () => {
     expect(again.count).toBe(woods.count);
     expect(Array.from(again.x.subarray(0, 50))).toEqual(Array.from(woods.x.subarray(0, 50)));
   });
+
+  it('is the same trees after other plates were worked out in the same arrays (`farWoods.ts` scratch)', () => {
+    for (const nature of [{ region: 'amazon' as const, seed: 7 }, NATURE]) farWoods({ relief: RELIEF_NATURAL, nature, cx: 0, cy: 0, grid: GRID });
+    const again = farWoods({ relief: RELIEF_NATURAL, nature: NATURE, cx: corner.cx, cy: corner.cy, grid: GRID });
+    expect(again.planned).toBe(woods.planned);
+    for (const key of ['x', 'y', 'z', 'size', 'yaw', 'seed', 'pick'] as const) expect(Array.from(again[key])).toEqual(Array.from(woods[key]));
+  });
 });
 
 /** A worker stand-in: answers at once with a few trees per plate, counting the asks. */
