@@ -449,9 +449,20 @@ class ShellPart {
     this.slots.fill(0);
   }
 
-  /** Room in every array for `count` vertices written from `vertices` on. */
+  /** Each stream's array as 32-bit words and its words a vertex, as they are after `room` (an array only changes there, as it grows). */
+  private readonly views: Int32Array[] = [];
+  private readonly widths: number[] = [];
+
+  /** Room in every array for `count` vertices written from `vertices` on; the weld's views of them made again only where one grew. */
   room(count: number): void {
-    for (const s of this.streams) s.grow.room(count * s.size);
+    const streams = this.streams;
+    for (let i = 0; i < streams.length; i++) {
+      const s = streams[i]!;
+      s.grow.room(count * s.size);
+      // DO NOT ask each stream for its words in every hash and every comparison of the weld (`bits` checks the buffer each time).
+      this.views[i] = s.grow.bits();
+      this.widths[i] = s.words;
+    }
   }
 
   /** The vertex just written at `vertices`: kept as a new one, or the one laid before with every number alike; its index. */
@@ -476,8 +487,9 @@ class ShellPart {
 
   private hash(v: number): number {
     let h = 0x2545f491;
-    for (const { grow, words } of this.streams) {
-      const bits = grow.bits();
+    const views = this.views, widths = this.widths;
+    for (let i = 0; i < views.length; i++) {
+      const bits = views[i]!, words = widths[i]!;
       for (let k = v * words, end = k + words; k < end; k++) h = hashWord(h, bits[k]!);
     }
     // MurmurHash3's finaliser: every bit of the words reaches the low bits the table reads.
@@ -486,8 +498,9 @@ class ShellPart {
   }
 
   private same(a: number, b: number): boolean {
-    for (const { grow, words } of this.streams) {
-      const bits = grow.bits();
+    const views = this.views, widths = this.widths;
+    for (let i = 0; i < views.length; i++) {
+      const bits = views[i]!, words = widths[i]!;
       for (let k = 0; k < words; k++) if (bits[a * words + k] !== bits[b * words + k]) return false;
     }
     return true;
