@@ -547,6 +547,9 @@ export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way
     return [{ way: from.way, dir: to.s >= from.s ? 1 : -1, from: from.s, to: to.s }];
   }
   const n = g.nodes.length;
+  // DO NOT expand every way reached to find the goal is on a footway cut off from the start: the graph's components say so first.
+  const comp = walkComponents(g);
+  if (comp[from.way.a] !== comp[to.way.a]) return null;
   // The graph's own arrays, used again by every search on it: a node's entry counts only when its stamp is this search's
   const r = routeScratch(g);
   const { dist, via, stamp, done, open } = r;
@@ -616,6 +619,35 @@ export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way
   const arriveAtA = end.node === to.way.a;
   steps.push({ way: to.way, dir: arriveAtA ? 1 : -1, from: arriveAtA ? 0 : to.way.path.length, to: to.s });
   return steps;
+}
+
+/** Each node's component in the walk graph as it is (`WalkGraph.state`): labelled again when the graph changed and a route is asked. */
+const WALK_COMPONENTS = new WeakMap<WalkGraph, { readonly state: object; readonly comp: Int32Array }>();
+/** @rebuild The graph's nodes labelled by their component (the ways joining them), once per state of the graph. */
+function walkComponents(g: WalkGraph): Int32Array {
+  const known = WALK_COMPONENTS.get(g);
+  if (known && known.state === g.state && known.comp.length >= g.nodes.length) return known.comp;
+  const n = g.nodes.length;
+  const comp = new Int32Array(n).fill(-1);
+  const stack: number[] = [];
+  let next = 0;
+  for (let start = 0; start < n; start++) {
+    if (comp[start] !== -1 || !g.nodes[start]) continue;
+    comp[start] = next;
+    stack.push(start);
+    while (stack.length) {
+      const node = stack.pop()!;
+      for (const wid of g.at.get(node) ?? []) {
+        const way = g.ways[wid];
+        if (!way) continue;
+        const other = way.a === node ? way.b : way.a;
+        if (comp[other] === -1) { comp[other] = next; stack.push(other); }
+      }
+    }
+    next++;
+  }
+  WALK_COMPONENTS.set(g, { state: g.state, comp });
+  return comp;
 }
 
 /** DO NOT go back to `new Float64Array(n).fill(Infinity)` per search */

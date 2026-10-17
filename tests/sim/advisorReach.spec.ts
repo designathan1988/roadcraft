@@ -94,5 +94,36 @@ describe('the control advisor', () => {
     w.conflicts.setWindow(w.graph, new Set());
     for (let t = 0; t < F.trendWindow * 4; t++) w.stepControlAdvisor(1);
     expect(w.advisor.choice(node)).toBe('signal');
+    // Back in the window: its rates are those it left with (not aged meanwhile), it is judged on them and stays signalised.
+    w.conflicts.setWindow(w.graph, new Set([node]));
+    for (let t = 0; t < 30; t++) w.stepControlAdvisor(1);
+    expect(w.advisor.choice(node)).toBe('signal');
+  });
+
+  it("asks the meso's window, where the flows are counted, not the conflicts'", () => {
+    const doc = town(4);
+    const net = new Network(doc);
+    net.rebuild();
+    const w = new SimWorld(doc, net, 0xad52);
+    w.rebuildTopology();
+    w.useMicroWindow();
+    const node = [...w.graph.junctions.keys()].find((n) => doc.node(n)!.control === 'auto' && doc.node(n)!.incident.length >= 4)!;
+    let inside = true;
+    w.meso = { step() {}, reset() {}, insideWindow: () => inside };
+    // The conflicts' window holds nothing: the meso's says where the flows are counted.
+    w.conflicts.setWindow(w.graph, new Set());
+    const legs = doc.node(node)!.incident as SegmentId[];
+    const main = mainRoadLegs(doc, node) ?? legs;
+    const minor = legs.find((l) => !main.includes(l));
+    for (let t = 0; t < F.trendWindow * 2 + 30; t++) {
+      if (t % 4 !== 0) w.flow.record(node, main[0]!);
+      if (t % 3 === 0) w.flow.record(node, main[1] ?? main[0]!);
+      if (minor !== undefined && t % 10 === 0) w.flow.record(node, minor);
+      w.stepControlAdvisor(1);
+    }
+    expect(w.advisor.choice(node)).toBe('signal');
+    inside = false;
+    for (let t = 0; t < F.trendWindow * 4; t++) w.stepControlAdvisor(1);
+    expect(w.advisor.choice(node)).toBe('signal');
   });
 });

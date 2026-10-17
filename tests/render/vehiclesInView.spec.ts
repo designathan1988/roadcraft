@@ -3,7 +3,7 @@ import { Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Sphere, Vector
 import { Rng } from '@core/rng';
 import { VEHICLE_REACH, createAgentMeshes } from '@render/agents';
 import { frustumGroundBox } from '@render/frustumGround';
-import { FleetGrid, type GroundBox } from '@sim/host/fleetGrid';
+import { FleetGrid, type FleetCell, type GroundBox } from '@sim/host/fleetGrid';
 import type { SimClient, VehicleView } from '@sim/host/simClient';
 import { archetypeById } from '@sim/vehicles/archetypes';
 import type { Network } from '@world/network';
@@ -104,8 +104,9 @@ function parkedCar(id: number, x: number, y: number): VehicleView {
 function worldWith(parked: readonly VehicleView[]): SimClient {
   const grid = new FleetGrid<VehicleView>();
   for (const car of parked) grid.place(car);
-  const vehiclesIn = (box: GroundBox, out: VehicleView[]): VehicleView[] => { out.length = 0; return grid.near(box.x0, box.y0, box.x1, box.y1, out); };
-  return { time: 0, traffic: [], vehicles: new Map(), parked, isParked: (v: VehicleView) => parked.includes(v), pedViews: [], fleet: 0, vehiclesIn } as unknown as SimClient;
+  const vehiclesIn = (box: GroundBox, out: VehicleView[], which = 'all'): VehicleView[] => { out.length = 0; return which === 'traffic' ? out : grid.near(box.x0, box.y0, box.x1, box.y1, out); };
+  const parkedCellsIn = (box: GroundBox, out: FleetCell<VehicleView>[]): FleetCell<VehicleView>[] => { out.length = 0; return grid.cellsNear(box.x0, box.y0, box.x1, box.y1, out); };
+  return { time: 0, traffic: [], vehicles: new Map(), parked, isParked: (v: VehicleView) => parked.includes(v), pedViews: [], fleet: 0, vehiclesIn, parkedCellsIn, grid } as unknown as SimClient;
 }
 
 const netWith = (): Network => ({ doc: { changes: new ChangeJournal() } }) as unknown as Network;
@@ -150,6 +151,39 @@ describe('vehicles drawn from the grid', () => {
     }
     all.dispose();
     grid.dispose();
+  });
+
+  it('walk no parked car of a cell that stands, in a view that stands; a cell that changed walked again', () => {
+    const cars: VehicleView[] = [];
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) cars.push(parkedCar(i * 6 + j + 1, i * m(40), j * m(40)));
+    const world = worldWith(cars);
+    const grid = (world as unknown as { grid: FleetGrid<VehicleView> }).grid;
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    let asked = 0;
+    const options = {
+      vehicleVisible: () => true, vehicleBox: { x0: -m(10), y0: -m(10), x1: m(250), y1: m(250) },
+      screenScale: (): number => { asked++; return 2; }, eye: new Vector3(0, m(100), 0),
+    };
+    agents.sync(world, netWith(), 0, true, undefined, options);
+    const shown = drawn(bodiesOf(agents));
+    expect(shown).toBe(cars.length);
+    // The same view: only the view's own probe asked, every car still drawn from its kept instances.
+    asked = 0;
+    agents.sync(world, netWith(), 0, true, undefined, options);
+    expect(asked).toBe(1);
+    expect(drawn(bodiesOf(agents))).toBe(shown);
+    // A car of one cell changed there: that cell's cars walked, no other.
+    grid.touch(cars[0]!);
+    asked = 0;
+    agents.sync(world, netWith(), 0, true, undefined, options);
+    const inCell = cars.filter((c) => Math.floor(c.frames.x / m(64)) === 0 && Math.floor(c.frames.y / m(64)) === 0).length;
+    expect(asked).toBe(1 + inCell);
+    // The view moved: every car walked.
+    asked = 0;
+    agents.sync(world, netWith(), 0, true, undefined, { ...options, eye: new Vector3(m(1), m(100), 0) });
+    expect(asked).toBe(1 + cars.length);
+    expect(drawn(bodiesOf(agents))).toBe(shown);
+    agents.dispose();
   });
 
   it('off the screen and in the reach of the shadows, write only what casts', () => {

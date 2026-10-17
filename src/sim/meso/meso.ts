@@ -624,6 +624,11 @@ export class Meso {
 
   // ------------------------------------------------------------ the micro window
 
+  /** Whether a point is inside the micro window as it stands (its links' cars are the micro simulation's). */
+  insideWindow(x: number, y: number): boolean {
+    return this.inWindow(x, y);
+  }
+
   private inWindow(x: number, y: number): boolean {
     const win = this.micro;
     return win.r > 0 && Math.hypot(x - win.x, y - win.y) < win.r;

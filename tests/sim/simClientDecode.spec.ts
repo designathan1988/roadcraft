@@ -94,6 +94,17 @@ describe("the page's reading of the fleet", () => {
     expect(client.parked.map((v) => v.id).sort()).toEqual([1, 4]);
     expect(client.parked.find((v) => v.id === 1)).toBe(one);
     expect(client.vehiclesIn({ x0: 8, y0: -1, x1: 12, y1: 1 }, [], 'parked')).toEqual([]);
+    // By cell, with a version that moves only where a parked car came, went or changed (`parkedCellsIn`).
+    const far = 100_000;
+    tick(client, [], told(false, [{ id: 7, x: far }]));
+    const cells = (): Map<number, number> => new Map(client.parkedCellsIn({ x0: -far * 2, y0: -1, x1: far * 2, y1: 1 }, []).map((c) => [c.key, c.version]));
+    const was = cells();
+    expect(was.size).toBe(2);
+    tick(client, [], told(false, [{ id: 7, x: far + 1 }]));
+    const now = cells();
+    const moved = [...was.keys()].filter((k) => now.get(k) !== was.get(k));
+    expect(moved).toHaveLength(1);
+    expect(client.parkedCellsIn({ x0: far, y0: -1, x1: far + 2, y1: 1 }, [])[0]!.key).toBe(moved[0]);
   });
 
   it("keeps a gesture's clock from the age it was told at, with no gesture told each tick", () => {

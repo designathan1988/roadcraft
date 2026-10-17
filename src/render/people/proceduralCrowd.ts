@@ -29,6 +29,8 @@ import {
 import { buildClassAnimation, createPalettePass, type ClassAnimation, type PalettePass } from './crowdAnimation';
 import { BODY_WIDTH, createClassBodies, type ClassBodies } from './crowdBodies';
 import { createGpuRows, type GpuRows } from './gpuRows';
+import { personFaceInWorker } from '../bakePool';
+import type { PersonFaceJob } from '../citizenBake.worker';
 import {
   EYE_TRIANGLES, FAR_TRIANGLES, LEVELS, LEVEL_CAPS, LEVEL_TRIANGLES, REGION, cardCentres, cardSelections, farMesh, filterTriangles,
   levelFor, lodReady, simplifiedIndexAway, sortSkinWeights, type FarPart, type PieceRole,
@@ -159,6 +161,8 @@ interface BodyClass {
   readonly pass: PalettePass;
   readonly uniforms: {
     procBones: { value: Texture };
+    /** The class's first row in the palettes' shared target (`paletteTargets.ts`). */
+    procBase: { value: number };
     procBodies: { value: Texture };
     procBodyStride: { value: number };
     procCover: { value: DataTexture };
@@ -313,6 +317,7 @@ function vertexPars(v: Variant): string {
   const expr = v.kind !== 'far' && v.level === 0;
   return `
 uniform sampler2D procBones;
+uniform float procBase;
 uniform sampler2D procBodies;
 uniform float procBodyStride;
 uniform mat4 bindMatrix;
@@ -325,7 +330,7 @@ attribute vec3 aRefW;
 mat4 procPlace;
 mat4 getBoneMatrix(const in float i) {
   int x = int(i) * 4;
-  int y = int(aPerson.x);
+  int y = int(aPerson.x) + int(procBase);
   return mat4(texelFetch(procBones, ivec2(x, y), 0), texelFetch(procBones, ivec2(x + 1, y), 0),
     texelFetch(procBones, ivec2(x + 2, y), 0), texelFetch(procBones, ivec2(x + 3, y), 0));
 }
@@ -619,7 +624,7 @@ export function personProgramStandIns(): { readonly lit: Group; readonly shadow:
   const blank = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
   const shading: ClassShading = {
     uniforms: {
-      procBones: { value: blank }, procBodies: { value: blank }, procBodyStride: { value: 0 }, procCover: { value: blank },
+      procBones: { value: blank }, procBase: { value: 0 }, procBodies: { value: blank }, procBodyStride: { value: 0 }, procCover: { value: blank },
       procCoverRows: { value: 0 }, procFace: { value: blank }, procFaceRows: { value: 0 }, procFaceHead: { value: 0 },
       procExprHead: { value: 0 }, procPerson: { value: blank }, procTime: { value: 0 }, procWoundUnit: { value: 1 },
     },
@@ -1095,6 +1100,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       height: metres, clips, bones, order, parent, jointBasis, shapePixels, bodies, anim, pass,
       uniforms: {
         procBones: { value: pass.texture },
+        procBase: { value: pass.base },
 
         procBodies: { value: bodies.texture },
         procBodyStride: { value: bodies.stride },
@@ -1149,6 +1155,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     cls.capacity = capacity;
     cls.pass.grow(capacity);
     cls.uniforms.procBones.value = cls.pass.texture;
+    cls.uniforms.procBase.value = cls.pass.base;
     const faceRows = cls.uniforms.procFaceRows.value;
     const head = cls.uniforms.procFaceHead.value;
     // The rows on the GPU are carried into the bigger texture there, at the next flush.
@@ -1853,6 +1860,28 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return cls.rows++;
   };
 
+  /** What the people's worker reads of a class to work out a face (`PersonFaceJob`): its body's posture and face vertices, shared once; null where memory is not shared. */
+  const faceShares = new Map<BodyClass, Pick<PersonFaceJob, 'deltas' | 'faceVerts' | 'faceFloats'> | null>();
+  const faceShare = (cls: BodyClass): Pick<PersonFaceJob, 'deltas' | 'faceVerts' | 'faceFloats'> | null => {
+    let share = faceShares.get(cls);
+    if (share !== undefined) return share;
+    const d = cls.rig.deltasData;
+    const shared = <T extends Float32Array | Float64Array | Int32Array>(a: T, make: (b: SharedArrayBuffer) => T): T => { const c = make(new SharedArrayBuffer(a.byteLength)); c.set(a as never); return c; };
+    share = d && typeof SharedArrayBuffer !== 'undefined' && (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true ? {
+      deltas: { positions: shared(d.positions, (b) => new Float32Array(b)), lowestDm: d.lowestDm, bodyRange: d.bodyRange.map(([x, y]) => [x, y] as const),
+        linear: shared(d.linear, (b) => new Float64Array(b)) },
+      faceVerts: shared(cls.faceVerts, (b) => new Int32Array(b)),
+      faceFloats: cls.uniforms.procFaceRows.value * FACE_WIDTH * 4,
+    } : null;
+    faceShares.set(cls, share);
+    return share;
+  };
+  /** Row `row`'s face as worked out in the worker (null: none, zero moves), sent up at the next flush. */
+  const writeFace = (cls: BodyClass, row: number, features: Readonly<Record<string, number>> | null, face: Float32Array | null): void => {
+    const faceRows = cls.uniforms.procFaceRows.value;
+    cls.faceOf[row] = features;
+    cls.faces.write(cls.uniforms.procFaceHead.value + row * faceRows, face ?? new Float32Array(faceRows * FACE_WIDTH * 4));
+  };
   /** Row `row`'s own face: the regional sliders on the class body, posed as it is (zero: none), sent up at the next flush. */
   const setFace = (cls: BodyClass, row: number, features: Readonly<Record<string, number>> | null): void => {
     const faceRows = cls.uniforms.procFaceRows.value;
@@ -1928,11 +1957,16 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       // Shown only with their body's vertices written (a new body is baked in a worker).
       await body.ready;
       if (epoch !== started) throw new Error('crowd cleared');
-      // Their own face; a reused row holds the last person's face: theirs replaces it, or none.
-      setFace(cls, row, Object.keys(spec.features).length ? spec.features : null);
-      // Heights from the vertices' Y alone (MakeHuman's `getHeightCm`).
-      const tall = mo.height(spec.body, a.bodyRange);
-      const level0 = mo.height(level, a.bodyRange);
+      // Their heights (from the vertices' Y alone, MakeHuman's `getHeightCm`) and their own face: worked out on the people's worker; here where none can.
+      const features = Object.keys(spec.features).length ? spec.features : null;
+      const share = faceShare(cls);
+      const worked = share ? await personFaceInWorker({ body: spec.body, features: features ?? {}, classHeight: cls.base.height, ...share }) : null;
+      if (epoch !== started) throw new Error('crowd cleared');
+      // A reused row holds the last person's face: theirs replaces it, or none.
+      if (worked) writeFace(cls, row, features, worked.face);
+      else setFace(cls, row, features);
+      const tall = worked ? worked.tall : mo.height(spec.body, a.bodyRange);
+      const level0 = worked ? worked.level0 : mo.height(level, a.bodyRange);
       const scale = tall / Math.max(1e-3, level0);
       const person: ProceduralPerson = {
         spec, band, sex, row, scale, height: tall / 10, items: worn.map(([nm]) => nm),
@@ -2233,6 +2267,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         if (!cls.drawn) continue;
         cls.pass.render(renderer, cls.rows);
         cls.uniforms.procBones.value = cls.pass.texture;
+        cls.uniforms.procBase.value = cls.pass.base;
       }
     },
     clear() {

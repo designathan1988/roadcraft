@@ -29,7 +29,7 @@ import {
   type VehicleShape,
 } from '@sim/vehicles/archetypes';
 import type { SimClient, VehicleView as SimVehicle } from '@sim/host/simClient';
-import type { GroundBox } from '@sim/host/fleetGrid';
+import type { FleetCell, GroundBox } from '@sim/host/fleetGrid';
 import type { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
 import type { ChangeKind } from '@world/changes';
@@ -1480,11 +1480,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     }
   };
   /** Who sits in (or steps out of) a seat: the seat's person, cast with the vehicle's company. */
+  /** DO NOT make an identity for every seat drawn every frame: one, filled again (`drawClip` and `indexFor` read it in the call, keep nothing of it). */
+  const seatWho: { -readonly [K in keyof ClipIdentity]-?: ClipIdentity[K] } = { seed: 0, gender: 'f', ageClass: 'adult', company: 'car', companyId: 0, hasChild: false };
   const seatIdentity = (vehicle: SimVehicle, person: { seed: number; gender: 'f' | 'm'; ageClass: 'child' | 'adult' | 'elder' },
     hasChild: boolean): ClipIdentity => {
     castVehicles.set(vehicle.id, vehicle);
-    return { seed: person.seed, gender: person.gender, ageClass: person.ageClass,
-      company: vehicleCompany(vehicle), companyId: vehicle.id, hasChild };
+    seatWho.seed = person.seed; seatWho.gender = person.gender; seatWho.ageClass = person.ageClass;
+    seatWho.company = vehicleCompany(vehicle); seatWho.companyId = vehicle.id; seatWho.hasChild = hasChild;
+    return seatWho;
   };
 
   /** The whole person in a seat: its world point, written without allocating. */
@@ -1801,6 +1804,21 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     return s;
   };
 
+  /** What a cell of parked cars drew (`sync`): its version then, whether every car of it drawn stood as kept, those kept, each whole candidate's pixels and the cap's answer, whether one had wheels. */
+  interface CellRecord {
+    version: number;
+    still: boolean;
+    readonly kept: VehicleDraw[];
+    readonly pixels: number[];
+    readonly whole: boolean[];
+    wheeled: boolean;
+  }
+  const cellsDrawn = new Map<number, CellRecord>();
+  const cellsSeen = new Set<number>();
+  const cellsIn: FleetCell<SimVehicle>[] = [];
+  /** The view a frame was drawn for: a cell is kept only in a frame that stands as the last. */
+  const viewKey = { x0: NaN, y0: NaN, x1: NaN, y1: NaN, zoom: NaN, probe: NaN, ex: NaN, ey: NaN, ez: NaN, ratio: NaN, shadows: false, occupant: NaN, detailed: false, serial: NaN, levels: NaN };
+
   return {
     meshes,
     get castersChanged() { return castersChanged; },
@@ -1969,8 +1987,17 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const bikesCast = bikesWhole;
       let bikesWholeNow = false, carsWheeled = false;
       // The traffic, then the scenery's cars parked in their bays, on the ground of the lot: DO NOT walk the whole fleet, only those standing on the view's ground.
-      const lists = options.vehicleBox ? [world.vehiclesIn(options.vehicleBox, inView)] : [world.traffic, world.parked];
-      for (const list of lists) for (const vehicle of list) {
+      /** Whole or not by the cap (`VEHICLE_NEAR_CAP`, the biggest on the screen, last frame's floor): 2 or 1. */
+      const wholeOrNot = (pixels: number): number => {
+        if (nearCount === nearCandidates.length) { const grown = new Float64Array(nearCount * 2); grown.set(nearCandidates); nearCandidates = grown; }
+        nearCandidates[nearCount++] = pixels;
+        if (pixels < nearFloor || whole >= VEHICLE_NEAR_CAP) return 1;
+        whole++;
+        return 2;
+      };
+      /** The cell being walked (null: the traffic): what it drew, to be kept as it is while nothing of it nor of the view changes. */
+      let cellRecord: CellRecord | null = null;
+      const drawVehicle = (vehicle: SimVehicle): void => {
         const s = drawOf(vehicle);
         // Off the road and not moving (the town's parked cars): where it is, with none of the interpolation's sums.
         const at = vehicle.free;
@@ -1984,12 +2011,12 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         // DO NOT ask the ground of a vehicle off the view: tested first with the deck last asked, the sphere grown to hold every deck it can have reached since.
         if (options.vehicleVisible && s.cullKnown) {
           const moved = hypot2(pose.p.x - s.cullX, pose.p.y - s.cullY);
-          if (moved < CULL_REUSE && !options.vehicleVisible(pose.p.x, pose.p.y, s.cullDeck, reach + CULL_GROWTH * moved * CULL_GRADE)) continue;
+          if (moved < CULL_REUSE && !options.vehicleVisible(pose.p.x, pose.p.y, s.cullDeck, reach + CULL_GROWTH * moved * CULL_GRADE)) return;
         }
         const deck = free ? offRoadDeck(s, vehicle, pose.p.x, pose.p.y) : elevationAt(pose.p.x, pose.p.y, vehicle.segment);
         s.cullKnown = true; s.cullX = pose.p.x; s.cullY = pose.p.y; s.cullDeck = deck;
         // Off screen, and too far from it for its shadow to fall on it: nothing of this vehicle is written this frame.
-        if (options.vehicleVisible && !options.vehicleVisible(pose.p.x, pose.p.y, deck, reach)) continue;
+        if (options.vehicleVisible && !options.vehicleVisible(pose.p.x, pose.p.y, deck, reach)) return;
         // Off screen but in the shadows' reach: only what casts is written (no glass, cabin, trim, lamps or disc).
         const onScreen = !options.vehicleVisible || options.vehicleVisible(pose.p.x, pose.p.y, deck, plan.length * 0.6 + plan.height * 0.5);
         // Its own level, by the screen's scale where it stands (a tenth of hysteresis going up).
@@ -2000,18 +2027,16 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           const edge = level === 2 ? occupantZoom : level === 1 ? FAR_BODY_ZOOM : 2 / CAR_LENGTH;
           if (pixels >= (level > was ? edge * (1 + VEHICLE_HYSTERESIS) : edge)) { own = level; break; }
         }
-        if (own < 0) continue;
+        if (own < 0) return;
         // Whole: at most `VEHICLE_NEAR_CAP`, the biggest on the screen (last frame's floor).
         if (own === 2) {
-          if (nearCount === nearCandidates.length) { const grown = new Float64Array(nearCount * 2); grown.set(nearCandidates); nearCandidates = grown; }
-          nearCandidates[nearCount++] = pixels;
-          if (pixels < nearFloor || whole >= VEHICLE_NEAR_CAP) own = 1;
-          else whole++;
+          own = wholeOrNot(pixels);
+          if (cellRecord) { cellRecord.pixels.push(pixels); cellRecord.whole.push(own === 2); }
         }
         const level = Math.min(vehicleBand, own);
         if (twoWheeled && level === 2) bikesWholeNow = true;
         // A car's tyres cast only with its whole body (level 2): at level 1 its shadow is the soft disc, the tyres' dots under it were the player's to drop (2026-10-17).
-        if (!twoWheeled && level >= 2) carsWheeled = true;
+        if (!twoWheeled && level >= 2) { carsWheeled = true; if (cellRecord) cellRecord.wheeled = true; }
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
         drawPixels = pixels * pixelRatio;
         // Stopped in the traffic a whole tick (a light, a queue), no indicator flashing, nobody drawn in it: as still as a parked car.
@@ -2026,9 +2051,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
             s.keptSeen = suspensionFrame;
             s.seen = suspensionFrame;
             s.lod = own;
+            cellRecord?.kept.push(s);
             // A car stopped in the traffic still runs: its smoke leaves it every frame.
             if (options.exhaust && level >= 1 && !parked) options.exhaust(pose.p.x, pose.p.y, deck, pose.angle, plan.length, vehicle.v, free);
-            continue;
+            return;
           }
           // Its kept instances already drawn this frame by another view of the id: this one drawn with the frame's.
           if (s.keptSeen === suspensionFrame) still = false;
@@ -2105,13 +2131,56 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         // Below the whole level, its shadow is a soft disc (the body casts none); a two-wheeler's too while none is drawn whole
         if ((twoWheeled ? !bikesCast : level < 2) && softShadows) placeBlob(pose.p.x, pose.p.y, s.deck, pose.angle, plan.length * 0.55, plan.width * 0.62);
         castOnly = false;
+        // A cell is kept whole only while every car of it drawn stands as kept.
+        if (cellRecord) { if (still) cellRecord.kept.push(s); else cellRecord.still = false; }
         if (still) {
           recording = null;
           s.keptSeen = suspensionFrame;
           s.keptX = pose.p.x; s.keptY = pose.p.y; s.keptAngle = pose.angle; s.keptDeck = deck;
           s.keptBand = level; s.keptLevels = levels; s.keptVersion = levelsVersion; s.keptPaint = s.paint; s.keptShadows = softShadows; s.keptCastOnly = !onScreen; s.keptParked = parked;
         }
-      }
+          };
+      // DO NOT walk the parked cars of a cell that stands as drawn in a view that stands: its version (`SimClient.parkedCellsIn`) and the view's, the diary's and the levels' unchanged.
+      const box = options.vehicleBox;
+      const probe = screenScale && box ? screenScale(box.x0, box.y0, 0) : 0;
+      const eye = options.eye;
+      const view = viewKey;
+      const viewStands = !!box && view.x0 === box.x0 && view.y0 === box.y0 && view.x1 === box.x1 && view.y1 === box.y1 && view.zoom === zoom
+        && view.probe === probe && view.ex === (eye?.x ?? 0) && view.ey === (eye?.y ?? 0) && view.ez === (eye?.z ?? 0) && view.ratio === pixelRatio
+        && view.shadows === softShadows && view.occupant === occupantZoom && view.detailed === detailed && view.serial === offRoadSerial && view.levels === levelsVersion;
+      if (box) Object.assign(view, { x0: box.x0, y0: box.y0, x1: box.x1, y1: box.y1, zoom, probe, ex: eye?.x ?? 0, ey: eye?.y ?? 0, ez: eye?.z ?? 0, ratio: pixelRatio,
+        shadows: softShadows, occupant: occupantZoom, detailed, serial: offRoadSerial, levels: levelsVersion });
+      /** The cap's answers for a kept cell, asked again in this frame's order: the same answers, or the cell is walked (the counts put back). */
+      const replays = (was: CellRecord): boolean => {
+        const count = nearCount, wholeBefore = whole;
+        for (let i = 0; i < was.pixels.length; i++) {
+        if ((wholeOrNot(was.pixels[i]!) === 2) === was.whole[i]) continue;
+        nearCount = count; whole = wholeBefore;
+        return false;
+        }
+        return true;
+      };
+      if (box) {
+        for (const vehicle of world.vehiclesIn(box, inView, 'traffic')) drawVehicle(vehicle);
+        cellsSeen.clear();
+        for (const cell of world.parkedCellsIn(box, cellsIn)) {
+          cellsSeen.add(cell.key);
+          const was = cellsDrawn.get(cell.key);
+          if (viewStands && was && was.version === cell.version && was.still && replays(was)) {
+            for (const s of was.kept) { s.keptSeen = suspensionFrame; s.seen = suspensionFrame; }
+            if (was.wheeled) carsWheeled = true;
+            continue;
+          }
+          cellRecord = was ?? { version: 0, still: true, kept: [], pixels: [], whole: [], wheeled: false };
+          cellRecord.version = cell.version; cellRecord.still = true; cellRecord.kept.length = 0;
+          cellRecord.pixels.length = 0; cellRecord.whole.length = 0; cellRecord.wheeled = false;
+          cellsDrawn.set(cell.key, cellRecord);
+          for (const vehicle of cell.items) drawVehicle(vehicle);
+          cellRecord = null;
+        }
+        // A cell gone from the view (or emptied): drawn again when it comes back.
+        if (cellsDrawn.size > cellsSeen.size) for (const key of cellsDrawn.keys()) if (!cellsSeen.has(key)) cellsDrawn.delete(key);
+      } else for (const list of [world.traffic, world.parked]) for (const vehicle of list) drawVehicle(vehicle);
       // The parked cars kept and not drawn this frame (gone, out of view, under two pixels, moving off): let go before the frame is drawn.
       for (let i = keptList.length - 1; i >= 0; i--) { const s = keptList[i]!; if (s.keptSeen !== suspensionFrame) dropKept(s); }
       // The two-wheelers cast only while one is drawn whole; the shared tyres also while a car is drawn whole.

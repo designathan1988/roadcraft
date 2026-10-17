@@ -2,7 +2,7 @@ import { jobPort } from '../jobs/jobPool';
 import { Matrix4, type Object3D } from 'three';
 
 import { type ClipFrames, type RigNode, type ShuffleFacts, rigData } from './citizenBake';
-import type { BakeReply, BakedClip } from './citizenBake.worker';
+import type { BakeReply, BakedClip, PersonFaceJob } from './citizenBake.worker';
 import type { WalkSex } from './citizenWalk';
 import type { DecodedPerson } from './people/cookedPerson';
 import type { CartoonStyle } from './people/cartoon';
@@ -20,15 +20,20 @@ interface Job {
   readonly message: object;
   readonly transfer: Transferable[];
   readonly answer: (reply: BakeReply | null) => void;
+  /** Run only on the one worker that holds the MakeHuman packs (`people`): DO NOT load them (~18 MB, and their tables) in every worker of the one V8 cage. */
+  readonly people?: boolean;
 }
 const queue: Job[] = [];
 /** The job each worker has in hand, to answer it should the worker fail. */
 const busy = new Map<Worker, Job>();
+/** The worker the people's jobs go to (`Job.people`), once one ran. */
+let peopleWorker: Worker | null = null;
 
 function releaseIfIdle(): void {
   if (!releaseRequested || busy.size > 0 || queue.length > 0) return;
   for (const worker of idle) worker.terminate();
   idle.length = 0;
+  peopleWorker = null;
   releaseRequested = false;
 }
 
@@ -63,6 +68,7 @@ function createWorker(): Worker {
     const job = busy.get(worker);
     busy.delete(worker);
     worker.terminate();
+    if (peopleWorker === worker) peopleWorker = null;
     job?.answer(null);
     dispatch();
     releaseIfIdle();
@@ -72,20 +78,34 @@ function createWorker(): Worker {
 
 /** Grow only while every existing worker is busy; keep the six-job peak. */
 function dispatch(): void {
-  while (queue.length > 0) {
-    let worker = idle.pop();
-    if (!worker) {
-      if (busy.size >= SIZE) return;
-      try {
-        worker = createWorker();
-      } catch (error) {
-        console.error('Citizen bake worker could not start', error);
-        // DO NOT give up on workers for the session on one failure.
-        if (busy.size === 0) for (const job of queue.splice(0)) job.answer(null);
-        return;
+  for (let i = 0; i < queue.length;) {
+    const job = queue[i]!;
+    let worker: Worker | undefined;
+    if (job.people && peopleWorker) {
+      // The people's worker busy: the job waits for it, the others go on.
+      const at = idle.indexOf(peopleWorker);
+      if (at < 0) { i++; continue; }
+      worker = idle.splice(at, 1)[0];
+    } else {
+      // Any free worker but the people's, which keeps itself for them while others can be made.
+      const at = idle.findIndex((w) => w !== peopleWorker);
+      worker = at >= 0 ? idle.splice(at, 1)[0] : undefined;
+      if (!worker && busy.size + idle.length < SIZE) {
+        try {
+          worker = createWorker();
+        } catch (error) {
+          console.error('Citizen bake worker could not start', error);
+          // DO NOT give up on workers for the session on one failure.
+          if (busy.size === 0) for (const waiting of queue.splice(0)) waiting.answer(null);
+          return;
+        }
       }
+      if (!worker && peopleWorker && idle.includes(peopleWorker)) worker = idle.splice(idle.indexOf(peopleWorker), 1)[0];
+      if (!worker) return;
+      if (job.people) peopleWorker = worker;
     }
-    const job = queue.shift()!;
+    if (!worker) return;
+    queue.splice(i, 1);
     busy.set(worker, job);
     try {
       worker.postMessage({ id: 0, ...job.message }, job.transfer);
@@ -99,11 +119,11 @@ function dispatch(): void {
 }
 
 /** A job queued for the next free worker; null at once where no worker can run it. */
-function run(message: object, transfer: Transferable[] = []): Promise<BakeReply | null> {
+function run(message: object, transfer: Transferable[] = [], people = false): Promise<BakeReply | null> {
   releaseRequested = false;
   if (!usable) return Promise.resolve(null);
   return new Promise((answer) => {
-    queue.push({ message, transfer, answer });
+    queue.push({ message, transfer, answer, people });
     dispatch();
   });
 }
@@ -140,7 +160,8 @@ export async function uncookInWorker(url: string): Promise<DecodedPerson | null>
 
 /** A person not cooked for this build, built in a worker (`personBuild.ts`) and read back as a cooked one; null when no worker can. */
 export async function buildPersonInWorker(person: PersonSpec, gender: 'f' | 'm', style: CartoonStyle, faces: boolean): Promise<DecodedPerson | null> {
-  const reply = await run({ build: { person, gender, style, faces } });
+  // On the people's worker: it holds the MakeHuman packs already (`Job.people`).
+  const reply = await run({ build: { person, gender, style, faces } }, [], true);
   return reply?.person ?? null;
 }
 
@@ -148,6 +169,12 @@ export async function buildPersonInWorker(person: PersonSpec, gender: 'f' | 'm',
 export async function bakeBodyInWorker(basis: Float32Array, vertexCount: number, shapes: number, c: Float32Array, stride: number): Promise<Float32Array | null> {
   const reply = await run({ body: { basis, vertexCount, shapes, c, stride } });
   return reply?.pixels ?? null;
+}
+
+/** A procedural person's heights and own face, worked out on the people's worker (`citizenBake.worker.ts` face); null when no worker can (worked out here then). */
+export async function personFaceInWorker(job: PersonFaceJob): Promise<{ readonly tall: number; readonly level0: number; readonly face: Float32Array | null } | null> {
+  const reply = await run({ face: job }, [], true);
+  return reply?.heights ? { tall: reply.heights[0]!, level0: reply.heights[1]!, face: reply.face ?? null } : null;
 }
 
 /** Releases decoded motion libraries held by idle workers after all visual bodies leave. */

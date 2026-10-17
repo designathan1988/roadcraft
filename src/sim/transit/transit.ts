@@ -5,8 +5,7 @@ import { CellFiling } from '@world/cells';
 import type { ChangeRect } from '@world/changes';
 import { DRIVER_NOISE, DT } from '../params';
 import type { SimWorld } from '../world';
-import { ARCHETYPES, bodyClassOfArchetype } from '../vehicles/archetypes';
-import { planTrip } from '../drive/tactical';
+import { ARCHETYPES } from '../vehicles/archetypes';
 import { makeDriver } from '../vehicles/driver';
 import { createVehicle, snapshot, type Vehicle, type VehicleId } from '../vehicles/state';
 import { planFrom } from '../routing/router';
@@ -371,11 +370,13 @@ export class TransitSim {
     for (let k = 0; k < 2 * line.stops.length; k++) {
       const lane = this.stopLanes.get(line.stops[bus.next]!);
       // A stop the bus can get to from where it is (a stop on a road out of the map, on the lane leaving it, cannot be reached)
-      if (lane && (lane.lanelet === v.lanelet || planTrip(w, v.lanelet, v.s, lane.lanelet, bodyClassOfArchetype(v.archetype), true, v.archetype.shape, false))) {
+      // DO NOT search the way there twice (once to ask, once to plan): planned once, and a stop it cannot reach (`planFrom` lets the destination go) skipped.
+      if (lane) {
         v.commute = { trip: -1, lanelet: lane.lanelet, at: lane.at + v.archetype.length / 2 };
         v.destination = lane.lanelet;
         planFrom(w, v);
-        return;
+        if (lane.lanelet === v.lanelet || v.destination === lane.lanelet) return;
+        v.commute = null;
       }
       // A stop with no lane beside it: skipped.
       if (bus.next + bus.dir < 0 || bus.next + bus.dir >= line.stops.length) bus.dir = bus.dir === 1 ? -1 : 1;
