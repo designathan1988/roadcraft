@@ -33,8 +33,8 @@ const RETRY_WRITE_MS = 5_000;
 export interface StreamerEvents {
   /** A tile came from the store: a frame to put it in (the frames are drawn on demand, `frameLoop.ts`). */
   arrived?(): void;
-  /** A tile put in the page's document. */
-  loaded?(key: number): void;
+  /** A tile put in the page's document, at the version it was read at: what reads its stored sections knows which it needs (C7). */
+  loaded?(key: number, version: number): void;
   /** A tile let go, and the stretches of the lists it took (undo forgets what it named, `History.letGoTile`). */
   letGo?(key: number, removedAt: ReadonlyMap<ListPart, readonly number[]>, gone: ReadonlyMap<RecordPart, ReadonlySet<number>>): void;
   /** A tile written at a version (what is baked of it is stale). */
@@ -232,7 +232,7 @@ export class WorldStreamer {
       // Put in from a write that failed (`load`): the page holds what the store does not, written again from here.
       const behind = this.unsaved.get(best);
       if (behind?.write?.failed) { behind.write = null; this.dirty.add(best); }
-      this.tell.loaded?.(best);
+      this.tell.loaded?.(best, records.version);
       if (this.ready.size) this.tell.arrived?.();
       // The region whole now: the tiles ahead asked.
       else this.ask();

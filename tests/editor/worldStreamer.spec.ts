@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import type { TileRecords } from '@world/doc';
@@ -449,6 +450,21 @@ describe("the world's values", () => {
     await turns(2);
     expect(streamer.storeBehind(tileKey(0, 0))).toBe(true);
     expect(written).toEqual([['economy']]);
+  });
+});
+
+describe('a tile put in', () => {
+  it('is told with the version it was read at, and the game hands it to the simulation (C7)', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const versioned = { ...store, load: (k: number) => store.load(k).then((r) => ({ ...r, version: 7 })) };
+    const told: [number, number][] = [];
+    const streamer = new WorldStreamer(doc, versioned, { loaded: (key, version) => told.push([key, version]) });
+    streamer.focus(10, 10);
+    for (let frame = 0; frame < 30 && !streamer.settled; frame++) { await turns(1); streamer.focus(10, 10); streamer.apply(frame); }
+    expect(told.length).toBe(9);
+    expect(told.every(([, version]) => version === 7)).toBe(true);
+    expect(readFileSync('src/main.ts', 'utf8')).toMatch(/sim\.tile\('loaded', key, version\)/);
   });
 });
 
