@@ -38,6 +38,7 @@ import {
 import { createBlobShadows } from '../blobShadows';
 import { lodPool } from './lodPool';
 import { providePeopleLod } from './lodPort';
+import { measureHitch } from '@core/hitch';
 
 // The class bodies built on this page simplify their levels in the page's pool (`lodPort.ts`).
 providePeopleLod(lodPool);
@@ -1407,7 +1408,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         geometry.computeVertexNormals();
         geometry.computeBoundingSphere();
         const made = await makeItem(cls, name, kindOf(it), role, geometry, map, null, name.startsWith('hair:'));
-        performance.measure(`hitch:person/fit ${cls.key} ${name}`, { start: fitAt, end: performance.now() });
+        measureHitch(`hitch:person/fit ${cls.key} ${name}`, fitAt);
         cls.items.set(name, made);
         return made;
       })();

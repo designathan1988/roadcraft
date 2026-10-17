@@ -11,6 +11,7 @@ import { CHANNELS, channelShapes } from './faceExpression';
 import { createPersonRig, type PersonRig } from './personRig';
 import { captureBind, captureBindRotations, loadRocketboxClips, type WalkSex } from '../citizenWalk';
 import { bakeLibraryClip, bakeWalk, breathe, restRig, type ClipFrames } from '../citizenBake';
+import { measureHitch } from '@core/hitch';
 
 /** What the procedural crowd (`proceduralCrowd.ts`) is cooked from (`npm run cook:people`, `proceduralCook.ts`) */
 
@@ -92,7 +93,7 @@ export async function hairCards(env: BakeEnv, style: HairStyle): Promise<ProxyPa
   const { assets: a, morpher: mo } = await env.setup();
   const at = performance.now();
   const pack = generateHair(style, hairBase(a, mo));
-  performance.measure(`hitch:person/hair ${style.name}`, { start: at, end: performance.now() });
+  measureHitch(`hitch:person/hair ${style.name}`, at);
   return pack;
 }
 

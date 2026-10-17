@@ -10,6 +10,7 @@ import { createPersonRig, personSimplifier } from './personRig';
 import { attachFacialMorphs } from './facialMorphs';
 import { channelShapes } from './faceExpression';
 import { captureBind, captureBindRotations } from '../citizenWalk';
+import { measureHitch } from '@core/hitch';
 
 /** A roster person built from the MakeHuman packs (what the cook stores, `cookedPerson.ts`): in a worker (`citizenBake.worker.ts`), or on the page where none can */
 
@@ -37,12 +38,12 @@ export async function buildPersonScene(person: PersonSpec, gender: 'f' | 'm', st
   await beforeRig();
   const built = performance.now();
   const rig = createPersonRig(input);
-  performance.measure('person-rig', { start: built, end: performance.now() });
+  measureHitch('person-rig', built);
   // Live faces: blinking, gaze, mood, speech
   if (faces) {
     const faceAt = performance.now();
     await attachFacialMorphs(input, rig, channelShapes(await expressionShapes()));
-    performance.measure('person-face', { start: faceAt, end: performance.now() });
+    measureHitch('person-face', faceAt);
   }
   // Its levels made (off the thread, `personRig.ts`) before anybody reads them.
   const waits: Promise<unknown>[] = [];
