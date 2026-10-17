@@ -95,8 +95,8 @@ export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<Su
   'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
   lock: readonly [number, number, number, number], near: boolean): Mesh {
   const level = finish(coarseGeometry(coarse), { ...options, name: `${options.name}-far` });
-  // Made again from the block's tiles when a lost context asks, like the block's own.
-  gpuOnly(level, () => coarseArrays(tileArrays(source(), readsOf(options.material))!, lock) ?? coarse);
+  // Made again from the block's tiles when a lost context asks, like the block's own. DO NOT fall back on `coarse`: the closure held the worker's arrays on the page for the block's life, after they were on the GPU.
+  gpuOnly(level, () => coarseArrays(tileArrays(source(), readsOf(options.material))!, lock) ?? emptyLike(level));
   const levels = mesh.userData[LOD_KEY] as BlockLevels;
   (levels as { coarse: Mesh | null }).coarse = level;
   level.renderOrder = mesh.renderOrder;
@@ -104,6 +104,16 @@ export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<Su
   mesh.parent?.add(level);
   if (!near) makeFar(mesh);
   return level;
+}
+
+/** A mesh's arrays at their sizes, all zero (every triangle of no area): what a far level the tiles no longer simplify to is given back, never the arrays it was made with. */
+function emptyLike(mesh: Mesh): Record<string, ArrayLike<number>> {
+  const g = mesh.geometry;
+  const out: Record<string, ArrayLike<number>> = {};
+  for (const [name, attribute] of Object.entries(g.attributes)) out[name] = new Float32Array(attribute.count * attribute.itemSize);
+  // Of the type it was made with: by its vertices (`roadLodPure.ts` coarse index).
+  if (g.index) out.index = (g.getAttribute('position')?.count ?? 0) > 0xffff ? new Uint32Array(g.index.count) : new Uint16Array(g.index.count);
+  return out;
 }
 
 /** A block's arrays from its tiles as kept (the store's), for the attributes its material reads: a copy end to end, nothing cut (`roadResidency.ts` makeNear). */

@@ -7,6 +7,7 @@ import { marksRoadSection } from '@render/mesh/roadEdges';
 import { COARSE_ERROR } from '@render/mesh/roadLodPure';
 import { FAR_MARGIN, makeFar, makeNear, updateRoadLevels } from '@render/mesh/roadResidency';
 import { attachFarLevel, blockArraysOf, cloneBlock, mergeTiles } from '@render/mesh/surfaceTiles';
+import { refillArrays } from '@render/mesh/gpuOnly';
 import type { Tile } from '@render/mesh/tileMesh';
 
 /** THE FAR LEVEL OF A BLOCK OF ROAD (`mesh/roadLod.ts`, `mesh/roadResidency.ts`) */
@@ -111,6 +112,36 @@ describe('a block of road with a far level', () => {
     expect(mesh.visible).toBe(false);
     expect(levels(mesh).coarse.visible).toBe(true);
     expect((mesh.geometry.getAttribute('position') as { array: unknown }).array).toBeNull();
+  });
+});
+
+describe('a far level on the GPU', () => {
+  it('lets go of the arrays its worker made once they are sent, and is made again from the block\'s tiles, never from them', () => {
+    let tiles: Tile[] = [strip()];
+    let made: ReturnType<typeof coarseArrays> = null;
+    const block = mergeTiles([strip()], options, () => tiles, {
+      lock, near: false,
+      start: (b, arrays) => { made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(b, made, options, () => tiles, lock, false); },
+    })!;
+    const level = levels(block).coarse;
+    expect(made).not.toBeNull();
+    const kept = made!;
+    const position = level.geometry.getAttribute('position') as BufferAttribute;
+    // Sent to the GPU: its arrays let go (`gpuOnly`).
+    for (const a of [...Object.values(level.geometry.attributes), level.geometry.index!]) (a as unknown as { onUploadCallback: () => void }).onUploadCallback.call(a);
+    expect((position as { array: unknown }).array).toBeNull();
+    // A lost context: made again from the tiles, the same far level.
+    refillArrays(level);
+    expect(position.array).not.toBe(kept.position);
+    expect(Array.from(position.array)).toEqual(Array.from(kept.position));
+    // Tiles that no longer simplify (too small to gain): arrays of its sizes, never the worker's it was made with.
+    for (const a of [...Object.values(level.geometry.attributes), level.geometry.index!]) (a as unknown as { onUploadCallback: () => void }).onUploadCallback.call(a);
+    tiles = [{ positions: Float32Array.of(0, 0, 0, 1, 0, 0, 0, 0, -1), normals: Float32Array.of(0, 1, 0, 0, 1, 0, 0, 1, 0), uvs: new Float32Array(6), colors: new Float32Array(0), sections: new Float32Array(0), indices: Uint32Array.of(0, 2, 1) }];
+    refillArrays(level);
+    expect(position.array).not.toBe(kept.position);
+    expect(level.geometry.index!.array).not.toBe(kept.index);
+    expect(position.array.length).toBe(kept.position.length);
+    expect(level.geometry.index!.array.length).toBe(kept.index.length);
   });
 });
 
