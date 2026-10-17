@@ -52,7 +52,8 @@ export function askPlate(grid: CornerGrid, natural: Float64Array, regions: reado
   // Regions over as many corners as the plate has: the plate's corners once.
   const whole = count >= n * n;
   const xy = new Float64Array((whole ? n * n : count) * 2);
-  const lands = whole ? natural.slice() : new Float64Array(count);
+  // The whole plate: its natural corners as they are (DO NOT copy them here: the message copies them once, or shares them when they are shared memory, `sharedGround.ts`).
+  const lands = whole ? natural : new Float64Array(count);
   if (whole) {
     for (let i = 0; i < n * n; i++) { xy[i * 2] = grid.x(i); xy[i * 2 + 1] = grid.y(i); }
   } else {
