@@ -5,7 +5,12 @@ const LONGEST = 5.6;
 /** Seconds of noise kept: the longest clap, and room to start it anywhere in the first part. */
 const NOISE_SECONDS = LONGEST + 4;
 /** DO NOT make it per strike: that was 125 to 270 thousand samples of `Math.random` on the page at each bolt */
-interface Audio { readonly ctx: AudioContext; noise: AudioBuffer | null }
+interface Audio {
+  readonly ctx: AudioContext;
+  noise: AudioBuffer | null;
+  /** The claps asked before the noise was made (`playThunder`): played once it is, in an idle moment of the page. */
+  waiting: (() => void)[] | null;
+}
 let audio: Audio | null = null;
 function noiseOf(state: Audio): AudioBuffer {
   if (state.noise) return state.noise;
@@ -26,11 +31,22 @@ function noiseOf(state: Audio): AudioBuffer {
 export function playThunder(metres: number, volume: number): void {
   if (volume <= 0) return;
   try {
-    audio ??= { ctx: new AudioContext(), noise: null };
+    audio ??= { ctx: new AudioContext(), noise: null, waiting: null };
   } catch {
     return;
   }
-  const { ctx } = audio;
+  const state = audio;
+  // DO NOT make the noise in the frame of the first strike (its callback): in an idle moment, the clap played then (its sound comes late anyway, `delay`).
+  const idle = (globalThis as { requestIdleCallback?: (run: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
+  if (!state.noise && idle) {
+    if (!state.waiting) {
+      const waiting: (() => void)[] = state.waiting = [];
+      idle(() => { noiseOf(state); state.waiting = null; for (const play of waiting) play(); }, { timeout: 500 });
+    }
+    state.waiting!.push(() => playThunder(metres, volume));
+    return;
+  }
+  const { ctx } = state;
   // Browsers start audio only after the player has touched the page.
   if (ctx.state === 'suspended') void ctx.resume();
   const delay = Math.min(6, metres / 343);
