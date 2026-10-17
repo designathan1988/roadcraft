@@ -958,6 +958,12 @@ export function createSceneRenderer(
     vehicleBounds.radius = radius;
     return crowdFrustum.intersectsSphere(vehicleBounds);
   };
+  /** Whether such a sphere (centred as `vehicleVisible` centres it) is wholly inside the view: every plane of the frustum farther than its radius (`agents.ts` vehicleInside: a cell of parked cars standing as drawn is not walked). */
+  const vehicleInside = (x: number, y: number, height: number, radius: number): boolean => {
+    vehicleBounds.center.set(x, height + radius * 0.3, -y);
+    for (const plane of crowdFrustum.planes) if (plane.distanceToPoint(vehicleBounds.center) < radius) return false;
+    return true;
+  };
   /** The ground every vehicle `vehicleVisible` passes stands on, set each frame (`frustumGroundBox`): its sphere's centre between the deepest land and the highest deck. */
   const vehicleBox: GroundBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
   // A raised deck over the highest land, and room for decks stacked on it; a cut below the deepest.
@@ -2947,6 +2953,7 @@ export function createSceneRenderer(
         shadows: renderer.shadowMap.enabled,
         eye: cullCamera.position,
         vehicleVisible,
+        vehicleInside,
         vehicleBox,
         occupantZoom: quality.occupantZoom,
         exhaust: (x, y, z, angle, length, speed, dusty) => {
