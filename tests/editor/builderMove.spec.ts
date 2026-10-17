@@ -56,13 +56,11 @@ describe('the builder under a moving pointer', () => {
     const result = placeBuilding(ctx, blueprintByKey('house')!.body, { x: 0, y: m(24) }, 0, 'house');
     const first = doc.buildings.get(result.id as BuildingId)!;
     const kept = neighbourOf(first).obstacles;
-    const draft = cloneBuilding(first);
-    draft.id = 999 as BuildingId;
+    const draft = { ...cloneBuilding(first), id: 999 as BuildingId };
     draft.x += m(4);
     expect(weldInto(ctx, draft)).toEqual([first.id]);
     expect(neighbourOf(first).obstacles).toBe(kept);
-    const far = cloneBuilding(first);
-    far.id = 998 as BuildingId;
+    const far = { ...cloneBuilding(first), id: 998 as BuildingId };
     far.x += m(80);
     expect(weldInto(ctx, far)).toEqual([]);
   });
