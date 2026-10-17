@@ -1941,7 +1941,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         for (const [id, g] of pedGround) if (suspensionFrame - g.seen > 120) pedGround.delete(id);
       }
       forgetCast(world);
-      pedestrians.begin(options.pedestrianDetail ?? 2, zoom);
+      // Each cooked body at its own level, by the screen's scale where it stands (`riggedCitizens.ts` `lookAt`).
+      pedestrians.begin(options.pedestrianDetail ?? 2, zoom, options.screenScale);
       procPixels = options.personPixels ?? null;
       // This frame's instances start after the parked cars' kept ones.
       for (const part of live) part.n = part.kept;
@@ -2059,7 +2060,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         frameAt(pose.p.x, pose.p.y, pose.angle, s.deck,
           twoWheeled ? leanOf(vehicle, s) + (fit ? fit.stopTilt * (1 - riderMoving(vehicle)) : 0) : 0,
           s.pitch, s.roll);
-        occupantBand = twoWheeled ? vehicleBand : level;
+        // A two-wheeler at its own level too (never under its trim and rider while the view draws any): not the view's band for every one.
+        const bikeBand = Math.max(1, level);
+        occupantBand = twoWheeled ? (vehicleBand === 0 ? 0 : bikeBand) : level;
         frameClock = vehicle.age;
 
         // Brakes and indicators, straight off the simulation.
@@ -2083,7 +2086,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         switch (plan.shape) {
           case 'motorcycle':
           case 'bicycle':
-            drawTwoWheeler(vehicle, s, Math.max(1, vehicleBand));
+            drawTwoWheeler(vehicle, s, bikeBand);
             break;
           case 'car':
           case 'bus':
