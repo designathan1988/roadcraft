@@ -133,6 +133,12 @@ export class WorldStreamer {
     for (const part of parts) this.clears.set(part, (this.clears.get(part) ?? 0) + 1);
     // What is being read or waits to be put in now was read before the store's clear, perhaps.
     for (const key of [...this.asked, ...this.ready.keys()]) this.markRead(key, parts);
+    // A write that failed is posted again from its records (`retryFailed`): without the lists, or it puts back what the clear took.
+    for (const behind of this.unsaved.values()) {
+      const write = behind.write;
+      if (!write?.failed) continue;
+      behind.write = { ...write, records: { ...write.records, ...Object.fromEntries(parts.map((part) => [part, []])) } };
+    }
     let open = true;
     return () => {
       if (!open) return;

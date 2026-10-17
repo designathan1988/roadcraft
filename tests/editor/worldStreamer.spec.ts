@@ -291,6 +291,32 @@ describe('a whole map clear', () => {
   });
 });
 
+describe('a failed write and a clear', () => {
+  it('posts the failed write again without the lists the clear emptied', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const streamer = new WorldStreamer(doc, store);
+    await settle(streamer, 10, 10);
+    doc.plantTrees([{ x: 100, y: 100, height: 8, yaw: 0, seed: 0.3 }]);
+    expect(doc.trees).toHaveLength(1);
+    // Its write fails, then the tile is let go: only the failed write's records hold it.
+    // Every write of it fails (the one of the edit, the one as it is let go): only the failed write's records hold it.
+    store.failures = 99;
+    streamer.apply(1);
+    await turns(3);
+    streamer.focus(8 * TILE, 0);
+    for (let f = 0; f < 4; f++) { streamer.apply(2 + f); await turns(2); }
+    expect(doc.hasTile(tileKey(0, 0))).toBe(false);
+    store.failures = 0;
+    // The trees cleared over the whole map, in the store as `clearLists` does; then the retry.
+    const done = streamer.clearing(['trees']);
+    for (const [key, t] of store.stored) store.stored.set(key, { ...t, trees: [] });
+    done();
+    expect(await streamer.flush()).toBe(true);
+    expect(store.stored.get(tileKey(0, 0))!.trees).toEqual([]);
+  });
+});
+
 describe('a tile read before a clear', () => {
   it('comes in without the lists even when it is put in after the clear is done', async () => {
     const doc = new RoadDoc();
