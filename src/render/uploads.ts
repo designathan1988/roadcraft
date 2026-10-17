@@ -41,6 +41,10 @@ const toCompile: { object: Object3D; shadow: boolean; done: () => void; pass?: O
 let shadowTarget: WebGLRenderTarget | null = null;
 /** Whether a renderer is answering (none in tests: nothing is waited for there). */
 let compiler = false;
+/** What came into the scene before the renderer first answered: taken through the door at its first drain (`drainCompiles`). DO NOT let them in unheld: a program first used in a frame waits there for its link. */
+const early: Object3D[] = [];
+/** The scene's lights as the last drain gathered them (`litScene`), by kind and shadow: part of every lit program's key (three's `WebGLPrograms` getParameters counts them), so a variant built under other lights is not taken for built. */
+let lightsKey = '';
 
 /** DO NOT give the stand-in RGBA packing: the packing is part of the program's key */
 const SHADOW_SIDE: Record<Side, Side> = { [FrontSide]: BackSide, [BackSide]: FrontSide, [DoubleSide]: DoubleSide };
@@ -139,13 +143,24 @@ export function compileCopy(object: Object3D): Object3D {
   }
 }
 
-/** Every compile asked for and not settled, and the drains it has waited through: DO NOT let one wait for ever (a program that never says it is built, a mesh let go meanwhile): past `COMPILE_FRAMES` it settles, and the mesh is drawn as it was before (its program built in the draw at worst). */
-const inFlight = new Set<{ frames: number; settle: () => void }>();
-const COMPILE_FRAMES = 30;
-/** `done` once, however many times it is called, and taken off `inFlight`. */
-function once(done: () => void): () => void {
-  const entry = { frames: 0, settle: () => {} };
-  entry.settle = () => { if (!inFlight.delete(entry)) return; done(); };
+/** Every compile asked for and not settled, and since when (`performance.now`). DO NOT settle one after a count of frames: the door opened on a program still linking, its first draw waited for the link in the frame (three's onFirstUse, getProgramInfoLog: 716 ms of the conferencia 110 move). It settles when three says its programs are ready (linked, or failed: the error said by onShaderError at the first draw, as ever), when a material of it is disposed (its programs never come, nothing of it is drawn), or past `COMPILE_GIVE_UP_MS`, said. */
+const inFlight = new Set<{ readonly since: number; settle: () => void }>();
+/** A driver that never says a program is built: given up on and said, never a mesh held for ever (a slow driver shows in the opening's time, `programsReady`). */
+const COMPILE_GIVE_UP_MS = 10_000;
+/** `done` once, however many times it is called, and taken off `inFlight`; settled too when a material of `object` is disposed. */
+function once(done: () => void, object: Object3D): () => void {
+  const materials = new Set<Material>();
+  object.traverse((o) => {
+    const m = (o as Mesh).material;
+    if (m) for (const x of Array.isArray(m) ? m : [m]) materials.add(x);
+  });
+  const entry = { since: performance.now(), settle: () => {} };
+  entry.settle = () => {
+    if (!inFlight.delete(entry)) return;
+    for (const m of materials) m.removeEventListener('dispose', entry.settle);
+    done();
+  };
+  for (const m of materials) m.addEventListener('dispose', entry.settle);
   inFlight.add(entry);
   return entry.settle;
 }
@@ -153,26 +168,37 @@ function once(done: () => void): () => void {
 /** `shadow`: the object's material is a shadow's depth material, compiled for a shadow map. */
 export function compileAhead(object: Object3D, shadow = false): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object, shadow, done: once(done) }));
+  return new Promise((done) => toCompile.push({ object, shadow, done: once(done, object) }));
 }
 
 /** `object`'s programs as they are drawn under another set of the scene's lights (`lights`, every one counted lit or not): the variant a light switched on or off asks for, built before it is. */
 export function compileAheadWith(object: Object3D, lights: readonly Object3D[]): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object, shadow: false, done: once(done), lights }));
+  return new Promise((done) => toCompile.push({ object, shadow: false, done: once(done, object), lights }));
 }
 
 /** DO NOT draw a pass of its own (`people/crowdAnimation.ts` palette pass) before its program is built: compiled on its first draw, in the frame (2026-10-16) */
 export function compilePassAhead(scene: Scene, camera: Camera, target: WebGLRenderTarget): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done: once(done), pass: { camera, target } }));
+  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done: once(done, scene), pass: { camera, target } }));
 }
 
 /** Starts compiling what is waiting; each promise settles when its shaders are ready. */
 export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
+  const first = !compiler;
   compiler = true;
-  // A compile waited for past its frames settles: never a mesh held for ever.
-  for (const entry of [...inFlight]) if (++entry.frames > COMPILE_FRAMES) entry.settle();
+  // The lights the last compile gathered, as they stand now (DO NOT walk the scene for them every frame: walked when something is compiled, `litScene`).
+  if (!litScenes.has(scene)) litScene(scene);
+  const known = litScenes.get(scene)?.lights;
+  if (known) lightsKey = known.filter((l) => l.visible).map((l) => `${l.type}${(l as Light).castShadow ? '+' : ''}`).sort().join(',');
+  if (first) for (const root of early.splice(0)) if (root.parent) gateUntilBuilt(root);
+  // A compile the driver never answers: given up on, said; never a mesh held for ever.
+  const now = performance.now();
+  for (const entry of [...inFlight]) {
+    if (now - entry.since <= COMPILE_GIVE_UP_MS) continue;
+    console.warn('[uploads] a program was not built in', COMPILE_GIVE_UP_MS, 'ms: drawn as it is');
+    entry.settle();
+  }
   if (!toCompile.length) return;
   // Without the parallel compile, three's compileAsync polls each program with a timer: built here at once instead, off the draw, and settled.
   const extensions = (renderer as { extensions?: { has?: (name: string) => boolean } }).extensions;
@@ -367,7 +393,7 @@ function litKey(mesh: Mesh): string {
   const m = mesh as Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean; isBatchedMesh?: boolean; instanceColor?: unknown; morphTexture?: unknown };
   const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   const g = mesh.geometry;
-  return ['lit', materials.map((x) => `${x.uuid}:${x.version}`).join(','), !!m.isInstancedMesh, !!m.instanceColor, !!m.morphTexture, !!m.isSkinnedMesh, !!m.isBatchedMesh,
+  return ['lit', lightsKey, materials.map((x) => `${x.uuid}:${x.version}`).join(','), !!m.isInstancedMesh, !!m.instanceColor, !!m.morphTexture, !!m.isSkinnedMesh, !!m.isBatchedMesh,
     mesh.receiveShadow, Object.keys(g.attributes).sort().join(','), Object.keys(g.morphAttributes).sort().join(',')].join('/');
 }
 /** A variant's programs asked for once, with `mesh` as its stand-in; the promise settles when they are built. */
@@ -397,7 +423,7 @@ function programsOf(mesh: Mesh): Promise<unknown> | null {
 const gated = new WeakMap<Object3D, number>();
 /** What comes into the scene (`renderer.ts` childadded): every mesh, line and points under it whose programs are not built held off the drawn layers until they are (`programsOf`). Nothing is held where no renderer answers (tests, the opening before the first frame: the catalogue builds those). */
 export function gateUntilBuilt(root: Object3D): void {
-  if (!compiler) return;
+  if (!compiler) { early.push(root); return; }
   root.traverse((object) => {
     const mesh = object as Mesh & { isLine?: boolean; isPoints?: boolean };
     if (!(mesh.isMesh || mesh.isLine || mesh.isPoints) || gated.has(object) || !mesh.material) return;
@@ -413,7 +439,7 @@ export function gateUntilBuilt(root: Object3D): void {
       gated.delete(object);
       if (mask !== undefined && object.layers.mask === 1 << GATE_LAYER) object.layers.mask = mask;
     };
-    // Built, failed or given up on (`COMPILE_FRAMES`): the door opens all the same.
+    // Built, failed (said at its first draw) or given up on (`COMPILE_GIVE_UP_MS`): the door opens.
     void waiting.then(open, open);
   });
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, InstancedMesh, Layers, Line, LineBasicMaterial, Mesh, MeshStandardMaterial, type Object3D,
+  BoxGeometry, BufferGeometry, DirectionalLight, Float32BufferAttribute, Group, InstancedMesh, Layers, Line, LineBasicMaterial, Mesh, MeshStandardMaterial, type Object3D,
   PerspectiveCamera, Points, PointsMaterial, Scene, type WebGLRenderer,
 } from 'three';
 import { drainCompiles, drainWarm, gateUntilBuilt, warmLooseAhead, warmPending } from '@render/uploads';
@@ -92,7 +92,7 @@ describe('the door into the drawn scene', () => {
     await tick();
     expect(built).toContain(a);
     expect(drawn(a)).toBe(true);
-    // A compile that never answers: the door opens after its frames, the mesh drawn as before.
+    // A compile that never answers: the door stays shut however many frames pass (DO NOT open on a count of frames: the program still linking was waited for in the draw, conferencia 110).
     const stuck = {
       getRenderTarget: () => null, setRenderTarget: () => {}, render: () => {}, autoClear: true,
       compileAsync: () => new Promise(() => {}),
@@ -100,6 +100,10 @@ describe('the door into the drawn scene', () => {
     const b = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
     gateUntilBuilt(b);
     for (let frame = 0; frame < 40; frame++) drainCompiles(stuck, camera, scene, null);
+    await tick();
+    expect(drawn(b)).toBe(false);
+    // Its material let go: its programs never come, it settles.
+    (b.material as MeshStandardMaterial).dispose();
     await tick();
     expect(drawn(b)).toBe(true);
     // A loose mesh let go before it went up: what waits for it is told.
@@ -111,15 +115,115 @@ describe('the door into the drawn scene', () => {
     cancelWarm([c]);
     await tick();
     expect(told).toBe(true);
-    // One let go while its programs are built: settled all the same.
+    // One let go while its programs are built: settled all the same, once its material goes.
     const d = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
     let settled = false;
     void warmLooseAhead([d])!.then(() => { settled = true; });
     drainWarm(stuck);
     cancelWarm([d]);
     for (let frame = 0; frame < 40; frame++) drainCompiles(stuck, camera, scene, null);
+    (d.material as MeshStandardMaterial).dispose();
     await tick();
     expect(settled).toBe(true);
     expect(warmPending()).toBe(false);
+  });
+
+  it('opens on a program that failed to link (three says it at the first draw), and holds a slow one back alone', async () => {
+    const scene = new Scene(), camera = new PerspectiveCamera();
+    const slowMaterial = new MeshStandardMaterial();
+    let failed: () => void = () => {};
+    const renderer = {
+      getRenderTarget: () => null, setRenderTarget: () => {}, render: () => {}, autoClear: true,
+      compileAsync: (object: Object3D) => {
+        let slow = false, failing = false;
+        object.traverse((o) => { const m = (o as Mesh).material; if (m === slowMaterial) slow = true; if ((m as { name?: string })?.name === 'fails') failing = true; });
+        if (slow) return new Promise(() => {});
+        // A link that fails is ready all the same (r186 isReady: COMPLETION_STATUS), its error said by onShaderError.
+        if (failing) return new Promise<void>((_, reject) => { failed = () => reject(new Error('link')); });
+        return Promise.resolve();
+      },
+    } as unknown as WebGLRenderer;
+    drainCompiles(renderer, camera, scene, null);
+    const slow = new Mesh(new BoxGeometry(), slowMaterial);
+    const quick = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    const failing = new Mesh(new BoxGeometry(), Object.assign(new MeshStandardMaterial(), { name: 'fails' }));
+    for (const m of [slow, quick, failing]) gateUntilBuilt(m);
+    drainCompiles(renderer, camera, scene, null);
+    await tick();
+    expect(drawn(quick)).toBe(true);
+    expect(drawn(slow)).toBe(false);
+    expect(drawn(failing)).toBe(false);
+    failed();
+    await tick();
+    expect(drawn(failing)).toBe(true);
+    expect(drawn(slow)).toBe(false);
+    // A driver that never answers: given up on past its time, said, never held for ever.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const now = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 60_000);
+    try {
+      drainCompiles(renderer, camera, scene, null);
+      await tick();
+      expect(drawn(slow)).toBe(true);
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      now.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it('takes a variant built under other lights for not built: a light switched off, a mesh of the same material held until its programs are', async () => {
+    const scene = new Scene(), camera = new PerspectiveCamera();
+    const sun = new DirectionalLight();
+    sun.castShadow = true;
+    scene.add(sun);
+    let compiles = 0;
+    const renderer = {
+      getRenderTarget: () => null, setRenderTarget: () => {}, render: () => {}, autoClear: true,
+      compileAsync: () => { compiles++; return Promise.resolve(); },
+    } as unknown as WebGLRenderer;
+    drainCompiles(renderer, camera, scene, null);
+    const material = new MeshStandardMaterial();
+    const a = new Mesh(new BoxGeometry(), material);
+    gateUntilBuilt(a);
+    drainCompiles(renderer, camera, scene, null);
+    drainCompiles(renderer, camera, scene, null);
+    await tick();
+    expect(drawn(a)).toBe(true);
+    // The same lights: a twin goes in at once.
+    const twin = new Mesh(new BoxGeometry(), material);
+    gateUntilBuilt(twin);
+    expect(drawn(twin)).toBe(true);
+    // The sun switched off: another program; held until it is built.
+    sun.visible = false;
+    drainCompiles(renderer, camera, scene, null);
+    const dark = new Mesh(new BoxGeometry(), material);
+    gateUntilBuilt(dark);
+    expect(drawn(dark)).toBe(false);
+    const before = compiles;
+    drainCompiles(renderer, camera, scene, null);
+    await tick();
+    expect(compiles).toBeGreaterThan(before);
+    expect(drawn(dark)).toBe(true);
+  });
+
+  it('takes through the door what came in before the renderer first answered', async () => {
+    vi.resetModules();
+    const fresh = await import('@render/uploads');
+    const scene = new Scene(), camera = new PerspectiveCamera();
+    const early = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    scene.add(early);
+    fresh.gateUntilBuilt(early);
+    expect(drawn(early)).toBe(true);
+    let answer: () => void = () => {};
+    const renderer = {
+      getRenderTarget: () => null, setRenderTarget: () => {}, render: () => {}, autoClear: true,
+      compileAsync: () => new Promise<void>((done) => { answer = done; }),
+    } as unknown as WebGLRenderer;
+    fresh.drainCompiles(renderer, camera, scene, null);
+    expect(drawn(early)).toBe(false);
+    fresh.drainCompiles(renderer, camera, scene, null);
+    answer();
+    await tick();
+    expect(drawn(early)).toBe(true);
   });
 });
