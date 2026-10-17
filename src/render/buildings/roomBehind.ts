@@ -59,7 +59,15 @@ export function roomsOfStorey(b: Building, v: Volume, inside: FloorInterior, lev
     walls.push(p.x, p.y, q.x, q.y);
   }
   const stone = floorKind(b, level);
-  return (ax: number, ay: number, tx: number, ty: number, nx: number, ny: number, a: number, h: number, ceiling: number): number[] => {
+  // A pane alike - the same place on the block's plan, height and ceiling - on another level of the type looked at once.
+  const known = new Map<string, readonly number[]>();
+  return (ax: number, ay: number, tx: number, ty: number, nx: number, ny: number, a: number, h: number, ceiling: number): readonly number[] => {
+    const key = `${ax},${ay},${tx},${ty},${nx},${ny},${a},${h},${ceiling}`;
+    let room = known.get(key);
+    if (!room) known.set(key, room = roomAt(ax, ay, tx, ty, nx, ny, a, h, ceiling));
+    return room;
+  };
+  function roomAt(ax: number, ay: number, tx: number, ty: number, nx: number, ny: number, a: number, h: number, ceiling: number): number[] {
     const px = ax + tx * a, py = ay + ty * a;
     const depth = Math.max(m(0.8), firstHit(walls, px - nx * m(0.02), py - ny * m(0.02), -nx, -ny, MOST_DEEP));
     const qx = px - nx * INSIDE, qy = py - ny * INSIDE;
@@ -88,5 +96,5 @@ export function roomsOfStorey(b: Building, v: Volume, inside: FloorInterior, lev
     return flip
       ? [ahead, back, depth, h, ceiling - h, stone, kind, fh, -fc, fhalf, fnear, ffar]
       : [back, ahead, depth, h, ceiling - h, stone, kind, fh, fc, fhalf, fnear, ffar];
-  };
+  }
 }

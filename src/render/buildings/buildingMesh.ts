@@ -903,8 +903,8 @@ function emitBuilding(
   const componentAt = new Map<string, BayComponent>();
   for (const bay of bays) componentAt.set(`${bay.volume}:${bay.level}:${bay.side}:${bay.index}`, bay.component);
   const volumes = new Map(b.volumes.map((v) => [v.id, v]));
-  // The rooms behind the windows, a storey of a block at a time: the interior the cut-open view draws (`interiorAt`, furnished once for the blocks).
-  const roomsOf = new Map<string, ReturnType<typeof roomsOfStorey>>();
+  // The rooms behind the windows, a type of floor of a block at a time: the interior the cut-open view draws (`interiorAt`, furnished once a type for the blocks).
+  const roomsOf = new Map<readonly Furniture[], Map<number, ReturnType<typeof roomsOfStorey>>>();
   // The far level's bays, laid as runs once all are known.
   const farBays: FarBay[] = [];
   for (const bay of bays) {
@@ -958,12 +958,12 @@ function emitBuilding(
     } else {
       e.slot = slotOfBay(b, v, bay, spacesOf, slots);
       if (b.id >= 0 && b.cutaway === undefined) {
-        const key = `${v.id}:${bay.level}`;
-        let look = roomsOf.get(key);
-        if (!look) {
-          look = roomsOfStorey(b, v, interiorAt(b, bay.level), bay.level);
-          roomsOf.set(key, look);
-        }
+        // The levels of one type share their pieces (`interiorAt`), and so their rooms, a pane alike looked at once.
+        const inside = interiorAt(b, bay.level);
+        let byBlock = roomsOf.get(inside.furniture);
+        if (!byBlock) roomsOf.set(inside.furniture, byBlock = new Map());
+        let look = byBlock.get(v.id);
+        if (!look) byBlock.set(v.id, look = roomsOfStorey(b, v, inside, bay.level));
         const behind = look;
         e.room = (a, h) => behind(face.ax, face.ay, face.tx, face.ty, face.nx, face.ny, a, h, face.H - m(0.3));
       }
