@@ -240,7 +240,7 @@ export class NearTiles implements FarTiles {
   /** Each edited tile's records as the page holds them, by the edit they are of, and cut to each set of parts: DO NOT read the page's document again for every kind, every neighbour or every frame (`tileMembers` walks the region's document; a road drawn held frames of 500 ms, conf23, 2026-10-17). */
   private readonly pageCuts = new Map<number, { readonly edit: number; readonly records: TileRecords | null; readonly cuts: Map<string, PageCut> }>();
   /** Each tile's last digest by set of parts: whether an edit moved what a kind reads. */
-  private readonly lastDigests = new Map<string, string>();
+  private readonly lastDigests = new Map<number, Map<string, string>>();
   /** Each record's digest, once a record (`partsDigest`). */
   private readonly recordDigests = new WeakMap<object, number>();
   /** The tiles with a kind asked this choice: one job each once every kind is chosen (`submit`). */
@@ -371,6 +371,14 @@ export class NearTiles implements FarTiles {
     this.asking.clear();
     // Read again over the tiles the kinds hold now: the key before the choice read those they held before it.
     this.chosenOutside = this.outsideKey();
+    this.forgetUnread();
+  }
+
+  /** DO NOT keep an edited tile's records once no kind reads it: the page's whole records of every tile edited along the way stayed (`pageCuts`), let go only when the tile was read again, never once it left the view; what the kinds read now is the tiles they hold and their neighbours (`editsSeen`, `outsideKey`). */
+  private forgetUnread(): void {
+    const read = this.editsSeen;
+    for (const key of this.pageCuts.keys()) if (!read.has(key)) this.pageCuts.delete(key);
+    for (const [key, digests] of this.lastDigests) if (!read.has(key)) { digests.clear(); this.lastDigests.delete(key); }
   }
 
   /** What the choice reads from outside that tells it nothing when it moves: the ground's record, the page's edits of the tiles the kinds hold and of the neighbours those read (`tilesOf`), each kind's standing and its version at the tiles it holds.
@@ -507,8 +515,10 @@ export class NearTiles implements FarTiles {
     let cut = known.cuts.get(name);
     if (!cut) {
       const digest = partsDigest(known.records, read, this.recordDigests);
-      const was = this.lastDigests.get(`${key}|${name}`);
-      this.lastDigests.set(`${key}|${name}`, digest);
+      let digests = this.lastDigests.get(key);
+      if (!digests) this.lastDigests.set(key, digests = new Map());
+      const was = digests.get(name);
+      digests.set(name, digest);
       cut = { records: recordsFor(known.records, posted), digest, changed: was !== undefined && was !== digest };
       known.cuts.set(name, cut);
     }
