@@ -1,7 +1,7 @@
 import { RecordMap } from '@core/recordMap';
 import type { Vec2 } from '@core/vec2';
 import { ForkMap, forkWork } from '@core/forkMap';
-import { ChangeJournal, rectAround, type ChangeRect } from './changes';
+import { ChangeJournal, isStreaming, rectAround, rectsAround, type ChangeRect } from './changes';
 import { CellFiling } from './cells';
 import { JournalCursor } from './derived';
 import { IdAllocator } from './ids';
@@ -261,7 +261,9 @@ export class LotStore {
       if (value) rects.push(lotBox(value));
       ids.push(id);
     }
-    if (ids.length) this.journal.record('lots', rects, { ids, cause });
+    // A tile's lots put in or taken out: one rectangle round them all, with their ids, not one each.
+    const where = isStreaming({ cause }) && rects.length > 1 ? [rectsAround(rects)] : rects;
+    if (ids.length) this.journal.record('lots', where, { ids, cause });
   }
 
   /** The lots and keys of a map read (`RoadDoc.fromJSON`): the whole store, entries without ids. */

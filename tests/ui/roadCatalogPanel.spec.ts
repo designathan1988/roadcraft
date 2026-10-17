@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { catalogStrip, pickedRoad } from '@ui/roads/catalogPanel';
 import { drawProfile, setDrawProfile } from '@ui/roads/drawProfile';
 import { closeProfileEditor } from '@ui/roads/profileEditor';
+import { saveTemplate } from '@ui/roads/templates';
+import { classTemplates } from '@world/roads/templates';
 
-afterEach(() => { setDrawProfile(null); closeProfileEditor(); document.body.innerHTML = ''; });
+afterEach(() => { setDrawProfile(null); closeProfileEditor(); document.body.innerHTML = ''; localStorage.clear(); });
 
 function mount(classIndex = 0): { root: HTMLElement; picked: number[]; render: () => void } {
   const picked: number[] = [];
@@ -50,6 +52,8 @@ describe('the road catalogue', () => {
   });
 
   it('keeps the strip it built while nothing it shows changed: a render or a pick does not build the cards again (plan K5)', () => {
+    // A road of the player's saved: the list read from storage is text to parse.
+    expect(saveTemplate('Mine', 1, classTemplates()[1]!.profile)).not.toBeNull();
     const { root, render } = mount();
     const strip = root.querySelector('.rc-catalog')!;
     const img = strip.querySelector('img.rc-art')!;

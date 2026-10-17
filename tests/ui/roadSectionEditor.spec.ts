@@ -16,12 +16,15 @@ const fire = (input: HTMLInputElement | HTMLSelectElement, value: string): void 
 
 describe('the road section editor', () => {
   it('shows the lane width a saved section will hold, so confirming another field does not widen the road', () => {
-    const { host, sent } = mount();
+    // An avenue: its lanes 3.5 m, off the 1 m grid a saved section is put on.
+    expect(laneWidth(roadProfile(2)) % m(1)).not.toBe(0);
+    const { host, sent } = mount(undefined, 2);
     const lane = host.querySelector<HTMLInputElement>('[data-section-field="laneWidth"]')!;
     fire(host.querySelector<HTMLInputElement>('[data-section-field="speedKmh"]')!, '40');
     const saved = normalizeRoadSection(sent.at(-1))!;
+    // What the field shows is what is saved: no half metre added behind the player's back.
     expect(saved.laneWidth).toBe(Number(lane.value) * m(1));
-    expect(Math.abs(saved.laneWidth - laneWidth(roadProfile(1)))).toBeLessThanOrEqual(m(0.5));
+    expect(Math.abs(saved.laneWidth - laneWidth(roadProfile(2)))).toBeLessThanOrEqual(m(0.5));
   });
 
   it('sets both footways with the footway control, over a side of its own saved before', () => {

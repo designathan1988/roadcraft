@@ -3,12 +3,13 @@ import { type ChangeRect, DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import { type ListPart, type RecordPart, type RoadDoc, type WorldPart, preparedTiles } from '@world/doc';
 import { TILE, tileIJ, tileKey, tileOfKey, tileRect, tilesAround } from '@world/tiles';
+import { m } from '@world/units';
 import type { TileRecords } from '@world/doc';
 
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
 
 /** The kinds of the map's parts no tile holds (`RoadDoc.worldValues`): their changes are written with the world, not with a tile. */
-const WORLD_KINDS: ReadonlySet<string> = new Set<WorldPart>(['terrain', 'fog', 'gullies', 'clouds', 'clearings', 'zones', 'people', 'transit', 'economy', 'weather', 'markingStyle', 'nature']);
+const WORLD_KINDS: readonly string[] = ['terrain', 'fog', 'gullies', 'clouds', 'clearings', 'zones', 'people', 'transit', 'economy', 'weather', 'markingStyle', 'nature'] satisfies readonly WorldPart[];
 
 /** Tiles each way from the camera's tile held in the document: 3 x 3 tiles, 3 km - the editing and the detail's reach; past it the buildings, roads and land are drawn from what is baked of the store (a dense downtown tile holds ~1,500 buildings: 9 of them stay a fraction of the page's heap). */
 export const ACTIVE_RADIUS = 1;
@@ -20,6 +21,8 @@ const IN_FLIGHT = 4;
 const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
 /** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
 const RETRY_MS = 30_000;
+/** How far past the edge of its tile the camera goes before the region is centred on the next one (two sub-cells): walking along an edge does not turn three tiles back and forth. */
+const RECENTRE_PAST = m(128);
 /** A write that failed is posted again after this (a store failing on it fails again at once). */
 const RETRY_WRITE_MS = 5_000;
 
@@ -94,6 +97,11 @@ export class WorldStreamer {
   focus(x: number, y: number): void {
     const { i, j } = tileIJ(x, y);
     if (i === this.around.i && j === this.around.j) { this.ask(); return; }
+    // Still within reach of the tile the region is centred on: it stays where it is.
+    if (Number.isFinite(this.around.i)) {
+      const [x0, y0, x1, y1] = tileRect(this.around.i, this.around.j);
+      if (x >= x0 - RECENTRE_PAST && x <= x1 + RECENTRE_PAST && y >= y0 - RECENTRE_PAST && y <= y1 + RECENTRE_PAST) { this.ask(); return; }
+    }
     const wasActive = new Set(this.wanted);
     this.around = { i, j };
     // DO NOT ask a tile past the map's edge (`tileOnMap`): there is nothing there, and the region ends with the map.
@@ -204,8 +212,16 @@ export class WorldStreamer {
       // The region whole now: the tiles ahead asked.
       else this.ask();
     }
-    for (const key of [...this.doc.loadedTiles]) {
+    // One tile let go a frame, the farthest first: a camera that jumped far leaves a ring of tiles, each its records out and its products dropped (a frame stays a frame).
+    let far: number | null = null, farD = -1;
+    for (const key of this.doc.loadedTiles) {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
+      const { i, j } = tileOfKey(key);
+      const d = Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j));
+      if (d > farD) { farD = d; far = key; }
+    }
+    if (far !== null) {
+      const key = far;
       if (this.dirty.has(key) || this.unsaved.get(key)?.write?.failed) this.write(key);
       // Let go first: an optional call (`?.`) does not evaluate its arguments when nobody listens.
       const gone = new Map<RecordPart, Set<number>>();
@@ -364,7 +380,7 @@ export class WorldStreamer {
     }
     for (const entry of entries) {
       if (isStreaming(entry)) continue;
-      if (WORLD_KINDS.has(entry.kind)) { this.worldDirty.add(entry.kind as WorldPart); continue; }
+      if (WORLD_KINDS.includes(entry.kind)) { this.worldDirty.add(entry.kind as WorldPart); continue; }
       if (entry.rects === null) { for (const key of this.doc.loadedTiles) this.touched(key, serial); continue; }
       for (const [x0, y0, x1, y1] of entry.rects) {
         // A rectangle reaches every tile it overlaps (a road's box on two tiles marks both: either may own a piece of it).

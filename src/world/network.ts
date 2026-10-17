@@ -217,9 +217,8 @@ export class Network {
         this.crossingLandings.get(seg)?.delete(node);
       }
     }
-    for (const rect of delta.rects) {
-      for (const seg of this.segmentCells.idsMeeting(rect)) { this.crossingDistances.delete(seg); this.crossingLandings.delete(seg); }
-    }
+    // Every rectangle in one look (`idsMeetingAny`): one at a time read the cells they share again, and named a road once a rectangle.
+    if (delta.rects.length) for (const seg of this.segmentCells.idsMeetingAny(delta.rects)) { this.crossingDistances.delete(seg); this.crossingLandings.delete(seg); }
   }
 
   /** Where the crossing of `seg` at `node` lands on the footways */

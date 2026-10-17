@@ -47,6 +47,7 @@ import { OWNER, TILE_COUNTED, tileIdBase, tileOfKey, tileRect } from './tiles';
 import { type GrownRows, selectRows } from './growth/rows';
 import { gatesOf } from './buildingGates';
 import { PoleIndex } from './poleIndex';
+import { TileIndex } from './tileIndex';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
 import { METERS_PER_UNIT, m } from './units';
@@ -804,7 +805,7 @@ export class RoadDoc {
     const where = this.rectsOrMap(this.nodeRect(id));
     for (const sid of n.incident.slice()) this.removeSegment(sid);
     this.nodes.delete(id);
-    this.roadsChanged(where, true, { ids: [id], detail: 'node removed' });
+    this.roadsChanged(where, true, { nodes: [id], detail: 'node removed' });
   }
 
   /** Rewires every segment from `source` into `target`, then removes `source`. */
@@ -845,7 +846,7 @@ export class RoadDoc {
     dropStaleCrossing(keep);
     this.markNode(target, true, gone ? [gone] : []);
     // The node that went, by id, for a reader by id (its rectangle is in the entry above).
-    this.roadsChanged(gone ? [gone] : null, true, { ids: [source], detail: 'node merged away' });
+    this.roadsChanged(gone ? [gone] : null, true, { nodes: [source], detail: 'node merged away' });
     return true;
   }
 
@@ -1337,7 +1338,7 @@ export class RoadDoc {
       this.nodes.delete(id);
     }
     this.loose.clear();
-    if (ids.length) this.roadsChanged(rects, true, { ids, detail: `${ids.length} loose nodes dropped` });
+    if (ids.length) this.roadsChanged(rects, true, { nodes: ids, detail: `${ids.length} loose nodes dropped` });
     return ids.length;
   }
 
@@ -1348,7 +1349,7 @@ export class RoadDoc {
     // Every real edit is written, even of a node edited before: the diary is the mutation clock
     const rect = this.nodeRect(id);
     const rects = rect ? [rect, ...also] : also;
-    this.roadsChanged(rects.length ? rects : null, traffic, { ids: [id] });
+    this.roadsChanged(rects.length ? rects : null, traffic, { nodes: [id] });
   }
 
   /** DO NOT write only the segment's rectangle: what is derived round a junction would keep the old mouths. */
@@ -1360,7 +1361,7 @@ export class RoadDoc {
     const s = this.segments.get(id);
     if (s) for (const end of [s.a, s.b]) { const r = this.nodeRect(end); if (r) rects.push(r); }
     // With its two ends: their records (`incident`) change with it, and a reader by id
-    this.roadsChanged(rects.length ? rects : null, true, { ids: s ? [id, s.a, s.b] : [id] });
+    this.roadsChanged(rects.length ? rects : null, true, { segments: [id], nodes: s ? [s.a, s.b] : [] });
   }
 
   /** A rectangle as the diary takes it: itself, or the whole map when there is none. */
@@ -1369,7 +1370,13 @@ export class RoadDoc {
   }
 
   /** The roads changed there: their geometry */
-  private roadsChanged(rects: readonly ChangeRect[] | null, traffic: boolean, extra: { readonly ids?: readonly number[]; readonly detail?: string } = {}): void {
+  /** `nodes`, `segments`: what it touched, told apart (an id may name a node and a segment of one tile); `ids` their union, as every other kind writes them. */
+  private roadsChanged(rects: readonly ChangeRect[] | null, traffic: boolean, touched: { readonly nodes?: readonly number[]; readonly segments?: readonly number[]; readonly detail?: string } = {}): void {
+    const nodes = touched.nodes ?? [], segments = touched.segments ?? [];
+    const extra = {
+      ...(nodes.length || segments.length ? { ids: [...new Set([...segments, ...nodes])], nodes: [...new Set(nodes)], segments: [...new Set(segments)] } : {}),
+      ...(touched.detail ? { detail: touched.detail } : {}),
+    };
     const roads = this.changes.record('roads', rects, extra);
     if (traffic) this.changes.record('traffic', rects, { ...extra, parent: roads });
   }
@@ -1378,6 +1385,14 @@ export class RoadDoc {
 
   /** The tiles in this document (the active region, CLAUDE.md "Streaming world"): the page holds the tiles near the camera, never the world. */
   private tileContents = new Set<number>();
+  /** Each tile's nodes, roads, land keys and dabs, kept by the diary (`tileIndex.ts`): a tile's members read without walking the region. */
+  private readonly tileIndex = ((doc: RoadDoc) => new TileIndex({
+    get changes() { return doc.changes; },
+    get nodes() { return doc.nodes; },
+    get segments() { return doc.segments; },
+    get lotKeyList() { return doc.lotStore.keys; },
+    get paintList() { return doc.terrainPaint; },
+  }, lotKeyPlace))(this);
   /** Each loaded tile's next ids, by kind (`TileRecords.next`): a record made in a tile takes its id from the tile's range. */
   private tileNext = new Map<number, TileNext>();
   /** Each loaded tile's grown rows (`TileRecords.grown`, kept by `preparedGrown`), and its lots as they were put in: a row is written back only while its lot is that very record (an edit replaces it). */
@@ -1439,7 +1454,7 @@ export class RoadDoc {
     const tile = { nodes: [] as NodeId[], borrowedNodes: [] as NodeId[], segments: [] as SegmentId[] };
     const cause = this.changes.cause;
     this.changes.causeNext(TILE_LOADED);
-    const roadIds: number[] = [];
+    const nodeIds: number[] = [], segmentIds: number[] = [];
     const rects: ChangeRect[] = [square];
     // The nodes: an owner's record takes the place of a borrowed copy (its incident roads kept); a borrowed one comes in only if absent.
     for (const [id, node] of piece.nodes) {
@@ -1452,7 +1467,7 @@ export class RoadDoc {
         if (here) continue;
         this.nodes.set(id, { ...node, incident: [] });
       }
-      roadIds.push(id);
+      nodeIds.push(id);
       const r = this.nodeRect(id);
       if (r) rects.push(r);
     }
@@ -1462,12 +1477,12 @@ export class RoadDoc {
       this.nodeToWrite(segment.a)!.incident.push(id);
       this.nodeToWrite(segment.b)!.incident.push(id);
       tile.segments.push(id);
-      roadIds.push(id);
+      segmentIds.push(id);
       // Its ends named too: a junction already here (a neighbour's edge node) gains a leg and is built again.
-      roadIds.push(segment.a, segment.b);
+      nodeIds.push(segment.a, segment.b);
     }
     for (const id of [...tile.nodes, ...tile.borrowedNodes]) if (this.requireNode(id).incident.length === 0) this.loose.add(id);
-    if (roadIds.length) this.roadsChanged(rects, true, { ids: [...new Set(roadIds)], detail: 'tile' });
+    if (nodeIds.length || segmentIds.length) this.roadsChanged(rects, true, { nodes: nodeIds, segments: segmentIds, detail: 'tile' });
     // The utilities: borrowed poles as the nodes.
     const utilityIds: number[] = [];
     for (const [id, pole] of piece.poleMap) {
@@ -1523,10 +1538,13 @@ export class RoadDoc {
     const square = tileRect(i, j);
     const mine = (p: { readonly x: number; readonly y: number }): boolean => OWNER.at(p) === key;
     const nodes: RoadNode[] = [], segments: RoadSegment[] = [], borrowed = new Map<NodeId, RoadNode>();
-    for (const node of this.nodes.values()) if (OWNER.node(node) === key) nodes.push(node);
-    for (const s of this.segments.values()) {
-      const a = this.nodes.get(s.a), b = this.nodes.get(s.b);
-      if (!a || !b || OWNER.segment(a, b) !== key) continue;
+    // The tile's own, by id (`tileIndex.ts`), in id order: DO NOT walk every node and road of the region for one tile.
+    const filed = this.tileIndex.roadsOf(key);
+    for (const id of [...filed.nodes].sort((p, q) => p - q)) { const node = this.nodes.get(id as NodeId); if (node) nodes.push(node); }
+    for (const id of [...filed.segments].sort((p, q) => p - q)) {
+      const s = this.segments.get(id as SegmentId);
+      const a = s && this.nodes.get(s.a), b = s && this.nodes.get(s.b);
+      if (!s || !a || !b) continue;
       segments.push(s);
       for (const end of [a, b]) if (OWNER.node(end) !== key) borrowed.set(end.id, end);
     }
@@ -1551,8 +1569,8 @@ export class RoadDoc {
       barriers: this.barriersIn(square).filter((b) => b.points.length > 0 && mine(b.points[0]!)),
       buildings: this.buildings.near(square[0], square[1], square[2], square[3]).filter(mine),
       lots: this.lotStore.in(square).filter((lot) => mine(lotCentre(lot))),
-      lotKeys: this.lotStore.keys.filter((k) => { const at = lotKeyPlace(k); return at !== null && mine(at); }),
-      paint: this.terrainPaint.filter(mine),
+      lotKeys: [...this.tileIndex.keysOf(key)],
+      paint: [...this.tileIndex.paintOf<PaintDab>(key)],
       trees: this.treesIn(square).filter(mine),
       elements: this.elementsIn(square).filter(mine),
     };
@@ -1619,7 +1637,7 @@ export class RoadDoc {
     this.tileGrown.delete(key);
     const cause = this.changes.cause;
     this.changes.causeNext(TILE_UNLOADED);
-    const roadIds: number[] = [];
+    const nodeIds: number[] = [], segmentIds: number[] = [];
     const rects: ChangeRect[] = [t.square];
     for (const s of t.segments) {
       const r = this.segmentRect(s.id);
@@ -1628,7 +1646,8 @@ export class RoadDoc {
       detach(this.nodeToWrite(s.b), s.id);
       this.segments.delete(s.id);
       // Its ends named too: a node that stays (a neighbour's edge node) loses a leg and is built again.
-      roadIds.push(s.id, s.a, s.b);
+      segmentIds.push(s.id);
+      nodeIds.push(s.a, s.b);
     }
     // A node goes once no road here ends on it and the tile it belongs to is not here (its own tile's, or one borrowed).
     for (const node of [...t.nodes, ...t.borrowedNodes]) {
@@ -1638,9 +1657,9 @@ export class RoadDoc {
       const r = this.nodeRect(node.id);
       if (r) rects.push(r);
       this.nodes.delete(node.id);
-      roadIds.push(node.id);
+      nodeIds.push(node.id);
     }
-    if (roadIds.length) this.roadsChanged(rects, true, { ids: [...new Set(roadIds)], detail: 'tile' });
+    if (nodeIds.length || segmentIds.length) this.roadsChanged(rects, true, { nodes: nodeIds, segments: segmentIds, detail: 'tile' });
     const utilityIds: number[] = [];
     for (const span of t.spans) { this.deleteSpanRecord(span.id); utilityIds.push(span.id); }
     for (const pole of [...t.poles, ...t.borrowedPoles]) {
@@ -1923,14 +1942,14 @@ export class RoadDoc {
     // Read before anything here is written: it holds while this diary stands where the copy was made.
     const buildingIds = this.buildingsMovedIn(source);
     const lotIds = this.lotsMovedIn(source);
-    const roads = moved('roads', 'traffic') ? roadDifferences(this, source) : { rects: [], ids: [], traffic: false };
+    const roads = moved('roads', 'traffic') ? roadDifferences(this, source) : { rects: [], nodes: [], segments: [], traffic: false };
     const stamps = !moved('terrain') ? { rects: [], ids: [] }
       : this.terrainRelief !== source.terrainRelief ? null : stampDifferences(this.terrainStamps, source.terrainStamps);
     const items = itemDifferences(this, source, moved);
     const changed = this.replaceContents(source, moved, buildingIds, lotIds);
     const where = (rects: readonly ChangeRect[] | undefined): readonly ChangeRect[] | null => rects && rects.length ? rects : null;
     // The traffic's plan only when it moved (`roadDifferences`): a node only raised leaves it, as `setNodeHeightOffset` does.
-    if (changed.roads || roads.rects.length) this.roadsChanged(where(roads.rects), roads.traffic, { ids: roads.ids });
+    if (changed.roads || roads.rects.length) this.roadsChanged(where(roads.rects), roads.traffic, { nodes: roads.nodes, segments: roads.segments });
     if (changed.land || (stamps !== null && stamps.rects.length)) {
       this.changes.record('terrain', where(stamps?.rects), stamps?.ids ? { ids: stamps.ids } : {});
     }
@@ -2073,7 +2092,7 @@ export class RoadDoc {
     let roadsTouched = false;
     // DO NOT write `traffic` for every road record: an undo of a node raised rebuilt the simulation's plan.
     let traffic = false;
-    const roadIds: number[] = [];
+    const nodeIds: number[] = [], segmentIds: number[] = [];
     const utilityIds: number[] = [], landscapeIds: number[] = [], barrierIds: number[] = [];
     const lotRecords: { id: number; value: Lot | undefined }[] = [];
     // Where the roads stand: each record's own rectangle, and a node's roads (its move moves them).
@@ -2108,9 +2127,9 @@ export class RoadDoc {
         case 'nodes': {
           const was = this.nodes.get(id as NodeId);
           if ((was || value !== undefined) && nodeMovesTraffic(was, value as RoadNode | undefined)) traffic = true;
-          put(this.nodes as Map<number, RoadNode>); this.loose.add(id as NodeId); roadsTouched = true; roadIds.push(id); break;
+          put(this.nodes as Map<number, RoadNode>); this.loose.add(id as NodeId); roadsTouched = true; nodeIds.push(id); break;
         }
-        case 'segments': put(this.segments as Map<number, RoadSegment>); roadsTouched = true; traffic = true; roadIds.push(id); break;
+        case 'segments': put(this.segments as Map<number, RoadSegment>); roadsTouched = true; traffic = true; segmentIds.push(id); break;
         case 'poles': if (value === undefined) this.deletePoleRecord(id as PoleId); else this.putPoleRecord(structuredClone(value) as UtilityPole); kinds.add('utilities'); utilityIds.push(id); break;
         case 'poleSpans': if (value === undefined) this.deleteSpanRecord(id as SpanId); else this.putSpanRecord(structuredClone(value) as UtilitySpan); kinds.add('utilities'); utilityIds.push(id); break;
         case 'landscape':
@@ -2151,7 +2170,7 @@ export class RoadDoc {
     roadRects();
     itemRects();
     const where = (rects: readonly ChangeRect[]): readonly ChangeRect[] | null => (rects.length ? rects : null);
-    if (roadsTouched) this.roadsChanged(where(roads), traffic, { ids: roadIds, detail: 'restored' });
+    if (roadsTouched) this.roadsChanged(where(roads), traffic, { nodes: nodeIds, segments: segmentIds, detail: 'restored' });
     // The paint style is written with the other values below, as its own kind (`setMarkingStyle`).
     // With the poles and spans put back, as their writers name them (`addPole`, `addPoleSpan`).
     if (kinds.has('utilities')) this.changes.record('utilities', where(utilities), { ids: utilityIds });
@@ -3138,9 +3157,9 @@ function nodeMovesTraffic(p: RoadNode | undefined, q: RoadNode | undefined): boo
 type MovedKinds = (...kinds: readonly DocChangeKind[]) => boolean;
 
 /** Where two documents' roads differ: every segment and node that is new, gone or changed */
-function roadDifferences(a: RoadDoc, b: RoadDoc): { rects: ChangeRect[]; ids: number[]; traffic: boolean } {
+function roadDifferences(a: RoadDoc, b: RoadDoc): { rects: ChangeRect[]; nodes: number[]; segments: number[]; traffic: boolean } {
   const rects: ChangeRect[] = [];
-  const ids: number[] = [];
+  const nodes: number[] = [], segments: number[] = [];
   // Every segment that differs moves the traffic's plan (`markSegment`); a node only by more than its height
   let traffic = false;
   const add = (rect: ChangeRect | null): void => { if (rect) rects.push(rect); };
@@ -3154,14 +3173,14 @@ function roadDifferences(a: RoadDoc, b: RoadDoc): { rects: ChangeRect[]; ids: nu
   for (const [id, p] of a.segments) {
     const q = b.segments.get(id);
     if (q && sameSegment(p, q) && !endsMoved(p)) continue;
-    ids.push(id);
+    segments.push(id);
     traffic = true;
     add(a.segmentRect(id));
     if (q) add(b.segmentRect(id));
   }
   for (const id of b.segments.keys()) {
     if (a.segments.has(id)) continue;
-    ids.push(id);
+    segments.push(id);
     traffic = true;
     add(b.segmentRect(id));
   }
@@ -3170,12 +3189,12 @@ function roadDifferences(a: RoadDoc, b: RoadDoc): { rects: ChangeRect[]; ids: nu
     const q = b.nodes.get(id);
     if (q && sameNode(p, q)) continue;
     if (nodeMovesTraffic(p, q)) traffic = true;
-    ids.push(id);
+    nodes.push(id);
     add(a.nodeRect(id));
     if (q) add(b.nodeRect(id));
   }
-  for (const id of b.nodes.keys()) if (!a.nodes.has(id)) { traffic = true; ids.push(id); add(b.nodeRect(id)); }
-  return { rects, ids, traffic };
+  for (const id of b.nodes.keys()) if (!a.nodes.has(id)) { traffic = true; nodes.push(id); add(b.nodeRect(id)); }
+  return { rects, nodes, segments, traffic };
 }
 
 /** The land's stamps added, gone or changed between two lists, by id. */

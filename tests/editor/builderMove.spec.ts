@@ -50,7 +50,7 @@ describe('the builder under a moving pointer', () => {
     expect(near.mock.calls.length - before).toBe(first);
   });
 
-  it('welds by the neighbour rings kept per record, the same as before', () => {
+  it('welds by the neighbour rings kept per record (never made again from the record), the same as before', () => {
     const { doc, net } = setup();
     const ctx = { doc, net, groundAt: () => 0 };
     const result = placeBuilding(ctx, blueprintByKey('house')!.body, { x: 0, y: m(24) }, 0, 'house');
@@ -63,5 +63,12 @@ describe('the builder under a moving pointer', () => {
     const far = { ...cloneBuilding(first), id: 998 as BuildingId };
     far.x += m(80);
     expect(weldInto(ctx, far)).toEqual([]);
+    // The rings it reads are the kept ones, not made again from the record: kept rings moved away, the same draft no longer meets it.
+    for (const { ring, box } of kept) {
+      for (const p of ring as { x: number; y: number }[]) p.x += m(500);
+      (box as { minX: number; maxX: number }).minX += m(500);
+      (box as { minX: number; maxX: number }).maxX += m(500);
+    }
+    expect(weldInto(ctx, { ...cloneBuilding(first), id: 997 as BuildingId, x: first.x + m(4) })).toEqual([]);
   });
 });
