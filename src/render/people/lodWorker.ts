@@ -1,5 +1,6 @@
 import type { JobScope } from '../../jobs/jobScope';
 import { MeshoptSimplifier } from 'meshoptimizer';
+import { ladderIndices, levelBuffers, partLevelArrays, type PartArrays, type Weld } from '../partLevelsWork';
 
 /** The coarser levels of a person, simplified off the main thread */
 export interface LodRequest {
@@ -33,12 +34,10 @@ export interface LadderRequest {
   readonly errors: readonly number[];
 }
 
-/** `index` simplified to the fewest triangles each error allows (meshoptimizer README: `ErrorAbsolute`, `Prune`), finest first. */
-export function ladderIndices(req: Omit<LadderRequest, 'id' | 'kind'>): Uint32Array[] {
-  const stride = req.weights.length;
-  return req.errors.map((error) => MeshoptSimplifier.simplifyWithAttributes(req.index, req.positions, 3, req.attributes, stride,
-    [...req.weights], null, 3, error, ['ErrorAbsolute', 'Prune'])[0]);
-}
+/** A vehicle part's levels made whole here (`partLevelsWork.ts`): welded, simplified, creased. */
+export interface PartRequest { readonly id: number; readonly kind: 'part'; readonly part: PartArrays; readonly weld: Weld }
+
+export { ladderIndices } from '../partLevelsWork';
 
 export interface LodLevel {
   readonly index: Uint32Array;
@@ -81,11 +80,16 @@ export function simplifyIndex(source: Uint32Array, positions: Float32Array, tria
 
 /** The people's levels' service of the job system (`job.worker.ts`): each request answered. */
 export function serve(self: JobScope): void {
-  self.onmessage = async (e: MessageEvent<LodRequest | IndexRequest | LadderRequest>) => {
+  self.onmessage = async (e: MessageEvent<LodRequest | IndexRequest | LadderRequest | PartRequest>) => {
     const req = e.data;
     // Every request answered, a failure too (`lodPool.ts` rejects it)
     try {
       await MeshoptSimplifier.ready;
+      if ('kind' in req && req.kind === 'part') {
+        const part = partLevelArrays(req.part, req.weld);
+        self.postMessage({ id: req.id, part }, levelBuffers(part));
+        return;
+      }
       if ('kind' in req && req.kind === 'ladder') {
         const ladder = ladderIndices(req);
         self.postMessage({ id: req.id, ladder }, ladder.map((l) => l.buffer));
