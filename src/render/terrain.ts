@@ -66,6 +66,7 @@ import type { GullyDab } from '@world/gullies';
 import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sampleCorners, shapeCorners } from './terrainShaping';
 import { type NaturalPlate, type PlateShapeAnswer, type PlateShapeAsk, askPlate } from './groundShape';
 import type { Aabb } from '@core/aabb';
+import { geometryCost } from './gpuLedger';
 import type { PlateHeights } from './sharedGround';
 import { TERRAIN_CELL, TERRAIN_HALF, TERRAIN_SEGMENTS, TERRAIN_SIZE } from './terrainGrid';
 
@@ -205,6 +206,8 @@ export interface PlateSurface extends TerrainSurface {
   waterArea(): { minX: number; maxX: number; minY: number; maxY: number } | null;
   /** Where this plate's water changed, its own (x, y): the box it had and the box it has at each rebuild. */
   readonly waterChanges: GroundChanges;
+  /** What its textures and meshes hold on the GPU, bytes: what the atlas keeps a hidden plate by (`flatAtlas.ts`). */
+  gpuBytes(): number;
 }
 
 /** A plate of the ground and where its centre stands (`flatAtlas.ts`). */
@@ -2118,6 +2121,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       return level > NO_WATER / 2 ? level : null;
     },
     waterArea: () => waterBox,
+    gpuBytes() {
+      // The corners (RGBA floats), the shore (one layer of them), the water's ground (floats), the paint array at its size; the patches' grids and the water's mesh.
+      const textures = GRID * GRID * (16 + 16 + 4) + paintRes * paintRes * 4 * PAINT_LAYERS;
+      return textures + geometryCost(lod.geometry).bytes + geometryCost(lod.rimGeometry).bytes + geometryCost(water.geometry).bytes;
+    },
     waterChanges,
     heightAt,
     naturalRenderedHeightAt,
