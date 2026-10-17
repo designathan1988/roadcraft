@@ -413,6 +413,20 @@ function smallMap(): SerializedDoc {
   };
 }
 
+describe('a tile store of a tab that only reads the world', () => {
+  it('writes nothing: a tile made is not stored, a write is refused, the maker that stores is never asked', async () => {
+    const store = memoryStore();
+    let stored = 0;
+    const tiles = new TileStore('map', storeTiles(store), async (i, j) => emptyTile(i, j),
+      async () => { stored++; return { version: 1 }; });
+    tiles.readOnly = true;
+    await tiles.load(tileKey(0, 0));
+    expect(await tiles.write(emptyTile(1, 0))).toBeNull();
+    expect(store.writes).toHaveLength(0);
+    expect(stored).toBe(0);
+  });
+});
+
 describe('a map saved before the tiles', () => {
   it("is migrated without another world's parts left in the store (its balance, zones, people)", async () => {
     const store = memoryStore();

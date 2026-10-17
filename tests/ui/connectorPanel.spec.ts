@@ -65,4 +65,19 @@ describe('the lane connector editor', () => {
     press(end(root, `l${b}:1`), ' ');
     expect(sent.length).toBe(1);
   });
+
+  it('keeps the keyboard on its lane end when the inspector is made again', () => {
+    const lanes = lanesOf(1, 2);
+    const host = { lanes: () => lanes, links: () => undefined, set: () => {} };
+    const first = document.createElement('div');
+    document.body.replaceChildren(first);
+    mountConnectorPanel(first, node, host);
+    end(first, `a${a}:1`).focus();
+    // The inspector's body written again: the panel made anew, the old one (and its focus) gone.
+    const again = document.createElement('div');
+    document.body.replaceChildren(again);
+    mountConnectorPanel(again, node, host);
+    expect(document.activeElement?.getAttribute('data-end')).toBe(`a${a}:1`);
+    expect(again.contains(document.activeElement)).toBe(true);
+  });
 });

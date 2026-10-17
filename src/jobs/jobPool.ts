@@ -12,6 +12,10 @@ const WORKER_HEAP_BYTES = 170 * 2 ** 20;
 /** Services whose one job runs for seconds: kept on workers of their own, never beside another kind's lane or a queued job (a streamed tile is 2-25 s, `cityTile.worker.ts`: the traffic's conflict pairs waited behind tile after tile and the city's clock stood still). */
 const LONG_RUNNING: readonly JobService[] = ['growth', 'cityTiles'];
 
+/** Services whose worker no queued job runs on (where another worker can take it): the save's writes are a few short awaits, and each waited for the job running on its worker - under load a tile's write took past a reload, the edit lost (conf15, conf22). */
+const KEPT_CLEAR: readonly JobService[] = ['save'];
+const keptClear = (host: Host): boolean => KEPT_CLEAR.some((service) => host.services.has(service));
+
 /** Workers set apart for the long-running services: the pool less two kept for every other kind, one at least. */
 export function longWorkers(): number {
   const n = jobWorkers();
@@ -289,6 +293,7 @@ function hostFor(service: JobService): Host | null {
   let cold: Host | null = null, idleLong: Host | null = null, warmBusy: Host | null = null, coldBusy: Host | null = null;
   for (const host of system.workers) {
     if (host.job || host.failed) continue;
+    if (keptClear(host) && system.workers.length > 1) continue;
     if (host.long && system.workers.length > 1) { if (host.laneWork === 0) idleLong ??= host; continue; }
     const warm = host.queuePorts.has(service);
     if (host.laneWork > 0) {
@@ -369,12 +374,17 @@ function place(service: JobService): Host {
   let bestScore = Infinity;
   for (const w of system.workers) {
     if (w.long !== long) continue;
-    // Lanes of a kind on different workers, then the least loaded.
-    const score = (w.services.get(service) ?? 0) * 10_000 + w.ports;
+    // Lanes of a kind on different workers, then the least loaded; the save's worker kept to the save, the save on a worker of its own where there is one.
+    // The save's lanes together on its worker (never a worker each: the pool's workers are the jobs').
+    const clear = KEPT_CLEAR.includes(service);
+    const apart = clear ? (w.services.size > (w.services.has(service) ? 1 : 0) ? 1 : 0) : keptClear(w) ? 1 : 0;
+    const score = apart * 1_000_000 + (clear ? (w.services.has(service) ? 0 : 1) : (w.services.get(service) ?? 0) * 10_000) + w.ports;
     if (score < bestScore) { bestScore = score; best = w; }
   }
   // A worker with nothing on it scores 0: one is made for the lane while its side has room, as if every worker were there.
-  if (best === null || bestScore > 0) best = grow(long) ?? best;
+  // A lane of the save goes to the save's own worker once there is one, not to a new worker.
+  const own = best !== null && KEPT_CLEAR.includes(service) && best.services.has(service) && best.services.size === 1;
+  if (best === null || (bestScore > 0 && !own)) best = grow(long) ?? best;
   // A pool of one worker: the two sides share it.
   if (!best) best = system.workers.reduce<Host | null>((a, w) => (a === null || w.ports < a.ports ? w : a), null);
   if (!best) throw new Error('no job worker could be made');

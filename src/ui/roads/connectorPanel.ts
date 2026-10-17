@@ -15,38 +15,45 @@ export interface ConnectorPanelHost {
 
 interface Picked { readonly segment: SegmentId; readonly lane: number }
 
-let open: { node: NodeId; host: ConnectorPanelHost; root: HTMLElement; drawn: string } | null = null;
-let picked: { node: NodeId; lane: Picked } | null = null;
+/** The panel open now, the lane picked, and the lane end the keyboard is on (kept past a rebuild of the inspector: its panel made again, the old one's focus gone with it; let go when the player goes elsewhere). */
+const panel: {
+  open: { node: NodeId; host: ConnectorPanelHost; root: HTMLElement; drawn: string } | null;
+  picked: { node: NodeId; lane: Picked } | null;
+  keyboard: { node: NodeId; end: string } | null;
+} = { open: null, picked: null, keyboard: null };
 
 export function mountConnectorPanel(container: HTMLElement, node: NodeId, host: ConnectorPanelHost): void {
   const root = document.createElement('section');
   root.className = 'rp-summary rp-connectors';
   container.append(root);
-  open = { node, host, root, drawn: '' };
-  if (picked?.node !== node) picked = null;
+  panel.open = { node, host, root, drawn: '' };
+  if (panel.picked?.node !== node) panel.picked = null;
   draw();
 }
 
 /** Redraws the open panel when the lane graph or the node's links changed. */
 export function refreshConnectorPanel(): void {
-  if (open && !open.root.isConnected) { open = null; return; }
+  if (panel.open && !panel.open.root.isConnected) { panel.open = null; return; }
   draw();
 }
 
 function draw(): void {
-  if (!open) return;
-  const { node, host, root } = open;
+  if (!panel.open) return;
+  const { node, host, root } = panel.open;
   const lanes = host.lanes();
   const links = host.links();
   // A lane picked before an undo or a rebuild that took it away is no longer picked.
-  if (picked && (picked.node !== node || !lanes?.ends.some((e) => e.arriving && e.segment === picked!.lane.segment && e.lane === picked!.lane.lane))) picked = null;
+  if (panel.picked && (panel.picked.node !== node || !lanes?.ends.some((e) => e.arriving && e.segment === panel.picked!.lane.segment && e.lane === panel.picked!.lane.lane))) panel.picked = null;
   // In screen terms (y down): through the camera when the host gives it, else north up.
   const view = (p: { x: number; y: number }): { x: number; y: number } => host.project ? host.project(p.x, p.y) : { x: p.x, y: -p.y };
-  const stamp = `${lanes?.revision ?? -1}|${lanes ? lanes.built.map(linkKey).join(',') : '-'}|${links?.map(linkKey).join(',') ?? ''}|${picked ? `${picked.lane.segment}:${picked.lane.lane}` : ''}|${lanes ? turnOf(view, lanes) : ''}`;
-  if (stamp === open.drawn) return;
-  open.drawn = stamp;
-  // The end the keyboard was on keeps the focus through the redraw.
-  const focused = root.contains(document.activeElement) ? document.activeElement?.getAttribute('data-end') ?? null : null;
+  const stamp = `${lanes?.revision ?? -1}|${lanes ? lanes.built.map(linkKey).join(',') : '-'}|${links?.map(linkKey).join(',') ?? ''}|${panel.picked ? `${panel.picked.lane.segment}:${panel.picked.lane.lane}` : ''}|${lanes ? turnOf(view, lanes) : ''}`;
+  if (stamp === panel.open.drawn) return;
+  panel.open.drawn = stamp;
+  // The end the keyboard was on keeps the focus through the redraw, and through the inspector made again (the focus then on nothing).
+  const active = document.activeElement;
+  const lost = !active || active === document.body;
+  const focused = root.contains(active) ? active?.getAttribute('data-end') ?? null
+    : lost && panel.keyboard?.node === node ? panel.keyboard.end : null;
   root.replaceChildren();
   const head = document.createElement('div');
   head.className = 'rp-summary-head';
@@ -89,7 +96,7 @@ function draw(): void {
     const sx = x - (e.dx / len) * stub * (arriving ? 1 : -1), sy = y - (e.dy / len) * stub * (arriving ? 1 : -1);
     parts.push(`<line x1="${sx.toFixed(1)}" y1="${sy.toFixed(1)}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="cn-stub"/>`);
   }
-  const lit = picked && picked.node === node ? picked.lane : null;
+  const lit = panel.picked && panel.picked.node === node ? panel.picked.lane : null;
   for (const link of lanes.built) {
     const a = ends.get(keyOf(link.from, link.fromLane, true)), b = ends.get(keyOf(link.to, link.toLane, false));
     if (!a || !b) continue;
@@ -110,10 +117,10 @@ function draw(): void {
   art.className = 'rp-summary-art cn-art';
   art.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t('connectors.title')}">${parts.join('')}</svg>`;
   const press = (end: string): void => {
-    if (!open) return;
+    if (!panel.open) return;
     const [segment, lane] = end.slice(1).split(':').map(Number) as [number, number];
     if (end.startsWith('a')) {
-      picked = lit && lit.segment === segment && lit.lane === lane ? null : { node, lane: { segment: segment as SegmentId, lane } };
+      panel.picked = lit && lit.segment === segment && lit.lane === lane ? null : { node, lane: { segment: segment as SegmentId, lane } };
       draw();
       return;
     }
@@ -127,6 +134,13 @@ function draw(): void {
     if (end) press(end);
   });
   // The ends are buttons: Enter and Space press them as a click does.
+  art.addEventListener('focusin', (event) => {
+    const end = (event.target as Element).closest('[data-end]')?.getAttribute('data-end');
+    if (end) panel.keyboard = { node, end };
+  });
+  // Focus taken to another control, or a press outside the plan: the keyboard is no longer on it.
+  art.addEventListener('focusout', (event) => { if (event.relatedTarget instanceof Element && !art.contains(event.relatedTarget)) panel.keyboard = null; });
+  art.addEventListener('pointerdown', () => { panel.keyboard = null; });
   art.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const end = (event.target as Element).closest('[data-end]')?.getAttribute('data-end');
@@ -147,7 +161,7 @@ function draw(): void {
     reset.className = 'rp-btn';
     reset.dataset['action'] = 'resetConnectors';
     reset.textContent = t('connectors.reset');
-    reset.onclick = () => { picked = null; host.set(undefined); };
+    reset.onclick = () => { panel.picked = null; host.set(undefined); };
     root.append(reset);
   }
 }

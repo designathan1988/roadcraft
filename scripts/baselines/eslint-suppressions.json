@@ -668,9 +668,6 @@
   "src/ui/roads/connectorPanel.ts": {
     "roadcraft/no-global-revision": {
       "count": 1
-    },
-    "roadcraft/no-module-state": {
-      "count": 2
     }
   },
   "src/ui/roads/cutWalls.ts": {
