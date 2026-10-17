@@ -96,8 +96,8 @@ export interface LorryWay {
 export class Yard {
   readonly gates: YardGate[] = [];
   readonly docks: YardDock[] = [];
-  readonly solid: Solid;
-  readonly field: Clearance;
+  /** The grid and its clearance, while a dock is still to be planned: DO NOT keep them for the yard's life (a works' grid is some 100 000 cells, ~0.5 MB with its clearance, a yard of the map each). */
+  private grids: { readonly solid: Solid; readonly field: Clearance } | null;
   readonly body: Steered;
   /** The lot's ring, local. */
   readonly ring: { x: number; y: number }[];
@@ -119,8 +119,7 @@ export class Yard {
     this.ring = made.ring;
     const exits = made.exits;
     const solid = made.solid;
-    this.solid = solid;
-    this.field = made.field;
+    this.grids = { solid, field: made.field };
 
     for (const exit of exits) {
       if (!exit.outer || exit.lane.entryAt === undefined) continue;
@@ -149,7 +148,7 @@ export class Yard {
       let pre: AxlePose | null = null;
       for (let d = PRE_DOCK; d >= m(0.25); d -= m(0.25)) {
         const at = { x: docked.x + ox * d, y: docked.y + oy * d, angle };
-        if (bodyClear(this.field, discs, at.x, at.y, at.angle) && straightClear(solid, body, at, docked)) { pre = at; break; }
+        if (bodyClear(made.field, discs, at.x, at.y, at.angle) && straightClear(solid, body, at, docked)) { pre = at; break; }
       }
       const order = this.gates.map((_, g) => g).sort((p, q) => gateDistance(this.gates[p]!, open) - gateDistance(this.gates[q]!, open));
       this.docks.push({
@@ -160,8 +159,25 @@ export class Yard {
     }
   }
 
-  /** Plans on, up to `budget` poses expanded; how many it spent. */
+  /** The yard's grid, while it is kept (`plan` lets it go once every dock is planned). */
+  get solid(): Solid {
+    if (!this.grids) throw new Error("[lorries] a yard's grid read after every dock was planned");
+    return this.grids.solid;
+  }
+
+  get field(): Clearance {
+    if (!this.grids) throw new Error("[lorries] a yard's clearance read after every dock was planned");
+    return this.grids.field;
+  }
+
+  /** Plans on, up to `budget` poses expanded; how many it spent. Every dock planned, the grids are let go (the ways keep only poses). */
   plan(dockIndex: number, budget: number): number {
+    const spent = this.planDock(dockIndex, budget);
+    if (this.grids && this.docks.every((_, k) => this.planned(k))) this.grids = null;
+    return spent;
+  }
+
+  private planDock(dockIndex: number, budget: number): number {
     const dock = this.docks[dockIndex]!;
     let spent = 0;
     for (const g of dock.order) {
