@@ -435,6 +435,8 @@ export class TileStore {
   private readonly bakes = new Map<number, NetworkBake>();
   /** The calls under way on each tile (and on the world's values): a tile's calls run one after another, other tiles' alongside. */
   private readonly chains = new Map<number | 'world', Promise<unknown>>();
+  /** Writes of each tile posted and not begun: a bake or the bays of the tile whose turn comes before them gives up (`writeWaits`). */
+  private readonly writesWaiting = new Map<number, number>();
   /** A migration under way: every call waits for it. */
   private gate: Promise<unknown> = Promise.resolve();
 
@@ -445,6 +447,8 @@ export class TileStore {
     private readonly generate: (i: number, j: number) => Promise<TileRecords>,
     /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`, its records handed back prepared with `records`; with `ifMissing`, only when the store has none (else the stored one's version, or its records prepared); none where the store is not the worker's to write (the desktop's). */
     private readonly makeStored?: (i: number, j: number, after: number, records: boolean, ifMissing: boolean, baysOnly?: boolean, sectionsOnly?: boolean) => Promise<MadeTile>,
+    /** A tile's bake and bays asked of the maker and not begun, dropped (`TileGenerator.dropQueued`): a write of it does not wait for them on its chain. */
+    private readonly dropQueued?: (key: number) => void,
   ) {}
 
   /** Another tab holds this world (`main.ts` holdWorld): this one reads it and writes nothing to the store (no tile made is stored, no old tile written again in parts), its tiles made here only to be drawn. */
@@ -477,9 +481,15 @@ export class TileStore {
   addBays(key: number): Promise<void> {
     if (!this.makeStored) return Promise.resolve();
     return this.chained(key, async () => {
+      if (this.writeWaits(key)) return;
       const { i, j } = tileOfKey(key);
       await this.makeStored!(i, j, this.versions.get(key) ?? 0, false, false, true);
     });
+  }
+
+  /** Whether a write of the tile waits behind the call whose turn it is: the bake and the bays give up then (the write asks its own bake). */
+  private writeWaits(key: number): boolean {
+    return (this.writesWaiting.get(key) ?? 0) > 0;
   }
 
   /** The stored tile, or null when the store has none (a stored tile unreadable rejects). */
@@ -491,7 +501,13 @@ export class TileStore {
   /** DO NOT bake a tile's sections in the save worker before its records are stored: the bake (the network's junctions, the grown buildings made again) held the worker's event loop for seconds, every write's commit and the world's values' with it, and a reload meanwhile lost the edit and the balance (conf28). The records stored first, alone; the maker bakes the sections after, on the tile's chain (`bakeStoredTile`). */
   write(records: TileRecords): Promise<number | null> {
     const maker = this.readOnly ? undefined : this.makeStored;
+    // DO NOT queue an edit behind the tile's bake or bays not begun: dropped, its own bake asked after it.
+    this.dropQueued?.(records.key);
+    // Those not asked of the maker yet, their turn still to come on the chain, give up when it does (`writeWaits`).
+    this.writesWaiting.set(records.key, (this.writesWaiting.get(records.key) ?? 0) + 1);
     const written = this.chained(records.key, async () => {
+      const left = (this.writesWaiting.get(records.key) ?? 1) - 1;
+      if (left > 0) this.writesWaiting.set(records.key, left); else this.writesWaiting.delete(records.key);
       const stamped = this.stamped(records);
       return (await this.put(tileWrite(stamped), maker !== undefined)) ? stamped.version : null;
     });
@@ -500,7 +516,7 @@ export class TileStore {
       // A failed bake leaves the tile stored without its sections: its readers derive them, the next look at its version bakes them (`upgraded`).
       void this.chained(records.key, async () => {
         const version = await written;
-        if (version !== null) await maker(i, j, version, false, false, false, true);
+        if (version !== null && !this.writeWaits(records.key)) await maker(i, j, version, false, false, false, true);
       }).catch((error: unknown) => console.warn(`[save] tile ${records.key}'s sections were not baked`, error));
     }
     return written;
@@ -555,6 +571,7 @@ export class TileStore {
 
   /** A stored tile's lists emptied (a "whole map" clear), in its order with the tile's other calls: the version written, null when there was nothing to clear or no tile is stored. */
   clearLists(key: number, parts: readonly ClearablePart[]): Promise<number | null> {
+    this.dropQueued?.(key);
     return this.chained(key, async () => {
       const maker = this.readOnly ? undefined : this.makeStored;
       const got = (await this.backend.run({ op: 'clearLists', map: this.map, key, parts, after: this.versions.get(key) ?? 0, ...(maker ? { unbaked: true } : {}) })) as { version: number; cleared: boolean } | null;

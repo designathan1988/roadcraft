@@ -26,7 +26,7 @@ function lookingFirst(store: PartStore, make: (i: number, j: number, after: numb
 import { generateBody } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
-import { TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
+import { TILE, TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 
@@ -124,6 +124,8 @@ describe('a tile stored', () => {
     };
     const tiles = new TileStore('map', storeTiles(store, bake), never, maker);
     expect(await tiles.write(tile)).toBe(1);
+    // Its bake begun before the next edit comes (one not begun gives up for it, `writeWaits`).
+    await new Promise((r) => setTimeout(r, 0));
     // The player lays a road: a second node, the tile written again.
     const edited = { ...tile, version: 1, nodes: [...tile.nodes, node(2, m(1_200), m(5))] };
     expect(await tiles.write(edited)).toBe(2);
@@ -426,6 +428,30 @@ describe('a tile stored', () => {
     expect(JSON.parse(JSON.stringify(back.buildings))).toEqual(JSON.parse(JSON.stringify(edited.buildings)));
   });
 
+  it("an edit of a tile whose bays and bake wait in the maker's queue is written at once, not behind them: a reload then reads it (conf73, conf77)", async () => {
+    const store = memoryStore();
+    const key = tileKey(3, 1), base = tileIdBase(key);
+    const tile = { ...emptyTile(3, 1, { buildings: [house(base + 1, 3 * TILE + m(100)), house(base + 2, 3 * TILE + m(400))] }), version: 1 };
+    await writeTile(store, 'map', tile, () => ({ mark: { json: 1 } }));
+    // The maker's queue as `TileGenerator` keeps it: the bays and a bake not begun (its lanes busy making tiles), dropped by `dropQueued`.
+    const queued: { key: number; done: (made: MadeTile) => void }[] = [];
+    const looking = lookingFirst(store, async () => { throw new Error('nothing is made here'); });
+    const maker = (i: number, j: number, after: number, text: boolean, ifMissing: boolean, baysOnly?: boolean, sectionsOnly?: boolean): Promise<MadeTile> =>
+      baysOnly || sectionsOnly ? new Promise((done) => queued.push({ key: tileKey(i, j), done })) : looking(i, j, after, text, ifMissing);
+    const dropQueued = (k: number): void => { for (const q of queued.splice(0)) if (q.key === k) q.done({ version: null, existed: true }); else queued.push(q); };
+    const tiles = new TileStore('map', storeTiles(store), never, maker, dropQueued);
+    const loaded = await tiles.load(key);
+    // Its bays asked (the map made, the lanes busy): on its chain, not begun.
+    void tiles.addBays(key);
+    // The road next door demolishes one of its buildings: the tile written.
+    const edited = { ...loaded, buildings: [loaded.buildings[1]!] };
+    const outcome = await Promise.race([tiles.write(edited), new Promise((done) => setTimeout(() => done('held behind the queue'), 200))]);
+    expect(outcome).toBe(2);
+    // A reload right after: the building gone for good.
+    const back = await new TileStore('map', storeTiles(store), never).read(key);
+    expect(back!.buildings.map((b) => (b as Building).id)).toEqual([base + 2]);
+  });
+
   it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {
     const store = memoryStore();
     const tiles = new TileStore('map', storeTiles(store), never);
@@ -665,6 +691,8 @@ describe("a stored tile's bays added after the map is made (`TileStore.addBays`)
     const store = new TileStore('map', backend as never, () => Promise.reject(new Error('not made here')), maker);
     const key = tileKey(2, 3);
     const bays = store.addBays(key);
+    // The bays begun before the write comes (one asked and not begun is dropped for it: "conf77" below).
+    await new Promise((r) => setTimeout(r, 0));
     const base = tileIdBase(key);
     const written = store.write({
       key, version: 1, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [], lotKeys: [],

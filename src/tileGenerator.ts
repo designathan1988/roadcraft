@@ -55,6 +55,18 @@ export class TileGenerator {
     });
   }
 
+  /** A tile's sections and bays asked and not begun (`sectionsOnly`, `baysOnly`) answered at once, nothing done: a write of the tile comes, which they would hold on its chain (`TileStore.write`) - DO NOT let them: a tile next door the road's demolition reached waited behind its bays and its bake, and a reload lost it (conf73, conf77). Its write asks its own sections; its bays come when it is put in again. */
+  dropQueued(key: number): void {
+    for (const queue of [this.queue, this.lowQueue]) {
+      for (let k = queue.length - 1; k >= 0; k--) {
+        const w = queue[k]!;
+        if (w.key !== key || !(w.store?.sectionsOnly || w.store?.baysOnly)) continue;
+        queue.splice(k, 1);
+        w.done({ version: null, existed: true });
+      }
+    }
+  }
+
   /** DO NOT leave the other kinds' workers idle while the whole map is made (the workers' profile, 2026-10-16: the two of them 14 s and 6 s busy of 90, the seven tile workers 96%): while `on`, a lane of tiles on each of them too; off, those lanes are let go as their tile ends, the workers theirs again. */
   setAside(on: boolean): void {
     if (this.aside === on) return;
