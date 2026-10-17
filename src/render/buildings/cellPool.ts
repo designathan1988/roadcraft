@@ -25,6 +25,15 @@ const PAVING_REACH = m(64);
 const TIER: Readonly<Record<JobKind, number>> = { cell: 0, facade: 1, mass: 2, massTile: 2.5, massPlate: 2.75, summary: 3 };
 /** A band: farther than any cell of any map is from the eye (the far levels' jobs take a band of their own, `farLevels.ts`). */
 export const TIER_SPAN = m(10_000_000);
+/** The bands the detail is put back by while the town is unseen (`coarseFirst`): past the masses (2-2.75) and the far levels (2.9). */
+const DETAIL_LATER = 4;
+/** A cell job's place in the queue (lower first): a building cut open before anything, else its kind's band (`TIER`, the detail put back past the coarse levels while the town is unseen, `coarseFirst`), nearest the eye first within it. */
+export function cellPriority(kind: JobKind, away: number, cutOpen: boolean, coarseFirst: boolean): number {
+  if (cutOpen) return -TIER_SPAN;
+  const later = coarseFirst && (kind === 'cell' || kind === 'facade') ? DETAIL_LATER : 0;
+  return (TIER[kind] + later) * TIER_SPAN + away;
+}
+
 /** Times a job is asked again over wider roads (`wider`) before the page puts it together. */
 const MOST_WIDER = 2;
 
@@ -67,6 +76,8 @@ export class CellPool {
   private readonly byKey = new Map<string, Asked>();
   private nextId = 1;
   private warned = false;
+  /** DO NOT give the detail the queue first while the town is behind its curtain: the opening shows the masses and the far levels, the detail lands after (`renderer.ts` reveal), and the cells' detail took the queue's two workers while the coarse levels the curtain waits for stood behind it (2026-10-16, 90 s at the curtain's limit, the workers' profile). Set by the layer as it is hidden or shown. */
+  coarseFirst = false;
 
   /** `workers`: false does every job on the page (tests). `tone`: each finish's colour from afar, for the masses (`kit.ts`). */
   /** `text`: where an entry's record is read (`recordTable.ts`), taken when the job is sent. */
@@ -84,7 +95,7 @@ export class CellPool {
     const at = squareOf(cell);
     const away = at ? focusDistance((at.i0 + at.n / 2) * BATCH_CELL, (at.j0 + at.n / 2) * BATCH_CELL) : 0;
     // A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
-    const priority = entries.some((e) => e.key.includes('|')) ? -TIER_SPAN : TIER[kind] * TIER_SPAN + away;
+    const priority = cellPriority(kind, away, entries.some((e) => e.key.includes('|')), this.coarseFirst);
     const asked: Asked = {
       id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority,
       rect: env.pavedAt ? pavingRect(cell) : null, widened: 0, ticket: null,

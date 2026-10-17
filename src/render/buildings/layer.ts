@@ -517,7 +517,13 @@ export function createBuildingLayer(): BuildingLayer {
     },
     far: farTiles,
     farEnv,
-    hidden: false,
+    // Behind the curtain the coarse levels go first in the queue (`CellPool.coarseFirst`): they are what the opening shows.
+    get hidden() {
+      return pool.coarseFirst;
+    },
+    set hidden(on: boolean) {
+      pool.coarseFirst = on;
+    },
     kit,
     chunkOf(b) {
       if (!lastGround) return null;
