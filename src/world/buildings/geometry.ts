@@ -624,7 +624,8 @@ function workOutLayout(b: Building, onlyLevel?: number): LocalBay[] {
     // DO NOT work a side's frame, bays and start out again each storey: they are the block's.
     const sides = volumeSides(v).map((side) => {
       const frame = edgeFrame(v, side);
-      return { side, nx: frame.nx, ny: frame.ny, count: baysOn(b, v, side), width: bayWidth(b, v, side), s: sideStart(v, side) };
+      const count = baysOn(b, v, side);
+      return { side, nx: frame.nx, ny: frame.ny, count, width: bayWidth(b, v, side), s: sideStart(v, side), pushes: reliefPushes(v, side, count) };
     });
     const lift = volumeLift(v);
     for (let k = 0; k < v.storeys.length; k++) {
@@ -634,7 +635,7 @@ function workOutLayout(b: Building, onlyLevel?: number): LocalBay[] {
       if (onlyLevel !== undefined && level !== onlyLevel) continue;
       const z = lift + (elevations[level] ?? levelElevation(b, level));
       const height = levelHeight(b, level);
-      for (const { side, nx, ny, count, width, s } of sides) {
+      for (const { side, nx, ny, count, width, s, pushes } of sides) {
         const spans = coveredSpans(b, v, side, level);
         // Against a block at another floor for part of the storey: plain wall there.
         const partly = lifted ? partlyCoveredSpans(b, v, side, level) : NO_SPANS;
@@ -661,7 +662,7 @@ function workOutLayout(b: Building, onlyLevel?: number): LocalBay[] {
         for (let index = 0; index < count; index++) {
           const a0 = index * width;
           const a1 = a0 + width;
-          const push = reliefAt(v, side, index, k)?.depth ?? 0;
+          const push = pushes ? pushes[k * count + index]! : 0;
           let partlyHere = false;
           for (const [s0, s1] of partly) if (s1 > a0 + EPS && s0 < a1 - EPS) { partlyHere = true; break; }
           // Nothing against the side: the bay whole, no list made.
@@ -673,6 +674,21 @@ function workOutLayout(b: Building, onlyLevel?: number): LocalBay[] {
         }
       }
     }
+  }
+  return out;
+}
+
+/** DO NOT ask `reliefAt` for each bay: a side's every bay and storey has its relief's depth written once, the reliefs in their order so the last listed wins (as `reliefAt` finds it); null with none on the side. */
+function reliefPushes(v: Volume, side: FaceId, count: number): Float64Array | null {
+  const list = v.reliefs;
+  if (!list?.length) return null;
+  let out: Float64Array | null = null;
+  const storeys = v.storeys.length;
+  for (const r of list) {
+    if (r.side !== side) continue;
+    out ??= new Float64Array(storeys * count);
+    const k1 = Math.min(Math.floor(r.storey1), storeys - 1), i1 = Math.min(Math.floor(r.bay1), count - 1);
+    for (let k = Math.max(Math.ceil(r.storey0), 0); k <= k1; k++) for (let i = Math.max(Math.ceil(r.bay0), 0); i <= i1; i++) out[k * count + i] = r.depth ?? 0;
   }
   return out;
 }
