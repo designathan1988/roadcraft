@@ -26,6 +26,9 @@ const DERIVED = [
   { entry: 'src/render/farRoadTiles.ts', also: [] as string[], define: '__FAR_ROADS_HASH__' },
   // The near products baked per tile (`render/nearBakers.ts`, kept by `nearTiles.ts`): poles, furniture, signs, barriers, trees, structures, gardens.
   { entry: 'src/render/nearBakers.ts', also: [] as string[], define: '__NEAR_TILES_HASH__' },
+  // A plate's ecosystem and a far plate's woods (`world/ecology.ts`, `render/farWoods.ts`, kept by `ecologyKept.ts`).
+  { entry: 'src/world/ecology.ts', also: [] as string[], define: '__ECOLOGY_HASH__' },
+  { entry: 'src/render/farWoods.ts', also: [] as string[], define: '__FAR_WOODS_HASH__' },
 ] as const;
 /** The path aliases of `tsconfig.json`. */
 const ALIASES: readonly [string, string][] = [
