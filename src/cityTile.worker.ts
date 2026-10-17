@@ -8,8 +8,9 @@ import { type PreparedTile, addTileSection, bakeStoredTile, prepareTile, readTil
 import { withGrownBuildings } from '@world/growth/grownRows';
 import { BAYS_SECTION } from '@sim/tileBays';
 import { NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, tileBaysSection, tileNetworkSection } from '@sim/tileSections';
-import { type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
-import { keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTiles';
+import { type FarCache, type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
+import { type FarRoadCache, keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTiles';
+import { WriteBudget } from '@core/derivedCache';
 import type { SharedGroundData } from './render/sharedGround';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
@@ -37,11 +38,17 @@ export interface FarTileBake extends FarGroundEnv {
 }
 
 /** DO NOT let a tile's far levels be baked again by another worker from the store (two hundred jobs of seconds each on the queue's workers, the opening's 198 s, 2026-10-16): baked here from the tile just made, under the version just written; a failure is said and left to the page's jobs. */
-async function keepFar(records: TileRecords, full: TileRecords, version: number, far: FarTileBake): Promise<void> {
+/** Bytes of far levels this worker may have handed IndexedDB and not seen committed: a tile's far writes past it wait for the earlier ones (`WriteBudget`). */
+const FAR_WRITES_MOST = 48 * 2 ** 20;
+
+/** Where this worker keeps the far levels it bakes, queued under its write budget. */
+interface FarCaches { readonly far: FarCache; readonly roads: FarRoadCache }
+
+async function keepFar(records: TileRecords, full: TileRecords, version: number, far: FarTileBake, caches: FarCaches): Promise<void> {
   const bakes = await Promise.allSettled([
     // Queued, not waited for (`keepDerivedQueued`): the page's far job for the tile asks after this answer, and its read comes after these writes.
-    keepTileFar(full, version, far, far.massPrefix, queuedFarCache),
-    keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix, queuedRoadCache),
+    keepTileFar(full, version, far, far.massPrefix, caches.far),
+    keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix, caches.roads),
   ]);
   for (const bake of bakes) if (bake.status === 'rejected') console.warn(`[city tile] tile ${records.key}'s far level not kept; the far jobs bake it`, bake.reason);
 }
@@ -105,6 +112,9 @@ let parts: ReturnType<typeof workerParts> | null = null;
 const stored = (): ReturnType<typeof workerParts> => (parts ??= workerParts());
 
 export function serve(self: JobScope): void {
+  // The far levels' writes of this worker held under one budget (the V8 cage the page and its workers share).
+  const budget = new WriteBudget(FAR_WRITES_MOST);
+  const caches: FarCaches = { far: queuedFarCache(budget), roads: queuedRoadCache(budget) };
   self.onmessage = (event: MessageEvent<StreamTileAsk>) => {
     const { store, i, j } = event.data;
     if (store?.sectionsOnly) {
@@ -121,16 +131,16 @@ export function serve(self: JobScope): void {
     }
     // DO NOT make a tile the store has: looked up here, where the store is open, not through the save worker's lanes.
     if (store?.ifMissing) {
-      storedAnswer(store, i, j).then((answer) => (answer ? self.postMessage(answer) : make(self, event.data)),
+      storedAnswer(store, i, j).then((answer) => (answer ? self.postMessage(answer) : make(self, event.data, caches)),
         (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} could not be looked up: ${String(error)}` } satisfies StreamTileAnswer));
       return;
     }
-    make(self, event.data);
+    make(self, event.data, caches);
   };
 }
 
 /** The tile made (and stored, with its far levels, when asked). */
-function make(self: JobScope, ask: StreamTileAsk): void {
+function make(self: JobScope, ask: StreamTileAsk, caches: FarCaches): void {
   const { options, i, j, store } = ask;
   try {
     // Stored with its grown buildings as rows (`world/growth/rows.ts`); baked and handed to the page whole, as just grown (never made again here).
@@ -142,7 +152,7 @@ function make(self: JobScope, ask: StreamTileAsk): void {
     void writeTile(stored(), store.map, records, (r) => bakeTileSections(r, store.records), full).then(
       async ({ ok }) => {
         // Its far levels kept before the page hears of it: the far tree's job for it then finds them (`farTiles.ts` `runFarJob` level 0).
-        if (ok && store.far) await keepFar(records, full, version, store.far);
+        if (ok && store.far) await keepFar(records, full, version, store.far, caches);
         // The records handed back prepared (migrated and interned here, `prepareTile`: the page only files them); kept for the page even when the write failed.
         const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full, true, records.grown) } : {}) };
         self.postMessage(answer);

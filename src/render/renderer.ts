@@ -65,6 +65,7 @@ import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, dropSurfaceBlocks, noRoadSurfaces, passLook, roadSurfaceSteps, surfaceLook, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { SurfaceInputs } from './roadSurfaceInputs';
 import { forgetDerivedKeys, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
+import { DerivedWriterLane } from './derivedWriterLane';
 import { disposeMesh } from './mesh/surfaceMesh';
 import { RoadTilePool } from './roadTilePool';
 import { GroundShapePool } from './groundShapePool';
@@ -687,6 +688,8 @@ export function createSceneRenderer(
   /** Where the road tiles are kept for a later session, off the page (`derivedWriter.worker.ts`); none in tests. */
   const tileWriter = tilesPrefix && typeof Worker !== 'undefined'
     ? jobPort('derivedWriter') : null;
+  /** Its writes under a ceiling of bytes not yet committed: past it a tile is not kept, made again next time (`DerivedWriterLane`). */
+  const tileWrites = tileWriter ? new DerivedWriterLane(tileWriter, 48 * 2 ** 20) : null;
   /** Where the camera looks and how far the roads are at full detail round it (`mesh/roadResidency.ts`). */
   const roadFocus = { x: initialCentre.x, y: initialCentre.y, reach: 700, frames: 0 };
   /** THE GPU'S TIME GOVERNS THE ERROR SCALE'S FLOOR: every `GOVERN_FRAMES` frames, the window's p95 against the view's budget (`VIEW_BUDGETS` gpuMs) asks the floor a step up or down (`BuildingLayer.pressTime`), a step up kept only if it paid (`TimeGovernor`). */
@@ -729,15 +732,16 @@ export function createSceneRenderer(
     // DO NOT hold the built tiles for idle writes
     keep: (key, bundle) => {
       if (!tilesPrefix || storedKeys.has(key)) return;
-      noteStored(key);
       // The tile's arrays handed to the writer, not copied: nothing reads them once its blocks are merged (`SurfaceReuse.keep`).
-      if (tileWriter) {
+      if (tileWrites) {
         const buffers: ArrayBuffer[] = [];
         for (const tile of bundle.values()) {
           for (const a of [tile.positions, tile.normals, tile.uvs, tile.colors, tile.sections, tile.indices]) buffers.push(a.buffer as ArrayBuffer);
         }
-        tileWriter.postMessage({ prefix: tilesPrefix, entries: [[key, bundle]] }, buffers);
+        // DO NOT post past the ceiling: not kept, made again next time.
+        if (!tileWrites.post(tilesPrefix, [[key, bundle]], buffers, buffers.reduce((n, b) => n + b.byteLength, 0))) return;
       } else writeDerivedMany(tilesPrefix, new Map([[key, bundle]]));
+      noteStored(key);
     },
   };
   if (tilesPrefix && ROAD_TILES_HASH) {

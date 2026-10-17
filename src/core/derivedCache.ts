@@ -151,9 +151,62 @@ export async function keepDerivedDurably(key: string, value: unknown): Promise<{
   }
 }
 
-/** Keeps a value under `key`, resolved once the write is queued, not committed: a read asked after it, from any thread, sees it (IndexedDB starts a read-only transaction only once the read/write transactions created before it on its store are finished, W3C IndexedDB "transaction scheduling"). DO NOT wait for the commit where nothing needs it: a tile's maker held its lane 5-8 s a tile for it (2026-10-16, the workers' profile). */
-export function keepDerivedQueued(key: string, value: unknown): Promise<void> {
-  return keepDerived(key, value);
+/** Keeps a value under `key`, resolved once the write is queued, not committed: a read asked after it, from any thread, sees it (IndexedDB starts a read-only transaction only once the read/write transactions created before it on its store are finished, W3C IndexedDB "transaction scheduling"). DO NOT wait for the commit where nothing needs it: a tile's maker held its lane 5-8 s a tile for it (2026-10-16, the workers' profile).
+ *  DO NOT queue without bound: the bytes of the writes not committed yet are held under `budget` (`WriteBudget`), a write past it waits for the earlier ones to commit - the V8 cage the page and its workers share. */
+export async function keepDerivedQueued(key: string, value: unknown, budget: WriteBudget): Promise<void> {
+  const release = await budget.take(bytesOf(value));
+  const { committed } = await keepDerivedDurably(key, value);
+  void committed.then(release);
+}
+
+/** THE BYTES OF WRITES A THREAD HAS HANDED INDEXEDDB AND NOT SEEN COMMITTED, held under `most` (the V8 cage, the defect that kills the runs): one per thread that writes the derived cache, made where its service is served (`cityTile.worker.ts`, `renderer.ts`). */
+export class WriteBudget {
+  private inFlight = 0;
+  private readonly waiting: (() => void)[] = [];
+  constructor(readonly most: number) {}
+
+  /** Bytes in flight now. */
+  get bytes(): number {
+    return this.inFlight;
+  }
+
+  /** Room for `bytes`, once the writes in flight leave it (at once for a write alone, whatever its size): the release to call on its commit. */
+  async take(bytes: number): Promise<() => void> {
+    while (this.inFlight > 0 && this.inFlight + bytes > this.most) await new Promise<void>((go) => this.waiting.push(go));
+    return this.taken(bytes);
+  }
+
+  /** Room for `bytes` now, or null: for a thread that may not wait (the page), what does not fit is not kept (made again next time). */
+  tryTake(bytes: number): (() => void) | null {
+    if (this.inFlight > 0 && this.inFlight + bytes > this.most) return null;
+    return this.taken(bytes);
+  }
+
+  private taken(bytes: number): () => void {
+    this.inFlight += bytes;
+    let open = true;
+    return () => {
+      if (!open) return;
+      open = false;
+      this.inFlight -= bytes;
+      for (const go of this.waiting.splice(0)) go();
+    };
+  }
+}
+
+/** About how many bytes a value takes once cloned (its arrays' buffers, its strings, a number's eight): what a write holds until it commits. */
+export function bytesOf(value: unknown, depth = 0): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return 8;
+  if (typeof value === 'string') return value.length * 2;
+  if (typeof value !== 'object' || depth > 8) return 8;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  let total = 0;
+  if (value instanceof Map) { for (const [k, v] of value) total += bytesOf(k, depth + 1) + bytesOf(v, depth + 1); return total; }
+  if (Array.isArray(value)) { for (const v of value) total += bytesOf(v, depth + 1); return total; }
+  for (const v of Object.values(value)) total += bytesOf(v, depth + 1);
+  return total;
 }
 
 /** Keeps a value under `key`, without waiting. */
@@ -164,6 +217,22 @@ export function writeDerived(key: string, value: unknown): void {
 /** Keeps many values, each under `prefix` and its own key, in one transaction */
 export function writeDerivedMany(prefix: string, values: ReadonlyMap<string, unknown>): void {
   void keepDerivedMany(prefix, values);
+}
+
+/** As `keepDerivedMany`, resolved once the transaction has committed (or failed): what the derived writer answers on (`derivedWriter.worker.ts`). */
+export async function keepDerivedManyCommitted(prefix: string, values: ReadonlyMap<string, unknown>): Promise<void> {
+  if (!values.size) return;
+  const db = await database();
+  if (!db) return;
+  // A transaction that cannot be made (no space, the store closed) throws to the writer, which says so (`derivedWriter.worker.ts`).
+  const tx = db.transaction(STORE, 'readwrite');
+  const committed = new Promise<void>((resolve) => { tx.oncomplete = () => resolve(); tx.onabort = () => resolve(); tx.onerror = () => resolve(); });
+  const store = tx.objectStore(STORE);
+  for (const [key, value] of values) {
+    const request = store.put(value, `${prefix}${key}`);
+    request.onerror = (event) => event.preventDefault();
+  }
+  await committed;
 }
 
 /** As `writeDerivedMany`, resolved once the store has taken its copy of every value */
