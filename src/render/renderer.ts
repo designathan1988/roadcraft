@@ -2623,7 +2623,6 @@ export function createSceneRenderer(
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
         settleNearTiles();
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
-          (b, since) => groundChanges.touches(Number(since), bankBox(b)),
           (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;
         if (buildings.pending) onAssetsReady();
       }

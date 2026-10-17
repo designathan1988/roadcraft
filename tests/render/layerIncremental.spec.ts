@@ -194,3 +194,50 @@ describe('the far sun cascades', () => {
     layer.dispose();
   });
 });
+
+describe('the ground under the buildings, followed', () => {
+  it('samples no building\'s ground again while nothing changes, nor when the ground changed elsewhere: what moved is asked once a key', () => {
+    const doc = new RoadDoc();
+    for (let i = 0; i < 9; i++) doc.buildings.add(body(i, (i % 3) * SPACING, Math.floor(i / 3) * SPACING));
+    const layer = createBuildingLayer();
+    let sampled = 0;
+    const ground = (): number => { sampled++; return flat(); };
+    let asked = 0;
+    const movedUnder = (): readonly never[] => { asked++; return []; };
+    for (let frame = 0; frame < 400; frame++) {
+      beginFrameWork();
+      layer.update(doc, ground, 'g', undefined, ground, movedUnder);
+      layer.levelOfDetail(SPACING, SPACING, m(40), 1000, null);
+      if (!layer.pending && frame > 20) break;
+    }
+    // Nothing changes: no digest made again, frame after frame.
+    sampled = 0;
+    for (let frame = 0; frame < 30; frame++) {
+      beginFrameWork();
+      layer.update(doc, ground, 'g', undefined, ground, movedUnder);
+      layer.levelOfDetail(SPACING, SPACING, m(40), 1000, null);
+    }
+    expect(sampled).toBe(0);
+    // The ground changed where no building stands: every digest kept, what moved asked once for the key the buildings were sampled at.
+    asked = 0;
+    for (let frame = 0; frame < 30; frame++) {
+      beginFrameWork();
+      layer.update(doc, ground, 'g2', undefined, ground, movedUnder);
+      layer.levelOfDetail(SPACING, SPACING, m(40), 1000, null);
+    }
+    expect(sampled).toBe(0);
+    expect(asked).toBeLessThanOrEqual(2);
+    layer.dispose();
+  });
+});
+
+describe('a cell waiting for its level', () => {
+  it('keeps its entries while its records, ground and cut-open view stay, made again only when one changes', async () => {
+    const { readFileSync } = await import('node:fs');
+    const layer = readFileSync('src/render/buildings/layer.ts', 'utf8');
+    const land = layer.slice(layer.indexOf('const landCells'), layer.indexOf('const landCells') + 3000);
+    expect(land).toMatch(/const entries = entriesFor\(cell, list, groundAt, groundKey, pavedAt\)/);
+    const keep = layer.slice(layer.indexOf('const entriesFor'), layer.indexOf('const entriesFor') + 600);
+    expect(keep).toMatch(/known\.groundKey === groundKey && known\.cutaway === cutaway && known\.list\.length === list\.length && known\.list\.every/);
+  });
+});
