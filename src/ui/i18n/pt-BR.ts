@@ -860,7 +860,6 @@ export const PT_BR: Dictionary = {
   'health.copyFailed': 'Não foi possível copiar: o navegador recusou a área de transferência',
   'health.system.panels': 'painéis',
   'health.system.camera': 'câmera',
-  'health.system.growCity': 'crescimento da cidade',
   'health.system.topology': 'topologia',
   'health.system.simulation': 'simulação',
   'health.system.roadNetwork': 'rede viária',
@@ -1758,7 +1757,6 @@ export const PT_BR: Dictionary = {
   'hint.transit.trackOnRoad': 'Trilho de trem cruza ruas, mas não corre por cima delas (use o metrô por baixo).',
   'hint.transit.lineShort': 'Uma linha precisa de pelo menos duas paradas.',
   'hint.transit.lineMade': 'Linha criada.',
-  'city.building': 'Construindo a cidade: {done} de {total} lotes',
   'map.loading': 'Carregando o mapa…',
   'map.generating': 'Gerando a cidade… {done} de {total} partes',
 };

@@ -114,10 +114,9 @@ describe('the growth of the buildings', () => {
   // A building grown was designed on the page, in the frame: 28.6 s of a 2,560 m city's 120 s of work, the town stuttering as it grew (2026-10-15). The city's growth and the zones' ask the growth's worker (`growthFeed.ts`).
   const main = read('src/main.ts');
   it('designs no building of a city or a zone on the page', () => {
-    for (const name of ['growCity', 'askCity', 'growZones', 'growthAnswered']) {
+    for (const name of ['growZones', 'growthAnswered']) {
       expect(bodyOf(main, name), name).not.toMatch(/growOnLot\(|designOnLot\(/);
     }
-    expect(bodyOf(main, 'askCity')).toMatch(/growth\.ask\(lotTool\.refused, /);
     expect(bodyOf(main, 'growZones')).toMatch(/growth\.ask\(lotRefused, /);
     expect(main).toMatch(/new GrowthPool\(\(answer\) => growthAnswered\(answer\)/);
     expect(main).toMatch(/new GrowthSession\(growthPool, /);
@@ -125,6 +124,12 @@ describe('the growth of the buildings', () => {
     const calls = [...main.matchAll(/growOnLot\(/g)].map((m) => main.lastIndexOf('\n', m.index));
     expect(calls.map((at) => main.slice(at, at + 40).trim().split(':')[0])).toEqual(['growTimed']);
     expect(main).not.toMatch(/designOnLot/);
+  });
+
+  it('lays no city on the page: a generated city is the streamed world, made by the tile generator', () => {
+    // A round city was laid on the page 100 ms a frame (`GROW_SLICE_MS`, `layoutSteps`): one path now, the tiles' (`wholeMapTile.ts`).
+    expect(main).not.toMatch(/layCity\(|planCity\(|zoneCity\(|GROW_SLICE_MS = /);
+    expect(main).toMatch(/generateCity: \(options[^]{0,400}?void openStreamedWorld\(/);
   });
 
   it('the pool posts to the growth worker, and the page writes only what it answers', () => {

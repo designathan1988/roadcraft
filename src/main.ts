@@ -25,7 +25,6 @@ import { LotTool, type LotSplitKind, type ZoneMode } from '@editor/lotTool';
 import { watchHealth } from '@ui/healthWatch';
 import { mountHealthPanel } from '@ui/healthPanel';
 import { METERS_PER_UNIT } from '@world/units';
-import { applyLots, planLotsSteps } from '@world/lots';
 import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
@@ -34,9 +33,8 @@ import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from 
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
-import { DEFAULT_CITY, planCity, type CityOptions, type CityPlan, type CitySize } from '@world/cityGen/plan';
+import { DEFAULT_CITY, type CityOptions } from '@world/cityGen/plan';
 import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, clampToMap, worldKey } from '@world/cityGen/wholeMap';
-import { greenCitySteps, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
 import { MAX_TERRAIN_STAMPS, RELIEF_FLAT, type TerrainMode } from '@world/terrain';
@@ -131,7 +129,7 @@ import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
 import { LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
 import { GrowthSession } from '@editor/growthFeed';
-import { BATCH_MOST, type GrowAnswer } from '@editor/growthReplica';
+import type { GrowAnswer } from '@editor/growthReplica';
 import { GrowthPool } from './growthPool';
 import { TERRAIN_CELL } from '@render/terrain';
 import { bulbClearing } from '@world/junction/bulb';
@@ -1883,94 +1881,6 @@ trackFocusModality();
 onRoadGridChange(requestDraw);
 mountAbout();
 
-/** A generated city (`world/cityGen/plan.ts`, `editor/cityGenerator.ts`): the map replaced */
-let cityGrowth: { left: number; total: number; started: number; guard: number;
-  /** The layout still being laid, a slice a frame (`layoutSteps`); gone once the lots are zoned. */
-  layout?: Generator<void, { zoned: number; squares: number; pieces: number }>;
-  /** Every lot built on: the progress notice let go at the next frame. */
-  done?: boolean } | null = null;
-function generateCity(options: CityOptions, plan = planCity(options)): { roads: number; lots: number; zoned: number; squares: number; pieces: number } {
-  const cityDoc = layCity(plan);
-  history.begin(doc);
-  // The footways wide enough for street trees before the lots are cut (V7).
-  widenCityFootways(cityDoc);
-  // On the level plain, as every new map
-  applySnapshot({ ...cityDoc.toJSON(), relief: NEW_RELIEF }, 'import');
-  if (net.revision !== doc.revision) net.rebuild();
-  // The lots, the squares, the power lines, the furniture and the zones a slice a frame (`growCity`), then the buildings
-  cityGrowth = { left: 0, total: 0, started: performance.now(), guard: 0, layout: layoutSteps(plan, options.seed) };
-  fitView();
-  requestDraw();
-  return { roads: doc.segments.size, lots: 0, zoned: 0, squares: 0, pieces: 0 };
-}
-/** The generated city's layout after its roads: lots cut, squares and streets dressed (`greenCitySteps`), lots zoned. */
-function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: number; squares: number; pieces: number }> {
-  applyLots(doc, yield* planLotsSteps(doc, net));
-  yield;
-  // A square in each neighbourhood and the streets' trees and furniture (V7).
-  const green = yield* greenCitySteps(doc, net, seed);
-  yield;
-  const zoned = zoneCity(doc, net, plan);
-  lotTool.refused.clear();
-  lotTool.refusedNow();
-  return { zoned, ...green };
-}
-/** Builds on the generated city's lots: each building made in the growth's worker (`growth`), drawn in the next frame. */
-const cityProgress = document.createElement('div');
-cityProgress.className = 'city-progress';
-cityProgress.style.cssText = 'position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:50;display:none;'
-  + 'background:rgba(10,16,18,.85);color:#fff;font:600 14px system-ui,sans-serif;padding:10px 16px;border-radius:10px';
-document.body.appendChild(cityProgress);
-function growCity(): void {
-  if (!cityGrowth) return;
-  // DO NOT hold the buildings from the renderer until the last one: every site was graded in one frame, 5.6 s at 2,560 m.
-  const growing = cityGrowth;
-  if (cityProgress.style.display !== 'block') {
-    cityProgress.style.display = 'block';
-    cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
-    lotTool.holdOverlay(true);
-    requestDraw();
-    return;
-  }
-  if (growing.layout) {
-    // The layout first, within the slice; the lots counted as they are cut.
-    const until = performance.now() + GROW_SLICE_MS;
-    let laid: { zoned: number } | null = null;
-    caused('city generated', () => {
-      for (;;) {
-        const step = growing.layout!.next();
-        if (step.done) { laid = step.value; break; }
-        if (performance.now() >= until) break;
-      }
-    });
-    if (laid !== null) { growing.total = growing.left = (laid as { zoned: number }).zoned; delete growing.layout; }
-    cityProgress.textContent = t('city.building', { done: 0, total: laid !== null ? growing.total : doc.lots.length });
-    requestDraw();
-    return;
-  }
-  // The next building asked for when none is being made (its answer asks for the one after, `growthAnswered`).
-  askCity(growing);
-  cityProgress.textContent = t('city.building', { done: growing.total - growing.left, total: growing.total });
-  if (!growing.done) return;
-  cityGrowth = null;
-  cityBuiltIn = (performance.now() - growing.started) / 1000;
-  cityProgress.style.display = 'none';
-  lotTool.holdOverlay(false);
-  persistence.saveSessionSoon(doc, sessionSettings);
-  updateStatus();
-}
-/** @rebuild The generated city's next buildings asked of the growth's worker, when none is being made (DO NOT design them on the page). */
-function askCity(growing: NonNullable<typeof cityGrowth>): void {
-  if (growing.done || growing.layout || growth.busy || mover.dragging) return;
-  if (++growing.guard > growing.total * 3 + 50) { growing.done = true; requestDraw(); return; }
-  // Several buildings an ask (`BATCH_MOST`): none left open, the city is built.
-  if (!caused('city generated', () => growth.ask(lotTool.refused, 0x5eed, BATCH_MOST))) { growing.done = true; requestDraw(); }
-}
-/** Milliseconds a frame spent laying the generated city's lots (`growCity`). */
-const GROW_SLICE_MS = 100;
-/** Seconds the last generated city took, from the call to its last building (probes). */
-let cityBuiltIn = 0;
-
 /** THE STREAMED WORLD (CLAUDE.md, "Streaming world"): a city of any size - the page's document holds the tiles round the camera (`worldStreamer.ts`), the tile store (`editor/tileStore.ts`) every tile ever made and is the save, a tile never made is generated on demand in a worker (`tileGenerator.ts`) */
 let streamed: { readonly store: TileStore; readonly generator: TileGenerator; readonly streamer: WorldStreamer; readonly release: () => void;
   /** A tile written at a version (`StreamerEvents.written`): what is baked of it is stale. */
@@ -2092,26 +2002,19 @@ const growthPool = new GrowthPool((answer) => growthAnswered(answer), () => grow
 const growth = new GrowthSession(growthPool, () => ({
   doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: scene.pavedHeightAt, cell: TERRAIN_CELL,
 }));
-/** The worker's answer: the building written, stamped as grown now, and the next asked for while a city is being built. False: not now - nothing is written in the middle of a drag (an authoring preview); the pool offers it again at the next frame (`GrowthPool.pump`). */
+/** The worker's answer: the building written, stamped as grown now. False: not now - nothing is written in the middle of a drag (an authoring preview); the pool offers it again at the next frame (`GrowthPool.pump`). */
 function growthAnswered(answer: GrowAnswer): boolean {
   if (mover.dragging) return false;
-  const city = cityGrowth;
-  const cause = city ? 'city generated' : 'zone growth';
   // Each building stamped as grown now as it is written, before the next (`GrowthSession.receive`).
-  const outcome = caused(cause, () => growth.receive(answer, (id) => {
+  const outcome = caused('zone growth', () => growth.receive(answer, (id) => {
     const fresh = doc.buildings.get(id as BuildingId);
     if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.minutes, decay: 0, lotPlan: LOT_PLAN_VERSION });
   }));
   if (outcome.kind === 'answered' && outcome.grown.length) {
-    if (city) city.left -= outcome.grown.length;
-    else {
-      persistence.saveSessionSoon(doc, sessionSettings);
-      updateStatus();
-    }
+    persistence.saveSessionSoon(doc, sessionSettings);
+    updateStatus();
     requestDraw();
   }
-  // The city's next building at once, not at the next frame.
-  if (city && cityGrowth === city) askCity(city);
   return true;
 }
 
@@ -2156,7 +2059,7 @@ function newMap(): void {
     flashHint('hint.newMap');
   });
 }
-/** A NEW CITY OVER THE WHOLE MAP (10 km x 10 km, `wholeMap.ts` MAP_TILES) from the menu: a fresh seed, the streamed world opened round the camera (`openStreamedWorld`, as `generateCity({ size: 'whole' })`). */
+/** A NEW CITY OVER THE WHOLE MAP (10 km x 10 km, `wholeMap.ts` MAP_TILES) from the menu: a fresh seed, the streamed world opened round the camera (`openStreamedWorld`, as the console's `generateCity`). */
 function newWorld(): void {
   if (!window.confirm(t('confirm.newWorld'))) return;
   const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
@@ -2532,8 +2435,7 @@ function growZones(): void {
   const now = sim.clock.time;
   // A hold set before the clock went back (a new map) holds nothing.
   if (mover.dragging || (now >= zoneGrowthHold.at && now < zoneGrowthHold.until)) return;
-  // While a generated city is built, its growth asks for the lots.
-  if (cityGrowth || growth.busy) return;
+  if (growth.busy) return;
   // DO NOT read `doc.lots` here nor design the building on the page: the growth's worker answers (`growthAnswered`).
   caused('zone growth', () => growth.ask(lotRefused, 0x5eed));
 }
@@ -2615,9 +2517,6 @@ function frame(now: number): void {
   if (!worldShown && drawnOnce && !scene.opening) worldShown = true;
   // Moving a node is an authoring preview.
   let holdSim = mover.dragging || topologyAfterDraw || !worldShown;
-  // A generated city being built (`generateCity`): its own share of the frame, apart from the traffic's topology.
-  growCity();
-  frameTimer.mark('growCity');
   // The pistol or the bomb chosen: their effects and the physics the bodies fall with loaded now, while the player aims
   if (!actionsWarm && game.tool === 'bulldoze' && strikeChoice.mode !== 'demolish') {
     actionsWarm = true;
@@ -3986,24 +3885,15 @@ if (import.meta.env.DEV) (window as unknown as { __roadcraft: unknown }).__roadc
     roadTool.heightChosen(metres * UNITS_PER_METER);
     requestDraw();
   },
-  /** A generated city (`editor/cityGenerator.ts`), and how far its building has gone. */
-  generateCity: (options: Partial<Omit<CityOptions, 'size'>> & { size?: CitySize | 'whole' } = {}) => {
-    const { size = DEFAULT_CITY.size, ...asked } = options;
-    // The whole map, square, by tile (rewrite F7); else a round city of the size asked.
-    if (size === 'whole') {
-      // A city of any size: the streamed world, made tile by tile round the camera as it goes (CLAUDE.md, "Streaming world").
-      const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
-      void openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked }, true);
-      return { tiles: 0 };
-    }
-    // A round city: the streamed world closed first, the document the whole map again.
-    const chosen = { ...DEFAULT_CITY, ...asked, size };
-    return afterStreamedWorld(() => generateCity(chosen, planCity(chosen)));
+  /** A generated city: the streamed world over the whole map, made tile by tile round the camera by the tile generator (CLAUDE.md, "Streaming world"); DO NOT lay a city on the page (a round city laid 100 ms a frame, `GROW_SLICE_MS`): one path, the tiles'. */
+  generateCity: (options: Partial<CityOptions> = {}) => {
+    const { size: _size, radius: _radius, ...asked } = options;
+    const { size: _s, radius: _r, ...base } = DEFAULT_CITY;
+    void openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked }, true);
+    return { tiles: 0 };
   },
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   growTimed: () => { const t = performance.now(); const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed); return { id, ms: performance.now() - t }; },
-  cityGrowth: () => (cityGrowth || cityProgress.style.display === 'block' ? { pending: true } : null),
-  cityBuiltIn: () => cityBuiltIn,
   /** Replaces the map as loading a file does: document, network and simulation topology. */
   loadDoc: (data: ReturnType<RoadDoc['toJSON']>) => afterStreamedWorld(() => {
     history.begin(doc);

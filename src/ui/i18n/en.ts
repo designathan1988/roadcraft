@@ -869,7 +869,6 @@ export const EN: Dictionary = {
   'health.copyFailed': 'Could not copy: the browser refused the clipboard',
   'health.system.panels': 'panels',
   'health.system.camera': 'camera',
-  'health.system.growCity': 'city growth',
   'health.system.topology': 'topology',
   'health.system.simulation': 'simulation',
   'health.system.roadNetwork': 'road network',
@@ -1768,7 +1767,6 @@ export const EN: Dictionary = {
   'hint.transit.trackOnRoad': 'A train track crosses streets but does not run down them (use the metro under them).',
   'hint.transit.lineShort': 'A line needs at least two stops.',
   'hint.transit.lineMade': 'Line made.',
-  'city.building': 'Building the city: {done} of {total} lots',
   'map.loading': 'Loading the map…',
   'map.generating': 'Generating the city… {done} of {total} parts',
 };
