@@ -23,6 +23,8 @@ const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
 const RETRY_MS = 30_000;
 /** How far past the edge of its tile the camera goes before the region is centred on the next one (two sub-cells): walking along an edge does not turn three tiles back and forth. */
 const RECENTRE_PAST = m(128);
+/** Tiles past the document an edit may bring in at once (`hold`): each a dense tile's ~1,500 buildings on the page, in the V8 cage the page and its workers share - DO NOT bring a long road's every tile in. */
+export const HOLD_MOST = 4;
 /** A write that failed is posted again after this (a store failing on it fails again at once). */
 const RETRY_WRITE_MS = 5_000;
 
@@ -119,9 +121,13 @@ export class WorldStreamer {
   }
 
   /** Tiles an edit waits on, wherever the camera is (a road drawn across the map, `RoadTool.layHeld`): asked as the region's are, put in the document with their records only and kept until let go; `[]` lets them go (the farthest first, as the camera's ring). Replaces the tiles held before. */
-  hold(keys: readonly number[]): void {
-    this.held = new Set(keys.filter((key) => { const { i, j } = tileOfKey(key); return tileOnMap(i, j); }));
+  /** False, and nothing held, when more than `HOLD_MOST` of them are not in the document. */
+  hold(keys: readonly number[]): boolean {
+    const onMap = keys.filter((key) => { const { i, j } = tileOfKey(key); return tileOnMap(i, j); });
+    if (onMap.filter((key) => !this.doc.hasTile(key)).length > HOLD_MOST) { this.held = new Set(); return false; }
+    this.held = new Set(onMap);
     this.ask();
+    return true;
   }
 
   /** Whether a tile is in the active region (3 x 3 round the camera's tile): the near products are made for it; a tile kept in the ring beyond has its records only. */

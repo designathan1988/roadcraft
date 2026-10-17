@@ -92,7 +92,7 @@ export interface RoadToolHost {
   /** The roads just laid blink. */
   flash(ids: readonly SegmentId[]): void;
   /** Whether every tile of the map `rect` reaches is in the page's document (a streamed world: those not yet in hold buildings the road would clear), those not asked for (`WorldStreamer.hold`) and kept until `null` lets them go; absent: always. */
-  tilesIn?(rect: ChangeRect | null): boolean;
+  tilesIn?(rect: ChangeRect | null): boolean | 'tooFar';
   /** An edit of the document, one undo step. */
   mutate(fn: () => boolean): void;
   hint(key: string): void;
@@ -437,7 +437,10 @@ export class RoadTool {
   /** The road held for a tile not yet in (`held`) laid, once every tile it reaches is: true when it was. Each frame (`main.ts`). */
   layHeld(): boolean {
     const held = this.held;
-    if (!held || !this.tilesReady(held.d)) return false;
+    if (!held) return false;
+    const ready = this.tilesReady(held.d);
+    if (ready === 'tooFar') { this.held = null; this.host.tilesIn?.(null); return false; }
+    if (!ready) return false;
     this.held = null;
     const laid = this.commit(held.d, held.chosenEnd);
     // The tiles asked for it let go (written, as the ring's are, `WorldStreamer.apply`).
@@ -446,7 +449,7 @@ export class RoadTool {
   }
 
   /** Whether the tiles a road reaches are in the document, those not asked for: DO NOT lay it while one is not - the buildings under it there are not on the page, and stood after it was laid (conf60, "the road demolished 3 buildings", 8 in the runs whose region was in); nor wait for the camera to come - a road drawn on the map view across tiles past the region was never laid. */
-  private tilesReady(d: RoadDraft): boolean {
+  private tilesReady(d: RoadDraft): boolean | 'tooFar' {
     if (!this.host.tilesIn) return true;
     let x0 = Math.min(d.start.at.x, d.snap.at.x), y0 = Math.min(d.start.at.y, d.snap.at.y), x1 = Math.max(d.start.at.x, d.snap.at.x), y1 = Math.max(d.start.at.y, d.snap.at.y);
     for (const p of [...d.samples.map((q) => q.at), ...(d.curveControl ? [d.curveControl] : [])]) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
@@ -458,7 +461,13 @@ export class RoadTool {
   /** Lays the road `d` ends at (`chosenEnd`, or what is under its end), one undo step; false when refused, or held until the tiles it reaches are in (`layHeld`). */
   private commit(d: RoadDraft, chosenEnd?: Anchor): boolean {
     const { host } = this;
-    if (!this.tilesReady(d)) {
+    const ready = this.tilesReady(d);
+    // More tiles past the document than an edit may bring in (`WorldStreamer.HOLD_MOST`): drawn in parts, or nearer.
+    if (ready === 'tooFar') {
+      host.hint('hint.road.tooFar');
+      return false;
+    }
+    if (!ready) {
       this.held = { d, ...(chosenEnd ? { chosenEnd } : {}) };
       host.hint('hint.road.waitTiles');
       host.redraw();

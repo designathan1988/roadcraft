@@ -619,6 +619,7 @@ export const PT_BR: Dictionary = {
   'hint.road': 'Clique no início, mire, ajuste {heightUp}/{heightDown} e clique no fim · {alignmentKey}: traçado · Esc: cancelar',
   'hint.road.gradeLimited': 'A via atingiu a inclinação segura; continue desenhando para chegar à altura escolhida.',
   'hint.road.waitTiles': 'O mapa ali ainda está carregando: a via é assentada assim que ele entrar.',
+  'hint.road.tooFar': 'A via alcança mapa demais fora da área carregada em volta da câmera: desenhe-a em partes ou mais perto.',
   'hint.road.invalid': 'Esta conexão precisa de mais distância ou outro ponto final.',
   'hint.rule.sharp': 'Recusado: as vias se encontrariam num ângulo fechado demais (menos de 25°).',
   'hint.rule.squeezed': 'Recusado: trecho curto demais para as faixas se separarem na junção (junções perto demais ou ângulo fechado).',

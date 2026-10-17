@@ -440,8 +440,8 @@ const roadTool = new RoadTool({
       keys.push(tileKey(i, j));
       if (!doc.hasTile(tileKey(i, j))) all = false;
     }
-    // Kept in the document until the road is laid, those already in too (the camera may move off them meanwhile).
-    streamed.streamer.hold(keys);
+    // Kept in the document until the road is laid, those already in too (the camera may move off them meanwhile); too many to bring in: refused.
+    if (!streamed.streamer.hold(keys)) return 'tooFar';
     return all;
   },
   mutate: (fn) => mutate(fn),
