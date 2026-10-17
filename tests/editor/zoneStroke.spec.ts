@@ -49,7 +49,7 @@ describe('the zone brush over street land', () => {
       hint: () => {},
       redraw: () => {},
     });
-    while (tool.advanceProposal()) { /* the proposal worked out first */ }
+    tool.advanceProposal();
     tool.down(1, { x: m(-100), y: m(14) }, false, 1);
     tool.move(1, { x: m(100), y: m(14) });
     tool.up(1, true);
