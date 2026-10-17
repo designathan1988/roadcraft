@@ -64,6 +64,12 @@ export interface RunStore {
   readonly levels?: KindLevels;
 }
 
+/** Pixels across under which a small thing (a stone, a bush, a tuft) is not drawn: its levels (`KindLevels.least`), measured by its model's sphere. */
+export function leastPixel(geometry: BufferGeometry): KindLevels {
+  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+  return { reach: geometry.boundingSphere?.radius ?? 1, least: 1 };
+}
+
 /** A thing's instances in one store: poses (the layer's `PoseFormat`), tints (tinted stores) and each one's largest scale. */
 type RunPack = Pack;
 
