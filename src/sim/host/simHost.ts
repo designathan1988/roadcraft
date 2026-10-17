@@ -210,9 +210,11 @@ export class SimHost {
     if (controls.focus) sim.focus = controls.focus;
     this.governor.setMax(controls.maxShare);
     if (this.net.revision !== this.doc.revision) this.net.rebuild();
-    let held = hold;
-    if (this.topology.step(sim, this.net.trafficRevision, false)) held = true;
-    else this.topology.stepWindow(sim, this.net.trafficRevision);
+    const held = hold;
+    // DO NOT stop the clock while a tile's topology is prepared (its lanes, turns and conflict pairs, on the workers): the city runs on the graph it has meanwhile, and takes the new one when it is ready.
+    const catching = this.topology.step(sim, this.net.trafficRevision, false);
+    if (!catching) this.topology.stepWindow(sim, this.net.trafficRevision);
+    sim.topologyDeferred = catching;
     let alpha = 1;
     if (!held) {
       sim.walkwaysNow();

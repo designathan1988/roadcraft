@@ -282,6 +282,8 @@ export class SimWorld {
 
   /** Topology revision the indices were last built from. */
   topologyRevision = -1;
+  /** The topology is being caught up off the step (`TopologyCatchUp`, the simulation's worker): the step runs on the graph it has and does not build it again itself. */
+  topologyDeferred = false;
   /** Revision the vehicle half was last built from (`rebuildVehicleTopology`). */
   vehicleTopologyRevision = -1;
   constructor(

@@ -39,8 +39,8 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
     }
     : (): void => {};
 
-  // 0. topology: the only place derived structure may change
-  if (w.topologyRevision !== w.net.trafficRevision) {
+  // 0. topology: the only place derived structure may change; not while its catch-up is under way off the step (`topologyDeferred`): the city runs on the graph it has.
+  if (!w.topologyDeferred && w.topologyRevision !== w.net.trafficRevision) {
     w.rebuildTopology();
     rebindAgents(w);
   }
