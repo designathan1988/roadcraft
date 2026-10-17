@@ -3,7 +3,7 @@ import type { BodyPart, Severable } from '@sim/people/view';
 import {
   BufferAttribute, BufferGeometry, Color, DataTexture, DoubleSide, DynamicDrawUsage, FloatType, Group,
   InstancedBufferAttribute, InstancedMesh, Matrix4, MeshDepthMaterial, Quaternion, MeshStandardMaterial, Vector3, NearestFilter,
-  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, UnsignedByteType,
+  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, ShaderChunk, UnsignedByteType,
   type Material, type Texture, type WebGLRenderer,
 } from 'three';
 import { bodyHeight } from '@people/body/morph';
@@ -388,6 +388,10 @@ function patchVertex(shader: { vertexShader: string }, v: Variant): void {
     vs = vs.replace('#include <skinbase_vertex>', TWO_BONES_BASE)
       .replace('#include <skinnormal_vertex>', TWO_BONES_NORMAL)
       .replace('#include <skinning_vertex>', TWO_BONES_POSITION);
+  }
+  // The palette holds the bones where the person stands (the pass is placed, `setPlace`): DO NOT place each piece again by an instance matrix.
+  for (const chunk of ['project_vertex', 'defaultnormal_vertex', 'worldpos_vertex'] as const) {
+    vs = vs.replace(`#include <${chunk}>`, ShaderChunk[chunk].replaceAll('instanceMatrix', 'mat4(1.0)'));
   }
   shader.vertexShader = vs.replace('#include <begin_vertex>', `#include <begin_vertex>
 ${v.widen ? 'transformed = aCard + (transformed - aCard) * procWiden;' : ''}
@@ -838,6 +842,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const items = new Map<string, Promise<ProxyItem>>();
   const textures = new Map<string, Promise<Texture | null>>();
   const scaled = new Matrix4();
+  /** A person's matrix for the placed pass (`setPlace`), reused. */
+  const placeScratch = new Matrix4();
   const blobs = createBlobShadows('procedural-people-shadows', 1024);
   group.add(blobs.mesh);
   /** How every item is drawn at each level, by item (the body: 'skin'): the same for every class, whose fits share their vertices' order. */
@@ -1029,7 +1035,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const bodies = createClassBodies(shapePixels, vertexCount, SHAPES, jointBasis, bones);
     // The atlas's texels let go once on the GPU: the clips keep the same frames for the CPU's own palettes.
     const anim = buildClassAnimation(clips, bones, true);
-    const pass = createPalettePass(anim, parent, () => bodies.joints, ROW_START);
+    // Placed: each person's matrix applied in the pass (`setPlace`), so their pieces need none of their own.
+    const pass = createPalettePass(anim, parent, () => bodies.joints, ROW_START, true);
     await breathe();
     // Drawn only once its program is built (`uploads.ts` compilePassAhead), off the frame.
     await pass.ready;
@@ -1572,24 +1579,18 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const burnt = charred.has(person);
         piece.attrs.get('aPerson')!.setXYZW(slot, person.row, st.variant, woundedRow(st.cls, person.row) ? 1 : 0, burnt ? 1 : 0);
         piece.attrs.get('aDye')!.setXYZW(slot, person.hairColour.r, person.hairColour.g, person.hairColour.b, burnt ? 3 : 1);
-        piece.mesh.setMatrixAt(slot, st.drawn);
       });
       upload(piece, true);
       shown.add(piece);
     }
   };
 
-  /** A piece's frame to the GPU: its count, its matrices, and its entries when they changed - only the written part. */
+  /** A piece's frame to the GPU: its count, and its entries when they changed - only the written part (where the people stand is in their palettes, `setPlace`). */
   const upload = (piece: Piece, entries: boolean): void => {
     const n = piece.people.length;
     piece.mesh.count = n;
     piece.mesh.visible = n > 0;
-    if (!n) return;
-    const matrices = piece.mesh.instanceMatrix;
-    matrices.clearUpdateRanges();
-    matrices.addUpdateRange(0, n * 16);
-    matrices.needsUpdate = true;
-    if (!entries) return;
+    if (!n || !entries) return;
     for (const attr of piece.attrs.values()) {
       attr.clearUpdateRanges();
       attr.addUpdateRange(0, n * attr.itemSize);
@@ -2121,6 +2122,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
           cls.drawn++;
           levelCount[st.level] = (levelCount[st.level] ?? 0) + 1;
           st.drawn.multiplyMatrices(person.matrix, scaled.makeScale(person.scale, person.scale, person.scale));
+          // Once a person, for every piece of them: the skinning undoes the bind round the palette, so the pass is given bind * drawn * bind^-1.
+          placeScratch.multiplyMatrices(cls.rig.mesh.bindMatrix, st.drawn).multiply(cls.rig.mesh.bindMatrixInverse);
+          cls.pass.setPlace(person.row, placeScratch.elements);
           // Their skeleton: the GPU pass plays their clip on their joints; somebody held, bent, jolted or maimed is worked out here.
           if (overridden(person)) {
             const at = person.row * width;
@@ -2162,10 +2166,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         }
         for (const piece of cls.pieces) {
           const n = piece.people.length;
-          if (n) {
-            for (let slot = 0; slot < n; slot++) piece.mesh.setMatrixAt(slot, states.get(piece.people[slot]!)!.drawn);
-            trianglesDrawn += n * piece.triangles;
-          }
+          if (n) trianglesDrawn += n * piece.triangles;
           upload(piece, piece.dirty);
           piece.dirty = false;
         }

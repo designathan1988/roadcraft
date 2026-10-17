@@ -48,4 +48,19 @@ describe('the palette pass of the procedural crowd', () => {
       for (let i = 0; i < 16; i++) expect(read.elements[i]).toBe(again.elements[i]);
     }
   });
+
+  it('places a person in the pass: bind * drawn * bind^-1 on the palette skins a vertex where the instance matrix put it', () => {
+    expect(REFIT_FRAGMENT).toContain('#ifdef PLACED');
+    expect(REFIT_FRAGMENT).toContain('m = place * m;');
+    // three's skinning: bind^-1 * bone * bind * v; then the instance matrix. The placed pass folds the instance into the bone.
+    const bind = new Matrix4().makeRotationY(0.4).setPosition(0.1, -0.2, 0.05);
+    const bindInverse = bind.clone().invert();
+    const bone = new Matrix4().makeRotationX(0.7).setPosition(0.3, 1.1, -0.4);
+    const drawn = new Matrix4().makeRotationY(2.1).scale(new Vector3(1.07, 1.07, 1.07)).setPosition(812.5, 3.25, -4410.75);
+    const v = new Vector3(0.12, 1.4, -0.03);
+    const before = v.clone().applyMatrix4(bind).applyMatrix4(bone).applyMatrix4(bindInverse).applyMatrix4(drawn);
+    const placed = new Matrix4().multiplyMatrices(bind, drawn).multiply(bindInverse).multiply(bone);
+    const after = v.clone().applyMatrix4(bind).applyMatrix4(placed).applyMatrix4(bindInverse);
+    expect(after.distanceTo(before)).toBeLessThan(1e-6);
+  });
 });
