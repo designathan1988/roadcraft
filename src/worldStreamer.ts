@@ -212,8 +212,16 @@ export class WorldStreamer {
       // The region whole now: the tiles ahead asked.
       else this.ask();
     }
-    for (const key of [...this.doc.loadedTiles]) {
+    // One tile let go a frame, the farthest first: a camera that jumped far leaves a ring of tiles, each its records out and its products dropped (a frame stays a frame).
+    let far: number | null = null, farD = -1;
+    for (const key of this.doc.loadedTiles) {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
+      const { i, j } = tileOfKey(key);
+      const d = Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j));
+      if (d > farD) { farD = d; far = key; }
+    }
+    if (far !== null) {
+      const key = far;
       if (this.dirty.has(key) || this.unsaved.get(key)?.write?.failed) this.write(key);
       // Let go first: an optional call (`?.`) does not evaluate its arguments when nobody listens.
       const gone = new Map<RecordPart, Set<number>>();

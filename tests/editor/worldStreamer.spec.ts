@@ -174,7 +174,8 @@ describe('the tiles written', () => {
     store.held = true;
     // Away and straight back: the tile goes out with its write held, and is asked again before the write lands.
     streamer.focus(far, 10);
-    streamer.apply(1000);
+    // One tile let go a frame: frames until this one is.
+    for (let f = 0; f < 20 && doc.hasTile(tileKey(0, 0)); f++) streamer.apply(1000 + f);
     expect(doc.hasTile(tileKey(0, 0))).toBe(false);
     streamer.focus(10, 10);
     store.held = false;
@@ -251,6 +252,22 @@ describe('the tiles written', () => {
     expect(store.writes).toBe(before + 2);
     expect(worldWrites).toBe(1);
     expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 200 && n.y === 100)).toBe(true);
+  });
+});
+
+describe('tiles let go', () => {
+  it('lets one go a frame, the farthest first, when the camera jumps far', async () => {
+    const doc = new RoadDoc();
+    const letGo: number[] = [];
+    const streamer = new WorldStreamer(doc, chainedStore(), { letGo: (key) => letGo.push(key) });
+    await settle(streamer, 10, 10);
+    const before = doc.loadedTiles.size;
+    expect(before).toBeGreaterThan(1);
+    streamer.focus(10 * TILE, 10 * TILE);
+    streamer.apply(100);
+    expect(letGo).toHaveLength(1);
+    streamer.apply(101);
+    expect(letGo).toHaveLength(2);
   });
 });
 
