@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import type { TileRecords } from '@world/doc';
 import { TILE, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
 import { MAP_TILES, tileOnMap } from '@world/cityGen/wholeMap';
 import { WorldStreamer } from '@/worldStreamer';
+import { generateBody } from '@world/buildings/blueprints';
+import type { Building } from '@world/buildings/types';
 
 /** THE ACTIVE REGION'S STREAMER (`worldStreamer.ts`): the region's tiles first, then the ring it loads next, then every other tile of the map. */
 
@@ -447,6 +450,47 @@ describe("the world's values", () => {
     await turns(2);
     expect(streamer.storeBehind(tileKey(0, 0))).toBe(true);
     expect(written).toEqual([['economy']]);
+  });
+});
+
+describe('a tile put in', () => {
+  it('is told with the version it was read at, and the game hands it to the simulation (C7)', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const versioned = { ...store, load: (k: number) => store.load(k).then((r) => ({ ...r, version: 7 })) };
+    const told: [number, number][] = [];
+    const streamer = new WorldStreamer(doc, versioned, { loaded: (key, version) => told.push([key, version]) });
+    streamer.focus(10, 10);
+    for (let frame = 0; frame < 30 && !streamer.settled; frame++) { await turns(1); streamer.focus(10, 10); streamer.apply(frame); }
+    expect(told.length).toBe(9);
+    expect(told.every(([, version]) => version === 7)).toBe(true);
+    expect(readFileSync('src/main.ts', 'utf8')).toMatch(/sim\.tile\('loaded', key, version\)/);
+  });
+});
+
+describe('a tile written again', () => {
+  it('asks the store to keep its buildings part when no building or lot of it changed since its last write (D4)', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const keeps: (boolean | undefined)[] = [];
+    const watched = { ...store, write: (_r: TileRecords, keep?: { readonly buildings: boolean }) => { keeps.push(keep?.buildings); return Promise.resolve(2); } };
+    const streamer = new WorldStreamer(doc, watched);
+    streamer.focus(10, 10);
+    for (let frame = 0; frame < 30 && !streamer.settled; frame++) { await turns(1); streamer.focus(10, 10); streamer.apply(frame); }
+    await turns(2);
+    keeps.length = 0;
+    // A road: its buildings untouched.
+    const a = doc.addNode({ x: 100, y: 100 }), b = doc.addNode({ x: 300, y: 100 });
+    doc.addSegment(a.id, b.id, 1);
+    streamer.apply(100);
+    await turns(2);
+    expect(keeps).toEqual([true]);
+    // A building put: written whole.
+    keeps.length = 0;
+    doc.buildings.add({ ...generateBody('residential', 20, 20, 2), x: 200, y: 400, rotation: 0 } as unknown as Building);
+    streamer.apply(101);
+    await turns(2);
+    expect(keeps).toEqual([undefined]);
   });
 });
 

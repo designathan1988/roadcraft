@@ -1959,12 +1959,13 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   const written = (key: number, version: number): void => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); };
   const streamer = new WorldStreamer(doc, store, {
     arrived: () => requestDraw(),
-    loaded: (key) => {
+    loaded: (key, version) => {
       // Its far level stands until its near roads and buildings are drawn (`scene.onNearDrawn`): no hole while they are made.
       const t = tileOfKey(key);
       scene.tileLoaded(key, tileRect(t.i, t.j), doc.revision);
       for (const f of far) f.loadedChanged(key);
-      sim.tile('loaded', key);
+      // At the version put in: the simulation's worker reads its sections from the store (C7, `SimHost.tileBuildings`).
+      sim.tile('loaded', key, version);
       // Its junctions and ribbons as the worker solved them, for the frame's rebuild (`NetworkBuild.takeBakes`).
       const bake = store.takeBake(key);
       if (bake) { net.offerBake(bake); sim.offerBake(key, bake); }
