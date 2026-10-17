@@ -1,7 +1,13 @@
 /** THE SAVE WORKER'S TURNS: its writes before its reads, on the one worker they share (`jobPool.ts` KEPT_CLEAR) */
 
-/** A task of its own: what came in meanwhile (a write's message, an IndexedDB event) runs first. */
-const nextTask = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+/** A task of its own (a message to itself, HTML's task queue): what came in meanwhile (a write's message, an IndexedDB event) runs first. */
+function nextTask(): Promise<void> {
+  return new Promise((done) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => { channel.port1.close(); done(); };
+    channel.port2.postMessage(null);
+  });
+}
 
 /** DO NOT let a write wait behind the reads queued before it: a read's decoding and preparing is synchronous (a tile's records parsed, `prepareTile`), and three of them held an edit's and the balance's commits ~460 ms, a reload meanwhile lost them (conf28). The reads one at a time, each begun in a task of its own once no write is under way: a write waits for one read at most, never takes a worker from the pool. */
 export class StoreTurns {
