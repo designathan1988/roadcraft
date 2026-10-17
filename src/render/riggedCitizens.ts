@@ -17,7 +17,7 @@ import { loadPeopleAssets } from '@people/body/assets';
 import { Morpher } from '@people/body/morph';
 import { createPersonRig, personSimplifier } from './people/personRig';
 import { cancelUploads, compileAhead, shadowStandIn, warmAhead } from './uploads';
-import { bakeInWorker, releaseIdleBakeWorkers } from './bakePool';
+import { bakeDeferredInWorker, bakeInWorker, bakeRig, releaseIdleBakeWorkers } from './bakePool';
 import { cookPerson, loadCookedPerson, peopleCookHash } from './people/cookedPerson';
 import { HELD, createHeldProps } from './people/heldProps';
 import { attachFacialMorphs } from './people/facialMorphs';
@@ -29,13 +29,14 @@ import { wornItems } from '@people/spec';
 import { captureBind, captureBindRotations, loadRocketboxClips } from './citizenWalk';
 import { type Gradient, shearMatrix } from './groundShear';
 import { PACKED_BONE_FLOATS, SKIN_BONE_FLOATS, blendPackedFrames } from './citizenPalette';
-import { GPU_PLAYS, citizenAtlas, cpuPose, gpuPlays, type CitizenAtlas, type Play } from './citizenPlays';
+import { GPU_PLAYS, appendClip, citizenAtlas, cpuPose, gpuPlays, type CitizenAtlas, type Play } from './citizenPlays';
 import { createPalettePass, type PalettePass } from './people/crowdAnimation';
 import { createGait, gaitHeading, gaitPlays, stepGait, type Gait, type GaitClips, type GaitPlay } from './citizenGait';
 import {
-  CARRY_AT, GAIT_AT, LIBRARY_AT, RIDER_AT, WALK, WALK_ELDER, afterFrame, bake, gaitClips,
-  type CitizenClipKey, type ClipFrames, type Deferred, type Played,
+  CARRY_AT, GAIT_AT, LIBRARY_AT, RIDER_AT, WALK, WALK_ELDER, WALK_SHUFFLE, afterFrame, bake, gaitClips,
+  type CitizenClipKey, type ClipFrames, type Deferred, type Played, type RigNode,
 } from './citizenBake';
+import type { WalkSex } from './citizenWalk';
 
 export type { CitizenClipKey } from './citizenBake';
 export { CROWD_IDS } from './citizenCasting';
@@ -74,9 +75,12 @@ interface CitizenBatch {
   readonly parents: Int16Array;
   /** This body's helmet in its head bone's frame (`riderPoses.helmetShape`), or null. */
   helmet: Matrix4 | null;
-  /** Clips still to bake, on first use (`Deferred`), one at a time. */
+  /** Clips still to bake, on first use (`Deferred`), one at a time: in a worker, on the body's rig (`rigNodes`, made at the first). */
   deferred: Deferred;
   baking: Promise<void>;
+  readonly sex: WalkSex;
+  readonly scene: Object3D;
+  rigNodes: readonly RigNode[] | null;
 }
 
 /** A walker's last pose as played (`capturedPose`): the clips, phases and weights, whether one frame was copied, the limbs lost. */
@@ -452,14 +456,13 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     try {
     const model = CROWD[index];
     const sex = model ? (model.gender === 'f' ? 'female' : 'male') : models[index]!.includes('female') ? 'female' : 'male';
-    const [asset, library] = await Promise.all([
-      model?.person ? personAsset(model, false, owned) : (async () => {
-        const url = CITIZEN_ASSET_URLS[model?.sourceId ?? models[index]!];
-        if (!url) throw new Error(`Missing citizen asset: ${models[index]}`);
-        return new GLTFLoader().loadAsync(url);
-      })(),
-      loadRocketboxClips(sex),
-    ]);
+    const asset = await (model?.person ? personAsset(model, false, owned) : (async () => {
+      const url = CITIZEN_ASSET_URLS[model?.sourceId ?? models[index]!];
+      if (!url) throw new Error(`Missing citizen asset: ${models[index]}`);
+      return new GLTFLoader().loadAsync(url);
+    })());
+    // DO NOT decode the motion library here (~5 MB of JSON a sex) while a worker bakes every clip: only for what is baked here.
+    const library = (): ReturnType<typeof loadRocketboxClips> => loadRocketboxClips(sex);
       asset.scene.traverse(o => {
         if (!(o instanceof SkinnedMesh)) return;
         owned.add(o.geometry);
@@ -493,7 +496,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       const pass = createPalettePass(atlas.anim, parents, () => joints, rows);
       const uniform: { value: Texture } = { value: pass.texture };
       const batch: CitizenBatch = { meshes: [], parts: [], sources: [], local: [], clips, gait: gaitClips(clips), width, rows,
-        atlas, pass, uniform, scratch: new Float32Array(width), joints, parents,
+        atlas, pass, uniform, scratch: new Float32Array(width), joints, parents, sex, scene: asset.scene, rigNodes: null,
         count: 0, helmet, resources: owned, animationBytes: 0,
         lastUsed: performance.now(), disposed: false,
         deferred, baking: Promise.resolve() };
@@ -738,12 +741,14 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     if (!waiting) baking.set(batch, waiting = new Set());
     waiting.add(at);
     batch.baking = batch.baking.then(async () => {
-      const clip = await job.make();
+      // In a worker on the body's rig, timed by its shuffle; here (in slices) only where no worker can.
+      batch.rigNodes ??= bakeRig(batch.scene);
+      const clip = await bakeDeferredInWorker(batch.rigNodes, batch.sex, at, batch.clips[WALK_SHUFFLE]!) ?? await job.make();
       waiting.delete(at);
       if (disposed || batch.disposed) return;
       batch.clips[at] = clip;
       batch.gait = gaitClips(batch.clips);
-      relayAtlas(batch);
+      addToAtlas(batch, clip);
       batch.animationBytes += clip.data.byteLength;
       group.userData.animationBytes = (group.userData.animationBytes ?? 0) + clip.data.byteLength;
     }).catch(() => {});
@@ -810,15 +815,13 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     group.userData.paletteBytes += paletteBytes(batch) - before;
   }
 
-  /** A clip baked since the atlas was laid: the atlas laid again with it, and a pass reading it (an event, not a frame). */
-  function relayAtlas(batch: CitizenBatch): void {
+  /** DO NOT lay the atlas again nor make a pass for a clip baked since: its rows written into the atlas's room, the pass kept (a new texture only when the atlas grows). */
+  function addToAtlas(batch: CitizenBatch, clip: ClipFrames): void {
     const before = paletteBytes(batch);
-    const old = batch.atlas, oldPass = batch.pass;
-    batch.atlas = citizenAtlas(batch.clips, batch.width / SKIN_BONE_FLOATS);
-    batch.pass = createPalettePass(batch.atlas.anim, batch.parents, () => batch.joints, batch.rows);
-    batch.uniform.value = batch.pass.texture;
-    oldPass.dispose();
-    old.anim.atlas.dispose();
+    const old = batch.atlas.anim.atlas;
+    if (!appendClip(batch.atlas, clip)) return;
+    batch.pass.setAtlas(batch.atlas.anim.atlas);
+    old.dispose();
     group.userData.paletteBytes += paletteBytes(batch) - before;
   }
 

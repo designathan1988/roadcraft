@@ -104,6 +104,8 @@ export interface PalettePass {
   render(renderer: WebGLRenderer, rows: number): void;
   /** Room for `capacity` rows; the rows written so far are kept. */
   grow(capacity: number): void;
+  /** The clips' atlas read from now on (a grown one, `citizenPlays.ts` appendClip): the same program and targets. */
+  setAtlas(atlas: Texture): void;
   dispose(): void;
 }
 
@@ -316,6 +318,9 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       uniforms.uOverride.value = overrideTexture;
       rows = capacity;
       dirtyAll = true;
+    },
+    setAtlas(atlas) {
+      uniforms.uAtlas.value = atlas as DataTexture;
     },
     dispose() {
       target.dispose();

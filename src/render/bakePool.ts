@@ -1,7 +1,7 @@
 import { jobPort } from '../jobs/jobPool';
 import { Matrix4, type Object3D } from 'three';
 
-import { type ClipFrames, rigData } from './citizenBake';
+import { type ClipFrames, type RigNode, type ShuffleFacts, rigData } from './citizenBake';
 import type { BakedClip } from './citizenBake.worker';
 import type { WalkSex } from './citizenWalk';
 
@@ -14,9 +14,12 @@ const usable = typeof Worker !== 'undefined';
 let releaseRequested = false;
 const idle: Worker[] = [];
 interface Job {
-  readonly nodes: ReturnType<typeof rigData>['nodes'];
+  readonly nodes: readonly RigNode[];
   readonly transfer: ReturnType<typeof rigData>['transfer'];
   readonly sex: WalkSex;
+  /** One clip baked on first use (`citizenBake.ts` bakeDeferred), and the shuffle it is timed by; none: the core clips. */
+  readonly at?: number;
+  readonly facts?: ShuffleFacts;
   readonly resolve: (result: Result) => void;
 }
 const queue: Job[] = [];
@@ -86,7 +89,7 @@ function dispatch(): void {
     const job = queue.shift()!;
     busy.set(worker, job);
     try {
-      worker.postMessage({ id: 0, nodes: job.nodes, sex: job.sex }, job.transfer);
+      worker.postMessage({ id: 0, nodes: job.nodes, sex: job.sex, ...(job.at !== undefined ? { at: job.at, facts: job.facts } : {}) }, job.transfer);
     } catch (error) {
       console.error('Citizen bake worker could not receive a rig', error);
       busy.delete(worker);
@@ -105,6 +108,23 @@ export function bakeInWorker(scene: Object3D, sex: WalkSex): Promise<Result> {
     queue.push({ nodes, transfer, sex, resolve });
     dispatch();
   });
+}
+
+/** A body's rig as a worker bakes on it (`rigData`), kept by the page for its clips baked on first use. */
+export function bakeRig(scene: Object3D): readonly RigNode[] {
+  return rigData(scene).nodes;
+}
+
+/** One clip of a body baked on first use, in a worker (`bakeDeferred`); null when no worker can (it is baked here then). */
+export async function bakeDeferredInWorker(nodes: readonly RigNode[], sex: WalkSex, at: number, facts: ShuffleFacts): Promise<ClipFrames | null> {
+  releaseRequested = false;
+  if (!usable) return null;
+  // The rig copied, not moved: the body's next clip is baked on it too.
+  const result = await new Promise<Result>((resolve) => {
+    queue.push({ nodes, transfer: [], sex, at, facts: { duration: facts.duration, stride: facts.stride }, resolve });
+    dispatch();
+  });
+  return result?.[0] ?? null;
 }
 
 /** Releases decoded motion libraries held by idle workers after all visual bodies leave. */
