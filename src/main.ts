@@ -1969,7 +1969,9 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
     },
     letGo: (key, removedAt, gone) => {
       // A record that went with the tile (by id, whatever range it came from or wherever it was first made), or one whose value stands in it.
-      history.letGoTile((r) => gone.get(r.part as RecordPart)?.has(r.id) === true || tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
+      const undoGone = history.letGoTile((r) => gone.get(r.part as RecordPart)?.has(r.id) === true || tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
+      // A long road laid in parts past the region can no longer be undone as a whole: said, so its undo going is not a surprise.
+      if (undoGone > 0) { flashHint('hint.road.undoGone'); updateHistoryButtons(); }
       scene.tileLetGo(key);
       for (const f of far) f.loadedChanged(key);
       sim.tile('letGo', key);
