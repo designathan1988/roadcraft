@@ -5,7 +5,7 @@ import { type RecordRef, readRecords, refOf } from '@world/buildings/recordTable
 import type { Building } from '@world/buildings/types';
 import type { TileRecords } from '@world/doc';
 import { tileKey, tileOfKey } from '@world/tiles';
-import { derivedCacheOpen, keepDerivedDurably, readDerived } from '../derivedCache';
+import { derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { type CellMass, cellMass, cellMassBuffers, indexArray, shellBounds } from './cellArrays';
 import { AGGREGATE, farKey, farNode, nodeSide, readStored } from './farGrid';
@@ -61,6 +61,9 @@ interface FarChild {
   readonly key: string;
   readonly sig: string;
 }
+
+/** The same store, a write resolved once queued (`keepDerivedQueued`): for a tile's maker, whose later readers' transactions come after its write's. */
+export const queuedFarCache: FarCache = { ready: derivedCacheOpen, get: (key) => readDerived(key), put: (key, value) => keepDerivedQueued(key, value) };
 
 /** Rows of one shared table of buildings (`recordTable.ts`): the table posted as a handle, never copied, each row a building migrated where the table was written. */
 export interface RecordRows {

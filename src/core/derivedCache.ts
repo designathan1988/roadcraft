@@ -151,6 +151,11 @@ export async function keepDerivedDurably(key: string, value: unknown): Promise<{
   }
 }
 
+/** Keeps a value under `key`, resolved once the write is queued, not committed: a read asked after it, from any thread, sees it (IndexedDB starts a read-only transaction only once the read/write transactions created before it on its store are finished, W3C IndexedDB "transaction scheduling"). DO NOT wait for the commit where nothing needs it: a tile's maker held its lane 5-8 s a tile for it (2026-10-16, the workers' profile). */
+export function keepDerivedQueued(key: string, value: unknown): Promise<void> {
+  return keepDerived(key, value);
+}
+
 /** Keeps a value under `key`, without waiting. */
 export function writeDerived(key: string, value: unknown): void {
   void keepDerived(key, value);

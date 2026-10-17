@@ -6,8 +6,8 @@ import type { JobScope } from './jobs/jobScope';
 import { workerParts } from '@editor/workerParts';
 import { type PreparedTile, prepareTile, readTile, storedVersion, writeTile } from '@editor/tileStore';
 import { bakeTileSections } from '@sim/tileSections';
-import { type FarGroundEnv, keepTileFar } from './render/buildings/farTiles';
-import { keepTileFarRoads, tileRoads } from './render/farRoadTiles';
+import { type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
+import { keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTiles';
 import type { SharedGroundData } from './render/sharedGround';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
@@ -33,8 +33,9 @@ export interface FarTileBake extends FarGroundEnv {
 /** DO NOT let a tile's far levels be baked again by another worker from the store (two hundred jobs of seconds each on the queue's workers, the opening's 198 s, 2026-10-16): baked here from the tile just made, under the version just written; a failure is said and left to the page's jobs. */
 async function keepFar(records: TileRecords, full: TileRecords, version: number, far: FarTileBake): Promise<void> {
   const bakes = await Promise.allSettled([
-    keepTileFar(full, version, far, far.massPrefix),
-    keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix),
+    // Queued, not waited for (`keepDerivedQueued`): the page's far job for the tile asks after this answer, and its read comes after these writes.
+    keepTileFar(full, version, far, far.massPrefix, queuedFarCache),
+    keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix, queuedRoadCache),
   ]);
   for (const bake of bakes) if (bake.status === 'rejected') console.warn(`[city tile] tile ${records.key}'s far level not kept; the far jobs bake it`, bake.reason);
 }
