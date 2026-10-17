@@ -6,14 +6,13 @@ import {
   FrontSide,
   type Frustum,
   type Group,
-  Matrix4,
+  type Matrix4,
   MeshStandardMaterial,
   PlaneGeometry,
-  Quaternion,
   RepeatWrapping,
   SRGBColorSpace,
   TextureLoader,
-  Vector3,
+  type Vector3,
   type Texture,
 } from 'three';
 import { isEffectKind, type EffectKind, type ElementItem, type ElementKind } from '@world/elements';
@@ -285,7 +284,6 @@ export function createElementLayer(kit: ElementKit, active?: ActiveTiles): Eleme
   const drawn = new Map<number, Run>();
   const emitters = new Map<number, Emitter[]>();
   let effects = 0;
-  const matrix = new Matrix4(), position = new Vector3(), rotation = new Quaternion(), scale = new Vector3(), up = new Vector3(0, 1, 0);
   const tint = { r: 1, g: 1, b: 1 };
   /** One cell's elements: its props into a run, its effects as emitters. */
   const cellOf = (items: readonly ElementItem[], groundAt: (x: number, y: number) => number): { run: Run; fires: Emitter[] } => {
@@ -296,13 +294,11 @@ export function createElementLayer(kit: ElementKit, active?: ActiveTiles): Eleme
       const variants = storesOf.get(item.kind);
       if (!variants?.length) continue;
       const parts = variants[Math.min(variants.length - 1, Math.floor(item.seed * variants.length))]!;
-      position.set(item.x, groundAt(item.x, item.y), -item.y);
-      rotation.setFromAxisAngle(up, item.yaw);
-      scale.setScalar(item.size);
-      matrix.compose(position, rotation, scale);
       const t = 0.88 + ((item.seed * 7.31) % 1) * 0.24;
       tint.r = t; tint.g = t; tint.b = t;
-      for (const store of parts) builder.add(store, matrix.elements, item.size, tint);
+      // The layer's pose is `YAW_POSE` (place, yaw, scale), never a matrix; world y is three's -z.
+      const z = groundAt(item.x, item.y);
+      for (const store of parts) builder.turned(store, item.x, z, -item.y, item.yaw, item.size, item.size, item.size, item.size, tint);
     }
     return { run: builder.build(), fires };
   };
