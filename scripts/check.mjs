@@ -60,6 +60,17 @@ export const ALWAYS = [
   'tests/render/gardenMatrix.spec.ts',
   'tests/render/roadLod.spec.ts',
   'tests/render/cheapAudit.spec.ts',
+  'tests/editor/history.spec.ts',
+  'tests/editor/lotProposalPlace.spec.ts',
+  'tests/editor/tileStore.spec.ts',
+  'tests/editor/worldStreamer.spec.ts',
+  'tests/render/canyonLight.spec.ts',
+  'tests/render/frameBudget.spec.ts',
+  'tests/render/layerIncremental.spec.ts',
+  'tests/render/openingNature.spec.ts',
+  'tests/render/programsGate.spec.ts',
+  'tests/render/textureUploads.spec.ts',
+  'tests/ui/statusScope.spec.ts',
 ];
 
 /** The specs a change calls for: `null` */
