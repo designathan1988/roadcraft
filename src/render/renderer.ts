@@ -449,6 +449,8 @@ export function createSceneRenderer(
     instanced: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
     tinted: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
   };
+  // DO NOT write colour into the shadow map: it is sampled by its depth texture alone (three r186 `WebGLShadowMap`, PCF: `shadow.map.depthTexture` with a compare function), the RGBA target written for nothing every caster, every cascade.
+  for (const depth of Object.values(depthVariants)) depth.colorWrite = false;
   const ownDepth = new Set<MeshDepthMaterial>(Object.values(depthVariants));
   const plainOpaque = (material: Material): boolean => {
     const m = material as Material & { alphaTest: number; alphaMap?: unknown; map?: unknown; displacementMap?: unknown };

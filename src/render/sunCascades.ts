@@ -154,16 +154,34 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   const enter = new Float64Array(4), leave = new Float64Array(4);
   const splits = new Float64Array(SUN_CASCADES + 1);
 
-  /** The radius a root's casters reach (largest piece), for the texel test */
-  const sphereOf = (object: Object3D): number => {
+  /** The radius a root's casters reach (largest piece), for the texel test: an instanced piece at its largest instance's scale (a train's cars, a platform's bays are a unit geometry scaled by their instances: read at the geometry's own size they lost their shadow in the far cascade). */
+  const measureSphere = (object: Object3D): number => {
     let radius = 0;
     object.traverse((o) => {
-      const mesh = o as Mesh;
+      const mesh = o as Mesh & { isInstancedMesh?: boolean; count?: number; instanceMatrix?: { array: ArrayLike<number> } };
       if (!mesh.isMesh) return;
       const geometry = mesh.geometry;
       if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-      radius = Math.max(radius, (geometry.boundingSphere?.radius ?? 0) * mesh.matrixWorld.getMaxScaleOnAxis());
+      let scale = 1;
+      if (mesh.isInstancedMesh && mesh.instanceMatrix) {
+        const m = mesh.instanceMatrix.array;
+        scale = 0;
+        for (let k = 0, n = mesh.count ?? 0; k < n; k++) {
+          const e = k * 16;
+          scale = Math.max(scale, m[e]! * m[e]! + m[e + 1]! * m[e + 1]! + m[e + 2]! * m[e + 2]!, m[e + 4]! * m[e + 4]! + m[e + 5]! * m[e + 5]! + m[e + 6]! * m[e + 6]!,
+            m[e + 8]! * m[e + 8]! + m[e + 9]! * m[e + 9]! + m[e + 10]! * m[e + 10]!);
+        }
+        scale = Math.sqrt(scale);
+      }
+      radius = Math.max(radius, (geometry.boundingSphere?.radius ?? 0) * scale * mesh.matrixWorld.getMaxScaleOnAxis());
     });
+    return radius;
+  };
+  /** DO NOT walk a root's tree for every cascade and twice a frame: each root's radius once a frame (`pass` clears it). */
+  const spheres = new Map<Object3D, number>();
+  const sphereOf = (object: Object3D): number => {
+    let radius = spheres.get(object);
+    if (radius === undefined) spheres.set(object, radius = measureSphere(object));
     return radius;
   };
   const texelOf = (i: number): number => (2 * fits[i]!.half) / Math.max(1, lights[i]!.shadow.mapSize.x);
@@ -340,6 +358,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     },
     pass({ changed, effects, wind }) {
       if (!enabled) return false;
+      spheres.clear();
       let any = false;
       for (let i = 0; i < SUN_CASCADES; i++) {
         let moved = false;
