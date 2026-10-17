@@ -110,6 +110,8 @@ import { createFlatAtlas } from './flatAtlas';
 import { FarRoads } from './farRoads';
 import { NearTiles } from './nearTiles';
 import { poleProduct } from './poleTiles';
+import { furnitureProduct } from './furnitureTiles';
+import { signProduct } from './signTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -641,6 +643,9 @@ export function createSceneRenderer(
   let polePreview: Utilities | null = null;
   /** Placed signs, street name plates and the junctions' rule plates, kept sign by sign from the diary (`signLayer.ts`). */
   const signs = createSignLayer(activeTiles);
+  // The streamed world's furniture and signs per tile (`furnitureTiles.ts`, `signTiles.ts`), in the layers' own cells and sheets: the region makes none of them.
+  nearTiles.add(furnitureProduct(furniture, sceneryKit.lens, () => cityMinutes));
+  nearTiles.add(signProduct(signs, () => worldNet?.doc.markingStyle ?? 'classic'));
   let polePreviewKey = '';
   /** Walls, fences and hedges (`barriers.ts`), kept barrier by barrier from the diary. */
   const barriers = createBarriers(activeTiles);
@@ -2265,6 +2270,9 @@ export function createSceneRenderer(
     set onNearDrawn(fn) { onNearDrawn = fn; },
     setActiveTiles(at, rects) {
       buildings.setActive(at, rects);
+      // The furniture and the signs of a streamed world are the tiles' (`nearTiles`): the page's own let go.
+      furniture.setTiled(at !== null);
+      signs.setTiled(at !== null);
       // The other near products (gardens, furniture, signs, walls, poles, structures, planted trees, covers, elements, lots) take in or let go the tiles that came or left (`activeTiles.ts`).
       activeTiles.set(at, rects);
       // The near roads built again for the tiles that came in or left (`rebuildWorld`: the kept tiles' digests stand, only the flipped tiles are made or let go).
@@ -3073,6 +3081,8 @@ export function createSceneRenderer(
       densityCars.dispose();
       exhaust.dispose();
       wear.dispose();
+      // The tiles' products first: they take their runs back from the layers below.
+      nearTiles.dispose();
       barriers.dispose();
       transit.dispose();
       transitPreview?.dispose();
@@ -3084,7 +3094,6 @@ export function createSceneRenderer(
       signals.dispose();
       buildings.dispose();
       farRoads.dispose();
-      nearTiles.dispose();
       blinkMaterial.dispose();
       worldJob = null;
       roads?.dispose();

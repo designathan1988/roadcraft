@@ -82,7 +82,8 @@ interface Tint { readonly r: number; readonly g: number; readonly b: number }
 export class RunBuilder {
   private readonly lists = new Map<number, { poses: number[]; colours: number[]; scales: number[] }>();
 
-  constructor(private readonly stores: readonly RunStore[], private readonly format: PoseFormat = YAW_POSE) {}
+  /** `stores`: whether each store is tinted (all a builder reads of it: a worker builds runs without the models). */
+  constructor(private readonly stores: readonly Pick<RunStore, 'tinted'>[], private readonly format: PoseFormat = YAW_POSE) {}
 
   private listOf(store: number, scale: number, tint: Tint | undefined): number[] {
     let list = this.lists.get(store);

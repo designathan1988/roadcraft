@@ -14,7 +14,7 @@ import { TERRAIN_CELL } from './terrainGrid';
 /** Asked by the page's choice of tiles (`nearTiles.ts`), run by the job system (`nearTiles.worker.ts`); a tile the page holds edited is baked from the page's records, never from the store's older version. */
 
 /** The kinds of near products baked per tile (`nearBakers.ts`). */
-export type NearKind = 'poles';
+export type NearKind = 'poles' | 'furniture' | 'signs';
 
 /** The parts a tile is stored in (`editor/tileStore.ts`): its roads, its buildings, and the rest (poles, placed things, barriers, trees). */
 export type NearPart = 'roads' | 'buildings' | 'rest';
@@ -37,7 +37,7 @@ export interface NearProduct<P = unknown> {
   /** Its highest piece over the ground, m: where the eye measures a tile from. */
   readonly top: number;
   /** What else it is baked from that the page may change: in its version. */
-  version?(): string;
+  version?(tile: number): string;
   /** What its bake reads from the page besides the tiles and the ground (`NearTileJob.extra`). */
   extra?(): unknown;
   /** A bake made drawable; `tile`, its tile's key. */

@@ -286,7 +286,7 @@ export class NearTiles implements FarTiles {
     const kind = product.kind;
     const slot = this.slotOf(leaf, kind);
     const tiles = this.tilesOf(leaf, kind);
-    const want = `${nearSig(tiles.map((t) => ({ key: t.key, version: t.edit ? `${t.version}+${t.edit}` : t.version })))}:${product.version?.() ?? ''}`;
+    const want = `${nearSig(tiles.map((t) => ({ key: t.key, version: t.edit ? `${t.version}+${t.edit}` : t.version })))}:${product.version?.(leaf.key) ?? ''}`;
     const sig = `${want}|${Math.max(this.groundEverywhere, this.groundOf.get(leaf.key) ?? 0)}`;
     if (slot.sig === sig || slot.asked === sig || slot.failed === sig) return;
     slot.cancel?.();
