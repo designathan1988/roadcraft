@@ -15,6 +15,7 @@ import {
   type BufferGeometry,
 } from 'three';
 import { TILE } from '@world/tiles';
+import { pinned } from './pinned';
 import { TERRAIN_MAX_HEIGHT, TERRAIN_MIN_HEIGHT } from '@world/terrain';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Network } from '@world/network';
@@ -155,7 +156,7 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
   const shape = carGeometry();
   const group = new Group();
   group.name = 'densityCars';
-  group.matrixAutoUpdate = false;
+  pinned(group);
 
   /** The cars of one tile: a mesh culled by the tile's sphere, its links (slots), and whether one of them changed since it was written. */
   interface CarTile {
@@ -206,7 +207,7 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     const geometry = tileGeometry(made, TILE_START, sphere);
     const mesh = new Mesh(geometry, material);
     mesh.name = `densityCars-${cx},${cy}`;
-    mesh.matrixAutoUpdate = false;
+    pinned(mesh);
     mesh.castShadow = false;
     mesh.receiveShadow = true;
     // Nothing drawn until a car is written.
