@@ -780,6 +780,9 @@ persistence.documentText = (d) => (d === doc ? serializedDoc() : null);
 
 function mutateBuilt(fn: () => boolean): boolean {
   const mutateAt = performance.now();
+  // The network up to the map before the edit (a tile may have come in this frame): the road-wins look takes the edit's own changes only.
+  followNetwork(doc, net);
+  const roadsBefore = net.state;
   history.begin(doc);
   performance.measure('hitch:mutate/before', { start: mutateAt, end: performance.now() });
   // What the diary says this edit came from (`world/changes.ts`).
@@ -789,7 +792,7 @@ function mutateBuilt(fn: () => boolean): boolean {
     // DO NOT move these below `history.end`.
     if (net.revision !== doc.revision) net.rebuild();
     // A road over a building demolishes it (where the network changed only).
-    buildings.afterRoadEdit();
+    buildings.afterRoadEdit(roadsBefore);
     // And nothing stands in a turning circle's carriageway (V8): what stood on a road end's footway goes.
     clearBulbs(doc, net);
   }
