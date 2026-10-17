@@ -2001,7 +2001,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
-    (i, j, after, text, ifMissing) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing));
+    (i, j, after, text, ifMissing, baysOnly) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing, baysOnly));
   if (imported && release) {
     // One at a time, each a write of its own (`TileStore.write`, the save worker): the file's tiles take the place of the stored ones.
     await store.setMeta(imported.meta);

@@ -48,6 +48,8 @@ export interface TileSource {
   ensure?(key: number): Promise<number>;
   /** The version written, or null when it was not. */
   write(records: TileRecords): Promise<number | null>;
+  /** A stored tile's parking bays baked and added where it has none (`TileStore.addBays`); none: nothing to do. */
+  addBays?(key: number): Promise<void>;
 }
 
 export class WorldStreamer {
@@ -278,6 +280,27 @@ export class WorldStreamer {
       });
     }
     this.askAhead();
+    this.askBays();
+  }
+
+  /** The tiles whose bays were asked for (`askBays`), and how many are under way. */
+  private readonly baysAsked = new Set<number>();
+  private baysUnderWay = 0;
+
+  /** DO NOT leave every tile's bays to its first coming into the region (1-2 s a dense tile as the camera moves): once the map is made (`mapMade`), the generator's lanes left idle bake them, from the camera's tile outwards, one lane short of all (a tile the camera moves onto goes first). */
+  private askBays(): void {
+    const add = this.source.addBays;
+    if (!add || this.rush || this.mapMade < this.mapTotal || this.asked.size > 0 || this.ready.size > 0) return;
+    for (const key of this.aheadOrder) {
+      if (this.baysUnderWay >= Math.max(1, this.inFlight - 1)) return;
+      if (this.baysAsked.has(key) || this.doc.hasTile(key)) continue;
+      this.baysAsked.add(key);
+      this.baysUnderWay++;
+      add.call(this.source, key).catch((error: unknown) => console.warn(`[stream] tile ${key}'s bays were not added`, error)).finally(() => {
+        this.baysUnderWay--;
+        this.askBays();
+      });
+    }
   }
 
   /** DO NOT make tiles ahead while the region waits for its own: once every tile it wants is in, the ring it loads next (several at once), then every other tile of the map nearest first (the far levels draw them, `written`). */

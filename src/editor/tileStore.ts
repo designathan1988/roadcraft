@@ -441,7 +441,7 @@ export class TileStore {
     /** Builds a tile the store does not have (the whole-map generator's worker): a pure function of the seed and its place. */
     private readonly generate: (i: number, j: number) => Promise<TileRecords>,
     /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`, its records handed back prepared with `records`; with `ifMissing`, only when the store has none (else the stored one's version, or its records prepared); none where the store is not the worker's to write (the desktop's). */
-    private readonly makeStored?: (i: number, j: number, after: number, records: boolean, ifMissing: boolean) => Promise<MadeTile>,
+    private readonly makeStored?: (i: number, j: number, after: number, records: boolean, ifMissing: boolean, baysOnly?: boolean) => Promise<MadeTile>,
   ) {}
 
   /** The tile in the store, made and stored when it is not, and its version: DO NOT hand its records to the page for a tile it only needs to know is there (the tiles made ahead, `worldStreamer.ts`). */
@@ -463,6 +463,15 @@ export class TileStore {
         return known;
       }
       return (await this.made(key)).version;
+    });
+  }
+
+  /** A stored tile's parking bays baked and added, that section alone, where it has none (`cityTile.worker.ts` addBays), on the tile's chain: no write of it comes between; nothing where tiles are not the generator's to write. */
+  addBays(key: number): Promise<void> {
+    if (!this.makeStored) return Promise.resolve();
+    return this.chained(key, async () => {
+      const { i, j } = tileOfKey(key);
+      await this.makeStored!(i, j, this.versions.get(key) ?? 0, false, false, true);
     });
   }
 

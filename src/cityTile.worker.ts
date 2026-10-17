@@ -21,7 +21,9 @@ export interface StreamTileAsk {
   readonly i: number;
   readonly j: number;
   /** Stored here in the tile store's map (`workerParts`) at a version past `after`: the page never posts a tile it was handed back to the store; `records`, its records handed back prepared too (a tile of the region, `prepareTile`), else its version alone (a tile made ahead); `far`, its far levels baked here and kept. */
-  readonly store?: { readonly map: string; readonly after: number; readonly records: boolean; readonly ifMissing?: boolean; readonly far?: FarTileBake | null };
+  readonly store?: { readonly map: string; readonly after: number; readonly records: boolean; readonly ifMissing?: boolean; readonly far?: FarTileBake | null;
+    /** Nothing made: the stored tile's bays baked and added, if it has none (`addBays`, the map made, the generator's workers idle). */
+    readonly baysOnly?: boolean };
 }
 
 /** WHAT A TILE'S MAKER BAKES ITS FAR LEVELS WITH (the page's far trees and buildings layer, `SceneHandle.farBakeEnv`): the ground and tones their jobs read, and the keys they keep a tile's level 0 under (null: that kind keeps nothing) */
@@ -60,7 +62,15 @@ async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: numbe
   return { key, stored: records.version, prepared: prepareTile(records), existed: true };
 }
 
-/** DO NOT bake every tile's bays in the opening's rush (a grid and a way out per stall, the dearest part of a tile after its growth): a tile made ahead is stored without them, and they are baked and added here, that section alone, when the tile is loaded into the region - the tiles round the camera first.
+/** A stored tile's bays added (`addBays`): its version, null when none is stored (nothing is made). */
+async function baysAnswer(map: string, i: number, j: number): Promise<StreamTileAnswer> {
+  const key = tileKey(i, j);
+  const records = await readTile(stored(), map, key);
+  if (records) await addBays(map, records);
+  return { key, stored: records ? records.version : null, existed: records !== null };
+}
+
+/** DO NOT bake every tile's bays in the opening's rush (a grid and a way out per stall, the dearest part of a tile after its growth): a tile made ahead is stored without them, and they are baked and added here, that section alone: once the map is made, by the generator's idle workers from the camera's tile outwards (`WorldStreamer` bays, `baysAnswer`), and when a tile not reached yet is loaded into the region.
  *  Run while the page waits for this answer on the tile's chain (`TileStore.load`): no write of the tile comes between. A failure is said; the simulation works them out as it does for a tile without them. */
 async function addBays(map: string, records: TileRecords): Promise<void> {
   try {
@@ -81,6 +91,11 @@ const stored = (): ReturnType<typeof workerParts> => (parts ??= workerParts());
 export function serve(self: JobScope): void {
   self.onmessage = (event: MessageEvent<StreamTileAsk>) => {
     const { store, i, j } = event.data;
+    if (store?.baysOnly) {
+      baysAnswer(store.map, i, j).then((answer) => self.postMessage(answer),
+        (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j}'s bays could not be added: ${String(error)}` } satisfies StreamTileAnswer));
+      return;
+    }
     // DO NOT make a tile the store has: looked up here, where the store is open, not through the save worker's lanes.
     if (store?.ifMissing) {
       storedAnswer(store, i, j).then((answer) => (answer ? self.postMessage(answer) : make(self, event.data)),
