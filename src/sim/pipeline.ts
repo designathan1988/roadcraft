@@ -334,7 +334,19 @@ function ensureVehicleRoutes(w: SimWorld): void {
 function reconcileReservedChain(w: SimWorld, v: Vehicle): boolean {
   const lane = w.lanelet(v.lanelet);
   if (!lane) return false;
+  // DO NOT walk the chain again each tick while nothing it reads moved: found valid with the same lane, grant, reservations, route and topology.
+  const was = w.reservationsChecked.get(v);
+  if (was && was.lanelet === v.lanelet && was.admitted === v.admittedConnector && was.reserved === v.reservedConnectors && was.reservedLength === v.reservedConnectors.length
+    && was.route === v.route && was.routeLength === v.route.length && was.topology === w.topologyLog.state) return true;
+  const valid = reservedChainValid(w, v, lane);
+  if (valid) {
+    w.reservationsChecked.set(v, { lanelet: v.lanelet, admitted: v.admittedConnector, reserved: v.reservedConnectors, reservedLength: v.reservedConnectors.length,
+      route: v.route, routeLength: v.route.length, topology: w.topologyLog.state });
+  } else w.reservationsChecked.delete(v);
+  return valid;
+}
 
+function reservedChainValid(w: SimWorld, v: Vehicle, lane: NonNullable<ReturnType<SimWorld['lanelet']>>): boolean {
   let expectedFrom: string | undefined;
   if (lane.kind === 'connector') {
     expectedFrom = w.connector(lane.id)?.toLane;

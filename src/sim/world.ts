@@ -254,6 +254,11 @@ export class SimWorld {
   edgeTraffic = true;
   /** The city's services - the time of day, the public transport (`sim/city/city.ts`) - stepped by the pipeline. */
   readonly city = new City();
+  /** Each vehicle's reservation chain as last found valid (`pipeline.ts` reconcileReservedChain): walked again only when what it reads moved. */
+  readonly reservationsChecked = new WeakMap<Vehicle, {
+    readonly lanelet: LaneletId; readonly admitted: LaneletId | null; readonly reserved: readonly LaneletId[]; readonly reservedLength: number;
+    readonly route: readonly LaneletId[]; readonly routeLength: number; readonly topology: object;
+  }>();
   /** The life of the scenery: people and traffic made round the view (`sim/ambient`). */
   readonly ambient = new AmbientWorld();
   /** The meso traffic of the whole map and its micro window (`meso/meso.ts`): the game's (`simHost.ts`); off in the specs, the micro simulation everywhere. */
