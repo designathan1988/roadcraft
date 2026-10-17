@@ -458,7 +458,8 @@ export function createBuildingKit(): BuildingKit {
     railing: railingGeometry(),
     roofRailing: roofRailingGeometry(),
     awning: awningGeometry(),
-    column: new CylinderGeometry(0.5, 0.5, 1, 12),
+    // Open-ended: an arcade's column runs floor to soffit, its ends never seen (`emitBay` pillar).
+    column: new CylinderGeometry(0.5, 0.5, 1, 12, 1, true),
     glassDark: glassPlane,
     water: unitBox,
     lamp: unitBox,
