@@ -616,57 +616,69 @@ function workOutLayout(b: Building, onlyLevel?: number): LocalBay[] {
   const elevations: number[] = [];
   const top = topLevel(b);
   for (let level = 0; level <= top; level++) elevations.push(levelElevation(b, level));
+  // Whether two blocks stand at lifts apart (`partlyCoveredSpans` finds nothing otherwise).
+  let lowLift = Infinity, highLift = -Infinity;
+  for (const o of b.volumes) { lowLift = Math.min(lowLift, volumeLift(o)); highLift = Math.max(highLift, volumeLift(o)); }
+  const lifted = highLift - lowLift > EPS;
   for (const v of b.volumes) {
+    // DO NOT work a side's frame, bays and start out again each storey: they are the block's.
+    const sides = volumeSides(v).map((side) => {
+      const frame = edgeFrame(v, side);
+      return { side, nx: frame.nx, ny: frame.ny, count: baysOn(b, v, side), width: bayWidth(b, v, side), s: sideStart(v, side) };
+    });
+    const lift = volumeLift(v);
     for (let k = 0; k < v.storeys.length; k++) {
       const storey = v.storeys[k];
       if (!storey) continue;
       const level = v.base + k;
       if (onlyLevel !== undefined && level !== onlyLevel) continue;
-      const z = volumeLift(v) + (elevations[level] ?? levelElevation(b, level));
+      const z = lift + (elevations[level] ?? levelElevation(b, level));
       const height = levelHeight(b, level);
-      for (const side of volumeSides(v)) {
-        const frame = edgeFrame(v, side);
-        const n = { x: frame.nx, y: frame.ny };
-        const count = baysOn(b, v, side);
-        const width = bayWidth(b, v, side);
+      for (const { side, nx, ny, count, width, s } of sides) {
         const spans = coveredSpans(b, v, side, level);
         // Against a block at another floor for part of the storey: plain wall there.
-        const partly = partlyCoveredSpans(b, v, side, level);
-        const s = sideStart(v, side);
+        const partly = lifted ? partlyCoveredSpans(b, v, side, level) : NO_SPANS;
+        const bay = (index: number, push: number, p0: number, p1: number, whole: boolean): void => {
+          const mid = (p0 + p1) / 2;
+          out.push({
+            volume: v.id,
+            storey: k,
+            level,
+            side,
+            index,
+            component: whole ? componentAt(storey.facade, side, index) : 'wall',
+            lx: s.x + s.tx * mid + nx * push,
+            ly: s.y + s.ty * mid + ny * push,
+            lnx: nx,
+            lny: ny,
+            z,
+            start: p0,
+            push,
+            width: p1 - p0,
+            height,
+          });
+        };
         for (let index = 0; index < count; index++) {
           const a0 = index * width;
           const a1 = a0 + width;
-          const parts = spans.length === 0 ? [[a0, a1] as [number, number]] : exposedParts(spans, a0, a1);
-          const first = parts[0];
-          const whole = parts.length === 1 && first !== undefined && Math.abs(first[0] - a0) < EPS && Math.abs(first[1] - a1) < EPS &&
-            !partly.some(([s0, s1]) => s1 > a0 + EPS && s0 < a1 - EPS);
           const push = reliefAt(v, side, index, k)?.depth ?? 0;
-          for (const [p0, p1] of parts) {
-            const mid = (p0 + p1) / 2;
-            out.push({
-              volume: v.id,
-              storey: k,
-              level,
-              side,
-              index,
-              component: whole ? componentAt(storey.facade, side, index) : 'wall',
-              lx: s.x + s.tx * mid + n.x * push,
-              ly: s.y + s.ty * mid + n.y * push,
-              lnx: n.x,
-              lny: n.y,
-              z,
-              start: p0,
-              push,
-              width: p1 - p0,
-              height,
-            });
-          }
+          let partlyHere = false;
+          for (const [s0, s1] of partly) if (s1 > a0 + EPS && s0 < a1 - EPS) { partlyHere = true; break; }
+          // Nothing against the side: the bay whole, no list made.
+          if (spans.length === 0) { bay(index, push, a0, a1, !partlyHere); continue; }
+          const parts = exposedParts(spans, a0, a1);
+          const first = parts[0];
+          const whole = parts.length === 1 && first !== undefined && Math.abs(first[0] - a0) < EPS && Math.abs(first[1] - a1) < EPS && !partlyHere;
+          for (const [p0, p1] of parts) bay(index, push, p0, p1, whole);
         }
       }
     }
   }
   return out;
 }
+
+/** No spans. */
+const NO_SPANS: readonly (readonly [number, number])[] = Object.freeze([]);
 
 // ------------------------------------------------------------------ roofs
 
