@@ -10,7 +10,7 @@ import { MesoMemory } from '../meso/memory';
 import { type TileReader, TileLinkFeed } from '../meso/tileFeed';
 import { storeTileReader } from '../../tileReader';
 import { laneGrid } from '../agents/laneGrid';
-import { tileBaysGone, tileBaysRead, tileBaysWanted, useBayWorkers } from '../agents/parking';
+import { tileBaysGone, tileBaysRead, tileBaysReset, tileBaysWanted, useBayWorkers } from '../agents/parking';
 import { BayPool } from '../../bayPool';
 import { ConflictPool } from '../../conflictPool';
 import { TopologyCatchUp } from '../topologyCatchUp';
@@ -179,6 +179,9 @@ export class SimHost {
 
   /** Another map: the replica made whole again, and nothing of the old simulation carried over. */
   private load(map: TrafficMap): void {
+    // DO NOT let a tile's read of the old map land in the new one: its buildings and bays would be put in this map (`tileBuildings`).
+    this.tileReads.clear();
+    if (this.sim) tileBaysReset(this.sim);
     takeTrafficMap(this.doc, this.buildings, map);
     this.net.rebuild({ full: true });
     this.sim?.reset();

@@ -157,6 +157,12 @@ export function tileBaysGone(w: BayWorld, tile: number): void {
   if (book.reading.delete(tile)) release(book);
 }
 
+/** Another map put in: every tile's baked bays and reads of the old one dropped. */
+export function tileBaysReset(w: BayWorld): void {
+  const book = bookOf(w);
+  for (const tile of new Set([...book.bakedTiles.keys(), ...book.reading.keys()])) tileBaysGone(w, tile);
+}
+
 function dropBaked(book: BayBook, tile: number): void {
   const was = book.bakedTiles.get(tile);
   if (!was) return;

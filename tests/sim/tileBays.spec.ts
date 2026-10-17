@@ -7,7 +7,7 @@ import { OWNER, tileIdBase, tileKey } from '@world/tiles';
 import { METERS_PER_UNIT } from '@world/units';
 import { SimWorld } from '@sim/world';
 import { type Bay, bayWork } from '@sim/agents/bay';
-import { collectBays, tileBaysGone, tileBaysRead, tileBaysWanted } from '@sim/agents/parking';
+import { collectBays, tileBaysGone, tileBaysRead, tileBaysReset, tileBaysWanted } from '@sim/agents/parking';
 import { type TrafficBuilding, TrafficBuildingTable } from '@sim/agents/trafficBuildings';
 import { BAYS_SECTION, type TileBays, unpackTileBays } from '@sim/tileBays';
 import { TRAFFIC_SECTION, bakeTileSections, trafficOfSection } from '@sim/tileSections';
@@ -151,5 +151,19 @@ describe('a tile\'s baked bays', () => {
     // Let go: its streets wait no more.
     tileBaysGone(w, key);
     expect(collectBays(w)).toEqual(liveBays().bays);
+  });
+
+  it('of the map before are all let go when another map is put in: a read still on its way lands in nothing', () => {
+    const { w } = worldOf(undefined, []);
+    const tiles = [...streetTiles()];
+    // One tile's bays taken, the others still being read, when another map comes (`simHost.ts` load).
+    for (const t of tiles) tileBaysWanted(w, t, 1);
+    tileBaysRead(w, tiles[0]!, 1, tileBays());
+    tileBaysReset(w);
+    // The streets wait for nothing, nothing baked is taken, and a late read is not taken either.
+    for (const t of tiles.slice(1)) tileBaysRead(w, t, 1, tileBays());
+    const fresh = worked(() => collectBays(worldOf(undefined, []).w)).kerbs;
+    expect(fresh).toBeGreaterThan(0);
+    expect(worked(() => collectBays(w)).kerbs).toBe(fresh);
   });
 });
