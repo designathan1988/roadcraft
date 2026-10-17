@@ -1,7 +1,7 @@
 import { poseMatrices } from '@render/buildings/partPose';
 import { describe, expect, it } from 'vitest';
 
-import type { InstancedMesh, InterleavedBufferAttribute } from 'three';
+import { DataUtils, type InstancedMesh, type InterleavedBufferAttribute } from 'three';
 import { type BuildingChunk, type PartBatch, assembleBuildingMeshes, emitChunk, shellPartFaces, withShellParts } from '@render/buildings/buildingMesh';
 import type { ShellChunk } from '@render/buildings/chunk';
 import {
@@ -87,7 +87,7 @@ function farAt(far: BuildingChunk, px: number, py: number, pz: number, nx: numbe
       const wa = 1 - wb - wc;
       if (wa < -1e-6 || wb < -1e-6 || wc < -1e-6) continue;
       const at = (k: number): number => wa * grid[a * FACADE_GRID + k]! + wb * grid[b * FACADE_GRID + k]! + wc * grid[c * FACADE_GRID + k]!;
-      const gu = at(0), gv = at(1), W = facade[a * FACADE_FLOATS]!;
+      const gu = at(0), gv = at(1), W = DataUtils.fromHalfFloat(facade[a * FACADE_FLOATS]!);
       const raw = grid[a * FACADE_GRID + 2]!, kind = raw & (FACADE_FLIP - 1), key = grid[a * FACADE_GRID + 3]!;
       // The run's direction as the shader works it out: the face's own horizontal on the plan, turned round where flagged.
       const across = Math.hypot(wx, wz), turn = raw & FACADE_FLIP ? -1 : 1;
@@ -415,13 +415,13 @@ describe('the shell\'s compact vertex', () => {
     }
   });
 
-  it('is 28 bytes, 52 only on the far level\'s runs of bays with openings (37 and 77 before)', () => {
+  it('is 28 bytes, 48 only on the far level\'s runs of bays with openings (37 and 77 before, then 52)', () => {
     for (const far of [false, true]) {
       const s = cellArrays(town.map((b) => emitChunk(b, groundAt, undefined, groundAt, undefined, far)), take, unitBoxes);
       if (far) expect(s.shells.some((p) => p.facade)).toBe(true);
       for (const piece of s.shells) {
         const one = { shells: [piece], parts: {}, furniture: {} };
-        expect((cellBytes(one) - piece.index.byteLength) / (piece.position.length / 3)).toBe(piece.facade ? 52 : 28);
+        expect((cellBytes(one) - piece.index.byteLength) / (piece.position.length / 3)).toBe(piece.facade ? 48 : 28);
       }
     }
   });
@@ -465,5 +465,25 @@ describe('the shell\'s compact vertex', () => {
     // Five faces of four corners each (no bottom); the fronts, backs and tops of the two share their edge at x = 1, the end faces there face apart.
     expect(laid.index.length / 3).toBe(2 * 5 * 2);
     expect(laid.position.length / 3).toBe(2 * 5 * 4 - 3 * 2);
+  });
+});
+
+describe('the far level\'s window grid', () => {
+  it('holds each run\'s bay width and storey height in half floats, to under 2 mm', () => {
+    let runs = 0;
+    for (const b of grownTown().slice(0, 12)) {
+      const l1 = emitChunk(b, groundAt, undefined, groundAt, undefined, true);
+      for (const s of Object.values(l1.runs ?? {})) {
+        expect(s.facade).toBeInstanceOf(Uint16Array);
+        for (let v = 0; v < s.facade.length; v += FACADE_FLOATS) {
+          const W = DataUtils.fromHalfFloat(s.facade[v]!), H = DataUtils.fromHalfFloat(s.facade[v + 1]!);
+          // A bay a metre to a few, a storey two to six: within the half float's step there.
+          expect(W).toBeGreaterThan(m(0.5));
+          expect(H).toBeGreaterThan(m(1.5));
+          runs++;
+        }
+      }
+    }
+    expect(runs).toBeGreaterThan(0);
   });
 });

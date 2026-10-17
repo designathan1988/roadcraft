@@ -63,7 +63,7 @@ interface ShellArrays {
   readonly index: Uint16Array | Uint32Array;
   readonly bounds: Bounds;
   /** The far level's runs of bays with openings only (`RunChunk`): each vertex's bay width and storey height (`FACADE_FLOATS`), its grid (`FACADE_GRID` shorts) and its opening (`FACADE_BYTES`, `facadeLevel.ts`). */
-  readonly facade?: Float32Array;
+  readonly facade?: Uint16Array;
   readonly grid?: Int16Array;
   readonly opening?: Uint8Array;
 }
@@ -129,7 +129,7 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
   return { shells, parts, furniture };
 }
 
-/** Floats per vertex of the far level's window grid (`buildingMesh.ts` `FacadeStamp`): one bay's width and one storey's height. */
+/** Half floats per vertex of the far level's window grid (`buildingMesh.ts` `FacadeStamp`): one bay's width and one storey's height, to a millimetre or two. */
 export const FACADE_FLOATS = 2;
 /** Shorts per vertex of the far level's window grid, each a whole number: bay and level (u, v, whole at a run's corners), kind + `FACADE_FLIP` where the bays run against the face's own horizontal, volume * 4 + side. */
 export const FACADE_GRID = 4;
@@ -301,7 +301,7 @@ function shellArrays(chunks: readonly BuildingChunk[], of: FragmentsOf): ShellAr
   const normalDecay = new Int16Array(vertices * SHELL_SHORTS);
   const paint = new Uint16Array(vertices * SHELL_SHORTS);
   const index = indexArray(vertices, indices);
-  const facade = runs ? new Float32Array(vertices * FACADE_FLOATS) : undefined;
+  const facade = runs ? new Uint16Array(vertices * FACADE_FLOATS) : undefined;
   const grid = runs ? new Int16Array(vertices * FACADE_GRID) : undefined;
   const opening = runs ? new Uint8Array(vertices * FACADE_BYTES) : undefined;
   let v = 0;

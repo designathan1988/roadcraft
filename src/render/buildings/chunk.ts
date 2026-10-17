@@ -75,7 +75,7 @@ export interface ShellChunk {
 /** The far level's runs of bays with openings (`emitChunk` `far`): a shell fragment whose every vertex carries its window grid (`facadeLevel.ts`). */
 export interface RunChunk extends ShellChunk {
   /** Each vertex's bay width and storey height, `FACADE_FLOATS` numbers (`cellArrays.ts`). */
-  readonly facade: Float32Array;
+  readonly facade: Uint16Array;
   /** Each vertex's bay, level, kind and volume * 4 + side, `FACADE_GRID` shorts. */
   readonly grid: Int16Array;
   /** Each vertex's opening and frame colour, `FACADE_BYTES` bytes. */
