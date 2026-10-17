@@ -6,7 +6,7 @@ import { type LotSurface as LotPlane, lotSurfaces } from '@world/buildings/lots'
 import { POOL_SINK } from '@world/buildings/pads';
 import { deriveSpaces } from '@world/buildings/spaces';
 import { spaceSeed } from './lightSlots';
-import { localToWorld, worldToLocal } from '@world/buildings/geometry';
+import { buildingFrame, frameX, frameY, localToWorld, worldToLocal } from '@world/buildings/geometry';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type Furniture, type FurnitureKind, interiorAt, levelFlights } from '@world/buildings/interior';
 import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
@@ -3513,6 +3513,34 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   const withGround = lotGround ? { ...out, lotGround } : out;
   const withSignature = signature && floor !== undefined ? { ...withGround, signatureFloor: floor } : withGround;
   return flags.length ? { ...withSignature, flags } : withSignature;
+}
+
+/** What the page keeps of a building (`cellWork.ts` `ChunkSummary`), as `emitChunk` makes it, without laying it: its lots' ground recipe and its signature floor; a building that flies a flag is laid whole, the flags being where its roof puts them. */
+export function chunkSummary(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, party?: PartyWalls): Pick<BuildingChunk, 'flags' | 'lotGround' | 'signatureFloor'> {
+  const resolved = resolveBlocks(b);
+  if (fliesFlag(resolved)) return emitChunk(b, groundAt, pavedAt, naturalAt, undefined, false, true, party);
+  const lots = resolved.volumes.filter((v) => v.open);
+  const closed = closedBlocks(resolved.volumes);
+  const floor = party ? party.floorOf(b) : closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+  const signature = closed.length > 0 && drawsSignature(b);
+  let lotGround: LotGround | undefined;
+  if (lots.length === 0) lotGround = lotGroundOf(resolved, [], floor, false);
+  else {
+    // The level `emitLots` lays the lots at: the building's floor, else the highest ground of the lots a little over.
+    let level = floor;
+    if (level === undefined) {
+      const f = buildingFrame(resolved);
+      let top = -Infinity;
+      for (const v of lots) {
+        for (const q of localFootprint(v)) top = Math.max(top, groundAt(frameX(f, q.x, q.y), frameY(f, q.x, q.y)));
+        top = Math.max(top, groundAt(frameX(f, v.x + v.w / 2, v.y + v.d / 2), frameY(f, v.x + v.w / 2, v.y + v.d / 2)));
+      }
+      level = top + m(0.12);
+    }
+    lotGround = lotGroundOf(resolved, lotSurfaces(resolved, level, pavedAt), level, true);
+  }
+  const out = lotGround ? { lotGround } : {};
+  return signature && floor !== undefined ? { ...out, signatureFloor: floor } : out;
 }
 
 /** A part's arrays viewed at their length, no copy. */
