@@ -58,5 +58,5 @@ describe("the proposed lots planned in the simulation's worker", () => {
     applyLots(doc, { add: page.add.slice(0, 5), keys: [], drop: [] });
     const again = planLots(doc, net);
     expect(shape(await client.lotPlan())).toEqual(shape(again));
-  }, 60_000);
+  });
 });

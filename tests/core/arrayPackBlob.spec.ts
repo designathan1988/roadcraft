@@ -24,5 +24,5 @@ describe('a pack as a Blob', () => {
     const records = buildStreamTile(options, 0, 0);
     const section = bakeTileSections(records, false)[LINKS_SECTION] as { blob: Blob };
     expect(await bytes(section.blob)).toEqual([...packLinks(bakeTileLinks(records))]);
-  }, 30_000);
+  });
 });
