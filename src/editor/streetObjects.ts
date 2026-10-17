@@ -95,10 +95,9 @@ export function commitUturn(doc: RoadDoc, net: Network, segmentId: SegmentId, to
   if (from === undefined) return { committed: false, reason: 'geometry' };
   work.setNodeUturn(node, from);
   workNet.rebuild();
-  const graph = new LaneletGraph();
-  graph.build(work, workNet);
+  // The new node's movements alone, made as the whole graph's build makes them: DO NOT build the lanes of every road on the page for one U-turn.
   const car = 1;
-  const fits = [...graph.connectors.values()].some((c) => c.node === node && c.turn === 'uturn' && c.maxBodyClass >= car);
+  const fits = LaneletGraph.junctionConnectors(work, workNet, node).connectors.some((c) => c.turn === 'uturn' && c.maxBodyClass >= car);
   if (!fits) return { committed: false, reason: 'narrow' };
   doc.takeBack(work);
   net.takeBack(workNet);
