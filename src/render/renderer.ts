@@ -919,10 +919,11 @@ export function createSceneRenderer(
   const vehicleBox: GroundBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
   // A raised deck over the highest land, and room for decks stacked on it; a cut below the deepest.
   const VEHICLE_LOW = TERRAIN_MIN_HEIGHT - m(16), VEHICLE_HIGH = TERRAIN_MAX_HEIGHT + m(64) + VEHICLE_REACH * 0.3;
-  // The vehicles' instanced parts never move as objects (their instances do): a still tree; the people's groups move bones and stay outside.
+  // DO NOT leave the people's groups out of it: their figures are instanced meshes skinned on the GPU (`riggedCitizens.ts` citizenBones, the source SkinnedMesh never in the scene), each level a mesh, recomposed every frame for nothing.
+  // The vehicles' parts and the people's meshes never move as objects (their instances do): a still tree.
   const agentParts = new Group();
   agentParts.name = 'agent-parts';
-  for (const mesh of agents.meshes) ((mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh ? agentParts : scene).add(mesh);
+  agentParts.add(...agents.meshes);
   holdStill(agentParts);
   scene.add(agentParts);
   // The far traffic: the meso model's cars on every road outside the micro window, in one draw (`densityCars.ts`).
