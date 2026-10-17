@@ -6,7 +6,7 @@ import type { Change, ChangeJournal, ChangeKind } from '@world/changes';
 import { CellFiling, grow } from '@world/cells';
 import { Derived, type DerivedSpec } from '@world/derived';
 import type { RoadElevation } from '@world/elevation';
-import { ACCESS_REACH, GROW_MINUTES, MAX_ITEM_RADIUS, plantGrowth, type LandscapeItem } from '@world/landscape';
+import { ACCESS_REACH, GROW_MINUTES, MAX_ITEM_RADIUS, crossingAccessTester, crossingAccesses, plantGrowth, type LandscapeItem } from '@world/landscape';
 import type { Network } from '@world/network';
 import { footwayRiseAt } from '@world/roads/footwayRise';
 import { FOOTWAY_RISE } from '@world/roadTypes';
@@ -129,9 +129,9 @@ function streetSpecies(roll: number): TreeSpecies {
 /** Where a lamp's lens stands on its post (`SceneryKit.lens`): what a furniture bake reads of the models. */
 export interface LampLens { readonly reach: number; readonly height: number }
 
-/** Where a placed item's instances stand, or undefined when it draws nothing */
-function furniturePlace(net: Network, elevation: RoadElevation, placed: LandscapeItem, lens: LampLens): FurniturePlace | undefined {
-  const item = furnitureOf(net, placed);
+/** Where a placed item's instances stand, or undefined when it draws nothing; `onAccess`: the crossings' landings filed once for many items (`crossingAccessTester`), else asked round the item (`nearCrossingAccess`). */
+function furniturePlace(net: Network, elevation: RoadElevation, placed: LandscapeItem, lens: LampLens, onAccess?: Parameters<typeof furnitureOf>[2]): FurniturePlace | undefined {
+  const item = furnitureOf(net, placed, onAccess);
   if (!item) return undefined;
   const out: Placed[] = [];
   const put = (store: number, p: Omit<Placed, 'store' | 'tint' | 'h'> & { tint?: Color; h?: number }): void => {
@@ -340,10 +340,12 @@ export function bakeFurniture(net: Network, elevation: RoadElevation, groundAt: 
   const now = Number.isFinite(minutes) ? Math.floor(minutes / 60) * 60 : Number.NaN;
   const furniture = new RunBuilder(FURNITURE_TINTS), grass = new RunBuilder(MEADOW_TINTS);
   let growing = false;
+  // DO NOT ask the roads round each item for the crossings' landings (`nearCrossingAccess`, an 80 m query an item): filed once for the bake's roads, as `streetFurniture` does.
+  let onAccess: ReturnType<typeof crossingAccessTester> | null = null;
   for (const item of items) {
     if (item.kind === 'meadow') { meadowInto(grass, elevation, groundAt, item); continue; }
     if (item.kind === 'sign' || item.kind === 'streetname') continue;
-    const place = furniturePlace(net, elevation, item, lens);
+    const place = furniturePlace(net, elevation, item, lens, onAccess ??= crossingAccessTester(net, crossingAccesses(net)));
     if (!place) continue;
     placeInto(furniture, place, now);
     if (stillGrowing(place.planted, now)) growing = true;

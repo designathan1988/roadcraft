@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Frustum, Matrix4, OrthographicCamera, type InstancedMesh } from 'three';
 import { Rng } from '@core/rng';
 import { Network } from '@world/network';
@@ -11,9 +11,16 @@ import type { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
 import { drawnMatrices } from '@render/cellInstances';
 import { createSceneryKit } from '@render/scenery';
-import { type FurnitureBake, createStreetFurniture } from '@render/streetFurnitureLayer';
+import { type FurnitureBake, bakeFurniture, createStreetFurniture } from '@render/streetFurnitureLayer';
+import { nearCrossingAccess } from '@world/landscape';
 import { furnitureProduct } from '@render/furnitureTiles';
 import { bakeEveryTile } from '../support/nearTileBakes';
+
+/** The one-point landing query watched (the module as it is otherwise): a bake files the landings once instead. */
+vi.mock('@world/landscape', async (actual) => {
+  const real = await actual<typeof import('@world/landscape')>();
+  return { ...real, nearCrossingAccess: vi.fn(real.nearCrossingAccess) };
+});
 
 /** A TILE'S STREET FURNITURE BAKED IN A WORKER (`furnitureTiles.ts`): every tile's bake together draws what the page's layer draws for the whole town */
 
@@ -64,6 +71,14 @@ function drawn(layer: ReturnType<typeof createStreetFurniture>, box: readonly [n
 }
 
 describe('a tile\'s street furniture baked in a worker', () => {
+  it('files the crossings\' landings once a bake, never asking the roads round each item for them', () => {
+    const { doc, net } = town();
+    vi.mocked(nearCrossingAccess).mockClear();
+    const bake = bakeFurniture(net, buildRoadElevation(net, () => 0), () => 0, doc.landscape.values(), kit.lens, GROW_MINUTES);
+    expect(bake.furniture?.size).toBeGreaterThan(0);
+    expect(vi.mocked(nearCrossingAccess)).not.toHaveBeenCalled();
+  });
+
   it('every tile\'s bake together draws the page\'s layer of the whole town, the plants sized at the city\'s hour', async () => {
     const { doc, net, box } = town();
     const minutes = GROW_MINUTES / 2 + 37;
