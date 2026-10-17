@@ -10,6 +10,9 @@ import { jobPort, longWorkers, shortWorkers } from './jobs/jobPool';
 /** Workers making tiles at once, and how many the region asks at a time (`worldStreamer.ts` inFlight): the long-running side of the pool (`longWorkers`), the growth beside them (it grows the player's zones, once the map is made); never on the workers of the traffic's lanes, the cells or the far levels (`jobPool.ts` place). */
 export const tileLanes = (): number => longWorkers();
 
+/** Lanes set aside on the other kinds' workers while the map is made (`setAside`): one on each of them but the save's, which stays clear (`jobPool.ts` KEPT_CLEAR: two lanes there were put on the one other worker, a tile waiting behind a tile). */
+export const asideLanes = (): number => Math.max(0, shortWorkers() - 1);
+
 /** Where a tile made is stored by the worker, and whether its texts come back with its version. */
 type StoreAsk = NonNullable<StreamTileAsk['store']>;
 
@@ -62,7 +65,7 @@ export class TileGenerator {
 
   /** The tiles this generator makes at once now: what the asker keeps in flight (`worldStreamer.ts` `inFlight`). */
   get lanesWanted(): number {
-    return tileLanes() + (this.aside ? shortWorkers() : 0);
+    return tileLanes() + (this.aside ? asideLanes() : 0);
   }
 
   /** The workers let go (another world opened, the page going away). */
@@ -90,7 +93,7 @@ export class TileGenerator {
     const idle = (): number => this.lanes.filter((l) => !l.busy).length;
     // The low work on the generator's own lanes alone, never on those set aside.
     for (let made = own; made < tileLanes() && this.queue.length + this.lowQueue.length > idle(); made++) this.lanes.push(this.lane(false));
-    if (this.aside) for (let made = aside; made < shortWorkers() && this.queue.length > idle(); made++) this.lanes.push(this.lane(true));
+    if (this.aside) for (let made = aside; made < asideLanes() && this.queue.length > idle(); made++) this.lanes.push(this.lane(true));
     for (const lane of this.lanes) {
       if (lane.busy) continue;
       const next = this.queue.shift() ?? (lane.aside ? undefined : this.lowQueue.shift());
