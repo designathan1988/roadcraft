@@ -1,4 +1,4 @@
-import type { SerializedDoc, WorldPart } from '@world/doc';
+import { type SerializedDoc, type WorldPart, WORLD_PARTS } from '@world/doc';
 import { type WorldMeta, metaKey, metaPartKey, readMeta } from './worldMeta';
 
 export type { WorldMeta } from './worldMeta';
@@ -289,7 +289,7 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
     }
     case 'write': return (await writeTile(store, op.map, writtenRecords(op.records), bake)).ok;
     case 'meta': return readMeta(store, op.map);
-    case 'setMeta': return writer.write({ put: [{ key: metaKey(op.map), value: op.meta, packed: false }], remove: [] });
+    case 'setMeta': return writer.write({ put: [{ key: metaKey(op.map), value: op.meta, packed: false }], remove: WORLD_PARTS.map((part) => metaPartKey(op.map, part)) }); // the parts written apart before it go (`readMeta`)
     case 'setMetaParts': return writer.write({
       put: (Object.entries(op.parts) as [WorldPart, Partial<SerializedDoc>][]).map(([part, value]) => ({ key: metaPartKey(op.map, part), value, packed: false })), remove: [] });
     case 'migrate': return migrate(store, op.map, op.local);
@@ -473,6 +473,11 @@ export class TileStore {
 
   meta(): Promise<WorldMeta | null> {
     return this.chained('world', () => this.backend.run({ op: 'meta', map: this.map }) as Promise<WorldMeta | null>);
+  }
+
+  /** A stored tile's records as their texts, each an object of some of its fields (`TileText`), never parsed here: null when none is stored (a map saved to a file, `worldExport.ts`). */
+  readText(key: number): Promise<TileText | null> {
+    return this.chained(key, () => this.backend.run({ op: 'readText', map: this.map, key }) as Promise<TileText | null>);
   }
 
   /** A stored tile's lists emptied (a "whole map" clear), in its order with the tile's other calls: the version written, null when there was nothing to clear or no tile is stored. */

@@ -98,7 +98,8 @@ import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingP
 import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
 import { STUTTER_MS } from '@core/sampleRing';
 import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
-import { exportToFile } from '@editor/mapExport';
+import { exportToFile, offerFile } from '@editor/mapExport';
+import { worldFilePieces } from '@editor/worldExport';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
 import { TransitTool, setTransitTool, transitTool } from '@editor/transitTools';
 import type { BuildingId } from '@world/buildings/types';
@@ -1984,7 +1985,9 @@ const itemInTile = (item: unknown, key: number): boolean => {
   return !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && OWNER.at(p as { x: number; y: number }) === key;
 };
 /** A world of the generator's options opened: the document emptied, the tiles round the camera streamed in (made the first time, read after). */
-async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Promise<void> {
+async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
+  /** A world file opened (`worldExport.ts`): its values and tiles put in the store first, in place of what it held. */
+  imported?: Extract<ImportResult, { status: 'world' }>['world']): Promise<void> {
   // The world open before closed first, its changed tiles written.
   await afterStreamedWorld(() => undefined);
   persistence.paused = true;
@@ -1999,6 +2002,11 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
     (i, j, after, text, ifMissing) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing));
+  if (imported && release) {
+    // One at a time, each a write of its own (`TileStore.write`, the save worker): the file's tiles take the place of the stored ones.
+    await store.setMeta(imported.meta);
+    for (const tile of imported.tiles) await store.write(tile);
+  }
   // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
   const empty = new RoadDoc();
@@ -2167,8 +2175,24 @@ scene.setSkyMode(game.sky);
 
 /** DO NOT say "saved" without asking `exportToFile` */
 function saveMap(): void {
+  if (streamed) { void saveWorld(streamed); return; }
   const offered = exportToFile(doc, sessionSettings(), undefined, () => flashHint('hint.exportFailed'));
   if (offered) flashHint('hint.saved');
+}
+
+/** DO NOT save only the region of a streamed world: its changed tiles written, then the world's values and every stored tile of the map in one file (`worldExport.ts`), each tile read in the save worker and put in as it is stored. */
+async function saveWorld(open: NonNullable<typeof streamed>): Promise<void> {
+  try {
+    await open.streamer.flush();
+    const meta = await open.store.meta();
+    if (!meta) throw new Error('the world has no values stored');
+    const pieces = await worldFilePieces(meta, mapTilesFrom(0, 0), (key) => open.store.readText(key));
+    if (!offerFile(new Blob(pieces, { type: 'application/json' }), 'roadcraft-city.json')) throw new Error('the file was not offered');
+    flashHint('hint.saved');
+  } catch (error) {
+    console.error('[world] the city could not be saved to a file', error);
+    flashHint('hint.exportFailed');
+  }
 }
 /** Loads a picked map. */
 function openImported(result: ImportResult): boolean | Promise<boolean> {
@@ -2176,6 +2200,15 @@ function openImported(result: ImportResult): boolean | Promise<boolean> {
   if (result.status === 'invalid') {
     flashHint('hint.openFailed');
     return false;
+  }
+  // A city saved by tiles: opened as the streamed world it is (the store takes its tiles).
+  if (result.status === 'world') {
+    const { world } = result;
+    return openStreamedWorld(world.meta.generator!, false, world).then(() => { flashHint('hint.opened'); return true; }, (error: unknown) => {
+      console.error('[world] the city file could not be opened', error);
+      flashHint('hint.openFailed');
+      return false;
+    });
   }
   const { session } = result;
   return afterStreamedWorld(() => openSession(session));
