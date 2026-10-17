@@ -9,6 +9,7 @@ import type { FlagInstance } from './flagLayer';
 import { PART_KINDS } from './kit';
 import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
 import { CELL_DETAIL, type MassDetail, PLATE_DETAIL, TILE_DETAIL, emitMassing, type MassingChunk } from './massing';
+import { type PartFiling, fileParts, filingBuffers } from './partFiling';
 import { PartyWalls } from './partyWalls';
 import { drawsSignature } from './signature';
 
@@ -53,8 +54,8 @@ export interface ChunkSummary {
 export interface CellResult {
   /** The coarse batch ('cell'); none for a summary or masses. */
   readonly batch: CellArrays | null;
-  /** Each detail cell's batch, by its key ('cell'). */
-  readonly details: readonly (readonly [string, CellArrays])[];
+  /** The cell's parts by band and detail cell, filed here (`partFiling.ts`): null for a summary or masses, or none. */
+  readonly parts: PartFiling | null;
   /** The buildings this job emitted whole. */
   readonly summaries: readonly ChunkSummary[];
   /** The cell's masses ('mass'): null when none of its buildings has any. */
@@ -71,7 +72,7 @@ export type WorkReply =
 export function replyBuffers(reply: WorkReply): ArrayBuffer[] {
   if (reply.kind !== 'done') return [];
   const out = reply.result.batch ? cellBuffers(reply.result.batch) : [];
-  for (const [, arrays] of reply.result.details) out.push(...cellBuffers(arrays));
+  if (reply.result.parts) out.push(...filingBuffers(reply.result.parts));
   if (reply.result.mass) out.push(...cellMassBuffers(reply.result.mass));
   return out;
 }
@@ -118,7 +119,7 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
       const mass = emitMassing(b, groundAt, paved, naturalAt, drawsSignature(b), job.tone, detail);
       if (mass) masses.push(mass);
     }
-    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, details: [], summaries: [], mass: cellMass(masses) } };
+    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries: [], mass: cellMass(masses) } };
   }
   // DO NOT parse a text per building: each record decoded from its tile's shared table, a tile's shared members once for the job.
   const buildings = readRecords(job.entries.map((entry) => entry.record));
@@ -130,7 +131,7 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   // DO NOT lay a building for its summary: its lots' recipe and its floor alone (`chunkSummary`).
   if (job.kind === 'summary') {
     const summaries = buildings.map((b, i) => summaryOf(chunkSummary(b, groundAt, paved, naturalAt), i));
-    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, details: [], summaries } };
+    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, parts: null, summaries } };
   }
   // The detail and its far level: the buildings of the cell as one another's neighbours, a party wall's covered bays not laid (`partyWalls.ts`).
   const party = new PartyWalls(buildings, naturalAt, paved);
@@ -146,7 +147,10 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
     if (list) list.push(chunks[i]!); else byDetail.set(key, [chunks[i]!]);
   });
   const details = [...byDetail].map(([key, list]) => [key, cellArrays(list, { ...DETAIL, ghost: false, dim: false }, job.boxes)] as const);
-  return { kind: 'done', job: job.id, result: { batch, details, summaries } };
+  // DO NOT hand the page the instances to band: the parts filed here, by band and detail cell, their buffers ready (`partFiling.ts`).
+  if (!job.boxes.bandings) throw new Error('[buildings] a cell job with no part bandings (`kitBoxes`)');
+  const parts = details.length ? fileParts(job.cell, details, job.boxes.bandings) : null;
+  return { kind: 'done', job: job.id, result: { batch, parts, summaries } };
 }
 
 /** The roads to hand the job again: those it was handed and every point it read past them, a metre round. */
