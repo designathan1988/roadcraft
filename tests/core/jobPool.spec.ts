@@ -208,4 +208,31 @@ describe('the job system', () => {
     expect(FakeWorker.made[save]!.asked.filter((m) => m.seq !== undefined)).toEqual([]);
     expect(FakeWorker.made.length).toBeLessThanOrEqual(jobWorkers());
   });
+
+  it("gives the store's reads a worker of their own, apart from the save's, where the pool has five or more: within its count, the queue first (conf28, conf37)", async () => {
+    vi.stubGlobal('navigator', { hardwareConcurrency: 10 });
+    const { jobPort, jobWorkers, keptClearWorkers, longWorkers, shortWorkers, submitJob } = await import('@/jobs/jobPool');
+    expect(jobWorkers()).toBe(8);
+    expect([longWorkers(), shortWorkers(), keptClearWorkers()]).toEqual([5, 3, 2]);
+    // The queue full of long jobs before the world opens: it grows what it may, never the kept-clear services' workers.
+    const queued = (n: number): void => {
+      for (let k = 0; k < n; k++) submitJob({ service: 'cells', key: null, priority: k, write: () => ({ data: k, transfer: [] }), done: () => {}, failed: () => {} });
+    };
+    queued(20);
+    // The worker a port posts to, the queue's own messages left where they are.
+    const placed = (port: Worker): number => {
+      const before = FakeWorker.made.map((w) => w.asked.length);
+      port.postMessage({});
+      return FakeWorker.made.findIndex((w, i) => w.asked.length > (before[i] ?? 0));
+    };
+    const save = placed(jobPort('save'));
+    const reads = [0, 1, 2].map(() => placed(jobPort('tileRead')));
+    expect(new Set(reads).size).toBe(1);
+    expect(reads[0]).not.toBe(save);
+    const aside = [0, 1].map(() => placed(jobPort('cityTilesAside')));
+    queued(20);
+    for (const a of aside) expect([save, reads[0]]).not.toContain(a);
+    for (const kept of [save, reads[0]!]) expect(FakeWorker.made[kept]!.asked.filter((m) => m.seq !== undefined)).toEqual([]);
+    expect(FakeWorker.made.length).toBeLessThanOrEqual(jobWorkers());
+  });
 });
