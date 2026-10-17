@@ -222,7 +222,13 @@ describe('the far levels chosen top down', () => {
     const kit = createBuildingKit();
     const cache = memoryCache();
     const tiles = world();
-    const far = new FarLevels(kit, runner(cache), 'test:');
+    // Each answer a turn after its job, as a worker's: the tree chooses again between them (`again`).
+    const later: FarRun = (job, done) => {
+      let live = true;
+      void runFarJob(job, cache).then((reply) => setTimeout(() => { if (live) done(reply); }, 0));
+      return () => { live = false; };
+    };
+    const far = new FarLevels(kit, later, 'test:');
     far.setSource(storeOf(tiles), () => false);
     for (const [key, records] of tiles) far.stored(key, records.version);
     // 6 km up, looking up at the sky: no node of the city in the frustum.
@@ -234,6 +240,9 @@ describe('the far levels chosen top down', () => {
     const sky = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     const away = (): void => far.choose(0, 0, m(6_000), 1000, null, Infinity, sky);
     away();
+    expect(far.waiting).toBe(0);
+    // Chosen again by the tree itself as the answers come in (`again`): in the same frustum, still nothing waited for.
+    for (let turn = 0; turn < 3; turn++) await new Promise((resolve) => setTimeout(resolve, 0));
     expect(far.waiting).toBe(0);
     // Turned back to the city: the same nodes, already come, nothing to wait for and nothing missing.
     await until(away, () => far.shownKeys().length === 16);

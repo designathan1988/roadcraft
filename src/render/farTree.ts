@@ -616,7 +616,8 @@ export class FarTree<P> implements FarTiles {
     queueMicrotask(() => {
       this.scheduled = false;
       const e = this.eye;
-      if (e) this.choose(e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, e.reach);
+      // With the frustum it was chosen in: without it every node waited for counted as seen, behind the camera too.
+      if (e) this.choose(e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, e.reach, this.view);
     });
   }
 }
