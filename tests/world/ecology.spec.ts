@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { REGIONS, computeEcology, isNatureSettings, type EcologyInput, type RegionId } from '@world/ecology';
+import { EcologyScratch, REGIONS, computeEcology, isNatureSettings, type EcologyInput, type RegionId } from '@world/ecology';
 
 /** A small land: a plateau at 100 with a river valley down the middle column and a cliff along the north edge */
 const SIDE = 41;
@@ -29,6 +29,17 @@ function land(region: RegionId, painted: Float32Array | null = null, valleyDepth
 const at = (ix: number, iy: number): number => iy * SIDE + ix;
 
 describe('ecology', () => {
+  it('written into arrays handed again and again, answers as with arrays of its own', () => {
+    const scratch = new EcologyScratch();
+    const keys = ['canopy', 'trees', 'emergent', 'shrub', 'palm', 'cactus', 'grass', 'dry', 'wet', 'rocky', 'region', 'waterDistance'] as const;
+    // Another land in between: nothing of it is left in the next answer.
+    for (const region of ['cerrado', 'amazon', 'cerrado', 'pampa'] as const) {
+      const own = computeEcology(land(region, null, region === 'amazon' ? 5 : 30));
+      const kept = computeEcology(land(region, null, region === 'amazon' ? 5 : 30), undefined, scratch);
+      for (const key of keys) expect(Buffer.from(kept[key].buffer).equals(Buffer.from(own[key].buffer)), `${region} ${key}`).toBe(true);
+    }
+  });
+
   it('is the same land every time it is read', () => {
     const a = computeEcology(land('cerrado'));
     const b = computeEcology(land('cerrado'));

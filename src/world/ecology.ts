@@ -249,9 +249,8 @@ function regionCommunity(region: RegionId, s: Site, out: Community): void {
 }
 
 /** Distance to the nearest wet corner, in world units: a two-pass chamfer transform (3-4 weights), linear in the corners. */
-function waterDistance(water: ArrayLike<number>, side: number, cell: number): Float32Array {
+function waterDistance(water: ArrayLike<number>, side: number, cell: number, d = new Float32Array(side * side)): Float32Array {
   const far = 1e9;
-  const d = new Float32Array(side * side);
   for (let i = 0; i < d.length; i++) d[i] = (water[i] as number) > 0.5 ? 0 : far;
   const a = 3, b = 4;
   for (let y = 0; y < side; y++) {
@@ -302,9 +301,7 @@ function localMeanIn(heights: ArrayLike<number>, side: number, radius: number, x
 }
 
 /** The mean of the heights round each corner over a square of `radius` corners: a separable box blur. */
-function localMean(heights: ArrayLike<number>, side: number, radius: number): Float32Array {
-  const rows = new Float32Array(side * side);
-  const out = new Float32Array(side * side);
+function localMean(heights: ArrayLike<number>, side: number, radius: number, rows = new Float32Array(side * side), out = new Float32Array(side * side)): Float32Array {
   for (let y = 0; y < side; y++) {
     let sum = 0, n = 0;
     for (let x = 0; x <= Math.min(side - 1, radius); x++) { sum += heights[y * side + x] as number; n++; }
@@ -328,8 +325,25 @@ function localMean(heights: ArrayLike<number>, side: number, radius: number): Fl
   return out;
 }
 
-/** Reads the land and answers what grows at every corner. */
-export function computeEcology(input: EcologyInput, update?: EcologyUpdate): EcologyField {
+/** Arrays a caller that reads the answer and lets it go hands every ecology it asks for (`farWoods.ts`): the answer is written into them, the next ask writes over it. */
+export class EcologyScratch {
+  private count = -1;
+  private arrays: Float32Array<ArrayBuffer>[] = [];
+  private region = new Uint8Array(0);
+
+  /** Ten fields, the water's distance and the mean's two passes, `count` corners each; the regions. */
+  take(count: number): { readonly floats: readonly Float32Array<ArrayBuffer>[]; readonly region: Uint8Array } {
+    if (count !== this.count) {
+      this.count = count;
+      this.arrays = Array.from({ length: 13 }, () => new Float32Array(count));
+      this.region = new Uint8Array(count);
+    }
+    return { floats: this.arrays, region: this.region };
+  }
+}
+
+/** Reads the land and answers what grows at every corner; `scratch`: the answer written into its arrays (DO NOT make fifteen arrays of a plate for an answer read once and let go). */
+export function computeEcology(input: EcologyInput, update?: EcologyUpdate, scratch?: EcologyScratch): EcologyField {
   const { side, cell, heights } = input;
   const count = side * side;
   let lowest = Infinity;
@@ -338,17 +352,23 @@ export function computeEcology(input: EcologyInput, update?: EcologyUpdate): Eco
   const prev = update && update.previous.side === side && update.previous.lowest === lowest ? update.previous : null;
   const x0 = prev ? Math.max(0, update!.ix0 - REACH) : 0, x1 = prev ? Math.min(side - 1, update!.ix1 + REACH) : side - 1;
   const y0 = prev ? Math.max(0, update!.iy0 - REACH) : 0, y1 = prev ? Math.min(side - 1, update!.iy1 + REACH) : side - 1;
-  const field: EcologyField = prev ?? {
+  // Every corner of every field is written below (the whole grid when there is no answer to update).
+  const kept = !prev && scratch ? scratch.take(count) : null;
+  const f = kept?.floats;
+  const field: EcologyField = prev ?? (f ? {
+    side, canopy: f[0]!, trees: f[1]!, emergent: f[2]!, shrub: f[3]!, palm: f[4]!, cactus: f[5]!, grass: f[6]!, dry: f[7]!, wet: f[8]!, rocky: f[9]!,
+    region: kept.region, waterDistance: waterDistance(input.water, side, cell, f[10]), lowest,
+  } : {
     side,
     canopy: new Float32Array(count), trees: new Float32Array(count), emergent: new Float32Array(count),
     shrub: new Float32Array(count), palm: new Float32Array(count), cactus: new Float32Array(count),
     grass: new Float32Array(count), dry: new Float32Array(count), wet: new Float32Array(count),
     rocky: new Float32Array(count), region: new Uint8Array(count),
     waterDistance: waterDistance(input.water, side, cell), lowest,
-  };
+  });
   const distance = field.waterDistance;
   // A valley floor or a ridge against the ground some 130 m round it
-  const mean = prev ? localMeanIn(heights, side, MEAN_RADIUS, x0, x1, y0, y1) : localMean(heights, side, MEAN_RADIUS);
+  const mean = prev ? localMeanIn(heights, side, MEAN_RADIUS, x0, x1, y0, y1) : f ? localMean(heights, side, MEAN_RADIUS, f[11], f[12]) : localMean(heights, side, MEAN_RADIUS);
   const seedX = (input.settings.seed % 997) * 1.731;
   const seedY = (Math.floor(input.settings.seed / 997) % 997) * 2.113;
   const half = ((side - 1) * cell) / 2;
