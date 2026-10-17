@@ -59,7 +59,9 @@ describe("a class's rig from the people's worker", () => {
     // The worker keeps its own rig: every array sent is a copy, moved.
     expect(made.shape).not.toBe(shape);
     expect(transfer.length).toBeGreaterThan(5);
-    const back = rigFromMade(made, data.weights, data.joints);
+    // One copy sent for the shape and the posture's positions.
+    expect(made.shape).toBe(made.deltas.positions);
+    const { rig: back } = rigFromMade(made, data.weights, data.joints);
     expect(back.mesh.skeleton.bones.map((b) => b.name)).toEqual(rig.mesh.skeleton.bones.map((b) => b.name));
     back.mesh.skeleton.boneInverses.forEach((m, i) => m.elements.forEach((x, k) => expect(x === rig.mesh.skeleton.boneInverses[i]!.elements[k]).toBe(true)));
     expect(Array.from(back.mesh.geometry.getAttribute('position').array)).toEqual(Array.from(rig.mesh.geometry.getAttribute('position').array));
@@ -73,5 +75,30 @@ describe("a class's rig from the people's worker", () => {
     for (let v = 0; v < offset.length; v += 7) offset[v] = 0.01;
     const vertices = [0, 10, 100, 1000];
     expect(Array.from(back.deltasAt!(offset, vertices))).toEqual(Array.from(rig.deltasAt!(offset, vertices)));
+  });
+
+  it('keeps one copy of its posture on an isolated page: the shared one, nothing of what the worker sent', () => {
+    (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated = true;
+    try {
+      const person = randomPerson(4, 4);
+      const rig = createPersonRig({
+        nude: true, texturedSkin: true, data, skeleton, bodyRange, positions: morpher.shape(person.body), look: { ...person.look, hairCut: 'none', hat: 'none', extras: [] },
+        capture: captureBind('male'), captureAxes: captureBindRotations('male'),
+      });
+      const n = rig.mesh.geometry.getAttribute('position').count;
+      rig.mesh.geometry.userData['morphSource'] = { kind: new Int16Array(n), index: new Int32Array(n) };
+      const { made } = classRigMade(rig, DEFAULT_MACRO, rig.deltasData!.positions);
+      const { rig: back, shape } = rigFromMade(made, data.weights, data.joints);
+      const d = back.deltasData!;
+      expect(d.positions.buffer).toBeInstanceOf(SharedArrayBuffer);
+      expect(d.linear.buffer).toBeInstanceOf(SharedArrayBuffer);
+      // The class's shape is the same array: one copy, and the arrays the worker sent are not referenced.
+      expect(shape).toBe(d.positions);
+      expect(d.positions).not.toBe(made.deltas.positions);
+      expect(d.linear).not.toBe(made.deltas.linear);
+      expect(Array.from(d.positions)).toEqual(Array.from(made.deltas.positions));
+    } finally {
+      delete (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated;
+    }
   });
 });
