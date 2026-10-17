@@ -31,7 +31,7 @@ export const plantedBaker: NearBaker<PlantedBake | null, PlantedExtra> = {
   parts: ['rest'],
   // The roads and the buildings of a tile with trees only.
   more: ['roads', 'buildings'],
-  has: (tiles) => tiles[0]!.trees.length > 0,
+  has: (tile) => tile.trees.length > 0,
   around: true,
   // A tree stands on the ground as drawn at its foot.
   groundReach: m(8),

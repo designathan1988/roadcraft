@@ -18,7 +18,7 @@ export const structureBaker: NearBaker<StructureParts | null, StructureExtra> = 
   around: true,
   // A structure reads the ground round its road (abutments, piers' feet, portals' wings, `SPAN_REACH`).
   groundReach: m(64),
-  has: (tiles) => tiles[0]!.segments.length > 0,
+  has: (tile) => tile.segments.length > 0,
   bake(area, extra) {
     const net = area.net();
     const ribbons: SegmentRibbon[] = [];

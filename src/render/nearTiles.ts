@@ -313,7 +313,7 @@ export class NearTiles implements FarTiles {
       ...(records ? { records } : {}),
       ...(edited ? { edited } : {}),
       ...(this.source?.workersRead ? { store: this.source.workersRead } : {}),
-      ...(product.extra ? { extra: product.extra(leaf.key) } : {}),
+      ...(product.extra ? { extra: product.extra() } : {}),
     };
     slot.cancel = this.run(job, (reply) => this.answer(leaf, product, reply, { want, tiles, edited }));
   }

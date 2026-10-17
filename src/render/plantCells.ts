@@ -131,41 +131,20 @@ export function createCoverCells(kit: GroundCoverKit, name: string, places: {
       with: cards ? [{ name: 'forest-cards', geometry: cards, material: kit.cardMaterial, castShadow: false, receiveShadow: false, cards: true, far: false }] : [],
     });
   })])) as Record<(typeof FOREST_SPECIES)[number], number[]>;
-  const layout: CoverLayout = { rocks, scrub, trees };
-  return plantLayer(name, stores, COVER_POSE, (cell, builder) => {
-    coverInto(builder, layout, places.rocksIn(cell), places.scrubIn(cell), places.treesIn(cell));
-  }, false, COVER_SHADOW_REACH);
-}
-
-/** Where each kind of cover is drawn among a cover layer's stores (`createCoverCells`): each rock model's store, each scrub model's, each forest species' models'. */
-export interface CoverLayout {
-  readonly rocks: readonly number[];
-  readonly scrub: readonly number[];
-  readonly trees: Readonly<Record<(typeof FOREST_SPECIES)[number], readonly number[]>>;
-}
-
-/** The layout of a cover layer of these many models (`createCoverCells` lays its stores in this order): what a tile's bake builds its runs in (`coverTiles.ts`). */
-export function coverLayout(rocks: number, scrub: number, trees: Readonly<Record<(typeof FOREST_SPECIES)[number], number>>): { readonly layout: CoverLayout; readonly stores: number } {
-  let next = 0;
-  const take = (n: number): number[] => Array.from({ length: n }, () => next++);
-  const layout: CoverLayout = { rocks: take(rocks), scrub: take(scrub), trees: Object.fromEntries(FOREST_SPECIES.map((species) => [species, take(trees[species])])) as unknown as CoverLayout['trees'] };
-  return { layout, stores: next };
-}
-
-/** Stones, scrub and card trees put in a run of a cover layer's stores: posed by their stance, tinted by their kind (a stone by its rock), the model picked by the seed; the page's cells and a tile's bake alike. */
-export function coverInto(builder: RunBuilder, layout: CoverLayout, rocks: readonly CoverPlacement[], scrub: readonly CoverPlacement[], trees: readonly TreePlacement[]): void {
   const pose = new Float32Array(COVER_POSE.stride), colour = new Color(), tint = { r: 1, g: 1, b: 1 };
-  const put = (store: number, item: CoverPlacement, stance: (typeof COVER_STANCE)[keyof typeof COVER_STANCE], paint: (item: CoverPlacement, out: Color) => Color): void => {
+  const put = (builder: RunBuilder, store: number, item: CoverPlacement, stance: (typeof COVER_STANCE)[keyof typeof COVER_STANCE], paint: (item: CoverPlacement, out: Color) => Color): void => {
     coverPoseInto(item, stance.sink, stance.tilt, stance.upright, pose, 0);
     paint(item, colour);
     tint.r = colour.r; tint.g = colour.g; tint.b = colour.b;
     builder.add(store, pose, item.size, tint);
   };
-  for (const item of rocks) put(layout.rocks[coverVariant(item, layout.rocks.length)]!, item, COVER_STANCE.rocks, rockTint);
-  for (const item of scrub) put(layout.scrub[coverVariant(item, layout.scrub.length)]!, item, COVER_STANCE.scrub, scrubTint);
-  for (const tree of trees) {
-    const models = layout.trees[tree.species];
-    if (!models?.length) continue;
-    put(models[coverVariant(tree, models.length)]!, tree, COVER_STANCE.trees, treeTint);
-  }
+  return plantLayer(name, stores, COVER_POSE, (cell, builder) => {
+    for (const item of places.rocksIn(cell)) put(builder, rocks[coverVariant(item, rocks.length)]!, item, COVER_STANCE.rocks, rockTint);
+    for (const item of places.scrubIn(cell)) put(builder, scrub[coverVariant(item, scrub.length)]!, item, COVER_STANCE.scrub, scrubTint);
+    for (const tree of places.treesIn(cell)) {
+      const models = trees[tree.species];
+      if (!models?.length) continue;
+      put(builder, models[coverVariant(tree, models.length)]!, tree, COVER_STANCE.trees, treeTint);
+    }
+  }, false, COVER_SHADOW_REACH);
 }
