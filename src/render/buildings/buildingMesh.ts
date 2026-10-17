@@ -30,7 +30,7 @@ import {
   type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, FACADE_GRID, FINISH_ATTRIBUTE, type KitBoxes, NORMAL_SHORTS, type ShellGrid, PAINT_ATTRIBUTE, SHELL_MESH, SHELL_NORMAL, SHELL_SHORTS, WEAR_STEPS, cellArrays, finishId, finishWear, octNormal, paintShort, wearByte,
 } from './cellArrays';
 import {
-  COVER_INSET, GRIME_REACH, GROUND_ATTRIBUTE, LOOK_FLOATS, MACRO_SCALE, NO_GROUND, SHELL_PARTS, SHELL_PART_FACES, SHELL_PART_KINDS, type ShellPartKind, macroNoise,
+  COVER_INSET, GRIME_REACH, GROUND_ATTRIBUTE, LOOK_FLOATS, MACRO_SCALE, NO_GROUND, SHELL_PARTS, SHELL_PART_FACES, SHELL_PART_KINDS, type ShellPartKind, macroNoiseInto,
 } from './shellParts';
 import { partLook } from './fade';
 
@@ -526,6 +526,8 @@ const toByte = (x: number): number => Math.round(Math.max(0, Math.min(1, x)) * 2
 /** Triangles in THREE's axes, one buffer set per finish; winding fixed per face. */
 class Shell {
   readonly parts = new Map<Finish, ShellPart>();
+  /** Where `macroNoiseInto` writes a vertex's tone noise. */
+  private readonly noise = new Float64Array(1);
   /** The far level's runs of bays with openings, apart (`RunChunk`): only their vertices pay for the window grid. */
   readonly runs = new Map<Finish, ShellPart>();
   /** The ground floor's height for the building being emitted: walls darken towards it */
@@ -579,7 +581,8 @@ class Shell {
       position[p3] = x + 0; position[p3 + 1] = z + 0; position[p3 + 2] = 0 - y;
       // No two stretches of wall quite the same tone, and the base weathered.
       // A vertex's own shade (a streak under a sill darker at its foot, `emitStreak`).
-      let tone = (0.97 + macroNoise(x / MACRO_SCALE, y / MACRO_SCALE, z / MACRO_SCALE) * 0.06) * (shades?.[i] ?? 1);
+      macroNoiseInto(x / MACRO_SCALE, y / MACRO_SCALE, z / MACRO_SCALE, this.noise, 0);
+      let tone = (0.97 + this.noise[0]! * 0.06) * (shades?.[i] ?? 1);
       if (grime) {
         const t = Math.min(1, Math.max(0, (z - this.ground) / GRIME_REACH));
         tone *= 0.8 + 0.2 * t * t * (3 - 2 * t);

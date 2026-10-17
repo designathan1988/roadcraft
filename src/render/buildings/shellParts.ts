@@ -25,24 +25,28 @@ export const GRIME_REACH = m(1.2);
 /** How far a paving's sides stand in from its top's edge (`Emitter.slab`): a wall or a gate on that edge keeps the face there. */
 export const COVER_INSET = m(0.006);
 
-/** The lattice value of `macroNoise` at (i, j, k), 0..1. */
-function noiseHash(i: number, j: number, k: number): number {
-  let h = Math.imul(i | 0, 0x27d4eb2d) ^ Math.imul(j | 0, 0x165667b1) ^ Math.imul(k | 0, 0x3c6ef372);
+/** The lattice value of `macroNoiseInto` from a corner's three terms (`Math.imul(i | 0, 0x27d4eb2d)`, the j's and the k's), 0..1: integers in, so no number is boxed out of a call for it. */
+function lattice(ti: number, tj: number, tk: number): number {
+  let h = ti ^ tj ^ tk;
   h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
   return ((h ^ (h >>> 13)) >>> 0) / 4_294_967_296;
 }
 
-/** Smooth 3D value noise, 0..1, for tone that drifts over a whole facade. */
-export function macroNoise(x: number, y: number, z: number): number {
+/** Smooth 3D value noise, 0..1, for tone that drifts over a whole facade, written in `out[at]`: DO NOT return it (a number out of a call not inlined is boxed: one a vertex of every shell). */
+/** DO NOT hash each of a cell's eight corners from its coordinates: each axis's two terms once (the same integers as each corner hashed alone, the xor in any order the same). */
+export function macroNoiseInto(x: number, y: number, z: number, out: Float64Array, at: number): void {
   const x0 = Math.floor(x), y0 = Math.floor(y), z0 = Math.floor(z);
   let fx = x - x0, fy = y - y0, fz = z - z0;
   fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
-  const p0a = noiseHash(x0, y0, z0), p0b = noiseHash(x0 + 1, y0, z0), p0c = noiseHash(x0, y0 + 1, z0), p0d = noiseHash(x0 + 1, y0 + 1, z0);
-  const p1a = noiseHash(x0, y0, z0 + 1), p1b = noiseHash(x0 + 1, y0, z0 + 1), p1c = noiseHash(x0, y0 + 1, z0 + 1), p1d = noiseHash(x0 + 1, y0 + 1, z0 + 1);
+  const i0 = Math.imul(x0 | 0, 0x27d4eb2d), i1 = Math.imul((x0 + 1) | 0, 0x27d4eb2d);
+  const j0 = Math.imul(y0 | 0, 0x165667b1), j1 = Math.imul((y0 + 1) | 0, 0x165667b1);
+  const k0 = Math.imul(z0 | 0, 0x3c6ef372), k1 = Math.imul((z0 + 1) | 0, 0x3c6ef372);
+  const p0a = lattice(i0, j0, k0), p0b = lattice(i1, j0, k0), p0c = lattice(i0, j1, k0), p0d = lattice(i1, j1, k0);
+  const p1a = lattice(i0, j0, k1), p1b = lattice(i1, j0, k1), p1c = lattice(i0, j1, k1), p1d = lattice(i1, j1, k1);
   const ab0 = p0a + (p0b - p0a) * fx, cd0 = p0c + (p0d - p0c) * fx;
   const ab1 = p1a + (p1b - p1a) * fx, cd1 = p1c + (p1d - p1c) * fx;
   const plane0 = ab0 + (cd0 - ab0) * fy, plane1 = ab1 + (cd1 - ab1) * fy;
-  return plane0 + (plane1 - plane0) * fz;
+  out[at] = plane0 + (plane1 - plane0) * fz;
 }
 
 /** A shell vertex's planar uv, metres along its face and up it, from its place and its face's normal in three's axes (x, y up, -z north): `SHELL_UV_GLSL` to the formula, as `Shell.face` once laid it. */
@@ -105,7 +109,7 @@ export const SHELL_PART_FACES: Readonly<Record<ShellPartKind, readonly ShellPart
 /** A number as a GLSL float literal. */
 const glsl = (x: number): string => x.toFixed(6);
 
-/** GLSL of the shell's vertex shader drawn instanced (`finishes.ts`): `macroNoise` to the bit (Math.imul is a uint product, >>> a uint shift). */
+/** GLSL of the shell's vertex shader drawn instanced (`finishes.ts`): `macroNoiseInto` to the bit (Math.imul is a uint product, >>> a uint shift). */
 export const SHELL_PART_PARS = `
 #ifdef USE_INSTANCING
 attribute float ${GROUND_ATTRIBUTE};
