@@ -98,10 +98,18 @@ describe('the micro window', () => {
     expect(windowR()).toBe(MICRO_MIN_RADIUS);
     expect(meso.owned.size).toBeLessThan(wide);
     expect(Math.abs(total() - before)).toBeLessThanOrEqual(2);
-    // A small wheel step does not resize it (it does not breathe).
-    w.focus = { x: 0, y: 0, r: m(70), detail: true };
+    // Above the floor, a small wheel step does not resize it (it does not breathe), though the page asks again for the window with its most (`want`, each frame).
+    w.focus = { x: 0, y: 0, r: m(400), detail: true };
     run(DT);
-    expect(windowR()).toBe(MICRO_MIN_RADIUS);
+    expect(windowR()).toBeCloseTo(m(400) * 1.35, 6);
+    meso.want(0, 0, MICRO_RADIUS);
+    w.focus = { x: 0, y: 0, r: m(370), detail: true };
+    run(DT);
+    expect(windowR()).toBeCloseTo(m(400) * 1.35, 6);
+    // Shrunk under three quarters of it: resized.
+    w.focus = { x: 0, y: 0, r: m(250), detail: true };
+    run(DT);
+    expect(windowR()).toBeCloseTo(m(250) * 1.35, 6);
     // The map view again: the meso's cars come out on the links the window takes back in.
     const narrow = total();
     w.focus = { x: 0, y: 0, r: m(2000), detail: false };

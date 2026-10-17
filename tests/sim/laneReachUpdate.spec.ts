@@ -11,6 +11,11 @@ const recordRejected = (error: unknown): void => { rejected.push(error); };
 
 /** THE ROAD ENDS EACH LANE REACHES, KEPT BY WHAT CHANGED (`laneReach.ts`, from the world's topology log) */
 function fromNothing(w: SimWorld, start: LaneletId, body: number): LaneletId[] {
+  return [...reachedFrom(w, start, body)].filter((id) => boundaryExit(w, id)).sort();
+}
+
+/** Every link lane a search reaches from `start` for a body, `start` included. */
+function reachedFrom(w: SimWorld, start: LaneletId, body: number): Set<LaneletId> {
   const next = (lane: LaneletId): LaneletId[] => {
     const out: LaneletId[] = [];
     for (const id of w.graph.exitsOf(lane)) {
@@ -23,17 +28,21 @@ function fromNothing(w: SimWorld, start: LaneletId, body: number): LaneletId[] {
   const seen = new Set([start]);
   const queue = [start];
   while (queue.length) for (const v of next(queue.pop()!)) if (!seen.has(v)) { seen.add(v); queue.push(v); }
-  return [...seen].filter((id) => boundaryExit(w, id)).sort();
+  return seen;
 }
 
 function check(w: SimWorld, name: string): number {
   let reached = 0;
+  const links = [...w.graph.lanelets.values()].filter((lane) => lane.kind === 'link').map((lane) => lane.id);
   for (const lane of w.graph.lanelets.values()) {
     if (lane.kind !== 'link') continue;
     for (let body = 0; body <= 3; body++) {
       const kept = [...w.laneReaches.exitsFrom(w, lane.id, body as never)];
       expect(kept, `${name}: ${lane.id} body ${body}`).toEqual(fromNothing(w, lane.id, body));
       reached += kept.length;
+      // Whether it may reach each other lane (`mayReach`, the routes' first check) is what the search finds.
+      const found = reachedFrom(w, lane.id, body);
+      for (const goal of links) expect(w.laneReaches.mayReach(w, lane.id, goal, body as never), `${name}: ${lane.id} to ${goal} body ${body}`).toBe(found.has(goal));
     }
   }
   return reached;
