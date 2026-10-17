@@ -1,5 +1,6 @@
 import { applyStructureSway } from './wind';
 import { castBySize } from './shadowCasters';
+import { holdStill } from './stillTree';
 import {
   BoxGeometry,
   Color,
@@ -100,6 +101,8 @@ export function createSignalHeads(
 ): SignalHeads {
   const group = new Group();
   group.name = 'traffic-signals';
+  // DO NOT let the frame recompose every cell's batches: they never move (the sway is the shader's), a still tree (`stillTree.ts`).
+  holdStill(group);
   scene.add(group);
 
   const postGeometry = new CylinderGeometry(POST_RADIUS, POST_RADIUS, POST_HEIGHT, 8);
