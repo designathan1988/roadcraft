@@ -111,6 +111,8 @@ export class TimeGovernor {
   private lowered = false;
   /** A step down brought the frame back past `OVER`: none tried again in this view. */
   private downVain = false;
+  /** The last step up was judged paid: tried once back down under `OVER` (DO NOT keep it for good: the opening's load ended in the window that judged it, and with the district between the marks the floor never came down, half the town in masses, conferencia 103/104). */
+  private paid = false;
 
   /** A window's p95 against the view's budget, ms: `press(true)` asks the floor a step coarser (false when there is none left), `press(false)` a step finer. */
   read(p95: number, budget: number, press: (up: boolean) => boolean): void {
@@ -121,14 +123,17 @@ export class TimeGovernor {
       const before = this.pressedAt;
       this.pressedAt = null;
       if (p95 > before * (1 - GAIN)) { press(false); this.vainAt = before; return; }
+      this.paid = true;
     }
     const lowered = this.lowered;
     this.lowered = false;
     if (p95 > budget * OVER) {
       if (lowered) this.downVain = true;
       if (p95 > this.vainAt * (1 + GAIN)) this.vainAt = Infinity;
-      if (this.vainAt === Infinity && press(true)) { this.pressedAt = p95; this.settling = true; }
-    } else if (p95 < budget * OVER * TIME_SLACK && !this.downVain && !judging) {
+      if (this.vainAt === Infinity && press(true)) { this.pressedAt = p95; this.settling = true; this.paid = false; }
+    } else if ((p95 < budget * OVER * TIME_SLACK || this.paid) && !this.downVain && !judging) {
+      // A step judged paid is tried once back down: what fell may have been a passing load (the opening, a road's build), not the triangles.
+      this.paid = false;
       this.lowered = press(false);
       this.vainAt = Infinity;
     }
@@ -141,5 +146,6 @@ export class TimeGovernor {
     this.vainAt = Infinity;
     this.lowered = false;
     this.downVain = false;
+    this.paid = false;
   }
 }

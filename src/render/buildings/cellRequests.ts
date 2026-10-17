@@ -53,7 +53,7 @@ export class CellRequests {
     const asked = this.asked.get(key);
     if (asked && sameEntries(asked.entries, entries)) return null;
     // DO NOT ask a level to upload while the upload queue is full (`uploads.ts` warmFull): its arrays waited on the page behind every other one (the renderer at 7.3 GB in a re-bake, conf77, 2026-10-17). What is drawn stands, asked again next frame; a building cut open always goes.
-    if (upload && warmFull() && !edited && !entries.some((e) => e.key.includes('|'))) return null;
+    if (upload && warmFull(this.rank(kind, cell)) && !edited && !entries.some((e) => e.key.includes('|'))) return null;
     // Replaced by the cell as it is now: never sent if waiting, its answer dropped if begun (the queue's key does the same).
     if (asked) this.pool.supersede(asked.id);
     const ask = { entries, id: 0 };
@@ -107,9 +107,9 @@ export class CellRequests {
   }
 
   /** A cell's masses from afar made of `entries` (`cellWork.ts` 'mass'), handed to `done` when they come */
-  mass(cell: string, entries: readonly CellEntry[], env: CellEnv, done: (mass: CellMass | null) => void, edited = false): boolean {
-    // The upload queue full: not asked (the caller asks again next frame), as `want`; never what the player just edited.
-    if (warmFull() && !edited) return false;
+  mass(cell: string, entries: readonly CellEntry[], env: CellEnv, done: (mass: CellMass | null) => void, edited = false, rank = 0): boolean {
+    // The upload queue full before it (`rank`, its masses' pixels on the screen): not asked (the caller asks again next frame), as `want`; never what the player just edited.
+    if (warmFull(rank) && !edited) return false;
     const was = this.masses.get(cell);
     if (was !== undefined) { this.pool.cancel(was); this.masses.delete(cell); }
     let id = -1;
