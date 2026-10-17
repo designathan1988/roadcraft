@@ -59,6 +59,7 @@ import { HELMET_SEGMENTS, STEER_FULL } from './riderPoses';
 import { NIGHT_LUMINANCE, nightGain } from './lightLevels';
 import { DOOR_SWING, createKerbFigure, kerbFigure, occupantPlays, type Play } from './occupants';
 import { blobInto, blobMesh } from './blobShadows';
+import { pinned } from './pinned';
 import { LEVELS, levelFor, partLevels, type Weld } from './vehicleLevels';
 
 /** Vehicles and riders use the original instanced batches. */
@@ -465,7 +466,7 @@ function instanced(
   castShadow = true,
 ): Part {
   const count = PART_CAPACITY;
-  const mesh = new InstancedMesh(geometry, material, count);
+  const mesh = pinned(new InstancedMesh(geometry, material, count));
   mesh.name = name;
   mesh.instanceMatrix.setUsage(DynamicDrawUsage);
   // Every part carries a colour per instance, white until tinted.
@@ -1041,7 +1042,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     },
   };
   /** The soft shadow under a vehicle below the whole level (`blobShadows.ts`): a part like the others, a parked car's kept with it. */
-  const blobs = partOf(blobMesh('vehicle-shadows', MAX_VEHICLES, 0.4));
+  const blobs = partOf(pinned(blobMesh('vehicle-shadows', MAX_VEHICLES, 0.4)));
   const meshes = [...allParts.map((part) => part.mesh), blobs.mesh, pedestrians.group, ...(procedural ? [procedural.group] : [])];
 
   const object = new Object3D();

@@ -8,6 +8,7 @@ import { createInstanceRuns, RunBuilder, sameRun, type Run, type RunStore } from
 
 import type { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
+import { pinned } from './pinned';
 import type { TrainState } from '@sim/host/protocol';
 
 /** The materials of the transport, made once and shared by every rebuild: one made afresh on each rebuild */
@@ -325,7 +326,7 @@ export function createTransit(): TransitMeshes & {
   /** The parts the camera can see, every frame. */
   cull(frustum: Frustum, view: Matrix4): void;
 } {
-  const group = new Group();
+  const group = pinned(new Group());
   group.name = 'transit';
   const unit = new BoxGeometry(1, 1, 1);
   const material = (colour: number, roughness: number, metalness = 0, opacity = 1): MeshStandardMaterial =>
@@ -378,7 +379,7 @@ export function createTransit(): TransitMeshes & {
     o.scale.set(b.length, b.height, b.width);
     o.updateMatrix();
   };
-  const cars = new InstancedMesh(unit, sharedMaterial(0xffffff, 0.45, 0.3, 1, false, true, 0, true), MAX_CARS);
+  const cars = pinned(new InstancedMesh(unit, sharedMaterial(0xffffff, 0.45, 0.3, 1, false, true, 0, true), MAX_CARS));
   cars.name = 'transit-trains';
   // Its colour per car from the start: one program and one shadow depth variant (`renderer.ts` `watchShadowDepth`), not a second on first use.
   cars.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX_CARS * 3).fill(1), 3);
@@ -502,12 +503,12 @@ const PREVIEW_LAYERS = [
 
 /** DO NOT build the preview again per move. */
 export function createTrackPreview(): TrackPreview {
-  const group = new Group();
+  const group = pinned(new Group());
   group.name = 'transit-preview';
   const unit = new BoxGeometry(1, 1, 1);
   const o = new Object3D();
   const meshes = PREVIEW_LAYERS.map((layer) => {
-    const mesh = new InstancedMesh(unit, sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, true, 0, true), 16);
+    const mesh = pinned(new InstancedMesh(unit, sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, true, 0, true), 16));
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.renderOrder = 30 + layer.order;
     mesh.frustumCulled = false;
@@ -527,7 +528,7 @@ export function createTrackPreview(): TrackPreview {
           // three cannot resize a buffer attribute: a new mesh, twice as long, the old one's buffers freed.
           let capacity = mesh.instanceMatrix.count;
           while (capacity < boxes.length) capacity *= 2;
-          const grown = new InstancedMesh(unit, mesh.material, capacity);
+          const grown = pinned(new InstancedMesh(unit, mesh.material, capacity));
           grown.instanceMatrix.setUsage(DynamicDrawUsage);
           grown.renderOrder = mesh.renderOrder;
           grown.frustumCulled = false;

@@ -3,6 +3,7 @@ import {
   InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { pinned } from '../pinned';
 
 /** What people hold while they do something (`sim/people` gestures) */
 export type HeldKind = 'newspaper' | 'cup' | 'phone' | 'camera' | 'bag' | 'umbrella' | 'box';
@@ -97,12 +98,12 @@ export interface HeldProps {
 }
 
 export function createHeldProps(): HeldProps {
-  const group = new Group();
+  const group = pinned(new Group());
   group.name = 'held-props';
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0 });
   const meshes = new Map<HeldKind, InstancedMesh>();
   for (const kind of HELD_KINDS) {
-    const mesh = new InstancedMesh(model(kind), material, CAPACITY);
+    const mesh = pinned(new InstancedMesh(model(kind), material, CAPACITY));
     mesh.name = `held-${kind}`;
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.frustumCulled = false;

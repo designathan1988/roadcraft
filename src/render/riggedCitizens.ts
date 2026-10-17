@@ -17,6 +17,7 @@ import { cancelUploads, compileAhead, shadowStandIn, warmAhead } from './uploads
 import { bakeDeferredInWorker, bakeInWorker, bakeRig, buildPersonInWorker, releaseIdleBakeWorkers } from './bakePool';
 import { assemblePerson, cookPerson } from './people/cookedPerson';
 import { buildPersonScene } from './people/personBuild';
+import { pinned } from './pinned';
 import { lodPool } from './people/lodPool';
 import { providePeopleLod } from './people/lodPort';
 import { loadCookedPerson, peopleCookHash } from './people/cookedLoad';
@@ -269,7 +270,7 @@ export function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial,
 
 export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   onAssetsReady: () => void = () => {}) {
-  const group = new Group();
+  const group = pinned(new Group());
   group.name = 'rigged-citizens';
   let casting = false;
   const batches = new Map<number, CitizenBatch>();
@@ -543,7 +544,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         const distinct = [...new Set(variants)];
         const part: CitizenPart = { levels: [], at: CITIZEN_LEVEL_ERROR.map((_, k) => distinct.indexOf(variants[Math.min(k, variants.length - 1)]!)) };
         for (const geometry of distinct) {
-          const mesh = new InstancedMesh(geometry, Array.isArray(o.material) ? materials : materials[0]!, LEVEL_START);
+          const mesh = pinned(new InstancedMesh(geometry, Array.isArray(o.material) ? materials : materials[0]!, LEVEL_START));
           // InstancedMesh does not initialise this array itself; only the nearest level has the face.
           if (o.morphTargetInfluences && geometry.morphAttributes.position) mesh.morphTargetInfluences = [...o.morphTargetInfluences];
           // A colour per body from the start (white): a body burnt black by a bomb is the same program, its colour near black
