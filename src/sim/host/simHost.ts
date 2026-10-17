@@ -2,7 +2,7 @@ import { readDerivedSome } from '@core/derivedCache';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import type { NodeId } from '@world/ids';
-import { SimWorld } from '../world';
+import { SimWorld, issuesSince } from '../world';
 import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
 import { Meso, type TileEvent } from '../meso/meso';
@@ -362,8 +362,9 @@ export class SimHost {
 
   private stats(): SimStats {
     const sim = this.sim!;
-    const issues = sim.issues.slice(this.issuesSent).map((i) => ({ code: i.code, subject: String(i.subject), detail: String(i.detail), tick: i.tick }));
-    this.issuesSent = sim.issues.length;
+    // The issues reported since the last frame, the last of them still kept (the list keeps 512).
+    const issues = issuesSince(sim, this.issuesSent).map((i) => ({ code: i.code, subject: String(i.subject), detail: String(i.detail), tick: i.tick }));
+    this.issuesSent = sim.issuesReported;
     const measured = ++this.measuredDue % 300 === 0 ? [...sim.conflicts.takeMeasured()] : [];
     return {
       vehicles: sim.vehicles.size, people: sim.pedViews.length, completedTrips: sim.completedTrips, entryDemandLost: sim.entryDemandLost,

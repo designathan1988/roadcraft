@@ -1191,10 +1191,20 @@ export class SimWorld {
     this.vehicles.delete(v.id);
   }
 
+  /** Every issue ever reported, a serial that only grows: a reader keeps how far it has read (`simHost.ts`), DO NOT read the kept list's length, which stops at 512. */
+  issuesReported = 0;
+
   report(issue: AuditIssue): void {
+    this.issuesReported++;
     this.issues.push(issue);
     if (this.issues.length > 512) this.issues.shift();
   }
+}
+
+/** The issues reported since a reader had read `sent` of them (`SimWorld.issuesReported`): the last ones still kept, however many came. */
+export function issuesSince(w: Pick<SimWorld, 'issues' | 'issuesReported'>, sent: number): readonly AuditIssue[] {
+  const fresh = Math.min(Math.max(0, w.issuesReported - sent), w.issues.length);
+  return w.issues.slice(w.issues.length - fresh);
 }
 
 /** The junction a crossing is at (`makeCrossingId`). */
