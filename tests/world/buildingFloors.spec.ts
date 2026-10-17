@@ -77,4 +77,26 @@ describe('the floors kept for every reader', () => {
     expect(again).toBeGreaterThan(0);
     expect(again * 10).toBeLessThan(reads);
   });
+
+  it('where the diary cannot say, works out again only the floors the regions just shaped reach, not the town\'s', () => {
+    const b1 = town[Math.floor(town.length / 3)]!;
+    const r1 = storedBounds(b1, 0);
+    const rect: Rect = [r1.minX - m(10), r1.minY - m(10), r1.maxX + m(10), r1.maxY + m(10)];
+    const before = land;
+    land = (x, y) => before(x, y) + (x >= rect[0] && x <= rect[2] && y >= rect[1] && y <= rect[3] ? m(0.8) : 0);
+    // The diary has lost where (its entries let go): the caller's regions say it.
+    floors.follow(doc.buildings, { version: 2, rectsSince: () => null }, [rect]);
+    reads = 0;
+    same();
+    const again = reads;
+    reads = 0;
+    for (const b of town) floorHeight(b, groundAt, pavedAt);
+    expect(again).toBeGreaterThan(0);
+    expect(again * 10).toBeLessThan(reads);
+    // No regions either: every floor again, as before.
+    floors.follow(doc.buildings, { version: 3, rectsSince: () => null });
+    reads = 0;
+    for (const b of town) floors.floorOf(b);
+    expect(reads).toBeGreaterThan(0);
+  });
 });

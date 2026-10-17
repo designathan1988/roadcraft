@@ -1146,7 +1146,8 @@ export function createSceneRenderer(
   };
   /** Each building's floor, once per record while what it reads stands (`floors.ts`) */
   const floors = buildingFloors(builtGroundAt, pavedHeightAt, floorBox, FLOOR_READ_REACH);
-  const followFloors = (net: Network): void => floors.follow(net.doc.buildings, floorGroundSince);
+  /** `shaped`: the regions the caller is shaping, where the diary cannot say what moved (`floors.ts` `follow`). */
+  const followFloors = (net: Network, shaped: readonly ChangeRect[] | null = null): void => floors.follow(net.doc.buildings, floorGroundSince, shaped);
   const cameraSolidsKept = cameraSolidsKeeper((b) => floors.floorOf(b), floorBox, FLOOR_READ_REACH);
   /** The roads watched for vanishing from the picture */
   let roadsWatchedAt = 0;
@@ -1352,7 +1353,7 @@ export function createSceneRenderer(
       const box = bankBox(b);
       return box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1];
     });
-    followFloors(net);
+    followFloors(net, blocks);
     // The platforms worked out by the ground's worker, in one ask for the change (`groundShape.ts` `padsOfAsk`): DO NOT work them out on the page a square a frame - ~0.2 s of the page a tile, the tile's near roads waiting behind them.
     const padsAsk = reached.length ? padsAskOf(reached) : null;
     let padsTaken = false;
@@ -1446,7 +1447,7 @@ export function createSceneRenderer(
       derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'lot ground levelled' : 'ground cut and filled', parent);
     };
     const roads = net.doc.segments.size > 0 ? elevation : null;
-    followFloors(net);
+    followFloors(net, list ? list.map(regionRect) : null);
     if (!padsReady && (!region || !sitesGraded.pads || sites)) {
       gradedFor = net.doc.buildings.revision;
       // The roads or the land moved: the platforms whose banks the diary says they moved under worked out afresh (`siteGrading.ts` `follow`, the floors' own changes); every one only the first time, or where the diary cannot say.
