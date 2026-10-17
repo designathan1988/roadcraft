@@ -26,6 +26,8 @@ export interface FarTileSource {
   readonly workersRead?: string;
   /** The page's edit of a tile the store does not hold yet (`worldStreamer.ts` pageEdit: a serial; 0 when the store holds the tile as the page has it), and the tile as the page holds it: what a near level reads of a tile edited (`FarKind.near`), drawn from the edit on, not from the write seconds later. */
   pageEdit?(key: number): number;
+  /** A serial that moves whenever any tile's `pageEdit` may have (`worldStreamer.ts` pageEdits): the choice keyed by it, not by every leaf's. */
+  pageEdits?(): number;
   pageRecords?(key: number): TileRecords | null;
 }
 
@@ -410,6 +412,9 @@ export class FarTree<P> implements FarTiles {
     const near = this.kind.near;
     if (!near) return '';
     const version = near.version?.() ?? '';
+    // DO NOT ask every leaf each frame (every tile of the map): one serial for them all where the source has it.
+    const edits = this.source?.pageEdits;
+    if (edits) return `${version}|${edits()}`;
     const edit = this.source?.pageEdit;
     if (!edit) return version;
     const d = new Digest();

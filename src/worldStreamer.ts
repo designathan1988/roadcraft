@@ -86,6 +86,12 @@ export class WorldStreamer {
   private readonly ahead = new Set<number>();
   /** The tiles to make ahead: every tile of the map, nearest the camera's tile first. */
   private aheadOrder: number[] = [];
+  /** How far along `aheadOrder` every tile is known (`askAhead`) and every tile's bays asked or on the page (`askBays`): DO NOT walk the whole map each frame for the few tiles left (a frame's walk of 100 tiles at 10 km, 1,600 at 40). Back to 0 when the order is made again. */
+  private aheadAt = 0;
+  private baysAt = 0;
+  /** The diary's version the edits were last noted at (`noteEdits`), and a serial moved whenever a tile's edit not yet in the store comes or goes (`pageEdits`). */
+  private notedAt = -1;
+  private pageEditSerial = 0;
   /** ONE RECORD OF WHERE THE STORE STANDS BEHIND THE PAGE, by tile: its last edit the store does not hold yet (`pageEdit`), and its last write posted and not confirmed (its records served to a tile asked again after the write failed, `load`; a failed one written again, `retryFailed`). Gone once a write holding the last edit is confirmed. */
   private readonly unsaved = new Map<number, Behind>();
   private editSerial = 0;
@@ -118,7 +124,12 @@ export class WorldStreamer {
     const flipped: number[] = [];
     for (const key of this.doc.loadedTiles) if (wasActive.has(key) !== this.wanted.includes(key)) flipped.push(key);
     if (flipped.length) this.tell.activeChanged?.(flipped, flipped.map((key) => { const t = tileOfKey(key); return tileRect(t.i, t.j); }));
-    this.aheadOrder = mapTilesFrom(i, j);
+    // DO NOT order the whole map again once nothing of it is left to ask (the map made, every tile's bays asked).
+    if (this.aheadAt < this.aheadOrder.length || this.baysAt < this.aheadOrder.length || this.aheadOrder.length === 0) {
+      this.aheadOrder = mapTilesFrom(i, j);
+      this.aheadAt = 0;
+      this.baysAt = 0;
+    }
     this.ask();
   }
 
@@ -309,6 +320,12 @@ export class WorldStreamer {
     return this.unsaved.get(key)?.edit ?? 0;
   }
 
+  /** A serial that moves whenever any tile's `pageEdit` may have: what a far level's choice is keyed by, DO NOT ask every tile of the map each frame (`farTree.ts` outsideKey). */
+  pageEdits(): number {
+    this.noteEdits();
+    return this.pageEditSerial;
+  }
+
   /** Whether the store is behind the page for a tile: an edit of it not written, or a write of it not confirmed (`unsaved`). */
   storeBehind(key: number): boolean {
     this.noteEdits();
@@ -328,6 +345,7 @@ export class WorldStreamer {
     const behind = this.unsaved.get(key);
     if (behind) behind.edit = serial;
     else this.unsaved.set(key, { edit: serial, write: null });
+    this.pageEditSerial++;
   }
 
   /** Whether a tile lies within `radius` tiles of the camera's tile. */
@@ -369,7 +387,10 @@ export class WorldStreamer {
   private askBays(): void {
     const add = this.source.addBays;
     if (!add || this.rush || this.mapMade < this.mapTotal || this.asked.size > 0 || this.ready.size > 0) return;
-    for (const key of this.aheadOrder) {
+    // Past the tiles whose bays are asked or that are on the page (theirs come with them, `cityTile.worker.ts` addBays): never walked again.
+    while (this.baysAt < this.aheadOrder.length && (this.baysAsked.has(this.aheadOrder[this.baysAt]!) || this.doc.hasTile(this.aheadOrder[this.baysAt]!))) this.baysAt++;
+    for (let at = this.baysAt; at < this.aheadOrder.length; at++) {
+      const key = this.aheadOrder[at]!;
       if (this.baysUnderWay >= Math.max(1, this.inFlight - 1)) return;
       if (this.baysAsked.has(key) || this.doc.hasTile(key)) continue;
       this.baysAsked.add(key);
@@ -385,7 +406,10 @@ export class WorldStreamer {
   private askAhead(): void {
     // The map being made (`rush`): every lane the region's tiles leave free, at once; after, once the region is in.
     if (!this.rush && (this.asked.size > 0 || this.ready.size > 0 || !this.settled)) return;
-    for (const key of this.aheadOrder) {
+    // Past the tiles known (in the store): never walked again.
+    while (this.aheadAt < this.aheadOrder.length && this.known.has(this.aheadOrder[this.aheadAt]!)) this.aheadAt++;
+    for (let at = this.aheadAt; at < this.aheadOrder.length; at++) {
+      const key = this.aheadOrder[at]!;
       // Nearest first: past the ring, one lane kept free for the tiles the camera moves onto. The map being made: twice the lanes asked, so a lane that ends a tile finds the next waiting in the generator's queue - DO NOT let it wait for the page to hear of the last and ask again (the opening's lanes at half load, 30-50 s, 2026-10-17).
       if (this.rush ? this.asked.size + this.ahead.size >= 2 * this.inFlight
         : this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, this.inFlight - 1))) return;
@@ -414,6 +438,10 @@ export class WorldStreamer {
 
   /** The tiles the edits since the last look reached: to be written (the loads and unloads of tiles are not edits, `isStreaming`). */
   private noteEdits(): void {
+    // Nothing written in the diary since the last look: nothing to note (an allocator moves only with a record made, which the diary tells). DO NOT look again for each tile asked (`pageEdit`, every leaf of the far levels every frame).
+    const version = this.doc.changes.version;
+    if (version === this.notedAt) return;
+    this.notedAt = version;
     const marks = this.doc.allocatorMarks().join(',');
     if (marks !== this.allocatorsSeen) {
       if (this.allocatorsSeen) this.worldDirty.add('allocators');
@@ -495,7 +523,7 @@ export class WorldStreamer {
       const now = this.unsaved.get(key);
       if (now?.write === pending) {
         now.write = null;
-        if (now.edit === pending.edit) this.unsaved.delete(key);
+        if (now.edit === pending.edit) { this.unsaved.delete(key); this.pageEditSerial++; }
       }
       if (this.doc.hasTile(key)) this.versions.set(key, version);
       this.tell.written?.(key, version);

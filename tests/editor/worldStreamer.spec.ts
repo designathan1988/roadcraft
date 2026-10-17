@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import type { TileRecords } from '@world/doc';
 import { TILE, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
@@ -469,6 +469,62 @@ describe('the map being made (`rush`)', () => {
     for (const key of [...store.ensures]) store.finish(key);
     await turns(3);
     expect(store.ensures.length - 6).toBeLessThanOrEqual(3);
+  });
+});
+
+describe("a frame's work, the map made", () => {
+  it('does not walk the map: a few lookups a frame, and one look at the diary for every tile asked of it, whatever the number of tiles', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const streamer = new WorldStreamer(doc, { ...store, addBays: () => Promise.resolve() } as never, {}, 4);
+    streamer.rush = true;
+    for (let round = 0; round < 80 && streamer.mapMade < streamer.mapTotal; round++) {
+      for (const key of [...store.ensures]) store.finish(key);
+      await turns(2);
+      streamer.focus(0, 0);
+      streamer.apply(round);
+    }
+    streamer.rush = false;
+    for (let frame = 0; frame < 20; frame++) { streamer.focus(0, 0); streamer.apply(100 + frame); await turns(2); }
+    expect(streamer.mapMade).toBe(MAP_TILES * MAP_TILES);
+    // Every lookup of the streamer's sets counted from now on.
+    let lookups = 0;
+    const inner = streamer as unknown as Record<string, Set<number>>;
+    for (const name of ['known', 'baysAsked', 'ahead', 'asked']) {
+      const set = inner[name]!;
+      const has = set.has.bind(set);
+      set.has = (key: number) => { lookups++; return has(key); };
+    }
+    const marks = vi.spyOn(doc, 'allocatorMarks');
+    const frames = 20;
+    for (let frame = 0; frame < frames; frame++) {
+      streamer.focus(0, 0);
+      streamer.apply(200 + frame);
+      // The far levels ask each of the map's tiles every frame (`farTree.ts`): one look at the diary for them all.
+      for (let i = -MAP_TILES / 2; i < MAP_TILES / 2; i++) for (let j = -MAP_TILES / 2; j < MAP_TILES / 2; j++) streamer.pageEdit(tileKey(i, j));
+      streamer.pageEdits();
+    }
+    // Bounded by the region (nine tiles and a few looks), not by the map's hundred tiles.
+    expect(lookups / frames).toBeLessThan(30);
+    expect(marks.mock.calls.length).toBeLessThanOrEqual(1);
+  });
+
+  it('moves its edits serial when a tile is edited and again when its write is confirmed, nothing else', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const streamer = new WorldStreamer(doc, store);
+    streamer.focus(10, 10);
+    for (let frame = 0; frame < 30 && !streamer.settled; frame++) { await turns(1); streamer.focus(10, 10); streamer.apply(frame); }
+    await turns(2);
+    const before = streamer.pageEdits();
+    expect(streamer.pageEdits()).toBe(before);
+    doc.addNode({ x: 100, y: 100 });
+    const edited = streamer.pageEdits();
+    expect(edited).toBeGreaterThan(before);
+    streamer.apply(100);
+    await turns(3);
+    expect(streamer.pageEdits()).toBeGreaterThan(edited);
+    expect(streamer.pageEdit(tileKey(0, 0))).toBe(0);
   });
 });
 
