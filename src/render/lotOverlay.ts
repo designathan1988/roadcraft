@@ -442,6 +442,18 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
     texture.needsUpdate = true;
   };
 
+  /** Whether a named group laid is not wholly in the frame: only then the frame is stood again over them all (the groups held are in it). */
+  const leaves = (input: LotOverlayInput, names: Iterable<string>): boolean => {
+    const side = 2 * lattice.half;
+    for (const name of names) {
+      const g = input.groups.get(name);
+      const box = g ? groupBox(g) : null;
+      if (!box || (active && !active.meets(box))) continue;
+      if (box[0] < lattice.x0 || box[1] < lattice.y0 || box[2] > lattice.x0 + side || box[3] > lattice.y0 + side) return true;
+    }
+    return false;
+  };
+
   /** The frame stood again over the lots drawn when they left it, on the plate under their middle (`world/bounds.ts`): every shape laid anew in it. */
   const standFrame = (input: LotOverlayInput): boolean => {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -485,16 +497,12 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
         return;
       }
       const changed = input.changedFor(reader);
-      // The frame stood again over lots that left it: every group laid anew in it.
-      const restood = standFrame(input);
       // Another input than the one drawn, or one that cannot say what changed: every group, a shape with the same key kept.
-      if (restood || input !== shown || changed === null || moved === 'all' || flipped === null) {
-        shown = input;
-        for (const name of [...held.keys()]) if (!input.groups.has(name)) remake(name, undefined);
-        for (const [name, group] of input.groups) remake(name, group);
-      } else {
-        // DO NOT walk every group: only those the input or the ground say changed.
-        const names = new Set(changed);
+      const whole = input !== shown || changed === null || moved === 'all' || flipped === null;
+      let names: Set<string> | null = null;
+      if (!whole) {
+        // DO NOT walk every group: only those the input or the ground say changed (it is set every frame, `main.ts` drawOverlayScreen; it walked the whole zoned city's groups each frame to stand its frame).
+        names = new Set(changed);
         for (const name of moved) names.add(name);
         // And those of the tiles that came into the active region or left it: a look at each group's box once a tile is crossed, never at a pointer move.
         if (flipped.length) {
@@ -504,6 +512,14 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
           }
         }
         if (names.size === 0) return;
+      }
+      // The frame stood again over lots that left it (looked for over every group only when a named one left it): every group laid anew in it.
+      const restood = (names === null || leaves(input, names)) && standFrame(input);
+      if (names === null || restood) {
+        shown = input;
+        for (const name of [...held.keys()]) if (!input.groups.has(name)) remake(name, undefined);
+        for (const [name, group] of input.groups) remake(name, group);
+      } else {
         for (const name of names) remake(name, input.groups.get(name));
       }
       lattice.flush();
