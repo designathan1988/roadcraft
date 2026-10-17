@@ -8,14 +8,14 @@ describe('a timed step', () => {
 
   it('is measured in a development build', () => {
     const measure = vi.spyOn(performance, 'measure');
-    measureHitch('hitch:test/dev', performance.now());
+    measureHitch('hitch:test/dev', 0);
     expect(measure).toHaveBeenCalledTimes(1);
   });
 
   it('is not measured in the game built for the player', () => {
     vi.stubEnv('DEV', false);
     const measure = vi.spyOn(performance, 'measure');
-    measureHitch('hitch:test/shipped', performance.now());
+    measureHitch('hitch:test/shipped', 0);
     expect(measure).not.toHaveBeenCalled();
   });
 });
