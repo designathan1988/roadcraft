@@ -24,7 +24,7 @@ export interface BuildingLayer {
   readonly triangles: number;
   /** The highest point of any building drawn, world height (-Infinity with none): kept as cells land, never a walk of the meshes. */
   readonly top: number;
-  /** A change is still being made: masses or near cells asked of the workers and not come, or cells the budget held back not yet weighed against a level measured since. */
+  /** A change is still being made: masses or near cells asked of the workers and not come. */
   readonly pending: boolean;
   /** The coarse levels still to come: masses and far levels asked of the workers (never the near cells' detail: the opening shows the town with its masses, the detail lands after, `renderer.ts` reveal). */
   readonly coarsePending: boolean;
