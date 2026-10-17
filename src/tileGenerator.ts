@@ -3,12 +3,15 @@ import { tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { FarTileBake, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
-import { jobPort, longWorkers, shortWorkers } from './jobs/jobPool';
+import { jobPort, keptClearWorkers, longWorkers, shortWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
 /** Workers making tiles at once, and how many the region asks at a time (`worldStreamer.ts` inFlight): the long-running side of the pool (`longWorkers`), the growth beside them (it grows the player's zones, once the map is made); never on the workers of the traffic's lanes, the cells or the far levels (`jobPool.ts` place). */
 export const tileLanes = (): number => longWorkers();
+
+/** Lanes set aside on the other kinds' workers while the map is made (`setAside`): never on the kept-clear workers (the save's and the reads', `jobPool.ts` keptClearWorkers), and one of them always left to the queue (conf39: the cells, the near roads and a building's detail waited behind tiles of 2-25 s on the one worker the queue could use). */
+export const asideLanes = (): number => Math.max(0, shortWorkers() - keptClearWorkers() - 1);
 
 /** Where a tile made is stored by the worker, and whether its texts come back with its version. */
 type StoreAsk = NonNullable<StreamTileAsk['store']>;
@@ -26,6 +29,8 @@ interface Lane { readonly port: Worker; busy: Waiting | null; readonly aside: bo
 export class TileGenerator {
   private readonly lanes: Lane[] = [];
   private readonly queue: Waiting[] = [];
+  /** Work that waits for the lanes to have nothing else (`makeStored` with `low`): a tile asked meanwhile goes first. */
+  private readonly lowQueue: Waiting[] = [];
   /** Lanes on the other kinds' workers too (`setAside`). */
   private aside = false;
 
@@ -41,9 +46,14 @@ export class TileGenerator {
   }
 
   /** Tile `key` made and stored by the worker in the tile store's `map` at a version past `after`: the version (null: not stored), and with `records` its records prepared for the page (DO NOT post them to the store again from the page). */
-  makeStored(key: number, map: string, after: number, records: boolean, ifMissing = false): Promise<MadeTile> {
+  makeStored(key: number, map: string, after: number, records: boolean, ifMissing = false, baysOnly = false, sectionsOnly = false): Promise<MadeTile> {
     return new Promise((done, failed) => {
-      this.queue.push({ key, store: { map, after, records, ...(ifMissing ? { ifMissing } : {}) }, done: (answer) => done(answer as MadeTile), failed: (why) => failed(new Error(why)) });
+      const waiting: Waiting = { key, store: { map, after, records, ...(ifMissing ? { ifMissing } : {}), ...(baysOnly ? { baysOnly } : {}), ...(sectionsOnly ? { sectionsOnly } : {}) },
+        done: (answer) => done(answer as MadeTile), failed: (why) => failed(new Error(why)) };
+      // A stored tile's bays (`baysOnly`): only on the lanes the tiles leave idle; a tile the player edited (`sectionsOnly`) first, its chain waits on it.
+      if (baysOnly) this.lowQueue.push(waiting);
+      else if (sectionsOnly) this.queue.unshift(waiting);
+      else this.queue.push(waiting);
       this.pump();
     });
   }
@@ -58,7 +68,7 @@ export class TileGenerator {
 
   /** The tiles this generator makes at once now: what the asker keeps in flight (`worldStreamer.ts` `inFlight`). */
   get lanesWanted(): number {
-    return tileLanes() + (this.aside ? shortWorkers() : 0);
+    return tileLanes() + (this.aside ? asideLanes() : 0);
   }
 
   /** The workers let go (another world opened, the page going away). */
@@ -66,7 +76,7 @@ export class TileGenerator {
     // A tile being made when let go is told so, as one waiting: whoever asked does not wait for ever.
     for (const lane of this.lanes) { lane.port.terminate(); lane.busy?.failed('the generator was let go'); lane.busy = null; }
     this.lanes.length = 0;
-    for (const w of this.queue.splice(0)) w.failed('the generator was let go');
+    for (const w of [...this.queue.splice(0), ...this.lowQueue.splice(0)]) w.failed('the generator was let go');
   }
 
   /** The lanes set aside with no tile let go (their workers' other work comes back to them). */
@@ -81,15 +91,17 @@ export class TileGenerator {
 
   /** Each free lane given the next tile asked. */
   private pump(): void {
-    if (!this.aside) this.dropAside();
+    // DO NOT keep a lane set aside with no tile waiting: the rush's end (`setAside(false)`) waits for every tile made, and a tile that failed never counts.
+    if (!this.aside || this.queue.length === 0) this.dropAside();
     const own = this.lanes.filter((l) => !l.aside).length, aside = this.lanes.length - own;
     const idle = (): number => this.lanes.filter((l) => !l.busy).length;
-    for (let made = own; made < tileLanes() && this.queue.length > idle(); made++) this.lanes.push(this.lane(false));
-    if (this.aside) for (let made = aside; made < shortWorkers() && this.queue.length > idle(); made++) this.lanes.push(this.lane(true));
+    // The low work on the generator's own lanes alone, never on those set aside.
+    for (let made = own; made < tileLanes() && this.queue.length + this.lowQueue.length > idle(); made++) this.lanes.push(this.lane(false));
+    if (this.aside) for (let made = aside; made < asideLanes() && this.queue.length > idle(); made++) this.lanes.push(this.lane(true));
     for (const lane of this.lanes) {
       if (lane.busy) continue;
-      const next = this.queue.shift();
-      if (!next) return;
+      const next = this.queue.shift() ?? (lane.aside ? undefined : this.lowQueue.shift());
+      if (!next) continue;
       lane.busy = next;
       const { i, j } = tileOfKey(next.key);
       lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: { ...next.store, far: this.far() } } : {}) } satisfies StreamTileAsk);

@@ -38,7 +38,7 @@ import {
 } from 'three';
 
 import { Digest } from '@core/digest';
-import type { ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
+import type { Change, ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
@@ -68,19 +68,22 @@ import { forgetDerivedKeys, forgetOtherDerived, readDerivedKeys, readDerivedSome
 import { disposeMesh } from './mesh/surfaceMesh';
 import { RoadTilePool } from './roadTilePool';
 import { GroundShapePool } from './groundShapePool';
-import { type BlockDigestAsk, type GroundShapeAsk, type PlateShapeAnswer, blockDigest, cornerBoxes, shapeGroundAsk } from './groundShape';
+import { type BlockDigestAsk, type GroundShapeAsk, type PadsAsk, type PlateShapeAnswer, blockDigest, cornerBoxes, shapeGroundAsk } from './groundShape';
+import type { Pad } from '@world/buildings/pads';
+import { refOf } from '@world/buildings/recordTable';
 import { shapeBoth } from './terrainShaping';
 import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
 import { createStreetFurniture } from './streetFurnitureLayer';
-import { createGardens, type GardenPlant, type Gardens } from './gardens';
+import { createGardens, gardenPlants, type Gardens } from './gardens';
 import { gardenLists } from './gardenLists';
-import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
-import { followPieces } from '@world/buildings/elements';
+import { solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { RoadDoc } from '@world/doc';
-import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
+import { compileAhead, drainCompiles, drainUploads, drainWarm, gateUntilBuilt, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather } from './wind';
-import { holdStill } from './stillTree';
+import { holdStill, updateMoving } from './stillTree';
+import { castCastersInto } from './shadowCasters';
+import { setShadowSun } from './cellInstances';
 import { createRain } from './rain';
 import { createLightning } from './lightning';
 import { windVector } from '@world/weather';
@@ -108,9 +111,19 @@ import { buildTrackPreview, createTrackPreview, createTransit, type TrackPreview
 import { TERRAIN_CELL, TERRAIN_GRID, TERRAIN_HALF, type TerrainPart, type TerrainRegion, type TerrainSurface } from './terrain';
 import { createFlatAtlas } from './flatAtlas';
 import { FarRoads } from './farRoads';
+import { NearTiles } from './nearTiles';
+import { poleProduct } from './poleTiles';
+import { furnitureProduct } from './furnitureTiles';
+import { signProduct } from './signTiles';
+import { barrierProduct } from './barrierTiles';
+import { plantedProduct } from './plantedTiles';
+import { structureProduct } from './structureTiles';
+import { gardenProduct } from './gardenTiles';
+import { coverExtraFor, coverProduct } from './coverTiles';
+import { elementProduct } from './elementTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
-import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
+import { WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
 import { buildingFloors } from '@world/buildings/floors';
@@ -144,13 +157,14 @@ import { type GroundRecord, type Rect, unionRect } from './groundChanges';
 import { FOREST_SPECIES, createGroundCoverKit } from './groundCover';
 import type { PlantedTree } from '@world/trees';
 import { ClearingCells } from './clearingCells';
-import { natureDensity } from './natureNoise';
 import { buildNatureForest, loadNatureTrees, seedOfKind, type NatureTreeKit } from './natureTrees';
 import { createFogField, createFogTexture, type FogLayer } from './fogLayer';
 import { createElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
 import { isCoverKind } from '@world/terrainPaint';
 import { CellKeeps, keepCellAt, keepCellRect, keepCellsOver } from './cellKeeps';
 import { ActiveTiles } from './activeTiles';
+import { measureHitch } from '@core/hitch';
+import { TILE, tileKeyAt, tileOfKey } from '@world/tiles';
 import { createDensityCars } from './densityCars';
 import { COVER_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
 import { PlateFollow } from './plateFollow';
@@ -371,37 +385,20 @@ function firstDrawnVertices(root: Object3D): number {
   return 0;
 }
 
-/** The plants of every building's garden, in the world, on the ground they stand on. */
-function gardenPlants(all: Iterable<Building>, groundAt: (x: number, y: number) => number): GardenPlant[] {
-  const out: GardenPlant[] = [];
-  for (const b of all) {
-    for (const el of b.elements ?? []) {
-      if (el.kind !== 'tree' && el.kind !== 'shrub' && el.kind !== 'hedge' && el.kind !== 'flowers') continue;
-      // `w` runs across the way the element faces.
-      const yaw = (b.rotation ?? 0) + (el.facing === 1 || el.facing === 3 ? Math.PI / 2 : 0) + (el.angle ?? 0);
-      // A long hedge in steps, each on the ground under it, not one box at its middle's height.
-      const kind = el.kind;
-      followPieces(el).forEach((piece, k) => {
-        const at = localToWorld(b, piece.x, piece.y);
-        out.push({ kind, x: at.x, y: at.y, z: groundAt(at.x, at.y), w: piece.w, d: piece.d, h: piece.h, yaw,
-          seed: ((b.id * 7919 + el.id * 104729 + k * 31) % 100003) / 100003 });
-      });
-    }
-  }
-  return out;
-}
-
 export function createSceneRenderer(
   canvas: HTMLCanvasElement,
   initialCentre: Vec2,
   initialZoom: number,
   initialQuality: QualityLevel | 'auto' = 'auto',
-  onAssetsReady: () => void = () => {},
+  askDraw: () => void = () => {},
   /** The engine the scene's products are registered with (`core/engine.ts`): the game's one, from `main.ts`. */
   engine: Engine = new Engine(),
   /** The player's own settings on the tier (the options panel); the tier's own when absent. */
   initialSettings?: QualitySettings,
 ): SceneHandle {
+  /** Something landed or asked for a frame since the last shadow pass: the casters kept still in the sun's stores may have changed (`ShadowPassInput.still`). */
+  let castersStirred = true;
+  const onAssetsReady = (): void => { castersStirred = true; askDraw(); };
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
   onEcologyRead(onAssetsReady);
   /** The shadow map is drawn only when it can have changed. */
@@ -412,9 +409,16 @@ export function createSceneRenderer(
   const movingCasters = (): boolean => agents.casting || transit.moving || (fx?.busy() ?? false);
   /** Moving casters in the last shadow frame: when they stop, the map is drawn once more with them at rest. */
   let castersMoved = false;
+  /** The camera at the last shadow pass: a view moved re-culls the instanced layers, the casters kept still are not those (`ShadowPassInput.still`). */
+  const shadowView = new Matrix4(), shadowProjection = new Matrix4();
+  let shadowScale = Number.NaN;
+  /** Whether the opening's quality draws through the post chain: its canvas then takes only the output pass, so it is made without multisampling or depth (the chain's scene target has its own). */
+  const canvasForChain = (initialSettings ?? QUALITY[initialQuality === 'auto' ? 'high' : initialQuality]).postProcessing;
   const renderer = new WebGLRenderer({
     canvas,
-    antialias: true,
+    // A quality without the chain chosen later draws through a multisampled target of its own (`postprocess.ts` plainChain).
+    antialias: !canvasForChain,
+    depth: !canvasForChain,
     alpha: false,
     powerPreference: 'high-performance',
     stencil: false,
@@ -440,11 +444,14 @@ export function createSceneRenderer(
   renderer.shadowMap.autoUpdate = false;
 
   // One shadow depth material per program variant. three draws every caster without a depth material of its own with ONE
+  // DO NOT write the colour: the sun's maps are read by their depth (PCF compares the depth texture, `sunCascades.ts`), nothing reads the packed colour.
   const depthVariants = {
-    plain: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
-    instanced: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
-    tinted: new MeshDepthMaterial({ depthPacking: RGBADepthPacking }),
+    plain: new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false }),
+    instanced: new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false }),
+    tinted: new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false }),
   };
+  // DO NOT write colour into the shadow map: it is sampled by its depth texture alone (three r186 `WebGLShadowMap`, PCF: `shadow.map.depthTexture` with a compare function), the RGBA target written for nothing every caster, every cascade.
+  for (const depth of Object.values(depthVariants)) depth.colorWrite = false;
   const ownDepth = new Set<MeshDepthMaterial>(Object.values(depthVariants));
   const plainOpaque = (material: Material): boolean => {
     const m = material as Material & { alphaTest: number; alphaMap?: unknown; map?: unknown; displacementMap?: unknown };
@@ -472,9 +479,13 @@ export function createSceneRenderer(
       if ((object as Mesh).isMesh || watchedForDepth.has(object)) return;
       watchedForDepth.add(object);
       object.addEventListener('childadded', onChildAdded);
+      object.addEventListener('childremoved', onChildRemoved);
     });
   };
-  const onChildAdded = (event: { child: Object3D }): void => watchShadowDepth(event.child);
+  // What comes into the scene or leaves it changes what casts: the sun's stores are not used for that frame (`castersStirred`).
+  // And through the one door into the drawn scene: held off the drawn layers until its programs are built (`uploads.ts` gateUntilBuilt).
+  const onChildAdded = (event: { child: Object3D }): void => { castersStirred = true; watchShadowDepth(event.child); gateUntilBuilt(event.child); };
+  const onChildRemoved = (): void => { castersStirred = true; };
 
   let requested: QualityLevel | 'auto' = initialQuality;
   const governor = new QualityGovernor(requested === 'auto' ? 'high' : requested);
@@ -532,7 +543,18 @@ export function createSceneRenderer(
   // The root never moves.
   scene.matrixAutoUpdate = false;
   scene.updateMatrix();
+  // DO NOT let three walk the whole scene in every pass drawn (scene, normals, shadows): the frame updates what moves once (`updateMoving`), the still trees place what enters them.
+  scene.matrixWorldAutoUpdate = false;
   const initialHeight = Math.max(1, canvas.clientHeight || window.innerHeight);
+  /** The canvas's CSS size, kept by a ResizeObserver: DO NOT read clientWidth or clientHeight in the frame (each read forces a layout when anything on the page moved). */
+  const css = { w: canvas.clientWidth, h: canvas.clientHeight };
+  const sizeWatch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+    css.w = canvas.clientWidth;
+    css.h = canvas.clientHeight;
+    // A frame for the new size, however still the game stands.
+    onAssetsReady();
+  });
+  sizeWatch?.observe(canvas);
   /** Where the relief's close window is centred (three's x, z; see `draw`). */
   const reliefFocus = { x: 0, z: 0 };
   const rig = createIsoRig(initialCentre, initialHeight / Math.max(0.001, initialZoom * 2));
@@ -578,8 +600,20 @@ export function createSceneRenderer(
     markingStyle: () => worldNet?.doc.markingStyle ?? 'classic',
     naturalIsGround: () => buildings.farEnv().naturalIsGround,
     dress: (source, raised) => surfaceLook(source, raised, materials, terrain.vergeMaterial, nearPaintFor),
+    coarseFirst: () => buildings.hidden,
   });
   world.add(farRoads.group);
+  /** The streamed world's near products per tile, chosen by the view and baked in workers from the store (`nearTiles.ts`): the poles and wires (`poleTiles.ts`). */
+  const nearTiles = new NearTiles();
+  nearTiles.add(poleProduct(sceneryKit, world));
+  /** The roads' tree and the near products' tiles, told the stored tiles as one (`main.ts` far levels). */
+  const roadsAndNear: FarTiles = {
+    setSource: (source, isLoaded) => { farRoads.setSource(source, isLoaded); nearTiles.setSource(source, isLoaded); },
+    stored: (key, version) => { farRoads.stored(key, version); nearTiles.stored(key, version); },
+    loadedChanged: (key) => { farRoads.loadedChanged(key); nearTiles.loadedChanged(key); },
+    setErrorScale: (scale) => { farRoads.setErrorScale(scale); nearTiles.setErrorScale(scale); },
+    get bakePrefix() { return farRoads.bakePrefix; },
+  };
   /** The streamed world's active tiles as the near products read them (`activeTiles.ts`, `setActiveTiles`): the kept ring's items are the far levels'. */
   const activeTiles = new ActiveTiles();
 
@@ -628,9 +662,14 @@ export function createSceneRenderer(
   let polePreview: Utilities | null = null;
   /** Placed signs, street name plates and the junctions' rule plates, kept sign by sign from the diary (`signLayer.ts`). */
   const signs = createSignLayer(activeTiles);
+  // The streamed world's furniture and signs per tile (`furnitureTiles.ts`, `signTiles.ts`), in the layers' own cells and sheets: the region makes none of them.
+  nearTiles.add(furnitureProduct(furniture, sceneryKit.lens, () => cityMinutes));
+  nearTiles.add(signProduct(signs, () => worldNet?.doc.markingStyle ?? 'classic'));
   let polePreviewKey = '';
   /** Walls, fences and hedges (`barriers.ts`), kept barrier by barrier from the diary. */
   const barriers = createBarriers(activeTiles);
+  // The streamed world's barriers per tile (`barrierTiles.ts`), in the layer's own cells: the region makes none.
+  nearTiles.add(barrierProduct(barriers));
   /** Public transport (`transit.ts`), kept track by track and stop by stop from the diary. */
   const transit = createTransit();
   let elevation: RoadElevation | null = null;
@@ -733,14 +772,20 @@ export function createSceneRenderer(
   /** The opening's town (or a map opened) is held until it is whole (`revealGate.ts`). */
   const reveal = new RevealGate();
   /** Every program the game draws with, compiled before the town is shown (`shaderCatalogue.ts`). */
-  const programs = createShaderCatalogue(personProgramStandIns);
+  /** The sets of lights the room and effect lights and the fill make, on and off: each set's programs built ahead (`shaderCatalogue.ts`). */
+  const lightVariants = (): Object3D[][] => {
+    const points: Object3D[] = [...roomLights, fxLights.muzzle, fxLights.blast];
+    const fill = scene.getObjectByName('fill');
+    const base: Object3D[] = [];
+    scene.traverse((o) => { if ((o as PointLight).isLight && o.visible && o !== fill && !points.includes(o)) base.push(o); });
+    return [false, true].flatMap((lit) => [false, true].map((filled) => [...base, ...(lit ? points : []), ...(filled && fill ? [fill] : [])]));
+  };
+  const programs = createShaderCatalogue(personProgramStandIns, lightVariants);
   let openingSince: number | null = null;
   /** The opening's programs, asked of the driver all at once when the town is whole (`compileAsync`, built in parallel), and whether they are built: its unseen frame is drawn only then (`reveal` warm). */
   let openingPrograms: 'no' | 'asked' | 'built' = 'no';
   /** The streamed world's tiles round the camera (`holdOpening`): the opening shows the town once they are in. */
   let openingHeld: (() => boolean) | null = null;
-  /** While nothing is shown (`opened` false) the nature is swept this much a frame (`natureSweep`). */
-  const HIDDEN_SLICE_MS = 250;
   /** Builds the world of the last edit up to its next wait on a worker; it puts itself in place once complete. */
   /** DO NOT ask the next frame at once while the world's job waits on a worker: the unseen opening's frames come without the display's pace (`frameLoop.ts`), and it spun the page at 2,000 frames a second, starving the workers it waited on (2026-10-16); looked at again a display frame later. */
   const WAIT_LOOK_MS = 16;
@@ -880,7 +925,13 @@ export function createSceneRenderer(
   const vehicleBox: GroundBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
   // A raised deck over the highest land, and room for decks stacked on it; a cut below the deepest.
   const VEHICLE_LOW = TERRAIN_MIN_HEIGHT - m(16), VEHICLE_HIGH = TERRAIN_MAX_HEIGHT + m(64) + VEHICLE_REACH * 0.3;
-  scene.add(...agents.meshes);
+  // DO NOT leave the people's groups out of it: their figures are instanced meshes skinned on the GPU (`riggedCitizens.ts` citizenBones, the source SkinnedMesh never in the scene), each level a mesh, recomposed every frame for nothing.
+  // The vehicles' parts and the people's meshes never move as objects (their instances do): a still tree.
+  const agentParts = new Group();
+  agentParts.name = 'agent-parts';
+  agentParts.add(...agents.meshes);
+  holdStill(agentParts);
+  scene.add(agentParts);
   // The far traffic: the meso model's cars on every road outside the micro window, in one draw (`densityCars.ts`).
   const densityCars = createDensityCars(deckHeight);
   scene.add(densityCars.object);
@@ -893,15 +944,23 @@ export function createSceneRenderer(
 
   // Modular buildings: their own layer, behind their own gate
   const buildings = createBuildingLayer();
+  // Buildings are placed once, never moved: a still tree.
+  holdStill(buildings.group);
   scene.add(buildings.group);
   // Each sun cascade draws the parts wider than its own texel only, not every part the finest one draws.
-  environment.setCasters((texel) => buildings.castInto(texel));
+  // And every layer that registered its meshes by size (`shadowCasters.ts`): cellInstances, flags, signals, things in the hand.
+  // The far cascades (1 and 2) take the buildings by their masses only (`BuildingLayer.castInto` coarse).
+  environment.setCasters((texel, cascade) => {
+    buildings.castInto(texel, cascade >= 1);
+    castCastersInto(texel);
+  });
   // The town's meshes keep their arrays only until they are on the GPU (`mesh/gpuOnly.ts`)
   renderer.domElement.addEventListener('webglcontextrestored', () => {
     refillArrays(scene);
     for (const { mesh } of surfaceReuse.chunks?.values() ?? []) refillArrays(mesh);
     buildings.refill();
     farRoads.refill();
+    nearTiles.refill();
     signs.refill();
     wantAllTexels();
   });
@@ -947,6 +1006,17 @@ export function createSceneRenderer(
   let elementLayer: ElementLayer | null = null;
   /** What the elements stand on and are, from the diary: a dab lays its own cells again, not the map's. */
   const elementRead = new JournalCursor(['elements', 'terrain', 'ground']);
+  /** The elements' layer, made once their models are in: the region's cells draw in it, and a streamed world's tiles (`elementTiles.ts`). */
+  const elementLayerOf = (): ElementLayer | null => {
+    if (!elementKit) return null;
+    if (!elementLayer) {
+      elementLayer = createElementLayer(elementKit, activeTiles);
+      world.add(elementLayer.group);
+    }
+    return elementLayer;
+  };
+  // The streamed world's brush elements per tile, in the elements' layer.
+  nearTiles.add(elementProduct(elementLayerOf));
   void loadElementKit(anisotropy).then((kit) => { elementKit = kit; }, (error: unknown) => {
     console.warn('[elements] models not loaded', error);
   });
@@ -1070,6 +1140,21 @@ export function createSceneRenderer(
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
   const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt), activeTiles);
+  // The streamed world's gardens per tile (`gardenTiles.ts`), in the gardens' own cells: the region places none.
+  nearTiles.add(gardenProduct(() => (gardens ??= createGardens(sceneryKit)), world));
+  // The near products' bakes read the ground shared with the workers and the clearings; a tile the ground changed under (a stroke of the relief too) or a clearing cut in is asked again, its bake kept where what it reads did not change (`nearTileBake.ts` groundDigest, readKey).
+  const NEAR_GROUND_KINDS: readonly ChangeKind[] = ['elevation', 'ground', 'terrain', 'clearings'];
+  nearTiles.setGround(() => ({ ground: farRoadGround(), naturalIsGround: buildings.farEnv().naturalIsGround }), {
+    get version() { return groundDiary?.version ?? 0; },
+    touches: (since, area) => groundDiary?.touches(since, area, NEAR_GROUND_KINDS) ?? false,
+    rectsSince: (since) => {
+      const entries = groundDiary?.since(since, NEAR_GROUND_KINDS);
+      if (!entries) return null;
+      const rects: ChangeRect[] = [];
+      for (const entry of entries) { if (entry.rects === null) return null; rects.push(...entry.rects); }
+      return rects;
+    },
+  });
   /** Where the ground changed since a serial, from the same diary (`cameraSolids.ts` `GroundSince`). */
   const groundSince: GroundSince = {
     get version() { return groundChanges.version; },
@@ -1121,7 +1206,8 @@ export function createSceneRenderer(
   };
   /** Each building's floor, once per record while what it reads stands (`floors.ts`) */
   const floors = buildingFloors(builtGroundAt, pavedHeightAt, floorBox, FLOOR_READ_REACH);
-  const followFloors = (net: Network): void => floors.follow(net.doc.buildings, floorGroundSince);
+  /** `shaped`: the regions the caller is shaping, where the diary cannot say what moved (`floors.ts` `follow`). */
+  const followFloors = (net: Network, shaped: readonly ChangeRect[] | null = null): void => floors.follow(net.doc.buildings, floorGroundSince, shaped);
   const cameraSolidsKept = cameraSolidsKeeper((b) => floors.floorOf(b), floorBox, FLOOR_READ_REACH);
   /** The roads watched for vanishing from the picture */
   let roadsWatchedAt = 0;
@@ -1165,7 +1251,9 @@ export function createSceneRenderer(
   };
   /** Cuts and fills the ground to the roads AND to the buildings */
   /** Each building's platform, the town's, and the sites as last graded (`world/buildings/siteGrading.ts`). */
-  const sitesGraded = siteGrading(builtGroundAt, pavedHeightAt, TERRAIN_CELL * 1.5, (b) => bankBox(b), floors);
+  /** The level ground round a platform before its bank, the page's and the ground worker's (`padsAskOf`). */
+  const SITE_APRON = TERRAIN_CELL * 1.5;
+  const sitesGraded = siteGrading(builtGroundAt, pavedHeightAt, SITE_APRON, (b) => bankBox(b), floors);
   /** The box a building's bank reaches, once per record (records are never changed in place) */
   const bankBoxes = new WeakMap<Building, readonly [number, number, number, number]>();
   /** How far a building's bank reaches past its own bounds. */
@@ -1306,26 +1394,54 @@ export function createSceneRenderer(
   /** `region`: a brush dab while the stroke is held */
   /** The ground cut and filled again only in `blocks` (the roads changed there, the land did not) */
   /** `shapeBlocks` in steps (`worldSteps`) */
+  /** The platforms of these buildings asked of the ground's worker: their records, their floors as kept, the paving over their banks and the shared ground; null where it cannot be handed over. */
+  const padsAskOf = (list: readonly Building[]): PadsAsk | null => {
+    const ground = (terrain.renderedHeightAt as SharedGroundAt).share?.current;
+    if (!ground || !pavedHeightAt.pack) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const b of list) {
+      const box = bankBox(b);
+      x0 = Math.min(x0, box[0]); y0 = Math.min(y0, box[1]); x1 = Math.max(x1, box[2]); y1 = Math.max(y1, box[3]);
+    }
+    const paving = pavedHeightAt.pack([x0, y0, x1, y1]);
+    if (!paving) return null;
+    return { buildings: list.map((b) => ({ record: refOf(b), floor: floors.floorOf(b) })), paving: paving.data, ground, apron: SITE_APRON };
+  };
   function* shapeBlocksSteps(net: Network, blocks: readonly [number, number, number, number][]): Generator<'wait' | void, void, void> {
     // DO NOT walk `buildings.all()` for them, nor every building for a platform not known yet (`ensure`, a building a step)
     const reached = net.doc.buildings.nearAny(blocks, BANK_REACH, (b, q) => {
       const box = bankBox(b);
       return box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1];
     });
-    followFloors(net);
-    // A step a square of the ground's blocks (`PADS_SQUARE` of them a side), each its buildings' platforms - a product of the change, as the ground's blocks are: DO NOT step a building at a time - a tile put in was ~1,000 steps, a step a frame, its near roads 16 s late once the town was shown (2026-10-16; the platforms themselves ~0.2 s a tile: ~16 steps of ~12 ms).
-    const side = SHAPE_BLOCK * PADS_SQUARE;
-    const bySquare = new Map<string, Building[]>();
-    for (const b of reached) {
-      const box = bankBox(b);
-      const k = `${Math.floor((box[0] + box[2]) / 2 / side)},${Math.floor((box[1] + box[3]) / 2 / side)}`;
-      let list = bySquare.get(k);
-      if (!list) bySquare.set(k, list = []);
-      list.push(b);
+    followFloors(net, blocks);
+    // The platforms worked out by the ground's worker, in one ask for the change (`groundShape.ts` `padsOfAsk`): DO NOT work them out on the page a square a frame - ~0.2 s of the page a tile, the tile's near roads waiting behind them.
+    const padsAsk = reached.length ? padsAskOf(reached) : null;
+    let padsTaken = false;
+    if (padsAsk && groundWorkers.available) {
+      let answer: (Pad | null)[] | null = null, failed = false;
+      groundWorkers.pads(padsAsk).then((pads) => { answer = pads; }, (error: unknown) => {
+        console.warn('[ground] the platforms are worked out on the page', error);
+        failed = true;
+      });
+      while (!answer && !failed) { groundWorkers.check(); yield 'wait'; }
+      const pads = answer as (Pad | null)[] | null;
+      if (pads) { reached.forEach((b, i) => sitesGraded.take(b, pads[i] ?? null)); padsTaken = true; }
     }
-    for (const list of bySquare.values()) {
-      for (const b of list) sitesGraded.refresh(b);
-      yield;
+    if (!padsTaken) {
+      // No worker (or it could not): a step a square of the ground's blocks (`PADS_SQUARE` of them a side), never a building a step.
+      const side = SHAPE_BLOCK * PADS_SQUARE;
+      const bySquare = new Map<string, Building[]>();
+      for (const b of reached) {
+        const box = bankBox(b);
+        const k = `${Math.floor((box[0] + box[2]) / 2 / side)},${Math.floor((box[1] + box[3]) / 2 / side)}`;
+        let list = bySquare.get(k);
+        if (!list) bySquare.set(k, list = []);
+        list.push(b);
+      }
+      for (const list of bySquare.values()) {
+        for (const b of list) sitesGraded.refresh(b);
+        yield;
+      }
     }
     gradedFor = net.doc.buildings.revision;
     // The sites that changed with the edit
@@ -1391,11 +1507,14 @@ export function createSceneRenderer(
       derived(net, 'ground', list ? list.map(regionRect) : null, sites ? 'lot ground levelled' : 'ground cut and filled', parent);
     };
     const roads = net.doc.segments.size > 0 ? elevation : null;
-    followFloors(net);
+    followFloors(net, list ? list.map(regionRect) : null);
     if (!padsReady && (!region || !sitesGraded.pads || sites)) {
       gradedFor = net.doc.buildings.revision;
-      // The roads or the land moved: every platform is worked out afresh.
-      if (!sites) sitesGraded.forget(net.doc.buildings);
+      // The roads or the land moved: the platforms whose banks the diary says they moved under worked out afresh (`siteGrading.ts` `follow`, the floors' own changes); every one only the first time, or where the diary cannot say.
+      if (!sites) {
+        if (sitesGraded.pads) sitesGraded.follow(net.doc.buildings, floorGroundSince, BANK_REACH);
+        else sitesGraded.forget(net.doc.buildings);
+      }
       sitesGraded.rebuild(net.doc.buildings);
     }
     const pads = net.doc.buildings.size > 0 ? sitesGraded.pads : null;
@@ -1434,6 +1553,13 @@ export function createSceneRenderer(
   /** The pole layer brought up to the diary (`poleLayer.ts`) */
   const syncUtilities = (net: Network, groundAt: (x: number, y: number) => number): void => {
     const serial = net.doc.changes.serialOf(...POLE_KINDS);
+    // THE STREAMED WORLD'S POLES ARE THE TILES' (`poleTiles.ts`, each tile baked in a worker, an edited one from the page's records): the region places none. Its layer took in and let go three tiles of poles on the page at every tile's edge the camera crossed (plan 2.4.1).
+    if (activeAt !== null) {
+      if (utilities) { builtTriangles -= utilities.triangles; world.remove(utilities.group); utilities.dispose(); utilities = null; }
+      poleMoves.take();
+      poleSerial = serial;
+      return;
+    }
     if (utilities && serial === poleSerial && !poleMoves.pending) return;
     const entries = utilities ? net.doc.changes.since(poleSerial, POLE_KINDS) : null;
     const moved = poleMoves.entries('utilities');
@@ -1454,7 +1580,7 @@ export function createSceneRenderer(
     utilityRevision = net.doc.utilityRevision;
     const at = performance.now();
     syncUtilities(net, poleGroundAt(elevation, terrain.renderedHeightAt, net));
-    performance.measure('hitch:utilities/poles', { start: at, end: performance.now() });
+    measureHitch('hitch:utilities/poles', at);
   };
 
   /** The city's clock, read each frame: the planted trees and shrubs grow with it (`plantGrowth`). */
@@ -1470,7 +1596,7 @@ export function createSceneRenderer(
       const before = furniture.triangles;
       const work = furniture.sync(placedOn, elevation, terrain.renderedHeightAt, cityMinutes);
       builtTriangles += furniture.triangles - before;
-      performance.measure('hitch:furniture', { start: at, end: performance.now() });
+      measureHitch('hitch:furniture', at);
       return work;
     },
   }, 'draw');
@@ -1521,6 +1647,18 @@ export function createSceneRenderer(
   let pendingBlocks: (BlockCompare | null)[] = [];
   /** The land a brush moved since the world was last built */
   let landDirty: Rect | 'all' | null = null;
+  /** The diary's land entries, read every frame: where a rewrite the terrain cannot place (an undo, a stamp dropped) moved the land. */
+  const landRead = new JournalCursor(['terrain']);
+  /** Where the land entries since the last frame moved it, grown by a terrain cell each side (a stamp's rewrite reaches a cell past its circle, `terrain.ts`); null when one cannot say. */
+  const landMovedSince = (entries: readonly Change[] | null): Rect | null => {
+    if (entries === null || entries.length === 0) return null;
+    let box: Rect | null = null;
+    for (const e of entries) {
+      if (e.rects === null) return null;
+      for (const r of e.rects) box = unionRect(box, [r[0] - 2 * TERRAIN_CELL, r[1] - 2 * TERRAIN_CELL, r[2] + 2 * TERRAIN_CELL, r[3] + 2 * TERRAIN_CELL]);
+    }
+    return box;
+  };
   /** The shaping blocks a world box reaches, on the grid `changedBlocks` uses. */
   const blocksOver = (box: Rect): [number, number, number, number][] => {
     const out: [number, number, number, number][] = [];
@@ -1553,7 +1691,7 @@ export function createSceneRenderer(
       if (worldJob === null && (utilityRevision !== net.doc.utilityRevision || poleSerial !== net.doc.changes.serialOf(...POLE_KINDS))) {
         const atUtilities = performance.now();
         rebuildUtilities(net);
-        performance.measure('hitch:road-edit/utilities alone', { start: atUtilities, end: performance.now() });
+        measureHitch('hitch:road-edit/utilities alone', atUtilities);
       }
       return;
     }
@@ -1588,7 +1726,7 @@ export function createSceneRenderer(
       // On land that has not moved, from the last solve
       : buildRoadElevation(net, builtGroundAt, from, roadStations.current, groundMoved);
     roadStations.used();
-    performance.measure('hitch:road-edit/elevation', { start: started, end: performance.now() });
+    measureHitch('hitch:road-edit/elevation', started);
     // Now the ground comes to meet the roads
     // The blocks the two solves differ in, digested off the page (`compareSolves`) and read by the job, which waits for them
     const compare = previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null;
@@ -1643,10 +1781,11 @@ export function createSceneRenderer(
         { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
     }
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
+    // A streamed world's structures are the tiles' (`structureTiles.ts`, baked in workers): the region builds none, its cells let go.
     const atdetails = performance.now();
-    details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles);
-    const freshDetails = details.prepare(net, solve, terrain.renderedHeightAt, blocks);
-    performance.measure('hitch:road-edit/details', { start: atdetails, end: performance.now() });
+    if (byTile && details) { builtTriangles -= details.triangles; world.remove(details.group); details.dispose(); details = null; }
+    const freshDetails = byTile ? null : (details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles)).prepare(net, solve, terrain.renderedHeightAt, blocks);
+    measureHitch('hitch:road-edit/details', atdetails);
     yield;
     // The overhead utility network.
     const utilityBuilt = net.doc.utilityRevision;
@@ -1655,7 +1794,7 @@ export function createSceneRenderer(
     // The new pieces' shaders compiled before they are drawn - in parallel where the driver can
     if (sliced) {
       const stage = new Group();
-      for (const piece of [freshRoads.group, ...freshDetails.fresh]) {
+      for (const piece of [freshRoads.group, ...(freshDetails?.fresh ?? [])]) {
         if (piece.parent === null) stage.add(piece);
       }
       if (stage.children.length > 0) {
@@ -1670,22 +1809,22 @@ export function createSceneRenderer(
     if (roads && roads !== freshRoads) { triangles -= roads.triangles; world.remove(roads.group); roads.dispose(); }
     // The region's blocks of a world drawn by tiles now: let go once out of the picture.
     if (byTile && surfaceReuse.chunks.size) dropSurfaceBlocks(surfaceReuse);
-    triangles -= details.triangles;
+    triangles -= details?.triangles ?? 0;
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
     roads.adopt();
     world.add(roads.group);
-    freshDetails.apply();
-    if (!details.group.parent) world.add(details.group);
+    freshDetails?.apply();
+    if (details && !details.group.parent) world.add(details.group);
     utilityRevision = utilityBuilt;
-    builtTriangles = triangles + roads.triangles + details.triangles;
+    builtTriangles = triangles + roads.triangles + (details?.triangles ?? 0);
     // The poles the edit reached, on the ground just put in place (`syncUtilities`, from the diary).
     const atutilities = performance.now();
     syncUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net));
-    performance.measure('hitch:road-edit/utilities', { start: atutilities, end: performance.now() });
+    measureHitch('hitch:road-edit/utilities', atutilities);
     // The street furniture and the signs follow from the diary once the world stands (the engine's 'draw' phase, in `draw`).
     rebuildMs = performance.now() - started;
-    performance.measure('hitch:road-edit/world rebuilt', { start: started, end: performance.now() });
+    measureHitch('hitch:road-edit/world rebuilt', started);
     rebuilds++;
     landedRevision = builtOf;
     onAssetsReady();
@@ -1901,37 +2040,32 @@ export function createSceneRenderer(
   };
   const natureSweep = (key: string): NatureSweep => {
     if (quality.vegetation <= 0 || !terrain.parts.some((p) => p.surface.ecology())) return { key };
-    // One plate's density swept a frame at most while the game is seen (each was some 35 ms)
-    let sweptNew = false, pending = 0;
-    const sweepFrom = performance.now();
+    // A plate whose woods' base is not in yet waits for it (`terrain.ts` keeps it with the land): DO NOT work a plate's density out here, a plate a frame - 35 ms of the page each.
+    let pending = 0;
     // THE TREE MAP, as Horizon Zero Dawn's Placement_Trees (Guerrilla, GDC 2017)
     const cells = Math.floor((TERRAIN_HALF * 2) / NATURE_SPACING);
     const plates: NaturePlate[] = [];
     let treeSum = 0;
-    const d = WOODS_SLOPE_STEP;
     // What a plate's density reads besides its own ecology: its own land (`plateLand`) and the vegetation setting.
     const vegetation = quality.vegetation;
     for (const part of terrain.parts) {
       const field = part.surface.ecology();
       if (!field) continue;
       // Kept from the last sweep while its own ecology and the land are as they were
-      const plateKey = `${part.surface.ecologyRevision}:${plateLand.get(part.surface) ?? 0}:${vegetation}`;
+      const plateKey = `${part.surface.ecologyRevision}:${part.surface.woodsRevision ?? 0}:${plateLand.get(part.surface) ?? 0}:${vegetation}`;
       const known = naturePlates.get(part.surface);
       if (known && known.key === plateKey) {
         plates.push(known);
         treeSum += known.sum;
         continue;
       }
-      if (sweptNew && (reveal.opened || performance.now() - sweepFrom > HIDDEN_SLICE_MS)) { pending++; continue; }
-      sweptNew = true;
+      // Its density but the ecosystem's share, kept by the plate on its land (`woodsBase.ts`): only that share added here.
+      const base = part.surface.woodsBase?.() ?? null;
+      if (!base) { pending++; continue; }
       const odds = known?.odds ?? new Float32Array(cells * cells);
       const band = known?.band ?? new Uint8Array(cells * cells);
       let plateSum = 0;
       const di = Math.round(part.cx / NATURE_SPACING), dj = Math.round(part.cy / NATURE_SPACING);
-      // The land's own slope, before the roads cut and fill it: a wood holds a hillside, not the bank of a street
-      const natural = part.surface.naturalRenderedHeightAt;
-      // Its density but the ecosystem's share, made off the page with the plate (`woodsBase.ts`): only that share added here.
-      const base = part.surface.woodsBase?.() ?? null;
       for (let j = 0; j < cells; j++) {
         for (let i = 0; i < cells; i++) {
           const x = -TERRAIN_HALF + (i + 0.5) * NATURE_SPACING, y = -TERRAIN_HALF + (j + 0.5) * NATURE_SPACING;
@@ -1941,16 +2075,8 @@ export function createSceneRenderer(
           const o = j * cells + i;
           // Nothing grows past the map's edge (`wholeMap.ts`).
           if (!onMap(x + part.cx, y + part.cy)) { odds[o] = 0; band[o] = 0; continue; }
-          let density: number;
-          if (base) density = base[o]! + ecology * 0.3;
-          else {
-            const wx = x + part.cx, wy = y + part.cy;
-
-            const slope = Math.hypot(natural(x + d, y) - natural(x - d, y), natural(x, y + d) - natural(x, y - d)) / (2 * d);
-            const hillside = Math.min(1, Math.max(0, (slope - 0.06) / 0.35));
-            // The patches drawn out to clear masses: woods on the plains too, as capões, and clean meadows between them.
-            density = natureDensity(wx, wy, m(1), hillside, ecology);
-          }
+          // `natureDensity` is linear in the ecology: the base (the land's slope and the patches, `woodsBase.ts`) and its share.
+          const density = base[o]! + ecology * 0.3;
           // The bands: inner forest, its edge, scattered trees, a rare lone one.
           if (density > 0.62) { odds[o] = 0.92; band[o] = 3; }
           else if (density > 0.5) { odds[o] = 0.25 + (density - 0.5) / 0.12 * 0.6; band[o] = 2; }
@@ -2089,7 +2215,27 @@ export function createSceneRenderer(
   /** Which of the trees the player planted stand: off the roads, out of the buildings. */
   const plantedKeeps = new CellKeeps<PlantedTree>((t) => (onCarriageway(keepNet!, t) || buildings.covers(t.x, t.y) ? null : terrain.renderedHeightAt(t.x, t.y)));
   /** The planted trees standing in a keep cell, from the document's filing by place (`RoadDoc.treesIn`); none in a cell of the kept ring (`ActiveTiles.keepsCell`). */
-  const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => (activeTiles.keepsCell(key) ? doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key) : []);
+  /** A keep cell whose tile's planted trees the tiles draw (`plantedTiles.ts`): the region files none there; until that tile's bake lands the region draws them (never a hole while it is baked). */
+  const plantedByTile = (key: number): boolean => { const r = keepCellRect(key); return nearTiles.landed('planted', tileKeyAt((r[0] + r[2]) / 2, (r[1] + r[3]) / 2)); };
+  const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => (activeTiles.keepsCell(key) && !plantedByTile(key) ? doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key) : []);
+  /** The tiles whose planted bake came or went since the region last filed its trees: their cells filed again. */
+  const plantedFlips = new Set<number>();
+  nearTiles.onLanded = (kind, tile) => { if (kind === 'planted') { plantedFlips.add(tile); onAssetsReady(); } };
+  /** The planted forest's cells, made once the woods' models are in: the region's keep draws in them, and a streamed world's tiles (`plantedTiles.ts`). */
+  const plantedForestOf = (): PlantCells | null => {
+    if (!natureTreeKit) return null;
+    const kit = natureTreeKit;
+    return plantedForest ??= (() => {
+      const made = createTreeCells(kit, 'planted-forest', (cell) => plantedKeeps.standingIn(cell)
+        .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.height, yaw: c.yaw, seed: c.seed, species: 'broadleaf' as const })));
+      world.add(made.group);
+      return made;
+    })();
+  };
+  // The streamed world's planted trees per tile, in the planted forest's cells.
+  nearTiles.add(plantedProduct(plantedForestOf, () => natureTreeKit?.variants.length ?? 0));
+  // The streamed world's road structures per tile (`structureTiles.ts`): piers, parapets, retaining walls, portals.
+  nearTiles.add(structureProduct(world, materials, terrain.vergeMaterial));
   /** @rebuild Every planted tree filed cell by cell: the map opened, or its trees replaced whole. */
   const plantAll = (doc: RoadDoc): void => {
     plantedKeeps.clear();
@@ -2099,7 +2245,7 @@ export function createSceneRenderer(
       const list = byCell.get(key);
       if (list) list.push(t); else byCell.set(key, [t]);
     }
-    for (const [key, list] of byCell) if (activeTiles.keepsCell(key)) plantedKeeps.fill(key, list);
+    for (const [key, list] of byCell) if (activeTiles.keepsCell(key) && !plantedByTile(key)) plantedKeeps.fill(key, list);
   };
   /** What the cover sweeps read of the ground (`coverSweep.ts`). */
   const coverField: CoverField = {
@@ -2128,6 +2274,36 @@ export function createSceneRenderer(
   };
   /** The rivers' stones plate by plate (`ShorePlates`): a plate come in, or whose water changed, sweeps its own cells; one gone lets them go. */
   const shorePlates = new ShorePlates((key, water) => coverKeeps.shore.fill(key, shoreIn(key, coverField, water), sameShore));
+  /** The cover layer's cells (stones, scrub, card trees), made once: the region's keeps draw in them, and a streamed world's tiles (`coverTiles.ts`). */
+  const coverCellsOf = (): PlantCells => coverCells ??= (() => {
+    const made = createCoverCells(coverKit, 'ground-cover', {
+      rocksIn: (cell) => [...coverKeeps.rocks.standingIn(cell), ...coverKeeps.shore.standingIn(cell)]
+        .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.size, yaw: c.yaw, seed: c.seed, rock: terrain.geologyAt(c.x, c.y) })),
+      scrubIn: (cell) => coverKeeps.scrub.standingIn(cell).map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.size, yaw: c.yaw, seed: c.seed })),
+      treesIn: (cell) => (!natureTreeKit && !natureTreesPending ? coverKeeps.forest.standingIn(cell).map(({ c, z }) => ({ ...c, z })) : []),
+    });
+    world.add(made.group);
+    return made;
+  })();
+  /** The painted woods' low-poly trees (`natureTrees.ts`), made once the woods' models are in. */
+  const paintedForestOf = (): PlantCells | null => {
+    if (!natureTreeKit) return null;
+    const kit = natureTreeKit;
+    return paintedForest ??= (() => {
+      const made = createTreeCells(kit, 'painted-forest', (cell) => coverKeeps.forest.standingIn(cell).map(({ c, z }) => ({ ...c, z })));
+      world.add(made.group);
+      return made;
+    })();
+  };
+  /** The region's painted cover let go for the tiles' (a streamed world open). */
+  let coverTiled = false;
+  // The streamed world's painted cover per tile (`coverTiles.ts`): its stones and scrub in the cover's cells, its woods in the painted forest's.
+  nearTiles.add(coverProduct({
+    coverCells: coverCellsOf,
+    forest: paintedForestOf,
+    version: () => `${!natureTreeKit && !natureTreesPending ? 'cards' : 'trees'}:${natureTreeKit?.variants.length ?? 0}`,
+    extra: (tile) => coverExtraFor(tile, coverKit, natureTreeKit?.variants.length ?? 0, !natureTreeKit && !natureTreesPending, worldNet?.doc.treeClearings ?? []),
+  }));
   const handle: SceneHandle = {
     // Asked for by the Actions (a shot, a bomb) and the weapons lab: the effects, and now the physics the bodies fall with
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
@@ -2231,6 +2407,11 @@ export function createSceneRenderer(
     set onNearDrawn(fn) { onNearDrawn = fn; },
     setActiveTiles(at, rects) {
       buildings.setActive(at, rects);
+      // The furniture and the signs of a streamed world are the tiles' (`nearTiles`): the page's own let go.
+      furniture.setTiled(at !== null);
+      signs.setTiled(at !== null);
+      barriers.setTiled(at !== null);
+      plantLists.setTiled(at !== null);
       // The other near products (gardens, furniture, signs, walls, poles, structures, planted trees, covers, elements, lots) take in or let go the tiles that came or left (`activeTiles.ts`).
       activeTiles.set(at, rects);
       // The near roads built again for the tiles that came in or left (`rebuildWorld`: the kept tiles' digests stand, only the flipped tiles are made or let go).
@@ -2248,10 +2429,10 @@ export function createSceneRenderer(
       return buildings.far;
     },
     get farRoads() {
-      return farRoads;
+      return roadsAndNear;
     },
     farBakeEnv() {
-      return { ...buildings.farEnv(), massPrefix: buildings.far.bakePrefix, roadPrefix: farRoads.bakePrefix, roadGround: farRoadGround() };
+      return { ...buildings.farEnv(), massPrefix: buildings.far.bakePrefix, roadPrefix: farRoads.bakePrefix, roadGround: farRoadGround(), nearPrefix: nearTiles.bakePrefix };
     },
     beginLoad() {
       reveal.begin();
@@ -2384,19 +2565,23 @@ export function createSceneRenderer(
       const fxDt = fx ? fx.clock(wallDt) : 0;
       lastWall = wallNow;
       cameraEasing = rig.settle(wallDt);
-      if (canvas.clientWidth !== lastWidth || canvas.clientHeight !== lastHeight) {
-        lastWidth = canvas.clientWidth;
-        lastHeight = canvas.clientHeight;
+      // Without an observer (none in this browser): read once here, as the frame did before.
+      if (!sizeWatch) { css.w = canvas.clientWidth; css.h = canvas.clientHeight; }
+      if (css.w !== lastWidth || css.h !== lastHeight) {
+        lastWidth = css.w;
+        lastHeight = css.h;
         resize();
       }
       const terrainStarted = performance.now();
       const stroking = !!options?.holdRoads && !!elevation && networkRevision === net.revision;
       const groundMoved = terrain.update(net.doc, stroking);
+      const landEntries = landRead.read(net.doc.changes);
       if (groundMoved) {
         landVersion++;
-        // The stroke's dirty region, dab by dab (`landDirty`).
+        // The stroke's dirty region, dab by dab (`landDirty`); a rewrite the terrain cannot place (an undo of the relief), where the diary says it moved.
         const moved = terrain.lastRegion;
-        landDirty = moved === null || landDirty === 'all' ? 'all' : unionRect(landDirty, regionRect(moved));
+        const said = moved === null ? landMovedSince(landEntries) : regionRect(moved);
+        landDirty = said === null || landDirty === 'all' ? 'all' : unionRect(landDirty, said);
       }
       terrain.updatePaint(net.doc);
       // A brush stroke in progress: every dab used to re-solve the whole road network and re-mesh every road
@@ -2408,12 +2593,12 @@ export function createSceneRenderer(
       } else {
         const atRebuild = performance.now();
         rebuildWorld(net);
-        performance.measure('hitch:draw/Rebuild', { start: atRebuild, end: performance.now() });
+        measureHitch('hitch:draw/Rebuild', atRebuild);
         terrain.settle();
       }
       const atPump = performance.now();
       pumpWorld();
-      performance.measure('hitch:draw/Pump', { start: atPump, end: performance.now() });
+      measureHitch('hitch:draw/Pump', atPump);
       // A building placed, moved or reshaped grades its own site.
       landShapes();
       followFloors(net);
@@ -2442,8 +2627,8 @@ export function createSceneRenderer(
           (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;
         if (buildings.pending) onAssetsReady();
       }
-      // The countryside's trees are grown once the first world is in, not while the opening builds it (`loadNatureTrees`).
-      if (!natureTreesStarted && roads !== null && !worldJob) startNatureTrees();
+      // The countryside's trees' kit (its models, its programs compiled ahead: `loadNatureTrees`) made while the first world is built, not after: it reads nothing of the world, and the opening waited for it once the world was in (`natureTreesPending`, the curtain's `whole`). The trees themselves are grown once the world stands (the nature's keeps, `!worldJob`).
+      if (!natureTreesStarted && roads !== null) startNatureTrees();
       // The Actions' effects (`playEffects.ts`) made in idle time once the world stands, not on the first shot
       if (!fxPreload && !fxLoading && roads !== null && !worldJob && typeof requestIdleCallback === 'function') {
         fxPreload = true;
@@ -2472,14 +2657,17 @@ export function createSceneRenderer(
         {
           const at = performance.now();
           const paint = activeTiles.read(coverPaintRead, net.doc.changes);
-          if (paint === null || paint.some((e) => e.rects === null)) sweepAllCovers(net.doc);
+          // A streamed world's painted cover is the tiles' (`coverTiles.ts`, baked in workers): the region sweeps none; the rivers' stones stay the plates'.
+          if (activeAt !== null) {
+            if (!coverTiled) { coverTiled = true; for (const keep of [coverKeeps.forest, coverKeeps.scrub, coverKeeps.rocks]) keep.clear(); }
+          } else if (paint === null || paint.some((e) => e.rects === null) || coverTiled) { coverTiled = false; sweepAllCovers(net.doc); }
           else if (paint.length) {
             const cells = new Set<number>();
             for (const e of paint) for (const r of e.rects!) keepCellsOver(r, COVER_SWEEP_PAD, cells);
             resweepCovers(cells);
           }
           shorePlates.follow(terrain.parts);
-          performance.measure('hitch:cover/sweep', { start: at, end: performance.now() });
+          measureHitch('hitch:cover/sweep', at);
         }
         // The painted woods' trees are the countryside's (`natureTrees.ts`); the old card trees only if those cannot be grown.
         const standIns = !natureTreeKit && !natureTreesPending;
@@ -2503,29 +2691,12 @@ export function createSceneRenderer(
             if (cells === null) coverWhole = true; else for (const cell of cells) changed.add(cell);
           }
           if (coverWhole || changed.size) {
-            coverCells ??= (() => {
-              const made = createCoverCells(coverKit, 'ground-cover', {
-                rocksIn: (cell) => [...coverKeeps.rocks.standingIn(cell), ...coverKeeps.shore.standingIn(cell)]
-                  .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.size, yaw: c.yaw, seed: c.seed, rock: terrain.geologyAt(c.x, c.y) })),
-                scrubIn: (cell) => coverKeeps.scrub.standingIn(cell).map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.size, yaw: c.yaw, seed: c.seed })),
-                treesIn: (cell) => (!natureTreeKit && !natureTreesPending ? coverKeeps.forest.standingIn(cell).map(({ c, z }) => ({ ...c, z })) : []),
-              });
-              world.add(made.group);
-              return made;
-            })();
             // DO NOT gather every cell of the map unless every cell is drawn again.
-            coverCells.sync(coverWhole ? null : changed, coverWhole ? allCoverCells() : []);
-            if (natureTreeKit) {
-              paintedForest ??= (() => {
-                const made = createTreeCells(natureTreeKit, 'painted-forest', (cell) => coverKeeps.forest.standingIn(cell).map(({ c, z }) => ({ ...c, z })));
-                world.add(made.group);
-                return made;
-              })();
-              paintedForest.sync(coverWhole ? null : changed, coverWhole ? coverKeeps.forest.cellKeys() : []);
-            }
+            coverCellsOf().sync(coverWhole ? null : changed, coverWhole ? allCoverCells() : []);
+            paintedForestOf()?.sync(coverWhole ? null : changed, coverWhole ? coverKeeps.forest.cellKeys() : []);
           }
           coverStandIns = standIns;
-          performance.measure('hitch:cover', { start: at, end: performance.now() });
+          measureHitch('hitch:cover', at);
         }
         // The ecosystem's own trees.
         bringPlateLand(net.doc);
@@ -2537,7 +2708,7 @@ export function createSceneRenderer(
           natureSweepPending = (swept.pending ?? 0) > 0;
           // While plates wait their sweep (one a frame), the trees standing stay
           if (!natureSweepPending || !natureSweepState) natureSweepState = swept;
-          performance.measure('hitch:nature/sweep', { start: at, end: performance.now() });
+          measureHitch('hitch:nature/sweep', at);
         }
         if (natureSweepState) {
           const sweep = natureSweepState;
@@ -2574,29 +2745,28 @@ export function createSceneRenderer(
             })();
             natureCards.sync(changed, whole ? natureKeeps.cellKeys() : []);
           }
-          performance.measure('hitch:nature', { start: at, end: performance.now() });
+          measureHitch('hitch:nature', at);
         }
         // The trees the player planted (`world/trees.ts`), with the woods' own models: filed again only in the cells planted or cut
+        // A streamed world's planted trees are the tiles' (`plantedTiles.ts`, baked in workers) once a tile's bake landed; until then the region draws its own tiles' (`plantedByTile`).
         if (natureTreeKit) {
           const planted = activeTiles.read(plantedRead, net.doc.changes);
-          if (planted === null || planted.some((e) => e.rects === null)) plantAll(net.doc);
-          else if (planted.length) {
+          if (planted === null || planted.some((e) => e.rects === null)) { plantAll(net.doc); plantedFlips.clear(); }
+          else if (planted.length || plantedFlips.size) {
             const cells = new Set<number>();
             for (const e of planted) for (const r of e.rects!) keepCellsOver(r, 0, cells);
+            // A tile whose bake came or went: its cells filed again, its trees let go or taken back.
+            for (const tile of plantedFlips) { const { i, j } = tileOfKey(tile); keepCellsOver([i * TILE, j * TILE, (i + 1) * TILE - 1e-6, (j + 1) * TILE - 1e-6], 0, cells); }
+            plantedFlips.clear();
             for (const key of cells) plantedKeeps.fill(key, plantedIn(net.doc, key), (a, b) => a === b);
           }
           if (rects === null) plantedKeeps.refreshAll();
           else if (rects.length) plantedKeeps.refresh(rects, KEEP_REACH);
           const cells = plantedKeeps.takeChangedCells();
           if (cells === null || cells.size || vegetationRedraw) {
-            plantedForest ??= (() => {
-              const made = createTreeCells(natureTreeKit, 'planted-forest', (cell) => plantedKeeps.standingIn(cell)
-                .map(({ c, z }) => ({ x: c.x, y: c.y, z, size: c.height, yaw: c.yaw, seed: c.seed, species: 'broadleaf' as const })));
-              world.add(made.group);
-              return made;
-            })();
+            const forest = plantedForestOf()!;
             const whole = cells === null || vegetationRedraw;
-            plantedForest.sync(whole ? null : cells, whole ? plantedKeeps.cellKeys() : []);
+            forest.sync(whole ? null : cells, whole ? plantedKeeps.cellKeys() : []);
           }
         }
         vegetationRedraw = false;
@@ -2616,18 +2786,18 @@ export function createSceneRenderer(
         const eye = rig.camera.position;
         let k = 1;
         if (!rig.perspective) {
-          const halfH = canvas.clientHeight / Math.max(1e-3, 2 * rig.viewport.zoom);
+          const halfH = css.h / Math.max(1e-3, 2 * rig.viewport.zoom);
           k = halfH / Math.tan((PERSPECTIVE_FOV * Math.PI) / 360) / Math.max(1e-3, eye.distanceTo(rig.target));
         }
         const t = rig.target;
         const ex = t.x + (eye.x - t.x) * k, ey = -(t.z + (eye.z - t.z) * k), ez = t.y + (eye.y - t.y) * k;
         // The far level of the buildings by the error on the screen, in CSS pixels
-        const pxAtMetre = canvas.clientHeight / (2 * Math.tan(((rig.perspective ? (rig.camera as PerspectiveCamera).fov : PERSPECTIVE_FOV) * Math.PI) / 360));
+        const pxAtMetre = css.h / (2 * Math.tan(((rig.perspective ? (rig.camera as PerspectiveCamera).fov : PERSPECTIVE_FOV) * Math.PI) / 360));
         // In the view from above a metre spans the same pixels wherever it stands; in perspective nothing past the far plane is seen
         let reach = rig.perspective ? (rig.camera as PerspectiveCamera).far : Infinity;
         if (!rig.perspective) {
-          const halfH = canvas.clientHeight / Math.max(1e-3, 2 * rig.viewport.zoom);
-          const halfW = (halfH * canvas.clientWidth) / Math.max(1, canvas.clientHeight);
+          const halfH = css.h / Math.max(1e-3, 2 * rig.viewport.zoom);
+          const halfW = (halfH * css.w) / Math.max(1, css.h);
           reach = Math.hypot(halfW, halfH / Math.max(0.3, Math.sin(rig.viewport.elevation))) * 1.25 + m(120);
         }
         rig.camera.updateMatrixWorld();
@@ -2639,6 +2809,7 @@ export function createSceneRenderer(
         buildings.frame.budget = VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles;
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
+        nearTiles.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;
         const texel = environment.sun.castShadow ? (shadow.camera.right - shadow.camera.left) / shadow.camera.zoom / shadow.mapSize.x : Infinity;
@@ -2710,9 +2881,11 @@ export function createSceneRenderer(
       crowdFrustum.setFromProjectionMatrix(crowdProjection, cullCamera.coordinateSystem, cullCamera.reversedDepth);
       cameraRight.setFromMatrixColumn(cullCamera.matrixWorld, 0).normalize();
       // The canvas's CSS size read once a frame, before the vehicles ask `screenScale`
-      cssHalfW = renderer.domElement.clientWidth * 0.5;
-      cssHalfH = renderer.domElement.clientHeight * 0.5;
+      cssHalfW = css.w * 0.5;
+      cssHalfH = css.h * 0.5;
       // Plants and street furniture outside the view are not drawn at all.
+      // The layers' shadow margin away from the sun the cascades cast by (the light's own direction, `sunCascades.ts`).
+      setShadowSun(environment.sun.position.x - environment.sun.target.position.x, environment.sun.position.y - environment.sun.target.position.y, environment.sun.position.z - environment.sun.target.position.z);
       furniture.cull(crowdFrustum, crowdProjection);
       signs.cull(crowdFrustum, crowdProjection);
       barriers.cull(crowdFrustum, crowdProjection);
@@ -2764,8 +2937,8 @@ export function createSceneRenderer(
       signals.sync(sim.signals, net, detailed, crowdFrustum);
 
       target.copy(rig.target);
-      const halfHeight = canvas.clientHeight / Math.max(0.001, rig.viewport.zoom * 2);
-      const halfWidth = (halfHeight * canvas.clientWidth) / Math.max(1, canvas.clientHeight);
+      const halfHeight = css.h / Math.max(0.001, rig.viewport.zoom * 2);
+      const halfWidth = (halfHeight * css.w) / Math.max(1, css.h);
       // The screen's height covers more ground the lower the camera looks
       const reach = rig.perspective ? 1.6 : 1;
       const groundHalfDepth = (reach * halfHeight) / Math.max(0.3, Math.sin(rig.viewport.elevation));
@@ -2799,7 +2972,7 @@ export function createSceneRenderer(
           const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * span * 0.45;
           strikeAt(target.x + Math.cos(a) * r, -target.z + Math.sin(a) * r);
         }
-        canvasSize.set(canvas.clientWidth, canvas.clientHeight);
+        canvasSize.set(css.w, css.h);
         const flash = lightning.update(step, canvasSize);
         const storm = Math.min(1, weather.lightning / 8);
         environment.setWeather(Math.max(weather.rain * 0.85, storm * 0.6), flash);
@@ -2830,7 +3003,7 @@ export function createSceneRenderer(
           const coneDirection = rig.camera.getWorldDirection(flatDirection);
           const flat = Math.hypot(coneDirection.x, coneDirection.z);
           if (flat > 0.05) {
-            const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+            const aspect = css.w / Math.max(1, css.h);
             const fov = rig.camera instanceof PerspectiveCamera ? rig.camera.fov : PERSPECTIVE_FOV;
             const halfAcross = Math.atan(Math.tan((fov * Math.PI) / 360) * aspect);
             view = {
@@ -2859,7 +3032,16 @@ export function createSceneRenderer(
         if (castersMoved && !moving) shadowMoved = true;
         castersMoved = moving;
         // Each cascade drawn when what it holds can have changed (`sunCascades.ts` `pass`)
-        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), wind: net.doc.weather.wind > 0 })) {
+        // The still casters as they stood at the last pass: the same view (what the layers cull by it) and nothing landed, added or taken away since.
+        const viewStill = shadowView.equals(rig.camera.matrixWorld) && shadowProjection.equals(rig.camera.projectionMatrix);
+        shadowView.copy(rig.camera.matrixWorld);
+        shadowProjection.copy(rig.camera.projectionMatrix);
+        // The buildings' levels follow the frame's error scale too (`frameBudget.ts`): one moved, other levels cast.
+        const scaleStill = shadowScale === buildings.frame.scale;
+        shadowScale = buildings.frame.scale;
+        const still = viewStill && scaleStill && !castersStirred;
+        castersStirred = false;
+        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), wind: net.doc.weather.wind > 0, still })) {
           renderer.shadowMap.needsUpdate = true;
         }
         shadowMoved = false;
@@ -2883,7 +3065,7 @@ export function createSceneRenderer(
         reliefFocus.x = centre.x + dx * pull;
         reliefFocus.z = -centre.y + dz * pull;
         // Close: the screen's height under some 1800 units of ground, in either camera
-        const halfHeight = renderer.domElement.clientHeight / Math.max(1e-3, 2 * rig.viewport.zoom);
+        const halfHeight = css.h / Math.max(1e-3, 2 * rig.viewport.zoom);
         const close = halfHeight < 900;
         if (net.doc.gullyRevision !== gulliesFor) {
           gulliesFor = net.doc.gullyRevision;
@@ -2922,7 +3104,7 @@ export function createSceneRenderer(
           fogJournal = doc.changes;
           fogSeen = fogSerial;
           fogTerrainSeen = doc.terrainRevision;
-          performance.measure('hitch:fog', { start: startedAt, end: performance.now() });
+          measureHitch('hitch:fog', startedAt);
         }
         if (!landHeld) {
           // The fog's window kept round where the view looks (`fogLayer.ts`): only the texels that came in written.
@@ -2934,10 +3116,9 @@ export function createSceneRenderer(
         // The elements: again only in the cells where they or the ground under them changed (`elements.ts`).
         if (elementKit && !landHeld) {
           const startedAt = performance.now();
-          if (!elementLayer) {
-            elementLayer = createElementLayer(elementKit, activeTiles);
-            world.add(elementLayer.group);
-          }
+          const layer = elementLayerOf()!;
+          // A streamed world's elements are the tiles' (`elementTiles.ts`, baked in workers): the region makes none.
+          layer.setTiled(activeAt !== null);
           const entries = activeTiles.read(elementRead, doc.changes);
           let cells: Set<number> | null = null;
           if (entries !== null && entries.every((e) => e.rects !== null)) {
@@ -2945,11 +3126,11 @@ export function createSceneRenderer(
             // A prop stands on the ground drawn under its point: a terrain cell round a change of the ground.
             for (const e of entries) for (const r of e.rects!) keepCellsOver(r, TERRAIN_CELL, cells);
           }
-          if ((cells === null || cells.size > 0) && elementLayer.sync(cells, doc, (x, y) => terrain.renderedHeightAt(x, y))) {
-            elementLayer.cull(crowdFrustum, crowdProjection);
+          if ((cells === null || cells.size > 0) && layer.sync(cells, doc, (x, y) => terrain.renderedHeightAt(x, y))) {
+            layer.cull(crowdFrustum, crowdProjection);
             shadowMoved = true;
           }
-          performance.measure('hitch:elements', { start: startedAt, end: performance.now() });
+          measureHitch('hitch:elements', startedAt);
         }
         elementLayer?.emit(Math.min(0.1, Math.max(0, delta)), rig.camera.position, exhaust);
         post.setGroundFog(fogLayer?.any ? { texture: fogLayer.texture, low: fogLayer.low, high: fogLayer.high, density: f.density, window: fogLayer.window } : null);
@@ -2967,6 +3148,16 @@ export function createSceneRenderer(
       const atRender = performance.now();
       // The people's skeletons on the GPU (`people/crowdAnimation.ts`), before anybody draws them.
       agents.renderPalettes(renderer);
+      {
+        // DO NOT keep the eight point lights in the scene unlit (R18): three counts every visible light and each lit fragment evaluates it; shown together, so they make one variant (compiled ahead, `lightVariants`).
+        const pointsOn = fxLights.muzzle.intensity > 0 || fxLights.blast.intensity > 0 || roomLights.some((light) => light.intensity > 0);
+        for (const light of roomLights) light.visible = pointsOn;
+        fxLights.muzzle.visible = fxLights.blast.visible = pointsOn;
+      }
+      // The world matrices of what moves, once for every pass of the frame.
+      updateMoving(scene);
+      // Every texture queued this frame to the GPU before anything draws with it (R19).
+      drainUploads(renderer);
       // The opening's town is shown whole
       openingSince ??= performance.now();
       if (!reveal.opened) {
@@ -3004,17 +3195,17 @@ export function createSceneRenderer(
         gpuTimer.end();
         governFrame();
       } else onAssetsReady();
-      performance.measure('hitch:draw/Render', { start: atRender, end: performance.now() });
+      measureHitch('hitch:draw/Render', atRender);
       if (shake > 0) { rig.camera.position.sub(shakeOffset); rig.camera.updateMatrixWorld(); }
-      // One waiting texture a frame to the GPU, before anybody draws it.
-      drainUploads(renderer, 1);
+      // And those queued while the frame drew: on the GPU before the next one draws.
+      drainUploads(renderer);
       drainCompiles(renderer, rig.camera, scene, post.target);
       // From the second frame on, the compiler answers: warm the road shaders.
       warmRoadShaders();
       warmBlastShaders();
       warmPreviewShaders();
       // One waiting body's geometry a frame to the GPU, before anybody draws it.
-      drainWarm(renderer, rig.camera, scene, post.target);
+      drainWarm(renderer);
       // Meshes still waiting to go up: another frame, so the queue never stands while the game is still.
       if (warmPending()) onAssetsReady();
 
@@ -3030,6 +3221,7 @@ export function createSceneRenderer(
       return requested;
     },
     dispose() {
+      sizeWatch?.disconnect();
       roadTiles.dispose();
       groundWorkers.dispose();
       tileWriter?.terminate();
@@ -3038,6 +3230,8 @@ export function createSceneRenderer(
       densityCars.dispose();
       exhaust.dispose();
       wear.dispose();
+      // The tiles' products first: they take their runs back from the layers below.
+      nearTiles.dispose();
       barriers.dispose();
       transit.dispose();
       transitPreview?.dispose();

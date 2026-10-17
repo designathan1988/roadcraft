@@ -10,7 +10,9 @@ import { type Bay, bayWork } from '@sim/agents/bay';
 import { collectBays, tileBaysGone, tileBaysRead, tileBaysReset, tileBaysWanted } from '@sim/agents/parking';
 import { type TrafficBuilding, TrafficBuildingTable } from '@sim/agents/trafficBuildings';
 import { BAYS_SECTION, type TileBays, unpackTileBays } from '@sim/tileBays';
-import { TRAFFIC_SECTION, bakeTileSections, trafficOfSection } from '@sim/tileSections';
+import { TRAFFIC_SECTION, bakeTileSections, tileBaysSection, trafficOfSection } from '@sim/tileSections';
+import { addTileSection, readTile, readTileSection, writeTile } from '@editor/tileStore';
+import type { PartStore } from '@editor/saveStore';
 
 /** A TILE'S BAYS BAKED WHERE IT IS WRITTEN (`sim/tileBays.ts`) ARE THE ONES THE SIMULATION WORKS OUT FROM THE SAME TILE, AND IT TAKES THEM INSTEAD OF WORKING THEM OUT. */
 
@@ -165,5 +167,29 @@ describe('a tile\'s baked bays', () => {
     const fresh = worked(() => collectBays(worldOf(undefined, []).w)).kerbs;
     expect(fresh).toBeGreaterThan(0);
     expect(worked(() => collectBays(w)).kerbs).toBe(fresh);
+  });
+});
+
+describe("a tile made ahead of the region (the opening's rush)", () => {
+  it('is stored without its bays, and takes them later as one section, its records and other parts as they were', async () => {
+    const blobs = new Map<string, Blob>();
+    const store: PartStore = {
+      async get(keys) { return keys.map((k) => blobs.get(k) ?? null); },
+      async write(put) { for (const [k, b] of put) blobs.set(k, b); return true; },
+    };
+    const tile = bake().tile;
+    expect((await writeTile(store, 'm', tile, (r) => bakeTileSections(r, false))).ok).toBe(true);
+    expect(await readTileSection(store, 'm', tile.key, BAYS_SECTION)).toBeNull();
+    const records = await readTile(store, 'm', tile.key);
+    const traffic = await readTileSection(store, 'm', tile.key, TRAFFIC_SECTION);
+    const section = tileBaysSection(tile, (traffic as { value: unknown }).value)!;
+    // Not at another version (the tile was written since): nothing written.
+    expect(await addTileSection(store, 'm', tile.key, tile.version + 1, BAYS_SECTION, section)).toBe(false);
+    expect(await addTileSection(store, 'm', tile.key, tile.version, BAYS_SECTION, section)).toBe(true);
+    const added = await readTileSection(store, 'm', tile.key, BAYS_SECTION);
+    // The bays baked with the tile written whole, byte for byte; the records the same; the traffic section kept.
+    expect(new Uint8Array((added as { bytes: ArrayBuffer }).bytes)).toEqual(new Uint8Array(bytesBack((bake().sections[BAYS_SECTION] as { bin: Uint8Array }).bin)));
+    expect(await readTile(store, 'm', tile.key)).toEqual(records);
+    expect(await readTileSection(store, 'm', tile.key, TRAFFIC_SECTION)).toEqual(traffic);
   });
 });

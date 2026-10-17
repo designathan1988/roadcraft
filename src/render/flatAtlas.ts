@@ -33,7 +33,11 @@ import type { Aabb } from '@core/aabb';
 import type { NaturalPlate } from './groundShape';
 import { GroundShare, type SharedGroundAt } from './sharedGround';
 import { setJobFocus } from '../jobs/jobPool';
+import { gpuLedger } from './gpuLedger';
+import { measureHitch } from '@core/hitch';
+import { compilesAhead, programsReady, queueUpload } from './uploads';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
+import { TILE, tileOfKey } from '@world/tiles';
 
 /** THE WORLD'S GROUND, plate by plate of the unbounded grid (`world/bounds.ts`): the plates near the view made in full, a ring of far patches round it, nothing beyond */
 
@@ -83,6 +87,8 @@ interface Plate {
   readonly dabCopies: WeakMap<PaintDab, PaintDab | null>;
   surface: PlateSurface | null;
   shown: boolean;
+  /** Its surface's programs built (`uploads.ts` programsReady): not shown before, the far patch standing in. */
+  ready: boolean;
   /** The land at the plate's grid corners, the base level added, read off the page (`flatGroundPool.ts`), rows from the north edge; null until then. */
   heights: Float64Array | null;
   /** Its first build made off the page, until the plate is made from it (`plateMesh.ts`). */
@@ -256,12 +262,18 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   };
   const neighbour = (fp: FarPlate, di: number, dj: number): boolean => farPlates.has(plateOf(fp.cx + di * PLATE_SIZE, fp.cy + dj * PLATE_SIZE));
   /** The far patches of the plates not drawn in full, their rims where the ring ends. */
+  /** The slots the far index was last written with (their rims follow the ring, set once). */
+  let farDrawn = '';
   const drawFar = (): void => {
     const patches: FarPatchDrawn[] = [];
     for (const fp of farPlates.values()) {
       if (plates.get(fp.key)?.shown) continue;
       patches.push({ slot: fp.slot, rim: [!neighbour(fp, 0, -1), !neighbour(fp, 0, 1), !neighbour(fp, -1, 0), !neighbour(fp, 1, 0)] });
     }
+    // DO NOT write the whole far index again at each refresh (every edit of the content calls one): only when the plates it draws changed.
+    const key = patches.map((p) => p.slot).join(',');
+    if (key === farDrawn) return;
+    farDrawn = key;
     farIndexInto(far, patches);
   };
   /** The map's plates, written once (they never follow the view: the map has an edge); true the first time. */
@@ -365,7 +377,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const r = plateRegion(key);
     p = {
       key, cx: r.cx, cy: r.cy, source: new PlateSource(), stampCopies: new WeakMap(), dabCopies: new WeakMap(),
-      surface: null, shown: false, heights: null, mesh: null, asked: false, top: -Infinity,
+      surface: null, shown: false, ready: false, heights: null, mesh: null, asked: false, top: -Infinity,
     };
     plates.set(key, p);
     if (lastDoc) fill(p, lastDoc);
@@ -385,12 +397,17 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       s.update(p.source, false);
       const t2 = performance.now();
       s.updatePaint(p.source, true);
-      performance.measure('hitch:flat-plate/update', { start: t1, end: t2 });
-      performance.measure('hitch:flat-plate/paint', { start: t2, end: performance.now() });
+      measureHitch('hitch:flat-plate/update', t1, t2);
+      measureHitch('hitch:flat-plate/paint', t2);
     }
-    performance.measure('hitch:flat-plate/create', { start: t0, end: t1 });
+    measureHitch('hitch:flat-plate/create', t0, t1);
     if (lastSun) s.setSun(lastSun);
     if (lookGiven) s.setWaterLook(lastLook);
+    // Sent ahead of its first draw (`uploads.ts`), not inside it.
+    queueUpload(...s.textures());
+    // Shown once its programs are built (`uploads.ts` programsReady, the door's own variants): until then its far patch stands in, not a hole while the scene's door holds its meshes.
+    p.ready = !compilesAhead();
+    if (!p.ready) void Promise.all((s.meshes as Mesh[]).map((mesh) => programsReady(mesh))).then(() => { if (p.surface === s) { p.ready = true; contentCame = true; } });
     measureTop(p);
     return s;
   };
@@ -416,19 +433,29 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   // The first plate made, at the origin: its materials are the ones the verges and the far ground lend (`vergeMaterial`), so it is never let go.
   const home = plateFor(plateOf(0, 0));
   const outOfReach = (p: Plate): boolean => Math.abs(p.cx - focusX) > keepReach || Math.abs(p.cy - focusY) > keepReach;
+  /** A plate of the content waiting for its corners from the workers: the atlas refreshed when they come (`focus`). */
+  let contentCame = false;
   const refresh = (): void => {
     const wanted = new Set<number>(content);
     for (const key of near) wanted.add(key);
-    for (const key of wanted) ensure(plateFor(key));
+    // DO NOT make every plate wanted on the page in one frame (the whole city's at its opening): a plate whose corners the workers can read is asked for them and made when they come, the far patch standing in meanwhile (as the near ones, `focus`).
+    const offPage = !failedOffPage && flatGroundOffPage();
+    for (const key of wanted) {
+      const p = plateFor(key);
+      if (p.surface) continue;
+      if (offPage && !p.heights && seenRelief !== null) askCorners(p); else ensure(p);
+    }
     shownList.length = 0;
     const cached: Plate[] = [];
     for (const p of plates.values()) {
       if (!p.surface) continue;
+      // Wanted but its programs still being built: neither shown nor let go (the far patch stands in).
+      if (wanted.has(p.key) && !p.ready) { show(p, false); continue; }
       const want = wanted.has(p.key);
       show(p, want);
       if (want) shownList.push(p); else cached.push(p);
     }
-    for (const p of cached) if (p !== home && outOfReach(p)) letGo(p);
+    keepWithinBudget(cached);
     // A plate holding nothing any more (not made, not asked, out of reach) forgotten: made again from the document if it comes back.
     for (const p of plates.values()) {
       if (p !== home && !p.surface && !p.asked && !wanted.has(p.key) && !wantedNear.includes(p) && outOfReach(p)) plates.delete(p.key);
@@ -436,6 +463,20 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     partsShown = shownList.map((p) => ({ surface: p.surface!, cx: p.cx, cy: p.cy }));
     drawFar();
     measureHighest();
+  };
+  /**
+   * The plates made but not drawn kept, nearest the view first, while the GPU's book has room for them past what it holds and the plates drawn:
+   * DO NOT let every one go once the view takes in more than `NEAR_VIEW` (a zoom out and back made each again from nothing).
+   */
+  const keepWithinBudget = (cached: Plate[]): void => {
+    let room = gpuLedger.cap - gpuLedger.bytes();
+    for (const p of shownList) room -= p.surface!.gpuBytes();
+    cached.sort((a, b) => Math.hypot(a.cx - focusX, a.cy - focusY) - Math.hypot(b.cx - focusX, b.cy - focusY));
+    for (const p of cached) {
+      if (p === home) continue;
+      room -= p.surface!.gpuBytes();
+      if (room < 0) letGo(p);
+    }
   };
 
   let contentKey = '';
@@ -447,14 +488,30 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (key === contentKey) return false;
     contentKey = key;
     const entries = contentCursor.read(doc.changes);
-    // An unloaded tile takes its records away: what each plate still holds is only known from the document (the active region's).
-    if (entries && entries.every((e) => e.rects !== null) && !entries.some((e) => e.cause === TILE_UNLOADED)) {
+    const loaded = (doc as Partial<RoadDoc>).loadedTiles;
+    // An unloaded tile takes its records away: the plates it reaches asked again (DO NOT read the whole document at each tile let go).
+    const unloads = entries?.some((e) => e.cause === TILE_UNLOADED) ?? false;
+    if (entries && entries.every((e) => e.rects !== null) && (!unloads || loaded)) {
+      const before = new Set(content);
+      const emptied = new Set<number>();
       // Marked in place: the plates the changes reach (a stamp or paint has its rects too).
-      const before = content.size;
-      for (const e of entries) for (const rect of e.rects!) for (const k of platesOver(rect)) content.add(k);
-      return content.size !== before;
+      for (const e of entries) {
+        for (const rect of e.rects!) for (const k of platesOver(rect)) (e.cause === TILE_UNLOADED ? emptied : content).add(k);
+      }
+      for (const k of emptied) if (!plateHolds(doc, k, loaded!)) content.delete(k); else content.add(k);
+      return content.size !== before.size || [...content].some((k) => !before.has(k));
     }
     return readWholeContent(doc);
+  };
+  /** Whether plate `key` holds anything after a tile left: a tile of the page in it (a tile lies in one plate), or a stamp or a dab reaching it. */
+  const plateHolds = (doc: TerrainSource, key: number, loaded: ReadonlySet<number>): boolean => {
+    const r = plateRegion(key);
+    for (const t of loaded) {
+      const { i, j } = tileOfKey(t);
+      if (plateOf((i + 0.5) * TILE, (j + 0.5) * TILE) === key) return true;
+    }
+    const reach = (x: number, y: number, radius: number): boolean => Math.abs(x - r.cx) <= TERRAIN_HALF + radius && Math.abs(y - r.cy) <= TERRAIN_HALF + radius;
+    return doc.terrainStamps.some((s) => reach(s.x, s.y, s.radius)) || doc.terrainPaint.some((d) => reach(d.x, d.y, d.radius));
   };
   /** @rebuild Every plate's content read from the whole document (the page's: the active region): the first time, an unload, or when the diary cannot say where. */
   const readWholeContent = (doc: TerrainSource): boolean => {
@@ -518,7 +575,12 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       // Tiles came or went (`isStreaming`): what each plate laid stays; a stroke: its rectangles say what to lay again (`plateDabs`).
       const entries = paintCursor.read(doc.changes);
       const edited = entries && entries.every((e) => e.rects !== null) ? entries.filter((e) => !isStreaming(e)).flatMap((e) => e.rects!) : null;
-      for (const p of plates.values()) takePaint(p, doc, edited);
+      // DO NOT filter the map's every dab for every plate at a dab: only the plates a stroke's rectangles reach (a dab's rectangle holds its disc); a tile come or gone, every plate (its dabs may reach past its square).
+      const strokes = edited && !entries!.some(isStreaming) ? edited : null;
+      for (const p of plates.values()) {
+        if (strokes && !strokes.some((r) => r[2] >= p.cx - TERRAIN_HALF && r[0] <= p.cx + TERRAIN_HALF && r[3] >= p.cy - TERRAIN_HALF && r[1] <= p.cy + TERRAIN_HALF)) continue;
+        takePaint(p, doc, edited);
+      }
     }
     if (readContent(doc)) refresh();
   };
@@ -547,9 +609,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         p.asked = false;
         // A plate made meanwhile keeps the field it was made on; a relief changed meanwhile, the new one; a plate forgotten meanwhile, nothing.
         if (relief === seenRelief && !p.surface && plates.get(p.key) === p) { p.heights = mesh.heights; p.mesh = mesh; }
+        if (content.has(p.key)) contentCame = true;
         focusKey = '';
       },
-      failed: () => { p.asked = false; p.heights = null; p.mesh = null; failedOffPage = true; focusKey = ''; },
+      failed: () => { p.asked = false; p.heights = null; p.mesh = null; failedOffPage = true; contentCame = true; focusKey = ''; },
     });
   };
   let failedOffPage = false;
@@ -618,20 +681,19 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         }
         for (const p of plates.values()) if (p.asked && !wantedNear.includes(p) && !content.has(p.key)) { cancelFlatGround(p.key); p.asked = false; }
       }
-      // One plate made this frame: the nearest whose corners are in (or, with no workers, the nearest at all).
+      // Every plate wanted whose corners are in made now (DO NOT make one a frame: they come ready from the workers, `plateMesh.ts`, and their textures go up the upload queue before they are first drawn); with no workers, on the page.
       const offPage = !failedOffPage && flatGroundOffPage();
-      let made = false;
       for (const p of wantedNear) {
         if (p.surface) continue;
         if (offPage && !p.heights) { askCorners(p); continue; }
-        if (made) continue;
         ensure(p);
-        made = true;
       }
       // Drawn: the wanted plates that are made.
       nextNear.length = 0;
       for (const p of wantedNear) if (p.surface) nextNear.push(p.key);
-      if (!ringMoved && nextNear.length === near.length && nextNear.every((v, k) => v === near[k]) && nextNear.every((k) => plates.get(k)?.shown)) return;
+      const came = contentCame;
+      contentCame = false;
+      if (!came && !ringMoved && nextNear.length === near.length && nextNear.every((v, k) => v === near[k]) && nextNear.every((k) => plates.get(k)?.shown)) return;
       near = nextNear.slice();
       refresh();
     },
@@ -647,6 +709,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         farForest.book.setFull(fp.key, p?.shown ?? false, p?.surface?.ecology() != null, now);
       }
       farForest.update(renderer, now);
+      // Each plate drawn sends the paint a stroke laid since the last frame (`terrain.ts` flushPaint).
+      for (const p of shownList) p.surface!.bakeRelief(renderer, null);
     },
     setWaterLook(look: WaterLook) {
       const was = lastLook;

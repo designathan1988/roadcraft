@@ -9,7 +9,7 @@ import { randomPerson } from '@people/spec';
 import { createPersonRig, type SkeletonMeta } from '@render/people/personRig';
 import type { PersonMeshData } from '@render/people/personMesh';
 import { captureBind, captureBindRotations } from '@render/citizenWalk';
-import { cookPerson, uncookPerson } from '@render/people/cookedPerson';
+import { assemblePerson, cookPerson, decodeCookedPerson, uncookPerson } from '@render/people/cookedPerson';
 
 const DIR = join(__dirname, '..', '..', 'public', 'models', 'people');
 const buf = (f: string): ArrayBuffer => {
@@ -90,5 +90,23 @@ describe('a person cooked ahead and read back', () => {
     expect(mesh!.morphTargetDictionary).toEqual(rig.mesh.morphTargetDictionary);
     // What the skin shader reads off the geometry: without it, a crash on the first frame.
     for (const key of ['faceOrigin', 'faceScale', 'wornGroups']) expect(b.userData[key]).toEqual(a.userData[key]);
+  });
+
+  it('is read in a worker and put together on the page: every array it keeps moved, its bounds as three works them out', () => {
+    const rig = rigFor(5);
+    const { person, transfer } = decodeCookedPerson(cookPerson(rig.scene));
+    const moved = new Set(transfer);
+    const kept = person.meshes.flatMap((m) => (m ? [...m.attributes, ...(m.index ? [m.index] : []), ...m.morphs, ...m.lods] : []));
+    expect(kept.length).toBeGreaterThan(0);
+    for (const array of kept) expect(moved.has(array.buffer as ArrayBuffer)).toBe(true);
+    expect(moved.size).toBe(kept.length);
+    let mesh: SkinnedMesh | undefined;
+    assemblePerson(person).traverse((o) => { if (o instanceof SkinnedMesh && !mesh) mesh = o; });
+    const g = mesh!.geometry;
+    const box = g.boundingBox!.clone(), sphere = g.boundingSphere!.clone();
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    expect(box.equals(g.boundingBox!)).toBe(true);
+    expect(sphere.equals(g.boundingSphere!)).toBe(true);
   });
 });

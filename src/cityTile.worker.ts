@@ -4,10 +4,16 @@ import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 import { workerParts } from '@editor/workerParts';
-import { type PreparedTile, prepareTile, readTile, storedVersion, writeTile } from '@editor/tileStore';
-import { bakeTileSections } from '@sim/tileSections';
+import { type PreparedTile, addTileSection, bakeStoredTile, prepareTile, readTile, readTileSection, storedVersionBaked, writeTile } from '@editor/tileStore';
+import { withGrownBuildings } from '@world/growth/grownRows';
+import { migrateBuilding } from '@world/buildings/serialize';
+import type { Building } from '@world/buildings/types';
+import { BAYS_SECTION } from '@sim/tileBays';
+import { NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, tileBaysSection, tileNetworkSection } from '@sim/tileSections';
 import { type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
 import { keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTiles';
+import { keepTileNearBuildings } from './render/nearBuildings';
+import { queuedNearCache } from './render/nearTileBake';
 import type { SharedGroundData } from './render/sharedGround';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
@@ -19,7 +25,11 @@ export interface StreamTileAsk {
   readonly i: number;
   readonly j: number;
   /** Stored here in the tile store's map (`workerParts`) at a version past `after`: the page never posts a tile it was handed back to the store; `records`, its records handed back prepared too (a tile of the region, `prepareTile`), else its version alone (a tile made ahead); `far`, its far levels baked here and kept. */
-  readonly store?: { readonly map: string; readonly after: number; readonly records: boolean; readonly ifMissing?: boolean; readonly far?: FarTileBake | null };
+  readonly store?: { readonly map: string; readonly after: number; readonly records: boolean; readonly ifMissing?: boolean; readonly far?: FarTileBake | null;
+    /** Nothing made: the stored tile's bays baked and added, if it has none (`addBays`, the map made, the generator's workers idle). */
+    readonly baysOnly?: boolean;
+    /** Nothing made: the tile the page stored at `after` with no sections (`TileStore.write`) baked and written again with them. */
+    readonly sectionsOnly?: boolean };
 }
 
 /** WHAT A TILE'S MAKER BAKES ITS FAR LEVELS WITH (the page's far trees and buildings layer, `SceneHandle.farBakeEnv`): the ground and tones their jobs read, and the keys they keep a tile's level 0 under (null: that kind keeps nothing) */
@@ -28,6 +38,8 @@ export interface FarTileBake extends FarGroundEnv {
   readonly roadPrefix: string | null;
   /** The ground the far roads read (`farRoads.ts`, the terrain's shared ground). */
   readonly roadGround: SharedGroundData | null;
+  /** The key prefix the near products' bakes are kept under (`nearTiles.ts`): the tile's buildings as they read them kept here (`nearBuildings.ts`); null or none: nothing kept. */
+  readonly nearPrefix?: string | null;
 }
 
 /** DO NOT let a tile's far levels be baked again by another worker from the store (two hundred jobs of seconds each on the queue's workers, the opening's 198 s, 2026-10-16): baked here from the tile just made, under the version just written; a failure is said and left to the page's jobs. */
@@ -36,6 +48,8 @@ async function keepFar(records: TileRecords, full: TileRecords, version: number,
     // Queued, not waited for (`keepDerivedQueued`): the page's far job for the tile asks after this answer, and its read comes after these writes.
     keepTileFar(full, version, far, far.massPrefix, queuedFarCache),
     keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix, queuedRoadCache),
+    // What the near products read of its buildings (where no plant stands, its gardens' plants): DO NOT leave them to be made again from the rows by every bake that reads the tile.
+    keepTileNearBuildings(records, full, version, far.nearPrefix ?? null, queuedNearCache),
   ]);
   for (const bake of bakes) if (bake.status === 'rejected') console.warn(`[city tile] tile ${records.key}'s far level not kept; the far jobs bake it`, bake.reason);
 }
@@ -48,12 +62,57 @@ export type StreamTileAnswer = { readonly key: number; readonly records: TileRec
 /** A tile asked only if missing (`StreamTileAsk.store.ifMissing`): what the store has of it, read here, or null to make it. */
 async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: number, j: number): Promise<StreamTileAnswer | null> {
   const key = tileKey(i, j);
-  const version = await storedVersion(stored(), store.map, key);
+  // A tile the page wrote and whose bake a reload cut short baked here first: DO NOT refuse it as 'legacy' (the reopening then read it on the store's lanes, behind the rush's tiles, conf37).
+  const version = await storedVersionBaked(stored(), store.map, key, (r) => bakeTileSections(r, true));
   if (version === null) return null;
   if (version === 'legacy') return { key, stored: null, legacy: true };
   if (!store.records) return { key, stored: version, existed: true };
   const records = await readTile(stored(), store.map, key);
-  return records ? { key, stored: records.version, prepared: prepareTile(records), existed: true } : null;
+  if (!records) return null;
+  await addBays(store.map, records);
+  const prepared = prepareTile(records);
+  await addNetwork(store.map, records, prepared);
+  return { key, stored: records.version, prepared, existed: true };
+}
+
+/** DO NOT let the page post a tile's junctions to the simulation's worker (read here, cloned to the page, cloned again to the worker): solved here for the page anyway (`prepareTile`), they are added to the stored tile, that section alone, and the worker reads them from the store (`tileReader.ts` network). Same chain as `addBays`. */
+async function addNetwork(map: string, records: TileRecords, prepared: PreparedTile): Promise<void> {
+  if (!prepared.network) return;
+  try {
+    if (await readTileSection(stored(), map, records.key, NETWORK_SECTION)) return;
+    if (!(await addTileSection(stored(), map, records.key, records.version, NETWORK_SECTION, tileNetworkSection(prepared.network)))) console.warn(`[city tile] tile ${records.key}'s network was not added`);
+  } catch (error) {
+    console.warn(`[city tile] tile ${records.key}'s network was not added`, error);
+  }
+}
+
+/** A stored tile's bays added (`addBays`): its version, null when none is stored (nothing is made). */
+async function baysAnswer(map: string, i: number, j: number): Promise<StreamTileAnswer> {
+  const key = tileKey(i, j);
+  const records = await readTile(stored(), map, key);
+  if (records) await addBays(map, records);
+  return { key, stored: records ? records.version : null, existed: records !== null };
+}
+
+/** DO NOT bake every tile's bays in the opening's rush (a grid and a way out per stall, the dearest part of a tile after its growth): a tile made ahead is stored without them, and they are baked and added here, that section alone: once the map is made, by the generator's idle workers from the camera's tile outwards (`WorldStreamer` bays, `baysAnswer`), and when a tile not reached yet is loaded into the region.
+ *  Run while the page waits for this answer on the tile's chain (`TileStore.load`): no write of the tile comes between. A failure is said; the simulation works them out as it does for a tile without them. */
+async function addBays(map: string, records: TileRecords): Promise<void> {
+  try {
+    if (await readTileSection(stored(), map, records.key, BAYS_SECTION)) return;
+    const traffic = await readTileSection(stored(), map, records.key, TRAFFIC_SECTION);
+    if (!traffic || !('value' in traffic)) return;
+    const section = tileBaysSection(withGrownBuildings(records), traffic.value);
+    if (section && !(await addTileSection(stored(), map, records.key, records.version, BAYS_SECTION, section))) console.warn(`[city tile] tile ${records.key}'s bays were not added`);
+  } catch (error) {
+    console.warn(`[city tile] tile ${records.key}'s bays were not added`, error);
+  }
+}
+
+/** A tile's buildings as current records, each made once (`migrateBuilding`), those it cannot read left out as every reader of them leaves them. */
+function migratedOnce(buildings: TileRecords['buildings']): TileRecords['buildings'] {
+  const out: Building[] = [];
+  for (const raw of buildings) { const b = migrateBuilding(raw); if (b) out.push(b); }
+  return out as unknown as TileRecords['buildings'];
 }
 
 /** The tile store's parts as this worker opens them (`workerParts`: IndexedDB, or the desktop's saves writer through its own port), on the first tile stored. */
@@ -63,6 +122,18 @@ const stored = (): ReturnType<typeof workerParts> => (parts ??= workerParts());
 export function serve(self: JobScope): void {
   self.onmessage = (event: MessageEvent<StreamTileAsk>) => {
     const { store, i, j } = event.data;
+    if (store?.sectionsOnly) {
+      const key = tileKey(i, j);
+      bakeStoredTile(stored(), store.map, key, store.after, (r) => bakeTileSections(r, true)).then(
+        (baked) => self.postMessage({ key, stored: baked ? store.after : null, existed: true } satisfies StreamTileAnswer),
+        (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j}'s sections could not be baked: ${String(error)}` } satisfies StreamTileAnswer));
+      return;
+    }
+    if (store?.baysOnly) {
+      baysAnswer(store.map, i, j).then((answer) => self.postMessage(answer),
+        (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j}'s bays could not be added: ${String(error)}` } satisfies StreamTileAnswer));
+      return;
+    }
     // DO NOT make a tile the store has: looked up here, where the store is open, not through the save worker's lanes.
     if (store?.ifMissing) {
       storedAnswer(store, i, j).then((answer) => (answer ? self.postMessage(answer) : make(self, event.data)),
@@ -81,14 +152,15 @@ function make(self: JobScope, ask: StreamTileAsk): void {
     const pair = buildStreamTilePair(options, i, j);
     if (!store) { self.postMessage({ key: tileKey(i, j), records: pair.records } satisfies StreamTileAnswer); return; }
     const version = Math.max(pair.records.version, store.after) + 1;
-    const records = { ...pair.records, version }, full = { ...pair.full, version };
-    // Its sections baked here with it, once (`sim/tileSections.ts`).
-    void writeTile(stored(), store.map, records, bakeTileSections, full).then(
+    // Every building migrated once for all the tile's bakes (its sections, its far levels, the page's records): the same objects, their derived products worked out once.
+    const records = { ...pair.records, version }, full = { ...pair.full, version, buildings: migratedOnce(pair.full.buildings) };
+    // Its sections baked here with it, once (`sim/tileSections.ts`); its bays only for a tile of the region (records asked), a tile made ahead takes them when it is loaded (`addBays`).
+    void writeTile(stored(), store.map, records, (r) => bakeTileSections(r, store.records), full).then(
       async ({ ok }) => {
         // Its far levels kept before the page hears of it: the far tree's job for it then finds them (`farTiles.ts` `runFarJob` level 0).
         if (ok && store.far) await keepFar(records, full, version, store.far);
         // The records handed back prepared (migrated and interned here, `prepareTile`: the page only files them); kept for the page even when the write failed.
-        const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full) } : {}) };
+        const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full, true, records.grown) } : {}) };
         self.postMessage(answer);
       },
       (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} was made and not stored: ${String(error)}` } satisfies StreamTileAnswer));

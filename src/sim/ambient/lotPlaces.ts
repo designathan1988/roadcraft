@@ -111,6 +111,7 @@ interface PlaceCell<W extends PlaceWay> {
 
 /** DO NOT go back to working out lots' ways by a time budget a look */
 export class LotPlaces<W extends PlaceWay> {
+  /** The diary read by serial, not followed (a reader that stops reading would keep every entry after it). */
   private serial = -1;
   private readonly byBuilding = new Map<number, Place<W>>();
   private readonly trees = PLACE_KINDS.map(() => new Fenwick());

@@ -183,8 +183,8 @@ export class CellFiling<Id extends number, T extends object> {
       const set = this.cellToWrite(key);
       if (!set) continue;
       set.delete(id);
-      if (set.size === 0) this.byCell.delete(key);
-      this.bump(key);
+      // An emptied cell's version let go with it (DO NOT keep a number for every cell ever filed in: a version reads 0 for a cell holding nothing, as it did before anything came).
+      if (set.size === 0) { this.byCell.delete(key); this.versions.delete(key); this.epoch = nextVersion(); } else this.bump(key);
     }
   }
 

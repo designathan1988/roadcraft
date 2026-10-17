@@ -17,6 +17,13 @@ function solidsOf(boxes: Box[]): () => CameraSolids {
         visit(b.x, b.y, 1, 0, 0, 0, b.w, b.d, b.top);
       }
     },
+    forEachInAny(rects: readonly (readonly [number, number, number, number])[],
+      visit: (bx: number, by: number, c: number, s: number, lx0: number, ly0: number, lx1: number, ly1: number, top: number) => void) {
+      for (const b of boxes) {
+        if (!rects.some(([x0, y0, x1, y1]) => !(b.x + b.w < x0 || b.x > x1 || b.y + b.d < y0 || b.y > y1))) continue;
+        visit(b.x, b.y, 1, 0, 0, 0, b.w, b.d, b.top);
+      }
+    },
   } as unknown as CameraSolids;
   return () => solids;
 }
@@ -28,12 +35,14 @@ describe('canyon light', () => {
     const data = heights.image.data as Uint8Array;
     const boxes: Box[] = [{ x: m(10), y: m(10), w: m(20), d: m(20), top: m(12) }];
     const solids = solidsOf(boxes);
-    // The first call lays the whole window; a few hundred volumes a frame, here one.
+    // The first call lays the whole window, in that call.
     canyon.follow(0, 0, solids, null);
     const window = (canyon.pass.material as ShaderMaterial).uniforms['uWindow']!.value as { x: number; y: number; z: number; w: number };
+    // The field is a torus: a world cell's texel is its index modulo the side.
     const cell = (x: number, y: number): number => {
-      const k = Math.floor((x - window.x) / window.z), j = Math.floor((y - window.y) / window.z);
-      const at = (j * window.w + k) * 4;
+      const side = window.w;
+      const k = Math.floor(x / window.z) & (side - 1), j = Math.floor(y / window.z) & (side - 1);
+      const at = (j * side + k) * 4;
       return data[at]! * 256 + data[at + 1]!;
     };
     expect(cell(m(20), m(20))).toBeGreaterThan(0);
@@ -53,6 +62,34 @@ describe('canyon light', () => {
     canyon.follow(0, 0, solids, [[m(70), m(70), m(86), m(86)]]);
     expect(cell(m(78), m(78))).toBe(0);
     expect(cell(m(20), m(20))).toBeGreaterThan(0);
+    canyon.dispose();
+  });
+
+  it('moves its window by the strip that came in, keeping what it still holds', () => {
+    const canyon = createCanyonLight(new PerspectiveCamera(), () => null);
+    const heights = (canyon.pass.material as ShaderMaterial).uniforms['uHeights']!.value as DataTexture;
+    const data = heights.image.data as Uint8Array;
+    const window = (canyon.pass.material as ShaderMaterial).uniforms['uWindow']!.value as { x: number; y: number; z: number; w: number };
+    const boxes: Box[] = [{ x: m(10), y: m(10), w: m(20), d: m(20), top: m(12) }];
+    const solids = solidsOf(boxes);
+    canyon.follow(0, 0, solids, null);
+    const cell = (x: number, y: number): number => {
+      const side = window.w;
+      const at = ((Math.floor(y / window.z) & (side - 1)) * side + (Math.floor(x / window.z) & (side - 1))) * 4;
+      return data[at]! * 256 + data[at + 1]!;
+    };
+    const first = cell(m(20), m(20));
+    const startX = window.x;
+    expect(first).toBeGreaterThan(0);
+    // A building just past the window's east edge, then the view moves east by a few hundred metres.
+    const east = window.x + window.z * window.w + m(40);
+    boxes.push({ x: east, y: m(10), w: m(20), d: m(20), top: m(20) });
+    heights.clearUpdateRanges();
+    canyon.follow(m(400), 0, solids, []);
+    expect(window.x).toBeGreaterThan(startX);
+    // The strip that came in is laid, what stayed in the window is as it was, and only the strip's cells were cleared.
+    expect(cell(east + m(10), m(20))).toBeGreaterThan(first);
+    expect(cell(m(20), m(20))).toBe(first);
     canyon.dispose();
   });
 });

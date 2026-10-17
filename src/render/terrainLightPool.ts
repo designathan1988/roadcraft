@@ -1,9 +1,9 @@
 import { jobPort } from '../jobs/jobPool';
 import type { LightGrid, LightRequest, LightResult } from './terrainLightCompute';
 
-/** THE LAND LIGHT, WORKED OUT BY A FEW SHARED WORKERS. */
+/** THE LAND'S SLOPE, WORKED OUT BY A FEW SHARED WORKERS. */
 
-/** Workers for every plate's light: a sliver of the machine, never all of it. */
+/** Workers for every plate's slope: a sliver of the machine, never all of it. */
 const POOL_SIZE = 2;
 
 interface Job {
@@ -35,14 +35,14 @@ function start(grid: LightGrid): Lane[] | null {
         lane.busy = null;
         if (job) {
           if ('error' in event.data) {
-            console.warn('[terrain] the land\'s light failed in its worker', event.data.error);
+            console.warn('[terrain] the land\'s slope failed in its worker', event.data.error);
             job.failed();
           } else job.done(event.data);
         }
         next(lane);
       };
       worker.onerror = (event) => {
-        console.warn('[terrain] a land light worker failed', event.message);
+        console.warn('[terrain] a land slope worker failed', event.message);
         const job = lane.busy;
         lane.busy = null;
         job?.failed();
@@ -51,7 +51,7 @@ function start(grid: LightGrid): Lane[] | null {
       return lane;
     });
   } catch (error) {
-    console.warn('[terrain] the land\'s light workers are unavailable; the light is worked out on the page', error);
+    console.warn('[terrain] the land\'s slope workers are unavailable; the slope is worked out on the page', error);
     broken = true;
     lanes = null;
   }
@@ -65,7 +65,7 @@ function next(lane: Lane): void {
   lane.worker.postMessage({ ...job!.request, key: job!.key }, [job!.request.heights.buffer]);
 }
 
-/** Sends a plate's light request to its worker (queued behind the others); false when there are no workers */
+/** Sends a plate's slope request to its worker (queued behind the others); false when there are no workers */
 export function submitLight(grid: LightGrid, key: number, request: LightRequest, done: Job['done'], failed: Job['failed']): boolean {
   const pool = start(grid);
   if (!pool) return false;

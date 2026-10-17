@@ -1,5 +1,6 @@
 import { jobLanes, jobPort } from '../jobs/jobPool';
-import type { BlockDigestAsk, GroundJob, GroundJobAnswer, GroundShapeAsk, PlateShapeAnswer } from './groundShape';
+import type { BlockDigestAsk, GroundJob, GroundJobAnswer, GroundShapeAsk, PadsAsk, PlateShapeAnswer } from './groundShape';
+import type { Pad } from '@world/buildings/pads';
 
 /** DO NOT take a silent worker for a dead one: it shares the job pool's workers and the CPU share (a failure comes as an error). */
 interface Lane {
@@ -22,6 +23,8 @@ interface GroundWorkers {
   readonly available: boolean;
   shape(ask: GroundShapeAsk): Promise<PlateShapeAnswer[]>;
   digest(ask: BlockDigestAsk): Promise<Float64Array[]>;
+  /** Some buildings' platforms (`groundShape.ts` `padsOfAsk`). */
+  pads(ask: PadsAsk): Promise<(Pad | null)[]>;
   /** Called while waiting: reports a worker with jobs waiting silent too long (queued behind other work or without CPU, still waited for). */
   check(now?: number): void;
 }
@@ -41,6 +44,10 @@ export class GroundShapePool implements GroundWorkers {
 
   digest(ask: BlockDigestAsk): Promise<Float64Array[]> {
     return this.run({ kind: 'blocks', ask }) as Promise<Float64Array[]>;
+  }
+
+  pads(ask: PadsAsk): Promise<(Pad | null)[]> {
+    return this.run({ kind: 'pads', ask }) as Promise<(Pad | null)[]>;
   }
 
   check(now = performance.now()): void {

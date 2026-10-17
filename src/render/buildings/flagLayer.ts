@@ -12,6 +12,7 @@ import {
 } from 'three';
 import { FLAG_PATTERNS, type FlagDesign } from '@world/buildings/flags';
 import { windUniforms } from '../wind';
+import { castBySize } from '../shadowCasters';
 
 /** Every flag in the city, one instanced draw: a cloth that waves in the wind. */
 
@@ -107,10 +108,15 @@ export function createFlagLayer(): FlagLayer {
   geometry.translate(0.5, -0.5, 0);
   const mat = material();
   let mesh: InstancedMesh | null = null;
+  /** The widest cloth's half-diagonal, world units: under a cascade's texel no flag is drawn into it (`shadowCasters.ts`). */
+  let widest = 0;
+  let uncast: (() => void) | null = null;
 
   return {
     group,
     set(flags) {
+      uncast?.();
+      uncast = null;
       if (mesh) {
         group.remove(mesh);
         // Its geometry is its own clone (the instance attributes ride on it)
@@ -149,9 +155,13 @@ export function createFlagLayer(): FlagLayer {
       mesh.instanceMatrix.needsUpdate = true;
       mesh.castShadow = true;
       mesh.frustumCulled = false;
+      widest = 0;
+      for (const f of flags) widest = Math.max(widest, Math.hypot(f.width, f.height) / 2);
+      uncast = castBySize({ mesh, casts: true, radius: () => widest });
       group.add(mesh);
     },
     dispose() {
+      uncast?.();
       if (mesh) { mesh.geometry.dispose(); mesh.dispose(); }
       geometry.dispose();
       mat.dispose();

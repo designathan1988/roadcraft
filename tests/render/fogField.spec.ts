@@ -9,6 +9,25 @@ const dab = (x: number, y: number, radius: number): FogDab =>
   ({ x, y, radius, strength: 0.8, height: m(20), speed: m(2) }) as FogDab;
 
 describe('fog field', () => {
+  it('rasters nothing while there is no fog, and the whole window at the first dab, as a window laid with it', () => {
+    let asked = 0;
+    const ground = (x: number, y: number): number => { asked++; return Math.sin(x / m(300)) * m(10) + y / m(500); };
+    const kept = createFogTexture();
+    const field = createFogField(kept);
+    expect(field.whole([], ground).any).toBe(false);
+    expect(field.follow(m(3000), m(2000), [], ground)?.any ?? false).toBe(false);
+    expect(asked).toBe(0);
+    const dabs = [dab(m(3000), m(2000), m(150))];
+    const laid = field.update(dabs, ground, [[m(2850), m(1850), m(3150), m(2150)]]);
+    const fresh = createFogTexture();
+    const other = createFogField(fresh);
+    other.follow(m(3000), m(2000), [], ground);
+    const whole = other.whole(dabs, ground);
+    expect(laid.any).toBe(true);
+    expect(laid.window).toEqual(whole.window);
+    expect(Array.from(kept.image.data as Uint16Array)).toEqual(Array.from(fresh.image.data as Uint16Array));
+  });
+
   it('lays a dab in its rectangle as the whole map would, and its slab with it', () => {
     const ground = (x: number, y: number): number => Math.sin(x / m(300)) * m(10) + y / m(500);
     const first = [dab(m(-800), m(400), m(150))];

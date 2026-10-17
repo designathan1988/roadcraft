@@ -16,6 +16,7 @@ const KINDS: readonly (keyof Mix)[] = ['home', 'shop', 'work', 'civic'];
 
 /** Each cell's buildings by kind (`kindOf`): the simulation's own (the page's tiles) kept by the diary, and the far tiles' as their link tables bring them. */
 export class DemandCells {
+  /** The diary read by serial, not followed (a reader that stops reading would keep every entry after it). */
   private serial = -1;
   private readonly byBuilding = new Map<number, { readonly cell: number; readonly kind: number }>();
   /** By cell: home, shop, work, civic, all. */

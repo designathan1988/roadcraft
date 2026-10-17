@@ -3,6 +3,7 @@ import { laneWidth } from '@world/roadTypes';
 import { LANE_TURN_RULES, ROAD_SECTION_LIMITS, type LaneTurnRule, type RoadSection } from '@world/roadSection';
 import type { SegmentDirection } from '@world/doc';
 import { METERS_PER_UNIT, UNITS_PER_METER } from '@world/units';
+import { onGridLength } from '@world/grid';
 import { formatDecimal, t } from './i18n';
 
 /** Editing is opt-in; saved road dimensions remain readable without the flag. */
@@ -16,8 +17,9 @@ export function mountRoadSectionEditor(
   change: (section: RoadSection | undefined) => void,
 ): void {
   const oneWay = direction !== 'both';
-  const section = {
-    laneWidth: laneWidth(profile), sidewalk: profile.sidewalk, median: profile.median,
+  // The widths as a saved section holds them, on the grid (`normalizeRoadSection`): DO NOT show 3.5 m and save 4 m when another field is confirmed.
+  const section: { -readonly [K in keyof RoadSection]: RoadSection[K] } = {
+    laneWidth: onGridLength(laneWidth(profile)), sidewalk: onGridLength(profile.sidewalk), median: onGridLength(profile.median),
     speedKmh: profile.speedLimit * METERS_PER_UNIT * 3.6, priority: profile.priorityRank,
     ...authored,
   };
@@ -73,7 +75,12 @@ export function mountRoadSectionEditor(
     };
     update();
     input.oninput = () => { section[field] = Number(input.value) * scale; update(); draw(); };
-    input.onchange = () => { section[field] = Number(input.value) * scale; change({ ...section }); };
+    input.onchange = () => {
+      section[field] = Number(input.value) * scale;
+      // One footway for both sides: DO NOT leave a side's own width, which a saved section reads before `sidewalk` (`sectionSidewalk`).
+      if (field === 'sidewalk') { delete section.sidewalkLeft; delete section.sidewalkRight; }
+      change({ ...section });
+    };
     label.append(title, output, input); panel.append(label);
   }
   const turns = document.createElement('details');
@@ -101,7 +108,9 @@ export function mountRoadSectionEditor(
       select.onchange = () => {
         const rules = Array.from({ length: count }, (_, n) => section[key]?.[n] ?? 'all');
         rules[i] = select.value as LaneTurnRule;
-        change({ ...section, [key]: rules });
+        // Kept here too: a second lane changed before the inspector is made again keeps the first.
+        section[key] = rules;
+        change({ ...section });
       };
       label.append(select); turns.append(label);
     }

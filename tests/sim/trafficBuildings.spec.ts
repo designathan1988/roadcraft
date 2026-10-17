@@ -10,7 +10,7 @@ import { SimWorld } from '@sim/world';
 import { collectBays } from '@sim/agents/parking';
 import { YardList } from '@sim/agents/lorryTraffic';
 import { doorWay } from '@sim/agents/lotDoors';
-import { TrafficBuildingTable, buildingChangesOf, docBuildings, takeTrafficMap, trafficMapOf } from '@sim/agents/trafficBuildings';
+import { TrafficBuildingTable, buildingChangesOf, docBuildings, takeTrafficMap, trafficChangesOf, trafficMapOf } from '@sim/agents/trafficBuildings';
 
 /** THE SIMULATION'S WORKER IS SENT WHAT TRAFFIC READS, NEVER THE WHOLE MAP NOR A BUILDING'S RECORD (`sim/host/simClient.ts`) */
 
@@ -56,15 +56,19 @@ describe('the map the simulation\'s worker is sent', () => {
     expect(map.doc.nodes.length).toBe(doc.nodes.size);
     expect(map.doc.segments.length).toBe(doc.segments.size);
     expect(map.lots.length).toBe(doc.lotStore.size);
-    expect(map.buildings.map((b) => b.id)).toEqual([...doc.buildings.all()].map((b) => b.id));
-    for (const b of map.buildings) for (const key of Object.keys(b)) expect(TRAFFIC_KEYS.has(key), `building ${b.id}: ${key}`).toBe(true);
-    const text = JSON.stringify(map.buildings);
+    // The buildings go as where their records are read; the worker works out what traffic reads of each (`takeTrafficMap`), never the page.
+    const table = new TrafficBuildingTable(new RoadDoc().changes);
+    takeTrafficMap(new RoadDoc(), table, structuredClone(map));
+    const read = [...table.all()];
+    expect(read.map((b) => b.id)).toEqual([...doc.buildings.all()].map((b) => b.id));
+    for (const b of read) for (const key of Object.keys(b)) expect(TRAFFIC_KEYS.has(key), `building ${b.id}: ${key}`).toBe(true);
+    const text = JSON.stringify(read);
     for (const key of RECORD_ONLY) expect(text.includes(`"${key}"`), key).toBe(false);
     // What traffic reads is there: car parks, gates, docks, doors onto the footway.
-    expect(map.buildings.some((b) => b.elements?.some((el) => el.kind === 'parking'))).toBe(true);
-    expect(map.buildings.some((b) => b.docks.length > 0)).toBe(true);
-    expect(map.buildings.some((b) => b.doors.length > 0)).toBe(true);
-    expect(map.buildings.some((b) => b.entrances.length > 0)).toBe(true);
+    expect(read.some((b) => b.elements?.some((el) => el.kind === 'parking'))).toBe(true);
+    expect(read.some((b) => b.docks.length > 0)).toBe(true);
+    expect(read.some((b) => b.doors.length > 0)).toBe(true);
+    expect(read.some((b) => b.entrances.length > 0)).toBe(true);
   });
 
   it('makes a copy on which the worker finds the page\'s bays, yards and doors, kept by the diary through edits', () => {
@@ -115,7 +119,10 @@ describe('the map the simulation\'s worker is sent', () => {
       const ids = new Set<BuildingId>();
       for (const e of entries) for (const id of e.ids!) ids.add(id as BuildingId);
       sent += ids.size;
-      table.apply(structuredClone(buildingChangesOf(doc, ids)));
+      // One diary entry for the whole message, never one a building.
+      const was = copy.changes.version;
+      table.apply(trafficChangesOf(structuredClone(buildingChangesOf(doc, ids))));
+      expect(copy.changes.version - was).toBeLessThanOrEqual(1);
       same();
     }
     expect(sent).toBeGreaterThan(5);

@@ -1,6 +1,6 @@
 import type { Vec2 } from '@core/vec2';
-import type { SegmentId } from '../ids';
-import { type LandscapeItem, type LandscapeKind, plantedMedian, snapLandscape } from '../landscape';
+import type { NodeId, SegmentId } from '../ids';
+import { ACCESS_REACH, MAX_ITEM_RADIUS, type LandscapeItem, type LandscapeKind, type SnapLocal, crossingAccessTester, crossingAccessesAt, plantedMedian, snapLandscape } from '../landscape';
 import { travelShift } from '../roadTypes';
 import type { Network } from '../network';
 import { carriesPedestrians } from '../pedestrianAccess';
@@ -40,6 +40,27 @@ function patternsOf(set: 'complete' | 'basic'): Pattern[] {
 
 /** The cell of the nearby-items grid, world units. */
 const CELL = m(40);
+/** The cell a street's items are filed in for each piece's look round it (`SnapLocal.around`). */
+const NEAR_CELL = m(8);
+
+/** A street's items filed by place: a piece looks at those round it, never the street's every item. */
+function nearGrid(): { file(item: LandscapeItem): void; around(at: Vec2, radius: number): LandscapeItem[] } {
+  const cells = new Map<string, LandscapeItem[]>();
+  return {
+    file(item) {
+      const key = `${Math.floor(item.x / NEAR_CELL)},${Math.floor(item.y / NEAR_CELL)}`;
+      const list = cells.get(key);
+      if (list) list.push(item); else cells.set(key, [item]);
+    },
+    around(at, radius) {
+      const out: LandscapeItem[] = [];
+      for (let cx = Math.floor((at.x - radius) / NEAR_CELL); cx <= Math.floor((at.x + radius) / NEAR_CELL); cx++) {
+        for (let cy = Math.floor((at.y - radius) / NEAR_CELL); cy <= Math.floor((at.y + radius) / NEAR_CELL); cy++) out.push(...(cells.get(`${cx},${cy}`) ?? []));
+      }
+      return out;
+    },
+  };
+}
 
 export interface FurniturePlacement {
   readonly kind: LandscapeKind;
@@ -66,10 +87,24 @@ export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: F
     list.push(item);
   };
   for (const item of existing ?? []) file(item);
-  let nextId = -1;
-  for (const id of [...segments].sort((a, b) => a - b)) {
+  const streets = [...segments].sort((a, b) => a - b).filter((id) => {
     const segment = net.doc.segment(id), ribbon = net.ribbons.get(id);
-    if (!segment || !ribbon || !carriesPedestrians(ribbon.road) || ribbon.road.sidewalk <= 0) continue;
+    return !!segment && !!ribbon && carriesPedestrians(ribbon.road) && ribbon.road.sidewalk > 0;
+  });
+  // DO NOT ask the roads round each piece for the crossings' landings (`nearCrossingAccess`, an 80 m query a candidate): the landings of the nodes round the streets filed once.
+  const nodes = new Set<NodeId>();
+  for (const id of streets) {
+    const ribbon = net.ribbons.get(id)!, box = ribbon.full.bbox;
+    const r = ribbon.road.width / 2 + ribbon.road.sidewalk + m(4) + ACCESS_REACH + MAX_ITEM_RADIUS;
+    for (const near of net.ribbonsMeeting([box.minX - r, box.minY - r, box.maxX + r, box.maxY + r])) {
+      const s = net.doc.segment(near.id);
+      if (s) { nodes.add(s.a); nodes.add(s.b); }
+    }
+  }
+  const onAccess = crossingAccessTester(net, crossingAccessesAt(net, [...nodes].sort((a, b) => a - b)));
+  let nextId = -1;
+  for (const id of streets) {
+    const segment = net.doc.requireSegment(id), ribbon = net.ribbons.get(id)!;
     const box = ribbon.full.bbox, pad = ribbon.road.width / 2 + ribbon.road.sidewalk + m(4);
     const items: LandscapeItem[] = [];
     for (let cx = Math.floor((box.minX - pad) / CELL); cx <= Math.floor((box.maxX + pad) / CELL); cx++) {
@@ -79,7 +114,10 @@ export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: F
     if (existing === null) items.push(...net.doc.landscapeIn(area));
     // DO NOT file every pole of the map for each road drawn.
     for (const pole of net.doc.polesIn(area)) items.push({ id: -1_000_000 - pole.id, kind: 'lamp', x: pole.x, y: pole.y });
-    const keep = (item: LandscapeItem): void => { items.push(item); file(item); };
+    const near = nearGrid();
+    for (const item of items) near.file(item);
+    const local: SnapLocal = { onAccess, around: near.around };
+    const keep = (item: LandscapeItem): void => { items.push(item); near.file(item); file(item); };
     const line = ribbon.full;
     const section = sectionOf(ribbon.road, segment.direction);
     const startS = net.mouthDistance(id, segment.a);
@@ -90,7 +128,7 @@ export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: F
       const shift = travelShift(ribbon.road);
       for (let s = startS + m(8); s <= endS - m(6); s += m(10)) {
         const f = line.sampleAt(s);
-        const snap = snapLandscape(net, items, 'tree', { x: f.p.x + f.n.x * shift, y: f.p.y + f.n.y * shift }, m(0.6));
+        const snap = snapLandscape(net, items, 'tree', { x: f.p.x + f.n.x * shift, y: f.p.y + f.n.y * shift }, m(0.6), local);
         if (!snap.ok || !snap.median || snap.median.segment !== id) continue;
         out.push({ kind: 'tree', at: snap.at });
         keep({ id: nextId--, kind: 'tree', x: snap.at.x, y: snap.at.y });
@@ -114,7 +152,7 @@ export function furnitureFor(net: Network, segments: Iterable<SegmentId>, set: F
         for (let s = startS + pattern.first + (pattern.kind === 'lamp' ? stagger : 0); s <= endS - m(4); s += pattern.every) {
           const f = line.sampleAt(s);
           const at = { x: f.p.x + f.n.x * depth * sign, y: f.p.y + f.n.y * depth * sign };
-          const snap = snapLandscape(net, items, pattern.kind, at, m(0.6));
+          const snap = snapLandscape(net, items, pattern.kind, at, m(0.6), local);
           if (!snap.ok || snap.hit?.segment !== id) continue;
           out.push({ kind: pattern.kind, at: snap.at });
           keep({ id: nextId--, kind: pattern.kind, x: snap.at.x, y: snap.at.y });

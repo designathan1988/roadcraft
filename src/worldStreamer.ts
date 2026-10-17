@@ -3,12 +3,13 @@ import { type ChangeRect, DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import { type ListPart, type RecordPart, type RoadDoc, type WorldPart, preparedTiles } from '@world/doc';
 import { TILE, tileIJ, tileKey, tileOfKey, tileRect, tilesAround } from '@world/tiles';
+import { m } from '@world/units';
 import type { TileRecords } from '@world/doc';
 
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
 
 /** The kinds of the map's parts no tile holds (`RoadDoc.worldValues`): their changes are written with the world, not with a tile. */
-const WORLD_KINDS: ReadonlySet<string> = new Set<WorldPart>(['terrain', 'fog', 'gullies', 'clouds', 'clearings', 'zones', 'people', 'transit', 'economy', 'weather', 'markingStyle', 'nature']);
+const WORLD_KINDS: readonly string[] = ['terrain', 'fog', 'gullies', 'clouds', 'clearings', 'zones', 'people', 'transit', 'economy', 'weather', 'markingStyle', 'nature'] satisfies readonly WorldPart[];
 
 /** Tiles each way from the camera's tile held in the document: 3 x 3 tiles, 3 km - the editing and the detail's reach; past it the buildings, roads and land are drawn from what is baked of the store (a dense downtown tile holds ~1,500 buildings: 9 of them stay a fraction of the page's heap). */
 export const ACTIVE_RADIUS = 1;
@@ -20,6 +21,8 @@ const IN_FLIGHT = 4;
 const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
 /** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
 const RETRY_MS = 30_000;
+/** How far past the edge of its tile the camera goes before the region is centred on the next one (two sub-cells): walking along an edge does not turn three tiles back and forth. */
+const RECENTRE_PAST = m(128);
 /** A write that failed is posted again after this (a store failing on it fails again at once). */
 const RETRY_WRITE_MS = 5_000;
 
@@ -48,6 +51,8 @@ export interface TileSource {
   ensure?(key: number): Promise<number>;
   /** The version written, or null when it was not. */
   write(records: TileRecords): Promise<number | null>;
+  /** A stored tile's parking bays baked and added where it has none (`TileStore.addBays`); none: nothing to do. */
+  addBays?(key: number): Promise<void>;
 }
 
 export class WorldStreamer {
@@ -94,6 +99,11 @@ export class WorldStreamer {
   focus(x: number, y: number): void {
     const { i, j } = tileIJ(x, y);
     if (i === this.around.i && j === this.around.j) { this.ask(); return; }
+    // Still within reach of the tile the region is centred on: it stays where it is.
+    if (Number.isFinite(this.around.i)) {
+      const [x0, y0, x1, y1] = tileRect(this.around.i, this.around.j);
+      if (x >= x0 - RECENTRE_PAST && x <= x1 + RECENTRE_PAST && y >= y0 - RECENTRE_PAST && y <= y1 + RECENTRE_PAST) { this.ask(); return; }
+    }
     const wasActive = new Set(this.wanted);
     this.around = { i, j };
     // DO NOT ask a tile past the map's edge (`tileOnMap`): there is nothing there, and the region ends with the map.
@@ -111,14 +121,40 @@ export class WorldStreamer {
     return this.wanted.includes(key);
   }
 
-  /** The lists a "whole map" clear is emptying in the store (`main.ts` clearStoredTiles): a tile that comes meanwhile (read before its clear) comes without them, and is written so. */
-  private stripping: ReadonlySet<'trees' | 'elements'> = new Set();
+  /** The "whole map" clears under way, by list (`main.ts` clearStoredTiles): a tile that comes meanwhile (read before its clear) comes without the lists, and is written so; two clears of a list running at once each count. */
+  private readonly clears = new Map<'trees' | 'elements', number>();
+
+  /** The tiles read (or asked) while a clear ran, and its lists: emptied as they are put in, even after the clear is done (their read may have come before it). */
+  private readonly readDuringClear = new Map<number, Set<'trees' | 'elements'>>();
+
+  /** The lists some clear is emptying now. */
+  private get stripping(): ReadonlySet<'trees' | 'elements'> {
+    return new Set([...this.clears].filter(([, n]) => n > 0).map(([part]) => part));
+  }
+
+  private markRead(key: number, parts: Iterable<'trees' | 'elements'>): void {
+    let set = this.readDuringClear.get(key);
+    if (!set) this.readDuringClear.set(key, set = new Set());
+    for (const part of parts) set.add(part);
+  }
 
   /** A "whole map" clear of these lists under way: until `done` is called, a tile put in has them emptied (and is to be written). */
   clearing(parts: readonly ('trees' | 'elements')[]): () => void {
-    const set = new Set(parts);
-    this.stripping = set;
-    return () => { if (this.stripping === set) this.stripping = new Set(); };
+    for (const part of parts) this.clears.set(part, (this.clears.get(part) ?? 0) + 1);
+    // What is being read or waits to be put in now was read before the store's clear, perhaps.
+    for (const key of [...this.asked, ...this.ready.keys()]) this.markRead(key, parts);
+    // A write that failed is posted again from its records (`retryFailed`): without the lists, or it puts back what the clear took.
+    for (const behind of this.unsaved.values()) {
+      const write = behind.write;
+      if (!write?.failed) continue;
+      behind.write = { ...write, records: { ...write.records, ...Object.fromEntries(parts.map((part) => [part, []])) } };
+    }
+    let open = true;
+    return () => {
+      if (!open) return;
+      open = false;
+      for (const part of parts) this.clears.set(part, (this.clears.get(part) ?? 1) - 1);
+    };
   }
 
   /** Another tab holds this world (`main.ts` holdWorld, a Web Lock): this one reads it and writes nothing, its edits kept on the page only. */
@@ -150,7 +186,7 @@ export class WorldStreamer {
     // One tile put in a frame, the nearest first: a dense tile is ~1,500 buildings read and filed, the frame stays a frame (the work is the view's tiles, never the map's).
     let best: number | null = null, bestD = Infinity;
     for (const key of this.ready.keys()) {
-      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) { this.ready.delete(key); continue; }
+      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) { this.ready.delete(key); this.readDuringClear.delete(key); continue; }
       const { i, j } = tileOfKey(key);
       const d = Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j));
       if (d < bestD) { bestD = d; best = key; }
@@ -158,7 +194,9 @@ export class WorldStreamer {
     if (best !== null) {
       let records = this.ready.get(best)!;
       this.ready.delete(best);
-      const strip = [...this.stripping].filter((part) => records[part].length > 0);
+      const marked = this.readDuringClear.get(best);
+      this.readDuringClear.delete(best);
+      const strip = [...new Set([...this.stripping, ...(marked ?? [])])].filter((part) => records[part].length > 0);
       if (strip.length) {
         const was = records;
         records = { ...records, ...Object.fromEntries(strip.map((part) => [part, []])) };
@@ -176,8 +214,16 @@ export class WorldStreamer {
       // The region whole now: the tiles ahead asked.
       else this.ask();
     }
-    for (const key of [...this.doc.loadedTiles]) {
+    // One tile let go a frame, the farthest first: a camera that jumped far leaves a ring of tiles, each its records out and its products dropped (a frame stays a frame).
+    let far: number | null = null, farD = -1;
+    for (const key of this.doc.loadedTiles) {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
+      const { i, j } = tileOfKey(key);
+      const d = Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j));
+      if (d > farD) { farD = d; far = key; }
+    }
+    if (far !== null) {
+      const key = far;
       if (this.dirty.has(key) || this.unsaved.get(key)?.write?.failed) this.write(key);
       // Let go first: an optional call (`?.`) does not evaluate its arguments when nobody listens.
       const gone = new Map<RecordPart, Set<number>>();
@@ -185,6 +231,13 @@ export class WorldStreamer {
       this.tell.letGo?.(key, removedAt, gone);
       this.versions.delete(key);
     }
+    this.save(now);
+  }
+
+  /** The changed tiles and the world's values written: every frame, a world build running or not (a write reads the document, never changes it). */
+  save(now: number): void {
+    if (this.doc.editing) return;
+    this.noteEdits();
     // DO NOT hold a changed tile for a timer: a page closed or reloaded meanwhile (a browser waits for nothing) lost the edits. Written as soon as its last write is in, so the store is one write behind the page at most.
     for (const key of [...this.dirty]) if (!this.posting(key)) this.write(key);
     if (now - this.lastRetry >= RETRY_WRITE_MS) {
@@ -265,6 +318,8 @@ export class WorldStreamer {
       if (this.doc.hasTile(key) || this.asked.has(key) || this.ready.has(key)) continue;
       if (performance.now() - (this.failedAt.get(key) ?? -Infinity) < RETRY_MS) continue;
       this.asked.add(key);
+      // Asked while a clear runs: its read may come before the store's clear.
+      if (this.stripping.size) this.markRead(key, this.stripping);
       this.load(key).then((records) => {
         this.asked.delete(key);
         this.noteKnown(key, records.version);
@@ -278,6 +333,27 @@ export class WorldStreamer {
       });
     }
     this.askAhead();
+    this.askBays();
+  }
+
+  /** The tiles whose bays were asked for (`askBays`), and how many are under way. */
+  private readonly baysAsked = new Set<number>();
+  private baysUnderWay = 0;
+
+  /** DO NOT leave every tile's bays to its first coming into the region (1-2 s a dense tile as the camera moves): once the map is made (`mapMade`), the generator's lanes left idle bake them, from the camera's tile outwards, one lane short of all (a tile the camera moves onto goes first). */
+  private askBays(): void {
+    const add = this.source.addBays;
+    if (!add || this.rush || this.mapMade < this.mapTotal || this.asked.size > 0 || this.ready.size > 0) return;
+    for (const key of this.aheadOrder) {
+      if (this.baysUnderWay >= Math.max(1, this.inFlight - 1)) return;
+      if (this.baysAsked.has(key) || this.doc.hasTile(key)) continue;
+      this.baysAsked.add(key);
+      this.baysUnderWay++;
+      add.call(this.source, key).catch((error: unknown) => console.warn(`[stream] tile ${key}'s bays were not added`, error)).finally(() => {
+        this.baysUnderWay--;
+        this.askBays();
+      });
+    }
   }
 
   /** DO NOT make tiles ahead while the region waits for its own: once every tile it wants is in, the ring it loads next (several at once), then every other tile of the map nearest first (the far levels draw them, `written`). */
@@ -327,7 +403,7 @@ export class WorldStreamer {
     }
     for (const entry of entries) {
       if (isStreaming(entry)) continue;
-      if (WORLD_KINDS.has(entry.kind)) { this.worldDirty.add(entry.kind as WorldPart); continue; }
+      if (WORLD_KINDS.includes(entry.kind)) { this.worldDirty.add(entry.kind as WorldPart); continue; }
       if (entry.rects === null) { for (const key of this.doc.loadedTiles) this.touched(key, serial); continue; }
       for (const [x0, y0, x1, y1] of entry.rects) {
         // A rectangle reaches every tile it overlaps (a road's box on two tiles marks both: either may own a piece of it).

@@ -136,20 +136,11 @@ export interface LotPlan {
   keyRects?: ChangeRect[];
 }
 
-export function planLots(doc: RoadDoc, net: Network): LotPlan {
-  const steps = planLotsSteps(doc, net);
-  for (;;) {
-    const step = steps.next();
-    if (step.done) return step.value;
-  }
-}
-
 /** Each network's planner, following that network's changes and its document's lots (`LotPlanner`). */
 const planners = new WeakMap<Network, LotPlanner>();
 
 /** DO NOT plan the whole map again after an edit: the land the diaries say changed is planned again, the rest kept */
-export function* planLotsSteps(doc: RoadDoc, net: Network): Generator<void, LotPlan> {
-  yield;
+export function planLots(doc: RoadDoc, net: Network): LotPlan {
   let planner = planners.get(net);
   if (!planner || planner.doc !== doc) planners.set(net, planner = new LotPlanner(doc, net));
   return planner.update();

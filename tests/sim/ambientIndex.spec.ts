@@ -9,7 +9,10 @@ import type { Building } from '@world/buildings/types';
 import { growOnLot } from '@world/growth/zoning';
 import { BuildingMix, SightWalls, ambientIndexWork, crosses, StreetLength, atRoll } from '@sim/ambient/ambientIndex';
 import { kindOf, type Mix } from '@sim/ambient/demand';
-import { docBuildings } from '@sim/agents/trafficBuildings';
+import { TrafficBuildingTable, docBuildings } from '@sim/agents/trafficBuildings';
+import { LotPlaces } from '@sim/ambient/lotPlaces';
+import { DemandCells } from '@sim/meso/demand';
+import { ChangeJournal } from '@world/changes';
 
 /** The scenery's indexes (`sim/ambient/ambientIndex.ts`) answer as the walks over the whole map they replace */
 
@@ -247,5 +250,19 @@ describe('a lane drawn by its length', () => {
       expect(atRoll(at, total)).toBe(lengths.length - 1);
     }
     expect(rolls).toBe(100_000);
+  });
+});
+
+describe("the scenery's indexes and the buildings' diary", () => {
+  it('keep nothing of the diary for themselves once they stop reading it (no view to look through)', () => {
+    const journal = new ChangeJournal();
+    const table = new TrafficBuildingTable(journal);
+    const walls = new SightWalls(), mix = new BuildingMix(), demand = new DemandCells();
+    const places = new LotPlaces({ wayOf: () => null, gatesOf: () => [] } as never);
+    walls.sync(table, journal); mix.sync(table, journal); demand.sync(table, journal); places.sync(table, journal);
+    const read = journal.version;
+    // Tiles' buildings come and go while none of them reads: the diary lets go what nobody follows.
+    for (let k = 0; k < 6000; k++) journal.record('buildings', [[0, 0, 1, 1]], { ids: [k] });
+    expect(journal.since(read, ['buildings'])).toBeNull();
   });
 });

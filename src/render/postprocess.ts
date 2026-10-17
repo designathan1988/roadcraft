@@ -1,6 +1,6 @@
 import {
   Color, DepthTexture, type DirectionalLight, FloatType, HalfFloatType, Matrix4, Mesh, NoBlending,
-  RedFormat, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
+  RGFormat, SRGBColorSpace, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { CopyShader } from 'three/examples/jsm/shaders/CopyShader.js';
@@ -70,15 +70,19 @@ export function createPostChain(
   level: QualityLevel,
 ): PostChain {
   if (!quality.postProcessing) {
+    // A canvas made for the chain has no multisampling of its own (`renderer.ts`): the scene multisampled in a target, then tone mapped onto it, as the canvas did.
+    const plain = renderer.getContext().getContextAttributes()?.antialias === false ? plainChain(renderer, scene, camera) : null;
     return {
       enabled: false,
-      target: null,
-      targets: () => [],
+      target: plain?.target ?? null,
+      targets: () => (plain ? [plain.target] : []),
       render() {
-        renderer.render(scene, camera);
+        if (plain) plain.render();
+        else renderer.render(scene, camera);
       },
-      setSize() {
-        /* the renderer's own resize is enough */
+      setSize(width, height, pixelRatio) {
+        // Otherwise the renderer's own resize is enough.
+        plain?.setSize(width, height, pixelRatio);
       },
       setNight() {
         /* no bloom without the chain */
@@ -100,7 +104,7 @@ export function createPostChain(
         /* no clouds without the chain */
       },
       dispose() {
-        /* nothing owned */
+        plain?.dispose();
       },
     };
   }
@@ -134,37 +138,20 @@ export function createPostChain(
   composer.addPass(scenePass);
   /** The depth the scene was drawn with THIS frame. */
   const sceneDepth: DepthTexture | null = sceneTarget.depthTexture;
-  /** How much each pixel may be sharpened (`SHARP_MASK`), worked out from the scene's depth right after the scene is drawn */
-  const sharpMask = quality.sharpen > 0
-    ? new WebGLRenderTarget(Math.max(1, size.x * ratio), Math.max(1, size.y * ratio), { type: UnsignedByteType, format: RedFormat, depthBuffer: false })
-    : null;
-  const sharpMaskQuad = sharpMask ? new FullScreenQuad(new ShaderMaterial({
-    uniforms: { tDepth: { value: null }, uProjectionInverse: { value: new Matrix4() }, uSharpSpan: { value: new Vector2(m(0.1), m(0.3)) } },
-    vertexShader: SHARP_MASK.vertexShader, fragmentShader: SHARP_MASK.fragmentShader,
-    blending: NoBlending, depthTest: false, depthWrite: false,
-  })) : null;
+  /** Whether the first pass after the scene reads the scene's own target (`sceneReader`): then nothing is copied out of it. */
+  let sceneRead = (): boolean => false;
   {
     const draw = scenePass.render.bind(scenePass);
     scenePass.render = (...args: Parameters<RenderPass['render']>) => {
-      // Into the scene's own target, then its resolved picture into the buffer the next pass reads.
+      // Into the scene's own target; its resolved picture copied into the buffer the next pass reads only where that pass does not read the target itself.
       const [, writeBuffer, readBuffer, delta, mask] = args;
       draw(args[0], writeBuffer, sceneTarget, delta, mask);
-      {
+      if (!sceneRead()) {
         const gl = args[0];
         (copyQuad.material as ShaderMaterial).uniforms['tDiffuse']!.value = sceneTarget.texture;
         const previous = gl.getRenderTarget();
         gl.setRenderTarget(readBuffer);
         copyQuad.render(gl);
-        gl.setRenderTarget(previous);
-      }
-      if (sharpMask && sharpMaskQuad) {
-        const u = (sharpMaskQuad.material as ShaderMaterial).uniforms;
-        u['tDepth']!.value = sceneDepth;
-        (u['uProjectionInverse']!.value as Matrix4).copy(camera.projectionMatrixInverse);
-        const gl = args[0];
-        const previous = gl.getRenderTarget();
-        gl.setRenderTarget(sharpMask);
-        sharpMaskQuad.render(gl);
         gl.setRenderTarget(previous);
       }
     };
@@ -173,7 +160,9 @@ export function createPostChain(
   let gtao: GTAOPass | null = null;
   if (quality.ambientOcclusion) {
     gtao = new GTAOPass(scene, camera, size.x, size.y);
-    gtao.output = GTAOPass.OUTPUT.Default;
+    // DO NOT let it copy the picture and blend into it (`OUTPUT.Default`, two full passes): its denoised occlusion is multiplied in by the canyon pass that reads the picture next (`canyonLight.ts` tAO).
+    gtao.output = GTAOPass.OUTPUT.Off;
+    gtao.needsSwap = false;
     // Tuned for world units where a kerb is 0.4 high and a pier is 15 tall.
     gtao.updateGtaoMaterial({
       radius: level === 'ultra' ? 1.3 : 1.0,
@@ -216,7 +205,15 @@ export function createPostChain(
     ? createCanyonLight(camera, () => sceneDepth, () => (sunLights ??= ['sun', 'sun-cascade-1'].map((name) => scene.getObjectByName(name) as DirectionalLight | undefined).filter((light): light is DirectionalLight => light !== undefined)))
     : null;
   if (canyon) {
-    composer.addPass(canyon.pass);
+    const pass = canyon.pass;
+    const shade = pass.render.bind(pass);
+    // The scene's own resolved picture read directly (no copy), with the occlusion multiplied in as GTAO's blend did (dst * mix(1, ao, intensity)).
+    pass.render = (gl, writeBuffer, readBuffer, delta, mask) => {
+      canyon.setOcclusion(gtao?.enabled ? gtao.pdRenderTarget.texture : null, gtao?.blendIntensity ?? 0);
+      shade(gl, writeBuffer, pass.enabled ? sceneTarget : readBuffer, delta, mask);
+    };
+    sceneRead = () => pass.enabled;
+    composer.addPass(pass);
     const quad = fullScreenTriangle();
     const warm = new Scene();
     warm.add(new Mesh(quad, canyon.pass.material));
@@ -345,13 +342,34 @@ export function createPostChain(
     };
     tune(pass._materialEdges, { SMAA_THRESHOLD: '0.04' });
     tune(pass._materialWeights, { SMAA_MAX_SEARCH_STEPS: '16' });
+    // DO NOT keep three's half-float edges and weights: SMAA's own are RG8 and RGBA8 (Jimenez et al., SMAA.hlsl: edgesTex R8G8, blendTex R8G8B8A8), four and eight bytes a pixel less.
+    const targets = smaa as unknown as { _edgesRT: WebGLRenderTarget; _weightsRT: WebGLRenderTarget; _uniformsWeights: Record<string, { value: unknown }>; _uniformsBlend: Record<string, { value: unknown }> };
+    targets._edgesRT.dispose();
+    targets._weightsRT.dispose();
+    targets._edgesRT = new WebGLRenderTarget(1, 1, { depthBuffer: false, type: UnsignedByteType, format: RGFormat });
+    targets._edgesRT.texture.name = 'SMAAPass.edges';
+    targets._weightsRT = new WebGLRenderTarget(1, 1, { depthBuffer: false, type: UnsignedByteType });
+    targets._weightsRT.texture.name = 'SMAAPass.weights';
+    targets._uniformsWeights['tDiffuse']!.value = targets._edgesRT.texture;
+    targets._uniformsBlend['tDiffuse']!.value = targets._weightsRT.texture;
     composer.addPass(smaa);
   }
   // The output and the grade in ONE pass: tone mapping, the sRGB transfer and the film grade
   const output = new OutputPass();
-  output.material.fragmentShader = GRADED_OUTPUT_FRAGMENT;
+  // A raw shader gets no renderer defines: the depth convention written in (the OutputPass rewrites `defines` itself).
+  output.material.fragmentShader = (renderer.capabilities.reversedDepthBuffer ? '#define USE_REVERSED_DEPTH_BUFFER\n' : '') + GRADED_OUTPUT_FRAGMENT;
   output.uniforms['uSharpen'] = { value: quality.sharpen };
-  output.uniforms['tSharpMask'] = { value: sharpMask?.texture ?? null };
+  // How much each pixel may be sharpened, from the scene's depth, worked out in the output itself (no mask target of its own).
+  output.uniforms['tDepth'] = { value: sceneDepth };
+  output.uniforms['uProjectionInverse'] = { value: new Matrix4() };
+  output.uniforms['uSharpSpan'] = { value: new Vector2(m(0.1), m(0.3)) };
+  {
+    const draw = output.render.bind(output);
+    output.render = (...args: Parameters<OutputPass['render']>) => {
+      (output.uniforms['uProjectionInverse']!.value as Matrix4).copy(camera.projectionMatrixInverse);
+      draw(...args);
+    };
+  }
   // The OutputPass's material is raw GLSL ES 1.00 (no `textureSize`): the texel is a uniform, set with the size (`setSize`).
   output.uniforms['uTexel'] = { value: new Vector2(1 / Math.max(1, size.x * ratio), 1 / Math.max(1, size.y * ratio)) };
   output.material.needsUpdate = true;
@@ -367,7 +385,7 @@ export function createPostChain(
     target: sceneTarget,
     // The occlusion's two targets too (its `normalRenderTarget` is never bound once `setGBuffer` is handed the scene's depth: no GPU memory)
     // The bloom's bright pass and its five mips each way (made at construction, on or off) and SMAA's edges and weights (r186 `_edgesRT`, `_weightsRT`)
-    targets: () => [sceneTarget, composer.renderTarget1, composer.renderTarget2, ...(sharpMask ? [sharpMask] : []), ...bodiesTargets, shadowMapTarget, ...(gtao ? [gtao.gtaoRenderTarget, gtao.pdRenderTarget] : []),
+    targets: () => [sceneTarget, composer.renderTarget1, composer.renderTarget2, ...bodiesTargets, shadowMapTarget, ...(gtao ? [gtao.gtaoRenderTarget, gtao.pdRenderTarget] : []),
       bloom.renderTargetBright, ...bloom.renderTargetsHorizontal, ...bloom.renderTargetsVertical,
       ...(smaa ? [(smaa as unknown as { _edgesRT: WebGLRenderTarget })._edgesRT, (smaa as unknown as { _weightsRT: WebGLRenderTarget })._weightsRT] : [])],
     render(delta) {
@@ -449,7 +467,6 @@ export function createPostChain(
       composer.setSize(width, height);
       sceneTarget.setSize(Math.max(1, width * pixelRatio), Math.max(1, height * pixelRatio));
       for (const t of bodiesTargets) t.setSize(bodiesSize(width * pixelRatio), bodiesSize(height * pixelRatio));
-      sharpMask?.setSize(Math.max(1, width * pixelRatio), Math.max(1, height * pixelRatio));
       (output.uniforms['uTexel']!.value as Vector2).set(1 / Math.max(1, width * pixelRatio), 1 / Math.max(1, height * pixelRatio));
       historyValid = false;
     },
@@ -468,9 +485,6 @@ export function createPostChain(
     gtao?.dispose();
     bloom.dispose();
     smaa?.dispose();
-    sharpMask?.dispose();
-    sharpMaskQuad?.dispose();
-    sharpMaskQuad?.material.dispose();
     output.dispose();
     clouds?.dispose();
     (bodiesQuad?.material as ShaderMaterial | undefined)?.dispose();
@@ -478,6 +492,52 @@ export function createPostChain(
     (shadowMapQuad?.material as ShaderMaterial | undefined)?.dispose();
     shadowMapTarget.dispose();
   }
+}
+
+/** The scene without the chain on a canvas with no multisampling: into a multisampled target three draws as it draws the canvas, then copied onto the canvas as it is. */
+export function plainTarget(width: number, height: number, samples: number): WebGLRenderTarget {
+  const target = new WebGLRenderTarget(width, height, {
+    type: UnsignedByteType,
+    colorSpace: SRGBColorSpace,
+    // The reversed Z keeps its precision only in a float depth buffer.
+    depthTexture: new DepthTexture(width, height, FloatType),
+    samples,
+  });
+  // DO NOT tone map it after the transparent things are blended (a linear target and an OutputPass): three draws a target it takes for the XR layer as it draws the canvas, every material tone mapped and sRGB encoded, blended 8 bits a channel in sRGB (WebGLPrograms toneMapping and outputColorSpace).
+  (target as WebGLRenderTarget & { isXRRenderTarget: boolean }).isXRRenderTarget = true;
+  // Kept as the shader wrote it, as the canvas keeps it: no sRGB storage decoding it on the copy (three's own XR targets are linear too, WebGLTextures forceLinearTransfer).
+  target.texture.internalFormat = 'RGBA8';
+  return target;
+}
+
+function plainChain(renderer: WebGLRenderer, scene: Scene, camera: Camera): { target: WebGLRenderTarget; render(): void; setSize(width: number, height: number, pixelRatio: number): void; dispose(): void } {
+  const size = renderer.getDrawingBufferSize(new Vector2());
+  // Four samples: a browser's own for an antialiased canvas.
+  const target = plainTarget(Math.max(1, size.x), Math.max(1, size.y), Math.min(4, renderer.capabilities.maxSamples));
+  const copy = new FullScreenQuad(new ShaderMaterial({
+    uniforms: { tDiffuse: { value: target.texture }, opacity: { value: 1 } },
+    vertexShader: CopyShader.vertexShader, fragmentShader: CopyShader.fragmentShader,
+    blending: NoBlending, depthTest: false, depthWrite: false, toneMapped: false,
+  }));
+  return {
+    target,
+    render() {
+      const previous = renderer.getRenderTarget();
+      renderer.setRenderTarget(target);
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(null);
+      copy.render(renderer);
+      renderer.setRenderTarget(previous);
+    },
+    setSize(width, height, pixelRatio) {
+      target.setSize(Math.max(1, width * pixelRatio), Math.max(1, height * pixelRatio));
+    },
+    dispose() {
+      target.dispose();
+      copy.dispose();
+      copy.material.dispose();
+    },
+  };
 }
 
 /** How much a cloud's shadow takes from the light under it at its heart, until the light's direct share is known (`setDirectShare`). */
@@ -1001,39 +1061,17 @@ const CLOUD_BODIES_MAIN = /* glsl */ `
     }
 `;
 
-/** Where the final image may be sharpened, 1 to 0, from the scene's depth. */
-const SHARP_MASK = {
-  vertexShader: /* glsl */ `
-    varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
-  `,
-  fragmentShader: /* glsl */ `
-    uniform sampler2D tDepth;
-    uniform mat4 uProjectionInverse;
-    uniform vec2 uSharpSpan;
-    varying vec2 vUv;
-    ${DEPTH_GLSL}
-    vec3 viewAt(vec2 uv, float depth) {
-      vec4 v = uProjectionInverse * vec4(uv * 2.0 - 1.0, depthToClipZ(depth), 1.0);
-      return v.xyz / v.w;
-    }
-    void main() {
-      float depth = texture2D(tDepth, vUv).r;
-      float across = 1.0 / float(textureSize(tDepth, 0).x);
-      float span = length(viewAt(vUv + vec2(across, 0.0), depth) - viewAt(vUv, depth));
-      gl_FragColor = vec4(depth != DEPTH_FAR ? 1.0 - smoothstep(uSharpSpan.x, uSharpSpan.y, span) : 0.0, 0.0, 0.0, 1.0);
-    }
-  `,
-};
-
 /** A film grade on the display image: a gentle S-curve of contrast, colour kept rich without neon */
 const GRADED_OUTPUT_FRAGMENT = /* glsl */ `
   precision highp float;
 
   uniform sampler2D tDiffuse;
   uniform float uSharpen;
-  uniform sampler2D tSharpMask;
+  uniform highp sampler2D tDepth;
+  uniform mat4 uProjectionInverse;
+  uniform vec2 uSharpSpan;
   uniform vec2 uTexel;
+  ${DEPTH_GLSL}
 
   #include <tonemapping_pars_fragment>
   #include <colorspace_pars_fragment>
@@ -1063,11 +1101,23 @@ const GRADED_OUTPUT_FRAGMENT = /* glsl */ `
     return c;
   }
 
+  vec3 viewAt(vec2 uv, float depth) {
+    vec4 v = uProjectionInverse * vec4(uv * 2.0 - 1.0, depthToClipZ(depth), 1.0);
+    return v.xyz / v.w;
+  }
+  // Where the image may be sharpened, 1 to 0: the ground a pixel spans across, small enough (none on the background).
+  float sharpMask() {
+    float depth = texture2D(tDepth, vUv).r;
+    if (depth == DEPTH_FAR) return 0.0;
+    float span = length(viewAt(vUv + vec2(uTexel.x, 0.0), depth) - viewAt(vUv, depth));
+    return 1.0 - smoothstep(uSharpSpan.x, uSharpSpan.y, span);
+  }
+
   void main() {
     vec4 src = display(texture2D(tDiffuse, vUv));
     vec3 c = src.rgb;
     // SHARPENING, AMD FidelityFX CAS (ffx_cas.h, the sharpen-only path)
-    float sharpen = uSharpen > 0.0 ? uSharpen * texture2D(tSharpMask, vUv).r : 0.0;
+    float sharpen = uSharpen > 0.0 ? uSharpen * sharpMask() : 0.0;
     if (sharpen > 0.0) {
       vec2 texel = uTexel;
       vec3 cl = pow(c, vec3(2.2));

@@ -324,7 +324,7 @@ export class LotTraffic {
 
   /** DO NOT read the town's list (`collectBays`) on a change of `buildings.revision` */
   private readBays(w: SimWorld): void {
-    const { serial, changed } = bayChangesSince(w, this.baysRead);
+    const { serial, changed } = bayChangesSince(w, this.baysRead, this);
     if (changed !== null && changed.length === 0) { this.baysRead = serial; return; }
     if (serial !== this.baysSeen) { this.baysSeen = serial; return; }
     const sources = changed ?? baySources(w);

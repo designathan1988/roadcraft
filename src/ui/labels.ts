@@ -18,3 +18,5 @@ export const roadCountLabel = (count: number): string => plural('status.roads', 
 export const nodeCountLabel = (count: number): string => plural('status.nodes', count);
 export const vehicleCountLabel = (count: number): string => plural('status.vehicles', count);
 export const peopleCountLabel = (count: number): string => plural('status.people', count);
+/** What the top bar's counts count: in a streamed world the region round the camera (the simulation's and the network's), never the whole city - said, not left to be read as the city's; nothing to add on a map held whole. */
+export const statusScopeTip = (region: boolean): string => (region ? t('status.region') : '');

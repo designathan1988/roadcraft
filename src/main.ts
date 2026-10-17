@@ -1,3 +1,4 @@
+import { measureHitch } from '@core/hitch';
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
 import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
@@ -24,7 +25,6 @@ import { LotTool, type LotSplitKind, type ZoneMode } from '@editor/lotTool';
 import { watchHealth } from '@ui/healthWatch';
 import { mountHealthPanel } from '@ui/healthPanel';
 import { METERS_PER_UNIT } from '@world/units';
-import { applyLots, planLotsSteps } from '@world/lots';
 import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
@@ -33,9 +33,8 @@ import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from 
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
-import { DEFAULT_CITY, planCity, type CityOptions, type CityPlan, type CitySize } from '@world/cityGen/plan';
+import { DEFAULT_CITY, type CityOptions } from '@world/cityGen/plan';
 import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, clampToMap, worldKey } from '@world/cityGen/wholeMap';
-import { greenCitySteps, layCity, widenCityFootways, zoneCity } from '@editor/cityGenerator';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
 import { MAX_TERRAIN_STAMPS, RELIEF_FLAT, type TerrainMode } from '@world/terrain';
@@ -92,14 +91,15 @@ import { CameraGestures, type PointerSample } from '@view/cameraGestures';
 import { CameraMotion } from '@view/cameraMotion';
 import { freeRoadsEnabled } from '@ui/roadSectionEditor';
 import { applyProfileTo } from '@editor/roads/profile';
-import { drawProfile } from '@ui/roads/drawProfile';
+import { drawProfile, setDrawProfile } from '@ui/roads/drawProfile';
 import { cutWallsChosen } from '@ui/roads/cutWalls';
 import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingPreset, setRoadParkingPreset } from '@editor/roadParking';
 import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
 import { STUTTER_MS } from '@core/sampleRing';
 import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
 import { exportToFile, offerFile } from '@editor/mapExport';
-import { worldFilePieces } from '@editor/worldExport';
+import { saveWorldFile } from '@editor/worldExport';
+import { worldHolds } from '@editor/worldLock';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
 import { TransitTool, setTransitTool, transitTool } from '@editor/transitTools';
 import type { BuildingId } from '@world/buildings/types';
@@ -129,7 +129,7 @@ import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
 import { LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
 import { GrowthSession } from '@editor/growthFeed';
-import { BATCH_MOST, type GrowAnswer } from '@editor/growthReplica';
+import type { GrowAnswer } from '@editor/growthReplica';
 import { GrowthPool } from './growthPool';
 import { TERRAIN_CELL } from '@render/terrain';
 import { bulbClearing } from '@world/junction/bulb';
@@ -485,6 +485,8 @@ const lotTool = new LotTool({
   mutate: (fn) => mutate(fn),
   hint: (key) => flashHint(key),
   redraw: () => requestDraw(),
+  // Planned in the simulation's worker, on its copy of the region (`SimHost.lotPlan`).
+  plan: () => sim.lotPlan(),
 });
 let hoverAnchor: Anchor | null = null;
 /** What is selected - a road (and where along it) or a junction - written through the game's state with why (`gameState`). */
@@ -529,6 +531,8 @@ const terrainBrush = new TerrainBrush({
   interval: (stroking) => Math.max(TERRAIN_MIN_MS, (stroking ? scene.stats.terrainMs : scene.stats.rebuildMs) * 1.4),
   record: () => { history.begin(doc); updateHistoryButtons(); },
   redraw: () => requestDraw(),
+  // Decision 5.1: a full tile refuses the new item, nothing of the player's taken away.
+  refused: () => flashHint('hint.tileFull'),
 });
 /** The brush in hand, as one dab reads it (`editor/terrainBrush.ts` `DabSettings`). */
 function dabSettings(): DabSettings {
@@ -601,7 +605,8 @@ await sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient'
 const engine = new Engine();
 const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, graphics.level, requestDraw, engine, graphics.settings);
 // The surgical profiler (`core/profiler.ts`)
-const profileFrameEnd = wireProfiler();
+// Decision 5.4: the profiler, the F9 monitor and the console's hooks in a development build only (`scripts/look.mjs` runs on the dev server).
+const profileFrameEnd = import.meta.env.DEV ? wireProfiler() : (): void => {};
 function wireProfiler(): () => void {
   hookProfiler(scene.gl);
   engine.watch(() => doc.changes.version);
@@ -785,7 +790,7 @@ function mutateBuilt(fn: () => boolean): boolean {
   followNetwork(doc, net);
   const roadsBefore = net.state;
   history.begin(doc);
-  performance.measure('hitch:mutate/before', { start: mutateAt, end: performance.now() });
+  measureHitch('hitch:mutate/before', mutateAt);
   // What the diary says this edit came from (`world/changes.ts`).
   doc.changes.causeNext(`tool ${game.tool}`);
   const changed = fn();
@@ -801,7 +806,7 @@ function mutateBuilt(fn: () => boolean): boolean {
   // An edit that reports success without changing anything
   const recorded = history.end(doc);
   if (!changed || !recorded) return false;
-  performance.measure('hitch:mutate/edit+after', { start: mutateAt, end: performance.now() });
+  measureHitch('hitch:mutate/edit+after', mutateAt);
   // The simulation catches up in the frame AFTER the one that draws the edit
   topologyAfterDraw = topologyAfterDraw || sim.topologyRevision !== net.trafficRevision;
   persistence.saveSessionSoon(doc, sessionSettings);
@@ -809,7 +814,7 @@ function mutateBuilt(fn: () => boolean): boolean {
   updateStatus();
   refreshInspector();
   requestDraw();
-  performance.measure('hitch:mutate/after edit', { start: mutateAt, end: performance.now() });
+  measureHitch('hitch:mutate/after edit', mutateAt);
   return true;
 }
 
@@ -1465,6 +1470,8 @@ function laneChoices(): { id: string; label: string; on: boolean }[] {
 function setLanes(id: string): void {
   const choice = LANE_CHOICES.find((c) => c.id === id);
   if (!choice) return;
+  // Lanes chosen on their own: the profile in hand (catalogue, eyedropper) is put down, or the choice would be ignored.
+  setDrawProfile(null);
   gameState.set('roadLanePreset', choice.lanes, 'lanes chosen');
   if (choice.lanes === null) selectRoadType(MEDIAN_CLASS);
   requestDraw();
@@ -1472,6 +1479,8 @@ function setLanes(id: string): void {
 
 function selectRoadType(i: number): void {
   if (!ROAD_TYPES[i]) return;
+  // A class chosen (its key, its card) puts the profile in hand down; the catalogue sets its profile after.
+  setDrawProfile(null);
   gameState.set('roadTypeIndex', i, 'road class chosen');
   requestDraw();
 }
@@ -1816,8 +1825,8 @@ function mountInterface(): void {
       return { roads: doc.segments.size, nodes: doc.nodes.size, zoom: view.zoom, x: centre.x, y: centre.y };
     },
   });
-  // F9's button in the top bar, before Help (`ui/healthPanel.ts`).
-  shell.addToBar(healthPanel.button);
+  // F9's button in the top bar, before Help (`ui/healthPanel.ts`): in a development build.
+  if (healthPanel) shell.addToBar(healthPanel.button);
   // The compass in a corner (`ui/v2/compass.ts`): a click faces north, a drag turns and tilts.
   if (view.kind !== '2d') {
     compass = mountCompass(document.querySelector<HTMLElement>('.v2') ?? document.body, {
@@ -1874,111 +1883,13 @@ trackFocusModality();
 onRoadGridChange(requestDraw);
 mountAbout();
 
-/** A generated city (`world/cityGen/plan.ts`, `editor/cityGenerator.ts`): the map replaced */
-let cityGrowth: { left: number; total: number; started: number; guard: number;
-  /** The layout still being laid, a slice a frame (`layoutSteps`); gone once the lots are zoned. */
-  layout?: Generator<void, { zoned: number; squares: number; pieces: number }>;
-  /** Every lot built on: the progress notice let go at the next frame. */
-  done?: boolean } | null = null;
-function generateCity(options: CityOptions, plan = planCity(options)): { roads: number; lots: number; zoned: number; squares: number; pieces: number } {
-  const cityDoc = layCity(plan);
-  history.begin(doc);
-  // The footways wide enough for street trees before the lots are cut (V7).
-  widenCityFootways(cityDoc);
-  // On the level plain, as every new map
-  applySnapshot({ ...cityDoc.toJSON(), relief: NEW_RELIEF }, 'import');
-  if (net.revision !== doc.revision) net.rebuild();
-  // The lots, the squares, the power lines, the furniture and the zones a slice a frame (`growCity`), then the buildings
-  cityGrowth = { left: 0, total: 0, started: performance.now(), guard: 0, layout: layoutSteps(plan, options.seed) };
-  fitView();
-  requestDraw();
-  return { roads: doc.segments.size, lots: 0, zoned: 0, squares: 0, pieces: 0 };
-}
-/** The generated city's layout after its roads: lots cut, squares and streets dressed (`greenCitySteps`), lots zoned. */
-function* layoutSteps(plan: CityPlan, seed: number): Generator<void, { zoned: number; squares: number; pieces: number }> {
-  applyLots(doc, yield* planLotsSteps(doc, net));
-  yield;
-  // A square in each neighbourhood and the streets' trees and furniture (V7).
-  const green = yield* greenCitySteps(doc, net, seed);
-  yield;
-  const zoned = zoneCity(doc, net, plan);
-  lotTool.refused.clear();
-  lotTool.refusedNow();
-  return { zoned, ...green };
-}
-/** Builds on the generated city's lots: each building made in the growth's worker (`growth`), drawn in the next frame. */
-const cityProgress = document.createElement('div');
-cityProgress.className = 'city-progress';
-cityProgress.style.cssText = 'position:fixed;left:50%;top:76px;transform:translateX(-50%);z-index:50;display:none;'
-  + 'background:rgba(10,16,18,.85);color:#fff;font:600 14px system-ui,sans-serif;padding:10px 16px;border-radius:10px';
-document.body.appendChild(cityProgress);
-function growCity(): void {
-  if (!cityGrowth) return;
-  // DO NOT hold the buildings from the renderer until the last one: every site was graded in one frame, 5.6 s at 2,560 m.
-  const growing = cityGrowth;
-  if (cityProgress.style.display !== 'block') {
-    cityProgress.style.display = 'block';
-    cityProgress.textContent = t('city.building', { done: 0, total: growing.total });
-    lotTool.holdOverlay(true);
-    requestDraw();
-    return;
-  }
-  if (growing.layout) {
-    // The layout first, within the slice; the lots counted as they are cut.
-    const until = performance.now() + GROW_SLICE_MS;
-    let laid: { zoned: number } | null = null;
-    caused('city generated', () => {
-      for (;;) {
-        const step = growing.layout!.next();
-        if (step.done) { laid = step.value; break; }
-        if (performance.now() >= until) break;
-      }
-    });
-    if (laid !== null) { growing.total = growing.left = (laid as { zoned: number }).zoned; delete growing.layout; }
-    cityProgress.textContent = t('city.building', { done: 0, total: laid !== null ? growing.total : doc.lots.length });
-    requestDraw();
-    return;
-  }
-  // The next building asked for when none is being made (its answer asks for the one after, `growthAnswered`).
-  askCity(growing);
-  cityProgress.textContent = t('city.building', { done: growing.total - growing.left, total: growing.total });
-  if (!growing.done) return;
-  cityGrowth = null;
-  cityBuiltIn = (performance.now() - growing.started) / 1000;
-  cityProgress.style.display = 'none';
-  lotTool.holdOverlay(false);
-  persistence.saveSessionSoon(doc, sessionSettings);
-  updateStatus();
-}
-/** @rebuild The generated city's next buildings asked of the growth's worker, when none is being made (DO NOT design them on the page). */
-function askCity(growing: NonNullable<typeof cityGrowth>): void {
-  if (growing.done || growing.layout || growth.busy || mover.dragging) return;
-  if (++growing.guard > growing.total * 3 + 50) { growing.done = true; requestDraw(); return; }
-  // Several buildings an ask (`BATCH_MOST`): none left open, the city is built.
-  if (!caused('city generated', () => growth.ask(lotTool.refused, 0x5eed, BATCH_MOST))) { growing.done = true; requestDraw(); }
-}
-/** Milliseconds a frame spent laying the generated city's lots (`growCity`). */
-const GROW_SLICE_MS = 100;
-/** Seconds the last generated city took, from the call to its last building (probes). */
-let cityBuiltIn = 0;
-
 /** THE STREAMED WORLD (CLAUDE.md, "Streaming world"): a city of any size - the page's document holds the tiles round the camera (`worldStreamer.ts`), the tile store (`editor/tileStore.ts`) every tile ever made and is the save, a tile never made is generated on demand in a worker (`tileGenerator.ts`) */
 let streamed: { readonly store: TileStore; readonly generator: TileGenerator; readonly streamer: WorldStreamer; readonly release: () => void;
   /** A tile written at a version (`StreamerEvents.written`): what is baked of it is stale. */
   readonly written: (key: number, version: number) => void } | null = null;
 
-/** DO NOT let two tabs write one world (each stamps the versions it knows, the last writer wins): the first holds it (a Web Lock by its name, MDN "LockManager"), until it closes it; another tab opens it read only. Resolves the release, or null when another tab holds it. */
-function holdWorld(name: string): Promise<(() => void) | null> {
-  const locks = (navigator as { locks?: LockManager }).locks;
-  if (!locks) return Promise.resolve(() => {});
-  return new Promise((answer) => {
-    void locks.request(`roadcraft.world.${name}`, { ifAvailable: true }, (lock) => {
-      if (!lock) { answer(null); return undefined; }
-      // Held while this promise stands: settled when the world is closed (`afterStreamedWorld`).
-      return new Promise<void>((release) => answer(release));
-    });
-  });
-}
+/** This tab's holds of its worlds (`worldLock.ts`): one tab writes a world, another reads it. */
+const holdWorld = worldHolds((navigator as { locks?: LockManager }).locks);
 /** A place of an item of a list (a dab, a tree, an element) in tile `key`. */
 const itemInTile = (item: unknown, key: number): boolean => {
   const p = item as { x?: number; y?: number } | null;
@@ -1998,14 +1909,17 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   const mapName = `roadcraft.tiles.${worldKey(options.seed)}`;
   // Read, written and made in the job workers, the desktop's as a browser's (each worker its own port to the shell's saves, `editor/workerParts.ts`).
   const release = await holdWorld(mapName);
-  const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
+  const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3), () => jobPort('tileRead')),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
-    (i, j, after, text, ifMissing) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing));
-  if (imported && release) {
-    // One at a time, each a write of its own (`TileStore.write`, the save worker): the file's tiles take the place of the stored ones.
-    await store.setMeta(imported.meta);
-    for (const tile of imported.tiles) await store.write(tile);
+    (i, j, after, text, ifMissing, baysOnly, sectionsOnly) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing, baysOnly, sectionsOnly));
+  // Another tab holds it: from the first read on, nothing of this tab reaches the store.
+  store.readOnly = !release;
+  // DO NOT say "opened" for a world not written: another tab holds it, or a write failed (`TileStore.importWorld`); the world stored opens instead, and the refusal is said at the end.
+  let refused: string | null = null;
+  if (imported) {
+    if (!release) refused = 'another tab holds this world: the file was not opened into it';
+    else if (!(await store.importWorld(imported.meta, imported.tiles, mapTilesFrom(0, 0)))) refused = 'the file was not written whole into the store';
   }
   // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
@@ -2080,6 +1994,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   if (fresh) { camera.x = 0; camera.y = 0; view.moveTo({ x: 0, y: 0 }); }
   streamer.focus(camera.x, camera.y);
   requestDraw();
+  // The file refused (said by the caller with `hint.openFailed`), the world as it was stored open.
+  if (refused) throw new Error(refused);
 }
 
 
@@ -2088,26 +2004,19 @@ const growthPool = new GrowthPool((answer) => growthAnswered(answer), () => grow
 const growth = new GrowthSession(growthPool, () => ({
   doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: scene.pavedHeightAt, cell: TERRAIN_CELL,
 }));
-/** The worker's answer: the building written, stamped as grown now, and the next asked for while a city is being built. False: not now - nothing is written in the middle of a drag (an authoring preview); the pool offers it again at the next frame (`GrowthPool.pump`). */
+/** The worker's answer: the building written, stamped as grown now. False: not now - nothing is written in the middle of a drag (an authoring preview); the pool offers it again at the next frame (`GrowthPool.pump`). */
 function growthAnswered(answer: GrowAnswer): boolean {
   if (mover.dragging) return false;
-  const city = cityGrowth;
-  const cause = city ? 'city generated' : 'zone growth';
   // Each building stamped as grown now as it is written, before the next (`GrowthSession.receive`).
-  const outcome = caused(cause, () => growth.receive(answer, (id) => {
+  const outcome = caused('zone growth', () => growth.receive(answer, (id) => {
     const fresh = doc.buildings.get(id as BuildingId);
     if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.minutes, decay: 0, lotPlan: LOT_PLAN_VERSION });
   }));
   if (outcome.kind === 'answered' && outcome.grown.length) {
-    if (city) city.left -= outcome.grown.length;
-    else {
-      persistence.saveSessionSoon(doc, sessionSettings);
-      updateStatus();
-    }
+    persistence.saveSessionSoon(doc, sessionSettings);
+    updateStatus();
     requestDraw();
   }
-  // The city's next building at once, not at the next frame.
-  if (city && cityGrowth === city) askCity(city);
   return true;
 }
 
@@ -2152,7 +2061,7 @@ function newMap(): void {
     flashHint('hint.newMap');
   });
 }
-/** A NEW CITY OVER THE WHOLE MAP (10 km x 10 km, `wholeMap.ts` MAP_TILES) from the menu: a fresh seed, the streamed world opened round the camera (`openStreamedWorld`, as `generateCity({ size: 'whole' })`). */
+/** A NEW CITY OVER THE WHOLE MAP (10 km x 10 km, `wholeMap.ts` MAP_TILES) from the menu: a fresh seed, the streamed world opened round the camera (`openStreamedWorld`, as the console's `generateCity`). */
 function newWorld(): void {
   if (!window.confirm(t('confirm.newWorld'))) return;
   const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
@@ -2182,17 +2091,7 @@ function saveMap(): void {
 
 /** DO NOT save only the region of a streamed world: its changed tiles written, then the world's values and every stored tile of the map in one file (`worldExport.ts`), each tile read in the save worker and put in as it is stored. */
 async function saveWorld(open: NonNullable<typeof streamed>): Promise<void> {
-  try {
-    await open.streamer.flush();
-    const meta = await open.store.meta();
-    if (!meta) throw new Error('the world has no values stored');
-    const pieces = await worldFilePieces(meta, mapTilesFrom(0, 0), (key) => open.store.readText(key));
-    if (!offerFile(new Blob(pieces, { type: 'application/json' }), 'roadcraft-city.json')) throw new Error('the file was not offered');
-    flashHint('hint.saved');
-  } catch (error) {
-    console.error('[world] the city could not be saved to a file', error);
-    flashHint('hint.exportFailed');
-  }
+  flashHint(await saveWorldFile(open, mapTilesFrom(0, 0), (blob) => offerFile(blob, 'roadcraft-city.json')));
 }
 /** Loads a picked map. */
 function openImported(result: ImportResult): boolean | Promise<boolean> {
@@ -2482,7 +2381,7 @@ const gameKeys = createGameKeys({
   // F8: what changed, where (`drawChanges`).
   toggleChanges: () => { showChanges = !showChanges; requestDraw(); },
   // F9: the monitor (`healthPanel`, mounted at the end of this file).
-  health: { toggle: () => healthPanel.toggle(), close: () => healthPanel.close() },
+  health: { toggle: () => healthPanel?.toggle() ?? false, close: () => healthPanel?.close() ?? false },
   toolKey: (next) => {
     pickTool(next);
     shell?.toolKeyed(next);
@@ -2538,8 +2437,7 @@ function growZones(): void {
   const now = sim.clock.time;
   // A hold set before the clock went back (a new map) holds nothing.
   if (mover.dragging || (now >= zoneGrowthHold.at && now < zoneGrowthHold.until)) return;
-  // While a generated city is built, its growth asks for the lots.
-  if (cityGrowth || growth.busy) return;
+  if (growth.busy) return;
   // DO NOT read `doc.lots` here nor design the building on the page: the growth's worker answers (`growthAnswered`).
   caused('zone growth', () => growth.ask(lotRefused, 0x5eed));
 }
@@ -2610,6 +2508,8 @@ function frame(now: number): void {
     streamed.streamer.focus(camera.x, camera.y);
     // A tile put in (or let go) only between two world builds: DO NOT change the network under a running one, it started again at every tile and never landed (the near roads never drawn, the far level standing for them).
     if (!scene.worldBusy) streamed.streamer.apply(now);
+    // The edits written whatever the world's build is doing: a long build under load kept them from the store past a reload (the balance and the buildings back).
+    else streamed.streamer.save(now);
   }
   // A flatten held still levels on, a dab when its interval allows (`terrainBrush.ts` tick).
   if (terrainBrush.tick(performance.now())) requestDraw();
@@ -2619,9 +2519,6 @@ function frame(now: number): void {
   if (!worldShown && drawnOnce && !scene.opening) worldShown = true;
   // Moving a node is an authoring preview.
   let holdSim = mover.dragging || topologyAfterDraw || !worldShown;
-  // A generated city being built (`generateCity`): its own share of the frame, apart from the traffic's topology.
-  growCity();
-  frameTimer.mark('growCity');
   // The pistol or the bomb chosen: their effects and the physics the bodies fall with loaded now, while the player aims
   if (!actionsWarm && game.tool === 'bulldoze' && strikeChoice.mode !== 'demolish') {
     actionsWarm = true;
@@ -3579,7 +3476,10 @@ function showInspector(): void {
         flashHint(problem ? `profile.problem.${problem}` : 'hint.profile.toStreet');
       },
       // The eyedropper: the road tool in hand, drawing with the profile just picked.
-      onDrawWithProfile: () => {
+      onDrawWithProfile: (held) => {
+        // The class first, so the tool's panel shows the profile's own class, then the profile in hand.
+        selectRoadType(held.type);
+        setDrawProfile(held);
         // The road tool's panel opened, showing the profile picked.
         shell?.openTool('road');
         flashHint('hint.profile.picked');
@@ -3795,6 +3695,8 @@ function currentStatus(): ShellStatus {
     queued: String(queued),
     impossible: net.impossible.size,
     balance: doc.economy.balance,
+    // A streamed world: the counts above are the region's round the camera.
+    region: streamed !== null,
   };
 }
 /** Tells the interface the city's numbers (a few times a second while the city runs, and after an edit). */
@@ -3886,15 +3788,15 @@ function setQuality(value: string): void {
   if (isQualityLevel(value)) graphics.setPreset(value);
 }
 /** The game's state in the console (`core/gameState.ts`): `__state()` its values now and the last changes */
-(window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({
+if (import.meta.env.DEV) (window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({
   now: gameState.snapshot(),
   changes: gameState.latest(count).map((c) => `#${c.serial} ${c.key}: ${String(c.from)} → ${String(c.to)} (${c.cause})`),
   toolMachine: tools.latest(count).map((r) => `#${r.serial} ${r.from} → ${r.to} (${r.event})`),
 });
 /** The game's health in the console (`core/health.ts`): what broke or was slow, newest first. */
-(window as unknown as { __health: unknown }).__health = (count = 30): unknown => health.latest(count);
+if (import.meta.env.DEV) (window as unknown as { __health: unknown }).__health = (count = 30): unknown => health.latest(count);
 /** The last frames per system (`core/health.ts` `frameStats`) */
-(window as unknown as { __frames: unknown }).__frames = (since = 0): unknown =>
+if (import.meta.env.DEV) (window as unknown as { __frames: unknown }).__frames = (since = 0): unknown =>
   frameStats(frameTimer.recent().filter((f) => f.start >= since));
 /** The GPU time of the frames drawn since the last `__gpu(true)` (or the last 40 s) */
 /** The F9 monitor's GPU lines (state tab, the whole width) */
@@ -3905,7 +3807,7 @@ function gpuLines(): string[] {
   const s = t.samples.stats(STUTTER_MS);
   return [`gpu: p50 ${s.p50} · p95 ${s.p95} · p99 ${s.p99} · max ${s.max} ms · n ${s.n}`, `gpuName: ${name}`];
 }
-(window as unknown as { __gpu: unknown }).__gpu = (reset = false): unknown => {
+if (import.meta.env.DEV) (window as unknown as { __gpu: unknown }).__gpu = (reset = false): unknown => {
   const t = scene.gpu;
   const out = { supported: t.supported, label: t.label, ...t.samples.stats(STUTTER_MS), skipped: t.skipped, disjoint: t.disjoint };
   if (reset) t.samples.clear();
@@ -3925,7 +3827,7 @@ function noteSimulationIssues(): void {
 }
 
 const valueText = (value: unknown): string => (value === null || value === undefined ? '—' : typeof value === 'number' ? String(Math.round(value * 100) / 100) : String(value));
-const healthPanel = mountHealthPanel({
+const healthPanel = !import.meta.env.DEV ? null : mountHealthPanel({
   log: health,
   world: (n) => doc.changes.latest(n).map((c) => {
     const where = c.rects === null ? t('health.world.whole') : t('health.world.rects', { count: c.rects.length });
@@ -3942,7 +3844,7 @@ const healthPanel = mountHealthPanel({
   }),
 });
 /** The diary of changes in the console (`world/changes.ts`): `__changes()` lists the last ones */
-(window as unknown as { __changes: unknown }).__changes = (count = 30, serial?: number): unknown => {
+if (import.meta.env.DEV) (window as unknown as { __changes: unknown }).__changes = (count = 30, serial?: number): unknown => {
   const row = (c: Change) => ({
     serial: c.serial, kind: c.kind, cause: c.cause, after: c.parent ?? '',
     where: c.rects === null ? 'whole map' : `${c.rects.length} rects ${Math.round(c.rects.reduce((a, r) => a + (r[2] - r[0]) * (r[3] - r[1]), 0) / 1e3)}k u²`,
@@ -3960,7 +3862,7 @@ const healthPanel = mountHealthPanel({
 };
 
 // Diagnostic surface for browser-driven checks.
-(window as unknown as { __roadcraft: unknown }).__roadcraft = {
+if (import.meta.env.DEV) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
   /** The surgical profiler's numbers (`core/profiler.ts`), as its HUD shows them. */
   profiler: () => profiler.view(),
   /** The engine's ledger: each product's computes, last refresh and in all (`core/engine.ts`). */
@@ -3971,7 +3873,10 @@ const healthPanel = mountHealthPanel({
   camera,
   surface,
   DT,
-  exportMap: () => exportToFile(doc, sessionSettings()),
+  /** The map to a file as Ctrl+S makes it: a streamed world whole (every stored tile, `saveWorldFile`), else the map; the hint it would show. */
+  exportMap: () => streamed
+    ? saveWorldFile(streamed, mapTilesFrom(0, 0), (blob) => offerFile(blob, 'roadcraft-city.json'))
+    : exportToFile(doc, sessionSettings()),
   /** The autosave written now, resolved once it is stored (the route's reopening step, `scripts/look/route.json`). */
   saved: () => { persistence.saveSessionSoon(doc, sessionSettings); persistence.flush(); return persistence.written(); },
   importMap: async () => openImported(await importFromFile()),
@@ -3984,24 +3889,15 @@ const healthPanel = mountHealthPanel({
     roadTool.heightChosen(metres * UNITS_PER_METER);
     requestDraw();
   },
-  /** A generated city (`editor/cityGenerator.ts`), and how far its building has gone. */
-  generateCity: (options: Partial<Omit<CityOptions, 'size'>> & { size?: CitySize | 'whole' } = {}) => {
-    const { size = DEFAULT_CITY.size, ...asked } = options;
-    // The whole map, square, by tile (rewrite F7); else a round city of the size asked.
-    if (size === 'whole') {
-      // A city of any size: the streamed world, made tile by tile round the camera as it goes (CLAUDE.md, "Streaming world").
-      const { size: _size, radius: _radius, ...base } = DEFAULT_CITY;
-      void openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked }, true);
-      return { tiles: 0 };
-    }
-    // A round city: the streamed world closed first, the document the whole map again.
-    const chosen = { ...DEFAULT_CITY, ...asked, size };
-    return afterStreamedWorld(() => generateCity(chosen, planCity(chosen)));
+  /** A generated city: the streamed world over the whole map, made tile by tile round the camera by the tile generator (CLAUDE.md, "Streaming world"); DO NOT lay a city on the page (a round city laid 100 ms a frame, `GROW_SLICE_MS`): one path, the tiles'. */
+  generateCity: (options: Partial<CityOptions> = {}) => {
+    const { size: _size, radius: _radius, ...asked } = options;
+    const { size: _s, radius: _r, ...base } = DEFAULT_CITY;
+    void openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked }, true);
+    return { tiles: 0 };
   },
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   growTimed: () => { const t = performance.now(); const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed); return { id, ms: performance.now() - t }; },
-  cityGrowth: () => (cityGrowth || cityProgress.style.display === 'block' ? { pending: true } : null),
-  cityBuiltIn: () => cityBuiltIn,
   /** Replaces the map as loading a file does: document, network and simulation topology. */
   loadDoc: (data: ReturnType<RoadDoc['toJSON']>) => afterStreamedWorld(() => {
     history.begin(doc);

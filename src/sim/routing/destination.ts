@@ -64,6 +64,8 @@ export function chooseVehicleDestination(w: SimWorld, start: LaneletId, body: Bo
 export function routeToDestination(w: SimWorld, start: LaneletId, goal: LaneletId, body: BodyClass): LaneletId[] | null {
   if (start === goal) return [start];
   if (!w.lanelet(start) || !w.lanelet(goal) || w.rt(goal).ghost) return null;
+  // DO NOT expand the whole graph to find out a goal cannot be reached: the lanes' components say so first (`laneReach.ts`).
+  if (!w.laneReaches.mayReach(w, start, goal, body)) return null;
   const best = new Map<LaneletId, number>([[start, 0]]);
   const parent = new Map<LaneletId, Parent>();
   const heap: RouteStep[] = [];

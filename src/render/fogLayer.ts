@@ -57,6 +57,15 @@ export function createFogField(texture: DataTexture): FogField {
   const rowHigh = new Float64Array(FOG_RES).fill(-Infinity);
   /** Whether the texture has reached the GPU whole: until then a range would send only that range. */
   let uploaded = false;
+  /** DO NOT raster a window with no fog in it (a ground height a texel, 262 144 of them, and the strips the view brings in): nothing reads it until a dab is laid, and then the whole window is rastered. */
+  let blank = false;
+  /** No fog anywhere: the window left as it is, every row empty. */
+  const clear = (): FogLayer => {
+    blank = true;
+    rowLow.fill(Infinity);
+    rowHigh.fill(-Infinity);
+    return layer();
+  };
   texture.onUpdate = () => { uploaded = true; };
 
   /** World texels [gx0, gx1] x [gy0, gy1] of the window worked out from `dabs` (those that can reach them); their rows marked to send. */
@@ -111,14 +120,20 @@ export function createFogField(texture: DataTexture): FogField {
     const any = Number.isFinite(low);
     return { texture, low: any ? low : 0, high: any ? high : 0, any, window: [view.ox * cell, view.oy * cell, view.span] };
   };
+  const whole = (dabs: readonly FogDab[], groundAt: (x: number, y: number) => number): FogLayer => {
+    if (dabs.length === 0) return clear();
+    blank = false;
+    raster(dabs, groundAt, view.whole);
+    texture.clearUpdateRanges();
+    texture.needsUpdate = true;
+    return layer();
+  };
   return {
-    whole(dabs, groundAt) {
-      raster(dabs, groundAt, view.whole);
-      texture.clearUpdateRanges();
-      texture.needsUpdate = true;
-      return layer();
-    },
+    whole,
     update(dabs, groundAt, rects) {
+      if (dabs.length === 0) return clear();
+      // The first fog on a window left unrastered: all of it, as the first time.
+      if (blank) return whole(dabs, groundAt);
       for (const r of rects) {
         const band = view.bandOf(r);
         if (band) raster(dabs, groundAt, band);
@@ -127,7 +142,9 @@ export function createFogField(texture: DataTexture): FogField {
     },
     follow(x, y, dabs, groundAt) {
       const bands = view.follow(x, y, FOG_HOLD);
+      if (blank && dabs.length > 0) return whole(dabs, groundAt);
       if (!bands) return null;
+      if (dabs.length === 0) return clear();
       for (const band of bands) raster(dabs, groundAt, band);
       return layer();
     },

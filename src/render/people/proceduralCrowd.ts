@@ -3,7 +3,7 @@ import type { BodyPart, Severable } from '@sim/people/view';
 import {
   BufferAttribute, BufferGeometry, Color, DataTexture, DoubleSide, DynamicDrawUsage, FloatType, Group,
   InstancedBufferAttribute, InstancedMesh, Matrix4, MeshDepthMaterial, Quaternion, MeshStandardMaterial, Vector3, NearestFilter,
-  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, UnsignedByteType,
+  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, ShaderChunk, UnsignedByteType,
   type Material, type Texture, type WebGLRenderer,
 } from 'three';
 import { bodyHeight } from '@people/body/morph';
@@ -29,22 +29,34 @@ import {
 import { buildClassAnimation, createPalettePass, type ClassAnimation, type PalettePass } from './crowdAnimation';
 import { BODY_WIDTH, createClassBodies, type ClassBodies } from './crowdBodies';
 import { createGpuRows, type GpuRows } from './gpuRows';
+import { classRigInWorker, personFaceInWorker, wearInWorker } from '../bakePool';
+import type { WornPiece } from './personRig';
+import { rigFromMade } from './classRigMade';
+import type { PersonFaceJob } from '../citizenBake.worker';
 import {
   EYE_TRIANGLES, FAR_TRIANGLES, LEVELS, LEVEL_CAPS, LEVEL_TRIANGLES, REGION, cardCentres, cardSelections, farMesh, filterTriangles,
   levelFor, lodReady, simplifiedIndexAway, sortSkinWeights, type FarPart, type PieceRole,
 } from './crowdLod';
 import { createBlobShadows } from '../blobShadows';
+import { lodPool } from './lodPool';
+import { providePeopleLod } from './lodPort';
+import { measureHitch } from '@core/hitch';
 
-;
+// The class bodies built on this page simplify their levels in the page's pool (`lodPort.ts`).
+providePeopleLod(lodPool);
 
 /** Procedural people (`people-lab.html`, then the game): one MakeHuman body per class - sex and age band */
 
 /** Wounds kept a person (`procPerson`): bullet holes and where blood soaks out of them. */
 const WOUND_SLOTS = 8;
-/** A person's row of `procPerson`: their wounds (`WOUND_SLOTS` texels), then their expression weights (`EXPR_SLOTS` / 4 texels). */
-const PERSON_FLOATS = (WOUND_SLOTS + EXPR_SLOTS / 4) * 4;
+/** A person's matrix as drawn this frame (with their height), read by every piece they are in: DO NOT write it into each piece. */
+const PLACE_FLOATS = 16;
+/** A person's row of `procPerson`: their wounds (`WOUND_SLOTS` texels), their expression weights (`EXPR_SLOTS` / 4 texels), then their place (4 texels). */
+const PERSON_FLOATS = (WOUND_SLOTS + EXPR_SLOTS / 4) * 4 + PLACE_FLOATS;
 /** Where a person's expression weights start in their row, floats. */
 const EXPR_AT = WOUND_SLOTS * 4;
+/** Where their place starts, floats. */
+const PLACE_AT = (WOUND_SLOTS + EXPR_SLOTS / 4) * 4;
 
 const WOUND_BONES: Readonly<Record<BodyPart, readonly string[]>> = {
   head: ['Bip01_Head'], torso: ['Bip01_Spine', 'Bip01_Spine1', 'Bip01_Spine2', 'Bip01_Pelvis'],
@@ -137,6 +149,8 @@ interface BodyClass {
   readonly shape: Float32Array;
   readonly coefficients: Float64Array;
   readonly rig: PersonRig;
+  /** An item fitted to the class's body (`PersonRig.wear`): on the people's worker, where the rig is kept. */
+  readonly fit: (item: ProxyItem) => Promise<WornPiece>;
   readonly height: number;
   readonly clips: Record<ProcClip, ClipFrames>;
   readonly bones: number;
@@ -152,6 +166,8 @@ interface BodyClass {
   readonly pass: PalettePass;
   readonly uniforms: {
     procBones: { value: Texture };
+    /** The class's first row in the palettes' shared target (`paletteTargets.ts`). */
+    procBase: { value: number };
     procBodies: { value: Texture };
     procBodyStride: { value: number };
     procCover: { value: DataTexture };
@@ -161,7 +177,7 @@ interface BodyClass {
     procFaceRows: { value: number };
     procFaceHead: { value: number };
     procExprHead: { value: number };
-    /** Each person's row (`PERSON_FLOATS`): wounds - where on the body at rest, and since when (-1: none) - then expression weights. */
+    /** Each person's row (`PERSON_FLOATS`): wounds - where on the body at rest, and since when (-1: none) - then expression weights, then their place. */
     procPerson: { value: DataTexture };
     /** The clock the wounds spread by (seconds), and the body's units a metre. */
     procTime: { value: number };
@@ -169,6 +185,8 @@ interface BodyClass {
   };
   /** `procPerson`'s pixels: each person's wounds and expression weights now. */
   personData: Float32Array;
+  /** The rows whose place was written this frame. */
+  readonly placed: number[];
   /** Palette rows worked out here: those held, bent, jolted or maimed, and the ragdolls' questions. */
   palette: Float32Array;
   /** `procFace` on the GPU only: the head (index, expressions), then each person's own face (their regional sliders) as moves of the head's vertices, `faceRows` rows each. */
@@ -304,16 +322,20 @@ function vertexPars(v: Variant): string {
   const expr = v.kind !== 'far' && v.level === 0;
   return `
 uniform sampler2D procBones;
+uniform float procBase;
 uniform sampler2D procBodies;
 uniform float procBodyStride;
 uniform mat4 bindMatrix;
 uniform mat4 bindMatrixInverse;
+uniform sampler2D procPerson;
 attribute vec4 aPerson;
 attribute vec3 aRefs;
 attribute vec3 aRefW;
+// The person's matrix, read once at the top of main (placeChunk): the instance's own is never written.
+mat4 procPlace;
 mat4 getBoneMatrix(const in float i) {
   int x = int(i) * 4;
-  int y = int(aPerson.x);
+  int y = int(aPerson.x) + int(procBase);
   return mat4(texelFetch(procBones, ivec2(x, y), 0), texelFetch(procBones, ivec2(x + 1, y), 0),
     texelFetch(procBones, ivec2(x + 2, y), 0), texelFetch(procBones, ivec2(x + 3, y), 0));
 }
@@ -322,7 +344,7 @@ uniform sampler2D procFace;
 uniform float procFaceRows;
 uniform float procFaceHead;
 uniform float procExprHead;
-${expr ? 'uniform sampler2D procPerson;' : ''}
+
 vec3 procFaceDelta(int v) {
   // The face index: four vertices a texel at the head of procFace
   int q = v / 4;
@@ -380,10 +402,18 @@ const TWO_BONES_POSITION = `
 vec4 skinVertex = bindMatrix * vec4( transformed, 1.0 );
 transformed = ( bindMatrixInverse * ( boneMatX * skinVertex * procW.x + boneMatY * skinVertex * procW.y ) ).xyz;`;
 
-/** The vertex half of a program: the person's skeleton, shape and widening, the skin's cover. */
+/** three's chunk with the person's row (`procPlace`) for the instance's matrix. */
+const placeChunk = (name: 'project_vertex' | 'defaultnormal_vertex' | 'worldpos_vertex'): string =>
+  ShaderChunk[name].replaceAll('instanceMatrix', 'procPlace');
+
+/** The vertex half of a program: the person's place, skeleton, shape and widening, the skin's cover. */
 function patchVertex(shader: { vertexShader: string }, v: Variant): void {
   const cover = v.kind === 'skin' && v.level <= 2;
-  let vs = shader.vertexShader.replace('#include <skinning_pars_vertex>', vertexPars(v) + (cover ? COVER_CHUNK : ''));
+  let vs = shader.vertexShader.replace('#include <skinning_pars_vertex>', vertexPars(v) + (cover ? COVER_CHUNK : ''))
+    .replace('void main() {', `void main() {
+  procPlace = mat4(texelFetch(procPerson, ivec2(${PLACE_AT / 4}, int(aPerson.x)), 0), texelFetch(procPerson, ivec2(${PLACE_AT / 4 + 1}, int(aPerson.x)), 0),
+    texelFetch(procPerson, ivec2(${PLACE_AT / 4 + 2}, int(aPerson.x)), 0), texelFetch(procPerson, ivec2(${PLACE_AT / 4 + 3}, int(aPerson.x)), 0));`);
+  for (const name of ['project_vertex', 'defaultnormal_vertex', 'worldpos_vertex'] as const) vs = vs.replace(`#include <${name}>`, placeChunk(name));
   if (v.level >= 2) {
     vs = vs.replace('#include <skinbase_vertex>', TWO_BONES_BASE)
       .replace('#include <skinnormal_vertex>', TWO_BONES_NORMAL)
@@ -581,14 +611,16 @@ reflectedLight.indirectSpecular *= personIndirect();`);
   return material;
 }
 
+/** DO NOT cast a piece with its own level's program: it casts the next level's triangles (`castsAt`), so the next level's skinning, without the face or expressions the shadow cannot show. */
 function depthMaterial(cls: ClassShading, v: Variant, widen: number): MeshDepthMaterial {
   const material = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
   material.defines = { USE_SKINNING: '' };
+  const cast: Variant = { ...v, level: v.level + 1 };
   material.onBeforeCompile = (shader) => {
     uniformsInto(shader, cls, v.widen ? widen : undefined);
-    patchVertex(shader, v);
+    patchVertex(shader, cast);
   };
-  material.customProgramCacheKey = () => personDepthKey(v);
+  material.customProgramCacheKey = () => personDepthKey(cast);
   return material;
 }
 
@@ -597,7 +629,7 @@ export function personProgramStandIns(): { readonly lit: Group; readonly shadow:
   const blank = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
   const shading: ClassShading = {
     uniforms: {
-      procBones: { value: blank }, procBodies: { value: blank }, procBodyStride: { value: 0 }, procCover: { value: blank },
+      procBones: { value: blank }, procBase: { value: 0 }, procBodies: { value: blank }, procBodyStride: { value: 0 }, procCover: { value: blank },
       procCoverRows: { value: 0 }, procFace: { value: blank }, procFaceRows: { value: 0 }, procFaceHead: { value: 0 },
       procExprHead: { value: 0 }, procPerson: { value: blank }, procTime: { value: 0 }, procWoundUnit: { value: 1 },
     },
@@ -794,7 +826,7 @@ export interface ProceduralCrowd {
   readonly people: readonly ProceduralPerson[];
   /** Drops an item and its pieces, so it is built again on next use (a hairstyle being edited). */
   forget(name: string): void;
-  /** Every class's rig made ahead, one at a time with a pause between: each is a single stretch of 50-100 ms */
+  /** Every class made ahead, one at a time: its rig on the people's worker (`classRigInWorker`), the page only putting it together */
   warmClasses(): Promise<void>;
   /** Every class and hairstyle built here, packed for the cook (`proceduralCook.ts`, `scripts/cook-people.mjs`). */
   cook(): Promise<Map<string, ArrayBuffer>>;
@@ -818,8 +850,9 @@ interface PersonState {
   /** Their level now (-1: not drawn), and the one this frame wants. */
   level: number;
   want: number;
-  /** The pieces they are in now. */
+  /** The pieces they are in now, and their slot in each (DO NOT look it up in the piece's list: `indexOf` over every person in it). */
   readonly pieces: Piece[];
+  readonly slotIn: Map<Piece, number>;
   /** Their matrix with their own height, this frame. */
   readonly drawn: Matrix4;
 }
@@ -844,6 +877,10 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const lodPlans = new Map<string, Promise<LodPlan>>();
   const levelCount = [0, 0, 0, 0];
   let trianglesDrawn = 0;
+  /** Whether a piece that casts (levels 0 and 1, `castsAt`) drew anybody this frame: the far levels' shadow is a disc, never the map's. */
+  let castingNow = false;
+  /** Last frame's: the last caster gone changes the shadow too. */
+  let castedLast = false;
 
   /** The class's pose on this person's own joints. */
   const shift = new Float32Array(512 * 3);
@@ -988,9 +1025,17 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const buildClass = async (sex: WalkSex, band: AgeBand): Promise<BodyClass> => {
     const { assets: a, morpher: mo } = await env.setup();
     const started = performance.now();
-    const { base, shape, eyes, rig } = await classRig(env, sex, band);
     // Read from the cook (`proceduralCook.ts`); built here only when it is missing or stale.
     const cooked = await loadProcedural(`class-${sex}-${band}`);
+    // DO NOT build a class's rig on the page (`createPersonRig`, 50-100 ms each, while the map opens): made and kept on the people's worker, its body read back as a cooked person, its items fitted there (`fit`).
+    const away = cooked ? await classRigInWorker(sex, band) : null;
+    const made = away ? null : await classRig(env, sex, band);
+    const { base, shape } = away ?? made!;
+    const eyes = made?.eyes ?? await env.eyes();
+    const rig: PersonRig = made?.rig ?? rigFromMade(away!, a.mesh.weights, a.mesh.joints);
+    const fit = (it: ProxyItem): Promise<WornPiece> => (away
+      ? wearInWorker(sex, band, it.pack).then((worn) => worn ?? Promise.reject(new Error(`${it.pack.name}: not fitted`)))
+      : Promise.resolve(rig.wear!(it, shape)));
     const data = cooked ? classFromRecord(cooked) : await classData(env, sex, rig, shape);
     const { shapePixels, jointBasis, faceIndexPixels, faceList } = data;
     const clips: Record<ProcClip, ClipFrames> = {
@@ -1051,6 +1096,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       return headOf(again ? classFromRecord(again) : await classData(env, sex, rig, shape));
     };
     const personData = personRows(ROW_START);
+
     const palette = new Float32Array(bones * SKIN_BONE_FLOATS * ROW_START);
     const coverPixels = new Uint8Array(COVER_WIDTH);
     const cover = new DataTexture(coverPixels, COVER_WIDTH, 1, RedFormat, UnsignedByteType);
@@ -1064,9 +1110,11 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     bakeMs += performance.now() - started;
     const cls: BodyClass = {
       key: `${sex}-${band}`, sex, band, base, shape, coefficients: mo.coefficients(base), rig,
-      height: metres, clips, bones, order, parent, jointBasis, shapePixels, bodies, anim, pass,
+      height: metres, clips, bones, order, parent, jointBasis, shapePixels: bodies.basis, bodies, anim, pass,
       uniforms: {
         procBones: { value: pass.texture },
+        procBase: { value: pass.base },
+
         procBodies: { value: bodies.texture },
         procBodyStride: { value: bodies.stride },
         procCover: { value: cover },
@@ -1079,7 +1127,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         procTime: { value: 0 },
         procWoundUnit: { value: unit },
       },
-      personData, faces, faceOf: [], reloadHead, faceVerts: faceList, palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
+      fit, personData, placed: [], faces, faceOf: [], reloadHead, faceVerts: faceList, palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
       skins: new Map(), items: new Map(), far: new Map(), pieces: [], people: [], ankle, drawn: 0,
     };
     ready.push(cls);
@@ -1120,6 +1168,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     cls.capacity = capacity;
     cls.pass.grow(capacity);
     cls.uniforms.procBones.value = cls.pass.texture;
+    cls.uniforms.procBase.value = cls.pass.base;
     const faceRows = cls.uniforms.procFaceRows.value;
     const head = cls.uniforms.procFaceHead.value;
     // The rows on the GPU are carried into the bigger texture there, at the next flush.
@@ -1128,6 +1177,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     cls.personData = personRows(capacity, cls.personData);
     cls.uniforms.procPerson.value.dispose();
     cls.uniforms.procPerson.value = rowTexture(cls.personData, PERSON_FLOATS, capacity);
+
   };
 
   /** An instanced attribute of `size` floats an entry, for a piece of `capacity` people. */
@@ -1179,7 +1229,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
 
   /** DO NOT dispose the geometry for its old per-person attributes */
   const growPiece = (piece: Piece): void => {
-    piece.mesh.dispose();
+    // DO NOT `dispose` the mesh for its old matrices: three's releaseStatesOfObject walks every geometry the renderer knows, ms a call (the old buffer stays on the GPU, less than the new one).
     const capacity = piece.capacity * 2;
     const matrices = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
     matrices.setUsage(DynamicDrawUsage);
@@ -1355,7 +1405,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const map = await textureOf(name, it);
         await breathe();
         const fitAt = performance.now();
-        const fitted = cls.rig.wear!(it, cls.shape);
+        const fitted = await cls.fit(it);
         const geometry = new BufferGeometry();
         geometry.setAttribute('position', new BufferAttribute(fitted.positions, 3));
         const n = fitted.positions.length / 3;
@@ -1370,7 +1420,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         geometry.computeVertexNormals();
         geometry.computeBoundingSphere();
         const made = await makeItem(cls, name, kindOf(it), role, geometry, map, null, name.startsWith('hair:'));
-        performance.measure(`hitch:person/fit ${cls.key} ${name}`, { start: fitAt, end: performance.now() });
+        measureHitch(`hitch:person/fit ${cls.key} ${name}`, fitAt);
         cls.items.set(name, made);
         return made;
       })();
@@ -1441,16 +1491,21 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const slot = piece.people.length;
     piece.people.push(person);
     st.pieces.push(piece);
+    st.slotIn.set(piece, slot);
     writeEntry(piece, slot, person, st);
     piece.dirty = true;
   };
   /** A person's slot in a piece given up: the last slot moved into it. */
   const unplace = (piece: Piece, person: ProceduralPerson): void => {
-    const slot = piece.people.indexOf(person);
-    if (slot < 0) return;
+    const st = states.get(person);
+    const slot = st?.slotIn.get(piece);
+    if (!st || slot === undefined) return;
+    st.slotIn.delete(piece);
     const last = piece.people.length - 1;
     if (slot !== last) {
-      piece.people[slot] = piece.people[last]!;
+      const moved = piece.people[last]!;
+      piece.people[slot] = moved;
+      states.get(moved)?.slotIn.set(piece, slot);
       for (const attr of piece.attrs.values()) {
         const n = attr.itemSize, a = attr.array as Float32Array;
         a.copyWithin(slot * n, last * n, last * n + n);
@@ -1479,8 +1534,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const st = states.get(person);
     if (!st) return;
     for (const piece of st.pieces) {
-      const slot = piece.people.indexOf(person);
-      if (slot < 0) continue;
+      const slot = st.slotIn.get(piece);
+      if (slot === undefined) continue;
       writeEntry(piece, slot, person, st);
       piece.dirty = true;
     }
@@ -1510,12 +1565,12 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const key = `${cls.key}/${grownName}`;
     let made = strandPieces.get(key);
     if (!made) {
-      made = env.setup().then(({ assets: a, morpher: mo }) => {
+      made = env.setup().then(async ({ assets: a, morpher: mo }) => {
         const style = HAIR_STYLES[grownName.slice(5)]!;
         const pack = generateHairStrands(style, { positions: mo.base, vertexCount: a.mesh.vertexCount, bodyRange: a.bodyRange,
           joints: a.mesh.joints, weights: a.mesh.weights, boneNames: a.mesh.boneNames, faces: a.mesh.faces });
         const it: ProxyItem = { pack, texture: null, transparent: true, textureFile: null };
-        const fitted = cls.rig.wear!(it, cls.shape);
+        const fitted = await cls.fit(it);
         const geometry = new BufferGeometry();
         geometry.setAttribute('position', new BufferAttribute(fitted.positions, 3));
         geometry.setAttribute('uv', new BufferAttribute(pack.uvs!, 2));
@@ -1539,7 +1594,11 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return made;
   };
   const shown = new Set<Piece>();
+  /** The nearest people this frame and the strand pieces they want: DO NOT make an entry, a map or a list a frame (the entries are reused, `nearPool`). */
   const near: { p: ProceduralPerson; d: number }[] = [];
+  const nearPool: { p: ProceduralPerson; d: number }[] = [];
+  const wanted = new Set<Piece>();
+  const byDistance = (a: { d: number }, b: { d: number }): number => a.d - b.d;
   const at3 = new Vector3();
   const strandsUpdate = (eye: Vector3): void => {
     near.length = 0;
@@ -1549,47 +1608,45 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       // Only the close levels: further away the strands are under a pixel.
       if (!st || st.level < 0 || st.level > 1) continue;
       const d = eye.distanceTo(at3.setFromMatrixPosition(p.matrix));
-      if (d < range) near.push({ p, d });
+      if (d >= range) continue;
+      const entry = nearPool[near.length] ??= { p, d };
+      entry.p = p; entry.d = d;
+      near.push(entry);
     }
-    near.sort((a, b) => a.d - b.d);
+    near.sort(byDistance);
     if (near.length > NEAR) near.length = NEAR;
-    const wanted = new Map<Piece, ProceduralPerson[]>();
+    wanted.clear();
+    for (const piece of shown) piece.people.length = 0;
     for (const { p } of near) {
       const cls = states.get(p)!.cls;
       const piece = readyStrand.get(`${cls.key}/${p.grown}`);
       if (!piece) { void strandPiece(cls, p.grown!); continue; }
-      const list = wanted.get(piece) ?? [];
-      list.push(p);
-      wanted.set(piece, list);
+      if (!wanted.has(piece)) { wanted.add(piece); piece.people.length = 0; }
+      piece.people.push(p);
     }
-    for (const piece of shown) if (!wanted.has(piece)) { piece.people = []; piece.mesh.count = 0; piece.mesh.visible = false; }
+    for (const piece of shown) if (!wanted.has(piece)) { piece.mesh.count = 0; piece.mesh.visible = false; }
     shown.clear();
-    for (const [piece, list] of wanted) {
+    for (const piece of wanted) {
+      const list = piece.people;
       while (piece.capacity < list.length) growPiece(piece);
-      piece.people = list;
-      list.forEach((person, slot) => {
+      for (let slot = 0; slot < list.length; slot++) {
+        const person = list[slot]!;
         const st = states.get(person)!;
         const burnt = charred.has(person);
         piece.attrs.get('aPerson')!.setXYZW(slot, person.row, st.variant, woundedRow(st.cls, person.row) ? 1 : 0, burnt ? 1 : 0);
         piece.attrs.get('aDye')!.setXYZW(slot, person.hairColour.r, person.hairColour.g, person.hairColour.b, burnt ? 3 : 1);
-        piece.mesh.setMatrixAt(slot, st.drawn);
-      });
+      }
       upload(piece, true);
       shown.add(piece);
     }
   };
 
-  /** A piece's frame to the GPU: its count, its matrices, and its entries when they changed - only the written part. */
+  /** A piece's frame to the GPU: its count, and its entries when they changed - only the written part (the people's places are their class's, `procPlaces`). */
   const upload = (piece: Piece, entries: boolean): void => {
     const n = piece.people.length;
     piece.mesh.count = n;
     piece.mesh.visible = n > 0;
-    if (!n) return;
-    const matrices = piece.mesh.instanceMatrix;
-    matrices.clearUpdateRanges();
-    matrices.addUpdateRange(0, n * 16);
-    matrices.needsUpdate = true;
-    if (!entries) return;
+    if (!n || !entries) return;
     for (const attr of piece.attrs.values()) {
       attr.clearUpdateRanges();
       attr.addUpdateRange(0, n * attr.itemSize);
@@ -1816,6 +1873,28 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return cls.rows++;
   };
 
+  /** What the people's worker reads of a class to work out a face (`PersonFaceJob`): its body's posture and face vertices, shared once; null where memory is not shared. */
+  const faceShares = new Map<BodyClass, Pick<PersonFaceJob, 'deltas' | 'faceVerts' | 'faceFloats'> | null>();
+  const faceShare = (cls: BodyClass): Pick<PersonFaceJob, 'deltas' | 'faceVerts' | 'faceFloats'> | null => {
+    let share = faceShares.get(cls);
+    if (share !== undefined) return share;
+    const d = cls.rig.deltasData;
+    const shared = <T extends Float32Array | Float64Array | Int32Array>(a: T, make: (b: SharedArrayBuffer) => T): T => { const c = make(new SharedArrayBuffer(a.byteLength)); c.set(a as never); return c; };
+    share = d && typeof SharedArrayBuffer !== 'undefined' && (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true ? {
+      deltas: { positions: shared(d.positions, (b) => new Float32Array(b)), lowestDm: d.lowestDm, bodyRange: d.bodyRange.map(([x, y]) => [x, y] as const),
+        linear: shared(d.linear, (b) => new Float64Array(b)) },
+      faceVerts: shared(cls.faceVerts, (b) => new Int32Array(b)),
+      faceFloats: cls.uniforms.procFaceRows.value * FACE_WIDTH * 4,
+    } : null;
+    faceShares.set(cls, share);
+    return share;
+  };
+  /** Row `row`'s face as worked out in the worker (null: none, zero moves), sent up at the next flush. */
+  const writeFace = (cls: BodyClass, row: number, features: Readonly<Record<string, number>> | null, face: Float32Array | null): void => {
+    const faceRows = cls.uniforms.procFaceRows.value;
+    cls.faceOf[row] = features;
+    cls.faces.write(cls.uniforms.procFaceHead.value + row * faceRows, face ?? new Float32Array(faceRows * FACE_WIDTH * 4));
+  };
   /** Row `row`'s own face: the regional sliders on the class body, posed as it is (zero: none), sent up at the next flush. */
   const setFace = (cls: BodyClass, row: number, features: Readonly<Record<string, number>> | null): void => {
     const faceRows = cls.uniforms.procFaceRows.value;
@@ -1888,11 +1967,19 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const coef = new Float32Array(SHAPES);
       for (let k = 0; k < SHAPES; k++) coef[k] = (c[k] ?? 0) - (cls.coefficients[k] ?? 0);
       const body = cls.bodies.pick(coef);
-      // Their own face; a reused row holds the last person's face: theirs replaces it, or none.
-      setFace(cls, row, Object.keys(spec.features).length ? spec.features : null);
-      // Heights from the vertices' Y alone (MakeHuman's `getHeightCm`).
-      const tall = mo.height(spec.body, a.bodyRange);
-      const level0 = mo.height(level, a.bodyRange);
+      // Shown only with their body's vertices written (a new body is baked in a worker).
+      await body.ready;
+      if (epoch !== started) throw new Error('crowd cleared');
+      // Their heights (from the vertices' Y alone, MakeHuman's `getHeightCm`) and their own face: worked out on the people's worker; here where none can.
+      const features = Object.keys(spec.features).length ? spec.features : null;
+      const share = faceShare(cls);
+      const worked = share ? await personFaceInWorker({ body: spec.body, features: features ?? {}, classHeight: cls.base.height, ...share }) : null;
+      if (epoch !== started) throw new Error('crowd cleared');
+      // A reused row holds the last person's face: theirs replaces it, or none.
+      if (worked) writeFace(cls, row, features, worked.face);
+      else setFace(cls, row, features);
+      const tall = worked ? worked.tall : mo.height(spec.body, a.bodyRange);
+      const level0 = worked ? worked.level0 : mo.height(level, a.bodyRange);
       const scale = tall / Math.max(1e-3, level0);
       const person: ProceduralPerson = {
         spec, band, sex, row, scale, height: tall / 10, items: worn.map(([nm]) => nm),
@@ -1920,7 +2007,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       states.set(person, {
         cls, coef, variant: body.index, wears, covers, farKey,
         skinColour: skin.colour.clone().multiply(skinTint), shoeColour: shoes ? shoes.colour.clone() : new Color(0.08, 0.07, 0.065),
-        outfitDye: tint, level: -1, want: -1, pieces: [], drawn: new Matrix4(),
+        outfitDye: tint, level: -1, want: -1, pieces: [], slotIn: new Map(), drawn: new Matrix4(),
       });
       cls.people.push(person);
       people.push(person);
@@ -1987,7 +2074,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         cls.personData.copyWithin(row * PERSON_FLOATS, person.row * PERSON_FLOATS, person.row * PERSON_FLOATS + EXPR_AT);
         touchRows(cls.uniforms.procPerson.value, row, 1);
         const twin: ProceduralPerson = { ...person, row, matrix: new Matrix4().makeScale(0, 0, 0), clip: 'idle', phase: 0, activity: undefined, lost: undefined };
-        states.set(twin, { ...st, level: -1, want: -1, pieces: [], drawn: new Matrix4() });
+        states.set(twin, { ...st, level: -1, want: -1, pieces: [], slotIn: new Map(), drawn: new Matrix4() });
         cls.people.push(twin);
         people.push(twin);
         return twin;
@@ -1997,7 +2084,11 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const st = states.get(twin);
         if (!cls || !st) return;
         for (const piece of st.pieces) unplace(piece, twin);
-        for (const piece of shown) if (piece.people.includes(twin)) piece.people = piece.people.filter((p) => p !== twin);
+        // Out of the strands drawn: their list kept (`strandsUpdate` fills it again each frame).
+        for (const piece of shown) {
+          const at = piece.people.indexOf(twin);
+          if (at >= 0) piece.people.splice(at, 1);
+        }
         states.delete(twin);
         cls.people.splice(cls.people.indexOf(twin), 1);
         const i = people.indexOf(twin);
@@ -2080,6 +2171,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const time = simTime ?? performance.now() / 1000;
       levelCount.fill(0);
       trianglesDrawn = 0;
+      castedLast = castingNow;
+      castingNow = false;
       // Each person's level from their height on the screen: hidden (a zero scale) or too small, none.
       close.length = 0;
       let close0 = 0, close1 = 0;
@@ -2121,6 +2214,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
           cls.drawn++;
           levelCount[st.level] = (levelCount[st.level] ?? 0) + 1;
           st.drawn.multiplyMatrices(person.matrix, scaled.makeScale(person.scale, person.scale, person.scale));
+          // Their place once, in their row: every piece they are in reads it there.
+          cls.personData.set(st.drawn.elements, person.row * PERSON_FLOATS + PLACE_AT);
+          cls.placed.push(person.row);
           // Their skeleton: the GPU pass plays their clip on their joints; somebody held, bent, jolted or maimed is worked out here.
           if (overridden(person)) {
             const at = person.row * width;
@@ -2160,12 +2256,14 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
           // The far ones' shadow: a soft disc under them.
           if (st.level >= 2 && shadows) blobs.add(person.matrix, BLOB_RADIUS * person.scale);
         }
+        // The rows of the people placed, a range a row; most of the class: the whole (small) texture.
+        const places = cls.uniforms.procPerson.value;
+        if (cls.placed.length * 2 < cls.capacity) for (const row of cls.placed) touchRows(places, row, 1);
+        else if (cls.placed.length) { places.clearUpdateRanges(); places.needsUpdate = true; }
+        cls.placed.length = 0;
         for (const piece of cls.pieces) {
-          const n = piece.people.length;
-          if (n) {
-            for (let slot = 0; slot < n; slot++) piece.mesh.setMatrixAt(slot, states.get(piece.people[slot]!)!.drawn);
-            trianglesDrawn += n * piece.triangles;
-          }
+          trianglesDrawn += piece.people.length * piece.triangles;
+          if (piece.mesh.castShadow && piece.people.length > 0) castingNow = true;
           upload(piece, piece.dirty);
           piece.dirty = false;
         }
@@ -2182,6 +2280,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         if (!cls.drawn) continue;
         cls.pass.render(renderer, cls.rows);
         cls.uniforms.procBones.value = cls.pass.texture;
+        cls.uniforms.procBase.value = cls.pass.base;
       }
     },
     clear() {
@@ -2224,8 +2323,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     async warmClasses() {
       for (const sex of ['female', 'male'] as const) {
         for (const band of ['adult', 'young', 'senior', 'child'] as const) {
+          // One at a time: each class's rig is made on the people's worker, none on the page to space out.
           await classFor(sex, band);
-          await new Promise<void>((done) => setTimeout(done, 400));
         }
       }
     },
@@ -2256,7 +2355,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     probe(person, vertices) {
       const st = states.get(person)!;
       const cls = st.cls;
-      const exact = cls.rig.deltas!(env.loaded!.morpher.shape({ ...person.spec.body, height: cls.base.height }));
+      // A class made on the people's worker has its whole rig there: nothing to probe here.
+      if (!cls.rig.deltas) return [];
+      const exact = cls.rig.deltas(env.loaded!.morpher.shape({ ...person.spec.body, height: cls.base.height }));
       const px = cls.shapePixels;
       return vertices.map((v) => {
         const linear = [0, 0, 0];
@@ -2267,7 +2368,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         return { v, linear, exact: [exact[v * 3]!, exact[v * 3 + 1]!, exact[v * 3 + 2]!] };
       });
     },
-    get casting() { return trianglesDrawn > 0; },
+    get casting() { return castingNow || castedLast; },
     stats() {
       let pieces = 0, draws = 0, vertices = 0, textureBytes = 0;
       const names = new Set<string>();

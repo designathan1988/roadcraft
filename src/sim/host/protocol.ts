@@ -1,5 +1,5 @@
 import type { Restoration } from '@world/doc';
-import type { BuildingChange, TrafficMap } from '../agents/trafficBuildings';
+import type { BuildingSent, TrafficMap } from '../agents/trafficBuildings';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { NetworkBake } from '@world/networkBuild';
 import type { BodyPart, PedView, PersonAgeClass } from '../people/view';
@@ -97,8 +97,8 @@ export type ToSim =
   /** A tile of the page taken in, let go, or written at `version` (`worldStreamer.ts` StreamerEvents). */
   /** `fromPage`: a tile loaded whose store is behind the page (a write not confirmed): its buildings come from the page, DO NOT read them, or its bays, from the store. */
   | { readonly type: 'tile'; readonly event: TileEvent; readonly key: number; readonly version: number; readonly fromPage?: boolean }
-  /** The roads', lots' and transit's records the diary named (`delta`), and the buildings it named as traffic records. */
-  | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingChange[] }
+  /** The roads', lots' and transit's records the diary named (`delta`), and where the buildings it named are read (worked out as traffic reads them in the worker). */
+  | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingSent[] }
   /** A tile's junctions and ribbons as the page has them solved (`NetworkBake`): the worker's network takes them where its inputs are the same, never solving them again. */
   | { readonly type: 'bake'; readonly bake: NetworkBake }
   | { readonly type: 'frame'; readonly wall: number; readonly hold: boolean; readonly controls: SimControls }
@@ -106,7 +106,9 @@ export type ToSim =
   /** The micro window's centre and radius (`meso/meso.ts`), and the page's buffer the meso traffic is written into (`meso/memory.ts`). */
   | { readonly type: 'window'; readonly x: number; readonly y: number; readonly r: number; readonly meso: SharedArrayBuffer }
   | { readonly type: 'act'; readonly id: number; readonly act: SimAct }
-  | { readonly type: 'ask'; readonly id: number; readonly ask: SimAsk };
+  | { readonly type: 'ask'; readonly id: number; readonly ask: SimAsk }
+  /** The zoning tool's proposed lots planned on the worker's copy of the region (`SimHost.lotPlan`), answered with `answer`: a `LotPlan`, or null when not now. */
+  | { readonly type: 'lotPlan'; readonly id: number };
 
 /** What the player sets of the simulation, sent each frame (a few numbers). */
 export interface SimControls {
@@ -155,19 +157,16 @@ export type FromSim =
   | { readonly type: 'failed'; readonly message: string }
   | { readonly type: 'tick'; readonly slot: number; readonly vehicles: readonly (readonly [number, VehicleRich])[]; readonly peds: readonly (readonly [number, PedRich])[];
       readonly signals: readonly SignalLights[]; readonly layout: { readonly all: boolean; readonly junctions: readonly SignalLayout[] } | null; readonly trains: readonly TrainState[];
-      readonly parked: readonly ParkedCar[] | null; readonly stats: SimStats;
+      readonly parked: ParkedChanges | null; readonly stats: SimStats;
       readonly wounds: readonly Wound[]; readonly casualties: readonly Casualty[] }
   | { readonly type: 'acted'; readonly id: number; readonly result: unknown }
   | { readonly type: 'answer'; readonly id: number; readonly answer: unknown };
 
-/** A car parked in its bay, still: where, and how it looks. */
-export interface ParkedCar {
-  readonly id: number; readonly archetype: string; readonly color: string; readonly x: number; readonly y: number; readonly angle: number; readonly lot: number | null;
-  /** Gone from its bay (driven out, taken away). */
-  readonly gone: boolean;
-  /** The list is every parked car of the map: those not in it are gone. */
-  readonly whole: boolean;
-}
+/** The cars come into a bay or gone from one, `PARKED_STRIDE` numbers each (fields `PK`), in a buffer handed over; `whole`: every car standing, those not in it gone. */
+export interface ParkedChanges { readonly whole: boolean; readonly cars: Float64Array }
+/** A parked car's numbers: its id, gone (1) or standing (0), where, its lot (-1: none), its kind (`ARCHETYPES` index) and its colour (0xrrggbb). */
+export const PK = { id: 0, gone: 1, x: 2, y: 3, angle: 4, lot: 5, archetype: 6, color: 7 } as const;
+export const PARKED_STRIDE = 8;
 
 /** The simulation's own numbers for the status bar, the monitor and the population governor. */
 export interface SimStats {
@@ -181,5 +180,6 @@ export interface SimStats {
   readonly issues: readonly { readonly code: string; readonly subject: string; readonly detail: string; readonly tick: number }[];
   readonly populationShare: number;
   readonly stepMs: number;
+  /** Left empty: the worker keeps the zones it measured itself (`SimHost.stats`); `main.ts` zonesDue reads it until it goes. */
   readonly measured: readonly (readonly [string, Float64Array | null])[];
 }

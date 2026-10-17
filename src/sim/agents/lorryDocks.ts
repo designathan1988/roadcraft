@@ -17,7 +17,7 @@ import type { Archetype } from '../vehicles/archetypes';
 import { carGates, gatedProperty, gateExits, lanesInBox, wallsOf, type BayLane, type LotExit } from './parking';
 import {
   type AxlePose, bodyClear, bodyClearExact, type Clearance, clearanceSteps, discsOf, fillRing, fillRings,
-  type Solid, type Steered, type Waypoint, WaySearch,
+  type Holonomic, type Solid, type Steered, type Waypoint, WaySearch,
 } from './hybridAStar';
 
 /** A works' loading yard as a lorry drives it */
@@ -96,8 +96,10 @@ export interface LorryWay {
 export class Yard {
   readonly gates: YardGate[] = [];
   readonly docks: YardDock[] = [];
-  readonly solid: Solid;
-  readonly field: Clearance;
+  /** The grid and its clearance, while a dock is still to be planned: DO NOT keep them for the yard's life (a works' grid is some 100 000 cells, ~0.5 MB with its clearance, a yard of the map each). */
+  private grids: { readonly solid: Solid; readonly field: Clearance } | null;
+  /** The distance maps of the searches on this yard's field, by goal (a dock's ways in from every gate share one): let go with the grids. */
+  private maps = new Map<string, Holonomic>();
   readonly body: Steered;
   /** The lot's ring, local. */
   readonly ring: { x: number; y: number }[];
@@ -119,8 +121,7 @@ export class Yard {
     this.ring = made.ring;
     const exits = made.exits;
     const solid = made.solid;
-    this.solid = solid;
-    this.field = made.field;
+    this.grids = { solid, field: made.field };
 
     for (const exit of exits) {
       if (!exit.outer || exit.lane.entryAt === undefined) continue;
@@ -149,7 +150,7 @@ export class Yard {
       let pre: AxlePose | null = null;
       for (let d = PRE_DOCK; d >= m(0.25); d -= m(0.25)) {
         const at = { x: docked.x + ox * d, y: docked.y + oy * d, angle };
-        if (bodyClear(this.field, discs, at.x, at.y, at.angle) && straightClear(solid, body, at, docked)) { pre = at; break; }
+        if (bodyClear(made.field, discs, at.x, at.y, at.angle) && straightClear(made.field, body, at, docked)) { pre = at; break; }
       }
       const order = this.gates.map((_, g) => g).sort((p, q) => gateDistance(this.gates[p]!, open) - gateDistance(this.gates[q]!, open));
       this.docks.push({
@@ -160,8 +161,25 @@ export class Yard {
     }
   }
 
-  /** Plans on, up to `budget` poses expanded; how many it spent. */
+  /** The yard's grid, while it is kept (`plan` lets it go once every dock is planned). */
+  get solid(): Solid {
+    if (!this.grids) throw new Error("[lorries] a yard's grid read after every dock was planned");
+    return this.grids.solid;
+  }
+
+  get field(): Clearance {
+    if (!this.grids) throw new Error("[lorries] a yard's clearance read after every dock was planned");
+    return this.grids.field;
+  }
+
+  /** Plans on, up to `budget` poses expanded; how many it spent. Every dock planned, the grids are let go (the ways keep only poses). */
   plan(dockIndex: number, budget: number): number {
+    const spent = this.planDock(dockIndex, budget);
+    if (this.grids && this.docks.every((_, k) => this.planned(k))) { this.grids = null; this.maps = new Map(); }
+    return spent;
+  }
+
+  private planDock(dockIndex: number, budget: number): number {
     const dock = this.docks[dockIndex]!;
     let spent = 0;
     for (const g of dock.order) {
@@ -169,13 +187,13 @@ export class Yard {
       const gate = this.gates[g]!;
       const onto = dock.onto[g]!;
       spent += this.step(onto, budget - spent, () => new WaySearch(this.field, this.body, gate.stop, dock.pre,
-        { arriveReversing: true, reach: REACH, turn: TURN }));
+        { arriveReversing: true, reach: REACH, turn: TURN, maps: this.maps }));
       if (!onto.done) return spent;
       if (onto.way && !this.settles(last(onto.way), dock.pre, true)) onto.way = null;
       if (!onto.way) continue;
       const away = dock.away[g]!;
       spent += this.step(away, budget - spent, () => new WaySearch(this.field, this.body, dock.pre, gate.join,
-        { arriveReversing: false, reach: REACH, turn: TURN }));
+        { arriveReversing: false, reach: REACH, turn: TURN, maps: this.maps }));
       if (!away.done) return spent;
       if (away.way && !this.settles(last(away.way), gate.join, false)) away.way = null;
       if (!away.way) continue;
@@ -249,7 +267,7 @@ export class Yard {
 
   /** Whether the short leg from where a search stopped to its exact goal is clear, cell by cell. */
   private settles(from: AxlePose, to: AxlePose, reverse: boolean): boolean {
-    return settle(from, to, reverse).every((p) => bodyClearExact(this.solid, this.body, p.x, p.y, p.angle, m(0.02)));
+    return settle(from, to, reverse).every((p) => bodyClearExact(this.field, this.body, p.x, p.y, p.angle, m(0.02)));
   }
 }
 
@@ -372,7 +390,7 @@ function yardBox(b: TrafficBuilding, prop: { x: number; y: number; w: number; d:
 const GATE_LANES_READ = m(45) + m(5);
 
 /** What a yard is made from, near it, as one number: the lanes its gates may be joined to */
-function yardInputs(w: SimWorld, b: TrafficBuilding, lots?: readonly Lot[]): number {
+export function yardInputs(w: SimWorld, b: TrafficBuilding, lots?: readonly Lot[]): number {
   const prop = gatedProperty(b);
   if (!prop) return 0;
   const { wx0, wy0, wx1, wy1 } = yardBox(b, prop);
@@ -535,6 +553,6 @@ function straight(from: AxlePose, to: AxlePose, reverse: boolean): Waypoint[] {
   return out;
 }
 
-function straightClear(solid: Solid, body: Steered, from: AxlePose, to: AxlePose): boolean {
-  return straight(from, to, true).every((p) => bodyClearExact(solid, body, p.x, p.y, p.angle, m(0.02)));
+function straightClear(field: Clearance, body: Steered, from: AxlePose, to: AxlePose): boolean {
+  return straight(from, to, true).every((p) => bodyClearExact(field, body, p.x, p.y, p.angle, m(0.02)));
 }

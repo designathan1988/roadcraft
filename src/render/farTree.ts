@@ -1,4 +1,4 @@
-import { Box3, type Frustum, Group, type Mesh, type Object3D } from 'three';
+import { Box3, Frustum, Group, type Mesh, type Object3D } from 'three';
 import { Digest } from '@core/digest';
 import { type WholeMapOptions, worldKey } from '@world/cityGen/wholeMap';
 import { tileKey, tileOfKey } from '@world/tiles';
@@ -114,8 +114,12 @@ export interface FarNear<P> {
   land(payload: P, base: FarNearLanded | null): FarNearLanded;
   /** Whether an answer builds on a version drawn (its blocks changed since alone): that version, else null. */
   baseOf(payload: P): string | null;
+  /** What an answer is of: the content it was baked from and its level (a landed level's `bake` and `variant`); none: every answer is new. */
+  contentOf?(payload: P): { readonly bake: string; readonly variant: string };
   /** What else it is baked from that the page may change (the roads' paint style): in its version. */
   version?(): string;
+  /** A tile the page holds edited, cut to what the near level reads, and the digest of that: the version an edited tile is asked at, so an edit of what it does not read (a building grown, a tree) asks nothing. */
+  pageCut?(records: TileRecords): { readonly records: TileRecords; readonly digest: string };
   /** Whether it draws the tiles the page's document holds too (the roads: one way for every tile; the buildings' cells draw theirs). */
   readonly drawsLoaded?: boolean;
 }
@@ -189,6 +193,8 @@ interface FarNode {
   nearLanded: string | null;
   nearAsked: string | null;
   nearCancel: (() => void) | null;
+  /** The version the level on its way to the GPU stands for now: a newer answer of the same content moves it here, never the upload (`landNear`). */
+  nearComingSig: string | null;
   nearFailed: string | null;
 }
 
@@ -229,6 +235,13 @@ export class FarTree<P> implements FarTiles {
   /** The camera's frustum at the last `choose` (null: every node counts as seen). */
   private view: Frustum | null = null;
   private readonly viewBox = new Box3();
+  /** Whether anything the choice reads changed since the last whole one (a tile stored or loaded, an answer, the scale): with the same eye and frustum, `choose` is skipped. */
+  private changed = true;
+  /** The eye, frustum and outside versions (`outsideKey`) the last whole choice was made for. */
+  private readonly chosenEye: Eye = { x: Number.NaN, y: 0, z: 0, pxAtMetre: 0, orthoPx: null, reach: Infinity };
+  private readonly chosenView = new Frustum();
+  private chosenHadView = false;
+  private chosenOutside = '';
   private scheduled = false;
   private warned = false;
 
@@ -271,6 +284,7 @@ export class FarTree<P> implements FarTiles {
     }
     this.source = source;
     this.isLoaded = isLoaded;
+    this.changed = true;
     for (const key of this.leaves.keys()) this.loadedChanged(key);
     this.pump();
   }
@@ -278,7 +292,7 @@ export class FarTree<P> implements FarTiles {
   stored(tile: number, version: number | null): void {
     let leaf = this.leaves.get(tile);
     if (version === null) {
-      if (leaf) this.unstore(tile, leaf);
+      if (leaf) { this.unstore(tile, leaf); this.changed = true; }
       return;
     }
     if (!leaf) {
@@ -289,6 +303,7 @@ export class FarTree<P> implements FarTiles {
       for (let n: FarNode | null = leaf; n; n = n.parent) { n.tiles++; if (leaf.inDoc) n.loaded++; }
     } else if (leaf.version === version) return;
     leaf.version = version;
+    this.changed = true;
     // DO NOT bake anything but it and its ancestors again: the others' versions stand (a plan's node it falls under takes its tiles' and the plan's).
     for (let n: FarNode | null = leaf; n; n = n.parent) n.sig = null;
   }
@@ -299,15 +314,30 @@ export class FarTree<P> implements FarTiles {
     const now = this.isLoaded(tile);
     if (now === leaf.inDoc) return;
     leaf.inDoc = now;
+    this.changed = true;
     for (let n: FarNode | null = leaf; n; n = n.parent) n.loaded += now ? 1 : -1;
   }
 
   setErrorScale(scale: number): void {
+    if (this.seen.scale !== scale) this.changed = true;
     this.seen.scale = scale;
   }
 
   /** THE NODES DRAWN, from the roots down: a node is drawn in place of its children while what it leaves out spans under the pixels allowed; `reach`, an orthographic view's (Infinity in perspective) */
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach = Infinity, view: Frustum | null = null): void {
+    // DO NOT walk the tree again, and make its sets, for the frame that changed nothing it reads: the same eye, frustum and versions, nothing come or stored.
+    const outside = this.outsideKey();
+    const c = this.chosenEye;
+    if (!this.changed && c.x === eyeX && c.y === eyeY && c.z === eyeZ && c.pxAtMetre === pxAtMetre && c.orthoPx === orthoPx && c.reach === reach
+      && outside === this.chosenOutside && sameView(this.chosenHadView ? this.chosenView : null, view)) {
+      this.view = view;
+      return;
+    }
+    this.changed = false;
+    c.x = eyeX; c.y = eyeY; c.z = eyeZ; c.pxAtMetre = pxAtMetre; c.orthoPx = orthoPx; c.reach = reach;
+    this.chosenOutside = outside;
+    this.chosenHadView = view !== null;
+    if (view) this.chosenView.copy(view);
     this.view = view;
     const eye = this.eyeNow;
     eye.x = eyeX; eye.y = eyeY; eye.z = eyeZ; eye.pxAtMetre = pxAtMetre; eye.orthoPx = orthoPx; eye.reach = reach;
@@ -348,6 +378,7 @@ export class FarTree<P> implements FarTiles {
 
   /** A WebGL context restored: every mesh made again from the store, its arrays having been let go (`gpuOnly.ts`). */
   refill(): void {
+    this.changed = true;
     for (const n of this.nodes.values()) {
       n.cancel?.();
       n.cancel = null;
@@ -378,6 +409,18 @@ export class FarTree<P> implements FarTiles {
     this.eye = null;
   }
 
+  /** What the choice reads from outside the tree that tells it nothing when it moves: the near level's version and the page's edits of the stored tiles (`nearTiles`). */
+  private outsideKey(): string {
+    const near = this.kind.near;
+    if (!near) return '';
+    const version = near.version?.() ?? '';
+    const edit = this.source?.pageEdit;
+    if (!edit) return version;
+    const d = new Digest();
+    for (const key of this.leaves.keys()) d.add(edit(key));
+    return `${version}|${d.value()}`;
+  }
+
   /** The bakes' keys: the prefix, and the world's fingerprint when it has a plan. */
   private get keyPrefix(): string | null {
     return this.prefix === null ? null : this.world ? `${this.prefix}${this.world}:` : this.prefix;
@@ -398,7 +441,7 @@ export class FarTree<P> implements FarTiles {
       x0: i * side, y0: j * side, x1: (i + 1) * side, y1: (j + 1) * side, top: 0,
       tiles: 0, loaded: 0, version: 0, inDoc: false, sig: null, baked: null, landed: null, mesh: null, error: this.kind.levelError(k),
       asked: null, askedWant: false, cancel: null, blocked: null, waitingFor: null, blockedWant: false, failed: null, queued: false,
-      near: null, nearComing: null, nearLanded: null, nearAsked: null, nearCancel: null, nearFailed: null,
+      near: null, nearComing: null, nearComingSig: null, nearLanded: null, nearAsked: null, nearCancel: null, nearFailed: null,
     };
     this.nodes.set(key, n);
     if (parent) parent.children[(i - 2 * parent.i) + 2 * (j - 2 * parent.j)] = n;
@@ -530,33 +573,71 @@ export class FarTree<P> implements FarTiles {
     return this.kind.near!.fineError * this.seen.perMetre < this.seen.allowed * (full ? HYSTERESIS : 1) ? 'coarse' : 'full';
   }
 
-  /** The tile and its neighbours stored, at their versions (the tile first): what its near level reads; a tile the page holds edited, at its edit (`FarTileSource.pageEdit`). */
-  private nearTiles(n: FarNode): { key: number; version: number; edit: number }[] {
-    const edit = (key: number): number => this.source?.pageEdit?.(key) ?? 0;
-    const out = [{ key: tileKey(n.i, n.j), version: n.version, edit: edit(tileKey(n.i, n.j)) }];
+  /** The tile and its neighbours stored, at their versions (the tile first): what its near level reads; a tile the page holds edited, at the digest of what the near level reads of it (`pageCutOf`). */
+  private nearTiles(n: FarNode): { key: number; version: number; cut: { readonly records: TileRecords; readonly digest: string } | null }[] {
+    const out = [{ key: tileKey(n.i, n.j), version: n.version, cut: this.pageCutOf(tileKey(n.i, n.j)) }];
     for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         if (di === 0 && dj === 0) continue;
         const key = tileKey(n.i + di, n.j + dj);
         const leaf = this.leaves.get(key);
-        if (leaf) out.push({ key, version: leaf.version, edit: edit(key) });
+        if (leaf) out.push({ key, version: leaf.version, cut: this.pageCutOf(key) });
       }
     }
     return out;
   }
 
+  /** Each edited tile's records as the near level reads them, by the edit they are of: DO NOT read the page's document again for every neighbour that reads the tile, nor for every frame (`tileMembers` walks the region's document). */
+  private readonly pageCuts = new Map<number, { readonly edit: number; readonly cut: { readonly records: TileRecords; readonly digest: string } | null; drawn?: boolean }>();
+
+  /** A tile the page holds edited (`FarTileSource.pageEdit`), cut to what the near level reads and digested, once an edit; null for one the store holds as the page has it. */
+  private pageCutOf(key: number): { readonly records: TileRecords; readonly digest: string } | null {
+    const edit = this.source?.pageEdit?.(key) ?? 0;
+    const known = this.pageCuts.get(key);
+    if (!edit || !this.source?.pageRecords) {
+      // DO NOT let the edit's write being confirmed ask the near level again before the edit is drawn: the stored versions hold what the cut holds, and the job of the cut, still waiting, was cancelled for one of the version in the cells' band, behind every building the road's edit had baked again; a second write (a building grown next to it) cancelled it once more (`conferencia` 40-road-4s, the road drawn only after a reload, conf42-45, 2026-10-17; found by the near-tiles session). The cut stands for the tile until the tile's near level made of it is drawn (`markCutDrawn`); then the version's, of the same roads, is kept as drawn (`landNear` same content).
+      if (edit === 0 && known?.cut && !known.drawn && this.source?.pageRecords) return known.cut;
+      this.pageCuts.delete(key);
+      this.cutAsked.delete(key);
+      return null;
+    }
+    if (known && known.edit === edit) return known.cut;
+    const records = this.source.pageRecords(key);
+    const cut = records ? (this.kind.near!.pageCut ? this.kind.near!.pageCut(records) : { records, digest: `e${edit}` }) : null;
+    this.pageCuts.set(key, { edit, cut });
+    return cut;
+  }
+
+  /** A tile's near level drawn of what it read (`sig`): the tile's cut, if it was made of it, drawn - the edit is on the screen. */
+  private markCutDrawn(n: FarNode, sig: string): void {
+    const key = tileKey(n.i, n.j);
+    const known = this.pageCuts.get(key);
+    if (known?.cut && this.cutAsked.get(key)?.get(sig) === known.cut.digest) known.drawn = true;
+  }
+
+  /** The cut of its own tile each tile's near level was asked of, by the signature asked (the signature is a digest: it does not say). */
+  private readonly cutAsked = new Map<number, Map<string, string>>();
+
   /** A tile's near level asked of the workers at the versions of the tiles it reads and at the level the view wants; once. */
   private askNear(n: FarNode): void {
     const tiles = this.nearTiles(n);
-    const bake = `${nearSig(tiles.map((t) => ({ key: t.key, version: t.edit ? `${t.version}+${t.edit}` : t.version })))}:${this.kind.near!.version?.() ?? ''}`;
+    // An edited tile at what the near level reads of it: a building grown or a tree planted asks nothing (each was every tile round it baked again, 2026-10-17).
+    const bake = `${nearSig(tiles.map((t) => ({ key: t.key, version: t.cut ? `p${t.cut.digest}` : t.version })))}:${this.kind.near!.version?.() ?? ''}`;
     const variant = this.nearVariant(n);
     const sig = `${bake}:${variant}`;
     if (n.nearLanded === sig || n.nearAsked === sig || n.nearFailed === sig) return;
     n.nearCancel?.();
     n.nearAsked = sig;
+    const own = tiles[0]!.cut;
+    if (own) {
+      const key = tileKey(n.i, n.j);
+      let asked = this.cutAsked.get(key);
+      if (!asked) { asked = new Map(); this.cutAsked.set(key, asked); }
+      asked.set(sig, own.digest);
+    }
     // The edited tiles as the page holds them: drawn from the edit, not from its write.
-    const edited = tiles.some((t) => t.edit) && this.source?.pageRecords ? tiles.map((t) => (t.edit ? this.source!.pageRecords!(t.key) : null)) : undefined;
-    this.submitNear(n, sig, bake, variant, tiles, edited, tiles[0]!.edit > 0);
+    const edited = tiles.some((t) => t.cut) ? tiles.map((t) => t.cut?.records ?? null) : undefined;
+    this.submitNear(n, sig, bake, variant, tiles, edited, tiles[0]!.cut !== null);
   }
 
   private submitNear(n: FarNode, sig: string, bake: string, variant: string, tiles: readonly { key: number; version: number }[], records?: readonly (TileRecords | null)[], edited = false): void {
@@ -594,7 +675,7 @@ export class FarTree<P> implements FarTiles {
         void Promise.all(asked.tiles.map((t) => source.records(t.key).then((r) => r ?? emptyRecords(t.key, t.version)))).then((records) => {
           if (this.nodes.get(n.key) === n && n.nearAsked === sig) this.submitNear(n, sig, asked.bake, asked.variant, asked.tiles, records, asked.edited);
         }, (error: unknown) => {
-          if (this.nodes.get(n.key) === n && n.nearAsked === sig) { n.nearAsked = null; n.nearFailed = sig; }
+          if (this.nodes.get(n.key) === n && n.nearAsked === sig) { n.nearAsked = null; n.nearFailed = sig; this.changed = true; }
           if (!this.warned) { this.warned = true; console.warn(`[${this.kind.name}] a tile could not be read from the store`, error); }
         });
         break;
@@ -613,10 +694,27 @@ export class FarTree<P> implements FarTiles {
 
   /** A tile's near level come (null: no road near): its new blocks sent to the GPU, and drawn in place of the one before only once they are there (DO NOT upload a tile's roads in a frame: tens of megabytes); an answer built on the one drawn (`base`) keeps that one's other blocks. */
   private landNear(n: FarNode, payload: P | null, sig: string, base: FarNearLanded | null): void {
+    // DO NOT throw away what is drawn or on its way to the GPU for an answer of the same content (a neighbour written, the same roads at another version): the upload restarted at every write, and the street view kept the far level (conferencia 09-street, 2026-10-17; found by the near-tiles session).
+    const same = payload !== null ? this.kind.near!.contentOf?.(payload) : undefined;
+    if (same) {
+      const coming = n.nearComing;
+      if (coming && coming.bake === same.bake && coming.variant === same.variant) {
+        n.nearComingSig = sig;
+        return;
+      }
+      if (!coming && n.near && n.near.bake === same.bake && n.near.variant === same.variant) {
+        n.nearLanded = sig;
+        this.markCutDrawn(n, sig);
+        if (n.nearAsked === sig) n.nearAsked = null;
+        this.again();
+        return;
+      }
+    }
     this.nearDropComing(n);
     if (payload === null) {
       this.dropNear(n);
       n.nearLanded = sig;
+      this.markCutDrawn(n, sig);
       if (n.nearAsked === sig) n.nearAsked = null;
       return;
     }
@@ -624,22 +722,26 @@ export class FarTree<P> implements FarTiles {
     landed.group.visible = false;
     this.group.add(landed.group);
     n.nearComing = landed;
+    n.nearComingSig = sig;
     gpuLedger.set(landed.group, `far ${this.kind.name} near`, landed.bytes, landed.triangles);
     const put = (): void => {
       if (n.nearComing !== landed) return;
       n.nearComing = null;
+      const done = n.nearComingSig ?? sig;
+      n.nearComingSig = null;
       // The one before goes now (the blocks the new one kept passed to it): the new one is on the GPU.
       if (n.near) {
         if (base === n.near) landed.adopt(n.near);
         this.letGoNear(n.near);
       }
       n.near = landed;
-      n.nearLanded = sig;
-      if (n.nearAsked === sig) n.nearAsked = null;
+      n.nearLanded = done;
+      this.markCutDrawn(n, done);
+      if (n.nearAsked === done) n.nearAsked = null;
       this.nearResident.add(n);
       this.again();
     };
-    const sent = warmLooseAhead(landed.meshes, () => this.pixelsOf(n));
+    const sent = warmLooseAhead(landed.meshes, () => this.nearPixelsOf(n));
     if (sent) void sent.then(put); else put();
   }
 
@@ -656,6 +758,7 @@ export class FarTree<P> implements FarTiles {
     const coming = n.nearComing;
     if (!coming) return;
     n.nearComing = null;
+    n.nearComingSig = null;
     this.letGoNear(coming);
   }
 
@@ -772,6 +875,7 @@ export class FarTree<P> implements FarTiles {
 
   /** A node that cannot be baked at this version: drawn empty, and so are its ancestors waiting for it. */
   private fail(n: FarNode, sig: string): void {
+    this.changed = true;
     this.dropMesh(n);
     n.asked = null;
     n.failed = sig;
@@ -847,6 +951,13 @@ export class FarTree<P> implements FarTiles {
   }
 
   /** The pixels a node's height spans from the last eye: its upload's rank (`uploads.ts`). */
+  /** The pixels a tile's near level leaves out while its far level stands, from the last eye: its upload's rank, by the measure the choice wants it by (`wantsNear`) and the cells' detail is ranked by (`layer.ts`). DO NOT rank it by the road's height: flat on the ground, it went behind every building in reach, and with the uploads a few MiB a frame (`uploads.ts` drainWarm) the street view showed the far level for seconds (conferencia 09-street, 2026-10-17). */
+  private nearPixelsOf(n: FarNode): number {
+    const e = this.eyeNow;
+    measureSeen(this.ranked, e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, n.x0, n.y0, n.x1, n.y1, n.top);
+    return this.kind.near!.error * this.ranked.perMetre;
+  }
+
   private pixelsOf(n: FarNode): number {
     const e = this.eyeNow;
     measureSeen(this.ranked, e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, n.x0, n.y0, n.x1, n.y1, n.top);
@@ -866,6 +977,8 @@ export class FarTree<P> implements FarTiles {
 
   /** Chosen again with the last eye once the answers of this turn are in (one walk for many answers). */
   private again(): void {
+    // An answer came: the next choice is made whole.
+    this.changed = true;
     if (this.scheduled || !this.eye) return;
     this.scheduled = true;
     queueMicrotask(() => {
@@ -875,4 +988,14 @@ export class FarTree<P> implements FarTiles {
       if (e) this.choose(e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, e.reach, this.view);
     });
   }
+}
+
+/** Whether two frusta (or none) are the same: every plane's normal and constant. */
+function sameView(a: Frustum | null, b: Frustum | null): boolean {
+  if (a === null || b === null) return a === b;
+  for (let i = 0; i < 6; i++) {
+    const p = a.planes[i]!, q = b.planes[i]!;
+    if (p.constant !== q.constant || !p.normal.equals(q.normal)) return false;
+  }
+  return true;
 }

@@ -3,7 +3,7 @@ import { Frustum, Matrix4, OrthographicCamera, PerspectiveCamera, Sphere, Vector
 import { Rng } from '@core/rng';
 import { VEHICLE_REACH, createAgentMeshes } from '@render/agents';
 import { frustumGroundBox } from '@render/frustumGround';
-import { FleetGrid, type GroundBox } from '@sim/host/fleetGrid';
+import { FleetGrid, type FleetCell, type GroundBox } from '@sim/host/fleetGrid';
 import type { SimClient, VehicleView } from '@sim/host/simClient';
 import { archetypeById } from '@sim/vehicles/archetypes';
 import type { Network } from '@world/network';
@@ -104,8 +104,9 @@ function parkedCar(id: number, x: number, y: number): VehicleView {
 function worldWith(parked: readonly VehicleView[]): SimClient {
   const grid = new FleetGrid<VehicleView>();
   for (const car of parked) grid.place(car);
-  const vehiclesIn = (box: GroundBox, out: VehicleView[]): VehicleView[] => { out.length = 0; return grid.near(box.x0, box.y0, box.x1, box.y1, out); };
-  return { time: 0, traffic: [], vehicles: new Map(), parked, isParked: (v: VehicleView) => parked.includes(v), pedViews: [], fleet: 0, vehiclesIn } as unknown as SimClient;
+  const vehiclesIn = (box: GroundBox, out: VehicleView[], which = 'all'): VehicleView[] => { out.length = 0; return which === 'traffic' ? out : grid.near(box.x0, box.y0, box.x1, box.y1, out); };
+  const parkedCellsIn = (box: GroundBox, out: FleetCell<VehicleView>[]): FleetCell<VehicleView>[] => { out.length = 0; return grid.cellsNear(box.x0, box.y0, box.x1, box.y1, out); };
+  return { time: 0, traffic: [], vehicles: new Map(), parked, isParked: (v: VehicleView) => parked.includes(v), pedViews: [], fleet: 0, vehiclesIn, parkedCellsIn, grid } as unknown as SimClient;
 }
 
 const netWith = (): Network => ({ doc: { changes: new ChangeJournal() } }) as unknown as Network;
@@ -139,8 +140,10 @@ describe('vehicles drawn from the grid', () => {
         return frustum.intersectsSphere(sphere);
       };
       const vehicleBox = frustumGroundBox(frustum, VEHICLE_REACH, -m(160), m(300), { x0: 0, y0: 0, x1: 0, y1: 0 });
-      all.sync(world, net, 0, true, undefined, { vehicleVisible });
-      grid.sync(world, net, 0, true, undefined, { vehicleVisible, vehicleBox });
+      // Every car at the middle level: the whole level's cap (`VEHICLE_NEAR_CAP`) takes them in the order walked, and a car off the screen draws only what casts.
+      const screenScale = (): number => 2;
+      all.sync(world, net, 0, true, undefined, { vehicleVisible, screenScale });
+      grid.sync(world, net, 0, true, undefined, { vehicleVisible, vehicleBox, screenScale });
       const walked = drawn(bodiesOf(all));
       expect(walked).toBeGreaterThan(0);
       expect(walked).toBeLessThan(cars.length);
@@ -148,5 +151,81 @@ describe('vehicles drawn from the grid', () => {
     }
     all.dispose();
     grid.dispose();
+  });
+
+  it('walk no parked car of a cell that stands, in a view that stands; a cell that changed walked again', () => {
+    const cars: VehicleView[] = [];
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) cars.push(parkedCar(i * 6 + j + 1, i * m(40), j * m(40)));
+    const world = worldWith(cars);
+    const grid = (world as unknown as { grid: FleetGrid<VehicleView> }).grid;
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    let asked = 0;
+    const options = {
+      vehicleVisible: () => true, vehicleBox: { x0: -m(10), y0: -m(10), x1: m(250), y1: m(250) },
+      screenScale: (): number => { asked++; return 2; }, eye: new Vector3(0, m(100), 0),
+    };
+    agents.sync(world, netWith(), 0, true, undefined, options);
+    const shown = drawn(bodiesOf(agents));
+    expect(shown).toBe(cars.length);
+    // The same view: only the view's own probe asked, every car still drawn from its kept instances.
+    asked = 0;
+    agents.sync(world, netWith(), 0, true, undefined, options);
+    expect(asked).toBe(1);
+    expect(drawn(bodiesOf(agents))).toBe(shown);
+    // A car of one cell changed there: that cell's cars walked, no other.
+    grid.touch(cars[0]!);
+    asked = 0;
+    agents.sync(world, netWith(), 0, true, undefined, options);
+    const inCell = cars.filter((c) => Math.floor(c.frames.x / m(64)) === 0 && Math.floor(c.frames.y / m(64)) === 0).length;
+    expect(asked).toBe(1 + inCell);
+    // The view moved: every car walked.
+    asked = 0;
+    agents.sync(world, netWith(), 0, true, undefined, { ...options, eye: new Vector3(m(1), m(100), 0) });
+    expect(asked).toBe(1 + cars.length);
+    expect(drawn(bodiesOf(agents))).toBe(shown);
+    agents.dispose();
+  });
+
+  it('test a cell off the view once, not each of its cars, while nothing of it changed', () => {
+    const cars: VehicleView[] = [];
+    // Two cells: one in the view, one off it, 20 cars each.
+    for (let k = 0; k < 20; k++) cars.push(parkedCar(k + 1, m(10) + (k % 5) * m(8), m(10) + Math.floor(k / 5) * m(8)));
+    for (let k = 0; k < 20; k++) cars.push(parkedCar(k + 101, m(138) + (k % 5) * m(8), m(10) + Math.floor(k / 5) * m(8)));
+    const world = worldWith(cars);
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    let tests = 0;
+    const vehicleVisible = (x: number): boolean => { tests++; return x < m(110); };
+    let eye = 0;
+    const frame = (): void => {
+      // A view that moves a little every frame: nothing kept by the view standing still.
+      agents.sync(world, netWith(), 0, true, undefined, { vehicleVisible, vehicleBox: { x0: 0, y0: 0, x1: m(250), y1: m(100) }, screenScale: () => 2, eye: new Vector3(eye++, m(100), 0) });
+    };
+    frame();
+    tests = 0;
+    frame();
+    // A test a cell (the one off the view stops there), then the 20 cars in view their own (the first, the exact one, the body's): not 20 more for the cell off it.
+    expect(tests).toBeLessThanOrEqual(2 + 20 * 3);
+    expect(drawn(bodiesOf(agents))).toBe(20);
+    agents.dispose();
+  });
+
+  it('off the screen and in the reach of the shadows, write only what casts', () => {
+    const world = worldWith([parkedCar(1, 0, 0)]);
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const named = (re: RegExp): number => drawn(agents.meshes.filter((o): o is InstancedMesh => (o as InstancedMesh).isInstancedMesh === true && re.test(o.name)));
+    const big = (): number => 50;
+    // Seen: the body, its glass and its lamps.
+    agents.sync(world, netWith(), 0, true, undefined, { vehicleVisible: () => true, screenScale: big });
+    expect(named(/^car-.*-shell$/)).toBe(1);
+    expect(named(/^car-.*-glass$/)).toBe(1);
+    expect(named(/^vehicle-lamps$/)).toBeGreaterThan(0);
+    // Only its shadow's sphere in the view: the body and the wheels, no glass, no lamps.
+    const reachOnly = (_x: number, _y: number, _h: number, radius: number): boolean => radius > m(4.5);
+    agents.sync(world, netWith(), 0, true, undefined, { vehicleVisible: reachOnly, screenScale: big });
+    expect(named(/^car-.*-shell$/)).toBe(1);
+    expect(named(/^vehicle-wheels$/)).toBe(4);
+    expect(named(/^car-.*-glass$/)).toBe(0);
+    expect(named(/^vehicle-lamps$/)).toBe(0);
+    agents.dispose();
   });
 });

@@ -2,10 +2,11 @@ import type { RoadDoc, Restoration, RecordPart, ValuePart } from '@world/doc';
 import { type DocChangeKind, type JournalReader, TILE_LOADED } from '@world/changes';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { NetworkBake } from '@world/networkBuild';
+import type { LotPlan } from '@world/lots';
 import { OWNER, tileOfRecord } from '@world/tiles';
 import type { BuildingId } from '@world/buildings/types';
 import { buildingChangesOf, trafficMapOf } from '../agents/trafficBuildings';
-import { archetypeById, type Archetype } from '../vehicles/archetypes';
+import { ARCHETYPES, archetypeById, type Archetype } from '../vehicles/archetypes';
 import type { KerbStop } from '../vehicles/kerbStops';
 import type { PedView, PersonAgeClass } from '../people/view';
 import type { VehicleFrames } from '../pose';
@@ -13,10 +14,10 @@ import type { SignalState } from '../signals/query';
 import type { JunctionAnswer, TrafficCount } from './simAnswers';
 import type { Casualty } from '../people/casualties';
 import type { TileEvent } from '../meso/meso';
-import { FleetGrid, type GroundBox } from './fleetGrid';
+import { type FleetCell, FleetGrid, type GroundBox } from './fleetGrid';
 import {
-  C, H, P, PED_STRIDE, V, VEHICLE_STRIDE, headBase, makeSharedFrames, pedBase, vehicleBase,
-  type FromSim, type SignalLayout, type SimAct, type SimAsk, type SimControls, type SimStats, type ToSim, type TrainState, type Wound,
+  C, H, P, PARKED_STRIDE, PED_STRIDE, PK, V, VEHICLE_STRIDE, headBase, makeSharedFrames, pedBase, vehicleBase,
+  type FromSim, type ParkedChanges, type SignalLayout, type SimAct, type SimAsk, type SimControls, type SimStats, type ToSim, type TrainState, type Wound,
 } from './protocol';
 
 /** THE PAGE'S SIDE OF THE SIMULATION'S WORKER (`simHost.ts`): the map's changes sent, the frame read, the panels' questions asked */
@@ -88,7 +89,8 @@ export class SimClient implements JournalReader {
   /** The diary read up to (what the worker's copy of the map stands at), in the document it is of. */
   private seen = -1;
   private seenDoc: RoadDoc | null = null;
-  private lotKeysSent = 0;
+  /** The lot keys the worker's copy holds, in its order (what was sent): DO NOT send the whole list when some go (a tile let go), only the stretches taken out and the keys put in. */
+  private sentKeys: string[] = [];
   /** The lot store's `keysRewritten` when the keys were last sent: unchanged, only the keys added since go. */
   private lotKeysRewritten = -1;
   /** A frame asked of the worker and not answered: the next waits, its wall time added up meanwhile. */
@@ -131,7 +133,7 @@ export class SimClient implements JournalReader {
   trafficSpeed = 0;
   trafficQueued = 0;
   readonly pedViews: PedView[] = [];
-  /** Moves whenever a vehicle came or went (the casting forgets the people of those gone, `render/agents.ts`). */
+  /** Moves whenever a traffic view came or went, or a parked one went (the casting forgets the people of those gone, `render/agents.ts`); DO NOT move it for a parked car told again. */
   fleet = 0;
   /** Whether a view is one of the cars parked in their bays now. */
   isParked(view: VehicleView): boolean {
@@ -147,12 +149,20 @@ export class SimClient implements JournalReader {
     return out;
   }
 
+  /** The cells of the parked cars the box reaches (grown by the settling cars' step), appended to `out` after clearing it: each with its version, which moves when a parked car comes into it, goes or changes there (`FleetGrid`); DO NOT walk the parked cars of a cell whose version stands. */
+  parkedCellsIn(box: Readonly<GroundBox>, out: FleetCell<VehicleView>[]): FleetCell<VehicleView>[] {
+    out.length = 0;
+    const s = this.parkedSlack;
+    return this.parkedGrid.cellsNear(box.x0 - s, box.y0 - s, box.x1 + s, box.y1 + s, out);
+  }
+
   private addParked(view: VehicleView): void {
     this.parkedById.set(view.id, view);
     this.parkedAt.set(view, this.parked.push(view) - 1);
   }
 
   private dropParked(view: VehicleView): void {
+    this.fleet++;
     this.parkedById.delete(view.id);
     const at = this.parkedAt.get(view);
     if (at !== undefined) {
@@ -164,7 +174,9 @@ export class SimClient implements JournalReader {
     this.settling.delete(view);
   }
 
+  /** Another map: every parked view let go at once. */
   private clearParked(): void {
+    if (this.parked.length) this.fleet++;
     this.parked.length = 0;
     this.parkedById.clear();
     this.parkedAt.clear();
@@ -197,7 +209,10 @@ export class SimClient implements JournalReader {
   /** Called with each frame read (a tick written), and once the worker stands. */
   onTick: (() => void) | null = null;
   private readonly layouts = new Map<NodeId, SignalLayout>();
-  private readonly lights = new Map<NodeId, { stage: string; states: Map<number, SignalState> }>();
+  private readonly lights = new Map<NodeId, { stage: string; readonly states: Map<number, SignalState> }>();
+  /** What the vehicles and the people carry as told this tick, by id (`readTick`): one map each, emptied and filled each tick. */
+  private readonly vehicleRich = new Map<number, Extract<FromSim, { type: 'tick' }>['vehicles'][number][1]>();
+  private readonly pedRich = new Map<number, Extract<FromSim, { type: 'tick' }>['peds'][number][1]>();
   private readonly signalLog: NodeId[] = [];
   private signalBase = 0;
   private signalAll = 0;
@@ -300,6 +315,8 @@ export class SimClient implements JournalReader {
   /** DO NOT let the worker solve again the junctions and ribbons the page has solved: a tile's bake from its worker (`editor/tileStore.ts`), sent as it is put in, for a tile the worker's copy holds. */
   offerBake(key: number, bake: NetworkBake): void {
     if (!this.worker || (this.isActive && !this.held.has(key))) return;
+    // DO NOT post it where the worker reads the tile itself: it reads the tile's network from the store (`SimHost.tileBuildings`), unless the store is behind the page.
+    if (this.workerReadsTiles && !this.storeBehind(key)) return;
     this.send({ type: 'bake', bake });
   }
 
@@ -316,7 +333,8 @@ export class SimClient implements JournalReader {
       const records: Restoration['records'][number][] = [];
       if (active) {
         this.held.add(key);
-        if (bakeOf) this.send({ type: 'bake', bake: bakeOf([...t.nodes, ...t.borrowedNodes], t.segments) });
+        // The page's own solved junctions only where the worker does not read the tile from the store (DO NOT export and post them for a tile it reads).
+        if (bakeOf && !(this.workerReadsTiles && !this.storeBehind(key))) this.send({ type: 'bake', bake: bakeOf([...t.nodes, ...t.borrowedNodes], t.segments) });
         for (const id of [...t.nodes, ...t.borrowedNodes]) records.push({ part: 'nodes', id, value: this.nodeRecord(id) });
         for (const id of t.segments) records.push({ part: 'segments', id, value: recordOf(this.doc, 'segments', id) });
         for (const id of t.lots) records.push({ part: 'lots', id, value: recordOf(this.doc, 'lots', id) });
@@ -331,7 +349,7 @@ export class SimClient implements JournalReader {
         for (const id of t.lots) records.push({ part: 'lots', id, value: undefined });
         // A node stays while a road of a held tile ends on it (the page keeps a borrowed node the same way, `RoadDoc.unloadTile`), sent again without the roads let go.
         for (const id of [...t.nodes, ...t.borrowedNodes]) records.push({ part: 'nodes', id, value: this.usedByHeld(id) ? this.nodeRecord(id) : undefined });
-        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: t.buildings.map((id) => ({ id, value: null })) });
+        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: t.buildings.map((id) => ({ id, ref: null })) });
       }
     }
   }
@@ -429,6 +447,14 @@ export class SimClient implements JournalReader {
     return answer.value ?? null;
   }
 
+  /** The zoning tool's proposed lots, planned in the worker on its copy of the region (`SimHost.lotPlan`): the diary sent first, so it plans the land as the page has it now; null when not now (no worker, a tile's network still read there). */
+  lotPlan(): Promise<LotPlan | null> {
+    if (!this.worker) return Promise.resolve(null);
+    this.sendChanges();
+    const id = this.nextAsk++;
+    return new Promise((done) => { this.pending.set(id, (value) => done((value as LotPlan | null) ?? null)); this.send({ type: 'lotPlan', id }); });
+  }
+
   /** A question answered when the worker has (the green wave). */
   ask(ask: SimAsk): Promise<unknown> {
     const id = this.nextAsk++;
@@ -472,7 +498,7 @@ export class SimClient implements JournalReader {
     // DO NOT read the diary without following it: past 2 x KEPT entries of a kind it let them go, and the whole map was sent again each frame a city was laid out.
     if (this.seenDoc !== this.doc) this.doc.changes.follow(this);
     this.seenDoc = this.doc;
-    this.lotKeysSent = this.doc.lotStore.keys.length;
+    this.sentKeys = this.doc.lotStore.keys.slice();
     this.lotKeysRewritten = this.doc.lotStore.keysRewritten;
   }
 
@@ -538,15 +564,38 @@ export class SimClient implements JournalReader {
     if (keys) {
       const store = this.doc.lotStore, all = store.keys;
       // DO NOT send every key at each lot laid: the city's layout sent the whole list once per lot (O(lots²) copied).
-      if (store.keysRewritten === this.lotKeysRewritten && all.length >= this.lotKeysSent) lists.push({ part: 'lotKeys', start: this.lotKeysSent, remove: 0, items: all.slice(this.lotKeysSent) });
-      else lists.push({ part: 'lotKeys', start: 0, remove: this.lotKeysSent, items: all.slice() });
-      this.lotKeysSent = all.length;
+      const sent = this.sentKeys;
+      if (store.keysRewritten === this.lotKeysRewritten && all.length >= sent.length) {
+        // Only added at the end since: the new tail.
+        const items = all.slice(sent.length);
+        lists.push({ part: 'lotKeys', start: sent.length, remove: 0, items });
+        for (const key of items) sent.push(key);
+      } else lists.push(...this.keyChanges());
       this.lotKeysRewritten = store.keysRewritten;
     }
     this.send({
       type: 'delta', delta: { records, lists, values: [...values].map((part) => ({ part, value: this.doc.valueOf(part) })) },
       buildings: buildingChangesOf(this.doc, buildingList),
     });
+  }
+
+  /** The worker's keys brought to the store's: each stretch no longer there taken out (from the end, so the places before it hold), then the keys it lacks put at its end. */
+  private keyChanges(): Restoration['lists'][number][] {
+    const store = this.doc.lotStore, sent = this.sentKeys;
+    const out: Restoration['lists'][number][] = [];
+    for (let n = sent.length - 1; n >= 0; n--) {
+      if (store.hasKey(sent[n]!)) continue;
+      let m = n;
+      while (m > 0 && !store.hasKey(sent[m - 1]!)) m--;
+      out.push({ part: 'lotKeys', start: m, remove: n - m + 1, items: [] });
+      n = m;
+    }
+    const kept = sent.filter((key) => store.hasKey(key));
+    const held = new Set(kept);
+    const added = store.keys.filter((key) => !held.has(key));
+    if (added.length) out.push({ part: 'lotKeys', start: kept.length, remove: 0, items: added });
+    this.sentKeys = [...kept, ...added];
+    return out;
   }
 
   private receive(message: FromSim): void {
@@ -581,30 +630,17 @@ export class SimClient implements JournalReader {
     this.lastSteps = data[h + H.steps]!;
     this.lastStepMs = data[h + H.stepMs]!;
     // What the vehicles carry, told for those whose changed: no map made a tick none did.
-    const rich = message.vehicles.length ? new Map(message.vehicles) : null;
+    // DO NOT make a map a tick: the tick's own, emptied and filled.
+    const rich = message.vehicles.length ? fillMap(this.vehicleRich, message.vehicles) : null;
     // This tick's stamp (`tick` once read): a view not stamped by it was not in it (DO NOT gather the tick's ids in a set to find them).
     const stamp = this.tick + 1;
-    // The cars parked in bays, as told: come, gone, or the whole list.
-    if (message.parked) {
-      if (message.parked.some((p) => p.whole)) this.clearParked();
-      for (const p of message.parked) {
-        this.fleet++;
-        if (p.gone) { const gone = this.parkedById.get(p.id); if (gone) this.dropParked(gone); continue; }
-        const known = this.parkedById.get(p.id);
-        const view = known ?? newView(p.id);
-        view.archetype = archetypeById(p.archetype);
-        view.color = p.color;
-        setFree(view, p.x, p.y, p.angle, p.x, p.y, p.angle, p.lot);
-        view.v = 0; view.prev.v = 0; view.seats = 0;
-        setFrames(view.frames, p.x, p.y, p.angle, p.x, p.y, p.angle);
-        if (!known) this.addParked(view);
-        this.parkedGrid.place(view);
-      }
-    } else {
+    // The cars parked in bays, as told: come, gone, or every one standing, each applied by its id (DO NOT clear them all and make every view again).
+    if (message.parked) this.applyParked(message.parked, stamp);
+    else {
       // The parked cars that moved last tick and not this one stand where they stopped: DO NOT walk every parked car for them.
       for (const view of this.settling) {
         const f = view.free;
-        if (f && (f.px !== f.x || f.py !== f.y)) { f.px = f.x; f.py = f.y; f.pangle = f.angle; setFrames(view.frames, f.x, f.y, f.angle, f.x, f.y, f.angle); }
+        if (f && (f.px !== f.x || f.py !== f.y)) { f.px = f.x; f.py = f.y; f.pangle = f.angle; setFrames(view.frames, f.x, f.y, f.angle, f.x, f.y, f.angle); this.parkedGrid.touch(view); }
       }
       this.settling.clear();
     }
@@ -620,8 +656,7 @@ export class SimClient implements JournalReader {
       let view = parked ? this.parkedById.get(id) : this.vehicles.get(id);
       if (!view) {
         view = newView(id);
-        this.fleet++;
-        if (parked) this.addParked(view); else this.vehicles.set(id, view);
+        if (parked) this.addParked(view); else { this.vehicles.set(id, view); this.fleet++; }
       }
       const r = rich?.get(id);
       if (r) {
@@ -675,7 +710,7 @@ export class SimClient implements JournalReader {
     }
     this.parkedSlack = parkedSlack;
     // The people: their numbers from the slot, what they carry from the message (kept from the last time it changed).
-    const pedRich = message.peds.length ? new Map(message.peds) : null;
+    const pedRich = message.peds.length ? fillMap(this.pedRich, message.peds) : null;
     const m = data[h + H.peds]!;
     const pb = pedBase(slot);
     this.pedViews.length = 0;
@@ -700,6 +735,13 @@ export class SimClient implements JournalReader {
       const segment = data[at + P.segment]!;
       w.segment = segment < 0 ? undefined : segment as SegmentId;
       w.walking = data[at + P.walking] === 1; w.kerbWait = data[at + P.kerbWait]!; w.rank = data[at + P.rank]!;
+      // A gesture is told once, when it starts: its clock (`t`) kept here from the age it started at (DO NOT have it told each tick for its clock).
+      const gesture = view.gesture;
+      if (gesture) {
+        let from = GESTURE_FROM.get(gesture);
+        if (from === undefined) GESTURE_FROM.set(gesture, from = w.age - gesture.t);
+        gesture.t = w.age - from;
+      }
       this.pedViews.push(view);
       if (view.tickRead !== stamp) { view.tickRead = stamp; pedRead++; }
     }
@@ -723,8 +765,38 @@ export class SimClient implements JournalReader {
       if (message.layout.all) this.signalAll = this.signalBase + this.signalLog.length;
       if (this.signalLog.length > 4096) { this.signalBase += this.signalLog.length; this.signalLog.length = 0; this.signalAll = this.signalBase; }
     }
-    for (const s of message.signals) this.lights.set(s.node, { stage: s.stage, states: new Map(s.states) });
+    for (const s of message.signals) {
+      // A junction's lights written into the map it has (DO NOT make one a junction a tick).
+      const lit = this.lights.get(s.node);
+      if (lit) { lit.stage = s.stage; fillMap(lit.states, s.states); } else this.lights.set(s.node, { stage: s.stage, states: new Map(s.states) });
+    }
     this.onTick?.();
+  }
+
+  /** The parked cars' numbers (`PK`) applied by id: a known view written in place, a new one made, a gone one let go; with `whole`, those not named let go too. */
+  private applyParked(told: ParkedChanges, stamp: number): void {
+    const cars = told.cars;
+    for (let at = 0; at < cars.length; at += PARKED_STRIDE) {
+      const id = cars[at + PK.id]!;
+      const known = this.parkedById.get(id);
+      if (cars[at + PK.gone] === 1) { if (known) this.dropParked(known); continue; }
+      const view = known ?? newView(id);
+      view.archetype = ARCHETYPES[cars[at + PK.archetype]!] ?? archetypeById('');
+      view.color = colourOf(cars[at + PK.color]!);
+      const x = cars[at + PK.x]!, y = cars[at + PK.y]!, angle = cars[at + PK.angle]!, lot = cars[at + PK.lot]!;
+      setFree(view, x, y, angle, x, y, angle, lot < 0 ? null : lot);
+      view.v = 0; view.prev.v = 0; view.seats = 0;
+      setFrames(view.frames, x, y, angle, x, y, angle);
+      view.tickRead = stamp;
+      if (!known) this.addParked(view);
+      this.parkedGrid.place(view);
+    }
+    if (!told.whole) return;
+    // Every car standing was named: those not stamped by this tick are gone (one pass over the list, only when the log was let go).
+    for (let k = this.parked.length - 1; k >= 0; k--) {
+      const view = this.parked[k]!;
+      if (view.tickRead !== stamp) this.dropParked(view);
+    }
   }
 
   private clearViews(): void {
@@ -744,6 +816,24 @@ export class SimClient implements JournalReader {
     this.signalLog.length = 0;
     this.signalAll = this.signalBase;
   }
+}
+
+/** A map emptied and filled with the pairs. */
+function fillMap<K, V>(map: Map<K, V>, pairs: readonly (readonly [K, V])[]): Map<K, V> {
+  map.clear();
+  for (const [k, v] of pairs) map.set(k, v);
+  return map;
+}
+
+/** Each gesture told, by the age (`PedView.age`) its clock started at. */
+const GESTURE_FROM = new WeakMap<object, number>();
+
+/** A colour as the worker numbers it (0xrrggbb), as its palette writes it; the strings kept, one per colour. */
+const COLOURS = new Map<number, string>();
+function colourOf(n: number): string {
+  let c = COLOURS.get(n);
+  if (c === undefined) COLOURS.set(n, c = `#${n.toString(16).padStart(6, '0')}`);
+  return c;
 }
 
 function newView(id: number): VehicleView {

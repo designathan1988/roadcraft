@@ -1,9 +1,10 @@
-import { readDerivedSome } from '@core/derivedCache';
+import { readDerivedSome, writeDerivedMany } from '@core/derivedCache';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
+import { type LotPlan, planLots } from '@world/lots';
 import type { NodeId } from '@world/ids';
 import { SimWorld, issuesSince } from '../world';
-import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents/trafficBuildings';
+import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap, trafficChangesOf } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
 import { Meso, type TileEvent } from '../meso/meso';
 import { MesoMemory } from '../meso/memory';
@@ -20,12 +21,13 @@ import { WheelOdometer, indicatorSide, pathCurvature } from '../vehicleSignals';
 import { signalStateFor } from '../signals/query';
 import type { SignalController } from '../signals/fsm';
 import { strandVehicle, type Vehicle } from '../vehicles/state';
+import { ARCHETYPES } from '../vehicles/archetypes';
 import { answer } from './simAnswers';
 import { type Casualty, impactCasualties, takeWounds } from '../people/casualties';
 import type { PedView } from '../people/view';
 import {
   C, H, MAX_PEDS, MAX_VEHICLES, P, PED_STRIDE, V, VEHICLE_STRIDE, headBase, pedBase, vehicleBase,
-  type FromSim, type ParkedCar, type SimStats, type PedRich, type SignalLayout, type SignalLights, type SimAct, type SimAsk, type SimControls, type ToSim, type VehicleRich,
+  PARKED_STRIDE, PK, type FromSim, type ParkedChanges, type SimStats, type PedRich, type SignalLayout, type SignalLights, type SimAct, type SimAsk, type SimControls, type ToSim, type VehicleRich,
 } from './protocol';
 
 /** THE SIMULATION IN ITS OWN THREAD: the page sends the map's changes and the player's controls, the worker steps the city */
@@ -43,6 +45,8 @@ export class SimHost {
   private reader: TileReader | null = null;
   private readonly tileReads = new Map<number, number>();
   private readSerial = 0;
+  /** Tiles' networks being read from the store (`tileBuildings`): the network is not built again until they land, so their junctions are taken, not solved here. */
+  private networkReads = 0;
   private sim: SimWorld | null = null;
   /** The meso traffic and its micro window: made before the world, so a window told early is kept for it. */
   private readonly meso = new Meso();
@@ -72,10 +76,12 @@ export class SimHost {
   private parkedSerial = -1;
   private issuesSent = 0;
   private measuredDue = 0;
+  /** Where the conflict zones measured are kept for the next session (`init`); null: not kept. */
+  private zonesPrefix: string | null = null;
   /** The casualties already told (the page keeps their clocks). */
   private readonly casualtiesSent = new WeakSet<Casualty>();
 
-  constructor(private readonly post: (message: FromSim) => void) {}
+  constructor(private readonly post: (message: FromSim, transfer?: Transferable[]) => void) {}
 
   async handle(message: ToSim): Promise<void> {
     switch (message.type) {
@@ -99,7 +105,7 @@ export class SimHost {
         return;
       case 'delta':
         this.doc.restore(message.delta);
-        this.buildings.apply(message.buildings);
+        this.buildings.apply(trafficChangesOf(message.buildings));
         return;
       case 'bake': this.net.offerBake(message.bake); return;
       case 'reset': this.sim?.reset(); this.sim?.ambient.reset(this.sim); return;
@@ -110,6 +116,7 @@ export class SimHost {
       case 'frame': this.frame(message.wall, message.hold, message.controls); return;
       case 'act': this.post({ type: 'acted', id: message.id, result: this.act(message.act) }); return;
       case 'ask': this.post({ type: 'answer', id: message.id, answer: this.ask(message.ask) }); return;
+      case 'lotPlan': this.post({ type: 'answer', id: message.id, answer: this.lotPlan() }); return;
     }
   }
 
@@ -131,6 +138,7 @@ export class SimHost {
     sim.conflicts.seed(zones);
     // The zones kept in earlier sessions read by the pairs a build needs (`ConflictIndex.lookup`), never all at the start.
     if (prefix) sim.conflicts.lookup = (keys) => readDerivedSome<Float64Array | null>(prefix, keys);
+    this.zonesPrefix = prefix;
     sim.usePedestrianEngine((await import('../agents/walk')).createAgentWalkEngine());
     sim.followCity = true;
     sim.ambient.enabled = true;
@@ -164,6 +172,13 @@ export class SimHost {
       return null;
     }) : Promise.resolve(null);
     if (sim && reader.bays) tileBaysWanted(sim, key, read);
+    // Its junctions and ribbons as baked with it, read from the store (DO NOT have the page post them: `SimClient.offerBake`); the network waits for them (`frame`).
+    if (reader.network) {
+      this.networkReads++;
+      reader.network(key).then((bake) => { if (bake && this.tileReads.get(key) === read) this.net.offerBake(bake); }, (error: unknown) => {
+        console.warn(`[sim] tile ${key}'s network could not be read from the store: solved here`, error);
+      }).finally(() => { this.networkReads--; });
+    }
     // Its traffic section alone, baked where the tile was written (`sim/tileSections.ts`): DO NOT parse the whole tile here a second time.
     Promise.all([reader.traffic(key), bays]).then(([traffic, baked]) => {
       // The bays offered before the buildings are put: their lots take them at the next look (`parking.ts` lookAtLot).
@@ -205,16 +220,21 @@ export class SimHost {
     sim.demandMultiplier = controls.demandMultiplier;
     if (controls.focus) sim.focus = controls.focus;
     this.governor.setMax(controls.maxShare);
-    if (this.net.revision !== this.doc.revision) this.net.rebuild();
-    let held = hold;
-    if (this.topology.step(sim, this.net.trafficRevision, false)) held = true;
-    else this.topology.stepWindow(sim, this.net.trafficRevision);
+    // Not while a tile's network is being read: its junctions would be solved here, then handed.
+    if (this.net.revision !== this.doc.revision && this.networkReads === 0) this.net.rebuild();
+    const held = hold;
+    // DO NOT stop the clock while a tile's topology is prepared (its lanes, turns and conflict pairs, on the workers): the city runs on the graph it has meanwhile, and takes the new one when it is ready.
+    const catching = this.topology.step(sim, this.net.trafficRevision, false);
+    if (!catching) this.topology.stepWindow(sim, this.net.trafficRevision);
+    sim.topologyDeferred = catching;
     let alpha = 1;
     if (!held) {
       sim.walkwaysNow();
       laneGrid(sim);
+      const topology = sim.topologyRevision;
       alpha = sim.clock.advance(wall, () => step(sim, { traffic: controls.traffic, pedestrians: controls.pedestrians }), STEP_BUDGET_MS);
-      sim.populationShare = this.governor.feed(sim.clock.lastSteps, sim.clock.lastStepMs, performance.now() / 1000, sim.vehicles.size, sim.pedViews.length);
+      // DO NOT count a frame whose steps built the topology again (a tile came or went): walking the city thinned its streets to 30%.
+      if (sim.topologyRevision === topology) sim.populationShare = this.governor.feed(sim.clock.lastSteps, sim.clock.lastStepMs, performance.now() / 1000, sim.vehicles.size, sim.pedViews.length);
     }
     // The blows' casualties aged by the wall time (the page keeps its own clocks of those it was told).
     impactCasualties(sim, wall);
@@ -292,11 +312,12 @@ export class SimHost {
     data[h + H.tick] = ++this.tick; data[h + H.time] = sim.clock.time; data[h + H.vehicles] = n; data[h + H.peds] = m;
     data[h + H.alpha] = alpha; data[h + H.steps] = sim.clock.lastSteps; data[h + H.stepMs] = sim.clock.lastStepMs; data[h + H.minutes] = sim.city.minutes(sim);
     Atomics.store(control, C.latest, slot);
+    const parked = this.parked();
     this.post({
       type: 'tick', slot, vehicles, peds, ...this.signals(), trains: sim.city.transit.trains().map((t) => ({ colour: t.colour, metro: t.metro, cars: t.cars })),
-      parked: this.parked(), stats: this.stats(), wounds: takeWounds(sim),
+      parked, stats: this.stats(), wounds: takeWounds(sim),
       casualties: impactCasualties(sim, 0).filter((c) => !this.casualtiesSent.has(c) && (this.casualtiesSent.add(c), true)),
-    });
+    }, parked ? [parked.cars.buffer] : undefined);
   }
 
   /** The junctions whose heads moved (the signals' log) and those whose lights changed since the last frame. */
@@ -329,7 +350,8 @@ export class SimHost {
     for (const list of [log.nodes, stepped]) {
       for (const node of list) {
         const controller = sim.controller(node);
-        if (controller) tell(node, controller);
+        // A junction whose control went (its tile let go, its roads gone): its lights forgotten with it.
+        if (controller) tell(node, controller); else this.lightsSent.delete(node);
       }
     }
     return { layout, signals };
@@ -346,20 +368,27 @@ export class SimHost {
     return id;
   }
 
-  /** The cars come into a bay or gone from one since the last frame; null when nothing changed (all, when the log was forgotten). */
-  private parked(): ParkedCar[] | null {
+  /** The cars come into a bay or gone from one since the last frame, each once as it stands now; null when nothing changed (every car standing, when the log was let go for this reader). */
+  private parked(): ParkedChanges | null {
     const sim = this.sim!;
-    const changes = sim.ambient.parkedSince(this.parkedSerial);
+    const changes = sim.ambient.parkedSince(this.parkedSerial, this);
     const serial = sim.ambient.parkedSerialNow();
     if (changes !== null && changes.length === 0) return null;
     this.parkedSerial = serial;
-    const all = changes === null;
-    const cars = all ? sim.ambient.parked : changes.map((c) => c.car);
-    return cars.map((car): ParkedCar => {
-      const standing = all || sim.ambient.isParked(car);
-      const f = car.free;
-      return { id: car.id, archetype: car.archetype.id, color: car.color, x: f?.x ?? 0, y: f?.y ?? 0, angle: f?.angle ?? 0, lot: f?.lot ?? null, gone: !standing || !f, whole: all };
+    const whole = changes === null;
+    // DO NOT tell a car once per entry: a bay's source stood again logs each of its cars out and in.
+    const cars = whole ? sim.ambient.parked : [...new Set(changes.map((c) => c.car))];
+    const out = new Float64Array(cars.length * PARKED_STRIDE);
+    cars.forEach((car, k) => {
+      const at = k * PARKED_STRIDE, f = car.free;
+      out[at + PK.id] = car.id;
+      out[at + PK.gone] = (whole || sim.ambient.isParked(car)) && f ? 0 : 1;
+      out[at + PK.x] = f?.x ?? 0; out[at + PK.y] = f?.y ?? 0; out[at + PK.angle] = f?.angle ?? 0;
+      out[at + PK.lot] = f?.lot ?? -1;
+      out[at + PK.archetype] = archetypeIndex(car.archetype.id);
+      out[at + PK.color] = parseInt(car.color.slice(1), 16);
     });
+    return { whole, cars: out };
   }
 
   private stats(): SimStats {
@@ -367,7 +396,9 @@ export class SimHost {
     // The issues reported since the last frame, the last of them still kept (the list keeps 512).
     const issues = issuesSince(sim, this.issuesSent).map((i) => ({ code: i.code, subject: String(i.subject), detail: String(i.detail), tick: i.tick }));
     this.issuesSent = sim.issuesReported;
-    const measured = ++this.measuredDue % 300 === 0 ? [...sim.conflicts.takeMeasured()] : [];
+    // The zones measured since kept for the next session from here, as the conflicts' workers keep theirs: DO NOT pass them through the page to the store.
+    if (++this.measuredDue % 300 === 0 && this.zonesPrefix) writeDerivedMany(this.zonesPrefix, sim.conflicts.takeMeasured());
+    const measured: SimStats['measured'] = [];
     return {
       vehicles: sim.vehicles.size, people: sim.pedViews.length, completedTrips: sim.completedTrips, entryDemandLost: sim.entryDemandLost,
       controllers: sim.controllers.size, lotsMoving: sim.city.lots.moving(), topologyRevision: sim.topologyRevision, issues,
@@ -407,6 +438,14 @@ export class SimHost {
         return n;
       }
     }
+  }
+
+  /** THE ZONING TOOL'S PROPOSAL (`editor/lotTool.ts`): the land along the streets cut into lots on this copy of the region, which the page's diary keeps as the page has it (sent before the question, `SimClient.lotPlan`) - planned again only where the roads and the lots changed (`world/lots.ts` LotPlanner, one for this network), DO NOT plan it on the page. Null while a tile's network is being read (its junctions would be solved here): asked again. */
+  private lotPlan(): LotPlan | null {
+    if (!this.sim || this.networkReads > 0) return null;
+    // Brought up to the diary sent before the question (nothing to do when the frame built it: the build reads what changed).
+    this.net.rebuild();
+    return planLots(this.doc, this.net);
   }
 
   /** The panels' questions, answered off the simulation as it stands (`simAnswers.ts`). */
@@ -454,7 +493,14 @@ function pedDiffers(p: PedView, key: readonly unknown[]): boolean {
   return false;
 }
 
+/** DO NOT copy it a second time: posted in the same call (`publish`), the message copies it. */
 function pedRich(p: PedView): PedRich {
   const { id: _id, x: _x, y: _y, heading: _h, prev: _p, v: _v, turnV: _t, age: _a, segment: _s, walking: _w, kerbWait: _k, rank: _r, ...rich } = p;
-  return structuredClone(rich);
+  return rich;
+}
+
+/** Each kind of vehicle's place in `ARCHETYPES`, as the parked cars' numbers carry it (`PK.archetype`). */
+const ARCHETYPE_AT = new Map(ARCHETYPES.map((a, k) => [a.id, k]));
+function archetypeIndex(id: string): number {
+  return ARCHETYPE_AT.get(id) ?? 1;
 }

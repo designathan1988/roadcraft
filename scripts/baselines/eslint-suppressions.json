@@ -665,17 +665,9 @@
       "count": 1
     }
   },
-  "src/ui/roads/catalogPanel.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/ui/roads/connectorPanel.ts": {
     "roadcraft/no-global-revision": {
       "count": 1
-    },
-    "roadcraft/no-module-state": {
-      "count": 2
     }
   },
   "src/ui/roads/cutWalls.ts": {
@@ -722,11 +714,6 @@
       "count": 1
     },
     "roadcraft/no-silent-catch": {
-      "count": 1
-    }
-  },
-  "src/ui/roads/profileSwatch.ts": {
-    "roadcraft/no-module-state": {
       "count": 1
     }
   },

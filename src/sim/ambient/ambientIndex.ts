@@ -47,6 +47,7 @@ const WALL_SLACK = m(0.01);
 
 /** The buildings' solid rings in a fixed grid, kept by the diary: a sight line asks only the cells it crosses. */
 export class SightWalls {
+  /** DO NOT follow the diary from here (`JournalCursor`): a reader that stops reading (no view to look through) keeps every entry after it for ever. One entry a tile (`TrafficBuildingTable.apply`) keeps it within what the diary holds. */
   private serial = -1;
   private readonly byBuilding = new Map<number, Wall[]>();
   private readonly cells = new Map<number, Set<Wall>>();
@@ -170,6 +171,7 @@ const MIX_SLACK = m(0.001);
 
 /** How many buildings of each kind (`demand.ts` kindOf) stand where */
 export class BuildingMix {
+  /** DO NOT follow the diary from here (`JournalCursor`): a reader that stops reading (no view to look through) keeps every entry after it for ever. One entry a tile (`TrafficBuildingTable.apply`) keeps it within what the diary holds. */
   private serial = -1;
   private readonly byBuilding = new Map<number, Filed>();
   private readonly cells = new Map<number, { counts: Counts; members: Set<Filed> }>();

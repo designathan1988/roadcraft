@@ -3,7 +3,7 @@ import { type CatalogCategory, CATALOG_CATEGORIES, type CatalogRoad, catalogRoad
 import { type RoadProfileSpec, profileRoad, profileWidth, sameProfile } from '@world/roads/profile';
 import type { RoadTemplate } from '@world/roads/templates';
 import { UNITS_PER_METER } from '@world/units';
-import { plural, t } from '../i18n';
+import { language, plural, t } from '../i18n';
 import { metresText } from './crossSection';
 import { profileSwatch } from './profileSwatch';
 import { type DrawProfile, drawProfile, setDrawProfile } from './drawProfile';
@@ -22,7 +22,8 @@ export interface CatalogHost {
   readonly refresh: () => void;
 }
 
-let category: CatalogCategory | null = null;
+/** The tab shown and the strip last built. */
+const strip: { category: CatalogCategory | null; built: BuiltStrip | null } = { category: null, built: null };
 
 const nameOf = (r: RoadTemplate): string => (r.nameKey ? t(r.nameKey) : r.name ?? r.id);
 const sameRoad = (a: { type: number; profile: RoadProfileSpec }, b: { type: number; profile: RoadProfileSpec }): boolean =>
@@ -48,12 +49,35 @@ function pickRoad(road: RoadTemplate, host: CatalogHost): void {
   setDrawProfile(profile);
 }
 
+/** The strip as last built and what it was built from: the same inputs keep it, only the picked card changes. */
+interface BuiltStrip {
+  readonly root: HTMLElement;
+  readonly language: string;
+  readonly category: CatalogCategory;
+  readonly saved: readonly RoadTemplate[];
+  readonly loose: DrawProfile | null;
+  readonly cards: readonly { readonly id: string; readonly card: HTMLElement; readonly main: HTMLButtonElement; readonly road: CatalogRoad }[];
+  /** Each shown card's plan-view picture, by profile and scale: only the cards shown now are kept. */
+  readonly swatches: ReadonlyMap<string, string>;
+  host: CatalogHost;
+}
+
 export function catalogStrip(host: CatalogHost): HTMLElement {
+  const picked = pickedRoad(host);
+  const saved = savedTemplates();
+  strip.category ??= picked?.category ?? 'streets';
+  const category = strip.category;
+  // A profile in hand that no card is (an edited one, or one picked from a road with the eyedropper, V8)
+  const loose = picked ? null : drawProfile();
+  const kept = strip.built;
+  if (kept && kept.language === language() && kept.category === category && kept.saved === saved && kept.loose === loose) {
+    kept.host = host;
+    markPicked(kept, loose ? 'drawProfile' : picked?.id ?? null);
+    return kept.root;
+  }
+  const roads = allCatalogRoads();
   const root = document.createElement('div');
   root.className = 'rc-catalog';
-  const picked = pickedRoad(host);
-  const roads = allCatalogRoads();
-  category ??= picked?.category ?? 'streets';
 
   const tabs = document.createElement('div');
   tabs.className = 'rc-tabs';
@@ -69,7 +93,7 @@ export function catalogStrip(host: CatalogHost): HTMLElement {
     b.innerHTML = '<span></span><em></em>';
     b.querySelector('span')!.textContent = t(`catalog.cat.${c}`);
     b.querySelector('em')!.textContent = String(count);
-    b.onclick = () => { category = c; host.refresh(); };
+    b.onclick = () => { strip.category = c; built.host.refresh(); };
     tabs.append(b);
   }
   root.append(tabs);
@@ -77,11 +101,7 @@ export function catalogStrip(host: CatalogHost): HTMLElement {
   const grid = document.createElement('div');
   grid.className = 'rc-cards';
   const shown = roads.filter((r) => r.category === category);
-  // A profile in hand that no card is (an edited one, or one picked from a road with the eyedropper, V8)
-  const loose = drawProfile();
-  const looseRoad: CatalogRoad | null = loose && !picked
-    ? { id: 'drawProfile', name: loose.name, category, type: loose.type, profile: loose.profile } : null;
-  if (looseRoad) shown.unshift(looseRoad);
+  if (loose) shown.unshift({ id: 'drawProfile', name: loose.name, category, type: loose.type, profile: loose.profile });
   // One scale for every tile: the widest road offered.
   const span = Math.max(...roads.map((r) => r.profile.elements.reduce((sum, e) => sum + e.width, 0)));
   if (!shown.length) {
@@ -90,16 +110,16 @@ export function catalogStrip(host: CatalogHost): HTMLElement {
     empty.textContent = t(category === 'mine' ? 'catalog.mineEmpty' : 'catalog.empty');
     grid.append(empty);
   }
+  const swatches = new Map<string, string>();
+  const cards: BuiltStrip['cards'][number][] = [];
   for (const road of shown) {
-    const on = picked?.id === road.id || road === looseRoad;
     const rt = profileRoad(road.profile, road.type);
     const card = document.createElement('div');
-    card.className = `rc-card${on ? ' on' : ''}`;
+    card.className = 'rc-card';
     const main = document.createElement('button');
     main.type = 'button';
     main.className = 'rc-card-main';
     main.dataset['road'] = road.id;
-    main.setAttribute('aria-pressed', String(on));
     const lanes = road.profile.elements.filter((e) => e.kind === 'lane').length;
     const oneWay = !road.profile.elements.some((e) => e.kind === 'lane' && e.dir === 'backward') ||
       !road.profile.elements.some((e) => e.kind === 'lane' && e.dir === 'forward');
@@ -107,40 +127,60 @@ export function catalogStrip(host: CatalogHost): HTMLElement {
       name: nameOf(road), lanes: plural('palette.lanes.count', lanes), way: t(oneWay ? 'catalog.oneWay' : 'catalog.twoWay'), speed: road.profile.speedKmh,
     });
     main.innerHTML = '<img class="rc-art" alt="" draggable="false"><span class="rc-name"></span><span class="rc-meta"></span>';
-    (main.querySelector('.rc-art') as HTMLImageElement).src = profileSwatch(road.profile, span, 124, 64);
+    const swatchKey = `${JSON.stringify(road.profile)}|${span}`;
+    const swatch = swatches.get(swatchKey) ?? kept?.swatches.get(swatchKey) ?? profileSwatch(road.profile, span, 124, 64);
+    swatches.set(swatchKey, swatch);
+    (main.querySelector('.rc-art') as HTMLImageElement).src = swatch;
     main.querySelector('.rc-name')!.textContent = nameOf(road);
     main.querySelector('.rc-meta')!.textContent = t('catalog.meta', {
       width: metresText(profileWidth(road.profile)),
       price: formatMoney(Math.round(pricePerUnit(rt) * UNITS_PER_METER)),
     });
     main.onclick = () => {
-      pickRoad(road, host);
+      pickRoad(road, built.host);
       if (profileEditorOpen()) closeProfileEditor();
-      host.refresh();
+      built.host.refresh();
     };
     card.append(main);
-    if (on) {
-      const custom = document.createElement('button');
-      custom.type = 'button';
-      custom.className = 'rc-custom';
-      custom.dataset['action'] = 'customise';
-      custom.title = t('catalog.customise');
-      custom.setAttribute('aria-label', t('catalog.customise'));
-      custom.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 11.5V13h1.5l6.9-6.9-1.5-1.5L3 11.5zm9.7-6.2a.8.8 0 000-1.1l-.9-.9a.8.8 0 00-1.1 0l-.8.8 1.5 1.5.8-.8z" fill="currentColor"/></svg>';
-      custom.onclick = () => {
-        openProfileEditor({
-          title: t('profileEditor.newRoads'),
-          profile: road.profile,
-          type: road.type,
-          docked: true,
-          drawWith: (name, profile, type) => { host.pickClass(type); setDrawProfile({ name, profile, type }); host.refresh(); },
-          onSaved: () => { category = 'mine'; host.refresh(); },
-        });
-      };
-      card.append(custom);
-    }
     grid.append(card);
+    cards.push({ id: road.id, card, main, road });
   }
   root.append(grid);
+  const built: BuiltStrip = { root, language: language(), category, saved, loose, cards, swatches, host };
+  strip.built = built;
+  markPicked(built, loose ? 'drawProfile' : picked?.id ?? null);
   return root;
+}
+
+/** Marks the picked card (and gives it "Customise..."), the others plain: the strip is not built again for a pick. */
+function markPicked(built: BuiltStrip, id: string | null): void {
+  for (const { id: cardId, card, main, road } of built.cards) {
+    const on = cardId === id;
+    card.classList.toggle('on', on);
+    main.setAttribute('aria-pressed', String(on));
+    const custom = card.querySelector('.rc-custom');
+    if (on && !custom) card.append(customButton(built, road));
+    else if (!on) custom?.remove();
+  }
+}
+
+function customButton(built: BuiltStrip, road: CatalogRoad): HTMLButtonElement {
+  const custom = document.createElement('button');
+  custom.type = 'button';
+  custom.className = 'rc-custom';
+  custom.dataset['action'] = 'customise';
+  custom.title = t('catalog.customise');
+  custom.setAttribute('aria-label', t('catalog.customise'));
+  custom.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 11.5V13h1.5l6.9-6.9-1.5-1.5L3 11.5zm9.7-6.2a.8.8 0 000-1.1l-.9-.9a.8.8 0 00-1.1 0l-.8.8 1.5 1.5.8-.8z" fill="currentColor"/></svg>';
+  custom.onclick = () => {
+    openProfileEditor({
+      title: t('profileEditor.newRoads'),
+      profile: road.profile,
+      type: road.type,
+      docked: true,
+      drawWith: (name, profile, type) => { built.host.pickClass(type); setDrawProfile({ name, profile, type }); built.host.refresh(); },
+      onSaved: () => { strip.category = 'mine'; built.host.refresh(); },
+    });
+  };
+  return custom;
 }

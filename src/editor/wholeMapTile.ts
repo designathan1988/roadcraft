@@ -9,7 +9,7 @@ import { OWNER, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/til
 import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 import { type Building, type BuildingId, generatedBuiltAt } from '@world/buildings/types';
-import { gatesOf } from '@world/parkingLayout';
+import { gatesOf } from '@world/buildingGates';
 import { asSegmentId } from '@world/ids';
 import type { SerializedDoc } from '@world/doc';
 import { type TilePlan, planTile } from '@world/cityGen/tile';
@@ -18,7 +18,7 @@ import { greenCity, layCity, widenCityFootways, zoneCity } from './cityGenerator
 import { type GrownChoice, LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
 import { packGrown } from '@world/growth/grownRows';
 
-/** ONE TILE OF THE WORLD BUILT (`world/cityGen/tile.ts`), in a worker of the job pool (`cityTile.worker.ts`): the steps a generated city takes on the page (`main.ts` `generateCity`) - its roads, footways, lots, squares, power lines, furniture, names, zones and every building grown (`growOnLot`, as `growthReplica.ts` grows them) - taken here on the tile alone, on the flat ground a new map has. Handed back as the streamed world's tile (`buildStreamTile`, `world/tiles.ts`). A pure function of the options and the tile's place: the same tile comes out the same in any worker, at any time. */
+/** ONE TILE OF THE WORLD BUILT (`world/cityGen/tile.ts`), in a worker of the job pool (`cityTile.worker.ts`): the steps a generated city takes - its roads, footways, lots, squares, power lines, furniture, names, zones and every building grown (`growOnLot`, as `growthReplica.ts` grows them) - taken here on the tile alone, on the flat ground a new map has. Handed back as the streamed world's tile (`buildStreamTile`, `world/tiles.ts`). A pure function of the options and the tile's place: the same tile comes out the same in any worker, at any time. */
 
 /** The seed the buildings' streams are drawn from, as the page grows a city (`main.ts` `askCity`). */
 const GROWTH_SEED = 0x5eed;
@@ -30,10 +30,12 @@ function keyPlace(key: string): Vec2 | null {
 }
 
 /** Tile (i, j) built whole: its plan, its document as a saved map holds it (ids the document's own; the neighbours' gate pieces and border corners in it too) and what makes each building grown again (`replayOnLot`, by the document's id), on the flat ground it was grown on. */
-export function buildTileMap(options: WholeMapOptions, i: number, j: number): { tile: TilePlan; data: SerializedDoc; choices: Map<number, GrownChoice>; ms: number } {
+export function buildTileMap(options: WholeMapOptions, i: number, j: number, internShared = false): { tile: TilePlan; data: SerializedDoc; choices: Map<number, GrownChoice>; ms: number } {
   const started = performance.now();
   const tile = planTile(planWholeMap(options), i, j);
   const doc = layCity(tile.city);
+  // Read once as text (`toJSON`) and thrown away: its buildings' members are not shared with each other here (`BuildingStore.internShared`), the tile's reader interns them.
+  doc.buildings.internShared = internShared;
   widenCityFootways(doc);
   const net = new Network(doc);
   net.rebuild();

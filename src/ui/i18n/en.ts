@@ -829,6 +829,8 @@ export const EN: Dictionary = {
   'hint.undone': 'Undone',
   'hint.redone': 'Redone',
   'hint.saved': 'Map saved to a file',
+  'hint.tileFull': 'This part of the map holds as many as it can: nothing was added, nothing was taken away',
+  'hint.saveBehind': 'Some changes could not be written yet: no file was made, try again in a moment',
   'hint.opened': 'Map opened',
   'hint.worldReadOnly': 'This city is open in another window: here it can be seen, changes are not saved',
   'hint.openFailed': 'That file is not a Roadcraft map, or it is damaged. Nothing was changed',
@@ -867,7 +869,6 @@ export const EN: Dictionary = {
   'health.copyFailed': 'Could not copy: the browser refused the clipboard',
   'health.system.panels': 'panels',
   'health.system.camera': 'camera',
-  'health.system.growCity': 'city growth',
   'health.system.topology': 'topology',
   'health.system.simulation': 'simulation',
   'health.system.roadNetwork': 'road network',
@@ -927,6 +928,7 @@ export const EN: Dictionary = {
   'health.context.opening': 'opening the game',
   'status.impossible.one': '1 node cannot be built',
   'status.impossible.other': '{count} nodes cannot be built',
+  'status.region': 'Counted in the region round the camera, not in the whole city',
 
   // ---------------------------------------------------------------- quality
   'quality.auto': 'Automatic',
@@ -1766,7 +1768,6 @@ export const EN: Dictionary = {
   'hint.transit.trackOnRoad': 'A train track crosses streets but does not run down them (use the metro under them).',
   'hint.transit.lineShort': 'A line needs at least two stops.',
   'hint.transit.lineMade': 'Line made.',
-  'city.building': 'Building the city: {done} of {total} lots',
   'map.loading': 'Loading the map…',
   'map.generating': 'Generating the city… {done} of {total} parts',
 };

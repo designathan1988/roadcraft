@@ -23,6 +23,15 @@ describe('camera solids', () => {
     expect(solids.floorAt(c.x, c.y)).toBeGreaterThan(10 + buildingHeight(b) - 1e-6);
   });
 
+  it('visits each volume once, though it is filed in every cell it touches', () => {
+    const seen: number[] = [];
+    solids.forEachIn(c.x - m(200), c.y - m(200), c.x + m(200), c.y + m(200), (_bx, _by, _cos, _sin, lx0, ly0) => { seen.push(lx0 * 1e3 + ly0); });
+    expect(seen.length).toBe(b.volumes.filter((v) => !v.open).length);
+    const both: number[] = [];
+    solids.forEachInAny([[c.x - m(5), c.y - m(5), c.x, c.y], [c.x, c.y, c.x + m(5), c.y + m(5)]], () => { both.push(1); });
+    expect(both.length).toBeLessThanOrEqual(seen.length);
+  });
+
   it('asks nothing far from every building', () => {
     expect(solids.floorAt(c.x + m(300), c.y)).toBe(-Infinity);
   });

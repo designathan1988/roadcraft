@@ -1,6 +1,6 @@
 import { Box3, BufferAttribute, BufferGeometry, type Frustum, Group, Mesh, Sphere, Vector3 } from 'three';
 import { gpuOnly } from '../mesh/gpuOnly';
-import { cancelWarm, warmLooseAhead } from '../uploads';
+import { cancelWarm, meshBytes, warmLooseAhead } from '../uploads';
 import { type GpuClass, geometryCost, gpuLedger } from '../gpuLedger';
 import { m } from '@world/units';
 import { type CellMass, MASS_FACADE, MASS_GRID } from './cellArrays';
@@ -106,6 +106,10 @@ export interface MassCells {
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, allNear: boolean | ReadonlySet<string>, reach?: number, view?: Frustum | null): void;
   /** DO NOT draw more detail than the budget holds (the brief: detail residency capped in bytes, falling back to L1): the farthest near cells fall back to their facade level, then to their masses, until `bytesOf` the cells left near fits `budget`; those forced near stay */
   cap(eyeX: number, eyeY: number, budget: number, bytesOf: (key: string, fine: boolean) => number, forced: boolean | ReadonlySet<string>): void;
+  /** The bytes a cell's masses hold on the GPU (0 before they came): what a level of it never landed is reckoned at (`layer.ts` capNow). */
+  massBytes(key: string): number;
+  /** A far sun cascade being drawn (`layer.ts` castInto): the cells drawn in detail whose masses can stand for them shown for the pass, their keys given (the layer leaves their detail out); false: as they are drawn, none given. */
+  shadowMasses(on: boolean): string[];
   /** Whether a cell is drawn near; a cell with no mass (lawns only), or none known, always is. */
   near(key: string): boolean;
   /** Whether a cell is drawn at full detail (L0) rather than its facade level (L1); a cell not near is not. */
@@ -189,7 +193,9 @@ export function cellMesh(mass: CellMass, kit: BuildingKit, name = 'building-mass
 }
 
 /** `released`: a cell's or a level's masses let go, neither drawn nor wanted (or refused as they came): to be asked again once wanted (`layer.ts`). */
-export function createMassCells(kit: BuildingKit, cellSize: number, released: (key: string) => void = () => {}): MassCells {
+/** `current`: whether a tile's or plate's masses are of its buildings as they are now (`MassLevels.outdated`): a level made before they changed is never coarsened into. */
+export function createMassCells(kit: BuildingKit, cellSize: number, released: (key: string) => void = () => {},
+  current: (levelKey: string) => boolean = () => true): MassCells {
   const group = new Group();
   group.name = 'buildings-far';
   group.matrixAutoUpdate = false;
@@ -476,8 +482,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       waiting = 0;
       for (const plate of plates.values()) {
         const plateWhole = coarseWanted(plate);
-        const plateDrawn = plateWhole && plate.mesh !== null;
-        if (plateWhole && !plate.mesh) waiting++;
+        // DO NOT coarsen into a plate made before its buildings changed (one drawn already may stay: nothing better is under it): its cells' masses were let go under a mesh without them, and the far tree had let their tiles go (the map's centre empty, conf20/03-map, 2026-10-17).
+        const plateDrawn = plateWhole && plate.mesh !== null && (plate.coarse || current(plate.key));
+        if (plateWhole && !plateDrawn) waiting++;
         const plateHeld = forcedLevels.has(plate.key) || allNear === true;
         let covered = true;
         tileState.length = 0;
@@ -487,15 +494,15 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
           if (plateDrawn) { tileState.push({ tile, coarse: false }); setWanted(tile, false); setExposed(tile, false); continue; }
           setWanted(tile, true);
           const tileWhole = coarseWanted(tile);
-          const tileDrawn = tileWhole && tile.mesh !== null;
-          if (tileWhole && !tile.mesh) waiting++;
+          const tileDrawn = tileWhole && tile.mesh !== null && (tile.coarse || current(key));
+          if (tileWhole && !tileDrawn) waiting++;
           // Refining from a tile drawn: it stands until its cells' masses come (refinement without a hole).
           const hold = !tileWhole && tile.coarse && tile.mesh !== null && !forcedLevels.has(key) && allNear !== true && !cellsLanded(tile);
           if (hold) waiting++;
           if (!tileDrawn && !hold && plate.coarse && !cellsLanded(tile)) covered = false;
           tileState.push({ tile, coarse: tileDrawn || hold });
           // Wanted whole and not come: its cells stay as they are (kept if held, not asked if not: coarsening without a hole).
-          setExposed(tile, tileWhole && !tile.mesh ? tile.exposed : !tileDrawn);
+          setExposed(tile, tileWhole && !tileDrawn ? tile.exposed : !tileDrawn);
         }
         // Refining from the plate drawn: it stands until every tile under it is drawn or has its cells.
         const plateStays = !plateWhole && plate.coarse && plate.mesh !== null && !plateHeld && !covered;
@@ -551,28 +558,62 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     cap(eyeX, eyeY, budget, bytesOf, forced) {
       if (!Number.isFinite(budget) || forced === true) return;
       let total = 0;
-      const movable: { readonly key: string; readonly cell: Cell; readonly away: number }[] = [];
+      // DO NOT coarsen by the distance to the eye's point on the plan: two cells as far from the camera on either side of it were drawn one in detail, one in masses (conferencia 30, 48). By the error on the screen, as `choose` picks: the cells whose step down shows least go first, ties the farthest from the eye first.
+      const movable: { readonly key: string; readonly cell: Cell; readonly px: number; readonly away: number }[] = [];
       for (const key of nearKeys) {
         const cell = cells.get(key);
         if (!cell) continue;
         total += bytesOf(key, cell.fine);
         if (cell.massless || (forced !== false && forced.has(key))) continue;
-        movable.push({ key, cell, away: Math.hypot(Math.max(cell.x0 - eyeX, 0, eyeX - cell.x1), Math.max(cell.y0 - eyeY, 0, eyeY - cell.y1)) });
+        const dx = Math.max(cell.x0 - eyeX, 0, eyeX - cell.x1), dy = Math.max(cell.y0 - eyeY, 0, eyeY - cell.y1);
+        movable.push({ key, cell, px: pixelsAt(cell), away: Math.hypot(dx, dy, lastEye.known ? Math.max(lastEye.z - cell.top, 0) : 0) });
       }
       if (total <= budget) return;
-      movable.sort((a, b) => b.away - a.away);
-      // The farthest first: their detail for their facade level, then their facade level for their masses.
-      for (const { key, cell } of movable) {
-        if (total <= budget) return;
-        if (!cell.fine) continue;
-        total += bytesOf(key, false) - bytesOf(key, true);
-        setNear(key, cell, true, false);
+      movable.sort((a, b) => a.px - b.px || b.away - a.away);
+      /** The cells of the same rank as `movable[at]` (the same error and distance): stepped down together, never one of two alike. */
+      const sameRank = (at: number): number => {
+        let end = at + 1;
+        while (end < movable.length && movable[end]!.px === movable[at]!.px && movable[end]!.away === movable[at]!.away) end++;
+        return end;
+      };
+      // Their detail for their facade level, then their facade level for their masses.
+      for (let at = 0; at < movable.length && total > budget;) {
+        const end = sameRank(at);
+        for (let k = at; k < end; k++) {
+          const { key, cell } = movable[k]!;
+          if (!cell.fine) continue;
+          total += bytesOf(key, false) - bytesOf(key, true);
+          setNear(key, cell, true, false);
+        }
+        at = end;
       }
-      for (const { key, cell } of movable) {
-        if (total <= budget) return;
-        total -= bytesOf(key, false);
-        setNear(key, cell, false);
+      for (let at = 0; at < movable.length && total > budget;) {
+        const end = sameRank(at);
+        for (let k = at; k < end; k++) {
+          const { key, cell } = movable[k]!;
+          // DO NOT send a cell far before its masses (or its tile's, its plate's) can stand for it: its facade level stays, never a hole.
+          if (!this.drawn(key)) continue;
+          total -= bytesOf(key, false);
+          setNear(key, cell, false);
+        }
+        at = end;
       }
+    },
+    massBytes(key) {
+      const mesh = cells.get(key)?.mesh;
+      return mesh ? meshBytes(mesh) : 0;
+    },
+    shadowMasses(on) {
+      const swapped: string[] = [];
+      for (const key of detailed) {
+        const cell = cells.get(key);
+        if (!cell?.mesh) continue;
+        if (!on) { showMass(key, cell); continue; }
+        if (cell.covered || !cell.near) continue;
+        cell.mesh.visible = true;
+        swapped.push(key);
+      }
+      return swapped;
     },
     near(key) {
       return cells.get(key)?.near ?? true;
@@ -613,10 +654,11 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     drawn(key, current = () => true) {
       const cell = cells.get(key);
       if (!cell) return false;
-      if (cell.mesh || cell.massless) return true;
+      // Its own masses only where they are shown: a cell under a tile or plate is drawn by that level, and only if it is of its buildings now.
+      if (cell.massless || (cell.mesh && !cell.covered)) return true;
       const [i, j] = cellIndex(key);
       const tile = tiles.get(tileOf(i, j)), plate = plates.get(plateOf(i, j));
-      return (!!tile?.coarse && current(tileOf(i, j))) || (!!plate?.coarse && current(plateOf(i, j)));
+      return (!!tile?.coarse && !!tile.mesh && current(tileOf(i, j))) || (!!plate?.coarse && !!plate.mesh && current(plateOf(i, j)));
     },
     dispose() {
       for (const cell of cells.values()) drop(cell);

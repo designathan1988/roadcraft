@@ -9,7 +9,7 @@ import { DT, PED } from '../params';
 import { newPose, vehiclePoseNowInto } from '../pose';
 import type { SimWorld } from '../world';
 import type { AuditIssue } from '../audit';
-import { emptyCrossingState } from '../crossings/state';
+import { type CrossingState, emptyCrossingState } from '../crossings/state';
 import { indexReservations, mayEnterCrossing } from '../crossings/permission';
 import { makeCrossingId, type CrossingId } from '../signals/plan';
 import type { SidewalkEdge } from '../peds/sidewalk';
@@ -129,8 +129,8 @@ export interface ParkedSource {
   readonly parked: readonly StandingCar[];
   /** The serial of the latest change of `parked`. */
   readonly parkedSerial: number;
-  /** The cars that came (`added`) and went since `serial`, oldest first; null: `parked` is to be read whole. */
-  parkedSince(serial: number): readonly { readonly car: StandingCar; readonly added: boolean }[] | null;
+  /** The cars that came (`added`) and went since `serial`, oldest first; null: `parked` is to be read whole. `reader` has read up to `parkedSerial` (the log kept for it). */
+  parkedSince(serial: number, reader?: object): readonly { readonly car: StandingCar; readonly added: boolean }[] | null;
   /** The cars of `parked` that may move while standing in it. */
   readonly movers: ReadonlySet<StandingCar>;
 }
@@ -148,7 +148,7 @@ export class ParkedZoneIndex {
 
   /** Brought up to the cars standing, from what their keeper says changed */
   follow(source: ParkedSource): void {
-    const changes = this.serial < 0 ? null : source.parkedSince(this.serial);
+    const changes = source.parkedSince(this.serial, this);
     this.serial = source.parkedSerial;
     // The order-kept list belongs to `sync`: a later `sync` finds it from the cars.
     this.list.length = 0;
@@ -339,6 +339,8 @@ interface Walker {
   lost?: Severable[] | undefined;
   /** The step its view's `stretch` was last spelt for (`publish`). */
   stretchOf?: Step | undefined;
+  /** The act its view's `gesture` was made for (`publish`): made again only when the act changes, its clock kept by the page (`SimClient.readTick`). */
+  gestureOf?: Walker['act'] | undefined;
   /** Health lost a second to a wound bleeding (a limb gone): they die of it. */
   bleeding?: number | undefined;
 }
@@ -347,7 +349,7 @@ interface Walker {
 const WALKER_SHAPE = {
   progress: undefined, jammedOn: undefined, aimAt: undefined, grantedAt: undefined, fright: undefined, tripAt: undefined,
   maimed: undefined, hp: undefined, hits: undefined, opened: undefined, leader: undefined, crawlNext: undefined,
-  lastHit: undefined, hurt: undefined, lost: undefined, stretchOf: undefined, bleeding: undefined,
+  lastHit: undefined, hurt: undefined, lost: undefined, stretchOf: undefined, gestureOf: undefined, bleeding: undefined,
 } as const satisfies { [K in keyof Walker]?: undefined };
 
 interface State {
@@ -369,8 +371,9 @@ interface State {
   /** The walkers by cell for the cars' questions */
   near: WalkerGrid;
   nearAt: number;
-  /** The vehicles by cell for `gapOpen`, filed once a tick when somebody first asks; the fastest of them. */
-  traffic: Map<number, TrafficSeen[]>;
+  /** Each crossing's state of the last tick (`publish`), taken back if it has somebody again. */
+  crossingPool: Map<CrossingId, CrossingState>;
+  /** The fastest vehicle's speed for `gapOpen`, read once a tick when somebody first asks. */
   trafficAt: number;
   fastest: number;
   /** The walkers by cell, filed again at the start of every step (`WalkerGrid`). */
@@ -382,9 +385,6 @@ interface State {
 }
 
 /** A vehicle as `gapOpen` reads it: where it is, which way it faces, how fast it goes. */
-interface TrafficSeen { readonly x: number; readonly y: number; readonly angle: number; readonly speed: number }
-/** Cells for the vehicles near a crossing (`gapOpen`). */
-const TRAFFIC_CELL = m(32);
 
 /** A test bench's trace of what happens to chosen walkers (the weapons lab, `traceWalkers`) */
 export interface WalkTrace {
@@ -461,7 +461,7 @@ function stateOf(w: SimWorld): State {
   let s = STATES.get(w);
   if (!s) {
     s = { graph: null, graphState: null, wayIndex: new Map(), walkers: [], byId: new Map(), arrivals: [], onCarWay: new Map(),
-      shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, traffic: new Map(), trafficAt: -1, fastest: 0,
+      shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, crossingPool: new Map(), trafficAt: -1, fastest: 0,
       grid: new WalkerGrid(), parked: new ParkedZoneIndex(), parties: new Map() };
     STATES.set(w, s);
   }
@@ -547,6 +547,9 @@ export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way
     return [{ way: from.way, dir: to.s >= from.s ? 1 : -1, from: from.s, to: to.s }];
   }
   const n = g.nodes.length;
+  // DO NOT expand every way reached to find the goal is on a footway cut off from the start: the graph's components say so first.
+  const comp = walkComponents(g);
+  if (comp[from.way.a] !== comp[to.way.a]) return null;
   // The graph's own arrays, used again by every search on it: a node's entry counts only when its stamp is this search's
   const r = routeScratch(g);
   const { dist, via, stamp, done, open } = r;
@@ -616,6 +619,35 @@ export function route(g: WalkGraph, from: { way: Walkway; s: number }, to: { way
   const arriveAtA = end.node === to.way.a;
   steps.push({ way: to.way, dir: arriveAtA ? 1 : -1, from: arriveAtA ? 0 : to.way.path.length, to: to.s });
   return steps;
+}
+
+/** Each node's component in the walk graph as it is (`WalkGraph.state`): labelled again when the graph changed and a route is asked. */
+const WALK_COMPONENTS = new WeakMap<WalkGraph, { readonly state: object; readonly comp: Int32Array }>();
+/** @rebuild The graph's nodes labelled by their component (the ways joining them), once per state of the graph. */
+function walkComponents(g: WalkGraph): Int32Array {
+  const known = WALK_COMPONENTS.get(g);
+  if (known && known.state === g.state && known.comp.length >= g.nodes.length) return known.comp;
+  const n = g.nodes.length;
+  const comp = new Int32Array(n).fill(-1);
+  const stack: number[] = [];
+  let next = 0;
+  for (let start = 0; start < n; start++) {
+    if (comp[start] !== -1 || !g.nodes[start]) continue;
+    comp[start] = next;
+    stack.push(start);
+    while (stack.length) {
+      const node = stack.pop()!;
+      for (const wid of g.at.get(node) ?? []) {
+        const way = g.ways[wid];
+        if (!way) continue;
+        const other = way.a === node ? way.b : way.a;
+        if (comp[other] === -1) { comp[other] = next; stack.push(other); }
+      }
+    }
+    next++;
+  }
+  WALK_COMPONENTS.set(g, { state: g.state, comp });
+  return comp;
 }
 
 /** DO NOT go back to `new Float64Array(n).fill(Infinity)` per search */
@@ -828,40 +860,27 @@ const GAP_NEAR = m(6);
 function gapOpen(w: SimWorld, s: State, z: Zebra, pace: number, waited: number): boolean {
   const path = z.way.path;
   const time = path.length / Math.max(pace, m(0.5)) + (waited < IMPATIENT ? GAP_MARGIN : 0);
-  // The vehicles by cell, filed once this tick (their poses were worked out for every vehicle at every ask)
+  // DO NOT file the whole fleet with its poses for one crossing: the fastest speed once a tick (no pose), then the vehicles on the lanes within reach of this crossing, posed.
   if (s.trafficAt !== s.clock) {
     s.trafficAt = s.clock;
-    s.traffic.clear();
     s.fastest = 0;
-    const file = (x: number, y: number, angle: number, speed: number): void => {
-      const k = cellKey(x, y, TRAFFIC_CELL);
-      const seen: TrafficSeen = { x, y, angle, speed };
-      const list = s.traffic.get(k);
-      if (list) list.push(seen); else s.traffic.set(k, [seen]);
-    };
-    const pose = TRAFFIC_POSE;
-    for (const v of w.vehicles.values()) {
-      if (!vehiclePoseNowInto(w, v, pose)) continue;
-      file(pose.p.x, pose.p.y, pose.angle, v.v);
-      if (v.v > s.fastest) s.fastest = v.v;
-    }
+    for (const v of w.vehicles.values()) if (v.v > s.fastest) s.fastest = v.v;
   }
   const reach = Math.max(GAP_NEAR, s.fastest * time);
   const box = path.bbox;
-  const gx0 = Math.floor((box.minX - reach) / TRAFFIC_CELL), gx1 = Math.floor((box.maxX + reach) / TRAFFIC_CELL);
-  const gy0 = Math.floor((box.minY - reach) / TRAFFIC_CELL), gy1 = Math.floor((box.maxY + reach) / TRAFFIC_CELL);
-  for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
-    for (const v of s.traffic.get(cell(gx, gy)) ?? NO_TRAFFIC) {
-      const hit = path.closestPoint(v);
-      if (hit.distance < GAP_NEAR) return false;
-      if (v.speed < m(0.5) || hit.distance > v.speed * time) continue;
-      // Coming towards it, not going away.
-      if ((hit.point.x - v.x) * Math.cos(v.angle) + (hit.point.y - v.y) * Math.sin(v.angle) > 0) return false;
-    }
+  const pose = TRAFFIC_POSE;
+  const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
+  for (const vehicle of w.vehiclesNear(cx, cy, reach + Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
+    if (!vehiclePoseNowInto(w, vehicle, pose)) continue;
+    const v = pose.p;
+    const hit = path.closestPoint(v);
+    if (hit.distance < GAP_NEAR) return false;
+    if (vehicle.v < m(0.5) || hit.distance > vehicle.v * time) continue;
+    // Coming towards it, not going away.
+    if ((hit.point.x - v.x) * Math.cos(pose.angle) + (hit.point.y - v.y) * Math.sin(pose.angle) > 0) return false;
   }
   return true;
 }
-const NO_TRAFFIC: readonly TrafficSeen[] = [];
 
 /** The zebra a walker is coming up to and has not been let onto, and the distance along its route to where it waits for it */
 function zebraAhead(w: SimWorld, p: Walker): { zebra: Zebra; stop: number } | null {
@@ -1869,6 +1888,9 @@ function stepWalkers(w: SimWorld): void {
 
 function publish(w: SimWorld): void {
   const s = stateOf(w);
+  // Last tick's states kept to be taken back: only those, never every crossing ever walked.
+  s.crossingPool.clear();
+  for (const [id, state] of w.crossingStates) s.crossingPool.set(id, state);
   w.crossingStates.clear();
   const views = w.pedViews;
   const byId = w.pedViewById;
@@ -1884,7 +1906,14 @@ function publish(w: SimWorld): void {
     const edge = report?.edge;
     if (report && edge) {
       let state = w.crossingStates.get(report.id);
-      if (!state) { state = emptyCrossingState(edge.length); w.crossingStates.set(report.id, state); w.signalAtCrossing(report.id); }
+      if (!state) {
+        // DO NOT make a crossing's state a tick: the one of the last tick taken back, emptied.
+        state = s.crossingPool.get(report.id);
+        if (!state || state.length !== edge.length) s.crossingPool.set(report.id, state = emptyCrossingState(edge.length));
+        else { state.occupants.length = 0; state.waitingFrom = 0; state.waitingTo = 0; state.demand = false; state.longestWait = 0; }
+        w.crossingStates.set(report.id, state);
+        w.signalAtCrossing(report.id);
+      }
       const hit = edge.path.closestPoint({ x: p.x, y: p.y });
       if (on) {
         const t = edge.path.sampleAt(hit.s).t;
@@ -1909,14 +1938,19 @@ function publish(w: SimWorld): void {
     // Spelt out once a step, not a fresh string each tick.
     if (p.stretchOf !== st) { p.stretchOf = st; v.stretch = st.way ? `${st.way.id}:${st.dir}` : ''; }
     v.walking = p.v > m(0.1);
-    v.gesture = p.act ? { kind: p.act.kind, phase: 'hold', t: p.age - p.act.from, hold: p.act.until - p.act.from,
-      ...(p.act.kind === 'fall' ? { fromX: p.act.faceX, fromY: p.act.faceY } : {}) } : null;
+    // DO NOT make a gesture a tick: a new object each tick was told to the page each tick (`simHost.ts` compares by identity). Its `t` as of now, the page's clock keeps it.
+    if (p.gestureOf !== p.act) {
+      p.gestureOf = p.act;
+      v.gesture = p.act ? { kind: p.act.kind, phase: 'hold', t: p.age - p.act.from, hold: p.act.until - p.act.from,
+        ...(p.act.kind === 'fall' ? { fromX: p.act.faceX, fromY: p.act.faceY } : {}) } : null;
+    } else if (v.gesture && p.act) v.gesture.t = p.age - p.act.from;
     v.panic = (p.fright ?? 0) > p.age;
     if (p.maimed) v.maimed = p.maimed;
     if (p.lost?.length) v.lost = p.lost;
     if ((p.hp ?? 100) < 100) v.bleeding = true;
+    // The same wound kept while it reads the same (a new object a tick was told each tick).
     const wound = woundOf(p);
-    if (wound) v.wound = wound;
+    if (wound && (v.wound?.part !== wound.part || v.wound.grave !== wound.grave)) v.wound = wound;
     v.kerbWait = p.waiting ? p.waited : 0;
     v.waitingFor = p.waiting ? p.waiting.id : null;
     if (same && (count >= before || views[count] !== v)) same = false;

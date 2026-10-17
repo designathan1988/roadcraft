@@ -208,7 +208,8 @@ export class Meso {
     this.sync(w);
     this.takeTables();
     this.settle(w);
-    if (w.focus && this.most > 0) this.wanted = followView(this.wanted ?? this.micro, w.focus, this.most) ?? this.wanted;
+    // Following the view, judged against the window as it stands: DO NOT judge against the page's ask (`want`, its most each frame), the window jumped to it and lost its hysteresis.
+    if (w.focus && this.most > 0) this.wanted = followView(this.micro, w.focus, this.most);
     if (this.wanted) this.moveWindow(w, this.wanted);
     this.admit(w);
     this.clock += DT;
@@ -622,6 +623,11 @@ export class Meso {
   }
 
   // ------------------------------------------------------------ the micro window
+
+  /** Whether a point is inside the micro window as it stands (its links' cars are the micro simulation's). */
+  insideWindow(x: number, y: number): boolean {
+    return this.inWindow(x, y);
+  }
 
   private inWindow(x: number, y: number): boolean {
     const win = this.micro;

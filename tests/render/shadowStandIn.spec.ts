@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BackSide, BoxGeometry, DoubleSide, FrontSide, Group, InstancedMesh, Mesh, MeshDepthMaterial, MeshStandardMaterial, RGBADepthPacking, Texture,
-  type Camera, type Object3D, type Scene, type WebGLRenderer,
+  Scene, type Camera, type Object3D, type WebGLRenderer,
 } from 'three';
 
 import { compileAhead, drainCompiles, shadowStandIn, shadowStandIns } from '@render/uploads';
@@ -20,7 +20,7 @@ function recorder(seen: string[]): WebGLRenderer {
     },
   } as unknown as WebGLRenderer;
 }
-const camera = {} as Camera, scene = {} as Scene;
+const camera = {} as Camera, scene = new Scene();
 
 /** THE SHADOWS COMPILED AHEAD (`uploads.ts` shadowStandIn) */
 describe('the shadow stand-ins compiled ahead', () => {
@@ -87,5 +87,26 @@ describe('the shadow stand-ins compiled ahead', () => {
     let standIns = 0;
     shadowStandIns(root).traverse((o) => { if ((o as Mesh).isMesh) standIns++; });
     expect(standIns).toBe(2);
+  });
+});
+
+describe('a stand-in of a mesh whose user data holds a geometry gone to the GPU', () => {
+  it('is made without copying the user data (three serializes it whole, and threw on the arrays let go)', async () => {
+    const { BufferGeometry, Float32BufferAttribute } = await import('three');
+    const posedFrom = new BufferGeometry();
+    const position = new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3);
+    posedFrom.setAttribute('position', position);
+    // As `gpuOnly` leaves it once uploaded.
+    (position as unknown as { array: null }).array = null;
+    const part = new InstancedMesh(new BoxGeometry(), new MeshStandardMaterial(), 2);
+    part.castShadow = true;
+    part.userData['posedFrom'] = posedFrom;
+    const plain = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    plain.castShadow = true;
+    plain.userData['posedFrom'] = posedFrom;
+    expect(() => shadowStandIn(part)).not.toThrow();
+    expect(() => shadowStandIn(plain)).not.toThrow();
+    expect(part.userData['posedFrom']).toBe(posedFrom);
+    expect(plain.userData['posedFrom']).toBe(posedFrom);
   });
 });

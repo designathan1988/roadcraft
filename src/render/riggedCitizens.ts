@@ -4,7 +4,7 @@ import {
   Matrix4, MeshDepthMaterial, MeshStandardMaterial, Object3D, Quaternion, RGBAFormat,
   RGBADepthPacking, SkinnedMesh, Texture, Vector3, type WebGLRenderer,
 } from 'three';
-import { PIXAR, REALISTIC, cartoonBody, styleFor, type CartoonStyle } from './people/cartoon';
+import { PIXAR, REALISTIC, type CartoonStyle } from './people/cartoon';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { personHash, type PartyView, type PedView } from '@sim/people/view';
 import { DT } from '@sim/dt';
@@ -13,58 +13,78 @@ import { CROWD, CROWD_IDS, CastingRegistry, type CastingContext, type Company } 
 import { NO_HELMET, type RiderClipKey } from './riderPoses';
 import { CITIZEN_ASSET_URLS, CITIZEN_LICENSES } from './citizenAssets';
 import type { CitizenModel } from './citizenCasting';
-import { loadPeopleAssets } from '@people/body/assets';
-import { Morpher } from '@people/body/morph';
-import { createPersonRig, personSimplifier } from './people/personRig';
 import { cancelUploads, compileAhead, shadowStandIn, warmAhead } from './uploads';
-import { bakeInWorker, releaseIdleBakeWorkers } from './bakePool';
-import { cookPerson, loadCookedPerson, peopleCookHash } from './people/cookedPerson';
+import { bakeDeferredInWorker, bakeInWorker, bakeRig, buildPersonInWorker, releaseIdleBakeWorkers } from './bakePool';
+import { assemblePerson, cookPerson } from './people/cookedPerson';
+import { buildPersonScene } from './people/personBuild';
+import { lodPool } from './people/lodPool';
+import { providePeopleLod } from './people/lodPort';
+import { loadCookedPerson, peopleCookHash } from './people/cookedLoad';
 import { HELD, createHeldProps } from './people/heldProps';
-import { attachFacialMorphs } from './people/facialMorphs';
-import { applyFace, channelShapes, faceAt, type FaceWeights } from './people/faceExpression';
-import { expressionShapes } from '@people/body/expressions';
+import { applyFace, faceAt, type FaceWeights } from './people/faceExpression';
 import { applySkinAppearance, createPersonLayers, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from './people/skinAppearance';
-import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
-import { wornItems } from '@people/spec';
-import { captureBind, captureBindRotations, loadRocketboxClips } from './citizenWalk';
+import { loadRocketboxClips } from './citizenWalk';
 import { type Gradient, shearMatrix } from './groundShear';
 import { PACKED_BONE_FLOATS, SKIN_BONE_FLOATS, blendPackedFrames } from './citizenPalette';
-import { GPU_PLAYS, citizenAtlas, cpuPose, gpuPlays, type CitizenAtlas, type Play } from './citizenPlays';
+import { GPU_PLAYS, appendClip, citizenAtlas, cpuPose, gpuPlays, type CitizenAtlas, type Play } from './citizenPlays';
 import { createPalettePass, type PalettePass } from './people/crowdAnimation';
 import { createGait, gaitHeading, gaitPlays, stepGait, type Gait, type GaitClips, type GaitPlay } from './citizenGait';
 import {
-  CARRY_AT, GAIT_AT, LIBRARY_AT, RIDER_AT, WALK, WALK_ELDER, afterFrame, bake, gaitClips,
-  type CitizenClipKey, type ClipFrames, type Deferred, type Played,
+  CARRY_AT, GAIT_AT, LIBRARY_AT, RIDER_AT, WALK, WALK_ELDER, WALK_SHUFFLE, afterFrame, bake, gaitClips,
+  type CitizenClipKey, type ClipFrames, type Deferred, type Played, type RigNode,
 } from './citizenBake';
+import type { WalkSex } from './citizenWalk';
+import { measureHitch } from '@core/hitch';
 
 export type { CitizenClipKey } from './citizenBake';
 export { CROWD_IDS } from './citizenCasting';
+// The bodies built on this page simplify their levels in the page's pool (`lodPort.ts`).
+providePeopleLod(lodPool);
 const CAPACITY = 1000;
+/** Instances a level's mesh starts with; it doubles with the figures drawn at that level (`growLevel`), up to `CAPACITY`. */
+const LEVEL_START = 16;
+/** One level of one part of a body: its own mesh, and each instance's palette row (`citizenRow`, read by the skinning). */
+interface LevelMesh {
+  readonly mesh: InstancedMesh;
+  readonly rows: InstancedBufferAttribute;
+  /** Figures written at this level this frame. */
+  count: number;
+  /** A slot's colour changed since the GPU took them (burnt, or a new buffer): DO NOT send every figure's colour every frame. */
+  colourChanged: boolean;
+}
+/** A part of a body: its distinct levels' meshes, and which of them each level (`CITIZEN_LEVEL_ERROR`) is drawn with. */
+interface CitizenPart {
+  readonly levels: LevelMesh[];
+  readonly at: number[];
+}
 interface CitizenBatch {
   resources: Set<{ dispose(): void }>;
   animationBytes: number;
   lastUsed: number;
   disposed: boolean;
-  meshes: InstancedMesh[]; sources: SkinnedMesh[]; local: Matrix4[]; clips: ClipFrames[];
+  /** Every level mesh of every part (`parts`), as added to the group. */
+  meshes: InstancedMesh[]; parts: CitizenPart[]; sources: SkinnedMesh[]; local: Matrix4[]; clips: ClipFrames[];
   /** The same baked clips, by the name the gait plays them by. */
   gait: GaitClips;
   /** Floats of a body's palette (16 a bone), and the bodies written this frame. */
   width: number; count: number;
   /** The skeletons blended on the GPU (`people/crowdAnimation.ts`): the clips' atlas, the pass, its rows; the skinning reads `uniform`. */
   atlas: CitizenAtlas; pass: PalettePass; rows: number; uniform: { value: Texture };
+  /** Its first row in the palettes' shared target, read by the skinning. */
+  readonly base: { value: number };
   /** A body's palette worked out on the CPU (held by a ragdoll, maimed, more plays than the pass takes). */
   readonly scratch: Float32Array;
   /** Rest joints for the pass's refit, all at the origin: the cooked bodies are drawn on their own joints. */
   readonly joints: DataTexture;
   readonly parents: Int16Array;
-  lods: BufferGeometry[][];
-  /** Each mesh's per-instance morph texture, kept aside while its level has no face (lod > 0). */
-  parkedMorph: (DataTexture | null)[];
   /** This body's helmet in its head bone's frame (`riderPoses.helmetShape`), or null. */
   helmet: Matrix4 | null;
-  /** Clips still to bake, on first use (`Deferred`), one at a time. */
+  /** Clips still to bake, on first use (`Deferred`), one at a time: in a worker, on the body's rig (`rigNodes`, made at the first). */
   deferred: Deferred;
   baking: Promise<void>;
+  readonly sex: WalkSex;
+  readonly scene: Object3D;
+  rigNodes: readonly RigNode[] | null;
 }
 
 /** A walker's last pose as played (`capturedPose`): the clips, phases and weights, whether one frame was copied, the limbs lost. */
@@ -113,6 +133,11 @@ export function citizenLevelFor(zoom: number): number {
   return citizenBandAt(zoom) === 0 ? 0 : citizenLevelAt(zoom);
 }
 
+/** The level of one figure whose 1.9 m (`BODY_EXTENT`) stands `pixels` canvas pixels tall on the screen, `ratio` of them a CSS pixel. */
+export function citizenLevelOfFigure(pixels: number, ratio: number): number {
+  return citizenLevelFor(pixels / (BODY_EXTENT * ratio));
+}
+
 /** Who a figure drawn by `drawClip` is and with whom: the casting context without the place. */
 export interface ClipIdentity {
   readonly seed: number;
@@ -123,13 +148,16 @@ export interface ClipIdentity {
   readonly hasChild?: boolean;
 }
 
+/** A figure's palette row is its own (`citizenRow`): the figures of a body are drawn by level, each level a mesh of its own. */
 const SKINNING = `
 uniform sampler2D citizenBones;
 uniform mat4 bindMatrix;
 uniform mat4 bindMatrixInverse;
+uniform float citizenBase;
+attribute float citizenRow;
 mat4 getBoneMatrix(const in float i) {
   int x = int(i)*4;
-  int y = gl_InstanceID;
+  int y = int(citizenRow) + int(citizenBase);
   return mat4(texelFetch(citizenBones,ivec2(x,y),0),
     texelFetch(citizenBones,ivec2(x+1,y),0),
     texelFetch(citizenBones,ivec2(x+2,y),0),
@@ -153,20 +181,50 @@ const BURNT = new Color(0.075, 0.062, 0.055);
 /** No expression: what a body drawn from a ragdoll palette shows (`drawPalette`). */
 const NEUTRAL_FACE: FaceWeights = {};
 
-function setFacialExpression(batch: CitizenBatch, slot: number, face: FaceWeights): void {
-  for (let i = 0; i < batch.meshes.length; i++) {
-    const source = batch.sources[i]!;
-    const influences = source.morphTargetInfluences;
-    const targets = source.morphTargetDictionary;
-    if (!influences || !targets) continue;
-    applyFace(influences, targets, face);
-    const mesh = batch.meshes[i]!;
-    // three allocates an InstancedMesh's morph texture from `count`.
-    const visible = mesh.count;
-    if (mesh.morphTexture === null) mesh.count = CAPACITY;
-    mesh.setMorphAt(slot, source);
-    mesh.count = visible;
-  }
+/** Part `source`'s face at instance `slot` of its nearest level's mesh. */
+function setFacialExpression(mesh: InstancedMesh, source: SkinnedMesh, slot: number, face: FaceWeights): void {
+  const influences = source.morphTargetInfluences;
+  const targets = source.morphTargetDictionary;
+  if (!influences || !targets || !mesh.geometry.morphAttributes.position) return;
+  applyFace(influences, targets, face);
+  // three allocates an InstancedMesh's morph texture from `count`.
+  const visible = mesh.count;
+  if (mesh.morphTexture === null) mesh.count = CAPACITY;
+  mesh.setMorphAt(slot, source);
+  mesh.count = visible;
+}
+
+/** An empty array, for the face shapes three has copied into its own texture. */
+const NO_SHAPE = new Float32Array(0);
+
+/** DO NOT keep a body's face shapes dense in the page once drawn (~3 MB a body): three copied them into its morph texture at the first draw (WebGLMorphtargets, kept by geometry, read again only if the number of shapes changes) and keeps that copy for a restored context. */
+export function dropFaceShapesOnceDrawn(mesh: InstancedMesh): void {
+  const shapes = mesh.geometry.morphAttributes.position;
+  if (!shapes?.length) return;
+  const drop = mesh.onAfterRender;
+  mesh.onAfterRender = function onceDrawn(this: InstancedMesh, ...args: Parameters<typeof drop>) {
+    for (const shape of shapes) (shape as { array: ArrayLike<number> }).array = NO_SHAPE;
+    mesh.onAfterRender = drop;
+    drop.apply(this, args);
+  };
+}
+
+/** Room for at least `needed` instances in a level's mesh (doubled), its written ones kept; its face's texture kept across. */
+function growLevel(level: LevelMesh, needed: number): void {
+  const mesh = level.mesh;
+  let capacity = Math.max(1, mesh.instanceMatrix.count);
+  while (capacity < needed) capacity *= 2;
+  capacity = Math.min(CAPACITY, capacity);
+  const matrices = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
+  matrices.array.set(mesh.instanceMatrix.array);
+  matrices.setUsage(DynamicDrawUsage);
+  const colours = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+  if (mesh.instanceColor) colours.array.set(mesh.instanceColor.array);
+  colours.setUsage(DynamicDrawUsage);
+  // DO NOT `dispose` the mesh to let its old buffers go: three's releaseStatesOfObject walks every geometry the renderer knows (WebGLBindingStates), ms a call; the old buffers stay on the GPU till the context goes (less than the new one's size).
+  mesh.instanceMatrix = matrices;
+  mesh.instanceColor = colours;
+  level.colourChanged = true;
 }
 
 function markChildShirt(mesh: SkinnedMesh): void {
@@ -189,11 +247,13 @@ function markChildShirt(mesh: SkinnedMesh): void {
   geometry.setAttribute('clothingMask', new BufferAttribute(mask, 1));
 }
 
+/** `base`: the body's first row in the palettes' shared target (`paletteTargets.ts`). */
 export function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial, uniform: { value: Texture },
-  mesh: SkinnedMesh, look = 0): void {
+  mesh: SkinnedMesh, look = 0, base: { value: number } = { value: 0 }): void {
   material.defines = { ...material.defines, USE_SKINNING: '' };
   material.onBeforeCompile = shader => {
     shader.uniforms.citizenBones = uniform;
+    shader.uniforms.citizenBase = base;
     shader.uniforms.bindMatrix = { value: mesh.bindMatrix };
     shader.uniforms.bindMatrixInverse = { value: mesh.bindMatrixInverse };
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_pars_vertex>', SKINNING);
@@ -216,7 +276,7 @@ export function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial,
       `);
     }
   };
-  material.customProgramCacheKey = () => `citizen-skinning-v2-look${look}`;
+  material.customProgramCacheKey = () => `citizen-skinning-v4-look${look}`;
 }
 
 export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
@@ -296,7 +356,6 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   const matrix = new Matrix4();
   const helmetBone = new Matrix4();
   let disposed = false;
-  let morpher: Morpher | null = null;
   let detail = 2;
   let lod = 0;
   /** What bodies do at this zoom besides their mesh (`citizenBandAt`). */
@@ -310,7 +369,6 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       if (batch.count > 0 || now - batch.lastUsed < IDLE_MS) continue;
       batch.disposed = true;
       for (const mesh of batch.meshes) group.remove(mesh);
-      for (const texture of batch.parkedMorph) texture?.dispose();
       group.userData.paletteBytes -= paletteBytes(batch);
       disposeOwned(batch.resources);
       group.userData.animationBytes -= batch.animationBytes;
@@ -322,24 +380,22 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     if (batches.size === 0 && loading.size === 0) releaseIdleBakeWorkers();
   };
   const evictionTimer = typeof window === 'undefined' ? 0 : window.setInterval(evictInactive, 15_000);
-  /** Puts mesh `i` of a batch on the current level of detail. */
-  const applyLevel = (batch: CitizenBatch, i: number): void => {
-    const variants = batch.lods[i]!;
-    const mesh = batch.meshes[i]!;
-    const wanted = variants[Math.min(lod, variants.length - 1)]!;
-    if (mesh.geometry !== wanted) mesh.geometry = wanted;
-    if (mesh.geometry.morphAttributes.position) {
-      if (!mesh.morphTexture && batch.parkedMorph[i]) { mesh.morphTexture = batch.parkedMorph[i]!; batch.parkedMorph[i] = null; }
-    } else if (mesh.morphTexture) {
-      batch.parkedMorph[i] = mesh.morphTexture;
-      mesh.morphTexture = null;
-    }
-    const material = mesh.material;
-    for (const m of Array.isArray(material) ? material : [material]) {
-      const appearance = m.userData['appearanceDetail'] as { value: number } | undefined;
-      if (appearance) appearance.value = band <= 1 ? 1 : 0;
+  /** A batch's materials on what bodies do at the current zoom (`citizenBandAt`): the skin's detail. */
+  const applyBand = (batch: CitizenBatch): void => {
+    for (const mesh of batch.meshes) {
+      const material = mesh.material;
+      for (const m of Array.isArray(material) ? material : [material]) {
+        const appearance = m.userData['appearanceDetail'] as { value: number } | undefined;
+        if (appearance) appearance.value = band <= 1 ? 1 : 0;
+      }
     }
   };
+  /** This frame's measure of a figure on the screen (`AgentRenderOptions.personPixels`, canvas pixels), and canvas pixels a CSS pixel. */
+  let figurePixels: ((x: number, y: number, z: number, height: number) => number) | null = null;
+  let figureRatio = 1;
+  /** The level a figure standing at (x, y, z) is drawn at: by its own size on the screen; the view's zoom where none is given. */
+  const levelOf = (x: number, y: number, z: number): number =>
+    figurePixels ? citizenLevelOfFigure(figurePixels(x, y, z, BODY_EXTENT), figureRatio) : lod;
   group.userData.availableModels = models.length;
   group.userData.models = models;
   group.userData.licenses = CITIZEN_LICENSES;
@@ -348,52 +404,29 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   async function personAsset(model: CitizenModel, fresh = false,
     owned: Set<{ dispose(): void }> = resources): Promise<GLTF> {
     const person = model.person!;
+    /** The person's scene with its skin's appearance (its textures, loaded here). */
+    const dressed = async (scene: Object3D): Promise<GLTF | null> => {
+      let mesh: SkinnedMesh | undefined;
+      scene.traverse((o) => { if (o instanceof SkinnedMesh && !mesh) mesh = o; });
+      if (!mesh) return null;
+      const skin = await loadSkinAppearance(person);
+      owned.add({ dispose: () => releaseSkinAppearance(skin) });
+      mesh.geometry.userData['skinAppearance'] = skin;
+      return { scene, parser: null } as unknown as GLTF;
+    };
     // Cooked ahead (`cookedPerson.ts`, `npm run cook:people`): read back, not built - the realistic bodies
     const style = peopleStyle();
     const cooked = fresh || style !== REALISTIC ? null : await loadCookedPerson(model.id);
-    if (cooked) {
-      let mesh: SkinnedMesh | undefined;
-      cooked.traverse((o) => { if (o instanceof SkinnedMesh && !mesh) mesh = o; });
-      if (mesh) {
-        const skin = await loadSkinAppearance(person);
-        owned.add({ dispose: () => releaseSkinAppearance(skin) });
-        mesh.geometry.userData['skinAppearance'] = skin;
-        return { scene: cooked, parser: null } as unknown as GLTF;
-      }
-    }
-    const people = await loadPeopleAssets();
-    morpher ??= new Morpher(people.packs);
-
-    // The garments it wears, loaded first; failing that it is drawn in the tailored shells rather than not at all.
-    const proxies = new Map<string, ProxyItem>();
-    try {
-      for (const [name, item] of await Promise.all(wornItems(person.look).map(async (n) => [n, await loadProxyItem(n)] as const))) proxies.set(name, item);
-    } catch { proxies.clear(); }
-    const input = {
-      proxies,
-      texturedSkin: true,
-      data: people.mesh, skeleton: people.skeleton, bodyRange: people.bodyRange,
-      positions: cartoonBody(morpher.shape(person.body, person.features), people.mesh, styleFor(style, person.id)), look: person.look,
-      capture: captureBind(model.gender === 'f' ? 'female' : 'male'), captureAxes: captureBindRotations(model.gender === 'f' ? 'female' : 'male'),
-    };
-    await personSimplifier;
+    const asCooked = cooked ? await dressed(cooked) : null;
+    if (asCooked) return asCooked;
+    const faces = new URLSearchParams(location.search).get('expressions') !== 'off';
+    // DO NOT build a person on the page (R22): built in a worker and read back as a cooked one; here only where no worker can, or for the cook.
+    const decoded = fresh ? null : await buildPersonInWorker(person, model.gender, style, faces);
+    const fromWorker = decoded ? await dressed(assemblePerson(decoded)) : null;
+    if (fromWorker) return fromWorker;
     // A body is built in one go, just after a frame is drawn.
-    await afterFrame();
-    const built = performance.now();
-    const rig = createPersonRig(input);
-    performance.measure('person-rig', { start: built, end: performance.now() });
-    // Live faces: blinking, gaze, mood, speech
-    if (new URLSearchParams(location.search).get('expressions') !== 'off') {
-      const faceAt = performance.now();
-      await attachFacialMorphs(input, rig, channelShapes(await expressionShapes()));
-      performance.measure('person-face', { start: faceAt, end: performance.now() });
-    }
-    {
-      const skin = await loadSkinAppearance(person);
-      owned.add({ dispose: () => releaseSkinAppearance(skin) });
-      rig.mesh.geometry.userData['skinAppearance'] = skin;
-    }
-    return { scene: rig.scene, parser: null } as unknown as GLTF;
+    const scene = await buildPersonScene(person, model.gender, style, faces, afterFrame);
+    return (await dressed(scene))!;
   }
 
   async function load(index: number): Promise<void> {
@@ -418,14 +451,13 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     try {
     const model = CROWD[index];
     const sex = model ? (model.gender === 'f' ? 'female' : 'male') : models[index]!.includes('female') ? 'female' : 'male';
-    const [asset, library] = await Promise.all([
-      model?.person ? personAsset(model, false, owned) : (async () => {
-        const url = CITIZEN_ASSET_URLS[model?.sourceId ?? models[index]!];
-        if (!url) throw new Error(`Missing citizen asset: ${models[index]}`);
-        return new GLTFLoader().loadAsync(url);
-      })(),
-      loadRocketboxClips(sex),
-    ]);
+    const asset = await (model?.person ? personAsset(model, false, owned) : (async () => {
+      const url = CITIZEN_ASSET_URLS[model?.sourceId ?? models[index]!];
+      if (!url) throw new Error(`Missing citizen asset: ${models[index]}`);
+      return new GLTFLoader().loadAsync(url);
+    })());
+    // DO NOT decode the motion library here (~5 MB of JSON a sex) while a worker bakes every clip: only for what is baked here.
+    const library = (): ReturnType<typeof loadRocketboxClips> => loadRocketboxClips(sex);
       asset.scene.traverse(o => {
         if (!(o instanceof SkinnedMesh)) return;
         owned.add(o.geometry);
@@ -442,7 +474,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       const given = await bakeInWorker(asset.scene, sex);
       if (abandonIfUnwanted()) return;
       const { clips, helmet, deferred } = await bake(asset.scene, sex, library, given ?? undefined);
-      performance.measure('person-bake', { start: bakeAt, end: performance.now() });
+      measureHitch('person-bake', bakeAt);
       if (abandonIfUnwanted()) return;
       let reference: SkinnedMesh | undefined;
       asset.scene.updateMatrixWorld(true);
@@ -458,9 +490,10 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       const parents = new Int16Array(bones).fill(-1);
       const pass = createPalettePass(atlas.anim, parents, () => joints, rows);
       const uniform: { value: Texture } = { value: pass.texture };
-      const batch: CitizenBatch = { meshes: [], sources: [], local: [], clips, gait: gaitClips(clips), width, rows,
-        atlas, pass, uniform, scratch: new Float32Array(width), joints, parents,
-        count: 0, lods: [], parkedMorph: [], helmet, resources: owned, animationBytes: 0,
+      const base = { value: pass.base };
+      const batch: CitizenBatch = { meshes: [], parts: [], sources: [], local: [], clips, gait: gaitClips(clips), width, rows,
+        atlas, pass, uniform, base, scratch: new Float32Array(width), joints, parents, sex, scene: asset.scene, rigNodes: null,
+        count: 0, helmet, resources: owned, animationBytes: 0,
         lastUsed: performance.now(), disposed: false,
         deferred, baking: Promise.resolve() };
       owned.add({ dispose: () => { batch.pass.dispose(); batch.atlas.anim.atlas.dispose(); batch.joints.dispose(); } });
@@ -506,49 +539,60 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           // A roster person's colours are its vertices' (`personRig.ts`).
           material.roughness = 0.88;
           material.metalness = 0;
-          skinMaterial(material, uniform, o, materialIndex === 0 ? (CROWD[index]?.look ?? 0) : 0);
+          skinMaterial(material, uniform, o, materialIndex === 0 ? (CROWD[index]?.look ?? 0) : 0, base);
           const skin = o.geometry.userData['skinAppearance'] as SkinAppearance | undefined;
           if (skin) applySkinAppearance(material, o.geometry, skin, personLayers);
           owned.add(material);
           return material;
         });
-        const mesh = new InstancedMesh(o.geometry, Array.isArray(o.material) ? materials : materials[0]!, CAPACITY);
-        // InstancedMesh does not initialise this array itself.
-        if (o.morphTargetInfluences) mesh.morphTargetInfluences = [...o.morphTargetInfluences];
-        // A colour per body from the start (white): a body burnt black by a bomb is the same program, its colour near black
-        mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(CAPACITY * 3).fill(1), 3);
-        mesh.instanceColor.setUsage(DynamicDrawUsage);
-        mesh.name = `citizen-${models[index]}-${o.name}`;
-        mesh.count = 0;
-        // Hidden until it has somebody to draw (`finish` shows it then).
-        mesh.visible = false;
-        mesh.frustumCulled = false;
-        mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-        mesh.castShadow = true;
-        // Small animated figures do not receive shadow maps
-        mesh.receiveShadow = false;
         const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
         const source = original[0] as MeshStandardMaterial;
         depth.map = source.map;
         depth.alphaTest = source.alphaTest;
-        skinMaterial(depth, uniform, o);
-        mesh.customDepthMaterial = depth;
-        owned.add(mesh); owned.add(depth);
-        batch.meshes.push(mesh);
+        skinMaterial(depth, uniform, o, 0, base);
+        owned.add(depth);
+        // A mesh per distinct level: each figure is drawn at the level its own size on the screen allows (`levelOf`).
+        const distinct = [...new Set(variants)];
+        const part: CitizenPart = { levels: [], at: CITIZEN_LEVEL_ERROR.map((_, k) => distinct.indexOf(variants[Math.min(k, variants.length - 1)]!)) };
+        for (const geometry of distinct) {
+          const mesh = new InstancedMesh(geometry, Array.isArray(o.material) ? materials : materials[0]!, LEVEL_START);
+          // InstancedMesh does not initialise this array itself; only the nearest level has the face.
+          if (o.morphTargetInfluences && geometry.morphAttributes.position) mesh.morphTargetInfluences = [...o.morphTargetInfluences];
+          // A colour per body from the start (white): a body burnt black by a bomb is the same program, its colour near black
+          mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(LEVEL_START * 3).fill(1), 3);
+          mesh.instanceColor.setUsage(DynamicDrawUsage);
+          const rows = new InstancedBufferAttribute(new Float32Array(CAPACITY), 1);
+          rows.setUsage(DynamicDrawUsage);
+          geometry.setAttribute('citizenRow', rows);
+          mesh.name = `citizen-${models[index]}-${o.name}@${part.levels.length}`;
+          mesh.count = 0;
+          // Hidden until it has somebody to draw (`finish` shows it then).
+          mesh.visible = false;
+          mesh.frustumCulled = false;
+          mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+          mesh.castShadow = true;
+          // Small animated figures do not receive shadow maps
+          mesh.receiveShadow = false;
+          mesh.customDepthMaterial = depth;
+          owned.add(mesh);
+          dropFaceShapesOnceDrawn(mesh);
+          part.levels.push({ mesh, rows, count: 0, colourChanged: true });
+          batch.meshes.push(mesh);
+          group.add(mesh);
+          added.push(mesh);
+        }
+        batch.parts.push(part);
         batch.sources.push(o);
-        batch.lods.push(variants);
         batch.local.push(o.matrixWorld.clone());
-        group.add(mesh);
-        added.push(mesh);
       }
       // Its shaders built before it is drawn (`uploads.ts`) - the programs it is really drawn with: a body far off has no face
       const warm = new Group();
       const shadows = new Group();
       const temporary: InstancedMesh[] = [];
-      batch.meshes.forEach((mesh, i) => {
-        const variants = batch.lods[i]!;
+      batch.parts.forEach((part, i) => {
+        const mesh = part.levels[0]!.mesh;
         const source = batch.sources[i]!;
-        const forms = [variants[Math.min(1, variants.length - 1)]!, variants[0]!];
+        const forms = [part.levels[Math.min(1, part.levels.length - 1)]!.mesh.geometry, mesh.geometry];
         for (const geometry of new Set(forms)) {
           const face = !!geometry.morphAttributes.position;
           const stand = new InstancedMesh(geometry, mesh.material, 1);
@@ -576,10 +620,10 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       shadows.clear();
       if (abandonIfUnwanted()) return;
       // And its geometry on the GPU, every level of it (`uploads.ts`).
-      await Promise.all(batch.meshes.map((mesh, i) => warmAhead(mesh, batch.lods[i]!.slice(1))));
+      await Promise.all(batch.parts.flatMap((part) => part.levels.slice(1).map((level) => warmAhead(level.mesh, [level.mesh.geometry]))));
       if (abandonIfUnwanted()) return;
-      // On the level in use NOW: a body arriving between two frames was drawn once on its nearest level, face and all
-      for (let i = 0; i < batch.meshes.length; i++) applyLevel(batch, i);
+      // The skin's detail of the zoom NOW.
+      applyBand(batch);
       batches.set(index, batch);
       wantedFrame.delete(index);
       committed = batch;
@@ -679,6 +723,17 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   function bodyFor(ctx: CastingContext): { index: number; size: number } | null {
     return registry.pickCitizenModel(ctx, helmetFits);
   }
+  /** DO NOT make a casting context for every figure drawn: one, filled again (the registry copies what it keeps). */
+  const scratch: { -readonly [K in keyof CastingContext]-?: CastingContext[K] | undefined } = {
+    seed: 0, gender: 'f', ageClass: 'adult', company: 'solo', companyId: 0, hasChild: undefined, helmet: undefined, x: 0, y: 0,
+  };
+  /** The context of a figure of `identity` at (x, y), in `scratch`. */
+  function contextOf(identity: ClipIdentity, helmet: boolean, x: number, y: number): CastingContext {
+    scratch.seed = identity.seed; scratch.gender = identity.gender; scratch.ageClass = identity.ageClass;
+    scratch.company = identity.company; scratch.companyId = identity.companyId; scratch.hasChild = identity.hasChild;
+    scratch.helmet = helmet; scratch.x = x; scratch.y = y;
+    return scratch as CastingContext;
+  }
   const mixClips: ClipFrames[] = [];
   const mixPhases: number[] = [];
   const mixWeights: number[] = [];
@@ -694,12 +749,14 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     if (!waiting) baking.set(batch, waiting = new Set());
     waiting.add(at);
     batch.baking = batch.baking.then(async () => {
-      const clip = await job.make();
+      // In a worker on the body's rig, timed by its shuffle; here (in slices) only where no worker can.
+      batch.rigNodes ??= bakeRig(batch.scene);
+      const clip = await bakeDeferredInWorker(batch.rigNodes, batch.sex, at, batch.clips[WALK_SHUFFLE]!) ?? await job.make();
       waiting.delete(at);
       if (disposed || batch.disposed) return;
       batch.clips[at] = clip;
       batch.gait = gaitClips(batch.clips);
-      relayAtlas(batch);
+      addToAtlas(batch, clip);
       batch.animationBytes += clip.data.byteLength;
       group.userData.animationBytes = (group.userData.animationBytes ?? 0) + clip.data.byteLength;
     }).catch(() => {});
@@ -725,10 +782,29 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     batch.pass.setPlays(row, null, 0);
   }
 
-  /** Writes one citizen: its bone palette (`pose`) plus instance transform. */
+  /** Writes one figure at `level` into each part's mesh of that level: `instance`, its colour, its palette row and, at the nearest level, its face. */
+  function place(batch: CitizenBatch, level: number, instance: Matrix4, colour: Color, face: FaceWeights | undefined): void {
+    for (let i = 0; i < batch.parts.length; i++) {
+      const part = batch.parts[i]!;
+      const at = part.levels[part.at[Math.min(level, part.at.length - 1)]!]!;
+      if (at.count >= at.mesh.instanceMatrix.count) growLevel(at, at.count + 1);
+      const slot = at.count++;
+      matrix.multiplyMatrices(instance, batch.local[i]!);
+      at.mesh.setMatrixAt(slot, matrix);
+      const c = at.mesh.instanceColor!.array as Float32Array, o = slot * 3;
+      if (c[o] !== colour.r || c[o + 1] !== colour.g || c[o + 2] !== colour.b) {
+        c[o] = colour.r; c[o + 1] = colour.g; c[o + 2] = colour.b;
+        at.colourChanged = true;
+      }
+      (at.rows.array as Float32Array)[slot] = batch.count;
+      if (face) setFacialExpression(at.mesh, batch.sources[i]!, slot, face);
+    }
+  }
+
+  /** Writes one citizen: its bone palette (`pose`) plus instance transform, at `level` (`levelOf`). */
   function emit(batch: CitizenBatch, clips: readonly ClipFrames[], phases: readonly number[],
     weights: readonly number[], x: number, height: number, y: number, heading: number, scale: number,
-    lean = 0, ground: Gradient | null = null, expression?: FaceWeights, lost: readonly Severable[] | null = null): void {
+    lean = 0, ground: Gradient | null = null, expression?: FaceWeights, lost: readonly Severable[] | null = null, level = lod): void {
     pose(batch, batch.count, clips, phases, weights, lost);
     transform.position.set(x, height, -y);
     // Yaw, then a roll about the body's own forward axis
@@ -736,13 +812,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     transform.scale.set(scale, scale, scale);
     transform.updateMatrix();
     if (ground) shearMatrix(transform.matrix, ground, x, -y);
-    for (let i = 0; i < batch.meshes.length; i++) {
-      matrix.multiplyMatrices(transform.matrix, batch.local[i]!);
-      batch.meshes[i]!.setMatrixAt(batch.count, matrix);
-      batch.meshes[i]!.setColorAt(batch.count, UNBURNT);
-    }
     // Faces are read only close up: from the nearest level of detail on, no expression is computed or uploaded.
-    if (expression && lod === 0) setFacialExpression(batch, batch.count, expression);
+    place(batch, level, transform.matrix, UNBURNT, level === 0 ? expression : undefined);
     batch.count++;
     batch.lastUsed = frameNow;
   }
@@ -753,24 +824,26 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     batch.rows = Math.min(CAPACITY, batch.rows * 2);
     batch.pass.grow(batch.rows);
     batch.uniform.value = batch.pass.texture;
+    batch.base.value = batch.pass.base;
     group.userData.paletteBytes += paletteBytes(batch) - before;
   }
 
-  /** A clip baked since the atlas was laid: the atlas laid again with it, and a pass reading it (an event, not a frame). */
-  function relayAtlas(batch: CitizenBatch): void {
+  /** DO NOT lay the atlas again nor make a pass for a clip baked since: its rows written into the atlas's room, the pass kept (a new texture only when the atlas grows). */
+  function addToAtlas(batch: CitizenBatch, clip: ClipFrames): void {
     const before = paletteBytes(batch);
-    const old = batch.atlas, oldPass = batch.pass;
-    batch.atlas = citizenAtlas(batch.clips, batch.width / SKIN_BONE_FLOATS);
-    batch.pass = createPalettePass(batch.atlas.anim, batch.parents, () => batch.joints, batch.rows);
-    batch.uniform.value = batch.pass.texture;
-    oldPass.dispose();
-    old.anim.atlas.dispose();
+    const old = batch.atlas.anim.atlas;
+    if (!appendClip(batch.atlas, clip)) return;
+    batch.pass.setAtlas(batch.atlas.anim.atlas);
+    old.dispose();
     group.userData.paletteBytes += paletteBytes(batch) - before;
   }
 
   return {
     group,
-    begin(level = 2, zoom = Infinity) {
+    /** `pixels`: a figure's height on the screen where it stands (canvas pixels, `ratio` of them a CSS pixel): each figure's level by it. */
+    begin(level = 2, zoom = Infinity, pixels: ((x: number, y: number, z: number, height: number) => number) | null = null, ratio = 1) {
+      figurePixels = pixels;
+      figureRatio = ratio;
       frameNow = performance.now();
       visualFrame++;
       held.begin();
@@ -785,7 +858,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       group.userData.lod = lod;
       for (const batch of batches.values()) {
         batch.count = 0;
-        if (levelChanged) for (let i = 0; i < batch.meshes.length; i++) applyLevel(batch, i);
+        for (const part of batch.parts) for (const at of part.levels) at.count = 0;
+        if (levelChanged) applyBand(batch);
       }
     },
     /** Draws one pedestrian, the body playing what `citizenGait.ts` decides from how the simulation moves it */
@@ -793,8 +867,9 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     draw(ped: PedView, x: number, y: number, heading: number, deck: number, alpha: number,
       ground: Gradient | null = null, lean = 0, priority = false) {
       const hash = personHash(ped.id);
-      const body = bodyFor({ seed: ped.id, gender: ped.gender, ageClass: ped.ageClass, company: companyOf(ped.party),
-        companyId: ped.party.id, hasChild: ped.party.hasChild, x, y });
+      scratch.seed = ped.id; scratch.gender = ped.gender; scratch.ageClass = ped.ageClass; scratch.company = companyOf(ped.party);
+      scratch.companyId = ped.party.id; scratch.hasChild = ped.party.hasChild; scratch.helmet = false; scratch.x = x; scratch.y = y;
+      const body = bodyFor(scratch as CastingContext);
       if (!body) return;
       const index = body.index;
       const batch = batches.get(index);
@@ -830,9 +905,10 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       }
       // Every limb lost (shots take more than one), the stump closed at its joint.
       const lost = ped.lost ?? (ped.maimed ? [ped.maimed] : null);
+      const level = levelOf(x, y, deck);
       emit(batch, mixClips, mixPhases, mixWeights, x, deck, y, gaitHeading(gait), m(scale), lean, ground,
-        lod === 0 ? faceAt(ped.id, time, ped.panic ? (ped.gesture?.kind === 'crouch' ? 'cry' : 'panic') : ped.gesture?.kind, CROWD[index]?.person?.mood) : undefined,
-        lost);
+        level === 0 ? faceAt(ped.id, time, ped.panic ? (ped.gesture?.kind === 'crouch' ? 'cry' : 'panic') : ped.gesture?.kind, CROWD[index]?.person?.mood) : undefined,
+        lost, level);
       if (lost) onBleed?.(ped.id, x, y, deck);
       {
         // What they play, kept: the palette is blended from it only if a ragdoll takes them (`capturedPose`).
@@ -889,7 +965,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       lean = 0, maxScale = Infinity, fromGround: boolean | 'pelvisOver' = false, fixedScale = 0,
       helmet: Matrix4 | null = null, face?: 'dead'): number {
       const hash = personHash(identity.seed);
-      const body = bodyFor({ ...identity, helmet: helmet !== null, x: pelvisX, y: pelvisY });
+      const body = bodyFor(contextOf(identity, helmet !== null, pelvisX, pelvisY));
       if (!body) return 0;
       const batch = batches.get(body.index);
       if (!batch) {
@@ -941,12 +1017,15 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       const aheadY = Math.sin(heading);
       const shiftLeft = fromGround === true ? 0 : (pelvisLeft / total) * scale;
       const shiftAhead = fromGround === true ? 0 : (pelvisAhead / total) * scale;
-      emit(batch, mixClips, mixPhases, mixWeights,
-        pelvisX - leftX * drop * Math.sin(lean) - leftX * shiftLeft - aheadX * shiftAhead, pelvisHeight - drop * Math.cos(lean),
-        pelvisY - leftY * drop * Math.sin(lean) - leftY * shiftLeft - aheadY * shiftAhead, heading, scale, lean, null,
+      const originX = pelvisX - leftX * drop * Math.sin(lean) - leftX * shiftLeft - aheadX * shiftAhead;
+      const originY = pelvisY - leftY * drop * Math.sin(lean) - leftY * shiftLeft - aheadY * shiftAhead;
+      const originHeight = pelvisHeight - drop * Math.cos(lean);
+      const level = levelOf(originX, originY, originHeight);
+      emit(batch, mixClips, mixPhases, mixWeights, originX, originHeight, originY, heading, scale, lean, null,
         // In a seat a face lives too: blinking, glancing, a passenger chatting now and then (wall time: the render's own clock).
-        lod === 0 ? faceAt(identity.seed, performance.now() / 1000 + identity.seed * 0.13,
-          face ?? (seatedChat(identity.seed, performance.now() / 1000) ? 'talk' : undefined), CROWD[body.index]?.person?.mood) : undefined);
+        level === 0 ? faceAt(identity.seed, performance.now() / 1000 + identity.seed * 0.13,
+          face ?? (seatedChat(identity.seed, performance.now() / 1000) ? 'talk' : undefined), CROWD[body.index]?.person?.mood) : undefined,
+        null, level);
       if (helmet) {
         // This body's helmet on the head of the pose carrying the most weight
         if (!headClip?.head || !batch.helmet) return -scale;
@@ -965,29 +1044,35 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       casting = false;
       if (visualFrame % 300 === 0) for (const [id, kept] of lastPose) if (visualFrame - kept.frame > 600) lastPose.delete(id);
       for (const batch of batches.values()) {
-        for (const mesh of batch.meshes) {
-          mesh.count = batch.count;
-          // An empty batch is still a program bind and its uniforms in every pass
-          mesh.visible = batch.count > 0;
+        for (const part of batch.parts) for (const at of part.levels) {
+          const mesh = at.mesh, count = at.count;
+          // Its last figure gone from the shadow map: the map changes.
+          if (mesh.castShadow && mesh.visible && mesh.count > 0 && count === 0) casting = true;
+          mesh.count = count;
+          // An empty level is still a program bind and its uniforms in every pass
+          mesh.visible = count > 0;
           mesh.castShadow = detail > 0 && band < 2;
-          if (mesh.castShadow && batch.count > 0) casting = true;
-          if (batch.count > 0) {
-            mesh.instanceMatrix.clearUpdateRanges();
-            mesh.instanceMatrix.addUpdateRange(0, batch.count * 16);
-            mesh.instanceMatrix.needsUpdate = true;
-            if (mesh.instanceColor) {
-              mesh.instanceColor.clearUpdateRanges();
-              mesh.instanceColor.addUpdateRange(0, batch.count * 3);
-              mesh.instanceColor.needsUpdate = true;
-            }
-            if (mesh.morphTexture && lod === 0) {
-              // The faces of the bodies drawn, a row each (three sends an update range as one row of the image)
-              const morph = mesh.morphTexture;
-              morph.clearUpdateRanges();
-              const row = morph.image.width;
-              if (batch.count * 2 < morph.image.height) for (let i = 0; i < batch.count; i++) morph.addUpdateRange(i * row, row);
-              morph.needsUpdate = true;
-            }
+          if (mesh.castShadow && count > 0) casting = true;
+          if (count === 0) continue;
+          mesh.instanceMatrix.clearUpdateRanges();
+          mesh.instanceMatrix.addUpdateRange(0, count * 16);
+          mesh.instanceMatrix.needsUpdate = true;
+          if (mesh.instanceColor && at.colourChanged) {
+            mesh.instanceColor.clearUpdateRanges();
+            mesh.instanceColor.addUpdateRange(0, count * 3);
+            mesh.instanceColor.needsUpdate = true;
+            at.colourChanged = false;
+          }
+          at.rows.clearUpdateRanges();
+          at.rows.addUpdateRange(0, count);
+          at.rows.needsUpdate = true;
+          if (mesh.morphTexture) {
+            // The faces of the bodies drawn, a row each (three sends an update range as one row of the image)
+            const morph = mesh.morphTexture;
+            morph.clearUpdateRanges();
+            const row = morph.image.width;
+            if (count * 2 < morph.image.height) for (let i = 0; i < count; i++) morph.addUpdateRange(i * row, row);
+            morph.needsUpdate = true;
           }
         }
       }
@@ -998,6 +1083,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         if (batch.count === 0) continue;
         batch.pass.render(renderer, batch.count);
         batch.uniform.value = batch.pass.texture;
+        batch.base.value = batch.pass.base;
       }
     },
     /** The pose a person was last drawn in, if within the last few seconds (`ragdoll.ts`): blended now, from what they played. */
@@ -1050,7 +1136,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     /** Draws a body of `index` with a palette of skin matrices (`ragdoll.ts`) and an instance matrix. */
     /** The body somebody of this identity is drawn with (a rider thrown off is the same person, `ragdoll.fling`). */
     indexFor(identity: ClipIdentity, helmet: boolean, x: number, y: number): number | null {
-      return bodyFor({ ...identity, helmet, x, y })?.index ?? null;
+      return bodyFor(contextOf(identity, helmet, x, y))?.index ?? null;
     },
     /** The people cast in a company forgotten: its vehicle is gone from the world (`CastingRegistry.forgetCompany`). */
     forgetCompany(company: Company, companyId: number): void {
@@ -1067,13 +1153,10 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       // Worked out by the ragdoll: the pass copies it as it is.
       batch.pass.setOverride(batch.count, palette);
       batch.pass.setPlays(batch.count, null, 0);
-      for (let i = 0; i < batch.meshes.length; i++) {
-        matrix.multiplyMatrices(instance, batch.local[i]!);
-        batch.meshes[i]!.setMatrixAt(batch.count, matrix);
-        batch.meshes[i]!.setColorAt(batch.count, charred ? BURNT : UNBURNT);
-      }
+      const e = instance.elements;
       // Its face's weights too, close up: the slot otherwise keeps whatever the morph texture held there - zero, never written
-      if (lod === 0) setFacialExpression(batch, batch.count, NEUTRAL_FACE);
+      const level = levelOf(e[12]!, -e[14]!, e[13]!);
+      place(batch, level, instance, charred ? BURNT : UNBURNT, level === 0 ? NEUTRAL_FACE : undefined);
       batch.count++;
       batch.lastUsed = frameNow;
     },
@@ -1084,7 +1167,6 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       queuedLoads.clear();
       for (const batch of batches.values()) {
         batch.disposed = true;
-        for (const texture of batch.parkedMorph) texture?.dispose();
         disposeOwned(batch.resources);
       }
       disposeOwned(resources);

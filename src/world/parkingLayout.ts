@@ -1,4 +1,3 @@
-import { identityMemo } from '@core/identityMemo';
 import type { Digest } from '@core/digest';
 import type { Vec2 } from '@core/vec2';
 import type { Polyline } from '@core/polyline';
@@ -6,8 +5,9 @@ import type { RoadDoc } from './doc';
 import type { NodeId, SegmentId } from './ids';
 import type { Network, SegmentRibbon } from './network';
 import { CROSSWALK_DEPTH } from './approach';
-import { localToWorld } from './buildings/geometry';
-import type { Building } from './buildings/types';
+import { entrancesOf } from './buildingGates';
+// Where they were first: the far roads and the tests read them from here too.
+export { entrancesOf, gatesOf } from './buildingGates';
 import { CORNER_CLEAR, CROSSING_CLEAR, PARKING_PITCH, type ParkingKind } from './parking';
 import { m, stepsIn } from './units';
 
@@ -50,39 +50,10 @@ const YELLOW = '#e1c45a';
 const CYCLE_RED = '#a8473e';
 /** Every colour the parking's lines are painted in (`render/markings.ts` `PAINT_COLOURS`). */
 export const PARKING_PAINT: readonly string[] = Object.freeze([WHITE, YELLOW, CYCLE_RED]);
-/** The narrowest gate a car goes through (a person's is 1.2 m); `sim/agents/parking.ts` `CAR_GATE`. */
-const CAR_GATE_WIDTH = m(2.2);
 /** Kept clear either side of a lot's frontage for its entrance. */
 const ENTRANCE_MARGIN = m(1);
 /** Step of the paint along a run, so a line follows a curve. */
 const RUN_STEP = m(1);
-
-/** One building's entrances: its car gates and the edges of its parking, worked out once a record (records are replaced, never changed: `identityMemo`) - each street with parking read the buildings near it on both its sides, every one worked out again each time. */
-export const entrancesOf: (b: Building) => readonly [Vec2, Vec2][] = identityMemo(workOutEntrances);
-
-/** Each record's entrances, worked out once (`entrancesOf`: records are never changed, only replaced). */
-function workOutEntrances(b: Building): readonly [Vec2, Vec2][] {
-  const out: [Vec2, Vec2][] = [];
-  // Every car gate is a lowered kerb (CTB art. 181 IX: no parking where the kerb is lowered for vehicles to go in or out)
-  for (const el of b.elements ?? []) {
-    if (el.kind !== 'gate' || el.w < CAR_GATE_WIDTH) continue;
-    const alongY = el.facing === 1 || el.facing === 3;
-    const c = Math.cos(el.angle ?? 0), s = Math.sin(el.angle ?? 0);
-    const ux = alongY ? -s : c, uy = alongY ? c : s;
-    out.push([localToWorld(b, el.x - ux * el.w / 2, el.y - uy * el.w / 2), localToWorld(b, el.x + ux * el.w / 2, el.y + uy * el.w / 2)]);
-  }
-  for (const el of b.elements ?? []) {
-    if (el.kind !== 'parking') continue;
-    const lot = b.volumes.find((v) => v.open && el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
-    const box = lot ?? { x: el.x - el.w / 2, y: el.y - el.d / 2, w: el.w, d: el.d };
-    const corners = [
-      localToWorld(b, box.x, box.y), localToWorld(b, box.x + box.w, box.y),
-      localToWorld(b, box.x + box.w, box.y + box.d), localToWorld(b, box.x, box.y + box.d),
-    ];
-    for (let i = 0; i < 4; i++) out.push([corners[i]!, corners[(i + 1) % 4]!]);
-  }
-  return out;
-}
 
 /** DO NOT hand every entrance of the map to every street: each street with parking tested every gate of the city. */
 export function parkingLayout(net: Network, entrances: readonly [Vec2, Vec2][] | null = null): ParkingLayout {
@@ -97,13 +68,6 @@ export function parkingLinesOf(net: Network, ribbon: SegmentRibbon, entrances: r
   const lines: ParkingLine[] = [];
   parkingOf(net, ribbon, entrances, [], lines);
   return lines;
-}
-
-/** Every entrance of some buildings (`entrancesOf`), four numbers each (x0, y0, x1, y1): what a tile keeps of its buildings for its streets' parking (`TileRecords.gates`). */
-export function gatesOf(buildings: Iterable<Building>): number[] {
-  const out: number[] = [];
-  for (const b of buildings) for (const [p, q] of entrancesOf(b)) out.push(p.x, p.y, q.x, q.y);
-  return out;
 }
 
 /** The entrances of `gates` (`gatesOf`) a street of half width `half` along `line` may read: those `entrancesNear` would hand it, for a road bake without the buildings (`render/nearRoadTiles.ts`). */

@@ -1,3 +1,4 @@
+import { measureHitch } from '@core/hitch';
 import { flipParking, sameParking, type SegmentParking } from '@world/parking';
 import {
   controlPoint,
@@ -83,7 +84,7 @@ export function commitRoadPath(
   pieces = joinShortPieces(pieces);
   // Each step of a road drawn timed (`hitch:` entries).
   let lap = performance.now();
-  const timed = (what: string): void => { const now = performance.now(); performance.measure(`hitch:commit/${what}`, { start: lap, end: now }); lap = now; };
+  const timed = (what: string): void => { const now = performance.now(); measureHitch(`hitch:commit/${what}`, lap, now); lap = now; };
   // DO NOT copy the map to judge against when the network is behind (`snapshotRoads`)
   if (net.revision !== doc.revision) net.rebuild();
   const work = doc.fork();

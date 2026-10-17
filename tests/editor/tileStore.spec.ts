@@ -4,14 +4,15 @@ import { TiledSaves } from '@editor/chunkedSave';
 import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
 import {
-  type MadeTile, type TileText, TileStore, type WorldMeta, readTile, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
-  preparedRecords, tileWrite, writtenRecords } from '@editor/tileStore';
+  type MadeTile, type TileOp, type TileText, TileStore, type WorldMeta, bakeStoredTile, portTiles, readTile, runTileOp, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
+  preparedRecords, storedVersionBaked, tileWrite, writtenRecords } from '@editor/tileStore';
 
-/** A maker as `cityTile.worker.ts` serves one: asked only if missing, it looks in the store first (`storedVersion`), the tile read and prepared where it is there; `make` runs only for a tile the store has not. */
-function lookingFirst(store: PartStore, make: (i: number, j: number, after: number, text: boolean) => Promise<MadeTile>) {
+/** A maker as `cityTile.worker.ts` serves one: asked only if missing, it looks in the store first (`storedVersionBaked`: a tile in parts with no sections baked there), the tile read and prepared where it is there; `make` runs only for a tile the store has not. */
+function lookingFirst(store: PartStore, make: (i: number, j: number, after: number, text: boolean) => Promise<MadeTile>,
+  bake: (records: TileRecords) => Readonly<Record<string, { json: unknown }>> = () => ({ mark: { json: 1 } })) {
   return async (i: number, j: number, after: number, text: boolean, ifMissing: boolean): Promise<MadeTile> => {
     if (ifMissing) {
-      const version = await storedVersion(store, 'map', tileKey(i, j));
+      const version = await storedVersionBaked(store, 'map', tileKey(i, j), bake);
       if (version === 'legacy') return { version: null, legacy: true };
       if (version !== null) {
         const records = text ? await readTile(store, 'map', tileKey(i, j)) : null;
@@ -108,6 +109,34 @@ describe('a tile stored', () => {
     expect(bake).toHaveBeenCalledTimes(1);
   });
 
+  it("an edit's records are stored before its sections are baked: a reload during the bake finds the edit (conf28)", async () => {
+    const store = memoryStore();
+    const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5))] });
+    const key = tile.key, blobKey = `map:T:${key}`;
+    // What the store held each time a bake ran: a page reloaded then keeps only that.
+    const heldAtBake: (Blob | undefined)[] = [];
+    const bake = vi.fn((records: TileRecords) => { heldAtBake.push(store.blobs.get(blobKey)); return { count: { json: { n: records.nodes.length } } }; });
+    // The maker as `cityTile.worker.ts` serves a tile the page stored (`sectionsOnly`).
+    const maker = async (_i: number, _j: number, after: number, _r: boolean, _m: boolean, _b?: boolean, sectionsOnly?: boolean): Promise<MadeTile> => {
+      if (!sectionsOnly) throw new Error('only the sections are asked of the maker here');
+      return { version: (await bakeStoredTile(store, 'map', key, after, bake)) ? after : null, existed: true };
+    };
+    const tiles = new TileStore('map', storeTiles(store, bake), never, maker);
+    expect(await tiles.write(tile)).toBe(1);
+    // The player lays a road: a second node, the tile written again.
+    const edited = { ...tile, version: 1, nodes: [...tile.nodes, node(2, m(1_200), m(5))] };
+    expect(await tiles.write(edited)).toBe(2);
+    await tiles.read(key);
+    expect(bake).toHaveBeenCalledTimes(2);
+    // Each bake ran with the version it bakes already stored.
+    expect(await Promise.all(heldAtBake.map(async (b) => (b ? (await readHead(b))?.head.version : null)))).toEqual([1, 2]);
+    // Read again as a reload reads it: the road there, and its sections baked after.
+    expect((await new TileStore('map', storeTiles(store), never).read(key))?.nodes.map((n) => n.id)).toEqual([1, 2]);
+    expect(await readTilePart(store, 'map', key, 'count')).toEqual({ value: { n: 2 } });
+    // A stale bake (a newer write stored meanwhile) writes nothing.
+    expect(await bakeStoredTile(store, 'map', key, 1, bake)).toBe(false);
+  });
+
   it('a tile of format 1 (one gzip of its records) is read, and written again in parts once when its version is asked', async () => {
     const store = memoryStore();
     const tile = { ...emptyTile(-1, 2, { nodes: [node(3, m(-500), m(2_500))] }), version: 3 };
@@ -191,16 +220,24 @@ describe('a tile stored', () => {
     expect(await tiles.write(tile)).toBe(2);
   });
 
-  it('a tile stored in the older form is not made again: the save worker reads its version', async () => {
+  it("a tile stored with no sections (a reload cut its bake short) is baked by its maker on reopening: never made, nor asked of the store's lanes (conf37)", async () => {
     const store = memoryStore();
-    const old = { ...emptyTile(3, 3), version: 4 };
-    // Written with no baker: no sections, the head not marked baked (`storedVersion` says 'legacy').
+    const old = { ...emptyTile(3, 3, { trees: [{ x: 3, y: 3 }] }), version: 4 };
+    // Written by the page before its bake (`TileStore.write`): no sections, the head not marked baked.
     await writeTile(store, 'map', old);
     expect(await storedVersion(store, 'map', old.key)).toBe('legacy');
     const made: number[] = [];
-    const tiles = new TileStore('map', storeTiles(store), never, lookingFirst(store, async (i, j) => { made.push(tileKey(i, j)); return { version: 1 }; }));
+    // The store's lanes (the save's worker and the reads'): DO NOT reach them while the map is made, they stand behind the rush's tiles.
+    const lanes: string[] = [];
+    const backend = storeTiles(store);
+    const watched = { run: (op: TileOp) => { lanes.push(op.op); return backend.run(op); } };
+    const tiles = new TileStore('map', watched, never, lookingFirst(store, async (i, j) => { made.push(tileKey(i, j)); return { version: 1 }; }));
     expect(await tiles.ensure(old.key)).toBe(4);
+    expect(await tiles.load(old.key)).toEqual(old);
     expect(made).toEqual([]);
+    expect(lanes).toEqual([]);
+    // Baked where the maker looked, at its own version.
+    expect(await storedVersion(store, 'map', old.key)).toBe(4);
   });
 
   it('a region tile made and not stored is still handed to the page', async () => {
@@ -292,6 +329,77 @@ describe('a tile stored', () => {
     expect(await tiles.clearLists(tile.key, ['trees'])).toBeNull();
     expect(store.writes.length).toBe(writes + 1);
     expect(await tiles.clearLists(tileKey(5, 5), ['trees'])).toBeNull();
+  });
+
+  it("a tile and the balance written while the reads' worker is busy: the save's worker only writes (conf28)", async () => {
+    const store = memoryStore();
+    /** A worker of the pool as `portTiles` posts to it: its calls one at a time, a read held while `busy` is not let go (a tile prepared with its network). */
+    let letGo = (): void => {};
+    const busy = new Promise<void>((done) => { letGo = done; });
+    const worker = (): Worker => {
+      const w = { onmessage: null as ((e: MessageEvent) => void) | null, onerror: null, onmessageerror: null, chain: Promise.resolve(),
+        postMessage(message: { id: number; tiles: TileOp }) {
+          w.chain = w.chain.then(async () => {
+            if (message.tiles.op === 'read') await busy;
+            const value = await runTileOp(store, message.tiles);
+            w.onmessage?.({ data: { id: message.id, ok: true, value } } as MessageEvent);
+          });
+        } };
+      return w as unknown as Worker;
+    };
+    const backend = portTiles(worker, 3, worker);
+    const maker = async (): Promise<MadeTile> => ({ version: null, existed: true });
+    const tiles = new TileStore('map', backend, never, maker);
+    await tiles.setMeta({ version: 1, generator: null, unit: 1, values: { terrain: [], economy: { balance: 20_000_000 } } });
+    // A tile of the region being read and prepared, its network solved: it holds its worker.
+    const reading = backend.run({ op: 'read', map: 'map', key: tileKey(4, 4), network: true });
+    const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5)), node(2, m(1_200), m(5))] });
+    const saved = Promise.all([tiles.write(tile), tiles.setMetaParts({ economy: { economy: { balance: 19_744_162 } } })]);
+    const outcome = await Promise.race([saved, new Promise((done) => setTimeout(() => done('held behind the read'), 200))]);
+    expect(outcome).toEqual([1, true]);
+    letGo();
+    await reading;
+    // Read again as a reload reads it: the road and the balance.
+    expect((await readTile(store, 'map', tile.key))?.nodes.map((n) => n.id)).toEqual([1, 2]);
+    expect((await new TileStore('map', storeTiles(store), never).meta())?.values?.economy).toEqual({ balance: 19_744_162 });
+  });
+
+  it("a tile and the balance written while the region's reads run: on a worker apart from the reads', they land behind no read's work (conf28)", async () => {
+    const store = memoryStore();
+    /** One worker's thread as a browser runs it: each call begun as it comes, its awaits let the next in, a read's decoding and preparing (`prepareTile`) synchronous - its thread held, nothing else run on it meanwhile (`turn`). */
+    const SYNC_READ_MS = 150;
+    const thread = (): Worker => {
+      let turn = Promise.resolve();
+      const w = { onmessage: null as ((e: MessageEvent) => void) | null, onerror: null, onmessageerror: null,
+        postMessage(message: { id: number; tiles: TileOp }) {
+          // The store's own wait (IndexedDB), then the call's work on the thread, after the work before it.
+          const hold = message.tiles.op === 'read' ? SYNC_READ_MS : 0;
+          const run = turn.then(() => new Promise((done) => setTimeout(done, hold)));
+          turn = run.then(() => undefined);
+          void run.then(async () => {
+            const value = await runTileOp(store, message.tiles);
+            w.onmessage?.({ data: { id: message.id, ok: true, value } } as MessageEvent);
+          });
+        } };
+      return w as unknown as Worker;
+    };
+    // The save's lane and the reads' on workers apart, as `jobPool.ts` places them where the pool has five or more (`keptClearWorkers`): on one, the edit waited ~460 ms behind three reads.
+    const saves = thread(), reading = thread();
+    const backend = portTiles(() => saves, 3, () => reading);
+    const tiles = new TileStore('map', backend, never, async () => ({ version: null, existed: true }));
+    await tiles.setMeta({ version: 1, generator: null, unit: 1, values: { terrain: [], economy: { balance: 20_000_000 } } });
+    for (let k = 0; k < 3; k++) await writeTile(store, 'map', { ...emptyTile(4, k), version: 1 });
+    // The region's tiles being read (three lanes), then the edit and the balance.
+    const reads = [0, 1, 2].map((k) => backend.run({ op: 'read', map: 'map', key: tileKey(4, k), network: false }));
+    const started = performance.now();
+    const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5)), node(2, m(1_200), m(5))] });
+    await Promise.all([tiles.write(tile), tiles.setMetaParts({ economy: { economy: { balance: 19_744_162 } } })]);
+    const waited = performance.now() - started;
+    await Promise.all(reads);
+    expect((await readTile(store, 'map', tile.key))?.nodes.map((n) => n.id)).toEqual([1, 2]);
+    expect((await new TileStore('map', storeTiles(store), never).meta())?.values?.economy).toEqual({ balance: 19_744_162 });
+    // Behind no read's synchronous work: the commits a reload may come after.
+    expect(waited).toBeLessThan(SYNC_READ_MS);
   });
 
   it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {
@@ -413,7 +521,34 @@ function smallMap(): SerializedDoc {
   };
 }
 
+describe('a tile store of a tab that only reads the world', () => {
+  it('writes nothing: a tile made is not stored, a write is refused, the maker that stores is never asked', async () => {
+    const store = memoryStore();
+    let stored = 0;
+    const tiles = new TileStore('map', storeTiles(store), async (i, j) => emptyTile(i, j),
+      async () => { stored++; return { version: 1 }; });
+    tiles.readOnly = true;
+    await tiles.load(tileKey(0, 0));
+    expect(await tiles.write(emptyTile(1, 0))).toBeNull();
+    expect(store.writes).toHaveLength(0);
+    expect(stored).toBe(0);
+  });
+});
+
 describe('a map saved before the tiles', () => {
+  it("is migrated without another world's parts left in the store (its balance, zones, people)", async () => {
+    const store = memoryStore();
+    const doc = smallMap();
+    store.blobs.set('map', new Blob([JSON.stringify({ version: 2, savedAt: 10, document: doc, settings: { camera: 1 } })]));
+    // A part written apart by a world before, its whole gone.
+    store.blobs.set('map:world:economy', new Blob([JSON.stringify({ economy: { balance: 123_456_789 } })]));
+    const tiles = new TileStore('map', storeTiles(store), never);
+    expect((await tiles.migrate()).outcome).toBe('migrated');
+    expect(store.blobs.has('map:world:economy')).toBe(false);
+    const meta = await tiles.meta();
+    expect((meta?.values as { economy?: { balance?: number } } | undefined)?.economy?.balance).not.toBe(123_456_789);
+  });
+
   it('is distributed into tiles whose union is the map, borrowed ends present', async () => {
     const store = memoryStore();
     const doc = smallMap();
@@ -493,3 +628,31 @@ describe('a map saved before the tiles', () => {
     expect(store.writes).toHaveLength(0);
   });
 });
+
+describe("a stored tile's bays added after the map is made (`TileStore.addBays`)", () => {
+  it("asks the maker for the bays alone, on the tile's chain: a write of the tile asked meanwhile waits for it", async () => {
+    const order: string[] = [];
+    let release: () => void = () => {};
+    const maker = (_i: number, _j: number, _after: number, _records: boolean, _ifMissing: boolean, baysOnly?: boolean): Promise<MadeTile> => {
+      order.push(baysOnly ? 'bays' : 'made');
+      return new Promise((done) => { release = () => done({ version: 1 }); });
+    };
+    const backend = { run: vi.fn(async (op: { op: string }) => { order.push(op.op); return op.op === 'write' ? true : null; }) };
+    const store = new TileStore('map', backend as never, () => Promise.reject(new Error('not made here')), maker);
+    const key = tileKey(2, 3);
+    const bays = store.addBays(key);
+    const base = tileIdBase(key);
+    const written = store.write({
+      key, version: 1, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [], lotKeys: [],
+      landscape: [], barriers: [], paint: [], trees: [], elements: [],
+      next: { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(order).toEqual(['bays']);
+    release();
+    await bays;
+    await written;
+    expect(order).toEqual(['bays', 'write']);
+  });
+});
+

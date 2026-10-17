@@ -74,8 +74,12 @@ export class AmbientWorld {
   readonly movers = new Set<Vehicle>();
   /** DO NOT make a reader compare the whole list every tick to find what changed: every parked car of the map, each tick. */
   private parkedLog: { readonly car: StandingCar; readonly added: boolean }[] = [];
+  /** Entries of `parkedLog` before it are let go; `parkedBase` is the serial of the entry at it. */
+  private parkedHead = 0;
   private parkedBase = 0;
   parkedSerial = 0;
+  /** DO NOT forget the log for everybody when one reader lags: each reader's serial read up to (`parkedSince`), the log kept from the least of them. */
+  private readonly parkedReaders = new Map<object, number>();
   /** The scenery's own cars standing in bays, by the bay's place (`spotKey`). */
   private readonly sceneryAt = new Map<number, SceneryCar>();
   /** Told the bay's place each time a scenery's car comes into a bay or leaves it (the lots' free bays, `lotTraffic.ts`); null: nobody. */
@@ -777,22 +781,40 @@ export class AmbientWorld {
     return this.parkedSerial;
   }
 
-  /** The cars that came into `parked` (`added`) and went since `serial`, oldest first; null: read it whole. */
-  parkedSince(serial: number): readonly { readonly car: StandingCar; readonly added: boolean }[] | null {
-    if (serial < this.parkedBase || serial > this.parkedSerial) return null;
-    return this.parkedLog.slice(serial - this.parkedBase);
+  /** The cars that came into `parked` (`added`) and went since `serial`, oldest first; null: read it whole. `reader` has then read up to `parkedSerial`: what all readers read is let go. */
+  parkedSince(serial: number, reader?: object): readonly { readonly car: StandingCar; readonly added: boolean }[] | null {
+    const out = serial < this.parkedBase || serial > this.parkedSerial ? null : this.parkedLog.slice(this.parkedHead + serial - this.parkedBase);
+    if (reader) { this.parkedReaders.set(reader, this.parkedSerial); this.trimParkedLog(); }
+    return out;
   }
 
   private logParked(car: StandingCar, added: boolean): void {
     this.parkedLog.push({ car, added });
     this.parkedSerial++;
-    // Longer than the list itself, reading the list whole is no dearer: forgotten.
-    if (this.parkedLog.length > Math.max(64, this.parked.length)) this.forgetParkedLog();
+    this.trimParkedLog();
+  }
+
+  /** The log kept from the least serial its readers read up to; a lagging reader's part longer than the list itself (reading it whole is no dearer) let go for that reader alone. */
+  private trimParkedLog(): void {
+    // With no reader known yet, kept up to the bound alone.
+    let least = this.parkedReaders.size ? this.parkedSerial : -Infinity;
+    for (const serial of this.parkedReaders.values()) if (serial < least) least = serial;
+    const floor = Math.max(least, this.parkedSerial - Math.max(64, this.parked.length));
+    if (floor <= this.parkedBase) return;
+    this.parkedHead += floor - this.parkedBase;
+    this.parkedBase = floor;
+    // The let-go head dropped once it is half the array: each entry moved a bounded number of times.
+    if (this.parkedHead > 64 && this.parkedHead * 2 > this.parkedLog.length) {
+      this.parkedLog = this.parkedLog.slice(this.parkedHead);
+      this.parkedHead = 0;
+    }
   }
 
   /** Everything logged forgotten: a reader of before reads `parked` whole (`parkedSince` null). */
   private forgetParkedLog(): void {
     this.parkedLog = [];
+    this.parkedHead = 0;
+    this.parkedReaders.clear();
     this.parkedBase = ++this.parkedSerial;
   }
 
@@ -803,7 +825,7 @@ export class AmbientWorld {
 
   /** DO NOT stand every bay of the town again at each change: every bay of the map */
   private parking(w: SimWorld): void {
-    const { serial, changed } = bayChangesSince(w, this.baysSerial);
+    const { serial, changed } = bayChangesSince(w, this.baysSerial, this);
     if (serial === this.baysSerial && changed !== null) return;
     this.baysSerial = serial;
     // The cars of the lots by where they stand, once for this look: DO NOT walk them all for each bay (`stand`).

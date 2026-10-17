@@ -307,6 +307,18 @@ describe('a route search touches the nodes it reaches', () => {
     expect(walkWork.routeNodes - before).toBeLessThan(g.nodes.length / 8);
   });
 
+  it('refuses a goal on a footway cut off from the start without searching the town', () => {
+    const doc = grid(6);
+    // A street of its own, far off, joined to nothing.
+    doc.addSegment(doc.addNode({ x: m(2000), y: 0 }).id, doc.addNode({ x: m(2100), y: 0 }).id, 1);
+    const g = graphOf(worldOf(doc));
+    const from = wayNear(g, m(10), m(4)), to = wayNear(g, m(2050), m(6));
+    expect(route(g, from, wayNear(g, m(100), m(30)))).not.toBeNull();
+    const before = walkWork.routeNodes;
+    expect(route(g, from, to)).toBeNull();
+    expect(walkWork.routeNodes - before).toBe(0);
+  });
+
   it('touches as many nodes for a short route on a map four times the size', () => {
     const work = (n: number): { touched: number; nodes: number } => {
       const g = graphOf(worldOf(grid(n)));

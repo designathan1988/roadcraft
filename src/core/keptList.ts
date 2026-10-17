@@ -3,6 +3,9 @@ export class KeptList {
   /** `what`: what the entries are, for the console ("blueprint", "road template"). */
   constructor(readonly key: string, private readonly what: string) {}
 
+  /** `readShared`'s last list and the stored text and reader it came from. */
+  private shared: { readonly text: string | null; readonly read: (entry: unknown) => unknown; readonly out: readonly unknown[] } | null = null;
+
   /** The stored entries as they are; empty when nothing is stored, storage is blocked or its text is not a list. */
   entries(): readonly unknown[] {
     const stored = this.stored();
@@ -20,6 +23,21 @@ export class KeptList {
         console.warn(`[kept] a ${this.what} this build cannot read; kept as it is`, error);
       }
     }
+    return out;
+  }
+
+  /** As `read`, but the same list (by identity, not parsed again) while the stored text is the same: for callers that redraw by it. */
+  readShared<T>(read: (entry: unknown) => T | null): readonly T[] {
+    let text: string | null;
+    try {
+      text = localStorage.getItem(this.key);
+    } catch (error) {
+      console.warn(`[kept] the ${this.what} list cannot be read`, error);
+      return this.read(read);
+    }
+    if (this.shared && this.shared.text === text && this.shared.read === read) return this.shared.out as readonly T[];
+    const out = this.read(read);
+    this.shared = { text, read, out };
     return out;
   }
 

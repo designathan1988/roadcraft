@@ -159,7 +159,7 @@ function baseReliefTuned(x: number, y: number): number {
 
 /** A uniform grid over the stamps, so a height query touches only nearby ones. */
 export class TerrainIndex {
-  private readonly buckets = new Map<number, TerrainStamp[]>();
+  private readonly buckets: Map<number, TerrainStamp[]>;
   readonly stamps: readonly TerrainStamp[];
   /** The revision the caller built it at (`RoadDoc.terrainRevision`), kept for it; the index itself never reads it. */
   readonly revision: number;
@@ -169,14 +169,22 @@ export class TerrainIndex {
   /** The land under the stamps when it is read otherwise than from the relief at the point itself */
   readonly ground: ((x: number, y: number) => number) | undefined;
 
-  constructor(stamps: readonly TerrainStamp[], revision: number, relief: ReliefVersion = RELIEF_LEGACY, ground?: (x: number, y: number) => number) {
+  /** `before`: an index of the first of these stamps on the same land (a dab appended): its cells shared, only the ones the new stamps cover filed again - DO NOT file the map's every stamp again for a dab of the brush. */
+  constructor(stamps: readonly TerrainStamp[], revision: number, relief: ReliefVersion = RELIEF_LEGACY, ground?: (x: number, y: number) => number,
+    before?: TerrainIndex) {
     this.relief = relief;
     this.ground = ground;
     // COPIED, not aliased.
     this.stamps = stamps.slice();
     this.revision = revision;
+    const from = before && before.relief === relief && before.ground === ground && before.stamps.length <= stamps.length
+      && before.stamps.every((s, i) => s === stamps[i]) ? before : null;
+    this.buckets = from ? new Map(from.buckets) : new Map();
+    /** The buckets this index owns (copied from `before` when first written): `before` is never changed. */
+    const own = from ? new Set<number>() : null;
     // DO NOT size the cell by the widest stamp: one wide stamp
-    for (const stamp of stamps) {
+    for (let k = from ? from.stamps.length : 0; k < stamps.length; k++) {
+      const stamp = stamps[k]!;
       const x0 = Math.floor((stamp.x - stamp.radius) / STAMP_CELL);
       const x1 = Math.floor((stamp.x + stamp.radius) / STAMP_CELL);
       const y0 = Math.floor((stamp.y - stamp.radius) / STAMP_CELL);
@@ -185,8 +193,9 @@ export class TerrainIndex {
         for (let y = y0; y <= y1; y++) {
           const key = stampCellKey(x, y);
           const bucket = this.buckets.get(key);
-          if (bucket) bucket.push(stamp);
-          else this.buckets.set(key, [stamp]);
+          if (!bucket) { this.buckets.set(key, [stamp]); own?.add(key); continue; }
+          if (own && !own.has(key)) { own.add(key); this.buckets.set(key, [...bucket, stamp]); continue; }
+          bucket.push(stamp);
         }
       }
     }

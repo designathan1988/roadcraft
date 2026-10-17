@@ -1,7 +1,7 @@
 import { internMembers } from './intern';
 import { RecordMap } from '@core/recordMap';
 import { IdAllocator } from '../ids';
-import { ChangeJournal, type ChangeRect } from '../changes';
+import { ChangeJournal, type ChangeRect, rectsAround } from '../changes';
 import { JournalCursor } from '../derived';
 import { samePlain } from '@core/plain';
 import { ForkMap } from '@core/forkMap';
@@ -57,9 +57,10 @@ export class BuildingStore {
     return this.journal.serialOf('buildingWear');
   }
 
-  /** Writes a change of these buildings (their rectangles, or the whole map when any has none). */
-  private changed(buildings: readonly Building[] | null, detail?: string): void {
-    const rects = buildings?.map(rectOf) ?? null;
+  /** Writes a change of these buildings (their rectangles, or the whole map when any has none); `oneRect`: a tile's buildings, one rectangle round them all (with their ids), not one each. */
+  private changed(buildings: readonly Building[] | null, detail?: string, oneRect = false): void {
+    const each = buildings?.map(rectOf) ?? null;
+    const rects = each && oneRect && each.length > 1 ? [rectsAround(each)] : each;
     const ids = buildings?.map((b) => b.id as number);
     this.journal.record('buildings', rects, { ...(ids ? { ids } : {}), ...(detail ? { detail } : {}) });
   }
@@ -188,7 +189,7 @@ export class BuildingStore {
       this.grid?.insert(now);
       placed.push(now);
     }
-    if (placed.length) this.changed(placed, 'tile');
+    if (placed.length) this.changed(placed, 'tile', true);
   }
 
   /** The buildings of a tile taken out of the page's document (`RoadDoc.unloadTile`): one diary entry. */
@@ -202,7 +203,7 @@ export class BuildingStore {
       this.grid?.delete(id);
       gone.push(was);
     }
-    if (gone.length) this.changed(gone, 'tile');
+    if (gone.length) this.changed(gone, 'tile', true);
   }
 
   /** The id the allocator hands out next, set back by undo. */
