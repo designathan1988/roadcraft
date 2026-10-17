@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToJob } from '@/jobs/jobScope';
+import { tileKey } from '@world/tiles';
 
 /** A stored tile's bays (low work) start only while the job queue is quiet: a queued job never waits for the bays of the whole map */
 class FakeWorker {
@@ -50,7 +51,8 @@ describe("the tile generator's bays", () => {
     job('near roads');
     const first = started[0]!;
     const host = FakeWorker.made.find((w) => w.asked.includes(first))!;
-    host.onmessage!({ data: { port: first.port, data: { key: 0, stored: 1, existed: true } } });
+    const at = first.data as { i: number; j: number };
+    host.onmessage!({ data: { port: first.port, data: { key: tileKey(at.i, at.j), stored: 1, existed: true } } });
     expect(bays()).toHaveLength(started.length);
     answerJob('near roads');
     // One under way still, one more begun: two again.
