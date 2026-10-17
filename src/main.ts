@@ -2000,7 +2000,11 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   }, () => generator.lanesWanted);
   const activeAt = (x: number, y: number): boolean => streamer.isActive(tileKeyAt(x, y));
   // The far levels stand in for every tile not in the active region, the kept ring's too (its records are on the page for the edits and the simulation, its products are the far levels').
-  for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, workersRead: mapName }, (key) => doc.hasTile(key) && streamer.isActive(key) && scene.nearDrawn(key));
+  // An edited tile's roads drawn from the page's records until its write is confirmed (`farTree.ts` near level), not from the store's older version.
+  for (const f of far) {
+    f.setSource({ records: (key) => store.read(key), plan: options, workersRead: mapName, pageEdit: (key) => streamer.pageEdit(key), pageRecords: (key) => streamer.pageRecords(key) },
+      (key) => doc.hasTile(key) && streamer.isActive(key) && scene.nearDrawn(key));
+  }
   scene.onNearDrawn = (key) => { for (const f of far) f.loadedChanged(key); requestDraw(); };
   scene.setActiveTiles(activeAt, []);
   // The simulation's worker holds the active region's records only: the ring's traffic is the meso's, from the store's tables.
