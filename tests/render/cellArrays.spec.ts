@@ -1,3 +1,4 @@
+import { poseMatrices } from '@render/buildings/partPose';
 import { describe, expect, it } from 'vitest';
 import { Box3, BufferAttribute, BufferGeometry, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, Sphere } from 'three';
 
@@ -59,7 +60,8 @@ describe('a batch as arrays', () => {
     expect(parts.length).toBeGreaterThan(5);
     for (const [kind, part] of parts) {
       const mesh = new InstancedMesh(kit.geometry[kind as keyof typeof kit.geometry], new MeshBasicMaterial(), part!.count);
-      mesh.instanceMatrix = new InstancedBufferAttribute(part!.instanceMatrix, 16);
+      // The matrices the GPU makes from the poses (`partPose.ts`).
+      mesh.instanceMatrix = new InstancedBufferAttribute(poseMatrices(part!.poses, part!.count), 16);
       mesh.computeBoundingBox();
       const box = mesh.boundingBox!;
       const sphere = box.getBoundingSphere(new Sphere());

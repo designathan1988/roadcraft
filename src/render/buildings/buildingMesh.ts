@@ -112,6 +112,7 @@ import type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch, RunChunk, Sh
 export type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch,  } from './chunk';
 import { drawsSignature } from './signature';
 import { type Cover, type PartyWalls, hiddenByCovers } from './partyWalls';
+import { POSE_FLOATS, letGoPosed, partPoseDepth, poseMatrixInto, posedCopy } from './partPose';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
 
 /** Where the flags of the building being emitted go (`emitChunk` sets it). */
@@ -3414,15 +3415,19 @@ function roomsOfPanes(list: readonly Placement[]): Uint16Array {
   return out;
 }
 
-/** Column-major T * Ry * S, written straight into `out` at `offset`. */
-function writeMatrix(out: Float32Array, offset: number, p: Placement): void {
-  const c = Math.cos(p.yaw);
-  const s = Math.sin(p.yaw);
-  out[offset] = c * p.sx; out[offset + 1] = 0; out[offset + 2] = -s * p.sx; out[offset + 3] = 0;
-  out[offset + 4] = 0; out[offset + 5] = p.sy; out[offset + 6] = 0; out[offset + 7] = 0;
-  out[offset + 8] = s * p.sz; out[offset + 9] = 0; out[offset + 10] = c * p.sz; out[offset + 11] = 0;
+/** A placement's pose (`partPose.ts`: T * Ry * S made by the GPU), written straight into `out` at instance `i`. */
+function writePose(out: Float32Array, i: number, p: Placement): void {
+  const o = i * POSE_FLOATS;
   // World y is mirrored into three's z, as everywhere else in this layer.
-  out[offset + 12] = p.x; out[offset + 13] = p.z; out[offset + 14] = -p.y; out[offset + 15] = 1;
+  out[o] = p.x; out[o + 1] = p.z; out[o + 2] = -p.y; out[o + 3] = Math.cos(p.yaw);
+  out[o + 4] = Math.sin(p.yaw); out[o + 5] = p.sx; out[o + 6] = p.sy; out[o + 7] = p.sz;
+}
+
+/** Every placement of a list as its pose. */
+function posesOf(list: readonly Placement[]): Float32Array {
+  const poses = new Float32Array(list.length * POSE_FLOATS);
+  list.forEach((p, i) => writePose(poses, i, p));
+  return poses;
 }
 
 /** Whether a building flies a flag: a spire or a lantern on its roof with a flag (`flagOf`). */
@@ -3474,14 +3479,13 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   const batches = {} as Record<PartKind, PartBatch>;
   for (const kind of PART_KINDS) {
     const list = parts[kind];
-    const matrices = new Float32Array(list.length * 16);
+    const poses = posesOf(list);
     const coloured = COLOURED_PARTS.has(kind);
     const colours = coloured ? new Float32Array(list.length * 3) : null;
     const fallback = PART_DEFAULT_COLOUR[kind] ?? WHITE_RGB;
     // A shell's part: its finish, its wear as the shell's vertices carry it and its ground (none: `NO_GROUND`).
     const looks = SHELL_PARTS.has(kind) ? new Float32Array(list.length * LOOK_FLOATS) : null;
     list.forEach((p, i) => {
-      writeMatrix(matrices, i * 16, p);
       if (colours) {
         const rgb = p.look?.paint.rgb;
         colours[i * 3] = rgb ? rgb[0] : p.colour ? p.colour.r : fallback[0];
@@ -3496,17 +3500,15 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
     });
     const glassy = kind === 'glass' || kind === 'glassDark';
     batches[kind] = glassy
-      ? { matrices, colours, count: list.length, slots: Float32Array.from(list, (p) => p.slot ?? -1), rooms: roomsOfPanes(list) }
-      : looks ? { matrices, colours, count: list.length, looks } : { matrices, colours, count: list.length };
+      ? { poses, colours, count: list.length, slots: Float32Array.from(list, (p) => p.slot ?? -1), rooms: roomsOfPanes(list) }
+      : looks ? { poses, colours, count: list.length, looks } : { poses, colours, count: list.length };
   }
   const shells = shellChunks(shell);
   let furniture: Partial<Record<FurnitureKind, PartBatch>> | undefined;
   for (const kind of FURNITURE_KINDS) {
     const list = furnished[kind];
     if (!list || list.length === 0) continue;
-    const matrices = new Float32Array(list.length * 16);
-    list.forEach((p, i) => writeMatrix(matrices, i * 16, p));
-    (furniture ??= {})[kind] = { matrices, colours: null, count: list.length };
+    (furniture ??= {})[kind] = { poses: posesOf(list), colours: null, count: list.length };
   }
   const runs = runChunks(shell);
   const laid = runs ? { shells, runs } : { shells };
@@ -3565,16 +3567,21 @@ function runChunks(shell: Shell): Partial<Record<Finish, RunChunk>> | undefined 
   return runs;
 }
 
+/** One instance's matrix, written over by each instance `shellPartFaces` lays. */
+const SHELL_PART_MATRIX = new Float32Array(16);
+
 /** The shell's parts of a chunk laid as the shell's faces again, as `Emitter.box`, `slab` and `emitFence` laid them, from the instances alone (`shellParts.ts`) */
 export function shellPartFaces(parts: Readonly<Record<PartKind, PartBatch>>): Partial<Record<Finish, ShellChunk>> {
   const shell = new Shell();
   for (const kind of SHELL_PART_KINDS) {
     const batch = parts[kind];
     if (!batch?.count || !batch.looks || !batch.colours) continue;
-    const { matrices: e, colours, looks } = batch;
+    const { poses, colours, looks } = batch;
+    const e = SHELL_PART_MATRIX, o = 0;
     for (let i = 0; i < batch.count; i++) {
-      const o = i * 16;
-      const sx = Math.hypot(e[o]!, e[o + 1]!, e[o + 2]!), sz = Math.hypot(e[o + 8]!, e[o + 9]!, e[o + 10]!);
+      // The instance's matrix as the GPU makes it from its pose (`partPose.ts`).
+      poseMatrixInto(poses, i * POSE_FLOATS, e, 0);
+      const sx = poses[i * POSE_FLOATS + 5]!, sz = poses[i * POSE_FLOATS + 7]!;
       // A model point (three's axes) through the matrix, then into the map's (x, y north, z up).
       const at = (x: number, y: number, z: number, w: number): V3 => {
         const X = e[o]! * x + e[o + 4]! * y + e[o + 8]! * z + e[o + 12]! * w;
@@ -3625,7 +3632,7 @@ export function withShellParts(chunk: BuildingChunk): BuildingChunk {
       index,
     };
   }
-  const none: PartBatch = { matrices: new Float32Array(0), colours: new Float32Array(0), count: 0, looks: new Float32Array(0) };
+  const none: PartBatch = { poses: new Float32Array(0), colours: new Float32Array(0), count: 0, looks: new Float32Array(0) };
   const parts = { ...chunk.parts } as Record<PartKind, PartBatch>;
   for (const kind of SHELL_PART_KINDS) parts[kind] = none;
   return { ...chunk, shells, parts };
@@ -3741,7 +3748,9 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const glassy = part.litSlot !== undefined;
     // And the shell's parts their finish, wear and ground (`shellParts.ts`).
     const looked = part.looks !== undefined;
-    const geometry = glassy || looked ? kit.geometry[kind].clone() : kit.geometry[kind];
+    // The kit's model with this batch's poses (`partPose.ts`): its own attributes shared, never copied.
+    const poseBuffer = new InstancedInterleavedBuffer(part.poses, POSE_FLOATS);
+    const geometry = posedCopy(kit.geometry[kind], poseBuffer);
     let roomBuffer: InstancedInterleavedBuffer | null = null;
     if (glassy) {
       geometry.setAttribute('litSlot', new InstancedBufferAttribute(part.litSlot!, 1));
@@ -3759,41 +3768,32 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       geometry.setAttribute('aDecay', new InterleavedBufferAttribute(lookBuffer, 1, 1));
       geometry.setAttribute(GROUND_ATTRIBUTE, new InterleavedBufferAttribute(lookBuffer, 1, 2));
     }
-    // Faded, each kind as `fade.ts` fades it: the shell's parts with the shell.
-    const mesh = new InstancedMesh(geometry, ghost ? kit.ghostParts : partLook(kit, kind, dim).material, count);
-    if (glassy || looked) mesh.userData['ownGeometry'] = true;
+    // Faded, each kind as `fade.ts` fades it: the shell's parts with the shell. No matrix of three's (`posePart`): the poses are the instances.
+    const material = ghost ? kit.ghostParts : partLook(kit, kind, dim).material;
+    const mesh = new InstancedMesh(geometry, material, 0);
+    mesh.count = count;
+    mesh.userData['posedFrom'] = kit.geometry[kind];
     mesh.name = `building-${kind}${ghost ? '-preview' : ''}`;
     mesh.castShadow = !ghost && kit.castsShadow.has(kind);
+    if (mesh.castShadow) mesh.customDepthMaterial = partPoseDepth(material);
     mesh.receiveShadow = !ghost;
-    mesh.instanceMatrix = new InstancedBufferAttribute(part.instanceMatrix, 16);
     if (part.instanceColor) mesh.instanceColor = new InstancedBufferAttribute(part.instanceColor, 3);
     mesh.boundingBox = boxOf(part.bounds);
     mesh.boundingSphere = sphereOf(part.bounds);
-    // DO NOT let go of the kit's geometry it draws: it is shared by every batch of the kind.
+    // DO NOT let go of the kit's model it draws: it is shared by every batch of the kind; only its own instance buffers go.
     if (!ghost) {
-      const own: Record<string, BufferAttribute | InstancedInterleavedBuffer> = { instanceMatrix: mesh.instanceMatrix };
+      const own: Record<string, BufferAttribute | InstancedInterleavedBuffer> = { poses: poseBuffer };
       if (mesh.instanceColor) own.instanceColor = mesh.instanceColor;
-      // The copy's model: what the kit's has (a shell's part also its white colours).
-      const model = looked ? (['position', 'normal', 'uv', 'color'] as const) : (['position', 'normal', 'uv'] as const);
-      if (glassy || looked) {
-        for (const name of model) own[name] = geometry.getAttribute(name) as BufferAttribute;
-        if (geometry.index) own.index = geometry.index;
-      }
       if (glassy) {
         own.litSlot = geometry.getAttribute('litSlot') as BufferAttribute;
         own.rooms = roomBuffer!;
       }
       if (lookBuffer) own.looks = lookBuffer;
-      const base = kit.geometry[kind];
       gpuOnlyAttributes(mesh, own, () => {
         const again = refill?.().parts[kind];
         if (!again) return {};
-        const out: Record<string, ArrayLike<number>> = { instanceMatrix: again.instanceMatrix };
+        const out: Record<string, ArrayLike<number>> = { poses: again.poses };
         if (again.instanceColor) out.instanceColor = again.instanceColor;
-        if (glassy || looked) {
-          for (const name of model) out[name] = (base.getAttribute(name) as BufferAttribute).array.slice();
-          if (base.index) out.index = base.index.array.slice();
-        }
         if (glassy) {
           out.litSlot = again.litSlot!;
           out.rooms = again.rooms!;
@@ -3815,19 +3815,23 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const furniture = kit.furniture();
     for (const kind of furnished) {
       const piece = pieces[kind]!;
-      const mesh = new InstancedMesh(furniture.geometry[kind], dim ? kit.dimParts : furniture.material, piece.count);
+      const poseBuffer = new InstancedInterleavedBuffer(piece.poses, POSE_FLOATS);
+      const material = dim ? kit.dimParts : furniture.material;
+      const mesh = new InstancedMesh(posedCopy(furniture.geometry[kind], poseBuffer), material, 0);
+      mesh.count = piece.count;
+      mesh.userData['posedFrom'] = furniture.geometry[kind];
       mesh.name = `building-furniture-${kind}`;
       mesh.castShadow = true;
+      mesh.customDepthMaterial = partPoseDepth(material);
       mesh.receiveShadow = true;
-      mesh.instanceMatrix = new InstancedBufferAttribute(piece.instanceMatrix, 16);
       // Faded, white instance colours as every faded part has (`cellArrays.ts`): one program variant of `dimParts`.
       if (dim) mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(piece.count * 3).fill(1), 3);
       mesh.boundingBox = boxOf(piece.bounds);
       mesh.boundingSphere = sphereOf(piece.bounds);
       // On the GPU only, made again from the chunks (`mesh/gpuOnly.ts`).
-      gpuOnlyAttributes(mesh, { instanceMatrix: mesh.instanceMatrix }, () => {
+      gpuOnlyAttributes(mesh, { poses: poseBuffer }, () => {
         const again = refill?.().furniture[kind];
-        return again ? { instanceMatrix: again.instanceMatrix } : {};
+        return again ? { poses: again.poses } : {};
       });
       meshes.push(mesh);
       const g = furniture.geometry[kind];
@@ -3851,7 +3855,8 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       for (const mesh of meshes) {
         // The shell geometry is this build's own; the part geometries are the kit's.
         if (mesh instanceof InstancedMesh) {
-          if (mesh.userData['ownGeometry']) mesh.geometry.dispose();
+          // A part's posed copy of the kit's model: its own buffers freed, the model's kept (`partPose.ts`).
+          letGoPosed(mesh.geometry, mesh.userData['posedFrom'] as BufferGeometry);
           mesh.dispose();
         } else mesh.geometry.dispose();
       }
@@ -3894,9 +3899,7 @@ export function interiorFurniture(b: Building, floor: number): Partial<Record<Fu
   for (const kind of FURNITURE_KINDS) {
     const list = placed[kind];
     if (!list?.length) continue;
-    const matrices = new Float32Array(list.length * 16);
-    list.forEach((p, i) => writeMatrix(matrices, i * 16, p));
-    out[kind] = { matrices, colours: null, count: list.length };
+    out[kind] = { poses: posesOf(list), colours: null, count: list.length };
   }
   return out;
 }

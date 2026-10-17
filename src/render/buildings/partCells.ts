@@ -1,9 +1,10 @@
-import { Box3, Group, InstancedInterleavedBuffer, type InstancedBufferAttribute, InstancedMesh, InterleavedBufferAttribute, type Mesh, Sphere, Vector3 } from 'three';
+import { Box3, type BufferGeometry, Group, InstancedInterleavedBuffer, InstancedMesh, InterleavedBufferAttribute, type InstancedBufferAttribute, type Mesh, Sphere, Vector3 } from 'three';
 import { gpuOnlyAttributes } from '../mesh/gpuOnly';
 import { type CellArrays, FINISH_ATTRIBUTE } from './cellArrays';
 import { GROUND_ATTRIBUTE, LOOK_FLOATS } from './shellParts';
 import { type Axes, type BuildingKit, PART_KINDS, type PartKind, type PartScreen } from './kit';
 import { partLook } from './fade';
+import { POSE_FLOATS, letGoPosed, partPoseDepth, posedCopy } from './partPose';
 import { BATCH_CELL, DETAIL_CELL } from './layerCells';
 
 /** THE PARTS OF ONE CELL OF BUILDINGS, EACH KIND DRAWN AT THE LEVEL ITS ERROR ON THE SCREEN ALLOWS */
@@ -49,7 +50,8 @@ interface Band {
   readonly box: Float64Array;
   /** Each sub-cell's largest scale of an instance along each of the model's axes, then the cell's. */
   readonly scale: Float32Array;
-  readonly matrices: InstancedInterleavedBuffer;
+  /** Its instances' poses (`partPose.ts`): the GPU makes their matrices. */
+  readonly poses: InstancedInterleavedBuffer;
   readonly colours: InstancedInterleavedBuffer | null;
   /** The shell's parts: each one's finish, wear and ground (`shellParts.ts`), read by its run's own copy of the model. */
   readonly looks: InstancedInterleavedBuffer | null;
@@ -111,7 +113,7 @@ export class PartCell {
     const own: Record<string, InstancedInterleavedBuffer> = {};
     for (const kind of PART_KINDS) {
       for (const band of this.file(kind, slots)) {
-        own[`${kind}-${this.bands.length}-matrices`] = band.matrices;
+        own[`${kind}-${this.bands.length}-poses`] = band.poses;
         if (band.colours) own[`${kind}-${this.bands.length}-colours`] = band.colours;
         if (band.looks) own[`${kind}-${this.bands.length}-looks`] = band.looks;
         this.bands.push(band);
@@ -136,15 +138,13 @@ export class PartCell {
       if (!p) continue;
       coloured ||= p.instanceColor !== undefined;
       looked ||= p.looks !== undefined;
-      const bands = new Uint8Array(p.count), e = p.instanceMatrix;
+      const bands = new Uint8Array(p.count), e = p.poses;
       let only = -2, lastBand = -1;
       let into: { counts: Uint32Array; scale: Float32Array } | undefined;
       for (let i = 0; i < p.count; i++) {
-        const o = i * 16;
-        // The model's axes as the instance scales them: the columns of its matrix.
-        const sx = Math.sqrt(e[o]! * e[o]! + e[o + 1]! * e[o + 1]! + e[o + 2]! * e[o + 2]!);
-        const sy = Math.sqrt(e[o + 4]! * e[o + 4]! + e[o + 5]! * e[o + 5]! + e[o + 6]! * e[o + 6]!);
-        const sz = Math.sqrt(e[o + 8]! * e[o + 8]! + e[o + 9]! * e[o + 9]! + e[o + 10]! * e[o + 10]!);
+        const o = i * POSE_FLOATS;
+        // The model's axes as the instance scales them: its pose's scale.
+        const sx = e[o + 5]!, sy = e[o + 6]!, sz = e[o + 7]!;
         const metres = first ? Math.max(first[0] * sx, first[1] * sy, first[2] * sz) : Math.sqrt((screen.extent[0] * sx) ** 2 + (screen.extent[1] * sy) ** 2 + (screen.extent[2] * sz) ** 2);
         // A shell's part is drawn whatever its size (`levelAt`, `choose`): every instance in one band, one draw a cell.
         const b = screen.whole ? 0 : bandOf(metres);
@@ -193,7 +193,7 @@ export class PartCell {
     for (const [band, { counts, scale }] of [...merged].sort((a, b) => a[0] - b[0])) {
       let total = 0;
       for (const c of counts) total += c;
-      const matrices = new Float32Array(total * 16), colours = coloured ? new Float32Array(total * 3) : null;
+      const poses = new Float32Array(total * POSE_FLOATS), colours = coloured ? new Float32Array(total * 3) : null;
       const looks = looked ? new Float32Array(total * LOOK_FLOATS) : null;
       const start = new Uint32Array(LEAVES + 1);
       const box = new Float64Array(LEAVES * 6);
@@ -204,9 +204,9 @@ export class PartCell {
         if (!p || counts[m] === 0) continue;
         // The sub-cell's box for the kind: a band's own is inside it.
         for (let k = 0; k < 6; k++) box[m * 6 + k] = p.bounds[k]!;
-        const e = p.instanceMatrix, tint = p.instanceColor, look = p.looks;
+        const e = p.poses, tint = p.instanceColor, look = p.looks;
         if (whole[m]! >= 0) {
-          matrices.set(e.subarray(0, p.count * 16), at * 16);
+          poses.set(e.subarray(0, p.count * POSE_FLOATS), at * POSE_FLOATS);
           if (colours && tint) colours.set(tint.subarray(0, p.count * 3), at * 3);
           if (looks && look) looks.set(look.subarray(0, p.count * LOOK_FLOATS), at * LOOK_FLOATS);
           at += p.count;
@@ -215,7 +215,7 @@ export class PartCell {
         const bands = bandsOf[m]!;
         for (let i = 0; i < p.count; i++) {
           if (into[bands[i]!] !== band) continue;
-          for (let k = 0; k < 16; k++) matrices[at * 16 + k] = e[i * 16 + k]!;
+          for (let k = 0; k < POSE_FLOATS; k++) poses[at * POSE_FLOATS + k] = e[i * POSE_FLOATS + k]!;
           if (colours && tint) for (let k = 0; k < 3; k++) colours[at * 3 + k] = tint[i * 3 + k]!;
           if (looks && look) for (let k = 0; k < LOOK_FLOATS; k++) looks[at * LOOK_FLOATS + k] = look[i * LOOK_FLOATS + k]!;
           at++;
@@ -224,7 +224,7 @@ export class PartCell {
       start[LEAVES] = at;
       out.push({
         kind, screen, start, box, scale,
-        matrices: new InstancedInterleavedBuffer(matrices, 16), colours: colours ? new InstancedInterleavedBuffer(colours, 3) : null,
+        poses: new InstancedInterleavedBuffer(poses, POSE_FLOATS), colours: colours ? new InstancedInterleavedBuffer(colours, 3) : null,
         looks: looks ? new InstancedInterleavedBuffer(looks, LOOK_FLOATS) : null,
         meshes: new Map(), drawn: new Map(), held: new Uint8Array(LEAVES), casts: false, width: 0,
       });
@@ -241,8 +241,7 @@ export class PartCell {
       const runs = this.runsOf(band, view);
       let width = 0;
       for (const piece of band.screen.pieces) width = Math.max(width, middle(piece, band.scale, LEAVES * 3));
-      // A shell's part casts at any size, as the shell it was laid in did.
-      if (band.screen.whole) width = Infinity;
+      // A shell's part too, by its widest piece: out of a cascade whose texel is wider than it (its colour drawn whatever its size, `levelAt`).
       band.width = width;
       const casts = this.kit.castsShadow.has(band.kind) && Number.isFinite(view.shadowTexel) && width >= view.shadowTexel * (band.casts ? COARSEN : 1);
       const recast = casts !== band.casts;
@@ -262,8 +261,8 @@ export class PartCell {
         if (band.drawn.get(key) === level && !recast) continue;
         let mesh = band.meshes.get(key);
         if (!mesh) band.meshes.set(key, mesh = this.make(band, this.runFirst[r]!, this.runLast[r]!));
-        // A shell's part keeps its run's own copy of its one level (`make`).
-        if (!band.looks) mesh.geometry = band.screen.levels[level]!.geometry;
+        // A shell's part keeps its run's own copy of its one level (`make`); another kind its run's posed copy of the level.
+        if (!band.looks) mesh.geometry = this.posedLevel(band, mesh, level);
         mesh.castShadow = casts;
         mesh.visible = visible;
         band.drawn.set(key, level);
@@ -326,6 +325,7 @@ export class PartCell {
       const look = partLook(this.kit, band.kind, faded);
       for (const [key, mesh] of band.meshes) {
         mesh.material = look.material;
+        mesh.customDepthMaterial = partPoseDepth(look.material);
         mesh.renderOrder = look.renderOrder;
         mesh.visible = band.drawn.has(key) && look.visible;
       }
@@ -353,7 +353,8 @@ export class PartCell {
     // A band's runs go at once: the first mesh disposed takes their shared buffer off the GPU (`WebGLObjects`).
     for (const band of this.bands) {
       for (const mesh of band.meshes.values()) {
-        if (mesh.userData['ownGeometry']) mesh.geometry.dispose();
+        // Its posed copies of the kit's levels: their own buffers freed, the kit's kept (`partPose.ts`).
+        for (const [level, copy] of mesh.userData['posed'] as Map<number, BufferGeometry>) letGoPosed(copy, band.screen.levels[level]!.geometry);
         mesh.dispose();
       }
     }
@@ -384,20 +385,30 @@ export class PartCell {
     return view.pxAtMetre / Math.max(Math.hypot(dx, dy, dh), 1);
   }
 
+  /** A run's posed copy of a level of its kind's model, bound at the run's first instance (`partPose.ts`), made once a level. */
+  private posedLevel(band: Band, mesh: InstancedMesh, level: number): BufferGeometry {
+    const copies = mesh.userData['posed'] as Map<number, BufferGeometry>;
+    let copy = copies.get(level);
+    if (!copy) copies.set(level, copy = posedCopy(band.screen.levels[level]!.geometry, band.poses, mesh.userData['first'] as number));
+    return copy;
+  }
+
   /** A run's mesh: the band's buffers bound at its first instance, its own bounds (three would read the matrices for them). */
   private make(band: Band, first: number, last: number): InstancedMesh {
     const look = partLook(this.kit, band.kind, this.faded);
     const at = band.start[first]!;
-    // A shell's part reads its finish, wear and ground per instance off its own copy of the model, bound at the run's first (`shellParts.ts`).
-    const geometry = band.looks ? band.screen.levels[0]!.geometry.clone() : band.screen.levels[0]!.geometry;
+    // The kit's model with the band's poses bound at the run's first; a shell's part also its finish, wear and ground per instance (`shellParts.ts`).
+    const geometry = posedCopy(band.screen.levels[0]!.geometry, band.poses, at);
     if (band.looks) {
       geometry.setAttribute(FINISH_ATTRIBUTE, new InterleavedBufferAttribute(band.looks, 1, at * LOOK_FLOATS));
       geometry.setAttribute('aDecay', new InterleavedBufferAttribute(band.looks, 1, at * LOOK_FLOATS + 1));
       geometry.setAttribute(GROUND_ATTRIBUTE, new InterleavedBufferAttribute(band.looks, 1, at * LOOK_FLOATS + 2));
     }
+    // No matrix of three's (`posePart`): the poses are the instances.
     const mesh = new InstancedMesh(geometry, look.material, 0);
-    if (band.looks) mesh.userData['ownGeometry'] = true;
-    mesh.instanceMatrix = new InterleavedBufferAttribute(band.matrices, 16, at * 16) as unknown as InstancedBufferAttribute;
+    mesh.userData['posed'] = new Map<number, BufferGeometry>([[0, geometry]]);
+    mesh.userData['first'] = at;
+    mesh.customDepthMaterial = partPoseDepth(look.material);
     if (band.colours) mesh.instanceColor = new InterleavedBufferAttribute(band.colours, 3, at * 3) as unknown as InstancedBufferAttribute;
     mesh.count = band.start[last + 1]! - at;
     const box = new Box3();

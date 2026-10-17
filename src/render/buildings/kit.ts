@@ -22,6 +22,7 @@ import type { FurnitureKind } from '@world/buildings/interior';
 import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
 import { createMassBoxDepth, createMassingMaterial } from './massingMaterial';
 import { unitBox as unitMassBox } from './massBoxes';
+import { posePart } from './partPose';
 import { type FacadePanes, createFacadeMaterial } from './facadeLevel';
 import { prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
@@ -624,6 +625,8 @@ export function createBuildingKit(): BuildingKit {
   })).then(() => {}, (error: unknown) => { console.error('Simplified prop levels failed', error); });
   let furniture: { geometry: Record<FurnitureKind, BufferGeometry>; material: MeshStandardMaterial } | null = null;
 
+  // DO NOT give the parts' instanced meshes three's matrices: every material a part is drawn with makes it from the part's pose, after all its own patches (`partPose.ts`); its meshes that are not instanced draw as before.
+  for (const m of new Set<Material>([...Object.values(material), ghostParts, dimParts, dimShell])) posePart(m);
   return {
     geometry,
     screen,
@@ -645,7 +648,7 @@ export function createBuildingKit(): BuildingKit {
     castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise', ...SHADOWED_PROPS, ...SHELL_PART_KINDS]),
     furniture() {
       if (!furniture) {
-        furniture = { geometry: furnitureGeometry, material: createFurnitureMaterial() };
+        furniture = { geometry: furnitureGeometry, material: posePart(createFurnitureMaterial()) };
         for (const g of Object.values(furniture.geometry)) geometries.add(g);
         unique.add(furniture.material);
       }

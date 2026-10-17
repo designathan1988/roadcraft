@@ -6,6 +6,7 @@ import type { BuildingChunk, PartBatch, PartKind, RunChunk, ShellChunk } from '.
 import type { MassingChunk } from './massing';
 import { ROOM_FLOATS } from './roomBehind';
 import { LOOK_FLOATS, SHELL_PARTS, SHELL_PART_KINDS } from './shellParts';
+import { POSE_FLOATS, poseMatrixInto } from './partPose';
 
 /** A BATCH OF BUILDINGS AS ARRAYS: what `buildingMesh.ts` `meshesOf` wraps in meshes */
 
@@ -68,7 +69,7 @@ interface ShellArrays {
 
 interface InstanceArrays {
   readonly count: number;
-  readonly instanceMatrix: Float32Array;
+  readonly poses: Float32Array;
   readonly instanceColor?: Float32Array;
   /** Window panes: each one's light slot (-1: none) and the room behind it. */
   readonly litSlot?: Float32Array;
@@ -108,7 +109,7 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
     // The shell's parts read their finish, wear and ground as the shell's vertices do, faded too (`fade.ts`); the preview's ghost reads none.
     const looked = !ghost && SHELL_PARTS.has(kind);
     const arrays = partArrays(chunks, kind, count, glassy, coloured, looked);
-    parts[kind] = { count, ...arrays, bounds: instanceBounds(arrays.instanceMatrix, count, boxes.parts[kind]) };
+    parts[kind] = { count, ...arrays, bounds: instanceBounds(arrays.poses, count, boxes.parts[kind]) };
   }
   const furniture: Partial<Record<FurnitureKind, InstanceArrays>> = {};
   // Furniture, only where an interior is drawn: one batch per kind.
@@ -118,8 +119,8 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
       for (const chunk of chunks) count += chunk.furniture?.[kind]?.count ?? 0;
       const box = boxes.furniture[kind];
       if (count === 0 || !box) continue;
-      const instanceMatrix = furnitureMatrices(chunks, kind, count);
-      furniture[kind] = { count, instanceMatrix, bounds: instanceBounds(instanceMatrix, count, box) };
+      const poses = furniturePoses(chunks, kind, count);
+      furniture[kind] = { count, poses, bounds: instanceBounds(poses, count, box) };
     }
   }
   return { shells, parts, furniture };
@@ -217,7 +218,7 @@ export function cellBytes(arrays: CellArrays): number {
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
-      bytes += p.instanceMatrix.byteLength;
+      bytes += p.poses.byteLength;
       for (const a of [p.instanceColor, p.litSlot, p.rooms, p.looks]) if (a) bytes += a.byteLength;
     }
   }
@@ -236,7 +237,7 @@ export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
-      out.push(p.instanceMatrix.buffer, p.bounds.buffer);
+      out.push(p.poses.buffer, p.bounds.buffer);
       for (const a of [p.instanceColor, p.litSlot, p.rooms, p.looks]) if (a) out.push(a.buffer);
     }
   }
@@ -328,9 +329,9 @@ const snorm = (x: number): number => Math.round(Math.max(-1, Math.min(1, x)) * 1
 
 /** A batch's own instance arrays from its chunks, in order: the matrices, the colours of a coloured kind */
 function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: number, glassy: boolean, coloured: boolean, looked: boolean): {
-  instanceMatrix: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Uint16Array; looks?: Float32Array;
+  poses: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Uint16Array; looks?: Float32Array;
 } {
-  const instanceMatrix = new Float32Array(count * 16);
+  const poses = new Float32Array(count * POSE_FLOATS);
   const instanceColor = coloured ? new Float32Array(count * 3).fill(1) : undefined;
   const litSlot = glassy ? new Float32Array(count) : undefined;
   const rooms = glassy ? new Uint16Array(count * ROOM_FLOATS) : undefined;
@@ -339,7 +340,7 @@ function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: num
   for (const chunk of chunks) {
     const batch: PartBatch = chunk.parts[kind];
     if (batch.count === 0) continue;
-    instanceMatrix.set(batch.matrices, at * 16);
+    poses.set(batch.poses, at * POSE_FLOATS);
     if (instanceColor && batch.colours) instanceColor.set(batch.colours, at * 3);
     if (litSlot) {
       if (batch.slots) litSlot.set(batch.slots, at);
@@ -349,20 +350,20 @@ function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: num
     if (looks && batch.looks) looks.set(batch.looks, at * LOOK_FLOATS);
     at += batch.count;
   }
-  return { instanceMatrix, ...(instanceColor ? { instanceColor } : {}), ...(litSlot ? { litSlot } : {}), ...(rooms ? { rooms } : {}), ...(looks ? { looks } : {}) };
+  return { poses, ...(instanceColor ? { instanceColor } : {}), ...(litSlot ? { litSlot } : {}), ...(rooms ? { rooms } : {}), ...(looks ? { looks } : {}) };
 }
 
-/** The furniture of one kind of every chunk, its matrices in chunk order. */
-function furnitureMatrices(chunks: readonly BuildingChunk[], kind: FurnitureKind, count: number): Float32Array {
-  const matrices = new Float32Array(count * 16);
+/** The furniture of one kind of every chunk, its poses in chunk order. */
+function furniturePoses(chunks: readonly BuildingChunk[], kind: FurnitureKind, count: number): Float32Array {
+  const poses = new Float32Array(count * POSE_FLOATS);
   let at = 0;
   for (const chunk of chunks) {
     const batch = chunk.furniture?.[kind];
     if (!batch) continue;
-    matrices.set(batch.matrices, at * 16);
+    poses.set(batch.poses, at * POSE_FLOATS);
     at += batch.count;
   }
-  return matrices;
+  return poses;
 }
 
 /** A shell's box and sphere as three's `BufferGeometry.computeBoundingBox` and `computeBoundingSphere` work them out */
@@ -382,12 +383,17 @@ export function shellBounds(position: Float32Array): Bounds {
   return Float64Array.of(minX, minY, minZ, maxX, maxY, maxZ, cx, cy, cz, Math.sqrt(most));
 }
 
+/** One instance's matrix, written over by each instance `instanceBounds` reads. */
+const BOUNDS_MATRIX = new Float32Array(16);
+
 /** An instanced batch's box and sphere as three's `InstancedMesh.computeBoundingBox` works the box out */
-function instanceBounds(matrices: Float32Array, count: number, box: readonly number[]): Bounds {
+function instanceBounds(poses: Float32Array, count: number, box: readonly number[]): Bounds {
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   const [bx0, by0, bz0, bx1, by1, bz1] = box as [number, number, number, number, number, number];
+  const matrices = BOUNDS_MATRIX, o = 0;
   for (let i = 0; i < count; i++) {
-    const o = i * 16;
+    // Each instance's matrix as the GPU makes it from its pose (`partPose.ts`).
+    poseMatrixInto(poses, i * POSE_FLOATS, matrices, 0);
     const e0 = matrices[o]!, e1 = matrices[o + 1]!, e2 = matrices[o + 2]!, e3 = matrices[o + 3]!;
     const e4 = matrices[o + 4]!, e5 = matrices[o + 5]!, e6 = matrices[o + 6]!, e7 = matrices[o + 7]!;
     const e8 = matrices[o + 8]!, e9 = matrices[o + 9]!, e10 = matrices[o + 10]!, e11 = matrices[o + 11]!;

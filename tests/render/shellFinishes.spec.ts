@@ -34,7 +34,7 @@ const finishesOf = (paint: Uint16Array): number[] => Array.from({ length: paint.
 
 /** A building's chunk with shells in `finishes` and no parts. */
 function chunkOf(finishes: readonly Finish[], chunk: number): BuildingChunk {
-  const none: PartBatch = { matrices: new Float32Array(0), colours: null, count: 0 };
+  const none: PartBatch = { poses: new Float32Array(0), colours: null, count: 0 };
   const parts = Object.fromEntries(PART_KINDS.map((kind) => [kind, none])) as Record<PartKind, PartBatch>;
   return { shells: Object.fromEntries(finishes.map((f) => [f, quad(f, chunk)])) as BuildingChunk['shells'], parts };
 }

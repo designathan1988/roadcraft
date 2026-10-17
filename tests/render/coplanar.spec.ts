@@ -1,3 +1,4 @@
+import { poseMatrices } from '@render/buildings/partPose';
 import { describe, expect, it } from 'vitest';
 import type { BufferGeometry, Material } from 'three';
 import { emitChunk, withShellParts } from '@render/buildings/buildingMesh';
@@ -150,7 +151,8 @@ function facesOf(b: Building, kit: ReturnType<typeof createBuildingKit>): Face[]
   for (const kind of PART_KINDS) {
     const batch = chunk.parts[kind];
     if (!batch || batch.count === 0) continue;
-    for (let k = 0; k < batch.count; k++) facesOfGeometry(kit.geometry[kind], kind, batch.matrices.subarray(k * 16, k * 16 + 16), faces);
+    const matrices = poseMatrices(batch.poses, batch.count);
+    for (let k = 0; k < batch.count; k++) facesOfGeometry(kit.geometry[kind], kind, matrices.subarray(k * 16, k * 16 + 16), faces);
   }
   return faces;
 }
