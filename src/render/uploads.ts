@@ -424,7 +424,7 @@ function programsOf(mesh: Mesh): Promise<unknown> | null {
 /** Each mesh held at the door, and the layers it had. */
 const gated = new WeakMap<Object3D, number>();
 /** What comes into the scene (`renderer.ts` childadded): every mesh, line and points under it whose programs are not built held off the drawn layers until they are (`programsOf`). Nothing is held where no renderer answers (tests, the opening before the first frame: the catalogue builds those). */
-export function gateUntilBuilt(root: Object3D): void {
+export function gateUntilBuilt(root: Object3D, opened?: () => void): void {
   if (!compiler) { early.push(root); return; }
   root.traverse((object) => {
     const mesh = object as Mesh & { isLine?: boolean; isPoints?: boolean };
@@ -440,6 +440,7 @@ export function gateUntilBuilt(root: Object3D): void {
       const mask = gated.get(object);
       gated.delete(object);
       if (mask !== undefined && object.layers.mask === 1 << GATE_LAYER) object.layers.mask = mask;
+      opened?.();
     };
     // Built, failed (said at its first draw) or given up on (`COMPILE_GIVE_UP_MS`): the door opens.
     void waiting.then(open, open);
