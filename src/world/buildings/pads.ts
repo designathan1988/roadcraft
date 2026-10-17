@@ -44,7 +44,7 @@ export interface Pad {
 }
 
 export interface BuildingPads {
-  /** The graded height at a point, and how fully it replaces the land (0 or 1). */
+  /** The graded height at a point, and how fully it replaces the land (0 or 1): one answer reused, read before the next call. */
   shapeAt(x: number, y: number, naturalGround: number): { height: number; weight: number };
   shapeBounds(): readonly Aabb[];
   readonly count: number;
@@ -237,6 +237,16 @@ export function padShaper(cut: PadShapeCut): Pick<BuildingPads, 'shapeAt'> {
 let bounds = new Float64Array(64);
 let measured = new Float64Array(64);
 const ringAt: (readonly Vec2[])[] = [];
+/** The answer of `shapeOverPads`, one for every point: DO NOT make an object a corner graded. */
+const shaped = { height: 0, weight: 0 };
+const answer = (height: number, weight: number): { height: number; weight: number } => { shaped.height = height; shaped.weight = weight; return shaped; };
+
+/** The distance from (x, y) to ring `at` of the walk (`ring`), measured once for both walks of `shapeOverPads`. */
+function distanceOf(at: number, ring: readonly Vec2[], x: number, y: number): number {
+  let d = measured[at]!;
+  if (Number.isNaN(d)) { padsWork.rings++; d = ringDistance(ring, x, y); measured[at] = d; }
+  return d;
+}
 
 /** The graded height at a point from the platforms filed under its cell, in their order */
 function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: number, y: number, ground: number): { height: number; weight: number } {
@@ -272,12 +282,6 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
       if (first < 0 || bounds[k]! < bounds[first]!) first = k;
     }
   }
-  /** The distance to ring `at` of the walk (`ring`), measured once for both walks. */
-  const distanceOf = (at: number, ring: readonly Vec2[]): number => {
-    let d = measured[at]!;
-    if (Number.isNaN(d)) { padsWork.rings++; d = ringDistance(ring, x, y); measured[at] = d; }
-    return d;
-  };
   let least = Infinity;
   if (first >= 0) {
     k = 0;
@@ -285,10 +289,10 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
       if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
       for (let i = 0; i < pad.rings.length; i++) ringAt[k++] = pad.rings[i]!;
     }
-    least = distanceOf(first, ringAt[first]!);
+    least = distanceOf(first, ringAt[first]!, x, y);
     for (let at = 0; at < count; at++) {
       if (bounds[at]! > least + BOUND_SLACK) continue;
-      const d = distanceOf(at, ringAt[at]!);
+      const d = distanceOf(at, ringAt[at]!, x, y);
       if (d < least) least = d;
     }
   }
@@ -305,7 +309,7 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
         && !(pad.stepped && i < pad.solidCount && lb <= apron + BOUND_SLACK)
         && !(paved && lb <= apron + BOUND_SLACK)) continue;
       const ring = pad.rings[i]!;
-      const d = distanceOf(k, ring);
+      const d = distanceOf(k, ring, x, y);
       // Inside a paved lot, its plate decides, not a lawn whose edge it shares.
       if (d < nearest || (d === 0 && paved && nearest === 0)) { nearest = d; level = padLevelAt(pad.levels[i]!, x, y); owner = pad; solid = i < pad.solidCount; }
       if (pad.water[i] && d < waterDistance) { waterDistance = d; waterLevel = padLevelAt(pad.levels[i]!, x, y); waterOwner = pad; }
@@ -319,7 +323,7 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
       }
     }
   }
-  if (nearest === Infinity) return { height: ground, weight: 0 };
+  if (nearest === Infinity) return answer(ground, 0);
   if (solid && nearest === 0 && stepPad === owner && stepLow < level) level = stepLow;
   // A water basin is cut into the ground under its surrounding deck too.
   if ((waterOwner === owner || !solid) && apron > 0 && waterDistance < 2 * apron && waterLevel < level) {
@@ -332,8 +336,8 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
   let height = ground < level ? Math.max(ground, level - out) : Math.min(ground, level + out);
   // Never over a lot's paving close by - unless that would dig under another building's floor.
   if (pavedLow < height && !(solid && owner !== pavedPad)) height = pavedLow;
-  if (Math.abs(height - ground) < 1e-3) return { height: ground, weight: 0 };
-  return { height, weight: 1 };
+  if (Math.abs(height - ground) < 1e-3) return answer(ground, 0);
+  return answer(height, 1);
 }
 
 const NO_PADS: readonly Pad[] = Object.freeze([]);
