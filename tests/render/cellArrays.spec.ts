@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Box3, BufferAttribute, BufferGeometry, DataUtils, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, Sphere } from 'three';
 
 import { emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
-import { SHELL_PIECE, cellArrays } from '@render/buildings/cellArrays';
+import { SHELL_GRID_STEP, SHELL_PIECE, cellArrays } from '@render/buildings/cellArrays';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
@@ -91,5 +91,44 @@ describe('a batch as arrays', () => {
       expect([...b.slice(6)], kind).toEqual([sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius]);
       expect(new Box3().copy(box).isEmpty()).toBe(false);
     }
+  });
+});
+
+describe("the far level's shells on their cell's grid", () => {
+  it('put every point within half a step of its float, a point shared by two pieces the same point, in 8 bytes for 12', () => {
+    const kit = createBuildingKit();
+    // A row of blocks side by side, back to back on their lot lines: corners shared between buildings, at the far level.
+    // Eight rows of eight, more points than one piece holds (`SHELL_PIECE`): corners shared across pieces too.
+    const row = Array.from({ length: 64 }, (_, i) => ({ ...JSON.parse(JSON.stringify(BLUEPRINTS[3]!.body)), id: i + 1, x: 10 + (i % 8) * 18, y: 20 + Math.floor(i / 8) * 12, rotation: 0 }) as Building);
+    const chunks = row.map((b) => emitChunk(b, groundAt, undefined, groundAt, undefined, true));
+    const take = { parts: [], shells: true, furniture: false, ghost: false, dim: false } as const;
+    const floats = cellArrays(chunks, take, kitBoxes(kit)).shells;
+    const grid = cellArrays(chunks, { ...take, grid: [0, 0] }, kitBoxes(kit)).shells;
+    expect(grid.length).toBe(floats.length);
+    expect(grid.length).toBeGreaterThan(1);
+    let shared = 0;
+    const pointAt = new Map<string, string>(), pieceOf = new Map<string, number>();
+    let acrossPieces = 0;
+    grid.forEach((piece, k) => {
+      const place = piece.place!;
+      expect(place.step).toBe(SHELL_GRID_STEP);
+      expect(piece.position).toBeInstanceOf(Uint16Array);
+      const f = floats[k]!.position as Float32Array, q = piece.position as Uint16Array;
+      expect(q.byteLength / (f.length / 3)).toBe(8);
+      const span = place.step * 65535;
+      for (let v = 0; v < f.length / 3; v++) {
+        // As the GPU reads it: normalised, then the mesh's matrix (scale, then origin), in floats.
+        const at = [place.x, place.y, place.z].map((o, c) => Math.fround(Math.fround(Math.fround(q[v * 4 + c]! / 65535) * Math.fround(span)) + Math.fround(o)));
+        for (let c = 0; c < 3; c++) expect(Math.abs(at[c]! - f[v * 3 + c]!)).toBeLessThanOrEqual(SHELL_GRID_STEP / 2 + 1e-4);
+        // A point laid twice (a corner of two blocks, of two buildings) is one point of the grid, bit for bit.
+        const key = [f[v * 3], f[v * 3 + 1], f[v * 3 + 2]].join(), got = at.join();
+        const was = pointAt.get(key);
+        if (was !== undefined) { expect(got).toBe(was); shared++; if (pieceOf.get(key) !== k) acrossPieces++; } else { pointAt.set(key, got); pieceOf.set(key, k); }
+      }
+    });
+    expect(shared).toBeGreaterThan(100);
+    // And across pieces: a point of one piece laid again in another, the same point.
+    expect(acrossPieces).toBeGreaterThan(0);
+    kit.dispose();
   });
 });

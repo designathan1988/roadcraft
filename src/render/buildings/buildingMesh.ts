@@ -27,7 +27,7 @@ import {
   Box3,
 } from 'three';
 import {
-  type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, FACADE_GRID, FINISH_ATTRIBUTE, type KitBoxes, NORMAL_SHORTS, PAINT_ATTRIBUTE, SHELL_MESH, SHELL_NORMAL, SHELL_SHORTS, WEAR_STEPS, cellArrays, finishId, finishWear, octNormal, paintShort, wearByte,
+  type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, FACADE_GRID, FINISH_ATTRIBUTE, type KitBoxes, NORMAL_SHORTS, type ShellGrid, PAINT_ATTRIBUTE, SHELL_MESH, SHELL_NORMAL, SHELL_SHORTS, WEAR_STEPS, cellArrays, finishId, finishWear, octNormal, paintShort, wearByte,
 } from './cellArrays';
 import {
   COVER_INSET, GRIME_REACH, GROUND_ATTRIBUTE, LOOK_FLOATS, MACRO_SCALE, NO_GROUND, SHELL_PARTS, SHELL_PART_FACES, SHELL_PART_KINDS, type ShellPartKind, macroNoise,
@@ -3704,7 +3704,9 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
   arrays.shells.forEach((shell, piece) => {
     const g = new BufferGeometry();
     // DO NOT wrap them in a Float32BufferAttribute or Uint32BufferAttribute: those copy the array they are given
-    g.setAttribute('position', new BufferAttribute(shell.position, 3));
+    // Floats, or on the cell's grid: four unsigned shorts read normalised, the mesh's matrix putting them in place (`cellArrays.ts` `ShellGrid`).
+    const place = shell.place;
+    g.setAttribute('position', place ? new BufferAttribute(shell.position, 4, true) : new BufferAttribute(shell.position, 3));
     // Two signed shorts a vertex, the normal octahedral: unfolded by the shell's program (`finishes.ts` `SHELL_NORMAL`).
     const normal = new BufferAttribute(shell.normal, NORMAL_SHORTS, true);
     g.setAttribute(SHELL_NORMAL, normal);
@@ -3723,9 +3725,14 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     }
     g.setIndex(new BufferAttribute(shell.index, 1));
     // One Mesh a piece, its arrays let go once on the GPU (below).
-    g.boundingBox = boxOf(shell.bounds);
-    g.boundingSphere = sphereOf(shell.bounds);
+    // The bounds in the mesh's own frame: on a grid, its points over its step from its origin.
+    g.boundingBox = place ? boxOf(gridBounds(shell.bounds, place)) : boxOf(shell.bounds);
+    g.boundingSphere = place ? sphereOf(gridBounds(shell.bounds, place)) : sphereOf(shell.bounds);
     const mesh = new Mesh(g, ghost ? kit.ghostShell : dim ? kit.dimShell : far ? kit.facade : kit.shellMaterial);
+    if (place) {
+      mesh.position.set(place.x, place.y, place.z);
+      mesh.scale.setScalar(place.step * 65535);
+    }
     // The town's shells live on the GPU only: their arrays are let go once uploaded
     if (!ghost) {
       const kept = {
@@ -3871,6 +3878,13 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       group.clear();
     },
   };
+}
+
+/** World bounds in a grid's frame (`ShellGrid`): over its whole span from its origin. */
+function gridBounds(b: Bounds, grid: ShellGrid): Bounds {
+  const span = grid.step * 65535;
+  const at = (v: number, o: number): number => (v - o) / span;
+  return Float64Array.of(at(b[0]!, grid.x), at(b[1]!, grid.y), at(b[2]!, grid.z), at(b[3]!, grid.x), at(b[4]!, grid.y), at(b[5]!, grid.z), at(b[6]!, grid.x), at(b[7]!, grid.y), at(b[8]!, grid.z), b[9]! / span);
 }
 
 const boxOf = (b: Bounds): Box3 => new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));

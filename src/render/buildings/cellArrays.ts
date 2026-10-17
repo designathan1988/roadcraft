@@ -1,4 +1,5 @@
 import { DataUtils } from 'three';
+import { CELL } from '@world/cells';
 import { FINISHES, type Finish } from '@world/buildings/materials';
 import { FURNITURE_KINDS, type FurnitureKind } from '@world/buildings/interior';
 import { FACADE_PROP_KINDS } from './facadeProps';
@@ -21,6 +22,44 @@ export interface CellSelection {
   readonly furniture: boolean;
   readonly ghost: boolean;
   readonly dim: boolean;
+  /** The far level's cell (its column and row, `BATCH_CELL`): its shells' places quantized on the cell's grid (`ShellGrid`); none: in floats (the detail's millimetre steps). */
+  readonly grid?: readonly [number, number];
+}
+
+/** A cell's grid its far level's shells are laid on (`cellShellGrid`): one origin and one step for every piece of the cell, so a corner two pieces share is one point of it, bit for bit. */
+export interface ShellGrid {
+  /** The grid's origin, three's axes. */
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  /** Metres a step: every axis alike (the mesh's scale is uniform, so its normals stay as they are). */
+  readonly step: number;
+}
+/** How far past its cell a cell's buildings may reach on its grid, m. */
+export const SHELL_GRID_MARGIN = 64;
+/** The grid's step: the cell and its margins in an unsigned short, 5.9 mm (a point within 2.9 mm, a hundredth of the far level's 0.3 m). */
+export const SHELL_GRID_STEP = (CELL + 2 * SHELL_GRID_MARGIN) / 65535;
+
+/** A cell's grid, its height from the lowest of its shells. */
+export const cellShellGrid = (i: number, j: number, lowest: number): ShellGrid =>
+  ({ x: i * CELL - SHELL_GRID_MARGIN, y: lowest, z: -(j + 1) * CELL - SHELL_GRID_MARGIN, step: SHELL_GRID_STEP });
+
+/** Pieces with their places on a grid: four unsigned shorts a vertex (the fourth left over: no 3-short format in Direct3D 11); null where a point falls off it (the cell keeps its floats). */
+function onGrid(pieces: readonly ShellArrays[], grid: ShellGrid): ShellArrays[] | null {
+  const out: ShellArrays[] = [];
+  for (const piece of pieces) {
+    const p = piece.position as Float32Array, n = p.length / 3;
+    const q = new Uint16Array(n * 4);
+    for (let v = 0; v < n; v++) {
+      for (let k = 0; k < 3; k++) {
+        const s = Math.round((p[v * 3 + k]! - (k === 0 ? grid.x : k === 1 ? grid.y : grid.z)) / grid.step);
+        if (!(s >= 0 && s <= 65535)) return null;
+        q[v * 4 + k] = s;
+      }
+    }
+    out.push({ ...piece, position: q, place: grid });
+  }
+  return out;
 }
 
 /** A box and a sphere: minX, minY, minZ, maxX, maxY, maxZ, then centre x, y, z and radius (three's `Box3` and `Sphere`). */
@@ -86,7 +125,9 @@ export function octDecode(a: number, b: number): [number, number, number] {
 
 /** A piece of a batch's shells of every finish, one geometry drawn in one call: 24 bytes a vertex, 44 on the far level's runs of bays with openings */
 interface ShellArrays {
-  readonly position: Float32Array;
+  /** Floats, or on its cell's grid (`place`): four unsigned shorts, read normalised and put in place by the mesh's matrix. */
+  readonly position: Float32Array | Uint16Array;
+  readonly place?: ShellGrid;
   /** The normal, octahedral in two signed shorts (`octNormal`): the uv is worked out from it and the place (`shellParts.ts` `shellUv`), so it needs more than a byte. */
   readonly normal: Int16Array;
   /** The paint's linear rgb (tone and grime in it) over `COLOUR_RANGE`, and the finish id with the wear (`finishWear`, `PAINT_ATTRIBUTE`), unsigned shorts. */
@@ -131,7 +172,11 @@ export interface KitBoxes {
 /** The batch of `chunks` that `selection` takes, as arrays. */
 export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSelection, boxes: KitBoxes): CellArrays {
   const { ghost, dim } = selection;
-  const shells = selection.shells ? [...shellPieces(chunks, (c) => c.shells), ...shellPieces(chunks, (c) => c.runs)] : [];
+  const floats = selection.shells ? [...shellPieces(chunks, (c) => c.shells), ...shellPieces(chunks, (c) => c.runs)] : [];
+  // The far level's: on its cell's grid, its height from its lowest point (`ShellGrid`).
+  let lowest = Infinity;
+  for (const piece of floats) lowest = Math.min(lowest, piece.bounds[1]!);
+  const shells = selection.grid && floats.length ? onGrid(floats, cellShellGrid(selection.grid[0], selection.grid[1], lowest)) ?? floats : floats;
   const parts: Partial<Record<PartKind, InstanceArrays>> = {};
   for (const kind of selection.parts) {
     // A lantern's light on the wall is light, not a part: no ghost or faded copy of it.
