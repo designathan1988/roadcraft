@@ -2,8 +2,6 @@ import type { RoadProfileSpec } from '@world/roads/profile';
 
 /** A ready road seen FROM ABOVE, as the game draws it: footways in their paving, the kerb line, asphalt */
 
-const CACHE = new Map<string, string>();
-
 const GRASS = ['#55753f', '#476536'];
 const FOOTWAY: Record<string, string> = { pavers: '#c4c0b4', concrete: '#bdbdb7', stone: '#a9a294' };
 const ASPHALT: Record<string, string> = { asphalt: '#3f4245', concrete: '#9a9a94', cobble: '#7d7468' };
@@ -16,9 +14,6 @@ const MEDIAN_GRASS = '#5e8a46';
 const CARS = ['#c8ccd0', '#2f4f7a', '#b8382e', '#e8e4dc', '#3d3d3d', '#7a8f4f'];
 
 export function profileSwatch(profile: RoadProfileSpec, span: number, width = 112, height = 64, dpr = 2): string {
-  const key = `${JSON.stringify(profile)}|${span}|${width}x${height}@${dpr}`;
-  const hit = CACHE.get(key);
-  if (hit !== undefined) return hit;
   const canvas = document.createElement('canvas');
   canvas.width = width * dpr;
   canvas.height = height * dpr;
@@ -136,7 +131,6 @@ export function profileSwatch(profile: RoadProfileSpec, span: number, width = 11
       }
     }
   }
-  const url = canvas.toDataURL('image/png');
-  CACHE.set(key, url);
-  return url;
+  // The catalogue keeps the pictures of the cards it shows (`catalogPanel.ts`): no cache here that only grows.
+  return canvas.toDataURL('image/png');
 }
