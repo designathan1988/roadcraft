@@ -29,8 +29,9 @@ function runs(): { jobs: Map<string, { job: NearTileJob; done: (reply: NearTileR
   return {
     jobs,
     run: (job, done) => {
-      jobs.set(job.node, { job, done });
-      return () => { if (jobs.get(job.node)?.job === job) jobs.delete(job.node); };
+      jobs.set(job.heavy ? job.node : `${job.node}:light`, { job, done });
+      const key = job.heavy ? job.node : `${job.node}:light`;
+      return () => { if (jobs.get(key)?.job === job) jobs.delete(key); };
     },
   };
 }
@@ -40,7 +41,7 @@ const answer = (held: { job: NearTileJob; done: (reply: NearTileReply) => void }
 
 describe('the near products chosen by tile', () => {
   it('keeps its jobs on a few workers at once, the rest free for the cells and roads; the nearest waiting sent first, an edit before it', () => {
-    const job = (i: number, edited = false): NearTileJob => ({ node: `${i},0`, asks: [], prefix: null, tiles: [{ key: tileKey(i, 0), version: 1 }], ground: { ground: null, naturalIsGround: true }, ...(edited ? { edited } : {}) });
+    const job = (i: number, edited = false): NearTileJob => ({ node: `${i},0`, asks: [], prefix: null, heavy: false, tiles: [{ key: tileKey(i, 0), version: 1 }], ground: { ground: null, naturalIsGround: true }, ...(edited ? { edited } : {}) });
     const sent: string[] = [];
     const gate = new NearGate(() => 2, (j) => Math.abs(tileOfKey(j.tiles[0]!.key).i) * 1000);
     const ask = (j: NearTileJob): (() => void) => gate.ask(j, () => { sent.push(j.node); return { cancel: () => sent.push(`cancel ${j.node}`) }; });
@@ -126,29 +127,59 @@ describe('the near products chosen by tile', () => {
     expect(log).toEqual([`put ${tileKey(0, 0)} a`, `remove ${tileKey(0, 0)} a`, `put ${tileKey(0, 0)} b`]);
   });
 
-  it('asks every kind of a tile in one job, a job under way replaced by one asking its kinds again with the new', () => {
+  it('asks the kinds of a tile in two jobs, the light kinds (no roads) apart from the heavy, a job under way replaced by one asking its kinds again', () => {
     const log: string[] = [];
     const { jobs, run } = runs();
     const near = new NearTiles(run, null);
     near.add(product(log, undefined, 'poles'));
+    near.add(product(log, undefined, 'signs'));
     near.add(product(log, undefined, 'barriers'));
     near.stored(tileKey(0, 0), 1);
     near.setSource({ records: async (key) => emptyRecords(key, 1), plan: null }, () => false);
     near.choose(m(512), m(512), m(100), 1000, null);
-    expect(jobs.size).toBe(1);
-    expect(jobs.get('0,0')!.job.asks.map((a) => a.kind)).toEqual(['poles', 'barriers']);
+    expect(jobs.size).toBe(2);
+    expect(jobs.get('0,0')!.job.heavy).toBe(true);
+    expect(jobs.get('0,0')!.job.asks.map((a) => a.kind)).toEqual(['poles', 'signs']);
+    expect(jobs.get('0,0:light')!.job.asks.map((a) => a.kind)).toEqual(['barriers']);
+    // The light job lands without waiting for the roads' kinds.
+    answer(jobs.get('0,0:light')!, 'a');
+    expect(log).toEqual([`put ${tileKey(0, 0)} a`]);
     const first = jobs.get('0,0')!;
     answer(first, 'a');
-    expect(log).toEqual([`put ${tileKey(0, 0)} a`, `put ${tileKey(0, 0)} a`]);
-    // The tile written again: one job asks both kinds again; a late answer of the one it replaced is dropped.
+    expect(log).toHaveLength(3);
+    // The tile written again: each job asks its kinds again; a late answer of the one replaced is dropped.
     near.stored(tileKey(0, 0), 2);
     near.choose(m(512), m(512), m(100), 1000, null);
     const second = jobs.get('0,0')!;
-    expect(second.job.asks.map((a) => a.kind)).toEqual(['poles', 'barriers']);
+    expect(second.job.asks.map((a) => a.kind)).toEqual(['poles', 'signs']);
     answer(first, 'stale');
-    expect(log).toHaveLength(2);
+    expect(log).toHaveLength(3);
     answer(second, 'b');
-    expect(log.slice(2)).toEqual([`remove ${tileKey(0, 0)} a`, `put ${tileKey(0, 0)} b`, `remove ${tileKey(0, 0)} a`, `put ${tileKey(0, 0)} b`]);
+    expect(log.slice(3)).toEqual([`remove ${tileKey(0, 0)} a`, `put ${tileKey(0, 0)} b`, `remove ${tileKey(0, 0)} a`, `put ${tileKey(0, 0)} b`]);
+  });
+
+  it('says when a tile\'s bake first lands and when it goes, so what the page drew there stands until then', () => {
+    const log: string[] = [];
+    const { jobs, run } = runs();
+    const near = new NearTiles(run, null);
+    near.add(product(log));
+    const told: string[] = [];
+    near.onLanded = (kind, tile) => told.push(`${kind} ${tile} ${near.landed(kind, tile)}`);
+    near.stored(tileKey(0, 0), 1);
+    near.setSource({ records: async (key) => emptyRecords(key, 1), plan: null }, () => false);
+    near.choose(m(512), m(512), m(100), 1000, null);
+    // Asked, not landed: the page's own still stands.
+    expect(near.landed('poles', tileKey(0, 0))).toBe(false);
+    expect(told).toEqual([]);
+    answer(jobs.get('0,0')!, 'a');
+    expect(told).toEqual([`poles ${tileKey(0, 0)} true`]);
+    // A newer bake replacing it tells nothing; the tile let go does.
+    near.stored(tileKey(0, 0), 2);
+    near.choose(m(512), m(512), m(100), 1000, null);
+    answer(jobs.get('0,0')!, 'b');
+    expect(told).toHaveLength(1);
+    near.choose(m(6000), m(512), m(100), 1000, null);
+    expect(told.at(-1)).toBe(`poles ${tileKey(0, 0)} false`);
   });
 
   it('asks nothing for an edit that leaves what the kind reads as it was, and puts first only an edit that changed it', () => {

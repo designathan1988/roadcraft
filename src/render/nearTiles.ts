@@ -4,7 +4,7 @@ import { worldKey } from '@world/cityGen/wholeMap';
 import type { TileRecords } from '@world/doc';
 import { TILE, tileKey, tileOfKey } from '@world/tiles';
 import { m } from '@world/units';
-import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../jobs/jobPool';
+import { canQueueJobs, focusDistance, shortWorkers, submitJob } from '../jobs/jobPool';
 import { EDIT_TIER, NEAR_TIER, TIER_SPAN } from './buildings/cellPool';
 import { emptyRecords } from './buildings/farGrid';
 import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
@@ -12,7 +12,7 @@ import { forgetOtherDerived } from './derivedCache';
 import type { FarTileSource, FarTiles } from './farTree';
 import type { GroundRecord } from './groundChanges';
 import { type NearGround, type NearKind, type NearLanded, type NearPart, type NearProduct, type NearTileCache, type NearTileJob, type NearTileReply, NEAR_GROUND_REACH, partsDigest } from './nearTileBake';
-import { nearParts, nearReadParts, nearReadsAround, runNearJob } from './nearBakers';
+import { nearParts, nearReadParts, nearReadsAround, nearReadsRoads, runNearJob } from './nearBakers';
 import { nearSig } from './nearRoadTiles';
 
 /** THE NEAR PRODUCTS PER TILE, CHOSEN BY THE VIEW (plan step 5): each kind (poles, furniture, signs...) of each stored tile baked in a worker from the tile store (`nearTileBake.ts`), drawn where what it draws spans a pixel, the bake drawn standing until the next one lands; every tile one way, the page's region too (an edited tile from the page's records, `FarTileSource.pageEdit`) */
@@ -56,7 +56,8 @@ interface Leaf {
   readonly j: number;
   version: number;
   readonly slots: Map<NearKind, Slot>;
-  job: { readonly job: NearTileJob; readonly cancel: () => void } | null;
+  /** Its jobs under way: the light kinds' and the heavy kinds' (`NearTileJob.heavy`). */
+  readonly jobs: Map<boolean, { readonly job: NearTileJob; readonly cancel: () => void }>;
 }
 
 /** The tiles a kind of a tile reads (the tile first), each at its version or, held edited by the page, at what the kind reads of it (`PageCut`), and the version of them all. */
@@ -96,7 +97,7 @@ const NO_CACHE: NearTileCache = { ready: async () => false, get: async () => und
 /** A job handed to the queue: its cancel (an answer cancelled is never given). */
 type Ticket = { cancel(): void };
 
-/** THE NEAR JOBS ON A FEW WORKERS AT ONCE: a third of the pool at most (`share`), the rest always free for the cells and the roads' near level; the waiting jobs here, an edit of what they read first, then the nearest to where the view looks
+/** THE NEAR JOBS ON A FEW WORKERS AT ONCE: half the workers of the queue's side at most (`jobPool.ts` shortWorkers: the others run the growth and the tiles), the rest always free for the cells and the roads' near level; the waiting jobs here, an edit of what they read first, then a light job (no roads), then the nearest to where the view looks
  *  - DO NOT hand them all to the queue: a job a worker has begun runs to its end, and tiles of near products each seconds long held every worker while the street's cells and roads asked after them waited (conf26 09-street, 2026-10-17; the queue's bands order what waits, not what runs). */
 export class NearGate {
   private readonly waiting: { readonly job: NearTileJob; readonly send: () => Ticket; ticket: Ticket | null }[] = [];
@@ -133,7 +134,8 @@ export class NearGate {
       let best = 0;
       for (let k = 1; k < this.waiting.length; k++) {
         const a = this.waiting[k]!.job, b = this.waiting[best]!.job;
-        if (Number(!!a.edited) > Number(!!b.edited) || (!!a.edited === !!b.edited && this.away(a) < this.away(b))) best = k;
+        const rank = (j: NearTileJob): number => (j.edited ? 0 : 2) + (j.heavy ? 1 : 0);
+        if (rank(a) < rank(b) || (rank(a) === rank(b) && this.away(a) < this.away(b))) best = k;
       }
       const [entry] = this.waiting.splice(best, 1);
       this.running++;
@@ -148,7 +150,8 @@ function nearRunner(): NearRun {
     const { i, j } = tileOfKey(job.tiles[0]!.key);
     return [(i + 0.5) * TILE, (j + 0.5) * TILE];
   };
-  const gate = new NearGate(() => Math.max(1, Math.floor(jobWorkers() / 3)), (job) => { const [x, y] = centre(job); return focusDistance(x, y); });
+  // DO NOT take a third of the whole pool: its long side runs the growth and the tiles, the queue had two workers and the near jobs took them, the street's roads and cells waited (conf29, 2026-10-17).
+  const gate = new NearGate(() => Math.max(1, Math.floor(shortWorkers() / 2)), (job) => { const [x, y] = centre(job); return focusDistance(x, y); });
   return (job, done) => {
     if (!canQueueJobs()) {
       let live = true;
@@ -160,7 +163,7 @@ function nearRunner(): NearRun {
     }
     return gate.ask(job, () => submitJob({
       service: 'nearTiles',
-      key: `nearTiles:${job.node}`,
+      key: `nearTiles:${job.node}:${job.heavy ? 'h' : 'l'}`,
       // An edit of what its kinds read first (`cellPool.ts` EDIT_TIER): what the player just did; the others after the cells and the roads' near level, nearest first (`PRODUCT_TIER`).
       priority: nearPriority(job),
       at: centre(job),
@@ -224,6 +227,14 @@ export class NearTiles implements FarTiles {
     this.groundSeen = record?.version ?? 0;
   }
 
+  /** Told when a tile's bake of a kind came (`landed` true) or went: what the page drew in its place stands until then (`renderer.ts`: the region's planted trees). */
+  onLanded: ((kind: NearKind, tile: number) => void) | null = null;
+
+  /** Whether a tile's bake of a kind is drawn (an empty one too: nothing of the kind there). */
+  landed(kind: NearKind, tile: number): boolean {
+    return (this.leaves.get(tile)?.slots.get(kind)?.bake ?? null) !== null;
+  }
+
   /** The tiles whose `kind` is drawn now, by key. */
   heldKeys(kind: NearKind): number[] {
     return [...(this.held.get(kind) ?? [])].filter((l) => l.slots.get(kind)?.landed).map((l) => l.key);
@@ -251,7 +262,7 @@ export class NearTiles implements FarTiles {
     }
     if (leaf) { leaf.version = version; return; }
     const { i, j } = tileOfKey(tile);
-    this.leaves.set(tile, { key: tile, i, j, version, slots: new Map(), job: null });
+    this.leaves.set(tile, { key: tile, i, j, version, slots: new Map(), jobs: new Map() });
   }
 
   /** Every tile is drawn here, the page's region's too: nothing changes with its standing. */
@@ -276,7 +287,7 @@ export class NearTiles implements FarTiles {
     this.reads.clear();
     for (const product of this.products) this.chooseKind(product);
     // DO NOT send a job a kind: each would read the tiles and solve their roads again; every kind of a tile asked goes in one.
-    for (const leaf of this.asking) this.submit(leaf);
+    for (const leaf of this.asking) { this.submit(leaf, false); this.submit(leaf, true); }
     this.asking.clear();
   }
 
@@ -411,10 +422,13 @@ export class NearTiles implements FarTiles {
   }
 
   /** A TILE'S JOB: every kind of it waiting for an answer, the one under way replaced (its kinds asked again in this one); the tiles any of them reads, the page's records of those it holds edited (`records`: of all, where no worker reads the store) */
-  private submit(leaf: Leaf, records?: readonly (Partial<TileRecords> | null)[]): void {
-    leaf.job?.cancel();
-    leaf.job = null;
-    const kinds = this.products.filter((p) => leaf.slots.get(p.kind)?.asked);
+  private submit(leaf: Leaf, heavy: boolean, records?: readonly (Partial<TileRecords> | null)[]): void {
+    const kinds = this.products.filter((p) => leaf.slots.get(p.kind)?.asked && nearReadsRoads(p.kind) === heavy);
+    // Nothing new of this class asked since its job: that job stands.
+    const under = leaf.jobs.get(heavy);
+    if (under && !records && kinds.every((p) => under.job.asks.some((a) => a.kind === p.kind && a.sig === leaf.slots.get(p.kind)!.asked))) return;
+    under?.cancel();
+    leaf.jobs.delete(heavy);
     if (!kinds.length) return;
     const parts = [...new Set(kinds.flatMap((p) => nearParts(p.kind)))].sort();
     const { tiles } = this.tilesOf(leaf, kinds.some((p) => nearReadsAround(p.kind)), parts, parts);
@@ -427,17 +441,20 @@ export class NearTiles implements FarTiles {
         return { kind: p.kind, sig: slot.asked!, want: slot.want, shown: slot.bake, ...(p.extra ? { extra: p.extra(leaf.key) } : {}) };
       }),
       ...(posted ? { records: posted } : {}),
+      heavy,
       ...(kinds.some((p) => leaf.slots.get(p.kind)!.urgent) ? { edited: true } : {}),
       ...(this.source?.workersRead ? { store: this.source.workersRead } : {}),
     };
-    const cancel = this.run(job, (reply) => this.answer(leaf, job, reply, parts));
+    let answered = false;
+    const cancel = this.run(job, (reply) => { answered = true; this.answer(leaf, job, reply, parts); });
     // A run that answered at once (the tests' page) left nothing under way.
-    if (!leaf.job && this.leaves.get(leaf.key) === leaf && job.asks.some((a) => leaf.slots.get(a.kind)?.asked === a.sig)) leaf.job = { job, cancel };
+    if (!answered && this.leaves.get(leaf.key) === leaf) leaf.jobs.set(heavy, { job, cancel });
   }
 
   private answer(leaf: Leaf, job: NearTileJob, reply: NearTileReply, parts: readonly NearPart[]): void {
-    if (this.leaves.get(leaf.key) !== leaf || (leaf.job !== null && leaf.job.job !== job)) return;
-    leaf.job = null;
+    const under = leaf.jobs.get(job.heavy);
+    if (this.leaves.get(leaf.key) !== leaf || (under && under.job !== job)) return;
+    leaf.jobs.delete(job.heavy);
     switch (reply.kind) {
       case 'near':
         for (const answer of reply.answers) {
@@ -458,7 +475,7 @@ export class NearTiles implements FarTiles {
         const source = this.source;
         if (!source) break;
         void Promise.all(job.tiles.map((t) => source.records(t.key).then((r) => recordsFor(r ?? emptyRecords(t.key, t.version), parts)))).then((records) => {
-          if (this.leaves.get(leaf.key) === leaf && leaf.job === null) this.submit(leaf, records);
+          if (this.leaves.get(leaf.key) === leaf && !leaf.jobs.has(job.heavy)) this.submit(leaf, job.heavy, records);
         }, (error: unknown) => {
           for (const ask of job.asks) { const slot = leaf.slots.get(ask.kind); if (slot?.asked === ask.sig) { slot.asked = null; slot.failed = ask.sig; } }
           this.warn('a tile could not be read from the store', error);
@@ -485,9 +502,11 @@ export class NearTiles implements FarTiles {
       slot.landed?.remove();
       landed?.put();
       slot.landed = landed;
+      const first = slot.bake === null;
       slot.bake = bake;
       slot.sig = sig;
       if (slot.asked === sig) slot.asked = null;
+      if (first) this.onLanded?.(product.kind, leaf.key);
     };
     if (landed?.ready) void landed.ready.then(put);
     else put();
@@ -501,7 +520,12 @@ export class NearTiles implements FarTiles {
     slot.coming?.remove();
     slot.landed?.remove();
     leaf.slots.delete(kind);
-    if (leaf.job && ![...leaf.slots.values()].some((s) => s.asked)) { leaf.job.cancel(); leaf.job = null; }
+    if (slot.bake !== null) this.onLanded?.(kind, leaf.key);
+    for (const [heavy, under] of [...leaf.jobs]) {
+      if (under.job.asks.some((a) => leaf.slots.get(a.kind)?.asked === a.sig)) continue;
+      under.cancel();
+      leaf.jobs.delete(heavy);
+    }
   }
 
   private warn(what: string, detail: unknown): void {

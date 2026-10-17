@@ -132,7 +132,7 @@ describe('the planted trees baked a tile at a time', () => {
     }
     const cache: NearTileCache = { ready: async () => true, get: async (key) => kept.get(key), put: async (key, value) => { kept.set(key, value); } };
     const reply = await runNearJob({
-      node: '0,0', prefix: 'p:', ground: { ground: null, naturalIsGround: true },
+      node: '0,0', prefix: 'p:', heavy: true, ground: { ground: null, naturalIsGround: true },
       asks: [{ kind: 'planted', sig: 's', want: 'w', shown: null, extra: { variants: 3 } }],
       tiles: tiles.map((key) => ({ key, version: 1 })), records: records.map((r) => recordsFor(r, ['rest', 'roads', 'buildings'])),
     }, cache);

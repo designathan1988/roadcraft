@@ -96,7 +96,7 @@ describe('a tile\'s poles baked in a worker', () => {
     const tiles = [tileKey(i, j)];
     for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (di || dj) tiles.push(tileKey(i + di, j + dj));
     const job: NearTileJob = {
-      node: `${i},${j}`, prefix: null, ground: { ground: null, naturalIsGround: true },
+      node: `${i},${j}`, prefix: null, heavy: true, ground: { ground: null, naturalIsGround: true },
       asks: [{ kind: 'poles', sig: 'p', want: 'w', shown: null, extra: product.extra!(0) }, { kind: 'signs', sig: 's', want: 'w', shown: null, extra: { markingStyle: 'classic' } }],
       tiles: tiles.map((key) => ({ key, version: 1 })), records: tiles.map((key) => recordsFor(doc.tileRecords(key, 1), ['roads', 'rest'])),
     };

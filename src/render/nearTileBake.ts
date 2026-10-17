@@ -4,8 +4,9 @@ import { RoadDoc, type TileRecords } from '@world/doc';
 import { type RoadElevation, buildRoadElevation } from '@world/elevation';
 import { Network } from '@world/network';
 import { TILE, tileOfKey } from '@world/tiles';
-import { m } from '@world/units';
+import { METERS_PER_UNIT, m } from '@world/units';
 import { emptyRecords } from './buildings/farGrid';
+import { nearRoadDoc } from './nearRoadTiles';
 import { derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from './derivedCache';
 import { type BuildingStage, buildingStage, stageKey } from './nearBuildings';
 import { type NearPart, partsDigest } from './nearContent';
@@ -70,6 +71,8 @@ export interface NearArea {
   readonly naturalAt: (x: number, y: number) => number;
   /** What the kind reads of the buildings of the tile read `n` (0: the tile), for a kind that reads them (`NearBaker.buildings`). */
   buildings(n: number): BuildingStage;
+  /** The tiles read whole in one document (`RoadDoc.loadTile`), its network and heights: for what walks a street far past the fringe (a street's name plates, `signTiles.ts`); seconds, made only when asked. */
+  wide(): { readonly doc: RoadDoc; readonly net: Network; readonly elevation: RoadElevation };
 }
 
 /** What a kind tells the bake: the parts it reads, whether it reads the neighbours, how far past the tile its ground is read, and its bake. */
@@ -132,6 +135,8 @@ export interface NearTileJob {
   /** The tile itself held edited by the page: what the player just did, baked before anything (`cellPool.ts` EDIT_TIER). */
   readonly edited?: boolean;
   readonly ground: NearGround;
+  /** Its kinds read the roads (their network and heights solved: seconds), or not (a tile's gardens, barriers, elements: milliseconds): a tile's two jobs, the light one sent first (`nearTiles.ts` NearGate). */
+  readonly heavy: boolean;
 }
 
 /** A kind's answer: its bake (its version, its arrays; none when it is the one drawn, `same`), or why it failed. */
@@ -186,10 +191,33 @@ function withoutEmpty(records: TileRecords): Partial<TileRecords> {
   return out as Partial<TileRecords>;
 }
 
+/** THE DOCUMENT A TILE'S BAKES READ: the roads as its near roads read them (`nearRoadTiles.ts` nearRoadDoc: the tile's, its neighbours' within 200 m of it, and those meeting an end of those), and every pole, placed thing, barrier, tree and element of the tiles read (an owner's pole over a neighbour's borrowed copy)
+ *  - DO NOT load the 3 x 3 tiles whole (`RoadDoc.loadTile`): their network and heights solved over nine square kilometres were seconds of a worker a tile, the street's own products after the cells and roads behind them (conf29, 2026-10-17); what a tile's products read lies within the fringe. */
+function nearDocOf(tiles: readonly TileRecords[]): RoadDoc {
+  const [tile, ...around] = tiles as [TileRecords, ...TileRecords[]];
+  const roads = nearRoadDoc(tile, around, '').toJSON();
+  const owned = new Set<number>();
+  const poles: NonNullable<TileRecords['poles']>[number][] = [];
+  for (const t of tiles) for (const p of t.poles) if (!owned.has(p.id)) { owned.add(p.id); poles.push(p); }
+  for (const t of tiles) for (const p of t.borrowedPoles) if (!owned.has(p.id)) { owned.add(p.id); poles.push(p); }
+  const unique = <T extends { readonly id: number }>(lists: readonly (readonly T[])[]): T[] => {
+    const seen = new Set<number>();
+    const out: T[] = [];
+    for (const list of lists) for (const item of list) if (!seen.has(item.id)) { seen.add(item.id); out.push(item); }
+    return out;
+  };
+  return RoadDoc.fromJSON({
+    version: 1, unit: METERS_PER_UNIT, nodes: roads.nodes, segments: roads.segments, poles,
+    poleSpans: unique(tiles.map((t) => t.poleSpans)), landscape: unique(tiles.map((t) => t.landscape)), barriers: unique(tiles.map((t) => t.barriers)),
+    trees: tiles.flatMap((t) => t.trees), elements: tiles.flatMap((t) => t.elements),
+  }, { repair: false });
+}
+
 /** The tiles as one area: the document made when first asked, the tile first (an owner's node over a neighbour's borrowed copy, `loadTile`). */
 function areaOf(tiles: readonly TileRecords[], groundAt: (x: number, y: number) => number, naturalAt: (x: number, y: number) => number,
   stages: ReadonlyMap<number, BuildingStage>): NearArea {
   let doc: RoadDoc | null = null, net: Network | null = null, elevation: RoadElevation | null = null;
+  let wide: ReturnType<NearArea['wide']> | null = null;
   const area: NearArea = {
     key: tiles[0]!.key, tile: tiles[0]!, tiles, groundAt, naturalAt,
     buildings(n) {
@@ -198,11 +226,17 @@ function areaOf(tiles: readonly TileRecords[], groundAt: (x: number, y: number) 
       return stage;
     },
     doc() {
-      if (!doc) {
-        doc = new RoadDoc();
-        for (const t of tiles) doc.loadTile(t);
+      return doc ??= nearDocOf(tiles);
+    },
+    wide() {
+      if (!wide) {
+        const whole = new RoadDoc();
+        for (const t of tiles) whole.loadTile(t);
+        const wholeNet = new Network(whole);
+        wholeNet.rebuild();
+        wide = { doc: whole, net: wholeNet, elevation: buildRoadElevation(wholeNet, naturalAt) };
       }
-      return doc;
+      return wide;
     },
     net() {
       if (!net) { net = new Network(area.doc()); net.rebuild(); }

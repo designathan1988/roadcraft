@@ -161,6 +161,7 @@ import { isCoverKind } from '@world/terrainPaint';
 import { CellKeeps, keepCellAt, keepCellRect, keepCellsOver } from './cellKeeps';
 import { ActiveTiles } from './activeTiles';
 import { measureHitch } from '@core/hitch';
+import { TILE, tileKeyAt, tileOfKey } from '@world/tiles';
 import { createDensityCars } from './densityCars';
 import { COVER_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
 import { PlateFollow } from './plateFollow';
@@ -2130,10 +2131,13 @@ export function createSceneRenderer(
   /** Which of the trees the player planted stand: off the roads, out of the buildings. */
   const plantedKeeps = new CellKeeps<PlantedTree>((t) => (onCarriageway(keepNet!, t) || buildings.covers(t.x, t.y) ? null : terrain.renderedHeightAt(t.x, t.y)));
   /** The planted trees standing in a keep cell, from the document's filing by place (`RoadDoc.treesIn`); none in a cell of the kept ring (`ActiveTiles.keepsCell`). */
-  const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => (activeTiles.keepsCell(key) ? doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key) : []);
+  /** A keep cell whose tile's planted trees the tiles draw (`plantedTiles.ts`): the region files none there; until that tile's bake lands the region draws them (never a hole while it is baked). */
+  const plantedByTile = (key: number): boolean => { const r = keepCellRect(key); return nearTiles.landed('planted', tileKeyAt((r[0] + r[2]) / 2, (r[1] + r[3]) / 2)); };
+  const plantedIn = (doc: RoadDoc, key: number): PlantedTree[] => (activeTiles.keepsCell(key) && !plantedByTile(key) ? doc.treesIn(keepCellRect(key)).filter((t) => keepCellAt(t.x, t.y) === key) : []);
+  /** The tiles whose planted bake came or went since the region last filed its trees: their cells filed again. */
+  const plantedFlips = new Set<number>();
+  nearTiles.onLanded = (kind, tile) => { if (kind === 'planted') { plantedFlips.add(tile); onAssetsReady(); } };
   /** The planted forest's cells, made once the woods' models are in: the region's keep draws in them, and a streamed world's tiles (`plantedTiles.ts`). */
-  /** The region's planted trees let go for the tiles' (a streamed world open). */
-  let plantedTiled = false;
   const plantedForestOf = (): PlantCells | null => {
     if (!natureTreeKit) return null;
     const kit = natureTreeKit;
@@ -2157,7 +2161,7 @@ export function createSceneRenderer(
       const list = byCell.get(key);
       if (list) list.push(t); else byCell.set(key, [t]);
     }
-    for (const [key, list] of byCell) if (activeTiles.keepsCell(key)) plantedKeeps.fill(key, list);
+    for (const [key, list] of byCell) if (activeTiles.keepsCell(key) && !plantedByTile(key)) plantedKeeps.fill(key, list);
   };
   /** What the cover sweeps read of the ground (`coverSweep.ts`). */
   const coverField: CoverField = {
@@ -2656,21 +2660,16 @@ export function createSceneRenderer(
           measureHitch('hitch:nature', at);
         }
         // The trees the player planted (`world/trees.ts`), with the woods' own models: filed again only in the cells planted or cut
-        // A streamed world's planted trees are the tiles' (`plantedTiles.ts`, baked in workers): the region files none.
-        if (natureTreeKit && activeAt !== null) {
-          activeTiles.read(plantedRead, net.doc.changes);
-          if (!plantedTiled) {
-            plantedTiled = true;
-            plantedKeeps.clear();
-            plantedForest?.sync(null, []);
-          }
-        } else if (natureTreeKit) {
-          plantedTiled = false;
+        // A streamed world's planted trees are the tiles' (`plantedTiles.ts`, baked in workers) once a tile's bake landed; until then the region draws its own tiles' (`plantedByTile`).
+        if (natureTreeKit) {
           const planted = activeTiles.read(plantedRead, net.doc.changes);
-          if (planted === null || planted.some((e) => e.rects === null)) plantAll(net.doc);
-          else if (planted.length) {
+          if (planted === null || planted.some((e) => e.rects === null)) { plantAll(net.doc); plantedFlips.clear(); }
+          else if (planted.length || plantedFlips.size) {
             const cells = new Set<number>();
             for (const e of planted) for (const r of e.rects!) keepCellsOver(r, 0, cells);
+            // A tile whose bake came or went: its cells filed again, its trees let go or taken back.
+            for (const tile of plantedFlips) { const { i, j } = tileOfKey(tile); keepCellsOver([i * TILE, j * TILE, (i + 1) * TILE - 1e-6, (j + 1) * TILE - 1e-6], 0, cells); }
+            plantedFlips.clear();
             for (const key of cells) plantedKeeps.fill(key, plantedIn(net.doc, key), (a, b) => a === b);
           }
           if (rects === null) plantedKeeps.refreshAll();
