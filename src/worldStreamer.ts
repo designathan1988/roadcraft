@@ -9,7 +9,7 @@ import type { TileRecords } from '@world/doc';
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
 
 /** The kinds of the map's parts no tile holds (`RoadDoc.worldValues`): their changes are written with the world, not with a tile. */
-const WORLD_KINDS: ReadonlySet<string> = new Set<WorldPart>(['terrain', 'fog', 'gullies', 'clouds', 'clearings', 'zones', 'people', 'transit', 'economy', 'weather', 'markingStyle', 'nature']);
+const WORLD_KINDS: readonly string[] = ['terrain', 'fog', 'gullies', 'clouds', 'clearings', 'zones', 'people', 'transit', 'economy', 'weather', 'markingStyle', 'nature'] satisfies readonly WorldPart[];
 
 /** Tiles each way from the camera's tile held in the document: 3 x 3 tiles, 3 km - the editing and the detail's reach; past it the buildings, roads and land are drawn from what is baked of the store (a dense downtown tile holds ~1,500 buildings: 9 of them stay a fraction of the page's heap). */
 export const ACTIVE_RADIUS = 1;
@@ -372,7 +372,7 @@ export class WorldStreamer {
     }
     for (const entry of entries) {
       if (isStreaming(entry)) continue;
-      if (WORLD_KINDS.has(entry.kind)) { this.worldDirty.add(entry.kind as WorldPart); continue; }
+      if (WORLD_KINDS.includes(entry.kind)) { this.worldDirty.add(entry.kind as WorldPart); continue; }
       if (entry.rects === null) { for (const key of this.doc.loadedTiles) this.touched(key, serial); continue; }
       for (const [x0, y0, x1, y1] of entry.rects) {
         // A rectangle reaches every tile it overlaps (a road's box on two tiles marks both: either may own a piece of it).
