@@ -257,7 +257,19 @@ function lightSet(scene: Scene, lights: readonly Object3D[]): Scene {
 /** Meshes whose geometry must be on the GPU before they are first drawn. three.js sends a geometry's buffers */
 const toWarm: { mesh: Mesh; geometries: readonly BufferGeometry[]; done: () => void }[] = [];
 /** DO NOT queue loose meshes behind the scene's: one FIFO stopped at a scene job at its head, and the masses behind it kept their CPU arrays (110 MB, 2026-10-16). */
-interface LooseJob { readonly mesh: Mesh; readonly done: () => void; readonly priority: () => number; rank: number }
+interface LooseJob { readonly mesh: Mesh; readonly done: () => void; readonly priority: () => number; rank: number; readonly bytes: number }
+/** The bytes of the loose meshes waiting to go up: their arrays live on the page until they are on the GPU (`gpuOnly`). */
+let queuedBytes = 0;
+/** Past this the producers ask no new mesh with its arrays (`warmFull`): the queue drains `UPLOAD_BYTES` a frame, and its arrays live on the CPU until sent (the page's process reached 7.3 GB, ~3.7 GB native, at a re-bake: mu1, conf77). */
+export const WARM_CEILING = 64 * 1024 * 1024;
+/** The bytes of the loose meshes waiting to go to the GPU (`toWarmLoose`), kept as they are queued and sent: what the producers hold back by. */
+export function warmQueuedBytes(): number {
+  return queuedBytes;
+}
+/** Whether the queue holds more than it may: the producers (`farTree.ts`, `cellRequests.ts`, `massCells.ts`) ask no new mesh until it drains; never where no frame warms (tests). */
+export function warmFull(): boolean {
+  return warmer && queuedBytes > WARM_CEILING;
+}
 const toWarmLoose: LooseJob[] = [];
 let warmer = false;
 export function warmAhead(mesh: Mesh, geometries: readonly BufferGeometry[]): Promise<void> {
@@ -268,16 +280,21 @@ export function warmAhead(mesh: Mesh, geometries: readonly BufferGeometry[]): Pr
 export function warmLooseAhead(meshes: readonly Mesh[], priority: () => number = () => 0): Promise<void> | null {
   // Nothing to wait for where no frame warms (tests, before the first frame).
   if (!warmer || meshes.length === 0) return null;
-  return Promise.all(meshes.map((mesh) => new Promise<void>((done) => toWarmLoose.push({ mesh, done, priority, rank: 0 })))).then(() => {});
+  return Promise.all(meshes.map((mesh) => new Promise<void>((done) => {
+    const bytes = meshBytes(mesh);
+    queuedBytes += bytes;
+    toWarmLoose.push({ mesh, done, priority, rank: 0, bytes });
+  }))).then(() => {});
 }
 /** DO NOT dispose a mesh still waiting here without this */
 export function cancelWarm(meshes: Iterable<Mesh>): void {
   const gone = new Set(meshes);
-  for (const queue of [toWarm, toWarmLoose] as { mesh: Mesh; done: () => void }[][]) {
+  for (const queue of [toWarm, toWarmLoose] as { mesh: Mesh; done: () => void; bytes?: number }[][]) {
     for (let i = queue.length - 1; i >= 0; i--) {
       const job = queue[i]!;
       if (!gone.has(job.mesh)) continue;
       queue.splice(i, 1);
+      queuedBytes -= job.bytes ?? 0;
       job.done();
     }
   }
@@ -323,7 +340,8 @@ export function drainWarm(renderer: WebGLRenderer): void {
   toWarmLoose.sort((a, b) => a.rank - b.rank);
   while (toWarmLoose.length > 0 && (budget === UPLOAD_BYTES || budget > 0)) {
     const job = toWarmLoose.pop()!;
-    budget -= meshBytes(job.mesh);
+    budget -= job.bytes;
+    queuedBytes -= job.bytes;
     try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { void programsReady(job.mesh).then(job.done, job.done); }
   }
 }
