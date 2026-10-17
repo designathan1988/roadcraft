@@ -34,6 +34,7 @@ import {
   type CitizenClipKey, type ClipFrames, type Deferred, type Played, type RigNode,
 } from './citizenBake';
 import type { WalkSex } from './citizenWalk';
+import { measureHitch } from '@core/hitch';
 
 export type { CitizenClipKey } from './citizenBake';
 export { CROWD_IDS } from './citizenCasting';
@@ -458,7 +459,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       const given = await bakeInWorker(asset.scene, sex);
       if (abandonIfUnwanted()) return;
       const { clips, helmet, deferred } = await bake(asset.scene, sex, library, given ?? undefined);
-      performance.measure('person-bake', { start: bakeAt, end: performance.now() });
+      measureHitch('person-bake', bakeAt);
       if (abandonIfUnwanted()) return;
       let reference: SkinnedMesh | undefined;
       asset.scene.updateMatrixWorld(true);
