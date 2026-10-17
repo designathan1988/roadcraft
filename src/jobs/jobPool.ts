@@ -8,6 +8,10 @@ const CAGE_BYTES = 4 * 2 ** 30;
 /** Two fifths of the cage for the pool (2026-10-16: the worker that took it down was a Clipper2 union that never ended, fixed in `scripts/patches`; a busy worker holds 100-250 MB): 9 workers at most by the cage, the page's heap and the simulation's keep the rest. */
 const POOL_CAGE_SHARE = 2 / 5;
 const WORKER_HEAP_BYTES = 170 * 2 ** 20;
+/** A busy worker's heap at its PEAK, before it collects (iso.log at the run's peak, 2026-10-17: 108-370 MB a job worker), and what the page's and the simulation's take of the cage then (611 and 505 MB), with room left over. */
+const WORKER_PEAK_BYTES = 370 * 2 ** 20;
+const PAGE_AND_SIM_BYTES = 1_500 * 2 ** 20;
+const CAGE_MARGIN_BYTES = 512 * 2 ** 20;
 
 /** Services whose one job runs for seconds: kept on workers of their own, never beside another kind's lane or a queued job (a streamed tile is 2-25 s, `cityTile.worker.ts`: the traffic's conflict pairs waited behind tile after tile and the city's clock stood still). */
 const LONG_RUNNING: readonly JobService[] = ['growth', 'cityTiles'];
@@ -20,12 +24,12 @@ const otherKinds = (host: Host): number => { let n = 0; for (const service of ho
 
 /** Workers set apart for the long-running services: the pool less two kept for every other kind, one at least. */
 export function longWorkers(): number {
-  const n = jobWorkers();
+  const n = poolWorkers();
   return n >= 3 ? n - 2 : 1;
 }
 
 /** Workers for every other kind (the traffic's lanes, the cells, the far levels, the roads, the ground): the rest of the pool, one at least. */
-export const shortWorkers = (): number => Math.max(1, jobWorkers() - longWorkers());
+export const shortWorkers = (): number => Math.max(1, poolWorkers() - longWorkers());
 
 /** A job of the central queue (Cidade's job pool, `submit`): its message written when a worker takes it, answered once. */
 interface JobSpec {
@@ -216,6 +220,8 @@ class JobSystem {
   setup: ((worker: Worker) => void) | null = null;
   /** Tiles of the map waiting for the long side's lanes (`tilesWaiting`): its workers take no queued job meanwhile. */
   tilesWaiting = false;
+  /** The map made (`settlePool`): the pool held to what the cage holds at the workers' peak (`settledWorkers`). */
+  settled = false;
 }
 const system = new JobSystem();
 
@@ -241,12 +247,41 @@ export function jobWorkers(): number {
   return Math.max(1, Math.min(cores - 2, byCage));
 }
 
+/** THE WORKERS THE CAGE HOLDS AT THEIR PEAK, ONCE THE MAP IS MADE: what is left of the 4 GB cage past the page's and the simulation's heaps and a margin, at a busy worker's peak heap (`WORKER_PEAK_BYTES`), at least one.
+ *  DO NOT keep the map's rush's workers after it: every isolate of the page's process sizes its own heap limit and none sees the others', and the renderer died "ran out of reservation" with the main cage's largest free region 0 B, eleven isolates, the page's own heap 443 MB (the Crashpad reports' v8-oom keys, conf runs of 2026-10-17 00:43 and 01:26). The rush keeps them (the opening is the tiles' CPU); then the map's tile workers are let go, their whole heaps with them (`Worker.terminate`). */
+export function settledWorkers(): number {
+  return Math.max(1, Math.min(jobWorkers(), Math.floor((CAGE_BYTES - PAGE_AND_SIM_BYTES - CAGE_MARGIN_BYTES) / WORKER_PEAK_BYTES)));
+}
+
+/** The workers the pool may hold now: all of `jobWorkers` while the map is made, `settledWorkers` once it is (`settlePool`). */
+const poolWorkers = (): number => (system.settled ? settledWorkers() : jobWorkers());
+
+/** The map made (`main.ts` mapMade) or a new one begun: once settled, the pool holds `settledWorkers` at most, and every worker past them with no lane and no job is let go now and as it frees (`retire`). */
+export function settlePool(on: boolean): void {
+  if (system.settled === on) return;
+  system.settled = on;
+  retire();
+  if (!on) dispatch();
+}
+
+/** The workers past what the pool may hold that have no lane nor job: let go (their heaps freed whole), the long side's first. */
+function retire(): void {
+  if (!system.settled) return;
+  const most = poolWorkers();
+  for (let k = system.workers.length - 1; k >= 0 && system.workers.length > most; k--) {
+    const host = system.workers[k]!;
+    if (host.job || host.ports > 0 || host.laneWork > 0) continue;
+    system.workers.splice(k, 1);
+    host.worker.terminate();
+  }
+}
+
 /** How many lanes a kind of work may have: never more than the workers its side has (a lane per worker, `jobPort`; the long-running services' are `tileLanes`). */
 export const jobLanes = (most: number): number => Math.max(1, Math.min(most, shortWorkers()));
 
 /** One more worker of its side (`long`), while the pool and that side have room (`longWorkers`, `shortWorkers`); null when full. */
 function grow(long: boolean): Host | null {
-  if (system.workers.length >= jobWorkers()) return null;
+  if (system.workers.length >= poolWorkers()) return null;
   if (system.workers.filter((h) => h.long === long).length >= (long ? longWorkers() : shortWorkers())) return null;
   const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
   system.setup?.(worker);
@@ -267,6 +302,7 @@ function grow(long: boolean): Host | null {
     if (event.data.error !== undefined) system.queue.fail(job, event.data.error);
     else system.queue.answer(job, event.data.data);
     dispatch();
+    retire();
     toldQuiet();
   };
   worker.onerror = (event) => {
@@ -461,6 +497,7 @@ export class JobPort {
     this.host.ports--;
     const left = (this.host.services.get(this.service) ?? 1) - 1;
     if (left > 0) this.host.services.set(this.service, left); else this.host.services.delete(this.service);
+    retire();
   }
 }
 

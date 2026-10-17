@@ -3,7 +3,7 @@ import { tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { FarTileBake, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
-import { jobPort, jobsQuiet, longWorkers, onJobsQuiet, setTilesWaiting, shortWorkers } from './jobs/jobPool';
+import { jobPort, jobsQuiet, longWorkers, onJobsQuiet, setTilesWaiting, settlePool, shortWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
@@ -82,6 +82,8 @@ export class TileGenerator {
   setAside(on: boolean): void {
     if (this.aside === on) return;
     this.aside = on;
+    // The map made: the pool held to what the cage holds at the workers' peak (`jobPool.ts` settlePool), the rush's tile lanes let go as they free (`pump`).
+    settlePool(!on);
     this.pump();
   }
 
@@ -113,8 +115,21 @@ export class TileGenerator {
     }
   }
 
+  /** The generator's own lanes with no tile let go past `tileLanes` (the pool settled once the map is made, `jobPool.ts` settlePool): their workers let go with them. */
+  private dropOwn(): void {
+    let own = this.lanes.filter((l) => !l.aside).length;
+    for (let k = this.lanes.length - 1; k >= 0 && own > tileLanes(); k--) {
+      const lane = this.lanes[k]!;
+      if (lane.aside || lane.inFlight.length > 0) continue;
+      lane.port.terminate();
+      this.lanes.splice(k, 1);
+      own--;
+    }
+  }
+
   /** Each free lane given the next tile asked. */
   private pump(): void {
+    this.dropOwn();
     // DO NOT keep a lane set aside with no tile waiting (the rush's end, `setAside(false)`, waits for every tile made, and a tile that failed never counts), nor past what the queue leaves (`asideLanes`).
     this.dropAside(!this.aside || this.queue.length === 0 ? 0 : asideLanes());
     const own = this.lanes.filter((l) => !l.aside).length, aside = this.lanes.length - own;
