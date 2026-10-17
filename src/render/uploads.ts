@@ -123,37 +123,65 @@ export function shadowStandIns(root: Object3D): Group {
 
 /** A copy of `object` to build its programs with: the same geometry, material and variant */
 export function compileCopy(object: Object3D): Object3D {
-  const instanced = object as InstancedMesh;
-  if (!instanced.isInstancedMesh) return object.clone(false);
-  const copy = new InstancedMesh(instanced.geometry, instanced.material, 1);
-  Object3D.prototype.copy.call(copy, instanced, false);
-  if (instanced.instanceColor) copy.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
-  copy.morphTexture = instanced.morphTexture;
-  return copy;
+  // DO NOT let three copy the user data (r186 `Object3D.copy`: JSON.parse(JSON.stringify(userData))): a part's `posedFrom` is a geometry, serialized whole, and one whose arrays went to the GPU (`gpuOnly`) threw, leaving the job that asked unsettled (conferencia 31: no cell's detail, no new road).
+  const kept = object.userData;
+  object.userData = {};
+  try {
+    const instanced = object as InstancedMesh;
+    if (!instanced.isInstancedMesh) return object.clone(false);
+    const copy = new InstancedMesh(instanced.geometry, instanced.material, 1);
+    Object3D.prototype.copy.call(copy, instanced, false);
+    if (instanced.instanceColor) copy.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
+    copy.morphTexture = instanced.morphTexture;
+    return copy;
+  } finally {
+    object.userData = kept;
+  }
+}
+
+/** Every compile asked for and not settled, and the drains it has waited through: DO NOT let one wait for ever (a program that never says it is built, a mesh let go meanwhile): past `COMPILE_FRAMES` it settles, and the mesh is drawn as it was before (its program built in the draw at worst). */
+const inFlight = new Set<{ frames: number; settle: () => void }>();
+const COMPILE_FRAMES = 30;
+/** `done` once, however many times it is called, and taken off `inFlight`. */
+function once(done: () => void): () => void {
+  const entry = { frames: 0, settle: () => {} };
+  entry.settle = () => { if (!inFlight.delete(entry)) return; done(); };
+  inFlight.add(entry);
+  return entry.settle;
 }
 
 /** `shadow`: the object's material is a shadow's depth material, compiled for a shadow map. */
 export function compileAhead(object: Object3D, shadow = false): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object, shadow, done }));
+  return new Promise((done) => toCompile.push({ object, shadow, done: once(done) }));
 }
 
 /** `object`'s programs as they are drawn under another set of the scene's lights (`lights`, every one counted lit or not): the variant a light switched on or off asks for, built before it is. */
 export function compileAheadWith(object: Object3D, lights: readonly Object3D[]): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object, shadow: false, done, lights }));
+  return new Promise((done) => toCompile.push({ object, shadow: false, done: once(done), lights }));
 }
 
 /** DO NOT draw a pass of its own (`people/crowdAnimation.ts` palette pass) before its program is built: compiled on its first draw, in the frame (2026-10-16) */
 export function compilePassAhead(scene: Scene, camera: Camera, target: WebGLRenderTarget): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done, pass: { camera, target } }));
+  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done: once(done), pass: { camera, target } }));
 }
 
 /** Starts compiling what is waiting; each promise settles when its shaders are ready. */
 export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   compiler = true;
+  // A compile waited for past its frames settles: never a mesh held for ever.
+  for (const entry of [...inFlight]) if (++entry.frames > COMPILE_FRAMES) entry.settle();
   if (!toCompile.length) return;
+  // Without the parallel compile, three's compileAsync polls each program with a timer: built here at once instead, off the draw, and settled.
+  const extensions = (renderer as { extensions?: { has?: (name: string) => boolean } }).extensions;
+  const parallel = extensions?.has?.('KHR_parallel_shader_compile') ?? true;
+  const build = (object: Object3D, cameraFor: Camera, targetScene: Scene): Promise<unknown> => {
+    if (parallel) return renderer.compileAsync(object, cameraFor, targetScene);
+    renderer.compile(object, cameraFor, targetScene);
+    return Promise.resolve();
+  };
   // For the target the scene is really drawn into: its colour space and tone mapping are part of every program.
   const previous = renderer.getRenderTarget();
   // DO NOT let three walk the whole scene for its lights once per object compiled (`compile` traverses its target scene): gathered once for this drain.
@@ -165,7 +193,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
         // Its own scene's lights (none) and its own target, as it is drawn.
         renderer.setRenderTarget(pass.target);
         try {
-          renderer.compileAsync(object, pass.camera, object as Scene).then(() => done(), () => done());
+          build(object, pass.camera, object as Scene).then(() => done(), () => done());
         } catch (error) {
           console.error('[uploads] the program of a pass could not be compiled ahead', error);
           done();
@@ -188,7 +216,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
         if (unit.variant) setDepth((unit.object as Mesh).material as DepthMaterial, unit.variant);
         // DO NOT let one program that cannot be built stop the others, nor the frame: said, and the promise still settles.
         try {
-          compiled.push(renderer.compileAsync(unit.object, camera, lights ? lightSet(scene, lights) : lit));
+          compiled.push(build(unit.object, camera, lights ? lightSet(scene, lights) : lit));
         } catch (error) {
           console.error('[uploads] a program could not be compiled ahead', error);
         }
@@ -296,30 +324,105 @@ export function drainWarm(renderer: WebGLRenderer): void {
   while (toWarmLoose.length > 0 && (budget === UPLOAD_BYTES || budget > 0)) {
     const job = toWarmLoose.pop()!;
     budget -= meshBytes(job.mesh);
-    try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { void programsReady(job.mesh).then(job.done); }
+    try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { void programsReady(job.mesh).then(job.done, job.done); }
   }
 }
 
 /** DO NOT let a mesh be drawn before its programs are built (a program first used in the frame's draw stalls it, three's onFirstUse): its own and its shadow's, compiled ahead at the next drain (`drainCompiles`, KHR_parallel_shader_compile); what waits for the mesh waits for them too. */
-function programsReady(mesh: Mesh): Promise<unknown> {
-  const shadow = shadowStandIn(mesh);
-  return Promise.all([compileAhead(mesh), shadow ? compileAhead(shadow, true) : null]);
+export function programsReady(mesh: Mesh): Promise<unknown> {
+  // Nothing built ahead where no renderer answers (tests): nothing waited for.
+  if (!compiler) return Promise.resolve();
+  // Through the variants the door keeps (`programsOf`): a mesh warmed here goes in at once when it enters the scene.
+  let waiting: Promise<unknown> | null;
+  // DO NOT let a mesh that cannot be stood in for stop the queue (an exception here left its job unsettled): it goes as it is.
+  try { waiting = programsOf(mesh); } catch (error) { console.error('[uploads] a mesh\'s programs could not be asked for', error); waiting = null; }
+  if (!waiting) return Promise.resolve();
+  pendingPrograms++;
+  return waiting.finally(() => { pendingPrograms--; });
+}
+/** THE ONE DOOR INTO THE DRAWN SCENE: what comes in with a program not built yet waits on a layer no camera draws (the colour pass's nor the shadow's: three tests the main camera's layers in both) until its programs, lit and in the shadow, are built ahead; then it is drawn as it was. DO NOT gate by `visible`: the layers' level choices set it every frame. */
+const GATE_LAYER = 30;
+/** Each program variant asked for, by what of a mesh is in its key (its material and the mesh's own flags), and whether it is built: a mesh of a variant built goes in at once. */
+const variants = new Map<string, { built: boolean; ready: Promise<unknown> }>();
+/** What three's program key reads of a mesh lit (r186 `WebGLPrograms.getParameters`): its materials, how it is instanced, skinned, morphed, its attributes, whether it takes shadows. */
+function litKey(mesh: Mesh): string {
+  const m = mesh as Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean; isBatchedMesh?: boolean; instanceColor?: unknown; morphTexture?: unknown };
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  const g = mesh.geometry;
+  return ['lit', materials.map((x) => `${x.uuid}:${x.version}`).join(','), !!m.isInstancedMesh, !!m.instanceColor, !!m.morphTexture, !!m.isSkinnedMesh, !!m.isBatchedMesh,
+    mesh.receiveShadow, Object.keys(g.attributes).sort().join(','), Object.keys(g.morphAttributes).sort().join(',')].join('/');
+}
+/** A variant's programs asked for once, with `mesh` as its stand-in; the promise settles when they are built. */
+function variantReady(key: string, build: () => Promise<unknown>): { built: boolean; ready: Promise<unknown> } {
+  let known = variants.get(key);
+  if (!known) {
+    const made: { built: boolean; ready: Promise<unknown> } = { built: false, ready: Promise.resolve() };
+    made.ready = build().finally(() => { made.built = true; });
+    variants.set(key, made);
+    known = made;
+  }
+  return known;
+}
+/** The programs a mesh is drawn with, lit and in the shadow (its variants, each asked for once): null when they are all built already. */
+function programsOf(mesh: Mesh): Promise<unknown> | null {
+  const waits: Promise<unknown>[] = [];
+  const lit = variantReady(litKey(mesh), () => compileAhead(mesh));
+  if (!lit.built) waits.push(lit.ready);
+  if (mesh.castShadow) {
+    // Its stand-in made only for a variant not asked for yet.
+    const cast = variantReady(`cast/${casterKey(mesh)}`, () => { const shadow = shadowStandIn(mesh); return shadow ? compileAhead(shadow, true) : Promise.resolve(); });
+    if (!cast.built) waits.push(cast.ready);
+  }
+  return waits.length ? Promise.all(waits) : null;
+}
+/** Each mesh held at the door, and the layers it had. */
+const gated = new WeakMap<Object3D, number>();
+/** What comes into the scene (`renderer.ts` childadded): every mesh, line and points under it whose programs are not built held off the drawn layers until they are (`programsOf`). Nothing is held where no renderer answers (tests, the opening before the first frame: the catalogue builds those). */
+export function gateUntilBuilt(root: Object3D): void {
+  if (!compiler) return;
+  root.traverse((object) => {
+    const mesh = object as Mesh & { isLine?: boolean; isPoints?: boolean };
+    if (!(mesh.isMesh || mesh.isLine || mesh.isPoints) || gated.has(object) || !mesh.material) return;
+    let waiting: Promise<unknown> | null;
+    try { waiting = programsOf(mesh); } catch (error) { console.error('[uploads] a mesh\'s programs could not be asked for', error); waiting = null; }
+    if (!waiting) return;
+    gated.set(object, object.layers.mask);
+    object.layers.set(GATE_LAYER);
+    pendingPrograms++;
+    const open = (): void => {
+      pendingPrograms--;
+      const mask = gated.get(object);
+      gated.delete(object);
+      if (mask !== undefined && object.layers.mask === 1 << GATE_LAYER) object.layers.mask = mask;
+    };
+    // Built, failed or given up on (`COMPILE_FRAMES`): the door opens all the same.
+    void waiting.then(open, open);
+  });
+}
+
+/** Meshes whose programs are being built (`programsReady`): the renderer asks for frames meanwhile (`warmPending`). */
+let pendingPrograms = 0;
+/** Whether programs are built ahead here (a renderer answers; none in tests): a mesh waits for them only then. */
+export function compilesAhead(): boolean {
+  return compiler;
 }
 /** Buffers sent to the GPU a frame at most, bytes: 16 MiB took the page up to 42 ms in one frame of the conf27 move (bufferData at ~2.6 ms a MiB): 4 MiB, ~10 ms there. */
 const UPLOAD_BYTES = 4 * 1024 * 1024;
 /** Whether meshes still wait to go to the GPU: the renderer asks for another frame meanwhile. */
 export function warmPending(): boolean {
-  return toWarm.length > 0 || toWarmLoose.length > 0;
+  return toWarm.length > 0 || toWarmLoose.length > 0 || pendingPrograms > 0;
 }
 
 /** A loose mesh's buffers sent up in a scene of its own (`warmLoose`) */
 const LOOSE = {
   scene: Object.assign(new ThreeScene(), { matrixWorldAutoUpdate: false }),
+  // Every layer: a mesh held at the door (`gateUntilBuilt`) still has its buffers sent.
   camera: new OrthographicCamera(),
   material: new MeshBasicMaterial(),
   target: new WebGLRenderTarget(1, 1),
 };
 LOOSE.scene.overrideMaterial = LOOSE.material;
+LOOSE.camera.layers.enableAll();
 
 /** DO NOT draw the whole scene for it (on a layer of its own) */
 function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly BufferGeometry[]): void {

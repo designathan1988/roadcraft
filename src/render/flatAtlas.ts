@@ -35,7 +35,7 @@ import { GroundShare, type SharedGroundAt } from './sharedGround';
 import { setJobFocus } from '../jobs/jobPool';
 import { gpuLedger } from './gpuLedger';
 import { measureHitch } from '@core/hitch';
-import { queueUpload } from './uploads';
+import { compilesAhead, programsReady, queueUpload } from './uploads';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
 import { TILE, tileOfKey } from '@world/tiles';
 
@@ -87,6 +87,8 @@ interface Plate {
   readonly dabCopies: WeakMap<PaintDab, PaintDab | null>;
   surface: PlateSurface | null;
   shown: boolean;
+  /** Its surface's programs built (`uploads.ts` programsReady): not shown before, the far patch standing in. */
+  ready: boolean;
   /** The land at the plate's grid corners, the base level added, read off the page (`flatGroundPool.ts`), rows from the north edge; null until then. */
   heights: Float64Array | null;
   /** Its first build made off the page, until the plate is made from it (`plateMesh.ts`). */
@@ -375,7 +377,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const r = plateRegion(key);
     p = {
       key, cx: r.cx, cy: r.cy, source: new PlateSource(), stampCopies: new WeakMap(), dabCopies: new WeakMap(),
-      surface: null, shown: false, heights: null, mesh: null, asked: false, top: -Infinity,
+      surface: null, shown: false, ready: false, heights: null, mesh: null, asked: false, top: -Infinity,
     };
     plates.set(key, p);
     if (lastDoc) fill(p, lastDoc);
@@ -403,6 +405,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (lookGiven) s.setWaterLook(lastLook);
     // Sent ahead of its first draw (`uploads.ts`), not inside it.
     queueUpload(...s.textures());
+    // Shown once its programs are built (`uploads.ts` programsReady, the door's own variants): until then its far patch stands in, not a hole while the scene's door holds its meshes.
+    p.ready = !compilesAhead();
+    if (!p.ready) void Promise.all((s.meshes as Mesh[]).map((mesh) => programsReady(mesh))).then(() => { if (p.surface === s) { p.ready = true; contentCame = true; } });
     measureTop(p);
     return s;
   };
@@ -444,6 +449,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const cached: Plate[] = [];
     for (const p of plates.values()) {
       if (!p.surface) continue;
+      // Wanted but its programs still being built: neither shown nor let go (the far patch stands in).
+      if (wanted.has(p.key) && !p.ready) { show(p, false); continue; }
       const want = wanted.has(p.key);
       show(p, want);
       if (want) shownList.push(p); else cached.push(p);
