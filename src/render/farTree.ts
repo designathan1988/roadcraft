@@ -1,6 +1,6 @@
-import { Box3, Frustum, Group, type Mesh, type Object3D } from 'three';
+import { Box3, Frustum, Group } from 'three';
 import { Digest } from '@core/digest';
-import { type WholeMapOptions, worldKey } from '@world/cityGen/wholeMap';
+import { worldKey } from '@world/cityGen/wholeMap';
 import { tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
@@ -11,134 +11,14 @@ import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
 import { cancelWarm, warmFull, warmLooseAhead } from './uploads';
 import { nearSig } from './nearRoadTiles';
 import { geometryCost, gpuLedger } from './gpuLedger';
+import { PageCuts } from './farTreeCuts';
+import { type Eye, type FarKind, type FarNearLanded, type FarNode, type FarTileSource, type FarTiles, type FarTreeJob, type FarTreeReply, type FarTreeRun, sameView } from './farTreeTypes';
+export type { FarKind, FarLanded, FarNear, FarNearLanded, FarTileSource, FarTiles, FarTreeJob, FarTreeRun } from './farTreeTypes';
+export { sameView } from './farTreeTypes';
 
 /** A QUADTREE OF LEVELS BAKED PER TILE IN WORKERS FROM THE TILE STORE (CLAUDE.md "Streaming world"), for any kind of thing drawn from afar: the buildings (`buildings/farLevels.ts`), the roads (`farRoads.ts`) */
 /** Chosen top down by their error on the screen (Cesium's replacement refinement, `selectTiles`); the tiles the page's document holds are drawn near, never here */
 /** EVERY TILE OF THE MAP IS MADE BEFORE THE CITY IS SHOWN (`worldStreamer.ts` rush, the city-game's opening): every node is baked from stored tiles, never from a stand-in */
-
-/** Where the far levels read the tile store (the coordinator wires it) */
-export interface FarTileSource {
-  /** A tile as the page's document files it (`editor/tileStore.ts` `preparedRecords`: its buildings migrated, each a row of its tile's shared table); null when the store has none. */
-  records(key: number): Promise<TileRecords | null>;
-  /** The world's generator options: its fingerprint keys the bakes (one world's never read for another's); null: no such world. */
-  readonly plan: WholeMapOptions | null;
-  /** The store's map when the workers can read it themselves (`core/storedTiles.ts`, the browser's IndexedDB): a tile's records then never cross the page. */
-  readonly workersRead?: string;
-  /** The page's edit of a tile the store does not hold yet (`worldStreamer.ts` pageEdit: a serial; 0 when the store holds the tile as the page has it), and the tile as the page holds it: what a near level reads of a tile edited (`FarKind.near`), drawn from the edit on, not from the write seconds later. */
-  pageEdit?(key: number): number;
-  pageRecords?(key: number): TileRecords | null;
-}
-
-/** What the coordinator tells the buildings' far levels (`BuildingLayer.far`). */
-export interface FarTiles {
-  /** The store to read (and the world's plan) and which tiles the page's document holds now (the streamer's region): those are drawn by the cells, never here. */
-  setSource(source: FarTileSource | null, isLoaded: (tileKey: number) => boolean): void;
-  /** A tile written by the store at a version (made, changed), or gone (null): it and its ancestors baked again when wanted, nothing else. */
-  stored(tileKey: number, version: number | null): void;
-  /** A tile loaded into the page's document or unloaded from it: `isLoaded` read again for it. */
-  loadedChanged(tileKey: number): void;
-  /** The frame's error scale for the next `choose` (`buildings/frameBudget.ts`), as the cells' (`massCells.ts` `setErrorScale`). */
-  setErrorScale(scale: number): void;
-  /** The key prefix its bakes are kept under for the world set (`setSource`): what a tile's maker keeps its level 0 under (`cityTile.worker.ts`); null when nothing is kept. */
-  readonly bakePrefix: string | null;
-}
-
-/** A job of the tree: a node at the version of the tiles under it, from the cache, its tile's records (level 0) or its children's bakes (above). */
-export interface FarTreeJob {
-  readonly node: string;
-  readonly k: number;
-  readonly i: number;
-  readonly j: number;
-  readonly sig: string;
-  /** Its mesh wanted back (to be drawn), or only baked and kept (for a parent). */
-  readonly want: boolean;
-  /** The cache's prefix; null: nothing kept, the levels past the tiles not made. */
-  readonly prefix: string | null;
-  /** Its quarters, null where no tile is stored under one. */
-  readonly children?: readonly ({ readonly key: string; readonly sig: string } | null)[];
-  /** The tile the page read (no worker reads the store): DO NOT post it whole, each kind's runner posts what its bake reads of it (the buildings' rows in their shared tables, `buildings/farLevels.ts` `farJobOf`; the roads alone, `farRoads.ts` `farRoadJob`). */
-  readonly records?: TileRecords;
-  /** The store's map the worker reads the tile from itself (`core/storedTiles.ts`), when it can (`FarTileSource.workersRead`): DO NOT drop it on the way to the worker. */
-  readonly store?: string;
-  /** A tile's near level (`FarKind.near`): the tiles it reads, each at its version (the tile first, then its neighbours stored), the version of what it reads (`bake`), the level wanted and the version of it drawn now (`shown`: only what changed since comes back); the page's records of the tiles it holds edited (or of all, where no worker reads the store), in that order, null for one read from the store. */
-  readonly near?: {
-    readonly tiles: readonly { readonly key: number; readonly version: number }[];
-    readonly bake: string;
-    readonly variant: string;
-    readonly shown: string | null;
-    readonly records?: readonly (TileRecords | null)[];
-    /** The tile itself held edited by the page: what the player just did, baked before anything (`cellPool.ts` EDIT_TIER). */
-    readonly edited?: boolean;
-  };
-}
-
-/** A job's answer, as `buildings/farTiles.ts` `FarReply`, its mesh's data a `payload`. */
-type FarTreeReply<P> =
-  | { readonly kind: 'far'; readonly node: string; readonly sig: string; readonly payload: P | null }
-  | { readonly kind: 'farRecords'; readonly node: string; readonly sig: string }
-  | { readonly kind: 'farChildren'; readonly node: string; readonly sig: string; readonly missing: readonly string[] }
-  | { readonly kind: 'farNoCache'; readonly node: string; readonly sig: string }
-  | { readonly kind: 'farError'; readonly node: string; readonly sig: string; readonly message: string };
-
-/** Runs a job and answers once; gives back its cancel (an answer cancelled is never given). */
-export type FarTreeRun<P> = (job: FarTreeJob, done: (reply: FarTreeReply<P>) => void) => () => void;
-
-/** A node's mesh made of its data: the mesh, its plan box and highest point (what the eye measures), what it leaves out, m. */
-export interface FarLanded {
-  readonly mesh: Mesh;
-  readonly x0: number;
-  readonly y0: number;
-  readonly x1: number;
-  readonly y1: number;
-  readonly top: number;
-  readonly error: number;
-}
-
-/** What a kind of far thing tells the tree: its meshes, and what each level may leave out before its mesh comes. */
-export interface FarKind<P> {
-  /** Its name in warnings. */
-  readonly name: string;
-  land(payload: P): FarLanded;
-  levelError(k: number): number;
-  /** The least pixels a level's error may span before it gives way to its quarters (none: the near levels' own, `massCells.ts` `measureSeen`): what a level draws never smaller on the screen than this asks. */
-  levelPixels?(k: number): number;
-  /** A level under the tiles (the roads' near level, `nearRoadTiles.ts`); none: a tile is the finest the tree draws (the buildings', whose cells draw the near). */
-  readonly near?: FarNear<P>;
-}
-
-/** A kind's level under its tiles, at two levels of its own: what a tile's own level leaves out that it draws (`error`, m: wanted where that spans the pixels allowed, as a cell comes near, `massCells.ts`), what its simplified level leaves out (`fineError`: its full detail wanted where that spans them), and its meshes. */
-export interface FarNear<P> {
-  readonly error: number;
-  readonly fineError: number;
-  /** A level's meshes from a job's answer; `base`, the one drawn now at that level, whose blocks the answer leaves out it keeps (`FarNearLanded.adopt`). */
-  land(payload: P, base: FarNearLanded | null): FarNearLanded;
-  /** Whether an answer builds on a version drawn (its blocks changed since alone): that version, else null. */
-  baseOf(payload: P): string | null;
-  /** What an answer is of: the content it was baked from and its level (a landed level's `bake` and `variant`); none: every answer is new. */
-  contentOf?(payload: P): { readonly bake: string; readonly variant: string };
-  /** What else it is baked from that the page may change (the roads' paint style): in its version. */
-  version?(): string;
-  /** Whether what it is baked from is known yet (the ground the buildings stand on): none asked before, as none is asked with the upload queue full. */
-  ready?(): boolean;
-  /** A tile the page holds edited, cut to what the near level reads, and the digest of that: the version an edited tile is asked at, so an edit of what it does not read (a building grown, a tree) asks nothing. */
-  pageCut?(records: TileRecords): { readonly records: TileRecords; readonly digest: string };
-  /** Whether it draws the tiles the page's document holds too (the roads: one way for every tile; the buildings' cells draw theirs). */
-  readonly drawsLoaded?: boolean;
-}
-
-/** A tile's near level made of its data: what is drawn, the meshes made for it (sent to the GPU before it is drawn), what it holds, its highest point, the version of what it read and its level. */
-export interface FarNearLanded {
-  readonly group: Object3D;
-  readonly meshes: readonly Mesh[];
-  readonly bytes: number;
-  readonly triangles: number;
-  readonly top: number;
-  readonly bake: string;
-  readonly variant: string;
-  /** At the swap: takes from the one drawn before the blocks it kept, which then lets go only the rest. */
-  adopt(base: FarNearLanded): void;
-  dispose(): void;
-}
 
 /** HOW FAR THE TREE IS DRAWN ROUND THE EYE (its stored tiles and the plan): the view's reach as the renderer gives it (the far plane in perspective, the frame from above); asked with none, as the far plane stands for an eye this high (`isoViewport.ts`: four times its distance and 2.4 km); never past a top-level node's side (3 x 3 roots at most)
  *  - DO NOT draw to a fixed 16 km whatever the camera: an eye at 340 m clips at 4.3 km, and 60 nodes past it were baked and uploaded for nothing (2026-10-16). */
@@ -154,54 +34,6 @@ const viewReach = (e: { readonly z: number; readonly reach: number }): number =>
 /** A tile's near level's key in the store of bakes (`farKey`'s level 0 under it: `n0:i,j`). */
 const nearKeyOf = (n: { readonly i: number; readonly j: number }): string => `n0:${n.i},${n.j}`;
 
-/** A node of the quadtree: a tile (level 0) or 2^k tiles a side; where the store has tiles, and where the plan is drawn. */
-interface FarNode {
-  readonly key: string;
-  readonly k: number;
-  readonly i: number;
-  readonly j: number;
-  readonly parent: FarNode | null;
-  /** Its quarters (level 1 and up), by `di + 2 dj`; null where no tile is (and no plan node was made). */
-  readonly children: (FarNode | null)[];
-  /** Its box in the plan (grown to its mesh's) and its highest point. */
-  x0: number; y0: number; x1: number; y1: number; top: number;
-  /** Tiles stored under it (none: the plan's alone), and how many of them the page's document holds. */
-  tiles: number;
-  loaded: number;
-  /** A tile's version, and whether the document holds it. */
-  version: number;
-  inDoc: boolean;
-  /** The version of the tiles under it (null: one changed, worked out again when read, `sigOf`). */
-  sig: string | null;
-  /** The version a worker baked and kept it at. */
-  baked: string | null;
-  /** The version its mesh is of (null: nothing known to draw); a landed node with no mesh has nothing to draw. */
-  landed: string | null;
-  mesh: Mesh | null;
-  error: number;
-  asked: string | null;
-  askedWant: boolean;
-  cancel: (() => void) | null;
-  /** Waiting for its children's bakes at this version: which, and whether its mesh is wanted then. */
-  blocked: string | null;
-  waitingFor: Set<string> | null;
-  blockedWant: boolean;
-  /** The version a worker failed to bake: not asked again. */
-  failed: string | null;
-  queued: boolean;
-  /** A tile's near level (`FarKind.near`): drawn, and on its way to the GPU; the version of the tiles it reads it is of, asked, failed. */
-  near: FarNearLanded | null;
-  nearComing: FarNearLanded | null;
-  nearLanded: string | null;
-  nearAsked: string | null;
-  nearCancel: (() => void) | null;
-  /** The version the level on its way to the GPU stands for now: a newer answer of the same content moves it here, never the upload (`landNear`). */
-  nearComingSig: string | null;
-  nearFailed: string | null;
-}
-
-/** The eye the nodes were last chosen for (map x/y, height; a metre's pixels at a metre, or the orthographic view's; how far the view reaches, Infinity in perspective). */
-interface Eye { x: number; y: number; z: number; pxAtMetre: number; orthoPx: number | null; reach: number }
 
 export class FarTree<P> implements FarTiles {
   readonly group = new Group();
@@ -244,6 +76,8 @@ export class FarTree<P> implements FarTiles {
   private readonly chosenView = new Frustum();
   private chosenHadView = false;
   private chosenOutside = '';
+  /** The tiles the page holds edited, cut to what the near level reads (`farTreeCuts.ts`). */
+  private readonly cuts = new PageCuts(() => this.source, (records) => this.kind.near?.pageCut?.(records) ?? null);
   private scheduled = false;
   private warned = false;
 
@@ -577,48 +411,17 @@ export class FarTree<P> implements FarTiles {
 
   /** The tile and its neighbours stored, at their versions (the tile first): what its near level reads; a tile the page holds edited, at the digest of what the near level reads of it (`pageCutOf`). */
   private nearTiles(n: FarNode): { key: number; version: number; cut: { readonly records: TileRecords; readonly digest: string } | null }[] {
-    const out = [{ key: tileKey(n.i, n.j), version: n.version, cut: this.pageCutOf(tileKey(n.i, n.j)) }];
+    const out = [{ key: tileKey(n.i, n.j), version: n.version, cut: this.cuts.of(tileKey(n.i, n.j)) }];
     for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         if (di === 0 && dj === 0) continue;
         const key = tileKey(n.i + di, n.j + dj);
         const leaf = this.leaves.get(key);
-        if (leaf) out.push({ key, version: leaf.version, cut: this.pageCutOf(key) });
+        if (leaf) out.push({ key, version: leaf.version, cut: this.cuts.of(key) });
       }
     }
     return out;
   }
-
-  /** Each edited tile's records as the near level reads them, by the edit they are of: DO NOT read the page's document again for every neighbour that reads the tile, nor for every frame (`tileMembers` walks the region's document). */
-  private readonly pageCuts = new Map<number, { readonly edit: number; readonly cut: { readonly records: TileRecords; readonly digest: string } | null; drawn?: boolean }>();
-
-  /** A tile the page holds edited (`FarTileSource.pageEdit`), cut to what the near level reads and digested, once an edit; null for one the store holds as the page has it. */
-  private pageCutOf(key: number): { readonly records: TileRecords; readonly digest: string } | null {
-    const edit = this.source?.pageEdit?.(key) ?? 0;
-    const known = this.pageCuts.get(key);
-    if (!edit || !this.source?.pageRecords) {
-      // DO NOT let the edit's write being confirmed ask the near level again before the edit is drawn: the stored versions hold what the cut holds, and the job of the cut, still waiting, was cancelled for one of the version in the cells' band, behind every building the road's edit had baked again; a second write (a building grown next to it) cancelled it once more (`conferencia` 40-road-4s, the road drawn only after a reload, conf42-45, 2026-10-17; found by the near-tiles session). The cut stands for the tile until the tile's near level made of it is drawn (`markCutDrawn`); then the version's, of the same roads, is kept as drawn (`landNear` same content).
-      if (edit === 0 && known?.cut && !known.drawn && this.source?.pageRecords) return known.cut;
-      this.pageCuts.delete(key);
-      this.cutAsked.delete(key);
-      return null;
-    }
-    if (known && known.edit === edit) return known.cut;
-    const records = this.source.pageRecords(key);
-    const cut = records ? (this.kind.near!.pageCut ? this.kind.near!.pageCut(records) : { records, digest: `e${edit}` }) : null;
-    this.pageCuts.set(key, { edit, cut });
-    return cut;
-  }
-
-  /** A tile's near level drawn of what it read (`sig`): the tile's cut, if it was made of it, drawn - the edit is on the screen. */
-  private markCutDrawn(n: FarNode, sig: string): void {
-    const key = tileKey(n.i, n.j);
-    const known = this.pageCuts.get(key);
-    if (known?.cut && this.cutAsked.get(key)?.get(sig) === known.cut.digest) known.drawn = true;
-  }
-
-  /** The cut of its own tile each tile's near level was asked of, by the signature asked (the signature is a digest: it does not say). */
-  private readonly cutAsked = new Map<number, Map<string, string>>();
 
   /** A tile's near level asked of the workers at the versions of the tiles it reads and at the level the view wants; once. */
   private askNear(n: FarNode): void {
@@ -635,12 +438,7 @@ export class FarTree<P> implements FarTiles {
     n.nearCancel?.();
     n.nearAsked = sig;
     const own = tiles[0]!.cut;
-    if (own) {
-      const key = tileKey(n.i, n.j);
-      let asked = this.cutAsked.get(key);
-      if (!asked) { asked = new Map(); this.cutAsked.set(key, asked); }
-      asked.set(sig, own.digest);
-    }
+    if (own) this.cuts.asked(tileKey(n.i, n.j), sig, own);
     // The edited tiles as the page holds them: drawn from the edit, not from its write.
     const edited = tiles.some((t) => t.cut) ? tiles.map((t) => t.cut?.records ?? null) : undefined;
     this.submitNear(n, sig, bake, variant, tiles, edited, tiles[0]!.cut !== null);
@@ -710,7 +508,7 @@ export class FarTree<P> implements FarTiles {
       }
       if (!coming && n.near && n.near.bake === same.bake && n.near.variant === same.variant) {
         n.nearLanded = sig;
-        this.markCutDrawn(n, sig);
+        this.cuts.drawn(tileKey(n.i, n.j), sig);
         if (n.nearAsked === sig) n.nearAsked = null;
         this.again();
         return;
@@ -720,7 +518,7 @@ export class FarTree<P> implements FarTiles {
     if (payload === null) {
       this.dropNear(n);
       n.nearLanded = sig;
-      this.markCutDrawn(n, sig);
+      this.cuts.drawn(tileKey(n.i, n.j), sig);
       if (n.nearAsked === sig) n.nearAsked = null;
       return;
     }
@@ -742,7 +540,7 @@ export class FarTree<P> implements FarTiles {
       }
       n.near = landed;
       n.nearLanded = done;
-      this.markCutDrawn(n, done);
+      this.cuts.drawn(tileKey(n.i, n.j), done);
       if (n.nearAsked === done) n.nearAsked = null;
       this.nearResident.add(n);
       this.again();
@@ -996,14 +794,4 @@ export class FarTree<P> implements FarTiles {
       if (e) this.choose(e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, e.reach, this.view);
     });
   }
-}
-
-/** Whether two frusta (or none) are the same: every plane's normal and constant. */
-export function sameView(a: Frustum | null, b: Frustum | null): boolean {
-  if (a === null || b === null) return a === b;
-  for (let i = 0; i < 6; i++) {
-    const p = a.planes[i]!, q = b.planes[i]!;
-    if (p.constant !== q.constant || !p.normal.equals(q.normal)) return false;
-  }
-  return true;
 }
