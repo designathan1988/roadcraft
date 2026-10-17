@@ -2,7 +2,7 @@ import type { Finish } from '@world/buildings/materials';
 import { eachRecord, readRecords } from '@world/buildings/recordTable';
 import { type PavingData, pavingReader } from '@world/paving';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
-import { emitChunk } from './buildingMesh';
+import { chunkSummary, emitChunk } from './buildingMesh';
 import { type CellArrays, type CellMass, type CellSelection, type KitBoxes, cellArrays, cellBuffers, cellMass, cellMassBuffers } from './cellArrays';
 import type { BuildingChunk, CellJobEntry, LotGroundRecipe } from './chunk';
 import type { FlagInstance } from './flagLayer';
@@ -122,15 +122,21 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   }
   // DO NOT parse a text per building: each record decoded from its tile's shared table, a tile's shared members once for the job.
   const buildings = readRecords(job.entries.map((entry) => entry.record));
-  // The detail and its far level: the buildings of the cell as one another's neighbours, a party wall's covered bays not laid (`partyWalls.ts`).
-  const party = job.kind === 'summary' ? undefined : new PartyWalls(buildings, naturalAt, paved);
-  const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade', true, party));
-  if (missX0 <= missX1) return wider(job, missX0, missY0, missX1, missY1);
-  const summaries: ChunkSummary[] = chunks.map((chunk, i) => {
+  /** What the page keeps of a building, from its chunk or its summary alone. */
+  const summaryOf = (chunk: Pick<BuildingChunk, 'flags' | 'lotGround' | 'signatureFloor'>, i: number): ChunkSummary => {
     const { flags, lotGround, signatureFloor } = chunk;
     return { key: job.entries[i]!.key, ...(flags ? { flags } : {}), lot: lotGround?.recipe ?? null, ...(signatureFloor !== undefined ? { signatureFloor } : {}) };
-  });
-  if (job.kind === 'summary') return { kind: 'done', job: job.id, result: { batch: null, details: [], summaries } };
+  };
+  // DO NOT lay a building for its summary: its lots' recipe and its floor alone (`chunkSummary`).
+  if (job.kind === 'summary') {
+    const summaries = buildings.map((b, i) => summaryOf(chunkSummary(b, groundAt, paved, naturalAt), i));
+    return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, details: [], summaries } };
+  }
+  // The detail and its far level: the buildings of the cell as one another's neighbours, a party wall's covered bays not laid (`partyWalls.ts`).
+  const party = new PartyWalls(buildings, naturalAt, paved);
+  const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade', true, party));
+  if (missX0 <= missX1) return wider(job, missX0, missY0, missX1, missY1);
+  const summaries = chunks.map(summaryOf);
   const batch = cellArrays(chunks, { ...COARSE, ghost: false, dim: false }, job.boxes);
   // The detail cells inside, each its buildings in the cell's order (`layerCells.ts` `chunksByCell`).
   const byDetail = new Map<string, BuildingChunk[]>();

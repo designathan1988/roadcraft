@@ -126,4 +126,24 @@ describe('a cell put together off the page', () => {
       compare([...changed, ...town.slice(3)]);
     });
   }
+
+  for (const paved of [pavedAt, undefined]) {
+    it(`summarizes a cell as its buildings laid whole do, none laid (${paved ? 'with' : 'without'} paving)`, () => {
+      const town = [...grownTown().buildings.all()];
+      const pool = new CellPool(() => boxes, (e) => () => texts.get(e.key)!, false);
+      const env = { groundAt, naturalAt, ...(paved ? { pavedAt: paved } : {}) };
+      let lots = 0;
+      for (const b of town) {
+        let got: CellResult | null = null;
+        pool.run('summary', cellOf(b), [entryOf(b)], env, (result) => { got = result; });
+        const s = (got! as CellResult).summaries[0]!;
+        const chunk = emitChunk(b, groundAt, paved, naturalAt);
+        expect(s.flags ?? null).toEqual(chunk.flags ?? null);
+        expect(s.signatureFloor).toBe(chunk.signatureFloor);
+        expect(s.lot).toEqual(chunk.lotGround?.recipe ?? null);
+        if (s.lot) lots++;
+      }
+      expect(lots).toBeGreaterThan(5);
+    });
+  }
 });
