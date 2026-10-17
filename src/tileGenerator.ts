@@ -129,7 +129,7 @@ export class TileGenerator {
         if ('error' in answer) waiting.failed(answer.error);
         else if ('stored' in answer) {
           waiting.done({ version: answer.stored, ...(answer.prepared ? { prepared: answer.prepared } : {}),
-            ...(answer.existed ? { existed: true } : {}), ...(answer.legacy ? { legacy: true } : {}) });
+            ...(answer.existed ? { existed: true } : {}), ...(answer.legacy ? { legacy: true } : {}), ...(answer.bays ? { bays: true } : {}) });
         }
         else waiting.done(answer.records);
       }
