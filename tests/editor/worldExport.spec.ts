@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PartStore } from '@editor/saveStore';
 import { TileStore, type WorldMeta, storeTiles } from '@editor/tileStore';
-import { readWorldFile, worldFilePieces } from '@editor/worldExport';
+import { readWorldFile, saveWorldFile, worldFilePieces } from '@editor/worldExport';
 import type { TileRecords } from '@world/doc';
 import { tileIdBase, tileKey } from '@world/tiles';
 import { m } from '@world/units';
@@ -54,5 +54,37 @@ describe('a city saved to a file', () => {
   it('is not taken for a map file of another kind', () => {
     expect(readWorldFile({ version: 2, document: {} })).toBeNull();
     expect(readWorldFile({ version: 3, world: { version: 1, unit: 1, generator: null }, tiles: [] })).toBeNull();
+  });
+
+  it('refuses a file whose tile lacks a list or a counter, or lies off the map', async () => {
+    const from = new TileStore('map', storeTiles(memoryStore()), never);
+    await from.write(tile(0, 0));
+    const meta: WorldMeta = { version: 1, generator: { seed: 4, style: 'mixed', centres: 3, density: 0.5, parks: 0.05, industry: true }, unit: 1, values: {} };
+    await from.setMeta(meta);
+    const text = await new Blob(await worldFilePieces((await from.meta())!, [tileKey(0, 0)], (key) => from.readText(key))).text();
+    const good = JSON.parse(text) as { tiles: Record<string, unknown>[][] };
+    expect(readWorldFile(good)).not.toBeNull();
+    // A tile without its trees' list.
+    const holed = JSON.parse(text) as { tiles: Record<string, unknown>[][] };
+    for (const part of holed.tiles[0]!) delete part['trees'];
+    expect(readWorldFile(holed)).toBeNull();
+    // A tile far past the map's edge.
+    const off = JSON.parse(text) as { tiles: Record<string, unknown>[][] };
+    for (const part of off.tiles[0]!) if ('key' in part) part['key'] = tileKey(5000, 0);
+    expect(readWorldFile(off)).toBeNull();
+  });
+
+  it('makes no file while a change is not written, nor from a tab that only reads the world', async () => {
+    const from = new TileStore('map', storeTiles(memoryStore()), never);
+    await from.write(tile(0, 0));
+    await from.setMeta({ version: 1, generator: { seed: 4, style: 'mixed', centres: 3, density: 0.5, parks: 0.05, industry: true }, unit: 1, values: {} });
+    const offered: Blob[] = [];
+    const offer = (blob: Blob): boolean => { offered.push(blob); return true; };
+    const keys = [tileKey(0, 0)];
+    expect(await saveWorldFile({ streamer: { flush: async () => false, readOnly: false }, store: from }, keys, offer)).toBe('hint.saveBehind');
+    expect(await saveWorldFile({ streamer: { flush: async () => true, readOnly: true }, store: from }, keys, offer)).toBe('hint.worldReadOnly');
+    expect(offered).toHaveLength(0);
+    expect(await saveWorldFile({ streamer: { flush: async () => true, readOnly: false }, store: from }, keys, offer)).toBe('hint.saved');
+    expect(offered).toHaveLength(1);
   });
 });

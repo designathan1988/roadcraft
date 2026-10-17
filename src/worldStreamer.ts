@@ -111,14 +111,40 @@ export class WorldStreamer {
     return this.wanted.includes(key);
   }
 
-  /** The lists a "whole map" clear is emptying in the store (`main.ts` clearStoredTiles): a tile that comes meanwhile (read before its clear) comes without them, and is written so. */
-  private stripping: ReadonlySet<'trees' | 'elements'> = new Set();
+  /** The "whole map" clears under way, by list (`main.ts` clearStoredTiles): a tile that comes meanwhile (read before its clear) comes without the lists, and is written so; two clears of a list running at once each count. */
+  private readonly clears = new Map<'trees' | 'elements', number>();
+
+  /** The tiles read (or asked) while a clear ran, and its lists: emptied as they are put in, even after the clear is done (their read may have come before it). */
+  private readonly readDuringClear = new Map<number, Set<'trees' | 'elements'>>();
+
+  /** The lists some clear is emptying now. */
+  private get stripping(): ReadonlySet<'trees' | 'elements'> {
+    return new Set([...this.clears].filter(([, n]) => n > 0).map(([part]) => part));
+  }
+
+  private markRead(key: number, parts: Iterable<'trees' | 'elements'>): void {
+    let set = this.readDuringClear.get(key);
+    if (!set) this.readDuringClear.set(key, set = new Set());
+    for (const part of parts) set.add(part);
+  }
 
   /** A "whole map" clear of these lists under way: until `done` is called, a tile put in has them emptied (and is to be written). */
   clearing(parts: readonly ('trees' | 'elements')[]): () => void {
-    const set = new Set(parts);
-    this.stripping = set;
-    return () => { if (this.stripping === set) this.stripping = new Set(); };
+    for (const part of parts) this.clears.set(part, (this.clears.get(part) ?? 0) + 1);
+    // What is being read or waits to be put in now was read before the store's clear, perhaps.
+    for (const key of [...this.asked, ...this.ready.keys()]) this.markRead(key, parts);
+    // A write that failed is posted again from its records (`retryFailed`): without the lists, or it puts back what the clear took.
+    for (const behind of this.unsaved.values()) {
+      const write = behind.write;
+      if (!write?.failed) continue;
+      behind.write = { ...write, records: { ...write.records, ...Object.fromEntries(parts.map((part) => [part, []])) } };
+    }
+    let open = true;
+    return () => {
+      if (!open) return;
+      open = false;
+      for (const part of parts) this.clears.set(part, (this.clears.get(part) ?? 1) - 1);
+    };
   }
 
   /** Another tab holds this world (`main.ts` holdWorld, a Web Lock): this one reads it and writes nothing, its edits kept on the page only. */
@@ -150,7 +176,7 @@ export class WorldStreamer {
     // One tile put in a frame, the nearest first: a dense tile is ~1,500 buildings read and filed, the frame stays a frame (the work is the view's tiles, never the map's).
     let best: number | null = null, bestD = Infinity;
     for (const key of this.ready.keys()) {
-      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) { this.ready.delete(key); continue; }
+      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) { this.ready.delete(key); this.readDuringClear.delete(key); continue; }
       const { i, j } = tileOfKey(key);
       const d = Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j));
       if (d < bestD) { bestD = d; best = key; }
@@ -158,7 +184,9 @@ export class WorldStreamer {
     if (best !== null) {
       let records = this.ready.get(best)!;
       this.ready.delete(best);
-      const strip = [...this.stripping].filter((part) => records[part].length > 0);
+      const marked = this.readDuringClear.get(best);
+      this.readDuringClear.delete(best);
+      const strip = [...new Set([...this.stripping, ...(marked ?? [])])].filter((part) => records[part].length > 0);
       if (strip.length) {
         const was = records;
         records = { ...records, ...Object.fromEntries(strip.map((part) => [part, []])) };
@@ -272,6 +300,8 @@ export class WorldStreamer {
       if (this.doc.hasTile(key) || this.asked.has(key) || this.ready.has(key)) continue;
       if (performance.now() - (this.failedAt.get(key) ?? -Infinity) < RETRY_MS) continue;
       this.asked.add(key);
+      // Asked while a clear runs: its read may come before the store's clear.
+      if (this.stripping.size) this.markRead(key, this.stripping);
       this.load(key).then((records) => {
         this.asked.delete(key);
         this.noteKnown(key, records.version);

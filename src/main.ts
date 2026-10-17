@@ -99,7 +99,8 @@ import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from 
 import { STUTTER_MS } from '@core/sampleRing';
 import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
 import { exportToFile, offerFile } from '@editor/mapExport';
-import { worldFilePieces } from '@editor/worldExport';
+import { saveWorldFile } from '@editor/worldExport';
+import { worldHolds } from '@editor/worldLock';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
 import { TransitTool, setTransitTool, transitTool } from '@editor/transitTools';
 import type { BuildingId } from '@world/buildings/types';
@@ -1971,18 +1972,8 @@ let streamed: { readonly store: TileStore; readonly generator: TileGenerator; re
   /** A tile written at a version (`StreamerEvents.written`): what is baked of it is stale. */
   readonly written: (key: number, version: number) => void } | null = null;
 
-/** DO NOT let two tabs write one world (each stamps the versions it knows, the last writer wins): the first holds it (a Web Lock by its name, MDN "LockManager"), until it closes it; another tab opens it read only. Resolves the release, or null when another tab holds it. */
-function holdWorld(name: string): Promise<(() => void) | null> {
-  const locks = (navigator as { locks?: LockManager }).locks;
-  if (!locks) return Promise.resolve(() => {});
-  return new Promise((answer) => {
-    void locks.request(`roadcraft.world.${name}`, { ifAvailable: true }, (lock) => {
-      if (!lock) { answer(null); return undefined; }
-      // Held while this promise stands: settled when the world is closed (`afterStreamedWorld`).
-      return new Promise<void>((release) => answer(release));
-    });
-  });
-}
+/** This tab's holds of its worlds (`worldLock.ts`): one tab writes a world, another reads it. */
+const holdWorld = worldHolds((navigator as { locks?: LockManager }).locks);
 /** A place of an item of a list (a dab, a tree, an element) in tile `key`. */
 const itemInTile = (item: unknown, key: number): boolean => {
   const p = item as { x?: number; y?: number } | null;
@@ -2186,17 +2177,7 @@ function saveMap(): void {
 
 /** DO NOT save only the region of a streamed world: its changed tiles written, then the world's values and every stored tile of the map in one file (`worldExport.ts`), each tile read in the save worker and put in as it is stored. */
 async function saveWorld(open: NonNullable<typeof streamed>): Promise<void> {
-  try {
-    await open.streamer.flush();
-    const meta = await open.store.meta();
-    if (!meta) throw new Error('the world has no values stored');
-    const pieces = await worldFilePieces(meta, mapTilesFrom(0, 0), (key) => open.store.readText(key));
-    if (!offerFile(new Blob(pieces, { type: 'application/json' }), 'roadcraft-city.json')) throw new Error('the file was not offered');
-    flashHint('hint.saved');
-  } catch (error) {
-    console.error('[world] the city could not be saved to a file', error);
-    flashHint('hint.exportFailed');
-  }
+  flashHint(await saveWorldFile(open, mapTilesFrom(0, 0), (blob) => offerFile(blob, 'roadcraft-city.json')));
 }
 /** Loads a picked map. */
 function openImported(result: ImportResult): boolean | Promise<boolean> {
