@@ -2,7 +2,7 @@ import type { Finish } from '@world/buildings/materials';
 import { eachRecord, readRecords } from '@world/buildings/recordTable';
 import { type PavingData, pavingReader } from '@world/paving';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
-import { chunkSummary, emitChunk } from './buildingMesh';
+import { ShellWriter, chunkSummary, emitChunk } from './buildingMesh';
 import { type CellArrays, type CellMass, type CellSelection, type KitBoxes, cellArrays, cellBuffers, cellMass, cellMassBuffers } from './cellArrays';
 import type { BuildingChunk, CellJobEntry, LotGroundRecipe } from './chunk';
 import type { FlagInstance } from './flagLayer';
@@ -150,7 +150,9 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   }
   // The detail and its far level: the buildings of the cell as one another's neighbours, a party wall's covered bays not laid (`partyWalls.ts`).
   const party = new PartyWalls(buildings, naturalAt, paved, known);
-  const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade', true, party));
+  // One shell written again for each building of the job (`ShellWriter`).
+  const writer = new ShellWriter();
+  const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade', true, party, writer));
   if (missX0 <= missX1) return wider(job, missX0, missY0, missX1, missY1);
   const summaries = chunks.map(summaryOf);
   // The far level's shells on the cell's grid (`cellArrays.ts` `ShellGrid`); the detail's in floats (its millimetre steps).

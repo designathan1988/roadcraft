@@ -373,6 +373,11 @@ class Grow<T extends Typed> {
     return this.array.subarray(0, this.length) as T;
   }
 
+  /** What was written, in an array of its own size (the arrays written again for the next building, `ShellWriter`). */
+  copy(): T {
+    return this.array.slice(0, this.length) as T;
+  }
+
   /** The array's bytes as 32-bit words (a new view only once it grew): what the vertex weld hashes and compares. */
   bits(): Int32Array {
     const a = this.array;
@@ -433,6 +438,15 @@ class ShellPart {
       streams.push({ grow: this.facade, size: FACADE_FLOATS, words: FACADE_FLOATS / 2 }, { grow: this.grid, size: FACADE_GRID, words: FACADE_GRID / 2 }, { grow: this.opening, size: FACADE_BYTES, words: FACADE_BYTES / 4 });
     }
     this.streams = streams;
+  }
+
+  /** Emptied for the next building, its arrays and its table kept at their size (`ShellWriter`). */
+  clear(): void {
+    this.vertices = 0;
+    for (const s of this.streams) s.grow.length = 0;
+    this.index.length = 0;
+    this.hashes.length = 0;
+    this.slots.fill(0);
   }
 
   /** Room in every array for `count` vertices written from `vertices` on. */
@@ -540,6 +554,24 @@ class Shell {
   stamp: FacadeStamp | null = null;
   /** The elements' boxes as instances of the shell's parts (`shellParts.ts`, `emitChunk` `apart`); false lays them here face by face. */
   apart = true;
+  /** Written again for each building of a job (`ShellWriter`): its chunks copy what was written out. */
+  reused = false;
+  /** The finishes this building laid, in the order it first laid each (its chunk's, as a new shell's parts were made). */
+  readonly order: Finish[] = [];
+  readonly runOrder: Finish[] = [];
+
+  /** Emptied for the next building: every part kept, its arrays at their size, none of what was laid. */
+  clear(): void {
+    for (const part of this.parts.values()) part.clear();
+    for (const part of this.runs.values()) part.clear();
+    this.order.length = 0;
+    this.runOrder.length = 0;
+    this.ground = Number.NaN;
+    this.decay = 0;
+    this.far = false;
+    this.stamp = null;
+    this.apart = true;
+  }
 
   /** DO NOT lay only the first two triangles: a lantern's octagonal and 24-sided caps */
   face(points: readonly (readonly [number, number, number])[], n: readonly [number, number, number], c: Paint, shades?: readonly number[]): void {
@@ -551,6 +583,7 @@ class Shell {
       part = new ShellPart(finishId(c.finish), st !== null);
       parts.set(c.finish, part);
     }
+    if (part.index.length === 0) (st ? this.runOrder : this.order).push(c.finish);
     const count = points.length;
     const length = Math.hypot(n[0], n[1], n[2]) || 1;
     const wx = n[0] / length;
@@ -3459,12 +3492,24 @@ export function signatureFloorOf(b: Building, naturalAt: GroundAt, pavedAt?: Pav
 /** A wear as the shell's vertices carry it to the GPU: a byte's step (`cellArrays.ts` `finishWear`), so a shell's part laid again from it is the shell. */
 const wearShort = (x: number): number => wearByte(x) / WEAR_STEPS;
 
+/** DO NOT grow a new shell's arrays for each building of a job from nothing (every one doubling its way up, the half let go, its chunk holding views of arrays twice its size): one shell written again for each, the arrays grown once to the largest, each chunk an exact copy. */
+export class ShellWriter {
+  private readonly shell = new Shell();
+  constructor() { this.shell.reused = true; }
+  /** The shell emptied for the next building. */
+  next(): Shell {
+    this.shell.clear();
+    return this.shell;
+  }
+}
+
 /** `far`: the building's far level (L1) - walls as runs of bays with their windows drawn by the shader, no parts (`facadeLevel.ts`). */
 /** `apart`: the elements' boxes, pavings and rails as instances of the shell's parts (`shellParts.ts`); false lays them in the shell face by face, as the parts draw them (the specs compare). */
 /** `party`: the job's buildings as one another's neighbours (`partyWalls.ts`): the bays inside a neighbour are not laid, and each floor is worked out once. */
+/** `writer`: one shell written again for each building of a job (`ShellWriter`): its arrays grow once, and each chunk copies out what is its own. */
 export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed, far = false, apart = true,
-  party?: PartyWalls): BuildingChunk {
-  const shell = new Shell();
+  party?: PartyWalls, writer?: ShellWriter): BuildingChunk {
+  const shell = writer ? writer.next() : new Shell();
   shell.decay = b.decay ?? 0;
   shell.far = far;
   shell.apart = apart;
@@ -3561,22 +3606,26 @@ export function chunkSummary(b: Building, groundAt: GroundAt, pavedAt?: PavedAt,
 }
 
 /** A part's arrays viewed at their length, no copy. */
-const shellChunkOf = (part: ShellPart): ShellChunk =>
-  ({ position: part.position.view(), normal: part.normal.view(), paint: part.paint.view(), index: part.index.view() });
+const shellChunkOf = (part: ShellPart, copy: boolean): ShellChunk => (copy
+  ? { position: part.position.copy(), normal: part.normal.copy(), paint: part.paint.copy(), index: part.index.copy() }
+  : { position: part.position.view(), normal: part.normal.view(), paint: part.paint.view(), index: part.index.view() });
 
 /** A shell's fragments by finish: the arrays it was laid in (every face but the far level's runs with openings). */
 function shellChunks(shell: Shell): Partial<Record<Finish, ShellChunk>> {
   const shells: Partial<Record<Finish, ShellChunk>> = {};
-  for (const [finish, part] of shell.parts) if (part.index.length > 0) shells[finish] = shellChunkOf(part);
+  for (const finish of shell.order) { const part = shell.parts.get(finish)!; if (part.index.length > 0) shells[finish] = shellChunkOf(part, shell.reused); }
   return shells;
 }
 
 /** The far level's runs of bays with openings by finish, each vertex with its window grid; undefined when none was laid. */
 function runChunks(shell: Shell): Partial<Record<Finish, RunChunk>> | undefined {
   let runs: Partial<Record<Finish, RunChunk>> | undefined;
-  for (const [finish, part] of shell.runs) {
+  for (const finish of shell.runOrder) {
+    const part = shell.runs.get(finish)!;
     if (part.index.length === 0 || !part.facade || !part.grid || !part.opening) continue;
-    (runs ??= {})[finish] = { ...shellChunkOf(part), facade: part.facade.view(), grid: part.grid.view(), opening: part.opening.view() };
+    (runs ??= {})[finish] = shell.reused
+      ? { ...shellChunkOf(part, true), facade: part.facade.copy(), grid: part.grid.copy(), opening: part.opening.copy() }
+      : { ...shellChunkOf(part, false), facade: part.facade.view(), grid: part.grid.view(), opening: part.opening.view() };
   }
   return runs;
 }
