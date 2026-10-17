@@ -92,4 +92,36 @@ describe('the detail and the view', () => {
     for (let i = 2; i < 5; i++) expect(cells.near(`${i},0`)).toBe(false);
     cells.dispose();
   });
+
+  it('tests no cell against a view that did not move, however many choices a frame makes; a view moved, tested again', () => {
+    const cells = createMassCells(createBuildingKit(), CELL);
+    for (let i = 0; i < 5; i++) {
+      const b = { ...JSON.parse(JSON.stringify(BLUEPRINTS[0]!.body)), id: i + 1, x: (i + 0.5) * CELL, y: CELL / 2, rotation: 0 } as Building;
+      cells.land(`${i},0`, cellMass([emitMassing(b, () => 0)!]));
+    }
+    const camera = new OrthographicCamera(-100, 100, 100, -100, 1, 2000);
+    camera.position.set(CELL / 2, 1000, -CELL / 2);
+    camera.lookAt(CELL / 2, 0, -CELL / 2);
+    camera.updateMatrixWorld();
+    const viewOf = (): Frustum => new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    const view = viewOf();
+    cells.choose(CELL / 2, CELL / 2, m(1000), 1000, 10, false, Infinity, view);
+    const near = [0, 1, 2, 3, 4].map((i) => cells.near(`${i},0`));
+    let tests = 0;
+    const box = Frustum.prototype.intersectsBox;
+    Frustum.prototype.intersectsBox = function (this: Frustum, b) { tests++; return box.call(this, b); };
+    try {
+      for (let frame = 0; frame < 20; frame++) cells.choose(CELL / 2, CELL / 2, m(1000), 1000, 10, false, Infinity, viewOf());
+      expect(tests).toBe(0);
+      expect([0, 1, 2, 3, 4].map((i) => cells.near(`${i},0`))).toEqual(near);
+      camera.position.x += CELL * 2;
+      camera.lookAt(camera.position.x, 0, -CELL / 2);
+      camera.updateMatrixWorld();
+      cells.choose(CELL * 2.5, CELL / 2, m(1000), 1000, 10, false, Infinity, viewOf());
+      expect(tests).toBeGreaterThan(0);
+    } finally {
+      Frustum.prototype.intersectsBox = box;
+    }
+    cells.dispose();
+  });
 });
