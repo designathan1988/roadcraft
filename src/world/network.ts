@@ -19,6 +19,7 @@ import {
   stopLineDistance as stopLine,
 } from './approach';
 import { CellFiling } from './cells';
+import { followRamps } from './curbRamps';
 import { m } from './units';
 import type { ChangeRect } from './changes';
 import { type NetworkBake, NetworkBuild } from './networkBuild';
@@ -119,6 +120,8 @@ export class Network {
     this.log.advance(delta);
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
+    // The dropped kerbs follow in this step, never in a walker's read (`curbRamps.ts` `walkingRise`).
+    followRamps(this);
     measureHitch(options.full ? 'hitch:network/full' : 'hitch:network/rebuild', started);
   }
 
@@ -205,6 +208,7 @@ export class Network {
     this.forgetCrossings(this.log.since(before));
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
+    followRamps(this);
   }
 
   /** Drops the crossing distances a change of the network may have moved */

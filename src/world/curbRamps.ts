@@ -76,7 +76,8 @@ function place(net: Network, state: RampState, nodeId: NodeId): void {
       const list = state.grid.get(key);
       if (!list) return;
       const at = list.indexOf(r);
-      if (at >= 0) list.splice(at, 1);
+      // Taken out by the last one put in its place (the order of a cell's ramps is read by none: `rampRiseIn` takes the lowest).
+      if (at >= 0) { list[at] = list[list.length - 1]!; list.pop(); }
       if (list.length === 0) state.grid.delete(key);
     });
   }
@@ -95,10 +96,22 @@ function placeAll(net: Network, state: RampState): void {
 function rampState(net: Network): RampState {
   let state = cache.get(net);
   if (!state) cache.set(net, state = { state: null, byNode: new Map(), grid: new Map() });
-  if (state.state === net.state) return state;
+  bring(net, state);
+  return state;
+}
+
+/** The network rebuilt or taken back (`Network.rebuild`, `takeBack`): its ramps, where they are kept, brought up to it in that step, never while a walker reads them (`walkingRise`). */
+export function followRamps(net: Network): void {
+  const state = cache.get(net);
+  if (state) bring(net, state);
+}
+
+/** The ramps of `state` brought up to the network: the nodes its changes reach placed again, or every node when it cannot say. */
+function bring(net: Network, state: RampState): void {
+  if (state.state === net.state) return;
   const delta = state.state === null ? null : net.changesSince(state.state);
   state.state = net.state;
-  if (delta === null) { placeAll(net, state); return state; }
+  if (delta === null) { placeAll(net, state); return; }
   const dirty = new Set<NodeId>(delta.nodes);
   const ends = (seg: SegmentId): void => {
     const s = net.doc.segment(seg);
@@ -108,12 +121,11 @@ function rampState(net: Network): RampState {
   // A crossing is fitted to the footway along its road: a change where the road reaches moves it.
   for (const rect of delta.rects) for (const seg of net.segmentCells.idsMeeting(rect)) ends(seg);
   for (const id of dirty) place(net, state, id);
-  return state;
 }
 
-/** How high the walking surface stands at (x, y), as a share of the footway's rise */
+/** How high the walking surface stands at (x, y), as a share of the footway's rise: a read of the ramps as kept (asked by every walker drawn every frame), brought up to the network by its own rebuild (`followRamps`); made here only the first time a network's are asked */
 export function walkingRise(net: Network, x: number, y: number, onFootway: boolean, structure = 'ground'): number {
-  return rampRiseIn(rampState(net).grid, x, y, onFootway, structure);
+  return rampRiseIn((cache.get(net) ?? rampState(net)).grid, x, y, onFootway, structure);
 }
 
 /** The ramps filed in the cells `rect` reaches (each once): every ramp `walkingRise` reads at a point of it. */

@@ -57,6 +57,27 @@ describe('walking height', () => {
     }
   });
 
+  it('follows the network in its rebuild, never in what a walker reads: a read after an edit works nothing out', () => {
+    const sim = city();
+    const net = sim.net;
+    // The ramps kept for this network (the surfaces' build asks them first).
+    expect([...sim.doc.nodes.keys()].flatMap((id) => rampsOfNode(net, id)).length).toBe(16);
+    // A fourth arm's road made a street of its own: a new junction, its zebras, its ramps.
+    const far = sim.doc.addNode({ x: 460, y: 300 });
+    const east = [...sim.doc.nodes.values()].find((n) => n.x === 460 && n.y === 0)!;
+    sim.doc.addSegment(east.id, far.id, 1);
+    net.rebuild();
+    // Every read counted: a walker's read must work out no crossing.
+    let worked = 0;
+    const crosswalk = net.crosswalkDistanceAt.bind(net);
+    net.crosswalkDistanceAt = (...args: Parameters<typeof net.crosswalkDistanceAt>) => { worked++; return crosswalk(...args); };
+    for (let i = 0; i < 50; i++) walkingRise(net, 455 + i * 0.2, 2 + i * 0.1, true);
+    expect(worked).toBe(0);
+    // And the ramps read are the network's now: the new junction's zebras have theirs.
+    expect(rampsOfNode(net, east.id).length).toBeGreaterThan(0);
+    expect(worked).toBe(0);
+  });
+
   it('never lifts or drops a walker more than a centimetre between ticks', () => {
     const sim = city();
     sim.usePedestrianEngine(createAgentWalkEngine());
