@@ -7,7 +7,8 @@ import type { Building } from '@world/buildings/types';
 import { TILE, tileIdBase, tileKey } from '@world/tiles';
 import { clearBuildingsAfterEdit } from '@editor/buildings';
 import { prepareTile, preparedRecords } from '@editor/tileStore';
-import { RoadTool, type RoadToolHost } from '@editor/roadTool';
+import { RoadTool, type RoadToolHost, cutAtTiles } from '@editor/roadTool';
+import { controlPoint, quadPoint } from '@core/bezier';
 import { HOLD_MOST, WorldStreamer } from '@/worldStreamer';
 import { History } from '@editor/history';
 
@@ -18,6 +19,85 @@ const empty = (key: number): TileRecords => ({
   lotKeys: [], landscape: [], barriers: [], paint: [], trees: [], elements: [],
   next: { node: tileIdBase(key), segment: tileIdBase(key), pole: tileIdBase(key), span: tileIdBase(key), building: tileIdBase(key), lot: tileIdBase(key), landscape: tileIdBase(key), barrier: tileIdBase(key) },
 });
+
+async function layAcrossEightTiles(bent: boolean): Promise<void> {
+  const doc = new RoadDoc();
+  const net = new Network(doc);
+  net.rebuild();
+  const written = new Map<number, TileRecords>();
+  const streamer = new WorldStreamer(doc, {
+    load: (k) => Promise.resolve(written.get(k) ?? preparedRecords(prepareTile(empty(k), false))),
+    write: (records) => { written.set(records.key, records); return Promise.resolve(records.version + 1); },
+  });
+  // The store's own count: four past the document held, a fifth refused.
+  const row = (n: number): number[] => Array.from({ length: n }, (_, k) => tileKey(k - 4, 3));
+  expect(streamer.hold(row(HOLD_MOST))).toBe(true);
+  expect(streamer.hold(row(HOLD_MOST + 1))).toBe(false);
+  streamer.hold([]);
+  const history = new History();
+  const groups: number[] = [];
+  let mostHeld = 0;
+  const keysIn = (rect: readonly number[]): number[] => {
+    const keys: number[] = [];
+    for (let i = Math.floor(rect[0]! / TILE); i <= Math.floor(rect[2]! / TILE); i++) for (let j = Math.floor(rect[1]! / TILE); j <= Math.floor(rect[3]! / TILE); j++) keys.push(tileKey(i, j));
+    return keys;
+  };
+  const hints: string[] = [];
+  const host: RoadToolHost = {
+    doc, net, zoom: () => 1, px: (n) => n,
+    settings: () => ({ typeIndex: 1, lanes: null, alignment: bent ? 'curve' : 'straight', heightOffset: 0, parking: undefined, width: null, grid: false }),
+    setHeight: () => {}, worldAtScreen: (x, y) => ({ x, y }), naturalHeightAt: () => 0, offerElevation: () => {},
+    flash: () => {}, hint: (k) => hints.push(k), redraw: () => {},
+    mutate: (fn) => { history.begin(doc); fn(); net.rebuild(); history.end(doc); },
+    // As the game's (`main.ts`): held by the streamer, cut into parts by what may come at once, one undo group.
+    tilesIn: (rect) => {
+      if (!rect) { streamer.hold([]); return true; }
+      const keys = keysIn(rect);
+      if (!streamer.hold(keys)) return 'tooFar';
+      mostHeld = Math.max(mostHeld, keys.filter((k) => !doc.hasTile(k)).length);
+      return keys.every((k) => doc.hasTile(k));
+    },
+    tilesFit: (rect) => streamer.fits(keysIn(rect)),
+    undoGroup: (group) => { if (group !== null) groups.push(group); history.grouped(group); },
+  };
+  const tool = new RoadTool(host);
+  // Across eight tiles of a row three north of the camera's, none of them in.
+  const at = (x: number): { x: number; y: number } => ({ x, y: 3 * TILE + m(500) });
+  tool.draft = {
+    start: { kind: 'free', at: at(-4 * TILE + m(100)) }, startHeightOffset: 0, chained: false, pressedAt: at(-4 * TILE + m(100)),
+    snap: { at: at(4 * TILE - m(100)), guide: null, angleDeg: 0, length: 8 * TILE } as never,
+    samples: [{ at: at(-4 * TILE + m(100)), heightOffset: 0 }, { at: at(0), heightOffset: 0 }], heightOffset: 0,
+    // A long bend: its control a tile and a half off the chord.
+    ...(bent ? { curveControl: { x: 0, y: 3 * TILE + m(500) + 1.5 * TILE } } : {}),
+  };
+  tool.up(() => at(4 * TILE - m(100)), true);
+  expect(hints).toContain('hint.road.waitTiles');
+  let frames = 0;
+  for (; frames < 400 && tool.preview(true)?.settling !== false && (tool as unknown as { held: unknown }).held; frames++) {
+    streamer.focus(0, 0);
+    streamer.apply(frames);
+    tool.layHeld();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  // Laid whole, in a finite time, never more than four tiles past the document held at once.
+  expect((tool as unknown as { held: unknown }).held).toBeNull();
+  expect(frames).toBeLessThan(400);
+  expect(mostHeld).toBeLessThanOrEqual(HOLD_MOST);
+  expect(hints).not.toContain('hint.road.tooFar');
+  for (let k = 0; k < 40; k++) { streamer.focus(0, 0); streamer.apply(1_000 + k); await new Promise((r) => setTimeout(r, 0)); }
+  // Each tile it crosses holds its stretch, in the store or on the page: the row's eight for a straight road; a bend leaves the row, its two ends' tiles and as many in all.
+  const stretch = (i: number, j: number): number => { const key = tileKey(i, j); return (doc.hasTile(key) ? doc.tileRecords(key, 1).segments : written.get(key)?.segments ?? []).length; };
+  if (!bent) for (let i = -4; i < 4; i++) expect(stretch(i, 3), `tile ${i},3`).toBeGreaterThan(0);
+  else {
+    expect(stretch(-4, 3)).toBeGreaterThan(0);
+    expect(stretch(3, 3)).toBeGreaterThan(0);
+    let crossed = 0;
+    for (let i = -4; i < 4; i++) for (let j = 2; j <= 6; j++) if (stretch(i, j) > 0) crossed++;
+    expect(crossed).toBeGreaterThanOrEqual(8);
+  }
+  // Its parts one undo group (`History.grouped`): one step for them all while their tiles are on the page.
+  expect(new Set(groups).size).toBe(1);
+}
 
 describe('a road let go over a tile not yet in the document', () => {
   it('is laid once the tile is in, and clears the buildings under it there: on the page and in the tile written', () => {
@@ -121,75 +201,37 @@ describe('a road let go over a tile not yet in the document', () => {
   });
 
   it(`laid in parts across eight tiles past the document, never more than ${HOLD_MOST} of them held, each written with its stretch, one undo step`, async () => {
-    const doc = new RoadDoc();
-    const net = new Network(doc);
-    net.rebuild();
-    const written = new Map<number, TileRecords>();
-    const streamer = new WorldStreamer(doc, {
-      load: (k) => Promise.resolve(written.get(k) ?? preparedRecords(prepareTile(empty(k), false))),
-      write: (records) => { written.set(records.key, records); return Promise.resolve(records.version + 1); },
-    });
-    // The store's own count: four past the document held, a fifth refused.
-    const row = (n: number): number[] => Array.from({ length: n }, (_, k) => tileKey(k - 4, 3));
-    expect(streamer.hold(row(HOLD_MOST))).toBe(true);
-    expect(streamer.hold(row(HOLD_MOST + 1))).toBe(false);
-    streamer.hold([]);
-    const history = new History();
-    const groups: number[] = [];
-    let mostHeld = 0;
-    const keysIn = (rect: readonly number[]): number[] => {
-      const keys: number[] = [];
-      for (let i = Math.floor(rect[0]! / TILE); i <= Math.floor(rect[2]! / TILE); i++) for (let j = Math.floor(rect[1]! / TILE); j <= Math.floor(rect[3]! / TILE); j++) keys.push(tileKey(i, j));
-      return keys;
-    };
-    const hints: string[] = [];
-    const host: RoadToolHost = {
-      doc, net, zoom: () => 1, px: (n) => n,
-      settings: () => ({ typeIndex: 1, lanes: null, alignment: 'straight', heightOffset: 0, parking: undefined, width: null, grid: false }),
-      setHeight: () => {}, worldAtScreen: (x, y) => ({ x, y }), naturalHeightAt: () => 0, offerElevation: () => {},
-      flash: () => {}, hint: (k) => hints.push(k), redraw: () => {},
-      mutate: (fn) => { history.begin(doc); fn(); net.rebuild(); history.end(doc); },
-      // As the game's (`main.ts`): held by the streamer, cut into parts by what may come at once, one undo group.
-      tilesIn: (rect) => {
-        if (!rect) { streamer.hold([]); return true; }
-        const keys = keysIn(rect);
-        if (!streamer.hold(keys)) return 'tooFar';
-        mostHeld = Math.max(mostHeld, keys.filter((k) => !doc.hasTile(k)).length);
-        return keys.every((k) => doc.hasTile(k));
-      },
-      tilesFit: (rect) => streamer.fits(keysIn(rect)),
-      undoGroup: (group) => { if (group !== null) groups.push(group); history.grouped(group); },
-    };
-    const tool = new RoadTool(host);
-    // Across eight tiles of a row three north of the camera's, none of them in.
-    const at = (x: number): { x: number; y: number } => ({ x, y: 3 * TILE + m(500) });
-    tool.draft = {
-      start: { kind: 'free', at: at(-4 * TILE + m(100)) }, startHeightOffset: 0, chained: false, pressedAt: at(-4 * TILE + m(100)),
-      snap: { at: at(4 * TILE - m(100)), guide: null, angleDeg: 0, length: 8 * TILE } as never,
-      samples: [{ at: at(-4 * TILE + m(100)), heightOffset: 0 }, { at: at(0), heightOffset: 0 }], heightOffset: 0,
-    };
-    tool.up(() => at(4 * TILE - m(100)), true);
-    expect(hints).toContain('hint.road.waitTiles');
-    let frames = 0;
-    for (; frames < 400 && tool.preview(true)?.settling !== false && (tool as unknown as { held: unknown }).held; frames++) {
-      streamer.focus(0, 0);
-      streamer.apply(frames);
-      tool.layHeld();
-      await new Promise((r) => setTimeout(r, 0));
-    }
-    // Laid whole, in a finite time, never more than four tiles past the document held at once.
-    expect((tool as unknown as { held: unknown }).held).toBeNull();
-    expect(frames).toBeLessThan(400);
-    expect(mostHeld).toBeLessThanOrEqual(HOLD_MOST);
-    expect(hints).not.toContain('hint.road.tooFar');
-    for (let k = 0; k < 40; k++) { streamer.focus(0, 0); streamer.apply(1_000 + k); await new Promise((r) => setTimeout(r, 0)); }
-    // Each of the eight tiles holds its stretch, in the store or on the page.
-    for (let i = -4; i < 4; i++) {
-      const key = tileKey(i, 3);
-      const segments = doc.hasTile(key) ? doc.tileRecords(key, 1).segments : written.get(key)?.segments ?? [];
-      expect(segments.length, `tile ${i},3`).toBeGreaterThan(0);
-    }
-    // Its parts one undo group (`History.grouped`): one step for them all while their tiles are on the page.
-    expect(new Set(groups).size).toBe(1);
+    await layAcrossEightTiles(false);
+  });
+
+  it('a long bend the same: split at the tiles borders as a Bezier is, laid in parts, not refused', async () => {
+    await layAcrossEightTiles(true);
   });
 });
+
+describe("a bend cut at the tiles' borders (`cutAtTiles`)", () => {
+  it('is the same curve, each part within its tiles, joined end to end', () => {
+    const start = { at: { x: -2 * TILE + m(100), y: m(500) }, heightOffset: 0 };
+    const end = { at: { x: 2 * TILE - m(100), y: m(500) }, heightOffset: m(4) };
+    const control = { x: 0, y: m(500) + TILE };
+    const piece = { start, end, curve: { t: 0.5, h: TILE } };
+    const c = controlPoint(start.at, end.at, piece.curve);
+    expect(c.x).toBeCloseTo(control.x, 3);
+    const parts = cutAtTiles(piece);
+    expect(parts.length).toBeGreaterThanOrEqual(4);
+    parts.forEach((p, k) => {
+      if (k > 0) expect(p.start).toBe(parts[k - 1]!.end);
+      // Each part's points on the whole curve: its middle among the whole's points.
+      const pc = controlPoint(p.start.at, p.end.at, p.curve!);
+      const mid = quadPoint(p.start.at, pc, p.end.at, 0.5);
+      let best = Infinity;
+      for (let i = 0; i <= 2000; i++) { const q = quadPoint(start.at, c, end.at, i / 2000); best = Math.min(best, Math.hypot(q.x - mid.x, q.y - mid.y)); }
+      expect(best).toBeLessThan(m(1));
+      // Within one column of tiles: no border crossed inside a part.
+      expect(Math.floor((Math.min(p.start.at.x, p.end.at.x) + 1e-6) / TILE)).toBe(Math.floor((Math.max(p.start.at.x, p.end.at.x) - 1e-6) / TILE));
+    });
+    expect(parts[0]!.start).toBe(start);
+    expect(parts[parts.length - 1]!.end).toBe(end);
+  });
+});
+
