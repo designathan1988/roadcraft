@@ -17,6 +17,7 @@ import type { NearRoadMesh, NearTileRoads, NearVariant } from './nearRoadTiles';
 import { COARSE_ERROR } from './mesh/roadLodPure';
 import type { PassLook } from './roadSurfacePass';
 import type { TileSource } from './roadTileShape';
+import { PAINT_COLOURS } from './paintQuads';
 import type { SharedGroundData } from './sharedGround';
 
 /** What a node of the roads' tree carries: a far level's mesh, or a tile's near level (`nearRoadTiles.ts`). */
@@ -248,6 +249,13 @@ class NearRoadLanded implements FarNearLanded {
   }
 }
 
+/** Every surface a near level draws, for its programs' stand-ins: each band, each median part, each paint colour of the catalogue. */
+const NEAR_SOURCES: readonly TileSource[] = [
+  ...(['verge', 'footway', 'curbRamp', 'kerb', 'asphalt'] as const).map((band): TileSource => ({ kind: 'band', band })),
+  ...(['kerb', 'planting', 'paved'] as const).map((part): TileSource => ({ kind: 'median', part })),
+  ...PAINT_COLOURS.map((color): TileSource => ({ kind: 'paint', color })),
+];
+
 /** THE FAR ROADS: the tree of their levels, with the material its meshes share */
 export class FarRoads extends FarTree<RoadPayload> {
   private readonly material: MeshStandardMaterial;
@@ -284,13 +292,44 @@ export class FarRoads extends FarTree<RoadPayload> {
     one.receiveShadow = true;
     one.frustumCulled = false;
     standIn.add(one);
+    // DO NOT leave the near level's programs to their first draw: the region draws no road of the streamed world any more, so the opening's catalogue met none of them, and each was built in the frame a tile's near roads first came into view (the move's profile, 2026-10-17). One stand-in a look, raised and not (a raised surface casts: its depth program too).
+    if (near) {
+      const seen = new Set<string>();
+      for (const raised of [false, true]) {
+        for (const source of NEAR_SOURCES) {
+          const look = near.dress(source, raised);
+          const reads = readsRoadSection(look.material);
+          const key = `${look.material.uuid}|${look.castShadow ?? false}|${reads}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const g = new BufferGeometry();
+          g.setAttribute('position', new BufferAttribute(new Float32Array(9), 3));
+          g.setAttribute('normal', new BufferAttribute(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), 3));
+          g.setAttribute('uv', new BufferAttribute(new Float32Array(6), 2));
+          if (look.material.vertexColors) g.setAttribute('color', new BufferAttribute(new Float32Array(9).fill(1), 3));
+          if (reads) g.setAttribute('roadSection', new BufferAttribute(noSection(3), 3));
+          g.setIndex([0, 1, 2]);
+          const mesh = new Mesh(g, look.material);
+          mesh.name = 'roads-near-program';
+          mesh.castShadow = look.castShadow ?? false;
+          mesh.receiveShadow = true;
+          mesh.frustumCulled = false;
+          standIn.add(mesh);
+          this.nearStandIns.push(mesh);
+        }
+      }
+    }
     this.group.add(standIn);
     this.standIn = one;
   }
 
+  /** The near level's program stand-ins (`constructor`). */
+  private readonly nearStandIns: Mesh[] = [];
+
   override dispose(): void {
     super.dispose();
     this.standIn.geometry.dispose();
+    for (const mesh of this.nearStandIns) mesh.geometry.dispose();
     this.material.dispose();
   }
 }
