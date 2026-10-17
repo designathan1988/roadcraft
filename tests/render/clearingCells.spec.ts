@@ -28,16 +28,24 @@ describe('the clearings by place', () => {
     expect(work(3_000)).toBe(1);
   });
 
-  it('lets the oldest go at the cap, one in and one out', () => {
-    const { doc, cells } = cut(MAX_TREE_CLEARINGS);
-    const oldest = doc.treeClearings[0]!;
-    expect(cells.has(oldest.x, oldest.y)).toBe(true);
-    const before = cells.work;
-    doc.cutTrees(4000, 4000, 10);
+  it("refuses a cut past its tile's cap (decision 5.1): nothing filed nor let go; a cut in another tile filed alone", () => {
+    // A tile's every clearing cut inside it (the tile from 3,072 m on both axes).
+    const doc = new RoadDoc();
+    for (let k = 0; k < MAX_TREE_CLEARINGS; k++) doc.cutTrees(3100 + (k % 100) * 9, 3100 + Math.floor(k / 100) * 9, 6);
+    const cells = new ClearingCells();
     cells.follow(doc, doc.treeClearings);
-    expect(cells.work - before).toBe(2);
-    expect(cells.has(oldest.x, oldest.y)).toBe(false);
-    expect(cells.has(4000, 4000)).toBe(true);
+    const oldest = doc.treeClearings[0]!;
+    const before = cells.work;
+    expect(doc.cutTrees(3500, 3500, 10)).toBe(false);
+    cells.follow(doc, doc.treeClearings);
+    expect(cells.work - before).toBe(0);
+    expect(cells.has(oldest.x, oldest.y)).toBe(true);
+    expect(doc.treeClearings).toHaveLength(MAX_TREE_CLEARINGS);
+    // Another tile: one in, filed alone.
+    expect(doc.cutTrees(-4000, -4000, 10)).toBe(true);
+    cells.follow(doc, doc.treeClearings);
+    expect(cells.work - before).toBe(1);
+    expect(cells.has(-4000, -4000)).toBe(true);
   });
 
   it('files a list replaced whole again, and a document of its own afresh', () => {
