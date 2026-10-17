@@ -364,9 +364,34 @@ export function componentAt(facade: Facade, side: FaceId, index: number): BayCom
   return facade.bays?.[bayKey(side, index)] ?? facade.sides?.[side] ?? facade.fill;
 }
 
-/** A deep, independent copy. Buildings are small; JSON is the honest clone. */
+/** A deep, independent copy, as JSON would make it (`jsonCopy`). */
 export function cloneBuilding<T extends Building>(b: T): T {
-  return JSON.parse(JSON.stringify(b)) as T;
+  return jsonCopy(b) as T;
+}
+
+/** What `JSON.parse(JSON.stringify(value))` makes, without the text: DO NOT go back to the round trip, every tile's buildings copied through a string of themselves (wprof4: `cloneBuilding` under the tile's `toJSON`, garbage for the collector). Plain objects and arrays copied by the same rules (members undefined, functions or symbols left out, in arrays null; -0 as 0, a number not finite as null); anything else (a class, a `toJSON`) through JSON itself. */
+export function jsonCopy(value: unknown): unknown {
+  switch (typeof value) {
+    case 'number': return Number.isFinite(value) ? value + 0 : null;
+    case 'string': case 'boolean': return value;
+    case 'object': break;
+    default: return undefined;
+  }
+  if (value === null) return null;
+  if (Array.isArray(value)) {
+    const out = new Array<unknown>(value.length);
+    for (let i = 0; i < value.length; i++) { const v = jsonCopy(value[i]); out[i] = v === undefined ? null : v; }
+    return out;
+  }
+  const proto = Object.getPrototypeOf(value) as unknown;
+  if ((proto !== Object.prototype && proto !== null) || typeof (value as { toJSON?: unknown }).toJSON === 'function') return JSON.parse(JSON.stringify(value)) as unknown;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(value)) {
+    const v = jsonCopy((value as Record<string, unknown>)[key]);
+    // A member named `__proto__` is a member as JSON.parse makes it, not the copy's prototype.
+    if (v !== undefined) { if (key === '__proto__') Object.defineProperty(out, key, { value: v, enumerable: true, writable: true, configurable: true }); else out[key] = v; }
+  }
+  return out;
 }
 
 /** DO NOT turn this back into a copy (`cloneBuilding`) */
