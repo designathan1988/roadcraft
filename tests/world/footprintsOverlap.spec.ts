@@ -7,7 +7,7 @@ import { overlapArea, supportShare, supportedBy } from '@world/buildings/footpri
 
 /** The area the sweep finds: what `overlapArea` gave before its convex path. */
 function swept(a: readonly Vec2[], b: readonly Vec2[]): number {
-  const poly = clipping.intersection([a.map((p) => [p.x, p.y])], [b.map((p) => [p.x, p.y])]);
+  const poly = clipping.intersection([a.map((p): [number, number] => [p.x, p.y])], [b.map((p): [number, number] => [p.x, p.y])]);
   let total = 0;
   for (const rings of poly) rings.forEach((ring, k) => {
     let twice = 0;
@@ -47,7 +47,7 @@ describe('the area two footprints share', () => {
     // Apart: summed; overlapping (a tower on its base): swept.
     for (const supports of [[left, rect(11, 5, 6, 12, 0)], [left, right], [rect(5, 5, 20, 20, 0)]]) {
       const area = 48;
-      const rest = clipping.difference([part.map((p) => [p.x, p.y])], ...supports.map((s) => [s.map((p) => [p.x, p.y])]));
+      const rest = clipping.difference([part.map((p): [number, number] => [p.x, p.y])], ...supports.map((s) => [s.map((p): [number, number] => [p.x, p.y])]));
       let left2 = 0;
       for (const rings of rest) rings.forEach((ring, k) => {
         let twice = 0;
