@@ -111,14 +111,23 @@ export class WorldStreamer {
     return this.wanted.includes(key);
   }
 
-  /** The lists a "whole map" clear is emptying in the store (`main.ts` clearStoredTiles): a tile that comes meanwhile (read before its clear) comes without them, and is written so. */
-  private stripping: ReadonlySet<'trees' | 'elements'> = new Set();
+  /** The "whole map" clears under way, by list (`main.ts` clearStoredTiles): a tile that comes meanwhile (read before its clear) comes without the lists, and is written so; two clears of a list running at once each count. */
+  private readonly clears = new Map<'trees' | 'elements', number>();
+
+  /** The lists some clear is emptying now. */
+  private get stripping(): ReadonlySet<'trees' | 'elements'> {
+    return new Set([...this.clears].filter(([, n]) => n > 0).map(([part]) => part));
+  }
 
   /** A "whole map" clear of these lists under way: until `done` is called, a tile put in has them emptied (and is to be written). */
   clearing(parts: readonly ('trees' | 'elements')[]): () => void {
-    const set = new Set(parts);
-    this.stripping = set;
-    return () => { if (this.stripping === set) this.stripping = new Set(); };
+    for (const part of parts) this.clears.set(part, (this.clears.get(part) ?? 0) + 1);
+    let open = true;
+    return () => {
+      if (!open) return;
+      open = false;
+      for (const part of parts) this.clears.set(part, (this.clears.get(part) ?? 1) - 1);
+    };
   }
 
   /** Another tab holds this world (`main.ts` holdWorld, a Web Lock): this one reads it and writes nothing, its edits kept on the page only. */

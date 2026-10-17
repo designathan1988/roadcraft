@@ -278,7 +278,7 @@ describe('a whole map clear', () => {
   it('empties the lists of a tile that comes while it runs (read before its clear), and writes it so', async () => {
     const doc = new RoadDoc();
     const store = chainedStore();
-    const tree = { x: 100, y: 100, species: 0, scale: 1 } as unknown as TileRecords['trees'][number];
+    const tree = { x: 100, y: 100, height: 8, yaw: 0, seed: 0.3 } as TileRecords['trees'][number];
     store.stored.set(tileKey(0, 0), { ...emptyTile(tileKey(0, 0)), trees: [tree] });
     const streamer = new WorldStreamer(doc, store);
     const done = streamer.clearing(['trees']);
@@ -288,6 +288,28 @@ describe('a whole map clear', () => {
     done();
     expect(await streamer.flush()).toBe(true);
     expect(store.stored.get(tileKey(0, 0))!.trees).toEqual([]);
+  });
+});
+
+describe('two whole map clears at once', () => {
+  it('empties each list until its own clear is done: a clear of another list does not end it', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const tree = { x: 100, y: 100, height: 8, yaw: 0, seed: 0.3 } as TileRecords['trees'][number];
+    store.stored.set(tileKey(0, 0), { ...emptyTile(tileKey(0, 0)), trees: [tree] });
+    const streamer = new WorldStreamer(doc, store);
+    // The trees' clear running, then the elements' started: the trees still emptied.
+    const trees = streamer.clearing(['trees']);
+    const elements = streamer.clearing(['elements']);
+    // And a clear of the trees done twice (its answer and its failure) counts once.
+    const again = streamer.clearing(['trees']);
+    again();
+    again();
+    await settle(streamer, 10, 10);
+    expect(doc.hasTile(tileKey(0, 0))).toBe(true);
+    expect(doc.trees).toHaveLength(0);
+    trees();
+    elements();
   });
 });
 
