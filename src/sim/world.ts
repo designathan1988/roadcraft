@@ -31,6 +31,8 @@ import { DT } from './params';
 const BUS_REACH = m(90);
 /** The micro simulation's window (`keepMicroWindow`): a junction this near a vehicle has its conflicts; 15 s ahead of a car at 70 km/h. */
 const VEHICLE_WINDOW = m(300);
+/** The cells the vehicles are gathered by for the window (`keepMicroWindow`): a cell's square reaches `VEHICLE_WINDOW` past it. */
+const WINDOW_CELL = m(100);
 /** The most of the window round the focus, where the scenery's cars are made (`AmbientWorld.traffic`). */
 const FOCUS_WINDOW = m(600);
 /** How far a vehicle's pose can lie outside its lane's bounds (`vehiclesNear`): the longest body (its rear axle still on the lane behind) and a lane change's sideways reach. */
@@ -709,9 +711,15 @@ export class SimWorld {
     };
     const focus = this.focus;
     if (focus) take(focus.x, focus.y, Math.min(FOCUS_WINDOW, Math.max(focus.r * 1.35, m(200)) * 1.15 + m(100)));
+    // DO NOT ask the junctions round each vehicle (a queue of a hundred cars asks the same square a hundred times): once per cell a vehicle stands in, the cell grown by the vehicles' reach.
+    const cells = new Set<number>();
     for (const v of this.vehicles.values()) {
       const pose = vehiclePose(this, v, 1);
-      if (pose) take(pose.p.x, pose.p.y, VEHICLE_WINDOW);
+      if (pose) cells.add((Math.floor(pose.p.x / WINDOW_CELL) + 2 ** 20) * 2 ** 21 + (Math.floor(pose.p.y / WINDOW_CELL) + 2 ** 20));
+    }
+    for (const cell of cells) {
+      const x0 = (Math.floor(cell / 2 ** 21) - 2 ** 20) * WINDOW_CELL, y0 = ((cell % 2 ** 21) - 2 ** 20) * WINDOW_CELL;
+      for (const node of this.junctionFiling.idsMeeting([x0 - VEHICLE_WINDOW, y0 - VEHICLE_WINDOW, x0 + WINDOW_CELL + VEHICLE_WINDOW, y0 + WINDOW_CELL + VEHICLE_WINDOW])) next.add(node);
     }
     this.windowWanted = this.conflicts.holdsWindow(next) ? null : next;
   }
