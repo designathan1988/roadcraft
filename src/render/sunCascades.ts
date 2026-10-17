@@ -241,7 +241,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
 
   shadows.forEach((shadow, i) => {
     shadow.beforeDraw = () => {
-      restore();
+      // The last cascade's hidden roots back; its casters left chosen, this cascade chooses them all again.
+      restore(false);
       // The movers alone over the store: nothing hidden, and the town's casters left as they are.
       if (drawingMovers) return;
       for (const mover of movers) {
@@ -253,6 +254,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         }
       }
       casters?.(texelOf(i));
+      castersChosen = casters !== null;
     };
   });
 
@@ -320,11 +322,13 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       renderer.setRenderTarget(target, face, level);
     };
   }
-  function restore(): void {
+  /** Whether the casters were chosen for a cascade since they were last given back (`restore`). */
+  let castersChosen = false;
+  /** What a cascade's pass hid put back; `settled`: the passes are over, the casters chosen by cascade given back too, once (DO NOT walk every caster between two cascades: the next one sets them all). */
+  function restore(settled = true): void {
     for (const root of hidden) root.visible = true;
     hidden.length = 0;
-    // The casters chosen by cascade back as their makers set them, between the passes.
-    casters?.(null);
+    if (settled && castersChosen) { castersChosen = false; casters?.(null); }
   }
 
   /** Writes a fit into its light: the light stands at the top of the depth range, looking down the sun. */
