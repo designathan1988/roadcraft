@@ -78,7 +78,7 @@ import { createGardens, gardenPlants, type Gardens } from './gardens';
 import { gardenLists } from './gardenLists';
 import { solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { RoadDoc } from '@world/doc';
-import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
+import { compileAhead, drainCompiles, drainUploads, drainWarm, gateUntilBuilt, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather } from './wind';
 import { holdStill, updateMoving } from './stillTree';
@@ -481,7 +481,8 @@ export function createSceneRenderer(
     });
   };
   // What comes into the scene or leaves it changes what casts: the sun's stores are not used for that frame (`castersStirred`).
-  const onChildAdded = (event: { child: Object3D }): void => { castersStirred = true; watchShadowDepth(event.child); };
+  // And through the one door into the drawn scene: held off the drawn layers until its programs are built (`uploads.ts` gateUntilBuilt).
+  const onChildAdded = (event: { child: Object3D }): void => { castersStirred = true; watchShadowDepth(event.child); gateUntilBuilt(event.child); };
   const onChildRemoved = (): void => { castersStirred = true; };
 
   let requested: QualityLevel | 'auto' = initialQuality;

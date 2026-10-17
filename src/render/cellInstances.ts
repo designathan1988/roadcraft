@@ -18,7 +18,6 @@ import { type Bounds, enclose, planeMask } from './instanceCull';
 import { impostorPick, thinWant } from './plantImpostors';
 import { trianglesOf } from './propGeometry';
 import { castBySize } from './shadowCasters';
-import { compilesAhead, programsReady } from './uploads';
 
 /**
  * INSTANCES KEPT CELL BY CELL, DRAWN AT THE LEVEL THEIR SIZE ON THE SCREEN CALLS FOR: the gardens'
@@ -288,8 +287,6 @@ interface MeshState {
   wasDrawn: boolean;
   /** Takes it off the casters chosen by cascade (`castBySize`). */
   uncast: (() => void) | null;
-  /** Its programs, lit and in the shadow, built (`programsReady`): hidden until then (three builds a visible mesh's program at its first draw, empty or not: r186 `renderBufferDirect` calls `setProgram` first). */
-  ready: boolean;
 }
 
 interface Kind {
@@ -357,7 +354,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     return {
       index, spec, centre: centre ?? new Vector3(), reach: centre ? reach : 1, levels,
       meshes: spec.meshes.map((m) => {
-        const s: MeshState = { spec: m, level: levels[m.far ? 1 : 0], mesh: null, wasDrawn: false, uncast: null, ready: true };
+        const s: MeshState = { spec: m, level: levels[m.far ? 1 : 0], mesh: null, wasDrawn: false, uncast: null };
         s.level.meshes.push(s);
         return s;
       }),
@@ -486,19 +483,6 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     spec.made?.(mesh);
     // Cast into a cascade only with instances, and where the widest it draws reaches a texel (`shadowCasters.ts`).
     s.uncast = castBySize({ mesh, casts: spec.castShadow, radius: () => b.largest });
-    // DO NOT show it before its programs are built: shown, it was drawn (empty or not) and three built them in the frame.
-    if (compilesAhead()) {
-      const shown = mesh.visible;
-      s.ready = false;
-      mesh.visible = false;
-      void programsReady(mesh).then(() => {
-        if (s.mesh !== mesh) return;
-        s.ready = true;
-        mesh.visible = shown && !(spec.cards && mapMode === true && !k.pictured);
-        // Shown now: its kind culled again at the next frame.
-        k.current = false;
-      });
-    }
     return mesh;
   };
 
@@ -788,8 +772,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         k.current = false;
         // DO NOT leave the cards shown with no instance at the map zoom: a draw call each for nothing.
         for (const s of k.meshes) {
-          // Not shown yet (its programs being built): shown with the map's choice once they are.
-          if (!s.spec.cards || !s.mesh || !s.ready) continue;
+          if (!s.spec.cards || !s.mesh) continue;
           const left = map && !k.pictured;
           s.mesh.visible = !left;
           if (left) s.mesh.count = 0;
