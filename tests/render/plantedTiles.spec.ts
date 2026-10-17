@@ -19,7 +19,7 @@ import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
 import { TILE, tileKey } from '@world/tiles';
 import { createCoverIndex } from '@render/buildings/layerCells';
-import { type BuildingStage, stageKey } from '@render/nearBuildings';
+import { type BuildingStage, STAGE_FORMAT, stageKey } from '@render/nearBuildings';
 import { partsDigest } from '@render/nearContent';
 import type { NearTileCache } from '@render/nearTileBake';
 import { runNearJob } from '@render/nearBakers';
@@ -128,7 +128,7 @@ describe('the planted trees baked a tile at a time', () => {
     const kept = new Map<string, unknown>();
     for (const r of records) {
       const whole = r.key === tileKey(0, 0) ? [4, 0, 0, TILE, 0, TILE, TILE, 0, TILE] : [];
-      kept.set(stageKey('p:', r.key), { version: 1, content: partsDigest(r, ['buildings']), covers: Float64Array.from(whole), plants: [] } satisfies BuildingStage);
+      kept.set(stageKey('p:', r.key), { format: STAGE_FORMAT, version: 1, content: partsDigest(r, ['buildings']), covers: Float64Array.from(whole), plants: new Float64Array(0) } satisfies BuildingStage);
     }
     const cache: NearTileCache = { ready: async () => true, get: async (key) => kept.get(key), put: async (key, value) => { kept.set(key, value); } };
     const reply = await runNearJob({
