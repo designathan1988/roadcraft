@@ -37,6 +37,41 @@ const meshNamed = (root: Object3D, name: string): Mesh[] => {
 };
 
 describe('a tile or a plate of masses drawn in place of its cells', () => {
+  it('lets nothing go for a coarser choice a frame tried and did not keep: the masses neither leave the scene nor are asked again (the still view, `__stillLog`)', () => {
+    const kit = createBuildingKit();
+    const released: string[] = [];
+    const far = createMassCells(kit, CELL, (key) => released.push(key));
+    far.land('0,0', masses(m(10), m(10)));
+    far.land('1,0', masses(CELL + m(10), m(10)));
+    far.planLevel(tileOf(0, 0));
+    const choose = (orthoPx: number): void => far.choose(m(128), m(128), m(500), 1000, orthoPx, false);
+    choose(2);
+    far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));
+    far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
+    choose(2);
+    far.settle();
+    const before = meshNamed(far.group, 'building-massing');
+    expect(before).toHaveLength(2);
+    let removed = 0;
+    far.group.addEventListener('childremoved', () => { removed++; });
+    // The frame's error scales tried: a coarse one (the tile, then the plate whole), and the one kept, close.
+    for (let frame = 0; frame < 10; frame++) {
+      choose(0.3);
+      choose(0.1);
+      choose(2);
+      far.settle();
+    }
+    expect(removed).toBe(0);
+    expect(released).toEqual([]);
+    expect(meshNamed(far.group, 'building-massing')).toEqual(before);
+    expect(meshNamed(far.group, 'building-massing-tile')).toHaveLength(1);
+    // Kept coarse at the frame's end: let go then.
+    choose(0.3);
+    far.settle();
+    expect(released.sort()).toEqual(['0,0', '1,0']);
+    far.dispose();
+  });
+
   it('is chosen by what it leaves out on the screen, hides its cells, and gives way to them near', () => {
     const kit = createBuildingKit();
     const released: string[] = [];
@@ -44,7 +79,8 @@ describe('a tile or a plate of masses drawn in place of its cells', () => {
     far.land('0,0', masses(m(10), m(10)));
     far.land('1,0', masses(CELL + m(10), m(10)));
     far.planLevel(tileOf(0, 0));
-    const look = (orthoPx: number, near: boolean | ReadonlySet<string> = false): void => far.choose(m(128), m(128), m(500), 1000, orthoPx, near);
+    // A frame's choice, and its end (`settle`): what it left unexposed or unwanted let go.
+    const look = (orthoPx: number, near: boolean | ReadonlySet<string> = false): void => { far.choose(m(128), m(128), m(500), 1000, orthoPx, near); far.settle(); };
     // Close first: the plate refined, so its tile is wanted and its masses taken.
     look(2);
     far.landLevel(tileOf(0, 0), masses(m(10), m(10), m(4)));

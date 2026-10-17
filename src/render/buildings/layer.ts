@@ -769,6 +769,8 @@ export function createBuildingLayer(): BuildingLayer {
       const fitted = (scale: number): number => { massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseNow(); capNow(); capTriangles(); return chosenTriangles(); };
       if (fitted(frame.floor) > frame.budget) frame.fit(fitted); else frame.scale = frame.floor;
       farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach, view);
+      // What the frame's last choice left unexposed or unwanted let go, not what a scale tried on the way did (`MassCells.settle`).
+      massCells.settle();
       // The room shrinks when another owner grows (a resize, the far levels): the hidden levels go first.
       keepToBudget();
       const now = new Set<string>(massCells.nearKeys());

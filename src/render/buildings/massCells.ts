@@ -108,6 +108,8 @@ export interface MassCells {
   cap(eyeX: number, eyeY: number, budget: number, bytesOf: (key: string, fine: boolean) => number, forced: boolean | ReadonlySet<string>, farOf?: (key: string) => number): void;
   /** The triangles drawn for what is not near: the tiles and plates shown and the far cells' masses (a near cell's masses, hidden under its detail or standing until it lands, are counted by its level: `layer.ts` chosenTriangles). */
   farTriangles(): number;
+  /** The frame's choosing is over (`layer.ts` levelOfDetail): what its last choice left unexposed or unwanted let go. */
+  settle(): void;
   /** The triangles of a cell's masses (0 before they came): what it costs sent far (`layer.ts` capTriangles). */
   massTriangles(key: string): number;
   /** The bytes a cell's masses hold on the GPU (0 before they came): what a level of it never landed is reckoned at (`layer.ts` capNow). */
@@ -323,7 +325,13 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     if (exposed) exposedTiles.add(tile.key); else exposedTiles.delete(tile.key);
     if (tile.exposed === exposed) return;
     tile.exposed = exposed;
-    if (exposed) return;
+    // DO NOT let its cells' masses go here: a frame chooses at several error scales (`frameBudget.ts` fitErrorScale), a coarser one let them go and the one kept asked them again, every frame of a still view (the masses in and out of the scene, the sun's stores never kept, `__stillLog`, 2026-10-17). Let go at `settle`, if the frame's last choice left it so.
+    if (!exposed) toSettle.add(tile);
+  };
+  /** The tiles a choice left unexposed or unwanted since the last `settle`. */
+  const toSettle = new Set<Level>();
+  /** A tile left unexposed by the frame's last choice: its cells' masses let go, neither drawn nor wanted. */
+  const letCellsGo = (tile: Level): void => {
     for (let i = tile.i0; i < tile.i0 + tile.n; i++) {
       for (let j = tile.j0; j < tile.j0 + tile.n; j++) {
         const key = keyOf(i, j);
@@ -341,6 +349,12 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     tile.wanted = wanted;
     if (wanted || !tile.mesh) return;
     setCoarse(tile, false);
+    // Let go at `settle`, as the cells under an unexposed tile.
+    toSettle.add(tile);
+  };
+  /** A tile left unwanted by the frame's last choice: its masses let go, asked again once its plate refines. */
+  const letTileGo = (tile: Level): void => {
+    if (!tile.mesh) return;
     dropMesh(tile.mesh);
     tile.mesh = null;
     tile.error = Infinity;
@@ -645,6 +659,13 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       const mesh = cells.get(key)?.mesh;
       return mesh ? meshBytes(mesh) : 0;
     },
+    settle() {
+      for (const tile of toSettle) {
+        if (!tile.exposed) letCellsGo(tile);
+        if (!tile.wanted) letTileGo(tile);
+      }
+      toSettle.clear();
+    },
     farTriangles() {
       return standingTriangles;
     },
@@ -722,6 +743,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       highest = -Infinity;
       highestStale = false;
       standing.clear();
+      toSettle.clear();
       standingTriangles = 0;
       nearKeys.clear();
       detailed.clear();
