@@ -1,7 +1,7 @@
 import { Box3, BufferAttribute, BufferGeometry, FrontSide, Group, type Material, Mesh, MeshStandardMaterial, Sphere, Vector3 } from 'three';
 import type { Building } from '@world/buildings/types';
 import { gatesOf } from '@world/parkingLayout';
-import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../jobs/jobPool';
+import { canQueueJobs, jobWorkers, submitJob } from '../jobs/jobPool';
 import { forgetOtherDerived } from './derivedCache';
 import { pullTowardEye } from './depthConvention';
 import { type FarRoadJob, type FarRoadMesh, type FarRoadReply, derivedRoadCache, farLevelError, runFarRoadJob, tileRoads } from './farRoadTiles';
@@ -140,7 +140,8 @@ function farRoadsRunner(ground: () => SharedGroundData | null, kit: NearRoadKit 
       service: 'farRoads',
       key: `farRoads:${tree.node}`,
       // A near level with the cells' detail, after every far level (`cellPool.ts` NEAR_TIER).
-      priority: tier * TIER_SPAN + focusDistance((tree.i + 0.5) * side, (tree.j + 0.5) * side),
+      priority: tier * TIER_SPAN,
+      at: [(tree.i + 0.5) * side, (tree.j + 0.5) * side],
       write: () => ({ data: { ...farRoadJob(tree, kit, ground()), ground: ground() }, transfer: [] }),
       done: (answer) => answered(answer as FarRoadReply),
       failed: (message) => done({ kind: 'farError', node: tree.node, sig: tree.sig, message }),

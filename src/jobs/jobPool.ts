@@ -26,8 +26,10 @@ interface JobSpec {
   readonly service: JobService;
   /** A newer job with the same key replaces this one: never sent if still waiting, its answer dropped if begun. */
   readonly key: string | null;
-  /** Lower first: the job's distance to the eye (`focusDistance`), in metres, or below it for what must come first. */
+  /** Lower first: the job's distance to the eye (`focusDistance`), in metres, or below it for what must come first; with `at`, its band (what comes before the distance, the same for a kind of job). */
   readonly priority: number;
+  /** Where on the map the job's work stands: its rank is `priority` plus its distance to where the view looks NOW, re-ranked as the view moves (`setJobFocus`), not where it looked when the job was asked. */
+  readonly at?: readonly [number, number];
   /** The message, written only when a worker takes the job (a job waiting its turn holds no copy of it). */
   readonly write: () => { readonly data: unknown; readonly transfer: Transferable[] };
   readonly done: (answer: unknown) => void;
@@ -44,7 +46,10 @@ export interface JobTicket {
 }
 
 /** A job in the queue: waiting, running on a worker, or over (answered, cancelled or replaced by a newer one of its key). */
-interface Queued { readonly seq: number; readonly spec: JobSpec; state: 'waiting' | 'running' | 'over' }
+interface Queued { readonly seq: number; readonly spec: JobSpec; state: 'waiting' | 'running' | 'over'; rank: number }
+
+/** A job's place in the queue now: its band and its distance to the view's focus (`JobSpec.at`), or its priority alone. */
+const rankOf = (spec: JobSpec): number => (spec.at ? spec.priority + focusDistance(spec.at[0], spec.at[1]) : spec.priority);
 
 /** ONE PRIORITY QUEUE FOR EVERY WORKER: a binary min-heap by (priority, order asked); a job replaced or cancelled is left in it and skipped when popped */
 class JobQueue {
@@ -60,7 +65,7 @@ class JobQueue {
   }
 
   submit(spec: JobSpec): Queued {
-    const job: Queued = { seq: ++this.seq, spec, state: 'waiting' };
+    const job: Queued = { seq: ++this.seq, spec, state: 'waiting', rank: rankOf(spec) };
     if (spec.key !== null) {
       const older = this.newest.get(spec.key);
       if (older) this.end(older);
@@ -71,6 +76,12 @@ class JobQueue {
     // DO NOT let the jobs over (replaced or cancelled) pile up in the heap: they are left in it and skipped when popped, and a camera moving replaces thousands a second (the far nodes and the cells asked again under their keys), each dispatch popping them one by one (500 ms of a 16 s drag, 2026-10-16); compacted once they outnumber the waiting.
     if (this.heap.length > this.count * 2 + 64) this.compact();
     return job;
+  }
+
+  /** Every waiting job placed by where the view looks now (`setJobFocus`), the heap made again. */
+  rerank(): void {
+    for (const job of this.heap) if (job.state === 'waiting') job.rank = rankOf(job.spec);
+    this.compact();
   }
 
   /** The heap made again of the waiting jobs alone (Floyd's build-heap, O(n)). */
@@ -128,7 +139,7 @@ class JobQueue {
   }
 
   private less(a: Queued, b: Queued): boolean {
-    return a.spec.priority < b.spec.priority || (a.spec.priority === b.spec.priority && a.seq < b.seq);
+    return a.rank < b.rank || (a.rank === b.rank && a.seq < b.seq);
   }
 
   private push(job: Queued): void {
@@ -192,6 +203,9 @@ class JobSystem {
   readonly queue = new JobQueue();
   focusX = 0;
   focusY = 0;
+  /** Where the waiting jobs were last ranked from (`setJobFocus`). */
+  rankedX = 0;
+  rankedY = 0;
   /** What each worker is told when it is made, before any job (`setJobWorkerSetup`). */
   setup: ((worker: Worker) => void) | null = null;
 }
@@ -335,7 +349,15 @@ export function warmJobWorkers(): void {
 export function setJobFocus(x: number, y: number): void {
   system.focusX = x;
   system.focusY = y;
+  // DO NOT leave the waiting jobs ranked by where the view was when they were asked: after a move, the cells at the new eye waited behind the old view's (the street view after a reload stood in masses for 14 s, its cell's detail queued behind those of the district view before it, 2026-10-17); Cesium sorts its requests by the current frame's screen error.
+  if (Math.hypot(x - system.rankedX, y - system.rankedY) < RERANK_MOVE) return;
+  system.rankedX = x;
+  system.rankedY = y;
+  system.queue.rerank();
 }
+
+/** How far the view moves before the waiting jobs are ranked again: a fraction of a cell (`BATCH_CELL` 256 m). */
+const RERANK_MOVE = 64;
 
 /** How far a point is from where the view looks (`setJobFocus`): a queued job's priority. */
 export const focusDistance = (x: number, y: number): number => Math.hypot(x - system.focusX, y - system.focusY);
