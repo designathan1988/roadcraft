@@ -87,6 +87,9 @@ const VEHICLE_NEAR_CAP = 200;
 const CULL_REUSE = m(24);
 const CULL_GRADE = 0.35;
 const CULL_GROWTH = 1.5;
+/** The side of the client's cells of parked cars (`fleetGrid.ts`), and half their diagonal. */
+const FLEET_CELL = m(64);
+const CELL_HALF_DIAGONAL = FLEET_CELL * Math.SQRT1_2;
 /** DO NOT size a part by the fleet's ceiling: 8 bodies x ~25 parts x 1,200 x 76 B was 15-22 MB of CPU and GPU; every part starts here and doubles with what is drawn (`growPart`). */
 const PART_CAPACITY = 16;
 
@@ -1296,7 +1299,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // DO NOT give a colour to a mesh made without one (the discs): another program, built during play.
     const colours = mesh.instanceColor ? new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3) : null;
     if (colours && mesh.instanceColor) { colours.array.set(mesh.instanceColor.array); colours.setUsage(DynamicDrawUsage); }
-    mesh.dispose();
+    // DO NOT `dispose` the mesh to let its old buffers go: three's releaseStatesOfObject walks every geometry the renderer knows (WebGLBindingStates), ms a call; the old buffers stay on the GPU till the context goes (less than the new one's size, a doubling at a time).
     mesh.instanceMatrix = matrices;
     mesh.instanceColor = colours;
     // A new buffer is sent whole the first time it is drawn.
@@ -1697,11 +1700,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** DO NOT ask the diary per car (`touches`): every car read every entry since its serial, cars x entries a frame */
   let offRoadSweep: ChangeSweep | null = null;
   let offRoadSerial = 0;
+  /** The serial the sweep stood at the frame before: only a car asked then is answered by the sweep's cells (`ChangeSweep.touches`). */
+  let offRoadBefore = 0;
   /** DO NOT key it by position alone: a parked car kept the height it was first asked at and floated over (kept for the view it was asked for, `drawOf`). */
   const offRoadDeck = (s: VehicleDraw, v: SimVehicle, x: number, y: number): number => {
     if (s.deckKnown && s.deckX === x && s.deckY === y) {
       if (s.deckSeen >= offRoadSerial) return s.deckValue;
-      if (!offRoadSweep!.touches(s.deckSeen, x, y)) {
+      // DO NOT ask the diary for a car not asked the frame before: every entry since and every rectangle of each (`journal.touches`) costs more than its ground.
+      if (s.deckSeen === offRoadBefore && !offRoadSweep!.touches(s.deckSeen, x, y)) {
         s.deckSeen = offRoadSerial;
         return s.deckValue;
       }
@@ -1807,6 +1813,11 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** What a cell of parked cars drew (`sync`): its version then, whether every car of it drawn stood as kept, those kept, each whole candidate's pixels and the cap's answer, whether one had wheels. */
   interface CellRecord {
     version: number;
+    /** The lowest and highest deck its cars were tested at (`cullDeck`), whether every car's was known, and the diary's serial then. */
+    lo: number;
+    hi: number;
+    bounded: boolean;
+    serial: number;
     still: boolean;
     readonly kept: VehicleDraw[];
     readonly pixels: number[];
@@ -1955,6 +1966,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     sync(world, net, alpha, detailed, zoom = Number.POSITIVE_INFINITY, options = {}) {
       // A new document has a journal of its own: the sweep follows the one the world stands on.
       if (offRoadSweep?.journal !== net.doc.changes) offRoadSweep = new ChangeSweep(net.doc.changes, OFF_ROAD_GROUND);
+      offRoadBefore = offRoadSerial;
       offRoadSweep.advance();
       offRoadSerial = offRoadSweep.serial;
       const now = typeof performance !== 'undefined' ? performance.now() : suspensionClock + 16;
@@ -2171,11 +2183,25 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
             if (was.wheeled) carsWheeled = true;
             continue;
           }
-          cellRecord = was ?? { version: 0, still: true, kept: [], pixels: [], whole: [], wheeled: false };
+          // DO NOT walk the cars of a cell off the view: one sphere over the cell and its cars' decks (as last tested, nothing of it changed since) tested first.
+          if (was && options.vehicleVisible && was.bounded && was.version === cell.version && was.serial === offRoadSerial) {
+            const middle = (was.lo + was.hi) / 2 + 0.3 * VEHICLE_REACH;
+            const radius = Math.hypot(CELL_HALF_DIAGONAL, (was.hi - was.lo) / 2 + 0.3 * VEHICLE_REACH) + VEHICLE_REACH;
+            if (!options.vehicleVisible((cell.cx + 0.5) * FLEET_CELL, (cell.cy + 0.5) * FLEET_CELL, middle - 0.3 * radius, radius)) continue;
+          }
+          cellRecord = was ?? { version: 0, lo: 0, hi: 0, bounded: false, serial: -1, still: true, kept: [], pixels: [], whole: [], wheeled: false };
           cellRecord.version = cell.version; cellRecord.still = true; cellRecord.kept.length = 0;
           cellRecord.pixels.length = 0; cellRecord.whole.length = 0; cellRecord.wheeled = false;
           cellsDrawn.set(cell.key, cellRecord);
-          for (const vehicle of cell.items) drawVehicle(vehicle);
+          let lo = Infinity, hi = -Infinity, bounded = true;
+          for (const vehicle of cell.items) {
+            drawVehicle(vehicle);
+            const d = draws.get(vehicle.id);
+            if (!d || !d.cullKnown || d.view !== vehicle) { bounded = false; continue; }
+            if (d.cullDeck < lo) lo = d.cullDeck;
+            if (d.cullDeck > hi) hi = d.cullDeck;
+          }
+          cellRecord.lo = lo; cellRecord.hi = hi; cellRecord.bounded = bounded && lo <= hi; cellRecord.serial = offRoadSerial;
           cellRecord = null;
         }
         // A cell gone from the view (or emptied): drawn again when it comes back.

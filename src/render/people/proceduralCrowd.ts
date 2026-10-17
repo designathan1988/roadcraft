@@ -1216,7 +1216,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
 
   /** DO NOT dispose the geometry for its old per-person attributes */
   const growPiece = (piece: Piece): void => {
-    piece.mesh.dispose();
+    // DO NOT `dispose` the mesh for its old matrices: three's releaseStatesOfObject walks every geometry the renderer knows, ms a call (the old buffer stays on the GPU, less than the new one).
     const capacity = piece.capacity * 2;
     const matrices = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
     matrices.setUsage(DynamicDrawUsage);

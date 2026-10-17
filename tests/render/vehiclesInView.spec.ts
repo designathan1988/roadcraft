@@ -186,6 +186,29 @@ describe('vehicles drawn from the grid', () => {
     agents.dispose();
   });
 
+  it('test a cell off the view once, not each of its cars, while nothing of it changed', () => {
+    const cars: VehicleView[] = [];
+    // Two cells: one in the view, one off it, 20 cars each.
+    for (let k = 0; k < 20; k++) cars.push(parkedCar(k + 1, m(10) + (k % 5) * m(8), m(10) + Math.floor(k / 5) * m(8)));
+    for (let k = 0; k < 20; k++) cars.push(parkedCar(k + 101, m(138) + (k % 5) * m(8), m(10) + Math.floor(k / 5) * m(8)));
+    const world = worldWith(cars);
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    let tests = 0;
+    const vehicleVisible = (x: number): boolean => { tests++; return x < m(110); };
+    let eye = 0;
+    const frame = (): void => {
+      // A view that moves a little every frame: nothing kept by the view standing still.
+      agents.sync(world, netWith(), 0, true, undefined, { vehicleVisible, vehicleBox: { x0: 0, y0: 0, x1: m(250), y1: m(100) }, screenScale: () => 2, eye: new Vector3(eye++, m(100), 0) });
+    };
+    frame();
+    tests = 0;
+    frame();
+    // A test a cell (the one off the view stops there), then the 20 cars in view their own (the first, the exact one, the body's): not 20 more for the cell off it.
+    expect(tests).toBeLessThanOrEqual(2 + 20 * 3);
+    expect(drawn(bodiesOf(agents))).toBe(20);
+    agents.dispose();
+  });
+
   it('off the screen and in the reach of the shadows, write only what casts', () => {
     const world = worldWith([parkedCar(1, 0, 0)]);
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
