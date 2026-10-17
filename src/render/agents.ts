@@ -690,12 +690,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     ...[c.roof, c.accent, c.roofLite, c.accentLite].flatMap((l) => (l ? [l.parts[0]!] : [])),
   ]);
 
+  /** A two-wheeler's parts, each at the level its size on the screen allows (`vehicleLevels.ts`), as a car's. */
   interface TwoWheelerParts {
     readonly model: TwoWheelerModel;
-    readonly body: Part;
-    readonly trim: Part;
-    readonly steering: Part;
-    readonly cranks: Part | null;
+    readonly body: Ladder;
+    readonly trim: Ladder;
+    readonly steering: Ladder;
+    readonly cranks: Ladder | null;
   }
   const twoWheelerParts = new Map<string, TwoWheelerParts>();
   for (const archetype of ARCHETYPES) {
@@ -705,14 +706,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     modelGeometries.push(model.body, model.trim, model.steering, ...(model.cranks ? [model.cranks] : []));
     twoWheelerParts.set(id, {
       model,
-      body: instanced(`bike-${id}-body`, model.body, paint),
-      trim: instanced(`bike-${id}-trim`, model.trim, trim),
-      steering: instanced(`bike-${id}-steering`, model.steering, trim, false),
-      cranks: model.cranks ? instanced(`bike-${id}-cranks`, model.cranks, trim, false) : null,
+      body: ladder(instanced(`bike-${id}-body`, model.body, paint), 'smooth'),
+      trim: ladder(instanced(`bike-${id}-trim`, model.trim, trim), 'boxes'),
+      steering: ladder(instanced(`bike-${id}-steering`, model.steering, trim, false), 'boxes'),
+      cranks: model.cranks ? ladder(instanced(`bike-${id}-cranks`, model.cranks, trim, false), 'boxes') : null,
     });
   }
   const twoWheelerPartList: Part[] = [...twoWheelerParts.values()].flatMap((t) =>
-    [t.body, t.trim, t.steering, ...(t.cranks ? [t.cranks] : [])]);
+    [t.body.parts[0]!, t.trim.parts[0]!, t.steering.parts[0]!, ...(t.cranks ? [t.cranks.parts[0]!] : [])]);
   const allParts: readonly Part[] = [...parts, ...carPartList, ...twoWheelerPartList, ...ladderParts];
 
   // The scenery's people: the few bodies of the scenery cast
@@ -1621,12 +1622,15 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const bike = s.bike;
     if (!bike) return;
     const model = bike.model;
-    placeWhole(bike.body, s.paintTint);
-    place(bike.steering, model.headX, 0, model.headY, 1, 1, 1, T_CHROME, 0, lamp.steer);
+    const detail = levelFor(drawPixels);
+    wholeAt(bike.body, detail, s.paintTint);
+    const steering = rung(bike.steering, detail);
+    if (steering) place(steering, model.headX, 0, model.headY, 1, 1, 1, T_CHROME, 0, lamp.steer);
     placeWheels(s.plan, band);
     if (band < 1) return;
-    placeWhole(bike.trim, T_TRIM);
-    if (bike.cranks) place(bike.cranks, model.bracketX, 0, model.bracketY, 1, 1, 1, T_CHROME, -lamp.crank);
+    wholeAt(bike.trim, detail, T_TRIM);
+    const cranks = bike.cranks ? rung(bike.cranks, detail) : null;
+    if (cranks) place(cranks, model.bracketX, 0, model.bracketY, 1, 1, 1, T_CHROME, -lamp.crank);
     const h = model.headlamp;
     place(lamps, h.x, 0, h.y, h.sx, h.sy, h.sz, T_HEADLAMP, 0, lamp.steer);
     const t = model.taillamp;
@@ -1942,7 +1946,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       // A vehicle not drawn for two seconds: its record let go (a kept one's instances went the frame it was not drawn).
       if (suspensionFrame % 600 === 0) for (const [id, s] of draws) if (suspensionFrame - s.seen > 120 && s.keptAt < 0) draws.delete(id);
       forgetCast(world);
-      pedestrians.begin(options.pedestrianDetail ?? 2, zoom);
+      pedestrians.begin(options.pedestrianDetail ?? 2, zoom, options.personPixels ?? null, options.pixelRatio ?? 1);
       procPixels = options.personPixels ?? null;
       // This frame's instances start after the parked cars' kept ones.
       for (const part of live) part.n = part.kept;
@@ -2104,7 +2108,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       for (let i = keptList.length - 1; i >= 0; i--) { const s = keptList[i]!; if (s.keptSeen !== suspensionFrame) dropKept(s); }
       // The two-wheelers cast only while one is drawn whole; the shared tyres also while a car is drawn with its wheels.
       castersChanged = thinWheels.mesh.castShadow !== bikesCast;
-      for (const t of twoWheelerParts.values()) { t.body.mesh.castShadow = bikesCast; t.trim.mesh.castShadow = bikesCast; }
+      for (const t of twoWheelerParts.values()) {
+        for (const part of t.body.parts) part.mesh.castShadow = bikesCast;
+        for (const part of t.trim.parts) part.mesh.castShadow = bikesCast;
+      }
       thinWheels.mesh.castShadow = bikesCast;
       for (const part of wheelLevels.parts) part.mesh.castShadow = bikesCast || carsWheeled;
       bikesWhole = bikesWholeNow;

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CITIZEN_LEVEL_ERROR, citizenBandAt, citizenLevelAt, citizenLevelFor } from '@render/riggedCitizens';
+import { CITIZEN_LEVEL_ERROR, citizenBandAt, citizenLevelAt, citizenLevelFor, citizenLevelOfFigure } from '@render/riggedCitizens';
 import { m, perM } from '@world/units';
 
 describe('the level a body is drawn at', () => {
@@ -20,6 +20,12 @@ describe('the level a body is drawn at', () => {
       expect(CITIZEN_LEVEL_ERROR[level]! * tall * zoom).toBeLessThanOrEqual(1);
       if (level > 0) expect(CITIZEN_LEVEL_ERROR[level - 1]! * tall * zoom).toBeLessThanOrEqual(1);
       if (level < CITIZEN_LEVEL_ERROR.length - 1) expect(CITIZEN_LEVEL_ERROR[level + 1]! * tall * zoom).toBeGreaterThan(1);
+    }
+  });
+
+  it('of one figure is the level of the zoom that draws a body its size on the screen', () => {
+    for (const ratio of [1, 1.5, 2]) for (let zoom = 0.1; zoom < 80; zoom *= 1.07) {
+      expect(citizenLevelOfFigure(zoom * m(1.9) * ratio, ratio)).toBe(citizenLevelFor(zoom));
     }
   });
 
