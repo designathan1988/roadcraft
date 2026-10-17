@@ -1,4 +1,4 @@
-import { Box3, BufferAttribute, BufferGeometry, type Frustum, Group, Mesh, Sphere, Vector3 } from 'three';
+import { Box3, BufferAttribute, BufferGeometry, Frustum, Group, Mesh, Sphere, Vector3 } from 'three';
 import { gpuOnly } from '../mesh/gpuOnly';
 import { cancelWarm, meshBytes, warmLooseAhead } from '../uploads';
 import { type GpuClass, geometryCost, gpuLedger } from '../gpuLedger';
@@ -344,12 +344,29 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
   const seen: Seen = { perMetre: 0, allowed: NEAR_PIXELS, across: 0 };
   /** A cell's box as the view's frustum is met by it (three's axes: map y is -z, height is y), one for every cell. */
   const viewBox = new Box3();
+  /** The view the cells were last tested in, and a serial that moves only when it changes (its six planes): DO NOT test every cell's box against a view that did not move (5.7 s of the opening's page, wprof6: `choose` runs several times a frame, the scale's fit and the cap). */
+  const testedView = new Frustum();
+  let testedKnown = false;
+  let viewSerial = 0;
+  const followView = (view: Frustum | null): void => {
+    if (!view) return;
+    if (testedKnown && sameFrustum(testedView, view)) return;
+    testedView.copy(view);
+    testedKnown = true;
+    viewSerial++;
+  };
+  /** Each cell's last test: the view's serial, the margin and the box it was made with, and its answer. */
+  const tested = new WeakMap<Cell, { serial: number; grow: number; x0: number; y0: number; x1: number; y1: number; bottom: number; top: number; inside: boolean }>();
   const inView = (view: Frustum | null | undefined, cell: Cell, grow: number): boolean => {
     if (!view) return true;
+    const t = tested.get(cell);
+    if (t && t.serial === viewSerial && t.grow === grow && t.x0 === cell.x0 && t.y0 === cell.y0 && t.x1 === cell.x1 && t.y1 === cell.y1 && t.bottom === cell.bottom && t.top === cell.top) return t.inside;
     const g = grow * cellSize;
     viewBox.min.set(cell.x0 - g, Math.min(cell.bottom, cell.top), -(cell.y1 + g));
     viewBox.max.set(cell.x1 + g, Math.max(cell.bottom, cell.top), -(cell.y0 - g));
-    return view.intersectsBox(viewBox);
+    const inside = view.intersectsBox(viewBox);
+    tested.set(cell, { serial: viewSerial, grow, x0: cell.x0, y0: cell.y0, x1: cell.x1, y1: cell.y1, bottom: cell.bottom, top: cell.top, inside });
+    return inside;
   };
   const measure = (eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, x0: number, y0: number, x1: number, y1: number, top: number): void =>
     measureSeen(seen, eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, x0, y0, x1, y1, top);
@@ -468,6 +485,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     },
     choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity, view = null) {
       Object.assign(lastEye, { x: eyeX, y: eyeY, z: eyeZ, pxAtMetre, orthoPx, known: true });
+      followView(view);
       // THE LEVELS FIRST, from the plates down (Cesium `selectTiles`): a level is drawn in place of its children while what it leaves out spans under the pixels the cells' masses are drawn for
       forcedLevels.clear();
       if (allNear !== true && allNear !== false) for (const key of allNear) { const [i, j] = cellIndex(key); forcedLevels.add(tileOf(i, j)); forcedLevels.add(plateOf(i, j)); }
@@ -676,4 +694,13 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       detailed.clear();
     },
   };
+}
+
+/** Whether two frusta are the same: every plane's normal and constant. */
+function sameFrustum(a: Frustum, b: Frustum): boolean {
+  for (let i = 0; i < 6; i++) {
+    const p = a.planes[i]!, q = b.planes[i]!;
+    if (p.constant !== q.constant || !p.normal.equals(q.normal)) return false;
+  }
+  return true;
 }
