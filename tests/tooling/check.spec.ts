@@ -45,14 +45,16 @@ describe('the steps of the check', () => {
   });
 
   it("keeps the turn's check to the barrier: lint and code rules; the tests run at the end of a block", async () => {
-    const { stepsFor, directSpecsFor } = (await load('check.mjs')) as {
+    const { stepsFor, directSpecsFor, ALWAYS } = (await load('check.mjs')) as {
       stepsFor: (files: string[] | null, fast?: boolean) => string[];
       directSpecsFor: (files: string[]) => string[];
+      ALWAYS: string[];
     };
     expect(stepsFor(['src/sim/pipeline.ts'], true)).toEqual(['lint', 'code']);
     expect(stepsFor(['docs/PLAN.md'], true)).toEqual([]);
     // A file the whole game imports: the specs of its own area that import it, not every spec it reaches.
-    const doc = directSpecsFor(['src/world/doc.ts']).filter((s) => !s.startsWith('tests/arch/') && !s.startsWith('tests/tooling/'));
+    // The always-run ones (`ALWAYS`: those that read the code as text, in whichever area) apart: they run for every change.
+    const doc = directSpecsFor(['src/world/doc.ts']).filter((s) => !ALWAYS.some((a) => s.startsWith(a)));
     expect(doc.length).toBeGreaterThan(10);
     expect(doc.filter((s) => s.startsWith('tests/') && !s.startsWith('tests/world/') && !s.startsWith('tests/ui/') && !s.startsWith('tests/render/'))).toEqual([]);
     // A changed spec runs itself.
