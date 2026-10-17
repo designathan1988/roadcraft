@@ -5,6 +5,9 @@ import { FLAT_GROUND, buildRoadElevation } from '@world/elevation';
 import { RoadDoc, type TileRecords } from '@world/doc';
 import type { NodeId } from '@world/ids';
 import { Network } from '@world/network';
+import { tileNetworkBake } from '@world/tileNetwork';
+import { networkOfSection, tileNetworkSection } from '@sim/tileSections';
+import { networkWork } from '@world/rebuildWork';
 import { gatesNear, parkingLinesOf } from '@world/parkingLayout';
 import { TILE, tileKey } from '@world/tiles';
 import { m } from '@world/units';
@@ -142,6 +145,30 @@ describe("a tile's near roads baked in a worker", () => {
     for (const name of ['asphalt', 'kerb', 'footway']) expect(page.get(name)?.length ?? 0, name).toBeGreaterThan(0);
     expect([...page.keys()].some((name) => name.startsWith('markings-'))).toBe(true);
   }, 10_000);
+
+  it('take the junctions each tile was stored with instead of solving them again, the same surfaces drawn', () => {
+    const doc = world();
+    const tiles = stored(doc);
+    const centre = tileKey(1, 1);
+    const ask = { look: passLook(materials, undefined), markingStyle: doc.markingStyle, ground: null, naturalIsGround: true };
+    const around = [...tiles].filter(([key]) => key !== centre).map(([, r]) => roadsOf(r));
+    // The junctions built, not looked at (a memo of the same key is taken as it is).
+    const solving = (): number => networkWork.built;
+    let before = solving();
+    const plain = bakeNearRoads(roadsOf(tiles.get(centre)!), around, ask)!;
+    const solvedPlain = solving() - before;
+    // Each tile's network section as the store keeps it and reads it back (`sim/tileSections.ts`).
+    const withNet = (r: TileRecords) => ({ ...roadsOf(r), network: networkOfSection(JSON.parse(JSON.stringify((tileNetworkSection(tileNetworkBake(r)) as { json: unknown }).json))) });
+    const aroundNet = [...tiles].filter(([key]) => key !== centre).map(([, r]) => withNet(r));
+    before = solving();
+    const taken = bakeNearRoads(withNet(tiles.get(centre)!), aroundNet, ask)!;
+    const solvedTaken = solving() - before;
+    expect(solvedPlain).toBeGreaterThan(0);
+    expect(solvedTaken).toBeLessThan(solvedPlain / 2);
+    const want = baked(plain), got = baked(taken);
+    expect([...got.keys()].sort()).toEqual([...want.keys()].sort());
+    for (const [name, list] of want) expect(got.get(name), name).toEqual(list);
+  }, 20_000);
 
   it("are the same on hilly ground: the heights solved from the tile and its fringe are the region's there", () => {
     const ground: SharedGroundData = { n: 2, cell: 1, half: 0.5, base: 0, relief: RELIEF_NATURAL, plates: new Map() };

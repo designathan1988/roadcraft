@@ -1,5 +1,6 @@
 import { storedTileReader } from '@core/storedTiles';
 import type { TileRecords } from '@world/doc';
+import type { NetworkBake } from '@world/network';
 import { TILE } from '@world/tiles';
 
 /** THE FAR LEVELS' QUADTREE OVER THE TILES (`farTiles.ts`, `../farRoadTiles.ts`, `../farTree.ts`): its nodes' keys and sides and a tile as a bake reads it, read by the buildings' and the roads' bakes without either importing the other */
@@ -41,6 +42,13 @@ export function emptyRecords(key: number, version: number): TileRecords {
 
 /** DO NOT read a whole tile for a bake that reads one part of it: the part alone (its roads, its buildings), the other lists left empty
  *  - read from the store by this worker (`core/storedTiles.ts`); undefined where it cannot read it (the page asked for it), empty when the store no longer has it. */
+/** A stored tile's junctions and ribbons as baked with it (`sim/tileSections.ts` NETWORK_SECTION): null where the store has none (a tile made ahead of the region) or this thread cannot read it. */
+export async function readStoredNetwork(store: string | undefined, key: number): Promise<NetworkBake | null> {
+  const read = store === undefined ? null : storedTileReader();
+  if (!read || store === undefined) return null;
+  return (await read(store, key, 'network') as NetworkBake | null) ?? null;
+}
+
 export async function readStored(store: string | undefined, key: number, part: 'roads' | 'buildings'): Promise<TileRecords | undefined> {
   const read = store === undefined ? null : storedTileReader();
   if (!read || store === undefined) return undefined;
