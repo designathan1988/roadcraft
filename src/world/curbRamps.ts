@@ -95,12 +95,16 @@ function placeAll(net: Network, state: RampState): void {
 
 function rampState(net: Network): RampState {
   let state = cache.get(net);
-  if (!state) cache.set(net, state = { state: null, byNode: new Map(), grid: new Map() });
+  if (!state) {
+    cache.set(net, state = { state: null, byNode: new Map(), grid: new Map() });
+    // Brought up to the network in the step that rebuilds it, from now on.
+    net.afterRebuild(followRamps);
+  }
   bring(net, state);
   return state;
 }
 
-/** The network rebuilt or taken back (`Network.rebuild`, `takeBack`): its ramps, where they are kept, brought up to it in that step, never while a walker reads them (`walkingRise`). */
+/** The network rebuilt or taken back (`Network.afterRebuild`, registered with its ramps' state): its ramps, where they are kept, brought up to it in that step, never while a walker reads them (`walkingRise`). */
 export function followRamps(net: Network): void {
   const state = cache.get(net);
   if (state) bring(net, state);
