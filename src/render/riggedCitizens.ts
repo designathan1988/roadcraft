@@ -569,7 +569,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           if (cast) shadows.add(cast);
         }
       });
-      await Promise.all([compileAhead(warm), compileAhead(shadows, true)]);
+      // The palette pass's program too (`uploads.ts` compilePassAhead): its first draw built it in the frame.
+      await Promise.all([compileAhead(warm), compileAhead(shadows, true), pass.ready]);
       for (const stand of temporary) stand.morphTexture?.dispose();
       warm.clear();
       shadows.clear();

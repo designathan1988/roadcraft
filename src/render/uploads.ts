@@ -33,8 +33,10 @@ export function drainUploads(renderer: WebGLRenderer, count = 1): void {
   }
 }
 
+/** A pass drawn into a target of its own, in a scene of its own: its programs are keyed by that scene's lights and that target (three's `WebGLPrograms` getParameters). */
+interface OwnPass { readonly camera: Camera; readonly target: WebGLRenderTarget }
 /** Objects whose shaders must be compiled before they are first drawn */
-const toCompile: { object: Object3D; shadow: boolean; done: () => void }[] = [];
+const toCompile: { object: Object3D; shadow: boolean; done: () => void; pass?: OwnPass }[] = [];
 /** What a shadow program is built for: a render target as a shadow map is (no colour space, no tone mapping). */
 let shadowTarget: WebGLRenderTarget | null = null;
 /** Whether a renderer is answering (none in tests: nothing is waited for there). */
@@ -136,6 +138,12 @@ export function compileAhead(object: Object3D, shadow = false): Promise<void> {
   return new Promise((done) => toCompile.push({ object, shadow, done }));
 }
 
+/** DO NOT draw a pass of its own (`people/crowdAnimation.ts` palette pass) before its program is built: compiled on its first draw, in the frame (2026-10-16) */
+export function compilePassAhead(scene: Scene, camera: Camera, target: WebGLRenderTarget): Promise<void> {
+  if (!compiler) return Promise.resolve();
+  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done, pass: { camera, target } }));
+}
+
 /** Starts compiling what is waiting; each promise settles when its shaders are ready. */
 export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   compiler = true;
@@ -144,7 +152,18 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   const previous = renderer.getRenderTarget();
   try {
     while (toCompile.length) {
-      const { object, shadow, done } = toCompile.shift()!;
+      const { object, shadow, done, pass } = toCompile.shift()!;
+      if (pass) {
+        // Its own scene's lights (none) and its own target, as it is drawn.
+        renderer.setRenderTarget(pass.target);
+        try {
+          renderer.compileAsync(object, pass.camera, object as Scene).then(() => done(), () => done());
+        } catch (error) {
+          console.error('[uploads] the program of a pass could not be compiled ahead', error);
+          done();
+        }
+        continue;
+      }
       renderer.setRenderTarget(shadow ? shadowTarget ??= new WebGLRenderTarget(1, 1) : target);
       // Each stand-in on its depth material set to its own variant (`shadowStandIn`), then the whole if anything else is in it
       const units: { readonly object: Object3D; readonly variant?: DepthVariant }[] = [];

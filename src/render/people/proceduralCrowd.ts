@@ -1031,6 +1031,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const anim = buildClassAnimation(clips, bones, true);
     const pass = createPalettePass(anim, parent, () => bodies.joints, ROW_START);
     await breathe();
+    // Drawn only once its program is built (`uploads.ts` compilePassAhead), off the frame.
+    await pass.ready;
     const faceRows = Math.ceil(faceList.length / FACE_WIDTH);
     // One texture for the face: the index (a vertex a float, four a texel), the expressions' shapes, then each person's face
     const indexRows = Math.ceil(faceIndexPixels.length / (FACE_WIDTH * 4));

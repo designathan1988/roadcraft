@@ -17,6 +17,7 @@ import {
 } from 'three';
 import type { ClipFrames } from '../citizenBake';
 import { PACKED_BONE_FLOATS } from '../citizenPalette';
+import { compilePassAhead } from '../uploads';
 
 /** A crowd's animation on the GPU, as GPU Gems 3, chapter 2 ("Animated Crowd Rendering") lays it out */
 
@@ -91,6 +92,8 @@ export interface PalettePass {
   /** The bone palettes, a row a person (`bones * 4` texels: mat4 columns), for the skinning to read. */
   readonly texture: Texture;
   readonly capacity: number;
+  /** Settles once its program is built (`uploads.ts` compilePassAhead): nobody draws with its palettes before. */
+  readonly ready: Promise<void>;
   /** What person `row` plays this frame, the body variant whose joints they have; null plays: a palette of their own (`setOverride`). */
   setPlays(row: number, plays: readonly PalettePlay[] | null, variant: number): void;
   /** Person `row` is not drawn this frame: their row is not blended. */
@@ -193,8 +196,11 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
   const scene = new Scene();
   scene.add(mesh);
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  // DO NOT build it at its first draw: a loop over every bone's parents, a second and more in the frame where the first person of a class came (2026-10-16).
+  const ready = compilePassAhead(scene, camera, target);
 
   return {
+    ready,
     get texture() { return target.texture; },
     get capacity() { return rows; },
     setPlays(row, list, variant) {
