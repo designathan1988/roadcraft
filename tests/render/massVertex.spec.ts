@@ -75,3 +75,14 @@ describe('a mass\'s slabs', () => {
     }
   });
 });
+
+describe('a lot\'s plate in the masses', () => {
+  it('is its corners once: a paved lot of four corners is four points and two triangles', () => {
+    const b = building(0);
+    // Its one block made a paved lot: the masses draw its plate alone (`emitLotPlates`).
+    b.volumes = [{ ...b.volumes[0]!, open: 'paving' }];
+    const chunk = emitMassing(b, () => 0)!;
+    expect(chunk.index.length / 3).toBe(2);
+    expect(chunk.position.length / 3).toBe(4);
+  });
+});

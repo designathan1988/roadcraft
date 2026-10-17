@@ -53,8 +53,13 @@ function standardOf(component: BayComponent, use: BuildingUse, old: number): Sta
   return use === 'mixed' || old > 0.35 ? 'popular' : 'middle';
 }
 
-/** The props of one bay. */
-export function facadeProps(component: BayComponent, level: number, use: BuildingUse, old: number, hash: number, W: number, o: PropOpening): FacadeProp[] {
+/** The components a prop is hung on or stood on, above the ground floor. */
+const FURNISHED: ReadonlySet<BayComponent> = new Set<BayComponent>(['window', 'sashWindow', 'shutteredWindow', 'ribbon', 'balcony', 'gourmet', 'loggia']);
+const NO_PROPS: readonly FacadeProp[] = Object.freeze([]);
+
+/** The props of one bay; DO NOT make its pickers for a bay that takes none (every wall, door and ground-floor bay of the town, in every emission). */
+export function facadeProps(component: BayComponent, level: number, use: BuildingUse, old: number, hash: number, W: number, o: PropOpening): readonly FacadeProp[] {
+  if (level < 1 || !FURNISHED.has(component)) return NO_PROPS;
   const out: FacadeProp[] = [];
   let state = hash >>> 0;
   const rnd = (): number => {
