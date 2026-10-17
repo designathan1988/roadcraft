@@ -407,7 +407,14 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     queueUpload(...s.textures());
     // Shown once its programs are built (`uploads.ts` programsReady, the door's own variants): until then its far patch stands in, not a hole while the scene's door holds its meshes.
     p.ready = !compilesAhead();
-    if (!p.ready) void Promise.all((s.meshes as Mesh[]).map((mesh) => programsReady(mesh))).then(() => { if (p.surface === s) { p.ready = true; contentCame = true; } });
+    if (!p.ready) {
+      programsWaited++;
+      const shown = (): void => { programsWaited--; if (p.surface === s) { p.ready = true; contentCame = true; } };
+      // DO NOT let a failed wait leave the plate on its far patch for good (no water, no road cut: conf52, conf54): a wait that throws or is rejected shows it all the same, three building its programs at its first draw.
+      let waits: Promise<unknown>;
+      try { waits = Promise.all((s.meshes as Mesh[]).map((mesh) => programsReady(mesh))); } catch (error) { waits = Promise.reject(error); }
+      void waits.then(shown, (error: unknown) => { console.warn('[terrain] a plate\'s programs could not be built ahead; it is shown all the same', error); shown(); });
+    }
     measureTop(p);
     return s;
   };
@@ -435,6 +442,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   const outOfReach = (p: Plate): boolean => Math.abs(p.cx - focusX) > keepReach || Math.abs(p.cy - focusY) > keepReach;
   /** A plate of the content waiting for its corners from the workers: the atlas refreshed when they come (`focus`). */
   let contentCame = false;
+  /** Plates whose programs are being built before they are shown (`ensure`). */
+  let programsWaited = 0;
   const refresh = (): void => {
     const wanted = new Set<number>(content);
     for (const key of near) wanted.add(key);
@@ -696,6 +705,11 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       if (!came && !ringMoved && nextNear.length === near.length && nextNear.every((v, k) => v === near[k]) && nextNear.every((k) => plates.get(k)?.shown)) return;
       near = nextNear.slice();
       refresh();
+    },
+    waiting() {
+      if (contentCame || programsWaited > 0) return true;
+      for (const p of plates.values()) if (p.asked) return true;
+      return false;
     },
     setSun(direction) {
       lastSun = direction;

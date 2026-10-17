@@ -52,15 +52,19 @@ describe('a plate of the ground made while the game runs', () => {
     const centre = `${PLATE_SIZE},0`;
     atlas.focus!(PLATE_SIZE, 0, m(300));
     expect(made.has(centre)).toBe(true);
-    // Made, not shown: its programs not built yet.
+    // Made, not shown: its programs not built yet; the frames asked to go on meanwhile (`waiting`, `renderer.ts` busy).
     expect(atlas.parts.some((p) => p.cx === PLATE_SIZE)).toBe(false);
+    expect(atlas.waiting!()).toBe(true);
     drainCompiles(renderer, camera, scene, null);
     await new Promise((done) => setTimeout(done, 0));
     // Each mesh's program variant built (`uploads.ts` programsReady: one per material and its flags), from a visible object.
     for (const mesh of made.get(centre)!) expect(compiled.some((c) => c.visible && (c.object as Mesh).material === mesh.material)).toBe(true);
-    // Built: shown at the next look.
+    // Built, not shown yet: a still camera must still be drawn, or the plate waits for good on its far patch (conf52, conf54).
+    expect(atlas.waiting!()).toBe(true);
+    // Shown at the next look; nothing waits any more.
     atlas.focus!(PLATE_SIZE, 0, m(300));
     expect(atlas.parts.some((p) => p.cx === PLATE_SIZE)).toBe(true);
+    expect(atlas.waiting!()).toBe(false);
     atlas.dispose();
   });
 });
