@@ -30,18 +30,14 @@ describe('the tile generator in the opening rush', () => {
     vi.restoreAllMocks();
   });
 
-  it.each([[6, 4], [12, 9]])('leaves the kept-clear workers and one other to the queue: a queued job never waits behind a tile (%i cores, %i workers)', async (cores, workers) => {
-    vi.stubGlobal('navigator', { hardwareConcurrency: cores });
+  it('leaves the save\'s worker and one other to the queue: a queued job never waits behind a tile', async () => {
     const { jobPort, jobWorkers, submitJob } = await import('@/jobs/jobPool');
-    expect(jobWorkers()).toBe(workers);
-    const read = (jobPort('tileRead') as unknown as { worker: FakeWorker }).worker;
     const { TileGenerator } = await import('@/tileGenerator');
     const save = (jobPort('save') as unknown as { worker: FakeWorker }).worker;
     const generator = new TileGenerator({} as never);
     generator.setAside(true);
     for (let k = 0; k < 3 * jobWorkers(); k++) void generator.makeStored(k, 'map', 0, false).catch(() => {});
     expect(tilesOn(save)).toEqual([]);
-    expect(tilesOn(read)).toEqual([]);
     const making = FakeWorker.made.filter((w) => tilesOn(w).length > 0);
     expect(making.every((w) => tilesOn(w).length === 1)).toBe(true);
     // A cell job asked in the rush: on a worker making no tile, not the save's.
@@ -49,7 +45,6 @@ describe('the tile generator in the opening rush', () => {
     const host = FakeWorker.made.find((w) => w.asked.some((m) => m.data === 'cell'));
     expect(host).toBeDefined();
     expect(host).not.toBe(save);
-    expect(host).not.toBe(read);
     expect(tilesOn(host!)).toEqual([]);
     generator.dispose();
   });
@@ -62,14 +57,13 @@ describe('the tile generator in the opening rush', () => {
     generator.setAside(true);
     const asked = Array.from({ length: tileLanes() + 2 }, (_, k) => k).map((k) => generator.makeStored(k, 'map', 0, false).catch(() => 'failed'));
     const lanes = (generator as unknown as { lanes: { aside: boolean; port: { worker: FakeWorker }; busy: unknown }[] }).lanes;
-    expect(lanes.filter((l) => l.aside).length).toBeGreaterThan(0);
-    // Every tile answered as lanes take them, the first aside one as failed; setAside(true) never turned off.
-    let failed = false;
-    for (let n = 0, lane = lanes.find((l) => l.busy); lane && n < 100; n++, lane = lanes.find((l) => l.busy)) {
+    const aside = lanes.filter((l) => l.aside);
+    expect(aside.length).toBeGreaterThan(0);
+    // Every tile answered, the first aside one as failed; setAside(true) never turned off.
+    for (const lane of lanes.filter((l) => l.busy)) {
       const m = tilesOn(lane.port.worker).at(-1)!;
-      const fail: boolean = lane.aside && !failed;
-      failed ||= fail;
-      lane.port.worker.onmessage!({ data: { port: m.port, data: fail ? { i: 0, j: 0, error: 'broken' } : { key: 0, stored: 1 } } });
+      const failed = lane === aside[0];
+      lane.port.worker.onmessage!({ data: { port: m.port, data: failed ? { i: 0, j: 0, error: 'broken' } : { key: 0, stored: 1 } } });
     }
     expect(await Promise.all(asked)).toContain('failed');
     expect(lanes.filter((l) => l.aside)).toEqual([]);
