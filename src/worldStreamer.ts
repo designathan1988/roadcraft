@@ -19,6 +19,8 @@ const KEEP_MARGIN = 1;
 const IN_FLIGHT = 4;
 /** The ring the region loads next as the camera moves (the tiles it keeps past its radius): made ahead first, as many at once as the region asks. */
 const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
+/** How far round the camera's tile the bays are baked ahead (`askBays`): the ring and the tiles it reaches next; past it, a tile's bays come with it into the region (`cityTile.worker.ts` addBays). */
+const BAYS_RADIUS = RING_RADIUS + 1;
 /** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
 const RETRY_MS = 30_000;
 /** How far past the edge of its tile the camera goes before the region is centred on the next one (two sub-cells): walking along an edge does not turn three tiles back and forth. */
@@ -51,6 +53,8 @@ export interface TileSource {
   load(key: number): Promise<TileRecords>;
   /** The tile in the store (made there when it is not) and its version, its records not handed over (`TileStore.ensure`); none: `load`. */
   ensure?(key: number): Promise<number>;
+  /** Every tile the store holds baked and its version, read at once (`TileStore.manifest`); null, or none: each tile ensured. */
+  manifest?(): Promise<ReadonlyMap<number, number> | null>;
   /** The version written, or null when it was not. */
   write(records: TileRecords, keep?: { readonly buildings: boolean }): Promise<number | null>;
   /** A stored tile's parking bays baked and added where it has none (`TileStore.addBays`); none: nothing to do. */
@@ -86,9 +90,13 @@ export class WorldStreamer {
   private readonly ahead = new Set<number>();
   /** The tiles to make ahead: every tile of the map, nearest the camera's tile first. */
   private aheadOrder: number[] = [];
-  /** How far along `aheadOrder` every tile is known (`askAhead`) and every tile's bays asked or on the page (`askBays`): DO NOT walk the whole map each frame for the few tiles left (a frame's walk of 100 tiles at 10 km, 1,600 at 40). Back to 0 when the order is made again. */
+  /** How far along `aheadOrder` every tile is known (`askAhead`): DO NOT walk the whole map each frame for the few tiles left (a frame's walk of 100 tiles at 10 km, 1,600 at 40). Back to 0 when the order is made again. */
   private aheadAt = 0;
+  /** The tiles whose bays are baked ahead, nearest the camera's tile first (`BAYS_RADIUS`), made again when the region recentres; and how far along it every tile's bays are asked or on the page. */
+  private baysOrder: number[] = [];
   private baysAt = 0;
+  /** The store's manifest: not read yet, being read, or read (its tiles known): no tile is made ahead before it is, DO NOT ensure a tile it names. */
+  private manifestRead: 'no' | 'reading' | 'read' = 'no';
   /** The diary's version the edits were last noted at (`noteEdits`), and a serial moved whenever a tile's edit not yet in the store comes or goes (`pageEdits`). */
   private notedAt = -1;
   private pageEditSerial = 0;
@@ -124,12 +132,13 @@ export class WorldStreamer {
     const flipped: number[] = [];
     for (const key of this.doc.loadedTiles) if (wasActive.has(key) !== this.wanted.includes(key)) flipped.push(key);
     if (flipped.length) this.tell.activeChanged?.(flipped, flipped.map((key) => { const t = tileOfKey(key); return tileRect(t.i, t.j); }));
-    // DO NOT order the whole map again once nothing of it is left to ask (the map made, every tile's bays asked).
-    if (this.aheadAt < this.aheadOrder.length || this.baysAt < this.aheadOrder.length || this.aheadOrder.length === 0) {
+    // DO NOT order the whole map again once nothing of it is left to ask (the map made).
+    if (this.aheadAt < this.aheadOrder.length || this.aheadOrder.length === 0) {
       this.aheadOrder = mapTilesFrom(i, j);
       this.aheadAt = 0;
-      this.baysAt = 0;
     }
+    this.baysOrder = tilesAround(i, j, BAYS_RADIUS).filter((t) => tileOnMap(t.i, t.j)).map((t) => tileKey(t.i, t.j));
+    this.baysAt = 0;
     this.ask();
   }
 
@@ -384,13 +393,14 @@ export class WorldStreamer {
   private baysUnderWay = 0;
 
   /** DO NOT leave every tile's bays to its first coming into the region (1-2 s a dense tile as the camera moves): once the map is made (`mapMade`), the generator's lanes left idle bake them, from the camera's tile outwards, one lane short of all (a tile the camera moves onto goes first). */
+  /** DO NOT bake every tile of the map's bays (65-161 ms a tile, 100 tiles at 10 km, 2,500 at 50): only those within `BAYS_RADIUS` of the camera's tile, the same count on any map. */
   private askBays(): void {
     const add = this.source.addBays;
     if (!add || this.rush || this.mapMade < this.mapTotal || this.asked.size > 0 || this.ready.size > 0) return;
     // Past the tiles whose bays are asked or that are on the page (theirs come with them, `cityTile.worker.ts` addBays): never walked again.
-    while (this.baysAt < this.aheadOrder.length && (this.baysAsked.has(this.aheadOrder[this.baysAt]!) || this.doc.hasTile(this.aheadOrder[this.baysAt]!))) this.baysAt++;
-    for (let at = this.baysAt; at < this.aheadOrder.length; at++) {
-      const key = this.aheadOrder[at]!;
+    while (this.baysAt < this.baysOrder.length && (this.baysAsked.has(this.baysOrder[this.baysAt]!) || this.doc.hasTile(this.baysOrder[this.baysAt]!))) this.baysAt++;
+    for (let at = this.baysAt; at < this.baysOrder.length; at++) {
+      const key = this.baysOrder[at]!;
       if (this.baysUnderWay >= Math.max(1, this.inFlight - 1)) return;
       if (this.baysAsked.has(key) || this.doc.hasTile(key)) continue;
       this.baysAsked.add(key);
@@ -406,6 +416,7 @@ export class WorldStreamer {
   private askAhead(): void {
     // The map being made (`rush`): every lane the region's tiles leave free, at once; after, once the region is in.
     if (!this.rush && (this.asked.size > 0 || this.ready.size > 0 || !this.settled)) return;
+    if (!this.knowStored()) return;
     // Past the tiles known (in the store): never walked again.
     while (this.aheadAt < this.aheadOrder.length && this.known.has(this.aheadOrder[this.aheadAt]!)) this.aheadAt++;
     for (let at = this.aheadAt; at < this.aheadOrder.length; at++) {
@@ -427,6 +438,22 @@ export class WorldStreamer {
         this.tell.failed?.(`tile ${key} ahead: ${String(error)}`);
       });
     }
+  }
+
+  /** Whether the store's manifest is read (none to read: at once); the first call reads it, and its tiles are known when it comes. */
+  private knowStored(): boolean {
+    if (this.manifestRead === 'read') return true;
+    if (this.manifestRead === 'reading') return false;
+    const manifest = this.source.manifest?.();
+    if (!manifest) { this.manifestRead = 'read'; return true; }
+    this.manifestRead = 'reading';
+    manifest.then((tiles) => {
+      if (tiles) for (const [key, version] of tiles) { const { i, j } = tileOfKey(key); if (tileOnMap(i, j)) this.noteKnown(key, version); }
+    }, (error: unknown) => console.warn('[stream] the store\'s manifest was not read: each tile is asked', error)).finally(() => {
+      this.manifestRead = 'read';
+      this.ask();
+    });
+    return false;
   }
 
   /** A tile seen in the store: told once (the far levels bake it). */

@@ -79,7 +79,7 @@ export type StreamTileAnswer = { readonly key: number; readonly records: TileRec
 async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: number, j: number): Promise<StreamTileAnswer | null> {
   const key = tileKey(i, j);
   // A tile the page wrote and whose bake a reload cut short baked here first: DO NOT refuse it as 'legacy' (the reopening then read it on the store's lanes, behind the rush's tiles, conf37).
-  const version = await storedVersionBaked(stored(), store.map, key, (r) => bakeTileSections(r, true));
+  const version = await storedVersionBaked(stored(), store.map, key, (r) => bakeTileSections(r, true), !store.records);
   if (version === null) return null;
   if (version === 'legacy') return { key, stored: null, legacy: true };
   // Whether its bays are stored too (a world reopened): the page asks no worker for them again (`TileStore.addBays`).

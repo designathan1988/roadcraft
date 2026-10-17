@@ -1941,7 +1941,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   let refused: string | null = null;
   if (imported) {
     if (!release) refused = 'another tab holds this world: the file was not opened into it';
-    else if (!(await store.importWorld(imported.meta, imported.tiles, mapTilesFrom(0, 0)))) refused = 'the file was not written whole into the store';
+    else if (!(await store.importWorld(imported.meta, (take) => imported.eachTile(take), mapTilesFrom(0, 0)))) refused = 'the file was not written whole into the store';
   }
   // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
