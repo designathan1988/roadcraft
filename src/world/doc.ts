@@ -1579,11 +1579,18 @@ export class RoadDoc {
   }
 
   /** A tile taken out of the page's document (cause `TILE_UNLOADED`): what it holds now (`tileMembers`); a node at its edge stays while a road of a tile still here ends on it */
-  unloadTile(key: number): ReadonlyMap<ListPart, readonly number[]> {
+  unloadTile(key: number, gone?: Map<RecordPart, Set<number>>): ReadonlyMap<ListPart, readonly number[]> {
     const removedAt = new Map<ListPart, number[]>();
     if (!this.tileContents.has(key)) return removedAt;
     if (this.recorder) throw new Error('a tile cannot go out during an edit');
     const t = this.tileMembers(key);
+    // The records that go with it, by id (`gone`): an undo step naming one cannot be taken any more, whatever range its id came from (`History.letGoTile`).
+    if (gone) {
+      const put = (part: RecordPart, ids: Iterable<number>): void => { const set = gone.get(part) ?? new Set<number>(); for (const id of ids) set.add(id); gone.set(part, set); };
+      put('segments', t.segments.map((s) => s.id)); put('nodes', t.nodes.map((n) => n.id)); put('poles', t.poles.map((p) => p.id));
+      put('poleSpans', t.spans.map((s) => s.id)); put('landscape', t.landscape.map((x) => x.id)); put('barriers', t.barriers.map((x) => x.id));
+      put('buildings', t.buildings.map((b) => b.id)); put('lots', t.lots.map((l) => l.id));
+    }
     this.tileContents.delete(key);
     const cause = this.changes.cause;
     this.changes.causeNext(TILE_UNLOADED);

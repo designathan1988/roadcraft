@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
-import { TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
-import type { TileRecords } from '@world/doc';
+import { TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey, tileOfRecord } from '@world/tiles';
+import type { RecordPart, TileRecords } from '@world/doc';
+import { History } from '@editor/history';
 import { isStreaming } from '@world/changes';
 import { generateBody } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
@@ -192,5 +193,34 @@ describe('an edge node whose own tile is not loaded', () => {
     expect(doc.canEditNode(id)).toBe(true);
     doc.setNodeHeightOffset(id, m(3));
     expect(doc.tileRecords(b.key, 2).nodes.find((n) => n.id === edge)!.heightOffset).toBe(m(3));
+  });
+});
+
+describe('an undo step when a tile goes', () => {
+  it('is dropped for a road that went with the tile, though its id came from another tile\'s range', () => {
+    const ka = tileKey(0, 0), kb = tileKey(1, 0);
+    const doc = new RoadDoc();
+    doc.loadTile(empty(ka));
+    doc.loadTile(empty(kb));
+    const history = new History();
+    // A road laid in tile a (its ids from a's range), then dragged over into tile b.
+    history.begin(doc);
+    const p = doc.addNode({ x: m(900), y: m(500) }), q = doc.addNode({ x: m(980), y: m(500) });
+    const seg = doc.addSegment(p.id, q.id, 1)!;
+    history.end(doc);
+    expect(Math.floor(seg.id / (tileIdBase(kb) - tileIdBase(ka)))).toBe(Math.floor(tileIdBase(ka) / (tileIdBase(kb) - tileIdBase(ka))));
+    history.begin(doc);
+    doc.moveNode(p.id, { x: TILE + m(100), y: m(500) });
+    doc.moveNode(q.id, { x: TILE + m(180), y: m(500) });
+    history.end(doc);
+    // A step that names the road alone (no place in its record): its tile is not the one its id says.
+    history.begin(doc);
+    doc.setSegmentType(seg.id, 2);
+    history.end(doc);
+    const gone = new Map<RecordPart, Set<number>>();
+    const removedAt = doc.unloadTile(kb, gone);
+    expect(gone.get('segments')?.has(seg.id)).toBe(true);
+    history.letGoTile((r) => gone.get(r.part as RecordPart)?.has(r.id) === true || tileOfRecord(r.part, r.id, r.value) === kb, () => false, removedAt);
+    expect(history.undo(doc)).toBe(false);
   });
 });

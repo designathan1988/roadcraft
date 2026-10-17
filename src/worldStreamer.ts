@@ -1,7 +1,7 @@
 import { MAP_TILES, tileOnMap } from '@world/cityGen/wholeMap';
 import { type ChangeRect, DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
-import type { ListPart, RoadDoc } from '@world/doc';
+import type { ListPart, RecordPart, RoadDoc } from '@world/doc';
 import { TILE, tileIJ, tileKey, tileOfKey, tileRect, tilesAround } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 
@@ -31,7 +31,7 @@ export interface StreamerEvents {
   /** A tile put in the page's document. */
   loaded?(key: number): void;
   /** A tile let go, and the stretches of the lists it took (undo forgets what it named, `History.letGoTile`). */
-  letGo?(key: number, removedAt: ReadonlyMap<ListPart, readonly number[]>): void;
+  letGo?(key: number, removedAt: ReadonlyMap<ListPart, readonly number[]>, gone: ReadonlyMap<RecordPart, ReadonlySet<number>>): void;
   /** A tile written at a version (what is baked of it is stale). */
   written?(key: number, version: number): void;
   /** The camera's tile changed: the loaded tiles that came into the active region (3 x 3) or left it for the kept ring, and the rectangles of them. The ring keeps its records only: its near products are let go and the far levels draw it (CLAUDE.md "Streaming world", the solution's 5.4). */
@@ -158,8 +158,9 @@ export class WorldStreamer {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
       if (this.dirty.has(key) || this.unsaved.get(key)?.write?.failed) this.write(key);
       // Let go first: an optional call (`?.`) does not evaluate its arguments when nobody listens.
-      const removedAt = this.doc.unloadTile(key);
-      this.tell.letGo?.(key, removedAt);
+      const gone = new Map<RecordPart, Set<number>>();
+      const removedAt = this.doc.unloadTile(key, gone);
+      this.tell.letGo?.(key, removedAt, gone);
       this.versions.delete(key);
     }
     // DO NOT hold a changed tile for a timer: a page closed or reloaded meanwhile (a browser waits for nothing) lost the edits. Written as soon as its last write is in, so the store is one write behind the page at most.

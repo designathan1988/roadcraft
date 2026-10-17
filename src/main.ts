@@ -28,7 +28,7 @@ import { applyLots, planLotsSteps } from '@world/lots';
 import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
-import { RoadDoc, type JunctionControl } from '@world/doc';
+import { RoadDoc, type JunctionControl, type RecordPart } from '@world/doc';
 import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from '@world/changes';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
@@ -1986,8 +1986,9 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
       const bake = store.takeBake(key);
       if (bake) { net.offerBake(bake); sim.offerBake(key, bake); }
     },
-    letGo: (key, removedAt) => {
-      history.letGoTile((r) => tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
+    letGo: (key, removedAt, gone) => {
+      // A record that went with the tile (by id, whatever range it came from or wherever it was first made), or one whose value stands in it.
+      history.letGoTile((r) => gone.get(r.part as RecordPart)?.has(r.id) === true || tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
       scene.tileLetGo(key);
       for (const f of far) f.loadedChanged(key);
       sim.tile('letGo', key);
