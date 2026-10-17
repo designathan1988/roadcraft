@@ -116,6 +116,7 @@ import { plantedProduct } from './plantedTiles';
 import { structureProduct } from './structureTiles';
 import { gardenProduct } from './gardenTiles';
 import { coverExtraFor, coverProduct } from './coverTiles';
+import { elementProduct } from './elementTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -952,6 +953,17 @@ export function createSceneRenderer(
   let elementLayer: ElementLayer | null = null;
   /** What the elements stand on and are, from the diary: a dab lays its own cells again, not the map's. */
   const elementRead = new JournalCursor(['elements', 'terrain', 'ground']);
+  /** The elements' layer, made once their models are in: the region's cells draw in it, and a streamed world's tiles (`elementTiles.ts`). */
+  const elementLayerOf = (): ElementLayer | null => {
+    if (!elementKit) return null;
+    if (!elementLayer) {
+      elementLayer = createElementLayer(elementKit, activeTiles);
+      world.add(elementLayer.group);
+    }
+    return elementLayer;
+  };
+  // The streamed world's brush elements per tile, in the elements' layer.
+  nearTiles.add(elementProduct(elementLayerOf));
   void loadElementKit(anisotropy).then((kit) => { elementKit = kit; }, (error: unknown) => {
     console.warn('[elements] models not loaded', error);
   });
@@ -3005,10 +3017,9 @@ export function createSceneRenderer(
         // The elements: again only in the cells where they or the ground under them changed (`elements.ts`).
         if (elementKit && !landHeld) {
           const startedAt = performance.now();
-          if (!elementLayer) {
-            elementLayer = createElementLayer(elementKit, activeTiles);
-            world.add(elementLayer.group);
-          }
+          const layer = elementLayerOf()!;
+          // A streamed world's elements are the tiles' (`elementTiles.ts`, baked in workers): the region makes none.
+          layer.setTiled(activeAt !== null);
           const entries = activeTiles.read(elementRead, doc.changes);
           let cells: Set<number> | null = null;
           if (entries !== null && entries.every((e) => e.rects !== null)) {
@@ -3016,8 +3027,8 @@ export function createSceneRenderer(
             // A prop stands on the ground drawn under its point: a terrain cell round a change of the ground.
             for (const e of entries) for (const r of e.rects!) keepCellsOver(r, TERRAIN_CELL, cells);
           }
-          if ((cells === null || cells.size > 0) && elementLayer.sync(cells, doc, (x, y) => terrain.renderedHeightAt(x, y))) {
-            elementLayer.cull(crowdFrustum, crowdProjection);
+          if ((cells === null || cells.size > 0) && layer.sync(cells, doc, (x, y) => terrain.renderedHeightAt(x, y))) {
+            layer.cull(crowdFrustum, crowdProjection);
             shadowMoved = true;
           }
           performance.measure('hitch:elements', { start: startedAt, end: performance.now() });
