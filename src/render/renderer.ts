@@ -160,6 +160,7 @@ import { createElementLayer, loadElementKit, type ElementKit, type ElementLayer 
 import { isCoverKind } from '@world/terrainPaint';
 import { CellKeeps, keepCellAt, keepCellRect, keepCellsOver } from './cellKeeps';
 import { ActiveTiles } from './activeTiles';
+import { measureHitch } from '@core/hitch';
 import { createDensityCars } from './densityCars';
 import { COVER_SWEEP_PAD, ShorePlates, cellHash, forestIn, rocksIn, sameCandidate, sameShore, scrubIn, shoreIn, type Candidate, type CoverField, type ShoreCandidate } from './coverSweep';
 import { PlateFollow } from './plateFollow';
@@ -1493,7 +1494,7 @@ export function createSceneRenderer(
     utilityRevision = net.doc.utilityRevision;
     const at = performance.now();
     syncUtilities(net, poleGroundAt(elevation, terrain.renderedHeightAt, net));
-    performance.measure('hitch:utilities/poles', { start: at, end: performance.now() });
+    measureHitch('hitch:utilities/poles', at);
   };
 
   /** The city's clock, read each frame: the planted trees and shrubs grow with it (`plantGrowth`). */
@@ -1509,7 +1510,7 @@ export function createSceneRenderer(
       const before = furniture.triangles;
       const work = furniture.sync(placedOn, elevation, terrain.renderedHeightAt, cityMinutes);
       builtTriangles += furniture.triangles - before;
-      performance.measure('hitch:furniture', { start: at, end: performance.now() });
+      measureHitch('hitch:furniture', at);
       return work;
     },
   }, 'draw');
@@ -1592,7 +1593,7 @@ export function createSceneRenderer(
       if (worldJob === null && (utilityRevision !== net.doc.utilityRevision || poleSerial !== net.doc.changes.serialOf(...POLE_KINDS))) {
         const atUtilities = performance.now();
         rebuildUtilities(net);
-        performance.measure('hitch:road-edit/utilities alone', { start: atUtilities, end: performance.now() });
+        measureHitch('hitch:road-edit/utilities alone', atUtilities);
       }
       return;
     }
@@ -1627,7 +1628,7 @@ export function createSceneRenderer(
       // On land that has not moved, from the last solve
       : buildRoadElevation(net, builtGroundAt, from, roadStations.current, groundMoved);
     roadStations.used();
-    performance.measure('hitch:road-edit/elevation', { start: started, end: performance.now() });
+    measureHitch('hitch:road-edit/elevation', started);
     // Now the ground comes to meet the roads
     // The blocks the two solves differ in, digested off the page (`compareSolves`) and read by the job, which waits for them
     const compare = previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null;
@@ -1686,7 +1687,7 @@ export function createSceneRenderer(
     const atdetails = performance.now();
     if (byTile && details) { builtTriangles -= details.triangles; world.remove(details.group); details.dispose(); details = null; }
     const freshDetails = byTile ? null : (details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles)).prepare(net, solve, terrain.renderedHeightAt, blocks);
-    performance.measure('hitch:road-edit/details', { start: atdetails, end: performance.now() });
+    measureHitch('hitch:road-edit/details', atdetails);
     yield;
     // The overhead utility network.
     const utilityBuilt = net.doc.utilityRevision;
@@ -1722,10 +1723,10 @@ export function createSceneRenderer(
     // The poles the edit reached, on the ground just put in place (`syncUtilities`, from the diary).
     const atutilities = performance.now();
     syncUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net));
-    performance.measure('hitch:road-edit/utilities', { start: atutilities, end: performance.now() });
+    measureHitch('hitch:road-edit/utilities', atutilities);
     // The street furniture and the signs follow from the diary once the world stands (the engine's 'draw' phase, in `draw`).
     rebuildMs = performance.now() - started;
-    performance.measure('hitch:road-edit/world rebuilt', { start: started, end: performance.now() });
+    measureHitch('hitch:road-edit/world rebuilt', started);
     rebuilds++;
     landedRevision = builtOf;
     onAssetsReady();
@@ -2500,12 +2501,12 @@ export function createSceneRenderer(
       } else {
         const atRebuild = performance.now();
         rebuildWorld(net);
-        performance.measure('hitch:draw/Rebuild', { start: atRebuild, end: performance.now() });
+        measureHitch('hitch:draw/Rebuild', atRebuild);
         terrain.settle();
       }
       const atPump = performance.now();
       pumpWorld();
-      performance.measure('hitch:draw/Pump', { start: atPump, end: performance.now() });
+      measureHitch('hitch:draw/Pump', atPump);
       // A building placed, moved or reshaped grades its own site.
       landShapes();
       followFloors(net);
@@ -2574,7 +2575,7 @@ export function createSceneRenderer(
             resweepCovers(cells);
           }
           shorePlates.follow(terrain.parts);
-          performance.measure('hitch:cover/sweep', { start: at, end: performance.now() });
+          measureHitch('hitch:cover/sweep', at);
         }
         // The painted woods' trees are the countryside's (`natureTrees.ts`); the old card trees only if those cannot be grown.
         const standIns = !natureTreeKit && !natureTreesPending;
@@ -2603,7 +2604,7 @@ export function createSceneRenderer(
             paintedForestOf()?.sync(coverWhole ? null : changed, coverWhole ? coverKeeps.forest.cellKeys() : []);
           }
           coverStandIns = standIns;
-          performance.measure('hitch:cover', { start: at, end: performance.now() });
+          measureHitch('hitch:cover', at);
         }
         // The ecosystem's own trees.
         bringPlateLand(net.doc);
@@ -2615,7 +2616,7 @@ export function createSceneRenderer(
           natureSweepPending = (swept.pending ?? 0) > 0;
           // While plates wait their sweep (one a frame), the trees standing stay
           if (!natureSweepPending || !natureSweepState) natureSweepState = swept;
-          performance.measure('hitch:nature/sweep', { start: at, end: performance.now() });
+          measureHitch('hitch:nature/sweep', at);
         }
         if (natureSweepState) {
           const sweep = natureSweepState;
@@ -2652,7 +2653,7 @@ export function createSceneRenderer(
             })();
             natureCards.sync(changed, whole ? natureKeeps.cellKeys() : []);
           }
-          performance.measure('hitch:nature', { start: at, end: performance.now() });
+          measureHitch('hitch:nature', at);
         }
         // The trees the player planted (`world/trees.ts`), with the woods' own models: filed again only in the cells planted or cut
         // A streamed world's planted trees are the tiles' (`plantedTiles.ts`, baked in workers): the region files none.
@@ -3005,7 +3006,7 @@ export function createSceneRenderer(
           fogJournal = doc.changes;
           fogSeen = fogSerial;
           fogTerrainSeen = doc.terrainRevision;
-          performance.measure('hitch:fog', { start: startedAt, end: performance.now() });
+          measureHitch('hitch:fog', startedAt);
         }
         if (!landHeld) {
           // The fog's window kept round where the view looks (`fogLayer.ts`): only the texels that came in written.
@@ -3031,7 +3032,7 @@ export function createSceneRenderer(
             layer.cull(crowdFrustum, crowdProjection);
             shadowMoved = true;
           }
-          performance.measure('hitch:elements', { start: startedAt, end: performance.now() });
+          measureHitch('hitch:elements', startedAt);
         }
         elementLayer?.emit(Math.min(0.1, Math.max(0, delta)), rig.camera.position, exhaust);
         post.setGroundFog(fogLayer?.any ? { texture: fogLayer.texture, low: fogLayer.low, high: fogLayer.high, density: f.density, window: fogLayer.window } : null);
@@ -3086,7 +3087,7 @@ export function createSceneRenderer(
         gpuTimer.end();
         governFrame();
       } else onAssetsReady();
-      performance.measure('hitch:draw/Render', { start: atRender, end: performance.now() });
+      measureHitch('hitch:draw/Render', atRender);
       if (shake > 0) { rig.camera.position.sub(shakeOffset); rig.camera.updateMatrixWorld(); }
       // One waiting texture a frame to the GPU, before anybody draws it.
       drainUploads(renderer, 1);
