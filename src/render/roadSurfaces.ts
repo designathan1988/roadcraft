@@ -540,8 +540,10 @@ export function* roadSurfaceSteps(
           tile.surfaces = [...bundle.keys()];
           tilesMs += performance.now() - tileAt;
           done(tile);
-          yield;
+          // A tile made here is a step of its own; the tiles a worker made are taken a batch a step (taking one is filing its arrays: ~170 steps a 1 km tile, a step a frame once the town is shown, 2026-10-16).
+          if (!made) yield;
         }
+        if (made) yield;
       }
     };
     /** The tiles built afresh this pass: kept for a later session once merged (below). */

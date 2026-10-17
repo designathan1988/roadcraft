@@ -1180,6 +1180,8 @@ export function createSceneRenderer(
   let buildingGroundSeen = -1;
   /** Where two solves of the roads differ: the blocks of the map whose ground the roads shape differently. */
   const SHAPE_BLOCK = 160;
+  /** The ground's blocks a side of the square a step of the platforms covers (`shapeBlocksSteps`). */
+  const PADS_SQUARE = 4;
   /** What a block of ground reads of a solve, digested: at each corner of the terrain grid in it */
   const groundRead = new WeakMap<RoadElevation, Map<number, number>>();
   /** The blocks of a solve being digested off the page, each with the job that will file it (`compareSolves`). */
@@ -1299,8 +1301,18 @@ export function createSceneRenderer(
       return box[0] <= q[2] && box[2] >= q[0] && box[1] <= q[3] && box[3] >= q[1];
     });
     followFloors(net);
+    // A step a square of the ground's blocks (`PADS_SQUARE` of them a side), each its buildings' platforms - a product of the change, as the ground's blocks are: DO NOT step a building at a time - a tile put in was ~1,000 steps, a step a frame, its near roads 16 s late once the town was shown (2026-10-16; the platforms themselves ~0.2 s a tile: ~16 steps of ~12 ms).
+    const side = SHAPE_BLOCK * PADS_SQUARE;
+    const bySquare = new Map<string, Building[]>();
     for (const b of reached) {
-      sitesGraded.refresh(b);
+      const box = bankBox(b);
+      const k = `${Math.floor((box[0] + box[2]) / 2 / side)},${Math.floor((box[1] + box[3]) / 2 / side)}`;
+      let list = bySquare.get(k);
+      if (!list) bySquare.set(k, list = []);
+      list.push(b);
+    }
+    for (const list of bySquare.values()) {
+      for (const b of list) sitesGraded.refresh(b);
       yield;
     }
     gradedFor = net.doc.buildings.revision;
