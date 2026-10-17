@@ -111,6 +111,22 @@ describe('the patches chosen for a camera', () => {
     return at;
   };
 
+  it('sends the patches only when the choice changed: the same camera twice sends none the second time', () => {
+    const attribute = lod.geometry.getAttribute('aLodPatch') as import('three').InstancedBufferAttribute;
+    look([-900, 40, 900], [600, 0, -700], 35);
+    // As if three sent them.
+    attribute.clearUpdateRanges();
+    const version = attribute.version;
+    const { patches } = look([-900, 40, 900], [600, 0, -700], 35);
+    expect(patches.length).toBeGreaterThan(0);
+    expect(attribute.version).toBe(version);
+    expect(attribute.updateRanges.length).toBe(0);
+    // Another view: sent again, from the first patch that differs.
+    look([-700, 260, 500], [-700, 0, 500], 170);
+    expect(attribute.version).toBeGreaterThan(version);
+    expect(attribute.updateRanges.length).toBe(1);
+  });
+
   it('cover the plate once, every level in use, from over it', () => {
     const { patches } = look([-700, 260, 500], [-700, 0, 500], 170);
     expect(levelsOf(patches).every((l) => l >= 0)).toBe(true);
