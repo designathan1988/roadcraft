@@ -516,9 +516,10 @@ function standingRange(plan: BodyPlan, own: number, pixels: number, ratio: numbe
   // The hysteresis of `sync`'s own level: up at the next edge grown by a tenth, down at its own edge.
   let lo = own === 1 ? FAR_BODY_ZOOM : 2 / CAR_LENGTH;
   let hi = (own === 1 ? occupantZoom : FAR_BODY_ZOOM) * (1 + VEHICLE_HYSTERESIS);
-  for (const size of [1, tyreSize(plan), rimSize(plan)]) {
+  // DO NOT make an array of the three sizes per car: three passes, one a part's scale.
+  for (let k = 0; k < 3; k++) {
     // `levelFor` keeps level L while LEVEL_ERRORS[L - 1] * p <= ERROR_PIXELS < LEVEL_ERRORS[L] * p.
-    const unit = ratio * size, level = levelFor(pixels * unit);
+    const unit = ratio * (k === 0 ? 1 : k === 1 ? tyreSize(plan) : rimSize(plan)), level = levelFor(pixels * unit);
     if (level < LEVEL_ERRORS.length) lo = Math.max(lo, ERROR_PIXELS / (LEVEL_ERRORS[level]! * unit));
     if (level > 0) hi = Math.min(hi, ERROR_PIXELS / (LEVEL_ERRORS[level - 1]! * unit));
   }
@@ -2075,7 +2076,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       let cellRecord: CellRecord | null = null;
       fieldFrame = -1;
       /** A car of `record` drawn standing: the scales its levels hold over narrow the cell's, its place and sphere grow the cell's. */
+      // Only where a cell can be kept whole in a moving view (`vehicleInside`): DO NOT work out each car's range for nothing.
+      const keepsCells = !!options.vehicleInside && !!screenScale;
       const standsIn = (record: CellRecord, plan: BodyPlan, own: number, pixels: number, onScreen: boolean, x: number, y: number, radius: number): void => {
+        if (!keepsCells) return;
         standingRange(plan, own, pixels, pixelRatio, occupantZoom, range);
         if (range.lo > record.rangeLo) record.rangeLo = range.lo;
         if (range.hi < record.rangeHi) record.rangeHi = range.hi;
