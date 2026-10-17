@@ -9,9 +9,9 @@ import {
 import { segSeg } from '@core/intersect';
 import { Polyline } from '@core/polyline';
 import { type Vec2, dist } from '@core/vec2';
-import { type RoadDoc, type RoadSegment, fitRoadCurve, sameStamps } from '@world/doc';
+import { type RoadDoc, fitRoadCurve, sameStamps } from '@world/doc';
 import { Network } from '@world/network';
-import { type NodeId, type SegmentId, asSegmentId } from '@world/ids';
+import { type NodeId, type SegmentId } from '@world/ids';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE, type RoadElevation, buildRoadElevation } from '@world/elevation';
 import { TerrainIndex, sampleTerrainHeight } from '@world/terrain';
@@ -49,6 +49,8 @@ export interface DraftResult {
   readonly cost?: number;
   /** A dry run's road as it would be built */
   readonly stations?: readonly RoadStation[];
+  /** The segments the edit added (`RoadDoc.addedSegments`), read off its working copy before it was taken back */
+  readonly laid?: readonly SegmentId[];
 }
 
 /** Spacing of a dry run's stations (`DraftResult.stations`). */
@@ -138,10 +140,11 @@ export function commitRoadPath(
     timed('stations');
     return { committed: true, heightLimited, finalHeightOffset: currentHeight, cost: charge.amount, stations };
   }
+  const laid = work.addedSegments(doc).map((seg) => seg.id);
   doc.takeBack(work);
   net.takeBack(workNet);
   timed('replace');
-  return { committed: true, heightLimited, finalHeightOffset: currentHeight, cost: charge.amount,
+  return { committed: true, heightLimited, finalHeightOffset: currentHeight, cost: charge.amount, laid,
     ...(!bore.bored && ground && bore.elevation ? { elevation: bore.elevation } : {}) };
 }
 
@@ -168,7 +171,8 @@ function solveOver(net: Network, ground: (x: number, y: number) => number, sampl
 
 function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?: (x: number, y: number) => number,
   previous: RoadElevation | null = null): { bored: boolean; elevation: RoadElevation | null } {
-  const fresh = segmentsNewIn(before, work).filter((seg) => seg.structure === 'ground');
+  // DO NOT find an edit's segments by the map's allocator: in a loaded tile they take the tile's ids (`RoadDoc.takeId`).
+  const fresh = work.addedSegments(before).filter((seg) => seg.structure === 'ground');
   if (!fresh.length || !work.terrainStamps.length) return { bored: false, elevation: null };
   // A cut that deep needs relief under the new roads, and the land is flat outside the stamps (the test just above)
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -204,25 +208,6 @@ function boreDeepCuts(before: RoadDoc, work: RoadDoc, workNet: Network, sampled?
   return { bored: changed, elevation };
 }
 
-/** Where the segments' allocator stands in `RoadDoc.allocatorMarks`. */
-const SEGMENT_MARK = 1;
-
-/** The id the next segment of `doc` will take: read before an edit, to find its own segments after it. */
-export const nextSegmentId = (doc: RoadDoc): number => doc.allocatorMarks()[SEGMENT_MARK]!;
-
-/** DO NOT copy `doc.segments.keys()` before an edit, or filter `work.segments` against `before.segments` */
-export function segmentsFrom(doc: RoadDoc, first: number): RoadSegment[] {
-  const out: RoadSegment[] = [];
-  for (let id = first, end = nextSegmentId(doc); id < end; id++) {
-    const seg = doc.segment(asSegmentId(id));
-    if (seg) out.push(seg);
-  }
-  return out;
-}
-
-/** The segments of the working copy `work` that its original `before` does not hold. */
-const segmentsNewIn = (before: RoadDoc, work: RoadDoc): RoadSegment[] => segmentsFrom(work, nextSegmentId(before));
-
 /** The stations of the road a gesture laid, on the copy it was laid on: the new segments that lie on the drawn pieces */
 function draftStations(
   before: RoadDoc, work: RoadDoc, workNet: Network, pieces: readonly RoadPathPiece[], type: number, startAt: Vec2,
@@ -234,7 +219,7 @@ function draftStations(
     return i === 0 ? pts : pts.slice(1);
   }));
   const laid = new Set<SegmentId>();
-  for (const seg of segmentsNewIn(before, work)) {
+  for (const seg of work.addedSegments(before)) {
     const line = workNet.ribbons.get(seg.id)?.full;
     if (!line) continue;
     const mid = line.sampleAt(line.length / 2).p;

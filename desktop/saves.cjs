@@ -100,13 +100,17 @@ function createSaves(saves) {
     queue = result.catch(() => undefined);
     return result;
   }
-  return { run };
+  /** Resolves once every request asked so far is done (the exit waits for it, `main.cjs` will-quit). */
+  const drained = () => queue.then(() => true);
+  return { run, drained };
 }
 
 // In the utility process: each page gets a port of its own (`main.cjs` `saves:connect`); answers go back by the request's id.
 if (process.parentPort) {
   const store = createSaves(process.argv[2]);
   process.parentPort.on('message', (event) => {
+    // The game exiting: told once every write asked before is on the disk.
+    if (event.data?.op === 'drain') { void store.drained().then(() => process.parentPort.postMessage({ drained: true })); return; }
     const [port] = event.ports;
     if (!port) return;
     port.on('message', ({ data }) => {

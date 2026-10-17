@@ -1,4 +1,5 @@
 import { CameraMotion } from '@view/cameraMotion';
+import { identityMemo } from '@core/identityMemo';
 
 /** THE ROAD TOOL'S KEYS, rebindable (read by `main.ts`) */
 export type RoadKeyAction = 'heightUp' | 'heightDown' | 'alignment';
@@ -102,5 +103,8 @@ export function keyLabel(key: string, short = false): string {
 
 /** The keys as placeholders for the interface's sentences (`{heightUp}`, `{heightDown}`, `{alignmentKey}`). */
 export function roadKeyParams(): Record<string, string> {
-  return { heightUp: keyLabel(bindings.heightUp), heightDown: keyLabel(bindings.heightDown), alignmentKey: keyLabel(bindings.alignment) };
+  // DO NOT make them at each `t()` (each frame a road in hand is drawn): once a set of bindings (replaced whole when one changes).
+  return paramsOf(bindings);
 }
+const paramsOf = identityMemo((b: Record<RoadKeyAction, string>): Record<string, string> =>
+  ({ heightUp: keyLabel(b.heightUp), heightDown: keyLabel(b.heightDown), alignmentKey: keyLabel(b.alignment) }));

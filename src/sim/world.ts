@@ -31,6 +31,8 @@ import { DT } from './params';
 const BUS_REACH = m(90);
 /** The micro simulation's window (`keepMicroWindow`): a junction this near a vehicle has its conflicts; 15 s ahead of a car at 70 km/h. */
 const VEHICLE_WINDOW = m(300);
+/** The cells the vehicles are gathered by for the window (`keepMicroWindow`): a cell's square reaches `VEHICLE_WINDOW` past it. */
+const WINDOW_CELL = m(100);
 /** The most of the window round the focus, where the scenery's cars are made (`AmbientWorld.traffic`). */
 const FOCUS_WINDOW = m(600);
 /** How far a vehicle's pose can lie outside its lane's bounds (`vehiclesNear`): the longest body (its rear axle still on the lane behind) and a lane change's sideways reach. */
@@ -252,6 +254,11 @@ export class SimWorld {
   edgeTraffic = true;
   /** The city's services - the time of day, the public transport (`sim/city/city.ts`) - stepped by the pipeline. */
   readonly city = new City();
+  /** Each vehicle's reservation chain as last found valid (`pipeline.ts` reconcileReservedChain): walked again only when what it reads moved. */
+  readonly reservationsChecked = new WeakMap<Vehicle, {
+    readonly lanelet: LaneletId; readonly admitted: LaneletId | null; readonly reserved: readonly LaneletId[]; readonly reservedLength: number;
+    readonly route: readonly LaneletId[]; readonly routeLength: number; readonly topology: object;
+  }>();
   /** The life of the scenery: people and traffic made round the view (`sim/ambient`). */
   readonly ambient = new AmbientWorld();
   /** The meso traffic of the whole map and its micro window (`meso/meso.ts`): the game's (`simHost.ts`); off in the specs, the micro simulation everywhere. */
@@ -709,9 +716,15 @@ export class SimWorld {
     };
     const focus = this.focus;
     if (focus) take(focus.x, focus.y, Math.min(FOCUS_WINDOW, Math.max(focus.r * 1.35, m(200)) * 1.15 + m(100)));
+    // DO NOT ask the junctions round each vehicle (a queue of a hundred cars asks the same square a hundred times): once per cell a vehicle stands in, the cell grown by the vehicles' reach.
+    const cells = new Set<number>();
     for (const v of this.vehicles.values()) {
       const pose = vehiclePose(this, v, 1);
-      if (pose) take(pose.p.x, pose.p.y, VEHICLE_WINDOW);
+      if (pose) cells.add((Math.floor(pose.p.x / WINDOW_CELL) + 2 ** 20) * 2 ** 21 + (Math.floor(pose.p.y / WINDOW_CELL) + 2 ** 20));
+    }
+    for (const cell of cells) {
+      const x0 = (Math.floor(cell / 2 ** 21) - 2 ** 20) * WINDOW_CELL, y0 = ((cell % 2 ** 21) - 2 ** 20) * WINDOW_CELL;
+      for (const node of this.junctionFiling.idsMeeting([x0 - VEHICLE_WINDOW, y0 - VEHICLE_WINDOW, x0 + WINDOW_CELL + VEHICLE_WINDOW, y0 + WINDOW_CELL + VEHICLE_WINDOW])) next.add(node);
     }
     this.windowWanted = this.conflicts.holdsWindow(next) ? null : next;
   }
@@ -722,6 +735,8 @@ export class SimWorld {
     const prep = this.prepGraph;
     const changed = prep?.current(this.net) ? this.graph.adopt(prep, this.doc, this.net) : this.graph.update(this.doc, this.net);
     this.topologyLog.push(changed);
+    // Each body's reach of the road ends follows the graph here, with the topology, not in the tick of the next vehicle made (`LaneReaches.follow`).
+    this.laneReaches.follow(this);
     // What the next rebind looks at: nothing while no vehicle is out, as a vehicle made later is made on this graph.
     if (this.vehicles.size === 0) { this.rebindLanes.clear(); this.rebindAll = false; }
     else if (changed === null) this.rebindAll = true;
@@ -839,6 +854,8 @@ export class SimWorld {
       const junction = this.graph.junctions.get(node);
       const n = this.doc.node(node);
       if (!junction || !n || n.control !== 'auto' || n.incident.length < 3) { this.advised.delete(node); continue; }
+      // DO NOT judge a junction out of the micro window: its flows are not counted there (the meso drives it), and its lights would follow the camera. Kept as it stood until the window comes back.
+      if (this.microWindow && !this.conflicts.inWindowOf(node)) continue;
       const main = mainRoadLegs(this.doc, node);
       let major = 0, minorMax = 0, minorTotal = 0;
       for (const seg of n.incident) {
@@ -1191,10 +1208,20 @@ export class SimWorld {
     this.vehicles.delete(v.id);
   }
 
+  /** Every issue ever reported, a serial that only grows: a reader keeps how far it has read (`simHost.ts`), DO NOT read the kept list's length, which stops at 512. */
+  issuesReported = 0;
+
   report(issue: AuditIssue): void {
+    this.issuesReported++;
     this.issues.push(issue);
     if (this.issues.length > 512) this.issues.shift();
   }
+}
+
+/** The issues reported since a reader had read `sent` of them (`SimWorld.issuesReported`): the last ones still kept, however many came. */
+export function issuesSince(w: Pick<SimWorld, 'issues' | 'issuesReported'>, sent: number): readonly AuditIssue[] {
+  const fresh = Math.min(Math.max(0, w.issuesReported - sent), w.issues.length);
+  return w.issues.slice(w.issues.length - fresh);
 }
 
 /** The junction a crossing is at (`makeCrossingId`). */

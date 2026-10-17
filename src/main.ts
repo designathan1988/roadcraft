@@ -1,7 +1,7 @@
 import { MESO_REACH } from '@sim/meso/tileFeed';
-import { TileStore, portTiles } from '@editor/tileStore';
+import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
 import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
-import { WorldStreamer } from './worldStreamer';
+import { WorldStreamer, mapTilesFrom } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
 import { profileOf } from '@world/roads/profile';
@@ -28,7 +28,7 @@ import { applyLots, planLotsSteps } from '@world/lots';
 import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
-import { RoadDoc, type JunctionControl } from '@world/doc';
+import { RoadDoc, type JunctionControl, type RecordPart } from '@world/doc';
 import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from '@world/changes';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
@@ -98,7 +98,8 @@ import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingP
 import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
 import { STUTTER_MS } from '@core/sampleRing';
 import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
-import { exportToFile } from '@editor/mapExport';
+import { exportToFile, offerFile } from '@editor/mapExport';
+import { worldFilePieces } from '@editor/worldExport';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
 import { TransitTool, setTransitTool, transitTool } from '@editor/transitTools';
 import type { BuildingId } from '@world/buildings/types';
@@ -110,7 +111,7 @@ import { formatCost } from '@ui/roads/money';
 import { type BuildMode, buildRuns } from '@world/roads/buildMode';
 import { profileRoad } from '@world/roads/profile';
 import { mountAbout, openAbout } from '@ui/about';
-import { applyTranslations, formatDecimal, initLanguage, onLanguageChange, setGlobalParams, t } from '@ui/i18n';
+import { applyTranslations, formatDecimal, initLanguage, onLanguageChange, plural, setGlobalParams, t } from '@ui/i18n';
 import { onRoadKeysChange, roadKeyAction, roadKeyParams } from '@ui/roads/keys';
 import {
   peopleCountLabel,
@@ -780,6 +781,9 @@ persistence.documentText = (d) => (d === doc ? serializedDoc() : null);
 
 function mutateBuilt(fn: () => boolean): boolean {
   const mutateAt = performance.now();
+  // The network up to the map before the edit (a tile may have come in this frame): the road-wins look takes the edit's own changes only.
+  followNetwork(doc, net);
+  const roadsBefore = net.state;
   history.begin(doc);
   performance.measure('hitch:mutate/before', { start: mutateAt, end: performance.now() });
   // What the diary says this edit came from (`world/changes.ts`).
@@ -789,7 +793,7 @@ function mutateBuilt(fn: () => boolean): boolean {
     // DO NOT move these below `history.end`.
     if (net.revision !== doc.revision) net.rebuild();
     // A road over a building demolishes it (where the network changed only).
-    buildings.afterRoadEdit();
+    buildings.afterRoadEdit(roadsBefore);
     // And nothing stands in a turning circle's carriageway (V8): what stood on a road end's footway goes.
     clearBulbs(doc, net);
   }
@@ -1452,7 +1456,7 @@ const LANE_CHOICES: readonly { readonly id: string; readonly lanes: number | nul
 function laneChoices(): { id: string; label: string; on: boolean }[] {
   return LANE_CHOICES.map((choice) => ({
     id: choice.id,
-    label: choice.lanes === null ? t('palette.lanes.median') : t('palette.lanes.count', { count: choice.lanes }),
+    label: choice.lanes === null ? t('palette.lanes.median') : plural('palette.lanes.count', choice.lanes),
     on: choice.lanes === null
       ? game.roadLanePreset === null && game.roadTypeIndex === MEDIAN_CLASS
       : game.roadTypeIndex !== MEDIAN_CLASS && choice.lanes === (game.roadLanePreset ?? roadType(game.roadTypeIndex).lanes),
@@ -1654,20 +1658,42 @@ function setMapBiome(key: string): void {
 }
 
 /** One edit of the whole map, asked first and undoable: what each "clear" and "spread" button does. */
-function wholeMapEdit(confirmKey: string | null, edit: () => void): void {
+function wholeMapEdit(confirmKey: string | null, edit: () => void, tileLists: readonly ClearablePart[] = []): void {
   if (confirmKey && !window.confirm(t(confirmKey))) return;
   history.begin(doc);
   edit();
   updateHistoryButtons();
   persistence.saveSessionSoon(doc, sessionSettings);
   requestDraw();
+  // The streamed world: the tiles not on the page emptied where they are stored (the region's edit is the undo step; the rest is not undone).
+  if (tileLists.length && streamed) void clearStoredTiles(streamed, tileLists);
+}
+
+/** DO NOT clear only the region for a "whole map" clear: every stored tile of the map not on the page emptied where it is stored (`TileStore.clearLists`, in the save worker, one tile at a time), a tile that comes meanwhile emptied as it comes (`WorldStreamer.clearing`). */
+async function clearStoredTiles(open: NonNullable<typeof streamed>, parts: readonly ClearablePart[]): Promise<void> {
+  if (open.streamer.readOnly) return;
+  const done = open.streamer.clearing(parts);
+  try {
+    for (const key of mapTilesFrom(0, 0)) {
+      if (streamed !== open) return;
+      if (doc.hasTile(key)) continue;
+      const version = await open.store.clearLists(key, parts);
+      if (version !== null) open.written(key, version);
+    }
+  } catch (error) {
+    console.error('[world] a whole map clear did not reach every tile', error);
+  } finally {
+    done();
+  }
 }
 const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
   clearTerrain: () => wholeMapEdit('confirm.clearTerrain', () => doc.clearTerrain()),
   clearGullies: () => { if (doc.gullyDabs.length > 0) wholeMapEdit('confirm.clearGullies', () => doc.clearGullies()); },
   clearFog: () => { if (doc.fogDabs.length > 0) wholeMapEdit('confirm.clearFog', () => doc.clearFog()); },
-  clearTrees: () => { if (doc.trees.length > 0 || doc.treeClearings.length > 0) wholeMapEdit('confirm.clearTrees', () => doc.clearTrees()); },
-  clearElements: () => { if (doc.elements.length > 0) wholeMapEdit('confirm.clearElements', () => doc.clearElements()); },
+  clearTrees: () => {
+    if (streamed || doc.trees.length > 0 || doc.treeClearings.length > 0) wholeMapEdit('confirm.clearTrees', () => doc.clearTrees(), ['trees']);
+  },
+  clearElements: () => { if (streamed || doc.elements.length > 0) wholeMapEdit('confirm.clearElements', () => doc.clearElements(), ['elements']); },
   clearClouds: () => {
     if (doc.clouds.length > 0) wholeMapEdit('confirm.clearClouds', () => { for (const cloud of [...doc.clouds]) doc.removeCloud(cloud.id); });
   },
@@ -1937,16 +1963,33 @@ const GROW_SLICE_MS = 100;
 let cityBuiltIn = 0;
 
 /** THE STREAMED WORLD (CLAUDE.md, "Streaming world"): a city of any size - the page's document holds the tiles round the camera (`worldStreamer.ts`), the tile store (`editor/tileStore.ts`) every tile ever made and is the save, a tile never made is generated on demand in a worker (`tileGenerator.ts`) */
-let streamed: { readonly store: TileStore; readonly generator: TileGenerator; readonly streamer: WorldStreamer } | null = null;
+let streamed: { readonly store: TileStore; readonly generator: TileGenerator; readonly streamer: WorldStreamer; readonly release: () => void;
+  /** A tile written at a version (`StreamerEvents.written`): what is baked of it is stale. */
+  readonly written: (key: number, version: number) => void } | null = null;
+
+/** DO NOT let two tabs write one world (each stamps the versions it knows, the last writer wins): the first holds it (a Web Lock by its name, MDN "LockManager"), until it closes it; another tab opens it read only. Resolves the release, or null when another tab holds it. */
+function holdWorld(name: string): Promise<(() => void) | null> {
+  const locks = (navigator as { locks?: LockManager }).locks;
+  if (!locks) return Promise.resolve(() => {});
+  return new Promise((answer) => {
+    void locks.request(`roadcraft.world.${name}`, { ifAvailable: true }, (lock) => {
+      if (!lock) { answer(null); return undefined; }
+      // Held while this promise stands: settled when the world is closed (`afterStreamedWorld`).
+      return new Promise<void>((release) => answer(release));
+    });
+  });
+}
 /** A place of an item of a list (a dab, a tree, an element) in tile `key`. */
 const itemInTile = (item: unknown, key: number): boolean => {
   const p = item as { x?: number; y?: number } | null;
   return !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && OWNER.at(p as { x: number; y: number }) === key;
 };
 /** A world of the generator's options opened: the document emptied, the tiles round the camera streamed in (made the first time, read after). */
-async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Promise<void> {
-  streamed?.generator.dispose();
-  streamed = null;
+async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
+  /** A world file opened (`worldExport.ts`): its values and tiles put in the store first, in place of what it held. */
+  imported?: Extract<ImportResult, { status: 'world' }>['world']): Promise<void> {
+  // The world open before closed first, its changed tiles written.
+  await afterStreamedWorld(() => undefined);
   persistence.paused = true;
   history.clear();
   // Each tile made has its far levels baked where it is made, with what the far trees' own jobs read (`SceneHandle.farBakeEnv`).
@@ -1954,10 +1997,16 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   // Under the plan's version and the map's size (`worldKey`): DO NOT reopen tiles an older plan made (a city of 5 km, land past the edge).
   const mapName = `roadcraft.tiles.${worldKey(options.seed)}`;
   // Read, written and made in the job workers, the desktop's as a browser's (each worker its own port to the shell's saves, `editor/workerParts.ts`).
+  const release = await holdWorld(mapName);
   const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
     (i, j, after, text, ifMissing) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing));
+  if (imported && release) {
+    // One at a time, each a write of its own (`TileStore.write`, the save worker): the file's tiles take the place of the stored ones.
+    await store.setMeta(imported.meta);
+    for (const tile of imported.tiles) await store.write(tile);
+  }
   // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
   const empty = new RoadDoc();
@@ -1971,6 +2020,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   updateHistoryButtons();
   // The buildings and the roads past the region, baked per tile in the workers from the store (`buildings/farLevels.ts`, `farRoads.ts`).
   const far = [scene.farBuildings, scene.farRoads];
+  const written = (key: number, version: number): void => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); };
   const streamer = new WorldStreamer(doc, store, {
     arrived: () => requestDraw(),
     loaded: (key) => {
@@ -1983,19 +2033,21 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
       const bake = store.takeBake(key);
       if (bake) { net.offerBake(bake); sim.offerBake(key, bake); }
     },
-    letGo: (key, removedAt) => {
-      history.letGoTile((r) => tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
+    letGo: (key, removedAt, gone) => {
+      // A record that went with the tile (by id, whatever range it came from or wherever it was first made), or one whose value stands in it.
+      history.letGoTile((r) => gone.get(r.part as RecordPart)?.has(r.id) === true || tileOfRecord(r.part, r.id, r.value) === key, (item) => itemInTile(item, key), removedAt);
       scene.tileLetGo(key);
       for (const f of far) f.loadedChanged(key);
       sim.tile('letGo', key);
     },
-    written: (key, version) => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); },
+    written: (key, version) => written(key, version),
     // The kept ring's buildings and roads are the far levels' to draw, not the near products' (the solution's 5.4): the layer, the roads and the far levels told when a tile's standing changes.
     activeChanged: (keys, rects) => {
       // A tile come into the region has its near products made now: its far level stands until they are drawn; one gone to the ring is the far levels' at once.
       keys.forEach((key, k) => { if (streamer.isActive(key)) scene.tileLoaded(key, rects[k]!, doc.revision); else scene.tileLetGo(key); });
       for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); sim.activeChanged(keys, (nodes, segments) => net.exportBake(nodes, segments)); },
-    writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
+    // Only the parts that changed, each apart (`RoadDoc.worldPart`): DO NOT write the terrain and the zones for a road paid for.
+    writeWorld: (parts) => store.setMetaParts(Object.fromEntries(parts.map((part) => [part, doc.worldPart(part)]))),
     failed: (why) => console.error('[world]', why),
   }, () => generator.lanesWanted);
   const activeAt = (x: number, y: number): boolean => streamer.isActive(tileKeyAt(x, y));
@@ -2009,11 +2061,15 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   scene.setActiveTiles(activeAt, []);
   // The simulation's worker holds the active region's records only: the ring's traffic is the meso's, from the store's tables.
   sim.setActive((key) => streamer.isActive(key));
+  // A tile whose store is behind the page: its buildings sent from the page, not read from the store (`SimClient.loaded`).
+  sim.storeBehind = (key) => streamer.storeBehind(key);
   // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`); on the desktop through a port of its own to the shell's saves.
   if (!desktopStores) sim.tiles(mapName, MESO_REACH);
   else desktopStores.connect().then((port) => sim.tiles(mapName, MESO_REACH, port), (error: unknown) => console.error('[world] the simulation got no port to the saves', error));
-  streamed = { store, generator, streamer };
-  if (fresh) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
+  streamed = { store, generator, streamer, release: release ?? (() => {}), written };
+  // Another tab holds this world: read here, written there only.
+  if (!release) { streamer.readOnly = true; flashHint('hint.worldReadOnly'); }
+  if (fresh && release) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
   // THE WHOLE MAP MADE BEFORE THE TOWN IS SHOWN (the city-game's opening): every tile generated and stored (`streamer.mapMade`), so every far level is drawn from a tile, never from a stand-in; the region's own detail lands behind the curtain's fall (`renderer.ts` reveal, the opening in two steps).
   streamer.rush = true;
@@ -2055,15 +2111,46 @@ function growthAnswered(answer: GrowAnswer): boolean {
   return true;
 }
 
+/** DO NOT replace the map under a streamed world: closed first (its changed tiles written or failed), the region's tiles left, then `replace`; with no streamed world, `replace` at once. */
+function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
+  const open = streamed;
+  if (!open) return replace();
+  // Posted now, from the records the page holds; nothing streams in or out after.
+  const written = open.streamer.flush();
+  streamed = null;
+  void written.finally(() => open.release());
+  open.generator.dispose();
+  scene.farBuildings.setSource(null, () => false);
+  scene.farRoads.setSource(null, () => false);
+  scene.setActiveTiles(null, []);
+  sim.setActive(null);
+  sim.storeBehind = () => false;
+  scene.holdOpening(null);
+  try { window.localStorage.removeItem(STREAMED_MARK); } catch { /* storage blocked */ }
+  // Every write settles, written or failed (`WorldStreamer.flush`): DO NOT race it with a timer.
+  return written.then((ok) => {
+    if (!ok) console.error('[world] some changed tiles were not confirmed written before the map was replaced');
+    doc.leaveTiles();
+    const out = replace();
+    // The region's records are no map of their own: no undo back into them; the next map is saved as a map.
+    history.clear();
+    persistence.paused = false;
+    updateHistoryButtons();
+    return out;
+  });
+}
+
 function newMap(): void {
   if (!window.confirm(t('confirm.newMap'))) return;
-  // Discarding the whole map is the largest edit the editor can make, so it is the one that most needs to be undoable.
-  history.begin(doc);
-  // A new map is empty, painted to the Brazilian standard.
-  applySnapshot({ ...new RoadDoc().toJSON(), relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
-  roadTool.reset();
-  fitView();
-  flashHint('hint.newMap');
+  void afterStreamedWorld(() => {
+    // Discarding the whole map is the largest edit the editor can make, so it is the one that most needs to be undoable.
+    history.begin(doc);
+    // A new map is empty, painted to the Brazilian standard.
+    applySnapshot({ ...new RoadDoc().toJSON(), relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
+    roadTool.reset();
+    fitView();
+    flashHint('hint.newMap');
+  });
 }
 /** A NEW CITY OVER THE WHOLE MAP (10 km x 10 km, `wholeMap.ts` MAP_TILES) from the menu: a fresh seed, the streamed world opened round the camera (`openStreamedWorld`, as `generateCity({ size: 'whole' })`). */
 function newWorld(): void {
@@ -2088,21 +2175,51 @@ scene.setSkyMode(game.sky);
 
 /** DO NOT say "saved" without asking `exportToFile` */
 function saveMap(): void {
+  if (streamed) { void saveWorld(streamed); return; }
   const offered = exportToFile(doc, sessionSettings(), undefined, () => flashHint('hint.exportFailed'));
   if (offered) flashHint('hint.saved');
 }
+
+/** DO NOT save only the region of a streamed world: its changed tiles written, then the world's values and every stored tile of the map in one file (`worldExport.ts`), each tile read in the save worker and put in as it is stored. */
+async function saveWorld(open: NonNullable<typeof streamed>): Promise<void> {
+  try {
+    await open.streamer.flush();
+    const meta = await open.store.meta();
+    if (!meta) throw new Error('the world has no values stored');
+    const pieces = await worldFilePieces(meta, mapTilesFrom(0, 0), (key) => open.store.readText(key));
+    if (!offerFile(new Blob(pieces, { type: 'application/json' }), 'roadcraft-city.json')) throw new Error('the file was not offered');
+    flashHint('hint.saved');
+  } catch (error) {
+    console.error('[world] the city could not be saved to a file', error);
+    flashHint('hint.exportFailed');
+  }
+}
 /** Loads a picked map. */
-function openImported(result: ImportResult): boolean {
+function openImported(result: ImportResult): boolean | Promise<boolean> {
   if (result.status === 'cancelled') return false;
   if (result.status === 'invalid') {
     flashHint('hint.openFailed');
     return false;
   }
+  // A city saved by tiles: opened as the streamed world it is (the store takes its tiles).
+  if (result.status === 'world') {
+    const { world } = result;
+    return openStreamedWorld(world.meta.generator!, false, world).then(() => { flashHint('hint.opened'); return true; }, (error: unknown) => {
+      console.error('[world] the city file could not be opened', error);
+      flashHint('hint.openFailed');
+      return false;
+    });
+  }
+  const { session } = result;
+  return afterStreamedWorld(() => openSession(session));
+}
+/** A picked map's session put in place of the map. */
+function openSession(session: Extract<ImportResult, { status: 'ok' }>['session']): boolean {
   const before = doc.toJSON();
   // Opening a map is an edit like any other: undo gives the map before it back.
   history.begin(doc);
   try {
-    applySnapshot(result.session.document, 'import');
+    applySnapshot(session.document, 'import');
   } catch (error) {
     console.error('The map could not be loaded.', error);
     applySnapshot(before);
@@ -2112,12 +2229,12 @@ function openImported(result: ImportResult): boolean {
   }
   history.end(doc);
   updateHistoryButtons();
-  restoreSettings(result.session.settings);
+  restoreSettings(session.settings);
   flashHint('hint.opened');
   return true;
 }
 async function openMap(): Promise<void> {
-  openImported(await importFromFile());
+  await openImported(await importFromFile());
 }
 
 // Perspective or the isometric (orthographic) view, the player's choice, kept.
@@ -3702,10 +3819,12 @@ function saveOnClose(): (event: BeforeUnloadEvent) => void {
   return (event) => {
     if (saved) return;
     persistence.saveSession(doc, sessionSettings());
+    // The streamed world's changed tiles posted now, before the close is decided (`pagehide` comes after it).
+    const tiles = streamed?.streamer.flush() ?? Promise.resolve(true);
     if (location.protocol !== 'app:') return;
     event.preventDefault();
     event.returnValue = '';
-    void Promise.race([persistence.written(), new Promise((done) => setTimeout(done, CLOSE_WAIT_MS))]).then(() => {
+    void Promise.race([Promise.all([persistence.written(), tiles]), new Promise((done) => setTimeout(done, CLOSE_WAIT_MS))]).then(() => {
       saved = true;
       window.close();
     });
@@ -3875,31 +3994,19 @@ const healthPanel = mountHealthPanel({
       void openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked }, true);
       return { tiles: 0 };
     }
-    // A round city: the streamed world closed, the document the whole map again.
-    if (streamed) {
-      void streamed.streamer.flush();
-      streamed.generator.dispose();
-      scene.farBuildings.setSource(null, () => false);
-      scene.farRoads.setSource(null, () => false);
-      scene.setActiveTiles(null, []);
-      sim.setActive(null);
-      streamed = null;
-      persistence.paused = false;
-      scene.holdOpening(null);
-      try { window.localStorage.removeItem(STREAMED_MARK); } catch { /* storage blocked */ }
-    }
+    // A round city: the streamed world closed first, the document the whole map again.
     const chosen = { ...DEFAULT_CITY, ...asked, size };
-    return generateCity(chosen, planCity(chosen));
+    return afterStreamedWorld(() => generateCity(chosen, planCity(chosen)));
   },
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   growTimed: () => { const t = performance.now(); const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed); return { id, ms: performance.now() - t }; },
   cityGrowth: () => (cityGrowth || cityProgress.style.display === 'block' ? { pending: true } : null),
   cityBuiltIn: () => cityBuiltIn,
   /** Replaces the map as loading a file does: document, network and simulation topology. */
-  loadDoc: (data: ReturnType<RoadDoc['toJSON']>) => {
+  loadDoc: (data: ReturnType<RoadDoc['toJSON']>) => afterStreamedWorld(() => {
     history.begin(doc);
     applySnapshot(data, 'import');
-  },
+  }),
   /** Centres the play camera on a world point, so the next frame builds what is there */
   /** The transport tool, for the browser checks. */
   transitTool: () => transitEditor,

@@ -57,4 +57,18 @@ function run(ops: readonly Parameters<typeof applyOp>[1][], name: string): void 
 describe('the road ends each lane reaches, kept by the topology log', () => {
   for (let seed = 1; seed <= 8; seed++) it(`equal a search from each lane after every op of fuzz sequence ${seed}`, () => run(generate(seed, 24), `seed ${seed}`));
   for (const fixture of loadFixtures()) it(`equal a search from each lane over the fuzz fixture ${fixture.name}`, () => run(fixture.ops, fixture.name));
+
+  it('are brought up to the graph where the topology is built, not by the next vehicle made', () => {
+    const state = freshState();
+    const w = new SimWorld(state.doc, state.net, 1);
+    w.rebuildTopology();
+    const link = [...w.graph.lanelets.values()].find((lane) => lane.kind === 'link');
+    if (link) w.laneReaches.exitsFrom(w, link.id, 1 as never);
+    const seen = (): unknown => (w.laneReaches as unknown as { seen: unknown }).seen;
+    for (const op of generate(3, 12)) {
+      try { if (!applyOp(state, op)) continue; } catch (error) { recordRejected(error); continue; }
+      w.rebuildTopology();
+      expect(seen()).toBe(w.topologyLog.state);
+    }
+  });
 });

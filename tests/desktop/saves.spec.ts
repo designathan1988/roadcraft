@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
 /** THE DESKTOP'S SAVES FOLDER: keys as file names, batches as transactions, a crash finished or dropped (`desktop/saves.cjs`). */
-interface Saves { run(request: object): Promise<unknown> }
+interface Saves { run(request: object): Promise<unknown>; drained(): Promise<boolean> }
 const { createSaves, fileOf, keyOf } = createRequire(import.meta.url)('../../desktop/saves.cjs') as {
   createSaves(dir: string): Saves;
   fileOf(key: string): string;
@@ -64,6 +64,17 @@ describe('the desktop saves folder', () => {
     writeFileSync(join(`${dir}.staging`, '0'), 'half');
     expect(await get(createSaves(dir), ['k'])).toEqual(['new']);
     expect(readdirSync(join(dir, '..'))).toEqual(['saves']);
+  });
+
+  it('says it is drained only once every write asked before is on the disk (the exit waits for it)', async () => {
+    const dir = folder();
+    const saves = createSaves(dir);
+    const writes = Array.from({ length: 5 }, (_, k) => saves.run({ op: 'write', put: [[`w:${k}`, bytes(String(k))]], remove: [] }));
+    let settled = 0;
+    for (const w of writes) void w.then(() => { settled++; });
+    expect(await saves.drained()).toBe(true);
+    expect(settled).toBe(5);
+    expect(await get(saves, ['w:0', 'w:4'])).toEqual(['0', '4']);
   });
 
   it('answers an unknown request with a refusal, and keeps answering', async () => {

@@ -44,7 +44,8 @@ import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from '
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, rectAround, type ChangeRect, type DocChangeKind } from './changes';
 import { OWNER, TILE_COUNTED, tileIdBase, tileOfKey, tileRect } from './tiles';
-import type { GrownRows } from './growth/rows';
+import { type GrownRows, selectRows } from './growth/rows';
+import { gatesOf } from './parkingLayout';
 import { PoleIndex } from './poleIndex';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
@@ -677,6 +678,18 @@ export class RoadDoc {
     return this.nodes.get(id)?.incident.length ?? 0;
   }
 
+  /** A node an edit may change, or undefined: DO NOT edit a copy of a node whose own tile is not loaded (a tile's edge node borrowed by a neighbour): the owner's record takes its place when that tile comes (`loadTile`), and the edit would be lost. */
+  private editableNode(id: NodeId): RoadNode | undefined {
+    const node = this.nodes.get(id);
+    if (!node || this.tileContents.size === 0) return node;
+    return this.tileContents.has(OWNER.node(node)) ? node : undefined;
+  }
+
+  /** Whether an edit may change the node (`editableNode`): the tools leave alone a node whose own tile is not loaded. */
+  canEditNode(id: NodeId): boolean {
+    return this.editableNode(id) !== undefined;
+  }
+
   /** Whether a node is the map's edge: the end of one road, where traffic and people come in from outside and leave */
   mapEdge(id: NodeId): boolean {
     const node = this.nodes.get(id);
@@ -838,7 +851,7 @@ export class RoadDoc {
 
   /** Moves a node freely; junction geometry adapts to the resulting angle. */
   moveNode(id: NodeId, to: Vec2): boolean {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was) return false;
     // Dragging a node off the plate is the same offence as building one there, and is caught in the same place.
     const p = onWorld(to);
@@ -963,7 +976,7 @@ export class RoadDoc {
 
   /** The player's lane connections at a node; undefined or empty: all derived (`RoadNode.laneLinks`). */
   setNodeLaneLinks(id: NodeId, links: readonly LaneLink[] | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was) return;
     const next = normalizeLaneLinks(links);
     if (linksDigest(was.laneLinks) === linksDigest(next)) return;
@@ -983,7 +996,7 @@ export class RoadDoc {
 
   /** A U-turn through the median for the traffic arriving from `from` (`RoadNode.uturn`), or none. */
   setNodeUturn(id: NodeId, from: SegmentId | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || was.uturn === from) return;
     const node = this.nodeToWrite(id)!;
     if (from !== undefined) node.uturn = from;
@@ -993,7 +1006,7 @@ export class RoadDoc {
 
   /** What a road's end is (`RoadNode.end`): a turning circle, or (undefined) the map's edge. */
   setNodeEnd(id: NodeId, end: RoadEnd | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || was.end === end) return;
     const node = this.nodeToWrite(id)!;
     if (end) node.end = end;
@@ -1003,7 +1016,7 @@ export class RoadDoc {
 
   /** Each leg's rule at a junction (`RoadNode.approachRules`); undefined: all derived. */
   setNodeApproachRules(id: NodeId, rules: readonly ApproachRuleEntry[] | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was) return;
     const next = normalizeApproachRules(rules);
     if (rulesDigest(was.approachRules) === rulesDigest(next)) return;
@@ -1015,7 +1028,7 @@ export class RoadDoc {
 
   /** A signal's settings (`RoadNode.signal`); undefined: adaptive with the game's timings. */
   setNodeSignal(id: NodeId, signal: SignalSettings | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was) return;
     const next = normalizeSignalSettings(signal);
     if (signalDigest(was.signal) === signalDigest(next)) return;
@@ -1033,7 +1046,7 @@ export class RoadDoc {
   }
 
   setNodeHeightOffset(id: NodeId, heightOffset: number): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || !Number.isFinite(heightOffset) || was.heightOffset === heightOffset) return;
     const junctionModeChanged = (was.heightOffset < -TUNNEL_HEADROOM) !==
       (heightOffset < -TUNNEL_HEADROOM);
@@ -1272,7 +1285,7 @@ export class RoadDoc {
   }
 
   setNodeControl(id: NodeId, control: JunctionControl): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || was.control === control) return;
     this.nodeToWrite(id)!.control = control;
     this.markNode(id);
@@ -1280,7 +1293,7 @@ export class RoadDoc {
 
   /** Puts a mid-block pedestrian crossing on a two-road node, painted on `segment`. */
   setNodeCrossing(id: NodeId, kind: NodeCrossingKind, segment: SegmentId): boolean {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || was.incident.length !== 2 || !was.incident.includes(segment)) return false;
     const n = this.nodeToWrite(id)!;
     n.crossing = { kind, segment };
@@ -1291,7 +1304,7 @@ export class RoadDoc {
 
   /** Removes a node's mid-block crossing; the node goes back to `auto`. */
   clearNodeCrossing(id: NodeId): void {
-    if (!this.nodes.get(id)?.crossing) return;
+    if (!this.editableNode(id)?.crossing) return;
     const n = this.nodeToWrite(id)!;
     delete n.crossing;
     n.control = 'auto';
@@ -1299,7 +1312,7 @@ export class RoadDoc {
   }
 
   setMovementBlocked(id: NodeId, from: SegmentId, to: SegmentId, blocked: boolean): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || from === to) return;
     const key = movementKey(from, to);
     const index = was.blockedMovements.indexOf(key);
@@ -1367,6 +1380,8 @@ export class RoadDoc {
   private tileContents = new Set<number>();
   /** Each loaded tile's next ids, by kind (`TileRecords.next`): a record made in a tile takes its id from the tile's range. */
   private tileNext = new Map<number, TileNext>();
+  /** Each loaded tile's grown rows (`TileRecords.grown`, kept by `preparedGrown`): the buildings still exactly their row's are written back as it (`tileRecords`). */
+  private tileGrown = new Map<number, PreparedGrown>();
 
   /** Whether an edit is open (`beginEdit`..`endEdit`): no tile comes in or goes out then. */
   get editing(): boolean {
@@ -1488,7 +1503,18 @@ export class RoadDoc {
     }
     this.tileContents.add(records.key);
     this.tileNext.set(records.key, tileNextOf(records));
+    const grown = preparedTiles.get(records);
+    if (grown) this.tileGrown.set(records.key, grown);
+    else this.tileGrown.delete(records.key);
     this.changes.causeNext(cause);
+  }
+
+  /** The streamed world closed (`main.ts` afterStreamedWorld): no tile is held any more, and no id is taken from a tile's range; the records stay until the document is replaced. */
+  leaveTiles(): void {
+    if (this.recorder) throw new Error('the tiles cannot be left during an edit');
+    this.tileContents.clear();
+    this.tileNext.clear();
+    this.tileGrown.clear();
   }
 
   /** What a tile holds now, by `OWNER` (what the player added or moved there included): read off the page's document, which holds the active region only, so bounded by it, never by the world */
@@ -1545,12 +1571,19 @@ export class RoadDoc {
   tileRecords(key: number, version: number): TileRecords {
     const t = this.tileMembers(key);
     const next = this.tileNext.get(key) ?? freshTileNext(key);
+    // DO NOT write a grown building no edit touched as a whole record: it is written back as its row (the generator's few numbers), made again where it is read.
+    const made = this.tileGrown.get(key);
+    const asRows = new Set<number>();
+    if (made) for (const b of t.buildings) if (made.made.has(b)) asRows.add(b.id);
+    const grown = made && asRows.size ? selectRows(made.rows, asRows) : null;
     return {
       key, version,
       nodes: t.nodes.map(savedNode), borrowedNodes: t.borrowedNodes.map(savedNode), segments: t.segments.map(savedSegment),
       poles: t.poles.map(savedPole), borrowedPoles: t.borrowedPoles.map(savedPole), poleSpans: t.spans.map(savedSpan),
       // DO NOT copy a building (a record is replaced, never edited, `BuildingStore`): the write posts each as its table's row (`tileStore.ts` tileWrite).
-      buildings: t.buildings,
+      buildings: asRows.size ? t.buildings.filter((b) => !asRows.has(b.id)) : t.buildings,
+      // Every building's gates, the rows' too (a write with rows does not make them again, `tileWrite`).
+      ...(grown ? { grown, gates: gatesOf(t.buildings) } : {}),
       lots: t.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) })),
       lotKeys: [...t.lotKeys],
       landscape: t.landscape.map(savedLandscape), barriers: t.barriers.map(savedBarrier),
@@ -1560,12 +1593,20 @@ export class RoadDoc {
   }
 
   /** A tile taken out of the page's document (cause `TILE_UNLOADED`): what it holds now (`tileMembers`); a node at its edge stays while a road of a tile still here ends on it */
-  unloadTile(key: number): ReadonlyMap<ListPart, readonly number[]> {
+  unloadTile(key: number, gone?: Map<RecordPart, Set<number>>): ReadonlyMap<ListPart, readonly number[]> {
     const removedAt = new Map<ListPart, number[]>();
     if (!this.tileContents.has(key)) return removedAt;
     if (this.recorder) throw new Error('a tile cannot go out during an edit');
     const t = this.tileMembers(key);
+    // The records that go with it, by id (`gone`): an undo step naming one cannot be taken any more, whatever range its id came from (`History.letGoTile`).
+    if (gone) {
+      const put = (part: RecordPart, ids: Iterable<number>): void => { const set = gone.get(part) ?? new Set<number>(); for (const id of ids) set.add(id); gone.set(part, set); };
+      put('segments', t.segments.map((s) => s.id)); put('nodes', t.nodes.map((n) => n.id)); put('poles', t.poles.map((p) => p.id));
+      put('poleSpans', t.spans.map((s) => s.id)); put('landscape', t.landscape.map((x) => x.id)); put('barriers', t.barriers.map((x) => x.id));
+      put('buildings', t.buildings.map((b) => b.id)); put('lots', t.lots.map((l) => l.id));
+    }
     this.tileContents.delete(key);
+    this.tileGrown.delete(key);
     const cause = this.changes.cause;
     this.changes.causeNext(TILE_UNLOADED);
     const roadIds: number[] = [];
@@ -1634,10 +1675,20 @@ export class RoadDoc {
   fork(): RoadDoc {
     const copy = new RoadDoc();
     this.layOver(copy);
-    // The same tiles, and the same counters: an id a draft took is never handed out again, kept or not.
-    copy.tileContents = this.tileContents;
-    copy.tileNext = this.tileNext;
     return copy;
+  }
+
+  /** The segments this copy of `before` added that `before` does not hold: an edit's own, whichever range their ids came from (a loaded tile's or the map's allocator). */
+  addedSegments(before: RoadDoc): RoadSegment[] {
+    const map = this.segments;
+    const out: RoadSegment[] = [];
+    if (map instanceof ForkMap && this.below === before) {
+      for (const [id, seg] of (map as ForkMap<SegmentId, RoadSegment>).changes().added) if (!before.segments.has(id)) out.push(seg);
+      return out;
+    }
+    // @rebuild An independent copy (`clone`) cannot say what it wrote: every segment compared.
+    for (const [id, seg] of map) if (!before.segments.has(id)) out.push(seg);
+    return out;
   }
 
   /** Takes back an edit made on a working copy of this document (`fork`): what it wrote and its diary entries (`takeFork`). */
@@ -1683,6 +1734,10 @@ export class RoadDoc {
     copy.barrierIds = new IdAllocator(this.barrierIds.peek);
     copy.landscapeIds = new IdAllocator(this.landscapeIds.peek);
     copy.nextTerrainId = this.nextTerrainId;
+    // The same tiles, their counters copied: a dry run that is let go takes no id of a tile for good (`takeFork` carries them on).
+    copy.tileContents = this.tileContents;
+    copy.tileGrown = this.tileGrown;
+    copy.tileNext = new Map([...this.tileNext].map(([key, next]) => [key, { ...next }]));
     copy.buildings.forkFrom(this.buildings);
     copy.lotStore.forkFrom(this.lotStore);
     copy.openLotsIndex = null;
@@ -1736,6 +1791,8 @@ export class RoadDoc {
     this.barrierIds = new IdAllocator(copy.barrierIds.peek);
     this.landscapeIds = new IdAllocator(copy.landscapeIds.peek);
     this.nextTerrainId = copy.nextTerrainId;
+    // The counters the copy moved carried on, tile by tile (a tile loaded meanwhile keeps its own).
+    for (const [key, next] of copy.tileNext) this.tileNext.set(key, next);
     this.changes.take(copy.changes);
     this.layOver(copy);
   }
@@ -2352,7 +2409,18 @@ export class RoadDoc {
   /** The map's parts no tile holds (CLAUDE.md, "Streaming world"): its terrain stamps, fog, gullies, clouds, clearings, zones, people, transit, economy, weather and the like, as `toJSON` writes them - the streamed world's values (`editor/tileStore.ts` WorldMeta). */
   worldValues(): Omit<SerializedDoc, 'version' | 'nodes' | 'segments' | 'poles' | 'poleSpans' | 'landscape' | 'barriers' | 'buildings' | 'lots' | 'lotKeys' | 'paint' | 'trees' | 'elements'> {
     const { version: _v, nodes: _n, segments: _s, poles: _p, poleSpans: _ps, landscape: _l, barriers: _b, buildings: _bu, lots: _lo, lotKeys: _k, paint: _pa, trees: _t, elements: _e, ...rest } = this.serialized(false, false);
-    return rest;
+    // DO NOT start the map's own allocators at 1 again each session: a record made where no tile is loaded takes from them (`takeId`), and its id would meet an older one.
+    return { ...rest, allocators: this.allocatorMarks() };
+  }
+
+  /** The allocators' next ids as saved (`allocatorMarks`, the streamed world's values): each kept above them, never below what this document already holds. */
+  private reserveAllocators(marks: readonly number[]): void {
+    const [nodes, segs, poles, spans, barriers, landscape, terrain, buildings] = marks;
+    const above = (allocator: IdAllocator, next: number | undefined): void => { if (Number.isInteger(next) && next! > 0) allocator.reserve(next! - 1); };
+    above(this.nodeIds, nodes); above(this.segIds, segs); above(this.poleIds, poles); above(this.spanIds, spans);
+    above(this.barrierIds, barriers); above(this.landscapeIds, landscape);
+    if (Number.isInteger(terrain)) this.nextTerrainId = Math.max(this.nextTerrainId, terrain!);
+    if (Number.isInteger(buildings) && buildings! > this.buildings.nextId) this.buildings.restoreNextId(buildings!);
   }
 
   /** `toJSON`, the buildings left out when `withBuildings` is false (`clone` shares them). */
@@ -2362,21 +2430,18 @@ export class RoadDoc {
       unit: METERS_PER_UNIT,
       nodes: withRecords ? inIdOrder(this.nodes.values()).map(savedNode) : [],
       segments: withRecords ? inIdOrder(this.segments.values()).map(savedSegment) : [],
-      terrain: this.terrainStamps.map((stamp) => ({ ...stamp })),
-      // Only for the natural land: a legacy map serialises as before.
-      ...(this.terrainRelief !== RELIEF_LEGACY ? { relief: this.terrainRelief } : {}),
-      ...(this.markingStyle !== 'classic' ? { markingStyle: this.markingStyle } : {}),
-      ...(this.nature ? { nature: { ...this.nature } } : {}),
+      terrain: [],
+      ...this.worldPart('terrain'),
+      ...this.worldPart('markingStyle'),
+      ...this.worldPart('nature'),
       ...(withRecords && this.terrainPaint.length > 0 ? { paint: this.terrainPaint.map((dab) => ({ ...dab })) } : {}),
-      ...(this.fogDabs.length > 0 || JSON.stringify(this.fogSettings) !== JSON.stringify(DEFAULT_FOG)
-        ? { fog: { dabs: this.fogDabs.map((dab) => ({ ...dab })), settings: { ...this.fogSettings } } } : {}),
-      ...(this.gullyDabs.length > 0 || this.gullyAuto !== DEFAULT_GULLY_AUTO
-        ? { gullies: { dabs: this.gullyDabs.map((dab) => ({ ...dab })), auto: this.gullyAuto } } : {}),
-      ...(this.clouds.length > 0 ? { clouds: this.clouds.map((c) => ({ ...c })) } : {}),
+      ...this.worldPart('fog'),
+      ...this.worldPart('gullies'),
+      ...this.worldPart('clouds'),
       ...(withRecords && this.elements.length > 0 ? { elements: this.elements.map((e) => ({ ...e })) } : {}),
       ...(withRecords && this.trees.length > 0 ? { trees: this.trees.map((t) => ({ ...t })) } : {}),
-      ...(JSON.stringify(this.weather) !== JSON.stringify(DEFAULT_WEATHER) ? { weather: { ...this.weather } } : {}),
-      ...(this.treeClearings.length > 0 ? { treeClearings: this.treeClearings.map((c) => ({ ...c })) } : {}),
+      ...this.worldPart('weather'),
+      ...this.worldPart('clearings'),
       poles: withRecords ? inIdOrder(this.poles.values()).map(savedPole) : [],
       poleSpans: withRecords ? inIdOrder(this.poleSpans.values()).map(savedSpan) : [],
       ...(withRecords && this.landscape.size > 0 ? { landscape: inIdOrder(this.landscape.values()).map(savedLandscape) } : {}),
@@ -2384,19 +2449,43 @@ export class RoadDoc {
       ...(withRecords && this.barriers.size > 0 ? { barriers: inIdOrder(this.barriers.values()).map(savedBarrier) } : {}),
       // Only when there are any, so a map without buildings serialises exactly as it did before buildings existed.
       ...(withBuildings && this.buildings.size > 0 ? { buildings: this.buildings.toJSON() } : {}),
-      ...(this.zones.length > 0 ? { zones: this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })) } : {}),
-      ...(this.zoneMarks.length > 0 ? { zoneMarks: this.zoneMarks.map((mark) => ({ ...mark })) } : {}),
+      ...this.worldPart('zones'),
       ...(withRecords && (this.lotStore.size > 0 || this.lotStore.keys.length > 0) ? {
         lots: this.lotStore.toJSON(),
         lotKeys: [...this.lotStore.keys],
       } : {}),
-      // Likewise the people: only a city that has some carries the key.
-      ...(this.people.length > 0 ? { people: this.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec) } : {}),
-      // And the public transport.
-      ...(hasTransit(this.transit) ? { transit: JSON.parse(JSON.stringify(this.transit)) as TransitData } : {}),
-      // Only off the starting balance: a map that never paid for a road serialises as before.
-      ...(this.economy.balance !== DEFAULT_ECONOMY.balance ? { economy: { balance: this.economy.balance } } : {}),
+      ...this.worldPart('people'),
+      ...this.worldPart('transit'),
+      ...this.worldPart('economy'),
     };
+  }
+
+  /** One of the map's parts no tile holds, as `toJSON` writes it (`WorldPart`): the streamed world writes each apart, only when its kind changed (`worldStreamer.ts`). */
+  worldPart(part: WorldPart): Partial<SerializedDoc> {
+    switch (part) {
+      // Only for the natural land: a legacy map serialises as before.
+      case 'terrain': return { terrain: this.terrainStamps.map((stamp) => ({ ...stamp })), ...(this.terrainRelief !== RELIEF_LEGACY ? { relief: this.terrainRelief } : {}) };
+      case 'markingStyle': return this.markingStyle !== 'classic' ? { markingStyle: this.markingStyle } : {};
+      case 'nature': return this.nature ? { nature: { ...this.nature } } : {};
+      case 'fog': return this.fogDabs.length > 0 || JSON.stringify(this.fogSettings) !== JSON.stringify(DEFAULT_FOG)
+        ? { fog: { dabs: this.fogDabs.map((dab) => ({ ...dab })), settings: { ...this.fogSettings } } } : {};
+      case 'gullies': return this.gullyDabs.length > 0 || this.gullyAuto !== DEFAULT_GULLY_AUTO
+        ? { gullies: { dabs: this.gullyDabs.map((dab) => ({ ...dab })), auto: this.gullyAuto } } : {};
+      case 'clouds': return this.clouds.length > 0 ? { clouds: this.clouds.map((c) => ({ ...c })) } : {};
+      case 'weather': return JSON.stringify(this.weather) !== JSON.stringify(DEFAULT_WEATHER) ? { weather: { ...this.weather } } : {};
+      case 'clearings': return this.treeClearings.length > 0 ? { treeClearings: this.treeClearings.map((c) => ({ ...c })) } : {};
+      case 'zones': return {
+        ...(this.zones.length > 0 ? { zones: this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })) } : {}),
+        ...(this.zoneMarks.length > 0 ? { zoneMarks: this.zoneMarks.map((mark) => ({ ...mark })) } : {}),
+      };
+      // Likewise the people: only a city that has some carries the key.
+      case 'people': return this.people.length > 0 ? { people: this.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec) } : {};
+      // And the public transport.
+      case 'transit': return hasTransit(this.transit) ? { transit: JSON.parse(JSON.stringify(this.transit)) as TransitData } : {};
+      // Only off the starting balance: a map that never paid for a road serialises as before.
+      case 'economy': return this.economy.balance !== DEFAULT_ECONOMY.balance ? { economy: { balance: this.economy.balance } } : {};
+      case 'allocators': return { allocators: this.allocatorMarks() };
+    }
   }
 
   /** Builds a document from its serialized form. */
@@ -2626,6 +2715,7 @@ export class RoadDoc {
       seen.add(person.id);
       doc.people.push(person);
     }
+    if (Array.isArray(data.allocators)) doc.reserveAllocators(data.allocators);
     doc.roadsChanged(null, true, { detail: 'map loaded' });
     if (data.terrain?.length) doc.changes.record('terrain', null, { cause: 'map loaded' });
     return doc;
@@ -2760,7 +2850,13 @@ function lotKeyPlace(key: string): { x: number; y: number } | null {
 
 /** A tile as the store keeps it (`TileStore`): the records it owns, as a saved map holds them, and the ends of its roads and spans that are its neighbours' */
 /** The tiles whose buildings a worker prepared (`editor/tileStore.ts` `prepareTile`: migrated and interned there): `loadTile` files them as they are. A set beside the records, never a field of them: every list field of `TileRecords` is a list. */
-export const preparedTiles = new WeakSet<TileRecords>();
+export const preparedTiles = new WeakMap<TileRecords, PreparedGrown | null>();
+
+/** A prepared tile's grown rows and the buildings made from them (`editor/tileStore.ts` preparedRecords), each the very record so made: a record is replaced, never edited (`BuildingStore`), so one still in `made` is exactly its row's, written back as the row (`tileRecords`). */
+export interface PreparedGrown {
+  readonly rows: GrownRows;
+  readonly made: WeakSet<object>;
+}
 
 export interface TileRecords {
   readonly key: number;
@@ -2818,6 +2914,10 @@ export interface Restoration {
   readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly remove: number; readonly items: readonly unknown[] }[];
   readonly values: readonly { readonly part: ValuePart; readonly value: unknown }[];
 }
+
+/** The map's parts no tile holds (`RoadDoc.worldPart`), each named as the diary's kind that changes it (`allocators`: the map's own id allocators). */
+export type WorldPart = 'terrain' | 'markingStyle' | 'nature' | 'fog' | 'gullies' | 'clouds' | 'weather' | 'clearings' | 'zones' | 'people' | 'transit' | 'economy' | 'allocators';
+export const WORLD_PARTS: readonly WorldPart[] = ['terrain', 'markingStyle', 'nature', 'fog', 'gullies', 'clouds', 'weather', 'clearings', 'zones', 'people', 'transit', 'economy', 'allocators'];
 
 export interface SerializedDoc {
   readonly version: 1;
@@ -2891,6 +2991,8 @@ export interface SerializedDoc {
   readonly people?: readonly unknown[];
   /** The balance (`economy.ts`); absent at the starting balance. */
   readonly economy?: { readonly balance: number };
+  /** The map's own allocators' next ids (`allocatorMarks`): written with the streamed world's values only (`worldValues`). */
+  readonly allocators?: readonly number[];
 }
 
 function detach(n: RoadNode | undefined, id: SegmentId): void {

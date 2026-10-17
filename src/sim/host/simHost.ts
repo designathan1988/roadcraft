@@ -2,7 +2,7 @@ import { readDerivedSome } from '@core/derivedCache';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import type { NodeId } from '@world/ids';
-import { SimWorld } from '../world';
+import { SimWorld, issuesSince } from '../world';
 import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
 import { Meso, type TileEvent } from '../meso/meso';
@@ -10,7 +10,7 @@ import { MesoMemory } from '../meso/memory';
 import { type TileReader, TileLinkFeed } from '../meso/tileFeed';
 import { storeTileReader } from '../../tileReader';
 import { laneGrid } from '../agents/laneGrid';
-import { tileBaysGone, tileBaysRead, tileBaysWanted, useBayWorkers } from '../agents/parking';
+import { tileBaysGone, tileBaysRead, tileBaysReset, tileBaysWanted, useBayWorkers } from '../agents/parking';
 import { BayPool } from '../../bayPool';
 import { ConflictPool } from '../../conflictPool';
 import { TopologyCatchUp } from '../topologyCatchUp';
@@ -95,7 +95,7 @@ export class SimHost {
       }
       case 'tile':
         this.meso.tileEvent(message.event, message.key, message.version);
-        this.tileBuildings(message.event, message.key);
+        this.tileBuildings(message.event, message.key, message.fromPage === true);
         return;
       case 'delta':
         this.doc.restore(message.delta);
@@ -145,9 +145,10 @@ export class SimHost {
 
   /** A tile put in the page's document: its buildings as the traffic reads them read here from the store (`trafficBuilding`, baked with the tile), never on the page (`SimClient.sendChanges`)
    *  - one let go before its read lands is not placed; a building the page already told (an edit since) keeps the page's. */
-  private tileBuildings(event: TileEvent, key: number): void {
+  private tileBuildings(event: TileEvent, key: number, fromPage = false): void {
     const sim = this.sim;
-    if (event === 'letGo') {
+    if (event === 'letGo' || (event === 'loaded' && fromPage)) {
+      // Let go, or loaded with the store behind the page (its buildings sent from the page): no read of the store stands for it, its bays worked out here.
       this.tileReads.delete(key);
       if (sim) tileBaysGone(sim, key);
       return;
@@ -179,6 +180,9 @@ export class SimHost {
 
   /** Another map: the replica made whole again, and nothing of the old simulation carried over. */
   private load(map: TrafficMap): void {
+    // DO NOT let a tile's read of the old map land in the new one: its buildings and bays would be put in this map (`tileBuildings`).
+    this.tileReads.clear();
+    if (this.sim) tileBaysReset(this.sim);
     takeTrafficMap(this.doc, this.buildings, map);
     this.net.rebuild({ full: true });
     this.sim?.reset();
@@ -254,7 +258,8 @@ export class SimHost {
         was.seen = frame;
         return;
       }
-      const rich: VehicleRich = { color: v.color, archetype: v.archetype.id, doors: v.doors.slice(), kerbStop: v.kerbStop ? structuredClone(v.kerbStop) : null,
+      // The kerb stop as it is: posted below in this same call, the message copies it (DO NOT copy it a second time, a vehicle a frame).
+      const rich: VehicleRich = { color: v.color, archetype: v.archetype.id, doors: v.doors.slice(), kerbStop: v.kerbStop,
         people: v.people.slice(), peopleAge: v.peopleAge.slice(), freeLot: v.free?.lot ?? null };
       this.vehicleSent.set(v.id, { color: rich.color, archetype: rich.archetype, busy, people: rich.people, peopleAge: rich.peopleAge, seen: frame });
       vehicles.push([v.id, rich]);
@@ -359,8 +364,9 @@ export class SimHost {
 
   private stats(): SimStats {
     const sim = this.sim!;
-    const issues = sim.issues.slice(this.issuesSent).map((i) => ({ code: i.code, subject: String(i.subject), detail: String(i.detail), tick: i.tick }));
-    this.issuesSent = sim.issues.length;
+    // The issues reported since the last frame, the last of them still kept (the list keeps 512).
+    const issues = issuesSince(sim, this.issuesSent).map((i) => ({ code: i.code, subject: String(i.subject), detail: String(i.detail), tick: i.tick }));
+    this.issuesSent = sim.issuesReported;
     const measured = ++this.measuredDue % 300 === 0 ? [...sim.conflicts.takeMeasured()] : [];
     return {
       vehicles: sim.vehicles.size, people: sim.pedViews.length, completedTrips: sim.completedTrips, entryDemandLost: sim.entryDemandLost,

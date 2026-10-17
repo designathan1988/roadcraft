@@ -327,7 +327,7 @@ export class TransitSim {
     for (let k = 0; k < 2 * line.stops.length; k++) {
       const lane = this.stopLanes.get(line.stops[bus.next]!);
       // A stop the bus can get to from where it is (a stop on a road out of the map, on the lane leaving it, cannot be reached)
-      if (lane && (lane.lanelet === v.lanelet || planTrip(w, v.lanelet, v.s, lane.lanelet, bodyClassOfArchetype(v.archetype), true, v.archetype.shape))) {
+      if (lane && (lane.lanelet === v.lanelet || planTrip(w, v.lanelet, v.s, lane.lanelet, bodyClassOfArchetype(v.archetype), true, v.archetype.shape, false))) {
         v.commute = { trip: -1, lanelet: lane.lanelet, at: lane.at + v.archetype.length / 2 };
         v.destination = lane.lanelet;
         planFrom(w, v);
@@ -445,12 +445,19 @@ export class TransitSim {
   }
 
   /** Every car of the trains at grade, and the track just ahead of each moving one, as discs a walker keeps clear of */
-  trainZones(ahead = true): { x: number; y: number; r: number }[][] {
+  trainZones(ahead = true, near?: readonly [number, number, number, number]): { x: number; y: number; r: number }[][] {
     const zones = new Map<string, { x: number; y: number; r: number }[]>();
     const zone = (key: string): { x: number; y: number; r: number }[] => { let z = zones.get(key); if (!z) { z = []; zones.set(key, z); } return z; };
+    // DO NOT make the discs of every train of the map for the walkers of a corner of it: a train whose cars and track ahead cannot reach `near` (the walkers' box) is left out.
+    const far = (rail: RailLine, train: Train): boolean => {
+      if (!near) return false;
+      const head = this.pointAt(rail, train.s), reach = TRAIN_CARS * CAR_LENGTH + Math.max(TRAIN_AHEAD, train.v * AHEAD_TIME) + m(4);
+      return head.x + reach < near[0] || head.x - reach > near[2] || head.y + reach < near[1] || head.y - reach > near[3];
+    };
     for (const rail of ahead ? this.rails : []) {
       if (rail.line.mode === 'metro') continue;
       for (const train of rail.trains) {
+        if (far(rail, train)) continue;
         // Standing at a station, it is ground to keep off only once it is about to leave.
         if (train.v < m(1) && train.dwell > AHEAD_TIME) continue;
         // Ahead by time, not distance: as long as it takes to walk across the track.
@@ -465,6 +472,7 @@ export class TransitSim {
     for (const rail of this.rails) {
       if (rail.line.mode === 'metro') continue;
       for (const train of rail.trains) {
+        if (far(rail, train)) continue;
         // Discs close enough to overlap: no gap a person could slip through.
         for (let k = 0; k < TRAIN_CARS; k++) {
           const car = this.pointAt(rail, train.s - CAR_LENGTH * (k + 0.5));

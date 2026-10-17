@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { setTimeout, clearTimeout } = require('node:timers');
 const ISOLATED = require('./isolation.cjs');
 
 // The player's folder named here, not by the package's name: the saves' place is what Steam Auto-Cloud is told (`scripts/package-desktop.mjs`).
@@ -215,3 +216,26 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => app.quit());
+/** How long the exit waits for the saves' writer to finish what it was asked (the page waits as long for its own writes, `main.ts` saveOnClose). */
+const QUIT_WAIT_MS = 8000;
+let savesDrained = false;
+// DO NOT exit with writes still queued in the saves' writer: asked to finish them once every window is closed (Electron `will-quit`, after the pages' own last writes; `before-quit` comes before a page's `beforeunload` and its writes), then the exit goes on.
+app.on('will-quit', (event) => {
+  if (savesDrained || !saves) return;
+  event.preventDefault();
+  const child = saves;
+  let timer = null;
+  const onMessage = (message) => { if (message?.drained) done(); };
+  const done = () => {
+    if (savesDrained) return;
+    savesDrained = true;
+    child.off('message', onMessage);
+    child.off('exit', done);
+    clearTimeout(timer);
+    app.quit();
+  };
+  child.on('message', onMessage);
+  child.once('exit', done);
+  timer = setTimeout(done, QUIT_WAIT_MS);
+  child.postMessage({ op: 'drain' });
+});

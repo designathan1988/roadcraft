@@ -121,8 +121,8 @@ export class Bulldozer {
     // DO NOT walk `doc.segments`, `doc.buildings.all()`, `doc.landscape` or `doc.barriers` here
     const segments = ribbonsNear(net, box).filter((ribbon) => inside(ribbon.full.sampleAt(ribbon.full.length / 2).p)).map((ribbon) => ribbon.id);
     const builtIds = doc.buildings.near(x0, y0, x1, y1).filter((bd) => inside({ x: bd.x, y: bd.y })).map((bd) => bd.id);
-    // The lots have no index of their own yet (`world/lots.ts`, their diary entries carry no ids)
-    const lots = doc.lots.filter((l) => inside(lotCentre(l))).map((l) => l.id);
+    // By the lots' index (`LotStore.in`): a centre inside the box is a lot whose box meets it.
+    const lots = doc.lotsIn(box).filter((l) => inside(lotCentre(l))).map((l) => l.id);
     const poles = doc.polesIn([x0, y0, x1, y1]).filter((p) => inside(p)).sort((p, q) => p.id - q.id).map((p) => p.id);
     const items = doc.landscapeIn(box).filter((it) => inside(it)).map((it) => it.id);
     const walls = doc.barriersIn(box).filter((bar) => bar.points.some(inside)).map((bar) => bar.id);

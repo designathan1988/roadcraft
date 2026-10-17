@@ -122,7 +122,9 @@ export function buildRouteGraph(net: Network, lines: PoleLines, region: ChangeRe
 }
 
 /** The route of a run, as a list of points */
-export function route(g: RouteGraph, a: OnContour, b: OnContour, head: Vec2 | null, tail: Vec2 | null): { readonly path: Vec2[]; readonly cost: number } | null {
+export function route(g: RouteGraph, a: OnContour, b: OnContour, head: Vec2 | null, tail: Vec2 | null,
+  /** Filled with the box of every station reached when no route is found (`poles.ts` routeRun: a part of the lines closed in itself needs no larger region). */
+  reached?: { x0: number; y0: number; x1: number; y1: number }): { readonly path: Vec2[]; readonly cost: number } | null {
   const n = g.x.length;
   // Two extra nodes, the run's ends, each joined to the stations either side of it on its contour.
   const START = n, END = n + 1;
@@ -171,7 +173,18 @@ export function route(g: RouteGraph, a: OnContour, b: OnContour, head: Vec2 | nu
       for (let k = g.spanStart[node]!; k < g.spanStart[node + 1]!; k++) relax(node, g.spanTo[k]!, g.spanLength[k]! + CROSSING_COST);
       if (node === b0 || node === b1) relax(node, END, dist(here, b.at));
     }
-    if (!done[END]) return null;
+    if (!done[END]) {
+      if (reached) {
+        reached.x0 = reached.y0 = Infinity; reached.x1 = reached.y1 = -Infinity;
+        for (const node of touched) {
+          if (node >= n) continue;
+          const x = g.x[node]!, y = g.y[node]!;
+          if (x < reached.x0) reached.x0 = x; if (x > reached.x1) reached.x1 = x;
+          if (y < reached.y0) reached.y0 = y; if (y > reached.y1) reached.y1 = y;
+        }
+      }
+      return null;
+    }
     const nodes: number[] = [];
     for (let k = END; k !== -1; k = prev[k]!) nodes.push(k);
     nodes.reverse();

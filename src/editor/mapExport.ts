@@ -13,20 +13,25 @@ export function exportToFile(
   filename = 'roadcraft-map.json',
   onFailed?: (error: unknown) => void,
 ): boolean {
-  let url: string;
+  let blob: Blob;
   try {
     const saved: SerializedSession | SerializedDoc = settings
       // With the unit its camera is in, as the autosave stamps it (`persistence.ts` withUnit).
       ? { version: 2, document: doc.toJSON(), settings: withUnit(settings) }
       : doc.toJSON();
-    const blob = new Blob(jsonPieces(saved, EXPORT_SPLIT_DEPTH), { type: 'application/json' });
-    url = URL.createObjectURL(blob);
+    blob = new Blob(jsonPieces(saved, EXPORT_SPLIT_DEPTH), { type: 'application/json' });
   } catch (error) {
     if (!onFailed) throw error;
     console.error('[export] the map file could not be made', error);
     onFailed(error);
     return false;
   }
+  return offerFile(blob, filename);
+}
+
+/** A file offered to the player to save (a link to it clicked): whether it was. */
+export function offerFile(blob: Blob, filename: string): boolean {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;

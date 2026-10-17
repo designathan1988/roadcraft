@@ -22,3 +22,23 @@ export interface GrownRows {
   /** Eight words a row: the stream at the start of the candidate kept and after the candidates (`GrownChoice.keptState`, `afterState`); absent in a tile grown before them, whose rows are replayed candidate by candidate. */
   readonly streams?: readonly number[];
 }
+
+/** The rows of the buildings `keep` names, in their order (a tile written again with the grown buildings no edit touched, `RoadDoc.tileRecords`). */
+export function selectRows(rows: GrownRows, keep: ReadonlySet<number>): GrownRows {
+  const out = { version: rows.version, id: [] as number[], lot: [] as number[], state: [] as number[], pick: [] as number[], floor: [] as (number | null)[],
+    reach: [] as number[], nbEnd: [] as number[], nb: [] as number[], dropEnd: [] as number[], drop: [] as number[], streams: rows.streams ? [] as number[] : undefined };
+  for (let k = 0; k < rows.id.length; k++) {
+    if (!keep.has(rows.id[k]!)) continue;
+    out.id.push(rows.id[k]!); out.lot.push(rows.lot[k]!);
+    for (let w = 0; w < 4; w++) out.state.push(rows.state[k * 4 + w]!);
+    for (let w = 0; w < 5; w++) out.pick.push(rows.pick[k * 5 + w]!);
+    out.floor.push(rows.floor[k]!); out.reach.push(rows.reach[k]!);
+    for (let i = k ? rows.nbEnd[k - 1]! : 0; i < rows.nbEnd[k]!; i++) out.nb.push(rows.nb[i]!);
+    out.nbEnd.push(out.nb.length);
+    for (let i = k ? rows.dropEnd[k - 1]! : 0; i < rows.dropEnd[k]!; i++) out.drop.push(rows.drop[i]!);
+    out.dropEnd.push(out.drop.length);
+    if (rows.streams && out.streams) for (let w = 0; w < 8; w++) out.streams.push(rows.streams[k * 8 + w]!);
+  }
+  const { streams, ...rest } = out;
+  return streams ? { ...rest, streams } : rest;
+}

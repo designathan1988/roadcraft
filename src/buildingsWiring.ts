@@ -10,7 +10,7 @@ import { BUILDING_FUNCTIONS, type Building, type BuildingId, volumeById } from '
 import { localFootprint } from '@world/buildings/footprints';
 import { FINISH_COLOUR } from '@world/buildings/materials';
 import { METERS_PER_UNIT, m } from '@world/units';
-import { type EditResult, addBuildingRecord, clearBuildingsOnRoads, deleteBuilding } from '@editor/buildings';
+import { type EditResult, addBuildingRecord, clearBuildingsAfterEdit, deleteBuilding } from '@editor/buildings';
 import { BuildingTool, type ToolHost, type ToolView } from '@editor/buildingTool';
 import type { PlanShape, Primitive } from '@editor/buildingPlans';
 import { BlueprintLibrary } from '@editor/blueprintLibrary';
@@ -70,8 +70,8 @@ export interface BuildingWiring {
   drawOverlay(ctx: CanvasRenderingContext2D): void;
   /** After an undo, a redo or a load. */
   restored(): void;
-  /** After a road edit, inside the same undo step: the road-wins rule. */
-  afterRoadEdit(): void;
+  /** After a road edit, inside the same undo step: the road-wins rule over what changed since `before`, the network's state read just before the edit. */
+  afterRoadEdit(before: object): void;
   /** The bulldozer: demolishes the building under a screen point, if any. */
   bulldozeAt(screen: Vec2): boolean;
   hintKey(prefix: string): string;
@@ -81,8 +81,6 @@ export interface BuildingWiring {
 export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
   const { doc, net, history, scene } = deps;
   const library = new BlueprintLibrary();
-  /** The network's state at the last road-wins look (`afterRoadEdit`); the buildings standing then were clear of it. */
-  let roadsSeen: object | null = net.state;
   let userBlueprints = library.list();
 
   const view: ToolView = {
@@ -1183,11 +1181,8 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       tool.sync();
       host.changed();
     },
-    afterRoadEdit() {
-      // Where the roads changed since the last look (`Network.changesSince`)
-      const delta = net.changesSince(roadsSeen);
-      roadsSeen = net.state;
-      const razed = clearBuildingsOnRoads({ doc, net, groundAt: null }, delta === null ? null : delta.rects);
+    afterRoadEdit(before) {
+      const razed = clearBuildingsAfterEdit({ doc, net, groundAt: null }, before);
       if (razed > 0) {
         tool.sync();
         notify(razed === 1 ? 'building.demolished.one' : 'building.demolished.other', { count: razed });

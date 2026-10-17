@@ -19,7 +19,9 @@ import {
   type Anchor, anchorForHeight as anchorAtHeight, anchorHeightOffset as anchorHeightAt, findAnchor, setGridSnapStep, snapRoadEndpoint,
   snapRoadStart, type SnapResult,
 } from './snap';
-import { commitRoadPath, nextSegmentId, segmentsFrom } from './commit';
+import { commitRoadPath } from './commit';
+import { DOC_CHANGE_KINDS } from '@world/changes';
+import { JournalCursor } from '@world/derived';
 import { applyProfileTo } from './roads/profile';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
 import type { RoadProfileSpec } from '@world/roads/profile';
@@ -364,7 +366,7 @@ export class RoadTool {
     return this.judged.reason;
   }
 
-  private judged: { key: string | null; reason: RefusalReason | null; cost: number | null; stations: readonly RoadStation[] | null } =
+  private judged: { key: DraftKey | null; reason: RefusalReason | null; cost: number | null; stations: readonly RoadStation[] | null } =
     { key: null, reason: null, cost: null, stations: null };
 
   /** The road in hand as it would be built: the dry run's stations */
@@ -381,14 +383,38 @@ export class RoadTool {
   /** When the draft in hand will have rested long enough to be judged (`verdict`); null: nothing waiting. */
   private judgeAt: number | null = null;
 
-  private draftKey(d: RoadDraft): string {
+  /** DO NOT key the draft on the whole map's revision (every tile that came in judged it again) nor make its key a text each frame: its numbers, compared as they are, and `mapAround` for the map. */
+  private draftKey(d: RoadDraft): DraftKey {
     const s = this.host.settings();
     const last = d.samples[d.samples.length - 1]?.at;
-    return JSON.stringify([d.start, d.startHeightOffset, d.snap.at, d.heightOffset, d.curveControl ?? null, d.samples.length,
-      last ?? null, s.typeIndex, s.lanes, s.alignment, this.host.doc.revision]);
+    const a = d.start;
+    const key: (string | number | null)[] = [a.kind, a.at.x, a.at.y, a.node ?? null, a.segment ?? null, a.s ?? null, d.startHeightOffset, d.snap.at.x, d.snap.at.y, d.heightOffset,
+      d.curveControl?.x ?? null, d.curveControl?.y ?? null, d.samples.length, last?.x ?? null, last?.y ?? null, s.typeIndex, s.lanes, s.alignment, this.mapAround(d)];
+    const was = this.lastKey;
+    if (was && was.length === key.length && was.every((v, k) => Object.is(v, key[k]))) return was;
+    this.lastKey = key;
+    return key;
   }
+  private lastKey: DraftKey | null = null;
 
-  private judge(key: string): void {
+  /** What the dry run reads of the map moved near the draft: a serial, moved by a change of the diary whose place meets the draft's box (or the balance, or the whole map). */
+  private mapAround(d: RoadDraft): number {
+    const entries = this.mapSeen.read(this.host.doc.changes);
+    if (entries === null) return ++this.mapSerial;
+    if (!entries.length) return this.mapSerial;
+    let x0 = Math.min(d.start.at.x, d.snap.at.x), y0 = Math.min(d.start.at.y, d.snap.at.y), x1 = Math.max(d.start.at.x, d.snap.at.x), y1 = Math.max(d.start.at.y, d.snap.at.y);
+    for (const p of [...d.samples.map((q) => q.at), ...(d.curveControl ? [d.curveControl] : [])]) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    // Past the draft by what a road's crossings, cuts and rules reach.
+    const pad = m(80);
+    for (const e of entries) {
+      if (e.kind === 'economy' || e.rects === null || e.rects.some((r) => r[0] <= x1 + pad && r[2] >= x0 - pad && r[1] <= y1 + pad && r[3] >= y0 - pad)) return ++this.mapSerial;
+    }
+    return this.mapSerial;
+  }
+  private readonly mapSeen = new JournalCursor(DOC_CHANGE_KINDS);
+  private mapSerial = 0;
+
+  private judge(key: DraftKey): void {
     const road = this.draft ?? this.chainPreview;
     if (!road || this.draftKey(road) !== key) return;
     const { host } = this;
@@ -409,18 +435,16 @@ export class RoadTool {
     const settings = host.settings();
     const { end, endHeightOffset, pieces } = this.ending(d, chosenEnd);
     let result: ReturnType<typeof commitRoadPath> = { committed: false };
-    /** The segment ids from here on are the edit's own (ids are handed out in increasing order, never again). */
-    let firstNew = 0;
     host.mutate(() => {
-      firstNew = nextSegmentId(doc);
       result = commitRoadPath(doc, net, d.start, end, settings.typeIndex, pieces, settings.lanes, settings.parking,
         (x, y) => host.naturalHeightAt(x, y), { groundSolve: host.groundSolve?.() ?? null });
       if (result.elevation) host.offerElevation(result.elevation, net.revision);
       // Drawn as it was previewed until the new world is in place.
       if (result.committed) this.settling = { ...d, snap: { ...d.snap, at: end.at } };
+      // The segments the edit laid, in a loaded tile's id range or the map's (`DraftResult.laid`).
+      const laid = result.laid ?? [];
       // A chosen total width (Roads > Width): the segments just laid take it.
       if (result.committed && (settings.profile || settings.width !== null)) {
-        const laid = laidFrom(doc, firstNew);
         const kept = laid.map((id) => ({ ...doc.requireSegment(id) }));
         const money = roadsBefore(doc);
         if (settings.profile) applyProfileTo(doc, laid, settings.profile.profile, settings.profile.type);
@@ -442,12 +466,11 @@ export class RoadTool {
       }
       // Retaining walls in the cuttings of the roads just laid (V3).
       if (result.committed && settings.cutWalls) {
-        for (const id of laidFrom(doc, firstNew)) doc.setSegmentCutWalls(id, true);
+        for (const id of laid) doc.setSegmentCutWalls(id, true);
       }
       // The furniture of the roads just laid, in the same undo step (V7)
       if (result.committed && settings.furniture && settings.furniture !== 'none') {
         if (net.revision !== doc.revision) net.rebuild();
-        const laid = laidFrom(doc, firstNew);
         // The complete set: a power line down the left, its poles lit (V7).
         const power = settings.furniture === 'complete' && layPowerLines(doc, net, laid) > 0;
         for (const piece of furnitureFor(net, laid, settings.furniture, landscapeAlong(doc, net, laid), power)) doc.addLandscape(piece.kind, piece.at);
@@ -471,7 +494,7 @@ export class RoadTool {
     host.setHeight(finalHeight, 'road finished');
     this.heightEdited = false;
     if (result.heightLimited) host.hint('hint.road.gradeLimited');
-    const laid = laidFrom(doc, firstNew);
+    const laid = result.laid ?? [];
     if (laid.length) host.flash(laid);
     return true;
   }
@@ -531,9 +554,6 @@ export class RoadTool {
   }
 }
 
-/** The segment ids an edit made: those from `first` on (`commit.ts` `segmentsFrom`). */
-const laidFrom = (doc: RoadDoc, first: number): SegmentId[] => segmentsFrom(doc, first).map((seg) => seg.id);
-
 /** The placed items the furniture of `laid` can meet */
 function landscapeAlong(doc: RoadDoc, net: Network, laid: readonly SegmentId[]): LandscapeItem[] {
   const out = new Map<number, LandscapeItem>();
@@ -548,3 +568,6 @@ function landscapeAlong(doc: RoadDoc, net: Network, laid: readonly SegmentId[]):
 
 /** The side of `furnitureFor`'s cells (`world/roads/furnitureSets.ts` CELL). */
 const FURNITURE_CELL = m(40);
+
+/** A draft's numbers as it is judged (`RoadTool.draftKey`): the same array while none of them moved. */
+type DraftKey = readonly (string | number | null)[];

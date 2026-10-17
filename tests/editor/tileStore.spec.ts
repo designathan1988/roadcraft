@@ -274,6 +274,38 @@ describe('a tile stored', () => {
     expect(store.writes.at(-1)).toEqual(['map:world']);
     expect(await new TileStore('map', storeTiles(store), never).meta()).toEqual(meta);
   });
+
+  it('empties the trees of a stored tile where it is stored, its version moved on, its other lists kept; nothing to clear, nothing written', async () => {
+    const store = memoryStore();
+    const tiles = new TileStore('map', storeTiles(store), never);
+    const tree = { x: m(10), y: m(10), species: 0, scale: 1 } as unknown as TileRecords['trees'][number];
+    const element = { kind: 'rock', x: m(20), y: m(20) } as unknown as TileRecords['elements'][number];
+    const tile = emptyTile(0, 0, { trees: [tree, tree], elements: [element] });
+    await tiles.write(tile);
+    const writes = store.writes.length;
+    const version = await tiles.clearLists(tile.key, ['trees']);
+    expect(version).toBe(2);
+    const back = (await new TileStore('map', storeTiles(store), never).read(tile.key))!;
+    expect(back.trees).toEqual([]);
+    expect(back.elements).toHaveLength(1);
+    expect(back.version).toBe(2);
+    expect(await tiles.clearLists(tile.key, ['trees'])).toBeNull();
+    expect(store.writes.length).toBe(writes + 1);
+    expect(await tiles.clearLists(tileKey(5, 5), ['trees'])).toBeNull();
+  });
+
+  it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {
+    const store = memoryStore();
+    const tiles = new TileStore('map', storeTiles(store), never);
+    const meta: WorldMeta = { version: 1, generator: null, unit: 1, values: { terrain: [], economy: { balance: 5 }, weather: { rain: 1 } as never } };
+    await tiles.setMeta(meta);
+    expect(await tiles.setMetaParts({ economy: { economy: { balance: 7 } } })).toBe(true);
+    expect(store.writes.at(-1)).toEqual(['map:world:economy']);
+    expect((await tiles.meta())?.values).toEqual({ terrain: [], economy: { balance: 7 }, weather: { rain: 1 } });
+    // Back at the starting balance the part holds no key: the value is gone.
+    await tiles.setMetaParts({ economy: {} });
+    expect((await new TileStore('map', storeTiles(store), never).meta())?.values).toEqual({ terrain: [], weather: { rain: 1 } });
+  });
 });
 
 /** A house of the parametric generator in tile (0,0), as the generator writes it. */

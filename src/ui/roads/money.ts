@@ -1,10 +1,10 @@
 import { ROAD_TUNING } from '@world/roads/tuning';
-import { language, t } from '../i18n';
+import { formatDecimal, language, t } from '../i18n';
 
 /** Money as the player reads it (`world/economy.ts`) */
 export function formatMoney(value: number): string {
-  const grouped = new Intl.NumberFormat(language(), { maximumFractionDigits: 0 }).format(Math.round(value));
-  return t('economy.money', { value: grouped });
+  // DO NOT make a formatter per call (each frame a road in hand shows its cost): the language's own, kept (`formatDecimal`).
+  return t('economy.money', { value: formatDecimal(Math.round(value), 0, language()) });
 }
 
 /** What a road in hand costs, for the preview: its price, or what a demolition-like edit gives back. */

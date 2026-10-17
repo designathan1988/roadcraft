@@ -25,6 +25,8 @@ import { FINISH_COLOUR, type MaterialSpec, type MaterialTarget, applyMaterial, a
 import { ELEMENT_DEFAULTS, elementAt, elementsAgainstBay } from '@world/buildings/elements';
 import { type BuildingProblem, validateBuilding } from '@world/buildings/validate';
 import {
+  MAX_STOREYS,
+  MAX_STOREY_HEIGHT,
   type BayComponent,
   type Building,
   type BuildingElement,
@@ -2646,6 +2648,9 @@ const PICK_STEP = m(64);
 const PICK_PAD = m(2);
 /** How far along the ground the ray is walked: the deepest ground a view takes in (a low view zoomed out, `isoViewport.ts`), the world having no edge to stop it. */
 const PICK_REACH = m(16_384);
+/** The highest a roof can stand (the tallest building on the highest land) and the lowest ground: a ray is walked between them. */
+const PICK_TOP = MAX_STOREYS * MAX_STOREY_HEIGHT + m(1500);
+const PICK_BOTTOM = -m(1500);
 
 /** DO NOT copy `buildings.all()` here: every move of the pointer over the map copied and tested the whole city (audit A9). */
 export function pickAlongRay(
@@ -2666,7 +2671,13 @@ export function pickAlongRay(
   // Looking straight down: the ray's track is a point.
   if (speed < 1e-9) return pickBuilding(fresh([ray.ox - PICK_PAD, ray.oy - PICK_PAD, ray.ox + PICK_PAD, ray.oy + PICK_PAD]), ray, floorOf);
   // The stretch of the ray (t >= 0) the view can show: no map edge to stop it, the farthest ground a view takes in.
-  const t0 = 0, t1 = PICK_REACH / speed;
+  // DO NOT walk 16 km of it for a ray that goes under the land in a few hundred metres: only where it is between the highest roof there can be and the lowest ground.
+  let t0 = 0, t1 = PICK_REACH / speed;
+  if (ray.dz < -1e-9) {
+    t0 = Math.max(t0, (ray.oz - PICK_TOP) / -ray.dz);
+    t1 = Math.min(t1, (ray.oz - PICK_BOTTOM) / -ray.dz);
+  } else if (ray.dz > 1e-9) t1 = Math.min(t1, Math.max(0, (PICK_TOP - ray.oz) / ray.dz));
+  if (ray.oz > PICK_TOP && ray.dz >= -1e-9) return null;
   const step = PICK_STEP / speed;
   let best: BuildingHit | null = null;
   for (let ta = t0; ta <= t1; ta += step) {

@@ -102,10 +102,12 @@ function routeGraph(net: Network, lines: PoleLines, region: ChangeRect): RouteGr
 
 /** A route searched first this far round its two ends, then twice as far, and so on. */
 const ROUTE_MARGIN = m(96);
+/** How near the region's edge the lines a run's start reaches must come for a larger region to join them to its end (`routeRun`). */
+const CLOSED_PAD = m(24);
 /** Past this margin a route is taken as found (a run is never planned across a whole city). */
 const ROUTE_MARGIN_MOST = m(4096);
 /** What the route search did: regions read. A count for the budgets (`core/perfBudget.ts`). */
-const poleRouteWork = { regions: 0 };
+export const poleRouteWork = { regions: 0 };
 
 /** The run's route, read from the lines of a region round its ends only (`poleLinesIn`), as exact as the whole map's */
 function routeRun(net: Network, from: PoleSnap, to: PoleSnap, first = ROUTE_MARGIN):
@@ -122,7 +124,10 @@ function routeRun(net: Network, from: PoleSnap, to: PoleSnap, first = ROUTE_MARG
     const a = placeOf(lines, from);
     const b = placeOf(lines, to);
     if (!a || !b) return 'noPlace';
-    const found = route(routeGraph(net, lines, region), a, b, endOff(from, a), endOff(to, b));
+    const reached = { x0: 0, y0: 0, x1: 0, y1: 0 };
+    const found = route(routeGraph(net, lines, region), a, b, endOff(from, a), endOff(to, b), reached);
+    // DO NOT grow the region up to 4 km for ends no line joins: what the start reaches closes in itself, short of the region's edge.
+    if (!found && reached.x0 > region[0] + CLOSED_PAD && reached.y0 > region[1] + CLOSED_PAD && reached.x1 < region[2] - CLOSED_PAD && reached.y1 < region[3] - CLOSED_PAD) return 'noPath';
     // How far the region reaches past the ends, on its nearest side.
     const reach = Math.min(x0 - region[0], y0 - region[1], region[2] - x1, region[3] - y1);
     const last = margin >= ROUTE_MARGIN_MOST;

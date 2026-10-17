@@ -7,6 +7,16 @@ import { setGlobalParams, t } from '@ui/i18n';
 afterEach(() => { resetRoadKeys(); closeRoadKeys(); });
 
 describe('the road keys', () => {
+  it('give the same placeholders while they stand, made again when one is rebound', () => {
+    const first = roadKeyParams();
+    expect(roadKeyParams()).toBe(first);
+    expect(setRoadKey('heightUp', 'PageDown')).toBe(true);
+    const next = roadKeyParams();
+    expect(next).not.toBe(first);
+    expect(next['heightUp']).toBe('Page Down');
+    expect(roadKeyParams()).toBe(next);
+  });
+
   it('start as Page Up, Page Down and V', () => {
     expect([roadKey('heightUp'), roadKey('heightDown'), roadKey('alignment')]).toEqual(['PageUp', 'PageDown', 'v']);
     expect(roadKeyAction('PageUp')).toBe('heightUp');

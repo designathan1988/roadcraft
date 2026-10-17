@@ -328,13 +328,18 @@ export class LaneReaches {
 
   /** The road ends a link lane can reach, for a body (its own included when it is one). */
   exitsFrom(w: ReachWorld, start: LaneletId, body: BodyClass): readonly LaneletId[] {
+    this.follow(w);
+    let reach = this.bodies.get(body);
+    if (!reach) { this.bodies.set(body, reach = new BodyReach(body)); reach.buildAll(w); }
+    return reach.exitsFrom(w, start);
+  }
+
+  /** DO NOT leave the graph's changes to the first vehicle made after them (its tick paid for every body's reach): followed where the topology is built again (`SimWorld.rebuildVehicleTopology`). */
+  follow(w: ReachWorld): void {
     const changes = w.topologyLog.since(this.seen);
     this.seen = w.topologyLog.state;
     if (changes === null) this.bodies.clear();
     else if (changes.length) for (const reach of this.bodies.values()) reach.follow(w, changes);
-    let reach = this.bodies.get(body);
-    if (!reach) { this.bodies.set(body, reach = new BodyReach(body)); reach.buildAll(w); }
-    return reach.exitsFrom(w, start);
   }
 
   /** Lanes looked at since made, over the body classes (the scale tests' count). */

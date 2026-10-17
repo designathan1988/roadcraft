@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
-import { TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
-import type { TileRecords } from '@world/doc';
+import { TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey, tileOfRecord } from '@world/tiles';
+import type { RecordPart, TileRecords } from '@world/doc';
+import { History } from '@editor/history';
 import { isStreaming } from '@world/changes';
 import { generateBody } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
@@ -112,5 +113,114 @@ describe('the page\'s document by tiles', () => {
     doc.beginEdit();
     expect(() => doc.loadTile(a)).toThrow();
     doc.endEdit();
+  });
+});
+
+describe('a working copy over loaded tiles', () => {
+  it('takes no id of a tile for good when it is let go, and carries its ids on when it is taken back', () => {
+    const key = tileKey(0, 0), base = tileIdBase(key);
+    const doc = new RoadDoc();
+    doc.loadTile(empty(key));
+    const at = { x: m(300), y: m(500) };
+    // Many dry runs let go: the tile's counters do not move.
+    for (let k = 0; k < 50; k++) {
+      const work = doc.fork();
+      const a = work.addNode(at), b = work.addNode({ x: at.x + m(80), y: at.y });
+      expect(a.id).toBe(base);
+      work.addSegment(a.id, b.id, 1);
+    }
+    expect(doc.tileRecords(key, 2).next).toEqual(empty(key).next);
+    // One taken back: the next record after it takes the next id.
+    const work = doc.fork();
+    const a = work.addNode(at), b = work.addNode({ x: at.x + m(80), y: at.y });
+    const seg = work.addSegment(a.id, b.id, 1)!;
+    doc.takeBack(work);
+    expect([a.id, b.id, seg.id]).toEqual([base, base + 1, base]);
+    expect(doc.addNode({ x: at.x, y: at.y + m(40) }).id).toBe(base + 2);
+    expect(doc.tileRecords(key, 2).next).toMatchObject({ node: base + 3, segment: base + 1 });
+    // A copy made after it counts on from there.
+    expect(doc.fork().addNode({ x: at.x, y: at.y + m(80) }).id).toBe(base + 3);
+  });
+});
+
+describe('the streamed world left', () => {
+  it('holds no tile after `leaveTiles`: a map put in takes no tile id, and the same tile loads again after', () => {
+    const key = tileKey(0, 0), base = tileIdBase(key);
+    const doc = new RoadDoc();
+    doc.loadTile(empty(key));
+    expect(doc.addNode({ x: m(300), y: m(500) }).id).toBe(base);
+    doc.leaveTiles();
+    expect(doc.hasTile(key)).toBe(false);
+    expect(doc.loadedTiles.size).toBe(0);
+    doc.replaceWith(new RoadDoc());
+    expect(doc.addNode({ x: m(300), y: m(500) }).id).toBeLessThan(base);
+    doc.loadTile(empty(key));
+    expect(doc.hasTile(key)).toBe(true);
+  });
+});
+
+describe('the map\'s own allocators in the streamed world', () => {
+  it('are written with the world\'s values and taken back by the next session, so an id made where no tile is loaded never repeats', () => {
+    const doc = new RoadDoc();
+    // No tile loaded here: the map's own allocator hands the ids out.
+    const a = doc.addNode({ x: m(10), y: m(10) }), b = doc.addNode({ x: m(90), y: m(10) });
+    const seg = doc.addSegment(a.id, b.id, 1)!;
+    const values = doc.worldValues();
+    expect(values.allocators).toEqual(doc.allocatorMarks());
+    // The next session opens the world from its values (`main.ts` openStreamedWorld).
+    const next = RoadDoc.fromJSON({ ...new RoadDoc().toJSON(), ...values });
+    expect(next.addNode({ x: m(10), y: m(50) }).id).toBeGreaterThan(b.id);
+    const c = next.addNode({ x: m(90), y: m(50) });
+    expect(next.addSegment(c.id, c.id - 1 as never, 1)!.id).toBeGreaterThan(seg.id);
+  });
+});
+
+describe('an edge node whose own tile is not loaded', () => {
+  it('is not edited through the copy a neighbour borrows (its owner would overwrite the edit), and is once its owner is here', () => {
+    const { a, b, edge } = twoTiles();
+    const doc = new RoadDoc();
+    doc.loadTile(a);
+    const id = edge as never;
+    const was = { ...doc.requireNode(id) };
+    expect(doc.canEditNode(id)).toBe(false);
+    expect(doc.moveNode(id, { x: was.x, y: was.y + m(5) })).toBe(false);
+    doc.setNodeHeightOffset(id, m(3));
+    doc.setNodeControl(id, 'signal');
+    expect(doc.requireNode(id)).toMatchObject({ x: was.x, y: was.y, heightOffset: was.heightOffset ?? 0 });
+    expect(doc.requireNode(id).control).not.toBe('signal');
+    // Its owner comes: the node is edited, and the edit is in the owner's records.
+    doc.loadTile(b);
+    expect(doc.canEditNode(id)).toBe(true);
+    doc.setNodeHeightOffset(id, m(3));
+    expect(doc.tileRecords(b.key, 2).nodes.find((n) => n.id === edge)!.heightOffset).toBe(m(3));
+  });
+});
+
+describe('an undo step when a tile goes', () => {
+  it('is dropped for a road that went with the tile, though its id came from another tile\'s range', () => {
+    const ka = tileKey(0, 0), kb = tileKey(1, 0);
+    const doc = new RoadDoc();
+    doc.loadTile(empty(ka));
+    doc.loadTile(empty(kb));
+    const history = new History();
+    // A road laid in tile a (its ids from a's range), then dragged over into tile b.
+    history.begin(doc);
+    const p = doc.addNode({ x: m(900), y: m(500) }), q = doc.addNode({ x: m(980), y: m(500) });
+    const seg = doc.addSegment(p.id, q.id, 1)!;
+    history.end(doc);
+    expect(Math.floor(seg.id / (tileIdBase(kb) - tileIdBase(ka)))).toBe(Math.floor(tileIdBase(ka) / (tileIdBase(kb) - tileIdBase(ka))));
+    history.begin(doc);
+    doc.moveNode(p.id, { x: TILE + m(100), y: m(500) });
+    doc.moveNode(q.id, { x: TILE + m(180), y: m(500) });
+    history.end(doc);
+    // A step that names the road alone (no place in its record): its tile is not the one its id says.
+    history.begin(doc);
+    doc.setSegmentType(seg.id, 2);
+    history.end(doc);
+    const gone = new Map<RecordPart, Set<number>>();
+    const removedAt = doc.unloadTile(kb, gone);
+    expect(gone.get('segments')?.has(seg.id)).toBe(true);
+    history.letGoTile((r) => gone.get(r.part as RecordPart)?.has(r.id) === true || tileOfRecord(r.part, r.id, r.value) === kb, () => false, removedAt);
+    expect(history.undo(doc)).toBe(false);
   });
 });

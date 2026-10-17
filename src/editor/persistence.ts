@@ -1,4 +1,5 @@
 import { RoadDoc, type JunctionControl, type SegmentDirection, type SerializedDoc } from '@world/doc';
+import { readWorldFile } from './worldExport';
 import { ROAD_TYPES } from '@world/roadTypes';
 import { normalizeRoadSection } from '@world/roadSection';
 import { migrateStructure } from '@world/structures';
@@ -426,6 +427,8 @@ function isSavedSettings(settings: unknown): settings is SavedSettings {
 /** What a file pick came to: a map, nothing chosen, or a file that is not one. */
 export type ImportResult =
   | { readonly status: 'ok'; readonly session: SavedSession }
+  /** A streamed world's file (`worldExport.ts`): its values and its tiles, to be put in the tile store. */
+  | { readonly status: 'world'; readonly world: NonNullable<ReturnType<typeof readWorldFile>> }
   | { readonly status: 'cancelled' }
   | { readonly status: 'invalid' };
 
@@ -449,6 +452,8 @@ export async function importFromFile(): Promise<ImportResult> {
       }
       try {
         const parsed: unknown = JSON.parse(await file.text());
+        const world = readWorldFile(parsed);
+        if (world) { finish({ status: 'world', world }); return; }
         const session = readImportedSession(parsed);
         finish(session ? { status: 'ok', session } : { status: 'invalid' });
       } catch {

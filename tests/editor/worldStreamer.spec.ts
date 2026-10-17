@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import type { TileRecords } from '@world/doc';
-import { tileIdBase, tileKey, tileOfKey } from '@world/tiles';
+import { TILE, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
 import { MAP_TILES, tileOnMap } from '@world/cityGen/wholeMap';
 import { WorldStreamer } from '@/worldStreamer';
 
@@ -119,6 +119,207 @@ describe('the active region and the kept ring', () => {
     streamer.focus(10, 10);
     expect(flips).toHaveLength(2);
     expect(new Set(flips[1]!.keys)).toEqual(new Set([-1, 0, 1].map((j) => tileKey(-1, j))));
+  });
+});
+
+/** A store that runs each tile's calls in order, as `TileStore` does; its writes can be held and made to fail. */
+function chainedStore() {
+  const stored = new Map<number, TileRecords>();
+  const chains = new Map<number, Promise<unknown>>();
+  const gates: (() => void)[] = [];
+  const s = {
+    stored, held: false, failures: 0, writes: 0,
+    release() { for (const open of gates.splice(0)) open(); },
+    chained<T>(key: number, run: () => Promise<T>): Promise<T> {
+      const done = (chains.get(key) ?? Promise.resolve()).then(run);
+      chains.set(key, done.then(() => undefined, () => undefined));
+      return done;
+    },
+    load(key: number) { return s.chained(key, async () => stored.get(key) ?? emptyTile(key)); },
+    write(records: TileRecords) {
+      return s.chained(records.key, async () => {
+        s.writes++;
+        if (s.held) await new Promise<void>((open) => gates.push(open));
+        if (s.failures > 0) { s.failures--; return null; }
+        const version = (stored.get(records.key)?.version ?? 1) + 1;
+        stored.set(records.key, { ...records, version });
+        return version;
+      });
+    },
+  };
+  return s;
+}
+
+/** Frames until every tile the camera at (x, y) wants is in. */
+async function settle(streamer: WorldStreamer, x: number, y: number): Promise<void> {
+  for (let frame = 0; frame < 60; frame++) {
+    streamer.focus(x, y);
+    streamer.apply(frame);
+    if (streamer.settled) return;
+    await turns(1);
+  }
+}
+
+describe('the tiles written', () => {
+  const far = 4 * TILE + 10;
+  const edited = (doc: RoadDoc): boolean => [...doc.nodes.values()].some((n) => n.x === 100 && n.y === 100);
+
+  it('reads a tile let go and asked again at the version its write holds, the write still under way', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    // Lanes for every tile at once: the tile is asked again the moment the camera is back.
+    const streamer = new WorldStreamer(doc, store, {}, 64);
+    await settle(streamer, 10, 10);
+    doc.addNode({ x: 100, y: 100 });
+    store.held = true;
+    // Away and straight back: the tile goes out with its write held, and is asked again before the write lands.
+    streamer.focus(far, 10);
+    streamer.apply(1000);
+    expect(doc.hasTile(tileKey(0, 0))).toBe(false);
+    streamer.focus(10, 10);
+    store.held = false;
+    store.release();
+    await settle(streamer, 10, 10);
+    expect(doc.hasTile(tileKey(0, 0))).toBe(true);
+    expect(edited(doc)).toBe(true);
+  });
+
+  it('keeps a tile whose write failed: asked again it is served what was written, and written again', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const failed: string[] = [];
+    const streamer = new WorldStreamer(doc, store, { failed: (why) => failed.push(why) });
+    await settle(streamer, 10, 10);
+    doc.addNode({ x: 100, y: 100 });
+    store.failures = 1;
+    streamer.focus(far, 10);
+    streamer.apply(1000);
+    await turns(3);
+    expect(failed.length).toBe(1);
+    expect(edited(RoadDoc.fromJSON({ version: 1, nodes: store.stored.get(tileKey(0, 0))?.nodes ?? [], segments: [] }))).toBe(false);
+    await settle(streamer, 10, 10);
+    expect(edited(doc)).toBe(true);
+    // Written again from the page: the store holds the edit.
+    expect(await streamer.flush()).toBe(true);
+    expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 100 && n.y === 100)).toBe(true);
+  });
+
+  it('flushes only once the store confirmed every write, and writes a failed one again', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const streamer = new WorldStreamer(doc, store);
+    await settle(streamer, 10, 10);
+    doc.addNode({ x: 100, y: 100 });
+    store.held = true;
+    store.failures = 1;
+    let result: boolean | null = null;
+    void streamer.flush().then((ok) => { result = ok; });
+    await turns(3);
+    expect(result).toBeNull();
+    store.held = false;
+    store.release();
+    await turns(3);
+    expect(result).toBe(false);
+    expect(await streamer.flush()).toBe(true);
+    expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 100 && n.y === 100)).toBe(true);
+  });
+
+  it('writes an edit at the next frame, not seconds later, and an edit made during a write right after it', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    let worldWrites = 0;
+    const streamer = new WorldStreamer(doc, store, { writeWorld: () => { worldWrites++; return Promise.resolve(true); } });
+    await settle(streamer, 10, 10);
+    const before = store.writes;
+    doc.addNode({ x: 100, y: 100 });
+    doc.setBalance(doc.economy.balance - 1);
+    store.held = true;
+    // The next frame, a few milliseconds on: the tile posted (the world's values after it).
+    streamer.apply(1);
+    await turns(1);
+    expect(store.writes).toBe(before + 1);
+    // Another edit while the write is held: not posted beside it, written once it is in.
+    doc.addNode({ x: 200, y: 100 });
+    streamer.apply(2);
+    await turns(2);
+    expect(store.writes).toBe(before + 1);
+    store.held = false;
+    store.release();
+    await turns(3);
+    streamer.apply(3);
+    await turns(3);
+    expect(store.writes).toBe(before + 2);
+    expect(worldWrites).toBe(1);
+    expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 200 && n.y === 100)).toBe(true);
+  });
+});
+
+describe('a whole map clear', () => {
+  it('empties the lists of a tile that comes while it runs (read before its clear), and writes it so', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const tree = { x: 100, y: 100, species: 0, scale: 1 } as unknown as TileRecords['trees'][number];
+    store.stored.set(tileKey(0, 0), { ...emptyTile(tileKey(0, 0)), trees: [tree] });
+    const streamer = new WorldStreamer(doc, store);
+    const done = streamer.clearing(['trees']);
+    await settle(streamer, 10, 10);
+    expect(doc.hasTile(tileKey(0, 0))).toBe(true);
+    expect(doc.trees).toHaveLength(0);
+    done();
+    expect(await streamer.flush()).toBe(true);
+    expect(store.stored.get(tileKey(0, 0))!.trees).toEqual([]);
+  });
+});
+
+describe('a world another tab holds', () => {
+  it('is read and never written from this tab: no tile, no value, and its flush says all is well', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    let worldWrites = 0;
+    const streamer = new WorldStreamer(doc, store, { writeWorld: () => { worldWrites++; return Promise.resolve(true); } });
+    streamer.readOnly = true;
+    await settle(streamer, 10, 10);
+    const before = store.writes;
+    doc.addNode({ x: 100, y: 100 });
+    doc.setBalance(doc.economy.balance - 5);
+    streamer.apply(1);
+    expect(await streamer.flush()).toBe(true);
+    await turns(3);
+    expect(store.writes).toBe(before);
+    expect(worldWrites).toBe(0);
+  });
+});
+
+describe("the world's values", () => {
+  it('are written by the part that changed, never all of them for one', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const written: (readonly string[])[] = [];
+    const streamer = new WorldStreamer(doc, store, { writeWorld: (parts) => { written.push([...parts]); return Promise.resolve(true); } });
+    await settle(streamer, 10, 10);
+    await turns(2);
+    written.length = 0;
+    doc.setBalance(doc.economy.balance - 100);
+    streamer.apply(1);
+    await turns(3);
+    expect(written).toEqual([['economy']]);
+  });
+});
+
+describe("the map's own allocators", () => {
+  it("are written with the world's values when a record made where no tile is loaded moves them", async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    let worldWrites = 0;
+    const streamer = new WorldStreamer(doc, store, { writeWorld: () => { worldWrites++; return Promise.resolve(true); } });
+    await settle(streamer, 10, 10);
+    await turns(2);
+    const before = worldWrites;
+    // Far past the region: no tile loaded there, the map's allocator gives the id.
+    doc.addNode({ x: 4 * TILE + 10, y: 10 });
+    streamer.apply(1);
+    await turns(3);
+    expect(worldWrites).toBe(before + 1);
   });
 });
 

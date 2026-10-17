@@ -69,4 +69,30 @@ describe('the control advisor', () => {
     expect(advised().size).toBeLessThanOrEqual(busy.length);
     for (const node of busy) expect(w.advisor.choice(node)).toBe('signal');
   });
+
+  it('keeps a junction out of the micro window as it stood: its lights do not follow the camera', () => {
+    const doc = town(4);
+    const net = new Network(doc);
+    net.rebuild();
+    const w = new SimWorld(doc, net, 0xad52);
+    w.rebuildTopology();
+    w.useMicroWindow();
+    const node = [...w.graph.junctions.keys()].find((n) => doc.node(n)!.control === 'auto' && doc.node(n)!.incident.length >= 4)!;
+    w.conflicts.setWindow(w.graph, new Set([node]));
+    const legs = doc.node(node)!.incident as SegmentId[];
+    const main = mainRoadLegs(doc, node) ?? legs;
+    const minor = legs.find((l) => !main.includes(l));
+    // Busy while the camera is there: signalised.
+    for (let t = 0; t < F.trendWindow * 2 + 30; t++) {
+      if (t % 4 !== 0) w.flow.record(node, main[0]!);
+      if (t % 3 === 0) w.flow.record(node, main[1] ?? main[0]!);
+      if (minor !== undefined && t % 10 === 0) w.flow.record(node, minor);
+      w.stepControlAdvisor(1);
+    }
+    expect(w.advisor.choice(node)).toBe('signal');
+    // The camera goes elsewhere: the junction is the meso's, nothing counted there; it stays signalised.
+    w.conflicts.setWindow(w.graph, new Set());
+    for (let t = 0; t < F.trendWindow * 4; t++) w.stepControlAdvisor(1);
+    expect(w.advisor.choice(node)).toBe('signal');
+  });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { RoadDoc } from '@world/doc';
 import type { SegmentId } from '@world/ids';
@@ -23,6 +23,14 @@ function road(type: number, median?: number): { doc: RoadDoc; net: Network; id: 
 }
 
 describe('a U-turn through the median', () => {
+  it('is judged on its own junction, never by building the lanes of every road', () => {
+    const { doc, net, id } = road(BOULEVARD, 5);
+    const whole = vi.spyOn(LaneletGraph.prototype, 'build');
+    expect(commitUturn(doc, net, id, 'b').committed).toBe(true);
+    expect(whole).not.toHaveBeenCalled();
+    whole.mockRestore();
+  });
+
   it('is refused on a road with no median', () => {
     const { doc, net, id } = road(AVENUE);
     expect(commitUturn(doc, net, id, 'b')).toEqual({ committed: false, reason: 'noMedian' });

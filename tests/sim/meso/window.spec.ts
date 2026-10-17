@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { m } from '@world/units';
@@ -6,6 +6,7 @@ import { SimWorld } from '@sim/world';
 import { step } from '@sim/pipeline';
 import { Meso } from '@sim/meso/meso';
 import { DT } from '@sim/params';
+import { MICRO_MIN_RADIUS, MICRO_RADIUS } from '@sim/meso/memory';
 
 /** THE MICRO WINDOW: the meso traffic hands its cars to the micro simulation inside it, and none drives outside it */
 
@@ -65,5 +66,67 @@ describe('the micro window', () => {
     expect(most).toBeGreaterThan(0);
     // No car came in at the map's edge by the micro simulation's own entries: every one is the meso's.
     for (const v of w.vehicles.values()) expect(meso.owned.has(v.id)).toBe(true);
+  });
+
+  it('follows the view: a street view keeps a smaller window (fewer micro cars), and its cars go back to the meso and come out again, none lost', () => {
+    const doc = town();
+    const net = new Network(doc);
+    net.rebuild();
+    const w = new SimWorld(doc, net, 0x3e50);
+    w.rebuildTopology();
+    const meso = new Meso();
+    w.meso = meso;
+    w.trafficIntensity = 10;
+    w.clock.paused = false;
+    meso.want(0, 0, MICRO_RADIUS);
+    const run = (seconds: number): void => { for (let t = 0; t < Math.round(seconds / DT); t++) step(w, { traffic: true, pedestrians: false }); };
+    const windowR = (): number => (meso as unknown as { micro: { r: number } }).micro.r;
+    // The map view: the whole window the page asked for.
+    w.focus = { x: 0, y: 0, r: m(2000), detail: false };
+    run(60);
+    expect(windowR()).toBe(MICRO_RADIUS);
+    const wide = meso.owned.size;
+    expect(wide).toBeGreaterThan(5);
+    // No new trips from here: the cars on the map are only handed between the two models.
+    w.trafficIntensity = 0;
+    run(1);
+    const total = (): number => meso.model.vehicles() + meso.owned.size;
+    const before = total();
+    // A street view: the window shrinks to its least, the cars past it handed back to the meso.
+    w.focus = { x: 0, y: 0, r: m(60), detail: true };
+    run(DT);
+    expect(windowR()).toBe(MICRO_MIN_RADIUS);
+    expect(meso.owned.size).toBeLessThan(wide);
+    expect(Math.abs(total() - before)).toBeLessThanOrEqual(2);
+    // A small wheel step does not resize it (it does not breathe).
+    w.focus = { x: 0, y: 0, r: m(70), detail: true };
+    run(DT);
+    expect(windowR()).toBe(MICRO_MIN_RADIUS);
+    // The map view again: the meso's cars come out on the links the window takes back in.
+    const narrow = total();
+    w.focus = { x: 0, y: 0, r: m(2000), detail: false };
+    run(5);
+    expect(windowR()).toBe(MICRO_RADIUS);
+    expect(Math.abs(total() - narrow)).toBeLessThanOrEqual(4);
+  });
+
+  it('asks the demand of each cell once a step, not once for each of its links', () => {
+    const doc = town();
+    const net = new Network(doc);
+    net.rebuild();
+    const w = new SimWorld(doc, net, 0x3e51);
+    w.rebuildTopology();
+    const meso = new Meso();
+    w.meso = meso;
+    w.clock.paused = false;
+    meso.want(0, 0, MICRO_RADIUS);
+    for (let t = 0; t < Math.round(3 / DT); t++) step(w, { traffic: true, pedestrians: false });
+    const inner = meso as unknown as { demand: { carsPer100m(cell: number): number }; cellOf: ArrayLike<number> };
+    const asked = vi.spyOn(inner.demand, 'carsPer100m');
+    for (let t = 0; t < Math.round(2 / DT); t++) step(w, { traffic: true, pedestrians: false });
+    const cells = new Set(Array.from({ length: meso.model.slots }, (_, k) => inner.cellOf[k]!)).size;
+    expect(meso.model.slots).toBeGreaterThan(cells);
+    expect(asked.mock.calls.length).toBeGreaterThan(0);
+    expect(asked.mock.calls.length).toBeLessThanOrEqual(2 * cells);
   });
 });

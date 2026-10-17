@@ -81,4 +81,15 @@ describe('a train line loop', () => {
       }
     });
   }
+
+  it('gives the walkers the discs of the trains that can reach them only, the same ones as asked of every train', () => {
+    const { w } = lineOn([{ x: m(50), y: 0 }, { x: m(150), y: 0 }, { x: m(250), y: m(25) }]);
+    for (let t = 0; t < 40; t++) w.city.transit.step(w);
+    const all = w.city.transit.trainZones();
+    expect(all.length).toBeGreaterThan(0);
+    // Walkers round the line: the same discs.
+    expect(w.city.transit.trainZones(true, [m(-50), m(-50), m(350), m(100)])).toEqual(all);
+    // Walkers a few kilometres off: none.
+    expect(w.city.transit.trainZones(true, [m(3000), m(3000), m(3100), m(3100)])).toEqual([]);
+  });
 });

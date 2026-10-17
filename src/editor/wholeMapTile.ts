@@ -8,7 +8,7 @@ import { footwayRiseAt } from '@world/roads/footwayRise';
 import { OWNER, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
-import type { Building, BuildingId } from '@world/buildings/types';
+import { type Building, type BuildingId, generatedBuiltAt } from '@world/buildings/types';
 import { gatesOf } from '@world/parkingLayout';
 import { asSegmentId } from '@world/ids';
 import type { SerializedDoc } from '@world/doc';
@@ -182,7 +182,8 @@ function tileRecordsOf(key: number, data: SerializedDoc, choices: ReadonlyMap<nu
     buildingId.set(b.id, id);
     const choice = choices.get(b.id);
     if (choice) choiceOf.set(id, choice);
-    return { ...b, id };
+    // Built at a minute of its own (`generatedBuiltAt`), by its id in the tile, as a building made again from its row is.
+    return { ...b, id, builtAt: generatedBuiltAt(id) };
   });
   const lots = (data.lots ?? []).filter((l) => mine(lotCentre(l))).map((l): Lot => {
     const { building: on, ...rest } = l;

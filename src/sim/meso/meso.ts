@@ -9,7 +9,7 @@ import { spawnVehicleAt, ENTRY_RATE } from '../vehicles/spawn';
 import { TRAFFIC } from '../ambient/ambient';
 import { MesoModel, type MesoLinkSpec } from './model';
 import { DemandCells } from './demand';
-import { MC, MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS, ML, type MesoMemory } from './memory';
+import { MC, MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS, ML, type MesoMemory, followView } from './memory';
 import { LINK_CROSSING, LINK_ONE_WAY, NODE_BULB, type TileLinks, linkId, linkSegment, reverseLink } from './tileLinks';
 import type { TileLinkFeed } from './tileFeed';
 import { SlotIndex, Threads, grown } from './slots';
@@ -151,11 +151,13 @@ export class Meso {
     this.memory = memory;
   }
 
-  /** The micro window asked to stand round (x, y): moved at the next step; the far tables' reach is round it too. */
+  /** The micro window asked to stand round (x, y), moved at the next step (the far tables' reach round it too); `r` the most it grows to (`follow`). */
   want(x: number, y: number, r = MICRO_RADIUS): void {
     this.wanted = { x, y, r };
     this.focusAt = { x, y };
+    this.most = r;
   }
+  private most = 0;
 
   /** The stored tiles round the camera read for the meso (`tileFeed.ts`): the tables of another world forgotten. */
   useTiles(feed: TileLinkFeed): void {
@@ -206,6 +208,7 @@ export class Meso {
     this.sync(w);
     this.takeTables();
     this.settle(w);
+    if (w.focus && this.most > 0) this.wanted = followView(this.wanted ?? this.micro, w.focus, this.most) ?? this.wanted;
     if (this.wanted) this.moveWindow(w, this.wanted);
     this.admit(w);
     this.clock += DT;
@@ -746,15 +749,15 @@ export class Meso {
     this.demand.sync(w.buildings, w.doc.changes);
     this.demand.atHour((w.city.minutes(w) % 1440) / 60);
     const model = this.model;
+    const ofCell = new Map<number, readonly [number, number]>(); // DO NOT ask a cell's demand for each of its links: once a cell
     for (let slot = 0; slot < model.slots; slot++) {
       if (!model.has(slot)) continue;
-      const L = model.lengthAt(slot), lanes = model.lanesAt(slot), cell = this.cellOf[slot]!;
-      const vFree = model.freeSpeedAt(slot);
-      const entry = this.placed[slot] && this.edgeAt(this.endFrom[slot]!) ? ENTRY_RATE * lanes : 0;
+      const L = model.lengthAt(slot), cell = this.cellOf[slot]!, d = ofCell.get(cell) ?? [this.demand.carsPer100m(cell), this.demand.weight(cell)] as const;
+      ofCell.set(cell, d);
+      const entry = this.placed[slot] && this.edgeAt(this.endFrom[slot]!) ? ENTRY_RATE * model.lanesAt(slot) : 0;
       // Balanced with the share ending here: the street holds the ambient's density in free flow.
-      const local = this.demand.carsPer100m(cell) * (L / m(100)) * vFree / TRIP_LENGTH;
-      model.setGeneration(slot, (entry + local) * this.scale);
-      model.setSinkShare(slot, Math.min(1, L / TRIP_LENGTH) * this.demand.weight(cell));
+      model.setGeneration(slot, (entry + d[0] * (L / m(100)) * model.freeSpeedAt(slot) / TRIP_LENGTH) * this.scale);
+      model.setSinkShare(slot, Math.min(1, L / TRIP_LENGTH) * d[1]);
     }
   }
 

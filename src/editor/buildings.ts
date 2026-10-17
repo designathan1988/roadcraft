@@ -591,6 +591,13 @@ export function clearBuildingsOnRoads(ctx: BuildingContext, rects: readonly Chan
   return doomed.length;
 }
 
+/** DO NOT look since the last edit: the roads a tile brought in between two edits would demolish or rewrite the buildings they meet. */
+export function clearBuildingsAfterEdit(ctx: BuildingContext, before: object): number {
+  // Where the edit itself changed the roads (`Network.changesSince` the state read just before it).
+  const delta = ctx.net ? ctx.net.changesSince(before) : null;
+  return clearBuildingsOnRoads(ctx, delta === null ? null : delta.rects);
+}
+
 /** @rebuild What changed is not known (a map loaded): every building, once. */
 function everyBuilding(ctx: BuildingContext): Building[] {
   return [...ctx.doc.buildings.all()];

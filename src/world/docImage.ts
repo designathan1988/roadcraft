@@ -10,7 +10,7 @@ export const PARTS_OF_SAVED = {
   markingStyle: 'markingStyle', nature: 'nature', poles: 'poles', poleSpans: 'poleSpans', paint: 'terrainPaint',
   fog: ['fogDabs', 'fogSettings'], gullies: ['gullyDabs', 'gullyAuto'], clouds: 'clouds', elements: 'elements', trees: 'trees',
   weather: 'weather', treeClearings: 'treeClearings', landscape: 'landscape', transit: 'transit', barriers: 'barriers',
-  buildings: 'buildings', zones: 'zones', zoneMarks: 'zoneMarks', lots: 'lots', lotKeys: 'lotKeys', people: 'people', economy: 'economy',
+  buildings: 'buildings', zones: 'zones', zoneMarks: 'zoneMarks', lots: 'lots', lotKeys: 'lotKeys', people: 'people', economy: 'economy', allocators: 'allocators',
 } as const satisfies Record<keyof SerializedDoc, RecordPart | ListPart | ValuePart | readonly (ListPart | ValuePart)[] | null>;
 
 /** One side of a patch as `RoadDoc.restore` takes it: `before` undoes, `after` redoes. */

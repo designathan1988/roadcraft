@@ -17,6 +17,7 @@ import { type Building, type BuildingId, cloneBuilding, componentAt, volumeById 
 import {
   type BuildingContext,
   type EditResult,
+  clearBuildingsAfterEdit,
   clearBuildingsOnRoads,
   duplicateBuilding,
   editBuilding,
@@ -45,6 +46,16 @@ import { offsetPlan, shapeBody } from '@editor/buildingPlans';
 import { localFootprint } from '@world/buildings/footprints';
 import { signedArea } from '@core/polygon';
 import { METERS_PER_UNIT, TUNED_UNIT } from '@world/units';
+import { TILE, tileIdBase, tileKey } from '@world/tiles';
+import type { TileRecords } from '@world/doc';
+
+/** A tile with nothing in it, as the store hands one over (`RoadDoc.loadTile`). */
+const emptyTile = (key: number): TileRecords => {
+  const base = tileIdBase(key);
+  return { key, version: 1, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [],
+    lotKeys: [], landscape: [], barriers: [], paint: [], trees: [], elements: [],
+    next: { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base } };
+};
 
 /** The 0.4 m unit these scenes were laid out in: every length below is in it, times U. */
 const U = TUNED_UNIT;
@@ -261,6 +272,35 @@ describe('building commands', () => {
     expect(doc.buildings.has(far.id)).toBe(true);
     // Nothing moved since: nothing looked at, nothing gone.
     expect(clearBuildingsOnRoads(ctx, net.changesSince(net.state)!.rects)).toBe(0);
+  });
+
+  it('never demolishes or rewrites a building for the roads a tile brought in between two edits', () => {
+    // Tile (0,0) loaded with a house near its east edge; the last edit's look was then.
+    const doc = new RoadDoc();
+    const net = new Network(doc);
+    const ka = tileKey(0, 0), kb = tileKey(1, 0);
+    doc.loadTile(emptyTile(ka));
+    net.rebuild();
+    const ctx: BuildingContext = { doc, net, groundAt: flat };
+    const house = place(ctx, 'house', { x: TILE - 20 * U, y: TILE / 2 });
+    const lastLook = net.state;
+    // Tile (1,0) comes in: its road starts in tile (0,0), over the house (a seam of two tiles generated apart).
+    const west = { id: tileIdBase(ka) + 1000, x: TILE - 60 * U, y: TILE / 2 };
+    const east = { id: tileIdBase(kb), x: TILE + 400 * U, y: TILE / 2 };
+    doc.loadTile({ ...emptyTile(kb), nodes: [east], borrowedNodes: [west], segments: [{ id: tileIdBase(kb) + 1, a: west.id, b: east.id, type: 1, curve: null }] });
+    net.rebuild();
+    expect(footprintRects(doc.buildings.get(house.id)!).some((r) => touchesRoad(net, r))).toBe(true);
+    const kept = JSON.stringify(doc.buildings.get(house.id));
+    // An edit far from it: the look takes what the edit changed, read from just before it.
+    const before = net.state;
+    const a = doc.addNode({ x: 100 * U, y: 100 * U }), b = doc.addNode({ x: 300 * U, y: 100 * U });
+    doc.addSegment(a.id, b.id, 1);
+    net.rebuild();
+    expect(clearBuildingsAfterEdit(ctx, before)).toBe(0);
+    expect(JSON.stringify(doc.buildings.get(house.id))).toBe(kept);
+    // Looked at since the last edit instead, the tile's road would have taken the house.
+    expect(net.changesSince(lastLook)!.rects.length).toBeGreaterThan(0);
+    expect(clearBuildingsAfterEdit(ctx, lastLook)).toBe(1);
   });
 });
 
