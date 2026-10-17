@@ -118,6 +118,8 @@ export interface FarNear<P> {
   contentOf?(payload: P): { readonly bake: string; readonly variant: string };
   /** What else it is baked from that the page may change (the roads' paint style): in its version. */
   version?(): string;
+  /** Whether what it is baked from is known yet (the ground the buildings stand on): none asked before, as none is asked with the upload queue full. */
+  ready?(): boolean;
   /** A tile the page holds edited, cut to what the near level reads, and the digest of that: the version an edited tile is asked at, so an edit of what it does not read (a building grown, a tree) asks nothing. */
   pageCut?(records: TileRecords): { readonly records: TileRecords; readonly digest: string };
   /** Whether it draws the tiles the page's document holds too (the roads: one way for every tile; the buildings' cells draw theirs). */
@@ -628,6 +630,8 @@ export class FarTree<P> implements FarTiles {
     if (n.nearLanded === sig || n.nearAsked === sig || n.nearFailed === sig) return;
     // The upload queue full: as `ask`; never the tile the player edits, which draws what was just done.
     if (tiles[0]!.cut === null && warmFull()) { this.changed = true; return; }
+    // DO NOT ask a near level before what it is baked from is known: behind a reopening's curtain the roads were asked on the ground taken as natural, missed every bake kept on the built one, and baked again (~17 s of the workers, rprof6).
+    if (this.kind.near!.ready?.() === false) { this.changed = true; return; }
     n.nearCancel?.();
     n.nearAsked = sig;
     const own = tiles[0]!.cut;

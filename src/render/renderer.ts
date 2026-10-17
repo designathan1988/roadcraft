@@ -597,12 +597,15 @@ export function createSceneRenderer(
   // DO NOT read it off `surfaceReuse`: the near level's programs are made with the far roads (`farRoads.ts` stand-ins), before it is declared (the page did not open, 2026-10-17).
   const roadPaint = paintCatalogue();
   const nearPaintFor = (color: string): Material => roadPaint.get(color) ?? roadPaint.get(LANE_LINE) ?? materials.asphalt;
+  /** The buildings put on the ground once (`buildings.update`): the near roads are baked on the ground they read, known from then. */
+  let buildingsGrounded = false;
   const farRoads = new FarRoads(farRoadGround, undefined, undefined, {
     look: () => passLook(materials, terrain.vergeMaterial),
     markingStyle: () => worldNet?.doc.markingStyle ?? 'classic',
     naturalIsGround: () => buildings.farEnv().naturalIsGround,
     dress: (source, raised) => surfaceLook(source, raised, materials, terrain.vergeMaterial, nearPaintFor),
     coarseFirst: () => buildings.hidden,
+    ready: () => buildingsGrounded,
   });
   world.add(farRoads.group);
   /** The streamed world's near products per tile, chosen by the view and baked in workers from the store (`nearTiles.ts`): the poles and wires (`poleTiles.ts`). */
@@ -2631,6 +2634,7 @@ export function createSceneRenderer(
       // At the opening the buildings come once the first world (the roads, the ground cut and filled to them) is in
       if (roads !== null && (reveal.opened || !worldJob)) {
         buildings.hidden = !reveal.opened;
+        buildingsGrounded = true;
         farRoads.coarseFirst(buildings.hidden);
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
         settleNearTiles();

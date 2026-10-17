@@ -95,6 +95,8 @@ export interface NearRoadKit {
   look(): PassLook;
   markingStyle(): string;
   naturalIsGround(): boolean;
+  /** Whether the ground the roads are baked on is known yet (the buildings put on it once): no near level is asked before. */
+  ready?(): boolean;
   /** A surface's material, shadow and order (`roadSurfaces.ts` surfaceLook). */
   dress(source: TileSource, raised: boolean): { readonly material: Material; readonly castShadow?: boolean; readonly renderOrder?: number };
   /** Whether the coarse levels go first in the queue (the town behind the curtain, `CellPool.coarseFirst`): a near level is a cell's detail, put back with them. */
@@ -308,7 +310,9 @@ export class FarRoads extends FarTree<RoadPayload> {
           land: (data: RoadPayload, base: FarNearLanded | null) => new NearRoadLanded(data as NearRoadMesh, (data as NearRoadMesh).bake, near, base as NearRoadLanded | null),
           baseOf: (data: RoadPayload) => (data as NearRoadMesh).base,
           contentOf: (data: RoadPayload) => ({ bake: (data as NearRoadMesh).bake, variant: (data as NearRoadMesh).variant }),
-          version: () => near.markingStyle(),
+          // The ground read as natural or built is in the bake (`contentSig`): in its version too, or a bake kept on the other one is taken as asked.
+          version: () => `${near.markingStyle()}:${near.naturalIsGround() ? 1 : 0}`,
+          ...(near.ready ? { ready: () => near.ready!() } : {}),
           pageCut: (records: TileRecords) => {
             const roads = nearRoadsOf(records)!;
             return { records: { ...emptyRecords(records.key, records.version), ...roads }, digest: nearRoadsDigest(roads) };

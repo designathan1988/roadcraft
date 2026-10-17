@@ -438,3 +438,34 @@ describe('the far roads chosen top down', () => {
     far.dispose();
   });
 });
+
+describe('a near level of the roads and the ground it is baked on', () => {
+  it('is asked only once the ground is known, and baked again when the ground it reads as natural changes (rprof6: the reopening baked every kept one again)', async () => {
+    const cache = memoryCache();
+    const tiles = world();
+    let ready = false;
+    let natural = true;
+    const grounded: NearRoadKit = { ...kit, naturalIsGround: () => natural, ready: () => ready };
+    const roads = new FarRoads(() => null, runner(cache, grounded), 'test:', grounded);
+    roads.setSource(storeOf(tiles), () => false);
+    for (const [key, records] of tiles) roads.stored(key, records.version);
+    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    const nearPuts = (): number => cache.puts.filter((key) => key.includes('n0:')).length;
+    await until(over, () => roads.waiting === 0);
+    expect(nearPuts()).toBe(0);
+    expect(roads.nearKeys()).not.toContain(farKey(0, 0, 0));
+    // The buildings put on the ground: the near levels asked, on the built ground.
+    ready = true;
+    natural = false;
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
+    const baked = nearPuts();
+    expect(baked).toBeGreaterThan(0);
+    // The same ground: nothing baked again.
+    for (let turn = 0; turn < 20; turn++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    expect(nearPuts()).toBe(baked);
+    // The ground read the other way: the bake kept on the built one is not taken as asked.
+    natural = true;
+    await until(over, () => nearPuts() > baked);
+    roads.dispose();
+  });
+});
