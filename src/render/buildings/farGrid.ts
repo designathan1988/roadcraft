@@ -2,7 +2,7 @@ import { storedTileReader } from '@core/storedTiles';
 import type { TileRecords } from '@world/doc';
 import { TILE } from '@world/tiles';
 
-/** THE FAR LEVELS' QUADTREE OVER THE TILES (`farTiles.ts`, `farPlan.ts`, `../farTree.ts`): its nodes' keys and sides and a tile as a bake reads it, read by the bakes of the tiles and of the plan without either importing the other */
+/** THE FAR LEVELS' QUADTREE OVER THE TILES (`farTiles.ts`, `../farRoadTiles.ts`, `../farTree.ts`): its nodes' keys and sides and a tile as a bake reads it, read by the buildings' and the roads' bakes without either importing the other */
 
 /** The coarsest level: 2^7 tiles a side (131 km); a bigger world has more roots. */
 export const TOP_LEVEL = 7;

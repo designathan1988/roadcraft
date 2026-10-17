@@ -9,7 +9,7 @@ import { type FarJob, type FarReply, derivedFarCache, farNode, levelDrop, nodeSi
 import type { BuildingKit } from './kit';
 import { FAR_ERROR, cellMesh } from './massCells';
 
-/** THE BUILDINGS OF THE TILES NOT IN THE PAGE'S DOCUMENT (CLAUDE.md "Streaming world"): a quadtree of levels baked per tile in workers from the tile store (`farTiles.ts`), and from the generator's plan where no tile was made (`farPlan.ts`) */
+/** THE BUILDINGS OF THE TILES NOT IN THE PAGE'S DOCUMENT (CLAUDE.md "Streaming world"): a quadtree of levels baked per tile in workers from the tile store (`farTiles.ts`), every tile of the map made before the city is shown */
 /** Chosen top down by their error on the screen (`farTree.ts`, the walk the far roads share), as the cells' tiles and plates are (`massCells.ts`); the tiles the document holds are drawn by `massCells.ts`, never here */
 
 declare const __FAR_MASS_HASH__: string | undefined;
@@ -21,8 +21,8 @@ const FAR_TIER = 2.9;
 /** DO NOT draw a box level's merged boxes smaller than this on the screen, px: at 2 px of error the plan's 32 m squares came out 1.6 px wide in the map view, a million boxes and five triangles a pixel over 16 km (2026-10-16); a level whose squares would span less gives way to its parent, so the boxes drawn are bounded by the screen, not by the world. */
 const BOX_PIXELS = 4;
 
-/** The finest level drawn from the plan: the boxes' (levels 0 and 1, a tile's and a plate's masses, only from made tiles). */
-const PLAN_LEVEL = 2;
+/** The first level drawn as boxes (levels 0 and 1 are a tile's and a plate's masses). */
+const BOX_LEVEL = 2;
 
 export type { FarTileSource, FarTiles } from '../farTree';
 
@@ -72,7 +72,6 @@ export function farJobOf(job: FarTreeJob): FarJob {
     ...(job.children ? { children: job.children } : {}),
     ...(job.records ? { buildings: tileRows(job.records.buildings) } : {}),
     ...(job.store !== undefined ? { store: job.store } : {}),
-    ...(job.plan ? { plan: job.plan } : {}),
   };
 }
 
@@ -95,8 +94,7 @@ export class FarLevels extends FarTree<CellMass> {
       },
       levelError: (k) => Math.max(FAR_ERROR, levelDrop(k)),
       // A box level's error is its square's diagonal (`levelDrop`): a square `BOX_PIXELS` wide on the screen at the least.
-      levelPixels: (k) => (k >= PLAN_LEVEL ? BOX_PIXELS * Math.SQRT2 : 0),
-      planFrom: PLAN_LEVEL,
+      levelPixels: (k) => (k >= BOX_LEVEL ? BOX_PIXELS * Math.SQRT2 : 0),
     };
     super(kind, asTreeRun(run), prefix, lanes);
     // The bakes of an older build of this code: let go.
