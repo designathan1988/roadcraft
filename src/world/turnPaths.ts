@@ -9,7 +9,7 @@ import { type SurfaceSource, surfaceParts } from './surfaceParts';
 import { BODY_ENVELOPE, HEAVY, type BodyClass } from './conflictTable';
 import { m, stepsIn } from './units';
 import { TurnDigest as Digest } from './turnDigest';
-import { HEADING_CHORD, chordHeading } from './heading';
+import { HEADING_CHORD } from './heading';
 import { type Queue, type Rect, clearOfQueue, overlap, queueOf, rect } from './sweptBodies';
 import type { JunctionTurns, TurnChoice } from './junctionTurns';
 
@@ -197,22 +197,51 @@ interface FailHint { at: number }
 /** Frames `sweep` samples into, made once (`Polyline.sampleAtInto`). */
 const atFrame = newFrame(), behindFrame = newFrame(), aheadFrame = newFrame();
 const corner = { x: 0, y: 0 };
+/** Where `sweep` writes the position it probes first, read for nothing but whether it fits. */
+const probeRect: Rect = { cx: 0, cy: 0, ux: 0, uy: 0, hl: 0, hw: 0, r: 0 };
 
-/** The body at `c` along the manoeuvre, headed along the chord about it */
-function poseAt(surface: JunctionSurface, frameAt: (c: number, out: FrameOut) => FrameOut,
-  c: number, length: number, width: number): Rect | null {
+/** The body at `c` along the manoeuvre, headed along the chord about it, written into `out`; false when it leaves the surface (`out` then holds nothing to read). */
+/** DO NOT make a rectangle and a heading a candidate position: a turn's search sweeps thousands (the allocation profile, 2026-10-17: `poseAt` 0.5-0.8 GB in the traffic's workers); `sweep` writes into its pool (`takeRect`). */
+function poseInto(surface: JunctionSurface, frameAt: (c: number, out: FrameOut) => FrameOut,
+  c: number, length: number, width: number, out: Rect): boolean {
   const at = frameAt(c, atFrame);
-  const t = chordHeading(frameAt(c - HEADING_CHORD, behindFrame).p, frameAt(c + HEADING_CHORD, aheadFrame).p, at.t);
-  const px = at.p.x, py = at.p.y, tx = t.x, ty = t.y;
-  for (const a of CORNER_ALONG) {
-    for (const b of CORNER_ACROSS) {
+  const behind = frameAt(c - HEADING_CHORD, behindFrame).p, ahead = frameAt(c + HEADING_CHORD, aheadFrame).p;
+  // `chordHeading`, its numbers alone.
+  const dx = ahead.x - behind.x, dy = ahead.y - behind.y, d = Math.hypot(dx, dy);
+  const tx = d < 1e-6 ? at.t.x : dx / d, ty = d < 1e-6 ? at.t.y : dy / d;
+  const px = at.p.x, py = at.p.y;
+  for (let ia = 0; ia < CORNER_ALONG.length; ia++) {
+    const a = CORNER_ALONG[ia]!;
+    for (let ib = 0; ib < CORNER_ACROSS.length; ib++) {
+      const b = CORNER_ACROSS[ib]!;
       corner.x = px + tx * a * length - ty * b * width;
       corner.y = py + ty * a * length + tx * b * width;
-      if (!surface.contains(corner)) return null;
+      if (!surface.contains(corner)) return false;
     }
   }
-  return rect({ x: px, y: py }, { x: tx, y: ty }, length, width);
+  setRect(out, px, py, tx, ty, length, width);
+  return true;
 }
+
+/** A rectangle's fields written as `rect` makes them. */
+function setRect(out: Rect, px: number, py: number, tx: number, ty: number, length: number, width: number): void {
+  out.cx = px; out.cy = py; out.ux = tx; out.uy = ty; out.hl = length / 2; out.hw = width / 2; out.r = Math.hypot(length, width) / 2;
+}
+
+/** The rectangles one `sweep` writes its positions into, kept for the next: each sweep's are its own until it returns (no sweep runs inside another). */
+const rectPool: Rect[] = [];
+let rectsTaken = 0;
+const takeRect = (): Rect => rectPool[rectsTaken++] ?? (rectPool[rectsTaken - 1] = { cx: 0, cy: 0, ux: 0, uy: 0, hl: 0, hw: 0, r: 0 });
+
+/** The body at `c` as a rectangle of its own, kept (an approach's positions, `approachPosesOf`). */
+function poseAt(surface: JunctionSurface, frameAt: (c: number, out: FrameOut) => FrameOut,
+  c: number, length: number, width: number): Rect | null {
+  const out: Rect = { cx: 0, cy: 0, ux: 0, uy: 0, hl: 0, hw: 0, r: 0 };
+  return poseInto(surface, frameAt, c, length, width, out) ? out : null;
+}
+
+/** A sweep's lists, kept for the next sweep and emptied at its start (no sweep runs inside another). */
+const sweepPoses: Rect[] = [], sweepAlong: number[] = [], sweepBehind: Rect[] = [], sweepBehindAt: number[] = [];
 
 /** A body's positions on an approach lane, before its heading chord reaches the turn */
 interface ApproachPoses {
@@ -253,8 +282,9 @@ function sweep(surface: JunctionSurface, inCentre: Polyline, path: Polyline, out
   const first = ends.fromRoadEnd ? Math.max(-half, half - inCentre.length) : -half;
   const last = ends.toRoadEnd ? Math.min(path.length + half, path.length + outCentre.length - half) : path.length + half;
   // 1.
-  const poses: Rect[] = [];
-  const along: number[] = [];
+  rectsTaken = 0;
+  const poses = sweepPoses, along = sweepAlong;
+  poses.length = 0; along.length = 0;
   let c = first;
   // The positions still wholly on the approach are the same for every candidate path of this movement
   const approach = surface.approachPoses(inCentre, body, first);
@@ -267,11 +297,11 @@ function sweep(surface: JunctionSurface, inCentre: Polyline, path: Polyline, out
   if (hint && hint.at > poses.length) {
     let k = poses.length, probe = c;
     while (k < hint.at && probe <= last) { probe = probe < last ? Math.min(last, probe + SWEEP_STEP) : Infinity; k++; }
-    if (probe <= last && !poseAt(surface, frameAt, probe, length, width)) return null;
+    if (probe <= last && !poseInto(surface, frameAt, probe, length, width, probeRect)) return null;
   }
   for (; c <= last; c = c < last ? Math.min(last, c + SWEEP_STEP) : Infinity) {
-    const pose = poseAt(surface, frameAt, c, length, width);
-    if (!pose) {
+    const pose = takeRect();
+    if (!poseInto(surface, frameAt, c, length, width, pose)) {
       if (hint) hint.at = poses.length;
       return null;
     }
@@ -279,12 +309,14 @@ function sweep(surface: JunctionSurface, inCentre: Polyline, path: Polyline, out
     along.push(c);
   }
   // 2.
-  const behind: Rect[] = [];
-  const behindAt: number[] = [];
+  const behind = sweepBehind, behindAt = sweepBehindAt;
+  behind.length = 0; behindAt.length = 0;
   const queueFrom = Math.max(-half - length - FOLLOW_GAP, ends.fromRoadEnd ? half - inCentre.length : -inCentre.length);
   for (let c = queueFrom; c < -half; c += SWEEP_STEP) {
     const at = frameAt(c, atFrame);
-    behind.push(rect(at.p, at.t, length, width));
+    const body = takeRect();
+    setRect(body, at.p.x, at.p.y, at.t.x, at.t.y, length, width);
+    behind.push(body);
     behindAt.push(c);
   }
   const reach = length + FOLLOW_GAP;
