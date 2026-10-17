@@ -40,6 +40,9 @@ export interface Change {
   readonly rects: readonly ChangeRect[] | null;
   /** The ids it touched (segments, nodes, stamps, poles...), when it has them. */
   readonly ids?: readonly number[];
+  /** A road entry's ids told apart (`'roads'`, `'traffic'`): within a tile a node and a segment may share an id (both counted from `tileIdBase`). */
+  readonly nodes?: readonly number[];
+  readonly segments?: readonly number[];
   /** Why: the tool and gesture, or what derived it. */
   readonly cause: string;
   /** The entry it follows from (a derived change). */
@@ -219,13 +222,16 @@ export class ChangeJournal {
 
   /** Writes an entry; returns its serial. An empty list of rectangles writes nothing (0). */
   record(kind: ChangeKind, rects: readonly ChangeRect[] | null, extra: {
-    readonly ids?: readonly number[]; readonly cause?: string; readonly parent?: number; readonly ms?: number; readonly detail?: string;
+    readonly ids?: readonly number[]; readonly nodes?: readonly number[]; readonly segments?: readonly number[];
+    readonly cause?: string; readonly parent?: number; readonly ms?: number; readonly detail?: string;
   } = {}): number {
     if (rects !== null && rects.length === 0) return 0;
     const serial = ++this.serial;
     const entry: Change = {
       serial, kind, rects, cause: extra.cause ?? this.pendingCause, at: performance.now(),
       ...(extra.ids && extra.ids.length ? { ids: extra.ids } : {}),
+      ...(extra.nodes ? { nodes: extra.nodes } : {}),
+      ...(extra.segments ? { segments: extra.segments } : {}),
       ...(extra.parent ? { parent: extra.parent } : {}),
       ...(extra.ms !== undefined ? { ms: extra.ms } : {}),
       ...(extra.detail ? { detail: extra.detail } : {}),
