@@ -47,6 +47,7 @@ import { OWNER, TILE_COUNTED, tileIdBase, tileOfKey, tileRect } from './tiles';
 import { type GrownRows, selectRows } from './growth/rows';
 import { gatesOf } from './buildingGates';
 import { PoleIndex } from './poleIndex';
+import { TileIndex } from './tileIndex';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
 import { METERS_PER_UNIT, m } from './units';
@@ -1384,6 +1385,14 @@ export class RoadDoc {
 
   /** The tiles in this document (the active region, CLAUDE.md "Streaming world"): the page holds the tiles near the camera, never the world. */
   private tileContents = new Set<number>();
+  /** Each tile's nodes, roads, land keys and dabs, kept by the diary (`tileIndex.ts`): a tile's members read without walking the region. */
+  private readonly tileIndex = ((doc: RoadDoc) => new TileIndex({
+    get changes() { return doc.changes; },
+    get nodes() { return doc.nodes; },
+    get segments() { return doc.segments; },
+    get lotKeyList() { return doc.lotStore.keys; },
+    get paintList() { return doc.terrainPaint; },
+  }, lotKeyPlace))(this);
   /** Each loaded tile's next ids, by kind (`TileRecords.next`): a record made in a tile takes its id from the tile's range. */
   private tileNext = new Map<number, TileNext>();
   /** Each loaded tile's grown rows (`TileRecords.grown`, kept by `preparedGrown`), and its lots as they were put in: a row is written back only while its lot is that very record (an edit replaces it). */
@@ -1529,10 +1538,13 @@ export class RoadDoc {
     const square = tileRect(i, j);
     const mine = (p: { readonly x: number; readonly y: number }): boolean => OWNER.at(p) === key;
     const nodes: RoadNode[] = [], segments: RoadSegment[] = [], borrowed = new Map<NodeId, RoadNode>();
-    for (const node of this.nodes.values()) if (OWNER.node(node) === key) nodes.push(node);
-    for (const s of this.segments.values()) {
-      const a = this.nodes.get(s.a), b = this.nodes.get(s.b);
-      if (!a || !b || OWNER.segment(a, b) !== key) continue;
+    // The tile's own, by id (`tileIndex.ts`), in id order: DO NOT walk every node and road of the region for one tile.
+    const filed = this.tileIndex.roadsOf(key);
+    for (const id of [...filed.nodes].sort((p, q) => p - q)) { const node = this.nodes.get(id as NodeId); if (node) nodes.push(node); }
+    for (const id of [...filed.segments].sort((p, q) => p - q)) {
+      const s = this.segments.get(id as SegmentId);
+      const a = s && this.nodes.get(s.a), b = s && this.nodes.get(s.b);
+      if (!s || !a || !b) continue;
       segments.push(s);
       for (const end of [a, b]) if (OWNER.node(end) !== key) borrowed.set(end.id, end);
     }
@@ -1557,8 +1569,8 @@ export class RoadDoc {
       barriers: this.barriersIn(square).filter((b) => b.points.length > 0 && mine(b.points[0]!)),
       buildings: this.buildings.near(square[0], square[1], square[2], square[3]).filter(mine),
       lots: this.lotStore.in(square).filter((lot) => mine(lotCentre(lot))),
-      lotKeys: this.lotStore.keys.filter((k) => { const at = lotKeyPlace(k); return at !== null && mine(at); }),
-      paint: this.terrainPaint.filter(mine),
+      lotKeys: [...this.tileIndex.keysOf(key)],
+      paint: [...this.tileIndex.paintOf<PaintDab>(key)],
       trees: this.treesIn(square).filter(mine),
       elements: this.elementsIn(square).filter(mine),
     };
