@@ -59,7 +59,7 @@ import { HELMET_SEGMENTS, STEER_FULL } from './riderPoses';
 import { NIGHT_LUMINANCE, nightGain } from './lightLevels';
 import { DOOR_SWING, createKerbFigure, kerbFigure, occupantPlays, type Play } from './occupants';
 import { blobInto, blobMesh } from './blobShadows';
-import { LEVELS, levelFor, partLevels, type Weld } from './vehicleLevels';
+import { ERROR_PIXELS, LEVELS, LEVEL_ERRORS, levelFor, partLevels, type Weld } from './vehicleLevels';
 import { jobPort } from '../jobs/jobPool';
 import { provideLanes } from './pagePorts';
 import { lodPool } from './people/lodPool';
@@ -99,6 +99,8 @@ const CULL_GROWTH = 1.5;
 /** The side of the client's cells of parked cars (`fleetGrid.ts`), and half their diagonal. */
 const FLEET_CELL = m(64);
 const CELL_HALF_DIAGONAL = FLEET_CELL * Math.SQRT1_2;
+/** Relative slack of the screen's scale worked out from its field (`depthField`) against the asked one: a cell at a level's edge is walked. */
+const FIELD_SLACK = 1e-6;
 /** DO NOT size a part by the fleet's ceiling: 8 bodies x ~25 parts x 1,200 x 76 B was 15-22 MB of CPU and GPU; every part starts here and doubles with what is drawn (`growPart`). */
 const PART_CAPACITY = 16;
 
@@ -132,6 +134,8 @@ interface AgentRenderOptions {
   readonly pedestrianVisible?: (x: number, y: number, height: number) => boolean;
   /** Whether a vehicle of this reach, centred here, can be on screen or cast a shadow onto it. */
   readonly vehicleVisible?: (x: number, y: number, height: number, radius: number) => boolean;
+  /** Whether such a sphere is wholly inside the view (every plane of the frustum farther than its radius): a cell of parked cars standing as drawn is not walked. */
+  readonly vehicleInside?: (x: number, y: number, height: number, radius: number) => boolean;
   /** The ground where a vehicle `vehicleVisible` can pass stands (`frustumGround.ts`): only the vehicles there are asked of the client's grid; none given, every one. */
   readonly vehicleBox?: Readonly<GroundBox>;
   /** Zoom from which vehicle cabins and occupants are drawn. */
@@ -505,6 +509,21 @@ const rimSize = (plan: BodyPlan): number => Math.max(plan.wheelRadius * 2 * 0.52
 /** Every level a vehicle's parts are drawn at, as one number: a parked car's copied writes hold while it stays the same. */
 const levelsKey = (plan: BodyPlan, pixels: number): number =>
   levelFor(pixels) + LEVELS * (levelFor(pixels * tyreSize(plan)) + LEVELS * levelFor(pixels * rimSize(plan)));
+
+/** The screen scales (CSS pixels a unit) over which a standing vehicle drawn at `own` from `pixels` keeps its own level and its parts' (`levelsKey`): the open range [out.lo, out.hi]; none for a whole one (the cap's). */
+function standingRange(plan: BodyPlan, own: number, pixels: number, ratio: number, occupantZoom: number, out: { lo: number; hi: number }): void {
+  if (own >= 2) { out.lo = Infinity; out.hi = -Infinity; return; }
+  // The hysteresis of `sync`'s own level: up at the next edge grown by a tenth, down at its own edge.
+  let lo = own === 1 ? FAR_BODY_ZOOM : 2 / CAR_LENGTH;
+  let hi = (own === 1 ? occupantZoom : FAR_BODY_ZOOM) * (1 + VEHICLE_HYSTERESIS);
+  for (const size of [1, tyreSize(plan), rimSize(plan)]) {
+    // `levelFor` keeps level L while LEVEL_ERRORS[L - 1] * p <= ERROR_PIXELS < LEVEL_ERRORS[L] * p.
+    const unit = ratio * size, level = levelFor(pixels * unit);
+    if (level < LEVEL_ERRORS.length) lo = Math.max(lo, ERROR_PIXELS / (LEVEL_ERRORS[level]! * unit));
+    if (level > 0) hi = Math.min(hi, ERROR_PIXELS / (LEVEL_ERRORS[level - 1]! * unit));
+  }
+  out.lo = lo; out.hi = hi;
+}
 
 /** The part of `ladder` for `level`; null when nothing of it is left to draw there. */
 function rung(ladder: Ladder, level: number): Part | null {
@@ -1711,20 +1730,26 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   let offRoadSerial = 0;
   /** The serial the sweep stood at the frame before: only a car asked then is answered by the sweep's cells (`ChangeSweep.touches`). */
   let offRoadBefore = 0;
+  /** Whether the ground last asked for `s` still holds where it stands (on its segment, or off the road): nothing of the diary since touched it. */
   /** DO NOT key it by position alone: a parked car kept the height it was first asked at and floated over (kept for the view it was asked for, `drawOf`). */
-  const offRoadDeck = (s: VehicleDraw, v: SimVehicle, x: number, y: number): number => {
-    if (s.deckKnown && s.deckX === x && s.deckY === y) {
-      if (s.deckSeen >= offRoadSerial) return s.deckValue;
-      // DO NOT ask the diary for a car not asked the frame before: every entry since and every rectangle of each (`journal.touches`) costs more than its ground.
-      if (s.deckSeen === offRoadBefore && !offRoadSweep!.touches(s.deckSeen, x, y)) {
-        s.deckSeen = offRoadSerial;
-        return s.deckValue;
-      }
+  const deckHolds = (s: VehicleDraw, v: SimVehicle, x: number, y: number): boolean => {
+    if (!s.deckKnown || s.deckX !== x || s.deckY !== y || s.deckSegment !== (v.free ? undefined : v.segment)) return false;
+    if (s.deckSeen >= offRoadSerial) return true;
+    // DO NOT ask the diary for a car not asked the frame before: every entry since and every rectangle of each (`journal.touches`) costs more than its ground.
+    if (s.deckSeen === offRoadBefore && !offRoadSweep!.touches(s.deckSeen, x, y)) {
+      s.deckSeen = offRoadSerial;
+      return true;
     }
+    return false;
+  };
+  /** The ground under a vehicle: its lot or the land off the road, its segment's deck on it; asked again only where it moved or the diary touched it (DO NOT ask a car stopped at a light its deck every frame). */
+  const standingDeck = (s: VehicleDraw, v: SimVehicle, x: number, y: number): number => {
+    if (deckHolds(s, v, x, y)) return s.deckValue;
+    const segment = v.free ? undefined : v.segment;
     const lot = v.free?.lot ?? null;
     const onLot = lot !== null && lotAt ? lotAt(lot, x, y) : NaN;
-    const deck = Number.isFinite(onLot) ? onLot : elevationAt(x, y, undefined);
-    s.deckKnown = true; s.deckX = x; s.deckY = y; s.deckValue = deck; s.deckSeen = offRoadSerial;
+    const deck = Number.isFinite(onLot) ? onLot : elevationAt(x, y, segment);
+    s.deckKnown = true; s.deckX = x; s.deckY = y; s.deckSegment = segment; s.deckValue = deck; s.deckSeen = offRoadSerial;
     return deck;
   };
 
@@ -1758,6 +1783,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     deckY: number;
     deckValue: number;
     deckSeen: number;
+    deckSegment: SegmentId | undefined;
     /** Standing still in its bay: its place in `keptList` (-1: none), the frame it was last drawn kept, its kept instances and what they were written for. */
     keptAt: number;
     keptSeen: number;
@@ -1791,7 +1817,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       s = {
         keptSlots: [], leanKnown: false, lean: 0, leanAge: 0, view: null, archetype: null, plan: FALLBACK_PLAN, car: null, bike: null,
         look: BLANK_LOOK, lookSeats: -1, accent: T_WHITE, helmet: T_WHITE, color: null, paint: 0, paintTint: T_WHITE,
-        rideSet: false, deck: 0, pitch: 0, roll: 0, lod: -1, seen: 0, deckKnown: false, deckX: 0, deckY: 0, deckValue: 0, deckSeen: 0,
+        rideSet: false, deck: 0, pitch: 0, roll: 0, lod: -1, seen: 0, deckKnown: false, deckX: 0, deckY: 0, deckValue: 0, deckSeen: 0, deckSegment: undefined,
         keptAt: -1, keptSeen: -1, keptParts: [], keptX: 0, keptY: 0, keptAngle: 0, keptDeck: 0, keptBand: 0, keptLevels: 0, keptVersion: 0,
         keptPaint: 0, keptShadows: false, keptCastOnly: false, keptParked: false, cullKnown: false, cullX: 0, cullY: 0, cullDeck: 0,
       };
@@ -1832,7 +1858,36 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     readonly pixels: number[];
     readonly whole: boolean[];
     wheeled: boolean;
+    /** Kept whole in a moving view (`vehicleInside`): the cars it had, every one drawn kept and on screen, the screen scales all of them keep their levels over, where they stand and their largest sphere; and what else their levels were chosen by. */
+    count: number;
+    onScreen: boolean;
+    rangeLo: number;
+    rangeHi: number;
+    x0: number; y0: number; x1: number; y1: number;
+    radius: number;
+    band: number; ratio: number; shadows: boolean; occupant: number; levels: number;
   }
+  /** What a standing car's levels hold over (`standingRange`), reused. */
+  const range = { lo: 0, hi: 0 };
+  /** One over the screen's scale as a function of the place (`screenScale` goes as one over the depth, an affine function of the place; constant in an orthographic view): [at the origin, slope along x, y, z], found once a frame. */
+  const field = Object.assign([0, 0, 0, 0], { valid: false });
+  let fieldFrame = -1;
+  const depthField = (scale: (x: number, y: number, z: number) => number, box: Readonly<GroundBox>): typeof field => {
+    if (fieldFrame === suspensionFrame) return field;
+    fieldFrame = suspensionFrame;
+    const step = FLEET_CELL;
+    const inv0 = 1 / scale(box.x0, box.y0, 0);
+    field[1] = (1 / scale(box.x0 + step, box.y0, 0) - inv0) / step;
+    field[2] = (1 / scale(box.x0, box.y0 + step, 0) - inv0) / step;
+    field[3] = (1 / scale(box.x0, box.y0, step) - inv0) / step;
+    field[0] = inv0 - field[1] * box.x0 - field[2] * box.y0;
+    // DO NOT trust it untold: checked at the box's far corner; a scale of another form (or a corner behind the eye) walks every cell.
+    const fx = box.x1, fy = box.y1, fz = step / 2;
+    const predicted = field[0] + field[1] * fx + field[2] * fy + field[3] * fz;
+    const measured = 1 / scale(fx, fy, fz);
+    field.valid = Number.isFinite(predicted) && Number.isFinite(inv0) && inv0 > 0 && Math.abs(predicted - measured) <= FIELD_SLACK * Math.abs(measured);
+    return field;
+  };
   const cellsDrawn = new Map<number, CellRecord>();
   const cellsSeen = new Set<number>();
   const cellsIn: FleetCell<SimVehicle>[] = [];
@@ -2018,6 +2073,19 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       };
       /** The cell being walked (null: the traffic): what it drew, to be kept as it is while nothing of it nor of the view changes. */
       let cellRecord: CellRecord | null = null;
+      fieldFrame = -1;
+      /** A car of `record` drawn standing: the scales its levels hold over narrow the cell's, its place and sphere grow the cell's. */
+      const standsIn = (record: CellRecord, plan: BodyPlan, own: number, pixels: number, onScreen: boolean, x: number, y: number, radius: number): void => {
+        standingRange(plan, own, pixels, pixelRatio, occupantZoom, range);
+        if (range.lo > record.rangeLo) record.rangeLo = range.lo;
+        if (range.hi < record.rangeHi) record.rangeHi = range.hi;
+        if (!onScreen) record.onScreen = false;
+        if (x < record.x0) record.x0 = x;
+        if (x > record.x1) record.x1 = x;
+        if (y < record.y0) record.y0 = y;
+        if (y > record.y1) record.y1 = y;
+        if (radius > record.radius) record.radius = radius;
+      };
       const drawVehicle = (vehicle: SimVehicle): void => {
         const s = drawOf(vehicle);
         // Off the road and not moving (the town's parked cars): where it is, with none of the interpolation's sums.
@@ -2029,17 +2097,33 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         const plan = s.plan;
         const twoWheeled = plan.shape === 'motorcycle' || plan.shape === 'bicycle';
         const reach = plan.length * 0.5 + plan.height * 2;
+        const seen = plan.length * 0.6 + plan.height * 0.5;
+        const visible = options.vehicleVisible;
+        // On screen; else off it but in the shadows' reach: only what casts is written (no glass, cabin, trim, lamps or disc); else nothing of it this frame.
+        // DO NOT test the reach of one on screen: its sphere holds the screen's (centres 0.3 of the radii apart), one test.
+        let onScreen = true;
+        /** Whether this frame's tests were made already, at the deck last asked (it stands where it was asked). */
+        let tested = false;
         // DO NOT ask the ground of a vehicle off the view: tested first with the deck last asked, the sphere grown to hold every deck it can have reached since.
-        if (options.vehicleVisible && s.cullKnown) {
+        if (visible && s.cullKnown) {
           const moved = hypot2(pose.p.x - s.cullX, pose.p.y - s.cullY);
-          if (moved < CULL_REUSE && !options.vehicleVisible(pose.p.x, pose.p.y, s.cullDeck, reach + CULL_GROWTH * moved * CULL_GRADE)) return;
+          if (moved === 0) {
+            // Standing where it was asked: the tests at that deck are this frame's while its ground holds.
+            tested = true;
+            if (!(reach >= seen && visible(pose.p.x, pose.p.y, s.cullDeck, seen))) {
+              if (!visible(pose.p.x, pose.p.y, s.cullDeck, reach)) return;
+              onScreen = reach >= seen ? false : visible(pose.p.x, pose.p.y, s.cullDeck, seen);
+            }
+          } else if (moved < CULL_REUSE && !visible(pose.p.x, pose.p.y, s.cullDeck, reach + CULL_GROWTH * moved * CULL_GRADE)) return;
         }
-        const deck = free ? offRoadDeck(s, vehicle, pose.p.x, pose.p.y) : elevationAt(pose.p.x, pose.p.y, vehicle.segment);
+        const deck = standingDeck(s, vehicle, pose.p.x, pose.p.y);
+        // Its ground changed under it: tested again on the new one.
+        if (tested && deck !== s.cullDeck) { tested = false; onScreen = true; }
         s.cullKnown = true; s.cullX = pose.p.x; s.cullY = pose.p.y; s.cullDeck = deck;
-        // Off screen, and too far from it for its shadow to fall on it: nothing of this vehicle is written this frame.
-        if (options.vehicleVisible && !options.vehicleVisible(pose.p.x, pose.p.y, deck, reach)) return;
-        // Off screen but in the shadows' reach: only what casts is written (no glass, cabin, trim, lamps or disc).
-        const onScreen = !options.vehicleVisible || options.vehicleVisible(pose.p.x, pose.p.y, deck, plan.length * 0.6 + plan.height * 0.5);
+        if (visible && !tested && !(reach >= seen && visible(pose.p.x, pose.p.y, deck, seen))) {
+          if (!visible(pose.p.x, pose.p.y, deck, reach)) return;
+          onScreen = reach >= seen ? false : visible(pose.p.x, pose.p.y, deck, seen);
+        }
         // Its own level, by the screen's scale where it stands (a tenth of hysteresis going up).
         const pixels = screenScale ? screenScale(pose.p.x, pose.p.y, deck) : Infinity;
         const was = s.lod;
@@ -2072,7 +2156,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
             s.keptSeen = suspensionFrame;
             s.seen = suspensionFrame;
             s.lod = own;
-            cellRecord?.kept.push(s);
+            if (cellRecord) { cellRecord.kept.push(s); standsIn(cellRecord, plan, own, pixels, onScreen, pose.p.x, pose.p.y, seen); }
             // A car stopped in the traffic still runs: its smoke leaves it every frame.
             if (options.exhaust && level >= 1 && !parked) options.exhaust(pose.p.x, pose.p.y, deck, pose.angle, plan.length, vehicle.v, free);
             return;
@@ -2153,7 +2237,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if ((twoWheeled ? !bikesCast : level < 2) && softShadows) placeBlob(pose.p.x, pose.p.y, s.deck, pose.angle, plan.length * 0.55, plan.width * 0.62);
         castOnly = false;
         // A cell is kept whole only while every car of it drawn stands as kept.
-        if (cellRecord) { if (still) cellRecord.kept.push(s); else cellRecord.still = false; }
+        if (cellRecord) {
+          if (still) { cellRecord.kept.push(s); standsIn(cellRecord, plan, own, pixels, onScreen, pose.p.x, pose.p.y, seen); } else cellRecord.still = false;
+        }
         if (still) {
           recording = null;
           s.keptSeen = suspensionFrame;
@@ -2192,15 +2278,41 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
             if (was.wheeled) carsWheeled = true;
             continue;
           }
+          // DO NOT walk the parked cars of a cell standing as drawn while the view moves: the cell wholly on screen, and its cars' scales there (at the corners of where they stand: `screenScale` goes as one over the depth) within those every car keeps its levels over.
+          if (was && options.vehicleInside && screenScale && was.still && was.onScreen && was.kept.length === was.count && was.count === cell.items.length
+            && was.version === cell.version && was.serial === offRoadSerial && was.band === vehicleBand && was.ratio === pixelRatio && was.shadows === softShadows
+            && was.occupant === occupantZoom && was.levels === levelsVersion && was.bounded && was.rangeLo < was.rangeHi) {
+            const across = Math.hypot((was.x1 - was.x0) / 2, (was.y1 - was.y0) / 2);
+            const upright = (was.hi + 0.3 * was.radius - was.lo) / 2;
+            const radius = Math.hypot(across, upright) + was.radius;
+            if (options.vehicleInside((was.x0 + was.x1) / 2, (was.y0 + was.y1) / 2, was.lo + upright - 0.3 * radius, radius)) {
+              const field = depthField(screenScale, box);
+              // One over the scale at the box's nearest and farthest corners (each axis at the end its slope picks).
+              let near = field[0]!, far = field[0]!;
+              for (const [axis, a, b] of [[1, was.x0, was.x1], [2, was.y0, was.y1], [3, was.lo, was.hi]] as const) {
+                const g = field[axis]!;
+                near += Math.min(g * a, g * b);
+                far += Math.max(g * a, g * b);
+              }
+              if (field.valid && near > 0 && 1 / far * (1 - FIELD_SLACK) > was.rangeLo && 1 / near * (1 + FIELD_SLACK) < was.rangeHi) {
+                for (const s of was.kept) { s.keptSeen = suspensionFrame; s.seen = suspensionFrame; }
+                if (was.wheeled) carsWheeled = true;
+                continue;
+              }
+            }
+          }
           // DO NOT walk the cars of a cell off the view: one sphere over the cell and its cars' decks (as last tested, nothing of it changed since) tested first.
           if (was && options.vehicleVisible && was.bounded && was.version === cell.version && was.serial === offRoadSerial) {
             const middle = (was.lo + was.hi) / 2 + 0.3 * VEHICLE_REACH;
             const radius = Math.hypot(CELL_HALF_DIAGONAL, (was.hi - was.lo) / 2 + 0.3 * VEHICLE_REACH) + VEHICLE_REACH;
             if (!options.vehicleVisible((cell.cx + 0.5) * FLEET_CELL, (cell.cy + 0.5) * FLEET_CELL, middle - 0.3 * radius, radius)) continue;
           }
-          cellRecord = was ?? { version: 0, lo: 0, hi: 0, bounded: false, serial: -1, still: true, kept: [], pixels: [], whole: [], wheeled: false };
+          cellRecord = was ?? { version: 0, lo: 0, hi: 0, bounded: false, serial: -1, still: true, kept: [], pixels: [], whole: [], wheeled: false,
+            count: 0, onScreen: true, rangeLo: 0, rangeHi: 0, x0: 0, y0: 0, x1: 0, y1: 0, radius: 0, band: 0, ratio: 0, shadows: false, occupant: 0, levels: 0 };
           cellRecord.version = cell.version; cellRecord.still = true; cellRecord.kept.length = 0;
           cellRecord.pixels.length = 0; cellRecord.whole.length = 0; cellRecord.wheeled = false;
+          Object.assign(cellRecord, { count: cell.items.length, onScreen: true, rangeLo: -Infinity, rangeHi: Infinity, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, radius: 0,
+            band: vehicleBand, ratio: pixelRatio, shadows: softShadows, occupant: occupantZoom, levels: levelsVersion });
           cellsDrawn.set(cell.key, cellRecord);
           let lo = Infinity, hi = -Infinity, bounded = true;
           for (const vehicle of cell.items) {
