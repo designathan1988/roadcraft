@@ -629,7 +629,8 @@ async function migrate(store: PartStore, map: string, local: string | null): Pro
   const put: SaveEntry[] = tiles.map((t) => ({ key: tileBlobKey(map, t.key), value: t, packed: true }));
   // The world's values last in the batch: their key says the world is stored.
   put.push({ key: metaKey(map), value: metaOf(data, kept, found), packed: false });
-  const ok = await (store.writer ?? storeWriter(store)).write({ put, remove: [] });
+  // The parts a world written before left (`setMetaParts`) go with it: read over these values they would be another world's balance, zones and people.
+  const ok = await (store.writer ?? storeWriter(store)).write({ put, remove: WORLD_PARTS.map((part) => metaPartKey(map, part)) });
   return ok ? { outcome: 'migrated', from: found.from, keys: tiles.map((t) => t.key) } : { outcome: 'failed', from: found.from, keys: [] };
 }
 

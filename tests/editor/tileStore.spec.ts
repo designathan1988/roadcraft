@@ -414,6 +414,19 @@ function smallMap(): SerializedDoc {
 }
 
 describe('a map saved before the tiles', () => {
+  it("is migrated without another world's parts left in the store (its balance, zones, people)", async () => {
+    const store = memoryStore();
+    const doc = smallMap();
+    store.blobs.set('map', new Blob([JSON.stringify({ version: 2, savedAt: 10, document: doc, settings: { camera: 1 } })]));
+    // A part written apart by a world before, its whole gone.
+    store.blobs.set('map:world:economy', new Blob([JSON.stringify({ economy: { balance: 123_456_789 } })]));
+    const tiles = new TileStore('map', storeTiles(store), never);
+    expect((await tiles.migrate()).outcome).toBe('migrated');
+    expect(store.blobs.has('map:world:economy')).toBe(false);
+    const meta = await tiles.meta();
+    expect((meta?.values as { economy?: { balance?: number } } | undefined)?.economy?.balance).not.toBe(123_456_789);
+  });
+
   it('is distributed into tiles whose union is the map, borrowed ends present', async () => {
     const store = memoryStore();
     const doc = smallMap();
