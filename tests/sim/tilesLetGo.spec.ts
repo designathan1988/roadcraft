@@ -55,5 +55,5 @@ describe("the simulation's worker over tiles put in and let go", () => {
   it('keeps no more of them after the fourth than after the first', async () => {
     const snaps = await run();
     expect(snaps[3]).toEqual(snaps[0]);
-  }, 60_000);
+  });
 });

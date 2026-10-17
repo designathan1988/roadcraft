@@ -16,5 +16,5 @@ describe("a tile's generator without interning", () => {
     expect((plain.data.buildings ?? []).length).toBeGreaterThan(50);
     expect(sha(plain.data)).toBe(sha(interned.data));
     expect(sha([...plain.choices])).toBe(sha([...interned.choices]));
-  }, 20_000);
+  });
 });
