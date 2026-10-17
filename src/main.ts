@@ -2,7 +2,7 @@ import { MESO_REACH } from '@sim/meso/tileFeed';
 import { TileStore, portTiles } from '@editor/tileStore';
 import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
 import { WorldStreamer } from './worldStreamer';
-import { TileGenerator, tileLanes } from './tileGenerator';
+import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
@@ -1997,7 +1997,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
       for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); sim.activeChanged(keys, (nodes, segments) => net.exportBake(nodes, segments)); },
     writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
     failed: (why) => console.error('[world]', why),
-  }, tileLanes());
+  }, () => generator.lanesWanted);
   const activeAt = (x: number, y: number): boolean => streamer.isActive(tileKeyAt(x, y));
   // The far levels stand in for every tile not in the active region, the kept ring's too (its records are on the page for the edits and the simulation, its products are the far levels').
   for (const f of far) f.setSource({ records: (key) => store.read(key), plan: options, workersRead: mapName }, (key) => doc.hasTile(key) && streamer.isActive(key) && scene.nearDrawn(key));
@@ -2013,6 +2013,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
   // THE WHOLE MAP MADE BEFORE THE TOWN IS SHOWN (the city-game's opening): every tile generated and stored (`streamer.mapMade`), so every far level is drawn from a tile, never from a stand-in; the region's own detail lands behind the curtain's fall (`renderer.ts` reveal, the opening in two steps).
   streamer.rush = true;
+  // Every worker makes tiles while the map is made (the other kinds' work is light then): let go once it is (`frame`).
+  generator.setAside(true);
   scene.holdOpening(() => doc.loadedTiles.size > 0 && streamer.mapMade >= streamer.mapTotal);
   // A new world opens over its first city, at the origin (`cityGen/wholeMap.ts`); one opened again where the camera was left.
   if (fresh) { camera.x = 0; camera.y = 0; view.moveTo({ x: 0, y: 0 }); }
@@ -2441,6 +2443,8 @@ function syncLoadingCurtain(): void {
       if (loadingCurtain.textContent !== text) loadingCurtain.textContent = text;
     } else if (loadingCurtain.textContent !== t('map.loading')) loadingCurtain.textContent = t('map.loading');
     if (!scene.opening) streamer.rush = false;
+    // The map made: the other kinds' workers theirs again (`TileGenerator.setAside`).
+    if (streamer.mapMade >= streamer.mapTotal) streamed.generator.setAside(false);
   }
   const ready = scene.programsReady;
   if (ready !== programsWaited) {

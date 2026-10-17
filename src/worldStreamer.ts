@@ -74,8 +74,13 @@ export class WorldStreamer {
   private aheadOrder: number[] = [];
   private writing: Promise<unknown> = Promise.resolve();
 
-  /** `inFlight`: how many tiles are asked of the store at once (the generator's lanes, `tileGenerator.ts` tileLanes). */
-  constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private readonly tell: StreamerEvents = {}, private readonly inFlight = IN_FLIGHT) {}
+  /** `inFlight`: how many tiles are asked of the store at once (the generator's lanes, `tileGenerator.ts` `lanesWanted`: more while the map is made), read as they are asked. */
+  constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private readonly tell: StreamerEvents = {},
+    private readonly lanes: number | (() => number) = IN_FLIGHT) {}
+
+  private get inFlight(): number {
+    return typeof this.lanes === 'number' ? this.lanes : this.lanes();
+  }
 
   /** The camera's focus on the map (x, y): the tiles around it wanted, the nearest asked first. */
   focus(x: number, y: number): void {

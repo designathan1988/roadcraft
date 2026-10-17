@@ -3,7 +3,7 @@ import { tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { FarTileBake, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
-import { jobPort, longWorkers } from './jobs/jobPool';
+import { jobPort, longWorkers, shortWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
@@ -20,9 +20,14 @@ interface Waiting {
   readonly failed: (why: string) => void;
 }
 
+/** A worker's lane of the generator: on a worker of the long-running side, or set aside on another kind's while the map is made (`setAside`). */
+interface Lane { readonly port: Worker; busy: Waiting | null; readonly aside: boolean }
+
 export class TileGenerator {
-  private readonly lanes: { readonly port: Worker; busy: Waiting | null }[] = [];
+  private readonly lanes: Lane[] = [];
   private readonly queue: Waiting[] = [];
+  /** Lanes on the other kinds' workers too (`setAside`). */
+  private aside = false;
 
   /** `far`: what each tile stored is baked into its far levels with, read as the tile is asked (the ground as it stands then); none: no far level kept by the maker. */
   constructor(private readonly options: WholeMapOptions, private readonly far: () => FarTileBake | null = () => null) {}
@@ -43,6 +48,19 @@ export class TileGenerator {
     });
   }
 
+  /** DO NOT leave the other kinds' workers idle while the whole map is made (the workers' profile, 2026-10-16: the two of them 14 s and 6 s busy of 90, the seven tile workers 96%): while `on`, a lane of tiles on each of them too; off, those lanes are let go as their tile ends, the workers theirs again. */
+  setAside(on: boolean): void {
+    if (this.aside === on) return;
+    this.aside = on;
+    if (!on) this.dropAside();
+    this.pump();
+  }
+
+  /** The tiles this generator makes at once now: what the asker keeps in flight (`worldStreamer.ts` `inFlight`). */
+  get lanesWanted(): number {
+    return tileLanes() + (this.aside ? shortWorkers() : 0);
+  }
+
   /** The workers let go (another world opened, the page going away). */
   dispose(): void {
     // A tile being made when let go is told so, as one waiting: whoever asked does not wait for ever.
@@ -51,10 +69,23 @@ export class TileGenerator {
     for (const w of this.queue.splice(0)) w.failed('the generator was let go');
   }
 
+  /** The lanes set aside with no tile let go (their workers' other work comes back to them). */
+  private dropAside(): void {
+    for (let k = this.lanes.length - 1; k >= 0; k--) {
+      const lane = this.lanes[k]!;
+      if (!lane.aside || lane.busy) continue;
+      lane.port.terminate();
+      this.lanes.splice(k, 1);
+    }
+  }
+
   /** Each free lane given the next tile asked. */
   private pump(): void {
-    const lanes = tileLanes();
-    while (this.lanes.length < lanes && this.queue.length > this.lanes.filter((l) => !l.busy).length) this.lanes.push(this.lane());
+    if (!this.aside) this.dropAside();
+    const own = this.lanes.filter((l) => !l.aside).length, aside = this.lanes.length - own;
+    const idle = (): number => this.lanes.filter((l) => !l.busy).length;
+    for (let made = own; made < tileLanes() && this.queue.length > idle(); made++) this.lanes.push(this.lane(false));
+    if (this.aside) for (let made = aside; made < shortWorkers() && this.queue.length > idle(); made++) this.lanes.push(this.lane(true));
     for (const lane of this.lanes) {
       if (lane.busy) continue;
       const next = this.queue.shift();
@@ -65,8 +96,8 @@ export class TileGenerator {
     }
   }
 
-  private lane(): { readonly port: Worker; busy: Waiting | null } {
-    const lane: { readonly port: Worker; busy: Waiting | null } = { port: jobPort('cityTiles'), busy: null };
+  private lane(aside: boolean): Lane {
+    const lane: Lane = { port: jobPort(aside ? 'cityTilesAside' : 'cityTiles'), busy: null, aside };
     lane.port.onmessage = (event: MessageEvent<StreamTileAnswer>) => {
       const waiting = lane.busy;
       lane.busy = null;

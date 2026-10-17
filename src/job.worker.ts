@@ -18,6 +18,8 @@ readStoredTilesWith(async (map, key, part) => {
 const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   growth: () => import('./growth.worker'),
   cityTiles: () => import('./cityTile.worker'),
+  // The same tiles, made on the other kinds' workers while the map is made (`tileGenerator.ts` aside lanes).
+  cityTilesAside: () => import('./cityTile.worker'),
   bays: () => import('./bays.worker'),
   conflicts: () => import('./conflictTable.worker'),
   cells: () => import('./render/buildings/cell.worker'),
