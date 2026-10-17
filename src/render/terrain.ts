@@ -1732,7 +1732,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     // A plate's whole field is read off the page (`ecologyPool.ts`): 90 ms of a frame each time the view brought a plate in.
     if (!over && ecologyOffPage()) {
       const input = {
-        side: GRID, cell: TERRAIN_CELL, heights: Float64Array.from(natural), water: wet,
+        // Where the plate stands: its noise the world's, the same across a seam as on the plate beyond (and as the far woods read it, `farWoods.ts`).
+        side: GRID, cell: TERRAIN_CELL, heights: Float64Array.from(natural), water: wet, centre: { x: origin.x, y: origin.y },
         sandstone: Float32Array.from(sand), basalt: Float32Array.from(basalt),
         painted: biomeCorners ? Float32Array.from(biomeCorners) : null, settings: nature,
       };
@@ -1773,7 +1774,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const wet = wetGiven ?? wetCorners();
     const startedAt = performance.now();
     const field = computeEcology({
-      side: GRID, cell: TERRAIN_CELL, heights: natural, water: wet,
+      side: GRID, cell: TERRAIN_CELL, heights: natural, water: wet, centre: origin,
       sandstone: store.sand, basalt: store.basalt,
       painted: biomeCorners, settings: nature,
     }, over && ecologyField ? { previous: ecologyField, ix0: over[0], ix1: over[1], iy0: over[2], iy1: over[3] } : undefined);
