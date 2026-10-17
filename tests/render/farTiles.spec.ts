@@ -1,4 +1,5 @@
 import { refOf } from '@world/buildings/recordTable';
+import { Frustum, Matrix4, PerspectiveCamera } from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { readStoredTilesWith } from '@core/storedTiles';
@@ -189,6 +190,32 @@ describe('the far levels chosen top down', () => {
     const held = coverage(far.shownKeys(), tiles.keys());
     expect(held.get(loaded)).toBe(0);
     for (const [tile, count] of held) if (tile !== loaded) expect(count).toBe(1);
+    far.dispose();
+    kit.dispose();
+  });
+
+  it('waits only for the nodes in the view: those out of it are asked and drawn all the same, never waited for', async () => {
+    const kit = createBuildingKit();
+    const cache = memoryCache();
+    const tiles = world();
+    const far = new FarLevels(kit, runner(cache), 'test:');
+    far.setSource(storeOf(tiles), () => false);
+    for (const [key, records] of tiles) far.stored(key, records.version);
+    // 6 km up, looking up at the sky: no node of the city in the frustum.
+    const camera = new PerspectiveCamera(35, 1, m(1), m(20_000));
+    camera.position.set(0, m(6_000), 0);
+    camera.up.set(0, 0, -1);
+    camera.lookAt(0, m(12_000), 0);
+    camera.updateMatrixWorld();
+    const sky = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    const away = (): void => far.choose(0, 0, m(6_000), 1000, null, Infinity, sky);
+    away();
+    expect(far.waiting).toBe(0);
+    // Turned back to the city: the same nodes, already come, nothing to wait for and nothing missing.
+    await until(away, () => far.shownKeys().length === 16);
+    far.choose(0, 0, m(6_000), 1000, null);
+    expect(far.waiting).toBe(0);
+    expect([...coverage(far.shownKeys(), tiles.keys()).values()].every((c) => c === 1)).toBe(true);
     far.dispose();
     kit.dispose();
   });

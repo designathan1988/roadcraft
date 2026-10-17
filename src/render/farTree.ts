@@ -1,4 +1,4 @@
-import { Group, type Mesh } from 'three';
+import { Box3, type Frustum, Group, type Mesh } from 'three';
 import { Digest } from '@core/digest';
 import { type WholeMapOptions, worldKey } from '@world/cityGen/wholeMap';
 import { tileKey, tileOfKey } from '@world/tiles';
@@ -166,6 +166,9 @@ export class FarTree<P> implements FarTiles {
   private readonly ranked: Seen = { perMetre: 0, allowed: 0, across: 0 };
   private readonly eyeNow: Eye = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null, reach: Infinity };
   private eye: Eye | null = null;
+  /** The camera's frustum at the last `choose` (null: every node counts as seen). */
+  private view: Frustum | null = null;
+  private readonly viewBox = new Box3();
   private scheduled = false;
   private warned = false;
 
@@ -175,7 +178,7 @@ export class FarTree<P> implements FarTiles {
     this.group.matrixAutoUpdate = false;
   }
 
-  /** Nodes the view would draw whose meshes have not come. */
+  /** Nodes the view would draw IN THE FRUSTUM whose meshes have not come: the opening waits for these (`renderer.ts` reveal); those beside or behind the camera are asked and drawn all the same, never waited for. */
   get waiting(): number {
     return this.wanting;
   }
@@ -239,7 +242,8 @@ export class FarTree<P> implements FarTiles {
   }
 
   /** THE NODES DRAWN, from the roots down: a node is drawn in place of its children while what it leaves out spans under the pixels allowed; `reach`, an orthographic view's (Infinity in perspective) */
-  choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach = Infinity): void {
+  choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach = Infinity, view: Frustum | null = null): void {
+    this.view = view;
     const eye = this.eyeNow;
     eye.x = eyeX; eye.y = eyeY; eye.z = eyeZ; eye.pxAtMetre = pxAtMetre; eye.orthoPx = orthoPx; eye.reach = reach;
     this.eye = eye;
@@ -363,6 +367,15 @@ export class FarTree<P> implements FarTiles {
     return n.x1 < e.x - r || n.x0 > e.x + r || n.y1 < e.y - r || n.y0 > e.y + r;
   }
 
+  /** Whether a node's box (its tiles, from under the ground to its top or a tall tower's height before it lands) meets the camera's frustum; true with none. */
+  private inView(n: FarNode): boolean {
+    if (!this.view) return true;
+    const top = n.landed !== null && Number.isFinite(n.top) ? Math.max(n.top, m(60)) : m(500);
+    this.viewBox.min.set(n.x0, -m(50), -n.y1);
+    this.viewBox.max.set(n.x1, top, -n.y0);
+    return this.view.intersectsBox(this.viewBox);
+  }
+
   /** Whether the view wants a node drawn in place of its children, with hysteresis (as a cell near stays near). */
   private fine(n: FarNode): boolean {
     const e = this.eyeNow;
@@ -381,7 +394,7 @@ export class FarTree<P> implements FarTiles {
       this.desired.push(n);
       this.ask(n, true);
       if (n.landed !== null) { this.drawing.push(n); return true; }
-      this.wanting++;
+      if (this.inView(n)) this.wanting++;
       // Not come yet: what stands under it from before (coarsening, Cesium keeps the children drawn until the parent comes).
       return n.k > 0 && this.fallback(n);
     }

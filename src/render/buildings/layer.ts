@@ -717,7 +717,7 @@ export function createBuildingLayer(): BuildingLayer {
       // The levels chosen at the floor the GPU's time sets, over the view's budget of triangles the farthest coarsened first (`capTriangles`); only when the masses alone pass it does the scale rise (`frameBudget.ts`). The building cut open and the one being edited stay in detail whatever the eye says.
       const fitted = (scale: number): number => { massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseNow(); capNow(); capTriangles(); return chosenTriangles(); };
       if (fitted(frame.floor) > frame.budget) frame.fit(fitted); else frame.scale = frame.floor;
-      farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach);
+      farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach, view);
       // The room shrinks when another owner grows (a resize, the far levels): the hidden levels go first.
       keepToBudget();
       const now = new Set<string>(massCells.nearKeys());
