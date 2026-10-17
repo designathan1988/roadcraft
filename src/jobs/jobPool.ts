@@ -12,8 +12,8 @@ const WORKER_HEAP_BYTES = 170 * 2 ** 20;
 /** Services whose one job runs for seconds: kept on workers of their own, never beside another kind's lane or a queued job (a streamed tile is 2-25 s, `cityTile.worker.ts`: the traffic's conflict pairs waited behind tile after tile and the city's clock stood still). */
 const LONG_RUNNING: readonly JobService[] = ['growth', 'cityTiles'];
 
-/** Services whose worker no queued job runs on (where another worker can take it): the save's writes are a few short awaits, and each waited for the job running on its worker - under load a tile's write took past a reload, the edit lost (conf15, conf22). */
-const KEPT_CLEAR: readonly JobService[] = ['save'];
+/** Services whose worker no queued job runs on (where another worker can take it); the tile store's reads (`tileRead`) on a worker of their own, never the save's: the save's writes are a few short awaits, and each waited for the job running on its worker - under load a tile's write took past a reload, the edit lost (conf15, conf22). */
+const KEPT_CLEAR: readonly JobService[] = ['save', 'tileRead'];
 const keptClear = (host: Host): boolean => KEPT_CLEAR.some((service) => host.services.has(service));
 
 /** Workers set apart for the long-running services: the pool less two kept for every other kind, one at least. */
