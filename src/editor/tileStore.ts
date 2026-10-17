@@ -357,7 +357,8 @@ export interface PreparedTile {
 }
 
 /** A TILE MADE READY FOR THE PAGE where it is read or made (the save worker, the generator's): each building migrated and its members interned (`intern.ts`: a tile's records share their shapes, kept through the message's clone), so the page only files them (`BuildingStore.loadPrepared`); with `network`, the tile's junctions and ribbons solved here from its roads (`bakeTileNetwork`), so the page's build takes them instead of solving a thousand junctions in the frame the tile is put in. */
-export function prepareTile(records: TileRecords, network = true): PreparedTile {
+/** `grown`: the rows its grown buildings came from when `records` holds them whole (a tile just generated, `cityTile.worker.ts`): kept beside them, never made again. */
+export function prepareTile(records: TileRecords, network = true, grown?: TileRecords['grown']): PreparedTile {
   const buildings: Building[] = [];
   for (const raw of tileBuildingsOf(records)) {
     const b = migrateBuilding(raw);
@@ -366,9 +367,10 @@ export function prepareTile(records: TileRecords, network = true): PreparedTile 
     buildings.push(b);
   }
   // DO NOT post the buildings as objects (cloned by every message, hash-consed again by every thread): one table, its shared members written once.
-  const { grown, ...rest } = records;
+  const { grown: own, ...rest } = records;
+  const rows = grown ?? own;
   return { records: { ...rest, buildings: [] }, buildings: encodeRecords(buildings).buffer, network: network ? bakeTileNetwork(records) : null,
-    ...(grown?.id.length ? { grown } : {}) };
+    ...(rows?.id.length ? { grown: rows } : {}) };
 }
 
 /** A prepared tile's records as the page files them: its buildings read from its table, each knowing its row (`tableRecords`). */

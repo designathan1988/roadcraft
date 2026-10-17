@@ -88,7 +88,7 @@ function make(self: JobScope, ask: StreamTileAsk): void {
         // Its far levels kept before the page hears of it: the far tree's job for it then finds them (`farTiles.ts` `runFarJob` level 0).
         if (ok && store.far) await keepFar(records, full, version, store.far);
         // The records handed back prepared (migrated and interned here, `prepareTile`: the page only files them); kept for the page even when the write failed.
-        const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full) } : {}) };
+        const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full, true, records.grown) } : {}) };
         self.postMessage(answer);
       },
       (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} was made and not stored: ${String(error)}` } satisfies StreamTileAnswer));

@@ -60,4 +60,17 @@ describe('a generated tile written by the page', () => {
     // The other lots untouched: their buildings still rows.
     expect(edited.grown!.id.length).toBeGreaterThan(0);
   }, 10_000);
+
+  it('keeps the rows of a tile just generated, handed to the page whole (`cityTile.worker.ts`): written back as rows, not as records', () => {
+    const map = planWholeMap(options);
+    let pick: [number, number] | null = null, heat = Infinity;
+    for (let j = -3; j < 3; j++) for (let i = -3; i < 3; i++) { const h = map.tile(i, j).heat; if (h > 0.05 && h < heat) { heat = h; pick = [i, j]; } }
+    const { records, full } = buildStreamTilePair(options, pick![0], pick![1]);
+    const doc = new RoadDoc();
+    // As the worker hands it: the whole buildings, with the rows they came from.
+    doc.loadTile(preparedRecords(prepareTile(full, true, records.grown)));
+    const written = doc.tileRecords(records.key, records.version);
+    expect(written.grown?.id.length).toBe(records.grown!.id.length);
+    expect(written.buildings.length).toBe(records.buildings.length);
+  }, 10_000);
 });
