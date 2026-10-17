@@ -213,8 +213,10 @@ export function validateOn(
   // On the world: the plates of the ground are one plane, so a building may stand across the line between two of them.
   if (!insideWorld({ x: box.minX, y: box.minY }, BUILDING_WORLD_MARGIN) || !insideWorld({ x: box.maxX, y: box.maxY }, BUILDING_WORLD_MARGIN)) return 'bounds';
 
-  const rects = [...footprintRects(b, -TOUCH), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
-  const party = [...footprintRects(b, -PARTY_WALL), ...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
+  // The projections and the ground elements the same rings in both lists: made once (each corner a point, at every candidate the growth tries).
+  const beside = [...groundProjections(b, -TOUCH), ...groundElements(b, -TOUCH)];
+  const rects = [...footprintRects(b, -TOUCH), ...beside];
+  const party = [...footprintRects(b, -PARTY_WALL), ...beside];
   if (ctx.net && rects.some((rect) => touchesRoad(ctx.net as RoadReach, rect))) return 'road';
 
   // DO NOT ask over `buildingBounds` alone
