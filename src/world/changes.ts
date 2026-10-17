@@ -59,6 +59,10 @@ export type ChangeArea = ChangeRect | readonly ChangeRect[] | null;
 
 /** How many entries are kept, in all and of each kind: a reader older than that takes everything as changed. */
 const KEPT = 2048;
+/** What the diary holds at least, in rectangles and ids, however little is loaded (`ChangeJournal.cap`). */
+const HELD_FLOOR = 65_536;
+/** What an entry holds: its rectangles and its ids (a tile's load names every record of the tile). */
+const weightOf = (entry: Change): number => 1 + (entry.rects?.length ?? 0) + (entry.ids?.length ?? 0) + (entry.nodes?.length ?? 0) + (entry.segments?.length ?? 0);
 
 /** A reader of some kinds that follows the diary (`ChangeJournal.follow`) */
 export interface JournalReader {
@@ -70,11 +74,23 @@ export interface JournalReader {
 /** DO NOT let them go by count alone */
 class KindLog {
   private entries: Change[] = [];
+  /** What its entries hold (`weightOf`). */
+  private weight = 0;
   constructor(public missingUpTo: number) {}
 
-  /** `needed`: the oldest serial a reader of this kind has read up to (Infinity: none follows it). */
-  push(entry: Change, needed: () => number): void {
+  /** `needed`: the oldest serial a reader of this kind has read up to (Infinity: none follows it); `cap`, the most it holds (`ChangeJournal.cap`). */
+  push(entry: Change, needed: () => number, cap: number): void {
     this.entries.push(entry);
+    this.weight += weightOf(entry);
+    // DO NOT hold more than the cap for a reader however far behind: past what is loaded, it reads the document whole for no more (`ChangeJournal.cap`).
+    // The newest is never counted against it: one entry larger than the cap (a list at its cap named whole) does not push out the ones just before it.
+    const newest = weightOf(entry);
+    if (this.weight - newest > cap && this.entries.length > 1) {
+      let cut = 0;
+      while (cut < this.entries.length - 1 && this.weight - newest > cap) this.weight -= weightOf(this.entries[cut++]!);
+      this.missingUpTo = Math.max(this.missingUpTo, this.entries[cut - 1]!.serial);
+      this.entries = this.entries.slice(cut);
+    }
     // Let go of what no one needs only past twice what is always kept: each entry looked at a constant number of times.
     if (this.entries.length < 2 * KEPT) return;
     const keepFrom = this.entries.length - KEPT;
@@ -82,6 +98,7 @@ class KindLog {
     let cut = 0;
     while (cut < keepFrom && this.entries[cut]!.serial <= upTo) cut++;
     if (!cut) return;
+    for (let i = 0; i < cut; i++) this.weight -= weightOf(this.entries[i]!);
     this.missingUpTo = Math.max(this.missingUpTo, this.entries[cut - 1]!.serial);
     this.entries = this.entries.slice(cut);
   }
@@ -158,6 +175,10 @@ export class ChangeJournal {
   /** Entries after `forgotten`, oldest first, in a ring of `KEPT`. */
   private readonly ring: (Change | undefined)[] = new Array<Change | undefined>(KEPT);
   private count = 0;
+  /** What the ring's entries hold (`weightOf`). */
+  private ringWeight = 0;
+  /** What the tiles loaded and not let go brought (`weightOf` of their streaming entries): what the document holds, as the diary sees it. */
+  private loaded = 0;
   /** The cause given to the document's entries until the next (`causeNext`). */
   private pendingCause = 'edit';
   /** The serial of the latest entry of each kind, kept after the entry itself is forgotten. */
@@ -185,6 +206,8 @@ export class ChangeJournal {
   continueFrom(other: ChangeJournal): void {
     this.serial = other.serial;
     this.count = 0;
+    this.ringWeight = 0;
+    this.loaded = 0;
     this.ring.fill(undefined);
     this.lastOf.clear();
     for (const [kind, serial] of other.lastOf) this.lastOf.set(kind, serial);
@@ -211,6 +234,11 @@ export class ChangeJournal {
       this.write(entry);
     }
     this.pendingCause = from.pendingCause;
+  }
+
+  /** The most the ring and each kind's log hold: twice what is loaded (a whole region let go and another taken in), and never less than `HELD_FLOOR`. */
+  private get cap(): number {
+    return Math.max(HELD_FLOOR, 2 * this.loaded);
   }
 
   /** The serial before which entries are no longer kept. */
@@ -250,12 +278,26 @@ export class ChangeJournal {
   /** An entry whose serial is this diary's latest, put in the ring, its kind's log and a copy's list. */
   private write(entry: Change): void {
     const { serial, kind } = entry;
+    const weight = weightOf(entry);
+    if (entry.cause === TILE_LOADED) this.loaded += weight;
+    else if (entry.cause === TILE_UNLOADED) this.loaded = Math.max(0, this.loaded - weight);
+    const over = this.ring[serial % KEPT];
+    if (over && this.count >= KEPT) this.ringWeight -= weightOf(over);
     this.ring[serial % KEPT] = entry;
+    this.ringWeight += weight;
     if (this.count < KEPT) this.count++;
+    // DO NOT hold every tile the camera passed (a heap snapshot of the simulation's worker over 22 tiles walked, 2026-10-17: ~0.3 MB a tile in the ring and the kinds' logs): the oldest let go past the cap, a reader that far behind reads the document whole for no more.
+    const cap = this.cap;
+    while (this.count > 1 && this.ringWeight - weight > cap) {
+      const at = (serial - this.count + 1) % KEPT, old = this.ring[at];
+      if (old) this.ringWeight -= weightOf(old);
+      this.ring[at] = undefined;
+      this.count--;
+    }
     this.lastOf.set(kind, serial);
     let log = this.byKind.get(kind);
     if (!log) this.byKind.set(kind, (log = new KindLog(this.startedAt)));
-    log.push(entry, () => this.neededFor(kind));
+    log.push(entry, () => this.neededFor(kind), cap);
     this.written?.push(entry);
   }
 

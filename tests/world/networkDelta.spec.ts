@@ -54,4 +54,22 @@ describe('the network history', () => {
     log.merge(() => false);
     expect(log.since(token)).toBeNull();
   });
+
+  it('holds no merged change larger than the network, however far a reader holding an old state stays behind', () => {
+    // The roads and nodes a tile brings and takes away: the network holds one tile's at a time.
+    const tile = (t: number): NetworkDelta => ({ segments: new Set(Array.from({ length: 300 }, (_, k) => (t * 1000 + k) as SegmentId)), nodes: new Set<NodeId>(), rects: [[t, 0, t + 1, 1]] });
+    const log = new DeltaLog();
+    // A reader that took a state and never reads again.
+    const stuck = log.state;
+    const held = (): number => (log as unknown as { edges: { delta: NetworkDelta | null }[] }).edges.reduce((n, e) => n + (e.delta ? e.delta.segments.size : 0), 0);
+    const sizes: number[] = [];
+    for (let t = 0; t < 20; t++) {
+      for (let k = 0; k < 40; k++) log.advance(k === 0 ? tile(t) : delta(t), 300);
+      log.merge((state) => state === stuck);
+      sizes.push(held());
+    }
+    expect(sizes[19]).toBe(sizes[1]);
+    // That reader is told to read the network whole.
+    expect(log.since(stuck)).toBeNull();
+  });
 });

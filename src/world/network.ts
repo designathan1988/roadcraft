@@ -118,7 +118,7 @@ export class Network {
     if (options.full || this.build.empty) this.clear();
     const delta = this.build.rebuild();
     this.forgetCrossings(delta);
-    this.log.advance(delta);
+    this.log.advance(delta, this.ribbons.size + this.junctions.size);
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
     // What follows the network (the dropped kerbs, `curbRamps.ts`) follows in this step, never in a walker's read (`walkingRise`).
