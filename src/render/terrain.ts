@@ -188,6 +188,8 @@ export interface TerrainSurface {
   setVegetation?(amount: number): void;
   /** The woods' density but the ecosystem's share per cell, made off the page with the plate's first build */
   woodsBase?(): Float32Array | null;
+  /** Moves whenever the woods' base changes (a stamp of the land redoes its cells). */
+  readonly woodsRevision?: number;
   dispose(): void;
 }
 
@@ -1429,6 +1431,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
 
   /** The woods' base made off the page with the first build (`woodsBase`), while it holds. */
   let woods: Float32Array | null = null;
+  /** Moves whenever `woods` changes (`woodsRevision`). */
+  let woodsRevision = 0;
 
   const waterSurface = createWaterSurface(anisotropy);
   const water = new Mesh(new BufferGeometry(), waterSurface.material);
@@ -2254,9 +2258,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       // The first build worked out off the page (`plateMesh.ts`, as Cesium builds its terrain meshes in a worker)
       const made = firstBuild && prebuilt && doc.terrainStamps.length === 0 ? prebuilt : null;
       prebuilt = null;
-      // The woods' base holds only on the land it was worked out on.
-      woods = made?.woods ?? null;
       if (made) {
+        // The woods' base worked out with it, on the same land.
+        woods = made.woods ?? null;
+        woodsRevision++;
         grid.set(made.heights);
         natural.set(made.heights);
         flip.set(made.flip);
@@ -2292,6 +2297,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       // Only the corners the dab rewrote, the diagonals and normals round them and the levels over them.
       if (box) cornersMoved(box[0], box[1], box[2], box[3]);
       else wholePlateMoved();
+      // The woods' base on the land as it is: the dab's own cells, or the plate's with the plate (DO NOT drop it: the nature's sweep then worked each plate's out on the page, a plate a frame).
+      if (box && woods) woodsBaseInto(woods, naturalRenderedHeightAt, TERRAIN_HALF, origin.x, origin.y, surface.rectOf(box));
+      else woods = woodsBase(naturalRenderedHeightAt, TERRAIN_HALF, origin.x, origin.y);
+      woodsRevision++;
       lastStamps = doc.terrainStamps;
       // The water is the deferred part of a stroke: a river dab makes water, any other dab is its box (with what a stroke left waiting).
       markWaterDirty(added && added.mode !== 'river' ? box : null);
@@ -2307,6 +2316,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       return true;
     },
     woodsBase: () => woods,
+    get woodsRevision() { return woodsRevision; },
     lookFrom(camera, pixels) {
       const shown = lod.select(camera, pixels) > 0;
       ground.visible = shown;

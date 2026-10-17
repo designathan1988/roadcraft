@@ -114,7 +114,7 @@ import { createFlatAtlas } from './flatAtlas';
 import { FarRoads } from './farRoads';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
-import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
+import { WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
 import { buildingFloors } from '@world/buildings/floors';
@@ -148,7 +148,6 @@ import { type GroundRecord, type Rect, unionRect } from './groundChanges';
 import { FOREST_SPECIES, createGroundCoverKit } from './groundCover';
 import type { PlantedTree } from '@world/trees';
 import { ClearingCells } from './clearingCells';
-import { natureDensity } from './natureNoise';
 import { buildNatureForest, loadNatureTrees, seedOfKind, type NatureTreeKit } from './natureTrees';
 import { createFogField, createFogTexture, type FogLayer } from './fogLayer';
 import { createElementLayer, loadElementKit, type ElementKit, type ElementLayer } from './elements';
@@ -778,8 +777,6 @@ export function createSceneRenderer(
   let openingPrograms: 'no' | 'asked' | 'built' = 'no';
   /** The streamed world's tiles round the camera (`holdOpening`): the opening shows the town once they are in. */
   let openingHeld: (() => boolean) | null = null;
-  /** While nothing is shown (`opened` false) the nature is swept this much a frame (`natureSweep`). */
-  const HIDDEN_SLICE_MS = 250;
   /** Builds the world of the last edit up to its next wait on a worker; it puts itself in place once complete. */
   /** DO NOT ask the next frame at once while the world's job waits on a worker: the unseen opening's frames come without the display's pace (`frameLoop.ts`), and it spun the page at 2,000 frames a second, starving the workers it waited on (2026-10-16); looked at again a display frame later. */
   const WAIT_LOOK_MS = 16;
@@ -1998,37 +1995,32 @@ export function createSceneRenderer(
   };
   const natureSweep = (key: string): NatureSweep => {
     if (quality.vegetation <= 0 || !terrain.parts.some((p) => p.surface.ecology())) return { key };
-    // One plate's density swept a frame at most while the game is seen (each was some 35 ms)
-    let sweptNew = false, pending = 0;
-    const sweepFrom = performance.now();
+    // A plate whose woods' base is not in yet waits for it (`terrain.ts` keeps it with the land): DO NOT work a plate's density out here, a plate a frame - 35 ms of the page each.
+    let pending = 0;
     // THE TREE MAP, as Horizon Zero Dawn's Placement_Trees (Guerrilla, GDC 2017)
     const cells = Math.floor((TERRAIN_HALF * 2) / NATURE_SPACING);
     const plates: NaturePlate[] = [];
     let treeSum = 0;
-    const d = WOODS_SLOPE_STEP;
     // What a plate's density reads besides its own ecology: its own land (`plateLand`) and the vegetation setting.
     const vegetation = quality.vegetation;
     for (const part of terrain.parts) {
       const field = part.surface.ecology();
       if (!field) continue;
       // Kept from the last sweep while its own ecology and the land are as they were
-      const plateKey = `${part.surface.ecologyRevision}:${plateLand.get(part.surface) ?? 0}:${vegetation}`;
+      const plateKey = `${part.surface.ecologyRevision}:${part.surface.woodsRevision ?? 0}:${plateLand.get(part.surface) ?? 0}:${vegetation}`;
       const known = naturePlates.get(part.surface);
       if (known && known.key === plateKey) {
         plates.push(known);
         treeSum += known.sum;
         continue;
       }
-      if (sweptNew && (reveal.opened || performance.now() - sweepFrom > HIDDEN_SLICE_MS)) { pending++; continue; }
-      sweptNew = true;
+      // Its density but the ecosystem's share, kept by the plate on its land (`woodsBase.ts`): only that share added here.
+      const base = part.surface.woodsBase?.() ?? null;
+      if (!base) { pending++; continue; }
       const odds = known?.odds ?? new Float32Array(cells * cells);
       const band = known?.band ?? new Uint8Array(cells * cells);
       let plateSum = 0;
       const di = Math.round(part.cx / NATURE_SPACING), dj = Math.round(part.cy / NATURE_SPACING);
-      // The land's own slope, before the roads cut and fill it: a wood holds a hillside, not the bank of a street
-      const natural = part.surface.naturalRenderedHeightAt;
-      // Its density but the ecosystem's share, made off the page with the plate (`woodsBase.ts`): only that share added here.
-      const base = part.surface.woodsBase?.() ?? null;
       for (let j = 0; j < cells; j++) {
         for (let i = 0; i < cells; i++) {
           const x = -TERRAIN_HALF + (i + 0.5) * NATURE_SPACING, y = -TERRAIN_HALF + (j + 0.5) * NATURE_SPACING;
@@ -2038,16 +2030,8 @@ export function createSceneRenderer(
           const o = j * cells + i;
           // Nothing grows past the map's edge (`wholeMap.ts`).
           if (!onMap(x + part.cx, y + part.cy)) { odds[o] = 0; band[o] = 0; continue; }
-          let density: number;
-          if (base) density = base[o]! + ecology * 0.3;
-          else {
-            const wx = x + part.cx, wy = y + part.cy;
-
-            const slope = Math.hypot(natural(x + d, y) - natural(x - d, y), natural(x, y + d) - natural(x, y - d)) / (2 * d);
-            const hillside = Math.min(1, Math.max(0, (slope - 0.06) / 0.35));
-            // The patches drawn out to clear masses: woods on the plains too, as capões, and clean meadows between them.
-            density = natureDensity(wx, wy, m(1), hillside, ecology);
-          }
+          // `natureDensity` is linear in the ecology: the base (the land's slope and the patches, `woodsBase.ts`) and its share.
+          const density = base[o]! + ecology * 0.3;
           // The bands: inner forest, its edge, scattered trees, a rare lone one.
           if (density > 0.62) { odds[o] = 0.92; band[o] = 3; }
           else if (density > 0.5) { odds[o] = 0.25 + (density - 0.5) / 0.12 * 0.6; band[o] = 2; }
