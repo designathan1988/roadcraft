@@ -351,6 +351,9 @@ export const GLASS_SHARE: Partial<Record<BayComponent, number>> = {
 /** How far an arcade's wall steps back behind its columns (`buildingMesh.ts` ARCADE). */
 const ARCADE = m(1.8);
 
+/** Bays in the order they stand along their side. */
+const byStart = (p: LocalBay, q: LocalBay): number => p.start - q.start;
+
 /** A block's walls from its bays as the detailed building lays them (`facadeBays`), off the layout every block of the body reads (`bayLayout`, worked out once) */
 function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (spec: MaterialSpec) => Rgb): void {
   const eaves = floor + volumeHeight(b, v);
@@ -365,16 +368,17 @@ function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (
   /** One run of a storey (bays side by side with the same relief and glass), before the storeys alike are stacked into one. */
   interface Run { side: number; a0: number; a1: number; d: number; z0: number; z1: number; zb: number; height: number; glass: number; colour: Rgb }
   const runs: Run[] = [];
+  // The run's outward offset: a relief's push, an arcade's wall set back.
+  // Laid flat where the level leaves it out: the wall then runs on with its neighbours (one quad where they were coplanar).
+  // DO NOT make these again for each row: one pair for the block.
+  const offsetOf = (bay: LocalBay): number => {
+    const d = bay.component === 'pillar' ? -ARCADE : bay.push;
+    return w.leaves(Math.abs(d)) ? 0 : d;
+  };
+  const shareOf = (bay: LocalBay): number => GLASS_SHARE[bay.component] ?? 0;
   for (const row of rows.values()) {
-    row.sort((p, q) => p.start - q.start);
+    row.sort(byStart);
     const side = row[0]!.side;
-    // The run's outward offset: a relief's push, an arcade's wall set back.
-    // Laid flat where the level leaves it out: the wall then runs on with its neighbours (one quad where they were coplanar).
-    const offsetOf = (bay: LocalBay): number => {
-      const d = bay.component === 'pillar' ? -ARCADE : bay.push;
-      return w.leaves(Math.abs(d)) ? 0 : d;
-    };
-    const shareOf = (bay: LocalBay): number => GLASS_SHARE[bay.component] ?? 0;
     let i = 0;
     while (i < row.length) {
       const first = row[i]!;

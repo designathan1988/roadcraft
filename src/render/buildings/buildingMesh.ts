@@ -655,8 +655,7 @@ interface BayFace {
 function sideFrame(v: Volume, side: FaceId, along: number, push = 0): Pick<BayFace, 'ax' | 'ay' | 'tx' | 'ty' | 'nx' | 'ny'> {
   const s = sideStart(v, side);
   const edge = edgeFrame(v, side);
-  const n = { x: edge.nx, y: edge.ny };
-  return { ax: s.x + s.tx * along + n.x * push, ay: s.y + s.ty * along + n.y * push, tx: s.tx, ty: s.ty, nx: n.x, ny: n.y };
+  return { ax: s.x + s.tx * along + edge.nx * push, ay: s.y + s.ty * along + edge.ny * push, tx: s.tx, ty: s.ty, nx: edge.nx, ny: edge.ny };
 }
 
 // ------------------------------------------------------------------ one building
