@@ -2527,8 +2527,8 @@ export function createSceneRenderer(
           (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;
         if (buildings.pending) onAssetsReady();
       }
-      // The countryside's trees are grown once the first world is in, not while the opening builds it (`loadNatureTrees`).
-      if (!natureTreesStarted && roads !== null && !worldJob) startNatureTrees();
+      // The countryside's trees' kit (its models, its programs compiled ahead: `loadNatureTrees`) made while the first world is built, not after: it reads nothing of the world, and the opening waited for it once the world was in (`natureTreesPending`, the curtain's `whole`). The trees themselves are grown once the world stands (the nature's keeps, `!worldJob`).
+      if (!natureTreesStarted && roads !== null) startNatureTrees();
       // The Actions' effects (`playEffects.ts`) made in idle time once the world stands, not on the first shot
       if (!fxPreload && !fxLoading && roads !== null && !worldJob && typeof requestIdleCallback === 'function') {
         fxPreload = true;
