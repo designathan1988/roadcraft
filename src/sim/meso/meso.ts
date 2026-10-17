@@ -9,7 +9,7 @@ import { spawnVehicleAt, ENTRY_RATE } from '../vehicles/spawn';
 import { TRAFFIC } from '../ambient/ambient';
 import { MesoModel, type MesoLinkSpec } from './model';
 import { DemandCells } from './demand';
-import { MC, MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS, ML, type MesoMemory } from './memory';
+import { MC, MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS, ML, type MesoMemory, followView } from './memory';
 import { LINK_CROSSING, LINK_ONE_WAY, NODE_BULB, type TileLinks, linkId, linkSegment, reverseLink } from './tileLinks';
 import type { TileLinkFeed } from './tileFeed';
 import { SlotIndex, Threads, grown } from './slots';
@@ -151,11 +151,13 @@ export class Meso {
     this.memory = memory;
   }
 
-  /** The micro window asked to stand round (x, y): moved at the next step; the far tables' reach is round it too. */
+  /** The micro window asked to stand round (x, y), moved at the next step (the far tables' reach round it too); `r` the most it grows to (`follow`). */
   want(x: number, y: number, r = MICRO_RADIUS): void {
     this.wanted = { x, y, r };
     this.focusAt = { x, y };
+    this.most = r;
   }
+  private most = 0;
 
   /** The stored tiles round the camera read for the meso (`tileFeed.ts`): the tables of another world forgotten. */
   useTiles(feed: TileLinkFeed): void {
@@ -206,6 +208,7 @@ export class Meso {
     this.sync(w);
     this.takeTables();
     this.settle(w);
+    if (w.focus && this.most > 0) this.wanted = followView(this.wanted ?? this.micro, w.focus, this.most) ?? this.wanted;
     if (this.wanted) this.moveWindow(w, this.wanted);
     this.admit(w);
     this.clock += DT;

@@ -19,6 +19,18 @@ export const MESO_ONE_WAY = 4;
 
 /** The micro window's radius: the ~1.5 km window of the brief (CLAUDE.md), the micro simulation inside, the meso outside. */
 export const MICRO_RADIUS = 750 * UNITS_PER_METER;
+/** The least the micro window shrinks to round a close view (`Meso.follow`): the street and the next blocks stay micro. */
+export const MICRO_MIN_RADIUS = 300 * UNITS_PER_METER;
+
+/** DO NOT keep the micro window 750 m wide round a street view (`Meso.step`): 1.35 the view (as `AmbientWorld`'s cars), between `MICRO_MIN_RADIUS` and the page's ask (`most`); moved past a third of it, resized when the view outgrows it or shrinks under 3/4 (no breathing with the wheel). The window to move to, or null. */
+export function followView(now: { readonly x: number; readonly y: number; readonly r: number },
+  focus: { readonly x: number; readonly y: number; readonly r: number; readonly view?: { readonly far: number } | null }, most: number): { x: number; y: number; r: number } | null {
+  // Playing, the camera sees far down the street, past `r` (`SimWorld.focus.view`).
+  const r = Math.min(most, Math.max(MICRO_MIN_RADIUS, Math.max(focus.r, focus.view?.far ?? 0) * 1.35));
+  const resized = now.r <= 0 || r > now.r || r < now.r * 0.75;
+  if (!resized && Math.hypot(focus.x - now.x, focus.y - now.y) <= now.r / 3) return null;
+  return { x: focus.x, y: focus.y, r: resized ? r : now.r };
+}
 
 /** Bytes a slot takes: its link's id (Float64, `ids`) and its record. */
 const SLOT_BYTES = 8 + MESO_RECORD * 4;
