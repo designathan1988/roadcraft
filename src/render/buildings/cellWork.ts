@@ -9,6 +9,7 @@ import type { FlagInstance } from './flagLayer';
 import { PART_KINDS } from './kit';
 import { COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from './layerCells';
 import { CELL_DETAIL, type MassDetail, PLATE_DETAIL, TILE_DETAIL, emitMassing, type MassingChunk } from './massing';
+import { PartyWalls } from './partyWalls';
 import { drawsSignature } from './signature';
 
 /** DO NOT send the page a chunk per building */
@@ -121,7 +122,9 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   }
   // DO NOT parse a text per building: each record decoded from its tile's shared table, a tile's shared members once for the job.
   const buildings = readRecords(job.entries.map((entry) => entry.record));
-  const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade'));
+  // The detail and its far level: the buildings of the cell as one another's neighbours, a party wall's covered bays not laid (`partyWalls.ts`).
+  const party = job.kind === 'summary' ? undefined : new PartyWalls(buildings, naturalAt, paved);
+  const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade', true, party));
   if (missX0 <= missX1) return wider(job, missX0, missY0, missX1, missY1);
   const summaries: ChunkSummary[] = chunks.map((chunk, i) => {
     const { flags, lotGround, signatureFloor } = chunk;
