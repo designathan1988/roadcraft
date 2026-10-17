@@ -1,5 +1,6 @@
 import { Color, Group, type Material, type Mesh } from 'three';
 
+import { measureHitch } from '@core/hitch';
 import { Digest } from '@core/digest';
 import type { Network } from '@world/network';
 import { ROAD_TYPES } from '@world/roadTypes';
@@ -659,7 +660,7 @@ export function* roadSurfaceSteps(
   while (coarsening > 0) { tiler?.check(); yield 'wait'; }
   // Where an edit's time went (`hitch:` entries).
   const end = performance.now();
-  performance.measure(`hitch:road-edit/surfaces ${built} tiles built ${reused} kept ${remade} remade, ${chunksMerged} blocks merged ${chunksKept} kept: tiles ${tilesMs.toFixed(0)} ms, merge ${mergeMs.toFixed(0)} ms`, { start: started, end });
+  measureHitch(`hitch:road-edit/surfaces ${built} tiles built ${reused} kept ${remade} remade, ${chunksMerged} blocks merged ${chunksKept} kept: tiles ${tilesMs.toFixed(0)} ms, merge ${mergeMs.toFixed(0)} ms`, started, end);
   return {
     group,
     meshes,

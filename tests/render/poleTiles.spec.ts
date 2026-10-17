@@ -76,6 +76,13 @@ describe('a tile\'s poles baked in a worker', () => {
     for (const bake of bakes) drawn.add(PoleLayer.fromBake(kit, bake).group);
     const baked = bakes.length;
     expect(baked).toBeGreaterThan(1);
+    // A tile's poles in one cell, one mesh a part and one for its wires: never the world's cells of 256 m (twelve meshes each, ~200 a tile).
+    for (const bake of bakes) {
+      expect(bake.cells).toHaveLength(1);
+      let meshes = 0;
+      PoleLayer.fromBake(kit, bake).group.traverse((o) => { if ((o as Mesh).isMesh) meshes++; });
+      expect(meshes).toBeLessThanOrEqual(12);
+    }
     expect(picture(drawn)).toEqual(picture(page.group));
     page.dispose();
   });

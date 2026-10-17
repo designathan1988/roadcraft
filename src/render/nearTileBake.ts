@@ -6,7 +6,9 @@ import { Network } from '@world/network';
 import { TILE, tileOfKey } from '@world/tiles';
 import { m } from '@world/units';
 import { emptyRecords } from './buildings/farGrid';
-import { derivedCacheOpen, keepDerivedDurably, readDerived } from './derivedCache';
+import { derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from './derivedCache';
+import { type BuildingStage, buildingStage, stageKey } from './nearBuildings';
+import { type NearPart, partsDigest } from './nearContent';
 import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
 import { TERRAIN_CELL } from './terrainGrid';
 
@@ -14,10 +16,10 @@ import { TERRAIN_CELL } from './terrainGrid';
 /** Asked by the page's choice of tiles (`nearTiles.ts`), run by the job system (`nearTiles.worker.ts`); a tile the page holds edited is baked from the page's records, never from the store's older version. */
 
 /** The kinds of near products baked per tile (`nearBakers.ts`). */
-export type NearKind = 'poles' | 'furniture' | 'signs' | 'barriers' | 'planted' | 'structures' | 'gardens' | 'covers';
+export type NearKind = 'poles' | 'furniture' | 'signs' | 'barriers' | 'planted' | 'structures' | 'gardens' | 'covers' | 'elements';
 
-/** The parts a tile is stored in (`editor/tileStore.ts`): its roads, its buildings, and the rest (poles, placed things, barriers, trees). */
-export type NearPart = 'roads' | 'buildings' | 'rest';
+export type { NearPart };
+export { partsDigest };
 
 /** A kind's bake as the page draws it. */
 export interface NearLanded {
@@ -66,6 +68,8 @@ export interface NearArea {
   /** The ground as drawn, and before the roads cut it. */
   readonly groundAt: (x: number, y: number) => number;
   readonly naturalAt: (x: number, y: number) => number;
+  /** What the kind reads of the buildings of the tile read `n` (0: the tile), for a kind that reads them (`NearBaker.buildings`). */
+  buildings(n: number): BuildingStage;
 }
 
 /** What a kind tells the bake: the parts it reads, whether it reads the neighbours, how far past the tile its ground is read, and its bake. */
@@ -81,9 +85,9 @@ export interface NearBaker<P, E = unknown> {
   readonly groundReach: number;
   /** What the bake reads of the page's own values (the clearings reaching the tile), digested: kept by it as by the ground (none: nothing). */
   readKey?(extra: E): number;
-  /** A first stage of its bake that reads no ground (a garden's plants, its buildings made again from their rows): kept by the tiles' version alone, so a change of the ground under the tile never makes it again; handed to `bake`. */
-  staged?(area: NearArea, extra: E): unknown;
-  bake(area: NearArea, extra: E, staged?: unknown): P | null;
+  /** What it reads of the buildings (`nearBuildings.ts`: where no plant stands, the gardens' plants), of the tile alone or of the tiles round it too: kept a version of each tile, never made again in a bake that finds it. */
+  readonly buildings?: 'own' | 'around';
+  bake(area: NearArea, extra: E): P | null;
   /** Its buffers, handed over not copied. */
   buffers(payload: P): ArrayBuffer[];
 }
@@ -101,6 +105,9 @@ export const derivedNearCache: NearTileCache = {
   get: (key) => readDerived(key),
   put: async (key, value) => { await (await keepDerivedDurably(key, value)).committed; },
 };
+
+/** The same store, a write resolved once queued (`keepDerivedQueued`): for a tile's maker, whose later readers' transactions come after its write's (`cityTile.worker.ts`). */
+export const queuedNearCache: NearTileCache = { ready: derivedCacheOpen, get: (key) => readDerived(key), put: (key, value) => keepDerivedQueued(key, value) };
 
 /** A kind of a tile asked: the page's version of the ask (`sig`: an answer to another is dropped), the version of what it reads (`want`: the tiles' versions and the kind's own), the bake the page draws now (`shown`: the same bake comes back without its arrays), what else it reads from the page (`NearProduct.extra`). */
 export interface NearAsk {
@@ -147,32 +154,6 @@ interface KeptNear {
   readonly payload: unknown;
 }
 
-/** The fields of each part, in a fixed order (`editor/tileStore.ts` splitRecords; `next` left out: it moves with every record made). */
-const PART_FIELDS: Readonly<Record<NearPart, readonly (keyof TileRecords)[]>> = {
-  roads: ['nodes', 'borrowedNodes', 'segments', 'gates'],
-  buildings: ['buildings', 'grown', 'lots'],
-  rest: ['poles', 'borrowedPoles', 'poleSpans', 'lotKeys', 'landscape', 'barriers', 'paint', 'trees', 'elements'],
-};
-
-/** THE CONTENT OF SOME PARTS OF A TILE, digested: what a kind reads of it, whatever version the tile is at; a record object digested once where its reader keeps `memo` (a record is replaced, never edited). The page names an edited tile by it (`nearTiles.ts`), a worker its kept bakes. */
-export function partsDigest(records: Partial<TileRecords>, parts: readonly NearPart[], memo: WeakMap<object, number> = new WeakMap()): string {
-  const d = new Digest();
-  for (const part of [...parts].sort()) {
-    for (const field of PART_FIELDS[part]) {
-      const value = records[field] as unknown;
-      d.addText(field);
-      if (!Array.isArray(value)) { d.addPlain(value ?? null); continue; }
-      for (const item of value as unknown[]) {
-        if (item === null || typeof item !== 'object') { d.addPlain(item ?? null); continue; }
-        let known = memo.get(item);
-        if (known === undefined) memo.set(item, known = new Digest().addPlain(item).value());
-        d.add(known);
-      }
-      d.add(value.length);
-    }
-  }
-  return d.value().toString(36);
-}
 
 /** What a tile's bake reads of the ground: every corner of the terrain's cells over the tile and `reach` round it, as drawn and as natural (a stroke, the roads' cut). */
 export function groundDigest(key: number, reach: number, groundAt: (x: number, y: number) => number, naturalAt: (x: number, y: number) => number): number {
@@ -206,10 +187,16 @@ function withoutEmpty(records: TileRecords): Partial<TileRecords> {
 }
 
 /** The tiles as one area: the document made when first asked, the tile first (an owner's node over a neighbour's borrowed copy, `loadTile`). */
-function areaOf(tiles: readonly TileRecords[], groundAt: (x: number, y: number) => number, naturalAt: (x: number, y: number) => number): NearArea {
+function areaOf(tiles: readonly TileRecords[], groundAt: (x: number, y: number) => number, naturalAt: (x: number, y: number) => number,
+  stages: ReadonlyMap<number, BuildingStage>): NearArea {
   let doc: RoadDoc | null = null, net: Network | null = null, elevation: RoadElevation | null = null;
   const area: NearArea = {
     key: tiles[0]!.key, tile: tiles[0]!, tiles, groundAt, naturalAt,
+    buildings(n) {
+      const stage = stages.get(n);
+      if (!stage) throw new Error(`the buildings of tile ${tiles[n]?.key} were not read for this bake`);
+      return stage;
+    },
     doc() {
       if (!doc) {
         doc = new RoadDoc();
@@ -239,9 +226,6 @@ interface Baking {
   readonly key: string;
   /** What was kept under its key (another version of the tiles, maybe the same content). */
   readonly kept: KeptNear | undefined;
-  staged?: { readonly value: unknown };
-  /** Its first stage kept at another version: taken where the content read is the same. */
-  stage?: { readonly want: string; readonly content: string; readonly value: unknown };
 }
 
 /** A kept bake as an answer: the same as the page draws (no arrays), or its arrays. */
@@ -249,11 +233,14 @@ const keptAnswer = (ask: NearAsk, kept: KeptNear): NearAnswer => (ask.shown === 
   ? { kind: ask.kind, sig: ask.sig, bake: kept.bake, payload: null, same: true }
   : { kind: ask.kind, sig: ask.sig, bake: kept.bake, payload: kept.payload, same: false });
 
-/** What a kind's bake read of the tiles: each tile's key and the content of its parts (and its `more` where it had something of the kind). */
-function contentOf(b: Baking, tiles: readonly TileRecords[], has: boolean): string {
+/** What a kind's bake read of the tiles: each tile's key and the content of its parts (and its `more` and buildings where it had something of the kind). */
+function contentOf(b: Baking, tiles: readonly TileRecords[], has: boolean, stages: ReadonlyMap<number, BuildingStage>): string {
   const parts = has && b.baker.more ? [...b.baker.parts, ...b.baker.more] : b.baker.parts;
   const d = new Digest();
-  for (const t of tiles) d.add(t.key).addText(partsDigest(t, parts));
+  tiles.forEach((t, n) => {
+    d.add(t.key).addText(partsDigest(t, parts));
+    if (has && b.baker.buildings && (b.baker.buildings === 'around' || n === 0)) d.addText(stages.get(n)?.content ?? '-');
+  });
   return d.value().toString(36);
 }
 
@@ -277,17 +264,10 @@ export async function runNearTileJob(job: NearTileJob, cache: NearTileCache, bak
     const key = `${job.prefix}${ask.kind}:${node}`;
     const kept = keeps ? await cache.get(key) as KeptNear | undefined : undefined;
     if (kept && kept.want === ask.want && kept.ground === ground) { answers.push(keptAnswer(ask, kept)); continue; }
-    const item: Baking = { ask, baker, ground, bake, key, kept };
-    // A first stage that reads no ground, kept by the tiles' version (or, read, their content): taken back without reading a tile.
-    if (baker.staged && keeps) {
-      const stage = await cache.get(`${key}#staged`) as { readonly want: string; readonly content: string; readonly value: unknown } | undefined;
-      if (stage && stage.want === ask.want) item.staged = { value: stage.value };
-      else if (stage) item.stage = stage;
-    }
-    baking.push(item);
+    baking.push({ ask, baker, ground, bake, key, kept });
   }
   if (baking.length) {
-    const reading = baking.some((b) => !b.staged && b.baker.around) ? job.tiles : job.tiles.slice(0, 1);
+    const reading = baking.some((b) => b.baker.around) ? job.tiles : job.tiles.slice(0, 1);
     /** The tiles read for some parts. */
     const read = async (parts: readonly NearPart[]): Promise<TileRecords[] | null> => {
       const out: TileRecords[] = [];
@@ -300,7 +280,7 @@ export async function runNearTileJob(job: NearTileJob, cache: NearTileCache, bak
       return out;
     };
     const union = (lists: readonly (readonly NearPart[])[]): NearPart[] => [...new Set(lists.flat())];
-    const needs = baking.filter((b) => !b.staged);
+    const needs = baking;
     let tiles = await read(union(needs.map((b) => b.baker.parts)));
     if (!tiles) return { kind: 'nearRecords', node };
     const ownOf = (b: Baking): readonly TileRecords[] => (b.baker.around ? tiles! : tiles!.slice(0, 1));
@@ -311,24 +291,31 @@ export async function runNearTileJob(job: NearTileJob, cache: NearTileCache, bak
       if (!extra) return { kind: 'nearRecords', node };
       tiles = tiles.map((t, n) => ({ ...t, ...withoutEmpty(extra[n]!) }));
     }
-    const area = areaOf(tiles, groundAt, naturalAt);
+    // What the kinds read of the buildings: each tile's stage kept a version (`nearBuildings.ts`), made again from the rows only where none is kept.
+    const stages = new Map<number, BuildingStage>();
+    for (const b of having) {
+      if (!b.baker.buildings) continue;
+      for (let n = 0; n < (b.baker.buildings === 'around' ? reading.length : 1); n++) {
+        if (stages.has(n)) continue;
+        const stage = await stageFor(job, cache, keeps, reading[n]!, job.records?.[n]);
+        if (!stage) return { kind: 'nearRecords', node };
+        stages.set(n, stage);
+      }
+    }
+    const area = areaOf(tiles, groundAt, naturalAt, stages);
     for (const b of baking) {
       try {
         // What it read, whatever version the tiles are at: the same content in another version (a write of the page's edit, a neighbour written) is what was baked.
-        const read = b.staged ? '' : contentOf(b, ownOf(b), having.has(b));
-        const bake = b.staged ? b.bake : bakeOf(read, b.ground);
-        if (!b.staged && b.ask.shown === bake) { answers.push({ kind: b.ask.kind, sig: b.ask.sig, bake, payload: null, same: true }); continue; }
-        if (!b.staged && b.kept && b.kept.content === read && b.kept.ground === b.ground) { answers.push(keptAnswer(b.ask, b.kept)); continue; }
-        if (!b.staged && !having.has(b)) {
+        const read = contentOf(b, ownOf(b), having.has(b), stages);
+        const bake = bakeOf(read, b.ground);
+        if (b.ask.shown === bake) { answers.push({ kind: b.ask.kind, sig: b.ask.sig, bake, payload: null, same: true }); continue; }
+        if (b.kept && b.kept.content === read && b.kept.ground === b.ground) { answers.push(keptAnswer(b.ask, b.kept)); continue; }
+        if (!having.has(b)) {
           answers.push({ kind: b.ask.kind, sig: b.ask.sig, bake, payload: null, same: b.ask.shown === bake });
           if (keeps) await cache.put(b.key, { want: b.ask.want, content: read, ground: b.ground, bake, payload: null } satisfies KeptNear);
           continue;
         }
-        if (b.baker.staged && !b.staged) {
-          b.staged = { value: b.stage && b.stage.content === read ? b.stage.value : b.baker.staged(area, b.ask.extra) };
-          if (keeps) await cache.put(`${b.key}#staged`, { want: b.ask.want, content: read, value: b.staged.value });
-        }
-        const payload = b.baker.bake(area, b.ask.extra, b.staged?.value);
+        const payload = b.baker.bake(area, b.ask.extra);
         // Kept before it is handed over: its buffers are the page's once posted.
         if (keeps) await cache.put(b.key, { want: b.ask.want, content: read, ground: b.ground, bake, payload } satisfies KeptNear);
         answers.push({ kind: b.ask.kind, sig: b.ask.sig, bake, payload, same: false });
@@ -339,6 +326,21 @@ export async function runNearTileJob(job: NearTileJob, cache: NearTileCache, bak
     }
   }
   return { kind: 'near', node, answers };
+}
+
+/** A tile's buildings as the bakes read them: kept at its version (the tile's maker kept it, `cityTile.worker.ts`; or a bake that made it), else made from its buildings part (the page's records of a tile it holds edited: never kept) and kept; null where the tile cannot be read here (the page reads it). */
+async function stageFor(job: NearTileJob, cache: NearTileCache, keeps: boolean, tile: { readonly key: number; readonly version: number },
+  page: Partial<TileRecords> | null | undefined): Promise<BuildingStage | null> {
+  const key = keeps && job.prefix !== null ? stageKey(job.prefix, tile.key) : null;
+  const kept = key ? await cache.get(key) as BuildingStage | undefined : undefined;
+  if (!page && kept && kept.version === tile.version) return kept;
+  const records = await partsOf(tile.key, tile.version, ['buildings'], page, job.store);
+  if (!records) return null;
+  // The same buildings in another version (a neighbour's write, an edit of the tile's roads): the stage kept, not made again.
+  if (kept && kept.content === partsDigest(records, ['buildings'])) return kept;
+  const stage = buildingStage(records, page ? null : tile.version);
+  if (!page && key) await cache.put(key, stage);
+  return stage;
 }
 
 /** Every buffer of an answer: handed over, not copied (MDN, `postMessage` transfer); one shared by two bakes once. */

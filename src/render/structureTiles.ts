@@ -39,7 +39,8 @@ export function structureProduct(parent: Object3D, materials: SceneMaterials, gr
   return {
     kind: 'structures',
     // A pier or a portal, several metres across, seen from afar.
-    cover: m(5) * m(5),
+    // Out to where a tree or a pier is a couple of pixels tall (DO NOT reach out to 6 km: dozens of tiles of roads solved, behind the street's cells).
+    cover: m(3) * m(3),
     top: m(60),
     extra: (): StructureExtra => ({ deckTile: materials.scale.deck }),
     land(parts) {
