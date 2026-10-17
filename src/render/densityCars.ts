@@ -170,6 +170,7 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     n: number;
     readonly slots: Set<number>;
     dirty: boolean;
+    readonly key: number;
   }
   const tiles = new Map<number, CarTile>();
   /** Each slot's tile, and the numbers its cars were last written from (NaN: write them). */
@@ -212,10 +213,18 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     mesh.receiveShadow = true;
     // Nothing drawn until a car is written.
     mesh.visible = false;
-    tile = Object.assign(made, { mesh, geometry, n: 0, slots: new Set<number>(), dirty: false });
+    tile = Object.assign(made, { mesh, geometry, n: 0, slots: new Set<number>(), dirty: false, key });
     tiles.set(key, tile);
     group.add(mesh);
     return tile;
+  }
+
+  /** A tile with no road left: its cars out of the count, its mesh off the group, its geometry's buffers released (three keeps them until disposed). */
+  function dropTile(tile: CarTile): void {
+    tiles.delete(tile.key);
+    total -= tile.n;
+    group.remove(tile.mesh);
+    tile.geometry.dispose();
   }
 
   /** The slot's link filed in the tile of its middle (`ML.mx`, `ML.my`); the tiles it left and joined written again. */
@@ -226,7 +235,12 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     const next = present && Number.isFinite(mx) && Number.isFinite(my) ? tileAt(Math.floor(mx / TILE), Math.floor(my / TILE)) : undefined;
     const was = slotTile[slot];
     if (was === next) return;
-    if (was) { was.slots.delete(slot); was.dirty = true; }
+    if (was) {
+      was.slots.delete(slot);
+      was.dirty = true;
+      // DO NOT keep a tile the window left: its mesh, geometry and buffers let go with its last road, or every tile the camera ever passed stays (grows with the path, not the view).
+      if (was.slots.size === 0) dropTile(was);
+    }
     if (next) { next.slots.add(slot); next.dirty = true; }
     slotTile[slot] = next;
   }
@@ -332,7 +346,11 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
       seenShape[slot] = recs[slot * MESO_RECORD + ML.shape]!;
       const was = slotLink[slot]!, now = memory.ids[slot]!;
       if (was !== now) {
-        if (!Number.isNaN(was)) bySegment.get(linkSegment(was))?.delete(slot);
+        if (!Number.isNaN(was)) {
+          // A segment no slot holds any more: forgotten (DO NOT keep a set for every segment the window ever had).
+          const left = bySegment.get(linkSegment(was));
+          if (left) { left.delete(slot); if (left.size === 0) bySegment.delete(linkSegment(was)); }
+        }
         slotLink[slot] = now;
         let set = bySegment.get(linkSegment(now));
         if (!set) bySegment.set(linkSegment(now), set = new Set());
