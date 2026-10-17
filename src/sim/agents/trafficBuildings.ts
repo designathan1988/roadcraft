@@ -126,6 +126,12 @@ function fileRect(b: TrafficBuilding): ChangeRect | null {
   return r.every(Number.isFinite) ? r : null;
 }
 
+/** A batch of the buildings' changes in the diary (`TrafficBuildingTable.apply`): its detail is this, then one letter an id - gone, kept in its place, or new (put last). */
+export const BATCH_DETAIL = 'batch:';
+export const BATCH_GONE = 'g';
+export const BATCH_KEPT = 'k';
+export const BATCH_NEW = 'n';
+
 /** A building of the page changed, as the worker is told it: its traffic record now, null when it is gone. */
 export interface BuildingChange {
   readonly id: BuildingId;
@@ -160,8 +166,11 @@ export class TrafficBuildingTable implements TrafficBuildings {
     this.journal.record('buildings', null, { detail: 'loaded' });
   }
 
-  /** The page's changes, each written in the diary as `BuildingStore.restore` writes it (`buildingOrder.ts` reads `restored`). */
+  /** The page's changes, written in the diary as ONE entry (DO NOT write one a building: a tile's ~1,500 pushed every reader past what the diary keeps): each building's id once, in order, and what became of it (`BATCH_DETAIL`, `buildingOrder.ts`). */
   apply(changes: readonly BuildingChange[]): void {
+    const ids: BuildingId[] = [];
+    const rects: ChangeRect[] = [];
+    let ops = '';
     for (const { id, value } of changes) {
       const was = this.items.get(id);
       if (value === null) {
@@ -169,12 +178,16 @@ export class TrafficBuildingTable implements TrafficBuildings {
         this.items.delete(id);
         this.ranks.delete(id);
         this.cells.remove(id);
-        this.journal.record('buildings', [rectOf(was)], { ids: [id], detail: 'restored' });
+        ids.push(id); rects.push(rectOf(was)); ops += BATCH_GONE;
         continue;
       }
       this.place(value);
-      this.journal.record('buildings', was ? [rectOf(was), rectOf(value)] : [rectOf(value)], { ids: was ? [id, id] : [id], detail: 'restored' });
+      ids.push(id);
+      if (was) rects.push(rectOf(was));
+      rects.push(rectOf(value));
+      ops += was ? BATCH_KEPT : BATCH_NEW;
     }
+    if (ids.length) this.journal.record('buildings', rects, { ids, detail: `${BATCH_DETAIL}${ops}` });
   }
 
   near(minX: number, minY: number, maxX: number, maxY: number): TrafficBuilding[] {

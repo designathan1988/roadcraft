@@ -119,7 +119,10 @@ describe('the map the simulation\'s worker is sent', () => {
       const ids = new Set<BuildingId>();
       for (const e of entries) for (const id of e.ids!) ids.add(id as BuildingId);
       sent += ids.size;
+      // One diary entry for the whole message, never one a building.
+      const was = copy.changes.version;
       table.apply(trafficChangesOf(structuredClone(buildingChangesOf(doc, ids))));
+      expect(copy.changes.version - was).toBeLessThanOrEqual(1);
       same();
     }
     expect(sent).toBeGreaterThan(5);
