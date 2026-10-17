@@ -11,10 +11,18 @@ import { buildingChangesOf, trafficMapOf } from '@sim/agents/trafficBuildings';
 const town = JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')) as SerializedDoc & { buildings: { id: number; x: number }[] };
 
 /** The structures a tile fills, by name: what is read of the worker. */
-type Inside = { net: Record<string, unknown> & { segmentCells: unknown; junctionCells: unknown }; sim: Record<string, unknown> };
+type Inside = { readonly net: unknown; readonly sim: unknown };
+/** A field of the worker read by its path (`a.b.c`). */
+const at = (root: unknown, path: string): unknown => path.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown> | null)?.[k], root);
 const STRUCTURES: Readonly<Record<string, (host: Inside) => number>> = {
-  walkableCells: (h) => ((h.net as { crossingWalkable: { made: Map<number, unknown> } | null }).crossingWalkable?.made.size ?? 0),
+  walkableCells: (h) => (at(h.net, 'crossingWalkable.made') as Map<number, unknown> | undefined)?.size ?? 0,
+  // The cells' versions of the filings by place (`world/cells.ts` CellFiling).
+  segmentCells: (h) => versions(at(h.net, 'segmentCells')),
+  junctionCells: (h) => versions(at(h.net, 'junctionCells')),
+  nodePlaces: (h) => versions(at(h.net, 'build.nodePlaces')),
+  junctionFiling: (h) => versions(at(h.sim, 'junctionFiling')),
 };
+const versions = (filing: unknown): number => (at(filing, 'versions') as Map<number, number>).size;
 
 async function run(): Promise<Record<string, number>[]> {
   const host = new SimHost(() => {});
