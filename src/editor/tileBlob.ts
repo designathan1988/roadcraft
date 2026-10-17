@@ -29,9 +29,22 @@ export interface HeadRead {
   readonly body: number;
 }
 
-/** gzip of some bytes (MDN, `CompressionStream`). */
-export const gzipBytes = (bytes: Uint8Array<ArrayBuffer>): Promise<Blob> =>
-  new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+/** gzip of some bytes (MDN, `CompressionStream`): written straight to its writer, its chunks read and made one Blob at the end. DO NOT copy the input into a Blob to have a stream, nor let a Response gather it into more: a Blob is native memory the V8 does not count, and a worker whose heap is quiet never collects them - they piled up tile after tile, ~2.9 GB outside the JS heap while the map was made (2026-10-17). */
+export async function gzipBytes(bytes: Uint8Array<ArrayBuffer>): Promise<Blob> {
+  const stream = new CompressionStream('gzip');
+  const writer = stream.writable.getWriter();
+  // Written while it is read: the stream's queue would hold the write otherwise.
+  const writing = writer.write(bytes).then(() => writer.close());
+  const reader = stream.readable.getReader();
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value as Uint8Array<ArrayBuffer>);
+  }
+  await writing;
+  return new Blob(chunks);
+}
 
 /** The bytes a gzip blob holds. */
 export async function gunzipBytes(blob: Blob): Promise<Uint8Array<ArrayBuffer>> {
