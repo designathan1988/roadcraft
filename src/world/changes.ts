@@ -84,12 +84,16 @@ class KindLog {
     this.weight += weightOf(entry);
     // DO NOT hold more than the cap for a reader however far behind: past what is loaded, it reads the document whole for no more (`ChangeJournal.cap`).
     // The newest is never counted against it: one entry larger than the cap (a list at its cap named whole) does not push out the ones just before it.
+    // DO NOT cut what a live reader has not read (`needed`): it would take everything as changed, and a reader of the roads then looks at every building (`tests/editor/buildings.spec.ts`).
     const newest = weightOf(entry);
     if (this.weight - newest > cap && this.entries.length > 1) {
+      const upTo = needed();
       let cut = 0;
-      while (cut < this.entries.length - 1 && this.weight - newest > cap) this.weight -= weightOf(this.entries[cut++]!);
-      this.missingUpTo = Math.max(this.missingUpTo, this.entries[cut - 1]!.serial);
-      this.entries = this.entries.slice(cut);
+      while (cut < this.entries.length - 1 && this.weight - newest > cap && this.entries[cut]!.serial <= upTo) this.weight -= weightOf(this.entries[cut++]!);
+      if (cut) {
+        this.missingUpTo = Math.max(this.missingUpTo, this.entries[cut - 1]!.serial);
+        this.entries = this.entries.slice(cut);
+      }
     }
     // Let go of what no one needs only past twice what is always kept: each entry looked at a constant number of times.
     if (this.entries.length < 2 * KEPT) return;
