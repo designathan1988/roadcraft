@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Mesh, type MeshStandardMaterial, type WebGLProgramParametersWithUniforms, type WebGLRenderer } from 'three';
+import { type WebGLProgramParametersWithUniforms, type WebGLRenderer } from 'three';
 import { createFarForest } from '@render/farForest';
 import { natureTreePictures } from '@render/natureTrees';
 
@@ -11,7 +11,7 @@ describe('the trees\' pictures', () => {
   it('are one atlas for the far woods and the near trees, held until the last lets go', () => {
     const near = natureTreePictures();
     const far = createFarForest(4, grid, () => {});
-    const material = (far.object.children[0] as Mesh).material as MeshStandardMaterial;
+    const material = far.material;
     const shader = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>', fragmentShader: '#include <common>\n#include <map_fragment>\n#include <normal_fragment_begin>', defines: {} };
     material.onBeforeCompile(shader as unknown as WebGLProgramParametersWithUniforms, {} as WebGLRenderer);
     const uniforms = shader.uniforms as Record<string, { value: unknown }>;

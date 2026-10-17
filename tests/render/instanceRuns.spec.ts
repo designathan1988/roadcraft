@@ -14,6 +14,7 @@ import {
   Vector3,
   type BufferAttribute,
   type Camera,
+  type InstancedMesh,
   type InterleavedBuffer,
   type WebGLProgramParametersWithUniforms,
   type WebGLRenderer,
@@ -208,6 +209,33 @@ describe('instances kept thing by thing', () => {
       expect(sent, `step ${step}`).toBeGreaterThanOrEqual(changed);
       expect(sent, `step ${step}: ${sent} of ${now.count} sent`).toBeLessThan(Math.max(8, now.count / 4));
     }
+    layer.dispose();
+  });
+
+  it('keeps in the scene only the meshes that draw something, and puts one back once its instances come into view', () => {
+    const layer = createInstanceRuns('test', specs, SHADOW_REACH);
+    const near = (store: number, x: number): Run => { const b = new RunBuilder(specs); b.turned(store, x, 0, 0, 0, m(2), m(2), m(2), m(2), { r: 1, g: 1, b: 1 }); return b.build(); };
+    // Store 0 near the origin; store 1 far away; store 2 near too, but only once added.
+    layer.update({ added: [near(0, 0), near(1, m(40_000))], removed: [] });
+    const viewAt = (): { frustum: Frustum; view: Matrix4 } => {
+      const camera = new PerspectiveCamera(50, 1.6, 1, m(800));
+      camera.position.set(0, m(60), m(80));
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld();
+      const view = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      return { frustum: new Frustum().setFromProjectionMatrix(view), view };
+    };
+    let { frustum, view } = viewAt();
+    layer.cull(frustum, view);
+    // Both meshes made; only the one drawing stays under the layer's group.
+    expect(layer.meshes.length).toBe(2);
+    expect(layer.group.children.map((c) => c.name)).toEqual(['plain']);
+    // A store's thing comes into view: its mesh made and drawn; the far one stays out.
+    layer.update({ added: [near(2, m(3))], removed: [] });
+    ({ frustum, view } = viewAt());
+    layer.cull(frustum, view.clone());
+    expect(layer.group.children.map((c) => c.name).sort()).toEqual(['cards', 'plain'].filter((n) => layer.meshes.some((x) => x.name === n && x.count > 0)).sort());
+    expect(layer.group.children.every((c) => (c as InstancedMesh).count > 0)).toBe(true);
     layer.dispose();
   });
 
