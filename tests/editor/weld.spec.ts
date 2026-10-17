@@ -4,7 +4,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { footprintBox, footprintRects, localDirToWorld, planOverlap } from '@world/buildings/geometry';
 import { type Building, type BuildingId, cloneBuilding, volumeById } from '@world/buildings/types';
-import { blueprintByKey } from '@world/buildings/blueprints';
+import { blueprintByKey, generateBlock } from '@world/buildings/blueprints';
 import { paletteOf } from '@world/buildings/materials';
 import { validateBuilding } from '@world/buildings/validate';
 import {
@@ -15,7 +15,7 @@ import {
   weldInto,
 } from '@editor/buildings';
 import type { Building as BuildingType } from '@world/buildings/types';
-import { TUNED_UNIT } from '@world/units';
+import { TUNED_UNIT, m } from '@world/units';
 
 /** The 0.4 m unit these scenes were laid out in: every length below is in it, times U. */
 const U = TUNED_UNIT;
@@ -67,6 +67,28 @@ describe('welding two buildings', () => {
     expect(weldInto(ctx, draft, [])).toEqual([first.id]);
     const walls = draft.volumes.map((v) => (v.materials?.wall ?? paletteOf(draft).wall).finish).sort();
     expect(walls).toEqual(['brick', 'plaster']);
+  });
+
+  it('welds in a chain: a building touching only the one just absorbed comes in too', () => {
+    const { ctx } = world();
+    // A block of w x d metres whose footprint's centre is (cx, cy), turned by `rotation`.
+    const block = (w: number, d: number, cx: number, cy: number, rotation: number): Omit<Building, 'id'> => {
+      const c = Math.cos(rotation), s = Math.sin(rotation), hw = m(w) / 2, hd = m(d) / 2;
+      return { ...generateBlock(m(w), m(d), 1), x: cx - (hw * c - hd * s), y: cy - (hw * s + hd * c), rotation } as Omit<Building, 'id'>;
+    };
+    // A long bar turned 45 degrees: its box has empty corners. A touches its edge; B, in a corner of the box, touches A alone.
+    const base = { x: 0, y: m(100) };
+    const nx = -Math.SQRT1_2, ny = Math.SQRT1_2;
+    const pa = { x: base.x + m(10) * Math.SQRT1_2 + nx * m(4), y: base.y + m(10) * Math.SQRT1_2 + ny * m(4) };
+    const pb = { x: pa.x + nx * m(7), y: pa.y + ny * m(7) };
+    const a = ctx.doc.buildings.add(block(6, 6, pa.x, pa.y, 0));
+    const b = ctx.doc.buildings.add(block(6, 6, pb.x, pb.y, 0));
+    const draft = { ...block(40, 4, base.x, base.y, Math.PI / 4), id: 9999 as BuildingId } as Building;
+    // B alone does not touch the draft: welded only through A.
+    expect(weldInto(ctx, cloneBuilding(draft), [a.id])).not.toContain(b.id);
+    const absorbed = weldInto(ctx, cloneBuilding(draft), []);
+    expect(absorbed).toContain(a.id);
+    expect(absorbed).toContain(b.id);
   });
 
   it('joins two overlapping buildings into one, keeping both blocks whole', () => {

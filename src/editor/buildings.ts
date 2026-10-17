@@ -843,6 +843,8 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
       draft.elements = [...(draft.elements ?? []), { ...element, id: takeElementId(draft), x: p.x, y: p.y }];
     }
     absorbed.push(other.id);
+    // The draft grew by it: its rings made again, so a building touching the one absorbed welds in too (a chain).
+    mineRings = null;
   }
   // Nothing is cut: the blocks of both buildings stay whole, overlapping where they overlap, and can be moved apart again.
   void fresh;
