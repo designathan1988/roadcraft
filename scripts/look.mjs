@@ -102,9 +102,17 @@ async function steps(page, report) {
   /** A city generated, and the seconds until it stands. */
   const city = async (options) => {
     const t0 = Date.now();
-    await page.evaluate((o) => window.__roadcraft.generateCity(o === true ? {} : o), options);
+    // An earlier opening's mark is not this city's.
+    await page.evaluate((o) => { performance.clearMarks('opening:shown'); window.__roadcraft.generateCity(o === true ? {} : o); }, options);
     // `?.`: a reload in the wait leaves the page without `__roadcraft` for a moment.
-    await page.waitForFunction(() => window.__roadcraft && !window.__roadcraft.cityGrowth() && window.__roadcraft.memory().drawCalls > 100, null, { timeout: 1_800_000, polling: 1000 });
+    // Shown: the opening's own mark (`renderer.ts` reveal), read for nothing; the draw calls only every 10th look (`memory` walks the whole scene: 9 s of an opening's page, 2026-10-16), for a town shown without the mark.
+    await page.waitForFunction(() => {
+      const game = window.__roadcraft;
+      if (!game || game.cityGrowth()) return false;
+      if (performance.getEntriesByName('opening:shown').length > 0) return true;
+      window.__lookPolls = (window.__lookPolls ?? 0) + 1;
+      return window.__lookPolls % 10 === 0 && game.memory().drawCalls > 100;
+    }, null, { timeout: 1_800_000, polling: 1000 });
     stillThere();
     const value = { seconds: (Date.now() - t0) / 1000, builtIn: await page.evaluate(() => window.__roadcraft.cityBuiltIn()) };
     console.log(`city ready in ${value.seconds.toFixed(1)} s (growth ${Number(value.builtIn).toFixed(1)} s)`);
