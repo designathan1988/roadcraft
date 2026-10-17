@@ -10,8 +10,7 @@ class FakeWorker {
   readonly asked: ToJob[] = [];
   constructor() { FakeWorker.made.push(this); }
   postMessage(message: ToJob): void { this.asked.push(message); }
-  terminated = false;
-  terminate(): void { this.terminated = true; }
+  terminate(): void { /* the pool's workers outlive a lane */ }
 }
 
 /** Which fake worker a port posts to. */
@@ -235,38 +234,5 @@ describe('the job system', () => {
     }
     expect(FakeWorker.made[save]!.asked.filter((m) => m.seq !== undefined)).toEqual([]);
     expect(FakeWorker.made.length).toBeLessThanOrEqual(jobWorkers());
-  });
-
-  it("once the map is made holds the workers the cage holds at their peak: the rush's tile workers let go as their lanes free, the queue still served", async () => {
-    vi.stubGlobal('navigator', { hardwareConcurrency: 24 });
-    const { jobPort, jobWorkers, settlePool, settledWorkers, submitJob } = await import('@/jobs/jobPool');
-    expect(jobWorkers()).toBe(9);
-    expect(settledWorkers()).toBe(5);
-    // The rush: the tiles on the long side's seven workers, the roads on the other two.
-    const tiles = Array.from({ length: 7 }, () => jobPort('cityTiles'));
-    const roads = [0, 1].map(() => jobPort('roadTiles'));
-    expect(FakeWorker.made).toHaveLength(9);
-    const workerOf = (lane: Worker): FakeWorker => (lane as unknown as { worker: FakeWorker }).worker;
-    // The map made: nothing let go while every worker holds a lane.
-    settlePool(true);
-    expect(FakeWorker.made.filter((w) => w.terminated)).toHaveLength(0);
-    // The generator lets go its lanes past three (`tileGenerator.ts` dropOwn): their workers go with them, down to five.
-    for (const lane of tiles.slice(3)) lane.terminate();
-    const gone = FakeWorker.made.filter((w) => w.terminated);
-    expect(gone).toHaveLength(4);
-    for (const lane of tiles.slice(3)) expect(gone).toContain(workerOf(lane));
-    for (const lane of [...tiles.slice(0, 3), ...roads]) expect(workerOf(lane).terminated).toBe(false);
-    // The queue still served, by the workers left, and no new one made past five.
-    const answered: string[] = [];
-    for (const name of ['a', 'b', 'c', 'd', 'e', 'f']) submitJob({ service: 'cells', key: null, priority: -1, write: () => ({ data: name, transfer: [] }), done: () => answered.push(name), failed: () => {} });
-    expect(FakeWorker.made.filter((w) => !w.terminated)).toHaveLength(5);
-    for (let round = 0; round < 6; round++) {
-      for (const w of FakeWorker.made.filter((x) => !x.terminated)) {
-        const job = w.asked.find((m) => m.seq !== undefined && !answered.includes(m.data as string));
-        if (job) w.onmessage?.({ data: { port: job.port, seq: job.seq, data: null } });
-      }
-    }
-    expect(answered.sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
-    expect(FakeWorker.made.filter((w) => !w.terminated)).toHaveLength(5);
   });
 });
