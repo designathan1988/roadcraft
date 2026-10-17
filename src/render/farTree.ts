@@ -693,7 +693,7 @@ export class FarTree<P> implements FarTiles {
       this.nearResident.add(n);
       this.again();
     };
-    const sent = warmLooseAhead(landed.meshes, () => this.pixelsOf(n));
+    const sent = warmLooseAhead(landed.meshes, () => this.nearPixelsOf(n));
     if (sent) void sent.then(put); else put();
   }
 
@@ -902,6 +902,13 @@ export class FarTree<P> implements FarTiles {
   }
 
   /** The pixels a node's height spans from the last eye: its upload's rank (`uploads.ts`). */
+  /** The pixels a tile's near level leaves out while its far level stands, from the last eye: its upload's rank, by the measure the choice wants it by (`wantsNear`) and the cells' detail is ranked by (`layer.ts`). DO NOT rank it by the road's height: flat on the ground, it went behind every building in reach, and with the uploads a few MiB a frame (`uploads.ts` drainWarm) the street view showed the far level for seconds (conferencia 09-street, 2026-10-17). */
+  private nearPixelsOf(n: FarNode): number {
+    const e = this.eyeNow;
+    measureSeen(this.ranked, e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, n.x0, n.y0, n.x1, n.y1, n.top);
+    return this.kind.near!.error * this.ranked.perMetre;
+  }
+
   private pixelsOf(n: FarNode): number {
     const e = this.eyeNow;
     measureSeen(this.ranked, e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, n.x0, n.y0, n.x1, n.y1, n.top);
