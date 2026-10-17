@@ -738,7 +738,10 @@ export function createSceneRenderer(
       has: (key) => storedKeys.has(key),
       fetch: (keys) => (tilesPrefix ? readDerivedSome<TileBundle>(tilesPrefix, keys) : Promise.resolve(new Map())),
     },
-    // DO NOT hold the built tiles for idle writes
+    // Kept by the road tile workers that make them (`roadTile.worker.ts`): the page only marks the key.
+    workersKeep: tilesPrefix && typeof Worker !== 'undefined' ? tilesPrefix : null,
+    kept: (key) => { if (tilesPrefix && !storedKeys.has(key)) noteStored(key); },
+    // DO NOT hold the built tiles for idle writes (the ones made here, when the workers failed)
     keep: (key, bundle) => {
       if (!tilesPrefix || storedKeys.has(key)) return;
       // The tile's arrays handed to the writer, not copied: nothing reads them once its blocks are merged (`SurfaceReuse.keep`).

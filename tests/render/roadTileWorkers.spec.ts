@@ -225,3 +225,49 @@ describe('road surface inputs kept between builds', () => {
     expect(after(() => { doc.buildings.add(lot); }).built).toBeGreaterThan(0);
   });
 });
+
+describe('the road tiles kept for a later session by their workers', () => {
+  it('keeps every tile, waiting under a full ceiling rather than dropping one', async () => {
+    const { keepTiles } = await import('@render/roadTile.worker');
+    const { WriteBudget } = await import('@core/derivedCache');
+    const budget = new WriteBudget(1024);
+    // Something else holds the ceiling: the tiles wait for it, none is dropped.
+    const held = await budget.take(1024);
+    const tile = (n: number): TileMeshes => [['asphalt', { positions: new Float32Array(n) } as unknown as TileMeshes[number][1]]];
+    let kept: number[] | null = null;
+    void keepTiles([tile(300), tile(300), tile(300)], { prefix: 'p:', keys: ['a', null, 'c'] }, budget).then((k) => { kept = k; });
+    await new Promise((done) => setTimeout(done, 0));
+    expect(kept).toBeNull();
+    held();
+    for (let k = 0; k < 20 && kept === null; k++) await new Promise((done) => setTimeout(done, 0));
+    expect(kept).toEqual([0, 2]);
+  });
+
+  it('leaves the page nothing to keep of a tile its worker kept: the key marked, no arrays held', async () => {
+    const net = new Network(RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/grid-and-bends.json', 'utf8')).document));
+    net.rebuild();
+    const inner = workerTiler();
+    const tiler: RoadTiler = {
+      ...inner,
+      tiles: (job) => {
+        const made = inner.tiles(job);
+        return made.then((tiles) => { job.keep?.keys.forEach((key, k) => { if (key) job.onKept?.(k); }); return tiles; });
+      },
+    };
+    const keptKeys: string[] = [];
+    let pageKept = 0;
+    const reuse = {
+      tiles: new Map(), dependsOn: () => 0, paint: new Map(), chunks: new Map(),
+      workersKeep: 'roadtiles:test:', kept: (key: string) => { keptKeys.push(key); }, keep: () => { pageKept++; },
+    } as unknown as Parameters<typeof roadSurfaceSteps>[4];
+    const elevation = buildRoadElevation(net, ground);
+    const steps = roadSurfaceSteps(net, elevation, materials, ground, reuse, undefined, tiler);
+    for (;;) {
+      const step = steps.next();
+      if (step.done) break;
+      if (step.value === 'wait') await new Promise((done) => setTimeout(done, 0));
+    }
+    expect(keptKeys.length).toBeGreaterThan(10);
+    expect(pageKept).toBe(0);
+  });
+});

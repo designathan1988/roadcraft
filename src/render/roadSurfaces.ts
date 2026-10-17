@@ -68,6 +68,9 @@ export interface SurfaceReuse {
   readonly inputs?: SurfaceInputs;
   /** Each tile built afresh, to be kept for a later session */
   readonly keep?: (key: string, bundle: TileBundle) => void;
+  /** The store's prefix the road tile workers keep the tiles they make under (none: the page keeps them, `keep`); `kept` tells the page a key is kept. */
+  readonly workersKeep?: string | null;
+  readonly kept?: (key: string) => void;
 }
 
 /** The box round a block's tiles' rectangles, [minX, minY, maxX, maxY]. */
@@ -456,15 +459,21 @@ export function* roadSurfaceSteps(
     };
     /** DO NOT cut, triangulate or read the vertices of a city's tiles on the page: the whole of its roads' build (2026-10-15). */
     const offPage = tiler && elevation.fieldFor ? tiler : null;
+    /** The tiles their worker kept in the store (`TileJob.keep`). */
+    const keptByWorker = new Set<PassTile>();
     const buildAll = function* (list: readonly PassTile[], done: (tile: PassTile) => void): Generator<'wait' | void, void, void> {
       /** Asks the tiler for `SHAPE_BATCH` tiles from `from` on; the answer lands in the record it returns. */
       const ask = (from: number): { readonly from: number; readonly answer: { tiles?: Map<string, Tile>[]; failed?: boolean } } => {
         const answer: { tiles?: Map<string, Tile>[]; failed?: boolean } = {};
+        const batch = list.slice(from, from + SHAPE_BATCH);
+        const prefix = reuse?.workersKeep;
         const request: TileJob = {
           pass: desc,
-          tiles: list.slice(from, from + SHAPE_BATCH).map((t) => ({ rect: t.rect, into: polysOf(t.into) })),
+          tiles: batch.map((t) => ({ rect: t.rect, into: polysOf(t.into) })),
           dataFor,
           terrainAt,
+          // Kept by the workers that make them, with a ceiling of their own on what is not committed: DO NOT post them back to be kept (past the page's ceiling a tile was dropped).
+          ...(prefix ? { keep: { prefix, keys: batch.map((t) => (reuse?.stored?.has(t.stored) ? null : t.stored)) }, onKept: (k: number) => { keptByWorker.add(batch[k]!); } } : {}),
         };
         offPage!.tiles(request).then(
           (tiles) => { answer.tiles = tiles; },
@@ -498,7 +507,7 @@ export function* roadSurfaceSteps(
         if (made) yield;
       }
     };
-    /** The tiles built afresh this pass: kept for a later session once merged (below). */
+    /** The tiles built afresh this pass: kept for a later session once merged (below), unless their worker kept them. */
     const fresh: PassTile[] = [];
     let builtHere = 0;
     yield* buildAll(tiles.filter((t) => t.surfaces === null), (tile) => {
@@ -645,7 +654,10 @@ export function* roadSurfaceSteps(
     // The tiles' arrays go with this build: copied into the blocks, which send them to the GPU (the pass's state keeps none).
     mergeMs += performance.now() - mergeAt;
     // Kept for a later session only now, every block merged
-    for (const tile of fresh) reuse?.keep?.(tile.stored, tile.bundle!);
+    for (const tile of fresh) {
+      if (keptByWorker.has(tile)) reuse?.kept?.(tile.stored);
+      else reuse?.keep?.(tile.stored, tile.bundle!);
+    }
     for (const tile of tiles) tile.bundle = null;
   }
   // Blocks no surface has any more.
