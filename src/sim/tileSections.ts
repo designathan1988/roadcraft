@@ -1,4 +1,4 @@
-import { packArrays, packedArray, packedNumber, unpackArrays } from '@core/arrayPack';
+import { packArrays, packArraysBlob, packedArray, packedNumber, unpackArrays } from '@core/arrayPack';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { TileRecords } from '@world/doc';
 import { type TrafficBuilding, trafficBuilding } from './agents/trafficBuildings';
@@ -17,18 +17,23 @@ export const TRAFFIC_SECTION = 'traffic';
 const TRAFFIC_FORMAT = 1;
 
 /** A section as the tile store keeps it (`editor/tileStore.ts` TileSection, the same shape: the simulation does not import the editor). */
-type Section = { readonly json: unknown } | { readonly bin: Uint8Array<ArrayBuffer> };
+type Section = { readonly json: unknown } | { readonly bin: Uint8Array<ArrayBuffer> } | { readonly blob: Blob };
 
 /** The link table's arrays as they are packed. */
 const LINK_ARRAYS = [
   'link', 'from', 'to', 'length', 'lanes', 'vFree', 'capacity', 'flags', 'shape', 'turnStart', 'turnTo', 'turnWeight', 'nodes', 'nodeFlags', 'nodeDegree', 'cells',
 ] as const satisfies readonly (keyof TileLinks)[];
 
-/** A link table as one buffer. */
-function packLinks(links: TileLinks): Uint8Array<ArrayBuffer> {
+/** A link table's numbers and arrays as they are packed. */
+function linkPack(links: TileLinks): [Readonly<Record<string, number>>, Readonly<Record<string, TileLinks[(typeof LINK_ARRAYS)[number]]>>] {
   const arrays: Record<string, TileLinks[(typeof LINK_ARRAYS)[number]]> = {};
   for (const name of LINK_ARRAYS) arrays[name] = links[name];
-  return packArrays({ key: links.key, version: links.version, format: links.format, count: links.count }, arrays);
+  return [{ key: links.key, version: links.version, format: links.format, count: links.count }, arrays];
+}
+
+/** A link table as one buffer. */
+export function packLinks(links: TileLinks): Uint8Array<ArrayBuffer> {
+  return packArrays(...linkPack(links));
 }
 
 /** A link table read back from its buffer, its arrays views on it; null: of another format than this build bakes (derived again). */
@@ -126,7 +131,8 @@ export function networkOfSection(value: unknown): NetworkBake | null {
 export function bakeTileSections(records: TileRecords, bays = true): Readonly<Record<string, Section>> {
   const traffic = trafficJson(tileTraffic(records.buildings));
   const sections: Record<string, Section> = {
-    [LINKS_SECTION]: { bin: packLinks(bakeTileLinks(records)) },
+    // Straight into the part's Blob (`packArraysBlob`), the same bytes as `packLinks`: no buffer of its own beside it.
+    [LINKS_SECTION]: { blob: packArraysBlob(...linkPack(bakeTileLinks(records))) },
     [TRAFFIC_SECTION]: { json: traffic },
   };
   const baked = bays ? tileBaysSection(records, traffic) : null;

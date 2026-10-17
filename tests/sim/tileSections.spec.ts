@@ -23,17 +23,17 @@ function townTile(): TileRecords {
   };
 }
 
-/** A section as the tile store keeps it: a JSON part made text and read back, a binary part's bytes in a buffer of their own. */
+/** A section as the tile store keeps it: a JSON part made text and read back. */
 const jsonBack = (value: unknown): unknown => JSON.parse(JSON.stringify(value)) as unknown;
-const bytesBack = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 
 describe('a tile\'s simulation sections', () => {
-  it('the link table read back is the one baked from the records', () => {
+  it('the link table read back is the one baked from the records', async () => {
     const tile = townTile();
     expect(tile.segments.length).toBeGreaterThan(0);
     const section = bakeTileSections(tile)[LINKS_SECTION]!;
-    expect('bin' in section).toBe(true);
-    const links = unpackLinks(bytesBack((section as { bin: Uint8Array }).bin))!;
+    // Written straight into the part's Blob (`packArraysBlob`).
+    expect('blob' in section).toBe(true);
+    const links = unpackLinks(await (section as { blob: Blob }).blob.arrayBuffer())!;
     const baked = bakeTileLinks(tile);
     expect(links.key).toBe(tile.key);
     expect(links.version).toBe(4);
