@@ -4,7 +4,7 @@ import { lotCentre } from '@world/lotRings';
 import { rescaleSerializedDoc } from '@world/rescale';
 import { OWNER, TILE_COUNTED, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
 import type { NodeId, SegmentId } from '@world/ids';
-import { type TileRecords, preparedTiles } from '@world/doc';
+import { type PreparedGrown, type TileRecords, preparedTiles } from '@world/doc';
 import type { NetworkBake } from '@world/network';
 import { tileRoadNetwork } from '@world/tileNetwork';
 import { internMembers } from '@world/buildings/intern';
@@ -12,6 +12,7 @@ import { encodeRecords, readRecords, refOf, tableRecords } from '@world/building
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
 import { tileBuildingsOf, withGrownBuildings } from '@world/growth/grownRows';
+import type { GrownRows } from '@world/growth/rows';
 import { gatesOf } from '@world/parkingLayout';
 import { METERS_PER_UNIT, m } from '@world/units';
 import { type PartStore, type SaveEntry, storeWriter } from './saveStore';
@@ -197,8 +198,9 @@ export function tileWrite(records: TileRecords): TileWrite {
     table[k] = t;
     row[k] = ref.row;
   }
-  // The gates of the buildings as they stand now, read from the records here (`entrancesOf` keeps each record's); a tile with no building has none to keep.
-  return { ...records, ...(n ? { gates: gatesOf(buildings) } : {}), buildings: { tables, table, row } };
+  // The gates of the buildings as they stand now, read from the records here (`entrancesOf` keeps each record's); a tile with no building has none to keep. Those of a tile written with grown rows come with it (`RoadDoc.tileRecords`: every building's, the rows' too).
+  const gates = records.grown?.id.length ? records.gates : n ? gatesOf(buildings) : undefined;
+  return { ...records, ...(gates ? { gates } : {}), buildings: { tables, table, row } };
 }
 
 /** A write's records as the store keeps them: each building read from its row (`readRecords`, one reader a table), where the tile is written (the save worker; the page itself on the desktop, `storeTiles`). */
@@ -379,6 +381,8 @@ export interface PreparedTile {
   readonly records: TileRecords;
   readonly buildings: ArrayBufferLike;
   readonly network: NetworkBake | null;
+  /** The rows its grown buildings were made from (`TileRecords.grown`): kept for the page, which writes back as rows those no edit touched (`RoadDoc.tileRecords`). */
+  readonly grown?: GrownRows;
 }
 
 /** A TILE MADE READY FOR THE PAGE where it is read or made (the save worker, the generator's): each building migrated and its members interned (`intern.ts`: a tile's records share their shapes, kept through the message's clone), so the page only files them (`BuildingStore.loadPrepared`); with `network`, the tile's junctions and ribbons solved here from its roads (`bakeTileNetwork`), so the page's build takes them instead of solving a thousand junctions in the frame the tile is put in. */
@@ -391,14 +395,23 @@ export function prepareTile(records: TileRecords, network = true): PreparedTile 
     buildings.push(b);
   }
   // DO NOT post the buildings as objects (cloned by every message, hash-consed again by every thread): one table, its shared members written once.
-  const { grown: _grown, ...rest } = records;
-  return { records: { ...rest, buildings: [] }, buildings: encodeRecords(buildings).buffer, network: network ? bakeTileNetwork(records) : null };
+  const { grown, ...rest } = records;
+  return { records: { ...rest, buildings: [] }, buildings: encodeRecords(buildings).buffer, network: network ? bakeTileNetwork(records) : null,
+    ...(grown?.id.length ? { grown } : {}) };
 }
 
 /** A prepared tile's records as the page files them: its buildings read from its table, each knowing its row (`tableRecords`). */
 export function preparedRecords(prepared: PreparedTile): TileRecords {
-  const records = { ...prepared.records, buildings: tableRecords(prepared.buildings) as unknown as TileRecords['buildings'] };
-  preparedTiles.add(records);
+  const buildings = tableRecords(prepared.buildings);
+  const records = { ...prepared.records, buildings: buildings as unknown as TileRecords['buildings'] };
+  // The buildings made from rows, as they were made: the page writes them back as their rows while no edit replaces them (`PreparedGrown`).
+  let grown: PreparedGrown | null = null;
+  if (prepared.grown) {
+    const ids = new Set(prepared.grown.id), made = new WeakSet<object>();
+    for (const b of buildings) if (ids.has(b.id)) made.add(b);
+    grown = { rows: prepared.grown, made };
+  }
+  preparedTiles.set(records, grown);
   return records;
 }
 

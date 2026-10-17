@@ -44,7 +44,8 @@ import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from '
 import { normalizePerson, type PersonSpec } from '@people/spec';
 import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, rectAround, type ChangeRect, type DocChangeKind } from './changes';
 import { OWNER, TILE_COUNTED, tileIdBase, tileOfKey, tileRect } from './tiles';
-import type { GrownRows } from './growth/rows';
+import { type GrownRows, selectRows } from './growth/rows';
+import { gatesOf } from './parkingLayout';
 import { PoleIndex } from './poleIndex';
 import { CellFiling } from './cells';
 import { rescaleSerializedDoc } from './rescale';
@@ -1379,6 +1380,8 @@ export class RoadDoc {
   private tileContents = new Set<number>();
   /** Each loaded tile's next ids, by kind (`TileRecords.next`): a record made in a tile takes its id from the tile's range. */
   private tileNext = new Map<number, TileNext>();
+  /** Each loaded tile's grown rows (`TileRecords.grown`, kept by `preparedGrown`): the buildings still exactly their row's are written back as it (`tileRecords`). */
+  private tileGrown = new Map<number, PreparedGrown>();
 
   /** Whether an edit is open (`beginEdit`..`endEdit`): no tile comes in or goes out then. */
   get editing(): boolean {
@@ -1500,6 +1503,9 @@ export class RoadDoc {
     }
     this.tileContents.add(records.key);
     this.tileNext.set(records.key, tileNextOf(records));
+    const grown = preparedTiles.get(records);
+    if (grown) this.tileGrown.set(records.key, grown);
+    else this.tileGrown.delete(records.key);
     this.changes.causeNext(cause);
   }
 
@@ -1508,6 +1514,7 @@ export class RoadDoc {
     if (this.recorder) throw new Error('the tiles cannot be left during an edit');
     this.tileContents.clear();
     this.tileNext.clear();
+    this.tileGrown.clear();
   }
 
   /** What a tile holds now, by `OWNER` (what the player added or moved there included): read off the page's document, which holds the active region only, so bounded by it, never by the world */
@@ -1564,12 +1571,19 @@ export class RoadDoc {
   tileRecords(key: number, version: number): TileRecords {
     const t = this.tileMembers(key);
     const next = this.tileNext.get(key) ?? freshTileNext(key);
+    // DO NOT write a grown building no edit touched as a whole record: it is written back as its row (the generator's few numbers), made again where it is read.
+    const made = this.tileGrown.get(key);
+    const asRows = new Set<number>();
+    if (made) for (const b of t.buildings) if (made.made.has(b)) asRows.add(b.id);
+    const grown = made && asRows.size ? selectRows(made.rows, asRows) : null;
     return {
       key, version,
       nodes: t.nodes.map(savedNode), borrowedNodes: t.borrowedNodes.map(savedNode), segments: t.segments.map(savedSegment),
       poles: t.poles.map(savedPole), borrowedPoles: t.borrowedPoles.map(savedPole), poleSpans: t.spans.map(savedSpan),
       // DO NOT copy a building (a record is replaced, never edited, `BuildingStore`): the write posts each as its table's row (`tileStore.ts` tileWrite).
-      buildings: t.buildings,
+      buildings: asRows.size ? t.buildings.filter((b) => !asRows.has(b.id)) : t.buildings,
+      // Every building's gates, the rows' too (a write with rows does not make them again, `tileWrite`).
+      ...(grown ? { grown, gates: gatesOf(t.buildings) } : {}),
       lots: t.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) })),
       lotKeys: [...t.lotKeys],
       landscape: t.landscape.map(savedLandscape), barriers: t.barriers.map(savedBarrier),
@@ -1592,6 +1606,7 @@ export class RoadDoc {
       put('buildings', t.buildings.map((b) => b.id)); put('lots', t.lots.map((l) => l.id));
     }
     this.tileContents.delete(key);
+    this.tileGrown.delete(key);
     const cause = this.changes.cause;
     this.changes.causeNext(TILE_UNLOADED);
     const roadIds: number[] = [];
@@ -1721,6 +1736,7 @@ export class RoadDoc {
     copy.nextTerrainId = this.nextTerrainId;
     // The same tiles, their counters copied: a dry run that is let go takes no id of a tile for good (`takeFork` carries them on).
     copy.tileContents = this.tileContents;
+    copy.tileGrown = this.tileGrown;
     copy.tileNext = new Map([...this.tileNext].map(([key, next]) => [key, { ...next }]));
     copy.buildings.forkFrom(this.buildings);
     copy.lotStore.forkFrom(this.lotStore);
@@ -2813,7 +2829,13 @@ function lotKeyPlace(key: string): { x: number; y: number } | null {
 
 /** A tile as the store keeps it (`TileStore`): the records it owns, as a saved map holds them, and the ends of its roads and spans that are its neighbours' */
 /** The tiles whose buildings a worker prepared (`editor/tileStore.ts` `prepareTile`: migrated and interned there): `loadTile` files them as they are. A set beside the records, never a field of them: every list field of `TileRecords` is a list. */
-export const preparedTiles = new WeakSet<TileRecords>();
+export const preparedTiles = new WeakMap<TileRecords, PreparedGrown | null>();
+
+/** A prepared tile's grown rows and the buildings made from them (`editor/tileStore.ts` preparedRecords), each the very record so made: a record is replaced, never edited (`BuildingStore`), so one still in `made` is exactly its row's, written back as the row (`tileRecords`). */
+export interface PreparedGrown {
+  readonly rows: GrownRows;
+  readonly made: WeakSet<object>;
+}
 
 export interface TileRecords {
   readonly key: number;
