@@ -15,7 +15,7 @@ import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { FAR_ERROR, createMassCells } from './massCells';
-import { FrameScale, LandedTriangles, TYPICAL_LEVEL_TRIANGLES, SLACK, letGoPassed } from './frameBudget';
+import { FrameScale, LandedMeasure, TYPICAL_LEVEL_TRIANGLES, SLACK, letGoPassed } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
 import { FarLevels, farRunner } from './farLevels';
@@ -89,7 +89,9 @@ export function createBuildingLayer(): BuildingLayer {
   /** THE FRAME'S SCALE (`frameBudget.ts`): the view's budget of triangles, the error scale that fits it and the floor the GPU's time sets (`renderer.ts` `governFrame`). */
   const frame = new FrameScale();
   /** What each cell's level drew when it last landed (`show`): what a level not landed yet is reckoned at. */
-  const landedTriangles = new LandedTriangles<BatchKind>(TYPICAL_LEVEL_TRIANGLES);
+  const landedTriangles = new LandedMeasure<BatchKind>(TYPICAL_LEVEL_TRIANGLES);
+  /** What each cell's level held when it last landed, bytes: a level never landed counts as its kind's landed do on average (NaN before any: its cell's masses, `capNow`). */
+  const landedBytes = new LandedMeasure<BatchKind>({ cell: Number.NaN, facade: Number.NaN });
   /** A cell's level come or gone: its bytes counted (here and in the ledger), the level shown chosen again. */
   const counted = (kind: BatchKind, key: string, has: boolean): void => {
     const part = has ? (kind === 'cell' ? cells : facades).get(key)! : null;
@@ -162,10 +164,14 @@ export function createBuildingLayer(): BuildingLayer {
   const chooseNow = (): void => {
     if (eye) massCells.choose(eye.x, eye.y, eye.z, eye.pxAtMetre, eye.orthoPx, forcedNear, eye.reach, viewKnown ? eyeView : null);
   };
-  /** The detail drawn within the room the ledger leaves (`MassCells.cap`): a level never landed counts as its cell's masses (DO NOT reckon it at a typical dense cell before any landed: 64 MB each, every cell was capped before one came). */
+  /** The detail drawn within the room the ledger leaves (`MassCells.cap`): a level never landed counts as its kind's landed do on average, and before any of its kind landed as its cell's masses. DO NOT reckon it at a fixed number (64 MB each capped every cell before one came), nor at the masses once a level of its kind measured (the facade level holds 4-5 times its masses: the cap asked too many and the admission threw whole jobs away). */
   const capNow = (): void => {
     if (!eye) return;
-    massCells.cap(eye.x, eye.y, room(), (key, fine) => resident.of(fine ? 'cell' : 'facade', key, massCells.massBytes(key)), forcedNear);
+    massCells.cap(eye.x, eye.y, room(), (key, fine) => {
+      const kind: BatchKind = fine ? 'cell' : 'facade';
+      const mean = landedBytes.of(kind, key);
+      return resident.of(kind, key, Number.isNaN(mean) ? massCells.massBytes(key) : mean);
+    }, forcedNear);
   };
   /** The shown buildings by coarse cell, as last put together (`update`): what a cell streamed in is made of. */
   let townCells = new Map<string, Building[]>();
@@ -321,6 +327,7 @@ export function createBuildingLayer(): BuildingLayer {
   /** A cell's level landed: uploaded only if the view still wants it at that level within the room (the cap worked out again with its measured bytes). */
   const admit = (kind: BatchKind, cell: string, bytes: number): boolean => {
     resident.landed(kind, cell, bytes);
+    landedBytes.set(kind, cell, bytes);
     if (forcedNear.has(cell) || !eye) return true;
     capNow();
     return massCells.near(cell) && (massCells.fine(cell) ? 'cell' : 'facade') === kind;
@@ -771,7 +778,11 @@ export function createBuildingLayer(): BuildingLayer {
       for (const [kind, map] of [['cell', partCells], ['facade', facadeParts]] as const) {
         for (const [key, cell] of map) {
           cell.group.visible = levelShown(key) === kind;
-          if (cell.group.visible) cell.choose(partView);
+          if (!cell.group.visible) continue;
+          cell.choose(partView);
+          // What the level draws, measured with its parts chosen (DO NOT measure it as it lands: its parts are chosen at this cull, they counted 0 and the facade level's mean fell 7 times under what it draws).
+          const level = (kind === 'cell' ? cells : facades).get(key)?.part;
+          if (level) landedTriangles.set(kind, key, level.triangles + cell.triangles);
         }
       }
     },
