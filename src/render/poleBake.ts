@@ -126,11 +126,10 @@ interface BakingCell {
   wires: { readonly data: number[]; count: number; readonly bounds: WireBounds } | null;
 }
 
-/** THE POLES AND WIRES OF A SOURCE BAKED, IN A WORKER (`poleTiles.ts`): placed, framed and strung as a layer filled with them places them (`PoleLayer.fill`, the same order, the same matrices), cell by cell (`cellOf`: the world's cells of 256 m, or a tile's one); `shapes`, each part's box (`partShape`, from the page's catalogue) */
-export function bakePoles(net: Network, groundAt: (x: number, y: number) => number, source: PoleSource, shapes: readonly PartShape[],
-  cellOf: (x: number, y: number) => number = cellAt): PoleBake {
+/** THE POLES AND WIRES OF A SOURCE BAKED, IN A WORKER (`poleTiles.ts`): placed, framed and strung as a layer filled with them places them (`PoleLayer.fill`, the same order, the same matrices), cell by cell; `shapes`, each part's box (`partShape`, from the page's catalogue) */
+export function bakePoles(net: Network, groundAt: (x: number, y: number) => number, source: PoleSource, shapes: readonly PartShape[]): PoleBake {
   const cells = new Map<number, BakingCell>();
-  const baking = (key: number): BakingCell => {
+  const cellOf = (key: number): BakingCell => {
     let cell = cells.get(key);
     if (!cell) cells.set(key, cell = { parts: Array.from({ length: POLE_PART_COUNT }, () => null), wires: null });
     return cell;
@@ -145,7 +144,7 @@ export function bakePoles(net: Network, groundAt: (x: number, y: number) => numb
     if (!(source.draws?.(pole) ?? true)) continue;
     for (const list of out) list.length = 0;
     placePole(pole, top, frame, kerb, groundAt, out);
-    const cell = baking(cellOf(pole.x, pole.y));
+    const cell = cellOf(cellAt(pole.x, pole.y));
     out.forEach((list, k) => {
       for (const placement of list) {
         const part = cell.parts[k] ??= { matrices: [], count: 0, bounds: { box: emptyBox(), scale: 0, cover: 0 } };
@@ -161,7 +160,7 @@ export function bakePoles(net: Network, groundAt: (x: number, y: number) => numb
     if (!(source.strings?.(span) ?? true)) continue;
     const a = states.get(span.a), b = states.get(span.b);
     if (!a || !b) continue;
-    const cell = baking(cellOf((a.x + b.x) / 2, (a.y + b.y) / 2));
+    const cell = cellOf(cellAt((a.x + b.x) / 2, (a.y + b.y) / 2));
     const wires = cell.wires ??= { data: [], count: 0, bounds: { box: emptyBox(), sag: 0 } };
     spanWires(span, wireEnd(span, a), wireEnd(span, b), block, 0);
     growWires(wires.bounds, block, 0);

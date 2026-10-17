@@ -1,7 +1,6 @@
 import { type NearBaker, type NearKind, type NearPart, type NearTileCache, type NearTileJob, type NearTileReply, nearReplyBuffers, runNearTileJob } from './nearTileBake';
 import { barrierBaker } from './barrierTiles';
 import { coverBaker } from './coverTiles';
-import { elementBaker } from './elementTiles';
 import { furnitureBaker } from './furnitureTiles';
 import { gardenBaker } from './gardenTiles';
 import { plantedBaker } from './plantedTiles';
@@ -19,11 +18,10 @@ const BAKERS: Readonly<Record<NearKind, NearBaker<unknown>>> = {
   structures: structureBaker as NearBaker<unknown>,
   gardens: gardenBaker as NearBaker<unknown>,
   covers: coverBaker as NearBaker<unknown>,
-  elements: elementBaker as NearBaker<unknown>,
 };
 
 /** The parts a kind reads (what the page posts of a tile it holds edited). */
-export const nearParts = (kind: NearKind): readonly NearPart[] => [...new Set<NearPart>([...BAKERS[kind].parts, ...(BAKERS[kind].more ?? []), ...(BAKERS[kind].buildings ? ['buildings' as const] : [])])];
+export const nearParts = (kind: NearKind): readonly NearPart[] => [...BAKERS[kind].parts, ...(BAKERS[kind].more ?? [])];
 /** The parts a kind always reads (not those it reads only where the tile has something of it, `more`): what an edited tile is named by for it. */
 export const nearReadParts = (kind: NearKind): readonly NearPart[] => BAKERS[kind].parts;
 /** Whether a kind reads the tiles round its tile. */

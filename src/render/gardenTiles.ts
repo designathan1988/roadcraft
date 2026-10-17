@@ -1,7 +1,10 @@
 import type { InstancedMesh, Object3D } from 'three';
+import { migrateBuilding } from '@world/buildings/serialize';
+import type { Building } from '@world/buildings/types';
+import { tileBuildingsOf } from '@world/growth/grownRows';
 import { m } from '@world/units';
 import type { Pack } from './cellInstances';
-import { type Gardens, gardenPack } from './gardens';
+import { type GardenPlant, type Gardens, gardenPack, gardenPlants } from './gardens';
 import type { NearBaker, NearProduct } from './nearTileBake';
 import { runBuffers } from './streetFurnitureLayer';
 
@@ -14,14 +17,19 @@ export interface GardenBake {
 
 /** THE GARDENS OF THE TILE'S OWN BUILDINGS (each in one tile's records, its grown rows made records again), whole wherever its lot runs */
 export const gardenBaker: NearBaker<GardenBake | null> = {
-  parts: [],
+  parts: ['buildings'],
   around: false,
-  // Its plants read off the tile's buildings kept a version (`nearBuildings.ts`): DO NOT make a dense tile's ~1,500 buildings again from their rows for its gardens.
-  buildings: 'own',
+  has: (tiles) => tiles[0]!.buildings.length > 0 || (tiles[0]!.grown?.id.length ?? 0) > 0,
   // A lot's plants stand on the ground round its building (`renderer.ts` bankBox).
   groundReach: m(64),
-  bake(area) {
-    const plants = area.buildings(0).plants.map((p) => ({ ...p, z: area.groundAt(p.x, p.y) }));
+  // DO NOT make the buildings again from their rows at every change of the ground under the tile (a dense tile's ~1,500 buildings, seconds of a worker): their plants are kept by the tile's version alone, on no ground; the ground is read after.
+  staged(area): readonly GardenPlant[] {
+    const buildings: Building[] = [];
+    for (const raw of tileBuildingsOf(area.tile)) { const b = migrateBuilding(raw); if (b) buildings.push(b); }
+    return gardenPlants(buildings, () => 0);
+  },
+  bake(area, _extra, staged) {
+    const plants = (staged as readonly GardenPlant[]).map((p) => ({ ...p, z: area.groundAt(p.x, p.y) }));
     if (!plants.length) return null;
     const packs = gardenPack(plants);
     return packs.size ? { packs } : null;
@@ -33,7 +41,7 @@ export const gardenBaker: NearBaker<GardenBake | null> = {
 export function gardenProduct(gardens: () => Gardens, parent: Object3D): NearProduct<GardenBake> {
   return {
     kind: 'gardens',
-    // As far as the furniture's street trees (`furnitureTiles.ts`): a garden tree a few pixels tall there. Its plants are read off each tile's buildings kept a version (`nearBuildings.ts`).
+    // As far as the furniture's street trees (`furnitureTiles.ts`): a garden tree a few pixels tall there. Each tile's buildings are made again from their rows once a version of the tile (`staged`), kept in the store.
     cover: m(2) * m(2),
     top: m(16),
     land(bake) {
