@@ -250,6 +250,9 @@ export class FarTree<P> implements FarTiles {
     const near = this.kind.near;
     if (!near) return '';
     const version = near.version?.() ?? '';
+    // DO NOT ask every leaf each frame (every tile of the map): one serial for them all where the source has it.
+    const edits = this.source?.pageEdits;
+    if (edits) return `${version}|${edits()}`;
     const edit = this.source?.pageEdit;
     if (!edit) return version;
     const d = new Digest();

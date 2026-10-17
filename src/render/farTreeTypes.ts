@@ -14,6 +14,8 @@ export interface FarTileSource {
   readonly workersRead?: string;
   /** The page's edit of a tile the store does not hold yet (`worldStreamer.ts` pageEdit: a serial; 0 when the store holds the tile as the page has it), and the tile as the page holds it: what a near level reads of a tile edited (`FarKind.near`), drawn from the edit on, not from the write seconds later. */
   pageEdit?(key: number): number;
+  /** A serial that moves whenever any tile's `pageEdit` may have (`worldStreamer.ts` pageEdits): the choice keyed by it, not by every leaf's. */
+  pageEdits?(): number;
   pageRecords?(key: number): TileRecords | null;
 }
 
