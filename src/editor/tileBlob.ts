@@ -87,3 +87,17 @@ export function partOf(blob: Blob, read: HeadRead, name: string): { readonly kin
 
 /** A tile's blob's key in the store. */
 export const tileBlobKey = (map: string, key: number): string => `${map}:T:${key}`;
+
+/** A tile's mark in the store: its version and whether its sections are baked, written with its blob in one transaction (`PartStore.write` marks), so the world's every tile is known by one read (`PartStore.marks`), never a read of each tile's head. */
+export const tileMarkKey = (map: string, key: number): string => `${map}:V:${key}`;
+/** What every tile mark of a map starts with. */
+export const tileMarkPrefix = (map: string): string => `${map}:V:`;
+export const tileMark = (version: number, baked: boolean): string => `${version}${baked ? '' : 'u'}`;
+/** A mark read back: the tile and its version, baked or not; null for a key or value not a mark's. */
+export function readTileMark(prefix: string, key: string, value: string): { readonly key: number; readonly version: number; readonly baked: boolean } | null {
+  if (!key.startsWith(prefix)) return null;
+  const tile = Number(key.slice(prefix.length));
+  const baked = !value.endsWith('u');
+  const version = Number(baked ? value : value.slice(0, -1));
+  return Number.isInteger(tile) && Number.isInteger(version) && version >= 0 ? { key: tile, version, baked } : null;
+}

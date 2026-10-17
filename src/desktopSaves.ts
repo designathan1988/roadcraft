@@ -1,5 +1,6 @@
 import type { LargeStore } from '@editor/persistence';
 import { type PartStore, type SaveBatch, SAVES_STORE, openSaves } from '@editor/saveStore';
+import { markBytes, markTexts } from '@editor/workerParts';
 
 /** THE DESKTOP'S SAVES: the autosave's stores as files in the folder Steam Auto-Cloud syncs, kept by the shell's utility process (`desktop/saves.cjs`); none in a browser. */
 
@@ -8,7 +9,8 @@ type Request =
   | { readonly op: 'get'; readonly keys: readonly string[] }
   | { readonly op: 'write'; readonly put: readonly (readonly [string, Uint8Array])[]; readonly remove: readonly string[] }
   | { readonly op: 'batch'; readonly batch: SaveBatch }
-  | { readonly op: 'keys' };
+  | { readonly op: 'keys' }
+  | { readonly op: 'marks'; readonly prefix: string };
 interface Answer { readonly id: number; readonly ok: boolean; readonly result?: unknown }
 
 /** The window messages the preload hands on (`desktop/preload.cjs`). */
@@ -89,10 +91,14 @@ export function desktopSaves(): DesktopStores | null {
       const found = answer?.ok && Array.isArray(answer.result) ? (answer.result as unknown[]) : [];
       return keys.map((_, i) => { const bytes = found[i]; return bytes instanceof Uint8Array ? new Blob([bytes as Uint8Array<ArrayBuffer>]) : null; });
     },
-    async write(put, remove) {
+    async write(put, remove, marks) {
       await ready();
       const bytes = await Promise.all(put.map(async ([key, blob]) => [key, new Uint8Array(await blob.arrayBuffer())] as const));
-      return written(await call({ op: 'write', put: bytes, remove }));
+      return written(await call({ op: 'write', put: [...bytes, ...markBytes(marks)], remove }));
+    },
+    async marks(prefix) {
+      await ready();
+      return markTexts(await call({ op: 'marks', prefix }));
     },
     // The changed records go to the writer as they are: it makes the text and the gzip there, as the job system's `save` lane does in a browser.
     writer: { write: async (batch) => { await ready(); return written(await call({ op: 'batch', batch })); } },

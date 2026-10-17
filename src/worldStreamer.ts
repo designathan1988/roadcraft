@@ -51,6 +51,8 @@ export interface TileSource {
   load(key: number): Promise<TileRecords>;
   /** The tile in the store (made there when it is not) and its version, its records not handed over (`TileStore.ensure`); none: `load`. */
   ensure?(key: number): Promise<number>;
+  /** Every tile the store holds baked and its version, read at once (`TileStore.manifest`); null, or none: each tile ensured. */
+  manifest?(): Promise<ReadonlyMap<number, number> | null>;
   /** The version written, or null when it was not. */
   write(records: TileRecords, keep?: { readonly buildings: boolean }): Promise<number | null>;
   /** A stored tile's parking bays baked and added where it has none (`TileStore.addBays`); none: nothing to do. */
@@ -89,6 +91,8 @@ export class WorldStreamer {
   /** How far along `aheadOrder` every tile is known (`askAhead`) and every tile's bays asked or on the page (`askBays`): DO NOT walk the whole map each frame for the few tiles left (a frame's walk of 100 tiles at 10 km, 1,600 at 40). Back to 0 when the order is made again. */
   private aheadAt = 0;
   private baysAt = 0;
+  /** The store's manifest: not read yet, being read, or read (its tiles known): no tile is made ahead before it is, DO NOT ensure a tile it names. */
+  private manifestRead: 'no' | 'reading' | 'read' = 'no';
   /** The diary's version the edits were last noted at (`noteEdits`), and a serial moved whenever a tile's edit not yet in the store comes or goes (`pageEdits`). */
   private notedAt = -1;
   private pageEditSerial = 0;
@@ -406,6 +410,7 @@ export class WorldStreamer {
   private askAhead(): void {
     // The map being made (`rush`): every lane the region's tiles leave free, at once; after, once the region is in.
     if (!this.rush && (this.asked.size > 0 || this.ready.size > 0 || !this.settled)) return;
+    if (!this.knowStored()) return;
     // Past the tiles known (in the store): never walked again.
     while (this.aheadAt < this.aheadOrder.length && this.known.has(this.aheadOrder[this.aheadAt]!)) this.aheadAt++;
     for (let at = this.aheadAt; at < this.aheadOrder.length; at++) {
@@ -427,6 +432,22 @@ export class WorldStreamer {
         this.tell.failed?.(`tile ${key} ahead: ${String(error)}`);
       });
     }
+  }
+
+  /** Whether the store's manifest is read (none to read: at once); the first call reads it, and its tiles are known when it comes. */
+  private knowStored(): boolean {
+    if (this.manifestRead === 'read') return true;
+    if (this.manifestRead === 'reading') return false;
+    const manifest = this.source.manifest?.();
+    if (!manifest) { this.manifestRead = 'read'; return true; }
+    this.manifestRead = 'reading';
+    manifest.then((tiles) => {
+      if (tiles) for (const [key, version] of tiles) { const { i, j } = tileOfKey(key); if (tileOnMap(i, j)) this.noteKnown(key, version); }
+    }, (error: unknown) => console.warn('[stream] the store\'s manifest was not read: each tile is asked', error)).finally(() => {
+      this.manifestRead = 'read';
+      this.ask();
+    });
+    return false;
   }
 
   /** A tile seen in the store: told once (the far levels bake it). */

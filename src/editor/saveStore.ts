@@ -3,8 +3,10 @@
 /** Where a map's blobs are kept: blobs by key, written and removed in one go. */
 export interface PartStore {
   get(keys: readonly string[]): Promise<(Blob | null)[]>;
-  /** Writes `put` and removes `remove` together; false when nothing was written. */
-  write(put: readonly (readonly [string, Blob])[], remove: readonly string[]): Promise<boolean>;
+  /** Writes `put` and removes `remove` together, with `marks` (short texts, `marks`); false when nothing was written. */
+  write(put: readonly (readonly [string, Blob])[], remove: readonly string[], marks?: readonly (readonly [string, string])[]): Promise<boolean>;
+  /** Every mark whose key starts with `prefix`, in one read: what a world's every tile is known by (`tileBlob.ts` tileMarkKey); absent: the store keeps none, each tile is asked. */
+  marks?(prefix: string): Promise<readonly (readonly [string, string])[]>;
   /** Who encodes and writes a save for this store (a worker); absent: done where it is asked. */
   readonly writer?: SaveWriter;
 }
@@ -111,13 +113,29 @@ export function indexedDbParts(open: () => Promise<IDBDatabase | null>, storeNam
       });
       return out ?? keys.map(() => null);
     },
-    async write(put, remove) {
+    async write(put, remove, marks) {
       const out = await transact('readwrite', (store) => {
         for (const [key, blob] of put) store.put(blob, key);
+        // A mark as a string, not a blob: DO NOT give each a blob of its own (a file each in Chromium's IndexedDB), the world's marks read at once (`marks`).
+        for (const [key, text] of marks ?? []) store.put(text, key);
         for (const key of remove) store.delete(key);
         return () => true;
       });
       return out === true;
+    },
+    async marks(prefix) {
+      // One transaction, the keys and values of one key range (MDN IDBObjectStore getAll, getAllKeys; IDBKeyRange.bound).
+      const out = await transact('readonly', (store) => {
+        const range = IDBKeyRange.bound(prefix, `${prefix}\uffff`);
+        const keys = store.getAllKeys(range);
+        const values = store.getAll(range);
+        return () => {
+          const found: [string, string][] = [];
+          keys.result.forEach((key, k) => { const value: unknown = values.result[k]; if (typeof key === 'string' && typeof value === 'string') found.push([key, value]); });
+          return found;
+        };
+      });
+      return out ?? [];
     },
   };
 }

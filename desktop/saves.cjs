@@ -90,9 +90,16 @@ function createSaves(saves) {
 
   const keys = async () => (await fs.promises.readdir(saves)).filter((file) => file.startsWith('k_')).map(keyOf);
 
+  /** Every key starting with `prefix` and its bytes, in one request: a world's tile marks (`src/editor/tileBlob.ts` tileMarkKey), never one request a tile. */
+  async function marks(prefix) {
+    const found = (await keys()).filter((key) => key.startsWith(prefix));
+    const bytes = await get(found);
+    return found.map((key, i) => [key, bytes[i]]).filter(([, b]) => b !== null);
+  }
+
   // One request at a time, in order, the recovery first: a read sees every write asked before it and never a batch halfway, as in one IndexedDB database.
   let queue = recover().catch((error) => console.error('[saves] the interrupted write could not be finished', error));
-  const ops = { get: (r) => get(r.keys), write: (r) => write(r.put, r.remove), batch: (r) => writeBatch(r.batch), keys: () => keys() };
+  const ops = { get: (r) => get(r.keys), write: (r) => write(r.put, r.remove), batch: (r) => writeBatch(r.batch), keys: () => keys(), marks: (r) => marks(String(r.prefix)) };
   /** Answers a request (`src/desktopSaves.ts`), after every one asked before it. */
   function run(request) {
     const op = Object.hasOwn(ops, request?.op) ? ops[request.op] : null;

@@ -36,7 +36,8 @@ export function workerParts(): PartStore {
   const open = (): Promise<PartStore> => (backend ??= Promise.resolve(indexedDbParts(openSaves, SAVES_STORE)));
   return {
     get: async (keys) => (await open()).get(keys),
-    write: async (put, remove) => (await open()).write(put, remove),
+    write: async (put, remove, marks) => (await open()).write(put, remove, marks),
+    marks: async (prefix) => (await (await open()).marks?.(prefix)) ?? [],
   };
 }
 
@@ -60,9 +61,12 @@ export function portParts(port: MessagePort): PartStore & { readonly drop: () =>
       const found = answer?.ok && Array.isArray(answer.result) ? (answer.result as unknown[]) : [];
       return keys.map((_, i) => { const bytes = found[i]; return bytes instanceof Uint8Array ? new Blob([bytes as Uint8Array<ArrayBuffer>]) : null; });
     },
-    async write(put, remove) {
+    async write(put, remove, marks) {
       const bytes = await Promise.all(put.map(async ([key, blob]) => [key, new Uint8Array(await blob.arrayBuffer())] as const));
-      return (await call({ op: 'write', put: bytes, remove }))?.ok === true;
+      return (await call({ op: 'write', put: [...bytes, ...markBytes(marks)], remove }))?.ok === true;
+    },
+    async marks(prefix) {
+      return markTexts(await call({ op: 'marks', prefix }));
     },
     drop() {
       for (const done of waiting.values()) done(null);
@@ -70,4 +74,19 @@ export function portParts(port: MessagePort): PartStore & { readonly drop: () =>
       port.close();
     },
   };
+}
+
+/** Marks as the saves writer keeps them: a file each, its text's bytes (`desktop/saves.cjs`). */
+export const markBytes = (marks: readonly (readonly [string, string])[] = []): (readonly [string, Uint8Array])[] =>
+  marks.map(([key, text]) => [key, new TextEncoder().encode(text)] as const);
+
+/** The saves writer's answer to 'marks' (each key and its bytes) as texts; none when it failed. */
+export function markTexts(answer: { readonly ok: boolean; readonly result?: unknown } | null): (readonly [string, string])[] {
+  if (!answer?.ok || !Array.isArray(answer.result)) return [];
+  const out: [string, string][] = [];
+  for (const entry of answer.result as unknown[]) {
+    if (!Array.isArray(entry) || typeof entry[0] !== 'string' || !(entry[1] instanceof Uint8Array)) continue;
+    out.push([entry[0], new TextDecoder().decode(entry[1])]);
+  }
+  return out;
 }
