@@ -9,19 +9,22 @@ export function drawBuilderGrid(ctx: CanvasRenderingContext2D, project: (x: numb
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineWidth = 1;
-  for (let v = -reach; v <= reach; v += GRID) {
-    const major = Math.abs(Math.round(v / (GRID * 5))) * GRID * 5 === Math.abs(v);
-    if (!major && Math.abs(v) > radius) continue;
+  // Two paths, one stroke each (the major lines and the minor): DO NOT stroke each line apart, ~127 strokes a frame.
+  for (const major of [false, true]) {
     ctx.strokeStyle = major ? 'rgba(85,230,206,0.22)' : 'rgba(85,230,206,0.1)';
-    const a = project(centre.x + v, centre.y - reach, z);
-    const b = project(centre.x + v, centre.y + reach, z);
-    const c = project(centre.x - reach, centre.y + v, z);
-    const d = project(centre.x + reach, centre.y + v, z);
     ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.moveTo(c.x, c.y);
-    ctx.lineTo(d.x, d.y);
+    for (let v = -reach; v <= reach; v += GRID) {
+      const isMajor = Math.abs(Math.round(v / (GRID * 5))) * GRID * 5 === Math.abs(v);
+      if (isMajor !== major || (!isMajor && Math.abs(v) > radius)) continue;
+      const a = project(centre.x + v, centre.y - reach, z);
+      const b = project(centre.x + v, centre.y + reach, z);
+      const c = project(centre.x - reach, centre.y + v, z);
+      const d = project(centre.x + reach, centre.y + v, z);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.moveTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
+    }
     ctx.stroke();
   }
   ctx.restore();
