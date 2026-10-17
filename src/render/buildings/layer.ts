@@ -500,7 +500,9 @@ export function createBuildingLayer(): BuildingLayer {
           else {
             done = false;
             if (requests.isAsked(kind, cell) || requests.asking < STREAM_AHEAD) {
-              const got = requests.want(kind, cell, entries, env, true, editedCells.has(cell));
+              // A hole: wanted in detail and no level of it landed (its masses at the camera).
+              const hole = kind === 'cell' && !cells.has(cell) && !facades.has(cell);
+              const got = requests.want(kind, cell, entries, env, true, editedCells.has(cell), hole);
               // DO NOT hold ready cells back a few a frame (`STREAM_CELLS_PER_FRAME`): the swap is a group put in a group.
               if (got) {
                 requests.take(kind, cell);
