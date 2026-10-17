@@ -209,6 +209,8 @@ export interface PlateSurface extends TerrainSurface {
   readonly waterChanges: GroundChanges;
   /** What its textures and meshes hold on the GPU, bytes: what the atlas keeps a hidden plate by (`flatAtlas.ts`). */
   gpuBytes(): number;
+  /** Its own textures (its corners, the paint and corner layers, the shore, the water's ground): sent ahead of its first draw (`uploads.ts`). */
+  textures(): Texture[];
 }
 
 /** A plate of the ground and where its centre stands (`flatAtlas.ts`). */
@@ -2176,6 +2178,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       return level > NO_WATER / 2 ? level : null;
     },
     waterArea: () => waterBox,
+    textures: () => [land, paintArray, shore, groundTexture],
     gpuBytes() {
       // The corners (RGBA floats), the shore (one layer of them), the water's ground (floats), the paint array at its size; the patches' grids and the water's mesh.
       const textures = GRID * GRID * (16 + 16 + 4) + paintRes * paintRes * 4 * PAINT_LAYERS;

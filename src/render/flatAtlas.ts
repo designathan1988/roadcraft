@@ -34,7 +34,9 @@ import type { NaturalPlate } from './groundShape';
 import { GroundShare, type SharedGroundAt } from './sharedGround';
 import { setJobFocus } from '../jobs/jobPool';
 import { gpuLedger } from './gpuLedger';
+import { queueUpload } from './uploads';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
+import { TILE, tileOfKey } from '@world/tiles';
 
 /** THE WORLD'S GROUND, plate by plate of the unbounded grid (`world/bounds.ts`): the plates near the view made in full, a ring of far patches round it, nothing beyond */
 
@@ -398,6 +400,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     performance.measure('hitch:flat-plate/create', { start: t0, end: t1 });
     if (lastSun) s.setSun(lastSun);
     if (lookGiven) s.setWaterLook(lastLook);
+    // Sent ahead of its first draw (`uploads.ts`), not inside it.
+    queueUpload(...s.textures());
     measureTop(p);
     return s;
   };
@@ -476,14 +480,30 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (key === contentKey) return false;
     contentKey = key;
     const entries = contentCursor.read(doc.changes);
-    // An unloaded tile takes its records away: what each plate still holds is only known from the document (the active region's).
-    if (entries && entries.every((e) => e.rects !== null) && !entries.some((e) => e.cause === TILE_UNLOADED)) {
+    const loaded = (doc as Partial<RoadDoc>).loadedTiles;
+    // An unloaded tile takes its records away: the plates it reaches asked again (DO NOT read the whole document at each tile let go).
+    const unloads = entries?.some((e) => e.cause === TILE_UNLOADED) ?? false;
+    if (entries && entries.every((e) => e.rects !== null) && (!unloads || loaded)) {
+      const before = new Set(content);
+      const emptied = new Set<number>();
       // Marked in place: the plates the changes reach (a stamp or paint has its rects too).
-      const before = content.size;
-      for (const e of entries) for (const rect of e.rects!) for (const k of platesOver(rect)) content.add(k);
-      return content.size !== before;
+      for (const e of entries) {
+        for (const rect of e.rects!) for (const k of platesOver(rect)) (e.cause === TILE_UNLOADED ? emptied : content).add(k);
+      }
+      for (const k of emptied) if (!plateHolds(doc, k, loaded!)) content.delete(k); else content.add(k);
+      return content.size !== before.size || [...content].some((k) => !before.has(k));
     }
     return readWholeContent(doc);
+  };
+  /** Whether plate `key` holds anything after a tile left: a tile of the page in it (a tile lies in one plate), or a stamp or a dab reaching it. */
+  const plateHolds = (doc: TerrainSource, key: number, loaded: ReadonlySet<number>): boolean => {
+    const r = plateRegion(key);
+    for (const t of loaded) {
+      const { i, j } = tileOfKey(t);
+      if (plateOf((i + 0.5) * TILE, (j + 0.5) * TILE) === key) return true;
+    }
+    const reach = (x: number, y: number, radius: number): boolean => Math.abs(x - r.cx) <= TERRAIN_HALF + radius && Math.abs(y - r.cy) <= TERRAIN_HALF + radius;
+    return doc.terrainStamps.some((s) => reach(s.x, s.y, s.radius)) || doc.terrainPaint.some((d) => reach(d.x, d.y, d.radius));
   };
   /** @rebuild Every plate's content read from the whole document (the page's: the active region): the first time, an unload, or when the diary cannot say where. */
   const readWholeContent = (doc: TerrainSource): boolean => {
@@ -653,15 +673,12 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         }
         for (const p of plates.values()) if (p.asked && !wantedNear.includes(p) && !content.has(p.key)) { cancelFlatGround(p.key); p.asked = false; }
       }
-      // One plate made this frame: the nearest whose corners are in (or, with no workers, the nearest at all).
+      // Every plate wanted whose corners are in made now (DO NOT make one a frame: they come ready from the workers, `plateMesh.ts`, and their textures go up the upload queue before they are first drawn); with no workers, on the page.
       const offPage = !failedOffPage && flatGroundOffPage();
-      let made = false;
       for (const p of wantedNear) {
         if (p.surface) continue;
         if (offPage && !p.heights) { askCorners(p); continue; }
-        if (made) continue;
         ensure(p);
-        made = true;
       }
       // Drawn: the wanted plates that are made.
       nextNear.length = 0;

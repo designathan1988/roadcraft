@@ -3,6 +3,7 @@ import {
   PLATE_SIZE, WORLD_HALF, clampToWorld, insideWorld, plateIJ, plateKey, plateOf, plateOfKey, plateRegion, platesAround, platesOver, regionAt,
 } from '@world/bounds';
 import { RoadDoc } from '@world/doc';
+import { TILE_UNLOADED } from '@world/changes';
 import { m } from '@world/units';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
 import type { FarWoodsBook } from '@render/farForest';
@@ -34,7 +35,7 @@ vi.mock('@render/terrain', async (load) => {
       return {
         meshes: [new Mesh()], parts: [], ground: new Mesh(), vergeMaterial: material, meshMaterial: material,
         highest: () => 0, update: () => false, updatePaint: () => {}, setSun: () => {}, setWaterLook: () => {}, lookFrom: () => {},
-        ecology: () => null, geologyAt: () => 'granite', gpuBytes: () => PLATE_BYTES,
+        ecology: () => null, geologyAt: () => 'granite', gpuBytes: () => PLATE_BYTES, textures: () => [], bakeRelief: () => {}, geologyChanges: { version: 0, rectsSince: () => [] },
         dispose: () => { if (!gone && key >= 0) seen.live.delete(id); gone = true; },
       } as unknown as ReturnType<typeof real.createTerrainSurface>;
     },
@@ -118,7 +119,7 @@ describe('the ground of the map', () => {
   /** A plate's centre on the map (`wholeMap.ts` MAP_HALF: the map's edge on the plates' edges). */
   const onMap = (cx: number, cy: number): boolean => Math.abs(cx) < MAP_HALF && Math.abs(cy) < MAP_HALF;
 
-  it('makes plates round the camera, one a frame, on the map only, keeps them hidden while the GPU has room, and lets them go when it has none', () => {
+  it('makes plates round the camera, on the map only, keeps them hidden while the GPU has room, and lets them go when it has none', () => {
     seen.live.clear();
     seen.made = 0;
     const atlas = createFlatAtlas(1);
@@ -159,6 +160,45 @@ describe('the ground of the map', () => {
     gpuLedger.cap = cap;
     for (const k of seen.live) expect(near(k, 0, 0, PLATE_SIZE), `plate ${k} kept with no room`).toBe(true);
     expect(seen.book!.plates.size).toBe(25);
+    atlas.dispose();
+  });
+
+  it('makes every plate the view wants whose corners are in in the frame it is wanted, not one a frame', () => {
+    seen.live.clear();
+    seen.made = 0;
+    const atlas = createFlatAtlas(1);
+    // No workers here: every corner read on the page, every plate wanted made at once.
+    // Between four plates: each centre within the view's reach.
+    atlas.focus!(PLATE_SIZE / 2, PLATE_SIZE / 2, m(300));
+    const wanted = [...seen.live].filter((k) => k !== '0,0');
+    expect(wanted.length).toBe(3);
+    // A second frame makes none more.
+    const made = seen.made;
+    atlas.focus!(PLATE_SIZE / 2, PLATE_SIZE / 2, m(300));
+    expect(seen.made).toBe(made);
+    atlas.dispose();
+  });
+
+  it('asks again only the plates a tile let go reaches, never the whole document', () => {
+    seen.live.clear();
+    const doc = new RoadDoc();
+    const atlas = createFlatAtlas(1);
+    atlas.updatePaint(doc);
+    // Every whole read of the document counted (`readWholeContent` walks the buildings).
+    let wholes = 0;
+    const all = doc.buildings.all.bind(doc.buildings);
+    doc.buildings.all = () => { wholes++; return all(); };
+    // Trees put on plate (2, 0): it holds content, drawn in full.
+    const square = [PLATE_SIZE * 1.6, m(10), PLATE_SIZE * 1.9, m(300)] as const;
+    doc.changes.record('trees', [square]);
+    atlas.updatePaint(doc);
+    expect(atlas.parts.some((p) => p.cx === PLATE_SIZE * 2)).toBe(true);
+    // Its tile let go: that plate holds nothing more, and nothing else was read.
+    doc.changes.causeNext(TILE_UNLOADED);
+    doc.changes.record('trees', [square]);
+    atlas.updatePaint(doc);
+    expect(wholes).toBe(0);
+    expect(atlas.parts.some((p) => p.cx === PLATE_SIZE * 2)).toBe(false);
     atlas.dispose();
   });
 
