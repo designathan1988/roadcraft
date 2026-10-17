@@ -81,7 +81,7 @@ export class AmbientWorld {
   /** Told the bay's place each time a scenery's car comes into a bay or leaves it (the lots' free bays, `lotTraffic.ts`); null: nobody. */
   sceneryWatch: ((spot: number) => void) | null = null;
   /** The scenery's cars by the source of their bays */
-  private readonly carsBySource = new Map<string, SceneryCar[]>();
+  private readonly carsBySource = new Map<string, Set<SceneryCar>>();
   private readonly sourceOf = new Map<SceneryCar, string>();
   /** The serial of the bays' changes last taken in (`bayChangesSince`); -1: none yet. */
   private baysSerial = -1;
@@ -805,16 +805,30 @@ export class AmbientWorld {
     const { serial, changed } = bayChangesSince(w, this.baysSerial);
     if (serial === this.baysSerial && changed !== null) return;
     this.baysSerial = serial;
+    // The cars of the lots by where they stand, once for this look: DO NOT walk them all for each bay (`stand`).
+    const movers = this.moverCells();
     if (changed === null) {
-      for (const source of [...this.carsBySource.keys()]) this.standSource(w, source, false);
-      for (const source of baySources(w)) this.standSource(w, source, true);
+      for (const source of [...this.carsBySource.keys()]) this.standSource(w, source, false, movers);
+      for (const source of baySources(w)) this.standSource(w, source, true, movers);
       return;
     }
-    for (const source of new Set(changed)) this.standSource(w, source, true);
+    for (const source of new Set(changed)) this.standSource(w, source, true, movers);
+  }
+
+  /** The cars of the lots (`movers`) filed by `MOVER_CELL` cells of where they stand. */
+  private moverCells(): Map<number, Vehicle[]> {
+    const cells = new Map<number, Vehicle[]>();
+    for (const car of this.movers) {
+      if (!car.free) continue;
+      const key = moverCell(Math.floor(car.free.x / MOVER_CELL), Math.floor(car.free.y / MOVER_CELL));
+      const list = cells.get(key);
+      if (list) list.push(car); else cells.set(key, [car]);
+    }
+    return cells;
   }
 
   /** The scenery's cars of one source of bays stood again: those there now off, a car in each of its bays now (`stand`) */
-  private standSource(w: SimWorld, source: string, fill: boolean): void {
+  private standSource(w: SimWorld, source: string, fill: boolean, movers: ReadonlyMap<number, readonly Vehicle[]>): void {
     const was = new Map<number, SceneryCar>();
     for (const car of [...(this.carsBySource.get(source) ?? [])]) {
       was.set(car.spot, car);
@@ -823,20 +837,25 @@ export class AmbientWorld {
     if (!fill) return;
     const cars: SceneryCar[] = [];
     for (const bay of baysOfSource(w, source)) {
-      const car = this.stand(w, bay, was.get(spotKey(bay.x, bay.y)));
+      const car = this.stand(w, bay, was.get(spotKey(bay.x, bay.y)), movers);
       if (!car) continue;
       cars.push(car);
       this.sourceOf.set(car, source);
     }
-    if (cars.length) this.carsBySource.set(source, cars);
+    if (cars.length) this.carsBySource.set(source, new Set(cars));
   }
 
   /** A scenery car in a bay, or none (the bay left empty): the same row in the same bay each time, its look drawn from where the bay is. */
-  private stand(w: SimWorld, bay: Bay, was: SceneryCar | undefined): SceneryCar | null {
+  private stand(w: SimWorld, bay: Bay, was: SceneryCar | undefined, movers: ReadonlyMap<number, readonly Vehicle[]>): SceneryCar | null {
     const spot = spotKey(bay.x, bay.y);
-    // Left empty by a car the lots drove out (`release`), or held by one of theirs.
+    // Left empty by a car the lots drove out (`release`), or held by one of theirs (those within a cell of it, `moverCells`).
     if (this.vacated.has(spot)) return null;
-    for (const car of this.movers) if (car.free && Math.hypot(car.free.x - bay.x, car.free.y - bay.y) < m(1.5)) return null;
+    const cx = Math.floor(bay.x / MOVER_CELL), cy = Math.floor(bay.y / MOVER_CELL);
+    for (let i = cx - 1; i <= cx + 1; i++) {
+      for (let j = cy - 1; j <= cy + 1; j++) {
+        for (const car of movers.get(moverCell(i, j)) ?? []) if (Math.hypot(car.free!.x - bay.x, car.free!.y - bay.y) < MOVER_CELL) return null;
+      }
+    }
     // Seeded by where the bay is, in steps of 0.4 m: the same car in it at any world unit.
     const seed = 0x9e3779b9 ^ Math.imul(Math.round(stepsIn(bay.x, 0.4) * 7) + Math.round(stepsIn(bay.y, 0.4) * 13) * 4099, 2654435761);
     const r = new Rng(seed);
@@ -883,9 +902,8 @@ export class AmbientWorld {
     this.sourceOf.delete(car);
     const list = this.carsBySource.get(source);
     if (!list) return;
-    const at = list.indexOf(car);
-    if (at >= 0) list.splice(at, 1);
-    if (!list.length) this.carsBySource.delete(source);
+    list.delete(car);
+    if (!list.size) this.carsBySource.delete(source);
   }
 
   // ------------------------------------------------------------ the place
@@ -918,3 +936,7 @@ function reversed(way: DoorWay): readonly { x: number; y: number }[] {
   if (!back) REVERSED.set(way, back = [...way.out].reverse());
   return back;
 }
+
+/** How near a car of the lots holds a bay (`AmbientWorld.stand`), and the cells they are filed by. */
+const MOVER_CELL = m(1.5);
+const moverCell = (i: number, j: number): number => (i + 2 ** 20) * 2 ** 21 + (j + 2 ** 20);
