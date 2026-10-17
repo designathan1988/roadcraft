@@ -623,7 +623,7 @@ describe('an edited tile', () => {
     expect(streamer.pageEdit(key)).toBe(0);
   });
 
-  it("has every stored tile's bays added once the map is made, from the camera's tile outwards, a lane short of all, none of the region's", async () => {
+  it("has the bays of the tiles round the camera's added once the map is made (not the whole map's), from the camera's tile outwards, a lane short of all, none of the region's; those round a new place once the camera goes there", async () => {
     const doc = new RoadDoc();
     const store = source();
     const bays: number[] = [];
@@ -645,15 +645,30 @@ describe('an edited tile', () => {
     streamer.focus(0, 0);
     // A lane short of all at once, the nearest first, never a tile of the page's.
     expect(bays.length).toBe(3);
-    for (let round = 0; round < 200 && bays.length < MAP_TILES * MAP_TILES - doc.loadedTiles.size; round++) {
-      for (const [key, done] of [...waiting]) { waiting.delete(key); done(); }
-      await turns(2);
-      streamer.focus(0, 0);
-    }
+    const settle = async (x: number, y: number): Promise<void> => {
+      for (let round = 0; round < 200; round++) {
+        for (const [key, done] of [...waiting]) { waiting.delete(key); done(); }
+        await turns(2);
+        streamer.focus(x, y);
+        if (!waiting.size) break;
+      }
+    };
+    await settle(0, 0);
     expect(new Set(bays).size).toBe(bays.length);
-    expect(bays.length).toBe(MAP_TILES * MAP_TILES - doc.loadedTiles.size);
+    // The tiles within three of the camera's (7 x 7), not the map's 100: the count of a map of any size.
+    const near = (key: number, i: number, j: number): boolean => { const t = tileOfKey(key); return Math.max(Math.abs(t.i - i), Math.abs(t.j - j)) <= 3; };
+    expect(bays.every((key) => near(key, 0, 0))).toBe(true);
+    expect(bays.length).toBe(49 - doc.loadedTiles.size);
     expect(bays.some((key) => doc.hasTile(key))).toBe(false);
     const rings = bays.map(ring);
     for (let k = 1; k < rings.length; k++) expect(rings[k]!).toBeGreaterThanOrEqual(rings[k - 1]!);
+    // The camera gone to another corner of the map: the tiles round it baked, none asked twice.
+    const before = bays.length;
+    const x = -4.5 * TILE, y = -4.5 * TILE;
+    for (let frame = 0; frame < 30; frame++) { await turns(1); streamer.focus(x, y); streamer.apply(200 + frame); }
+    await settle(x, y);
+    expect(bays.length).toBeGreaterThan(before);
+    expect(new Set(bays).size).toBe(bays.length);
+    expect(bays.slice(before).every((key) => near(key, -5, -5))).toBe(true);
   });
 });
