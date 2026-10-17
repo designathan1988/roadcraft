@@ -867,6 +867,10 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const lodPlans = new Map<string, Promise<LodPlan>>();
   const levelCount = [0, 0, 0, 0];
   let trianglesDrawn = 0;
+  /** Whether a piece that casts (levels 0 and 1, `castsAt`) drew anybody this frame: the far levels' shadow is a disc, never the map's. */
+  let castingNow = false;
+  /** Last frame's: the last caster gone changes the shadow too. */
+  let castedLast = false;
 
   /** The class's pose on this person's own joints. */
   const shift = new Float32Array(512 * 3);
@@ -2120,6 +2124,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const time = simTime ?? performance.now() / 1000;
       levelCount.fill(0);
       trianglesDrawn = 0;
+      castedLast = castingNow;
+      castingNow = false;
       // Each person's level from their height on the screen: hidden (a zero scale) or too small, none.
       close.length = 0;
       let close0 = 0, close1 = 0;
@@ -2210,6 +2216,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         cls.placed.length = 0;
         for (const piece of cls.pieces) {
           trianglesDrawn += piece.people.length * piece.triangles;
+          if (piece.mesh.castShadow && piece.people.length > 0) castingNow = true;
           upload(piece, piece.dirty);
           piece.dirty = false;
         }
@@ -2311,7 +2318,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         return { v, linear, exact: [exact[v * 3]!, exact[v * 3 + 1]!, exact[v * 3 + 2]!] };
       });
     },
-    get casting() { return trianglesDrawn > 0; },
+    get casting() { return castingNow || castedLast; },
     stats() {
       let pieces = 0, draws = 0, vertices = 0, textureBytes = 0;
       const names = new Set<string>();

@@ -1026,6 +1026,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       for (const batch of batches.values()) {
         for (const part of batch.parts) for (const at of part.levels) {
           const mesh = at.mesh, count = at.count;
+          // Its last figure gone from the shadow map: the map changes.
+          if (mesh.castShadow && mesh.visible && mesh.count > 0 && count === 0) casting = true;
           mesh.count = count;
           // An empty level is still a program bind and its uniforms in every pass
           mesh.visible = count > 0;

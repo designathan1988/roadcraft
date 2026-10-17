@@ -440,11 +440,15 @@ interface Part {
   listed: boolean;
   /** Made to cast into the shadow map: a vehicle off the screen and in the shadows' reach writes only these (`castOnly`). */
   readonly casts: boolean;
+  /** Instances drawn last frame: one gone changes the shadow as much as one moved. */
+  shown: number;
+  /** Whether it cast last frame: a part turned to cast, or not, changes the shadow too. */
+  castLast: boolean;
 }
 
 /** A part over `mesh`: nothing drawn, every upload clearing what was waiting to go. */
 function partOf(mesh: InstancedMesh, casts = false): Part {
-  const part: Part = { mesh, kept: 0, n: 0, holders: [], holderAt: [], tinted: false, lo: 0, hi: 0, listed: false, casts };
+  const part: Part = { mesh, kept: 0, n: 0, holders: [], holderAt: [], tinted: false, lo: 0, hi: 0, listed: false, casts, shown: 0, castLast: false };
   watchUploads(part);
   return part;
 }
@@ -2186,6 +2190,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       pedestrians.finish();
 
       // Send only what changed: this frame's instances, and the kept ones moved or written since the GPU last took them.
+      // DO NOT call the shadow map's casters moving for what stands still: only a casting part with instances written, moved or gone this frame (a parked car kept is none).
       casting = pedestrians.casting || (procedural ? procedural.casting : false);
       let drawn = 0;
       for (let i = 0; i < live.length; i++) {
@@ -2193,10 +2198,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         mesh.count = n;
         // An empty instanced mesh still costs a program bind, its uniforms and a state change in every pass
         mesh.visible = n > 0;
+        if ((mesh.castShadow && n !== part.shown) || (n > 0 && mesh.castShadow !== part.castLast)) casting = true;
+        part.shown = n;
+        part.castLast = mesh.castShadow;
         if (n === 0) { part.listed = false; part.lo = 0; part.hi = 0; continue; }
         live[drawn++] = part;
-        if (mesh.castShadow) casting = true;
         if (n > part.kept) touch(part, part.kept, n);
+        if (mesh.castShadow && part.hi > part.lo) casting = true;
         const hi = Math.min(part.hi, n);
         if (hi <= part.lo) continue;
         send(mesh.instanceMatrix, part.lo, hi, 16);
