@@ -227,6 +227,12 @@ describe('the far roads chosen top down', () => {
     const cache = memoryCache();
     const tiles = world();
     const roads = new FarRoads(() => null, runner(cache, kit), 'test:', kit);
+    // Every material the near level draws with stands in the tree before any tile comes, for the opening to compile (`shaderCatalogue.ts`).
+    const programs = new Set<unknown>();
+    roads.group.traverse((o) => { if (o.name === 'roads-near-program') programs.add((o as Mesh).material); });
+    expect(programs.has(materials.asphalt)).toBe(true);
+    expect(programs.has(materials.asphaltRaised)).toBe(true);
+    expect(programs.has(paint)).toBe(true);
     roads.setSource(storeOf(tiles), () => false);
     for (const [key, records] of tiles) roads.stored(key, records.version);
     // 300 m over tile (0, 0): a metre spans 3 px there, past what the far level may leave out where the cells come near.
