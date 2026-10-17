@@ -839,6 +839,8 @@ export class SimWorld {
       const junction = this.graph.junctions.get(node);
       const n = this.doc.node(node);
       if (!junction || !n || n.control !== 'auto' || n.incident.length < 3) { this.advised.delete(node); continue; }
+      // DO NOT judge a junction out of the micro window: its flows are not counted there (the meso drives it), and its lights would follow the camera. Kept as it stood until the window comes back.
+      if (this.microWindow && !this.conflicts.inWindowOf(node)) continue;
       const main = mainRoadLegs(this.doc, node);
       let major = 0, minorMax = 0, minorTotal = 0;
       for (const seg of n.incident) {

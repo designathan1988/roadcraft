@@ -99,6 +99,11 @@ export class ConflictIndex {
     return out;
   }
 
+  /** Whether a junction is in the window (every one with no window). */
+  inWindowOf(node: NodeId): boolean {
+    return this.inWindow(node);
+  }
+
   /** Whether the window held is `next`. */
   holdsWindow(next: ReadonlySet<NodeId>): boolean {
     const now = this.kept;
