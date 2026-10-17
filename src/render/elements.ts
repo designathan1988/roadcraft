@@ -21,7 +21,7 @@ import { m } from '@world/units';
 import { KEEP_CELL, keepCellKey } from './candidateKeep';
 import { keepCellAt, keepCellRect } from './cellKeeps';
 import type { ActiveTiles } from './activeTiles';
-import { createInstanceRuns, RunBuilder, type Run, type RunStore } from './instanceRuns';
+import { createInstanceRuns, leastPixel, RunBuilder, type Run, type RunStore } from './instanceRuns';
 import type { Exhaust, PuffKind } from './exhaust';
 import URLS from 'virtual:model-urls/elements?ext=gltf,bin,png';
 
@@ -277,6 +277,8 @@ export function createElementLayer(kit: ElementKit, active?: ActiveTiles): Eleme
     storesOf.set(kind, variants.map((parts) => parts.map((part) => stores.push({
       name: `element-${kind}`, geometry: part.geometry, material: part.material,
       castShadow: CASTS.has(kind), receiveShadow: true, tinted: true, cards: false,
+      // A pebble or a tuft under a pixel across is not drawn (`leastPixel`).
+      levels: leastPixel(part.geometry),
     }) - 1)));
   }
   const runs = createInstanceRuns('elements', stores, ELEMENT_SHADOW_REACH);

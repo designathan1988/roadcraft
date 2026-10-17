@@ -109,3 +109,25 @@ describe('the elements kept cell by cell', () => {
     layer.dispose();
   });
 });
+
+describe('the elements by their size on the screen', () => {
+  it('leaves out a prop under a pixel across and draws it once it is more', () => {
+    const pebble = { kind: 'stones' as const, x: 0, y: 0, size: 0.05, yaw: 0, seed: 0.2 };
+    const layer = createElementLayer(kit);
+    layer.sync(null, sourceOf([pebble]), () => 0);
+    const drawnFrom = (distance: number): number => {
+      // 50 degrees of a 1,080-pixel drawing buffer (`cellInstances.ts` screen.half), the prop in the middle.
+      const camera = new PerspectiveCamera(50, 1.5, 1, 5000);
+      camera.position.set(0, distance * 0.6, distance * 0.8);
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld();
+      const view = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      layer.cull(new Frustum().setFromProjectionMatrix(view), view);
+      return (layer.group.children as InstancedMesh[]).reduce((n, mesh) => n + (mesh.isInstancedMesh ? mesh.count : 0), 0);
+    };
+    // 0.09 m across: 0.07 px at 1,500 m, 1.7 px at 60 m.
+    expect(drawnFrom(1500)).toBe(0);
+    expect(drawnFrom(60)).toBe(1);
+    layer.dispose();
+  });
+});
