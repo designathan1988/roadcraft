@@ -1,4 +1,5 @@
 import { POSE_FLOATS } from '@render/buildings/partPose';
+import { fileParts, partBandings } from '@render/buildings/partFiling';
 import { describe, expect, it } from 'vitest';
 import { type BufferGeometry, InstancedMesh, type InterleavedBufferAttribute } from 'three';
 import { type BuildingChunk, emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
@@ -54,7 +55,7 @@ describe('the parts of a cell', () => {
   const windows = [100, 1.2, 1.5, 0.06] as const, posts = [100, 0.06, 0.3, 0.5] as const;
 
   it('draw a window frame by its street faces once its depth is under a pixel, a deep post whole', () => {
-    const cell = new PartCell('0,0', [['0,0', arrays(frames([windows, posts], 10, 10))]], kit);
+    const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([windows, posts], 10, 10))]], partBandings(kit.screen)), kit);
     // 200 m off: the windows' 6 cm are 0.3 px, the posts' 50 cm are 2.5 px.
     cell.choose(view(10, 210, 5));
     const levels = kit.screen.frame.levels;
@@ -65,7 +66,7 @@ describe('the parts of a cell', () => {
   });
 
   it('draw nothing where an instance is under a pixel, and come back without being made again', () => {
-    const cell = new PartCell('0,0', [['0,0', arrays(frames([windows, posts], 10, 10))]], kit);
+    const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([windows, posts], 10, 10))]], partBandings(kit.screen)), kit);
     cell.choose(view(10, 5010, 5));
     expect(drawn(cell)).toHaveLength(0);
     const made = cell.group.children.length;
@@ -77,13 +78,13 @@ describe('the parts of a cell', () => {
   });
 
   it('cast a frame\'s shadow only where its bars span a shadow texel', () => {
-    const cell = new PartCell('0,0', [['0,0', arrays(frames([windows], 10, 10))]], kit);
+    const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([windows], 10, 10))]], partBandings(kit.screen)), kit);
     cell.choose(view(10, 30, 5, 0.05));
     expect(drawn(cell).every((mesh) => mesh.castShadow)).toBe(true);
     cell.choose(view(10, 30, 5, 0.2));
     expect(drawn(cell).some((mesh) => mesh.castShadow)).toBe(false);
     // A post is the frame's model 30 cm tall and 50 cm deep: its sides' shadow spans the texel.
-    const post = new PartCell('0,0', [['0,0', arrays(frames([posts], 10, 10))]], kit);
+    const post = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([posts], 10, 10))]], partBandings(kit.screen)), kit);
     post.choose(view(10, 30, 5, 0.2));
     expect(drawn(post).every((mesh) => mesh.castShadow)).toBe(true);
   });
@@ -92,7 +93,7 @@ describe('the parts of a cell', () => {
     // Two sub-cells 192 m apart in the same cell, the eye over the first: enough frames for a split to spare more than its draws.
     const many = [300, 1.2, 1.5, 0.06] as const;
     const near = frames([many], 10, 10), far = frames([many], 10, 202);
-    const cell = new PartCell('0,0', [['0,0', arrays(near)], ['0,3', arrays(far)]], kit);
+    const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(near)], ['0,3', arrays(far)]], partBandings(kit.screen)), kit);
     cell.choose(view(10, 10, 20));
     const levels = kit.screen.frame.levels;
     const shown = drawn(cell).map((mesh) => levelOf(levels, mesh)).sort();
@@ -100,7 +101,7 @@ describe('the parts of a cell', () => {
   });
 
   it('refuse a sub-cell outside its cell', () => {
-    expect(() => new PartCell('0,0', [['4,0', arrays(frames([windows], 300, 10))]], kit)).toThrow();
+    expect(() => new PartCell('0,0', fileParts('0,0', [['4,0', arrays(frames([windows], 300, 10))]], partBandings(kit.screen)), kit)).toThrow();
   });
 });
 
@@ -161,7 +162,7 @@ describe("the shell's parts of a grown town's cells", () => {
       let seen = 0;
       for (const [key, subs] of byCell) {
         const details = [...subs].map(([sub, chunks]) => [sub, cellArrays(chunks, { parts: detailParts, shells: false, furniture: false, ghost: false, dim: false }, boxes)] as const);
-        const cell = new PartCell(key, details, kit);
+        const cell = new PartCell(key, fileParts(key, details, partBandings(kit.screen)), kit);
         const comma = key.indexOf(',');
         const cx = (Number(key.slice(0, comma)) + 0.5) * BATCH_CELL, cy = (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL;
         // Over the cell, beside it with shadows, far off, and from above at a tiny scale where every other part is under a pixel.

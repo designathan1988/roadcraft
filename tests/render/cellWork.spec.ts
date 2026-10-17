@@ -5,6 +5,7 @@ import { type BuildingChunk, emitChunk, kitBoxes, lotGroundAgain } from '@render
 import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
 import { CellPool } from '@render/buildings/cellPool';
 import { PartyWalls } from '@render/buildings/partyWalls';
+import { fileParts } from '@render/buildings/partFiling';
 import type { CellEntry, CellResult } from '@render/buildings/cellWork';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
@@ -101,11 +102,9 @@ describe('a cell put together off the page', () => {
           const coarse = cellArrays([...chunks.values()], { parts: PART_KINDS.filter((k) => COARSE_PARTS.has(k)), shells: true, furniture: true, ghost: false, dim: false }, boxes);
           expect(difference(result.batch, coarse), cell).toBe('');
           const details = chunksByCell(buildings, (b) => chunks.get(b)!, DETAIL_CELL);
-          expect(result.details.map(([k]) => k)).toEqual([...details.keys()]);
-          for (const [k, arrays] of result.details) {
-            const here = cellArrays(details.get(k)!, { parts: PART_KINDS.filter((p) => DETAIL_PARTS.has(p)), shells: false, furniture: false, ghost: false, dim: false }, boxes);
-            expect(difference(arrays, here), k).toBe('');
-          }
+          // The detail cells' parts as the job filed them by band (`partFiling.ts`): the filing of the batches made here.
+          const here = [...details].map(([k, list]) => [k, cellArrays(list, { parts: PART_KINDS.filter((p) => DETAIL_PARTS.has(p)), shells: false, furniture: false, ghost: false, dim: false }, boxes)] as const);
+          expect(difference(result.parts as never, fileParts(cell, here, boxes.bandings!) as never), cell).toBe('');
           for (const s of result.summaries) {
             const b = buildings.find((x) => String(x.id) === s.key)!;
             const chunk = chunks.get(b)!;

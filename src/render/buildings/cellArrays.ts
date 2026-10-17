@@ -4,6 +4,7 @@ import { FURNITURE_KINDS, type FurnitureKind } from '@world/buildings/interior';
 import { FACADE_PROP_KINDS } from './facadeProps';
 import type { BuildingChunk, PartBatch, PartKind, RunChunk, ShellChunk } from './chunk';
 import type { MassingChunk } from './massing';
+import type { PartBandings } from './partFiling';
 import { ROOM_FLOATS } from './roomBehind';
 import { LOOK_FLOATS, SHELL_PARTS, SHELL_PART_KINDS } from './shellParts';
 import { POSE_FLOATS, poseMatrixInto } from './partPose';
@@ -90,6 +91,8 @@ export interface CellArrays {
 export interface KitBoxes {
   readonly parts: Readonly<Record<PartKind, readonly number[]>>;
   readonly furniture: Readonly<Partial<Record<FurnitureKind, readonly number[]>>>;
+  /** What filing a cell's parts by band reads of each kind's screen, as the kit has them now (`partFiling.ts`). */
+  readonly bandings?: PartBandings;
 }
 
 /** The batch of `chunks` that `selection` takes, as arrays. */

@@ -206,7 +206,7 @@ describe('the tiles and plates asked of the workers', () => {
       isRunning(id: number) { return running.has(id); },
     } as unknown as CellPool;
     const answer = (): void => {
-      for (const a of asked) if (running.delete(a.id)) a.done({ batch: null, details: [], summaries: [], mass: null });
+      for (const a of asked) if (running.delete(a.id)) a.done({ batch: null, parts: null, summaries: [], mass: null });
     };
     return { pool, asked, answer };
   }
