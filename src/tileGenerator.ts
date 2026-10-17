@@ -11,6 +11,9 @@ import { jobPort, jobsQuiet, longWorkers, onJobsQuiet, shortWorkers } from './jo
 export const tileLanes = (): number => longWorkers();
 
 /** Lanes set aside on the other kinds' workers while the map is made (`setAside`): never on the save's (`jobPool.ts` KEPT_CLEAR); the queue's worker makes a tile only while no queued job waits or runs (`jobsQuiet`), and is given back at the end of its tile when one comes (conf39: cells, near roads and a building's detail waited behind tiles of 2-25 s; wprof4: the queue's worker idle 61 s of the opening). */
+/** Low work (a stored tile's bays) under way at once at most: a job coming waits one short bake at most, and tile workers stay free. */
+export const LOW_IN_FLIGHT = 2;
+
 export const asideLanes = (): number => Math.max(0, shortWorkers() - 2) + (jobsQuiet() ? 1 : 0);
 
 /** Where a tile made is stored by the worker, and whether its texts come back with its version. */
@@ -106,12 +109,13 @@ export class TileGenerator {
     const listen = this.aside || this.lowQueue.length > 0;
     if (listen && !this.quiet) this.quiet = onJobsQuiet(() => this.pump());
     else if (!listen && this.quiet) { this.quiet(); this.quiet = null; }
-    for (let made = own; made < tileLanes() && this.queue.length + (quiet ? this.lowQueue.length : 0) > idle(); made++) this.lanes.push(this.lane(false));
+    for (let made = own; made < tileLanes() && this.queue.length + (quiet ? Math.min(this.lowQueue.length, LOW_IN_FLIGHT) : 0) > idle(); made++) this.lanes.push(this.lane(false));
     if (this.aside) for (let made = aside; made < asideLanes() && this.queue.length > idle(); made++) this.lanes.push(this.lane(true));
+    let low = this.lanes.filter((l) => l.busy?.store?.baysOnly).length;
     for (const lane of this.lanes) {
       if (lane.busy) continue;
       // DO NOT start low work while a queued job waits or runs (conf67: the bays of the whole map on six of seven tile workers at once, the far levels, cells and near roads left two workers): only on a quiet queue, the one under way let finish.
-      const next = this.queue.shift() ?? (lane.aside || !quiet ? undefined : this.lowQueue.shift());
+      const next = this.queue.shift() ?? (lane.aside || !quiet || low >= LOW_IN_FLIGHT ? undefined : (low++, this.lowQueue.shift()));
       if (!next) continue;
       lane.busy = next;
       const { i, j } = tileOfKey(next.key);
