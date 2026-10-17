@@ -178,7 +178,9 @@ export function cellMesh(mass: CellMass, kit: BuildingKit, name = 'building-mass
 }
 
 /** `released`: a cell's or a level's masses let go, neither drawn nor wanted (or refused as they came): to be asked again once wanted (`layer.ts`). */
-export function createMassCells(kit: BuildingKit, cellSize: number, released: (key: string) => void = () => {}): MassCells {
+/** `current`: whether a tile's or plate's masses are of its buildings as they are now (`MassLevels.outdated`): a level made before they changed is never coarsened into. */
+export function createMassCells(kit: BuildingKit, cellSize: number, released: (key: string) => void = () => {},
+  current: (levelKey: string) => boolean = () => true): MassCells {
   const group = new Group();
   group.name = 'buildings-far';
   group.matrixAutoUpdate = false;
@@ -465,8 +467,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       waiting = 0;
       for (const plate of plates.values()) {
         const plateWhole = coarseWanted(plate);
-        const plateDrawn = plateWhole && plate.mesh !== null;
-        if (plateWhole && !plate.mesh) waiting++;
+        // DO NOT coarsen into a plate made before its buildings changed (one drawn already may stay: nothing better is under it): its cells' masses were let go under a mesh without them, and the far tree had let their tiles go (the map's centre empty, conf20/03-map, 2026-10-17).
+        const plateDrawn = plateWhole && plate.mesh !== null && (plate.coarse || current(plate.key));
+        if (plateWhole && !plateDrawn) waiting++;
         const plateHeld = forcedLevels.has(plate.key) || allNear === true;
         let covered = true;
         tileState.length = 0;
@@ -476,15 +479,15 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
           if (plateDrawn) { tileState.push({ tile, coarse: false }); setWanted(tile, false); setExposed(tile, false); continue; }
           setWanted(tile, true);
           const tileWhole = coarseWanted(tile);
-          const tileDrawn = tileWhole && tile.mesh !== null;
-          if (tileWhole && !tile.mesh) waiting++;
+          const tileDrawn = tileWhole && tile.mesh !== null && (tile.coarse || current(key));
+          if (tileWhole && !tileDrawn) waiting++;
           // Refining from a tile drawn: it stands until its cells' masses come (refinement without a hole).
           const hold = !tileWhole && tile.coarse && tile.mesh !== null && !forcedLevels.has(key) && allNear !== true && !cellsLanded(tile);
           if (hold) waiting++;
           if (!tileDrawn && !hold && plate.coarse && !cellsLanded(tile)) covered = false;
           tileState.push({ tile, coarse: tileDrawn || hold });
           // Wanted whole and not come: its cells stay as they are (kept if held, not asked if not: coarsening without a hole).
-          setExposed(tile, tileWhole && !tile.mesh ? tile.exposed : !tileDrawn);
+          setExposed(tile, tileWhole && !tileDrawn ? tile.exposed : !tileDrawn);
         }
         // Refining from the plate drawn: it stands until every tile under it is drawn or has its cells.
         const plateStays = !plateWhole && plate.coarse && plate.mesh !== null && !plateHeld && !covered;
@@ -602,10 +605,11 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     drawn(key, current = () => true) {
       const cell = cells.get(key);
       if (!cell) return false;
-      if (cell.mesh || cell.massless) return true;
+      // Its own masses only where they are shown: a cell under a tile or plate is drawn by that level, and only if it is of its buildings now.
+      if (cell.massless || (cell.mesh && !cell.covered)) return true;
       const [i, j] = cellIndex(key);
       const tile = tiles.get(tileOf(i, j)), plate = plates.get(plateOf(i, j));
-      return (!!tile?.coarse && current(tileOf(i, j))) || (!!plate?.coarse && current(plateOf(i, j)));
+      return (!!tile?.coarse && !!tile.mesh && current(tileOf(i, j))) || (!!plate?.coarse && !!plate.mesh && current(plateOf(i, j)));
     },
     dispose() {
       for (const cell of cells.values()) drop(cell);

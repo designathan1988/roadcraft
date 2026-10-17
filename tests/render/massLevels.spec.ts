@@ -306,6 +306,33 @@ describe('a tile or a plate drawn before some of its buildings came in', () => {
     kit.dispose();
   });
 
+  it('is never coarsened into while outdated: the cells keep their masses until it is made again', () => {
+    const kit = createBuildingKit();
+    let stale = true;
+    const far = createMassCells(kit, CELL, () => {}, (level) => !(stale && level === plateOf(0, 0)));
+    far.planLevel(tileOf(0, 0));
+    // Close first: the cells asked and drawn with their masses.
+    far.choose(m(128), m(128), m(500), 1000, 2, false);
+    far.land('0,0', masses(m(10), m(10)));
+    far.land('1,0', masses(CELL + m(10), m(10)));
+    far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
+    far.choose(m(128), m(128), m(500), 1000, 2, false);
+    // From afar, the plate made before its cells' buildings changed: not drawn in their place, their masses kept and drawn.
+    far.choose(m(128), m(128), m(500), 1000, 0.1, false);
+    expect(far.coarse(plateOf(0, 0))).toBe(false);
+    expect(meshNamed(far.group, 'building-massing').length).toBe(2);
+    expect(far.drawn('0,0', (level) => !(stale && level === plateOf(0, 0)))).toBe(true);
+    expect(far.waiting).toBeGreaterThan(0);
+    // Made again: the plate stands for them.
+    stale = false;
+    far.choose(m(128), m(128), m(500), 1000, 0.1, false);
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    // A cell's masses hidden under it draw nothing: drawn by the plate only while it is current.
+    expect(far.drawn('0,0', (level) => level !== plateOf(0, 0))).toBe(false);
+    far.dispose();
+    kit.dispose();
+  });
+
   it('is outdated from the change of a cell under it until its masses are made again', () => {
     const answers: ((result: CellResult) => void)[] = [];
     // A pool whose jobs wait for the test.

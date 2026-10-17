@@ -52,7 +52,7 @@ export function createBuildingLayer(): BuildingLayer {
   const massCells = createMassCells(kit, BATCH_CELL, (key) => {
     if (key[0] === 't' || key[0] === 'p') levels.release(key);
     else massAsked.delete(key);
-  });
+  }, (key) => !levels.outdated(key));
   group.add(massCells.group);
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
