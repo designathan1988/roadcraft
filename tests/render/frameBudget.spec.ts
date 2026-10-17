@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createBuildingKit } from '@render/buildings/kit';
 import { cellMass } from '@render/buildings/cellArrays';
-import { ERROR_STEP, FrameScale, GAIN, LandedTriangles, MOST_ERROR_SCALE, MOST_TIME_SCALE, TIME_SLACK, TimeGovernor, fitErrorScale } from '@render/buildings/frameBudget';
+import { ERROR_STEP, FrameScale, GAIN, LandedTriangles, MOST_ERROR_SCALE, MOST_TIME_SCALE, TIME_SLACK, TimeGovernor, fitErrorScale, letGoPassed } from '@render/buildings/frameBudget';
 import { createMassCells } from '@render/buildings/massCells';
 import { emitMassing } from '@render/buildings/massing';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
@@ -187,5 +187,25 @@ describe("the GPU's time governing the floor", () => {
     g.read(40, 12, press);
     g.read(40, 12, press);
     expect(asked).toEqual([true, true]);
+  });
+});
+
+describe('the cells held back by the budget', () => {
+  // Five cells in a row; the eye over the first, then over the last.
+  const away = (eyeAt: number) => (key: string): number => Math.abs(Number(key.split(',')[0]) - eyeAt) * 256;
+
+  it('stay held while the cells kept are nearer the eye', () => {
+    const far = new Set(['3,0', '4,0']), coarse = new Set(['2,0']);
+    letGoPassed(far, coarse, [{ key: '0,0', fine: true }, { key: '1,0', fine: true }, { key: '2,0', fine: false }], away(0));
+    expect([...far]).toEqual(['3,0', '4,0']);
+    expect([...coarse]).toEqual(['2,0']);
+  });
+
+  it('are let go once the eye is nearer them than a cell kept: the one at the camera is drawn in detail again', () => {
+    // Held from over the first cell; the eye went down over the last.
+    const far = new Set(['3,0', '4,0']), coarse = new Set(['2,0']);
+    letGoPassed(far, coarse, [{ key: '0,0', fine: true }, { key: '1,0', fine: true }, { key: '2,0', fine: false }], away(4));
+    expect([...far]).toEqual([]);
+    expect([...coarse]).toEqual([]);
   });
 });

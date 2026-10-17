@@ -9,6 +9,18 @@ export const SLACK = 0.6;
 /** The most the GPU's time may raise the scale (`layer.ts` `pressTime`): 8 px of error keeps the street view's near cells in detail (0.3 m spans 8.4 px at 28 px a metre); a frame slow past that is not slow for triangles, and coarser levels would only take the picture away. */
 export const MOST_TIME_SCALE = 4;
 
+/** THE CELLS HELD BACK THAT THE EYE CAME NEARER TO THAN A CELL KEPT (`layer.ts` capTriangles): let go. The budget coarsens the farthest first; a cell held in one view stayed held when the eye went down into it, its neighbours farther off kept in detail: the street view showed the building at the camera at its facade level (conferencia 09-street, 2026-10-17). `kept`: the cells drawn near now, each with whether at full detail; `away`: a cell's distance from the eye. */
+export function letGoPassed(heldFar: Set<string>, heldCoarse: Set<string>, kept: Iterable<{ readonly key: string; readonly fine: boolean }>, away: (key: string) => number): void {
+  let nearest = -1, finest = -1;
+  for (const { key, fine } of kept) {
+    const d = away(key);
+    if (d > nearest) nearest = d;
+    if (fine && d > finest) finest = d;
+  }
+  for (const key of heldFar) if (away(key) < nearest) heldFar.delete(key);
+  for (const key of heldCoarse) if (away(key) < finest) heldCoarse.delete(key);
+}
+
 /** The scale that fits `budget`: `count(scale)` chooses the levels at that scale and says their triangles; `floor`, the least scale the frame's time allows (`layer.ts` `pressTime`).
  *  - Over the budget: coarser, step by step, until it fits or the coarsest is reached. Under `SLACK` of it and above the floor: one step finer, kept only if that still fits. */
 export function fitErrorScale(scale: number, floor: number, budget: number, count: (scale: number) => number): number {
