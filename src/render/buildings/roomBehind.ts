@@ -79,7 +79,9 @@ export function roomsOfStorey(b: Building, v: Volume, inside: FloorInterior, lev
       if (!seen(f.kind)) continue;
       const c = Math.cos(f.angle), s = Math.sin(f.angle);
       let a0 = Infinity, a1 = -Infinity, d0 = Infinity, d1 = -Infinity;
-      for (const [cx, cy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+      // Its four corners, (-1, -1), (1, -1), (1, 1), (-1, 1): DO NOT make their list for each piece and pane.
+      for (let k = 0; k < 4; k++) {
+        const cx = k === 1 || k === 2 ? 1 : -1, cy = k >= 2 ? 1 : -1;
         const x = f.x + (cx * f.w * c - cy * f.d * s) / 2, y = f.y + (cx * f.w * s + cy * f.d * c) / 2;
         const along = (x - px) * tx + (y - py) * ty, deep = (px - x) * nx + (py - y) * ny;
         a0 = Math.min(a0, along); a1 = Math.max(a1, along); d0 = Math.min(d0, deep); d1 = Math.max(d1, deep);
