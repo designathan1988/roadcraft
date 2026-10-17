@@ -2614,6 +2614,8 @@ function frame(now: number): void {
     streamed.streamer.focus(camera.x, camera.y);
     // A tile put in (or let go) only between two world builds: DO NOT change the network under a running one, it started again at every tile and never landed (the near roads never drawn, the far level standing for them).
     if (!scene.worldBusy) streamed.streamer.apply(now);
+    // The edits written whatever the world's build is doing: a long build under load kept them from the store past a reload (the balance and the buildings back).
+    else streamed.streamer.save(now);
   }
   // A flatten held still levels on, a dab when its interval allows (`terrainBrush.ts` tick).
   if (terrainBrush.tick(performance.now())) requestDraw();

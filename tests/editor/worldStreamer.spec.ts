@@ -254,6 +254,26 @@ describe('the tiles written', () => {
   });
 });
 
+describe('the streamer under a long world build', () => {
+  it('writes an edit while the world is being built (`save`), putting no tile in meanwhile', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const streamer = new WorldStreamer(doc, store);
+    await settle(streamer, 10, 10);
+    const before = store.writes;
+    const loaded = doc.loadedTiles.size;
+    doc.addNode({ x: 100, y: 100 });
+    // The camera on: tiles ahead come ready, the build still running (main.ts calls `save`, not `apply`).
+    streamer.focus(TILE * 3, 0);
+    await turns(3);
+    streamer.save(1);
+    await turns(2);
+    expect(store.writes).toBe(before + 1);
+    expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 100 && n.y === 100)).toBe(true);
+    expect(doc.loadedTiles.size).toBe(loaded);
+  });
+});
+
 describe('a whole map clear', () => {
   it('empties the lists of a tile that comes while it runs (read before its clear), and writes it so', async () => {
     const doc = new RoadDoc();
