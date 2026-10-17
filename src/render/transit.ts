@@ -1,4 +1,5 @@
-import { BoxGeometry, Color, DynamicDrawUsage, type Frustum, Group, InstancedBufferAttribute, InstancedMesh, type Matrix4, MeshStandardMaterial, Object3D } from 'three';
+import { BoxGeometry, Color, DynamicDrawUsage, Frustum, Group, InstancedBufferAttribute, InstancedMesh, type Matrix4, MeshStandardMaterial, Object3D, Sphere, Vector3 } from 'three';
+import { TERRAIN_MAX_HEIGHT, TERRAIN_MIN_HEIGHT } from '@world/terrain';
 import type { Change, ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
 import { CellFiling } from '@world/cells';
 import { Derived, type DerivedSpec } from '@world/derived';
@@ -365,6 +366,12 @@ export function createTransit(): TransitMeshes & {
 
   // The trains: one box per car, moved each frame, in their line's colour.
   const o = new Object3D();
+  /** DO NOT place every train car of the map: the view (`cull`, before `update`) tests each with its shadow's reach, first over every height the land has, then on its ground. */
+  const trainView = new Frustum();
+  let viewKnown = false;
+  const carSphere = new Sphere(new Vector3(), 1);
+  const CAR_REACH = CAR.length / 2 + CAR.height * 2;
+  const LAND_HALF = (TERRAIN_MAX_HEIGHT - TERRAIN_MIN_HEIGHT) / 2;
   const place = (b: Box): void => {
     o.position.set(b.x, b.z + b.height / 2, -b.y);
     o.rotation.set(0, b.yaw, 0);
@@ -404,6 +411,8 @@ export function createTransit(): TransitMeshes & {
       return product.work.last;
     },
     cull(frustum, view) {
+      trainView.copy(frustum);
+      viewKnown = true;
       visible.cull(frustum, view);
       if (xray.group.visible) xray.cull(frustum, view);
     },
@@ -416,7 +425,18 @@ export function createTransit(): TransitMeshes & {
         tint.copy(colour);
         for (const car of train.cars) {
           if (n >= MAX_CARS) break;
-          place({ x: car.x, y: car.y, z: ground(car.x, car.y) + m(0.55), yaw: car.heading, length: CAR.length, width: CAR.width, height: CAR.height });
+          if (viewKnown) {
+            carSphere.center.set(car.x, (TERRAIN_MAX_HEIGHT + TERRAIN_MIN_HEIGHT) / 2, -car.y);
+            carSphere.radius = CAR_REACH + LAND_HALF;
+            if (!trainView.intersectsSphere(carSphere)) continue;
+          }
+          const z = ground(car.x, car.y) + m(0.55);
+          if (viewKnown) {
+            carSphere.center.set(car.x, z + CAR.height / 2, -car.y);
+            carSphere.radius = CAR_REACH;
+            if (!trainView.intersectsSphere(carSphere)) continue;
+          }
+          place({ x: car.x, y: car.y, z, yaw: car.heading, length: CAR.length, width: CAR.width, height: CAR.height });
           cars.setMatrixAt(n, o.matrix);
           cars.setColorAt(n, tint);
           n++;

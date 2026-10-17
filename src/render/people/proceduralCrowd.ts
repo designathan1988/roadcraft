@@ -838,8 +838,9 @@ interface PersonState {
   /** Their level now (-1: not drawn), and the one this frame wants. */
   level: number;
   want: number;
-  /** The pieces they are in now. */
+  /** The pieces they are in now, and their slot in each (DO NOT look it up in the piece's list: `indexOf` over every person in it). */
   readonly pieces: Piece[];
+  readonly slotIn: Map<Piece, number>;
   /** Their matrix with their own height, this frame. */
   readonly drawn: Matrix4;
 }
@@ -1464,16 +1465,21 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const slot = piece.people.length;
     piece.people.push(person);
     st.pieces.push(piece);
+    st.slotIn.set(piece, slot);
     writeEntry(piece, slot, person, st);
     piece.dirty = true;
   };
   /** A person's slot in a piece given up: the last slot moved into it. */
   const unplace = (piece: Piece, person: ProceduralPerson): void => {
-    const slot = piece.people.indexOf(person);
-    if (slot < 0) return;
+    const st = states.get(person);
+    const slot = st?.slotIn.get(piece);
+    if (!st || slot === undefined) return;
+    st.slotIn.delete(piece);
     const last = piece.people.length - 1;
     if (slot !== last) {
-      piece.people[slot] = piece.people[last]!;
+      const moved = piece.people[last]!;
+      piece.people[slot] = moved;
+      states.get(moved)?.slotIn.set(piece, slot);
       for (const attr of piece.attrs.values()) {
         const n = attr.itemSize, a = attr.array as Float32Array;
         a.copyWithin(slot * n, last * n, last * n + n);
@@ -1502,8 +1508,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const st = states.get(person);
     if (!st) return;
     for (const piece of st.pieces) {
-      const slot = piece.people.indexOf(person);
-      if (slot < 0) continue;
+      const slot = st.slotIn.get(piece);
+      if (slot === undefined) continue;
       writeEntry(piece, slot, person, st);
       piece.dirty = true;
     }
@@ -1562,7 +1568,11 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return made;
   };
   const shown = new Set<Piece>();
+  /** The nearest people this frame and the strand pieces they want: DO NOT make an entry, a map or a list a frame (the entries are reused, `nearPool`). */
   const near: { p: ProceduralPerson; d: number }[] = [];
+  const nearPool: { p: ProceduralPerson; d: number }[] = [];
+  const wanted = new Set<Piece>();
+  const byDistance = (a: { d: number }, b: { d: number }): number => a.d - b.d;
   const at3 = new Vector3();
   const strandsUpdate = (eye: Vector3): void => {
     near.length = 0;
@@ -1572,30 +1582,34 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       // Only the close levels: further away the strands are under a pixel.
       if (!st || st.level < 0 || st.level > 1) continue;
       const d = eye.distanceTo(at3.setFromMatrixPosition(p.matrix));
-      if (d < range) near.push({ p, d });
+      if (d >= range) continue;
+      const entry = nearPool[near.length] ??= { p, d };
+      entry.p = p; entry.d = d;
+      near.push(entry);
     }
-    near.sort((a, b) => a.d - b.d);
+    near.sort(byDistance);
     if (near.length > NEAR) near.length = NEAR;
-    const wanted = new Map<Piece, ProceduralPerson[]>();
+    wanted.clear();
+    for (const piece of shown) piece.people.length = 0;
     for (const { p } of near) {
       const cls = states.get(p)!.cls;
       const piece = readyStrand.get(`${cls.key}/${p.grown}`);
       if (!piece) { void strandPiece(cls, p.grown!); continue; }
-      const list = wanted.get(piece) ?? [];
-      list.push(p);
-      wanted.set(piece, list);
+      if (!wanted.has(piece)) { wanted.add(piece); piece.people.length = 0; }
+      piece.people.push(p);
     }
-    for (const piece of shown) if (!wanted.has(piece)) { piece.people = []; piece.mesh.count = 0; piece.mesh.visible = false; }
+    for (const piece of shown) if (!wanted.has(piece)) { piece.mesh.count = 0; piece.mesh.visible = false; }
     shown.clear();
-    for (const [piece, list] of wanted) {
+    for (const piece of wanted) {
+      const list = piece.people;
       while (piece.capacity < list.length) growPiece(piece);
-      piece.people = list;
-      list.forEach((person, slot) => {
+      for (let slot = 0; slot < list.length; slot++) {
+        const person = list[slot]!;
         const st = states.get(person)!;
         const burnt = charred.has(person);
         piece.attrs.get('aPerson')!.setXYZW(slot, person.row, st.variant, woundedRow(st.cls, person.row) ? 1 : 0, burnt ? 1 : 0);
         piece.attrs.get('aDye')!.setXYZW(slot, person.hairColour.r, person.hairColour.g, person.hairColour.b, burnt ? 3 : 1);
-      });
+      }
       upload(piece, true);
       shown.add(piece);
     }
@@ -1940,7 +1954,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       states.set(person, {
         cls, coef, variant: body.index, wears, covers, farKey,
         skinColour: skin.colour.clone().multiply(skinTint), shoeColour: shoes ? shoes.colour.clone() : new Color(0.08, 0.07, 0.065),
-        outfitDye: tint, level: -1, want: -1, pieces: [], drawn: new Matrix4(),
+        outfitDye: tint, level: -1, want: -1, pieces: [], slotIn: new Map(), drawn: new Matrix4(),
       });
       cls.people.push(person);
       people.push(person);
@@ -2007,7 +2021,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         cls.personData.copyWithin(row * PERSON_FLOATS, person.row * PERSON_FLOATS, person.row * PERSON_FLOATS + EXPR_AT);
         touchRows(cls.uniforms.procPerson.value, row, 1);
         const twin: ProceduralPerson = { ...person, row, matrix: new Matrix4().makeScale(0, 0, 0), clip: 'idle', phase: 0, activity: undefined, lost: undefined };
-        states.set(twin, { ...st, level: -1, want: -1, pieces: [], drawn: new Matrix4() });
+        states.set(twin, { ...st, level: -1, want: -1, pieces: [], slotIn: new Map(), drawn: new Matrix4() });
         cls.people.push(twin);
         people.push(twin);
         return twin;
@@ -2017,7 +2031,11 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const st = states.get(twin);
         if (!cls || !st) return;
         for (const piece of st.pieces) unplace(piece, twin);
-        for (const piece of shown) if (piece.people.includes(twin)) piece.people = piece.people.filter((p) => p !== twin);
+        // Out of the strands drawn: their list kept (`strandsUpdate` fills it again each frame).
+        for (const piece of shown) {
+          const at = piece.people.indexOf(twin);
+          if (at >= 0) piece.people.splice(at, 1);
+        }
         states.delete(twin);
         cls.people.splice(cls.people.indexOf(twin), 1);
         const i = people.indexOf(twin);
