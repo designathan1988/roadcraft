@@ -109,6 +109,26 @@ describe('the near products chosen by tile', () => {
     expect(looks).toBeGreaterThan(0);
   });
 
+  it('asks the page for the edits of the tiles the view holds and their neighbours alone each frame, however large the map', () => {
+    const askedPerFrame = (side: number): number => {
+      const { run } = runs();
+      const near = new NearTiles(run, null);
+      near.add(product([]));
+      for (let i = -side; i <= side; i++) for (let j = -side; j <= side; j++) near.stored(tileKey(i, j), 1);
+      let asked = 0;
+      near.setSource({ records: async (key) => emptyRecords(key, 1), plan: null, pageEdit: () => { asked++; return 0; }, pageRecords: (key) => emptyRecords(key, 1) }, () => false);
+      near.choose(m(512), m(512), m(100), 1000, null);
+      asked = 0;
+      // A still frame: the choice's key read again.
+      near.choose(m(512), m(512), m(100), 1000, null);
+      return asked;
+    };
+    const small = askedPerFrame(4);
+    expect(small).toBeGreaterThan(0);
+    // A map 81 times larger: the same tiles asked.
+    expect(askedPerFrame(40)).toBe(small);
+  });
+
   it('asks the tiles where the kind spans a pixel, keeps a bake drawn until the next lands, and lets go what the view leaves', () => {
     const log: string[] = [];
     const { jobs, run } = runs();
