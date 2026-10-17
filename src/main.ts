@@ -431,23 +431,26 @@ const roadTool = new RoadTool({
   tilesIn: (rect) => {
     if (!streamed) return true;
     if (!rect) { streamed.streamer.hold([]); return true; }
-    const [x0, y0, x1, y1] = rect;
-    const a = tileOfKey(tileKeyAt(x0, y0)), b = tileOfKey(tileKeyAt(x1, y1));
-    const keys: number[] = [];
-    let all = true;
-    for (let i = a.i; i <= b.i; i++) for (let j = a.j; j <= b.j; j++) {
-      if (!tileOnMap(i, j)) continue;
-      keys.push(tileKey(i, j));
-      if (!doc.hasTile(tileKey(i, j))) all = false;
-    }
+    const keys = mapTilesIn(rect);
     // Kept in the document until the road is laid, those already in too (the camera may move off them meanwhile); too many to bring in: refused.
     if (!streamed.streamer.hold(keys)) return 'tooFar';
-    return all;
+    return keys.every((key) => doc.hasTile(key));
   },
+  // A long road cut into parts each bringing in no more tiles than may come at once (`WorldStreamer.HOLD_MOST`).
+  tilesFit: (rect) => !streamed || streamed.streamer.fits(mapTilesIn(rect)),
+  // Its parts one undo step (`History.grouped`).
+  undoGroup: (group) => history.grouped(group),
   mutate: (fn) => mutate(fn),
   hint: (key) => flashHint(key),
   redraw: () => requestDraw(),
 });
+/** The tiles of the map a rectangle reaches (`tileOnMap`). */
+function mapTilesIn([x0, y0, x1, y1]: readonly [number, number, number, number]): number[] {
+  const a = tileOfKey(tileKeyAt(x0, y0)), b = tileOfKey(tileKeyAt(x1, y1));
+  const keys: number[] = [];
+  for (let i = a.i; i <= b.i; i++) for (let j = a.j; j <= b.j; j++) if (tileOnMap(i, j)) keys.push(tileKey(i, j));
+  return keys;
+}
 /** The pole tool (`editor/poles.ts`): the stretch being dragged and the line's last pole. */
 const poleTool = new PoleTool({
   doc,

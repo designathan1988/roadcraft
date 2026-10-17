@@ -121,6 +121,11 @@ export class WorldStreamer {
   }
 
   /** Tiles an edit waits on, wherever the camera is (a road drawn across the map, `RoadTool.layHeld`): asked as the region's are, put in the document with their records only and kept until let go; `[]` lets them go (the farthest first, as the camera's ring). Replaces the tiles held before. */
+  /** Whether no more than `HOLD_MOST` of these tiles of the map are not in the document: nothing asked. */
+  fits(keys: readonly number[]): boolean {
+    return keys.filter((key) => { const { i, j } = tileOfKey(key); return tileOnMap(i, j) && !this.doc.hasTile(key); }).length <= HOLD_MOST;
+  }
+
   /** False, and nothing held, when more than `HOLD_MOST` of them are not in the document. */
   hold(keys: readonly number[]): boolean {
     const onMap = keys.filter((key) => { const { i, j } = tileOfKey(key); return tileOnMap(i, j); });
