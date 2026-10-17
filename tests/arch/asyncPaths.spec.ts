@@ -44,7 +44,8 @@ describe('the frame and the world rebuild', () => {
 
   it('reads the diary for the parked cars through the sweep', () => {
     const agents = read('src/render/agents.ts');
-    const deck = agents.slice(agents.indexOf('const offRoadDeck'), agents.indexOf('const offRoadDeck') + 1200);
+    const deck = agents.slice(agents.indexOf('const deckHolds'), agents.indexOf('const deckHolds') + 1200);
+    expect(deck.length).toBeGreaterThan(0);
     expect(deck).toMatch(/offRoadSweep!\.touches\(/);
     expect(deck).not.toMatch(/changes\.touches\(/);
   });

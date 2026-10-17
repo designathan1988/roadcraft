@@ -159,7 +159,7 @@ describe('the door into the drawn scene', () => {
     expect(drawn(slow)).toBe(false);
     // A driver that never answers: given up on past its time, said, never held for ever.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const now = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 60_000);
+    const now = vi.spyOn(performance, 'now').mockReturnValue(Number.MAX_SAFE_INTEGER);
     try {
       drainCompiles(renderer, camera, scene, null);
       await tick();
