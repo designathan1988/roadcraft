@@ -1580,7 +1580,11 @@ function stepWalkers(w: SimWorld): void {
   s.parked.follow(w.ambient);
   s.onCarWay.clear();
   // The trains at grade: solid as cars are (nobody walks across a level crossing under one).
-  for (const discs of w.city.transit.trainZones()) {
+  // Only the trains that can reach a walker (their box, with a walker's look ahead).
+  let wx0 = Infinity, wy0 = Infinity, wx1 = -Infinity, wy1 = -Infinity;
+  for (const p of s.walkers) { if (p.x < wx0) wx0 = p.x; if (p.x > wx1) wx1 = p.x; if (p.y < wy0) wy0 = p.y; if (p.y > wy1) wy1 = p.y; }
+  const walkersBox = [wx0 - LOOK, wy0 - LOOK, wx1 + LOOK, wy1 + LOOK] as const;
+  for (const discs of s.walkers.length ? w.city.transit.trainZones(true, walkersBox) : []) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const d of discs) { x0 = Math.min(x0, d.x - d.r); y0 = Math.min(y0, d.y - d.r); x1 = Math.max(x1, d.x + d.r); y1 = Math.max(y1, d.y + d.r); }
     // `on` empty: whoever is on a train's ground walks off it (`inside` below).
