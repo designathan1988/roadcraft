@@ -60,6 +60,8 @@ export class WorldStreamer {
   /** Tiles changed by the player (or the game) since last written, and whether the map's parts no tile holds did. */
   private readonly dirty = new Set<number>();
   private worldDirty = false;
+  /** The map's own allocators as last written with the world's values (`RoadDoc.allocatorMarks`): a record made where no tile is loaded moves them. */
+  private allocatorsSeen = '';
   private readonly edits = new JournalCursor(DOC_CHANGE_KINDS);
   /** The tiles wanted now, nearest first, and the camera's tile they were worked out for. */
   private wanted: number[] = [];
@@ -282,6 +284,11 @@ export class WorldStreamer {
 
   /** The tiles the edits since the last look reached: to be written (the loads and unloads of tiles are not edits, `isStreaming`). */
   private noteEdits(): void {
+    const marks = this.doc.allocatorMarks().join(',');
+    if (marks !== this.allocatorsSeen) {
+      if (this.allocatorsSeen) this.worldDirty = true;
+      this.allocatorsSeen = marks;
+    }
     const entries = this.edits.read(this.doc.changes);
     if (entries !== null && entries.length === 0) return;
     const serial = ++this.editSerial;

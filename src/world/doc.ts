@@ -2374,7 +2374,18 @@ export class RoadDoc {
   /** The map's parts no tile holds (CLAUDE.md, "Streaming world"): its terrain stamps, fog, gullies, clouds, clearings, zones, people, transit, economy, weather and the like, as `toJSON` writes them - the streamed world's values (`editor/tileStore.ts` WorldMeta). */
   worldValues(): Omit<SerializedDoc, 'version' | 'nodes' | 'segments' | 'poles' | 'poleSpans' | 'landscape' | 'barriers' | 'buildings' | 'lots' | 'lotKeys' | 'paint' | 'trees' | 'elements'> {
     const { version: _v, nodes: _n, segments: _s, poles: _p, poleSpans: _ps, landscape: _l, barriers: _b, buildings: _bu, lots: _lo, lotKeys: _k, paint: _pa, trees: _t, elements: _e, ...rest } = this.serialized(false, false);
-    return rest;
+    // DO NOT start the map's own allocators at 1 again each session: a record made where no tile is loaded takes from them (`takeId`), and its id would meet an older one.
+    return { ...rest, allocators: this.allocatorMarks() };
+  }
+
+  /** The allocators' next ids as saved (`allocatorMarks`, the streamed world's values): each kept above them, never below what this document already holds. */
+  private reserveAllocators(marks: readonly number[]): void {
+    const [nodes, segs, poles, spans, barriers, landscape, terrain, buildings] = marks;
+    const above = (allocator: IdAllocator, next: number | undefined): void => { if (Number.isInteger(next) && next! > 0) allocator.reserve(next! - 1); };
+    above(this.nodeIds, nodes); above(this.segIds, segs); above(this.poleIds, poles); above(this.spanIds, spans);
+    above(this.barrierIds, barriers); above(this.landscapeIds, landscape);
+    if (Number.isInteger(terrain)) this.nextTerrainId = Math.max(this.nextTerrainId, terrain!);
+    if (Number.isInteger(buildings) && buildings! > this.buildings.nextId) this.buildings.restoreNextId(buildings!);
   }
 
   /** `toJSON`, the buildings left out when `withBuildings` is false (`clone` shares them). */
@@ -2648,6 +2659,7 @@ export class RoadDoc {
       seen.add(person.id);
       doc.people.push(person);
     }
+    if (Array.isArray(data.allocators)) doc.reserveAllocators(data.allocators);
     doc.roadsChanged(null, true, { detail: 'map loaded' });
     if (data.terrain?.length) doc.changes.record('terrain', null, { cause: 'map loaded' });
     return doc;
@@ -2913,6 +2925,8 @@ export interface SerializedDoc {
   readonly people?: readonly unknown[];
   /** The balance (`economy.ts`); absent at the starting balance. */
   readonly economy?: { readonly balance: number };
+  /** The map's own allocators' next ids (`allocatorMarks`): written with the streamed world's values only (`worldValues`). */
+  readonly allocators?: readonly number[];
 }
 
 function detach(n: RoadNode | undefined, id: SegmentId): void {

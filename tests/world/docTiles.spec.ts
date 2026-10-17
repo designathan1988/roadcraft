@@ -157,3 +157,19 @@ describe('the streamed world left', () => {
     expect(doc.hasTile(key)).toBe(true);
   });
 });
+
+describe('the map\'s own allocators in the streamed world', () => {
+  it('are written with the world\'s values and taken back by the next session, so an id made where no tile is loaded never repeats', () => {
+    const doc = new RoadDoc();
+    // No tile loaded here: the map's own allocator hands the ids out.
+    const a = doc.addNode({ x: m(10), y: m(10) }), b = doc.addNode({ x: m(90), y: m(10) });
+    const seg = doc.addSegment(a.id, b.id, 1)!;
+    const values = doc.worldValues();
+    expect(values.allocators).toEqual(doc.allocatorMarks());
+    // The next session opens the world from its values (`main.ts` openStreamedWorld).
+    const next = RoadDoc.fromJSON({ ...new RoadDoc().toJSON(), ...values });
+    expect(next.addNode({ x: m(10), y: m(50) }).id).toBeGreaterThan(b.id);
+    const c = next.addNode({ x: m(90), y: m(50) });
+    expect(next.addSegment(c.id, c.id - 1 as never, 1)!.id).toBeGreaterThan(seg.id);
+  });
+});

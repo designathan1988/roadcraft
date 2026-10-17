@@ -254,6 +254,23 @@ describe('the tiles written', () => {
   });
 });
 
+describe("the map's own allocators", () => {
+  it("are written with the world's values when a record made where no tile is loaded moves them", async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    let worldWrites = 0;
+    const streamer = new WorldStreamer(doc, store, { writeWorld: () => { worldWrites++; return Promise.resolve(true); } });
+    await settle(streamer, 10, 10);
+    await turns(2);
+    const before = worldWrites;
+    // Far past the region: no tile loaded there, the map's allocator gives the id.
+    doc.addNode({ x: 4 * TILE + 10, y: 10 });
+    streamer.apply(1);
+    await turns(3);
+    expect(worldWrites).toBe(before + 1);
+  });
+});
+
 describe('an edited tile', () => {
   it('is behind in the store from the edit until a write holding it is confirmed: drawn from the page meanwhile (`pageEdit`, `pageRecords`)', async () => {
     const doc = new RoadDoc();
