@@ -30,22 +30,33 @@ describe('the tile generator in the opening rush', () => {
     vi.restoreAllMocks();
   });
 
-  it('leaves the save\'s worker and one other to the queue: a queued job never waits behind a tile', async () => {
+  it.each([[6, 4], [12, 9]])("makes a tile on the queue's worker while the queue is quiet, gives it back when a job comes, never on the save's (%i cores, %i workers)", async (cores, workers) => {
+    vi.stubGlobal('navigator', { hardwareConcurrency: cores });
     const { jobPort, jobWorkers, submitJob } = await import('@/jobs/jobPool');
+    expect(jobWorkers()).toBe(workers);
     const { TileGenerator } = await import('@/tileGenerator');
     const save = (jobPort('save') as unknown as { worker: FakeWorker }).worker;
     const generator = new TileGenerator({} as never);
     generator.setAside(true);
     for (let k = 0; k < 3 * jobWorkers(); k++) void generator.makeStored(k, 'map', 0, false).catch(() => {});
+    // The queue quiet: every worker but the save's makes one tile.
     expect(tilesOn(save)).toEqual([]);
     const making = FakeWorker.made.filter((w) => tilesOn(w).length > 0);
+    expect(making).toHaveLength(jobWorkers() - 1);
     expect(making.every((w) => tilesOn(w).length === 1)).toBe(true);
-    // A cell job asked in the rush: on a worker making no tile, not the save's.
+    const lanes = (generator as unknown as { lanes: { aside: boolean; port: { worker: FakeWorker } }[] }).lanes;
+    const queueWorker = lanes.find((l) => l.aside)!.port.worker;
+    // A cell job comes: it waits for the tile in flight on the queue's worker, and no tile follows it there.
     submitJob({ service: 'cells', key: null, priority: 0, write: () => ({ data: 'cell', transfer: [] }), done: () => {}, failed: () => {} });
-    const host = FakeWorker.made.find((w) => w.asked.some((m) => m.data === 'cell'));
-    expect(host).toBeDefined();
-    expect(host).not.toBe(save);
-    expect(tilesOn(host!)).toEqual([]);
+    const job = queueWorker.asked.find((m) => m.data === 'cell')!;
+    expect(job).toBeDefined();
+    const tile = tilesOn(queueWorker)[0]!;
+    queueWorker.onmessage!({ data: { port: tile.port, data: { key: 0, stored: 1 } } });
+    expect(tilesOn(queueWorker)).toHaveLength(1);
+    // The job answered, the queue quiet again: the next tile goes to the queue's worker.
+    queueWorker.onmessage!({ data: { port: job.port, data: 'cell done', seq: job.seq } });
+    expect(tilesOn(queueWorker)).toHaveLength(2);
+    expect(tilesOn(save)).toEqual([]);
     generator.dispose();
   });
 
@@ -60,9 +71,9 @@ describe('the tile generator in the opening rush', () => {
     const aside = lanes.filter((l) => l.aside);
     expect(aside.length).toBeGreaterThan(0);
     // Every tile answered, the first aside one as failed; setAside(true) never turned off.
-    for (const lane of lanes.filter((l) => l.busy)) {
+    for (let n = 0, lane = lanes.find((l) => l.busy); lane && n < 100; n++, lane = lanes.find((l) => l.busy)) {
       const m = tilesOn(lane.port.worker).at(-1)!;
-      const failed = lane === aside[0];
+      const failed: boolean = lane === aside[0];
       lane.port.worker.onmessage!({ data: { port: m.port, data: failed ? { i: 0, j: 0, error: 'broken' } : { key: 0, stored: 1 } } });
     }
     expect(await Promise.all(asked)).toContain('failed');

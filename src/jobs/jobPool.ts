@@ -258,6 +258,7 @@ function grow(long: boolean): Host | null {
     if (event.data.error !== undefined) system.queue.fail(job, event.data.error);
     else system.queue.answer(job, event.data.data);
     dispatch();
+    toldQuiet();
   };
   worker.onerror = (event) => {
     for (const port of system.ports.values()) if (port.worker === worker) port.onerror?.(event);
@@ -332,6 +333,20 @@ function dispatch(): void {
       system.queue.fail(job, String(error));
     }
   }
+}
+
+/** Whether no queued job waits nor runs on the other kinds' workers: only then does the queue's worker make a tile too (`TileGenerator` asideLanes). */
+export const jobsQuiet = (): boolean => system.queue.waiting === 0 && !system.workers.some((h) => !h.long && h.job !== null);
+/** Told when a queued job's answer leaves the queue quiet (`jobsQuiet`). */
+const quietListeners = new Set<() => void>();
+/** `listener` told each time the queue goes quiet; the returned function stops it. */
+export function onJobsQuiet(listener: () => void): () => void {
+  quietListeners.add(listener);
+  return () => { quietListeners.delete(listener); };
+}
+/** The listeners told, when the queue is quiet after an answer. */
+function toldQuiet(): void {
+  if (quietListeners.size > 0 && jobsQuiet()) for (const listener of [...quietListeners]) listener();
 }
 
 /** A job for the queue: run by the first free worker, nearest the eye first (`JobSpec`). */
