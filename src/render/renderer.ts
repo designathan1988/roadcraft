@@ -112,6 +112,7 @@ import { NearTiles } from './nearTiles';
 import { poleProduct } from './poleTiles';
 import { furnitureProduct } from './furnitureTiles';
 import { signProduct } from './signTiles';
+import { barrierProduct } from './barrierTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -649,6 +650,8 @@ export function createSceneRenderer(
   let polePreviewKey = '';
   /** Walls, fences and hedges (`barriers.ts`), kept barrier by barrier from the diary. */
   const barriers = createBarriers(activeTiles);
+  // The streamed world's barriers per tile (`barrierTiles.ts`), in the layer's own cells: the region makes none.
+  nearTiles.add(barrierProduct(barriers));
   /** Public transport (`transit.ts`), kept track by track and stop by stop from the diary. */
   const transit = createTransit();
   let elevation: RoadElevation | null = null;
@@ -2273,6 +2276,7 @@ export function createSceneRenderer(
       // The furniture and the signs of a streamed world are the tiles' (`nearTiles`): the page's own let go.
       furniture.setTiled(at !== null);
       signs.setTiled(at !== null);
+      barriers.setTiled(at !== null);
       // The other near products (gardens, furniture, signs, walls, poles, structures, planted trees, covers, elements, lots) take in or let go the tiles that came or left (`activeTiles.ts`).
       activeTiles.set(at, rects);
       // The near roads built again for the tiles that came in or left (`rebuildWorld`: the kept tiles' digests stand, only the flipped tiles are made or let go).

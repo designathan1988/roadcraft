@@ -14,7 +14,7 @@ import { TERRAIN_CELL } from './terrainGrid';
 /** Asked by the page's choice of tiles (`nearTiles.ts`), run by the job system (`nearTiles.worker.ts`); a tile the page holds edited is baked from the page's records, never from the store's older version. */
 
 /** The kinds of near products baked per tile (`nearBakers.ts`). */
-export type NearKind = 'poles' | 'furniture' | 'signs';
+export type NearKind = 'poles' | 'furniture' | 'signs' | 'barriers';
 
 /** The parts a tile is stored in (`editor/tileStore.ts`): its roads, its buildings, and the rest (poles, placed things, barriers, trees). */
 export type NearPart = 'roads' | 'buildings' | 'rest';
