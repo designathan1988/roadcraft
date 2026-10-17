@@ -150,7 +150,7 @@ export class Yard {
       let pre: AxlePose | null = null;
       for (let d = PRE_DOCK; d >= m(0.25); d -= m(0.25)) {
         const at = { x: docked.x + ox * d, y: docked.y + oy * d, angle };
-        if (bodyClear(made.field, discs, at.x, at.y, at.angle) && straightClear(solid, body, at, docked)) { pre = at; break; }
+        if (bodyClear(made.field, discs, at.x, at.y, at.angle) && straightClear(made.field, body, at, docked)) { pre = at; break; }
       }
       const order = this.gates.map((_, g) => g).sort((p, q) => gateDistance(this.gates[p]!, open) - gateDistance(this.gates[q]!, open));
       this.docks.push({
@@ -267,7 +267,7 @@ export class Yard {
 
   /** Whether the short leg from where a search stopped to its exact goal is clear, cell by cell. */
   private settles(from: AxlePose, to: AxlePose, reverse: boolean): boolean {
-    return settle(from, to, reverse).every((p) => bodyClearExact(this.solid, this.body, p.x, p.y, p.angle, m(0.02)));
+    return settle(from, to, reverse).every((p) => bodyClearExact(this.field, this.body, p.x, p.y, p.angle, m(0.02)));
   }
 }
 
@@ -553,6 +553,6 @@ function straight(from: AxlePose, to: AxlePose, reverse: boolean): Waypoint[] {
   return out;
 }
 
-function straightClear(solid: Solid, body: Steered, from: AxlePose, to: AxlePose): boolean {
-  return straight(from, to, true).every((p) => bodyClearExact(solid, body, p.x, p.y, p.angle, m(0.02)));
+function straightClear(field: Clearance, body: Steered, from: AxlePose, to: AxlePose): boolean {
+  return straight(from, to, true).every((p) => bodyClearExact(field, body, p.x, p.y, p.angle, m(0.02)));
 }

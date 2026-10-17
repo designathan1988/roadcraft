@@ -6,7 +6,8 @@ import { applyLots, planLots, zoneLots } from '@world/lots';
 import { growOnLot } from '@world/growth/zoning';
 import { SimWorld } from '@sim/world';
 import { ARCHETYPES } from '@sim/vehicles/archetypes';
-import { type Holonomic, WaySearch, clearanceOf } from '@sim/agents/hybridAStar';
+import { type Holonomic, WaySearch, bodyClearExact, clearanceOf } from '@sim/agents/hybridAStar';
+import { Rng } from '@core/rng';
 import { buildYard, knownYard, lorryOf, yardKey } from '@sim/agents/lorryDocks';
 
 /** A WORKS' YARD IS MADE A SLICE A TICK. */
@@ -99,5 +100,28 @@ describe('a works yard', () => {
       expect(searches[k]!.state).toBe(fresh[k]!.state);
       expect(searches[k]!.way).toEqual(fresh[k]!.way);
     }
+  });
+
+  it("tests a body against the grid the same with the clearance field's shortcut as cell by cell", () => {
+    const doc = works();
+    const net = new Network(doc);
+    net.rebuild();
+    const w = new SimWorld(doc, net, 0x0be9);
+    w.rebuildTopology();
+    const b = [...w.buildings.all()].find((x) => knownYard(w, x) !== null)!;
+    const body = lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!);
+    const steps = buildYard(b, yardKey(w), w, body);
+    let next = steps.next();
+    while (!next.done) next = steps.next();
+    const { field, solid } = next.value;
+    const rng = new Rng(0xd3);
+    let clear = 0;
+    for (let k = 0; k < 3000; k++) {
+      const x = solid.x0 + rng.float() * solid.nx * solid.cell, y = solid.y0 + rng.float() * solid.ny * solid.cell, a = rng.float() * Math.PI * 2;
+      const exact = bodyClearExact(solid, body, x, y, a, m(0.02));
+      expect(bodyClearExact(field, body, x, y, a, m(0.02)), `pose ${k}`).toBe(exact);
+      if (exact) clear++;
+    }
+    expect(clear).toBeGreaterThan(30);
   });
 });

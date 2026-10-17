@@ -156,9 +156,16 @@ function clearAt(field: Clearance, px: number, py: number): number {
 }
 
 /** Whether the body's rectangle at the pose covers no solid cell */
-export function bodyClearExact(field: Solid, body: Steered, x: number, y: number, angle: number, margin = 0): boolean {
+export function bodyClearExact(field: Solid | Clearance, body: Steered, x: number, y: number, angle: number, margin = 0): boolean {
   const c = Math.cos(angle), s = Math.sin(angle);
   const back = body.length / 2 - body.rear + margin, front = body.length / 2 + body.rear + margin, hw = body.width / 2 + margin;
+  // DO NOT sample the body cell by cell where the clearance field already says it is clear: every sample lies within `reach` of the rectangle's middle, and a solid cell under one would be nearer than the field says (a cell's centre half a diagonal off at each end).
+  if ('clear' in field) {
+    const mid = (front - back) / 2, cx = x + c * mid, cy = y + s * mid;
+    const reach = Math.hypot((front + back) / 2, hw) + field.cell * Math.SQRT2;
+    const inside = cx - reach >= field.x0 && cy - reach >= field.y0 && cx + reach <= field.x0 + field.nx * field.cell && cy + reach <= field.y0 + field.ny * field.cell;
+    if (inside && clearAt(field, cx, cy) > reach) return true;
+  }
   const step = field.cell / 2;
   for (let u = -back; u <= front + 1e-9; u += step) {
     for (let v = -hw; v <= hw + 1e-9; v += step) {
