@@ -1640,6 +1640,19 @@ export class RoadDoc {
     return copy;
   }
 
+  /** The segments this copy of `before` added that `before` does not hold: an edit's own, whichever range their ids came from (a loaded tile's or the map's allocator). */
+  addedSegments(before: RoadDoc): RoadSegment[] {
+    const map = this.segments;
+    const out: RoadSegment[] = [];
+    if (map instanceof ForkMap && this.below === before) {
+      for (const [id, seg] of (map as ForkMap<SegmentId, RoadSegment>).changes().added) if (!before.segments.has(id)) out.push(seg);
+      return out;
+    }
+    // @rebuild An independent copy (`clone`) cannot say what it wrote: every segment compared.
+    for (const [id, seg] of map) if (!before.segments.has(id)) out.push(seg);
+    return out;
+  }
+
   /** Takes back an edit made on a working copy of this document (`fork`): what it wrote and its diary entries (`takeFork`). */
   takeBack(copy: RoadDoc): void {
     if (copy.below !== this) throw new Error('RoadDoc.takeBack: not a working copy of this document');

@@ -10,7 +10,8 @@ import { roadStructure } from '@world/structures';
 import { commitRoadPath, splitSegment } from '@editor/commit';
 import { restoreInto } from '@editor/history';
 import { roadPathFromGesture, type RoadPathPoint } from '@editor/roadPath';
-import { TUNED_UNIT } from '@world/units';
+import { TUNED_UNIT, m } from '@world/units';
+import { TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
 
 const point = (x: number, y: number, heightOffset = 0): RoadPathPoint =>
   ({ at: { x, y }, heightOffset });
@@ -240,3 +241,44 @@ describe('a road laid over a mountain', () => {
   });
 });
 
+
+/** A tile in the page's document with nothing in it (`RoadDoc.loadTile`): what the streaming world loads before the player draws. */
+function loadedTile(i = 0, j = 0): { doc: RoadDoc; net: Network; key: number } {
+  const key = tileKey(i, j), base = tileIdBase(key);
+  const doc = new RoadDoc();
+  doc.loadTile({
+    key, version: 1, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [],
+    lotKeys: [], landscape: [], barriers: [], paint: [], trees: [], elements: [],
+    next: { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base },
+  });
+  const net = new Network(doc);
+  net.rebuild();
+  return { doc, net, key };
+}
+
+describe('a road drawn in a loaded tile', () => {
+  const inTile = (id: number, key: number): boolean => id >= tileIdBase(key) && id < tileIdBase(key) + TILE_COUNTED;
+
+  it('names the segments it laid, from the tile\'s range, and its dry run has stations', () => {
+    const { doc, net, key } = loadedTile();
+    const start = point(m(200), m(500)), end = point(m(600), m(500));
+    const dry = commitRoadPath(doc, net, { kind: 'free', at: start.at }, { kind: 'free', at: end.at }, 1, [{ start, end, curve: null }], null,
+      undefined, undefined, { dryRun: true });
+    expect(dry.committed).toBe(true);
+    expect(dry.stations?.length).toBeGreaterThan(0);
+    const result = commitRoadPath(doc, net, { kind: 'free', at: start.at }, { kind: 'free', at: end.at }, 1, [{ start, end, curve: null }]);
+    expect(result.committed).toBe(true);
+    expect(result.laid!.length).toBeGreaterThan(0);
+    expect([...result.laid!].sort()).toEqual([...doc.segments.keys()].sort());
+    for (const id of result.laid!) expect(inTile(id, key)).toBe(true);
+  });
+
+  it('is bored as a tunnel under a mountain there', () => {
+    const { doc, net } = loadedTile();
+    for (let k = 0; k < 6; k++) doc.addTerrainStamp({ x: m(500), y: m(500), radius: 300, strength: 40, mode: 'raise', stroke: k + 1 });
+    net.rebuild();
+    const start = point(m(500) - 450, m(500)), end = point(m(500) + 450, m(500));
+    expect(commitRoadPath(doc, net, { kind: 'free', at: start.at }, { kind: 'free', at: end.at }, 1, [{ start, end, curve: null }]).committed).toBe(true);
+    expect([...doc.segments.values()].map((seg) => seg.structure)).toContain('tunnel');
+  });
+});

@@ -19,7 +19,7 @@ import {
   type Anchor, anchorForHeight as anchorAtHeight, anchorHeightOffset as anchorHeightAt, findAnchor, setGridSnapStep, snapRoadEndpoint,
   snapRoadStart, type SnapResult,
 } from './snap';
-import { commitRoadPath, nextSegmentId, segmentsFrom } from './commit';
+import { commitRoadPath } from './commit';
 import { applyProfileTo } from './roads/profile';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
 import type { RoadProfileSpec } from '@world/roads/profile';
@@ -409,18 +409,16 @@ export class RoadTool {
     const settings = host.settings();
     const { end, endHeightOffset, pieces } = this.ending(d, chosenEnd);
     let result: ReturnType<typeof commitRoadPath> = { committed: false };
-    /** The segment ids from here on are the edit's own (ids are handed out in increasing order, never again). */
-    let firstNew = 0;
     host.mutate(() => {
-      firstNew = nextSegmentId(doc);
       result = commitRoadPath(doc, net, d.start, end, settings.typeIndex, pieces, settings.lanes, settings.parking,
         (x, y) => host.naturalHeightAt(x, y), { groundSolve: host.groundSolve?.() ?? null });
       if (result.elevation) host.offerElevation(result.elevation, net.revision);
       // Drawn as it was previewed until the new world is in place.
       if (result.committed) this.settling = { ...d, snap: { ...d.snap, at: end.at } };
+      // The segments the edit laid, in a loaded tile's id range or the map's (`DraftResult.laid`).
+      const laid = result.laid ?? [];
       // A chosen total width (Roads > Width): the segments just laid take it.
       if (result.committed && (settings.profile || settings.width !== null)) {
-        const laid = laidFrom(doc, firstNew);
         const kept = laid.map((id) => ({ ...doc.requireSegment(id) }));
         const money = roadsBefore(doc);
         if (settings.profile) applyProfileTo(doc, laid, settings.profile.profile, settings.profile.type);
@@ -442,12 +440,11 @@ export class RoadTool {
       }
       // Retaining walls in the cuttings of the roads just laid (V3).
       if (result.committed && settings.cutWalls) {
-        for (const id of laidFrom(doc, firstNew)) doc.setSegmentCutWalls(id, true);
+        for (const id of laid) doc.setSegmentCutWalls(id, true);
       }
       // The furniture of the roads just laid, in the same undo step (V7)
       if (result.committed && settings.furniture && settings.furniture !== 'none') {
         if (net.revision !== doc.revision) net.rebuild();
-        const laid = laidFrom(doc, firstNew);
         // The complete set: a power line down the left, its poles lit (V7).
         const power = settings.furniture === 'complete' && layPowerLines(doc, net, laid) > 0;
         for (const piece of furnitureFor(net, laid, settings.furniture, landscapeAlong(doc, net, laid), power)) doc.addLandscape(piece.kind, piece.at);
@@ -471,7 +468,7 @@ export class RoadTool {
     host.setHeight(finalHeight, 'road finished');
     this.heightEdited = false;
     if (result.heightLimited) host.hint('hint.road.gradeLimited');
-    const laid = laidFrom(doc, firstNew);
+    const laid = result.laid ?? [];
     if (laid.length) host.flash(laid);
     return true;
   }
@@ -530,9 +527,6 @@ export class RoadTool {
     return fitRoadCurve(a, b, shapeFromControl(a, b, { x: mid.x + nx * side * 1.36, y: mid.y + ny * side * 1.36 }), typeIndex);
   }
 }
-
-/** The segment ids an edit made: those from `first` on (`commit.ts` `segmentsFrom`). */
-const laidFrom = (doc: RoadDoc, first: number): SegmentId[] => segmentsFrom(doc, first).map((seg) => seg.id);
 
 /** The placed items the furniture of `laid` can meet */
 function landscapeAlong(doc: RoadDoc, net: Network, laid: readonly SegmentId[]): LandscapeItem[] {

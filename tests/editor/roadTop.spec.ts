@@ -3,6 +3,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { RoadTop } from '@editor/roadTop';
 import { m } from '@world/units';
+import { tileIdBase, tileKey } from '@world/tiles';
 
 /** The highest road of the map (`editor/roadTop.ts`) */
 function town(): { doc: RoadDoc; net: Network; top: RoadTop; ids: number[] } {
@@ -63,6 +64,33 @@ describe('the highest road', () => {
     const b = fresh.addNode({ x: m(50), y: 0 }, m(3));
     fresh.addSegment(a.id, b.id, 1);
     doc.replaceWith(fresh);
+    net.rebuild();
+    expect(top.height()).toBe(highest(doc));
+  });
+});
+
+describe('the highest road in a loaded tile', () => {
+  it('follows roads that take the tile\'s ids', () => {
+    const key = tileKey(0, 0), base = tileIdBase(key);
+    const doc = new RoadDoc();
+    doc.loadTile({
+      key, version: 1, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [],
+      lotKeys: [], landscape: [], barriers: [], paint: [], trees: [], elements: [],
+      next: { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base },
+    });
+    const net = new Network(doc);
+    const heightAt = (x: number, y: number): number => {
+      for (const node of doc.nodes.values()) if (node.x === x && node.y === y) return node.heightOffset;
+      return 0;
+    };
+    const top = new RoadTop(doc, net, heightAt);
+    const a = doc.addNode({ x: m(200), y: m(500) }, m(3));
+    const b = doc.addNode({ x: m(300), y: m(500) }, m(3));
+    const seg = doc.addSegment(a.id, b.id, 1)!;
+    expect(seg.id).toBeGreaterThanOrEqual(base);
+    net.rebuild();
+    expect(top.height()).toBe(highest(doc));
+    doc.setNodeHeightOffset(a.id, m(30));
     net.rebuild();
     expect(top.height()).toBe(highest(doc));
   });

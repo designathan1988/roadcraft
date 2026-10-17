@@ -4,6 +4,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { PoleTool, type PoleToolHost } from '@editor/poles';
 import { TUNED_UNIT } from '@world/units';
+import { TILE, TILE_COUNTED, tileIdBase, tileKey } from '@world/tiles';
 
 /** The 0.4 m unit these scenes were laid out in: every length below is in it, times U. */
 const U = TUNED_UNIT;
@@ -83,5 +84,32 @@ describe('the pole tool', () => {
     const before = built.doc.poles.size;
     removing.down({ x: first!.x, y: first!.y }, false);
     expect(built.doc.poles.size).toBe(before - 1);
+  });
+
+  it('builds a line in a loaded tile, its poles and spans taking the ids of the tile', () => {
+    const key = tileKey(0, 0), base = tileIdBase(key);
+    const doc = new RoadDoc();
+    doc.loadTile({
+      key, version: 1, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [],
+      lotKeys: [], landscape: [], barriers: [], paint: [], trees: [], elements: [],
+      next: { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base },
+    });
+    const cx = TILE / 2, cy = TILE / 2;
+    const a = doc.addNode({ x: cx - 400 * U, y: cy });
+    const b = doc.addNode({ x: cx + 400 * U, y: cy });
+    doc.addSegment(a.id, b.id, 1);
+    const net = new Network(doc);
+    net.rebuild();
+    const pole = new PoleTool({
+      doc, net, zoom: () => 2 / U, mode: () => 'build', lamps: () => 'none', inHand: () => true,
+      mutate: (fn) => fn(), hint: () => {}, redraw: () => {},
+    });
+    click(pole, { x: cx - 200 * U, y: cy + Y });
+    click(pole, { x: cx - 60 * U, y: cy + Y });
+    expect(doc.poles.size).toBeGreaterThan(1);
+    expect(doc.poleSpans.size).toBeGreaterThan(0);
+    const inTile = (id: number): boolean => id >= base && id < base + TILE_COUNTED;
+    for (const p of doc.poles.values()) expect(inTile(p.id)).toBe(true);
+    for (const s of doc.poleSpans.values()) expect(inTile(s.id)).toBe(true);
   });
 });
