@@ -28,11 +28,12 @@ import { type ListField, type MigrationReport, finite, isObject, migrate } from 
 /** A call of the tile store, as the page hands it to the save worker (`save.worker.ts` `serve`). */
 export type TileOp =
   /** The stored tile prepared for the page (`prepareTile`): with `network`, its junctions and ribbons solved here too (a tile of the region). */
-  | { readonly op: 'read'; readonly map: string; readonly key: number; readonly network?: boolean }
+  | { readonly op: 'read'; readonly map: string; readonly key: number; readonly network?: boolean; readonly readOnly?: boolean }
   /** The stored tile's records as texts (`TileText`), or null: what the page parses once, the bytes handed over, never cloned. */
-  | { readonly op: 'readText'; readonly map: string; readonly key: number }
+  | { readonly op: 'readText'; readonly map: string; readonly key: number; readonly readOnly?: boolean }
   /** The stored tile's version alone, or null: what the tiles made ahead are known by, their records never handed to the page. */
-  | { readonly op: 'version'; readonly map: string; readonly key: number }
+  /** `readOnly` (a tab that only reads the world, `TileStore.readOnly`): a tile stored in an older form is read as it is, never written again in parts. */
+  | { readonly op: 'version'; readonly map: string; readonly key: number; readonly readOnly?: boolean }
   /** The tile written, its buildings as rows of tables (`tileWrite`): read back where it is stored (`writtenRecords`). */
   | { readonly op: 'write'; readonly map: string; readonly records: TileWrite }
   | { readonly op: 'meta'; readonly map: string }
@@ -253,14 +254,14 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
     }
     case 'readText': {
       const stored = await storedBlob(store, op.map, op.key);
-      return stored ? upgraded(store, op.map, op.key, stored, bake) : null;
+      return stored ? upgraded(store, op.map, op.key, stored, op.readOnly ? undefined : bake) : null;
     }
     case 'version': {
       // The head alone: DO NOT parse a tile to know it is there (format 1 parsed once, and written again in parts).
       const stored = await storedBlob(store, op.map, op.key);
       if (!stored) return null;
-      if (stored.read && (stored.read.head.baked || !bake)) return stored.read.head.version;
-      return parseTileText(await upgraded(store, op.map, op.key, stored, bake), op.key).version;
+      if (stored.read && (stored.read.head.baked || !bake || op.readOnly)) return stored.read.head.version;
+      return parseTileText(await upgraded(store, op.map, op.key, stored, op.readOnly ? undefined : bake), op.key).version;
     }
     case 'write': return (await writeTile(store, op.map, writtenRecords(op.records), bake)).ok;
     case 'meta': return readMeta(store, op.map);
@@ -402,11 +403,15 @@ export class TileStore {
     private readonly makeStored?: (i: number, j: number, after: number, records: boolean, ifMissing: boolean) => Promise<MadeTile>,
   ) {}
 
+  /** Another tab holds this world (`main.ts` holdWorld): this one reads it and writes nothing to the store (no tile made is stored, no old tile written again in parts), its tiles made here only to be drawn. */
+  readOnly = false;
+
   /** The tile in the store, made and stored when it is not, and its version: DO NOT hand its records to the page for a tile it only needs to know is there (the tiles made ahead, `worldStreamer.ts`). */
   /** DO NOT ask the save worker first where the maker can look itself: its lanes stand on the queue's busy workers, and the tile makers waited on them for every tile of the map (2026-10-16, the opening's 148 s rush). */
   ensure(key: number): Promise<number> {
     return this.chained(key, async () => {
-      if (this.makeStored) {
+      // The maker stores what it makes: not for a tab that only reads the world.
+      if (this.makeStored && !this.readOnly) {
         const { i, j } = tileOfKey(key);
         const made = await this.makeStored(i, j, this.versions.get(key) ?? 0, false, true);
         if (!made.legacy) {
@@ -415,7 +420,7 @@ export class TileStore {
           return made.version;
         }
       }
-      const known = (await this.backend.run({ op: 'version', map: this.map, key })) as number | null;
+      const known = (await this.backend.run({ op: 'version', map: this.map, key, readOnly: this.readOnly })) as number | null;
       if (known !== null) {
         this.versions.set(key, Math.max(this.versions.get(key) ?? 0, known));
         return known;
@@ -457,7 +462,7 @@ export class TileStore {
   /** The version the store holds a tile at (null: none), kept as the least the next write of it goes past. */
   private knownVersion(key: number): Promise<number | null> {
     return this.chained(key, async () => {
-      const known = (await this.backend.run({ op: 'version', map: this.map, key })) as number | null;
+      const known = (await this.backend.run({ op: 'version', map: this.map, key, readOnly: this.readOnly })) as number | null;
       if (known !== null) this.versions.set(key, Math.max(this.versions.get(key) ?? 0, known));
       return known;
     });
@@ -467,7 +472,7 @@ export class TileStore {
   load(key: number): Promise<TileRecords> {
     return this.chained(key, async () => {
       // The maker reads it where it is stored (the browser's), and makes it only if it is not.
-      if (this.makeStored) {
+      if (this.makeStored && !this.readOnly) {
         const records = await this.madeThere(key);
         if (records) return records;
       }
@@ -481,7 +486,7 @@ export class TileStore {
 
   /** A stored tile's records as their texts, each an object of some of its fields (`TileText`), never parsed here: null when none is stored (a map saved to a file, `worldExport.ts`). */
   readText(key: number): Promise<TileText | null> {
-    return this.chained(key, () => this.backend.run({ op: 'readText', map: this.map, key }) as Promise<TileText | null>);
+    return this.chained(key, () => this.backend.run({ op: 'readText', map: this.map, key, readOnly: this.readOnly }) as Promise<TileText | null>);
   }
 
   /** A stored tile's lists emptied (a "whole map" clear), in its order with the tile's other calls: the version written, null when there was nothing to clear or no tile is stored. */
@@ -521,7 +526,7 @@ export class TileStore {
   /** DO NOT have the save worker parse a tile and clone it to the page: its texts are handed over and parsed here, once. */
   /** The stored tile read and prepared where the store is (`runTileOp` 'read', the save worker): the page files its records as they come. */
   private async readNow(key: number, network: boolean): Promise<TileRecords | null> {
-    const prepared = (await this.backend.run({ op: 'read', map: this.map, key, network })) as PreparedTile | null;
+    const prepared = (await this.backend.run({ op: 'read', map: this.map, key, network, readOnly: this.readOnly })) as PreparedTile | null;
     if (!prepared) return null;
     const records = preparedRecords(prepared);
     if (prepared.network) this.bakes.set(key, prepared.network);
@@ -558,6 +563,7 @@ export class TileStore {
     if (fresh.key !== key) throw new Error(`the generator made tile ${fresh.key} for tile ${key}`);
     // Prepared here as a worker prepares one (`prepareTile`): its buildings one table, which the page reads them from, the write posts and the cell jobs read.
     const records = preparedRecords(prepareTile(this.stamped(fresh), false));
+    if (this.readOnly) return records;
     if (!(await this.put(tileWrite(records)))) console.warn(`[save] tile ${key} was made and not stored`);
     return records;
   }
@@ -569,6 +575,7 @@ export class TileStore {
   }
 
   private async put(write: TileWrite): Promise<boolean> {
+    if (this.readOnly) return false;
     try {
       return (await this.backend.run({ op: 'write', map: this.map, records: write })) === true;
     } catch (error) {
