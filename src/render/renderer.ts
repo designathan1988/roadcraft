@@ -114,6 +114,7 @@ import { furnitureProduct } from './furnitureTiles';
 import { signProduct } from './signTiles';
 import { barrierProduct } from './barrierTiles';
 import { plantedProduct } from './plantedTiles';
+import { structureProduct } from './structureTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -1686,9 +1687,10 @@ export function createSceneRenderer(
         { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
     }
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
+    // A streamed world's structures are the tiles' (`structureTiles.ts`, baked in workers): the region builds none, its cells let go.
     const atdetails = performance.now();
-    details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles);
-    const freshDetails = details.prepare(net, solve, terrain.renderedHeightAt, blocks);
+    if (byTile && details) { builtTriangles -= details.triangles; world.remove(details.group); details.dispose(); details = null; }
+    const freshDetails = byTile ? null : (details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles)).prepare(net, solve, terrain.renderedHeightAt, blocks);
     performance.measure('hitch:road-edit/details', { start: atdetails, end: performance.now() });
     yield;
     // The overhead utility network.
@@ -1698,7 +1700,7 @@ export function createSceneRenderer(
     // The new pieces' shaders compiled before they are drawn - in parallel where the driver can
     if (sliced) {
       const stage = new Group();
-      for (const piece of [freshRoads.group, ...freshDetails.fresh]) {
+      for (const piece of [freshRoads.group, ...(freshDetails?.fresh ?? [])]) {
         if (piece.parent === null) stage.add(piece);
       }
       if (stage.children.length > 0) {
@@ -1713,15 +1715,15 @@ export function createSceneRenderer(
     if (roads && roads !== freshRoads) { triangles -= roads.triangles; world.remove(roads.group); roads.dispose(); }
     // The region's blocks of a world drawn by tiles now: let go once out of the picture.
     if (byTile && surfaceReuse.chunks.size) dropSurfaceBlocks(surfaceReuse);
-    triangles -= details.triangles;
+    triangles -= details?.triangles ?? 0;
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;
     roads.adopt();
     world.add(roads.group);
-    freshDetails.apply();
-    if (!details.group.parent) world.add(details.group);
+    freshDetails?.apply();
+    if (details && !details.group.parent) world.add(details.group);
     utilityRevision = utilityBuilt;
-    builtTriangles = triangles + roads.triangles + details.triangles;
+    builtTriangles = triangles + roads.triangles + (details?.triangles ?? 0);
     // The poles the edit reached, on the ground just put in place (`syncUtilities`, from the diary).
     const atutilities = performance.now();
     syncUtilities(net, poleGroundAt(solve, terrain.renderedHeightAt, net));
@@ -2148,6 +2150,8 @@ export function createSceneRenderer(
   };
   // The streamed world's planted trees per tile, in the planted forest's cells.
   nearTiles.add(plantedProduct(plantedForestOf, () => natureTreeKit?.variants.length ?? 0));
+  // The streamed world's road structures per tile (`structureTiles.ts`): piers, parapets, retaining walls, portals.
+  nearTiles.add(structureProduct(world, materials, terrain.vergeMaterial));
   /** @rebuild Every planted tree filed cell by cell: the map opened, or its trees replaced whole. */
   const plantAll = (doc: RoadDoc): void => {
     plantedKeeps.clear();

@@ -4,6 +4,7 @@ import { furnitureBaker } from './furnitureTiles';
 import { plantedBaker } from './plantedTiles';
 import { poleBaker } from './poleTiles';
 import { signBaker } from './signTiles';
+import { structureBaker } from './structureTiles';
 
 /** EVERY KIND OF NEAR PRODUCT'S BAKE (`nearTileBake.ts`), one module each, all in this file's closure: their code is the bakes' fingerprint (`cook-plugin.ts`), a change of any making the kept bakes stale */
 const BAKERS: Readonly<Record<NearKind, NearBaker<unknown>>> = {
@@ -12,6 +13,7 @@ const BAKERS: Readonly<Record<NearKind, NearBaker<unknown>>> = {
   signs: signBaker as NearBaker<unknown>,
   barriers: barrierBaker as NearBaker<unknown>,
   planted: plantedBaker as NearBaker<unknown>,
+  structures: structureBaker as NearBaker<unknown>,
 };
 
 /** The parts a kind reads (what the page posts of a tile it holds edited). */
