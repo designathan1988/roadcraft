@@ -128,8 +128,13 @@ function mandatory(w: SimWorld, v: Vehicle, target: LaneletId): LaneletId | null
 
 /** Road a mandatory change of `steps` lanes needs at `speed`: each lane is signalled for */
 function roomNeeded(w: SimWorld, v: Vehicle, adjacent: LaneletId, steps: number, speed: number): number {
-  return (Math.max(LANE_CHANGE_MIN_ROOM, speed * LANE_CHANGE_TIME,
-    changeLength(w, v, adjacent, speed) + FINISH_MARGIN) + speed * SIGNAL_LEAD_CRAWLING) * steps;
+  return roomAt(v, sideways(w, v, adjacent), steps, speed);
+}
+
+/** `roomNeeded` with the lateral distance to the adjacent lane given (`sideways`): DO NOT project on the lanes again for each speed tried. */
+function roomAt(v: Vehicle, across: number | null, steps: number, speed: number): number {
+  const length = across === null ? 0 : laneChangeLength(across, speed, v.archetype.length);
+  return (Math.max(LANE_CHANGE_MIN_ROOM, speed * LANE_CHANGE_TIME, length + FINISH_MARGIN) + speed * SIGNAL_LEAD_CRAWLING) * steps;
 }
 
 /** The speed a driver holds while working across to the lane the route needs. */
@@ -146,13 +151,15 @@ export function positioningSpeedCap(w: SimWorld, v: Vehicle): number {
     lane.laneIndex + Math.sign(to.laneIndex - lane.laneIndex));
   // A second of travel in hand, so the driver eases off before the room runs out rather than on the tick it does.
   const left = lane.length - v.s - v.v;
-  if (roomNeeded(w, v, adjacent, steps, Math.max(v.v, lane.speedLimit)) <= left) return Infinity;
+  // The distance across, measured once: only the change's length depends on the speed tried.
+  const across = sideways(w, v, adjacent);
+  if (roomAt(v, across, steps, Math.max(v.v, lane.speedLimit)) <= left) return Infinity;
   // Room falls with speed, so bisect for the fastest speed that still fits.
   let lo = 0;
   let hi = Math.max(v.v, lane.speedLimit);
   for (let i = 0; i < 12; i++) {
     const mid = (lo + hi) / 2;
-    if (roomNeeded(w, v, adjacent, steps, mid) <= left) lo = mid;
+    if (roomAt(v, across, steps, mid) <= left) lo = mid;
     else hi = mid;
   }
   // Never below a crawl: a change that needs less than that is not made.
@@ -166,11 +173,17 @@ const CRAWL = m(2);
 
 /** Road a change into `target` from here would be driven over. */
 function changeLength(w: SimWorld, v: Vehicle, target: LaneletId, speed = v.v): number {
+  const across = sideways(w, v, target);
+  return across === null ? 0 : laneChangeLength(across, speed, v.archetype.length);
+}
+
+/** How far across `target`'s centre lies from this vehicle's place on its lane; null when either lane is gone. */
+function sideways(w: SimWorld, v: Vehicle, target: LaneletId): number | null {
   const lane = w.lanelet(v.lanelet);
   const other = w.lanelet(target);
-  if (!lane || !other) return 0;
+  if (!lane || !other) return null;
   const here = lane.centre.sampleAt(Math.min(Math.max(0, v.s), lane.length)).p;
-  return laneChangeLength(other.centre.closestPoint(here).distance, speed, v.archetype.length);
+  return other.centre.closestPoint(here).distance;
 }
 
 /** The change the driver wants: the best neighbouring lane, or none. */
