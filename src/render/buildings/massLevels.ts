@@ -24,8 +24,11 @@ export class MassLevels {
   constructor(private readonly pool: CellPool, private readonly land: (key: string, mass: CellMass | null) => void, private readonly remove: (key: string) => void,
     private readonly plan: (key: string) => void, private readonly wanted: (key: string) => boolean) {}
 
-  /** A cell's buildings asked again (`entries`), or gone (null): its tile and plate to be asked again at `flush`. */
-  touch(cell: string, entries: readonly CellEntry[] | null): void {
+  /** The levels a player's edit changed (`touch` with `edited`): asked first in the queue (`cellPool.ts` EDIT_TIER), once. */
+  private readonly edited = new Set<string>();
+
+  /** A cell's buildings asked again (`entries`), or gone (null): its tile and plate to be asked again at `flush`; `edited`, by the player's edit (asked first). */
+  touch(cell: string, entries: readonly CellEntry[] | null, edited = false): void {
     const was = this.entries.get(cell);
     // The same buildings on the same ground (the whole town filed again): its levels stand as they are.
     if (was && entries && sameEntries(was, entries)) return;
@@ -34,6 +37,7 @@ export class MassLevels {
     const [i, j] = cellIndex(cell);
     this.dirty.add(tileOf(i, j));
     this.dirty.add(plateOf(i, j));
+    if (edited) { this.edited.add(tileOf(i, j)); this.edited.add(plateOf(i, j)); }
   }
 
   /** Every plate touched asked once, made of its cells' entries; a tile touched asked once it is wanted (`pump`); a level with none left removed. */
@@ -44,12 +48,13 @@ export class MassLevels {
         const was = this.asked.get(key);
         if (was !== undefined) { this.pool.cancel(was); this.asked.delete(key); }
         this.stale.delete(key);
+        this.edited.delete(key);
         this.remove(key);
         continue;
       }
       this.plan(key);
       // The upload queue full (`uploads.ts` warmFull): left stale, asked by `pump` once it drains.
-      if ((key[0] === 'p' || this.wanted(key)) && !warmFull()) this.ask(key, list, env);
+      if ((key[0] === 'p' || this.wanted(key)) && (!warmFull() || this.edited.has(key))) this.ask(key, list, env);
       else {
         // Its old masses, if any, are no longer its buildings': asked again once a view wants it.
         const was = this.asked.get(key);
@@ -64,7 +69,7 @@ export class MassLevels {
   pump(env: CellEnv): void {
     for (const key of this.stale) {
       // DO NOT ask masses to upload while the upload queue is full: their arrays waited on the page (conf77, 2026-10-17); asked once it drains.
-      if (warmFull()) return;
+      if (warmFull() && !this.edited.has(key)) continue;
       if (key[0] !== 'p' && !this.wanted(key)) continue;
       this.stale.delete(key);
       const list = this.listOf(key);
@@ -97,10 +102,11 @@ export class MassLevels {
     const kind = KIND[levelCells(key).level];
     // DO NOT read `id` in the answer before it is given: on the page the answer comes inside `run`.
     let id = -1;
+    const edited = this.edited.delete(key);
     id = this.pool.run(kind, key, list, env, (result) => {
       if (this.asked.get(key) === id) this.asked.delete(key);
       this.land(key, result.mass ?? null);
-    }, `${kind}|${key}`);
+    }, `${kind}|${key}`, edited);
     if (this.pool.isRunning(id)) this.asked.set(key, id);
   }
 
@@ -121,5 +127,6 @@ export class MassLevels {
     this.entries.clear();
     this.dirty.clear();
     this.stale.clear();
+    this.edited.clear();
   }
 }
