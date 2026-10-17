@@ -169,6 +169,8 @@ export function createBuildingLayer(): BuildingLayer {
   };
   /** The shown buildings by coarse cell, as last put together (`update`): what a cell streamed in is made of. */
   let townCells = new Map<string, Building[]>();
+  /** The document's revision the town was last put together from (`update`): what `drawnOver` waits for. */
+  let townAt = -1;
   /** Where a building must stand to be put together here (`setActive`: the streamed world's active tiles), the rectangles whose standing changed since the last update, and how many times it changed (part of the town's key). */
   let activeAt: ((x: number, y: number) => boolean) | null = null;
   const activeFlipped: ChangeRect[] = [];
@@ -532,6 +534,8 @@ export function createBuildingLayer(): BuildingLayer {
       return { chunk: emitChunk(b, groundAt, pavedAt, naturalAt), kit };
     },
     update(doc, groundAt, groundKey, pavedAt, naturalAt = groundAt, groundTouched, groundMovedUnder) {
+      // Put together below from the document as it stands now, in this call.
+      townAt = doc.revision;
       lastGround = { groundAt, groundKey, pavedAt, naturalAt };
       touched = groundTouched;
       const env: CellEnv = { groundAt, naturalAt, ...(pavedAt ? { pavedAt } : {}) };
@@ -737,7 +741,8 @@ export function createBuildingLayer(): BuildingLayer {
       budget = bytes;
       keepToBudget();
     },
-    drawnOver(rect) {
+    drawnOver(rect, revision = -Infinity) {
+      if (townAt < revision) return false;
       const i0 = Math.floor(rect[0] / BATCH_CELL), j0 = Math.floor(rect[1] / BATCH_CELL), i1 = Math.ceil(rect[2] / BATCH_CELL), j1 = Math.ceil(rect[3] / BATCH_CELL);
       for (const key of townCells.keys()) {
         const comma = key.indexOf(',');

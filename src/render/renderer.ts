@@ -788,7 +788,7 @@ export function createSceneRenderer(
     // The roads drawn are the last build that landed: a tile put in at or before its revision has its near roads on screen, whatever build runs now (DO NOT wait for a frame with no job: with tiles coming one after another only a landing frame had none).
     for (const [key, p] of nearPending) {
       if (landedRevision < 0 || landedRevision < p.revision) continue;
-      if (!buildings.drawnOver(p.rect)) continue;
+      if (!buildings.drawnOver(p.rect, p.revision)) continue;
       nearPending.delete(key);
       onNearDrawn?.(key);
     }
