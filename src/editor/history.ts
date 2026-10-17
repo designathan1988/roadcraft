@@ -96,33 +96,36 @@ export class History {
   }
 
   /** The steps of the groups `gone` steps were in, dropped too: DO NOT leave half a group to undo (a long road's parts, one undo for them all). */
-  private dropGroupsOf(gone: readonly DocPatch[]): void {
+  private dropGroupsOf(gone: readonly DocPatch[]): number {
     const groups = new Set<number>();
     for (const p of gone) { const g = this.groupOf.get(p); if (g !== undefined) groups.add(g); }
-    if (!groups.size) return;
+    if (!groups.size) return 0;
     const kept = (p: DocPatch): boolean => !groups.has(this.groupOf.get(p) ?? -1);
     const undo = this.undoStack.filter(kept), redo = this.redoStack.filter(kept);
     this.undoStack.length = 0;
     this.undoStack.push(...undo);
     this.redoStack.length = 0;
     this.redoStack.push(...redo);
+    return groups.size;
   }
 
   /** A tile let go of the page (`worldStreamer.ts`): a step naming a record or an item of it can no longer be undone or redone
    *  - such an undo step is dropped with every older one, the redo steps all; the steps kept have their stretches of the lists shifted past the items that went (`removedAt`, indices before they went). */
   letGoTile(touches: (record: { readonly part: string; readonly id: number; readonly value: unknown }) => boolean, itemIn: (item: unknown) => boolean,
-    removedAt: ReadonlyMap<ListPart, readonly number[]>): void {
+    removedAt: ReadonlyMap<ListPart, readonly number[]>): number {
     this.settle();
+    // How many groups went (a long road's parts, `grouped`): the player told (`main.ts`).
+    let groups = 0;
     const named = (p: DocPatch): boolean => p.whole !== undefined
       || p.records.some((r) => touches({ part: r.part, id: r.id, value: r.before }) || touches({ part: r.part, id: r.id, value: r.after }))
       || p.lists.some((l) => l.before.some(itemIn) || l.after.some(itemIn));
     for (let k = this.undoStack.length - 1; k >= 0; k--) {
       if (!named(this.undoStack[k]!)) continue;
-      this.dropGroupsOf(this.undoStack.splice(0, k + 1));
+      groups = this.dropGroupsOf(this.undoStack.splice(0, k + 1));
       break;
     }
     if (this.redoStack.some(named)) this.redoStack.length = 0;
-    if (!removedAt.size) return;
+    if (!removedAt.size) return groups;
     const shift = (p: DocPatch): DocPatch => (p.lists.length === 0 ? p : {
       ...p,
       lists: p.lists.map((l) => {
@@ -135,6 +138,7 @@ export class History {
     });
     for (let k = 0; k < this.undoStack.length; k++) this.undoStack[k] = shift(this.undoStack[k]!);
     for (let k = 0; k < this.redoStack.length; k++) this.redoStack[k] = shift(this.redoStack[k]!);
+    return groups;
   }
 
   clear(): void {

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { History, followNetwork } from '@editor/history';
@@ -210,8 +211,10 @@ describe('steps joined into a group', () => {
     expect(doc.segments.size).toBe(5);
     // A part's records let go with its tile: the whole group can no longer be undone, never half of it.
     const parts = [...doc.segments.values()].filter((s) => doc.node(s.a)!.x >= 2_000).map((s) => s.id);
-    history.letGoTile((r) => r.part === 'segments' && r.id === parts[0], () => false, new Map());
+    // Told, so the player is said why (`hint.road.undoGone`, `main.ts`).
+    expect(history.letGoTile((r) => r.part === 'segments' && r.id === parts[0], () => false, new Map())).toBe(1);
     expect(history.canUndo).toBe(false);
+    expect(readFileSync('src/main.ts', 'utf8')).toMatch(/if \(undoGone > 0\) \{ flashHint\('hint\.road\.undoGone'\)/);
     expect(doc.segments.size).toBe(5);
   });
 });
