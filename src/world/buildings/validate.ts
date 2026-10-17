@@ -1,4 +1,5 @@
 import { AREA_EPS, validOutline, overlapArea, roofPartFits } from './footprints';
+import { hypot2 } from '@core/hypot';
 import type { Aabb } from '@core/aabb';
 import type { Polyline } from '@core/polyline';
 import type { Vec2 } from '@core/vec2';
@@ -305,7 +306,7 @@ function pointSegmentDistance(p: Vec2, a: Vec2, b: Vec2): number {
   const dy = b.y - a.y;
   const l2 = dx * dx + dy * dy;
   const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
-  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+  return hypot2(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
 }
 
 /** Shortest distance from an open polyline to a closed polygon (0 inside). */

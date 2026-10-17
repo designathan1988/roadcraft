@@ -1,4 +1,5 @@
 import clipping from 'polygon-clipping';
+import { hypot2 } from '@core/hypot';
 import { isSimple, pointInPolygon, signedArea } from '@core/polygon';
 import type { Vec2 } from '@core/vec2';
 import type { FaceId, RoofDetail, Volume } from './types';
@@ -40,7 +41,7 @@ function sideFrame(v: Volume, side: number): EdgeFrame {
   const ring = localFootprint(v);
   let p = ring[side % ring.length]!, q = ring[(side + 1) % ring.length]!;
   const dx = q.x - p.x, dy = q.y - p.y;
-  const length = Math.hypot(dx, dy) || 1;
+  const length = hypot2(dx, dy) || 1;
   const nx = dy / length, ny = -dx / length;
   // Legacy rectangles number bays from left to right / front to back.
   if (!v.outline && side >= 2) [p, q] = [q, p];
@@ -170,8 +171,8 @@ export function offsetRing(ring: readonly Vec2[], distance: number): Vec2[] {
   if (distance === 0) return ring.map((p) => ({ ...p }));
   return ring.map((p, i) => {
     const prev = ring[(i + ring.length - 1) % ring.length]!, next = ring[(i + 1) % ring.length]!;
-    const a = Math.hypot(p.x - prev.x, p.y - prev.y) || 1;
-    const b = Math.hypot(next.x - p.x, next.y - p.y) || 1;
+    const a = hypot2(p.x - prev.x, p.y - prev.y) || 1;
+    const b = hypot2(next.x - p.x, next.y - p.y) || 1;
     const nx = (p.y - prev.y) / a, ny = -(p.x - prev.x) / a;
     const mx = (next.y - p.y) / b, my = -(next.x - p.x) / b;
     const scale = distance / Math.max(.3, 1 + nx * mx + ny * my);
