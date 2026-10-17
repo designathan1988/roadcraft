@@ -89,14 +89,17 @@ class GpuCopy {
   constructor(readonly attribute: BufferAttribute | InterleavedBuffer) {}
   draw(): Float32Array {
     const a = this.attribute, array = a.array as Float32Array;
+    // As three r186 `WebGLAttributes`: made whole (its ranges kept), then sent by its ranges; told each time (`onUploadCallback`).
     if (!this.data) {
       this.data = Float32Array.from(array);
       this.version = a.version;
+      a.onUploadCallback();
     } else if (this.version < a.version) {
       if (a.updateRanges.length === 0) this.data.set(array);
       else for (const r of a.updateRanges) this.data.set(array.subarray(r.start, r.start + r.count), r.start);
       a.clearUpdateRanges();
       this.version = a.version;
+      a.onUploadCallback();
     }
     return this.data;
   }
@@ -167,6 +170,44 @@ describe('instances kept thing by thing', () => {
       }
     }
     expect(compared).toBeGreaterThan(5_000);
+    layer.dispose();
+  });
+
+  it('sends only the positions whose instance changed when the view moves a little, not every instance in view', () => {
+    const rng = new Rng(9);
+    const layer = createInstanceRuns('test', specs, SHADOW_REACH);
+    layer.update({ added: Array.from({ length: 1_500 }, () => thing(rng, (rng.float() - 0.5) * m(3000), (rng.float() - 0.5) * m(3000), m(40)).run), removed: [] });
+    const viewAt = (x: number): { frustum: Frustum; view: Matrix4 } => {
+      const camera = new PerspectiveCamera(50, 1.6, 1, m(1500));
+      camera.position.set(x, m(120), m(300));
+      camera.lookAt(x, 0, -m(300));
+      camera.updateMatrixWorld();
+      const view = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      return { frustum: new Frustum().setFromProjectionMatrix(view), view };
+    };
+    let x = 0;
+    for (let step = 0; step < 30; step++, x += m(6)) {
+      const { frustum, view } = viewAt(x);
+      const mesh = layer.meshes.find((s) => s.name === 'plain');
+      const before = mesh ? Float32Array.from(posesOf(mesh).buffer.array as Float32Array) : null;
+      const bufferBefore = mesh ? posesOf(mesh).buffer : null;
+      // As if three sent it: its ranges gone, its upload told.
+      if (bufferBefore) { bufferBefore.clearUpdateRanges(); bufferBefore.onUploadCallback(); }
+      layer.cull(frustum, view);
+      const now = layer.meshes.find((s) => s.name === 'plain')!;
+      const { buffer } = posesOf(now);
+      // A buffer made anew (grown or shrunk) is sent whole: nothing to count.
+      if (step === 0 || buffer !== bufferBefore || !before) continue;
+      const stride = buffer.stride, after = buffer.array as Float32Array;
+      let changed = 0;
+      for (let p = 0; p < now.count; p++) {
+        for (let j = 0; j < stride; j++) if (!Object.is(after[p * stride + j], before[p * stride + j])) { changed++; break; }
+      }
+      const sent = buffer.updateRanges.reduce((n, r) => n + r.count, 0) / stride;
+      // The positions written are those whose slot changed (one moved in may hold the same pose to the bit: never more sent than that).
+      expect(sent, `step ${step}`).toBeGreaterThanOrEqual(changed);
+      expect(sent, `step ${step}: ${sent} of ${now.count} sent`).toBeLessThan(Math.max(8, now.count / 4));
+    }
     layer.dispose();
   });
 
