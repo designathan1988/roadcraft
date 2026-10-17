@@ -20,7 +20,7 @@ import {
   snapRoadStart, type SnapResult,
 } from './snap';
 import { commitRoadPath } from './commit';
-import { type ChangeRect, DOC_CHANGE_KINDS } from '@world/changes';
+import { DOC_CHANGE_KINDS } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import { applyProfileTo } from './roads/profile';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
@@ -91,8 +91,6 @@ export interface RoadToolHost {
   groundSolve?(): RoadElevation | null;
   /** The roads just laid blink. */
   flash(ids: readonly SegmentId[]): void;
-  /** Whether every tile of the map `rect` reaches is in the page's document (a streamed world: those not yet in hold buildings the road would clear); absent: always. */
-  tilesIn?(rect: ChangeRect): boolean;
   /** An edit of the document, one undo step. */
   mutate(fn: () => boolean): void;
   hint(key: string): void;
@@ -116,8 +114,6 @@ export class RoadTool {
   private heightEdited = false;
   /** The road just committed, drawn as previewed until the world with it is built. */
   private settling: RoadDraft | null = null;
-  /** A road let go over a tile not yet in the document (`RoadToolHost.tilesIn`): laid once it is in (`layHeld`), drawn meanwhile. */
-  private held: { readonly d: RoadDraft; readonly chosenEnd?: Anchor } | null = null;
 
   constructor(private readonly host: RoadToolHost) {}
 
@@ -139,7 +135,6 @@ export class RoadTool {
   }
 
   cancel(): void {
-    this.held = null;
     this.draft = null;
     this.chain = null;
     this.chainPreview = null;
@@ -433,33 +428,9 @@ export class RoadTool {
     host.redraw();
   }
 
-  /** The road held for a tile not yet in (`held`) laid, once every tile it reaches is: true when it was. Each frame (`main.ts`). */
-  layHeld(): boolean {
-    const held = this.held;
-    if (!held || !this.tilesReady(held.d)) return false;
-    this.held = null;
-    return this.commit(held.d, held.chosenEnd);
-  }
-
-  /** Whether the tiles a road reaches are in the document: DO NOT lay it while one is not - the buildings under it there are not on the page, and stood after it was laid (conf60, "the road demolished 3 buildings", 8 in the runs whose region was in). */
-  private tilesReady(d: RoadDraft): boolean {
-    if (!this.host.tilesIn) return true;
-    let x0 = Math.min(d.start.at.x, d.snap.at.x), y0 = Math.min(d.start.at.y, d.snap.at.y), x1 = Math.max(d.start.at.x, d.snap.at.x), y1 = Math.max(d.start.at.y, d.snap.at.y);
-    for (const p of [...d.samples.map((q) => q.at), ...(d.curveControl ? [d.curveControl] : [])]) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-    // Past the centreline by the widest road and its cut: the buildings it clears.
-    const pad = m(40);
-    return this.host.tilesIn([x0 - pad, y0 - pad, x1 + pad, y1 + pad]);
-  }
-
-  /** Lays the road `d` ends at (`chosenEnd`, or what is under its end), one undo step; false when refused, or held until the tiles it reaches are in (`layHeld`). */
+  /** Lays the road `d` ends at (`chosenEnd`, or what is under its end), one undo step; false when refused. */
   private commit(d: RoadDraft, chosenEnd?: Anchor): boolean {
     const { host } = this;
-    if (!this.tilesReady(d)) {
-      this.held = { d, ...(chosenEnd ? { chosenEnd } : {}) };
-      host.hint('hint.road.waitTiles');
-      host.redraw();
-      return false;
-    }
     const { doc, net } = host;
     const settings = host.settings();
     const { end, endHeightOffset, pieces } = this.ending(d, chosenEnd);
@@ -542,8 +513,6 @@ export class RoadTool {
     }
     const road = this.draft ?? this.chainPreview;
     if (road) return { road, settling: false };
-    // A road waiting for its tiles drawn as it will be laid.
-    if (this.held) return { road: this.held.d, settling: true };
     return this.settling ? { road: this.settling, settling: true } : null;
   }
 

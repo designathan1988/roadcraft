@@ -34,7 +34,7 @@ import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
 import { DEFAULT_CITY, type CityOptions } from '@world/cityGen/plan';
-import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, clampToMap, tileOnMap, worldKey } from '@world/cityGen/wholeMap';
+import { WHOLE_MAP_DEFAULTS, type WholeMapOptions, clampToMap, worldKey } from '@world/cityGen/wholeMap';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
 import { MAX_TERRAIN_STAMPS, RELIEF_FLAT, type TerrainMode } from '@world/terrain';
@@ -427,13 +427,6 @@ const roadTool = new RoadTool({
     return solved && solved.terrainRevision === doc.terrainRevision ? solved.elevation : null;
   },
   flash: (ids) => scene.flashRoads(ids),
-  // A streamed world: a road reaching a tile of the map not in the document yet waits for it (`RoadTool.layHeld`).
-  tilesIn: ([x0, y0, x1, y1]) => {
-    if (!streamed) return true;
-    const a = tileOfKey(tileKeyAt(x0, y0)), b = tileOfKey(tileKeyAt(x1, y1));
-    for (let i = a.i; i <= b.i; i++) for (let j = a.j; j <= b.j; j++) if (tileOnMap(i, j) && !doc.hasTile(tileKey(i, j))) return false;
-    return true;
-  },
   mutate: (fn) => mutate(fn),
   hint: (key) => flashHint(key),
   redraw: () => requestDraw(),
@@ -3049,8 +3042,6 @@ function drawOverlayScreen(): void {
   }
 
   // The road just laid, as previewed, while the world with it is still being built.
-  // A road let go over a tile still coming in: laid once the tile is in.
-  roadTool.layHeld();
   const shownRoad = roadTool.preview(!scene.worldBusy && !topologyAfterDraw);
   const settling = shownRoad?.settling ?? false;
   const roadPreview: RoadDraft | null = shownRoad?.road ?? null;

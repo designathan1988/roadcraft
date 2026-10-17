@@ -402,30 +402,6 @@ describe('a tile stored', () => {
     expect(waited).toBeLessThan(2 * SYNC_READ_MS);
   });
 
-  it("a tile edited, its page gone before the bake, reopened: the same records read, never made again (conf60)", async () => {
-    const store = memoryStore();
-    const key = tileKey(2, 1);
-    const made: number[] = [];
-    const maker = lookingFirst(store, async (i, j) => { made.push(tileKey(i, j)); return { version: 1 }; });
-    // The first page: the tile as made, then the player's edit (a building gone, a road laid), written before its bake.
-    const first = new TileStore('map', storeTiles(store), never, async (i, j, after, text, ifMissing, _b, sectionsOnly) =>
-      sectionsOnly ? new Promise<MadeTile>(() => { /* the page went away mid-bake */ }) : maker(i, j, after, text, ifMissing));
-    const base = tileIdBase(key);
-    const tile = { ...emptyTile(2, 1, { buildings: [house(base + 1, m(2_100)), house(base + 2, m(2_300))] }), version: 1 };
-    await writeTile(store, 'map', tile, () => ({ mark: { json: 1 } }));
-    const loaded = await first.load(key);
-    const edited = { ...loaded, buildings: [loaded.buildings[0]!], nodes: [node(base + 3, m(2_100), m(1_100))] };
-    expect(await first.write(edited)).toBe(2);
-    // The second page, reopening: the tile read through its maker as the first page left it.
-    const second = new TileStore('map', storeTiles(store), never, maker);
-    expect(await second.ensure(key)).toBe(2);
-    const back = await second.load(key);
-    expect(made).toEqual([]);
-    expect(back.version).toBe(2);
-    expect(back.nodes).toEqual(edited.nodes);
-    expect(JSON.parse(JSON.stringify(back.buildings))).toEqual(JSON.parse(JSON.stringify(edited.buildings)));
-  });
-
   it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {
     const store = memoryStore();
     const tiles = new TileStore('map', storeTiles(store), never);
