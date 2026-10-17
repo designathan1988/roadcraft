@@ -81,6 +81,8 @@ import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn, wa
 import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather } from './wind';
 import { holdStill, updateMoving } from './stillTree';
+import { castCastersInto } from './shadowCasters';
+import { setShadowSun } from './cellInstances';
 import { createRain } from './rain';
 import { createLightning } from './lightning';
 import { windVector } from '@world/weather';
@@ -935,7 +937,11 @@ export function createSceneRenderer(
   holdStill(buildings.group);
   scene.add(buildings.group);
   // Each sun cascade draws the parts wider than its own texel only, not every part the finest one draws.
-  environment.setCasters((texel) => buildings.castInto(texel));
+  // And every layer that registered its meshes by size (`shadowCasters.ts`): cellInstances, flags, signals, things in the hand.
+  environment.setCasters((texel) => {
+    if (texel !== null) buildings.castInto(texel);
+    castCastersInto(texel);
+  });
   // The town's meshes keep their arrays only until they are on the GPU (`mesh/gpuOnly.ts`)
   renderer.domElement.addEventListener('webglcontextrestored', () => {
     refillArrays(scene);
@@ -2769,6 +2775,8 @@ export function createSceneRenderer(
       cssHalfW = css.w * 0.5;
       cssHalfH = css.h * 0.5;
       // Plants and street furniture outside the view are not drawn at all.
+      // The layers' shadow margin away from the sun the cascades cast by (the light's own direction, `sunCascades.ts`).
+      setShadowSun(environment.sun.position.x - environment.sun.target.position.x, environment.sun.position.y - environment.sun.target.position.y, environment.sun.position.z - environment.sun.target.position.z);
       furniture.cull(crowdFrustum, crowdProjection);
       signs.cull(crowdFrustum, crowdProjection);
       barriers.cull(crowdFrustum, crowdProjection);

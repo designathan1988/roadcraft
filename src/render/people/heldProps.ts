@@ -2,6 +2,7 @@ import {
   BoxGeometry, BufferAttribute, BufferGeometry, ConeGeometry, CylinderGeometry, DynamicDrawUsage, Group,
   InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, Vector3,
 } from 'three';
+import { castBySize } from '../shadowCasters';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /** What people hold while they do something (`sim/people` gestures) */
@@ -101,6 +102,9 @@ export function createHeldProps(): HeldProps {
   group.name = 'held-props';
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0 });
   const meshes = new Map<HeldKind, InstancedMesh>();
+  const uncast: (() => void)[] = [];
+  /** The largest body scale a thing was placed at this frame: the things' sizes (`castBySize`). */
+  let heldScale = 1;
   for (const kind of HELD_KINDS) {
     const mesh = new InstancedMesh(model(kind), material, CAPACITY);
     mesh.name = `held-${kind}`;
@@ -110,6 +114,10 @@ export function createHeldProps(): HeldProps {
     mesh.count = 0;
     meshes.set(kind, mesh);
     group.add(mesh);
+    // A thing in the hand casts where it reaches a texel, and only while someone holds one (`shadowCasters.ts`).
+    if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+    const reach = mesh.geometry.boundingSphere?.radius ?? 0;
+    uncast.push(castBySize({ mesh, casts: true, radius: () => reach * heldScale }));
   }
   const position = new Vector3(), turn = new Quaternion(), size = new Vector3(), out = new Matrix4();
   const grip = new Vector3(), thumb = new Vector3(), upright = new Quaternion();
@@ -123,6 +131,7 @@ export function createHeldProps(): HeldProps {
   return {
     group,
     begin() {
+      heldScale = 0;
       // Empty until something is placed: not drawn
       for (const mesh of meshes.values()) {
         mesh.count = 0;
@@ -135,6 +144,7 @@ export function createHeldProps(): HeldProps {
       if (mesh.count >= CAPACITY) return;
       // The hand's place and turn; the thing's own size, at the body's scale.
       hand.decompose(position, turn, size);
+      heldScale = Math.max(heldScale, scale);
       const at = UPRIGHT[kind];
       if (at) {
         // Where the fist is, standing straight, turned to the thumb.
@@ -149,8 +159,10 @@ export function createHeldProps(): HeldProps {
       const mesh = meshes.get(kind)!;
       if (mesh.count >= CAPACITY) return;
       put(mesh, matrix);
+      heldScale = Math.max(heldScale, matrix.getMaxScaleOnAxis());
     },
     dispose() {
+      for (const off of uncast) off();
       for (const mesh of meshes.values()) { mesh.geometry.dispose(); mesh.dispose(); }
       material.dispose();
     },
