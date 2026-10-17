@@ -226,3 +226,14 @@ describe('the ground under the buildings, followed', () => {
     layer.dispose();
   });
 });
+
+describe('a cell waiting for its level', () => {
+  it('keeps its entries while its records, ground and cut-open view stay, made again only when one changes', async () => {
+    const { readFileSync } = await import('node:fs');
+    const layer = readFileSync('src/render/buildings/layer.ts', 'utf8');
+    const land = layer.slice(layer.indexOf('const landCells'), layer.indexOf('const landCells') + 3000);
+    expect(land).toMatch(/const entries = entriesFor\(cell, list, groundAt, groundKey, pavedAt\)/);
+    const keep = layer.slice(layer.indexOf('const entriesFor'), layer.indexOf('const entriesFor') + 600);
+    expect(keep).toMatch(/known\.groundKey === groundKey && known\.cutaway === cutaway && known\.list\.length === list\.length && known\.list\.every/);
+  });
+});
