@@ -55,6 +55,15 @@ describe('the door into the drawn scene', () => {
     twin.castShadow = true;
     gateUntilBuilt(twin);
     expect(drawn(twin)).toBe(true);
+    // One held tells, once through, that it now casts (the sun's stores, `renderer.ts`).
+    let told = 0;
+    const late = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    gateUntilBuilt(late, () => { told++; });
+    expect(told).toBe(0);
+    drain();
+    await tick();
+    expect(drawn(late)).toBe(true);
+    expect(told).toBe(1);
   });
 
   it('lets a mesh warmed before it comes in through at once', async () => {
@@ -71,7 +80,9 @@ describe('the door into the drawn scene', () => {
 
   it('is what the renderer passes everything that comes into the scene through', () => {
     const source = readFileSync('src/render/renderer.ts', 'utf8');
-    expect(source).toMatch(/const onChildAdded = [^\n]*gateUntilBuilt\(event\.child\)/);
+    // Its whole body, up to the closing brace at its own indent.
+    const body = /const onChildAdded = [^]*?\n {2}\};/.exec(source)?.[0] ?? '';
+    expect(body).toMatch(/gateUntilBuilt\(event\.child[,)]/);
   });
 
   it('always settles: without the parallel compile (built at once), a mesh let go meanwhile, a compile that never answers (given up after its frames)', async () => {

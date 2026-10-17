@@ -412,7 +412,7 @@ export function createSceneRenderer(
     const key = by();
     stirredBy.set(key, (stirredBy.get(key) ?? 0) + 1);
   };
-  const onAssetsReady = (): void => { stir(() => `assets ${new Error().stack?.split(String.fromCharCode(10))[2]?.trim().slice(0, 90) ?? ''}`); askDraw(); };
+  const onAssetsReady = (): void => { stir(() => `assets ${new Error().stack?.split(String.fromCharCode(10))[3]?.trim().slice(0, 90) ?? ''}`); askDraw(); };
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
   onEcologyRead(onAssetsReady);
   /** The shadow map is drawn only when it can have changed. */
@@ -499,8 +499,24 @@ export function createSceneRenderer(
   };
   // What comes into the scene or leaves it changes what casts: the sun's stores are not used for that frame (`castersStirred`).
   // And through the one door into the drawn scene: held off the drawn layers until its programs are built (`uploads.ts` gateUntilBuilt).
-  const onChildAdded = (event: { child: Object3D; target?: Object3D }): void => { stir(() => `added to ${event.target?.name || '?'}: ${event.child.name || event.child.type}`); watchShadowDepth(event.child); gateUntilBuilt(event.child); };
-  const onChildRemoved = (event: { child: Object3D; target?: Object3D }): void => { stir(() => `removed from ${event.target?.name || '?'}: ${event.child.name || event.child.type}`); event.child.traverse((o) => noteSway(o, false)); };
+  // DO NOT stir the sun's stores for what comes or goes under a mover (people, vehicles, trains): never in a store, drawn over it every frame (`sunCascades.ts` movers); people walking into view stirred them every frame of a still view (`__stillLog`, 2026-10-17).
+  const onChildAdded = (event: { child: Object3D; target?: Object3D }): void => {
+    const casts = !inMover(event.target);
+    if (casts) stir(() => `added to ${event.target?.name || '?'}: ${event.child.name || event.child.type}`);
+    watchShadowDepth(event.child);
+    // Out of the door into the drawn layers: a caster from now on (`uploads.ts` gateUntilBuilt).
+    gateUntilBuilt(event.child, casts ? () => stir(() => `opened: ${event.child.name || event.child.type}`) : undefined);
+  };
+  const onChildRemoved = (event: { child: Object3D; target?: Object3D }): void => {
+    if (!inMover(event.target)) stir(() => `removed from ${event.target?.name || '?'}: ${event.child.name || event.child.type}`);
+    event.child.traverse((o) => noteSway(o, false));
+  };
+  /** The roots of what moves (`environment.setMovers`): what is under them is drawn over the stores, never kept in them. */
+  const moverRoots = new Set<Object3D>();
+  const inMover = (object: Object3D | undefined): boolean => {
+    for (let o = object; o; o = o.parent ?? undefined) if (moverRoots.has(o)) return true;
+    return false;
+  };
   /** What the wind sways in the shadow (`wind.ts` markSway on its depth material: trees, grass, impostors, scenery; flags, wires and signal posts cast at rest), mesh by mesh: a mover of the sun's cascades (`sunCascades.ts`), drawn over their store of what stands still. */
   const swayMeshes = new Set<Object3D>();
   let swayList: Object3D[] = [];
@@ -995,6 +1011,7 @@ export function createSceneRenderer(
     { roots: [transit.group], moving: () => simRunning && transit.moving },
     swaying,
   ]);
+  for (const root of [...agents.meshes, transit.group]) moverRoots.add(root);
   const signals: SignalHeads = createSignalHeads(scene, deckHeight);
 
   // Modular buildings: their own layer, behind their own gate
@@ -2685,7 +2702,8 @@ export function createSceneRenderer(
         settleNearTiles();
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
           (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;
-        if (buildings.pending) onAssetsReady();
+        // Another frame while they land, nothing more: what lands stirs the stores itself (childadded, the door, `update`'s answer).
+        if (buildings.pending) askDraw();
       }
       // The countryside's trees' kit (its models, its programs compiled ahead: `loadNatureTrees`) made while the first world is built, not after: it reads nothing of the world, and the opening waited for it once the world was in (`natureTreesPending`, the curtain's `whole`). The trees themselves are grown once the world stands (the nature's keeps, `!worldJob`).
       if (!natureTreesStarted && roads !== null) startNatureTrees();
@@ -3272,8 +3290,8 @@ export function createSceneRenderer(
       warmPreviewShaders();
       // One waiting body's geometry a frame to the GPU, before anybody draws it.
       drainWarm(renderer);
-      // Meshes still waiting to go up: another frame, so the queue never stands while the game is still.
-      if (warmPending()) onAssetsReady();
+      // Meshes still waiting to go up: another frame, so the queue never stands while the game is still (DO NOT stir the stores for it: a mesh is a caster once through the door, which says so).
+      if (warmPending()) askDraw();
 
       if (delta > 0) fps = fps * 0.9 + (1 / Math.min(1, delta)) * 0.1;
     },
