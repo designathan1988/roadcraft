@@ -1,4 +1,4 @@
-import { jobPort } from '../../jobs/jobPool';
+import { laneOf } from '../pagePorts';
 import { padGarmentPixels, type GarmentPadRequest, type GarmentPadResponse } from './garmentPadding';
 
 type Input = Omit<GarmentPadRequest, 'id' | 'url'> & { readonly pixels: Uint8ClampedArray };
@@ -67,7 +67,9 @@ function startWorker(): Worker | null {
   if (worker || unavailable) return worker;
   if (typeof Worker === 'undefined') return null;
   try {
-    const created = jobPort('garmentPadding');
+    // The page's lane (`pagePorts.ts`); none given, padded here.
+    const created = laneOf('garmentPadding');
+    if (!created) return null;
     created.onmessage = ({ data }: MessageEvent<GarmentPadResponse>) => {
       const job = waiting.get(data.id);
       if (!job) return;
