@@ -10,7 +10,7 @@ import { TILE, tileKey } from '@world/tiles';
 import { m } from '@world/units';
 import type { SceneMaterials } from '@render/materials';
 import { marksRoadSection } from '@render/mesh/roadEdges';
-import { type NearRoadMesh, type NearTileRoads, bakeNearRoads, nearKey, nearSig, runNearRoadJob } from '@render/nearRoadTiles';
+import { type KeptNear, type NearRoadMesh, type NearTileRoads, bakeNearRoads, nearKey, nearMeshOf, nearSig, runNearRoadJob } from '@render/nearRoadTiles';
 import { buildRoadSurfaces, passLook, type SurfaceReuse } from '@render/roadSurfaces';
 import type { FarRoadCache } from '@render/farRoadTiles';
 import { type SharedGroundData, sharedGroundReaders } from '@render/sharedGround';
@@ -102,8 +102,20 @@ function regionDrawn(tiles: ReadonlyMap<number, TileRecords>, groundAt: (x: numb
   return trianglesByName(meshes);
 }
 
-const baked = (mesh: NearRoadMesh): Map<string, string[]> =>
-  trianglesByName(mesh.surfaces.map((s) => ({ name: s.name, position: s.position, index: s.index })));
+/** A bake's triangles by surface, over all its blocks, at a level. */
+const baked = (kept: KeptNear, variant: 'full' | 'coarse' = 'full'): Map<string, string[]> =>
+  trianglesByName(nearMeshOf(kept, variant, null).blocks.flatMap((b) => b.surfaces).map((s) => ({ name: s.name, position: s.arrays.position, index: s.arrays.index })));
+
+/** A cache in memory, as the browser's store keeps a value (a copy each), with every key written. */
+function memoryCache(): FarRoadCache & { readonly puts: string[] } {
+  const kept = new Map<string, unknown>();
+  const puts: string[] = [];
+  return {
+    puts,
+    ready: () => Promise.resolve(true), get: (key) => Promise.resolve(kept.get(key)),
+    put: (key, value) => { kept.set(key, structuredClone(value)); puts.push(key); return Promise.resolve(); },
+  };
+}
 
 /** The page's region and the tile's bake on the same ground: its triangles by surface, both. */
 function bothOn(ground: SharedGroundData | null): { page: Map<string, string[]>; near: Map<string, string[]> } {
@@ -157,31 +169,64 @@ describe("a tile's near roads baked in a worker", () => {
     expect(tested).toBeGreaterThan(0);
   });
 
-  it('are kept by the versions of the tiles they read, baked once a version', async () => {
+  it('are kept by the versions of the tiles they read, baked once a version, both levels from one bake', async () => {
     const doc = world();
     const tiles = stored(doc);
-    const kept = new Map<string, unknown>();
-    const puts: string[] = [];
-    const cache: FarRoadCache = {
-      ready: () => Promise.resolve(true), get: (key) => Promise.resolve(kept.get(key)),
-      put: (key, value) => { kept.set(key, structuredClone(value)); puts.push(key); return Promise.resolve(); },
-    };
+    const cache = memoryCache();
     const order = [tileKey(1, 1), ...[...tiles.keys()].filter((k) => k !== tileKey(1, 1))];
     const versions = order.map((key) => ({ key, version: 1 }));
-    const near = { look: passLook(materials, undefined), markingStyle: doc.markingStyle, ground: null, naturalIsGround: false, tiles: versions };
-    const node = nearKey(1, 1), sig = nearSig(versions);
+    const bake = nearSig(versions);
+    const ask = { look: passLook(materials, undefined), markingStyle: doc.markingStyle, ground: null, naturalIsGround: false, tiles: versions, bake, shown: null };
+    const node = nearKey(1, 1);
     // No store this thread reads: the page's records asked for.
-    const asked = await runNearRoadJob({ node, sig, want: true, prefix: 'test:', near }, cache);
+    const asked = await runNearRoadJob({ node, sig: `${bake}:full`, want: true, prefix: 'test:', near: { ...ask, variant: 'full' } }, cache);
     expect(asked.kind).toBe('farRecords');
-    const made = await runNearRoadJob({ node, sig, want: true, prefix: 'test:', near: { ...near, records: order.map((key) => roadsOf(tiles.get(key)!)) } }, cache);
+    const records = order.map((key) => roadsOf(tiles.get(key)!));
+    const full = await runNearRoadJob({ node, sig: `${bake}:full`, want: true, prefix: 'test:', near: { ...ask, variant: 'full', records } }, cache);
+    if (full.kind !== 'far' || !full.payload) throw new Error(full.kind);
+    expect(full.payload.base).toBeNull();
+    expect(full.payload.blocks.length).toBe(full.payload.chunks.length);
+    // The simplified level from the same bake: nothing baked again, fewer triangles, the paint whole.
+    const coarse = await runNearRoadJob({ node, sig: `${bake}:coarse`, want: true, prefix: 'test:', near: { ...ask, variant: 'coarse' } }, cache);
+    if (coarse.kind !== 'far' || !coarse.payload) throw new Error(coarse.kind);
+    expect(cache.puts).toEqual([`test:${node}`]);
+    expect(coarse.payload.triangles).toBeLessThan(full.payload.triangles);
+    const paintOf = (mesh: NearRoadMesh): number => mesh.blocks.flatMap((b) => b.surfaces).filter((x) => x.source.kind === 'paint').reduce((n, x) => n + x.arrays.index.length, 0);
+    expect(paintOf(coarse.payload)).toBe(paintOf(full.payload));
+    expect(paintOf(full.payload)).toBeGreaterThan(0);
+  });
+
+  it('are baked again a block at a time after an edit: the blocks it reached made and sent alone, the others kept', async () => {
+    const doc = world();
+    const tiles = stored(doc);
+    const cache = memoryCache();
+    const order = [tileKey(1, 1), ...[...tiles.keys()].filter((k) => k !== tileKey(1, 1))];
+    const versions = order.map((key) => ({ key, version: 1 }));
+    const look = { look: passLook(materials, undefined), markingStyle: doc.markingStyle, ground: null, naturalIsGround: false };
+    const node = nearKey(1, 1);
+    const first = nearSig(versions);
+    const made = await runNearRoadJob({ node, sig: `${first}:full`, want: true, prefix: 'test:',
+      near: { ...look, tiles: versions, bake: first, variant: 'full', shown: null, records: order.map((key) => roadsOf(tiles.get(key)!)) } }, cache);
     if (made.kind !== 'far' || !made.payload) throw new Error(made.kind);
-    expect(made.payload.triangles).toBeGreaterThan(0);
-    const again = await runNearRoadJob({ node, sig, want: true, prefix: 'test:', near }, cache);
+    // A street of the tile bent, as the page holds it before it is written: the tile's records the page's.
+    const edited = new RoadDoc();
+    for (const r of tiles.values()) edited.loadTile(r);
+    const street = [...edited.segments.values()].find((x) => {
+      const a = edited.node(x.a)!, b = edited.node(x.b)!;
+      return Math.min(a.x, b.x) > TILE + m(200) && Math.max(a.x, b.x) < TILE + m(700) && Math.min(a.y, b.y) > TILE + m(200) && Math.max(a.y, b.y) < TILE + m(700);
+    })!;
+    expect(street).toBeDefined();
+    edited.setSegmentCurve(street.id, { t: 0.5, h: m(12) });
+    const page = order.map((key, n) => (n === 0 ? roadsOf(edited.tileRecords(key, 1)) : null));
+    const second = nearSig(versions.map((v, n) => (n === 0 ? { ...v, version: '1+1' } : v)));
+    const again = await runNearRoadJob({ node, sig: `${second}:full`, want: true, prefix: 'test:',
+      near: { ...look, tiles: versions, bake: second, variant: 'full', shown: first, records: page.map((r, n) => r ?? roadsOf(tiles.get(order[n]!)!)) } }, cache);
     if (again.kind !== 'far' || !again.payload) throw new Error(again.kind);
-    expect(again.payload.triangles).toBe(made.payload.triangles);
-    expect(puts).toEqual([`test:${node}`]);
-    // A neighbour written again: another version, baked again.
-    const moved = nearSig(versions.map((v, n) => (n === 3 ? { ...v, version: 2 } : v)));
-    expect(moved).not.toBe(sig);
+    expect(again.payload.base).toBe(first);
+    expect(again.payload.blocks.length).toBeGreaterThan(0);
+    expect(again.payload.blocks.length).toBeLessThan(again.payload.chunks.length);
+    // The blocks sent are those the bend reached: every other block's digest as before.
+    const before = new Map(made.payload.blocks.map((b) => [b.chunk, b.digest]));
+    for (const b of again.payload.blocks) expect(before.get(b.chunk)).not.toBe(b.digest);
   });
 });

@@ -234,10 +234,13 @@ describe('the far roads chosen top down', () => {
     await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
     expect(roads.shownKeys()).not.toContain(farKey(0, 0, 0));
     const near = roads.group.children.find((o) => o.name === 'roads-near' && o.visible)!;
-    const asphalt = near.children.find((o) => o.name === 'asphalt') as Mesh | undefined;
+    // Its meshes, block by block.
+    const meshes: Mesh[] = [];
+    near.traverse((o) => { if ((o as Mesh).isMesh) meshes.push(o as Mesh); });
+    const asphalt = meshes.find((o) => o.name === 'asphalt');
     expect(asphalt).toBeDefined();
     expect(asphalt!.material).toBe(materials.asphalt);
-    expect(near.children.some((o) => o.name.startsWith('markings-') && (o as Mesh).material === paint)).toBe(true);
+    expect(meshes.some((o) => o.name.startsWith('markings-') && o.material === paint)).toBe(true);
     // From 6 km up: the far levels, the near one let go.
     const afar = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(6_000), 1000, null);
     await until(afar, () => roads.nearKeys().length === 0 && roads.waiting === 0);

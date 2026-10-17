@@ -15,7 +15,7 @@ import { farKey, readStored } from './buildings/farGrid';
 import { medianOf } from './roadSurfaceRings';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR, FOOTWAY_TINT } from './roadTones';
 import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
-import { type NearRoadAsk, type NearRoadMesh, nearRoadBuffers, runNearRoadJob } from './nearRoadTiles';
+import { type NearRoadMesh, type NearRoadWant, nearRoadBuffers, runNearRoadJob } from './nearRoadTiles';
 
 /** THE ROADS FAR FROM THE CAMERA, BAKED PER TILE IN WORKERS FROM THE TILE STORE (CLAUDE.md "Streaming world"): nothing of their records on the page */
 /** A tile's roads built alone (its segments and borrowed ends, as `editor/wholeMapTile.ts` builds a tile), drawn flat on the ground as one mesh: carriageways, kerbs, footways and medians, each the colour its near material reads from afar */
@@ -390,7 +390,7 @@ export interface FarRoadJob {
   /** The ground shared with the workers (`sharedGround.ts`); none: flat at 0. */
   readonly ground?: SharedGroundData | null;
   /** A tile's near level (`nearRoadTiles.ts`): what it reads besides the roads; its node is the tile's under level 0. */
-  readonly near?: NearRoadAsk;
+  readonly near?: NearRoadWant;
 }
 
 export type FarRoadReply =
