@@ -102,13 +102,12 @@ export class CellPool {
   }
 
   /** A cell's job: its batches ('cell'), its far level ('facade'), its masses ('mass') or its buildings' summaries; `key`, what a newer job replaces */
-  run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void, key: string | null = null, edited = false): number {
+  run(kind: JobKind, cell: string, entries: readonly CellEntry[], env: CellEnv, done: (result: CellResult) => void, key: string | null = null): number {
     if (key !== null) { const older = this.byKey.get(key); if (older) this.cancel(older.id); }
     const at = squareOf(cell);
     // Its band; its distance to the view is the queue's, as the view moves (`JobSpec.at`). A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
     const place = at ? [(at.i0 + at.n / 2) * BATCH_CELL, (at.j0 + at.n / 2) * BATCH_CELL] as const : null;
-    // A cell the player's edit changed (`edited`, `layer.ts` editedCells: a building demolished in a tile next to a road's) goes with the cut-open one: it draws what was just done.
-    const priority = cellPriority(kind, 0, edited || entries.some((e) => e.key.includes('|')), this.coarseFirst);
+    const priority = cellPriority(kind, 0, entries.some((e) => e.key.includes('|')), this.coarseFirst);
     const asked: Asked = {
       id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority, place,
       rect: env.pavedAt ? pavingRect(cell) : null, widened: 0, ticket: null,

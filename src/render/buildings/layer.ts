@@ -39,9 +39,6 @@ interface Kept { readonly sig: number; readonly digest: number; readonly b: Buil
 const DETAIL_CLASSES: readonly GpuClass[] = ['building detail', 'building facade'];
 const detailClass = (kind: BatchKind): GpuClass => (kind === 'cell' ? 'building detail' : 'building facade');
 
-/** Whether a diary entry is the player's edit (`main.ts` mutateBuilt's `tool …`, undo, redo), not the growth (`zone growth`) nor a tile coming in. */
-export const playerCause = (cause: string): boolean => cause.startsWith('tool ') || cause === 'desfazer' || cause === 'refazer';
-
 export function createBuildingLayer(): BuildingLayer {
   const kit: BuildingKit = createBuildingKit();
   const group = new Group();
@@ -361,8 +358,6 @@ export function createBuildingLayer(): BuildingLayer {
     (key) => massCells.planLevel(key), (key) => massCells.wanted(key));
   /** Each cell's buildings as last filed (`askMass`), and as last asked of the workers for its own masses: asked only while the view draws the cell one by one (`askExposed`). */
   const massEntries = new Map<string, readonly CellEntry[]>();
-  /** The cells the player's edit changed since their jobs were last asked (a road demolishing buildings, in its own tile or the next): their detail and masses asked first (`cellPool.ts` EDIT_TIER), in whichever tile. DO NOT put the growth here: every building grown ahead of the queue held the view's detail behind it (the near tiles, conf23). */
-  const editedCells = new Set<string>();
   const massAsked = new Map<string, readonly CellEntry[]>();
   /** DO NOT ask every cell's masses of the map at the opening: only the cells the view draws one by one (their tile refined, `massCells.exposedCells`), their plate or tile standing for the rest */
   const askExposed = (env: CellEnv): void => {
@@ -373,7 +368,7 @@ export function createBuildingLayer(): BuildingLayer {
       if (!requests.mass(cell, entries, env, (mass) => {
         massCells.land(cell, mass);
         chooseNow();
-      }, editedCells.has(cell))) return;
+      })) return;
       massAsked.set(cell, entries);
     }
   };
@@ -393,7 +388,7 @@ export function createBuildingLayer(): BuildingLayer {
   const askMass = (cell: string, groundAt: GroundAt, groundKey: string, pavedAt: PavedAt | undefined): void => {
     const list = massTown.get(cell);
     if (!list?.length) {
-      requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null, editedCells.has(cell)); massEntries.delete(cell); massAsked.delete(cell);
+      requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null); massEntries.delete(cell); massAsked.delete(cell);
       resident.forget(cell);
       return;
     }
@@ -411,7 +406,7 @@ export function createBuildingLayer(): BuildingLayer {
       return { key: String(b.id), sig, digest: digestFor(b, sig, groundKey, groundAt, pavedAt) };
     });
     // Its tile and plate asked again once every cell changed is touched (`levels.flush`); its own masses once the view draws it alone (`askExposed`).
-    levels.touch(cell, entries, editedCells.has(cell));
+    levels.touch(cell, entries);
     massEntries.set(cell, entries);
   };
   /** The cells a cut-open view reaches */
@@ -503,7 +498,7 @@ export function createBuildingLayer(): BuildingLayer {
           else {
             done = false;
             if (requests.isAsked(kind, cell) || requests.asking < STREAM_AHEAD) {
-              const got = requests.want(kind, cell, entries, env, true, editedCells.has(cell));
+              const got = requests.want(kind, cell, entries, env, true);
               // DO NOT hold ready cells back a few a frame (`STREAM_CELLS_PER_FRAME`): the swap is a group put in a group.
               if (got) {
                 requests.take(kind, cell);
@@ -514,7 +509,7 @@ export function createBuildingLayer(): BuildingLayer {
           }
         }
       }
-      if (done) { pendingCells.delete(cell); cellEntries.delete(cell); editedCells.delete(cell); }
+      if (done) { pendingCells.delete(cell); cellEntries.delete(cell); }
     }
     // Nothing near to make: the far buildings' flags (the workers take them after the cells and masses).
     if (pendingCells.size === 0 && backlog.length) {
@@ -606,14 +601,9 @@ export function createBuildingLayer(): BuildingLayer {
           }
           // The one left solid before and now: out of its cell, or back in it.
           if (dimmed !== storedDimmed) for (const id of [storedDimmed, dimmed]) if (typeof id === 'number') named.push(id);
-          // The buildings the player's edit changed (the diary's cause, `main.ts` mutateBuilt and undo): their cells asked first, in whichever tile.
-          const byPlayer = new Set<number>();
-          for (const e of changed) if (playerCause(e.cause)) for (const id of e.ids!) byPlayer.add(id);
           for (const id of named) {
             const b = doc.buildings.get(id);
-            const own = byPlayer.has(id) ? new Set<string>() : dirty;
-            town.take(id, b && inCell(b) ? b : undefined, own);
-            if (own !== dirty) for (const cell of own) { dirty.add(cell); editedCells.add(cell); }
+            town.take(id, b && inCell(b) ? b : undefined, dirty);
             ids.add(id);
           }
           townSeen = doc.changes.version;

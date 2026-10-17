@@ -45,7 +45,7 @@ export class CellRequests {
   }
 
   /** `cell`'s batches made of `entries`, once landed and (with `upload`) on the GPU; null while they are made */
-  want(kind: BatchKind, cell: string, entries: readonly CellEntry[], env: CellEnv, upload: boolean, edited = false): LandedCell | null {
+  want(kind: BatchKind, cell: string, entries: readonly CellEntry[], env: CellEnv, upload: boolean): LandedCell | null {
     const key = `${kind}|${cell}`;
     const got = this.landed.get(key);
     if (got && sameEntries(got.entries, entries)) return got.uploads > 0 ? null : got;
@@ -53,7 +53,7 @@ export class CellRequests {
     const asked = this.asked.get(key);
     if (asked && sameEntries(asked.entries, entries)) return null;
     // DO NOT ask a level to upload while the upload queue is full (`uploads.ts` warmFull): its arrays waited on the page behind every other one (the renderer at 7.3 GB in a re-bake, conf77, 2026-10-17). What is drawn stands, asked again next frame; a building cut open always goes.
-    if (upload && warmFull() && !edited && !entries.some((e) => e.key.includes('|'))) return null;
+    if (upload && warmFull() && !entries.some((e) => e.key.includes('|'))) return null;
     // Replaced by the cell as it is now: never sent if waiting, its answer dropped if begun (the queue's key does the same).
     if (asked) this.pool.supersede(asked.id);
     const ask = { entries, id: 0 };
@@ -64,7 +64,7 @@ export class CellRequests {
       this.onSummaries(result.summaries, entries, env);
       const landing = this.land(kind, cell, entries, result, upload);
       if (landing) this.landed.set(key, landing);
-    }, key, edited);
+    }, key);
     // Where no worker runs the job is done by now.
     const now = this.landed.get(key);
     return now && now.entries === entries && now.uploads === 0 ? now : null;
@@ -107,16 +107,16 @@ export class CellRequests {
   }
 
   /** A cell's masses from afar made of `entries` (`cellWork.ts` 'mass'), handed to `done` when they come */
-  mass(cell: string, entries: readonly CellEntry[], env: CellEnv, done: (mass: CellMass | null) => void, edited = false): boolean {
-    // The upload queue full: not asked (the caller asks again next frame), as `want`; never what the player just edited.
-    if (warmFull() && !edited) return false;
+  mass(cell: string, entries: readonly CellEntry[], env: CellEnv, done: (mass: CellMass | null) => void): boolean {
+    // The upload queue full: not asked (the caller asks again next frame), as `want`.
+    if (warmFull()) return false;
     const was = this.masses.get(cell);
     if (was !== undefined) { this.pool.cancel(was); this.masses.delete(cell); }
     let id = -1;
     id = this.pool.run('mass', cell, entries, env, (result) => {
       if (this.masses.get(cell) === id) this.masses.delete(cell);
       done(result.mass ?? null);
-    }, `mass|${cell}`, edited);
+    }, `mass|${cell}`);
     if (this.pool.isRunning(id)) this.masses.set(cell, id);
     return true;
   }
