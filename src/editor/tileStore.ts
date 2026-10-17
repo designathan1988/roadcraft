@@ -154,7 +154,7 @@ export function tileWrite(records: TileRecords): TileWrite {
     row[k] = ref.row;
   }
   // The gates of the buildings as they stand now, read from the records here (`entrancesOf` keeps each record's); a tile with no building has none to keep. Those of a tile written with grown rows come with it (`RoadDoc.tileRecords`: every building's, the rows' too).
-  const gates = records.grown?.id.length ? records.gates : n ? gatesOf(buildings) : undefined;
+  const gates = records.gates ?? (n ? gatesOf(buildings) : undefined);
   return { ...records, ...(gates ? { gates } : {}), buildings: { tables, table, row } };
 }
 

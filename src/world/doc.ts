@@ -42,8 +42,9 @@ import type { SerializedBuilding } from './buildings/serialize';
 import type { Building, BuildingId } from './buildings/types';
 import { isZoneDensity, isZoneMark, isZoneUse, type Zone, type ZoneMark } from './zones';
 import { normalizePerson, type PersonSpec } from '@people/spec';
-import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, rectAround, type ChangeRect, type DocChangeKind } from './changes';
-import { OWNER, TILE_COUNTED, tileIdBase, tileOfKey, tileRect } from './tiles';
+import { ChangeJournal, TILE_LOADED, TILE_UNLOADED, isStreaming, rectAround, type ChangeRect, type DocChangeKind } from './changes';
+import { OWNER, TILE, TILE_COUNTED, tileIdBase, tileKey, tileOfKey, tileRect } from './tiles';
+import { JournalCursor } from './derived';
 import { type GrownRows, selectRows } from './growth/rows';
 import { gatesOf } from './buildingGates';
 import { PoleIndex } from './poleIndex';
@@ -1385,6 +1386,10 @@ export class RoadDoc {
 
   /** The tiles in this document (the active region, CLAUDE.md "Streaming world"): the page holds the tiles near the camera, never the world. */
   private tileContents = new Set<number>();
+  /** Each loaded tile's buildings' gates (`TileRecords.gates`) while no building of it changed: written back as they are, not worked out again from every building at each write (`tileRecords`). */
+  private readonly tileGates = new Map<number, readonly number[]>();
+  /** The buildings' diary as the gates last read it: an entry over a tile lets its gates go. */
+  private readonly gatesCursor = new JournalCursor(['buildings']);
   /** Each tile's nodes, roads, land keys and dabs, kept by the diary (`tileIndex.ts`): a tile's members read without walking the region. */
   private readonly tileIndex = ((doc: RoadDoc) => new TileIndex({
     get changes() { return doc.changes; },
@@ -1545,10 +1550,36 @@ export class RoadDoc {
     }
     this.tileContents.add(records.key);
     this.tileNext.set(records.key, tileNextOf(records));
+    // The gates it came with stand for its buildings until one changes (the diary, `tileGatesOf`).
+    this.followGates();
+    if (records.gates) this.tileGates.set(records.key, records.gates); else this.tileGates.delete(records.key);
     const grown = preparedTiles.get(records);
     if (grown) this.tileGrown.set(records.key, { grown, lots: new Map(lots.map((lot) => [lot.id, this.lot(lot.id)!])) });
     else this.tileGrown.delete(records.key);
     this.changes.causeNext(cause);
+  }
+
+  /** A tile's gates: those kept while none of its buildings changed, else worked out from them now and kept. */
+  private tileGatesOf(key: number, buildings: readonly Building[]): readonly number[] {
+    this.followGates();
+    let gates = this.tileGates.get(key);
+    if (!gates) { gates = gatesOf(buildings); this.tileGates.set(key, gates); }
+    return gates;
+  }
+
+  /** The buildings' diary since the gates last read it: each tile an edit reached lets its gates go (a tile put in or let go reaches no other's buildings). */
+  private followGates(): void {
+    const entries = this.gatesCursor.read(this.changes);
+    if (entries === null) { this.tileGates.clear(); return; }
+    for (const entry of entries) {
+      if (isStreaming(entry)) continue;
+      if (entry.rects === null) { this.tileGates.clear(); return; }
+      for (const [x0, y0, x1, y1] of entry.rects) {
+        for (let i = Math.floor(x0 / TILE); i <= Math.floor(x1 / TILE); i++) {
+          for (let j = Math.floor(y0 / TILE); j <= Math.floor(y1 / TILE); j++) this.tileGates.delete(tileKey(i, j));
+        }
+      }
+    }
   }
 
   /** The streamed world closed (`main.ts` afterStreamedWorld): no tile is held any more, and no id is taken from a tile's range; the records stay until the document is replaced. */
@@ -1557,6 +1588,7 @@ export class RoadDoc {
     this.tileContents.clear();
     this.tileNext.clear();
     this.tileGrown.clear();
+    this.tileGates.clear();
   }
 
   /** What a tile holds now, by `OWNER` (what the player added or moved there included): read off the page's document, which holds the active region only, so bounded by it, never by the world */
@@ -1637,8 +1669,9 @@ export class RoadDoc {
       poles: t.poles.map(savedPole), borrowedPoles: t.borrowedPoles.map(savedPole), poleSpans: t.spans.map(savedSpan),
       // DO NOT copy a building (a record is replaced, never edited, `BuildingStore`): the write posts each as its table's row (`tileStore.ts` tileWrite).
       buildings: asRows.size ? t.buildings.filter((b) => !asRows.has(b.id)) : t.buildings,
-      // Every building's gates, the rows' too (a write with rows does not make them again, `tileWrite`).
-      ...(grown ? { grown, gates: gatesOf(t.buildings) } : {}),
+      // Every building's gates, the rows' too (a write does not make them again, `tileWrite`): the ones kept while no building of the tile changed.
+      ...(grown ? { grown } : {}),
+      ...(t.buildings.length ? { gates: this.tileGatesOf(key, t.buildings) } : {}),
       lots: t.lots.map((lot) => ({ ...lot, corners: lot.corners.map((q) => ({ x: q.x, y: q.y })) })),
       lotKeys: [...t.lotKeys],
       landscape: t.landscape.map(savedLandscape), barriers: t.barriers.map(savedBarrier),
@@ -1662,6 +1695,7 @@ export class RoadDoc {
     }
     this.tileContents.delete(key);
     this.tileGrown.delete(key);
+    this.tileGates.delete(key);
     const cause = this.changes.cause;
     this.changes.causeNext(TILE_UNLOADED);
     const nodeIds: number[] = [], segmentIds: number[] = [];
