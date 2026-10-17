@@ -211,9 +211,12 @@ export class TableReader {
   private readonly strUnits: Uint16Array;
   private readonly shapeStart: Uint32Array;
   private readonly shapeKeys: Uint32Array;
-  private readonly strings: (string | undefined)[] = [];
-  private readonly shapes: (string[] | undefined)[] = [];
-  private readonly nodes: unknown[] = [];
+  // DO NOT fill these at the ids met, from empty: a row read first meets ids far past the array's end, and V8 turns such an array into a dictionary (each look-up hashed: the cell jobs' decoding, wprof4). Sized and filled once.
+  private readonly strings: (string | undefined)[];
+  private readonly shapes: (string[] | undefined)[];
+  private readonly nodes: unknown[];
+  /** Whether each shared member was decoded (a member may decode to null). */
+  private readonly decoded: Uint8Array;
   private pos = 0;
 
   constructor(readonly table: RecordTable) {
@@ -225,6 +228,10 @@ export class TableReader {
     this.strUnits = new Uint16Array(buffer, at.strUnits, at.units);
     this.shapeStart = new Uint32Array(buffer, at.shapeStart, at.shapes + 1);
     this.shapeKeys = new Uint32Array(buffer, at.shapeKeys, at.keys);
+    this.strings = new Array<string | undefined>(at.strings).fill(undefined);
+    this.shapes = new Array<string[] | undefined>(at.shapes).fill(undefined);
+    this.nodes = new Array<unknown>(at.nodes).fill(undefined);
+    this.decoded = new Uint8Array(at.nodes);
   }
 
   /** A row's record: a fresh object of its own, its shared members the reader's. */
@@ -281,7 +288,7 @@ export class TableReader {
       }
       case T_NODE: {
         const id = view.getUint32(this.pos, true); this.pos += 4;
-        if (id in this.nodes) {
+        if (this.decoded[id]) {
           // The first meeting is followed by the member's body: stepped over when it was decoded before.
           if (this.pos === this.nodeAt[id]) this.skip();
           return this.nodes[id];
@@ -290,6 +297,7 @@ export class TableReader {
         this.pos = this.nodeAt[id]!;
         const node = this.value();
         this.nodes[id] = node;
+        this.decoded[id] = 1;
         if (back !== this.nodeAt[id]) this.pos = back;
         return node;
       }
