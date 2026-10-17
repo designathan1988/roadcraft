@@ -499,9 +499,9 @@ export function createBuildingLayer(): BuildingLayer {
           if (known && sameEntries(known.entries, entries)) requests.drop(kind, cell);
           else {
             done = false;
-            if (requests.isAsked(kind, cell) || requests.asking < STREAM_AHEAD) {
-              // A hole: wanted in detail and no level of it landed (its masses at the camera).
-              const hole = kind === 'cell' && !cells.has(cell) && !facades.has(cell);
+            // A hole: wanted in detail and no level of it landed (its masses at the camera). DO NOT hold it behind `STREAM_AHEAD` cells asked before it (the district's, waiting behind a reopening's re-bake): it is asked past them, `MOST_HOLES` at once (conferencia 109, picture 51).
+            const hole = kind === 'cell' && !cells.has(cell) && !facades.has(cell);
+            if (requests.isAsked(kind, cell) || requests.asking < STREAM_AHEAD || (hole && requests.holeRoom())) {
               const got = requests.want(kind, cell, entries, env, true, editedCells.has(cell), hole);
               // DO NOT hold ready cells back a few a frame (`STREAM_CELLS_PER_FRAME`): the swap is a group put in a group.
               if (got) {

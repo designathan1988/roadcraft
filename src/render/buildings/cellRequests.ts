@@ -60,13 +60,13 @@ export class CellRequests {
     // DO NOT ask a level to upload while the upload queue is full (`uploads.ts` warmFull): its arrays waited on the page behind every other one (the renderer at 7.3 GB in a re-bake, conf77, 2026-10-17). What is drawn stands, asked again next frame; a building cut open always goes.
     // `hole`: a cell the view wants in detail with no level of it landed, the building at the camera in its masses: it goes too, `MOST_HOLES` at once (DO NOT hold it behind the reopening's far levels and masses: conferencia 93-108, picture 51).
     if (upload && warmFull() && !edited && !entries.some((e) => e.key.includes('|'))) {
-      if (!hole || this.holesInFlight() >= MOST_HOLES) return null;
-      this.holes.add(key);
+      if (!hole || !this.holeRoom()) return null;
     }
     // Replaced by the cell as it is now: never sent if waiting, its answer dropped if begun (the queue's key does the same).
     if (asked) this.pool.supersede(asked.id);
     const ask = { entries, id: 0 };
     this.asked.set(key, ask);
+    if (hole) this.holes.add(key);
     ask.id = this.pool.run(kind, cell, entries, env, (result) => {
       if (this.asked.get(key) !== ask) return;
       this.asked.delete(key);
@@ -79,7 +79,12 @@ export class CellRequests {
     return now && now.entries === entries && now.uploads === 0 ? now : null;
   }
 
-  /** The holes asked past a full queue still asked or on their way to the GPU; the others forgotten. */
+  /** Whether another hole may be asked past the limits (a full upload queue, `layer.ts` STREAM_AHEAD): fewer than `MOST_HOLES` asked or on their way to the GPU. */
+  holeRoom(): boolean {
+    return this.holesInFlight() < MOST_HOLES;
+  }
+
+  /** The holes asked still asked or on their way to the GPU; the others forgotten. */
   private holesInFlight(): number {
     let n = 0;
     for (const key of this.holes) {

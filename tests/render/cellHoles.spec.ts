@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BufferGeometry, Float32BufferAttribute, Mesh, MeshBasicMaterial, type WebGLRenderer } from 'three';
 import type { CellEnv, CellPool } from '@render/buildings/cellPool';
@@ -39,5 +40,18 @@ describe('a cell wanted in detail with no level landed', () => {
     requests.want('cell', '10,0', [], env, true, false, true);
     expect(requests.isAsked('cell', '10,0')).toBe(true);
     cancelWarm(waiting);
+  });
+
+  it('the layer asks past the cells asked before it (`STREAM_AHEAD`), as many as it lets holes in', () => {
+    const source = readFileSync('src/render/buildings/layer.ts', 'utf8');
+    expect(source).toMatch(/requests\.asking < STREAM_AHEAD \|\| \(hole && requests\.holeRoom\(\)\)/);
+    let id = 0;
+    const pool = { run: () => ++id, supersede: () => {}, cancel: () => {} } as unknown as CellPool;
+    const requests = new CellRequests(pool, {} as BuildingKit, () => {});
+    // Holes asked with the queue empty count too: the fifth finds no room.
+    for (let i = 0; i < MOST_HOLES; i++) requests.want('cell', `${i},5`, [], {} as CellEnv, true, false, true);
+    expect(requests.holeRoom()).toBe(false);
+    requests.drop('cell', '0,5');
+    expect(requests.holeRoom()).toBe(true);
   });
 });
