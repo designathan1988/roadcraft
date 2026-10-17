@@ -4,7 +4,7 @@ import { type Finish, FINISHES } from '@world/buildings/materials';
 import { LOOKS, finishTiles } from '../bake/finishRecipes';
 import { type SurfaceBake, surfaceMaps } from '../surfaceTextures';
 import { applyLotOverlay } from '../lotOverlay';
-import { COLOUR_RANGE, FINISH_ATTRIBUTE, PAINT_ATTRIBUTE, PAINT_UNIT } from './cellArrays';
+import { COLOUR_RANGE, FINISH_ATTRIBUTE, PAINT_ATTRIBUTE, PAINT_UNIT, SHELL_NORMAL, WEAR_STEPS } from './cellArrays';
 import { SHELL_PART_BEGIN, SHELL_PART_PARS, SHELL_UV_GLSL, shellPartVertex } from './shellParts';
 
 /** The building finishes ("Materials"): their recipes in `bake/finishRecipes.ts`, baked at build time as one texture array per map, a layer per finish */
@@ -108,6 +108,15 @@ if (vDecay > 0.001 && shellKind.z < 0.5) {
   }
 }`;
 
+/** GLSL: a shell vertex's normal, octahedral in two normalised shorts (\`octNormal\`, Cigolle et al. 2014), unfolded. */
+export const SHELL_NORMAL_GLSL = `attribute vec2 ${SHELL_NORMAL};
+vec3 shellUnfold(vec2 e) {
+  e = max(e, vec2(-1.0));
+  vec3 n = vec3(e, 1.0 - abs(e.x) - abs(e.y));
+  if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
+  return normalize(n);
+}`;
+
 /** The shell's program: each pixel's finish picks its layer of the maps and its rows of the look table; `weathered` adds the wear. A shell's vertex carries its paint and finish (`PAINT_ATTRIBUTE`), its uv worked out here from its place and normal as `Shell.face` laid it; instanced, the shell's parts (`shellParts.ts`) their finish, wear and ground per instance; `carried`: a ruin's pieces, which move, their uv, colour and finish carried per vertex (`fracture.ts`). */
 function shellShader(shader: WebGLProgramParametersWithUniforms, maps: SurfaceBake | undefined, looks: { value: Float32Array }, weathered: boolean, carried: boolean): void {
   shader.uniforms['shellLooks'] = looks;
@@ -121,19 +130,23 @@ function shellShader(shader: WebGLProgramParametersWithUniforms, maps: SurfaceBa
   // Each addition lands right after its chunk: a material built on this one (`facadeLevel.ts`) adds its own after it.
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>
-${carried ? `attribute float ${FINISH_ATTRIBUTE};` : `#ifdef USE_INSTANCING\nattribute float ${FINISH_ATTRIBUTE};\n#else\nattribute vec4 ${PAINT_ATTRIBUTE};\n#endif`}
+${carried ? `attribute float ${FINISH_ATTRIBUTE};` : `#ifdef USE_INSTANCING\nattribute float ${FINISH_ATTRIBUTE};\n#else\nattribute vec4 ${PAINT_ATTRIBUTE};\n${SHELL_NORMAL_GLSL}\n#endif`}
 uniform vec4 shellLooks[${FINISHES.length * LOOK_ROWS}];
 flat varying int vShellFinish;
 varying vec2 vShellUv;
 ${weathered ? 'attribute float aDecay;\nvarying float vDecay;\nvarying vec3 vDecayWorld;\nvarying vec3 vDecayNormal;' : ''}
 ${SHELL_UV_GLSL}
 ${SHELL_PART_PARS}`)
+    // A shell's normal unfolded from its two shorts (`cellArrays.ts` `octNormal`); a part's is its model's.
+    .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+${carried ? '' : `#ifndef USE_INSTANCING\nobjectNormal = shellUnfold(${SHELL_NORMAL});\n#endif`}`)
     // The finish's tile, as each finish's map repeat was.
     .replace('#include <uv_vertex>', `#include <uv_vertex>
 ${carried ? `vShellFinish = int(${FINISH_ATTRIBUTE} + 0.5);\nvShellUv = uv * ${scale};` : `#ifdef USE_INSTANCING
 vShellFinish = int(${FINISH_ATTRIBUTE} + 0.5);
 #else
-vShellFinish = int(${PAINT_ATTRIBUTE}.w * ${PAINT_UNIT}.0 + 0.5);
+// The finish id in the fourth short's low byte, the wear over it (\`finishWear\`).
+vShellFinish = int(${PAINT_ATTRIBUTE}.w * ${PAINT_UNIT}.0 + 0.5) & 255;
 #endif`}`)
     // The paint as `Shell.face` laid it, tone and grime in it.
     .replace('#include <color_vertex>', `#include <color_vertex>
@@ -144,7 +157,11 @@ ${shellPartVertex(LOOK_ROWS)}
 ${carried ? '' : `#ifndef USE_INSTANCING
 vShellUv = shellPlanarUv((modelMatrix * vec4(transformed, 1.0)).xyz, normalize(mat3(modelMatrix) * objectNormal)) * ${scale};
 #endif`}
-${weathered ? `vDecay = aDecay;
+${weathered ? `${carried ? 'vDecay = aDecay;' : `#ifdef USE_INSTANCING
+vDecay = aDecay;
+#else
+vDecay = float(int(${PAINT_ATTRIBUTE}.w * ${PAINT_UNIT}.0 + 0.5) >> 8) / ${WEAR_STEPS}.0;
+#endif`}
 {
   vec4 shellWorld = vec4(transformed, 1.0);
   vec3 shellNormal = objectNormal;

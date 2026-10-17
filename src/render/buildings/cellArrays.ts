@@ -31,6 +31,8 @@ export const SHELL_MESH = 'building-shell';
 
 /** The finish id of a shell's part per instance, and of a ruin's piece per vertex (`finishes.ts`): its place in `FINISHES`, its layer of the finishes' maps. */
 export const FINISH_ATTRIBUTE = 'shellFinish';
+/** The shell's vertex attribute of its normal, octahedral (`octNormal`): two shorts read normalised (`finishes.ts`). */
+export const SHELL_NORMAL = 'shellOctNormal';
 /** The shell's vertex attribute of its paint: rgb over `COLOUR_RANGE` and the finish id in w, four unsigned shorts read normalised (`finishes.ts`). */
 export const PAINT_ATTRIBUTE = 'shellPaint';
 
@@ -49,15 +51,45 @@ export const paintShort = (x: number): number => Math.round(Math.max(0, Math.min
 /** A number in [-1, 1] as a signed short the GPU reads back normalised: the shell's normal and wear. */
 export const snorm16 = (x: number): number => Math.round(Math.max(-1, Math.min(1, x)) * NORMAL_UNIT);
 
-/** Numbers a shell vertex carries in its normal and wear (`normalDecay`) and in its paint (`paint`): four shorts each. */
+/** Numbers a shell vertex carries in its paint (`paint`): four shorts, rgb and its finish with its wear (`finishWear`). */
 export const SHELL_SHORTS = 4;
+/** Numbers a shell vertex carries in its normal (`normal`): two signed shorts, octahedral (`octNormal`). */
+export const NORMAL_SHORTS = 2;
+/** A wear's steps in the paint's fourth short (`finishWear`): its high byte. */
+export const WEAR_STEPS = 255;
 
-/** A piece of a batch's shells of every finish, one geometry drawn in one call: 28 bytes a vertex, 52 on the far level's runs of bays with openings */
+/** A wear (0..1) as the shell carries it: a byte's step, `WEAR_STEPS`. */
+export const wearByte = (x: number): number => Math.round(Math.max(0, Math.min(1, x)) * WEAR_STEPS);
+/** The paint's fourth short: the finish id in its low byte, the wear's byte over it (`finishes.ts` reads both back). */
+export const finishWear = (finish: number, wear: number): number => finish + 256 * wearByte(wear);
+
+/** A unit normal as two signed shorts, octahedral (Cigolle et al. 2014, "A Survey of Efficient Representations for Independent Unit Vectors"): 4 bytes, to 1e-4 rad. */
+export function octNormal(x: number, y: number, z: number, out: Int16Array, at: number): void {
+  const sum = Math.abs(x) + Math.abs(y) + Math.abs(z) || 1;
+  let u = x / sum, v = y / sum;
+  if (z < 0) {
+    const su = u >= 0 ? 1 : -1, sv = v >= 0 ? 1 : -1;
+    const nu = (1 - Math.abs(v)) * su, nv = (1 - Math.abs(u)) * sv;
+    u = nu; v = nv;
+  }
+  out[at] = snorm16(u); out[at + 1] = snorm16(v);
+}
+
+/** A normal back from its two shorts, as the shell's program reads it (`finishes.ts` `shellOctNormal`). */
+export function octDecode(a: number, b: number): [number, number, number] {
+  let x = Math.max(-1, a / NORMAL_UNIT), y = Math.max(-1, b / NORMAL_UNIT);
+  const z = 1 - Math.abs(x) - Math.abs(y);
+  if (z < 0) { const nx = (1 - Math.abs(y)) * (x >= 0 ? 1 : -1), ny = (1 - Math.abs(x)) * (y >= 0 ? 1 : -1); x = nx; y = ny; }
+  const l = Math.hypot(x, y, z) || 1;
+  return [x / l, y / l, z / l];
+}
+
+/** A piece of a batch's shells of every finish, one geometry drawn in one call: 24 bytes a vertex, 44 on the far level's runs of bays with openings */
 interface ShellArrays {
   readonly position: Float32Array;
-  /** The normal (x, y, z) and the wear (w), each a signed short over 32767: the uv is worked out from it and the place (`shellParts.ts` `shellUv`), so it needs more than a byte. */
-  readonly normalDecay: Int16Array;
-  /** The paint's linear rgb (tone and grime in it) over `COLOUR_RANGE` and the finish id (`PAINT_ATTRIBUTE`), unsigned shorts. */
+  /** The normal, octahedral in two signed shorts (`octNormal`): the uv is worked out from it and the place (`shellParts.ts` `shellUv`), so it needs more than a byte. */
+  readonly normal: Int16Array;
+  /** The paint's linear rgb (tone and grime in it) over `COLOUR_RANGE`, and the finish id with the wear (`finishWear`, `PAINT_ATTRIBUTE`), unsigned shorts. */
   readonly paint: Uint16Array;
   /** 16 bits: a piece's vertices fit them (`SHELL_PIECE`), but for a single building larger than that. */
   readonly index: Uint16Array | Uint32Array;
@@ -140,7 +172,7 @@ export const FACADE_BYTES = 8;
 /** A cell's buildings from afar as one mesh's arrays (`massCells.ts`) */
 export interface CellMass {
   readonly position: Float32Array;
-  /** Four signed bytes a vertex over 127 (x, y, z, and one left over: no 3-byte format in Direct3D 11): lighting only, no uv worked out from it (the shells' are shorts, `normalDecay`). */
+  /** Four signed bytes a vertex over 127 (x, y, z, and one left over: no 3-byte format in Direct3D 11): lighting only, no uv worked out from it (the shells' are shorts, `normal`). */
   readonly normal: Int8Array;
   /** Linear rgb and a fourth left over, half floats (`HALF_FLOAT`, `massCells.ts` `cellMesh`): 11 bits of mantissa, more than a colour shows. */
   readonly color: Uint16Array;
@@ -218,7 +250,7 @@ export const farMassBuffers = (m: FarMass): ArrayBuffer[] => (isBoxMass(m) ? [m.
 /** What a batch sends to the GPU, in bytes: every array but the bounds (kept on the page), the kit's shared geometry not counted. */
 export function cellBytes(arrays: CellArrays): number {
   let bytes = 0;
-  for (const s of arrays.shells) bytes += s.position.byteLength + s.normalDecay.byteLength + s.paint.byteLength + s.index.byteLength + (s.facade?.byteLength ?? 0) + (s.grid?.byteLength ?? 0) + (s.opening?.byteLength ?? 0);
+  for (const s of arrays.shells) bytes += s.position.byteLength + s.normal.byteLength + s.paint.byteLength + s.index.byteLength + (s.facade?.byteLength ?? 0) + (s.grid?.byteLength ?? 0) + (s.opening?.byteLength ?? 0);
   for (const list of [arrays.parts, arrays.furniture]) {
     for (const p of Object.values(list) as (InstanceArrays | undefined)[]) {
       if (!p) continue;
@@ -233,7 +265,7 @@ export function cellBytes(arrays: CellArrays): number {
 export function cellBuffers(arrays: CellArrays): ArrayBuffer[] {
   const out: ArrayBufferLike[] = [];
   for (const s of arrays.shells) {
-    out.push(s.position.buffer, s.normalDecay.buffer, s.paint.buffer, s.index.buffer, s.bounds.buffer);
+    out.push(s.position.buffer, s.normal.buffer, s.paint.buffer, s.index.buffer, s.bounds.buffer);
     if (s.facade) out.push(s.facade.buffer);
     if (s.grid) out.push(s.grid.buffer);
     if (s.opening) out.push(s.opening.buffer);
@@ -299,7 +331,7 @@ function shellArrays(chunks: readonly BuildingChunk[], of: FragmentsOf): ShellAr
   }
   if (indices === 0) return null;
   const position = new Float32Array(vertices * 3);
-  const normalDecay = new Int16Array(vertices * SHELL_SHORTS);
+  const normal = new Int16Array(vertices * NORMAL_SHORTS);
   const paint = new Uint16Array(vertices * SHELL_SHORTS);
   const index = indexArray(vertices, indices);
   const facade = runs ? new Uint16Array(vertices * FACADE_FLOATS) : undefined;
@@ -312,7 +344,7 @@ function shellArrays(chunks: readonly BuildingChunk[], of: FragmentsOf): ShellAr
       const part = of(chunk)?.[finish];
       if (!part) continue;
       position.set(part.position, v * 3);
-      normalDecay.set(part.normalDecay, v * SHELL_SHORTS);
+      normal.set(part.normal, v * NORMAL_SHORTS);
       paint.set(part.paint, v * SHELL_SHORTS);
       if ('facade' in part) {
         facade?.set(part.facade, v * FACADE_FLOATS);
@@ -325,7 +357,7 @@ function shellArrays(chunks: readonly BuildingChunk[], of: FragmentsOf): ShellAr
     }
   }
   const bounds = shellBounds(position);
-  return { position, normalDecay, paint, index, bounds, ...(facade && grid && opening ? { facade, grid, opening } : {}) };
+  return { position, normal, paint, index, bounds, ...(facade && grid && opening ? { facade, grid, opening } : {}) };
 }
 
 /** 1 in half float: an instance with no tint of its own. */

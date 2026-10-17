@@ -65,9 +65,9 @@ export interface PartBatch {
 /** A shell's vertices are written in the GPU's layout as they are laid (`cellArrays.ts` `ShellArrays`), each one once: faces alike in every number share it (`buildingMesh.ts` `ShellPart.weld`). */
 export interface ShellChunk {
   readonly position: Float32Array;
-  /** The normal (three's axes) and the wear, `SHELL_SHORTS` signed shorts a vertex over `NORMAL_UNIT`. */
-  readonly normalDecay: Int16Array;
-  /** The paint's linear rgb over `COLOUR_RANGE` and the finish id, `SHELL_SHORTS` unsigned shorts a vertex over `PAINT_UNIT`. */
+  /** The normal (three's axes), octahedral: `NORMAL_SHORTS` signed shorts a vertex over `NORMAL_UNIT` (`cellArrays.ts` `octNormal`). */
+  readonly normal: Int16Array;
+  /** The paint's linear rgb over `COLOUR_RANGE` and the finish id with the wear (`finishWear`), `SHELL_SHORTS` unsigned shorts a vertex. */
   readonly paint: Uint16Array;
   readonly index: Uint32Array;
 }
