@@ -730,6 +730,8 @@ export class SimWorld {
     const prep = this.prepGraph;
     const changed = prep?.current(this.net) ? this.graph.adopt(prep, this.doc, this.net) : this.graph.update(this.doc, this.net);
     this.topologyLog.push(changed);
+    // Each body's reach of the road ends follows the graph here, with the topology, not in the tick of the next vehicle made (`LaneReaches.follow`).
+    this.laneReaches.follow(this);
     // What the next rebind looks at: nothing while no vehicle is out, as a vehicle made later is made on this graph.
     if (this.vehicles.size === 0) { this.rebindLanes.clear(); this.rebindAll = false; }
     else if (changed === null) this.rebindAll = true;
