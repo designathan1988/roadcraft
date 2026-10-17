@@ -1,3 +1,4 @@
+import { identityMemo } from '@core/identityMemo';
 import { kmh, m } from './units';
 import { PARKING_DEPTH, parkingAllowed, type ParkingKind, type SegmentParking } from './parking';
 import type { CentreLine, RoadSection, LaneLine, LaneTurnRule, LaneUse, SectionMaterials } from './roadSection';
@@ -238,13 +239,32 @@ export const roadType = (i: number): RoadType =>
 const MIN_TRAVEL_LANES = 1;
 const MAX_TRAVEL_LANES = 8;
 
-/** Resolves the physical road profile for a segment. */
+/** A segment with no section, or no parking: one key object for all of them (`roadProfile`'s memo). */
+const NO_PART = Object.freeze({});
+/** Each segment's profile, by its section and parking (records replaced on an edit, never changed) and its class, lanes and direction. */
+const profilesOf = identityMemo((_section: object) => identityMemo((_parking: object) => new Map<string, RoadType>()));
+
+/** Resolves the physical road profile for a segment: DO NOT build it again for every leg of every pass of a junction (`junction/build.ts`, `derive.ts`, `bulb.ts`, a pair of lanes in `junctionBuild.ts`): worked out once for its section, parking, class, lanes and direction. */
 export function roadProfile(
   typeIndex: number,
   configuredLanes?: number | null,
   direction: SegmentDirection = 'both',
   section?: RoadSection,
   parking?: SegmentParking,
+): RoadType {
+  const byKey = profilesOf(section ?? NO_PART)(parking ?? NO_PART);
+  const key = `${typeIndex}|${configuredLanes ?? '-'}|${direction}`;
+  let profile = byKey.get(key);
+  if (!profile) byKey.set(key, profile = resolveProfile(typeIndex, configuredLanes, direction, section, parking));
+  return profile;
+}
+
+function resolveProfile(
+  typeIndex: number,
+  configuredLanes: number | null | undefined,
+  direction: SegmentDirection,
+  section: RoadSection | undefined,
+  parking: SegmentParking | undefined,
 ): RoadType {
   const travel = travelProfile(typeIndex, configuredLanes, direction, section);
   if (!parking) return travel;
