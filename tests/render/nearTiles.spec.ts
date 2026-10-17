@@ -129,6 +129,23 @@ describe('the near products chosen by tile', () => {
     expect(askedPerFrame(40)).toBe(small);
   });
 
+  it('keeps what it read of the edited tiles for the tiles the view holds alone, however far the camera went', () => {
+    // The camera walked `steps` tiles east over a map of edited tiles (none of them written yet): what is kept of the page's records afterwards.
+    const keptAfter = (steps: number): number[] => {
+      const { run } = runs();
+      const near = new NearTiles(run, null);
+      near.add(product([]));
+      for (let i = -2; i <= 26; i++) for (let j = -2; j <= 2; j++) near.stored(tileKey(i, j), 1);
+      near.setSource({ records: async (key) => emptyRecords(key, 1), plan: null, pageEdit: () => 1, pageRecords: (key) => emptyRecords(key, 1) }, () => false);
+      for (let s = 0; s <= steps; s++) near.choose(m(512) + s * m(1024), m(512), m(100), 1000, null);
+      const inner = near as unknown as { pageCuts: Map<number, unknown>; lastDigests: Map<number, unknown> };
+      return [inner.pageCuts.size, inner.lastDigests.size];
+    };
+    const near2 = keptAfter(2);
+    expect(near2[0]).toBeGreaterThan(0);
+    expect(keptAfter(20)).toEqual(near2);
+  });
+
   it('asks the tiles where the kind spans a pixel, keeps a bake drawn until the next lands, and lets go what the view leaves', () => {
     const log: string[] = [];
     const { jobs, run } = runs();
