@@ -67,28 +67,33 @@ export interface NearRoadSurface {
 /** A tile's near roads at full detail, or simplified to the error of the region's far blocks (`roadLodPure.ts` COARSE_ERROR), its paint whole. */
 export type NearVariant = 'full' | 'coarse';
 
-/** A block of a tile's near roads: the surface tiles of one 4 x 4 square of the grid the tile owns (`roadSurfaces.ts` CHUNK, cut by the tile), every surface of every pass over them. */
-export interface NearRoadBlock {
-  readonly chunk: string;
-  /** What its surface tiles read: their inputs, the heights solved there, the ground. */
+/** ONE MESH OF A TILE'S NEAR ROADS: a surface over the whole tile, every block's of the same name and standing (raised or not: the same material, shadow and order, `roadSurfaces.ts` surfaceLook) end to end. DO NOT send a mesh a block and surface: ~200 meshes a dense tile, each walked by three's render and its three shadow cascades every frame, the move's long frames (2026-10-17); the plan's ~10 a tile (plan, step 2). */
+export interface NearRoadDraw {
+  /** Its name and standing (`drawKey`). */
+  readonly key: string;
+  /** What its blocks read (their digests, in order) and the level: a draw of the same digest is the same mesh. */
   readonly digest: number;
-  /** Its square in the plan, x0, y0, x1, y1: the edge its simplified level keeps. */
-  readonly lock: Float64Array;
-  readonly surfaces: readonly NearRoadSurface[];
+  readonly name: string;
+  readonly source: TileSource;
+  readonly raised: boolean;
+  readonly arrays: NearArrays;
 }
 
-/** A tile's near roads at one level, as a job hands them: its blocks (every one, or those changed since `base`, the version the page draws: the others it keeps), the blocks it has now, its plan box and heights (x0, y0, x1, y1, lowest, highest), its triangles. */
+/** A tile's near roads at one level, as a job hands them: its draws (every one, or those changed since `base`, the version the page draws: the others it keeps), the draws it has now, its plan box and heights (x0, y0, x1, y1, lowest, highest), its triangles. */
 export interface NearRoadMesh {
   readonly near: true;
   /** The version of what it read (`NearRoadWant.bake`). */
   readonly bake: string;
   readonly variant: NearVariant;
   readonly base: string | null;
-  readonly blocks: readonly NearRoadBlock[];
-  readonly chunks: readonly string[];
+  readonly draws: readonly NearRoadDraw[];
+  readonly keys: readonly string[];
   readonly bounds: Float64Array;
   readonly triangles: number;
 }
+
+/** A draw's key: a surface's name and whether its pass is raised. */
+const drawKey = (s: NearRoadSurface): string => `${s.name}|${s.raised ? 1 : 0}`;
 
 /** A block as it is kept: both its levels (the simplified one sharing the arrays of a surface not worth simplifying, and of the paint). */
 interface KeptBlock {
@@ -350,29 +355,76 @@ function makeBlock(chunk: string, digest: number,
   return full.length ? { chunk, digest, lock, full, coarse } : null;
 }
 
-/** A kept bake as a job hands it: one level of its blocks (those changed since `base`'s alone, where the page draws `base`). */
-export function nearMeshOf(kept: KeptNear, variant: NearVariant, base: KeptNear | null): NearRoadMesh {
-  const was = new Map((base?.blocks ?? []).map((b) => [b.chunk, b.digest]));
-  const blocks: NearRoadBlock[] = [];
-  let triangles = 0;
+/** Each draw of a kept bake at a level: its digest, and its surfaces block by block. */
+function drawsOf(kept: Pick<KeptNear, 'blocks'>, variant: NearVariant): Map<string, { readonly digest: Digest; readonly surfaces: NearRoadSurface[] }> {
+  const out = new Map<string, { readonly digest: Digest; readonly surfaces: NearRoadSurface[] }>();
   for (const b of kept.blocks) {
-    const surfaces = variant === 'full' ? b.full : b.coarse;
-    for (const s of surfaces) triangles += s.arrays.index.length / 3;
-    if (base && was.get(b.chunk) === b.digest) continue;
-    blocks.push({ chunk: b.chunk, digest: b.digest, lock: b.lock, surfaces });
+    for (const s of variant === 'full' ? b.full : b.coarse) {
+      const key = drawKey(s);
+      let draw = out.get(key);
+      if (!draw) out.set(key, draw = { digest: new Digest().addText(variant), surfaces: [] });
+      draw.digest.addText(b.chunk).add(b.digest);
+      draw.surfaces.push(s);
+    }
   }
-  return { near: true, bake: kept.sig, variant, base: base ? base.sig : null, blocks, chunks: kept.blocks.map((b) => b.chunk), bounds: kept.bounds, triangles };
+  return out;
 }
 
-/** Every buffer of a near mesh: handed over, not copied (MDN, `postMessage` transfer); one shared by two surfaces once. */
+/** A kept bake as a job hands it: one level of its draws (those changed since `base`'s alone, where the page draws `base` at that level). */
+export function nearMeshOf(kept: KeptNear, variant: NearVariant, base: KeptNear | null): NearRoadMesh {
+  const was = new Map<string, number>();
+  if (base) for (const [key, d] of drawsOf(base, variant)) was.set(key, d.digest.value());
+  const draws: NearRoadDraw[] = [];
+  let triangles = 0;
+  const all = drawsOf(kept, variant);
+  for (const [key, { digest, surfaces }] of all) {
+    for (const s of surfaces) triangles += s.arrays.index.length / 3;
+    const value = digest.value();
+    if (base && was.get(key) === value) continue;
+    const first = surfaces[0]!;
+    draws.push({ key, digest: value, name: first.name, source: first.source, raised: first.raised, arrays: surfaces.length === 1 ? first.arrays : joinArrays(surfaces.map((s) => s.arrays)) });
+  }
+  return { near: true, bake: kept.sig, variant, base: base ? base.sig : null, draws, keys: [...all.keys()], bounds: kept.bounds, triangles };
+}
+
+/** Arrays end to end, the indices shifted, a tint and a section where one had them (white, and none, where another had not). */
+function joinArrays(list: readonly NearArrays[]): NearArrays {
+  let vertices = 0, count = 0, tinted = false, sectioned = false;
+  for (const a of list) {
+    vertices += a.position.length / 3;
+    count += a.index.length;
+    if (a.color) tinted = true;
+    if (a.section) sectioned = true;
+  }
+  const position = new Float32Array(vertices * 3), normal = new Float32Array(vertices * 3), uv = new Float32Array(vertices * 2);
+  const color = tinted ? new Float32Array(vertices * 3) : null;
+  const section = sectioned ? new Float32Array(vertices * 3) : null;
+  const index = vertices > 0xffff ? new Uint32Array(count) : new Uint16Array(count);
+  const box = Float32Array.of(Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity);
+  let v = 0, k = 0;
+  for (const a of list) {
+    const n = a.position.length / 3;
+    position.set(a.position, v * 3);
+    normal.set(a.normal, v * 3);
+    uv.set(a.uv, v * 2);
+    if (color) { if (a.color) color.set(a.color, v * 3); else color.fill(1, v * 3, (v + n) * 3); }
+    if (section) {
+      if (a.section) section.set(a.section, v * 3);
+      else for (let p = v; p < v + n; p++) { section[p * 3] = 0; section[p * 3 + 1] = -1; section[p * 3 + 2] = 0; }
+    }
+    for (let p = 0; p < a.index.length; p++) index[k++] = a.index[p]! + v;
+    for (let c = 0; c < 3; c++) { box[c] = Math.min(box[c]!, a.box[c]!); box[c + 3] = Math.max(box[c + 3]!, a.box[c + 3]!); }
+    v += n;
+  }
+  return { position, normal, uv, color, section, index, box };
+}
+
+/** Every buffer of a near mesh: handed over, not copied (MDN, `postMessage` transfer); one shared by two draws once. */
 export function nearRoadBuffers(mesh: NearRoadMesh): ArrayBuffer[] {
   const out = new Set<ArrayBuffer>([mesh.bounds.buffer as ArrayBuffer]);
-  for (const b of mesh.blocks) {
-    out.add(b.lock.buffer as ArrayBuffer);
-    for (const s of b.surfaces) {
-      const a = s.arrays;
-      for (const array of [a.position, a.normal, a.uv, a.color, a.section, a.index, a.box]) if (array) out.add(array.buffer as ArrayBuffer);
-    }
+  for (const d of mesh.draws) {
+    const a = d.arrays;
+    for (const array of [a.position, a.normal, a.uv, a.color, a.section, a.index, a.box]) if (array) out.add(array.buffer as ArrayBuffer);
   }
   return [...out];
 }

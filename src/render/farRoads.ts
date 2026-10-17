@@ -156,47 +156,34 @@ function noSection(vertices: number): Float32Array {
   return out;
 }
 
-/** One block of a tile's near roads as the page draws it: a mesh per surface, what they hold. */
-interface BlockMeshes {
-  readonly group: Group;
-  readonly meshes: readonly Mesh[];
+/** One draw of a tile's near roads as the page draws it: its mesh, what it holds. */
+interface DrawMesh {
+  readonly mesh: Mesh;
   readonly bytes: number;
-  readonly triangles: number;
 }
 
-/** A block's surfaces as meshes, with the material, shadow and order the region gives each (`kit.dress`), the attributes its material reads alone (`surfaceTiles.ts` readsOf), bounded by its box; their arrays let go once on the GPU. */
-function blockMeshes(block: NearRoadMesh['blocks'][number], kit: NearRoadKit): BlockMeshes {
-  const group = new Group();
-  group.name = `roads-near-${block.chunk}`;
-  group.matrixAutoUpdate = false;
-  const meshes: Mesh[] = [];
-  let bytes = 0, triangles = 0;
-  for (const s of block.surfaces) {
-    const look = kit.dress(s.source, s.raised);
-    const a = s.arrays;
-    const vertices = a.position.length / 3;
-    const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(a.position, 3));
-    g.setAttribute('normal', new BufferAttribute(a.normal, 3));
-    g.setAttribute('uv', new BufferAttribute(a.uv, 2));
-    if (look.material.vertexColors) g.setAttribute('color', new BufferAttribute(a.color ?? new Float32Array(vertices * 3).fill(1), 3));
-    if (readsRoadSection(look.material)) g.setAttribute('roadSection', new BufferAttribute(a.section ?? noSection(vertices), 3));
-    g.setIndex(new BufferAttribute(a.index, 1));
-    g.boundingBox = new Box3(new Vector3(a.box[0], a.box[1], a.box[2]), new Vector3(a.box[3], a.box[4], a.box[5]));
-    g.boundingSphere = g.boundingBox.getBoundingSphere(new Sphere());
-    const mesh = finish(g, { name: s.name, material: look.material, castShadow: look.castShadow ?? false, receiveShadow: true });
-    if (look.renderOrder !== undefined) mesh.renderOrder = look.renderOrder;
-    bytes += geometryCost(g).bytes;
-    triangles += a.index.length / 3;
-    // Made again from the store when a lost context asks (the tree's `refill`).
-    gpuOnly(mesh, () => ({}));
-    group.add(mesh);
-    meshes.push(mesh);
-  }
-  return { group, meshes, bytes, triangles };
+/** A draw as a mesh, with the material, shadow and order the region gives its surface (`kit.dress`), the attributes its material reads alone (`surfaceTiles.ts` readsOf), bounded by its box; its arrays let go once on the GPU. */
+function drawMesh(s: NearRoadMesh['draws'][number], kit: NearRoadKit): DrawMesh {
+  const look = kit.dress(s.source, s.raised);
+  const a = s.arrays;
+  const vertices = a.position.length / 3;
+  const g = new BufferGeometry();
+  g.setAttribute('position', new BufferAttribute(a.position, 3));
+  g.setAttribute('normal', new BufferAttribute(a.normal, 3));
+  g.setAttribute('uv', new BufferAttribute(a.uv, 2));
+  if (look.material.vertexColors) g.setAttribute('color', new BufferAttribute(a.color ?? new Float32Array(vertices * 3).fill(1), 3));
+  if (readsRoadSection(look.material)) g.setAttribute('roadSection', new BufferAttribute(a.section ?? noSection(vertices), 3));
+  g.setIndex(new BufferAttribute(a.index, 1));
+  g.boundingBox = new Box3(new Vector3(a.box[0], a.box[1], a.box[2]), new Vector3(a.box[3], a.box[4], a.box[5]));
+  g.boundingSphere = g.boundingBox.getBoundingSphere(new Sphere());
+  const mesh = finish(g, { name: s.name, material: look.material, castShadow: look.castShadow ?? false, receiveShadow: true });
+  if (look.renderOrder !== undefined) mesh.renderOrder = look.renderOrder;
+  // Made again from the store when a lost context asks (the tree's `refill`).
+  gpuOnly(mesh, () => ({}));
+  return { mesh, bytes: geometryCost(g).bytes };
 }
 
-/** A TILE'S NEAR ROADS AS THE PAGE DRAWS THEM, block by block: the blocks an answer brings made here; the others (an answer built on the version drawn, `base`) the drawn one's, taken over at the swap (`adopt`), never made nor sent to the GPU again */
+/** A TILE'S NEAR ROADS AS THE PAGE DRAWS THEM, a mesh a draw: the draws an answer brings made here; the others (an answer built on the version drawn, `base`) the drawn one's, taken over at the swap (`adopt`), never made nor sent to the GPU again */
 class NearRoadLanded implements FarNearLanded {
   readonly group = new Group();
   readonly meshes: Mesh[] = [];
@@ -205,8 +192,8 @@ class NearRoadLanded implements FarNearLanded {
   readonly top: number;
   readonly bake: string;
   readonly variant: string;
-  /** Its blocks: those it made, and those it keeps of the version drawn (theirs until `adopt`). */
-  private readonly blocks = new Map<string, BlockMeshes>();
+  /** Its draws: those it made, and those it keeps of the version drawn (theirs until `adopt`). */
+  private readonly draws = new Map<string, DrawMesh>();
   private readonly mine = new Set<string>();
 
   constructor(data: NearRoadMesh, bake: string, kit: NearRoadKit, base: NearRoadLanded | null) {
@@ -216,18 +203,18 @@ class NearRoadLanded implements FarNearLanded {
     this.variant = data.variant;
     this.top = data.bounds[5]!;
     let bytes = 0;
-    for (const block of data.blocks) {
-      const made = blockMeshes(block, kit);
-      this.blocks.set(block.chunk, made);
-      this.mine.add(block.chunk);
-      this.group.add(made.group);
-      this.meshes.push(...made.meshes);
+    for (const draw of data.draws) {
+      const made = drawMesh(draw, kit);
+      this.draws.set(draw.key, made);
+      this.mine.add(draw.key);
+      this.group.add(made.mesh);
+      this.meshes.push(made.mesh);
       bytes += made.bytes;
     }
-    for (const chunk of data.chunks) {
-      if (this.blocks.has(chunk)) continue;
-      const kept = base?.blocks.get(chunk);
-      if (kept) { this.blocks.set(chunk, kept); bytes += kept.bytes; }
+    for (const key of data.keys) {
+      if (this.draws.has(key)) continue;
+      const kept = base?.draws.get(key);
+      if (kept) { this.draws.set(key, kept); bytes += kept.bytes; }
     }
     this.bytes = bytes;
     this.triangles = data.triangles;
@@ -235,16 +222,16 @@ class NearRoadLanded implements FarNearLanded {
 
   adopt(base: FarNearLanded): void {
     const from = base as NearRoadLanded;
-    for (const [chunk, block] of this.blocks) {
-      if (this.mine.has(chunk) || from.blocks.get(chunk) !== block) continue;
-      from.mine.delete(chunk);
-      this.mine.add(chunk);
-      this.group.add(block.group);
+    for (const [key, draw] of this.draws) {
+      if (this.mine.has(key) || from.draws.get(key) !== draw) continue;
+      from.mine.delete(key);
+      this.mine.add(key);
+      this.group.add(draw.mesh);
     }
   }
 
   dispose(): void {
-    for (const chunk of this.mine) for (const mesh of this.blocks.get(chunk)!.meshes) mesh.geometry.dispose();
+    for (const key of this.mine) this.draws.get(key)!.mesh.geometry.dispose();
     this.mine.clear();
   }
 }
