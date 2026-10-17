@@ -371,8 +371,7 @@ interface State {
   /** The walkers by cell for the cars' questions */
   near: WalkerGrid;
   nearAt: number;
-  /** The vehicles by cell for `gapOpen`, filed once a tick when somebody first asks; the fastest of them. */
-  traffic: Map<number, TrafficSeen[]>;
+  /** The fastest vehicle's speed for `gapOpen`, read once a tick when somebody first asks. */
   trafficAt: number;
   fastest: number;
   /** The walkers by cell, filed again at the start of every step (`WalkerGrid`). */
@@ -384,9 +383,6 @@ interface State {
 }
 
 /** A vehicle as `gapOpen` reads it: where it is, which way it faces, how fast it goes. */
-interface TrafficSeen { readonly x: number; readonly y: number; readonly angle: number; readonly speed: number }
-/** Cells for the vehicles near a crossing (`gapOpen`). */
-const TRAFFIC_CELL = m(32);
 
 /** A test bench's trace of what happens to chosen walkers (the weapons lab, `traceWalkers`) */
 export interface WalkTrace {
@@ -463,7 +459,7 @@ function stateOf(w: SimWorld): State {
   let s = STATES.get(w);
   if (!s) {
     s = { graph: null, graphState: null, wayIndex: new Map(), walkers: [], byId: new Map(), arrivals: [], onCarWay: new Map(),
-      shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, traffic: new Map(), trafficAt: -1, fastest: 0,
+      shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, trafficAt: -1, fastest: 0,
       grid: new WalkerGrid(), parked: new ParkedZoneIndex(), parties: new Map() };
     STATES.set(w, s);
   }
@@ -830,40 +826,27 @@ const GAP_NEAR = m(6);
 function gapOpen(w: SimWorld, s: State, z: Zebra, pace: number, waited: number): boolean {
   const path = z.way.path;
   const time = path.length / Math.max(pace, m(0.5)) + (waited < IMPATIENT ? GAP_MARGIN : 0);
-  // The vehicles by cell, filed once this tick (their poses were worked out for every vehicle at every ask)
+  // DO NOT file the whole fleet with its poses for one crossing: the fastest speed once a tick (no pose), then the vehicles on the lanes within reach of this crossing, posed.
   if (s.trafficAt !== s.clock) {
     s.trafficAt = s.clock;
-    s.traffic.clear();
     s.fastest = 0;
-    const file = (x: number, y: number, angle: number, speed: number): void => {
-      const k = cellKey(x, y, TRAFFIC_CELL);
-      const seen: TrafficSeen = { x, y, angle, speed };
-      const list = s.traffic.get(k);
-      if (list) list.push(seen); else s.traffic.set(k, [seen]);
-    };
-    const pose = TRAFFIC_POSE;
-    for (const v of w.vehicles.values()) {
-      if (!vehiclePoseNowInto(w, v, pose)) continue;
-      file(pose.p.x, pose.p.y, pose.angle, v.v);
-      if (v.v > s.fastest) s.fastest = v.v;
-    }
+    for (const v of w.vehicles.values()) if (v.v > s.fastest) s.fastest = v.v;
   }
   const reach = Math.max(GAP_NEAR, s.fastest * time);
   const box = path.bbox;
-  const gx0 = Math.floor((box.minX - reach) / TRAFFIC_CELL), gx1 = Math.floor((box.maxX + reach) / TRAFFIC_CELL);
-  const gy0 = Math.floor((box.minY - reach) / TRAFFIC_CELL), gy1 = Math.floor((box.maxY + reach) / TRAFFIC_CELL);
-  for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
-    for (const v of s.traffic.get(cell(gx, gy)) ?? NO_TRAFFIC) {
-      const hit = path.closestPoint(v);
-      if (hit.distance < GAP_NEAR) return false;
-      if (v.speed < m(0.5) || hit.distance > v.speed * time) continue;
-      // Coming towards it, not going away.
-      if ((hit.point.x - v.x) * Math.cos(v.angle) + (hit.point.y - v.y) * Math.sin(v.angle) > 0) return false;
-    }
+  const pose = TRAFFIC_POSE;
+  const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
+  for (const vehicle of w.vehiclesNear(cx, cy, reach + Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
+    if (!vehiclePoseNowInto(w, vehicle, pose)) continue;
+    const v = pose.p;
+    const hit = path.closestPoint(v);
+    if (hit.distance < GAP_NEAR) return false;
+    if (vehicle.v < m(0.5) || hit.distance > vehicle.v * time) continue;
+    // Coming towards it, not going away.
+    if ((hit.point.x - v.x) * Math.cos(pose.angle) + (hit.point.y - v.y) * Math.sin(pose.angle) > 0) return false;
   }
   return true;
 }
-const NO_TRAFFIC: readonly TrafficSeen[] = [];
 
 /** The zebra a walker is coming up to and has not been let onto, and the distance along its route to where it waits for it */
 function zebraAhead(w: SimWorld, p: Walker): { zebra: Zebra; stop: number } | null {

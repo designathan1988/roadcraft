@@ -6,15 +6,34 @@ export class RouteIndex<V extends { readonly route: readonly LaneletId[] }> {
   /** The ids each vehicle is filed under: its route as last noted. */
   private readonly filed = new Map<V, readonly LaneletId[]>();
 
-  /** A vehicle filed under its route now, out of the lanes of the route it had. */
+  /** A vehicle filed under its route now, out of the lanes of the route it had: DO NOT take it out of every lane and put it back for a step along its route (each lane it enters), only what came and went is touched. */
   file(v: V): void {
-    this.unfile(v);
-    const ids = v.route.slice();
-    for (const id of ids) {
-      const set = this.byLane.get(id);
-      if (set) set.add(v); else this.byLane.set(id, new Set([v]));
+    const was = this.filed.get(v);
+    const now = v.route;
+    const ids = now.slice();
+    if (!was) {
+      for (const id of ids) this.add(id, v);
+    } else if (ids.length === was.length - 1 && sameTail(was, ids)) {
+      // A step along: the lane left, unless the route comes back to it.
+      if (!ids.includes(was[0]!)) this.drop(was[0]!, v);
+    } else {
+      const before = new Set(was), after = new Set(ids);
+      for (const id of before) if (!after.has(id)) this.drop(id, v);
+      for (const id of after) if (!before.has(id)) this.add(id, v);
     }
     this.filed.set(v, ids);
+  }
+
+  private add(id: LaneletId, v: V): void {
+    const set = this.byLane.get(id);
+    if (set) set.add(v); else this.byLane.set(id, new Set([v]));
+  }
+
+  private drop(id: LaneletId, v: V): void {
+    const set = this.byLane.get(id);
+    if (!set) return;
+    set.delete(v);
+    if (!set.size) this.byLane.delete(id);
   }
 
   unfile(v: V): void {
@@ -38,4 +57,10 @@ export class RouteIndex<V extends { readonly route: readonly LaneletId[] }> {
     this.byLane.clear();
     this.filed.clear();
   }
+}
+
+/** Whether `tail` is `list` without its first. */
+function sameTail(list: readonly LaneletId[], tail: readonly LaneletId[]): boolean {
+  for (let i = 0; i < tail.length; i++) if (list[i + 1] !== tail[i]) return false;
+  return true;
 }
