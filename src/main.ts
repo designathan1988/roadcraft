@@ -92,7 +92,7 @@ import { CameraGestures, type PointerSample } from '@view/cameraGestures';
 import { CameraMotion } from '@view/cameraMotion';
 import { freeRoadsEnabled } from '@ui/roadSectionEditor';
 import { applyProfileTo } from '@editor/roads/profile';
-import { drawProfile } from '@ui/roads/drawProfile';
+import { drawProfile, setDrawProfile } from '@ui/roads/drawProfile';
 import { cutWallsChosen } from '@ui/roads/cutWalls';
 import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingPreset, setRoadParkingPreset } from '@editor/roadParking';
 import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from '@editor/history';
@@ -1465,6 +1465,8 @@ function laneChoices(): { id: string; label: string; on: boolean }[] {
 function setLanes(id: string): void {
   const choice = LANE_CHOICES.find((c) => c.id === id);
   if (!choice) return;
+  // Lanes chosen on their own: the profile in hand (catalogue, eyedropper) is put down, or the choice would be ignored.
+  setDrawProfile(null);
   gameState.set('roadLanePreset', choice.lanes, 'lanes chosen');
   if (choice.lanes === null) selectRoadType(MEDIAN_CLASS);
   requestDraw();
@@ -1472,6 +1474,8 @@ function setLanes(id: string): void {
 
 function selectRoadType(i: number): void {
   if (!ROAD_TYPES[i]) return;
+  // A class chosen (its key, its card) puts the profile in hand down; the catalogue sets its profile after.
+  setDrawProfile(null);
   gameState.set('roadTypeIndex', i, 'road class chosen');
   requestDraw();
 }
@@ -3579,7 +3583,10 @@ function showInspector(): void {
         flashHint(problem ? `profile.problem.${problem}` : 'hint.profile.toStreet');
       },
       // The eyedropper: the road tool in hand, drawing with the profile just picked.
-      onDrawWithProfile: () => {
+      onDrawWithProfile: (held) => {
+        // The class first, so the tool's panel shows the profile's own class, then the profile in hand.
+        selectRoadType(held.type);
+        setDrawProfile(held);
         // The road tool's panel opened, showing the profile picked.
         shell?.openTool('road');
         flashHint('hint.profile.picked');

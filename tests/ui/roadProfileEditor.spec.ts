@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { drawSection, metresText } from '@ui/roads/crossSection';
 import { formatDecimal } from '@ui/i18n';
 import { closeProfileEditor, insertionIndex, moved, openProfileEditor, withWidth } from '@ui/roads/profileEditor';
+import { type DrawProfile, drawProfile } from '@ui/roads/drawProfile';
 import { mountProfilePanel } from '@ui/roads/profilePanel';
 import type { RoadSegment } from '@world/doc';
 import { type RoadProfileSpec, profileIssues } from '@world/roads/profile';
@@ -162,5 +163,16 @@ describe('the editor and the inspector use the interface’s own controls', () =
     expect(host.querySelector('svg.xs')).not.toBeNull();
     expect(host.querySelectorAll('select, input').length).toBe(0);
     expect(host.querySelectorAll('button').length).toBe(1);
+  });
+
+  it('the eyedropper hands the host the profile with its class, so the host picks the class before holding it (plan K8)', () => {
+    const host = document.createElement('div');
+    const segment = { type: typeIndex('urban'), lanes: null, direction: 'both' } as unknown as RoadSegment;
+    const held: DrawProfile[] = [];
+    mountProfilePanel(host, segment, () => {}, { drawWith: (profile) => held.push(profile) });
+    host.querySelector<HTMLButtonElement>('[data-action="eyedropper"]')!.click();
+    expect(held.map((h) => h.type)).toEqual([typeIndex('urban')]);
+    // The host holds it, after choosing the class: the panel does not hold it on its own.
+    expect(drawProfile()).toBeNull();
   });
 });
