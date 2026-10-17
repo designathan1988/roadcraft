@@ -241,13 +241,22 @@ export function createBuildingLayer(): BuildingLayer {
   };
   /** An edit to one building must not resample the ground under every other building. */
   const groundDigests = new Map<BuildingId, { sig: number; groundKey: string; digest: number }>();
-  /** Whether a ground change since a key reached a building; without one, any new key did. */
-  let touched: ((b: Building, sinceKey: string) => boolean) | undefined;
+  /** The buildings the ground moved under since a key (`update`'s `groundMovedUnder`, one look by place); null when it cannot say. */
+  let movedUnder: ((sinceKey: string) => readonly Building[] | null) | undefined;
+  /** DO NOT ask the diary building by building whether the ground moved under each (every building of every cell asked again at each ground change of the opening: 7.8 s of the page, wprof4): what moved since a key, found once for that key, until the ground changes again. */
+  const movedSince = new Map<string, ReadonlySet<BuildingId> | null>();
+  const movedFor = (sinceKey: string): ReadonlySet<BuildingId> | null => {
+    if (movedSince.has(sinceKey)) return movedSince.get(sinceKey)!;
+    const list = movedUnder?.(sinceKey) ?? null;
+    const set = list ? new Set(list.map((b) => b.id)) : null;
+    movedSince.set(sinceKey, set);
+    return set;
+  };
   const digestFor = (b: Building, sig: number, groundKey: string, groundAt: GroundAt, pavedAt?: PavedAt): number => {
     const known = groundDigests.get(b.id);
     if (known && known.sig === sig && known.groundKey === groundKey) return known.digest;
     // The ground changed somewhere, not under this building: what it sampled stands.
-    if (known && known.sig === sig && touched && !touched(b, known.groundKey)) {
+    if (known && known.sig === sig && movedFor(known.groundKey)?.has(b.id) === false) {
       groundDigests.set(b.id, { ...known, groundKey });
       return known.digest;
     }
@@ -543,11 +552,13 @@ export function createBuildingLayer(): BuildingLayer {
       // One building asked for at once (a ruin): emitted here.
       return { chunk: emitChunk(b, groundAt, pavedAt, naturalAt), kit };
     },
-    update(doc, groundAt, groundKey, pavedAt, naturalAt = groundAt, groundTouched, groundMovedUnder) {
+    update(doc, groundAt, groundKey, pavedAt, naturalAt = groundAt, groundMovedUnder) {
       // Put together below from the document as it stands now, in this call.
       townAt = doc.revision;
+      // Another ground: what moved since each key is asked again (the sets were up to the ground before).
+      if (lastGround?.groundKey !== groundKey) movedSince.clear();
       lastGround = { groundAt, groundKey, pavedAt, naturalAt };
-      touched = groundTouched;
+      movedUnder = groundMovedUnder;
       const env: CellEnv = { groundAt, naturalAt, ...(pavedAt ? { pavedAt } : {}) };
       const hides = preview?.hides ?? null;
       const cutKey = cutaway

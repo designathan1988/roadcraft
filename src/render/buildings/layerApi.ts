@@ -32,8 +32,7 @@ export interface BuildingLayer {
   hidden: boolean;
   /** Rebuilds what is stale. */
   update(doc: RoadDoc, groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt, naturalAt?: GroundAt,
-    groundTouched?: (b: Building, sinceKey: string) => boolean,
-    /** The buildings a change of the ground since `sinceKey` reached (found by place); null when that cannot be said */
+    /** The buildings a change of the ground since `sinceKey` reached (found by place, once a key: `digestFor`); null when that cannot be said */
     groundMovedUnder?: (sinceKey: string) => readonly Building[] | null): boolean;
   setPreview(preview: BuildingPreviewInput | null): void;
   /** "See inside": every building within `radius` of (x, y) is drawn cut open at `level`, its rooms and furniture showing */
