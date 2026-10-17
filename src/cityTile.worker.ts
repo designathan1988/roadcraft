@@ -4,7 +4,7 @@ import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 import { workerParts } from '@editor/workerParts';
-import { type PreparedTile, addTileSection, bakeStoredTile, prepareTile, readTile, readTileSection, storedVersion, writeTile } from '@editor/tileStore';
+import { type PreparedTile, addTileSection, bakeStoredTile, prepareTile, readTile, readTileSection, storedVersionBaked, writeTile } from '@editor/tileStore';
 import { withGrownBuildings } from '@world/growth/grownRows';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
@@ -62,7 +62,8 @@ export type StreamTileAnswer = { readonly key: number; readonly records: TileRec
 /** A tile asked only if missing (`StreamTileAsk.store.ifMissing`): what the store has of it, read here, or null to make it. */
 async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: number, j: number): Promise<StreamTileAnswer | null> {
   const key = tileKey(i, j);
-  const version = await storedVersion(stored(), store.map, key);
+  // A tile the page wrote and whose bake a reload cut short baked here first: DO NOT refuse it as 'legacy' (the reopening then read it on the store's lanes, behind the rush's tiles, conf37).
+  const version = await storedVersionBaked(stored(), store.map, key, (r) => bakeTileSections(r, true));
   if (version === null) return null;
   if (version === 'legacy') return { key, stored: null, legacy: true };
   if (!store.records) return { key, stored: version, existed: true };

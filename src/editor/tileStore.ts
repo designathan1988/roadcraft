@@ -44,7 +44,7 @@ export type TileOp =
   /** Stored tiles taken away (a world file opened lacks them): made again when asked. */
   | { readonly op: 'removeTiles'; readonly map: string; readonly keys: readonly number[] }
   /** A stored tile's lists emptied (a "whole map" clear, `TileStore.clearLists`), its version past `after`: the version it stands at and whether it was written, null when none is stored or the write failed. */
-  | { readonly op: 'clearLists'; readonly map: string; readonly key: number; readonly parts: readonly ClearablePart[]; readonly after: number };
+  | { readonly op: 'clearLists'; readonly map: string; readonly key: number; readonly parts: readonly ClearablePart[]; readonly after: number; readonly unbaked?: boolean };
 
 /** The lists of a tile a "whole map" clear empties in every stored tile (`main.ts` MAP_ACTIONS). */
 export type ClearablePart = 'trees' | 'elements';
@@ -250,6 +250,16 @@ export async function storedVersion(store: PartStore, map: string, key: number):
   return stored.read?.head.baked ? stored.read.head.version : 'legacy';
 }
 
+/** `storedVersion` where the maker looks (`cityTile.worker.ts`), a tile stored in parts with no sections baked here first (a page's write whose bake a reload cut short, `TileStore.write`): DO NOT leave it to the save's worker, its reads and writes wait behind a bake; `'legacy'` is format 1 alone. Run on the tile's chain. */
+export async function storedVersionBaked(store: PartStore, map: string, key: number, bake: TileBaker): Promise<number | 'legacy' | null> {
+  const stored = await storedBlob(store, map, key);
+  if (!stored) return null;
+  if (!stored.read) return 'legacy';
+  const { version, baked } = stored.read.head;
+  if (!baked && !(await bakeStoredTile(store, map, key, version, bake))) console.warn(`[city tile] tile ${key}'s sections were not baked: its readers derive them`);
+  return version;
+}
+
 /** A section a reader does not derive from the records where the tile has none (the simulation's bays, `sim/tileBays.ts`): that part alone, the records never parsed; null: no tile stored, or stored without it. */
 export async function readTileSection(store: PartStore, map: string, key: number, name: string): Promise<{ readonly value: unknown } | { readonly bytes: ArrayBuffer } | null> {
   const stored = await storedBlob(store, map, key);
@@ -266,7 +276,8 @@ async function partValue(part: NonNullable<ReturnType<typeof partOf>>): Promise<
 /** A tile of format 1, or written with no baker, written again in parts with its sections at its own version, once: the next reads take their part alone (run on the page's chain of the tile, `TileStore`: no write of it runs between). */
 async function upgraded(store: PartStore, map: string, key: number, stored: Stored, bake: TileBaker | undefined): Promise<TileText> {
   const text = await textOf(stored, map, key);
-  if (bake && !stored.read?.head.baked) {
+  // A tile in parts with no sections is the maker's to bake (`storedVersionBaked`): DO NOT bake it on the save's worker, which the reads share.
+  if (bake && !stored.read) {
     const { blob } = await encodeTile(parseTileText(text, key), bake);
     if (!(await store.write([[tileBlobKey(map, key), blob]], []))) console.warn(`[save] tile ${key} of ${map} was not written again in parts`);
   }
@@ -289,7 +300,7 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
       // The head alone: DO NOT parse a tile to know it is there (format 1 parsed once, and written again in parts).
       const stored = await storedBlob(store, op.map, op.key);
       if (!stored) return null;
-      if (stored.read && (stored.read.head.baked || !bake || op.readOnly)) return stored.read.head.version;
+      if (stored.read) return stored.read.head.version;
       return parseTileText(await upgraded(store, op.map, op.key, stored, op.readOnly ? undefined : bake), op.key).version;
     }
     case 'write': return (await writeTile(store, op.map, writtenRecords(op.records), op.unbaked ? undefined : bake)).ok;
@@ -306,7 +317,8 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
       if (!op.parts.some((part) => records[part].length > 0)) return { version: records.version, cleared: false };
       const version = Math.max(records.version, op.after) + 1;
       const cleared: TileRecords = { ...records, version, ...Object.fromEntries(op.parts.map((part) => [part, []])) };
-      return (await writeTile(store, op.map, cleared, bake)).ok ? { version, cleared: true } : null;
+      // Its sections baked by the maker after (`TileStore.clearLists`), never on the save's worker.
+      return (await writeTile(store, op.map, cleared, op.unbaked ? undefined : bake)).ok ? { version, cleared: true } : null;
     }
   }
 }
@@ -544,9 +556,15 @@ export class TileStore {
   /** A stored tile's lists emptied (a "whole map" clear), in its order with the tile's other calls: the version written, null when there was nothing to clear or no tile is stored. */
   clearLists(key: number, parts: readonly ClearablePart[]): Promise<number | null> {
     return this.chained(key, async () => {
-      const got = (await this.backend.run({ op: 'clearLists', map: this.map, key, parts, after: this.versions.get(key) ?? 0 })) as { version: number; cleared: boolean } | null;
+      const maker = this.readOnly ? undefined : this.makeStored;
+      const got = (await this.backend.run({ op: 'clearLists', map: this.map, key, parts, after: this.versions.get(key) ?? 0, ...(maker ? { unbaked: true } : {}) })) as { version: number; cleared: boolean } | null;
       if (!got) return null;
       this.versions.set(key, Math.max(this.versions.get(key) ?? 0, got.version));
+      // Its sections baked by the maker, as a write's (`write`).
+      if (maker && got.cleared) {
+        const { i, j } = tileOfKey(key);
+        void this.chained(key, () => maker(i, j, got.version, false, false, false, true)).catch((error: unknown) => console.warn(`[save] tile ${key}'s sections were not baked`, error));
+      }
       return got.cleared ? got.version : null;
     });
   }

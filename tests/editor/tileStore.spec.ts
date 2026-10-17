@@ -5,13 +5,14 @@ import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
 import {
   type MadeTile, type TileOp, type TileText, TileStore, type WorldMeta, bakeStoredTile, portTiles, readTile, runTileOp, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
-  preparedRecords, tileWrite, writtenRecords } from '@editor/tileStore';
+  preparedRecords, storedVersionBaked, tileWrite, writtenRecords } from '@editor/tileStore';
 
-/** A maker as `cityTile.worker.ts` serves one: asked only if missing, it looks in the store first (`storedVersion`), the tile read and prepared where it is there; `make` runs only for a tile the store has not. */
-function lookingFirst(store: PartStore, make: (i: number, j: number, after: number, text: boolean) => Promise<MadeTile>) {
+/** A maker as `cityTile.worker.ts` serves one: asked only if missing, it looks in the store first (`storedVersionBaked`: a tile in parts with no sections baked there), the tile read and prepared where it is there; `make` runs only for a tile the store has not. */
+function lookingFirst(store: PartStore, make: (i: number, j: number, after: number, text: boolean) => Promise<MadeTile>,
+  bake: (records: TileRecords) => Readonly<Record<string, { json: unknown }>> = () => ({ mark: { json: 1 } })) {
   return async (i: number, j: number, after: number, text: boolean, ifMissing: boolean): Promise<MadeTile> => {
     if (ifMissing) {
-      const version = await storedVersion(store, 'map', tileKey(i, j));
+      const version = await storedVersionBaked(store, 'map', tileKey(i, j), bake);
       if (version === 'legacy') return { version: null, legacy: true };
       if (version !== null) {
         const records = text ? await readTile(store, 'map', tileKey(i, j)) : null;
@@ -219,16 +220,24 @@ describe('a tile stored', () => {
     expect(await tiles.write(tile)).toBe(2);
   });
 
-  it('a tile stored in the older form is not made again: the save worker reads its version', async () => {
+  it("a tile stored with no sections (a reload cut its bake short) is baked by its maker on reopening: never made, nor asked of the store's lanes (conf37)", async () => {
     const store = memoryStore();
-    const old = { ...emptyTile(3, 3), version: 4 };
-    // Written with no baker: no sections, the head not marked baked (`storedVersion` says 'legacy').
+    const old = { ...emptyTile(3, 3, { trees: [{ x: 3, y: 3 }] }), version: 4 };
+    // Written by the page before its bake (`TileStore.write`): no sections, the head not marked baked.
     await writeTile(store, 'map', old);
     expect(await storedVersion(store, 'map', old.key)).toBe('legacy');
     const made: number[] = [];
-    const tiles = new TileStore('map', storeTiles(store), never, lookingFirst(store, async (i, j) => { made.push(tileKey(i, j)); return { version: 1 }; }));
+    // The store's lanes (the save's worker and the reads'): DO NOT reach them while the map is made, they stand behind the rush's tiles.
+    const lanes: string[] = [];
+    const backend = storeTiles(store);
+    const watched = { run: (op: TileOp) => { lanes.push(op.op); return backend.run(op); } };
+    const tiles = new TileStore('map', watched, never, lookingFirst(store, async (i, j) => { made.push(tileKey(i, j)); return { version: 1 }; }));
     expect(await tiles.ensure(old.key)).toBe(4);
+    expect(await tiles.load(old.key)).toEqual(old);
     expect(made).toEqual([]);
+    expect(lanes).toEqual([]);
+    // Baked where the maker looked, at its own version.
+    expect(await storedVersion(store, 'map', old.key)).toBe(4);
   });
 
   it('a region tile made and not stored is still handed to the page', async () => {
