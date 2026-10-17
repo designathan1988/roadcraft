@@ -91,6 +91,8 @@ export class WalkGraph {
   private spareWays = new Map<number, Walkway[]>();
   private added: Walkway[] = [];
   private readonly log: { readonly from: object; readonly change: WalkChange }[] = [];
+  /** Walkways held by the log's changes, removed and added. */
+  private logWays = 0;
   private token: object = {};
   private readonly none: readonly WalkChange[] = [];
 
@@ -177,8 +179,14 @@ export class WalkGraph {
     this.added = [];
     if (!removed.length && !added.length) return;
     this.log.push({ from: this.token, change: { removed, added } });
+    this.logWays += removed.length + added.length;
     this.token = {};
-    if (this.log.length > KEPT_CHANGES) this.log.shift();
+    // DO NOT keep more walkways in the log than the graph holds: a reader that far behind files them all again for less (`ensureGraph`), and the log held every walkway of every tile the camera passed (a heap snapshot of the simulation's worker over 22 tiles walked, 2026-10-17: ~1 MB a tile, `WalkGraph.log`).
+    const live = this.ways.length - this.freeWays.length;
+    while (this.log.length > KEPT_CHANGES || (this.log.length > 1 && this.logWays > live)) {
+      const first = this.log.shift()!;
+      this.logWays -= first.change.removed.length + first.change.added.length;
+    }
   }
 
   private link(node: number, way: number): void {
