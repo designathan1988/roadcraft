@@ -1380,8 +1380,8 @@ export class RoadDoc {
   private tileContents = new Set<number>();
   /** Each loaded tile's next ids, by kind (`TileRecords.next`): a record made in a tile takes its id from the tile's range. */
   private tileNext = new Map<number, TileNext>();
-  /** Each loaded tile's grown rows (`TileRecords.grown`, kept by `preparedGrown`): the buildings still exactly their row's are written back as it (`tileRecords`). */
-  private tileGrown = new Map<number, PreparedGrown>();
+  /** Each loaded tile's grown rows (`TileRecords.grown`, kept by `preparedGrown`), and its lots as they were put in: a row is written back only while its lot is that very record (an edit replaces it). */
+  private tileGrown = new Map<number, { readonly grown: PreparedGrown; readonly lots: ReadonlyMap<number, Lot> }>();
 
   /** Whether an edit is open (`beginEdit`..`endEdit`): no tile comes in or goes out then. */
   get editing(): boolean {
@@ -1504,7 +1504,7 @@ export class RoadDoc {
     this.tileContents.add(records.key);
     this.tileNext.set(records.key, tileNextOf(records));
     const grown = preparedTiles.get(records);
-    if (grown) this.tileGrown.set(records.key, grown);
+    if (grown) this.tileGrown.set(records.key, { grown, lots: new Map(lots.map((lot) => [lot.id, this.lot(lot.id)!])) });
     else this.tileGrown.delete(records.key);
     this.changes.causeNext(cause);
   }
@@ -1572,9 +1572,19 @@ export class RoadDoc {
     const t = this.tileMembers(key);
     const next = this.tileNext.get(key) ?? freshTileNext(key);
     // DO NOT write a grown building no edit touched as a whole record: it is written back as its row (the generator's few numbers), made again where it is read.
-    const made = this.tileGrown.get(key);
+    const kept = this.tileGrown.get(key);
+    const made = kept?.grown;
     const asRows = new Set<number>();
-    if (made) for (const b of t.buildings) if (made.made.has(b)) asRows.add(b.id);
+    if (kept && made) {
+      // Each row's lot: a building whose lot was moved, curved, rezoned, split or joined since is written whole (its row would be made again on another lot).
+      const lotOf = new Map<number, number>();
+      for (let k = 0; k < made.rows.id.length; k++) lotOf.set(made.rows.id[k]!, made.rows.lot[k]!);
+      for (const b of t.buildings) {
+        if (!made.made.has(b)) continue;
+        const lot = lotOf.get(b.id);
+        if (lot !== undefined && this.lot(lot) !== undefined && this.lot(lot) === kept.lots.get(lot)) asRows.add(b.id);
+      }
+    }
     const grown = made && asRows.size ? selectRows(made.rows, asRows) : null;
     return {
       key, version,

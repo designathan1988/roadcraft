@@ -42,4 +42,22 @@ describe('a generated tile written by the page', () => {
     const other = records.grown!.id[1]!;
     expect(JSON.parse(JSON.stringify(again.get(other)))).toEqual(JSON.parse(JSON.stringify(before.get(other))));
   }, 10_000);
+
+  it('writes a grown building whole once its lot was edited (moved, rezoned, split): its row would grow again on another lot', () => {
+    const map = planWholeMap(options);
+    let pick: [number, number] | null = null, heat = Infinity;
+    for (let j = -3; j < 3; j++) for (let i = -3; i < 3; i++) { const h = map.tile(i, j).heat; if (h > 0.05 && h < heat) { heat = h; pick = [i, j]; } }
+    const { records } = buildStreamTilePair(options, pick![0], pick![1]);
+    const doc = new RoadDoc();
+    doc.loadTile(preparedRecords(prepareTile(records, false)));
+    const id = records.grown!.id[0]!, lotId = records.grown!.lot[0]!;
+    const lot = doc.lot(lotId)!;
+    // The lot replaced by an edit (a corner moved): a record of its own, no longer the one put in.
+    doc.lotStore.apply({ put: [{ ...lot, corners: lot.corners.map((p) => ({ x: p.x + 1, y: p.y })) }] }, 'test');
+    const edited = doc.tileRecords(records.key, records.version);
+    expect(edited.grown?.id ?? []).not.toContain(id);
+    expect((edited.buildings as Building[]).map((b) => b.id)).toContain(id);
+    // The other lots untouched: their buildings still rows.
+    expect(edited.grown!.id.length).toBeGreaterThan(0);
+  }, 10_000);
 });
