@@ -15,7 +15,7 @@ import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { FAR_ERROR, createMassCells } from './massCells';
-import { FrameScale, LandedMeasure, TYPICAL_LEVEL_TRIANGLES, SLACK, letGoPassed } from './frameBudget';
+import { FrameScale, LandedMeasure, TYPICAL_LEVEL_TRIANGLES, letBackFitting, letGoPassed } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
 import { FarLevels, farRunner } from './farLevels';
@@ -186,7 +186,8 @@ export function createBuildingLayer(): BuildingLayer {
   let activeSerial = 0;
   /** What the levels chosen draw, triangles: each near cell's level (shown, or as its kind is reckoned until it lands), and every mass resident (the cells', tiles' and plates': those hidden under a cell's detail counted too, so never under what is drawn). */
   const chosenTriangles = (): number => {
-    let n = gpuLedger.triangles('cell masses') + gpuLedger.triangles('tile masses') + gpuLedger.triangles('plate masses');
+    // DO NOT count every mass on the GPU: a cell in detail was counted twice, by its level and by its masses hidden under it (the view over its budget, cells cut that fit, conferencia 40).
+    let n = massCells.farTriangles();
     for (const key of massCells.nearKeys()) {
       const level = levelShown(key);
       if (level === 'cell') n += cells.get(key)!.part.triangles + (partCells.get(key)?.triangles ?? 0);
@@ -196,30 +197,26 @@ export function createBuildingLayer(): BuildingLayer {
     return n;
   };
   /** DO NOT fit the view's budget of triangles by raising one error scale for the whole view: every cell coarsened at once, the ones at the eye fell to their facade level; the farthest go first (`MassCells.cap`, as the bytes' budget), detail to facade level to masses, the nearest kept in detail */
-  /** The cells the budget held back, remembered (`MassCells.hold`): a cell capped stays capped until there is room, then ONE comes back a frame, the nearest first (let all back at once, the view passed the budget again and they were capped again: the city blinked, cells loaded and unloaded by turns). */
+  /** The cells the budget held back, remembered (`MassCells.hold`): a cell capped stays capped until its next level fits the budget with what the view draws, then comes back a level, the ones spanning most of the screen first (let all back at once, the view passed the budget again and they were capped again: the city blinked, cells loaded and unloaded by turns). */
   const heldFar = new Set<string>(), heldCoarse = new Set<string>();
   /** How far down the order the budget coarsens in a cell stands (`MassCells.cap`): the less a metre spans there, the sooner it goes; DO NOT rank it by its distance to the eye's point on the plan (two cells alike either side of it were ranked apart). */
   const rankOf = (key: string): number => -massCells.pixels(key, 1);
-  const nearestHeld = (held: ReadonlySet<string>): string | null => {
-    let best: string | null = null, bestD = Infinity;
-    for (const key of held) { const d = rankOf(key); if (d < bestD) { bestD = d; best = key; } }
-    return best;
-  };
   const capTriangles = (): void => {
     if (!eye || !Number.isFinite(frame.budget)) return;
-    const masses = gpuLedger.triangles('cell masses') + gpuLedger.triangles('tile masses') + gpuLedger.triangles('plate masses');
+    const masses = massCells.farTriangles();
     const fineBefore = new Map<string, boolean>();
     for (const key of massCells.nearKeys()) fineBefore.set(key, massCells.fine(key));
-    massCells.cap(eye.x, eye.y, frame.budget - masses, (key, fine) => landedTriangles.of(fine ? 'cell' : 'facade', key), forcedNear);
+    massCells.cap(eye.x, eye.y, frame.budget - masses, (key, fine) => landedTriangles.of(fine ? 'cell' : 'facade', key), forcedNear, (key) => massCells.massTriangles(key));
     for (const [key, wasFine] of fineBefore) {
       if (!massCells.near(key)) heldFar.add(key);
       else if (wasFine && !massCells.fine(key)) heldCoarse.add(key);
     }
     // The eye moved: a cell held that spans more of the screen than one the budget keeps goes back to the view (the one spanning least is capped in its place).
     letGoPassed(heldFar, heldCoarse, [...massCells.nearKeys()].map((key) => ({ key, fine: massCells.fine(key) })), rankOf);
-    if ((heldFar.size || heldCoarse.size) && chosenTriangles() < frame.budget * SLACK) {
-      const key = nearestHeld(heldCoarse) ?? nearestHeld(heldFar);
-      if (key !== null) { heldCoarse.delete(key); heldFar.delete(key); }
+    // Each held cell a level back while the view with it still fits (`letBackFitting`), not only under a share of the budget.
+    if (heldFar.size || heldCoarse.size) {
+      letBackFitting(heldFar, heldCoarse, chosenTriangles(), frame.budget, rankOf, (key, far) =>
+        (far ? landedTriangles.of('facade', key) - massCells.massTriangles(key) : landedTriangles.of('cell', key) - landedTriangles.of('facade', key)));
     }
     massCells.hold(heldFar, heldCoarse);
   };

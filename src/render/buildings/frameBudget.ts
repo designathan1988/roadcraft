@@ -21,6 +21,17 @@ export function letGoPassed(heldFar: Set<string>, heldCoarse: Set<string>, kept:
   for (const key of heldCoarse) if (away(key) < finest) heldCoarse.delete(key);
 }
 
+/** THE CELLS HELD BACK THAT FIT AGAIN (`layer.ts` capTriangles): each a level back, the ones spanning most of the screen first (`rank`, least first), while `drawn` with what it adds (`more`: far to its facade level, facade level to its detail) stays within `budget`; a far one comes back to its facade level only (held coarse), its detail when that fits too. DO NOT wait for the view to fall under `SLACK` of the budget: a still view never does, and the cells cut stayed cut (conferencia 40). */
+export function letBackFitting(heldFar: Set<string>, heldCoarse: Set<string>, drawn: number, budget: number, rank: (key: string) => number, more: (key: string, far: boolean) => number): void {
+  for (const key of [...new Set([...heldCoarse, ...heldFar])].sort((a, b) => rank(a) - rank(b))) {
+    const far = heldFar.has(key);
+    const add = more(key, far);
+    if (drawn + add > budget) continue;
+    drawn += add;
+    if (far) { heldFar.delete(key); heldCoarse.add(key); } else heldCoarse.delete(key);
+  }
+}
+
 /** The scale that fits `budget`: `count(scale)` chooses the levels at that scale and says their triangles; `floor`, the least scale the frame's time allows (`layer.ts` `pressTime`).
  *  - Over the budget: coarser, step by step, until it fits or the coarsest is reached. Under `SLACK` of it and above the floor: one step finer, kept only if that still fits. */
 export function fitErrorScale(scale: number, floor: number, budget: number, count: (scale: number) => number): number {

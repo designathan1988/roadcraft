@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createBuildingKit } from '@render/buildings/kit';
 import { cellMass } from '@render/buildings/cellArrays';
-import { ERROR_STEP, FrameScale, GAIN, LandedMeasure, MOST_ERROR_SCALE, MOST_TIME_SCALE, TIME_SLACK, TimeGovernor, fitErrorScale, letGoPassed } from '@render/buildings/frameBudget';
+import { ERROR_STEP, FrameScale, GAIN, LandedMeasure, MOST_ERROR_SCALE, MOST_TIME_SCALE, TIME_SLACK, TimeGovernor, fitErrorScale, letBackFitting, letGoPassed } from '@render/buildings/frameBudget';
 import { createMassCells } from '@render/buildings/massCells';
 import { emitMassing } from '@render/buildings/massing';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
@@ -207,6 +207,23 @@ describe('the cells held back by the budget', () => {
     letGoPassed(far, coarse, [{ key: '0,0', fine: true }, { key: '1,0', fine: true }, { key: '2,0', fine: false }], away(4));
     expect([...far]).toEqual([]);
     expect([...coarse]).toEqual([]);
+  });
+
+  it('come back a level each as soon as it fits, a still view well over a share of the budget; the nearest first, none past the budget', () => {
+    // The view draws 900 of 1000: no gap under the old 60 % share, ever, with the camera still.
+    const far = new Set(['3,0', '4,0']), coarse = new Set(['2,0']);
+    const rank = (key: string): number => Number(key.split(',')[0]);
+    // Each step adds 40: the nearest's detail, the next one's facade level; the last does not fit.
+    letBackFitting(far, coarse, 900, 1000, rank, () => 40);
+    expect([...coarse]).toEqual(['3,0']);
+    expect([...far]).toEqual(['4,0']);
+    // Nothing fits at 980: all stays.
+    letBackFitting(far, coarse, 980, 1000, rank, () => 40);
+    expect([...coarse]).toEqual(['3,0']);
+    // At 950 the nearest held steps back to its detail, the last still past the budget.
+    letBackFitting(far, coarse, 950, 1000, rank, () => 40);
+    expect([...coarse]).toEqual([]);
+    expect([...far]).toEqual(['4,0']);
   });
 });
 

@@ -66,6 +66,34 @@ describe('the detail drawn', () => {
     cells.dispose();
   });
 
+  it('counts the masses drawn only: a view in detail under its budget, its masses hidden under the detail, keeps every cell (conferencia 40)', () => {
+    const cells = row();
+    for (let i = 0; i < 5; i++) cells.setDetailed(`${i},0`, true);
+    const masses = [0, 1, 2, 3, 4].reduce((n, i) => n + cells.massTriangles(`${i},0`), 0);
+    expect(masses).toBeGreaterThan(0);
+    // Hidden under the detail: none of them drawn.
+    expect(cells.farTriangles()).toBe(0);
+    // The detail fits the budget alone; with the hidden masses counted it did not.
+    const budget = 500 + masses / 2;
+    cells.cap(CELL / 2, CELL / 2, budget - cells.farTriangles(), bytesOf, false, (key) => cells.massTriangles(key));
+    for (let i = 0; i < 5; i++) expect([cells.near(`${i},0`), cells.fine(`${i},0`)]).toEqual([true, true]);
+    cells.dispose();
+  });
+
+  it('reckons a cell sent far at its masses, drawn from then on', () => {
+    const cells = row();
+    for (let i = 0; i < 5; i++) cells.setDetailed(`${i},0`, true);
+    const mass = cells.massTriangles('4,0');
+    // Facade levels dearer than the masses; room for the first cell's detail (forced), three facade levels and the last cell's masses.
+    const facade = mass + 50;
+    const cost = (_key: string, fine: boolean): number => (fine ? facade + 100 : facade);
+    cells.cap(CELL / 2, CELL / 2, facade + 100 + 3 * facade + mass, cost, new Set(['0,0']), (key) => cells.massTriangles(key));
+    expect(cells.near('4,0')).toBe(false);
+    expect(cells.near('3,0')).toBe(true);
+    expect(cells.farTriangles()).toBe(mass);
+    cells.dispose();
+  });
+
   it('never moves a cell forced near (the one being edited)', () => {
     const cells = row();
     cells.cap(CELL / 2, CELL / 2, 0, bytesOf, new Set(['4,0']));
