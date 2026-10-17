@@ -2,6 +2,7 @@ import clipping from 'polygon-clipping';
 import { isSimple, pointInPolygon, signedArea } from '@core/polygon';
 import type { Vec2 } from '@core/vec2';
 import type { FaceId, RoofDetail, Volume } from './types';
+import { identityMemo } from '@core/identityMemo';
 import { TUNED_UNIT } from '../units';
 
 /** Polygon outlines are normalized to the volume's bounding rectangle. */
@@ -21,7 +22,21 @@ export const volumeSides = (v: Volume): FaceId[] => Array.from({ length: v.outli
 
 export interface EdgeFrame { x: number; y: number; tx: number; ty: number; nx: number; ny: number; length: number }
 
+/** A block's side frames as last worked out, and the numbers they were worked out from (the editor's operations move a block in place, `opScalePlan`). */
+interface KnownFrames { x: number; y: number; w: number; d: number; outline: Volume['outline']; readonly frames: (EdgeFrame | undefined)[] }
+const framesOf = identityMemo((v: Volume): KnownFrames => ({ x: v.x, y: v.y, w: v.w, d: v.d, outline: v.outline, frames: [] }));
+
+/** DO NOT make a side's frame (and the block's ring) again each time it is asked, by side and storey: kept on the block, worked out again only when its place, size or outline changed; frozen, read only. */
 export function edgeFrame(v: Volume, side: number): EdgeFrame {
+  const known = framesOf(v);
+  if (known.x !== v.x || known.y !== v.y || known.w !== v.w || known.d !== v.d || known.outline !== v.outline) {
+    known.x = v.x; known.y = v.y; known.w = v.w; known.d = v.d; known.outline = v.outline;
+    known.frames.length = 0;
+  }
+  return known.frames[side] ??= Object.freeze(sideFrame(v, side));
+}
+
+function sideFrame(v: Volume, side: number): EdgeFrame {
   const ring = localFootprint(v);
   let p = ring[side % ring.length]!, q = ring[(side + 1) % ring.length]!;
   const dx = q.x - p.x, dy = q.y - p.y;
