@@ -144,6 +144,8 @@ const NO_RUNTIME: LaneletRuntime = Object.freeze({
 export interface MesoTraffic {
   step(w: SimWorld, traffic: boolean): void;
   reset(): void;
+  /** Whether a point is inside its micro window (the flows at a junction are counted there). */
+  insideWindow(x: number, y: number): boolean;
 }
 
 export class SimWorld {
@@ -865,6 +867,13 @@ export class SimWorld {
     return changed;
   }
 
+  /** Whether the flows at a junction are counted now: inside the window the meso hands its cars to the micro simulation in (`meso.ts`), where vehicles drive through it; the conflicts' window without the meso. */
+  private countsAt(node: NodeId): boolean {
+    if (!this.meso) return this.conflicts.inWindowOf(node);
+    const n = this.doc.node(node);
+    return !!n && this.meso.insideWindow(n.x, n.y);
+  }
+
   /** The junctions the advisor still looks at (`stepControlAdvisor`): built again, counted, or not yet at rest; the others cannot change. */
   private readonly advised = new Set<NodeId>();
 
@@ -879,7 +888,7 @@ export class SimWorld {
       const n = this.doc.node(node);
       if (!junction || !n || n.control !== 'auto' || n.incident.length < 3) { this.advised.delete(node); continue; }
       // DO NOT judge a junction out of the micro window: its flows are not counted there (the meso drives it), and its lights would follow the camera. Kept as it stood, its rates held (not aged), until the window comes back.
-      if (this.microWindow && !this.conflicts.inWindowOf(node)) { this.flow.hold(node); continue; }
+      if (this.microWindow && !this.countsAt(node)) { this.flow.hold(node); continue; }
       this.flow.resume(node);
       const main = mainRoadLegs(this.doc, node);
       let major = 0, minorMax = 0, minorTotal = 0;
