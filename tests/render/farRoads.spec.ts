@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { roadRecipes } from '@render/bake/roadRecipes';
 import { TOP_LEVEL, emptyRecords, farKey, farNode } from '@render/buildings/farTiles';
 import type { FarTileSource } from '@render/buildings/farLevels';
-import { FarRoads, farRoadJob } from '@render/farRoads';
+import { FarRoads, type NearRoadKit, type RoadPayload, farRoadJob } from '@render/farRoads';
+import { MeshBasicMaterial, type Mesh } from 'three';
+import type { SceneMaterials } from '@render/materials';
+import { marksRoadSection } from '@render/mesh/roadEdges';
+import { passLook, surfaceLook } from '@render/roadSurfaces';
 import { type FarRoadCache, type FarRoadMesh, bakeTileRoads, farRoadTones, runFarRoadJob, tileNetwork } from '@render/farRoadTiles';
 import type { FarTreeRun } from '@render/farTree';
 import { surfaceTexels } from '@render/mesh/textureBaker';
@@ -64,10 +68,27 @@ function memoryCache(): FarRoadCache & { readonly puts: string[] } {
 }
 
 /** The far jobs run here, as a worker runs them: posted as the runner posts them (`farRoadJob`). */
-const runner = (cache: FarRoadCache): FarTreeRun<FarRoadMesh> => (job, done) => {
+const runner = (cache: FarRoadCache, kit: NearRoadKit | null = null): FarTreeRun<RoadPayload> => (job, done) => {
   let live = true;
-  void runFarRoadJob(farRoadJob(job), cache).then((reply) => { if (live) done(reply); });
+  void runFarRoadJob(farRoadJob(job, kit), cache).then((reply) => { if (live) done(reply); });
   return () => { live = false; };
+};
+
+/** Stand-in materials, one of each, reading every attribute a road surface may carry. */
+const made = new Map<PropertyKey, MeshBasicMaterial>();
+const materials = new Proxy({}, {
+  get: (_target, key) => {
+    if (key === 'scale') return new Proxy({}, { get: () => 4 });
+    let material = made.get(key);
+    if (!material) { material = new MeshBasicMaterial({ vertexColors: true }); marksRoadSection(material); made.set(key, material); }
+    return material;
+  },
+}) as unknown as SceneMaterials;
+const paint = new MeshBasicMaterial();
+/** The page's look of the roads, as the renderer hands it (`renderer.ts`). */
+const kit: NearRoadKit = {
+  look: () => passLook(materials, undefined), markingStyle: () => 'classic', naturalIsGround: () => false,
+  dress: (source, raised) => surfaceLook(source, raised, materials, undefined, () => paint),
 };
 
 /** 4 x 4 tiles round the origin, a cross of streets each. */
@@ -151,7 +172,7 @@ describe('a tile of roads baked from the store', () => {
     if (made.kind !== 'far') throw new Error(made.kind);
     const again = await runFarRoadJob(job, cache);
     if (again.kind !== 'far') throw new Error(again.kind);
-    expect(again.payload!.index).toEqual(made.payload!.index);
+    expect((again.payload as FarRoadMesh).index).toEqual((made.payload as FarRoadMesh).index);
     expect(cache.puts).toEqual([`test:${node}`]);
   });
 
@@ -200,6 +221,32 @@ describe('the far roads chosen top down', () => {
     expect(held.get(loaded)).toBe(0);
     for (const [tile, count] of held) if (tile !== loaded) expect(count).toBe(1);
     far.dispose();
+  });
+
+  it("draws a tile's near level where the view wants its detail (the region's surfaces, materials and all), its far level from afar", async () => {
+    const cache = memoryCache();
+    const tiles = world();
+    const roads = new FarRoads(() => null, runner(cache, kit), 'test:', kit);
+    roads.setSource(storeOf(tiles), () => false);
+    for (const [key, records] of tiles) roads.stored(key, records.version);
+    // 300 m over tile (0, 0): a metre spans 3 px there, past what the far level may leave out where the cells come near.
+    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
+    expect(roads.shownKeys()).not.toContain(farKey(0, 0, 0));
+    const near = roads.group.children.find((o) => o.name === 'roads-near' && o.visible)!;
+    const asphalt = near.children.find((o) => o.name === 'asphalt') as Mesh | undefined;
+    expect(asphalt).toBeDefined();
+    expect(asphalt!.material).toBe(materials.asphalt);
+    expect(near.children.some((o) => o.name.startsWith('markings-') && (o as Mesh).material === paint)).toBe(true);
+    // From 6 km up: the far levels, the near one let go.
+    const afar = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(6_000), 1000, null);
+    await until(afar, () => roads.nearKeys().length === 0 && roads.waiting === 0);
+    expect(roads.group.children.some((o) => o.name === 'roads-near')).toBe(false);
+    // Back over it: its near level read from where it was kept, not baked again.
+    const puts = cache.puts.length;
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
+    expect(cache.puts.slice(puts).filter((key) => key.includes('n0:'))).toEqual([]);
+    roads.dispose();
   });
 
   it('bakes again only the tile whose version changed and its ancestors', async () => {

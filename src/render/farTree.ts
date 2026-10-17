@@ -1,4 +1,4 @@
-import { Box3, type Frustum, Group, type Mesh } from 'three';
+import { Box3, type Frustum, Group, type Mesh, type Object3D } from 'three';
 import { Digest } from '@core/digest';
 import { type WholeMapOptions, worldKey } from '@world/cityGen/wholeMap';
 import { tileKey, tileOfKey } from '@world/tiles';
@@ -9,6 +9,7 @@ import { TOP_LEVEL, emptyRecords, farKey, nodeSide } from './buildings/farTiles'
 import { LEVEL_MASS_KEY } from './buildings/farGrid';
 import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
 import { cancelWarm, warmLooseAhead } from './uploads';
+import { nearSig } from './nearRoadTiles';
 import { geometryCost, gpuLedger } from './gpuLedger';
 
 /** A QUADTREE OF LEVELS BAKED PER TILE IN WORKERS FROM THE TILE STORE (CLAUDE.md "Streaming world"), for any kind of thing drawn from afar: the buildings (`buildings/farLevels.ts`), the roads (`farRoads.ts`) */
@@ -56,6 +57,8 @@ export interface FarTreeJob {
   readonly records?: TileRecords;
   /** The store's map the worker reads the tile from itself (`core/storedTiles.ts`), when it can (`FarTileSource.workersRead`): DO NOT drop it on the way to the worker. */
   readonly store?: string;
+  /** A tile's near level (`FarKind.near`): the tiles it reads, each at its version (the tile first, then its neighbours stored); the page's records of them, in that order, where no worker reads the store. */
+  readonly near?: { readonly tiles: readonly { readonly key: number; readonly version: number }[]; readonly records?: readonly TileRecords[] };
 }
 
 /** A job's answer, as `buildings/farTiles.ts` `FarReply`, its mesh's data a `payload`. */
@@ -88,6 +91,26 @@ export interface FarKind<P> {
   levelError(k: number): number;
   /** The least pixels a level's error may span before it gives way to its quarters (none: the near levels' own, `massCells.ts` `measureSeen`): what a level draws never smaller on the screen than this asks. */
   levelPixels?(k: number): number;
+  /** A level under the tiles (the roads' near level, `nearRoadTiles.ts`); none: a tile is the finest the tree draws (the buildings', whose cells draw the near). */
+  readonly near?: FarNear<P>;
+}
+
+/** A kind's level under its tiles: what a tile's own level leaves out that it draws (m: wanted where that spans the pixels allowed, as a cell comes near, `massCells.ts`), and its meshes. */
+export interface FarNear<P> {
+  readonly error: number;
+  land(payload: P): FarNearLanded;
+  /** What else it is baked from that the page may change (the roads' paint style): in its version. */
+  version?(): string;
+}
+
+/** A tile's near level made of its data: what is drawn, its meshes (sent to the GPU before it is), what it holds, its highest point. */
+export interface FarNearLanded {
+  readonly group: Object3D;
+  readonly meshes: readonly Mesh[];
+  readonly bytes: number;
+  readonly triangles: number;
+  readonly top: number;
+  dispose(): void;
 }
 
 /** HOW FAR THE TREE IS DRAWN ROUND THE EYE (its stored tiles and the plan): the view's reach as the renderer gives it (the far plane in perspective, the frame from above); asked with none, as the far plane stands for an eye this high (`isoViewport.ts`: four times its distance and 2.4 km); never past a top-level node's side (3 x 3 roots at most)
@@ -100,6 +123,9 @@ const PLAN_MAX_REACH = nodeSide(TOP_LEVEL);
 const viewReach = (e: { readonly z: number; readonly reach: number }): number =>
   Math.min(PLAN_MAX_REACH, Number.isFinite(e.reach) ? e.reach : PLAN_PER_HEIGHT * e.z + PLAN_MARGIN);
 
+
+/** A tile's near level's key in the store of bakes (`farKey`'s level 0 under it: `n0:i,j`). */
+const nearKeyOf = (n: { readonly i: number; readonly j: number }): string => `n0:${n.i},${n.j}`;
 
 /** A node of the quadtree: a tile (level 0) or 2^k tiles a side; where the store has tiles, and where the plan is drawn. */
 interface FarNode {
@@ -136,6 +162,13 @@ interface FarNode {
   /** The version a worker failed to bake: not asked again. */
   failed: string | null;
   queued: boolean;
+  /** A tile's near level (`FarKind.near`): drawn, and on its way to the GPU; the version of the tiles it reads it is of, asked, failed. */
+  near: FarNearLanded | null;
+  nearComing: FarNearLanded | null;
+  nearLanded: string | null;
+  nearAsked: string | null;
+  nearCancel: (() => void) | null;
+  nearFailed: string | null;
 }
 
 /** The eye the nodes were last chosen for (map x/y, height; a metre's pixels at a metre, or the orthographic view's; how far the view reaches, Infinity in perspective). */
@@ -163,6 +196,11 @@ export class FarTree<P> implements FarTiles {
   private readonly fetchQueue: FarNode[] = [];
   private fetching = 0;
   private readonly resident = new Set<FarNode>();
+  /** The tiles whose near level is drawn, wanted this choice, and held on the GPU (`FarKind.near`). */
+  private nearShown = new Set<FarNode>();
+  private readonly nearDrawing: FarNode[] = [];
+  private readonly nearWanted: FarNode[] = [];
+  private readonly nearResident = new Set<FarNode>();
   private readonly seen: Seen = { perMetre: 0, allowed: 0, across: 0 };
   private readonly ranked: Seen = { perMetre: 0, allowed: 0, across: 0 };
   private readonly eyeNow: Eye = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null, reach: Infinity };
@@ -192,6 +230,11 @@ export class FarTree<P> implements FarTiles {
   /** The nodes drawn now, by key. */
   shownKeys(): string[] {
     return [...this.shown].map((n) => n.key);
+  }
+
+  /** The tiles whose near level is drawn now, by key (`FarKind.near`). */
+  nearKeys(): string[] {
+    return [...this.nearShown].map((n) => n.key);
   }
 
   setSource(source: FarTileSource | null, isLoaded: (tileKey: number) => boolean): void {
@@ -250,6 +293,8 @@ export class FarTree<P> implements FarTiles {
     this.eye = eye;
     this.drawing.length = 0;
     this.desired.length = 0;
+    this.nearDrawing.length = 0;
+    this.nearWanted.length = 0;
     this.wanting = 0;
     this.reach = viewReach(eye);
     for (const root of this.roots.values()) this.visit(root);
@@ -260,13 +305,24 @@ export class FarTree<P> implements FarTiles {
       if (wanted.has(n)) n.mesh!.visible = false;
       else this.dropMesh(n);
     }
+    const nearNow = new Set(this.nearDrawing), nearWanted = new Set(this.nearWanted);
+    for (const n of [...this.nearResident]) {
+      if (nearNow.has(n)) continue;
+      if (nearWanted.has(n)) n.near!.group.visible = false;
+      else this.dropNear(n);
+    }
     this.highest = -Infinity;
     for (const n of now) {
       if (!n.mesh) continue;
       n.mesh.visible = true;
       this.highest = Math.max(this.highest, n.top);
     }
+    for (const n of nearNow) {
+      n.near!.group.visible = true;
+      this.highest = Math.max(this.highest, n.near!.top);
+    }
     this.shown = now;
+    this.nearShown = nearNow;
   }
 
   /** A WebGL context restored: every mesh made again from the store, its arrays having been let go (`gpuOnly.ts`). */
@@ -280,8 +336,15 @@ export class FarTree<P> implements FarTiles {
       n.queued = false;
     }
     for (const n of [...this.resident]) this.dropMesh(n);
+    for (const n of this.nodes.values()) {
+      n.nearCancel?.();
+      n.nearCancel = null;
+      n.nearAsked = null;
+      this.dropNear(n);
+    }
     this.fetchQueue.length = 0;
     this.shown.clear();
+    this.nearShown.clear();
     this.highest = -Infinity;
   }
 
@@ -314,6 +377,7 @@ export class FarTree<P> implements FarTiles {
       x0: i * side, y0: j * side, x1: (i + 1) * side, y1: (j + 1) * side, top: 0,
       tiles: 0, loaded: 0, version: 0, inDoc: false, sig: null, baked: null, landed: null, mesh: null, error: this.kind.levelError(k),
       asked: null, askedWant: false, cancel: null, blocked: null, waitingFor: null, blockedWant: false, failed: null, queued: false,
+      near: null, nearComing: null, nearLanded: null, nearAsked: null, nearCancel: null, nearFailed: null,
     };
     this.nodes.set(key, n);
     if (parent) parent.children[(i - 2 * parent.i) + 2 * (j - 2 * parent.j)] = n;
@@ -338,13 +402,18 @@ export class FarTree<P> implements FarTiles {
     for (const c of n.children) if (c) this.forget(c);
     n.cancel?.();
     n.cancel = null;
+    n.nearCancel?.();
+    n.nearCancel = null;
     this.dropMesh(n);
+    const hadNear = n.nearLanded !== null || n.near !== null;
+    this.dropNear(n);
     this.shown.delete(n);
     this.nodes.delete(n.key);
     if (n.parent) n.parent.children[(n.i - 2 * n.parent.i) + 2 * (n.j - 2 * n.parent.j)] = null;
     else this.roots.delete(n.key);
     const prefix = this.keyPrefix;
     if (prefix !== null && n.baked !== null) forgetDerivedKeys(prefix, n.k === 1 ? [n.key, `${n.key}${LEVEL_MASS_KEY}`] : [n.key]);
+    if (prefix !== null && hadNear) forgetDerivedKeys(prefix, [nearKeyOf(n)]);
   }
 
   /** The version of the tiles under a node: a tile's own, or its quarters' digested (a node with none is never asked: it is let go, `forget`). */
@@ -394,6 +463,12 @@ export class FarTree<P> implements FarTiles {
     if (whole) {
       this.desired.push(n);
       this.ask(n, true);
+      // A tile's near level where the view wants its detail (`FarKind.near`): drawn once it came (the last one made stands while the next is baked), the tile's own level until then.
+      if (n.k === 0 && this.kind.near && this.wantsNear(n)) {
+        this.nearWanted.push(n);
+        this.askNear(n);
+        if (n.near !== null) { this.nearDrawing.push(n); return true; }
+      }
       if (n.landed !== null) { this.drawing.push(n); return true; }
       if (this.inView(n)) this.wanting++;
       // Not come yet: what stands under it from before (coarsening, Cesium keeps the children drawn until the parent comes).
@@ -413,6 +488,136 @@ export class FarTree<P> implements FarTiles {
       return true;
     }
     return false;
+  }
+
+  /** Whether the view wants a tile's near level: what its own level leaves out spans the pixels allowed (with hysteresis, as a cell near stays near), and it is in the view or its near level is held already (DO NOT bake the tiles behind the camera: a second each). */
+  private wantsNear(n: FarNode): boolean {
+    const e = this.eyeNow;
+    measureSeen(this.seen, e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, n.x0, n.y0, n.x1, n.y1, n.top);
+    if (this.kind.near!.error * this.seen.perMetre < this.seen.allowed * (this.nearShown.has(n) ? HYSTERESIS : 1)) return false;
+    return n.near !== null || this.inView(n);
+  }
+
+  /** The tile and its neighbours stored, at their versions (the tile first): what its near level reads. */
+  private nearTiles(n: FarNode): { key: number; version: number }[] {
+    const out = [{ key: tileKey(n.i, n.j), version: n.version }];
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        if (di === 0 && dj === 0) continue;
+        const key = tileKey(n.i + di, n.j + dj);
+        const leaf = this.leaves.get(key);
+        if (leaf) out.push({ key, version: leaf.version });
+      }
+    }
+    return out;
+  }
+
+  /** A tile's near level asked of the workers at the versions of the tiles it reads; once. */
+  private askNear(n: FarNode): void {
+    const tiles = this.nearTiles(n);
+    const sig = `${nearSig(tiles)}:${this.kind.near!.version?.() ?? ''}`;
+    if (n.nearLanded === sig || n.nearAsked === sig || n.nearFailed === sig) return;
+    n.nearCancel?.();
+    n.nearAsked = sig;
+    this.submitNear(n, sig, tiles);
+  }
+
+  private submitNear(n: FarNode, sig: string, tiles: readonly { key: number; version: number }[], records?: readonly TileRecords[]): void {
+    const job: FarTreeJob = {
+      node: nearKeyOf(n), k: -1, i: n.i, j: n.j, sig, want: true, prefix: this.keyPrefix,
+      near: { tiles, ...(records ? { records } : {}) },
+      ...(!records && this.source?.workersRead ? { store: this.source.workersRead } : {}),
+    };
+    n.nearCancel = this.run(job, (reply) => this.answerNear(n, reply, tiles));
+  }
+
+  private answerNear(n: FarNode, reply: FarTreeReply<P>, tiles: readonly { key: number; version: number }[]): void {
+    if (this.nodes.get(n.key) !== n || reply.sig !== n.nearAsked) return;
+    n.nearCancel = null;
+    switch (reply.kind) {
+      case 'far':
+        // Still asked while it goes to the GPU (`landNear`): DO NOT ask it again every frame meanwhile.
+        this.landNear(n, reply.payload, reply.sig);
+        break;
+      case 'farRecords': {
+        // No worker reads the store (the tests): the page reads the tiles, one empty where the store has none.
+        const source = this.source;
+        if (!source) { n.nearAsked = null; break; }
+        const sig = reply.sig;
+        void Promise.all(tiles.map((t) => source.records(t.key).then((r) => r ?? emptyRecords(t.key, t.version)))).then((records) => {
+          if (this.nodes.get(n.key) === n && n.nearAsked === sig) this.submitNear(n, sig, tiles, records);
+        }, (error: unknown) => {
+          if (this.nodes.get(n.key) === n && n.nearAsked === sig) { n.nearAsked = null; n.nearFailed = sig; }
+          if (!this.warned) { this.warned = true; console.warn(`[${this.kind.name}] a tile could not be read from the store`, error); }
+        });
+        break;
+      }
+      case 'farError':
+        if (!this.warned) { this.warned = true; console.warn(`[${this.kind.name}] a near level could not be baked; its far level stands`, reply.message); }
+        n.nearAsked = null;
+        n.nearFailed = reply.sig;
+        break;
+      default:
+        n.nearAsked = null;
+        n.nearFailed = reply.sig;
+    }
+    this.again();
+  }
+
+  /** A tile's near level come (null: no road near): sent to the GPU, and drawn in place of the one before only once it is there (DO NOT upload a tile's roads in a frame: tens of megabytes). */
+  private landNear(n: FarNode, payload: P | null, sig: string): void {
+    this.nearDropComing(n);
+    if (payload === null) {
+      this.dropNear(n);
+      n.nearLanded = sig;
+      if (n.nearAsked === sig) n.nearAsked = null;
+      return;
+    }
+    const landed = this.kind.near!.land(payload);
+    landed.group.visible = false;
+    this.group.add(landed.group);
+    n.nearComing = landed;
+    gpuLedger.set(landed.group, `far ${this.kind.name} near`, landed.bytes, landed.triangles);
+    const put = (): void => {
+      if (n.nearComing !== landed) return;
+      n.nearComing = null;
+      // The one before goes now: the new one is on the GPU.
+      if (n.near) this.letGoNear(n.near);
+      n.near = landed;
+      n.nearLanded = sig;
+      if (n.nearAsked === sig) n.nearAsked = null;
+      this.nearResident.add(n);
+      this.again();
+    };
+    const sent = warmLooseAhead(landed.meshes, () => this.pixelsOf(n));
+    if (sent) void sent.then(put); else put();
+  }
+
+  /** What a tile's near level holds let go: off the GPU's book, out of the upload queue, its meshes freed. */
+  private letGoNear(landed: FarNearLanded): void {
+    gpuLedger.remove(landed.group);
+    cancelWarm(landed.meshes);
+    this.group.remove(landed.group);
+    landed.dispose();
+  }
+
+  /** A near level on its way to the GPU given up (a newer one came, or the tile went). */
+  private nearDropComing(n: FarNode): void {
+    const coming = n.nearComing;
+    if (!coming) return;
+    n.nearComing = null;
+    this.letGoNear(coming);
+  }
+
+  /** A tile's near level let go, drawn or coming: baked again when wanted. */
+  private dropNear(n: FarNode): void {
+    // One let go on its way to the GPU closes its ask (none is under way): asked again when wanted.
+    if (n.nearComing && !n.nearCancel) n.nearAsked = null;
+    this.nearDropComing(n);
+    if (n.near) this.letGoNear(n.near);
+    n.near = null;
+    n.nearLanded = null;
+    this.nearResident.delete(n);
   }
 
   /** The nodes under one drawn already, without asking anything: whether they cover it. */

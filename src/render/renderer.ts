@@ -44,7 +44,7 @@ import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
 import { GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, roadsToRead, type RoadElevation } from '@world/elevation';
 import { RoadStations } from './roadStations';
-import { FOOTWAY_RISE, sidewalkHalf } from '@world/roadTypes';
+import { FOOTWAY_RISE, LANE_LINE, sidewalkHalf } from '@world/roadTypes';
 import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
 import { type PavingData, type PavingSource, pavedHeightFrom } from '@world/paving';
 import type { RoadStructure } from '@world/structures';
@@ -62,7 +62,7 @@ import { renderTargetsBytes } from './targetBytes';
 import { deviceGpuCap, gpuLedger, readGpuDevice } from './gpuLedger';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
-import { buildRoadSurfaces, disposeSurfaceReuse, roadSurfaceSteps, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
+import { buildRoadSurfaces, disposeSurfaceReuse, passLook, roadSurfaceSteps, surfaceLook, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { SurfaceInputs } from './roadSurfaceInputs';
 import { forgetDerivedKeys, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
 import { disposeMesh } from './mesh/surfaceMesh';
@@ -569,7 +569,14 @@ export function createSceneRenderer(
   scene.add(world);
   /** The roads of the tiles not in the page's document (`farRoads.ts`), on the ground shared with the workers. */
   const farRoadGround = (): SharedGroundData | null => (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null;
-  const farRoads = new FarRoads(farRoadGround);
+  // Each tile's near level where the view wants its detail and the region does not draw it (`nearRoadTiles.ts`): the region's look of the roads, the same materials.
+  const nearPaintFor = (color: string): Material => surfaceReuse.paint.get(color) ?? surfaceReuse.paint.get(LANE_LINE) ?? materials.asphalt;
+  const farRoads = new FarRoads(farRoadGround, undefined, undefined, {
+    look: () => passLook(materials, terrain.vergeMaterial),
+    markingStyle: () => worldNet?.doc.markingStyle ?? 'classic',
+    naturalIsGround: () => buildings.farEnv().naturalIsGround,
+    dress: (source, raised) => surfaceLook(source, raised, materials, terrain.vergeMaterial, nearPaintFor),
+  });
   world.add(farRoads.group);
   /** The streamed world's active tiles as the near products read them (`activeTiles.ts`, `setActiveTiles`): the kept ring's items are the far levels'. */
   const activeTiles = new ActiveTiles();

@@ -15,6 +15,7 @@ import { farKey, readStored } from './buildings/farGrid';
 import { medianOf } from './roadSurfaceRings';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR, FOOTWAY_TINT } from './roadTones';
 import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
+import { type NearRoadAsk, type NearRoadMesh, nearRoadBuffers, runNearRoadJob } from './nearRoadTiles';
 
 /** THE ROADS FAR FROM THE CAMERA, BAKED PER TILE IN WORKERS FROM THE TILE STORE (CLAUDE.md "Streaming world"): nothing of their records on the page */
 /** A tile's roads built alone (its segments and borrowed ends, as `editor/wholeMapTile.ts` builds a tile), drawn flat on the ground as one mesh: carriageways, kerbs, footways and medians, each the colour its near material reads from afar */
@@ -388,11 +389,13 @@ export interface FarRoadJob {
   readonly store?: string;
   /** The ground shared with the workers (`sharedGround.ts`); none: flat at 0. */
   readonly ground?: SharedGroundData | null;
+  /** A tile's near level (`nearRoadTiles.ts`): what it reads besides the roads; its node is the tile's under level 0. */
+  readonly near?: NearRoadAsk;
 }
 
 export type FarRoadReply =
-  /** Baked and kept: its mesh when wanted (null: no road seen under it). */
-  | { readonly kind: 'far'; readonly node: string; readonly sig: string; readonly payload: FarRoadMesh | null }
+  /** Baked and kept: its mesh when wanted (null: no road seen under it); a tile's near level's (`nearRoadTiles.ts`) for a near job. */
+  | { readonly kind: 'far'; readonly node: string; readonly sig: string; readonly payload: FarRoadMesh | NearRoadMesh | null }
   /** A tile not kept at that version and no store this worker reads: its roads wanted from the page. */
   | { readonly kind: 'farRecords'; readonly node: string; readonly sig: string }
   /** Children not kept at their versions: baked first. */
@@ -402,7 +405,8 @@ export type FarRoadReply =
   | { readonly kind: 'farError'; readonly node: string; readonly sig: string; readonly message: string };
 
 /** Every buffer of a reply. */
-export const farRoadReplyBuffers = (reply: FarRoadReply): ArrayBuffer[] => (reply.kind === 'far' && reply.payload ? farRoadBuffers(reply.payload) : []);
+export const farRoadReplyBuffers = (reply: FarRoadReply): ArrayBuffer[] =>
+  (reply.kind === 'far' && reply.payload ? ('near' in reply.payload ? nearRoadBuffers(reply.payload) : farRoadBuffers(reply.payload)) : []);
 
 /** What a node keeps: the version of its tiles and its mesh. */
 interface RoadEntry {
@@ -424,6 +428,8 @@ export async function keepTileFarRoads(records: TileRoads, version: number, grou
 
 /** DO NOT bake what is kept: a node is baked once per version of its tiles (kept under its key with that version), from its tile's records or its children's bakes, never from the page's document */
 export async function runFarRoadJob(job: FarRoadJob, cache: FarRoadCache): Promise<FarRoadReply> {
+  // A tile's near level: its own job, in the same service (the roads' code warm in the same workers).
+  if (job.near) return runNearRoadJob({ ...job, near: job.near }, cache);
   const { node, sig, prefix, k, i, j } = job;
   // DO NOT simplify before the simplifier's WebAssembly is made (meshoptimizer README, `MeshoptSimplifier.ready`).
   await MeshoptSimplifier.ready;
