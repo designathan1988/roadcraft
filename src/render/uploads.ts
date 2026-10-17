@@ -236,7 +236,7 @@ export function warmAhead(mesh: Mesh, geometries: readonly BufferGeometry[]): Pr
   if (!warmer) return Promise.resolve();
   return new Promise((done) => toWarm.push({ mesh, geometries, done }));
 }
-/** Meshes not in the scene yet (a batch of buildings put together to replace the one drawn); `priority`: the pixels of error their absence leaves on the screen, the largest sent first. Settles once their buffers are on the GPU and their programs, lit and in the shadow, are built (`programsReady`). */
+/** Meshes not in the scene yet (a batch of buildings put together to replace the one drawn); `priority`: the pixels of error their absence leaves on the screen, the largest sent first. */
 export function warmLooseAhead(meshes: readonly Mesh[], priority: () => number = () => 0): Promise<void> | null {
   // Nothing to wait for where no frame warms (tests, before the first frame).
   if (!warmer || meshes.length === 0) return null;
@@ -296,14 +296,8 @@ export function drainWarm(renderer: WebGLRenderer): void {
   while (toWarmLoose.length > 0 && (budget === UPLOAD_BYTES || budget > 0)) {
     const job = toWarmLoose.pop()!;
     budget -= meshBytes(job.mesh);
-    try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { void programsReady(job.mesh).then(job.done); }
+    try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { job.done(); }
   }
-}
-
-/** DO NOT let a mesh be drawn before its programs are built (a program first used in the frame's draw stalls it, three's onFirstUse): its own and its shadow's, compiled ahead at the next drain (`drainCompiles`, KHR_parallel_shader_compile); what waits for the mesh waits for them too. */
-function programsReady(mesh: Mesh): Promise<unknown> {
-  const shadow = shadowStandIn(mesh);
-  return Promise.all([compileAhead(mesh), shadow ? compileAhead(shadow, true) : null]);
 }
 /** Buffers sent to the GPU a frame at most, bytes: 16 MiB took the page up to 42 ms in one frame of the conf27 move (bufferData at ~2.6 ms a MiB): 4 MiB, ~10 ms there. */
 const UPLOAD_BYTES = 4 * 1024 * 1024;
