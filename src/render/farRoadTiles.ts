@@ -8,7 +8,7 @@ import { levelRingsOf } from '@world/surfaces';
 import { TILE, tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { METERS_PER_UNIT, m } from '@world/units';
-import { type WriteBudget, derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from './derivedCache';
+import { derivedCacheOpen, keepDerivedDurably, readDerived } from './derivedCache';
 import { surfaceShape } from './mesh/tileShape';
 import { farKey, readStored } from './buildings/farGrid';
 import { medianOf } from './roadSurfaceRings';
@@ -351,8 +351,6 @@ export const derivedRoadCache: FarRoadCache = {
   put: async (key, value) => { await (await keepDerivedDurably(key, value)).committed; },
 };
 
-/** The same store, a write resolved once queued (`keepDerivedQueued`): for a tile's maker, whose later readers' transactions come after its write's. */
-export const queuedRoadCache = (budget: WriteBudget): FarRoadCache => ({ ready: derivedCacheOpen, get: (key) => readDerived(key), put: (key, value) => keepDerivedQueued(key, value, budget) });
 
 /** A far job (`farTree.ts` asks it, `farRoads.worker.ts` runs it) */
 export interface FarRoadJob {

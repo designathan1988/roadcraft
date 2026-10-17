@@ -153,12 +153,29 @@ export async function keepDerivedDurably(key: string, value: unknown): Promise<{
   }
 }
 
-/** Keeps a value under `key`, resolved once the write is queued, not committed: a read asked after it, from any thread, sees it (IndexedDB starts a read-only transaction only once the read/write transactions created before it on its store are finished, W3C IndexedDB "transaction scheduling"). DO NOT wait for the commit where nothing needs it: a tile's maker held its lane 5-8 s a tile for it (2026-10-16, the workers' profile).
- *  DO NOT queue without bound: the bytes of the writes not committed yet are held under `budget` (`WriteBudget`), a write past it waits for the earlier ones to commit - the V8 cage the page and its workers share. */
-export async function keepDerivedQueued(key: string, value: unknown, budget: WriteBudget): Promise<void> {
-  const release = await budget.take(bytesOf(value));
-  const { committed } = await keepDerivedDurably(key, value);
-  void committed.then(release);
+/** Keeps `entries` in one transaction, resolved once the write is queued, not committed: a read asked after it, from any thread, sees it (IndexedDB starts a read-only transaction only once the read/write transactions created before it on its store are finished, W3C IndexedDB "transaction scheduling"); DO NOT wait for the commit where nothing needs it (a tile's maker held its lane 5-8 s a tile for it, 2026-10-16), nor queue without bound (`budget`, the V8 cage), nor commit a tile's far levels key by key (its masses, its plate, its boxes, its roads: four commits a tile, the generator's lanes waiting on them, 2026-10-17). Resolved once queued; the budget freed on the commit. */
+export async function keepDerivedQueuedMany(entries: readonly (readonly [string, unknown])[], budget: WriteBudget): Promise<void> {
+  if (!entries.length) return;
+  let bytes = 0;
+  for (const [, value] of entries) bytes += bytesOf(value);
+  const release = await budget.take(bytes);
+  const db = await database();
+  if (!db) { release(); return; }
+  try {
+    const tx = db.transaction(STORE, 'readwrite', RELAXED);
+    tx.oncomplete = release;
+    tx.onabort = release;
+    tx.onerror = release;
+    const store = tx.objectStore(STORE);
+    for (const [key, value] of entries) {
+      const request = store.put(value, key);
+      request.onerror = (event) => event.preventDefault();
+    }
+  } catch (error) {
+    release();
+    // Not kept (no space, private window): its far jobs bake it again.
+    console.error('[derived] a tile\'s far levels were not kept', error);
+  }
 }
 
 /** THE BYTES OF WRITES A THREAD HAS HANDED INDEXEDDB AND NOT SEEN COMMITTED, held under `most` (the V8 cage, the defect that kills the runs): one per thread that writes the derived cache, made where its service is served (`cityTile.worker.ts`, `renderer.ts`). */

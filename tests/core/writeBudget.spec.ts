@@ -29,7 +29,7 @@ describe("the page's writes to the derived cache", () => {
   });
 });
 
-describe("a worker's queued writes (`keepDerivedQueued`)", () => {
+describe("a worker's queued writes (`keepDerivedQueuedMany`)", () => {
   it('wait for the earlier ones to commit past the ceiling, a lone one whatever its size', async () => {
     const budget = new WriteBudget(40 * MB);
     const first = await budget.take(30 * MB);
