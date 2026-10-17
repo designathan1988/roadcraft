@@ -1,10 +1,7 @@
-import { migrateBuilding } from '@world/buildings/serialize';
-import type { Building } from '@world/buildings/types';
 import { onCarriageway } from '@world/carriageway';
-import { tileBuildingsOf } from '@world/growth/grownRows';
 import type { PlantedTree } from '@world/trees';
 import { m } from '@world/units';
-import { createCoverIndex } from './buildings/layerCells';
+import { stagesCover } from './nearBuildings';
 import { keepCellKey, keepCellOf } from './candidateKeep';
 import { keepCellAt } from './cellKeeps';
 import type { TreePlacement } from './groundCover';
@@ -29,25 +26,21 @@ export interface PlantedBake {
 /** THE TILE'S OWN PLANTED TREES (each in the tile it stands in), standing where the page's keep lets them (`renderer.ts` plantedKeeps: off the roads, out of the buildings of the 3 x 3 read), cell by cell among the standing trees of the cells round it (its neighbours' too) */
 export const plantedBaker: NearBaker<PlantedBake | null, PlantedExtra> = {
   parts: ['rest'],
-  // The roads and the buildings of a tile with trees only.
-  more: ['roads', 'buildings'],
+  // The roads of a tile with trees only; the buildings read off each tile's kept stage (`nearBuildings.ts`), never made again from their rows here.
+  more: ['roads'],
+  buildings: 'around',
   has: (tiles) => tiles[0]!.trees.length > 0,
   around: true,
   // A tree stands on the ground as drawn at its foot.
   groundReach: m(8),
   bake(area, extra) {
     const net = area.net();
-    const buildings: Building[] = [];
-    for (const records of area.tiles) {
-      for (const raw of tileBuildingsOf(records)) { const b = migrateBuilding(raw); if (b) buildings.push(b); }
-    }
-    const cover = createCoverIndex();
-    cover.index(buildings);
+    const covers = stagesCover(area.tiles.map((_, n) => area.buildings(n)));
     /** Each keep cell's standing trees, the tile's and its neighbours', and the tile's own. */
     const standing = new Map<number, TreePlacement[]>(), own = new Map<number, TreePlacement[]>();
     for (const records of area.tiles) {
       for (const t of records.trees as readonly PlantedTree[]) {
-        if (onCarriageway(net, t) || cover.covers(t.x, t.y)) continue;
+        if (onCarriageway(net, t) || covers(t.x, t.y)) continue;
         const key = keepCellAt(t.x, t.y);
         const tree: TreePlacement = { x: t.x, y: t.y, z: area.groundAt(t.x, t.y), size: t.height, yaw: t.yaw, seed: t.seed, species: 'broadleaf' };
         for (const map of records === area.tile ? [standing, own] : [standing]) {
@@ -74,7 +67,8 @@ export function plantedProduct(forest: () => PlantCells | null, variants: () => 
   return {
     kind: 'planted',
     // A grown tree, a few metres across, seen as its picture from afar (`plantImpostors.ts`).
-    cover: m(5) * m(5),
+    // Out to where a tree or a pier is a couple of pixels tall (DO NOT reach out to 6 km: dozens of tiles of roads solved, behind the street's cells).
+    cover: m(3) * m(3),
     top: m(20),
     enabled: () => forest() !== null,
     extra: (): PlantedExtra => ({ variants: variants() }),

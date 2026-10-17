@@ -1,14 +1,11 @@
 import { Digest } from '@core/digest';
 import { PLATE_SIZE, plateOf } from '@world/bounds';
-import { migrateBuilding } from '@world/buildings/serialize';
-import type { Building } from '@world/buildings/types';
 import { onCarriageway } from '@world/carriageway';
-import { tileBuildingsOf } from '@world/growth/grownRows';
 import { type CoverKind, type PaintDab, isCoverKind } from '@world/terrainPaint';
 import { TILE, tileOfKey } from '@world/tiles';
 import type { TreeClearing } from '@world/trees';
 import { m } from '@world/units';
-import { createCoverIndex } from './buildings/layerCells';
+import { stagesCover } from './nearBuildings';
 import { KEEP_CELL, keepCellKey, keepCellOf } from './candidateKeep';
 import { ClearingCells } from './clearingCells';
 import { COVER_SWEEP_PAD, type Candidate, type CoverField, forestIn, rocksIn, scrubIn } from './coverSweep';
@@ -63,8 +60,9 @@ function platesOver(box: readonly [number, number, number, number], dabs: readon
 /** THE TILE'S OWN KEEP CELLS' COVER (the cells of 64 m fall whole in a tile), swept from the dabs of the 3 x 3 read: its neighbours' dabs reaching over its edge laid too */
 export const coverBaker: NearBaker<CoverBake | null, CoverExtra> = {
   parts: ['rest'],
-  // The roads and buildings of a tile with cover only.
-  more: ['roads', 'buildings'],
+  // The roads of a tile with cover only; the buildings read off each tile's kept stage (`nearBuildings.ts`), never made again from their rows here.
+  more: ['roads'],
+  buildings: 'around',
   around: true,
   // A stone or a tree stands on the ground as drawn.
   groundReach: AROUND + COVER_SWEEP_PAD,
@@ -88,14 +86,11 @@ export const coverBaker: NearBaker<CoverBake | null, CoverExtra> = {
       shoreLevelAt: () => null,
     };
     const net = area.net();
-    const buildings: Building[] = [];
-    for (const records of area.tiles) for (const raw of tileBuildingsOf(records)) { const b = migrateBuilding(raw); if (b) buildings.push(b); }
-    const cover = createCoverIndex();
-    cover.index(buildings);
+    const covers = stagesCover(area.tiles.map((_, n) => area.buildings(n)));
     const clearings = new ClearingCells();
     clearings.follow(extra, extra.clearings);
     // As the page's keeps test them (`renderer.ts` coverKeeps).
-    const free = (x: number, y: number): boolean => !onCarriageway(net, { x, y }) && !cover.covers(x, y);
+    const free = (x: number, y: number): boolean => !onCarriageway(net, { x, y }) && !covers(x, y);
     const placed = (c: Candidate): Candidate & { readonly z: number } => ({ ...c, z: area.groundAt(c.x, c.y) });
     const ci0 = Math.floor(x0 / KEEP_CELL), cj0 = Math.floor(y0 / KEEP_CELL), cells = TILE / KEEP_CELL;
     /** Each cell's standing woods, the tile's and the ring round it. */
@@ -157,7 +152,8 @@ export function coverProduct(page: {
   return {
     kind: 'covers',
     // A wood's tree, ten metres and more, seen as its picture from afar; a stone a pixel across far nearer (`cellInstances.ts` levels).
-    cover: m(5) * m(5),
+    // Out to where a tree or a pier is a couple of pixels tall (DO NOT reach out to 6 km: dozens of tiles of roads solved, behind the street's cells).
+    cover: m(3) * m(3),
     top: m(20),
     version: page.version,
     extra: page.extra,

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { tileKey } from '@world/tiles';
+import { tileKey, tileOfKey } from '@world/tiles';
 import { m } from '@world/units';
 import type { TileRecords } from '@world/doc';
 import { emptyRecords } from '@render/buildings/farGrid';
 import type { NearKind, NearTileJob, NearTileReply } from '@render/nearTileBake';
-import { type NearLanded, type NearProduct, NearTiles, nearPriority } from '@render/nearTiles';
+import { NearGate, type NearLanded, type NearProduct, NearTiles, nearPriority } from '@render/nearTiles';
 import { EDIT_TIER, NEAR_TIER, TIER_SPAN, cellPriority } from '@render/buildings/cellPool';
 
 /** THE NEAR PRODUCTS' CHOICE OF TILES (`nearTiles.ts`): by the view, the bake drawn standing until the next one lands */
@@ -39,6 +39,28 @@ const answer = (held: { job: NearTileJob; done: (reply: NearTileReply) => void }
   held.done({ kind: 'near', node: held.job.node, answers: held.job.asks.map((a) => ({ kind: a.kind, sig: a.sig, bake: `${a.want}#${payload}`, payload, same: false })) });
 
 describe('the near products chosen by tile', () => {
+  it('keeps its jobs on a few workers at once, the rest free for the cells and roads; the nearest waiting sent first, an edit before it', () => {
+    const job = (i: number, edited = false): NearTileJob => ({ node: `${i},0`, asks: [], prefix: null, tiles: [{ key: tileKey(i, 0), version: 1 }], ground: { ground: null, naturalIsGround: true }, ...(edited ? { edited } : {}) });
+    const sent: string[] = [];
+    const gate = new NearGate(() => 2, (j) => Math.abs(tileOfKey(j.tiles[0]!.key).i) * 1000);
+    const ask = (j: NearTileJob): (() => void) => gate.ask(j, () => { sent.push(j.node); return { cancel: () => sent.push(`cancel ${j.node}`) }; });
+    ask(job(5)); ask(job(1));
+    const far = ask(job(9));
+    ask(job(3)); ask(job(7, true));
+    expect(sent).toEqual(['5,0', '1,0']);
+    expect(gate.queued).toBe(3);
+    // A job answered: the edit next, then the nearest.
+    gate.settle();
+    expect(sent.at(-1)).toBe('7,0');
+    gate.settle();
+    expect(sent.at(-1)).toBe('3,0');
+    // One waiting cancelled is never sent; one running cancelled frees its place.
+    far();
+    expect(gate.queued).toBe(0);
+    gate.settle();
+    expect(sent).not.toContain('9,0');
+  });
+
   it('waits in the queue behind every cell, mass and road near level, whatever the distances, and goes before them only for an edit of what it reads', () => {
     // The queue's rank: the band plus the distance to the view's focus (`jobPool.ts` rankOf); the farthest a map can put two jobs apart.
     const far = m(100_000);

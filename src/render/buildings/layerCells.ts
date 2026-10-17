@@ -98,6 +98,9 @@ const PLANT_MARGIN = m(1);
 /** Side of the footprint index's buckets, world units. */
 const COVER_CELL = m(25.6);
 
+/** A building's ground no plant stands on: its solid footprints grown by `PLANT_MARGIN`, and its footprint's rectangles (the cover index's and a tile's near bake's, `nearBuildings.ts`). */
+export const coverPolygons = (b: Building): Vec2[][] => [...solidFootprints(b, PLANT_MARGIN), ...footprintRects(b)];
+
 /** Where the buildings stand, for the scenery's plant cull */
 export interface CoverIndex {
   /** The whole town filed again (the opening, a map opened). */
@@ -131,7 +134,7 @@ export function createCoverIndex(): CoverIndex {
   const file = (b: Building): number => {
     let rects = footprints.get(b);
     if (!rects) {
-      rects = [...solidFootprints(b, PLANT_MARGIN), ...footprintRects(b)];
+      rects = coverPolygons(b);
       footprints.set(b, rects);
     }
     const digest = new Digest();

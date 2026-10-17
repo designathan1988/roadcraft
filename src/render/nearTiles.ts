@@ -4,7 +4,7 @@ import { worldKey } from '@world/cityGen/wholeMap';
 import type { TileRecords } from '@world/doc';
 import { TILE, tileKey, tileOfKey } from '@world/tiles';
 import { m } from '@world/units';
-import { canQueueJobs, submitJob } from '../jobs/jobPool';
+import { canQueueJobs, focusDistance, jobWorkers, submitJob } from '../jobs/jobPool';
 import { EDIT_TIER, NEAR_TIER, TIER_SPAN } from './buildings/cellPool';
 import { emptyRecords } from './buildings/farGrid';
 import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
@@ -93,8 +93,62 @@ export const nearPriority = (job: Pick<NearTileJob, 'edited'>): number => (job.e
 /** The page's own cache of bakes where no worker runs (tests): nothing kept. */
 const NO_CACHE: NearTileCache = { ready: async () => false, get: async () => undefined, put: async () => {} };
 
-/** DO NOT bake on the page: the jobs go to the job system's queue (`nearTiles` service), the page only when no worker can run (tests). */
+/** A job handed to the queue: its cancel (an answer cancelled is never given). */
+type Ticket = { cancel(): void };
+
+/** THE NEAR JOBS ON A FEW WORKERS AT ONCE: a third of the pool at most (`share`), the rest always free for the cells and the roads' near level; the waiting jobs here, an edit of what they read first, then the nearest to where the view looks
+ *  - DO NOT hand them all to the queue: a job a worker has begun runs to its end, and tiles of near products each seconds long held every worker while the street's cells and roads asked after them waited (conf26 09-street, 2026-10-17; the queue's bands order what waits, not what runs). */
+export class NearGate {
+  private readonly waiting: { readonly job: NearTileJob; readonly send: () => Ticket; ticket: Ticket | null }[] = [];
+  private running = 0;
+
+  /** `most`: the jobs on workers at once; `away`: a job's distance to the view's focus. */
+  constructor(private readonly most: () => number, private readonly away: (job: NearTileJob) => number) {}
+
+  /** A job to send once a place is free (`send` hands it to the queue, and its answer must come back through `settle`); its cancel. */
+  ask(job: NearTileJob, send: () => Ticket): () => void {
+    const entry = { job, send, ticket: null as Ticket | null };
+    this.waiting.push(entry);
+    this.pump();
+    return () => {
+      const at = this.waiting.indexOf(entry);
+      if (at >= 0) { this.waiting.splice(at, 1); return; }
+      if (entry.ticket) { entry.ticket.cancel(); entry.ticket = null; this.settle(); }
+    };
+  }
+
+  /** A job sent came back (answered or failed): its place free for the next. */
+  settle(): void {
+    this.running = Math.max(0, this.running - 1);
+    this.pump();
+  }
+
+  /** Jobs waiting here (not yet on a worker). */
+  get queued(): number {
+    return this.waiting.length;
+  }
+
+  private pump(): void {
+    while (this.running < this.most() && this.waiting.length) {
+      let best = 0;
+      for (let k = 1; k < this.waiting.length; k++) {
+        const a = this.waiting[k]!.job, b = this.waiting[best]!.job;
+        if (Number(!!a.edited) > Number(!!b.edited) || (!!a.edited === !!b.edited && this.away(a) < this.away(b))) best = k;
+      }
+      const [entry] = this.waiting.splice(best, 1);
+      this.running++;
+      entry!.ticket = entry!.send();
+    }
+  }
+}
+
+/** DO NOT bake on the page: the jobs go to the job system's queue (`nearTiles` service) through the gate (`NearGate`), the page only when no worker can run (tests). */
 function nearRunner(): NearRun {
+  const centre = (job: NearTileJob): readonly [number, number] => {
+    const { i, j } = tileOfKey(job.tiles[0]!.key);
+    return [(i + 0.5) * TILE, (j + 0.5) * TILE];
+  };
+  const gate = new NearGate(() => Math.max(1, Math.floor(jobWorkers() / 3)), (job) => { const [x, y] = centre(job); return focusDistance(x, y); });
   return (job, done) => {
     if (!canQueueJobs()) {
       let live = true;
@@ -104,18 +158,16 @@ function nearRunner(): NearRun {
       );
       return () => { live = false; };
     }
-    const { i, j } = tileOfKey(job.tiles[0]!.key);
-    const ticket = submitJob({
+    return gate.ask(job, () => submitJob({
       service: 'nearTiles',
       key: `nearTiles:${job.node}`,
-      // A tile the page holds edited first (`cellPool.ts` EDIT_TIER): what the player just did; the others after the cells and the roads' near level, nearest first (`PRODUCT_TIER`).
+      // An edit of what its kinds read first (`cellPool.ts` EDIT_TIER): what the player just did; the others after the cells and the roads' near level, nearest first (`PRODUCT_TIER`).
       priority: nearPriority(job),
-      at: [(i + 0.5) * TILE, (j + 0.5) * TILE],
+      at: centre(job),
       write: () => ({ data: job, transfer: [] }),
-      done: (answer) => done(answer as NearTileReply),
-      failed: (message) => done({ kind: 'nearError', node: job.node, message }),
-    });
-    return () => ticket.cancel();
+      done: (answer) => { gate.settle(); done(answer as NearTileReply); },
+      failed: (message) => { gate.settle(); done({ kind: 'nearError', node: job.node, message }); },
+    }));
   };
 }
 

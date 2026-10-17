@@ -8,6 +8,8 @@ import { type PreparedTile, prepareTile, readTile, storedVersion, writeTile } fr
 import { bakeTileSections } from '@sim/tileSections';
 import { type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
 import { keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTiles';
+import { keepTileNearBuildings } from './render/nearBuildings';
+import { queuedNearCache } from './render/nearTileBake';
 import type { SharedGroundData } from './render/sharedGround';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
@@ -28,6 +30,8 @@ export interface FarTileBake extends FarGroundEnv {
   readonly roadPrefix: string | null;
   /** The ground the far roads read (`farRoads.ts`, the terrain's shared ground). */
   readonly roadGround: SharedGroundData | null;
+  /** The key prefix the near products' bakes are kept under (`nearTiles.ts`): the tile's buildings as they read them kept here (`nearBuildings.ts`); null or none: nothing kept. */
+  readonly nearPrefix?: string | null;
 }
 
 /** DO NOT let a tile's far levels be baked again by another worker from the store (two hundred jobs of seconds each on the queue's workers, the opening's 198 s, 2026-10-16): baked here from the tile just made, under the version just written; a failure is said and left to the page's jobs. */
@@ -36,6 +40,8 @@ async function keepFar(records: TileRecords, full: TileRecords, version: number,
     // Queued, not waited for (`keepDerivedQueued`): the page's far job for the tile asks after this answer, and its read comes after these writes.
     keepTileFar(full, version, far, far.massPrefix, queuedFarCache),
     keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix, queuedRoadCache),
+    // What the near products read of its buildings (where no plant stands, its gardens' plants): DO NOT leave them to be made again from the rows by every bake that reads the tile.
+    keepTileNearBuildings(records, full, version, far.nearPrefix ?? null, queuedNearCache),
   ]);
   for (const bake of bakes) if (bake.status === 'rejected') console.warn(`[city tile] tile ${records.key}'s far level not kept; the far jobs bake it`, bake.reason);
 }
