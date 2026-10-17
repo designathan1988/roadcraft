@@ -17,7 +17,7 @@ import { loadPeopleAssets } from '@people/body/assets';
 import { Morpher } from '@people/body/morph';
 import { createPersonRig, personSimplifier } from './people/personRig';
 import { cancelUploads, compileAhead, shadowStandIn, warmAhead } from './uploads';
-import { bakeInWorker, releaseIdleBakeWorkers } from './bakePool';
+import { bakeDeferredInWorker, bakeInWorker, releaseIdleBakeWorkers } from './bakePool';
 import { cookPerson, loadCookedPerson, peopleCookHash } from './people/cookedPerson';
 import { HELD, createHeldProps } from './people/heldProps';
 import { attachFacialMorphs } from './people/facialMorphs';
@@ -26,7 +26,7 @@ import { expressionShapes } from '@people/body/expressions';
 import { applySkinAppearance, createPersonLayers, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from './people/skinAppearance';
 import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
 import { wornItems } from '@people/spec';
-import { captureBind, captureBindRotations, loadRocketboxClips } from './citizenWalk';
+import { type WalkSex, captureBind, captureBindRotations, loadRocketboxClips } from './citizenWalk';
 import { type Gradient, shearMatrix } from './groundShear';
 import { PACKED_BONE_FLOATS, SKIN_BONE_FLOATS, blendPackedFrames } from './citizenPalette';
 import { GPU_PLAYS, citizenAtlas, cpuPose, gpuPlays, type CitizenAtlas, type Play } from './citizenPlays';
@@ -60,8 +60,9 @@ interface CitizenBatch {
   readonly parents: Int16Array;
   /** This body's helmet in its head bone's frame (`riderPoses.helmetShape`), or null. */
   helmet: Matrix4 | null;
-  /** Clips still to bake, on first use (`Deferred`), one at a time. */
+  /** Clips still to bake, on first use (`Deferred`), one at a time: in a bake worker, from this rig (`bakeDeferredInWorker`). */
   deferred: Deferred;
+  readonly rig: { readonly scene: Object3D; readonly sex: WalkSex };
   baking: Promise<void>;
 }
 
@@ -538,7 +539,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         atlas, pass, uniform, scratch: new Float32Array(width), joints, parents,
         count: 0, helmet, resources: owned, animationBytes: 0,
         lastUsed: performance.now(), disposed: false,
-        deferred, baking: Promise.resolve() };
+        deferred, baking: Promise.resolve(), rig: { scene: asset.scene, sex } };
       owned.add({ dispose: () => { batch.pass.dispose(); batch.atlas.anim.atlas.dispose(); batch.joints.dispose(); } });
       paletteAdded = paletteBytes(batch);
       group.userData.paletteBytes = (group.userData.paletteBytes ?? 0) + paletteAdded;
@@ -756,12 +757,13 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     if (!waiting) baking.set(batch, waiting = new Set());
     waiting.add(at);
     batch.baking = batch.baking.then(async () => {
-      const clip = await job.make();
+      // On another core; on the page only where no worker can.
+      const clip = await bakeDeferredInWorker(batch.rig.scene, batch.rig.sex, at, batch.clips[GAIT_AT.walkShuffle]!) ?? await job.make();
       waiting.delete(at);
       if (disposed || batch.disposed) return;
       batch.clips[at] = clip;
       batch.gait = gaitClips(batch.clips);
-      relayAtlas(batch);
+      laidIn(batch, at, clip);
       batch.animationBytes += clip.data.byteLength;
       group.userData.animationBytes = (group.userData.animationBytes ?? 0) + clip.data.byteLength;
     }).catch(() => {});
@@ -810,15 +812,10 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     group.userData.paletteBytes += paletteBytes(batch) - before;
   }
 
-  /** A clip baked since the atlas was laid: the atlas laid again with it, and a pass reading it (an event, not a frame). */
-  function relayAtlas(batch: CitizenBatch): void {
+  /** A clip baked since the atlas was laid: added to the same atlas, read by the same pass (`CitizenAtlas.add`). */
+  function laidIn(batch: CitizenBatch, at: number, clip: ClipFrames): void {
     const before = paletteBytes(batch);
-    const old = batch.atlas, oldPass = batch.pass;
-    batch.atlas = citizenAtlas(batch.clips, batch.width / SKIN_BONE_FLOATS);
-    batch.pass = createPalettePass(batch.atlas.anim, batch.parents, () => batch.joints, batch.rows);
-    batch.uniform.value = batch.pass.texture;
-    oldPass.dispose();
-    old.anim.atlas.dispose();
+    batch.atlas.add(at, clip);
     group.userData.paletteBytes += paletteBytes(batch) - before;
   }
 

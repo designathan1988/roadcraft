@@ -346,44 +346,35 @@ const RIDER_BASE: Readonly<Partial<Record<RiderClipKey, RiderClipKey>>> = {
 
 export type Deferred = Map<number, { readonly make: () => Promise<ClipFrames>; readonly standIn: number }>;
 
-export async function bake(scene: Object3D, sex: WalkSex, library: RocketboxClips,
-  given?: readonly (ClipFrames | undefined)[]): Promise<{ clips: ClipFrames[]; helmet: Matrix4 | null; deferred: Deferred }> {
-  const body = restRig(scene);
-  // A helmet is fitted to this head, at rest, once.
-  const helmet = helmetShape(body.rig);
-  const clips: ClipFrames[] = [];
-  // The elder's step, and the shuffle's, cover less ground in the same time
-  clips[WALK] = given?.[WALK] ?? await bakeWalk(body, sex);
-  clips[WALK_ELDER] = given?.[WALK_ELDER] ?? await bakeWalk(body, sex, ELDER_AMPLITUDE);
-  clips[WALK_SHUFFLE] = given?.[WALK_SHUFFLE] ?? await bakeLibraryClip(body, library.walkSlow, SHUFFLE_AMPLITUDE);
+/** What a sideways walk is baked over: the shuffle's length and stride (`WALK_SHUFFLE`). */
+export type ShuffleFacts = Pick<ClipFrames, 'duration' | 'stride'>;
+
+/** The shuffle warped to walk at `angle` (back, left, right), with the box in both hands or not. */
+function directionalOf(body: BakeRig, library: RocketboxClips, shuffle: () => ShuffleFacts) {
+  return async (angle: number, carry: boolean): Promise<ClipFrames> => {
+    body.reset();
+    const warped = directionalWalkFor(body.rig, body.mesh, library.walkSlow, SHUFFLE_AMPLITUDE, angle);
+    const facts = shuffle();
+    const frames = await bakeFrames(body, time => { warped.pose(time); if (carry) carryBox(body.rig); }, facts.duration, true, FPS, carry);
+    return { ...frames, duration: facts.duration, loop: true, stride: facts.stride * warped.strideScale };
+  };
+}
+
+const SIDEWAYS = [['walkBack', Math.PI], ['walkLeft', Math.PI / 2], ['walkRight', -Math.PI / 2]] as const;
+
+/** The clips baked on first use, each with what stands in for it until then: the same on the page and in a bake worker (`bakeDeferred`). */
+function deferredClips(body: BakeRig, sex: WalkSex, library: RocketboxClips, shuffle: () => ShuffleFacts): Deferred {
   const deferred: Deferred = new Map();
   for (const name of LIBRARY) {
-    if (CORE_LIBRARY.has(name)) clips[LIBRARY_AT[name]] = given?.[LIBRARY_AT[name]] ?? await bakeLibraryClip(body, library[name], undefined, name);
-    else deferred.set(LIBRARY_AT[name], {
+    if (!CORE_LIBRARY.has(name)) deferred.set(LIBRARY_AT[name], {
       make: () => bakeLibraryClip(body, library[name], undefined, name),
       standIn: name === 'walkDrunk' ? WALK : LIBRARY_AT.idle,
     });
   }
-  body.reset();
-  const rest = clipTransferFor(body.rig, body.mesh, library.walkSlow, REST_AMPLITUDE);
-  clips[DIRECTIONAL_AT.walkRest] = given?.[DIRECTIONAL_AT.walkRest] ??
-    { ...await bakeFrames(body, () => rest.pose(0), 1, true, 1), frames: 1, duration: 1, loop: true, stride: 0 };
-  const directional = async (angle: number, carry: boolean): Promise<ClipFrames> => {
-    body.reset();
-    const warped = directionalWalkFor(body.rig, body.mesh, library.walkSlow, SHUFFLE_AMPLITUDE, angle);
-    const facts = clips[WALK_SHUFFLE]!;
-    const frames = await bakeFrames(body, time => { warped.pose(time); if (carry) carryBox(body.rig); }, facts.duration, true, FPS, carry);
-    return { ...frames, duration: facts.duration, loop: true, stride: facts.stride * warped.strideScale };
-  };
-  const SIDEWAYS = [['walkBack', Math.PI], ['walkLeft', Math.PI / 2], ['walkRight', -Math.PI / 2]] as const;
-  for (const [name, angle] of SIDEWAYS) clips[DIRECTIONAL_AT[name]] = given?.[DIRECTIONAL_AT[name]] ?? await directional(angle, false);
   for (const clip of RIDER_CLIPS) {
     const base = RIDER_BASE[clip.key];
     if (base) deferred.set(RIDER_AT[clip.key], { make: () => bakeRiderClip(body, clip), standIn: RIDER_AT[base] });
-    else clips[RIDER_AT[clip.key]] = given?.[RIDER_AT[clip.key]] ?? await bakeRiderClip(body, clip);
   }
-  clips[HAND_WALK_AT.walkHandL] = given?.[HAND_WALK_AT.walkHandL] ?? await bakeWalk(body, sex, undefined, 'L');
-  clips[HAND_WALK_AT.walkHandR] = given?.[HAND_WALK_AT.walkHandR] ?? await bakeWalk(body, sex, undefined, 'R');
   // Carrying a box: every clip again with the box in both hands, on first use.
   const carried = (name: (typeof CARRIED)[number], make: () => Promise<ClipFrames>): void => {
     deferred.set(CARRY_AT[name]!, { make, standIn: GAIT_AT[name] });
@@ -394,7 +385,43 @@ export async function bake(scene: Object3D, sex: WalkSex, library: RocketboxClip
     carried(name, () => bakeLibraryClip(body, library[name], undefined, name, true));
   }
   // Stepping aside or back with the box, too: it never leaves the hands.
+  const directional = directionalOf(body, library, shuffle);
   for (const [name, angle] of SIDEWAYS) carried(name, () => directional(angle, true));
+  return deferred;
+}
+
+/** One deferred clip (`at`) of the body whose rig is `scene`, baked whole: what a bake worker does when a body first plays it. */
+export async function bakeDeferred(scene: Object3D, sex: WalkSex, library: RocketboxClips, at: number, shuffle: ShuffleFacts): Promise<ClipFrames | null> {
+  const job = deferredClips(restRig(scene), sex, library, () => shuffle).get(at);
+  return job ? job.make() : null;
+}
+
+export async function bake(scene: Object3D, sex: WalkSex, library: RocketboxClips,
+  given?: readonly (ClipFrames | undefined)[]): Promise<{ clips: ClipFrames[]; helmet: Matrix4 | null; deferred: Deferred }> {
+  const body = restRig(scene);
+  // A helmet is fitted to this head, at rest, once.
+  const helmet = helmetShape(body.rig);
+  const clips: ClipFrames[] = [];
+  // The elder's step, and the shuffle's, cover less ground in the same time
+  clips[WALK] = given?.[WALK] ?? await bakeWalk(body, sex);
+  clips[WALK_ELDER] = given?.[WALK_ELDER] ?? await bakeWalk(body, sex, ELDER_AMPLITUDE);
+  clips[WALK_SHUFFLE] = given?.[WALK_SHUFFLE] ?? await bakeLibraryClip(body, library.walkSlow, SHUFFLE_AMPLITUDE);
+  const shuffle = (): ShuffleFacts => clips[WALK_SHUFFLE]!;
+  const deferred = deferredClips(body, sex, library, shuffle);
+  for (const name of LIBRARY) {
+    if (CORE_LIBRARY.has(name)) clips[LIBRARY_AT[name]] = given?.[LIBRARY_AT[name]] ?? await bakeLibraryClip(body, library[name], undefined, name);
+  }
+  body.reset();
+  const rest = clipTransferFor(body.rig, body.mesh, library.walkSlow, REST_AMPLITUDE);
+  clips[DIRECTIONAL_AT.walkRest] = given?.[DIRECTIONAL_AT.walkRest] ??
+    { ...await bakeFrames(body, () => rest.pose(0), 1, true, 1), frames: 1, duration: 1, loop: true, stride: 0 };
+  const directional = directionalOf(body, library, shuffle);
+  for (const [name, angle] of SIDEWAYS) clips[DIRECTIONAL_AT[name]] = given?.[DIRECTIONAL_AT[name]] ?? await directional(angle, false);
+  for (const clip of RIDER_CLIPS) {
+    if (!RIDER_BASE[clip.key]) clips[RIDER_AT[clip.key]] = given?.[RIDER_AT[clip.key]] ?? await bakeRiderClip(body, clip);
+  }
+  clips[HAND_WALK_AT.walkHandL] = given?.[HAND_WALK_AT.walkHandL] ?? await bakeWalk(body, sex, undefined, 'L');
+  clips[HAND_WALK_AT.walkHandR] = given?.[HAND_WALK_AT.walkHandR] ?? await bakeWalk(body, sex, undefined, 'R');
   // Until baked, each points at what stands in for it.
   for (const [at, { standIn }] of deferred) clips[at] = clips[standIn]!;
   return { clips, helmet, deferred };
