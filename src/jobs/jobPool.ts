@@ -219,7 +219,7 @@ class JobSystem {
 }
 const system = new JobSystem();
 
-/** Whether tiles of the map wait for the long-running side's lanes (`tileGenerator.ts` pump): while they do, a long worker between two tiles takes no queued job. DO NOT give it one: a cell's job of seconds held the next tile behind it - the opening's tile workers ran 103 s of cells' jobs (wprof4, 2026-10-17), whenever the queue's worker had a lane's message in flight. Told off, the jobs waiting go out to them. */
+/** Whether tiles of the map wait for the long-running side's lanes (`tileGenerator.ts` pump): while they do, a long worker between two tiles takes no queued job of the cells' bands and after (priority 0 on: a cell, a facade, a mass, a near level), only those ahead of them (a far level, an edit; `cellPool.ts` FAR_TIER, EDIT_TIER), short and what the opening's view waits for - kept off them all, the map's edges stood empty after the curtain (conf55, 2026-10-17). DO NOT give it a cell's job: one of seconds held the next tile behind it - the opening's tile workers ran 103 s of cells' jobs (wprof4, 2026-10-17), whenever the queue's worker had a lane's message in flight. Told off, the jobs waiting go out to them. */
 export function setTilesWaiting(on: boolean): void {
   if (system.tilesWaiting === on) return;
   system.tilesWaiting = on;
@@ -300,12 +300,12 @@ function queuePort(host: Host, service: JobService): number {
 /** The worker a queued job of `service` goes to: a free one already running the kind, else a new one while the pool has room, else any free one
  *  - a long-running service's worker only while its lanes have nothing in flight: a tile asked after it waits one job, never a job behind a tile (only a pool of one worker shares it otherwise).
  *  - DO NOT give it to a worker whose lanes have messages in flight while one with none is free: it waited behind a tile read or a batch of road tiles (`JobPort` posts straight to its worker); such a worker only when no other is free. */
-function hostFor(service: JobService): Host | null {
+function hostFor(service: JobService, priority = 0): Host | null {
   let cold: Host | null = null, idleLong: Host | null = null, warmBusy: Host | null = null, coldBusy: Host | null = null;
   for (const host of system.workers) {
     if (host.job || host.failed) continue;
     if (keptClear(host) && system.workers.length > 1) continue;
-    if (host.long && system.workers.length > 1) { if (host.laneWork === 0 && !system.tilesWaiting) idleLong ??= host; continue; }
+    if (host.long && system.workers.length > 1) { if (host.laneWork === 0 && (!system.tilesWaiting || priority < 0)) idleLong ??= host; continue; }
     const warm = host.queuePorts.has(service);
     if (host.laneWork > 0) {
       if (warm) warmBusy ??= host; else coldBusy ??= host;
@@ -322,7 +322,7 @@ function dispatch(): void {
   for (let job = system.queue.peek(); job; job = system.queue.peek()) {
     let host: Host | null;
     try {
-      host = hostFor(job.spec.service);
+      host = hostFor(job.spec.service, job.spec.priority);
     } catch (error) {
       system.queue.failAll(`no job workers: ${String(error)}`);
       return;

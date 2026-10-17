@@ -158,9 +158,12 @@ describe('the job system', () => {
     job('second');
     job('third');
     expect(queuedOn('third')).toBe(-1);
-    // No tile waits any more: the tile worker takes a waiting job.
+    // A far level's bake (ahead of the cells' bands): the tile worker between two tiles takes it.
+    submitJob({ service: 'farRoads', key: null, priority: -1, write: () => ({ data: 'far', transfer: [] }), done: () => {}, failed: () => {} });
+    expect(queuedOn('far')).toBe(FakeWorker.made.indexOf(workerOf(tiles[1]!)));
+    // No tile waits any more: a waiting job goes out once a worker is free.
     setTilesWaiting(false);
-    expect([queuedOn('second'), queuedOn('third')]).toContain(FakeWorker.made.indexOf(workerOf(tiles[1]!)));
+    expect(queuedOn('third')).toBe(-1);
   });
 
   it('drops the answer of a job cancelled while it ran', async () => {
