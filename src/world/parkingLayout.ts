@@ -92,11 +92,31 @@ export function parkingLayout(net: Network, entrances: readonly [Vec2, Vec2][] |
   return { bays, lines };
 }
 
-/** The paint of one street's parking (`parkingLayout`) */
-export function parkingLinesOf(net: Network, ribbon: SegmentRibbon): ParkingLine[] {
+/** The paint of one street's parking (`parkingLayout`); `entrances`: the gates within its reach (`gatesNear`), read from the document's buildings when none. */
+export function parkingLinesOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec2, Vec2][] | null = null): ParkingLine[] {
   const lines: ParkingLine[] = [];
-  parkingOf(net, ribbon, null, [], lines);
+  parkingOf(net, ribbon, entrances, [], lines);
   return lines;
+}
+
+/** Every entrance of some buildings (`entrancesOf`), four numbers each (x0, y0, x1, y1): what a tile keeps of its buildings for its streets' parking (`TileRecords.gates`). */
+export function gatesOf(buildings: Iterable<Building>): number[] {
+  const out: number[] = [];
+  for (const b of buildings) for (const [p, q] of entrancesOf(b)) out.push(p.x, p.y, q.x, q.y);
+  return out;
+}
+
+/** The entrances of `gates` (`gatesOf`) a street of half width `half` along `line` may read: those `entrancesNear` would hand it, for a road bake without the buildings (`render/nearRoadTiles.ts`). */
+export function gatesNear(gates: ArrayLike<number>, line: Polyline, half: number): [Vec2, Vec2][] {
+  const reach = half + m(8);
+  const bb = line.bbox;
+  const out: [Vec2, Vec2][] = [];
+  for (let k = 0; k + 3 < gates.length; k += 4) {
+    const x0 = gates[k]!, y0 = gates[k + 1]!, x1 = gates[k + 2]!, y1 = gates[k + 3]!;
+    if (Math.max(x0, x1) < bb.minX - reach || Math.min(x0, x1) > bb.maxX + reach || Math.max(y0, y1) < bb.minY - reach || Math.min(y0, y1) > bb.maxY + reach) continue;
+    out.push([{ x: x0, y: y0 }, { x: x1, y: y1 }]);
+  }
+  return out;
 }
 
 /** Whether a street has parking laid out at all (`parkingOf`): only then do the buildings near it move its paint. */

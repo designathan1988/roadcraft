@@ -1,42 +1,35 @@
 import { Color, Group, type Material, type Mesh } from 'three';
 
-import type { Poly } from '@core/clipper';
 import { Digest } from '@core/digest';
-import type { SegmentId } from '@world/ids';
 import type { Network } from '@world/network';
-import { Level, ROAD_TYPES, laneWidth } from '@world/roadTypes';
+import { ROAD_TYPES } from '@world/roadTypes';
 import type { CarriagewayMaterial } from '@world/roadSection';
-import { footwayRiseShare, packFlush } from '@world/roads/footwayRise';
-import { rampsMeeting, walkingRise } from '@world/curbRamps';
+import { packFlush } from '@world/roads/footwayRise';
+import { rampsMeeting } from '@world/curbRamps';
 import type { CurbRamp } from '@world/rampRise';
-import { RAISED_LIFT, isRaised, roadStructure } from '@world/structures';
+import { roadStructure } from '@world/structures';
 import { type RoadElevation, SURFACE_READ_REACH } from '@world/elevation';
 import { LANE_LINE } from '@world/roadTypes';
-import { PAINT_RISE } from './markings';
 import { type Reach, SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadSurfaceInputs';
-import type { Input } from './roadSurfaceRings';
 import type { SceneMaterials } from './materials';
-import { TERRAIN_CELL } from './terrainGrid';
+import { type PassLook, passDesc, passRaised, passReads, polysOf, tileBundle } from './roadSurfacePass';
 import { attachFarLevel, blockArraysOf, cloneBlock, mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
 import { type BlockArrays, levelsOf } from './mesh/roadLod';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR } from './roadTones';
-import { type TilePolys, type TileSource, tileShapes } from './roadTileShape';
+import type { TileSource } from './roadTileShape';
 import type { RoadTiler, TileJob } from './roadTilePool';
 import type { SurfaceData } from './roadTileMesh';
 import {
   FOOTWAY_EDGE_CELL,
   passSurfaces,
-  tileSpecOf,
   type PassDesc,
   type RoadLook,
   type SurfaceRead,
-  type SurfaceReads,
 } from './roadSurfaceReads';
-import type { SurfaceShape } from './mesh/tileShape';
+import type { SegmentId } from '@world/ids';
 import {
   disposeMesh,
-  meshTileShape,
   type SurfaceMeshOptions,
   type Tile,
   type TileRect,
@@ -45,11 +38,6 @@ import {
 export { TERRAIN_UV } from './roadSurfaceReads';
 
 /** The road network's surface bands */
-
-/** Longest triangle edge on a road at grade. */
-const GROUND_MAX_EDGE = TERRAIN_CELL / 2;
-/** A raised deck follows nothing, so it needs vertices only for its shading. */
-const RAISED_MAX_EDGE = TERRAIN_CELL;
 
 /** What one build of the surfaces keeps for the next, so an edit rebuilds only the tiles it reaches. */
 export interface SurfaceReuse {
@@ -158,7 +146,7 @@ function sameTiles(parts: readonly number[], list: readonly PassTile[]): boolean
 function surfaceSource(spec: SurfaceSpec, tiles: readonly { readonly rect: TileRect; readonly into: Reach }[],
   reading: <T>(work: () => T) => T): () => Tile[] {
   return () => tiles.map(({ rect, into }) =>
-    reading(() => bundleOf(tileShapes(polysOf(into), rect, [tileSpecOf(spec)]), [spec]).get(spec.options.name)!));
+    reading(() => tileBundle(into, rect, [spec]).get(spec.options.name)!));
 }
 
 export interface RoadSurfaces {
@@ -203,6 +191,17 @@ const CLASS_TINTS: readonly number[] = CLASS_TINT.flatMap(againstReference);
 const REFERENCE_TINT = againstReference(TINT_REFERENCE);
 const PAVING_TINTS: Readonly<Record<string, readonly [number, number, number]>> = Object.fromEntries(
   Object.entries(CARRIAGEWAY_TINT).map(([name, tint]) => [name, againstReference(tint)]));
+
+/** The page's constants the roads are drawn with (`PassLook`): what a road bake in a worker is handed to draw them alike (`nearRoadTiles.ts`). */
+export function passLook(materials: SceneMaterials, groundMaterial: Material | undefined): PassLook {
+  return {
+    groundMaterial: groundMaterial !== undefined,
+    scale: { asphalt: materials.scale.asphalt, footway: materials.scale.footway, kerb: materials.scale.kerb, verge: materials.scale.verge, deck: materials.scale.deck },
+    classTint: CLASS_TINTS,
+    referenceTint: REFERENCE_TINT,
+    pavingTint: PAVING_TINTS,
+  };
+}
 /** What each surface of a tile is made from (`roadTileShape.ts`). */
 type Source = TileSource;
 
@@ -211,23 +210,6 @@ interface SurfaceSpec {
   readonly source: Source;
   readonly options: Omit<SurfaceMeshOptions, 'polygons'>;
   readonly renderOrder?: number;
-}
-
-/** The road a surface reads beside the field, as a pass sees it (`RoadLook`): its paving, widths and mouths. */
-function lookOf(net: Network, id: SegmentId): RoadLook | undefined {
-  const ribbon = net.ribbons.get(id);
-  if (!ribbon) return undefined;
-  const trims = net.trims.get(id);
-  const materials = ribbon.road.materials;
-  return {
-    width: ribbon.road.width,
-    lane: laneWidth(ribbon.road),
-    from: trims?.a[Level.Asphalt] ?? 0,
-    to: ribbon.full.length - (trims?.b[Level.Asphalt] ?? 0),
-    carriageway: materials?.carriageway,
-    footwayLeft: materials?.footwayLeft,
-    footwayRight: materials?.footwayRight,
-  };
 }
 
 export function buildRoadSurfaces(
@@ -308,60 +290,16 @@ export function* roadSurfaceSteps(
       continue;
     }
 
-    const raised = pass.chain !== undefined
-      ? pass.chain.some((id) => {
-        const line = net.ribbons.get(id)?.full;
-        if (!line) return false;
-        for (let s = 0; s <= line.length; s += Math.max(4, line.length / 24)) {
-          const p = line.sampleAt(s).p;
-          if (elevation.onSegment(id, p.x, p.y) - terrainAt(p.x, p.y) > RAISED_LIFT) return true;
-        }
-        return false;
-      })
-      : isRaised(structure.id);
-    const maxEdge = raised ? RAISED_MAX_EDGE : GROUND_MAX_EDGE;
+    const raised = passRaised(net, pass, elevation, terrainAt);
 
-    // DO NOT merge every footway of the pass: the union of a town's footways is one ring round the whole town
-    const footwayEdges = new Map<number, number[] | undefined>();
-    const edgesAt = (key: number): number[] | undefined => {
-      if (!footwayEdges.has(key)) footwayEdges.set(key, inputs.footwayEdges(pass.id, key));
-      return footwayEdges.get(key);
-    };
-    /** Each road's look, asked per vertex: made once a pass. */
-    const looks = new Map<SegmentId, RoadLook | undefined>();
-    const look = (id: SegmentId): RoadLook | undefined => {
-      if (!looks.has(id)) looks.set(id, lookOf(net, id));
-      return looks.get(id);
-    };
     /** What this pass's surfaces read on the page: the network and the solved field (in a worker, `SurfaceData`). */
-    const pageReads: SurfaceReads = {
-      field: elevation,
-      terrainAt,
-      lineOf: (id) => net.ribbons.get(id)?.full,
-      look,
-      footwayShare: (x, y) => footwayRiseShare(net, x, y),
-      walkingRise: (x, y, at) => walkingRise(net, x, y, true, at),
-      footwayEdges: edgesAt,
-    };
+    const pageReads = passReads(net, elevation, terrainAt, inputs, pass.id);
+    const look = (id: SegmentId): RoadLook | undefined => pageReads.look(id);
+    const edgesAt = (key: number): ArrayLike<number> | undefined => pageReads.footwayEdges(key);
     net.crossingSurface();
     yield;
     /** The pass as its surfaces read it, plain data: the same on the page and in a worker (`roadSurfaceReads.ts`). */
-    const desc: PassDesc = {
-      id: pass.id,
-      structure: structure.id,
-      ...(pass.segment !== undefined ? { segment: pass.segment } : {}),
-      ...(pass.chain !== undefined ? { chain: pass.chain } : {}),
-      rootType: pass.segment === undefined ? 0 : net.doc.segment(pass.segment)?.type ?? 0,
-      raised,
-      maxEdge,
-      groundMaterial: groundMaterial !== undefined,
-      scale: { asphalt: materials.scale.asphalt, footway: materials.scale.footway, kerb: materials.scale.kerb, verge: materials.scale.verge, deck: materials.scale.deck },
-      paint: paintColours,
-      paintLift: 0.02 + PAINT_RISE,
-      classTint: CLASS_TINTS,
-      referenceTint: REFERENCE_TINT,
-      pavingTint: PAVING_TINTS,
-    };
+    const desc: PassDesc = passDesc(net, pass, raised, passLook(materials, groundMaterial), paintColours);
     const specs = passSurfaces(desc, pageReads).map((read) => dress(read, raised, materials, groundMaterial, paintFor));
 
     // Everything a tile's build reads besides its rings and its surroundings
@@ -741,54 +679,36 @@ function concat(parts: readonly ArrayLike<number>[]): { lineEnds: Uint32Array; l
   return { lineEnds, lines };
 }
 
-/** A surface as the page draws it: what it reads (`passSurfaces`) with its material and shadows. */
-function dress(read: SurfaceRead, raised: boolean, materials: SceneMaterials, groundMaterial: Material | undefined,
-  paintFor: (color: string) => Material): SurfaceSpec {
-  const source = read.source;
-  if (source.kind === 'paint') {
-    return { source, options: { ...read.options, material: paintFor(source.color), receiveShadow: true }, renderOrder: 3 };
-  }
-  if (source.kind === 'median') {
-    const material = source.part === 'kerb' ? materials.kerb : source.part === 'planting' ? materials.verge : materials.footway;
-    return { source, options: { ...read.options, material, receiveShadow: true } };
-  }
+/** How a surface is drawn: its material, whether it casts a shadow, its order among the roads' meshes (the paint over the deck) - the region's (`dress`) and a tile's near roads baked off the page (`farRoads.ts` near level) alike. */
+export function surfaceLook(source: TileSource, raised: boolean, materials: SceneMaterials, groundMaterial: Material | undefined,
+  paintFor: (color: string) => Material): { readonly material: Material; readonly castShadow?: boolean; readonly renderOrder?: number } {
+  if (source.kind === 'paint') return { material: paintFor(source.color), renderOrder: 3 };
+  if (source.kind === 'median') return { material: source.part === 'kerb' ? materials.kerb : source.part === 'planting' ? materials.verge : materials.footway };
   switch (source.band) {
     case 'verge':
-      return { source, options: { ...read.options, material: raised ? materials.deck : groundMaterial ?? materials.verge, castShadow: raised, receiveShadow: true } };
+      return { material: raised ? materials.deck : groundMaterial ?? materials.verge, castShadow: raised };
     case 'footway':
     case 'curbRamp':
-      return { source, options: { ...read.options, material: materials.footway, castShadow: raised, receiveShadow: true } };
+      return { material: materials.footway, castShadow: raised };
     case 'kerb':
-      return { source, options: { ...read.options, material: materials.kerb, receiveShadow: true } };
+      return { material: materials.kerb };
     case 'asphalt':
-      return { source, options: { ...read.options, material: raised ? materials.asphaltRaised : materials.asphalt, castShadow: raised, receiveShadow: true } };
+      return { material: raised ? materials.asphaltRaised : materials.asphalt, castShadow: raised };
   }
 }
 
-/** Every surface of one tile, from the rings that reach it */
-function buildTile(into: Reach, rect: TileRect, specs: readonly SurfaceSpec[]): TileBundle {
-  return bundleOf(tileShapes(polysOf(into), rect, specs.map(tileSpecOf)), specs);
-}
-
-/** A tile's surfaces from their shapes, each vertex read here (`meshTileShape`): a tile the page builds itself (a worker makes its own, `roadTileMesh.ts`). */
-function bundleOf(shapes: ReadonlyMap<string, SurfaceShape>, specs: readonly SurfaceSpec[]): TileBundle {
-  const bundle = new Map<string, Tile>();
-  for (const spec of specs) {
-    const shape = shapes.get(spec.options.name);
-    if (shape) bundle.set(spec.options.name, meshTileShape(shape, spec.options));
-  }
-  return bundle;
-}
-
-
-/** A tile's rings without their digests: what its shapes are cut from. */
-function polysOf(into: Reach): TilePolys {
-  const polys = (list: readonly Input[]): Poly[] => list.map((input) => input.poly);
+/** A surface as the page draws it: what it reads (`passSurfaces`) with its material and shadows (`surfaceLook`). */
+function dress(read: SurfaceRead, raised: boolean, materials: SceneMaterials, groundMaterial: Material | undefined,
+  paintFor: (color: string) => Material): SurfaceSpec {
+  const look = surfaceLook(read.source, raised, materials, groundMaterial, paintFor);
   return {
-    levels: { casing: polys(into.levels.casing), sidewalk: polys(into.levels.sidewalk), curb: polys(into.levels.curb), asphalt: polys(into.levels.asphalt) },
-    medians: { kerb: polys(into.medians.kerb), planting: polys(into.medians.planting), paved: polys(into.medians.paved) },
-    ramps: polys(into.ramps),
-    ribbons: polys(into.ribbons),
-    quads: new Map([...into.quads].map(([color, list]) => [color, polys(list)])),
+    source: read.source,
+    options: { ...read.options, material: look.material, ...(look.castShadow !== undefined ? { castShadow: look.castShadow } : {}), receiveShadow: true },
+    ...(look.renderOrder !== undefined ? { renderOrder: look.renderOrder } : {}),
   };
+}
+
+/** Every surface of one tile, from the rings that reach it (`roadSurfacePass.ts` tileBundle): a tile the page builds itself (a worker makes its own, `roadTileMesh.ts`). */
+function buildTile(into: Reach, rect: TileRect, specs: readonly SurfaceSpec[]): TileBundle {
+  return tileBundle(into, rect, specs);
 }

@@ -1,4 +1,6 @@
 import type { MultiPoly, Poly } from '@core/clipper';
+import type { Polyline } from '@core/polyline';
+import type { Vec2 } from '@core/vec2';
 import { union } from '@core/clipper';
 import { Digest } from '@core/digest';
 import { type Input, inputOf, medianOf } from './roadSurfaceRings';
@@ -22,7 +24,7 @@ import {
   transitionMarkings,
 } from '@world/markings';
 import { parkingLinesOf, parksAlong } from '@world/parkingLayout';
-import { PAINT_COLOURS, STOP_PAINT, ZEBRA_PAINT, barQuad, roadStrokes, strokeQuads, type QuadSink } from './markings';
+import { PAINT_COLOURS, STOP_PAINT, ZEBRA_PAINT, barQuad, roadStrokes, strokeQuads, type QuadSink } from './paintQuads';
 import { FOOTWAY_EDGE_CELL } from './roadSurfaceReads';
 
 /** DO NOT gather a pass's inputs by walking the whole map and filtering by the pass */
@@ -129,6 +131,9 @@ interface SegmentItem {
 
 /** The inputs of every pass, kept between builds and brought up to the network by its change (`refresh`). */
 export class SurfaceInputs {
+  /** `gates`: the entrances a street's parking keeps clear of (`parkingLayout.ts` gatesNear), for a network without its buildings (a road bake in a worker, `nearRoadTiles.ts`); none: the document's buildings. */
+  constructor(private readonly gates: ((line: Polyline, half: number) => [Vec2, Vec2][]) | null = null) {}
+
   private net: Network | null = null;
   /** The network's state the inputs stand for (`Network.state`). */
   private token: object | null = null;
@@ -320,7 +325,8 @@ export class SurfaceInputs {
       for (const spec of roadStrokes(net, ribbon)) strokeQuads(lines, spec);
       // Parking bays and the no-parking lines beside them (`world/parkingLayout.ts`).
       const parking = paint(PHASE.parking);
-      for (const line of parkingLinesOf(net, ribbon)) {
+      const gates = this.gates && parksAlong(net, ribbon) ? this.gates(ribbon.full, ribbon.road.width / 2) : null;
+      for (const line of parkingLinesOf(net, ribbon, gates)) {
         strokeQuads(parking, { points: line.points, width: line.width, color: line.color, dash: line.dash, dashOffset: 0 });
       }
     }
