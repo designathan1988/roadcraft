@@ -1,5 +1,5 @@
 import type { Finish } from '@world/buildings/materials';
-import { readRecords } from '@world/buildings/recordTable';
+import { eachRecord, readRecords } from '@world/buildings/recordTable';
 import { type PavingData, pavingReader } from '@world/paving';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { emitChunk } from './buildingMesh';
@@ -94,8 +94,6 @@ const DETAIL: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS.filter(
 
 /** DO NOT ask the page for the ground in rounds: a cell's job reads every height itself (`sharedGround.ts`), in one pass, nothing kept once it is done */
 export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
-  // DO NOT parse a text per building: each record decoded from its tile's shared table, a tile's shared members once for the job.
-  const buildings = readRecords(job.entries.map((entry) => entry.record));
   // A paving point past the roads handed over: the box of them, to ask the job again over it (`wider`).
   let missX0 = Infinity, missY0 = Infinity, missX1 = -Infinity, missY1 = -Infinity;
   const pavedHere = reads.pavedAt;
@@ -114,12 +112,15 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   const detail = MASS_DETAIL[job.kind];
   if (detail) {
     const masses: MassingChunk[] = [];
-    for (const b of buildings) {
+    // One record at a time, let go once its masses are made: a plate's job is four tiles of buildings (`eachRecord`).
+    for (const b of eachRecord(job.entries.map((entry) => entry.record))) {
       const mass = emitMassing(b, groundAt, paved, naturalAt, drawsSignature(b), job.tone, detail);
       if (mass) masses.push(mass);
     }
     return missX0 <= missX1 ? wider(job, missX0, missY0, missX1, missY1) : { kind: 'done', job: job.id, result: { batch: null, details: [], summaries: [], mass: cellMass(masses) } };
   }
+  // DO NOT parse a text per building: each record decoded from its tile's shared table, a tile's shared members once for the job.
+  const buildings = readRecords(job.entries.map((entry) => entry.record));
   const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade'));
   if (missX0 <= missX1) return wider(job, missX0, missY0, missX1, missY1);
   const summaries: ChunkSummary[] = chunks.map((chunk, i) => {
