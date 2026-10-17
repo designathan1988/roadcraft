@@ -132,28 +132,49 @@ export function compileCopy(object: Object3D): Object3D {
   return copy;
 }
 
+/** Every compile asked for and not settled, and the drains it has waited through: DO NOT let one wait for ever (a program that never says it is built, a mesh let go meanwhile): past `COMPILE_FRAMES` it settles, and the mesh is drawn as it was before (its program built in the draw at worst). */
+const inFlight = new Set<{ frames: number; settle: () => void }>();
+const COMPILE_FRAMES = 30;
+/** `done` once, however many times it is called, and taken off `inFlight`. */
+function once(done: () => void): () => void {
+  const entry = { frames: 0, settle: () => {} };
+  entry.settle = () => { if (!inFlight.delete(entry)) return; done(); };
+  inFlight.add(entry);
+  return entry.settle;
+}
+
 /** `shadow`: the object's material is a shadow's depth material, compiled for a shadow map. */
 export function compileAhead(object: Object3D, shadow = false): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object, shadow, done }));
+  return new Promise((done) => toCompile.push({ object, shadow, done: once(done) }));
 }
 
 /** `object`'s programs as they are drawn under another set of the scene's lights (`lights`, every one counted lit or not): the variant a light switched on or off asks for, built before it is. */
 export function compileAheadWith(object: Object3D, lights: readonly Object3D[]): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object, shadow: false, done, lights }));
+  return new Promise((done) => toCompile.push({ object, shadow: false, done: once(done), lights }));
 }
 
 /** DO NOT draw a pass of its own (`people/crowdAnimation.ts` palette pass) before its program is built: compiled on its first draw, in the frame (2026-10-16) */
 export function compilePassAhead(scene: Scene, camera: Camera, target: WebGLRenderTarget): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done, pass: { camera, target } }));
+  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done: once(done), pass: { camera, target } }));
 }
 
 /** Starts compiling what is waiting; each promise settles when its shaders are ready. */
 export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   compiler = true;
+  // A compile waited for past its frames settles: never a mesh held for ever.
+  for (const entry of [...inFlight]) if (++entry.frames > COMPILE_FRAMES) entry.settle();
   if (!toCompile.length) return;
+  // Without the parallel compile, three's compileAsync polls each program with a timer: built here at once instead, off the draw, and settled.
+  const extensions = (renderer as { extensions?: { has?: (name: string) => boolean } }).extensions;
+  const parallel = extensions?.has?.('KHR_parallel_shader_compile') ?? true;
+  const build = (object: Object3D, cameraFor: Camera, targetScene: Scene): Promise<unknown> => {
+    if (parallel) return renderer.compileAsync(object, cameraFor, targetScene);
+    renderer.compile(object, cameraFor, targetScene);
+    return Promise.resolve();
+  };
   // For the target the scene is really drawn into: its colour space and tone mapping are part of every program.
   const previous = renderer.getRenderTarget();
   // DO NOT let three walk the whole scene for its lights once per object compiled (`compile` traverses its target scene): gathered once for this drain.
@@ -165,7 +186,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
         // Its own scene's lights (none) and its own target, as it is drawn.
         renderer.setRenderTarget(pass.target);
         try {
-          renderer.compileAsync(object, pass.camera, object as Scene).then(() => done(), () => done());
+          build(object, pass.camera, object as Scene).then(() => done(), () => done());
         } catch (error) {
           console.error('[uploads] the program of a pass could not be compiled ahead', error);
           done();
@@ -188,7 +209,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
         if (unit.variant) setDepth((unit.object as Mesh).material as DepthMaterial, unit.variant);
         // DO NOT let one program that cannot be built stop the others, nor the frame: said, and the promise still settles.
         try {
-          compiled.push(renderer.compileAsync(unit.object, camera, lights ? lightSet(scene, lights) : lit));
+          compiled.push(build(unit.object, camera, lights ? lightSet(scene, lights) : lit));
         } catch (error) {
           console.error('[uploads] a program could not be compiled ahead', error);
         }
@@ -296,7 +317,7 @@ export function drainWarm(renderer: WebGLRenderer): void {
   while (toWarmLoose.length > 0 && (budget === UPLOAD_BYTES || budget > 0)) {
     const job = toWarmLoose.pop()!;
     budget -= meshBytes(job.mesh);
-    try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { void programsReady(job.mesh).then(job.done); }
+    try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { void programsReady(job.mesh).then(job.done, job.done); }
   }
 }
 
@@ -305,7 +326,9 @@ export function programsReady(mesh: Mesh): Promise<unknown> {
   // Nothing built ahead where no renderer answers (tests): nothing waited for.
   if (!compiler) return Promise.resolve();
   // Through the variants the door keeps (`programsOf`): a mesh warmed here goes in at once when it enters the scene.
-  const waiting = programsOf(mesh);
+  let waiting: Promise<unknown> | null;
+  // DO NOT let a mesh that cannot be stood in for stop the queue (an exception here left its job unsettled): it goes as it is.
+  try { waiting = programsOf(mesh); } catch (error) { console.error('[uploads] a mesh\'s programs could not be asked for', error); waiting = null; }
   if (!waiting) return Promise.resolve();
   pendingPrograms++;
   return waiting.finally(() => { pendingPrograms--; });
@@ -353,17 +376,20 @@ export function gateUntilBuilt(root: Object3D): void {
   root.traverse((object) => {
     const mesh = object as Mesh & { isLine?: boolean; isPoints?: boolean };
     if (!(mesh.isMesh || mesh.isLine || mesh.isPoints) || gated.has(object) || !mesh.material) return;
-    const waiting = programsOf(mesh);
+    let waiting: Promise<unknown> | null;
+    try { waiting = programsOf(mesh); } catch (error) { console.error('[uploads] a mesh\'s programs could not be asked for', error); waiting = null; }
     if (!waiting) return;
     gated.set(object, object.layers.mask);
     object.layers.set(GATE_LAYER);
     pendingPrograms++;
-    void waiting.then(() => {
+    const open = (): void => {
       pendingPrograms--;
       const mask = gated.get(object);
       gated.delete(object);
       if (mask !== undefined && object.layers.mask === 1 << GATE_LAYER) object.layers.mask = mask;
-    });
+    };
+    // Built, failed or given up on (`COMPILE_FRAMES`): the door opens all the same.
+    void waiting.then(open, open);
   });
 }
 
