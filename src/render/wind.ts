@@ -97,8 +97,21 @@ const NEAR_FADE_GLSL = /* glsl */ `
   }
 `;
 
+/** The mark of a material whose vertices the wind moves: what it draws sways every frame, and the sun's cascades draw it over their store of what stands still (`sunCascades.ts` movers, `renderer.ts`). */
+const SWAYS = Symbol('sways');
+type Swaying = Material & { [SWAYS]?: true };
+/** A material the wind moves (its shader reads `windUniforms`): every shader that sways marks its material, lit and depth. */
+export function markSway(material: Material): void {
+  (material as Swaying)[SWAYS] = true;
+}
+/** Whether a material sways in the wind (`markSway`). */
+export function sways(material: Material): boolean {
+  return (material as Swaying)[SWAYS] === true;
+}
+
 /** Makes a material's instances bend in the wind (and fade where the camera is among them). */
 export function applyWind(material: Material, response: WindResponse, key: string): void {
+  markSway(material);
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
     previous(shader, renderer);
@@ -112,6 +125,7 @@ ${NEAR_FADE_GLSL}`);
 /** The shadow-pass twin of a wind material, for `mesh.customDepthMaterial`. */
 export function windDepthMaterial(response: WindResponse, key: string): MeshDepthMaterial {
   const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+  markSway(depth);
   depth.onBeforeCompile = (shader) => install(shader, response);
   depth.customProgramCacheKey = () => `wind-depth-${key}`;
   return depth;
@@ -145,6 +159,7 @@ export function wireWindGlsl(swing: string, phase: string): string {
 
 /** A stiff structure in the wind - a signal post, its arm and heads */
 export function applyStructureSway(material: Material, originHeight: number, tall: number, amplitude: number, key: string): void {
+  markSway(material);
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
     previous(shader, renderer);

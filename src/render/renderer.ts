@@ -57,6 +57,7 @@ import type { Viewport } from '@view/viewport';
 import { VEHICLE_REACH, createAgentMeshes, type AgentMeshes } from './agents';
 import { frustumGroundBox } from './frustumGround';
 import { createEnvironment, sunShadowChunks } from './environment';
+import type { Movers } from './sunCascades';
 import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { renderTargetsBytes } from './targetBytes';
@@ -82,7 +83,7 @@ import { solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { RoadDoc } from '@world/doc';
 import { compileAhead, drainCompiles, drainUploads, drainWarm, gateUntilBuilt, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
-import { advanceWind, setWindWeather } from './wind';
+import { advanceWind, setWindWeather, sways } from './wind';
 import { holdStill, updateMoving } from './stillTree';
 import { castCastersInto } from './shadowCasters';
 import { setShadowSun } from './cellInstances';
@@ -478,6 +479,7 @@ export function createSceneRenderer(
   const watchShadowDepth = (root: Object3D): void => {
     root.traverse((object) => {
       depthFor(object);
+      noteSway(object, true);
       if ((object as Mesh).isMesh || watchedForDepth.has(object)) return;
       watchedForDepth.add(object);
       object.addEventListener('childadded', onChildAdded);
@@ -487,7 +489,31 @@ export function createSceneRenderer(
   // What comes into the scene or leaves it changes what casts: the sun's stores are not used for that frame (`castersStirred`).
   // And through the one door into the drawn scene: held off the drawn layers until its programs are built (`uploads.ts` gateUntilBuilt).
   const onChildAdded = (event: { child: Object3D }): void => { castersStirred = true; watchShadowDepth(event.child); gateUntilBuilt(event.child); };
-  const onChildRemoved = (): void => { castersStirred = true; };
+  const onChildRemoved = (event: { child: Object3D }): void => { castersStirred = true; event.child.traverse((o) => noteSway(o, false)); };
+  /** What the wind sways in the shadow (`wind.ts` markSway on its depth material: trees, grass, impostors, scenery; flags, wires and signal posts cast at rest), mesh by mesh: a mover of the sun's cascades (`sunCascades.ts`), drawn over their store of what stands still. */
+  const swayMeshes = new Set<Object3D>();
+  let swayList: Object3D[] = [];
+  let swayChanged = false;
+  const noteSway = (object: Object3D, on: boolean): void => {
+    const mesh = object as Mesh;
+    if (!mesh.isMesh) return;
+    if (on) {
+      // Its shadow is drawn with its depth material: only one the wind moves sways there.
+      if (!mesh.customDepthMaterial || !sways(mesh.customDepthMaterial)) return;
+      if (swayMeshes.has(mesh)) return;
+      swayMeshes.add(mesh);
+    } else if (!swayMeshes.delete(mesh)) return;
+    swayChanged = true;
+  };
+  const swaying: Movers = {
+    get roots() {
+      if (swayChanged) { swayList = [...swayMeshes]; swayChanged = false; }
+      return swayList;
+    },
+    // The wind is never still (`wind.ts` uWindStrength): what it sways moves every frame.
+    moving: () => true,
+    fixedSize: true,
+  };
 
   let requested: QualityLevel | 'auto' = initialQuality;
   const governor = new QualityGovernor(requested === 'auto' ? 'high' : requested);
@@ -950,6 +976,7 @@ export function createSceneRenderer(
   environment.setMovers([
     { roots: agents.meshes, moving: () => simRunning && agents.casting },
     { roots: [transit.group], moving: () => simRunning && transit.moving },
+    swaying,
   ]);
   const signals: SignalHeads = createSignalHeads(scene, deckHeight);
 
@@ -3057,7 +3084,7 @@ export function createSceneRenderer(
         shadowScale = buildings.frame.scale;
         const still = viewStill && scaleStill && !castersStirred;
         castersStirred = false;
-        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), wind: net.doc.weather.wind > 0, still })) {
+        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), still })) {
           renderer.shadowMap.needsUpdate = true;
         }
         shadowMoved = false;

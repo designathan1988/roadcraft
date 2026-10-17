@@ -3,6 +3,7 @@ import { DirectionalLight, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMateria
 
 import { cascadedSunChunks, createSunCascades, SUN_CASCADES } from '@render/sunCascades';
 import { m } from '@world/units';
+import { sways, windDepthMaterial } from '@render/wind';
 
 /** THE SUN'S CASCADES (`sunCascades.ts`): split by eye depth, fitted on whole texels, drawn only when what they hold changed */
 
@@ -65,7 +66,7 @@ describe('sun cascades', () => {
   it('keeps its cascades where they are while the view moves within their room, and draws none again for that', () => {
     const { cascades, camera, sunDirection, target } = rig();
     cascades.follow(camera, sunDirection, flat, target, m(40));
-    cascades.pass({ changed: false, effects: false, wind: false });
+    cascades.pass({ changed: false, effects: false });
     const before = cascades.lights.map((light) => light.position.clone());
     // Ten centimetres to the side
     camera.position.x += m(0.1);
@@ -74,31 +75,31 @@ describe('sun cascades', () => {
     cascades.follow(camera, sunDirection, flat, target, m(40));
     expect(cascades.lights.map((light, i) => light.position.equals(before[i]!))).toEqual([true, true, true]);
     for (const light of cascades.lights) light.shadow.needsUpdate = false;
-    expect(cascades.pass({ changed: false, effects: false, wind: false })).toBe(false);
+    expect(cascades.pass({ changed: false, effects: false })).toBe(false);
   });
 
   it('moves the sun in steps of a tenth of a degree, every cascade with it', () => {
     const { cascades, camera, sunDirection, target } = rig();
     cascades.follow(camera, sunDirection, flat, target, m(40));
-    cascades.pass({ changed: false, effects: false, wind: false });
+    cascades.pass({ changed: false, effects: false });
     const turned = (degrees: number): Vector3 => sunDirection.clone().applyAxisAngle(new Vector3(0, 1, 0), (degrees * Math.PI) / 180);
     expect(cascades.follow(camera, turned(0.05), flat, target, m(40))).toBe(false);
     expect(cascades.follow(camera, turned(0.2), flat, target, m(40))).toBe(true);
     for (const light of cascades.lights) light.shadow.needsUpdate = false;
-    expect(cascades.pass({ changed: false, effects: false, wind: false })).toBe(true);
+    expect(cascades.pass({ changed: false, effects: false })).toBe(true);
     expect(cascades.lights.every((light) => light.shadow.needsUpdate)).toBe(true);
   });
 
   it('draws again only the cascades a moving caster is wide enough to be drawn into', () => {
     const { cascades, camera, sunDirection, target } = rig();
     cascades.follow(camera, sunDirection, flat, target, m(40));
-    cascades.pass({ changed: false, effects: false, wind: false });
+    cascades.pass({ changed: false, effects: false });
     // Something ten centimetres across: wider than two texels of the nearest cascade, not of the farthest
     const small = new Mesh(new BoxGeometry(m(0.1), m(0.1), m(0.1)));
     small.updateMatrixWorld();
     cascades.setMovers([{ roots: [small], moving: () => true }]);
     for (const light of cascades.lights) light.shadow.needsUpdate = false;
-    cascades.pass({ changed: false, effects: false, wind: false });
+    cascades.pass({ changed: false, effects: false });
     const radius = small.geometry.boundingSphere!.radius;
     expect(cascades.lights.map((light) => light.shadow.needsUpdate)).toEqual(cascades.lights.map((light) => radius >= texelOf(light)));
     expect(cascades.lights[0]!.shadow.needsUpdate).toBe(true);
@@ -113,14 +114,14 @@ describe('sun cascades', () => {
   it("measures an instanced caster at its instances' size: a unit geometry scaled to a train car is drawn into the far cascade", () => {
     const { cascades, camera, sunDirection, target } = rig();
     cascades.follow(camera, sunDirection, flat, target, m(40));
-    cascades.pass({ changed: false, effects: false, wind: false });
+    cascades.pass({ changed: false, effects: false });
     // A ten-centimetre box, each instance scaled to twenty metres.
     const cars = new InstancedMesh(new BoxGeometry(m(0.1), m(0.1), m(0.1)), new MeshBasicMaterial(), 2);
     for (let k = 0; k < 2; k++) cars.setMatrixAt(k, new Matrix4().makeScale(200, 200, 200).setPosition(k * m(30), 0, 0));
     cars.updateMatrixWorld();
     cascades.setMovers([{ roots: [cars], moving: () => true }]);
     for (const light of cascades.lights) light.shadow.needsUpdate = false;
-    cascades.pass({ changed: false, effects: false, wind: false });
+    cascades.pass({ changed: false, effects: false });
     expect(cascades.lights.map((light) => light.shadow.needsUpdate)).toEqual([true, true, true]);
     cascades.lights[2]!.shadow.updateMatrices(cascades.lights[2]!);
     expect(cars.visible).toBe(true);
@@ -168,38 +169,39 @@ describe('sun cascades', () => {
     camera.updateMatrixWorld();
     cascades.follow(camera, new Vector3(-0.5, 0.75, -0.3).normalize(), flat, new Vector3(), m(40));
     const frame = (): void => { renderer.shadowMap.render(cascades.lights as DirectionalLight[], town); cascades.restore(); };
-    // The first frame, the scene still: every cascade drawn whole; the far one without the car, kept, and the car drawn over it without a clear; the near two with the car in the same pass (they never draw over a store: the sway).
-    expect(cascades.pass({ changed: false, effects: false, wind: false, still: true })).toBe(true);
+    // The first frame, the scene still: every cascade drawn whole without the car, kept, and the car drawn over each without a clear (what the wind sways is a mover too, `wind.ts` markSway: the near cascades keep a store as the far one).
+    expect(cascades.pass({ changed: false, effects: false, still: true })).toBe(true);
     const inTown: boolean[] = [];
     for (const light of cascades.lights) {
       const shadow = light.shadow, draw = shadow.updateMatrices.bind(shadow);
       shadow.updateMatrices = (l) => { draw(l); if (drawn.length < SUN_CASCADES) inTown.push(car.visible); };
     }
     frame();
-    expect(inTown).toEqual([true, true, false]);
+    expect(inTown).toEqual([false, false, false]);
     const still = drawn.filter((d) => !d.movers), over = drawn.filter((d) => d.movers);
     expect(still.length).toBe(SUN_CASCADES);
-    expect(over.length).toBe(1);
+    expect(over.length).toBe(SUN_CASCADES);
     expect(over.every((d) => !d.cleared)).toBe(true);
-    expect(copies).toEqual(['.shadowMap>']);
-    // The car moves on, nothing else changed: the far cascade not drawn again, only put back from its copy and the car over it; the near two drawn whole (the plants sway in them, `wind.ts`).
+    expect(copies.filter((c) => c.endsWith('>')).length).toBe(SUN_CASCADES);
+    // The car moves on, nothing else changed: no cascade drawn again, each put back from its copy and the car over it.
     drawn.length = 0; copies.length = 0;
-    expect(cascades.pass({ changed: false, effects: false, wind: false, still: true })).toBe(true);
-    expect(cascades.lights.map((light) => light.shadow.needsUpdate)).toEqual([true, true, false]);
+    expect(cascades.pass({ changed: false, effects: false, still: true })).toBe(true);
+    expect(cascades.lights.map((light) => light.shadow.needsUpdate)).toEqual([false, false, false]);
     frame();
-    expect(drawn.filter((d) => !d.movers).length).toBe(SUN_CASCADES - 1);
+    expect(drawn.filter((d) => !d.movers).length).toBe(0);
+    expect(drawn.filter((d) => d.movers).length).toBe(SUN_CASCADES);
     expect(drawn.filter((d) => d.movers).every((d) => !d.cleared)).toBe(true);
-    expect(copies.filter((c) => c.startsWith('>')).length).toBe(1);
+    expect(copies.filter((c) => c.startsWith('>')).length).toBe(SUN_CASCADES);
     // Something landed or the view moved (not still): the far cascade's store stands for nothing, drawn whole, the car in the same pass: no copy kept, no second pass.
     drawn.length = 0; copies.length = 0;
-    cascades.pass({ changed: false, effects: false, wind: false, still: false });
+    cascades.pass({ changed: false, effects: false, still: false });
     expect(cascades.lights[2]!.shadow.needsUpdate).toBe(true);
     frame();
     expect(drawn.every((d) => !d.movers)).toBe(true);
     expect(copies).toEqual([]);
     // The town changed: drawn whole again.
     drawn.length = 0;
-    cascades.pass({ changed: true, effects: false, wind: false });
+    cascades.pass({ changed: true, effects: false });
     frame();
     expect(drawn.filter((d) => !d.movers).length).toBe(SUN_CASCADES);
     expect(car.visible).toBe(true);
@@ -245,7 +247,7 @@ describe('sun cascades', () => {
     camera.lookAt(0, 0, 0);
     camera.updateMatrixWorld();
     cascades.follow(camera, new Vector3(-0.5, 0.75, -0.3).normalize(), flat, new Vector3(), m(40));
-    cascades.pass({ changed: false, effects: false, wind: false, still: true });
+    cascades.pass({ changed: false, effects: false, still: true });
     renderer.shadowMap.render(cascades.lights as DirectionalLight[], town);
     expect(over.length).toBeGreaterThan(0);
     for (const list of over) {
@@ -261,6 +263,35 @@ describe('sun cascades', () => {
     expect(ShaderChunk.lights_fragment_begin).toContain(`NUM_DIR_LIGHT_SHADOWS == ${SUN_CASCADES}`);
     // Three's own loop is kept for any other set of lights
     expect(ShaderChunk.lights_fragment_begin).toContain('#elif ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )');
+  });
+});
+
+describe('what the wind sways in the shadow', () => {
+  it('is marked by its depth material, the plain depth is not; a mover of fixed size is measured once, not every frame', () => {
+    expect(sways(windDepthMaterial({ bend: 0.5, flutter: 0.2, height: 4 } as unknown as Parameters<typeof windDepthMaterial>[0], 'test'))).toBe(true);
+    expect(sways(new MeshBasicMaterial())).toBe(false);
+    const sun = new DirectionalLight(), others = [new DirectionalLight(), new DirectionalLight()];
+    sun.castShadow = true;
+    const cascades = createSunCascades(sun, others, 2);
+    cascades.setEnabled(true, 512);
+    const trees = new InstancedMesh(new BoxGeometry(m(4), m(8), m(4)), new MeshBasicMaterial(), 2);
+    trees.castShadow = true;
+    trees.updateMatrixWorld();
+    let reads = 0;
+    const matrices = trees.instanceMatrix;
+    const array = matrices.array;
+    Object.defineProperty(matrices, 'array', { get: () => { reads++; return array; } });
+    cascades.setMovers([{ roots: [trees], moving: () => true, fixedSize: true }]);
+    const camera = new PerspectiveCamera(50, 16 / 9, m(0.4), m(2500));
+    camera.position.set(0, m(10), m(30));
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    cascades.follow(camera, new Vector3(-0.5, 0.75, -0.3).normalize(), flat, new Vector3(), m(40));
+    cascades.pass({ changed: false, effects: false, still: true });
+    const first = reads;
+    for (let frame = 0; frame < 5; frame++) cascades.pass({ changed: false, effects: false, still: true });
+    expect(first).toBeGreaterThan(0);
+    expect(reads).toBe(first);
   });
 });
 
