@@ -13,7 +13,7 @@ import type { SignalState } from '../signals/query';
 import type { JunctionAnswer, TrafficCount } from './simAnswers';
 import type { Casualty } from '../people/casualties';
 import type { TileEvent } from '../meso/meso';
-import { type FleetCell, FleetGrid, type GroundBox } from './fleetGrid';
+import { FleetGrid, type GroundBox } from './fleetGrid';
 import {
   C, H, P, PED_STRIDE, V, VEHICLE_STRIDE, headBase, makeSharedFrames, pedBase, vehicleBase,
   type FromSim, type SignalLayout, type SimAct, type SimAsk, type SimControls, type SimStats, type ToSim, type TrainState, type Wound,
@@ -145,13 +145,6 @@ export class SimClient implements JournalReader {
     if (which !== 'parked') { const s = this.trafficSlack; this.trafficGrid.near(box.x0 - s, box.y0 - s, box.x1 + s, box.y1 + s, out); }
     if (which !== 'traffic') { const s = this.parkedSlack; this.parkedGrid.near(box.x0 - s, box.y0 - s, box.x1 + s, box.y1 + s, out); }
     return out;
-  }
-
-  /** The cells of the parked cars the box reaches (grown by the settling cars' step), appended to `out` after clearing it: each with its version, which moves when a parked car comes into it, goes or changes there (`FleetGrid`); DO NOT walk the parked cars of a cell whose version stands. */
-  parkedCellsIn(box: Readonly<GroundBox>, out: FleetCell<VehicleView>[]): FleetCell<VehicleView>[] {
-    out.length = 0;
-    const s = this.parkedSlack;
-    return this.parkedGrid.cellsNear(box.x0 - s, box.y0 - s, box.x1 + s, box.y1 + s, out);
   }
 
   private addParked(view: VehicleView): void {
@@ -611,7 +604,7 @@ export class SimClient implements JournalReader {
       // The parked cars that moved last tick and not this one stand where they stopped: DO NOT walk every parked car for them.
       for (const view of this.settling) {
         const f = view.free;
-        if (f && (f.px !== f.x || f.py !== f.y)) { f.px = f.x; f.py = f.y; f.pangle = f.angle; setFrames(view.frames, f.x, f.y, f.angle, f.x, f.y, f.angle); this.parkedGrid.touch(view); }
+        if (f && (f.px !== f.x || f.py !== f.y)) { f.px = f.x; f.py = f.y; f.pangle = f.angle; setFrames(view.frames, f.x, f.y, f.angle, f.x, f.y, f.angle); }
       }
       this.settling.clear();
     }

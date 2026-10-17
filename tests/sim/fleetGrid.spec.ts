@@ -64,31 +64,4 @@ describe('the fleet grid', () => {
     grid.clear();
     expect(grid.near(-Infinity, -Infinity, Infinity, Infinity, [])).toEqual([]);
   });
-
-  it("moves a cell's version when an item comes, goes or changes in it, and only that cell's", () => {
-    const grid = new FleetGrid<Item>();
-    const a = itemAt(1, m(10), m(10)), b = itemAt(2, m(200), m(10)), c = itemAt(3, m(20), m(20));
-    for (const item of [a, b, c]) grid.place(item);
-    const versions = (): Map<number, number> => new Map(grid.cellsNear(-m(1000), -m(1000), m(1000), m(1000), []).map((cell) => [cell.key, cell.version]));
-    const cellOf = (item: Item): number => grid.cellsNear(item.frames.x, item.frames.y, item.frames.x, item.frames.y, [])[0]!.key;
-    const before = versions();
-    expect(before.size).toBe(2);
-    // Changed in place: its cell alone.
-    a.frames.x += m(1);
-    grid.touch(a);
-    let now = versions();
-    expect(now.get(cellOf(a))).toBeGreaterThan(before.get(cellOf(a))!);
-    expect(now.get(cellOf(b))).toBe(before.get(cellOf(b)));
-    // Gone: its cell moves; a cell emptied and filled again never shows a version of before.
-    const was = versions();
-    grid.remove(b);
-    expect(versions().has(cellOf(a))).toBe(true);
-    const bKey = was.get([...was.keys()].find((k) => k !== cellOf(a))!)!;
-    grid.place(b);
-    now = versions();
-    expect(now.get(cellOf(b))).toBeGreaterThan(bKey);
-    // The cells a box reaches, with their items.
-    const near = grid.cellsNear(0, 0, m(50), m(50), []);
-    expect(near.flatMap((cell) => cell.items.map((i) => i.id)).sort()).toEqual([1, 3]);
-  });
 });
