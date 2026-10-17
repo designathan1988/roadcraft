@@ -9,7 +9,7 @@ describe('the issues told to the page', () => {
   it('go on arriving once 512 are kept, and a reset of the city starts no reader over', () => {
     const doc = new RoadDoc();
     const w = new SimWorld(doc, new Network(doc), 1);
-    const issue = (n: number): AuditIssue => ({ code: 'stuck', tick: n, subject: String(n), detail: '' } as AuditIssue);
+    const issue = (n: number): AuditIssue => ({ code: 'stuck', tick: n, subject: String(n), detail: '' } as unknown as AuditIssue);
     let sent = 0;
     const told: number[] = [];
     const frame = (): void => { for (const i of issuesSince(w, sent)) told.push(i.tick); sent = w.issuesReported; };
