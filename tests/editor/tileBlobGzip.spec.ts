@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { gunzipBytes, gzipBytes } from '@editor/tileBlob';
+import { writeTile } from '@editor/tileStore';
+import type { PartStore } from '@editor/saveStore';
+import { tileIdBase, tileKey } from '@world/tiles';
 
 /** THE TILE'S GZIP MAKES NO BLOB BUT ITS RESULT (`tileBlob.ts` gzipBytes): a Blob is native memory the V8 does not count, and a worker whose heap is quiet never collects them (~2.9 GB outside the JS heap while the map was made) */
 
@@ -29,3 +32,18 @@ describe("a tile's part compressed", () => {
     expect(given).toBeLessThan(text.byteLength);
   });
 });
+
+describe('a tile written', () => {
+  it("hands back whether it was stored, not its records' texts (held through the sections' bake, read by nobody)", async () => {
+    const blobs = new Map<string, Blob>();
+    const store: PartStore = { async get(keys) { return keys.map((k) => blobs.get(k) ?? null); }, async write(put) { for (const [k, b] of put) blobs.set(k, b); return true; } };
+    const key = tileKey(1, 1), base = tileIdBase(key);
+    const result = await writeTile(store, 'map', {
+      key, version: 1, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [], lotKeys: [],
+      landscape: [], barriers: [], paint: [], trees: [], elements: [],
+      next: { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base },
+    });
+    expect(result).toEqual({ ok: true });
+  });
+});
+

@@ -108,17 +108,13 @@ export type TileSection = { readonly json: unknown } | { readonly bin: Uint8Arra
 export type TileBaker = (records: TileRecords) => Readonly<Record<string, TileSection>>;
 
 /** A tile's blob, and its records' texts (handed to whoever asked for the tile): the records made text once, for both. */
-async function encodeTile(records: TileRecords, bake: TileBaker | undefined, full?: TileRecords, reused?: ReadonlyMap<string, Blob>): Promise<{ readonly blob: Blob; readonly text: TileText }> {
+/** DO NOT keep the records' texts past their gzip: no caller reads them, and they lived through the sections' bake (5-15 MB a part, the generator's memory, 2026-10-17 - as the simulacao's 3f34d8e9). */
+async function encodeTile(records: TileRecords, bake: TileBaker | undefined, full?: TileRecords, reused?: ReadonlyMap<string, Blob>): Promise<{ readonly blob: Blob }> {
   const encoder = new TextEncoder();
-  const json = (value: unknown): Uint8Array<ArrayBuffer> => encoder.encode(JSON.stringify(value)) as Uint8Array<ArrayBuffer>;
   const split = splitRecords(records);
-  // A part taken as stored is neither written as text nor compressed again.
-  const text = RECORD_PARTS.map((name) => (reused?.has(name) ? new Uint8Array(0) : json(split[name])));
   const parts: TilePartIn[] = [];
-  for (let n = 0; n < RECORD_PARTS.length; n++) {
-    const name = RECORD_PARTS[n]!, kept = reused?.get(name);
-    parts.push({ name, kind: 'json', data: kept ?? await gzipBytes(text[n]!) });
-  }
+  // Each part made text, compressed and let go, one at a time; one taken as stored is neither (D4).
+  for (const name of RECORD_PARTS) parts.push({ name, kind: 'json', data: reused?.get(name) ?? await gzipBytes(encoder.encode(JSON.stringify(split[name])) as Uint8Array<ArrayBuffer>) });
   let sections: Readonly<Record<string, TileSection>> = {};
   try {
     // From every building: the grown rows made again where the caller has not the records whole (`full`).
@@ -128,7 +124,7 @@ async function encodeTile(records: TileRecords, bake: TileBaker | undefined, ful
     console.error(`[save] tile ${records.key}'s sections could not be baked`, error);
   }
   for (const [name, section] of Object.entries(sections)) parts.push(await sectionPart(name, section));
-  return { blob: tileBlob(records.key, records.version, bake !== undefined, parts), text };
+  return { blob: tileBlob(records.key, records.version, bake !== undefined, parts) };
 }
 
 /** A section as a part of the tile's blob: a binary pack as it is, a JSON value gzipped. */
@@ -201,10 +197,10 @@ export function writtenRecords(write: TileWrite): TileRecords {
 
 /** A tile written in one transaction of its one key, its sections baked with it: whether it was stored, and its records' texts. */
 export async function writeTile(store: PartStore, map: string, records: TileRecords, bake?: TileBaker, full?: TileRecords,
-  /** Record parts taken as they are stored (`storedParts`): their texts come back empty. */
-  reused?: ReadonlyMap<string, Blob>): Promise<{ readonly ok: boolean; readonly text: TileText }> {
-  const { blob, text } = await encodeTile(records, bake, full, reused);
-  return { ok: await store.write([[tileBlobKey(map, records.key), blob]], []), text };
+  /** Record parts taken as they are stored (`storedParts`). */
+  reused?: ReadonlyMap<string, Blob>): Promise<{ readonly ok: boolean }> {
+  const { blob } = await encodeTile(records, bake, full, reused);
+  return { ok: await store.write([[tileBlobKey(map, records.key), blob]], []) };
 }
 
 /** The parts `same` names as the store holds them, when its tile is still at `same.base` in parts (null: written whole). */
