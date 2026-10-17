@@ -129,8 +129,8 @@ export interface ParkedSource {
   readonly parked: readonly StandingCar[];
   /** The serial of the latest change of `parked`. */
   readonly parkedSerial: number;
-  /** The cars that came (`added`) and went since `serial`, oldest first; null: `parked` is to be read whole. */
-  parkedSince(serial: number): readonly { readonly car: StandingCar; readonly added: boolean }[] | null;
+  /** The cars that came (`added`) and went since `serial`, oldest first; null: `parked` is to be read whole. `reader` has read up to `parkedSerial` (the log kept for it). */
+  parkedSince(serial: number, reader?: object): readonly { readonly car: StandingCar; readonly added: boolean }[] | null;
   /** The cars of `parked` that may move while standing in it. */
   readonly movers: ReadonlySet<StandingCar>;
 }
@@ -148,7 +148,7 @@ export class ParkedZoneIndex {
 
   /** Brought up to the cars standing, from what their keeper says changed */
   follow(source: ParkedSource): void {
-    const changes = this.serial < 0 ? null : source.parkedSince(this.serial);
+    const changes = source.parkedSince(this.serial, this);
     this.serial = source.parkedSerial;
     // The order-kept list belongs to `sync`: a later `sync` finds it from the cars.
     this.list.length = 0;

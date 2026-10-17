@@ -92,8 +92,12 @@ export interface BakedSource {
 interface BayBook {
   /** The bays' sources (`L<building>` a lot, `K<segment>` a street's kerb) whose bays changed since `logBase`, oldest first */
   log: string[];
+  /** Entries of `log` before it are let go; `logBase` is the serial of the entry at it. */
+  logHead: number;
   logBase: number;
   serial: number;
+  /** DO NOT forget the log for every reader when one lags: each reader's serial read up to (`bayChangesSince`), the log kept from the least. */
+  readonly readers: Map<object, number>;
   /** `out` is to be put together again before it is handed out (`collectBays`). */
   outStale: boolean;
   /** The lots (buildings with a `parking` element), in the store's order. */
@@ -124,7 +128,7 @@ function bookOf(w: BayWorld): BayBook {
   let book = BOOKS.get(w);
   if (!book) {
     book = { lots: new BuildingsInOrder(hasParking), known: new Map(), waiting: new Map(), kerb: newKerbBook(), workers: null, lanesSeen: null,
-      out: [], log: [], logBase: 0, serial: 0, outStale: true, bakedTiles: new Map(), bakedLots: new Map(), bakedKerbs: new Map(), reading: new Map(),
+      out: [], log: [], logHead: 0, logBase: 0, serial: 0, readers: new Map(), outStale: true, bakedTiles: new Map(), bakedLots: new Map(), bakedKerbs: new Map(), reading: new Map(),
       reads: null };
     BOOKS.set(w, book);
   }
@@ -285,10 +289,22 @@ function noteBays(book: BayBook, source: string): void {
   book.outStale = true;
   book.log.push(source);
   book.serial++;
-  // Longer than every source read once: forgotten (its readers read every source).
-  if (book.log.length > Math.max(256, book.known.size + book.kerb.reach.size)) {
-    book.log = [];
-    book.logBase = ++book.serial;
+  trimLog(book);
+}
+
+/** The log kept from the least serial its readers read up to; a lagging reader's part longer than every source read once (it reads every source then) let go for that reader alone. */
+function trimLog(book: BayBook): void {
+  // With no reader known yet, kept up to the bound alone.
+  let least = book.readers.size ? book.serial : -Infinity;
+  for (const serial of book.readers.values()) if (serial < least) least = serial;
+  const floor = Math.max(least, book.serial - Math.max(256, book.known.size + book.kerb.reach.size));
+  if (floor <= book.logBase) return;
+  book.logHead += floor - book.logBase;
+  book.logBase = floor;
+  // The let-go head dropped once it is half the array: each entry moved a bounded number of times.
+  if (book.logHead > 256 && book.logHead * 2 > book.log.length) {
+    book.log = book.log.slice(book.logHead);
+    book.logHead = 0;
   }
 }
 
@@ -307,11 +323,12 @@ function townBays(book: BayBook): readonly Bay[] {
   return out;
 }
 
-/** DO NOT read the town's list (`collectBays`) at every change: every bay of the town, for each building grown. */
-export function bayChangesSince(w: BayWorld, serial: number): { readonly serial: number; readonly changed: readonly string[] | null } {
+/** DO NOT read the town's list (`collectBays`) at every change: every bay of the town, for each building grown. `reader` has read up to `serial`: the log is kept for it from there. */
+export function bayChangesSince(w: BayWorld, serial: number, reader?: object): { readonly serial: number; readonly changed: readonly string[] | null } {
   const book = baysNow(w);
-  if (serial < 0 || serial < book.logBase || serial > book.serial) return { serial: book.serial, changed: null };
-  return { serial: book.serial, changed: book.log.slice(serial - book.logBase) };
+  const changed = serial < 0 || serial < book.logBase || serial > book.serial ? null : book.log.slice(book.logHead + serial - book.logBase);
+  if (reader && serial >= 0) { book.readers.set(reader, serial); trimLog(book); }
+  return { serial: book.serial, changed };
 }
 
 /** @rebuild Every source of bays, in the town's order (the lots in the store's, then the streets by id): read whole. */

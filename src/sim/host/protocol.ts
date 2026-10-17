@@ -155,19 +155,16 @@ export type FromSim =
   | { readonly type: 'failed'; readonly message: string }
   | { readonly type: 'tick'; readonly slot: number; readonly vehicles: readonly (readonly [number, VehicleRich])[]; readonly peds: readonly (readonly [number, PedRich])[];
       readonly signals: readonly SignalLights[]; readonly layout: { readonly all: boolean; readonly junctions: readonly SignalLayout[] } | null; readonly trains: readonly TrainState[];
-      readonly parked: readonly ParkedCar[] | null; readonly stats: SimStats;
+      readonly parked: ParkedChanges | null; readonly stats: SimStats;
       readonly wounds: readonly Wound[]; readonly casualties: readonly Casualty[] }
   | { readonly type: 'acted'; readonly id: number; readonly result: unknown }
   | { readonly type: 'answer'; readonly id: number; readonly answer: unknown };
 
-/** A car parked in its bay, still: where, and how it looks. */
-export interface ParkedCar {
-  readonly id: number; readonly archetype: string; readonly color: string; readonly x: number; readonly y: number; readonly angle: number; readonly lot: number | null;
-  /** Gone from its bay (driven out, taken away). */
-  readonly gone: boolean;
-  /** The list is every parked car of the map: those not in it are gone. */
-  readonly whole: boolean;
-}
+/** The cars come into a bay or gone from one, `PARKED_STRIDE` numbers each (fields `PK`), in a buffer handed over; `whole`: every car standing, those not in it gone. */
+export interface ParkedChanges { readonly whole: boolean; readonly cars: Float64Array }
+/** A parked car's numbers: its id, gone (1) or standing (0), where, its lot (-1: none), its kind (`ARCHETYPES` index) and its colour (0xrrggbb). */
+export const PK = { id: 0, gone: 1, x: 2, y: 3, angle: 4, lot: 5, archetype: 6, color: 7 } as const;
+export const PARKED_STRIDE = 8;
 
 /** The simulation's own numbers for the status bar, the monitor and the population governor. */
 export interface SimStats {
