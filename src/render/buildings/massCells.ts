@@ -108,6 +108,8 @@ export interface MassCells {
   cap(eyeX: number, eyeY: number, budget: number, bytesOf: (key: string, fine: boolean) => number, forced: boolean | ReadonlySet<string>): void;
   /** The bytes a cell's masses hold on the GPU (0 before they came): what a level of it never landed is reckoned at (`layer.ts` capNow). */
   massBytes(key: string): number;
+  /** A far sun cascade being drawn (`layer.ts` castInto): the cells drawn in detail whose masses can stand for them shown for the pass, their keys given (the layer leaves their detail out); false: as they are drawn, none given. */
+  shadowMasses(on: boolean): string[];
   /** Whether a cell is drawn near; a cell with no mass (lawns only), or none known, always is. */
   near(key: string): boolean;
   /** Whether a cell is drawn at full detail (L0) rather than its facade level (L1); a cell not near is not. */
@@ -589,6 +591,18 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     massBytes(key) {
       const mesh = cells.get(key)?.mesh;
       return mesh ? meshBytes(mesh) : 0;
+    },
+    shadowMasses(on) {
+      const swapped: string[] = [];
+      for (const key of detailed) {
+        const cell = cells.get(key);
+        if (!cell?.mesh) continue;
+        if (!on) { showMass(key, cell); continue; }
+        if (cell.covered || !cell.near) continue;
+        cell.mesh.visible = true;
+        swapped.push(key);
+      }
+      return swapped;
     },
     near(key) {
       return cells.get(key)?.near ?? true;
