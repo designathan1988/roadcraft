@@ -298,8 +298,12 @@ function migrateCore(raw: unknown, scale: Scale): Core | null {
 const height = (v: unknown, fallback: number, max = MAX_STOREY_HEIGHT): number =>
   clamp(finite(v) ? v : fallback, MIN_STOREY_HEIGHT, max);
 
-/** Any stored building, of any schema this build knows, as a current one. */
+/** The buildings this thread's `migrateBuilding` made: already current (records are replaced, never edited). */
+const MIGRATED = new WeakSet<object>();
+
+/** Any stored building, of any schema this build knows, as a current one: DO NOT migrate one of its own again (a new object each time, every derived product kept by record - bounds, footprints, blocks - worked out again for it: a tile's bakes migrated each building twice). */
 export function migrateBuilding(raw: unknown): Building | null {
+  if (typeof raw === 'object' && raw !== null && MIGRATED.has(raw)) return raw as Building;
   if (!isRecord(raw)) return null;
   if (!finite(raw.id) || raw.id < 1 || !Number.isInteger(raw.id)) return null;
   if (!finite(raw.x) || !finite(raw.y)) return null;
@@ -386,6 +390,7 @@ export function migrateBuilding(raw: unknown): Building | null {
   if (Object.keys(furnishing).length) building.furnishing = furnishing;
   else delete building.furnishing;
   delete building.cutaway;
+  MIGRATED.add(building);
   return building;
 }
 

@@ -6,6 +6,8 @@ import type { JobScope } from './jobs/jobScope';
 import { workerParts } from '@editor/workerParts';
 import { type PreparedTile, addTileSection, prepareTile, readTile, readTileSection, storedVersion, writeTile } from '@editor/tileStore';
 import { withGrownBuildings } from '@world/growth/grownRows';
+import { migrateBuilding } from '@world/buildings/serialize';
+import type { Building } from '@world/buildings/types';
 import { BAYS_SECTION } from '@sim/tileBays';
 import { NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, tileBaysSection, tileNetworkSection } from '@sim/tileSections';
 import { type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
@@ -97,6 +99,13 @@ async function addBays(map: string, records: TileRecords): Promise<void> {
   }
 }
 
+/** A tile's buildings as current records, each made once (`migrateBuilding`), those it cannot read left out as every reader of them leaves them. */
+function migratedOnce(buildings: TileRecords['buildings']): TileRecords['buildings'] {
+  const out: Building[] = [];
+  for (const raw of buildings) { const b = migrateBuilding(raw); if (b) out.push(b); }
+  return out as unknown as TileRecords['buildings'];
+}
+
 /** The tile store's parts as this worker opens them (`workerParts`: IndexedDB, or the desktop's saves writer through its own port), on the first tile stored. */
 let parts: ReturnType<typeof workerParts> | null = null;
 const stored = (): ReturnType<typeof workerParts> => (parts ??= workerParts());
@@ -127,7 +136,8 @@ function make(self: JobScope, ask: StreamTileAsk): void {
     const pair = buildStreamTilePair(options, i, j);
     if (!store) { self.postMessage({ key: tileKey(i, j), records: pair.records } satisfies StreamTileAnswer); return; }
     const version = Math.max(pair.records.version, store.after) + 1;
-    const records = { ...pair.records, version }, full = { ...pair.full, version };
+    // Every building migrated once for all the tile's bakes (its sections, its far levels, the page's records): the same objects, their derived products worked out once.
+    const records = { ...pair.records, version }, full = { ...pair.full, version, buildings: migratedOnce(pair.full.buildings) };
     // Its sections baked here with it, once (`sim/tileSections.ts`); its bays only for a tile of the region (records asked), a tile made ahead takes them when it is loaded (`addBays`).
     void writeTile(stored(), store.map, records, (r) => bakeTileSections(r, store.records), full).then(
       async ({ ok }) => {
