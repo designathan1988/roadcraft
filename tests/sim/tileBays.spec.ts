@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { packArrays } from '@core/arrayPack';
 import { RoadDoc, type SerializedDoc, type TileRecords } from '@world/doc';
 import { Network } from '@world/network';
@@ -27,9 +27,11 @@ function townTile(): TileRecords {
   };
 }
 
-/** A section as the tile store keeps it: a JSON part made text and read back, a binary part's bytes in a buffer of their own. */
+/** A section as the tile store keeps it: a JSON part made text and read back, a binary part's bytes read from its Blob. */
 const jsonBack = (value: unknown): unknown => JSON.parse(JSON.stringify(value)) as unknown;
-const bytesBack = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
+const bytesOf = (section: unknown): Promise<ArrayBuffer> => (section as { blob: Blob }).blob.arrayBuffer();
+/** The bays section's bytes, read once (`beforeAll`). */
+let baysBytes: ArrayBuffer | null = null;
 
 /** The tile, its sections baked once, its buildings as the simulation's worker reads them back. */
 let baked: { tile: TileRecords; sections: ReturnType<typeof bakeTileSections>; traffic: TrafficBuilding[] } | null = null;
@@ -41,7 +43,7 @@ function bake(): NonNullable<typeof baked> {
   }
   return baked;
 }
-const tileBays = (): TileBays => unpackTileBays(bytesBack((bake().sections[BAYS_SECTION] as { bin: Uint8Array }).bin))!;
+const tileBays = (): TileBays => unpackTileBays(baysBytes!)!;
 
 /** The simulation's worker over the tile: its roads as the page sends them, its buildings as its traffic section reads back (`simHost.ts`). */
 function worldOf(segments?: TileRecords['segments'], buildings?: readonly TrafficBuilding[]): { w: SimWorld; table: TrafficBuildingTable } {
@@ -88,6 +90,7 @@ function streetTiles(): Set<number> {
 }
 
 describe('a tile\'s baked bays', () => {
+  beforeAll(async () => { baysBytes = await bytesOf(bake().sections[BAYS_SECTION]); });
   it('are the bays the simulation works out from the same tile, and are taken without working out a lot or a street', () => {
     const { bays: want, work } = liveBays();
     expect(work.lots, 'lots the simulation works out').toBeGreaterThan(5);
@@ -144,7 +147,7 @@ describe('a tile\'s baked bays', () => {
   });
 
   it('of an older read of the tile, or of another format, are not taken', () => {
-    expect(unpackTileBays(bytesBack(packArrays({ key: 0, version: 0, format: 999, lots: 0, kerbs: 0 }, {})))).toBeNull();
+    expect(unpackTileBays(packArrays({ key: 0, version: 0, format: 999, lots: 0, kerbs: 0 }, {}).buffer)).toBeNull();
     const { w } = worldOf();
     const key = bake().tile.key;
     tileBaysWanted(w, key, 2);
@@ -188,7 +191,7 @@ describe("a tile made ahead of the region (the opening's rush)", () => {
     expect(await addTileSection(store, 'm', tile.key, tile.version, BAYS_SECTION, section)).toBe(true);
     const added = await readTileSection(store, 'm', tile.key, BAYS_SECTION);
     // The bays baked with the tile written whole, byte for byte; the records the same; the traffic section kept.
-    expect(new Uint8Array((added as { bytes: ArrayBuffer }).bytes)).toEqual(new Uint8Array(bytesBack((bake().sections[BAYS_SECTION] as { bin: Uint8Array }).bin)));
+    expect(new Uint8Array((added as { bytes: ArrayBuffer }).bytes)).toEqual(new Uint8Array(await bytesOf(bake().sections[BAYS_SECTION])));
     expect(await readTile(store, 'm', tile.key)).toEqual(records);
     expect(await readTileSection(store, 'm', tile.key, TRAFFIC_SECTION)).toEqual(traffic);
   });

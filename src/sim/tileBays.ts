@@ -1,4 +1,4 @@
-import { packArrays, packedArray, packedNumber, unpackArrays } from '@core/arrayPack';
+import { packArraysBlob, packedArray, packedNumber, unpackArrays } from '@core/arrayPack';
 import { ChangeLog } from '@core/changeLog';
 import type { BuildingId } from '@world/buildings/types';
 import type { TileRecords } from '@world/doc';
@@ -28,7 +28,7 @@ const NO_LOT = -1 as BuildingId;
 const NOT_GHOST = Object.freeze({ ghost: false });
 
 /** @rebuild A tile's bays worked out from its own records alone (no workers): its roads as a network of their own with their link lanes, its buildings as traffic reads them back from the tile's traffic section (`traffic`) */
-export function bakeTileBays(records: TileRecords, traffic: readonly TrafficBuilding[]): Uint8Array<ArrayBuffer> {
+export function bakeTileBays(records: TileRecords, traffic: readonly TrafficBuilding[]): Blob {
   // The tile's roads built once for its bakes (`world/tileNetwork.ts`): the junctions' bake reads the same network.
   const { doc, net } = tileRoadNetwork(records);
   // The link lanes alone: the bays read no junction's turns.
@@ -39,8 +39,8 @@ export function bakeTileBays(records: TileRecords, traffic: readonly TrafficBuil
   return packBays(records.key, records.version, bakeBays(world), graph);
 }
 
-/** The baked lots then streets as one pack (`core/arrayPack.ts`): each source's id, digests and bays, every bay's lane by its lanelet's numbers. */
-function packBays(key: number, version: number, baked: ReturnType<typeof bakeBays>, graph: LaneletGraph): Uint8Array<ArrayBuffer> {
+/** The baked lots then streets as one pack (`core/arrayPack.ts`): each source's id, digests and bays, every bay's lane by its lanelet's numbers; written straight into the section's Blob (`packArraysBlob`), no buffer of its own beside it. */
+function packBays(key: number, version: number, baked: ReturnType<typeof bakeBays>, graph: LaneletGraph): Blob {
   const sources: readonly BakedSource[] = [...baked.lots, ...baked.kerbs];
   let bays = 0, points = 0;
   for (const s of sources) {
@@ -68,7 +68,7 @@ function packBays(key: number, version: number, baked: ReturnType<typeof bakeBay
   });
   start[sources.length] = n;
   viaStart[n] = v;
-  return packArrays(
+  return packArraysBlob(
     { key, version, format: TILE_BAYS_FORMAT, lots: baked.lots.length, kerbs: baked.kerbs.length },
     { source, record, keys, start, bay, lane, viaStart, via },
   );
