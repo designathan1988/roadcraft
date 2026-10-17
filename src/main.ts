@@ -1,7 +1,7 @@
 import { MESO_REACH } from '@sim/meso/tileFeed';
-import { TileStore, portTiles } from '@editor/tileStore';
+import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
 import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
-import { WorldStreamer } from './worldStreamer';
+import { WorldStreamer, mapTilesFrom } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
 import { profileOf } from '@world/roads/profile';
@@ -1657,20 +1657,42 @@ function setMapBiome(key: string): void {
 }
 
 /** One edit of the whole map, asked first and undoable: what each "clear" and "spread" button does. */
-function wholeMapEdit(confirmKey: string | null, edit: () => void): void {
+function wholeMapEdit(confirmKey: string | null, edit: () => void, tileLists: readonly ClearablePart[] = []): void {
   if (confirmKey && !window.confirm(t(confirmKey))) return;
   history.begin(doc);
   edit();
   updateHistoryButtons();
   persistence.saveSessionSoon(doc, sessionSettings);
   requestDraw();
+  // The streamed world: the tiles not on the page emptied where they are stored (the region's edit is the undo step; the rest is not undone).
+  if (tileLists.length && streamed) void clearStoredTiles(streamed, tileLists);
+}
+
+/** DO NOT clear only the region for a "whole map" clear: every stored tile of the map not on the page emptied where it is stored (`TileStore.clearLists`, in the save worker, one tile at a time), a tile that comes meanwhile emptied as it comes (`WorldStreamer.clearing`). */
+async function clearStoredTiles(open: NonNullable<typeof streamed>, parts: readonly ClearablePart[]): Promise<void> {
+  if (open.streamer.readOnly) return;
+  const done = open.streamer.clearing(parts);
+  try {
+    for (const key of mapTilesFrom(0, 0)) {
+      if (streamed !== open) return;
+      if (doc.hasTile(key)) continue;
+      const version = await open.store.clearLists(key, parts);
+      if (version !== null) open.written(key, version);
+    }
+  } catch (error) {
+    console.error('[world] a whole map clear did not reach every tile', error);
+  } finally {
+    done();
+  }
 }
 const MAP_ACTIONS: Readonly<Record<string, () => void>> = {
   clearTerrain: () => wholeMapEdit('confirm.clearTerrain', () => doc.clearTerrain()),
   clearGullies: () => { if (doc.gullyDabs.length > 0) wholeMapEdit('confirm.clearGullies', () => doc.clearGullies()); },
   clearFog: () => { if (doc.fogDabs.length > 0) wholeMapEdit('confirm.clearFog', () => doc.clearFog()); },
-  clearTrees: () => { if (doc.trees.length > 0 || doc.treeClearings.length > 0) wholeMapEdit('confirm.clearTrees', () => doc.clearTrees()); },
-  clearElements: () => { if (doc.elements.length > 0) wholeMapEdit('confirm.clearElements', () => doc.clearElements()); },
+  clearTrees: () => {
+    if (streamed || doc.trees.length > 0 || doc.treeClearings.length > 0) wholeMapEdit('confirm.clearTrees', () => doc.clearTrees(), ['trees']);
+  },
+  clearElements: () => { if (streamed || doc.elements.length > 0) wholeMapEdit('confirm.clearElements', () => doc.clearElements(), ['elements']); },
   clearClouds: () => {
     if (doc.clouds.length > 0) wholeMapEdit('confirm.clearClouds', () => { for (const cloud of [...doc.clouds]) doc.removeCloud(cloud.id); });
   },
@@ -1940,7 +1962,9 @@ const GROW_SLICE_MS = 100;
 let cityBuiltIn = 0;
 
 /** THE STREAMED WORLD (CLAUDE.md, "Streaming world"): a city of any size - the page's document holds the tiles round the camera (`worldStreamer.ts`), the tile store (`editor/tileStore.ts`) every tile ever made and is the save, a tile never made is generated on demand in a worker (`tileGenerator.ts`) */
-let streamed: { readonly store: TileStore; readonly generator: TileGenerator; readonly streamer: WorldStreamer; readonly release: () => void } | null = null;
+let streamed: { readonly store: TileStore; readonly generator: TileGenerator; readonly streamer: WorldStreamer; readonly release: () => void;
+  /** A tile written at a version (`StreamerEvents.written`): what is baked of it is stale. */
+  readonly written: (key: number, version: number) => void } | null = null;
 
 /** DO NOT let two tabs write one world (each stamps the versions it knows, the last writer wins): the first holds it (a Web Lock by its name, MDN "LockManager"), until it closes it; another tab opens it read only. Resolves the release, or null when another tab holds it. */
 function holdWorld(name: string): Promise<(() => void) | null> {
@@ -1988,6 +2012,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   updateHistoryButtons();
   // The buildings and the roads past the region, baked per tile in the workers from the store (`buildings/farLevels.ts`, `farRoads.ts`).
   const far = [scene.farBuildings, scene.farRoads];
+  const written = (key: number, version: number): void => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); };
   const streamer = new WorldStreamer(doc, store, {
     arrived: () => requestDraw(),
     loaded: (key) => {
@@ -2007,7 +2032,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
       for (const f of far) f.loadedChanged(key);
       sim.tile('letGo', key);
     },
-    written: (key, version) => { for (const f of far) f.stored(key, version); sim.tile('written', key, version); },
+    written: (key, version) => written(key, version),
     // The kept ring's buildings and roads are the far levels' to draw, not the near products' (the solution's 5.4): the layer, the roads and the far levels told when a tile's standing changes.
     activeChanged: (keys, rects) => {
       // A tile come into the region has its near products made now: its far level stands until they are drawn; one gone to the ring is the far levels' at once.
@@ -2033,7 +2058,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`); on the desktop through a port of its own to the shell's saves.
   if (!desktopStores) sim.tiles(mapName, MESO_REACH);
   else desktopStores.connect().then((port) => sim.tiles(mapName, MESO_REACH, port), (error: unknown) => console.error('[world] the simulation got no port to the saves', error));
-  streamed = { store, generator, streamer, release: release ?? (() => {}) };
+  streamed = { store, generator, streamer, release: release ?? (() => {}), written };
   // Another tab holds this world: read here, written there only.
   if (!release) { streamer.readOnly = true; flashHint('hint.worldReadOnly'); }
   if (fresh && release) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
@@ -2078,7 +2103,7 @@ function growthAnswered(answer: GrowAnswer): boolean {
   return true;
 }
 
-/** DO NOT replace the map under a streamed world: closed first (its changed tiles written, as long as the close of the page waits, `CLOSE_WAIT_MS`), the region's tiles left, then `replace`; with no streamed world, `replace` at once. */
+/** DO NOT replace the map under a streamed world: closed first (its changed tiles written or failed), the region's tiles left, then `replace`; with no streamed world, `replace` at once. */
 function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
   const open = streamed;
   if (!open) return replace();
@@ -2094,8 +2119,8 @@ function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
   sim.storeBehind = () => false;
   scene.holdOpening(null);
   try { window.localStorage.removeItem(STREAMED_MARK); } catch { /* storage blocked */ }
-  const waited = new Promise<boolean>((done) => setTimeout(() => done(false), CLOSE_WAIT_MS));
-  return Promise.race([written, waited]).then((ok) => {
+  // Every write settles, written or failed (`WorldStreamer.flush`): DO NOT race it with a timer.
+  return written.then((ok) => {
     if (!ok) console.error('[world] some changed tiles were not confirmed written before the map was replaced');
     doc.leaveTiles();
     const out = replace();

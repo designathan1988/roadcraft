@@ -275,6 +275,25 @@ describe('a tile stored', () => {
     expect(await new TileStore('map', storeTiles(store), never).meta()).toEqual(meta);
   });
 
+  it('empties the trees of a stored tile where it is stored, its version moved on, its other lists kept; nothing to clear, nothing written', async () => {
+    const store = memoryStore();
+    const tiles = new TileStore('map', storeTiles(store), never);
+    const tree = { x: m(10), y: m(10), species: 0, scale: 1 } as unknown as TileRecords['trees'][number];
+    const element = { kind: 'rock', x: m(20), y: m(20) } as unknown as TileRecords['elements'][number];
+    const tile = emptyTile(0, 0, { trees: [tree, tree], elements: [element] });
+    await tiles.write(tile);
+    const writes = store.writes.length;
+    const version = await tiles.clearLists(tile.key, ['trees']);
+    expect(version).toBe(2);
+    const back = (await new TileStore('map', storeTiles(store), never).read(tile.key))!;
+    expect(back.trees).toEqual([]);
+    expect(back.elements).toHaveLength(1);
+    expect(back.version).toBe(2);
+    expect(await tiles.clearLists(tile.key, ['trees'])).toBeNull();
+    expect(store.writes.length).toBe(writes + 1);
+    expect(await tiles.clearLists(tileKey(5, 5), ['trees'])).toBeNull();
+  });
+
   it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {
     const store = memoryStore();
     const tiles = new TileStore('map', storeTiles(store), never);

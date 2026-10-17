@@ -1,5 +1,7 @@
-import type { WholeMapOptions } from '@world/cityGen/wholeMap';
-import { type SerializedDoc, type WorldPart, WORLD_PARTS } from '@world/doc';
+import type { SerializedDoc, WorldPart } from '@world/doc';
+import { type WorldMeta, metaKey, metaPartKey, readMeta } from './worldMeta';
+
+export type { WorldMeta } from './worldMeta';
 import { lotCentre } from '@world/lotRings';
 import { rescaleSerializedDoc } from '@world/rescale';
 import { OWNER, TILE_COUNTED, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
@@ -23,7 +25,7 @@ import { type HeadRead, type TilePartIn, gunzipBytes, gzipBytes, partOf, readHea
 /** DO NOT read or write the map whole: a tile is one blob and its write one transaction; the page hands the save worker the call, nothing else */
 
 /** The lists of a map the tiles have no field for yet (`TileRecords`): kept whole, in the map's order, never dropped. */
-interface HeldLists {
+export interface HeldLists {
   readonly terrain: readonly unknown[];
   readonly fog: readonly unknown[];
   readonly gullies: readonly unknown[];
@@ -35,31 +37,6 @@ interface HeldLists {
   readonly lotKeys: readonly string[];
 }
 
-/** What the world keeps outside its tiles: the values with no place on the map, small. */
-export interface WorldMeta {
-  readonly version: 1;
-  /** The whole-map generator's options with its seed (`cityGen/wholeMap.ts`); null: a map not generated, or saved before the tiles. */
-  readonly generator: WholeMapOptions | null;
-  /** Metres per world unit the tiles' records are in (`world/units.ts`). */
-  readonly unit: number;
-  /** The streamed world's parts no tile holds, as the page's document writes them (`RoadDoc.worldValues`): read back into it when the world opens. */
-  readonly values?: Partial<SerializedDoc>;
-  readonly relief?: number;
-  readonly markingStyle?: string;
-  readonly nature?: SerializedDoc['nature'];
-  readonly weather?: unknown;
-  /** The fog's settings (its dabs are the map's). */
-  readonly fog?: unknown;
-  readonly gullyAuto?: unknown;
-  readonly economy?: SerializedDoc['economy'];
-  readonly transit?: unknown;
-  readonly people?: readonly unknown[];
-  /** A map saved before the tiles: what of it no tile holds. */
-  readonly held?: HeldLists;
-  /** A map saved before the tiles: its camera and simulation settings, and when it was saved. */
-  readonly settings?: unknown;
-  readonly savedAt?: number;
-}
 
 /** Where the migrated map came from: the tiles' manifest (5), the parts' (3), the whole text in IndexedDB or in `localStorage`. */
 type SaveSource = 'tiles' | 'parts' | 'large' | 'local';
@@ -86,14 +63,17 @@ export type TileOp =
   | { readonly op: 'setMeta'; readonly map: string; readonly meta: WorldMeta }
   /** Some of the world's parts (`RoadDoc.worldPart`), each under a key of its own: read back over the world's values (`readMeta`). */
   | { readonly op: 'setMetaParts'; readonly map: string; readonly parts: Readonly<Partial<Record<WorldPart, Partial<SerializedDoc>>>> }
-  | { readonly op: 'migrate'; readonly map: string; readonly local: string | null };
+  | { readonly op: 'migrate'; readonly map: string; readonly local: string | null }
+  /** A stored tile's lists emptied (a "whole map" clear, `TileStore.clearLists`), its version past `after`: the version it stands at and whether it was written, null when none is stored or the write failed. */
+  | { readonly op: 'clearLists'; readonly map: string; readonly key: number; readonly parts: readonly ClearablePart[]; readonly after: number };
+
+/** The lists of a tile a "whole map" clear empties in every stored tile (`main.ts` MAP_ACTIONS). */
+export type ClearablePart = 'trees' | 'elements';
 
 /** Who runs the tile store's calls: the save worker (`portTiles`), or the thread that asks (`storeTiles`). */
 interface TileBackend { run(op: TileOp): Promise<unknown> }
 
 const tileBlobKey = (map: string, key: number): string => `${map}:T:${key}`;
-const metaKey = (map: string): string => `${map}:world`;
-const metaPartKey = (map: string, part: WorldPart): string => `${map}:world:${part}`;
 
 type ListField = Exclude<keyof TileRecords, 'key' | 'version' | 'next' | 'grown' | 'gates'>;
 type NextKind = keyof TileRecords['next'];
@@ -113,10 +93,6 @@ function isTileRecords(value: unknown): value is TileRecords {
   if (!isObject(value) || !Number.isInteger(value['key']) || !finite(value['version'])) return false;
   const next = value['next'];
   return LIST_FIELDS.every((field) => Array.isArray(value[field])) && isObject(next) && NEXT_KINDS.every((kind) => finite(next[kind]));
-}
-
-function isWorldMeta(value: unknown): value is WorldMeta {
-  return isObject(value) && value['version'] === 1 && finite(value['unit']) && (value['generator'] === null || isObject(value['generator']));
 }
 
 /** THE PARTS A TILE IS STORED IN (format 2, `tileBlob.ts`): its records in three - the far roads read the roads alone, the far buildings the buildings, the region's load all three - then the sections baked from them where the tile is written (`TileBaker`) */
@@ -292,31 +268,6 @@ async function upgraded(store: PartStore, map: string, key: number, stored: Stor
   return text;
 }
 
-async function readMeta(store: PartStore, map: string): Promise<WorldMeta | null> {
-  const [blob, ...parts] = await store.get([metaKey(map), ...WORLD_PARTS.map((part) => metaPartKey(map, part))]);
-  if (!blob) return null;
-  const value: unknown = JSON.parse(await blob.text());
-  if (!isWorldMeta(value)) throw new Error(`the world of ${map} is stored and cannot be read`);
-  if (parts.every((part) => !part)) return value;
-  // Each part written apart since (`setMetaParts`) taken over the values: its keys as it holds them now (a key it no longer has is gone).
-  let values: Record<string, unknown> = { ...(value.values ?? {}) };
-  for (let k = 0; k < WORLD_PARTS.length; k++) {
-    const part = parts[k];
-    if (!part) continue;
-    const held = JSON.parse(await part.text()) as Record<string, unknown>;
-    for (const key of PART_KEYS[WORLD_PARTS[k]!]) delete values[key];
-    values = { ...values, ...held };
-  }
-  return { ...value, values: values as Partial<SerializedDoc> };
-}
-
-/** The keys of the world's values each part writes (`RoadDoc.worldPart`): a part read back first clears its own. */
-const PART_KEYS: Readonly<Record<WorldPart, readonly string[]>> = {
-  terrain: ['terrain', 'relief'], markingStyle: ['markingStyle'], nature: ['nature'], fog: ['fog'], gullies: ['gullies'], clouds: ['clouds'],
-  weather: ['weather'], clearings: ['treeClearings'], zones: ['zones', 'zoneMarks'], people: ['people'], transit: ['transit'], economy: ['economy'],
-  allocators: ['allocators'],
-};
-
 /** Runs one call of the tile store against `store`: in the save worker on IndexedDB, or in the thread that asks (tests); `bake`, the sections baked with a tile written (none: stored without them). */
 export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker): Promise<unknown> {
   const writer = store.writer ?? storeWriter(store);
@@ -342,6 +293,15 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
     case 'setMetaParts': return writer.write({
       put: (Object.entries(op.parts) as [WorldPart, Partial<SerializedDoc>][]).map(([part, value]) => ({ key: metaPartKey(op.map, part), value, packed: false })), remove: [] });
     case 'migrate': return migrate(store, op.map, op.local);
+    case 'clearLists': {
+      // Read, emptied and written where the store is: DO NOT bring the tile's buildings to the page for it.
+      const records = await readTile(store, op.map, op.key);
+      if (!records) return null;
+      if (!op.parts.some((part) => records[part].length > 0)) return { version: records.version, cleared: false };
+      const version = Math.max(records.version, op.after) + 1;
+      const cleared: TileRecords = { ...records, version, ...Object.fromEntries(op.parts.map((part) => [part, []])) };
+      return (await writeTile(store, op.map, cleared, bake)).ok ? { version, cleared: true } : null;
+    }
   }
 }
 
@@ -513,6 +473,16 @@ export class TileStore {
 
   meta(): Promise<WorldMeta | null> {
     return this.chained('world', () => this.backend.run({ op: 'meta', map: this.map }) as Promise<WorldMeta | null>);
+  }
+
+  /** A stored tile's lists emptied (a "whole map" clear), in its order with the tile's other calls: the version written, null when there was nothing to clear or no tile is stored. */
+  clearLists(key: number, parts: readonly ClearablePart[]): Promise<number | null> {
+    return this.chained(key, async () => {
+      const got = (await this.backend.run({ op: 'clearLists', map: this.map, key, parts, after: this.versions.get(key) ?? 0 })) as { version: number; cleared: boolean } | null;
+      if (!got) return null;
+      this.versions.set(key, Math.max(this.versions.get(key) ?? 0, got.version));
+      return got.cleared ? got.version : null;
+    });
   }
 
   /** Some of the world's parts written, each apart (`RoadDoc.worldPart`): DO NOT write the whole world's values for one part that changed. */

@@ -254,6 +254,23 @@ describe('the tiles written', () => {
   });
 });
 
+describe('a whole map clear', () => {
+  it('empties the lists of a tile that comes while it runs (read before its clear), and writes it so', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const tree = { x: 100, y: 100, species: 0, scale: 1 } as unknown as TileRecords['trees'][number];
+    store.stored.set(tileKey(0, 0), { ...emptyTile(tileKey(0, 0)), trees: [tree] });
+    const streamer = new WorldStreamer(doc, store);
+    const done = streamer.clearing(['trees']);
+    await settle(streamer, 10, 10);
+    expect(doc.hasTile(tileKey(0, 0))).toBe(true);
+    expect(doc.trees).toHaveLength(0);
+    done();
+    expect(await streamer.flush()).toBe(true);
+    expect(store.stored.get(tileKey(0, 0))!.trees).toEqual([]);
+  });
+});
+
 describe('a world another tab holds', () => {
   it('is read and never written from this tab: no tile, no value, and its flush says all is well', async () => {
     const doc = new RoadDoc();

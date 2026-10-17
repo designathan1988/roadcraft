@@ -1,7 +1,7 @@
 import { MAP_TILES, tileOnMap } from '@world/cityGen/wholeMap';
 import { type ChangeRect, DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
-import type { ListPart, RecordPart, RoadDoc, WorldPart } from '@world/doc';
+import { type ListPart, type RecordPart, type RoadDoc, type WorldPart, preparedTiles } from '@world/doc';
 import { TILE, tileIJ, tileKey, tileOfKey, tileRect, tilesAround } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 
@@ -111,6 +111,16 @@ export class WorldStreamer {
     return this.wanted.includes(key);
   }
 
+  /** The lists a "whole map" clear is emptying in the store (`main.ts` clearStoredTiles): a tile that comes meanwhile (read before its clear) comes without them, and is written so. */
+  private stripping: ReadonlySet<'trees' | 'elements'> = new Set();
+
+  /** A "whole map" clear of these lists under way: until `done` is called, a tile put in has them emptied (and is to be written). */
+  clearing(parts: readonly ('trees' | 'elements')[]): () => void {
+    const set = new Set(parts);
+    this.stripping = set;
+    return () => { if (this.stripping === set) this.stripping = new Set(); };
+  }
+
   /** Another tab holds this world (`main.ts` holdWorld, a Web Lock): this one reads it and writes nothing, its edits kept on the page only. */
   readOnly = false;
 
@@ -146,9 +156,17 @@ export class WorldStreamer {
       if (d < bestD) { bestD = d; best = key; }
     }
     if (best !== null) {
-      const records = this.ready.get(best)!;
+      let records = this.ready.get(best)!;
       this.ready.delete(best);
+      const strip = [...this.stripping].filter((part) => records[part].length > 0);
+      if (strip.length) {
+        const was = records;
+        records = { ...records, ...Object.fromEntries(strip.map((part) => [part, []])) };
+        // Still the tile its worker prepared (its buildings filed as they are, its grown rows kept).
+        if (preparedTiles.has(was)) preparedTiles.set(records, preparedTiles.get(was) ?? null);
+      }
       this.doc.loadTile(records);
+      if (strip.length) this.dirty.add(best);
       this.versions.set(best, records.version);
       // Put in from a write that failed (`load`): the page holds what the store does not, written again from here.
       const behind = this.unsaved.get(best);
