@@ -335,21 +335,25 @@ function overlap(
     && Math.abs(-dx * buy + dy * bux) < (ahl * across + ahw * along) + bhw * bLength;
 }
 
-/** What `pairTable` works in, kept for every pair (a worker measures thousands in a row): DO NOT make them a pair. `seen` holds a stamp per sample of b, `stamp` only grows, so nothing is cleared between samples or pairs. */
-let seen = new Int32Array(1024);
-let stamp = 0;
-let hits = new Uint32Array(4096);
-const projection = new Float64Array(20);
+/** What `pairTable` works in, kept by whoever measures many pairs (a worker's batch, the conflict index): DO NOT make them a pair. `seen` holds a stamp per sample of b, `stamp` only grows, so nothing is cleared between samples or pairs. */
+export class PairWork {
+  seen = new Int32Array(1024);
+  stamp = 0;
+  hits = new Uint32Array(4096);
+  readonly projection = new Float64Array(20);
+}
 
 /** The 3 x 3 class pairs' [enterA, exitA, enterB, exitB] (NaN: none), or null when even two heavy bodies never touch. */
-export function pairTable(a: SweepSamples, b: SweepSamples): Float64Array | null {
+export function pairTable(a: SweepSamples, b: SweepSamples, work: PairWork): Float64Array | null {
   const aa = boundsOf(a), bb = boundsOf(b);
   if (aa.maxX < bb.minX || bb.maxX < aa.minX || aa.maxY < bb.minY || bb.maxY < aa.minY) return null;
   // Heavy against heavy, through the grid.
   let n = 0;
-  if (seen.length < b.count) seen = new Int32Array(Math.max(b.count, seen.length * 2));
+  if (work.seen.length < b.count) work.seen = new Int32Array(Math.max(b.count, work.seen.length * 2));
   // A new stamp per sample of a: what b's samples were tested against before is never this one.
-  if (stamp > 0x7fffffff - a.count - 1) { seen.fill(0); stamp = 0; }
+  if (work.stamp > 0x7fffffff - a.count - 1) { work.seen.fill(0); work.stamp = 0; }
+  const seen = work.seen, projection = work.projection;
+  let hits = work.hits;
   const { gx0, gy0, w, h, start, items } = gridOf(b);
   const hl = HALF_LENGTH[HEAVY]!, hw = HALF_WIDTH[HEAVY]!;
   for (let i = 0; i < a.count; i++) {
@@ -357,7 +361,7 @@ export function pairTable(a: SweepSamples, b: SweepSamples): Float64Array | null
     const tx = a.frame[i * 4 + 2] as number, ty = a.frame[i * 4 + 3] as number;
     const ex = Math.abs(tx) * hl + Math.abs(ty) * hw;
     const ey = Math.abs(ty) * hl + Math.abs(tx) * hw;
-    const mark = ++stamp;
+    const mark = ++work.stamp;
     const fx0 = Math.max(Math.floor((x - ex) / CELL), gx0), fx1 = Math.min(Math.floor((x + ex) / CELL), gx0 + w - 1);
     const fy0 = Math.max(Math.floor((y - ey) / CELL), gy0), fy1 = Math.min(Math.floor((y + ey) / CELL), gy0 + h - 1);
     for (let gx = fx0; gx <= fx1; gx++) {
@@ -368,7 +372,7 @@ export function pairTable(a: SweepSamples, b: SweepSamples): Float64Array | null
           if (seen[j] === mark) continue;
           seen[j] = mark;
           if (overlap(a, i, HEAVY, b, j, HEAVY)) {
-            if (n + 2 > hits.length) { const more = new Uint32Array(hits.length * 2); more.set(hits); hits = more; }
+            if (n + 2 > hits.length) { const more = new Uint32Array(hits.length * 2); more.set(hits); hits = work.hits = more; }
             hits[n++] = i; hits[n++] = j;
           }
         }

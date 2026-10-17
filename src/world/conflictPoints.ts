@@ -6,7 +6,7 @@ import { rebuildWork } from './rebuildWork';
 import {
   BODY_CLASSES, BODY_ENVELOPE, type BodyClass, type ConflictKind, type ConflictRef, type Crossing, type Diverge, HEAVY, type PairFacts,
   type FinishAsk, type PairMeasurer, type PairZones, type SweepAsk, type SweepSamples, type Zone, firstCrossing, frameLengthsOf, joinedPath,
-  lineDigest as digestOfLine, pairFacts, pairTable, pushDiverge, pushRef, shapeDigest, sweepFrame, sweepSpan, zonesOf,
+  lineDigest as digestOfLine, PairWork, pairFacts, pairTable, pushDiverge, pushRef, shapeDigest, sweepFrame, sweepSpan, zonesOf,
 } from './conflictTable';
 
 import { WAITING, answered } from './waiting';
@@ -113,7 +113,7 @@ export class ConflictIndex {
   }
 
   /** Every pair's zones known to this index, kept between sessions by the game (`seed`, `takeMeasured`). */
-  private readonly store: KeptZones = { kept: new Map(), fresh: new Map() };
+  private readonly store: KeptZones = { kept: new Map(), fresh: new Map(), work: new PairWork() };
 
   /** Reads the zones kept in an earlier session for these pairs (the derived cache, from the simulation's worker): only the pairs a build needs, never the whole store at the start. */
   lookup: ((keys: readonly string[]) => Promise<ReadonlyMap<string, Float64Array | null>>) | null = null;
@@ -636,13 +636,15 @@ let pairsMeasured = 0;
 interface KeptZones {
   readonly kept: Map<string, Float64Array | null>;
   readonly fresh: Map<string, Float64Array | null>;
+  /** What the pairs measured here are measured in (`pairTable`). */
+  readonly work: PairWork;
 }
 
 /** A pair measured, or read back from an earlier session. */
 function measurePair(key: string, a: Sweep, shapeA: SweepShape, b: Sweep, shapeB: SweepShape, store: KeptZones): CachedPair {
   const kept = store.kept.get(key);
   if (kept !== undefined) return { a: shapeA, b: shapeB, zones: kept && zonesOf(kept), table: kept };
-  return keepPair(key, shapeA, shapeB, pairTable(a, b), store);
+  return keepPair(key, shapeA, shapeB, pairTable(a, b, store.work), store);
 }
 
 /** A pair's table just measured (here or by a worker, `ConflictIndex.prepare`), kept for this session and the next. */

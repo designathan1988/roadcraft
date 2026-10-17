@@ -3,7 +3,7 @@ import { SimWorld } from '@sim/world';
 import { Network } from '@world/network';
 import { type LaneletGraph } from '@world/lanelets';
 import { WAITING } from '@world/conflictPoints';
-import { type PairMeasurer, type SampledSweep, type SweepSamples, finishPair, pairTable, sampleSweep } from '@world/conflictTable';
+import { type PairMeasurer, type SampledSweep, type SweepSamples, finishPair, PairWork, pairTable, sampleSweep } from '@world/conflictTable';
 import type { ChosenTurn } from '@world/junctionTurns';
 import type { JunctionSurface } from '@world/turnPaths';
 import { chooseTurnOf } from '@world/turnChoice';
@@ -56,7 +56,7 @@ function workers(failSweeps = false): Workers {
       const plain = (s: SweepSamples) => ({ c0: s.c0, count: s.count, length: s.length, frame: s.frame, frameLengthSq: s.frameLengthSq });
       const sent = structuredClone(pairs.map((p) => ({ a: plain(p.a), b: plain(p.b) })));
       const fresh = (s: ReturnType<typeof plain>): SweepSamples => ({ ...s, bounds: null, grid: null, range: null });
-      return Promise.resolve(structuredClone(sent.map((p) => pairTable(fresh(p.a), fresh(p.b)))));
+      return Promise.resolve(structuredClone(sent.map((p) => pairTable(fresh(p.a), fresh(p.b), new PairWork()))));
     },
     chooseTurns(asks, surfaces) {
       asked.turns += asks.length;

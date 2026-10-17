@@ -4,11 +4,11 @@ import { TopologyCatchUp } from '@sim/topologyCatchUp';
 import { applyOp } from '../fuzz/support/ops';
 import { generate } from '../fuzz/support/runner';
 import { fixtureDoc, simOf } from './support/bodies';
-import { type PairMeasurer, pairTable } from '@world/conflictTable';
+import { type PairMeasurer, PairWork, pairTable } from '@world/conflictTable';
 
 /** Pairs measured as the workers do: answered later, a frame or more after they are asked (`conflictPool.ts`). */
 const later: PairMeasurer = {
-  measure: (pairs) => new Promise((done) => setTimeout(() => done(pairs.map((p) => pairTable(p.a, p.b))), 0)),
+  measure: (pairs) => new Promise((done) => setTimeout(() => done(pairs.map((p) => pairTable(p.a, p.b, new PairWork()))), 0)),
 };
 const nextTurn = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
 

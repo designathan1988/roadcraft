@@ -5,7 +5,7 @@ import type { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
 import { BODY_CLASSES, ConflictIndex, WAITING } from '@world/conflictPoints';
-import { type PairMeasurer, type SweepSamples, pairTable } from '@world/conflictTable';
+import { type PairMeasurer, type SweepSamples, PairWork, pairTable } from '@world/conflictTable';
 import type { NodeId } from '@world/ids';
 import { fixtureDoc } from '../sim/support/bodies';
 
@@ -74,7 +74,7 @@ const offPage: PairMeasurer = {
     const fresh = (s: SweepSamples): SweepSamples => ({
       c0: s.c0, count: s.count, length: s.length, frame: s.frame.slice(), frameLengthSq: s.frameLengthSq.slice(), bounds: null, grid: null, range: null,
     });
-    return Promise.resolve(pairs.map((p) => pairTable(fresh(p.a), fresh(p.b))?.slice() ?? null));
+    return Promise.resolve(pairs.map((p) => pairTable(fresh(p.a), fresh(p.b), new PairWork())?.slice() ?? null));
   },
 };
 

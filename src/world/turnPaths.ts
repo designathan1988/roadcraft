@@ -78,6 +78,8 @@ export class JunctionSurface {
   /** The ring that held the last point `contains` found (an index into `areas`). */
   private lastHit = 0;
   private readonly approaches = new Map<Polyline, ApproachPoses[]>();
+  /** What the sweeps over this surface work in (`sweep`). */
+  readonly work = new SweepWork();
   readonly centre: Vec2;
   /** Digest of every ring point, for `turnPath`'s memo. */
   readonly key: string;
@@ -197,8 +199,6 @@ interface FailHint { at: number }
 /** Frames `sweep` samples into, made once (`Polyline.sampleAtInto`). */
 const atFrame = newFrame(), behindFrame = newFrame(), aheadFrame = newFrame();
 const corner = { x: 0, y: 0 };
-/** Where `sweep` writes the position it probes first, read for nothing but whether it fits. */
-const probeRect: Rect = { cx: 0, cy: 0, ux: 0, uy: 0, hl: 0, hw: 0, r: 0 };
 
 /** The body at `c` along the manoeuvre, headed along the chord about it, written into `out`; false when it leaves the surface (`out` then holds nothing to read). */
 /** DO NOT make a rectangle and a heading a candidate position: a turn's search sweeps thousands (the allocation profile, 2026-10-17: `poseAt` 0.5-0.8 GB in the traffic's workers); `sweep` writes into its pool (`takeRect`). */
@@ -228,10 +228,22 @@ function setRect(out: Rect, px: number, py: number, tx: number, ty: number, leng
   out.cx = px; out.cy = py; out.ux = tx; out.uy = ty; out.hl = length / 2; out.hw = width / 2; out.r = Math.hypot(length, width) / 2;
 }
 
-/** The rectangles one `sweep` writes its positions into, kept for the next: each sweep's are its own until it returns (no sweep runs inside another). */
-const rectPool: Rect[] = [];
-let rectsTaken = 0;
-const takeRect = (): Rect => rectPool[rectsTaken++] ?? (rectPool[rectsTaken - 1] = { cx: 0, cy: 0, ux: 0, uy: 0, hl: 0, hw: 0, r: 0 });
+/** What the sweeps over one surface work in, kept by the surface (`JunctionSurface.work`): the rectangles a sweep writes its positions into, and its lists; each sweep's are its own until it returns (no sweep runs inside another). */
+export class SweepWork {
+  readonly rects: Rect[] = [];
+  taken = 0;
+  readonly poses: Rect[] = [];
+  readonly along: number[] = [];
+  readonly behind: Rect[] = [];
+  readonly behindAt: number[] = [];
+  /** Where the position probed first is written, read for nothing but whether it fits. */
+  readonly probe: Rect = { cx: 0, cy: 0, ux: 0, uy: 0, hl: 0, hw: 0, r: 0 };
+
+  /** The next rectangle of this sweep. */
+  take(): Rect {
+    return this.rects[this.taken++] ?? (this.rects[this.taken - 1] = { cx: 0, cy: 0, ux: 0, uy: 0, hl: 0, hw: 0, r: 0 });
+  }
+}
 
 /** The body at `c` as a rectangle of its own, kept (an approach's positions, `approachPosesOf`). */
 function poseAt(surface: JunctionSurface, frameAt: (c: number, out: FrameOut) => FrameOut,
@@ -240,8 +252,7 @@ function poseAt(surface: JunctionSurface, frameAt: (c: number, out: FrameOut) =>
   return poseInto(surface, frameAt, c, length, width, out) ? out : null;
 }
 
-/** A sweep's lists, kept for the next sweep and emptied at its start (no sweep runs inside another). */
-const sweepPoses: Rect[] = [], sweepAlong: number[] = [], sweepBehind: Rect[] = [], sweepBehindAt: number[] = [];
+
 
 /** A body's positions on an approach lane, before its heading chord reaches the turn */
 interface ApproachPoses {
@@ -282,8 +293,9 @@ function sweep(surface: JunctionSurface, inCentre: Polyline, path: Polyline, out
   const first = ends.fromRoadEnd ? Math.max(-half, half - inCentre.length) : -half;
   const last = ends.toRoadEnd ? Math.min(path.length + half, path.length + outCentre.length - half) : path.length + half;
   // 1.
-  rectsTaken = 0;
-  const poses = sweepPoses, along = sweepAlong;
+  const work = surface.work;
+  work.taken = 0;
+  const poses = work.poses, along = work.along;
   poses.length = 0; along.length = 0;
   let c = first;
   // The positions still wholly on the approach are the same for every candidate path of this movement
@@ -297,10 +309,10 @@ function sweep(surface: JunctionSurface, inCentre: Polyline, path: Polyline, out
   if (hint && hint.at > poses.length) {
     let k = poses.length, probe = c;
     while (k < hint.at && probe <= last) { probe = probe < last ? Math.min(last, probe + SWEEP_STEP) : Infinity; k++; }
-    if (probe <= last && !poseInto(surface, frameAt, probe, length, width, probeRect)) return null;
+    if (probe <= last && !poseInto(surface, frameAt, probe, length, width, work.probe)) return null;
   }
   for (; c <= last; c = c < last ? Math.min(last, c + SWEEP_STEP) : Infinity) {
-    const pose = takeRect();
+    const pose = work.take();
     if (!poseInto(surface, frameAt, c, length, width, pose)) {
       if (hint) hint.at = poses.length;
       return null;
@@ -309,12 +321,12 @@ function sweep(surface: JunctionSurface, inCentre: Polyline, path: Polyline, out
     along.push(c);
   }
   // 2.
-  const behind = sweepBehind, behindAt = sweepBehindAt;
+  const behind = work.behind, behindAt = work.behindAt;
   behind.length = 0; behindAt.length = 0;
   const queueFrom = Math.max(-half - length - FOLLOW_GAP, ends.fromRoadEnd ? half - inCentre.length : -inCentre.length);
   for (let c = queueFrom; c < -half; c += SWEEP_STEP) {
     const at = frameAt(c, atFrame);
-    const body = takeRect();
+    const body = work.take();
     setRect(body, at.p.x, at.p.y, at.t.x, at.t.y, length, width);
     behind.push(body);
     behindAt.push(c);
