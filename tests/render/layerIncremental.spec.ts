@@ -123,3 +123,23 @@ describe('the buildings layer, a change at a time', () => {
     live.dispose();
   });
 });
+
+describe('a tile handed to the cells', () => {
+  it('is not said drawn before the town was put together from the document as it stood when the tile came in', () => {
+    const doc = new RoadDoc();
+    const layer = createBuildingLayer();
+    settle(layer, doc);
+    // The tile comes in, its roads and its buildings (`RoadDoc.loadTile`): the town has not taken them in yet, no cell of it exists.
+    doc.addNode({ x: m(50), y: m(50) });
+    for (let i = 0; i < 4; i++) doc.buildings.add(body(i, m(100) + i * SPACING, m(100)));
+    const came = doc.revision;
+    const rect = [0, 0, m(1024), m(1024)] as const;
+    // No cell over it yet: "every cell drawn" held for none.
+    expect(layer.drawnOver(rect)).toBe(true);
+    expect(layer.drawnOver(rect, came)).toBe(false);
+    settle(layer, doc);
+    // Put together: its cells say for it, the tile's revision no longer holds it back.
+    expect(layer.drawnOver(rect, came)).toBe(layer.drawnOver(rect));
+  });
+});
+
