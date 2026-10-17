@@ -33,7 +33,7 @@ export class TileGenerator {
   private readonly lowQueue: Waiting[] = [];
   /** Lanes on the other kinds' workers too (`setAside`). */
   private aside = false;
-  /** Stops the pump being told the queue went quiet (`onJobsQuiet`), while lanes are set aside. */
+  /** Stops the pump being told the queue went quiet (`onJobsQuiet`): kept while lanes are set aside or low work waits. */
   private quiet: (() => void) | null = null;
 
   /** `far`: what each tile stored is baked into its far levels with, read as the tile is asked (the ground as it stands then); none: no far level kept by the maker. */
@@ -64,8 +64,6 @@ export class TileGenerator {
   setAside(on: boolean): void {
     if (this.aside === on) return;
     this.aside = on;
-    this.quiet?.();
-    this.quiet = on ? onJobsQuiet(() => this.pump()) : null;
     this.pump();
   }
 
@@ -104,11 +102,17 @@ export class TileGenerator {
     const own = this.lanes.filter((l) => !l.aside).length, aside = this.lanes.length - own;
     const idle = (): number => this.lanes.filter((l) => !l.busy).length;
     // The low work on the generator's own lanes alone, never on those set aside.
-    for (let made = own; made < tileLanes() && this.queue.length + this.lowQueue.length > idle(); made++) this.lanes.push(this.lane(false));
+    const quiet = jobsQuiet();
+    // Told when the queue goes quiet while either can start then.
+    const listen = this.aside || this.lowQueue.length > 0;
+    if (listen && !this.quiet) this.quiet = onJobsQuiet(() => this.pump());
+    else if (!listen && this.quiet) { this.quiet(); this.quiet = null; }
+    for (let made = own; made < tileLanes() && this.queue.length + (quiet ? this.lowQueue.length : 0) > idle(); made++) this.lanes.push(this.lane(false));
     if (this.aside) for (let made = aside; made < asideLanes() && this.queue.length > idle(); made++) this.lanes.push(this.lane(true));
     for (const lane of this.lanes) {
       if (lane.busy) continue;
-      const next = this.queue.shift() ?? (lane.aside ? undefined : this.lowQueue.shift());
+      // DO NOT start low work while a queued job waits or runs (conf67: the bays of the whole map on six of seven tile workers at once, the far levels, cells and near roads left two workers): only on a quiet queue, the one under way let finish.
+      const next = this.queue.shift() ?? (lane.aside || !quiet ? undefined : this.lowQueue.shift());
       if (!next) continue;
       lane.busy = next;
       const { i, j } = tileOfKey(next.key);
