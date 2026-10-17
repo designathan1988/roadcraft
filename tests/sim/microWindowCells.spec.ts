@@ -4,9 +4,10 @@ import { Network } from '@world/network';
 import { m } from '@world/units';
 import type { NodeId } from '@world/ids';
 import { SimWorld } from '@sim/world';
-import { step } from '@sim/pipeline';
-import { DT } from '@sim/params';
 import { vehiclePose } from '@sim/pose';
+import { spawnVehicleAt } from '@sim/vehicles/spawn';
+import { archetypeById } from '@sim/vehicles/archetypes';
+import { Rng } from '@core/rng';
 
 /** THE MICRO WINDOW ROUND THE VEHICLES ASKED BY CELL (`SimWorld.keepMicroWindow`): every junction within reach of a vehicle, none much past it */
 const BLOCK = 120;
@@ -30,12 +31,18 @@ describe('the micro window round the vehicles', () => {
     const net = new Network(doc);
     net.rebuild();
     const w = new SimWorld(doc, net, 0x77c1);
-    w.rebuildTopology();
-    w.trafficIntensity = 10;
-    w.clock.paused = false;
-    for (let t = 0; t < Math.round(40 / DT); t++) step(w, { traffic: true, pedestrians: false });
-    expect(w.vehicles.size).toBeGreaterThan(3);
+    // The window first: the junctions' conflicts are built only where it asks (as in the game), not for the whole town before it.
     w.useMicroWindow();
+    w.rebuildTopology();
+    // Cars put on lanes drawn across the town: where they stand is all the window reads (DO NOT drive the town 40 s for it).
+    const rng = new Rng(0x77c1);
+    const links = [...w.graph.lanelets.values()].filter((lane) => lane.kind === 'link' && lane.length > m(20));
+    const car = archetypeById('sedan');
+    for (let k = 0; k < 6; k++) {
+      const lane = links[rng.int(0, links.length - 1)]!;
+      spawnVehicleAt(w, lane.id, car.length + m(1) + rng.float() * (lane.length - car.length - m(2)), car);
+    }
+    expect(w.vehicles.size).toBeGreaterThan(3);
     w.keepMicroWindow();
     const asked = (w as unknown as { windowWanted: ReadonlySet<NodeId> | null }).windowWanted!;
     const poses = [...w.vehicles.values()].map((v) => vehiclePose(w, v, 1)!.p);
@@ -43,10 +50,14 @@ describe('the micro window round the vehicles', () => {
       const n = doc.node(node)!;
       return Math.min(...poses.map((p) => Math.max(Math.abs(n.x - p.x), Math.abs(n.y - p.y))));
     };
+    let near = 0, far = 0;
     for (const node of w.graph.junctions.keys()) {
       const d = reach(node);
-      if (d <= m(300)) expect(asked.has(node), `junction ${node} at ${d}`).toBe(true);
-      if (d > m(400)) expect(asked.has(node), `junction ${node} at ${d}`).toBe(false);
+      if (d <= m(300)) { near++; expect(asked.has(node), `junction ${node} at ${d}`).toBe(true); }
+      if (d > m(400)) { far++; expect(asked.has(node), `junction ${node} at ${d}`).toBe(false); }
     }
+    // Both sides of the edge looked at.
+    expect(near).toBeGreaterThan(0);
+    expect(far).toBeGreaterThan(0);
   });
 });
