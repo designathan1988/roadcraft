@@ -1,4 +1,4 @@
-import type { AdoptLane, FromJob, JobService, ToJob } from './jobScope';
+import type { AdoptLane, CloseLane, FromJob, JobService, ToJob } from './jobScope';
 
 /** THE JOB SYSTEM: one pool of workers (hardwareConcurrency - 2, within the machine's memory) for every kind of work off the page, in place of a pool per kind */
 /** DO NOT make every worker at the start nor give a kind's job to any free worker: each worker is a whole JS heap with the code and state of every service it ran, so 22 of them each running every service took the page's process past 6 GB on a 3 x 3 tile region (2026-10-16, Chrome memory-infra: 2.8 GB of V8 in the workers, out of memory at 8 GB) - workers are made as work waits, and a kind's jobs go first to the workers that already run it */
@@ -455,6 +455,7 @@ export class JobPort {
   /** The lane let go (its service's state stays in the worker for the next lane of the kind). */
   terminate(): void {
     if (!system.ports.delete(this.id)) return;
+    this.worker.postMessage({ close: this.id } satisfies CloseLane);
     this.host.laneWork -= this.inFlight;
     this.inFlight = 0;
     this.host.ports--;
