@@ -427,12 +427,22 @@ const roadTool = new RoadTool({
     return solved && solved.terrainRevision === doc.terrainRevision ? solved.elevation : null;
   },
   flash: (ids) => scene.flashRoads(ids),
-  // A streamed world: a road reaching a tile of the map not in the document yet waits for it (`RoadTool.layHeld`).
-  tilesIn: ([x0, y0, x1, y1]) => {
+  // A streamed world: a road reaching a tile of the map not in the document yet waits for it, the streamer asked for it wherever it is (`RoadTool.layHeld`, `WorldStreamer.hold`).
+  tilesIn: (rect) => {
     if (!streamed) return true;
+    if (!rect) { streamed.streamer.hold([]); return true; }
+    const [x0, y0, x1, y1] = rect;
     const a = tileOfKey(tileKeyAt(x0, y0)), b = tileOfKey(tileKeyAt(x1, y1));
-    for (let i = a.i; i <= b.i; i++) for (let j = a.j; j <= b.j; j++) if (tileOnMap(i, j) && !doc.hasTile(tileKey(i, j))) return false;
-    return true;
+    const keys: number[] = [];
+    let all = true;
+    for (let i = a.i; i <= b.i; i++) for (let j = a.j; j <= b.j; j++) {
+      if (!tileOnMap(i, j)) continue;
+      keys.push(tileKey(i, j));
+      if (!doc.hasTile(tileKey(i, j))) all = false;
+    }
+    // Kept in the document until the road is laid, those already in too (the camera may move off them meanwhile).
+    streamed.streamer.hold(keys);
+    return all;
   },
   mutate: (fn) => mutate(fn),
   hint: (key) => flashHint(key),

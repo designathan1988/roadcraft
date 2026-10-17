@@ -91,8 +91,8 @@ export interface RoadToolHost {
   groundSolve?(): RoadElevation | null;
   /** The roads just laid blink. */
   flash(ids: readonly SegmentId[]): void;
-  /** Whether every tile of the map `rect` reaches is in the page's document (a streamed world: those not yet in hold buildings the road would clear); absent: always. */
-  tilesIn?(rect: ChangeRect): boolean;
+  /** Whether every tile of the map `rect` reaches is in the page's document (a streamed world: those not yet in hold buildings the road would clear), those not asked for (`WorldStreamer.hold`) and kept until `null` lets them go; absent: always. */
+  tilesIn?(rect: ChangeRect | null): boolean;
   /** An edit of the document, one undo step. */
   mutate(fn: () => boolean): void;
   hint(key: string): void;
@@ -139,6 +139,7 @@ export class RoadTool {
   }
 
   cancel(): void {
+    if (this.held) this.host.tilesIn?.(null);
     this.held = null;
     this.draft = null;
     this.chain = null;
@@ -438,10 +439,13 @@ export class RoadTool {
     const held = this.held;
     if (!held || !this.tilesReady(held.d)) return false;
     this.held = null;
-    return this.commit(held.d, held.chosenEnd);
+    const laid = this.commit(held.d, held.chosenEnd);
+    // The tiles asked for it let go (written, as the ring's are, `WorldStreamer.apply`).
+    this.host.tilesIn?.(null);
+    return laid;
   }
 
-  /** Whether the tiles a road reaches are in the document: DO NOT lay it while one is not - the buildings under it there are not on the page, and stood after it was laid (conf60, "the road demolished 3 buildings", 8 in the runs whose region was in). */
+  /** Whether the tiles a road reaches are in the document, those not asked for: DO NOT lay it while one is not - the buildings under it there are not on the page, and stood after it was laid (conf60, "the road demolished 3 buildings", 8 in the runs whose region was in); nor wait for the camera to come - a road drawn on the map view across tiles past the region was never laid. */
   private tilesReady(d: RoadDraft): boolean {
     if (!this.host.tilesIn) return true;
     let x0 = Math.min(d.start.at.x, d.snap.at.x), y0 = Math.min(d.start.at.y, d.snap.at.y), x1 = Math.max(d.start.at.x, d.snap.at.x), y1 = Math.max(d.start.at.y, d.snap.at.y);
