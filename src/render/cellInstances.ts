@@ -12,6 +12,7 @@ import {
   Vector2,
   Vector3,
   type Frustum,
+  type Object3D,
 } from 'three';
 import { m } from '@world/units';
 import { type Bounds, enclose, planeMask } from './instanceCull';
@@ -287,6 +288,8 @@ interface MeshState {
   wasDrawn: boolean;
   /** Takes it off the casters chosen by cascade (`castBySize`). */
   uncast: (() => void) | null;
+  /** Where it was put (its owner's group) while it is out of the scene with nothing to draw (`settleInScene`). */
+  home: Object3D | null;
 }
 
 interface Kind {
@@ -354,7 +357,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     return {
       index, spec, centre: centre ?? new Vector3(), reach: centre ? reach : 1, levels,
       meshes: spec.meshes.map((m) => {
-        const s: MeshState = { spec: m, level: levels[m.far ? 1 : 0], mesh: null, wasDrawn: false, uncast: null };
+        const s: MeshState = { spec: m, level: levels[m.far ? 1 : 0], mesh: null, wasDrawn: false, uncast: null, home: null };
         s.level.meshes.push(s);
         return s;
       }),
@@ -719,6 +722,20 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     }
   };
 
+  /**
+   * A mesh with no instance to draw taken out of the scene, put back where it was once it has some. DO NOT leave a kind's every mesh in the
+   * scene empty: three walks, sorts and calls each visible mesh, empty or not, in the colour pass and every cascade (r186 `projectObject`,
+   * `renderObject`), dozens of a layer's kinds out of view.
+   */
+  const settleInScene = (s: MeshState): void => {
+    const mesh = s.mesh!;
+    if (mesh.count === 0) {
+      if (mesh.parent) { s.home = mesh.parent; mesh.parent.remove(mesh); }
+    } else if (!mesh.parent && s.home) {
+      s.home.add(mesh);
+      s.home = null;
+    }
+  };
   const meshes = (): InstancedMesh[] => kinds.flatMap((k) => k.meshes.flatMap((s) => (s.mesh ? [s.mesh] : [])));
   return {
     get meshes() { return meshes(); },
@@ -826,7 +843,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         k.levels.forEach((b, id) => { if (b.live && b.poses) reconcile(k, b, id === 0 ? NEAR : FAR); });
         for (const s of k.meshes) {
           s.wasDrawn = drawnNow(k, s);
-          if (s.mesh) s.mesh.count = s.wasDrawn ? s.level.drawn : 0;
+          if (s.mesh) { s.mesh.count = s.wasDrawn ? s.level.drawn : 0; settleInScene(s); }
         }
       }
     },

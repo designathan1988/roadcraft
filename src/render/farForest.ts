@@ -179,6 +179,8 @@ export interface FarForest {
   /** The far woods' mesh, added to the atlas' group. */
   readonly object: Group;
   readonly book: FarWoodsBook;
+  /** The woods' one material (the trees' pictures, `natureTrees.ts` natureTreePictures): every plate's mesh drawn with it. */
+  readonly material: MeshStandardMaterial;
   /** Each frame: the pictures taken once, the instances of plates come in written, the fades moved. */
   update(renderer: WebGLRenderer, now: number): void;
   dispose(): void;
@@ -235,13 +237,6 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
     geometry.instanceCount = spot.count;
     return geometry;
   };
-  // One empty tree (a pick of 2 is never under the scale: no triangle) always in the group
-  const program = new Mesh(quadOf(new InstancedBufferAttribute(new Float32Array(4), 4), new InstancedBufferAttribute(Float32Array.of(0, 2, 0, 1), 4)), material);
-  program.name = 'far-forest-program';
-  program.frustumCulled = false;
-  program.castShadow = false;
-  program.receiveShadow = false;
-  object.add(program);
 
   /** A plate's trees as its instances: x, height, three's z, size; the model and the plate's slot, the pick, the yaw, the tint. */
   const arraysOf = (key: number): { aSpot: Float32Array; aLook: Float32Array } | null => {
@@ -308,6 +303,7 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
 
   return {
     object,
+    material,
     book,
     update(renderer, now) {
       // The trees' pictures (theirs and the near plants'), between draws (`plantImpostors.ts`).
@@ -332,7 +328,6 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
     },
     dispose() {
       for (const mesh of meshes.values()) mesh.geometry.dispose();
-      program.geometry.dispose();
       object.clear();
       material.dispose();
       pictures.release();
