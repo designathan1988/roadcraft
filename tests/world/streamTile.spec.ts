@@ -214,7 +214,7 @@ describe("a tile's far levels kept where it is made", () => {
     expect(reply.mass?.position).toEqual(masses?.position);
     // Another version is not this one's: asked again.
     expect((await runFarJob({ ...job, sig: String(version + 1) }, cache)).kind).toBe('farRecords');
-  }, 20_000);
+  }, 10_000);
 
   it("the roads' level 0 is found by the page's job, the mesh the stored roads bake to", async () => {
     const cache = memory();
@@ -225,7 +225,7 @@ describe("a tile's far levels kept where it is made", () => {
     expect(reply.kind).toBe('far');
     if (reply.kind !== 'far') return;
     expect(reply.payload).toEqual(bakeTileRoads(tileRoads(pair.records)));
-  }, 20_000);
+  }, 10_000);
 
   it('keeps nothing where the far tree keeps nothing', async () => {
     const cache = memory();
