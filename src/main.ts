@@ -3695,6 +3695,8 @@ function currentStatus(): ShellStatus {
     queued: String(queued),
     impossible: net.impossible.size,
     balance: doc.economy.balance,
+    // A streamed world: the counts above are the region's round the camera.
+    region: streamed !== null,
   };
 }
 /** Tells the interface the city's numbers (a few times a second while the city runs, and after an edit). */
