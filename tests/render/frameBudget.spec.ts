@@ -191,6 +191,19 @@ describe("the GPU's time governing the floor", () => {
 });
 
 describe('the cells held back by the budget', () => {
+  it('are weighed again once a level is measured anew, not while the measures stand (`LandedMeasure.serial`)', () => {
+    const measure = new LandedMeasure<'cell'>({ cell: 1000 });
+    const at = measure.serial;
+    measure.set('cell', '0,0', 400);
+    expect(measure.serial).not.toBe(at);
+    const after = measure.serial;
+    // The same measure every frame of a still view: nothing to weigh again.
+    measure.set('cell', '0,0', 400);
+    expect(measure.serial).toBe(after);
+    measure.set('cell', '0,0', 300);
+    expect(measure.serial).not.toBe(after);
+  });
+
   // Five cells in a row; the eye over the first, then over the last.
   const away = (eyeAt: number) => (key: string): number => Math.abs(Number(key.split(',')[0]) - eyeAt) * 256;
 
