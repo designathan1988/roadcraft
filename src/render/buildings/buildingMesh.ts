@@ -110,6 +110,7 @@ import type { FlagInstance } from './flagLayer';
 import type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch, RunChunk, ShellChunk } from './chunk';
 export type { BuildingChunk, LotGround, LotGroundRecipe, PartBatch,  } from './chunk';
 import { drawsSignature } from './signature';
+import { type Cover, type PartyWalls, hiddenByCovers } from './partyWalls';
 import { type FlagDesign, legacyFlag } from '@world/buildings/flags';
 
 /** Where the flags of the building being emitted go (`emitChunk` sets it). */
@@ -832,6 +833,8 @@ function emitBuilding(
   onLot?: (el: BuildingElement) => boolean,
   designedFloor?: number,
   slots: SlotAllocator = spaceSeed,
+  /** The neighbours' blocks a party wall stands against (`partyWalls.ts`): a bay inside them is not laid. */
+  covers: readonly Cover[] = [],
 ): Foundation {
   const e = new Emitter(b, shell, parts, furniture);
   // Put in the world off the layout kept for the blocks (`bayLayout`): the flights' feet and the like buildings of the job read the same one.
@@ -907,6 +910,10 @@ function emitBuilding(
   for (const bay of bays) {
     const v = volumes.get(bay.volume) as Volume;
     const face: BayFace = { ...sideFrame(v, bay.side, bay.start, bay.push), z0: floor + bay.z, W: bay.width, H: bay.height };
+    if (covers.length > 0) {
+      const [x, y] = e.L(face.ax, face.ay, 0), [tx, ty] = e.N(face.tx, face.ty), [nx, ny] = e.N(face.nx, face.ny);
+      if (hiddenByCovers(covers, x, y, tx, ty, nx, ny, face.W, face.z0, face.z0 + face.H)) continue;
+    }
     const left = componentAt.get(`${bay.volume}:${bay.level}:${bay.side}:${bay.index - 1}`);
     const right = componentAt.get(`${bay.volume}:${bay.level}:${bay.side}:${bay.index + 1}`);
     const recess = bay.level === 0 ? entrances.get(entranceKey(bay.volume, bay.side, bay.index))?.recess ?? 0 : 0;
@@ -3414,7 +3421,9 @@ const wearShort = (x: number): number => snorm16(x) / NORMAL_UNIT;
 
 /** `far`: the building's far level (L1) - walls as runs of bays with their windows drawn by the shader, no parts (`facadeLevel.ts`). */
 /** `apart`: the elements' boxes, pavings and rails as instances of the shell's parts (`shellParts.ts`); false lays them in the shell face by face, as the parts draw them (the specs compare). */
-export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed, far = false, apart = true): BuildingChunk {
+/** `party`: the job's buildings as one another's neighbours (`partyWalls.ts`): the bays inside a neighbour are not laid, and each floor is worked out once. */
+export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, slots: SlotAllocator = spaceSeed, far = false, apart = true,
+  party?: PartyWalls): BuildingChunk {
   const shell = new Shell();
   shell.decay = b.decay ?? 0;
   shell.far = far;
@@ -3430,13 +3439,13 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   const inLot = (el: BuildingElement): boolean =>
     lots.some((v) => el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
   // The terrain is graded from this natural-ground floor.
-  const designedFloor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+  const designedFloor = party ? party.floorOf(b) : closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
   const flags: FlagInstance[] = [];
   flagSink = flags;
   // A signature building's body is drawn with its own parts (`signature.ts`).
   const signature = closed.length > 0 && drawsSignature(b);
   const body = !signature && closed.length > 0
-    ? emitBuilding({ ...resolved, volumes: closed }, groundAt, shell, parts, pavedAt, furnished, inLot, designedFloor, slots)
+    ? emitBuilding({ ...resolved, volumes: closed }, groundAt, shell, parts, pavedAt, furnished, inLot, designedFloor, slots, party?.coversNear(b))
     : undefined;
   const floor = signature ? designedFloor : body?.floor;
   flagSink = null;

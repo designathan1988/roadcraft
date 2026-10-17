@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { type BuildingChunk, emitChunk, kitBoxes, lotGroundAgain } from '@render/buildings/buildingMesh';
 import { type CellArrays, cellArrays } from '@render/buildings/cellArrays';
 import { CellPool } from '@render/buildings/cellPool';
+import { PartyWalls } from '@render/buildings/partyWalls';
 import type { CellEntry, CellResult } from '@render/buildings/cellWork';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, COARSE_PARTS, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
@@ -90,7 +91,9 @@ describe('a cell put together off the page', () => {
         const byCell = new Map<string, Building[]>();
         for (const b of list) { const c = cellOf(b); byCell.set(c, [...byCell.get(c) ?? [], b]); }
         for (const [cell, buildings] of byCell) {
-          const chunks = new Map<Building, BuildingChunk>(buildings.map((b) => [b, emitChunk(b, groundAt, paved, naturalAt)]));
+          // The cell's buildings as one another's neighbours, as the job reads them (`partyWalls.ts`).
+          const party = new PartyWalls(buildings, naturalAt, paved);
+          const chunks = new Map<Building, BuildingChunk>(buildings.map((b) => [b, emitChunk(b, groundAt, paved, naturalAt, undefined, false, true, party)]));
           let got: CellResult | null = null;
           pool.run('cell', cell, buildings.map(entryOf), env, (result) => { got = result; });
           expect(got).not.toBeNull();
