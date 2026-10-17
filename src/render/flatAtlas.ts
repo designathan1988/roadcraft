@@ -36,6 +36,7 @@ import { setJobFocus } from '../jobs/jobPool';
 import { gpuLedger } from './gpuLedger';
 import { measureHitch } from '@core/hitch';
 import { queueUpload } from './uploads';
+import { programsOf, programsWaited } from './programsFirst';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
 import { TILE, tileOfKey } from '@world/tiles';
 
@@ -87,6 +88,8 @@ interface Plate {
   readonly dabCopies: WeakMap<PaintDab, PaintDab | null>;
   surface: PlateSurface | null;
   shown: boolean;
+  /** Its surface's programs built (`programsFirst.ts`): not shown before, the far patch standing in. */
+  ready: boolean;
   /** The land at the plate's grid corners, the base level added, read off the page (`flatGroundPool.ts`), rows from the north edge; null until then. */
   heights: Float64Array | null;
   /** Its first build made off the page, until the plate is made from it (`plateMesh.ts`). */
@@ -250,13 +253,19 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (relief === null) return;
     writeFarPatch(far, fp.slot, fp.cx, fp.cy, (x, y) => reliefHeight(relief, x, y));
   };
+  /** A far mesh shown once its programs are built (`programsFirst.ts`), not built in the frame that first draws it. */
+  const showWhenBuilt = (mesh: Mesh): void => {
+    if (mesh.visible) return;
+    if (!programsWaited()) { mesh.visible = true; return; }
+    void programsOf([mesh]).then(() => { mesh.visible = true; });
+  };
   /** The cut sides on the map's edge, along the far patches' own edge (their quads' step): where the land ends. */
   const buildSlab = (): void => {
     const relief = farRelief;
     if (relief === null || !ringSet) return;
     slab.geometry.dispose();
     slab.geometry = slabGeometry(-MAP_HALF, MAP_HALF, -MAP_HALF, MAP_HALF, PLATE_SIZE / FAR_QUADS, (x, y) => TERRAIN_BASE + reliefHeight(relief, x, y));
-    slab.visible = true;
+    showWhenBuilt(slab);
   };
   const neighbour = (fp: FarPlate, di: number, dj: number): boolean => farPlates.has(plateOf(fp.cx + di * PLATE_SIZE, fp.cy + dj * PLATE_SIZE));
   /** The far patches of the plates not drawn in full, their rims where the ring ends. */
@@ -304,7 +313,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     farRelief = relief;
     for (const fp of farPlates.values()) writeFar(fp);
     buildSlab();
-    farMesh.visible = true;
+    showWhenBuilt(farMesh);
     drawFar();
   };
 
@@ -375,7 +384,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const r = plateRegion(key);
     p = {
       key, cx: r.cx, cy: r.cy, source: new PlateSource(), stampCopies: new WeakMap(), dabCopies: new WeakMap(),
-      surface: null, shown: false, heights: null, mesh: null, asked: false, top: -Infinity,
+      surface: null, shown: false, ready: false, heights: null, mesh: null, asked: false, top: -Infinity,
     };
     plates.set(key, p);
     if (lastDoc) fill(p, lastDoc);
@@ -403,6 +412,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (lookGiven) s.setWaterLook(lastLook);
     // Sent ahead of its first draw (`uploads.ts`), not inside it.
     queueUpload(...s.textures());
+    // DO NOT show it before its programs are built: shown, three built them in the frame that first drew it (`programsFirst.ts`).
+    p.ready = !programsWaited();
+    if (!p.ready) void programsOf(s.meshes as Mesh[]).then(() => { if (p.surface === s) { p.ready = true; contentCame = true; } });
     measureTop(p);
     return s;
   };
@@ -444,6 +456,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const cached: Plate[] = [];
     for (const p of plates.values()) {
       if (!p.surface) continue;
+      // Wanted but its programs still being built: neither shown nor let go (the far patch stands in).
+      if (wanted.has(p.key) && !p.ready) { show(p, false); continue; }
       const want = wanted.has(p.key);
       show(p, want);
       if (want) shownList.push(p); else cached.push(p);

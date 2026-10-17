@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
+import { type Mesh, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
 import { createGardens, type GardenPlant } from '@render/gardens';
 import { createSceneryKit } from '@render/scenery';
 import { drainCompiles, warmPending } from '@render/uploads';
@@ -9,11 +9,12 @@ import { townChanges } from '../support/gardenChange';
 /** NO MESH DRAWN BEFORE ITS PROGRAMS ARE BUILT (`uploads.ts` programsReady): the instanced layers' new meshes (`cellInstances.ts`) */
 describe('a new instanced mesh', () => {
   it('is hidden until its programs, lit and in the shadow, are built, and the frames keep coming meanwhile', async () => {
-    const compiled: Object3D[] = [];
+    const compiled: { object: Object3D; visible: boolean }[] = [];
     const renderer = {
       getRenderTarget: () => null,
       setRenderTarget: () => {},
-      compileAsync: (object: Object3D) => { compiled.push(object); return Promise.resolve(); },
+      // Each object as it was handed to the compiler: three builds only what is visible then.
+      compileAsync: (object: Object3D) => { compiled.push({ object, visible: object.visible }); return Promise.resolve(); },
     } as unknown as WebGLRenderer;
     const scene = new Scene(), camera = new PerspectiveCamera();
     // The compiler answers from now on.
@@ -26,7 +27,9 @@ describe('a new instanced mesh', () => {
     expect(warmPending()).toBe(true);
     drainCompiles(renderer, camera, scene, null);
     await new Promise((done) => setTimeout(done, 0));
-    for (const mesh of made) expect(compiled).toContain(mesh);
+    // Built through a visible stand-in of each (three builds ahead only what is visible: r186 `compile` walks `traverseVisible`), sharing its geometry and material.
+    for (const mesh of made) expect(compiled.some((c) => c.visible && (c.object as Mesh).geometry === mesh.geometry && (c.object as Mesh).material === mesh.material)).toBe(true);
+    expect(compiled.every((c) => c.visible)).toBe(true);
     expect(made.some((mesh) => mesh.visible)).toBe(true);
     expect(warmPending()).toBe(false);
   });

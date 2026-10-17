@@ -18,7 +18,7 @@ import { type Bounds, enclose, planeMask } from './instanceCull';
 import { impostorPick, thinWant } from './plantImpostors';
 import { trianglesOf } from './propGeometry';
 import { castBySize } from './shadowCasters';
-import { compilesAhead, programsReady } from './uploads';
+import { programsOf, programsWaited } from './programsFirst';
 
 /**
  * INSTANCES KEPT CELL BY CELL, DRAWN AT THE LEVEL THEIR SIZE ON THE SCREEN CALLS FOR: the gardens'
@@ -487,11 +487,12 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     // Cast into a cascade only with instances, and where the widest it draws reaches a texel (`shadowCasters.ts`).
     s.uncast = castBySize({ mesh, casts: spec.castShadow, radius: () => b.largest });
     // DO NOT show it before its programs are built: shown, it was drawn (empty or not) and three built them in the frame.
-    if (compilesAhead()) {
+    if (programsWaited()) {
       const shown = mesh.visible;
       s.ready = false;
       mesh.visible = false;
-      void programsReady(mesh).then(() => {
+      // Through a visible stand-in: three builds ahead only what is visible (`programsFirst.ts`); the shadow's as it will cast.
+      void programsOf([mesh], spec.castShadow).then(() => {
         if (s.mesh !== mesh) return;
         s.ready = true;
         mesh.visible = shown && !(spec.cards && mapMode === true && !k.pictured);
