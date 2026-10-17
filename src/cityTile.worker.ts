@@ -4,7 +4,7 @@ import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 import { workerParts } from '@editor/workerParts';
-import { type PreparedTile, addTileSection, bakeStoredTile, prepareTile, readTile, readTileSection, storedVersionBaked, writeTile } from '@editor/tileStore';
+import { type PreparedTile, addTileSection, bakeStoredTile, hasTileSection, prepareTile, readTile, readTileSection, storedVersion, storedVersionBaked, writeTile } from '@editor/tileStore';
 import { withGrownBuildings } from '@world/growth/grownRows';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
@@ -56,7 +56,7 @@ async function keepFar(records: TileRecords, full: TileRecords, version: number,
 
 /** The streamed tile built (its key and records), stored here (its version, and its records prepared when asked for), or why it could not be. */
 export type StreamTileAnswer = { readonly key: number; readonly records: TileRecords }
-  | { readonly key: number; readonly stored: number | null; readonly prepared?: PreparedTile; readonly existed?: boolean; readonly legacy?: boolean }
+  | { readonly key: number; readonly stored: number | null; readonly prepared?: PreparedTile; readonly existed?: boolean; readonly legacy?: boolean; readonly bays?: boolean }
   | { readonly i: number; readonly j: number; readonly error: string };
 
 /** A tile asked only if missing (`StreamTileAsk.store.ifMissing`): what the store has of it, read here, or null to make it. */
@@ -66,7 +66,8 @@ async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: numbe
   const version = await storedVersionBaked(stored(), store.map, key, (r) => bakeTileSections(r, true));
   if (version === null) return null;
   if (version === 'legacy') return { key, stored: null, legacy: true };
-  if (!store.records) return { key, stored: version, existed: true };
+  // Whether its bays are stored too (a world reopened): the page asks no worker for them again (`TileStore.addBays`).
+  if (!store.records) return { key, stored: version, existed: true, ...((await hasTileSection(stored(), store.map, key, BAYS_SECTION)) ? { bays: true } : {}) };
   const records = await readTile(stored(), store.map, key);
   if (!records) return null;
   await addBays(store.map, records);
@@ -89,6 +90,11 @@ async function addNetwork(map: string, records: TileRecords, prepared: PreparedT
 /** A stored tile's bays added (`addBays`): its version, null when none is stored (nothing is made). */
 async function baysAnswer(map: string, i: number, j: number): Promise<StreamTileAnswer> {
   const key = tileKey(i, j);
+  // DO NOT read the whole tile to learn it has its bays: its head says so.
+  if (await hasTileSection(stored(), map, key, BAYS_SECTION)) {
+    const version = await storedVersion(stored(), map, key);
+    return { key, stored: typeof version === 'number' ? version : null, existed: true, bays: true };
+  }
   const records = await readTile(stored(), map, key);
   if (records) await addBays(map, records);
   return { key, stored: records ? records.version : null, existed: records !== null };

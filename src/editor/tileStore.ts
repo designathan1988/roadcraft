@@ -260,6 +260,12 @@ export async function storedVersionBaked(store: PartStore, map: string, key: num
   return version;
 }
 
+/** Whether the stored tile holds section `name`: its head read, no part decoded (a world reopened: its bays baked by the session before, `cityTile.worker.ts`). */
+export async function hasTileSection(store: PartStore, map: string, key: number, name: string): Promise<boolean> {
+  const stored = await storedBlob(store, map, key);
+  return stored?.read ? partOf(stored.blob, stored.read, name) !== null : false;
+}
+
 /** A section a reader does not derive from the records where the tile has none (the simulation's bays, `sim/tileBays.ts`): that part alone, the records never parsed; null: no tile stored, or stored without it. */
 export async function readTileSection(store: PartStore, map: string, key: number, name: string): Promise<{ readonly value: unknown } | { readonly bytes: ArrayBuffer } | null> {
   const stored = await storedBlob(store, map, key);
@@ -377,6 +383,8 @@ export interface MadeTile {
   readonly prepared?: PreparedTile;
   /** Asked only if missing (`makeStored`'s `ifMissing`): the store had it and it was not made again; `legacy`, stored in an older form the save worker must read (`storedVersion`). */
   readonly existed?: boolean;
+  /** Asked only if missing and stored: it holds its parking bays already (`addBays` has nothing to do). */
+  readonly bays?: boolean;
   readonly legacy?: boolean;
 }
 
@@ -435,6 +443,8 @@ export class TileStore {
   private readonly bakes = new Map<number, NetworkBake>();
   /** The calls under way on each tile (and on the world's values): a tile's calls run one after another, other tiles' alongside. */
   private readonly chains = new Map<number | 'world', Promise<unknown>>();
+  /** The tiles stored with their parking bays, as the maker said (`ensure`, `addBays`): DO NOT ask a worker for them again (a world reopened asked the bays of the whole map, each tile read whole, on the tile workers the page's cells and far levels wait for). */
+  private readonly withBays = new Set<number>();
   /** A migration under way: every call waits for it. */
   private gate: Promise<unknown> = Promise.resolve();
 
@@ -460,6 +470,7 @@ export class TileStore {
         const made = await this.makeStored(i, j, this.versions.get(key) ?? 0, false, true);
         if (!made.legacy) {
           if (made.version === null) throw new Error(`tile ${key} was made and not stored`);
+          if (made.bays) this.withBays.add(key);
           this.versions.set(key, Math.max(this.versions.get(key) ?? 0, made.version));
           return made.version;
         }
@@ -475,10 +486,11 @@ export class TileStore {
 
   /** A stored tile's parking bays baked and added, that section alone, where it has none (`cityTile.worker.ts` addBays), on the tile's chain: no write of it comes between; nothing where tiles are not the generator's to write. */
   addBays(key: number): Promise<void> {
-    if (!this.makeStored) return Promise.resolve();
+    if (!this.makeStored || this.withBays.has(key)) return Promise.resolve();
     return this.chained(key, async () => {
       const { i, j } = tileOfKey(key);
       await this.makeStored!(i, j, this.versions.get(key) ?? 0, false, false, true);
+      this.withBays.add(key);
     });
   }
 
@@ -490,6 +502,8 @@ export class TileStore {
   /** Stores a tile, its version one past the last the store knows: the version written, or null when it was not (what is baked of it is keyed by that version). */
   /** DO NOT bake a tile's sections in the save worker before its records are stored: the bake (the network's junctions, the grown buildings made again) held the worker's event loop for seconds, every write's commit and the world's values' with it, and a reload meanwhile lost the edit and the balance (conf28). The records stored first, alone; the maker bakes the sections after, on the tile's chain (`bakeStoredTile`). */
   write(records: TileRecords): Promise<number | null> {
+    // A new version: whether it holds its bays is the maker's to say again.
+    this.withBays.delete(records.key);
     const maker = this.readOnly ? undefined : this.makeStored;
     const written = this.chained(records.key, async () => {
       const stamped = this.stamped(records);
