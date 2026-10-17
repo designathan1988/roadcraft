@@ -1,6 +1,6 @@
 import type { EcologyField, EcologyInput } from '@world/ecology';
 import { forgetOtherDerived } from './derivedCache';
-import { ECOLOGY_HASH, WOODS_HASH, keptEcology, keptWoods } from './ecologyKept';
+import { ECOLOGY_HASH, WOODS_HASH, derivedEcologyCache, keptEcology, keptWoods } from './ecologyKept';
 import { FarWoodsWork, type FarWoodsAsk } from './farWoods';
 import type { JobScope } from '../jobs/jobScope';
 
@@ -8,6 +8,8 @@ import type { JobScope } from '../jobs/jobScope';
 export function serve(self: JobScope): void {
   /** What this worker's far woods are worked in, plate after plate (`FarWoodsWork`). */
   const woodsWork = new FarWoodsWork();
+  /** Where this worker keeps the fields and woods it works out, under its own write budget. */
+  const kept = derivedEcologyCache();
   // An older build's fields and woods let go (kept under another fingerprint).
   if (ECOLOGY_HASH) forgetOtherDerived('ecology', ECOLOGY_HASH);
   if (WOODS_HASH) forgetOtherDerived('farWoods', WOODS_HASH);
@@ -18,12 +20,12 @@ export function serve(self: JobScope): void {
     try {
       if (far) {
         // The woods kept for the same ask read back before they are worked out (`ecologyKept.ts`).
-        const woods = await keptWoods(far, woodsWork);
+        const woods = await keptWoods(far, woodsWork, kept);
         post.postMessage({ id, woods }, [woods.x, woods.y, woods.z, woods.size, woods.yaw, woods.seed, woods.pick].map((a) => a.buffer));
         return;
       }
       // The field kept for the same land read back before it is worked out (`ecologyKept.ts`).
-      const field: EcologyField = await keptEcology(input!);
+      const field: EcologyField = await keptEcology(input!, kept);
       const transfer = [field.canopy, field.trees, field.emergent, field.shrub, field.palm, field.cactus, field.grass, field.dry, field.wet, field.rocky, field.region, field.waterDistance]
         .filter((a): a is Float32Array | Uint8Array => ArrayBuffer.isView(a))
         .map((a) => a.buffer);

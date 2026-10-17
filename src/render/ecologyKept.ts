@@ -1,5 +1,5 @@
 import { Digest } from '@core/digest';
-import { derivedCacheOpen, keepDerivedQueued, readDerived } from './derivedCache';
+import { WriteBudget, derivedCacheOpen, keepDerivedQueuedMany, readDerived } from './derivedCache';
 import { computeEcology, type EcologyField, type EcologyInput } from '@world/ecology';
 import { type FarWoods, type FarWoodsAsk, type FarWoodsWork, farWoods } from './farWoods';
 
@@ -21,12 +21,18 @@ export interface EcologyCache {
   put(key: string, value: unknown): Promise<void>;
 }
 
-export const derivedEcologyCache: EcologyCache = {
-  ready: derivedCacheOpen,
-  get: (key) => readDerived(key),
-  // IndexedDB copies the value when `put` is called (W3C IndexedDB, "clone a value"): queued is enough before the arrays go to the page.
-  put: (key, value) => keepDerivedQueued(key, value),
-};
+/** Bytes of plates' fields this thread may have handed IndexedDB and not seen committed (a near plate ~5 MB): the writes past it wait (`WriteBudget`, the V8 cage). */
+const ECOLOGY_WRITES_MOST = 32 * 2 ** 20;
+
+/** The derived cache under a write budget of its own: one a thread that works the plates out (`ecology.worker.ts`). */
+export function derivedEcologyCache(budget = new WriteBudget(ECOLOGY_WRITES_MOST)): EcologyCache {
+  return {
+    ready: derivedCacheOpen,
+    get: (key) => readDerived(key),
+    // IndexedDB copies the value when `put` is called (W3C IndexedDB, "clone a value"): queued is enough before the arrays go to the page.
+    put: (key, value) => keepDerivedQueuedMany([[key, value]], budget),
+  };
+}
 
 interface Kept<T> { readonly digest: number; readonly value: T }
 
@@ -39,7 +45,7 @@ export function ecologyDigest(input: EcologyInput): number {
 }
 
 /** A plate's field: the one kept for the same land when there is one, else worked out and kept. */
-export async function keptEcology(input: EcologyInput, cache: EcologyCache = derivedEcologyCache, prefix: string | null = ECOLOGY_PREFIX): Promise<EcologyField> {
+export async function keptEcology(input: EcologyInput, cache: EcologyCache, prefix: string | null = ECOLOGY_PREFIX): Promise<EcologyField> {
   if (prefix === null || !input.centre || !(await cache.ready())) return computeEcology(input);
   const key = `${prefix}${input.centre.x},${input.centre.y}`;
   const digest = ecologyDigest(input);
@@ -51,7 +57,7 @@ export async function keptEcology(input: EcologyInput, cache: EcologyCache = der
 }
 
 /** A far plate's woods: the ones kept for the same ask (its land is the relief's, its ecosystem the settings') when there are some, else worked out and kept. */
-export async function keptWoods(ask: FarWoodsAsk, work: FarWoodsWork, cache: EcologyCache = derivedEcologyCache, prefix: string | null = WOODS_PREFIX): Promise<FarWoods> {
+export async function keptWoods(ask: FarWoodsAsk, work: FarWoodsWork, cache: EcologyCache, prefix: string | null = WOODS_PREFIX): Promise<FarWoods> {
   if (prefix === null || !(await cache.ready())) return farWoods(ask, work);
   const key = `${prefix}${ask.cx},${ask.cy}`;
   const digest = new Digest().addPlain(ask).value();
