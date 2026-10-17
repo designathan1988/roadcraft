@@ -38,7 +38,7 @@ import {
 } from 'three';
 
 import { Digest } from '@core/digest';
-import type { ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
+import type { Change, ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
@@ -541,6 +541,15 @@ export function createSceneRenderer(
   // DO NOT let three walk the whole scene in every pass drawn (scene, normals, shadows): the frame updates what moves once (`updateMoving`), the still trees place what enters them.
   scene.matrixWorldAutoUpdate = false;
   const initialHeight = Math.max(1, canvas.clientHeight || window.innerHeight);
+  /** The canvas's CSS size, kept by a ResizeObserver: DO NOT read clientWidth or clientHeight in the frame (each read forces a layout when anything on the page moved). */
+  const css = { w: canvas.clientWidth, h: canvas.clientHeight };
+  const sizeWatch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+    css.w = canvas.clientWidth;
+    css.h = canvas.clientHeight;
+    // A frame for the new size, however still the game stands.
+    onAssetsReady();
+  });
+  sizeWatch?.observe(canvas);
   /** Where the relief's close window is centred (three's x, z; see `draw`). */
   const reliefFocus = { x: 0, z: 0 };
   const rig = createIsoRig(initialCentre, initialHeight / Math.max(0.001, initialZoom * 2));
@@ -1544,6 +1553,18 @@ export function createSceneRenderer(
   let pendingBlocks: (BlockCompare | null)[] = [];
   /** The land a brush moved since the world was last built */
   let landDirty: Rect | 'all' | null = null;
+  /** The diary's land entries, read every frame: where a rewrite the terrain cannot place (an undo, a stamp dropped) moved the land. */
+  const landRead = new JournalCursor(['terrain']);
+  /** Where the land entries since the last frame moved it, grown by a terrain cell each side (a stamp's rewrite reaches a cell past its circle, `terrain.ts`); null when one cannot say. */
+  const landMovedSince = (entries: readonly Change[] | null): Rect | null => {
+    if (entries === null || entries.length === 0) return null;
+    let box: Rect | null = null;
+    for (const e of entries) {
+      if (e.rects === null) return null;
+      for (const r of e.rects) box = unionRect(box, [r[0] - 2 * TERRAIN_CELL, r[1] - 2 * TERRAIN_CELL, r[2] + 2 * TERRAIN_CELL, r[3] + 2 * TERRAIN_CELL]);
+    }
+    return box;
+  };
   /** The shaping blocks a world box reaches, on the grid `changedBlocks` uses. */
   const blocksOver = (box: Rect): [number, number, number, number][] => {
     const out: [number, number, number, number][] = [];
@@ -2407,19 +2428,23 @@ export function createSceneRenderer(
       const fxDt = fx ? fx.clock(wallDt) : 0;
       lastWall = wallNow;
       cameraEasing = rig.settle(wallDt);
-      if (canvas.clientWidth !== lastWidth || canvas.clientHeight !== lastHeight) {
-        lastWidth = canvas.clientWidth;
-        lastHeight = canvas.clientHeight;
+      // Without an observer (none in this browser): read once here, as the frame did before.
+      if (!sizeWatch) { css.w = canvas.clientWidth; css.h = canvas.clientHeight; }
+      if (css.w !== lastWidth || css.h !== lastHeight) {
+        lastWidth = css.w;
+        lastHeight = css.h;
         resize();
       }
       const terrainStarted = performance.now();
       const stroking = !!options?.holdRoads && !!elevation && networkRevision === net.revision;
       const groundMoved = terrain.update(net.doc, stroking);
+      const landEntries = landRead.read(net.doc.changes);
       if (groundMoved) {
         landVersion++;
-        // The stroke's dirty region, dab by dab (`landDirty`).
+        // The stroke's dirty region, dab by dab (`landDirty`); a rewrite the terrain cannot place (an undo of the relief), where the diary says it moved.
         const moved = terrain.lastRegion;
-        landDirty = moved === null || landDirty === 'all' ? 'all' : unionRect(landDirty, regionRect(moved));
+        const said = moved === null ? landMovedSince(landEntries) : regionRect(moved);
+        landDirty = said === null || landDirty === 'all' ? 'all' : unionRect(landDirty, said);
       }
       terrain.updatePaint(net.doc);
       // A brush stroke in progress: every dab used to re-solve the whole road network and re-mesh every road
@@ -2639,18 +2664,18 @@ export function createSceneRenderer(
         const eye = rig.camera.position;
         let k = 1;
         if (!rig.perspective) {
-          const halfH = canvas.clientHeight / Math.max(1e-3, 2 * rig.viewport.zoom);
+          const halfH = css.h / Math.max(1e-3, 2 * rig.viewport.zoom);
           k = halfH / Math.tan((PERSPECTIVE_FOV * Math.PI) / 360) / Math.max(1e-3, eye.distanceTo(rig.target));
         }
         const t = rig.target;
         const ex = t.x + (eye.x - t.x) * k, ey = -(t.z + (eye.z - t.z) * k), ez = t.y + (eye.y - t.y) * k;
         // The far level of the buildings by the error on the screen, in CSS pixels
-        const pxAtMetre = canvas.clientHeight / (2 * Math.tan(((rig.perspective ? (rig.camera as PerspectiveCamera).fov : PERSPECTIVE_FOV) * Math.PI) / 360));
+        const pxAtMetre = css.h / (2 * Math.tan(((rig.perspective ? (rig.camera as PerspectiveCamera).fov : PERSPECTIVE_FOV) * Math.PI) / 360));
         // In the view from above a metre spans the same pixels wherever it stands; in perspective nothing past the far plane is seen
         let reach = rig.perspective ? (rig.camera as PerspectiveCamera).far : Infinity;
         if (!rig.perspective) {
-          const halfH = canvas.clientHeight / Math.max(1e-3, 2 * rig.viewport.zoom);
-          const halfW = (halfH * canvas.clientWidth) / Math.max(1, canvas.clientHeight);
+          const halfH = css.h / Math.max(1e-3, 2 * rig.viewport.zoom);
+          const halfW = (halfH * css.w) / Math.max(1, css.h);
           reach = Math.hypot(halfW, halfH / Math.max(0.3, Math.sin(rig.viewport.elevation))) * 1.25 + m(120);
         }
         rig.camera.updateMatrixWorld();
@@ -2733,8 +2758,8 @@ export function createSceneRenderer(
       crowdFrustum.setFromProjectionMatrix(crowdProjection, cullCamera.coordinateSystem, cullCamera.reversedDepth);
       cameraRight.setFromMatrixColumn(cullCamera.matrixWorld, 0).normalize();
       // The canvas's CSS size read once a frame, before the vehicles ask `screenScale`
-      cssHalfW = renderer.domElement.clientWidth * 0.5;
-      cssHalfH = renderer.domElement.clientHeight * 0.5;
+      cssHalfW = css.w * 0.5;
+      cssHalfH = css.h * 0.5;
       // Plants and street furniture outside the view are not drawn at all.
       furniture.cull(crowdFrustum, crowdProjection);
       signs.cull(crowdFrustum, crowdProjection);
@@ -2787,8 +2812,8 @@ export function createSceneRenderer(
       signals.sync(sim.signals, net, detailed, crowdFrustum);
 
       target.copy(rig.target);
-      const halfHeight = canvas.clientHeight / Math.max(0.001, rig.viewport.zoom * 2);
-      const halfWidth = (halfHeight * canvas.clientWidth) / Math.max(1, canvas.clientHeight);
+      const halfHeight = css.h / Math.max(0.001, rig.viewport.zoom * 2);
+      const halfWidth = (halfHeight * css.w) / Math.max(1, css.h);
       // The screen's height covers more ground the lower the camera looks
       const reach = rig.perspective ? 1.6 : 1;
       const groundHalfDepth = (reach * halfHeight) / Math.max(0.3, Math.sin(rig.viewport.elevation));
@@ -2822,7 +2847,7 @@ export function createSceneRenderer(
           const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * span * 0.45;
           strikeAt(target.x + Math.cos(a) * r, -target.z + Math.sin(a) * r);
         }
-        canvasSize.set(canvas.clientWidth, canvas.clientHeight);
+        canvasSize.set(css.w, css.h);
         const flash = lightning.update(step, canvasSize);
         const storm = Math.min(1, weather.lightning / 8);
         environment.setWeather(Math.max(weather.rain * 0.85, storm * 0.6), flash);
@@ -2853,7 +2878,7 @@ export function createSceneRenderer(
           const coneDirection = rig.camera.getWorldDirection(flatDirection);
           const flat = Math.hypot(coneDirection.x, coneDirection.z);
           if (flat > 0.05) {
-            const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+            const aspect = css.w / Math.max(1, css.h);
             const fov = rig.camera instanceof PerspectiveCamera ? rig.camera.fov : PERSPECTIVE_FOV;
             const halfAcross = Math.atan(Math.tan((fov * Math.PI) / 360) * aspect);
             view = {
@@ -2906,7 +2931,7 @@ export function createSceneRenderer(
         reliefFocus.x = centre.x + dx * pull;
         reliefFocus.z = -centre.y + dz * pull;
         // Close: the screen's height under some 1800 units of ground, in either camera
-        const halfHeight = renderer.domElement.clientHeight / Math.max(1e-3, 2 * rig.viewport.zoom);
+        const halfHeight = css.h / Math.max(1e-3, 2 * rig.viewport.zoom);
         const close = halfHeight < 900;
         if (net.doc.gullyRevision !== gulliesFor) {
           gulliesFor = net.doc.gullyRevision;
@@ -3061,6 +3086,7 @@ export function createSceneRenderer(
       return requested;
     },
     dispose() {
+      sizeWatch?.disconnect();
       roadTiles.dispose();
       groundWorkers.dispose();
       tileWriter?.terminate();
