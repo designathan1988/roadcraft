@@ -1948,8 +1948,8 @@ const itemInTile = (item: unknown, key: number): boolean => {
 };
 /** A world of the generator's options opened: the document emptied, the tiles round the camera streamed in (made the first time, read after). */
 async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Promise<void> {
-  streamed?.generator.dispose();
-  streamed = null;
+  // The world open before closed first, its changed tiles written.
+  await afterStreamedWorld(() => undefined);
   persistence.paused = true;
   history.clear();
   // Each tile made has its far levels baked where it is made, with what the far trees' own jobs read (`SceneHandle.farBakeEnv`).
@@ -2054,15 +2054,44 @@ function growthAnswered(answer: GrowAnswer): boolean {
   return true;
 }
 
+/** DO NOT replace the map under a streamed world: closed first (its changed tiles written, as long as the close of the page waits, `CLOSE_WAIT_MS`), the region's tiles left, then `replace`; with no streamed world, `replace` at once. */
+function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
+  const open = streamed;
+  if (!open) return replace();
+  // Posted now, from the records the page holds; nothing streams in or out after.
+  const written = open.streamer.flush();
+  streamed = null;
+  open.generator.dispose();
+  scene.farBuildings.setSource(null, () => false);
+  scene.farRoads.setSource(null, () => false);
+  scene.setActiveTiles(null, []);
+  sim.setActive(null);
+  scene.holdOpening(null);
+  try { window.localStorage.removeItem(STREAMED_MARK); } catch { /* storage blocked */ }
+  const waited = new Promise<boolean>((done) => setTimeout(() => done(false), CLOSE_WAIT_MS));
+  return Promise.race([written, waited]).then((ok) => {
+    if (!ok) console.error('[world] some changed tiles were not confirmed written before the map was replaced');
+    doc.leaveTiles();
+    const out = replace();
+    // The region's records are no map of their own: no undo back into them; the next map is saved as a map.
+    history.clear();
+    persistence.paused = false;
+    updateHistoryButtons();
+    return out;
+  });
+}
+
 function newMap(): void {
   if (!window.confirm(t('confirm.newMap'))) return;
-  // Discarding the whole map is the largest edit the editor can make, so it is the one that most needs to be undoable.
-  history.begin(doc);
-  // A new map is empty, painted to the Brazilian standard.
-  applySnapshot({ ...new RoadDoc().toJSON(), relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
-  roadTool.reset();
-  fitView();
-  flashHint('hint.newMap');
+  void afterStreamedWorld(() => {
+    // Discarding the whole map is the largest edit the editor can make, so it is the one that most needs to be undoable.
+    history.begin(doc);
+    // A new map is empty, painted to the Brazilian standard.
+    applySnapshot({ ...new RoadDoc().toJSON(), relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
+    roadTool.reset();
+    fitView();
+    flashHint('hint.newMap');
+  });
 }
 /** A NEW CITY OVER THE WHOLE MAP (10 km x 10 km, `wholeMap.ts` MAP_TILES) from the menu: a fresh seed, the streamed world opened round the camera (`openStreamedWorld`, as `generateCity({ size: 'whole' })`). */
 function newWorld(): void {
@@ -2091,17 +2120,22 @@ function saveMap(): void {
   if (offered) flashHint('hint.saved');
 }
 /** Loads a picked map. */
-function openImported(result: ImportResult): boolean {
+function openImported(result: ImportResult): boolean | Promise<boolean> {
   if (result.status === 'cancelled') return false;
   if (result.status === 'invalid') {
     flashHint('hint.openFailed');
     return false;
   }
+  const { session } = result;
+  return afterStreamedWorld(() => openSession(session));
+}
+/** A picked map's session put in place of the map. */
+function openSession(session: Extract<ImportResult, { status: 'ok' }>['session']): boolean {
   const before = doc.toJSON();
   // Opening a map is an edit like any other: undo gives the map before it back.
   history.begin(doc);
   try {
-    applySnapshot(result.session.document, 'import');
+    applySnapshot(session.document, 'import');
   } catch (error) {
     console.error('The map could not be loaded.', error);
     applySnapshot(before);
@@ -2111,12 +2145,12 @@ function openImported(result: ImportResult): boolean {
   }
   history.end(doc);
   updateHistoryButtons();
-  restoreSettings(result.session.settings);
+  restoreSettings(session.settings);
   flashHint('hint.opened');
   return true;
 }
 async function openMap(): Promise<void> {
-  openImported(await importFromFile());
+  await openImported(await importFromFile());
 }
 
 // Perspective or the isometric (orthographic) view, the player's choice, kept.
@@ -3876,31 +3910,19 @@ const healthPanel = mountHealthPanel({
       void openStreamedWorld({ ...base, ...WHOLE_MAP_DEFAULTS, ...asked }, true);
       return { tiles: 0 };
     }
-    // A round city: the streamed world closed, the document the whole map again.
-    if (streamed) {
-      void streamed.streamer.flush();
-      streamed.generator.dispose();
-      scene.farBuildings.setSource(null, () => false);
-      scene.farRoads.setSource(null, () => false);
-      scene.setActiveTiles(null, []);
-      sim.setActive(null);
-      streamed = null;
-      persistence.paused = false;
-      scene.holdOpening(null);
-      try { window.localStorage.removeItem(STREAMED_MARK); } catch { /* storage blocked */ }
-    }
+    // A round city: the streamed world closed first, the document the whole map again.
     const chosen = { ...DEFAULT_CITY, ...asked, size };
-    return generateCity(chosen, planCity(chosen));
+    return afterStreamedWorld(() => generateCity(chosen, planCity(chosen)));
   },
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   growTimed: () => { const t = performance.now(); const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed); return { id, ms: performance.now() - t }; },
   cityGrowth: () => (cityGrowth || cityProgress.style.display === 'block' ? { pending: true } : null),
   cityBuiltIn: () => cityBuiltIn,
   /** Replaces the map as loading a file does: document, network and simulation topology. */
-  loadDoc: (data: ReturnType<RoadDoc['toJSON']>) => {
+  loadDoc: (data: ReturnType<RoadDoc['toJSON']>) => afterStreamedWorld(() => {
     history.begin(doc);
     applySnapshot(data, 'import');
-  },
+  }),
   /** Centres the play camera on a world point, so the next frame builds what is there */
   /** The transport tool, for the browser checks. */
   transitTool: () => transitEditor,

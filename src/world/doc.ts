@@ -1491,6 +1491,13 @@ export class RoadDoc {
     this.changes.causeNext(cause);
   }
 
+  /** The streamed world closed (`main.ts` afterStreamedWorld): no tile is held any more, and no id is taken from a tile's range; the records stay until the document is replaced. */
+  leaveTiles(): void {
+    if (this.recorder) throw new Error('the tiles cannot be left during an edit');
+    this.tileContents.clear();
+    this.tileNext.clear();
+  }
+
   /** What a tile holds now, by `OWNER` (what the player added or moved there included): read off the page's document, which holds the active region only, so bounded by it, never by the world */
   private tileMembers(key: number): TileMembers {
     const { i, j } = tileOfKey(key);

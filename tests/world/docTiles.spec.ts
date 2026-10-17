@@ -141,3 +141,19 @@ describe('a working copy over loaded tiles', () => {
     expect(doc.fork().addNode({ x: at.x, y: at.y + m(80) }).id).toBe(base + 3);
   });
 });
+
+describe('the streamed world left', () => {
+  it('holds no tile after `leaveTiles`: a map put in takes no tile id, and the same tile loads again after', () => {
+    const key = tileKey(0, 0), base = tileIdBase(key);
+    const doc = new RoadDoc();
+    doc.loadTile(empty(key));
+    expect(doc.addNode({ x: m(300), y: m(500) }).id).toBe(base);
+    doc.leaveTiles();
+    expect(doc.hasTile(key)).toBe(false);
+    expect(doc.loadedTiles.size).toBe(0);
+    doc.replaceWith(new RoadDoc());
+    expect(doc.addNode({ x: m(300), y: m(500) }).id).toBeLessThan(base);
+    doc.loadTile(empty(key));
+    expect(doc.hasTile(key)).toBe(true);
+  });
+});
