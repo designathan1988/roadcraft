@@ -4,7 +4,7 @@ import type { Building } from '@world/buildings/types';
 import { tileBuildingsOf } from '@world/growth/grownRows';
 import { m } from '@world/units';
 import type { Pack } from './cellInstances';
-import { type Gardens, gardenPack, gardenPlants } from './gardens';
+import { type GardenPlant, type Gardens, gardenPack, gardenPlants } from './gardens';
 import type { NearBaker, NearProduct } from './nearTileBake';
 import { runBuffers } from './streetFurnitureLayer';
 
@@ -22,10 +22,14 @@ export const gardenBaker: NearBaker<GardenBake | null> = {
   has: (tiles) => tiles[0]!.buildings.length > 0 || (tiles[0]!.grown?.id.length ?? 0) > 0,
   // A lot's plants stand on the ground round its building (`renderer.ts` bankBox).
   groundReach: m(64),
-  bake(area) {
+  // DO NOT make the buildings again from their rows at every change of the ground under the tile (a dense tile's ~1,500 buildings, seconds of a worker): their plants are kept by the tile's version alone, on no ground; the ground is read after.
+  staged(area): readonly GardenPlant[] {
     const buildings: Building[] = [];
     for (const raw of tileBuildingsOf(area.tile)) { const b = migrateBuilding(raw); if (b) buildings.push(b); }
-    const plants = gardenPlants(buildings, area.groundAt);
+    return gardenPlants(buildings, () => 0);
+  },
+  bake(area, _extra, staged) {
+    const plants = (staged as readonly GardenPlant[]).map((p) => ({ ...p, z: area.groundAt(p.x, p.y) }));
     if (!plants.length) return null;
     const packs = gardenPack(plants);
     return packs.size ? { packs } : null;
@@ -37,7 +41,7 @@ export const gardenBaker: NearBaker<GardenBake | null> = {
 export function gardenProduct(gardens: () => Gardens, parent: Object3D): NearProduct<GardenBake> {
   return {
     kind: 'gardens',
-    // As far as the furniture's street trees (`furnitureTiles.ts`): a garden tree a few pixels tall there. Each tile's buildings are made again from their rows to bake it, once a version.
+    // As far as the furniture's street trees (`furnitureTiles.ts`): a garden tree a few pixels tall there. Each tile's buildings are made again from their rows once a version of the tile (`staged`), kept in the store.
     cover: m(2) * m(2),
     top: m(16),
     land(bake) {
