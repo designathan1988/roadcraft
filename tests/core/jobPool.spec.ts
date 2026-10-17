@@ -175,4 +175,22 @@ describe('the job system', () => {
     lanes[2]!.terminate();
     expect(hostOf(jobPort('ecology'))).toBe(freed);
   });
+
+  it("runs no queued job on the save's worker: its writes never wait behind a job", async () => {
+    const { jobPort, submitJob } = await import('@/jobs/jobPool');
+    const save = hostOf(jobPort('save'));
+    // A second lane of the save, the pool not full: on the same worker, no worker made for it.
+    expect(hostOf(jobPort('save'))).toBe(save);
+    expect(FakeWorker.made).toHaveLength(1);
+    const written: string[] = [];
+    for (let k = 0; k < 8; k++) {
+      submitJob({ service: 'cells', key: null, priority: k, write: () => { written.push(String(k)); return { data: k, transfer: [] }; }, done: () => {}, failed: () => {} });
+    }
+    // Jobs went to the other workers (four in all here), none to the save's.
+    expect(written.length).toBeGreaterThan(0);
+    expect(FakeWorker.made[save]!.asked.filter((m) => m.seq !== undefined)).toEqual([]);
+    // And another kind's lane is put elsewhere too; another lane of the save on the same worker.
+    expect(hostOf(jobPort('roadTiles'))).not.toBe(save);
+    expect(hostOf(jobPort('save'))).toBe(save);
+  });
 });
