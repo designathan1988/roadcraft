@@ -207,7 +207,10 @@ export class SimClient implements JournalReader {
   /** Called with each frame read (a tick written), and once the worker stands. */
   onTick: (() => void) | null = null;
   private readonly layouts = new Map<NodeId, SignalLayout>();
-  private readonly lights = new Map<NodeId, { stage: string; states: Map<number, SignalState> }>();
+  private readonly lights = new Map<NodeId, { stage: string; readonly states: Map<number, SignalState> }>();
+  /** What the vehicles and the people carry as told this tick, by id (`readTick`): one map each, emptied and filled each tick. */
+  private readonly vehicleRich = new Map<number, Extract<FromSim, { type: 'tick' }>['vehicles'][number][1]>();
+  private readonly pedRich = new Map<number, Extract<FromSim, { type: 'tick' }>['peds'][number][1]>();
   private readonly signalLog: NodeId[] = [];
   private signalBase = 0;
   private signalAll = 0;
@@ -591,7 +594,8 @@ export class SimClient implements JournalReader {
     this.lastSteps = data[h + H.steps]!;
     this.lastStepMs = data[h + H.stepMs]!;
     // What the vehicles carry, told for those whose changed: no map made a tick none did.
-    const rich = message.vehicles.length ? new Map(message.vehicles) : null;
+    // DO NOT make a map a tick: the tick's own, emptied and filled.
+    const rich = message.vehicles.length ? fillMap(this.vehicleRich, message.vehicles) : null;
     // This tick's stamp (`tick` once read): a view not stamped by it was not in it (DO NOT gather the tick's ids in a set to find them).
     const stamp = this.tick + 1;
     // The cars parked in bays, as told: come, gone, or every one standing, each applied by its id (DO NOT clear them all and make every view again).
@@ -670,7 +674,7 @@ export class SimClient implements JournalReader {
     }
     this.parkedSlack = parkedSlack;
     // The people: their numbers from the slot, what they carry from the message (kept from the last time it changed).
-    const pedRich = message.peds.length ? new Map(message.peds) : null;
+    const pedRich = message.peds.length ? fillMap(this.pedRich, message.peds) : null;
     const m = data[h + H.peds]!;
     const pb = pedBase(slot);
     this.pedViews.length = 0;
@@ -725,7 +729,11 @@ export class SimClient implements JournalReader {
       if (message.layout.all) this.signalAll = this.signalBase + this.signalLog.length;
       if (this.signalLog.length > 4096) { this.signalBase += this.signalLog.length; this.signalLog.length = 0; this.signalAll = this.signalBase; }
     }
-    for (const s of message.signals) this.lights.set(s.node, { stage: s.stage, states: new Map(s.states) });
+    for (const s of message.signals) {
+      // A junction's lights written into the map it has (DO NOT make one a junction a tick).
+      const lit = this.lights.get(s.node);
+      if (lit) { lit.stage = s.stage; fillMap(lit.states, s.states); } else this.lights.set(s.node, { stage: s.stage, states: new Map(s.states) });
+    }
     this.onTick?.();
   }
 
@@ -772,6 +780,13 @@ export class SimClient implements JournalReader {
     this.signalLog.length = 0;
     this.signalAll = this.signalBase;
   }
+}
+
+/** A map emptied and filled with the pairs. */
+function fillMap<K, V>(map: Map<K, V>, pairs: readonly (readonly [K, V])[]): Map<K, V> {
+  map.clear();
+  for (const [k, v] of pairs) map.set(k, v);
+  return map;
 }
 
 /** Each gesture told, by the age (`PedView.age`) its clock started at. */
