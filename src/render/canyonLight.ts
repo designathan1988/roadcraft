@@ -180,7 +180,8 @@ const FRAGMENT = /* glsl */ `
         vec4 clip = uViewProjection * vec4(Q, 1.0);
         vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
         if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break;
-        vec3 S = worldAt(uv, texture2D(tDepth, uv).r);
+        // DO NOT sample with implicit derivatives in a loop that breaks: D3D's compiler (ANGLE) unrolls and analyses all of it (9 s for this program, wprof7). The depth has no mips and is nearest: its level 0 is what texture2D read.
+        vec3 S = worldAt(uv, textureLod(tDepth, uv, 0.0).r);
         float dQ = distance(uCameraPos, Q), dS = distance(uCameraPos, S);
         if (dS < dQ - 0.03 && dQ - dS < 0.8) { shade = 1.0; break; }
       }

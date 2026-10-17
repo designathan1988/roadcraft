@@ -217,9 +217,13 @@ export function createPostChain(
     const quad = fullScreenTriangle();
     const warm = new Scene();
     warm.add(new Mesh(quad, canyon.pass.material));
+    // For the target it draws into (the composer's: no tone mapping, its colour space): compiled for another, its program was built again at its first draw (9 s, wprof7).
+    const previous = renderer.getRenderTarget();
+    renderer.setRenderTarget(composer.renderTarget1);
     warming.push(renderer.compileAsync(warm, camera).catch((error: unknown) => {
       console.error('Street light shader precompile failed', error);
     }).finally(() => quad.dispose()));
+    renderer.setRenderTarget(previous);
   }
 
   // Light that is brighter than white spills a little round itself: the sun on glass, lit windows and lamps at night.

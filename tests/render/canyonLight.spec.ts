@@ -93,3 +93,21 @@ describe('canyon light', () => {
     canyon.dispose();
   });
 });
+
+describe('the canyon light\'s program', () => {
+  it('samples no texture with implicit derivatives inside a loop that breaks (D3D unrolled and analysed it for seconds)', async () => {
+    const material = createCanyonLight(new PerspectiveCamera(), () => null).pass.material as ShaderMaterial;
+    const shader = material.fragmentShader;
+    const contact = shader.slice(shader.indexOf('for (int i = 1; i <= 8; i++)'), shader.indexOf('shade *= '));
+    expect(contact.length).toBeGreaterThan(0);
+    expect(contact).not.toMatch(/texture2D\(|texture\(/);
+    expect(contact).toMatch(/textureLod\(tDepth, uv, 0\.0\)/);
+  });
+
+  it('is compiled ahead for the target it draws into, not the screen', async () => {
+    const { readFileSync } = await import('node:fs');
+    const post = readFileSync('src/render/postprocess.ts', 'utf8');
+    const warm = post.slice(post.indexOf('warm.add(new Mesh(quad, canyon.pass.material));'), post.indexOf('warm.add(new Mesh(quad, canyon.pass.material));') + 700);
+    expect(warm).toMatch(/renderer\.setRenderTarget\(composer\.renderTarget1\);[\s\S]*renderer\.compileAsync\(warm, camera\)/);
+  });
+});
