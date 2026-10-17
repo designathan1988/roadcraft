@@ -482,4 +482,38 @@ describe('an edited tile', () => {
     await turns(2);
     expect(streamer.pageEdit(key)).toBe(0);
   });
+
+  it("has every stored tile's bays added once the map is made, from the camera's tile outwards, a lane short of all, none of the region's", async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const bays: number[] = [];
+    const waiting = new Map<number, () => void>();
+    const withBays = Object.assign(store, { addBays: (key: number) => { bays.push(key); return new Promise<void>((done) => waiting.set(key, done)); } });
+    const streamer = new WorldStreamer(doc, withBays, {}, 4);
+    streamer.rush = true;
+    streamer.focus(0, 0);
+    for (let round = 0; round < 80 && streamer.mapMade < streamer.mapTotal; round++) {
+      // While the map is made, no bays asked.
+      expect(bays).toEqual([]);
+      for (const key of [...store.ensures]) store.finish(key);
+      await turns(2);
+      streamer.focus(0, 0);
+      streamer.apply(round);
+    }
+    streamer.rush = false;
+    for (let frame = 0; frame < 10 && !streamer.settled; frame++) { await turns(1); streamer.focus(0, 0); streamer.apply(100 + frame); }
+    streamer.focus(0, 0);
+    // A lane short of all at once, the nearest first, never a tile of the page's.
+    expect(bays.length).toBe(3);
+    for (let round = 0; round < 200 && bays.length < MAP_TILES * MAP_TILES - doc.loadedTiles.size; round++) {
+      for (const [key, done] of [...waiting]) { waiting.delete(key); done(); }
+      await turns(2);
+      streamer.focus(0, 0);
+    }
+    expect(new Set(bays).size).toBe(bays.length);
+    expect(bays.length).toBe(MAP_TILES * MAP_TILES - doc.loadedTiles.size);
+    expect(bays.some((key) => doc.hasTile(key))).toBe(false);
+    const rings = bays.map(ring);
+    for (let k = 1; k < rings.length; k++) expect(rings[k]!).toBeGreaterThanOrEqual(rings[k - 1]!);
+  });
 });

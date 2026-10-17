@@ -124,4 +124,19 @@ describe("the page's reading of the fleet", () => {
     ped(12.5, []);
     expect(client.pedViews[0]!.gesture!.t).toBe(3.5);
   });
+
+  it("keeps a junction's lights as last told, written into the map it has", () => {
+    const client = new SimClient(new RoadDoc());
+    const stats = { issues: [] } as unknown as SimStats;
+    const told = (stage: string, state: 'red' | 'green'): void => {
+      inside(client).data[headBase(0) + H.vehicles] = 0;
+      inside(client).data[headBase(0) + H.peds] = 0;
+      inside(client).receive({ type: 'tick', slot: 0, vehicles: [], peds: [], signals: [{ node: 5 as never, stage, states: [[1, state]] }], layout: null, trains: [], parked: null, stats, wounds: [], casualties: [] });
+    };
+    told('a', 'green');
+    expect(client.signals.state(5 as never, 1)).toBe('green');
+    told('b', 'red');
+    expect(client.signals.state(5 as never, 1)).toBe('red');
+    expect(client.signals.stage(5 as never)).toBe('b');
+  });
 });

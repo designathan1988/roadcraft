@@ -101,7 +101,7 @@ function parseTileText(text: TileText, key: number): TileRecords {
 }
 
 /** A tile's derived product kept with it: a JSON value, or a typed-array pack (`core/arrayPack.ts`). */
-type TileSection = { readonly json: unknown } | { readonly bin: Uint8Array<ArrayBuffer> };
+export type TileSection = { readonly json: unknown } | { readonly bin: Uint8Array<ArrayBuffer> };
 /** What bakes a tile's sections where it is written (`sim/tileSections.ts`, handed in by the thread that writes: the generator's worker, the save worker). */
 export type TileBaker = (records: TileRecords) => Readonly<Record<string, TileSection>>;
 
@@ -121,10 +121,30 @@ async function encodeTile(records: TileRecords, bake: TileBaker | undefined, ful
     // Stored without them: each reader derives its own from the records (`readTilePart`).
     console.error(`[save] tile ${records.key}'s sections could not be baked`, error);
   }
-  for (const [name, section] of Object.entries(sections)) {
-    parts.push('bin' in section ? { name, kind: 'bin', data: new Blob([section.bin]) } : { name, kind: 'json', data: await gzipBytes(json(section.json)) });
-  }
+  for (const [name, section] of Object.entries(sections)) parts.push(await sectionPart(name, section));
   return { blob: tileBlob(records.key, records.version, bake !== undefined, parts), text };
+}
+
+/** A section as a part of the tile's blob: a binary pack as it is, a JSON value gzipped. */
+async function sectionPart(name: string, section: TileSection): Promise<TilePartIn> {
+  if ('bin' in section) return { name, kind: 'bin', data: new Blob([section.bin]) };
+  return { name, kind: 'json', data: await gzipBytes(new TextEncoder().encode(JSON.stringify(section.json)) as Uint8Array<ArrayBuffer>) };
+}
+
+/** DO NOT write a tile's records again to add one section to it: its blob's parts kept as they are, the section put in (or in place of the one of that name). False, and nothing written, when the store holds no tile in parts at `version`.
+ *  Run where no other write of the tile can come between the read and the write (the tile's chain, `TileStore`: the maker answering `load`). */
+export async function addTileSection(store: PartStore, map: string, key: number, version: number, name: string, section: TileSection): Promise<boolean> {
+  const stored = await storedBlob(store, map, key);
+  const read = stored?.read;
+  if (!stored || !read || !read.head.baked || read.head.version !== version) return false;
+  const parts: TilePartIn[] = [];
+  for (const [part] of read.head.parts) {
+    if (part === name) continue;
+    const got = partOf(stored.blob, read, part);
+    if (got) parts.push({ name: part, kind: got.kind, data: got.data });
+  }
+  parts.push(await sectionPart(name, section));
+  return store.write([[tileBlobKey(map, key), tileBlob(key, version, true, parts)]], []);
 }
 
 /** DO NOT post a tile's buildings as objects to be written (each copied by a JSON round trip, then cloned by the message, every few seconds a changed tile): each is a row of a table in shared memory */
@@ -400,7 +420,7 @@ export class TileStore {
     /** Builds a tile the store does not have (the whole-map generator's worker): a pure function of the seed and its place. */
     private readonly generate: (i: number, j: number) => Promise<TileRecords>,
     /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`, its records handed back prepared with `records`; with `ifMissing`, only when the store has none (else the stored one's version, or its records prepared); none where the store is not the worker's to write (the desktop's). */
-    private readonly makeStored?: (i: number, j: number, after: number, records: boolean, ifMissing: boolean) => Promise<MadeTile>,
+    private readonly makeStored?: (i: number, j: number, after: number, records: boolean, ifMissing: boolean, baysOnly?: boolean) => Promise<MadeTile>,
   ) {}
 
   /** Another tab holds this world (`main.ts` holdWorld): this one reads it and writes nothing to the store (no tile made is stored, no old tile written again in parts), its tiles made here only to be drawn. */
@@ -426,6 +446,15 @@ export class TileStore {
         return known;
       }
       return (await this.made(key)).version;
+    });
+  }
+
+  /** A stored tile's parking bays baked and added, that section alone, where it has none (`cityTile.worker.ts` addBays), on the tile's chain: no write of it comes between; nothing where tiles are not the generator's to write. */
+  addBays(key: number): Promise<void> {
+    if (!this.makeStored) return Promise.resolve();
+    return this.chained(key, async () => {
+      const { i, j } = tileOfKey(key);
+      await this.makeStored!(i, j, this.versions.get(key) ?? 0, false, false, true);
     });
   }
 

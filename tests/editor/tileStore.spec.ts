@@ -520,3 +520,31 @@ describe('a map saved before the tiles', () => {
     expect(store.writes).toHaveLength(0);
   });
 });
+
+describe("a stored tile's bays added after the map is made (`TileStore.addBays`)", () => {
+  it("asks the maker for the bays alone, on the tile's chain: a write of the tile asked meanwhile waits for it", async () => {
+    const order: string[] = [];
+    let release: () => void = () => {};
+    const maker = (_i: number, _j: number, _after: number, _records: boolean, _ifMissing: boolean, baysOnly?: boolean): Promise<MadeTile> => {
+      order.push(baysOnly ? 'bays' : 'made');
+      return new Promise((done) => { release = () => done({ version: 1 }); });
+    };
+    const backend = { run: vi.fn(async (op: { op: string }) => { order.push(op.op); return op.op === 'write' ? true : null; }) };
+    const store = new TileStore('map', backend as never, () => Promise.reject(new Error('not made here')), maker);
+    const key = tileKey(2, 3);
+    const bays = store.addBays(key);
+    const base = tileIdBase(key);
+    const written = store.write({
+      key, version: 1, nodes: [], borrowedNodes: [], segments: [], poles: [], borrowedPoles: [], poleSpans: [], buildings: [], lots: [], lotKeys: [],
+      landscape: [], barriers: [], paint: [], trees: [], elements: [],
+      next: { node: base, segment: base, pole: base, span: base, building: base, lot: base, landscape: base, barrier: base },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(order).toEqual(['bays']);
+    release();
+    await bays;
+    await written;
+    expect(order).toEqual(['bays', 'write']);
+  });
+});
+
