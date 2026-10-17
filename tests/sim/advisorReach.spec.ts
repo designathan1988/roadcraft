@@ -94,5 +94,9 @@ describe('the control advisor', () => {
     w.conflicts.setWindow(w.graph, new Set());
     for (let t = 0; t < F.trendWindow * 4; t++) w.stepControlAdvisor(1);
     expect(w.advisor.choice(node)).toBe('signal');
+    // Back in the window: its rates are those it left with (not aged meanwhile), it is judged on them and stays signalised.
+    w.conflicts.setWindow(w.graph, new Set([node]));
+    for (let t = 0; t < 30; t++) w.stepControlAdvisor(1);
+    expect(w.advisor.choice(node)).toBe('signal');
   });
 });

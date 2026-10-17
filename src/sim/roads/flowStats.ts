@@ -60,14 +60,33 @@ export class FlowStats {
     return known ? agedTo(known, this.second) : 0;
   }
 
+  /** Junctions whose rates stand still (out of the micro window: nothing is counted there), by the second they were held at. */
+  private readonly held = new Map<NodeId, number>();
+
+  /** A junction's rates held as they are (`resume` lets them age again): DO NOT let them fall while nobody counts there, a signal came back as a priority junction. */
+  hold(node: NodeId): void {
+    if (!this.held.has(node)) this.held.set(node, this.second);
+  }
+
+  /** A held junction's rates go on from where they were held, the seconds out not aged. */
+  resume(node: NodeId): void {
+    const from = this.held.get(node);
+    if (from === undefined) return;
+    this.held.delete(node);
+    const out = this.second - from;
+    if (out <= 0) return;
+    for (const known of this.rates.get(node)?.values() ?? []) if (known.at <= from) known.at += out;
+  }
+
   /** Forgets what a removed junction measured. */
   keepOnly(nodes: ReadonlySet<NodeId>): void {
     for (const node of [...this.rates.keys()]) if (!nodes.has(node)) this.rates.delete(node);
+    for (const node of [...this.held.keys()]) if (!nodes.has(node)) this.held.delete(node);
   }
 
   /** These junctions' flows forgotten (gone with an edit). */
   drop(nodes: ReadonlySet<NodeId>): void {
-    for (const node of nodes) this.rates.delete(node);
+    for (const node of nodes) { this.rates.delete(node); this.held.delete(node); }
   }
 }
 
