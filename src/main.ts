@@ -3701,10 +3701,12 @@ function saveOnClose(): (event: BeforeUnloadEvent) => void {
   return (event) => {
     if (saved) return;
     persistence.saveSession(doc, sessionSettings());
+    // The streamed world's changed tiles posted now, before the close is decided (`pagehide` comes after it).
+    const tiles = streamed?.streamer.flush() ?? Promise.resolve(true);
     if (location.protocol !== 'app:') return;
     event.preventDefault();
     event.returnValue = '';
-    void Promise.race([persistence.written(), new Promise((done) => setTimeout(done, CLOSE_WAIT_MS))]).then(() => {
+    void Promise.race([Promise.all([persistence.written(), tiles]), new Promise((done) => setTimeout(done, CLOSE_WAIT_MS))]).then(() => {
       saved = true;
       window.close();
     });

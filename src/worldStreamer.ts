@@ -72,7 +72,10 @@ export class WorldStreamer {
   private readonly ahead = new Set<number>();
   /** The tiles to make ahead: every tile of the map, nearest the camera's tile first. */
   private aheadOrder: number[] = [];
-  private writing: Promise<unknown> = Promise.resolve();
+  /** Each tile's last write posted and not confirmed yet, its records as written: a tile asked again meanwhile is served them if the write failed; a failed one is written again (`retryFailed`). */
+  private readonly unconfirmed = new Map<number, PendingWrite>();
+  /** The world's values written, one after another. */
+  private worldWriting: Promise<unknown> = Promise.resolve();
 
   /** `inFlight`: how many tiles are asked of the store at once (the generator's lanes, `tileGenerator.ts` `lanesWanted`: more while the map is made), read as they are asked. */
   constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private readonly tell: StreamerEvents = {},
@@ -139,6 +142,8 @@ export class WorldStreamer {
       this.ready.delete(best);
       this.doc.loadTile(records);
       this.versions.set(best, records.version);
+      // Put in from a write that failed (`load`): the page holds what the store does not, written again from here.
+      if (this.unconfirmed.get(best)?.failed) { this.unconfirmed.delete(best); this.dirty.add(best); }
       this.tell.loaded?.(best);
       if (this.ready.size) this.tell.arrived?.();
       // The region whole now: the tiles ahead asked.
@@ -146,25 +151,39 @@ export class WorldStreamer {
     }
     for (const key of [...this.doc.loadedTiles]) {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
-      if (this.dirty.has(key)) this.write(key);
-      this.tell.letGo?.(key, this.doc.unloadTile(key));
+      if (this.dirty.has(key) || this.unconfirmed.get(key)?.failed) this.write(key);
+      // Let go first: an optional call (`?.`) does not evaluate its arguments when nobody listens.
+      const removedAt = this.doc.unloadTile(key);
+      this.tell.letGo?.(key, removedAt);
       this.versions.delete(key);
     }
     // A changed tile kept in the ring is written at once: the far levels draw it from the store (`activeChanged`), never from the page.
     for (const key of [...this.dirty]) if (!this.wanted.includes(key)) this.write(key);
     if (now - this.lastWrite >= WRITE_EVERY_MS) {
       this.lastWrite = now;
+      this.retryFailed();
       for (const key of [...this.dirty]) this.write(key);
       this.writeWorld();
     }
   }
 
-  /** Every changed tile written (the page going away, a map saved by hand). */
-  flush(): Promise<unknown> {
+  /** Every changed tile written, and those that failed written again (the page going away, a map changed): true once the store confirmed every write, false when one failed. */
+  flush(): Promise<boolean> {
     this.noteEdits();
+    this.retryFailed();
     for (const key of [...this.dirty]) this.write(key);
     this.writeWorld();
-    return this.writing;
+    const tiles = [...this.unconfirmed.values()].map((w) => w.done);
+    return Promise.all([...tiles, this.worldWriting.then(() => !this.worldDirty)]).then((ok) => ok.every(Boolean));
+  }
+
+  /** The writes that failed posted again: a loaded tile from the page's records, one let go from the records it was written with. */
+  private retryFailed(): void {
+    for (const [key, pending] of [...this.unconfirmed]) {
+      if (!pending.failed) continue;
+      if (this.doc.hasTile(key)) this.dirty.add(key);
+      else this.post(key, pending.records);
+    }
   }
 
   /** Whether a tile lies within `radius` tiles of the camera's tile. */
@@ -180,7 +199,7 @@ export class WorldStreamer {
       if (this.doc.hasTile(key) || this.asked.has(key) || this.ready.has(key)) continue;
       if (performance.now() - (this.failedAt.get(key) ?? -Infinity) < RETRY_MS) continue;
       this.asked.add(key);
-      this.source.load(key).then((records) => {
+      this.load(key).then((records) => {
         this.asked.delete(key);
         this.noteKnown(key, records.version);
         this.ready.set(key, records);
@@ -249,25 +268,59 @@ export class WorldStreamer {
     }
   }
 
-  /** The map's parts no tile holds written when they changed, after the tiles queued before. */
+  /** The map's parts no tile holds written when they changed, after the tiles posted before; changed again if the write failed. */
   private writeWorld(): void {
     if (!this.worldDirty || !this.tell.writeWorld) return;
     this.worldDirty = false;
     const write = this.tell.writeWorld;
-    this.writing = this.writing.then(() => write()).catch((error: unknown) => this.tell.failed?.(`the world's values were not written: ${String(error)}`));
+    const before = [...this.unconfirmed.values()].map((w) => w.done);
+    const failed = (why: string): void => { this.worldDirty = true; this.tell.failed?.(why); };
+    this.worldWriting = this.worldWriting.then(() => Promise.all(before)).then(() => write()).then(
+      (ok) => { if (ok === false) failed('the world\'s values were not written'); },
+      (error: unknown) => failed(`the world's values were not written: ${String(error)}`));
   }
 
-  /** A tile written as the document holds it now, its version moved on; written in order, never two of one tile at once. */
+  /** A tile from the store; DO NOT read the store's older version of one whose last write failed: the records written are served (`apply` writes them again). */
+  private load(key: number): Promise<TileRecords> {
+    // The store runs a tile's calls in order (`TileStore` chains): a write posted before is in it by the time the read runs.
+    return this.source.load(key).then((records) => {
+      const pending = this.unconfirmed.get(key);
+      return pending?.failed ? { ...pending.records, version: Math.max(pending.records.version, records.version) } : records;
+    });
+  }
+
+  /** A tile written as the document holds it now, its version moved on. */
   private write(key: number): void {
     this.dirty.delete(key);
     // The store says the version it wrote (one past what it knows): the far levels key their bakes by it.
-    const records = this.doc.tileRecords(key, this.versions.get(key) ?? 0);
-    this.writing = this.writing.then(() => this.source.write(records)).then((version) => {
-      if (version === null) { this.tell.failed?.(`tile ${key} was not written`); return; }
+    this.post(key, this.doc.tileRecords(key, this.versions.get(key) ?? 0));
+  }
+
+  /** DO NOT queue a write behind every other tile's (one chain for all): a tile let go and asked again was read at its old version before its write went in. The store chains each tile's calls itself. */
+  private post(key: number, records: TileRecords): void {
+    const pending: PendingWrite = { records, failed: false, done: Promise.resolve(false) };
+    this.unconfirmed.set(key, pending);
+    const failed = (why: string): boolean => {
+      // Only the tile's last write stands for it: an older one failing is covered by the newer.
+      if (this.unconfirmed.get(key) === pending) pending.failed = true;
+      this.tell.failed?.(why);
+      return false;
+    };
+    pending.done = this.source.write(records).then((version) => {
+      if (version === null) return failed(`tile ${key} was not written`);
+      if (this.unconfirmed.get(key) === pending) this.unconfirmed.delete(key);
       if (this.doc.hasTile(key)) this.versions.set(key, version);
       this.tell.written?.(key, version);
-    }, (error: unknown) => this.tell.failed?.(`tile ${key} was not written: ${String(error)}`));
+      return true;
+    }, (error: unknown) => failed(`tile ${key} was not written: ${String(error)}`));
   }
+}
+
+/** A tile's write posted to the store: its records, whether it failed, and its outcome (true: confirmed). */
+interface PendingWrite {
+  readonly records: TileRecords;
+  failed: boolean;
+  done: Promise<boolean>;
 }
 
 /** DO NOT leave the far city to the plan's stand-ins (`farPlan.ts`: boxes on a lattice and the avenues alone, the "city only in the middle" of 2026-10-16): every tile of the map, nearest (i, j) first, made once and stored, so the far levels draw the tiles themselves (the map is bounded, `wholeMap.ts` MAP_TILES). */
