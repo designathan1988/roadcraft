@@ -626,6 +626,7 @@ export const EN: Dictionary = {
   'hint.road': 'Click a start, aim, {heightUp}/{heightDown} for height, then click the end · {alignmentKey}: plan · Esc: cancel',
   'hint.road.gradeLimited': 'The road reached its safe grade; continue drawing to reach the selected height.',
   'hint.road.waitTiles': 'The map there is still loading: the road is laid as soon as it is in.',
+  'hint.road.tooFar': 'The road reaches too much of the map past the area loaded round the camera: draw it in parts, or nearer.',
   'hint.road.invalid': 'This connection needs more distance or a different endpoint.',
   'hint.rule.sharp': 'Refused: the roads would meet at too sharp an angle (under 25°).',
   'hint.rule.squeezed': 'Refused: stretch too short for the lanes to separate at the junction (junctions too close or angle too narrow).',

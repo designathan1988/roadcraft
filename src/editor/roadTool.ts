@@ -4,7 +4,7 @@ import { type FurnitureSet, furnitureFor } from '@world/roads/furnitureSets';
 import type { Vec2 } from '@core/vec2';
 import { dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
-import { shapeFromControl, type CurveShape } from '@core/bezier';
+import { controlPoint, shapeFromControl, type CurveShape } from '@core/bezier';
 import { fitRoadCurve, type RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
@@ -13,6 +13,7 @@ import { GRID_CELL, GRID_STEP, snapToGrid } from '@world/grid';
 import { Level, halfWidth, roadProfile } from '@world/roadTypes';
 import { sectionForWidth } from '@world/roadSection';
 import { METERS_PER_UNIT, UNITS_PER_METER, m } from '@world/units';
+import { TILE } from '@world/tiles';
 import type { RoadElevation } from '@world/elevation';
 import type { SegmentParking } from '@world/parking';
 import {
@@ -91,8 +92,12 @@ export interface RoadToolHost {
   groundSolve?(): RoadElevation | null;
   /** The roads just laid blink. */
   flash(ids: readonly SegmentId[]): void;
-  /** Whether every tile of the map `rect` reaches is in the page's document (a streamed world: those not yet in hold buildings the road would clear); absent: always. */
-  tilesIn?(rect: ChangeRect): boolean;
+  /** Whether every tile of the map `rect` reaches is in the page's document (a streamed world: those not yet in hold buildings the road would clear), those not asked for (`WorldStreamer.hold`) and kept until `null` lets them go; 'tooFar': more not in than may be brought in at once; absent: always. */
+  tilesIn?(rect: ChangeRect | null): boolean | 'tooFar';
+  /** Whether the tiles `rect` reaches not in the document may be brought in at once (`WorldStreamer.HOLD_MOST`), nothing asked: how a long road is cut into parts. */
+  tilesFit?(rect: ChangeRect): boolean;
+  /** The undo steps of the edits made from now joined into one (`History.grouped`), until `null`: a long road's parts. */
+  undoGroup?(group: number | null): void;
   /** An edit of the document, one undo step. */
   mutate(fn: () => boolean): void;
   hint(key: string): void;
@@ -116,8 +121,10 @@ export class RoadTool {
   private heightEdited = false;
   /** The road just committed, drawn as previewed until the world with it is built. */
   private settling: RoadDraft | null = null;
-  /** A road let go over a tile not yet in the document (`RoadToolHost.tilesIn`): laid once it is in (`layHeld`), drawn meanwhile. */
-  private held: { readonly d: RoadDraft; readonly chosenEnd?: Anchor } | null = null;
+  /** A road let go over tiles not yet in the document (`RoadToolHost.tilesIn`): laid part by part as their tiles come in (`layHeld`), drawn whole meanwhile; its parts, the next to lay, its undo group. */
+  private held: { readonly d: RoadDraft; readonly parts: readonly RoadPart[]; next: number; readonly group: number } | null = null;
+  /** The undo groups handed out (`RoadToolHost.undoGroup`). */
+  private groups = 0;
 
   constructor(private readonly host: RoadToolHost) {}
 
@@ -139,6 +146,7 @@ export class RoadTool {
   }
 
   cancel(): void {
+    if (this.held) this.host.tilesIn?.(null);
     this.held = null;
     this.draft = null;
     this.chain = null;
@@ -433,43 +441,86 @@ export class RoadTool {
     host.redraw();
   }
 
-  /** The road held for a tile not yet in (`held`) laid, once every tile it reaches is: true when it was. Each frame (`main.ts`). */
+  /** The held road's next part laid, once the tiles it reaches are in (asked for as it waits, `RoadToolHost.tilesIn`): true when one was. Each frame (`main.ts`). */
   layHeld(): boolean {
     const held = this.held;
-    if (!held || !this.tilesReady(held.d)) return false;
+    if (!held || !this.host.tilesIn) return false;
+    const part = held.parts[held.next]!;
+    const ready = this.host.tilesIn(part.rect);
+    if (ready === 'tooFar') { this.dropHeld(); this.host.hint('hint.road.tooFar'); return false; }
+    if (!ready) return false;
+    const last = held.next === held.parts.length - 1;
+    // Each part after the first from the end the one before it laid: a node there now.
+    const first = part.pieces[0]!.start;
+    const start = held.next === 0 ? held.d.start : this.atHeight(findAnchor(this.host.doc, this.host.net, first.at, this.host.zoom(), undefined, first.heightOffset), first.heightOffset);
+    const laid = this.layPart(held.d, start, part.end, part.endHeightOffset, part.pieces, last, held.parts.length > 1 ? held.group : null);
+    if (!laid || last) this.dropHeld();
+    else held.next++;
+    return laid;
+  }
+
+  /** The held road given up (laid, refused or cancelled): what it waited for let go (written, as the ring's are, `WorldStreamer.apply`). */
+  private dropHeld(): void {
     this.held = null;
-    return this.commit(held.d, held.chosenEnd);
+    this.host.tilesIn?.(null);
   }
 
-  /** Whether the tiles a road reaches are in the document: DO NOT lay it while one is not - the buildings under it there are not on the page, and stood after it was laid (conf60, "the road demolished 3 buildings", 8 in the runs whose region was in). */
-  private tilesReady(d: RoadDraft): boolean {
-    if (!this.host.tilesIn) return true;
-    let x0 = Math.min(d.start.at.x, d.snap.at.x), y0 = Math.min(d.start.at.y, d.snap.at.y), x1 = Math.max(d.start.at.x, d.snap.at.x), y1 = Math.max(d.start.at.y, d.snap.at.y);
-    for (const p of [...d.samples.map((q) => q.at), ...(d.curveControl ? [d.curveControl] : [])]) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
-    // Past the centreline by the widest road and its cut: the buildings it clears.
-    const pad = m(40);
-    return this.host.tilesIn([x0 - pad, y0 - pad, x1 + pad, y1 + pad]);
+  /** DO NOT bring every tile of a long road onto the page at once (each a dense tile's ~1,500 buildings, the V8 cage): its pieces cut at the tiles' borders and joined into parts, each reaching no more tiles not in than may come at once (`RoadToolHost.tilesFit`); one part where it all fits. 'tooFar': one piece alone reaches more. */
+  private planParts(end: Anchor, endHeightOffset: number, pieces: readonly RoadPathPiece[]): RoadPart[] | 'tooFar' {
+    const box = (ps: readonly RoadPathPiece[]): ChangeRect => partRect(ps);
+    const whole = box(pieces);
+    const fits = this.host.tilesFit;
+    if (!fits || fits(whole)) return [{ pieces: [...pieces], end, endHeightOffset, rect: whole }];
+    const cut = pieces.flatMap((piece) => cutAtTiles(piece));
+    const parts: RoadPart[] = [];
+    let run: RoadPathPiece[] = [];
+    for (const piece of cut) {
+      if (!fits(box([piece]))) return 'tooFar';
+      if (run.length && !fits(box([...run, piece]))) {
+        const tail = run[run.length - 1]!.end;
+        parts.push({ pieces: run, end: { kind: 'free', at: tail.at }, endHeightOffset: tail.heightOffset, rect: box(run) });
+        run = [];
+      }
+      run.push(piece);
+    }
+    parts.push({ pieces: run, end, endHeightOffset, rect: box(run) });
+    return parts;
   }
 
-  /** Lays the road `d` ends at (`chosenEnd`, or what is under its end), one undo step; false when refused, or held until the tiles it reaches are in (`layHeld`). */
+  /** Lays the road `d` ends at (`chosenEnd`, or what is under its end), one undo step; false when refused, or held until the tiles it reaches are in (`layHeld`): a long one in parts, one undo step for them all. */
   private commit(d: RoadDraft, chosenEnd?: Anchor): boolean {
     const { host } = this;
-    if (!this.tilesReady(d)) {
-      this.held = { d, ...(chosenEnd ? { chosenEnd } : {}) };
-      host.hint('hint.road.waitTiles');
-      host.redraw();
+    const { end, endHeightOffset, pieces } = this.ending(d, chosenEnd);
+    if (!host.tilesIn) return this.layPart(d, d.start, end, endHeightOffset, pieces, true, null);
+    const parts = this.planParts(end, endHeightOffset, pieces);
+    // A piece alone reaching more tiles not in than may come at once (a long bend): drawn in parts, or nearer.
+    if (parts === 'tooFar') {
+      host.hint('hint.road.tooFar');
       return false;
     }
+    this.held = { d, parts, next: 0, group: ++this.groups };
+    // Laid now when its tiles are in; else as they come, the player told.
+    if (this.layHeld()) return true;
+    if (this.held) {
+      host.hint('hint.road.waitTiles');
+      host.redraw();
+    }
+    return false;
+  }
+
+  /** One part of a road laid from `start` to `end`, one undo step (joined into `group`'s); `last`: the gesture ends with it. False when refused. */
+  private layPart(d: RoadDraft, start: Anchor, end: Anchor, endHeightOffset: number, pieces: RoadPathPiece[], last: boolean, group: number | null): boolean {
+    const { host } = this;
     const { doc, net } = host;
     const settings = host.settings();
-    const { end, endHeightOffset, pieces } = this.ending(d, chosenEnd);
     let result: ReturnType<typeof commitRoadPath> = { committed: false };
+    if (group !== null) host.undoGroup?.(group);
     host.mutate(() => {
-      result = commitRoadPath(doc, net, d.start, end, settings.typeIndex, pieces, settings.lanes, settings.parking,
+      result = commitRoadPath(doc, net, start, end, settings.typeIndex, pieces, settings.lanes, settings.parking,
         (x, y) => host.naturalHeightAt(x, y), { groundSolve: host.groundSolve?.() ?? null });
       if (result.elevation) host.offerElevation(result.elevation, net.revision);
       // Drawn as it was previewed until the new world is in place.
-      if (result.committed) this.settling = { ...d, snap: { ...d.snap, at: end.at } };
+      if (result.committed && last) this.settling = { ...d, snap: { ...d.snap, at: end.at } };
       // The segments the edit laid, in a loaded tile's id range or the map's (`DraftResult.laid`).
       const laid = result.laid ?? [];
       // A chosen total width (Roads > Width): the segments just laid take it.
@@ -508,11 +559,17 @@ export class RoadTool {
       }
       return result.committed;
     });
+    if (group !== null) host.undoGroup?.(null);
     if (!result.committed) {
       const reason = result.reason;
       host.hint(reason === 'clearance' ? 'hint.road.clearance'
         : reason && isRefusal(reason) ? `hint.rule.${reason}` : 'hint.road.invalid');
       return false;
+    }
+    if (!last) {
+      const laid = result.laid ?? [];
+      if (laid.length) host.flash(laid);
+      return true;
     }
     const finalHeight = result.finalHeightOffset ?? endHeightOffset;
     // Each completed placement ends the gesture.
@@ -602,3 +659,45 @@ const FURNITURE_CELL = m(40);
 
 /** A draft's numbers as it is judged (`RoadTool.draftKey`): the same array while none of them moved. */
 type DraftKey = readonly (string | number | null)[];
+
+/** A part of a long road laid at once (`RoadTool.planParts`): its pieces, where it ends, and the box its tiles are read in. */
+interface RoadPart {
+  readonly pieces: RoadPathPiece[];
+  readonly end: Anchor;
+  readonly endHeightOffset: number;
+  readonly rect: ChangeRect;
+}
+
+/** Past a road's centreline by the widest road and its cut: the buildings it clears, the tiles it reaches. */
+const PART_PAD = m(40);
+
+/** The box of pieces (a bend's control point within it), padded by what a road clears. */
+function partRect(pieces: readonly RoadPathPiece[]): ChangeRect {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const take = (p: Vec2): void => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); };
+  for (const piece of pieces) {
+    take(piece.start.at);
+    take(piece.end.at);
+    if (piece.curve) take(controlPoint(piece.start.at, piece.end.at, piece.curve));
+  }
+  return [x0 - PART_PAD, y0 - PART_PAD, x1 + PART_PAD, y1 + PART_PAD];
+}
+
+/** A straight piece cut where it crosses the tiles' borders (`TILE`), its height shared out along it; a bend whole. */
+function cutAtTiles(piece: RoadPathPiece): RoadPathPiece[] {
+  if (piece.curve) return [piece];
+  const a = piece.start, b = piece.end;
+  const ts: number[] = [];
+  for (const [p, q] of [[a.at.x, b.at.x], [a.at.y, b.at.y]] as const) {
+    if (p === q) continue;
+    for (let k = Math.ceil(Math.min(p, q) / TILE); k * TILE < Math.max(p, q); k++) {
+      const t = (k * TILE - p) / (q - p);
+      if (t > 1e-6 && t < 1 - 1e-6) ts.push(t);
+    }
+  }
+  if (!ts.length) return [piece];
+  ts.sort((u, v) => u - v);
+  const at = (t: number): RoadPathPoint => ({ at: { x: a.at.x + (b.at.x - a.at.x) * t, y: a.at.y + (b.at.y - a.at.y) * t }, heightOffset: a.heightOffset + (b.heightOffset - a.heightOffset) * t });
+  const points = [a, ...ts.map(at), b];
+  return points.slice(1).map((end, k) => ({ start: points[k]!, end, curve: null }));
+}

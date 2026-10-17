@@ -23,6 +23,8 @@ const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
 const RETRY_MS = 30_000;
 /** How far past the edge of its tile the camera goes before the region is centred on the next one (two sub-cells): walking along an edge does not turn three tiles back and forth. */
 const RECENTRE_PAST = m(128);
+/** Tiles past the document an edit may bring in at once (`hold`): each a dense tile's ~1,500 buildings on the page, in the V8 cage the page and its workers share - DO NOT bring a long road's every tile in. */
+export const HOLD_MOST = 4;
 /** A write that failed is posted again after this (a store failing on it fails again at once). */
 const RETRY_WRITE_MS = 5_000;
 
@@ -71,6 +73,8 @@ export class WorldStreamer {
   private readonly edits = new JournalCursor(DOC_CHANGE_KINDS);
   /** The tiles wanted now, nearest first, and the camera's tile they were worked out for. */
   private wanted: number[] = [];
+  /** Tiles asked for past the region by an edit waiting on them (`hold`): put in the document and kept until let go. */
+  private held = new Set<number>();
   private around = { i: Number.NaN, j: Number.NaN };
   private lastRetry = 0;
   /** When a tile last failed to come (`RETRY_MS`). */
@@ -114,6 +118,21 @@ export class WorldStreamer {
     if (flipped.length) this.tell.activeChanged?.(flipped, flipped.map((key) => { const t = tileOfKey(key); return tileRect(t.i, t.j); }));
     this.aheadOrder = mapTilesFrom(i, j);
     this.ask();
+  }
+
+  /** Tiles an edit waits on, wherever the camera is (a road drawn across the map, `RoadTool.layHeld`): asked as the region's are, put in the document with their records only and kept until let go; `[]` lets them go (the farthest first, as the camera's ring). Replaces the tiles held before. */
+  /** Whether no more than `HOLD_MOST` of these tiles of the map are not in the document: nothing asked. */
+  fits(keys: readonly number[]): boolean {
+    return keys.filter((key) => { const { i, j } = tileOfKey(key); return tileOnMap(i, j) && !this.doc.hasTile(key); }).length <= HOLD_MOST;
+  }
+
+  /** False, and nothing held, when more than `HOLD_MOST` of them are not in the document. */
+  hold(keys: readonly number[]): boolean {
+    const onMap = keys.filter((key) => { const { i, j } = tileOfKey(key); return tileOnMap(i, j); });
+    if (onMap.filter((key) => !this.doc.hasTile(key)).length > HOLD_MOST) { this.held = new Set(); return false; }
+    this.held = new Set(onMap);
+    this.ask();
+    return true;
   }
 
   /** Whether a tile is in the active region (3 x 3 round the camera's tile): the near products are made for it; a tile kept in the ring beyond has its records only. */
@@ -186,7 +205,7 @@ export class WorldStreamer {
     // One tile put in a frame, the nearest first: a dense tile is ~1,500 buildings read and filed, the frame stays a frame (the work is the view's tiles, never the map's).
     let best: number | null = null, bestD = Infinity;
     for (const key of this.ready.keys()) {
-      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) { this.ready.delete(key); this.readDuringClear.delete(key); continue; }
+      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN) && !this.held.has(key)) { this.ready.delete(key); this.readDuringClear.delete(key); continue; }
       const { i, j } = tileOfKey(key);
       const d = Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j));
       if (d < bestD) { bestD = d; best = key; }
@@ -217,7 +236,7 @@ export class WorldStreamer {
     // One tile let go a frame, the farthest first: a camera that jumped far leaves a ring of tiles, each its records out and its products dropped (a frame stays a frame).
     let far: number | null = null, farD = -1;
     for (const key of this.doc.loadedTiles) {
-      if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN)) continue;
+      if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN) || this.held.has(key)) continue;
       const { i, j } = tileOfKey(key);
       const d = Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j));
       if (d > farD) { farD = d; far = key; }
@@ -313,7 +332,7 @@ export class WorldStreamer {
 
   /** The nearest wanted tiles not here nor asked: asked of the store, a few at a time; then the tiles ahead made in the store, one at a time. */
   private ask(): void {
-    for (const key of this.wanted) {
+    for (const key of [...this.wanted, ...this.held]) {
       if (this.asked.size >= this.inFlight) break;
       if (this.doc.hasTile(key) || this.asked.has(key) || this.ready.has(key)) continue;
       if (performance.now() - (this.failedAt.get(key) ?? -Infinity) < RETRY_MS) continue;

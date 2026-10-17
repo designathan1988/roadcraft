@@ -189,3 +189,30 @@ describe('the diary of an undo', () => {
     expect(named(() => history.undo(doc), 'landscape')).toEqual([bench.id]);
   });
 });
+
+/** A LONG ROAD'S PARTS ARE ONE UNDO STEP (`History.grouped`, `RoadTool.layHeld`) */
+describe('steps joined into a group', () => {
+  it('are undone and redone together, and dropped together when one is let go with its tile', () => {
+    const { doc } = city();
+    const history = new History();
+    const lay = (x: number): void => { history.begin(doc); const a = doc.addNode({ x, y: 500 }), b = doc.addNode({ x: x + 100, y: 500 }); doc.addSegment(a.id, b.id, 1); history.end(doc); };
+    lay(1_000);
+    history.grouped(7);
+    lay(2_000);
+    lay(3_000);
+    lay(4_000);
+    history.grouped(null);
+    expect(doc.segments.size).toBe(5);
+    // One undo: the three parts; the step before them stays.
+    expect(history.undo(doc)).toBe(true);
+    expect(doc.segments.size).toBe(2);
+    expect(history.redo(doc)).toBe(true);
+    expect(doc.segments.size).toBe(5);
+    // A part's records let go with its tile: the whole group can no longer be undone, never half of it.
+    const parts = [...doc.segments.values()].filter((s) => doc.node(s.a)!.x >= 2_000).map((s) => s.id);
+    history.letGoTile((r) => r.part === 'segments' && r.id === parts[0], () => false, new Map());
+    expect(history.canUndo).toBe(false);
+    expect(doc.segments.size).toBe(5);
+  });
+});
+

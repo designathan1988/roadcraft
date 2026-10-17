@@ -427,17 +427,30 @@ const roadTool = new RoadTool({
     return solved && solved.terrainRevision === doc.terrainRevision ? solved.elevation : null;
   },
   flash: (ids) => scene.flashRoads(ids),
-  // A streamed world: a road reaching a tile of the map not in the document yet waits for it (`RoadTool.layHeld`).
-  tilesIn: ([x0, y0, x1, y1]) => {
+  // A streamed world: a road reaching a tile of the map not in the document yet waits for it, the streamer asked for it wherever it is (`RoadTool.layHeld`, `WorldStreamer.hold`).
+  tilesIn: (rect) => {
     if (!streamed) return true;
-    const a = tileOfKey(tileKeyAt(x0, y0)), b = tileOfKey(tileKeyAt(x1, y1));
-    for (let i = a.i; i <= b.i; i++) for (let j = a.j; j <= b.j; j++) if (tileOnMap(i, j) && !doc.hasTile(tileKey(i, j))) return false;
-    return true;
+    if (!rect) { streamed.streamer.hold([]); return true; }
+    const keys = mapTilesIn(rect);
+    // Kept in the document until the road is laid, those already in too (the camera may move off them meanwhile); too many to bring in: refused.
+    if (!streamed.streamer.hold(keys)) return 'tooFar';
+    return keys.every((key) => doc.hasTile(key));
   },
+  // A long road cut into parts each bringing in no more tiles than may come at once (`WorldStreamer.HOLD_MOST`).
+  tilesFit: (rect) => !streamed || streamed.streamer.fits(mapTilesIn(rect)),
+  // Its parts one undo step (`History.grouped`).
+  undoGroup: (group) => history.grouped(group),
   mutate: (fn) => mutate(fn),
   hint: (key) => flashHint(key),
   redraw: () => requestDraw(),
 });
+/** The tiles of the map a rectangle reaches (`tileOnMap`). */
+function mapTilesIn([x0, y0, x1, y1]: readonly [number, number, number, number]): number[] {
+  const a = tileOfKey(tileKeyAt(x0, y0)), b = tileOfKey(tileKeyAt(x1, y1));
+  const keys: number[] = [];
+  for (let i = a.i; i <= b.i; i++) for (let j = a.j; j <= b.j; j++) if (tileOnMap(i, j)) keys.push(tileKey(i, j));
+  return keys;
+}
 /** The pole tool (`editor/poles.ts`): the stretch being dragged and the line's last pole. */
 const poleTool = new PoleTool({
   doc,
