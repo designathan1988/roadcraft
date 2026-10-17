@@ -1910,7 +1910,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
-    (i, j, after, text, ifMissing, baysOnly) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing, baysOnly));
+    (i, j, after, text, ifMissing, baysOnly, sectionsOnly) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing, baysOnly, sectionsOnly));
   // Another tab holds it: from the first read on, nothing of this tab reaches the store.
   store.readOnly = !release;
   // DO NOT say "opened" for a world not written: another tab holds it, or a write failed (`TileStore.importWorld`); the world stored opens instead, and the refusal is said at the end.

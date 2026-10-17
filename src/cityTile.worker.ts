@@ -4,7 +4,7 @@ import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 import { workerParts } from '@editor/workerParts';
-import { type PreparedTile, addTileSection, prepareTile, readTile, readTileSection, storedVersion, writeTile } from '@editor/tileStore';
+import { type PreparedTile, addTileSection, bakeStoredTile, prepareTile, readTile, readTileSection, storedVersion, writeTile } from '@editor/tileStore';
 import { withGrownBuildings } from '@world/growth/grownRows';
 import { BAYS_SECTION } from '@sim/tileBays';
 import { NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, tileBaysSection, tileNetworkSection } from '@sim/tileSections';
@@ -23,7 +23,9 @@ export interface StreamTileAsk {
   /** Stored here in the tile store's map (`workerParts`) at a version past `after`: the page never posts a tile it was handed back to the store; `records`, its records handed back prepared too (a tile of the region, `prepareTile`), else its version alone (a tile made ahead); `far`, its far levels baked here and kept. */
   readonly store?: { readonly map: string; readonly after: number; readonly records: boolean; readonly ifMissing?: boolean; readonly far?: FarTileBake | null;
     /** Nothing made: the stored tile's bays baked and added, if it has none (`addBays`, the map made, the generator's workers idle). */
-    readonly baysOnly?: boolean };
+    readonly baysOnly?: boolean;
+    /** Nothing made: the tile the page stored at `after` with no sections (`TileStore.write`) baked and written again with them. */
+    readonly sectionsOnly?: boolean };
 }
 
 /** WHAT A TILE'S MAKER BAKES ITS FAR LEVELS WITH (the page's far trees and buildings layer, `SceneHandle.farBakeEnv`): the ground and tones their jobs read, and the keys they keep a tile's level 0 under (null: that kind keeps nothing) */
@@ -104,6 +106,13 @@ const stored = (): ReturnType<typeof workerParts> => (parts ??= workerParts());
 export function serve(self: JobScope): void {
   self.onmessage = (event: MessageEvent<StreamTileAsk>) => {
     const { store, i, j } = event.data;
+    if (store?.sectionsOnly) {
+      const key = tileKey(i, j);
+      bakeStoredTile(stored(), store.map, key, store.after, (r) => bakeTileSections(r, true)).then(
+        (baked) => self.postMessage({ key, stored: baked ? store.after : null, existed: true } satisfies StreamTileAnswer),
+        (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j}'s sections could not be baked: ${String(error)}` } satisfies StreamTileAnswer));
+      return;
+    }
     if (store?.baysOnly) {
       baysAnswer(store.map, i, j).then((answer) => self.postMessage(answer),
         (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j}'s bays could not be added: ${String(error)}` } satisfies StreamTileAnswer));
