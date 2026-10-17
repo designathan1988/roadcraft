@@ -1,5 +1,5 @@
 import type { Mesh } from 'three';
-import { cancelWarm, warmLooseAhead } from '../uploads';
+import { cancelWarm, warmFull, warmLooseAhead } from '../uploads';
 import { type BuildingMeshes, meshesOf } from './buildingMesh';
 import { type CellMass, cellBytes } from './cellArrays';
 import type { CellEnv, CellPool } from './cellPool';
@@ -52,6 +52,8 @@ export class CellRequests {
     if (got) { disposeLanded(got); this.landed.delete(key); }
     const asked = this.asked.get(key);
     if (asked && sameEntries(asked.entries, entries)) return null;
+    // DO NOT ask a level to upload while the upload queue is full (`uploads.ts` warmFull): its arrays waited on the page behind every other one (the renderer at 7.3 GB in a re-bake, conf77, 2026-10-17). What is drawn stands, asked again next frame; a building cut open always goes.
+    if (upload && warmFull() && !entries.some((e) => e.key.includes('|'))) return null;
     // Replaced by the cell as it is now: never sent if waiting, its answer dropped if begun (the queue's key does the same).
     if (asked) this.pool.supersede(asked.id);
     const ask = { entries, id: 0 };
@@ -105,7 +107,9 @@ export class CellRequests {
   }
 
   /** A cell's masses from afar made of `entries` (`cellWork.ts` 'mass'), handed to `done` when they come */
-  mass(cell: string, entries: readonly CellEntry[], env: CellEnv, done: (mass: CellMass | null) => void): void {
+  mass(cell: string, entries: readonly CellEntry[], env: CellEnv, done: (mass: CellMass | null) => void): boolean {
+    // The upload queue full: not asked (the caller asks again next frame), as `want`.
+    if (warmFull()) return false;
     const was = this.masses.get(cell);
     if (was !== undefined) { this.pool.cancel(was); this.masses.delete(cell); }
     let id = -1;
@@ -114,6 +118,7 @@ export class CellRequests {
       done(result.mass ?? null);
     }, `mass|${cell}`);
     if (this.pool.isRunning(id)) this.masses.set(cell, id);
+    return true;
   }
 
   /** A cell's masses no longer wanted (it has no building left). */

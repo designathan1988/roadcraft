@@ -364,11 +364,12 @@ export function createBuildingLayer(): BuildingLayer {
     for (const cell of massCells.exposedCells()) {
       const entries = massEntries.get(cell);
       if (!entries || massAsked.get(cell) === entries) continue;
-      massAsked.set(cell, entries);
-      requests.mass(cell, entries, env, (mass) => {
+      // The upload queue full (`warmFull`): left for the next frame, nothing marked asked.
+      if (!requests.mass(cell, entries, env, (mass) => {
         massCells.land(cell, mass);
         chooseNow();
-      });
+      })) return;
+      massAsked.set(cell, entries);
     }
   };
   /** The far buildings flying a flag not emitted yet: their summaries asked of the workers in the frames' spare slices */

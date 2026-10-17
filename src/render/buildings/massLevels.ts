@@ -3,6 +3,7 @@ import type { CellEnv, CellPool } from './cellPool';
 import { type CellEntry, sameEntries } from './chunk';
 import type { JobKind } from './cellWork';
 import { type MassLevel, cellIndex, levelCells, plateOf, tileOf } from './levelKeys';
+import { warmFull } from '../uploads';
 
 /** THE BUILDINGS' LEVELS ABOVE THE CELLS: a 1,024 m tile (L2) and a 2,048 m plate (L3) of masses, one mesh each (`massCells.ts` chooses them) */
 
@@ -47,7 +48,8 @@ export class MassLevels {
         continue;
       }
       this.plan(key);
-      if (key[0] === 'p' || this.wanted(key)) this.ask(key, list, env);
+      // The upload queue full (`uploads.ts` warmFull): left stale, asked by `pump` once it drains.
+      if ((key[0] === 'p' || this.wanted(key)) && !warmFull()) this.ask(key, list, env);
       else {
         // Its old masses, if any, are no longer its buildings': asked again once a view wants it.
         const was = this.asked.get(key);
@@ -61,7 +63,9 @@ export class MassLevels {
   /** The tiles changed since last asked that a view now wants (a plate refined): asked (each frame, `layer.ts`; as many as tiles changed, never the map). */
   pump(env: CellEnv): void {
     for (const key of this.stale) {
-      if (!this.wanted(key)) continue;
+      // DO NOT ask masses to upload while the upload queue is full: their arrays waited on the page (conf77, 2026-10-17); asked once it drains.
+      if (warmFull()) return;
+      if (key[0] !== 'p' && !this.wanted(key)) continue;
       this.stale.delete(key);
       const list = this.listOf(key);
       if (list.length) this.ask(key, list, env);

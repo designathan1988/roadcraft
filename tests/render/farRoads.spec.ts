@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+/** The upload queue as the test sets it: full or not (`uploads.ts` warmFull). */
+const queue = vi.hoisted(() => ({ full: false }));
+vi.mock('@render/uploads', async (original) => ({ ...(await original<typeof import('@render/uploads')>()), warmFull: () => queue.full }));
 
 import { roadRecipes } from '@render/bake/roadRecipes';
 import { TOP_LEVEL, emptyRecords, farKey, farNode } from '@render/buildings/farTiles';
@@ -366,6 +370,28 @@ describe('the far roads chosen top down', () => {
     // Behind the curtain, put back with the cells past the masses the opening shows.
     expect(farRoadPriority(job({}), hidden)).toBe(cellPriority('cell', 0, false, true));
     expect(farRoadPriority(job({}), hidden)).toBeGreaterThan(cellPriority('massPlate', m(5000), false, true));
+  });
+
+  it('asks no mesh while the upload queue is full, and every one the view wants once it drains', async () => {
+    const cache = memoryCache();
+    const tiles = world();
+    const asked: FarTreeJob[] = [];
+    const run = runner(cache, kit);
+    const roads = new FarRoads(() => null, (job, done) => { asked.push(job); return run(job, done); }, 'test:', kit);
+    roads.setSource(storeOf(tiles), () => false);
+    for (const [key, records] of tiles) roads.stored(key, records.version);
+    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    queue.full = true;
+    for (let k = 0; k < 30; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    // Nothing drawn asked: neither a far level's mesh nor a tile's near level.
+    expect(asked.filter((job) => job.want)).toEqual([]);
+    expect(roads.shownKeys()).toEqual([]);
+    // The queue drained, the eye still: the choice made again, every level the view wants asked and drawn.
+    queue.full = false;
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)) && roads.waiting === 0);
+    expect(asked.some((job) => job.want && !job.near)).toBe(true);
+    expect(roads.shownKeys().length).toBeGreaterThan(0);
+    roads.dispose();
   });
 
   it("keeps a tile's near level drawn when its neighbour is written with the same roads: nothing made nor sent to the GPU again", async () => {
