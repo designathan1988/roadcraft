@@ -1062,26 +1062,71 @@ export class RoadDoc {
     this.nature = next ? { ...next } : null;    this.changes.record('nature', null);
   }
 
+  /** Each tile's count of a capped list's items (by `OWNER`), counted from the list when first asked. */
+  private tileCountsOf(part: CappedPart): Map<number, number> {
+    let counts = this.capCounts.get(part);
+    if (!counts) {
+      counts = new Map();
+      for (const item of this.listOf(part) as readonly { x: number; y: number }[]) {
+        const key = OWNER.at(item);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+      this.capCounts.set(part, counts);
+    }
+    return counts;
+  }
+
+  /** The items of `items` their tiles have room for (`TILE_CAPS`), in order: DO NOT take an old item away to make room - the player's work is never deleted, the new item is refused (the caller says so). */
+  private withRoom<T extends { readonly x: number; readonly y: number }>(part: CappedPart, items: readonly T[]): { readonly taken: T[]; readonly counts: Map<number, number> } {
+    const counts = this.tileCountsOf(part);
+    const cap = TILE_CAPS[part];
+    const taken: T[] = [];
+    for (const item of items) {
+      const key = OWNER.at(item), n = counts.get(key) ?? 0;
+      if (n >= cap) continue;
+      counts.set(key, n + 1);
+      taken.push(item);
+    }
+    return { taken, counts };
+  }
+
+  /** The counts kept through the list's own write (`ownList` lets them go): the add counted its items already. */
+  private keepCounts(part: CappedPart, counts: Map<number, number>): void {
+    this.capCounts.set(part, counts);
+  }
+
   // DO NOT write `null` (the whole map) for it: on a map at the cap every dab, stamp or tree laid the whole map again.
-  addPaintDab(dab: PaintDab): void {
+  /** False: its tile holds as many dabs as it may (`TILE_CAPS`), nothing laid. */
+  addPaintDab(dab: PaintDab): boolean {
+    const { taken, counts } = this.withRoom('terrainPaint', [dab]);
+    if (!taken.length) return false;
     this.ownList('terrainPaint');
     this.terrainPaint.push({ ...dab });
-    const gone = this.terrainPaint.length > MAX_PAINT_DABS ? this.terrainPaint.shift() : undefined;
-    this.changes.record('paint', gone ? [circleRect(dab), circleRect(gone)] : [circleRect(dab)]);
+    this.keepCounts('terrainPaint', counts);
+    this.changes.record('paint', [circleRect(dab)]);
+    return true;
   }
 
-  addFogDab(dab: FogDab): void {
+  /** False: its tile is full, nothing laid. */
+  addFogDab(dab: FogDab): boolean {
+    const { taken, counts } = this.withRoom('fogDabs', [dab]);
+    if (!taken.length) return false;
     this.ownList('fogDabs');
     this.fogDabs.push({ ...dab });
-    const gone = this.fogDabs.length > MAX_FOG_DABS ? this.fogDabs.shift() : undefined;
-    this.changes.record('fog', gone ? [circleRect(dab), circleRect(gone)] : [circleRect(dab)]);
+    this.keepCounts('fogDabs', counts);
+    this.changes.record('fog', [circleRect(dab)]);
+    return true;
   }
 
-  addGullyDab(dab: GullyDab): void {
+  /** False: its tile is full, nothing laid. */
+  addGullyDab(dab: GullyDab): boolean {
+    const { taken, counts } = this.withRoom('gullyDabs', [dab]);
+    if (!taken.length) return false;
     this.ownList('gullyDabs');
     this.gullyDabs.push({ ...dab });
-    const gone = this.gullyDabs.length > MAX_GULLY_DABS ? this.gullyDabs.shift() : undefined;
-    this.changes.record('gullies', gone ? [circleRect(dab), circleRect(gone)] : [circleRect(dab)]);
+    this.keepCounts('gullyDabs', counts);
+    this.changes.record('gullies', [circleRect(dab)]);
+    return true;
   }
 
   // A list cleared is written where its items lay (one box round them all), not as the whole map
@@ -1112,18 +1157,22 @@ export class RoadDoc {
     this.weather = next;    this.changes.record('weather', null);
   }
 
-  plantTrees(trees: readonly PlantedTree[]): void {
-    if (trees.length === 0) return;
+  /** How many were planted: those of a full tile (`TILE_CAPS`) are refused, none taken away for them. */
+  plantTrees(trees: readonly PlantedTree[]): number {
+    if (trees.length === 0) return 0;
+    const { taken, counts } = this.withRoom('trees', trees);
+    if (!taken.length) return 0;
     this.ownList('trees');
-    for (const t of trees) { const tree = { ...t }; this.trees.push(tree); this.treeGrid?.add(tree); }
-    const gone = this.trees.length > MAX_PLANTED_TREES ? this.trees.splice(0, this.trees.length - MAX_PLANTED_TREES) : [];
-    for (const t of gone) this.treeGrid?.remove(t);
-    const goneRect = rectAround(gone, ITEM_PAD);
-    this.changes.record('trees', goneRect ? [rectAround(trees, ITEM_PAD)!, goneRect] : [rectAround(trees, ITEM_PAD)!]);
+    for (const t of taken) { const tree = { ...t }; this.trees.push(tree); this.treeGrid?.add(tree); }
+    this.keepCounts('trees', counts);
+    this.changes.record('trees', [rectAround(taken, ITEM_PAD)!]);
+    return taken.length;
   }
 
-  /** Cuts the trees away within `radius` of (x, y) */
-  cutTrees(x: number, y: number, radius: number): void {
+  /** Cuts the trees away within `radius` of (x, y); false (nothing cut): its tile holds as many clearings as it may (`TILE_CAPS`). */
+  cutTrees(x: number, y: number, radius: number): boolean {
+    const { taken, counts } = this.withRoom('treeClearings', [{ x, y }]);
+    if (!taken.length) return false;
     this.ownList('trees');
     this.ownList('treeClearings');
     const before = this.trees.length;
@@ -1133,8 +1182,9 @@ export class RoadDoc {
     for (const t of there) this.treeCells.remove(t);
     if (this.trees.length !== before) this.changes.record('trees', [circleRect({ x, y, radius })], { detail: `${before - this.trees.length} cut` });
     this.treeClearings.push({ x, y, radius });
-    const gone = this.treeClearings.length > MAX_TREE_CLEARINGS ? this.treeClearings.shift() : undefined;
-    this.changes.record('clearings', gone ? [circleRect({ x, y, radius }), circleRect(gone)] : [circleRect({ x, y, radius })]);
+    this.keepCounts('treeClearings', counts);
+    this.changes.record('clearings', [circleRect({ x, y, radius })]);
+    return true;
   }
 
   /** Every planted tree gone, and every clearing grown over again. */
@@ -1154,16 +1204,16 @@ export class RoadDoc {
     }
   }
 
-  addElements(items: readonly ElementItem[]): void {
-    if (items.length === 0) return;
+  /** How many were laid: those of a full tile (`TILE_CAPS`) are refused, none taken away for them. */
+  addElements(items: readonly ElementItem[]): number {
+    if (items.length === 0) return 0;
+    const { taken, counts } = this.withRoom('elements', items);
+    if (!taken.length) return 0;
     this.ownList('elements');
-    for (const item of items) { this.elements.push(item); this.elementGrid?.add(item); }
-    const gone = this.elements.length > MAX_ELEMENTS ? this.elements.splice(0, this.elements.length - MAX_ELEMENTS) : [];
-    for (const item of gone) this.elementGrid?.remove(item);
-    const rects = [elementsBox(items)!];
-    const goneRect = elementsBox(gone);
-    if (goneRect) rects.push(goneRect);
-    this.changes.record('elements', rects);
+    for (const item of taken) { this.elements.push(item); this.elementGrid?.add(item); }
+    this.keepCounts('elements', counts);
+    this.changes.record('elements', [elementsBox(taken)!]);
+    return taken.length;
   }
 
   /** Takes away the elements within `radius` of (x, y) - of one kind, or every kind (`kind` null). How many went. */
@@ -1266,14 +1316,15 @@ export class RoadDoc {
     this.changes.record('paint', where);
   }
 
-  addTerrainStamp(value: Omit<TerrainStamp, 'id'>): TerrainStamp {
+  /** The stamp laid; null: its tile holds as many as it may (`TILE_CAPS`), the land left as it is (DO NOT drop the oldest: the relief sculpted first went away). */
+  addTerrainStamp(value: Omit<TerrainStamp, 'id'>): TerrainStamp | null {
+    const { taken, counts } = this.withRoom('terrainStamps', [value]);
+    if (!taken.length) return null;
     this.ownList('terrainStamps');
     const stamp: TerrainStamp = { ...value, id: this.nextTerrainId++ };
     this.terrainStamps.push(stamp);
-    // The oldest stamp dropped moves the land where it lay too.
-    const gone = this.terrainStamps.length > MAX_TERRAIN_STAMPS ? this.terrainStamps.shift() : undefined;
-    this.changes.record('terrain', gone ? [circleRect(stamp), circleRect(gone)] : [circleRect(stamp)],
-      { ids: gone ? [stamp.id, gone.id] : [stamp.id] });
+    this.keepCounts('terrainStamps', counts);
+    this.changes.record('terrain', [circleRect(stamp)], { ids: [stamp.id] });
     return stamp;
   }
 
@@ -1390,6 +1441,8 @@ export class RoadDoc {
   private readonly tileGates = new Map<number, readonly number[]>();
   /** The buildings' diary as the gates last read it: an entry over a tile lets its gates go. */
   private readonly gatesCursor = new JournalCursor(['buildings']);
+  /** How many items of each capped list each tile holds (`TILE_CAPS`), counted when first asked; let go whenever the list is written otherwise than by its add. */
+  private readonly capCounts = new Map<CappedPart, Map<number, number>>();
   /** Each tile's nodes, roads, land keys and dabs, kept by the diary (`tileIndex.ts`): a tile's members read without walking the region. */
   private readonly tileIndex = ((doc: RoadDoc) => new TileIndex({
     get changes() { return doc.changes; },
@@ -1536,7 +1589,7 @@ export class RoadDoc {
       if (isPaintKind(dab.kind) && [dab.x, dab.y, dab.radius, dab.strength].every(Number.isFinite)) paint.push({ kind: dab.kind, x: dab.x, y: dab.y, radius: dab.radius, strength: dab.strength });
     }
     if (paint.length) { this.ownList('terrainPaint'); for (const dab of paint) this.terrainPaint.push(dab); this.changes.record('paint', [square]); }
-    const trees = records.trees.map(readPlantedTree).filter((t): t is PlantedTree => t !== null).slice(0, MAX_PLANTED_TREES);
+    const trees = records.trees.map(readPlantedTree).filter((t): t is PlantedTree => t !== null);
     if (trees.length) {
       this.ownList('trees');
       for (const t of trees) { this.trees.push(t); this.treeGrid?.add(t); }
@@ -1905,6 +1958,7 @@ export class RoadDoc {
 
   /** A list about to be written in place: a working copy's own, copied from the original's the first time (`fork`). */
   private ownList(part: DocListPart): void {
+    this.capCounts.delete(part as CappedPart);
     this.noteList(part);
     if (!this.sharedLists.delete(part)) return;
     const list = this.listOf(part);
@@ -1916,6 +1970,7 @@ export class RoadDoc {
 
   /** A list of the document set whole: only a working copy's, laid over or owned (`layOver`, `ownList`). */
   private setList(part: DocListPart, list: unknown[]): void {
+    this.capCounts.delete(part as CappedPart);
     (this as unknown as Record<DocListPart, unknown[]>)[part] = list;
   }
 
@@ -2636,12 +2691,13 @@ export class RoadDoc {
     // Absent: a map with no trees planted or cut.
     for (const raw of data.trees ?? []) {
       const tree = readPlantedTree(raw);
-      if (tree && doc.trees.length < MAX_PLANTED_TREES) doc.trees.push(tree);
+      // Every tree read, however many: a cap refuses a new one, it never drops what was saved (decision 5.1).
+      if (tree) doc.trees.push(tree);
     }
     if (doc.trees.length) doc.changes.record('trees', null, loaded);
     for (const raw of data.treeClearings ?? []) {
       const clearing = readTreeClearing(raw);
-      if (clearing && doc.treeClearings.length < MAX_TREE_CLEARINGS) doc.treeClearings.push(clearing);
+      if (clearing) doc.treeClearings.push(clearing);
     }
     if (doc.treeClearings.length) doc.changes.record('clearings', null, loaded);
     // Absent: a map with no elements laid.
@@ -2663,7 +2719,7 @@ export class RoadDoc {
     if (data.gullies) {
       for (const raw of data.gullies.dabs ?? []) {
         const dab = readGullyDab(raw);
-        if (dab && doc.gullyDabs.length < MAX_GULLY_DABS) doc.gullyDabs.push(dab);
+        if (dab) doc.gullyDabs.push(dab);
       }
       const auto = data.gullies.auto;
       if (typeof auto === 'number' && Number.isFinite(auto)) doc.gullyAuto = Math.min(1, Math.max(0, auto));
@@ -2824,6 +2880,13 @@ export type ValuePart = 'terrainRelief' | 'markingStyle' | 'nature' | 'fogSettin
   | 'nextZoneId' | 'nextLotId' | 'allocators';
 /** The lists the document holds itself (the lots' keys are the lot store's): what a working copy shares until it writes (`RoadDoc.fork`). */
 type DocListPart = Exclude<ListPart, 'lotKeys'>;
+/** The lists with a cap, each item placed (`OWNER.at`). */
+type CappedPart = 'terrainStamps' | 'terrainPaint' | 'fogDabs' | 'gullyDabs' | 'trees' | 'treeClearings' | 'elements';
+/** DECISION 5.1 (the player's, 2026-10-17): each list's cap is a TILE's, and past it the new item is refused with a word to the player; nothing is ever taken away for it. */
+const TILE_CAPS: Readonly<Record<CappedPart, number>> = {
+  terrainStamps: MAX_TERRAIN_STAMPS, terrainPaint: MAX_PAINT_DABS, fogDabs: MAX_FOG_DABS, gullyDabs: MAX_GULLY_DABS,
+  trees: MAX_PLANTED_TREES, treeClearings: MAX_TREE_CLEARINGS, elements: MAX_ELEMENTS,
+};
 const DOC_LISTS: readonly DocListPart[] = ['terrainStamps', 'terrainPaint', 'fogDabs', 'gullyDabs', 'clouds', 'trees', 'treeClearings', 'elements', 'zones', 'zoneMarks', 'people'];
 /** The indices by place a working copy reads from the original until it writes their kind (`RoadDoc.ownIndex`). */
 type IndexKind = 'poles' | 'barriers' | 'landscape';

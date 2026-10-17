@@ -530,6 +530,8 @@ const terrainBrush = new TerrainBrush({
   interval: (stroking) => Math.max(TERRAIN_MIN_MS, (stroking ? scene.stats.terrainMs : scene.stats.rebuildMs) * 1.4),
   record: () => { history.begin(doc); updateHistoryButtons(); },
   redraw: () => requestDraw(),
+  // Decision 5.1: a full tile refuses the new item, nothing of the player's taken away.
+  refused: () => flashHint('hint.tileFull'),
 });
 /** The brush in hand, as one dab reads it (`editor/terrainBrush.ts` `DabSettings`). */
 function dabSettings(): DabSettings {

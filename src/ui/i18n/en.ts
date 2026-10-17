@@ -829,6 +829,7 @@ export const EN: Dictionary = {
   'hint.undone': 'Undone',
   'hint.redone': 'Redone',
   'hint.saved': 'Map saved to a file',
+  'hint.tileFull': 'This part of the map holds as many as it can: nothing was added, nothing was taken away',
   'hint.saveBehind': 'Some changes could not be written yet: no file was made, try again in a moment',
   'hint.opened': 'Map opened',
   'hint.worldReadOnly': 'This city is open in another window: here it can be seen, changes are not saved',
