@@ -2013,6 +2013,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   scene.setActiveTiles(activeAt, []);
   // The simulation's worker holds the active region's records only: the ring's traffic is the meso's, from the store's tables.
   sim.setActive((key) => streamer.isActive(key));
+  // A tile whose store is behind the page: its buildings sent from the page, not read from the store (`SimClient.loaded`).
+  sim.storeBehind = (key) => streamer.storeBehind(key);
   // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`); on the desktop through a port of its own to the shell's saves.
   if (!desktopStores) sim.tiles(mapName, MESO_REACH);
   else desktopStores.connect().then((port) => sim.tiles(mapName, MESO_REACH, port), (error: unknown) => console.error('[world] the simulation got no port to the saves', error));
@@ -2071,6 +2073,7 @@ function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
   scene.farRoads.setSource(null, () => false);
   scene.setActiveTiles(null, []);
   sim.setActive(null);
+  sim.storeBehind = () => false;
   scene.holdOpening(null);
   try { window.localStorage.removeItem(STREAMED_MARK); } catch { /* storage blocked */ }
   const waited = new Promise<boolean>((done) => setTimeout(() => done(false), CLOSE_WAIT_MS));

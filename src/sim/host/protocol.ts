@@ -95,7 +95,8 @@ export type ToSim =
   /** The page's worker serving those lanes failed: their pool falls back to working here. */
   | { readonly type: 'laneLost'; readonly service: 'bays' | 'conflicts'; readonly why: string }
   /** A tile of the page taken in, let go, or written at `version` (`worldStreamer.ts` StreamerEvents). */
-  | { readonly type: 'tile'; readonly event: TileEvent; readonly key: number; readonly version: number }
+  /** `fromPage`: a tile loaded whose store is behind the page (a write not confirmed): its buildings come from the page, DO NOT read them, or its bays, from the store. */
+  | { readonly type: 'tile'; readonly event: TileEvent; readonly key: number; readonly version: number; readonly fromPage?: boolean }
   /** The roads', lots' and transit's records the diary named (`delta`), and the buildings it named as traffic records. */
   | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingChange[] }
   /** A tile's junctions and ribbons as the page has them solved (`NetworkBake`): the worker's network takes them where its inputs are the same, never solving them again. */

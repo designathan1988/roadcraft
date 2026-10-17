@@ -277,7 +277,18 @@ export class SimClient implements JournalReader {
   tile(event: TileEvent, key: number, version = 0): void {
     if (this.isActive && event === 'loaded') { if (!this.isActive(key)) return; this.held.add(key); }
     if (this.isActive && event === 'letGo' && !this.held.delete(key)) return;
+    if (event === 'loaded') { this.loaded(key, version); return; }
     this.send({ type: 'tile', event, key, version });
+  }
+
+  /** Whether the store is behind the page for a tile (`WorldStreamer.storeBehind`): a write of it not confirmed. */
+  storeBehind: (key: number) => boolean = () => false;
+
+  /** DO NOT let the worker read a tile from the store while the store is behind the page: it would take the buildings of before the edits. Its buildings sent from the page then. */
+  private loaded(key: number, version: number): void {
+    const fromPage = this.workerReadsTiles && this.storeBehind(key);
+    if (fromPage) this.send({ type: 'delta', delta: { records: [], lists: [], values: [] }, buildings: buildingChangesOf(this.doc, this.doc.tileIds(key).buildings) });
+    this.send({ type: 'tile', event: 'loaded', key, version, ...(fromPage ? { fromPage } : {}) });
   }
 
   /** The streamed world's active tiles: the worker's copy follows them alone (its records, the traffic's buildings, the meso's live tiles); null: every tile of the document. */
@@ -310,8 +321,9 @@ export class SimClient implements JournalReader {
         for (const id of t.segments) records.push({ part: 'segments', id, value: recordOf(this.doc, 'segments', id) });
         for (const id of t.lots) records.push({ part: 'lots', id, value: recordOf(this.doc, 'lots', id) });
         // Its buildings: the worker reads the tile's traffic section from the store itself on 'loaded' (`SimHost.tileBuildings`); sent here only when it does not read tiles.
-        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: this.workerReadsTiles ? [] : buildingChangesOf(this.doc, t.buildings) });
-        this.send({ type: 'tile', event: 'loaded', key, version: 0 });
+        const fromPage = this.workerReadsTiles && this.storeBehind(key);
+        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: this.workerReadsTiles && !fromPage ? [] : buildingChangesOf(this.doc, t.buildings) });
+        this.send({ type: 'tile', event: 'loaded', key, version: 0, ...(fromPage ? { fromPage } : {}) });
       } else {
         this.held.delete(key);
         this.send({ type: 'tile', event: 'letGo', key, version: 0 });

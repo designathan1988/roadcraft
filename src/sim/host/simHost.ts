@@ -95,7 +95,7 @@ export class SimHost {
       }
       case 'tile':
         this.meso.tileEvent(message.event, message.key, message.version);
-        this.tileBuildings(message.event, message.key);
+        this.tileBuildings(message.event, message.key, message.fromPage === true);
         return;
       case 'delta':
         this.doc.restore(message.delta);
@@ -145,9 +145,10 @@ export class SimHost {
 
   /** A tile put in the page's document: its buildings as the traffic reads them read here from the store (`trafficBuilding`, baked with the tile), never on the page (`SimClient.sendChanges`)
    *  - one let go before its read lands is not placed; a building the page already told (an edit since) keeps the page's. */
-  private tileBuildings(event: TileEvent, key: number): void {
+  private tileBuildings(event: TileEvent, key: number, fromPage = false): void {
     const sim = this.sim;
-    if (event === 'letGo') {
+    if (event === 'letGo' || (event === 'loaded' && fromPage)) {
+      // Let go, or loaded with the store behind the page (its buildings sent from the page): no read of the store stands for it, its bays worked out here.
       this.tileReads.delete(key);
       if (sim) tileBaysGone(sim, key);
       return;

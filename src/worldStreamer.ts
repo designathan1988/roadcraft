@@ -211,6 +211,12 @@ export class WorldStreamer {
     return this.unsaved.get(key)?.edit ?? 0;
   }
 
+  /** Whether the store is behind the page for a tile: an edit of it not written, or a write of it not confirmed (`unsaved`). */
+  storeBehind(key: number): boolean {
+    this.noteEdits();
+    return this.unsaved.has(key);
+  }
+
   /** A loaded tile's records as the page holds them now (`RoadDoc.tileRecords`); null for a tile not loaded. */
   pageRecords(key: number): TileRecords | null {
     return this.doc.hasTile(key) ? this.doc.tileRecords(key, this.versions.get(key) ?? 0) : null;
