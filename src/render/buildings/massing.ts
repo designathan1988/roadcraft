@@ -299,10 +299,11 @@ const ARCADE = m(1.8);
 /** A block's walls from its bays as the detailed building lays them (`facadeBays`), off the layout every block of the body reads (`bayLayout`, worked out once) */
 function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (spec: MaterialSpec) => Rgb): void {
   const eaves = floor + volumeHeight(b, v);
-  const rows = new Map<string, LocalBay[]>();
+  // Each storey of each side, by a number (no text a bay): a side's index is under 4096.
+  const rows = new Map<number, LocalBay[]>();
   for (const bay of bayLayout(b)) {
     if (bay.volume !== v.id) continue;
-    const key = `${bay.side}:${bay.level}`;
+    const key = bay.level * 4096 + bay.side;
     const list = rows.get(key);
     if (list) list.push(bay); else rows.set(key, [bay]);
   }
