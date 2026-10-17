@@ -181,6 +181,34 @@ describe("the GPU's time governing the floor", () => {
     expect(asked).toEqual([true, false, true]);
   });
 
+  it('brings a floor raised by a passing load back down once the frame is well under what raised it, though never under the budget itself (r20: a road built)', () => {
+    const g = new TimeGovernor();
+    const { asked, press } = pressing();
+    // A road's build: 35 ms; it ends in the window that judges the step, which seems to have paid.
+    g.read(35, 12, press); g.read(35, 12, press); g.read(18, 12, press);
+    expect(asked).toEqual([true]);
+    // 18 ms, the pixels' own cost, over the budget: the floor comes back down all the same.
+    g.read(18, 12, press);
+    expect(asked).toEqual([true, false]);
+  });
+
+  it('steps up again a step down that brought the frame back past OVER, and tries none again in the view', () => {
+    const g = new TimeGovernor();
+    const { asked, press } = pressing();
+    g.read(35, 12, press); g.read(35, 12, press); g.read(18, 12, press);
+    g.read(18, 12, press);
+    expect(asked).toEqual([true, false]);
+    // The detail back costs the frame again: up, and held there.
+    g.read(35, 12, press); g.read(35, 12, press); g.read(18, 12, press);
+    expect(asked).toEqual([true, false, true]);
+    for (let i = 0; i < 4; i++) g.read(18, 12, press);
+    expect(asked).toEqual([true, false, true]);
+    // Another view: tried again.
+    g.reset();
+    g.read(18, 12, press);
+    expect(asked).toEqual([true, false, true, false]);
+  });
+
   it('at the coarsest floor nothing is asked for a window to settle', () => {
     const g = new TimeGovernor();
     const { asked, press } = pressing(0);

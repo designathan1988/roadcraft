@@ -94,12 +94,12 @@ export class LandedMeasure<K extends string> {
 
 /** A step up paid only if the window's p95 fell by this share of what it was: under it the frame is slow for pixels (the targets, MSAA, the post chain), not for triangles, and coarser levels would only take the picture away (measured 2026-10-16: 22.9 ms at 2.96 M triangles on the RTX 3060, the same at 13 M). */
 export const GAIN = 0.1;
-/** Under this share of the budget the time's floor may come down a step. */
+/** Under this share of what raises the floor (`OVER` times the budget) it may come down a step. DO NOT bring it down only under a share of the budget itself: the pixel pipeline alone costs more than that, the floor raised in a road's build (judged paid when the build ended) stayed for good and the district stood in masses (r20, 2026-10-17). */
 export const TIME_SLACK = 0.66;
 /** The floor rises only past this many times the budget (30 ms at 12: under 33 fps, a view not playable). DO NOT trade the picture for a frame time the view cannot reach anyway: the pixel pipeline alone costs 15-20 ms at 1080p on the RTX 3060, and the governor stepped the district view down to masses chasing 12 ms (2026-10-16). */
 export const OVER = 2.5;
 
-/** THE GPU'S TIME GOVERNS THE SCALE'S FLOOR, one window of frames at a time (`renderer.ts` `governFrame`): past `OVER` times the budget, a step coarser is asked; the next window is the levels' to settle; the one after says whether the step paid (`GAIN`). A step that did not pay is undone and none is tried again until the frame is slower than it was then by `GAIN` (something changed) or the view changes (`reset`). Well under the budget, a step finer. */
+/** THE GPU'S TIME GOVERNS THE SCALE'S FLOOR, one window of frames at a time (`renderer.ts` `governFrame`): past `OVER` times the budget, a step coarser is asked; the next window is the levels' to settle; the one after says whether the step paid (`GAIN`). A step that did not pay is undone and none is tried again until the frame is slower than it was then by `GAIN` (something changed) or the view changes (`reset`). Well under `OVER` times the budget (`TIME_SLACK`), a step finer; one that brought the frame back past `OVER` is stepped up again and not tried again in the view. */
 export class TimeGovernor {
   /** The p95 before the step up being judged, ms. */
   private pressedAt: number | null = null;
@@ -107,20 +107,29 @@ export class TimeGovernor {
   private settling = false;
   /** The p95 at which a step up bought nothing, ms: none tried again under it. */
   private vainAt = Infinity;
+  /** A step down made by the last window: judged by this one. */
+  private lowered = false;
+  /** A step down brought the frame back past `OVER`: none tried again in this view. */
+  private downVain = false;
 
   /** A window's p95 against the view's budget, ms: `press(true)` asks the floor a step coarser (false when there is none left), `press(false)` a step finer. */
   read(p95: number, budget: number, press: (up: boolean) => boolean): void {
+    // The window that judges a step up may step further up, never back down (that is the next window's to say).
+    const judging = this.pressedAt !== null;
     if (this.pressedAt !== null) {
       if (this.settling) { this.settling = false; return; }
       const before = this.pressedAt;
       this.pressedAt = null;
       if (p95 > before * (1 - GAIN)) { press(false); this.vainAt = before; return; }
     }
+    const lowered = this.lowered;
+    this.lowered = false;
     if (p95 > budget * OVER) {
+      if (lowered) this.downVain = true;
       if (p95 > this.vainAt * (1 + GAIN)) this.vainAt = Infinity;
       if (this.vainAt === Infinity && press(true)) { this.pressedAt = p95; this.settling = true; }
-    } else if (p95 < budget * TIME_SLACK) {
-      press(false);
+    } else if (p95 < budget * OVER * TIME_SLACK && !this.downVain && !judging) {
+      this.lowered = press(false);
       this.vainAt = Infinity;
     }
   }
@@ -130,5 +139,7 @@ export class TimeGovernor {
     this.pressedAt = null;
     this.settling = false;
     this.vainAt = Infinity;
+    this.lowered = false;
+    this.downVain = false;
   }
 }
