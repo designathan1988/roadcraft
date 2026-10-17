@@ -160,7 +160,8 @@ export async function uncookInWorker(url: string): Promise<DecodedPerson | null>
 
 /** A person not cooked for this build, built in a worker (`personBuild.ts`) and read back as a cooked one; null when no worker can. */
 export async function buildPersonInWorker(person: PersonSpec, gender: 'f' | 'm', style: CartoonStyle, faces: boolean): Promise<DecodedPerson | null> {
-  const reply = await run({ build: { person, gender, style, faces } });
+  // On the people's worker: it holds the MakeHuman packs already (`Job.people`).
+  const reply = await run({ build: { person, gender, style, faces } }, [], true);
   return reply?.person ?? null;
 }
 
