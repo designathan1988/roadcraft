@@ -588,13 +588,22 @@ export class FarTree<P> implements FarTiles {
   }
 
   /** Each edited tile's records as the near level reads them, by the edit they are of: DO NOT read the page's document again for every neighbour that reads the tile, nor for every frame (`tileMembers` walks the region's document). */
-  private readonly pageCuts = new Map<number, { readonly edit: number; readonly cut: { readonly records: TileRecords; readonly digest: string } | null }>();
+  private readonly pageCuts = new Map<number, { readonly edit: number; readonly cut: { readonly records: TileRecords; readonly digest: string } | null; written?: number }>();
 
   /** A tile the page holds edited (`FarTileSource.pageEdit`), cut to what the near level reads and digested, once an edit; null for one the store holds as the page has it. */
   private pageCutOf(key: number): { readonly records: TileRecords; readonly digest: string } | null {
     const edit = this.source?.pageEdit?.(key) ?? 0;
-    if (!edit || !this.source?.pageRecords) { this.pageCuts.delete(key); return null; }
     const known = this.pageCuts.get(key);
+    if (!edit || !this.source?.pageRecords) {
+      // DO NOT let the edit's write being confirmed ask the near level again: the version the write stored holds what the cut holds, and the job of the cut, still waiting, was cancelled for one of the version in the cells' band, behind every building the road's edit had baked again (`conferencia` 40-road-4s, the road drawn only after a reload, 2026-10-17; found by the near-tiles session). The cut stands for the tile while the store holds the version its write made (`worldStreamer.ts` written: `stored` in the same turn as the edit let go).
+      const version = this.leaves.get(key)?.version;
+      if (edit === 0 && known?.cut && version !== undefined) {
+        known.written ??= version;
+        if (known.written === version) return known.cut;
+      }
+      this.pageCuts.delete(key);
+      return null;
+    }
     if (known && known.edit === edit) return known.cut;
     const records = this.source.pageRecords(key);
     const cut = records ? (this.kind.near!.pageCut ? this.kind.near!.pageCut(records) : { records, digest: `e${edit}` }) : null;
