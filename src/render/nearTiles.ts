@@ -11,8 +11,8 @@ import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
 import { forgetOtherDerived } from './derivedCache';
 import type { FarTileSource, FarTiles } from './farTree';
 import type { GroundRecord } from './groundChanges';
-import { type NearGround, type NearKind, type NearLanded, type NearPart, type NearProduct, type NearTileCache, type NearTileJob, type NearTileReply, NEAR_GROUND_REACH, partsDigest } from './nearTileBake';
-import { nearParts, nearReadParts, nearReadsAround, runNearJob } from './nearBakers';
+import { type NearGround, type NearKind, type NearLanded, type NearPart, type NearProduct, type NearTileCache, type NearTileJob, type NearTileReply, NEAR_GROUND_REACH } from './nearTileBake';
+import { nearParts, nearReadsAround, runNearJob } from './nearBakers';
 import { nearSig } from './nearRoadTiles';
 
 /** THE NEAR PRODUCTS PER TILE, CHOSEN BY THE VIEW (plan step 5): each kind (poles, furniture, signs...) of each stored tile baked in a worker from the tile store (`nearTileBake.ts`), drawn where what it draws spans a pixel, the bake drawn standing until the next one lands; every tile one way, the page's region too (an edited tile from the page's records, `FarTileSource.pageEdit`) */
@@ -28,7 +28,7 @@ export type { NearLanded, NearProduct };
 /** Runs a near job and answers once; gives back its cancel (an answer cancelled is never given). */
 export type NearRun = (job: NearTileJob, done: (reply: NearTileReply) => void) => () => void;
 
-/** A kind of a tile as drawn: the bake drawn and the ask it answered, the one on its way (to the GPU), the ask waiting for its answer (and the version of what it reads), a failed one. */
+/** A kind of a tile as drawn: the bake drawn and the ask it answered, the one on its way (to the GPU), the ask in flight, a failed one. */
 interface Slot {
   landed: NearLanded | null;
   /** The bake drawn (null: none yet); its ask. */
@@ -36,33 +36,17 @@ interface Slot {
   sig: string | null;
   coming: NearLanded | null;
   asked: string | null;
-  want: string;
-  /** The ask is of an edit of what the kind reads (its parts changed, not a building grown): baked before anything. */
-  urgent: boolean;
+  cancel: (() => void) | null;
   failed: string | null;
 }
 
-/** An edited tile cut to what a kind reads: its records (every part the kind may read) and the digest of the parts it always reads; whether that digest moved with the last edit. */
-interface PageCut {
-  readonly records: Partial<TileRecords>;
-  readonly digest: string;
-  readonly changed: boolean;
-}
-
-/** A stored tile: its place and version, each kind's slot, and its job under way (every kind asked of it, `NearTileJob`). */
+/** A stored tile: its place and version, and each kind's slot. */
 interface Leaf {
   readonly key: number;
   readonly i: number;
   readonly j: number;
   version: number;
   readonly slots: Map<NearKind, Slot>;
-  job: { readonly job: NearTileJob; readonly cancel: () => void } | null;
-}
-
-/** The tiles a kind of a tile reads (the tile first), each at its version or, held edited by the page, at what the kind reads of it (`PageCut`), and the version of them all. */
-interface TilesRead {
-  readonly tiles: readonly { readonly key: number; readonly version: number; readonly cut: PageCut | null }[];
-  readonly sig: string;
 }
 
 /** The eye the tiles were last chosen for. */
@@ -84,12 +68,6 @@ export function recordsFor(records: TileRecords, parts: readonly NearPart[]): Pa
   return out as Partial<TileRecords>;
 }
 
-/** THE NEAR PRODUCTS' BAND IN THE QUEUE: after the buildings' cells and masses and the roads' near level (`cellPool.ts` NEAR_TIER), nearest first within it: furniture, poles and the rest refine a street whose roads and buildings come first. DO NOT share the roads' band: eight kinds a tile, out to kilometres, held the street's near roads behind them and the street stood on its far level (conf22 09-street, 2026-10-17). */
-const PRODUCT_TIER = NEAR_TIER + 0.05;
-
-/** A near job's place in the queue (`jobPool.ts`: lower first, the distance to the view's focus added within a band): an edit of what its kinds read before anything (`cellPool.ts` EDIT_TIER), else after the cells, the masses and the roads' near level (`PRODUCT_TIER`). */
-export const nearPriority = (job: Pick<NearTileJob, 'edited'>): number => (job.edited ? EDIT_TIER : PRODUCT_TIER) * TIER_SPAN;
-
 /** The page's own cache of bakes where no worker runs (tests): nothing kept. */
 const NO_CACHE: NearTileCache = { ready: async () => false, get: async () => undefined, put: async () => {} };
 
@@ -100,7 +78,7 @@ function nearRunner(): NearRun {
       let live = true;
       void runNearJob(job, NO_CACHE).then(
         (reply) => { if (live) done(reply); },
-        (error: unknown) => { if (live) done({ kind: 'nearError', node: job.node, message: String(error) }); },
+        (error: unknown) => { if (live) done({ kind: 'nearError', node: job.node, sig: job.sig, message: String(error) }); },
       );
       return () => { live = false; };
     }
@@ -108,12 +86,12 @@ function nearRunner(): NearRun {
     const ticket = submitJob({
       service: 'nearTiles',
       key: `nearTiles:${job.node}`,
-      // A tile the page holds edited first (`cellPool.ts` EDIT_TIER): what the player just did; the others after the cells and the roads' near level, nearest first (`PRODUCT_TIER`).
-      priority: nearPriority(job),
+      // A tile the page holds edited first (`cellPool.ts` EDIT_TIER): what the player just did; the others with the roads' near level, nearest first.
+      priority: (job.edited ? EDIT_TIER : NEAR_TIER) * TIER_SPAN,
       at: [(i + 0.5) * TILE, (j + 0.5) * TILE],
       write: () => ({ data: job, transfer: [] }),
       done: (answer) => done(answer as NearTileReply),
-      failed: (message) => done({ kind: 'nearError', node: job.node, message }),
+      failed: (message) => done({ kind: 'nearError', node: job.node, sig: job.sig, message }),
     });
     return () => ticket.cancel();
   };
@@ -142,16 +120,6 @@ export class NearTiles implements FarTiles {
   private readonly viewBox = new Box3();
   private scheduled = false;
   private warned = false;
-  /** Each tile's tiles read and their version, by what a kind reads (alone or with its neighbours, and its parts), worked out once a choice for every kind (`tilesOf`). */
-  private readonly reads = new Map<string, TilesRead>();
-  /** Each edited tile's records as the page holds them, by the edit they are of, and cut to each set of parts: DO NOT read the page's document again for every kind, every neighbour or every frame (`tileMembers` walks the region's document; a road drawn held frames of 500 ms, conf23, 2026-10-17). */
-  private readonly pageCuts = new Map<number, { readonly edit: number; readonly records: TileRecords | null; readonly cuts: Map<string, PageCut> }>();
-  /** Each tile's last digest by set of parts: whether an edit moved what a kind reads. */
-  private readonly lastDigests = new Map<string, string>();
-  /** Each record's digest, once a record (`partsDigest`). */
-  private readonly recordDigests = new WeakMap<object, number>();
-  /** The tiles with a kind asked this choice: one job each once every kind is chosen (`submit`). */
-  private readonly asking = new Set<Leaf>();
 
   /** `run`, `prefix`: where the jobs go and the bakes are kept (tests give their own). */
   constructor(private readonly run: NearRun = nearRunner(), private readonly prefix: string | null = NEAR_PREFIX) {
@@ -199,7 +167,7 @@ export class NearTiles implements FarTiles {
     }
     if (leaf) { leaf.version = version; return; }
     const { i, j } = tileOfKey(tile);
-    this.leaves.set(tile, { key: tile, i, j, version, slots: new Map(), job: null });
+    this.leaves.set(tile, { key: tile, i, j, version, slots: new Map() });
   }
 
   /** Every tile is drawn here, the page's region's too: nothing changes with its standing. */
@@ -221,11 +189,7 @@ export class NearTiles implements FarTiles {
     this.view = view;
     if (!this.source) return;
     this.groundMoved();
-    this.reads.clear();
     for (const product of this.products) this.chooseKind(product);
-    // DO NOT send a job a kind: each would read the tiles and solve their roads again; every kind of a tile asked goes in one.
-    for (const leaf of this.asking) this.submit(leaf);
-    this.asking.clear();
   }
 
   /** A WebGL context restored: every bake landed again (their arrays were let go once on the GPU). */
@@ -258,7 +222,7 @@ export class NearTiles implements FarTiles {
 
   private slotOf(leaf: Leaf, kind: NearKind): Slot {
     let slot = leaf.slots.get(kind);
-    if (!slot) leaf.slots.set(kind, slot = { landed: null, bake: null, sig: null, coming: null, asked: null, want: '', urgent: false, failed: null });
+    if (!slot) leaf.slots.set(kind, slot = { landed: null, bake: null, sig: null, coming: null, asked: null, cancel: null, failed: null });
     return slot;
   }
 
@@ -306,116 +270,82 @@ export class NearTiles implements FarTiles {
     return this.view.intersectsBox(this.viewBox);
   }
 
-  /** The tile and (where read) its neighbours stored, the tile first, each at its version or, held edited, at the digest of the parts read of it (`pageCut`); and the version of them: an edit of what the parts do not hold (a building grown, for the poles) asks nothing. */
-  private tilesOf(leaf: Leaf, around: boolean, read: readonly NearPart[], posted: readonly NearPart[]): TilesRead {
-    const memo = `${leaf.key}|${around ? 1 : 0}|${read.join(',')}|${posted.join(',')}`;
-    const had = this.reads.get(memo);
-    if (had) return had;
-    const tiles = [{ key: leaf.key, version: leaf.version, cut: this.pageCut(leaf.key, read, posted) }];
-    for (let dj = -1; around && dj <= 1; dj++) {
+  /** The tile and (for a kind that reads them) its neighbours stored, at their versions, the tile first; a tile the page holds edited at its edit. */
+  private tilesOf(leaf: Leaf, kind: NearKind): { key: number; version: number; edit: number }[] {
+    const edit = (key: number): number => this.source?.pageEdit?.(key) ?? 0;
+    const out = [{ key: leaf.key, version: leaf.version, edit: edit(leaf.key) }];
+    if (!nearReadsAround(kind)) return out;
+    for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         if (di === 0 && dj === 0) continue;
         const near = this.leaves.get(tileKey(leaf.i + di, leaf.j + dj));
-        if (near) tiles.push({ key: near.key, version: near.version, cut: this.pageCut(near.key, read, posted) });
+        if (near) out.push({ key: near.key, version: near.version, edit: edit(near.key) });
       }
     }
-    const out: TilesRead = { tiles, sig: nearSig(tiles.map((t) => ({ key: t.key, version: t.cut ? `p${t.cut.digest}` : t.version }))) };
-    this.reads.set(memo, out);
     return out;
   }
 
-  /** A tile the page holds edited (`FarTileSource.pageEdit`), cut to the parts posted (`posted`) and named by the digest of the parts read (`read`), once an edit; null for one the store holds as the page has it. */
-  private pageCut(key: number, read: readonly NearPart[], posted: readonly NearPart[]): PageCut | null {
-    const edit = this.source?.pageEdit?.(key) ?? 0;
-    if (!edit || !this.source?.pageRecords) { this.pageCuts.delete(key); return null; }
-    let known = this.pageCuts.get(key);
-    if (!known || known.edit !== edit) this.pageCuts.set(key, known = { edit, records: this.source.pageRecords(key), cuts: new Map() });
-    if (!known.records) return null;
-    const name = `${read.join(',')}|${posted.join(',')}`;
-    let cut = known.cuts.get(name);
-    if (!cut) {
-      const digest = partsDigest(known.records, read, this.recordDigests);
-      const was = this.lastDigests.get(`${key}|${name}`);
-      this.lastDigests.set(`${key}|${name}`, digest);
-      cut = { records: recordsFor(known.records, posted), digest, changed: was !== undefined && was !== digest };
-      known.cuts.set(name, cut);
-    }
-    return cut;
-  }
-
-  /** A tile's kind asked at the version of what it reads, once: its tile's job sent once every kind is chosen. */
+  /** A tile's kind asked of the workers at the version of what it reads, once. */
   private ask(leaf: Leaf, product: NearProduct): void {
-    const slot = this.slotOf(leaf, product.kind);
-    const read = nearReadParts(product.kind);
-    const { tiles, sig: version } = this.tilesOf(leaf, nearReadsAround(product.kind), read, nearParts(product.kind));
-    const want = `${version}:${product.version?.(leaf.key) ?? ''}`;
+    const kind = product.kind;
+    const slot = this.slotOf(leaf, kind);
+    const tiles = this.tilesOf(leaf, kind);
+    const want = `${nearSig(tiles.map((t) => ({ key: t.key, version: t.edit ? `${t.version}+${t.edit}` : t.version })))}:${product.version?.(leaf.key) ?? ''}`;
     const sig = `${want}|${Math.max(this.groundEverywhere, this.groundOf.get(leaf.key) ?? 0)}`;
     if (slot.sig === sig || slot.asked === sig || slot.failed === sig) return;
+    slot.cancel?.();
     slot.asked = sig;
-    slot.want = want;
-    // DO NOT put every edited tile first: the growth edits the region all the time, and its jobs went before the streets' roads and cells (conf22). An edit of what the kind reads goes first; one of the buildings (the growth's, a garden's) does not.
-    slot.urgent = (tiles[0]!.cut?.changed ?? false) && !read.includes('buildings');
-    this.asking.add(leaf);
+    const parts = nearParts(kind);
+    // The edited tiles as the page holds them: drawn from the edit, not from its write.
+    const records = tiles.some((t) => t.edit) && this.source?.pageRecords
+      ? tiles.map((t) => { const r = t.edit ? this.source!.pageRecords!(t.key) : null; return r ? recordsFor(r, parts) : null; })
+      : undefined;
+    this.submit(leaf, product, sig, want, tiles, records, tiles[0]!.edit > 0);
   }
 
-  /** A TILE'S JOB: every kind of it waiting for an answer, the one under way replaced (its kinds asked again in this one); the tiles any of them reads, the page's records of those it holds edited (`records`: of all, where no worker reads the store) */
-  private submit(leaf: Leaf, records?: readonly (Partial<TileRecords> | null)[]): void {
-    leaf.job?.cancel();
-    leaf.job = null;
-    const kinds = this.products.filter((p) => leaf.slots.get(p.kind)?.asked);
-    if (!kinds.length) return;
-    const parts = [...new Set(kinds.flatMap((p) => nearParts(p.kind)))].sort();
-    const { tiles } = this.tilesOf(leaf, kinds.some((p) => nearReadsAround(p.kind)), parts, parts);
-    // The edited tiles as the page holds them (cut once an edit, `pageCut`): drawn from the edit, not from its write.
-    const posted = records ?? (tiles.some((t) => t.cut) ? tiles.map((t) => t.cut?.records ?? null) : undefined);
+  private submit(leaf: Leaf, product: NearProduct, sig: string, want: string, tiles: readonly { key: number; version: number }[],
+    records?: readonly (Partial<TileRecords> | null)[], edited = false): void {
+    const kind = product.kind;
+    const slot = this.slotOf(leaf, kind);
     const job: NearTileJob = {
-      node: `${leaf.i},${leaf.j}`, prefix: this.bakePrefix, tiles: tiles.map((t) => ({ key: t.key, version: t.version })), ground: this.ground(),
-      asks: kinds.map((p) => {
-        const slot = leaf.slots.get(p.kind)!;
-        return { kind: p.kind, sig: slot.asked!, want: slot.want, shown: slot.bake, ...(p.extra ? { extra: p.extra(leaf.key) } : {}) };
-      }),
-      ...(posted ? { records: posted } : {}),
-      ...(kinds.some((p) => leaf.slots.get(p.kind)!.urgent) ? { edited: true } : {}),
+      kind, node: `${kind}:${leaf.i},${leaf.j}`, sig, want, shown: slot.bake, prefix: this.bakePrefix,
+      tiles: tiles.map((t) => ({ key: t.key, version: t.version })), ground: this.ground(),
+      ...(records ? { records } : {}),
+      ...(edited ? { edited } : {}),
       ...(this.source?.workersRead ? { store: this.source.workersRead } : {}),
+      ...(product.extra ? { extra: product.extra(leaf.key) } : {}),
     };
-    const cancel = this.run(job, (reply) => this.answer(leaf, job, reply, parts));
-    // A run that answered at once (the tests' page) left nothing under way.
-    if (!leaf.job && this.leaves.get(leaf.key) === leaf && job.asks.some((a) => leaf.slots.get(a.kind)?.asked === a.sig)) leaf.job = { job, cancel };
+    slot.cancel = this.run(job, (reply) => this.answer(leaf, product, reply, { want, tiles, edited }));
   }
 
-  private answer(leaf: Leaf, job: NearTileJob, reply: NearTileReply, parts: readonly NearPart[]): void {
-    if (this.leaves.get(leaf.key) !== leaf || (leaf.job !== null && leaf.job.job !== job)) return;
-    leaf.job = null;
+  private answer(leaf: Leaf, product: NearProduct, reply: NearTileReply, asked: { readonly want: string; readonly tiles: readonly { key: number; version: number }[]; readonly edited: boolean }): void {
+    const kind = product.kind;
+    const slot = leaf.slots.get(kind);
+    if (!slot || this.leaves.get(leaf.key) !== leaf || reply.sig !== slot.asked) return;
+    slot.cancel = null;
     switch (reply.kind) {
       case 'near':
-        for (const answer of reply.answers) {
-          const slot = leaf.slots.get(answer.kind);
-          if (!slot || answer.sig !== slot.asked) continue;
-          if ('error' in answer) {
-            this.warn(`a tile's ${answer.kind} could not be baked`, answer.error);
-            slot.asked = null;
-            slot.failed = answer.sig;
-          } else if (answer.same) {
-            slot.sig = answer.sig;
-            slot.asked = null;
-          } else this.land(leaf, this.products.find((p) => p.kind === answer.kind)!, slot, answer.payload, answer.bake, answer.sig);
-        }
+        if (reply.same) { slot.sig = reply.sig; slot.asked = null; break; }
+        this.land(leaf, product, slot, reply.payload, reply.bake, reply.sig);
         break;
       case 'nearRecords': {
         // No worker reads the store (the tests, a store the workers cannot open): the page reads the tiles, one empty where the store has none.
         const source = this.source;
-        if (!source) break;
-        void Promise.all(job.tiles.map((t) => source.records(t.key).then((r) => recordsFor(r ?? emptyRecords(t.key, t.version), parts)))).then((records) => {
-          if (this.leaves.get(leaf.key) === leaf && leaf.job === null) this.submit(leaf, records);
+        if (!source) { slot.asked = null; break; }
+        const sig = reply.sig;
+        const parts = nearParts(kind);
+        void Promise.all(asked.tiles.map((t) => source.records(t.key).then((r) => recordsFor(r ?? emptyRecords(t.key, t.version), parts)))).then((records) => {
+          if (this.leaves.get(leaf.key) === leaf && slot.asked === sig) this.submit(leaf, product, sig, asked.want, asked.tiles, records, asked.edited);
         }, (error: unknown) => {
-          for (const ask of job.asks) { const slot = leaf.slots.get(ask.kind); if (slot?.asked === ask.sig) { slot.asked = null; slot.failed = ask.sig; } }
+          if (this.leaves.get(leaf.key) === leaf && slot.asked === sig) { slot.asked = null; slot.failed = sig; }
           this.warn('a tile could not be read from the store', error);
         });
-        return;
+        break;
       }
       case 'nearError':
-        this.warn('a tile\'s near products could not be baked', reply.message);
-        for (const ask of job.asks) { const slot = leaf.slots.get(ask.kind); if (slot?.asked === ask.sig) { slot.asked = null; slot.failed = ask.sig; } }
+        this.warn(`a tile's ${kind} could not be baked`, reply.message);
+        slot.asked = null;
+        slot.failed = reply.sig;
         break;
     }
     this.again();
@@ -441,15 +371,15 @@ export class NearTiles implements FarTiles {
     else put();
   }
 
-  /** A tile's kind let go, drawn or coming; its tile's job cancelled once no kind of it waits: asked again when wanted. */
+  /** A tile's kind let go, drawn or coming, its ask cancelled: asked again when wanted. */
   private drop(leaf: Leaf, kind: NearKind): void {
     this.held.get(kind)?.delete(leaf);
     const slot = leaf.slots.get(kind);
     if (!slot) return;
+    slot.cancel?.();
     slot.coming?.remove();
     slot.landed?.remove();
     leaf.slots.delete(kind);
-    if (leaf.job && ![...leaf.slots.values()].some((s) => s.asked)) { leaf.job.cancel(); leaf.job = null; }
   }
 
   private warn(what: string, detail: unknown): void {
