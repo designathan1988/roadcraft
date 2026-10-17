@@ -372,7 +372,7 @@ function yardBox(b: TrafficBuilding, prop: { x: number; y: number; w: number; d:
 const GATE_LANES_READ = m(45) + m(5);
 
 /** What a yard is made from, near it, as one number: the lanes its gates may be joined to */
-function yardInputs(w: SimWorld, b: TrafficBuilding, lots?: readonly Lot[]): number {
+export function yardInputs(w: SimWorld, b: TrafficBuilding, lots?: readonly Lot[]): number {
   const prop = gatedProperty(b);
   if (!prop) return 0;
   const { wx0, wy0, wx1, wy1 } = yardBox(b, prop);

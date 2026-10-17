@@ -217,8 +217,10 @@ export class SimHost {
     if (!held) {
       sim.walkwaysNow();
       laneGrid(sim);
+      const topology = sim.topologyRevision;
       alpha = sim.clock.advance(wall, () => step(sim, { traffic: controls.traffic, pedestrians: controls.pedestrians }), STEP_BUDGET_MS);
-      sim.populationShare = this.governor.feed(sim.clock.lastSteps, sim.clock.lastStepMs, performance.now() / 1000, sim.vehicles.size, sim.pedViews.length);
+      // DO NOT count a frame whose steps built the topology again (a tile came or went): walking the city thinned its streets to 30%.
+      if (sim.topologyRevision === topology) sim.populationShare = this.governor.feed(sim.clock.lastSteps, sim.clock.lastStepMs, performance.now() / 1000, sim.vehicles.size, sim.pedViews.length);
     }
     // The blows' casualties aged by the wall time (the page keeps its own clocks of those it was told).
     impactCasualties(sim, wall);
