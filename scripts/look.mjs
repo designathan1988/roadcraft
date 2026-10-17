@@ -30,7 +30,9 @@ const [width, height] = plan.viewport ?? [1920, 1080];
 const ATTEMPTS = 3;
 const RELOADED = 'the page reloaded midway (a file was saved and Vite reloaded the game)';
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist'] });
+// LOOK_JS_FLAGS: V8 flags for the run's Chrome, as the desktop build passes them (`desktop/main.cjs` js-flags): the dev run measured as the product runs.
+const jsFlags = process.env.LOOK_JS_FLAGS ? [`--js-flags=${process.env.LOOK_JS_FLAGS}`] : [];
+const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist', ...jsFlags] });
 let report;
 try {
   for (let attempt = 1; ; attempt++) {
