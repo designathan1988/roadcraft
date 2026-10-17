@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DirectionalLight, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, BoxGeometry, Object3D, PerspectiveCamera, ShaderChunk, Vector3, type WebGLRenderer } from 'three';
+import { DirectionalLight, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, BoxGeometry, Object3D, PerspectiveCamera, ShaderChunk, Vector3, type WebGLRenderer } from 'three';
 
 import { cascadedSunChunks, createSunCascades, SUN_CASCADES } from '@render/sunCascades';
 import { m } from '@world/units';
@@ -158,6 +158,7 @@ describe('sun cascades', () => {
     const cascades = createSunCascades(sun, others, 2, renderer as unknown as WebGLRenderer);
     cascades.setEnabled(true, 512);
     const car = new Mesh(new BoxGeometry(m(5), m(2), m(5)));
+    car.castShadow = true;
     town.add(car);
     car.updateMatrixWorld();
     cascades.setMovers([{ roots: [car], moving: () => true }]);
@@ -200,6 +201,55 @@ describe('sun cascades', () => {
     frame();
     expect(drawn.filter((d) => !d.movers).length).toBe(SUN_CASCADES);
     expect(car.visible).toBe(true);
+  });
+
+  it('draws over the store only the parts of a mover that cast, hold instances and reach the texel, not the mover whole', () => {
+    const over: Object3D[][] = [];
+    const renderer = {
+      capabilities: { reversedDepthBuffer: false },
+      clear: () => {}, initRenderTarget: () => {}, copyTextureToTexture: () => {},
+      getRenderTarget: () => null, getActiveCubeFace: () => 0, getActiveMipmapLevel: () => 0, setRenderTarget: () => {},
+      shadowMap: {
+        needsUpdate: false,
+        render(lights: DirectionalLight[], scene: Object3D) {
+          for (const light of lights) {
+            if (!light.shadow.needsUpdate) continue;
+            light.shadow.updateMatrices(light);
+            if (scene !== town) over.push([...scene.children]);
+            light.shadow.needsUpdate = false;
+          }
+        },
+      },
+    };
+    const sun = new DirectionalLight(), others = [new DirectionalLight(), new DirectionalLight()];
+    const cascades = createSunCascades(sun, others, 2, renderer as unknown as WebGLRenderer);
+    cascades.setEnabled(true, 512);
+    const town = new Object3D();
+    // A group of people's levels: one drawing three, one empty, one too small for any texel, one that casts no shadow.
+    const people = new Group();
+    const part = (size: number, count: number, casts = true): InstancedMesh => {
+      const mesh = new InstancedMesh(new BoxGeometry(size, size, size), undefined, 4);
+      mesh.count = count;
+      mesh.castShadow = casts;
+      people.add(mesh);
+      return mesh;
+    };
+    const drawn = part(m(4), 3), empty = part(m(4), 0), tiny = part(m(0.001), 3), dark = part(m(4), 3, false);
+    town.add(people);
+    town.updateMatrixWorld(true);
+    cascades.setMovers([{ roots: [people], moving: () => true }]);
+    const camera = new PerspectiveCamera(50, 16 / 9, m(0.4), m(2500));
+    camera.position.set(0, m(10), m(30));
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    cascades.follow(camera, new Vector3(-0.5, 0.75, -0.3).normalize(), flat, new Vector3(), m(40));
+    cascades.pass({ changed: false, effects: false, wind: false });
+    renderer.shadowMap.render(cascades.lights as DirectionalLight[], town);
+    expect(over.length).toBeGreaterThan(0);
+    for (const list of over) {
+      expect(list).toContain(drawn);
+      for (const left of [empty, tiny, dark, people]) expect(list).not.toContain(left);
+    }
   });
 
   it('lights the sun once in three\'s shaders, by the finest cascade that holds the point', () => {
