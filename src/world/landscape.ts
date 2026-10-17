@@ -316,6 +316,12 @@ export type LandscapeSnap =
   | { readonly ok: true; readonly at: Vec2; readonly hit: FootwayHit | null; readonly median?: MedianHit }
   | { readonly ok: false; readonly at: Vec2; readonly reason: LandscapeRefusal };
 
+/** What a caller placing many items hands `snapLandscape`, made once: the crossings' landings filed (`crossingAccessTester`), and the items found by place round a point (`around`; else `items` walked whole). */
+export interface SnapLocal {
+  readonly onAccess?: (segment: SegmentId, x: number, y: number, radius: number) => boolean;
+  readonly around?: (at: Vec2, radius: number) => Iterable<LandscapeItem>;
+}
+
 /** Where an item of `kind` put at `at` would stand, or why it cannot. */
 export function snapLandscape(
   net: Network,
@@ -323,6 +329,7 @@ export function snapLandscape(
   kind: LandscapeKind,
   at: Vec2,
   reach: number,
+  local?: SnapLocal,
 ): LandscapeSnap {
   if (kind === 'streetname') {
     // A street's name is put on the street: its signs stand at the corners.
@@ -340,9 +347,11 @@ export function snapLandscape(
   const hit = footwayAt(net, at, reach);
   // A tree or a shrub in a planted median, on its centre line (V7).
   const median = !hit && (kind === 'tree' || kind === 'shrub') ? medianAt(net, at, Math.min(reach, m(1))) : null;
+  // The items that can stand in its way: within its radius, the widest item's and the gap.
+  const others = (p: Vec2, radius: number): Iterable<LandscapeItem> => local?.around ? local.around(p, radius + MAX_ITEM_RADIUS + ITEM_GAP) : items;
   if (median) {
     const radius = LANDSCAPE_RADIUS[kind];
-    for (const other of items) {
+    for (const other of others(median.centre, radius)) {
       const clear = radius + LANDSCAPE_RADIUS[other.kind] + ITEM_GAP;
       if (apart(other, median.centre) < clear) return { ok: false, at: median.centre, reason: 'occupied' };
     }
@@ -357,10 +366,10 @@ export function snapLandscape(
     y: hit.frame.p.y + hit.frame.n.y * depth * hit.side,
   };
   const radius = LANDSCAPE_RADIUS[kind];
-  if (nearCrossingAccess(net, hit.segment, placed.x, placed.y, radius)) {
+  if (local?.onAccess ? local.onAccess(hit.segment, placed.x, placed.y, radius) : nearCrossingAccess(net, hit.segment, placed.x, placed.y, radius)) {
     return { ok: false, at: placed, reason: 'crossing' };
   }
-  for (const other of items) {
+  for (const other of others(placed, radius)) {
     const clear = radius + LANDSCAPE_RADIUS[other.kind] + ITEM_GAP;
     if (apart(other, placed) < clear) return { ok: false, at: placed, reason: 'occupied' };
   }
