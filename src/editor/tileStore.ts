@@ -531,13 +531,22 @@ export class TileStore {
 
   /** EVERY TILE THE STORE HOLDS BAKED AND ITS VERSION, IN ONE READ (their marks, `PartStore.marks`): DO NOT ask the store for each tile of the map at the opening (`ensure`: a worker's and IndexedDB's round trip a tile, 100 at 10 km, 1,600 at 40). Null where the store keeps no marks; a tile missing from it, or not baked, is ensured as before. */
   async manifest(): Promise<ReadonlyMap<number, number> | null> {
+    const marks = await this.storedMarks();
+    if (!marks) return null;
+    const out = new Map<number, number>();
+    for (const [key, { version, baked }] of marks) if (baked) out.set(key, version);
+    return out;
+  }
+
+  /** Every mark the store holds, baked or not, each version kept as the least the next write of its tile goes past; null where the store keeps none. */
+  private async storedMarks(): Promise<ReadonlyMap<number, { readonly version: number; readonly baked: boolean }> | null> {
     const flat = (await this.backend.run({ op: 'marks', map: this.map })) as number[] | null;
     if (!flat) return null;
-    const out = new Map<number, number>();
+    const out = new Map<number, { version: number; baked: boolean }>();
     for (let k = 0; k + 2 < flat.length; k += 3) {
       const key = flat[k]!, version = flat[k + 1]!;
       this.versions.set(key, Math.max(this.versions.get(key) ?? 0, version));
-      if (flat[k + 2] === 1) out.set(key, version);
+      out.set(key, { version, baked: flat[k + 2] === 1 });
     }
     return out;
   }
@@ -591,20 +600,21 @@ export class TileStore {
     return written;
   }
 
-  /** A world file opened (`main.ts` openStreamedWorld): its tiles in place of the stored ones, each written above the version stored (what was baked of the old tile not taken for it); every tile of the map the file lacks taken away, to be made again above it too; the values last (their key says the world is stored). False when any of it was not written. */
-  async importWorld(meta: WorldMeta, tiles: readonly TileRecords[], mapKeys: Iterable<number>): Promise<boolean> {
-    const given = new Set(tiles.map((t) => t.key));
-    const gone: number[] = [];
-    for (const key of mapKeys) {
-      if (given.has(key)) continue;
-      const known = await this.knownVersion(key);
-      if (known !== null) gone.push(key);
-    }
+  /** A world file opened (`main.ts` openStreamedWorld): its tiles in place of the stored ones, each written above the version stored (what was baked of the old tile not taken for it); every tile of the map the file lacks taken away after, to be made again above it too; the values last (their key says the world is stored). False when any of it was not written. */
+  /** DO NOT hold the file's tiles together, nor ask the store for each tile of the map: `eachTile` hands them one at a time (`worldExport.ts` WorldFile), the versions stored come from the marks in one read (`manifest`), and the tiles it lacks go in one removal. */
+  async importWorld(meta: WorldMeta, eachTile: (take: (records: TileRecords) => Promise<boolean>) => Promise<boolean>, mapKeys: Iterable<number>): Promise<boolean> {
+    const marked = await this.storedMarks();
+    const given = new Set<number>();
+    const whole = await eachTile(async (tile) => {
+      given.add(tile.key);
+      // A tile stored before marks were: its version asked alone.
+      if (!marked?.has(tile.key)) await this.knownVersion(tile.key);
+      return (await this.write(tile)) !== null;
+    });
+    if (!whole) return false;
+    // Taken away whether stored or not (a removal of a key not there does nothing): DO NOT ask for each first.
+    const gone = [...mapKeys].filter((key) => !given.has(key));
     if (gone.length && (await this.backend.run({ op: 'removeTiles', map: this.map, keys: gone })) !== true) return false;
-    for (const tile of tiles) {
-      await this.knownVersion(tile.key);
-      if ((await this.write(tile)) === null) return false;
-    }
     return this.setMeta(meta);
   }
 
