@@ -35,6 +35,8 @@ export interface EnvironmentQuality {
 export interface SceneEnvironment {
   /** The sun as the game reads it (colour, intensity, direction): the first of its cascades. */
   readonly sun: DirectionalLight;
+  /** Towards the sun the shadows are cast by (`SunCascades.toSun`). */
+  readonly toSun: Vector3;
   readonly skyColor: Color;
   /** Fits the sun's cascades to what the camera sees (`sunCascades.ts`). */
   follow(camera: Camera, target: Vector3, top: number, groundAt: (x: number, y: number) => number): void;
@@ -200,6 +202,7 @@ export function createEnvironment(
   const FILL_WHITE = new Color(0xf2f2ee);
   return {
     sun,
+    toSun: cascades.toSun,
     skyColor: horizon,
     follow(camera, target, top, groundAt) {
       sky.position.copy(target);

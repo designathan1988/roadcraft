@@ -5,7 +5,7 @@ import { instantiate } from '@world/buildings/blueprints';
 import { PLINTH_MIN, floorHeight } from '@world/buildings/foundation';
 import { footprintRects, localToWorld, solidFootprints } from '@world/buildings/geometry';
 import { lotSurfaces } from '@world/buildings/lots';
-import { LOT_PLATE, PAD_BATTER, POOL_SINK, POOL_TERRAIN_CLEARANCE, buildingPads } from '@world/buildings/pads';
+import { LOT_PLATE, PAD_BATTER, POOL_SINK, POOL_TERRAIN_CLEARANCE, buildingPads, padsWork } from '@world/buildings/pads';
 import { type Building, asBuildingId } from '@world/buildings/types';
 import { m } from '@world/units';
 
@@ -68,5 +68,23 @@ describe('building pads', () => {
     const point = localToWorld(house, m(2), m(17));
     const ground = buildingPads([house], flat, undefined, m(4)).shapeAt(point.x, point.y, 0).height;
     expect(ground).toBeCloseTo(water.heightAt(point.x, point.y) - POOL_SINK - LOT_PLATE - POOL_TERRAIN_CLEARANCE, 6);
+  });
+});
+
+describe('the platforms of a dense block', () => {
+  const model = cityBuilding('supermarket')!;
+  const all: Building[] = [];
+  for (let j = 0; j < 4; j++) for (let i = 0; i < 6; i++) {
+    all.push({ ...instantiate(model.body, { x: m(70) * i, y: m(70) * j }, (i + j) * 0.3, model.fn), id: asBuildingId(1 + i + 6 * j) } as Building);
+  }
+  const ground = (x: number, y: number): number => Math.sin(x / 41) * m(3) + Math.cos(y / 29) * m(2);
+  const pads = buildingPads(all, ground, undefined, m(9.6));
+
+  it('measures the rings near a point, not every ring of its cell in the platforms order', () => {
+    padsWork.rings = 0;
+    let corners = 0;
+    for (let y = m(-60); y <= m(270); y += m(3.2)) for (let x = m(-60); x <= m(410); x += m(3.2)) { pads.shapeAt(x, y, ground(x, y)); corners++; }
+    // Measured in the platforms' order against the nearest so far: 3.38 a corner; the nearest first: 1.45.
+    expect(padsWork.rings / corners).toBeLessThan(2);
   });
 });

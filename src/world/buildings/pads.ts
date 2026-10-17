@@ -233,6 +233,11 @@ export function padShaper(cut: PadShapeCut): Pick<BuildingPads, 'shapeAt'> {
   };
 }
 
+/** Each ring's bound and its distance (NaN: not measured) for the point being graded (`shapeOverPads`): grown, never made per point. */
+let bounds = new Float64Array(64);
+let measured = new Float64Array(64);
+const ringAt: (readonly Vec2[])[] = [];
+
 /** The graded height at a point from the platforms filed under its cell, in their order */
 function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: number, y: number, ground: number): { height: number; weight: number } {
   // The nearest platform decides: two buildings side by side share the strip between them as each one's own apron
@@ -249,20 +254,58 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
   // The lowest paving of a lot within an apron of the point (a car park, a yard, a drive's ramp, a terrace)
   let pavedLow = Infinity;
   let pavedPad: Pad | null = null;
-  for (const pad of list ?? NO_PADS) {
+  // THE NEAREST RING FIRST, AS A NUMBER: every ring's bound, the one of the lowest measured, then only those whose bound can still beat the best (the ring's own distance never under its bound, `BOUND_SLACK` for the rounding). DO NOT measure in the platforms' order against the nearest so far: it starts at Infinity, and most rings of a dense cell were measured for nothing (12.8 s of the ground's worker in an opening).
+  const rings = list ?? NO_PADS;
+  let count = 0;
+  for (const pad of rings) {
     if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
-    for (let i = 0; i < pad.rings.length; i++) {
-      // The distance to the ring's bounds never exceeds the distance to the ring
+    count += pad.rings.length;
+  }
+  if (bounds.length < count) { bounds = new Float64Array(count * 2); measured = new Float64Array(count * 2); }
+  let k = 0, first = -1;
+  for (const pad of rings) {
+    if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
+    for (let i = 0; i < pad.rings.length; i++, k++) {
       const rb = pad.boxes[i]!;
-      const lb = Math.hypot(Math.max(rb.minX - x, 0, x - rb.maxX), Math.max(rb.minY - y, 0, y - rb.maxY));
+      bounds[k] = Math.hypot(Math.max(rb.minX - x, 0, x - rb.maxX), Math.max(rb.minY - y, 0, y - rb.maxY));
+      measured[k] = NaN;
+      if (first < 0 || bounds[k]! < bounds[first]!) first = k;
+    }
+  }
+  /** The distance to ring `at` of the walk (`ring`), measured once for both walks. */
+  const distanceOf = (at: number, ring: readonly Vec2[]): number => {
+    let d = measured[at]!;
+    if (Number.isNaN(d)) { padsWork.rings++; d = ringDistance(ring, x, y); measured[at] = d; }
+    return d;
+  };
+  let least = Infinity;
+  if (first >= 0) {
+    k = 0;
+    for (const pad of rings) {
+      if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
+      for (let i = 0; i < pad.rings.length; i++) ringAt[k++] = pad.rings[i]!;
+    }
+    least = distanceOf(first, ringAt[first]!);
+    for (let at = 0; at < count; at++) {
+      if (bounds[at]! > least + BOUND_SLACK) continue;
+      const d = distanceOf(at, ringAt[at]!);
+      if (d < least) least = d;
+    }
+  }
+  // The walk as it always was, in the platforms' order (its ties, its water, steps and paving), a ring past the least distance left out: it can neither be the nearest nor tie with it.
+  k = 0;
+  for (const pad of rings) {
+    if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
+    for (let i = 0; i < pad.rings.length; i++, k++) {
+      // The distance to the ring's bounds never exceeds the distance to the ring
+      const lb = bounds[k]!;
       // A paved lot (a car park, a yard), not grass or water.
       const paved = i >= pad.solidCount && !pad.water[i] && pad.paved[i];
-      if (lb > nearest + BOUND_SLACK && !(pad.water[i] && lb < waterDistance + BOUND_SLACK)
+      if (lb > Math.min(nearest, least) + BOUND_SLACK && !(pad.water[i] && lb < waterDistance + BOUND_SLACK)
         && !(pad.stepped && i < pad.solidCount && lb <= apron + BOUND_SLACK)
         && !(paved && lb <= apron + BOUND_SLACK)) continue;
       const ring = pad.rings[i]!;
-      padsWork.rings++;
-      const d = ringDistance(ring, x, y);
+      const d = distanceOf(k, ring);
       // Inside a paved lot, its plate decides, not a lawn whose edge it shares.
       if (d < nearest || (d === 0 && paved && nearest === 0)) { nearest = d; level = padLevelAt(pad.levels[i]!, x, y); owner = pad; solid = i < pad.solidCount; }
       if (pad.water[i] && d < waterDistance) { waterDistance = d; waterLevel = padLevelAt(pad.levels[i]!, x, y); waterOwner = pad; }

@@ -2884,8 +2884,8 @@ export function createSceneRenderer(
       cssHalfW = css.w * 0.5;
       cssHalfH = css.h * 0.5;
       // Plants and street furniture outside the view are not drawn at all.
-      // The layers' shadow margin away from the sun the cascades cast by (the light's own direction, `sunCascades.ts`).
-      setShadowSun(environment.sun.position.x - environment.sun.target.position.x, environment.sun.position.y - environment.sun.target.position.y, environment.sun.position.z - environment.sun.target.position.z);
+      // The layers' shadow margin away from the sun the cascades cast by. DO NOT take the light's position less its target: both move with every fit of the cascades (the ground coming in, the camera), their difference by the last bits, and every layer's every kind was culled again each frame the view stood still.
+      setShadowSun(environment.toSun.x, environment.toSun.y, environment.toSun.z);
       furniture.cull(crowdFrustum, crowdProjection);
       signs.cull(crowdFrustum, crowdProjection);
       barriers.cull(crowdFrustum, crowdProjection);
