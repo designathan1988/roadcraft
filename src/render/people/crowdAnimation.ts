@@ -81,6 +81,76 @@ mat4 ${name}(int row, int bone) {
 }`;
 }
 
+/** The first pass: a texel a column of a bone of a person, its plays blended (GPU Gems 3, ch. 2); a person at rest or with a palette of their own, nothing. */
+export const BLEND_FRAGMENT = /* glsl */`
+  precision highp float;
+  precision highp int;
+  precision highp sampler2D;
+  uniform sampler2D uAtlas;
+  uniform sampler2D uPlays;
+  out highp vec4 outColor;
+  ${atlasBoneGlsl('atlasBone', 'uAtlas')}
+  void main() {
+    ivec2 at = ivec2(gl_FragCoord.xy);
+    int bone = at.x / 4;
+    int column = at.x - bone * 4;
+    int person = at.y;
+    vec4 meta = texelFetch(uPlays, ivec2(PLAYS, person), 0);
+    if (meta.z > 0.5 || meta.y > 0.5) { outColor = vec4(0.0); return; }
+    mat4 m = mat4(0.0);
+    for (int k = 0; k < PLAYS; k++) {
+      vec4 p = texelFetch(uPlays, ivec2(k, person), 0);
+      if (p.z <= 0.0) continue;
+      int r = int(p.x + 0.5);
+      m += p.z * ((1.0 - p.y) * atlasBone(r, bone) + p.y * atlasBone(r + 1, bone));
+    }
+    outColor = m[column];
+  }`;
+
+/** The second pass: each bone's blend read back (`uBlend`), moved to this body's joints by its parents' blends read back too, never blended again. */
+export const REFIT_FRAGMENT = /* glsl */`
+  precision highp float;
+  precision highp int;
+  precision highp sampler2D;
+  uniform sampler2D uPlays;
+  uniform sampler2D uJoints;
+  uniform sampler2D uOverride;
+  uniform sampler2D uBlend;
+  uniform int uParent[BONES];
+  out highp vec4 outColor;
+  mat4 blendedAt(int person, int bone) {
+    return mat4(texelFetch(uBlend, ivec2(bone * 4, person), 0), texelFetch(uBlend, ivec2(bone * 4 + 1, person), 0),
+      texelFetch(uBlend, ivec2(bone * 4 + 2, person), 0), texelFetch(uBlend, ivec2(bone * 4 + 3, person), 0));
+  }
+  mat3 turnAt(int person, int bone) {
+    return mat3(texelFetch(uBlend, ivec2(bone * 4, person), 0).xyz, texelFetch(uBlend, ivec2(bone * 4 + 1, person), 0).xyz,
+      texelFetch(uBlend, ivec2(bone * 4 + 2, person), 0).xyz);
+  }
+  vec3 jointOf(int variant, int bone) { return texelFetch(uJoints, ivec2(bone, variant), 0).xyz; }
+  void main() {
+    ivec2 at = ivec2(gl_FragCoord.xy);
+    int bone = at.x / 4;
+    int column = at.x - bone * 4;
+    int person = at.y;
+    vec4 meta = texelFetch(uPlays, ivec2(PLAYS, person), 0);
+    if (meta.z > 0.5) { outColor = vec4(0.0); return; }
+    if (meta.y > 0.5) { outColor = texelFetch(uOverride, at, 0); return; }
+    int variant = int(meta.x + 0.5);
+    mat4 m = blendedAt(person, bone);
+    // The bone moved to this body's joints (proceduralCrowd.ts refit): its head carried by every parent's turn up to the root.
+    vec3 shift = vec3(0.0);
+    int cur = bone;
+    for (int s = 0; s < MAX_DEPTH; s++) {
+      int p = uParent[cur];
+      if (p < 0) break;
+      shift += turnAt(person, p) * (jointOf(variant, cur) - jointOf(variant, p));
+      cur = p;
+    }
+    shift += jointOf(variant, cur);
+    m[3].xyz += shift - mat3(m) * jointOf(variant, bone);
+    outColor = m[column];
+  }`;
+
 /** One play of a person in the palette pass: an atlas row, the fraction to the next row, its weight. */
 interface PalettePlay {
   readonly row: number;
@@ -123,81 +193,41 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
   let override = new Float32Array(width * 4 * rows);
   let overrideTexture = rowsTexture(override, width, rows);
   let target = makeTarget(width, rows);
+  /** Each bone's plays blended, before the refit (`BLEND_FRAGMENT`): the refit reads a parent's turn here instead of blending it again. */
+  let blendTarget = makeTarget(width, rows);
   /** Rows of plays written since the last upload; past a few, the whole (small) texture goes up at once. */
   const dirty = new Set<number>();
   let dirtyAll = false;
   const overrideRows = new Set<number>();
 
-  const material = new ShaderMaterial({
-    glslVersion: GLSL3,
-    defines: { BONES: bones, MAX_DEPTH: Math.max(1, depth), PLAYS },
-    uniforms: {
-      uAtlas: { value: anim.atlas },
-      uPlays: { value: playTexture },
-      uJoints: { value: joints() },
-      uOverride: { value: overrideTexture },
-      uParent: { value: Array.from(parent) },
-    },
+  const uniforms = {
+    uAtlas: { value: anim.atlas },
+    uPlays: { value: playTexture },
+    uJoints: { value: joints() },
+    uOverride: { value: overrideTexture },
+    uParent: { value: Array.from(parent) },
+    uBlend: { value: blendTarget.texture },
+  };
+  const defines = { BONES: bones, MAX_DEPTH: Math.max(1, depth), PLAYS };
+  const pass = (fragmentShader: string): ShaderMaterial => new ShaderMaterial({
+    glslVersion: GLSL3, defines, uniforms, fragmentShader, blending: NoBlending, depthTest: false, depthWrite: false,
     vertexShader: /* glsl */`
       void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`,
-    fragmentShader: /* glsl */`
-      precision highp float;
-      precision highp int;
-      precision highp sampler2D;
-      uniform sampler2D uAtlas;
-      uniform sampler2D uPlays;
-      uniform sampler2D uJoints;
-      uniform sampler2D uOverride;
-      uniform int uParent[BONES];
-      out highp vec4 outColor;
-      ${atlasBoneGlsl('atlasBone', 'uAtlas')}
-      mat4 blended(int person, int bone) {
-        mat4 m = mat4(0.0);
-        for (int k = 0; k < PLAYS; k++) {
-          vec4 p = texelFetch(uPlays, ivec2(k, person), 0);
-          if (p.z <= 0.0) continue;
-          int r = int(p.x + 0.5);
-          m += p.z * ((1.0 - p.y) * atlasBone(r, bone) + p.y * atlasBone(r + 1, bone));
-        }
-        return m;
-      }
-      vec3 jointOf(int variant, int bone) { return texelFetch(uJoints, ivec2(bone, variant), 0).xyz; }
-      void main() {
-        ivec2 at = ivec2(gl_FragCoord.xy);
-        int bone = at.x / 4;
-        int column = at.x - bone * 4;
-        int person = at.y;
-        vec4 meta = texelFetch(uPlays, ivec2(${PLAYS}, person), 0);
-        if (meta.z > 0.5) { outColor = vec4(0.0); return; }
-        if (meta.y > 0.5) { outColor = texelFetch(uOverride, at, 0); return; }
-        int variant = int(meta.x + 0.5);
-        mat4 m = blended(person, bone);
-        // The bone moved to this body's joints (proceduralCrowd.ts refit): its head carried by every parent's turn up to the root.
-        vec3 shift = vec3(0.0);
-        int cur = bone;
-        for (int s = 0; s < MAX_DEPTH; s++) {
-          int p = uParent[cur];
-          if (p < 0) break;
-          shift += mat3(blended(person, p)) * (jointOf(variant, cur) - jointOf(variant, p));
-          cur = p;
-        }
-        shift += jointOf(variant, cur);
-        m[3].xyz += shift - mat3(m) * jointOf(variant, bone);
-        outColor = m[column];
-      }`,
-    blending: NoBlending,
-    depthTest: false,
-    depthWrite: false,
   });
+  // Two passes: each bone's plays blended once a person, then each bone refitted from its parents' blends read back.
+  const blend = pass(BLEND_FRAGMENT);
+  const refit = pass(REFIT_FRAGMENT);
   const quad = new BufferGeometry();
   quad.setAttribute('position', new Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
-  const mesh = new Mesh(quad, material);
-  mesh.frustumCulled = false;
-  const scene = new Scene();
-  scene.add(mesh);
+  const sceneOf = (material: ShaderMaterial): Scene => {
+    const mesh = new Mesh(quad, material);
+    mesh.frustumCulled = false;
+    return new Scene().add(mesh);
+  };
+  const blendScene = sceneOf(blend), refitScene = sceneOf(refit);
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  // DO NOT build it at its first draw: a loop over every bone's parents, a second and more in the frame where the first person of a class came (2026-10-16).
-  const ready = compilePassAhead(scene, camera, target);
+  // DO NOT build them at their first draw: a loop over every bone's parents, a second and more in the frame where the first person of a class came (2026-10-16).
+  const ready = Promise.all([compilePassAhead(blendScene, camera, blendTarget), compilePassAhead(refitScene, camera, target)]).then(() => {});
 
   return {
     ready,
@@ -230,7 +260,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
     render(renderer, used) {
       const n = Math.min(rows, Math.max(0, used));
       if (n === 0) return;
-      material.uniforms['uJoints']!.value = joints();
+      uniforms.uJoints.value = joints();
       if (dirtyAll || dirty.size) {
         // Each update range is one row of the image in three (WebGLTextures.js)
         playTexture.clearUpdateRanges();
@@ -248,9 +278,12 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       const previous = renderer.getRenderTarget();
       const autoClear = renderer.autoClear;
       renderer.autoClear = false;
+      blendTarget.viewport.set(0, 0, width, n);
+      renderer.setRenderTarget(blendTarget);
+      renderer.render(blendScene, camera);
       target.viewport.set(0, 0, width, n);
       renderer.setRenderTarget(target);
-      renderer.render(scene, camera);
+      renderer.render(refitScene, camera);
       renderer.setRenderTarget(previous);
       renderer.autoClear = autoClear;
     },
@@ -268,16 +301,21 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       overrideTexture = rowsTexture(override, width, capacity);
       target.dispose();
       target = makeTarget(width, capacity);
-      material.uniforms['uPlays']!.value = playTexture;
-      material.uniforms['uOverride']!.value = overrideTexture;
+      blendTarget.dispose();
+      blendTarget = makeTarget(width, capacity);
+      uniforms.uPlays.value = playTexture;
+      uniforms.uOverride.value = overrideTexture;
+      uniforms.uBlend.value = blendTarget.texture;
       rows = capacity;
       dirtyAll = true;
     },
     dispose() {
       target.dispose();
+      blendTarget.dispose();
       playTexture.dispose();
       overrideTexture.dispose();
-      material.dispose();
+      blend.dispose();
+      refit.dispose();
       quad.dispose();
     },
   };
