@@ -258,6 +258,9 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
   /** The x spans kept clear in front of the people's gates (`put`), filled once the door is known. */
   const gateWays: { x0: number; x1: number }[] = [];
   const probe = (): Building => ({ ...body, id: 0, x: 0, y: 0, rotation: 0 } as Building);
+  /** The part every candidate is written into (`fits`): never laid, never kept. */
+  const candidate: { id: number; kind: ElementKind; x: number; y: number; facing: Side; w: number; d: number; z: number; h: number; material: MaterialSpec | undefined } =
+    { id: 0, kind: 'shrub', x: 0, y: 0, facing: 0, w: 0, d: 0, z: 0, h: 0, material: undefined };
   /** Each part's reach (`planReach`), worked out once: DO NOT ask `elementsMeet` of two parts its own first test sets apart, the part against every other of the lot for each one laid. */
   const reaches = new WeakMap<BuildingElement, number>();
   const reachOf = (e: BuildingElement): number => {
@@ -299,15 +302,25 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       if (elements.length >= MAX_ELEMENTS - (boundary ? 2 : BOUNDARY_RESERVE) || w < 0.1 || d < 0.1 || h < 0.1) return false;
       // Only the boundary's own runs and the gates may stand at the drive's edge
       if (!(laying || kind === 'gate') && z < 2 && !FLAT_KINDS.has(kind)) {
-        const [hw, hd] = facing === 1 || facing === 3 ? [d / 2, w / 2] : [w / 2, d / 2];
-        if (keepClear.some((r) => x + hw > r.x0 && x - hw < r.x1 && y + hd > r.y0 && y - hd < r.y1)) return false;
+        const across = facing === 1 || facing === 3;
+        const hw = across ? d / 2 : w / 2, hd = across ? w / 2 : d / 2;
+        for (const r of keepClear) if (x + hw > r.x0 && x - hw < r.x1 && y + hd > r.y0 && y - hd < r.y1) return false;
         // The way from a people's gate to the door: nothing in the opening and half a metre either side, across the front
-        if (y - hd < Math.max(F, 1) && gateWays.some((g) => x + hw > g.x0 && x - hw < g.x1)) return false;
+        if (y - hd < Math.max(F, 1)) for (const g of gateWays) if (x + hw > g.x0 && x - hw < g.x1) return false;
       }
-      const el: BuildingElement = { id: nextElement, kind, x: X(x), y: Y(y), facing, w: m(Math.min(w, 40)), d: m(d), z: m(z), h: m(h) };
-      if (elementClash(probe(), el)) return false;
+      // The candidate written into the one part this lot tests with (`candidate`): DO NOT make a part a candidate.
+      const c = candidate;
+      c.id = nextElement; c.kind = kind; c.x = X(x); c.y = Y(y); c.facing = facing; c.w = m(Math.min(w, 40)); c.d = m(d); c.z = m(z); c.h = m(h); c.material = material;
+      // Read as a part: an absent material and an undefined one read alike (`isStructure`, `elementsMeet`).
+      const el = c as unknown as BuildingElement;
+      // What `elementClash` reads of the building (its blocks and storeys) is the body's own.
+      if (elementClash(body as unknown as Building, el)) return false;
       // Nothing solid in another's footprint
-      return laying || isStructure(material ? { ...el, material } : el) || !elements.some((o) => near(el, o) && elementsMeet(el, o));
+      if (laying || isStructure(el)) return true;
+      // Its reach worked out here, not kept: the candidate is written again for the next.
+      const reach = planReach(el);
+      for (const o of elements) if (!(Math.hypot(o.x - el.x, o.y - el.y) > reach + reachOf(o)) && elementsMeet(el, o)) return false;
+      return true;
     },
     put(kind, x, y, facing, w, d, h, z = 0, material) {
       if (!lot.fits(kind, x, y, facing, w, d, h, z, material)) return false;
