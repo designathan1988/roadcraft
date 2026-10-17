@@ -52,4 +52,12 @@ describe('facade props', () => {
     const most = Math.max(0, ...[...new Set(furnished)].map((a) => furnished.filter((b) => b === a).length));
     expect(most).toBeLessThanOrEqual(4);
   });
+
+  it('makes nothing for a bay that takes no prop: a wall, a door, a ground floor', () => {
+    const none = facadeProps('wall', 3, 'residential', 0.1, 12345, m(3), opening);
+    expect(none).toHaveLength(0);
+    // One empty list for all of them, not a list and its pickers a bay.
+    expect(facadeProps('door', 2, 'residential', 0.1, 7, m(3), opening)).toBe(none);
+    expect(facadeProps('window', 0, 'residential', 0.1, 7, m(3), opening)).toBe(none);
+  });
 });
