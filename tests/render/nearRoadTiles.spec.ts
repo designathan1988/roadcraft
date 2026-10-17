@@ -168,7 +168,7 @@ describe("a tile's near roads baked in a worker", () => {
     const want = baked(plain), got = baked(taken);
     expect([...got.keys()].sort()).toEqual([...want.keys()].sort());
     for (const [name, list] of want) expect(got.get(name), name).toEqual(list);
-  }, 20_000);
+  });
 
   it("are the same on hilly ground: the heights solved from the tile and its fringe are the region's there", () => {
     const ground: SharedGroundData = { n: 2, cell: 1, half: 0.5, base: 0, relief: RELIEF_NATURAL, plates: new Map() };

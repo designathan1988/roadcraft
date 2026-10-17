@@ -5,7 +5,7 @@ import type { TileRecords } from '@world/doc';
 import { emptyRecords } from '@render/buildings/farGrid';
 import type { NearKind, NearTileJob, NearTileReply } from '@render/nearTileBake';
 import { NearGate, type NearLanded, type NearProduct, NearTiles, nearPriority } from '@render/nearTiles';
-import { EDIT_TIER, NEAR_TIER, TIER_SPAN, cellPriority } from '@render/buildings/cellPool';
+import { EDIT_TIER, TIER_SPAN, cellPriority } from '@render/buildings/cellPool';
 
 /** THE NEAR PRODUCTS' CHOICE OF TILES (`nearTiles.ts`): by the view, the bake drawn standing until the next one lands */
 
@@ -62,13 +62,16 @@ describe('the near products chosen by tile', () => {
     expect(sent).not.toContain('9,0');
   });
 
-  it('waits in the queue behind every cell, mass and road near level, whatever the distances, and goes before them only for an edit of what it reads', () => {
-    // The queue's rank: the band plus the distance to the view's focus (`jobPool.ts` rankOf); the farthest a map can put two jobs apart.
-    const far = m(100_000);
+  it('waits in the queue as a cell\'s detail does, nearest first with the cells, put back with them behind the curtain, and goes before everything for an edit of what it reads', () => {
+    // The queue's rank: the band plus the distance to the view's focus (`jobPool.ts` rankOf).
+    const far = m(2000);
     const product = nearPriority({}), edit = nearPriority({ edited: true });
-    for (const kind of ['cell', 'facade', 'mass', 'massTile', 'massPlate'] as const) expect(product).toBeGreaterThan(cellPriority(kind, far, false, false));
-    // The roads' near level of a tile 100 km away still comes before a near product at the camera.
-    expect(product).toBeGreaterThan(NEAR_TIER * TIER_SPAN + far);
+    expect(product).toBe(cellPriority('cell', 0, false, false));
+    // The camera's tile before a cell, a facade or a mass 2 km away (it waited behind them all after a reload, conferencia 99-100).
+    for (const kind of ['cell', 'facade', 'mass', 'massTile', 'massPlate'] as const) expect(product).toBeLessThan(cellPriority(kind, far, false, false));
+    // Behind the curtain, put back past the masses with the cells' detail.
+    expect(nearPriority({}, true)).toBe(cellPriority('cell', 0, false, true));
+    expect(nearPriority({}, true)).toBeGreaterThan(cellPriority('massPlate', far, false, true));
     expect(edit).toBe(EDIT_TIER * TIER_SPAN);
     expect(edit + far).toBeLessThan(cellPriority('cell', 0, false, false));
   });

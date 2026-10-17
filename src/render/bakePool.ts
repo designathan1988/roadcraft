@@ -1,4 +1,4 @@
-import { jobPort } from '../jobs/jobPool';
+import { hasLanes, laneOf } from './pagePorts';
 import { Matrix4, type Object3D } from 'three';
 
 import { type ClipFrames, type RigNode, type ShuffleFacts, rigData } from './citizenBake';
@@ -16,7 +16,8 @@ import type { PersonSpec } from '@people/spec';
 
 const SIZE = Math.max(1, Math.min(6, (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4) - 1));
 
-const usable = typeof Worker !== 'undefined';
+/** Whether the page gave the bake service's lanes (`pagePorts.ts`): none, every bake runs where it is asked. */
+const usable = (): boolean => typeof Worker !== 'undefined' && hasLanes('citizenBake');
 let releaseRequested = false;
 const idle: Worker[] = [];
 /** A job: its message and what it moves, and its answer (null: failed, the asker does it another way). */
@@ -52,7 +53,7 @@ function finished(worker: Worker, reply: BakeReply | null): void {
 }
 
 function createWorker(): Worker {
-  const worker = jobPort('citizenBake');
+  const worker = laneOf('citizenBake')!;
   worker.onmessage = (e: MessageEvent<BakeReply>) => {
     if (e.data.error !== undefined) {
       console.error('Citizen bake worker failed', e.data.error);
@@ -125,7 +126,7 @@ function dispatch(): void {
 /** A job queued for the next free worker; null at once where no worker can run it. */
 function run(message: object, transfer: Transferable[] = [], people = false): Promise<BakeReply | null> {
   releaseRequested = false;
-  if (!usable) return Promise.resolve(null);
+  if (!usable()) return Promise.resolve(null);
   return new Promise((answer) => {
     queue.push({ message, transfer, answer, people });
     dispatch();
@@ -138,7 +139,7 @@ const clipsOf = (clips: readonly (BakedClip | null)[]): (ClipFrames | undefined)
 
 /** The core clips of the body whose rig is `scene`, baked in a worker; null when no worker can */
 export async function bakeInWorker(scene: Object3D, sex: WalkSex): Promise<(ClipFrames | undefined)[] | null> {
-  if (!usable) return null;
+  if (!usable()) return null;
   const { nodes, transfer } = rigData(scene);
   const reply = await run({ nodes, sex }, transfer);
   return reply?.clips ? clipsOf(reply.clips) : null;

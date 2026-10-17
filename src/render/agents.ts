@@ -60,6 +60,15 @@ import { NIGHT_LUMINANCE, nightGain } from './lightLevels';
 import { DOOR_SWING, createKerbFigure, kerbFigure, occupantPlays, type Play } from './occupants';
 import { blobInto, blobMesh } from './blobShadows';
 import { LEVELS, levelFor, partLevels, type Weld } from './vehicleLevels';
+import { jobPort } from '../jobs/jobPool';
+import { provideLanes } from './pagePorts';
+import { lodPool } from './people/lodPool';
+import { providePeopleLod } from './people/lodPort';
+
+// The page that draws people and vehicles hands their bakes, garments and levels' simplifier the job system's lanes (`pagePorts.ts`, `lodPort.ts`): the cooked bodies' code imports neither.
+provideLanes('citizenBake', () => jobPort('citizenBake'));
+provideLanes('garmentPadding', () => jobPort('garmentPadding'));
+providePeopleLod(lodPool);
 
 /** Vehicles and riders use the original instanced batches. */
 

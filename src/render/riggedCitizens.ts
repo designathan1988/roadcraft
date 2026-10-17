@@ -17,8 +17,6 @@ import { cancelUploads, compileAhead, shadowStandIn, warmAhead } from './uploads
 import { bakeDeferredInWorker, bakeInWorker, bakeRig, buildPersonInWorker, releaseIdleBakeWorkers } from './bakePool';
 import { assemblePerson, cookPerson } from './people/cookedPerson';
 import { buildPersonScene } from './people/personBuild';
-import { lodPool } from './people/lodPool';
-import { providePeopleLod } from './people/lodPort';
 import { loadCookedPerson, peopleCookHash } from './people/cookedLoad';
 import { HELD, createHeldProps } from './people/heldProps';
 import { applyFace, faceAt, type FaceWeights } from './people/faceExpression';
@@ -38,8 +36,6 @@ import { measureHitch } from '@core/hitch';
 
 export type { CitizenClipKey } from './citizenBake';
 export { CROWD_IDS } from './citizenCasting';
-// The bodies built on this page simplify their levels in the page's pool (`lodPort.ts`).
-providePeopleLod(lodPool);
 const CAPACITY = 1000;
 /** Instances a level's mesh starts with; it doubles with the figures drawn at that level (`growLevel`), up to `CAPACITY`. */
 const LEVEL_START = 16;
