@@ -401,7 +401,18 @@ export function createSceneRenderer(
 ): SceneHandle {
   /** Something landed or asked for a frame since the last shadow pass: the casters kept still in the sun's stores may have changed (`ShadowPassInput.still`). */
   let castersStirred = true;
-  const onAssetsReady = (): void => { castersStirred = true; askDraw(); };
+  // TEMPORARY (DEV only, to be taken out): each shadow pass's stillness and what broke it (`window.__stillLog`).
+  const stillLog: { at: number; view: boolean; scale: boolean; stirred: boolean; by: string[] }[] = [];
+  if (import.meta.env.DEV) Object.assign(window, { __stillLog: stillLog });
+  // TEMPORARY (DEV only, to be taken out): what stirred the casters this frame, for `window.__stillLog`.
+  const stirredBy = new Map<string, number>();
+  const stir = (by: () => string): void => {
+    castersStirred = true;
+    if (!import.meta.env.DEV) return;
+    const key = by();
+    stirredBy.set(key, (stirredBy.get(key) ?? 0) + 1);
+  };
+  const onAssetsReady = (): void => { stir(() => `assets ${new Error().stack?.split(String.fromCharCode(10))[2]?.trim().slice(0, 90) ?? ''}`); askDraw(); };
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
   onEcologyRead(onAssetsReady);
   /** The shadow map is drawn only when it can have changed. */
@@ -488,8 +499,8 @@ export function createSceneRenderer(
   };
   // What comes into the scene or leaves it changes what casts: the sun's stores are not used for that frame (`castersStirred`).
   // And through the one door into the drawn scene: held off the drawn layers until its programs are built (`uploads.ts` gateUntilBuilt).
-  const onChildAdded = (event: { child: Object3D }): void => { castersStirred = true; watchShadowDepth(event.child); gateUntilBuilt(event.child); };
-  const onChildRemoved = (event: { child: Object3D }): void => { castersStirred = true; event.child.traverse((o) => noteSway(o, false)); };
+  const onChildAdded = (event: { child: Object3D; target?: Object3D }): void => { stir(() => `added to ${event.target?.name || '?'}: ${event.child.name || event.child.type}`); watchShadowDepth(event.child); gateUntilBuilt(event.child); };
+  const onChildRemoved = (event: { child: Object3D; target?: Object3D }): void => { stir(() => `removed from ${event.target?.name || '?'}: ${event.child.name || event.child.type}`); event.child.traverse((o) => noteSway(o, false)); };
   /** What the wind sways in the shadow (`wind.ts` markSway on its depth material: trees, grass, impostors, scenery; flags, wires and signal posts cast at rest), mesh by mesh: a mover of the sun's cascades (`sunCascades.ts`), drawn over their store of what stands still. */
   const swayMeshes = new Set<Object3D>();
   let swayList: Object3D[] = [];
@@ -3090,6 +3101,11 @@ export function createSceneRenderer(
         const scaleStill = shadowScale === buildings.frame.scale;
         shadowScale = buildings.frame.scale;
         const still = viewStill && scaleStill && !castersStirred;
+        if (import.meta.env.DEV) {
+          stillLog.push({ at: Math.round(performance.now()), view: viewStill, scale: scaleStill, stirred: castersStirred, by: [...stirredBy].map(([k, n]) => `${n}x ${k}`).slice(0, 6) });
+          if (stillLog.length > 4000) stillLog.splice(0, 1000);
+          stirredBy.clear();
+        }
         castersStirred = false;
         if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), still })) {
           renderer.shadowMap.needsUpdate = true;

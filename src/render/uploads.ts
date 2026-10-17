@@ -144,7 +144,7 @@ export function compileCopy(object: Object3D): Object3D {
 }
 
 /** Every compile asked for and not settled, and since when (`performance.now`). DO NOT settle one after a count of frames: the door opened on a program still linking, its first draw waited for the link in the frame (three's onFirstUse, getProgramInfoLog: 716 ms of the conferencia 110 move). It settles when three says its programs are ready (linked, or failed: the error said by onShaderError at the first draw, as ever), when a material of it is disposed (its programs never come, nothing of it is drawn), or past `COMPILE_GIVE_UP_MS`, said. */
-const inFlight = new Set<{ readonly since: number; settle: () => void }>();
+const inFlight = new Set<{ readonly since: number; readonly what: string; settle: () => void }>();
 /** A driver that never says a program is built: given up on and said, never a mesh held for ever (a slow driver shows in the opening's time, `programsReady`). */
 const COMPILE_GIVE_UP_MS = 10_000;
 /** `done` once, however many times it is called, and taken off `inFlight`; settled too when a material of `object` is disposed. */
@@ -154,7 +154,9 @@ function once(done: () => void, object: Object3D): () => void {
     const m = (o as Mesh).material;
     if (m) for (const x of Array.isArray(m) ? m : [m]) materials.add(x);
   });
-  const entry = { since: performance.now(), settle: () => {} };
+  // What it is, said if it is given up on: the object and its materials, by name or type.
+  const what = `${object.name || object.type} [${[...materials].map((m) => m.name || m.type).slice(0, 4).join(', ')}]`;
+  const entry = { since: performance.now(), what, settle: () => {} };
   entry.settle = () => {
     if (!inFlight.delete(entry)) return;
     for (const m of materials) m.removeEventListener('dispose', entry.settle);
@@ -196,7 +198,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   const now = performance.now();
   for (const entry of [...inFlight]) {
     if (now - entry.since <= COMPILE_GIVE_UP_MS) continue;
-    console.warn('[uploads] a program was not built in', COMPILE_GIVE_UP_MS, 'ms: drawn as it is');
+    console.warn('[uploads] a program was not built in', COMPILE_GIVE_UP_MS, 'ms: drawn as it is:', entry.what, `(${inFlight.size} compiles in flight)`);
     entry.settle();
   }
   if (!toCompile.length) return;
