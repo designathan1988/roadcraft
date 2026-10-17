@@ -71,3 +71,6 @@ export function partOf(blob: Blob, read: HeadRead, name: string): { readonly kin
   const [, kind, offset, size] = found;
   return { kind, data: blob.slice(read.body + offset, read.body + offset + size) };
 }
+
+/** A tile's blob's key in the store. */
+export const tileBlobKey = (map: string, key: number): string => `${map}:T:${key}`;
