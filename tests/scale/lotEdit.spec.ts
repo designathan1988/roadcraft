@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '@core/vec2';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
-import { applyLots } from '@world/lots';
+import { applyLots, planLots } from '@world/lots';
 import { m } from '@world/units';
 import { LotTool, type LotSplitKind, type ZoneMode } from '@editor/lotTool';
 
@@ -46,6 +46,7 @@ function gestureReads(n: number): Record<string, number> {
       mutate: (fn) => { fn(); },
       hint: () => {},
       redraw: () => {},
+      plan: async () => planLots(doc, net),
     });
     prepare(tool);
     reads.count = 0;

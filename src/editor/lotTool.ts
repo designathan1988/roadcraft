@@ -4,7 +4,7 @@ import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import {
   addPolygonLot, applyLots, curveLotSide, cutLines, deleteLot, insideLot, joinLots, lotCentre, lotFrame, lotRect, lotSnapper,
-  moveLotCorner, onLand, planLots, setLotFront, splitLot, zoneLots, type Lot,
+  moveLotCorner, onLand, setLotFront, splitLot, zoneLots, type Lot, type LotPlan,
 } from '@world/lots';
 import { LotStore, lotBox } from '@world/lotStore';
 import { CellFiling } from '@world/cells';
@@ -40,6 +40,8 @@ export interface LotToolHost {
   mutate(fn: () => boolean): void;
   hint(key: string): void;
   redraw(): void;
+  /** The proposed lots for the land as it is now, planned off the page (the simulation's worker, `SimClient.lotPlan`); null: not now, asked again. */
+  plan(): Promise<LotPlan | null>;
 }
 
 /** What the scene draws of the lots, a group at a time (the shape of `render/lotOverlay.ts` `LotOverlayShapes`), and the labels. */
@@ -196,7 +198,7 @@ export class LotTool {
   /** Every gesture dropped without committing it. */
   cancel(): void {
     // A stroke already let go is the player's: made now, not dropped.
-    if (this.waiting) this.advanceProposal();
+    if (this.waiting) void this.advanceProposal();
     this.polygon = [];
     this.drawn = null;
     this.corner = null;
@@ -229,19 +231,35 @@ export class LotTool {
     return this.proposalStamp;
   }
 
-  /** The proposal brought up to the land as it is, worked out at once when what it stands on changed: the planner plans again only the blocks and streets the diaries say changed (`LotPlanner`), DO NOT spread it over frames (a budget a frame only held it back a frame). */
-  advanceProposal(): void {
+  /** The plan asked for and its key, until it is answered. */
+  private asking: { readonly key: number; readonly done: Promise<void> } | null = null;
+
+  /** The proposal brought up to the land as it is: when what it stands on changed, the plan asked of the host (planned in the simulation's worker, incrementally: DO NOT plan it on the page, the first plan of a region floods its land for long) and the last plan shown until it comes; the stroke waiting on it made once a plan for the land as it is now is in. Resolves when the plan asked for is in. */
+  advanceProposal(): Promise<void> {
     const key = this.proposalKey();
-    if (!this.proposal || this.proposal.key !== key) {
-      const plan = planLots(this.doc, this.net);
-      this.proposal = { key, lots: plan.add.map((c) => c.corners), keys: plan.keys, keyRects: plan.keyRects ?? [] };
-    }
-    if (this.waiting) {
-      const { stroke, use, density } = this.waiting;
-      this.waiting = null;
-      this.readPending(stroke);
-      this.commitStroke(stroke, use, density);
-    }
+    if (this.proposal?.key === key) { this.takeWaiting(); return Promise.resolve(); }
+    if (this.asking?.key === key) return this.asking.done;
+    const done = this.host.plan().then((plan) => {
+      if (this.asking?.key === key) this.asking = null;
+      // Not now (the worker reading a tile): asked again at the next frame.
+      if (plan) this.proposal = { key, lots: plan.add.map((c) => c.corners), keys: plan.keys, keyRects: plan.keyRects ?? [] };
+      this.host.redraw();
+      if (plan && key === this.proposalKey()) this.takeWaiting();
+    }, (error: unknown) => {
+      if (this.asking?.key === key) this.asking = null;
+      console.warn('[lots] the proposed lots could not be planned', error);
+    });
+    this.asking = { key, done };
+    return done;
+  }
+
+  /** The stroke let go before the proposal was in, made now with it. */
+  private takeWaiting(): void {
+    if (!this.waiting) return;
+    const { stroke, use, density } = this.waiting;
+    this.waiting = null;
+    this.readPending(stroke);
+    this.commitStroke(stroke, use, density);
   }
 
   /** The proposed lot under a point (its index), or -1; only once worked out for the land as it is now. */
@@ -527,9 +545,9 @@ export class LotTool {
       this.stroke = null;
       this.readPending(stroke);
       if (commit && stroke.pending.length) {
-        // The street land it passed is still being worked out: finished now, at once, and the stroke made
+        // The street land it passed is still being worked out: the stroke made as soon as it is in
         this.waiting = { stroke, use: settings.use, density: settings.density };
-        this.advanceProposal();
+        void this.advanceProposal();
         if (this.waiting) host.hint('hint.zone.pending');
       } else if (commit) this.commitStroke(stroke, settings.use, settings.density);
       host.redraw();
@@ -603,7 +621,7 @@ export class LotTool {
     const gesture = this.polygon.length > 0 || this.drawn !== null || this.cutLine !== null || this.curve !== null;
     // A faint hint, not the tool: held while a city grows lot by lot
     if (!editing && !gesture && this.held && this.drawnWith?.editing === false) return this.book;
-    if (editing) this.advanceProposal();
+    if (editing) void this.advanceProposal();
     const settings = this.host.settings();
     const hoverLot = editing && this.hover ? this.lotAt(this.hover) : undefined;
     const decor: LotDecor = { editing, mode: settings.mode, use: settings.use, eraser: settings.eraser, hover: hoverLot?.id ?? -1, joinFirst: this.joinFirst ?? -1 };
@@ -724,7 +742,8 @@ export class LotTool {
   /** The street land proposed as lots, in every mode of the tool (they vanished from the Lots modes): faint outlines, one group each */
   private refreshProposal(d: LotDecor, hoverLot: Lot | undefined): void {
     const prop = this.proposal;
-    const lots: readonly (readonly Vec2[])[] = d.editing && prop && prop.key === this.proposalKey() ? prop.lots : NO_PROPOSAL;
+    // The last plan drawn until the next is in (DO NOT leave the street land bare while the worker plans): only one for the land as it is now is picked or laid.
+    const lots: readonly (readonly Vec2[])[] = d.editing && prop ? prop.lots : NO_PROPOSAL;
     const hoverAt = d.editing && this.hover && !hoverLot && d.mode === 'brush' ? this.proposedAt(this.hover) : -1;
     const fresh = this.stroke?.fresh;
     const stateOf = (k: number): number => (fresh?.has(k) ? 1 : 0) | (k === hoverAt ? 2 : 0);

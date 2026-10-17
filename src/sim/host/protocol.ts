@@ -106,7 +106,9 @@ export type ToSim =
   /** The micro window's centre and radius (`meso/meso.ts`), and the page's buffer the meso traffic is written into (`meso/memory.ts`). */
   | { readonly type: 'window'; readonly x: number; readonly y: number; readonly r: number; readonly meso: SharedArrayBuffer }
   | { readonly type: 'act'; readonly id: number; readonly act: SimAct }
-  | { readonly type: 'ask'; readonly id: number; readonly ask: SimAsk };
+  | { readonly type: 'ask'; readonly id: number; readonly ask: SimAsk }
+  /** The zoning tool's proposed lots planned on the worker's copy of the region (`SimHost.lotPlan`), answered with `answer`: a `LotPlan`, or null when not now. */
+  | { readonly type: 'lotPlan'; readonly id: number };
 
 /** What the player sets of the simulation, sent each frame (a few numbers). */
 export interface SimControls {
