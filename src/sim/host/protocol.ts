@@ -178,5 +178,6 @@ export interface SimStats {
   readonly issues: readonly { readonly code: string; readonly subject: string; readonly detail: string; readonly tick: number }[];
   readonly populationShare: number;
   readonly stepMs: number;
+  /** Left empty: the worker keeps the zones it measured itself (`SimHost.stats`); `main.ts` zonesDue reads it until it goes. */
   readonly measured: readonly (readonly [string, Float64Array | null])[];
 }
