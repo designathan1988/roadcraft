@@ -116,6 +116,8 @@ export interface FarNear<P> {
   baseOf(payload: P): string | null;
   /** What else it is baked from that the page may change (the roads' paint style): in its version. */
   version?(): string;
+  /** A tile the page holds edited, cut to what the near level reads, and the digest of that: the version an edited tile is asked at, so an edit of what it does not read (a building grown, a tree) asks nothing. */
+  pageCut?(records: TileRecords): { readonly records: TileRecords; readonly digest: string };
   /** Whether it draws the tiles the page's document holds too (the roads: one way for every tile; the buildings' cells draw theirs). */
   readonly drawsLoaded?: boolean;
 }
@@ -530,33 +532,48 @@ export class FarTree<P> implements FarTiles {
     return this.kind.near!.fineError * this.seen.perMetre < this.seen.allowed * (full ? HYSTERESIS : 1) ? 'coarse' : 'full';
   }
 
-  /** The tile and its neighbours stored, at their versions (the tile first): what its near level reads; a tile the page holds edited, at its edit (`FarTileSource.pageEdit`). */
-  private nearTiles(n: FarNode): { key: number; version: number; edit: number }[] {
-    const edit = (key: number): number => this.source?.pageEdit?.(key) ?? 0;
-    const out = [{ key: tileKey(n.i, n.j), version: n.version, edit: edit(tileKey(n.i, n.j)) }];
+  /** The tile and its neighbours stored, at their versions (the tile first): what its near level reads; a tile the page holds edited, at the digest of what the near level reads of it (`pageCutOf`). */
+  private nearTiles(n: FarNode): { key: number; version: number; cut: { readonly records: TileRecords; readonly digest: string } | null }[] {
+    const out = [{ key: tileKey(n.i, n.j), version: n.version, cut: this.pageCutOf(tileKey(n.i, n.j)) }];
     for (let dj = -1; dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         if (di === 0 && dj === 0) continue;
         const key = tileKey(n.i + di, n.j + dj);
         const leaf = this.leaves.get(key);
-        if (leaf) out.push({ key, version: leaf.version, edit: edit(key) });
+        if (leaf) out.push({ key, version: leaf.version, cut: this.pageCutOf(key) });
       }
     }
     return out;
   }
 
+  /** Each edited tile's records as the near level reads them, by the edit they are of: DO NOT read the page's document again for every neighbour that reads the tile, nor for every frame (`tileMembers` walks the region's document). */
+  private readonly pageCuts = new Map<number, { readonly edit: number; readonly cut: { readonly records: TileRecords; readonly digest: string } | null }>();
+
+  /** A tile the page holds edited (`FarTileSource.pageEdit`), cut to what the near level reads and digested, once an edit; null for one the store holds as the page has it. */
+  private pageCutOf(key: number): { readonly records: TileRecords; readonly digest: string } | null {
+    const edit = this.source?.pageEdit?.(key) ?? 0;
+    if (!edit || !this.source?.pageRecords) { this.pageCuts.delete(key); return null; }
+    const known = this.pageCuts.get(key);
+    if (known && known.edit === edit) return known.cut;
+    const records = this.source.pageRecords(key);
+    const cut = records ? (this.kind.near!.pageCut ? this.kind.near!.pageCut(records) : { records, digest: `e${edit}` }) : null;
+    this.pageCuts.set(key, { edit, cut });
+    return cut;
+  }
+
   /** A tile's near level asked of the workers at the versions of the tiles it reads and at the level the view wants; once. */
   private askNear(n: FarNode): void {
     const tiles = this.nearTiles(n);
-    const bake = `${nearSig(tiles.map((t) => ({ key: t.key, version: t.edit ? `${t.version}+${t.edit}` : t.version })))}:${this.kind.near!.version?.() ?? ''}`;
+    // An edited tile at what the near level reads of it: a building grown or a tree planted asks nothing (each was every tile round it baked again, 2026-10-17).
+    const bake = `${nearSig(tiles.map((t) => ({ key: t.key, version: t.cut ? `p${t.cut.digest}` : t.version })))}:${this.kind.near!.version?.() ?? ''}`;
     const variant = this.nearVariant(n);
     const sig = `${bake}:${variant}`;
     if (n.nearLanded === sig || n.nearAsked === sig || n.nearFailed === sig) return;
     n.nearCancel?.();
     n.nearAsked = sig;
     // The edited tiles as the page holds them: drawn from the edit, not from its write.
-    const edited = tiles.some((t) => t.edit) && this.source?.pageRecords ? tiles.map((t) => (t.edit ? this.source!.pageRecords!(t.key) : null)) : undefined;
-    this.submitNear(n, sig, bake, variant, tiles, edited, tiles[0]!.edit > 0);
+    const edited = tiles.some((t) => t.cut) ? tiles.map((t) => t.cut?.records ?? null) : undefined;
+    this.submitNear(n, sig, bake, variant, tiles, edited, tiles[0]!.cut !== null);
   }
 
   private submitNear(n: FarNode, sig: string, bake: string, variant: string, tiles: readonly { key: number; version: number }[], records?: readonly (TileRecords | null)[], edited = false): void {

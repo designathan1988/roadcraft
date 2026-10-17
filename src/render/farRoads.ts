@@ -13,7 +13,9 @@ import { geometryCost } from './gpuLedger';
 import { gpuOnly } from './mesh/gpuOnly';
 import { readsRoadSection } from './mesh/roadEdges';
 import { finish } from './mesh/surfaceMesh';
-import type { NearRoadMesh, NearTileRoads, NearVariant } from './nearRoadTiles';
+import { type NearRoadMesh, type NearTileRoads, type NearVariant, nearRoadsDigest } from './nearRoadTiles';
+import { emptyRecords } from './buildings/farGrid';
+import type { TileRecords } from '@world/doc';
 import { COARSE_ERROR } from './mesh/roadLodPure';
 import type { PassLook } from './roadSurfacePass';
 import type { TileSource } from './roadTileShape';
@@ -262,6 +264,10 @@ export class FarRoads extends FarTree<RoadPayload> {
           land: (data: RoadPayload, base: FarNearLanded | null) => new NearRoadLanded(data as NearRoadMesh, (data as NearRoadMesh).bake, near, base as NearRoadLanded | null),
           baseOf: (data: RoadPayload) => (data as NearRoadMesh).base,
           version: () => near.markingStyle(),
+          pageCut: (records: TileRecords) => {
+            const roads = nearRoadsOf(records)!;
+            return { records: { ...emptyRecords(records.key, records.version), ...roads }, digest: nearRoadsDigest(roads) };
+          },
         },
       } : {}),
     };
