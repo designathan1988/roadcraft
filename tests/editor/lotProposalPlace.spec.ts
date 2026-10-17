@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { LotTool } from '@editor/lotTool';
@@ -18,7 +18,7 @@ describe('the proposed lots taken in', () => {
       settings: () => ({ mode: 'edit', use: 'residential', density: 'low', eraser: false, splitKind: 'vertical', splitParts: 2 }),
       mutate: (fn) => { fn(); }, hint: () => undefined, redraw: () => undefined,
     });
-    tool.advanceProposal(Infinity);
+    tool.advanceProposal();
     expect(tool.proposalReady()).toBeGreaterThan(0);
     const before = doc.changes.version;
     tool.down(1, { x: m(500), y: m(500) }, false, 1);
@@ -26,5 +26,27 @@ describe('the proposed lots taken in', () => {
     expect(lots.length).toBeGreaterThan(0);
     expect(lots.every((e) => e.rects !== null)).toBe(true);
     expect(doc.lots.length).toBeGreaterThan(0);
+  });
+
+  it('are worked out in the call that asks, however slow the frame', () => {
+    const doc = new RoadDoc();
+    const a = doc.addNode({ x: m(-120), y: 0 });
+    const b = doc.addNode({ x: m(120), y: 0 });
+    doc.addSegment(a.id, b.id, 1);
+    const net = new Network(doc);
+    net.rebuild();
+    const tool = new LotTool({
+      doc, net, zoom: () => 1,
+      settings: () => ({ mode: 'edit', use: 'residential', density: 'low', eraser: false, splitKind: 'vertical', splitParts: 2 }),
+      mutate: (fn) => { fn(); }, hint: () => undefined, redraw: () => undefined,
+    });
+    let t = 0;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => (t += 1000));
+    try {
+      tool.advanceProposal();
+      expect(tool.proposalReady()).toBeGreaterThan(0);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

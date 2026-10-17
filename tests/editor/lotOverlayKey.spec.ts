@@ -53,7 +53,7 @@ describe('the lots overlay', () => {
   it('in the Zoning tool, makes again only the lots the pointer and the edits reach', () => {
     const { doc, tool } = street();
     // The proposal of the street land is worked out first.
-    while (tool.advanceProposal(50)) { /* until ready */ }
+    tool.advanceProposal();
     const reader = {};
     const book = tool.overlay(true);
     // Every lot is drawn in the tool.

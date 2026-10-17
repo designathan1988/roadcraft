@@ -52,7 +52,7 @@ function gestureReads(n: number): Record<string, number> {
     gesture(tool);
     return reads.count;
   };
-  // Taking the zone off (shift): the stroke's lots by place. Over land with no lot, zoning waits on the proposal (`planLotsSteps`).
+  // Taking the zone off (shift): the stroke's lots by place. Over land with no lot, zoning waits on the proposal (`planLots`).
   out.brush = run('brush', (tool) => { tool.down(1, at(1, 1), true, 1); tool.move(1, at(3, 1)); tool.up(1, true); });
   out.erase = run('delete', (tool) => { tool.down(1, at(1, 1), false, 1); tool.move(1, at(2, 1)); tool.up(1, true); });
   out.corner = run('edit', (tool) => { tool.down(1, corner(1, 1), false, 1); tool.move(1, { x: corner(1, 1).x + m(1), y: corner(1, 1).y }); tool.up(1, true); });

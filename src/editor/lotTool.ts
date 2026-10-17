@@ -4,7 +4,7 @@ import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import {
   addPolygonLot, applyLots, curveLotSide, cutLines, deleteLot, insideLot, joinLots, lotCentre, lotFrame, lotRect, lotSnapper,
-  moveLotCorner, onLand, planLotsSteps, setLotFront, splitLot, zoneLots, type Lot, type LotPlan,
+  moveLotCorner, onLand, planLots, setLotFront, splitLot, zoneLots, type Lot,
 } from '@world/lots';
 import { LotStore, lotBox } from '@world/lotStore';
 import { CellFiling } from '@world/cells';
@@ -53,8 +53,6 @@ export interface LotOverlay {
 }
 
 const ZONE_COLOURS: Readonly<Record<ZoneUse, number>> = { residential: 0x56bb73, commercial: 0x5da9e9, industrial: 0xd9b254 };
-/** Milliseconds a frame the proposed lots are worked out in (the budget of an edit's background work). */
-const PROPOSAL_BUDGET_MS = 4;
 /** Side of the grid the proposed lots are filed in for the pointer (`proposedAt`): a few lots wide, as the planner files them. */
 const PROPOSAL_CELL = m(64);
 /** Drawing ranks of the overlay's groups (`render/lotOverlay.ts`, under 2^29): the lots by their order, then the proposal, then the gesture. */
@@ -131,7 +129,7 @@ export class LotTool {
   /** A stroke let go before the proposal it waits on was worked out: made in the frame the proposal is done */
   private waiting: { stroke: NonNullable<LotTool['stroke']>; use: ZoneUse; density: ZoneDensity } | null = null;
   /** The land along the streets cut into lots while the Zoning tool is in hand, as Cities */
-  private proposal: { key: number; steps: Generator<void, LotPlan> | null; lots: readonly Vec2[][]; keys: readonly string[]; keyRects: readonly ChangeRect[] } | null = null;
+  private proposal: { key: number; lots: readonly Vec2[][]; keys: readonly string[]; keyRects: readonly ChangeRect[] } | null = null;
   /** The proposed lots by place (`proposedAt`), filed for the list they were filed from. */
   private proposalFiling: { lots: readonly Vec2[][]; cells: CellFiling<number, readonly Vec2[]> } | null = null;
   private corner: { pointer: number; from: Vec2; to: Vec2 } | null = null;
@@ -198,7 +196,7 @@ export class LotTool {
   /** Every gesture dropped without committing it. */
   cancel(): void {
     // A stroke already let go is the player's: made now, not dropped.
-    if (this.waiting) this.advanceProposal(Infinity);
+    if (this.waiting) this.advanceProposal();
     this.polygon = [];
     this.drawn = null;
     this.corner = null;
@@ -231,38 +229,25 @@ export class LotTool {
     return this.proposalStamp;
   }
 
-  /** Moves the proposal on by up to `budget` milliseconds, starting it again when what it was worked out from changed. */
-  advanceProposal(budget = PROPOSAL_BUDGET_MS): boolean {
+  /** The proposal brought up to the land as it is, worked out at once when what it stands on changed: the planner plans again only the blocks and streets the diaries say changed (`LotPlanner`), DO NOT spread it over frames (a budget a frame only held it back a frame). */
+  advanceProposal(): void {
     const key = this.proposalKey();
     if (!this.proposal || this.proposal.key !== key) {
-      this.proposal = { key, steps: planLotsSteps(this.doc, this.net), lots: this.proposal?.lots ?? [], keys: [], keyRects: [] };
+      const plan = planLots(this.doc, this.net);
+      this.proposal = { key, lots: plan.add.map((c) => c.corners), keys: plan.keys, keyRects: plan.keyRects ?? [] };
     }
-    const p = this.proposal;
-    if (!p.steps) return false;
-    const until = performance.now() + budget;
-    for (;;) {
-      const r = p.steps.next();
-      if (r.done) {
-        p.steps = null;
-        p.lots = r.value.add.map((c) => c.corners);
-        p.keys = r.value.keys;
-        p.keyRects = r.value.keyRects ?? [];
-        if (this.waiting) {
-          const { stroke, use, density } = this.waiting;
-          this.waiting = null;
-          this.readPending(stroke);
-          this.commitStroke(stroke, use, density);
-        }
-        return false;
-      }
-      if (performance.now() >= until) return true;
+    if (this.waiting) {
+      const { stroke, use, density } = this.waiting;
+      this.waiting = null;
+      this.readPending(stroke);
+      this.commitStroke(stroke, use, density);
     }
   }
 
   /** The proposed lot under a point (its index), or -1; only once worked out for the land as it is now. */
   private proposedAt(p: Vec2): number {
     const prop = this.proposal;
-    if (!prop || prop.steps || prop.key !== this.proposalKey()) return -1;
+    if (!prop || prop.key !== this.proposalKey()) return -1;
     // DO NOT walk the proposal: this runs for each of up to 400 steps of a pointer move. Filed once for each plan.
     let filing = this.proposalFiling;
     if (!filing || filing.lots !== prop.lots) {
@@ -288,7 +273,7 @@ export class LotTool {
     const { doc, host } = this;
     if (!stroke.ids.size && !stroke.fresh.size) { host.hint('hint.zone.empty'); return; }
     const fresh = [...stroke.fresh].map((k) => this.proposal?.lots[k]).filter((c): c is Vec2[] => !!c);
-    const before = this.proposal && !this.proposal.steps && this.proposal.key === this.proposalKey() ? this.proposal : null;
+    const before = this.proposal && this.proposal.key === this.proposalKey() ? this.proposal : null;
     host.mutate(() => {
       const first = doc.nextLotId;
       if (fresh.length) applyLots(doc, { add: fresh.map((corners) => ({ key: '', corners })), keys: [], drop: [] });
@@ -298,7 +283,7 @@ export class LotTool {
     // The proposal holds on: the lots laid were its own, and the rest of it is as it was
     if (before && fresh.length) {
       const laid = new Set(stroke.fresh);
-      this.proposal = { key: this.proposalKey(), steps: null, lots: before.lots.filter((_, k) => !laid.has(k)), keys: before.keys, keyRects: before.keyRects };
+      this.proposal = { key: this.proposalKey(), lots: before.lots.filter((_, k) => !laid.has(k)), keys: before.keys, keyRects: before.keyRects };
     }
     this.refused.clear();
     host.hint(stroke.remove ? 'hint.zone.removed' : 'hint.zone.painted');
@@ -320,7 +305,7 @@ export class LotTool {
   /** Whether the proposal for the land as it is now is ready (probes). */
   proposalReady(): number {
     const prop = this.proposal;
-    return prop && !prop.steps && prop.key === this.proposalKey() ? prop.lots.length : -1;
+    return prop && prop.key === this.proposalKey() ? prop.lots.length : -1;
   }
 
   // ------------------------------------------------------------ geometry
@@ -415,7 +400,7 @@ export class LotTool {
   /** The street land's proposed lots made real, to be edited as lots */
   private adoptProposal(): void {
     const prop = this.proposal;
-    if (!prop || prop.steps || prop.key !== this.proposalKey() || !prop.lots.length) return;
+    if (!prop || prop.key !== this.proposalKey() || !prop.lots.length) return;
     const add = prop.lots.map((corners) => ({ key: '', corners: [...corners] }));
     // With where each key's land lies (`LotPlan.keyRects`): DO NOT hand the keys without it
     this.host.mutate(() => applyLots(this.doc, { add, keys: [...prop.keys], drop: [], keyRects: [...prop.keyRects] }));
@@ -544,7 +529,7 @@ export class LotTool {
       if (commit && stroke.pending.length) {
         // The street land it passed is still being worked out: finished now, at once, and the stroke made
         this.waiting = { stroke, use: settings.use, density: settings.density };
-        this.advanceProposal(Infinity);
+        this.advanceProposal();
         if (this.waiting) host.hint('hint.zone.pending');
       } else if (commit) this.commitStroke(stroke, settings.use, settings.density);
       host.redraw();
@@ -618,7 +603,7 @@ export class LotTool {
     const gesture = this.polygon.length > 0 || this.drawn !== null || this.cutLine !== null || this.curve !== null;
     // A faint hint, not the tool: held while a city grows lot by lot
     if (!editing && !gesture && this.held && this.drawnWith?.editing === false) return this.book;
-    if (editing && this.advanceProposal()) this.host.redraw();
+    if (editing) this.advanceProposal();
     const settings = this.host.settings();
     const hoverLot = editing && this.hover ? this.lotAt(this.hover) : undefined;
     const decor: LotDecor = { editing, mode: settings.mode, use: settings.use, eraser: settings.eraser, hover: hoverLot?.id ?? -1, joinFirst: this.joinFirst ?? -1 };
@@ -739,7 +724,7 @@ export class LotTool {
   /** The street land proposed as lots, in every mode of the tool (they vanished from the Lots modes): faint outlines, one group each */
   private refreshProposal(d: LotDecor, hoverLot: Lot | undefined): void {
     const prop = this.proposal;
-    const lots: readonly (readonly Vec2[])[] = d.editing && prop && !prop.steps && prop.key === this.proposalKey() ? prop.lots : NO_PROPOSAL;
+    const lots: readonly (readonly Vec2[])[] = d.editing && prop && prop.key === this.proposalKey() ? prop.lots : NO_PROPOSAL;
     const hoverAt = d.editing && this.hover && !hoverLot && d.mode === 'brush' ? this.proposedAt(this.hover) : -1;
     const fresh = this.stroke?.fresh;
     const stateOf = (k: number): number => (fresh?.has(k) ? 1 : 0) | (k === hoverAt ? 2 : 0);
