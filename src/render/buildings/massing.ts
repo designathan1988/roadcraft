@@ -1,4 +1,5 @@
 import earcut from 'earcut';
+import { hypot2 } from '@core/hypot';
 import clipping from 'polygon-clipping';
 import { Color } from 'three';
 import { resolveBlocks } from '@world/buildings/blocks';
@@ -582,7 +583,7 @@ function emitPolygonRoof(w: MassWriter, b: Building, v: Volume, eaves: number, r
   const sides = volumeSides(v);
   for (let i = 0; i < ring.length; i++) {
     const p = ring[i]!, q = ring[(i + 1) % ring.length]!;
-    const len = Math.hypot(q.x - p.x, q.y - p.y);
+    const len = hypot2(q.x - p.x, q.y - p.y);
     if (len < 1e-6) continue;
     const steps = 8;
     const nx = (q.y - p.y) / len, ny = -(q.x - p.x) / len;

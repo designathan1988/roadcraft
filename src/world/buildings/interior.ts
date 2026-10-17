@@ -1,4 +1,5 @@
 import { pointInPolygon } from '@core/polygon';
+import { hypot2 } from '@core/hypot';
 import type { Vec2 } from '@core/vec2';
 import { m, stepsIn } from '../units';
 import { localFootprint } from './footprints';
@@ -232,7 +233,9 @@ function placed(p: PlacedFurniture): Furniture {
 function roomLights(items: readonly Furniture[]): Furniture[] {
   const rooms: { x: number; y: number; n: number }[] = [];
   for (const f of items) {
-    const room = rooms.find((r) => Math.hypot(r.x / r.n - f.x, r.y / r.n - f.y) < m(4.5));
+    // The first room within reach (`find`, without a function made for each piece).
+    let room: { x: number; y: number; n: number } | undefined;
+    for (const r of rooms) if (hypot2(r.x / r.n - f.x, r.y / r.n - f.y) < m(4.5)) { room = r; break; }
     if (room) { room.x += f.x; room.y += f.y; room.n++; } else rooms.push({ x: f.x, y: f.y, n: 1 });
   }
   const [w, d, h] = FURNITURE_SIZE.ceilingLamp;
