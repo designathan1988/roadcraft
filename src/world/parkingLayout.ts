@@ -1,3 +1,4 @@
+import { identityMemo } from '@core/identityMemo';
 import type { Digest } from '@core/digest';
 import type { Vec2 } from '@core/vec2';
 import type { Polyline } from '@core/polyline';
@@ -56,8 +57,8 @@ const ENTRANCE_MARGIN = m(1);
 /** Step of the paint along a run, so a line follows a curve. */
 const RUN_STEP = m(1);
 
-/** One building's entrances: its car gates and the edges of its parking, worked out when its traffic record is sent (the worker keeps them, the page does not). */
-export const entrancesOf = (b: Building): readonly [Vec2, Vec2][] => workOutEntrances(b);
+/** One building's entrances: its car gates and the edges of its parking, worked out once a record (records are replaced, never changed: `identityMemo`) - each street with parking read the buildings near it on both its sides, every one worked out again each time. */
+export const entrancesOf: (b: Building) => readonly [Vec2, Vec2][] = identityMemo(workOutEntrances);
 
 /** Each record's entrances, worked out once (`entrancesOf`: records are never changed, only replaced). */
 function workOutEntrances(b: Building): readonly [Vec2, Vec2][] {
@@ -130,6 +131,8 @@ function parkingOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec
   const s1 = length - endClear(net, ribbon.id, segment.b);
   const mouthA = net.mouthDistance(ribbon.id, segment.a);
   const mouthB = length - net.mouthDistance(ribbon.id, segment.b);
+  // The buildings' entrances near the street read once for both its sides, and only if a side parks.
+  let near = entrances;
   for (const side of [1, -1] as const) {
     const kind = side === 1 ? rt.parkingLeftKind : rt.parkingRightKind;
     const depth = side === 1 ? rt.parkingLeft : rt.parkingRight;
@@ -153,7 +156,7 @@ function parkingOf(net: Network, ribbon: SegmentRibbon, entrances: readonly [Vec
     }
     // Which way a car moving on this side travels, along a -> b.
     const travel = segment.direction === 'aToB' ? 1 : segment.direction === 'bToA' ? -1 : side === 1 ? -1 : 1;
-    const blocked = frontagesOn(line, half, side, entrances ?? entrancesNear(doc, line, half));
+    const blocked = frontagesOn(line, half, side, near ??= entrancesNear(doc, line, half));
     const runs = subtract([[s0, s1]], blocked);
     const pitch = PARKING_PITCH[kind];
     const at = (s: number, offset: number): Vec2 => {
