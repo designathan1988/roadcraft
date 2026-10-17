@@ -88,7 +88,8 @@ export class SimClient implements JournalReader {
   /** The diary read up to (what the worker's copy of the map stands at), in the document it is of. */
   private seen = -1;
   private seenDoc: RoadDoc | null = null;
-  private lotKeysSent = 0;
+  /** The lot keys the worker's copy holds, in its order (what was sent): DO NOT send the whole list when some go (a tile let go), only the stretches taken out and the keys put in. */
+  private sentKeys: string[] = [];
   /** The lot store's `keysRewritten` when the keys were last sent: unchanged, only the keys added since go. */
   private lotKeysRewritten = -1;
   /** A frame asked of the worker and not answered: the next waits, its wall time added up meanwhile. */
@@ -485,7 +486,7 @@ export class SimClient implements JournalReader {
     // DO NOT read the diary without following it: past 2 x KEPT entries of a kind it let them go, and the whole map was sent again each frame a city was laid out.
     if (this.seenDoc !== this.doc) this.doc.changes.follow(this);
     this.seenDoc = this.doc;
-    this.lotKeysSent = this.doc.lotStore.keys.length;
+    this.sentKeys = this.doc.lotStore.keys.slice();
     this.lotKeysRewritten = this.doc.lotStore.keysRewritten;
   }
 
@@ -551,15 +552,38 @@ export class SimClient implements JournalReader {
     if (keys) {
       const store = this.doc.lotStore, all = store.keys;
       // DO NOT send every key at each lot laid: the city's layout sent the whole list once per lot (O(lots²) copied).
-      if (store.keysRewritten === this.lotKeysRewritten && all.length >= this.lotKeysSent) lists.push({ part: 'lotKeys', start: this.lotKeysSent, remove: 0, items: all.slice(this.lotKeysSent) });
-      else lists.push({ part: 'lotKeys', start: 0, remove: this.lotKeysSent, items: all.slice() });
-      this.lotKeysSent = all.length;
+      const sent = this.sentKeys;
+      if (store.keysRewritten === this.lotKeysRewritten && all.length >= sent.length) {
+        // Only added at the end since: the new tail.
+        const items = all.slice(sent.length);
+        lists.push({ part: 'lotKeys', start: sent.length, remove: 0, items });
+        for (const key of items) sent.push(key);
+      } else lists.push(...this.keyChanges());
       this.lotKeysRewritten = store.keysRewritten;
     }
     this.send({
       type: 'delta', delta: { records, lists, values: [...values].map((part) => ({ part, value: this.doc.valueOf(part) })) },
       buildings: buildingChangesOf(this.doc, buildingList),
     });
+  }
+
+  /** The worker's keys brought to the store's: each stretch no longer there taken out (from the end, so the places before it hold), then the keys it lacks put at its end. */
+  private keyChanges(): Restoration['lists'][number][] {
+    const store = this.doc.lotStore, sent = this.sentKeys;
+    const out: Restoration['lists'][number][] = [];
+    for (let n = sent.length - 1; n >= 0; n--) {
+      if (store.hasKey(sent[n]!)) continue;
+      let m = n;
+      while (m > 0 && !store.hasKey(sent[m - 1]!)) m--;
+      out.push({ part: 'lotKeys', start: m, remove: n - m + 1, items: [] });
+      n = m;
+    }
+    const kept = sent.filter((key) => store.hasKey(key));
+    const held = new Set(kept);
+    const added = store.keys.filter((key) => !held.has(key));
+    if (added.length) out.push({ part: 'lotKeys', start: kept.length, remove: 0, items: added });
+    this.sentKeys = [...kept, ...added];
+    return out;
   }
 
   private receive(message: FromSim): void {

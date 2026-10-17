@@ -110,4 +110,25 @@ describe("the worker's copy of the active region", () => {
     expect(sent.map((message) => message.type)).toEqual(['bake', 'delta', 'tile']);
     expect(asked.map((ids) => [...ids].sort((p, q) => p - q))).toEqual([[...b.nodes.map((n) => n.id), ...b.segments.map((s) => s.id)].sort((p, q) => p - q)]);
   });
+
+  it('sends the lot keys a tile let go takes away as the stretch they were, and those it brings back as new keys, never the whole list', () => {
+    const doc = new RoadDoc();
+    const sent: ToSim[] = [];
+    const client = new SimClient(doc);
+    (client as unknown as { worker: { postMessage(message: ToSim): void } }).worker = { postMessage: (message) => sent.push(message) };
+    const { a, b } = twoTiles();
+    const ka = ['b:10,10,1,1', 'b:20,10,1,1'], kb = ['b:300,10,1,1', 'b:310,10,1,1'];
+    doc.loadTile({ ...a, lotKeys: ka });
+    doc.loadTile({ ...b, lotKeys: kb });
+    client.frame(0.1, false, RUN);
+    sent.length = 0;
+    const keyLists = (): unknown[] => sent.filter((m) => m.type === 'delta').flatMap((m) => (m as Delta).delta.lists.filter((l) => l.part === 'lotKeys'));
+    doc.unloadTile(b.key);
+    client.frame(0.1, false, RUN);
+    expect(keyLists()).toEqual([{ part: 'lotKeys', start: 2, remove: 2, items: [] }]);
+    sent.length = 0;
+    doc.loadTile({ ...b, lotKeys: kb });
+    client.frame(0.1, false, RUN);
+    expect(keyLists()).toEqual([{ part: 'lotKeys', start: 2, remove: 0, items: kb }]);
+  });
 });
