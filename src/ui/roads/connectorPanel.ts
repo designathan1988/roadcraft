@@ -17,6 +17,8 @@ interface Picked { readonly segment: SegmentId; readonly lane: number }
 
 let open: { node: NodeId; host: ConnectorPanelHost; root: HTMLElement; drawn: string } | null = null;
 let picked: { node: NodeId; lane: Picked } | null = null;
+/** The lane end the keyboard is on: kept past a rebuild of the inspector (its panel made again, the old one's focus gone with it), let go when the player goes elsewhere. */
+let keyboard: { node: NodeId; end: string } | null = null;
 
 export function mountConnectorPanel(container: HTMLElement, node: NodeId, host: ConnectorPanelHost): void {
   const root = document.createElement('section');
@@ -45,8 +47,11 @@ function draw(): void {
   const stamp = `${lanes?.revision ?? -1}|${lanes ? lanes.built.map(linkKey).join(',') : '-'}|${links?.map(linkKey).join(',') ?? ''}|${picked ? `${picked.lane.segment}:${picked.lane.lane}` : ''}|${lanes ? turnOf(view, lanes) : ''}`;
   if (stamp === open.drawn) return;
   open.drawn = stamp;
-  // The end the keyboard was on keeps the focus through the redraw.
-  const focused = root.contains(document.activeElement) ? document.activeElement?.getAttribute('data-end') ?? null : null;
+  // The end the keyboard was on keeps the focus through the redraw, and through the inspector made again (the focus then on nothing).
+  const active = document.activeElement;
+  const lost = !active || active === document.body;
+  const focused = root.contains(active) ? active?.getAttribute('data-end') ?? null
+    : lost && keyboard?.node === node ? keyboard.end : null;
   root.replaceChildren();
   const head = document.createElement('div');
   head.className = 'rp-summary-head';
@@ -127,6 +132,13 @@ function draw(): void {
     if (end) press(end);
   });
   // The ends are buttons: Enter and Space press them as a click does.
+  art.addEventListener('focusin', (event) => {
+    const end = (event.target as Element).closest('[data-end]')?.getAttribute('data-end');
+    if (end) keyboard = { node, end };
+  });
+  // Focus taken to another control, or a press outside the plan: the keyboard is no longer on it.
+  art.addEventListener('focusout', (event) => { if (event.relatedTarget instanceof Element && !art.contains(event.relatedTarget)) keyboard = null; });
+  art.addEventListener('pointerdown', () => { keyboard = null; });
   art.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const end = (event.target as Element).closest('[data-end]')?.getAttribute('data-end');
