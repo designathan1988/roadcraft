@@ -21,6 +21,7 @@ import {
   SRGBColorSpace,
   ShaderChunk,
   Vector3,
+  Box2,
   Color,
   type CompressedTexture,
   type Material,
@@ -41,7 +42,7 @@ import { landSlope, slopeRequest, unionCorners, type CornerRect, type LightResul
 import { submitLight } from './terrainLightPool';
 import { ecologyOffPage, readEcology } from './ecologyPool';
 import type { PlateMesh } from './plateMesh';
-import { stageTexels, type StagedTexels } from './stagedTexels';
+import { stageTexels, type StagedTexels, type TexelBox } from './stagedTexels';
 import { ecologyCornersInto, groundCornersInto, landTexelsInto, lightLayerInto, type CornerCover, type CornerStore } from './plateTexels';
 import { LOD_LEVELS, LandLevels } from './terrainLevels';
 import { LandLod, lodFragmentGlsl, lodVertexGlsl, type LandGrid } from './terrainLod';
@@ -363,6 +364,24 @@ function paintLayer(texels: Uint8Array, res: number, layer: number): Uint8Array 
   return texels.subarray(layer * size, (layer + 1) * size);
 }
 
+/** A dab's square, the plate's own (x, y): min x, min y, max x, max y. */
+type DabRect = [number, number, number, number];
+const unionDab = (box: DabRect | null, dab: PaintDab): DabRect => {
+  const r: DabRect = [dab.x - dab.radius, dab.y - dab.radius, dab.x + dab.radius, dab.y + dab.radius];
+  return box ? [Math.min(box[0], r[0]), Math.min(box[1], r[1]), Math.max(box[2], r[2]), Math.max(box[3], r[3])] : r;
+};
+/** The paint texels a dab lays (`rasterPaint`, the same bounds). */
+function paintTexelBox(dab: PaintDab): TexelBox {
+  const cell = TERRAIN_SIZE / PAINT_RES;
+  const cx = (dab.x + TERRAIN_HALF) / cell, cy = (dab.y + TERRAIN_HALF) / cell, r = dab.radius / cell;
+  return {
+    x0: Math.max(0, Math.floor(cx - r)), x1: Math.min(PAINT_RES - 1, Math.ceil(cx + r)),
+    y0: Math.max(0, Math.floor(cy - r)), y1: Math.min(PAINT_RES - 1, Math.ceil(cy + r)),
+  };
+}
+const unionTexels = (a: TexelBox | null, b: TexelBox): TexelBox =>
+  a ? { x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1) } : b;
+
 /** Lays one dab into the weight textures: within its radius every layer moves toward the dab's */
 function rasterPaint(layers: readonly Uint8Array[], dab: PaintDab): void {
   const a = layers[0]!;
@@ -467,10 +486,9 @@ function terrainMaterial(bakes: TerrainBakes, data: TerrainData, lod: TerrainLod
 }
 
 /** The corners' water, flowers, scrub, geology and forest (floats: the level, and two bytes a channel), `side` corners a side. */
-function shoreLayers(side: number, data: Float32Array | null): DataArrayTexture {
-  const shore = new DataArrayTexture(data, side, side, 1);
-  shore.format = RGBAFormat;
-  shore.type = FloatType;
+function shoreLayers(side: number, data: Float32Array | null): DataTexture {
+  // A 2D texture: a dab's rows of corners sent alone (`Texture.addUpdateRange`), which an array's layers cannot be (three r186 `WebGLTextures`).
+  const shore = new DataTexture(data, side, side, RGBAFormat, FloatType);
   shore.magFilter = NearestFilter;
   shore.minFilter = NearestFilter;
   shore.generateMipmaps = false;
@@ -493,7 +511,7 @@ function ecologyBytesInto(corners: Uint8Array, count: number, field: EcologyFiel
 }
 
 /** A plate's land textures and uniforms, made once for all its materials: the painted ground's array and the corners' (`shoreSide` corners a side). */
-function terrainData(bakes: TerrainBakes, paint: DataArrayTexture, shore: DataArrayTexture, shoreSide: number): TerrainData {
+function terrainData(bakes: TerrainBakes, paint: DataArrayTexture, shore: DataTexture, shoreSide: number): TerrainData {
   const userData: Record<string, unknown> = {};
   const uniforms = {
     uPaint: { value: paint as Texture },
@@ -600,7 +618,7 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          uniform vec4 uGrassField; // world x, y, reach, on
          uniform vec2 uGrid; // cell, strength
          // The corners' water, flowers, scrub, geology and forest.
-         uniform highp sampler2DArray uShore;
+         uniform highp sampler2D uShore;
          // The grass map's mean luma (\`meanLuma\`).
          uniform float uGrassMean;
          float terrainHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -625,10 +643,10 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
            vec2 i = floor(g);
            vec2 f = g - i;
            ivec2 p = ivec2(i);
-           vec4 c00 = texelFetch(uShore, ivec3(p, 0), 0);
-           vec4 c10 = texelFetch(uShore, ivec3(p + ivec2(1, 0), 0), 0);
-           vec4 c01 = texelFetch(uShore, ivec3(p + ivec2(0, 1), 0), 0);
-           vec4 c11 = texelFetch(uShore, ivec3(p + ivec2(1, 1), 0), 0);
+           vec4 c00 = texelFetch(uShore, p, 0);
+           vec4 c10 = texelFetch(uShore, p + ivec2(1, 0), 0);
+           vec4 c01 = texelFetch(uShore, p + ivec2(0, 1), 0);
+           vec4 c11 = texelFetch(uShore, p + ivec2(1, 1), 0);
            vec4 level = vec4(c00.x, c10.x, c01.x, c11.x);
            vec4 bilinear = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
            vec4 has = step(vec4(${NO_WATER / 2}.0), level);
@@ -1645,11 +1663,23 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const ix = k % GRID, iy = (k - ix) / GRID;
     return coverAt(kind, -TERRAIN_HALF + ix * TERRAIN_CELL, TERRAIN_HALF - iy * TERRAIN_CELL);
   };
-  // The shore array from the store and the covers, at each send.
+  /** Whether the whole shore texture waits to be sent (its first upload, the water rebuilt): rows added meanwhile would cut it to them. */
+  let shoreWhole = true;
+  shore.onUpdate = () => { shoreWhole = false; };
+  // The shore texture from the store and the covers, at each send.
   stageTexels(shore, Float32Array, GRID * GRID * 4, 4, (into) => groundCornersInto(into, store, coverCorner));
-  /** The corner store or the covers changed: the shore array sent again. */
-  const sendCorners = (): void => {
-    shore.addLayerUpdate(0);
+  /** The corner store or the covers changed over `rect` (the plate's own x, y; null: anywhere): those rows of corners sent again, never the plate for a dab. */
+  const sendCorners = (rect: readonly [number, number, number, number] | null = null): void => {
+    if (rect && !shoreWhole) {
+      // The cover cells round the rect too: a corner reads the cell it stands in (`coverAt`).
+      const reach = TERRAIN_SIZE / FOREST_RES + TERRAIN_CELL;
+      const x0 = Math.max(0, Math.floor((rect[0] - reach + TERRAIN_HALF) / TERRAIN_CELL)), x1 = Math.min(GRID - 1, Math.ceil((rect[2] + reach + TERRAIN_HALF) / TERRAIN_CELL));
+      const y0 = Math.max(0, Math.floor((TERRAIN_HALF - rect[3] - reach) / TERRAIN_CELL)), y1 = Math.min(GRID - 1, Math.ceil((TERRAIN_HALF - rect[1] + reach) / TERRAIN_CELL));
+      for (let y = y0; y <= y1; y++) shore.addUpdateRange((y * GRID + x0) * 4, (x1 - x0 + 1) * 4);
+    } else {
+      shoreWhole = true;
+      shore.clearUpdateRanges();
+    }
     shore.needsUpdate = true;
   };
   /** THE CORNER LAYER per corner, RGBA bytes (`LIGHT_LAYER`): the ecology's dry grass, wet and bare ground, and the land's slope (`terrainLight`); none until worked out. */
@@ -1922,6 +1952,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     paintRes = PAINT_RES;
     paintTexels.hold(null);
     paintTexels = stagePaint(next);
+    // The whole layers go at its first send: no box of the smaller array left to send.
+    paintBox = null;
     // Every layer at its first send, the light too: the layers a dab marks would leave it out.
     for (let layer = 0; layer < PAINT_LAYERS; layer++) next.addLayerUpdate(layer);
     small.dispose();
@@ -1980,7 +2012,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
   let paintRevision = 0;
   let paintCount = 0;
-  let paintFirst: PaintDab | undefined;
   const covers: Record<CoverKind, Uint8Array> = {
     forest: new Uint8Array(FOREST_RES * FOREST_RES),
     scrub: new Uint8Array(FOREST_RES * FOREST_RES),
@@ -2014,28 +2045,31 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     const geologyRects: (readonly [number, number, number, number])[] = [];
     // Something to lay: the array at its full size first.
     if (dabs.length > 0) growPaint();
-    // Dabs only added since the last time: lay just those, on the layers held while the brush paints.
-    const appended = dabs.length >= paintCount && dabs[0] === paintFirst && paintCount > 0;
+    // Dabs only added since the last time: lay just those, on the layers held while the brush paints. DO NOT judge it by the first dab and the count: a dab taken off the middle and one added kept both.
+    let appended = paintCount > 0 && dabs.length >= paintCount;
+    for (let i = 0; appended && i < paintCount; i++) if (dabs[i] !== paintDabs[i]) appended = false;
     let raster: Uint8Array[] | null = null;
+    /** Where the dabs laid here reach, the plate's own (x, y): the corners sent again only there; and where the rock and biome dabs reach, the ecology read again only there. */
+    let reached: DabRect | null = null, natural: DabRect | null = null;
     const lay = (dab: PaintDab): void => {
-      if (isGeologyKind(dab.kind)) {
-        geologyRects.push(rasterGeology(sandCorners, basaltCorners, dab));
-        ecologyAll();
+      if (isGeologyKind(dab.kind) || isBiomeKind(dab.kind)) {
+        if (isGeologyKind(dab.kind)) geologyRects.push(rasterGeology(sandCorners, basaltCorners, dab));
+        else rasterBiome(biomeCorners ??= new Float32Array(GRID * GRID * REGIONS.length), dab);
+        reached = unionDab(reached, dab);
+        natural = unionDab(natural, dab);
         return;
       }
-      if (isBiomeKind(dab.kind)) {
-        rasterBiome(biomeCorners ??= new Float32Array(GRID * GRID * REGIONS.length), dab);
-        ecologyAll();
-        return;
-      }
-      // The layers laid from the dabs before these (`paintDabs`), then these.
-      if (appended) rasterPaint(raster ??= paintRaster(), dab);
+      // The layers laid from the dabs before these (`paintDabs`), then these; only their box sent (`flushPaint`).
+      if (appended) { rasterPaint(raster ??= paintRaster(), dab); paintBox = unionTexels(paintBox, paintTexelBox(dab)); }
       rasterCover(covers, dab);
+      reached = unionDab(reached, dab);
       covered = true;
     };
     if (appended) {
       for (let i = paintCount; i < dabs.length; i++) lay(dabs[i]!);
       if (geologyRects.length > 0) geologyChanges.mark(geologyRects);
+      // The ecology reads a corner's own painted rock and biome (`computeEcology`, its reach round the region its own): read again round the dabs, not over the plate.
+      if (natural) ecologyOver(surface.regionOf(natural));
     } else {
       // Every dab laid again: the paint layers from all of them at the send.
       paintTexels.hold(null);
@@ -2050,14 +2084,36 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     }
     paintDabs = dabs;
     paintCount = dabs.length;
-    paintFirst = dabs[0];
-    if (covered) {
+    // Laid on the held layers: their box sent at the next frame (`flushPaint`); laid again from every dab: the whole layers at the send.
+    if (covered && !raster) {
+      paintBox = null;
       paintArray.addLayerUpdate(0);
       paintArray.addLayerUpdate(1);
       paintArray.needsUpdate = true;
     }
-    // The flowers, the scrub, the forest and the geology at each corner, from the covers and the store at the send.
-    sendCorners();
+    // The flowers, the scrub, the forest and the geology at each corner, from the covers and the store at the send: the rows the dabs reach.
+    sendCorners(appended ? reached : null);
+  };
+  /** The paint layers' texels laid on the held copy and not yet sent (column x, row y, inclusive). */
+  let paintBox: TexelBox | null = null;
+  /** Let the held layers go once their box is sent (`settle` with a box waiting). */
+  let paintLetGo = false;
+  /** One layer of the held copy, as three's copy reads a source (r186 `copyTextureToTexture`: a DataTexture's `image.data` from the skipped rows and pixels). */
+  const paintSource = new DataTexture(null, 1, 1, RGBAFormat, UnsignedByteType);
+  const paintSourceBox = new Box2(), paintTarget = new Vector3();
+  /** The box of the paint layers laid since the last frame sent alone, layer by layer, from the held copy: DO NOT send both whole layers (8 MB) for a dab. */
+  const flushPaint = (renderer: WebGLRenderer): void => {
+    const held = paintTexels.held, box = paintBox;
+    paintBox = null;
+    if (held && box) {
+      paintSourceBox.min.set(box.x0, box.y0);
+      paintSourceBox.max.set(box.x1 + 1, box.y1 + 1);
+      for (const layer of [0, 1]) {
+        paintSource.image = { data: paintLayer(held, paintRes, layer), width: paintRes, height: paintRes } as typeof paintSource.image;
+        renderer.copyTextureToTexture(paintSource, paintArray, paintSourceBox, paintTarget.set(box.x0, box.y0, layer));
+      }
+    }
+    if (paintLetGo) { paintLetGo = false; paintTexels.letGoWhenSent(); }
   };
 
   const parts: TerrainPart[] = [];
@@ -2083,7 +2139,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     // The gullies were drawn by the fine relief alone; it was read by nothing the ground draws (see `bakeRelief`).
     setGullies() {},
     setWaterLook(look) { waterSurface.setLook(look); },
-    bakeRelief() {},
+    // Once a frame (`flatAtlas.ts`): the box of paint a stroke laid since the last, sent.
+    bakeRelief(renderer) { if (paintBox || paintLetGo) flushPaint(renderer); },
     vergeMaterial,
     updatePaint,
     get ecologyPending() { return ecologyStale && !waterStale; },
@@ -2144,8 +2201,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     },
     get lastRegion() { return lastRegion; },
     settle() {
-      // No stroke held: the layers a brush painted go once sent, laid again from the dabs when needed.
-      paintTexels.letGoWhenSent();
+      // No stroke held: the layers a brush painted go once sent (their box at the next frame, `flushPaint`), laid again from the dabs when needed.
+      if (paintBox) paintLetGo = true; else paintTexels.letGoWhenSent();
       if (!waterStale) return;
       waterStale = false;
       const dirty = waterDirty;

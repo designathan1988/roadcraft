@@ -541,7 +541,12 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       // Tiles came or went (`isStreaming`): what each plate laid stays; a stroke: its rectangles say what to lay again (`plateDabs`).
       const entries = paintCursor.read(doc.changes);
       const edited = entries && entries.every((e) => e.rects !== null) ? entries.filter((e) => !isStreaming(e)).flatMap((e) => e.rects!) : null;
-      for (const p of plates.values()) takePaint(p, doc, edited);
+      // DO NOT filter the map's every dab for every plate at a dab: only the plates a stroke's rectangles reach (a dab's rectangle holds its disc); a tile come or gone, every plate (its dabs may reach past its square).
+      const strokes = edited && !entries!.some(isStreaming) ? edited : null;
+      for (const p of plates.values()) {
+        if (strokes && !strokes.some((r) => r[2] >= p.cx - TERRAIN_HALF && r[0] <= p.cx + TERRAIN_HALF && r[3] >= p.cy - TERRAIN_HALF && r[1] <= p.cy + TERRAIN_HALF)) continue;
+        takePaint(p, doc, edited);
+      }
     }
     if (readContent(doc)) refresh();
   };
@@ -673,6 +678,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         farForest.book.setFull(fp.key, p?.shown ?? false, p?.surface?.ecology() != null, now);
       }
       farForest.update(renderer, now);
+      // Each plate drawn sends the paint a stroke laid since the last frame (`terrain.ts` flushPaint).
+      for (const p of shownList) p.surface!.bakeRelief(renderer, null);
     },
     setWaterLook(look: WaterLook) {
       const was = lastLook;
