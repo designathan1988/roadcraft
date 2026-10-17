@@ -81,7 +81,9 @@ export interface NearBaker<P, E = unknown> {
   readonly groundReach: number;
   /** What the bake reads of the page's own values (the clearings reaching the tile), digested: kept by it as by the ground (none: nothing). */
   readKey?(extra: E): number;
-  bake(area: NearArea, extra: E): P | null;
+  /** A first stage of its bake that reads no ground (a garden's plants, its buildings made again from their rows): kept by the tiles' version alone, so a change of the ground under the tile never makes it again; handed to `bake`. */
+  staged?(area: NearArea, extra: E): unknown;
+  bake(area: NearArea, extra: E, staged?: unknown): P | null;
   /** Its buffers, handed over not copied. */
   buffers(payload: P): ArrayBuffer[];
 }
@@ -100,40 +102,76 @@ export const derivedNearCache: NearTileCache = {
   put: async (key, value) => { await (await keepDerivedDurably(key, value)).committed; },
 };
 
-/** A near job: a kind of a tile, the version of what it reads (`want`: the tiles' versions and the kind's own), the bake the page draws now (`shown`: the same bake comes back without its arrays), the page's records where it holds the tiles edited. */
-export interface NearTileJob {
+/** A kind of a tile asked: the page's version of the ask (`sig`: an answer to another is dropped), the version of what it reads (`want`: the tiles' versions and the kind's own), the bake the page draws now (`shown`: the same bake comes back without its arrays), what else it reads from the page (`NearProduct.extra`). */
+export interface NearAsk {
   readonly kind: NearKind;
-  /** `kind:i,j`. */
-  readonly node: string;
-  /** The page's version of the ask: an answer to another is dropped. */
   readonly sig: string;
   readonly want: string;
   readonly shown: string | null;
+  readonly extra?: unknown;
+}
+
+/** A NEAR JOB: EVERY KIND OF A TILE ASKED AT ONCE (`nearTiles.ts`), the tiles read once and their document, network and heights made once for all of them; the page's records where it holds the tiles edited */
+export interface NearTileJob {
+  /** The tile's column and row, `i,j`. */
+  readonly node: string;
+  readonly asks: readonly NearAsk[];
   readonly prefix: string | null;
   readonly store?: string;
-  /** The tile and the neighbours stored, each at its version (the tile first). */
+  /** The tile and (where a kind asked reads them) the neighbours stored, each at its version (the tile first). */
   readonly tiles: readonly { readonly key: number; readonly version: number }[];
   /** The tiles' records the page holds (edited, not written yet; all of them where no worker reads the store), in the order of `tiles`, null for one read here. */
   readonly records?: readonly (Partial<TileRecords> | null)[];
   /** The tile itself held edited by the page: what the player just did, baked before anything (`cellPool.ts` EDIT_TIER). */
   readonly edited?: boolean;
   readonly ground: NearGround;
-  /** What else the kind's bake reads from the page (`NearProduct.extra`). */
-  readonly extra?: unknown;
 }
 
-/** A near job's answer: the bake (its version, its arrays; none when it is the one drawn, `same`), the tiles' records asked of the page, or why it failed. */
-export type NearTileReply =
-  | { readonly kind: 'near'; readonly node: string; readonly sig: string; readonly bake: string; readonly payload: unknown; readonly same: boolean }
-  | { readonly kind: 'nearRecords'; readonly node: string; readonly sig: string }
-  | { readonly kind: 'nearError'; readonly node: string; readonly sig: string; readonly message: string };
+/** A kind's answer: its bake (its version, its arrays; none when it is the one drawn, `same`), or why it failed. */
+export type NearAnswer =
+  | { readonly kind: NearKind; readonly sig: string; readonly bake: string; readonly payload: unknown; readonly same: boolean }
+  | { readonly kind: NearKind; readonly sig: string; readonly error: string };
 
-/** A bake as it is kept: what it read (the tiles' and the kind's versions, the ground under it) and what it made. */
+/** A near job's answer: each kind's, the tiles' records asked of the page (no worker reads the store), or why the job failed. */
+export type NearTileReply =
+  | { readonly kind: 'near'; readonly node: string; readonly answers: readonly NearAnswer[] }
+  | { readonly kind: 'nearRecords'; readonly node: string }
+  | { readonly kind: 'nearError'; readonly node: string; readonly message: string };
+
+/** A bake as it is kept: what it read (the tiles' and the kind's versions, the content of the parts it read, the ground under it) and what it made; named by its content and ground (`bake`), not by the tiles' versions. */
 interface KeptNear {
   readonly want: string;
+  readonly content: string;
   readonly ground: number;
   readonly bake: string;
   readonly payload: unknown;
+}
+
+/** The fields of each part, in a fixed order (`editor/tileStore.ts` splitRecords; `next` left out: it moves with every record made). */
+const PART_FIELDS: Readonly<Record<NearPart, readonly (keyof TileRecords)[]>> = {
+  roads: ['nodes', 'borrowedNodes', 'segments', 'gates'],
+  buildings: ['buildings', 'grown', 'lots'],
+  rest: ['poles', 'borrowedPoles', 'poleSpans', 'lotKeys', 'landscape', 'barriers', 'paint', 'trees', 'elements'],
+};
+
+/** THE CONTENT OF SOME PARTS OF A TILE, digested: what a kind reads of it, whatever version the tile is at; a record object digested once where its reader keeps `memo` (a record is replaced, never edited). The page names an edited tile by it (`nearTiles.ts`), a worker its kept bakes. */
+export function partsDigest(records: Partial<TileRecords>, parts: readonly NearPart[], memo: WeakMap<object, number> = new WeakMap()): string {
+  const d = new Digest();
+  for (const part of [...parts].sort()) {
+    for (const field of PART_FIELDS[part]) {
+      const value = records[field] as unknown;
+      d.addText(field);
+      if (!Array.isArray(value)) { d.addPlain(value ?? null); continue; }
+      for (const item of value as unknown[]) {
+        if (item === null || typeof item !== 'object') { d.addPlain(item ?? null); continue; }
+        let known = memo.get(item);
+        if (known === undefined) memo.set(item, known = new Digest().addPlain(item).value());
+        d.add(known);
+      }
+      d.add(value.length);
+    }
+  }
+  return d.value().toString(36);
 }
 
 /** What a tile's bake reads of the ground: every corner of the terrain's cells over the tile and `reach` round it, as drawn and as natural (a stroke, the roads' cut). */
@@ -192,49 +230,126 @@ function areaOf(tiles: readonly TileRecords[], groundAt: (x: number, y: number) 
 /** The version of a bake: what it read. */
 const bakeOf = (want: string, ground: number): string => `${want}/${ground.toString(36)}`;
 
-/** DO NOT bake what is kept: a tile's kind is kept by the version of what it read (the tiles, the kind's own, the ground under it, `groundDigest`); the bake the page draws comes back as `same`, its arrays not sent again */
-export async function runNearTileJob(job: NearTileJob, cache: NearTileCache, baker: NearBaker<unknown>): Promise<NearTileReply> {
-  const { node, sig } = job;
+/** A tile's kind a job bakes: its ask, its bake, the ground it read, the key it is kept under; its first stage kept where it has one (`NearBaker.staged`). */
+interface Baking {
+  readonly ask: NearAsk;
+  readonly baker: NearBaker<unknown>;
+  readonly ground: number;
+  readonly bake: string;
+  readonly key: string;
+  /** What was kept under its key (another version of the tiles, maybe the same content). */
+  readonly kept: KeptNear | undefined;
+  staged?: { readonly value: unknown };
+  /** Its first stage kept at another version: taken where the content read is the same. */
+  stage?: { readonly want: string; readonly content: string; readonly value: unknown };
+}
+
+/** A kept bake as an answer: the same as the page draws (no arrays), or its arrays. */
+const keptAnswer = (ask: NearAsk, kept: KeptNear): NearAnswer => (ask.shown === kept.bake
+  ? { kind: ask.kind, sig: ask.sig, bake: kept.bake, payload: null, same: true }
+  : { kind: ask.kind, sig: ask.sig, bake: kept.bake, payload: kept.payload, same: false });
+
+/** What a kind's bake read of the tiles: each tile's key and the content of its parts (and its `more` where it had something of the kind). */
+function contentOf(b: Baking, tiles: readonly TileRecords[], has: boolean): string {
+  const parts = has && b.baker.more ? [...b.baker.parts, ...b.baker.more] : b.baker.parts;
+  const d = new Digest();
+  for (const t of tiles) d.add(t.key).addText(partsDigest(t, parts));
+  return d.value().toString(36);
+}
+
+/** DO NOT bake what is kept, nor read and solve the tiles once a kind: every kind of a tile asked is answered by one job; one kept by the version of what it read (the tiles, the kind's own, the ground under it, `groundDigest`) is taken from the store, one the page draws comes back as `same`, its arrays not sent again; the others read the tiles once (every part any of them reads), share one area (its document, network and heights), and are each baked and kept */
+export async function runNearTileJob(job: NearTileJob, cache: NearTileCache, bakerOf: (kind: NearKind) => NearBaker<unknown>): Promise<NearTileReply> {
+  const { node } = job;
   const shared = job.ground.ground ? sharedGroundReaders(job.ground.ground) : null;
   const groundAt = shared ? shared.groundAt : (): number => 0;
   const naturalAt = shared ? (job.ground.naturalIsGround ? shared.groundAt : shared.naturalAt) : groundAt;
-  const under = groundDigest(job.tiles[0]!.key, baker.groundReach, groundAt, naturalAt);
-  const ground = baker.readKey ? new Digest().add(under).add(baker.readKey(job.extra)).value() : under;
-  const bake = bakeOf(job.want, ground);
-  if (job.shown === bake) return { kind: 'near', node, sig, bake, payload: null, same: true };
   const keeps = job.prefix !== null && await cache.ready();
-  const key = `${job.prefix}${node}`;
-  const kept = keeps ? await cache.get(key) as KeptNear | undefined : undefined;
-  if (kept && kept.want === job.want && kept.ground === ground) return { kind: 'near', node, sig, bake, payload: kept.payload, same: false };
-  const reading = baker.around ? job.tiles : job.tiles.slice(0, 1);
-  /** The tiles read, their `parts`; then, where the tile has anything of the kind, the `more` parts too. */
-  const read = async (parts: readonly NearPart[]): Promise<TileRecords[] | null> => {
-    const out: TileRecords[] = [];
-    for (let n = 0; n < reading.length; n++) {
-      const tile = await partsOf(reading[n]!.key, reading[n]!.version, parts, job.records?.[n], job.store);
-      if (!tile) return null;
-      out.push(tile);
+  const digests = new Map<number, number>();
+  const answers: NearAnswer[] = [];
+  const baking: Baking[] = [];
+  for (const ask of job.asks) {
+    const baker = bakerOf(ask.kind);
+    let under = digests.get(baker.groundReach);
+    if (under === undefined) digests.set(baker.groundReach, under = groundDigest(job.tiles[0]!.key, baker.groundReach, groundAt, naturalAt));
+    const ground = baker.readKey ? new Digest().add(under).add(baker.readKey(ask.extra)).value() : under;
+    // A staged kind's bake is named by the tiles' version (its stage read no tile); the others' by the content they read, once read.
+    const bake = bakeOf(ask.want, ground);
+    const key = `${job.prefix}${ask.kind}:${node}`;
+    const kept = keeps ? await cache.get(key) as KeptNear | undefined : undefined;
+    if (kept && kept.want === ask.want && kept.ground === ground) { answers.push(keptAnswer(ask, kept)); continue; }
+    const item: Baking = { ask, baker, ground, bake, key, kept };
+    // A first stage that reads no ground, kept by the tiles' version (or, read, their content): taken back without reading a tile.
+    if (baker.staged && keeps) {
+      const stage = await cache.get(`${key}#staged`) as { readonly want: string; readonly content: string; readonly value: unknown } | undefined;
+      if (stage && stage.want === ask.want) item.staged = { value: stage.value };
+      else if (stage) item.stage = stage;
     }
-    return out;
-  };
-  let tiles = await read(baker.parts);
-  if (!tiles) return { kind: 'nearRecords', node, sig };
-  const has = baker.has?.(tiles) ?? true;
-  if (has && baker.more) {
-    const more = await read(baker.more);
-    if (!more) return { kind: 'nearRecords', node, sig };
-    tiles = tiles.map((t, n) => ({ ...t, ...withoutEmpty(more[n]!) }));
+    baking.push(item);
   }
-  const payload = has ? baker.bake(areaOf(tiles, groundAt, naturalAt), job.extra) : null;
-  // Kept before it is handed over: its buffers are the page's once posted.
-  if (keeps) await cache.put(key, { want: job.want, ground, bake, payload } satisfies KeptNear);
-  return { kind: 'near', node, sig, bake, payload, same: false };
+  if (baking.length) {
+    const reading = baking.some((b) => !b.staged && b.baker.around) ? job.tiles : job.tiles.slice(0, 1);
+    /** The tiles read for some parts. */
+    const read = async (parts: readonly NearPart[]): Promise<TileRecords[] | null> => {
+      const out: TileRecords[] = [];
+      for (let n = 0; n < reading.length; n++) {
+        if (!parts.length) { out.push(emptyRecords(reading[n]!.key, reading[n]!.version)); continue; }
+        const tile = await partsOf(reading[n]!.key, reading[n]!.version, parts, job.records?.[n], job.store);
+        if (!tile) return null;
+        out.push(tile);
+      }
+      return out;
+    };
+    const union = (lists: readonly (readonly NearPart[])[]): NearPart[] => [...new Set(lists.flat())];
+    const needs = baking.filter((b) => !b.staged);
+    let tiles = await read(union(needs.map((b) => b.baker.parts)));
+    if (!tiles) return { kind: 'nearRecords', node };
+    const ownOf = (b: Baking): readonly TileRecords[] => (b.baker.around ? tiles! : tiles!.slice(0, 1));
+    const having = new Set(needs.filter((b) => b.baker.has?.(ownOf(b)) ?? true));
+    const more = union([...having].map((b) => b.baker.more ?? []));
+    if (more.length) {
+      const extra = await read(more);
+      if (!extra) return { kind: 'nearRecords', node };
+      tiles = tiles.map((t, n) => ({ ...t, ...withoutEmpty(extra[n]!) }));
+    }
+    const area = areaOf(tiles, groundAt, naturalAt);
+    for (const b of baking) {
+      try {
+        // What it read, whatever version the tiles are at: the same content in another version (a write of the page's edit, a neighbour written) is what was baked.
+        const read = b.staged ? '' : contentOf(b, ownOf(b), having.has(b));
+        const bake = b.staged ? b.bake : bakeOf(read, b.ground);
+        if (!b.staged && b.ask.shown === bake) { answers.push({ kind: b.ask.kind, sig: b.ask.sig, bake, payload: null, same: true }); continue; }
+        if (!b.staged && b.kept && b.kept.content === read && b.kept.ground === b.ground) { answers.push(keptAnswer(b.ask, b.kept)); continue; }
+        if (!b.staged && !having.has(b)) {
+          answers.push({ kind: b.ask.kind, sig: b.ask.sig, bake, payload: null, same: b.ask.shown === bake });
+          if (keeps) await cache.put(b.key, { want: b.ask.want, content: read, ground: b.ground, bake, payload: null } satisfies KeptNear);
+          continue;
+        }
+        if (b.baker.staged && !b.staged) {
+          b.staged = { value: b.stage && b.stage.content === read ? b.stage.value : b.baker.staged(area, b.ask.extra) };
+          if (keeps) await cache.put(`${b.key}#staged`, { want: b.ask.want, content: read, value: b.staged.value });
+        }
+        const payload = b.baker.bake(area, b.ask.extra, b.staged?.value);
+        // Kept before it is handed over: its buffers are the page's once posted.
+        if (keeps) await cache.put(b.key, { want: b.ask.want, content: read, ground: b.ground, bake, payload } satisfies KeptNear);
+        answers.push({ kind: b.ask.kind, sig: b.ask.sig, bake, payload, same: false });
+      } catch (error) {
+        console.error(`[near] a tile's ${b.ask.kind} could not be baked`, error);
+        answers.push({ kind: b.ask.kind, sig: b.ask.sig, error: String((error as Error)?.stack ?? error) });
+      }
+    }
+  }
+  return { kind: 'near', node, answers };
 }
 
-/** Every buffer of an answer: handed over, not copied (MDN, `postMessage` transfer). */
-export function nearReplyBuffers(baker: NearBaker<unknown>, reply: NearTileReply): ArrayBuffer[] {
-  if (reply.kind !== 'near' || reply.payload === null) return [];
-  return [...new Set(baker.buffers(reply.payload))];
+/** Every buffer of an answer: handed over, not copied (MDN, `postMessage` transfer); one shared by two bakes once. */
+export function nearReplyBuffers(bakerOf: (kind: NearKind) => NearBaker<unknown>, reply: NearTileReply): ArrayBuffer[] {
+  if (reply.kind !== 'near') return [];
+  const out = new Set<ArrayBuffer>();
+  for (const answer of reply.answers) {
+    if ('error' in answer || answer.payload === null) continue;
+    for (const buffer of bakerOf(answer.kind).buffers(answer.payload)) out.add(buffer);
+  }
+  return [...out];
 }
 
 /** The ground a bake reads past a tile when its kind says nothing else. */
