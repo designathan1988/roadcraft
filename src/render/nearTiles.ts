@@ -251,6 +251,8 @@ export class NearTiles implements FarTiles {
   private readonly chosenView = new Frustum();
   private chosenHadView = false;
   private chosenOutside = '';
+  /** The tiles whose edit the last key read (`outsideKey`): one set for every frame. */
+  private readonly editsSeen = new Set<number>();
 
   private readonly run: NearRun;
   /** The queue's runner (none when the tests give their own). */
@@ -359,7 +361,6 @@ export class NearTiles implements FarTiles {
       && outside === this.chosenOutside && sameView(this.chosenHadView ? this.chosenView : null, view)) return;
     this.changed = false;
     c.x = eyeX; c.y = eyeY; c.z = eyeZ; c.pxAtMetre = pxAtMetre; c.orthoPx = orthoPx; c.reach = reach;
-    this.chosenOutside = outside;
     this.chosenHadView = view !== null;
     if (view) this.chosenView.copy(view);
     this.groundMoved();
@@ -368,13 +369,29 @@ export class NearTiles implements FarTiles {
     // DO NOT send a job a kind: each would read the tiles and solve their roads again; every kind of a tile asked goes in one.
     for (const leaf of this.asking) { this.submit(leaf, false); this.submit(leaf, true); }
     this.asking.clear();
+    // Read again over the tiles the kinds hold now: the key before the choice read those they held before it.
+    this.chosenOutside = this.outsideKey();
   }
 
-  /** What the choice reads from outside that tells it nothing when it moves: the ground's record, the page's edits of the stored tiles, each kind's standing and its version at the tiles it holds. */
+  /** What the choice reads from outside that tells it nothing when it moves: the ground's record, the page's edits of the tiles the kinds hold and of the neighbours those read (`tilesOf`), each kind's standing and its version at the tiles it holds.
+   *  - DO NOT ask every stored tile of the map for its edit each frame: the cost grew with the map (`MAP_TILES`), and an edit of a tile no kind holds changes nothing chosen (a tile wanted later is asked at its edit then). */
   private outsideKey(): string {
     const d = new Digest().add(this.groundRecord?.version ?? 0);
     const edit = this.source?.pageEdit;
-    if (edit) for (const key of this.leaves.keys()) d.add(edit(key));
+    if (edit) {
+      const seen = this.editsSeen;
+      seen.clear();
+      for (const held of this.held.values()) {
+        for (const leaf of held) {
+          for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+            const key = tileKey(leaf.i + di, leaf.j + dj);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            d.add(key).add(edit(key));
+          }
+        }
+      }
+    }
     for (const product of this.products) {
       d.add(product.enabled && !product.enabled() ? 0 : 1);
       if (product.version) for (const leaf of this.held.get(product.kind)!) d.addText(product.version(leaf.key));
