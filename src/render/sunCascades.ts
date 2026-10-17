@@ -247,8 +247,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       if (drawingMovers) return;
       for (const mover of movers) {
         for (const root of mover.roots) {
-          // With a store, every mover is drawn over it after the still casters (`drawOver`); without, those too small for the texels are left out.
-          if (!root.visible || (!renderer && drawnIn(root, i))) continue;
+          // Kept in a store this frame (`whole`): every mover is drawn over it after the still casters (`drawOver`); else drawn with them, those too small for the texels left out.
+          if (!root.visible || (!whole[i] && drawnIn(root, i))) continue;
           root.visible = false;
           hidden.push(root);
         }
@@ -517,7 +517,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         if (!fits[i]!.placed || !(all || moved)) continue;
         if (all) {
           lights[i]!.shadow.needsUpdate = true;
-          whole[i] = renderer !== null;
+          // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame), or a near cascade (drawn whole whenever anything moves, the sway): the movers drawn in the same pass, no copy, no second pass over them.
+          whole[i] = renderer !== null && still && i === SUN_CASCADES - 1;
           refitted[i] = false;
           framesSince[i] = 0;
         } else over[i] = true;
