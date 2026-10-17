@@ -124,8 +124,6 @@ export interface MassCells {
   setDetailed(key: string, detailed: boolean): void;
   /** The highest point of any cell's masses (the shadow's reach over the view, `renderer.ts`); -Infinity with none. */
   top(): number;
-  /** The pixels a cell's or a level's masses leave out of the screen while not drawn: its height at its pixels a metre (as their upload is ranked, `sendUp`); a level not come yet at the town's highest top. What its ask waits on the upload queue by (`uploads.ts` warmFull). */
-  massRank(key: string): number;
   /** The pixels `metres` spans at a cell from the last eye (`choose`): what its upload is ranked by (`uploads.ts`). */
   pixels(key: string, metres: number): number;
   /** The frame's error scale for the next `choose` (`frameBudget.ts`): every error is allowed this many times the pixels it is allowed at 1. */
@@ -687,14 +685,6 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
         for (const cell of cells.values()) if (cell.mesh && cell.top > highest) highest = cell.top;
       }
       return highest;
-    },
-    massRank(key) {
-      if (key[1] === ':') {
-        const level = levelsOf(key).get(key);
-        return level ? (level.top > 0 ? level.top : this.top()) * levelPixels(level) : 0;
-      }
-      const cell = cells.get(key);
-      return cell ? cell.top * pixelsAt(cell) : 0;
     },
     pixels(key, metres) {
       const cell = cells.get(key);

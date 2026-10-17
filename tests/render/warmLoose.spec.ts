@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
 
-import { WARM_CEILING, WARM_MOST, cancelWarm, drainCompiles, drainWarm, meshBytes, warmAhead, warmFull, warmLooseAhead, warmPending, warmQueuedBytes } from '@render/uploads';
+import { WARM_CEILING, cancelWarm, drainCompiles, drainWarm, meshBytes, warmAhead, warmFull, warmLooseAhead, warmPending, warmQueuedBytes } from '@render/uploads';
 import { buildRoadSurfaces } from '@render/roadSurfaces';
 import type { SceneMaterials } from '@render/materials';
 import { Network } from '@world/network';
@@ -195,50 +195,18 @@ describe('a loose mesh sent to the GPU', () => {
     const meshes = Array.from({ length: 6 }, block);
     const sent = warmLooseAhead(meshes.slice(0, 5))!;
     expect(warmQueuedBytes() - before).toBe(5 * 12 * 1024 * 1024);
-    expect(warmFull(0)).toBe(false);
+    expect(warmFull()).toBe(false);
     const more = warmLooseAhead([meshes[5]!])!;
     expect(warmQueuedBytes()).toBeGreaterThan(WARM_CEILING);
-    expect(warmFull(0)).toBe(true);
+    expect(warmFull()).toBe(true);
     // One let go: its bytes out of the count.
     cancelWarm([meshes[5]!]);
     await more;
-    expect(warmFull(0)).toBe(false);
+    expect(warmFull()).toBe(false);
     // Sent, a frame at a time: nothing left counted.
     for (let frame = 0; frame < 10 && warmQueuedBytes() > before; frame++) { drainWarm(renderer); drainCompiles(renderer, camera, scene, null); }
     drainCompiles(renderer, camera, scene, null);
     await sent;
-    expect(warmQueuedBytes()).toBe(before);
-    // (a) 70 MiB of far levels far off (2 px each) queued, nothing else: the cell at the camera (400 px of error) is asked, a far level as far off waits.
-    const piece = 1024 * 1024;
-    const meshOf = (bytes: number): Mesh => {
-      const g = new BufferGeometry();
-      g.setAttribute('position', new Float32BufferAttribute(new Float32Array(bytes / 4), 3));
-      return new Mesh(g, new MeshBasicMaterial());
-    };
-    const farOff = Array.from({ length: 70 }, () => meshOf(piece));
-    for (const mesh of farOff) void warmLooseAhead([mesh], () => 2);
-    expect(warmFull(400)).toBe(false);
-    expect(warmFull(2)).toBe(true);
-    // (b) Ranked by the screen, whatever the producer: a far level in the view (60 px) goes before a cell out of it (1 px).
-    expect(warmFull(60)).toBe(false);
-    expect(warmFull(1)).toBe(true);
-    cancelWarm(farOff);
-    // (c) A thousand asks of every kind, ranked anyhow, each only while the queue before it is not full: the whole never past its most by more than the one asked last.
-    let seed = 5;
-    const rand = (): number => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32);
-    const mixed: Mesh[] = [];
-    let most = 0;
-    for (let k = 0; k < 1000; k++) {
-      const rank = k % 3 === 0 ? k : rand() * 500;
-      if (warmFull(rank)) continue;
-      const mesh = meshOf(piece);
-      mixed.push(mesh);
-      void warmLooseAhead([mesh], () => rank);
-      most = Math.max(most, warmQueuedBytes());
-    }
-    expect(most).toBeGreaterThan(WARM_CEILING);
-    expect(most).toBeLessThanOrEqual(WARM_MOST + piece);
-    cancelWarm(mixed);
     expect(warmQueuedBytes()).toBe(before);
   });
 });

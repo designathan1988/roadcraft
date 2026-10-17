@@ -22,7 +22,7 @@ export class MassLevels {
   /** `land`: a level's masses come (null: none of its buildings has any); `remove`: a level with no building left; `plan`: a level that has buildings (its place known before its masses);
    *  `wanted`: whether a tile is wanted now (its plate refined for the view) - DO NOT ask every tile of the map: a plate stands for them from afar (Cesium asks a tile's children only when it refines). */
   constructor(private readonly pool: CellPool, private readonly land: (key: string, mass: CellMass | null) => void, private readonly remove: (key: string) => void,
-    private readonly plan: (key: string) => void, private readonly wanted: (key: string) => boolean, private readonly rank: (key: string) => number = () => 0) {}
+    private readonly plan: (key: string) => void, private readonly wanted: (key: string) => boolean) {}
 
   /** The levels a player's edit changed (`touch` with `edited`): asked first in the queue (`cellPool.ts` EDIT_TIER), once. */
   private readonly edited = new Set<string>();
@@ -54,7 +54,7 @@ export class MassLevels {
       }
       this.plan(key);
       // The upload queue full (`uploads.ts` warmFull): left stale, asked by `pump` once it drains.
-      if ((key[0] === 'p' || this.wanted(key)) && (!warmFull(this.rank(key)) || this.edited.has(key))) this.ask(key, list, env);
+      if ((key[0] === 'p' || this.wanted(key)) && (!warmFull() || this.edited.has(key))) this.ask(key, list, env);
       else {
         // Its old masses, if any, are no longer its buildings': asked again once a view wants it.
         const was = this.asked.get(key);
@@ -69,7 +69,7 @@ export class MassLevels {
   pump(env: CellEnv): void {
     for (const key of this.stale) {
       // DO NOT ask masses to upload while the upload queue is full: their arrays waited on the page (conf77, 2026-10-17); asked once it drains.
-      if (warmFull(this.rank(key)) && !this.edited.has(key)) continue;
+      if (warmFull() && !this.edited.has(key)) continue;
       if (key[0] !== 'p' && !this.wanted(key)) continue;
       this.stale.delete(key);
       const list = this.listOf(key);
