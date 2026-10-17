@@ -81,11 +81,7 @@ interface FarRoadTones {
   readonly planting: readonly [number, number, number];
 }
 
-let tonesMade: FarRoadTones | null = null;
-
-/** The near materials' means (`materials.ts`: the texture times the vertex tint, the close-up layer gone from afar, `detailLayer.ts`), made once a thread. */
-export function farRoadTones(): FarRoadTones {
-  if (tonesMade) return tonesMade;
+function makeTones(): FarRoadTones {
   const { asphalt, footway, kerb, verge } = STREET_MEANS;
   const reference = hexLinear(ASPHALT_REFERENCE);
   // As `roadSurfaces.ts` `againstReference`: the class's colour over the reference, channel by channel, times the texture.
@@ -94,14 +90,21 @@ export function farRoadTones(): FarRoadTones {
     return [asphalt[0] * c[0] / reference[0], asphalt[1] * c[1] / reference[1], asphalt[2] * c[2] / reference[2]];
   };
   const tinted = (t: readonly [number, number, number]): [number, number, number] => [footway[0] * t[0], footway[1] * t[1], footway[2] * t[2]];
-  tonesMade = {
+  return {
     classes: ROAD_TYPES.map((type) => over(Number.parseInt(type.color.slice(1), 16))),
     paving: Object.fromEntries(Object.entries(CARRIAGEWAY_COLOUR).map(([name, hex]) => [name, over(hex)])),
     kerb: [...kerb],
     footway: Object.fromEntries(Object.entries(FOOTWAY_TINT).map(([name, tint]) => [name, tinted(tint)])),
     planting: [...verge],
   };
-  return tonesMade;
+}
+
+/** The near materials' means made once, at load: constants of constants (`STREET_MEANS`, the road classes' colours). */
+const FAR_ROAD_TONES: FarRoadTones = makeTones();
+
+/** The near materials' means (`materials.ts`: the texture times the vertex tint, the close-up layer gone from afar, `detailLayer.ts`). */
+export function farRoadTones(): FarRoadTones {
+  return FAR_ROAD_TONES;
 }
 
 /** A linear colour as the mesh's sRGB bytes. */
@@ -173,7 +176,7 @@ function emitBand(out: Builder, shape: MultiPoly, band: Band, groundAt: (x: numb
   }
 }
 
-/** THE BANDS OF A TILE'S ROADS: each road's carriageway (its class's or its paving's tone), kerb, footway (its material's) and median; each junction the tile owns, its plate in its widest road's tone */
+/** @rebuild Every road of ONE TILE's network (`tileNetwork`, built for this bake from the tile's records), never the map's. THE BANDS OF A TILE'S ROADS: each road's carriageway (its class's or its paving's tone), kerb, footway (its material's) and median; each junction the tile owns, its plate in its widest road's tone */
 function tileBands(net: Network, owned: ReadonlySet<number>): Band[] {
   const tones = farRoadTones();
   const bands = new Map<string, { order: number; tone: readonly [number, number, number]; lift: number; rings: MultiPoly }>();
