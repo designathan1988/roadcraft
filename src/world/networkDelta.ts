@@ -27,27 +27,18 @@ export class DeltaLog {
   private edges: DeltaEdge[] = [];
   /** How long the history was after its last merge (`advance`). */
   private merged = 0;
-  /** The network's roads and nodes now (`advance`): a merged change past it is held as everything (null). */
-  private size = Infinity;
-  /** What the edges' changes hold (`weightOf`). */
-  private weight = 0;
 
-  /** Records a rebuild that moved the network to a new state; `size`, the roads and nodes it holds now. */
-  advance(delta: NetworkDelta | null, size = Infinity): void {
-    this.size = size;
+  /** Records a rebuild that moved the network to a new state. */
+  advance(delta: NetworkDelta | null): void {
     const to = {};
     const toRef = new WeakRef(to);
     this.edges.push({ from: this.stateRef, to: toRef, delta });
-    this.weight += weightOf(delta);
     this.state = to;
     this.stateRef = toRef;
-    // Merged when it has doubled, or when what it holds passes twice the network: the camera crossing tiles fills it with whole tiles' roads.
-    if (this.edges.length >= Math.max(MERGE_FROM, this.merged * 2) || this.weight > 2 * size) {
+    if (this.edges.length >= Math.max(MERGE_FROM, this.merged * 2)) {
       this.merge(() => true);
       this.merged = this.edges.length;
     }
-    // Still past it, every state held: the oldest rebuilds let go, their readers told everything changed (`since` null).
-    while (this.weight > 2 * size && this.edges.length > 1) this.weight -= weightOf(this.edges.shift()!.delta);
   }
 
   /** Takes another log's current state and every rebuild it remembers (`Network.adopt`). */
@@ -57,7 +48,6 @@ export class DeltaLog {
     const merged = this.edges.slice();
     for (const edge of other.edges) if (!known.has(edge)) merged.push(edge);
     this.edges = merged;
-    this.weight = merged.reduce((n, e) => n + weightOf(e.delta), 0);
     this.state = other.state;
     this.stateRef = other.stateRef;
   }
@@ -87,11 +77,10 @@ export class DeltaLog {
         if (list.length < 2) continue;
         const [a, b] = list as [DeltaEdge, DeltaEdge];
         const from = a.from === ref ? a.to : a.from, to = b.from === ref ? b.to : b.from;
-        if (from !== to) added.push({ from, to, delta: union(a.delta, b.delta, this.size) });
+        if (from !== to) added.push({ from, to, delta: union(a.delta, b.delta) });
       }
       if (changed) this.edges = [...this.edges.filter((e) => !gone.has(e)), ...added];
     }
-    this.weight = this.edges.reduce((n, e) => n + weightOf(e.delta), 0);
   }
 
   /** Everything that changed between the state `from` and the current one, or `null` when that is not known */
@@ -126,14 +115,8 @@ export class DeltaLog {
   }
 }
 
-/** What a change holds: its roads, nodes and rectangles. */
-const weightOf = (d: NetworkDelta | null): number => (d ? d.segments.size + d.nodes.size + d.rects.length : 0);
-
-/** Two changes as one: every road, node and rectangle of both; `null` (everything) if either is, or if they name more roads and nodes than the network holds (`size`) */
-/** DO NOT keep a merged change larger than the network: a reader that far behind reads it whole for no more (a reader holding an old state kept every road of every tile the camera passed, a heap snapshot of the simulation's worker over 22 tiles walked, 2026-10-17). */
-function union(a: NetworkDelta | null, b: NetworkDelta | null, size: number): NetworkDelta | null {
+/** Two changes as one: every road, node and rectangle of both; `null` (everything) if either is. */
+function union(a: NetworkDelta | null, b: NetworkDelta | null): NetworkDelta | null {
   if (a === null || b === null) return null;
-  const segments = new Set([...a.segments, ...b.segments]), nodes = new Set([...a.nodes, ...b.nodes]);
-  if (segments.size + nodes.size > size) return null;
-  return { segments, nodes, rects: [...a.rects, ...b.rects] };
+  return { segments: new Set([...a.segments, ...b.segments]), nodes: new Set([...a.nodes, ...b.nodes]), rects: [...a.rects, ...b.rects] };
 }
