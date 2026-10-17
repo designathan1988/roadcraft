@@ -1,5 +1,5 @@
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
-import { tileOfKey } from '@world/tiles';
+import { tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { FarTileBake, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
@@ -27,7 +27,10 @@ interface Waiting {
 }
 
 /** A worker's lane of the generator: on a worker of the long-running side, or set aside on another kind's while the map is made (`setAside`). */
-interface Lane { readonly port: Worker; busy: Waiting | null; readonly aside: boolean }
+interface Lane { readonly port: Worker; readonly inFlight: Waiting[]; readonly aside: boolean }
+
+/** Tiles posted to a lane at once while the map is made (`setAside`): DO NOT post a lane its next tile only when the page hears the last one's answer, its worker idle for a round trip through the page's long frames (the workers' profile, wprof8-10: the tile workers 0-50% busy from 30 to 50 s of the opening); one after, the page's asks kept to the tile under way. */
+const RUSH_DEPTH = 2;
 
 export class TileGenerator {
   private readonly lanes: Lane[] = [];
@@ -92,7 +95,7 @@ export class TileGenerator {
     // A tile being made when let go is told so, as one waiting: whoever asked does not wait for ever.
     this.quiet?.();
     this.quiet = null;
-    for (const lane of this.lanes) { lane.port.terminate(); lane.busy?.failed('the generator was let go'); lane.busy = null; }
+    for (const lane of this.lanes) { lane.port.terminate(); for (const w of lane.inFlight.splice(0)) w.failed('the generator was let go'); }
     this.lanes.length = 0;
     for (const w of [...this.queue.splice(0), ...this.lowQueue.splice(0)]) w.failed('the generator was let go');
     setTilesWaiting(false);
@@ -100,10 +103,10 @@ export class TileGenerator {
 
   /** The lanes set aside with no tile let go past `keep` (their workers' other work comes back to them). */
   private dropAside(keep: number): void {
-    let kept = this.lanes.filter((l) => l.aside && l.busy).length;
+    let kept = this.lanes.filter((l) => l.aside && l.inFlight.length > 0).length;
     for (let k = this.lanes.length - 1; k >= 0; k--) {
       const lane = this.lanes[k]!;
-      if (!lane.aside || lane.busy) continue;
+      if (!lane.aside || lane.inFlight.length > 0) continue;
       if (kept < keep) { kept++; continue; }
       lane.port.terminate();
       this.lanes.splice(k, 1);
@@ -115,7 +118,10 @@ export class TileGenerator {
     // DO NOT keep a lane set aside with no tile waiting (the rush's end, `setAside(false)`, waits for every tile made, and a tile that failed never counts), nor past what the queue leaves (`asideLanes`).
     this.dropAside(!this.aside || this.queue.length === 0 ? 0 : asideLanes());
     const own = this.lanes.filter((l) => !l.aside).length, aside = this.lanes.length - own;
-    const idle = (): number => this.lanes.filter((l) => !l.busy).length;
+    // A lane set aside keeps one: the queue's worker is given back at the end of the tile under way.
+    const depthOf = (l: Lane): number => (this.aside && !l.aside ? RUSH_DEPTH : 1);
+    // Room for tiles on the lanes there are: each lane's free places.
+    const idle = (): number => this.lanes.reduce((n, l) => n + Math.max(0, depthOf(l) - l.inFlight.length), 0);
     // The low work on the generator's own lanes alone, never on those set aside.
     const quiet = jobsQuiet();
     // Told when the queue goes quiet while either can start then.
@@ -124,27 +130,30 @@ export class TileGenerator {
     else if (!listen && this.quiet) { this.quiet(); this.quiet = null; }
     for (let made = own; made < tileLanes() && this.queue.length + (quiet ? Math.min(this.lowQueue.length, LOW_IN_FLIGHT) : 0) > idle(); made++) this.lanes.push(this.lane(false));
     if (this.aside) for (let made = aside; made < asideLanes() && this.queue.length > idle(); made++) this.lanes.push(this.lane(true));
-    let low = this.lanes.filter((l) => l.busy?.store?.baysOnly).length;
+    let low = this.lanes.filter((l) => l.inFlight.some((w) => w.store?.baysOnly)).length;
     for (const lane of this.lanes) {
-      if (lane.busy) continue;
-      // DO NOT start low work while a queued job waits or runs (conf67: the bays of the whole map on six of seven tile workers at once, the far levels, cells and near roads left two workers): only on a quiet queue, the one under way let finish.
-      const next = this.queue.shift() ?? (lane.aside || !quiet || low >= LOW_IN_FLIGHT ? undefined : (low++, this.lowQueue.shift()));
-      if (!next) continue;
-      lane.busy = next;
-      const { i, j } = tileOfKey(next.key);
-      lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: { ...next.store, far: this.far() } } : {}) } satisfies StreamTileAsk);
+      while (lane.inFlight.length < depthOf(lane)) {
+        // DO NOT start low work while a queued job waits or runs (conf67: the bays of the whole map on six of seven tile workers at once, the far levels, cells and near roads left two workers): only on a quiet queue, the one under way let finish; and on an empty lane alone.
+        const next = this.queue.shift() ?? (lane.aside || !quiet || low >= LOW_IN_FLIGHT || lane.inFlight.length > 0 ? undefined : (low++, this.lowQueue.shift()));
+        if (!next) break;
+        lane.inFlight.push(next);
+        const { i, j } = tileOfKey(next.key);
+        lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: { ...next.store, far: this.far() } } : {}) } satisfies StreamTileAsk);
+      }
     }
     // The map's tiles waiting: the long side's workers kept for them, no queued job between two tiles (`jobPool.ts` setTilesWaiting).
     setTilesWaiting(this.aside && this.queue.length > 0);
   }
 
   private lane(aside: boolean): Lane {
-    const lane: Lane = { port: jobPort(aside ? 'cityTilesAside' : 'cityTiles'), busy: null, aside };
+    const lane: Lane = { port: jobPort(aside ? 'cityTilesAside' : 'cityTiles'), inFlight: [], aside };
     lane.port.onmessage = (event: MessageEvent<StreamTileAnswer>) => {
-      const waiting = lane.busy;
-      lane.busy = null;
+      const answer = event.data;
+      // The tile it answers, by its key: a tile that fails at once may answer before the one ahead of it is stored.
+      const key = 'error' in answer ? tileKey(answer.i, answer.j) : answer.key;
+      const at = lane.inFlight.findIndex((w) => w.key === key);
+      const waiting = at < 0 ? undefined : lane.inFlight.splice(at, 1)[0];
       if (waiting) {
-        const answer = event.data;
         if ('error' in answer) waiting.failed(answer.error);
         else if ('stored' in answer) {
           waiting.done({ version: answer.stored, ...(answer.prepared ? { prepared: answer.prepared } : {}),
@@ -155,9 +164,7 @@ export class TileGenerator {
       this.pump();
     };
     lane.port.onerror = (event) => {
-      const waiting = lane.busy;
-      lane.busy = null;
-      waiting?.failed(`a tile worker failed: ${event.message}`);
+      for (const waiting of lane.inFlight.splice(0)) waiting.failed(`a tile worker failed: ${event.message}`);
       this.pump();
     };
     return lane;
