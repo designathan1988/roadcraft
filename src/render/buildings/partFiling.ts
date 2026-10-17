@@ -1,13 +1,18 @@
-import type { CellArrays } from './cellArrays';
-import { type Axes, PART_KINDS, type PartKind, type PartScreen } from './kit';
-import { BATCH_CELL, DETAIL_CELL } from './layerCells';
+import { CELL } from '@world/cells';
+import { m } from '@world/units';
+import type { CellArrays, PartBanding, PartBandings } from './cellArrays';
+import { PART_KINDS, type PartKind, type PartScreen } from './kit';
 import { POSE_FLOATS } from './partPose';
 import { LOOK_FLOATS } from './shellParts';
 
 /** A CELL'S PARTS FILED BY BAND AND SUB-CELL WHERE THE CELL IS MADE (`cellWork.ts`): the page is handed each band's buffers ready, never an instance to read (`partCells.ts` draws them) */
 
-/** Sub-cells a side of a cell: four, as `morton` is made for. */
-export const SIDE = Math.round(BATCH_CELL / DETAIL_CELL);
+export type { PartBanding, PartBandings } from './cellArrays';
+
+/** Side of the sub-cells a cell's parts are filed by (four a side): each part kind's level is chosen per sub-cell, or per quadrant or cell where they agree (`partCells.ts`). DO NOT read it of `layerCells.ts`: that module reaches the shells, which reach the filing. */
+export const DETAIL_CELL = m(64);
+/** Sub-cells a side of a cell (the world's one grid, `layerCells.ts` BATCH_CELL): four, as `morton` is made for. */
+export const SIDE = Math.round(CELL / DETAIL_CELL);
 if (SIDE !== 4) throw new Error(`[buildings] a cell's parts are filed four sub-cells a side, not ${SIDE}`);
 export const LEAVES = SIDE * SIDE;
 /** What a draw is taken to cost in triangles: a band is kept apart only if it draws as much (three's per-object work on the page, `projectObject`/`renderObject`, outweighs this many triangles on the GPU). */
@@ -15,14 +20,6 @@ export const DRAW_TRIANGLES = 16384;
 
 /** A sub-cell's index in Morton order from its column and row in the cell. */
 export const morton = (u: number, v: number): number => (u & 1) | ((v & 1) << 1) | ((u & 2) << 1) | ((v & 2) << 2);
-
-/** What filing a kind reads of its screen (`kit.ts` `PartScreen`), sent with each job (`kitBoxes`): its first coarser level's error, its box, its finest level's triangles. */
-export interface PartBanding {
-  readonly first: Axes | null;
-  readonly extent: Axes;
-  readonly triangles: number;
-}
-export type PartBandings = Readonly<Record<PartKind, PartBanding>>;
 
 /** Each kind's banding off the kit's screens as they are now (a small prop's simplified levels come in once the simplifier has loaded). */
 export function partBandings(screens: Readonly<Record<PartKind, PartScreen>>): PartBandings {

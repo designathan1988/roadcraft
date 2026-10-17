@@ -1,9 +1,11 @@
 import {
-  Box3, BufferAttribute, BufferGeometry, InstancedBufferGeometry, InstancedInterleavedBuffer, InterleavedBufferAttribute, Mesh, Sphere, Vector3,
+  Box3, BufferAttribute, BufferGeometry, InstancedBufferGeometry, InstancedInterleavedBuffer, InterleavedBufferAttribute, type Material, Mesh, Sphere, Vector3,
 } from 'three';
 import { gpuOnlyAttributes } from '../mesh/gpuOnly';
 import { BOX_INSTANCE, type BoxMass } from './cellArrays';
-import type { BuildingKit } from './kit';
+
+/** What a box level reads of the kit (`kit.ts`): its unit box, the boxes' material and their depth. DO NOT import the kit for it: the kit makes the unit box here. */
+interface BoxKit { readonly massBox: BufferGeometry; readonly massingBoxes: Material; readonly massBoxDepth: Material }
 
 /** THE BOX LEVELS' BUILDINGS AS INSTANCES OF ONE BOX (`farTiles.ts` levels 2 and up): the box's 20 vertices once for the kit, each building's box `BOX_INSTANCE` numbers, laid by the masses' shader (`massingMaterial.ts` `boxes`) */
 
@@ -26,7 +28,7 @@ export function unitBox(): BufferGeometry {
 }
 
 /** A box level's mesh: the kit's unit box drawn once a box, each from its instance. */
-export function boxesMesh(mass: BoxMass, kit: BuildingKit, name = 'building-massing-far'): Mesh {
+export function boxesMesh(mass: BoxMass, kit: BoxKit, name = 'building-massing-far'): Mesh {
   const g = new InstancedBufferGeometry();
   const unit = kit.massBox;
   g.index = unit.index;

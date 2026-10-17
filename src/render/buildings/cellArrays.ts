@@ -5,7 +5,6 @@ import { FURNITURE_KINDS, type FurnitureKind } from '@world/buildings/interior';
 import { FACADE_PROP_KINDS } from './facadeProps';
 import type { BuildingChunk, PartBatch, PartKind, RunChunk, ShellChunk } from './chunk';
 import type { MassingChunk } from './massing';
-import type { PartBandings } from './partFiling';
 import { ROOM_FLOATS } from './roomBehind';
 import { LOOK_FLOATS, SHELL_PARTS, SHELL_PART_KINDS } from './shellParts';
 import { POSE_FLOATS, poseMatrixInto } from './partPose';
@@ -14,6 +13,14 @@ import { POSE_FLOATS, poseMatrixInto } from './partPose';
 
 /** Parts drawn with a colour per instance: awnings, the window frames and balcony railings in their building's trim (the materials are white), the shell's parts in their paint. */
 export const COLOURED_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['awning', 'frame', 'railing', 'fin', 'louvre', 'brise', ...FACADE_PROP_KINDS, ...SHELL_PART_KINDS]));
+
+/** What filing a kind reads of its screen (`kit.ts` `PartScreen`), sent with each job (`kitBoxes`): its first coarser level's error, its box (the kit's `Axes`), its finest level's triangles. Here, not in `partFiling.ts`: the batches' boxes carry it, and the filing reads the batches. */
+export interface PartBanding {
+  readonly first: readonly [number, number, number] | null;
+  readonly extent: readonly [number, number, number];
+  readonly triangles: number;
+}
+export type PartBandings = Readonly<Record<PartKind, PartBanding>>;
 
 /** What a batch takes: the part kinds, whether the shells and the furniture; the preview's look (`ghost`) or the faded one (`dim`). */
 export interface CellSelection {

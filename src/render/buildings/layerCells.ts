@@ -34,8 +34,8 @@ export function groundDigest(b: Building, groundAt: GroundAt, pavedAt?: PavedAt)
 export const STREAM_AHEAD = 8;
 /** Side of the cells the buildings are batched in: the world's one grid (`world/cells.ts`). */
 export const BATCH_CELL = CELL;
-/** Side of the sub-cells a cell's parts are filed by (four a side): each part kind's level is chosen per sub-cell, or per quadrant or cell where they agree (`partCells.ts`). */
-export const DETAIL_CELL = m(64);
+/** Side of the sub-cells a cell's parts are filed by (`partFiling.ts`). */
+export { DETAIL_CELL } from './partFiling';
 // Frozen tables, not state (`eslint-rules/no-module-state.js`).
 /** The parts drawn with the cell's shells, one batch a cell: window panes (each with its room's light) and pool water, their single level two triangles. */
 export const COARSE_PARTS: ReadonlySet<PartKind> = Object.freeze(new Set<PartKind>(['glass', 'glassDark', 'water']));
