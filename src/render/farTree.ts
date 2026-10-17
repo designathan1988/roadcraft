@@ -432,7 +432,7 @@ export class FarTree<P> implements FarTiles {
     const sig = `${bake}:${variant}`;
     if (n.nearLanded === sig || n.nearAsked === sig || n.nearFailed === sig) return;
     // The upload queue full: as `ask`; never the tile the player edits, which draws what was just done.
-    if (tiles[0]!.cut === null && warmFull(this.nearPixelsOf(n))) { this.changed = true; return; }
+    if (tiles[0]!.cut === null && warmFull()) { this.changed = true; return; }
     // DO NOT ask a near level before what it is baked from is known: behind a reopening's curtain the roads were asked on the ground taken as natural, missed every bake kept on the built one, and baked again (~17 s of the workers, rprof6).
     if (this.kind.near!.ready?.() === false) { this.changed = true; return; }
     // DO NOT cancel a near level a worker is baking for a newer version of what it reads: an edited tile's cut holds its buildings' gates, every building grown in the tile or a neighbour made a new one, and each cancelled the bake under way and began it again; the edited tile's roads never landed while the town grew (`conferencia` 40-road-4s: the new road missing over the left lake 4 s on, in 4 of 6 runs, 2026-10-17). The bake under way lands, then the newest is asked.
@@ -600,7 +600,7 @@ export class FarTree<P> implements FarTiles {
     if (n.asked === sig && (n.askedWant || !want)) return;
     if (n.blocked === sig) { if (want) n.blockedWant = true; return; }
     // DO NOT ask a mesh while the upload queue is full (`uploads.ts` warmFull): its arrays waited on the page with every other one baked again, the renderer at 7.3 GB in a re-bake and the page lost (conf74, conf75, conf77, 2026-10-17). What is drawn stands; asked again once it drains (the choice made again, `changed`).
-    if (want && warmFull(this.pixelsOf(n))) { this.changed = true; return; }
+    if (want && warmFull()) { this.changed = true; return; }
     n.cancel?.();
     n.asked = sig;
     n.askedWant = want;

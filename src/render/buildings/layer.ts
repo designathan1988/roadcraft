@@ -355,7 +355,7 @@ export function createBuildingLayer(): BuildingLayer {
   const requests = new CellRequests(pool, kit, keep, admit, rank);
   /** The tiles' (L2) and plates' (L3) masses, asked again only where a cell's buildings changed (`massLevels.ts`). */
   const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key),
-    (key) => massCells.planLevel(key), (key) => massCells.wanted(key), (key) => massCells.massRank(key));
+    (key) => massCells.planLevel(key), (key) => massCells.wanted(key));
   /** Each cell's buildings as last filed (`askMass`), and as last asked of the workers for its own masses: asked only while the view draws the cell one by one (`askExposed`). */
   const massEntries = new Map<string, readonly CellEntry[]>();
   /** The cells the player's edit changed since their jobs were last asked (a road demolishing buildings, in its own tile or the next): their detail and masses asked first (`cellPool.ts` EDIT_TIER), in whichever tile. DO NOT put the growth here: every building grown ahead of the queue held the view's detail behind it (the near tiles, conf23). */
@@ -370,7 +370,7 @@ export function createBuildingLayer(): BuildingLayer {
       if (!requests.mass(cell, entries, env, (mass) => {
         massCells.land(cell, mass);
         chooseNow();
-      }, editedCells.has(cell), massCells.massRank(cell))) return;
+      }, editedCells.has(cell))) return;
       massAsked.set(cell, entries);
     }
   };
