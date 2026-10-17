@@ -228,3 +228,17 @@ describe('a level never landed, reckoned in bytes', () => {
     expect(cap).toMatch(/Number\.isNaN\(mean\) \? massCells\.massBytes\(key\) : mean/);
   });
 });
+
+describe('what a level is reckoned to draw', () => {
+  it('before any of its kind landed: a dense cell\'s detail and facade level with their parts, as measured', async () => {
+    const { TYPICAL_LEVEL_TRIANGLES } = await import('@render/buildings/frameBudget');
+    expect(TYPICAL_LEVEL_TRIANGLES).toEqual({ cell: 1_300_000, facade: 600_000 });
+  });
+
+  it('once landed: measured with its parts chosen (`cullDetails`), not as it lands with none chosen yet', async () => {
+    const { readFileSync } = await import('node:fs');
+    const layer = readFileSync('src/render/buildings/layer.ts', 'utf8');
+    const cull = layer.slice(layer.indexOf('    cullDetails(eyeX'), layer.indexOf('    cullDetails(eyeX') + 1200);
+    expect(cull).toMatch(/cell\.choose\(partView\);[\s\S]*landedTriangles\.set\(kind, key, level\.triangles \+ cell\.triangles\)/);
+  });
+});

@@ -56,8 +56,8 @@ export class FrameScale {
   }
 }
 
-/** What a cell's level is reckoned to draw before any of its kind landed: a dense cell's detail and facade level, from the district view measured 2026-10-16 (13 M triangles over ~30 near cells). */
-export const TYPICAL_LEVEL_TRIANGLES: Readonly<Record<'cell' | 'facade', number>> = { cell: 600_000, facade: 300_000 };
+/** What a cell's level is reckoned to draw before any of its kind landed: a dense cell's detail and facade level with their parts, as measured by the predios session (2026-10-17: 1.3 M and 0.6 M, twice the 2026-10-16 figures). */
+export const TYPICAL_LEVEL_TRIANGLES: Readonly<Record<'cell' | 'facade', number>> = { cell: 1_300_000, facade: 600_000 };
 
 /** WHAT A LEVEL DRAWS OR HOLDS, reckoned before it lands (`layer.ts` `chosenTriangles`, `capNow`): as it measured when it last landed, else the mean of its kind's landed, else `typical`. */
 export class LandedMeasure<K extends string> {

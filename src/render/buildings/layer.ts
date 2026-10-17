@@ -778,7 +778,11 @@ export function createBuildingLayer(): BuildingLayer {
       for (const [kind, map] of [['cell', partCells], ['facade', facadeParts]] as const) {
         for (const [key, cell] of map) {
           cell.group.visible = levelShown(key) === kind;
-          if (cell.group.visible) cell.choose(partView);
+          if (!cell.group.visible) continue;
+          cell.choose(partView);
+          // What the level draws, measured with its parts chosen (DO NOT measure it as it lands: its parts are chosen at this cull, they counted 0 and the facade level's mean fell 7 times under what it draws).
+          const level = (kind === 'cell' ? cells : facades).get(key)?.part;
+          if (level) landedTriangles.set(kind, key, level.triangles + cell.triangles);
         }
       }
     },
