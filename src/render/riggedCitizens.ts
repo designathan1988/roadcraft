@@ -4,7 +4,7 @@ import {
   Matrix4, MeshDepthMaterial, MeshStandardMaterial, Object3D, Quaternion, RGBAFormat,
   RGBADepthPacking, SkinnedMesh, Texture, Vector3, type WebGLRenderer,
 } from 'three';
-import { PIXAR, REALISTIC, cartoonBody, styleFor, type CartoonStyle } from './people/cartoon';
+import { PIXAR, REALISTIC, type CartoonStyle } from './people/cartoon';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { personHash, type PartyView, type PedView } from '@sim/people/view';
 import { DT } from '@sim/dt';
@@ -13,21 +13,17 @@ import { CROWD, CROWD_IDS, CastingRegistry, type CastingContext, type Company } 
 import { NO_HELMET, type RiderClipKey } from './riderPoses';
 import { CITIZEN_ASSET_URLS, CITIZEN_LICENSES } from './citizenAssets';
 import type { CitizenModel } from './citizenCasting';
-import { loadPeopleAssets } from '@people/body/assets';
-import { Morpher } from '@people/body/morph';
-import { createPersonRig, personSimplifier } from './people/personRig';
 import { cancelUploads, compileAhead, shadowStandIn, warmAhead } from './uploads';
-import { bakeDeferredInWorker, bakeInWorker, bakeRig, releaseIdleBakeWorkers } from './bakePool';
-import { cookPerson } from './people/cookedPerson';
+import { bakeDeferredInWorker, bakeInWorker, bakeRig, buildPersonInWorker, releaseIdleBakeWorkers } from './bakePool';
+import { assemblePerson, cookPerson } from './people/cookedPerson';
+import { buildPersonScene } from './people/personBuild';
+import { lodPool } from './people/lodPool';
+import { providePeopleLod } from './people/lodPort';
 import { loadCookedPerson, peopleCookHash } from './people/cookedLoad';
 import { HELD, createHeldProps } from './people/heldProps';
-import { attachFacialMorphs } from './people/facialMorphs';
-import { applyFace, channelShapes, faceAt, type FaceWeights } from './people/faceExpression';
-import { expressionShapes } from '@people/body/expressions';
+import { applyFace, faceAt, type FaceWeights } from './people/faceExpression';
 import { applySkinAppearance, createPersonLayers, loadSkinAppearance, releaseSkinAppearance, type SkinAppearance } from './people/skinAppearance';
-import { loadProxyItem, type ProxyItem } from '@people/body/proxy';
-import { wornItems } from '@people/spec';
-import { captureBind, captureBindRotations, loadRocketboxClips } from './citizenWalk';
+import { loadRocketboxClips } from './citizenWalk';
 import { type Gradient, shearMatrix } from './groundShear';
 import { PACKED_BONE_FLOATS, SKIN_BONE_FLOATS, blendPackedFrames } from './citizenPalette';
 import { GPU_PLAYS, appendClip, citizenAtlas, cpuPose, gpuPlays, type CitizenAtlas, type Play } from './citizenPlays';
@@ -41,6 +37,8 @@ import type { WalkSex } from './citizenWalk';
 
 export type { CitizenClipKey } from './citizenBake';
 export { CROWD_IDS } from './citizenCasting';
+// The bodies built on this page simplify their levels in the page's pool (`lodPort.ts`).
+providePeopleLod(lodPool);
 const CAPACITY = 1000;
 /** Instances a level's mesh starts with; it doubles with the figures drawn at that level (`growLevel`), up to `CAPACITY`. */
 const LEVEL_START = 16;
@@ -338,7 +336,6 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   const matrix = new Matrix4();
   const helmetBone = new Matrix4();
   let disposed = false;
-  let morpher: Morpher | null = null;
   let detail = 2;
   let lod = 0;
   /** What bodies do at this zoom besides their mesh (`citizenBandAt`). */
@@ -387,52 +384,29 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   async function personAsset(model: CitizenModel, fresh = false,
     owned: Set<{ dispose(): void }> = resources): Promise<GLTF> {
     const person = model.person!;
+    /** The person's scene with its skin's appearance (its textures, loaded here). */
+    const dressed = async (scene: Object3D): Promise<GLTF | null> => {
+      let mesh: SkinnedMesh | undefined;
+      scene.traverse((o) => { if (o instanceof SkinnedMesh && !mesh) mesh = o; });
+      if (!mesh) return null;
+      const skin = await loadSkinAppearance(person);
+      owned.add({ dispose: () => releaseSkinAppearance(skin) });
+      mesh.geometry.userData['skinAppearance'] = skin;
+      return { scene, parser: null } as unknown as GLTF;
+    };
     // Cooked ahead (`cookedPerson.ts`, `npm run cook:people`): read back, not built - the realistic bodies
     const style = peopleStyle();
     const cooked = fresh || style !== REALISTIC ? null : await loadCookedPerson(model.id);
-    if (cooked) {
-      let mesh: SkinnedMesh | undefined;
-      cooked.traverse((o) => { if (o instanceof SkinnedMesh && !mesh) mesh = o; });
-      if (mesh) {
-        const skin = await loadSkinAppearance(person);
-        owned.add({ dispose: () => releaseSkinAppearance(skin) });
-        mesh.geometry.userData['skinAppearance'] = skin;
-        return { scene: cooked, parser: null } as unknown as GLTF;
-      }
-    }
-    const people = await loadPeopleAssets();
-    morpher ??= new Morpher(people.packs);
-
-    // The garments it wears, loaded first; failing that it is drawn in the tailored shells rather than not at all.
-    const proxies = new Map<string, ProxyItem>();
-    try {
-      for (const [name, item] of await Promise.all(wornItems(person.look).map(async (n) => [n, await loadProxyItem(n)] as const))) proxies.set(name, item);
-    } catch { proxies.clear(); }
-    const input = {
-      proxies,
-      texturedSkin: true,
-      data: people.mesh, skeleton: people.skeleton, bodyRange: people.bodyRange,
-      positions: cartoonBody(morpher.shape(person.body, person.features), people.mesh, styleFor(style, person.id)), look: person.look,
-      capture: captureBind(model.gender === 'f' ? 'female' : 'male'), captureAxes: captureBindRotations(model.gender === 'f' ? 'female' : 'male'),
-    };
-    await personSimplifier;
+    const asCooked = cooked ? await dressed(cooked) : null;
+    if (asCooked) return asCooked;
+    const faces = new URLSearchParams(location.search).get('expressions') !== 'off';
+    // DO NOT build a person on the page (R22): built in a worker and read back as a cooked one; here only where no worker can, or for the cook.
+    const decoded = fresh ? null : await buildPersonInWorker(person, model.gender, style, faces);
+    const fromWorker = decoded ? await dressed(assemblePerson(decoded)) : null;
+    if (fromWorker) return fromWorker;
     // A body is built in one go, just after a frame is drawn.
-    await afterFrame();
-    const built = performance.now();
-    const rig = createPersonRig(input);
-    performance.measure('person-rig', { start: built, end: performance.now() });
-    // Live faces: blinking, gaze, mood, speech
-    if (new URLSearchParams(location.search).get('expressions') !== 'off') {
-      const faceAt = performance.now();
-      await attachFacialMorphs(input, rig, channelShapes(await expressionShapes()));
-      performance.measure('person-face', { start: faceAt, end: performance.now() });
-    }
-    {
-      const skin = await loadSkinAppearance(person);
-      owned.add({ dispose: () => releaseSkinAppearance(skin) });
-      rig.mesh.geometry.userData['skinAppearance'] = skin;
-    }
-    return { scene: rig.scene, parser: null } as unknown as GLTF;
+    const scene = await buildPersonScene(person, model.gender, style, faces, afterFrame);
+    return (await dressed(scene))!;
   }
 
   async function load(index: number): Promise<void> {

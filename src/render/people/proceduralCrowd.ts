@@ -34,8 +34,11 @@ import {
   levelFor, lodReady, simplifiedIndexAway, sortSkinWeights, type FarPart, type PieceRole,
 } from './crowdLod';
 import { createBlobShadows } from '../blobShadows';
+import { lodPool } from './lodPool';
+import { providePeopleLod } from './lodPort';
 
-;
+// The class bodies built on this page simplify their levels in the page's pool (`lodPort.ts`).
+providePeopleLod(lodPool);
 
 /** Procedural people (`people-lab.html`, then the game): one MakeHuman body per class - sex and age band */
 

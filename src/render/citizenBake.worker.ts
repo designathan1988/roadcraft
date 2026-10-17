@@ -2,7 +2,10 @@
 import type { JobScope } from '../jobs/jobScope';
 import { type ClipFrames, type RigNode, type ShuffleFacts, bake, bakeDeferred, rigFromData, setSliceMs } from './citizenBake';
 import { loadRocketboxClips, type RocketboxClips, type WalkSex } from './citizenWalk';
-import { decodeCookedPerson, type DecodedPerson } from './people/cookedPerson';
+import { cookPerson, decodeCookedPerson, type DecodedPerson } from './people/cookedPerson';
+import { buildPersonScene } from './people/personBuild';
+import type { CartoonStyle } from './people/cartoon';
+import type { PersonSpec } from '@people/spec';
 
 /** Nothing to yield to here: a bake runs to its end. */
 setSliceMs(Infinity);
@@ -15,6 +18,8 @@ interface Job {
   readonly at?: number;
   readonly facts?: ShuffleFacts;
   readonly uncook?: string;
+  /** A person not cooked for this build (`personBuild.ts`), built here and read back as a cooked one. */
+  readonly build?: { readonly person: PersonSpec; readonly gender: 'f' | 'm'; readonly style: CartoonStyle; readonly faces: boolean };
 }
 
 export type BakedClip = Omit<ClipFrames, 'head'> & { head?: number[] };
@@ -37,8 +42,14 @@ function sent(clip: ClipFrames, transfer: Set<ArrayBuffer>): BakedClip {
 }
 
 async function bakeJob(scope: JobScope, e: MessageEvent<Job>): Promise<void> {
-  const { id, nodes, sex, at, facts, uncook } = e.data;
+  const { id, nodes, sex, at, facts, uncook, build } = e.data;
   try {
+    if (build) {
+      const scene = await buildPersonScene(build.person, build.gender, build.style, build.faces);
+      const { person, transfer } = decodeCookedPerson(cookPerson(scene));
+      scope.postMessage({ id, person } satisfies BakeReply, transfer);
+      return;
+    }
     if (uncook !== undefined) {
       const response = await fetch(uncook);
       if (!response.ok) throw new Error(`${uncook}: ${response.status}`);
