@@ -73,8 +73,8 @@ export function isTileRecords(value: unknown): value is TileRecords {
 /** THE PARTS A TILE IS STORED IN (format 2, `tileBlob.ts`): its records in three - the far roads read the roads alone, the far buildings the buildings, the region's load all three - then the sections baked from them where the tile is written (`TileBaker`) */
 type RecordPart = 'rest' | 'roads' | 'buildings';
 const RECORD_PARTS: readonly RecordPart[] = ['rest', 'roads', 'buildings'];
-/** The parts of the records the far bakes read alone. */
-export type TilePartName = 'roads' | 'buildings';
+/** The parts of the records the far and near bakes read alone (`rest`: the poles, the placed things, the barriers, the trees, `render/nearTileBake.ts`). */
+export type TilePartName = RecordPart;
 
 function splitRecords(records: TileRecords): Record<RecordPart, object> {
   const { nodes, borrowedNodes, segments, gates, buildings, grown, lots, ...rest } = records;

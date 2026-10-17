@@ -19,6 +19,9 @@ export interface PlantCells {
   cull(frustum: Frustum, view: Matrix4): void;
   /** The map zoom: the leaf cards left out (`InstanceRuns.setMap`). */
   setMap(map: boolean): void;
+  /** A run made elsewhere (a tile's, baked in a worker: `plantedTiles.ts`) drawn with the cells' own; taken away by `take` with the same run. */
+  put(run: Run): void;
+  take(run: Run): void;
   dispose(): void;
 }
 
@@ -54,6 +57,8 @@ function plantLayer(name: string, stores: readonly RunStore[], format: PoseForma
     },
     cull(frustum, view) { runs.cull(frustum, view); },
     setMap(map) { runs.setMap(map); },
+    put(run) { runs.update({ removed: [], added: [run] }); },
+    take(run) { runs.update({ removed: [run], added: [] }); },
     dispose() { runs.dispose(); drawn.clear(); },
   };
 }
@@ -87,18 +92,22 @@ export function createTreeCells(kit: NatureTreeKit, name: string, treesIn: (cell
         castShadow: true, receiveShadow: false, cards: false, far: true, made: far.attach },
     ],
   }));
-  const pose = new Float32Array(TREE_POSE.stride), col = new Float32Array(3), tint = { r: 1, g: 1, b: 1 };
   return plantLayer(name, stores, TREE_POSE, (cell, builder) => {
     const { own, among } = treesRound(cell, treesIn);
-    if (!own.length) return;
-    const stand = standsAmong(own, among);
-    own.forEach((tree, i) => {
-      treePoseInto(tree, stand.crowd[i]!, stand.openX[i]!, stand.openY[i]!, pose, 0);
-      treeColourInto(tree, col, 0);
-      tint.r = col[0]!; tint.g = col[1]!; tint.b = col[2]!;
-      builder.add(varietyOf(tree, kit.variants.length), pose, tree.size * 1.2, tint);
-    });
+    if (own.length) treesInto(builder, own, among, kit.variants.length);
   }, true, TREE_SHADOW_REACH);
+}
+
+/** A cell's trees put in a run of the woods' stores (`TREE_POSE`, a store a model): each shaped by the trees round it (`standsAmong`, `among` its cell's and its neighbours'), tinted, its model picked of `variants` (`varietyOf`); the page's cells and a tile's bake (`plantedTiles.ts`) alike. */
+export function treesInto(builder: RunBuilder, own: readonly TreePlacement[], among: readonly TreePlacement[], variants: number): void {
+  const pose = new Float32Array(TREE_POSE.stride), col = new Float32Array(3), tint = { r: 1, g: 1, b: 1 };
+  const stand = standsAmong(own, among);
+  own.forEach((tree, i) => {
+    treePoseInto(tree, stand.crowd[i]!, stand.openX[i]!, stand.openY[i]!, pose, 0);
+    treeColourInto(tree, col, 0);
+    tint.r = col[0]!; tint.g = col[1]!; tint.b = col[2]!;
+    builder.add(varietyOf(tree, variants), pose, tree.size * 1.2, tint);
+  });
 }
 
 /** The painted covers' stones and bushes, the rivers' stones, and the woods' card trees where the low-poly ones are not grown. */

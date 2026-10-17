@@ -126,8 +126,11 @@ function streetSpecies(roll: number): TreeSpecies {
   return roll < 0.89 ? 'ipeYellow' : 'ipePink';
 }
 
+/** Where a lamp's lens stands on its post (`SceneryKit.lens`): what a furniture bake reads of the models. */
+export interface LampLens { readonly reach: number; readonly height: number }
+
 /** Where a placed item's instances stand, or undefined when it draws nothing */
-function furniturePlace(net: Network, elevation: RoadElevation, placed: LandscapeItem, kit: SceneryKit): FurniturePlace | undefined {
+function furniturePlace(net: Network, elevation: RoadElevation, placed: LandscapeItem, lens: LampLens): FurniturePlace | undefined {
   const item = furnitureOf(net, placed);
   if (!item) return undefined;
   const out: Placed[] = [];
@@ -140,7 +143,6 @@ function furniturePlace(net: Network, elevation: RoadElevation, placed: Landscap
   const inward = angleOf({ x: -item.outward.x, y: -item.outward.y });
   const facing = angleOf({ x: item.outward.y, y: -item.outward.x });
   const at = { x: item.x, y: item.y, z: base, sx: 1, sy: 1, sz: 1 };
-  const lens = kit.lens;
   switch (item.kind) {
     case 'lamp': {
       put(MODEL.lamp, { ...at, yaw: inward });
@@ -276,7 +278,7 @@ export function furnitureProduct(kit: SceneryKit, active?: ActiveTiles): Derived
   return new Derived(new PlacedProduct<FurniturePlace>('street furniture', {
     landscape: 0, roads: ROAD_REACH, elevation: DECK_REACH,
   }, (item) => item.kind !== 'meadow' && item.kind !== 'sign' && item.kind !== 'streetname',
-  (item, source) => furniturePlace(source.net, source.elevation, item, kit), samePlace, active));
+  (item, source) => furniturePlace(source.net, source.elevation, item, kit.lens), samePlace, active));
 }
 
 const MEADOW_STORES = (kit: SceneryKit): RunStore[] => [
@@ -290,16 +292,74 @@ export function meadowProduct(kit: SceneryKit, active?: ActiveTiles): Derived<Fu
   return new Derived(new PlacedProduct<MeadowPlace>('long grass', {
     landscape: 0, elevation: CLUMP_READ_REACH + m(1), ground: CLUMP_READ_REACH + m(1),
   }, (item) => item.kind === 'meadow', (item, source) => {
-    const clump = grassClump(source.elevation, source.groundAt, item);
     const builder = new RunBuilder(stores);
-    const add = (store: number, tuft: Tuft): void => {
-      builder.turned(store, tuft.x, tuft.z, -tuft.y, tuft.yaw, tuft.height * tuft.width, tuft.height, tuft.height * tuft.width,
-        tuft.height * Math.max(1, tuft.width), tuft.tint);
-    };
-    for (const tuft of clump.tufts) add(0, tuft);
-    for (const tuft of clump.flowers) add(1, tuft);
+    meadowInto(builder, source.elevation, source.groundAt, item);
     return { x: item.x, y: item.y, run: builder.build() };
   }, (a, b) => a.x === b.x && a.y === b.y && sameRun(a.run, b.run), active));
+}
+
+/** A clump's tufts and flowers put in a run of the long grass's stores (`MEADOW_STORES`). */
+function meadowInto(builder: RunBuilder, elevation: RoadElevation, groundAt: (x: number, y: number) => number, item: LandscapeItem): void {
+  const clump = grassClump(elevation, groundAt, item);
+  const add = (store: number, tuft: Tuft): void => {
+    builder.turned(store, tuft.x, tuft.z, -tuft.y, tuft.yaw, tuft.height * tuft.width, tuft.height, tuft.height * tuft.width,
+      tuft.height * Math.max(1, tuft.width), tuft.tint);
+  };
+  for (const tuft of clump.tufts) add(0, tuft);
+  for (const tuft of clump.flowers) add(1, tuft);
+}
+
+/** A placed item's instances at the city's time (the hour's start), put in a run of the furniture's stores: a plant sized by its growth then. */
+function placeInto(builder: RunBuilder, place: FurniturePlace, now: number): void {
+  const growth = plantGrowth(place.planted, now);
+  for (const p of place.placed) {
+    let sx = p.sx, sy = p.sy, sz = p.sz;
+    if (p.h > 0) {
+      const height = p.h * growth;
+      sx = height * p.sx; sy = height * p.sy; sz = height * p.sz;
+    }
+    builder.turned(p.store, p.x, p.z, -p.y, p.yaw, sx, sy, sz, Math.max(sx, sy, sz), p.tint ?? undefined);
+  }
+}
+
+/** Whether each of the furniture's stores is tinted (`furnitureStores` order: the props', then the street plants'), and the long grass's. */
+const FURNITURE_TINTS: readonly Pick<RunStore, 'tinted'>[] = [
+  ...FURNITURE_MODELS.map(() => ({ tinted: false })), ...TREE_SPECIES.map(() => ({ tinted: true })), ...BUSH_KINDS.map(() => ({ tinted: true })),
+];
+const MEADOW_TINTS: readonly Pick<RunStore, 'tinted'>[] = [{ tinted: true }, { tinted: true }];
+
+/** A tile's furniture and long grass as a bake hands them (`furnitureTiles.ts`): every item's instances in one run a layer, at the city's hour, and whether a plant was still growing then (the tile is baked again at the next hour). */
+export interface FurnitureBake {
+  readonly furniture: Run | null;
+  readonly grass: Run | null;
+  readonly growing: boolean;
+}
+
+/** THE ITEMS' FURNITURE AND LONG GRASS BAKED, IN A WORKER: each placed as the page's layer places it (`furniturePlace`, `grassClump`), sized at the city's hour (`minutes`; its start) as the page sizes it */
+export function bakeFurniture(net: Network, elevation: RoadElevation, groundAt: (x: number, y: number) => number, items: Iterable<LandscapeItem>, lens: LampLens, minutes: number): FurnitureBake {
+  const now = Number.isFinite(minutes) ? Math.floor(minutes / 60) * 60 : Number.NaN;
+  const furniture = new RunBuilder(FURNITURE_TINTS), grass = new RunBuilder(MEADOW_TINTS);
+  let growing = false;
+  for (const item of items) {
+    if (item.kind === 'meadow') { meadowInto(grass, elevation, groundAt, item); continue; }
+    if (item.kind === 'sign' || item.kind === 'streetname') continue;
+    const place = furniturePlace(net, elevation, item, lens);
+    if (!place) continue;
+    placeInto(furniture, place, now);
+    if (stillGrowing(place.planted, now)) growing = true;
+  }
+  const furnitureRun = furniture.build(), grassRun = grass.build();
+  return { furniture: furnitureRun.size ? furnitureRun : null, grass: grassRun.size ? grassRun : null, growing };
+}
+
+/** Every buffer of a run: handed over, not copied. */
+export function runBuffers(run: Run | null): ArrayBuffer[] {
+  const out: ArrayBuffer[] = [];
+  for (const pack of run?.values() ?? []) {
+    out.push(pack.data.buffer as ArrayBuffer, pack.scales.buffer as ArrayBuffer);
+    if (pack.colours) out.push(pack.colours.buffer as ArrayBuffer);
+  }
+  return out;
 }
 
 /** The street furniture and the long grass, kept item by item. */
@@ -314,6 +374,11 @@ export interface StreetFurnitureLayer {
   /** Brings the furniture and the long grass up to the diary (and the hour); the items computed (the engine's ledger, `core/engine.ts`). */
   sync(net: Network, elevation: RoadElevation, groundAt: (x: number, y: number) => number, minutes: number): number;
   setMap(map: boolean): void;
+  /** The streamed world: the items are the tiles' (`furnitureTiles.ts`, `put`), the page's own taken away and none made by `sync`; off, the page's own made again from the diary. */
+  setTiled(tiled: boolean): void;
+  /** A tile's bake drawn (`bakeFurniture`); taken away by `take` with the same bake. */
+  put(bake: FurnitureBake): void;
+  take(bake: FurnitureBake): void;
   /** A mesh of each of its stores, as it draws them */
   warm(): InstancedMesh[];
   cull(frustum: Frustum, view: Matrix4): void;
@@ -332,8 +397,9 @@ export function createStreetFurniture(kit: SceneryKit, active?: ActiveTiles): St
   // The grass throws no shadow: only what the view itself takes.
   const meadowStores = MEADOW_STORES(kit);
   const meadow = createInstanceRuns('grass', meadowStores, 0);
-  const places = furnitureProduct(kit, active);
-  const clumps = meadowProduct(kit, active);
+  let places = furnitureProduct(kit, active);
+  let clumps = meadowProduct(kit, active);
+  let tiled = false;
   /** Where the active tiles moved since the last sync: the items there placed or let go, as a landscaping entry there would. */
   const moves = active?.reader();
   /** Each item's run as drawn, and the growth it was sized at. */
@@ -346,15 +412,7 @@ export function createStreetFurniture(kit: SceneryKit, active?: ActiveTiles): St
   /** An item's instances at the city's time (the hour's start: the same whenever it is made in that hour). */
   const runOf = (place: FurniturePlace, now: number): Run => {
     const builder = new RunBuilder(stores);
-    const growth = plantGrowth(place.planted, now);
-    for (const p of place.placed) {
-      let sx = p.sx, sy = p.sy, sz = p.sz;
-      if (p.h > 0) {
-        const height = p.h * growth;
-        sx = height * p.sx; sy = height * p.sy; sz = height * p.sz;
-      }
-      builder.turned(p.store, p.x, p.z, -p.y, p.yaw, sx, sy, sz, Math.max(sx, sy, sz), p.tint ?? undefined);
-    }
+    placeInto(builder, place, now);
     return builder.build();
   };
 
@@ -364,6 +422,7 @@ export function createStreetFurniture(kit: SceneryKit, active?: ActiveTiles): St
     grass: meadow.group,
     get triangles() { return furniture.triangles + meadow.triangles; },
     sync(net, elevation, groundAt, minutes) {
+      if (tiled) return 0;
       const source: FurnitureSource = { changes: net.doc.changes, net, elevation, groundAt };
       const moved = moves ? moves.entries('landscape') : [];
       const nowHour = Number.isFinite(minutes) ? Math.floor(minutes / 60) : Number.NaN;
@@ -401,6 +460,28 @@ export function createStreetFurniture(kit: SceneryKit, active?: ActiveTiles): St
     },
     setMap(map) {
       furniture.setMap(map);
+    },
+    setTiled(on) {
+      if (on === tiled) return;
+      tiled = on;
+      // The page's own items taken away, and its products made from nothing: off again, `sync` places every item afresh.
+      const removed = [...runs.values()].map((r) => r.run), gone = [...clumpRuns.values()];
+      if (removed.length) furniture.update({ removed, added: [] });
+      if (gone.length) meadow.update({ removed: gone, added: [] });
+      runs.clear();
+      clumpRuns.clear();
+      growing.clear();
+      hour = Number.NaN;
+      places = furnitureProduct(kit, active);
+      clumps = meadowProduct(kit, active);
+    },
+    put(bake) {
+      if (bake.furniture) furniture.update({ removed: [], added: [bake.furniture] });
+      if (bake.grass) meadow.update({ removed: [], added: [bake.grass] });
+    },
+    take(bake) {
+      if (bake.furniture) furniture.update({ removed: [bake.furniture], added: [] });
+      if (bake.grass) meadow.update({ removed: [bake.grass], added: [] });
     },
     warm() {
       return warmMeshes([...stores, ...meadowStores]);
