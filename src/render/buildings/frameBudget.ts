@@ -59,8 +59,8 @@ export class FrameScale {
 /** What a cell's level is reckoned to draw before any of its kind landed: a dense cell's detail and facade level, from the district view measured 2026-10-16 (13 M triangles over ~30 near cells). */
 export const TYPICAL_LEVEL_TRIANGLES: Readonly<Record<'cell' | 'facade', number>> = { cell: 600_000, facade: 300_000 };
 
-/** WHAT A LEVEL DRAWS, reckoned before it lands (`layer.ts` `chosenTriangles`): as it measured when it last landed, else the mean of its kind's landed, else `typical`. */
-export class LandedTriangles<K extends string> {
+/** WHAT A LEVEL DRAWS OR HOLDS, reckoned before it lands (`layer.ts` `chosenTriangles`, `capNow`): as it measured when it last landed, else the mean of its kind's landed, else `typical`. */
+export class LandedMeasure<K extends string> {
   private readonly landed = new Map<string, number>();
   private readonly sums = new Map<K, { sum: number; n: number }>();
   constructor(private readonly typical: Readonly<Record<K, number>>) {}

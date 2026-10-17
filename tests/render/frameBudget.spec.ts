@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createBuildingKit } from '@render/buildings/kit';
 import { cellMass } from '@render/buildings/cellArrays';
-import { ERROR_STEP, FrameScale, GAIN, LandedTriangles, MOST_ERROR_SCALE, MOST_TIME_SCALE, TIME_SLACK, TimeGovernor, fitErrorScale, letGoPassed } from '@render/buildings/frameBudget';
+import { ERROR_STEP, FrameScale, GAIN, LandedMeasure, MOST_ERROR_SCALE, MOST_TIME_SCALE, TIME_SLACK, TimeGovernor, fitErrorScale, letGoPassed } from '@render/buildings/frameBudget';
 import { createMassCells } from '@render/buildings/massCells';
 import { emitMassing } from '@render/buildings/massing';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
@@ -73,7 +73,7 @@ describe("the frame's scale and the floor the time sets", () => {
 
 describe('what a level is reckoned to draw', () => {
   it('as it measured, else the mean of its kind landed, else the typical of its kind', () => {
-    const t = new LandedTriangles<'cell' | 'facade'>({ cell: 600, facade: 300 });
+    const t = new LandedMeasure<'cell' | 'facade'>({ cell: 600, facade: 300 });
     expect(t.of('cell', '0,0')).toBe(600);
     expect(t.of('facade', '0,0')).toBe(300);
     t.set('cell', '0,0', 100);
@@ -207,5 +207,24 @@ describe('the cells held back by the budget', () => {
     letGoPassed(far, coarse, [{ key: '0,0', fine: true }, { key: '1,0', fine: true }, { key: '2,0', fine: false }], away(4));
     expect([...far]).toEqual([]);
     expect([...coarse]).toEqual([]);
+  });
+});
+
+describe('a level never landed, reckoned in bytes', () => {
+  it('counts as its kind\'s landed do on average, and before any landed as nothing known (its cell\'s masses then)', async () => {
+    const { LandedMeasure: Measure } = await import('@render/buildings/frameBudget');
+    const bytes = new Measure<'cell' | 'facade'>({ cell: Number.NaN, facade: Number.NaN });
+    expect(Number.isNaN(bytes.of('facade', '3,4'))).toBe(true);
+    bytes.set('facade', '0,0', 4_000_000);
+    bytes.set('facade', '1,0', 6_000_000);
+    // Never the cell kind's for a facade level, never a fixed number.
+    expect(bytes.of('facade', '3,4')).toBe(5_000_000);
+    expect(Number.isNaN(bytes.of('cell', '3,4'))).toBe(true);
+    expect(bytes.of('facade', '1,0')).toBe(6_000_000);
+    const { readFileSync } = await import('node:fs');
+    const layer = readFileSync('src/render/buildings/layer.ts', 'utf8');
+    const cap = layer.slice(layer.indexOf('const capNow'), layer.indexOf('const capNow') + 500);
+    expect(cap).toMatch(/landedBytes\.of\(kind, key\)/);
+    expect(cap).toMatch(/Number\.isNaN\(mean\) \? massCells\.massBytes\(key\) : mean/);
   });
 });
