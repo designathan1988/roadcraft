@@ -30,10 +30,8 @@ const PLAN_MAX_REACH = nodeSide(TOP_LEVEL);
 const viewReach = (e: { readonly z: number; readonly reach: number }): number =>
   Math.min(PLAN_MAX_REACH, Number.isFinite(e.reach) ? e.reach : PLAN_PER_HEIGHT * e.z + PLAN_MARGIN);
 
-
 /** A tile's near level's key in the store of bakes (`farKey`'s level 0 under it: `n0:i,j`). */
 const nearKeyOf = (n: { readonly i: number; readonly j: number }): string => `n0:${n.i},${n.j}`;
-
 
 export class FarTree<P> implements FarTiles {
   readonly group = new Group();
@@ -251,8 +249,7 @@ export class FarTree<P> implements FarTiles {
     if (!near) return '';
     const version = near.version?.() ?? '';
     // DO NOT ask every leaf each frame (every tile of the map): one serial for them all where the source has it.
-    const edits = this.source?.pageEdits;
-    if (edits) return `${version}|${edits()}`;
+    if (this.source?.pageEdits) return `${version}|${this.source.pageEdits()}`;
     const edit = this.source?.pageEdit;
     if (!edit) return version;
     const d = new Digest();
@@ -337,7 +334,6 @@ export class FarTree<P> implements FarTiles {
   private loadedOf(n: FarNode): number {
     return this.kind.near?.drawsLoaded ? 0 : n.loaded;
   }
-
 
   /** A node wholly past what the view reaches: nothing of it drawn nor asked. */
   private outOfReach(n: FarNode): boolean {
