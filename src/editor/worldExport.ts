@@ -25,6 +25,28 @@ export async function worldFilePieces(meta: WorldMeta, keys: Iterable<number>, r
   return pieces;
 }
 
+/** What saving a streamed world to a file needs: its streamer's writes and its store's tiles. */
+export interface WorldToSave {
+  readonly streamer: { flush(): Promise<boolean>; readonly readOnly: boolean };
+  readonly store: { meta(): Promise<WorldMeta | null>; readText(key: number): Promise<TileText | null> };
+}
+
+/** DO NOT say "saved" when the file would not hold what the player sees: every change written first (a write failed: no file), and never from a tab that only reads the world (its changes are on its page alone). The hint to show. */
+export async function saveWorldFile(world: WorldToSave, keys: Iterable<number>, offer: (blob: Blob) => boolean): Promise<'hint.saved' | 'hint.saveBehind' | 'hint.worldReadOnly' | 'hint.exportFailed'> {
+  if (world.streamer.readOnly) return 'hint.worldReadOnly';
+  try {
+    if (!(await world.streamer.flush())) return 'hint.saveBehind';
+    const meta = await world.store.meta();
+    if (!meta) throw new Error('the world has no values stored');
+    const pieces = await worldFilePieces(meta, keys, (key) => world.store.readText(key));
+    if (!offer(new Blob(pieces, { type: 'application/json' }))) throw new Error('the file was not offered');
+    return 'hint.saved';
+  } catch (error) {
+    console.error('[world] the city could not be saved to a file', error);
+    return 'hint.exportFailed';
+  }
+}
+
 /** A world file read back: its values and its tiles (each its parts' fields merged), or null when it is not one. */
 export function readWorldFile(value: unknown): { readonly meta: WorldMeta; readonly tiles: readonly TileRecords[] } | null {
   if (typeof value !== 'object' || value === null) return null;

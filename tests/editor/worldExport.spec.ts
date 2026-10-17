@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PartStore } from '@editor/saveStore';
 import { TileStore, type WorldMeta, storeTiles } from '@editor/tileStore';
-import { readWorldFile, worldFilePieces } from '@editor/worldExport';
+import { readWorldFile, saveWorldFile, worldFilePieces } from '@editor/worldExport';
 import type { TileRecords } from '@world/doc';
 import { tileIdBase, tileKey } from '@world/tiles';
 import { m } from '@world/units';
@@ -72,5 +72,19 @@ describe('a city saved to a file', () => {
     const off = JSON.parse(text) as { tiles: Record<string, unknown>[][] };
     for (const part of off.tiles[0]!) if ('key' in part) part['key'] = tileKey(5000, 0);
     expect(readWorldFile(off)).toBeNull();
+  });
+
+  it('makes no file while a change is not written, nor from a tab that only reads the world', async () => {
+    const from = new TileStore('map', storeTiles(memoryStore()), never);
+    await from.write(tile(0, 0));
+    await from.setMeta({ version: 1, generator: { seed: 4, style: 'mixed', centres: 3, density: 0.5, parks: 0.05, industry: true }, unit: 1, values: {} });
+    const offered: Blob[] = [];
+    const offer = (blob: Blob): boolean => { offered.push(blob); return true; };
+    const keys = [tileKey(0, 0)];
+    expect(await saveWorldFile({ streamer: { flush: async () => false, readOnly: false }, store: from }, keys, offer)).toBe('hint.saveBehind');
+    expect(await saveWorldFile({ streamer: { flush: async () => true, readOnly: true }, store: from }, keys, offer)).toBe('hint.worldReadOnly');
+    expect(offered).toHaveLength(0);
+    expect(await saveWorldFile({ streamer: { flush: async () => true, readOnly: false }, store: from }, keys, offer)).toBe('hint.saved');
+    expect(offered).toHaveLength(1);
   });
 });

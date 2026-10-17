@@ -99,7 +99,7 @@ import { History, followNetwork, restoreInto, restoreSnapshot, serialize } from 
 import { STUTTER_MS } from '@core/sampleRing';
 import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
 import { exportToFile, offerFile } from '@editor/mapExport';
-import { worldFilePieces } from '@editor/worldExport';
+import { saveWorldFile } from '@editor/worldExport';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
 import { TransitTool, setTransitTool, transitTool } from '@editor/transitTools';
 import type { BuildingId } from '@world/buildings/types';
@@ -2186,17 +2186,7 @@ function saveMap(): void {
 
 /** DO NOT save only the region of a streamed world: its changed tiles written, then the world's values and every stored tile of the map in one file (`worldExport.ts`), each tile read in the save worker and put in as it is stored. */
 async function saveWorld(open: NonNullable<typeof streamed>): Promise<void> {
-  try {
-    await open.streamer.flush();
-    const meta = await open.store.meta();
-    if (!meta) throw new Error('the world has no values stored');
-    const pieces = await worldFilePieces(meta, mapTilesFrom(0, 0), (key) => open.store.readText(key));
-    if (!offerFile(new Blob(pieces, { type: 'application/json' }), 'roadcraft-city.json')) throw new Error('the file was not offered');
-    flashHint('hint.saved');
-  } catch (error) {
-    console.error('[world] the city could not be saved to a file', error);
-    flashHint('hint.exportFailed');
-  }
+  flashHint(await saveWorldFile(open, mapTilesFrom(0, 0), (blob) => offerFile(blob, 'roadcraft-city.json')));
 }
 /** Loads a picked map. */
 function openImported(result: ImportResult): boolean | Promise<boolean> {
