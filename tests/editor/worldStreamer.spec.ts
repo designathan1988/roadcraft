@@ -254,6 +254,25 @@ describe('the tiles written', () => {
   });
 });
 
+describe('a world another tab holds', () => {
+  it('is read and never written from this tab: no tile, no value, and its flush says all is well', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    let worldWrites = 0;
+    const streamer = new WorldStreamer(doc, store, { writeWorld: () => { worldWrites++; return Promise.resolve(true); } });
+    streamer.readOnly = true;
+    await settle(streamer, 10, 10);
+    const before = store.writes;
+    doc.addNode({ x: 100, y: 100 });
+    doc.setBalance(doc.economy.balance - 5);
+    streamer.apply(1);
+    expect(await streamer.flush()).toBe(true);
+    await turns(3);
+    expect(store.writes).toBe(before);
+    expect(worldWrites).toBe(0);
+  });
+});
+
 describe("the world's values", () => {
   it('are written by the part that changed, never all of them for one', async () => {
     const doc = new RoadDoc();

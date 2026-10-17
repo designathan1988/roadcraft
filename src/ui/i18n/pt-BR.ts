@@ -821,6 +821,7 @@ export const PT_BR: Dictionary = {
   'hint.redone': 'Refeito',
   'hint.saved': 'Mapa salvo em arquivo',
   'hint.opened': 'Mapa aberto',
+  'hint.worldReadOnly': 'Esta cidade está aberta em outra janela: aqui ela pode ser vista, as mudanças não são gravadas',
   'hint.openFailed': 'Esse arquivo não é um mapa do Roadcraft ou está danificado. Nada foi alterado',
   'hint.saveFailed': 'O salvamento automático falhou: o armazenamento do navegador está cheio. Use Salvar mapa para guardar uma cópia',
   'hint.exportFailed': 'Não foi possível gerar o arquivo do mapa: nada foi salvo',

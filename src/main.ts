@@ -1940,7 +1940,20 @@ const GROW_SLICE_MS = 100;
 let cityBuiltIn = 0;
 
 /** THE STREAMED WORLD (CLAUDE.md, "Streaming world"): a city of any size - the page's document holds the tiles round the camera (`worldStreamer.ts`), the tile store (`editor/tileStore.ts`) every tile ever made and is the save, a tile never made is generated on demand in a worker (`tileGenerator.ts`) */
-let streamed: { readonly store: TileStore; readonly generator: TileGenerator; readonly streamer: WorldStreamer } | null = null;
+let streamed: { readonly store: TileStore; readonly generator: TileGenerator; readonly streamer: WorldStreamer; readonly release: () => void } | null = null;
+
+/** DO NOT let two tabs write one world (each stamps the versions it knows, the last writer wins): the first holds it (a Web Lock by its name, MDN "LockManager"), until it closes it; another tab opens it read only. Resolves the release, or null when another tab holds it. */
+function holdWorld(name: string): Promise<(() => void) | null> {
+  const locks = (navigator as { locks?: LockManager }).locks;
+  if (!locks) return Promise.resolve(() => {});
+  return new Promise((answer) => {
+    void locks.request(`roadcraft.world.${name}`, { ifAvailable: true }, (lock) => {
+      if (!lock) { answer(null); return undefined; }
+      // Held while this promise stands: settled when the world is closed (`afterStreamedWorld`).
+      return new Promise<void>((release) => answer(release));
+    });
+  });
+}
 /** A place of an item of a list (a dab, a tree, an element) in tile `key`. */
 const itemInTile = (item: unknown, key: number): boolean => {
   const p = item as { x?: number; y?: number } | null;
@@ -1957,6 +1970,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   // Under the plan's version and the map's size (`worldKey`): DO NOT reopen tiles an older plan made (a city of 5 km, land past the edge).
   const mapName = `roadcraft.tiles.${worldKey(options.seed)}`;
   // Read, written and made in the job workers, the desktop's as a browser's (each worker its own port to the shell's saves, `editor/workerParts.ts`).
+  const release = await holdWorld(mapName);
   const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
@@ -2019,8 +2033,10 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   // The traffic past the region: the simulation's worker reads the stored tiles' link tables itself (`sim/meso/tileFeed.ts`); on the desktop through a port of its own to the shell's saves.
   if (!desktopStores) sim.tiles(mapName, MESO_REACH);
   else desktopStores.connect().then((port) => sim.tiles(mapName, MESO_REACH, port), (error: unknown) => console.error('[world] the simulation got no port to the saves', error));
-  streamed = { store, generator, streamer };
-  if (fresh) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
+  streamed = { store, generator, streamer, release: release ?? (() => {}) };
+  // Another tab holds this world: read here, written there only.
+  if (!release) { streamer.readOnly = true; flashHint('hint.worldReadOnly'); }
+  if (fresh && release) void store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() });
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
   // THE WHOLE MAP MADE BEFORE THE TOWN IS SHOWN (the city-game's opening): every tile generated and stored (`streamer.mapMade`), so every far level is drawn from a tile, never from a stand-in; the region's own detail lands behind the curtain's fall (`renderer.ts` reveal, the opening in two steps).
   streamer.rush = true;
@@ -2069,6 +2085,7 @@ function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
   // Posted now, from the records the page holds; nothing streams in or out after.
   const written = open.streamer.flush();
   streamed = null;
+  void written.finally(() => open.release());
   open.generator.dispose();
   scene.farBuildings.setSource(null, () => false);
   scene.farRoads.setSource(null, () => false);

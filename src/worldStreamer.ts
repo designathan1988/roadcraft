@@ -111,6 +111,9 @@ export class WorldStreamer {
     return this.wanted.includes(key);
   }
 
+  /** Another tab holds this world (`main.ts` holdWorld, a Web Lock): this one reads it and writes nothing, its edits kept on the page only. */
+  readOnly = false;
+
   /** THE WHOLE MAP MADE BEFORE IT IS SHOWN (the city-game's opening: every tile generated, then the city): while set, the tiles ahead take every lane (nothing else waits on them); let go once the town is shown. */
   rush = false;
 
@@ -322,6 +325,7 @@ export class WorldStreamer {
 
   /** The map's parts no tile holds written when they changed, after the tiles posted before; changed again if the write failed. */
   private writeWorld(force = false): void {
+    if (this.readOnly) { this.worldDirty.clear(); return; }
     if (this.worldDirty.size === 0 || !this.tell.writeWorld || (this.worldPosting && !force)) return;
     const parts = [...this.worldDirty];
     this.worldDirty.clear();
@@ -346,6 +350,7 @@ export class WorldStreamer {
   /** A tile written as the document holds it now, its version moved on. */
   private write(key: number): void {
     this.dirty.delete(key);
+    if (this.readOnly) return;
     // The store says the version it wrote (one past what it knows): the far levels key their bakes by it.
     this.post(key, this.doc.tileRecords(key, this.versions.get(key) ?? 0));
   }
