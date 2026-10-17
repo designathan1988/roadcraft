@@ -194,6 +194,21 @@ function setFacialExpression(mesh: InstancedMesh, source: SkinnedMesh, slot: num
   mesh.count = visible;
 }
 
+/** An empty array, for the face shapes three has copied into its own texture. */
+const NO_SHAPE = new Float32Array(0);
+
+/** DO NOT keep a body's face shapes dense in the page once drawn (~3 MB a body): three copied them into its morph texture at the first draw (WebGLMorphtargets, kept by geometry, read again only if the number of shapes changes) and keeps that copy for a restored context. */
+export function dropFaceShapesOnceDrawn(mesh: InstancedMesh): void {
+  const shapes = mesh.geometry.morphAttributes.position;
+  if (!shapes?.length) return;
+  const drop = mesh.onAfterRender;
+  mesh.onAfterRender = function onceDrawn(this: InstancedMesh, ...args: Parameters<typeof drop>) {
+    for (const shape of shapes) (shape as { array: ArrayLike<number> }).array = NO_SHAPE;
+    mesh.onAfterRender = drop;
+    drop.apply(this, args);
+  };
+}
+
 /** Room for at least `needed` instances in a level's mesh (doubled), its written ones kept; its face's texture kept across. */
 function growLevel(level: LevelMesh, needed: number): void {
   const mesh = level.mesh;
@@ -560,6 +575,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           mesh.receiveShadow = false;
           mesh.customDepthMaterial = depth;
           owned.add(mesh);
+          dropFaceShapesOnceDrawn(mesh);
           part.levels.push({ mesh, rows, count: 0, colourChanged: true });
           batch.meshes.push(mesh);
           group.add(mesh);

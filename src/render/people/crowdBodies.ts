@@ -11,6 +11,8 @@ const WIDTH = BODY_WIDTH;
 
 export interface ClassBodies {
   readonly texture: Texture;
+  /** The shape basis the bodies are baked from, the only copy kept (shared with the workers where memory can be shared). */
+  readonly basis: Float32Array;
   readonly joints: DataTexture;
   /** Texels between the first vertices of two bodies. */
   readonly stride: number;
@@ -35,11 +37,14 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
   const rowsPerBody = Math.ceil(vertexCount / WIDTH);
   const stride = rowsPerBody * WIDTH;
   // DO NOT sum a new body's vertices on the page: the basis shared once with the workers, each new body baked there.
-  const shared = canShare() ? (() => {
-    const copy = new Float32Array(new SharedArrayBuffer(shapePixels.byteLength));
-    copy.set(shapePixels);
-    return copy;
-  })() : null;
+  // DO NOT keep the caller's copy beside the shared one (two of ~6 MB a class): the shared one is the basis from here on.
+  // (No inner function reads the caller's array: V8 would keep it in the closures' shared context.)
+  let shared: Float32Array | null = null;
+  if (canShare()) {
+    shared = new Float32Array(new SharedArrayBuffer(shapePixels.byteLength));
+    shared.set(shapePixels);
+  }
+  const basis = shared ?? shapePixels;
   // DO NOT keep the bodies on the CPU: each is baked from the shape basis, sent up, and baked again only on a restore.
   const rows = createGpuRows(WIDTH, rowsPerBody * BODIES);
   const jointPixels = new Float32Array(bones * 4 * BODIES);
@@ -51,7 +56,7 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
 
   /** Body `b`'s every vertex move, baked from its coefficients here, sent up at the next flush (a restore). */
   const bake = (b: number): void => {
-    rows.write(b * rowsPerBody, bodyPixels(shapePixels, vertexCount, shapes, coefficients[b]!, stride));
+    rows.write(b * rowsPerBody, bodyPixels(basis, vertexCount, shapes, coefficients[b]!, stride));
   };
   /** Each body's vertices written (`pick`'s `ready`). */
   const written: Promise<void>[] = [];
@@ -77,6 +82,7 @@ export function createClassBodies(shapePixels: Float32Array, vertexCount: number
 
   return {
     get texture() { return rows.texture; },
+    basis,
     joints,
     stride,
     get count() { return coefficients.length; },

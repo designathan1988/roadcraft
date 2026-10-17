@@ -1098,7 +1098,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     bakeMs += performance.now() - started;
     const cls: BodyClass = {
       key: `${sex}-${band}`, sex, band, base, shape, coefficients: mo.coefficients(base), rig,
-      height: metres, clips, bones, order, parent, jointBasis, shapePixels, bodies, anim, pass,
+      height: metres, clips, bones, order, parent, jointBasis, shapePixels: bodies.basis, bodies, anim, pass,
       uniforms: {
         procBones: { value: pass.texture },
         procBase: { value: pass.base },
