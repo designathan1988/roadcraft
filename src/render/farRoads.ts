@@ -13,7 +13,8 @@ import { geometryCost } from './gpuLedger';
 import { gpuOnly } from './mesh/gpuOnly';
 import { readsRoadSection } from './mesh/roadEdges';
 import { finish } from './mesh/surfaceMesh';
-import type { NearRoadMesh, NearTileRoads } from './nearRoadTiles';
+import type { NearRoadMesh, NearTileRoads, NearVariant } from './nearRoadTiles';
+import { COARSE_ERROR } from './mesh/roadLodPure';
 import type { PassLook } from './roadSurfacePass';
 import type { TileSource } from './roadTileShape';
 import type { SharedGroundData } from './sharedGround';
@@ -95,10 +96,10 @@ export interface NearRoadKit {
   dress(source: TileSource, raised: boolean): { readonly material: Material; readonly castShadow?: boolean; readonly renderOrder?: number };
 }
 
-/** A tile the page read, as a near bake reads it: its roads, and its buildings' gates (worked out here for one written before they were kept). */
-const nearRoadsOf = (records: FarTreeJob['records'] & object): NearTileRoads => ({
+/** A tile the page holds, as a near bake reads it: its roads, and its buildings' gates (worked out here where the records have none: the page's own, a tile written before they were kept); null, one the worker reads from the store. */
+const nearRoadsOf = (records: NonNullable<FarTreeJob['records']> | null): NearTileRoads | null => (records ? {
   ...tileRoads(records), gates: records.gates ?? gatesOf(records.buildings as readonly Building[]),
-});
+} : null);
 
 /** A tree's job as the far roads' job: the tile the page read (the desktop's store) cut to its roads (`tileRoads`), its buildings never posted; the store's map kept for the worker to read the tile itself; a near level's with the page's look of the roads and the ground (`kit`). */
 export function farRoadJob(tree: FarTreeJob, kit?: NearRoadKit | null, ground: SharedGroundData | null = null): FarRoadJob {
@@ -109,6 +110,7 @@ export function farRoadJob(tree: FarTreeJob, kit?: NearRoadKit | null, ground: S
       ...job,
       near: {
         look: kit.look(), markingStyle: kit.markingStyle(), ground, naturalIsGround: kit.naturalIsGround(), tiles: near.tiles,
+        bake: near.bake, variant: near.variant as NearVariant, shown: near.shown,
         ...(near.records ? { records: near.records.map(nearRoadsOf) } : {}),
       },
     };
@@ -151,37 +153,97 @@ function noSection(vertices: number): Float32Array {
   return out;
 }
 
-/** A TILE'S NEAR ROADS AS THE PAGE DRAWS THEM: a mesh per surface, with the material, shadow and order the region gives it (`kit.dress`), the attributes its material reads alone (`surfaceTiles.ts` readsOf), bounded by its box; its arrays let go once on the GPU */
-function nearRoadGroup(data: NearRoadMesh, kit: NearRoadKit): FarNearLanded {
+/** One block of a tile's near roads as the page draws it: a mesh per surface, what they hold. */
+interface BlockMeshes {
+  readonly group: Group;
+  readonly meshes: readonly Mesh[];
+  readonly bytes: number;
+  readonly triangles: number;
+}
+
+/** A block's surfaces as meshes, with the material, shadow and order the region gives each (`kit.dress`), the attributes its material reads alone (`surfaceTiles.ts` readsOf), bounded by its box; their arrays let go once on the GPU. */
+function blockMeshes(block: NearRoadMesh['blocks'][number], kit: NearRoadKit): BlockMeshes {
   const group = new Group();
-  group.name = 'roads-near';
+  group.name = `roads-near-${block.chunk}`;
   group.matrixAutoUpdate = false;
   const meshes: Mesh[] = [];
-  let bytes = 0;
-  for (const s of data.surfaces) {
+  let bytes = 0, triangles = 0;
+  for (const s of block.surfaces) {
     const look = kit.dress(s.source, s.raised);
-    const vertices = s.position.length / 3;
+    const a = s.arrays;
+    const vertices = a.position.length / 3;
     const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(s.position, 3));
-    g.setAttribute('normal', new BufferAttribute(s.normal, 3));
-    g.setAttribute('uv', new BufferAttribute(s.uv, 2));
-    if (look.material.vertexColors) g.setAttribute('color', new BufferAttribute(s.color ?? new Float32Array(vertices * 3).fill(1), 3));
-    if (readsRoadSection(look.material)) g.setAttribute('roadSection', new BufferAttribute(s.section ?? noSection(vertices), 3));
-    g.setIndex(new BufferAttribute(s.index, 1));
-    g.boundingBox = new Box3(new Vector3(s.box[0], s.box[1], s.box[2]), new Vector3(s.box[3], s.box[4], s.box[5]));
+    g.setAttribute('position', new BufferAttribute(a.position, 3));
+    g.setAttribute('normal', new BufferAttribute(a.normal, 3));
+    g.setAttribute('uv', new BufferAttribute(a.uv, 2));
+    if (look.material.vertexColors) g.setAttribute('color', new BufferAttribute(a.color ?? new Float32Array(vertices * 3).fill(1), 3));
+    if (readsRoadSection(look.material)) g.setAttribute('roadSection', new BufferAttribute(a.section ?? noSection(vertices), 3));
+    g.setIndex(new BufferAttribute(a.index, 1));
+    g.boundingBox = new Box3(new Vector3(a.box[0], a.box[1], a.box[2]), new Vector3(a.box[3], a.box[4], a.box[5]));
     g.boundingSphere = g.boundingBox.getBoundingSphere(new Sphere());
     const mesh = finish(g, { name: s.name, material: look.material, castShadow: look.castShadow ?? false, receiveShadow: true });
     if (look.renderOrder !== undefined) mesh.renderOrder = look.renderOrder;
     bytes += geometryCost(g).bytes;
+    triangles += a.index.length / 3;
     // Made again from the store when a lost context asks (the tree's `refill`).
     gpuOnly(mesh, () => ({}));
     group.add(mesh);
     meshes.push(mesh);
   }
-  return {
-    group, meshes, bytes, triangles: data.triangles, top: data.bounds[5]!,
-    dispose() { for (const mesh of meshes) mesh.geometry.dispose(); },
-  };
+  return { group, meshes, bytes, triangles };
+}
+
+/** A TILE'S NEAR ROADS AS THE PAGE DRAWS THEM, block by block: the blocks an answer brings made here; the others (an answer built on the version drawn, `base`) the drawn one's, taken over at the swap (`adopt`), never made nor sent to the GPU again */
+class NearRoadLanded implements FarNearLanded {
+  readonly group = new Group();
+  readonly meshes: Mesh[] = [];
+  readonly bytes: number;
+  readonly triangles: number;
+  readonly top: number;
+  readonly bake: string;
+  readonly variant: string;
+  /** Its blocks: those it made, and those it keeps of the version drawn (theirs until `adopt`). */
+  private readonly blocks = new Map<string, BlockMeshes>();
+  private readonly mine = new Set<string>();
+
+  constructor(data: NearRoadMesh, bake: string, kit: NearRoadKit, base: NearRoadLanded | null) {
+    this.group.name = 'roads-near';
+    this.group.matrixAutoUpdate = false;
+    this.bake = bake;
+    this.variant = data.variant;
+    this.top = data.bounds[5]!;
+    let bytes = 0;
+    for (const block of data.blocks) {
+      const made = blockMeshes(block, kit);
+      this.blocks.set(block.chunk, made);
+      this.mine.add(block.chunk);
+      this.group.add(made.group);
+      this.meshes.push(...made.meshes);
+      bytes += made.bytes;
+    }
+    for (const chunk of data.chunks) {
+      if (this.blocks.has(chunk)) continue;
+      const kept = base?.blocks.get(chunk);
+      if (kept) { this.blocks.set(chunk, kept); bytes += kept.bytes; }
+    }
+    this.bytes = bytes;
+    this.triangles = data.triangles;
+  }
+
+  adopt(base: FarNearLanded): void {
+    const from = base as NearRoadLanded;
+    for (const [chunk, block] of this.blocks) {
+      if (this.mine.has(chunk) || from.blocks.get(chunk) !== block) continue;
+      from.mine.delete(chunk);
+      this.mine.add(chunk);
+      this.group.add(block.group);
+    }
+  }
+
+  dispose(): void {
+    for (const chunk of this.mine) for (const mesh of this.blocks.get(chunk)!.meshes) mesh.geometry.dispose();
+    this.mine.clear();
+  }
 }
 
 /** THE FAR ROADS: the tree of their levels, with the material its meshes share */
@@ -195,7 +257,15 @@ export class FarRoads extends FarTree<RoadPayload> {
     const kind: FarKind<RoadPayload> = {
       name: 'roads', land: (data) => farRoadMesh(data as FarRoadMesh, material), levelError: farLevelError,
       // Where the buildings' cells come near (`massCells.ts` FAR_ERROR): the roads under them with their own detail.
-      ...(near ? { near: { error: FAR_ERROR, land: (data: RoadPayload) => nearRoadGroup(data as NearRoadMesh, near), version: () => near.markingStyle() } } : {}),
+      // Its simplified level near, its full detail where the simplification would show (`roadLodPure.ts` COARSE_ERROR); every tile drawn here, those of the page's document too: one way for the roads.
+      ...(near ? {
+        near: {
+          error: FAR_ERROR, fineError: COARSE_ERROR, drawsLoaded: true,
+          land: (data: RoadPayload, base: FarNearLanded | null) => new NearRoadLanded(data as NearRoadMesh, (data as NearRoadMesh).bake, near, base as NearRoadLanded | null),
+          baseOf: (data: RoadPayload) => (data as NearRoadMesh).base,
+          version: () => near.markingStyle(),
+        },
+      } : {}),
     };
     super(kind, run ?? farRoadsRunner(ground, near), prefix, canQueueJobs() ? jobWorkers() : 1);
     this.material = material;

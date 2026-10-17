@@ -62,7 +62,7 @@ import { renderTargetsBytes } from './targetBytes';
 import { deviceGpuCap, gpuLedger, readGpuDevice } from './gpuLedger';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
-import { buildRoadSurfaces, disposeSurfaceReuse, passLook, roadSurfaceSteps, surfaceLook, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
+import { buildRoadSurfaces, disposeSurfaceReuse, dropSurfaceBlocks, noRoadSurfaces, passLook, roadSurfaceSteps, surfaceLook, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { SurfaceInputs } from './roadSurfaceInputs';
 import { forgetDerivedKeys, forgetOtherDerived, readDerivedKeys, readDerivedSome, writeDerivedMany } from './derivedCache';
 import { disposeMesh } from './mesh/surfaceMesh';
@@ -1150,7 +1150,8 @@ export function createSceneRenderer(
       if (net.doc.segment(ribbon.id)?.structure === 'tunnel') continue;
       if (Number.isFinite(paved) && land > paved + m(0.3)) { buried = { x: p.x, y: p.y, land, paved }; break; }
     }
-    const missing = !roads || !roads.group.parent || vertices === 0;
+    // The streamed world's roads are the tiles' (`farRoads.ts`): the region draws none by design.
+    const missing = activeAt === null && (!roads || !roads.group.parent || vertices === 0);
     if ((missing || buried) && !roadsReported) {
       roadsReported = true;
       // Once, latched by `roadsReported`; as text, so a headless console log keeps it.
@@ -1630,11 +1631,15 @@ export function createSceneRenderer(
     // Only the tiles the changed blocks reach are digested again (`roadSurfaces.ts` `depends`): the blocks hold where the land moved too (`landBlocks`), null when that cannot be said.
     // The blocks every build since the last finished one changed (a build replaced halfway left its own for this one).
     surfaceBlocks = blocks !== null && surfaceBlocks !== null ? [...surfaceBlocks, ...blocks] : null;
-    const freshRoads = yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
+    // THE STREAMED WORLD'S ROADS ARE THE TILES' (`farRoads.ts` near level: every tile one way, an edited one from the page's records): the region builds none to draw. Two ways of drawing them met at the region's edge, its detail on one side and the far level's flat colour on the other at the same distance (2026-10-16).
+    const byTile = activeAt !== null;
+    const freshRoads = byTile ? noRoadSurfaces() : yield* roadSurfaceSteps(net, solve, materials, terrain.renderedHeightAt, surfaceReuse, terrain.vergeMaterial,
       sliced ? roadTiles : null, surfaceBlocks);
     surfaceBlocks = [];
-    derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
-      { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
+    if (!byTile) {
+      derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
+        { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
+    }
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
     const atdetails = performance.now();
     details ??= createStructureCells(materials, terrain.vergeMaterial, activeTiles);
@@ -1661,6 +1666,8 @@ export function createSceneRenderer(
     // Everything in place at once: the world as it was goes - only what is replaced here.
     let triangles = builtTriangles;
     if (roads && roads !== freshRoads) { triangles -= roads.triangles; world.remove(roads.group); roads.dispose(); }
+    // The region's blocks of a world drawn by tiles now: let go once out of the picture.
+    if (byTile && surfaceReuse.chunks.size) dropSurfaceBlocks(surfaceReuse);
     triangles -= details.triangles;
     for (const mesh of surfaceReuse.retired?.splice(0) ?? []) disposeMesh(mesh);
     roads = freshRoads;

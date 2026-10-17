@@ -96,6 +96,12 @@ export interface StoredTiles {
 
 /** Frees what a `SurfaceReuse` holds on the GPU. */
 export function disposeSurfaceReuse(reuse: SurfaceReuse): void {
+  dropSurfaceBlocks(reuse);
+  for (const material of reuse.paint.values()) material.dispose();
+}
+
+/** The blocks a `SurfaceReuse` holds freed, its paint kept (what else draws the roads uses it: `farRoads.ts` near level). */
+export function dropSurfaceBlocks(reuse: SurfaceReuse): void {
   for (const { mesh } of reuse.chunks?.values() ?? []) disposeMesh(mesh);
   reuse.chunks?.clear();
   // What the passes and tiles stood at goes with the blocks: a later build visits every tile again.
@@ -104,7 +110,14 @@ export function disposeSurfaceReuse(reuse: SurfaceReuse): void {
   reuse.depends?.clear();
   if (reuse.withinMoved !== undefined) reuse.withinMoved = null;
   for (const mesh of reuse.retired?.splice(0) ?? []) disposeMesh(mesh);
-  for (const material of reuse.paint.values()) material.dispose();
+}
+
+/** No road surfaces: what a build of the streamed world's region leaves, its roads drawn by the tiles' near levels (`farRoads.ts`). */
+export function noRoadSurfaces(): RoadSurfaces {
+  const group = new Group();
+  group.name = 'road-network';
+  group.matrixAutoUpdate = false;
+  return { group, meshes: [], triangles: 0, built: 0, reused: 0, remade: 0, rebuilt: [], workMs: 0, adopt() {}, dispose() { group.clear(); } };
 }
 
 /** Every surface of one tile, by mesh name. */

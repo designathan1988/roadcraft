@@ -253,3 +253,41 @@ describe('the tiles written', () => {
     expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 200 && n.y === 100)).toBe(true);
   });
 });
+
+describe('an edited tile', () => {
+  it('is behind in the store from the edit until a write holding it is confirmed: drawn from the page meanwhile (`pageEdit`, `pageRecords`)', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const writes: ((version: number) => void)[] = [];
+    // Each write waits to be let through by the test.
+    const slow = { ...store, write: () => new Promise<number>((done) => writes.push(done)) };
+    const streamer = new WorldStreamer(doc, slow);
+    streamer.focus(10, 10);
+    for (let frame = 0; frame < 30 && !streamer.settled; frame++) { await turns(1); streamer.focus(10, 10); streamer.apply(frame); }
+    const key = tileKey(0, 0);
+    expect(streamer.pageEdit(key)).toBe(0);
+    // A road's end laid in the tile: the store is behind from now on, the page's records hold it.
+    const laid = doc.addNode({ x: 300, y: 400 });
+    const first = streamer.pageEdit(key);
+    expect(first).toBeGreaterThan(0);
+    expect(streamer.pageRecords(key)!.nodes.map((n) => n.id)).toContain(laid.id);
+    expect(streamer.pageEdit(tileKey(1, 1))).toBe(0);
+    // Written: still behind until the store says it wrote it, and behind again by an edit made meanwhile.
+    void streamer.flush();
+    await turns(2);
+    expect(writes.length).toBeGreaterThan(0);
+    expect(streamer.pageEdit(key)).toBe(first);
+    doc.addNode({ x: 320, y: 410 });
+    const second = streamer.pageEdit(key);
+    expect(second).toBeGreaterThan(first);
+    writes.shift()!(2);
+    await turns(2);
+    expect(streamer.pageEdit(key)).toBe(second);
+    // The write of the second edit confirmed: the store holds the tile as the page has it.
+    void streamer.flush();
+    await turns(2);
+    while (writes.length) writes.shift()!(3);
+    await turns(2);
+    expect(streamer.pageEdit(key)).toBe(0);
+  });
+});
