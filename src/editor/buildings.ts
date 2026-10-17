@@ -1,5 +1,7 @@
 import { paletteOf, roofMaterial } from '@world/buildings/materials';
 import type { Vec2 } from '@core/vec2';
+import type { Aabb } from '@core/aabb';
+import { neighbourOf, ringBox } from '@world/buildings/neighbours';
 import clipping from 'polygon-clipping';
 import { signedArea } from '@core/polygon';
 import { AREA_EPS, asPolygon, edgeFrame, localFootprint, offsetRing, supportedBy, overlapArea, roofDetailRing } from '@world/buildings/footprints';
@@ -800,19 +802,17 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
   const absorbed: BuildingId[] = [];
   const fresh = new Set(draft.volumes.map((v) => v.id));
   const mine = buildingBounds(draft, 0.5);
+  // The draft's rings and boxes once, before the neighbours (each neighbour's are kept per record, `neighbourOf`).
+  let mineRings: { readonly ring: readonly Vec2[]; readonly box: Aabb }[] | null = null;
   // DO NOT walk `buildings.all()` here: the ghost of a placement asks this on every pointer move
   for (const other of ctx.doc.buildings.near(mine.minX - 0.5, mine.minY - 0.5, mine.maxX + 0.5, mine.maxY + 0.5)) {
     if (other.id === draft.id || skip.includes(other.id)) continue;
-    const otherRings = [...footprintRects(other), ...groundProjections(other), ...groundElements(other)];
-    const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-    for (const ring of otherRings) for (const p of ring) {
-      box.minX = Math.min(box.minX, p.x - 0.5); box.maxX = Math.max(box.maxX, p.x + 0.5);
-      box.minY = Math.min(box.minY, p.y - 0.5); box.maxY = Math.max(box.maxY, p.y + 0.5);
-    }
-    if (box.maxX < mine.minX || box.minX > mine.maxX || box.maxY < mine.minY || box.minY > mine.maxY) continue;
-    // Does anything actually touch or overlap?
-    const mineRings = [...footprintRects(draft, m(0.02)), ...groundProjections(draft, m(0.02)), ...groundElements(draft, m(0.02))];
-    const touches = mineRings.some((a) => otherRings.some((c) => overlapArea(a, c) > 1e-6));
+    const otherRings = neighbourOf(other).obstacles;
+    if (!otherRings.some(({ box }) => boxesMeet(box, mine, 0.5))) continue;
+    // Does anything actually touch or overlap? Clipped only where the two rings' boxes meet.
+    mineRings ??= [...footprintRects(draft, m(0.02)), ...groundProjections(draft, m(0.02)), ...groundElements(draft, m(0.02))]
+      .map((ring) => ({ ring, box: ringBox(ring) }));
+    const touches = mineRings.some((a) => otherRings.some((c) => boxesMeet(a.box, c.box, 0) && overlapArea(a.ring, c.ring) > 1e-6));
     if (!touches) continue;
     for (const v of other.volumes) {
       const ring = localFootprint(v).map((p) => worldToLocalAt(draft, localToWorld(other, p.x, p.y)));
@@ -848,6 +848,10 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
   void fresh;
   return absorbed;
 }
+
+/** Whether two boxes meet, `pad` round the first. */
+const boxesMeet = (a: Aabb, b: Aabb, pad: number): boolean =>
+  a.minX - pad <= b.maxX && a.maxX + pad >= b.minX && a.minY - pad <= b.maxY && a.maxY + pad >= b.minY;
 
 /** The part of `ring` inside `within` (local units), as one simple ring - the largest piece when the two meet in several. */
 export function clipRing(ring: readonly Vec2[], within: readonly Vec2[]): Vec2[] | null {
