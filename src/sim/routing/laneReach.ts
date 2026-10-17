@@ -36,8 +36,22 @@ class BodyReach {
     return c === undefined ? [] : this.exitsOf(w, c);
   }
 
+  /** Each component asked from, with the components it leads to (itself included): forgotten at any change of the graph. */
+  private readonly ahead = new Map<number, ReadonlySet<number>>();
+
+  /** Whether a link lane can lead to another for this body; null when one of them is no link lane known here. */
+  reachesFrom(start: LaneletId, goal: LaneletId): boolean | null {
+    const cu = this.comp.get(start), cv = this.comp.get(goal);
+    if (cu === undefined || cv === undefined) return null;
+    if (cu === cv) return true;
+    let ahead = this.ahead.get(cu);
+    if (!ahead) this.ahead.set(cu, ahead = this.walkCond(cu, this.condOut, null));
+    return ahead.has(cv);
+  }
+
   /** @rebuild Every link lane: a body class asked for the first time, or a lane graph built whole. */
   buildAll(w: ReachWorld): void {
+    this.ahead.clear();
     this.comp.clear(); this.members.clear(); this.out.clear(); this.into.clear();
     this.condOut.clear(); this.condIn.clear(); this.exitsMemo.clear();
     const links: LaneletId[] = [];
@@ -50,6 +64,7 @@ class BodyReach {
 
   /** Brought up to the lane graph's changes. */
   follow(w: ReachWorld, changes: readonly GraphChange[]): void {
+    this.ahead.clear();
     const isLink = (id: LaneletId): boolean => w.graph.lanelets.get(id)?.kind === 'link';
     // The lanes whose ways out may have changed: made or taken, and those into a junction built again.
     const lanes = new Set<LaneletId>();
@@ -332,6 +347,14 @@ export class LaneReaches {
     let reach = this.bodies.get(body);
     if (!reach) { this.bodies.set(body, reach = new BodyReach(body)); reach.buildAll(w); }
     return reach.exitsFrom(w, start);
+  }
+
+  /** Whether a link lane can lead to another for a body (false: no route, DO NOT search the graph for one); true when it may, or when it cannot be said. */
+  mayReach(w: ReachWorld, start: LaneletId, goal: LaneletId, body: BodyClass): boolean {
+    this.follow(w);
+    let reach = this.bodies.get(body);
+    if (!reach) { this.bodies.set(body, reach = new BodyReach(body)); reach.buildAll(w); }
+    return reach.reachesFrom(start, goal) !== false;
   }
 
   /** DO NOT leave the graph's changes to the first vehicle made after them (its tick paid for every body's reach): followed where the topology is built again (`SimWorld.rebuildVehicleTopology`). */

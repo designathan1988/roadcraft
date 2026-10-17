@@ -98,6 +98,8 @@ export function planTrip(
   const startLane = w.lanelet(start);
   if (!startLane || startLane.kind !== 'link' || !w.lanelet(goal) || w.rt(goal).ghost) return null;
   if (start === goal) return { route: [start], changeTo: null, intent: null, cost: 0 };
+  // DO NOT expand the whole graph to find out a goal cannot be reached: the lanes' components say so first (`laneReach.ts`).
+  if (!w.laneReaches.mayReach(w, start, goal, body)) return null;
 
   const best = new Map<string, number>([[start, 0]]);
   const parent = new Map<string, Step>();
