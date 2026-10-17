@@ -68,6 +68,8 @@ import { type CornerGrid, type TerrainRegion, type TerrainShaper, boxRegion, sam
 import { type NaturalPlate, type PlateShapeAnswer, type PlateShapeAsk, askPlate } from './groundShape';
 import type { Aabb } from '@core/aabb';
 import { geometryCost } from './gpuLedger';
+import { measureHitch } from '@core/hitch';
+import { woodsBase, woodsBaseInto } from './woodsBase';
 import type { PlateHeights } from './sharedGround';
 import { TERRAIN_CELL, TERRAIN_HALF, TERRAIN_SEGMENTS, TERRAIN_SIZE } from './terrainGrid';
 import { FOREST_RES, coverOf, geologyOf, rasterCover, rasterGeology } from './coverRaster';
@@ -189,6 +191,8 @@ export interface TerrainSurface {
   setVegetation?(amount: number): void;
   /** The woods' density but the ecosystem's share per cell, made off the page with the plate's first build */
   woodsBase?(): Float32Array | null;
+  /** Moves whenever the woods' base changes (a stamp of the land redoes its cells). */
+  readonly woodsRevision?: number;
   dispose(): void;
 }
 
@@ -1381,6 +1385,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
 
   /** The woods' base made off the page with the first build (`woodsBase`), while it holds. */
   let woods: Float32Array | null = null;
+  /** Moves whenever `woods` changes (`woodsRevision`). */
+  let woodsRevision = 0;
 
   const waterSurface = createWaterSurface(anisotropy);
   const water = new Mesh(new BufferGeometry(), waterSurface.material);
@@ -1732,7 +1738,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       sandstone: store.sand, basalt: store.basalt,
       painted: biomeCorners, settings: nature,
     }, over && ecologyField ? { previous: ecologyField, ix0: over[0], ix1: over[1], iy0: over[2], iy1: over[3] } : undefined);
-    performance.measure('hitch:ecology', { start: startedAt, end: performance.now() });
+    measureHitch('hitch:ecology', startedAt);
     applyEcology(field);
   };
   const applyEcology = (field: EcologyField): void => {
@@ -1944,8 +1950,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     }
     paintArray.addLayerUpdate(LIGHT_LAYER);
     paintArray.needsUpdate = true;
-    performance.measure('hitch:terrain-light', { start: startedAt, end: performance.now() });
-    performance.measure('terrain-light/worker', { start: startedAt - result.ms, end: startedAt, detail: `${width}x${rect.y1 - rect.y0 + 1} corners` });
+    measureHitch('hitch:terrain-light', startedAt);
+    if (import.meta.env.DEV) performance.measure('terrain-light/worker', { start: startedAt - result.ms, end: startedAt, detail: `${width}x${rect.y1 - rect.y0 + 1} corners` });
     // Rows run from +y downwards.
     diary?.record('light', [[origin.x - TERRAIN_HALF + rect.x0 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y1 * TERRAIN_CELL, origin.x - TERRAIN_HALF + rect.x1 * TERRAIN_CELL, origin.y + TERRAIN_HALF - rect.y0 * TERRAIN_CELL]],
       { cause: 'inclinação do terreno refeita', ...(lightCause ? { parent: lightCause } : {}), ms: result.ms, detail: `${width}×${rect.y1 - rect.y0 + 1} cantos, num worker` });
@@ -2161,7 +2167,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     shapeToRoads(shape, region = null) {
       const shapeAt = performance.now();
       const moved = shapeToRoads(shape, region);
-      performance.measure('hitch:road-edit/ground shape', { start: shapeAt, end: performance.now() });
+      measureHitch('hitch:road-edit/ground shape', shapeAt);
       return shapeLanded(moved, region);
     },
     askShape(region, bounds) {
@@ -2171,7 +2177,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         take: (answers) => {
           const at = performance.now();
           const moved = take(answers[0]!);
-          performance.measure('hitch:ground/shaped heights put in place', { start: at, end: performance.now() });
+          measureHitch('hitch:ground/shaped heights put in place', at);
           return shapeLanded(moved, region);
         },
       };
@@ -2197,9 +2203,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       // The first build worked out off the page (`plateMesh.ts`, as Cesium builds its terrain meshes in a worker)
       const made = firstBuild && prebuilt && doc.terrainStamps.length === 0 ? prebuilt : null;
       prebuilt = null;
-      // The woods' base holds only on the land it was worked out on.
-      woods = made?.woods ?? null;
       if (made) {
+        // The woods' base worked out with it, on the same land.
+        woods = made.woods ?? null;
+        woodsRevision++;
         grid.set(made.heights);
         natural.set(made.heights);
         flip.set(made.flip);
@@ -2235,6 +2242,10 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       // Only the corners the dab rewrote, the diagonals and normals round them and the levels over them.
       if (box) cornersMoved(box[0], box[1], box[2], box[3]);
       else wholePlateMoved();
+      // The woods' base on the land as it is: the dab's own cells, or the plate's with the plate (DO NOT drop it: the nature's sweep then worked each plate's out on the page, a plate a frame).
+      if (box && woods) woodsBaseInto(woods, naturalRenderedHeightAt, TERRAIN_HALF, origin.x, origin.y, surface.rectOf(box));
+      else woods = woodsBase(naturalRenderedHeightAt, TERRAIN_HALF, origin.x, origin.y);
+      woodsRevision++;
       lastStamps = doc.terrainStamps;
       // The water is the deferred part of a stroke: a river dab makes water, any other dab is its box (with what a stroke left waiting).
       markWaterDirty(added && added.mode !== 'river' ? box : null);
@@ -2250,6 +2261,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       return true;
     },
     woodsBase: () => woods,
+    get woodsRevision() { return woodsRevision; },
     lookFrom(camera, pixels) {
       const shown = lod.select(camera, pixels) > 0;
       ground.visible = shown;
