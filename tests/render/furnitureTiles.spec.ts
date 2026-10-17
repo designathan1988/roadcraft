@@ -70,7 +70,7 @@ describe('a tile\'s street furniture baked in a worker', () => {
     const page = createStreetFurniture(kit);
     page.sync(net, buildRoadElevation(net, () => 0), () => 0, minutes);
     const product = furnitureProduct(page, kit.lens, () => minutes);
-    const bakes = await bakeEveryTile(doc, box, 'furniture', product.extra!()) as FurnitureBake[];
+    const bakes = await bakeEveryTile(doc, box, 'furniture', product.extra!(0)) as FurnitureBake[];
     expect(bakes.length).toBeGreaterThan(1);
     expect(bakes.some((b) => b.growing)).toBe(true);
     const tiled = createStreetFurniture(kit);

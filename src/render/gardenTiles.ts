@@ -19,7 +19,7 @@ export interface GardenBake {
 export const gardenBaker: NearBaker<GardenBake | null> = {
   parts: ['buildings'],
   around: false,
-  has: (tile) => tile.buildings.length > 0 || (tile.grown?.id.length ?? 0) > 0,
+  has: (tiles) => tiles[0]!.buildings.length > 0 || (tiles[0]!.grown?.id.length ?? 0) > 0,
   // A lot's plants stand on the ground round its building (`renderer.ts` bankBox).
   groundReach: m(64),
   bake(area) {
