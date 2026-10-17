@@ -114,4 +114,13 @@ describe('a city saved to a file', () => {
     delete (file as { plan?: unknown }).plan;
     expect(readWorldFile(file)).toBeNull();
   });
+
+  it('says a file was not opened when a tile of it could not be written: the values are not written over the world', async () => {
+    const blobs = memoryStore();
+    const failing: PartStore = { ...blobs, async write(put, remove) { return put.some(([k]) => k.includes(':T:')) ? false : blobs.write(put, remove); } };
+    const store = new TileStore('map', storeTiles(failing), never);
+    const meta: WorldMeta = { version: 1, generator: { seed: 4, style: 'mixed', centres: 3, density: 0.5, parks: 0.05, industry: true }, unit: 1, values: {} };
+    expect(await store.importWorld(meta, [tile(0, 0)], [tileKey(0, 0)])).toBe(false);
+    expect(await store.meta()).toBeNull();
+  });
 });

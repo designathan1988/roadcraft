@@ -1997,10 +1997,11 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
     (i, j, after, text, ifMissing) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing));
-  if (imported && release) {
-    // One at a time, each a write of its own (`TileStore.write`, the save worker): the file's tiles take the place of the stored ones.
-    await store.setMeta(imported.meta);
-    for (const tile of imported.tiles) await store.write(tile);
+  // DO NOT say "opened" for a world not written: another tab holds it, or a write failed (`TileStore.importWorld`); the world stored opens instead, and the refusal is said at the end.
+  let refused: string | null = null;
+  if (imported) {
+    if (!release) refused = 'another tab holds this world: the file was not opened into it';
+    else if (!(await store.importWorld(imported.meta, imported.tiles, mapTilesFrom(0, 0)))) refused = 'the file was not written whole into the store';
   }
   // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
@@ -2075,6 +2076,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   if (fresh) { camera.x = 0; camera.y = 0; view.moveTo({ x: 0, y: 0 }); }
   streamer.focus(camera.x, camera.y);
   requestDraw();
+  // The file refused (said by the caller with `hint.openFailed`), the world as it was stored open.
+  if (refused) throw new Error(refused);
 }
 
 
