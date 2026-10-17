@@ -169,6 +169,9 @@ export class LandLod {
   private readonly rims: InstancedBufferAttribute;
   private count = 0;
   private rimCount = 0;
+  /** The first patch and rim this selection wrote anew (Infinity: none). */
+  private patchesFrom = Infinity;
+  private rimsFrom = Infinity;
 
   constructor(
     private readonly levels: LandLevels,
@@ -197,12 +200,19 @@ export class LandLod {
     frustum.setFromProjectionMatrix(viewProjection, WebGLCoordinateSystem, camera.reversedDepth);
     this.count = 0;
     this.rimCount = 0;
+    this.patchesFrom = Infinity;
+    this.rimsFrom = Infinity;
     this.visit(LOD_LEVELS - 1, 0, 0);
-    for (const [attribute, count, geometry] of [[this.patches, this.count, this.geometry], [this.rims, this.rimCount, this.rimGeometry]] as const) {
-      attribute.clearUpdateRanges();
-      attribute.addUpdateRange(0, count * 4);
-      attribute.needsUpdate = true;
+    // DO NOT send the patches every frame: only from the first one that differs from what was sent (a still camera sends none).
+    for (const [attribute, count, from, geometry] of [[this.patches, this.count, this.patchesFrom, this.geometry], [this.rims, this.rimCount, this.rimsFrom, this.rimGeometry]] as const) {
       geometry.instanceCount = count;
+      if (from >= count) continue;
+      // A range not sent yet kept whole: its instances past this count are not sent again when the count grows back.
+      const pending = attribute.updateRanges[0];
+      const start = pending ? Math.min(pending.start, from * 4) : from * 4, end = pending ? Math.max(pending.start + pending.count, count * 4) : count * 4;
+      attribute.clearUpdateRanges();
+      attribute.addUpdateRange(start, end - start);
+      attribute.needsUpdate = true;
     }
     return this.count;
   }
@@ -278,13 +288,20 @@ export class LandLod {
     }
     const step = 1 << level;
     const x = cx * LOD_PATCH * step, y = cy * LOD_PATCH * step;
-    const write = (attribute: InstancedBufferAttribute, k: number): void => {
+    /** Written only where it differs from what the buffer holds; the first such index kept (`select`). */
+    const write = (attribute: InstancedBufferAttribute, k: number): boolean => {
       const a = attribute.array as Float32Array;
+      if (a[k * 4] === x && a[k * 4 + 1] === y && a[k * 4 + 2] === step && a[k * 4 + 3] === level) return false;
       a[k * 4] = x; a[k * 4 + 1] = y; a[k * 4 + 2] = step; a[k * 4 + 3] = level;
+      return true;
     };
-    write(this.patches, this.count++);
+    if (write(this.patches, this.count) && this.count < this.patchesFrom) this.patchesFrom = this.count;
+    this.count++;
     const end = LOD_PATCH * step, seg = this.grid.seg, s = this.skirt;
-    if ((x === 0 && s.x > 0) || (x + end === seg && s.y > 0) || (y === 0 && s.z > 0) || (y + end === seg && s.w > 0)) write(this.rims, this.rimCount++);
+    if ((x === 0 && s.x > 0) || (x + end === seg && s.y > 0) || (y === 0 && s.z > 0) || (y + end === seg && s.w > 0)) {
+      if (write(this.rims, this.rimCount) && this.rimCount < this.rimsFrom) this.rimsFrom = this.rimCount;
+      this.rimCount++;
+    }
   }
 
   dispose(): void {

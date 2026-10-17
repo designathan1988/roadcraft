@@ -132,6 +132,38 @@ describe('garden cull', () => {
     expect(meshes.every((mesh) => posesOf(mesh).buffer.updateRanges.length === 0)).toBe(true);
   });
 
+  it('sends at each cull no more than the positions whose instance changed, the buffers sent between culls', () => {
+    const gardens = createGardens(kit);
+    gardens.update({ added: town(200, m(2000), 5), removed: [] });
+    const rng = new Rng(11);
+    // Each buffer as three last sent it, and how many positions it drew then.
+    const sent = new Map<object, { data: Float32Array; count: number }>();
+    for (let c = 0; c < 30; c++) {
+      for (const mesh of gardens.meshes as InstancedMesh[]) {
+        const buffer = posesOf(mesh).buffer;
+        // As if three sent it: its ranges gone, its upload told.
+        buffer.clearUpdateRanges();
+        buffer.onUploadCallback();
+        sent.set(buffer, { data: Float32Array.from(buffer.array as Float32Array), count: mesh.count });
+      }
+      const { frustum, view } = viewOf(cameraAt(rng, m(2000)));
+      gardens.cull(frustum, view);
+      for (const mesh of gardens.meshes as InstancedMesh[]) {
+        const buffer = posesOf(mesh).buffer, was = sent.get(buffer);
+        // A buffer made anew is sent whole once, by three.
+        if (!was) continue;
+        const stride = buffer.stride, now = buffer.array as Float32Array;
+        let changed = 0;
+        for (let p = 0; p < mesh.count; p++) {
+          if (p >= was.count) { changed++; continue; }
+          for (let j = 0; j < stride; j++) if (!Object.is(now[p * stride + j], was.data[p * stride + j])) { changed++; break; }
+        }
+        const floats = buffer.updateRanges.reduce((n, r) => n + r.count, 0);
+        expect(floats, `cull ${c}: ${floats / stride} positions sent, ${changed} changed`).toBeLessThanOrEqual(changed * stride);
+      }
+    }
+  });
+
   it('never lets the pending upload ranges grow while a mesh is not drawn: one cull\'s runs, then one range round them', () => {
     const gardens = createGardens(kit);
     gardens.update({ added: town(200, m(2000), 5), removed: [] });

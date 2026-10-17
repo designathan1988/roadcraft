@@ -87,7 +87,8 @@ export function farWoods(ask: FarWoodsAsk): FarWoods {
     for (let i = 0; i < side; i++) heights[j * side + i] = base + reliefHeight(relief, cx - half + i * cell, y);
   }
   const zeros = new Float32Array(side * side);
-  const field = computeEcology({ side, cell, heights, water: new Uint8Array(side * side), sandstone: zeros, basalt: zeros, painted: null, settings: nature });
+  // Its noise at the plate's place in the world, as the plate drawn in full reads it (`terrain.ts` refreshEcology): the far woods are its near ones.
+  const field = computeEcology({ side, cell, heights, water: new Uint8Array(side * side), sandstone: zeros, basalt: zeros, painted: null, settings: nature, centre: { x: cx, y: cy } });
   // The land between corners, bilinear (the woods' slope reads it as the near sweep reads the plate's).
   const seg = side - 1;
   const natural = (x: number, y: number): number => {

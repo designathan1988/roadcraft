@@ -257,12 +257,18 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   };
   const neighbour = (fp: FarPlate, di: number, dj: number): boolean => farPlates.has(plateOf(fp.cx + di * PLATE_SIZE, fp.cy + dj * PLATE_SIZE));
   /** The far patches of the plates not drawn in full, their rims where the ring ends. */
+  /** The slots the far index was last written with (their rims follow the ring, set once). */
+  let farDrawn = '';
   const drawFar = (): void => {
     const patches: FarPatchDrawn[] = [];
     for (const fp of farPlates.values()) {
       if (plates.get(fp.key)?.shown) continue;
       patches.push({ slot: fp.slot, rim: [!neighbour(fp, 0, -1), !neighbour(fp, 0, 1), !neighbour(fp, -1, 0), !neighbour(fp, 1, 0)] });
     }
+    // DO NOT write the whole far index again at each refresh (every edit of the content calls one): only when the plates it draws changed.
+    const key = patches.map((p) => p.slot).join(',');
+    if (key === farDrawn) return;
+    farDrawn = key;
     farIndexInto(far, patches);
   };
   /** The map's plates, written once (they never follow the view: the map has an edge); true the first time. */
