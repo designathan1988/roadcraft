@@ -10,8 +10,8 @@ import { jobPort, longWorkers, shortWorkers } from './jobs/jobPool';
 /** Workers making tiles at once, and how many the region asks at a time (`worldStreamer.ts` inFlight): the long-running side of the pool (`longWorkers`), the growth beside them (it grows the player's zones, once the map is made); never on the workers of the traffic's lanes, the cells or the far levels (`jobPool.ts` place). */
 export const tileLanes = (): number => longWorkers();
 
-/** Lanes set aside on the other kinds' workers while the map is made (`setAside`): one on each of them but the save's, which stays clear (`jobPool.ts` KEPT_CLEAR: two lanes there were put on the one other worker, a tile waiting behind a tile). */
-export const asideLanes = (): number => Math.max(0, shortWorkers() - 1);
+/** Lanes set aside on the other kinds' workers while the map is made (`setAside`): never on the save's (`jobPool.ts` KEPT_CLEAR), and one of them always left to the queue (conf39: the cells, the near roads and a building's detail waited behind tiles of 2-25 s on the one worker the queue could use). */
+export const asideLanes = (): number => Math.max(0, shortWorkers() - 2);
 
 /** Where a tile made is stored by the worker, and whether its texts come back with its version. */
 type StoreAsk = NonNullable<StreamTileAsk['store']>;
@@ -91,7 +91,8 @@ export class TileGenerator {
 
   /** Each free lane given the next tile asked. */
   private pump(): void {
-    if (!this.aside) this.dropAside();
+    // DO NOT keep a lane set aside with no tile waiting: the rush's end (`setAside(false)`) waits for every tile made, and a tile that failed never counts.
+    if (!this.aside || this.queue.length === 0) this.dropAside();
     const own = this.lanes.filter((l) => !l.aside).length, aside = this.lanes.length - own;
     const idle = (): number => this.lanes.filter((l) => !l.busy).length;
     // The low work on the generator's own lanes alone, never on those set aside.
