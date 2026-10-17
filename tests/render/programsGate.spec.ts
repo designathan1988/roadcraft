@@ -73,4 +73,53 @@ describe('the door into the drawn scene', () => {
     const source = readFileSync('src/render/renderer.ts', 'utf8');
     expect(source).toMatch(/const onChildAdded = [^\n]*gateUntilBuilt\(event\.child\)/);
   });
+
+  it('always settles: without the parallel compile (built at once), a mesh let go meanwhile, a compile that never answers (given up after its frames)', async () => {
+    const scene = new Scene(), camera = new PerspectiveCamera();
+    // No KHR_parallel_shader_compile: three's compile, at once, off the draw.
+    const built: Object3D[] = [];
+    const plain = {
+      getRenderTarget: () => null, setRenderTarget: () => {}, render: () => {}, autoClear: true,
+      extensions: { has: () => false },
+      compile: (object: Object3D) => { built.push(object); },
+      compileAsync: () => new Promise(() => {}),
+    } as unknown as WebGLRenderer;
+    drainCompiles(plain, camera, scene, null);
+    const a = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    gateUntilBuilt(a);
+    expect(drawn(a)).toBe(false);
+    drainCompiles(plain, camera, scene, null);
+    await tick();
+    expect(built).toContain(a);
+    expect(drawn(a)).toBe(true);
+    // A compile that never answers: the door opens after its frames, the mesh drawn as before.
+    const stuck = {
+      getRenderTarget: () => null, setRenderTarget: () => {}, render: () => {}, autoClear: true,
+      compileAsync: () => new Promise(() => {}),
+    } as unknown as WebGLRenderer;
+    const b = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    gateUntilBuilt(b);
+    for (let frame = 0; frame < 40; frame++) drainCompiles(stuck, camera, scene, null);
+    await tick();
+    expect(drawn(b)).toBe(true);
+    // A loose mesh let go before it went up: what waits for it is told.
+    drainWarm(stuck);
+    const c = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    let told = false;
+    void warmLooseAhead([c])!.then(() => { told = true; });
+    const { cancelWarm } = await import('@render/uploads');
+    cancelWarm([c]);
+    await tick();
+    expect(told).toBe(true);
+    // One let go while its programs are built: settled all the same.
+    const d = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    let settled = false;
+    void warmLooseAhead([d])!.then(() => { settled = true; });
+    drainWarm(stuck);
+    cancelWarm([d]);
+    for (let frame = 0; frame < 40; frame++) drainCompiles(stuck, camera, scene, null);
+    await tick();
+    expect(settled).toBe(true);
+    expect(warmPending()).toBe(false);
+  });
 });
