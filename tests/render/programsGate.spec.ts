@@ -1,36 +1,76 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { type Mesh, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
-import { createGardens, type GardenPlant } from '@render/gardens';
-import { createSceneryKit } from '@render/scenery';
-import { drainCompiles, warmPending } from '@render/uploads';
-import { m } from '@world/units';
-import { townChanges } from '../support/gardenChange';
+import {
+  BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, InstancedMesh, Layers, Line, LineBasicMaterial, Mesh, MeshStandardMaterial, type Object3D,
+  PerspectiveCamera, Points, PointsMaterial, Scene, type WebGLRenderer,
+} from 'three';
+import { drainCompiles, drainWarm, gateUntilBuilt, warmLooseAhead, warmPending } from '@render/uploads';
 
-/** NO MESH DRAWN BEFORE ITS PROGRAMS ARE BUILT (`uploads.ts` programsReady): the instanced layers' new meshes (`cellInstances.ts`) */
-describe('a new instanced mesh', () => {
-  it('is hidden until its programs, lit and in the shadow, are built, and the frames keep coming meanwhile', async () => {
-    const compiled: { object: Object3D; visible: boolean }[] = [];
-    const renderer = {
-      getRenderTarget: () => null,
-      setRenderTarget: () => {},
-      // Each object as it was handed to the compiler: three builds only what is visible then.
-      compileAsync: (object: Object3D) => { compiled.push({ object, visible: object.visible }); return Promise.resolve(); },
-    } as unknown as WebGLRenderer;
-    const scene = new Scene(), camera = new PerspectiveCamera();
-    // The compiler answers from now on.
-    drainCompiles(renderer, camera, scene, null);
-    const gardens = createGardens(createSceneryKit());
-    const plant: GardenPlant = { kind: 'tree', x: 0, y: 0, z: 0, w: m(2), d: m(2), h: m(6), yaw: 0, seed: 0.3 };
-    const made = gardens.update(townChanges()([[plant]])).added;
-    expect(made.length).toBeGreaterThan(0);
-    for (const mesh of made) expect(mesh.visible).toBe(false);
+/** THE ONE DOOR INTO THE DRAWN SCENE (`uploads.ts` gateUntilBuilt): nothing is drawn with a program not built */
+
+const drawnBy = new Layers();
+const drawn = (o: Object3D): boolean => o.layers.test(drawnBy);
+const tick = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
+
+function compiler(): { renderer: WebGLRenderer; compiled: Object3D[]; drain(): void } {
+  const compiled: Object3D[] = [];
+  const renderer = {
+    getRenderTarget: () => null,
+    setRenderTarget: () => {},
+    render: () => {},
+    autoClear: true,
+    compileAsync: (object: Object3D) => { object.traverse((o) => compiled.push(o)); return Promise.resolve(); },
+  } as unknown as WebGLRenderer;
+  const scene = new Scene(), camera = new PerspectiveCamera();
+  drainCompiles(renderer, camera, scene, null);
+  return { renderer, compiled, drain: () => drainCompiles(renderer, camera, scene, null) };
+}
+
+describe('the door into the drawn scene', () => {
+  it('holds every kind of thing that comes in off the drawn layers until its programs, lit and in the shadow, are built', async () => {
+    const { compiled, drain } = compiler();
+    const material = new MeshStandardMaterial();
+    const plain = new Mesh(new BoxGeometry(), material);
+    plain.castShadow = true;
+    const instanced = new InstancedMesh(new BoxGeometry(), new MeshStandardMaterial(), 4);
+    const group = new Group();
+    group.add(instanced);
+    const line = new Line(new BufferGeometry().setAttribute('position', new Float32BufferAttribute([0, 0, 0, 1, 1, 1], 3)), new LineBasicMaterial());
+    const points = new Points(new BufferGeometry().setAttribute('position', new Float32BufferAttribute([0, 0, 0], 3)), new PointsMaterial());
+    for (const root of [plain, group, line, points]) gateUntilBuilt(root);
+    const things = [plain, instanced, line, points];
+    for (const thing of things) expect(drawn(thing)).toBe(false);
     expect(warmPending()).toBe(true);
-    drainCompiles(renderer, camera, scene, null);
-    await new Promise((done) => setTimeout(done, 0));
-    // Built through a visible stand-in of each (three builds ahead only what is visible: r186 `compile` walks `traverseVisible`), sharing its geometry and material.
-    for (const mesh of made) expect(compiled.some((c) => c.visible && (c.object as Mesh).geometry === mesh.geometry && (c.object as Mesh).material === mesh.material)).toBe(true);
-    expect(compiled.every((c) => c.visible)).toBe(true);
-    expect(made.some((mesh) => mesh.visible)).toBe(true);
+    drain();
+    await tick();
+    for (const thing of things) {
+      expect(compiled).toContain(thing);
+      expect(drawn(thing)).toBe(true);
+    }
+    // Its shadow's program too: a stand-in on a depth material.
+    expect(compiled.some((o) => ((o as Mesh).material as { isMeshDepthMaterial?: boolean }).isMeshDepthMaterial)).toBe(true);
     expect(warmPending()).toBe(false);
+    // Another mesh of a variant built: in at once.
+    const twin = new Mesh(new BoxGeometry(), material);
+    twin.castShadow = true;
+    gateUntilBuilt(twin);
+    expect(drawn(twin)).toBe(true);
+  });
+
+  it('lets a mesh warmed before it comes in through at once', async () => {
+    const { renderer, drain } = compiler();
+    drainWarm(renderer);
+    const mesh = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    const sent = warmLooseAhead([mesh])!;
+    drainWarm(renderer);
+    drain();
+    await sent;
+    gateUntilBuilt(mesh);
+    expect(drawn(mesh)).toBe(true);
+  });
+
+  it('is what the renderer passes everything that comes into the scene through', () => {
+    const source = readFileSync('src/render/renderer.ts', 'utf8');
+    expect(source).toMatch(/const onChildAdded = [^\n]*gateUntilBuilt\(event\.child\)/);
   });
 });

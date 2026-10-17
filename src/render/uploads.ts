@@ -304,10 +304,69 @@ export function drainWarm(renderer: WebGLRenderer): void {
 export function programsReady(mesh: Mesh): Promise<unknown> {
   // Nothing built ahead where no renderer answers (tests): nothing waited for.
   if (!compiler) return Promise.resolve();
-  const shadow = shadowStandIn(mesh);
+  // Through the variants the door keeps (`programsOf`): a mesh warmed here goes in at once when it enters the scene.
+  const waiting = programsOf(mesh);
+  if (!waiting) return Promise.resolve();
   pendingPrograms++;
-  return Promise.all([compileAhead(mesh), shadow ? compileAhead(shadow, true) : null]).finally(() => { pendingPrograms--; });
+  return waiting.finally(() => { pendingPrograms--; });
 }
+/** THE ONE DOOR INTO THE DRAWN SCENE: what comes in with a program not built yet waits on a layer no camera draws (the colour pass's nor the shadow's: three tests the main camera's layers in both) until its programs, lit and in the shadow, are built ahead; then it is drawn as it was. DO NOT gate by `visible`: the layers' level choices set it every frame. */
+const GATE_LAYER = 30;
+/** Each program variant asked for, by what of a mesh is in its key (its material and the mesh's own flags), and whether it is built: a mesh of a variant built goes in at once. */
+const variants = new Map<string, { built: boolean; ready: Promise<unknown> }>();
+/** What three's program key reads of a mesh lit (r186 `WebGLPrograms.getParameters`): its materials, how it is instanced, skinned, morphed, its attributes, whether it takes shadows. */
+function litKey(mesh: Mesh): string {
+  const m = mesh as Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean; isBatchedMesh?: boolean; instanceColor?: unknown; morphTexture?: unknown };
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  const g = mesh.geometry;
+  return ['lit', materials.map((x) => `${x.uuid}:${x.version}`).join(','), !!m.isInstancedMesh, !!m.instanceColor, !!m.morphTexture, !!m.isSkinnedMesh, !!m.isBatchedMesh,
+    mesh.receiveShadow, Object.keys(g.attributes).sort().join(','), Object.keys(g.morphAttributes).sort().join(',')].join('/');
+}
+/** A variant's programs asked for once, with `mesh` as its stand-in; the promise settles when they are built. */
+function variantReady(key: string, build: () => Promise<unknown>): { built: boolean; ready: Promise<unknown> } {
+  let known = variants.get(key);
+  if (!known) {
+    const made: { built: boolean; ready: Promise<unknown> } = { built: false, ready: Promise.resolve() };
+    made.ready = build().finally(() => { made.built = true; });
+    variants.set(key, made);
+    known = made;
+  }
+  return known;
+}
+/** The programs a mesh is drawn with, lit and in the shadow (its variants, each asked for once): null when they are all built already. */
+function programsOf(mesh: Mesh): Promise<unknown> | null {
+  const waits: Promise<unknown>[] = [];
+  const lit = variantReady(litKey(mesh), () => compileAhead(mesh));
+  if (!lit.built) waits.push(lit.ready);
+  if (mesh.castShadow) {
+    // Its stand-in made only for a variant not asked for yet.
+    const cast = variantReady(`cast/${casterKey(mesh)}`, () => { const shadow = shadowStandIn(mesh); return shadow ? compileAhead(shadow, true) : Promise.resolve(); });
+    if (!cast.built) waits.push(cast.ready);
+  }
+  return waits.length ? Promise.all(waits) : null;
+}
+/** Each mesh held at the door, and the layers it had. */
+const gated = new WeakMap<Object3D, number>();
+/** What comes into the scene (`renderer.ts` childadded): every mesh, line and points under it whose programs are not built held off the drawn layers until they are (`programsOf`). Nothing is held where no renderer answers (tests, the opening before the first frame: the catalogue builds those). */
+export function gateUntilBuilt(root: Object3D): void {
+  if (!compiler) return;
+  root.traverse((object) => {
+    const mesh = object as Mesh & { isLine?: boolean; isPoints?: boolean };
+    if (!(mesh.isMesh || mesh.isLine || mesh.isPoints) || gated.has(object) || !mesh.material) return;
+    const waiting = programsOf(mesh);
+    if (!waiting) return;
+    gated.set(object, object.layers.mask);
+    object.layers.set(GATE_LAYER);
+    pendingPrograms++;
+    void waiting.then(() => {
+      pendingPrograms--;
+      const mask = gated.get(object);
+      gated.delete(object);
+      if (mask !== undefined && object.layers.mask === 1 << GATE_LAYER) object.layers.mask = mask;
+    });
+  });
+}
+
 /** Meshes whose programs are being built (`programsReady`): the renderer asks for frames meanwhile (`warmPending`). */
 let pendingPrograms = 0;
 /** Whether programs are built ahead here (a renderer answers; none in tests): a mesh waits for them only then. */
@@ -324,11 +383,13 @@ export function warmPending(): boolean {
 /** A loose mesh's buffers sent up in a scene of its own (`warmLoose`) */
 const LOOSE = {
   scene: Object.assign(new ThreeScene(), { matrixWorldAutoUpdate: false }),
+  // Every layer: a mesh held at the door (`gateUntilBuilt`) still has its buffers sent.
   camera: new OrthographicCamera(),
   material: new MeshBasicMaterial(),
   target: new WebGLRenderTarget(1, 1),
 };
 LOOSE.scene.overrideMaterial = LOOSE.material;
+LOOSE.camera.layers.enableAll();
 
 /** DO NOT draw the whole scene for it (on a layer of its own) */
 function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly BufferGeometry[]): void {

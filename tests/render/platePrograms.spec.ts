@@ -5,7 +5,7 @@ import { createFlatAtlas } from '@render/flatAtlas';
 import { drainCompiles } from '@render/uploads';
 import { m } from '@world/units';
 
-/** NO PLATE OF THE GROUND DRAWN BEFORE ITS PROGRAMS ARE BUILT (`flatAtlas.ts`, `programsFirst.ts`): the far patch stands in meanwhile */
+/** NO PLATE OF THE GROUND SHOWN BEFORE ITS PROGRAMS ARE BUILT (`flatAtlas.ts`, `uploads.ts` programsReady): the far patch stands in meanwhile, not a hole while the door holds its meshes */
 
 /** Each plate's meshes, by centre. */
 const made = vi.hoisted(() => new Map<string, Mesh[]>());
@@ -37,7 +37,7 @@ vi.mock('@render/farForest', async (load) => {
 });
 
 describe('a plate of the ground made while the game runs', () => {
-  it('is shown only once its programs are built, through visible stand-ins of its meshes', async () => {
+  it('is shown only once its programs are built, its far patch standing in meanwhile', async () => {
     const compiled: { object: Object3D; visible: boolean }[] = [];
     const renderer = {
       getRenderTarget: () => null,
@@ -56,7 +56,8 @@ describe('a plate of the ground made while the game runs', () => {
     expect(atlas.parts.some((p) => p.cx === PLATE_SIZE)).toBe(false);
     drainCompiles(renderer, camera, scene, null);
     await new Promise((done) => setTimeout(done, 0));
-    for (const mesh of made.get(centre)!) expect(compiled.some((c) => c.visible && (c.object as Mesh).geometry === mesh.geometry && (c.object as Mesh).material === mesh.material)).toBe(true);
+    // Each mesh's program variant built (`uploads.ts` programsReady: one per material and its flags), from a visible object.
+    for (const mesh of made.get(centre)!) expect(compiled.some((c) => c.visible && (c.object as Mesh).material === mesh.material)).toBe(true);
     // Built: shown at the next look.
     atlas.focus!(PLATE_SIZE, 0, m(300));
     expect(atlas.parts.some((p) => p.cx === PLATE_SIZE)).toBe(true);

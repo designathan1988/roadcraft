@@ -18,7 +18,6 @@ import { natureTreePictures } from './natureTrees';
 import { FAR_WOODS_BUDGET, woodsScale, type FarWoods, type FarWoodsAsk, type FarWoodsGrid } from './farWoods';
 import { IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTOR_VERTEX, IMPOSTOR_VERTEX_PARS, IMPOSTOR_FRAGMENT_PARS } from './impostorShaders';
 import { gpuOnlyAttributes } from './mesh/gpuOnly';
-import { programsOf, programsWaited } from './programsFirst';
 
 /** DO NOT go back to one mesh of the map: its 102,400 instances */
 
@@ -243,12 +242,6 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
   program.castShadow = false;
   program.receiveShadow = false;
   object.add(program);
-  /** The woods' programs built (`programsFirst.ts`): no plate's woods shown before (made where nothing builds ahead, at once). */
-  let built = !programsWaited();
-  if (!built) {
-    program.visible = false;
-    void programsOf([program]).then(() => { built = true; program.visible = true; });
-  }
 
   /** A plate's trees as its instances: x, height, three's z, size; the model and the plate's slot, the pick, the yaw, the tint. */
   const arraysOf = (key: number): { aSpot: Float32Array; aLook: Float32Array } | null => {
@@ -306,7 +299,7 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     mesh.matrixAutoUpdate = false;
-    mesh.visible = built && (book.plates.get(key)?.fade ?? 0) > 0;
+    mesh.visible = (book.plates.get(key)?.fade ?? 0) > 0;
     // The instances live on the GPU only, made again from the plate's woods (`mesh/gpuOnly.ts`).
     gpuOnlyAttributes(mesh, { aSpot: spot, aLook: look }, () => arraysOf(key) ?? {});
     meshes.set(key, mesh);
@@ -334,7 +327,7 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
         fade[p.slot] = p.fade;
         // Faded out (drawn in full, its own trees grown): not drawn at all.
         const mesh = meshes.get(p.key);
-        if (mesh) mesh.visible = built && p.fade > 0;
+        if (mesh) mesh.visible = p.fade > 0;
       }
     },
     dispose() {

@@ -35,8 +35,7 @@ import { GroundShare, type SharedGroundAt } from './sharedGround';
 import { setJobFocus } from '../jobs/jobPool';
 import { gpuLedger } from './gpuLedger';
 import { measureHitch } from '@core/hitch';
-import { queueUpload } from './uploads';
-import { programsOf, programsWaited } from './programsFirst';
+import { compilesAhead, programsReady, queueUpload } from './uploads';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
 import { TILE, tileOfKey } from '@world/tiles';
 
@@ -88,7 +87,7 @@ interface Plate {
   readonly dabCopies: WeakMap<PaintDab, PaintDab | null>;
   surface: PlateSurface | null;
   shown: boolean;
-  /** Its surface's programs built (`programsFirst.ts`): not shown before, the far patch standing in. */
+  /** Its surface's programs built (`uploads.ts` programsReady): not shown before, the far patch standing in. */
   ready: boolean;
   /** The land at the plate's grid corners, the base level added, read off the page (`flatGroundPool.ts`), rows from the north edge; null until then. */
   heights: Float64Array | null;
@@ -253,19 +252,13 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (relief === null) return;
     writeFarPatch(far, fp.slot, fp.cx, fp.cy, (x, y) => reliefHeight(relief, x, y));
   };
-  /** A far mesh shown once its programs are built (`programsFirst.ts`), not built in the frame that first draws it. */
-  const showWhenBuilt = (mesh: Mesh): void => {
-    if (mesh.visible) return;
-    if (!programsWaited()) { mesh.visible = true; return; }
-    void programsOf([mesh]).then(() => { mesh.visible = true; });
-  };
   /** The cut sides on the map's edge, along the far patches' own edge (their quads' step): where the land ends. */
   const buildSlab = (): void => {
     const relief = farRelief;
     if (relief === null || !ringSet) return;
     slab.geometry.dispose();
     slab.geometry = slabGeometry(-MAP_HALF, MAP_HALF, -MAP_HALF, MAP_HALF, PLATE_SIZE / FAR_QUADS, (x, y) => TERRAIN_BASE + reliefHeight(relief, x, y));
-    showWhenBuilt(slab);
+    slab.visible = true;
   };
   const neighbour = (fp: FarPlate, di: number, dj: number): boolean => farPlates.has(plateOf(fp.cx + di * PLATE_SIZE, fp.cy + dj * PLATE_SIZE));
   /** The far patches of the plates not drawn in full, their rims where the ring ends. */
@@ -313,7 +306,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     farRelief = relief;
     for (const fp of farPlates.values()) writeFar(fp);
     buildSlab();
-    showWhenBuilt(farMesh);
+    farMesh.visible = true;
     drawFar();
   };
 
@@ -412,9 +405,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     if (lookGiven) s.setWaterLook(lastLook);
     // Sent ahead of its first draw (`uploads.ts`), not inside it.
     queueUpload(...s.textures());
-    // DO NOT show it before its programs are built: shown, three built them in the frame that first drew it (`programsFirst.ts`).
-    p.ready = !programsWaited();
-    if (!p.ready) void programsOf(s.meshes as Mesh[]).then(() => { if (p.surface === s) { p.ready = true; contentCame = true; } });
+    // Shown once its programs are built (`uploads.ts` programsReady, the door's own variants): until then its far patch stands in, not a hole while the scene's door holds its meshes.
+    p.ready = !compilesAhead();
+    if (!p.ready) void Promise.all((s.meshes as Mesh[]).map((mesh) => programsReady(mesh))).then(() => { if (p.surface === s) { p.ready = true; contentCame = true; } });
     measureTop(p);
     return s;
   };
