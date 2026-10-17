@@ -1750,6 +1750,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     keptPaint: number;
     keptShadows: boolean;
     keptCastOnly: boolean;
+    /** Kept as a parked car (lamps off) or as one stopped in the traffic. */
+    keptParked: boolean;
     /** The deck last asked for it and where (`sync`'s cull): a later frame tests the view with it, grown by the most it can have climbed since. */
     cullKnown: boolean;
     cullX: number;
@@ -1769,7 +1771,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         look: BLANK_LOOK, lookSeats: -1, accent: T_WHITE, helmet: T_WHITE, color: null, paint: 0, paintTint: T_WHITE,
         rideSet: false, deck: 0, pitch: 0, roll: 0, lod: -1, seen: 0, deckKnown: false, deckX: 0, deckY: 0, deckValue: 0, deckSeen: 0,
         keptAt: -1, keptSeen: -1, keptParts: [], keptX: 0, keptY: 0, keptAngle: 0, keptDeck: 0, keptBand: 0, keptLevels: 0, keptVersion: 0,
-        keptPaint: 0, keptShadows: false, keptCastOnly: false, cullKnown: false, cullX: 0, cullY: 0, cullDeck: 0,
+        keptPaint: 0, keptShadows: false, keptCastOnly: false, keptParked: false, cullKnown: false, cullX: 0, cullY: 0, cullDeck: 0,
       };
       draws.set(vehicle.id, s);
     }
@@ -2007,16 +2009,20 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if (!twoWheeled && level >= 1) carsWheeled = true;
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
         drawPixels = pixels * pixelRatio;
+        // Stopped in the traffic a whole tick (a light, a queue), no indicator flashing, nobody drawn in it: as still as a parked car.
+        const stopped = !free && vehicle.v === 0 && vehicle.prev.v === 0 && vehicle.indicator === 0 && (level < 2 || vehicle.seats === 0);
         // Standing where it stood, drawn as it was: its instances kept where they were written, nothing written or sent.
-        let still = parked && !twoWheeled && vehicle.doors.length === 0 && !vehicle.kerbStop;
+        let still = (parked || stopped) && !twoWheeled && vehicle.doors.length === 0 && !vehicle.kerbStop;
         const levels = still ? levelsKey(plan, drawPixels) : 0;
         if (still) {
           if (s.keptAt >= 0 && s.keptX === pose.p.x && s.keptY === pose.p.y && s.keptAngle === pose.angle && s.keptDeck === deck
             && s.keptBand === level && s.keptLevels === levels && s.keptVersion === levelsVersion && s.keptPaint === s.paint
-            && s.keptShadows === softShadows && s.keptCastOnly === !onScreen) {
+            && s.keptShadows === softShadows && s.keptCastOnly === !onScreen && s.keptParked === parked) {
             s.keptSeen = suspensionFrame;
             s.seen = suspensionFrame;
             s.lod = own;
+            // A car stopped in the traffic still runs: its smoke leaves it every frame.
+            if (options.exhaust && level >= 1 && !parked) options.exhaust(pose.p.x, pose.p.y, deck, pose.angle, plan.length, vehicle.v, free);
             continue;
           }
           // Its kept instances already drawn this frame by another view of the id: this one drawn with the frame's.
@@ -2098,7 +2104,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           recording = null;
           s.keptSeen = suspensionFrame;
           s.keptX = pose.p.x; s.keptY = pose.p.y; s.keptAngle = pose.angle; s.keptDeck = deck;
-          s.keptBand = level; s.keptLevels = levels; s.keptVersion = levelsVersion; s.keptPaint = s.paint; s.keptShadows = softShadows; s.keptCastOnly = !onScreen;
+          s.keptBand = level; s.keptLevels = levels; s.keptVersion = levelsVersion; s.keptPaint = s.paint; s.keptShadows = softShadows; s.keptCastOnly = !onScreen; s.keptParked = parked;
         }
       }
       // The parked cars kept and not drawn this frame (gone, out of view, under two pixels, moving off): let go before the frame is drawn.
