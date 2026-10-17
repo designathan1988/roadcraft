@@ -148,7 +148,7 @@ export function tileBaysSection(records: TileRecords, traffic: unknown): Section
     // From the buildings as the simulation reads them back (the JSON's numbers: no -0, no Infinity), so their digests are the ones it makes there.
     const read = trafficOfSection(JSON.parse(JSON.stringify(traffic)));
     if (!read) return null;
-    return { bin: bakeTileBays(records, read) };
+    return { blob: bakeTileBays(records, read) };
   } catch (error) {
     // Stored without them: the simulation works them out where the tile is loaded, as before.
     console.error(`[save] tile ${records.key}'s bays could not be baked`, error);
