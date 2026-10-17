@@ -4,8 +4,8 @@ import { worldKey } from '@world/cityGen/wholeMap';
 import type { TileRecords } from '@world/doc';
 import { TILE, tileKey, tileOfKey } from '@world/tiles';
 import { m } from '@world/units';
-import { canQueueJobs, focusDistance, shortWorkers, submitJob } from '../jobs/jobPool';
-import { EDIT_TIER, NEAR_TIER, TIER_SPAN } from './buildings/cellPool';
+import { type JobTicket, canQueueJobs, focusDistance, shortWorkers, submitJob } from '../jobs/jobPool';
+import { EDIT_TIER, TIER_SPAN, cellPriority } from './buildings/cellPool';
 import { emptyRecords } from './buildings/farGrid';
 import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
 import { forgetOtherDerived } from './derivedCache';
@@ -85,11 +85,10 @@ export function recordsFor(records: TileRecords, parts: readonly NearPart[]): Pa
   return out as Partial<TileRecords>;
 }
 
-/** THE NEAR PRODUCTS' BAND IN THE QUEUE: after the buildings' cells and masses and the roads' near level (`cellPool.ts` NEAR_TIER), nearest first within it: furniture, poles and the rest refine a street whose roads and buildings come first. DO NOT share the roads' band: eight kinds a tile, out to kilometres, held the street's near roads behind them and the street stood on its far level (conf22 09-street, 2026-10-17). */
-const PRODUCT_TIER = NEAR_TIER + 0.05;
-
-/** A near job's place in the queue (`jobPool.ts`: lower first, the distance to the view's focus added within a band): an edit of what its kinds read before anything (`cellPool.ts` EDIT_TIER), else after the cells, the masses and the roads' near level (`PRODUCT_TIER`). */
-export const nearPriority = (job: Pick<NearTileJob, 'edited'>): number => (job.edited ? EDIT_TIER : PRODUCT_TIER) * TIER_SPAN;
+/** A near job's place in the queue (`jobPool.ts`: lower first, the distance to the view's focus added within a band): an edit of what its kinds read before anything (`cellPool.ts` EDIT_TIER), else a cell's detail (`cellPriority` 'cell', put back past the masses behind the curtain, `coarseFirst`): a tile's products are asked only where the view wants them in detail, as a cell's detail is, nearest first with the cells and the roads' near level (`farRoads.ts` farRoadPriority).
+ *  - DO NOT put them after every cell, mass and road near level of the queue, whatever the distances (`NEAR_TIER` + 0.05 was): after a reload the camera's tile had its tree and slab but no pole nor fence 4 s on, behind the re-bake of the whole region (conferencia 99-100, photo 51); the gate keeps them on half the short workers (`NearGate`), so the street's cells and roads always have workers. */
+export const nearPriority = (job: Pick<NearTileJob, 'edited'>, coarseFirst = false): number =>
+  (job.edited ? EDIT_TIER * TIER_SPAN : cellPriority('cell', 0, false, coarseFirst));
 
 /** The page's own cache of bakes where no worker runs (tests): nothing kept. */
 const NO_CACHE: NearTileCache = { ready: async () => false, get: async () => undefined, put: async () => {} };
@@ -144,15 +143,46 @@ export class NearGate {
   }
 }
 
-/** DO NOT bake on the page: the jobs go to the job system's queue (`nearTiles` service) through the gate (`NearGate`), the page only when no worker can run (tests). */
-function nearRunner(): NearRun {
+/** A near job handed to the queue and not yet taken by a worker: asked again in its band when the curtain lifts (`NearRunner.reband`). */
+interface QueuedNear {
+  readonly job: NearTileJob;
+  readonly done: (reply: NearTileReply) => void;
+  priority: number;
+  sent: boolean;
+  ticket: JobTicket | null;
+}
+
+/** The near jobs' runner, and what puts the ones waiting in the queue back in their band. */
+export interface NearRunner {
+  readonly run: NearRun;
+  /** The town shown or hidden (`coarse`): the jobs no worker took are asked again in the band it gives them now. */
+  reband(): void;
+}
+
+/** DO NOT bake on the page: the jobs go to the job system's queue (`nearTiles` service) through the gate (`NearGate`), the page only when no worker can run (tests); `coarse`: the town behind its curtain (`NearTiles.coarseFirst`). */
+export function nearRunner(coarse: () => boolean = () => false): NearRunner {
   const centre = (job: NearTileJob): readonly [number, number] => {
     const { i, j } = tileOfKey(job.tiles[0]!.key);
     return [(i + 0.5) * TILE, (j + 0.5) * TILE];
   };
   // DO NOT take a third of the whole pool: its long side runs the growth and the tiles, the queue had two workers and the near jobs took them, the street's roads and cells waited (conf29, 2026-10-17).
   const gate = new NearGate(() => Math.max(1, Math.floor(shortWorkers() / 2)), (job) => { const [x, y] = centre(job); return focusDistance(x, y); });
-  return (job, done) => {
+  // DO NOT leave a job asked behind the curtain in the detail's later band once the town shows: the queue ranks a job by the band it was asked in (as the cells, `CellPool.coarseFirst`, and the roads' near level, `farRoadsRunner`).
+  const queued = new Set<QueuedNear>();
+  const submit = (entry: QueuedNear): void => {
+    const { job, done } = entry;
+    entry.sent = false;
+    entry.ticket = submitJob({
+      service: 'nearTiles',
+      key: `nearTiles:${job.node}:${job.heavy ? 'h' : 'l'}`,
+      priority: entry.priority,
+      at: centre(job),
+      write: () => { entry.sent = true; queued.delete(entry); return { data: job, transfer: [] }; },
+      done: (answer) => { queued.delete(entry); gate.settle(); done(answer as NearTileReply); },
+      failed: (message) => { queued.delete(entry); gate.settle(); done({ kind: 'nearError', node: job.node, message }); },
+    });
+  };
+  const run: NearRun = (job, done) => {
     if (!canQueueJobs()) {
       let live = true;
       void runNearJob(job, NO_CACHE).then(
@@ -161,17 +191,25 @@ function nearRunner(): NearRun {
       );
       return () => { live = false; };
     }
-    return gate.ask(job, () => submitJob({
-      service: 'nearTiles',
-      key: `nearTiles:${job.node}:${job.heavy ? 'h' : 'l'}`,
-      // An edit of what its kinds read first (`cellPool.ts` EDIT_TIER): what the player just did; the others after the cells and the roads' near level, nearest first (`PRODUCT_TIER`).
-      priority: nearPriority(job),
-      at: centre(job),
-      write: () => ({ data: job, transfer: [] }),
-      done: (answer) => { gate.settle(); done(answer as NearTileReply); },
-      failed: (message) => { gate.settle(); done({ kind: 'nearError', node: job.node, message }); },
-    }));
+    return gate.ask(job, () => {
+      // Its band as the gate lets it go (`nearPriority`): an edit first, else with the cells' detail.
+      const entry: QueuedNear = { job, done, priority: nearPriority(job, coarse()), sent: false, ticket: null };
+      queued.add(entry);
+      submit(entry);
+      return { cancel: () => { queued.delete(entry); entry.ticket?.cancel(); } };
+    });
   };
+  const reband = (): void => {
+    for (const entry of [...queued]) {
+      if (entry.sent || !entry.ticket?.pending) { queued.delete(entry); continue; }
+      const priority = nearPriority(entry.job, coarse());
+      if (priority === entry.priority) continue;
+      entry.ticket.cancel();
+      entry.priority = priority;
+      submit(entry);
+    }
+  };
+  return { run, reband };
 }
 
 /** THE NEAR PRODUCTS' CHOICE OF TILES: told the stored tiles as the far levels are (`FarTiles`), chosen each frame by the view (`choose`) */
@@ -214,10 +252,29 @@ export class NearTiles implements FarTiles {
   private chosenHadView = false;
   private chosenOutside = '';
 
+  private readonly run: NearRun;
+  /** The queue's runner (none when the tests give their own). */
+  private readonly queued: NearRunner | null;
+  /** The town behind its curtain (`coarseFirst`), and as last told. */
+  private coarse = false;
+  private coarseSeen: boolean | null = null;
+
   /** `run`, `prefix`: where the jobs go and the bakes are kept (tests give their own). */
-  constructor(private readonly run: NearRun = nearRunner(), private readonly prefix: string | null = NEAR_PREFIX) {
+  constructor(run?: NearRun, private readonly prefix: string | null = NEAR_PREFIX) {
+    const queued = run ? null : nearRunner(() => this.coarse);
+    this.run = run ?? queued!.run;
+    this.queued = queued;
     // The bakes of an older build of this code: let go.
     if (prefix !== null && prefix === NEAR_PREFIX && NEAR_HASH) forgetOtherDerived('nearTiles', NEAR_HASH);
+  }
+
+  /** The town behind its curtain or shown (`renderer.ts`, set each frame as the buildings' `hidden`): the jobs asked from then on take the detail's band it gives (`nearPriority`), and on a change those waiting in the queue are asked again in it. */
+  coarseFirst(on: boolean): void {
+    this.coarse = on;
+    if (on === this.coarseSeen) return;
+    const first = this.coarseSeen === null;
+    this.coarseSeen = on;
+    if (!first) this.queued?.reband();
   }
 
   /** A kind drawn per tile from now on. */
