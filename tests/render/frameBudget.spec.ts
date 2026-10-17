@@ -209,6 +209,19 @@ describe("the GPU's time governing the floor", () => {
     expect(asked).toEqual([true, false, true, false]);
   });
 
+  it('between the two marks (20 to 29 ms) moves the floor neither way, raised or not: no level coming and going', () => {
+    const g = new TimeGovernor();
+    const { asked, press } = pressing();
+    const between = [20, 29, 21, 28.9, 24, 20.1, 27, 22];
+    for (const p95 of between) g.read(p95, 12, press);
+    expect(asked).toEqual([]);
+    // Raised by a real load, paid (35 -> 29): it stays while the frame swings between the marks.
+    g.read(35, 12, press); g.read(35, 12, press); g.read(29, 12, press);
+    expect(asked).toEqual([true]);
+    for (const p95 of between) g.read(p95, 12, press);
+    expect(asked).toEqual([true]);
+  });
+
   it('at the coarsest floor nothing is asked for a window to settle', () => {
     const g = new TimeGovernor();
     const { asked, press } = pressing(0);
