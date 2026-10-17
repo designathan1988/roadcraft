@@ -3,7 +3,7 @@ import { tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { FarTileBake, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
-import { jobPort, longWorkers, shortWorkers } from './jobs/jobPool';
+import { jobPort, longWorkers, setTilesWaiting, shortWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
@@ -77,6 +77,7 @@ export class TileGenerator {
     for (const lane of this.lanes) { lane.port.terminate(); lane.busy?.failed('the generator was let go'); lane.busy = null; }
     this.lanes.length = 0;
     for (const w of [...this.queue.splice(0), ...this.lowQueue.splice(0)]) w.failed('the generator was let go');
+    setTilesWaiting(false);
   }
 
   /** The lanes set aside with no tile let go (their workers' other work comes back to them). */
@@ -106,6 +107,8 @@ export class TileGenerator {
       const { i, j } = tileOfKey(next.key);
       lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: { ...next.store, far: this.far() } } : {}) } satisfies StreamTileAsk);
     }
+    // The map's tiles waiting: the long side's workers kept for them, no queued job between two tiles (`jobPool.ts` setTilesWaiting).
+    setTilesWaiting(this.aside && this.queue.length > 0);
   }
 
   private lane(aside: boolean): Lane {

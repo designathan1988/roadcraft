@@ -139,6 +139,30 @@ describe('the job system', () => {
     expect(queuedOn('third')).toBe(FakeWorker.made.indexOf(workerOf(lanes[0]!)));
   });
 
+  it('keeps an idle tile worker for the map while its tiles wait: the queued job goes to the other kinds worker, the tile worker takes the waiting ones once no tile waits', async () => {
+    const { jobPort, setTilesWaiting, submitJob } = await import('@/jobs/jobPool');
+    const lanes = [0, 1].map(() => jobPort('roadTiles'));
+    const tiles = [0, 1].map(() => jobPort('cityTiles'));
+    const workerOf = (lane: Worker): FakeWorker => (lane as unknown as { worker: FakeWorker }).worker;
+    // Both workers of the other kinds with a lane's message in flight; one tile worker making a tile, the other between two tiles.
+    lanes[0]!.postMessage({ tiles: [] });
+    lanes[1]!.postMessage({ tiles: [] });
+    tiles[0]!.postMessage({ stream: true });
+    setTilesWaiting(true);
+    const job = (name: string): void => { submitJob({ service: 'cells', key: null, priority: 1, write: () => ({ data: name, transfer: [] }), done: () => {}, failed: () => {} }); };
+    const queuedOn = (name: string): number => FakeWorker.made.findIndex((w) => w.asked.some((m) => m.data === name && m.seq !== undefined));
+    job('cell');
+    // The tile worker between two tiles kept for the next tile: the cell's job beside a lane's message instead.
+    expect(queuedOn('cell')).not.toBe(FakeWorker.made.indexOf(workerOf(tiles[1]!)));
+    expect([workerOf(lanes[0]!), workerOf(lanes[1]!)].map((w) => FakeWorker.made.indexOf(w))).toContain(queuedOn('cell'));
+    job('second');
+    job('third');
+    expect(queuedOn('third')).toBe(-1);
+    // No tile waits any more: the tile worker takes a waiting job.
+    setTilesWaiting(false);
+    expect([queuedOn('second'), queuedOn('third')]).toContain(FakeWorker.made.indexOf(workerOf(tiles[1]!)));
+  });
+
   it('drops the answer of a job cancelled while it ran', async () => {
     const { submitJob } = await import('@/jobs/jobPool');
     const done: unknown[] = [];

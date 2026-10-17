@@ -214,8 +214,17 @@ class JobSystem {
   rankedY = 0;
   /** What each worker is told when it is made, before any job (`setJobWorkerSetup`). */
   setup: ((worker: Worker) => void) | null = null;
+  /** Tiles of the map waiting for the long side's lanes (`tilesWaiting`): its workers take no queued job meanwhile. */
+  tilesWaiting = false;
 }
 const system = new JobSystem();
+
+/** Whether tiles of the map wait for the long-running side's lanes (`tileGenerator.ts` pump): while they do, a long worker between two tiles takes no queued job. DO NOT give it one: a cell's job of seconds held the next tile behind it - the opening's tile workers ran 103 s of cells' jobs (wprof4, 2026-10-17), whenever the queue's worker had a lane's message in flight. Told off, the jobs waiting go out to them. */
+export function setTilesWaiting(on: boolean): void {
+  if (system.tilesWaiting === on) return;
+  system.tilesWaiting = on;
+  if (!on) dispatch();
+}
 
 /** Told to every worker of the pool, those made and those to come, before its first job: on the desktop, the port it reads and writes the tiles through (`editor/workerParts.ts`). */
 export function setJobWorkerSetup(setup: (worker: Worker) => void): void {
@@ -296,7 +305,7 @@ function hostFor(service: JobService): Host | null {
   for (const host of system.workers) {
     if (host.job || host.failed) continue;
     if (keptClear(host) && system.workers.length > 1) continue;
-    if (host.long && system.workers.length > 1) { if (host.laneWork === 0) idleLong ??= host; continue; }
+    if (host.long && system.workers.length > 1) { if (host.laneWork === 0 && !system.tilesWaiting) idleLong ??= host; continue; }
     const warm = host.queuePorts.has(service);
     if (host.laneWork > 0) {
       if (warm) warmBusy ??= host; else coldBusy ??= host;
