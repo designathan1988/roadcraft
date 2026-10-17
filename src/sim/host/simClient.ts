@@ -688,6 +688,13 @@ export class SimClient implements JournalReader {
       const segment = data[at + P.segment]!;
       w.segment = segment < 0 ? undefined : segment as SegmentId;
       w.walking = data[at + P.walking] === 1; w.kerbWait = data[at + P.kerbWait]!; w.rank = data[at + P.rank]!;
+      // A gesture is told once, when it starts: its clock (`t`) kept here from the age it started at (DO NOT have it told each tick for its clock).
+      const gesture = view.gesture;
+      if (gesture) {
+        let from = GESTURE_FROM.get(gesture);
+        if (from === undefined) GESTURE_FROM.set(gesture, from = w.age - gesture.t);
+        gesture.t = w.age - from;
+      }
       this.pedViews.push(view);
       if (view.tickRead !== stamp) { view.tickRead = stamp; pedRead++; }
     }
@@ -759,6 +766,9 @@ export class SimClient implements JournalReader {
     this.signalAll = this.signalBase;
   }
 }
+
+/** Each gesture told, by the age (`PedView.age`) its clock started at. */
+const GESTURE_FROM = new WeakMap<object, number>();
 
 /** A colour as the worker numbers it (0xrrggbb), as its palette writes it; the strings kept, one per colour. */
 const COLOURS = new Map<number, string>();

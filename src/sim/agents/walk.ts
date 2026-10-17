@@ -339,6 +339,8 @@ interface Walker {
   lost?: Severable[] | undefined;
   /** The step its view's `stretch` was last spelt for (`publish`). */
   stretchOf?: Step | undefined;
+  /** The act its view's `gesture` was made for (`publish`): made again only when the act changes, its clock kept by the page (`SimClient.readTick`). */
+  gestureOf?: Walker['act'] | undefined;
   /** Health lost a second to a wound bleeding (a limb gone): they die of it. */
   bleeding?: number | undefined;
 }
@@ -347,7 +349,7 @@ interface Walker {
 const WALKER_SHAPE = {
   progress: undefined, jammedOn: undefined, aimAt: undefined, grantedAt: undefined, fright: undefined, tripAt: undefined,
   maimed: undefined, hp: undefined, hits: undefined, opened: undefined, leader: undefined, crawlNext: undefined,
-  lastHit: undefined, hurt: undefined, lost: undefined, stretchOf: undefined, bleeding: undefined,
+  lastHit: undefined, hurt: undefined, lost: undefined, stretchOf: undefined, gestureOf: undefined, bleeding: undefined,
 } as const satisfies { [K in keyof Walker]?: undefined };
 
 interface State {
@@ -1909,14 +1911,19 @@ function publish(w: SimWorld): void {
     // Spelt out once a step, not a fresh string each tick.
     if (p.stretchOf !== st) { p.stretchOf = st; v.stretch = st.way ? `${st.way.id}:${st.dir}` : ''; }
     v.walking = p.v > m(0.1);
-    v.gesture = p.act ? { kind: p.act.kind, phase: 'hold', t: p.age - p.act.from, hold: p.act.until - p.act.from,
-      ...(p.act.kind === 'fall' ? { fromX: p.act.faceX, fromY: p.act.faceY } : {}) } : null;
+    // DO NOT make a gesture a tick: a new object each tick was told to the page each tick (`simHost.ts` compares by identity). Its `t` as of now, the page's clock keeps it.
+    if (p.gestureOf !== p.act) {
+      p.gestureOf = p.act;
+      v.gesture = p.act ? { kind: p.act.kind, phase: 'hold', t: p.age - p.act.from, hold: p.act.until - p.act.from,
+        ...(p.act.kind === 'fall' ? { fromX: p.act.faceX, fromY: p.act.faceY } : {}) } : null;
+    } else if (v.gesture && p.act) v.gesture.t = p.age - p.act.from;
     v.panic = (p.fright ?? 0) > p.age;
     if (p.maimed) v.maimed = p.maimed;
     if (p.lost?.length) v.lost = p.lost;
     if ((p.hp ?? 100) < 100) v.bleeding = true;
+    // The same wound kept while it reads the same (a new object a tick was told each tick).
     const wound = woundOf(p);
-    if (wound) v.wound = wound;
+    if (wound && (v.wound?.part !== wound.part || v.wound.grave !== wound.grave)) v.wound = wound;
     v.kerbWait = p.waiting ? p.waited : 0;
     v.waitingFor = p.waiting ? p.waiting.id : null;
     if (same && (count >= before || views[count] !== v)) same = false;

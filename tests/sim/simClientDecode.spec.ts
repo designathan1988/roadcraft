@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SimClient } from '@sim/host/simClient';
-import { H, PARKED_STRIDE, PK, V, VEHICLE_STRIDE, headBase, vehicleBase, type FromSim, type ParkedChanges, type SimStats } from '@sim/host/protocol';
+import { H, P, PARKED_STRIDE, PED_STRIDE, PK, V, VEHICLE_STRIDE, headBase, pedBase, vehicleBase, type FromSim, type PedRich, type ParkedChanges, type SimStats } from '@sim/host/protocol';
 import { RoadDoc } from '@world/doc';
 
 /** THE PAGE READS THE WORKER'S FRAME (`SimClient.readTick`): each vehicle's view kept from tick to tick and written in place, those not in a tick let go */
@@ -94,5 +94,23 @@ describe("the page's reading of the fleet", () => {
     expect(client.parked.map((v) => v.id).sort()).toEqual([1, 4]);
     expect(client.parked.find((v) => v.id === 1)).toBe(one);
     expect(client.vehiclesIn({ x0: 8, y0: -1, x1: 12, y1: 1 }, [], 'parked')).toEqual([]);
+  });
+
+  it("keeps a gesture's clock from the age it was told at, with no gesture told each tick", () => {
+    const client = new SimClient(new RoadDoc());
+    const data = inside(client).data;
+    const ped = (age: number, rich: readonly (readonly [number, PedRich])[]): void => {
+      data[headBase(0) + H.vehicles] = 0;
+      data[headBase(0) + H.peds] = 1;
+      const at = pedBase(0);
+      data.fill(0, at, at + PED_STRIDE);
+      data[at + P.id] = 9; data[at + P.age] = age; data[at + P.segment] = -1;
+      const stats = { issues: [] } as unknown as SimStats;
+      inside(client).receive({ type: 'tick', slot: 0, vehicles: [], peds: rich, signals: [], layout: null, trains: [], parked: null, stats, wounds: [], casualties: [] });
+    };
+    ped(10, [[9, { gesture: { kind: 'look', phase: 'hold', t: 1, hold: 4 } } as unknown as PedRich]]);
+    expect(client.pedViews[0]!.gesture!.t).toBe(1);
+    ped(12.5, []);
+    expect(client.pedViews[0]!.gesture!.t).toBe(3.5);
   });
 });
