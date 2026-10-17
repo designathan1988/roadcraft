@@ -14,6 +14,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  DataUtils,
   Group,
   InstancedBufferAttribute,
   InstancedInterleavedBuffer,
@@ -3406,10 +3407,10 @@ function emitRoof(
 
 // ------------------------------------------------------------------ chunks
 
-/** The rooms behind a batch of panes, ROOM_FLOATS a pane; zeros (no room) where none is known. */
-function roomsOfPanes(list: readonly Placement[]): Float32Array {
-  const out = new Float32Array(list.length * ROOM_FLOATS);
-  list.forEach((p, i) => { if (p.room) out.set(p.room, i * ROOM_FLOATS); });
+/** The rooms behind a batch of panes, ROOM_FLOATS half floats a pane (metres to a few millimetres, a kind's index whole); zeros (no room) where none is known. */
+function roomsOfPanes(list: readonly Placement[]): Uint16Array {
+  const out = new Uint16Array(list.length * ROOM_FLOATS);
+  list.forEach((p, i) => { if (p.room) for (let k = 0; k < ROOM_FLOATS; k++) out[i * ROOM_FLOATS + k] = DataUtils.toHalfFloat(p.room[k]!); });
   return out;
 }
 
@@ -3746,6 +3747,8 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
       geometry.setAttribute('litSlot', new InstancedBufferAttribute(part.litSlot!, 1));
       // And the room behind each, for the interior drawn through it (`kit.ts`).
       roomBuffer = new InstancedInterleavedBuffer(part.rooms!, ROOM_FLOATS);
+      // Half floats: three uploads a Uint16Array as HALF_FLOAT where its buffer says so (r186 `WebGLAttributes.createBuffer`, an interleaved attribute by its buffer).
+      (roomBuffer as InstancedInterleavedBuffer & { isFloat16BufferAttribute: boolean }).isFloat16BufferAttribute = true;
       geometry.setAttribute('roomA', new InterleavedBufferAttribute(roomBuffer, 4, 0));
       geometry.setAttribute('roomB', new InterleavedBufferAttribute(roomBuffer, 4, 4));
       geometry.setAttribute('roomC', new InterleavedBufferAttribute(roomBuffer, 4, 8));

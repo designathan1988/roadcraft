@@ -71,7 +71,7 @@ interface InstanceArrays {
   readonly instanceColor?: Float32Array;
   /** Window panes: each one's light slot (-1: none) and the room behind it. */
   readonly litSlot?: Float32Array;
-  readonly rooms?: Float32Array;
+  readonly rooms?: Uint16Array;
   /** The shell's parts: each one's finish id, wear and ground (`shellParts.ts`). */
   readonly looks?: Float32Array;
   readonly bounds: Bounds;
@@ -297,12 +297,12 @@ const snorm = (x: number): number => Math.round(Math.max(-1, Math.min(1, x)) * 1
 
 /** A batch's own instance arrays from its chunks, in order: the matrices, the colours of a coloured kind */
 function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: number, glassy: boolean, coloured: boolean, looked: boolean): {
-  instanceMatrix: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Float32Array; looks?: Float32Array;
+  instanceMatrix: Float32Array; instanceColor?: Float32Array; litSlot?: Float32Array; rooms?: Uint16Array; looks?: Float32Array;
 } {
   const instanceMatrix = new Float32Array(count * 16);
   const instanceColor = coloured ? new Float32Array(count * 3).fill(1) : undefined;
   const litSlot = glassy ? new Float32Array(count) : undefined;
-  const rooms = glassy ? new Float32Array(count * ROOM_FLOATS) : undefined;
+  const rooms = glassy ? new Uint16Array(count * ROOM_FLOATS) : undefined;
   const looks = looked ? new Float32Array(count * LOOK_FLOATS) : undefined;
   let at = 0;
   for (const chunk of chunks) {
