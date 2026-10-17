@@ -26,7 +26,7 @@ import {
   EXPR, EXPR_SLOTS, FACE_WIDTH, SHAPES, classData, classFromRecord, classRig, cookAll, createBakeEnv,
   hairBase, hairCards, packFromRecord, type AgeBand,
 } from './proceduralBake';
-import { buildClassAnimation, createPalettePass, createPaletteTargets, renderPalettes, type ClassAnimation, type PalettePass } from './crowdAnimation';
+import { buildClassAnimation, createPalettePass, type ClassAnimation, type PalettePass } from './crowdAnimation';
 import { BODY_WIDTH, createClassBodies, type ClassBodies } from './crowdBodies';
 import { sharedShape } from './bodyBake';
 import { createGpuRows, type GpuRows } from './gpuRows';
@@ -153,8 +153,6 @@ interface BodyClass {
   readonly pass: PalettePass;
   readonly uniforms: {
     procBones: { value: Texture };
-    /** The first row of the class's people in the shared palettes (`renderPalettes`). */
-    procBase: { value: number };
     procBodies: { value: Texture };
     procBodyStride: { value: number };
     procCover: { value: DataTexture };
@@ -307,7 +305,6 @@ function vertexPars(v: Variant): string {
   const expr = v.kind !== 'far' && v.level === 0;
   return `
 uniform sampler2D procBones;
-uniform float procBase;
 uniform sampler2D procBodies;
 uniform float procBodyStride;
 uniform mat4 bindMatrix;
@@ -317,7 +314,7 @@ attribute vec3 aRefs;
 attribute vec3 aRefW;
 mat4 getBoneMatrix(const in float i) {
   int x = int(i) * 4;
-  int y = int(aPerson.x) + int(procBase);
+  int y = int(aPerson.x);
   return mat4(texelFetch(procBones, ivec2(x, y), 0), texelFetch(procBones, ivec2(x + 1, y), 0),
     texelFetch(procBones, ivec2(x + 2, y), 0), texelFetch(procBones, ivec2(x + 3, y), 0));
 }
@@ -605,7 +602,7 @@ export function personProgramStandIns(): { readonly lit: Group; readonly shadow:
   const blank = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
   const shading: ClassShading = {
     uniforms: {
-      procBones: { value: blank }, procBase: { value: 0 }, procBodies: { value: blank }, procBodyStride: { value: 0 }, procCover: { value: blank },
+      procBones: { value: blank }, procBodies: { value: blank }, procBodyStride: { value: 0 }, procCover: { value: blank },
       procCoverRows: { value: 0 }, procFace: { value: blank }, procFaceRows: { value: 0 }, procFaceHead: { value: 0 },
       procExprHead: { value: 0 }, procPerson: { value: blank }, procTime: { value: 0 }, procWoundUnit: { value: 1 },
     },
@@ -846,11 +843,6 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const items = new Map<string, Promise<ProxyItem>>();
   const textures = new Map<string, Promise<Texture | null>>();
   const scaled = new Matrix4();
-  /** Every class's palettes in one pair of targets (`renderPalettes`), and this frame's passes and bases, reused. */
-  const palettes = createPaletteTargets();
-  const paletteJobs: { pass: PalettePass; rows: number }[] = [];
-  const paletteBases: number[] = [];
-  const drawnClasses: BodyClass[] = [];
   /** A person's matrix for the placed pass (`setPlace`), reused. */
   const placeScratch = new Matrix4();
   const blobs = createBlobShadows('procedural-people-shadows', 1024);
@@ -1084,8 +1076,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       key: `${sex}-${band}`, sex, band, base, shape, coefficients: mo.coefficients(base), rig,
       height: metres, clips, bones, order, parent, jointBasis, shapePixels, bodies, anim, pass,
       uniforms: {
-        procBones: { value: palettes.texture },
-        procBase: { value: 0 },
+        procBones: { value: pass.texture },
         procBodies: { value: bodies.texture },
         procBodyStride: { value: bodies.stride },
         procCover: { value: cover },
@@ -1138,6 +1129,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     cls.palette = palette;
     cls.capacity = capacity;
     cls.pass.grow(capacity);
+    cls.uniforms.procBones.value = cls.pass.texture;
     const faceRows = cls.uniforms.procFaceRows.value;
     const head = cls.uniforms.procFaceHead.value;
     // The rows on the GPU are carried into the bigger texture there, at the next flush.
@@ -2194,16 +2186,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         // The bodies and faces made since the last frame, up before anybody draws them.
         cls.bodies.flush(renderer);
         cls.faces.flush(renderer);
-      }
-      // Every class's people into the same targets, each its band of rows (`renderPalettes`): two targets bound a frame, not two a class.
-      paletteJobs.length = 0;
-      drawnClasses.length = 0;
-      for (const cls of ready) if (cls.drawn) { paletteJobs.push({ pass: cls.pass, rows: cls.rows }); drawnClasses.push(cls); }
-      if (paletteJobs.length) renderPalettes(renderer, palettes, paletteJobs, paletteBases);
-      for (let i = 0; i < drawnClasses.length; i++) {
-        const cls = drawnClasses[i]!;
-        cls.uniforms.procBase.value = paletteBases[i]!;
-        cls.uniforms.procBones.value = palettes.texture;
+        if (!cls.drawn) continue;
+        cls.pass.render(renderer, cls.rows);
+        cls.uniforms.procBones.value = cls.pass.texture;
       }
     },
     clear() {

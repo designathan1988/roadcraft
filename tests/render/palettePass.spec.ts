@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DataTexture, FloatType, Matrix3, Matrix4, RGBAFormat, Vector3, type WebGLRenderer } from 'three';
-import { BLEND_FRAGMENT, REFIT_FRAGMENT, buildClassAnimation, createPalettePass, createPaletteTargets, renderPalettes } from '@render/people/crowdAnimation';
-import type { ClipFrames } from '@render/citizenBake';
+import { Matrix3, Matrix4, Vector3 } from 'three';
+import { BLEND_FRAGMENT, REFIT_FRAGMENT } from '@render/people/crowdAnimation';
 
 /** THE PALETTE PASS IN TWO (plan 9.6): each bone blended once a person, the refit reading its parents' blends back, the same palette as blending each parent again */
 
@@ -63,36 +62,5 @@ describe('the palette pass of the procedural crowd', () => {
     const placed = new Matrix4().multiplyMatrices(bind, drawn).multiply(bindInverse).multiply(bone);
     const after = v.clone().applyMatrix4(bind).applyMatrix4(placed).applyMatrix4(bindInverse);
     expect(after.distanceTo(before)).toBeLessThan(1e-6);
-  });
-
-  it('draws every pass into one pair of targets, each pass a band of rows from its base, the blends then the refits', () => {
-    const clip = { data: new Float32Array(3 * 2 * 12), frames: 1, duration: 1, stride: 1, pelvisY: 0, pelvisX: 0, pelvisZ: 0, loop: true } as ClipFrames;
-    const anim = (bones: number): ReturnType<typeof buildClassAnimation> =>
-      buildClassAnimation({ walk: { ...clip, data: new Float32Array(3 * bones * 12) } }, bones);
-    const joints = new DataTexture(new Float32Array(16), 2, 2, RGBAFormat, FloatType);
-    const small = createPalettePass(anim(2), Int16Array.from([-1, 0]), () => joints, 8);
-    const wide = createPalettePass(anim(3), Int16Array.from([-1, 0, 1]), () => joints, 8, true);
-    const bound: { target: unknown; y: number; height: number; width: number }[] = [];
-    let current: { viewport: { y: number; z: number; w: number } } | null = null;
-    const renderer = {
-      autoClear: true, getRenderTarget: () => null,
-      setRenderTarget: (t: { viewport: { y: number; z: number; w: number } } | null) => { current = t; },
-      render: () => { bound.push({ target: current, y: current!.viewport.y, width: current!.viewport.z, height: current!.viewport.w }); },
-    } as unknown as WebGLRenderer;
-    const targets = createPaletteTargets();
-    const bases: number[] = [];
-    renderPalettes(renderer, targets, [{ pass: small, rows: 3 }, { pass: wide, rows: 5 }], bases);
-    expect(bases).toEqual([0, 3]);
-    // Two targets in all: both passes' blends into the first, then both refits into the second.
-    expect(new Set(bound.map((b) => b.target)).size).toBe(2);
-    expect(bound[0]!.target).toBe(bound[1]!.target);
-    expect(bound[2]!.target).toBe(bound[3]!.target);
-    expect(bound.map((b) => [b.y, b.height, b.width])).toEqual([[0, 3, 8], [3, 5, 12], [0, 3, 8], [3, 5, 12]]);
-    // Room for every row, as wide as the widest palette.
-    expect(targets.texture.image.height).toBeGreaterThanOrEqual(8);
-    expect(targets.texture.image.width).toBe(12);
-    // The refit reads its blends and plays from its own base.
-    expect(REFIT_FRAGMENT).toContain('int person = at.y - uBase;');
-    expect(BLEND_FRAGMENT).toContain('int person = at.y - uBase;');
   });
 });
