@@ -26,6 +26,8 @@ const BAKERS: Readonly<Record<NearKind, NearBaker<unknown>>> = {
 export const nearParts = (kind: NearKind): readonly NearPart[] => [...new Set<NearPart>([...BAKERS[kind].parts, ...(BAKERS[kind].more ?? []), ...(BAKERS[kind].buildings ? ['buildings' as const] : [])])];
 /** The parts a kind always reads (not those it reads only where the tile has something of it, `more`): what an edited tile is named by for it. */
 export const nearReadParts = (kind: NearKind): readonly NearPart[] => BAKERS[kind].parts;
+/** Whether a kind reads the roads (its bake solves their network and heights: the heavy job of a tile). */
+export const nearReadsRoads = (kind: NearKind): boolean => nearParts(kind).includes('roads');
 /** Whether a kind reads the tiles round its tile. */
 export const nearReadsAround = (kind: NearKind): boolean => BAKERS[kind].around;
 

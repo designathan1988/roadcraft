@@ -19,7 +19,7 @@ export async function bakeEveryTile(doc: RoadDoc, box: readonly [number, number,
       const tiles = [tileKey(i, j)];
       for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (di || dj) tiles.push(tileKey(i + di, j + dj));
       const reply: NearTileReply = await runNearJob({
-        node: `${i},${j}`, asks: [{ kind, sig: 's', want: 'w', shown: null, extra }], prefix: null,
+        node: `${i},${j}`, asks: [{ kind, sig: 's', want: 'w', shown: null, extra }], prefix: null, heavy: true,
         tiles: tiles.map((key) => ({ key, version: 1 })), records: tiles.map((key) => recordsFor(doc.tileRecords(key, 1), parts)),
         ground: { ground: null, naturalIsGround: true },
       }, noCache);

@@ -19,11 +19,21 @@ export const signBaker: NearBaker<SignBake | null, SignExtra> = {
   groundReach: m(16),
   bake(area, extra) {
     const tile = area.tile;
-    const items = tile.landscape.filter((item) => item.kind === 'sign' || (item.kind === 'streetname' && !!item.text)).map((item) => item.id);
-    if (!tile.nodes.length && !items.length) return null;
-    const doc = area.doc();
-    if (isMarkingStyle(extra.markingStyle)) doc.markingStyle = extra.markingStyle;
-    return bakeSigns(area.net(), area.elevation(), tile.nodes.map((n) => n.id as NodeId), items);
+    const signs = tile.landscape.filter((item) => item.kind === 'sign').map((item) => item.id);
+    const names = tile.landscape.filter((item) => item.kind === 'streetname' && !!item.text).map((item) => item.id);
+    if (!tile.nodes.length && !signs.length && !names.length) return null;
+    const style = (doc: { markingStyle: string }): void => { if (isMarkingStyle(extra.markingStyle)) (doc as { markingStyle: typeof extra.markingStyle }).markingStyle = extra.markingStyle; };
+    style(area.doc());
+    // The junctions' plates and the placed signs read the roads round the tile (the fringe); a street's name plates stand at the ends of every segment of its street, walked whole (`streetChain`): the tiles read whole for those alone.
+    const near = bakeSigns(area.net(), area.elevation(), tile.nodes.map((n) => n.id as NodeId), signs);
+    let named: ReturnType<typeof bakeSigns> = null;
+    if (names.length) {
+      const wide = area.wide();
+      style(wide.doc);
+      named = bakeSigns(wide.net, wide.elevation, [], names);
+    }
+    const stands = [...(near?.stands ?? []), ...(named?.stands ?? [])];
+    return stands.length ? { stands } : null;
   },
   buffers: () => [],
 };
