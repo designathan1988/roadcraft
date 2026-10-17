@@ -95,21 +95,133 @@ function skirtShape(polygons: MultiPoly, maxEdge: number, cut?: TileRect): Skirt
   return out;
 }
 
+/**
+ * The triangles that own each edge, for `flipToDelaunay`: open addressing over the edge's key (`edgeKey`), each slot its owners'
+ * count and the first two (an edge of three or more, rare, keeps its list aside), the slots in the order their edges came. Made once
+ * and grown, reused by every piece: DO NOT keep an array per edge in a map (0.7-1.4 GB allocated per tile worker, the auditor's profile).
+ */
+class EdgeOwners {
+  keys = new Float64Array(1024);
+  /** Owners per slot; -1: a slot no edge took. */
+  counts = new Int32Array(1024).fill(-1);
+  first = new Int32Array(1024);
+  second = new Int32Array(1024);
+  /** The slots taken, in the order their edges were first asked. */
+  order = new Int32Array(512);
+  taken = 0;
+  /** The lists of the edges three or more triangles own, by slot. */
+  readonly many = new Map<number, number[]>();
+
+  /** Emptied for a piece of about `edges` edges. */
+  reset(edges: number): void {
+    let size = this.keys.length;
+    while (size < edges * 4) size *= 2;
+    if (size !== this.keys.length) this.allocate(size);
+    else this.counts.fill(-1);
+    this.taken = 0;
+    this.many.clear();
+  }
+
+  private allocate(size: number): void {
+    this.keys = new Float64Array(size);
+    this.counts = new Int32Array(size).fill(-1);
+    this.first = new Int32Array(size);
+    this.second = new Int32Array(size);
+    if (this.order.length < size / 2) this.order = new Int32Array(size / 2);
+  }
+
+  /** The slot of `key`, taken for it where it has none (count 0: owned by none). */
+  slot(key: number): number {
+    const mask = this.keys.length - 1;
+    // The key's two halves mixed (Math.imul, a multiplicative hash).
+    const lo = key % 0x4000_0000, hi = (key - lo) / 0x4000_0000;
+    let at = (Math.imul(lo, 0x9e3779b1) ^ Math.imul(hi, 0x85ebca77)) & mask;
+    for (;;) {
+      if (this.counts[at]! < 0) break;
+      if (this.keys[at] === key) return at;
+      at = (at + 1) & mask;
+    }
+    if ((this.taken + 1) * 2 > this.keys.length) { this.grow(); return this.slot(key); }
+    this.keys[at] = key;
+    this.counts[at] = 0;
+    this.order[this.taken++] = at;
+    return at;
+  }
+
+  /** Twice the slots, every edge filed again in the order it came. */
+  private grow(): void {
+    const { keys, counts, first, second } = this;
+    const order = this.order.slice(0, this.taken);
+    const lists = new Map(this.many);
+    this.allocate(keys.length * 2);
+    this.taken = 0;
+    this.many.clear();
+    for (const was of order) {
+      const at = this.slot(keys[was]!);
+      this.counts[at] = counts[was]!; this.first[at] = first[was]!; this.second[at] = second[was]!;
+      const list = lists.get(was);
+      if (list) this.many.set(at, list);
+    }
+  }
+
+  /** `tri` among the owners of the edge at `at`, last. */
+  add(at: number, tri: number): void {
+    const n = this.counts[at]!;
+    if (n === 0) this.first[at] = tri;
+    else if (n === 1) this.second[at] = tri;
+    else if (n === 2) this.many.set(at, [this.first[at]!, this.second[at]!, tri]);
+    else this.many.get(at)!.push(tri);
+    this.counts[at] = n + 1;
+  }
+
+  /** The edge at `at` owned by `tri` first, then by its owners less `gone`, in their order: `[tri, ...owners.filter((x) => x !== gone)]`. */
+  replace(at: number, tri: number, gone: number): void {
+    const n = this.counts[at]!;
+    let kept = 0;
+    scratchOwners[kept++] = tri;
+    if (n > 2) { for (const x of this.many.get(at)!) if (x !== gone) scratchOwners[kept++] = x; }
+    else {
+      if (n > 0 && this.first[at] !== gone) scratchOwners[kept++] = this.first[at]!;
+      if (n > 1 && this.second[at] !== gone) scratchOwners[kept++] = this.second[at]!;
+    }
+    this.counts[at] = kept;
+    this.first[at] = scratchOwners[0]!;
+    if (kept > 1) this.second[at] = scratchOwners[1]!;
+    if (kept > 2) this.many.set(at, scratchOwners.slice(0, kept)); else this.many.delete(at);
+  }
+
+  /** The edge at `at` owned by these two alone. */
+  pair(at: number, a: number, b: number): void {
+    this.many.delete(at);
+    this.first[at] = a; this.second[at] = b; this.counts[at] = 2;
+  }
+
+  /** The edge at `at` owned by none. */
+  clear(at: number): void {
+    this.many.delete(at);
+    this.counts[at] = 0;
+  }
+}
+
+const edgeOwners = new EdgeOwners();
+/** An edge's owners while `replace` writes them again. */
+const scratchOwners: number[] = [];
+/** The edges still to look at (`flipToDelaunay`), grown and reused. */
+let edgeStack = new Float64Array(1024);
+const edgeKey = (i: number, j: number): number => (i < j ? i * 0x4000_0000 + j : j * 0x4000_0000 + i);
+
 /** DO NOT leave the fan ear clipping made: its slivers were most of the road surfaces' triangles */
 function flipToDelaunay(b: Builder, maxEdge: number): void {
   const t = b.tris, xs = b.xs, ys = b.ys;
   const count = t.length / 3;
   if (count < 2) return;
-  const key = (i: number, j: number): number => (i < j ? i * 0x4000_0000 + j : j * 0x4000_0000 + i);
-  const owners = new Map<number, number[]>();
-  const own = (i: number, j: number, tri: number): void => {
-    const k = key(i, j);
-    const list = owners.get(k);
-    if (list) list.push(tri); else owners.set(k, [tri]);
-  };
+  const owners = edgeOwners;
+  owners.reset(count * 3);
   for (let tri = 0; tri < count; tri++) {
     const a = t[tri * 3]!, c = t[tri * 3 + 1]!, d = t[tri * 3 + 2]!;
-    own(a, c, tri); own(c, d, tri); own(d, a, tri);
+    owners.add(owners.slot(edgeKey(a, c)), tri);
+    owners.add(owners.slot(edgeKey(c, d)), tri);
+    owners.add(owners.slot(edgeKey(d, a)), tri);
   }
   const orient = (a: number, c: number, d: number): number =>
     (xs[c]! - xs[a]!) * (ys[d]! - ys[a]!) - (xs[d]! - xs[a]!) * (ys[c]! - ys[a]!);
@@ -117,19 +229,29 @@ function flipToDelaunay(b: Builder, maxEdge: number): void {
     const ax = xs[a]! - xs[p]!, ay = ys[a]! - ys[p]!, bx = xs[c]! - xs[p]!, by = ys[c]! - ys[p]!, cx = xs[d]! - xs[p]!, cy = ys[d]! - ys[p]!;
     return (ax * ax + ay * ay) * (bx * cy - cx * by) - (bx * bx + by * by) * (ax * cy - cx * ay) + (cx * cx + cy * cy) * (ax * by - bx * ay);
   };
-  const stack: number[] = [];
-  for (const [k, list] of owners) if (list.length === 2) stack.push(k);
+  let top = 0;
+  const push = (key: number): void => {
+    if (top >= edgeStack.length) { const grown = new Float64Array(edgeStack.length * 2); grown.set(edgeStack); edgeStack = grown; }
+    edgeStack[top++] = key;
+  };
+  // The edges two triangles share, in the order they first came.
+  for (let n = 0; n < owners.taken; n++) { const at = owners.order[n]!; if (owners.counts[at] === 2) push(owners.keys[at]!); }
   const third = (tri: number, i: number, j: number): number => {
     for (let n = 0; n < 3; n++) { const v = t[tri * 3 + n]!; if (v !== i && v !== j) return v; }
     return -1;
   };
+  // The two triangles keep their winding (that of the first, all of a piece's run one way).
+  let wind = 0;
+  const put = (tri: number, a: number, c: number, d: number): void => {
+    if (Math.sign(orient(a, c, d)) !== wind) { t[tri * 3] = a; t[tri * 3 + 1] = d; t[tri * 3 + 2] = c; } else { t[tri * 3] = a; t[tri * 3 + 1] = c; t[tri * 3 + 2] = d; }
+  };
   let budget = count * 12;
-  while (stack.length && budget-- > 0) {
-    const k = stack.pop()!;
-    const list = owners.get(k);
-    if (!list || list.length !== 2) continue;
+  while (top > 0 && budget-- > 0) {
+    const k = edgeStack[--top]!;
+    const at = owners.slot(k);
+    if (owners.counts[at] !== 2) continue;
     const j = k % 0x4000_0000, i = (k - j) / 0x4000_0000;
-    const t1 = list[0]!, t2 = list[1]!;
+    const t1 = owners.first[at]!, t2 = owners.second[at]!;
     const p = third(t1, i, j), q = third(t2, i, j);
     if (p < 0 || q < 0 || p === q) continue;
     // The quadrilateral i-p-j-q must be strictly convex for the other diagonal to lie inside it.
@@ -138,19 +260,15 @@ function flipToDelaunay(b: Builder, maxEdge: number): void {
     if (inCircle(i, j, p, q) * (side > 0 ? 1 : -1) <= 1e-9 * Math.abs(side)) continue;
     const old = Math.hypot(xs[i]! - xs[j]!, ys[i]! - ys[j]!), made = Math.hypot(xs[p]! - xs[q]!, ys[p]! - ys[q]!);
     if (made > Math.max(old, maxEdge)) continue;
-    // The two triangles keep their winding (that of the first, all of a piece's run one way).
-    const wind = Math.sign(orient(t[t1 * 3]!, t[t1 * 3 + 1]!, t[t1 * 3 + 2]!));
-    const put = (tri: number, a: number, c: number, d: number): void => {
-      if (Math.sign(orient(a, c, d)) !== wind) { t[tri * 3] = a; t[tri * 3 + 1] = d; t[tri * 3 + 2] = c; } else { t[tri * 3] = a; t[tri * 3 + 1] = c; t[tri * 3 + 2] = d; }
-    };
+    wind = Math.sign(orient(t[t1 * 3]!, t[t1 * 3 + 1]!, t[t1 * 3 + 2]!));
     // t1 = (i, j, p) and t2 = (j, i, q) become (i, q, p) and (q, j, p)
-    owners.set(key(j, p), [t2, ...(owners.get(key(j, p)) ?? []).filter((x) => x !== t1)]);
-    owners.set(key(i, q), [t1, ...(owners.get(key(i, q)) ?? []).filter((x) => x !== t2)]);
-    owners.delete(k);
-    owners.set(key(p, q), [t1, t2]);
+    owners.replace(owners.slot(edgeKey(j, p)), t2, t1);
+    owners.replace(owners.slot(edgeKey(i, q)), t1, t2);
+    owners.clear(owners.slot(k));
+    owners.pair(owners.slot(edgeKey(p, q)), t1, t2);
     put(t1, i, q, p);
     put(t2, q, j, p);
-    for (const e of [[i, q], [q, j], [j, p], [p, i]] as const) stack.push(key(e[0], e[1]));
+    push(edgeKey(i, q)); push(edgeKey(q, j)); push(edgeKey(j, p)); push(edgeKey(p, i));
   }
 }
 
