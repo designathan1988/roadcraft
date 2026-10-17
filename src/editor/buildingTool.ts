@@ -1,6 +1,8 @@
 import { DEFAULT_FLAG, type FlagDesign } from '@world/buildings/flags';
 import type { Vec2 } from '@core/vec2';
 import { signedArea } from '@core/polygon';
+import { samePlain } from '@core/plain';
+import { JournalCursor } from '@world/derived';
 import {
   BLUEPRINTS,
   type BlueprintBody,
@@ -225,6 +227,10 @@ export class BuildingTool {
 
   private drag: Drag | null = null;
   private serial = 0;
+  /** The last draft judged and its verdict: a pointer move that lands the draft where it was judges nothing again. */
+  private judged: { readonly draft: Building; readonly self: BuildingId | undefined; readonly problem: BuildingProblem | null } | null = null;
+  /** What a verdict reads (the buildings, the roads, the ground): an entry of these forgets the last one. */
+  private readonly judgedCursor = new JournalCursor(['buildings', 'terrain', 'roads', 'elevation']);
   /** The stored buildings' floors, kept from the diary (`buildingFloors.ts`). */
   private readonly floors = new BuildingFloors();
   private lastScreen: Vec2 | null = null;
@@ -2295,9 +2301,7 @@ export class BuildingTool {
       }
     }
     // A drag that lands on another building welds on release: the ghost reads what the release will do, weld included.
-    const blocking = this.verdict(draft, draft.id);
-    this.problem = blocking;
-    this.setPreview({ building: draft, valid: blocking === null, problem: blocking, hides: draft.id, serial: 0 });
+    this.showDraft(draft, draft.id);
     this.host.changed();
   }
 
@@ -2330,7 +2334,7 @@ export class BuildingTool {
       this.host.changed();
       return;
     }
-    if (JSON.stringify(preview.building) === JSON.stringify(drag.origin)) {
+    if (samePlain(preview.building, drag.origin)) {
       this.host.changed();
       return;
     }
@@ -2348,9 +2352,28 @@ export class BuildingTool {
     this.report(result);
   }
 
+  /** The ghost of `draft` and its verdict; the same draft as the ghost shown is neither judged nor sent to be drawn again. */
+  private showDraft(draft: Building, hides: BuildingId | null): void {
+    const blocking = this.verdict(draft, hides ?? undefined);
+    this.problem = blocking;
+    const shown = this.preview;
+    if (shown && shown.hides === hides && shown.problem === blocking && samePlain(shown.building, draft)) return;
+    this.setPreview({ building: draft, valid: blocking === null, problem: blocking, hides, serial: 0 });
+  }
+
   /** What a drop of `draft` will meet, weld included: the same question the release asks. */
   private verdict(draft: Building, self: BuildingId | undefined): BuildingProblem | null {
     const ctx = this.host.context();
+    const changed = this.judgedCursor.read(ctx.doc.changes);
+    if (changed === null || changed.length > 0) this.judged = null;
+    const last = this.judged;
+    if (last && last.self === self && samePlain(last.draft, draft)) return last.problem;
+    const problem = this.judge(ctx, draft, self);
+    this.judged = { draft, self, problem };
+    return problem;
+  }
+
+  private judge(ctx: BuildingContext, draft: Building, self: BuildingId | undefined): BuildingProblem | null {
     const problem = validateBuilding(ctx, draft, self);
     if (problem !== 'building') return problem;
     const trial = cloneBuilding(draft);
@@ -2530,9 +2553,7 @@ export class BuildingTool {
     // The body shared, not copied (`placeBody`): the ghost is only read, and cloned when it is placed (`placeHere`).
     const draft = { ...placeBody(this.body, anchor, rotation, this.blueprintKey ?? undefined), id: PREVIEW_ID } as Building;
     // Overlapping another building is a weld, not a refusal - when the weld works
-    const blocking = this.verdict(draft, undefined);
-    this.problem = blocking;
-    this.setPreview({ building: draft, valid: blocking === null, problem: blocking, hides: null, serial: 0 });
+    this.showDraft(draft, null);
   }
 
   private setPreview(preview: BuildingPreview | null): void {

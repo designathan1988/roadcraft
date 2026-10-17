@@ -48,15 +48,15 @@ export interface CellJobEntry extends CellEntry {
   readonly record: RecordRef;
 }
 
-/** One part batch of one building: its instance matrices (and colours). */
+/** One part batch of one building: its instances' poses (`partPose.ts`, `POSE_FLOATS` each) and colours. */
 export interface PartBatch {
-  readonly matrices: Float32Array;
+  readonly poses: Float32Array;
   readonly colours: Float32Array | null;
   readonly count: number;
   /** Window panes: each one's light slot. */
   readonly slots?: Float32Array;
   /** Window panes: each one's room behind it, ROOM_FLOATS numbers (`roomBehind.ts`); a depth of 0 for none known. */
-  readonly rooms?: Float32Array;
+  readonly rooms?: Uint16Array;
   /** The shell's parts (`shellParts.ts`): each one's finish id, wear and ground, `LOOK_FLOATS` numbers. */
   readonly looks?: Float32Array;
 }
@@ -65,9 +65,9 @@ export interface PartBatch {
 /** A shell's vertices are written in the GPU's layout as they are laid (`cellArrays.ts` `ShellArrays`), each one once: faces alike in every number share it (`buildingMesh.ts` `ShellPart.weld`). */
 export interface ShellChunk {
   readonly position: Float32Array;
-  /** The normal (three's axes) and the wear, `SHELL_SHORTS` signed shorts a vertex over `NORMAL_UNIT`. */
-  readonly normalDecay: Int16Array;
-  /** The paint's linear rgb over `COLOUR_RANGE` and the finish id, `SHELL_SHORTS` unsigned shorts a vertex over `PAINT_UNIT`. */
+  /** The normal (three's axes), octahedral: `NORMAL_SHORTS` signed shorts a vertex over `NORMAL_UNIT` (`cellArrays.ts` `octNormal`). */
+  readonly normal: Int16Array;
+  /** The paint's linear rgb over `COLOUR_RANGE` and the finish id with the wear (`finishWear`), `SHELL_SHORTS` unsigned shorts a vertex. */
   readonly paint: Uint16Array;
   readonly index: Uint32Array;
 }
@@ -75,7 +75,7 @@ export interface ShellChunk {
 /** The far level's runs of bays with openings (`emitChunk` `far`): a shell fragment whose every vertex carries its window grid (`facadeLevel.ts`). */
 export interface RunChunk extends ShellChunk {
   /** Each vertex's bay width and storey height, `FACADE_FLOATS` numbers (`cellArrays.ts`). */
-  readonly facade: Float32Array;
+  readonly facade: Uint16Array;
   /** Each vertex's bay, level, kind and volume * 4 + side, `FACADE_GRID` shorts. */
   readonly grid: Int16Array;
   /** Each vertex's opening and frame colour, `FACADE_BYTES` bytes. */

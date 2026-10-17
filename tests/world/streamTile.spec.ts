@@ -1,3 +1,4 @@
+import type { CellMass } from '@render/buildings/cellArrays';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CITY } from '@world/cityGen/plan';
 import { EDGE_INSET, MAP_HALF, WHOLE_MAP_DEFAULTS, type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
@@ -5,7 +6,7 @@ import { lotCentre } from '@world/lots';
 import { OWNER, TILE, TILE_COUNTED, edgeNodeId, tileIdBase, tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { buildStreamTile, buildStreamTilePair } from '@editor/wholeMapTile';
-import { type FarCache, type FarJob, bakeTileMasses, farKey, keepTileFar, runFarJob } from '@render/buildings/farTiles';
+import { type FarCache, type FarJob, bakeTileMasses, farKey, keepTileFar, runFarJob, tileSquare } from '@render/buildings/farTiles';
 import { TILE_DETAIL } from '@render/buildings/massing';
 import { type FarRoadCache, type FarRoadJob, bakeTileRoads, keepTileFarRoads, runFarRoadJob, tileRoads } from '@render/farRoadTiles';
 import { tileBuildingsOf } from '@world/growth/grownRows';
@@ -209,9 +210,10 @@ describe("a tile's far levels kept where it is made", () => {
     const reply = await runFarJob(job, cache);
     expect(reply.kind).toBe('far');
     if (reply.kind !== 'far') return;
-    const masses = bakeTileMasses(pair.records, TILE_DETAIL);
-    expect(reply.mass?.index.length).toBe(masses?.index.length);
-    expect(reply.mass?.position).toEqual(masses?.position);
+    const masses = bakeTileMasses(pair.records, TILE_DETAIL, undefined, undefined, tileSquare(i, j));
+    const mass = reply.mass as CellMass | null;
+    expect(mass?.index.length).toBe(masses?.index.length);
+    expect(mass?.position).toEqual(masses?.position);
     // Another version is not this one's: asked again.
     expect((await runFarJob({ ...job, sig: String(version + 1) }, cache)).kind).toBe('farRecords');
   }, 10_000);

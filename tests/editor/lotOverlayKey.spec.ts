@@ -20,6 +20,7 @@ function street(): { doc: RoadDoc; tool: LotTool } {
     mutate: (fn) => { fn(); },
     hint: () => {},
     redraw: () => {},
+    plan: async () => planLots(doc, net),
   });
   return { doc, tool };
 }
@@ -50,10 +51,10 @@ describe('the lots overlay', () => {
     expect(lotGroups(book.groups.keys())).toHaveLength(3);
   });
 
-  it('in the Zoning tool, makes again only the lots the pointer and the edits reach', () => {
+  it('in the Zoning tool, makes again only the lots the pointer and the edits reach', async () => {
     const { doc, tool } = street();
     // The proposal of the street land is worked out first.
-    while (tool.advanceProposal(50)) { /* until ready */ }
+    await tool.advanceProposal();
     const reader = {};
     const book = tool.overlay(true);
     // Every lot is drawn in the tool.

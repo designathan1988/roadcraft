@@ -8,7 +8,6 @@ import { levelRingsOf } from '@world/surfaces';
 import { TILE, tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { METERS_PER_UNIT, m } from '@world/units';
-import { roadRecipes } from './bake/roadRecipes';
 import { derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from './derivedCache';
 import { surfaceShape } from './mesh/tileShape';
 import { farKey, readStored } from './buildings/farGrid';
@@ -63,26 +62,13 @@ const toLinear = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055)
 const toSrgb = (c: number): number => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055);
 const hexLinear = (hex: number): [number, number, number] => [toLinear(((hex >> 16) & 255) / 255), toLinear(((hex >> 8) & 255) / 255), toLinear((hex & 255) / 255)];
 
-/** Texels between two samples of a texture's mean: odd, so a pattern of even period (pavers of 16, kerb units) is met at every phase. */
-const MEAN_STEP = 7;
-
-/** The mean linear albedo of a baked street texture (`bake/roadRecipes.ts`): each sample as the texel is stored (a byte, sRGB) and read (linear). */
-function recipeMean(key: string): [number, number, number] {
-  const entry = roadRecipes().find((r) => r.key === key);
-  if (!entry) throw new Error(`no street texture ${key}`);
-  const { size, shade } = entry.recipe;
-  const out = { r: 0, g: 0, b: 0, h: 0, rough: 0, metal: 0 };
-  const byte = (v: number): number => Math.round(Math.min(1, Math.max(0, v)) * 255) / 255;
-  let r = 0, g = 0, b = 0, n = 0;
-  for (let y = MEAN_STEP >> 1; y < size; y += MEAN_STEP) {
-    for (let x = MEAN_STEP >> 1; x < size; x += MEAN_STEP) {
-      shade(x, y, out);
-      r += toLinear(byte(out.r)); g += toLinear(byte(out.g)); b += toLinear(byte(out.b));
-      n++;
-    }
-  }
-  return [r / n, g / n, b / n];
-}
+/** THE MEAN LINEAR ALBEDO OF EACH BAKED STREET TEXTURE (`bake/roadRecipes.ts`), every texel as stored (sRGB bytes) and read (linear). DO NOT work them out in every worker from the recipes (four textures shaded a texel in seven, again per worker of the far roads, plan R12): constants, held to the recipes by `tests/render/farRoads.spec.ts` (a recipe changed fails it, with the new values). */
+export const STREET_MEANS: Readonly<Record<'asphalt' | 'footway' | 'kerb' | 'verge', readonly [number, number, number]>> = {
+  asphalt: [0.040666, 0.041456, 0.044698],
+  footway: [0.210044, 0.208119, 0.195658],
+  kerb: [0.338651, 0.331236, 0.316671],
+  verge: [0.029413, 0.070144, 0.010057],
+};
 
 /** Each surface's colour from afar, linear. */
 interface FarRoadTones {
@@ -100,7 +86,7 @@ let tonesMade: FarRoadTones | null = null;
 /** The near materials' means (`materials.ts`: the texture times the vertex tint, the close-up layer gone from afar, `detailLayer.ts`), made once a thread. */
 export function farRoadTones(): FarRoadTones {
   if (tonesMade) return tonesMade;
-  const asphalt = recipeMean('asphalt'), footway = recipeMean('footway'), kerb = recipeMean('kerb'), verge = recipeMean('verge');
+  const { asphalt, footway, kerb, verge } = STREET_MEANS;
   const reference = hexLinear(ASPHALT_REFERENCE);
   // As `roadSurfaces.ts` `againstReference`: the class's colour over the reference, channel by channel, times the texture.
   const over = (hex: number): [number, number, number] => {
@@ -111,9 +97,9 @@ export function farRoadTones(): FarRoadTones {
   tonesMade = {
     classes: ROAD_TYPES.map((type) => over(Number.parseInt(type.color.slice(1), 16))),
     paving: Object.fromEntries(Object.entries(CARRIAGEWAY_COLOUR).map(([name, hex]) => [name, over(hex)])),
-    kerb,
+    kerb: [...kerb],
     footway: Object.fromEntries(Object.entries(FOOTWAY_TINT).map(([name, tint]) => [name, tinted(tint)])),
-    planting: verge,
+    planting: [...verge],
   };
   return tonesMade;
 }

@@ -10,8 +10,9 @@ const kept = new KeptList('roadcraft.roadTemplates', 'road template');
 /** A stored entry as a template in this build's unit, or null when this build cannot read it (it stays stored). */
 const readTemplate = (raw: unknown): RoadTemplate | null => normalizeTemplate(inThisUnit(raw));
 
-export function savedTemplates(): RoadTemplate[] {
-  return kept.read(readTemplate);
+/** The same list while nothing was saved or deleted, so the catalogue can tell it is unchanged. */
+export function savedTemplates(): readonly RoadTemplate[] {
+  return kept.readShared(readTemplate);
 }
 
 /** Saves a template under a name, replacing one of the same name; null when it cannot be built or was not kept. */

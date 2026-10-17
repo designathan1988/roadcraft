@@ -5,7 +5,7 @@ import { createAgentMeshes } from '@render/agents';
 import { archetypeById } from '@sim/vehicles/archetypes';
 import type { SimClient, VehicleView } from '@sim/host/simClient';
 import type { Network } from '@world/network';
-import { ChangeJournal } from '@world/changes';
+import { ChangeJournal, journalWork } from '@world/changes';
 import { FLEET_CEILING } from '@sim/params';
 import { m } from '@world/units';
 
@@ -162,6 +162,62 @@ describe('parked cars drawn from instances kept where they were written', () => 
     agents.dispose();
   });
 
+  it('do not move the shadow map while they stand: casting only in a frame where one came, moved or went', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const cars = [parkedCar(1, 0, 0), parkedCar(2, m(10), 0)];
+    const net = netWith();
+    agents.sync(worldWith(cars), net, 0, true);
+    expect(agents.casting).toBe(true);
+    uploaded(meshesOf(agents, /./));
+    agents.sync(worldWith(cars), net, 0, true);
+    expect(agents.casting).toBe(false);
+    // One driven off: the map changes.
+    agents.sync(worldWith([cars[0]!]), net, 0, true);
+    expect(agents.casting).toBe(true);
+    uploaded(meshesOf(agents, /./));
+    agents.sync(worldWith([cars[0]!]), net, 0, true);
+    expect(agents.casting).toBe(false);
+    agents.dispose();
+  });
+
+  it('ask the ground again, not the diary, of a car not asked the frame before', () => {
+    const changes = new ChangeJournal();
+    let asked = 0;
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => { asked++; return 0; });
+    const car = parkedCar(1, m(5), m(5));
+    const net = netWith(changes);
+    let seen = true;
+    const options = { vehicleVisible: () => seen };
+    agents.sync(worldWith([car]), net, 0, true, undefined, options);
+    // Off the view a while, the diary filling meanwhile far from it.
+    seen = false;
+    for (let i = 0; i < 200; i++) {
+      changes.record('ground', Array.from({ length: 20 }, (_, k) => [m(500 + k), m(500), m(501 + k), m(501)] as [number, number, number, number]));
+      agents.sync(worldWith([car]), net, 0, true, undefined, options);
+    }
+    seen = true;
+    const before = journalWork.entries;
+    asked = 0;
+    agents.sync(worldWith([car]), net, 0, true, undefined, options);
+    // Its ground asked once; not the 200 entries since it was last asked.
+    expect(asked).toBe(1);
+    expect(journalWork.entries - before).toBeLessThan(10);
+    agents.dispose();
+  });
+
+  it('grow a part without disposing its mesh (three walks every geometry it knows to release one)', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const wheels = meshesOf(agents, /^vehicle-wheels$/)[0]!;
+    let disposed = 0;
+    wheels.addEventListener('dispose', () => { disposed++; });
+    const cars: VehicleView[] = [];
+    for (let i = 0; i < 40; i++) cars.push(parkedCar(i + 1, (i % 10) * m(8), Math.floor(i / 10) * m(8)));
+    agents.sync(worldWith(cars), netWith(), 0, true);
+    expect(wheels.instanceMatrix.count).toBeGreaterThanOrEqual(160);
+    expect(disposed).toBe(0);
+    agents.dispose();
+  });
+
   it('let one go with its instances: the last kept ones take their places, and only those places are sent', () => {
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
     const cars = [parkedCar(1, 0, 0), parkedCar(2, m(10), 0), parkedCar(3, m(20), 0)];
@@ -180,6 +236,31 @@ describe('parked cars drawn from instances kept where they were written', () => 
     agents.sync(worldWith([]), net, 0, true);
     expect(centres(agents)).toEqual([]);
     expect(wheels.visible).toBe(false);
+    agents.dispose();
+  });
+
+  it('keep a car stopped in the traffic as a parked one, its smoke still leaving it, until it moves off', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    // Stopped at a light a whole tick: no speed now nor in the tick before, no indicator.
+    const car: VehicleView = { ...movingCar(9, m(30), m(20)), v: 0, prev: { v: 0 } };
+    const net = netWith();
+    let smoke = 0;
+    const options = { exhaust: () => { smoke++; } };
+    agents.sync(worldWith([], [car]), net, 0, true, undefined, options);
+    const shown = meshesOf(agents, /./).filter((mesh) => mesh.visible);
+    uploaded(shown);
+    const versions = shown.map((mesh) => mesh.instanceMatrix.version);
+    agents.sync(worldWith([], [car]), net, 0, true, undefined, options);
+    shown.forEach((mesh, i) => expect(mesh.instanceMatrix.version, mesh.name).toBe(versions[i]));
+    expect(centres(agents)).toEqual([m(30)]);
+    expect(smoke).toBe(2);
+    // Its indicator on: drawn each frame again (the lamp flashes).
+    const signalling: VehicleView = { ...car, indicator: 1 };
+    agents.sync(worldWith([], [signalling]), net, 0, true, undefined, options);
+    // Moving off: written where it is now.
+    const off: VehicleView = { ...car, v: m(2), frames: { ...car.frames, bx: m(30), x: m(31) } };
+    agents.sync(worldWith([], [off]), net, 1, true, undefined, options);
+    expect(centres(agents)).toEqual([m(31)]);
     agents.dispose();
   });
 

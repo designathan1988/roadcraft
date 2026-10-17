@@ -64,6 +64,12 @@ export interface RunStore {
   readonly levels?: KindLevels;
 }
 
+/** Pixels across under which a small thing (a stone, a bush, a tuft) is not drawn: its levels (`KindLevels.least`), measured by its model's sphere. */
+export function leastPixel(geometry: BufferGeometry): KindLevels {
+  if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+  return { reach: geometry.boundingSphere?.radius ?? 1, least: 1 };
+}
+
 /** A thing's instances in one store: poses (the layer's `PoseFormat`), tints (tinted stores) and each one's largest scale. */
 type RunPack = Pack;
 
@@ -82,7 +88,8 @@ interface Tint { readonly r: number; readonly g: number; readonly b: number }
 export class RunBuilder {
   private readonly lists = new Map<number, { poses: number[]; colours: number[]; scales: number[] }>();
 
-  constructor(private readonly stores: readonly RunStore[], private readonly format: PoseFormat = YAW_POSE) {}
+  /** `stores`: whether each store is tinted (all a builder reads of it: a worker builds runs without the models). */
+  constructor(private readonly stores: readonly Pick<RunStore, 'tinted'>[], private readonly format: PoseFormat = YAW_POSE) {}
 
   private listOf(store: number, scale: number, tint: Tint | undefined): number[] {
     let list = this.lists.get(store);

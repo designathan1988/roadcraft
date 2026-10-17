@@ -1,5 +1,5 @@
-import type { Object3D } from 'three';
-import { compileAhead, shadowStandIns } from './uploads';
+import { Group, type Material, type Mesh, type Object3D, type ShaderMaterial } from 'three';
+import { compileAhead, compileAheadWith, compileCopy, shadowStandIns } from './uploads';
 
 /** THE PROGRAMS COMPILED AT LOAD: a closed catalogue of what the game draws with, built before the curtain lifts */
 
@@ -38,13 +38,44 @@ function meshesIn(root: Object3D): number {
   return n;
 }
 
-/** `people`: every program a person can be drawn with (`people/proceduralCrowd.ts` personProgramStandIns), built without a body. */
-export function createShaderCatalogue(people: () => FamilyStandIns): ShaderCatalogue {
+/** Whether a material is drawn with the scene's lights: its program changes with their number. */
+const isLit = (material: Material): boolean => {
+  const m = material as Material & { isMeshStandardMaterial?: boolean; isMeshLambertMaterial?: boolean; isMeshPhongMaterial?: boolean; isMeshToonMaterial?: boolean };
+  return !!(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshToonMaterial || (material as ShaderMaterial).lights);
+};
+
+/** One stand-in for each lit program the meshes under `roots` are drawn with (its material and what of the mesh is in the program's key): what a light variant compiles, not the whole scene again. */
+export function litStandIns(roots: readonly Object3D[]): Group {
+  const group = new Group();
+  const seen = new Set<string>();
+  for (const root of roots) {
+    root.traverse((object) => {
+      const mesh = object as Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean; isBatchedMesh?: boolean; instanceColor?: unknown; morphTexture?: unknown };
+      if (!mesh.isMesh) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      if (!materials.some(isLit)) return;
+      const g = mesh.geometry;
+      const key = [materials.map((m) => m.uuid).join(','), !!mesh.isInstancedMesh, !!mesh.instanceColor, !!mesh.morphTexture, !!mesh.isSkinnedMesh, !!mesh.isBatchedMesh,
+        mesh.receiveShadow, Object.keys(g.attributes).sort().join(','), Object.keys(g.morphAttributes).sort().join(',')].join('/');
+      if (seen.has(key)) return;
+      seen.add(key);
+      const copy = compileCopy(mesh);
+      copy.visible = true;
+      group.add(copy);
+    });
+  }
+  return group;
+}
+
+/** `people`: every program a person can be drawn with (`people/proceduralCrowd.ts` personProgramStandIns), built without a body. `lightVariants`: the sets of the scene's lights a light switched on or off makes (`renderer.ts`), each compiled once the opening's are, never waited for. */
+export function createShaderCatalogue(people: () => FamilyStandIns, lightVariants: () => readonly (readonly Object3D[])[] = () => []): ShaderCatalogue {
   const counts = Object.fromEntries(PROGRAM_FAMILIES.map((name) => [name, null])) as Record<ProgramFamily, FamilyCount | null>;
   let settle: () => void = () => {};
   let ready = new Promise<void>((done) => { settle = done; });
   let compiled = false;
   let peopleDone: Promise<void> | null = null;
+  /** The people's lit stand-ins, kept for the light variants. */
+  let peopleLit: Object3D | null = null;
 
   /** One family's stand-ins compiled ahead, lit and in the shadow; counted when done. A family that cannot be built is said, never awaited for ever. */
   const family = (name: ProgramFamily, build: () => FamilyStandIns): Promise<void> => {
@@ -80,10 +111,15 @@ export function createShaderCatalogue(people: () => FamilyStandIns): ShaderCatal
       // The world as it stands, hidden things too (`compileAsync` walks every mesh), and each of its casters' shadow programs once.
       const world = family('world', () => ({ lit: scene, shadow: shadowStandIns(scene) }));
       // The people come after the town is shown: their programs, every one of them, now (`personVariants.ts`).
-      peopleDone ??= family('people', people);
+      peopleDone ??= family('people', () => { const made = people(); peopleLit = made.lit; return made; });
       void Promise.all([world, peopleDone]).then(() => {
         performance.mark('programs:compiled', { detail: counts });
         done();
+        // The variants of the lights switched on or off (the room and effect lights, the fill at night): built now, before the first switch draws with one.
+        const sets = lightVariants();
+        if (sets.length === 0) return;
+        const standIns = litStandIns(peopleLit ? [scene, peopleLit] : [scene]);
+        void Promise.all(sets.map((lights) => compileAheadWith(standIns, lights))).then(() => standIns.clear());
       });
     },
     counts() {

@@ -3,12 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { roadRecipes } from '@render/bake/roadRecipes';
 import { TOP_LEVEL, emptyRecords, farKey, farNode } from '@render/buildings/farTiles';
 import type { FarTileSource } from '@render/buildings/farLevels';
-import { FarRoads, type NearRoadKit, type RoadPayload, farRoadJob } from '@render/farRoads';
+import { FarRoads, type NearRoadKit, type RoadPayload, farRoadJob, farRoadPriority } from '@render/farRoads';
+import { EDIT_TIER, FAR_TIER, TIER_SPAN, cellPriority } from '@render/buildings/cellPool';
 import { MeshBasicMaterial, type Mesh } from 'three';
 import type { SceneMaterials } from '@render/materials';
 import { marksRoadSection } from '@render/mesh/roadEdges';
 import { passLook, surfaceLook } from '@render/roadSurfaces';
-import { type FarRoadCache, type FarRoadMesh, bakeTileRoads, farRoadTones, runFarRoadJob, tileNetwork } from '@render/farRoadTiles';
+import { type FarRoadCache, type FarRoadMesh, STREET_MEANS, bakeTileRoads, farRoadTones, runFarRoadJob, tileNetwork } from '@render/farRoadTiles';
 import type { FarTreeJob, FarTreeRun } from '@render/farTree';
 import { surfaceTexels } from '@render/mesh/textureBaker';
 import { CURB_BAND, Level } from '@world/roadTypes';
@@ -121,6 +122,13 @@ async function until(look: () => void, done: () => boolean): Promise<void> {
 }
 
 describe('a tile of roads baked from the store', () => {
+  it('takes each street texture at its mean as the recipes bake it (the constants follow the recipes)', () => {
+    for (const key of ['asphalt', 'footway', 'kerb', 'verge'] as const) {
+      const mean = fullMean(key);
+      expect(STREET_MEANS[key].map((v, k) => Math.abs(v - mean[k]!) < 2e-6), `${key}: ${mean.map((v) => v.toFixed(6)).join(', ')}`).toEqual([true, true, true]);
+    }
+  });
+
   it("covers every carriageway and footway's ground, each in its near material's colour from afar", () => {
     const records = crossTile(0, 0);
     const mesh = bakeTileRoads(records);
@@ -282,6 +290,100 @@ describe('the far roads chosen top down', () => {
     expect(own.near!.records![0]!.version).toBe(2);
     // A neighbour that reads the edited tile reads it from the page too, but is not the player's edit.
     for (const job of asked) if (job.near && (job.i !== 0 || job.j !== 0)) expect(job.near.edited).toBeUndefined();
+    // Another edit of the tile that leaves its roads as they were (a building grown): nothing asked again.
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)) && !asked.some((job) => job.near && job.i === 0 && job.j === 0 && !job.near.edited));
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    asked.length = 0;
+    edit = 2;
+    for (let k = 0; k < 20; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    expect(asked.filter((job) => job.near).map((job) => `${job.i},${job.j} ${job.near!.bake} ${job.near!.variant} ${job.near!.edited}`)).toEqual([]);
+    roads.dispose();
+  });
+
+  it("keeps the edited tile's near job when the edit's write is confirmed: not cancelled for the same roads at the version written", async () => {
+    const cache = memoryCache();
+    const tiles = world();
+    const asked: FarTreeJob[] = [];
+    const cancelled: FarTreeJob[] = [];
+    const held: (() => void)[] = [];
+    const run = runner(cache, kit);
+    // The edited tile's job waits for a worker (the cells' jobs run): held until let go.
+    const roads = new FarRoads(() => null, (job, done) => {
+      asked.push(job);
+      let live = true;
+      const go = (): void => { if (live) run(job, done); };
+      if (job.near?.edited) held.push(go); else go();
+      return () => { live = false; cancelled.push(job); };
+    }, 'test:', kit);
+    const edited = tileKey(0, 0);
+    let edit = 0;
+    roads.setSource({ ...storeOf(tiles), pageEdit: (key) => (key === edited ? edit : 0), pageRecords: (key) => (key === edited ? crossTile(0, 0, 2) : null) }, () => false);
+    for (const [key, records] of tiles) roads.stored(key, records.version);
+    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    // The player edits the tile: its job asked first, waiting.
+    edit = 1;
+    asked.length = 0;
+    await until(over, () => held.length > 0);
+    cancelled.length = 0;
+    asked.length = 0;
+    // The write confirmed: the edit let go and the version written stored, in one turn (`worldStreamer.ts`).
+    edit = 0;
+    tiles.set(edited, crossTile(0, 0, 2));
+    roads.stored(edited, 2);
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    // A second write of the tile meanwhile (a building grown beside the road), its roads the same.
+    tiles.set(edited, { ...crossTile(0, 0, 2), version: 3 });
+    roads.stored(edited, 3);
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    expect(cancelled.filter((job) => job.near && job.i === 0 && job.j === 0)).toEqual([]);
+    expect(asked.filter((job) => job.near && job.i === 0 && job.j === 0)).toEqual([]);
+    // Its job let go: the edit drawn.
+    // (an answer built on another level drawn is asked again, held again: let go each time)
+    for (let k = 0; k < 200; k++) { over(); for (const go of held.splice(0)) go(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    expect(roads.nearKeys()).toContain(farKey(0, 0, 0));
+    // A later write of the tile once the edit is drawn (a new version): asked again.
+    tiles.set(edited, crossTile(0, 0, 4));
+    roads.stored(edited, 4);
+    await until(over, () => asked.some((job) => job.near && job.i === 0 && job.j === 0 && !job.near.edited));
+    roads.dispose();
+  });
+
+  it("queues a near level as a cell's detail is, never behind the masses; an edited tile's before anything", () => {
+    const job = (near?: { edited?: boolean }): FarTreeJob => ({
+      node: 'n0:0,0', k: -1, i: 0, j: 0, sig: 's', want: true, prefix: null,
+      ...(near ? { near: { tiles: [], bake: 'b', variant: 'full', shown: null, ...(near.edited ? { edited: true } : {}) } } : {}),
+    });
+    const shown = { ...kit, coarseFirst: () => false };
+    const hidden = { ...kit, coarseFirst: () => true };
+    expect(farRoadPriority(job(), shown)).toBe(FAR_TIER * TIER_SPAN);
+    expect(farRoadPriority(job({ edited: true }), shown)).toBe(EDIT_TIER * TIER_SPAN);
+    // In the cells' band (the queue adds the distance to the eye): a street's near roads ahead of a cell's facade or a mass 1 km off.
+    expect(farRoadPriority(job({}), shown)).toBe(cellPriority('cell', 0, false, false));
+    expect(farRoadPriority(job({}), shown) + m(100)).toBeLessThan(cellPriority('facade', m(1000), false, false));
+    expect(farRoadPriority(job({}), shown) + m(100)).toBeLessThan(cellPriority('mass', m(1000), false, false));
+    // Behind the curtain, put back with the cells past the masses the opening shows.
+    expect(farRoadPriority(job({}), hidden)).toBe(cellPriority('cell', 0, false, true));
+    expect(farRoadPriority(job({}), hidden)).toBeGreaterThan(cellPriority('massPlate', m(5000), false, true));
+  });
+
+  it("keeps a tile's near level drawn when its neighbour is written with the same roads: nothing made nor sent to the GPU again", async () => {
+    const cache = memoryCache();
+    const tiles = world();
+    const roads = new FarRoads(() => null, runner(cache, kit), 'test:', kit);
+    roads.setSource(storeOf(tiles), () => false);
+    for (const [key, records] of tiles) roads.stored(key, records.version);
+    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    const before = roads.group.children.filter((o) => o.name === 'roads-near');
+    // A neighbour written again with the same roads (a building grown on it): a new version.
+    const key = tileKey(1, 0);
+    roads.stored(key, tiles.get(key)!.version + 1);
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    // The very same groups: none made again (a neighbour reads tile (1, 0) too, its roads the same).
+    expect(roads.group.children.filter((o) => o.name === 'roads-near')).toEqual(before);
     roads.dispose();
   });
 

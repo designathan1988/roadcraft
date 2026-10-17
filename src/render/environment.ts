@@ -43,7 +43,7 @@ export interface SceneEnvironment {
   /** What moves and is drawn into the shadows (`sunCascades.ts` `Movers`). */
   setMovers(movers: readonly Movers[]): void;
   /** What chooses its casters by each cascade's texel (`SunCascades.setCasters`). */
-  setCasters(casters: ((texel: number) => void) | null): void;
+  setCasters(casters: ((texel: number | null, cascade: number) => void) | null): void;
   /** The cascades' maps, for the video memory count. */
   shadowMaps(): (WebGLRenderTarget | null)[];
   setQuality(quality: EnvironmentQuality): void;
@@ -176,7 +176,8 @@ export function createEnvironment(
     cascadeLights.push(light);
   }
   // The edge of a shadow filtered over two texels (three's PCF: a Vogel disc of `radius` texels)
-  const cascades = createSunCascades(sun, cascadeLights, 2);
+  // Each cascade's still casters kept between their draws, what moves drawn over them (`sunCascades.ts`).
+  const cascades = createSunCascades(sun, cascadeLights, 2, renderer);
   cascades.setEnabled(quality.shadows, quality.shadowMapSize);
   // In this order: three draws the lights that cast shadows first, in the order it meets them, and the shader takes them as cascades 0, 1, 2
   for (const light of cascades.lights) scene.add(light, light.target);
@@ -263,6 +264,8 @@ export function createEnvironment(
       // No town-wide haze (the player: the smoke stays where the fire is).
       void smog; void SMOG;
       scene.environmentIntensity = 0.6 * (0.2 + 0.8 * light) * (1 - smog * 0.4);
+      // DO NOT leave the fill in the scene unlit: three counts every visible light, and each lit fragment evaluates it (its variant without it compiled ahead, `shaderCatalogue.ts`).
+      fill.visible = fill.intensity > 0;
       cascades.syncLight();
       return dark;
     },

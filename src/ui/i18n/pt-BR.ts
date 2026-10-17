@@ -822,6 +822,8 @@ export const PT_BR: Dictionary = {
   'hint.undone': 'Desfeito',
   'hint.redone': 'Refeito',
   'hint.saved': 'Mapa salvo em arquivo',
+  'hint.tileFull': 'Este trecho do mapa já tem o máximo que cabe: nada foi acrescentado e nada foi apagado',
+  'hint.saveBehind': 'Algumas mudanças ainda não foram gravadas: nenhum arquivo foi feito, tente de novo em instantes',
   'hint.opened': 'Mapa aberto',
   'hint.worldReadOnly': 'Esta cidade está aberta em outra janela: aqui ela pode ser vista, as mudanças não são gravadas',
   'hint.openFailed': 'Esse arquivo não é um mapa do Roadcraft ou está danificado. Nada foi alterado',
@@ -858,7 +860,6 @@ export const PT_BR: Dictionary = {
   'health.copyFailed': 'Não foi possível copiar: o navegador recusou a área de transferência',
   'health.system.panels': 'painéis',
   'health.system.camera': 'câmera',
-  'health.system.growCity': 'crescimento da cidade',
   'health.system.topology': 'topologia',
   'health.system.simulation': 'simulação',
   'health.system.roadNetwork': 'rede viária',
@@ -918,6 +919,7 @@ export const PT_BR: Dictionary = {
   'health.context.opening': 'abrindo o jogo',
   'status.impossible.one': '1 nó impossível de construir',
   'status.impossible.other': '{count} nós impossíveis de construir',
+  'status.region': 'Contados na região em volta da câmera, não na cidade inteira',
 
   'quality.auto': 'Automática',
   'quality.low': 'Baixa',
@@ -1756,7 +1758,6 @@ export const PT_BR: Dictionary = {
   'hint.transit.trackOnRoad': 'Trilho de trem cruza ruas, mas não corre por cima delas (use o metrô por baixo).',
   'hint.transit.lineShort': 'Uma linha precisa de pelo menos duas paradas.',
   'hint.transit.lineMade': 'Linha criada.',
-  'city.building': 'Construindo a cidade: {done} de {total} lotes',
   'map.loading': 'Carregando o mapa…',
   'map.generating': 'Gerando a cidade… {done} de {total} partes',
 };

@@ -1,4 +1,5 @@
-import { BoxGeometry, Color, DynamicDrawUsage, type Frustum, Group, InstancedBufferAttribute, InstancedMesh, type Matrix4, MeshStandardMaterial, Object3D } from 'three';
+import { BoxGeometry, Color, DynamicDrawUsage, Frustum, Group, InstancedBufferAttribute, InstancedMesh, type Matrix4, MeshStandardMaterial, Object3D, Sphere, Vector3 } from 'three';
+import { TERRAIN_MAX_HEIGHT, TERRAIN_MIN_HEIGHT } from '@world/terrain';
 import type { Change, ChangeJournal, ChangeKind, ChangeRect } from '@world/changes';
 import { CellFiling } from '@world/cells';
 import { Derived, type DerivedSpec } from '@world/derived';
@@ -7,6 +8,7 @@ import { createInstanceRuns, RunBuilder, sameRun, type Run, type RunStore } from
 
 import type { RoadDoc } from '@world/doc';
 import { m } from '@world/units';
+import { pinned } from './pinned';
 import type { TrainState } from '@sim/host/protocol';
 
 /** The materials of the transport, made once and shared by every rebuild: one made afresh on each rebuild */
@@ -324,7 +326,7 @@ export function createTransit(): TransitMeshes & {
   /** The parts the camera can see, every frame. */
   cull(frustum: Frustum, view: Matrix4): void;
 } {
-  const group = new Group();
+  const group = pinned(new Group());
   group.name = 'transit';
   const unit = new BoxGeometry(1, 1, 1);
   const material = (colour: number, roughness: number, metalness = 0, opacity = 1): MeshStandardMaterial =>
@@ -365,13 +367,19 @@ export function createTransit(): TransitMeshes & {
 
   // The trains: one box per car, moved each frame, in their line's colour.
   const o = new Object3D();
+  /** DO NOT place every train car of the map: the view (`cull`, before `update`) tests each with its shadow's reach, first over every height the land has, then on its ground. */
+  const trainView = new Frustum();
+  let viewKnown = false;
+  const carSphere = new Sphere(new Vector3(), 1);
+  const CAR_REACH = CAR.length / 2 + CAR.height * 2;
+  const LAND_HALF = (TERRAIN_MAX_HEIGHT - TERRAIN_MIN_HEIGHT) / 2;
   const place = (b: Box): void => {
     o.position.set(b.x, b.z + b.height / 2, -b.y);
     o.rotation.set(0, b.yaw, 0);
     o.scale.set(b.length, b.height, b.width);
     o.updateMatrix();
   };
-  const cars = new InstancedMesh(unit, sharedMaterial(0xffffff, 0.45, 0.3, 1, false, true, 0, true), MAX_CARS);
+  const cars = pinned(new InstancedMesh(unit, sharedMaterial(0xffffff, 0.45, 0.3, 1, false, true, 0, true), MAX_CARS));
   cars.name = 'transit-trains';
   // Its colour per car from the start: one program and one shadow depth variant (`renderer.ts` `watchShadowDepth`), not a second on first use.
   cars.instanceColor = new InstancedBufferAttribute(new Float32Array(MAX_CARS * 3).fill(1), 3);
@@ -404,6 +412,8 @@ export function createTransit(): TransitMeshes & {
       return product.work.last;
     },
     cull(frustum, view) {
+      trainView.copy(frustum);
+      viewKnown = true;
       visible.cull(frustum, view);
       if (xray.group.visible) xray.cull(frustum, view);
     },
@@ -416,7 +426,18 @@ export function createTransit(): TransitMeshes & {
         tint.copy(colour);
         for (const car of train.cars) {
           if (n >= MAX_CARS) break;
-          place({ x: car.x, y: car.y, z: ground(car.x, car.y) + m(0.55), yaw: car.heading, length: CAR.length, width: CAR.width, height: CAR.height });
+          if (viewKnown) {
+            carSphere.center.set(car.x, (TERRAIN_MAX_HEIGHT + TERRAIN_MIN_HEIGHT) / 2, -car.y);
+            carSphere.radius = CAR_REACH + LAND_HALF;
+            if (!trainView.intersectsSphere(carSphere)) continue;
+          }
+          const z = ground(car.x, car.y) + m(0.55);
+          if (viewKnown) {
+            carSphere.center.set(car.x, z + CAR.height / 2, -car.y);
+            carSphere.radius = CAR_REACH;
+            if (!trainView.intersectsSphere(carSphere)) continue;
+          }
+          place({ x: car.x, y: car.y, z, yaw: car.heading, length: CAR.length, width: CAR.width, height: CAR.height });
           cars.setMatrixAt(n, o.matrix);
           cars.setColorAt(n, tint);
           n++;
@@ -482,12 +503,12 @@ const PREVIEW_LAYERS = [
 
 /** DO NOT build the preview again per move. */
 export function createTrackPreview(): TrackPreview {
-  const group = new Group();
+  const group = pinned(new Group());
   group.name = 'transit-preview';
   const unit = new BoxGeometry(1, 1, 1);
   const o = new Object3D();
   const meshes = PREVIEW_LAYERS.map((layer) => {
-    const mesh = new InstancedMesh(unit, sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, true, 0, true), 16);
+    const mesh = pinned(new InstancedMesh(unit, sharedMaterial(layer.colour, layer.roughness, layer.metalness, layer.opacity, true, true, 0, true), 16));
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.renderOrder = 30 + layer.order;
     mesh.frustumCulled = false;
@@ -507,7 +528,7 @@ export function createTrackPreview(): TrackPreview {
           // three cannot resize a buffer attribute: a new mesh, twice as long, the old one's buffers freed.
           let capacity = mesh.instanceMatrix.count;
           while (capacity < boxes.length) capacity *= 2;
-          const grown = new InstancedMesh(unit, mesh.material, capacity);
+          const grown = pinned(new InstancedMesh(unit, mesh.material, capacity));
           grown.instanceMatrix.setUsage(DynamicDrawUsage);
           grown.renderOrder = mesh.renderOrder;
           grown.frustumCulled = false;

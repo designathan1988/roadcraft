@@ -1,3 +1,4 @@
+import { measureHitch } from '@core/hitch';
 import { type ListPart, RoadDoc, type SerializedDoc } from '@world/doc';
 import { sideOf, type DocPatch } from '@world/docImage';
 import type { Network } from '@world/network';
@@ -111,7 +112,7 @@ export class History {
     this.open = null;
     const start = performance.now();
     const patch = doc.endEdit();
-    performance.measure('hitch:history/commit', { start, end: performance.now() });
+    measureHitch('hitch:history/commit', start);
     if (!patch) return false;
     this.undoStack.push(patch);
     this.redoStack.length = 0;

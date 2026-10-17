@@ -3,7 +3,7 @@ import { CompressedArrayTexture, type CompressedPixelFormat, type Mesh, RGBAForm
 
 import { FINISHES, type Finish } from '@world/buildings/materials';
 import { kitBoxes, meshesOf } from '@render/buildings/buildingMesh';
-import { NORMAL_UNIT, PAINT_ATTRIBUTE, SHELL_MESH, cellArrays, finishId, paintShort } from '@render/buildings/cellArrays';
+import { PAINT_ATTRIBUTE, SHELL_MESH, cellArrays, finishId, paintShort } from '@render/buildings/cellArrays';
 import type { BuildingChunk, PartBatch, ShellChunk } from '@render/buildings/chunk';
 import { PART_KINDS, type PartKind, createBuildingKit } from '@render/buildings/kit';
 import { createShellMaterial, finishLookTable } from '@render/buildings/finishes';
@@ -23,7 +23,8 @@ function quad(finish: Finish, chunk: number): ShellChunk {
   const white = paintShort(1), id = finishId(finish);
   return {
     position: Float32Array.of(x, 0, 0, x + 0.5, 0, 0, x + 0.5, 1, 0, x, 1, 0),
-    normalDecay: Int16Array.of(0, 0, NORMAL_UNIT, 0, 0, 0, NORMAL_UNIT, 0, 0, 0, NORMAL_UNIT, 0, 0, 0, NORMAL_UNIT, 0),
+    // Facing +z, octahedral (`octNormal`): the fold's centre.
+    normal: Int16Array.of(0, 0, 0, 0, 0, 0, 0, 0),
     paint: Uint16Array.of(white, white, white, id, white, white, white, id, white, white, white, id, white, white, white, id),
     index: Uint32Array.of(0, 1, 2, 0, 2, 3),
   };
@@ -34,7 +35,7 @@ const finishesOf = (paint: Uint16Array): number[] => Array.from({ length: paint.
 
 /** A building's chunk with shells in `finishes` and no parts. */
 function chunkOf(finishes: readonly Finish[], chunk: number): BuildingChunk {
-  const none: PartBatch = { matrices: new Float32Array(0), colours: null, count: 0 };
+  const none: PartBatch = { poses: new Float32Array(0), colours: null, count: 0 };
   const parts = Object.fromEntries(PART_KINDS.map((kind) => [kind, none])) as Record<PartKind, PartBatch>;
   return { shells: Object.fromEntries(finishes.map((f) => [f, quad(f, chunk)])) as BuildingChunk['shells'], parts };
 }

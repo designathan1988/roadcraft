@@ -9,7 +9,7 @@ import { createBuildingKit } from '@render/buildings/kit';
 import { createMassCells } from '@render/buildings/massCells';
 import { MassLevels } from '@render/buildings/massLevels';
 import { plateOf, tileOf } from '@render/buildings/levelKeys';
-import { CELL_DETAIL, PLATE_DETAIL, TILE_DETAIL, emitMassing } from '@render/buildings/massing';
+import { CELL_DETAIL, PLATE_DETAIL, TILE_DETAIL, emitMassing, emitMassingLevels } from '@render/buildings/massing';
 import { drawsSignature } from '@render/buildings/signature';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
@@ -168,6 +168,22 @@ describe('a tile or a plate of masses drawn in place of its cells', () => {
     expect(plateError).toBeGreaterThanOrEqual(tileError);
   });
 
+  it("walks a building once for a tile's and a plate's masses where they answer alike, each the same as walked alone", () => {
+    let shared = 0, apart = 0;
+    for (let i = 0; i < BLUEPRINTS.length; i++) {
+      for (const turn of [0, 0.7]) {
+        const b = { ...building(i, 0, 0), rotation: turn };
+        const [t, p] = emitMassingLevels(b, flat, undefined, flat, undefined, TILE_DETAIL, PLATE_DETAIL);
+        expect(t).toEqual(emitMassing(b, flat, undefined, flat, false, undefined, TILE_DETAIL));
+        expect(p).toEqual(emitMassing(b, flat, undefined, flat, false, undefined, PLATE_DETAIL));
+        if (t && t === p) shared++; else apart++;
+      }
+    }
+    // Both ways met: some buildings' plate masses their tile's own, some walked again.
+    expect(shared).toBeGreaterThan(0);
+    expect(apart).toBeGreaterThan(0);
+  });
+
   it("is made by the cells' job for its kind, merged, with its error", () => {
     // A building drawn by its masses (a signature one is drawn by its own body, `signature.ts`).
     const plain = BLUEPRINTS.findIndex((_, i) => !drawsSignature(building(i, 0, 0)));
@@ -206,7 +222,7 @@ describe('the tiles and plates asked of the workers', () => {
       isRunning(id: number) { return running.has(id); },
     } as unknown as CellPool;
     const answer = (): void => {
-      for (const a of asked) if (running.delete(a.id)) a.done({ batch: null, details: [], summaries: [], mass: null });
+      for (const a of asked) if (running.delete(a.id)) a.done({ batch: null, parts: null, summaries: [], mass: null });
     };
     return { pool, asked, answer };
   }
@@ -302,6 +318,33 @@ describe('a tile or a plate drawn before some of its buildings came in', () => {
     expect(far.drawn('1,1')).toBe(true);
     // The plate's mesh of older buildings (`MassLevels.outdated`): drawing nothing of the cell.
     expect(far.drawn('1,1', (level) => level !== plateOf(0, 0))).toBe(false);
+    far.dispose();
+    kit.dispose();
+  });
+
+  it('is never coarsened into while outdated: the cells keep their masses until it is made again', () => {
+    const kit = createBuildingKit();
+    let stale = true;
+    const far = createMassCells(kit, CELL, () => {}, (level) => !(stale && level === plateOf(0, 0)));
+    far.planLevel(tileOf(0, 0));
+    // Close first: the cells asked and drawn with their masses.
+    far.choose(m(128), m(128), m(500), 1000, 2, false);
+    far.land('0,0', masses(m(10), m(10)));
+    far.land('1,0', masses(CELL + m(10), m(10)));
+    far.landLevel(plateOf(0, 0), masses(m(10), m(10), m(10)));
+    far.choose(m(128), m(128), m(500), 1000, 2, false);
+    // From afar, the plate made before its cells' buildings changed: not drawn in their place, their masses kept and drawn.
+    far.choose(m(128), m(128), m(500), 1000, 0.1, false);
+    expect(far.coarse(plateOf(0, 0))).toBe(false);
+    expect(meshNamed(far.group, 'building-massing').length).toBe(2);
+    expect(far.drawn('0,0', (level) => !(stale && level === plateOf(0, 0)))).toBe(true);
+    expect(far.waiting).toBeGreaterThan(0);
+    // Made again: the plate stands for them.
+    stale = false;
+    far.choose(m(128), m(128), m(500), 1000, 0.1, false);
+    expect(far.coarse(plateOf(0, 0))).toBe(true);
+    // A cell's masses hidden under it draw nothing: drawn by the plate only while it is current.
+    expect(far.drawn('0,0', (level) => level !== plateOf(0, 0))).toBe(false);
     far.dispose();
     kit.dispose();
   });

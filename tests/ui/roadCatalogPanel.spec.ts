@@ -1,17 +1,19 @@
 // @vitest-environment happy-dom The road catalogue in the road tool's drawer (the player's order of 2026-10-09).
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { catalogStrip, pickedRoad } from '@ui/roads/catalogPanel';
 import { drawProfile, setDrawProfile } from '@ui/roads/drawProfile';
 import { closeProfileEditor } from '@ui/roads/profileEditor';
+import { saveTemplate } from '@ui/roads/templates';
+import { classTemplates } from '@world/roads/templates';
 
-afterEach(() => { setDrawProfile(null); closeProfileEditor(); document.body.innerHTML = ''; });
+afterEach(() => { setDrawProfile(null); closeProfileEditor(); document.body.innerHTML = ''; localStorage.clear(); });
 
-function mount(classIndex = 0): { root: HTMLElement; picked: number[] } {
+function mount(classIndex = 0): { root: HTMLElement; picked: number[]; render: () => void } {
   const picked: number[] = [];
   let cls = classIndex;
   const host = { classIndex: () => cls, pickClass: (i: number) => { cls = i; picked.push(i); }, refresh: () => { document.body.replaceChildren(catalogStrip(host)); } };
   document.body.replaceChildren(catalogStrip(host));
-  return { root: document.body, picked };
+  return { root: document.body, picked, render: host.refresh };
 }
 
 describe('the road catalogue', () => {
@@ -47,5 +49,29 @@ describe('the road catalogue', () => {
     const panel = document.querySelector('.rp-panel');
     expect(panel?.classList.contains('docked')).toBe(true);
     expect(panel?.querySelector('[data-action="fold"]')).not.toBeNull();
+  });
+
+  it('keeps the strip it built while nothing it shows changed: a render or a pick does not build the cards again (plan K5)', () => {
+    // A road of the player's saved: the list read from storage is text to parse.
+    expect(saveTemplate('Mine', 1, classTemplates()[1]!.profile)).not.toBeNull();
+    const { root, render } = mount();
+    const strip = root.querySelector('.rc-catalog')!;
+    const img = strip.querySelector('img.rc-art')!;
+    const parse = vi.spyOn(JSON, 'parse');
+    // A render of the drawer (PageUp, PageDown): the same strip, its pictures not drawn again, the saved roads not parsed.
+    render();
+    expect(document.body.querySelector('.rc-catalog')).toBe(strip);
+    expect(strip.querySelector('img.rc-art')).toBe(img);
+    expect(parse).not.toHaveBeenCalled();
+    parse.mockRestore();
+    // A pick moves the mark and "Customise..." to the card picked, on the same cards.
+    const cards = [...strip.querySelectorAll('.rc-card')];
+    const other = cards.find((c) => !c.classList.contains('on'))!;
+    (other.querySelector('.rc-card-main') as HTMLButtonElement).click();
+    expect(document.body.querySelector('.rc-catalog')).toBe(strip);
+    expect(other.classList.contains('on')).toBe(true);
+    expect(strip.querySelectorAll('.rc-card.on').length).toBe(1);
+    expect(strip.querySelectorAll('[data-action="customise"]').length).toBe(1);
+    expect(other.querySelector('[data-action="customise"]')).not.toBeNull();
   });
 });

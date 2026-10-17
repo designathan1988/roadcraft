@@ -30,7 +30,19 @@ function mixGlsl(mix: readonly (readonly [number, number])[]): string {
   return `${lines.join('\n')}\n  return ${lampVec(mix[mix.length - 1]![0])};`;
 }
 
-/** GLSL: `roomLamp(lot, office)`, a lit room's lamp colour from its lot (0..1) and whether it is an office or a shop */
+/** A mix's mean lamp, as GLSL: what its rooms' lamps average to where many windows fall in a pixel. */
+function meanGlsl(mix: readonly (readonly [number, number])[]): string {
+  let mr = 0, mg = 0, mb = 0;
+  for (const [k, share] of mix) {
+    const [r, g, b] = KELVIN_SRGB[k]!;
+    const c = new Color().setRGB(r / 255, g / 255, b / 255, 'srgb');
+    const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    mr += (share * c.r) / lum; mg += (share * c.g) / lum; mb += (share * c.b) / lum;
+  }
+  return `vec3(${mr.toFixed(4)}, ${mg.toFixed(4)}, ${mb.toFixed(4)})`;
+}
+
+/** GLSL: `roomLamp(lot, office)`, a lit room's lamp colour from its lot (0..1) and whether it is an office or a shop; `roomLampMean(office)`, the mix's mean, worked out here once */
 export const ROOM_LAMP_GLSL = `
 vec3 roomLampHome(float lot) {
 ${mixGlsl(HOME_MIX)}
@@ -39,6 +51,7 @@ vec3 roomLampOffice(float lot) {
 ${mixGlsl(OFFICE_MIX)}
 }
 vec3 roomLamp(float lot, float office) { return office > 0.5 ? roomLampOffice(lot) : roomLampHome(lot); }
+vec3 roomLampMean(float office) { return office > 0.5 ? ${meanGlsl(OFFICE_MIX)} : ${meanGlsl(HOME_MIX)}; }
 vec3 tvLight(float clock, float lot) {
   float cut = fract(sin(floor(clock * 0.6 + lot * 37.0) * 91.345 + lot * 13.1) * 43758.5453);
   float shimmer = 0.92 + 0.08 * sin(clock * 11.0 + lot * 40.0);

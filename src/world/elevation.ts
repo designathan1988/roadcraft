@@ -1,3 +1,4 @@
+import { measureHitch } from '@core/hitch';
 import { Digest } from '@core/digest';
 import { type Aabb, expand as expandBox } from '@core/aabb';
 import { Polyline } from '@core/polyline';
@@ -745,7 +746,7 @@ export function buildRoadElevation(
   memos.set(result, memo);
   if (flat) flatSolves.set(net, memo);
   if (typeof performance.measure === 'function') {
-    performance.measure(reuse ? 'hitch:elevation/incremental' : 'hitch:elevation/full', { start: started, end: performance.now() });
+    measureHitch(reuse ? 'hitch:elevation/incremental' : 'hitch:elevation/full', started);
   }
   return result;
 }

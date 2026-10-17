@@ -1,6 +1,6 @@
 import { MeshoptSimplifier } from 'meshoptimizer';
 import { type LodLevel, simplifyLevels } from './lodWorker';
-import { lodPool } from './lodPool';
+import { peopleLod } from './lodPort';
 import {
   Bone,
   BufferAttribute,
@@ -107,7 +107,7 @@ export interface PersonRigInput {
 }
 
 /** A MakeHuman item fitted to a rigged body, as a separate skinned piece. */
-interface WornPiece {
+export interface WornPiece {
   /** Vertices in the body's bind posture, metres. */
   readonly positions: Float32Array;
   /** Bones in the skeleton's order, four a vertex, and their weights. */
@@ -129,6 +129,45 @@ export interface PersonRig {
   readonly deltas?: (shape: Float32Array) => Float32Array;
   /** `deltas(positions + offset)` at the listed vertices only */
   readonly deltasAt?: (offset: Float32Array, vertices: ArrayLike<number>) => Float32Array;
+  /** What `deltasAt` reads of this body, to work it out on another thread (`rigDeltasAt`, `proceduralCrowd.ts` faces in a worker). */
+  readonly deltasData?: RigDeltas;
+}
+
+/** A body's shape and posture as `deltasAt` reads them: its positions (decimetres), its lowest body vertex, and each bone's posture as a 3 x 3 (column-major, nine a bone). */
+export interface RigDeltas {
+  readonly positions: Float32Array;
+  readonly lowestDm: number;
+  readonly bodyRange: readonly (readonly [number, number])[];
+  readonly linear: Float64Array;
+}
+
+/** `deltasAt` from its data alone: moves of `positions + offset` at `vertices`, metres, each turned by its bones' postures (`weights` and `joints` of the base mesh, four a vertex). */
+export function rigDeltasAt(d: RigDeltas, weights: ArrayLike<number>, joints: ArrayLike<number>, offset: Float32Array, vertices: ArrayLike<number>): Float32Array {
+  const { positions, lowestDm, bodyRange, linear } = d;
+  // `toMetres` stands the shape on its lowest body vertex: an offset that moves the feet lifts or drops the whole body.
+  let lowestOffset = Infinity;
+  for (const [a, b] of bodyRange) for (let v = a; v <= b; v++) lowestOffset = Math.min(lowestOffset, positions[v * 3 + 1]! + offset[v * 3 + 1]!);
+  const drop = lowestOffset - lowestDm;
+  const out = new Float32Array(vertices.length * 3);
+  for (let i = 0; i < vertices.length; i++) {
+    const v = vertices[i]!;
+    const dx = offset[v * 3]! / 10, dy = (offset[v * 3 + 1]! - drop) / 10, dz = offset[v * 3 + 2]! / 10;
+    let sum = 0, x = 0, y = 0, z = 0;
+    for (let k = 0; k < 4; k++) {
+      const w = weights[v * 4 + k]! / 65535;
+      if (w === 0) continue;
+      // `Vector3.applyMatrix3` by hand.
+      const e = joints[v * 4 + k]! * 9;
+      x += (linear[e]! * dx + linear[e + 3]! * dy + linear[e + 6]! * dz) * w;
+      y += (linear[e + 1]! * dx + linear[e + 4]! * dy + linear[e + 7]! * dz) * w;
+      z += (linear[e + 2]! * dx + linear[e + 5]! * dy + linear[e + 8]! * dz) * w;
+      sum += w;
+    }
+    out[i * 3] = sum > 0 ? x / sum : dx;
+    out[i * 3 + 1] = sum > 0 ? y / sum : dy;
+    out[i * 3 + 2] = sum > 0 ? z / sum : dz;
+  }
+  return out;
 }
 
 export function createPersonRig(input: PersonRigInput): PersonRig {
@@ -343,31 +382,12 @@ export function createPersonRig(input: PersonRigInput): PersonRig {
     return body;
   };
   // The posture's linear parts: what a move of a vertex (a direction, not a point) is turned by
-  const linear = correction.map((c) => new Matrix3().setFromMatrix4(c));
-  const deltasAt = (offset: Float32Array, vertices: ArrayLike<number>): Float32Array => {
-    // `toMetres` stands the shape on its lowest body vertex: an offset that moves the feet lifts or drops the whole body.
-    let lowestOffset = Infinity;
-    for (const [a, b] of bodyRange) for (let v = a; v <= b; v++) lowestOffset = Math.min(lowestOffset, positions[v * 3 + 1]! + offset[v * 3 + 1]!);
-    const drop = lowestOffset - lowestDm;
-    const out = new Float32Array(vertices.length * 3);
-    const d = new Vector3(), q = new Vector3();
-    for (let i = 0; i < vertices.length; i++) {
-      const v = vertices[i]!;
-      d.set(offset[v * 3]! / 10, (offset[v * 3 + 1]! - drop) / 10, offset[v * 3 + 2]! / 10);
-      let sum = 0, x = 0, y = 0, z = 0;
-      for (let k = 0; k < 4; k++) {
-        const w = data.weights[v * 4 + k]! / 65535;
-        if (w === 0) continue;
-        q.copy(d).applyMatrix3(linear[data.joints[v * 4 + k]!]!);
-        x += q.x * w; y += q.y * w; z += q.z * w; sum += w;
-      }
-      out[i * 3] = sum > 0 ? x / sum : d.x;
-      out[i * 3 + 1] = sum > 0 ? y / sum : d.y;
-      out[i * 3 + 2] = sum > 0 ? z / sum : d.z;
-    }
-    return out;
-  };
-  return { scene, mesh, height: highest - lowest, wear, deltas, deltasAt, ...(morph ? { morph } : {}) };
+  const linear = new Float64Array(correction.length * 9);
+  correction.forEach((c, i) => linear.set(new Matrix3().setFromMatrix4(c).elements, i * 9));
+  const deltasData: RigDeltas = { positions, lowestDm, bodyRange, linear };
+  const deltasAt = (offset: Float32Array, vertices: ArrayLike<number>): Float32Array =>
+    rigDeltasAt(deltasData, data.weights, data.joints, offset, vertices);
+  return { scene, mesh, height: highest - lowest, wear, deltas, deltasAt, deltasData, ...(morph ? { morph } : {}) };
 }
 
 // ---------------------------------------------------------------- geometry
@@ -741,7 +761,7 @@ function setLevels(geometry: BufferGeometry, positions: readonly number[], colou
     if (groups && groups.length) geometry.userData['lodGroups'] = levels.map((l) => l.groups);
   };
   // In the browser the work is done by a worker, and the body is shown when its levels are ready (\`lodReady\`); elsewhere
-  const worker = lodPool();
+  const worker = peopleLod();
   if (worker) {
     // A failure is said, and the body is drawn on its full level alone: DO NOT let it reject into the load
     geometry.userData['lodReady'] = worker.levels({ positions: pos, colours: col, index: all, ranges, levels: LOD_LEVELS }).then(store, (error: unknown) => {

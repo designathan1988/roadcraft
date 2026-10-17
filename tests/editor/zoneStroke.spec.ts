@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { m } from '@world/units';
-import { lotCentre } from '@world/lots';
+import { lotCentre, planLots } from '@world/lots';
 import { LotTool } from '@editor/lotTool';
 
 /** A ZONE STROKE IS NEVER LOST (Etapa 5g). */
 describe('the zone brush over street land', () => {
-  it('zones what a stroke passed while the proposal was being worked out', () => {
+  it('zones what a stroke passed while the proposal was being worked out', async () => {
     const doc = new RoadDoc();
     const a = doc.addNode({ x: m(-120), y: 0 }).id, b = doc.addNode({ x: m(120), y: 0 }).id;
     doc.addSegment(a, b, 1);
@@ -21,21 +21,23 @@ describe('the zone brush over street land', () => {
       mutate: (fn) => { fn(); },
       hint: (key) => hints.push(key),
       redraw: () => {},
+      plan: async () => planLots(doc, net),
     });
     // No frame has worked the proposal out yet: the stroke runs along the street's side.
     expect(tool.proposalReady()).toBe(-1);
     tool.down(1, { x: m(-60), y: m(14) }, false, 1);
     for (let x = -60; x <= 60; x += 4) tool.move(1, { x: m(x), y: m(14) });
     tool.up(1, true);
-    // Let go before the proposal was ready: the rest of it is worked out at once
-    expect(hints).not.toContain('hint.zone.pending');
+    // Let go before the proposal was in (planned off the page): kept, and made as soon as it is
+    expect(hints).toContain('hint.zone.pending');
+    await tool.advanceProposal();
     expect(hints).not.toContain('hint.zone.empty');
     expect(hints).toContain('hint.zone.painted');
     const zoned = doc.lots.filter((l) => l.use === 'residential');
     expect(zoned.length).toBeGreaterThan(2);
   });
 
-  it('zones every lot a fast stroke passed, not only those under its samples', () => {
+  it('zones every lot a fast stroke passed, not only those under its samples', async () => {
     // A fast drag reports its pointer far apart (the browser coalesces the moves): one report at each end of 120 m of street.
     const doc = new RoadDoc();
     const a = doc.addNode({ x: m(-120), y: 0 }).id, b = doc.addNode({ x: m(120), y: 0 }).id;
@@ -48,8 +50,9 @@ describe('the zone brush over street land', () => {
       mutate: (fn) => { fn(); },
       hint: () => {},
       redraw: () => {},
+      plan: async () => planLots(doc, net),
     });
-    while (tool.advanceProposal()) { /* the proposal worked out first */ }
+    await tool.advanceProposal();
     tool.down(1, { x: m(-100), y: m(14) }, false, 1);
     tool.move(1, { x: m(100), y: m(14) });
     tool.up(1, true);

@@ -1,15 +1,26 @@
 import {
+  DepthFormat,
+  DepthTexture,
   DirectionalLight,
+  GreaterEqualCompare,
+  LessEqualCompare,
   LightShadow,
+  LinearFilter,
+  NearestFilter,
+  Object3D,
   OrthographicCamera,
+  RedFormat,
   type Mesh,
+  type Scene,
   ShaderChunk,
+  UnsignedByteType,
+  UnsignedIntType,
   Vector3,
+  WebGLRenderTarget,
   type Camera,
   type Light,
-  type Object3D,
   type PerspectiveCamera,
-  type WebGLRenderTarget,
+  type WebGLRenderer,
 } from 'three';
 import { m } from '@world/units';
 
@@ -70,14 +81,16 @@ export interface ShadowPassInput {
   readonly effects: boolean;
   /** The wind sways the plants: the two near cascades, where a sway is wider than a texel. */
   readonly wind: boolean;
+  /** Nothing that casts and stands still changed since the last pass, as the caller knows it (the view, what landed, came or went): a cascade's store may stand for its town. Absent: it may not. */
+  readonly still?: boolean;
 }
 
 export interface SunCascades {
   /** Cascade 0 is the sun the rest of the game reads (its colour, intensity and direction). */
   readonly lights: readonly DirectionalLight[];
   setMovers(movers: readonly Movers[]): void;
-  /** What chooses its casters by size, told each cascade's texel (m) before that cascade is drawn: a piece narrower than it is a smudge PCF spreads away. */
-  setCasters(casters: ((texel: number) => void) | null): void;
+  /** What chooses its casters by size, told each cascade's texel (m) before that cascade is drawn (a piece narrower than it is a smudge PCF spreads away), and null once the passes are done. */
+  setCasters(casters: ((texel: number | null, cascade: number) => void) | null): void;
   /** Fits the cascades to what the camera sees of the ground and what stands on it */
   follow(camera: Camera, sunDirection: Vector3, groundAt: (x: number, y: number) => number, target: Vector3, top: number): boolean;
   /** Marks the cascades that must be drawn this frame; true when any is (the renderer's `shadowMap.needsUpdate`). */
@@ -119,7 +132,29 @@ class SunHold {
 
 const NDC: readonly (readonly [number, number])[] = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
 
-export function createSunCascades(sun: DirectionalLight, others: readonly DirectionalLight[], radius: number): SunCascades {
+/** A cascade's map as three's PCF shadow map makes it (r186 `WebGLShadowMap`: a depth texture compared, linear), its colour, which nothing reads, one byte a texel instead of four. */
+function cascadeMap(size: number, name: string, reversed: boolean): WebGLRenderTarget {
+  const map = new WebGLRenderTarget(size, size, { format: RedFormat, type: UnsignedByteType, depthTexture: new DepthTexture(size, size, UnsignedIntType) });
+  const depth = map.depthTexture!;
+  depth.name = name;
+  depth.format = DepthFormat;
+  depth.compareFunction = reversed ? GreaterEqualCompare : LessEqualCompare;
+  depth.minFilter = LinearFilter;
+  depth.magFilter = LinearFilter;
+  return map;
+}
+
+/** Where a cascade's still casters are kept between its whole draws: a depth as its map's, copied by a blit (three's `copyTextureToTexture`). */
+function staticStore(size: number): WebGLRenderTarget {
+  const store = new WebGLRenderTarget(size, size, { format: RedFormat, type: UnsignedByteType, depthTexture: new DepthTexture(size, size, UnsignedIntType) });
+  store.depthTexture!.format = DepthFormat;
+  store.depthTexture!.minFilter = NearestFilter;
+  store.depthTexture!.magFilter = NearestFilter;
+  return store;
+}
+
+/** `renderer`: with it, each cascade keeps the depth of its still casters (STATIC SHADOW CACHE): what moves is drawn over a copy of it, the town drawn again only when it changed, the cascade was fitted again, or `SAFETY_FRAMES` passed. */
+export function createSunCascades(sun: DirectionalLight, others: readonly DirectionalLight[], radius: number, renderer: WebGLRenderer | null = null): SunCascades {
   const lights = [sun, ...others];
   const shadows = lights.map((light) => {
     const shadow = new CascadeShadow();
@@ -136,10 +171,22 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   const hold = new SunHold();
   let sunStepped = true;
   let movers: readonly Movers[] = [];
-  let casters: ((texel: number) => void) | null = null;
+  let casters: ((texel: number | null, cascade: number) => void) | null = null;
   let enabled = true;
   /** The roots hidden in this frame's shadow pass, put back after it (`restore`). */
   const hidden: Object3D[] = [];
+  /** Each cascade's still casters' depth, whether it holds this cascade's town as it stands, and what this frame draws of the cascade: all of it (`whole`), or what moves over the store (`over`). */
+  const stores: (WebGLRenderTarget | null)[] = lights.map(() => null);
+  const storeValid = lights.map(() => false);
+  const whole = lights.map(() => false);
+  const over = lights.map(() => false);
+  /** Which pass three is drawing: the still casters (every mover hidden), or the movers alone over them. */
+  let drawingMovers = false;
+  /** The movers drawn over a cascade's store: a root that is no parent, its children the movers as they stand in the scene. */
+  const moverRoot = new Object3D();
+  const moverList: Object3D[] = [];
+  /** Each mover root's radius this frame (`sphereOf`), worked out once a frame at `pass`. */
+  const radii = new Map<Object3D, number>();
 
   // The view's four corner rays: where each starts (three's space) and its step per unit of eye depth.
   const stepOf = NDC.map(() => new Vector3());
@@ -154,38 +201,148 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   const enter = new Float64Array(4), leave = new Float64Array(4);
   const splits = new Float64Array(SUN_CASCADES + 1);
 
-  /** The radius a root's casters reach (largest piece), for the texel test */
-  const sphereOf = (object: Object3D): number => {
+  /** The radius a root's casters reach (largest piece), for the texel test: an instanced piece at its largest instance's scale (a train's cars, a platform's bays are a unit geometry scaled by their instances: read at the geometry's own size they lost their shadow in the far cascade). */
+  const measureSphere = (object: Object3D): number => {
     let radius = 0;
     object.traverse((o) => {
-      const mesh = o as Mesh;
+      const mesh = o as Mesh & { isInstancedMesh?: boolean; count?: number; instanceMatrix?: { array: ArrayLike<number> } };
       if (!mesh.isMesh) return;
       const geometry = mesh.geometry;
       if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-      radius = Math.max(radius, (geometry.boundingSphere?.radius ?? 0) * mesh.matrixWorld.getMaxScaleOnAxis());
+      let scale = 1;
+      if (mesh.isInstancedMesh && mesh.instanceMatrix) {
+        const m = mesh.instanceMatrix.array;
+        scale = 0;
+        for (let k = 0, n = mesh.count ?? 0; k < n; k++) {
+          const e = k * 16;
+          scale = Math.max(scale, m[e]! * m[e]! + m[e + 1]! * m[e + 1]! + m[e + 2]! * m[e + 2]!, m[e + 4]! * m[e + 4]! + m[e + 5]! * m[e + 5]! + m[e + 6]! * m[e + 6]!,
+            m[e + 8]! * m[e + 8]! + m[e + 9]! * m[e + 9]! + m[e + 10]! * m[e + 10]!);
+        }
+        scale = Math.sqrt(scale);
+      }
+      radius = Math.max(radius, (geometry.boundingSphere?.radius ?? 0) * scale * mesh.matrixWorld.getMaxScaleOnAxis());
     });
+    return radius;
+  };
+  /** DO NOT walk a root's tree for every cascade and twice a frame: each root's radius once a frame (`pass` clears it). */
+  const spheres = new Map<Object3D, number>();
+  const sphereOf = (object: Object3D): number => {
+    let radius = spheres.get(object);
+    if (radius === undefined) spheres.set(object, radius = measureSphere(object));
     return radius;
   };
   const texelOf = (i: number): number => (2 * fits[i]!.half) / Math.max(1, lights[i]!.shadow.mapSize.x);
   /** A mover is drawn into cascade `i` only if it is wider than two of its texels: under that, its shadow is a smudge PCF spreads away. */
-  const drawnIn = (root: Object3D, i: number): boolean => sphereOf(root) >= texelOf(i);
+  const drawnIn = (root: Object3D, i: number): boolean => {
+    let r = radii.get(root);
+    if (r === undefined) { r = sphereOf(root); radii.set(root, r); }
+    return r >= texelOf(i);
+  };
 
   shadows.forEach((shadow, i) => {
     shadow.beforeDraw = () => {
-      restore();
+      // The last cascade's hidden roots back; its casters left chosen, this cascade chooses them all again.
+      restore(false);
+      // The movers alone over the store: nothing hidden, and the town's casters left as they are.
+      if (drawingMovers) return;
       for (const mover of movers) {
         for (const root of mover.roots) {
-          if (!root.visible || drawnIn(root, i)) continue;
+          // Kept in a store this frame (`whole`): every mover is drawn over it after the still casters (`drawOver`); else drawn with them, those too small for the texels left out.
+          if (!root.visible || (!whole[i] && drawnIn(root, i))) continue;
           root.visible = false;
           hidden.push(root);
         }
       }
-      casters?.(texelOf(i));
+      casters?.(texelOf(i), i);
+      castersChosen = casters !== null;
     };
   });
-  function restore(): void {
+
+  /** Cascade `i`'s map as three made it, or ours: one byte of colour, its depth compared. */
+  const ensureMap = (i: number): void => {
+    if (!renderer) return;
+    const shadow = lights[i]!.shadow;
+    const size = shadow.mapSize.x;
+    if (!shadow.map) shadow.map = cascadeMap(size, `${lights[i]!.name}.shadowMap`, renderer.capabilities.reversedDepthBuffer);
+    let store = stores[i];
+    if (!store || store.width !== size) {
+      store?.dispose();
+      store = stores[i] = staticStore(size);
+      renderer.initRenderTarget(store);
+      storeValid[i] = false;
+    }
+  };
+
+  /** The meshes under a mover `root` drawn into a cascade of `texel`: each part that casts, holds instances, and is at least a texel wide (its model's sphere), not the root whole for its widest part (a group of people's levels, a car's parts with none drawn). */
+  const castersIn = (object: Object3D, texel: number, out: Object3D[]): void => {
+    if (!object.visible) return;
+    const mesh = object as Mesh & { isInstancedMesh?: boolean; count?: number };
+    if (mesh.isMesh && mesh.castShadow && !(mesh.isInstancedMesh && mesh.count === 0)) {
+      const geometry = mesh.geometry;
+      if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+      // Pushed whole (three draws its children with it), or its children looked at one by one.
+      if ((geometry.boundingSphere?.radius ?? 0) * mesh.matrixWorld.getMaxScaleOnAxis() >= texel) { out.push(mesh); return; }
+    }
+    for (const child of object.children) castersIn(child, texel, out);
+  };
+
+  /** What moves drawn into cascade `i` over what its map holds, by three's own shadow pass (depth materials and all) with its clear left out. */
+  const drawOver = (i: number, base: (lights: Light[], scene: Scene, camera: Camera) => void, camera: Camera): void => {
+    if (!renderer) return;
+    moverList.length = 0;
+    const texel = texelOf(i);
+    for (const mover of movers) for (const root of mover.roots) if (root.visible && drawnIn(root, i)) castersIn(root, texel, moverList);
+    if (moverList.length === 0) return;
+    moverRoot.children = moverList;
+    const clear = renderer.clear;
+    drawingMovers = true;
+    lights[i]!.shadow.needsUpdate = true;
+    renderer.shadowMap.needsUpdate = true;
+    // DO NOT clear the map: it holds the still casters (`over`) or was just drawn with them (`whole`).
+    renderer.clear = () => {};
+    try {
+      base([lights[i]!], moverRoot as unknown as Scene, camera);
+    } finally {
+      renderer.clear = clear;
+      drawingMovers = false;
+      moverRoot.children = [];
+    }
+  };
+
+  if (renderer) {
+    const shadowMap = renderer.shadowMap;
+    const base = shadowMap.render.bind(shadowMap) as (lights: Light[], scene: Scene, camera: Camera) => void;
+    shadowMap.render = (shadowLights: Light[], scene: Scene, camera: Camera): void => {
+      // A render of another scene (its own lights): nothing of the cascades' here.
+      if (!shadowLights.includes(sun)) { base(shadowLights, scene, camera); return; }
+      for (let i = 0; i < lights.length; i++) if (whole[i] || over[i]) ensureMap(i);
+      base(shadowLights, scene, camera);
+      if (!whole.includes(true) && !over.includes(true)) return;
+      restore();
+      const target = renderer.getRenderTarget(), face = renderer.getActiveCubeFace(), level = renderer.getActiveMipmapLevel();
+      for (let i = 0; i < lights.length; i++) {
+        if (!whole[i] && !over[i]) continue;
+        const map = lights[i]!.shadow.map, store = stores[i];
+        if (map?.depthTexture && store?.depthTexture) {
+          // Drawn whole: its still casters kept. Movers only: the still casters put back, as kept.
+          if (whole[i]) { renderer.copyTextureToTexture(map.depthTexture, store.depthTexture); storeValid[i] = true; }
+          else renderer.copyTextureToTexture(store.depthTexture, map.depthTexture);
+          drawOver(i, base, camera);
+        }
+        whole[i] = false;
+        over[i] = false;
+      }
+      // The blits leave the framebuffers unbound: the frame's own target bound again before the scene is drawn into it.
+      renderer.setRenderTarget(target, face, level);
+    };
+  }
+  /** Whether the casters were chosen for a cascade since they were last given back (`restore`). */
+  let castersChosen = false;
+  /** What a cascade's pass hid put back; `settled`: the passes are over, the casters chosen by cascade given back too, once (DO NOT walk every caster between two cascades: the next one sets them all). */
+  function restore(settled = true): void {
     for (const root of hidden) root.visible = true;
     hidden.length = 0;
+    if (settled && castersChosen) { castersChosen = false; casters?.(null, -1); }
   }
 
   /** Writes a fit into its light: the light stands at the top of the depth range, looking down the sun. */
@@ -338,8 +495,11 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       }
       return any || sunStepped;
     },
-    pass({ changed, effects, wind }) {
+    pass({ changed, effects, wind, still = false }) {
       if (!enabled) return false;
+      // DO NOT walk every mover's meshes for its radius once per cascade and draw: once a frame.
+      spheres.clear();
+      radii.clear();
       let any = false;
       for (let i = 0; i < SUN_CASCADES; i++) {
         let moved = false;
@@ -348,11 +508,20 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           for (const root of mover.roots) if (root.visible && drawnIn(root, i)) { moved = true; break; }
         }
         framesSince[i]!++;
-        const need = refitted[i]! || changed || effects || moved || (wind && i < SUN_CASCADES - 1) || framesSince[i]! >= SAFETY_FRAMES;
-        if (!need || !fits[i]!.placed) continue;
-        lights[i]!.shadow.needsUpdate = true;
-        refitted[i] = false;
-        framesSince[i] = 0;
+        // A store stands for its town only while nothing of it changed since it was taken.
+        if (!still) storeValid[i] = false;
+        // The town under the cascade drawn again: it changed, the cascade moved, the wind sways its plants, or no store stands for it.
+        // DO NOT draw a near cascade over its store: the plants and flags sway at every strength of the wind (`wind.ts` uWindStrength, never 0), wider than its texels; a frame of movers drew them swaying.
+        const all = refitted[i]! || changed || effects || (wind && i < SUN_CASCADES - 1) || framesSince[i]! >= SAFETY_FRAMES
+          || (moved && (!renderer || !storeValid[i] || i < SUN_CASCADES - 1));
+        if (!fits[i]!.placed || !(all || moved)) continue;
+        if (all) {
+          lights[i]!.shadow.needsUpdate = true;
+          // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame), or a near cascade (drawn whole whenever anything moves, the sway): the movers drawn in the same pass, no copy, no second pass over them.
+          whole[i] = renderer !== null && still && i === SUN_CASCADES - 1;
+          refitted[i] = false;
+          framesSince[i] = 0;
+        } else over[i] = true;
         any = true;
       }
       return any;
@@ -369,6 +538,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           light.shadow.map = null;
           fits[i]!.placed = false;
         }
+        storeValid[i] = false;
         refitted[i] = true;
       });
     },
@@ -378,10 +548,11 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         lights[i]!.intensity = sun.intensity;
       }
     },
-    maps: () => lights.map((light) => light.shadow.map as WebGLRenderTarget | null),
+    maps: () => [...lights.map((light) => light.shadow.map as WebGLRenderTarget | null), ...stores],
     restore,
     dispose() {
       restore();
+      for (const store of stores) store?.dispose();
       for (const light of lights) light.dispose();
     },
   };

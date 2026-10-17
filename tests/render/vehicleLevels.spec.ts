@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Box3, type BufferGeometry } from 'three';
 
 import { ERROR_PIXELS, LEVEL_ERRORS, LEVELS, levelFor, partLevels } from '@render/vehicleLevels';
+import { levelBuffers, partLevelArrays } from '@render/partLevelsWork';
 import { buildCarModel } from '@render/carBody';
 import { tyreGeometry } from '@render/vehicleModels';
 import { archetypeById } from '@sim/vehicles/archetypes';
@@ -17,6 +18,35 @@ describe('vehicle part levels', () => {
       if (level < LEVEL_ERRORS.length) expect(LEVEL_ERRORS[level]! * pixels).toBeGreaterThan(ERROR_PIXELS);
     }
     expect(levelFor(Number.POSITIVE_INFINITY)).toBe(0);
+  });
+
+  it('are made off the page from copies of the part (welded, simplified, creased), every array sent moved', async () => {
+    const model = buildCarModel(archetypeById('hatch'), 'hatch');
+    for (const [geometry, weld] of [[model.shell, 'smooth'], [model.trim, 'boxes']] as const) {
+      const position = geometry.getAttribute('position').array;
+      const index = geometry.getIndex()!.array;
+      const copy = { array: position.slice(), itemSize: 3, normalized: false };
+      const colour = geometry.getAttribute('color');
+      const normal = geometry.getAttribute('normal');
+      const made = partLevelArrays({
+        position: copy, color: colour ? { array: colour.array.slice(), itemSize: colour.itemSize, normalized: colour.normalized } : null,
+        normal: normal ? { array: normal.array.slice(), itemSize: 3, normalized: false } : null, index: (index as Uint32Array).slice(),
+      }, weld);
+      // The part's own arrays untouched; the levels the page puts together are the same ones.
+      expect(geometry.getAttribute('position').array).toBe(position);
+      const levels = await partLevels(geometry, weld);
+      made.levels.forEach((l, i) => {
+        const level = levels[i + 1];
+        if (l === null) expect(level).toBeNull();
+        else if (l === 'same') expect(level).toBe(levels[i]);
+        else expect(triangles(level!)).toBe(l.index ? l.index.length / 3 : l.position!.array.length / 9);
+      });
+      const moved = new Set(levelBuffers(made));
+      for (const l of made.levels) if (l && l !== 'same') {
+        if (l.index) expect(moved.has(l.index.buffer as ArrayBuffer)).toBe(true);
+        if (l.position) expect(moved.has(l.position.array.buffer as ArrayBuffer)).toBe(true);
+      }
+    }
   });
 
   it('simplifies a car body within each error, fewer triangles at each coarser level', async () => {

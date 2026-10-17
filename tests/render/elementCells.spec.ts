@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, MeshStandardMaterial, Vector3 } from 'three';
+import { BoxGeometry, Frustum, Matrix4, MeshStandardMaterial, PerspectiveCamera, Quaternion, type InstancedMesh, Vector3 } from 'three';
 
+import { drawnMatrices } from '@render/cellInstances';
 import { keepCellAt, keepCellRect } from '@render/cellKeeps';
 import { createElementLayer, type ElementKit, type ElementSource } from '@render/elements';
 import type { Exhaust } from '@render/exhaust';
@@ -86,6 +87,47 @@ describe('the elements kept cell by cell', () => {
     layer.emit(1, new Vector3(100, 50, -100), exhaust);
     expect(bursts.length).toBeGreaterThan(0);
     expect(bursts.every((x) => x === near.x)).toBe(true);
+    layer.dispose();
+  });
+
+  it('draws a prop where it stands, turned by its yaw and scaled by its size', () => {
+    const stone = { kind: 'stones' as const, x: 120, y: 200, size: 2.5, yaw: 0.7, seed: 0.2 };
+    const layer = createElementLayer(kit);
+    layer.sync(null, sourceOf([stone]), () => 5);
+    const camera = new PerspectiveCamera(50, 1.5, 1, 2000);
+    camera.position.set(stone.x, 60, -stone.y + 40);
+    camera.lookAt(stone.x, 5, -stone.y);
+    camera.updateMatrixWorld();
+    const view = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    layer.cull(new Frustum().setFromProjectionMatrix(view), view);
+    const shown = layer.group.children.filter((c) => (c as InstancedMesh).isInstancedMesh && (c as InstancedMesh).count > 0) as InstancedMesh[];
+    expect(shown.length).toBe(1);
+    // Three's compose of the same place (world y is three's -z), a turn about the up axis and the size on every axis.
+    const want = new Matrix4().compose(new Vector3(stone.x, 5, -stone.y), new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), stone.yaw), new Vector3(2.5, 2.5, 2.5));
+    const got = drawnMatrices(shown[0]!);
+    for (let i = 0; i < 16; i++) expect(got[i]).toBeCloseTo(want.elements[i]!, 4);
+    layer.dispose();
+  });
+});
+
+describe('the elements by their size on the screen', () => {
+  it('leaves out a prop under a pixel across and draws it once it is more', () => {
+    const pebble = { kind: 'stones' as const, x: 0, y: 0, size: 0.05, yaw: 0, seed: 0.2 };
+    const layer = createElementLayer(kit);
+    layer.sync(null, sourceOf([pebble]), () => 0);
+    const drawnFrom = (distance: number): number => {
+      // 50 degrees of a 1,080-pixel drawing buffer (`cellInstances.ts` screen.half), the prop in the middle.
+      const camera = new PerspectiveCamera(50, 1.5, 1, 5000);
+      camera.position.set(0, distance * 0.6, distance * 0.8);
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld();
+      const view = new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      layer.cull(new Frustum().setFromProjectionMatrix(view), view);
+      return (layer.group.children as InstancedMesh[]).reduce((n, mesh) => n + (mesh.isInstancedMesh ? mesh.count : 0), 0);
+    };
+    // 0.09 m across: 0.07 px at 1,500 m, 1.7 px at 60 m.
+    expect(drawnFrom(1500)).toBe(0);
+    expect(drawnFrom(60)).toBe(1);
     layer.dispose();
   });
 });

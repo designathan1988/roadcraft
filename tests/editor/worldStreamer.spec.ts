@@ -109,8 +109,8 @@ describe('the active region and the kept ring', () => {
     expect(streamer.settled).toBe(true);
     expect(flips).toEqual([]);
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) expect(streamer.isActive(tileKey(i, j))).toBe(true);
-    // One tile east: the west column (i = -1) is kept in the ring, not active; the east column (i = 2) is active and not loaded yet.
-    streamer.focus(1024 + 10, 10);
+    // One tile east, well past the edge (`RECENTRE_PAST`): the west column (i = -1) is kept in the ring, not active; the east column (i = 2) is active and not loaded yet.
+    streamer.focus(1024 + 300, 10);
     expect(flips).toHaveLength(1);
     expect(new Set(flips[0]!.keys)).toEqual(new Set([-1, 0, 1].map((j) => tileKey(-1, j))));
     expect(flips[0]!.rects).toContainEqual([-1024, 0, 0, 1024]);
@@ -174,7 +174,8 @@ describe('the tiles written', () => {
     store.held = true;
     // Away and straight back: the tile goes out with its write held, and is asked again before the write lands.
     streamer.focus(far, 10);
-    streamer.apply(1000);
+    // One tile let go a frame: frames until this one is.
+    for (let f = 0; f < 20 && doc.hasTile(tileKey(0, 0)); f++) streamer.apply(1000 + f);
     expect(doc.hasTile(tileKey(0, 0))).toBe(false);
     streamer.focus(10, 10);
     store.held = false;
@@ -254,11 +255,68 @@ describe('the tiles written', () => {
   });
 });
 
+describe('tiles let go', () => {
+  it('lets one go a frame, the farthest first, when the camera jumps far', async () => {
+    const doc = new RoadDoc();
+    const letGo: number[] = [];
+    const streamer = new WorldStreamer(doc, chainedStore(), { letGo: (key) => letGo.push(key) });
+    await settle(streamer, 10, 10);
+    const before = doc.loadedTiles.size;
+    expect(before).toBeGreaterThan(1);
+    streamer.focus(10 * TILE, 10 * TILE);
+    streamer.apply(100);
+    expect(letGo).toHaveLength(1);
+    streamer.apply(101);
+    expect(letGo).toHaveLength(2);
+  });
+});
+
+describe('the active region along a tile edge', () => {
+  it('is centred on the next tile only once the camera is well past the edge, and back only once well past it again', async () => {
+    const doc = new RoadDoc();
+    const flips: number[][] = [];
+    const streamer = new WorldStreamer(doc, chainedStore(), { activeChanged: (keys) => flips.push([...keys]) });
+    await settle(streamer, TILE / 2, TILE / 2);
+    flips.length = 0;
+    // Back and forth over the east edge, a few metres each way: the region stays.
+    for (const dx of [10, -10, 40, -40, 100, -20]) { streamer.focus(TILE + dx, TILE / 2); streamer.apply(1); }
+    expect(flips).toEqual([]);
+    expect(streamer.isActive(tileKey(-1, 0))).toBe(true);
+    // Well past it: centred on the next tile.
+    streamer.focus(TILE + 300, TILE / 2);
+    expect(streamer.isActive(tileKey(-1, 0))).toBe(false);
+    expect(streamer.isActive(tileKey(2, 0))).toBe(true);
+    // A little back over the edge: still there.
+    streamer.focus(TILE - 50, TILE / 2);
+    expect(streamer.isActive(tileKey(2, 0))).toBe(true);
+  });
+});
+
+describe('the streamer under a long world build', () => {
+  it('writes an edit while the world is being built (`save`), putting no tile in meanwhile', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const streamer = new WorldStreamer(doc, store);
+    await settle(streamer, 10, 10);
+    const before = store.writes;
+    const loaded = doc.loadedTiles.size;
+    doc.addNode({ x: 100, y: 100 });
+    // The camera on: tiles ahead come ready, the build still running (main.ts calls `save`, not `apply`).
+    streamer.focus(TILE * 3, 0);
+    await turns(3);
+    streamer.save(1);
+    await turns(2);
+    expect(store.writes).toBe(before + 1);
+    expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 100 && n.y === 100)).toBe(true);
+    expect(doc.loadedTiles.size).toBe(loaded);
+  });
+});
+
 describe('a whole map clear', () => {
   it('empties the lists of a tile that comes while it runs (read before its clear), and writes it so', async () => {
     const doc = new RoadDoc();
     const store = chainedStore();
-    const tree = { x: 100, y: 100, species: 0, scale: 1 } as unknown as TileRecords['trees'][number];
+    const tree = { x: 100, y: 100, height: 8, yaw: 0, seed: 0.3 } as TileRecords['trees'][number];
     store.stored.set(tileKey(0, 0), { ...emptyTile(tileKey(0, 0)), trees: [tree] });
     const streamer = new WorldStreamer(doc, store);
     const done = streamer.clearing(['trees']);
@@ -268,6 +326,71 @@ describe('a whole map clear', () => {
     done();
     expect(await streamer.flush()).toBe(true);
     expect(store.stored.get(tileKey(0, 0))!.trees).toEqual([]);
+  });
+});
+
+describe('a failed write and a clear', () => {
+  it('posts the failed write again without the lists the clear emptied', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const streamer = new WorldStreamer(doc, store);
+    await settle(streamer, 10, 10);
+    doc.plantTrees([{ x: 100, y: 100, height: 8, yaw: 0, seed: 0.3 }]);
+    expect(doc.trees).toHaveLength(1);
+    // Its write fails, then the tile is let go: only the failed write's records hold it.
+    // Every write of it fails (the one of the edit, the one as it is let go): only the failed write's records hold it.
+    store.failures = 99;
+    streamer.apply(1);
+    await turns(3);
+    streamer.focus(8 * TILE, 0);
+    for (let f = 0; f < 4; f++) { streamer.apply(2 + f); await turns(2); }
+    expect(doc.hasTile(tileKey(0, 0))).toBe(false);
+    store.failures = 0;
+    // The trees cleared over the whole map, in the store as `clearLists` does; then the retry.
+    const done = streamer.clearing(['trees']);
+    for (const [key, t] of store.stored) store.stored.set(key, { ...t, trees: [] });
+    done();
+    expect(await streamer.flush()).toBe(true);
+    expect(store.stored.get(tileKey(0, 0))!.trees).toEqual([]);
+  });
+});
+
+describe('a tile read before a clear', () => {
+  it('comes in without the lists even when it is put in after the clear is done', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const tree = { x: 100, y: 100, height: 8, yaw: 0, seed: 0.3 } as TileRecords['trees'][number];
+    store.stored.set(tileKey(0, 0), { ...emptyTile(tileKey(0, 0)), trees: [tree] });
+    const streamer = new WorldStreamer(doc, store);
+    // Asked (its read on its way, with the tree), then the clear begun and done before it is put in.
+    streamer.focus(10, 10);
+    const done = streamer.clearing(['trees']);
+    done();
+    await settle(streamer, 10, 10);
+    expect(doc.hasTile(tileKey(0, 0))).toBe(true);
+    expect(doc.trees).toHaveLength(0);
+  });
+});
+
+describe('two whole map clears at once', () => {
+  it('empties each list until its own clear is done: a clear of another list does not end it', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const tree = { x: 100, y: 100, height: 8, yaw: 0, seed: 0.3 } as TileRecords['trees'][number];
+    store.stored.set(tileKey(0, 0), { ...emptyTile(tileKey(0, 0)), trees: [tree] });
+    const streamer = new WorldStreamer(doc, store);
+    // The trees' clear running, then the elements' started: the trees still emptied.
+    const trees = streamer.clearing(['trees']);
+    const elements = streamer.clearing(['elements']);
+    // And a clear of the trees done twice (its answer and its failure) counts once.
+    const again = streamer.clearing(['trees']);
+    again();
+    again();
+    await settle(streamer, 10, 10);
+    expect(doc.hasTile(tileKey(0, 0))).toBe(true);
+    expect(doc.trees).toHaveLength(0);
+    trees();
+    elements();
   });
 });
 

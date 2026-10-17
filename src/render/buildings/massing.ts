@@ -99,14 +99,22 @@ class MassWriter {
   readonly index = new Grown(uints(96), uints);
   /** The tallest thing left out so far (`leaves`). */
   error = 0;
+  /** The smallest thing asked about and kept so far (`leaves`; a box-less level's pitched roof too, `asks`): a coarser level whose `drop` is under it answers every question alike (`emitMassingLevels`). */
+  kept = Infinity;
 
   constructor(private readonly b: Building, private readonly seed: number, readonly detail: MassDetail = CELL_DETAIL) {}
 
   /** Whether a thing `size` m tall or deep is left out at this level; its size kept as the level's error when it is. */
   leaves(size: number): boolean {
-    if (!(size > 0) || size > this.detail.drop) return false;
+    if (!(size > 0)) return false;
+    if (size > this.detail.drop) { this.kept = Math.min(this.kept, size); return false; }
     this.error = Math.max(this.error, size);
     return true;
+  }
+
+  /** A question only a level of boxes asks (`MassDetail.boxes`), kept as one this level was asked: a size another level would answer. */
+  asks(size: number): void {
+    if (size > 0) this.kept = Math.min(this.kept, size);
   }
 
   /** A point of the building's plan at height z, in three's axes. */
@@ -144,6 +152,26 @@ class MassWriter {
     }
   }
 
+  /** A flat polygon's triangles (`earcut`'s, of `points`) with its points written once and shared, as `face` would lay each triangle: DO NOT write a slab's every triangle's corners again. */
+  polygon(points: readonly (readonly [number, number, number])[], tris: readonly number[], n: readonly [number, number, number], rgb: Rgb): void {
+    const base = this.position.length / 3;
+    for (const p of points) {
+      this.position.push3(p[0], p[1], p[2]);
+      this.normal.push3(n[0], n[1], n[2]);
+      this.colour.push3(rgb[0], rgb[1], rgb[2]);
+      this.facade.push4(0, NO_FACADE.bay, NO_FACADE.storey, NO_FACADE.z0);
+      this.glazing.push2(NO_FACADE.share, this.seed);
+    }
+    for (let i = 0; i < tris.length; i += 3) {
+      const ia = tris[i]!, ib = tris[i + 1]!, ic = tris[i + 2]!;
+      const a = points[ia]!, b = points[ib]!, c = points[ic]!;
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      const forward = (uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2] >= 0;
+      if (forward) this.index.push3(base + ia, base + ib, base + ic);
+      else this.index.push3(base + ia, base + ic, base + ib);
+    }
+  }
+
   chunk(): MassingChunk {
     return {
       position: this.position.done(),
@@ -160,6 +188,12 @@ class MassWriter {
 /** The building's own shade, as the detailed one has it (`buildingMesh.ts` `emitBuilding`). */
 const shadeOf = (b: Building): number => 0.93 + (((b.id * 2654435761) >>> 0) % 1000) / 1000 * 0.12;
 
+/** A building's floor as the detailed one's (`buildingMesh.ts` `emitChunk`, `floorHeight`); undefined with no closed block. */
+export function massFloor(b: Building, naturalAt: GroundAt, pavedAt?: PavedAt): number | undefined {
+  const resolved = resolveBlocks(b);
+  return closedBlocks(resolved.volumes).length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+}
+
 /** A building's mass from afar, on the ground it stands on (the floor worked out as the detailed building's, `floorHeight`) */
 export function emitMassing(
   b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, signature = false,
@@ -167,14 +201,37 @@ export function emitMassing(
   tone?: Readonly<Record<Finish, readonly [number, number, number]>>,
   /** What the level leaves out (a tile's, a plate's); the cell's keeps all. */
   detail: MassDetail = CELL_DETAIL,
+  /** Its floor already worked out (`massFloor`): a tile's bake reads it once for its two levels and its boxes. */
+  known?: { readonly floor: number | undefined },
 ): MassingChunk | null {
+  const w = massWriter(b, groundAt, pavedAt, naturalAt, signature, tone, detail, known);
+  return w.position.length ? w.chunk() : null;
+}
+
+/** A building's masses at two levels, `coarse` leaving out at least what `fine` does: DO NOT walk the building again for the coarser where the finer's walk was asked nothing between their `drop`s (and no pitched roof a level of boxes lays flat): the same walk, the same chunk. */
+export function emitMassingLevels(
+  b: Building, groundAt: GroundAt, pavedAt: PavedAt | undefined, naturalAt: GroundAt,
+  tone: Readonly<Record<Finish, readonly [number, number, number]>> | undefined,
+  fine: MassDetail, coarse: MassDetail, known?: { readonly floor: number | undefined },
+): readonly [MassingChunk | null, MassingChunk | null] {
+  const w = massWriter(b, groundAt, pavedAt, naturalAt, false, tone, fine, known);
+  const chunk = w.position.length ? w.chunk() : null;
+  if (w.kept > coarse.drop) return [chunk, chunk];
+  return [chunk, emitMassing(b, groundAt, pavedAt, naturalAt, false, tone, coarse, known)];
+}
+
+/** A building's mass written out (`emitMassing`). */
+function massWriter(
+  b: Building, groundAt: GroundAt, pavedAt: PavedAt | undefined, naturalAt: GroundAt, signature: boolean,
+  tone: Readonly<Record<Finish, readonly [number, number, number]>> | undefined, detail: MassDetail, known: { readonly floor: number | undefined } | undefined,
+): MassWriter {
   const resolved = resolveBlocks(b);
   // One list for the blocks (`closedBlocks`, as `buildingMesh.ts` `emitChunk`): every block of the body reads one layout of its bays (`bayLayout`).
   const closed = closedBlocks(resolved.volumes);
   const office = b.use === 'commercial' || b.use === 'industrial' ? 2 : 0;
   const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296 + office, detail);
   // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`)
-  const floor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+  const floor = known ? known.floor : massFloor(b, naturalAt, pavedAt);
   if (floor !== undefined && !signature) {
     const shade = shadeOf(b);
     const rgb = (spec: MaterialSpec): Rgb => {
@@ -187,7 +244,7 @@ export function emitMassing(
     emitMachineRooms(w, body, floor, rgb);
   }
   emitLotPlates(w, resolved, floor, groundAt, pavedAt);
-  return w.position.length ? w.chunk() : null;
+  return w;
 }
 
 /** Numbers per far box (`emitBoxes`): centre x, y; half sides along the building's x and y; its turn; the wall's foot, the top, the floor; the wall's and the roof's colour; bay, storey, glass share, seed; the block's plan area. */
@@ -196,12 +253,13 @@ export const BOX_FLOATS = 19;
 /** A BUILDING AS BOXES, for the levels past the plates (`farTiles.ts`): each closed block the box of its plan, its roof's rise halved, coloured and glazed as its mass */
 export function emitBoxes(
   b: Building, pavedAt: PavedAt | undefined, naturalAt: GroundAt, tone: Readonly<Record<Finish, readonly [number, number, number]>> | undefined, out: number[],
+  known?: { readonly floor: number | undefined },
 ): void {
   const resolved = resolveBlocks(b);
   const closed = closedBlocks(resolved.volumes);
   if (closed.length === 0) return;
   // The floor as the mass's (`emitMassing`).
-  const floor = floorHeight(resolved, naturalAt, pavedAt);
+  const floor = known?.floor ?? floorHeight(resolved, naturalAt, pavedAt);
   const shade = shadeOf(b);
   const rgb = (spec: MaterialSpec): Rgb => {
     const c = rgbOf(spec.colour, shade), t = tone?.[spec.finish];
@@ -273,7 +331,7 @@ function emitLotPlates(w: MassWriter, b: Building, buildingFloor: number | undef
       const q = localToWorld(b, flatRing[2 * k]!, flatRing[2 * k + 1]!);
       return [q.x, surface.heightAt(q.x, q.y), -q.y];
     };
-    for (let i = 0; i < tris.length; i += 3) w.face([point(tris[i]!), point(tris[i + 1]!), point(tris[i + 2]!)], up, colour);
+    w.polygon(Array.from({ length: flatRing.length / 2 }, (_, k) => point(k)), tris, up, colour);
   }
 }
 
@@ -290,10 +348,11 @@ const ARCADE = m(1.8);
 /** A block's walls from its bays as the detailed building lays them (`facadeBays`), off the layout every block of the body reads (`bayLayout`, worked out once) */
 function emitVolume(w: MassWriter, b: Building, v: Volume, floor: number, rgb: (spec: MaterialSpec) => Rgb): void {
   const eaves = floor + volumeHeight(b, v);
-  const rows = new Map<string, LocalBay[]>();
+  // Each storey of each side, by a number (no text a bay): a side's index is under 4096.
+  const rows = new Map<number, LocalBay[]>();
   for (const bay of bayLayout(b)) {
     if (bay.volume !== v.id) continue;
-    const key = `${bay.side}:${bay.level}`;
+    const key = bay.level * 4096 + bay.side;
     const list = rows.get(key);
     if (list) list.push(bay); else rows.set(key, [bay]);
   }
@@ -379,15 +438,15 @@ function emitRoof(w: MassWriter, b: Building, v: Volume, floor: number, eaves: n
   const roof = v.roof === 'terrace' ? TERRACE_RGB : rgb(roofMaterial(b, v));
   const up = w.N(0, 0, 1);
   // A plate's box: a pitched roof whose rise the level leaves out, laid flat at its eaves (its gables gone with it).
-  const flatten = v.roof !== 'flat' && v.roof !== 'terrace' && w.detail.boxes && w.leaves(roofRise(b, v));
+  const pitched = v.roof !== 'flat' && v.roof !== 'terrace';
+  if (pitched && !w.detail.boxes) w.asks(roofRise(b, v));
+  const flatten = pitched && w.detail.boxes && w.leaves(roofRise(b, v));
   if (v.roof === 'flat' || v.roof === 'terrace' || flatten) {
     // The slab at the roof's own level (its parapet is the walls'), and what stands on it - as the detailed roof has them.
     const ring = localFootprint(v);
     const flatRing = ring.flatMap((p) => [p.x, p.y]);
     const tris = earcut(flatRing);
-    for (let i = 0; i < tris.length; i += 3) {
-      w.face([0, 1, 2].map((k) => w.P(flatRing[2 * tris[i + k]!]!, flatRing[2 * tris[i + k]! + 1]!, eaves)), up, roof);
-    }
+    w.polygon(ring.map((p) => w.P(p.x, p.y, eaves)), tris, up, roof);
     if (flatten) return;
     const built = b.volumes.some((o) => o !== v && !o.open && o.base === volumeTop(v));
     if (v.roof === 'flat') emitRoofPlant(w, b, v, eaves, rgb);
@@ -506,9 +565,7 @@ function emitPolygonRoof(w: MassWriter, b: Building, v: Volume, eaves: number, r
       const l = Math.hypot(n[0], n[1], n[2]) || 1;
       n = [n[0] / l, n[1] / l, n[2] / l];
       if (n[1] < 0) n = [-n[0], -n[1], -n[2]];
-      for (let i = 0; i < tris.length; i += 3) {
-        w.face([0, 1, 2].map((k) => { const p = pts[tris[i + k]!]!; return w.P(p.x, p.y, height(p)); }), n, roof);
-      }
+      w.polygon(pts.map((p) => w.P(p.x, p.y, height(p))), tris, n, roof);
     }
   }
   // Each wall filled up to the roof over it (a gable where the ridge meets it).

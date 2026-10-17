@@ -9,17 +9,21 @@ import {
   FrontSide,
   type Material,
   MeshBasicMaterial,
+  type MeshDepthMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
 } from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import type { Finish } from '@world/buildings/materials';
-import { createShellMaterial, finishAlbedo } from './finishes';
+import { SHELL_NORMAL_GLSL, createShellMaterial, finishAlbedo } from './finishes';
+import { SHELL_NORMAL } from './cellArrays';
 import { createFurnitureGeometries, createFurnitureMaterial, furnitureTones } from './furnitureKit';
 import type { FurnitureKind } from '@world/buildings/interior';
 import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
-import { createMassingMaterial } from './massingMaterial';
+import { createMassBoxDepth, createMassingMaterial } from './massingMaterial';
+import { unitBox as unitMassBox } from './massBoxes';
+import { posePart } from './partPose';
 import { type FacadePanes, createFacadeMaterial } from './facadeLevel';
 import { prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
@@ -134,8 +138,6 @@ export interface PartScreen {
   readonly extent: Axes;
   /** The pieces its shadow is made of (a frame's rails and stiles, a brise's blades): under a shadow texel across the middle side of each it casts none. */
   readonly pieces: readonly Axes[];
-  /** Drawn and casting at any size, as the shell it was laid in drew it (the shell's parts, `shellParts.ts`). */
-  readonly whole?: boolean;
 }
 
 export interface BuildingKit {
@@ -157,6 +159,10 @@ export interface BuildingKit {
   readonly finishTone: Readonly<Record<Finish, readonly [number, number, number]>>;
   /** Buildings seen from afar, their windows drawn by the shader (`massing.ts`, `massingMaterial.ts`). */
   readonly massing: MeshStandardMaterial;
+  /** The box levels' (`massBoxes.ts`): the masses' material laying each box from its instance, its shadow's, and the unit box they draw. */
+  readonly massingBoxes: MeshStandardMaterial;
+  readonly massBoxDepth: MeshDepthMaterial;
+  readonly massBox: BufferGeometry;
   /** The facade level (L1): the shells with their openings drawn by the shader, every finish (`facadeLevel.ts`). */
   readonly facade: MeshStandardMaterial;
   /** Parts that cast shadows; the small ones do not, to spare the shadow pass. */
@@ -458,7 +464,8 @@ export function createBuildingKit(): BuildingKit {
     railing: railingGeometry(),
     roofRailing: roofRailingGeometry(),
     awning: awningGeometry(),
-    column: new CylinderGeometry(0.5, 0.5, 1, 12),
+    // Open-ended: an arcade's column runs floor to soffit, its ends never seen (`emitBay` pillar).
+    column: new CylinderGeometry(0.5, 0.5, 1, 12, 1, true),
     glassDark: glassPlane,
     water: unitBox,
     lamp: unitBox,
@@ -548,6 +555,19 @@ export function createBuildingKit(): BuildingKit {
     side: FrontSide,
   });
   const ghostParts = ghostShell.clone();
+  // The preview's shells carry their normal octahedral (`cellArrays.ts` `octNormal`): unfolded as the shell's own program does (`finishes.ts`).
+  ghostShell.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+#ifndef USE_INSTANCING
+${SHELL_NORMAL_GLSL}
+#endif`)
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+#ifndef USE_INSTANCING
+objectNormal = shellUnfold(${SHELL_NORMAL});
+#endif`);
+  };
+  ghostShell.customProgramCacheKey = () => 'building-ghost-shell-oct';
 
   // The faded copies: same colour and maps, a fraction of the presence, and no depth write
   const fade = (faded: MeshStandardMaterial): MeshStandardMaterial => {
@@ -567,10 +587,13 @@ export function createBuildingKit(): BuildingKit {
   // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
   const massingNight = { value: 0 };
   const massing = createMassingMaterial({ roomsAwake, massingNight });
+  const massingBoxes = createMassingMaterial({ roomsAwake, massingNight }, true);
+  const massBoxDepth = createMassBoxDepth();
+  const massBox = unitMassBox();
   // The facade level's walls: the shell's every finish, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
   const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
   const facade = createFacadeMaterial(shell, panes, { roomsAwake, massingNight });
-  const unique = new Set<Material>([...Object.values(material), shell, ruinShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing]);
+  const unique = new Set<Material>([...Object.values(material), shell, ruinShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing, massingBoxes, massBoxDepth]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;
   for (const kind of PART_KINDS) levels[kind] = [{ geometry: geometry[kind], triangles: trianglesOf(geometry[kind]), error: [0, 0, 0] }];
@@ -602,8 +625,8 @@ export function createBuildingKit(): BuildingKit {
     const extent = extentOf(geometry[kind]);
     screen[kind] = { levels: levels[kind], extent, pieces: pieces[kind] ?? [extent] };
   }
-  for (const kind of SHELL_PART_KINDS) screen[kind] = { ...screen[kind], whole: true };
   const geometries = new Set<BufferGeometry>(Object.values(levels).flatMap((list) => list.map((l) => l.geometry)));
+  geometries.add(massBox);
   // The small props' simplified levels, made off the frame's path once the simplifier has loaded.
   void Promise.all(SIMPLIFIED.map(async (kind) => {
     for (const level of await simplerLevels(geometry[kind], levels[kind][0]!.triangles)) {
@@ -613,6 +636,8 @@ export function createBuildingKit(): BuildingKit {
   })).then(() => {}, (error: unknown) => { console.error('Simplified prop levels failed', error); });
   let furniture: { geometry: Record<FurnitureKind, BufferGeometry>; material: MeshStandardMaterial } | null = null;
 
+  // DO NOT give the parts' instanced meshes three's matrices: every material a part is drawn with makes it from the part's pose, after all its own patches (`partPose.ts`); its meshes that are not instanced draw as before.
+  for (const m of new Set<Material>([...Object.values(material), ghostParts, dimParts, dimShell])) posePart(m);
   return {
     geometry,
     screen,
@@ -624,6 +649,9 @@ export function createBuildingKit(): BuildingKit {
     dimShell,
     dimParts,
     massing,
+    massingBoxes,
+    massBoxDepth,
+    massBox,
     facade,
     finishTone: finishAlbedo(),
     // Glass, doors and shutters close the openings for the sun
@@ -631,7 +659,7 @@ export function createBuildingKit(): BuildingKit {
     castsShadow: new Set<PartKind>(['glass', 'glassDark', 'frame', 'door', 'shutter', 'concrete', 'railing', 'awning', 'column', 'roofRailing', 'fin', 'louvre', 'brise', ...SHADOWED_PROPS, ...SHELL_PART_KINDS]),
     furniture() {
       if (!furniture) {
-        furniture = { geometry: furnitureGeometry, material: createFurnitureMaterial() };
+        furniture = { geometry: furnitureGeometry, material: posePart(createFurnitureMaterial()) };
         for (const g of Object.values(furniture.geometry)) geometries.add(g);
         unique.add(furniture.material);
       }

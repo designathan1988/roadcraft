@@ -7,6 +7,7 @@ import type { CellEntry, CellResult, ChunkSummary } from './cellWork';
 import { sameEntries } from './chunk';
 import type { BuildingKit } from './kit';
 import { PartCell } from './partCells';
+import { filingBytes } from './partFiling';
 
 /** THE BUILDINGS' CELLS ASKED OF THE WORKERS AND LANDED (`layer.ts`) */
 
@@ -143,10 +144,10 @@ export class CellRequests {
   /** The batches wrapped in meshes, and sent to the GPU ahead (`warmLooseAhead`) when `upload` and admitted; null when refused (DO NOT upload a level the room has no place for: it was sent before the layer chose to show it). */
   private land(kind: BatchKind, cell: string, entries: readonly CellEntry[], result: CellResult, upload: boolean): Landing | null {
     let bytes = result.batch ? cellBytes(result.batch) : 0;
-    for (const [, arrays] of result.details) bytes += cellBytes(arrays);
+    if (result.parts) bytes += filingBytes(result.parts);
     if (upload && !this.admit(kind, cell, bytes)) return null;
     const batch = result.batch ? meshesOf(result.batch, this.kit, false, false) : null;
-    const parts = result.details.length ? new PartCell(cell, result.details, this.kit) : null;
+    const parts = result.parts ? new PartCell(cell, result.parts, this.kit) : null;
     const landing: Landing = { entries, batch, parts, bytes, uploads: 0 };
     if (!upload) return landing;
     const sent = warmLooseAhead(meshesIn(landing), () => this.rank(kind, cell));

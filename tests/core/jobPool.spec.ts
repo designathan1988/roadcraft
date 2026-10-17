@@ -193,4 +193,19 @@ describe('the job system', () => {
     expect(hostOf(jobPort('roadTiles'))).not.toBe(save);
     expect(hostOf(jobPort('save'))).toBe(save);
   });
+
+  it("puts the tile store's reads on the save's worker, where no queued job nor the rush's tiles run, within the pool's count (conf37)", async () => {
+    const { jobPort, jobWorkers, submitJob } = await import('@/jobs/jobPool');
+    const save = hostOf(jobPort('save'));
+    const reads = [0, 1, 2].map(() => hostOf(jobPort('tileRead')));
+    for (const r of reads) expect(r).toBe(save);
+    // The rush's lanes of tiles and the queue full of long jobs: elsewhere, the reads' worker never given one.
+    const aside = [0, 1].map(() => hostOf(jobPort('cityTilesAside')));
+    for (const a of aside) expect(a).not.toBe(save);
+    for (let k = 0; k < 12; k++) {
+      submitJob({ service: 'cells', key: null, priority: k, write: () => ({ data: k, transfer: [] }), done: () => {}, failed: () => {} });
+    }
+    expect(FakeWorker.made[save]!.asked.filter((m) => m.seq !== undefined)).toEqual([]);
+    expect(FakeWorker.made.length).toBeLessThanOrEqual(jobWorkers());
+  });
 });

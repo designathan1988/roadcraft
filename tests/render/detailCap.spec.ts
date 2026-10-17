@@ -50,6 +50,22 @@ describe('the detail drawn', () => {
     tight.dispose();
   });
 
+  it('gives two cells as far from the camera on either side of the eye the same level under the budget', () => {
+    const cells = createMassCells(createBuildingKit(), CELL);
+    for (const i of [-1, 0, 1]) {
+      const b = { ...JSON.parse(JSON.stringify(BLUEPRINTS[0]!.body)), id: i + 2, x: (i + 0.5) * CELL, y: CELL / 2, rotation: 0 } as Building;
+      cells.land(`${i},0`, cellMass([emitMassing(b, () => 0)!]));
+    }
+    // A perspective eye over the middle cell: the two others the same distance off, west and east.
+    cells.choose(CELL / 2, CELL / 2, m(120), 1000, null, false, Infinity);
+    for (const key of ['-1,0', '0,0', '1,0']) expect(cells.near(key)).toBe(true);
+    // Room for the middle one's detail and one more: the budget does not pick one side.
+    cells.cap(CELL / 2, CELL / 2, 260, bytesOf, false);
+    expect([cells.near('-1,0'), cells.fine('-1,0')]).toEqual([cells.near('1,0'), cells.fine('1,0')]);
+    expect(cells.fine('0,0')).toBe(true);
+    cells.dispose();
+  });
+
   it('never moves a cell forced near (the one being edited)', () => {
     const cells = row();
     cells.cap(CELL / 2, CELL / 2, 0, bytesOf, new Set(['4,0']));

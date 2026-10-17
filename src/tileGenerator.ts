@@ -46,11 +46,14 @@ export class TileGenerator {
   }
 
   /** Tile `key` made and stored by the worker in the tile store's `map` at a version past `after`: the version (null: not stored), and with `records` its records prepared for the page (DO NOT post them to the store again from the page). */
-  makeStored(key: number, map: string, after: number, records: boolean, ifMissing = false, baysOnly = false): Promise<MadeTile> {
+  makeStored(key: number, map: string, after: number, records: boolean, ifMissing = false, baysOnly = false, sectionsOnly = false): Promise<MadeTile> {
     return new Promise((done, failed) => {
-      const waiting: Waiting = { key, store: { map, after, records, ...(ifMissing ? { ifMissing } : {}), ...(baysOnly ? { baysOnly } : {}) }, done: (answer) => done(answer as MadeTile), failed: (why) => failed(new Error(why)) };
-      // A stored tile's bays (`baysOnly`): only on the lanes the tiles leave idle.
-      (baysOnly ? this.lowQueue : this.queue).push(waiting);
+      const waiting: Waiting = { key, store: { map, after, records, ...(ifMissing ? { ifMissing } : {}), ...(baysOnly ? { baysOnly } : {}), ...(sectionsOnly ? { sectionsOnly } : {}) },
+        done: (answer) => done(answer as MadeTile), failed: (why) => failed(new Error(why)) };
+      // A stored tile's bays (`baysOnly`): only on the lanes the tiles leave idle; a tile the player edited (`sectionsOnly`) first, its chain waits on it.
+      if (baysOnly) this.lowQueue.push(waiting);
+      else if (sectionsOnly) this.queue.unshift(waiting);
+      else this.queue.push(waiting);
       this.pump();
     });
   }

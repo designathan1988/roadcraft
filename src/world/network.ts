@@ -1,3 +1,4 @@
+import { measureHitch } from '@core/hitch';
 import { ForkMap, ForkSet } from '@core/forkMap';
 import { MIN_RIBBON } from '@core/scalar';
 import { type Vec2, dot } from '@core/vec2';
@@ -19,6 +20,7 @@ import {
   stopLineDistance as stopLine,
 } from './approach';
 import { CellFiling } from './cells';
+import { followRamps } from './curbRamps';
 import { m } from './units';
 import type { ChangeRect } from './changes';
 import { type NetworkBake, NetworkBuild } from './networkBuild';
@@ -26,12 +28,6 @@ import type { SegmentRibbon, SegmentTrims } from './ribbons';
 import { DeltaLog, type NetworkDelta } from './networkDelta';
 import type { PoleLineState } from './poleLines';
 
-/** A `hitch:` entry for the frame monitor, where the platform measures. */
-function measureHitch(name: string, start: number): void {
-  if (typeof performance !== 'undefined' && typeof performance.measure === 'function') {
-    performance.measure(name, { start, end: performance.now() });
-  }
-}
 
 export type { SegmentRibbon, SegmentTrims } from './ribbons';
 export type { NetworkBake } from './networkBuild';
@@ -119,6 +115,8 @@ export class Network {
     this.log.advance(delta);
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
+    // The dropped kerbs follow in this step, never in a walker's read (`curbRamps.ts` `walkingRise`).
+    followRamps(this);
     measureHitch(options.full ? 'hitch:network/full' : 'hitch:network/rebuild', started);
   }
 
@@ -205,6 +203,7 @@ export class Network {
     this.forgetCrossings(this.log.since(before));
     this.revision = this.doc.revision;
     this.trafficRevision = this.doc.trafficRevision;
+    followRamps(this);
   }
 
   /** Drops the crossing distances a change of the network may have moved */
@@ -217,9 +216,8 @@ export class Network {
         this.crossingLandings.get(seg)?.delete(node);
       }
     }
-    for (const rect of delta.rects) {
-      for (const seg of this.segmentCells.idsMeeting(rect)) { this.crossingDistances.delete(seg); this.crossingLandings.delete(seg); }
-    }
+    // Every rectangle in one look (`idsMeetingAny`): one at a time read the cells they share again, and named a road once a rectangle.
+    if (delta.rects.length) for (const seg of this.segmentCells.idsMeetingAny(delta.rects)) { this.crossingDistances.delete(seg); this.crossingLandings.delete(seg); }
   }
 
   /** Where the crossing of `seg` at `node` lands on the footways */

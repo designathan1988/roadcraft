@@ -8,10 +8,11 @@ import {
   type Material,
 } from 'three';
 
+import { poseMatrices } from './partPose';
 import type { Finish } from '@world/buildings/materials';
 import { m } from '@world/units';
 import type { BuildingChunk } from './buildingMesh';
-import { COLOUR_RANGE, FINISH_ATTRIBUTE, NORMAL_UNIT, PAINT_UNIT, SHELL_SHORTS, finishId } from './cellArrays';
+import { COLOUR_RANGE, FINISH_ATTRIBUTE, NORMAL_SHORTS, PAINT_UNIT, SHELL_SHORTS, WEAR_STEPS, finishId, octDecode } from './cellArrays';
 import { shellUv } from './shellParts';
 import type { BuildingKit, PartKind } from './kit';
 
@@ -77,7 +78,7 @@ function subdivide(v: number[], max: number, out: number[][]): void {
 /** What a fracture needs, as plain arrays (so it can run in a worker, `fracture.worker.ts`). */
 export interface FractureInput {
   /** The shell as it is drawn (`ShellChunk`): its normal, wear and paint in shorts, its uv worked out from them (`shellUv`). */
-  readonly shells: readonly { mat: number; finish: number; position: Float32Array; normalDecay: Int16Array; paint: Uint16Array; index: Uint32Array }[];
+  readonly shells: readonly { mat: number; finish: number; position: Float32Array; normal: Int16Array; paint: Uint16Array; index: Uint32Array }[];
   /** Instanced parts (windows, doors, furniture): their model, non-indexed, and each instance's matrix. */
   readonly parts: readonly { mat: number; position: Float32Array; normal: Float32Array; uv: Float32Array | null; colour: Float32Array | null;
     instColours: Float32Array | null; matrices: Float32Array; count: number }[];
@@ -119,7 +120,7 @@ export function prepareFracture(
   kit: BuildingKit,
   slabs: readonly { readonly corners: readonly Vector3[]; readonly y: number }[],
   seed: number,
-  furniture?: Partial<Record<string, { matrices: Float32Array; count: number }>>,
+  furniture?: Partial<Record<string, { poses: Float32Array; count: number }>>,
 ): { input: FractureInput; materials: Material[] } {
   const materials: Material[] = [];
   const index = new Map<Material, number>();
@@ -132,12 +133,13 @@ export function prepareFracture(
   // Every finish in the ruin's one material, each vertex its finish id, uv and colour carried as its piece moves (`finishes.ts`).
   const shellMat = materialIndex(kit.ruinShell);
   for (const [finish, part] of Object.entries(chunk.shells) as [Finish, NonNullable<BuildingChunk['shells'][Finish]>][]) {
-    shells.push({ mat: shellMat, finish: finishId(finish), position: part.position, normalDecay: part.normalDecay, paint: part.paint, index: part.index });
+    shells.push({ mat: shellMat, finish: finishId(finish), position: part.position, normal: part.normal, paint: part.paint, index: part.index });
   }
   const parts: FractureInput['parts'][number][] = [];
-  const model = (source: BufferGeometry, mat: number, batch: { matrices: Float32Array; count: number; colours?: Float32Array | null }): void => {
+  const model = (source: BufferGeometry, mat: number, batch: { poses: Float32Array; count: number; colours?: Float32Array | null }): void => {
     const arrays = modelArrays(source);
-    parts.push({ mat, ...arrays, instColours: batch.colours ?? null, matrices: batch.matrices, count: batch.count });
+    // Each instance's matrix as the GPU makes it from its pose (`partPose.ts`): a ruin's pieces are laid in the world.
+    parts.push({ mat, ...arrays, instColours: batch.colours ?? null, matrices: poseMatrices(batch.poses, batch.count), count: batch.count });
   };
   for (const [kind, batch] of Object.entries(chunk.parts) as [PartKind, BuildingChunk['parts'][PartKind]][]) {
     if (!batch.count || kind === 'water') continue;
@@ -234,18 +236,19 @@ export function mergeFragments(data: readonly FragmentData[]): StillData {
 export function fractureData(input: FractureInput): FragmentData[] {
   const tris: Tri[] = [];
   let wear = 0, wearN = 0;
-  for (const part of input.shells) for (let i = 3; i < part.normalDecay.length; i += SHELL_SHORTS) { wear += part.normalDecay[i]! / NORMAL_UNIT; wearN++; }
+  // The wear in the paint's fourth short, over its finish id (`cellArrays.ts` `finishWear`).
+  for (const part of input.shells) for (let i = 3; i < part.paint.length; i += SHELL_SHORTS) { wear += (part.paint[i]! >> 8) / WEAR_STEPS; wearN++; }
   const bDecay = wearN ? wear / wearN : 0;
   for (const part of input.shells) {
     const { mat, finish } = part;
-    const { position: p, normalDecay: nd, paint: c, index: idx } = part;
+    const { position: p, normal: nd, paint: c, index: idx } = part;
     // Each vertex as the shell draws it: its normal and wear read back as the GPU reads them, its paint, its uv as the shader works it out (`shellUv`).
     const vert = (i: number): number[] => {
       const o = i * SHELL_SHORTS;
-      const nx = nd[o]! / NORMAL_UNIT, ny = nd[o + 1]! / NORMAL_UNIT, nz = nd[o + 2]! / NORMAL_UNIT;
+      const [nx, ny, nz] = octDecode(nd[i * NORMAL_SHORTS]!, nd[i * NORMAL_SHORTS + 1]!);
       const [u, v] = shellUv(p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!, nx, ny, nz);
       const k = COLOUR_RANGE / PAINT_UNIT;
-      return [p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!, nx, ny, nz, c[o]! * k, c[o + 1]! * k, c[o + 2]! * k, u, v, nd[o + 3]! / NORMAL_UNIT];
+      return [p[i * 3]!, p[i * 3 + 1]!, p[i * 3 + 2]!, nx, ny, nz, c[o]! * k, c[o + 1]! * k, c[o + 2]! * k, u, v, (c[o + 3]! >> 8) / WEAR_STEPS];
     };
     for (let t = 0; t < idx.length; t += 3) {
       const out: number[][] = [];

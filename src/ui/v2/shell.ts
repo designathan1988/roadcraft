@@ -37,7 +37,7 @@ import { POLE_LAMP_MODES } from '@world/utilities';
 import { builderIconSvg } from '../builder/icons';
 import { SNAP_MODES, type BuilderState, type BuilderWorkspace } from '../builder/workspace';
 import { t, plural, onLanguageChange, LANGUAGES, language, setLanguage, formatDecimal } from '../i18n';
-import { nodeCountLabel, roadCountLabel } from '../labels';
+import { nodeCountLabel, roadCountLabel, statusScopeTip } from '../labels';
 import { UNITS_PER_METER } from '@world/units';
 import { balanceTip, formatMoney } from '../roads/money';
 import { drawProfile } from '../roads/drawProfile';
@@ -332,6 +332,8 @@ export interface ShellStatus {
   readonly impossible: number;
   /** The money in hand (`world/economy.ts`). */
   readonly balance: number;
+  /** The counts are the region's round the camera (a streamed world), not the city's. */
+  readonly region: boolean;
 }
 /** The map's own numbers the old status bar showed (`main.ts`): its roads and nodes, the zoom */
 interface ShellReadouts {
@@ -482,12 +484,14 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   impossibleB.appendChild(impossibleN);
   impossibleB.hidden = true;
   let impossibleShown = -1;
-  const syncImpossible = (n: number): void => {
-    if (n === impossibleShown) return;
+  let impossibleScope = '';
+  const syncImpossible = (n: number, scope: string): void => {
+    if (n === impossibleShown && scope === impossibleScope) return;
     impossibleShown = n;
+    impossibleScope = scope;
     impossibleB.hidden = n === 0;
     impossibleN.textContent = String(n);
-    impossibleB.title = plural('status.impossible', n);
+    impossibleB.title = scope ? `${plural('status.impossible', n)} - ${scope}` : plural('status.impossible', n);
   };
   // The money in hand: roads are paid from it.
   const money = el('strong', 'v2-money');
@@ -1931,7 +1935,10 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     if (clockText.data !== now.clock) clockText.data = now.clock;
     const line = [now.vehicles, now.people].filter(Boolean).join('  ·  ');
     if (statsText.data !== line) statsText.data = line;
-    syncImpossible(now.impossible);
+    // The counts' reach said (a streamed world: the region round the camera).
+    const scope = statusScopeTip(now.region);
+    if (stats.title !== scope) stats.title = scope;
+    syncImpossible(now.impossible, scope);
     syncMoney(now.balance);
     if (popId === 'sim') syncMetrics();
   };

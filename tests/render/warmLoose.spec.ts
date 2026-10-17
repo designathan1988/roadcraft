@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
+import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
 
-import { drainWarm, warmAhead, warmLooseAhead, warmPending } from '@render/uploads';
+import { drainCompiles, drainWarm, meshBytes, warmAhead, warmLooseAhead, warmPending } from '@render/uploads';
 import { buildRoadSurfaces } from '@render/roadSurfaces';
 import type { SceneMaterials } from '@render/materials';
 import { Network } from '@world/network';
@@ -49,11 +49,11 @@ describe('a loose mesh sent to the GPU', () => {
     b.matrixAutoUpdate = false;
     b.matrixWorld.makeTranslation(7, 8, 9);
     const before = b.matrixWorld.clone();
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    drainWarm(renderer);
     drawn.length = 0;
     const sent = warmLooseAhead([b]);
     expect(warmPending()).toBe(true);
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    drainWarm(renderer);
     await sent;
     expect(drawn.length).toBe(1);
     expect(drawn[0]).not.toBe(world);
@@ -72,7 +72,7 @@ describe('a loose mesh sent to the GPU', () => {
       render: (scene: Scene) => { order.push(scene.children.length === 1 ? scene.children[0]! : scene); },
     } as unknown as WebGLRenderer;
     const world = new Scene();
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    drainWarm(renderer);
     const inScene = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
     world.add(inScene, new Group());
     const small = new Mesh(new BoxGeometry(), new MeshBasicMaterial()), big = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
@@ -80,13 +80,45 @@ describe('a loose mesh sent to the GPU', () => {
     const second = warmAhead(inScene, [inScene.geometry]);
     const sent = Promise.all([warmLooseAhead([small], () => 1), warmLooseAhead([big], () => 40)]);
     order.length = 0;
-    // One frame: one scene mesh, and every loose one behind it, the largest error first.
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    // One frame: the scene's meshes (each drawn alone, as the loose ones), then every loose one, the largest error first, all under the frame's bytes.
+    drainWarm(renderer);
     await sent;
-    expect(order).toEqual([world, big, small]);
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    expect(order).toEqual([inScene, inScene, big, small]);
+    drainWarm(renderer);
     await Promise.all([first, second]);
     expect(warmPending()).toBe(false);
+  });
+
+  it('sends the loose meshes up to a cap of bytes a frame, one at least, measured by their buffers', async () => {
+    const drawn: Scene[] = [];
+    const renderer = fakeRenderer(drawn);
+    drainWarm(renderer);
+    // Six meshes of 1.5 MiB of positions each: two fit under the 4 MiB cap, the third goes over it and is the last of the frame.
+    const big = (): Mesh => {
+      const g = new BufferGeometry();
+      g.setAttribute('position', new Float32BufferAttribute(new Float32Array((1.5 * 1024 * 1024) / 4), 3));
+      return new Mesh(g, new MeshBasicMaterial());
+    };
+    const meshes = Array.from({ length: 6 }, big);
+    expect(meshBytes(meshes[0]!)).toBe(1.5 * 1024 * 1024);
+    const sent = warmLooseAhead(meshes);
+    drawn.length = 0;
+    drainWarm(renderer);
+    expect(drawn.length).toBe(3);
+    drainWarm(renderer);
+    expect(drawn.length).toBe(6);
+    await sent;
+    expect(warmPending()).toBe(false);
+    // One mesh over the whole cap still goes, alone.
+    const huge = new BufferGeometry();
+    huge.setAttribute('position', new Float32BufferAttribute(new Float32Array((12 * 1024 * 1024) / 4), 3));
+    // The same rank: the last queued goes first (`drainWarm` pops), here the one over the cap.
+    const alone = warmLooseAhead([big(), new Mesh(huge, new MeshBasicMaterial())]);
+    drawn.length = 0;
+    drainWarm(renderer);
+    expect(drawn.length).toBe(1);
+    drainWarm(renderer);
+    await alone;
   });
 
   it('keeps the frames coming while meshes wait (the renderer asks for one after each drain)', () => {
@@ -100,13 +132,13 @@ describe('a loose mesh sent to the GPU', () => {
     const drawn: Scene[] = [];
     const renderer = fakeRenderer(drawn);
     const world = new Scene();
-    drainWarm(renderer, new PerspectiveCamera(), world, null); // the frame loop is warming from now on
+    drainWarm(renderer); // the frame loop is warming from now on
     const doc = layCity(planCity({ ...DEFAULT_CITY, seed: 4, size: 'small' }));
     const net = new Network(doc);
     net.rebuild();
     const surfaces = buildRoadSurfaces(net, buildRoadElevation(net, ground), materials, ground);
     world.add(surfaces.group);
-    for (let guard = 0; warmPending() && guard < 100_000; guard++) drainWarm(renderer, new PerspectiveCamera(), world, null);
+    for (let guard = 0; warmPending() && guard < 100_000; guard++) drainWarm(renderer);
     expect(warmPending()).toBe(false);
     const kept: string[] = [];
     let blocks = 0;
@@ -121,5 +153,31 @@ describe('a loose mesh sent to the GPU', () => {
     });
     expect(blocks).toBeGreaterThan(10);
     expect(kept).toEqual([]);
+  });
+
+  it('settles once the mesh is on the GPU and its programs, lit and in the shadow, are built: never drawn before', async () => {
+    const compiled: Object3D[] = [];
+    const renderer = {
+      ...fakeRenderer([]),
+      compileAsync: (object: Object3D) => { compiled.push(object); return Promise.resolve(); },
+    } as unknown as WebGLRenderer;
+    drainWarm(renderer);
+    const scene = new Scene();
+    // The compiler answers from now on (`compileAhead` waits for it).
+    drainCompiles(renderer, new PerspectiveCamera(), scene, null);
+    const mesh = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    mesh.castShadow = true;
+    let settled = false;
+    void warmLooseAhead([mesh])!.then(() => { settled = true; });
+    drainWarm(renderer);
+    await new Promise((done) => setTimeout(done, 0));
+    // Uploaded, its programs not built yet: still waited for.
+    expect(settled).toBe(false);
+    drainCompiles(renderer, new PerspectiveCamera(), scene, null);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(settled).toBe(true);
+    expect(compiled).toContain(mesh);
+    // Its shadow's program too: a stand-in on a depth material.
+    expect(compiled.some((o) => o !== mesh && ((o as Mesh).material as { isMeshDepthMaterial?: boolean }).isMeshDepthMaterial)).toBe(true);
   });
 });

@@ -98,6 +98,9 @@ const PLANT_MARGIN = m(1);
 /** Side of the footprint index's buckets, world units. */
 const COVER_CELL = m(25.6);
 
+/** A building's ground no plant stands on: its solid footprints grown by `PLANT_MARGIN`, and its footprint's rectangles (the cover index's and a tile's near bake's, `nearBuildings.ts`). */
+export const coverPolygons = (b: Building): Vec2[][] => [...solidFootprints(b, PLANT_MARGIN), ...footprintRects(b)];
+
 /** Where the buildings stand, for the scenery's plant cull */
 export interface CoverIndex {
   /** The whole town filed again (the opening, a map opened). */
@@ -131,7 +134,7 @@ export function createCoverIndex(): CoverIndex {
   const file = (b: Building): number => {
     let rects = footprints.get(b);
     if (!rects) {
-      rects = [...solidFootprints(b, PLANT_MARGIN), ...footprintRects(b)];
+      rects = coverPolygons(b);
       footprints.set(b, rects);
     }
     const digest = new Digest();
@@ -202,12 +205,6 @@ export function recordRef(b: Building, key: string): RecordRef {
   return refOf(plain as Building, false);
 }
 
-/** A cell key's centre from a point, m (`layer.ts` `keepToBudget`). */
-export function cellDistance(key: string, x: number, y: number): number {
-  const comma = key.indexOf(',');
-  return Math.hypot((Number(key.slice(0, comma)) + 0.5) * BATCH_CELL - x, (Number(key.slice(comma + 1)) + 0.5) * BATCH_CELL - y);
-}
-
 /** A cell's level: its detail or its facade level (`cellRequests.ts` `BatchKind`, named here so the cells' module imports nothing of the requests). */
 type LevelKind = 'cell' | 'facade';
 
@@ -236,10 +233,6 @@ export class ResidentBytes {
   of(kind: LevelKind, key: string, typical: number): number {
     const at = `${kind}|${key}`;
     return this.resident.get(at) ?? this.measured.get(at) ?? typical;
-  }
-  /** The resident levels' mean, else `fallback`: what a cell never landed counts as. */
-  typical(fallback: number): number {
-    return this.resident.size ? this.total / this.resident.size : fallback;
   }
 }
 

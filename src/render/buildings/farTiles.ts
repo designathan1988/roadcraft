@@ -7,9 +7,10 @@ import type { TileRecords } from '@world/doc';
 import { tileKey, tileOfKey } from '@world/tiles';
 import { derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
-import { type CellMass, cellMass, cellMassBuffers, indexArray, shellBounds } from './cellArrays';
-import { AGGREGATE, LEVEL_MASS_KEY as MASS_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
-import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing } from './massing';
+import { BOX_INSTANCE, type BoxMass, type CellMass, type FarMass, MASS_FACADE, MASS_GRID, type MassSquare, cellMass, farMassBuffers, indexArray, massOnGrid, massPlaces, shellBounds } from './cellArrays';
+import { TILE_CELLS } from './levelKeys';
+import { AGGREGATE, LEVEL_MASS_KEY as MASS_KEY, NODE_BOX_KEY as BOX_KEY, TILE_PLATE_KEY as PLATE_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
+import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing, emitMassingLevels, massFloor } from './massing';
 
 export { AGGREGATE, TOP_LEVEL, emptyRecords, farKey, farNode, nodeSide } from './farGrid';
 
@@ -27,18 +28,27 @@ export function levelDrop(k: number): number {
   return (nodeSide(k) / AGGREGATE) * Math.SQRT2;
 }
 
-/** What a tile's bake keeps (`FarCache`, one entry a node: a newer version takes the older's place): the version, its masses at the tile's level and at the plate's, its blocks as boxes. */
-interface TileEntry {
+/** What a tile's bake makes: the version, its masses at the tile's level and at the plate's, its blocks as boxes. */
+interface TileBake {
   readonly sig: string;
   readonly tile: CellMass | null;
   readonly plate: CellMass | null;
   readonly boxes: Float32Array;
 }
-/** What a node above the tiles keeps: the version, its mesh (none at level 1: its tiles' plate masses are kept merged apart, `MASS_KEY`), its boxes for its parent. */
-interface NodeEntry {
+/** DO NOT keep a node's mesh and its parent's reads in one entry: each reader takes its part alone - a node drawn its masses, a plate's node its tiles' plate masses (`PLATE_KEY`), every parent its children's boxes (`BOX_KEY`); each kept by node and version (a newer version takes the older's place). */
+interface MassEntry {
   readonly sig: string;
-  readonly mass: CellMass | null;
+  readonly mass: FarMass | null;
+}
+interface BoxEntry {
+  readonly sig: string;
   readonly boxes: Float32Array;
+}
+
+/** A tile's bake kept, each reader's part under its own key, the boxes last (a parent asks for them first). */
+async function keepTile(cache: FarCache, at: string, bake: TileBake): Promise<void> {
+  await Promise.all([cache.put(at, { sig: bake.sig, mass: bake.tile }), cache.put(`${at}${PLATE_KEY}`, { sig: bake.sig, mass: bake.plate })]);
+  await cache.put(`${at}${BOX_KEY}`, { sig: bake.sig, boxes: bake.boxes });
 }
 
 /** Where bakes are kept by node and version (`derivedCache.ts` in the job workers; a map in tests). */
@@ -114,7 +124,7 @@ export interface FarJob {
 
 export type FarReply =
   /** Baked and kept: its mesh when wanted (null: none of its buildings has a mass). */
-  | { readonly kind: 'far'; readonly node: string; readonly sig: string; readonly mass: CellMass | null }
+  | { readonly kind: 'far'; readonly node: string; readonly sig: string; readonly mass: FarMass | null }
   /** A tile not kept at that version and no store this worker reads: its buildings wanted from the page. */
   | { readonly kind: 'farRecords'; readonly node: string; readonly sig: string }
   /** Children not kept at their versions: baked first. */
@@ -124,7 +134,7 @@ export type FarReply =
   | { readonly kind: 'farError'; readonly node: string; readonly sig: string; readonly message: string };
 
 /** Every buffer of a reply: handed over, not copied (MDN, `postMessage` transfer). */
-export const farReplyBuffers = (reply: FarReply): ArrayBuffer[] => (reply.kind === 'far' && reply.mass ? cellMassBuffers(reply.mass) : []);
+export const farReplyBuffers = (reply: FarReply): ArrayBuffer[] => (reply.kind === 'far' && reply.mass ? farMassBuffers(reply.mass) : []);
 
 const FLAT: GroundReaders = { groundAt: () => 0, naturalAt: () => 0 };
 
@@ -153,25 +163,36 @@ function tileBuildings(records: TileRecords): Building[] {
 }
 
 /** The masses of buildings at a level, merged, as the cells' job emits them (`cellWork.ts`); a signature building by its blocks (no body of its own is drawn far off). */
-function massesOf(buildings: readonly Building[], detail: MassDetail, reads: GroundReaders, tone?: FarJob['tone']): CellMass | null {
+function massesOf(buildings: readonly Building[], detail: MassDetail, reads: GroundReaders, tone?: FarJob['tone'], square?: MassSquare): CellMass | null {
   const chunks: MassingChunk[] = [];
-  for (const b of buildings) {
-    const mass = emitMassing(b, reads.groundAt, undefined, reads.naturalAt, false, tone, detail);
+  for (let n = 0; n < buildings.length; n++) {
+    const mass = emitMassing(buildings[n]!, reads.groundAt, undefined, reads.naturalAt, false, tone, detail);
     if (mass) chunks.push(mass);
   }
-  return cellMass(chunks);
+  return cellMass(chunks, square);
 }
 
 /** A TILE'S MASSES FROM ITS RECORDS ALONE: no page, no document, no paving (the floor on the natural ground) */
-export function bakeTileMasses(records: TileRecords, detail: MassDetail, reads: GroundReaders = FLAT, tone?: FarJob['tone']): CellMass | null {
-  return massesOf(tileBuildings(records), detail, reads, tone);
+/** `square`: the masses on its grid (`massGrid`), as a tile's job lays them; none: in floats. */
+export function bakeTileMasses(records: TileRecords, detail: MassDetail, reads: GroundReaders = FLAT, tone?: FarJob['tone'], square?: MassSquare): CellMass | null {
+  return massesOf(tileBuildings(records), detail, reads, tone, square);
 }
 
 /** A tile's bake from its buildings: its masses at its level and its plate's, its blocks as boxes. */
-function bakeTile(buildings: readonly Building[], sig: string, reads: GroundReaders, tone?: FarJob['tone']): TileEntry {
+function bakeTile(buildings: readonly Building[], sig: string, reads: GroundReaders, tone?: FarJob['tone'], square?: MassSquare): TileBake {
+  // DO NOT sample each building's ground three times: its floor once, for its boxes and its masses at both levels.
+  const floors = buildings.map((b) => ({ floor: massFloor(b, reads.naturalAt) }));
   const boxes: number[] = [];
-  for (const b of buildings) emitBoxes(b, undefined, reads.naturalAt, tone, boxes);
-  return { sig, tile: massesOf(buildings, TILE_DETAIL, reads, tone), plate: massesOf(buildings, PLATE_DETAIL, reads, tone), boxes: new Float32Array(boxes) };
+  buildings.forEach((b, n) => emitBoxes(b, undefined, reads.naturalAt, tone, boxes, floors[n]));
+  // Each building walked once for both levels where they answer alike (`emitMassingLevels`).
+  const tile: MassingChunk[] = [], plate: MassingChunk[] = [];
+  buildings.forEach((b, n) => {
+    const [t, p] = emitMassingLevels(b, reads.groundAt, undefined, reads.naturalAt, tone, TILE_DETAIL, PLATE_DETAIL, floors[n]);
+    if (t) tile.push(t);
+    if (p) plate.push(p);
+  });
+  // Its masses on its tile's grid (`massGrid`); its plate masses in floats, put on their plate's grid as its node joins them (`joinMasses`).
+  return { sig, tile: cellMass(tile, square), plate: cellMass(plate), boxes: new Float32Array(boxes) };
 }
 
 /** Several box lists as one. */
@@ -217,80 +238,58 @@ export function aggregateBoxes(boxes: Float32Array, k: number, i: number, j: num
   return new Float32Array(out);
 }
 
-/** Vertices and indices a box is drawn with: four walls and a top. */
-const BOX_VERTICES = 20;
-const BOX_INDICES = 30;
-
-/** BOXES AS ONE MESH OF MASSES: walls with the window pattern the masses' shader draws (`massingMaterial.ts`), a roof on top; `error`, what its level left out */
-function boxMass(boxes: Float32Array, error: number): CellMass | null {
+/** BOXES AS INSTANCES OF ONE BOX (`massBoxes.ts`): each its plan, heights, colours and glazing, `BOX_INSTANCE` numbers, its walls and roof laid by the masses' shader as `massing.ts` would lay them; `error`, what its level left out */
+function boxMass(boxes: Float32Array, error: number): BoxMass | null {
   const n = boxes.length / BOX_FLOATS;
   if (n === 0) return null;
-  const position = new Float32Array(n * BOX_VERTICES * 3), normal = new Float32Array(n * BOX_VERTICES * 3), colour = new Float32Array(n * BOX_VERTICES * 3);
-  const facade = new Float32Array(n * BOX_VERTICES * 4), glazing = new Float32Array(n * BOX_VERTICES * 2), index = new Uint32Array(n * BOX_INDICES);
-  let v = 0, t = 0;
-  /** A vertex: its plan point and height, its normal (plan x, y, up), its colour at `rgb` in the box, its facade (along, bay, storey, first storey's foot) and glass. */
-  const vertex = (o: number, rgb: number, x: number, y: number, z: number, nx: number, ny: number, nz: number, along: number, bay: number, storey: number, z0: number, share: number): void => {
-    // Three's axes: the plan's y is -z (`massing.ts` `P`).
-    position[v * 3] = x; position[v * 3 + 1] = z; position[v * 3 + 2] = -y;
-    normal[v * 3] = nx; normal[v * 3 + 1] = nz; normal[v * 3 + 2] = -ny;
-    for (let c = 0; c < 3; c++) colour[v * 3 + c] = boxes[o + rgb + c]!;
-    facade[v * 4] = along; facade[v * 4 + 1] = bay; facade[v * 4 + 2] = storey; facade[v * 4 + 3] = z0;
-    glazing[v * 2] = share; glazing[v * 2 + 1] = boxes[o + 17]!;
-    v++;
-  };
-  /** A quad of the last four vertices: counter-clockwise seen from outside (three's front faces), as each is laid. */
-  const quad = (): void => {
-    const first = v - 4;
-    index[t] = first; index[t + 1] = first + 1; index[t + 2] = first + 2;
-    index[t + 3] = first; index[t + 4] = first + 2; index[t + 5] = first + 3;
-    t += 6;
-  };
-  const xs = [0, 0, 0, 0], ys = [0, 0, 0, 0];
-  for (let o = 0; o < boxes.length; o += BOX_FLOATS) {
+  const out = new Float32Array(n * BOX_INSTANCE);
+  let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity, top = -Infinity;
+  for (let b = 0; b < n; b++) {
+    const o = b * BOX_FLOATS, t = b * BOX_INSTANCE;
     const cx = boxes[o]!, cy = boxes[o + 1]!, hu = boxes[o + 2]!, hv = boxes[o + 3]!, turn = boxes[o + 4]!;
-    const foot = boxes[o + 5]!, top = boxes[o + 6]!, floor = boxes[o + 7]!;
-    const bay = boxes[o + 14]!, storey = boxes[o + 15]!, share = boxes[o + 16]!;
+    out[t] = cx; out[t + 1] = cy; out[t + 2] = hu; out[t + 3] = hv;
+    out[t + 4] = turn; out[t + 5] = boxes[o + 5]!; out[t + 6] = boxes[o + 6]!; out[t + 7] = boxes[o + 7]!;
+    out[t + 8] = boxes[o + 8]!; out[t + 9] = boxes[o + 9]!; out[t + 10] = boxes[o + 10]!; out[t + 11] = boxes[o + 14]!;
+    out[t + 12] = boxes[o + 11]!; out[t + 13] = boxes[o + 12]!; out[t + 14] = boxes[o + 13]!; out[t + 15] = boxes[o + 15]!;
+    out[t + 16] = boxes[o + 16]!; out[t + 17] = boxes[o + 17]!;
+    // Its corners on the plan, as the shader lays them (three's axes: the plan's y is -z).
     const ux = Math.cos(turn), uy = Math.sin(turn);
-    // The plan's corners, counter-clockwise (x right, y up).
-    [[-hu, -hv], [hu, -hv], [hu, hv], [-hu, hv]].forEach(([a, d], corner) => { xs[corner] = cx + ux * a! - uy * d!; ys[corner] = cy + uy * a! + ux * d!; });
-    for (let side = 0; side < 4; side++) {
-      const px = xs[side]!, py = ys[side]!, qx = xs[(side + 1) % 4]!, qy = ys[(side + 1) % 4]!;
-      const len = Math.hypot(qx - px, qy - py) || 1;
-      // Outward of a counter-clockwise ring: the edge turned right. Seen from outside in three's axes, foot p, foot q, top q, top p is counter-clockwise.
-      const nx = (qy - py) / len, ny = -(qx - px) / len;
-      vertex(o, 8, px, py, foot, nx, ny, 0, 0, bay, storey, floor, share);
-      vertex(o, 8, qx, qy, foot, nx, ny, 0, len, bay, storey, floor, share);
-      vertex(o, 8, qx, qy, top, nx, ny, 0, len, bay, storey, floor, share);
-      vertex(o, 8, px, py, top, nx, ny, 0, 0, bay, storey, floor, share);
-      quad();
+    for (const [a, d] of [[-hu, -hv], [hu, -hv], [hu, hv], [-hu, hv]] as const) {
+      const x = cx + ux * a - uy * d, y = cy + uy * a + ux * d;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, -y); maxZ = Math.max(maxZ, -y);
     }
-    // The roof: no windows (bay 0, as `massing.ts` `NO_FACADE`).
-    for (let n = 0; n < 4; n++) vertex(o, 11, xs[n]!, ys[n]!, top, 0, 0, 1, 0, 0, 1, 0, 0);
-    quad();
+    minY = Math.min(minY, boxes[o + 5]!); maxY = Math.max(maxY, boxes[o + 6]!);
+    top = Math.max(top, boxes[o + 6]!);
   }
-  return cellMass([{ position, normal, colour, facade, glazing, index, error }]);
+  const ex = (maxX - minX) / 2, ey = (maxY - minY) / 2, ez = (maxZ - minZ) / 2;
+  const bounds = Float64Array.of(minX, minY, minZ, maxX, maxY, maxZ, minX + ex, minY + ey, minZ + ez, Math.hypot(ex, ey, ez));
+  return { boxes: out, bounds, top, error };
 }
 
-/** Several masses as one (a level-1 node's tiles' plate masses). */
+/** A tile's square of cells (`levelKeys.ts`). */
+export const tileSquare = (i: number, j: number): MassSquare => ({ i0: i * TILE_CELLS, j0: j * TILE_CELLS, n: TILE_CELLS });
+
+/** Several masses as one (a level-1 node's tiles' plate masses), their places in floats (`massPlaces`). */
 function joinMasses(list: readonly (CellMass | null)[]): CellMass | null {
   let vertices = 0, indices = 0, error = 0, top = -Infinity;
   const some = list.filter((c): c is CellMass => c !== null);
   for (const c of some) { vertices += c.position.length / 3; indices += c.index.length; error = Math.max(error, c.error); top = Math.max(top, c.top); }
   if (indices === 0) return null;
-  const position = new Float32Array(vertices * 3), normal = new Int8Array(vertices * 4), color = new Float32Array(vertices * 3);
-  const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = indexArray(vertices, indices);
+  const position = new Float32Array(vertices * 3), normal = new Int8Array(vertices * 4), color = new Uint16Array(vertices * 4);
+  const facade = new Float32Array(vertices * MASS_FACADE), grid = new Uint16Array(vertices * MASS_GRID), seed = new Float32Array(vertices), index = indexArray(vertices, indices);
   let v = 0, n = 0;
   for (const c of some) {
-    position.set(c.position, v * 3);
+    position.set(massPlaces(c), v * 3);
     normal.set(c.normal, v * 4);
-    color.set(c.color, v * 3);
-    facade.set(c.facade, v * 4);
-    glazing.set(c.glazing, v * 2);
+    color.set(c.color, v * 4);
+    facade.set(c.facade, v * MASS_FACADE);
+    grid.set(c.grid, v * MASS_GRID);
+    seed.set(c.seed, v);
     for (let i = 0; i < c.index.length; i++) index[n + i] = c.index[i]! + v;
     v += c.position.length / 3;
     n += c.index.length;
   }
-  return { position, normal, color, facade, glazing, index, bounds: shellBounds(position), top, error };
+  return { position, normal, color, facade, grid, seed, index, bounds: shellBounds(position), top, error };
 }
 
 
@@ -298,7 +297,7 @@ function joinMasses(list: readonly (CellMass | null)[]): CellMass | null {
 export async function keepTileFar(records: TileRecords, version: number, env: FarGroundEnv, prefix: string | null, cache: FarCache = derivedFarCache): Promise<boolean> {
   if (prefix === null || !(await cache.ready())) return false;
   const { i, j } = tileOfKey(records.key);
-  await cache.put(`${prefix}${farKey(0, i, j)}`, bakeTile(tileBuildings(records), String(version), readsOf(env), env.tone));
+  await keepTile(cache, `${prefix}${farKey(0, i, j)}`, bakeTile(tileBuildings(records), String(version), readsOf(env), env.tone, tileSquare(i, j)));
   return true;
 }
 
@@ -313,43 +312,43 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
     return entry?.sig === version ? entry : undefined;
   };
   if (k === 0) {
-    let entry = keeps ? await kept<TileEntry>(node, sig) : undefined;
-    if (!entry) {
-      // The rows the page posted (migrated where their table was written), or the stored part read here and migrated.
-      const stored = job.buildings ? undefined : await readStored(job.store, tileKey(i, j), 'buildings');
-      const buildings = job.buildings ? rowsBuildings(job.buildings) : stored ? tileBuildings(stored) : null;
-      if (!buildings) return { kind: 'farRecords', node, sig };
-      entry = bakeTile(buildings, sig, readsOf(job), job.tone);
-      if (keeps) await cache.put(`${prefix}${node}`, entry);
-    }
-    return { kind: 'far', node, sig, mass: job.want ? entry.tile : null };
+    // Its masses alone when drawn; its boxes when baked for its parent (`BOX_KEY`).
+    const known = keeps ? await kept<MassEntry | BoxEntry>(job.want ? node : `${node}${BOX_KEY}`, sig) : undefined;
+    if (known) return { kind: 'far', node, sig, mass: job.want ? (known as MassEntry).mass : null };
+    // The rows the page posted (migrated where their table was written), or the stored part read here and migrated.
+    const stored = job.buildings ? undefined : await readStored(job.store, tileKey(i, j), 'buildings');
+    const buildings = job.buildings ? rowsBuildings(job.buildings) : stored ? tileBuildings(stored) : null;
+    if (!buildings) return { kind: 'farRecords', node, sig };
+    const bake = bakeTile(buildings, sig, readsOf(job), job.tone, tileSquare(i, j));
+    if (keeps) await keepTile(cache, `${prefix}${node}`, bake);
+    return { kind: 'far', node, sig, mass: job.want ? bake.tile : null };
   }
   if (!keeps) return { kind: 'farNoCache', node, sig };
-  let entry = await kept<NodeEntry>(node, sig);
-  // DO NOT read its four tiles' entries whole whenever a level-1 node is drawn (their tile masses read with the plates, merged again each time): its tiles' plate masses are kept merged under a key of their own (`MASS_KEY`), apart from the boxes its parent reads.
-  if (k === 1 && job.want) {
-    const merged = await kept<{ readonly sig: string; readonly mass: CellMass | null }>(`${node}${MASS_KEY}`, sig);
-    if (merged) return { kind: 'far', node, sig, mass: merged.mass };
-  } else if (entry) return { kind: 'far', node, sig, mass: job.want ? entry.mass : null };
+  // DO NOT read its four tiles' entries whole whenever a level-1 node is drawn: its tiles' plate masses are kept merged under a key of their own (`MASS_KEY`), apart from the boxes its parent reads.
+  const drawn = job.want ? await kept<MassEntry>(k === 1 ? `${node}${MASS_KEY}` : node, sig) : undefined;
+  if (drawn) return { kind: 'far', node, sig, mass: drawn.mass };
+  const boxed = await kept<BoxEntry>(`${node}${BOX_KEY}`, sig);
+  if (boxed && !job.want) return { kind: 'far', node, sig, mass: null };
   const children = job.children ?? [];
-  const got = await Promise.all(children.map((c) => (c ? kept<TileEntry | NodeEntry>(c.key, c.sig) : Promise.resolve(null))));
+  // Its children's boxes unless its own are kept; a plate's node drawn, its tiles' plate masses.
+  const got = boxed ? children.map(() => null) : await Promise.all(children.map((c) => (c ? kept<BoxEntry>(`${c.key}${BOX_KEY}`, c.sig) : Promise.resolve(null))));
+  const plates = k === 1 && job.want ? await Promise.all(children.map((c) => (c ? kept<MassEntry>(`${c.key}${PLATE_KEY}`, c.sig) : Promise.resolve(null)))) : null;
   const missing: string[] = [];
-  children.forEach((c, n) => { if (c && !got[n]) missing.push(c.key); });
+  children.forEach((c, n) => { if (c && ((!boxed && !got[n]) || (plates && !plates[n]))) missing.push(c.key); });
   if (missing.length) return { kind: 'farChildren', node, sig, missing };
-  const lists = children.flatMap((_, n) => { const b = got[n]?.boxes; return b ? [b] : []; });
+  const lists = got.flatMap((e) => (e ? [e.boxes] : []));
   if (k === 1) {
-    const tiles = got.filter((e): e is TileEntry => !!e);
-    if (!entry) {
-      entry = { sig, mass: null, boxes: joined(lists) };
-      await cache.put(`${prefix}${node}`, entry);
-    }
-    if (!job.want) return { kind: 'far', node, sig, mass: null };
-    const mass = joinMasses(tiles.map((e) => e.plate));
+    if (!boxed) await cache.put(`${prefix}${node}${BOX_KEY}`, { sig, boxes: joined(lists) });
+    if (!plates) return { kind: 'far', node, sig, mass: null };
+    // On the node's grid: its two tiles a side (`massGrid`).
+    const merged = joinMasses(plates.map((e) => (e?.mass ?? null) as CellMass | null));
+    const mass = merged ? massOnGrid(merged, { i0: 2 * i * TILE_CELLS, j0: 2 * j * TILE_CELLS, n: 2 * TILE_CELLS }) : null;
     await cache.put(`${prefix}${node}${MASS_KEY}`, { sig, mass });
     return { kind: 'far', node, sig, mass };
   }
-  const boxes = aggregateBoxes(joined(lists), k, i, j);
-  entry = { sig, mass: boxMass(boxes, levelDrop(k)), boxes };
-  await cache.put(`${prefix}${node}`, entry);
-  return { kind: 'far', node, sig, mass: job.want ? entry.mass : null };
+  const boxes = boxed ? boxed.boxes : aggregateBoxes(joined(lists), k, i, j);
+  const mass = boxMass(boxes, levelDrop(k));
+  await cache.put(`${prefix}${node}`, { sig, mass });
+  if (!boxed) await cache.put(`${prefix}${node}${BOX_KEY}`, { sig, boxes });
+  return { kind: 'far', node, sig, mass: job.want ? mass : null };
 }

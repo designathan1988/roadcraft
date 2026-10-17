@@ -50,10 +50,37 @@ export interface NatureTreeKit {
   dispose(): void;
 }
 
+/** A model's seed: the near trees and their pictures grow the same tree from it. */
+const treeSeed = (i: number): number => 0x7ee5 + i * 7919;
+
+/** The trees' pictures and who holds them. */
+let treePictures: { readonly set: PlantImpostors; users: number } | null = null;
+/** ONE ATLAS OF THE TREES' PICTURES for the near trees' far level and the far woods (`farForest.ts`): the same models from the same seeds, taken once (DO NOT take a second atlas of them, ~22 MB). `release` when done: the pictures go with the last holder. */
+export function natureTreePictures(): { readonly set: PlantImpostors; release(): void } {
+  if (!treePictures) {
+    // Their own models, let go once taken: a palm's fronds throw its shadow, the others' crown hearts do.
+    const models = TREE_MODELS.map((kind, i) => ({ ...lowPolyTreeParts(kind, treeSeed(i)), cardsCast: kind === 'palm' }));
+    treePictures = { set: createPlantImpostors(models, PICTURE_WIND, 'nature', true), users: 0 };
+  }
+  const held = treePictures;
+  held.users++;
+  let released = false;
+  return {
+    set: held.set,
+    release() {
+      if (released) return;
+      released = true;
+      if (--held.users > 0) return;
+      held.set.dispose();
+      if (treePictures === held) treePictures = null;
+    },
+  };
+}
+
 /** Makes the trees; their materials share the forest's wind. */
 export async function loadNatureTrees(_anisotropy: number): Promise<NatureTreeKit> {
   const variants: Variant[] = TREE_MODELS.map((kind, i) => {
-    const { body, cards } = lowPolyTreeParts(kind, 0x7ee5 + i * 7919);
+    const { body, cards } = lowPolyTreeParts(kind, treeSeed(i));
     return { levels: [body, body, body], cards };
   });
   // Opaque, matt, faceted: the trunk and the crown's shaded heart.
@@ -61,8 +88,8 @@ export async function loadNatureTrees(_anisotropy: number): Promise<NatureTreeKi
   applyWind(material, FOREST_WIND, 'nature-trees-lowpoly');
   const depth = windDepthMaterial(FOREST_WIND, 'nature-trees-lowpoly-depth');
   const cardKit = leafCardMaterials(FOREST_WIND, 'nature-trees');
-  // A palm's fronds throw its shadow; the others' crown hearts do.
-  const pictures = createPlantImpostors(variants.map((v, i) => ({ body: v.levels[0], cards: v.cards, cardsCast: TREE_MODELS[i] === 'palm' })), PICTURE_WIND, 'nature');
+  const held = natureTreePictures();
+  const pictures = held.set;
   // Drawn from the trees' poses (`plantCells.ts`): the sample compiled ahead (`buildNatureForest`) builds the programs drawn.
   for (const made of [material, depth, cardKit.material, cardKit.depth, pictures.material, pictures.depth]) posedMaterial(made, TREE_POSE);
   console.info('[nature] trees (triangles, body + cards):', variants.map((v, i) => `${TREE_MODELS[i]} ${v.levels[0].getAttribute('position').count / 3} + ${(v.cards?.getAttribute('position').count ?? 0) / 3}`).join(', '));
@@ -79,7 +106,7 @@ export async function loadNatureTrees(_anisotropy: number): Promise<NatureTreeKi
       depth.dispose();
       cardKit.material.dispose();
       cardKit.depth.dispose();
-      pictures.dispose();
+      held.release();
     },
   };
 }

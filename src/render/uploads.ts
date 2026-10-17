@@ -22,9 +22,9 @@ export function cancelUploads(textures: Iterable<Texture>): void {
   }
 }
 
-/** Sends queued textures to the GPU, at most `count` this frame. */
-export function drainUploads(renderer: WebGLRenderer, count = 1): void {
-  for (let i = 0; i < count && queue.length; i++) {
+/** Sends every queued texture to the GPU now (DO NOT go back to one a frame: a texture queued while it is already drawn waited behind the others, and three sent it in the draw that needed it). */
+export function drainUploads(renderer: WebGLRenderer): void {
+  while (queue.length) {
     const t = queue.shift()!;
     queued.delete(t);
     if (sent.has(t)) continue;
@@ -36,7 +36,7 @@ export function drainUploads(renderer: WebGLRenderer, count = 1): void {
 /** A pass drawn into a target of its own, in a scene of its own: its programs are keyed by that scene's lights and that target (three's `WebGLPrograms` getParameters). */
 interface OwnPass { readonly camera: Camera; readonly target: WebGLRenderTarget }
 /** Objects whose shaders must be compiled before they are first drawn */
-const toCompile: { object: Object3D; shadow: boolean; done: () => void; pass?: OwnPass }[] = [];
+const toCompile: { object: Object3D; shadow: boolean; done: () => void; pass?: OwnPass; lights?: readonly Object3D[] }[] = [];
 /** What a shadow program is built for: a render target as a shadow map is (no colour space, no tone mapping). */
 let shadowTarget: WebGLRenderTarget | null = null;
 /** Whether a renderer is answering (none in tests: nothing is waited for there). */
@@ -123,41 +123,77 @@ export function shadowStandIns(root: Object3D): Group {
 
 /** A copy of `object` to build its programs with: the same geometry, material and variant */
 export function compileCopy(object: Object3D): Object3D {
-  const instanced = object as InstancedMesh;
-  if (!instanced.isInstancedMesh) return object.clone(false);
-  const copy = new InstancedMesh(instanced.geometry, instanced.material, 1);
-  Object3D.prototype.copy.call(copy, instanced, false);
-  if (instanced.instanceColor) copy.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
-  copy.morphTexture = instanced.morphTexture;
-  return copy;
+  // DO NOT let three copy the user data (r186 `Object3D.copy`: JSON.parse(JSON.stringify(userData))): a part's `posedFrom` is a geometry, serialized whole, and one whose arrays went to the GPU (`gpuOnly`) threw, leaving the job that asked unsettled (conferencia 31: no cell's detail, no new road).
+  const kept = object.userData;
+  object.userData = {};
+  try {
+    const instanced = object as InstancedMesh;
+    if (!instanced.isInstancedMesh) return object.clone(false);
+    const copy = new InstancedMesh(instanced.geometry, instanced.material, 1);
+    Object3D.prototype.copy.call(copy, instanced, false);
+    if (instanced.instanceColor) copy.instanceColor = new InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
+    copy.morphTexture = instanced.morphTexture;
+    return copy;
+  } finally {
+    object.userData = kept;
+  }
+}
+
+/** Every compile asked for and not settled, and the drains it has waited through: DO NOT let one wait for ever (a program that never says it is built, a mesh let go meanwhile): past `COMPILE_FRAMES` it settles, and the mesh is drawn as it was before (its program built in the draw at worst). */
+const inFlight = new Set<{ frames: number; settle: () => void }>();
+const COMPILE_FRAMES = 30;
+/** `done` once, however many times it is called, and taken off `inFlight`. */
+function once(done: () => void): () => void {
+  const entry = { frames: 0, settle: () => {} };
+  entry.settle = () => { if (!inFlight.delete(entry)) return; done(); };
+  inFlight.add(entry);
+  return entry.settle;
 }
 
 /** `shadow`: the object's material is a shadow's depth material, compiled for a shadow map. */
 export function compileAhead(object: Object3D, shadow = false): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object, shadow, done }));
+  return new Promise((done) => toCompile.push({ object, shadow, done: once(done) }));
+}
+
+/** `object`'s programs as they are drawn under another set of the scene's lights (`lights`, every one counted lit or not): the variant a light switched on or off asks for, built before it is. */
+export function compileAheadWith(object: Object3D, lights: readonly Object3D[]): Promise<void> {
+  if (!compiler) return Promise.resolve();
+  return new Promise((done) => toCompile.push({ object, shadow: false, done: once(done), lights }));
 }
 
 /** DO NOT draw a pass of its own (`people/crowdAnimation.ts` palette pass) before its program is built: compiled on its first draw, in the frame (2026-10-16) */
 export function compilePassAhead(scene: Scene, camera: Camera, target: WebGLRenderTarget): Promise<void> {
   if (!compiler) return Promise.resolve();
-  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done, pass: { camera, target } }));
+  return new Promise((done) => toCompile.push({ object: scene, shadow: false, done: once(done), pass: { camera, target } }));
 }
 
 /** Starts compiling what is waiting; each promise settles when its shaders are ready. */
 export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
   compiler = true;
+  // A compile waited for past its frames settles: never a mesh held for ever.
+  for (const entry of [...inFlight]) if (++entry.frames > COMPILE_FRAMES) entry.settle();
   if (!toCompile.length) return;
+  // Without the parallel compile, three's compileAsync polls each program with a timer: built here at once instead, off the draw, and settled.
+  const extensions = (renderer as { extensions?: { has?: (name: string) => boolean } }).extensions;
+  const parallel = extensions?.has?.('KHR_parallel_shader_compile') ?? true;
+  const build = (object: Object3D, cameraFor: Camera, targetScene: Scene): Promise<unknown> => {
+    if (parallel) return renderer.compileAsync(object, cameraFor, targetScene);
+    renderer.compile(object, cameraFor, targetScene);
+    return Promise.resolve();
+  };
   // For the target the scene is really drawn into: its colour space and tone mapping are part of every program.
   const previous = renderer.getRenderTarget();
+  // DO NOT let three walk the whole scene for its lights once per object compiled (`compile` traverses its target scene): gathered once for this drain.
+  const lit = litScene(scene);
   try {
     while (toCompile.length) {
-      const { object, shadow, done, pass } = toCompile.shift()!;
+      const { object, shadow, done, pass, lights } = toCompile.shift()!;
       if (pass) {
         // Its own scene's lights (none) and its own target, as it is drawn.
         renderer.setRenderTarget(pass.target);
         try {
-          renderer.compileAsync(object, pass.camera, object as Scene).then(() => done(), () => done());
+          build(object, pass.camera, object as Scene).then(() => done(), () => done());
         } catch (error) {
           console.error('[uploads] the program of a pass could not be compiled ahead', error);
           done();
@@ -180,7 +216,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
         if (unit.variant) setDepth((unit.object as Mesh).material as DepthMaterial, unit.variant);
         // DO NOT let one program that cannot be built stop the others, nor the frame: said, and the promise still settles.
         try {
-          compiled.push(renderer.compileAsync(unit.object, camera, scene));
+          compiled.push(build(unit.object, camera, lights ? lightSet(scene, lights) : lit));
         } catch (error) {
           console.error('[uploads] a program could not be compiled ahead', error);
         }
@@ -192,19 +228,43 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   }
 }
 
+/** The scene as three's `compile` reads its target (its lights, fog and environment), with its lights gathered once (`litScene`). */
+const litScenes = new WeakMap<Scene, { readonly scene: Scene; readonly lights: Object3D[] }>();
+/** `scene` with its visible lights gathered now: three's compile walks the stand-in's lights only, and reads the rest (fog, environment) from the scene. */
+function litScene(scene: Scene): Scene {
+  let lit = litScenes.get(scene);
+  if (!lit) {
+    const lights: Object3D[] = [];
+    const proxy = Object.create(scene, {
+      traverseVisible: { value: (visit: (object: Object3D) => void) => { for (const light of lights) visit(light); } },
+    }) as Scene;
+    lit = { scene: proxy, lights };
+    litScenes.set(scene, lit);
+  }
+  const lights = lit.lights;
+  lights.length = 0;
+  scene.traverseVisible((o) => { if ((o as Light).isLight) lights.push(o); });
+  return lit.scene;
+}
+
+/** `scene` as three's compile reads it with `lights` for its lights: the program variant those lights make. */
+function lightSet(scene: Scene, lights: readonly Object3D[]): Scene {
+  return Object.create(scene, {
+    traverseVisible: { value: (visit: (object: Object3D) => void) => { for (const light of lights) visit(light); } },
+  }) as Scene;
+}
+
 /** Meshes whose geometry must be on the GPU before they are first drawn. three.js sends a geometry's buffers */
-const WARM_LAYER = 31;
 const toWarm: { mesh: Mesh; geometries: readonly BufferGeometry[]; done: () => void }[] = [];
 /** DO NOT queue loose meshes behind the scene's: one FIFO stopped at a scene job at its head, and the masses behind it kept their CPU arrays (110 MB, 2026-10-16). */
 interface LooseJob { readonly mesh: Mesh; readonly done: () => void; readonly priority: () => number; rank: number }
 const toWarmLoose: LooseJob[] = [];
 let warmer = false;
-const lightsOf = new WeakMap<Scene, Light[]>();
 export function warmAhead(mesh: Mesh, geometries: readonly BufferGeometry[]): Promise<void> {
   if (!warmer) return Promise.resolve();
   return new Promise((done) => toWarm.push({ mesh, geometries, done }));
 }
-/** Meshes not in the scene yet (a batch of buildings put together to replace the one drawn); `priority`: the pixels of error their absence leaves on the screen, the largest sent first. */
+/** Meshes not in the scene yet (a batch of buildings put together to replace the one drawn); `priority`: the pixels of error their absence leaves on the screen, the largest sent first. Settles once their buffers are on the GPU and their programs, lit and in the shadow, are built (`programsReady`). */
 export function warmLooseAhead(meshes: readonly Mesh[], priority: () => number = () => 0): Promise<void> | null {
   // Nothing to wait for where no frame warms (tests, before the first frame).
   if (!warmer || meshes.length === 0) return null;
@@ -222,35 +282,147 @@ export function cancelWarm(meshes: Iterable<Mesh>): void {
     }
   }
 }
-/** Sends one waiting scene mesh's geometry to the GPU, after the frame (`renderer.ts`), and loose meshes by their error on the screen within a few milliseconds (one at least, so the queue always moves). */
-export function drainWarm(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
+/** The bytes a mesh's buffers take on the GPU: every attribute (an interleaved buffer once), the index, an instanced mesh's matrices and colours. */
+export function meshBytes(mesh: Mesh, geometries: readonly BufferGeometry[] = [mesh.geometry]): number {
+  const seen = new Set<unknown>();
+  let bytes = 0;
+  const add = (array: { readonly byteLength: number } | null | undefined, owner: unknown): void => {
+    if (!array || seen.has(owner)) return;
+    seen.add(owner);
+    bytes += array.byteLength;
+  };
+  for (const g of geometries) {
+    for (const a of Object.values(g.attributes)) {
+      const interleaved = (a as { data?: { array: ArrayLike<number> & { byteLength: number } } }).data;
+      if (interleaved) add(interleaved.array, interleaved);
+      else add((a as { array: ArrayLike<number> & { byteLength: number } }).array, a);
+    }
+    if (g.index) add(g.index.array as ArrayLike<number> & { byteLength: number }, g.index);
+  }
+  const instanced = mesh as Mesh & { isInstancedMesh?: boolean; instanceMatrix?: { array: Float32Array }; instanceColor?: { array: Float32Array } | null };
+  if (instanced.isInstancedMesh) {
+    add(instanced.instanceMatrix?.array, instanced.instanceMatrix);
+    add(instanced.instanceColor?.array, instanced.instanceColor);
+  }
+  return bytes;
+}
+
+/** Sends waiting meshes to the GPU after the frame (`renderer.ts`): the scene's first, then the loose ones by their error on the screen, up to `UPLOAD_BYTES` of buffers a frame (one at least, so the queue always moves). */
+export function drainWarm(renderer: WebGLRenderer): void {
   warmer = true;
-  warmOne(renderer, camera, scene, target);
+  let budget = UPLOAD_BYTES;
+  // DO NOT measure the sending by the page's clock: `bufferData` returns once the browser has copied the arrays, the GPU process takes them in after, in the next frame; the bytes are what the GPU takes.
+  while (toWarm.length > 0 && (budget === UPLOAD_BYTES || budget > 0)) {
+    const one = toWarm.shift()!;
+    budget -= meshBytes(one.mesh, one.geometries);
+    try { warmLoose(renderer, one.mesh, one.geometries); } finally { one.done(); }
+  }
   if (toWarmLoose.length === 0) return;
-  const until = performance.now() + WARM_SLICE_MS;
   // Ranked once a frame, the largest error last (popped first); the eye moved since they were queued.
   for (const job of toWarmLoose) job.rank = job.priority();
   toWarmLoose.sort((a, b) => a.rank - b.rank);
-  do {
+  while (toWarmLoose.length > 0 && (budget === UPLOAD_BYTES || budget > 0)) {
     const job = toWarmLoose.pop()!;
-    try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { job.done(); }
-  } while (toWarmLoose.length > 0 && performance.now() < until);
+    budget -= meshBytes(job.mesh);
+    try { warmLoose(renderer, job.mesh, [job.mesh.geometry]); } finally { void programsReady(job.mesh).then(job.done, job.done); }
+  }
 }
-/** Milliseconds a frame for loose meshes (`drainWarm`). */
-const WARM_SLICE_MS = 6;
+
+/** DO NOT let a mesh be drawn before its programs are built (a program first used in the frame's draw stalls it, three's onFirstUse): its own and its shadow's, compiled ahead at the next drain (`drainCompiles`, KHR_parallel_shader_compile); what waits for the mesh waits for them too. */
+export function programsReady(mesh: Mesh): Promise<unknown> {
+  // Nothing built ahead where no renderer answers (tests): nothing waited for.
+  if (!compiler) return Promise.resolve();
+  // Through the variants the door keeps (`programsOf`): a mesh warmed here goes in at once when it enters the scene.
+  let waiting: Promise<unknown> | null;
+  // DO NOT let a mesh that cannot be stood in for stop the queue (an exception here left its job unsettled): it goes as it is.
+  try { waiting = programsOf(mesh); } catch (error) { console.error('[uploads] a mesh\'s programs could not be asked for', error); waiting = null; }
+  if (!waiting) return Promise.resolve();
+  pendingPrograms++;
+  return waiting.finally(() => { pendingPrograms--; });
+}
+/** THE ONE DOOR INTO THE DRAWN SCENE: what comes in with a program not built yet waits on a layer no camera draws (the colour pass's nor the shadow's: three tests the main camera's layers in both) until its programs, lit and in the shadow, are built ahead; then it is drawn as it was. DO NOT gate by `visible`: the layers' level choices set it every frame. */
+const GATE_LAYER = 30;
+/** Each program variant asked for, by what of a mesh is in its key (its material and the mesh's own flags), and whether it is built: a mesh of a variant built goes in at once. */
+const variants = new Map<string, { built: boolean; ready: Promise<unknown> }>();
+/** What three's program key reads of a mesh lit (r186 `WebGLPrograms.getParameters`): its materials, how it is instanced, skinned, morphed, its attributes, whether it takes shadows. */
+function litKey(mesh: Mesh): string {
+  const m = mesh as Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean; isBatchedMesh?: boolean; instanceColor?: unknown; morphTexture?: unknown };
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  const g = mesh.geometry;
+  return ['lit', materials.map((x) => `${x.uuid}:${x.version}`).join(','), !!m.isInstancedMesh, !!m.instanceColor, !!m.morphTexture, !!m.isSkinnedMesh, !!m.isBatchedMesh,
+    mesh.receiveShadow, Object.keys(g.attributes).sort().join(','), Object.keys(g.morphAttributes).sort().join(',')].join('/');
+}
+/** A variant's programs asked for once, with `mesh` as its stand-in; the promise settles when they are built. */
+function variantReady(key: string, build: () => Promise<unknown>): { built: boolean; ready: Promise<unknown> } {
+  let known = variants.get(key);
+  if (!known) {
+    const made: { built: boolean; ready: Promise<unknown> } = { built: false, ready: Promise.resolve() };
+    made.ready = build().finally(() => { made.built = true; });
+    variants.set(key, made);
+    known = made;
+  }
+  return known;
+}
+/** The programs a mesh is drawn with, lit and in the shadow (its variants, each asked for once): null when they are all built already. */
+function programsOf(mesh: Mesh): Promise<unknown> | null {
+  const waits: Promise<unknown>[] = [];
+  const lit = variantReady(litKey(mesh), () => compileAhead(mesh));
+  if (!lit.built) waits.push(lit.ready);
+  if (mesh.castShadow) {
+    // Its stand-in made only for a variant not asked for yet.
+    const cast = variantReady(`cast/${casterKey(mesh)}`, () => { const shadow = shadowStandIn(mesh); return shadow ? compileAhead(shadow, true) : Promise.resolve(); });
+    if (!cast.built) waits.push(cast.ready);
+  }
+  return waits.length ? Promise.all(waits) : null;
+}
+/** Each mesh held at the door, and the layers it had. */
+const gated = new WeakMap<Object3D, number>();
+/** What comes into the scene (`renderer.ts` childadded): every mesh, line and points under it whose programs are not built held off the drawn layers until they are (`programsOf`). Nothing is held where no renderer answers (tests, the opening before the first frame: the catalogue builds those). */
+export function gateUntilBuilt(root: Object3D): void {
+  if (!compiler) return;
+  root.traverse((object) => {
+    const mesh = object as Mesh & { isLine?: boolean; isPoints?: boolean };
+    if (!(mesh.isMesh || mesh.isLine || mesh.isPoints) || gated.has(object) || !mesh.material) return;
+    let waiting: Promise<unknown> | null;
+    try { waiting = programsOf(mesh); } catch (error) { console.error('[uploads] a mesh\'s programs could not be asked for', error); waiting = null; }
+    if (!waiting) return;
+    gated.set(object, object.layers.mask);
+    object.layers.set(GATE_LAYER);
+    pendingPrograms++;
+    const open = (): void => {
+      pendingPrograms--;
+      const mask = gated.get(object);
+      gated.delete(object);
+      if (mask !== undefined && object.layers.mask === 1 << GATE_LAYER) object.layers.mask = mask;
+    };
+    // Built, failed or given up on (`COMPILE_FRAMES`): the door opens all the same.
+    void waiting.then(open, open);
+  });
+}
+
+/** Meshes whose programs are being built (`programsReady`): the renderer asks for frames meanwhile (`warmPending`). */
+let pendingPrograms = 0;
+/** Whether programs are built ahead here (a renderer answers; none in tests): a mesh waits for them only then. */
+export function compilesAhead(): boolean {
+  return compiler;
+}
+/** Buffers sent to the GPU a frame at most, bytes: 16 MiB took the page up to 42 ms in one frame of the conf27 move (bufferData at ~2.6 ms a MiB): 4 MiB, ~10 ms there. */
+const UPLOAD_BYTES = 4 * 1024 * 1024;
 /** Whether meshes still wait to go to the GPU: the renderer asks for another frame meanwhile. */
 export function warmPending(): boolean {
-  return toWarm.length > 0 || toWarmLoose.length > 0;
+  return toWarm.length > 0 || toWarmLoose.length > 0 || pendingPrograms > 0;
 }
 
 /** A loose mesh's buffers sent up in a scene of its own (`warmLoose`) */
 const LOOSE = {
   scene: Object.assign(new ThreeScene(), { matrixWorldAutoUpdate: false }),
+  // Every layer: a mesh held at the door (`gateUntilBuilt`) still has its buffers sent.
   camera: new OrthographicCamera(),
   material: new MeshBasicMaterial(),
   target: new WebGLRenderTarget(1, 1),
 };
 LOOSE.scene.overrideMaterial = LOOSE.material;
+LOOSE.camera.layers.enableAll();
 
 /** DO NOT draw the whole scene for it (on a layer of its own) */
 function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly BufferGeometry[]): void {
@@ -275,49 +447,6 @@ function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly Buf
     // Back where it was among its group's children: the order meshes of one render order are drawn in.
     if (parent) { parent.add(mesh); parent.children.splice(parent.children.length - 1, 1); parent.children.splice(at, 0, mesh); }
     renderer.setRenderTarget(previous);
-  }
-}
-
-function warmOne(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
-  const job = toWarm.shift();
-  if (!job) return;
-  const { mesh, geometries, done } = job;
-  let lights = lightsOf.get(scene);
-  if (!lights) {
-    lights = [];
-    scene.traverse((o) => { if ((o as Light).isLight) lights!.push(o as Light); });
-    lightsOf.set(scene, lights);
-  }
-  const mask = camera.layers.mask;
-  const visible = mesh.visible;
-  const original = mesh.geometry;
-  const previous = renderer.getRenderTarget();
-  const autoClear = renderer.autoClear;
-  // The world's matrices were brought up to date by the frame just drawn.
-  const autoUpdate = scene.matrixWorldAutoUpdate;
-  try {
-    scene.matrixWorldAutoUpdate = false;
-    for (const light of lights) light.layers.enable(WARM_LAYER);
-    mesh.layers.enable(WARM_LAYER);
-    mesh.visible = true;
-    camera.layers.set(WARM_LAYER);
-    renderer.setRenderTarget(target);
-    // The frame in the target has been shown already; nothing is cleared.
-    renderer.autoClear = false;
-    for (const geometry of geometries) {
-      mesh.geometry = geometry;
-      renderer.render(scene, camera);
-    }
-  } finally {
-    mesh.geometry = original;
-    mesh.visible = visible;
-    mesh.layers.disable(WARM_LAYER);
-    for (const light of lights) light.layers.disable(WARM_LAYER);
-    camera.layers.mask = mask;
-    renderer.autoClear = autoClear;
-    scene.matrixWorldAutoUpdate = autoUpdate;
-    renderer.setRenderTarget(previous);
-    done();
   }
 }
 

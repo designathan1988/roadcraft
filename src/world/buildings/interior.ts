@@ -141,7 +141,7 @@ function flightBox(f: LevelFlight): [number, number, number, number] {
     : [f.foot.x - h, Math.min(f.foot.y, f.top.y) - m(0.2), f.foot.x + h, Math.max(f.foot.y, f.top.y) + m(0.2)];
 }
 
-/** What a building's floors are furnished from besides its blocks (`furnishFloor`, `deriveSpaces`, `flatPlan`, `levelFlights`), and its floors furnished so far by level */
+/** What a building's floors are furnished from besides its blocks (`furnishFloor`, `deriveSpaces`, `flatPlan`, `levelFlights`), its floors furnished so far by level, and by type of floor */
 interface Furnished {
   readonly rhythm: Rhythm;
   readonly cores: Building['cores'];
@@ -149,27 +149,54 @@ interface Furnished {
   readonly fn: Building['function'];
   readonly furnishing: Building['furnishing'];
   readonly floors: Map<number, FloorInterior>;
+  /** Each type of floor furnished (`floorType`): the levels of one type share its pieces and walls. */
+  readonly types: Map<string, FloorInterior>;
+  /** Each storey record a type reads, by a number of its own (a tile's alike storeys are one object, `intern.ts`). */
+  readonly storeys: Map<object, number>;
 }
 
 /** Each blocks list's furnished floors, one set per rest of the building it was asked with. */
 const furnishedOf = identityMemo((_volumes: readonly Volume[]): Furnished[] => []);
 
 /** DO NOT key them by the record (each emission's body is a new one on the same blocks, `emitChunk`) nor cap them: kept on the blocks list, let go with it */
-function floorsOf(b: Building): Map<number, FloorInterior> {
+function furnishedFor(b: Building): Furnished {
   const known = furnishedOf(b.volumes);
   for (const k of known) {
-    if (k.cores === b.cores && k.use === b.use && k.fn === b.function && k.furnishing === b.furnishing && sameRhythm(k.rhythm, b)) return k.floors;
+    if (k.cores === b.cores && k.use === b.use && k.fn === b.function && k.furnishing === b.furnishing && sameRhythm(k.rhythm, b)) return k;
   }
-  const floors = new Map<number, FloorInterior>();
-  known.push({ rhythm: rhythmOf(b), cores: b.cores, use: b.use, fn: b.function, furnishing: b.furnishing, floors });
-  return floors;
+  const made: Furnished = { rhythm: rhythmOf(b), cores: b.cores, use: b.use, fn: b.function, furnishing: b.furnishing, floors: new Map(), types: new Map(), storeys: new Map() };
+  known.push(made);
+  return made;
 }
 
-/** One floor of a building, inside: furnished once for its blocks and the rest it reads (the records sharing them share it; a building emitted, its windows' rooms and the cut-open view alike). */
+/** DO NOT furnish every storey of a tower: a floor is furnished from what it reads of its level alone - ground or not, its height, the cores through it, and each block standing on it with its storey record, first or last of the block - so two levels alike in all of these are one type, furnished once. Null: the player's own arrangement, of its level alone. */
+function floorType(b: Building, level: number, storeys: Map<object, number>): string | null {
+  if (b.furnishing?.[String(level)]) return null;
+  let key = `${level === 0 ? 'g' : 'u'}${levelHeight(b, level)}`;
+  b.cores.forEach((c, i) => { if (c.from <= level && c.to >= level) key += `c${i}`; });
+  b.volumes.forEach((v, i) => {
+    if (v.open || v.mode === 'void' || v.mode === 'intersect' || !(v.base <= level && volumeTop(v) > level)) return;
+    const k = level - v.base, storey = v.storeys[k]!;
+    let id = storeys.get(storey);
+    if (id === undefined) storeys.set(storey, id = storeys.size);
+    key += `|${i}:${id}${k === 0 ? 'f' : ''}${k === v.storeys.length - 1 ? 't' : ''}`;
+  });
+  return key;
+}
+
+/** One floor of a building, inside: furnished once for its blocks, the rest it reads and its type (the records sharing them share it; a building emitted, its windows' rooms and the cut-open view alike). */
 export function interiorAt(b: Building, level: number): FloorInterior {
-  const floors = floorsOf(b);
-  let floor = floors.get(level);
-  if (!floor) floors.set(level, floor = furnishFloor(b, level));
+  const made = furnishedFor(b);
+  let floor = made.floors.get(level);
+  if (floor) return floor;
+  const type = floorType(b, level, made.storeys);
+  const like = type === null ? undefined : made.types.get(type);
+  if (like) floor = { level, furniture: like.furniture, partitions: like.partitions };
+  else {
+    floor = furnishFloor(b, level);
+    if (type !== null) made.types.set(type, floor);
+  }
+  made.floors.set(level, floor);
   return floor;
 }
 

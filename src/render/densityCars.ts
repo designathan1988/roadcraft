@@ -3,15 +3,20 @@ import {
   DataTexture,
   DynamicDrawUsage,
   FloatType,
+  Group,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
   Mesh,
   MeshStandardMaterial,
   NearestFilter,
   RGBAFormat,
+  Sphere,
   Vector3,
   type BufferGeometry,
 } from 'three';
+import { TILE } from '@world/tiles';
+import { pinned } from './pinned';
+import { TERRAIN_MAX_HEIGHT, TERRAIN_MIN_HEIGHT } from '@world/terrain';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
@@ -22,7 +27,8 @@ import { MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS,
 import { JAM_SPACING } from '@sim/meso/model';
 import { linkDirection, linkSegment } from '@sim/meso/tileLinks';
 
-/** THE FAR TRAFFIC: the meso model's cars on every road outside the micro window, as Cidade's density cars, in one draw */
+/** THE FAR TRAFFIC: the meso model's cars on every road outside the micro window, as Cidade's density cars, a draw a tile */
+/** DO NOT write every far car again at each meso step nor draw the tiles off the view: each link's cars belong to the tile of its middle, a mesh a tile culled by its sphere, and only the tiles where a link's numbers changed are written and sent. */
 // Each car an instance (its link's slot, place, lane, speed); the vertex shader places it on the link's road in a float texture (`texelFetch`):
 // the page's roads by their centreline, the far tiles' straight through the start, middle and end their link tables give (`meso/tileLinks.ts`).
 
@@ -37,8 +43,14 @@ const FIRST_CAPACITY = 1 << 15;
 const RECENTRE = MICRO_RADIUS * 0.3;
 /** Seconds of the wall a window message may go unanswered (the worker not up yet) before it is sent again. */
 const RESEND_MS = 2000;
-/** Most far cars drawn: past it the farthest roads' are not written. */
+/** Most far cars drawn: past it the roads of a tile written last are not written. */
 const MOST_CARS = 1 << 18;
+/** A link's numbers its cars are written from (`SIGNATURE` floats a slot): their count, queue, speed, lanes, road length and flags. */
+const SIGNATURE = 6;
+/** A tile's mesh starts with room for this many cars; it doubles with them. */
+const TILE_START = 256;
+/** A tile's sphere: its half diagonal and the land's heights, with a car's room over the highest deck. */
+const TILE_RADIUS = Math.hypot(TILE / 2, TILE / 2, (TERRAIN_MAX_HEIGHT - TERRAIN_MIN_HEIGHT) / 2 + m(80));
 /** The shader's clock wraps here (seconds): a float keeps a car's place to a few centimetres. */
 const TIME_WRAP = 4096;
 /** A far road's lane, for its cars' places across it (its profile is the store's, not on the page). */
@@ -99,7 +111,7 @@ vec3 transformed = carHidden ? carAt : carAt + carX * position.x + vec3(0.0, pos
 `;
 
 export interface DensityCars {
-  readonly object: Mesh;
+  readonly object: Group;
   /** Each frame: the window told the worker, the roads' lines the network or the meso changed written, the cars of a new meso step written. */
   update(net: Network, sim: SimClient, focusX: number, focusY: number): void;
   dispose(): void;
@@ -142,33 +154,81 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
   material.customProgramCacheKey = () => 'density-cars-v1';
 
   const shape = carGeometry();
-  let capacity = 0;
-  let link = new Float32Array(0), move = new Float32Array(0);
-  let linkAttribute: InstancedBufferAttribute | null = null, moveAttribute: InstancedBufferAttribute | null = null;
-  let geometry = makeGeometry(0);
-  const mesh = new Mesh(geometry, material);
-  mesh.name = 'densityCars';
-  // Placed by the shader all over the map: no box to cull it by.
-  mesh.frustumCulled = false;
-  mesh.matrixAutoUpdate = false;
-  mesh.castShadow = false;
-  mesh.receiveShadow = true;
+  const group = new Group();
+  group.name = 'densityCars';
+  pinned(group);
 
-  /** A geometry with room for `n` cars (the old one let go: three keeps a geometry's buffers until it is disposed). */
-  function makeGeometry(n: number): InstancedBufferGeometry {
+  /** The cars of one tile: a mesh culled by the tile's sphere, its links (slots), and whether one of them changed since it was written. */
+  interface CarTile {
+    readonly mesh: Mesh;
+    geometry: InstancedBufferGeometry;
+    link: Float32Array;
+    move: Float32Array;
+    linkAttribute: InstancedBufferAttribute;
+    moveAttribute: InstancedBufferAttribute;
+    capacity: number;
+    n: number;
+    readonly slots: Set<number>;
+    dirty: boolean;
+  }
+  const tiles = new Map<number, CarTile>();
+  /** Each slot's tile, and the numbers its cars were last written from (NaN: write them). */
+  let slotTile: (CarTile | undefined)[] = [];
+  let signature = new Float32Array(0);
+  /** Cars written in every tile. */
+  let total = 0;
+
+  /** A geometry for a tile with room for `n` cars (the old one let go: three keeps a geometry's buffers until it is disposed), its sphere the tile's. */
+  function tileGeometry(tile: Pick<CarTile, 'link' | 'move' | 'linkAttribute' | 'moveAttribute' | 'capacity'>, n: number, sphere: Sphere): InstancedBufferGeometry {
     const g = new InstancedBufferGeometry();
     g.index = shape.index;
     g.setAttribute('position', shape.getAttribute('position'));
     g.setAttribute('normal', shape.getAttribute('normal'));
-    link = new Float32Array(Math.max(4, n * 4));
-    move = new Float32Array(Math.max(4, n * 4));
-    linkAttribute = new InstancedBufferAttribute(link, 4).setUsage(DynamicDrawUsage);
-    moveAttribute = new InstancedBufferAttribute(move, 4).setUsage(DynamicDrawUsage);
-    g.setAttribute('aLink', linkAttribute);
-    g.setAttribute('aMove', moveAttribute);
+    tile.link = new Float32Array(n * 4);
+    tile.move = new Float32Array(n * 4);
+    tile.linkAttribute = new InstancedBufferAttribute(tile.link, 4).setUsage(DynamicDrawUsage);
+    tile.moveAttribute = new InstancedBufferAttribute(tile.move, 4).setUsage(DynamicDrawUsage);
+    g.setAttribute('aLink', tile.linkAttribute);
+    g.setAttribute('aMove', tile.moveAttribute);
     g.instanceCount = 0;
-    capacity = n;
+    // The cars are placed by the shader inside their tile: the tile's sphere is what the view culls.
+    g.boundingSphere = sphere;
+    tile.capacity = n;
     return g;
+  }
+
+  /** The tile at (cx, cy), made on first use. */
+  function tileAt(cx: number, cy: number): CarTile {
+    const key = cx * 65536 + cy;
+    let tile = tiles.get(key);
+    if (tile) return tile;
+    const sphere = new Sphere(new Vector3((cx + 0.5) * TILE, (TERRAIN_MAX_HEIGHT + TERRAIN_MIN_HEIGHT) / 2, -(cy + 0.5) * TILE), TILE_RADIUS);
+    const made = { link: new Float32Array(0), move: new Float32Array(0), capacity: 0 } as unknown as CarTile;
+    const geometry = tileGeometry(made, TILE_START, sphere);
+    const mesh = new Mesh(geometry, material);
+    mesh.name = `densityCars-${cx},${cy}`;
+    pinned(mesh);
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    // Nothing drawn until a car is written.
+    mesh.visible = false;
+    tile = Object.assign(made, { mesh, geometry, n: 0, slots: new Set<number>(), dirty: false });
+    tiles.set(key, tile);
+    group.add(mesh);
+    return tile;
+  }
+
+  /** The slot's link filed in the tile of its middle (`ML.mx`, `ML.my`); the tiles it left and joined written again. */
+  function fileSlot(slot: number): void {
+    const r = slot * MESO_RECORD, recs = memory.links;
+    const present = (recs[r + ML.flags]! & MESO_PRESENT) !== 0 && !Number.isNaN(slotLink[slot] ?? Number.NaN);
+    const mx = recs[r + ML.mx]!, my = recs[r + ML.my]!;
+    const next = present && Number.isFinite(mx) && Number.isFinite(my) ? tileAt(Math.floor(mx / TILE), Math.floor(my / TILE)) : undefined;
+    const was = slotTile[slot];
+    if (was === next) return;
+    if (was) { was.slots.delete(slot); was.dirty = true; }
+    if (next) { next.slots.add(slot); next.dirty = true; }
+    slotTile[slot] = next;
   }
 
   /** Room in the texture for slot `slot`: rows doubled, what was written kept. */
@@ -196,6 +256,10 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     const shapes = new Float32Array(n);
     shapes.set(seenShape);
     seenShape = shapes;
+    const signatures = new Float32Array(n * SIGNATURE).fill(Number.NaN);
+    signatures.set(signature);
+    signature = signatures;
+    slotTile.length = n;
   }
 
   /** One slot's line into the texture, its range marked for upload: the page's road by its centreline and deck, a far one straight through its table's points on the ground (none: its cars hidden). */
@@ -234,6 +298,10 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     }
     if (!whole) texture.addUpdateRange(at, LINK_POINTS * 4);
     texture.needsUpdate = true;
+    // Its cars written again (their length and lanes across the road come from the line).
+    if (slot * SIGNATURE < signature.length) signature[slot * SIGNATURE] = Number.NaN;
+    const tile = slotTile[slot];
+    if (tile) tile.dirty = true;
   }
 
   /** DO NOT write every line again for an edit or a tile come or gone: only the slots of the segments the network's delta names (a road on the page now drawn by its centreline, or gone back to its table's line). */
@@ -270,6 +338,7 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
         if (!set) bySegment.set(linkSegment(now), set = new Set());
         set.add(slot);
       }
+      fileSlot(slot);
       writeLine(net, slot);
     }
   }
@@ -292,26 +361,50 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     sent = { x: cx, y: cy, at: now, buffer: memory.buffer };
   }
 
-  /** The cars of the meso step just written: each road's count, its queue packed at its end, the rest moving round the free stretch. */
-  function writeCars(net: Network, slots: number): void {
+  /** The tiles of the slots whose numbers the meso step changed (their count, queue, speed, lanes, line or flags), marked to be written. */
+  function noteChanges(slots: number): void {
     const recs = memory.links;
+    for (let slot = 0; slot < slots; slot++) {
+      const tile = slotTile[slot];
+      if (!tile) continue;
+      const r = slot * MESO_RECORD, o = slot * SIGNATURE;
+      const flags = recs[r + ML.flags]! & (MESO_PRESENT | MESO_INSIDE | MESO_ONE_WAY);
+      const count = recs[r + ML.count]!, queued = recs[r + ML.queued]!, speed = recs[r + ML.speed]!, lanes = recs[r + ML.lanes]!;
+      const L = lines[slot * LINK_POINTS * 4 + 3]!;
+      if (signature[o] === count && signature[o + 1] === queued && signature[o + 2] === speed && signature[o + 3] === lanes
+        && signature[o + 4] === L && signature[o + 5] === flags) continue;
+      signature[o] = count; signature[o + 1] = queued; signature[o + 2] = speed; signature[o + 3] = lanes; signature[o + 4] = L; signature[o + 5] = flags;
+      tile.dirty = true;
+    }
+  }
+
+  /** Lanes across a road, to the right of travel (at most a road's lanes; one each, not one a car). */
+  const lateralOf: number[] = [];
+
+  /** One tile's cars of the meso step: each road's count, its queue packed at its end, the rest moving round the free stretch; only its buffer sent. */
+  function writeTile(net: Network, tile: CarTile): void {
+    const recs = memory.links;
+    total -= tile.n;
+    const room = MOST_CARS - total;
     let n = 0;
     const put = (slot: number, s: number, lateral: number, dir: number, speed: number, wrap: number, seed: number): void => {
-      if (n >= capacity) {
-        const old = geometry;
-        const keepLink = link, keepMove = move;
-        geometry = makeGeometry(Math.min(MOST_CARS, Math.max(1024, capacity * 2)));
-        link.set(keepLink.subarray(0, n * 4));
-        move.set(keepMove.subarray(0, n * 4));
-        mesh.geometry = geometry;
+      if (n >= tile.capacity) {
+        const old = tile.geometry;
+        const keepLink = tile.link, keepMove = tile.move;
+        tile.geometry = tileGeometry(tile, tile.capacity * 2, old.boundingSphere!);
+        tile.link.set(keepLink.subarray(0, n * 4));
+        tile.move.set(keepMove.subarray(0, n * 4));
+        tile.mesh.geometry = tile.geometry;
         old.dispose();
       }
       const at = n * 4;
+      const link = tile.link, move = tile.move;
       link[at] = slot; link[at + 1] = s; link[at + 2] = lateral; link[at + 3] = dir;
       move[at] = speed; move[at + 1] = wrap; move[at + 2] = seed; move[at + 3] = 0;
       n++;
     };
-    for (let slot = 0; slot < slots && n < MOST_CARS; slot++) {
+    for (const slot of tile.slots) {
+      if (n >= room) break;
       const r = slot * MESO_RECORD;
       const flags = recs[r + ML.flags]!;
       if (!(flags & MESO_PRESENT) || flags & MESO_INSIDE) continue;
@@ -327,28 +420,32 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
       const oneWay = (flags & MESO_ONE_WAY) !== 0;
       const cars = Math.min(count, Math.floor((L * lanes) / JAM_SPACING));
       const queued = Math.min(cars, Math.round(recs[r + ML.queued]!));
-      const lateral = (k: number): number => ribbon
-        ? -laneOffset(ribbon.road, k % lanes, ribbon.direction, dir === 0)
-        : farLateral(k % lanes, lanes, oneWay);
-      for (let k = 0; k < queued && n < MOST_CARS; k++) {
-        put(slot, L - (Math.floor(k / lanes) + 0.5) * JAM_SPACING, lateral(k), dir, 0, 0, slot * 31 + k);
+      for (let lane = 0; lane < lanes; lane++) {
+        lateralOf[lane] = ribbon ? -laneOffset(ribbon.road, lane, ribbon.direction, dir === 0) : farLateral(lane, lanes, oneWay);
+      }
+      for (let k = 0; k < queued && n < room; k++) {
+        put(slot, L - (Math.floor(k / lanes) + 0.5) * JAM_SPACING, lateralOf[k % lanes]!, dir, 0, 0, slot * 31 + k);
       }
       const free = cars - queued, stretch = Math.max(0, L - Math.ceil(queued / lanes) * JAM_SPACING);
       const speed = recs[r + ML.speed]!;
-      for (let k = 0; k < free && stretch > 0 && n < MOST_CARS; k++) {
-        put(slot, ((k + 0.5) / free) * stretch, lateral(queued + k), dir, speed, stretch, slot * 31 + queued + k);
+      for (let k = 0; k < free && stretch > 0 && n < room; k++) {
+        put(slot, ((k + 0.5) / free) * stretch, lateralOf[(queued + k) % lanes]!, dir, speed, stretch, slot * 31 + queued + k);
       }
     }
-    for (const attribute of [linkAttribute!, moveAttribute!]) {
+    for (const attribute of [tile.linkAttribute, tile.moveAttribute]) {
       attribute.clearUpdateRanges();
       attribute.addUpdateRange(0, n * 4);
       attribute.needsUpdate = true;
     }
-    geometry.instanceCount = n;
+    tile.geometry.instanceCount = n;
+    tile.mesh.visible = n > 0;
+    tile.n = n;
+    total += n;
+    tile.dirty = false;
   }
 
   return {
-    object: mesh,
+    object: group,
     update(net, sim, focusX, focusY) {
       // The texture made or rewritten whole last frame was drawn (uploaded whole) since: ranges again from now.
       whole = false;
@@ -359,14 +456,17 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
       uniforms.uWindow.value.set(head[MH.windowX]!, head[MH.windowY]!, head[MH.windowR]!);
       uniforms.uTime.value = sim.clock.time % TIME_WRAP;
       const now = memory.serial;
-      if (now === serial) return;
-      serial = now;
-      const slots = Math.min(memory.capacity, memory.wanted);
-      readLines(net, slots);
-      writeCars(net, slots);
+      if (now !== serial) {
+        serial = now;
+        const slots = Math.min(memory.capacity, memory.wanted);
+        readLines(net, slots);
+        noteChanges(slots);
+      }
+      // The tiles a step or an edit changed: written and sent, the others left as they are.
+      for (const tile of tiles.values()) if (tile.dirty) writeTile(net, tile);
     },
     dispose() {
-      geometry.dispose();
+      for (const tile of tiles.values()) tile.geometry.dispose();
       shape.dispose();
       material.dispose();
       texture.dispose();

@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest';
 
 import { readStoredTilesWith } from '@core/storedTiles';
 import { prepareTile, preparedRecords } from '@editor/tileStore';
-import type { CellMass } from '@render/buildings/cellArrays';
+import type { FarMass } from '@render/buildings/cellArrays';
 import { type CellJob, runCellJob } from '@render/buildings/cellWork';
 import { FarLevels, type FarRun, type FarTileSource, farJobOf } from '@render/buildings/farLevels';
-import { type FarCache, type FarJob, TOP_LEVEL, bakeTileMasses, emptyRecords, farKey, farNode, runFarJob, tileRows } from '@render/buildings/farTiles';
+import { type FarCache, type FarJob, TOP_LEVEL, bakeTileMasses, emptyRecords, farKey, farNode, runFarJob, tileRows, tileSquare } from '@render/buildings/farTiles';
 import { createBuildingKit } from '@render/buildings/kit';
 import { PLATE_DETAIL, TILE_DETAIL } from '@render/buildings/massing';
 import { drawsSignature } from '@render/buildings/signature';
@@ -40,7 +40,7 @@ function leavesOf(o: unknown, path = '', out = new Map<string, unknown>()): Map<
 }
 
 /** Where two meshes' arrays differ, '' when they are the same to the byte. */
-function difference(a: CellMass | null, b: CellMass | null): string {
+function difference(a: FarMass | null, b: FarMass | null): string {
   const x = leavesOf(a), y = leavesOf(b);
   for (const path of new Set([...x.keys(), ...y.keys()])) if (!Object.is(x.get(path), y.get(path))) return path || '(root)';
   return '';
@@ -112,7 +112,8 @@ describe('a tile baked from the store', () => {
       };
       const reply = runCellJob(job, { groundAt, naturalAt });
       if (reply.kind !== 'done') throw new Error(reply.kind);
-      const baked = bakeTileMasses(records, detail, { groundAt, naturalAt });
+      // On the tile's grid, as the job for 't:0,0' lays them (`massGrid`).
+      const baked = bakeTileMasses(records, detail, { groundAt, naturalAt }, undefined, tileSquare(0, 0));
       expect(baked).not.toBeNull();
       expect(difference(baked, reply.result.mass ?? null)).toBe('');
     }
@@ -123,11 +124,12 @@ describe('a tile baked from the store', () => {
     expect(asked.kind).toBe('farRecords');
     const made = await runFarJob({ far: true, node, sig: '1', want: true, prefix: 'test:', buildings: tileRows(buildings) }, cache);
     if (made.kind !== 'far') throw new Error(made.kind);
-    expect(difference(made.mass, bakeTileMasses(records, TILE_DETAIL))).toBe('');
+    expect(difference(made.mass, bakeTileMasses(records, TILE_DETAIL, undefined, undefined, tileSquare(0, 0)))).toBe('');
     const again = await runFarJob({ far: true, node, sig: '1', want: true, prefix: 'test:' }, cache);
     if (again.kind !== 'far') throw new Error(again.kind);
     expect(difference(again.mass, made.mass)).toBe('');
-    expect(cache.puts).toEqual([`test:${node}`]);
+    // Each reader's part under its own key: the tile's masses, its plate's, its boxes.
+    expect(cache.puts).toEqual([`test:${node}`, `test:${node}#plate`, `test:${node}#boxes`]);
   });
 
   it("a level-1 node keeps its tiles' plates merged: drawn again, its four tiles are not read", async () => {
@@ -168,7 +170,7 @@ describe('a tile baked from the store', () => {
     const made = await runFarJob(job, memoryCache());
     if (made.kind !== 'far') throw new Error(made.kind);
     expect(made.mass).not.toBeNull();
-    expect(difference(made.mass, bakeTileMasses(stored, TILE_DETAIL))).toBe('');
+    expect(difference(made.mass, bakeTileMasses(stored, TILE_DETAIL, undefined, undefined, tileSquare(0, 0)))).toBe('');
   });
 });
 
@@ -218,6 +220,38 @@ describe('the far levels chosen top down', () => {
     kit.dispose();
   });
 
+  it('skips a choice that nothing it reads changed, and chooses again when a tile is stored or the eye moves', async () => {
+    const kit = createBuildingKit();
+    const cache = memoryCache();
+    const tiles = world();
+    const far = new FarLevels(kit, runner(cache), 'test:');
+    far.setSource(storeOf(tiles), () => false);
+    for (const [key, records] of tiles) far.stored(key, records.version);
+    const fromHigh = (): void => far.choose(0, 0, m(6_000), 1000, null);
+    await until(fromHigh, () => far.waiting === 0);
+    // Every answer in: the same eye walks nothing.
+    await new Promise((done) => setTimeout(done, 0));
+    fromHigh();
+    const walks = { n: 0 };
+    const tree = far as unknown as { visit: (n: unknown) => boolean };
+    const visit = tree.visit.bind(far);
+    tree.visit = (n) => { walks.n++; return visit(n); };
+    fromHigh();
+    expect(walks.n).toBe(0);
+    // The eye moved: walked again.
+    far.choose(m(10), 0, m(6_000), 1000, null);
+    expect(walks.n).toBeGreaterThan(0);
+    // A tile stored at a new version: walked again with the same eye.
+    walks.n = 0;
+    far.choose(m(10), 0, m(6_000), 1000, null);
+    expect(walks.n).toBe(0);
+    far.stored(tileKey(0, 0), 2);
+    far.choose(m(10), 0, m(6_000), 1000, null);
+    expect(walks.n).toBeGreaterThan(0);
+    far.dispose();
+    kit.dispose();
+  });
+
   it('waits only for the nodes in the view: those out of it are asked and drawn all the same, never waited for', async () => {
     const kit = createBuildingKit();
     const cache = memoryCache();
@@ -263,7 +297,7 @@ describe('the far levels chosen top down', () => {
     const fromAfar = (): void => far.choose(0, 0, m(50_000), 1000, 0.0005);
     await until(fromAfar, () => far.waiting === 0);
     // Every tile baked once, and the levels above them.
-    expect(cache.puts.filter((key) => key.startsWith('test:f0:')).length).toBe(tiles.size);
+    expect(cache.puts.filter((key) => key.startsWith('test:f0:') && !key.includes('#')).length).toBe(tiles.size);
     expect(new Set(cache.puts).size).toBe(cache.puts.length);
 
     cache.puts.length = 0;
@@ -271,10 +305,11 @@ describe('the far levels chosen top down', () => {
     tiles.set(changed, { ...tiles.get(changed)!, version: 2, buildings: [...tiles.get(changed)!.buildings, building(999, 0.6 * TILE, 0.4 * TILE)] });
     far.stored(changed, 2);
     const chain = Array.from({ length: TOP_LEVEL + 1 }, (_, k) => `test:${farKey(k, 0, 0)}`);
-    await until(fromAfar, () => cache.puts.length >= chain.length);
+    const nodes = (): string[] => [...new Set(cache.puts.map((key) => key.split('#')[0]!))];
+    await until(fromAfar, () => nodes().length >= chain.length);
     // A few more turns: nothing else is baked.
     for (let turn = 0; turn < 5; turn++) { fromAfar(); await new Promise((resolve) => setTimeout(resolve, 0)); }
-    expect([...cache.puts].sort()).toEqual([...chain].sort());
+    expect(nodes().sort()).toEqual([...chain].sort());
     far.dispose();
     kit.dispose();
   });

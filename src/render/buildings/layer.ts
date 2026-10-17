@@ -1,4 +1,4 @@
-import { Box3, Frustum, Group } from 'three';
+import { Box3, Frustum, Group, type Object3D } from 'three';
 import { Digest } from '@core/digest';
 
 import type { RoadDoc } from '@world/doc';
@@ -8,14 +8,14 @@ import type { RecordRef } from '@world/buildings/recordTable';
 import type { Building, BuildingId } from '@world/buildings/types';
 import { CellFiling } from '@world/cells';
 import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fliesFlag, kitBoxes, lotGroundAgain, signatureFloorOf } from './buildingMesh';
-import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellDistance, cellGroup, createCoverIndex, dropCell, groundDigest, recordRef } from './layerCells';
+import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellGroup, createCoverIndex, dropCell, groundDigest, recordRef } from './layerCells';
 import type { ChangeRect } from '@world/changes';
 import { type PartCell, type PartView, dropParts } from './partCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { FAR_ERROR, createMassCells } from './massCells';
-import { FrameScale, LandedTriangles, TYPICAL_LEVEL_TRIANGLES, SLACK, letGoPassed } from './frameBudget';
+import { FrameScale, LandedMeasure, TYPICAL_LEVEL_TRIANGLES, SLACK, letGoPassed } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
 import { FarLevels, farRunner } from './farLevels';
@@ -35,8 +35,6 @@ import type { CellEntry, ChunkSummary } from './cellWork';
 interface Kept { readonly sig: number; readonly digest: number; readonly b: Building; readonly summary: ChunkSummary; readonly pavedAt?: PavedAt; lot?: LotGround | null }
 
 
-/** What a cell's detail is reckoned to hold before any has landed (`MassCells.cap`): a dense 256 m cell's facade level, ~70 MB measured 2026-10-16. */
-const TYPICAL_CELL_BYTES = 64 * 2 ** 20;
 /** The ledger's classes of the cells' detail (L0) and facade level (L1): what the room left under the cap is shared by. */
 const DETAIL_CLASSES: readonly GpuClass[] = ['building detail', 'building facade'];
 const detailClass = (kind: BatchKind): GpuClass => (kind === 'cell' ? 'building detail' : 'building facade');
@@ -52,7 +50,7 @@ export function createBuildingLayer(): BuildingLayer {
   const massCells = createMassCells(kit, BATCH_CELL, (key) => {
     if (key[0] === 't' || key[0] === 'p') levels.release(key);
     else massAsked.delete(key);
-  });
+  }, (key) => !levels.outdated(key));
   group.add(massCells.group);
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
@@ -68,6 +66,9 @@ export function createBuildingLayer(): BuildingLayer {
   group.matrixAutoUpdate = false;
   group.updateMatrix();
   let stored: BuildingMeshes | null = null;
+  /** A far cascade's pass in progress (`castInto` coarse): each cell's detail group hidden for it, and whether it was shown before. */
+  let shadowCoarse = false;
+  const shadowHidden = new Map<Object3D, boolean>();
   let ruined: ReadonlySet<number> = new Set();
   /** Moves when the ruins change (`setRuined`), not when the same ones are given again. */
   let ruinedSerial = 0;
@@ -88,7 +89,9 @@ export function createBuildingLayer(): BuildingLayer {
   /** THE FRAME'S SCALE (`frameBudget.ts`): the view's budget of triangles, the error scale that fits it and the floor the GPU's time sets (`renderer.ts` `governFrame`). */
   const frame = new FrameScale();
   /** What each cell's level drew when it last landed (`show`): what a level not landed yet is reckoned at. */
-  const landedTriangles = new LandedTriangles<BatchKind>(TYPICAL_LEVEL_TRIANGLES);
+  const landedTriangles = new LandedMeasure<BatchKind>(TYPICAL_LEVEL_TRIANGLES);
+  /** What each cell's level held when it last landed, bytes: a level never landed counts as its kind's landed do on average (NaN before any: its cell's masses, `capNow`). */
+  const landedBytes = new LandedMeasure<BatchKind>({ cell: Number.NaN, facade: Number.NaN });
   /** A cell's level come or gone: its bytes counted (here and in the ledger), the level shown chosen again. */
   const counted = (kind: BatchKind, key: string, has: boolean): void => {
     const part = has ? (kind === 'cell' ? cells : facades).get(key)! : null;
@@ -161,11 +164,14 @@ export function createBuildingLayer(): BuildingLayer {
   const chooseNow = (): void => {
     if (eye) massCells.choose(eye.x, eye.y, eye.z, eye.pxAtMetre, eye.orthoPx, forcedNear, eye.reach, viewKnown ? eyeView : null);
   };
-  /** The detail drawn within the room the ledger leaves (`MassCells.cap`): a cell never landed counts as the cells landed do on average. */
+  /** The detail drawn within the room the ledger leaves (`MassCells.cap`): a level never landed counts as its kind's landed do on average, and before any of its kind landed as its cell's masses. DO NOT reckon it at a fixed number (64 MB each capped every cell before one came), nor at the masses once a level of its kind measured (the facade level holds 4-5 times its masses: the cap asked too many and the admission threw whole jobs away). */
   const capNow = (): void => {
     if (!eye) return;
-    const typical = resident.typical(TYPICAL_CELL_BYTES);
-    massCells.cap(eye.x, eye.y, room(), (key, fine) => resident.of(fine ? 'cell' : 'facade', key, typical), forcedNear);
+    massCells.cap(eye.x, eye.y, room(), (key, fine) => {
+      const kind: BatchKind = fine ? 'cell' : 'facade';
+      const mean = landedBytes.of(kind, key);
+      return resident.of(kind, key, Number.isNaN(mean) ? massCells.massBytes(key) : mean);
+    }, forcedNear);
   };
   /** The shown buildings by coarse cell, as last put together (`update`): what a cell streamed in is made of. */
   let townCells = new Map<string, Building[]>();
@@ -189,9 +195,11 @@ export function createBuildingLayer(): BuildingLayer {
   /** DO NOT fit the view's budget of triangles by raising one error scale for the whole view: every cell coarsened at once, the ones at the eye fell to their facade level; the farthest go first (`MassCells.cap`, as the bytes' budget), detail to facade level to masses, the nearest kept in detail */
   /** The cells the budget held back, remembered (`MassCells.hold`): a cell capped stays capped until there is room, then ONE comes back a frame, the nearest first (let all back at once, the view passed the budget again and they were capped again: the city blinked, cells loaded and unloaded by turns). */
   const heldFar = new Set<string>(), heldCoarse = new Set<string>();
+  /** How far down the order the budget coarsens in a cell stands (`MassCells.cap`): the less a metre spans there, the sooner it goes; DO NOT rank it by its distance to the eye's point on the plan (two cells alike either side of it were ranked apart). */
+  const rankOf = (key: string): number => -massCells.pixels(key, 1);
   const nearestHeld = (held: ReadonlySet<string>): string | null => {
     let best: string | null = null, bestD = Infinity;
-    for (const key of held) { const d = cellDistance(key, eye!.x, eye!.y); if (d < bestD) { bestD = d; best = key; } }
+    for (const key of held) { const d = rankOf(key); if (d < bestD) { bestD = d; best = key; } }
     return best;
   };
   const capTriangles = (): void => {
@@ -204,9 +212,8 @@ export function createBuildingLayer(): BuildingLayer {
       if (!massCells.near(key)) heldFar.add(key);
       else if (wasFine && !massCells.fine(key)) heldCoarse.add(key);
     }
-    // The eye moved: a cell held nearer it than one the budget keeps goes back to the view (the farthest are capped in its place).
-    const at = eye;
-    letGoPassed(heldFar, heldCoarse, [...massCells.nearKeys()].map((key) => ({ key, fine: massCells.fine(key) })), (key) => cellDistance(key, at.x, at.y));
+    // The eye moved: a cell held that spans more of the screen than one the budget keeps goes back to the view (the one spanning least is capped in its place).
+    letGoPassed(heldFar, heldCoarse, [...massCells.nearKeys()].map((key) => ({ key, fine: massCells.fine(key) })), rankOf);
     if ((heldFar.size || heldCoarse.size) && chosenTriangles() < frame.budget * SLACK) {
       const key = nearestHeld(heldCoarse) ?? nearestHeld(heldFar);
       if (key !== null) { heldCoarse.delete(key); heldFar.delete(key); }
@@ -217,15 +224,14 @@ export function createBuildingLayer(): BuildingLayer {
   const pendingCells = new Set<string>();
   /** DO NOT let a far cell's detail go */
   let shownNear = new Set<string>();
-  /** Over the budget, the cells drawn far let go, the farthest first: their masses, on the GPU already, stand for them */
+  /** Over the budget, the cells drawn far let go, those spanning least of the screen first (`rankOf`): their masses, on the GPU already, stand for them */
   const keepToBudget = (): void => {
     const budget = room();
     if (resident.total <= budget || !eye || !stored) return;
-    const at = eye;
     // The levels not shown, the detail first: a cell drawn at its facade level lets its detail go before any facade level goes.
     for (const kind of ['cell', 'facade'] as const) {
       const cache = kind === 'cell' ? cells : facades;
-      const far = [...cache.keys()].filter((key) => levelShown(key) !== kind && !pendingCells.has(key)).sort((a, b) => cellDistance(b, at.x, at.y) - cellDistance(a, at.x, at.y));
+      const far = [...cache.keys()].filter((key) => levelShown(key) !== kind && !pendingCells.has(key)).sort((a, b) => rankOf(b) - rankOf(a));
       for (const key of far) {
         if (resident.total <= budget) return;
         if (kind === 'cell') { dropCell(cells, key, stored); dropParts(partCells, key, partRoot); }
@@ -321,6 +327,7 @@ export function createBuildingLayer(): BuildingLayer {
   /** A cell's level landed: uploaded only if the view still wants it at that level within the room (the cap worked out again with its measured bytes). */
   const admit = (kind: BatchKind, cell: string, bytes: number): boolean => {
     resident.landed(kind, cell, bytes);
+    landedBytes.set(kind, cell, bytes);
     if (forcedNear.has(cell) || !eye) return true;
     capNow();
     return massCells.near(cell) && (massCells.fine(cell) ? 'cell' : 'facade') === kind;
@@ -771,12 +778,36 @@ export function createBuildingLayer(): BuildingLayer {
       for (const [kind, map] of [['cell', partCells], ['facade', facadeParts]] as const) {
         for (const [key, cell] of map) {
           cell.group.visible = levelShown(key) === kind;
-          if (cell.group.visible) cell.choose(partView);
+          if (!cell.group.visible) continue;
+          cell.choose(partView);
+          // What the level draws, measured with its parts chosen (DO NOT measure it as it lands: its parts are chosen at this cull, they counted 0 and the facade level's mean fell 7 times under what it draws).
+          const level = (kind === 'cell' ? cells : facades).get(key)?.part;
+          if (level) landedTriangles.set(kind, key, level.triangles + cell.triangles);
         }
       }
     },
-    castInto(texel) {
-      for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible) cell.castInto(texel);
+    castInto(texel, coarse = false) {
+      // DO NOT draw hundreds of detail meshes into a far cascade: a cell's masses are its silhouette at those texels, one mesh. Only the cells whose masses stand in: the detail of any other (none landed yet, a town drawn whole) still casts, never a hole.
+      if (texel === null || !coarse) {
+        if (shadowCoarse) {
+          shadowCoarse = false;
+          for (const [group, was] of shadowHidden) group.visible = was;
+          shadowHidden.clear();
+          massCells.shadowMasses(false);
+        }
+        if (texel === null) return;
+        for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible) cell.castInto(texel);
+        return;
+      }
+      if (shadowCoarse) return;
+      shadowCoarse = true;
+      for (const key of massCells.shadowMasses(true)) {
+        for (const group of [cells.get(key)?.part.group, facades.get(key)?.part.group, partCells.get(key)?.group, facadeParts.get(key)?.group]) {
+          if (!group || shadowHidden.has(group)) continue;
+          shadowHidden.set(group, group.visible);
+          group.visible = false;
+        }
+      }
     },
     setCutaway(next) {
       cutaway = next;

@@ -132,6 +132,42 @@ describe('lot overlay', () => {
     overlay.dispose();
   });
 
+  it('walks no group on the frames nothing changed, and only the groups named when a few did', () => {
+    const overlay = createLotOverlay();
+    const changes = new ChangeJournal();
+    /** The groups, counting every walk of them all (`values`, `entries`, the iterator). */
+    class Counted extends Map<string, LotOverlayGroup> {
+      walks = 0;
+      override values() { this.walks++; return super.values(); }
+      override entries() { this.walks++; return super.entries(); }
+      override [Symbol.iterator]() { this.walks++; return super[Symbol.iterator](); }
+    }
+    const groups = new Counted(lots(400).groups);
+    let changed: string[] = [];
+    let seen: object | null = null;
+    const input: LotOverlayInput = { groups, changedFor: (reader) => { if (reader !== seen) { seen = reader; return null; } return changed.splice(0); } };
+    overlay.set(input, changes);
+    // The drawing's frames with nothing changed (the overlay is set every frame, `main.ts` drawOverlayScreen): no group walked.
+    groups.walks = 0;
+    for (let f = 0; f < 60; f++) overlay.set(input, changes);
+    expect(groups.walks).toBe(0);
+    // One lot zoned inside the frame: only it laid again, the groups not walked.
+    groups.set('l37', lots(400, 37).groups.get('l37')!);
+    changed = ['l37'];
+    overlay.set(input, changes);
+    expect(groups.walks).toBe(0);
+    expect(sampleLattice(overlay.lattice, 37 % 20 * 24 + 11, Math.floor(37 / 20) * 32 + 15)?.records.some((r) => r.fill && r.inside)).toBe(true);
+    // A lot drawn far past the frame: the frame stood again over every lot, the far one drawn.
+    const far = 5 * PLATE_SIZE;
+    groups.set('far', { rank: 1, polygons: [{ corners: [{ x: far, y: 0 }, { x: far + 22, y: 0 }, { x: far + 22, y: 30 }, { x: far, y: 30 }], fill: 0x56bb73, fillAlpha: 0.5, line: 0xffffff, lineAlpha: 1, width: 0.35 }], lines: [], points: [] });
+    changed = ['far'];
+    overlay.set(input, changes);
+    expect(sampleLattice(overlay.lattice, far + 11, 15)?.records.some((r) => r.fill && r.inside)).toBe(true);
+    // The lots near the origin still drawn in the frame stood again (on lot 0's front).
+    expect(sampleLattice(overlay.lattice, 11, 0.2)?.records.length).toBeGreaterThan(0);
+    overlay.dispose();
+  });
+
   it('takes away what is no longer drawn', () => {
     const overlay = createLotOverlay();
     overlay.set(lots(100, 3));

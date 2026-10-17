@@ -10,16 +10,28 @@ export const WOODS_SLOPE_STEP = m(6);
 export function woodsBase(natural: (x: number, y: number) => number, half: number, cx: number, cy: number): Float32Array {
   const cells = Math.floor((half * 2) / WOODS_SPACING);
   const out = new Float32Array(cells * cells);
+  woodsBaseInto(out, natural, half, cx, cy, null);
+  return out;
+}
+
+/** The base's cells whose slope reads the plate's own (x, y) in `rect` (null: every cell) worked out again into `out`: a stamp of the land redoes its own cells, never the plate's (`terrain.ts`). */
+export function woodsBaseInto(out: Float32Array, natural: (x: number, y: number) => number, half: number, cx: number, cy: number,
+  rect: readonly [number, number, number, number] | null): void {
+  const cells = Math.floor((half * 2) / WOODS_SPACING);
   const d = WOODS_SLOPE_STEP;
-  for (let j = 0; j < cells; j++) {
-    for (let i = 0; i < cells; i++) {
+  // A cell reads the land `d` either side of its centre.
+  const i0 = rect ? Math.max(0, Math.floor((rect[0] - d + half) / WOODS_SPACING - 0.5)) : 0;
+  const i1 = rect ? Math.min(cells - 1, Math.ceil((rect[2] + d + half) / WOODS_SPACING - 0.5)) : cells - 1;
+  const j0 = rect ? Math.max(0, Math.floor((rect[1] - d + half) / WOODS_SPACING - 0.5)) : 0;
+  const j1 = rect ? Math.min(cells - 1, Math.ceil((rect[3] + d + half) / WOODS_SPACING - 0.5)) : cells - 1;
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
       const x = -half + (i + 0.5) * WOODS_SPACING, y = -half + (j + 0.5) * WOODS_SPACING;
       const slope = Math.hypot(natural(x + d, y) - natural(x - d, y), natural(x, y + d) - natural(x, y - d)) / (2 * d);
       const hillside = Math.min(1, Math.max(0, (slope - 0.06) / 0.35));
       out[j * cells + i] = natureDensity(x + cx, y + cy, m(1), hillside, 0);
     }
   }
-  return out;
 }
 
 /** A plate's natural land read from its corners as the terrain reads them */

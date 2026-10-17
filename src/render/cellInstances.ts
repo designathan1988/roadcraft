@@ -12,11 +12,13 @@ import {
   Vector2,
   Vector3,
   type Frustum,
+  type Object3D,
 } from 'three';
 import { m } from '@world/units';
-import { type Bounds, enclose, markRange, planeMask } from './instanceCull';
+import { type Bounds, enclose, planeMask } from './instanceCull';
 import { impostorPick, thinWant } from './plantImpostors';
 import { trianglesOf } from './propGeometry';
+import { castBySize } from './shadowCasters';
 
 /**
  * INSTANCES KEPT CELL BY CELL, DRAWN AT THE LEVEL THEIR SIZE ON THE SCREEN CALLS FOR: the gardens'
@@ -243,6 +245,15 @@ const NEAR = 0, FAR = 1, NONE = 2, UNKNOWN = 255;
 
 /** Half the drawing buffer's height, device pixels, as the meshes last drew (`onBeforeRender`): the screen sizes are in it. */
 const screen = { half: 540 };
+/** Towards the sun the shadows are cast by (three's space, unit), as the cascades hold it (`setShadowSun`); none known: the margin round every way. */
+const shadowSun = { x: 0, y: 0, z: 0, known: false };
+/** The sun the shadows are cast by, for the layers' margins: an instance off the view is kept only where its shadow can fall into it, away from the sun. */
+export function setShadowSun(x: number, y: number, z: number): void {
+  const length = Math.hypot(x, y, z);
+  shadowSun.known = length > 1e-6;
+  if (!shadowSun.known) return;
+  shadowSun.x = x / length; shadowSun.y = y / length; shadowSun.z = z / length;
+}
 const bufferSize = new Vector2();
 
 /** The instances a kind draws at one level (near or far): ONE buffer of poses and one of tints for all the level's meshes (a plant's body and its cards). */
@@ -252,12 +263,21 @@ interface Level {
   tints: InstancedBufferAttribute | null;
   /** Instances its buffers hold: what is in view, grown twice over and shrunk under a quarter, never the kind's. */
   capacity: number;
-  /** Per drawn position: the slot the buffers hold there since the last cull (-1: unknown). */
+  /** Per drawn position: the slot the buffers hold there (-1: none). */
   shown: Int32Array;
+  /** Per slot of the kind: its position in the buffers (-1: not drawn at this level). */
+  at: Int32Array;
   /** Whether a mesh of it is drawn at the cull in progress. */
   live: boolean;
+  /** Positions in use, from 0. */
   drawn: number;
-  firstChanged: number;
+  /** The slots the cull in progress draws here that hold no position yet; the positions it wrote. */
+  readonly entering: number[];
+  readonly changed: number[];
+  /** Its buffers made and not yet sent: sent whole, no range of them. */
+  fresh: boolean;
+  /** The widest instance it drew at its last cull (radius, world units): what a cascade's texel is measured against (`shadowCasters.ts`). */
+  largest: number;
 }
 
 interface MeshState {
@@ -266,6 +286,10 @@ interface MeshState {
   mesh: InstancedMesh | null;
   /** Whether it was drawn (shown, not left out) when its kind was last culled. */
   wasDrawn: boolean;
+  /** Takes it off the casters chosen by cascade (`castBySize`). */
+  uncast: (() => void) | null;
+  /** Where it was put (its owner's group) while it is out of the scene with nothing to draw (`settleInScene`). */
+  home: Object3D | null;
 }
 
 interface Kind {
@@ -287,10 +311,11 @@ interface Kind {
   /** Per slot: where it stands (its matrix's translation) and its size, world units across (`KindLevels.reach`). */
   feet: Float32Array;
   sizes: Float32Array;
-  /** Per slot: its pick (`impostorPick`), the cull it was last in view at, the level it was drawn at. */
+  /** Per slot: its pick (`impostorPick`), the cull it was last in view at, the level it was drawn at, and the level the cull it was seen at draws it at (`NONE`: not drawn). */
   picks: Float32Array;
   seen: Uint32Array;
   level: Uint8Array;
+  want: Uint8Array;
   bounds: Bounds | null;
   runs: Map<object, { start: number; count: number }>;
   /** Culls of this kind so far; culled for the current view; culled by the walk in progress. */
@@ -327,18 +352,18 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       if (!s) continue;
       if (!centre) { centre = s.center.clone(); reach = s.radius; } else reach = Math.max(reach, centre.distanceTo(s.center) + s.radius);
     }
-    const level = (): Level => ({ meshes: [], poses: null, tints: null, capacity: 0, shown: new Int32Array(0), live: false, drawn: 0, firstChanged: 0 });
+    const level = (): Level => ({ meshes: [], poses: null, tints: null, capacity: 0, shown: new Int32Array(0), at: new Int32Array(0), live: false, drawn: 0, entering: [], changed: [], fresh: false, largest: 0 });
     const levels = [level(), level()] as const;
     return {
       index, spec, centre: centre ?? new Vector3(), reach: centre ? reach : 1, levels,
       meshes: spec.meshes.map((m) => {
-        const s: MeshState = { spec: m, level: levels[m.far ? 1 : 0], mesh: null, wasDrawn: false };
+        const s: MeshState = { spec: m, level: levels[m.far ? 1 : 0], mesh: null, wasDrawn: false, uncast: null, home: null };
         s.level.meshes.push(s);
         return s;
       }),
       capacity: 0, used: 0, dead: 0,
       data: new Float32Array(0), colours: new Float32Array(0), spheres: new Float32Array(0), feet: new Float32Array(0), sizes: new Float32Array(0),
-      picks: new Float32Array(0), seen: new Uint32Array(0), level: new Uint8Array(0),
+      picks: new Float32Array(0), seen: new Uint32Array(0), level: new Uint8Array(0), want: new Uint8Array(0),
       bounds: null, runs: new Map(), serial: 1, pictured: false, current: false, active: false,
     };
   });
@@ -437,6 +462,9 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       mesh.instanceColor = tints;
     }
     b.poses = poses; b.tints = tints; b.capacity = capacity; b.shown = shown;
+    // Sent whole when three first makes its buffer (r186 `WebGLAttributes.createBuffer`, which keeps the ranges): no range of it until then.
+    b.fresh = true;
+    poses.onUpload(() => { if (b.poses === poses) b.fresh = false; });
   };
   const makeMesh = (k: Kind, s: MeshState): InstancedMesh => {
     const spec = s.spec, b = s.level;
@@ -456,6 +484,8 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       before(renderer, ...rest);
     };
     spec.made?.(mesh);
+    // Cast into a cascade only with instances, and where the widest it draws reaches a texel (`shadowCasters.ts`).
+    s.uncast = castBySize({ mesh, casts: spec.castShadow, radius: () => b.largest });
     return mesh;
   };
 
@@ -464,7 +494,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
   const repack = (k: Kind, capacity: number, pack: boolean): void => {
     const data = new Float32Array(capacity * stride), colours = new Float32Array(k.spec.tinted ? capacity * 3 : 0).fill(1);
     const spheres = new Float32Array(capacity * 4), feet = new Float32Array(capacity * 3), sizes = new Float32Array(capacity);
-    const picks = new Float32Array(capacity), seen = new Uint32Array(capacity), level = new Uint8Array(capacity).fill(UNKNOWN);
+    const picks = new Float32Array(capacity), seen = new Uint32Array(capacity), level = new Uint8Array(capacity).fill(UNKNOWN), want = new Uint8Array(capacity).fill(NONE);
     const move = (from: number, to: number, count: number): void => {
       data.set(k.data.subarray(from * stride, (from + count) * stride), to * stride);
       if (k.spec.tinted) colours.set(k.colours.subarray(from * 3, (from + count) * 3), to * 3);
@@ -474,6 +504,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       picks.set(k.picks.subarray(from, from + count), to);
       seen.set(k.seen.subarray(from, from + count), to);
       level.set(k.level.subarray(from, from + count), to);
+      want.set(k.want.subarray(from, from + count), to);
     };
     if (pack) {
       const runs = new Map<object, { start: number; count: number }>();
@@ -488,7 +519,17 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       k.dead = 0;
     } else move(0, 0, k.used);
     k.data = data; k.colours = colours; k.spheres = spheres; k.feet = feet; k.sizes = sizes;
-    k.picks = picks; k.seen = seen; k.level = level; k.capacity = capacity;
+    k.picks = picks; k.seen = seen; k.level = level; k.want = want; k.capacity = capacity;
+    for (const b of k.levels) {
+      const at = new Int32Array(capacity).fill(-1);
+      // The slots moved: every position of the levels laid again at the next cull (`reconcile`); grown only, they keep theirs.
+      if (pack) {
+        b.shown.fill(-1);
+        b.drawn = 0;
+        for (const s of b.meshes) if (s.mesh) s.mesh.count = 0;
+      } else at.set(b.at.subarray(0, Math.min(b.at.length, capacity)));
+      b.at = at;
+    }
     if (pack) {
       k.bounds = null;
       for (let i = 0; i < k.used; i++) k.bounds = enclose(k.bounds, { x: spheres[i * 4]!, y: spheres[i * 4 + 1]!, z: spheres[i * 4 + 2]!, r: spheres[i * 4 + 3]! });
@@ -530,6 +571,8 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
 
   let culledFor: Matrix4 | null = null;
   let culledHalf = 0;
+  /** The sun the margins were last culled by (`setShadowSun`). */
+  const culledSun = { ...shadowSun };
   /** The map zoom as the last `setMap` gave it (null: never told). */
   let mapMode: boolean | null = null;
   /** Whether a mesh is drawn at all now: a kind with no far pictures (or none taken yet) leaves its cards out at the map zoom. */
@@ -539,25 +582,89 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
   /** The view's numbers for a size on the screen: row 1's length times half the height (pixels a unit at w = 1), and row 3 (w). */
   let perUnitAtOne = 0, w0 = 0, w1 = 0, w2 = 0, w3 = 1, wReach = 0;
   const wOf = (x: number, y: number, z: number): number => w0 * x + w1 * y + w2 * z + w3;
+  /** The margin as the cull tests it: a thing's shadow falls from it away from the sun, `margin` along the ray at most, so its sphere is tested moved half that way and grown by half (it holds that ray, and lies within the margin's sphere round the thing); with no sun known, the margin round every way. */
+  let reachX = 0, reachY = 0, reachZ = 0, reachR = margin;
 
-  /** Writes slot `i` of the kind into the buffers of `level`, once for all the level's meshes. */
-  const write = (k: Kind, i: number, level: number): void => {
+  /** Slot `i` of the kind drawn at `level` by the cull in progress (`NONE`: not drawn): a slot new to its level asked a position (`reconcile`). */
+  const mark = (k: Kind, i: number, level: number): void => {
+    k.want[i] = level;
+    if (level === NONE) return;
     const b = k.levels[level === FAR ? 1 : 0];
-    if (!b.live) return;
-    const n = b.drawn;
-    // Written only when this position held another slot; past the buffers' room only counted (`sizeLevel`, after the walk).
-    if (n < b.capacity && b.shown[n] !== i) {
-      b.shown[n] = i;
-      if (n < b.firstChanged) b.firstChanged = n;
-      // The pose as kept: the vertex shader makes its matrix (`posedMaterial`).
-      const poses = b.poses!.array as Float32Array, data = k.data;
-      for (let j = 0, to = n * stride, from = i * stride; j < stride; j++) poses[to + j] = data[from + j]!;
-      if (b.tints) {
-        const tints = b.tints.array as Float32Array, c = k.colours;
-        tints[n * 3] = c[i * 3]!; tints[n * 3 + 1] = c[i * 3 + 1]!; tints[n * 3 + 2] = c[i * 3 + 2]!;
-      }
+    const radius = k.spheres[i * 4 + 3]!;
+    if (radius > b.largest) b.largest = radius;
+    if (b.live && b.at[i]! < 0) b.entering.push(i);
+  };
+  /** Slot `i`'s pose and tint into position `p` of the level's buffers, once for all its meshes. */
+  const put = (k: Kind, b: Level, i: number, p: number): void => {
+    b.shown[p] = i;
+    b.at[i] = p;
+    b.changed.push(p);
+    // The pose as kept: the vertex shader makes its matrix (`posedMaterial`).
+    const poses = b.poses!.array as Float32Array, data = k.data;
+    for (let j = 0, to = p * stride, from = i * stride; j < stride; j++) poses[to + j] = data[from + j]!;
+    if (b.tints) {
+      const tints = b.tints.array as Float32Array, c = k.colours;
+      tints[p * 3] = c[i * 3]!; tints[p * 3 + 1] = c[i * 3 + 1]!; tints[p * 3 + 2] = c[i * 3 + 2]!;
     }
-    b.drawn = n + 1;
+  };
+  /**
+   * The level's positions brought to the cull just walked: one no longer drawn here takes the last position's slot, one new to the level goes
+   * at the end. DO NOT lay the instances in the walk's order: a cell come into view moved every position after it, and the view's every
+   * instance went to the GPU again at each frame of a move. Only the positions written are sent.
+   */
+  const reconcile = (k: Kind, b: Level, id: number): void => {
+    const now = k.serial, seen = k.seen, want = k.want, shown = b.shown, at = b.at;
+    let n = b.drawn;
+    for (let p = 0; p < n;) {
+      const s = shown[p]!;
+      if (seen[s] === now && want[s] === id) { p++; continue; }
+      at[s] = -1;
+      n--;
+      // The last position's slot moved here (looked at again: it may be going too).
+      if (p < n) put(k, b, shown[n]!, p);
+      shown[n] = -1;
+    }
+    if (n + b.entering.length > b.capacity) {
+      let capacity = Math.max(b.capacity, MIN_CAPACITY);
+      while (capacity < n + b.entering.length) capacity *= 2;
+      sizeLevel(k, b, capacity, n);
+    }
+    for (const i of b.entering) if (at[i]! < 0) put(k, b, i, n++);
+    b.drawn = n;
+    // A quarter of the buffers in use or less: shrunk to twice what is drawn, so they follow the view, not the most it ever held.
+    if (b.capacity > MIN_CAPACITY && n * 4 < b.capacity) sizeLevel(k, b, Math.max(MIN_CAPACITY, n * 2), n);
+    if (b.fresh) return;
+    const changed = b.changed.sort((x, y) => x - y);
+    // The last cull's ranges not sent yet (no mesh of the level drawn since): one range round them all, never a list growing while it is not drawn.
+    if (b.poses!.updateRanges.length > 0) {
+      const from = changed.length ? changed[0]! : Infinity, to = changed.length ? changed[changed.length - 1]! + 1 : -Infinity;
+      sendSpan(b.poses!, from, to, stride);
+      if (b.tints) sendSpan(b.tints, from, to, 3);
+      return;
+    }
+    if (changed.length > 0) {
+      // The positions written, in runs (three r186 `WebGLAttributes` merges the ranges next to each other into one `bufferSubData`).
+      for (let r = 0; r < changed.length;) {
+        let e = r;
+        while (e + 1 < changed.length && changed[e + 1]! <= changed[e]! + 1) e++;
+        const start = changed[r]!, end = Math.min(n, changed[e]! + 1);
+        if (start < end) {
+          b.poses!.addUpdateRange(start * stride, (end - start) * stride);
+          if (b.tints) b.tints.addUpdateRange(start * 3, (end - start) * 3);
+        }
+        r = e + 1;
+      }
+      b.poses!.needsUpdate = true;
+      if (b.tints) b.tints.needsUpdate = true;
+    }
+  };
+  /** Positions `from` to `to` (exclusive), `width` floats each, merged with the ranges waiting into one. */
+  const sendSpan = (attribute: InstancedInterleavedBuffer | InstancedBufferAttribute, from: number, to: number, width: number): void => {
+    let start = from * width, end = to * width;
+    for (const r of attribute.updateRanges) { start = Math.min(start, r.start); end = Math.max(end, r.start + r.count); }
+    attribute.clearUpdateRanges();
+    attribute.addUpdateRange(start, end - start);
+    attribute.needsUpdate = true;
   };
 
   /** The node and what it holds against the planes of `mask` still unsettled for it. */
@@ -565,7 +672,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     if (node.r < 0) return;
     let inner = mask;
     if (mask !== 0) {
-      inner = planeMask(cullFrustum!, node.x, node.y, node.z, node.r + PAD + margin, mask);
+      inner = planeMask(cullFrustum!, node.x + reachX, node.y + reachY, node.z + reachZ, node.r + PAD + reachR, mask);
       if (inner < 0) return;
     }
     if (node.children) {
@@ -591,15 +698,15 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         if (picks[i]! > stopAt) break;
         if (inner !== 0) {
           // A cell across the view's edge: its slots one by one.
-          probe.center.set(sp[i * 4]!, sp[i * 4 + 1]!, sp[i * 4 + 2]!);
-          probe.radius = r + margin;
+          probe.center.set(sp[i * 4]! + reachX, sp[i * 4 + 1]! + reachY, sp[i * 4 + 2]! + reachZ);
+          probe.radius = r + reachR;
           if (!cullFrustum!.intersectsSphere(probe)) continue;
         }
-        if (!levels) { write(k, i, NEAR); continue; }
-        const w = wOf(feet[i * 3]!, feet[i * 3 + 1]!, feet[i * 3 + 2]!);
-        const across = sizes[i]! * (w > 1e-4 ? perUnitAtOne / w : Infinity);
         const prev = seen[i] === was ? lv[i]! : UNKNOWN;
         seen[i] = now;
+        if (!levels) { mark(k, i, NEAR); continue; }
+        const w = wOf(feet[i * 3]!, feet[i * 3 + 1]!, feet[i * 3 + 2]!);
+        const across = sizes[i]! * (w > 1e-4 ? perUnitAtOne / w : Infinity);
         let level: number;
         if (far >= 0) {
           const bar = far * (prev === NEAR ? 1 - HYSTERESIS : prev === FAR ? 1 + HYSTERESIS : 1);
@@ -610,12 +717,25 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         } else level = NEAR;
         lv[i] = level;
         // A far picture past the share its size keeps is thinned out (the GPU grows the ones kept, `impostorThin`).
-        if (level === FAR && picks[i]! > thinWant(across) + PICK_SLACK) continue;
-        if (level !== NONE) write(k, i, level);
+        mark(k, i, level === FAR && picks[i]! > thinWant(across) + PICK_SLACK ? NONE : level);
       }
     }
   };
 
+  /**
+   * A mesh with no instance to draw taken out of the scene, put back where it was once it has some. DO NOT leave a kind's every mesh in the
+   * scene empty: three walks, sorts and calls each visible mesh, empty or not, in the colour pass and every cascade (r186 `projectObject`,
+   * `renderObject`), dozens of a layer's kinds out of view.
+   */
+  const settleInScene = (s: MeshState): void => {
+    const mesh = s.mesh!;
+    if (mesh.count === 0) {
+      if (mesh.parent) { s.home = mesh.parent; mesh.parent.remove(mesh); }
+    } else if (!mesh.parent && s.home) {
+      s.home.add(mesh);
+      s.home = null;
+    }
+  };
   const meshes = (): InstancedMesh[] => kinds.flatMap((k) => k.meshes.flatMap((s) => (s.mesh ? [s.mesh] : [])));
   return {
     get meshes() { return meshes(); },
@@ -641,12 +761,10 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         for (const { packs } of change.added) coming += packs.get(k.index)?.count ?? 0;
         // A kind none of whose things came or went: nothing of it is touched.
         if (left === 0 && coming === 0) continue;
-        let moved = false;
         if (k.dead > 0 && k.dead * 2 >= k.used + coming) {
           // Half the kind dead: packed again in the order the runs stood, the new ones after; its arrays shrunk when under a quarter is used.
           const live = k.used - k.dead + coming;
           repack(k, live * 4 < k.capacity ? Math.max(MIN_CAPACITY, live * 2) : Math.max(k.capacity, MIN_CAPACITY), true);
-          moved = true;
         }
         if (k.used + coming > k.capacity) repack(k, Math.max(MIN_CAPACITY, (k.used + coming) * 2), false);
         for (const { key, packs } of change.added) {
@@ -657,8 +775,6 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
           if (!s.mesh && k.capacity > 0) made.push(makeMesh(k, s));
           if (s.mesh && k.bounds) s.mesh.boundingSphere = new Sphere(new Vector3(k.bounds.x, k.bounds.y, k.bounds.z), k.bounds.r);
         }
-        // DO NOT forget every kind's positions at every edit: one thing more sent every instance in view to the GPU again.
-        if (moved) for (const b of k.levels) b.shown.fill(-1);
         // Its slots came or went: culled again at the next frame.
         k.current = false;
       }
@@ -681,9 +797,12 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       }
     },
     cull(frustum, view) {
-      if (!culledFor || !culledFor.equals(view) || culledHalf !== screen.half) {
+      // The sun moved (a step of the cascades' sun): the margins point elsewhere, every kind culled again.
+      const sunMoved = shadowSun.known !== culledSun.known || shadowSun.x !== culledSun.x || shadowSun.y !== culledSun.y || shadowSun.z !== culledSun.z;
+      if (!culledFor || !culledFor.equals(view) || culledHalf !== screen.half || (sunMoved && margin > 0)) {
         culledFor = (culledFor ?? new Matrix4()).copy(view);
         culledHalf = screen.half;
+        Object.assign(culledSun, shadowSun);
         for (const k of kinds) k.current = false;
       }
       // DO NOT cull every kind at every move whatever is shown.
@@ -699,8 +818,9 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         k.serial++;
         for (const b of k.levels) {
           b.live = b.meshes.some((s) => drawnNow(k, s));
-          b.drawn = 0;
-          b.firstChanged = Infinity;
+          b.entering.length = 0;
+          b.changed.length = 0;
+          b.largest = 0;
         }
         k.spec.levels?.view?.(view, culledHalf);
       }
@@ -710,51 +830,25 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       w0 = e[3]!; w1 = e[7]!; w2 = e[11]!; w3 = e[15]!;
       wReach = Math.hypot(w0, w1, w2);
       cullFrustum = frustum;
+      if (shadowSun.known && margin > 0) {
+        reachX = -shadowSun.x * margin / 2; reachY = -shadowSun.y * margin / 2; reachZ = -shadowSun.z * margin / 2;
+        reachR = margin / 2;
+      } else { reachX = reachY = reachZ = 0; reachR = margin; }
       for (const root of rootOrder) visit(root, ALL_PLANES);
-      // More in view than the buffers hold: grown, the first walk's writes kept, and the walk run again into them (no frame drawn short).
-      let grew = false;
-      for (const k of kinds) {
-        if (!k.active) continue;
-        for (const b of k.levels) {
-          if (!b.live || b.drawn <= b.capacity) continue;
-          let capacity = b.capacity;
-          while (capacity < b.drawn) capacity *= 2;
-          sizeLevel(k, b, capacity, b.capacity);
-          grew = true;
-        }
-      }
-      if (grew) {
-        // DO NOT forget where the first walk wrote (`firstChanged` kept): the same walk lays the same positions again.
-        for (const k of kinds) {
-          if (!k.active) continue;
-          // The second walk sees the levels the first chose as the ones before: the same levels again.
-          k.serial++;
-          for (const b of k.levels) b.drawn = 0;
-        }
-        for (const root of rootOrder) visit(root, ALL_PLANES);
-      }
       cullFrustum = null;
       for (const k of kinds) {
         if (!k.active) continue;
         k.active = false;
         k.current = true;
-        for (const b of k.levels) {
-          if (!b.live || !b.poses) continue;
-          // A quarter of the buffers in use or less: shrunk to twice what is drawn, so they follow the view, not the most it ever held.
-          if (b.capacity > MIN_CAPACITY && b.drawn * 4 < b.capacity) sizeLevel(k, b, Math.max(MIN_CAPACITY, b.drawn * 2), b.drawn);
-          // Only the positions whose slot changed go to the GPU.
-          if (b.firstChanged < b.drawn) {
-            markRange(b.poses, b.firstChanged * stride, (b.drawn - b.firstChanged) * stride);
-            if (b.tints) markRange(b.tints, b.firstChanged * 3, (b.drawn - b.firstChanged) * 3);
-          }
-        }
+        k.levels.forEach((b, id) => { if (b.live && b.poses) reconcile(k, b, id === 0 ? NEAR : FAR); });
         for (const s of k.meshes) {
           s.wasDrawn = drawnNow(k, s);
-          if (s.mesh) s.mesh.count = s.wasDrawn ? s.level.drawn : 0;
+          if (s.mesh) { s.mesh.count = s.wasDrawn ? s.level.drawn : 0; settleInScene(s); }
         }
       }
     },
     dispose() {
+      for (const k of kinds) for (const s of k.meshes) { s.uncast?.(); s.uncast = null; }
       for (const mesh of meshes()) {
         mesh.dispose();
         letGo(mesh.geometry);

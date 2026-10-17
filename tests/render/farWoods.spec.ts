@@ -129,13 +129,35 @@ describe('the far woods\' bookkeeping', () => {
     const { read } = stubReader();
     const book = bookOf(read);
     book.sync(RELIEF_NATURAL, NATURE, 0, 0);
-    const full = book.scale;
+    const home = RING[0]!.key;
+    const scale = (): number => book.plates.get(home)!.scale;
+    const full = scale();
     book.setVegetation(1_300);
-    expect(book.scale).toBeLessThan(full);
+    expect(scale()).toBeLessThan(full);
+    // Its instances written again at the new scale.
+    expect(book.arrived).toContain(home);
     book.setVegetation(0);
-    expect(book.scale).toBe(0);
+    expect(scale()).toBe(0);
     book.setVegetation(2_600);
-    expect(book.scale).toBe(full);
+    expect(scale()).toBe(full);
+  });
+
+  it('keeps each plate scale as its woods came: a plate of another density coming in changes none of the others', () => {
+    const answers = new Map<number, () => void>();
+    const read: FarWoodsReader = (key, ask, done) => {
+      // A plate twice as wooded as the others: an average over the plates would move theirs.
+      const planned = key === RING[3]!.key ? 90_000 : 20_000;
+      answers.set(key, () => done({ count: 1, x: Float32Array.of(ask.cx), y: Float32Array.of(ask.cy), z: Float32Array.of(0), size: Float32Array.of(10),
+        yaw: Float32Array.of(0), seed: Float32Array.of(0.1), pick: Float32Array.of(0.5), planned, work: 1 }));
+    };
+    const book = bookOf(read);
+    book.sync(RELIEF_NATURAL, NATURE, 0, 0);
+    for (const [key, answer] of answers) if (key !== RING[3]!.key) answer();
+    const before = RING.filter((r) => r.key !== RING[3]!.key).map((r) => book.plates.get(r.key)!.scale);
+    answers.get(RING[3]!.key)!();
+    expect(RING.filter((r) => r.key !== RING[3]!.key).map((r) => book.plates.get(r.key)!.scale)).toEqual(before);
+    // Its own scale its own density's: a thicker plate thinned more.
+    expect(book.plates.get(RING[3]!.key)!.scale).toBeLessThan(before[0]!);
   });
 
   it('asks nothing on a map with no ecosystem', () => {

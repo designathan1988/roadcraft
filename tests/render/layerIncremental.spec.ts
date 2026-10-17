@@ -1,3 +1,4 @@
+import { PAINT_ATTRIBUTE, PAINT_UNIT, WEAR_STEPS } from '@render/buildings/cellArrays';
 import { describe, expect, it } from 'vitest';
 import type { Mesh, Object3D } from 'three';
 
@@ -107,6 +108,9 @@ describe('the buildings layer, a change at a time', () => {
     const worn = (): number => {
       let most = 0;
       live.group.traverse((o: Object3D) => {
+        // A shell's wear in its paint's fourth short, over its finish id (`cellArrays.ts` `finishWear`); a part's in its looks.
+        const paint = (o as Mesh).isMesh ? (o as Mesh).geometry.getAttribute(PAINT_ATTRIBUTE) : undefined;
+        if (paint) for (let i = 0; i < paint.count; i++) most = Math.max(most, (Math.round(paint.getW(i) * PAINT_UNIT) >> 8) / WEAR_STEPS);
         const decay = (o as Mesh).isMesh ? (o as Mesh).geometry.getAttribute('aDecay') : undefined;
         if (decay) for (let i = 0; i < decay.count; i++) most = Math.max(most, decay.getX(i));
       });
@@ -123,7 +127,7 @@ describe('the buildings layer, a change at a time', () => {
     doc.buildings.all = all;
     expect(rebuilt).toBe(true);
     expect(walked).toBe(0);
-    // A signed short over 32767 on the GPU (`cellArrays.ts` `normalDecay`): 0.9 reads back within 1/65534.
+    // A byte's step on the GPU (`cellArrays.ts` `finishWear`): 0.9 reads back within 1/510.
     expect(worn()).toBeCloseTo(0.9, 2);
     live.dispose();
   });
@@ -148,3 +152,45 @@ describe('a tile handed to the cells', () => {
   });
 });
 
+
+describe('the far sun cascades', () => {
+  it('take the cells in detail by their masses only, never leave one without a caster, and every caster is back as it was after the passes', () => {
+    const doc = new RoadDoc();
+    for (let i = 0; i < 9; i++) doc.buildings.add(body(i, (i % 3) * SPACING, Math.floor(i / 3) * SPACING));
+    const layer = createBuildingLayer();
+    // An eye low over the town: its cells near and in detail, their masses come too.
+    for (let frame = 0; frame < 400; frame++) {
+      beginFrameWork();
+      layer.update(doc, flat, 'g');
+      layer.levelOfDetail(SPACING, SPACING, m(40), 1000, null);
+      if (!layer.pending && frame > 20) break;
+    }
+    /** What casts now: every mesh shown (it and every parent) that casts, by its parents' names and its own. */
+    const casters = (): string[] => {
+      const out: string[] = [];
+      const walk = (o: Object3D, path: string): void => {
+        if (!o.visible) return;
+        const mesh = o as Mesh;
+        if (mesh.isMesh && mesh.castShadow) out.push(`${path}/${o.name}#${o.id}`);
+        for (const child of o.children) walk(child, `${path}/${o.name}`);
+      };
+      walk(layer.group, '');
+      return out.sort();
+    };
+    const near = casters();
+    // In detail: the cells' batches cast in the near cascade, their masses hidden.
+    expect(near.some((c) => c.includes('/buildings/buildings/'))).toBe(true);
+    expect(near.some((c) => c.includes('building-massing'))).toBe(false);
+    layer.castInto(m(1), true);
+    const far = casters();
+    // A far cascade: the masses stand in, the detail left out, fewer objects and none of the town without a caster.
+    expect(far.some((c) => c.includes('/buildings/buildings/'))).toBe(false);
+    expect(far.some((c) => c.includes('building-massing'))).toBe(true);
+    expect(far.length).toBeLessThan(near.length);
+    layer.castInto(m(1), true);
+    expect(casters()).toEqual(far);
+    layer.castInto(null);
+    expect(casters()).toEqual(near);
+    layer.dispose();
+  });
+});

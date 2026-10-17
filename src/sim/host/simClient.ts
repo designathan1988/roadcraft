@@ -2,6 +2,7 @@ import type { RoadDoc, Restoration, RecordPart, ValuePart } from '@world/doc';
 import { type DocChangeKind, type JournalReader, TILE_LOADED } from '@world/changes';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { NetworkBake } from '@world/networkBuild';
+import type { LotPlan } from '@world/lots';
 import { OWNER, tileOfRecord } from '@world/tiles';
 import type { BuildingId } from '@world/buildings/types';
 import { buildingChangesOf, trafficMapOf } from '../agents/trafficBuildings';
@@ -444,6 +445,14 @@ export class SimClient implements JournalReader {
     this.pending.set(id, (value) => { if (this.answers.get(key) === kept) kept.value = value; });
     this.send({ type: 'ask', id, ask });
     return answer.value ?? null;
+  }
+
+  /** The zoning tool's proposed lots, planned in the worker on its copy of the region (`SimHost.lotPlan`): the diary sent first, so it plans the land as the page has it now; null when not now (no worker, a tile's network still read there). */
+  lotPlan(): Promise<LotPlan | null> {
+    if (!this.worker) return Promise.resolve(null);
+    this.sendChanges();
+    const id = this.nextAsk++;
+    return new Promise((done) => { this.pending.set(id, (value) => done((value as LotPlan | null) ?? null)); this.send({ type: 'lotPlan', id }); });
   }
 
   /** A question answered when the worker has (the green wave). */

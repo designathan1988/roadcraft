@@ -4,7 +4,7 @@ import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 import { workerParts } from '@editor/workerParts';
-import { type PreparedTile, addTileSection, prepareTile, readTile, readTileSection, storedVersion, writeTile } from '@editor/tileStore';
+import { type PreparedTile, addTileSection, bakeStoredTile, prepareTile, readTile, readTileSection, storedVersionBaked, writeTile } from '@editor/tileStore';
 import { withGrownBuildings } from '@world/growth/grownRows';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
@@ -12,6 +12,8 @@ import { BAYS_SECTION } from '@sim/tileBays';
 import { NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, tileBaysSection, tileNetworkSection } from '@sim/tileSections';
 import { type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
 import { keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTiles';
+import { keepTileNearBuildings } from './render/nearBuildings';
+import { queuedNearCache } from './render/nearTileBake';
 import type { SharedGroundData } from './render/sharedGround';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
@@ -25,7 +27,9 @@ export interface StreamTileAsk {
   /** Stored here in the tile store's map (`workerParts`) at a version past `after`: the page never posts a tile it was handed back to the store; `records`, its records handed back prepared too (a tile of the region, `prepareTile`), else its version alone (a tile made ahead); `far`, its far levels baked here and kept. */
   readonly store?: { readonly map: string; readonly after: number; readonly records: boolean; readonly ifMissing?: boolean; readonly far?: FarTileBake | null;
     /** Nothing made: the stored tile's bays baked and added, if it has none (`addBays`, the map made, the generator's workers idle). */
-    readonly baysOnly?: boolean };
+    readonly baysOnly?: boolean;
+    /** Nothing made: the tile the page stored at `after` with no sections (`TileStore.write`) baked and written again with them. */
+    readonly sectionsOnly?: boolean };
 }
 
 /** WHAT A TILE'S MAKER BAKES ITS FAR LEVELS WITH (the page's far trees and buildings layer, `SceneHandle.farBakeEnv`): the ground and tones their jobs read, and the keys they keep a tile's level 0 under (null: that kind keeps nothing) */
@@ -34,6 +38,8 @@ export interface FarTileBake extends FarGroundEnv {
   readonly roadPrefix: string | null;
   /** The ground the far roads read (`farRoads.ts`, the terrain's shared ground). */
   readonly roadGround: SharedGroundData | null;
+  /** The key prefix the near products' bakes are kept under (`nearTiles.ts`): the tile's buildings as they read them kept here (`nearBuildings.ts`); null or none: nothing kept. */
+  readonly nearPrefix?: string | null;
 }
 
 /** DO NOT let a tile's far levels be baked again by another worker from the store (two hundred jobs of seconds each on the queue's workers, the opening's 198 s, 2026-10-16): baked here from the tile just made, under the version just written; a failure is said and left to the page's jobs. */
@@ -42,6 +48,8 @@ async function keepFar(records: TileRecords, full: TileRecords, version: number,
     // Queued, not waited for (`keepDerivedQueued`): the page's far job for the tile asks after this answer, and its read comes after these writes.
     keepTileFar(full, version, far, far.massPrefix, queuedFarCache),
     keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix, queuedRoadCache),
+    // What the near products read of its buildings (where no plant stands, its gardens' plants): DO NOT leave them to be made again from the rows by every bake that reads the tile.
+    keepTileNearBuildings(records, full, version, far.nearPrefix ?? null, queuedNearCache),
   ]);
   for (const bake of bakes) if (bake.status === 'rejected') console.warn(`[city tile] tile ${records.key}'s far level not kept; the far jobs bake it`, bake.reason);
 }
@@ -54,7 +62,8 @@ export type StreamTileAnswer = { readonly key: number; readonly records: TileRec
 /** A tile asked only if missing (`StreamTileAsk.store.ifMissing`): what the store has of it, read here, or null to make it. */
 async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: number, j: number): Promise<StreamTileAnswer | null> {
   const key = tileKey(i, j);
-  const version = await storedVersion(stored(), store.map, key);
+  // A tile the page wrote and whose bake a reload cut short baked here first: DO NOT refuse it as 'legacy' (the reopening then read it on the store's lanes, behind the rush's tiles, conf37).
+  const version = await storedVersionBaked(stored(), store.map, key, (r) => bakeTileSections(r, true));
   if (version === null) return null;
   if (version === 'legacy') return { key, stored: null, legacy: true };
   if (!store.records) return { key, stored: version, existed: true };
@@ -113,6 +122,13 @@ const stored = (): ReturnType<typeof workerParts> => (parts ??= workerParts());
 export function serve(self: JobScope): void {
   self.onmessage = (event: MessageEvent<StreamTileAsk>) => {
     const { store, i, j } = event.data;
+    if (store?.sectionsOnly) {
+      const key = tileKey(i, j);
+      bakeStoredTile(stored(), store.map, key, store.after, (r) => bakeTileSections(r, true)).then(
+        (baked) => self.postMessage({ key, stored: baked ? store.after : null, existed: true } satisfies StreamTileAnswer),
+        (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j}'s sections could not be baked: ${String(error)}` } satisfies StreamTileAnswer));
+      return;
+    }
     if (store?.baysOnly) {
       baysAnswer(store.map, i, j).then((answer) => self.postMessage(answer),
         (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j}'s bays could not be added: ${String(error)}` } satisfies StreamTileAnswer));
@@ -144,7 +160,7 @@ function make(self: JobScope, ask: StreamTileAsk): void {
         // Its far levels kept before the page hears of it: the far tree's job for it then finds them (`farTiles.ts` `runFarJob` level 0).
         if (ok && store.far) await keepFar(records, full, version, store.far);
         // The records handed back prepared (migrated and interned here, `prepareTile`: the page only files them); kept for the page even when the write failed.
-        const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full) } : {}) };
+        const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full, true, records.grown) } : {}) };
         self.postMessage(answer);
       },
       (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} was made and not stored: ${String(error)}` } satisfies StreamTileAnswer));

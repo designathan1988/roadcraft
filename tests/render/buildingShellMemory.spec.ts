@@ -50,11 +50,12 @@ describe("the town's shells", () => {
     const meshes = assembleBuildingMeshes(chunks, kit);
     const parts = meshes.group.children.filter((m) => (m as InstancedMesh).isInstancedMesh) as InstancedMesh[];
     expect(parts.some((p) => p.name === 'building-glass')).toBe(true);
+    // A batch's own: its poses, colours, panes' slots and rooms, shell parts' looks; not the kit's model its posed copy shares (`partPose.ts`).
+    const model = (p: InstancedMesh): Set<unknown> => new Set(Object.values((p.userData['posedFrom'] as Mesh['geometry']).attributes));
     const own = (p: InstancedMesh): { array: ArrayLike<number> | null; onUploadCallback(): void }[] => {
-      const list: { array: ArrayLike<number> | null; onUploadCallback(): void }[] = [p.instanceMatrix];
+      const shared = model(p);
+      const list = uploads(p, false).filter((a) => !shared.has(a));
       if (p.instanceColor) list.push(p.instanceColor);
-      // A batch's own copy of its model (the panes' with their rooms, the shell's parts' with their looks): every attribute, an interleaved one by its buffer.
-      if (p.userData['ownGeometry']) for (const a of uploads(p, false)) list.push(a);
       return list;
     };
     const before = parts.map((p) => own(p).map((a) => Array.from(a.array!)));
@@ -62,8 +63,9 @@ describe("the town's shells", () => {
     for (const p of parts) {
       for (const a of own(p)) expect(a.array).toBeNull();
       expect(p.boundingSphere).not.toBeNull();
-      // The kit's geometry, drawn by every batch of the kind, keeps its arrays.
-      if (!p.userData['ownGeometry']) expect(p.geometry.getAttribute('position').array).not.toBeNull();
+      // The kit's model, drawn by every batch of the kind, keeps its arrays.
+      expect(p.geometry.getAttribute('position').array).not.toBeNull();
+      expect(own(p).length).toBeGreaterThan(0);
     }
     refillArrays(meshes.group);
     parts.forEach((p, k) => expect(own(p).map((a) => Array.from(a.array!))).toEqual(before[k]));

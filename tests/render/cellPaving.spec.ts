@@ -1,4 +1,5 @@
 import { refOf } from '@world/buildings/recordTable';
+import { PartyWalls } from '@render/buildings/partyWalls';
 import { describe, expect, it } from 'vitest';
 
 import { emitChunk, kitBoxes } from '@render/buildings/buildingMesh';
@@ -113,7 +114,9 @@ describe('the paving read by a building cell worker', () => {
     const reply = runCellJob(job, reads(job));
     expect(reply.kind).toBe('done');
     if (reply.kind !== 'done' || pass.kind !== 'done') return;
-    const chunks = buildings.map((b) => emitChunk(b, ground, paved, naturalAt));
+    // The cell's buildings as one another's neighbours, as the job reads them (`partyWalls.ts`).
+    const party = new PartyWalls(buildings, naturalAt, paved);
+    const chunks = buildings.map((b) => emitChunk(b, ground, paved, naturalAt, undefined, false, true, party));
     const coarse = cellArrays(chunks, { parts: PART_KINDS.filter((k) => COARSE_PARTS.has(k)), shells: true, furniture: true, ghost: false, dim: false }, kitBoxes(kit));
     expect(bytes(reply.result.batch)).toBe(bytes(coarse));
     expect(bytes(pass.result.batch)).toBe(bytes(coarse));
