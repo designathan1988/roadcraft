@@ -1,7 +1,7 @@
 import { jobPort } from '../jobs/jobPool';
 import { Matrix4, type Object3D } from 'three';
 
-import { type ClipFrames, type ShuffleFacts, rigData } from './citizenBake';
+import { type ClipFrames, rigData } from './citizenBake';
 import type { BakedClip } from './citizenBake.worker';
 import type { WalkSex } from './citizenWalk';
 
@@ -17,8 +17,6 @@ interface Job {
   readonly nodes: ReturnType<typeof rigData>['nodes'];
   readonly transfer: ReturnType<typeof rigData>['transfer'];
   readonly sex: WalkSex;
-  /** Only this deferred clip, over the shuffle's facts (`bakeDeferred`). */
-  readonly deferred?: { readonly at: number; readonly shuffle: ShuffleFacts };
   readonly resolve: (result: Result) => void;
 }
 const queue: Job[] = [];
@@ -88,7 +86,7 @@ function dispatch(): void {
     const job = queue.shift()!;
     busy.set(worker, job);
     try {
-      worker.postMessage({ id: 0, nodes: job.nodes, sex: job.sex, ...(job.deferred ? { deferred: job.deferred.at, shuffle: job.deferred.shuffle } : {}) }, job.transfer);
+      worker.postMessage({ id: 0, nodes: job.nodes, sex: job.sex }, job.transfer);
     } catch (error) {
       console.error('Citizen bake worker could not receive a rig', error);
       busy.delete(worker);
@@ -105,17 +103,6 @@ export function bakeInWorker(scene: Object3D, sex: WalkSex): Promise<Result> {
   const { nodes, transfer } = rigData(scene);
   return new Promise((resolve) => {
     queue.push({ nodes, transfer, sex, resolve });
-    dispatch();
-  });
-}
-
-/** One deferred clip of the body whose rig is `scene`, baked in a worker as a body first plays it; null when no worker can (the page bakes it then). */
-export function bakeDeferredInWorker(scene: Object3D, sex: WalkSex, at: number, shuffle: ShuffleFacts): Promise<ClipFrames | null> {
-  releaseRequested = false;
-  if (!usable) return Promise.resolve(null);
-  const { nodes, transfer } = rigData(scene);
-  return new Promise((resolve) => {
-    queue.push({ nodes, transfer, sex, deferred: { at, shuffle: { duration: shuffle.duration, stride: shuffle.stride } }, resolve: (result) => resolve(result?.[0] ?? null) });
     dispatch();
   });
 }

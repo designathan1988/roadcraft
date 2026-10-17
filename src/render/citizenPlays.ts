@@ -14,12 +14,10 @@ export interface Play { row: number; t: number; weight: number }
 export interface CitizenAtlas {
   readonly anim: ClassAnimation;
   readonly rowOf: ReadonlyMap<ClipFrames, number>;
-  /** A clip baked later (a deferred one) laid in at atlas index `at`: the same atlas and the same pass, its rows added. */
-  add(at: number, clip: ClipFrames): void;
 }
 
-/** The atlas of the clips baked so far (a clip listed twice is laid in once); `room`: rows kept for the clips baked later (`add`). */
-export function citizenAtlas(clips: readonly (ClipFrames | undefined)[], bones: number, room = 0): CitizenAtlas {
+/** The atlas of the clips baked so far (a clip listed twice is laid in once). */
+export function citizenAtlas(clips: readonly (ClipFrames | undefined)[], bones: number): CitizenAtlas {
   const named: Record<string, ClipFrames> = {};
   const names = new Map<ClipFrames, string>();
   clips.forEach((clip, at) => {
@@ -27,16 +25,10 @@ export function citizenAtlas(clips: readonly (ClipFrames | undefined)[], bones: 
     names.set(clip, String(at));
     named[String(at)] = clip;
   });
-  const anim = buildClassAnimation(named, bones, false, room);
+  const anim = buildClassAnimation(named, bones);
   const rowOf = new Map<ClipFrames, number>();
   for (const [clip, name] of names) rowOf.set(clip, anim.rowOf(name));
-  return {
-    anim, rowOf,
-    add(at, clip) {
-      if (rowOf.has(clip)) return;
-      rowOf.set(clip, anim.add(String(at), clip));
-    },
-  };
+  return { anim, rowOf };
 }
 
 /** The plays of a pose, as `cpuPose` would blend it, into `out` (its first entries); how many, or -1 when the pass cannot. */

@@ -30,7 +30,7 @@ const PLAY_TEXELS = PLAYS + 1;
 const PLACE_TEXELS = 4;
 
 export interface ClassAnimation {
-  /** Frames of every clip, a row each: `bones * 3` texels across (a new texture once `add` outgrew the room it had). */
+  /** Frames of every clip, a row each: `bones * 3` texels across. */
   readonly atlas: DataTexture;
   /** A clip's first row in the atlas. */
   rowOf(clip: string): number;
@@ -39,66 +39,34 @@ export interface ClassAnimation {
   readonly bytes: number;
   /** The atlas's texels made again from the clips and sent up (a WebGL context restored); only for a `gpuOnly` atlas. */
   refill(): void;
-  /** A clip baked later laid in after the others, its first row returned: in the room left, only its rows sent up; past it, the room doubled (never for a `gpuOnly` atlas). */
-  add(name: string, clip: ClipFrames): number;
 }
 
 /** The class's clips in one texture, in the order given; `gpuOnly` lets the texels go once they are on the GPU (the clips keep them). */
-export function buildClassAnimation(clips: Readonly<Record<string, ClipFrames>>, bones: number, gpuOnly = false, room = 0): ClassAnimation {
+export function buildClassAnimation(clips: Readonly<Record<string, ClipFrames>>, bones: number, gpuOnly = false): ClassAnimation {
   const packed = bones * PACKED_BONE_FLOATS;
   const rowsOf = (clip: ClipFrames): number => Math.round(clip.data.length / packed);
   let rows = 0;
   const start = new Map<string, number>();
-  const laid = new Map<string, ClipFrames>(Object.entries(clips));
-  for (const [name, clip] of laid) { start.set(name, rows); rows += rowsOf(clip); }
+  for (const [name, clip] of Object.entries(clips)) { start.set(name, rows); rows += rowsOf(clip); }
   const width = bones * ATLAS_TEXELS;
-  // `room` rows more than the clips take: the clips baked later go in there (`add`).
-  let height = Math.max(1, rows + room);
+  const height = Math.max(1, rows);
   // Twelve floats a bone are exactly three RGBA texels: each row is the clip's frame as baked.
   const texels = (): Float32Array => {
     const pixels = new Float32Array(width * 4 * height);
-    for (const [name, clip] of laid) pixels.set(clip.data.subarray(0, rowsOf(clip) * packed), start.get(name)! * width * 4);
+    for (const [name, clip] of Object.entries(clips)) pixels.set(clip.data.subarray(0, rowsOf(clip) * packed), start.get(name)! * width * 4);
     return pixels;
   };
-  const made = (): DataTexture => {
-    const texture = new DataTexture(texels(), width, height, RGBAFormat, FloatType);
-    texture.minFilter = texture.magFilter = NearestFilter;
-    texture.needsUpdate = true;
-    return texture;
-  };
-  let atlas = made();
+  const atlas = new DataTexture(texels(), width, height, RGBAFormat, FloatType);
+  atlas.minFilter = atlas.magFilter = NearestFilter;
+  atlas.needsUpdate = true;
   // DO NOT keep the texels: three uploads them once (WebGLTextures.js uploadTexture, then onUpdate), a restore refills them.
   if (gpuOnly) atlas.onUpdate = () => { (atlas.image as { data: Float32Array | null }).data = null; };
   return {
-    get atlas() { return atlas; },
-    rowOf: (clip) => start.get(clip) ?? 0, bones,
-    get bytes() { return width * height * 16; },
+    atlas, rowOf: (clip) => start.get(clip) ?? 0, bones, bytes: width * height * 16,
     refill() {
       if (!gpuOnly) return;
       (atlas.image as { data: Float32Array | null }).data = texels();
       atlas.needsUpdate = true;
-    },
-    add(name, clip) {
-      if (gpuOnly) throw new Error('a GPU-only atlas keeps no texels to add a clip to');
-      const known = start.get(name);
-      if (known !== undefined) return known;
-      const n = rowsOf(clip);
-      const first = rows;
-      laid.set(name, clip);
-      start.set(name, first);
-      rows += n;
-      if (rows > height) {
-        // Out of room: twice as many rows, the clips laid in again (each clip once, as a vector doubling).
-        height = Math.max(rows, height * 2);
-        atlas.dispose();
-        atlas = made();
-        return first;
-      }
-      // In the room left: its rows written and only they sent up (a range a row, `WebGLTextures.js`).
-      (atlas.image.data as Float32Array).set(clip.data.subarray(0, n * packed), first * width * 4);
-      for (let r = first; r < first + n; r++) atlas.addUpdateRange(r * width * 4, width * 4);
-      atlas.needsUpdate = true;
-      return first;
     },
   };
 }
@@ -318,8 +286,6 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       const n = Math.min(rows, Math.max(0, used));
       if (n === 0) return;
       uniforms.uJoints.value = joints();
-      // The atlas a clip baked later may have doubled (`ClassAnimation.add`): the pass reads the one there is now.
-      uniforms.uAtlas.value = anim.atlas;
       if (dirtyAll || dirty.size) {
         // Each update range is one row of the image in three (WebGLTextures.js)
         playTexture.clearUpdateRanges();
