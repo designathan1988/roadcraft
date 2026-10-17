@@ -38,7 +38,7 @@ import {
 } from 'three';
 
 import { Digest } from '@core/digest';
-import type { ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
+import type { Change, ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
@@ -1542,6 +1542,18 @@ export function createSceneRenderer(
   let pendingBlocks: (BlockCompare | null)[] = [];
   /** The land a brush moved since the world was last built */
   let landDirty: Rect | 'all' | null = null;
+  /** The diary's land entries, read every frame: where a rewrite the terrain cannot place (an undo, a stamp dropped) moved the land. */
+  const landRead = new JournalCursor(['terrain']);
+  /** Where the land entries since the last frame moved it, grown by a terrain cell each side (a stamp's rewrite reaches a cell past its circle, `terrain.ts`); null when one cannot say. */
+  const landMovedSince = (entries: readonly Change[] | null): Rect | null => {
+    if (entries === null || entries.length === 0) return null;
+    let box: Rect | null = null;
+    for (const e of entries) {
+      if (e.rects === null) return null;
+      for (const r of e.rects) box = unionRect(box, [r[0] - 2 * TERRAIN_CELL, r[1] - 2 * TERRAIN_CELL, r[2] + 2 * TERRAIN_CELL, r[3] + 2 * TERRAIN_CELL]);
+    }
+    return box;
+  };
   /** The shaping blocks a world box reaches, on the grid `changedBlocks` uses. */
   const blocksOver = (box: Rect): [number, number, number, number][] => {
     const out: [number, number, number, number][] = [];
@@ -2413,11 +2425,13 @@ export function createSceneRenderer(
       const terrainStarted = performance.now();
       const stroking = !!options?.holdRoads && !!elevation && networkRevision === net.revision;
       const groundMoved = terrain.update(net.doc, stroking);
+      const landEntries = landRead.read(net.doc.changes);
       if (groundMoved) {
         landVersion++;
-        // The stroke's dirty region, dab by dab (`landDirty`).
+        // The stroke's dirty region, dab by dab (`landDirty`); a rewrite the terrain cannot place (an undo of the relief), where the diary says it moved.
         const moved = terrain.lastRegion;
-        landDirty = moved === null || landDirty === 'all' ? 'all' : unionRect(landDirty, regionRect(moved));
+        const said = moved === null ? landMovedSince(landEntries) : regionRect(moved);
+        landDirty = said === null || landDirty === 'all' ? 'all' : unionRect(landDirty, said);
       }
       terrain.updatePaint(net.doc);
       // A brush stroke in progress: every dab used to re-solve the whole road network and re-mesh every road
