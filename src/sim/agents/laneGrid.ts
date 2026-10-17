@@ -29,8 +29,8 @@ export class LaneGrid {
   private readonly filed = new Map<LaneletId, Filed>();
   private readonly cells = new Map<number, LaneletId[]>();
   private seen: object | null = null;
-  /** The boxes of the lanes each follow changed, before and after (null: every lane); holding no more boxes than lanes filed. */
-  readonly changes = new ChangeLog<readonly ChangeRect[]>({ weight: (boxes) => boxes.length, limit: () => this.filed.size });
+  /** The boxes of the lanes each follow changed, before and after (null: every lane). */
+  readonly changes = new ChangeLog<readonly ChangeRect[]>();
   /** Lanes filed or taken out since made: the engine's ledger (`main.ts`). */
   work = 0;
 
