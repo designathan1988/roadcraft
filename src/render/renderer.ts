@@ -80,7 +80,7 @@ import { RoadDoc } from '@world/doc';
 import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
 import { advanceWind, setWindWeather } from './wind';
-import { holdStill } from './stillTree';
+import { holdStill, updateMoving } from './stillTree';
 import { createRain } from './rain';
 import { createLightning } from './lightning';
 import { windVector } from '@world/weather';
@@ -532,6 +532,8 @@ export function createSceneRenderer(
   // The root never moves.
   scene.matrixAutoUpdate = false;
   scene.updateMatrix();
+  // DO NOT let three walk the whole scene in every pass drawn (scene, normals, shadows): the frame updates what moves once (`updateMoving`), the still trees place what enters them.
+  scene.matrixWorldAutoUpdate = false;
   const initialHeight = Math.max(1, canvas.clientHeight || window.innerHeight);
   /** Where the relief's close window is centred (three's x, z; see `draw`). */
   const reliefFocus = { x: 0, z: 0 };
@@ -880,7 +882,12 @@ export function createSceneRenderer(
   const vehicleBox: GroundBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
   // A raised deck over the highest land, and room for decks stacked on it; a cut below the deepest.
   const VEHICLE_LOW = TERRAIN_MIN_HEIGHT - m(16), VEHICLE_HIGH = TERRAIN_MAX_HEIGHT + m(64) + VEHICLE_REACH * 0.3;
-  scene.add(...agents.meshes);
+  // The vehicles' instanced parts never move as objects (their instances do): a still tree; the people's groups move bones and stay outside.
+  const agentParts = new Group();
+  agentParts.name = 'agent-parts';
+  for (const mesh of agents.meshes) ((mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh ? agentParts : scene).add(mesh);
+  holdStill(agentParts);
+  scene.add(agentParts);
   // The far traffic: the meso model's cars on every road outside the micro window, in one draw (`densityCars.ts`).
   const densityCars = createDensityCars(deckHeight);
   scene.add(densityCars.object);
@@ -893,6 +900,8 @@ export function createSceneRenderer(
 
   // Modular buildings: their own layer, behind their own gate
   const buildings = createBuildingLayer();
+  // Buildings are placed once, never moved: a still tree.
+  holdStill(buildings.group);
   scene.add(buildings.group);
   // Each sun cascade draws the parts wider than its own texel only, not every part the finest one draws.
   environment.setCasters((texel) => buildings.castInto(texel));
@@ -2967,6 +2976,8 @@ export function createSceneRenderer(
       const atRender = performance.now();
       // The people's skeletons on the GPU (`people/crowdAnimation.ts`), before anybody draws them.
       agents.renderPalettes(renderer);
+      // The world matrices of what moves, once for every pass of the frame.
+      updateMoving(scene);
       // The opening's town is shown whole
       openingSince ??= performance.now();
       if (!reveal.opened) {
