@@ -36,9 +36,9 @@ export class TileGenerator {
   }
 
   /** Tile `key` made and stored by the worker in the tile store's `map` at a version past `after`: the version (null: not stored), and with `records` its records prepared for the page (DO NOT post them to the store again from the page). */
-  makeStored(key: number, map: string, after: number, records: boolean): Promise<MadeTile> {
+  makeStored(key: number, map: string, after: number, records: boolean, ifMissing = false): Promise<MadeTile> {
     return new Promise((done, failed) => {
-      this.queue.push({ key, store: { map, after, records }, done: (answer) => done(answer as MadeTile), failed: (why) => failed(new Error(why)) });
+      this.queue.push({ key, store: { map, after, records, ...(ifMissing ? { ifMissing } : {}) }, done: (answer) => done(answer as MadeTile), failed: (why) => failed(new Error(why)) });
       this.pump();
     });
   }
@@ -73,7 +73,10 @@ export class TileGenerator {
       if (waiting) {
         const answer = event.data;
         if ('error' in answer) waiting.failed(answer.error);
-        else if ('stored' in answer) waiting.done({ version: answer.stored, ...(answer.prepared ? { prepared: answer.prepared } : {}) });
+        else if ('stored' in answer) {
+          waiting.done({ version: answer.stored, ...(answer.prepared ? { prepared: answer.prepared } : {}),
+            ...(answer.existed ? { existed: true } : {}), ...(answer.legacy ? { legacy: true } : {}) });
+        }
         else waiting.done(answer.records);
       }
       this.pump();

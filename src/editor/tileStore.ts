@@ -254,6 +254,13 @@ export async function readTilePart(store: PartStore, map: string, key: number, n
   return partValue(part);
 }
 
+/** WHAT THE STORE HOLDS OF A TILE, AS ITS MAKER ASKS BEFORE MAKING IT (`cityTile.worker.ts`): the version of a tile stored in parts with its sections, `'legacy'` for one stored otherwise (format 1, or written with no baker: the save worker writes it again in parts, `upgraded`), null for none */
+export async function storedVersion(store: PartStore, map: string, key: number): Promise<number | 'legacy' | null> {
+  const stored = await storedBlob(store, map, key);
+  if (!stored) return null;
+  return stored.read?.head.baked ? stored.read.head.version : 'legacy';
+}
+
 /** A section a reader does not derive from the records where the tile has none (the simulation's bays, `sim/tileBays.ts`): that part alone, the records never parsed; null: no tile stored, or stored without it. */
 export async function readTileSection(store: PartStore, map: string, key: number, name: string): Promise<{ readonly value: unknown } | { readonly bytes: ArrayBuffer } | null> {
   const stored = await storedBlob(store, map, key);
@@ -359,6 +366,9 @@ export interface MadeTile {
   readonly version: number | null;
   /** The tile prepared (`prepareTile`), when the page asked for it (a tile of the region). */
   readonly prepared?: PreparedTile;
+  /** Asked only if missing (`makeStored`'s `ifMissing`): the store had it and it was not made again; `legacy`, stored in an older form the save worker must read (`storedVersion`). */
+  readonly existed?: boolean;
+  readonly legacy?: boolean;
 }
 
 /** A tile as the page takes it in: its records with no buildings, its buildings as one shared table (`recordTable.ts`: posted as a handle, the page reads its records from it and its jobs read its rows), and its network's bake (null when not asked for: a far tile's read). */
@@ -412,24 +422,29 @@ export class TileStore {
     private readonly backend: TileBackend,
     /** Builds a tile the store does not have (the whole-map generator's worker): a pure function of the seed and its place. */
     private readonly generate: (i: number, j: number) => Promise<TileRecords>,
-    /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`, its records handed back prepared with `records`; none where the store is not the worker's to write (the desktop's). */
-    private readonly makeStored?: (i: number, j: number, after: number, records: boolean) => Promise<MadeTile>,
+    /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`, its records handed back prepared with `records`; with `ifMissing`, only when the store has none (else the stored one's version, or its records prepared); none where the store is not the worker's to write (the desktop's). */
+    private readonly makeStored?: (i: number, j: number, after: number, records: boolean, ifMissing: boolean) => Promise<MadeTile>,
   ) {}
 
   /** The tile in the store, made and stored when it is not, and its version: DO NOT hand its records to the page for a tile it only needs to know is there (the tiles made ahead, `worldStreamer.ts`). */
+  /** DO NOT ask the save worker first where the maker can look itself: its lanes stand on the queue's busy workers, and the tile makers waited on them for every tile of the map (2026-10-16, the opening's 148 s rush). */
   ensure(key: number): Promise<number> {
     return this.chained(key, async () => {
+      if (this.makeStored) {
+        const { i, j } = tileOfKey(key);
+        const made = await this.makeStored(i, j, this.versions.get(key) ?? 0, false, true);
+        if (!made.legacy) {
+          if (made.version === null) throw new Error(`tile ${key} was made and not stored`);
+          this.versions.set(key, Math.max(this.versions.get(key) ?? 0, made.version));
+          return made.version;
+        }
+      }
       const known = (await this.backend.run({ op: 'version', map: this.map, key })) as number | null;
       if (known !== null) {
         this.versions.set(key, Math.max(this.versions.get(key) ?? 0, known));
         return known;
       }
-      if (!this.makeStored) return (await this.made(key)).version;
-      const { i, j } = tileOfKey(key);
-      const { version } = await this.makeStored(i, j, this.versions.get(key) ?? 0, false);
-      if (version === null) throw new Error(`tile ${key} was made and not stored`);
-      this.versions.set(key, version);
-      return version;
+      return (await this.made(key)).version;
     });
   }
 
@@ -448,7 +463,14 @@ export class TileStore {
 
   /** The stored tile, or the tile generated and stored: generated only when the store has none (stored by the generator's worker where it can, as a tile made ahead is). */
   load(key: number): Promise<TileRecords> {
-    return this.chained(key, async () => (await this.readNow(key, true)) ?? (this.makeStored ? this.madeThere(key) : this.made(key)));
+    return this.chained(key, async () => {
+      // The maker reads it where it is stored (the browser's), and makes it only if it is not.
+      if (this.makeStored) {
+        const records = await this.madeThere(key);
+        if (records) return records;
+      }
+      return (await this.readNow(key, true)) ?? this.made(key);
+    });
   }
 
   meta(): Promise<WorldMeta | null> {
@@ -490,9 +512,11 @@ export class TileStore {
   }
 
   /** DO NOT post a tile the generator made back to the store from the page: its worker stores it and hands the page its records prepared; kept for the page even when the write fails. */
-  private async madeThere(key: number): Promise<TileRecords> {
+  /** Null: stored in an older form, read by the save worker (`storedVersion`). */
+  private async madeThere(key: number): Promise<TileRecords | null> {
     const { i, j } = tileOfKey(key);
-    const made = await this.makeStored!(i, j, this.versions.get(key) ?? 0, true);
+    const made = await this.makeStored!(i, j, this.versions.get(key) ?? 0, true, true);
+    if (made.legacy) return null;
     if (!made.prepared) throw new Error(`tile ${key} was made and not handed back`);
     if (made.version === null) console.warn(`[save] tile ${key} was made and not stored`);
     const records = preparedRecords(made.prepared);

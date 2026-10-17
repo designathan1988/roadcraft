@@ -1957,7 +1957,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
   const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
-    (i, j, after, text) => generator.makeStored(tileKey(i, j), mapName, after, text));
+    (i, j, after, text, ifMissing) => generator.makeStored(tileKey(i, j), mapName, after, text, ifMissing));
   // The map's parts no tile holds (zones, fog, transit, economy...) put in first, as they were written (`RoadDoc.worldValues`); the tiles come after.
   const meta = fresh ? null : await store.meta().catch((error: unknown) => { console.error('[world] its values could not be read', error); return null; });
   const empty = new RoadDoc();

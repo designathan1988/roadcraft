@@ -4,8 +4,23 @@ import { TiledSaves } from '@editor/chunkedSave';
 import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
 import {
-  type MadeTile, type TileText, TileStore, type WorldMeta, readTile, readTilePart, storeTiles, tileOpTransfer, writeTile, prepareTile,
+  type MadeTile, type TileText, TileStore, type WorldMeta, readTile, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
   preparedRecords, tileWrite, writtenRecords } from '@editor/tileStore';
+
+/** A maker as `cityTile.worker.ts` serves one: asked only if missing, it looks in the store first (`storedVersion`), the tile read and prepared where it is there; `make` runs only for a tile the store has not. */
+function lookingFirst(store: PartStore, make: (i: number, j: number, after: number, text: boolean) => Promise<MadeTile>) {
+  return async (i: number, j: number, after: number, text: boolean, ifMissing: boolean): Promise<MadeTile> => {
+    if (ifMissing) {
+      const version = await storedVersion(store, 'map', tileKey(i, j));
+      if (version === 'legacy') return { version: null, legacy: true };
+      if (version !== null) {
+        const records = text ? await readTile(store, 'map', tileKey(i, j)) : null;
+        return { version, existed: true, ...(records ? { prepared: prepareTile(records) } : {}) };
+      }
+    }
+    return make(i, j, after, text);
+  };
+}
 import { generateBody } from '@world/buildings/blueprints';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc, type SerializedDoc } from '@world/doc';
@@ -133,12 +148,12 @@ describe('a tile stored', () => {
     const kept = emptyTile(1, 1);
     await new TileStore('map', storeTiles(store), never).write(kept);
     const asked: [number, number, number][] = [];
-    const makeStored = async (i: number, j: number, after: number): Promise<MadeTile> => {
+    const makeStored = lookingFirst(store, async (i, j, after) => {
       asked.push([i, j, after]);
       // As `cityTile.worker.ts` does: the tile written straight into the store, its version past `after`.
       await storeTiles(store).run({ op: 'write', map: 'map', records: tileWrite({ ...emptyTile(i, j), version: after + 1 }) });
       return { version: after + 1 };
-    };
+    });
     const tiles = new TileStore('map', storeTiles(store), never, makeStored);
     expect(await tiles.ensure(kept.key)).toBe(1);
     expect(asked).toEqual([]);
@@ -153,13 +168,13 @@ describe('a tile stored', () => {
   it('a region tile not stored is made and stored by the generator\'s worker, the page handed its texts and never writing it', async () => {
     const store = memoryStore();
     const asked: [number, number, number, boolean][] = [];
-    const makeStored = async (i: number, j: number, after: number, text: boolean): Promise<MadeTile> => {
+    const makeStored = lookingFirst(store, async (i, j, after, text) => {
       asked.push([i, j, after, text]);
       const records = { ...emptyTile(i, j, { trees: [{ x: i, y: j }] }), version: after + 1 };
       // As `cityTile.worker.ts` does: written in the worker, its texts the ones it stored.
       const written = await writeTile(store, 'map', records);
       return { version: written.ok ? records.version : null, ...(text ? { prepared: prepareTile(records) } : {}) };
-    };
+    });
     const generate = vi.fn(never);
     const tiles = new TileStore('map', storeTiles(store), generate, makeStored);
     const key = tileKey(-2, 6);
@@ -173,6 +188,18 @@ describe('a tile stored', () => {
     expect(await tiles.load(key)).toEqual(tile);
     expect(asked).toHaveLength(1);
     expect(await tiles.write(tile)).toBe(2);
+  });
+
+  it('a tile stored in the older form is not made again: the save worker reads its version', async () => {
+    const store = memoryStore();
+    const old = { ...emptyTile(3, 3), version: 4 };
+    // Written with no baker: no sections, the head not marked baked (`storedVersion` says 'legacy').
+    await writeTile(store, 'map', old);
+    expect(await storedVersion(store, 'map', old.key)).toBe('legacy');
+    const made: number[] = [];
+    const tiles = new TileStore('map', storeTiles(store), never, lookingFirst(store, async (i, j) => { made.push(tileKey(i, j)); return { version: 1 }; }));
+    expect(await tiles.ensure(old.key)).toBe(4);
+    expect(made).toEqual([]);
   });
 
   it('a region tile made and not stored is still handed to the page', async () => {
