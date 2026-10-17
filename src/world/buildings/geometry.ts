@@ -217,24 +217,51 @@ export function elementRect(e: BuildingElement): [number, number, number, number
 
 /** World bounding box of a building: its volumes and its elements. */
 export function buildingBounds(b: Building, grow = 0): { minX: number; minY: number; maxX: number; maxY: number } {
-  // DO NOT turn each corner into a point object: every check of a draft and every building filed passes here.
+  // DO NOT turn each corner into a point object, nor make a function, an array or a ring a call: every check of a draft and every building filed passes here.
   const c = Math.cos(b.rotation), s = Math.sin(b.rotation);
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const take = (lx: number, ly: number): void => {
-    const x = b.x + lx * c - ly * s, y = b.y + lx * s + ly * c;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  };
   for (const v of b.volumes) {
-    if (v.outline) { for (const p of offsetRing(localFootprint(v), grow)) take(p.x, p.y); continue; }
-    take(v.x - grow, v.y - grow); take(v.x + v.w + grow, v.y - grow); take(v.x + v.w + grow, v.y + v.d + grow); take(v.x - grow, v.y + v.d + grow);
+    if (v.outline) {
+      // The outline as it stands with no margin, its ring offset with one (`offsetRing`).
+      const ring = grow === 0 ? localFootprint(v) : offsetRing(localFootprint(v), grow);
+      for (const p of ring) {
+        const x = b.x + p.x * c - p.y * s, y = b.y + p.x * s + p.y * c;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      continue;
+    }
+    for (let k = 0; k < 4; k++) {
+      const lx = k === 0 || k === 3 ? v.x - grow : v.x + v.w + grow, ly = k < 2 ? v.y - grow : v.y + v.d + grow;
+      const x = b.x + lx * c - ly * s, y = b.y + lx * s + ly * c;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
   }
   for (const e of b.elements ?? []) {
-    const [x0, y0, x1, y1] = elementRect(e);
+    // `elementRect`, without its array.
+    const alongY = e.facing === 0 || e.facing === 2;
+    const sx = alongY ? e.w : e.d, sy = alongY ? e.d : e.w;
+    let hx = sx / 2, hy = sy / 2;
+    if (e.angle) {
+      const cs = Math.abs(Math.cos(e.angle)), sn = Math.abs(Math.sin(e.angle));
+      hx = (sx * cs + sy * sn) / 2;
+      hy = (sx * sn + sy * cs) / 2;
+    }
+    const x0 = e.x - hx, y0 = e.y - hy, x1 = e.x + hx, y1 = e.y + hy;
     const gx0 = Math.sign(x0 - e.x) * grow, gx1 = Math.sign(x1 - e.x) * grow, gy0 = Math.sign(y0 - e.y) * grow, gy1 = Math.sign(y1 - e.y) * grow;
-    take(x0 + gx0, y0 + gy0); take(x1 + gx1, y0 + gy0); take(x1 + gx1, y1 + gy1); take(x0 + gx0, y1 + gy1);
+    for (let k = 0; k < 4; k++) {
+      const lx = k === 0 || k === 3 ? x0 + gx0 : x1 + gx1, ly = k < 2 ? y0 + gy0 : y1 + gy1;
+      const x = b.x + lx * c - ly * s, y = b.y + lx * s + ly * c;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
   }
   return { minX, minY, maxX, maxY };
 }
