@@ -787,7 +787,11 @@ export class SimWorld {
     return { serial: this.signalSerial, nodes: this.signalLog.slice(serial - this.signalLogBase) };
   }
 
+  /** The junctions signalised when last noted: one that stops being so is noted once more (its heads and posts taken away). */
+  private readonly signalised = new Set<NodeId>();
+
   private noteSignal(node: NodeId): void {
+    if (this.graph.junctions.get(node)?.signalised) this.signalised.add(node); else this.signalised.delete(node);
     this.signalLog.push(node);
     this.signalSerial++;
     // DO NOT forget the whole log here: a reader that had just read was sent to read every junction again.
@@ -802,23 +806,35 @@ export class SimWorld {
   /** The roads' changes since the last rebuild (`noteJunctionsReached`). */
   private readonly roadsSeen = new JournalCursor(['roads']);
 
-  /** The junctions at the ends of the segments the roads' changes reached, noted; the log forgotten when the diary cannot say. */
+  /** The signalised junctions (now, or when last noted) at the ends of the segments the roads' changes reached, noted once each; the log forgotten when the diary cannot say.
+   *  DO NOT note every junction a tile's square reaches: a junction with no signal has no heads nor posts, and one that gains or loses its controller is noted where that happens (`syncControllers`, `applyAutoControl`). */
   private noteJunctionsReached(): void {
     const entries = this.roadsSeen.read(this.doc.changes);
     if (entries === null || entries.some((e) => e.rects === null)) { this.forgetSignals(); return; }
+    const noted = new Set<NodeId>();
+    const note = (node: NodeId): void => {
+      if (noted.has(node) || !(this.signalised.has(node) || this.graph.junctions.get(node)?.signalised)) return;
+      noted.add(node);
+      this.noteSignal(node);
+    };
     for (const entry of entries) {
       for (const rect of entry.rects!) {
         for (const id of this.net.segmentCells.idsMeeting(rect)) {
           const segment = this.doc.segment(id);
-          if (segment) { this.noteSignal(segment.a); this.noteSignal(segment.b); }
+          if (segment) { note(segment.a); note(segment.b); }
         }
       }
     }
+    // A signalised junction whose roads all went: no segment reaches it, noted from what was signalised.
+    for (const node of this.signalised) if (!this.graph.junctions.has(node) && !noted.has(node)) { noted.add(node); this.noteSignal(node); }
   }
 
+  /** @rebuild The log forgotten (readers read every junction): the signalised ones listed again from the graph. */
   private forgetSignals(): void {
     this.signalLog = [];
     this.signalLogBase = ++this.signalSerial;
+    this.signalised.clear();
+    for (const [node, junction] of this.graph.junctions) if (junction.signalised) this.signalised.add(node);
   }
 
   /** The control a junction on "automatic" runs */

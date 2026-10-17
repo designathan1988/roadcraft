@@ -79,7 +79,10 @@ describe('the signal posts the walkers keep clear of', () => {
     doc.addSegment(doc.addNode({ x: 120, y: -150 }).id, doc.addNode({ x: 120, y: -250 }).id, 1);
     sim.net.rebuild();
     sim.rebuildTopology();
-    expect(sim.signalChangesSince(before).nodes).not.toBeNull();
+    const reached = sim.signalChangesSince(before).nodes;
+    expect(reached).not.toBeNull();
+    // Only signalised junctions are noted: one without a signal has no heads nor posts to place again.
+    for (const node of reached!) expect(sim.graph.junctions.get(node)?.signalised, `junction ${node}`).toBe(true);
     sim.signalPosts.follow(sim);
     expect(indexed(sim, junctions)).toEqual(signalPosts(sim.net, sim.graph).map(key).sort());
   });
