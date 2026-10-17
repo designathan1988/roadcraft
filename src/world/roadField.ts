@@ -18,6 +18,16 @@ export const PROFILE_FADE = m(44);
 /** Side of the spatial index's cells, world units. */
 export const INDEX_CELL = m(25.6);
 
+/** Rounding between a box's distance and a line's (`closestInto` measures it its own way): a road this close to the cut is measured. */
+const BOX_SLACK = 1e-6;
+
+/** The distance from a point to a box (0 inside it): never more than to anything in the box. */
+function boxDistance(b: Aabb, x: number, y: number): number {
+  const dx = x < b.minX ? b.minX - x : x > b.maxX ? x - b.maxX : 0;
+  const dy = y < b.minY ? b.minY - y : y > b.maxY ? y - b.maxY : 0;
+  return Math.hypot(dx, dy);
+}
+
 /** What a query reads of one road's solved profile. */
 export interface FieldProfile {
   readonly id: SegmentId;
@@ -475,6 +485,8 @@ export function roadField<P extends FieldProfile>(
     for (const profile of index.near(x, y)) {
       if (structures && !structures.has(profile.structure)) continue;
       if (!includeManual && profile.manualVertical) continue;
+      // Exact: a road whose line's box is no nearer than the best so far is no nearer itself.
+      if (boxDistance(profile.line.bbox, x, y) > bestDistance + BOX_SLACK) continue;
       profile.line.closestInto(x, y, hit);
       if (hit.distance < bestDistance) {
         bestDistance = hit.distance;
@@ -518,6 +530,8 @@ export function roadField<P extends FieldProfile>(
     for (const profile of candidates) {
       if (structures && !structures.has(profile.structure)) continue;
       if (!includeManual && profile.manualVertical) continue;
+      // DO NOT measure a road the blend leaves out whatever it measures (`blend`: past `BLEND_SKIP` of the nearest): its line's box is already that far past the best so far, and the best only comes nearer. Exact.
+      if (boxDistance(profile.line.bbox, x, y) - best > BLEND_SKIP + BOX_SLACK) continue;
       profile.line.closestInto(x, y, hit);
       distances[found] = hit.distance;
       arcs[found] = hit.s;
