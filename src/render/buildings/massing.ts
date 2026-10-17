@@ -160,6 +160,12 @@ class MassWriter {
 /** The building's own shade, as the detailed one has it (`buildingMesh.ts` `emitBuilding`). */
 const shadeOf = (b: Building): number => 0.93 + (((b.id * 2654435761) >>> 0) % 1000) / 1000 * 0.12;
 
+/** A building's floor as the detailed one's (`buildingMesh.ts` `emitChunk`, `floorHeight`); undefined with no closed block. */
+export function massFloor(b: Building, naturalAt: GroundAt, pavedAt?: PavedAt): number | undefined {
+  const resolved = resolveBlocks(b);
+  return closedBlocks(resolved.volumes).length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+}
+
 /** A building's mass from afar, on the ground it stands on (the floor worked out as the detailed building's, `floorHeight`) */
 export function emitMassing(
   b: Building, groundAt: GroundAt, pavedAt?: PavedAt, naturalAt: GroundAt = groundAt, signature = false,
@@ -167,6 +173,8 @@ export function emitMassing(
   tone?: Readonly<Record<Finish, readonly [number, number, number]>>,
   /** What the level leaves out (a tile's, a plate's); the cell's keeps all. */
   detail: MassDetail = CELL_DETAIL,
+  /** Its floor already worked out (`massFloor`): a tile's bake reads it once for its two levels and its boxes. */
+  known?: { readonly floor: number | undefined },
 ): MassingChunk | null {
   const resolved = resolveBlocks(b);
   // One list for the blocks (`closedBlocks`, as `buildingMesh.ts` `emitChunk`): every block of the body reads one layout of its bays (`bayLayout`).
@@ -174,7 +182,7 @@ export function emitMassing(
   const office = b.use === 'commercial' || b.use === 'industrial' ? 2 : 0;
   const w = new MassWriter(b, ((b.id * 2654435761) >>> 0) / 4294967296 + office, detail);
   // The floor as the detailed building's (`buildingMesh.ts` `emitChunk`)
-  const floor = closed.length > 0 ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
+  const floor = known ? known.floor : massFloor(b, naturalAt, pavedAt);
   if (floor !== undefined && !signature) {
     const shade = shadeOf(b);
     const rgb = (spec: MaterialSpec): Rgb => {
@@ -196,12 +204,13 @@ export const BOX_FLOATS = 19;
 /** A BUILDING AS BOXES, for the levels past the plates (`farTiles.ts`): each closed block the box of its plan, its roof's rise halved, coloured and glazed as its mass */
 export function emitBoxes(
   b: Building, pavedAt: PavedAt | undefined, naturalAt: GroundAt, tone: Readonly<Record<Finish, readonly [number, number, number]>> | undefined, out: number[],
+  known?: { readonly floor: number | undefined },
 ): void {
   const resolved = resolveBlocks(b);
   const closed = closedBlocks(resolved.volumes);
   if (closed.length === 0) return;
   // The floor as the mass's (`emitMassing`).
-  const floor = floorHeight(resolved, naturalAt, pavedAt);
+  const floor = known?.floor ?? floorHeight(resolved, naturalAt, pavedAt);
   const shade = shadeOf(b);
   const rgb = (spec: MaterialSpec): Rgb => {
     const c = rgbOf(spec.colour, shade), t = tone?.[spec.finish];

@@ -9,7 +9,7 @@ import { derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } 
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { type CellMass, cellMass, cellMassBuffers, indexArray, shellBounds } from './cellArrays';
 import { AGGREGATE, LEVEL_MASS_KEY as MASS_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
-import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing } from './massing';
+import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing, massFloor } from './massing';
 
 export { AGGREGATE, TOP_LEVEL, emptyRecords, farKey, farNode, nodeSide } from './farGrid';
 
@@ -152,11 +152,11 @@ function tileBuildings(records: TileRecords): Building[] {
   return out;
 }
 
-/** The masses of buildings at a level, merged, as the cells' job emits them (`cellWork.ts`); a signature building by its blocks (no body of its own is drawn far off). */
-function massesOf(buildings: readonly Building[], detail: MassDetail, reads: GroundReaders, tone?: FarJob['tone']): CellMass | null {
+/** The masses of buildings at a level, merged, as the cells' job emits them (`cellWork.ts`); a signature building by its blocks (no body of its own is drawn far off). `floors`: each one's floor worked out already (`bakeTile`). */
+function massesOf(buildings: readonly Building[], detail: MassDetail, reads: GroundReaders, tone?: FarJob['tone'], floors?: readonly { readonly floor: number | undefined }[]): CellMass | null {
   const chunks: MassingChunk[] = [];
-  for (const b of buildings) {
-    const mass = emitMassing(b, reads.groundAt, undefined, reads.naturalAt, false, tone, detail);
+  for (let n = 0; n < buildings.length; n++) {
+    const mass = emitMassing(buildings[n]!, reads.groundAt, undefined, reads.naturalAt, false, tone, detail, floors?.[n]);
     if (mass) chunks.push(mass);
   }
   return cellMass(chunks);
@@ -169,9 +169,11 @@ export function bakeTileMasses(records: TileRecords, detail: MassDetail, reads: 
 
 /** A tile's bake from its buildings: its masses at its level and its plate's, its blocks as boxes. */
 function bakeTile(buildings: readonly Building[], sig: string, reads: GroundReaders, tone?: FarJob['tone']): TileEntry {
+  // DO NOT sample each building's ground three times: its floor once, for its boxes and its masses at both levels.
+  const floors = buildings.map((b) => ({ floor: massFloor(b, reads.naturalAt) }));
   const boxes: number[] = [];
-  for (const b of buildings) emitBoxes(b, undefined, reads.naturalAt, tone, boxes);
-  return { sig, tile: massesOf(buildings, TILE_DETAIL, reads, tone), plate: massesOf(buildings, PLATE_DETAIL, reads, tone), boxes: new Float32Array(boxes) };
+  buildings.forEach((b, n) => emitBoxes(b, undefined, reads.naturalAt, tone, boxes, floors[n]));
+  return { sig, tile: massesOf(buildings, TILE_DETAIL, reads, tone, floors), plate: massesOf(buildings, PLATE_DETAIL, reads, tone, floors), boxes: new Float32Array(boxes) };
 }
 
 /** Several box lists as one. */
