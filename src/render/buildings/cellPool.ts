@@ -69,7 +69,12 @@ interface Asked {
   readonly env: CellEnv;
   readonly done: (result: CellResult) => void;
   readonly key: string | null;
-  readonly priority: number;
+  /** Its band now (`cellPriority`): asked again in another when the curtain lifts (`coarseFirst`). */
+  priority: number;
+  /** Cut open or edited by the player: always first. */
+  readonly first: boolean;
+  /** Taken by a worker (`write` called): it runs through as asked. */
+  sent: boolean;
   readonly place: readonly [number, number] | null;
   /** The roads handed with it: the cell and its reach, wider once the worker said so. */
   rect: [number, number, number, number] | null;
@@ -89,7 +94,23 @@ export class CellPool {
   private nextId = 1;
   private warned = false;
   /** DO NOT give the detail the queue first while the town is behind its curtain: the opening shows the masses and the far levels, the detail lands after (`renderer.ts` reveal), and the cells' detail took the queue's two workers while the coarse levels the curtain waits for stood behind it (2026-10-16, 90 s at the curtain's limit, the workers' profile). Set by the layer as it is hidden or shown. */
-  coarseFirst = false;
+  get coarseFirst(): boolean {
+    return this.coarse;
+  }
+  /** DO NOT leave the detail asked behind the curtain in its band once the town shows: the queue ranks a job by the band it was asked in, and the cell at the camera after a reload waited behind the whole re-bake (conferencia 97, picture 51: neither its detail nor its facade level 4 s on). The jobs no worker took are asked again in their band now. */
+  set coarseFirst(on: boolean) {
+    if (on === this.coarse) return;
+    this.coarse = on;
+    for (const asked of this.asked.values()) {
+      if ((asked.kind !== 'cell' && asked.kind !== 'facade') || asked.sent || !asked.ticket?.pending) continue;
+      const priority = cellPriority(asked.kind, 0, asked.first, on);
+      if (priority === asked.priority) continue;
+      asked.ticket.cancel();
+      asked.priority = priority;
+      this.submit(asked);
+    }
+  }
+  private coarse = false;
 
   /** `workers`: false does every job on the page (tests). `tone`: each finish's colour from afar, for the masses (`kit.ts`). */
   /** `text`: where an entry's record is read (`recordTable.ts`), taken when the job is sent. */
@@ -108,9 +129,10 @@ export class CellPool {
     // Its band; its distance to the view is the queue's, as the view moves (`JobSpec.at`). A building the player cut open goes first: what the click asked for (`layer.ts` `entryFor`).
     const place = at ? [(at.i0 + at.n / 2) * BATCH_CELL, (at.j0 + at.n / 2) * BATCH_CELL] as const : null;
     // A cell the player's edit changed (`edited`, `layer.ts` editedCells: a building demolished in a tile next to a road's) goes with the cut-open one: it draws what was just done.
-    const priority = cellPriority(kind, 0, edited || entries.some((e) => e.key.includes('|')), this.coarseFirst);
+    const first = edited || entries.some((e) => e.key.includes('|'));
+    const priority = cellPriority(kind, 0, first, this.coarse);
     const asked: Asked = {
-      id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority, place,
+      id: this.nextId++, kind, cell, entries, writers: entries.map((e) => this.text(e)), env, done, key, priority, first, sent: false, place,
       rect: env.pavedAt ? pavingRect(cell) : null, widened: 0, ticket: null,
     };
     if (!this.offPage(env)) { this.onPage(asked); return asked.id; }
@@ -155,12 +177,13 @@ export class CellPool {
   }
 
   private submit(asked: Asked): void {
+    asked.sent = false;
     asked.ticket = submitJob({
       service: 'cells',
       key: asked.key === null ? null : `cells:${asked.key}`,
       priority: asked.priority,
       ...(asked.place ? { at: asked.place } : {}),
-      write: () => this.write(asked),
+      write: () => { asked.sent = true; return this.write(asked); },
       done: (answer) => this.answer(asked, answer as WorkReply),
       failed: (message) => this.failed(asked, message),
     });

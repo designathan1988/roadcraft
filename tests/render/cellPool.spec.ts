@@ -92,6 +92,30 @@ describe('a cell job no longer wanted', () => {
     expect(written).toEqual(['new', 'far']);
   });
 
+  it('asked behind the curtain, goes in the band of the detail once the town shows, not behind every coarse level (conferencia 97, picture 51)', async () => {
+    const { CellPool } = await import('@render/buildings/cellPool');
+    const { setJobFocus } = await import('@/jobs/jobPool');
+    const pool = new CellPool(() => boxes, () => () => ({ buffer: new SharedArrayBuffer(0), row: 0 }));
+    setJobFocus(0, 0);
+    // The worker busy; behind the curtain the cell at the camera's detail is asked, then a mass far off.
+    const busy = pool.run('mass', '30,30', [], env, () => {});
+    pool.coarseFirst = true;
+    const detail = pool.run('cell', '0,0', [], env, () => {});
+    const mass = pool.run('mass', '20,20', [], env, () => {});
+    // The curtain lifts before the worker is free.
+    pool.coarseFirst = false;
+    const worker = FakeWorker.made[0]!;
+    answer(worker, empty(busy));
+    expect(started(worker)).toEqual([busy, detail]);
+    answer(worker, empty(detail));
+    expect(started(worker)).toEqual([busy, detail, mass]);
+    // One taken by a worker is not asked again.
+    pool.coarseFirst = true;
+    expect(started(worker)).toEqual([busy, detail, mass]);
+    answer(worker, empty(mass));
+    expect(pool.running).toBe(0);
+  });
+
   it('read past the roads handed over is asked again over wider ones', async () => {
     const { CellPool } = await import('@render/buildings/cellPool');
     const rects: (readonly number[])[] = [];
