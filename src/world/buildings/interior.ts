@@ -255,10 +255,8 @@ function defaultFunction(b: Building): BuildingFunction {
 const ITEM_CELL = m(2);
 const itemCell = (x: number, y: number): number => (x + 32768) * 65536 + (y + 32768);
 /** A piece's half extents across the floor, with the gap kept round it (`Plan.free`). */
-function paddedHalf(it: Furniture): [number, number] {
-  const turned = Math.abs(Math.sin(it.angle)) > 0.5;
-  return [(turned ? it.d : it.w) / 2 + m(0.15), (turned ? it.w : it.d) / 2 + m(0.15)];
-}
+/** A cell no piece is filed in (`Plan.free`): DO NOT make an empty list for each one looked in. */
+const NONE_FILED: readonly Furniture[] = Object.freeze([]);
 
 /** One block's floor, being furnished: where things may stand, and what stands. */
 class Plan {
@@ -301,11 +299,11 @@ class Plan {
       corner.y = k < 2 ? y - hd : y + hd;
       if (!pointInPolygon(corner, this.ring)) return false;
     }
-    for (const [a0, b0, a1, b1] of this.cores) if (x + hw > a0 && x - hw < a1 && y + hd > b0 && y - hd < b1) return false;
+    for (const c of this.cores) if (x + hw > c[0] && x - hw < c[2] && y + hd > c[1] && y - hd < c[3]) return false;
     // Two boxes that overlap share a cell: only the pieces filed in this box's cells can be in its way.
     for (let gx = Math.floor((x - hw) / ITEM_CELL); gx <= Math.floor((x + hw) / ITEM_CELL); gx++) {
       for (let gy = Math.floor((y - hd) / ITEM_CELL); gy <= Math.floor((y + hd) / ITEM_CELL); gy++) {
-        for (const it of this.filed.get(itemCell(gx, gy)) ?? []) {
+        for (const it of this.filed.get(itemCell(gx, gy)) ?? NONE_FILED) {
           const t2 = Math.abs(Math.sin(it.angle)) > 0.5;
           const iw = (t2 ? it.d : it.w) / 2 + m(0.15);
           const id = (t2 ? it.w : it.d) / 2 + m(0.15);
@@ -317,12 +315,14 @@ class Plan {
   }
 
   put(kind: FurnitureKind, x: number, y: number, angle = 0, scale = 1): boolean {
-    const [w, d, h] = FURNITURE_SIZE[kind];
-    const fw = m(w) * scale, fd = m(d) * scale, fh = m(h);
+    const size = FURNITURE_SIZE[kind];
+    const fw = m(size[0]) * scale, fd = m(size[1]) * scale, fh = m(size[2]);
     if (!this.free(x, y, fw, fd, angle)) return false;
     const item: Furniture = { kind, x, y, w: fw, d: fd, h: fh, angle };
     this.items.push(item);
-    const [iw, id] = paddedHalf(item);
+    // Its box padded, as `free` pads the pieces it meets (no pair made for it).
+    const turned = Math.abs(Math.sin(item.angle)) > 0.5;
+    const iw = (turned ? item.d : item.w) / 2 + m(0.15), id = (turned ? item.w : item.d) / 2 + m(0.15);
     for (let gx = Math.floor((x - iw) / ITEM_CELL); gx <= Math.floor((x + iw) / ITEM_CELL); gx++) {
       for (let gy = Math.floor((y - id) / ITEM_CELL); gy <= Math.floor((y + id) / ITEM_CELL); gy++) {
         const key = itemCell(gx, gy);
