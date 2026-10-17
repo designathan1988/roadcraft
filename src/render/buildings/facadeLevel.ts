@@ -9,6 +9,10 @@ import { ROOM_LAMP_GLSL } from './roomLamps';
 export const FACADE_KIND = { none: 0, window: 1, clear: 2, darkQuarter: 3, darkFifth: 4, door: 5, shutterDoor: 6 } as const;
 /** Added to a vertex's kind where its run's bays go against its face's own horizontal (`shellUv`'s t): the shader turns the derived direction round. */
 export const FACADE_FLIP = 8;
+/** Its run's rain streak times this added to a vertex's kind (`buildingMesh.ts` `streakOf`): the shader darkens the wall under each sill as `emitStreak` does. */
+export const FACADE_STREAK = 16;
+/** How far under the opening a sill's streak starts, by the run's streak: the windows' sill, the shuttered window's deeper one (`emitBay`). */
+export const STREAK_SILL: readonly number[] = [0, m(0.06), m(0.08)];
 
 /** How wide a window's frame reads round its pane, m: the frame part's border (`kit.ts`), with the reveal beside it. */
 const FRAME = m(0.08);
@@ -43,6 +47,7 @@ float facadeSolid = 0.0;
 float facadeDark = 0.0;
 float facadeShutter = 0.0;
 float facadeLit = 0.0;
+float facadeStreak = 1.0;
 vec3 facadeLamp = vec3(1.0);
 ${ROOM_LAMP_GLSL}
 // The integral of a pulse [a0, a1) repeated every 1, from 0 to x.
@@ -71,7 +76,8 @@ function facadeColour(): string {
   const K = FACADE_KIND;
   return `
 vec2 facadeFoot = max(fwidth(vFacadeGrid.xy), vec2(1e-4));
-int facadeKind = int(vFacadeKey.x + 0.5);
+int facadeRaw = int(vFacadeKey.x + 0.5);
+int facadeKind = facadeRaw & ${FACADE_FLIP - 1};
 uint facadeHash = 0u;
 if (facadeKind > ${K.none}) {
   vec2 cell = vFacadeGrid.xy;
@@ -106,9 +112,20 @@ if (facadeKind > ${K.none}) {
     }
   }
   facadeWall = 1.0 - facadeFrame - facadeGlass - facadeSolid;
+  // The rain streak under the sill (\`emitStreak\`): two bays in three, darkest at the sill, fading down its reach.
+  int streak = facadeRaw / ${FACADE_STREAK};
+  if (streak > 0 && facadeHash % 3u != 0u) {
+    float sill = o.z * storeyH - (streak == 1 ? ${num(STREAK_SILL[1]!)} : ${num(STREAK_SILL[2]!)});
+    float reach = min(sill - ${num(m(0.05))}, ${num(m(0.7))} + float(facadeHash % 7u) * ${num(m(0.12))});
+    float am = 0.5 * (o.x + o.y), spread = (o.y - o.x) * (0.32 + float(facadeHash % 5u) * 0.03);
+    float bottom = sill - reach, top = sill - ${num(m(0.02))};
+    float under = facadePulse(cell.x, facadeFoot.x, am - spread, am + spread) * facadePulse(cell.y, facadeFoot.y, bottom / storeyH, top / storeyH);
+    float rise = clamp((fract(cell.y) * storeyH - bottom) / max(top - bottom, 1e-3), 0.0, 1.0);
+    facadeStreak = 1.0 - under * rise * (0.07 + 0.12 * vDecay);
+  }
   vec3 glassColour = mix(FACADE_GLASS, FACADE_GLASS_DARK, facadeDark);
   vec3 solidColour = mix(FACADE_DOOR, FACADE_SHUTTER, facadeShutter);
-  diffuseColor.rgb = diffuseColor.rgb * facadeWall + vFacadeTrim.rgb * facadeFrame + glassColour * facadeGlass + solidColour * facadeSolid;
+  diffuseColor.rgb = diffuseColor.rgb * facadeWall * facadeStreak + vFacadeTrim.rgb * facadeFrame + glassColour * facadeGlass + solidColour * facadeSolid;
   // Its room lit at night: the share awake once the window is under a pixel, its lamp from the mix the detailed panes draw from.
   float lot = float((facadeHash >> 8u) & 1023u) / 1024.0;
   float office = step(0.5, vFacadeTrim.a);
@@ -154,7 +171,7 @@ vFacadeGrid = vec4(facadeCell.xy, facadeSize);
   vec3 facadeOut = normalize(mat3(modelMatrix) * objectNormal);
   vec2 facadeAlong = vec2(facadeOut.z, facadeOut.x) / max(length(facadeOut.xz), 1e-6);
   if ((facadeRaw & ${FACADE_FLIP}) != 0) facadeAlong = -facadeAlong;
-  vFacadeKey = vec4(float(facadeRaw & ${FACADE_FLIP - 1}), facadeCell.w, facadeAlong);
+  vFacadeKey = vec4(float(facadeRaw - (facadeRaw & ${FACADE_FLIP})), facadeCell.w, facadeAlong);
 }
 vFacadeOpening = facadeOpening;
 vFacadeTrim = facadeTrim;
@@ -179,6 +196,6 @@ totalEmissiveRadiance += facadeLamp * massingNight * facadeLit * facadeGlass * m
     // The shell's own after: each of its additions lands right after its chunk, so before these (its finish's map, roughness, metalness and relief first).
     baseCompile(shader, renderer);
   };
-  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v3`;
+  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v4`;
   return material;
 }
