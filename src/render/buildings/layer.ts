@@ -1,4 +1,4 @@
-import { Box3, Frustum, Group } from 'three';
+import { Box3, Frustum, Group, type Object3D } from 'three';
 import { Digest } from '@core/digest';
 
 import type { RoadDoc } from '@world/doc';
@@ -66,6 +66,9 @@ export function createBuildingLayer(): BuildingLayer {
   group.matrixAutoUpdate = false;
   group.updateMatrix();
   let stored: BuildingMeshes | null = null;
+  /** A far cascade's pass in progress (`castInto` coarse): each cell's detail group hidden for it, and whether it was shown before. */
+  let shadowCoarse = false;
+  const shadowHidden = new Map<Object3D, boolean>();
   let ruined: ReadonlySet<number> = new Set();
   /** Moves when the ruins change (`setRuined`), not when the same ones are given again. */
   let ruinedSerial = 0;
@@ -772,8 +775,28 @@ export function createBuildingLayer(): BuildingLayer {
         }
       }
     },
-    castInto(texel) {
-      for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible) cell.castInto(texel);
+    castInto(texel, coarse = false) {
+      // DO NOT draw hundreds of detail meshes into a far cascade: a cell's masses are its silhouette at those texels, one mesh. Only the cells whose masses stand in: the detail of any other (none landed yet, a town drawn whole) still casts, never a hole.
+      if (texel === null || !coarse) {
+        if (shadowCoarse) {
+          shadowCoarse = false;
+          for (const [group, was] of shadowHidden) group.visible = was;
+          shadowHidden.clear();
+          massCells.shadowMasses(false);
+        }
+        if (texel === null) return;
+        for (const map of [partCells, facadeParts]) for (const cell of map.values()) if (cell.group.visible) cell.castInto(texel);
+        return;
+      }
+      if (shadowCoarse) return;
+      shadowCoarse = true;
+      for (const key of massCells.shadowMasses(true)) {
+        for (const group of [cells.get(key)?.part.group, facades.get(key)?.part.group, partCells.get(key)?.group, facadeParts.get(key)?.group]) {
+          if (!group || shadowHidden.has(group)) continue;
+          shadowHidden.set(group, group.visible);
+          group.visible = false;
+        }
+      }
     },
     setCutaway(next) {
       cutaway = next;

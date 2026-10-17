@@ -948,8 +948,9 @@ export function createSceneRenderer(
   scene.add(buildings.group);
   // Each sun cascade draws the parts wider than its own texel only, not every part the finest one draws.
   // And every layer that registered its meshes by size (`shadowCasters.ts`): cellInstances, flags, signals, things in the hand.
-  environment.setCasters((texel) => {
-    if (texel !== null) buildings.castInto(texel);
+  // The far cascades (1 and 2) take the buildings by their masses only (`BuildingLayer.castInto` coarse).
+  environment.setCasters((texel, cascade) => {
+    buildings.castInto(texel, cascade >= 1);
     castCastersInto(texel);
   });
   // The town's meshes keep their arrays only until they are on the GPU (`mesh/gpuOnly.ts`)

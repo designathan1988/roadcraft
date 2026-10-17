@@ -148,3 +148,45 @@ describe('a tile handed to the cells', () => {
   });
 });
 
+
+describe('the far sun cascades', () => {
+  it('take the cells in detail by their masses only, never leave one without a caster, and every caster is back as it was after the passes', () => {
+    const doc = new RoadDoc();
+    for (let i = 0; i < 9; i++) doc.buildings.add(body(i, (i % 3) * SPACING, Math.floor(i / 3) * SPACING));
+    const layer = createBuildingLayer();
+    // An eye low over the town: its cells near and in detail, their masses come too.
+    for (let frame = 0; frame < 400; frame++) {
+      beginFrameWork();
+      layer.update(doc, flat, 'g');
+      layer.levelOfDetail(SPACING, SPACING, m(40), 1000, null);
+      if (!layer.pending && frame > 20) break;
+    }
+    /** What casts now: every mesh shown (it and every parent) that casts, by its parents' names and its own. */
+    const casters = (): string[] => {
+      const out: string[] = [];
+      const walk = (o: Object3D, path: string): void => {
+        if (!o.visible) return;
+        const mesh = o as Mesh;
+        if (mesh.isMesh && mesh.castShadow) out.push(`${path}/${o.name}#${o.id}`);
+        for (const child of o.children) walk(child, `${path}/${o.name}`);
+      };
+      walk(layer.group, '');
+      return out.sort();
+    };
+    const near = casters();
+    // In detail: the cells' batches cast in the near cascade, their masses hidden.
+    expect(near.some((c) => c.includes('/buildings/buildings/'))).toBe(true);
+    expect(near.some((c) => c.includes('building-massing'))).toBe(false);
+    layer.castInto(m(1), true);
+    const far = casters();
+    // A far cascade: the masses stand in, the detail left out, fewer objects and none of the town without a caster.
+    expect(far.some((c) => c.includes('/buildings/buildings/'))).toBe(false);
+    expect(far.some((c) => c.includes('building-massing'))).toBe(true);
+    expect(far.length).toBeLessThan(near.length);
+    layer.castInto(m(1), true);
+    expect(casters()).toEqual(far);
+    layer.castInto(null);
+    expect(casters()).toEqual(near);
+    layer.dispose();
+  });
+});
