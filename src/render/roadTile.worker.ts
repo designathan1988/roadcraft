@@ -1,7 +1,7 @@
 import { type MeshAsk, TileMesher, type TileMeshes, tileBuffers } from './roadTileMesh';
 import { type BlockArrays, blockBuffers, coarseArrays } from './mesh/roadLodPure';
 import type { JobScope } from '../jobs/jobScope';
-import { WriteBudget, keepDerivedQueued } from '../core/derivedCache';
+import { WriteBudget, keepDerivedQueuedMany } from '../core/derivedCache';
 import { MeshoptSimplifier } from 'meshoptimizer';
 
 /** One worker of the roads' surface tiles (`roadTilePool.ts`): each tile of a share shaped and meshed whole */
@@ -25,7 +25,7 @@ export async function keepTiles(tiles: readonly TileMeshes[], keep: { readonly p
     const key = keep.keys[i];
     if (!key) continue;
     try {
-      await keepDerivedQueued(keep.prefix + key, new Map(tiles[i]!), budget);
+      await keepDerivedQueuedMany([[keep.prefix + key, new Map(tiles[i]!)]], budget);
       kept.push(i);
     } catch (error) {
       // Not kept: the page keeps it as it did before (`roadSurfaces.ts` keep).

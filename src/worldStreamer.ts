@@ -386,8 +386,8 @@ export class WorldStreamer {
     // The map being made (`rush`): every lane the region's tiles leave free, at once; after, once the region is in.
     if (!this.rush && (this.asked.size > 0 || this.ready.size > 0 || !this.settled)) return;
     for (const key of this.aheadOrder) {
-      // Nearest first: past the ring, one lane kept free for the tiles the camera moves onto.
-      if (this.rush ? this.asked.size + this.ahead.size >= this.inFlight
+      // Nearest first: past the ring, one lane kept free for the tiles the camera moves onto. The map being made: twice the lanes asked, so a lane that ends a tile finds the next waiting in the generator's queue - DO NOT let it wait for the page to hear of the last and ask again (the opening's lanes at half load, 30-50 s, 2026-10-17).
+      if (this.rush ? this.asked.size + this.ahead.size >= 2 * this.inFlight
         : this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, this.inFlight - 1))) return;
       if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key) || this.wantedNear(key, ACTIVE_RADIUS)) continue;
       this.ahead.add(key);

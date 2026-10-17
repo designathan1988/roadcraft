@@ -7,7 +7,7 @@ import { TILE, tileOfKey } from '@world/tiles';
 import { METERS_PER_UNIT, m } from '@world/units';
 import { emptyRecords } from './buildings/farGrid';
 import { nearRoadDoc } from './nearRoadTiles';
-import { type WriteBudget, derivedCacheOpen, keepDerivedDurably, keepDerivedQueued, readDerived } from './derivedCache';
+import { derivedCacheOpen, keepDerivedDurably, readDerived } from './derivedCache';
 import { type BuildingStage, STAGE_FORMAT, buildingStage, stageKey } from './nearBuildings';
 import { type NearPart, partsDigest } from './nearContent';
 import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
@@ -109,8 +109,6 @@ export const derivedNearCache: NearTileCache = {
   put: async (key, value) => { await (await keepDerivedDurably(key, value)).committed; },
 };
 
-/** The same store, a write resolved once queued (`keepDerivedQueued`): for a tile's maker, whose later readers' transactions come after its write's (`cityTile.worker.ts`). */
-export const queuedNearCache = (budget: WriteBudget): NearTileCache => ({ ready: derivedCacheOpen, get: (key) => readDerived(key), put: (key, value) => keepDerivedQueued(key, value, budget) });
 
 /** A kind of a tile asked: the page's version of the ask (`sig`: an answer to another is dropped), the version of what it reads (`want`: the tiles' versions and the kind's own), the bake the page draws now (`shown`: the same bake comes back without its arrays), what else it reads from the page (`NearProduct.extra`). */
 export interface NearAsk {

@@ -10,11 +10,11 @@ import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
 import { BAYS_SECTION } from '@sim/tileBays';
 import { NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, tileBaysSection, tileNetworkSection } from '@sim/tileSections';
-import { type FarCache, type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
-import { type FarRoadCache, keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTiles';
+import { type FarCache, type FarGroundEnv, keepTileFar } from './render/buildings/farTiles';
+import { type FarRoadCache, keepTileFarRoads, tileRoads } from './render/farRoadTiles';
 import { keepTileNearBuildings } from './render/nearBuildings';
-import { type NearTileCache, queuedNearCache } from './render/nearTileBake';
-import { WriteBudget } from '@core/derivedCache';
+import type { NearTileCache } from './render/nearTileBake';
+import { WriteBudget, derivedCacheOpen, keepDerivedQueuedMany, readDerived } from '@core/derivedCache';
 import type { SharedGroundData } from './render/sharedGround';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
@@ -47,18 +47,27 @@ export interface FarTileBake extends FarGroundEnv {
 /** Bytes of far levels this worker may have handed IndexedDB and not seen committed: a tile's far writes past it wait for the earlier ones (`WriteBudget`). */
 const FAR_WRITES_MOST = 48 * 2 ** 20;
 
-/** Where this worker keeps the far levels it bakes, queued under its write budget. */
-interface FarCaches { readonly far: FarCache; readonly roads: FarRoadCache; readonly near: NearTileCache }
+/** Where this worker keeps the far levels it bakes: its write budget. */
+interface FarCaches { readonly budget: WriteBudget }
+
+/** A tile's far bakes gathered, not written one by one: what `keepTileFar`, `keepTileFarRoads` and `keepTileNearBuildings` put, kept together after (`keepDerivedQueuedMany`). */
+function gathered(): { readonly far: FarCache; readonly roads: FarRoadCache; readonly near: NearTileCache; readonly entries: [string, unknown][] } {
+  const entries: [string, unknown][] = [];
+  const put = (key: string, value: unknown): Promise<void> => { entries.push([key, value]); return Promise.resolve(); };
+  return { far: { ready: derivedCacheOpen, get: (key) => readDerived(key), put }, roads: { ready: derivedCacheOpen, get: (key) => readDerived(key), put }, near: { ready: derivedCacheOpen, get: (key) => readDerived(key), put }, entries };
+}
 
 async function keepFar(records: TileRecords, full: TileRecords, version: number, far: FarTileBake, caches: FarCaches): Promise<void> {
+  const into = gathered();
   const bakes = await Promise.allSettled([
-    // Queued, not waited for (`keepDerivedQueued`): the page's far job for the tile asks after this answer, and its read comes after these writes.
-    keepTileFar(full, version, far, far.massPrefix, caches.far),
-    keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix, caches.roads),
+    keepTileFar(full, version, far, far.massPrefix, into.far),
+    keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix, into.roads),
     // What the near products read of its buildings (where no plant stands, its gardens' plants): DO NOT leave them to be made again from the rows by every bake that reads the tile.
-    keepTileNearBuildings(records, full, version, far.nearPrefix ?? null, caches.near),
+    keepTileNearBuildings(records, full, version, far.nearPrefix ?? null, into.near),
   ]);
   for (const bake of bakes) if (bake.status === 'rejected') console.warn(`[city tile] tile ${records.key}'s far level not kept; the far jobs bake it`, bake.reason);
+  // One transaction for them all, queued, not waited for: the page's far job for the tile asks after this answer, and its read comes after this write.
+  await keepDerivedQueuedMany(into.entries, caches.budget);
 }
 
 /** The streamed tile built (its key and records), stored here (its version, and its records prepared when asked for), or why it could not be. */
@@ -135,7 +144,7 @@ const stored = (): ReturnType<typeof workerParts> => (parts ??= workerParts());
 export function serve(self: JobScope): void {
   // The far levels' writes of this worker held under one budget (the V8 cage the page and its workers share).
   const budget = new WriteBudget(FAR_WRITES_MOST);
-  const caches: FarCaches = { far: queuedFarCache(budget), roads: queuedRoadCache(budget), near: queuedNearCache(budget) };
+  const caches: FarCaches = { budget };
   self.onmessage = (event: MessageEvent<StreamTileAsk>) => {
     const { store, i, j } = event.data;
     if (store?.sectionsOnly) {

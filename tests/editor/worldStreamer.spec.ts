@@ -84,10 +84,10 @@ describe('the streamer', () => {
     streamer.focus(0, 0);
     expect(streamer.mapTotal).toBe(MAP_TILES * MAP_TILES);
     await turns(1);
-    // Before the region is put in, the lanes it leaves free already make the map: never more than the lanes at once.
+    // Before the region is put in, the lanes it leaves free already make the map: never more than twice the lanes at once (the next waiting in the generator's queue for each).
     expect(doc.loadedTiles.size).toBe(0);
     expect(store.ensures.length).toBeGreaterThan(0);
-    expect(store.ensures.length).toBeLessThanOrEqual(4);
+    expect(store.ensures.length).toBeLessThanOrEqual(8);
     for (let round = 0; round < 80 && streamer.mapMade < streamer.mapTotal; round++) {
       for (const key of [...store.ensures]) store.finish(key);
       await turns(2);
@@ -450,6 +450,25 @@ describe("the world's values", () => {
     await turns(2);
     expect(streamer.storeBehind(tileKey(0, 0))).toBe(true);
     expect(written).toEqual([['economy']]);
+  });
+});
+
+describe('the map being made (`rush`)', () => {
+  it('keeps twice the lanes of tiles asked ahead, so a lane that ends finds the next waiting; once made, the lanes alone', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const streamer = new WorldStreamer(doc, store, {}, 3);
+    streamer.rush = true;
+    streamer.focus(0, 0);
+    for (let frame = 0; frame < 30 && !streamer.settled; frame++) { await turns(1); streamer.focus(0, 0); streamer.apply(frame); }
+    await turns(2);
+    // Three lanes: six tiles asked ahead, none answered yet.
+    expect(store.ensures).toHaveLength(6);
+    // The opening over: what is asked from now is held to the lanes again (the bays and the rest as before).
+    streamer.rush = false;
+    for (const key of [...store.ensures]) store.finish(key);
+    await turns(3);
+    expect(store.ensures.length - 6).toBeLessThanOrEqual(3);
   });
 });
 
