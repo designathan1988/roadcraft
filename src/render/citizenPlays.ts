@@ -1,6 +1,7 @@
+import { DataTexture, FloatType, NearestFilter, RGBAFormat } from 'three';
 import type { ClipFrames } from './citizenBake';
 import { PACKED_BONE_FLOATS, SKIN_BONE_FLOATS, blendPackedFrames, copyPackedFrame } from './citizenPalette';
-import { buildClassAnimation, type ClassAnimation } from './people/crowdAnimation';
+import type { ClassAnimation } from './people/crowdAnimation';
 
 /** WHAT A COOKED BODY PLAYS, AS THE GPU'S PALETTE PASS BLENDS IT (`people/crowdAnimation.ts`), AND THE SAME ON THE CPU */
 
@@ -12,23 +13,74 @@ export interface Play { row: number; t: number; weight: number }
 
 /** A body's clips in one atlas texture, and each clip's first row in it. */
 export interface CitizenAtlas {
-  readonly anim: ClassAnimation;
+  /** Its texture swapped only when it grows (`appendClip`): the pass reads `anim.atlas`. */
+  anim: ClassAnimation;
   readonly rowOf: ReadonlyMap<ClipFrames, number>;
+  /** Rows written; the texture's height is its room. */
+  rows: number;
 }
 
-/** The atlas of the clips baked so far (a clip listed twice is laid in once). */
+/** Texels a bone takes in an atlas row (twelve floats: `crowdAnimation.ts` ATLAS_TEXELS). */
+const ATLAS_TEXELS = 3;
+/** Room laid past the clips baked so far, a share of them: the clips baked on first use go in without laying the atlas again. */
+const ATLAS_SLACK = 0.25;
+
+/** An atlas texture of `height` rows, its texels `pixels`. */
+function atlasTexture(pixels: Float32Array, width: number, height: number): DataTexture {
+  const texture = new DataTexture(pixels, width, height, RGBAFormat, FloatType);
+  texture.minFilter = texture.magFilter = NearestFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** The atlas as the palette pass reads it (`ClassAnimation`). */
+function animationOf(texture: DataTexture, bones: number, width: number, height: number): ClassAnimation {
+  return { atlas: texture, rowOf: () => 0, bones, bytes: width * height * 16, refill() {} };
+}
+
+/** DO NOT lay the atlas again for each clip baked on first use: the clips baked so far (a clip listed twice laid in once), in order, with room for more. */
 export function citizenAtlas(clips: readonly (ClipFrames | undefined)[], bones: number): CitizenAtlas {
-  const named: Record<string, ClipFrames> = {};
-  const names = new Map<ClipFrames, string>();
-  clips.forEach((clip, at) => {
-    if (!clip || names.has(clip)) return;
-    names.set(clip, String(at));
-    named[String(at)] = clip;
-  });
-  const anim = buildClassAnimation(named, bones);
+  const packed = bones * PACKED_BONE_FLOATS;
+  const width = bones * ATLAS_TEXELS;
   const rowOf = new Map<ClipFrames, number>();
-  for (const [clip, name] of names) rowOf.set(clip, anim.rowOf(name));
-  return { anim, rowOf };
+  let rows = 0;
+  for (const clip of clips) {
+    if (!clip || rowOf.has(clip)) continue;
+    rowOf.set(clip, rows);
+    rows += Math.round(clip.data.length / packed);
+  }
+  const height = Math.max(1, Math.ceil(rows * (1 + ATLAS_SLACK)));
+  const pixels = new Float32Array(width * 4 * height);
+  for (const [clip, row] of rowOf) pixels.set(clip.data.subarray(0, Math.round(clip.data.length / packed) * packed), row * width * 4);
+  return { anim: animationOf(atlasTexture(pixels, width, height), bones, width, height), rowOf, rows };
+}
+
+/** A clip baked since the atlas was laid, written into its room (only its rows sent up); past the room the atlas doubles. Whether its texture changed. */
+export function appendClip(atlas: CitizenAtlas, clip: ClipFrames): boolean {
+  if (atlas.rowOf.has(clip)) return false;
+  const bones = atlas.anim.bones;
+  const packed = bones * PACKED_BONE_FLOATS;
+  const width = bones * ATLAS_TEXELS;
+  const count = Math.round(clip.data.length / packed);
+  const at = atlas.rows;
+  let texture = atlas.anim.atlas;
+  const height = texture.image.height;
+  let grown = false;
+  if (at + count > height) {
+    const next = Math.max(at + count, height * 2);
+    const pixels = new Float32Array(width * 4 * next);
+    pixels.set((texture.image.data as Float32Array).subarray(0, at * width * 4));
+    texture = atlasTexture(pixels, width, next);
+    atlas.anim = animationOf(texture, bones, width, next);
+    grown = true;
+  }
+  (texture.image.data as Float32Array).set(clip.data.subarray(0, count * packed), at * width * 4);
+  // Each update range is one row of the image (three's WebGLTextures): the new rows only.
+  if (!grown) for (let r = 0; r < count; r++) texture.addUpdateRange((at + r) * width * 4, width * 4);
+  texture.needsUpdate = true;
+  (atlas.rowOf as Map<ClipFrames, number>).set(clip, at);
+  atlas.rows = at + count;
+  return grown;
 }
 
 /** The plays of a pose, as `cpuPose` would blend it, into `out` (its first entries); how many, or -1 when the pass cannot. */

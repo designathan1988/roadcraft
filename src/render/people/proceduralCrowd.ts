@@ -3,7 +3,7 @@ import type { BodyPart, Severable } from '@sim/people/view';
 import {
   BufferAttribute, BufferGeometry, Color, DataTexture, DoubleSide, DynamicDrawUsage, FloatType, Group,
   InstancedBufferAttribute, InstancedMesh, Matrix4, MeshDepthMaterial, Quaternion, MeshStandardMaterial, Vector3, NearestFilter,
-  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, UnsignedByteType,
+  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, ShaderChunk, UnsignedByteType,
   type Material, type Texture, type WebGLRenderer,
 } from 'three';
 import { bodyHeight } from '@people/body/morph';
@@ -41,10 +41,14 @@ import { createBlobShadows } from '../blobShadows';
 
 /** Wounds kept a person (`procPerson`): bullet holes and where blood soaks out of them. */
 const WOUND_SLOTS = 8;
-/** A person's row of `procPerson`: their wounds (`WOUND_SLOTS` texels), then their expression weights (`EXPR_SLOTS` / 4 texels). */
-const PERSON_FLOATS = (WOUND_SLOTS + EXPR_SLOTS / 4) * 4;
+/** A person's matrix as drawn this frame (with their height), read by every piece they are in: DO NOT write it into each piece. */
+const PLACE_FLOATS = 16;
+/** A person's row of `procPerson`: their wounds (`WOUND_SLOTS` texels), their expression weights (`EXPR_SLOTS` / 4 texels), then their place (4 texels). */
+const PERSON_FLOATS = (WOUND_SLOTS + EXPR_SLOTS / 4) * 4 + PLACE_FLOATS;
 /** Where a person's expression weights start in their row, floats. */
 const EXPR_AT = WOUND_SLOTS * 4;
+/** Where their place starts, floats. */
+const PLACE_AT = (WOUND_SLOTS + EXPR_SLOTS / 4) * 4;
 
 const WOUND_BONES: Readonly<Record<BodyPart, readonly string[]>> = {
   head: ['Bip01_Head'], torso: ['Bip01_Spine', 'Bip01_Spine1', 'Bip01_Spine2', 'Bip01_Pelvis'],
@@ -161,7 +165,7 @@ interface BodyClass {
     procFaceRows: { value: number };
     procFaceHead: { value: number };
     procExprHead: { value: number };
-    /** Each person's row (`PERSON_FLOATS`): wounds - where on the body at rest, and since when (-1: none) - then expression weights. */
+    /** Each person's row (`PERSON_FLOATS`): wounds - where on the body at rest, and since when (-1: none) - then expression weights, then their place. */
     procPerson: { value: DataTexture };
     /** The clock the wounds spread by (seconds), and the body's units a metre. */
     procTime: { value: number };
@@ -169,6 +173,8 @@ interface BodyClass {
   };
   /** `procPerson`'s pixels: each person's wounds and expression weights now. */
   personData: Float32Array;
+  /** The rows whose place was written this frame. */
+  readonly placed: number[];
   /** Palette rows worked out here: those held, bent, jolted or maimed, and the ragdolls' questions. */
   palette: Float32Array;
   /** `procFace` on the GPU only: the head (index, expressions), then each person's own face (their regional sliders) as moves of the head's vertices, `faceRows` rows each. */
@@ -308,9 +314,12 @@ uniform sampler2D procBodies;
 uniform float procBodyStride;
 uniform mat4 bindMatrix;
 uniform mat4 bindMatrixInverse;
+uniform sampler2D procPerson;
 attribute vec4 aPerson;
 attribute vec3 aRefs;
 attribute vec3 aRefW;
+// The person's matrix, read once at the top of main (placeChunk): the instance's own is never written.
+mat4 procPlace;
 mat4 getBoneMatrix(const in float i) {
   int x = int(i) * 4;
   int y = int(aPerson.x);
@@ -322,7 +331,7 @@ uniform sampler2D procFace;
 uniform float procFaceRows;
 uniform float procFaceHead;
 uniform float procExprHead;
-${expr ? 'uniform sampler2D procPerson;' : ''}
+
 vec3 procFaceDelta(int v) {
   // The face index: four vertices a texel at the head of procFace
   int q = v / 4;
@@ -380,10 +389,18 @@ const TWO_BONES_POSITION = `
 vec4 skinVertex = bindMatrix * vec4( transformed, 1.0 );
 transformed = ( bindMatrixInverse * ( boneMatX * skinVertex * procW.x + boneMatY * skinVertex * procW.y ) ).xyz;`;
 
-/** The vertex half of a program: the person's skeleton, shape and widening, the skin's cover. */
+/** three's chunk with the person's row (`procPlace`) for the instance's matrix. */
+const placeChunk = (name: 'project_vertex' | 'defaultnormal_vertex' | 'worldpos_vertex'): string =>
+  ShaderChunk[name].replaceAll('instanceMatrix', 'procPlace');
+
+/** The vertex half of a program: the person's place, skeleton, shape and widening, the skin's cover. */
 function patchVertex(shader: { vertexShader: string }, v: Variant): void {
   const cover = v.kind === 'skin' && v.level <= 2;
-  let vs = shader.vertexShader.replace('#include <skinning_pars_vertex>', vertexPars(v) + (cover ? COVER_CHUNK : ''));
+  let vs = shader.vertexShader.replace('#include <skinning_pars_vertex>', vertexPars(v) + (cover ? COVER_CHUNK : ''))
+    .replace('void main() {', `void main() {
+  procPlace = mat4(texelFetch(procPerson, ivec2(${PLACE_AT / 4}, int(aPerson.x)), 0), texelFetch(procPerson, ivec2(${PLACE_AT / 4 + 1}, int(aPerson.x)), 0),
+    texelFetch(procPerson, ivec2(${PLACE_AT / 4 + 2}, int(aPerson.x)), 0), texelFetch(procPerson, ivec2(${PLACE_AT / 4 + 3}, int(aPerson.x)), 0));`);
+  for (const name of ['project_vertex', 'defaultnormal_vertex', 'worldpos_vertex'] as const) vs = vs.replace(`#include <${name}>`, placeChunk(name));
   if (v.level >= 2) {
     vs = vs.replace('#include <skinbase_vertex>', TWO_BONES_BASE)
       .replace('#include <skinnormal_vertex>', TWO_BONES_NORMAL)
@@ -1051,6 +1068,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       return headOf(again ? classFromRecord(again) : await classData(env, sex, rig, shape));
     };
     const personData = personRows(ROW_START);
+
     const palette = new Float32Array(bones * SKIN_BONE_FLOATS * ROW_START);
     const coverPixels = new Uint8Array(COVER_WIDTH);
     const cover = new DataTexture(coverPixels, COVER_WIDTH, 1, RedFormat, UnsignedByteType);
@@ -1067,6 +1085,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       height: metres, clips, bones, order, parent, jointBasis, shapePixels, bodies, anim, pass,
       uniforms: {
         procBones: { value: pass.texture },
+
         procBodies: { value: bodies.texture },
         procBodyStride: { value: bodies.stride },
         procCover: { value: cover },
@@ -1079,7 +1098,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         procTime: { value: 0 },
         procWoundUnit: { value: unit },
       },
-      personData, faces, faceOf: [], reloadHead, faceVerts: faceList, palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
+      personData, placed: [], faces, faceOf: [], reloadHead, faceVerts: faceList, palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
       skins: new Map(), items: new Map(), far: new Map(), pieces: [], people: [], ankle, drawn: 0,
     };
     ready.push(cls);
@@ -1128,6 +1147,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     cls.personData = personRows(capacity, cls.personData);
     cls.uniforms.procPerson.value.dispose();
     cls.uniforms.procPerson.value = rowTexture(cls.personData, PERSON_FLOATS, capacity);
+
   };
 
   /** An instanced attribute of `size` floats an entry, for a piece of `capacity` people. */
@@ -1572,24 +1592,18 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const burnt = charred.has(person);
         piece.attrs.get('aPerson')!.setXYZW(slot, person.row, st.variant, woundedRow(st.cls, person.row) ? 1 : 0, burnt ? 1 : 0);
         piece.attrs.get('aDye')!.setXYZW(slot, person.hairColour.r, person.hairColour.g, person.hairColour.b, burnt ? 3 : 1);
-        piece.mesh.setMatrixAt(slot, st.drawn);
       });
       upload(piece, true);
       shown.add(piece);
     }
   };
 
-  /** A piece's frame to the GPU: its count, its matrices, and its entries when they changed - only the written part. */
+  /** A piece's frame to the GPU: its count, and its entries when they changed - only the written part (the people's places are their class's, `procPlaces`). */
   const upload = (piece: Piece, entries: boolean): void => {
     const n = piece.people.length;
     piece.mesh.count = n;
     piece.mesh.visible = n > 0;
-    if (!n) return;
-    const matrices = piece.mesh.instanceMatrix;
-    matrices.clearUpdateRanges();
-    matrices.addUpdateRange(0, n * 16);
-    matrices.needsUpdate = true;
-    if (!entries) return;
+    if (!n || !entries) return;
     for (const attr of piece.attrs.values()) {
       attr.clearUpdateRanges();
       attr.addUpdateRange(0, n * attr.itemSize);
@@ -2121,6 +2135,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
           cls.drawn++;
           levelCount[st.level] = (levelCount[st.level] ?? 0) + 1;
           st.drawn.multiplyMatrices(person.matrix, scaled.makeScale(person.scale, person.scale, person.scale));
+          // Their place once, in their row: every piece they are in reads it there.
+          cls.personData.set(st.drawn.elements, person.row * PERSON_FLOATS + PLACE_AT);
+          cls.placed.push(person.row);
           // Their skeleton: the GPU pass plays their clip on their joints; somebody held, bent, jolted or maimed is worked out here.
           if (overridden(person)) {
             const at = person.row * width;
@@ -2160,12 +2177,13 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
           // The far ones' shadow: a soft disc under them.
           if (st.level >= 2 && shadows) blobs.add(person.matrix, BLOB_RADIUS * person.scale);
         }
+        // The rows of the people placed, a range a row; most of the class: the whole (small) texture.
+        const places = cls.uniforms.procPerson.value;
+        if (cls.placed.length * 2 < cls.capacity) for (const row of cls.placed) touchRows(places, row, 1);
+        else if (cls.placed.length) { places.clearUpdateRanges(); places.needsUpdate = true; }
+        cls.placed.length = 0;
         for (const piece of cls.pieces) {
-          const n = piece.people.length;
-          if (n) {
-            for (let slot = 0; slot < n; slot++) piece.mesh.setMatrixAt(slot, states.get(piece.people[slot]!)!.drawn);
-            trianglesDrawn += n * piece.triangles;
-          }
+          trianglesDrawn += piece.people.length * piece.triangles;
           upload(piece, piece.dirty);
           piece.dirty = false;
         }
