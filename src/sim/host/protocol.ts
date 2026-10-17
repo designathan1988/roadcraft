@@ -1,5 +1,5 @@
 import type { Restoration } from '@world/doc';
-import type { BuildingChange, TrafficMap } from '../agents/trafficBuildings';
+import type { BuildingSent, TrafficMap } from '../agents/trafficBuildings';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { NetworkBake } from '@world/networkBuild';
 import type { BodyPart, PedView, PersonAgeClass } from '../people/view';
@@ -97,8 +97,8 @@ export type ToSim =
   /** A tile of the page taken in, let go, or written at `version` (`worldStreamer.ts` StreamerEvents). */
   /** `fromPage`: a tile loaded whose store is behind the page (a write not confirmed): its buildings come from the page, DO NOT read them, or its bays, from the store. */
   | { readonly type: 'tile'; readonly event: TileEvent; readonly key: number; readonly version: number; readonly fromPage?: boolean }
-  /** The roads', lots' and transit's records the diary named (`delta`), and the buildings it named as traffic records. */
-  | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingChange[] }
+  /** The roads', lots' and transit's records the diary named (`delta`), and where the buildings it named are read (worked out as traffic reads them in the worker). */
+  | { readonly type: 'delta'; readonly delta: Restoration; readonly buildings: readonly BuildingSent[] }
   /** A tile's junctions and ribbons as the page has them solved (`NetworkBake`): the worker's network takes them where its inputs are the same, never solving them again. */
   | { readonly type: 'bake'; readonly bake: NetworkBake }
   | { readonly type: 'frame'; readonly wall: number; readonly hold: boolean; readonly controls: SimControls }

@@ -334,7 +334,7 @@ export class SimClient implements JournalReader {
         for (const id of t.lots) records.push({ part: 'lots', id, value: undefined });
         // A node stays while a road of a held tile ends on it (the page keeps a borrowed node the same way, `RoadDoc.unloadTile`), sent again without the roads let go.
         for (const id of [...t.nodes, ...t.borrowedNodes]) records.push({ part: 'nodes', id, value: this.usedByHeld(id) ? this.nodeRecord(id) : undefined });
-        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: t.buildings.map((id) => ({ id, value: null })) });
+        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: t.buildings.map((id) => ({ id, ref: null })) });
       }
     }
   }

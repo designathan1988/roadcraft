@@ -3,7 +3,7 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import type { NodeId } from '@world/ids';
 import { SimWorld, issuesSince } from '../world';
-import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents/trafficBuildings';
+import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap, trafficChangesOf } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
 import { Meso, type TileEvent } from '../meso/meso';
 import { MesoMemory } from '../meso/memory';
@@ -100,7 +100,7 @@ export class SimHost {
         return;
       case 'delta':
         this.doc.restore(message.delta);
-        this.buildings.apply(message.buildings);
+        this.buildings.apply(trafficChangesOf(message.buildings));
         return;
       case 'bake': this.net.offerBake(message.bake); return;
       case 'reset': this.sim?.reset(); this.sim?.ambient.reset(this.sim); return;
