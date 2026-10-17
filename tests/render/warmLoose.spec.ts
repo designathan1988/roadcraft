@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, Scene, type WebGLRenderer } from 'three';
+import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
 
-import { drainWarm, meshBytes, warmAhead, warmLooseAhead, warmPending } from '@render/uploads';
+import { drainCompiles, drainWarm, meshBytes, warmAhead, warmLooseAhead, warmPending } from '@render/uploads';
 import { buildRoadSurfaces } from '@render/roadSurfaces';
 import type { SceneMaterials } from '@render/materials';
 import { Network } from '@world/network';
@@ -153,5 +153,31 @@ describe('a loose mesh sent to the GPU', () => {
     });
     expect(blocks).toBeGreaterThan(10);
     expect(kept).toEqual([]);
+  });
+
+  it('settles once the mesh is on the GPU and its programs, lit and in the shadow, are built: never drawn before', async () => {
+    const compiled: Object3D[] = [];
+    const renderer = {
+      ...fakeRenderer([]),
+      compileAsync: (object: Object3D) => { compiled.push(object); return Promise.resolve(); },
+    } as unknown as WebGLRenderer;
+    drainWarm(renderer);
+    const scene = new Scene();
+    // The compiler answers from now on (`compileAhead` waits for it).
+    drainCompiles(renderer, new PerspectiveCamera(), scene, null);
+    const mesh = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    mesh.castShadow = true;
+    let settled = false;
+    void warmLooseAhead([mesh])!.then(() => { settled = true; });
+    drainWarm(renderer);
+    await new Promise((done) => setTimeout(done, 0));
+    // Uploaded, its programs not built yet: still waited for.
+    expect(settled).toBe(false);
+    drainCompiles(renderer, new PerspectiveCamera(), scene, null);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(settled).toBe(true);
+    expect(compiled).toContain(mesh);
+    // Its shadow's program too: a stand-in on a depth material.
+    expect(compiled.some((o) => o !== mesh && ((o as Mesh).material as { isMeshDepthMaterial?: boolean }).isMeshDepthMaterial)).toBe(true);
   });
 });
