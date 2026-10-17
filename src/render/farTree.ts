@@ -6,6 +6,7 @@ import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 import { forgetDerivedKeys } from './derivedCache';
 import { TOP_LEVEL, emptyRecords, farKey, nodeSide } from './buildings/farTiles';
+import { LEVEL_MASS_KEY } from './buildings/farGrid';
 import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
 import { cancelWarm, warmLooseAhead } from './uploads';
 import { geometryCost, gpuLedger } from './gpuLedger';
@@ -343,7 +344,7 @@ export class FarTree<P> implements FarTiles {
     if (n.parent) n.parent.children[(n.i - 2 * n.parent.i) + 2 * (n.j - 2 * n.parent.j)] = null;
     else this.roots.delete(n.key);
     const prefix = this.keyPrefix;
-    if (prefix !== null && n.baked !== null) forgetDerivedKeys(prefix, [n.key]);
+    if (prefix !== null && n.baked !== null) forgetDerivedKeys(prefix, n.k === 1 ? [n.key, `${n.key}${LEVEL_MASS_KEY}`] : [n.key]);
   }
 
   /** The version of the tiles under a node: a tile's own, or its quarters' digested (a node with none is never asked: it is let go, `forget`). */

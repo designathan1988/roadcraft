@@ -130,6 +130,30 @@ describe('a tile baked from the store', () => {
     expect(cache.puts).toEqual([`test:${node}`]);
   });
 
+  it("a level-1 node keeps its tiles' plates merged: drawn again, its four tiles are not read", async () => {
+    const cache = memoryCache();
+    const gets: string[] = [];
+    const watched: FarCache = { ...cache, get: (key) => { gets.push(key); return cache.get(key); } };
+    // Its four tiles baked and kept first, as their jobs keep them.
+    const quarters = [[0, 0], [1, 0], [0, 1], [1, 1]] as const;
+    for (const [i, j] of quarters) {
+      const buildings = [building(i * 2 + j, (i + 0.5) * TILE, (j + 0.5) * TILE)];
+      const reply = await runFarJob({ far: true, node: farKey(0, i, j), sig: '1', want: false, prefix: 'test:', buildings: tileRows(buildings) }, watched);
+      expect(reply.kind).toBe('far');
+    }
+    const children = quarters.map(([i, j]) => ({ key: farKey(0, i, j), sig: '1' }));
+    const job: FarJob = { far: true, node: farKey(1, 0, 0), sig: 'q', want: true, prefix: 'test:', children };
+    const first = await runFarJob(job, watched);
+    if (first.kind !== 'far') throw new Error(first.kind);
+    expect(first.mass).not.toBeNull();
+    gets.length = 0;
+    const again = await runFarJob(job, watched);
+    if (again.kind !== 'far') throw new Error(again.kind);
+    expect(difference(again.mass, first.mass)).toBe('');
+    // The node's own entries only: no tile's entry read again.
+    for (const key of gets) expect(key.startsWith(`test:${farKey(1, 0, 0)}`), key).toBe(true);
+  });
+
   it("is posted, when the page read the tile, as its shared table's rows, no record of it", async () => {
     const buildings = [0, 1, 2, 3].map((n) => building(n, m(150) + n * m(80), m(300) + (n % 2) * m(60)));
     const stored: TileRecords = { ...emptyRecords(tileKey(0, 0), 1), buildings: buildings.map((b) => JSON.parse(JSON.stringify(b)) as unknown) };

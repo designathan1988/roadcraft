@@ -11,6 +11,8 @@ export const AGGREGATE = 128;
 
 /** A node's key: its level and its column and row at that level ("f2:-1,3"). */
 export const farKey = (k: number, i: number, j: number): string => `f${k}:${i},${j}`;
+/** What a level-1 node keeps besides its boxes (`farTiles.ts`): its tiles' plate masses merged, under its key and this. */
+export const LEVEL_MASS_KEY = '#mass';
 
 /** A node's level, column and row from its key. */
 export function farNode(key: string): { readonly k: number; readonly i: number; readonly j: number } {
