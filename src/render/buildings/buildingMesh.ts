@@ -410,7 +410,7 @@ class ShellPart {
   readonly paint = new Grow((n) => new Uint16Array(n), SHELL_SHORTS * 64);
   readonly index = new Grow((n) => new Uint32Array(n), 96);
   /** A run of bays only (`RunChunk`): each vertex's bay width and storey height (`FACADE_FLOATS`), its grid (`FACADE_GRID`), its opening in its bay (a0, a1, h0, h1), its frames' colour (r, g, b) and office flag (`FACADE_BYTES`, 0..255). */
-  readonly facade: Grow<Float32Array> | null;
+  readonly facade: Grow<Uint16Array> | null;
   readonly grid: Grow<Int16Array> | null;
   readonly opening: Grow<Uint8Array> | null;
   /** Every array a vertex is written in: two vertices alike in all of them, bit for bit, are drawn as one. */
@@ -419,7 +419,7 @@ class ShellPart {
   private slots = new Int32Array(256);
 
   constructor(readonly finish: number, run: boolean) {
-    this.facade = run ? new Grow((n) => new Float32Array(n), FACADE_FLOATS * 64) : null;
+    this.facade = run ? new Grow((n) => new Uint16Array(n), FACADE_FLOATS * 64) : null;
     this.grid = run ? new Grow((n) => new Int16Array(n), FACADE_GRID * 64) : null;
     this.opening = run ? new Grow((n) => new Uint8Array(n), FACADE_BYTES * 64) : null;
     const streams: Stream[] = [
@@ -428,7 +428,7 @@ class ShellPart {
       { grow: this.paint, size: SHELL_SHORTS, words: SHELL_SHORTS / 2 },
     ];
     if (this.facade && this.grid && this.opening) {
-      streams.push({ grow: this.facade, size: FACADE_FLOATS, words: FACADE_FLOATS }, { grow: this.grid, size: FACADE_GRID, words: FACADE_GRID / 2 }, { grow: this.opening, size: FACADE_BYTES, words: FACADE_BYTES / 4 });
+      streams.push({ grow: this.facade, size: FACADE_FLOATS, words: FACADE_FLOATS / 2 }, { grow: this.grid, size: FACADE_GRID, words: FACADE_GRID / 2 }, { grow: this.opening, size: FACADE_BYTES, words: FACADE_BYTES / 4 });
     }
     this.streams = streams;
   }
@@ -612,7 +612,8 @@ class Shell {
     const facade = part.facade!.array, grid = part.grid!.array, opening = part.opening!.array;
     const [u, w] = st.uv[i]!;
     const f = v * FACADE_FLOATS, g = v * FACADE_GRID, o = v * FACADE_BYTES;
-    facade[f] = st.W; facade[f + 1] = st.H;
+    // Half floats (`cellArrays.ts` `FACADE_FLOATS`): a bay's width and a storey's height to a millimetre or two.
+    facade[f] = DataUtils.toHalfFloat(st.W); facade[f + 1] = DataUtils.toHalfFloat(st.H);
     grid[g] = u; grid[g + 1] = w; grid[g + 2] = st.kind + flip; grid[g + 3] = st.volume * 4 + st.side;
     for (let k = 0; k < FACADE_BYTES; k++) opening[o + k] = bytes[k]!;
   }
@@ -3710,7 +3711,8 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const opening = shell.opening ? new InterleavedBuffer(shell.opening, FACADE_BYTES) : null;
     let far: { facade: BufferAttribute; grid: BufferAttribute; opening: InterleavedBuffer } | null = null;
     if (shell.facade && shell.grid && opening) {
-      far = { facade: new BufferAttribute(shell.facade, FACADE_FLOATS), grid: new BufferAttribute(shell.grid, FACADE_GRID), opening };
+      // The bay's width and storey's height in half floats: HALF_FLOAT where the attribute says so (r186 `WebGLAttributes.createBuffer`).
+      far = { facade: Object.assign(new BufferAttribute(shell.facade, FACADE_FLOATS), { isFloat16BufferAttribute: true }), grid: new BufferAttribute(shell.grid, FACADE_GRID), opening };
       g.setAttribute('facadeSize', far.facade);
       g.setAttribute('facadeCell', far.grid);
       g.setAttribute('facadeOpening', new InterleavedBufferAttribute(opening, 4, 0, true));
@@ -3779,7 +3781,8 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     mesh.castShadow = !ghost && kit.castsShadow.has(kind);
     if (mesh.castShadow) mesh.customDepthMaterial = partPoseDepth(material);
     mesh.receiveShadow = !ghost;
-    if (part.instanceColor) mesh.instanceColor = new InstancedBufferAttribute(part.instanceColor, 3);
+    // Tints in half floats: HALF_FLOAT where the attribute says so (r186 `WebGLAttributes.createBuffer`).
+    if (part.instanceColor) mesh.instanceColor = Object.assign(new InstancedBufferAttribute(part.instanceColor, 3), { isFloat16BufferAttribute: true });
     mesh.boundingBox = boxOf(part.bounds);
     mesh.boundingSphere = sphereOf(part.bounds);
     // DO NOT let go of the kit's model it draws: it is shared by every batch of the kind; only its own instance buffers go.

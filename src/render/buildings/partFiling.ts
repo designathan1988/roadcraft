@@ -43,7 +43,8 @@ export interface FiledBand {
   /** Each sub-cell's largest scale of an instance along each of the model's axes, then the cell's. */
   readonly scale: Float32Array;
   readonly poses: Float32Array;
-  readonly colours: Float32Array | null;
+  /** Tints in half floats, as the sub-cells' (`cellArrays.ts` `instanceColor`). */
+  readonly colours: Uint16Array | null;
   /** The shell's parts: each one's finish, wear and ground (`shellParts.ts`). */
   readonly looks: Float32Array | null;
 }
@@ -149,7 +150,7 @@ function fileKind(kind: PartKind, slots: readonly (CellArrays | undefined)[], sc
   for (const [band, { counts, scale }] of [...merged].sort((a, b) => a[0] - b[0])) {
     let total = 0;
     for (const c of counts) total += c;
-    const poses = new Float32Array(total * POSE_FLOATS), colours = coloured ? new Float32Array(total * 3) : null;
+    const poses = new Float32Array(total * POSE_FLOATS), colours = coloured ? new Uint16Array(total * 3) : null;
     const looks = looked ? new Float32Array(total * LOOK_FLOATS) : null;
     const start = new Uint32Array(LEAVES + 1);
     const box = new Float64Array(LEAVES * 6);
