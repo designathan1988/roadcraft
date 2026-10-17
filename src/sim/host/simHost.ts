@@ -1,6 +1,7 @@
 import { readDerivedSome, writeDerivedMany } from '@core/derivedCache';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
+import { type LotPlan, planLots } from '@world/lots';
 import type { NodeId } from '@world/ids';
 import { SimWorld, issuesSince } from '../world';
 import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap, trafficChangesOf } from '../agents/trafficBuildings';
@@ -115,6 +116,7 @@ export class SimHost {
       case 'frame': this.frame(message.wall, message.hold, message.controls); return;
       case 'act': this.post({ type: 'acted', id: message.id, result: this.act(message.act) }); return;
       case 'ask': this.post({ type: 'answer', id: message.id, answer: this.ask(message.ask) }); return;
+      case 'lotPlan': this.post({ type: 'answer', id: message.id, answer: this.lotPlan() }); return;
     }
   }
 
@@ -436,6 +438,14 @@ export class SimHost {
         return n;
       }
     }
+  }
+
+  /** THE ZONING TOOL'S PROPOSAL (`editor/lotTool.ts`): the land along the streets cut into lots on this copy of the region, which the page's diary keeps as the page has it (sent before the question, `SimClient.lotPlan`) - planned again only where the roads and the lots changed (`world/lots.ts` LotPlanner, one for this network), DO NOT plan it on the page. Null while a tile's network is being read (its junctions would be solved here): asked again. */
+  private lotPlan(): LotPlan | null {
+    if (!this.sim || this.networkReads > 0) return null;
+    // Brought up to the diary sent before the question (nothing to do when the frame built it: the build reads what changed).
+    this.net.rebuild();
+    return planLots(this.doc, this.net);
   }
 
   /** The panels' questions, answered off the simulation as it stands (`simAnswers.ts`). */

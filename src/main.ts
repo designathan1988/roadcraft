@@ -485,6 +485,8 @@ const lotTool = new LotTool({
   mutate: (fn) => mutate(fn),
   hint: (key) => flashHint(key),
   redraw: () => requestDraw(),
+  // Planned in the simulation's worker, on its copy of the region (`SimHost.lotPlan`).
+  plan: () => sim.lotPlan(),
 });
 let hoverAnchor: Anchor | null = null;
 /** What is selected - a road (and where along it) or a junction - written through the game's state with why (`gameState`). */
