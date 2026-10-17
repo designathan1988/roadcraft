@@ -4,7 +4,7 @@ import { TiledSaves } from '@editor/chunkedSave';
 import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
 import {
-  type MadeTile, type TileText, TileStore, type WorldMeta, bakeStoredTile, readTile, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
+  type MadeTile, type TileText, TileStore, type WorldMeta, readTile, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
   preparedRecords, tileWrite, writtenRecords } from '@editor/tileStore';
 
 /** A maker as `cityTile.worker.ts` serves one: asked only if missing, it looks in the store first (`storedVersion`), the tile read and prepared where it is there; `make` runs only for a tile the store has not. */
@@ -106,34 +106,6 @@ describe('a tile stored', () => {
     // Known by its head alone: no section baked again.
     expect(await storeTiles(store, bake).run({ op: 'version', map: 'map', key: tile.key })).toBe(1);
     expect(bake).toHaveBeenCalledTimes(1);
-  });
-
-  it("an edit's records are stored before its sections are baked: a reload during the bake finds the edit (conf28)", async () => {
-    const store = memoryStore();
-    const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5))] });
-    const key = tile.key, blobKey = `map:T:${key}`;
-    // What the store held each time a bake ran: a page reloaded then keeps only that.
-    const heldAtBake: (Blob | undefined)[] = [];
-    const bake = vi.fn((records: TileRecords) => { heldAtBake.push(store.blobs.get(blobKey)); return { count: { json: { n: records.nodes.length } } }; });
-    // The maker as `cityTile.worker.ts` serves a tile the page stored (`sectionsOnly`).
-    const maker = async (_i: number, _j: number, after: number, _r: boolean, _m: boolean, _b?: boolean, sectionsOnly?: boolean): Promise<MadeTile> => {
-      if (!sectionsOnly) throw new Error('only the sections are asked of the maker here');
-      return { version: (await bakeStoredTile(store, 'map', key, after, bake)) ? after : null, existed: true };
-    };
-    const tiles = new TileStore('map', storeTiles(store, bake), never, maker);
-    expect(await tiles.write(tile)).toBe(1);
-    // The player lays a road: a second node, the tile written again.
-    const edited = { ...tile, version: 1, nodes: [...tile.nodes, node(2, m(1_200), m(5))] };
-    expect(await tiles.write(edited)).toBe(2);
-    await tiles.read(key);
-    expect(bake).toHaveBeenCalledTimes(2);
-    // Each bake ran with the version it bakes already stored.
-    expect(await Promise.all(heldAtBake.map(async (b) => (b ? (await readHead(b))?.head.version : null)))).toEqual([1, 2]);
-    // Read again as a reload reads it: the road there, and its sections baked after.
-    expect((await new TileStore('map', storeTiles(store), never).read(key))?.nodes.map((n) => n.id)).toEqual([1, 2]);
-    expect(await readTilePart(store, 'map', key, 'count')).toEqual({ value: { n: 2 } });
-    // A stale bake (a newer write stored meanwhile) writes nothing.
-    expect(await bakeStoredTile(store, 'map', key, 1, bake)).toBe(false);
   });
 
   it('a tile of format 1 (one gzip of its records) is read, and written again in parts once when its version is asked', async () => {

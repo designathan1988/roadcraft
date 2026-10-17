@@ -34,8 +34,7 @@ export type TileOp =
   /** `readOnly` (a tab that only reads the world, `TileStore.readOnly`): a tile stored in an older form is read as it is, never written again in parts. */
   | { readonly op: 'version'; readonly map: string; readonly key: number; readonly readOnly?: boolean }
   /** The tile written, its buildings as rows of tables (`tileWrite`): read back where it is stored (`writtenRecords`). */
-  /** `unbaked`: stored with no sections, at once (the maker bakes them after, `bakeStoredTile`). */
-  | { readonly op: 'write'; readonly map: string; readonly records: TileWrite; readonly unbaked?: boolean }
+  | { readonly op: 'write'; readonly map: string; readonly records: TileWrite }
   | { readonly op: 'meta'; readonly map: string }
   | { readonly op: 'setMeta'; readonly map: string; readonly meta: WorldMeta }
   /** Some of the world's parts (`RoadDoc.worldPart`), each under a key of its own: read back over the world's values (`readMeta`). */
@@ -129,15 +128,6 @@ async function encodeTile(records: TileRecords, bake: TileBaker | undefined, ful
 async function sectionPart(name: string, section: TileSection): Promise<TilePartIn> {
   if ('bin' in section) return { name, kind: 'bin', data: new Blob([section.bin]) };
   return { name, kind: 'json', data: await gzipBytes(new TextEncoder().encode(JSON.stringify(section.json)) as Uint8Array<ArrayBuffer>) };
-}
-
-/** A tile the page wrote with no sections (`TileStore.write`) baked and written again with them at the same version, where the maker runs (`cityTile.worker.ts`); false, nothing written, when the store holds it otherwise (another version, or baked already).
- *  Run on the tile's chain (`TileStore`): no write of it comes between the read and the write. */
-export async function bakeStoredTile(store: PartStore, map: string, key: number, version: number, bake: TileBaker): Promise<boolean> {
-  const stored = await storedBlob(store, map, key);
-  if (!stored?.read || stored.read.head.baked || stored.read.head.version !== version) return false;
-  const { blob } = await encodeTile(parseTileText(await textOf(stored, map, key), key), bake);
-  return store.write([[tileBlobKey(map, key), blob]], []);
 }
 
 /** DO NOT write a tile's records again to add one section to it: its blob's parts kept as they are, the section put in (or in place of the one of that name). False, and nothing written, when the store holds no tile in parts at `version`.
@@ -292,7 +282,7 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
       if (stored.read && (stored.read.head.baked || !bake || op.readOnly)) return stored.read.head.version;
       return parseTileText(await upgraded(store, op.map, op.key, stored, op.readOnly ? undefined : bake), op.key).version;
     }
-    case 'write': return (await writeTile(store, op.map, writtenRecords(op.records), op.unbaked ? undefined : bake)).ok;
+    case 'write': return (await writeTile(store, op.map, writtenRecords(op.records), bake)).ok;
     case 'meta': return readMeta(store, op.map);
     case 'setMeta': return writer.write({ put: [{ key: metaKey(op.map), value: op.meta, packed: false }], remove: WORLD_PARTS.map((part) => metaPartKey(op.map, part)) }); // the parts written apart before it go (`readMeta`)
     case 'setMetaParts': return writer.write({
@@ -428,7 +418,7 @@ export class TileStore {
     /** Builds a tile the store does not have (the whole-map generator's worker): a pure function of the seed and its place. */
     private readonly generate: (i: number, j: number) => Promise<TileRecords>,
     /** Builds a tile and stores it in the generator's own worker (`cityTile.worker.ts`, the browser's IndexedDB) at a version past `after`, its records handed back prepared with `records`; with `ifMissing`, only when the store has none (else the stored one's version, or its records prepared); none where the store is not the worker's to write (the desktop's). */
-    private readonly makeStored?: (i: number, j: number, after: number, records: boolean, ifMissing: boolean, baysOnly?: boolean, sectionsOnly?: boolean) => Promise<MadeTile>,
+    private readonly makeStored?: (i: number, j: number, after: number, records: boolean, ifMissing: boolean, baysOnly?: boolean) => Promise<MadeTile>,
   ) {}
 
   /** Another tab holds this world (`main.ts` holdWorld): this one reads it and writes nothing to the store (no tile made is stored, no old tile written again in parts), its tiles made here only to be drawn. */
@@ -472,22 +462,11 @@ export class TileStore {
   }
 
   /** Stores a tile, its version one past the last the store knows: the version written, or null when it was not (what is baked of it is keyed by that version). */
-  /** DO NOT bake a tile's sections in the save worker before its records are stored: the bake (the network's junctions, the grown buildings made again) held the worker's event loop for seconds, every write's commit and the world's values' with it, and a reload meanwhile lost the edit and the balance (conf28). The records stored first, alone; the maker bakes the sections after, on the tile's chain (`bakeStoredTile`). */
   write(records: TileRecords): Promise<number | null> {
-    const maker = this.readOnly ? undefined : this.makeStored;
-    const written = this.chained(records.key, async () => {
+    return this.chained(records.key, async () => {
       const stamped = this.stamped(records);
-      return (await this.put(tileWrite(stamped), maker !== undefined)) ? stamped.version : null;
+      return (await this.put(tileWrite(stamped))) ? stamped.version : null;
     });
-    if (maker) {
-      const { i, j } = tileOfKey(records.key);
-      // A failed bake leaves the tile stored without its sections: its readers derive them, the next look at its version bakes them (`upgraded`).
-      void this.chained(records.key, async () => {
-        const version = await written;
-        if (version !== null) await maker(i, j, version, false, false, false, true);
-      }).catch((error: unknown) => console.warn(`[save] tile ${records.key}'s sections were not baked`, error));
-    }
-    return written;
   }
 
   /** A world file opened (`main.ts` openStreamedWorld): its tiles in place of the stored ones, each written above the version stored (what was baked of the old tile not taken for it); every tile of the map the file lacks taken away, to be made again above it too; the values last (their key says the world is stored). False when any of it was not written. */
@@ -622,10 +601,10 @@ export class TileStore {
     return { ...records, version };
   }
 
-  private async put(write: TileWrite, unbaked = false): Promise<boolean> {
+  private async put(write: TileWrite): Promise<boolean> {
     if (this.readOnly) return false;
     try {
-      return (await this.backend.run({ op: 'write', map: this.map, records: write, ...(unbaked ? { unbaked } : {}) })) === true;
+      return (await this.backend.run({ op: 'write', map: this.map, records: write })) === true;
     } catch (error) {
       console.error(`[save] tile ${write.key} could not be written`, error);
       return false;
