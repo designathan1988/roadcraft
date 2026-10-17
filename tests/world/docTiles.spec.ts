@@ -173,3 +173,24 @@ describe('the map\'s own allocators in the streamed world', () => {
     expect(next.addSegment(c.id, c.id - 1 as never, 1)!.id).toBeGreaterThan(seg.id);
   });
 });
+
+describe('an edge node whose own tile is not loaded', () => {
+  it('is not edited through the copy a neighbour borrows (its owner would overwrite the edit), and is once its owner is here', () => {
+    const { a, b, edge } = twoTiles();
+    const doc = new RoadDoc();
+    doc.loadTile(a);
+    const id = edge as never;
+    const was = { ...doc.requireNode(id) };
+    expect(doc.canEditNode(id)).toBe(false);
+    expect(doc.moveNode(id, { x: was.x, y: was.y + m(5) })).toBe(false);
+    doc.setNodeHeightOffset(id, m(3));
+    doc.setNodeControl(id, 'signal');
+    expect(doc.requireNode(id)).toMatchObject({ x: was.x, y: was.y, heightOffset: was.heightOffset ?? 0 });
+    expect(doc.requireNode(id).control).not.toBe('signal');
+    // Its owner comes: the node is edited, and the edit is in the owner's records.
+    doc.loadTile(b);
+    expect(doc.canEditNode(id)).toBe(true);
+    doc.setNodeHeightOffset(id, m(3));
+    expect(doc.tileRecords(b.key, 2).nodes.find((n) => n.id === edge)!.heightOffset).toBe(m(3));
+  });
+});

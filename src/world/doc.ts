@@ -677,6 +677,18 @@ export class RoadDoc {
     return this.nodes.get(id)?.incident.length ?? 0;
   }
 
+  /** A node an edit may change, or undefined: DO NOT edit a copy of a node whose own tile is not loaded (a tile's edge node borrowed by a neighbour): the owner's record takes its place when that tile comes (`loadTile`), and the edit would be lost. */
+  private editableNode(id: NodeId): RoadNode | undefined {
+    const node = this.nodes.get(id);
+    if (!node || this.tileContents.size === 0) return node;
+    return this.tileContents.has(OWNER.node(node)) ? node : undefined;
+  }
+
+  /** Whether an edit may change the node (`editableNode`): the tools leave alone a node whose own tile is not loaded. */
+  canEditNode(id: NodeId): boolean {
+    return this.editableNode(id) !== undefined;
+  }
+
   /** Whether a node is the map's edge: the end of one road, where traffic and people come in from outside and leave */
   mapEdge(id: NodeId): boolean {
     const node = this.nodes.get(id);
@@ -838,7 +850,7 @@ export class RoadDoc {
 
   /** Moves a node freely; junction geometry adapts to the resulting angle. */
   moveNode(id: NodeId, to: Vec2): boolean {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was) return false;
     // Dragging a node off the plate is the same offence as building one there, and is caught in the same place.
     const p = onWorld(to);
@@ -963,7 +975,7 @@ export class RoadDoc {
 
   /** The player's lane connections at a node; undefined or empty: all derived (`RoadNode.laneLinks`). */
   setNodeLaneLinks(id: NodeId, links: readonly LaneLink[] | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was) return;
     const next = normalizeLaneLinks(links);
     if (linksDigest(was.laneLinks) === linksDigest(next)) return;
@@ -983,7 +995,7 @@ export class RoadDoc {
 
   /** A U-turn through the median for the traffic arriving from `from` (`RoadNode.uturn`), or none. */
   setNodeUturn(id: NodeId, from: SegmentId | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || was.uturn === from) return;
     const node = this.nodeToWrite(id)!;
     if (from !== undefined) node.uturn = from;
@@ -993,7 +1005,7 @@ export class RoadDoc {
 
   /** What a road's end is (`RoadNode.end`): a turning circle, or (undefined) the map's edge. */
   setNodeEnd(id: NodeId, end: RoadEnd | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || was.end === end) return;
     const node = this.nodeToWrite(id)!;
     if (end) node.end = end;
@@ -1003,7 +1015,7 @@ export class RoadDoc {
 
   /** Each leg's rule at a junction (`RoadNode.approachRules`); undefined: all derived. */
   setNodeApproachRules(id: NodeId, rules: readonly ApproachRuleEntry[] | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was) return;
     const next = normalizeApproachRules(rules);
     if (rulesDigest(was.approachRules) === rulesDigest(next)) return;
@@ -1015,7 +1027,7 @@ export class RoadDoc {
 
   /** A signal's settings (`RoadNode.signal`); undefined: adaptive with the game's timings. */
   setNodeSignal(id: NodeId, signal: SignalSettings | undefined): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was) return;
     const next = normalizeSignalSettings(signal);
     if (signalDigest(was.signal) === signalDigest(next)) return;
@@ -1033,7 +1045,7 @@ export class RoadDoc {
   }
 
   setNodeHeightOffset(id: NodeId, heightOffset: number): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || !Number.isFinite(heightOffset) || was.heightOffset === heightOffset) return;
     const junctionModeChanged = (was.heightOffset < -TUNNEL_HEADROOM) !==
       (heightOffset < -TUNNEL_HEADROOM);
@@ -1272,7 +1284,7 @@ export class RoadDoc {
   }
 
   setNodeControl(id: NodeId, control: JunctionControl): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || was.control === control) return;
     this.nodeToWrite(id)!.control = control;
     this.markNode(id);
@@ -1280,7 +1292,7 @@ export class RoadDoc {
 
   /** Puts a mid-block pedestrian crossing on a two-road node, painted on `segment`. */
   setNodeCrossing(id: NodeId, kind: NodeCrossingKind, segment: SegmentId): boolean {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || was.incident.length !== 2 || !was.incident.includes(segment)) return false;
     const n = this.nodeToWrite(id)!;
     n.crossing = { kind, segment };
@@ -1291,7 +1303,7 @@ export class RoadDoc {
 
   /** Removes a node's mid-block crossing; the node goes back to `auto`. */
   clearNodeCrossing(id: NodeId): void {
-    if (!this.nodes.get(id)?.crossing) return;
+    if (!this.editableNode(id)?.crossing) return;
     const n = this.nodeToWrite(id)!;
     delete n.crossing;
     n.control = 'auto';
@@ -1299,7 +1311,7 @@ export class RoadDoc {
   }
 
   setMovementBlocked(id: NodeId, from: SegmentId, to: SegmentId, blocked: boolean): void {
-    const was = this.nodes.get(id);
+    const was = this.editableNode(id);
     if (!was || from === to) return;
     const key = movementKey(from, to);
     const index = was.blockedMovements.indexOf(key);
