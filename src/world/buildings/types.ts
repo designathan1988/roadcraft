@@ -370,7 +370,8 @@ export function cloneBuilding<T extends Building>(b: T): T {
 }
 
 /** DO NOT turn this back into a copy (`cloneBuilding`) */
-export function settleBuilding<T extends object>(b: T, settled: WeakSet<object>, was?: object): T {
+/** `intern`: its members alike with other buildings' shared with them (`intern.ts`); false where the record is written out and let go. */
+export function settleBuilding<T extends object>(b: T, settled: WeakSet<object>, was?: object, intern = true): T {
   if (settled.has(b)) return b;
   const record = b as Record<string, unknown>;
   // Only a record settled itself vouches for its members (one loaded from a file was never walked).
@@ -381,7 +382,7 @@ export function settleBuilding<T extends object>(b: T, settled: WeakSet<object>,
     settleMember(record, key, value);
   }
   // What it has alike with other buildings shared with them (`intern.ts`): a storey, a facade, a material once for the city.
-  internMembers(record);
+  if (intern) internMembers(record);
   settled.add(b);
   return b;
 }
