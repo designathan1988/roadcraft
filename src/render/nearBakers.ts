@@ -1,6 +1,8 @@
 import { type NearBaker, type NearKind, type NearPart, type NearTileCache, type NearTileJob, type NearTileReply, nearReplyBuffers, runNearTileJob } from './nearTileBake';
 import { barrierBaker } from './barrierTiles';
+import { coverBaker } from './coverTiles';
 import { furnitureBaker } from './furnitureTiles';
+import { gardenBaker } from './gardenTiles';
 import { plantedBaker } from './plantedTiles';
 import { poleBaker } from './poleTiles';
 import { signBaker } from './signTiles';
@@ -14,6 +16,8 @@ const BAKERS: Readonly<Record<NearKind, NearBaker<unknown>>> = {
   barriers: barrierBaker as NearBaker<unknown>,
   planted: plantedBaker as NearBaker<unknown>,
   structures: structureBaker as NearBaker<unknown>,
+  gardens: gardenBaker as NearBaker<unknown>,
+  covers: coverBaker as NearBaker<unknown>,
 };
 
 /** The parts a kind reads (what the page posts of a tile it holds edited). */
