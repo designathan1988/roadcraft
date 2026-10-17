@@ -1933,6 +1933,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let paintTexels = stagePaint(paintArray);
   /** The paint layers a stroke's dabs are laid on: held while the brush paints this plate, let go at its end (`settle`). */
   const paintRaster = (): Uint8Array[] => {
+    // A stroke again before the last one's box went: its layers kept held.
+    paintLetGo = false;
     let texels = paintTexels.held;
     if (!texels) {
       texels = new Uint8Array(paintRes * paintRes * 4 * PAINT_LAYERS);
