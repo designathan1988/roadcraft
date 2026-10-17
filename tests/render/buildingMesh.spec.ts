@@ -1,3 +1,4 @@
+import { octDecode } from '@render/buildings/cellArrays';
 import { describe, expect, it } from 'vitest';
 import type { MeshStandardMaterial } from 'three';
 
@@ -34,7 +35,8 @@ function wrongWinding(chunk: BuildingChunk): number {
   let wrong = 0;
   for (const part of Object.values(chunk.shells)) {
     const p = part.position;
-    const n = part.normalDecay;
+    // Each vertex's normal unfolded as the shell's program unfolds it (`octDecode`), four numbers a vertex as the check reads them.
+    const n = Float32Array.from({ length: (part.position.length / 3) * 4 }, (_, k) => (k % 4 === 3 ? 0 : octDecode(part.normal[Math.floor(k / 4) * 2]!, part.normal[Math.floor(k / 4) * 2 + 1]!)[k % 4]!));
     for (let t = 0; t < part.index.length; t += 3) {
       const a = part.index[t]! * 3;
       const b = part.index[t + 1]! * 3;
@@ -98,7 +100,7 @@ describe('building shell', () => {
         expect(wrongWinding(chunk), `${BLUEPRINTS[i]!.key} at ${rotation}`).toBe(0);
         expect(positions(chunk).every(Number.isFinite)).toBe(true);
         for (const part of Object.values(chunk.shells)) {
-          expect(part.normalDecay.length / 4).toBe(part.position.length / 3);
+          expect(part.normal.length / 2).toBe(part.position.length / 3);
           expect(part.paint.length / 4).toBe(part.position.length / 3);
         }
       }

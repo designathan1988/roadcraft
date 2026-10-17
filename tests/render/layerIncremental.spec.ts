@@ -1,3 +1,4 @@
+import { PAINT_ATTRIBUTE, PAINT_UNIT, WEAR_STEPS } from '@render/buildings/cellArrays';
 import { describe, expect, it } from 'vitest';
 import type { Mesh, Object3D } from 'three';
 
@@ -107,6 +108,9 @@ describe('the buildings layer, a change at a time', () => {
     const worn = (): number => {
       let most = 0;
       live.group.traverse((o: Object3D) => {
+        // A shell's wear in its paint's fourth short, over its finish id (`cellArrays.ts` `finishWear`); a part's in its looks.
+        const paint = (o as Mesh).isMesh ? (o as Mesh).geometry.getAttribute(PAINT_ATTRIBUTE) : undefined;
+        if (paint) for (let i = 0; i < paint.count; i++) most = Math.max(most, (Math.round(paint.getW(i) * PAINT_UNIT) >> 8) / WEAR_STEPS);
         const decay = (o as Mesh).isMesh ? (o as Mesh).geometry.getAttribute('aDecay') : undefined;
         if (decay) for (let i = 0; i < decay.count; i++) most = Math.max(most, decay.getX(i));
       });
@@ -123,7 +127,7 @@ describe('the buildings layer, a change at a time', () => {
     doc.buildings.all = all;
     expect(rebuilt).toBe(true);
     expect(walked).toBe(0);
-    // A signed short over 32767 on the GPU (`cellArrays.ts` `normalDecay`): 0.9 reads back within 1/65534.
+    // A byte's step on the GPU (`cellArrays.ts` `finishWear`): 0.9 reads back within 1/510.
     expect(worn()).toBeCloseTo(0.9, 2);
     live.dispose();
   });

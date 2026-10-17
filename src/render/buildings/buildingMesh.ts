@@ -27,7 +27,7 @@ import {
   Box3,
 } from 'three';
 import {
-  type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, FACADE_GRID, FINISH_ATTRIBUTE, type KitBoxes, NORMAL_UNIT, PAINT_ATTRIBUTE, SHELL_MESH, SHELL_SHORTS, cellArrays, finishId, paintShort, snorm16,
+  type Bounds, COLOURED_PARTS, type CellArrays, type CellSelection, FACADE_BYTES, FACADE_FLOATS, FACADE_GRID, FINISH_ATTRIBUTE, type KitBoxes, NORMAL_SHORTS, PAINT_ATTRIBUTE, SHELL_MESH, SHELL_NORMAL, SHELL_SHORTS, WEAR_STEPS, cellArrays, finishId, finishWear, octNormal, paintShort, wearByte,
 } from './cellArrays';
 import {
   COVER_INSET, GRIME_REACH, GROUND_ATTRIBUTE, LOOK_FLOATS, MACRO_SCALE, NO_GROUND, SHELL_PARTS, SHELL_PART_FACES, SHELL_PART_KINDS, type ShellPartKind, macroNoise,
@@ -404,9 +404,9 @@ function hashWord(h: number, w: number): number {
 class ShellPart {
   vertices = 0;
   readonly position = new Grow((n) => new Float32Array(n), 3 * 64);
-  /** The normal and the building's decay (`Building.decay`), for the weathering shader. */
-  readonly normalDecay = new Grow((n) => new Int16Array(n), SHELL_SHORTS * 64);
-  /** The paint, its tone and grime in it, and the finish id. */
+  /** The normal, octahedral (`octNormal`). */
+  readonly normal = new Grow((n) => new Int16Array(n), NORMAL_SHORTS * 64);
+  /** The paint, its tone and grime in it, and the finish id with the building's decay (`Building.decay`) for the weathering shader (`finishWear`). */
   readonly paint = new Grow((n) => new Uint16Array(n), SHELL_SHORTS * 64);
   readonly index = new Grow((n) => new Uint32Array(n), 96);
   /** A run of bays only (`RunChunk`): each vertex's bay width and storey height (`FACADE_FLOATS`), its grid (`FACADE_GRID`), its opening in its bay (a0, a1, h0, h1), its frames' colour (r, g, b) and office flag (`FACADE_BYTES`, 0..255). */
@@ -424,7 +424,7 @@ class ShellPart {
     this.opening = run ? new Grow((n) => new Uint8Array(n), FACADE_BYTES * 64) : null;
     const streams: Stream[] = [
       { grow: this.position, size: 3, words: 3 },
-      { grow: this.normalDecay, size: SHELL_SHORTS, words: SHELL_SHORTS / 2 },
+      { grow: this.normal, size: NORMAL_SHORTS, words: NORMAL_SHORTS / 2 },
       { grow: this.paint, size: SHELL_SHORTS, words: SHELL_SHORTS / 2 },
     ];
     if (this.facade && this.grid && this.opening) {
@@ -485,6 +485,9 @@ class ShellPart {
     }
   }
 }
+
+/** The face being laid's normal, octahedral (`octNormal`), written over by each face. */
+const FACE_NORMAL = new Int16Array(NORMAL_SHORTS);
 
 /** Each corner of the face being laid: the vertex it was welded to (grown for a lantern's 24-sided cap). */
 let faceIds = new Int32Array(32);
@@ -552,10 +555,11 @@ class Shell {
     const grime = wall && Number.isFinite(this.ground);
     // Every vertex of every shell passes here (a town's opening: 2.5-3 s of its 6 s of buildings): straight into the GPU's layout, its uv worked out there (`shellUv`).
     part.room(count);
-    const position = part.position.array, normalDecay = part.normalDecay.array, paint = part.paint.array;
-    const qx = snorm16(nx), qy = snorm16(ny), qz = snorm16(nz), qd = snorm16(this.decay);
+    const position = part.position.array, normal = part.normal.array, paint = part.paint.array;
+    octNormal(nx, ny, nz, FACE_NORMAL, 0);
+    const qx = FACE_NORMAL[0]!, qy = FACE_NORMAL[1]!;
     const rgb = c.rgb;
-    const id = part.finish;
+    const id = finishWear(part.finish, this.decay);
     if (faceIds.length < count) faceIds = new Int32Array(count * 2);
     const ids = faceIds;
     const bytes = st ? this.runBytes(st) : null;
@@ -564,7 +568,7 @@ class Shell {
       const p = points[i]!;
       const x = p[0], y = p[1], z = p[2];
       // Written past the vertices kept: the weld keeps it, or finds it laid already and the next one writes over it.
-      const v = part.vertices, p3 = v * 3, p4 = v * SHELL_SHORTS;
+      const v = part.vertices, p3 = v * 3, p4 = v * SHELL_SHORTS, p2 = v * NORMAL_SHORTS;
       // Each -0 written +0 (x + 0, 0 - y), so the two weld: the GPU draws them alike.
       position[p3] = x + 0; position[p3 + 1] = z + 0; position[p3 + 2] = 0 - y;
       // No two stretches of wall quite the same tone, and the base weathered.
@@ -574,7 +578,7 @@ class Shell {
         const t = Math.min(1, Math.max(0, (z - this.ground) / GRIME_REACH));
         tone *= 0.8 + 0.2 * t * t * (3 - 2 * t);
       }
-      normalDecay[p4] = qx; normalDecay[p4 + 1] = qy; normalDecay[p4 + 2] = qz; normalDecay[p4 + 3] = qd;
+      normal[p2] = qx; normal[p2 + 1] = qy;
       paint[p4] = paintShort(rgb[0] * tone); paint[p4 + 1] = paintShort(rgb[1] * tone); paint[p4 + 2] = paintShort(rgb[2] * tone); paint[p4 + 3] = id;
       if (st && bytes) this.stampRun(part, v, st, i, flip, bytes);
       ids[i] = part.weld();
@@ -3444,8 +3448,8 @@ export function signatureFloorOf(b: Building, naturalAt: GroundAt, pavedAt?: Pav
   return resolved.volumes.some((v) => !v.open) ? floorHeight(resolved, naturalAt, pavedAt) : undefined;
 }
 
-/** A wear as the shell's vertices carry it to the GPU: a signed short over 32767 (`cellArrays.ts` `normalDecay`). */
-const wearShort = (x: number): number => snorm16(x) / NORMAL_UNIT;
+/** A wear as the shell's vertices carry it to the GPU: a byte's step (`cellArrays.ts` `finishWear`), so a shell's part laid again from it is the shell. */
+const wearShort = (x: number): number => wearByte(x) / WEAR_STEPS;
 
 /** `far`: the building's far level (L1) - walls as runs of bays with their windows drawn by the shader, no parts (`facadeLevel.ts`). */
 /** `apart`: the elements' boxes, pavings and rails as instances of the shell's parts (`shellParts.ts`); false lays them in the shell face by face, as the parts draw them (the specs compare). */
@@ -3550,7 +3554,7 @@ export function chunkSummary(b: Building, groundAt: GroundAt, pavedAt?: PavedAt,
 
 /** A part's arrays viewed at their length, no copy. */
 const shellChunkOf = (part: ShellPart): ShellChunk =>
-  ({ position: part.position.view(), normalDecay: part.normalDecay.view(), paint: part.paint.view(), index: part.index.view() });
+  ({ position: part.position.view(), normal: part.normal.view(), paint: part.paint.view(), index: part.index.view() });
 
 /** A shell's fragments by finish: the arrays it was laid in (every face but the far level's runs with openings). */
 function shellChunks(shell: Shell): Partial<Record<Finish, ShellChunk>> {
@@ -3629,7 +3633,7 @@ export function withShellParts(chunk: BuildingChunk): BuildingChunk {
     for (let k = 0; k < add.index.length; k++) index[was.index.length + k] = add.index[k]! + base;
     shells[finish] = {
       position: joined(was.position, add.position, (n) => new Float32Array(n)),
-      normalDecay: joined(was.normalDecay, add.normalDecay, (n) => new Int16Array(n)),
+      normal: joined(was.normal, add.normal, (n) => new Int16Array(n)),
       paint: joined(was.paint, add.paint, (n) => new Uint16Array(n)),
       index,
     };
@@ -3701,11 +3705,10 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const g = new BufferGeometry();
     // DO NOT wrap them in a Float32BufferAttribute or Uint32BufferAttribute: those copy the array they are given
     g.setAttribute('position', new BufferAttribute(shell.position, 3));
-    // Four signed shorts a vertex, read as the normal (its fourth left over: no 3-short format in Direct3D 11) and as the wear.
-    const normalDecay = new InterleavedBuffer(shell.normalDecay, SHELL_SHORTS);
-    g.setAttribute('normal', new InterleavedBufferAttribute(normalDecay, 4, 0, true));
-    g.setAttribute('aDecay', new InterleavedBufferAttribute(normalDecay, 1, 3, true));
-    // Four unsigned shorts, normalised: the paint and the finish id; the uv is the shader's (`finishes.ts`).
+    // Two signed shorts a vertex, the normal octahedral: unfolded by the shell's program (`finishes.ts` `SHELL_NORMAL`).
+    const normal = new BufferAttribute(shell.normal, NORMAL_SHORTS, true);
+    g.setAttribute(SHELL_NORMAL, normal);
+    // Four unsigned shorts, normalised: the paint, and the finish id with the wear; the uv is the shader's (`finishes.ts`).
     g.setAttribute(PAINT_ATTRIBUTE, new BufferAttribute(shell.paint, 4, true));
     // The far level's window grid and openings, for its shader (`facadeLevel.ts`).
     const opening = shell.opening ? new InterleavedBuffer(shell.opening, FACADE_BYTES) : null;
@@ -3726,13 +3729,13 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     // The town's shells live on the GPU only: their arrays are let go once uploaded
     if (!ghost) {
       const kept = {
-        position: g.attributes.position as BufferAttribute, normalDecay, paint: g.attributes[PAINT_ATTRIBUTE] as BufferAttribute, index: g.index!, ...(far ?? {}),
+        position: g.attributes.position as BufferAttribute, normal, paint: g.attributes[PAINT_ATTRIBUTE] as BufferAttribute, index: g.index!, ...(far ?? {}),
       };
       gpuOnlyAttributes(mesh, kept, () => {
         // The same chunks make the same pieces in the same order.
         const same = refilled()?.shells[piece];
         return same ? {
-          position: same.position, normalDecay: same.normalDecay, paint: same.paint, index: same.index,
+          position: same.position, normal: same.normal, paint: same.paint, index: same.index,
           ...(same.facade && same.grid && same.opening ? { facade: same.facade, grid: same.grid, opening: same.opening } : {}),
         } : {};
       });
