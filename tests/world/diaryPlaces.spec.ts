@@ -127,28 +127,39 @@ describe('only what changed', () => {
   });
 });
 
-describe('a list at its cap: the place of the item that left, not the whole map', () => {
-  const dab = (i: number): { x: number; y: number; radius: number; strength: number } =>
-    ({ x: i === 0 ? -2000 : 2000, y: i === 0 ? -2000 : 2000, radius: 10, strength: 1 });
+describe("a list at its tile's cap (decision 5.1): nothing leaves, the new item refused, no entry; one in another tile comes in, its entry at its place", () => {
+  /** A place in the full tile (1, 1), or (`other`) in the tile (-2, -2). */
+  const dab = (other = false): { x: number; y: number; radius: number; strength: number } =>
+    ({ x: other ? -2000 : 2000, y: other ? -2000 : 2000, radius: 10, strength: 1 });
 
   it('paint, fog, gullies, stamps, clearings', () => {
     const doc = new RoadDoc();
-    for (let i = 0; i < MAX_PAINT_DABS; i++) doc.addPaintDab({ kind: 'sand', ...dab(i) });
-    for (let i = 0; i < MAX_FOG_DABS; i++) doc.addFogDab({ ...dab(i), height: 10, speed: 1 });
-    for (let i = 0; i < MAX_GULLY_DABS; i++) doc.addGullyDab(dab(i));
-    for (let i = 0; i < MAX_TERRAIN_STAMPS; i++) doc.addTerrainStamp({ ...dab(i), mode: 'raise' });
-    for (let i = 0; i < MAX_TREE_CLEARINGS; i++) doc.cutTrees(dab(i).x, dab(i).y, 10);
+    for (let i = 0; i < MAX_PAINT_DABS; i++) doc.addPaintDab({ kind: 'sand', ...dab() });
+    for (let i = 0; i < MAX_FOG_DABS; i++) doc.addFogDab({ ...dab(), height: 10, speed: 1 });
+    for (let i = 0; i < MAX_GULLY_DABS; i++) doc.addGullyDab(dab());
+    for (let i = 0; i < MAX_TERRAIN_STAMPS; i++) doc.addTerrainStamp({ ...dab(), mode: 'raise' });
+    for (let i = 0; i < MAX_TREE_CLEARINGS; i++) doc.cutTrees(dab().x, dab().y, 10);
+    const counts = [doc.terrainPaint.length, doc.fogDabs.length, doc.gullyDabs.length, doc.terrainStamps.length, doc.treeClearings.length];
     const seen = doc.changes.version;
-    doc.addPaintDab({ kind: 'sand', ...dab(1) });
-    doc.addFogDab({ ...dab(1), height: 10, speed: 1 });
-    doc.addGullyDab(dab(1));
-    doc.addTerrainStamp({ ...dab(1), mode: 'raise' });
-    doc.cutTrees(2000, 2000, 10);
+    // The full tile: each refused, nothing taken away for it.
+    expect(doc.addPaintDab({ kind: 'sand', ...dab() })).toBe(false);
+    expect(doc.addFogDab({ ...dab(), height: 10, speed: 1 })).toBe(false);
+    expect(doc.addGullyDab(dab())).toBe(false);
+    expect(doc.addTerrainStamp({ ...dab(), mode: 'raise' })).toBeNull();
+    expect(doc.cutTrees(2000, 2000, 10)).toBe(false);
+    expect([doc.terrainPaint.length, doc.fogDabs.length, doc.gullyDabs.length, doc.terrainStamps.length, doc.treeClearings.length]).toEqual(counts);
+    for (const kind of ['paint', 'fog', 'gullies', 'terrain', 'clearings'] as const) expect(entriesSince(doc, seen, kind), kind).toEqual([]);
+    // Another tile: taken, its entry where it lies, not the whole map.
+    doc.addPaintDab({ kind: 'sand', ...dab(true) });
+    doc.addFogDab({ ...dab(true), height: 10, speed: 1 });
+    doc.addGullyDab(dab(true));
+    doc.addTerrainStamp({ ...dab(true), mode: 'raise' });
+    doc.cutTrees(-2000, -2000, 10);
     for (const kind of ['paint', 'fog', 'gullies', 'terrain', 'clearings'] as const) {
       const entries = entriesSince(doc, seen, kind);
       expect(placed(entries), kind).toBe(true);
       expect(covers(entries, -2000, -2000), kind).toBe(true);
-      expect(covers(entries, 0, 0), kind).toBe(false);
+      expect(covers(entries, 2000, 2000), kind).toBe(false);
     }
   });
 
@@ -156,22 +167,29 @@ describe('a list at its cap: the place of the item that left, not the whole map'
     const doc = new RoadDoc();
     const tree = (x: number): PlantedTree => ({ x, y: x, height: 10, yaw: 0, seed: 0.5 });
     const element = (x: number): ElementItem => ({ kind: 'rock', x, y: x, size: 2, yaw: 0, seed: 0.5 } as unknown as ElementItem);
-    doc.plantTrees([tree(-2000), ...Array.from({ length: MAX_PLANTED_TREES - 1 }, () => tree(2000))]);
-    doc.addElements([element(-2000), ...Array.from({ length: MAX_ELEMENTS - 1 }, () => element(2000))]);
+    doc.plantTrees(Array.from({ length: MAX_PLANTED_TREES }, () => tree(2000)));
+    doc.addElements(Array.from({ length: MAX_ELEMENTS }, () => element(2000)));
     const seen = doc.changes.version;
-    doc.plantTrees([tree(2000)]);
-    doc.addElements([element(2000)]);
+    // The full tile: refused, the first planted still there.
+    expect(doc.plantTrees([tree(2000)])).toBe(0);
+    expect(doc.addElements([element(2000)])).toBe(0);
+    expect(doc.trees).toHaveLength(MAX_PLANTED_TREES);
+    expect(doc.elements).toHaveLength(MAX_ELEMENTS);
+    for (const kind of ['trees', 'elements'] as const) expect(entriesSince(doc, seen, kind), kind).toEqual([]);
+    // Another tile: taken, its entry where it lies.
+    expect(doc.plantTrees([tree(-2000)])).toBe(1);
+    expect(doc.addElements([element(-2000)])).toBe(1);
     for (const kind of ['trees', 'elements'] as const) {
       const entries = entriesSince(doc, seen, kind);
       expect(placed(entries), kind).toBe(true);
       expect(covers(entries, -2000, -2000), kind).toBe(true);
-      expect(covers(entries, 0, 0), kind).toBe(false);
+      expect(covers(entries, 2000, 2000), kind).toBe(false);
     }
   });
 
   it('a layer cleared: where its items lay', () => {
     const doc = new RoadDoc();
-    doc.addPaintDab({ kind: 'sand', ...dab(1) });
+    doc.addPaintDab({ kind: 'sand', ...dab() });
     const seen = doc.changes.version;
     doc.clearPaint();
     const entries = entriesSince(doc, seen, 'paint');
