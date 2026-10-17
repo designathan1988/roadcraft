@@ -3,7 +3,7 @@ import { type CatalogCategory, CATALOG_CATEGORIES, type CatalogRoad, catalogRoad
 import { type RoadProfileSpec, profileRoad, profileWidth, sameProfile } from '@world/roads/profile';
 import type { RoadTemplate } from '@world/roads/templates';
 import { UNITS_PER_METER } from '@world/units';
-import { t } from '../i18n';
+import { plural, t } from '../i18n';
 import { metresText } from './crossSection';
 import { profileSwatch } from './profileSwatch';
 import { type DrawProfile, drawProfile, setDrawProfile } from './drawProfile';
@@ -104,7 +104,7 @@ export function catalogStrip(host: CatalogHost): HTMLElement {
     const oneWay = !road.profile.elements.some((e) => e.kind === 'lane' && e.dir === 'backward') ||
       !road.profile.elements.some((e) => e.kind === 'lane' && e.dir === 'forward');
     main.title = t('catalog.tip', {
-      name: nameOf(road), lanes, way: t(oneWay ? 'catalog.oneWay' : 'catalog.twoWay'), speed: road.profile.speedKmh,
+      name: nameOf(road), lanes: plural('palette.lanes.count', lanes), way: t(oneWay ? 'catalog.oneWay' : 'catalog.twoWay'), speed: road.profile.speedKmh,
     });
     main.innerHTML = '<img class="rc-art" alt="" draggable="false"><span class="rc-name"></span><span class="rc-meta"></span>';
     (main.querySelector('.rc-art') as HTMLImageElement).src = profileSwatch(road.profile, span, 124, 64);

@@ -201,7 +201,7 @@ function segmentStats(doc: RoadDoc, net: Network, sim: SimClient, id: SegmentId)
     [t('inspector.meanSpeed'), traffic?.speedCount ? `${Math.round((traffic.speedSum / traffic.speedCount) * METERS_PER_UNIT * 3.6)} km/h` : '—'],
     [t('inspector.vehicles'), String(traffic?.vehicles ?? 0)],
     [t('inspector.queue'), String(traffic?.queued ?? 0)],
-    [t('inspector.capacity'), t('inspector.capacityValue', { count: Math.round(traffic?.capacity ?? 0) })],
+    [t('inspector.capacity'), plural('inspector.capacityValue', Math.round(traffic?.capacity ?? 0))],
     [t('inspector.volume'), String(traffic?.volume ?? 0)],
   ]);
 }
@@ -359,7 +359,7 @@ function nodeStats(doc: RoadDoc, sim: SimClient, id: NodeId): string | null {
     [t('inspector.vehicles'), String(junction?.vehicles ?? 0)],
     [t('inspector.queue'), String(junction?.queued ?? 0)],
     [t('inspector.meanSpeed'), junction?.speedCount ? `${Math.round((junction.speedSum / junction.speedCount) * METERS_PER_UNIT * 3.6)} km/h` : '—'],
-    [t('inspector.capacity'), t('inspector.capacityValue', { count: Math.round(junction?.capacity ?? 0) })],
+    [t('inspector.capacity'), plural('inspector.capacityValue', Math.round(junction?.capacity ?? 0))],
     [t('inspector.volume'), String(junction?.volume ?? 0)],
   ];
   const plan = junction?.plan;

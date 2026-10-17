@@ -34,7 +34,8 @@ function detect(): LanguageCode {
   } catch {
     // Private browsing denies storage; the browser's own language still applies.
   }
-  const preferred = typeof navigator === 'undefined' ? [] : navigator.languages ?? [navigator.language];
+  // An empty list (some embedded browsers) is no choice: the single language then.
+  const preferred = typeof navigator === 'undefined' ? [] : navigator.languages?.length ? navigator.languages : [navigator.language];
   for (const tag of preferred) {
     if (typeof tag !== 'string') continue;
     if (tag.toLowerCase().startsWith('pt')) return 'pt-BR';

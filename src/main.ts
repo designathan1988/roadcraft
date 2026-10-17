@@ -111,7 +111,7 @@ import { formatCost } from '@ui/roads/money';
 import { type BuildMode, buildRuns } from '@world/roads/buildMode';
 import { profileRoad } from '@world/roads/profile';
 import { mountAbout, openAbout } from '@ui/about';
-import { applyTranslations, formatDecimal, initLanguage, onLanguageChange, setGlobalParams, t } from '@ui/i18n';
+import { applyTranslations, formatDecimal, initLanguage, onLanguageChange, plural, setGlobalParams, t } from '@ui/i18n';
 import { onRoadKeysChange, roadKeyAction, roadKeyParams } from '@ui/roads/keys';
 import {
   peopleCountLabel,
@@ -1456,7 +1456,7 @@ const LANE_CHOICES: readonly { readonly id: string; readonly lanes: number | nul
 function laneChoices(): { id: string; label: string; on: boolean }[] {
   return LANE_CHOICES.map((choice) => ({
     id: choice.id,
-    label: choice.lanes === null ? t('palette.lanes.median') : t('palette.lanes.count', { count: choice.lanes }),
+    label: choice.lanes === null ? t('palette.lanes.median') : plural('palette.lanes.count', choice.lanes),
     on: choice.lanes === null
       ? game.roadLanePreset === null && game.roadTypeIndex === MEDIAN_CLASS
       : game.roadTypeIndex !== MEDIAN_CLASS && choice.lanes === (game.roadLanePreset ?? roadType(game.roadTypeIndex).lanes),
