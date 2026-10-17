@@ -231,6 +231,12 @@ describe("a tile's near roads baked in a worker", () => {
     // The draws sent are those with a block the bend reached (a street bent reaches every surface of its blocks: here all); a draw none of whose blocks changed is kept as the page has it.
     const before = new Map(made.payload.draws.map((d) => [d.key, d.digest]));
     for (const d of again.payload.draws) expect(before.get(d.key)).not.toBe(d.digest);
+    // Exactly the draws whose digest changed are sent: the whole bake asked from nothing names every draw's digest now.
+    const whole = await runNearRoadJob({ node, sig: `${second}:full`, want: true, prefix: 'test:',
+      near: { ...look, tiles: versions, bake: second, variant: 'full', shown: null, records: page.map((r, n) => r ?? roadsOf(tiles.get(order[n]!)!)) } }, cache);
+    if (whole.kind !== 'far' || !whole.payload) throw new Error(whole.kind);
+    const changed = whole.payload.draws.filter((d) => before.get(d.key) !== d.digest).map((d) => d.key).sort();
+    expect(again.payload.draws.map((d) => d.key).sort()).toEqual(changed);
   });
 
   it('are not baked again for the same roads at other versions (a building grown, the tile written): nothing made, written nor sent', async () => {
