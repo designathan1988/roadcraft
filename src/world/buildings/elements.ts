@@ -434,16 +434,22 @@ export function isStructure(e: BuildingElement): boolean {
   return BOUNDARY_KINDS.has(e.kind) || isEarthwork(e);
 }
 
-interface Footprint { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly a: number }
+interface Footprint { cx: number; cy: number; hx: number; hy: number; a: number }
 
-function footprintOf(e: BuildingElement, size?: number): Footprint {
+/** The two footprints `elementsMeet` compares, written in place: DO NOT make two objects a pair tested, the growth tests a lot's every part against every candidate (the allocation profile, 2026-10-17: the lot plan's `fits` and `put` 0.6-1.1 GB in each tile worker). */
+const footA: Footprint = { cx: 0, cy: 0, hx: 0, hy: 0, a: 0 }, footB: Footprint = { cx: 0, cy: 0, hx: 0, hy: 0, a: 0 };
+
+function footprintOf(e: BuildingElement, out: Footprint, size?: number): Footprint {
   const alongY = e.facing === 0 || e.facing === 2;
-  return {
-    cx: e.x, cy: e.y,
-    hx: (size ?? (alongY ? e.w : e.d)) / 2, hy: (size ?? (alongY ? e.d : e.w)) / 2,
-    a: e.angle ?? 0,
-  };
+  out.cx = e.x; out.cy = e.y;
+  out.hx = (size ?? (alongY ? e.w : e.d)) / 2; out.hy = (size ?? (alongY ? e.d : e.w)) / 2;
+  out.a = e.angle ?? 0;
+  return out;
 }
+
+/** A footprint's half extent along the axis (ux, uy). */
+const reachAlong = (b: Footprint, ux: number, uy: number): number =>
+  b.hx * Math.abs(Math.cos(b.a) * ux + Math.sin(b.a) * uy) + b.hy * Math.abs(-Math.sin(b.a) * ux + Math.cos(b.a) * uy);
 
 /** How deep two turned rectangles run into each other (separating axes); <= 0 when apart. */
 function planDepth(p: Footprint, q: Footprint): number {
@@ -451,11 +457,11 @@ function planDepth(p: Footprint, q: Footprint): number {
   const gap = Math.hypot(q.cx - p.cx, q.cy - p.cy) - Math.hypot(p.hx, p.hy) - Math.hypot(q.hx, q.hy);
   if (gap > 0) return -gap;
   let best = Infinity;
-  for (const t of [p.a, p.a + Math.PI / 2, q.a, q.a + Math.PI / 2]) {
+  // The four axes: p's two, then q's two (no array of them, no function a pair).
+  for (let k = 0; k < 4; k++) {
+    const t = k === 0 ? p.a : k === 1 ? p.a + Math.PI / 2 : k === 2 ? q.a : q.a + Math.PI / 2;
     const ux = Math.cos(t), uy = Math.sin(t);
-    const reach = (b: Footprint): number =>
-      b.hx * Math.abs(Math.cos(b.a) * ux + Math.sin(b.a) * uy) + b.hy * Math.abs(-Math.sin(b.a) * ux + Math.cos(b.a) * uy);
-    best = Math.min(best, reach(p) + reach(q) - Math.abs((q.cx - p.cx) * ux + (q.cy - p.cy) * uy));
+    best = Math.min(best, reachAlong(p, ux, uy) + reachAlong(q, ux, uy) - Math.abs((q.cx - p.cx) * ux + (q.cy - p.cy) * uy));
   }
   return best;
 }
@@ -474,20 +480,23 @@ export function elementsMeet(a: BuildingElement, b: BuildingElement): boolean {
   if (SURFACE_KINDS.has(a.kind) || SURFACE_KINDS.has(b.kind)) return false;
   if (isStructure(a) && isStructure(b)) return false;
   // A plant against a thin run of the boundary grows through it (a shrub through a fence); a shed or a cabinet
-  const thinRun = (e: BuildingElement): boolean => (e.kind === 'wall' || e.kind === 'fence' || e.kind === 'railing') && Math.min(e.w, e.d) <= m(0.3);
   if ((PLANT_KINDS.has(a.kind) && thinRun(b)) || (PLANT_KINDS.has(b.kind) && thinRun(a))) return false;
   // Foliage into foliage: a shrub grown into a hedge.
-  const foliage = (e: BuildingElement): boolean => e.kind === 'shrub' || e.kind === 'hedge';
   if (foliage(a) && foliage(b)) return false;
   if (a.kind === 'tree' || b.kind === 'tree') {
-    const [tree, other] = a.kind === 'tree' ? [a, b] : [b, a];
-    if (other.kind === 'tree') return heightsMeet(a.z, a.z + a.h, b.z, b.z + b.h) && planDepth(footprintOf(a, TRUNK), footprintOf(b, TRUNK)) > MEET;
+    const tree = a.kind === 'tree' ? a : b, other = a.kind === 'tree' ? b : a;
+    if (other.kind === 'tree') return heightsMeet(a.z, a.z + a.h, b.z, b.z + b.h) && planDepth(footprintOf(a, footA, TRUNK), footprintOf(b, footB, TRUNK)) > MEET;
     const crown = tree.z + tree.h * CROWN_FROM;
     const trunkMeets = heightsMeet(tree.z, tree.z + tree.h, other.z, other.z + other.h)
-      && planDepth(footprintOf(tree, TRUNK), footprintOf(other)) > MEET;
+      && planDepth(footprintOf(tree, footA, TRUNK), footprintOf(other, footB)) > MEET;
     if (trunkMeets && !PLANT_KINDS.has(other.kind)) return true;
     return !PLANT_KINDS.has(other.kind) && heightsMeet(crown, tree.z + tree.h, other.z, other.z + other.h)
-      && other.z >= crown - MEET && planDepth(footprintOf(tree), footprintOf(other)) > MEET;
+      && other.z >= crown - MEET && planDepth(footprintOf(tree, footA), footprintOf(other, footB)) > MEET;
   }
-  return heightsMeet(a.z, a.z + a.h, b.z, b.z + b.h) && planDepth(footprintOf(a), footprintOf(b)) > MEET + m(0.001);
+  return heightsMeet(a.z, a.z + a.h, b.z, b.z + b.h) && planDepth(footprintOf(a, footA), footprintOf(b, footB)) > MEET + m(0.001);
 }
+
+/** A thin run of the boundary: a plant grows through it (`elementsMeet`). */
+const thinRun = (e: BuildingElement): boolean => (e.kind === 'wall' || e.kind === 'fence' || e.kind === 'railing') && Math.min(e.w, e.d) <= m(0.3);
+/** Foliage: a shrub grows into a hedge (`elementsMeet`). */
+const foliage = (e: BuildingElement): boolean => e.kind === 'shrub' || e.kind === 'hedge';

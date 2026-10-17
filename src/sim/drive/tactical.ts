@@ -123,7 +123,7 @@ export function planTrip(
       if (!Number.isFinite(step)) continue;
       const out = w.connector(id)!.toLane;
       const cost = node.cost + step;
-      relax(heap, best, parent, { key: out, lane: out, changed: false, cost, f: cost + toGo(out) }, { from: node.key, connector: id });
+      relax(heap, best, parent, out, out, false, cost, toGo, node.key, id);
     }
 
     if (node.changed || lane.laneIndex === undefined) continue;
@@ -136,7 +136,7 @@ export function planTrip(
       if (lanes === 0 || room < lanes * ROOM_PER_LANE) continue;
       const key = keyOf(sibling, true);
       const cost = node.cost + lanes * CHANGE_COST;
-      relax(heap, best, parent, { key, lane: sibling, changed: true, cost, f: cost + toGo(sibling) }, { from: node.key, connector: null });
+      relax(heap, best, parent, key, sibling, true, cost, toGo, node.key, null);
     }
   }
   if (!reached) return null;
@@ -173,9 +173,11 @@ export function planTrip(
   return { route, changeTo: null, intent: null, cost: reached.cost };
 }
 
-function relax(heap: Node[], best: Map<string, number>, parent: Map<string, Step>, node: Node, step: Step): void {
-  if (node.cost >= (best.get(node.key) ?? Infinity) - 1e-9) return;
-  best.set(node.key, node.cost);
-  parent.set(node.key, step);
-  push(heap, node);
+/** DO NOT make the node and its step before knowing it is kept: most are not (the allocation profile, 2026-10-17: `planTrip` 317 MB in the simulation's worker). */
+function relax(heap: Node[], best: Map<string, number>, parent: Map<string, Step>, key: string, lane: LaneletId, changed: boolean, cost: number,
+  toGo: (lane: LaneletId) => number, from: string, connector: LaneletId | null): void {
+  if (cost >= (best.get(key) ?? Infinity) - 1e-9) return;
+  best.set(key, cost);
+  parent.set(key, { from, connector });
+  push(heap, { key, lane, changed, cost, f: cost + toGo(lane) });
 }
