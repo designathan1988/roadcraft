@@ -150,6 +150,8 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   if (!toCompile.length) return;
   // For the target the scene is really drawn into: its colour space and tone mapping are part of every program.
   const previous = renderer.getRenderTarget();
+  // DO NOT let three walk the whole scene for its lights once per object compiled (`compile` traverses its target scene): gathered once for this drain.
+  const lit = litScene(scene);
   try {
     while (toCompile.length) {
       const { object, shadow, done, pass } = toCompile.shift()!;
@@ -180,7 +182,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
         if (unit.variant) setDepth((unit.object as Mesh).material as DepthMaterial, unit.variant);
         // DO NOT let one program that cannot be built stop the others, nor the frame: said, and the promise still settles.
         try {
-          compiled.push(renderer.compileAsync(unit.object, camera, scene));
+          compiled.push(renderer.compileAsync(unit.object, camera, lit));
         } catch (error) {
           console.error('[uploads] a program could not be compiled ahead', error);
         }
@@ -192,14 +194,31 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   }
 }
 
+/** The scene as three's `compile` reads its target (its lights, fog and environment), with its lights gathered once (`litScene`). */
+const litScenes = new WeakMap<Scene, { readonly scene: Scene; readonly lights: Object3D[] }>();
+/** `scene` with its visible lights gathered now: three's compile walks the stand-in's lights only, and reads the rest (fog, environment) from the scene. */
+function litScene(scene: Scene): Scene {
+  let lit = litScenes.get(scene);
+  if (!lit) {
+    const lights: Object3D[] = [];
+    const proxy = Object.create(scene, {
+      traverseVisible: { value: (visit: (object: Object3D) => void) => { for (const light of lights) visit(light); } },
+    }) as Scene;
+    lit = { scene: proxy, lights };
+    litScenes.set(scene, lit);
+  }
+  const lights = lit.lights;
+  lights.length = 0;
+  scene.traverseVisible((o) => { if ((o as Light).isLight) lights.push(o); });
+  return lit.scene;
+}
+
 /** Meshes whose geometry must be on the GPU before they are first drawn. three.js sends a geometry's buffers */
-const WARM_LAYER = 31;
 const toWarm: { mesh: Mesh; geometries: readonly BufferGeometry[]; done: () => void }[] = [];
 /** DO NOT queue loose meshes behind the scene's: one FIFO stopped at a scene job at its head, and the masses behind it kept their CPU arrays (110 MB, 2026-10-16). */
 interface LooseJob { readonly mesh: Mesh; readonly done: () => void; readonly priority: () => number; rank: number }
 const toWarmLoose: LooseJob[] = [];
 let warmer = false;
-const lightsOf = new WeakMap<Scene, Light[]>();
 export function warmAhead(mesh: Mesh, geometries: readonly BufferGeometry[]): Promise<void> {
   if (!warmer) return Promise.resolve();
   return new Promise((done) => toWarm.push({ mesh, geometries, done }));
@@ -223,9 +242,13 @@ export function cancelWarm(meshes: Iterable<Mesh>): void {
   }
 }
 /** Sends one waiting scene mesh's geometry to the GPU, after the frame (`renderer.ts`), and loose meshes by their error on the screen within a few milliseconds (one at least, so the queue always moves). */
-export function drainWarm(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
+export function drainWarm(renderer: WebGLRenderer): void {
   warmer = true;
-  warmOne(renderer, camera, scene, target);
+  // One scene mesh's levels as the loose ones go: in a scene of its own, not by drawing the whole scene on a layer.
+  const one = toWarm.shift();
+  if (one) {
+    try { warmLoose(renderer, one.mesh, one.geometries); } finally { one.done(); }
+  }
   if (toWarmLoose.length === 0) return;
   const until = performance.now() + WARM_SLICE_MS;
   // Ranked once a frame, the largest error last (popped first); the eye moved since they were queued.
@@ -275,49 +298,6 @@ function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly Buf
     // Back where it was among its group's children: the order meshes of one render order are drawn in.
     if (parent) { parent.add(mesh); parent.children.splice(parent.children.length - 1, 1); parent.children.splice(at, 0, mesh); }
     renderer.setRenderTarget(previous);
-  }
-}
-
-function warmOne(renderer: WebGLRenderer, camera: Camera, scene: Scene, target: WebGLRenderTarget | null): void {
-  const job = toWarm.shift();
-  if (!job) return;
-  const { mesh, geometries, done } = job;
-  let lights = lightsOf.get(scene);
-  if (!lights) {
-    lights = [];
-    scene.traverse((o) => { if ((o as Light).isLight) lights!.push(o as Light); });
-    lightsOf.set(scene, lights);
-  }
-  const mask = camera.layers.mask;
-  const visible = mesh.visible;
-  const original = mesh.geometry;
-  const previous = renderer.getRenderTarget();
-  const autoClear = renderer.autoClear;
-  // The world's matrices were brought up to date by the frame just drawn.
-  const autoUpdate = scene.matrixWorldAutoUpdate;
-  try {
-    scene.matrixWorldAutoUpdate = false;
-    for (const light of lights) light.layers.enable(WARM_LAYER);
-    mesh.layers.enable(WARM_LAYER);
-    mesh.visible = true;
-    camera.layers.set(WARM_LAYER);
-    renderer.setRenderTarget(target);
-    // The frame in the target has been shown already; nothing is cleared.
-    renderer.autoClear = false;
-    for (const geometry of geometries) {
-      mesh.geometry = geometry;
-      renderer.render(scene, camera);
-    }
-  } finally {
-    mesh.geometry = original;
-    mesh.visible = visible;
-    mesh.layers.disable(WARM_LAYER);
-    for (const light of lights) light.layers.disable(WARM_LAYER);
-    camera.layers.mask = mask;
-    renderer.autoClear = autoClear;
-    scene.matrixWorldAutoUpdate = autoUpdate;
-    renderer.setRenderTarget(previous);
-    done();
   }
 }
 

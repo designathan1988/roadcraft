@@ -3029,7 +3029,7 @@ export function createSceneRenderer(
       warmBlastShaders();
       warmPreviewShaders();
       // One waiting body's geometry a frame to the GPU, before anybody draws it.
-      drainWarm(renderer, rig.camera, scene, post.target);
+      drainWarm(renderer);
       // Meshes still waiting to go up: another frame, so the queue never stands while the game is still.
       if (warmPending()) onAssetsReady();
 
