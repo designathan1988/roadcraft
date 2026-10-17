@@ -181,6 +181,34 @@ describe("the GPU's time governing the floor", () => {
     expect(asked).toEqual([true, false, true]);
   });
 
+  it('brings a floor raised by a passing load back down once the frame is well under what raised it, though never under the budget itself (r20: a road built)', () => {
+    const g = new TimeGovernor();
+    const { asked, press } = pressing();
+    // A road's build: 35 ms; it ends in the window that judges the step, which seems to have paid.
+    g.read(35, 12, press); g.read(35, 12, press); g.read(18, 12, press);
+    expect(asked).toEqual([true]);
+    // 18 ms, the pixels' own cost, over the budget: the floor comes back down all the same.
+    g.read(18, 12, press);
+    expect(asked).toEqual([true, false]);
+  });
+
+  it('steps up again a step down that brought the frame back past OVER, and tries none again in the view', () => {
+    const g = new TimeGovernor();
+    const { asked, press } = pressing();
+    g.read(35, 12, press); g.read(35, 12, press); g.read(18, 12, press);
+    g.read(18, 12, press);
+    expect(asked).toEqual([true, false]);
+    // The detail back costs the frame again: up, and held there.
+    g.read(35, 12, press); g.read(35, 12, press); g.read(18, 12, press);
+    expect(asked).toEqual([true, false, true]);
+    for (let i = 0; i < 4; i++) g.read(18, 12, press);
+    expect(asked).toEqual([true, false, true]);
+    // Another view: tried again.
+    g.reset();
+    g.read(18, 12, press);
+    expect(asked).toEqual([true, false, true, false]);
+  });
+
   it('at the coarsest floor nothing is asked for a window to settle', () => {
     const g = new TimeGovernor();
     const { asked, press } = pressing(0);
@@ -191,19 +219,6 @@ describe("the GPU's time governing the floor", () => {
 });
 
 describe('the cells held back by the budget', () => {
-  it('are weighed again once a level is measured anew, not while the measures stand (`LandedMeasure.serial`)', () => {
-    const measure = new LandedMeasure<'cell'>({ cell: 1000 });
-    const at = measure.serial;
-    measure.set('cell', '0,0', 400);
-    expect(measure.serial).not.toBe(at);
-    const after = measure.serial;
-    // The same measure every frame of a still view: nothing to weigh again.
-    measure.set('cell', '0,0', 400);
-    expect(measure.serial).toBe(after);
-    measure.set('cell', '0,0', 300);
-    expect(measure.serial).not.toBe(after);
-  });
-
   // Five cells in a row; the eye over the first, then over the last.
   const away = (eyeAt: number) => (key: string): number => Math.abs(Number(key.split(',')[0]) - eyeAt) * 256;
 

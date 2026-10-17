@@ -199,8 +199,6 @@ export function createBuildingLayer(): BuildingLayer {
   /** DO NOT fit the view's budget of triangles by raising one error scale for the whole view: every cell coarsened at once, the ones at the eye fell to their facade level; the farthest go first (`MassCells.cap`, as the bytes' budget), detail to facade level to masses, the nearest kept in detail */
   /** The cells the budget held back, remembered (`MassCells.hold`): a cell capped stays capped until its next level fits the budget with what the view draws, then comes back a level, the ones spanning most of the screen first (let all back at once, the view passed the budget again and they were capped again: the city blinked, cells loaded and unloaded by turns). */
   const heldFar = new Set<string>(), heldCoarse = new Set<string>();
-  /** The measures (`LandedMeasure.serial`) the held cells were last weighed against: DO NOT stop drawing while a level measured since may let one back (the last level landed was measured after the frame's cap, no frame came after it, and the cells cut stayed in masses with the view still, conferencia 91). */
-  let heldWeighed = -1;
   /** How far down the order the budget coarsens in a cell stands (`MassCells.cap`): the less a metre spans there, the sooner it goes; DO NOT rank it by its distance to the eye's point on the plan (two cells alike either side of it were ranked apart). */
   const rankOf = (key: string): number => -massCells.pixels(key, 1);
   const capTriangles = (): void => {
@@ -221,7 +219,6 @@ export function createBuildingLayer(): BuildingLayer {
         (far ? landedTriangles.of('facade', key) - massCells.massTriangles(key) : landedTriangles.of('cell', key) - landedTriangles.of('facade', key)));
     }
     massCells.hold(heldFar, heldCoarse);
-    heldWeighed = landedTriangles.serial;
   };
   /** The cells whose batches must be made for the town as it is now, shown as they land (`landCells`). */
   const pendingCells = new Set<string>();
@@ -547,8 +544,7 @@ export function createBuildingLayer(): BuildingLayer {
     },
     get pending() {
       // What the view draws, not the whole map: the cells near, the cells drawn one by one, the tiles and plates standing for the rest, the far levels.
-      return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0
-        || ((heldFar.size > 0 || heldCoarse.size > 0) && heldWeighed !== landedTriangles.serial);
+      return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;
     },
     get coarsePending() {
       return requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;
