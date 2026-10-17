@@ -1,6 +1,6 @@
 import {
   Color, DepthTexture, type DirectionalLight, FloatType, HalfFloatType, Matrix4, Mesh, NoBlending,
-  RGFormat, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
+  RGFormat, SRGBColorSpace, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { CopyShader } from 'three/examples/jsm/shaders/CopyShader.js';
@@ -494,24 +494,39 @@ export function createPostChain(
   }
 }
 
-/** The scene without the chain on a canvas with no multisampling: into a multisampled target (4 samples, a browser's own for an antialiased canvas), then tone mapped and coloured onto the canvas (three's OutputPass). */
+/** The scene without the chain on a canvas with no multisampling: into a multisampled target three draws as it draws the canvas, then copied onto the canvas as it is. */
+export function plainTarget(width: number, height: number, samples: number): WebGLRenderTarget {
+  const target = new WebGLRenderTarget(width, height, {
+    type: UnsignedByteType,
+    colorSpace: SRGBColorSpace,
+    // The reversed Z keeps its precision only in a float depth buffer.
+    depthTexture: new DepthTexture(width, height, FloatType),
+    samples,
+  });
+  // DO NOT tone map it after the transparent things are blended (a linear target and an OutputPass): three draws a target it takes for the XR layer as it draws the canvas, every material tone mapped and sRGB encoded, blended 8 bits a channel in sRGB (WebGLPrograms toneMapping and outputColorSpace).
+  (target as WebGLRenderTarget & { isXRRenderTarget: boolean }).isXRRenderTarget = true;
+  // Kept as the shader wrote it, as the canvas keeps it: no sRGB storage decoding it on the copy (three's own XR targets are linear too, WebGLTextures forceLinearTransfer).
+  target.texture.internalFormat = 'RGBA8';
+  return target;
+}
+
 function plainChain(renderer: WebGLRenderer, scene: Scene, camera: Camera): { target: WebGLRenderTarget; render(): void; setSize(width: number, height: number, pixelRatio: number): void; dispose(): void } {
   const size = renderer.getDrawingBufferSize(new Vector2());
-  const target = new WebGLRenderTarget(Math.max(1, size.x), Math.max(1, size.y), {
-    type: HalfFloatType,
-    // The reversed Z keeps its precision only in a float depth buffer.
-    depthTexture: new DepthTexture(Math.max(1, size.x), Math.max(1, size.y), FloatType),
-    samples: Math.min(4, renderer.capabilities.maxSamples),
-  });
-  const output = new OutputPass();
-  output.renderToScreen = true;
+  // Four samples: a browser's own for an antialiased canvas.
+  const target = plainTarget(Math.max(1, size.x), Math.max(1, size.y), Math.min(4, renderer.capabilities.maxSamples));
+  const copy = new FullScreenQuad(new ShaderMaterial({
+    uniforms: { tDiffuse: { value: target.texture }, opacity: { value: 1 } },
+    vertexShader: CopyShader.vertexShader, fragmentShader: CopyShader.fragmentShader,
+    blending: NoBlending, depthTest: false, depthWrite: false, toneMapped: false,
+  }));
   return {
     target,
     render() {
       const previous = renderer.getRenderTarget();
       renderer.setRenderTarget(target);
       renderer.render(scene, camera);
-      output.render(renderer, null as unknown as WebGLRenderTarget, target, 0, false);
+      renderer.setRenderTarget(null);
+      copy.render(renderer);
       renderer.setRenderTarget(previous);
     },
     setSize(width, height, pixelRatio) {
@@ -519,7 +534,8 @@ function plainChain(renderer: WebGLRenderer, scene: Scene, camera: Camera): { ta
     },
     dispose() {
       target.dispose();
-      output.dispose();
+      copy.dispose();
+      copy.material.dispose();
     },
   };
 }
