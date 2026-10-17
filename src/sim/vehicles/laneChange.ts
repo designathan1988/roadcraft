@@ -2,7 +2,7 @@ import { laneletId, type LaneletId } from '@world/lanelets';
 import type { SimWorld } from '../world';
 import { m } from '@world/units';
 import type { Vehicle } from './state';
-import { JAM_GAP, laneChangeLength, laneChangeOffset, laneChangeSlope } from '../params';
+import { DT, JAM_GAP, laneChangeLength, laneChangeOffset, laneChangeSlope } from '../params';
 import { desiredSpeed } from './driver';
 import { idmAccel, type Obstacle } from './idm';
 
@@ -73,8 +73,8 @@ export function stepLaneChange(w: SimWorld): void {
       wanted = mandatory(w, v, target);
       mandatoryMove = wanted !== null;
     } else if (target !== lane.id) {
-      // Keep a discretionary intent alive while the move is still worth making
-      wanted = discretionary(w, v, lane.id, lane.length, v.laneIntent);
+      // Keep a discretionary intent alive while the move is still worth making: weighed (MOBIL) a few times a second, each driver on its own ticks (by its id); between, the intent stands while its lane is still beside and the room is there.
+      wanted = (v.id + w.clock.tick) % MOBIL_EVERY === 0 ? discretionary(w, v, lane.id, lane.length, v.laneIntent) : standingIntent(w, v, lane.id, lane.length);
     }
 
     if (wanted === null) {
@@ -184,6 +184,16 @@ function sideways(w: SimWorld, v: Vehicle, target: LaneletId): number | null {
   if (!lane || !other) return null;
   const here = lane.centre.sampleAt(Math.min(Math.max(0, v.s), lane.length)).p;
   return other.centre.closestPoint(here).distance;
+}
+
+/** Ticks between two weighings of a discretionary change by the same driver (MOBIL): a quarter of a second. */
+const MOBIL_EVERY = Math.max(1, Math.round(0.25 / DT));
+
+/** Between two weighings: the change being signalled, while it can still be made from here (its lane beside this one, room left). */
+function standingIntent(w: SimWorld, v: Vehicle, laneId: LaneletId, laneLength: number): LaneletId | null {
+  const intent = v.laneIntent;
+  if (intent === null || laneLength - v.s < Math.max(OVERTAKE_MIN_ROOM, v.v * OVERTAKE_TIME)) return null;
+  return w.graph.changeTargets(laneId, v.archetype.shape).includes(intent) && !w.rt(intent).ghost ? intent : null;
 }
 
 /** The change the driver wants: the best neighbouring lane, or none. */
