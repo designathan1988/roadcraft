@@ -109,8 +109,8 @@ describe('the active region and the kept ring', () => {
     expect(streamer.settled).toBe(true);
     expect(flips).toEqual([]);
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) expect(streamer.isActive(tileKey(i, j))).toBe(true);
-    // One tile east: the west column (i = -1) is kept in the ring, not active; the east column (i = 2) is active and not loaded yet.
-    streamer.focus(1024 + 10, 10);
+    // One tile east, well past the edge (`RECENTRE_PAST`): the west column (i = -1) is kept in the ring, not active; the east column (i = 2) is active and not loaded yet.
+    streamer.focus(1024 + 300, 10);
     expect(flips).toHaveLength(1);
     expect(new Set(flips[0]!.keys)).toEqual(new Set([-1, 0, 1].map((j) => tileKey(-1, j))));
     expect(flips[0]!.rects).toContainEqual([-1024, 0, 0, 1024]);
@@ -251,6 +251,27 @@ describe('the tiles written', () => {
     expect(store.writes).toBe(before + 2);
     expect(worldWrites).toBe(1);
     expect(store.stored.get(tileKey(0, 0))!.nodes.some((n) => n.x === 200 && n.y === 100)).toBe(true);
+  });
+});
+
+describe('the active region along a tile edge', () => {
+  it('is centred on the next tile only once the camera is well past the edge, and back only once well past it again', async () => {
+    const doc = new RoadDoc();
+    const flips: number[][] = [];
+    const streamer = new WorldStreamer(doc, chainedStore(), { activeChanged: (keys) => flips.push([...keys]) });
+    await settle(streamer, TILE / 2, TILE / 2);
+    flips.length = 0;
+    // Back and forth over the east edge, a few metres each way: the region stays.
+    for (const dx of [10, -10, 40, -40, 100, -20]) { streamer.focus(TILE + dx, TILE / 2); streamer.apply(1); }
+    expect(flips).toEqual([]);
+    expect(streamer.isActive(tileKey(-1, 0))).toBe(true);
+    // Well past it: centred on the next tile.
+    streamer.focus(TILE + 300, TILE / 2);
+    expect(streamer.isActive(tileKey(-1, 0))).toBe(false);
+    expect(streamer.isActive(tileKey(2, 0))).toBe(true);
+    // A little back over the edge: still there.
+    streamer.focus(TILE - 50, TILE / 2);
+    expect(streamer.isActive(tileKey(2, 0))).toBe(true);
   });
 });
 

@@ -3,6 +3,7 @@ import { type ChangeRect, DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
 import { type ListPart, type RecordPart, type RoadDoc, type WorldPart, preparedTiles } from '@world/doc';
 import { TILE, tileIJ, tileKey, tileOfKey, tileRect, tilesAround } from '@world/tiles';
+import { m } from '@world/units';
 import type { TileRecords } from '@world/doc';
 
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
@@ -20,6 +21,8 @@ const IN_FLIGHT = 4;
 const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
 /** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
 const RETRY_MS = 30_000;
+/** How far past the edge of its tile the camera goes before the region is centred on the next one (two sub-cells): walking along an edge does not turn three tiles back and forth. */
+const RECENTRE_PAST = m(128);
 /** A write that failed is posted again after this (a store failing on it fails again at once). */
 const RETRY_WRITE_MS = 5_000;
 
@@ -94,6 +97,11 @@ export class WorldStreamer {
   focus(x: number, y: number): void {
     const { i, j } = tileIJ(x, y);
     if (i === this.around.i && j === this.around.j) { this.ask(); return; }
+    // Still within reach of the tile the region is centred on: it stays where it is.
+    if (Number.isFinite(this.around.i)) {
+      const [x0, y0, x1, y1] = tileRect(this.around.i, this.around.j);
+      if (x >= x0 - RECENTRE_PAST && x <= x1 + RECENTRE_PAST && y >= y0 - RECENTRE_PAST && y <= y1 + RECENTRE_PAST) { this.ask(); return; }
+    }
     const wasActive = new Set(this.wanted);
     this.around = { i, j };
     // DO NOT ask a tile past the map's edge (`tileOnMap`): there is nothing there, and the region ends with the map.
