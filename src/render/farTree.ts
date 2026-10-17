@@ -114,6 +114,8 @@ export interface FarNear<P> {
   land(payload: P, base: FarNearLanded | null): FarNearLanded;
   /** Whether an answer builds on a version drawn (its blocks changed since alone): that version, else null. */
   baseOf(payload: P): string | null;
+  /** What an answer is of: the content it was baked from and its level (a landed level's `bake` and `variant`); none: every answer is new. */
+  contentOf?(payload: P): { readonly bake: string; readonly variant: string };
   /** What else it is baked from that the page may change (the roads' paint style): in its version. */
   version?(): string;
   /** A tile the page holds edited, cut to what the near level reads, and the digest of that: the version an edited tile is asked at, so an edit of what it does not read (a building grown, a tree) asks nothing. */
@@ -191,6 +193,8 @@ interface FarNode {
   nearLanded: string | null;
   nearAsked: string | null;
   nearCancel: (() => void) | null;
+  /** The version the level on its way to the GPU stands for now: a newer answer of the same content moves it here, never the upload (`landNear`). */
+  nearComingSig: string | null;
   nearFailed: string | null;
 }
 
@@ -437,7 +441,7 @@ export class FarTree<P> implements FarTiles {
       x0: i * side, y0: j * side, x1: (i + 1) * side, y1: (j + 1) * side, top: 0,
       tiles: 0, loaded: 0, version: 0, inDoc: false, sig: null, baked: null, landed: null, mesh: null, error: this.kind.levelError(k),
       asked: null, askedWant: false, cancel: null, blocked: null, waitingFor: null, blockedWant: false, failed: null, queued: false,
-      near: null, nearComing: null, nearLanded: null, nearAsked: null, nearCancel: null, nearFailed: null,
+      near: null, nearComing: null, nearComingSig: null, nearLanded: null, nearAsked: null, nearCancel: null, nearFailed: null,
     };
     this.nodes.set(key, n);
     if (parent) parent.children[(i - 2 * parent.i) + 2 * (j - 2 * parent.j)] = n;
@@ -667,6 +671,21 @@ export class FarTree<P> implements FarTiles {
 
   /** A tile's near level come (null: no road near): its new blocks sent to the GPU, and drawn in place of the one before only once they are there (DO NOT upload a tile's roads in a frame: tens of megabytes); an answer built on the one drawn (`base`) keeps that one's other blocks. */
   private landNear(n: FarNode, payload: P | null, sig: string, base: FarNearLanded | null): void {
+    // DO NOT throw away what is drawn or on its way to the GPU for an answer of the same content (a neighbour written, the same roads at another version): the upload restarted at every write, and the street view kept the far level (conferencia 09-street, 2026-10-17; found by the near-tiles session).
+    const same = payload !== null ? this.kind.near!.contentOf?.(payload) : undefined;
+    if (same) {
+      const coming = n.nearComing;
+      if (coming && coming.bake === same.bake && coming.variant === same.variant) {
+        n.nearComingSig = sig;
+        return;
+      }
+      if (!coming && n.near && n.near.bake === same.bake && n.near.variant === same.variant) {
+        n.nearLanded = sig;
+        if (n.nearAsked === sig) n.nearAsked = null;
+        this.again();
+        return;
+      }
+    }
     this.nearDropComing(n);
     if (payload === null) {
       this.dropNear(n);
@@ -678,18 +697,21 @@ export class FarTree<P> implements FarTiles {
     landed.group.visible = false;
     this.group.add(landed.group);
     n.nearComing = landed;
+    n.nearComingSig = sig;
     gpuLedger.set(landed.group, `far ${this.kind.name} near`, landed.bytes, landed.triangles);
     const put = (): void => {
       if (n.nearComing !== landed) return;
       n.nearComing = null;
+      const done = n.nearComingSig ?? sig;
+      n.nearComingSig = null;
       // The one before goes now (the blocks the new one kept passed to it): the new one is on the GPU.
       if (n.near) {
         if (base === n.near) landed.adopt(n.near);
         this.letGoNear(n.near);
       }
       n.near = landed;
-      n.nearLanded = sig;
-      if (n.nearAsked === sig) n.nearAsked = null;
+      n.nearLanded = done;
+      if (n.nearAsked === done) n.nearAsked = null;
       this.nearResident.add(n);
       this.again();
     };
@@ -710,6 +732,7 @@ export class FarTree<P> implements FarTiles {
     const coming = n.nearComing;
     if (!coming) return;
     n.nearComing = null;
+    n.nearComingSig = null;
     this.letGoNear(coming);
   }
 

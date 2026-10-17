@@ -299,6 +299,25 @@ describe('the far roads chosen top down', () => {
     roads.dispose();
   });
 
+  it("keeps a tile's near level drawn when its neighbour is written with the same roads: nothing made nor sent to the GPU again", async () => {
+    const cache = memoryCache();
+    const tiles = world();
+    const roads = new FarRoads(() => null, runner(cache, kit), 'test:', kit);
+    roads.setSource(storeOf(tiles), () => false);
+    for (const [key, records] of tiles) roads.stored(key, records.version);
+    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    const before = roads.group.children.filter((o) => o.name === 'roads-near');
+    // A neighbour written again with the same roads (a building grown on it): a new version.
+    const key = tileKey(1, 0);
+    roads.stored(key, tiles.get(key)!.version + 1);
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    // The very same groups: none made again (a neighbour reads tile (1, 0) too, its roads the same).
+    expect(roads.group.children.filter((o) => o.name === 'roads-near')).toEqual(before);
+    roads.dispose();
+  });
+
   it('bakes again only the tile whose version changed and its ancestors', async () => {
     const cache = memoryCache();
     const tiles = world();

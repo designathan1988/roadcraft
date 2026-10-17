@@ -263,6 +263,7 @@ export class FarRoads extends FarTree<RoadPayload> {
           error: FAR_ERROR, fineError: COARSE_ERROR, drawsLoaded: true,
           land: (data: RoadPayload, base: FarNearLanded | null) => new NearRoadLanded(data as NearRoadMesh, (data as NearRoadMesh).bake, near, base as NearRoadLanded | null),
           baseOf: (data: RoadPayload) => (data as NearRoadMesh).base,
+          contentOf: (data: RoadPayload) => ({ bake: (data as NearRoadMesh).bake, variant: (data as NearRoadMesh).variant }),
           version: () => near.markingStyle(),
           pageCut: (records: TileRecords) => {
             const roads = nearRoadsOf(records)!;
