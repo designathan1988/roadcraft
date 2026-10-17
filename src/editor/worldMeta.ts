@@ -2,9 +2,21 @@ import { type WorldPart, WORLD_PARTS } from '@world/doc';
 import type { SerializedDoc } from '@world/doc';
 import type { PartStore } from './saveStore';
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
-import type { HeldLists } from './tileStore';
 
 /** THE STREAMED WORLD'S VALUES IN THE STORE (`editor/tileStore.ts` WorldMeta): the whole under one key, each part written since under its own (`RoadDoc.worldPart`), read back over the whole */
+
+/** The lists of a map the tiles have no field for yet (`TileRecords`): kept whole, in the map's order, never dropped. */
+export interface HeldLists {
+  readonly terrain: readonly unknown[];
+  readonly fog: readonly unknown[];
+  readonly gullies: readonly unknown[];
+  readonly clouds: readonly unknown[];
+  readonly treeClearings: readonly unknown[];
+  readonly zones: readonly unknown[];
+  readonly zoneMarks: readonly unknown[];
+  /** Land keys whose place cannot be told (`lotKeyPlace`). */
+  readonly lotKeys: readonly string[];
+}
 
 /** What the world keeps outside its tiles: the values with no place on the map, small. */
 export interface WorldMeta {

@@ -8,7 +8,7 @@ import { METERS_PER_UNIT, m } from '@world/units';
 import { solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { streetDoors, type StreetDoor } from '@world/buildings/streetDoors';
 import { lorryDocks, type LorryDock } from '@world/buildings/docks';
-import { entrancesOf } from '@world/parkingLayout';
+import { entrancesOf } from '@world/buildingGates';
 import type { Building, BuildingElement, BuildingFunction, BuildingId, BuildingUse, Volume } from '@world/buildings/types';
 import type { LotPart } from './lotNav';
 import { LANE_REACH } from './lotBays';

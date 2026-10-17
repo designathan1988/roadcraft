@@ -1,5 +1,6 @@
 import { type SerializedDoc, type WorldPart, WORLD_PARTS } from '@world/doc';
-import { type WorldMeta, metaKey, metaPartKey, readMeta } from './worldMeta';
+import { type HeldLists, type WorldMeta, metaKey, metaPartKey, readMeta } from './worldMeta';
+export type { HeldLists } from './worldMeta';
 
 export type { WorldMeta } from './worldMeta';
 import { lotCentre } from '@world/lotRings';
@@ -15,7 +16,7 @@ import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
 import { tileBuildingsOf, withGrownBuildings } from '@world/growth/grownRows';
 import type { GrownRows } from '@world/growth/rows';
-import { gatesOf } from '@world/parkingLayout';
+import { gatesOf } from '@world/buildingGates';
 import { METERS_PER_UNIT, m } from '@world/units';
 import { type PartStore, type SaveEntry, storeWriter } from './saveStore';
 import { type HeadRead, type TilePartIn, gunzipBytes, gzipBytes, partOf, readHead, tileBlob } from './tileBlob';
@@ -24,18 +25,6 @@ import { type HeadRead, type TilePartIn, gunzipBytes, gzipBytes, partOf, readHea
 
 /** DO NOT read or write the map whole: a tile is one blob and its write one transaction; the page hands the save worker the call, nothing else */
 
-/** The lists of a map the tiles have no field for yet (`TileRecords`): kept whole, in the map's order, never dropped. */
-export interface HeldLists {
-  readonly terrain: readonly unknown[];
-  readonly fog: readonly unknown[];
-  readonly gullies: readonly unknown[];
-  readonly clouds: readonly unknown[];
-  readonly treeClearings: readonly unknown[];
-  readonly zones: readonly unknown[];
-  readonly zoneMarks: readonly unknown[];
-  /** Land keys whose place cannot be told (`lotKeyPlace`). */
-  readonly lotKeys: readonly string[];
-}
 
 
 /** Where the migrated map came from: the tiles' manifest (5), the parts' (3), the whole text in IndexedDB or in `localStorage`. */
