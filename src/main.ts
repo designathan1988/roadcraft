@@ -100,7 +100,7 @@ import { STUTTER_MS } from '@core/sampleRing';
 import { type ImportResult, Persistence, importFromFile, type SavedSettings, MAX_INTENSITY } from '@editor/persistence';
 import { exportToFile, offerFile } from '@editor/mapExport';
 import { saveWorldFile } from '@editor/worldExport';
-import { holdWorld } from '@editor/worldLock';
+import { worldHolds } from '@editor/worldLock';
 import { openInspector, closeInspector as hideInspector, onInspectorChange, refreshInspector } from '@ui/inspector';
 import { TransitTool, setTransitTool, transitTool } from '@editor/transitTools';
 import type { BuildingId } from '@world/buildings/types';
@@ -1972,6 +1972,8 @@ let streamed: { readonly store: TileStore; readonly generator: TileGenerator; re
   /** A tile written at a version (`StreamerEvents.written`): what is baked of it is stale. */
   readonly written: (key: number, version: number) => void } | null = null;
 
+/** This tab's holds of its worlds (`worldLock.ts`): one tab writes a world, another reads it. */
+const holdWorld = worldHolds((navigator as { locks?: LockManager }).locks);
 /** A place of an item of a list (a dab, a tree, an element) in tile `key`. */
 const itemInTile = (item: unknown, key: number): boolean => {
   const p = item as { x?: number; y?: number } | null;
@@ -1990,7 +1992,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   // Under the plan's version and the map's size (`worldKey`): DO NOT reopen tiles an older plan made (a city of 5 km, land past the edge).
   const mapName = `roadcraft.tiles.${worldKey(options.seed)}`;
   // Read, written and made in the job workers, the desktop's as a browser's (each worker its own port to the shell's saves, `editor/workerParts.ts`).
-  const release = await holdWorld((navigator as { locks?: LockManager }).locks, mapName);
+  const release = await holdWorld(mapName);
   const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3)),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
