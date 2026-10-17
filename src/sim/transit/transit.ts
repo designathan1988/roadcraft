@@ -327,7 +327,7 @@ export class TransitSim {
     for (let k = 0; k < 2 * line.stops.length; k++) {
       const lane = this.stopLanes.get(line.stops[bus.next]!);
       // A stop the bus can get to from where it is (a stop on a road out of the map, on the lane leaving it, cannot be reached)
-      if (lane && (lane.lanelet === v.lanelet || planTrip(w, v.lanelet, v.s, lane.lanelet, bodyClassOfArchetype(v.archetype), true, v.archetype.shape))) {
+      if (lane && (lane.lanelet === v.lanelet || planTrip(w, v.lanelet, v.s, lane.lanelet, bodyClassOfArchetype(v.archetype), true, v.archetype.shape, false))) {
         v.commute = { trip: -1, lanelet: lane.lanelet, at: lane.at + v.archetype.length / 2 };
         v.destination = lane.lanelet;
         planFrom(w, v);

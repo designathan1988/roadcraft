@@ -92,6 +92,8 @@ export function planTrip(
   startChange = true,
   /** The vehicle's shape (`VehicleShape`): who may drive a bus lane. */
   shape = 'car',
+  /** Whether a plan that changes lanes first needs its route as driven without the change (a second search): DO NOT ask it when the route is let go (`router.ts` extend, a bus's check). */
+  fallback = true,
 ): TripPlan | null {
   const startLane = w.lanelet(start);
   if (!startLane || startLane.kind !== 'link' || !w.lanelet(goal) || w.rt(goal).ghost) return null;
@@ -151,9 +153,9 @@ export function planTrip(
   if (first && first.connector === null) {
     // Change lanes here first. The route is the trip as driven without it.
     const next = steps[1];
-    const fallback = planTrip(w, start, startS, goal, body, false, shape);
+    const without = fallback ? planTrip(w, start, startS, goal, body, false, shape) : null;
     return {
-      route: fallback?.route ?? [start],
+      route: without?.route ?? [start],
       changeTo: first.lane,
       intent: next?.connector ?? null,
       cost: reached.cost,

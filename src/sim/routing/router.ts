@@ -193,8 +193,8 @@ export function extend(w: SimWorld, v: Vehicle): void {
     if (tail === v.destination) return;
     const lane = tail ? w.lanelet(tail) : undefined;
     if (lane?.kind === 'link') {
-      const plan = planTrip(w, tail!, 0, v.destination, body, true, shape);
-      // A change due on the tail lane is planned when the car gets there
+      // A change due on the tail lane is planned when the car gets there: its route without the change is not wanted.
+      const plan = planTrip(w, tail!, 0, v.destination, body, true, shape, false);
       if (plan) {
         if (!plan.changeTo) { v.route.push(...plan.route.slice(1)); w.noteRoute(v); }
         return;

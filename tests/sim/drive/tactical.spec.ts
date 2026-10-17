@@ -55,6 +55,13 @@ describe('Drive v2 tactical layer: the lane a trip is driven in', () => {
     expect(plan.changeTo).toBe(lane(3));
     expect(plan.intent).toBe(right.id);
 
+    // Asked without the route as driven without the change (`extend`, a bus's check): the same change and intent, one search, no second route.
+    const lean = planTrip(sim, lane(0), 10, right.toLane, 1, true, 'car', false)!;
+    expect(lean.changeTo).toBe(plan.changeTo);
+    expect(lean.intent).toBe(plan.intent);
+    expect(lean.cost).toBe(plan.cost);
+    expect(lean.route).toEqual([lane(0)]);
+
     // Already in the lane it needs: no change.
     const direct = planTrip(sim, lane(3), 10, right.toLane, 1)!;
     expect(direct.changeTo).toBeNull();
