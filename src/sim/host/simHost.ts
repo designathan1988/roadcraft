@@ -348,7 +348,8 @@ export class SimHost {
     for (const list of [log.nodes, stepped]) {
       for (const node of list) {
         const controller = sim.controller(node);
-        if (controller) tell(node, controller);
+        // A junction whose control went (its tile let go, its roads gone): its lights forgotten with it.
+        if (controller) tell(node, controller); else this.lightsSent.delete(node);
       }
     }
     return { layout, signals };
