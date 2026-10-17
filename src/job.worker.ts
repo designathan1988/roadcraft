@@ -13,6 +13,8 @@ const readers = new Map<string, Promise<StoredTileReader>>();
 readStoredTilesWith(async (map, key, part) => {
   let reader = readers.get(map);
   if (!reader) readers.set(map, reader = import('./tileReader').then((m) => m.storeTileReader(map)));
+  // A tile's junctions as baked with it (`sim/tileSections.ts` NETWORK_SECTION): read by the near roads' bakes (`nearRoadTiles.ts`).
+  if (part === 'network') return (await reader).network?.(key) ?? null;
   return (await reader).part(key, part as TilePartName);
 });
 const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {

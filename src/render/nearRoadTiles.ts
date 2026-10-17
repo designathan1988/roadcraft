@@ -4,13 +4,13 @@ import { SURFACE_READ_REACH, buildRoadElevation } from '@world/elevation';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
 import { tileBuildingsOf } from '@world/growth/grownRows';
-import { Network } from '@world/network';
+import { Network, type NetworkBake } from '@world/network';
 import { gatesNear, gatesOf } from '@world/parkingLayout';
 import { isMarkingStyle } from '@world/roads/markingStyle';
 import { roadStructure } from '@world/structures';
 import { TILE as WORLD_TILE, tileOfKey } from '@world/tiles';
 import { METERS_PER_UNIT, m } from '@world/units';
-import { emptyRecords, readStored } from './buildings/farGrid';
+import { emptyRecords, readStored, readStoredNetwork } from './buildings/farGrid';
 import { coarseArrays } from './mesh/roadLodPure';
 import type { Tile } from './mesh/tileMesh';
 import { SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadSurfaceInputs';
@@ -38,7 +38,10 @@ export interface NearRoadCache {
 }
 
 /** A tile's roads and its buildings' gates, as the store keeps them (its `roads` part). */
-export type NearTileRoads = Pick<TileRecords, 'key' | 'nodes' | 'borrowedNodes' | 'segments' | 'gates'>;
+export type NearTileRoads = Pick<TileRecords, 'key' | 'nodes' | 'borrowedNodes' | 'segments' | 'gates'> & {
+  /** Its junctions and ribbons as baked with the stored tile (`sim/tileSections.ts` NETWORK_SECTION), offered to the bake's network: never part of what it reads (`nearRoadsDigest`). */
+  readonly network?: NetworkBake | null;
+};
 
 /** The key of a tile's near roads in the tree: below its level 0 (`farKey`). */
 export const nearKey = (i: number, j: number): string => `n0:${i},${j}`;
@@ -277,6 +280,8 @@ export function bakeNearRoads(tile: NearTileRoads, around: readonly NearTileRoad
   const groundAt = shared ? shared.groundAt : (): number => 0;
   const naturalAt = shared ? (ask.naturalIsGround ? shared.groundAt : shared.naturalAt) : groundAt;
   const net = new Network(doc);
+  // DO NOT solve again the junctions each tile was stored with: a node whose roads are the same here takes its passes from its tile's bake (`NetworkBuild.takeBakes`, by `nodeBakeKey`); the fringe's nodes with a road of another tile, and the last ring's bare ends, are solved here. Each node was solved in its tile's job and in every neighbour's whose fringe holds it.
+  for (const t of [tile, ...around]) if (t.network) net.offerBake(t.network);
   net.rebuild();
   // As the page solves it: on the ground before the roads cut it (`renderer.ts` `builtGroundAt`).
   const elevation = buildRoadElevation(net, naturalAt);
@@ -469,7 +474,7 @@ async function nearTilesOf(ask: NearRoadAsk, store: string | undefined, prefix: 
     if (!read) return null;
     // A tile with roads and no gates kept was written before they were: its buildings read for them, once a version.
     const gates = read.gates ?? (read.segments.length && store !== undefined ? await storedGates(store, key, version, prefix, cache, keeps) : []);
-    out.push({ key, nodes: read.nodes, borrowedNodes: read.borrowedNodes, segments: read.segments, gates });
+    out.push({ key, nodes: read.nodes, borrowedNodes: read.borrowedNodes, segments: read.segments, gates, network: await readStoredNetwork(store, key) });
   }
   return out;
 }
