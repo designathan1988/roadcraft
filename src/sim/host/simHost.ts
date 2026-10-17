@@ -1,9 +1,9 @@
-import { readDerivedSome } from '@core/derivedCache';
+import { readDerivedSome, writeDerivedMany } from '@core/derivedCache';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import type { NodeId } from '@world/ids';
 import { SimWorld, issuesSince } from '../world';
-import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap } from '../agents/trafficBuildings';
+import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap, trafficChangesOf } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
 import { Meso, type TileEvent } from '../meso/meso';
 import { MesoMemory } from '../meso/memory';
@@ -73,6 +73,8 @@ export class SimHost {
   private parkedSerial = -1;
   private issuesSent = 0;
   private measuredDue = 0;
+  /** Where the conflict zones measured are kept for the next session (`init`); null: not kept. */
+  private zonesPrefix: string | null = null;
   /** The casualties already told (the page keeps their clocks). */
   private readonly casualtiesSent = new WeakSet<Casualty>();
 
@@ -100,7 +102,7 @@ export class SimHost {
         return;
       case 'delta':
         this.doc.restore(message.delta);
-        this.buildings.apply(message.buildings);
+        this.buildings.apply(trafficChangesOf(message.buildings));
         return;
       case 'bake': this.net.offerBake(message.bake); return;
       case 'reset': this.sim?.reset(); this.sim?.ambient.reset(this.sim); return;
@@ -132,6 +134,7 @@ export class SimHost {
     sim.conflicts.seed(zones);
     // The zones kept in earlier sessions read by the pairs a build needs (`ConflictIndex.lookup`), never all at the start.
     if (prefix) sim.conflicts.lookup = (keys) => readDerivedSome<Float64Array | null>(prefix, keys);
+    this.zonesPrefix = prefix;
     sim.usePedestrianEngine((await import('../agents/walk')).createAgentWalkEngine());
     sim.followCity = true;
     sim.ambient.enabled = true;
@@ -376,7 +379,9 @@ export class SimHost {
     // The issues reported since the last frame, the last of them still kept (the list keeps 512).
     const issues = issuesSince(sim, this.issuesSent).map((i) => ({ code: i.code, subject: String(i.subject), detail: String(i.detail), tick: i.tick }));
     this.issuesSent = sim.issuesReported;
-    const measured = ++this.measuredDue % 300 === 0 ? [...sim.conflicts.takeMeasured()] : [];
+    // The zones measured since kept for the next session from here, as the conflicts' workers keep theirs: DO NOT pass them through the page to the store.
+    if (++this.measuredDue % 300 === 0 && this.zonesPrefix) writeDerivedMany(this.zonesPrefix, sim.conflicts.takeMeasured());
+    const measured: SimStats['measured'] = [];
     return {
       vehicles: sim.vehicles.size, people: sim.pedViews.length, completedTrips: sim.completedTrips, entryDemandLost: sim.entryDemandLost,
       controllers: sim.controllers.size, lotsMoving: sim.city.lots.moving(), topologyRevision: sim.topologyRevision, issues,
@@ -463,9 +468,10 @@ function pedDiffers(p: PedView, key: readonly unknown[]): boolean {
   return false;
 }
 
+/** DO NOT copy it a second time: posted in the same call (`publish`), the message copies it. */
 function pedRich(p: PedView): PedRich {
   const { id: _id, x: _x, y: _y, heading: _h, prev: _p, v: _v, turnV: _t, age: _a, segment: _s, walking: _w, kerbWait: _k, rank: _r, ...rich } = p;
-  return structuredClone(rich);
+  return rich;
 }
 
 /** Each kind of vehicle's place in `ARCHETYPES`, as the parked cars' numbers carry it (`PK.archetype`). */
