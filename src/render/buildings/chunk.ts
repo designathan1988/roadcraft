@@ -48,9 +48,9 @@ export interface CellJobEntry extends CellEntry {
   readonly record: RecordRef;
 }
 
-/** One part batch of one building: its instance matrices (and colours). */
+/** One part batch of one building: its instances' poses (`partPose.ts`, `POSE_FLOATS` each) and colours. */
 export interface PartBatch {
-  readonly matrices: Float32Array;
+  readonly poses: Float32Array;
   readonly colours: Float32Array | null;
   readonly count: number;
   /** Window panes: each one's light slot. */

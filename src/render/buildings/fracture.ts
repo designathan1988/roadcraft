@@ -8,6 +8,7 @@ import {
   type Material,
 } from 'three';
 
+import { poseMatrices } from './partPose';
 import type { Finish } from '@world/buildings/materials';
 import { m } from '@world/units';
 import type { BuildingChunk } from './buildingMesh';
@@ -119,7 +120,7 @@ export function prepareFracture(
   kit: BuildingKit,
   slabs: readonly { readonly corners: readonly Vector3[]; readonly y: number }[],
   seed: number,
-  furniture?: Partial<Record<string, { matrices: Float32Array; count: number }>>,
+  furniture?: Partial<Record<string, { poses: Float32Array; count: number }>>,
 ): { input: FractureInput; materials: Material[] } {
   const materials: Material[] = [];
   const index = new Map<Material, number>();
@@ -135,9 +136,10 @@ export function prepareFracture(
     shells.push({ mat: shellMat, finish: finishId(finish), position: part.position, normalDecay: part.normalDecay, paint: part.paint, index: part.index });
   }
   const parts: FractureInput['parts'][number][] = [];
-  const model = (source: BufferGeometry, mat: number, batch: { matrices: Float32Array; count: number; colours?: Float32Array | null }): void => {
+  const model = (source: BufferGeometry, mat: number, batch: { poses: Float32Array; count: number; colours?: Float32Array | null }): void => {
     const arrays = modelArrays(source);
-    parts.push({ mat, ...arrays, instColours: batch.colours ?? null, matrices: batch.matrices, count: batch.count });
+    // Each instance's matrix as the GPU makes it from its pose (`partPose.ts`): a ruin's pieces are laid in the world.
+    parts.push({ mat, ...arrays, instColours: batch.colours ?? null, matrices: poseMatrices(batch.poses, batch.count), count: batch.count });
   };
   for (const [kind, batch] of Object.entries(chunk.parts) as [PartKind, BuildingChunk['parts'][PartKind]][]) {
     if (!batch.count || kind === 'water') continue;

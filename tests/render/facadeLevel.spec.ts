@@ -1,3 +1,4 @@
+import { poseMatrices } from '@render/buildings/partPose';
 import { describe, expect, it } from 'vitest';
 
 import type { InstancedMesh, InterleavedBufferAttribute } from 'three';
@@ -163,8 +164,9 @@ describe('the buildings\' far level', () => {
       const l1 = emitChunk(b, groundAt, undefined, groundAt, undefined, true);
       for (const kind of ['glass', 'glassDark'] as const) {
         const batch = detail.parts[kind];
+        const matrices = poseMatrices(batch.poses, batch.count);
         for (let i = 0; i < batch.count; i++) {
-          const mtx = batch.matrices.subarray(i * 16, i * 16 + 16);
+          const mtx = matrices.subarray(i * 16, i * 16 + 16);
           const len = Math.hypot(mtx[8]!, mtx[10]!);
           // A pane's own +Z is its wall's outward normal; panes not standing (none) are left out.
           if (len < 1e-6 || Math.abs(mtx[9]!) > 1e-6) continue;
@@ -309,8 +311,9 @@ describe('the lots\' boxes, the shell\'s parts', () => {
         const batch = chunk.parts[kind];
         expect(batch.looks!.length).toBe(batch.count * LOOK_FLOATS);
         expect(batch.colours!.length).toBe(batch.count * 3);
+        const matrices = poseMatrices(batch.poses, batch.count);
         for (let i = 0; i < batch.count; i++) {
-          const e = batch.matrices.subarray(i * 16, i * 16 + 16);
+          const e = matrices.subarray(i * 16, i * 16 + 16);
           // T * Ry * S: the yaw the building's own turn.
           const turn = Math.atan2(-e[2]!, e[0]!) - b.rotation;
           expect(Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn)))).toBeLessThan(1e-5);
@@ -452,12 +455,12 @@ describe('the shell\'s compact vertex', () => {
   });
 
   it('welds two boxes side by side where their faces meet alike, never across faces turned another way', () => {
-    const none: PartBatch = { matrices: new Float32Array(0), colours: null, count: 0 };
+    const none: PartBatch = { poses: new Float32Array(0), colours: null, count: 0 };
     const parts = Object.fromEntries(PART_KINDS.map((k) => [k, none])) as Record<PartKind, PartBatch>;
-    // Two unit boxes on the ground, the second one metre along x: they touch at x = 1.
-    const matrices = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.5, 0.5, 0.5, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.5, 0.5, 0.5, 1);
+    // Two unit boxes on the ground, the second one metre along x: they touch at x = 1 (`partPose.ts`: place, the turn's cosine and sine, scale).
+    const poses = Float32Array.of(0.5, 0.5, 0.5, 1, 0, 1, 1, 1, 1.5, 0.5, 0.5, 1, 0, 1, 1, 1);
     const id = FINISHES.indexOf('plaster');
-    parts.lotBox = { matrices, colours: Float32Array.of(0.6, 0.5, 0.4, 0.6, 0.5, 0.4), count: 2, looks: Float32Array.of(id, 0, NO_GROUND, id, 0, NO_GROUND) };
+    parts.lotBox = { poses, colours: Float32Array.of(0.6, 0.5, 0.4, 0.6, 0.5, 0.4), count: 2, looks: Float32Array.of(id, 0, NO_GROUND, id, 0, NO_GROUND) };
     const laid = shellPartFaces(parts).plaster!;
     // Five faces of four corners each (no bottom); the fronts, backs and tops of the two share their edge at x = 1, the end faces there face apart.
     expect(laid.index.length / 3).toBe(2 * 5 * 2);
