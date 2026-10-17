@@ -1,14 +1,14 @@
 import { MAP_TILES, tileOnMap } from '@world/cityGen/wholeMap';
 import { type ChangeRect, DOC_CHANGE_KINDS, isStreaming } from '@world/changes';
 import { JournalCursor } from '@world/derived';
-import type { ListPart, RecordPart, RoadDoc } from '@world/doc';
+import type { ListPart, RecordPart, RoadDoc, WorldPart } from '@world/doc';
 import { TILE, tileIJ, tileKey, tileOfKey, tileRect, tilesAround } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 
 /** THE ACTIVE REGION (CLAUDE.md, "Streaming world"): the tiles around the camera held in the page's document, loaded ahead and let go behind, each written to the store when it changed; the world beyond lives in the store and in what is baked from it */
 
 /** The kinds of the map's parts no tile holds (`RoadDoc.worldValues`): their changes are written with the world, not with a tile. */
-const WORLD_KINDS: ReadonlySet<string> = new Set(['terrain', 'fog', 'gullies', 'clouds', 'clearings', 'zones', 'people', 'transit', 'economy', 'weather', 'markingStyle', 'nature']);
+const WORLD_KINDS: ReadonlySet<string> = new Set<WorldPart>(['terrain', 'fog', 'gullies', 'clouds', 'clearings', 'zones', 'people', 'transit', 'economy', 'weather', 'markingStyle', 'nature']);
 
 /** Tiles each way from the camera's tile held in the document: 3 x 3 tiles, 3 km - the editing and the detail's reach; past it the buildings, roads and land are drawn from what is baked of the store (a dense downtown tile holds ~1,500 buildings: 9 of them stay a fraction of the page's heap). */
 export const ACTIVE_RADIUS = 1;
@@ -37,7 +37,7 @@ export interface StreamerEvents {
   /** The camera's tile changed: the loaded tiles that came into the active region (3 x 3) or left it for the kept ring, and the rectangles of them. The ring keeps its records only: its near products are let go and the far levels draw it (CLAUDE.md "Streaming world", the solution's 5.4). */
   activeChanged?(keys: readonly number[], rects: readonly ChangeRect[]): void;
   /** The map's parts no tile holds changed (zones, fog, transit, economy...): to be written (`RoadDoc.worldValues`). */
-  writeWorld?(): Promise<unknown>;
+  writeWorld?(parts: readonly WorldPart[]): Promise<unknown>;
   failed?(why: string): void;
 }
 
@@ -59,7 +59,8 @@ export class WorldStreamer {
   private readonly versions = new Map<number, number>();
   /** Tiles changed by the player (or the game) since last written, and whether the map's parts no tile holds did. */
   private readonly dirty = new Set<number>();
-  private worldDirty = false;
+  /** The world's parts changed since written (`RoadDoc.worldPart`): DO NOT write them all for one. */
+  private readonly worldDirty = new Set<WorldPart>();
   /** The map's own allocators as last written with the world's values (`RoadDoc.allocatorMarks`): a record made where no tile is loaded moves them. */
   private allocatorsSeen = '';
   private readonly edits = new JournalCursor(DOC_CHANGE_KINDS);
@@ -185,7 +186,7 @@ export class WorldStreamer {
     for (const key of [...this.dirty]) this.write(key);
     this.writeWorld(true);
     const tiles = this.posted();
-    return Promise.all([...tiles, this.worldWriting.then(() => !this.worldDirty)]).then((ok) => ok.every(Boolean));
+    return Promise.all([...tiles, this.worldWriting.then(() => this.worldDirty.size === 0)]).then((ok) => ok.every(Boolean));
   }
 
   /** The writes that failed posted again: a loaded tile from the page's records, one let go from the records it was written with. */
@@ -293,7 +294,7 @@ export class WorldStreamer {
   private noteEdits(): void {
     const marks = this.doc.allocatorMarks().join(',');
     if (marks !== this.allocatorsSeen) {
-      if (this.allocatorsSeen) this.worldDirty = true;
+      if (this.allocatorsSeen) this.worldDirty.add('allocators');
       this.allocatorsSeen = marks;
     }
     const entries = this.edits.read(this.doc.changes);
@@ -305,7 +306,7 @@ export class WorldStreamer {
     }
     for (const entry of entries) {
       if (isStreaming(entry)) continue;
-      if (WORLD_KINDS.has(entry.kind)) { this.worldDirty = true; continue; }
+      if (WORLD_KINDS.has(entry.kind)) { this.worldDirty.add(entry.kind as WorldPart); continue; }
       if (entry.rects === null) { for (const key of this.doc.loadedTiles) this.touched(key, serial); continue; }
       for (const [x0, y0, x1, y1] of entry.rects) {
         // A rectangle reaches every tile it overlaps (a road's box on two tiles marks both: either may own a piece of it).
@@ -321,13 +322,14 @@ export class WorldStreamer {
 
   /** The map's parts no tile holds written when they changed, after the tiles posted before; changed again if the write failed. */
   private writeWorld(force = false): void {
-    if (!this.worldDirty || !this.tell.writeWorld || (this.worldPosting && !force)) return;
-    this.worldDirty = false;
+    if (this.worldDirty.size === 0 || !this.tell.writeWorld || (this.worldPosting && !force)) return;
+    const parts = [...this.worldDirty];
+    this.worldDirty.clear();
     this.worldPosting = true;
     const write = this.tell.writeWorld;
     const before = this.posted();
-    const failed = (why: string): void => { this.worldDirty = true; this.tell.failed?.(why); };
-    this.worldWriting = this.worldWriting.then(() => Promise.all(before)).then(() => write()).then(
+    const failed = (why: string): void => { for (const part of parts) this.worldDirty.add(part); this.tell.failed?.(why); };
+    this.worldWriting = this.worldWriting.then(() => Promise.all(before)).then(() => write(parts)).then(
       (ok) => { if (ok === false) failed('the world\'s values were not written'); },
       (error: unknown) => failed(`the world's values were not written: ${String(error)}`)).then(() => { this.worldPosting = false; });
   }

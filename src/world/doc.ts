@@ -2430,21 +2430,18 @@ export class RoadDoc {
       unit: METERS_PER_UNIT,
       nodes: withRecords ? inIdOrder(this.nodes.values()).map(savedNode) : [],
       segments: withRecords ? inIdOrder(this.segments.values()).map(savedSegment) : [],
-      terrain: this.terrainStamps.map((stamp) => ({ ...stamp })),
-      // Only for the natural land: a legacy map serialises as before.
-      ...(this.terrainRelief !== RELIEF_LEGACY ? { relief: this.terrainRelief } : {}),
-      ...(this.markingStyle !== 'classic' ? { markingStyle: this.markingStyle } : {}),
-      ...(this.nature ? { nature: { ...this.nature } } : {}),
+      terrain: [],
+      ...this.worldPart('terrain'),
+      ...this.worldPart('markingStyle'),
+      ...this.worldPart('nature'),
       ...(withRecords && this.terrainPaint.length > 0 ? { paint: this.terrainPaint.map((dab) => ({ ...dab })) } : {}),
-      ...(this.fogDabs.length > 0 || JSON.stringify(this.fogSettings) !== JSON.stringify(DEFAULT_FOG)
-        ? { fog: { dabs: this.fogDabs.map((dab) => ({ ...dab })), settings: { ...this.fogSettings } } } : {}),
-      ...(this.gullyDabs.length > 0 || this.gullyAuto !== DEFAULT_GULLY_AUTO
-        ? { gullies: { dabs: this.gullyDabs.map((dab) => ({ ...dab })), auto: this.gullyAuto } } : {}),
-      ...(this.clouds.length > 0 ? { clouds: this.clouds.map((c) => ({ ...c })) } : {}),
+      ...this.worldPart('fog'),
+      ...this.worldPart('gullies'),
+      ...this.worldPart('clouds'),
       ...(withRecords && this.elements.length > 0 ? { elements: this.elements.map((e) => ({ ...e })) } : {}),
       ...(withRecords && this.trees.length > 0 ? { trees: this.trees.map((t) => ({ ...t })) } : {}),
-      ...(JSON.stringify(this.weather) !== JSON.stringify(DEFAULT_WEATHER) ? { weather: { ...this.weather } } : {}),
-      ...(this.treeClearings.length > 0 ? { treeClearings: this.treeClearings.map((c) => ({ ...c })) } : {}),
+      ...this.worldPart('weather'),
+      ...this.worldPart('clearings'),
       poles: withRecords ? inIdOrder(this.poles.values()).map(savedPole) : [],
       poleSpans: withRecords ? inIdOrder(this.poleSpans.values()).map(savedSpan) : [],
       ...(withRecords && this.landscape.size > 0 ? { landscape: inIdOrder(this.landscape.values()).map(savedLandscape) } : {}),
@@ -2452,19 +2449,43 @@ export class RoadDoc {
       ...(withRecords && this.barriers.size > 0 ? { barriers: inIdOrder(this.barriers.values()).map(savedBarrier) } : {}),
       // Only when there are any, so a map without buildings serialises exactly as it did before buildings existed.
       ...(withBuildings && this.buildings.size > 0 ? { buildings: this.buildings.toJSON() } : {}),
-      ...(this.zones.length > 0 ? { zones: this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })) } : {}),
-      ...(this.zoneMarks.length > 0 ? { zoneMarks: this.zoneMarks.map((mark) => ({ ...mark })) } : {}),
+      ...this.worldPart('zones'),
       ...(withRecords && (this.lotStore.size > 0 || this.lotStore.keys.length > 0) ? {
         lots: this.lotStore.toJSON(),
         lotKeys: [...this.lotStore.keys],
       } : {}),
-      // Likewise the people: only a city that has some carries the key.
-      ...(this.people.length > 0 ? { people: this.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec) } : {}),
-      // And the public transport.
-      ...(hasTransit(this.transit) ? { transit: JSON.parse(JSON.stringify(this.transit)) as TransitData } : {}),
-      // Only off the starting balance: a map that never paid for a road serialises as before.
-      ...(this.economy.balance !== DEFAULT_ECONOMY.balance ? { economy: { balance: this.economy.balance } } : {}),
+      ...this.worldPart('people'),
+      ...this.worldPart('transit'),
+      ...this.worldPart('economy'),
     };
+  }
+
+  /** One of the map's parts no tile holds, as `toJSON` writes it (`WorldPart`): the streamed world writes each apart, only when its kind changed (`worldStreamer.ts`). */
+  worldPart(part: WorldPart): Partial<SerializedDoc> {
+    switch (part) {
+      // Only for the natural land: a legacy map serialises as before.
+      case 'terrain': return { terrain: this.terrainStamps.map((stamp) => ({ ...stamp })), ...(this.terrainRelief !== RELIEF_LEGACY ? { relief: this.terrainRelief } : {}) };
+      case 'markingStyle': return this.markingStyle !== 'classic' ? { markingStyle: this.markingStyle } : {};
+      case 'nature': return this.nature ? { nature: { ...this.nature } } : {};
+      case 'fog': return this.fogDabs.length > 0 || JSON.stringify(this.fogSettings) !== JSON.stringify(DEFAULT_FOG)
+        ? { fog: { dabs: this.fogDabs.map((dab) => ({ ...dab })), settings: { ...this.fogSettings } } } : {};
+      case 'gullies': return this.gullyDabs.length > 0 || this.gullyAuto !== DEFAULT_GULLY_AUTO
+        ? { gullies: { dabs: this.gullyDabs.map((dab) => ({ ...dab })), auto: this.gullyAuto } } : {};
+      case 'clouds': return this.clouds.length > 0 ? { clouds: this.clouds.map((c) => ({ ...c })) } : {};
+      case 'weather': return JSON.stringify(this.weather) !== JSON.stringify(DEFAULT_WEATHER) ? { weather: { ...this.weather } } : {};
+      case 'clearings': return this.treeClearings.length > 0 ? { treeClearings: this.treeClearings.map((c) => ({ ...c })) } : {};
+      case 'zones': return {
+        ...(this.zones.length > 0 ? { zones: this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })) } : {}),
+        ...(this.zoneMarks.length > 0 ? { zoneMarks: this.zoneMarks.map((mark) => ({ ...mark })) } : {}),
+      };
+      // Likewise the people: only a city that has some carries the key.
+      case 'people': return this.people.length > 0 ? { people: this.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec) } : {};
+      // And the public transport.
+      case 'transit': return hasTransit(this.transit) ? { transit: JSON.parse(JSON.stringify(this.transit)) as TransitData } : {};
+      // Only off the starting balance: a map that never paid for a road serialises as before.
+      case 'economy': return this.economy.balance !== DEFAULT_ECONOMY.balance ? { economy: { balance: this.economy.balance } } : {};
+      case 'allocators': return { allocators: this.allocatorMarks() };
+    }
   }
 
   /** Builds a document from its serialized form. */
@@ -2893,6 +2914,10 @@ export interface Restoration {
   readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly remove: number; readonly items: readonly unknown[] }[];
   readonly values: readonly { readonly part: ValuePart; readonly value: unknown }[];
 }
+
+/** The map's parts no tile holds (`RoadDoc.worldPart`), each named as the diary's kind that changes it (`allocators`: the map's own id allocators). */
+export type WorldPart = 'terrain' | 'markingStyle' | 'nature' | 'fog' | 'gullies' | 'clouds' | 'weather' | 'clearings' | 'zones' | 'people' | 'transit' | 'economy' | 'allocators';
+export const WORLD_PARTS: readonly WorldPart[] = ['terrain', 'markingStyle', 'nature', 'fog', 'gullies', 'clouds', 'weather', 'clearings', 'zones', 'people', 'transit', 'economy', 'allocators'];
 
 export interface SerializedDoc {
   readonly version: 1;

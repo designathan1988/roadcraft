@@ -254,6 +254,22 @@ describe('the tiles written', () => {
   });
 });
 
+describe("the world's values", () => {
+  it('are written by the part that changed, never all of them for one', async () => {
+    const doc = new RoadDoc();
+    const store = chainedStore();
+    const written: (readonly string[])[] = [];
+    const streamer = new WorldStreamer(doc, store, { writeWorld: (parts) => { written.push([...parts]); return Promise.resolve(true); } });
+    await settle(streamer, 10, 10);
+    await turns(2);
+    written.length = 0;
+    doc.setBalance(doc.economy.balance - 100);
+    streamer.apply(1);
+    await turns(3);
+    expect(written).toEqual([['economy']]);
+  });
+});
+
 describe("the map's own allocators", () => {
   it("are written with the world's values when a record made where no tile is loaded moves them", async () => {
     const doc = new RoadDoc();

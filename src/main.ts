@@ -1999,7 +1999,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean): Prom
       // A tile come into the region has its near products made now: its far level stands until they are drawn; one gone to the ring is the far levels' at once.
       keys.forEach((key, k) => { if (streamer.isActive(key)) scene.tileLoaded(key, rects[k]!, doc.revision); else scene.tileLetGo(key); });
       for (const key of keys) for (const f of far) f.loadedChanged(key); scene.setActiveTiles(activeAt, rects); sim.activeChanged(keys, (nodes, segments) => net.exportBake(nodes, segments)); },
-    writeWorld: () => store.setMeta({ version: 1, generator: options, unit: METERS_PER_UNIT, values: doc.worldValues() }),
+    // Only the parts that changed, each apart (`RoadDoc.worldPart`): DO NOT write the terrain and the zones for a road paid for.
+    writeWorld: (parts) => store.setMetaParts(Object.fromEntries(parts.map((part) => [part, doc.worldPart(part)]))),
     failed: (why) => console.error('[world]', why),
   }, () => generator.lanesWanted);
   const activeAt = (x: number, y: number): boolean => streamer.isActive(tileKeyAt(x, y));

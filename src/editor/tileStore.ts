@@ -1,5 +1,5 @@
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
-import type { SerializedDoc } from '@world/doc';
+import { type SerializedDoc, type WorldPart, WORLD_PARTS } from '@world/doc';
 import { lotCentre } from '@world/lotRings';
 import { rescaleSerializedDoc } from '@world/rescale';
 import { OWNER, TILE_COUNTED, tileIdBase, tileKey, tileOfKey } from '@world/tiles';
@@ -84,6 +84,8 @@ export type TileOp =
   | { readonly op: 'write'; readonly map: string; readonly records: TileWrite }
   | { readonly op: 'meta'; readonly map: string }
   | { readonly op: 'setMeta'; readonly map: string; readonly meta: WorldMeta }
+  /** Some of the world's parts (`RoadDoc.worldPart`), each under a key of its own: read back over the world's values (`readMeta`). */
+  | { readonly op: 'setMetaParts'; readonly map: string; readonly parts: Readonly<Partial<Record<WorldPart, Partial<SerializedDoc>>>> }
   | { readonly op: 'migrate'; readonly map: string; readonly local: string | null };
 
 /** Who runs the tile store's calls: the save worker (`portTiles`), or the thread that asks (`storeTiles`). */
@@ -91,6 +93,7 @@ interface TileBackend { run(op: TileOp): Promise<unknown> }
 
 const tileBlobKey = (map: string, key: number): string => `${map}:T:${key}`;
 const metaKey = (map: string): string => `${map}:world`;
+const metaPartKey = (map: string, part: WorldPart): string => `${map}:world:${part}`;
 
 type ListField = Exclude<keyof TileRecords, 'key' | 'version' | 'next' | 'grown' | 'gates'>;
 type NextKind = keyof TileRecords['next'];
@@ -290,12 +293,29 @@ async function upgraded(store: PartStore, map: string, key: number, stored: Stor
 }
 
 async function readMeta(store: PartStore, map: string): Promise<WorldMeta | null> {
-  const [blob] = await store.get([metaKey(map)]);
+  const [blob, ...parts] = await store.get([metaKey(map), ...WORLD_PARTS.map((part) => metaPartKey(map, part))]);
   if (!blob) return null;
   const value: unknown = JSON.parse(await blob.text());
   if (!isWorldMeta(value)) throw new Error(`the world of ${map} is stored and cannot be read`);
-  return value;
+  if (parts.every((part) => !part)) return value;
+  // Each part written apart since (`setMetaParts`) taken over the values: its keys as it holds them now (a key it no longer has is gone).
+  let values: Record<string, unknown> = { ...(value.values ?? {}) };
+  for (let k = 0; k < WORLD_PARTS.length; k++) {
+    const part = parts[k];
+    if (!part) continue;
+    const held = JSON.parse(await part.text()) as Record<string, unknown>;
+    for (const key of PART_KEYS[WORLD_PARTS[k]!]) delete values[key];
+    values = { ...values, ...held };
+  }
+  return { ...value, values: values as Partial<SerializedDoc> };
 }
+
+/** The keys of the world's values each part writes (`RoadDoc.worldPart`): a part read back first clears its own. */
+const PART_KEYS: Readonly<Record<WorldPart, readonly string[]>> = {
+  terrain: ['terrain', 'relief'], markingStyle: ['markingStyle'], nature: ['nature'], fog: ['fog'], gullies: ['gullies'], clouds: ['clouds'],
+  weather: ['weather'], clearings: ['treeClearings'], zones: ['zones', 'zoneMarks'], people: ['people'], transit: ['transit'], economy: ['economy'],
+  allocators: ['allocators'],
+};
 
 /** Runs one call of the tile store against `store`: in the save worker on IndexedDB, or in the thread that asks (tests); `bake`, the sections baked with a tile written (none: stored without them). */
 export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker): Promise<unknown> {
@@ -319,6 +339,8 @@ export async function runTileOp(store: PartStore, op: TileOp, bake?: TileBaker):
     case 'write': return (await writeTile(store, op.map, writtenRecords(op.records), bake)).ok;
     case 'meta': return readMeta(store, op.map);
     case 'setMeta': return writer.write({ put: [{ key: metaKey(op.map), value: op.meta, packed: false }], remove: [] });
+    case 'setMetaParts': return writer.write({
+      put: (Object.entries(op.parts) as [WorldPart, Partial<SerializedDoc>][]).map(([part, value]) => ({ key: metaPartKey(op.map, part), value, packed: false })), remove: [] });
     case 'migrate': return migrate(store, op.map, op.local);
   }
 }
@@ -491,6 +513,14 @@ export class TileStore {
 
   meta(): Promise<WorldMeta | null> {
     return this.chained('world', () => this.backend.run({ op: 'meta', map: this.map }) as Promise<WorldMeta | null>);
+  }
+
+  /** Some of the world's parts written, each apart (`RoadDoc.worldPart`): DO NOT write the whole world's values for one part that changed. */
+  setMetaParts(parts: Partial<Record<WorldPart, Partial<SerializedDoc>>>): Promise<boolean> {
+    return this.chained('world', () => this.backend.run({ op: 'setMetaParts', map: this.map, parts }).then((ok) => ok === true, (error: unknown) => {
+      console.error('[save] the world could not be written', error);
+      return false;
+    }));
   }
 
   setMeta(meta: WorldMeta): Promise<boolean> {

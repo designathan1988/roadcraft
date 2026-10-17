@@ -274,6 +274,19 @@ describe('a tile stored', () => {
     expect(store.writes.at(-1)).toEqual(['map:world']);
     expect(await new TileStore('map', storeTiles(store), never).meta()).toEqual(meta);
   });
+
+  it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {
+    const store = memoryStore();
+    const tiles = new TileStore('map', storeTiles(store), never);
+    const meta: WorldMeta = { version: 1, generator: null, unit: 1, values: { terrain: [], economy: { balance: 5 }, weather: { rain: 1 } as never } };
+    await tiles.setMeta(meta);
+    expect(await tiles.setMetaParts({ economy: { economy: { balance: 7 } } })).toBe(true);
+    expect(store.writes.at(-1)).toEqual(['map:world:economy']);
+    expect((await tiles.meta())?.values).toEqual({ terrain: [], economy: { balance: 7 }, weather: { rain: 1 } });
+    // Back at the starting balance the part holds no key: the value is gone.
+    await tiles.setMetaParts({ economy: {} });
+    expect((await new TileStore('map', storeTiles(store), never).meta())?.values).toEqual({ terrain: [], weather: { rain: 1 } });
+  });
 });
 
 /** A house of the parametric generator in tile (0,0), as the generator writes it. */
