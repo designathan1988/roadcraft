@@ -72,10 +72,9 @@ import { type BlockDigestAsk, type GroundShapeAsk, type PlateShapeAnswer, blockD
 import { shapeBoth } from './terrainShaping';
 import { PLANT_MAP_ZOOM, PLANT_NEAR_ZOOM, createSceneryKit, plantSamples, type SceneryKit } from './scenery';
 import { createStreetFurniture } from './streetFurnitureLayer';
-import { createGardens, type GardenPlant, type Gardens } from './gardens';
+import { createGardens, gardenPlants, type Gardens } from './gardens';
 import { gardenLists } from './gardenLists';
-import { localToWorld, solidFootprints, storedBounds } from '@world/buildings/geometry';
-import { followPieces } from '@world/buildings/elements';
+import { solidFootprints, storedBounds } from '@world/buildings/geometry';
 import { RoadDoc } from '@world/doc';
 import { compileAhead, drainCompiles, drainUploads, drainWarm, shadowStandIn, warmPending } from './uploads';
 import { partWarmMeshes } from './buildings/partWarm';
@@ -115,6 +114,7 @@ import { signProduct } from './signTiles';
 import { barrierProduct } from './barrierTiles';
 import { plantedProduct } from './plantedTiles';
 import { structureProduct } from './structureTiles';
+import { gardenProduct } from './gardenTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
 import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SLOPE_STEP, WOODS_SPACING } from './woodsBase';
@@ -376,26 +376,6 @@ function firstDrawnVertices(root: Object3D): number {
     for (const child of o.children) stack.push(child);
   }
   return 0;
-}
-
-/** The plants of every building's garden, in the world, on the ground they stand on. */
-function gardenPlants(all: Iterable<Building>, groundAt: (x: number, y: number) => number): GardenPlant[] {
-  const out: GardenPlant[] = [];
-  for (const b of all) {
-    for (const el of b.elements ?? []) {
-      if (el.kind !== 'tree' && el.kind !== 'shrub' && el.kind !== 'hedge' && el.kind !== 'flowers') continue;
-      // `w` runs across the way the element faces.
-      const yaw = (b.rotation ?? 0) + (el.facing === 1 || el.facing === 3 ? Math.PI / 2 : 0) + (el.angle ?? 0);
-      // A long hedge in steps, each on the ground under it, not one box at its middle's height.
-      const kind = el.kind;
-      followPieces(el).forEach((piece, k) => {
-        const at = localToWorld(b, piece.x, piece.y);
-        out.push({ kind, x: at.x, y: at.y, z: groundAt(at.x, at.y), w: piece.w, d: piece.d, h: piece.h, yaw,
-          seed: ((b.id * 7919 + el.id * 104729 + k * 31) % 100003) / 100003 });
-      });
-    }
-  }
-  return out;
 }
 
 export function createSceneRenderer(
@@ -1094,6 +1074,8 @@ export function createSceneRenderer(
   };
   /** The gardens' plants, building by building, on the ground they stand on (`gardenLists.ts`). */
   const plantLists = gardenLists(groundChanges, (b) => bankBox(b), (b) => gardenPlants([b], terrain.renderedHeightAt), activeTiles);
+  // The streamed world's gardens per tile (`gardenTiles.ts`), in the gardens' own cells: the region places none.
+  nearTiles.add(gardenProduct(() => (gardens ??= createGardens(sceneryKit)), world));
   // The near products' bakes read the ground shared with the workers; a tile the ground changed under (a stroke of the relief too) is asked again, its bake kept where the ground it reads did not change (`nearTileBake.ts` groundDigest).
   const NEAR_GROUND_KINDS: readonly ChangeKind[] = ['elevation', 'ground', 'terrain'];
   nearTiles.setGround(() => ({ ground: farRoadGround(), naturalIsGround: buildings.farEnv().naturalIsGround }), {
@@ -2297,6 +2279,7 @@ export function createSceneRenderer(
       furniture.setTiled(at !== null);
       signs.setTiled(at !== null);
       barriers.setTiled(at !== null);
+      plantLists.setTiled(at !== null);
       // The other near products (gardens, furniture, signs, walls, poles, structures, planted trees, covers, elements, lots) take in or let go the tiles that came or left (`activeTiles.ts`).
       activeTiles.set(at, rects);
       // The near roads built again for the tiles that came in or left (`rebuildWorld`: the kept tiles' digests stand, only the flipped tiles are made or let go).

@@ -1,5 +1,8 @@
 import { Group, type BufferGeometry, type Color, type InstancedMesh, type Material, type MeshDepthMaterial } from 'three';
 import { Rng } from '@core/rng';
+import { followPieces } from '@world/buildings/elements';
+import { localToWorld } from '@world/buildings/geometry';
+import type { Building } from '@world/buildings/types';
 import { m } from '@world/units';
 import { createCellInstances, type KindSpec, type Pack } from './cellInstances';
 import { YAW_POSE } from './instanceRuns';
@@ -28,6 +31,26 @@ export interface GardenPlant {
   readonly plain?: boolean;
 }
 
+/** The plants of every building's garden, in the world, on the ground they stand on. */
+export function gardenPlants(all: Iterable<Building>, groundAt: (x: number, y: number) => number): GardenPlant[] {
+  const out: GardenPlant[] = [];
+  for (const b of all) {
+    for (const el of b.elements ?? []) {
+      if (el.kind !== 'tree' && el.kind !== 'shrub' && el.kind !== 'hedge' && el.kind !== 'flowers') continue;
+      // `w` runs across the way the element faces.
+      const yaw = (b.rotation ?? 0) + (el.facing === 1 || el.facing === 3 ? Math.PI / 2 : 0) + (el.angle ?? 0);
+      // A long hedge in steps, each on the ground under it, not one box at its middle's height.
+      const kind = el.kind;
+      followPieces(el).forEach((piece, k) => {
+        const at = localToWorld(b, piece.x, piece.y);
+        out.push({ kind, x: at.x, y: at.y, z: groundAt(at.x, at.y), w: piece.w, d: piece.d, h: piece.h, yaw,
+          seed: ((b.id * 7919 + el.id * 104729 + k * 31) % 100003) / 100003 });
+      });
+    }
+  }
+  return out;
+}
+
 interface Placement { x: number; y: number; z: number; yaw: number; sx: number; sy: number; sz: number; tint?: Color }
 
 /** A garden tree's species: mostly broadleaf, some conifers, now and then a flowering ipê. */
@@ -46,7 +69,7 @@ const KIND_KEYS = [...TREE_SPECIES.map((s) => `tree:${s}`), ...BUSH_KINDS.map((k
 const KIND_OF = new Map(KIND_KEYS.map((key, i) => [key, i]));
 
 /** One garden's plants placed, by plant kind (`KIND_KEYS`): each one's pose (DO NOT keep 16-float matrices of every plant of the town), tint and largest scale. */
-function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<number, Pack> {
+export function gardenPack(list: readonly GardenPlant[]): ReadonlyMap<number, Pack> {
   const trees = new Map<TreeSpecies, Placement[]>(TREE_SPECIES.map((s) => [s, []]));
   const bushes = new Map<string, Placement[]>(BUSH_KINDS.map((k) => [k, []]));
   for (const p of list) {
@@ -135,6 +158,9 @@ export interface GardenChange {
 export interface Gardens extends Scenery {
   /** DO NOT hand it the town's lists to find what changed: that was a pass over the town per building grown. */
   update(change: GardenChange): { readonly removed: readonly InstancedMesh[]; readonly added: readonly InstancedMesh[] };
+  /** Plants packed elsewhere (a tile's, baked in a worker: `gardenTiles.ts`) placed with the others; taken away by `take` with the same packs. The meshes made for kinds that had none. */
+  put(packs: ReadonlyMap<number, Pack>): readonly InstancedMesh[];
+  take(packs: ReadonlyMap<number, Pack>): void;
 }
 
 export function createGardens(kit: SceneryKit): Gardens {
@@ -166,6 +192,12 @@ export function createGardens(kit: SceneryKit): Gardens {
       // Only the gardens that came and went are read; each new one placed once for this update and let go after (the kinds hold them).
       const added = cells.update({ removed: change.removed, added: change.added.map((list) => ({ key: list, packs: gardenPack(list) })) });
       return { removed: [], added };
+    },
+    put(packs) {
+      return cells.update({ removed: [], added: [{ key: packs, packs }] });
+    },
+    take(packs) {
+      cells.update({ removed: [packs], added: [] });
     },
     // A plant's level follows its size on the screen (`cellInstances.ts`).
     setNear() {},
