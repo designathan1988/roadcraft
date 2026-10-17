@@ -5,7 +5,7 @@ import {
   type BuilderSelectionInfo,
   tabSpec,
 } from './catalog';
-import { applyTranslations, formatDecimal, onLanguageChange, parseDecimal, t } from '../i18n';
+import { applyTranslations, formatDecimal, language, onLanguageChange, parseDecimal, t } from '../i18n';
 import { builderIconSvg } from './icons';
 import './workspace.css';
 
@@ -160,15 +160,24 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
   const insideListeners: ((state: { readonly on: boolean; readonly level: number }) => void)[] = [];
 
   // ------------------------------------------------------------ inspector
+  /** The language the quick buttons' titles were last written in (`renderInspector`). */
+  let titledIn: string | null = null;
   function renderInspector(state: BuilderState): void {
     const info = state.selection;
     inspector.hidden = info === null || mode !== 'builder';
     inspector.classList.toggle('collapsed', !state.inspectorOpen);
-    inspectorToggle.innerHTML = builderIconSvg(state.inspectorOpen ? 'collapse' : 'expand', 14);
-    for (const [name, b] of actionButtons) {
-      const key = `builder.quick.${name}`;
-      b.title = t(key);
-      b.setAttribute('aria-label', t(key));
+    // DO NOT write the DOM each render (each move of the pointer in the builder): the toggle's icon when it flips, the buttons' titles when the language changes.
+    if (inspectorToggle.dataset['open'] !== String(state.inspectorOpen)) {
+      inspectorToggle.dataset['open'] = String(state.inspectorOpen);
+      inspectorToggle.innerHTML = builderIconSvg(state.inspectorOpen ? 'collapse' : 'expand', 14);
+    }
+    if (titledIn !== language()) {
+      titledIn = language();
+      for (const [name, b] of actionButtons) {
+        const key = `builder.quick.${name}`;
+        b.title = t(key);
+        b.setAttribute('aria-label', t(key));
+      }
     }
     if (!state.inspectorOpen || !info) return;
     const signature = `${info.titleKey}|${info.name}|${info.material ?? ''}|${info.fields.map((f) => `${f.id}:${f.text ?? f.value}`).join(',')}`;
