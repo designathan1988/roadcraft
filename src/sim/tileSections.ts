@@ -72,19 +72,29 @@ export function trafficOfSection(value: unknown): TrafficBuilding[] | null {
   return (v.buildings as TrafficBuilding[]).map((t) => ({ ...t, bounds: boxBack(t.bounds), reach: boxBack(t.reach) }));
 }
 
-/** DO NOT derive these again where the tile is read: baked here once per version of the tile, where it is written */
-export function bakeTileSections(records: TileRecords): Readonly<Record<string, Section>> {
+/** DO NOT derive these again where the tile is read: baked here once per version of the tile, where it is written
+ *  - `bays`: false for a tile made ahead of the region (the opening's rush): its bays are baked and added when it is loaded into the region (`tileBaysSection`, `cityTile.worker.ts`). */
+export function bakeTileSections(records: TileRecords, bays = true): Readonly<Record<string, Section>> {
   const traffic = trafficJson(tileTraffic(records.buildings));
   const sections: Record<string, Section> = {
     [LINKS_SECTION]: { bin: packLinks(bakeTileLinks(records)) },
     [TRAFFIC_SECTION]: { json: traffic },
   };
+  const baked = bays ? tileBaysSection(records, traffic) : null;
+  if (baked) sections[BAYS_SECTION] = baked;
+  return sections;
+}
+
+/** A tile's bays section, from its records (every building, the grown rows made again) and its traffic section's value; null when they could not be baked (said, and worked out where the tile is loaded). */
+export function tileBaysSection(records: TileRecords, traffic: unknown): Section | null {
   try {
     // From the buildings as the simulation reads them back (the JSON's numbers: no -0, no Infinity), so their digests are the ones it makes there.
-    sections[BAYS_SECTION] = { bin: bakeTileBays(records, trafficOfSection(JSON.parse(JSON.stringify(traffic)))!) };
+    const read = trafficOfSection(JSON.parse(JSON.stringify(traffic)));
+    if (!read) return null;
+    return { bin: bakeTileBays(records, read) };
   } catch (error) {
     // Stored without them: the simulation works them out where the tile is loaded, as before.
     console.error(`[save] tile ${records.key}'s bays could not be baked`, error);
+    return null;
   }
-  return sections;
 }

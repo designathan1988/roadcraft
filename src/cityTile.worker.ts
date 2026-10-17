@@ -4,8 +4,10 @@ import { tileKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { JobScope } from './jobs/jobScope';
 import { workerParts } from '@editor/workerParts';
-import { type PreparedTile, prepareTile, readTile, storedVersion, writeTile } from '@editor/tileStore';
-import { bakeTileSections } from '@sim/tileSections';
+import { type PreparedTile, addTileSection, prepareTile, readTile, readTileSection, storedVersion, writeTile } from '@editor/tileStore';
+import { withGrownBuildings } from '@world/growth/grownRows';
+import { BAYS_SECTION } from '@sim/tileBays';
+import { TRAFFIC_SECTION, bakeTileSections, tileBaysSection } from '@sim/tileSections';
 import { type FarGroundEnv, keepTileFar, queuedFarCache } from './render/buildings/farTiles';
 import { keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTiles';
 import type { SharedGroundData } from './render/sharedGround';
@@ -53,7 +55,23 @@ async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: numbe
   if (version === 'legacy') return { key, stored: null, legacy: true };
   if (!store.records) return { key, stored: version, existed: true };
   const records = await readTile(stored(), store.map, key);
-  return records ? { key, stored: records.version, prepared: prepareTile(records), existed: true } : null;
+  if (!records) return null;
+  await addBays(store.map, records);
+  return { key, stored: records.version, prepared: prepareTile(records), existed: true };
+}
+
+/** DO NOT bake every tile's bays in the opening's rush (a grid and a way out per stall, the dearest part of a tile after its growth): a tile made ahead is stored without them, and they are baked and added here, that section alone, when the tile is loaded into the region - the tiles round the camera first.
+ *  Run while the page waits for this answer on the tile's chain (`TileStore.load`): no write of the tile comes between. A failure is said; the simulation works them out as it does for a tile without them. */
+async function addBays(map: string, records: TileRecords): Promise<void> {
+  try {
+    if (await readTileSection(stored(), map, records.key, BAYS_SECTION)) return;
+    const traffic = await readTileSection(stored(), map, records.key, TRAFFIC_SECTION);
+    if (!traffic || !('value' in traffic)) return;
+    const section = tileBaysSection(withGrownBuildings(records), traffic.value);
+    if (section && !(await addTileSection(stored(), map, records.key, records.version, BAYS_SECTION, section))) console.warn(`[city tile] tile ${records.key}'s bays were not added`);
+  } catch (error) {
+    console.warn(`[city tile] tile ${records.key}'s bays were not added`, error);
+  }
 }
 
 /** The tile store's parts as this worker opens them (`workerParts`: IndexedDB, or the desktop's saves writer through its own port), on the first tile stored. */
@@ -82,8 +100,8 @@ function make(self: JobScope, ask: StreamTileAsk): void {
     if (!store) { self.postMessage({ key: tileKey(i, j), records: pair.records } satisfies StreamTileAnswer); return; }
     const version = Math.max(pair.records.version, store.after) + 1;
     const records = { ...pair.records, version }, full = { ...pair.full, version };
-    // Its sections baked here with it, once (`sim/tileSections.ts`).
-    void writeTile(stored(), store.map, records, bakeTileSections, full).then(
+    // Its sections baked here with it, once (`sim/tileSections.ts`); its bays only for a tile of the region (records asked), a tile made ahead takes them when it is loaded (`addBays`).
+    void writeTile(stored(), store.map, records, (r) => bakeTileSections(r, store.records), full).then(
       async ({ ok }) => {
         // Its far levels kept before the page hears of it: the far tree's job for it then finds them (`farTiles.ts` `runFarJob` level 0).
         if (ok && store.far) await keepFar(records, full, version, store.far);
