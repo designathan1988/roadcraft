@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DirectionalLight, Mesh, BoxGeometry, PerspectiveCamera, ShaderChunk, Vector3 } from 'three';
+import { DirectionalLight, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, BoxGeometry, PerspectiveCamera, ShaderChunk, Vector3 } from 'three';
 
 import { cascadedSunChunks, createSunCascades, SUN_CASCADES } from '@render/sunCascades';
 import { m } from '@world/units';
@@ -108,6 +108,23 @@ describe('sun cascades', () => {
     expect(small.visible).toBe(false);
     cascades.restore();
     expect(small.visible).toBe(true);
+  });
+
+  it("measures an instanced caster at its instances' size: a unit geometry scaled to a train car is drawn into the far cascade", () => {
+    const { cascades, camera, sunDirection, target } = rig();
+    cascades.follow(camera, sunDirection, flat, target, m(40));
+    cascades.pass({ changed: false, effects: false, wind: false });
+    // A ten-centimetre box, each instance scaled to twenty metres.
+    const cars = new InstancedMesh(new BoxGeometry(m(0.1), m(0.1), m(0.1)), new MeshBasicMaterial(), 2);
+    for (let k = 0; k < 2; k++) cars.setMatrixAt(k, new Matrix4().makeScale(200, 200, 200).setPosition(k * m(30), 0, 0));
+    cars.updateMatrixWorld();
+    cascades.setMovers([{ roots: [cars], moving: () => true }]);
+    for (const light of cascades.lights) light.shadow.needsUpdate = false;
+    cascades.pass({ changed: false, effects: false, wind: false });
+    expect(cascades.lights.map((light) => light.shadow.needsUpdate)).toEqual([true, true, true]);
+    cascades.lights[2]!.shadow.updateMatrices(cascades.lights[2]!);
+    expect(cars.visible).toBe(true);
+    cascades.restore();
   });
 
   it('lights the sun once in three\'s shaders, by the finest cascade that holds the point', () => {

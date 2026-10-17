@@ -1,7 +1,7 @@
 import type { RoadDoc } from '@world/doc';
 import type { ChangeKind, ChangeRect, JournalReader } from '@world/changes';
 import type { BuildingId } from '@world/buildings/types';
-import type { BuildingSource, TrafficBuilding } from './trafficBuildings';
+import { BATCH_DETAIL, BATCH_GONE, BATCH_KEPT, type BuildingSource, type TrafficBuilding } from './trafficBuildings';
 
 /** THE BUILDINGS A READER KEEPS, IN THE STORE'S ORDER, FROM THE DIARY. */
 
@@ -33,6 +33,18 @@ class StoreOrder {
   /** One entry of the diary applied to the ranks; false when its effect on the order is not known. */
   private apply(detail: string | undefined, ids: readonly BuildingId[] | undefined): boolean {
     if (!ids) return false;
+    // The worker's table's batch: a letter an id, in order (`TrafficBuildingTable.apply`).
+    if (detail?.startsWith(BATCH_DETAIL)) {
+      const ops = detail.slice(BATCH_DETAIL.length);
+      if (ops.length !== ids.length) return false;
+      for (let k = 0; k < ids.length; k++) {
+        const id = ids[k]!, op = ops[k];
+        if (op === BATCH_KEPT) { if (!this.ranks.has(id)) return false; }
+        else if (op === BATCH_GONE) this.ranks.delete(id);
+        else this.ranks.set(id, this.next++);
+      }
+      return true;
+    }
     switch (detail) {
       case 'added':
         for (const id of ids) {
@@ -77,6 +89,8 @@ export interface BuildingDelta {
 }
 
 const NOTHING: BuildingDelta = { ids: [], rects: [] };
+/** Past this many named in one update, the list is walked once and merged (`merge`), not spliced a building at a time. */
+const MERGE_PAST = 32;
 
 /** The buildings that pass `keep`, in the store's order, kept from the diary. */
 export class BuildingsInOrder implements JournalReader {
@@ -136,14 +150,44 @@ export class BuildingsInOrder implements JournalReader {
       this.epoch = order.epoch;
       return null;
     }
-    // Found in the list by the rank it was filed at, by halving: DO NOT walk the list.
-    for (const id of ids) this.unfile(id);
-    if (order.epoch !== this.epoch) this.resort();
-    for (const id of ids) {
-      const b = w.buildings.get(id);
-      if (b && this.keep(b)) this.file(id, order.rank(id)!);
+    // A few: found in the list by the rank it was filed at, by halving (DO NOT walk the list). Many (a tile's): DO NOT splice each in, the list walked once and the new ones merged in.
+    if (ids.size > MERGE_PAST) this.merge(w, ids);
+    else {
+      for (const id of ids) this.unfile(id);
+      if (order.epoch !== this.epoch) this.resort();
+      for (const id of ids) {
+        const b = w.buildings.get(id);
+        if (b && this.keep(b)) this.file(id, order.rank(id)!);
+      }
     }
     return { ids: [...ids], rects };
+  }
+
+  /** The named buildings taken out of the list in one walk, those kept now filed back by one merge of the two orders. */
+  private merge(w: BuildingSource, ids: ReadonlySet<BuildingId>): void {
+    const order = this.order;
+    for (const id of ids) this.filedAt.delete(id);
+    let list = this.list.filter((id) => !ids.has(id));
+    if (order.epoch !== this.epoch) {
+      list.sort((a, b) => order.rank(a)! - order.rank(b)!);
+      for (const id of list) this.filedAt.set(id, order.rank(id)!);
+      this.epoch = order.epoch;
+    }
+    const come: BuildingId[] = [];
+    for (const id of ids) {
+      const b = w.buildings.get(id);
+      if (b && this.keep(b)) { come.push(id); this.filedAt.set(id, order.rank(id)!); }
+    }
+    if (come.length) {
+      come.sort((a, b) => this.filedAt.get(a)! - this.filedAt.get(b)!);
+      const out: BuildingId[] = new Array(list.length + come.length);
+      let i = 0, j = 0, k = 0;
+      while (i < list.length || j < come.length) {
+        out[k++] = j >= come.length || (i < list.length && this.filedAt.get(list[i]!)! < this.filedAt.get(come[j]!)!) ? list[i++]! : come[j++]!;
+      }
+      list = out;
+    }
+    this.list = list;
   }
 
   /** Where a rank stands, or would stand, in the list (the list is in the order of the ranks it was filed at). */

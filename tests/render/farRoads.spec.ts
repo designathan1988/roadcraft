@@ -282,6 +282,13 @@ describe('the far roads chosen top down', () => {
     expect(own.near!.records![0]!.version).toBe(2);
     // A neighbour that reads the edited tile reads it from the page too, but is not the player's edit.
     for (const job of asked) if (job.near && (job.i !== 0 || job.j !== 0)) expect(job.near.edited).toBeUndefined();
+    // Another edit of the tile that leaves its roads as they were (a building grown): nothing asked again.
+    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)) && !asked.some((job) => job.near && job.i === 0 && job.j === 0 && !job.near.edited));
+    for (let k = 0; k < 50; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    asked.length = 0;
+    edit = 2;
+    for (let k = 0; k < 20; k++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    expect(asked.filter((job) => job.near).map((job) => `${job.i},${job.j} ${job.near!.bake} ${job.near!.variant} ${job.near!.edited}`)).toEqual([]);
     roads.dispose();
   });
 

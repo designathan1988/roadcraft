@@ -14,7 +14,7 @@ import {
 } from 'three';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
-import type { CameraSolids } from '@world/buildings/cameraSolids';
+import type { CameraSolids, Rect, SolidVisit } from '@world/buildings/cameraSolids';
 import { m } from '@world/units';
 import { DEPTH_GLSL } from './depthConvention';
 
@@ -27,13 +27,19 @@ const SIDE = Math.round(WINDOW / CELL);
 /** Heights stored in 16 bits: (h + OFFSET) / STEP. */
 const STEP = m(0.05);
 const OFFSET = m(100);
-/** Volumes laid into the field a frame. */
-const VOLUMES_PER_FRAME = 400;
+/** The window's corner moves in steps of this many cells: what a step brings in is a strip, laid in the frame it comes in. */
+const SNAP = 32;
+/** The field is a torus: world cell (i, j) is texel (i & MASK, j & MASK), so a window moved keeps every cell it still holds. */
+const MASK = SIDE - 1;
+/** Past this many rows written, the whole field goes up in one call (three sends one call a row of ranges). */
+const WHOLE_ROWS = SIDE / 8;
 
 export interface CanyonLight {
   readonly pass: ShaderPass;
   /** @rebuild The view's centre (map x, y), the town's solids, and where they changed since the last call */
   follow(cx: number, cy: number, solids: (() => CameraSolids) | null, changed: readonly (readonly [number, number, number, number])[] | null): void;
+  /** The ambient occlusion multiplied into the picture first (GTAO's denoised target, its blend intensity), or none. */
+  setOcclusion(texture: Texture | null, intensity: number): void;
   /** The sun's direction (world, to the sun) and its share of the light on the ground. */
   setSun(direction: Vector3, directShare: number): void;
   dispose(): void;
@@ -41,6 +47,9 @@ export interface CanyonLight {
 
 const FRAGMENT = /* glsl */ `
   uniform sampler2D tDiffuse;
+  uniform sampler2D tAO;
+  uniform float uAO;
+  uniform float uAOOn;
   uniform sampler2D tDepth;
   uniform sampler2D uHeights;
   uniform mat4 uProjectionInverse;
@@ -66,7 +75,8 @@ const FRAGMENT = /* glsl */ `
   float heightAt(vec2 p) {
     vec2 c = (p - uWindow.xy) / uWindow.z;
     if (c.x < 0.0 || c.y < 0.0 || c.x >= uWindow.w || c.y >= uWindow.w) return -1e4;
-    vec4 t = texelFetch(uHeights, ivec2(c), 0);
+    // The field wraps (canyonLight.ts MASK): a world cell's texel is its index modulo the side.
+    vec4 t = texelFetch(uHeights, ivec2(mod(floor(p / uWindow.z), uWindow.w)), 0);
     float v = t.r * 65280.0 + t.g * 255.0;
     return v < 0.5 ? -1e4 : v * ${STEP.toFixed(4)} - ${OFFSET.toFixed(1)};
   }
@@ -118,17 +128,26 @@ const FRAGMENT = /* glsl */ `
 
   void main() {
     vec4 src = texture2D(tDiffuse, vUv);
+    // The occlusion as GTAO's own blend laid it (three's GTAOBlendShader: dst * mix(1, ao, intensity), alpha * ao.a).
+    if (uAOOn > 0.5) {
+      vec4 ao = texture2D(tAO, vUv);
+      src *= vec4(mix(vec3(1.0), ao.rgb, uAO), ao.a);
+    }
     float depth = texture2D(tDepth, vUv).r;
     if (depthIsBackground(depth)) { gl_FragColor = src; return; }
     vec3 P = worldAt(vUv, depth);
+    vec2 p = vec2(P.x, -P.z);
+    vec2 inWindow = (p - uWindow.xy) / (uWindow.z * uWindow.w);
+    bool skyOn = uSky > 0.0 && inWindow.x > 0.0 && inWindow.y > 0.0 && inWindow.x < 1.0 && inWindow.y < 1.0;
+    float far = distance(uCameraPos, P);
+    // DO NOT rebuild the normal (eight depth taps) where neither the sky nor the contact shadow reads it: the picture as it came.
+    if (!skyOn && !(uContact > 0.0 && far < 120.0)) { gl_FragColor = src; return; }
     vec3 N = normalAt(vUv, depth, P);
     if (dot(N, uCameraPos - P) < 0.0) N = -N;
 
     // The sky past the buildings round it.
     float vis = 1.0;
-    vec2 p = vec2(P.x, -P.z);
-    vec2 inWindow = (p - uWindow.xy) / (uWindow.z * uWindow.w);
-    if (uSky > 0.0 && inWindow.x > 0.0 && inWindow.y > 0.0 && inWindow.x < 1.0 && inWindow.y < 1.0) {
+    if (skyOn) {
       vec2 facing = vec2(N.x, -N.z);
       bool wall = abs(N.y) < 0.6;
       if (wall) facing = normalize(facing);
@@ -154,7 +173,6 @@ const FRAGMENT = /* glsl */ `
 
     // The sun's contact shadows.
     float shade = 0.0;
-    float far = distance(uCameraPos, P);
     if (uContact > 0.0 && dot(N, uSunDir) > 0.05 && far < 120.0) {
       for (int i = 1; i <= 8; i++) {
         float t = float(i) / 8.0 * uContactLength;
@@ -178,7 +196,6 @@ const FRAGMENT = /* glsl */ `
 /** `sunsOf`: the sun's cascades, nearest first (`sunCascades.ts`); the two nearest are read. */
 export function createCanyonLight(camera: Camera, depthOf: () => Texture | null, sunsOf: () => readonly DirectionalLight[] = () => []): CanyonLight {
   const data = new Uint8Array(SIDE * SIDE * 4);
-  const next = new Uint8Array(SIDE * SIDE * 4);
   const heights = new DataTexture(data, SIDE, SIDE, RGBAFormat, UnsignedByteType);
   heights.magFilter = NearestFilter;
   heights.minFilter = NearestFilter;
@@ -190,6 +207,9 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
     name: 'canyon-light',
     uniforms: {
       tDiffuse: { value: null },
+      tAO: { value: null },
+      uAO: { value: 0 },
+      uAOOn: { value: 0 },
       tDepth: { value: null },
       uHeights: { value: heights },
       uProjectionInverse: { value: new Matrix4() },
@@ -236,94 +256,111 @@ export function createCanyonLight(camera: Camera, depthOf: () => Texture | null,
     draw(...args);
   };
 
-  /** The window being laid, and where: volumes still to lay */
-  let laid = { cx: Number.NaN, cy: Number.NaN, ox: 0, oy: 0 };
-  let pending: { cx: number; cy: number; ox: number; oy: number; volumes: number[]; at: number; after: (readonly [number, number, number, number])[] } | null = null;
-
-  const lay = (target: Uint8Array, volumes: readonly number[], from: number, to: number, ox: number, oy: number): void => {
-    for (let i = from * 9; i < to * 9; i += 9) {
-      const bx = volumes[i]!, by = volumes[i + 1]!, c = volumes[i + 2]!, s = volumes[i + 3]!;
-      const lx0 = volumes[i + 4]!, ly0 = volumes[i + 5]!, lx1 = volumes[i + 6]!, ly1 = volumes[i + 7]!, top = volumes[i + 8]!;
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      // The box's four corners in the world, written out (no array a corner: hundreds of thousands a window).
-      for (let corner = 0; corner < 4; corner++) {
-        const lx = corner === 0 || corner === 3 ? lx0 : lx1, ly = corner < 2 ? ly0 : ly1;
-        const wx = bx + lx * c - ly * s, wy = by + lx * s + ly * c;
-        minX = Math.min(minX, wx); maxX = Math.max(maxX, wx); minY = Math.min(minY, wy); maxY = Math.max(maxY, wy);
-      }
-      const v = Math.max(1, Math.min(65535, Math.round((top + OFFSET) / STEP)));
-      const i0 = Math.max(0, Math.floor((minX - ox) / CELL)), i1 = Math.min(SIDE - 1, Math.floor((maxX - ox) / CELL));
-      const j0 = Math.max(0, Math.floor((minY - oy) / CELL)), j1 = Math.min(SIDE - 1, Math.floor((maxY - oy) / CELL));
-      for (let j = j0; j <= j1; j++) {
-        for (let k = i0; k <= i1; k++) {
-          // The cell's centre in the building's frame, inside the volume's box.
-          const dx = ox + (k + 0.5) * CELL - bx, dy = oy + (j + 0.5) * CELL - by;
-          const lx = dx * c + dy * s, ly = -dx * s + dy * c;
-          if (lx < lx0 || lx > lx1 || ly < ly0 || ly > ly1) continue;
-          const at = (j * SIDE + k) * 4;
-          const was = target[at]! * 256 + target[at + 1]!;
-          if (v > was) { target[at] = v >> 8; target[at + 1] = v & 255; }
-        }
+  /** The window's corner, in cells (null: nothing laid yet). */
+  let laid: { gx: number; gy: number } | null = null;
+  /** The texel rows written since the last upload. */
+  const rowDirty = new Uint8Array(SIDE);
+  let dirtyRows = 0;
+  const markRow = (row: number): void => {
+    if (rowDirty[row]) return;
+    rowDirty[row] = 1;
+    dirtyRows++;
+  };
+  /** One volume laid into the window's cells it covers (by the cell's centre), the highest kept. */
+  const layVolume: SolidVisit = (bx, by, c, s, lx0, ly0, lx1, ly1, top) => {
+    const gx = laid!.gx, gy = laid!.gy;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    // The box's four corners in the world, written out (no array a corner: hundreds of thousands a window).
+    for (let corner = 0; corner < 4; corner++) {
+      const lx = corner === 0 || corner === 3 ? lx0 : lx1, ly = corner < 2 ? ly0 : ly1;
+      const wx = bx + lx * c - ly * s, wy = by + lx * s + ly * c;
+      minX = Math.min(minX, wx); maxX = Math.max(maxX, wx); minY = Math.min(minY, wy); maxY = Math.max(maxY, wy);
+    }
+    const v = Math.max(1, Math.min(65535, Math.round((top + OFFSET) / STEP)));
+    const i0 = Math.max(gx, Math.floor(minX / CELL)), i1 = Math.min(gx + SIDE - 1, Math.floor(maxX / CELL));
+    const j0 = Math.max(gy, Math.floor(minY / CELL)), j1 = Math.min(gy + SIDE - 1, Math.floor(maxY / CELL));
+    for (let j = j0; j <= j1; j++) {
+      const row = j & MASK;
+      for (let k = i0; k <= i1; k++) {
+        // The cell's centre in the building's frame, inside the volume's box.
+        const dx = (k + 0.5) * CELL - bx, dy = (j + 0.5) * CELL - by;
+        const lx = dx * c + dy * s, ly = -dx * s + dy * c;
+        if (lx < lx0 || lx > lx1 || ly < ly0 || ly > ly1) continue;
+        const at = (row * SIDE + (k & MASK)) * 4;
+        const was = data[at]! * 256 + data[at + 1]!;
+        if (v > was) { data[at] = v >> 8; data[at + 1] = v & 255; markRow(row); }
       }
     }
   };
-
-  /** The volumes the solids hold in a box, as `lay` reads them. */
-  const volumesIn = (solids: () => CameraSolids, x0: number, y0: number, x1: number, y1: number): number[] => {
-    const volumes: number[] = [];
-    solids().forEachIn(x0, y0, x1, y1, (bx, by, c, s, lx0, ly0, lx1, ly1, top) => { volumes.push(bx, by, c, s, lx0, ly0, lx1, ly1, top); });
-    return volumes;
-  };
-  /** The cells of `rect` cleared in `target` and laid again from what stands there now */
-  const relay = (target: Uint8Array, solids: () => CameraSolids, rect: readonly [number, number, number, number], ox: number, oy: number): [number, number] | null => {
-    const i0 = Math.max(0, Math.floor((rect[0] - ox) / CELL)), i1 = Math.min(SIDE - 1, Math.floor((rect[2] - ox) / CELL));
-    const j0 = Math.max(0, Math.floor((rect[1] - oy) / CELL)), j1 = Math.min(SIDE - 1, Math.floor((rect[3] - oy) / CELL));
+  /** The window's cells i0..i1, j0..j1 (world cells, clipped to the window) cleared; their world rectangle, or null when none is in the window. */
+  const clearCells = (i0: number, j0: number, i1: number, j1: number): Rect | null => {
+    const { gx, gy } = laid!;
+    i0 = Math.max(i0, gx); i1 = Math.min(i1, gx + SIDE - 1);
+    j0 = Math.max(j0, gy); j1 = Math.min(j1, gy + SIDE - 1);
     if (i0 > i1 || j0 > j1) return null;
-    for (let j = j0; j <= j1; j++) target.fill(0, (j * SIDE + i0) * 4, (j * SIDE + i1 + 1) * 4);
-    const volumes = volumesIn(solids, ox + i0 * CELL, oy + j0 * CELL, ox + (i1 + 1) * CELL, oy + (j1 + 1) * CELL);
-    lay(target, volumes, 0, volumes.length / 9, ox, oy);
-    return [j0, j1];
+    const from = i0 & MASK, count = i1 - i0 + 1;
+    // A span that wraps round the torus is two runs of the row.
+    const first = Math.min(count, SIDE - from);
+    for (let j = j0; j <= j1; j++) {
+      const row = j & MASK;
+      data.fill(0, (row * SIDE + from) * 4, (row * SIDE + from + first) * 4);
+      if (first < count) data.fill(0, row * SIDE * 4, (row * SIDE + count - first) * 4);
+      markRow(row);
+    }
+    return [i0 * CELL, j0 * CELL, (i1 + 1) * CELL, (j1 + 1) * CELL];
+  };
+  /** The rows written go up: each a range, or the whole field past `WHOLE_ROWS`. */
+  const upload = (): void => {
+    if (dirtyRows === 0) return;
+    if (dirtyRows > WHOLE_ROWS) heights.clearUpdateRanges();
+    else for (let row = 0; row < SIDE; row++) if (rowDirty[row]) heights.addUpdateRange(row * SIDE * 4, SIDE * 4);
+    heights.needsUpdate = true;
+    rowDirty.fill(0);
+    dirtyRows = 0;
   };
 
   return {
     pass,
     follow(cx, cy, solids, changed) {
       if (!solids) return;
-      const moved = !(Math.abs(cx - laid.cx) < WINDOW / 4 && Math.abs(cy - laid.cy) < WINDOW / 4);
-      const away = !pending || Math.abs(cx - pending.cx) >= WINDOW / 4 || Math.abs(cy - pending.cy) >= WINDOW / 4;
-      if ((moved && away) || changed === null) {
-        const ox = Math.floor((cx - WINDOW / 2) / CELL) * CELL, oy = Math.floor((cy - WINDOW / 2) / CELL) * CELL;
-        next.fill(0);
-        pending = { cx, cy, ox, oy, volumes: volumesIn(solids, ox, oy, ox + WINDOW, oy + WINDOW), at: 0, after: [] };
-      } else if (changed.length) {
-        if (pending) pending.after.push(...changed);
-        else {
-          // In place, in the field drawn: its rows alone go up (three sends an update range as one row).
-          let rows = 0;
-          for (const rect of changed) {
-            const span = relay(data, solids, rect, laid.ox, laid.oy);
-            if (!span) continue;
-            // A volume laid again may reach rows past the rectangle: there it wrote its own height, as before.
-            for (let row = span[0]; row <= span[1]; row++) heights.addUpdateRange(row * SIDE * 4, SIDE * 4);
-            rows++;
-          }
-          if (rows) heights.needsUpdate = true;
-        }
+      const gx = Math.floor((cx - WINDOW / 2) / CELL / SNAP) * SNAP, gy = Math.floor((cy - WINDOW / 2) / CELL / SNAP) * SNAP;
+      if (!laid || changed === null || Math.abs(gx - laid.gx) >= SIDE || Math.abs(gy - laid.gy) >= SIDE) {
+        // @rebuild The whole window: at the first call, a jump past it, or a change the diary cannot place.
+        laid = { gx, gy };
+        window.set(gx * CELL, gy * CELL, CELL, SIDE);
+        data.fill(0);
+        solids().forEachIn(gx * CELL, gy * CELL, (gx + SIDE) * CELL, (gy + SIDE) * CELL, layVolume);
+        heights.clearUpdateRanges();
+        heights.needsUpdate = true;
+        rowDirty.fill(0);
+        dirtyRows = 0;
+        return;
       }
-      if (!pending) return;
-      const total = pending.volumes.length / 9;
-      const to = Math.min(total, pending.at + VOLUMES_PER_FRAME);
-      lay(next, pending.volumes, pending.at, to, pending.ox, pending.oy);
-      pending.at = to;
-      if (to < total) return;
-      // What changed while it was laid, over it.
-      for (const rect of pending.after) relay(next, solids, rect, pending.ox, pending.oy);
-      data.set(next);
-      heights.clearUpdateRanges();
-      heights.needsUpdate = true;
-      window.set(pending.ox, pending.oy, CELL, SIDE);
-      laid = { cx: pending.cx, cy: pending.cy, ox: pending.ox, oy: pending.oy };
-      pending = null;
+      const rects: Rect[] = [];
+      if (gx !== laid.gx || gy !== laid.gy) {
+        // The strips the move brings in, cleared of what the cells a side away left there, then laid.
+        const was = laid;
+        laid = { gx, gy };
+        window.set(gx * CELL, gy * CELL, CELL, SIDE);
+        const columns = gx > was.gx ? clearCells(was.gx + SIDE, gy, gx + SIDE - 1, gy + SIDE - 1)
+          : gx < was.gx ? clearCells(gx, gy, was.gx - 1, gy + SIDE - 1) : null;
+        const rows = gy > was.gy ? clearCells(gx, was.gy + SIDE, gx + SIDE - 1, gy + SIDE - 1)
+          : gy < was.gy ? clearCells(gx, gy, gx + SIDE - 1, was.gy - 1) : null;
+        if (columns) rects.push(columns);
+        if (rows) rects.push(rows);
+      }
+      // What changed in place: every rectangle cleared first, then what stands there now laid once for all of them.
+      for (const rect of changed) {
+        const cleared = clearCells(Math.floor(rect[0] / CELL), Math.floor(rect[1] / CELL), Math.floor(rect[2] / CELL), Math.floor(rect[3] / CELL));
+        if (cleared) rects.push(cleared);
+      }
+      if (rects.length) solids().forEachInAny(rects, layVolume);
+      upload();
+    },
+    setOcclusion(texture, intensity) {
+      u['tAO']!.value = texture;
+      u['uAO']!.value = intensity;
+      u['uAOOn']!.value = texture ? 1 : 0;
     },
     setSun(direction, directShare) {
       sun.copy(direction).normalize();

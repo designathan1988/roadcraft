@@ -12,7 +12,7 @@ import { chooseVehicleDestination } from '../routing/destination';
 import { closeLane, laneClear, openLanes, type Closure } from '../vehicles/laneClosures';
 import { CLOSURE_STOP } from '../vehicles/obstacles';
 import { Shunt } from './manoeuvre';
-import { buildYard, forgetYard, forgetYardsBut, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardKey, yardOf } from './lorryDocks';
+import { buildYard, forgetYard, forgetYardsBut, keepYard, knownYard, type LorryWay, lorryOf, PLAN_BUDGET, type Yard, yardInputs, yardKey, yardOf } from './lorryDocks';
 import { gatedProperty, lanesInBox } from './parking';
 import { BuildingsInOrder } from './buildingOrder';
 import type { BuildingSource, TrafficBuilding } from './trafficBuildings';
@@ -173,8 +173,8 @@ export class LorryTraffic {
     else for (const id of gone) forgetYard(w, id);
   }
 
-  /** The yard being made, a slice a call */
-  private making: { building: TrafficBuilding; key: string; steps: Generator<void, Yard, void> } | null = null;
+  /** The yard being made, a slice a call, with what it is made from (`yardInputs`) as of the roads it was last checked on (`key`). */
+  private making: { building: TrafficBuilding; key: string; inputs: number; steps: Generator<void, Yard, void> } | null = null;
 
   /** A building's yard, made a slice a call (`buildYard`): undefined while it is being made. */
   private yardFor(w: SimWorld, building: BuildingId, begin = true): Yard | null | undefined {
@@ -184,8 +184,14 @@ export class LorryTraffic {
     if (known !== undefined) return known;
     if (!begin && this.making?.building !== b) return undefined;
     const key = yardKey(w);
+    // DO NOT start the yard over whenever the roads anywhere moved (each tile come or gone): with the camera moving no lorry ever docked. Its own grid's inputs looked at, and only a change there starts it over.
+    const making = this.making;
+    if (making && making.building === b && making.key !== key) {
+      const inputs = yardInputs(w, b);
+      if (inputs === making.inputs) making.key = key;
+    }
     if (!this.making || this.making.building !== b || this.making.key !== key) {
-      this.making = { building: b, key, steps: buildYard(b, key, w, lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!)) };
+      this.making = { building: b, key, inputs: yardInputs(w, b), steps: buildYard(b, key, w, lorryOf(ARCHETYPES.find((a) => a.id === 'truck')!)) };
     }
     const next = this.making.steps.next();
     if (!next.done) return undefined;

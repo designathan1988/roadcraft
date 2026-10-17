@@ -6,7 +6,7 @@ import type { ShellChunk } from '@render/buildings/chunk';
 import {
   COLOUR_RANGE, FACADE_BYTES, FACADE_FLOATS, FACADE_GRID, FINISH_ATTRIBUTE, NORMAL_UNIT, PAINT_UNIT, cellArrays, cellBytes, paintShort,
 } from '@render/buildings/cellArrays';
-import { FACADE_FLIP } from '@render/buildings/facadeLevel';
+import { FACADE_FLIP, FACADE_STREAK } from '@render/buildings/facadeLevel';
 import { shellUv } from '@render/buildings/shellParts';
 import { PART_KINDS, type PartKind, createBuildingKit } from '@render/buildings/kit';
 import { GROUND_ATTRIBUTE, LOOK_FLOATS, NO_GROUND, SHELL_PARTS, SHELL_PART_KINDS } from '@render/buildings/shellParts';
@@ -133,6 +133,27 @@ describe('the buildings\' far level', () => {
     }
     expect(far).toBeGreaterThan(0);
     expect(far).toBeLessThan(near * 0.9);
+  });
+
+  it('marks the rain streak under its sills on its runs, for the shader to draw, and lays no streak of its own', () => {
+    let streaked = 0;
+    for (const b of town) {
+      const l1 = emitChunk(b, groundAt, undefined, groundAt, undefined, true);
+      for (const s of Object.values(l1.runs ?? {})) {
+        for (let i = 2; i < s.grid.length; i += FACADE_GRID) {
+          const raw = s.grid[i]!, streak = Math.floor(raw / FACADE_STREAK), kind = raw & (FACADE_FLIP - 1);
+          if (streak === 0) continue;
+          streaked++;
+          // Only an opening with a sill takes one: a window, a sash or wide one, a shuttered one, a french, bay or ribbon window.
+          expect([1, 2]).toContain(streak);
+          expect([1, 2, 3, 4]).toContain(kind);
+        }
+      }
+      // What is under its error is left out: a mast, the drains, the posts.
+      const detail = emitChunk(b, groundAt);
+      expect(triangles(l1)).toBeLessThan(triangles(detail));
+    }
+    expect(streaked).toBeGreaterThan(0);
   });
 
   it('draws its windows where the detail has its panes, dark where the detail\'s are', () => {

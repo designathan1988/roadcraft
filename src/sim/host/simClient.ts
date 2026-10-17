@@ -5,7 +5,7 @@ import type { NetworkBake } from '@world/networkBuild';
 import { OWNER, tileOfRecord } from '@world/tiles';
 import type { BuildingId } from '@world/buildings/types';
 import { buildingChangesOf, trafficMapOf } from '../agents/trafficBuildings';
-import { archetypeById, type Archetype } from '../vehicles/archetypes';
+import { ARCHETYPES, archetypeById, type Archetype } from '../vehicles/archetypes';
 import type { KerbStop } from '../vehicles/kerbStops';
 import type { PedView, PersonAgeClass } from '../people/view';
 import type { VehicleFrames } from '../pose';
@@ -15,8 +15,8 @@ import type { Casualty } from '../people/casualties';
 import type { TileEvent } from '../meso/meso';
 import { FleetGrid, type GroundBox } from './fleetGrid';
 import {
-  C, H, P, PED_STRIDE, V, VEHICLE_STRIDE, headBase, makeSharedFrames, pedBase, vehicleBase,
-  type FromSim, type SignalLayout, type SimAct, type SimAsk, type SimControls, type SimStats, type ToSim, type TrainState, type Wound,
+  C, H, P, PARKED_STRIDE, PED_STRIDE, PK, V, VEHICLE_STRIDE, headBase, makeSharedFrames, pedBase, vehicleBase,
+  type FromSim, type ParkedChanges, type SignalLayout, type SimAct, type SimAsk, type SimControls, type SimStats, type ToSim, type TrainState, type Wound,
 } from './protocol';
 
 /** THE PAGE'S SIDE OF THE SIMULATION'S WORKER (`simHost.ts`): the map's changes sent, the frame read, the panels' questions asked */
@@ -131,7 +131,7 @@ export class SimClient implements JournalReader {
   trafficSpeed = 0;
   trafficQueued = 0;
   readonly pedViews: PedView[] = [];
-  /** Moves whenever a vehicle came or went (the casting forgets the people of those gone, `render/agents.ts`). */
+  /** Moves whenever a traffic view came or went, or a parked one went (the casting forgets the people of those gone, `render/agents.ts`); DO NOT move it for a parked car told again. */
   fleet = 0;
   /** Whether a view is one of the cars parked in their bays now. */
   isParked(view: VehicleView): boolean {
@@ -153,6 +153,7 @@ export class SimClient implements JournalReader {
   }
 
   private dropParked(view: VehicleView): void {
+    this.fleet++;
     this.parkedById.delete(view.id);
     const at = this.parkedAt.get(view);
     if (at !== undefined) {
@@ -164,7 +165,9 @@ export class SimClient implements JournalReader {
     this.settling.delete(view);
   }
 
+  /** Another map: every parked view let go at once. */
   private clearParked(): void {
+    if (this.parked.length) this.fleet++;
     this.parked.length = 0;
     this.parkedById.clear();
     this.parkedAt.clear();
@@ -331,7 +334,7 @@ export class SimClient implements JournalReader {
         for (const id of t.lots) records.push({ part: 'lots', id, value: undefined });
         // A node stays while a road of a held tile ends on it (the page keeps a borrowed node the same way, `RoadDoc.unloadTile`), sent again without the roads let go.
         for (const id of [...t.nodes, ...t.borrowedNodes]) records.push({ part: 'nodes', id, value: this.usedByHeld(id) ? this.nodeRecord(id) : undefined });
-        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: t.buildings.map((id) => ({ id, value: null })) });
+        this.send({ type: 'delta', delta: { records, lists: [], values: [] }, buildings: t.buildings.map((id) => ({ id, ref: null })) });
       }
     }
   }
@@ -584,23 +587,9 @@ export class SimClient implements JournalReader {
     const rich = message.vehicles.length ? new Map(message.vehicles) : null;
     // This tick's stamp (`tick` once read): a view not stamped by it was not in it (DO NOT gather the tick's ids in a set to find them).
     const stamp = this.tick + 1;
-    // The cars parked in bays, as told: come, gone, or the whole list.
-    if (message.parked) {
-      if (message.parked.some((p) => p.whole)) this.clearParked();
-      for (const p of message.parked) {
-        this.fleet++;
-        if (p.gone) { const gone = this.parkedById.get(p.id); if (gone) this.dropParked(gone); continue; }
-        const known = this.parkedById.get(p.id);
-        const view = known ?? newView(p.id);
-        view.archetype = archetypeById(p.archetype);
-        view.color = p.color;
-        setFree(view, p.x, p.y, p.angle, p.x, p.y, p.angle, p.lot);
-        view.v = 0; view.prev.v = 0; view.seats = 0;
-        setFrames(view.frames, p.x, p.y, p.angle, p.x, p.y, p.angle);
-        if (!known) this.addParked(view);
-        this.parkedGrid.place(view);
-      }
-    } else {
+    // The cars parked in bays, as told: come, gone, or every one standing, each applied by its id (DO NOT clear them all and make every view again).
+    if (message.parked) this.applyParked(message.parked, stamp);
+    else {
       // The parked cars that moved last tick and not this one stand where they stopped: DO NOT walk every parked car for them.
       for (const view of this.settling) {
         const f = view.free;
@@ -620,8 +609,7 @@ export class SimClient implements JournalReader {
       let view = parked ? this.parkedById.get(id) : this.vehicles.get(id);
       if (!view) {
         view = newView(id);
-        this.fleet++;
-        if (parked) this.addParked(view); else this.vehicles.set(id, view);
+        if (parked) this.addParked(view); else { this.vehicles.set(id, view); this.fleet++; }
       }
       const r = rich?.get(id);
       if (r) {
@@ -700,6 +688,13 @@ export class SimClient implements JournalReader {
       const segment = data[at + P.segment]!;
       w.segment = segment < 0 ? undefined : segment as SegmentId;
       w.walking = data[at + P.walking] === 1; w.kerbWait = data[at + P.kerbWait]!; w.rank = data[at + P.rank]!;
+      // A gesture is told once, when it starts: its clock (`t`) kept here from the age it started at (DO NOT have it told each tick for its clock).
+      const gesture = view.gesture;
+      if (gesture) {
+        let from = GESTURE_FROM.get(gesture);
+        if (from === undefined) GESTURE_FROM.set(gesture, from = w.age - gesture.t);
+        gesture.t = w.age - from;
+      }
       this.pedViews.push(view);
       if (view.tickRead !== stamp) { view.tickRead = stamp; pedRead++; }
     }
@@ -727,6 +722,32 @@ export class SimClient implements JournalReader {
     this.onTick?.();
   }
 
+  /** The parked cars' numbers (`PK`) applied by id: a known view written in place, a new one made, a gone one let go; with `whole`, those not named let go too. */
+  private applyParked(told: ParkedChanges, stamp: number): void {
+    const cars = told.cars;
+    for (let at = 0; at < cars.length; at += PARKED_STRIDE) {
+      const id = cars[at + PK.id]!;
+      const known = this.parkedById.get(id);
+      if (cars[at + PK.gone] === 1) { if (known) this.dropParked(known); continue; }
+      const view = known ?? newView(id);
+      view.archetype = ARCHETYPES[cars[at + PK.archetype]!] ?? archetypeById('');
+      view.color = colourOf(cars[at + PK.color]!);
+      const x = cars[at + PK.x]!, y = cars[at + PK.y]!, angle = cars[at + PK.angle]!, lot = cars[at + PK.lot]!;
+      setFree(view, x, y, angle, x, y, angle, lot < 0 ? null : lot);
+      view.v = 0; view.prev.v = 0; view.seats = 0;
+      setFrames(view.frames, x, y, angle, x, y, angle);
+      view.tickRead = stamp;
+      if (!known) this.addParked(view);
+      this.parkedGrid.place(view);
+    }
+    if (!told.whole) return;
+    // Every car standing was named: those not stamped by this tick are gone (one pass over the list, only when the log was let go).
+    for (let k = this.parked.length - 1; k >= 0; k--) {
+      const view = this.parked[k]!;
+      if (view.tickRead !== stamp) this.dropParked(view);
+    }
+  }
+
   private clearViews(): void {
     this.vehicles.clear();
     this.traffic.length = 0;
@@ -744,6 +765,17 @@ export class SimClient implements JournalReader {
     this.signalLog.length = 0;
     this.signalAll = this.signalBase;
   }
+}
+
+/** Each gesture told, by the age (`PedView.age`) its clock started at. */
+const GESTURE_FROM = new WeakMap<object, number>();
+
+/** A colour as the worker numbers it (0xrrggbb), as its palette writes it; the strings kept, one per colour. */
+const COLOURS = new Map<number, string>();
+function colourOf(n: number): string {
+  let c = COLOURS.get(n);
+  if (c === undefined) COLOURS.set(n, c = `#${n.toString(16).padStart(6, '0')}`);
+  return c;
 }
 
 function newView(id: number): VehicleView {

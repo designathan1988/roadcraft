@@ -83,8 +83,10 @@ uniform vec3 furnitureTone[${FURNITURE_KINDS.length}];
 float roomHash(float n) { return fract(sin(n * 91.345 + 7.13) * 43758.5453); }
 ${ROOM_LAMP_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
-// The room behind the pane.
-vec3 roomSeen;
+// A pane a few pixels across or less (\`vPane\` spans the pane), so it holds at any zoom and lens: worked out first, a pane under it shows its mean alone and its room is never looked into.
+float paneTiny = smoothstep(0.12, 0.45, max(fwidth(vPane.x), fwidth(vPane.y)));
+vec3 roomSeen = vec3(0.42, 0.45, 0.47);
+if (paneTiny < 1.0) {
 if (vRoomA.z > 0.05) {
   vec3 o = vRoomEye;
   vec3 d = vRoomRay;
@@ -224,10 +226,8 @@ if (vRoomA.z > 0.05) {
   room = mix(room, vec3(0.28, 0.22, 0.18), furniture * 0.85);
   roomSeen = mix(diffuseColor.rgb, room, 0.55);
 }
-// A pane a few pixels across or less
-// (\`vPane\` spans the pane), so it holds at any zoom and lens.
-float paneTiny = smoothstep(0.12, 0.45, max(fwidth(vPane.x), fwidth(vPane.y)));
 roomSeen = mix(roomSeen, vec3(0.42, 0.45, 0.47), paneTiny);
+}
 // The glass itself scatters next to nothing: what a pane shows is the
 // room through it (sent out below, \`roomDaylight\`) and its Fresnel
 // reflection.
@@ -236,7 +236,8 @@ diffuseColor.rgb *= 0.06;`)
 roughnessFactor = mix(roughnessFactor, 0.55, paneTiny);`)
       .replace('#include <envmap_physical_pars_fragment>', `#include <envmap_physical_pars_fragment>`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-// Not every occupied room shows its light (blinds, a lamp in the next room)
+// Not every occupied room shows its light (blinds, a lamp in the next room); by day the lamp's emissive is 0 (a uniform: one branch for every pixel) and none is worked out.
+if (totalEmissiveRadiance != vec3(0.0)) {
 float shown = step(fract(vRoomLot * 5.31), 0.64);
 float level = 0.3 + 0.85 * fract(vRoomLot * 7.13) * fract(vRoomLot * 2.17 + 0.4);
 float roomLit = shown * (vLit >= 0.0 ? vLit * level : step(0.34, vRoomLot) * level);
@@ -247,7 +248,8 @@ vec3 roomTint = roomLamp(fract(vRoomLot * 17.31), office);
 roomTint = mix(roomTint, tvLight(tvClock, vRoomLot), (1.0 - office) * step(1.0 - ${TV_SHARE.toFixed(2)}, fract(vRoomLot * 3.71)));
 // At night the lamp lights the room: its walls, floor and furniture seen, not a sheet of light.
 totalEmissiveRadiance *= roomLit * roomTint * (0.35 + 1.3 * clamp(roomSeen / 0.55, 0.0, 1.6));
+}
 totalEmissiveRadiance += roomSeen * roomDaylight;`);
   };
-  glassy.customProgramCacheKey = () => `room-lights-awake-interior-v9-${kind}`;
+  glassy.customProgramCacheKey = () => `room-lights-awake-interior-v10-${kind}`;
 }

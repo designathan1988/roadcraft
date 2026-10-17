@@ -36,8 +36,10 @@ describe('the matrix of a plant turned about the up axis', () => {
     const format = runs.slice(runs.indexOf('export const YAW_POSE'), runs.indexOf('/** One mesh of the layer'));
     expect(format).toMatch(/yawMatrixInto\(out, outAt/);
     const cells = readFileSync('src/render/cellInstances.ts', 'utf8');
-    const write = cells.slice(cells.indexOf('const write = '), cells.indexOf('const visit = '));
-    expect(write).toMatch(/if \(n < b\.capacity && b\.shown\[n\] !== i\)/);
+    // A plant kept at its position is not written again (`reconcile`); one moved or come is written as its pose (`put`).
+    const reconcile = cells.slice(cells.indexOf('const reconcile = '), cells.indexOf('const sendSpan = '));
+    expect(reconcile).toMatch(/if \(seen\[s\] === now && want\[s\] === id\) \{ p\+\+; continue; \}/);
+    const write = cells.slice(cells.indexOf('const put = '), cells.indexOf('const reconcile = '));
     expect(write).toMatch(/poses\[to \+ j\] = data\[from \+ j\]/);
     expect(write).not.toMatch(/matrixInto|instanceMatrix/);
   });

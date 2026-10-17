@@ -18,6 +18,7 @@ import {
   WebGLRenderTarget,
   type InstancedMesh,
   type MeshDepthMaterial,
+  type Texture,
   type WebGLRenderer,
 } from 'three';
 import { FRAMES, FRAME_PX, IMPOSTOR_FRAMES_GLSL, IMPOSTOR_READ_GLSL, bakeMaterials, bakeShadowMaterials, frameBasis, hemiOctaDirection } from './impostorShaders';
@@ -254,6 +255,11 @@ function layoutOf(n: number): { x: number; y: number } {
 export interface PlantImpostors {
   /** Each model's quad: four corners, its sphere and its block on the atlas in their attributes. */
   readonly quads: readonly BufferGeometry[];
+  /** The atlas's colour and normal pictures, its blocks across and down, and each model's sphere (one unit tall): what the far woods draw from too (`farForest.ts`). */
+  readonly albedo: Texture;
+  readonly normals: Texture;
+  readonly blocks: { readonly x: number; readonly y: number };
+  readonly spheres: readonly { readonly centre: Vector3; readonly radius: number }[];
   /** Each model's sphere radius, one unit tall: the size a plant's level is chosen by (`cellInstances.ts`). */
   readonly reach: readonly number[];
   readonly material: MeshStandardMaterial;
@@ -275,13 +281,13 @@ export function takeWaitingPictures(renderer: WebGLRenderer): void {
   for (const take of [...waiting]) take(renderer);
 }
 
-/** The pictures of these models, taken at the next `takeWaitingPictures`; `key` names their programs. */
-export function createPlantImpostors(models: readonly ImpostorModel[], wind: WindResponse, key: string): PlantImpostors {
+/** The pictures of these models, taken at the next `takeWaitingPictures`; `key` names their programs; `ownModels`: the models' geometries let go once taken. */
+export function createPlantImpostors(models: readonly ImpostorModel[], wind: WindResponse, key: string, ownModels = false): PlantImpostors {
   const pictures = models.map(pictureOf);
   const blocks = layoutOf(models.length);
   const block = FRAMES * FRAME_PX;
-  // Two pictures per view, the colour and the normal; and the outline that throws the shadow.
-  const atlas = new WebGLRenderTarget(blocks.x * block, blocks.y * block, { count: 2, depthBuffer: true, generateMipmaps: true });
+  // Two pictures per view, the colour and the normal; and the outline that throws the shadow. DO NOT keep a depth buffer the size of the atlas for its life: it is drawn once (`bake`, a target of its own with depth).
+  const atlas = new WebGLRenderTarget(blocks.x * block, blocks.y * block, { count: 2, depthBuffer: false, generateMipmaps: true });
   const outline = new WebGLRenderTarget(blocks.x * block, blocks.y * block, { format: RedFormat, depthBuffer: false, generateMipmaps: true });
   for (const t of [...atlas.textures, outline.texture]) { t.minFilter = LinearMipmapLinearFilter; t.magFilter = LinearFilter; }
   const uniforms = {
@@ -356,7 +362,9 @@ export function createPlantImpostors(models: readonly ImpostorModel[], wind: Win
     renderer.autoClear = false;
     renderer.shadowMap.autoUpdate = false;
     const direction = new Vector3(), tangent = new Vector3(), bitangent = new Vector3();
-    for (const [target, pass] of [[atlas, 'colour'], [outline, 'shadow']] as const) {
+    // The colour and normal pictures drawn with a depth buffer that lives only as long as the drawing: copied onto the atlas after.
+    const drawn = new WebGLRenderTarget(atlas.width, atlas.height, { count: 2, depthBuffer: true, generateMipmaps: false });
+    for (const [target, pass] of [[drawn, 'colour'], [outline, 'shadow']] as const) {
       // Made with every mip level (three allocates them by `generateMipmaps` when the target is first set), made once after the last picture.
       target.scissorTest = false;
       target.viewport.set(0, 0, target.width, target.height);
@@ -392,7 +400,8 @@ export function createPlantImpostors(models: readonly ImpostorModel[], wind: Win
             target.viewport.set(x, y, FRAME_PX, FRAME_PX);
             target.scissor.set(x, y, FRAME_PX, FRAME_PX);
             renderer.setRenderTarget(target);
-            if (taken++ === last) for (const t of target.textures) t.generateMipmaps = true;
+            // The outline's mips made after its last picture; the colour's on the atlas, once copied.
+            if (taken++ === last && target === outline) outline.texture.generateMipmaps = true;
             renderer.render(scene, camera);
           }
         }
@@ -400,7 +409,14 @@ export function createPlantImpostors(models: readonly ImpostorModel[], wind: Win
       target.scissorTest = false;
       target.viewport.set(0, 0, target.width, target.height);
     }
+    // The pictures onto the atlas, and its mip levels made by a draw of nothing into it (three r186 `render` ends with `updateRenderTargetMipmap`).
     scene.clear();
+    renderer.initRenderTarget(atlas);
+    for (let i = 0; i < atlas.textures.length; i++) renderer.copyTextureToTexture(drawn.textures[i]!, atlas.textures[i]!);
+    renderer.setRenderTarget(atlas);
+    renderer.render(scene, camera);
+    drawn.dispose();
+    if (ownModels) for (const model of models) { model.body.dispose(); model.cards?.dispose(); }
     renderer.setRenderTarget(was.target);
     renderer.setClearColor(was.colour, was.alpha);
     renderer.autoClear = was.autoClear;
@@ -412,6 +428,10 @@ export function createPlantImpostors(models: readonly ImpostorModel[], wind: Win
   const viewport = new Vector4();
   return {
     quads,
+    albedo: atlas.textures[0]!,
+    normals: atlas.textures[1]!,
+    blocks,
+    spheres: pictures,
     reach: pictures.map((p) => p.radius),
     material,
     depth,

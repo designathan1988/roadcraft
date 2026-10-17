@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BoxGeometry, Group, Mesh, MeshDepthMaterial, MeshStandardMaterial, Scene,
+  BoxGeometry, DirectionalLight, Group, Mesh, MeshDepthMaterial, MeshStandardMaterial, PointLight, Scene,
   type Camera, type Material, type Object3D, type WebGLRenderer,
 } from 'three';
 
 import { drainCompiles } from '@render/uploads';
-import { PROGRAM_FAMILIES, createShaderCatalogue } from '@render/shaderCatalogue';
+import { PROGRAM_FAMILIES, createShaderCatalogue, litStandIns } from '@render/shaderCatalogue';
 
 /** THE PROGRAMS COMPILED AT LOAD (`shaderCatalogue.ts`) */
 describe('the shader catalogue', () => {
@@ -90,5 +90,37 @@ describe('the shader catalogue', () => {
     drainCompiles(renderer, camera, scene, null);
     await catalogue.ready;
     expect(catalogue.counts().people).toBeNull();
+  });
+
+  it('compiles each light variant once the opening is ready, one stand-in a lit program, with that variant\'s lights', async () => {
+    const scene = new Scene();
+    const sets: number[] = [];
+    const lighted = {
+      getRenderTarget: () => null,
+      setRenderTarget: () => {},
+      compileAsync: (object: Object3D, _camera: Camera, target: Scene) => {
+        let lights = 0;
+        target.traverseVisible((o) => { if ((o as PointLight).isLight) lights++; });
+        if (object !== scene && (object as Group).isGroup && object.children.length) sets.push(lights);
+        return Promise.resolve();
+      },
+    } as unknown as WebGLRenderer;
+    drainCompiles(lighted, camera, scene, null);
+    const box = new BoxGeometry();
+    const shared = new MeshStandardMaterial();
+    for (let i = 0; i < 5; i++) scene.add(new Mesh(box, shared));
+    const lamp = new PointLight(0xffffff, 0);
+    lamp.visible = false;
+    scene.add(lamp, new DirectionalLight());
+    const sun = scene.children.at(-1)!;
+    const catalogue = createShaderCatalogue(() => ({ lit: new Group(), shadow: new Group() }), () => [[sun], [sun, lamp]]);
+    catalogue.compile(scene);
+    drainCompiles(lighted, camera, scene, null);
+    await catalogue.ready;
+    await new Promise((done) => setTimeout(done, 0));
+    drainCompiles(lighted, camera, scene, null);
+    expect(sets.sort()).toEqual([1, 2]);
+    // Five meshes of one material and geometry: one stand-in.
+    expect(litStandIns([scene]).children.length).toBe(1);
   });
 });

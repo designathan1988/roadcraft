@@ -3,7 +3,7 @@ import { keepCellKey, keepCellOf } from './candidateKeep';
 import { m } from '@world/units';
 
 import { COVER_POSE, COVER_STANCE, FOREST_SPECIES, coverPoseInto, coverVariant, rockTint, scrubTint, treeTint, type CoverPlacement, type GroundCoverKit, type TreePlacement } from './groundCover';
-import { createInstanceRuns, RunBuilder, type PoseFormat, type Run, type RunStore } from './instanceRuns';
+import { createInstanceRuns, leastPixel, RunBuilder, type PoseFormat, type Run, type RunStore } from './instanceRuns';
 import { TREE_MODELS, TREE_POSE, type NatureTreeKit, standsAmong, treeColourInto, treePoseInto, varietyOf } from './natureTrees';
 import { PICTURE_PX } from './plantImpostors';
 
@@ -110,8 +110,9 @@ export function createCoverCells(kit: GroundCoverKit, name: string, places: {
   const stores: RunStore[] = [];
   const shown = (geometry: RunStore['geometry'], material: RunStore['material'], storeName: string, extra: Partial<RunStore> = {}): number =>
     stores.push({ name: storeName, geometry, material, castShadow: true, receiveShadow: true, tinted: true, cards: false, ...extra }) - 1;
-  const rocks = kit.rocks.map((g) => shown(g, kit.rockMaterial, 'rocks'));
-  const scrub = kit.scrub.map((g) => shown(g, kit.scrubMaterial, 'scrub'));
+  // A stone or a bush under a pixel across is not drawn (`leastPixel`): from the map zoom it was every one of them in view, at its whole model.
+  const rocks = kit.rocks.map((g) => shown(g, kit.rockMaterial, 'rocks', { levels: leastPixel(g) }));
+  const scrub = kit.scrub.map((g) => shown(g, kit.scrubMaterial, 'scrub', { levels: leastPixel(g) }));
   const trees = Object.fromEntries(FOREST_SPECIES.map((species) => [species, kit.trees[species].map((model) => {
     const cards = model.cards && kit.trees[species].every((mm) => mm.cards) ? model.cards : null;
     // Its shadow sways with it (the forest's wind in the depth pass too).

@@ -33,6 +33,7 @@ import type { Aabb } from '@core/aabb';
 import type { NaturalPlate } from './groundShape';
 import { GroundShare, type SharedGroundAt } from './sharedGround';
 import { setJobFocus } from '../jobs/jobPool';
+import { gpuLedger } from './gpuLedger';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
 
 /** THE WORLD'S GROUND, plate by plate of the unbounded grid (`world/bounds.ts`): the plates near the view made in full, a ring of far patches round it, nothing beyond */
@@ -416,10 +417,18 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   // The first plate made, at the origin: its materials are the ones the verges and the far ground lend (`vergeMaterial`), so it is never let go.
   const home = plateFor(plateOf(0, 0));
   const outOfReach = (p: Plate): boolean => Math.abs(p.cx - focusX) > keepReach || Math.abs(p.cy - focusY) > keepReach;
+  /** A plate of the content waiting for its corners from the workers: the atlas refreshed when they come (`focus`). */
+  let contentCame = false;
   const refresh = (): void => {
     const wanted = new Set<number>(content);
     for (const key of near) wanted.add(key);
-    for (const key of wanted) ensure(plateFor(key));
+    // DO NOT make every plate wanted on the page in one frame (the whole city's at its opening): a plate whose corners the workers can read is asked for them and made when they come, the far patch standing in meanwhile (as the near ones, `focus`).
+    const offPage = !failedOffPage && flatGroundOffPage();
+    for (const key of wanted) {
+      const p = plateFor(key);
+      if (p.surface) continue;
+      if (offPage && !p.heights && seenRelief !== null) askCorners(p); else ensure(p);
+    }
     shownList.length = 0;
     const cached: Plate[] = [];
     for (const p of plates.values()) {
@@ -428,7 +437,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       show(p, want);
       if (want) shownList.push(p); else cached.push(p);
     }
-    for (const p of cached) if (p !== home && outOfReach(p)) letGo(p);
+    keepWithinBudget(cached);
     // A plate holding nothing any more (not made, not asked, out of reach) forgotten: made again from the document if it comes back.
     for (const p of plates.values()) {
       if (p !== home && !p.surface && !p.asked && !wanted.has(p.key) && !wantedNear.includes(p) && outOfReach(p)) plates.delete(p.key);
@@ -436,6 +445,20 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     partsShown = shownList.map((p) => ({ surface: p.surface!, cx: p.cx, cy: p.cy }));
     drawFar();
     measureHighest();
+  };
+  /**
+   * The plates made but not drawn kept, nearest the view first, while the GPU's book has room for them past what it holds and the plates drawn:
+   * DO NOT let every one go once the view takes in more than `NEAR_VIEW` (a zoom out and back made each again from nothing).
+   */
+  const keepWithinBudget = (cached: Plate[]): void => {
+    let room = gpuLedger.cap - gpuLedger.bytes();
+    for (const p of shownList) room -= p.surface!.gpuBytes();
+    cached.sort((a, b) => Math.hypot(a.cx - focusX, a.cy - focusY) - Math.hypot(b.cx - focusX, b.cy - focusY));
+    for (const p of cached) {
+      if (p === home) continue;
+      room -= p.surface!.gpuBytes();
+      if (room < 0) letGo(p);
+    }
   };
 
   let contentKey = '';
@@ -518,7 +541,12 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       // Tiles came or went (`isStreaming`): what each plate laid stays; a stroke: its rectangles say what to lay again (`plateDabs`).
       const entries = paintCursor.read(doc.changes);
       const edited = entries && entries.every((e) => e.rects !== null) ? entries.filter((e) => !isStreaming(e)).flatMap((e) => e.rects!) : null;
-      for (const p of plates.values()) takePaint(p, doc, edited);
+      // DO NOT filter the map's every dab for every plate at a dab: only the plates a stroke's rectangles reach (a dab's rectangle holds its disc); a tile come or gone, every plate (its dabs may reach past its square).
+      const strokes = edited && !entries!.some(isStreaming) ? edited : null;
+      for (const p of plates.values()) {
+        if (strokes && !strokes.some((r) => r[2] >= p.cx - TERRAIN_HALF && r[0] <= p.cx + TERRAIN_HALF && r[3] >= p.cy - TERRAIN_HALF && r[1] <= p.cy + TERRAIN_HALF)) continue;
+        takePaint(p, doc, edited);
+      }
     }
     if (readContent(doc)) refresh();
   };
@@ -547,9 +575,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         p.asked = false;
         // A plate made meanwhile keeps the field it was made on; a relief changed meanwhile, the new one; a plate forgotten meanwhile, nothing.
         if (relief === seenRelief && !p.surface && plates.get(p.key) === p) { p.heights = mesh.heights; p.mesh = mesh; }
+        if (content.has(p.key)) contentCame = true;
         focusKey = '';
       },
-      failed: () => { p.asked = false; p.heights = null; p.mesh = null; failedOffPage = true; focusKey = ''; },
+      failed: () => { p.asked = false; p.heights = null; p.mesh = null; failedOffPage = true; contentCame = true; focusKey = ''; },
     });
   };
   let failedOffPage = false;
@@ -631,7 +660,9 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       // Drawn: the wanted plates that are made.
       nextNear.length = 0;
       for (const p of wantedNear) if (p.surface) nextNear.push(p.key);
-      if (!ringMoved && nextNear.length === near.length && nextNear.every((v, k) => v === near[k]) && nextNear.every((k) => plates.get(k)?.shown)) return;
+      const came = contentCame;
+      contentCame = false;
+      if (!came && !ringMoved && nextNear.length === near.length && nextNear.every((v, k) => v === near[k]) && nextNear.every((k) => plates.get(k)?.shown)) return;
       near = nextNear.slice();
       refresh();
     },
@@ -647,6 +678,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
         farForest.book.setFull(fp.key, p?.shown ?? false, p?.surface?.ecology() != null, now);
       }
       farForest.update(renderer, now);
+      // Each plate drawn sends the paint a stroke laid since the last frame (`terrain.ts` flushPaint).
+      for (const p of shownList) p.surface!.bakeRelief(renderer, null);
     },
     setWaterLook(look: WaterLook) {
       const was = lastLook;

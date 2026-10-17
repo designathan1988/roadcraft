@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, PerspectiveCamera, Scene, type WebGLRenderer } from 'three';
+import { BoxGeometry, Group, type BufferAttribute, Mesh, MeshBasicMaterial, type Object3D, Scene, type WebGLRenderer } from 'three';
 
 import { drainWarm, warmAhead, warmLooseAhead, warmPending } from '@render/uploads';
 import { buildRoadSurfaces } from '@render/roadSurfaces';
@@ -49,11 +49,11 @@ describe('a loose mesh sent to the GPU', () => {
     b.matrixAutoUpdate = false;
     b.matrixWorld.makeTranslation(7, 8, 9);
     const before = b.matrixWorld.clone();
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    drainWarm(renderer);
     drawn.length = 0;
     const sent = warmLooseAhead([b]);
     expect(warmPending()).toBe(true);
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    drainWarm(renderer);
     await sent;
     expect(drawn.length).toBe(1);
     expect(drawn[0]).not.toBe(world);
@@ -72,7 +72,7 @@ describe('a loose mesh sent to the GPU', () => {
       render: (scene: Scene) => { order.push(scene.children.length === 1 ? scene.children[0]! : scene); },
     } as unknown as WebGLRenderer;
     const world = new Scene();
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    drainWarm(renderer);
     const inScene = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
     world.add(inScene, new Group());
     const small = new Mesh(new BoxGeometry(), new MeshBasicMaterial()), big = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
@@ -80,11 +80,11 @@ describe('a loose mesh sent to the GPU', () => {
     const second = warmAhead(inScene, [inScene.geometry]);
     const sent = Promise.all([warmLooseAhead([small], () => 1), warmLooseAhead([big], () => 40)]);
     order.length = 0;
-    // One frame: one scene mesh, and every loose one behind it, the largest error first.
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    // One frame: one scene mesh (drawn alone, as the loose ones), and every loose one behind it, the largest error first.
+    drainWarm(renderer);
     await sent;
-    expect(order).toEqual([world, big, small]);
-    drainWarm(renderer, new PerspectiveCamera(), world, null);
+    expect(order).toEqual([inScene, big, small]);
+    drainWarm(renderer);
     await Promise.all([first, second]);
     expect(warmPending()).toBe(false);
   });
@@ -100,13 +100,13 @@ describe('a loose mesh sent to the GPU', () => {
     const drawn: Scene[] = [];
     const renderer = fakeRenderer(drawn);
     const world = new Scene();
-    drainWarm(renderer, new PerspectiveCamera(), world, null); // the frame loop is warming from now on
+    drainWarm(renderer); // the frame loop is warming from now on
     const doc = layCity(planCity({ ...DEFAULT_CITY, seed: 4, size: 'small' }));
     const net = new Network(doc);
     net.rebuild();
     const surfaces = buildRoadSurfaces(net, buildRoadElevation(net, ground), materials, ground);
     world.add(surfaces.group);
-    for (let guard = 0; warmPending() && guard < 100_000; guard++) drainWarm(renderer, new PerspectiveCamera(), world, null);
+    for (let guard = 0; warmPending() && guard < 100_000; guard++) drainWarm(renderer);
     expect(warmPending()).toBe(false);
     const kept: string[] = [];
     let blocks = 0;

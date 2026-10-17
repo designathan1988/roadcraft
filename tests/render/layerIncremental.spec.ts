@@ -38,7 +38,8 @@ function drawn(layer: ReturnType<typeof createBuildingLayer>): { triangles: numb
 }
 
 describe('the buildings layer, a change at a time', () => {
-  it('draws what a layer put together from nothing draws', () => {
+  /** Twelve rounds of edits played on a live layer; from round `from` on, each round's drawing compared with a layer put together from nothing (the cost of the test: split in two so each half stays within its time). */
+  const rounds = (from: number, to: number): void => {
     let seed = 11;
     const rand = (): number => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32);
     const doc = new RoadDoc();
@@ -47,7 +48,7 @@ describe('the buildings layer, a change at a time', () => {
     const live = createBuildingLayer();
     settle(live, doc);
     let incremental = 0;
-    for (let round = 0; round < 12; round++) {
+    for (let round = 0; round < to; round++) {
       // A cell emptied whole, and a building taken to a cell where none stood.
       if (round === 4) for (const b of [...doc.buildings.all()]) if (b.x < m(240) && b.y < m(240)) doc.buildings.remove(b.id);
       if (round === 7) doc.buildings.add(body(3, side * SPACING + m(500), m(10)));
@@ -81,6 +82,7 @@ describe('the buildings layer, a change at a time', () => {
       const rebuilt = settle(live, doc);
       doc.buildings.all = all;
       if (rebuilt && walked === 0) incremental++;
+      if (round < from) continue;
       const fresh = createBuildingLayer();
       settle(fresh, doc);
       expect(drawn(live)).toEqual(drawn(fresh));
@@ -90,9 +92,12 @@ describe('the buildings layer, a change at a time', () => {
       }
       fresh.dispose();
     }
-    expect(incremental).toBe(12);
+    expect(incremental).toBe(to);
     live.dispose();
-  });
+  };
+
+  it('draws what a layer put together from nothing draws (rounds 1 to 6)', () => rounds(0, 6));
+  it('draws what a layer put together from nothing draws (rounds 7 to 12)', () => rounds(6, 12));
 
   it("draws a building's new wear, by its id, without walking the town", () => {
     const doc = new RoadDoc();

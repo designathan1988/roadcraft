@@ -1,30 +1,22 @@
 import {
   Box3,
   BufferAttribute,
-  Color,
   Group,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
-  LinearFilter,
-  LinearMipmapLinearFilter,
   Mesh,
   MeshStandardMaterial,
-  OrthographicCamera,
-  Scene,
   Sphere,
   Vector3,
   Vector4,
-  WebGLRenderTarget,
-  type BufferGeometry,
   type WebGLRenderer,
 } from 'three';
 import type { NatureSettings } from '@world/ecology';
 import type { ReliefVersion } from '@world/terrain';
-import { lowPolyTreeParts } from './lowPolyTrees';
 import { takeWaitingPictures } from './plantImpostors';
-import { TREE_MODELS } from './natureTrees';
+import { natureTreePictures } from './natureTrees';
 import { FAR_WOODS_BUDGET, woodsScale, type FarWoods, type FarWoodsAsk, type FarWoodsGrid } from './farWoods';
-import { bakeMaterials, IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTOR_VERTEX, IMPOSTOR_VERTEX_PARS, IMPOSTOR_FRAGMENT_PARS, FRAMES, FRAME_PX, hemiOctaDirection, frameBasis } from './impostorShaders';
+import { IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTOR_VERTEX, IMPOSTOR_VERTEX_PARS, IMPOSTOR_FRAGMENT_PARS } from './impostorShaders';
 import { gpuOnlyAttributes } from './mesh/gpuOnly';
 
 /** DO NOT go back to one mesh of the map: its 102,400 instances */
@@ -190,44 +182,13 @@ export interface FarForest {
   dispose(): void;
 }
 
-interface Variant { readonly body: BufferGeometry; readonly cards: BufferGeometry | null; readonly centre: Vector3; readonly radius: number }
-
-/** The models, one unit tall (`natureTrees.ts` loadNatureTrees: the same seeds, the same trees), and the sphere round each. */
-function variants(): Variant[] {
-  return TREE_MODELS.map((kind, i) => {
-    const { body, cards } = lowPolyTreeParts(kind, 0x7ee5 + i * 7919);
-    const min = new Vector3(Infinity, Infinity, Infinity), max = new Vector3(-Infinity, -Infinity, -Infinity);
-    const grow = (g: BufferGeometry, reach: number): void => {
-      const p = g.getAttribute('position');
-      for (let v = 0; v < p.count; v++) {
-        min.set(Math.min(min.x, p.getX(v) - reach), Math.min(min.y, p.getY(v) - reach), Math.min(min.z, p.getZ(v) - reach));
-        max.set(Math.max(max.x, p.getX(v) + reach), Math.max(max.y, p.getY(v) + reach), Math.max(max.z, p.getZ(v) + reach));
-      }
-    };
-    grow(body, 0);
-    let corner = 0;
-    if (cards) {
-      const c = cards.getAttribute('aCorner');
-      for (let v = 0; v < c.count; v++) corner = Math.max(corner, Math.hypot(c.getX(v), c.getY(v)));
-      grow(cards, corner);
-    }
-    const centre = min.clone().add(max).multiplyScalar(0.5);
-    // The sphere round the box: every view of the model fits its picture.
-    const radius = max.clone().sub(min).length() / 2;
-    return { body, cards, centre, radius };
-  });
-}
-
 /** `slots`: the most far plates there are at once (`flatAtlas.ts` the far ring), each fading by its slot. */
 export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWoodsReader): FarForest {
   const book = new FarWoodsBook(grid, read);
-  const models = variants();
-  const blocksX = 3, blocksY = Math.ceil(models.length / blocksX);
-  const block = FRAMES * FRAME_PX;
-  // Two pictures per view: the colour
-  const atlas = new WebGLRenderTarget(blocksX * block, blocksY * block, { count: 2, depthBuffer: true, generateMipmaps: true });
-  for (const t of atlas.textures) { t.minFilter = LinearMipmapLinearFilter; t.magFilter = LinearFilter; }
-  const bake = bakeMaterials();
+  // The near trees' pictures (`natureTrees.ts`): the same models, one atlas; taken between draws (`takeWaitingPictures`).
+  const pictures = natureTreePictures();
+  const models = pictures.set.spheres;
+  const blocksX = pictures.set.blocks.x, blocksY = pictures.set.blocks.y;
 
   const fades = Math.ceil(slots / 4);
   /** How far a tree's picture reaches from its foot, over its height: the model's sphere */
@@ -235,8 +196,8 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
   for (const v of models) reachPerSize = Math.max(reachPerSize, v.centre.length() + 2 * Math.SQRT2 * v.radius);
   reachPerSize /= Math.sqrt(THIN_LEAST);
   const uniforms = {
-    uAlbedo: { value: atlas.textures[0]! },
-    uNormals: { value: atlas.textures[1]! },
+    uAlbedo: { value: pictures.set.albedo },
+    uNormals: { value: pictures.set.normals },
     uFade: { value: new Float32Array(fades * 4).fill(1) },
     uScale: { value: 1 },
     uThin: { value: new Vector4(THIN_SHARE, THIN_LEAST, blocksX, blocksY) },
@@ -278,63 +239,6 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
   program.castShadow = false;
   program.receiveShadow = false;
   object.add(program);
-
-  let baked = false;
-  const takePictures = (renderer: WebGLRenderer): void => {
-    baked = true;
-    const camera = new OrthographicCamera(-1, 1, 1, -1, 0.01, 10);
-    const scene = new Scene();
-    // Each picture's square set on the atlas itself: a target's own viewport and scissor are in its pixels
-    const was = {
-      target: renderer.getRenderTarget(), autoClear: renderer.autoClear, alpha: renderer.getClearAlpha(),
-      shadows: renderer.shadowMap.autoUpdate, colour: renderer.getClearColor(new Color()),
-    };
-    atlas.scissorTest = false;
-    atlas.viewport.set(0, 0, atlas.width, atlas.height);
-    // Made with every mip level (three allocates them by `generateMipmaps` when the target is first set)
-    renderer.setRenderTarget(atlas);
-    for (const t of atlas.textures) t.generateMipmaps = false;
-    renderer.setClearColor(0x000000, 0);
-    renderer.clear(true, true, true);
-    renderer.autoClear = false;
-    renderer.shadowMap.autoUpdate = false;
-    atlas.scissorTest = true;
-    const direction = new Vector3(), tangent = new Vector3(), bitangent = new Vector3();
-    const last = models.length * FRAMES * FRAMES - 1;
-    let taken = 0;
-    models.forEach((v, k) => {
-      scene.clear();
-      scene.add(new Mesh(v.body, bake.body));
-      if (v.cards) scene.add(new Mesh(v.cards, bake.cards));
-      const r = v.radius;
-      camera.left = -r; camera.right = r; camera.top = r; camera.bottom = -r;
-      camera.near = 0.01 * r; camera.far = 4 * r;
-      camera.updateProjectionMatrix();
-      const bx = (k % blocksX) * block, by = Math.floor(k / blocksX) * block;
-      for (let row = 0; row < FRAMES; row++) {
-        for (let col = 0; col < FRAMES; col++) {
-          hemiOctaDirection(col / (FRAMES - 1), row / (FRAMES - 1), direction);
-          frameBasis(direction, tangent, bitangent);
-          camera.position.copy(v.centre).addScaledVector(direction, 2 * r);
-          camera.up.copy(bitangent);
-          camera.lookAt(v.centre);
-          camera.updateMatrixWorld();
-          const x = bx + col * FRAME_PX, y = by + row * FRAME_PX;
-          atlas.viewport.set(x, y, FRAME_PX, FRAME_PX);
-          atlas.scissor.set(x, y, FRAME_PX, FRAME_PX);
-          renderer.setRenderTarget(atlas);
-          if (taken++ === last) for (const t of atlas.textures) t.generateMipmaps = true;
-          renderer.render(scene, camera);
-        }
-      }
-    });
-    scene.clear();
-    renderer.setRenderTarget(was.target);
-    renderer.setClearColor(was.colour, was.alpha);
-    renderer.autoClear = was.autoClear;
-    renderer.shadowMap.autoUpdate = was.shadows;
-    for (const v of models) { v.body.dispose(); v.cards?.dispose(); }
-  };
 
   /** A plate's trees as its instances: x, height, three's z, size; the model and the plate's slot, the pick, the yaw, the tint. */
   const arraysOf = (key: number): { aSpot: Float32Array; aLook: Float32Array } | null => {
@@ -401,8 +305,7 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
     object,
     book,
     update(renderer, now) {
-      if (!baked) takePictures(renderer);
-      // The near plants' pictures too, the same way: between draws (`plantImpostors.ts`).
+      // The trees' pictures (theirs and the near plants'), between draws (`plantImpostors.ts`).
       takeWaitingPictures(renderer);
       if (book.gone.length) {
         for (const key of book.gone) unwrite(key);
@@ -428,10 +331,7 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
       program.geometry.dispose();
       object.clear();
       material.dispose();
-      atlas.dispose();
-      bake.body.dispose();
-      bake.cards.dispose();
-      for (const v of models) { v.body.dispose(); v.cards?.dispose(); }
+      pictures.release();
     },
   };
 }

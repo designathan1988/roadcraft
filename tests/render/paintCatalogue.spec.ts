@@ -37,6 +37,9 @@ describe('the paint catalogue', () => {
   it('is what the road surfaces read, made by the renderer at load', () => {
     const surfaces = readFileSync('src/render/roadSurfaces.ts', 'utf8');
     expect(surfaces).not.toMatch(/paintMaterial\(/);
-    expect(readFileSync('src/render/renderer.ts', 'utf8')).toMatch(/paint: paintCatalogue\(\),/);
+    // One catalogue made at load, read by the region's surfaces and the tiles' near roads alike.
+    const renderer = readFileSync('src/render/renderer.ts', 'utf8');
+    expect(renderer).toMatch(/const roadPaint = paintCatalogue\(\);/);
+    expect(renderer).toMatch(/paint: roadPaint,/);
   });
 });

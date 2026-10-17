@@ -13,6 +13,13 @@ export const AGGREGATE = 128;
 export const farKey = (k: number, i: number, j: number): string => `f${k}:${i},${j}`;
 /** What a level-1 node keeps besides its boxes (`farTiles.ts`): its tiles' plate masses merged, under its key and this. */
 export const LEVEL_MASS_KEY = '#mass';
+/** What a tile keeps besides its masses: its plate's masses, under its key and this (`farTiles.ts`). */
+export const TILE_PLATE_KEY = '#plate';
+/** What every node keeps for its parent: its boxes, under its key and this (`farTiles.ts`). */
+export const NODE_BOX_KEY = '#boxes';
+/** Every key a node's bake is kept under (`farTiles.ts` `runFarJob`): what is forgotten with it. */
+export const bakeKeysOf = (key: string, k: number): string[] =>
+  [key, `${key}${NODE_BOX_KEY}`, ...(k === 0 ? [`${key}${TILE_PLATE_KEY}`] : k === 1 ? [`${key}${LEVEL_MASS_KEY}`] : [])];
 
 /** A node's level, column and row from its key. */
 export function farNode(key: string): { readonly k: number; readonly i: number; readonly j: number } {
