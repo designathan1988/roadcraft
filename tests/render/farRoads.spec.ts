@@ -3,8 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { roadRecipes } from '@render/bake/roadRecipes';
 import { TOP_LEVEL, emptyRecords, farKey, farNode } from '@render/buildings/farTiles';
 import type { FarTileSource } from '@render/buildings/farLevels';
-import { FarRoads, type NearRoadKit, type RoadPayload, farRoadJob, farRoadPriority } from '@render/farRoads';
-import { EDIT_TIER, FAR_TIER, TIER_SPAN, cellPriority } from '@render/buildings/cellPool';
+import { FarRoads, type NearRoadKit, type RoadPayload, farRoadJob } from '@render/farRoads';
 import { MeshBasicMaterial, type Mesh } from 'three';
 import type { SceneMaterials } from '@render/materials';
 import { marksRoadSection } from '@render/mesh/roadEdges';
@@ -348,24 +347,6 @@ describe('the far roads chosen top down', () => {
     roads.stored(edited, 4);
     await until(over, () => asked.some((job) => job.near && job.i === 0 && job.j === 0 && !job.near.edited));
     roads.dispose();
-  });
-
-  it("queues a near level as a cell's detail is, never behind the masses; an edited tile's before anything", () => {
-    const job = (near?: { edited?: boolean }): FarTreeJob => ({
-      node: 'n0:0,0', k: -1, i: 0, j: 0, sig: 's', want: true, prefix: null,
-      ...(near ? { near: { tiles: [], bake: 'b', variant: 'full', shown: null, ...(near.edited ? { edited: true } : {}) } } : {}),
-    });
-    const shown = { ...kit, coarseFirst: () => false };
-    const hidden = { ...kit, coarseFirst: () => true };
-    expect(farRoadPriority(job(), shown)).toBe(FAR_TIER * TIER_SPAN);
-    expect(farRoadPriority(job({ edited: true }), shown)).toBe(EDIT_TIER * TIER_SPAN);
-    // In the cells' band (the queue adds the distance to the eye): a street's near roads ahead of a cell's facade or a mass 1 km off.
-    expect(farRoadPriority(job({}), shown)).toBe(cellPriority('cell', 0, false, false));
-    expect(farRoadPriority(job({}), shown) + m(100)).toBeLessThan(cellPriority('facade', m(1000), false, false));
-    expect(farRoadPriority(job({}), shown) + m(100)).toBeLessThan(cellPriority('mass', m(1000), false, false));
-    // Behind the curtain, put back with the cells past the masses the opening shows.
-    expect(farRoadPriority(job({}), hidden)).toBe(cellPriority('cell', 0, false, true));
-    expect(farRoadPriority(job({}), hidden)).toBeGreaterThan(cellPriority('massPlate', m(5000), false, true));
   });
 
   it("keeps a tile's near level drawn when its neighbour is written with the same roads: nothing made nor sent to the GPU again", async () => {

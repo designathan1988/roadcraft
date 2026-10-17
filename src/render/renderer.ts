@@ -600,7 +600,6 @@ export function createSceneRenderer(
     markingStyle: () => worldNet?.doc.markingStyle ?? 'classic',
     naturalIsGround: () => buildings.farEnv().naturalIsGround,
     dress: (source, raised) => surfaceLook(source, raised, materials, terrain.vergeMaterial, nearPaintFor),
-    coarseFirst: () => buildings.hidden,
   });
   world.add(farRoads.group);
   /** The streamed world's near products per tile, chosen by the view and baked in workers from the store (`nearTiles.ts`): the poles and wires (`poleTiles.ts`). */

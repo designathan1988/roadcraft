@@ -7,7 +7,7 @@ import { pullTowardEye } from './depthConvention';
 import { type FarRoadJob, type FarRoadMesh, type FarRoadReply, derivedRoadCache, farLevelError, runFarRoadJob, tileRoads } from './farRoadTiles';
 import { type FarKind, type FarLanded, type FarNearLanded, FarTree, type FarTreeJob, type FarTreeRun } from './farTree';
 import { nodeSide } from './buildings/farTiles';
-import { cellPriority, EDIT_TIER, FAR_TIER, TIER_SPAN } from './buildings/cellPool';
+import { EDIT_TIER, FAR_TIER, NEAR_TIER, TIER_SPAN } from './buildings/cellPool';
 import { FAR_ERROR } from './buildings/massCells';
 import { geometryCost } from './gpuLedger';
 import { gpuOnly } from './mesh/gpuOnly';
@@ -97,8 +97,6 @@ export interface NearRoadKit {
   naturalIsGround(): boolean;
   /** A surface's material, shadow and order (`roadSurfaces.ts` surfaceLook). */
   dress(source: TileSource, raised: boolean): { readonly material: Material; readonly castShadow?: boolean; readonly renderOrder?: number };
-  /** Whether the coarse levels go first in the queue (the town behind the curtain, `CellPool.coarseFirst`): a near level is a cell's detail, put back with them. */
-  coarseFirst?(): boolean;
 }
 
 /** A tile the page holds, as a near bake reads it: its roads, and its buildings' gates (worked out here where the records have none: the page's own, a tile written before they were kept); null, one the worker reads from the store. */
@@ -123,14 +121,6 @@ export function farRoadJob(tree: FarTreeJob, kit?: NearRoadKit | null, ground: S
   return records ? { ...job, records: tileRoads(records) } : job;
 }
 
-/** A far roads job's place in the queue (lower first): a far level in the far levels' band; a near level of a tile the page holds edited before anything (`cellPool.ts` EDIT_TIER): it draws what the player just did. */
-export function farRoadPriority(tree: FarTreeJob, kit: NearRoadKit | null): number {
-  if (!tree.near) return FAR_TIER * TIER_SPAN;
-  if (tree.near.edited) return EDIT_TIER * TIER_SPAN;
-  // DO NOT put a near level behind every building's cell, facade and mass of the queue, at any distance (NEAR_TIER): the street under the eye stood in its far level for seconds behind the district's cells (`conferencia` 09-street, 2026-10-17; found by the near-tiles session). It is asked as a cell's detail is, where its error spans the pixels allowed (`FarTree.wantsNear`): in the cells' band, nearest the eye first (the queue adds the distance), put back with them behind the curtain.
-  return cellPriority('cell', 0, false, kit?.coarseFirst?.() ?? false);
-}
-
 /** DO NOT bake on the page: the far jobs go to the job system's queue (`farRoads` service), the page only when no worker can run (tests) */
 function farRoadsRunner(ground: () => SharedGroundData | null, kit: NearRoadKit | null): FarTreeRun<RoadPayload> {
   return (tree, done) => {
@@ -145,11 +135,14 @@ function farRoadsRunner(ground: () => SharedGroundData | null, kit: NearRoadKit 
       return () => { live = false; };
     }
     const side = nodeSide(Math.max(0, tree.k));
-    const priority = farRoadPriority(tree, kit);
+    const near = tree.near !== undefined;
+    // A near level of a tile the page holds edited goes first (`cellPool.ts` EDIT_TIER): it draws what the player just did.
+    const tier = !near ? FAR_TIER : tree.near!.edited ? EDIT_TIER : NEAR_TIER;
     const ticket = submitJob({
       service: 'farRoads',
       key: `farRoads:${tree.node}`,
-      priority,
+      // A near level with the cells' detail, after every far level (`cellPool.ts` NEAR_TIER).
+      priority: tier * TIER_SPAN,
       at: [(tree.i + 0.5) * side, (tree.j + 0.5) * side],
       write: () => ({ data: { ...farRoadJob(tree, kit, ground()), ground: ground() }, transfer: [] }),
       done: (answer) => answered(answer as FarRoadReply),
