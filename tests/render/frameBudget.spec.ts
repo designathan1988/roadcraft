@@ -215,11 +215,25 @@ describe("the GPU's time governing the floor", () => {
     const between = [20, 29, 21, 28.9, 24, 20.1, 27, 22];
     for (const p95 of between) g.read(p95, 12, press);
     expect(asked).toEqual([]);
-    // Raised by a real load, paid (35 -> 29): it stays while the frame swings between the marks.
+    // Raised, paid (35 -> 29): tried once back down between the marks, then nothing moves while the frame swings there.
     g.read(35, 12, press); g.read(35, 12, press); g.read(29, 12, press);
     expect(asked).toEqual([true]);
     for (const p95 of between) g.read(p95, 12, press);
-    expect(asked).toEqual([true]);
+    expect(asked).toEqual([true, false]);
+  });
+
+  it('tries a step judged paid once back down under OVER: a passing load gone, the floor down; the load real, up again and held (conferencia 103/104)', () => {
+    const g = new TimeGovernor();
+    const { asked, press } = pressing();
+    // The opening: 35 ms, over in the window that judges the step (25 ms, between the marks).
+    g.read(35, 12, press); g.read(35, 12, press); g.read(25, 12, press);
+    g.read(25, 12, press);
+    expect(asked).toEqual([true, false]);
+    // A real load: the step down brings the frame back past OVER: up again, and never tried down again in the view.
+    g.read(35, 12, press); g.read(35, 12, press); g.read(25, 12, press);
+    expect(asked).toEqual([true, false, true]);
+    for (let i = 0; i < 6; i++) g.read(25, 12, press);
+    expect(asked).toEqual([true, false, true]);
   });
 
   it('at the coarsest floor nothing is asked for a window to settle', () => {
