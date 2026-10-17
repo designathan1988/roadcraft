@@ -52,6 +52,8 @@ interface PlateState {
   /** What its woods were asked for (land and ecosystem); empty when not asked. */
   asked: string;
   woods: FarWoods | null;
+  /** Its woods' scale (`woodsScale` of its own density and the quality's budget), fixed when they came: another plate coming changes none of it. */
+  scale: number;
   /** Drawn in full, and since when its own trees could grow (its ecosystem is in), seconds; NaN while not. */
   full: boolean;
   nearSince: number;
@@ -69,7 +71,6 @@ export class FarWoodsBook {
   arrived: number[] = [];
   /** The keys of the plates let go: their meshes to drop. */
   gone: number[] = [];
-  scale = 1;
   /** The trees per 1920 m square the quality tier allows (`setVegetation`). */
   private budget = FAR_WOODS_BUDGET;
 
@@ -78,7 +79,7 @@ export class FarWoodsBook {
   /** A far plate come into the view's ring, in `slot`: its woods asked once the land is known. */
   add(key: number, slot: number, cx: number, cy: number): void {
     if (this.plates.has(key)) return;
-    const p: PlateState = { key, slot, cx, cy, asked: '', woods: null, full: false, nearSince: NaN, fade: 1 };
+    const p: PlateState = { key, slot, cx, cy, asked: '', woods: null, scale: 1, full: false, nearSince: NaN, fade: 1 };
     this.plates.set(key, p);
     this.ask(p);
   }
@@ -92,7 +93,6 @@ export class FarWoodsBook {
     this.plates.delete(key);
     this.arrived = this.arrived.filter((k) => k !== key);
     this.gone.push(key);
-    if (p.woods) this.rescale();
   }
 
   /** The land and the ecosystem: when either changed, every far plate's woods asked again (in the background, the nearest first). */
@@ -117,18 +117,16 @@ export class FarWoodsBook {
     this.read(p.key, { relief: land.relief, nature: land.nature, cx: p.cx, cy: p.cy, grid: this.grid }, (woods) => {
       if (p.asked !== key || this.plates.get(p.key) !== p) return;
       p.woods = woods;
+      p.scale = this.scaleOf(woods);
       this.arrived.push(p.key);
-      this.rescale();
     }, () => {
       console.warn('[nature] the far woods of a plate could not be worked out; it stands bare from afar', p.key);
     });
   }
 
-  /** The woods' scale, as the near sweep's: the budget over the plates' average density. */
-  private rescale(): void {
-    let sum = 0, n = 0;
-    for (const p of this.plates.values()) if (p.woods) { sum += p.woods.planned; n++; }
-    this.scale = n ? woodsScale(sum / n, this.grid.half, this.budget) : 1;
+  /** A plate's woods' scale: the budget over its own density. DO NOT take it over the plates present: a plate coming in moved every plate's (the density seen changed as the camera went). */
+  private scaleOf(woods: FarWoods): number {
+    return this.budget === 0 ? 0 : woodsScale(woods.planned, this.grid.half, this.budget);
   }
 
   /** The vegetation the quality tier allows, as the near sweep reads it */
@@ -136,8 +134,12 @@ export class FarWoodsBook {
     const budget = FAR_WOODS_BUDGET * Math.min(1, Math.max(0, amount) / 2_600);
     if (budget === this.budget) return;
     this.budget = budget;
-    this.rescale();
-    if (budget === 0) this.scale = 0;
+    // Every plate's scale again, its instances written again (`arrived`).
+    for (const p of this.plates.values()) {
+      if (!p.woods) continue;
+      p.scale = this.scaleOf(p.woods);
+      if (!this.arrived.includes(p.key)) this.arrived.push(p.key);
+    }
   }
 
   /** Whether plate `key` is drawn in full, and whether its own ecosystem is in (its near trees can grow); a plate not in the ring has no far woods to fade. */
@@ -199,6 +201,7 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
     uAlbedo: { value: pictures.set.albedo },
     uNormals: { value: pictures.set.normals },
     uFade: { value: new Float32Array(fades * 4).fill(1) },
+    // Each plate's own scale is in its trees' picks (`arraysOf`): the shader's is 1.
     uScale: { value: 1 },
     uThin: { value: new Vector4(THIN_SHARE, THIN_LEAST, blocksX, blocksY) },
     uCentre: { value: models.map((v) => v.centre) },
@@ -255,9 +258,11 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
       const o = n * 4;
       s[o] = woods.x[i]!; s[o + 1] = woods.z[i]!; s[o + 2] = -woods.y[i]!; s[o + 3] = woods.size[i]!;
       const seed = woods.seed[i]!;
+      // Its pick over the plate's scale: the shader's test against a scale of 1 is the test against the plate's (`impostorShaders.ts`: want - pick, both over the scale); none stands at a scale of 0.
+      const pick = plate.scale > 0 ? woods.pick[i]! / plate.scale : 2;
       const variety = Math.min(models.length - 1, Math.floor(seed * models.length));
       // The near trees' own tint (`natureTrees.ts`): a little lighter or darker per tree.
-      l[o] = plate.slot * 8 + variety; l[o + 1] = woods.pick[i]!; l[o + 2] = woods.yaw[i]!; l[o + 3] = 0.9 + ((seed * 3.77) % 1) * 0.2;
+      l[o] = plate.slot * 8 + variety; l[o + 1] = pick; l[o + 2] = woods.yaw[i]!; l[o + 3] = 0.9 + ((seed * 3.77) % 1) * 0.2;
     }
     return { aSpot: s, aLook: l };
   };
@@ -315,7 +320,6 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
         for (const key of book.arrived) write(key);
         book.arrived = [];
       }
-      uniforms.uScale.value = book.scale;
       book.step(now);
       // Every far plate's fade into its slot each frame (a few dozen numbers): a slot handed on starts from its new plate's.
       const fade = uniforms.uFade.value;
