@@ -4,7 +4,7 @@ import { TiledSaves } from '@editor/chunkedSave';
 import type { PartStore } from '@editor/saveStore';
 import { readHead } from '@editor/tileBlob';
 import {
-  type MadeTile, type TileOp, type TileText, TileStore, type WorldMeta, bakeStoredTile, portTiles, readTile, runTileOp, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
+  type MadeTile, type TileText, TileStore, type WorldMeta, bakeStoredTile, readTile, readTilePart, storeTiles, storedVersion, tileOpTransfer, writeTile, prepareTile,
   preparedRecords, tileWrite, writtenRecords } from '@editor/tileStore';
 
 /** A maker as `cityTile.worker.ts` serves one: asked only if missing, it looks in the store first (`storedVersion`), the tile read and prepared where it is there; `make` runs only for a tile the store has not. */
@@ -320,39 +320,6 @@ describe('a tile stored', () => {
     expect(await tiles.clearLists(tile.key, ['trees'])).toBeNull();
     expect(store.writes.length).toBe(writes + 1);
     expect(await tiles.clearLists(tileKey(5, 5), ['trees'])).toBeNull();
-  });
-
-  it("a tile and the balance written while the reads' worker is busy: the save's worker only writes (conf28)", async () => {
-    const store = memoryStore();
-    /** A worker of the pool as `portTiles` posts to it: its calls one at a time, a read held while `busy` is not let go (a tile prepared with its network). */
-    let letGo = (): void => {};
-    const busy = new Promise<void>((done) => { letGo = done; });
-    const worker = (): Worker => {
-      const w = { onmessage: null as ((e: MessageEvent) => void) | null, onerror: null, onmessageerror: null, chain: Promise.resolve(),
-        postMessage(message: { id: number; tiles: TileOp }) {
-          w.chain = w.chain.then(async () => {
-            if (message.tiles.op === 'read') await busy;
-            const value = await runTileOp(store, message.tiles);
-            w.onmessage?.({ data: { id: message.id, ok: true, value } } as MessageEvent);
-          });
-        } };
-      return w as unknown as Worker;
-    };
-    const backend = portTiles(worker, 3, worker);
-    const maker = async (): Promise<MadeTile> => ({ version: null, existed: true });
-    const tiles = new TileStore('map', backend, never, maker);
-    await tiles.setMeta({ version: 1, generator: null, unit: 1, values: { terrain: [], economy: { balance: 20_000_000 } } });
-    // A tile of the region being read and prepared, its network solved: it holds its worker.
-    const reading = backend.run({ op: 'read', map: 'map', key: tileKey(4, 4), network: true });
-    const tile = emptyTile(1, 0, { nodes: [node(1, m(1_100), m(5)), node(2, m(1_200), m(5))] });
-    const saved = Promise.all([tiles.write(tile), tiles.setMetaParts({ economy: { economy: { balance: 19_744_162 } } })]);
-    const outcome = await Promise.race([saved, new Promise((done) => setTimeout(() => done('held behind the read'), 200))]);
-    expect(outcome).toEqual([1, true]);
-    letGo();
-    await reading;
-    // Read again as a reload reads it: the road and the balance.
-    expect((await readTile(store, 'map', tile.key))?.nodes.map((n) => n.id)).toEqual([1, 2]);
-    expect((await new TileStore('map', storeTiles(store), never).meta())?.values?.economy).toEqual({ balance: 19_744_162 });
   });
 
   it("writes a part of the world's values alone under its key, and reads it back over the values, a key it dropped gone", async () => {

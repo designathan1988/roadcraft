@@ -319,12 +319,9 @@ export function tileOpTransfer(op: TileOp, value: unknown): ArrayBuffer[] {
   return op.op === 'readText' && Array.isArray(value) ? (value as TileText).map((t) => t.buffer) : [];
 }
 
-/** Whether a call only writes what the page hands it (records with no sections, the world's values, keys taken away): run on the save's worker, which does nothing else. */
-const writesOnly = (op: TileOp): boolean =>
-  (op.op === 'write' && op.unbaked === true) || op.op === 'setMeta' || op.op === 'setMetaParts' || op.op === 'removeTiles' || op.op === 'migrate';
-
-/** The calls run in the job system's lanes: the page posts the call and is handed the answer. DO NOT read or bake on the save's worker (`port`): a tile prepared with its network, or its sections baked, held that worker's event loop for seconds, and every write's commit and the world's values' with it - a reload meanwhile lost the edit and the balance (conf28). The writes alone go there; every other call goes to `readPort`'s lanes, `readLanes` of them (the region's nine tiles read at the opening, not one after the other). */
-export function portTiles(port: () => Worker, readLanes = 1, readPort: () => Worker = port): TileBackend {
+/** The calls run in the job system's `save` lane (`port`): the page posts the call and is handed the answer. */
+/** `readLanes`: the reads of whole tiles spread over this many lanes of the pool (each reads and prepares a tile, its network solved there: the region's nine tiles at the opening, not one after the other); every other call on the first. */
+export function portTiles(port: () => Worker, readLanes = 1): TileBackend {
   const workers: Worker[] = [];
   let next = 1;
   let reads = 0;
@@ -332,8 +329,7 @@ export function portTiles(port: () => Worker, readLanes = 1, readPort: () => Wor
   const failAll = (): void => { for (const w of waiting.values()) w.fail(new Error('the save worker stopped')); waiting.clear(); };
   const lane = (k: number): Worker => {
     while (workers.length <= k) {
-      // Lane 0 the save's; the rest the reads'.
-      const worker = workers.length === 0 ? port() : readPort();
+      const worker = port();
       worker.onmessage = (event: MessageEvent<{ readonly id: number; readonly ok: boolean; readonly value?: unknown }>) => {
         const w = waiting.get(event.data.id);
         waiting.delete(event.data.id);
@@ -348,7 +344,7 @@ export function portTiles(port: () => Worker, readLanes = 1, readPort: () => Wor
   };
   return {
     run(op) {
-      const worker = lane(writesOnly(op) ? 0 : 1 + (reads++ % Math.max(1, readLanes)));
+      const worker = lane(op.op === 'read' && op.network ? reads++ % Math.max(1, readLanes) : 0);
       const id = next++;
       return new Promise<unknown>((done, fail) => {
         waiting.set(id, { done, fail });
