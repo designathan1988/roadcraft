@@ -1,4 +1,4 @@
-import { gaitSpeed, type BodyPart, type PedView, type PersonAgeClass, type Severable } from '@sim/people/view';
+import { gaitSpeed, type BodyPart, type PersonAgeClass, type Severable } from '@sim/people/view';
 import { simplified } from './mesh/simplify';
 import {
   BoxGeometry,
@@ -79,9 +79,6 @@ const OCCUPANT_ZOOM = perM(3);
 
 /** Each vehicle's own level, by the screen's scale where it stands */
 const VEHICLE_HYSTERESIS = 0.1;
-/** How far a vehicle or a walker may stand from where its ground was last asked and still be tested on that ground, and the reach added for it (a road climbs under 25%). */
-const VIEW_DECK_REUSE = m(8);
-const VIEW_DECK_SLACK = m(2);
 /** A car's length, for the smallest scale anything is drawn at (2 px). */
 const CAR_LENGTH = m(4.5);
 /** At most this many vehicles whole at once: past it, the smallest on the screen are drawn a level down. */
@@ -1356,8 +1353,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const pane = { visible: true, up: 0, sy: 1 };
 
   /** Hatchback, sedan, SUV and van, from the class's model (`vehicleModels.ts`) */
-  /** `shellOnly`: off screen, only its shadow on it: the parts that cast (body, doors, roof, accent, wheels), no glass, cabin, lamps or people. */
-  const drawCar = (vehicle: SimVehicle, s: VehicleDraw, band: number, shellOnly = false): void => {
+  const drawCar = (vehicle: SimVehicle, s: VehicleDraw, band: number): void => {
     const car = s.car;
     if (!car) return;
     const model = car.model;
@@ -1375,8 +1371,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // Real shadows from the whole vehicle only; the middle level's is a soft disc (`sync`).
     const shell = band >= 2 ? car.shell : car.shellLite;
     const doors = model.doors;
-    if (shellOnly && !doorsMoving) wholeAt(shell, detail, paint);
-    else if (!doorsMoving && look.windowsDown === 0) {
+    if (!doorsMoving && look.windowsDown === 0) {
       wholeAt(shell, detail, paint);
       wholeAt(car.glass, detail, null);
     } else if (!doorsMoving) {
@@ -1391,7 +1386,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       }
     } else {
       placeWhole(car.openShell, paint);
-      if (!shellOnly) placeWhole(car.openGlass, null);
+      placeWhole(car.openGlass, null);
       for (let i = 0; i < doors.length; i++) {
         const door = doors[i]!;
         const open = doorOpening(vehicle, door.index);
@@ -1401,24 +1396,23 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           const along = door.hingeX + door.slide * smooth01((open - 0.15) / 0.85);
           const across = -(door.hingeZ + door.side * out);
           place(car.doors[i]!, along, across, 0, 1, 1, 1, paint);
-          if (!shellOnly) place(car.doorGlass[i]!, along, across, 0, 1, 1, 1, null);
+          place(car.doorGlass[i]!, along, across, 0, 1, 1, 1, null);
           continue;
         }
         // Swung about the hinge, outwards on its own side.
         const swing = open * DOOR_SWING;
         place(car.doors[i]!, door.hingeX, -door.hingeZ, 0, 1, 1, 1, paint, 0, door.side * swing);
-        if (!shellOnly) place(car.doorGlass[i]!, door.hingeX, -door.hingeZ, 0, 1, 1, 1, null, 0, door.side * swing);
+        place(car.doorGlass[i]!, door.hingeX, -door.hingeZ, 0, 1, 1, 1, null, 0, door.side * swing);
       }
     }
     const roof = band >= 2 ? car.roof : car.roofLite;
     const accent = band >= 2 ? car.accent : car.accentLite;
     if (roof && car.roofGlass) {
-      if (look.glassRoof) { if (!shellOnly) placeWhole(car.roofGlass, null); }
+      if (look.glassRoof) placeWhole(car.roofGlass, null);
       else wholeAt(roof, detail, look.blackRoof ? T_BLACK_ROOF : paint);
     }
     wholeAt(accent, detail, s.accent);
     placeWheels(s.plan, band);
-    if (shellOnly) return;
 
     wholeAt(car.trim, detail, null);
     for (const l of model.headlamps) place(lamps, l.x, -l.z, l.y, l.sx, l.sy, l.sz, lamp.head);
@@ -1727,11 +1721,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     deckY: number;
     deckValue: number;
     deckSeen: number;
-    /** The deck the view test last read and where (`viewDeck`): a vehicle near there is tested on it, its ground not asked. */
-    testKnown: boolean;
-    testX: number;
-    testY: number;
-    testDeck: number;
     /** Standing still in its bay: its place in `keptList` (-1: none), the frame it was last drawn kept, its kept instances and what they were written for. */
     keptAt: number;
     keptSeen: number;
@@ -1751,10 +1740,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const draws = new Map<number, VehicleDraw>();
   /** The vehicles asked of the client's grid for this frame's view (`SimClient.vehiclesIn`), reused. */
   const inView: SimVehicle[] = [];
-  /** The same of the walkers (`SimClient.pedsIn`). */
-  const pedsInView: PedView[] = [];
-  /** Each walker's ground as the view test last asked it and where: a walker near there is tested on it (`sync`). */
-  const pedGround = new Map<number, { x: number; y: number; below: number; seen: number }>();
   const drawOf = (vehicle: SimVehicle): VehicleDraw => {
     let s = draws.get(vehicle.id);
     if (!s) {
@@ -1762,13 +1747,12 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         keptSlots: [], leanKnown: false, lean: 0, leanAge: 0, view: null, archetype: null, plan: FALLBACK_PLAN, car: null, bike: null,
         look: BLANK_LOOK, lookSeats: -1, accent: T_WHITE, helmet: T_WHITE, color: null, paint: 0, paintTint: T_WHITE,
         rideSet: false, deck: 0, pitch: 0, roll: 0, lod: -1, seen: 0, deckKnown: false, deckX: 0, deckY: 0, deckValue: 0, deckSeen: 0,
-        testKnown: false, testX: 0, testY: 0, testDeck: 0,
         keptAt: -1, keptSeen: -1, keptParts: [], keptX: 0, keptY: 0, keptAngle: 0, keptDeck: 0, keptBand: 0, keptLevels: 0, keptVersion: 0,
         keptPaint: 0, keptShadows: false,
       };
       draws.set(vehicle.id, s);
     }
-    if (s.view !== vehicle) { s.view = vehicle; s.deckKnown = false; s.leanKnown = false; s.testKnown = false; }
+    if (s.view !== vehicle) { s.view = vehicle; s.deckKnown = false; s.leanKnown = false; }
     const a = vehicle.archetype;
     if (s.archetype !== a) {
       s.archetype = a;
@@ -1936,10 +1920,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       gaitClock = simNow;
       suspensionFrame++;
       // A vehicle not drawn for two seconds: its record let go (a kept one's instances went the frame it was not drawn).
-      if (suspensionFrame % 600 === 0) {
-        for (const [id, s] of draws) if (suspensionFrame - s.seen > 120 && s.keptAt < 0) draws.delete(id);
-        for (const [id, g] of pedGround) if (suspensionFrame - g.seen > 120) pedGround.delete(id);
-      }
+      if (suspensionFrame % 600 === 0) for (const [id, s] of draws) if (suspensionFrame - s.seen > 120 && s.keptAt < 0) draws.delete(id);
       forgetCast(world);
       pedestrians.begin(options.pedestrianDetail ?? 2, zoom);
       procPixels = options.personPixels ?? null;
@@ -1972,16 +1953,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         const free = vehicle.free !== null;
         const plan = s.plan;
         const twoWheeled = plan.shape === 'motorcycle' || plan.shape === 'bicycle';
-        const reach = plan.length * 0.5 + plan.height * 2;
-        // Off screen, and too far from it for its shadow to fall on it: nothing of this vehicle is written this frame, its ground not asked.
-        const visible = options.vehicleVisible;
-        if (visible && s.testKnown && Math.abs(pose.p.x - s.testX) <= VIEW_DECK_REUSE && Math.abs(pose.p.y - s.testY) <= VIEW_DECK_REUSE
-          && !visible(pose.p.x, pose.p.y, s.testDeck, reach + VIEW_DECK_SLACK)) continue;
         const deck = free ? offRoadDeck(s, vehicle, pose.p.x, pose.p.y) : elevationAt(pose.p.x, pose.p.y, vehicle.segment);
-        s.testKnown = true; s.testX = pose.p.x; s.testY = pose.p.y; s.testDeck = deck;
-        if (visible && !visible(pose.p.x, pose.p.y, deck, reach)) continue;
-        // Only its shadow can reach the screen: drawn as what casts it, the body alone (`drawCar` shellOnly), or not at all where its shadow is a disc under it.
-        const shadowOnly = visible !== undefined && !visible(pose.p.x, pose.p.y, deck, plan.length * 0.5 + plan.height);
+        // Off screen, and too far from it for its shadow to fall on it: nothing of this vehicle is written this frame.
+        if (options.vehicleVisible && !options.vehicleVisible(pose.p.x, pose.p.y, deck, plan.length * 0.5 + plan.height * 2)) continue;
         // Its own level, by the screen's scale where it stands (a tenth of hysteresis going up).
         const pixels = screenScale ? screenScale(pose.p.x, pose.p.y, deck) : Infinity;
         const was = s.lod;
@@ -1991,11 +1965,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           if (pixels >= (level > was ? edge * (1 + VEHICLE_HYSTERESIS) : edge)) { own = level; break; }
         }
         if (own < 0) continue;
-        // Off screen, its shadow a disc under it or none at all (shadows off, a two-wheeler that casts none, a car below the whole level): nothing of it reaches the screen.
-        // It takes no place among the whole ones on the screen (`VEHICLE_NEAR_CAP`): last frame's floor only.
-        if (shadowOnly && (!softShadows || (twoWheeled ? !bikesCast : own < 2 || vehicleBand < 2 || pixels < nearFloor))) continue;
         // Whole: at most `VEHICLE_NEAR_CAP`, the biggest on the screen (last frame's floor).
-        if (own === 2 && !shadowOnly) {
+        if (own === 2) {
           if (nearCount === nearCandidates.length) { const grown = new Float64Array(nearCount * 2); grown.set(nearCandidates); nearCandidates = grown; }
           nearCandidates[nearCount++] = pixels;
           if (pixels < nearFloor || whole >= VEHICLE_NEAR_CAP) own = 1;
@@ -2023,10 +1994,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           // Moved, levelled, repainted: what was kept of it goes before it is written again.
           else if (s.keptAt >= 0) dropKept(s);
         }
-        // Drawn as its shadow's shell only: not kept, or it would stay half drawn when it comes into view.
-        if (shadowOnly) still = false;
         // A parked car's engine is off; a bicycle has none. Far off (the proxy), no smoke drawn.
-        if (options.exhaust && level >= 1 && plan.shape !== 'bicycle' && !parked && !shadowOnly) {
+        if (options.exhaust && level >= 1 && plan.shape !== 'bicycle' && !parked) {
           // Off the road (a lot, a drive) the wheels raise dust.
           options.exhaust(pose.p.x, pose.p.y, deck, pose.angle, plan.length, vehicle.v, free);
         }
@@ -2088,7 +2057,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           case 'car':
           case 'bus':
           case 'truck':
-            drawCar(vehicle, s, level, shadowOnly);
+            drawCar(vehicle, s, level);
             break;
         }
         // Below the whole level, its shadow is a soft disc (the body casts none); a two-wheeler's too while none is drawn whole
@@ -2115,30 +2084,18 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       // Pedestrians start at band 1: zoomed out past it a whole person is smaller than a car's wing mirror
       if (band >= 1) {
         let pedCount = 0;
-        // Only the walkers on the view's ground (the vehicles' box holds every sphere a walker is tested with): DO NOT walk every walker of the simulation.
-        const walkers = options.vehicleBox ? world.pedsIn(options.vehicleBox, pedsInView) : world.pedViews;
-        const visible = options.pedestrianVisible;
-        for (const ped of walkers) {
+        for (const ped of world.pedViews) {
           if (pedCount >= MAX_PEDS) break;
           if (options.hiddenPed?.(ped.id)) continue;
           pedPoseInto(ped, alpha, POSE);
           const pose = POSE;
-          // Tested on the ground last asked near here first: off screen, its ground is not asked at all.
-          const tested = pedGround.get(ped.id);
-          if (visible && tested && Math.abs(pose.p.x - tested.x) <= VIEW_DECK_REUSE && Math.abs(pose.p.y - tested.y) <= VIEW_DECK_REUSE
-            && !visible(pose.p.x, pose.p.y, tested.below - VIEW_DECK_SLACK) && !visible(pose.p.x, pose.p.y, tested.below + VIEW_DECK_SLACK)) {
-            tested.seen = suspensionFrame;
-            continue;
-          }
           const open = ped.ground === 'open';
           const segment = ped.segment;
           currentSegment = segment;
           const land = open && groundAt ? groundAt : elevationOnCurrent;
           // DO NOT ask them of every walker of the simulation before the test.
           const below = open ? (roughGroundAt ?? land)(pose.p.x, pose.p.y) : elevationAt(pose.p.x, pose.p.y, segment);
-          if (tested) { tested.x = pose.p.x; tested.y = pose.p.y; tested.below = below; tested.seen = suspensionFrame; }
-          else pedGround.set(ped.id, { x: pose.p.x, y: pose.p.y, below, seen: suspensionFrame });
-          if (visible && !visible(pose.p.x, pose.p.y, below)) continue;
+          if (options.pedestrianVisible && !options.pedestrianVisible(pose.p.x, pose.p.y, below)) continue;
           const rise = open ? m(0.04) : footwayRiseAt(net, pose.p.x, pose.p.y) * walkingRise(net, pose.p.x, pose.p.y, ped.ground !== 'crossing',
             segment === undefined ? 'ground' : net.doc.segment(segment)?.structure ?? 'ground');
           const deck = (open && roughGroundAt ? land(pose.p.x, pose.p.y) : below) + rise;
