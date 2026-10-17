@@ -10,8 +10,13 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 // The page cross-origin isolated: the same headers the desktop's `app://` sends (`desktop/isolation.cjs`; Vite replaces `import.meta.url` in its config with the file's own).
 const ISOLATED = createRequire(import.meta.url)('./desktop/isolation.cjs') as Record<string, string>;
 
+/** The map's tiles each way (`wholeMap.ts` MAP_TILES): 10 unless a run asks a larger map to prove the scale (ROADCRAFT_MAP_TILES, even, 2-64). */
+const MAP_TILES = Number(process.env['ROADCRAFT_MAP_TILES'] ?? 10);
+if (!Number.isInteger(MAP_TILES) || MAP_TILES < 2 || MAP_TILES > 64 || MAP_TILES % 2 !== 0) throw new Error(`ROADCRAFT_MAP_TILES must be an even number of tiles from 2 to 64, not ${process.env['ROADCRAFT_MAP_TILES']}`);
+
 export default defineConfig({
   root: '.',
+  define: { __MAP_TILES__: String(MAP_TILES) },
   // `modelUrlsPlugin`: the model files' URLs, a module per folder, never inlined (`model-urls-plugin.ts`).
   // `surfaceBakePlugin`: the procedural surfaces baked at build time into KTX2 (`surface-bake-plugin.ts`); before `cookPlugin`, whose middleware serves them once baked.
   plugins: [buildStampPlugin(), surfaceBakePlugin(), cookPlugin(), modelUrlsPlugin()],
