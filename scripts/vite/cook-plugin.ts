@@ -29,6 +29,8 @@ const DERIVED = [
 const ALIASES: readonly [string, string][] = [
   ['@core/', 'src/core/'], ['@world/', 'src/world/'], ['@sim/', 'src/sim/'], ['@render/', 'src/render/'],
   ['@view/', 'src/view/'], ['@editor/', 'src/editor/'], ['@ui/', 'src/ui/'], ['@people/', 'src/people/'],
+  // `tsconfig.json` and `vite.config.ts` also map `@/` to `src/`: a file reached only through it is code the bake runs too.
+  ['@/', 'src/'],
 ];
 
 /** Every source file `entry` runs, transitively: static imports and exports */
@@ -51,9 +53,10 @@ export function importClosure(root: string, entry: string): string[] {
     seen.add(file);
     if (!file.endsWith('.ts')) return;
     const text = fs.readFileSync(file, 'utf8');
-    const refs = /^\s*(?:import|export)\s+(?!type\b)[^'";]*?from\s+['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)|new URL\(\s*['"]([^'"]+)['"]/gm;
+    // DO NOT leave out an import for its effect alone (`import './x'`): what it runs is part of the bake as much as what is imported by name.
+    const refs = /^\s*(?:import|export)\s+(?!type\b)[^'";]*?from\s+['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)|new URL\(\s*['"]([^'"]+)['"]|^\s*import\s+['"]([^'"]+)['"]/gm;
     for (const m of text.matchAll(refs)) {
-      const found = resolve(file, (m[1] ?? m[2] ?? m[3])!);
+      const found = resolve(file, (m[1] ?? m[2] ?? m[3] ?? m[4])!);
       if (found) visit(found);
     }
   };
