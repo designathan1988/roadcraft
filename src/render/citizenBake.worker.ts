@@ -9,6 +9,10 @@ import { rigDeltasAt, type RigDeltas } from './people/personRig';
 import { loadPeopleAssets } from '@people/body/assets';
 import { Morpher } from '@people/body/morph';
 import type { MacroParams } from '@people/body/macro';
+import type { ProxyPack } from '@people/body/proxy';
+import { classRig, createBakeEnv, type AgeBand } from './people/proceduralBake';
+import type { PersonRig, WornPiece } from './people/personRig';
+import { classRigMade, type ClassRigMade } from './people/classRigMade';
 import type { CartoonStyle } from './people/cartoon';
 import type { PersonSpec } from '@people/spec';
 
@@ -29,7 +33,12 @@ interface Job {
   readonly body?: { readonly basis: Float32Array; readonly vertexCount: number; readonly shapes: number; readonly c: Float32Array; readonly stride: number };
   /** A procedural person's heights and own face (`proceduralCrowd.ts` add): only on the people's worker (`bakePool.ts` Job.people). */
   readonly face?: PersonFaceJob;
+  /** A procedural class's rig made here and kept (`proceduralBake.ts` classRig), sent as a cooked person; an item fitted to it (`wear`). */
+  readonly klass?: { readonly sex: WalkSex; readonly band: AgeBand };
+  readonly wear?: { readonly sex: WalkSex; readonly band: AgeBand; readonly pack: ProxyPack };
 }
+
+export type { ClassRigMade } from './people/classRigMade';
 
 /** A procedural person on their class's body: their sliders, the class's height, and the class body's posture and face vertices (shared once a class). */
 export interface PersonFaceJob {
@@ -48,11 +57,30 @@ export interface BakeReply {
   readonly id: number; readonly clips?: (BakedClip | null)[]; readonly person?: DecodedPerson; readonly pixels?: Float32Array;
   /** A person's height and the same body at their class's height (`Morpher.height`), and their face's rows (none: no sliders). */
   readonly heights?: readonly number[]; readonly face?: Float32Array | null;
+  readonly klass?: ClassRigMade; readonly worn?: WornPiece;
   readonly error?: string;
 }
 
 /** The MakeHuman packs, on the people's worker only. */
 let morpher: Morpher | null = null;
+/** The procedural classes' rigs made here, kept for the items fitted to them (`wear`). */
+const bakeEnv = createBakeEnv();
+const classRigs = new Map<string, Promise<{ base: MacroParams; shape: Float32Array; rig: PersonRig }>>();
+const classRigOf = (sex: WalkSex, band: AgeBand): Promise<{ base: MacroParams; shape: Float32Array; rig: PersonRig }> => {
+  const key = `${sex}-${band}`;
+  let made = classRigs.get(key);
+  if (!made) {
+    made = classRig(bakeEnv, sex, band).then(async (r) => {
+      const waits: Promise<unknown>[] = [];
+      r.rig.scene.traverse((o) => { const g = (o as { geometry?: { userData: Record<string, unknown> } }).geometry; if (g?.userData['lodReady']) waits.push(g.userData['lodReady'] as Promise<unknown>); });
+      await Promise.all(waits);
+      return r;
+    });
+    classRigs.set(key, made);
+    made.catch(() => classRigs.delete(key));
+  }
+  return made;
+};
 
 // Reuse decoded clips across this worker's jobs.
 const libraries: Partial<Record<WalkSex, RocketboxClips>> = {};
@@ -70,8 +98,20 @@ function sent(clip: ClipFrames, transfer: Set<ArrayBuffer>): BakedClip {
 }
 
 async function bakeJob(scope: JobScope, e: MessageEvent<Job>): Promise<void> {
-  const { id, nodes, sex, at, facts, uncook, build, body, face } = e.data;
+  const { id, nodes, sex, at, facts, uncook, build, body, face, klass, wear } = e.data;
   try {
+    if (klass) {
+      const { base, shape, rig } = await classRigOf(klass.sex, klass.band);
+      const { made, transfer } = classRigMade(rig, base, shape);
+      scope.postMessage({ id, klass: made } satisfies BakeReply, transfer);
+      return;
+    }
+    if (wear) {
+      const { rig } = await classRigOf(wear.sex, wear.band);
+      const worn = rig.wear!({ pack: wear.pack, texture: null, transparent: false, textureFile: null });
+      scope.postMessage({ id, worn } satisfies BakeReply, [worn.positions.buffer as ArrayBuffer, worn.joints.buffer as ArrayBuffer, worn.weights.buffer as ArrayBuffer]);
+      return;
+    }
     if (face) {
       const people = await loadPeopleAssets();
       morpher ??= new Morpher(people.packs);

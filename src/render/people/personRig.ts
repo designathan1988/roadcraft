@@ -107,7 +107,7 @@ export interface PersonRigInput {
 }
 
 /** A MakeHuman item fitted to a rigged body, as a separate skinned piece. */
-interface WornPiece {
+export interface WornPiece {
   /** Vertices in the body's bind posture, metres. */
   readonly positions: Float32Array;
   /** Bones in the skeleton's order, four a vertex, and their weights. */

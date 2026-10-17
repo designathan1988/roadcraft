@@ -2,7 +2,11 @@ import { jobPort } from '../jobs/jobPool';
 import { Matrix4, type Object3D } from 'three';
 
 import { type ClipFrames, type RigNode, type ShuffleFacts, rigData } from './citizenBake';
-import type { BakeReply, BakedClip, PersonFaceJob } from './citizenBake.worker';
+import type { BakeReply, BakedClip, ClassRigMade, PersonFaceJob } from './citizenBake.worker';
+import type { WalkSex as Sex } from './citizenWalk';
+import type { AgeBand } from './people/proceduralBake';
+import type { ProxyPack } from '@people/body/proxy';
+import type { WornPiece } from './people/personRig';
 import type { WalkSex } from './citizenWalk';
 import type { DecodedPerson } from './people/cookedPerson';
 import type { CartoonStyle } from './people/cartoon';
@@ -175,6 +179,18 @@ export async function bakeBodyInWorker(basis: Float32Array, vertexCount: number,
 export async function personFaceInWorker(job: PersonFaceJob): Promise<{ readonly tall: number; readonly level0: number; readonly face: Float32Array | null } | null> {
   const reply = await run({ face: job }, [], true);
   return reply?.heights ? { tall: reply.heights[0]!, level0: reply.heights[1]!, face: reply.face ?? null } : null;
+}
+
+/** A procedural class's rig made on the people's worker (`proceduralBake.ts` classRig) and kept there; null when no worker can (made here then). */
+export async function classRigInWorker(sex: Sex, band: AgeBand): Promise<ClassRigMade | null> {
+  const reply = await run({ klass: { sex, band } }, [], true);
+  return reply?.klass ?? null;
+}
+
+/** An item fitted to a class's rig on the people's worker (`PersonRig.wear`, on the class's own shape); null when it could not be. */
+export async function wearInWorker(sex: Sex, band: AgeBand, pack: ProxyPack): Promise<WornPiece | null> {
+  const reply = await run({ wear: { sex, band, pack } }, [], true);
+  return reply?.worn ?? null;
 }
 
 /** Releases decoded motion libraries held by idle workers after all visual bodies leave. */

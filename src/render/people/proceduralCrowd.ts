@@ -29,7 +29,9 @@ import {
 import { buildClassAnimation, createPalettePass, type ClassAnimation, type PalettePass } from './crowdAnimation';
 import { BODY_WIDTH, createClassBodies, type ClassBodies } from './crowdBodies';
 import { createGpuRows, type GpuRows } from './gpuRows';
-import { personFaceInWorker } from '../bakePool';
+import { classRigInWorker, personFaceInWorker, wearInWorker } from '../bakePool';
+import type { WornPiece } from './personRig';
+import { rigFromMade } from './classRigMade';
 import type { PersonFaceJob } from '../citizenBake.worker';
 import {
   EYE_TRIANGLES, FAR_TRIANGLES, LEVELS, LEVEL_CAPS, LEVEL_TRIANGLES, REGION, cardCentres, cardSelections, farMesh, filterTriangles,
@@ -147,6 +149,8 @@ interface BodyClass {
   readonly shape: Float32Array;
   readonly coefficients: Float64Array;
   readonly rig: PersonRig;
+  /** An item fitted to the class's body (`PersonRig.wear`): on the people's worker, where the rig is kept. */
+  readonly fit: (item: ProxyItem) => Promise<WornPiece>;
   readonly height: number;
   readonly clips: Record<ProcClip, ClipFrames>;
   readonly bones: number;
@@ -822,7 +826,7 @@ export interface ProceduralCrowd {
   readonly people: readonly ProceduralPerson[];
   /** Drops an item and its pieces, so it is built again on next use (a hairstyle being edited). */
   forget(name: string): void;
-  /** Every class's rig made ahead, one at a time with a pause between: each is a single stretch of 50-100 ms */
+  /** Every class made ahead, one at a time: its rig on the people's worker (`classRigInWorker`), the page only putting it together */
   warmClasses(): Promise<void>;
   /** Every class and hairstyle built here, packed for the cook (`proceduralCook.ts`, `scripts/cook-people.mjs`). */
   cook(): Promise<Map<string, ArrayBuffer>>;
@@ -1021,9 +1025,17 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const buildClass = async (sex: WalkSex, band: AgeBand): Promise<BodyClass> => {
     const { assets: a, morpher: mo } = await env.setup();
     const started = performance.now();
-    const { base, shape, eyes, rig } = await classRig(env, sex, band);
     // Read from the cook (`proceduralCook.ts`); built here only when it is missing or stale.
     const cooked = await loadProcedural(`class-${sex}-${band}`);
+    // DO NOT build a class's rig on the page (`createPersonRig`, 50-100 ms each, while the map opens): made and kept on the people's worker, its body read back as a cooked person, its items fitted there (`fit`).
+    const away = cooked ? await classRigInWorker(sex, band) : null;
+    const made = away ? null : await classRig(env, sex, band);
+    const { base, shape } = away ?? made!;
+    const eyes = made?.eyes ?? await env.eyes();
+    const rig: PersonRig = made?.rig ?? rigFromMade(away!, a.mesh.weights, a.mesh.joints);
+    const fit = (it: ProxyItem): Promise<WornPiece> => (away
+      ? wearInWorker(sex, band, it.pack).then((worn) => worn ?? Promise.reject(new Error(`${it.pack.name}: not fitted`)))
+      : Promise.resolve(rig.wear!(it, shape)));
     const data = cooked ? classFromRecord(cooked) : await classData(env, sex, rig, shape);
     const { shapePixels, jointBasis, faceIndexPixels, faceList } = data;
     const clips: Record<ProcClip, ClipFrames> = {
@@ -1115,7 +1127,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         procTime: { value: 0 },
         procWoundUnit: { value: unit },
       },
-      personData, placed: [], faces, faceOf: [], reloadHead, faceVerts: faceList, palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
+      fit, personData, placed: [], faces, faceOf: [], reloadHead, faceVerts: faceList, palette, rows: 0, capacity: ROW_START, cover: new Map(), body,
       skins: new Map(), items: new Map(), far: new Map(), pieces: [], people: [], ankle, drawn: 0,
     };
     ready.push(cls);
@@ -1393,7 +1405,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         const map = await textureOf(name, it);
         await breathe();
         const fitAt = performance.now();
-        const fitted = cls.rig.wear!(it, cls.shape);
+        const fitted = await cls.fit(it);
         const geometry = new BufferGeometry();
         geometry.setAttribute('position', new BufferAttribute(fitted.positions, 3));
         const n = fitted.positions.length / 3;
@@ -1553,12 +1565,12 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     const key = `${cls.key}/${grownName}`;
     let made = strandPieces.get(key);
     if (!made) {
-      made = env.setup().then(({ assets: a, morpher: mo }) => {
+      made = env.setup().then(async ({ assets: a, morpher: mo }) => {
         const style = HAIR_STYLES[grownName.slice(5)]!;
         const pack = generateHairStrands(style, { positions: mo.base, vertexCount: a.mesh.vertexCount, bodyRange: a.bodyRange,
           joints: a.mesh.joints, weights: a.mesh.weights, boneNames: a.mesh.boneNames, faces: a.mesh.faces });
         const it: ProxyItem = { pack, texture: null, transparent: true, textureFile: null };
-        const fitted = cls.rig.wear!(it, cls.shape);
+        const fitted = await cls.fit(it);
         const geometry = new BufferGeometry();
         geometry.setAttribute('position', new BufferAttribute(fitted.positions, 3));
         geometry.setAttribute('uv', new BufferAttribute(pack.uvs!, 2));
@@ -2311,8 +2323,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     async warmClasses() {
       for (const sex of ['female', 'male'] as const) {
         for (const band of ['adult', 'young', 'senior', 'child'] as const) {
+          // One at a time: each class's rig is made on the people's worker, none on the page to space out.
           await classFor(sex, band);
-          await new Promise<void>((done) => setTimeout(done, 400));
         }
       }
     },
@@ -2343,7 +2355,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     probe(person, vertices) {
       const st = states.get(person)!;
       const cls = st.cls;
-      const exact = cls.rig.deltas!(env.loaded!.morpher.shape({ ...person.spec.body, height: cls.base.height }));
+      // A class made on the people's worker has its whole rig there: nothing to probe here.
+      if (!cls.rig.deltas) return [];
+      const exact = cls.rig.deltas(env.loaded!.morpher.shape({ ...person.spec.body, height: cls.base.height }));
       const px = cls.shapePixels;
       return vertices.map((v) => {
         const linear = [0, 0, 0];
