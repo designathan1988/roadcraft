@@ -177,16 +177,17 @@ export class AmbientWorld {
     const carReach = Math.max(focus.r * 1.35, AmbientWorld.LIVE_CARS);
     const mix = this.mixAround(w, focus.x, focus.y, focus.r);
     const road = this.roadAround(w, focus.x, focus.y, reach);
-    const carRoad = this.roadAround(w, focus.x, focus.y, carReach);
     const density = (table: Mix): number =>
       table.home * mix.home * busy('home', hour) + table.shop * mix.shop * busy('shop', hour)
       + table.work * mix.work * busy('work', hour) + table.civic * mix.civic * busy('civic', hour);
     const wantWalkers = Math.min(MAX_WALKERS, Math.round(stepsIn(road, 100) * density(PEOPLE)));
-    const wantDrivers = Math.min(focus.detail ? MAX_DRIVERS : MAX_DRIVERS_FAR,
-      Math.round(stepsIn(carRoad, 100) * Math.max(0.25, density(CARS))));
     this.people(w, focus, reach, wantWalkers);
-    // With the meso traffic the cars round the view are its micro window's (`meso/meso.ts`).
-    if (!w.meso) this.traffic(w, focus, carReach, wantDrivers);
+    // With the meso traffic the cars round the view are its micro window's (`meso/meso.ts`): DO NOT measure the roads for drivers it does not make.
+    if (!w.meso) {
+      const carRoad = this.roadAround(w, focus.x, focus.y, carReach);
+      const wantDrivers = Math.min(focus.detail ? MAX_DRIVERS : MAX_DRIVERS_FAR, Math.round(stepsIn(carRoad, 100) * Math.max(0.25, density(CARS))));
+      this.traffic(w, focus, carReach, wantDrivers);
+    }
     this.parking(w);
   }
 
