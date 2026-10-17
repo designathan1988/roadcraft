@@ -34,6 +34,7 @@ import type { NaturalPlate } from './groundShape';
 import { GroundShare, type SharedGroundAt } from './sharedGround';
 import { setJobFocus } from '../jobs/jobPool';
 import { gpuLedger } from './gpuLedger';
+import { measureHitch } from '@core/hitch';
 import { queueUpload } from './uploads';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
 import { TILE, tileOfKey } from '@world/tiles';
@@ -394,10 +395,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       s.update(p.source, false);
       const t2 = performance.now();
       s.updatePaint(p.source, true);
-      performance.measure('hitch:flat-plate/update', { start: t1, end: t2 });
-      performance.measure('hitch:flat-plate/paint', { start: t2, end: performance.now() });
+      measureHitch('hitch:flat-plate/update', t1, t2);
+      measureHitch('hitch:flat-plate/paint', t2);
     }
-    performance.measure('hitch:flat-plate/create', { start: t0, end: t1 });
+    measureHitch('hitch:flat-plate/create', t0, t1);
     if (lastSun) s.setSun(lastSun);
     if (lookGiven) s.setWaterLook(lastLook);
     // Sent ahead of its first draw (`uploads.ts`), not inside it.
