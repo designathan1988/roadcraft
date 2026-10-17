@@ -1,3 +1,4 @@
+import { measureHitch } from '@core/hitch';
 import { ForkMap, ForkSet } from '@core/forkMap';
 import { MIN_RIBBON } from '@core/scalar';
 import { type Vec2, dot } from '@core/vec2';
@@ -26,12 +27,6 @@ import type { SegmentRibbon, SegmentTrims } from './ribbons';
 import { DeltaLog, type NetworkDelta } from './networkDelta';
 import type { PoleLineState } from './poleLines';
 
-/** A `hitch:` entry for the frame monitor, where the platform measures. */
-function measureHitch(name: string, start: number): void {
-  if (typeof performance !== 'undefined' && typeof performance.measure === 'function') {
-    performance.measure(name, { start, end: performance.now() });
-  }
-}
 
 export type { SegmentRibbon, SegmentTrims } from './ribbons';
 export type { NetworkBake } from './networkBuild';
