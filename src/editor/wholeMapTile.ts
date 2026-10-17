@@ -30,10 +30,12 @@ function keyPlace(key: string): Vec2 | null {
 }
 
 /** Tile (i, j) built whole: its plan, its document as a saved map holds it (ids the document's own; the neighbours' gate pieces and border corners in it too) and what makes each building grown again (`replayOnLot`, by the document's id), on the flat ground it was grown on. */
-export function buildTileMap(options: WholeMapOptions, i: number, j: number): { tile: TilePlan; data: SerializedDoc; choices: Map<number, GrownChoice>; ms: number } {
+export function buildTileMap(options: WholeMapOptions, i: number, j: number, internShared = false): { tile: TilePlan; data: SerializedDoc; choices: Map<number, GrownChoice>; ms: number } {
   const started = performance.now();
   const tile = planTile(planWholeMap(options), i, j);
   const doc = layCity(tile.city);
+  // Read once as text (`toJSON`) and thrown away: its buildings' members are not shared with each other here (`BuildingStore.internShared`), the tile's reader interns them.
+  doc.buildings.internShared = internShared;
   widenCityFootways(doc);
   const net = new Network(doc);
   net.rebuild();
