@@ -28,15 +28,16 @@ export function surfaceShape(polygons: MultiPoly, maxEdge: number, skirts: boole
   const spans: Poly[] = [];
   for (const polygon of polygons) splitToSpan(polygon, maxEdge * 6, spans);
   const pieces: PieceShape[] = [];
+  const flips = new Flips();
   for (const span of spans) {
-    const piece = pieceShape(span, maxEdge);
+    const piece = pieceShape(span, maxEdge, flips);
     if (piece) pieces.push(piece);
   }
   return { pieces, skirts: skirts ? skirtShape(polygons, maxEdge, cut) : null };
 }
 
 /** One compact piece: ear clipping and refinement. */
-function pieceShape(polygon: Poly, maxEdge: number): PieceShape | null {
+function pieceShape(polygon: Poly, maxEdge: number, flips: Flips): PieceShape | null {
   const outer = polygon[0];
   if (!outer || outer.length < 3) return null;
   const flat: number[] = [];
@@ -57,9 +58,9 @@ function pieceShape(polygon: Poly, maxEdge: number): PieceShape | null {
     builder.ys.push(flat[i + 1] as number);
   }
   // Ear clipping joins the outline's points with long thin triangles (a fan)
-  flipToDelaunay(builder, maxEdge);
+  flipToDelaunay(builder, maxEdge, flips);
   refine(builder, maxEdge);
-  flipToDelaunay(builder, maxEdge);
+  flipToDelaunay(builder, maxEdge, flips);
   const xy = new Float64Array(builder.xs.length * 2);
   for (let i = 0; i < builder.xs.length; i++) { xy[i * 2] = builder.xs[i]!; xy[i * 2 + 1] = builder.ys[i]!; }
   return { xy, tris: Uint32Array.from(builder.tris), flip };
@@ -98,7 +99,7 @@ function skirtShape(polygons: MultiPoly, maxEdge: number, cut?: TileRect): Skirt
 /**
  * The triangles that own each edge, for `flipToDelaunay`: open addressing over the edge's key (`edgeKey`), each slot its owners'
  * count and the first two (an edge of three or more, rare, keeps its list aside), the slots in the order their edges came. Made once
- * and grown, reused by every piece: DO NOT keep an array per edge in a map (0.7-1.4 GB allocated per tile worker, the auditor's profile).
+ * and grown, reused by every piece of a surface (`Flips`): DO NOT keep an array per edge in a map (0.7-1.4 GB allocated per tile worker, the auditor's profile).
  */
 class EdgeOwners {
   keys = new Float64Array(1024);
@@ -111,6 +112,8 @@ class EdgeOwners {
   taken = 0;
   /** The lists of the edges three or more triangles own, by slot. */
   readonly many = new Map<number, number[]>();
+  /** An edge's owners while `replace` writes them again. */
+  private readonly scratch: number[] = [];
 
   /** Emptied for a piece of about `edges` edges. */
   reset(edges: number): void {
@@ -177,6 +180,7 @@ class EdgeOwners {
   /** The edge at `at` owned by `tri` first, then by its owners less `gone`, in their order: `[tri, ...owners.filter((x) => x !== gone)]`. */
   replace(at: number, tri: number, gone: number): void {
     const n = this.counts[at]!;
+    const scratchOwners = this.scratch;
     let kept = 0;
     scratchOwners[kept++] = tri;
     if (n > 2) { for (const x of this.many.get(at)!) if (x !== gone) scratchOwners[kept++] = x; }
@@ -203,19 +207,20 @@ class EdgeOwners {
   }
 }
 
-const edgeOwners = new EdgeOwners();
-/** An edge's owners while `replace` writes them again. */
-const scratchOwners: number[] = [];
-/** The edges still to look at (`flipToDelaunay`), grown and reused. */
-let edgeStack = new Float64Array(1024);
+/** What a surface's pieces flip in (`surfaceShape`, one a surface): the edges' owners and the edges still to look at, grown and reused piece after piece. */
+class Flips {
+  readonly owners = new EdgeOwners();
+  stack = new Float64Array(1024);
+}
+
 const edgeKey = (i: number, j: number): number => (i < j ? i * 0x4000_0000 + j : j * 0x4000_0000 + i);
 
 /** DO NOT leave the fan ear clipping made: its slivers were most of the road surfaces' triangles */
-function flipToDelaunay(b: Builder, maxEdge: number): void {
+function flipToDelaunay(b: Builder, maxEdge: number, flips: Flips): void {
   const t = b.tris, xs = b.xs, ys = b.ys;
   const count = t.length / 3;
   if (count < 2) return;
-  const owners = edgeOwners;
+  const owners = flips.owners;
   owners.reset(count * 3);
   for (let tri = 0; tri < count; tri++) {
     const a = t[tri * 3]!, c = t[tri * 3 + 1]!, d = t[tri * 3 + 2]!;
@@ -231,8 +236,8 @@ function flipToDelaunay(b: Builder, maxEdge: number): void {
   };
   let top = 0;
   const push = (key: number): void => {
-    if (top >= edgeStack.length) { const grown = new Float64Array(edgeStack.length * 2); grown.set(edgeStack); edgeStack = grown; }
-    edgeStack[top++] = key;
+    if (top >= flips.stack.length) { const grown = new Float64Array(flips.stack.length * 2); grown.set(flips.stack); flips.stack = grown; }
+    flips.stack[top++] = key;
   };
   // The edges two triangles share, in the order they first came.
   for (let n = 0; n < owners.taken; n++) { const at = owners.order[n]!; if (owners.counts[at] === 2) push(owners.keys[at]!); }
@@ -247,7 +252,7 @@ function flipToDelaunay(b: Builder, maxEdge: number): void {
   };
   let budget = count * 12;
   while (top > 0 && budget-- > 0) {
-    const k = edgeStack[--top]!;
+    const k = flips.stack[--top]!;
     const at = owners.slot(k);
     if (owners.counts[at] !== 2) continue;
     const j = k % 0x4000_0000, i = (k - j) / 0x4000_0000;

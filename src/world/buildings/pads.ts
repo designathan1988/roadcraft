@@ -163,6 +163,7 @@ function townPads(apron: number): TownPads {
   const CELL = PAD_CELL;
   const cellKey = padCellKey;
   const cells = new Map<number, Pad[]>();
+  const grading = new Grading();
   const placed = new Map<number, { pad: Pad; keys: number[] }>();
   let bounds: Aabb[] | null = null;
   const keysOf = (pad: Pad): number[] => {
@@ -194,7 +195,7 @@ function townPads(apron: number): TownPads {
       }
       if (pad) placed.set(id, { pad, keys }); else placed.delete(id);
     },
-    shapeAt: (x, y, ground) => shapeOverPads(cells.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL))), apron, x, y, ground),
+    shapeAt: (x, y, ground) => shapeOverPads(cells.get(cellKey(Math.floor(x / CELL), Math.floor(y / CELL))), apron, x, y, ground, grading),
     cut(boxes) {
       const pads: Pad[] = [];
       const indexOf = new Map<Pad, number>();
@@ -224,32 +225,38 @@ function townPads(apron: number): TownPads {
 export function padShaper(cut: PadShapeCut): Pick<BuildingPads, 'shapeAt'> {
   const lists = new Map<number, readonly Pad[]>();
   for (const [key, ids] of cut.cells) lists.set(key, Array.from(ids, (k) => cut.pads[k]!));
+  const grading = new Grading();
   return {
     shapeAt(x, y, ground) {
       const list = lists.get(padCellKey(Math.floor(x / PAD_CELL), Math.floor(y / PAD_CELL)));
       if (!list) throw new Error(`no platforms were cut for (${x}, ${y})`);
-      return shapeOverPads(list, cut.apron, x, y, ground);
+      return shapeOverPads(list, cut.apron, x, y, ground, grading);
     },
   };
 }
 
-/** Each ring's bound and its distance (NaN: not measured) for the point being graded (`shapeOverPads`): grown, never made per point. */
-let bounds = new Float64Array(64);
-let measured = new Float64Array(64);
-const ringAt: (readonly Vec2[])[] = [];
-/** The answer of `shapeOverPads`, one for every point: DO NOT make an object a corner graded. */
-const shaped = { height: 0, weight: 0 };
-const answer = (height: number, weight: number): { height: number; weight: number } => { shaped.height = height; shaped.weight = weight; return shaped; };
+/** What `shapeOverPads` works in, point after point, owned by the platforms that grade (`buildingPads`, `padShaper`): each ring's bound and its distance (NaN: not measured), grown, never made per point; the answer, one for every point (DO NOT make an object a corner graded). */
+class Grading {
+  bounds = new Float64Array(64);
+  measured = new Float64Array(64);
+  readonly ringAt: (readonly Vec2[])[] = [];
+  private readonly shaped = { height: 0, weight: 0 };
 
-/** The distance from (x, y) to ring `at` of the walk (`ring`), measured once for both walks of `shapeOverPads`. */
-function distanceOf(at: number, ring: readonly Vec2[], x: number, y: number): number {
-  let d = measured[at]!;
-  if (Number.isNaN(d)) { padsWork.rings++; d = ringDistance(ring, x, y); measured[at] = d; }
-  return d;
+  answer(height: number, weight: number): { height: number; weight: number } {
+    this.shaped.height = height; this.shaped.weight = weight;
+    return this.shaped;
+  }
+
+  /** The distance from (x, y) to ring `at` of the walk (`ring`), measured once for both walks of `shapeOverPads`. */
+  distanceOf(at: number, ring: readonly Vec2[], x: number, y: number): number {
+    let d = this.measured[at]!;
+    if (Number.isNaN(d)) { padsWork.rings++; d = ringDistance(ring, x, y); this.measured[at] = d; }
+    return d;
+  }
 }
 
 /** The graded height at a point from the platforms filed under its cell, in their order */
-function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: number, y: number, ground: number): { height: number; weight: number } {
+function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: number, y: number, ground: number, g: Grading): { height: number; weight: number } {
   // The nearest platform decides: two buildings side by side share the strip between them as each one's own apron
   let nearest = Infinity;
   let level = 0;
@@ -271,7 +278,8 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
     if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
     count += pad.rings.length;
   }
-  if (bounds.length < count) { bounds = new Float64Array(count * 2); measured = new Float64Array(count * 2); }
+  if (g.bounds.length < count) { g.bounds = new Float64Array(count * 2); g.measured = new Float64Array(count * 2); }
+  const { bounds, measured, ringAt } = g;
   let k = 0, first = -1;
   for (const pad of rings) {
     if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
@@ -289,10 +297,10 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
       if (x < pad.box.minX || x > pad.box.maxX || y < pad.box.minY || y > pad.box.maxY) continue;
       for (let i = 0; i < pad.rings.length; i++) ringAt[k++] = pad.rings[i]!;
     }
-    least = distanceOf(first, ringAt[first]!, x, y);
+    least = g.distanceOf(first, ringAt[first]!, x, y);
     for (let at = 0; at < count; at++) {
       if (bounds[at]! > least + BOUND_SLACK) continue;
-      const d = distanceOf(at, ringAt[at]!, x, y);
+      const d = g.distanceOf(at, ringAt[at]!, x, y);
       if (d < least) least = d;
     }
   }
@@ -309,7 +317,7 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
         && !(pad.stepped && i < pad.solidCount && lb <= apron + BOUND_SLACK)
         && !(paved && lb <= apron + BOUND_SLACK)) continue;
       const ring = pad.rings[i]!;
-      const d = distanceOf(k, ring, x, y);
+      const d = g.distanceOf(k, ring, x, y);
       // Inside a paved lot, its plate decides, not a lawn whose edge it shares.
       if (d < nearest || (d === 0 && paved && nearest === 0)) { nearest = d; level = padLevelAt(pad.levels[i]!, x, y); owner = pad; solid = i < pad.solidCount; }
       if (pad.water[i] && d < waterDistance) { waterDistance = d; waterLevel = padLevelAt(pad.levels[i]!, x, y); waterOwner = pad; }
@@ -323,7 +331,7 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
       }
     }
   }
-  if (nearest === Infinity) return answer(ground, 0);
+  if (nearest === Infinity) return g.answer(ground, 0);
   if (solid && nearest === 0 && stepPad === owner && stepLow < level) level = stepLow;
   // A water basin is cut into the ground under its surrounding deck too.
   if ((waterOwner === owner || !solid) && apron > 0 && waterDistance < 2 * apron && waterLevel < level) {
@@ -336,8 +344,8 @@ function shapeOverPads(list: readonly Pad[] | undefined, apron: number, x: numbe
   let height = ground < level ? Math.max(ground, level - out) : Math.min(ground, level + out);
   // Never over a lot's paving close by - unless that would dig under another building's floor.
   if (pavedLow < height && !(solid && owner !== pavedPad)) height = pavedLow;
-  if (Math.abs(height - ground) < 1e-3) return answer(ground, 0);
-  return answer(height, 1);
+  if (Math.abs(height - ground) < 1e-3) return g.answer(ground, 0);
+  return g.answer(height, 1);
 }
 
 const NO_PADS: readonly Pad[] = Object.freeze([]);
