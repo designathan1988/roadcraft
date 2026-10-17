@@ -77,8 +77,13 @@ interface Asked {
   ticket: JobTicket | null;
 }
 
+/** A building's ground floor as a job measured it, and what it was measured on: its record, its ground (`CellEntry`) and whether the paving was read. */
+interface Floor { readonly sig: number; readonly digest: number; readonly paved: boolean; readonly floor: number | null }
+
 export class CellPool {
   private readonly asked = new Map<number, Asked>();
+  /** DO NOT measure a building's floor in each job of it (its cell's masses, its tile's, its plate's, its detail, its far level): measured once, handed with the next jobs while its record and ground are the same (`CellEntry.floor`). */
+  private readonly floors = new Map<string, Floor>();
   /** Each key's job asked: a newer one replaces it (the queue drops it too). */
   private readonly byKey = new Map<string, Asked>();
   private nextId = 1;
@@ -178,7 +183,10 @@ export class CellPool {
   private base(asked: Asked): CellJob {
     return {
       id: asked.id, kind: asked.kind, cell: asked.cell, paved: asked.env.pavedAt !== undefined, boxes: this.boxes(),
-      entries: asked.entries.map((e, i) => ({ ...e, record: asked.writers[i]!() })),
+      entries: asked.entries.map((e, i) => {
+        const floor = this.floorKnown(e, asked.env.pavedAt !== undefined);
+        return { ...e, ...(floor !== undefined ? { floor } : {}), record: asked.writers[i]!() };
+      }),
       ...(this.tone ? { tone: this.tone } : {}),
     };
   }
@@ -193,7 +201,7 @@ export class CellPool {
       return;
     }
     this.forget(asked);
-    if (reply.kind === 'done') { asked.done(reply.result); return; }
+    if (reply.kind === 'done') { this.learn(asked, reply.result); asked.done(reply.result); return; }
     if (reply.kind === 'error') console.warn('[buildings] a cell worker failed on a cell; put together on the page', reply.message);
     this.onPage(asked);
   }
@@ -216,6 +224,24 @@ export class CellPool {
     const { groundAt, naturalAt, pavedAt } = asked.env;
     const reply = runCellJob(this.base(asked), { groundAt, naturalAt, ...(pavedAt ? { pavedAt } : {}) });
     if (reply.kind !== 'done') throw new Error(`[buildings] a cell put together on the page did not finish (${asked.cell})`);
+    this.learn(asked, reply.result);
     asked.done(reply.result);
+  }
+
+  /** A building's floor measured on the same record, ground and paving; undefined when none was, or on other ground (its digest changed: a stamp under it, a road beside it). */
+  floorKnown(entry: CellEntry, paved: boolean): number | null | undefined {
+    const known = this.floors.get(entry.key);
+    return known && known.sig === entry.sig && known.digest === entry.digest && known.paved === paved ? known.floor : undefined;
+  }
+
+  /** The floors a job stood its buildings on, kept for their next jobs. */
+  private learn(asked: Asked, result: CellResult): void {
+    const floors = result.floors;
+    if (!floors) return;
+    const paved = asked.env.pavedAt !== undefined;
+    asked.entries.forEach((e, i) => {
+      const floor = floors[i];
+      if (floor !== undefined) this.floors.set(e.key, { sig: e.sig, digest: e.digest, paved, floor });
+    });
   }
 }
