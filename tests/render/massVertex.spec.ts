@@ -55,3 +55,23 @@ describe('a mass vertex', () => {
     kit.dispose();
   });
 });
+
+describe('a mass\'s slabs', () => {
+  it('share their corners between their triangles: a roof slab is its points once, not three a triangle', () => {
+    for (const n of [0, 3, 4, 6, 8]) {
+      const chunk = emitMassing(building(n), () => 0)!;
+      const up = (v: number): boolean => chunk.normal[v * 3 + 1]! > 0.9999;
+      // The flat faces' triangles and the points they are drawn from: shared, fewer points than three a triangle.
+      const used = new Set<number>();
+      let triangles = 0;
+      for (let t = 0; t < chunk.index.length; t += 3) {
+        const corners = [chunk.index[t]!, chunk.index[t + 1]!, chunk.index[t + 2]!];
+        if (!corners.every(up)) continue;
+        triangles++;
+        for (const c of corners) used.add(c);
+      }
+      expect(triangles, `building ${n}`).toBeGreaterThan(0);
+      expect(used.size, `building ${n}`).toBeLessThan(triangles * 3);
+    }
+  });
+});

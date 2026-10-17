@@ -144,6 +144,26 @@ class MassWriter {
     }
   }
 
+  /** A flat polygon's triangles (`earcut`'s, of `points`) with its points written once and shared, as `face` would lay each triangle: DO NOT write a slab's every triangle's corners again. */
+  polygon(points: readonly (readonly [number, number, number])[], tris: readonly number[], n: readonly [number, number, number], rgb: Rgb): void {
+    const base = this.position.length / 3;
+    for (const p of points) {
+      this.position.push3(p[0], p[1], p[2]);
+      this.normal.push3(n[0], n[1], n[2]);
+      this.colour.push3(rgb[0], rgb[1], rgb[2]);
+      this.facade.push4(0, NO_FACADE.bay, NO_FACADE.storey, NO_FACADE.z0);
+      this.glazing.push2(NO_FACADE.share, this.seed);
+    }
+    for (let i = 0; i < tris.length; i += 3) {
+      const ia = tris[i]!, ib = tris[i + 1]!, ic = tris[i + 2]!;
+      const a = points[ia]!, b = points[ib]!, c = points[ic]!;
+      const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      const forward = (uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2] >= 0;
+      if (forward) this.index.push3(base + ia, base + ib, base + ic);
+      else this.index.push3(base + ia, base + ic, base + ib);
+    }
+  }
+
   chunk(): MassingChunk {
     return {
       position: this.position.done(),
@@ -282,7 +302,7 @@ function emitLotPlates(w: MassWriter, b: Building, buildingFloor: number | undef
       const q = localToWorld(b, flatRing[2 * k]!, flatRing[2 * k + 1]!);
       return [q.x, surface.heightAt(q.x, q.y), -q.y];
     };
-    for (let i = 0; i < tris.length; i += 3) w.face([point(tris[i]!), point(tris[i + 1]!), point(tris[i + 2]!)], up, colour);
+    w.polygon(Array.from({ length: flatRing.length / 2 }, (_, k) => point(k)), tris, up, colour);
   }
 }
 
@@ -395,9 +415,7 @@ function emitRoof(w: MassWriter, b: Building, v: Volume, floor: number, eaves: n
     const ring = localFootprint(v);
     const flatRing = ring.flatMap((p) => [p.x, p.y]);
     const tris = earcut(flatRing);
-    for (let i = 0; i < tris.length; i += 3) {
-      w.face([0, 1, 2].map((k) => w.P(flatRing[2 * tris[i + k]!]!, flatRing[2 * tris[i + k]! + 1]!, eaves)), up, roof);
-    }
+    w.polygon(ring.map((p) => w.P(p.x, p.y, eaves)), tris, up, roof);
     if (flatten) return;
     const built = b.volumes.some((o) => o !== v && !o.open && o.base === volumeTop(v));
     if (v.roof === 'flat') emitRoofPlant(w, b, v, eaves, rgb);
@@ -516,9 +534,7 @@ function emitPolygonRoof(w: MassWriter, b: Building, v: Volume, eaves: number, r
       const l = Math.hypot(n[0], n[1], n[2]) || 1;
       n = [n[0] / l, n[1] / l, n[2] / l];
       if (n[1] < 0) n = [-n[0], -n[1], -n[2]];
-      for (let i = 0; i < tris.length; i += 3) {
-        w.face([0, 1, 2].map((k) => { const p = pts[tris[i + k]!]!; return w.P(p.x, p.y, height(p)); }), n, roof);
-      }
+      w.polygon(pts.map((p) => w.P(p.x, p.y, height(p))), tris, n, roof);
     }
   }
   // Each wall filled up to the roof over it (a gable where the ridge meets it).
