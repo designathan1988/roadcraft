@@ -86,7 +86,7 @@ describe('the owners in the ledger', () => {
     const cells = createMassCells(kit, m(256));
     const before = gpuLedger.bytes('cell masses');
     const mass = cellMass([0, 1].map((i) => emitMassing(building(i, m(20) + i * m(40), m(20)), () => 0)!))!;
-    const expected = mass.position.byteLength + mass.normal.byteLength + mass.color.byteLength + mass.facade.byteLength + mass.glazing.byteLength + mass.index.byteLength;
+    const expected = mass.position.byteLength + mass.normal.byteLength + mass.color.byteLength + mass.facade.byteLength + mass.grid.byteLength + mass.seed.byteLength + mass.index.byteLength;
     cells.land('0,0', mass);
     expect(gpuLedger.bytes('cell masses') - before).toBe(expected);
     expect(gpuLedger.triangles('cell masses')).toBeGreaterThan(0);

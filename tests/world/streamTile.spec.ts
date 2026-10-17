@@ -1,3 +1,4 @@
+import type { CellMass } from '@render/buildings/cellArrays';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CITY } from '@world/cityGen/plan';
 import { EDGE_INSET, MAP_HALF, WHOLE_MAP_DEFAULTS, type WholeMapOptions, planWholeMap } from '@world/cityGen/wholeMap';
@@ -210,8 +211,9 @@ describe("a tile's far levels kept where it is made", () => {
     expect(reply.kind).toBe('far');
     if (reply.kind !== 'far') return;
     const masses = bakeTileMasses(pair.records, TILE_DETAIL);
-    expect(reply.mass?.index.length).toBe(masses?.index.length);
-    expect(reply.mass?.position).toEqual(masses?.position);
+    const mass = reply.mass as CellMass | null;
+    expect(mass?.index.length).toBe(masses?.index.length);
+    expect(mass?.position).toEqual(masses?.position);
     // Another version is not this one's: asked again.
     expect((await runFarJob({ ...job, sig: String(version + 1) }, cache)).kind).toBe('farRecords');
   }, 10_000);

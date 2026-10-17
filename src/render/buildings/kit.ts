@@ -9,6 +9,7 @@ import {
   FrontSide,
   type Material,
   MeshBasicMaterial,
+  type MeshDepthMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
 } from 'three';
@@ -19,7 +20,8 @@ import { createShellMaterial, finishAlbedo } from './finishes';
 import { createFurnitureGeometries, createFurnitureMaterial, furnitureTones } from './furnitureKit';
 import type { FurnitureKind } from '@world/buildings/interior';
 import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
-import { createMassingMaterial } from './massingMaterial';
+import { createMassBoxDepth, createMassingMaterial } from './massingMaterial';
+import { unitBox as unitMassBox } from './massBoxes';
 import { type FacadePanes, createFacadeMaterial } from './facadeLevel';
 import { prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
@@ -157,6 +159,10 @@ export interface BuildingKit {
   readonly finishTone: Readonly<Record<Finish, readonly [number, number, number]>>;
   /** Buildings seen from afar, their windows drawn by the shader (`massing.ts`, `massingMaterial.ts`). */
   readonly massing: MeshStandardMaterial;
+  /** The box levels' (`massBoxes.ts`): the masses' material laying each box from its instance, its shadow's, and the unit box they draw. */
+  readonly massingBoxes: MeshStandardMaterial;
+  readonly massBoxDepth: MeshDepthMaterial;
+  readonly massBox: BufferGeometry;
   /** The facade level (L1): the shells with their openings drawn by the shader, every finish (`facadeLevel.ts`). */
   readonly facade: MeshStandardMaterial;
   /** Parts that cast shadows; the small ones do not, to spare the shadow pass. */
@@ -568,10 +574,13 @@ export function createBuildingKit(): BuildingKit {
   // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
   const massingNight = { value: 0 };
   const massing = createMassingMaterial({ roomsAwake, massingNight });
+  const massingBoxes = createMassingMaterial({ roomsAwake, massingNight }, true);
+  const massBoxDepth = createMassBoxDepth();
+  const massBox = unitMassBox();
   // The facade level's walls: the shell's every finish, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
   const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
   const facade = createFacadeMaterial(shell, panes, { roomsAwake, massingNight });
-  const unique = new Set<Material>([...Object.values(material), shell, ruinShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing]);
+  const unique = new Set<Material>([...Object.values(material), shell, ruinShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing, massingBoxes, massBoxDepth]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;
   for (const kind of PART_KINDS) levels[kind] = [{ geometry: geometry[kind], triangles: trianglesOf(geometry[kind]), error: [0, 0, 0] }];
@@ -605,6 +614,7 @@ export function createBuildingKit(): BuildingKit {
   }
   for (const kind of SHELL_PART_KINDS) screen[kind] = { ...screen[kind], whole: true };
   const geometries = new Set<BufferGeometry>(Object.values(levels).flatMap((list) => list.map((l) => l.geometry)));
+  geometries.add(massBox);
   // The small props' simplified levels, made off the frame's path once the simplifier has loaded.
   void Promise.all(SIMPLIFIED.map(async (kind) => {
     for (const level of await simplerLevels(geometry[kind], levels[kind][0]!.triangles)) {
@@ -625,6 +635,9 @@ export function createBuildingKit(): BuildingKit {
     dimShell,
     dimParts,
     massing,
+    massingBoxes,
+    massBoxDepth,
+    massBox,
     facade,
     finishTone: finishAlbedo(),
     // Glass, doors and shutters close the openings for the sun

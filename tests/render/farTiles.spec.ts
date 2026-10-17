@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { readStoredTilesWith } from '@core/storedTiles';
 import { prepareTile, preparedRecords } from '@editor/tileStore';
-import type { CellMass } from '@render/buildings/cellArrays';
+import type { FarMass } from '@render/buildings/cellArrays';
 import { type CellJob, runCellJob } from '@render/buildings/cellWork';
 import { FarLevels, type FarRun, type FarTileSource, farJobOf } from '@render/buildings/farLevels';
 import { type FarCache, type FarJob, TOP_LEVEL, bakeTileMasses, emptyRecords, farKey, farNode, runFarJob, tileRows } from '@render/buildings/farTiles';
@@ -40,7 +40,7 @@ function leavesOf(o: unknown, path = '', out = new Map<string, unknown>()): Map<
 }
 
 /** Where two meshes' arrays differ, '' when they are the same to the byte. */
-function difference(a: CellMass | null, b: CellMass | null): string {
+function difference(a: FarMass | null, b: FarMass | null): string {
   const x = leavesOf(a), y = leavesOf(b);
   for (const path of new Set([...x.keys(), ...y.keys()])) if (!Object.is(x.get(path), y.get(path))) return path || '(root)';
   return '';

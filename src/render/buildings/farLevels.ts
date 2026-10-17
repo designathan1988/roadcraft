@@ -1,10 +1,11 @@
 import { canQueueJobs, jobWorkers, submitJob } from '../../jobs/jobPool';
 import { forgetOtherDerived } from '../derivedCache';
 import { type FarKind, FarTree, type FarTreeJob, type FarTreeRun } from '../farTree';
-import type { CellMass } from './cellArrays';
+import { type FarMass, isBoxMass } from './cellArrays';
 import { FAR_TIER, TIER_SPAN } from './cellPool';
 import { type FarGroundEnv, type FarJob, type FarReply, derivedFarCache, farNode, levelDrop, nodeSide, runFarJob, tileRows } from './farTiles';
 import type { BuildingKit } from './kit';
+import { boxesMesh } from './massBoxes';
 import { FAR_ERROR, cellMesh } from './massCells';
 
 /** THE BUILDINGS OF THE TILES NOT IN THE PAGE'S DOCUMENT (CLAUDE.md "Streaming world"): a quadtree of levels baked per tile in workers from the tile store (`farTiles.ts`), every tile of the map made before the city is shown */
@@ -70,18 +71,19 @@ export function farJobOf(job: FarTreeJob): FarJob {
 }
 
 /** The tree's jobs as the buildings' far jobs, their masses its payload. */
-function asTreeRun(run: FarRun): FarTreeRun<CellMass> {
+function asTreeRun(run: FarRun): FarTreeRun<FarMass> {
   return (job, done) => run(farJobOf(job), (reply) => done(reply.kind === 'far' ? { kind: 'far', node: reply.node, sig: reply.sig, payload: reply.mass } : reply));
 }
 
 /** THE BUILDINGS' FAR LEVELS: the shared tree (`farTree.ts`) over their masses, drawn from the plan from the boxes' levels up */
-export class FarLevels extends FarTree<CellMass> {
+export class FarLevels extends FarTree<FarMass> {
   /** `run`: where its jobs go (`farRunner`); `prefix`: the bakes' key in the store (null: nothing kept); `lanes`: the records read at once. */
   constructor(kit: BuildingKit, run: FarRun, prefix: string | null = FAR_PREFIX, lanes = canQueueJobs() ? jobWorkers() : 1) {
-    const kind: FarKind<CellMass> = {
+    const kind: FarKind<FarMass> = {
       name: 'buildings',
       land: (mass) => {
-        const mesh = cellMesh(mass, kit, 'building-massing-far');
+        // A box level's boxes as instances of the kit's unit box (`massBoxes.ts`); a tile's and a plate's masses as they came.
+        const mesh = isBoxMass(mass) ? boxesMesh(mass, kit) : cellMesh(mass, kit, 'building-massing-far');
         const box = mesh.geometry.boundingBox!;
         // A building over the node's edge: its box is its masses' (plan y is three's -z).
         return { mesh, x0: box.min.x, x1: box.max.x, y0: -box.max.z, y1: -box.min.z, top: mass.top, error: Math.max(FAR_ERROR, mass.error) };

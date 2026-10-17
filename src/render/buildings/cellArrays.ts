@@ -1,3 +1,4 @@
+import { DataUtils } from 'three';
 import { FINISHES, type Finish } from '@world/buildings/materials';
 import { FURNITURE_KINDS, type FurnitureKind } from '@world/buildings/interior';
 import { FACADE_PROP_KINDS } from './facadeProps';
@@ -136,9 +137,14 @@ export interface CellMass {
   readonly position: Float32Array;
   /** Four signed bytes a vertex over 127 (x, y, z, and one left over: no 3-byte format in Direct3D 11): lighting only, no uv worked out from it (the shells' are shorts, `normalDecay`). */
   readonly normal: Int8Array;
-  readonly color: Float32Array;
+  /** Linear rgb and a fourth left over, half floats (`HALF_FLOAT`, `massCells.ts` `cellMesh`): 11 bits of mantissa, more than a colour shows. */
+  readonly color: Uint16Array;
+  /** Along its face and its windows' first storey's foot, m: the long and the high, full floats (`MASS_FACADE`). */
   readonly facade: Float32Array;
-  readonly glazing: Float32Array;
+  /** Its bay's width and storey's height and its glass share, and a fourth left over, half floats (`MASS_GRID`). */
+  readonly grid: Uint16Array;
+  /** Its rooms' seed (the lot of each lit window, `massingMaterial.ts`) and the office flag over it: a full float, a seed's fraction kept whole. */
+  readonly seed: Float32Array;
   readonly index: Uint16Array | Uint32Array;
   readonly bounds: Bounds;
   readonly top: number;
@@ -156,28 +162,53 @@ export function cellMass(masses: readonly MassingChunk[]): CellMass | null {
   let vertices = 0, indices = 0, error = 0;
   for (const c of masses) { vertices += c.position.length / 3; indices += c.index.length; error = Math.max(error, c.error); }
   if (indices === 0) return null;
-  const position = new Float32Array(vertices * 3), normal = new Int8Array(vertices * 4), color = new Float32Array(vertices * 3);
-  const facade = new Float32Array(vertices * 4), glazing = new Float32Array(vertices * 2), index = indexArray(vertices, indices);
+  const position = new Float32Array(vertices * 3), normal = new Int8Array(vertices * 4), color = new Uint16Array(vertices * 4);
+  const facade = new Float32Array(vertices * MASS_FACADE), grid = new Uint16Array(vertices * MASS_GRID), seed = new Float32Array(vertices), index = indexArray(vertices, indices);
   let v = 0, n = 0, top = -Infinity;
   for (const c of masses) {
     position.set(c.position, v * 3);
     for (let k = 0, count = c.position.length / 3; k < count; k++) {
-      normal[(v + k) * 4] = snorm(c.normal[k * 3]!); normal[(v + k) * 4 + 1] = snorm(c.normal[k * 3 + 1]!); normal[(v + k) * 4 + 2] = snorm(c.normal[k * 3 + 2]!);
+      const at = v + k;
+      normal[at * 4] = snorm(c.normal[k * 3]!); normal[at * 4 + 1] = snorm(c.normal[k * 3 + 1]!); normal[at * 4 + 2] = snorm(c.normal[k * 3 + 2]!);
+      for (let ch = 0; ch < 3; ch++) color[at * 4 + ch] = DataUtils.toHalfFloat(c.colour[k * 3 + ch]!);
+      // The chunk's facade (along, bay, storey, foot) and glazing (share, seed), split by what each needs.
+      facade[at * MASS_FACADE] = c.facade[k * 4]!; facade[at * MASS_FACADE + 1] = c.facade[k * 4 + 3]!;
+      grid[at * MASS_GRID] = DataUtils.toHalfFloat(c.facade[k * 4 + 1]!); grid[at * MASS_GRID + 1] = DataUtils.toHalfFloat(c.facade[k * 4 + 2]!);
+      grid[at * MASS_GRID + 2] = DataUtils.toHalfFloat(c.glazing[k * 2]!);
+      seed[at] = c.glazing[k * 2 + 1]!;
     }
-    color.set(c.colour, v * 3);
-    facade.set(c.facade, v * 4);
-    glazing.set(c.glazing, v * 2);
     for (let i = 0; i < c.index.length; i++) index[n + i] = c.index[i]! + v;
     for (let i = 1; i < c.position.length; i += 3) top = Math.max(top, c.position[i]!);
     v += c.position.length / 3;
     n += c.index.length;
   }
-  return { position, normal, color, facade, glazing, index, bounds: shellBounds(position), top, error };
+  return { position, normal, color, facade, grid, seed, index, bounds: shellBounds(position), top, error };
 }
+
+/** A mass vertex's numbers: its facade's full floats, its grid's half floats (`CellMass`): 44 bytes a vertex with its place, normal, colour and seed (52 in full floats). */
+export const MASS_FACADE = 2;
+export const MASS_GRID = 4;
 
 /** Every buffer of a cell's masses: handed over, not copied. */
 export const cellMassBuffers = (c: CellMass): ArrayBuffer[] =>
-  [c.position, c.normal, c.color, c.facade, c.glazing, c.index, c.bounds].map((a) => a.buffer as ArrayBuffer);
+  [c.position, c.normal, c.color, c.facade, c.grid, c.seed, c.index, c.bounds].map((a) => a.buffer as ArrayBuffer);
+
+/** Numbers a box of a box level is drawn from (`massBoxes.ts`): centre x, y, half sides, turn; wall's foot, top, floor; wall rgb, bay; roof rgb, storey; glass share, seed. */
+export const BOX_INSTANCE = 18;
+
+/** A BOX LEVEL'S BUILDINGS AS INSTANCES OF ONE BOX (`farTiles.ts` levels 2 and up): `BOX_INSTANCE` numbers a box in place of its 20 vertices and 30 indices. */
+export interface BoxMass {
+  readonly boxes: Float32Array;
+  readonly bounds: Bounds;
+  readonly top: number;
+  readonly error: number;
+}
+
+/** A far level's masses: a mesh's arrays, or boxes to instance. */
+export type FarMass = CellMass | BoxMass;
+export const isBoxMass = (m: FarMass): m is BoxMass => 'boxes' in m;
+/** Every buffer of a far level's masses: handed over, not copied. */
+export const farMassBuffers = (m: FarMass): ArrayBuffer[] => (isBoxMass(m) ? [m.boxes.buffer as ArrayBuffer, m.bounds.buffer as ArrayBuffer] : cellMassBuffers(m));
 
 /** What a batch sends to the GPU, in bytes: every array but the bounds (kept on the page), the kit's shared geometry not counted. */
 export function cellBytes(arrays: CellArrays): number {

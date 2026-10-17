@@ -3,7 +3,7 @@ import { gpuOnly } from '../mesh/gpuOnly';
 import { cancelWarm, warmLooseAhead } from '../uploads';
 import { type GpuClass, geometryCost, gpuLedger } from '../gpuLedger';
 import { m } from '@world/units';
-import type { CellMass } from './cellArrays';
+import { type CellMass, MASS_FACADE, MASS_GRID } from './cellArrays';
 import type { BuildingKit } from './kit';
 import { FLAT_DEPTH } from './buildingMesh';
 import { cellIndex, levelCells, plateOf, TILE_CELLS, tileOf } from './levelKeys';
@@ -159,9 +159,12 @@ export function cellMesh(mass: CellMass, kit: BuildingKit, name = 'building-mass
   const g = new BufferGeometry();
   g.setAttribute('position', new BufferAttribute(mass.position, 3));
   g.setAttribute('normal', new BufferAttribute(mass.normal, 4, true));
-  g.setAttribute('color', new BufferAttribute(mass.color, 3));
-  g.setAttribute('facade', new BufferAttribute(mass.facade, 4));
-  g.setAttribute('glazing', new BufferAttribute(mass.glazing, 2));
+  // Half floats where a vertex's numbers allow (`CellMass`): three uploads a Uint16Array as HALF_FLOAT where the attribute says so (r186 `WebGLAttributes.createBuffer`).
+  const half = (array: Uint16Array, size: number): BufferAttribute => Object.assign(new BufferAttribute(array, size), { isFloat16BufferAttribute: true });
+  g.setAttribute('color', half(mass.color, 4));
+  g.setAttribute('facade', new BufferAttribute(mass.facade, MASS_FACADE));
+  g.setAttribute('facadeGrid', half(mass.grid, MASS_GRID));
+  g.setAttribute('glazingSeed', new BufferAttribute(mass.seed, 1));
   g.setIndex(new BufferAttribute(mass.index, 1));
   g.boundingBox = boxOf(mass.bounds);
   g.boundingSphere = sphereOf(mass.bounds);
