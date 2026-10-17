@@ -22,9 +22,9 @@ export function cancelUploads(textures: Iterable<Texture>): void {
   }
 }
 
-/** Sends queued textures to the GPU, at most `count` this frame. */
-export function drainUploads(renderer: WebGLRenderer, count = 1): void {
-  for (let i = 0; i < count && queue.length; i++) {
+/** Sends every queued texture to the GPU now (DO NOT go back to one a frame: a texture queued while it is already drawn waited behind the others, and three sent it in the draw that needed it). */
+export function drainUploads(renderer: WebGLRenderer): void {
+  while (queue.length) {
     const t = queue.shift()!;
     queued.delete(t);
     if (sent.has(t)) continue;
