@@ -20,12 +20,13 @@ import { WheelOdometer, indicatorSide, pathCurvature } from '../vehicleSignals';
 import { signalStateFor } from '../signals/query';
 import type { SignalController } from '../signals/fsm';
 import { strandVehicle, type Vehicle } from '../vehicles/state';
+import { ARCHETYPES } from '../vehicles/archetypes';
 import { answer } from './simAnswers';
 import { type Casualty, impactCasualties, takeWounds } from '../people/casualties';
 import type { PedView } from '../people/view';
 import {
   C, H, MAX_PEDS, MAX_VEHICLES, P, PED_STRIDE, V, VEHICLE_STRIDE, headBase, pedBase, vehicleBase,
-  type FromSim, type ParkedCar, type SimStats, type PedRich, type SignalLayout, type SignalLights, type SimAct, type SimAsk, type SimControls, type ToSim, type VehicleRich,
+  PARKED_STRIDE, PK, type FromSim, type ParkedChanges, type SimStats, type PedRich, type SignalLayout, type SignalLights, type SimAct, type SimAsk, type SimControls, type ToSim, type VehicleRich,
 } from './protocol';
 
 /** THE SIMULATION IN ITS OWN THREAD: the page sends the map's changes and the player's controls, the worker steps the city */
@@ -75,7 +76,7 @@ export class SimHost {
   /** The casualties already told (the page keeps their clocks). */
   private readonly casualtiesSent = new WeakSet<Casualty>();
 
-  constructor(private readonly post: (message: FromSim) => void) {}
+  constructor(private readonly post: (message: FromSim, transfer?: Transferable[]) => void) {}
 
   async handle(message: ToSim): Promise<void> {
     switch (message.type) {
@@ -292,11 +293,12 @@ export class SimHost {
     data[h + H.tick] = ++this.tick; data[h + H.time] = sim.clock.time; data[h + H.vehicles] = n; data[h + H.peds] = m;
     data[h + H.alpha] = alpha; data[h + H.steps] = sim.clock.lastSteps; data[h + H.stepMs] = sim.clock.lastStepMs; data[h + H.minutes] = sim.city.minutes(sim);
     Atomics.store(control, C.latest, slot);
+    const parked = this.parked();
     this.post({
       type: 'tick', slot, vehicles, peds, ...this.signals(), trains: sim.city.transit.trains().map((t) => ({ colour: t.colour, metro: t.metro, cars: t.cars })),
-      parked: this.parked(), stats: this.stats(), wounds: takeWounds(sim),
+      parked, stats: this.stats(), wounds: takeWounds(sim),
       casualties: impactCasualties(sim, 0).filter((c) => !this.casualtiesSent.has(c) && (this.casualtiesSent.add(c), true)),
-    });
+    }, parked ? [parked.cars.buffer] : undefined);
   }
 
   /** The junctions whose heads moved (the signals' log) and those whose lights changed since the last frame. */
@@ -346,20 +348,27 @@ export class SimHost {
     return id;
   }
 
-  /** The cars come into a bay or gone from one since the last frame; null when nothing changed (all, when the log was forgotten). */
-  private parked(): ParkedCar[] | null {
+  /** The cars come into a bay or gone from one since the last frame, each once as it stands now; null when nothing changed (every car standing, when the log was let go for this reader). */
+  private parked(): ParkedChanges | null {
     const sim = this.sim!;
-    const changes = sim.ambient.parkedSince(this.parkedSerial);
+    const changes = sim.ambient.parkedSince(this.parkedSerial, this);
     const serial = sim.ambient.parkedSerialNow();
     if (changes !== null && changes.length === 0) return null;
     this.parkedSerial = serial;
-    const all = changes === null;
-    const cars = all ? sim.ambient.parked : changes.map((c) => c.car);
-    return cars.map((car): ParkedCar => {
-      const standing = all || sim.ambient.isParked(car);
-      const f = car.free;
-      return { id: car.id, archetype: car.archetype.id, color: car.color, x: f?.x ?? 0, y: f?.y ?? 0, angle: f?.angle ?? 0, lot: f?.lot ?? null, gone: !standing || !f, whole: all };
+    const whole = changes === null;
+    // DO NOT tell a car once per entry: a bay's source stood again logs each of its cars out and in.
+    const cars = whole ? sim.ambient.parked : [...new Set(changes.map((c) => c.car))];
+    const out = new Float64Array(cars.length * PARKED_STRIDE);
+    cars.forEach((car, k) => {
+      const at = k * PARKED_STRIDE, f = car.free;
+      out[at + PK.id] = car.id;
+      out[at + PK.gone] = (whole || sim.ambient.isParked(car)) && f ? 0 : 1;
+      out[at + PK.x] = f?.x ?? 0; out[at + PK.y] = f?.y ?? 0; out[at + PK.angle] = f?.angle ?? 0;
+      out[at + PK.lot] = f?.lot ?? -1;
+      out[at + PK.archetype] = archetypeIndex(car.archetype.id);
+      out[at + PK.color] = parseInt(car.color.slice(1), 16);
     });
+    return { whole, cars: out };
   }
 
   private stats(): SimStats {
@@ -457,4 +466,10 @@ function pedDiffers(p: PedView, key: readonly unknown[]): boolean {
 function pedRich(p: PedView): PedRich {
   const { id: _id, x: _x, y: _y, heading: _h, prev: _p, v: _v, turnV: _t, age: _a, segment: _s, walking: _w, kerbWait: _k, rank: _r, ...rich } = p;
   return structuredClone(rich);
+}
+
+/** Each kind of vehicle's place in `ARCHETYPES`, as the parked cars' numbers carry it (`PK.archetype`). */
+const ARCHETYPE_AT = new Map(ARCHETYPES.map((a, k) => [a.id, k]));
+function archetypeIndex(id: string): number {
+  return ARCHETYPE_AT.get(id) ?? 1;
 }
