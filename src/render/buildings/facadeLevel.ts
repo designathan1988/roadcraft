@@ -127,14 +127,14 @@ if (facadeKind > ${K.none}) {
   vec3 solidColour = mix(FACADE_DOOR, FACADE_SHUTTER, facadeShutter);
   diffuseColor.rgb = diffuseColor.rgb * facadeWall * facadeStreak + vFacadeTrim.rgb * facadeFrame + glassColour * facadeGlass + solidColour * facadeSolid;
   // Its room lit at night: the share awake once the window is under a pixel, its lamp from the mix the detailed panes draw from.
-  float lot = float((facadeHash >> 8u) & 1023u) / 1024.0;
-  float office = step(0.5, vFacadeTrim.a);
-  float sub = smoothstep(0.5, 1.5, max(facadeFoot.x, facadeFoot.y));
-  facadeLit = mix(step(1.0 - roomsAwake, lot), roomsAwake, sub);
-  vec3 meanLamp = office > 0.5
-    ? (roomLamp(0.1, 1.0) * 0.5 + roomLamp(0.6, 1.0) * 0.35 + roomLamp(0.95, 1.0) * 0.15)
-    : (roomLamp(0.1, 0.0) * 0.36 + roomLamp(0.45, 0.0) * 0.24 + roomLamp(0.65, 0.0) * 0.1 + roomLamp(0.9, 0.0) * 0.3);
-  facadeLamp = mix(roomLamp(fract(lot * 17.31), office), meanLamp, sub);
+  // By day (\`massingNight\` 0, a uniform: every pixel takes the same branch) no window glows, so none is worked out.
+  if (massingNight > 0.0) {
+    float lot = float((facadeHash >> 8u) & 1023u) / 1024.0;
+    float office = step(0.5, vFacadeTrim.a);
+    float sub = smoothstep(0.5, 1.5, max(facadeFoot.x, facadeFoot.y));
+    facadeLit = mix(step(1.0 - roomsAwake, lot), roomsAwake, sub);
+    facadeLamp = mix(roomLamp(fract(lot * 17.31), office), roomLampMean(office), sub);
+  }
 }
 `;
 }
@@ -196,6 +196,6 @@ totalEmissiveRadiance += facadeLamp * massingNight * facadeLit * facadeGlass * m
     // The shell's own after: each of its additions lands right after its chunk, so before these (its finish's map, roughness, metalness and relief first).
     baseCompile(shader, renderer);
   };
-  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v4`;
+  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v5`;
   return material;
 }
