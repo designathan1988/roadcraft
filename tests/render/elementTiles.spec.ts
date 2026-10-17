@@ -12,7 +12,8 @@ import { bakeEveryTile } from '../support/nearTileBakes';
 
 /** A TILE'S BRUSH ELEMENTS BAKED IN A WORKER (`elementTiles.ts`): every tile's bake together draws what the page's layer draws for the whole map, and gives off the same effects */
 
-const geometry = new BoxGeometry(1, 1, 1);
+// Ten metres a side: drawn at the map view the test looks from (a model under a pixel there is culled, `leastPixel`; a 1 m box was, and the page drew nothing to compare).
+const geometry = new BoxGeometry(m(10), m(10), m(10));
 geometry.computeBoundingSphere();
 const material = new MeshStandardMaterial();
 const part = { geometry, material };
