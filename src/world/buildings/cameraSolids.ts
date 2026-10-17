@@ -20,14 +20,34 @@ const PAGE = 1 << PAGE_BITS;
 
 class SolidPages {
   private pages: Float64Array[] = [];
+  /** Each slot's last visit (`visitOnce`): a volume filed in several cells is visited once a walk. */
+  private stamps: Uint32Array[] = [];
+  private epoch = 0;
   private free: number[] = [];
   private next = 0;
 
   /** A slot for one volume, from the free list or a new one (a page added when it is the first of one). */
   take(): number {
     const slot = this.free.pop() ?? this.next++;
-    while (this.pages.length <= slot >>> PAGE_BITS) this.pages.push(new Float64Array(PAGE * STRIDE));
+    while (this.pages.length <= slot >>> PAGE_BITS) {
+      this.pages.push(new Float64Array(PAGE * STRIDE));
+      this.stamps.push(new Uint32Array(PAGE));
+    }
     return slot;
+  }
+
+  /** A new walk: no slot visited in it yet. */
+  walk(): void {
+    this.epoch = (this.epoch + 1) >>> 0;
+    if (this.epoch === 0) { for (const s of this.stamps) s.fill(0); this.epoch = 1; }
+  }
+
+  /** True the first time `slot` is met in this walk. */
+  visitOnce(slot: number): boolean {
+    const stamps = this.stamps[slot >>> PAGE_BITS]!, k = slot & (PAGE - 1);
+    if (stamps[k] === this.epoch) return false;
+    stamps[k] = this.epoch;
+    return true;
   }
 
   give(slot: number): void {
@@ -41,6 +61,7 @@ class SolidPages {
 
   clear(): void {
     this.pages = [];
+    this.stamps = [];
     this.free = [];
     this.next = 0;
   }
@@ -54,10 +75,14 @@ export interface CameraSolids {
   floorAt(x: number, y: number): number;
   /** The roof over (x, y) when the point is inside a solid volume's plan (its highest, no margin round it), world height */
   roofAt(x: number, y: number): number;
-  /** Every solid volume filed in the cells over a map rectangle, as its building's frame */
-  forEachIn(x0: number, y0: number, x1: number, y1: number,
-    visit: (bx: number, by: number, cos: number, sin: number, lx0: number, ly0: number, lx1: number, ly1: number, top: number) => void): void;
+  /** Every solid volume filed in the cells over a map rectangle, once, as its building's frame */
+  forEachIn(x0: number, y0: number, x1: number, y1: number, visit: SolidVisit): void;
+  /** Every solid volume filed in the cells over any of the rectangles, once for all of them. */
+  forEachInAny(rects: readonly Rect[], visit: SolidVisit): void;
 }
+
+/** A solid volume as its building's frame: the building's centre and turn, the volume's box in that frame, its top. */
+export type SolidVisit = (bx: number, by: number, cos: number, sin: number, lx0: number, ly0: number, lx1: number, ly1: number, top: number) => void;
 
 const smoothstep = (t: number): number => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
@@ -214,11 +239,24 @@ class SolidFiling implements CameraSolids {
     this.filed.delete(id);
   }
 
-  forEachIn(x0: number, y0: number, x1: number, y1: number,
-    visit: (bx: number, by: number, cos: number, sin: number, lx0: number, ly0: number, lx1: number, ly1: number, top: number) => void): void {
+  forEachIn(x0: number, y0: number, x1: number, y1: number, visit: SolidVisit): void {
+    this.pages.walk();
+    this.visitCells(x0, y0, x1, y1, visit);
+  }
+
+  forEachInAny(rects: readonly Rect[], visit: SolidVisit): void {
+    this.pages.walk();
+    for (const r of rects) this.visitCells(r[0], r[1], r[2], r[3], visit);
+  }
+
+  /** The slots filed over a rectangle not yet met in this walk. */
+  private visitCells(x0: number, y0: number, x1: number, y1: number, visit: SolidVisit): void {
     for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) {
       for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) {
-        for (const slot of this.cells.get(cellKey(cx, cy)) ?? []) {
+        const list = this.cells.get(cellKey(cx, cy));
+        if (!list) continue;
+        for (const slot of list) {
+          if (!this.pages.visitOnce(slot)) continue;
           const p = this.pages.page(slot), o = at(slot);
           visit(p[o + S_BX]!, p[o + S_BY]!, p[o + S_COS]!, p[o + S_SIN]!, p[o + S_X0]!, p[o + S_Y0]!, p[o + S_X1]!, p[o + S_Y1]!, p[o + S_TOP]! - CLEARANCE);
         }
