@@ -16,7 +16,8 @@ import {
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import type { Finish } from '@world/buildings/materials';
-import { createShellMaterial, finishAlbedo } from './finishes';
+import { SHELL_NORMAL_GLSL, createShellMaterial, finishAlbedo } from './finishes';
+import { SHELL_NORMAL } from './cellArrays';
 import { createFurnitureGeometries, createFurnitureMaterial, furnitureTones } from './furnitureKit';
 import type { FurnitureKind } from '@world/buildings/interior';
 import { NIGHT_LUMINANCE, lightPoolTexture, luminanceOf } from '../lightLevels';
@@ -556,6 +557,19 @@ export function createBuildingKit(): BuildingKit {
     side: FrontSide,
   });
   const ghostParts = ghostShell.clone();
+  // The preview's shells carry their normal octahedral (`cellArrays.ts` `octNormal`): unfolded as the shell's own program does (`finishes.ts`).
+  ghostShell.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+#ifndef USE_INSTANCING
+${SHELL_NORMAL_GLSL}
+#endif`)
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+#ifndef USE_INSTANCING
+objectNormal = shellUnfold(${SHELL_NORMAL});
+#endif`);
+  };
+  ghostShell.customProgramCacheKey = () => 'building-ghost-shell-oct';
 
   // The faded copies: same colour and maps, a fraction of the presence, and no depth write
   const fade = (faded: MeshStandardMaterial): MeshStandardMaterial => {
