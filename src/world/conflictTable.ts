@@ -228,15 +228,15 @@ export interface SweepSamples {
   readonly frameLengthSq: Float64Array;
   /** A conservative bound around every sampled heavy-vehicle body. */
   bounds: { minX: number; minY: number; maxX: number; maxY: number } | null;
-  /** Broad phase of the HEAVY rectangles: cell key -> sample indices. */
-  grid: Map<number, number[]> | null;
+  /** Broad phase of the HEAVY rectangles (`SweepGrid`), made once a sweep. */
+  grid: SweepGrid | null;
   /** Body classes that may stand at each sampled centre, computed once. */
   range: Uint8Array | null;
 }
 
 function boundsOf(s: SweepSamples): { minX: number; minY: number; maxX: number; maxY: number } {
   if (s.bounds) return s.bounds;
-  const [hl, hw] = halfExtent(HEAVY);
+  const hl = HALF_LENGTH[HEAVY]!, hw = HALF_WIDTH[HEAVY]!;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (let i = 0; i < s.count; i++) {
     const x = s.frame[i * 4] as number, y = s.frame[i * 4 + 1] as number;
@@ -249,41 +249,49 @@ function boundsOf(s: SweepSamples): { minX: number; minY: number; maxX: number; 
   return (s.bounds = { minX, minY, maxX, maxY });
 }
 
-function gridOf(s: SweepSamples): Map<number, number[]> {
-  if (s.grid) return s.grid;
-  const grid = new Map<number, number[]>();
-  const [hl, hw] = halfExtent(HEAVY);
-  for (let i = 0; i < s.count; i++) {
-    const x = s.frame[i * 4] as number;
-    const y = s.frame[i * 4 + 1] as number;
-    const tx = s.frame[i * 4 + 2] as number;
-    const ty = s.frame[i * 4 + 3] as number;
-    const ex = Math.abs(tx) * hl + Math.abs(ty) * hw;
-    const ey = Math.abs(ty) * hl + Math.abs(tx) * hw;
-    for (let gx = Math.floor((x - ex) / CELL); gx <= Math.floor((x + ex) / CELL); gx++) {
-      for (let gy = Math.floor((y - ey) / CELL); gy <= Math.floor((y + ey) / CELL); gy++) {
-        const key = cellKey(gx, gy);
-        const list = grid.get(key);
-        if (list) list.push(i);
-        else grid.set(key, [i]);
-      }
-    }
+/** A sweep's HEAVY rectangles filed by cell over the sweep's own box, as typed arrays (CSR: each cell's samples at `items[start[c]..start[c + 1])`, in sample order): DO NOT go back to a map of a list a cell, an array per cell and per sweep the collector had to take back (the allocation profile, 2026-10-17: `pairTable` 2.8-4.7 GB in the traffic's workers). */
+export interface SweepGrid {
+  readonly gx0: number;
+  readonly gy0: number;
+  readonly w: number;
+  readonly h: number;
+  readonly start: Uint32Array;
+  readonly items: Uint32Array;
+}
+
+/** Each sample's HEAVY rectangle's cell span, `visit(gx, gy)` for each cell. */
+function eachCell(s: SweepSamples, i: number, visit: (gx: number, gy: number) => void): void {
+  const hl = HALF_LENGTH[HEAVY]!, hw = HALF_WIDTH[HEAVY]!;
+  const x = s.frame[i * 4] as number, y = s.frame[i * 4 + 1] as number;
+  const tx = s.frame[i * 4 + 2] as number, ty = s.frame[i * 4 + 3] as number;
+  const ex = Math.abs(tx) * hl + Math.abs(ty) * hw;
+  const ey = Math.abs(ty) * hl + Math.abs(tx) * hw;
+  for (let gx = Math.floor((x - ex) / CELL); gx <= Math.floor((x + ex) / CELL); gx++) {
+    for (let gy = Math.floor((y - ey) / CELL); gy <= Math.floor((y + ey) / CELL); gy++) visit(gx, gy);
   }
-  s.grid = grid;
-  return grid;
 }
 
-const cellKey = (x: number, y: number): number => (x + 32768) * 65536 + (y + 32768);
-
-/** Half length and half width of each class's swept rectangle, built once. */
-const HALF_EXTENT: readonly (readonly [number, number])[] = BODY_CLASSES.map((cls) => {
-  const e = BODY_ENVELOPE[cls] as { length: number; width: number };
-  return [e.length / 2 + SWEEP_STEP / 2 + SWEEP_MARGIN, e.width / 2 + SWEEP_MARGIN] as const;
-});
-
-function halfExtent(cls: BodyClass): readonly [number, number] {
-  return HALF_EXTENT[cls] as readonly [number, number];
+function gridOf(s: SweepSamples): SweepGrid {
+  if (s.grid) return s.grid;
+  const box = boundsOf(s);
+  const gx0 = Math.floor(box.minX / CELL), gy0 = Math.floor(box.minY / CELL);
+  const w = Math.floor(box.maxX / CELL) - gx0 + 1, h = Math.floor(box.maxY / CELL) - gy0 + 1;
+  // Counted, summed into each cell's start, then filled in sample order: the same samples a cell as the lists had, in the same order.
+  const start = new Uint32Array(w * h + 1);
+  const count = (gx: number, gy: number): void => { start[(gx - gx0) * h + (gy - gy0) + 1]!++; };
+  for (let i = 0; i < s.count; i++) eachCell(s, i, count);
+  for (let c = 0; c < w * h; c++) start[c + 1]! += start[c]!;
+  const items = new Uint32Array(start[w * h]!);
+  const fill = start.slice(0, w * h);
+  let at = 0;
+  const put = (gx: number, gy: number): void => { items[fill[(gx - gx0) * h + (gy - gy0)]!++] = at; };
+  for (let i = 0; i < s.count; i++) { at = i; eachCell(s, i, put); }
+  return (s.grid = { gx0, gy0, w, h, start, items });
 }
+
+/** Half length and half width of each class's swept rectangle, built once: DO NOT read them as a pair destructured (`const [l, w] = ...`), an iterator a call where the overlap test runs millions of times (the allocation profile: `overlap` 0.8-1.4 GB). */
+const HALF_LENGTH = Float64Array.from(BODY_CLASSES, (cls) => (BODY_ENVELOPE[cls] as { length: number }).length / 2 + SWEEP_STEP / 2 + SWEEP_MARGIN);
+const HALF_WIDTH = Float64Array.from(BODY_CLASSES, (cls) => (BODY_ENVELOPE[cls] as { width: number }).width / 2 + SWEEP_MARGIN);
 
 /** Whether sample `i` is a legal centre for a body of this class. */
 /** Whether a sample is a place a body of this class can be on the movement. */
@@ -308,8 +316,8 @@ function overlap(
   a: SweepSamples, i: number, ca: BodyClass,
   b: SweepSamples, j: number, cb: BodyClass,
 ): boolean {
-  const [ahl, ahw] = halfExtent(ca);
-  const [bhl, bhw] = halfExtent(cb);
+  const ahl = HALF_LENGTH[ca]!, ahw = HALF_WIDTH[ca]!;
+  const bhl = HALF_LENGTH[cb]!, bhw = HALF_WIDTH[cb]!;
   const ax = a.frame[i * 4] as number, ay = a.frame[i * 4 + 1] as number;
   const aux = a.frame[i * 4 + 2] as number, auy = a.frame[i * 4 + 3] as number;
   const bx = b.frame[j * 4] as number, by = b.frame[j * 4 + 1] as number;
@@ -327,44 +335,55 @@ function overlap(
     && Math.abs(-dx * buy + dy * bux) < (ahl * across + ahw * along) + bhw * bLength;
 }
 
+/** What `pairTable` works in, kept for every pair (a worker measures thousands in a row): DO NOT make them a pair. `seen` holds a stamp per sample of b, `stamp` only grows, so nothing is cleared between samples or pairs. */
+let seen = new Int32Array(1024);
+let stamp = 0;
+let hits = new Uint32Array(4096);
+const projection = new Float64Array(20);
+
 /** The 3 x 3 class pairs' [enterA, exitA, enterB, exitB] (NaN: none), or null when even two heavy bodies never touch. */
 export function pairTable(a: SweepSamples, b: SweepSamples): Float64Array | null {
   const aa = boundsOf(a), bb = boundsOf(b);
   if (aa.maxX < bb.minX || bb.maxX < aa.minX || aa.maxY < bb.minY || bb.maxY < aa.minY) return null;
   // Heavy against heavy, through the grid.
-  const hits: number[] = [];
-  // Which of b's samples this sample of a has already tested: a stamp per sample instead of a set cleared per sample.
-  const seen = new Int32Array(b.count);
-  const grid = gridOf(b);
-  const [hl, hw] = halfExtent(HEAVY);
+  let n = 0;
+  if (seen.length < b.count) seen = new Int32Array(Math.max(b.count, seen.length * 2));
+  // A new stamp per sample of a: what b's samples were tested against before is never this one.
+  if (stamp > 0x7fffffff - a.count - 1) { seen.fill(0); stamp = 0; }
+  const { gx0, gy0, w, h, start, items } = gridOf(b);
+  const hl = HALF_LENGTH[HEAVY]!, hw = HALF_WIDTH[HEAVY]!;
   for (let i = 0; i < a.count; i++) {
     const x = a.frame[i * 4] as number, y = a.frame[i * 4 + 1] as number;
     const tx = a.frame[i * 4 + 2] as number, ty = a.frame[i * 4 + 3] as number;
     const ex = Math.abs(tx) * hl + Math.abs(ty) * hw;
     const ey = Math.abs(ty) * hl + Math.abs(tx) * hw;
-    const stamp = i + 1;
-    for (let gx = Math.floor((x - ex) / CELL); gx <= Math.floor((x + ex) / CELL); gx++) {
-      for (let gy = Math.floor((y - ey) / CELL); gy <= Math.floor((y + ey) / CELL); gy++) {
-        const cell = grid.get(cellKey(gx, gy));
-        if (!cell) continue;
-        for (const j of cell) {
-          if (seen[j] === stamp) continue;
-          seen[j] = stamp;
-          if (overlap(a, i, HEAVY, b, j, HEAVY)) hits.push(i, j);
+    const mark = ++stamp;
+    const fx0 = Math.max(Math.floor((x - ex) / CELL), gx0), fx1 = Math.min(Math.floor((x + ex) / CELL), gx0 + w - 1);
+    const fy0 = Math.max(Math.floor((y - ey) / CELL), gy0), fy1 = Math.min(Math.floor((y + ey) / CELL), gy0 + h - 1);
+    for (let gx = fx0; gx <= fx1; gx++) {
+      for (let gy = fy0; gy <= fy1; gy++) {
+        const c = (gx - gx0) * h + (gy - gy0);
+        for (let q = start[c]!, end = start[c + 1]!; q < end; q++) {
+          const j = items[q]!;
+          if (seen[j] === mark) continue;
+          seen[j] = mark;
+          if (overlap(a, i, HEAVY, b, j, HEAVY)) {
+            if (n + 2 > hits.length) { const more = new Uint32Array(hits.length * 2); more.set(hits); hits = more; }
+            hits[n++] = i; hits[n++] = j;
+          }
         }
       }
     }
   }
-  if (!hits.length) return null;
+  if (!n) return null;
 
   const rangeA = rangeOf(a), rangeB = rangeOf(b);
 
   // 3 x 3 class pairs x [enterA, exitA, enterB, exitB]; NaN = no overlap.
   const table = new Float64Array(TABLE_SIZE).fill(Number.NaN);
   // The four SAT axes and their body projections are identical for all nine class pairs at a sampled pose pair.
-  const projection = new Float64Array(20);
-  for (let k = 0; k < hits.length; k += 2) {
-    const i = hits[k] as number, j = hits[k + 1] as number;
+  for (let k = 0; k < n; k += 2) {
+    const i = hits[k]!, j = hits[k + 1]!;
     const ax = a.frame[i * 4] as number, ay = a.frame[i * 4 + 1] as number;
     const aux = a.frame[i * 4 + 2] as number, auy = a.frame[i * 4 + 3] as number;
     const bx = b.frame[j * 4] as number, by = b.frame[j * 4 + 1] as number;
@@ -383,13 +402,13 @@ export function pairTable(a: SweepSamples, b: SweepSamples): Float64Array | null
     const cA = a.c0 + i * SWEEP_STEP;
     const cB = b.c0 + j * SWEEP_STEP;
     const eligibleA = rangeA[i] as number, eligibleB = rangeB[j] as number;
-    for (const ca of BODY_CLASSES) {
+    for (let ca = 0; ca < 3; ca++) {
       if (!(eligibleA & (1 << ca))) continue;
-      const [ahl, ahw] = halfExtent(ca);
-      for (const cb of BODY_CLASSES) {
+      const ahl = HALF_LENGTH[ca]!, ahw = HALF_WIDTH[ca]!;
+      for (let cb = 0; cb < 3; cb++) {
         if (!(eligibleB & (1 << cb))) continue;
         if (ca !== HEAVY || cb !== HEAVY) {
-          const [bhl, bhw] = halfExtent(cb);
+          const bhl = HALF_LENGTH[cb]!, bhw = HALF_WIDTH[cb]!;
           let separate = false;
           for (let axis = 0; axis < 4; axis++) {
             const at = axis * 5;
