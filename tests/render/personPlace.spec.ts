@@ -28,6 +28,8 @@ describe("a procedural person's place", () => {
       const vs = vertexOf(depth, 'depth');
       expect(vs).not.toContain('instanceMatrix');
       expect(vs).toContain('mvPosition = procPlace * mvPosition');
+      // Cast with the next level's program: never the face's expressions (`depthMaterial`).
+      expect(vs).not.toContain('The expression of the moment');
     }
   });
 });

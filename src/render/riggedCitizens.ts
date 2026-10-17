@@ -48,6 +48,8 @@ interface LevelMesh {
   readonly rows: InstancedBufferAttribute;
   /** Figures written at this level this frame. */
   count: number;
+  /** A slot's colour changed since the GPU took them (burnt, or a new buffer): DO NOT send every figure's colour every frame. */
+  colourChanged: boolean;
 }
 /** A part of a body: its distinct levels' meshes, and which of them each level (`CITIZEN_LEVEL_ERROR`) is drawn with. */
 interface CitizenPart {
@@ -207,6 +209,7 @@ function growLevel(level: LevelMesh, needed: number): void {
   mesh.morphTexture = morph;
   mesh.instanceMatrix = matrices;
   mesh.instanceColor = colours;
+  level.colourChanged = true;
 }
 
 function markChildShirt(mesh: SkinnedMesh): void {
@@ -554,7 +557,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           mesh.receiveShadow = false;
           mesh.customDepthMaterial = depth;
           owned.add(mesh);
-          part.levels.push({ mesh, rows, count: 0 });
+          part.levels.push({ mesh, rows, count: 0, colourChanged: true });
           batch.meshes.push(mesh);
           group.add(mesh);
           added.push(mesh);
@@ -701,6 +704,17 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
   function bodyFor(ctx: CastingContext): { index: number; size: number } | null {
     return registry.pickCitizenModel(ctx, helmetFits);
   }
+  /** DO NOT make a casting context for every figure drawn: one, filled again (the registry copies what it keeps). */
+  const scratch: { -readonly [K in keyof CastingContext]-?: CastingContext[K] | undefined } = {
+    seed: 0, gender: 'f', ageClass: 'adult', company: 'solo', companyId: 0, hasChild: undefined, helmet: undefined, x: 0, y: 0,
+  };
+  /** The context of a figure of `identity` at (x, y), in `scratch`. */
+  function contextOf(identity: ClipIdentity, helmet: boolean, x: number, y: number): CastingContext {
+    scratch.seed = identity.seed; scratch.gender = identity.gender; scratch.ageClass = identity.ageClass;
+    scratch.company = identity.company; scratch.companyId = identity.companyId; scratch.hasChild = identity.hasChild;
+    scratch.helmet = helmet; scratch.x = x; scratch.y = y;
+    return scratch as CastingContext;
+  }
   const mixClips: ClipFrames[] = [];
   const mixPhases: number[] = [];
   const mixWeights: number[] = [];
@@ -758,7 +772,11 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       const slot = at.count++;
       matrix.multiplyMatrices(instance, batch.local[i]!);
       at.mesh.setMatrixAt(slot, matrix);
-      at.mesh.setColorAt(slot, colour);
+      const c = at.mesh.instanceColor!.array as Float32Array, o = slot * 3;
+      if (c[o] !== colour.r || c[o + 1] !== colour.g || c[o + 2] !== colour.b) {
+        c[o] = colour.r; c[o + 1] = colour.g; c[o + 2] = colour.b;
+        at.colourChanged = true;
+      }
       (at.rows.array as Float32Array)[slot] = batch.count;
       if (face) setFacialExpression(at.mesh, batch.sources[i]!, slot, face);
     }
@@ -829,8 +847,9 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     draw(ped: PedView, x: number, y: number, heading: number, deck: number, alpha: number,
       ground: Gradient | null = null, lean = 0, priority = false) {
       const hash = personHash(ped.id);
-      const body = bodyFor({ seed: ped.id, gender: ped.gender, ageClass: ped.ageClass, company: companyOf(ped.party),
-        companyId: ped.party.id, hasChild: ped.party.hasChild, x, y });
+      scratch.seed = ped.id; scratch.gender = ped.gender; scratch.ageClass = ped.ageClass; scratch.company = companyOf(ped.party);
+      scratch.companyId = ped.party.id; scratch.hasChild = ped.party.hasChild; scratch.helmet = false; scratch.x = x; scratch.y = y;
+      const body = bodyFor(scratch as CastingContext);
       if (!body) return;
       const index = body.index;
       const batch = batches.get(index);
@@ -926,7 +945,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       lean = 0, maxScale = Infinity, fromGround: boolean | 'pelvisOver' = false, fixedScale = 0,
       helmet: Matrix4 | null = null, face?: 'dead'): number {
       const hash = personHash(identity.seed);
-      const body = bodyFor({ ...identity, helmet: helmet !== null, x: pelvisX, y: pelvisY });
+      const body = bodyFor(contextOf(identity, helmet !== null, pelvisX, pelvisY));
       if (!body) return 0;
       const batch = batches.get(body.index);
       if (!batch) {
@@ -1007,6 +1026,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
       for (const batch of batches.values()) {
         for (const part of batch.parts) for (const at of part.levels) {
           const mesh = at.mesh, count = at.count;
+          // Its last figure gone from the shadow map: the map changes.
+          if (mesh.castShadow && mesh.visible && mesh.count > 0 && count === 0) casting = true;
           mesh.count = count;
           // An empty level is still a program bind and its uniforms in every pass
           mesh.visible = count > 0;
@@ -1016,10 +1037,11 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           mesh.instanceMatrix.clearUpdateRanges();
           mesh.instanceMatrix.addUpdateRange(0, count * 16);
           mesh.instanceMatrix.needsUpdate = true;
-          if (mesh.instanceColor) {
+          if (mesh.instanceColor && at.colourChanged) {
             mesh.instanceColor.clearUpdateRanges();
             mesh.instanceColor.addUpdateRange(0, count * 3);
             mesh.instanceColor.needsUpdate = true;
+            at.colourChanged = false;
           }
           at.rows.clearUpdateRanges();
           at.rows.addUpdateRange(0, count);
@@ -1093,7 +1115,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     /** Draws a body of `index` with a palette of skin matrices (`ragdoll.ts`) and an instance matrix. */
     /** The body somebody of this identity is drawn with (a rider thrown off is the same person, `ragdoll.fling`). */
     indexFor(identity: ClipIdentity, helmet: boolean, x: number, y: number): number | null {
-      return bodyFor({ ...identity, helmet, x, y })?.index ?? null;
+      return bodyFor(contextOf(identity, helmet, x, y))?.index ?? null;
     },
     /** The people cast in a company forgotten: its vehicle is gone from the world (`CastingRegistry.forgetCompany`). */
     forgetCompany(company: Company, companyId: number): void {

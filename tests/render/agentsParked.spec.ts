@@ -162,6 +162,24 @@ describe('parked cars drawn from instances kept where they were written', () => 
     agents.dispose();
   });
 
+  it('do not move the shadow map while they stand: casting only in a frame where one came, moved or went', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const cars = [parkedCar(1, 0, 0), parkedCar(2, m(10), 0)];
+    const net = netWith();
+    agents.sync(worldWith(cars), net, 0, true);
+    expect(agents.casting).toBe(true);
+    uploaded(meshesOf(agents, /./));
+    agents.sync(worldWith(cars), net, 0, true);
+    expect(agents.casting).toBe(false);
+    // One driven off: the map changes.
+    agents.sync(worldWith([cars[0]!]), net, 0, true);
+    expect(agents.casting).toBe(true);
+    uploaded(meshesOf(agents, /./));
+    agents.sync(worldWith([cars[0]!]), net, 0, true);
+    expect(agents.casting).toBe(false);
+    agents.dispose();
+  });
+
   it('let one go with its instances: the last kept ones take their places, and only those places are sent', () => {
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
     const cars = [parkedCar(1, 0, 0), parkedCar(2, m(10), 0), parkedCar(3, m(20), 0)];
