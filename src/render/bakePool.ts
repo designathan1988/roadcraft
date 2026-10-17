@@ -2,25 +2,22 @@ import { jobPort } from '../jobs/jobPool';
 import { Matrix4, type Object3D } from 'three';
 
 import { type ClipFrames, type RigNode, type ShuffleFacts, rigData } from './citizenBake';
-import type { BakedClip } from './citizenBake.worker';
+import type { BakeReply, BakedClip } from './citizenBake.worker';
 import type { WalkSex } from './citizenWalk';
+import type { DecodedPerson } from './people/cookedPerson';
 
-/** The bake workers: a body's core clips baked on other cores while the game keeps drawing. */
-type Result = (ClipFrames | undefined)[] | null;
+/** The bake workers: a body's clips baked, and a cooked person read, on other cores while the game keeps drawing. */
 
 const SIZE = Math.max(1, Math.min(6, (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4) - 1));
 
 const usable = typeof Worker !== 'undefined';
 let releaseRequested = false;
 const idle: Worker[] = [];
+/** A job: its message and what it moves, and its answer (null: failed, the asker does it another way). */
 interface Job {
-  readonly nodes: readonly RigNode[];
-  readonly transfer: ReturnType<typeof rigData>['transfer'];
-  readonly sex: WalkSex;
-  /** One clip baked on first use (`citizenBake.ts` bakeDeferred), and the shuffle it is timed by; none: the core clips. */
-  readonly at?: number;
-  readonly facts?: ShuffleFacts;
-  readonly resolve: (result: Result) => void;
+  readonly message: object;
+  readonly transfer: Transferable[];
+  readonly answer: (reply: BakeReply | null) => void;
 }
 const queue: Job[] = [];
 /** The job each worker has in hand, to answer it should the worker fail. */
@@ -33,25 +30,25 @@ function releaseIfIdle(): void {
   releaseRequested = false;
 }
 
-function finished(worker: Worker, result: Result): void {
+function finished(worker: Worker, reply: BakeReply | null): void {
   const job = busy.get(worker);
   if (!job) return;
   busy.delete(worker);
   idle.push(worker);
-  job.resolve(result);
+  job.answer(reply);
   dispatch();
   releaseIfIdle();
 }
 
 function createWorker(): Worker {
   const worker = jobPort('citizenBake');
-  worker.onmessage = (e: MessageEvent<{ id: number; clips?: (BakedClip | null)[]; error?: string }>) => {
-    if (!e.data.clips) {
+  worker.onmessage = (e: MessageEvent<BakeReply>) => {
+    if (e.data.error !== undefined) {
       console.error('Citizen bake worker failed', e.data.error);
       finished(worker, null);
       return;
     }
-    finished(worker, e.data.clips.map((c) => (c ? { ...c, ...(c.head ? { head: new Matrix4().fromArray(c.head) } : {}) } as ClipFrames : undefined)));
+    finished(worker, e.data);
   };
   // A reply that could not be read fails its job as an error does
   worker.onmessageerror = () => fail('a reply could not be read');
@@ -64,7 +61,7 @@ function createWorker(): Worker {
     const job = busy.get(worker);
     busy.delete(worker);
     worker.terminate();
-    job?.resolve(null);
+    job?.answer(null);
     dispatch();
     releaseIfIdle();
   };
@@ -82,32 +79,43 @@ function dispatch(): void {
       } catch (error) {
         console.error('Citizen bake worker could not start', error);
         // DO NOT give up on workers for the session on one failure.
-        if (busy.size === 0) for (const job of queue.splice(0)) job.resolve(null);
+        if (busy.size === 0) for (const job of queue.splice(0)) job.answer(null);
         return;
       }
     }
     const job = queue.shift()!;
     busy.set(worker, job);
     try {
-      worker.postMessage({ id: 0, nodes: job.nodes, sex: job.sex, ...(job.at !== undefined ? { at: job.at, facts: job.facts } : {}) }, job.transfer);
+      worker.postMessage({ id: 0, ...job.message }, job.transfer);
     } catch (error) {
-      console.error('Citizen bake worker could not receive a rig', error);
+      console.error('Citizen bake worker could not receive a job', error);
       busy.delete(worker);
       idle.push(worker);
-      job.resolve(null);
+      job.answer(null);
     }
   }
 }
 
-/** The core clips of the body whose rig is `scene`, baked in a worker; null when no worker can */
-export function bakeInWorker(scene: Object3D, sex: WalkSex): Promise<Result> {
+/** A job queued for the next free worker; null at once where no worker can run it. */
+function run(message: object, transfer: Transferable[] = []): Promise<BakeReply | null> {
   releaseRequested = false;
   if (!usable) return Promise.resolve(null);
-  const { nodes, transfer } = rigData(scene);
-  return new Promise((resolve) => {
-    queue.push({ nodes, transfer, sex, resolve });
+  return new Promise((answer) => {
+    queue.push({ message, transfer, answer });
     dispatch();
   });
+}
+
+/** The clips as baked in a worker, their head bones as matrices again. */
+const clipsOf = (clips: readonly (BakedClip | null)[]): (ClipFrames | undefined)[] =>
+  clips.map((c) => (c ? { ...c, ...(c.head ? { head: new Matrix4().fromArray(c.head) } : {}) } as ClipFrames : undefined));
+
+/** The core clips of the body whose rig is `scene`, baked in a worker; null when no worker can */
+export async function bakeInWorker(scene: Object3D, sex: WalkSex): Promise<(ClipFrames | undefined)[] | null> {
+  if (!usable) return null;
+  const { nodes, transfer } = rigData(scene);
+  const reply = await run({ nodes, sex }, transfer);
+  return reply?.clips ? clipsOf(reply.clips) : null;
 }
 
 /** A body's rig as a worker bakes on it (`rigData`), kept by the page for its clips baked on first use. */
@@ -117,14 +125,15 @@ export function bakeRig(scene: Object3D): readonly RigNode[] {
 
 /** One clip of a body baked on first use, in a worker (`bakeDeferred`); null when no worker can (it is baked here then). */
 export async function bakeDeferredInWorker(nodes: readonly RigNode[], sex: WalkSex, at: number, facts: ShuffleFacts): Promise<ClipFrames | null> {
-  releaseRequested = false;
-  if (!usable) return null;
   // The rig copied, not moved: the body's next clip is baked on it too.
-  const result = await new Promise<Result>((resolve) => {
-    queue.push({ nodes, transfer: [], sex, at, facts: { duration: facts.duration, stride: facts.stride }, resolve });
-    dispatch();
-  });
-  return result?.[0] ?? null;
+  const reply = await run({ nodes, sex, at, facts: { duration: facts.duration, stride: facts.stride } });
+  return reply?.clips ? clipsOf(reply.clips)[0] ?? null : null;
+}
+
+/** A cooked person read and decoded in a worker (`cookedPerson.ts` decodeCookedPerson): its arrays moved to the page; null when no worker can, or it could not be read. */
+export async function uncookInWorker(url: string): Promise<DecodedPerson | null> {
+  const reply = await run({ uncook: url });
+  return reply?.person ?? null;
 }
 
 /** Releases decoded motion libraries held by idle workers after all visual bodies leave. */

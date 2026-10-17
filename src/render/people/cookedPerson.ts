@@ -1,5 +1,5 @@
 import {
-  Bone, BufferAttribute, BufferGeometry, Group, Matrix4, MaterialLoader, type Material, type Object3D, Skeleton, SkinnedMesh, Vector3,
+  Bone, Box3, BufferAttribute, BufferGeometry, Group, Matrix4, MaterialLoader, type Material, type Object3D, Skeleton, SkinnedMesh, Sphere, Vector3,
 } from 'three';
 
 /** A person's body cooked ahead (`scripts/cook-people.mjs`): the output of building it */
@@ -131,53 +131,107 @@ export function cookPerson(scene: Object3D): ArrayBuffer {
   return out.buffer;
 }
 
-/** The person's scene read back from `cookPerson`'s buffer: bones, skinned mesh, face shapes, levels. */
-export function uncookPerson(buffer: ArrayBuffer): Group {
+/** A typed array as the cook wrote it. */
+type Typed = Float32Array | Uint32Array | Uint16Array | Uint8Array;
+/** A skinned mesh's arrays read from the cook, each its own buffer (movable to the page): its face shapes whole, its bounds worked out. */
+interface DecodedMesh {
+  readonly attributes: readonly Typed[];
+  readonly index: Typed | null;
+  readonly morphs: readonly Float32Array[];
+  readonly lods: readonly Typed[];
+  /** Box min and max, then the sphere's centre and radius, as three's `computeBoundingBox` / `computeBoundingSphere` give them. */
+  readonly bounds: readonly number[];
+}
+/** A cooked person read: the header, and each node's mesh arrays (null: no mesh). */
+export interface DecodedPerson { readonly header: CookedHeader; readonly meshes: readonly (DecodedMesh | null)[] }
+
+/** DO NOT read a cooked person on the page: the arrays sliced, the face shapes made whole (shapes x vertices x 3) and the bounds worked out here, in a worker (`bakePool.ts` uncookInWorker). */
+export function decodeCookedPerson(buffer: ArrayBuffer): { person: DecodedPerson; transfer: ArrayBuffer[] } {
   const view = new DataView(buffer);
   const headerLength = view.getUint32(0, true);
   const header = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, headerLength))) as CookedHeader;
   if (header.version !== 2) throw new Error(`Cooked person version ${String(header.version)}`);
   const base = 4 + ((headerLength + 3) & ~3);
-  const get = (ref: BufferRef): ArrayLike<number> => {
+  const transfer: ArrayBuffer[] = [];
+  /** `kept`: sent to the page (moved), not only read here. */
+  const get = (ref: BufferRef, kept = true): Typed => {
     const Kind = KINDS[ref.kind];
     // A copy of its own, 4-aligned: the views are handed to WebGL as they are.
     const bytes = buffer.slice(base + ref.at, base + ref.at + ref.length * BYTES[ref.kind]);
-    return new Kind(bytes, 0, ref.length);
+    if (kept) transfer.push(bytes);
+    return new Kind(bytes, 0, ref.length) as Typed;
   };
+  const meshes = header.nodes.map((n): DecodedMesh | null => {
+    if (n.kind !== 'skinned' || !n.mesh) return null;
+    const m = n.mesh;
+    const attributes = m.attributes.map((a) => get(a.data));
+    const position = attributes[m.attributes.findIndex((a) => a.name === 'position')]!;
+    const count = position.length / 3;
+    const morphs = m.morphs.map((morph) => {
+      const full = new Float32Array(count * 3);
+      const vertices = get(morph.vertices, false);
+      const deltas = get(morph.deltas, false);
+      for (let i = 0; i < vertices.length; i++) {
+        const v = vertices[i]!;
+        full[v * 3] = deltas[i * 3]!; full[v * 3 + 1] = deltas[i * 3 + 1]!; full[v * 3 + 2] = deltas[i * 3 + 2]!;
+      }
+      transfer.push(full.buffer);
+      return full;
+    });
+    // The bounds as three works them out (the face shapes widen them): on a geometry of the position and the shapes alone.
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(position, 3));
+    if (morphs.length) {
+      g.morphAttributes['position'] = morphs.map((full) => new BufferAttribute(full, 3));
+      g.morphTargetsRelative = m.morphRelative;
+    }
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    const box = g.boundingBox!, sphere = g.boundingSphere!;
+    return {
+      attributes, index: m.index ? get(m.index) : null, morphs, lods: m.lods.map((l) => get(l.index)),
+      bounds: [...box.min.toArray(), ...box.max.toArray(), ...sphere.center.toArray(), sphere.radius],
+    };
+  });
+  return { person: { header, meshes }, transfer };
+}
+
+/** The person's scene read back from `cookPerson`'s buffer: bones, skinned mesh, face shapes, levels. */
+export function uncookPerson(buffer: ArrayBuffer): Group {
+  return assemblePerson(decodeCookedPerson(buffer).person);
+}
+
+/** The person's scene from its decoded arrays: three's objects only, no loop over a vertex. */
+export function assemblePerson(person: DecodedPerson): Group {
+  const { header, meshes } = person;
   const loader = new MaterialLoader();
-  const built: Object3D[] = header.nodes.map((n) => {
+  const built: Object3D[] = header.nodes.map((n, at) => {
     let o: Object3D;
+    const d = meshes[at];
     if (n.kind === 'bone') o = new Bone();
-    else if (n.kind === 'skinned' && n.mesh) {
+    else if (n.kind === 'skinned' && n.mesh && d) {
       const m = n.mesh;
       const g = new BufferGeometry();
-      for (const a of m.attributes) g.setAttribute(a.name, new BufferAttribute(get(a.data) as Float32Array, a.itemSize, a.normalized));
-      if (m.index) g.setIndex(new BufferAttribute(get(m.index) as Uint32Array, 1));
+      m.attributes.forEach((a, k) => g.setAttribute(a.name, new BufferAttribute(d.attributes[k]!, a.itemSize, a.normalized)));
+      if (d.index) g.setIndex(new BufferAttribute(d.index, 1));
       for (const gr of m.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
-      const count = g.getAttribute('position').count;
-      if (m.morphs.length) {
-        g.morphAttributes['position'] = m.morphs.map((morph) => {
-          const full = new Float32Array(count * 3);
-          const vertices = get(morph.vertices);
-          const deltas = get(morph.deltas);
-          for (let i = 0; i < vertices.length; i++) {
-            const v = vertices[i]!;
-            full[v * 3] = deltas[i * 3]!; full[v * 3 + 1] = deltas[i * 3 + 1]!; full[v * 3 + 2] = deltas[i * 3 + 2]!;
-          }
+      if (d.morphs.length) {
+        g.morphAttributes['position'] = d.morphs.map((full, k) => {
           const attribute = new BufferAttribute(full, 3);
-          attribute.name = morph.name;
+          attribute.name = m.morphs[k]!.name;
           return attribute;
         });
         g.morphTargetsRelative = m.morphRelative;
       }
-      g.userData['lodIndices'] = m.lods.map((l) => new BufferAttribute(get(l.index) as Uint32Array, 1));
+      g.userData['lodIndices'] = d.lods.map((index) => new BufferAttribute(index, 1));
       g.userData['lodGroups'] = m.lods.map((l) => l.groups);
       g.userData['lodReady'] = Promise.resolve();
       if (m.extra?.faceOrigin) g.userData['faceOrigin'] = new Vector3().fromArray(m.extra.faceOrigin);
       if (m.extra?.faceScale !== undefined) g.userData['faceScale'] = m.extra.faceScale;
       if (m.extra?.wornGroups) g.userData['wornGroups'] = [...m.extra.wornGroups];
-      g.computeBoundingBox();
-      g.computeBoundingSphere();
+      const b = d.bounds;
+      g.boundingBox = new Box3(new Vector3(b[0], b[1], b[2]), new Vector3(b[3], b[4], b[5]));
+      g.boundingSphere = new Sphere(new Vector3(b[6], b[7], b[8]), b[9]);
       const materials = m.materials.map((json) => loader.parse(json) as Material);
       const mesh = new SkinnedMesh(g, m.materialArray ? materials : materials[0]!);
       if (m.influences.length) {
@@ -210,57 +264,3 @@ export function uncookPerson(buffer: ArrayBuffer): Group {
   }
   return root as Group;
 }
-
-declare const __PEOPLE_COOK_HASH__: string | undefined;
-/** The fingerprint of how people are built in this build (`cook-plugin.ts`); null in tests. */
-const COOK_HASH = typeof __PEOPLE_COOK_HASH__ !== 'undefined' ? __PEOPLE_COOK_HASH__ : null;
-let manifest: Promise<ReadonlySet<string> | null> | null = null;
-/** A missing or stale cook is looked for again a little later */
-function lookAgain(): void {
-  if (typeof setTimeout === 'function') setTimeout(() => { manifest = null; }, 20_000);
-}
-
-/** The ids cooked for this build, or null when there are none (or another build's). */
-function cookedIds(): Promise<ReadonlySet<string> | null> {
-  manifest ??= (async () => {
-    if (!COOK_HASH || typeof fetch === 'undefined') return null;
-    if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('nocook')) return null;
-    try {
-      const response = await fetch(`${import.meta.env.BASE_URL}cooked/people/manifest.json`, { cache: 'no-cache' });
-      if (!response.ok) {
-        console.warn(`No cooked people for this build (fingerprint ${COOK_HASH}): every person is built during play, which stutters. Run "npm run cook:people".`);
-        lookAgain();
-        return null;
-      }
-      const m = (await response.json()) as { hash?: string; ids?: string[] };
-      if (m.hash !== COOK_HASH) {
-        // Named rather than silent: a stale cook is how a rebuild turned into a stutter nobody could explain.
-        console.warn(`The cooked people are stale: they were cooked under ${m.hash ?? '(no hash)'}, this build fingerprints ${COOK_HASH}. Every person is built during play until "npm run cook:people" is run again.`);
-        lookAgain();
-        return null;
-      }
-      return Array.isArray(m.ids) ? new Set(m.ids) : null;
-    } catch (error) {
-      // Unreadable - an HTML page served in its place, as when the path missed the build's base
-      console.error(`The cooked people's manifest could not be read (${String(error)}): every person is built during play, which stutters.`);
-      return null;
-    }
-  })();
-  return manifest;
-}
-
-/** The person cooked for this build, read back; null when it was not cooked (it is built instead). */
-export async function loadCookedPerson(id: string): Promise<Group | null> {
-  const ids = await cookedIds();
-  if (!ids?.has(id)) return null;
-  try {
-    const response = await fetch(`${import.meta.env.BASE_URL}cooked/people/${id}.bin`);
-    if (!response.ok) return null;
-    return uncookPerson(await response.arrayBuffer());
-  } catch {
-    return null;
-  }
-}
-
-/** This build's fingerprint, for the cook to stamp its manifest with. */
-export const peopleCookHash = (): string | null => COOK_HASH;
