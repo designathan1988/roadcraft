@@ -138,7 +138,10 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   const chunks = buildings.map((b) => emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade', true, party));
   if (missX0 <= missX1) return wider(job, missX0, missY0, missX1, missY1);
   const summaries = chunks.map(summaryOf);
-  const batch = cellArrays(chunks, { ...COARSE, ghost: false, dim: false }, job.boxes);
+  // The far level's shells on the cell's grid (`cellArrays.ts` `ShellGrid`); the detail's in floats (its millimetre steps).
+  const comma = job.cell.indexOf(',');
+  const grid = job.kind === 'facade' ? [Number(job.cell.slice(0, comma)), Number(job.cell.slice(comma + 1))] as const : undefined;
+  const batch = cellArrays(chunks, { ...COARSE, ghost: false, dim: false, ...(grid ? { grid } : {}) }, job.boxes);
   // The detail cells inside, each its buildings in the cell's order (`layerCells.ts` `chunksByCell`).
   const byDetail = new Map<string, BuildingChunk[]>();
   buildings.forEach((b, i) => {
