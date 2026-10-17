@@ -258,7 +258,8 @@ export class SimHost {
         was.seen = frame;
         return;
       }
-      const rich: VehicleRich = { color: v.color, archetype: v.archetype.id, doors: v.doors.slice(), kerbStop: v.kerbStop ? structuredClone(v.kerbStop) : null,
+      // The kerb stop as it is: posted below in this same call, the message copies it (DO NOT copy it a second time, a vehicle a frame).
+      const rich: VehicleRich = { color: v.color, archetype: v.archetype.id, doors: v.doors.slice(), kerbStop: v.kerbStop,
         people: v.people.slice(), peopleAge: v.peopleAge.slice(), freeLot: v.free?.lot ?? null };
       this.vehicleSent.set(v.id, { color: rich.color, archetype: rich.archetype, busy, people: rich.people, peopleAge: rich.peopleAge, seen: frame });
       vehicles.push([v.id, rich]);
