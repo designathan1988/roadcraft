@@ -49,6 +49,12 @@ interface Leaf {
   readonly slots: Map<NearKind, Slot>;
 }
 
+/** The tiles a kind of a tile reads (the tile first), each at its version and the page's edit of it, and the version of them all. */
+interface TilesRead {
+  readonly tiles: readonly { readonly key: number; readonly version: number; readonly edit: number }[];
+  readonly sig: string;
+}
+
 /** The eye the tiles were last chosen for. */
 interface Eye { x: number; y: number; z: number; pxAtMetre: number; orthoPx: number | null; reach: number }
 
@@ -120,6 +126,8 @@ export class NearTiles implements FarTiles {
   private readonly viewBox = new Box3();
   private scheduled = false;
   private warned = false;
+  /** Each tile's tiles read and their version, alone and with its neighbours, worked out once a choice for every kind (`tilesOf`). */
+  private readonly reads = new Map<number, { alone?: TilesRead; around?: TilesRead }>();
 
   /** `run`, `prefix`: where the jobs go and the bakes are kept (tests give their own). */
   constructor(private readonly run: NearRun = nearRunner(), private readonly prefix: string | null = NEAR_PREFIX) {
@@ -189,6 +197,7 @@ export class NearTiles implements FarTiles {
     this.view = view;
     if (!this.source) return;
     this.groundMoved();
+    this.reads.clear();
     for (const product of this.products) this.chooseKind(product);
   }
 
@@ -270,27 +279,33 @@ export class NearTiles implements FarTiles {
     return this.view.intersectsBox(this.viewBox);
   }
 
-  /** The tile and (for a kind that reads them) its neighbours stored, at their versions, the tile first; a tile the page holds edited at its edit. */
-  private tilesOf(leaf: Leaf, kind: NearKind): { key: number; version: number; edit: number }[] {
+  /** The tile and (for a kind that reads them) its neighbours stored, at their versions, the tile first, a tile the page holds edited at its edit; and the version of them. */
+  private tilesOf(leaf: Leaf, kind: NearKind): TilesRead {
+    const around = nearReadsAround(kind);
+    let known = this.reads.get(leaf.key);
+    if (!known) this.reads.set(leaf.key, known = {});
+    const had = around ? known.around : known.alone;
+    if (had) return had;
     const edit = (key: number): number => this.source?.pageEdit?.(key) ?? 0;
-    const out = [{ key: leaf.key, version: leaf.version, edit: edit(leaf.key) }];
-    if (!nearReadsAround(kind)) return out;
-    for (let dj = -1; dj <= 1; dj++) {
+    const tiles = [{ key: leaf.key, version: leaf.version, edit: edit(leaf.key) }];
+    for (let dj = -1; around && dj <= 1; dj++) {
       for (let di = -1; di <= 1; di++) {
         if (di === 0 && dj === 0) continue;
         const near = this.leaves.get(tileKey(leaf.i + di, leaf.j + dj));
-        if (near) out.push({ key: near.key, version: near.version, edit: edit(near.key) });
+        if (near) tiles.push({ key: near.key, version: near.version, edit: edit(near.key) });
       }
     }
-    return out;
+    const read: TilesRead = { tiles, sig: nearSig(tiles.map((t) => ({ key: t.key, version: t.edit ? `${t.version}+${t.edit}` : t.version }))) };
+    if (around) known.around = read; else known.alone = read;
+    return read;
   }
 
   /** A tile's kind asked of the workers at the version of what it reads, once. */
   private ask(leaf: Leaf, product: NearProduct): void {
     const kind = product.kind;
     const slot = this.slotOf(leaf, kind);
-    const tiles = this.tilesOf(leaf, kind);
-    const want = `${nearSig(tiles.map((t) => ({ key: t.key, version: t.edit ? `${t.version}+${t.edit}` : t.version })))}:${product.version?.(leaf.key) ?? ''}`;
+    const { tiles, sig: read } = this.tilesOf(leaf, kind);
+    const want = `${read}:${product.version?.(leaf.key) ?? ''}`;
     const sig = `${want}|${Math.max(this.groundEverywhere, this.groundOf.get(leaf.key) ?? 0)}`;
     if (slot.sig === sig || slot.asked === sig || slot.failed === sig) return;
     slot.cancel?.();
