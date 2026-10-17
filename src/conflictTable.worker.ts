@@ -1,6 +1,6 @@
 import { Polyline } from '@core/polyline';
 import type { Vec2 } from '@core/vec2';
-import { type FinishedPair, type SampledSweep, type SweepSamples, TABLE_SIZE, finishPair, pairTable, sampleSweep } from '@world/conflictTable';
+import { type FinishedPair, type SampledSweep, type SweepSamples, TABLE_SIZE, PairWork, finishPair, pairTable, sampleSweep } from '@world/conflictTable';
 import type { ChosenTurn } from '@world/junctionTurns';
 import type { JunctionSurface } from '@world/turnPaths';
 import { chooseTurnOf } from '@world/turnChoice';
@@ -144,8 +144,10 @@ export function serve(self: JobScope): void {
       const samples: SweepSamples[] = ask.sweeps.map((s) => ({ ...s, bounds: null, grid: null, range: null }));
       const tables: (Float64Array | null)[] = [];
       const transfer: ArrayBuffer[] = [];
+      // What every pair of the batch is measured in (`pairTable`).
+      const work = new PairWork();
       for (let k = 0; k < ask.pairs.length; k += 2) {
-        const table = pairTable(samples[ask.pairs[k]!]!, samples[ask.pairs[k + 1]!]!);
+        const table = pairTable(samples[ask.pairs[k]!]!, samples[ask.pairs[k + 1]!]!, work);
         tables.push(table);
         if (table) transfer.push(table.buffer as ArrayBuffer);
         beat();

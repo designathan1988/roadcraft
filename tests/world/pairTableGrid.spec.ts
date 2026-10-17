@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BODY_CLASSES, BODY_ENVELOPE, HEAVY, TABLE_SIZE, type BodyClass, type SweepSamples, pairTable, sampleSweep, sweepSpan } from '@world/conflictTable';
+import { BODY_CLASSES, BODY_ENVELOPE, HEAVY, PairWork, TABLE_SIZE, type BodyClass, type SweepSamples, pairTable, sampleSweep, sweepSpan } from '@world/conflictTable';
 import { m } from '@world/units';
 
 /** A pair's table through the typed grid is the table the map-of-lists grid made, bit for bit (`pairTable`) */
@@ -89,13 +89,14 @@ function sweep(seed: number, from: number, to: number): SweepSamples {
 
 describe('a pair table through the typed grid', () => {
   it('is the table the old grid made, bit for bit, over many movements', () => {
+    const work = new PairWork();
     const sweeps: SweepSamples[] = [];
     for (let k = 0; k < 24; k++) sweeps.push(sweep(k + 1, (k * 0.83) % (2 * Math.PI), ((k * 2.11) + 1) % (2 * Math.PI)));
     let met = 0;
     for (let p = 0; p < sweeps.length; p++) {
       for (let q = 0; q < sweeps.length; q++) {
         if (p === q) continue;
-        const want = oldTable(sweeps[p]!, sweeps[q]!), got = pairTable(sweeps[p]!, sweeps[q]!);
+        const want = oldTable(sweeps[p]!, sweeps[q]!), got = pairTable(sweeps[p]!, sweeps[q]!, work);
         if (want) met++;
         expect(got === null ? null : [...new Uint8Array(got.buffer)]).toEqual(want === null ? null : [...new Uint8Array(want.buffer)]);
       }
