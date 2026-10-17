@@ -1,4 +1,5 @@
 import { applyStructureSway } from './wind';
+import { castBySize } from './shadowCasters';
 import {
   BoxGeometry,
   Color,
@@ -162,6 +163,8 @@ export function createSignalHeads(
   const FIXED: readonly BatchName[] = ['posts', 'arms', 'boxes', 'visors'];
   const LENSES: readonly BatchName[] = ['lit', 'halos', 'red', 'amber', 'green'];
   /** A cell's batches, sized for its heads, culled by its sphere. */
+  /** Each casting batch taken off the casters chosen by cascade when its cell goes (`castBySize`). */
+  const uncast = new Map<InstancedMesh, () => void>();
   const batchesFor = (heads: number, sphere: Sphere): Record<BatchName, InstancedMesh> => {
     const out = {} as Record<BatchName, InstancedMesh>;
     for (const name of NAMES) {
@@ -172,6 +175,12 @@ export function createSignalHeads(
       mesh.count = 0;
       mesh.castShadow = shadows.cast;
       mesh.receiveShadow = shadows.receive;
+      if (shadows.cast) {
+        // Cast into a cascade only with heads, and where the part reaches a texel (a visor's hood is a few centimetres): `shadowCasters.ts`.
+        if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+        const reach = geometry.boundingSphere?.radius ?? 0;
+        uncast.set(mesh, castBySize({ mesh, casts: true, radius: () => reach }));
+      }
       // Culled as a cell, by the sphere round its heads (three's own test, `frustumCulled` left on).
       mesh.boundingSphere = sphere;
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -246,7 +255,13 @@ export function createSignalHeads(
   const landRead = new JournalCursor(['terrain', 'elevation']);
 
   const dropCell = (cell: Cell): void => {
-    for (const name of NAMES) { group.remove(cell.batches[name]); cell.batches[name].dispose(); }
+    for (const name of NAMES) {
+      const mesh = cell.batches[name];
+      uncast.get(mesh)?.();
+      uncast.delete(mesh);
+      group.remove(mesh);
+      mesh.dispose();
+    }
   };
   const dropCells = (): void => {
     for (const cell of cells.values()) dropCell(cell);
