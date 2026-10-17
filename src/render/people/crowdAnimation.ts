@@ -25,9 +25,8 @@ import { compilePassAhead } from '../uploads';
 const ATLAS_TEXELS = 3;
 /** Plays blended per person in the palette pass (a rider's are four). */
 const PLAYS = 4;
-/** Texels of a person's row of plays: one a play, then (variant, override, resting); a placed pass's, then the person's matrix (`setPlace`). */
+/** Texels of a person's row of plays: one a play, then (variant, override, resting). */
 const PLAY_TEXELS = PLAYS + 1;
-const PLACE_TEXELS = 4;
 
 export interface ClassAnimation {
   /** Frames of every clip, a row each: `bones * 3` texels across. */
@@ -135,19 +134,7 @@ export const REFIT_FRAGMENT = /* glsl */`
     int person = at.y;
     vec4 meta = texelFetch(uPlays, ivec2(PLAYS, person), 0);
     if (meta.z > 0.5) { outColor = vec4(0.0); return; }
-    #ifdef PLACED
-    // The person's matrix (setPlace): the palette is the bones where the person stands, their pieces drawn without a matrix of their own.
-    mat4 place = mat4(texelFetch(uPlays, ivec2(PLAYS + 1, person), 0), texelFetch(uPlays, ivec2(PLAYS + 2, person), 0),
-      texelFetch(uPlays, ivec2(PLAYS + 3, person), 0), texelFetch(uPlays, ivec2(PLAYS + 4, person), 0));
-    if (meta.y > 0.5) {
-      mat4 own = mat4(texelFetch(uOverride, ivec2(bone * 4, person), 0), texelFetch(uOverride, ivec2(bone * 4 + 1, person), 0),
-        texelFetch(uOverride, ivec2(bone * 4 + 2, person), 0), texelFetch(uOverride, ivec2(bone * 4 + 3, person), 0));
-      outColor = (place * own)[column];
-      return;
-    }
-    #else
     if (meta.y > 0.5) { outColor = texelFetch(uOverride, at, 0); return; }
-    #endif
     int variant = int(meta.x + 0.5);
     mat4 m = blendedAt(person, bone);
     // The bone moved to this body's joints (proceduralCrowd.ts refit): its head carried by every parent's turn up to the root.
@@ -161,9 +148,6 @@ export const REFIT_FRAGMENT = /* glsl */`
     }
     shift += jointOf(variant, cur);
     m[3].xyz += shift - mat3(m) * jointOf(variant, bone);
-    #ifdef PLACED
-    m = place * m;
-    #endif
     outColor = m[column];
   }`;
 
@@ -180,8 +164,6 @@ export interface PalettePass {
   readonly capacity: number;
   /** Settles once its program is built (`uploads.ts` compilePassAhead): nobody draws with its palettes before. */
   readonly ready: Promise<void>;
-  /** A placed pass (`createPalettePass` placed): person `row`'s matrix this frame, column-major, the bones written where they stand. */
-  setPlace(row: number, matrix: ArrayLike<number>): void;
   /** What person `row` plays this frame, the body variant whose joints they have; null plays: a palette of their own (`setOverride`). */
   setPlays(row: number, plays: readonly PalettePlay[] | null, variant: number): void;
   /** Person `row` is not drawn this frame: their row is not blended. */
@@ -195,9 +177,8 @@ export interface PalettePass {
   dispose(): void;
 }
 
-/** The palette pass of a body class: a quad drawn into a float target, a texel a column of a bone of a person; `placed`: each person's matrix applied too (`setPlace`). */
-export function createPalettePass(anim: ClassAnimation, parent: Int16Array, joints: () => Texture, capacity: number, placed = false): PalettePass {
-  const rowTexels = PLAY_TEXELS + (placed ? PLACE_TEXELS : 0);
+/** The palette pass of a body class: a quad drawn into a float target, a texel a column of a bone of a person. */
+export function createPalettePass(anim: ClassAnimation, parent: Int16Array, joints: () => Texture, capacity: number): PalettePass {
   const bones = anim.bones;
   const width = bones * 4;
   let depth = 0;
@@ -207,8 +188,8 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
     depth = Math.max(depth, d);
   }
   let rows = capacity;
-  let plays = new Float32Array(rowTexels * 4 * rows);
-  let playTexture = rowsTexture(plays, rowTexels, rows);
+  let plays = new Float32Array(PLAY_TEXELS * 4 * rows);
+  let playTexture = rowsTexture(plays, PLAY_TEXELS, rows);
   let override = new Float32Array(width * 4 * rows);
   let overrideTexture = rowsTexture(override, width, rows);
   let target = makeTarget(width, rows);
@@ -227,8 +208,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
     uParent: { value: Array.from(parent) },
     uBlend: { value: blendTarget.texture },
   };
-  const defines: Record<string, number | string> = { BONES: bones, MAX_DEPTH: Math.max(1, depth), PLAYS };
-  if (placed) defines['PLACED'] = '';
+  const defines = { BONES: bones, MAX_DEPTH: Math.max(1, depth), PLAYS };
   const pass = (fragmentShader: string): ShaderMaterial => new ShaderMaterial({
     glslVersion: GLSL3, defines, uniforms, fragmentShader, blending: NoBlending, depthTest: false, depthWrite: false,
     vertexShader: /* glsl */`
@@ -253,13 +233,8 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
     ready,
     get texture() { return target.texture; },
     get capacity() { return rows; },
-    setPlace(row, matrix) {
-      const o = (row * rowTexels + PLAY_TEXELS) * 4;
-      for (let i = 0; i < 16; i++) plays[o + i] = matrix[i]!;
-      dirty.add(row);
-    },
     setPlays(row, list, variant) {
-      const o = row * rowTexels * 4;
+      const o = row * PLAY_TEXELS * 4;
       for (let k = 0; k < PLAYS; k++) {
         const p = list?.[k];
         plays[o + k * 4] = p ? p.row : 0;
@@ -273,7 +248,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       dirty.add(row);
     },
     rest(row) {
-      const o = row * rowTexels * 4 + PLAYS * 4 + 2;
+      const o = row * PLAY_TEXELS * 4 + PLAYS * 4 + 2;
       if (plays[o] === 1) return;
       plays[o] = 1;
       dirty.add(row);
@@ -289,7 +264,7 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       if (dirtyAll || dirty.size) {
         // Each update range is one row of the image in three (WebGLTextures.js)
         playTexture.clearUpdateRanges();
-        if (!dirtyAll && dirty.size <= 8) for (const row of dirty) playTexture.addUpdateRange(row * rowTexels * 4, rowTexels * 4);
+        if (!dirtyAll && dirty.size <= 8) for (const row of dirty) playTexture.addUpdateRange(row * PLAY_TEXELS * 4, PLAY_TEXELS * 4);
         playTexture.needsUpdate = true;
         dirty.clear();
         dirtyAll = false;
@@ -314,11 +289,11 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
     },
     grow(capacity) {
       if (capacity <= rows) return;
-      const nextPlays = new Float32Array(rowTexels * 4 * capacity);
+      const nextPlays = new Float32Array(PLAY_TEXELS * 4 * capacity);
       nextPlays.set(plays);
       plays = nextPlays;
       playTexture.dispose();
-      playTexture = rowsTexture(plays, rowTexels, capacity);
+      playTexture = rowsTexture(plays, PLAY_TEXELS, capacity);
       const nextOverride = new Float32Array(width * 4 * capacity);
       nextOverride.set(override);
       override = nextOverride;
