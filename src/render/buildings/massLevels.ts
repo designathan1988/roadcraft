@@ -100,6 +100,11 @@ export class MassLevels {
     if (this.pool.isRunning(id)) this.asked.set(key, id);
   }
 
+  /** Whether a level's buildings changed since its masses were made (asked and not come, or not asked yet): its mesh, if any, is of older buildings. */
+  outdated(key: string): boolean {
+    return this.asked.has(key) || this.stale.has(key) || this.dirty.has(key);
+  }
+
   /** Levels asked and not come. */
   get asking(): number {
     return this.asked.size;

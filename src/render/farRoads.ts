@@ -7,7 +7,7 @@ import { pullTowardEye } from './depthConvention';
 import { type FarRoadJob, type FarRoadMesh, type FarRoadReply, derivedRoadCache, farLevelError, runFarRoadJob, tileRoads } from './farRoadTiles';
 import { type FarKind, type FarLanded, type FarNearLanded, FarTree, type FarTreeJob, type FarTreeRun } from './farTree';
 import { nodeSide } from './buildings/farTiles';
-import { FAR_TIER, NEAR_TIER, TIER_SPAN } from './buildings/cellPool';
+import { EDIT_TIER, FAR_TIER, NEAR_TIER, TIER_SPAN } from './buildings/cellPool';
 import { FAR_ERROR } from './buildings/massCells';
 import { geometryCost } from './gpuLedger';
 import { gpuOnly } from './mesh/gpuOnly';
@@ -133,11 +133,13 @@ function farRoadsRunner(ground: () => SharedGroundData | null, kit: NearRoadKit 
     }
     const side = nodeSide(Math.max(0, tree.k));
     const near = tree.near !== undefined;
+    // A near level of a tile the page holds edited goes first (`cellPool.ts` EDIT_TIER): it draws what the player just did.
+    const tier = !near ? FAR_TIER : tree.near!.edited ? EDIT_TIER : NEAR_TIER;
     const ticket = submitJob({
       service: 'farRoads',
       key: `farRoads:${tree.node}`,
       // A near level with the cells' detail, after every far level (`cellPool.ts` NEAR_TIER).
-      priority: (near ? NEAR_TIER : FAR_TIER) * TIER_SPAN + focusDistance((tree.i + 0.5) * side, (tree.j + 0.5) * side),
+      priority: tier * TIER_SPAN + focusDistance((tree.i + 0.5) * side, (tree.j + 0.5) * side),
       write: () => ({ data: { ...farRoadJob(tree, kit, ground()), ground: ground() }, transfer: [] }),
       done: (answer) => answered(answer as FarRoadReply),
       failed: (message) => done({ kind: 'farError', node: tree.node, sig: tree.sig, message }),

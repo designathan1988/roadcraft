@@ -31,9 +31,11 @@ const DETAIL_LATER = 4;
 export const FAR_TIER = -0.5;
 /** The roads' near level of a tile (`nearRoadTiles.ts`): after the buildings' masses (2-2.75), a refinement of roads already drawn by their far level, as Cesium loads the coarse levels first; ahead of them, a second's bake a tile held the masses the map view waited for (a region's tiles empty on the map, 2026-10-17). */
 export const NEAR_TIER = 2.9;
+/** WHAT THE PLAYER JUST EDITED (a building cut open, a tile's near roads baked from the page's records): before anything - it is what the player looks at. Behind the cells a road drawn was not on the screen 4 s after it was built (`conferencia` 40-road-4s, 2026-10-17). */
+export const EDIT_TIER = -1;
 /** A cell job's place in the queue (lower first): a building cut open before anything, else its kind's band (`TIER`, the detail put back past the coarse levels while the town is unseen, `coarseFirst`), nearest the eye first within it. */
 export function cellPriority(kind: JobKind, away: number, cutOpen: boolean, coarseFirst: boolean): number {
-  if (cutOpen) return -TIER_SPAN;
+  if (cutOpen) return EDIT_TIER * TIER_SPAN;
   const later = coarseFirst && (kind === 'cell' || kind === 'facade') ? DETAIL_LATER : 0;
   return (TIER[kind] + later) * TIER_SPAN + away;
 }

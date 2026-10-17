@@ -15,7 +15,7 @@ import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { FAR_ERROR, createMassCells } from './massCells';
-import { FrameScale, LandedTriangles, TYPICAL_LEVEL_TRIANGLES, SLACK } from './frameBudget';
+import { FrameScale, LandedTriangles, TYPICAL_LEVEL_TRIANGLES, SLACK, letGoPassed } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
 import { FarLevels, farRunner } from './farLevels';
@@ -204,6 +204,9 @@ export function createBuildingLayer(): BuildingLayer {
       if (!massCells.near(key)) heldFar.add(key);
       else if (wasFine && !massCells.fine(key)) heldCoarse.add(key);
     }
+    // The eye moved: a cell held nearer it than one the budget keeps goes back to the view (the farthest are capped in its place).
+    const at = eye;
+    letGoPassed(heldFar, heldCoarse, [...massCells.nearKeys()].map((key) => ({ key, fine: massCells.fine(key) })), (key) => cellDistance(key, at.x, at.y));
     if ((heldFar.size || heldCoarse.size) && chosenTriangles() < frame.budget * SLACK) {
       const key = nearestHeld(heldCoarse) ?? nearestHeld(heldFar);
       if (key !== null) { heldCoarse.delete(key); heldFar.delete(key); }
@@ -748,7 +751,8 @@ export function createBuildingLayer(): BuildingLayer {
         const comma = key.indexOf(',');
         const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
         if (i < i0 || i >= i1 || j < j0 || j >= j1) continue;
-        if (levelShown(key) === null && !massCells.drawn(key)) return false;
+        // A tile's or plate's mesh made before the tile's buildings came in stands for none of them (the plate of the map's centre: four tiles, the second to come handed to the cells under the first's plate, 2026-10-17).
+        if (levelShown(key) === null && !massCells.drawn(key, (level) => !levels.outdated(level))) return false;
       }
       return true;
     },

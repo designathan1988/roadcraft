@@ -120,8 +120,8 @@ export interface MassCells {
   pixels(key: string, metres: number): number;
   /** The frame's error scale for the next `choose` (`frameBudget.ts`): every error is allowed this many times the pixels it is allowed at 1. */
   setErrorScale(scale: number): void;
-  /** Whether a cell has its masses on the GPU, or a tile or plate drawn in its place (`layer.ts` drawnOver): what stands for it before its detail. */
-  drawn(key: string): boolean;
+  /** Whether a cell has its masses on the GPU, or a tile or plate drawn in its place (`layer.ts` drawnOver): what stands for it before its detail; `current`, whether a level's mesh is of its buildings now (`MassLevels.outdated`): one made before the cell's buildings came in stands for nothing of them. */
+  drawn(key: string, current?: (levelKey: string) => boolean): boolean;
   /** The cells the frame's budget holds back (`layer.ts` capTriangles): `far` never drawn near, `coarse` never at full detail, until let go there. DO NOT decide them by the eye again next frame: they blinked, capped and brought back by turns. */
   hold(far: ReadonlySet<string>, coarse: ReadonlySet<string>): void;
   dispose(): void;
@@ -596,12 +596,13 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       heldFar = far;
       heldCoarse = coarse;
     },
-    drawn(key) {
+    drawn(key, current = () => true) {
       const cell = cells.get(key);
       if (!cell) return false;
       if (cell.mesh || cell.massless) return true;
       const [i, j] = cellIndex(key);
-      return coveredAt(i, j);
+      const tile = tiles.get(tileOf(i, j)), plate = plates.get(plateOf(i, j));
+      return (!!tile?.coarse && current(tileOf(i, j))) || (!!plate?.coarse && current(plateOf(i, j)));
     },
     dispose() {
       for (const cell of cells.values()) drop(cell);
