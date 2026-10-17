@@ -82,7 +82,7 @@ describe('a tile\'s poles baked in a worker', () => {
         const reply = await runNearTileJob({
           kind: 'poles', node: `poles:${i},${j}`, sig: 's', want: 'w', shown: null, prefix: null,
           tiles: tiles.map((key) => ({ key, version: 1 })), records: tiles.map((key) => recordsFor(records.get(key)!, ['roads', 'rest'])),
-          ground: { ground: null, naturalIsGround: true }, extra: product.extra!(),
+          ground: { ground: null, naturalIsGround: true }, extra: product.extra!(0),
         }, noCache);
         expect(reply.kind).toBe('near');
         if (reply.kind !== 'near' || reply.payload === null) continue;
@@ -105,7 +105,7 @@ describe('a tile\'s poles baked in a worker', () => {
     const job = {
       kind: 'poles' as const, node: `poles:${i},${j}`, sig: 's', want: 'w', shown: null, prefix: null,
       tiles: [{ key, version: 1 }], records: [recordsFor(doc.tileRecords(key, 1), ['roads', 'rest'])],
-      ground: { ground: null, naturalIsGround: true }, extra: product.extra!(),
+      ground: { ground: null, naturalIsGround: true }, extra: product.extra!(0),
     };
     const first = await runNearTileJob(job, noCache);
     expect(first.kind === 'near' && first.payload).toBeTruthy();

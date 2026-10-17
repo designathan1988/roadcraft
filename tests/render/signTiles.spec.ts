@@ -38,7 +38,7 @@ describe('a tile\'s signs baked in a worker', () => {
       for (const s of product.get(key)?.stands ?? []) want.push([s.x, s.y, s.ground, s.yaw].map((v) => v.toFixed(3)).concat(s.type, s.text).join(','));
     }
     const tiled = signProduct(createSignLayer(), () => doc.markingStyle);
-    const bakes = await bakeEveryTile(doc, [x0, y0, x1, y1], 'signs', tiled.extra!()) as SignBake[];
+    const bakes = await bakeEveryTile(doc, [x0, y0, x1, y1], 'signs', tiled.extra!(0)) as SignBake[];
     expect(bakes.length).toBeGreaterThan(1);
     const got = bakes.flatMap((b) => b.stands.map((s) => [s.x, s.y, s.ground, s.yaw].map((v) => v.toFixed(3)).concat(s.type, s.text).join(',')));
     expect(want.length).toBeGreaterThan(100);
