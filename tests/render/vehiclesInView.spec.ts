@@ -105,7 +105,8 @@ function worldWith(parked: readonly VehicleView[]): SimClient {
   const grid = new FleetGrid<VehicleView>();
   for (const car of parked) grid.place(car);
   const vehiclesIn = (box: GroundBox, out: VehicleView[]): VehicleView[] => { out.length = 0; return grid.near(box.x0, box.y0, box.x1, box.y1, out); };
-  return { time: 0, traffic: [], vehicles: new Map(), parked, isParked: (v: VehicleView) => parked.includes(v), pedViews: [], fleet: 0, vehiclesIn } as unknown as SimClient;
+  return { time: 0, traffic: [], vehicles: new Map(), parked, isParked: (v: VehicleView) => parked.includes(v), pedViews: [], fleet: 0, vehiclesIn,
+    pedsIn: (_box: GroundBox, out: unknown[]) => { out.length = 0; return out; } } as unknown as SimClient;
 }
 
 const netWith = (): Network => ({ doc: { changes: new ChangeJournal() } }) as unknown as Network;

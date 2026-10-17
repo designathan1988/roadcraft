@@ -131,11 +131,23 @@ export class SimClient implements JournalReader {
   trafficSpeed = 0;
   trafficQueued = 0;
   readonly pedViews: PedView[] = [];
+  /** The walkers by 64 m cell, filed as the tick is decoded; DO NOT walk `pedViews` per frame to find those in view: ask `pedsIn`. */
+  private readonly pedGrid = new FleetGrid<PedView>((p) => p.x, (p) => p.y);
+  /** The longest step of a walker in the last tick (each axis). */
+  private pedSlack = 0;
   /** Moves whenever a vehicle came or went (the casting forgets the people of those gone, `render/agents.ts`). */
   fleet = 0;
   /** Whether a view is one of the cars parked in their bays now. */
   isParked(view: VehicleView): boolean {
     return this.parkedById.get(view.id) === view;
+  }
+
+  /** The walkers that may be drawn in the box this frame, appended to `out` after clearing it. */
+  pedsIn(box: Readonly<GroundBox>, out: PedView[]): PedView[] {
+    out.length = 0;
+    // Grown by the tick's longest step: the pose drawn lies between the two it holds (`pedPoseInto`).
+    const s = this.pedSlack;
+    return this.pedGrid.near(box.x0 - s, box.y0 - s, box.x1 + s, box.y1 + s, out);
   }
 
   /** The views that may be drawn in the box this frame, appended to `out` after clearing it: the traffic, then the parked cars (`which` keeps one of them). */
@@ -679,7 +691,7 @@ export class SimClient implements JournalReader {
     const m = data[h + H.peds]!;
     const pb = pedBase(slot);
     this.pedViews.length = 0;
-    let pedRead = 0;
+    let pedRead = 0, pedSlack = 0;
     for (let k = 0; k < m; k++) {
       const at = pb + k * PED_STRIDE;
       const id = data[at + P.id]!;
@@ -688,6 +700,8 @@ export class SimClient implements JournalReader {
       if (!view || r) {
         const base = r ?? view;
         if (!base) continue;
+        // A walker told again is a view of its own: the one it replaces leaves the grid.
+        if (view) this.pedGrid.remove(view);
         const { id: _i, x: _x, y: _y, heading: _h, prev: _p, v: _v, turnV: _t, age: _a, segment: _s, walking: _w, kerbWait: _k, rank: _r, ...carried } = base as PedView;
         view = { ...carried, id, x: 0, y: 0, heading: 0, prev: { x: 0, y: 0, heading: 0 }, v: 0, turnV: 0, age: 0, segment: undefined, walking: false, kerbWait: 0, rank: 0, tickRead: -1 } as PedRead;
         this.pedById.set(id, view);
@@ -701,9 +715,12 @@ export class SimClient implements JournalReader {
       w.segment = segment < 0 ? undefined : segment as SegmentId;
       w.walking = data[at + P.walking] === 1; w.kerbWait = data[at + P.kerbWait]!; w.rank = data[at + P.rank]!;
       this.pedViews.push(view);
+      this.pedGrid.place(view);
+      pedSlack = Math.max(pedSlack, Math.abs(w.x - prev.x), Math.abs(w.y - prev.y));
       if (view.tickRead !== stamp) { view.tickRead = stamp; pedRead++; }
     }
-    if (pedRead !== this.pedById.size) for (const [id, view] of this.pedById) if (view.tickRead !== stamp) this.pedById.delete(id);
+    this.pedSlack = pedSlack;
+    if (pedRead !== this.pedById.size) for (const [id, view] of this.pedById) if (view.tickRead !== stamp) { this.pedById.delete(id); this.pedGrid.remove(view); }
     Atomics.store(this.control, C.reading, -1);
     this.trains = message.trains;
     this.tick++;
@@ -737,6 +754,8 @@ export class SimClient implements JournalReader {
     this.clearParked();
     this.pedViews.length = 0;
     this.pedById.clear();
+    this.pedGrid.clear();
+    this.pedSlack = 0;
     this.layouts.clear();
     this.lights.clear();
     this.signalJunctions.junctions.clear();

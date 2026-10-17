@@ -16,16 +16,22 @@ const keyOf = (cx: number, cy: number): number => (cx + SHIFT) * (2 * SHIFT) + (
 interface Cell<T> { readonly key: number; readonly cx: number; readonly cy: number; readonly items: T[] }
 interface Slot<T> { cell: Cell<T>; index: number }
 
-/** Each item filed by where it stands now (`frames.x`, `frames.y`); refiled only when it changes cell. */
-export class FleetGrid<T extends { readonly frames: VehicleFrames }> {
+/** Where a vehicle stands now: its frames' current pose. */
+const framesX = (item: unknown): number => (item as { readonly frames: VehicleFrames }).frames.x;
+const framesY = (item: unknown): number => (item as { readonly frames: VehicleFrames }).frames.y;
+
+/** Each item filed by where it stands now (a vehicle's `frames.x`, `frames.y`; a walker's own by `xOf`, `yOf`); refiled only when it changes cell. */
+export class FleetGrid<T> {
   private readonly cells = new Map<number, Cell<T>>();
   private readonly slots = new Map<T, Slot<T>>();
+
+  constructor(private readonly xOf: (item: T) => number = framesX, private readonly yOf: (item: T) => number = framesY) {}
 
   get size(): number { return this.slots.size; }
 
   /** The item filed in the cell of its current pose (taken out where that pose is not a number). */
   place(item: T): void {
-    const x = item.frames.x, y = item.frames.y;
+    const x = this.xOf(item), y = this.yOf(item);
     if (!Number.isFinite(x) || !Number.isFinite(y)) { this.remove(item); return; }
     const cx = Math.floor(x / FLEET_CELL), cy = Math.floor(y / FLEET_CELL);
     const slot = this.slots.get(item);
@@ -61,14 +67,21 @@ export class FleetGrid<T extends { readonly frames: VehicleFrames }> {
     if (span <= this.cells.size) {
       for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
         const cell = this.cells.get(keyOf(cx, cy));
-        if (cell) collect(cell.items, x0, y0, x1, y1, out);
+        if (cell) this.collect(cell.items, x0, y0, x1, y1, out);
       }
       return out;
     }
     for (const cell of this.cells.values()) {
-      if (cell.cx >= cx0 && cell.cx <= cx1 && cell.cy >= cy0 && cell.cy <= cy1) collect(cell.items, x0, y0, x1, y1, out);
+      if (cell.cx >= cx0 && cell.cx <= cx1 && cell.cy >= cy0 && cell.cy <= cy1) this.collect(cell.items, x0, y0, x1, y1, out);
     }
     return out;
+  }
+
+  private collect(items: readonly T[], x0: number, y0: number, x1: number, y1: number, out: T[]): void {
+    for (const item of items) {
+      const x = this.xOf(item), y = this.yOf(item);
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) out.push(item);
+    }
   }
 
   private cellAt(cx: number, cy: number): Cell<T> {
@@ -87,12 +100,5 @@ export class FleetGrid<T extends { readonly frames: VehicleFrames }> {
       this.slots.get(last)!.index = slot.index;
     }
     if (items.length === 0) this.cells.delete(slot.cell.key);
-  }
-}
-
-function collect<T extends { readonly frames: VehicleFrames }>(items: readonly T[], x0: number, y0: number, x1: number, y1: number, out: T[]): void {
-  for (const item of items) {
-    const x = item.frames.x, y = item.frames.y;
-    if (x >= x0 && x <= x1 && y >= y0 && y <= y1) out.push(item);
   }
 }
