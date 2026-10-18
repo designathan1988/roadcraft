@@ -395,6 +395,8 @@ export class FarTree<P> implements FarTiles {
       if (c && !this.visit(c)) all = false;
     }
     if (all) return true;
+    // A node of the plan alone whose quarters have not come (a view jumped where nothing was seen): asked whole too, the parent before its children (3D Tiles' base traversal) - DO NOT leave the ground bare until every quarter is baked.
+    if (n.tiles === 0 && n.landed === null && drawable(n, this.planFrom)) { this.desired.push(n); this.ask(n, true); }
     // A child not come: this node, if it came and no tile under it is in the document, stands for them (refining).
     if (this.loadedOf(n) === 0 && n.landed !== null && drawable(n, this.planFrom)) {
       this.drawing.length = mark;
