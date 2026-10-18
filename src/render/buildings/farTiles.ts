@@ -3,13 +3,15 @@ import { tileBuildingsOf } from '@world/growth/grownRows';
 import type { Finish } from '@world/buildings/materials';
 import { type RecordRef, readRecords, refOf } from '@world/buildings/recordTable';
 import type { Building } from '@world/buildings/types';
+import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import type { TileRecords } from '@world/doc';
 import { tileKey, tileOfKey } from '@world/tiles';
 import { derivedCacheOpen, keepDerivedDurably, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { BOX_INSTANCE, type BoxMass, type CellMass, type FarMass, MASS_FACADE, MASS_GRID, type MassSquare, cellMass, farMassBuffers, indexArray, massOnGrid, massPlaces, shellBounds } from './cellArrays';
 import { TILE_CELLS } from './levelKeys';
-import { AGGREGATE, LEVEL_MASS_KEY as MASS_KEY, NODE_BOX_KEY as BOX_KEY, TILE_PLATE_KEY as PLATE_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
+import { AGGREGATE, PLAN_SIG, LEVEL_MASS_KEY as MASS_KEY, NODE_BOX_KEY as BOX_KEY, TILE_PLATE_KEY as PLATE_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
+import { planBoxes } from './farPlan';
 import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing, emitMassingLevels, massFloor } from './massing';
 
 export { AGGREGATE, TOP_LEVEL, emptyRecords, farKey, farNode, nodeSide } from './farGrid';
@@ -66,7 +68,9 @@ export const derivedFarCache: FarCache = {
   put: async (key, value) => { await (await keepDerivedDurably(key, value)).committed; },
 };
 
-/** A child of a node as its job reads it: its key and the version of the tiles under it. */
+export { PLAN_SIG } from './farGrid';
+
+/** A child of a node as its job reads it: its key and the version of the tiles under it (`PLAN_SIG`: none stored, the plan's). */
 interface FarChild {
   readonly key: string;
   readonly sig: string;
@@ -118,6 +122,8 @@ export interface FarJob {
   readonly ground?: SharedGroundData | null;
   readonly naturalIsGround?: boolean;
   readonly tone?: Readonly<Record<Finish, readonly [number, number, number]>>;
+  /** The world's generator options (`cityGen/wholeMap.ts`): what stands where no tile is made yet (`PLAN_SIG`). */
+  readonly plan?: WholeMapOptions;
 }
 
 export type FarReply =
@@ -299,6 +305,15 @@ export async function keepTileFar(records: TileRecords, version: number, env: Fa
   return true;
 }
 
+/** The plan's boxes of a node as a stored node's are kept (`aggregateBoxes` at its level; a tile's in its plate's squares, as a stored tile's are merged there). */
+function planBoxesOf(job: FarJob, k: number, i: number, j: number): Float32Array {
+  if (!job.plan) throw new Error(`far node ${farKey(k, i, j)}: a part with no tile and no plan`);
+  const reads = readsOf(job);
+  return k === 0
+    ? aggregateBoxes(planBoxes(job.plan, i, j, 0, reads, job.tone, 1), 1, i >> 1, j >> 1)
+    : aggregateBoxes(planBoxes(job.plan, i, j, k, reads, job.tone), k, i, j);
+}
+
 /** DO NOT bake what is kept: a node is baked once per version of its tiles (kept under its key with that version), from its tile's buildings or its children's bakes, never from the page's document */
 export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply> {
   const { node, sig, prefix } = job;
@@ -322,6 +337,14 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
     return { kind: 'far', node, sig, mass: job.want ? bake.tile : null };
   }
   if (!keeps) return { kind: 'farNoCache', node, sig };
+  // A node no tile is made under yet: the plan's boxes, baked once per world (it never changes); its mesh at the box levels.
+  if (sig === PLAN_SIG) {
+    const boxes = planBoxesOf(job, k, i, j);
+    const mass = k >= 2 ? boxMass(boxes, levelDrop(k)) : null;
+    await cache.put(`${prefix}${node}`, { sig, mass });
+    await cache.put(`${prefix}${node}${BOX_KEY}`, { sig, boxes });
+    return { kind: 'far', node, sig, mass: job.want ? mass : null };
+  }
   // DO NOT read its four tiles' entries whole whenever a level-1 node is drawn: its tiles' plate masses are kept merged under a key of their own (`MASS_KEY`), apart from the boxes its parent reads.
   const drawn = job.want ? await kept<MassEntry>(k === 1 ? `${node}${MASS_KEY}` : node, sig) : undefined;
   if (drawn) return { kind: 'far', node, sig, mass: drawn.mass };
@@ -329,7 +352,16 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
   if (boxed && !job.want) return { kind: 'far', node, sig, mass: null };
   const children = job.children ?? [];
   // Its children's boxes unless its own are kept; a plate's node drawn, its tiles' plate masses.
-  const got = boxed ? children.map(() => null) : await Promise.all(children.map((c) => (c ? kept<BoxEntry>(`${c.key}${BOX_KEY}`, c.sig) : Promise.resolve(null))));
+  // MIXING: a quarter no tile is made under yet is the plan's (`PLAN_SIG`, baked here); the others' bakes are read.
+  const planned = async (key: string): Promise<BoxEntry> => {
+    const known = await kept<BoxEntry>(`${key}${BOX_KEY}`, PLAN_SIG);
+    if (known) return known;
+    const at = farNode(key);
+    const made = { sig: PLAN_SIG, boxes: planBoxesOf(job, at.k, at.i, at.j) };
+    if (at.k > 0) await cache.put(`${prefix}${key}${BOX_KEY}`, made);
+    return made;
+  };
+  const got = boxed ? children.map(() => null) : await Promise.all(children.map((c) => (!c ? Promise.resolve(null) : c.sig === PLAN_SIG ? planned(c.key) : kept<BoxEntry>(`${c.key}${BOX_KEY}`, c.sig))));
   const plates = k === 1 && job.want ? await Promise.all(children.map((c) => (c ? kept<MassEntry>(`${c.key}${PLATE_KEY}`, c.sig) : Promise.resolve(null)))) : null;
   const missing: string[] = [];
   children.forEach((c, n) => { if (c && ((!boxed && !got[n]) || (plates && !plates[n]))) missing.push(c.key); });

@@ -1,17 +1,18 @@
 import { Box3, Frustum, Group } from 'three';
 import { Digest } from '@core/digest';
-import { worldKey } from '@world/cityGen/wholeMap';
+import { type WholeMapOptions, worldKey } from '@world/cityGen/wholeMap';
 import { tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import { m } from '@world/units';
 import { forgetDerivedKeys } from './derivedCache';
-import { TOP_LEVEL, emptyRecords, farKey, nodeSide } from './buildings/farTiles';
+import { PLAN_SIG, TOP_LEVEL, emptyRecords, farKey, nodeSide } from './buildings/farTiles';
 import { bakeKeysOf } from './buildings/farGrid';
 import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
 import { cancelWarm, warmFull, warmLooseAhead } from './uploads';
 import { nearSig } from './nearRoadTiles';
 import { geometryCost, gpuLedger } from './gpuLedger';
 import { PageCuts } from './farTreeCuts';
+import { drawable, nearOutsideKey, nearTilesOf, plantRoots, refinable } from './farTreePlan';
 import { type Eye, type FarKind, type FarNearLanded, type FarNode, type FarTileSource, type FarTiles, type FarTreeJob, type FarTreeReply, type FarTreeRun, sameView } from './farTreeTypes';
 export type { FarKind, FarLanded, FarNear, FarNearLanded, FarTileSource, FarTiles, FarTreeJob, FarTreeRun } from './farTreeTypes';
 export { sameView } from './farTreeTypes';
@@ -39,6 +40,8 @@ export class FarTree<P> implements FarTiles {
   private isLoaded: (tileKey: number) => boolean = () => false;
   /** The world's fingerprint in the bakes' keys (one world's bakes never read for another's). */
   private world = '';
+  /** The world's plan (null: only the stored tiles drawn): what stands where no tile is made yet (`FarKind.planFrom`). */
+  private plan: WholeMapOptions | null = null;
   /** How far round the eye anything of the tree is drawn now (`viewReach`). */
   private reach = 0;
   private readonly nodes = new Map<string, FarNode>();
@@ -119,6 +122,7 @@ export class FarTree<P> implements FarTiles {
       this.refill();
       for (const n of [...this.nodes.values()]) if (n.tiles === 0 && this.nodes.get(n.key) === n) this.forget(n);
       for (const n of this.nodes.values()) { n.baked = null; n.landed = null; n.failed = null; }
+      this.plan = plan;
       this.world = world;
     }
     this.source = source;
@@ -165,7 +169,7 @@ export class FarTree<P> implements FarTiles {
   /** THE NODES DRAWN, from the roots down: a node is drawn in place of its children while what it leaves out spans under the pixels allowed; `reach`, an orthographic view's (Infinity in perspective) */
   choose(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null, reach = Infinity, view: Frustum | null = null): void {
     // DO NOT walk the tree again, and make its sets, for the frame that changed nothing it reads: the same eye, frustum and versions, nothing come or stored.
-    const outside = this.outsideKey();
+    const outside = nearOutsideKey(this.kind.near, this.source, this.leaves.keys());
     const c = this.chosenEye;
     if (!this.changed && c.x === eyeX && c.y === eyeY && c.z === eyeZ && c.pxAtMetre === pxAtMetre && c.orthoPx === orthoPx && c.reach === reach
       && outside === this.chosenOutside && sameView(this.chosenHadView ? this.chosenView : null, view)) {
@@ -187,6 +191,7 @@ export class FarTree<P> implements FarTiles {
     this.nearWanted.length = 0;
     this.wanting = 0;
     this.reach = viewReach(eye);
+    if (this.planning && !this.cacheless) plantRoots(this.roots.values(), this.eyeNow, this.reach, (k, i, j) => this.ensure(k, i, j), (n) => this.forget(n));
     for (const root of this.roots.values()) this.visit(root);
     const now = new Set(this.drawing), wanted = new Set(this.desired);
     // DO NOT keep on the GPU what is neither drawn nor wanted (the area visited would pile up): read back from the store when wanted again.
@@ -248,20 +253,6 @@ export class FarTree<P> implements FarTiles {
     this.eye = null;
   }
 
-  /** What the choice reads from outside the tree that tells it nothing when it moves: the near level's version and the page's edits of the stored tiles (`nearTiles`). */
-  private outsideKey(): string {
-    const near = this.kind.near;
-    if (!near) return '';
-    const version = near.version?.() ?? '';
-    // DO NOT ask every leaf each frame (every tile of the map): one serial for them all where the source has it.
-    if (this.source?.pageEdits) return `${version}|${this.source.pageEdits()}`;
-    const edit = this.source?.pageEdit;
-    if (!edit) return version;
-    const d = new Digest();
-    for (const key of this.leaves.keys()) d.add(edit(key));
-    return `${version}|${d.value()}`;
-  }
-
   /** The bakes' keys: the prefix, and the world's fingerprint when it has a plan. */
   private get keyPrefix(): string | null {
     return this.prefix === null ? null : this.world ? `${this.prefix}${this.world}:` : this.prefix;
@@ -271,6 +262,16 @@ export class FarTree<P> implements FarTiles {
     return this.cacheless ? null : this.keyPrefix;
   }
 
+  /** The finest level drawn from the plan (Infinity: none, no plan or a kind that bakes none). */
+  private get planFrom(): number {
+    return this.plan !== null && this.kind.planFrom !== undefined ? this.kind.planFrom : Infinity;
+  }
+
+  private get planning(): boolean {
+    return Number.isFinite(this.planFrom);
+  }
+
+  /** NOT MADE YET (CLAUDE.md: never a hole): the top-level nodes over the view's reach round the eye made, for the plan's to stand where no tile is (those past it, with no tile, let go; their bakes kept: they never change). */
   private ensure(k: number, i: number, j: number): FarNode {
     const key = farKey(k, i, j);
     const known = this.nodes.get(key);
@@ -317,13 +318,14 @@ export class FarTree<P> implements FarTiles {
     if (n.parent) n.parent.children[(n.i - 2 * n.parent.i) + 2 * (n.j - 2 * n.parent.j)] = null;
     else this.roots.delete(n.key);
     const prefix = this.keyPrefix;
-    if (prefix !== null && n.baked !== null) forgetDerivedKeys(prefix, bakeKeysOf(n.key, n.k));
+    if (prefix !== null && n.baked !== null && n.baked !== PLAN_SIG) forgetDerivedKeys(prefix, bakeKeysOf(n.key, n.k));
     if (prefix !== null && hadNear) forgetDerivedKeys(prefix, [nearKeyOf(n)]);
   }
 
   /** The version of the tiles under a node: a tile's own, or its quarters' digested (a node with none is never asked: it is let go, `forget`). */
   private sigOf(n: FarNode): string {
     if (n.sig !== null) return n.sig;
+    if (n.tiles === 0) return (n.sig = PLAN_SIG);
     if (n.k === 0) return (n.sig = String(n.version));
     const d = new Digest();
     for (const c of n.children) d.addText(c && c.tiles > 0 ? this.sigOf(c) : '-');
@@ -332,7 +334,8 @@ export class FarTree<P> implements FarTiles {
 
   /** Every tile under a node in the page's document (with a plan, every tile there is; without, every one stored): the near products draw it; never, for a kind that draws them too (`FarNear.drawsLoaded`). */
   private covered(n: FarNode): boolean {
-    return this.loadedOf(n) === n.tiles;
+    // With a plan, every tile there is (a tile not made yet is the plan's, never covered); without, every one stored.
+    return this.loadedOf(n) === (this.planning ? 4 ** n.k : n.tiles);
   }
 
   /** The tiles under a node the page's document draws (none, for a kind that draws them too). */
@@ -368,12 +371,12 @@ export class FarTree<P> implements FarTiles {
     // DO NOT draw a stored tile the view does not reach: the street view drew every tile made ahead (11 km) at its finest, 4.9 M vertices (2026-10-16); culled as Cesium culls a tile out of the frustum.
     if (this.outOfReach(n)) return true;
     if (this.covered(n)) return true;
-    const whole = this.loadedOf(n) === 0 && (n.k === 0 || (!this.cacheless && this.fine(n)));
+    const whole = this.loadedOf(n) === 0 && drawable(n, this.planFrom) && (n.k === 0 || (!this.cacheless && (this.fine(n) || !refinable(n, this.planFrom))));
     if (whole) {
       this.desired.push(n);
       this.ask(n, true);
       // A tile's near level where the view wants its detail (`FarKind.near`): drawn once it came (the last one made stands while the next is baked), the tile's own level until then.
-      if (n.k === 0 && this.kind.near && this.wantsNear(n)) {
+      if (n.k === 0 && n.tiles > 0 && this.kind.near && this.wantsNear(n)) {
         this.nearWanted.push(n);
         this.askNear(n);
         if (n.near !== null) { this.nearDrawing.push(n); return true; }
@@ -386,12 +389,14 @@ export class FarTree<P> implements FarTiles {
     const mark = this.drawing.length;
     let all = true;
     for (let q = 0; q < n.children.length; q++) {
-      const c = n.children[q] ?? null;
+      let c = n.children[q] ?? null;
+      // With a plan, a quarter no tile is made under is its node (`PLAN_SIG`).
+      if (!c && this.planning && !this.cacheless && n.k - 1 >= this.planFrom) c = this.ensure(n.k - 1, 2 * n.i + (q & 1), 2 * n.j + (q >> 1));
       if (c && !this.visit(c)) all = false;
     }
     if (all) return true;
     // A child not come: this node, if it came and no tile under it is in the document, stands for them (refining).
-    if (this.loadedOf(n) === 0 && n.landed !== null) {
+    if (this.loadedOf(n) === 0 && n.landed !== null && drawable(n, this.planFrom)) {
       this.drawing.length = mark;
       this.drawing.push(n);
       return true;
@@ -413,23 +418,9 @@ export class FarTree<P> implements FarTiles {
     return this.kind.near!.fineError * this.seen.perMetre < this.seen.allowed * (full ? HYSTERESIS : 1) ? 'coarse' : 'full';
   }
 
-  /** The tile and its neighbours stored, at their versions (the tile first): what its near level reads; a tile the page holds edited, at the digest of what the near level reads of it (`pageCutOf`). */
-  private nearTiles(n: FarNode): { key: number; version: number; cut: { readonly records: TileRecords; readonly digest: string } | null }[] {
-    const out = [{ key: tileKey(n.i, n.j), version: n.version, cut: this.cuts.of(tileKey(n.i, n.j)) }];
-    for (let dj = -1; dj <= 1; dj++) {
-      for (let di = -1; di <= 1; di++) {
-        if (di === 0 && dj === 0) continue;
-        const key = tileKey(n.i + di, n.j + dj);
-        const leaf = this.leaves.get(key);
-        if (leaf) out.push({ key, version: leaf.version, cut: this.cuts.of(key) });
-      }
-    }
-    return out;
-  }
-
   /** A tile's near level asked of the workers at the versions of the tiles it reads and at the level the view wants; once. */
   private askNear(n: FarNode): void {
-    const tiles = this.nearTiles(n);
+    const tiles = nearTilesOf(n, this.leaves, this.cuts);
     // An edited tile at what the near level reads of it: a building grown or a tree planted asks nothing (each was every tile round it baked again, 2026-10-17).
     const bake = `${nearSig(tiles.map((t) => ({ key: t.key, version: t.cut ? `p${t.cut.digest}` : t.version })))}:${this.kind.near!.version?.() ?? ''}`;
     const variant = this.nearVariant(n);
@@ -588,9 +579,9 @@ export class FarTree<P> implements FarTiles {
     let all = true;
     for (const c of n.children) {
       // With a plan, a quarter not made is not covered.
-      if (!c) continue;
+      if (!c) { if (this.planning) all = false; continue; }
       if (this.covered(c)) continue;
-      if (this.loadedOf(c) === 0 && c.landed !== null) { this.drawing.push(c); continue; }
+      if (this.loadedOf(c) === 0 && c.landed !== null && drawable(c, this.planFrom)) { this.drawing.push(c); continue; }
       if (c.k === 0 || !this.fallback(c)) all = false;
     }
     return all;
@@ -616,7 +607,7 @@ export class FarTree<P> implements FarTiles {
     return [0, 1, 2, 3].map((q) => {
       const c = n.children[q];
       if (c && c.tiles > 0) return { key: c.key, sig: this.sigOf(c) };
-      return null;
+      return this.planning ? { key: farKey(n.k - 1, 2 * n.i + (q & 1), 2 * n.j + (q >> 1)), sig: PLAN_SIG } : null;
     });
   }
 
@@ -624,7 +615,8 @@ export class FarTree<P> implements FarTiles {
     const sig = n.asked!;
     const job: FarTreeJob = {
       node: n.key, k: n.k, i: n.i, j: n.j, sig, want: n.askedWant, prefix: this.keyPrefix,
-      ...(n.k > 0 ? { children: this.childrenOf(n) } : {}),
+      ...(n.k > 0 && sig !== PLAN_SIG ? { children: this.childrenOf(n) } : {}),
+      ...(this.planning && this.plan ? { plan: this.plan } : {}),
       ...(records ? { records } : {}),
       // DO NOT carry a tile's records through the page when the worker can read the store: the page held every tile read while it waited for a worker.
       ...(!records && n.k === 0 && this.source?.workersRead ? { store: this.source.workersRead } : {}),
