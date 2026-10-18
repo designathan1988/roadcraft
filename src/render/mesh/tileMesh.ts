@@ -1,5 +1,6 @@
 import { type Stream, doubles, indices as indexStream } from './stream';
 import type { PieceShape, SkirtRing, SurfaceShape } from './tileShape';
+import { hypot2 } from '@core/hypot';
 
 /** ONE TILE OF A ROAD SURFACE MESHED FROM ITS SHAPE (`tileShape.ts`) */
 
@@ -125,7 +126,7 @@ export function meshSkirts(skirts: readonly SkirtRing[], context: Context, out: 
       const ay = edges[e + 1] as number;
       const bx = edges[e + 2] as number;
       const by = edges[e + 3] as number;
-      const span = Math.hypot(bx - ax, by - ay);
+      const span = hypot2(bx - ax, by - ay);
       const sign = flip ? -1 : 1;
       const nx = (sign * (by - ay)) / span;
       const nz = (sign * (bx - ax)) / span;
@@ -256,9 +257,9 @@ function uvConsistent(
 
 /** One edge of `uvConsistent`: a function of its own, not a closure made per triangle. */
 function uvEdgeConsistent(positions: ArrayLike<number>, uvs: ArrayLike<number>, p: number, q: number, uvWorld: number): boolean {
-  const world = Math.hypot(positions[p * 3]! - positions[q * 3]!, positions[p * 3 + 2]! - positions[q * 3 + 2]!);
+  const world = hypot2(positions[p * 3]! - positions[q * 3]!, positions[p * 3 + 2]! - positions[q * 3 + 2]!);
   if (world < 1e-3) return true;
-  const texture = Math.hypot(uvs[p * 2]! - uvs[q * 2]!, uvs[p * 2 + 1]! - uvs[q * 2 + 1]!) * uvWorld;
+  const texture = hypot2(uvs[p * 2]! - uvs[q * 2]!, uvs[p * 2 + 1]! - uvs[q * 2 + 1]!) * uvWorld;
   const ratio = texture / world;
   return ratio > 0.5 && ratio < 2;
 }

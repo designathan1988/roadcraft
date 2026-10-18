@@ -26,6 +26,17 @@ describe('a filing asked for several rectangles at once', () => {
     }
   });
 
+  it('says whether some thing filed over a point passes a test as asking the rectangle of the point does, on cell edges too', () => {
+    const filing = new CellFiling<number, object>(100);
+    for (let id = 1; id <= 2_000; id++) filing.file(id, {}, box(rand() * 5_000, rand() * 5_000, rand() * 80, rand() * 80));
+    for (let k = 0; k < 4_000; k++) {
+      // Every eighth point on a cell's edge.
+      const x = k % 8 === 0 ? Math.floor(rand() * 50) * 100 : rand() * 5_000, y = rand() * 5_000;
+      const odd = (id: number): boolean => id % 3 !== 0;
+      expect(filing.someAt(x, y, odd)).toBe(filing.idsMeeting([x, y, x, y]).some(odd));
+    }
+  });
+
   it('reads each cell once for rectangles that overlap', () => {
     const filing = new CellFiling<number, object>(100);
     filing.file(1, {}, box(50, 50, 10, 10));

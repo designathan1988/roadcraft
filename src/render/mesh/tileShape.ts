@@ -4,6 +4,7 @@ import { cutAtAxis } from '@core/axisCut';
 import { type Stream, doubles, indices } from './stream';
 import { intersection, type MultiPoly, type Poly } from '@core/clipper';
 import { m } from '@world/units';
+import { hypot2 } from '@core/hypot';
 
 /** THE SHAPE OF A SURFACE, WITHOUT ITS HEIGHTS */
 
@@ -89,7 +90,7 @@ function skirtShape(polygons: MultiPoly, maxEdge: number, cut?: TileRect): Skirt
         const ay = flat[i + 1] as number;
         const bx = flat[j] as number;
         const by = flat[j + 1] as number;
-        if (Math.hypot(bx - ax, by - ay) < 1e-6) continue;
+        if (hypot2(bx - ax, by - ay) < 1e-6) continue;
         if (cut && alongCut(cut, ax, ay, bx, by)) continue;
         edges.push(ax, ay, bx, by);
       }
@@ -267,7 +268,7 @@ function flipToDelaunay(b: Builder, maxEdge: number, flips: Flips): void {
     if (orient(p, q, i) * orient(p, q, j) >= 0) continue;
     const side = orient(i, j, p);
     if (inCircle(i, j, p, q) * (side > 0 ? 1 : -1) <= 1e-9 * Math.abs(side)) continue;
-    const old = Math.hypot(xs[i]! - xs[j]!, ys[i]! - ys[j]!), made = Math.hypot(xs[p]! - xs[q]!, ys[p]! - ys[q]!);
+    const old = hypot2(xs[i]! - xs[j]!, ys[i]! - ys[j]!), made = hypot2(xs[p]! - xs[q]!, ys[p]! - ys[q]!);
     if (made > Math.max(old, maxEdge)) continue;
     wind = Math.sign(orient(t[t1 * 3]!, t[t1 * 3 + 1]!, t[t1 * 3 + 2]!));
     // t1 = (i, j, p) and t2 = (j, i, q) become (i, q, p) and (q, j, p)
@@ -306,7 +307,7 @@ function midpoint(b: Builder, i: number, j: number): number {
 }
 
 const edgeLength = (b: Builder, i: number, j: number): number =>
-  Math.hypot((b.xs.data[i] as number) - (b.xs.data[j] as number), (b.ys.data[i] as number) - (b.ys.data[j] as number));
+  hypot2((b.xs.data[i] as number) - (b.xs.data[j] as number), (b.ys.data[i] as number) - (b.ys.data[j] as number));
 
 /** Refines until no triangle edge is longer than `maxEdge`. ## Longest-edge bisection */
 function refine(b: Builder, maxEdge: number, maxRounds = 24, budget = 600_000): void {
@@ -417,7 +418,7 @@ function densify(flat: number[], ring: readonly (readonly number[])[], step: num
     const bx = b[0] as number;
     const by = b[1] as number;
     flat.push(ax, ay);
-    const cuts = Math.min(512, Math.floor(Math.hypot(bx - ax, by - ay) / step));
+    const cuts = Math.min(512, Math.floor(hypot2(bx - ax, by - ay) / step));
     for (let k = 1; k <= cuts; k++) {
       const t = k / (cuts + 1);
       flat.push(ax + (bx - ax) * t, ay + (by - ay) * t);

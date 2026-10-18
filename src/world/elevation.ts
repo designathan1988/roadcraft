@@ -676,6 +676,7 @@ export function buildRoadElevation(
     onSegment: field.onSegment,
     roadAt: field.roadAt,
     surfaceFrameAt: field.surfaceFrameAt,
+    surfaceFrameInto: field.surfaceFrameInto,
     fieldFor(rects, also) {
       const chain: Profile[] = [];
       for (const id of also) { const p = profiles.get(id); if (p) chain.push(p); }
