@@ -97,8 +97,8 @@ const NEAR_FADE_GLSL = /* glsl */ `
   }
 `;
 
-/** Makes a material's instances bend in the wind (and fade where the camera is among them). */
-export function applyWind(material: Material, response: WindResponse, key: string): void {
+/** Makes a material's instances bend in the wind (and fade where the camera is among them); `_name` says whose, for reading only. DO NOT key the program by whose it is: the patch is the same for every response (its sway and flutter are uniforms), and a key per user made a program per user of the same code (the opening's ~300 programs, 2026-10-18). */
+export function applyWind(material: Material, response: WindResponse, _name: string): void {
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
     previous(shader, renderer);
@@ -106,14 +106,14 @@ export function applyWind(material: Material, response: WindResponse, key: strin
     shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
 ${NEAR_FADE_GLSL}`);
   };
-  material.customProgramCacheKey = () => `wind-${key}-nearfade`;
+  material.customProgramCacheKey = () => 'wind-nearfade';
 }
 
-/** The shadow-pass twin of a wind material, for `mesh.customDepthMaterial`. */
-export function windDepthMaterial(response: WindResponse, key: string): MeshDepthMaterial {
+/** The shadow-pass twin of a wind material, for `mesh.customDepthMaterial`: one program for every response (`applyWind`). */
+export function windDepthMaterial(response: WindResponse, _name: string): MeshDepthMaterial {
   const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
   depth.onBeforeCompile = (shader) => install(shader, response);
-  depth.customProgramCacheKey = () => `wind-depth-${key}`;
+  depth.customProgramCacheKey = () => 'wind-depth';
   return depth;
 }
 

@@ -404,7 +404,7 @@ describe('a pose made a matrix by the GPU (`cellInstances.ts` `posedMaterial`)',
     expect(posedMaterial(material, TREE_POSE)).toBe(material);
     // One format a material: its program is one variant.
     expect(() => posedMaterial(material, YAW_POSE)).toThrow();
-    expect(material.customProgramCacheKey()).toBe('wind-pose-test-nearfade|pose-tree');
+    expect(material.customProgramCacheKey()).toBe('wind-nearfade|pose-tree');
     const shader = { vertexShader: ShaderLib.standard.vertexShader, fragmentShader: ShaderLib.standard.fragmentShader, uniforms: {} } as unknown as WebGLProgramParametersWithUniforms;
     material.onBeforeCompile(shader, {} as WebGLRenderer);
     const vertex = shader.vertexShader;
