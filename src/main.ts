@@ -2552,7 +2552,8 @@ function frame(now: number): void {
     if (held.x !== camera.x || held.y !== camera.y) { camera.x = held.x; camera.y = held.y; view.moveTo(held); }
     streamed.streamer.focus(camera.x, camera.y);
     // A tile put in (or let go) only between two world builds: DO NOT change the network under a running one, it started again at every tile and never landed (the near roads never drawn, the far level standing for them).
-    if (!scene.worldBusy) streamed.streamer.apply(now);
+    // Behind the curtain (`scene.opening`) every tile come at once: nothing is drawn to keep a frame short for.
+    if (!scene.worldBusy) streamed.streamer.apply(now, scene.opening);
     // The edits written whatever the world's build is doing: a long build under load kept them from the store past a reload (the balance and the buildings back).
     else streamed.streamer.save(now);
   }

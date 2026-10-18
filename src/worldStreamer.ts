@@ -244,11 +244,19 @@ export class WorldStreamer {
     return this.wanted.every((key) => this.doc.hasTile(key) || this.failedAt.has(key));
   }
 
-  /** At a moment with no edit open (the frame's start): the tiles come put in, those far let go (written first when changed), the changed ones written now and then. */
-  apply(now: number): void {
+  /** At a moment with no edit open (the frame's start): the tiles come put in, those far let go (written first when changed), the changed ones written now and then. `unseen`: no frame is shown (the curtain is down), every tile come put in at once. */
+  apply(now: number, unseen = false): void {
     if (this.doc.editing) return;
     this.noteEdits();
-    // One tile put in a frame, the nearest first: a dense tile is ~1,500 buildings read and filed, the frame stays a frame (the work is the view's tiles, never the map's).
+    // DO NOT put the region in one tile at a time behind the curtain: each tile waited for the world's build the one before it started (`main.ts` worldBusy), nine builds one after the other (the reopening's 6-19 s, 2026-10-18); together, one build for them all.
+    if (unseen) while (this.ready.size > 0 && this.putIn()) { /* the next nearest */ }
+    else this.putIn();
+    this.letGoFar();
+    this.save(now);
+  }
+
+  /** The nearest tile come put in, one: a dense tile is ~1,500 buildings read and filed, the frame stays a frame (the work is the view's tiles, never the map's). False when none was. */
+  private putIn(): boolean {
     let best: number | null = null, bestD = Infinity;
     for (const key of this.ready.keys()) {
       // DO NOT leave what came with it behind: a tile come after the camera went on is let go whole (its bake kept by the store for its putting in, every tile driven past, 2026-10-17).
@@ -282,7 +290,11 @@ export class WorldStreamer {
       // The region whole now: the tiles ahead asked.
       else this.ask();
     }
-    // One tile let go a frame, the farthest first: a camera that jumped far leaves a ring of tiles, each its records out and its products dropped (a frame stays a frame).
+    return best !== null;
+  }
+
+  /** One tile let go a frame, the farthest first: a camera that jumped far leaves a ring of tiles, each its records out and its products dropped (a frame stays a frame). */
+  private letGoFar(): void {
     let far: number | null = null, farD = -1;
     for (const key of this.doc.loadedTiles) {
       if (this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN) || this.held.has(key)) continue;
@@ -299,7 +311,6 @@ export class WorldStreamer {
       this.tell.letGo?.(key, removedAt, gone);
       this.versions.delete(key);
     }
-    this.save(now);
   }
 
   /** The changed tiles and the world's values written: every frame, a world build running or not (a write reads the document, never changes it). */
