@@ -84,6 +84,8 @@ async function steps(page, report) {
   }
   page.reloads = 0;
   page.on('load', () => { page.reloads++; });
+  // DO NOT wait on a page that is gone: Playwright's awaits hang, and the run looked like a stall (k20g/i/j/m: the renderer's out-of-memory dump, 0xE0000008, seconds after the last picture). Said and ended.
+  page.on('crash', () => { console.log('PAGE CRASHED (the renderer process died: Crashpad in the profile says why)'); report.console.push('PAGE CRASHED'); process.exitCode = 4; void browser.close().finally(() => process.exit(4)); });
   const stillThere = () => { if (page.reloads) throw new Error(RELOADED); };
 
   report.renderer = await page.evaluate(() => {
