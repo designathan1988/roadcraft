@@ -110,5 +110,6 @@ export function applyDetail(material: MeshStandardMaterial, spec: DetailSpec, an
          normal = normalize(tbn * mapN);`,
       );
   };
-  material.customProgramCacheKey = () => `detail-${spec.kind}`;
+  // Keyed by its source, the same for every kind (their textures and numbers are uniforms): DO NOT key it by the kind, each made its own program of the same source (the kerb, the verge and the deck, three where one draws them).
+  material.customProgramCacheKey = () => 'detail';
 }
