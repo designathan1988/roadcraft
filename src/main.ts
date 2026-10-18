@@ -2495,8 +2495,11 @@ function syncLoadingCurtain(): void {
       if (loadingCurtain.textContent !== text) loadingCurtain.textContent = text;
     } else if (loadingCurtain.textContent !== t('map.loading')) loadingCurtain.textContent = t('map.loading');
     if (!scene.opening) streamer.rush = false;
-    // The map made: the other kinds' workers theirs again (`TileGenerator.setAside`).
-    if (streamer.mapMade >= streamer.mapTotal) streamed.generator.setAside(false);
+    // The map made, or the opening's view made: the other kinds' workers theirs again (`TileGenerator.setAside`), and while the curtain is up no tile is made ahead - DO NOT keep every worker on the tiles behind the view: the far levels and the cells the curtain waits for stood behind them until its limit (k20b, 2026-10-17: the view's tiles made at ~51 s, the curtain fell at 90 s of work, not whole).
+    const viewMade = scene.opening && streamer.mapMade < streamer.mapTotal && openingViewMade(streamer);
+    if (viewMade) streamer.rush = false;
+    streamer.aheadHeld = viewMade;
+    if (viewMade || streamer.mapMade >= streamer.mapTotal) streamed.generator.setAside(false);
   }
   const ready = scene.programsReady;
   if (ready !== programsWaited) {

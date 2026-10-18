@@ -205,6 +205,8 @@ export class WorldStreamer {
 
   /** THE WHOLE MAP MADE BEFORE IT IS SHOWN (the city-game's opening: every tile generated, then the city): while set, the tiles ahead take every lane (nothing else waits on them); let go once the town is shown. */
   rush = false;
+  /** No tile made ahead while set (`main.ts`: the opening's view made, its far levels and cells to come before the curtain falls). */
+  aheadHeld = false;
 
   /** The map's tiles there are, and those made (in the store, or failed and told): the opening waits for all (`main.ts` holdOpening). */
   get mapTotal(): number {
@@ -422,6 +424,8 @@ export class WorldStreamer {
 
   /** DO NOT make tiles ahead while the region waits for its own: once every tile it wants is in, the ring it loads next (several at once), then every other tile of the map nearest first (the far levels draw them, `written`). */
   private askAhead(): void {
+    // The opening's view made and its town not shown yet (`main.ts`): the workers go to what the curtain waits for, the rest of the map after.
+    if (this.aheadHeld) return;
     // The map being made (`rush`): every lane the region's tiles leave free, at once; after, once the region is in.
     if (!this.rush && (this.asked.size > 0 || this.ready.size > 0 || !this.settled)) return;
     if (!this.knowStored()) return;
