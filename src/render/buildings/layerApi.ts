@@ -49,6 +49,8 @@ export interface BuildingLayer {
   setDetailBudget(bytes: number): void;
   /** Only the buildings standing where `at` says (the streamed world's active tiles, `worldStreamer.ts`) are put together here; the far levels draw the rest. `rects`: where the standing changed since the last update, their buildings taken in or let go at the next one. Null: every building of the document. */
   setActive(at: ((x: number, y: number) => boolean) | null, rects: readonly ChangeRect[]): void;
+  /** What the layer keeps, by book (cells, levels, measures, held back): bounded by the active region and the view, never by the road walked (tested walking 2 and 20 tiles). */
+  books(): Readonly<Record<string, number>>;
   /** Whether every cell of the town over `rect` has something drawn (a level shown, its masses, or a tile or plate in its place): DO NOT let the far level of a tile go before this says so (`farTree.ts`): the city showed holes with shadows while the near levels were made. */
   /** `revision`: the document's when the tile came in (`RoadDoc.revision`): DO NOT say a tile's cells are drawn before the town was put together from the document as it stood then - over a tile whose buildings were not taken in yet there is no cell, and "every cell drawn" held for none: the tile was handed to the cells with nothing drawn (the centre of the map empty, 2026-10-17). */
   drawnOver(rect: ChangeRect, revision?: number): boolean;

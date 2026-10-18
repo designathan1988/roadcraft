@@ -108,6 +108,8 @@ export interface MassCells {
   cap(eyeX: number, eyeY: number, budget: number, bytesOf: (key: string, fine: boolean) => number, forced: boolean | ReadonlySet<string>, farOf?: (key: string) => number): void;
   /** The triangles drawn for what is not near: the tiles and plates shown and the far cells' masses (a near cell's masses, hidden under its detail or standing until it lands, are counted by its level: `layer.ts` chosenTriangles). */
   farTriangles(): number;
+  /** What it keeps, by book: cells, tiles and plates known, masses standing (`BuildingLayer.books`). */
+  books(): Readonly<Record<string, number>>;
   /** The frame's choosing is over (`layer.ts` levelOfDetail): what its last choice left unexposed or unwanted let go. */
   settle(): void;
   /** The triangles of a cell's masses (0 before they came): what it costs sent far (`layer.ts` capTriangles). */
@@ -658,6 +660,9 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     massBytes(key) {
       const mesh = cells.get(key)?.mesh;
       return mesh ? meshBytes(mesh) : 0;
+    },
+    books() {
+      return { massCells: cells.size, massTiles: tiles.size, massPlates: plates.size, massStanding: standing.size, massNear: nearKeys.size };
     },
     settle() {
       for (const tile of toSettle) {
