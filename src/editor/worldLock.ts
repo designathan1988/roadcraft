@@ -3,19 +3,19 @@
 /** What of the Web Locks API the hold uses. */
 export type WorldLocks = Pick<LockManager, 'request'>;
 
-/** Holds world `name`: resolves the release, or null when another tab holds it (or no lock could be asked for: then the world opens read only, never hung). */
-export type HoldWorld = (name: string) => Promise<(() => void) | null>;
+/** Holds world `name`: resolves the release, or null when another tab holds it (or no lock could be asked for: then the world opens read only, never hung). `wait`: another tab's hold waited for (queued, MDN "LockManager.request" without ifAvailable), the release given once it lets go. */
+export type HoldWorld = (name: string, options?: { readonly wait?: boolean }) => Promise<(() => void) | null>;
 
 /** This tab's holds of its worlds: a world reopened waits for this tab's own last hold of it to be let go (its tiles still being written), never taken for another tab's. */
 export function worldHolds(locks: WorldLocks | undefined): HoldWorld {
   /** Each world's last request of this tab: settled once the lock manager let its lock go (or the request failed). */
   const last = new Map<string, Promise<unknown>>();
-  return async (name) => {
+  return async (name, options = {}) => {
     if (!locks) return () => {};
     const key = `roadcraft.world.${name}`;
     await last.get(key);
     return new Promise((answer) => {
-      const request = locks.request(key, { ifAvailable: true }, (lock) => {
+      const request = locks.request(key, { ifAvailable: !options.wait }, (lock) => {
         if (!lock) { answer(null); return undefined; }
         // Held while this promise stands: settled when the world is closed (`main.ts` afterStreamedWorld).
         return new Promise<void>((release) => answer(release));

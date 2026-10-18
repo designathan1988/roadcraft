@@ -1762,5 +1762,6 @@ export const PT_BR: Dictionary = {
   'hint.transit.lineShort': 'Uma linha precisa de pelo menos duas paradas.',
   'hint.transit.lineMade': 'Linha criada.',
   'map.loading': 'Carregando o mapa…',
+  'map.otherTab': 'Esta cidade está aberta em outra aba ou janela do jogo. Feche a outra para jogar aqui: ela abre sozinha.',
   'map.generating': 'Gerando a cidade… {done} de {total} partes',
 };
