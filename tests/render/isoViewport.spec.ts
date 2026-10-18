@@ -7,6 +7,7 @@ import {
   MIN_ELEVATION,
   createIsoRig,
 } from '@render/isoViewport';
+import { MAP_HALF } from '@world/cityGen/wholeMap';
 
 const W = 1200;
 const H = 800;
@@ -29,6 +30,15 @@ describe('free-orbit camera', () => {
         }
       }
     }
+  });
+
+  it('holds its centre to the map: a pan past the edge stops on it', () => {
+    const v = rig();
+    v.moveTo({ x: -MAP_HALF * 6, y: MAP_HALF * 3 });
+    expect(v.centre).toEqual({ x: -MAP_HALF, y: MAP_HALF });
+    v.slide(-MAP_HALF, MAP_HALF);
+    expect(Math.abs(v.centre.x)).toBeLessThanOrEqual(MAP_HALF);
+    expect(Math.abs(v.centre.y)).toBeLessThanOrEqual(MAP_HALF);
   });
 
   it('orbits about the centre of the view: the ground there stays put', () => {

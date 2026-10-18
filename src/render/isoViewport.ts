@@ -8,7 +8,7 @@ import {
 } from 'three';
 
 import type { Vec2 } from '@core/vec2';
-import { WORLD_HALF } from '@world/bounds';
+import { MAP_HALF } from '@world/cityGen/wholeMap';
 import { m } from '@world/units';
 import type { Facing, Viewport } from '@view/viewport';
 import { FAR_TILT, eyeLift, fieldOfView, minTilt, profileTilt, pullWeight, viewDistance } from '@view/cameraProfile';
@@ -112,8 +112,8 @@ export function createIsoRig(
   const apply = (): void => {
     const aspect = Math.max(0.1, width / Math.max(1, height));
     elevation = tiltNow();
-    // The view's centre goes anywhere on the world: only its reach holds it (`world/bounds.ts` WORLD_HALF; the ground goes on under it, `flatAtlas.ts`).
-    const edge = WORLD_HALF;
+    // The view's centre is held to the map (CLAUDE.md: the camera held to its edge, `wholeMap.ts` MAP_HALF), never past it into the void.
+    const edge = MAP_HALF;
     target.x = Math.max(-edge, Math.min(edge, target.x));
     target.z = Math.max(-edge, Math.min(edge, target.z));
     let distance = DISTANCE;
