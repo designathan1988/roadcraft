@@ -303,7 +303,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
         if (unit.variant) setDepth((unit.object as Mesh).material as DepthMaterial, unit.variant);
         // DO NOT let one program that cannot be built stop the others, nor the frame: said, and the promise still settles.
         try {
-          compiled.push(build(unit.object, camera, lights ? lightSet(scene, lights) : lit));
+          compiled.push(build(unit.object, camera, lightsFor(unit.object, scene, lights ?? litScenes.get(scene)!.lights, lights ? null : lit)));
         } catch (error) {
           console.error('[uploads] a program could not be compiled ahead', error);
         }
@@ -335,6 +335,15 @@ function litScene(scene: Scene): Scene {
 }
 
 /** `scene` as three's compile reads it with `lights` for its lights: the program variant those lights make. */
+/** The scene to compile `object` under: DO NOT give it a light twice. three's compile takes the lights of the target scene and then those of the object when the two differ (r186 `WebGLRenderer.compile`): the scene compiled under its own lights' set counted every light twice (8 directional lights, 6 of their shadows, 2 hemispheres), and every material it held was built for a variant never drawn (the ~300 programs, prova motor-programas, 2026-10-18). The scene itself under itself; an object holding lights under the others only; any other under the set (`plain` when given). */
+function lightsFor(object: Object3D, scene: Scene, lights: readonly Object3D[], plain: Scene | null): Scene {
+  if (object === scene) return scene;
+  const inside = new Set<Object3D>();
+  object.traverse((o) => { if ((o as Light).isLight) inside.add(o); });
+  if (inside.size === 0) return plain ?? lightSet(scene, lights);
+  return lightSet(scene, lights.filter((light) => !inside.has(light)));
+}
+
 function lightSet(scene: Scene, lights: readonly Object3D[]): Scene {
   return Object.create(scene, {
     traverseVisible: { value: (visit: (object: Object3D) => void) => { for (const light of lights) visit(light); } },

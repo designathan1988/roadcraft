@@ -217,6 +217,35 @@ describe('the door into the drawn scene', () => {
     expect(drawn(dark)).toBe(true);
   });
 
+  it('compiles every object with each light once, as three draws it: the scene under itself, an object holding lights under the others (r186 compile counts the lights of the target scene and then those of the object)', async () => {
+    const scene = new Scene(), camera = new PerspectiveCamera();
+    const sun = new DirectionalLight(), lamp = new DirectionalLight();
+    const room = new Group();
+    room.add(lamp, new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+    scene.add(sun, room, new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+    const counted: number[] = [];
+    const renderer = {
+      getRenderTarget: () => null, setRenderTarget: () => {}, render: () => {}, autoClear: true,
+      // Three's own count: the target's lights, then the object's when the two differ.
+      compileAsync: (object: Object3D, _camera: unknown, target: Scene) => {
+        let n = 0;
+        target.traverseVisible((o) => { if ((o as DirectionalLight).isLight) n++; });
+        if (object !== target) object.traverseVisible((o) => { if ((o as DirectionalLight).isLight) n++; });
+        counted.push(n);
+        return Promise.resolve();
+      },
+    } as unknown as WebGLRenderer;
+    drainCompiles(renderer, camera, scene, null);
+    const { compileAhead } = await import('@render/uploads');
+    void compileAhead(scene);
+    void compileAhead(room);
+    void compileAhead(new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+    drainCompiles(renderer, camera, scene, null);
+    await tick();
+    // Two lights in the scene, each counted once whatever was compiled.
+    expect(counted).toEqual([2, 2, 2]);
+  });
+
   it('takes through the door what came in before the renderer first answered', async () => {
     vi.resetModules();
     const fresh = await import('@render/uploads');
