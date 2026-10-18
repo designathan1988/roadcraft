@@ -4,6 +4,11 @@ import { m, perM } from '@world/units';
 
 export type QualityLevel = 'low' | 'medium' | 'high' | 'ultra';
 
+/** What every tier above the weak one draws people and vehicles with, as before tiers chose them (`vehicleLevels.ts`, `agents.ts`, `proceduralCrowd.ts`). */
+export const VEHICLE_ERROR_PIXELS = 0.5;
+export const VEHICLE_WHOLE_CAP = 200;
+export const HAIR_STRAND_PEOPLE = 8;
+
 export interface QualitySettings {
   /** Cap on the device pixel ratio the canvas is rendered at. */
   readonly pixelRatio: number;
@@ -34,6 +39,12 @@ export interface QualitySettings {
   readonly pedestrianDetail: 0 | 1 | 2;
   /** Zoom from which the people inside vehicles are drawn. */
   readonly occupantZoom: number;
+  /** A vehicle part's level: the coarsest whose error on the screen stays under this many pixels drawn (`vehicleLevels.ts` ERROR_PIXELS on every tier but the weak one). */
+  readonly vehicleErrorPixels: number;
+  /** Vehicles drawn whole (body, cabin, wheels apart) at most: the biggest on the screen (`agents.ts`). */
+  readonly vehicleWholeCap: number;
+  /** People nearest the camera drawn with their hair's strands (`proceduralCrowd.ts`). */
+  readonly hairStrandPeople: number;
   /** Soft shadows of drifting clouds over the land (`postprocess.ts`, needs post-processing). */
   readonly cloudShadows: boolean;
   /** The ecosystem's vegetation (`render/nature/`) */
@@ -71,6 +82,10 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     detailCutoffZoom: perM(1.25),
     pedestrianDetail: 0,
     occupantZoom: perM(7.5),
+    // The weak machine's integrated GPU: parts a pixel off, fewer whole vehicles, strands on the two nearest (the other tiers draw as they always did).
+    vehicleErrorPixels: 1,
+    vehicleWholeCap: 60,
+    hairStrandPeople: 2,
     cloudShadows: false,
     vegetationDistance: m(180),
     impostors: true,
@@ -98,6 +113,9 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     detailCutoffZoom: perM(0.85),
     pedestrianDetail: 1,
     occupantZoom: perM(5.5),
+    vehicleErrorPixels: VEHICLE_ERROR_PIXELS,
+    vehicleWholeCap: VEHICLE_WHOLE_CAP,
+    hairStrandPeople: HAIR_STRAND_PEOPLE,
     cloudShadows: false,
     vegetationDistance: m(300),
     impostors: true,
@@ -126,6 +144,9 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     detailCutoffZoom: perM(0.65),
     pedestrianDetail: 2,
     occupantZoom: perM(4),
+    vehicleErrorPixels: VEHICLE_ERROR_PIXELS,
+    vehicleWholeCap: VEHICLE_WHOLE_CAP,
+    hairStrandPeople: HAIR_STRAND_PEOPLE,
     cloudShadows: true,
     vegetationDistance: m(440),
     impostors: true,
@@ -153,6 +174,9 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     detailCutoffZoom: perM(0.5),
     pedestrianDetail: 2,
     occupantZoom: perM(3.25),
+    vehicleErrorPixels: VEHICLE_ERROR_PIXELS,
+    vehicleWholeCap: VEHICLE_WHOLE_CAP,
+    hairStrandPeople: HAIR_STRAND_PEOPLE,
     cloudShadows: true,
     vegetationDistance: m(640),
     impostors: true,

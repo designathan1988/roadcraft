@@ -8,6 +8,7 @@ import { archetypeById } from '@sim/vehicles/archetypes';
 import type { Network } from '@world/network';
 import { ChangeJournal } from '@world/changes';
 import { m } from '@world/units';
+import { QUALITY, VEHICLE_WHOLE_CAP } from '@render/quality';
 
 /** What a frame asks of each standing vehicle while the camera moves: its tests of the view, its ground and its scale on the screen, once per change and not per frame. */
 
@@ -114,6 +115,33 @@ describe('standing vehicles while the camera moves', () => {
     agents.sync(world, net, 0.5, true, 40, { vehicleBox: { x0: 0, y0: 0, x1: m(300), y1: m(300) }, hiddenPed: () => { asked++; return false; } });
     expect(asked).toBe(1);
     agents.dispose();
+  });
+
+  it('take their detail from the tier: the weak one coarser, every other one as before', () => {
+    expect([QUALITY.low.vehicleErrorPixels, QUALITY.low.vehicleWholeCap, QUALITY.low.hairStrandPeople]).toEqual([1, 60, 2]);
+    for (const level of ['medium', 'high', 'ultra'] as const) {
+      expect([QUALITY[level].vehicleErrorPixels, QUALITY[level].vehicleWholeCap, QUALITY[level].hairStrandPeople]).toEqual([0.5, 200, 8]);
+    }
+    // 300 cars, all big on the screen; frames drawn with no tier, the strong one, and the weak one.
+    const traffic = Array.from({ length: 300 }, (_, k) => ({ ...stoppedCar(k + 1, (k % 20) * m(12), Math.floor(k / 20) * m(12)), v: m(5), prev: { v: m(5) } }));
+    const world = worldWith([], traffic);
+    const net = { doc: { changes: new ChangeJournal() } } as unknown as Network;
+    const frame = (tier?: (typeof QUALITY)['high']): { names: string[]; matrices: number[][] } => {
+      const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+      const options = { vehicleVisible: () => true, vehicleBox: { x0: -1e6, y0: -1e6, x1: 1e6, y1: 1e6 }, screenScale: () => 40, ...(tier ? { tier } : {}) };
+      for (let f = 0; f < 3; f++) agents.sync(world, net, 0, true, 40, options);
+      const shown = agents.meshes.filter((o): o is InstancedMesh => (o as InstancedMesh).isInstancedMesh === true && o.visible && (o as InstancedMesh).count > 0);
+      const out = { names: shown.map((mesh) => `${mesh.name}:${mesh.count}`), matrices: shown.map((mesh) => Array.from((mesh.instanceMatrix.array as Float32Array).subarray(0, mesh.count * 16))) };
+      agents.dispose();
+      return out;
+    };
+    const none = frame();
+    for (const level of ['medium', 'high', 'ultra'] as const) expect(frame(QUALITY[level])).toEqual(none);
+    // The weak tier: at most its cap whole (a car's shell drawn whole), the rest a level down.
+    const weak = frame(QUALITY.low);
+    const whole = (f: { names: string[] }): number => f.names.filter((n) => /^car-.*-shell:/.test(n)).reduce((a, n) => a + Number(n.split(':').pop()), 0);
+    expect(whole(none)).toBe(VEHICLE_WHOLE_CAP);
+    expect(whole(weak)).toBe(60);
   });
 
   it('draw what walking every car draws, frame by frame, while the camera pans and comes down through the levels', () => {
