@@ -167,6 +167,8 @@ export interface AgentMeshes {
   readonly castersChanged: boolean;
   /** Whether the last `sync` drew anything into the shadow map (vehicles, two-wheelers, people): the map's moving casters. */
   readonly casting: boolean;
+  /** The records the page holds for the vehicles and walkers (by id, by cell, kept): bounded by the view, the region and the last seconds, never by the map or the path. */
+  readonly held: { readonly vehicles: number; readonly cells: number; readonly kept: number; readonly people: number };
   sync(world: SimClient, net: Network, alpha: number, detailed: boolean, zoom?: number, options?: AgentRenderOptions): void;
   /** Every figure drawn last frame and the body it was cast as (`citizenCasting.ts`). */
   census(): ReturnType<ReturnType<typeof createRiggedCitizens>['census']>;
@@ -1913,6 +1915,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     meshes,
     get castersChanged() { return castersChanged; },
     get casting() { return casting; },
+    get held() { return { vehicles: draws.size, cells: cellsDrawn.size, kept: keptList.length, people: procPeople.size }; },
     census: () => pedestrians.census(),
     meshProbe() {
       const out: { id: number; stretch: number; stretchBone: string; scale: number; scaleBone: string; held: boolean; clip: string }[] = [];

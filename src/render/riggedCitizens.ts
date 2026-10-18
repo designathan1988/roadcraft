@@ -14,6 +14,7 @@ import { NO_HELMET, type RiderClipKey } from './riderPoses';
 import { CITIZEN_ASSET_URLS, CITIZEN_LICENSES } from './citizenAssets';
 import type { CitizenModel } from './citizenCasting';
 import { cancelUploads, compileAhead, shadowStandIn, warmAhead } from './uploads';
+import { fillArrays, gpuOnlyAttributes, type GeometryArrays } from './mesh/gpuOnly';
 import { bakeDeferredInWorker, bakeInWorker, bakeRig, buildPersonInWorker, releaseIdleBakeWorkers } from './bakePool';
 import { assemblePerson, cookPerson } from './people/cookedPerson';
 import { buildPersonScene } from './people/personBuild';
@@ -243,6 +244,24 @@ function markChildShirt(mesh: SkinnedMesh): void {
   geometry.setAttribute('clothingMask', new BufferAttribute(mask, 1));
 }
 
+/** A body part's static arrays as they were uploaded: each attribute by name, its index (`index`) and each coarser level's (`lod1`, ...). */
+export function partArrays(geometry: BufferGeometry, levels: readonly (BufferAttribute | null)[]): Record<string, BufferAttribute> {
+  const own: Record<string, BufferAttribute> = {};
+  for (const [name, attribute] of Object.entries(geometry.attributes)) if (!(attribute as { isInterleavedBufferAttribute?: boolean }).isInterleavedBufferAttribute) own[name] = attribute as BufferAttribute;
+  if (geometry.index) own['index'] = geometry.index;
+  levels.forEach((index, k) => { if (index && index !== geometry.index) own[`lod${k + 1}`] = index; });
+  return own;
+}
+
+/** A body part kept on the GPU only (`mesh/gpuOnly.ts`): its static arrays let go once uploaded; a context restored reads them again (`again`, the body read back from its cook). */
+/** DO NOT keep a cooked body's vertices on the page once three has its own copy (4 to 7 MB a body, `memoryCounters` cpuByName citizen-mh_*): nothing reads them after the upload (bounds set, skinning, levels and maiming on the GPU or the skeleton). */
+export function keepPartOnGpu(holder: Object3D, own: Readonly<Record<string, BufferAttribute>>, again: () => Promise<GeometryArrays | null>): void {
+  gpuOnlyAttributes(holder, own, () => ({}));
+  holder.userData['refillArrays'] = (): void => {
+    void again().then((arrays) => { if (arrays) fillArrays(holder, arrays); }, (error: unknown) => console.error('A body could not be read again after the context was restored', error));
+  };
+}
+
 /** `base`: the body's first row in the palettes' shared target (`paletteTargets.ts`). */
 export function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial, uniform: { value: Texture },
   mesh: SkinnedMesh, look = 0, base: { value: number } = { value: 0 }): void {
@@ -426,6 +445,29 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
     return (await dressed(scene))!;
   }
 
+  /** Part `at` of a roster person's body read back as `load` read it: the arrays `keepPartOnGpu` let go, under the same names (`partArrays`). */
+  async function partArraysAgain(model: CitizenModel, at: number): Promise<GeometryArrays | null> {
+    const owned = new Set<{ dispose(): void }>();
+    try {
+      const asset = await personAsset(model, false, owned);
+      const parts: SkinnedMesh[] = [];
+      asset.scene.traverse((o) => { if (o instanceof SkinnedMesh) parts.push(o); });
+      const o = parts[at];
+      if (!o) return null;
+      if (model.look) markChildShirt(o);
+      await (o.geometry.userData['lodReady'] as Promise<void> | undefined);
+      const ready: unknown = o.geometry.userData['lodIndices'];
+      const own = partArrays(o.geometry, Array.isArray(ready) ? ready as BufferAttribute[] : []);
+      const arrays: Record<string, ArrayLike<number>> = {};
+      for (const [name, attribute] of Object.entries(own)) arrays[name] = attribute.array;
+      // The copy read back only lends its arrays: its own GPU side never made.
+      for (const p of parts) { p.geometry.dispose(); for (const mt of Array.isArray(p.material) ? p.material : [p.material]) mt.dispose(); }
+      return arrays;
+    } finally {
+      disposeOwned(owned);
+    }
+  }
+
   async function load(index: number): Promise<void> {
     const owned = new Set<{ dispose(): void }>();
     const added: InstancedMesh[] = [];
@@ -550,6 +592,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         owned.add(depth);
         // A mesh per distinct level: each figure is drawn at the level its own size on the screen allows (`levelOf`).
         const distinct = [...new Set(variants)];
+        // Its static arrays as uploaded, taken before the per-figure rows are added (`citizenRow`, rewritten each frame).
+        const statics = partArrays(o.geometry, variants.slice(1).map((g) => g.index));
         const part: CitizenPart = { levels: [], at: CITIZEN_LEVEL_ERROR.map((_, k) => distinct.indexOf(variants[Math.min(k, variants.length - 1)]!)) };
         for (const geometry of distinct) {
           const mesh = new InstancedMesh(geometry, Array.isArray(o.material) ? materials : materials[0]!, LEVEL_START);
@@ -577,6 +621,12 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           batch.meshes.push(mesh);
           group.add(mesh);
           added.push(mesh);
+        }
+        // A roster person is read back from its cook (or built in a worker) whenever it is wanted again: its arrays go once on the GPU.
+        const model = CROWD[index];
+        if (model?.person) {
+          const at = batch.parts.length;
+          keepPartOnGpu(part.levels[0]!.mesh, statics, () => partArraysAgain(model, at));
         }
         batch.parts.push(part);
         batch.sources.push(o);
