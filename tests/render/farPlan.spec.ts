@@ -253,4 +253,21 @@ describe('the far levels where no tile was made', () => {
     far.dispose();
     kit.dispose();
   }, 10_000);
+
+  it('let go of the meshes asked for a view the camera left: nothing it no longer wants waits ahead of the new view in the queue', () => {
+    const kit = createBuildingKit();
+    // The workers busy: every job waits; its cancel told.
+    const waiting = new Set<string>();
+    const far = new FarLevels(kit, (job) => { waiting.add(job.node); return () => { waiting.delete(job.node); }; }, 'test:');
+    far.setSource({ records: () => Promise.resolve(null), plan: OPTIONS }, () => false);
+    // A street's view at one corner of the map: its nodes asked.
+    far.choose(m(-4_000), m(-4_000), m(300), 1000, null, m(1_500));
+    const corner = [...waiting].filter((key) => { const n = farNode(key); return n.k < 4 && (n.i + 1) * nodeSide(n.k) <= 0 && (n.j + 1) * nodeSide(n.k) <= 0; });
+    expect(corner.length).toBeGreaterThan(0);
+    // The camera at the other corner: those asks let go.
+    far.choose(m(4_000), m(4_000), m(300), 1000, null, m(1_500));
+    expect(corner.filter((key) => waiting.has(key))).toEqual([]);
+    far.dispose();
+    kit.dispose();
+  });
 });
