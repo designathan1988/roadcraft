@@ -125,7 +125,7 @@ describe('a loose mesh sent to the GPU', () => {
     const source = readFileSync('src/render/renderer.ts', 'utf8');
     const drain = source.indexOf('drainWarm(renderer');
     expect(drain).toBeGreaterThan(0);
-    expect(source.slice(drain, drain + 400)).toMatch(/if \(warmPending\(\)\) onAssetsReady\(\);/);
+    expect(source.slice(drain, drain + 400)).toMatch(/if \(warmPending\(\)\) askDraw\(\);/);
   });
 
   it('leaves no road block with an array on the CPU once the queue is drained', () => {
