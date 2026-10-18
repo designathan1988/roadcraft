@@ -12,15 +12,22 @@ export interface Variant {
   readonly lash: boolean;
 }
 
-/** A piece's program, as three keys it (`customProgramCacheKey`): pieces of the same variant share it whatever their class. */
-export function personProgramKey(v: Variant): string {
-  if (v.kind === 'far') return 'procedural-person-far';
-  return `procedural-person-${v.kind}-L${v.level}${v.widen ? '-w' : ''}${v.grown ? '-grown' : ''}${v.lash ? '-lash' : ''}`;
+/** What a level changes in a piece's shader (`proceduralCrowd.ts` vertexPars, patchVertex, pieceMaterial): the face's moves (L0-1), the expressions (L0), the skin's cover (L0-2), two bones (L2-3). */
+/** DO NOT key a program by the level itself: hair and cloth at L2 and L3 are the same shader, and were compiled twice. */
+function levelTraits(kind: Kind | 'far', level: number): string {
+  const face = level <= 1, expr = level === 0, cover = kind === 'skin' && level <= 2, two = level >= 2;
+  return `${face ? 'f' : ''}${expr ? 'e' : ''}${cover ? 'c' : ''}${two ? '2' : ''}`;
 }
 
-/** A piece's shadow depth program (`customProgramCacheKey`). */
+/** A piece's program, as three keys it (`customProgramCacheKey`): pieces of the same shader share it whatever their class and level. */
+export function personProgramKey(v: Variant): string {
+  if (v.kind === 'far') return 'procedural-person-far';
+  return `procedural-person-${v.kind}-${levelTraits(v.kind, v.level)}${v.widen ? '-w' : ''}${v.grown ? '-grown' : ''}${v.lash ? '-lash' : ''}`;
+}
+
+/** A piece's shadow depth program (`customProgramCacheKey`): the vertex half alone, so only the skin's cover and the hair's widening tell kinds apart. */
 export function personDepthKey(v: Variant): string {
-  return `procedural-person-depth-${v.kind}-L${v.level}${v.widen ? '-w' : ''}`;
+  return `procedural-person-depth-${levelTraits(v.kind === 'skin' ? 'skin' : 'far', v.level)}${v.widen ? '-w' : ''}`;
 }
 
 /** Whether a piece casts a real shadow at `level`: close up only, cast by the next level's triangles; not the brows', lashes' or mouth's. */
