@@ -1,7 +1,7 @@
-import { BufferGeometry, Float32BufferAttribute, type Mesh } from 'three';
+import { BufferGeometry, Float32BufferAttribute, type Mesh, Uint32BufferAttribute } from 'three';
 
 import { surfaceShape } from '@render/mesh/tileShape';
-import { type Context, meshPiece, meshSkirts, smoothTopNormals, streams } from '@render/mesh/tileMesh';
+import { type Context, meshPiece, meshSkirts, smoothTopNormals, streamArrays, streams } from '@render/mesh/tileMesh';
 import { finish, type SurfaceMeshOptions } from '@render/mesh/surfaceMesh';
 
 /** A whole clipped surface band meshed in one piece, uncut by tiles: the game's own shape and mesh steps */
@@ -14,7 +14,7 @@ export function buildSurfaceMesh(options: SurfaceMeshOptions): Mesh | null {
   for (const piece of shape.pieces) meshPiece(piece, context, out);
   if (shape.skirts) meshSkirts(shape.skirts, context, out);
 
-  const { positions, normals, uvs, colors, sections, indices } = out;
+  const { positions, normals, uvs, colors, sections, indices } = streamArrays(out);
   if (indices.length === 0) return null;
   // Only the top face was given a placeholder normal
   smoothTopNormals(positions, normals, indices);
@@ -24,6 +24,6 @@ export function buildSurfaceMesh(options: SurfaceMeshOptions): Mesh | null {
   geometry.setAttribute('uv', new Float32BufferAttribute(uvs, 2));
   geometry.setAttribute('color', new Float32BufferAttribute(colors, 3));
   geometry.setAttribute('roadSection', new Float32BufferAttribute(sections, 3));
-  geometry.setIndex(indices);
+  geometry.setIndex(new Uint32BufferAttribute(indices, 1));
   return finish(geometry, options);
 }
