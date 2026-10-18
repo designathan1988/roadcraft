@@ -179,6 +179,28 @@ describe('the near products chosen by tile', () => {
     expect(pendingAfter(4, true)).toBe(0);
   });
 
+  it('keeps after a walk of 20 steps what the view holds, the same on a map of 10 and of 20 tiles a side', () => {
+    // Nine kinds over every stored tile, all edited (none written yet), the camera walked 4 km through the middle of the map, each job answered.
+    const keptAfterWalk = (side: number): number[] => {
+      const { jobs, run } = runs();
+      const near = new NearTiles(run, null);
+      for (const kind of ['poles', 'furniture', 'signs', 'structures', 'barriers', 'planted', 'gardens', 'covers', 'elements'] as NearKind[]) near.add(product([], undefined, kind));
+      for (let i = -side / 2; i < side / 2; i++) for (let j = -side / 2; j < side / 2; j++) near.stored(tileKey(i, j), 1);
+      near.setSource({ records: async (key) => emptyRecords(key, 1), plan: null, pageEdit: () => 1, pageRecords: (key) => emptyRecords(key, 1) }, () => false);
+      for (let s = 0; s < 20; s++) {
+        near.choose(m(-2000) + s * m(200), m(100), m(60), 1000, null);
+        for (const held of [...jobs.values()]) answer(held, 'x');
+      }
+      const inner = near as unknown as { leaves: Map<number, { slots: Map<unknown, unknown> }>; pageCuts: Map<number, unknown>; lastDigests: Map<number, unknown> };
+      let slots = 0;
+      for (const leaf of inner.leaves.values()) slots += leaf.slots.size;
+      return [slots, inner.pageCuts.size, inner.lastDigests.size];
+    };
+    const small = keptAfterWalk(10);
+    expect(small[0]).toBeGreaterThan(0);
+    expect(keptAfterWalk(20)).toEqual(small);
+  });
+
   it('asks the tiles where the kind spans a pixel, keeps a bake drawn until the next lands, and lets go what the view leaves', () => {
     const log: string[] = [];
     const { jobs, run } = runs();
