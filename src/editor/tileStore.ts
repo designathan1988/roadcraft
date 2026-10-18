@@ -714,6 +714,11 @@ export class TileStore {
     return records;
   }
 
+  /** A tile read for the page and not put in (`WorldStreamer` forget): its bake let go, never kept for a tile the camera drove past. */
+  forget(key: number): void {
+    this.bakes.delete(key);
+  }
+
   /** The network bake read with the tile (`load`), once: offered to the page's network as the tile is put in (`main.ts`). */
   takeBake(key: number): NetworkBake | undefined {
     const bake = this.bakes.get(key);

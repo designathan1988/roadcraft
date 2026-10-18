@@ -1749,6 +1749,8 @@ export class RoadDoc {
     this.tileContents.delete(key);
     this.tileGrown.delete(key);
     this.tileGates.delete(key);
+    // Its allocators go with it (they are its records', read only while it is here, `tileRecords`): DO NOT keep one for every tile ever loaded.
+    this.tileNext.delete(key);
     const cause = this.changes.cause;
     this.changes.causeNext(TILE_UNLOADED);
     const nodeIds: number[] = [], segmentIds: number[] = [];
@@ -1935,7 +1937,7 @@ export class RoadDoc {
     this.landscapeIds = new IdAllocator(copy.landscapeIds.peek);
     this.nextTerrainId = copy.nextTerrainId;
     // The counters the copy moved carried on, tile by tile (a tile loaded meanwhile keeps its own).
-    for (const [key, next] of copy.tileNext) this.tileNext.set(key, next);
+    for (const [key, next] of copy.tileNext) if (this.tileContents.has(key)) this.tileNext.set(key, next);
     this.changes.take(copy.changes);
     this.layOver(copy);
   }
