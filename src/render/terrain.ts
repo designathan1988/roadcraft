@@ -43,6 +43,7 @@ import { submitLight } from './terrainLightPool';
 import { ecologyOffPage, readEcology } from './ecologyPool';
 import type { PlateMesh } from './plateMesh';
 import { stageTexels, type StagedTexels, type TexelBox } from './stagedTexels';
+import { cancelUploads } from './uploads';
 import { ecologyCornersInto, groundCornersInto, landTexelsInto, lightLayerInto, type CornerCover, type CornerStore } from './plateTexels';
 import { LOD_LEVELS, LandLevels } from './terrainLevels';
 import { LandLod, lodFragmentGlsl, lodVertexGlsl, type LandGrid } from './terrainLod';
@@ -1882,18 +1883,20 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   /** The dabs the paint layers were last laid from (the document's, `paintStep`): laid again from them at a send. */
   let paintDabs: readonly PaintDab[] = [];
   /** The paint layers of `texels`: every dab of the ground's kinds laid in order onto none (`rasterPaint`). */
-  const layPaintInto = (texels: Uint8Array): void => {
-    const layers = [paintLayer(texels, paintRes, 0), paintLayer(texels, paintRes, 1)];
+  /** `res`: the side of the array the texels are of (the one being sent), never the side the plate has now: a smaller array still queued when it grew is filled at its own (`growPaint`). */
+  const layPaintInto = (texels: Uint8Array, res: number): void => {
+    const layers = [paintLayer(texels, res, 0), paintLayer(texels, res, 1)];
     for (const layer of layers) layer.fill(0);
     for (const dab of paintDabs) if (!isGeologyKind(dab.kind) && !isBiomeKind(dab.kind)) rasterPaint(layers, dab);
   };
   /** The array's `layers` (null: all) from their truth: the dabs and the corner layer. */
-  const fillPaint = (into: Uint8Array, layers: readonly number[] | null): void => {
-    if (!layers || layers.includes(0) || layers.includes(1)) layPaintInto(into);
-    if (!layers || layers.includes(LIGHT_LAYER)) lightLayerInto(paintLayer(into, paintRes, LIGHT_LAYER), paintRes, cornerBytes, GRID);
+  const fillPaint = (into: Uint8Array, res: number, layers: readonly number[] | null): void => {
+    if (!layers || layers.includes(0) || layers.includes(1)) layPaintInto(into, res);
+    if (!layers || layers.includes(LIGHT_LAYER)) lightLayerInto(paintLayer(into, res, LIGHT_LAYER), res, cornerBytes, GRID);
   };
+  // DO NOT fill a texture's texels at the plate's side of now: an array queued at 512 and grown to 1024 before it was sent was filled at 1024's rows (RangeError in lightLayerInto, the opening stuck under its curtain).
   const stagePaint = (texture: DataArrayTexture): StagedTexels<Uint8Array> =>
-    stageTexels(texture, Uint8Array, texture.image.width * texture.image.height * 4 * PAINT_LAYERS, 4, (into, part) => fillPaint(into, part.layers));
+    stageTexels(texture, Uint8Array, texture.image.width * texture.image.height * 4 * PAINT_LAYERS, 4, (into, part) => fillPaint(into, texture.image.width, part.layers));
   let paintTexels = stagePaint(paintArray);
   /** The paint layers a stroke's dabs are laid on: held while the brush paints this plate, let go at its end (`settle`). */
   const paintRaster = (): Uint8Array[] => {
@@ -1902,7 +1905,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     let texels = paintTexels.held;
     if (!texels) {
       texels = new Uint8Array(paintRes * paintRes * 4 * PAINT_LAYERS);
-      fillPaint(texels, null);
+      fillPaint(texels, paintRes, null);
       paintTexels.hold(texels);
     }
     return [paintLayer(texels, paintRes, 0), paintLayer(texels, paintRes, 1)];
@@ -1923,6 +1926,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     paintBox = null;
     // Every layer at its first send, the light too: the layers a dab marks would leave it out.
     for (let layer = 0; layer < PAINT_LAYERS; layer++) next.addLayerUpdate(layer);
+    // The smaller array taken out of the uploads' queue before it is let go: a texture disposed never reaches initTexture (it made its GL texture again, and was filled then).
+    cancelUploads([small]);
     small.dispose();
   };
   paintArray.addLayerUpdate(LIGHT_LAYER);
