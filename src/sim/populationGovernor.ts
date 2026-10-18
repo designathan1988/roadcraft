@@ -14,6 +14,11 @@ const HOLD_S = 3;
 /** The measure's memory: an exponential mean over about this many steps. */
 const SMOOTHING = 60;
 
+/** The most of the town a machine of `threads` threads is given to start with (the governor fills it from there when its steps are cheap): DO NOT start a four-thread machine at the full town, cut a 0.85 step every few seconds while its first steps run long (the weak machine's plan, 2026-10-18). */
+export function cpuPopulationShare(threads: number): number {
+  return threads <= 4 ? 0.5 : threads <= 8 ? 0.75 : 1;
+}
+
 export class PopulationGovernor {
   private mean = 0;
   private samples = 0;
@@ -34,6 +39,14 @@ export class PopulationGovernor {
   get stepMs(): number {
     return this.mean;
   }
+
+  /** Where the share starts, before any step is measured (`cpuPopulationShare`); later calls change nothing. */
+  start(share: number): void {
+    if (this.samples > 0 || this.started) return;
+    this.started = true;
+    this.shareNow = Math.min(this.max, Math.max(MIN_SHARE, share));
+  }
+  private started = false;
 
   /** The device's share changed (the screen narrowed or widened). */
   setMax(max: number): void {
