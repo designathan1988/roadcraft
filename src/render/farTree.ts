@@ -11,7 +11,7 @@ import { HYSTERESIS, type Seen, measureSeen } from './buildings/massCells';
 import { cancelWarm, warmFull, warmLooseAhead } from './uploads';
 import { nearSig } from './nearRoadTiles';
 import { geometryCost, gpuLedger } from './gpuLedger';
-import { PageCuts } from './farTreeCuts';
+import { PageCuts, standInDone } from './farTreeCuts';
 import { STANDING_LEVEL, drawable, nearOutsideKey, nearTilesOf, plantRoots, refinable, standingNodes, standsInPlan } from './farTreePlan';
 import { type Eye, type FarKind, type FarNearLanded, type FarNode, type FarTileSource, type FarTiles, type FarTreeJob, type FarTreeReply, type FarTreeRun, sameView } from './farTreeTypes';
 export type { FarKind, FarLanded, FarNear, FarNearLanded, FarTileSource, FarTiles, FarTreeJob, FarTreeRun } from './farTreeTypes';
@@ -100,14 +100,11 @@ export class FarTree<P> implements FarTiles {
   top(): number { return this.highest; }
 
   /** The nodes drawn now, by key. */
-  shownKeys(): string[] {
-    return [...this.shown].map((n) => n.key);
-  }
-
+  shownKeys(): string[] { return [...this.shown].map((n) => n.key); }
   /** The tiles whose near level is drawn now, by key (`FarKind.near`). */
-  nearKeys(): string[] {
-    return [...this.nearShown].map((n) => n.key);
-  }
+  nearKeys(): string[] { return [...this.nearShown].map((n) => n.key); }
+  /** Whether a tile's road stand-in can go (`farTreeCuts.ts` standInDone): its edit drawn, or no near level wanted there. */
+  standInDone(tile: number): boolean { return standInDone(this.leaves.get(tile), this.cuts, tile); }
 
   setSource(source: FarTileSource | null, isLoaded: (tileKey: number) => boolean): void {
     const plan = source?.plan ?? null;
