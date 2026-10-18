@@ -152,9 +152,25 @@ if (import.meta.env.DEV && typeof window !== 'undefined') Object.assign(window, 
 let lastProgramCount = 0;
 // TEMPORARY (DEV only, to be taken out): the programs three built, by name and the end of their key (the material's customProgramCacheKey), with what differs between those of a group (`window.__programsTable()`).
 let devRenderer: WebGLRenderer | null = null;
+let devScene: Scene | null = null;
 type BuiltProgram = { readonly name: string; readonly cacheKey: string; readonly usedTimes: number };
 const programsTable = (): unknown => {
   const programs = ((devRenderer as unknown as { info?: { programs?: BuiltProgram[] | null } } | null)?.info?.programs ?? []).slice();
+  // Who draws with each program: the meshes of the scene whose material holds it (none: a pass of the post chain, a stand-in, a scene of its own).
+  const owners = new Map<BuiltProgram, Set<string>>();
+  const properties = (devRenderer as unknown as { properties?: { get(material: Material): { currentProgram?: BuiltProgram; programs?: Map<string, BuiltProgram> } } } | null)?.properties;
+  devScene?.traverse((o) => {
+    const m = (o as Mesh).material;
+    if (!m || !properties) return;
+    for (const material of Array.isArray(m) ? m : [m]) {
+      const held = properties.get(material).programs;
+      for (const program of held?.values() ?? []) {
+        let set = owners.get(program);
+        if (!set) owners.set(program, set = new Set());
+        if (set.size < 4) set.add(`${o.name || o.type}/${material.name || material.type}`);
+      }
+    }
+  });
   const groups = new Map<string, BuiltProgram[]>();
   for (const p of programs) {
     const tokens = p.cacheKey.split(',');
@@ -172,7 +188,10 @@ const programsTable = (): unknown => {
       const values = new Set(split.map((t) => t[i] ?? ''));
       if (values.size > 1) varies[`#${i}`] = [...values].map((v) => v.slice(0, 40)).slice(0, 6);
     }
-    return { key, programs: list.length, used: list.reduce((n, p) => n + p.usedTimes, 0), varies: Object.fromEntries(Object.entries(varies).slice(0, 12)) };
+    const drawnBy = new Set<string>();
+    for (const p of list) for (const owner of owners.get(p) ?? ['(no mesh of the scene: post chain, stand-in or own scene)']) if (drawnBy.size < 12) drawnBy.add(owner);
+    return { key, programs: list.length, used: list.reduce((n, p) => n + p.usedTimes, 0), varies: Object.fromEntries(Object.entries(varies).slice(0, 12)), drawnBy: [...drawnBy],
+      ...(list.length > 8 ? { byOwner: list.map((p) => [...(owners.get(p) ?? ['(none)'])][0]).reduce<Record<string, number>>((n, o) => { n[o!] = (n[o!] ?? 0) + 1; return n; }, {}) } : {}) };
   }).sort((a, b) => b.programs - a.programs);
   const extensions = (devRenderer as unknown as { extensions?: { has?: (name: string) => boolean } } | null)?.extensions;
   return { total: programs.length, groups: rows.length, parallelCompile: extensions?.has?.('KHR_parallel_shader_compile') ?? null, rows };
@@ -252,6 +271,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   }
   if (import.meta.env.DEV) {
     devRenderer = renderer;
+    devScene = scene;
     lastProgramCount = (renderer as { info?: { programs?: unknown[] | null } }).info?.programs?.length ?? 0;
     const last = programSamples[programSamples.length - 1];
     if (!last || now - last.at >= 250) { programSamples.push({ at: Math.round(now), programs: lastProgramCount, inFlight: inFlight.size, queued: toCompile.length }); if (programSamples.length > 5000) programSamples.splice(0, 1000); }
