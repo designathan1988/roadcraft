@@ -812,7 +812,8 @@ export class SimClient implements JournalReader {
     this.layouts.clear();
     this.lights.clear();
     this.signalJunctions.junctions.clear();
-    this.signalBase += this.signalLog.length;
+    // Past every serial a reader of the map before holds (one more than the log's end): DO NOT let it read "nothing changed" (`changesSince` []) - the old map's heads stood on a new empty one; it places every junction again (null).
+    this.signalBase += this.signalLog.length + 1;
     this.signalLog.length = 0;
     this.signalAll = this.signalBase;
   }
