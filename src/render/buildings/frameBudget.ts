@@ -84,6 +84,21 @@ export class LandedMeasure<K extends string> {
     this.sums.set(kind, s);
     this.landed.set(at, triangles);
   }
+  /** A cell gone from the town (its tile left the active region): its measures let go, out of the means too (DO NOT keep every cell the camera ever passed: the books grew with the road walked, not with the view). */
+  forget(key: string): void {
+    for (const [kind, s] of this.sums) {
+      const at = `${kind}|${key}`;
+      const was = this.landed.get(at);
+      if (was === undefined) continue;
+      this.landed.delete(at);
+      s.sum -= was;
+      s.n--;
+    }
+  }
+  /** How many levels are measured (`BuildingLayer.books`). */
+  get size(): number {
+    return this.landed.size;
+  }
   of(kind: K, key: string): number {
     const got = this.landed.get(`${kind}|${key}`);
     if (got !== undefined) return got;

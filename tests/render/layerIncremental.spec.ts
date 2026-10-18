@@ -310,3 +310,45 @@ describe('the cells the budget of triangles held back', () => {
     layer.dispose();
   });
 });
+
+describe('what the layer keeps while the camera walks the town', () => {
+  /** A row of the same building, one a cell, along 23 tiles; the active region the three tiles round the eye; the eye walked a tile at a time. */
+  const walk = (tiles: number): Record<string, number> => {
+    const doc = new RoadDoc();
+    const CELL = m(256), TILE = m(1024);
+    for (let i = 0; i < 23 * 4; i++) doc.buildings.add(body(0, i * CELL + CELL / 2, CELL / 2));
+    const layer = createBuildingLayer();
+    // A budget the view passes: cells held back by it (`capTriangles`).
+    layer.frame.budget = 40_000;
+    let region: [number, number] | null = null;
+    for (let step = 0; step <= tiles; step++) {
+      const eyeX = TILE * 1.5 + step * TILE;
+      const lo = eyeX - TILE * 1.5, hi = eyeX + TILE * 1.5;
+      const rects: [number, number, number, number][] = [[Math.min(lo, region?.[0] ?? lo), -TILE, Math.max(hi, region?.[1] ?? hi), TILE]];
+      region = [lo, hi];
+      layer.setActive((x) => x >= lo && x < hi, rects);
+      for (let frame = 0; frame < 600; frame++) {
+        beginFrameWork();
+        layer.update(doc, flat, 'g');
+        layer.levelOfDetail(eyeX, CELL / 2, m(60), 1000, null);
+        layer.cullDetails(eyeX, CELL / 2, m(60), 1000, null, m(1));
+        if (!layer.pending && frame > 2) break;
+      }
+    }
+    const books = { ...layer.books() };
+    layer.dispose();
+    return books;
+  };
+
+  it('keeps as much after 20 tiles walked as after 2: its books bounded by the active region, never by the road walked', () => {
+    const near = walk(2), far = walk(20);
+    // The masses' books and the cells held back (`massCells.ts`, `capTriangles`): the same, region for region.
+    for (const book of ['massCells', 'massTiles', 'massPlates', 'massEntries', 'massAsked', 'townCells', 'heldFar', 'heldCoarse']) {
+      expect([book, far[book]]).toEqual([book, near[book]]);
+    }
+    // The levels measured (`LandedMeasure`): the town's cells' only, two levels a cell at most, whatever was walked (DO NOT keep every cell passed).
+    for (const book of ['landedTriangles', 'landedBytes']) {
+      for (const books of [near, far]) expect(books[book]!).toBeLessThanOrEqual(2 * books['townCells']!);
+    }
+  });
+});

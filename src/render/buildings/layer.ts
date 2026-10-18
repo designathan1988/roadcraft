@@ -392,6 +392,8 @@ export function createBuildingLayer(): BuildingLayer {
     if (!list?.length) {
       requests.dropMass(cell); massCells.remove(cell); levels.touch(cell, null, editedCells.has(cell)); massEntries.delete(cell); massAsked.delete(cell);
       resident.forget(cell);
+      // Gone from the town: nothing of it kept by the budget either (its measures, held back or not).
+      landedTriangles.forget(cell); landedBytes.forget(cell); heldFar.delete(cell); heldCoarse.delete(cell);
       return;
     }
     // Its height till its masses come: the ground under its buildings to the highest roof (the view's frustum, `MassCells.choose`).
@@ -795,6 +797,13 @@ export function createBuildingLayer(): BuildingLayer {
         if (levelShown(key) === null && !massCells.drawn(key, (level) => !levels.outdated(level))) return false;
       }
       return true;
+    },
+    books() {
+      return {
+        ...massCells.books(), landedTriangles: landedTriangles.size, landedBytes: landedBytes.size, heldFar: heldFar.size, heldCoarse: heldCoarse.size,
+        massEntries: massEntries.size, massAsked: massAsked.size, cells: cells.size, facades: facades.size, partCells: partCells.size, facadeParts: facadeParts.size,
+        townCells: townCells.size, kept: kept.size, sent: sent.size, groundDigests: groundDigests.size, cellEntries: cellEntries.size, flags: flagsOf.size,
+      };
     },
     setActive(at, rects) {
       activeAt = at;
