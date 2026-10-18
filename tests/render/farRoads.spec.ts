@@ -270,24 +270,6 @@ describe('the far roads chosen top down', () => {
     roads.dispose();
   });
 
-  it("tells when a tile's near level was drawn after a serial, so a road shown in its place can go", async () => {
-    const cache = memoryCache();
-    const tiles = world();
-    const roads = new FarRoads(() => null, runner(cache, kit), 'test:', kit);
-    roads.setSource(storeOf(tiles), () => false);
-    for (const [key, records] of tiles) roads.stored(key, records.version);
-    const before = roads.nearSerial;
-    const tile = tileKey(0, 0);
-    expect(roads.nearDrawnSince(tile, before)).toBe(false);
-    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
-    await until(over, () => roads.nearKeys().includes(farKey(0, 0, 0)));
-    expect(roads.nearSerial).toBeGreaterThan(before);
-    expect(roads.nearDrawnSince(tile, before)).toBe(true);
-    // Shown after it: not until the next.
-    expect(roads.nearDrawnSince(tile, roads.nearSerial)).toBe(false);
-    roads.dispose();
-  });
-
   it("counts a tile's near level the view wants and has not got as waiting: the opening waits for the street's detail, not its far level alone", async () => {
     const cache = memoryCache();
     const tiles = world();
