@@ -45,8 +45,11 @@ What moves the game is reading the code, fixing the cause, and looking at the re
   rules change only when he says to change this file.
 - If a fix does not hold, read more code and the official sources (three.js r186: `node_modules/three/src` and
   `examples/jsm`, docs at threejs.org; Cesium 3D Tiles spec for level refinement); do not try variations at random.
-- Do not ask the player: every decision is yours, including graphics trade-offs (before/after shots in the
-  playtest report), interface design and any architecture change the goal needs. Hard limits, never crossed:
+- NEVER ask the player anything: every decision is yours; weigh the options and take the best one, then say in
+  the report what you chose and why. That includes graphics trade-offs (before/after shots in the playtest
+  report), interface design and any architecture change the goal needs.
+- Do not stop until everything is solved: no pausing for approval, no "should I continue?", no ending a turn
+  with work left; finish each defect (fix, test, commit, shot) and go on to the next. Hard limits, never crossed:
   push only to `roadcraft4`; never delete the player's saves (a format change reads or migrates the old one,
   keeping a copy). No agents unless he asks: do the work yourself.
 
