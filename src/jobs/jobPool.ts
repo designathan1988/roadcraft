@@ -217,6 +217,9 @@ class JobSystem {
   setup: ((worker: Worker) => void) | null = null;
   /** Tiles of the map waiting for the long side's lanes (`tilesWaiting`): its workers take no queued job meanwhile. */
   tilesWaiting = false;
+  /** Another thread's asks submitted and not yet answered (`jobQueueChannel`), and those held back for room. */
+  channelInFlight = 0;
+  readonly channelWaiting: (() => void)[] = [];
 }
 const system = new JobSystem();
 
@@ -481,15 +484,28 @@ export function jobQueueChannel(service: JobService): MessagePort {
   const here = channel.port1;
   here.onmessage = (event: MessageEvent<QueuedAsk>) => {
     const { ask, transfer } = event.data;
-    submitJob({
-      service, key: null, priority: 0,
-      write: () => ({ data: { ...ask, quiet: true }, transfer }),
-      done: (answer) => here.postMessage(answer),
-      failed: (message) => here.postMessage({ id: ask.id, error: message }),
-    });
+    const run = (): void => {
+      system.channelInFlight++;
+      const settled = (): void => {
+        system.channelInFlight--;
+        system.channelWaiting.shift()?.();
+      };
+      submitJob({
+        service, key: null, priority: CHANNEL_BAND,
+        write: () => ({ data: { ...ask, quiet: true }, transfer }),
+        done: (answer) => { settled(); here.postMessage(answer); },
+        failed: (message) => { settled(); here.postMessage({ id: ask.id, error: message }); },
+      });
+    };
+    if (system.channelInFlight < CHANNEL_IN_FLIGHT) run(); else system.channelWaiting.push(run);
   };
   return channel.port2;
 }
+
+/** Where another thread's asks rank (`jobQueueChannel`): after every job of the view and of the tiles round it, whatever its distance (the 20 km runs k20f/k20g, 2026-10-18: at 0 the bays and pairs took four workers at a time from the view's cells and roads, the opening 90 s and a stall). */
+const CHANNEL_BAND = 1e12;
+/** The most of them on the workers at once, every channel and service together: the rest wait their turn in the page, never in the queue in a burst. */
+const CHANNEL_IN_FLIGHT = 2;
 
 /** A queue channel's port (`jobQueueChannel`) as the `Worker` a pool was written for: each message an ask, its buffers handed over with it. */
 export function queuePortWorker(port: MessagePort): Worker {
