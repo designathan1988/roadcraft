@@ -10,6 +10,8 @@ import { type PoleRunPlan, commitPoleRunPoles, planPoleRun, poleRunPlanner } fro
 const END_SETBACK = m(4);
 const MIN_RUN = m(24);
 const SNAP_REACH = m(8);
+/** The deepest a footway may lie under the designed ground and still carry poles: deeper, a pole stands in the bore and only its top shows above ground. */
+const BURIED = m(0.5);
 
 export function layPowerLines(doc: RoadDoc, net: Network, segments: Iterable<SegmentId>, plan?: PlanRun): number {
   const steps = layPowerLinesSteps(doc, net, segments, plan);
@@ -39,8 +41,11 @@ export function* layPowerLinesSteps(doc: RoadDoc, net: Network, segments: Iterab
     const segment = doc.segment(id), ribbon = net.ribbons.get(id);
     if (!segment || !ribbon || !carriesPedestrians(ribbon.road) || ribbon.road.sidewalk <= 0) continue;
     const line = ribbon.full;
-    const s0 = net.mouthDistance(id, segment.a) + END_SETBACK;
-    const s1 = line.length - net.mouthDistance(id, segment.b) - END_SETBACK;
+    if (segment.structure === 'tunnel') continue;
+    const open = openStretch(doc.node(segment.a)?.heightOffset ?? 0, doc.node(segment.b)?.heightOffset ?? 0);
+    if (!open) continue;
+    const s0 = Math.max(net.mouthDistance(id, segment.a) + END_SETBACK, open[0] * line.length);
+    const s1 = Math.min(line.length - net.mouthDistance(id, segment.b) - END_SETBACK, open[1] * line.length);
     if (s1 - s0 < MIN_RUN) continue;
     // On the left footway, by the kerb: the planner pulls each end onto its line.
     const out = ribbon.road.width / 2 + m(0.4);
@@ -50,15 +55,24 @@ export function* layPowerLinesSteps(doc: RoadDoc, net: Network, segments: Iterab
     };
     // The line coming in to this segment's start carries on from its last pole: one pole at the joint, not two 8 m apart.
     const coming = ends.get(segment.a);
-    const start = coming && !coming.leaving && doc.node(segment.a)?.incident.length === 2 ? doc.poles.get(coming.pole) : undefined;
+    const start = open[0] === 0 && coming && !coming.leaving && doc.node(segment.a)?.incident.length === 2 ? doc.poles.get(coming.pole) : undefined;
     const from = start ?? at(s0);
     const poles = commitPoleRunPoles(doc, planRun(doc, from, at(s1)));
     if (!poles) continue;
     built++;
-    join(segment.a, poles[0]!, true);
-    join(segment.b, poles[poles.length - 1]!, false);
+    // A run cut short by a buried stretch does not reach its node: no span across the bore.
+    if (open[0] === 0) join(segment.a, poles[0]!, true);
+    if (open[1] === 1) join(segment.b, poles[poles.length - 1]!, false);
   }
   return built;
+}
+
+/** The share of a road (0 at a, 1 at b) whose deck is not buried, its height running from its ends' authored offsets: null when it all is (a tunnel drawn below the ground). */
+export function openStretch(heightA: number, heightB: number): readonly [number, number] | null {
+  if (heightA >= -BURIED && heightB >= -BURIED) return [0, 1];
+  if (heightA < -BURIED && heightB < -BURIED) return null;
+  const t = (-BURIED - heightA) / (heightB - heightA);
+  return heightA < -BURIED ? [t, 1] : [0, t];
 }
 
 /** How one street's run is planned: its two ends, with the generator's reach, spacing and lamps. */
