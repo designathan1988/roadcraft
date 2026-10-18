@@ -299,6 +299,12 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
     } else if (step.move) await page.mouse.move(step.move[0], step.move[1], { steps: step.steps ?? 1 });
     else if (step.click) await page.mouse.click(step.click[0], step.click[1], { button: step.button ?? 'left', clickCount: step.count ?? 1 });
     else if (step.key) await page.keyboard.press(step.key);
+    // A key held down for `ms` (WASD panning, a held modifier), as a hand holds it.
+    else if (step.hold) {
+      await page.keyboard.down(step.hold);
+      await page.waitForTimeout(step.ms ?? 1000);
+      await page.keyboard.up(step.hold);
+    }
     else if (step.type !== undefined) await page.keyboard.type(step.type);
     else if (step.eval) line.value = await page.evaluate(step.eval);
     else if (step.evalFile) {
