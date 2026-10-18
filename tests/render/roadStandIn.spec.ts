@@ -34,6 +34,10 @@ describe('a road just built', () => {
     expect(hit!.point.y).toBeCloseTo(elevation.onSegment(street.id, m(300), m(325)), 3);
     // The crossing it starts at too.
     expect(new Raycaster(new Vector3(m(300), m(50), -m(200)), new Vector3(0, -1, 0)).intersectObjects(meshes).length).toBeGreaterThan(0);
+    // Not looked at for letting go in the frame it came (its near roads not asked of the edit yet); from the next frame on.
+    expect(standIn.settled()).toEqual([]);
+    standIn.settle();
+    expect(standIn.settled()).toEqual(standIn.tiles);
     // Its tile's near roads drawn: let go.
     standIn.drop(standIn.tiles[0]!);
     expect(standIn.group.children.length).toBe(0);
