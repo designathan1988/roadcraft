@@ -159,6 +159,11 @@ interface Furnished {
 /** Each blocks list's furnished floors, one set per rest of the building it was asked with. */
 const furnishedOf = identityMemo((_volumes: readonly Volume[]): Furnished[] => []);
 
+/** A blocks list's furnished floors let go now (`buildingMesh.ts` `letGoEmitted`: a job's building emitted, its furniture not read again by the job): asked again, they are furnished again, the same. */
+export function letGoInterior(volumes: readonly Volume[]): void {
+  furnishedOf(volumes).length = 0;
+}
+
 /** DO NOT key them by the record (each emission's body is a new one on the same blocks, `emitChunk`) nor cap them: kept on the blocks list, let go with it */
 function furnishedFor(b: Building): Furnished {
   const known = furnishedOf(b.volumes);

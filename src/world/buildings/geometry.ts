@@ -563,6 +563,11 @@ export const closedBlocks: (volumes: Volume[]) => Volume[] = identityMemo((volum
 /** Each blocks list's layouts, one per rhythm it was asked with: what `bayLayout` keeps. */
 const layoutsOf = identityMemo((_volumes: readonly Volume[]): { readonly rhythm: Rhythm; readonly bays: readonly LocalBay[] }[] => []);
 
+/** A blocks list's layouts let go now (`buildingMesh.ts` `letGoEmitted`): asked again, they are worked out again, the same. */
+export function letGoLayout(volumes: readonly Volume[]): void {
+  layoutsOf(volumes).length = 0;
+}
+
 /** A building's bays in its own frame, worked out once for its blocks list and rhythm: the records sharing them (`intern.ts`, a tile's decoded members, a draft moved) share it; asked by emission alone (a job's records, the page's few), let go with the list; DO NOT key it by the record nor cap it */
 export function bayLayout(b: Building): readonly LocalBay[] {
   const known = layoutsOf(b.volumes);

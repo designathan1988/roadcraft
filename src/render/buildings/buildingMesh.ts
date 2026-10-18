@@ -6,8 +6,8 @@ import { type LotSurface as LotPlane, lotSurfaces } from '@world/buildings/lots'
 import { POOL_SINK } from '@world/buildings/pads';
 import { deriveSpaces } from '@world/buildings/spaces';
 import { spaceSeed } from './lightSlots';
-import { buildingFrame, frameX, frameY, localToWorld, worldToLocal } from '@world/buildings/geometry';
-import { FURNITURE_KINDS, FURNITURE_SIZE, type Furniture, type FurnitureKind, interiorAt, levelFlights } from '@world/buildings/interior';
+import { buildingFrame, frameX, frameY, letGoLayout, localToWorld, worldToLocal } from '@world/buildings/geometry';
+import { FURNITURE_KINDS, FURNITURE_SIZE, type Furniture, type FurnitureKind, interiorAt, letGoInterior, levelFlights } from '@world/buildings/interior';
 import { ROOM_FLOATS, floorKind, roomsOfStorey } from './roomBehind';
 import { asPolygon, edgeFrame, localFootprint, volumeSides } from '@world/buildings/footprints';
 import {
@@ -3504,6 +3504,13 @@ export function signatureFloorOf(b: Building, naturalAt: GroundAt, pavedAt?: Pav
 
 /** A wear as the shell's vertices carry it to the GPU: a byte's step (`cellArrays.ts` `finishWear`), so a shell's part laid again from it is the shell. */
 const wearShort = (x: number): number => wearByte(x) / WEAR_STEPS;
+
+/** DO NOT hold a job's every building's furniture and bays until the job is done (a dense cell's 15 MB of furniture and 9 MB of bays as JS objects in the worker's heap, `cellWork.ts`): let go once the building is emitted, the blocks it was emitted from (`emitChunk`'s body, its closed blocks); asked again, made again the same. */
+export function letGoEmitted(b: Building): void {
+  const closed = closedBlocks(resolveBlocks(b).volumes);
+  letGoInterior(closed);
+  letGoLayout(closed);
+}
 
 /** DO NOT grow a new shell's arrays for each building of a job from nothing (every one doubling its way up, the half let go, its chunk holding views of arrays twice its size): one shell written again for each, the arrays grown once to the largest, each chunk an exact copy. */
 export class ShellWriter {
