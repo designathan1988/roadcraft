@@ -173,6 +173,18 @@ export class MesoModel {
     if (this.has(slot)) this.genOf[slot] = Math.max(0, perSecond);
   }
 
+  /** Every link's generation and sink share from its cell's demand (`meso.ts` rates), read from the arrays here: DO NOT ask a link's length, lanes and speed by calls, each double handed back a new heap number a link a step.
+   *  `entry`: each slot's trips from off the world; `cars`, `weight`: its cell's cars per 100 m and the share of trips ending there. */
+  setRates(entry: Float64Array, cars: Float64Array, weight: Float64Array, per100m: number, tripLength: number, scale: number): void {
+    for (let slot = 0; slot < this.size; slot++) {
+      if (this.present[slot] !== 1) continue;
+      const L = this.lengthOf[slot]!;
+      // As `setGeneration` and `setSinkShare` clamp them.
+      this.genOf[slot] = Math.max(0, (entry[slot]! + cars[slot]! * (L / per100m) * this.vFreeOf[slot]! / tripLength) * scale);
+      this.sinkOf[slot] = Math.min(1, Math.max(0, Math.min(1, L / tripLength) * weight[slot]!));
+    }
+  }
+
   setSinkShare(slot: number, share: number): void {
     if (this.has(slot)) this.sinkOf[slot] = Math.min(1, Math.max(0, share));
   }
@@ -310,6 +322,8 @@ export class MesoModel {
   step(): void {
     const dt = this.dt;
     this.handed.length = 0;
+    // The tallies summed here and stored once a step, in the same order: DO NOT add to a field a link at a time, a double stored in a field being a new heap number each time (the 20 km's garbage between collections, sim20a).
+    let generated = this.generated, lost = this.lost;
     for (let s = 0; s < this.size; s++) {
       this.inflow[s] = 0;
       this.outflow[s] = 0;
@@ -322,22 +336,35 @@ export class MesoModel {
         this.room[s] = Math.max(0, Math.min(cdt, storage - this.microOf[s]! - this.pendingOf[s]!));
       } else {
         const ua = this.upAt[s]!, ul = this.upLen[s]!, da = this.downAt[s]!, dl = this.downLen[s]!;
-        const up0 = this.cum(ua, ul, 0), down0 = this.cum(da, dl, 0);
-        const free = this.cum(ua, ul, Math.max(0, L / this.vFreeOf[s]! / dt - 1));
+        // `cum` written out here, not called: every double handed to or back from a call left out of line was a new heap number, four a link a step (the 20 km's ~1 GB of garbage between collections, sim20a).
+        const ring = this.rings.data, tick = this.tick;
+        const up0 = ring[ua + ((tick % ul) + ul) % ul]!, down0 = ring[da + ((tick % dl) + dl) % dl]!;
+        let b = Math.min(ul - 1, Math.max(0, Math.max(0, L / this.vFreeOf[s]! / dt - 1)));
+        let k0 = Math.floor(b), k1 = Math.min(ul - 1, k0 + 1), f = b - k0;
+        let a = ring[ua + (((tick - k0) % ul) + ul) % ul]!;
+        const free = f > 0 ? a + (ring[ua + (((tick - k1) % ul) + ul) % ul]! - a) * f : a;
         this.sending[s] = Math.max(0, Math.min(free - down0, cdt, up0 - down0));
-        const back = this.cum(da, dl, Math.max(0, L / WAVE_SPEED / dt - 1));
+        b = Math.min(dl - 1, Math.max(0, Math.max(0, L / WAVE_SPEED / dt - 1)));
+        k0 = Math.floor(b); k1 = Math.min(dl - 1, k0 + 1); f = b - k0;
+        a = ring[da + (((tick - k0) % dl) + dl) % dl]!;
+        const back = f > 0 ? a + (ring[da + (((tick - k1) % dl) + dl) % dl]! - a) * f : a;
         this.room[s] = Math.max(0, Math.min(back + storage - up0, cdt));
       }
       // The origin: what wants to start, up to its queue; the rest is lost.
       const arrive = this.genOf[s]! * dt;
       if (arrive > 0) {
-        this.generated += arrive;
+        generated += arrive;
         const most = ORIGIN_QUEUE * lanes;
         const next = this.origin[s]! + arrive;
-        if (next > most) { this.lost += next - most; this.origin[s] = most; } else this.origin[s] = next;
+        if (next > most) { lost += next - most; this.origin[s] = most; } else this.origin[s] = next;
       }
     }
-    for (const g of this.into.allGroups()) this.node(g);
+    this.generated = generated;
+    this.lost = lost;
+    // What the nodes sink, added in `tally` in their order and stored once.
+    this.tally[0] = this.sunk;
+    this.into.eachGroup(this.visitNode);
+    this.sunk = this.tally[0]!;
     // Starting from the street (a driveway, the map's edge) gives way to the through traffic: what room is left.
     for (let s = 0; s < this.size; s++) {
       if (!this.present[s] || this.origin[s]! <= 0) continue;
@@ -355,8 +382,9 @@ export class MesoModel {
         if (this.inflow[s]! > 0 && this.pendingOf[s]! >= 1) this.handed.push(s);
         continue;
       }
-      const ua = this.upAt[s]!, ul = this.upLen[s]!, da = this.downAt[s]!, dl = this.downLen[s]!;
-      const up0 = this.cum(ua, ul, 0), down0 = this.cum(da, dl, 0);
+      const ua = this.upAt[s]!, ul = this.upLen[s]!, da = this.downAt[s]!, dl = this.downLen[s]!, tick = this.tick;
+      // `cum` at no run back, written out (as above).
+      const up0 = d[ua + ((tick % ul) + ul) % ul]!, down0 = d[da + ((tick % dl) + dl) % dl]!;
       d[ua + this.ringAt(ul, -1)] = up0 + this.inflow[s]!;
       d[da + this.ringAt(dl, -1)] = down0 + this.outflow[s]!;
     }
@@ -381,7 +409,8 @@ export class MesoModel {
       let theta = Infinity;
       for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
         if (!this.live[i]) continue;
-        const c = this.priority(i), at = turnAt[i]!, n = turnLen[i]!;
+        // An approach's priority (its capacity over a step; a closed one still served in proportion), and an exit's room (none for a link gone), written out here: no number handed back by a call (`cumInto`).
+        const c = Math.max(EPS, this.capOf[i]! * this.dt), at = turnAt[i]!, n = turnLen[i]!;
         theta = Math.min(theta, this.left[i]! / c);
         for (let k = 0; k < n; k++) { const j = T[at + k]!; this.exitDemand[j] = this.exitDemand[j]! + c * T[at + n + k]!; }
       }
@@ -390,13 +419,13 @@ export class MesoModel {
         const at = turnAt[i]!, n = turnLen[i]!;
         for (let k = 0; k < n; k++) {
           const j = T[at + k]!, a = this.exitDemand[j]!;
-          if (a > EPS) theta = Math.min(theta, this.roomOf(j) / a);
+          if (a > EPS) theta = Math.min(theta, (j < this.size && this.present[j] === 1 ? this.room[j]! : 0) / a);
         }
       }
       theta = Number.isFinite(theta) ? Math.max(0, theta) : 0;
       for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
         if (!this.live[i]) continue;
-        const c = this.priority(i), at = turnAt[i]!, n = turnLen[i]!;
+        const c = Math.max(EPS, this.capOf[i]! * this.dt), at = turnAt[i]!, n = turnLen[i]!;
         for (let k = 0; k < n; k++) {
           const j = T[at + k]!;
           if (this.has(j)) this.inflow[j] = this.inflow[j]! + c * T[at + n + k]! * theta;
@@ -417,10 +446,10 @@ export class MesoModel {
       anyLive = false;
       for (let i = ins.head(g); i >= 0; i = ins.after(i)) {
         if (!this.live[i]) continue;
-        if (this.left[i]! <= EPS * this.priority(i)) { this.live[i] = 0; continue; }
+        if (this.left[i]! <= EPS * Math.max(EPS, this.capOf[i]! * this.dt)) { this.live[i] = 0; continue; }
         // FIFO: an approach with a full exit among its turns waits whole.
         const at = turnAt[i]!, n = turnLen[i]!;
-        for (let k = 0; k < n; k++) if (this.roomOf(T[at + k]!) <= EPS) { this.live[i] = 0; break; }
+        for (let k = 0; k < n; k++) { const j = T[at + k]!; if ((j < this.size && this.present[j] === 1 ? this.room[j]! : 0) <= EPS) { this.live[i] = 0; break; } }
         if (this.live[i]) anyLive = true;
       }
     }
@@ -430,18 +459,8 @@ export class MesoModel {
       const served = Math.min(want, Math.max(0, want - this.left[i]!));
       const total = want > EPS ? S * (served / want) : S;
       this.outflow[i] = total;
-      this.sunk += total - served;
+      this.tally[0] = this.tally[0]! + (total - served);
     }
-  }
-
-  /** An approach's priority (its capacity over a step); a closed one still served in proportion. */
-  private priority(i: number): number {
-    return Math.max(EPS, this.capOf[i]! * this.dt);
-  }
-
-  /** An exit's room: none for a link gone. */
-  private roomOf(j: number): number {
-    return this.has(j) ? this.room[j]! : 0;
   }
 
   /** The link's `n` vehicles laid along it as in free flow: entered evenly over the last free run, none left yet. */
@@ -477,6 +496,11 @@ export class MesoModel {
     const a = ring[at + this.ringAt(h, k0)]!;
     return f > 0 ? a + (ring[at + this.ringAt(h, k1)]! - a) * f : a;
   }
+  /** `node`, made once for `eachGroup`. */
+  private readonly visitNode = (g: number): void => this.node(g);
+  /** What a step's nodes sink, summed in place (`step`). */
+  private readonly tally = new Float64Array(1);
+
 
   /** A ring of `h`'s cell for `back` steps ago (-1: the next step). */
   private ringAt(h: number, back: number): number {

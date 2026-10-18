@@ -128,6 +128,7 @@ export class Meso {
     this.outAt = new Threads();
     this.inAt = new Threads();
     this.nodes = new Map();
+    this.nodesChanged++;
     this.touchedNodes.clear();
     this.lines = new Float32Array(0);
     this.oneWay = new Uint8Array(0);
@@ -287,12 +288,14 @@ export class Meso {
 
   private flag(node: number, flag: number): void {
     this.nodes.set(node, (this.nodes.get(node) ?? 0) | flag);
+    this.nodesChanged++;
   }
 
   /** A road more or fewer at `node`; with none left, the node's flags go with it. */
   private addRoads(node: number, d: number): void {
     const v = (this.nodes.get(node) ?? 0) + d * ROAD;
     if (v < ROAD) this.nodes.delete(node); else this.nodes.set(node, v);
+    this.nodesChanged++;
   }
 
   /** Whether a placed slot of `segment` leaves or reaches `node`. */
@@ -314,6 +317,7 @@ export class Meso {
       this.endTo[slot] = to;
       this.endSeg[slot] = segment;
       this.placed[slot] = 1;
+      this.nodesChanged++;
       this.outAt.add(slot, from);
       this.inAt.add(slot, to);
       if (newFrom) this.addRoads(from, 1);
@@ -327,6 +331,7 @@ export class Meso {
   private unplaceEnds(slot: number): void {
     const from = this.endFrom[slot]!, to = this.endTo[slot]!, segment = this.endSeg[slot]!;
     this.placed[slot] = 0;
+    this.nodesChanged++;
     this.outAt.remove(slot);
     this.inAt.remove(slot);
     if (!this.segmentAt(from, segment)) this.addRoads(from, -1);
@@ -755,16 +760,69 @@ export class Meso {
     this.demand.sync(w.buildings, w.doc.changes);
     this.demand.atHour((w.city.minutes(w) % 1440) / 60);
     const model = this.model;
-    const ofCell = new Map<number, readonly [number, number]>(); // DO NOT ask a cell's demand for each of its links: once a cell
+    if (this.slotCars.length < model.slots) {
+      let size = Math.max(256, this.slotCars.length);
+      while (size < model.slots) size *= 2;
+      this.slotCars = new Float64Array(size); this.slotWeight = new Float64Array(size); this.slotEntry = new Float64Array(size);
+      this.slotRow = new Int32Array(size); this.slotRowCell = new Float64Array(size).fill(Number.NaN); this.slotRowsAt = new Uint32Array(size);
+      this.slotEdge = new Uint8Array(size); this.slotEdgeAt = new Uint32Array(size);
+    }
+    // DO NOT ask a cell's demand for each of its links: once a cell a step, into rows kept between steps (a map and a pair a cell a step were the 20 km's garbage, sim20a).
+    const rows = this.cellRows, stamp = ++this.cellStamp;
+    let used = 0;
     for (let slot = 0; slot < model.slots; slot++) {
       if (!model.has(slot)) continue;
-      const L = model.lengthAt(slot), cell = this.cellOf[slot]!, d = ofCell.get(cell) ?? [this.demand.carsPer100m(cell), this.demand.weight(cell)] as const;
-      ofCell.set(cell, d);
-      const entry = this.placed[slot] && this.edgeAt(this.endFrom[slot]!) ? ENTRY_RATE * model.lanesAt(slot) : 0;
-      // Balanced with the share ending here: the street holds the ambient's density in free flow.
-      model.setGeneration(slot, (entry + d[0] * (L / m(100)) * model.freeSpeedAt(slot) / TRIP_LENGTH) * this.scale);
-      model.setSinkShare(slot, Math.min(1, L / TRIP_LENGTH) * d[1]);
+      const cell = this.cellOf[slot]!;
+      // The slot's row as last found, while its cell is the same and the rows were not made again: no map asked by a cell key (a key past a small integer is a number made each ask).
+      let row = this.slotRowCell[slot] === cell && this.slotRowsAt[slot] === this.rowsMade ? this.slotRow[slot]! : rows.get(cell);
+      if (row === undefined) { row = rows.size; rows.set(cell, row); }
+      this.slotRow[slot] = row; this.slotRowCell[slot] = cell; this.slotRowsAt[slot] = this.rowsMade;
+      if (row >= this.cellStamps.length) this.growCellRows(row + 1);
+      if (this.cellStamps[row] !== stamp) {
+        this.cellStamps[row] = stamp;
+        this.cellDemand[2 * row] = this.demand.carsPer100m(cell);
+        this.cellDemand[2 * row + 1] = this.demand.weight(cell);
+        used++;
+      }
+      this.slotCars[slot] = this.cellDemand[2 * row]!;
+      this.slotWeight[slot] = this.cellDemand[2 * row + 1]!;
+      // Whether its start is the map's edge, as last found while no node changed (`nodesChanged`): no map asked by a node id each step.
+      if (this.slotEdgeAt[slot] !== this.nodesChanged) { this.slotEdgeAt[slot] = this.nodesChanged; this.slotEdge[slot] = this.placed[slot] && this.edgeAt(this.endFrom[slot]!) ? 1 : 0; }
+      this.slotEntry[slot] = this.slotEdge[slot] ? ENTRY_RATE * model.lanesAt(slot) : 0;
     }
+    // Balanced with the share ending here: the street holds the ambient's density in free flow.
+    model.setRates(this.slotEntry, this.slotCars, this.slotWeight, m(100), TRIP_LENGTH, this.scale);
+    // The cells of links gone let go: past twice those read this step, the rows made again from the next.
+    if (rows.size > 2 * used + 64) { rows.clear(); this.cellStamps.fill(0); this.rowsMade++; }
+  }
+
+  /** Each slot's cell demand and trips from off the world, written by `rates` for `MesoModel.setRates`. */
+  private slotCars = new Float64Array(0);
+  private slotWeight = new Float64Array(0);
+  private slotEntry = new Float64Array(0);
+  /** Each slot's row in `cellRows`, the cell it was found for, and the making of the rows it was found in (`rowsMade`). */
+  private slotRow = new Int32Array(0);
+  private slotRowCell = new Float64Array(0);
+  private slotRowsAt = new Uint32Array(0);
+  private rowsMade = 1;
+  /** Each slot's start at the map's edge, and the node map's change it was found at (`nodesChanged`, bumped by every change of `nodes` and every slot placed or let go). */
+  private slotEdge = new Uint8Array(0);
+  private slotEdgeAt = new Uint32Array(0);
+  private nodesChanged = 1;
+  /** Each cell's row for `rates` (its demand, read once a step), the step each row was read at, and the two numbers read. */
+  private readonly cellRows = new Map<number, number>();
+  private cellStamp = 0;
+  private cellStamps = new Uint32Array(256);
+  private cellDemand = new Float64Array(512);
+
+  private growCellRows(n: number): void {
+    let size = this.cellStamps.length;
+    while (size < n) size *= 2;
+    const stamps = new Uint32Array(size), demand = new Float64Array(2 * size);
+    stamps.set(this.cellStamps);
+    demand.set(this.cellDemand);
+    this.cellStamps = stamps;
+    this.cellDemand = demand;
   }
 
   // ------------------------------------------------------------ the page's buffer
