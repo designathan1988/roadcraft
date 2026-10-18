@@ -11,7 +11,7 @@ import { m } from '@world/units';
 import { type Building, type BuildingId, generatedBuiltAt } from '@world/buildings/types';
 import { gatesOf } from '@world/buildingGates';
 import { asSegmentId } from '@world/ids';
-import type { SerializedDoc } from '@world/doc';
+import type { RoadDoc, SerializedDoc } from '@world/doc';
 import { type TilePlan, planTile } from '@world/cityGen/tile';
 import { type WholeMapOptions, planWholeMap, tileOnMap } from '@world/cityGen/wholeMap';
 import { greenCity, layCity, widenCityFootways, zoneCity } from './cityGenerator';
@@ -36,6 +36,13 @@ export function buildTileMap(options: WholeMapOptions, i: number, j: number, int
   const doc = layCity(tile.city);
   // Read once as text (`toJSON`) and thrown away: its buildings' members are not shared with each other here (`BuildingStore.internShared`), the tile's reader interns them.
   doc.buildings.internShared = internShared;
+  const choices = laidAndGrown(doc, tile);
+  return { tile, data: doc.toJSON(), choices, ms: performance.now() - started };
+}
+
+/** The tile's city laid out on `doc`: its footways, lots, green and zones, and every lot grown; what makes each building grown again, by the document's id.
+ *  DO NOT build the network where the document is written out: it is let go when this returns, before `toJSON` copies every building (the job's live heap was the network, ~26 MB a dense tile, on top of the document and its copy). */
+function laidAndGrown(doc: RoadDoc, tile: TilePlan): Map<number, GrownChoice> {
   widenCityFootways(doc);
   const net = new Network(doc);
   net.rebuild();
@@ -64,7 +71,7 @@ export function buildTileMap(options: WholeMapOptions, i: number, j: number, int
       doc.buildings.put({ ...fresh, builtAt: 0, decay: 0, lotPlan: LOT_PLAN_VERSION });
     } else if (doc.openLots.count(refused) === 0) break;
   }
-  return { tile, data: doc.toJSON(), choices, ms: performance.now() - started };
+  return choices;
 }
 
 /** A tile with nothing on it: past the map's edge (`tileOnMap`). */
