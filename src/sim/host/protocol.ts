@@ -120,8 +120,6 @@ export interface SimControls {
   readonly pedestrianIntensity: number;
   readonly demandMultiplier: number;
   readonly maxShare: number;
-  /** Where the population starts (`populationGovernor.ts` cpuPopulationShare): taken before the first step is measured. */
-  readonly startShare?: number;
   readonly focus: SimFocus | null;
 }
 

@@ -189,12 +189,12 @@ describe('the ground cut and filled', () => {
 
 describe('the bays of the lots', () => {
   it('are asked of the workers in the game, worked out on the page only by a world without them', () => {
-    // The simulation's worker has the pool (`bayPool.ts`), on the page's `bays` queue channels it was handed (`jobPool.ts` jobQueueChannel), its own only without them.
+    // The simulation's worker has the pool (`bayPool.ts`), on the page's `bays` lanes it was handed (`jobPool.ts` jobChannel), its own only without them.
     const host = read('src/sim/host/simHost.ts');
     expect(host).toMatch(/this\.bayPool = new BayPool\(this\.lanes\?\.bays\.length \? this\.lanes\.bays : null\);/);
     expect(host).toMatch(/useBayWorkers\(sim, this\.bayPool\);/);
-    expect(read('src/main.ts')).toMatch(/jobQueueChannel\(service\)/);
-    expect(read('src/bayPool.ts')).toMatch(/this\.ports \? queuePortWorker\(this\.ports\[k\]!\) : jobPort\('bays'\)/);
+    expect(read('src/main.ts')).toMatch(/jobChannel\(service, \(\) => sim\.laneLost\(service\)\)/);
+    expect(read('src/bayPool.ts')).toMatch(/this\.ports \? portWorker\(this\.ports\[k\]!\) : jobPort\('bays'\)/);
     const parking = read('src/sim/agents/parking.ts');
     // A lot looked at is asked of the workers when the world has them; `bayRows` on the page only without.
     expect(bodyOf(parking, 'baysNow')).toMatch(/lookAtLot\([^;]*workers \? asked : null\);/);
