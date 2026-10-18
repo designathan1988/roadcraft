@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process';
 // LOOK AT THE GAME AS THE PLAYER SEES IT, at full resolution, without taking anyone's window
 import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -146,19 +147,27 @@ async function steps(page, report) {
     if (Date.now() - stall.at < stallMs) return;
     clearInterval(watchdog);
     console.log(`STALLED at step ${stall.i} (${stall.step}) for ${Math.round((Date.now() - stall.at) / 1000)} s`);
+    // Which of Chrome's processes is working (the page's renderer, the GPU's): CPU seconds of each, twice 5 s apart (Windows), every call bounded.
+    const cpu = () => new Promise((done) => execFile('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | Where-Object { $_.CommandLine -match 'headless' } | ForEach-Object { $t = if ($_.CommandLine -match '--type=([a-z-]+)') { $matches[1] } else { 'browser' }; '{0} {1} {2:N1}' -f $_.ProcessId, $t, (((Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue).TotalProcessorTime.TotalSeconds)) }"], { timeout: 20_000 }, (_, text) => done(String(text ?? '').trim())));
+    try { console.log(`  chrome CPU s (pid type cpu):
+${(await cpu()).replace(/^/gm, '    ')}`); await new Promise((r) => setTimeout(r, 5000)); console.log(`  5 s later:
+${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no CPU: ${String(error)}`); }
+    const bounded = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`no answer in ${ms} ms`)), ms))]);
     try {
-      const probe = await page.context().newCDPSession(page);
+      const probe = await bounded(page.context().newCDPSession(page), 10_000);
       const heap = await Promise.race([probe.send('Runtime.getHeapUsage'), new Promise((r) => setTimeout(() => r(null), 5000))]);
       console.log(`  page heap: ${heap ? `${Math.round(heap.usedSize / 1e6)} MB used of ${Math.round(heap.totalSize / 1e6)} MB` : 'no answer'}`);
-      await probe.send('Profiler.enable');
-      await probe.send('Profiler.setSamplingInterval', { interval: 1000 });
-      await probe.send('Profiler.start');
+      await bounded(probe.send('Profiler.enable'), 10_000);
+      await bounded(probe.send('Profiler.setSamplingInterval', { interval: 1000 }), 10_000);
+      await bounded(probe.send('Profiler.start'), 10_000);
       await new Promise((r) => setTimeout(r, 5000));
       const { profile } = await Promise.race([probe.send('Profiler.stop'), new Promise((_, no) => setTimeout(() => no(new Error('no profile in 30 s')), 30_000))]);
       writeFileSync(join(out, 'stalled.cpuprofile'), JSON.stringify(profile));
       console.log(`  profile: ${join(out, 'stalled.cpuprofile')}`);
     } catch (error) { console.log(`  no profile: ${String(error)}`); }
-    process.exit(3);
+    // DO NOT leave the headless Chrome behind (CLAUDE.md): closed, or its processes killed.
+    try { await Promise.race([browser.close(), new Promise((r) => setTimeout(r, 15_000))]); } catch { /* closed by the kill below */ }
+    execFile('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | Where-Object { $_.CommandLine -match 'headless' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"], () => process.exit(3));
   }, 5000);
   watchdog.unref?.();
   for (const [i, step] of plan.steps.entries()) {
