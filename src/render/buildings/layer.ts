@@ -213,7 +213,7 @@ export function createBuildingLayer(): BuildingLayer {
   const budgetLog: Record<string, unknown> = {};
   if (import.meta.env.DEV && typeof window !== 'undefined') Object.assign(window, { __budgetLog: budgetLog });
   const budgetLogged = (fit: NonNullable<typeof lastFit>): void => {
-    const cellsOut: { key: string; px: number; eye: string; bytes: string; triangles: string; shown: string; why: string }[] = [];
+    const cellsOut: { key: string; px: number; eye: string; bytes: string; triangles: string; shown: string; why: string; seen?: unknown }[] = [];
     const why: Record<string, number> = {};
     for (const [key, eye] of fit.byEye) {
       const bytes = fit.byBytes.get(key)!, tri = fit.byTriangles.get(key)!;
@@ -222,7 +222,7 @@ export function createBuildingLayer(): BuildingLayer {
       const shown = levelShown(key) === 'cell' ? 'L0' : levelShown(key) === 'facade' ? 'L1' : 'none';
       const reason = eye !== 'L0' ? (covered ? `covered (${eye})` : `eye (${eye})`) : bytes !== 'L0' ? `bytes (${bytes})` : tri !== 'L0' ? `triangles (${tri}${heldFar.has(key) ? ', held far' : heldCoarse.has(key) ? ', held coarse' : ''})` : shown !== 'L0' ? `not landed (${shown})` : 'L0';
       why[reason] = (why[reason] ?? 0) + 1;
-      cellsOut.push({ key, px: +massCells.pixels(key, 1).toFixed(2), eye, bytes, triangles: tri, shown, why: reason });
+      cellsOut.push({ key, px: +massCells.pixels(key, 1).toFixed(2), eye, bytes, triangles: tri, shown, why: reason, ...(eye === 'far' ? { seen: massCells.explain(key) } : {}) });
     }
     Object.assign(budgetLog, {
       at: Math.round(performance.now()), scale: fit.scale, floor: frame.floor, budgetTriangles: frame.budget, chosenTriangles: fit.chosen,
