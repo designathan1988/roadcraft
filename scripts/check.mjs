@@ -73,6 +73,7 @@ export const ALWAYS = [
   'tests/ui/statusScope.spec.ts',
   'tests/core/derivedDurability.spec.ts',
   'tests/render/cellHoles.spec.ts',
+  'tests/render/shaderCatalogue.spec.ts',
 ];
 
 /** The specs a change calls for: `null` */
