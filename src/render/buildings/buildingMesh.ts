@@ -746,10 +746,26 @@ class Emitter {
     return this.L(f.ax + f.tx * a - f.nx * depth, f.ay + f.ty * a - f.ny * depth, f.z0 + h);
   }
 
+  /** The four corners a rectangle, strip or jamb hands `Shell.face`, written over by each (the face reads them and keeps none): DO NOT make four points and their list for each face of every bay. */
+  private readonly quad: [V3, V3, V3, V3] = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]];
+
+  /** Where `put` works out an instance's place. */
+  private readonly spot: V3 = [0, 0, 0];
+
+  /** `P` written into `out`, the same arithmetic. */
+  private corner(out: V3, f: BayFace, a: number, h: number, depth: number): void {
+    const lx = f.ax + f.tx * a - f.nx * depth, ly = f.ay + f.ty * a - f.ny * depth;
+    out[0] = this.b.x + lx * this.c - ly * this.s;
+    out[1] = this.b.y + lx * this.s + ly * this.c;
+    out[2] = f.z0 + h;
+  }
+
   /** A rectangle on (or parallel to) a bay face. */
   rect(f: BayFace, a0: number, a1: number, h0: number, h1: number, depth: number, n: V3, c: Paint): void {
     if (a1 - a0 < 1e-4 || h1 - h0 < 1e-4) return;
-    this.shell.face([this.P(f, a0, h0, depth), this.P(f, a1, h0, depth), this.P(f, a1, h1, depth), this.P(f, a0, h1, depth)], n, c);
+    const q = this.quad;
+    this.corner(q[0], f, a0, h0, depth); this.corner(q[1], f, a1, h0, depth); this.corner(q[2], f, a1, h1, depth); this.corner(q[3], f, a0, h1, depth);
+    this.shell.face(q, n, c);
   }
 
   /** An axis-aligned box in the local plan: sides and top (the bottom is never seen). */
@@ -799,12 +815,16 @@ class Emitter {
 
   /** A horizontal strip at height h, from depth d0 to d1 into the wall. */
   strip(f: BayFace, a0: number, a1: number, h: number, d0: number, d1: number, n: V3, c: Paint): void {
-    this.shell.face([this.P(f, a0, h, d0), this.P(f, a1, h, d0), this.P(f, a1, h, d1), this.P(f, a0, h, d1)], n, c);
+    const q = this.quad;
+    this.corner(q[0], f, a0, h, d0); this.corner(q[1], f, a1, h, d0); this.corner(q[2], f, a1, h, d1); this.corner(q[3], f, a0, h, d1);
+    this.shell.face(q, n, c);
   }
 
   /** A vertical strip across the wall's thickness at `a`, from h0 to h1. */
   jamb(f: BayFace, a: number, h0: number, h1: number, d0: number, d1: number, n: V3, c: Paint): void {
-    this.shell.face([this.P(f, a, h0, d0), this.P(f, a, h0, d1), this.P(f, a, h1, d1), this.P(f, a, h1, d0)], n, c);
+    const q = this.quad;
+    this.corner(q[0], f, a, h0, d0); this.corner(q[1], f, a, h0, d1); this.corner(q[2], f, a, h1, d1); this.corner(q[3], f, a, h1, d0);
+    this.shell.face(q, n, c);
   }
 
   /** An instance placed on a bay face, turned so its local +Z is the face's outward normal. */
@@ -818,9 +838,11 @@ class Emitter {
   put(kind: PartKind, f: BayFace, a: number, h: number, depth: number, sx: number, sy: number, sz: number, colour?: Color, turn = 0): void {
     // A flattened bay of the far level: what is set into its opening is drawn by the shader (`facadeLevel.ts`).
     if (this.flat && depth > 0 && SHADER_DRAWN.has(kind)) return;
-    const p = this.P(f, a, h, depth);
-    const n = this.N(f.nx, f.ny);
-    const placement: Placement = { x: p[0], y: p[1], z: p[2], yaw: Math.atan2(n[0], -n[1]) + turn, sx, sy, sz };
+    // Its place and the face's normal as `P` and `N` give them, with no point or normal made for each instance.
+    const p = this.spot;
+    this.corner(p, f, a, h, depth);
+    const nx = f.nx * this.c - f.ny * this.s, ny = f.nx * this.s + f.ny * this.c;
+    const placement: Placement = { x: p[0], y: p[1], z: p[2], yaw: Math.atan2(nx, -ny) + turn, sx, sy, sz };
     if (colour) placement.colour = colour;
     if (kind === 'glass' || kind === 'glassDark') {
       placement.slot = this.slot;
