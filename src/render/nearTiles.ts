@@ -131,11 +131,13 @@ export class NearGate {
 
   private pump(): void {
     while (this.running < this.most() && this.waiting.length) {
+      // An edit first, then the nearest to where the view looks now, a tile's light job before its heavy one. DO NOT send every light job before any heavy one: after a jump the camera's own poles and furniture waited behind the light jobs of every tile the view wanted, out to kilometres (k20c/51).
       let best = 0;
       for (let k = 1; k < this.waiting.length; k++) {
         const a = this.waiting[k]!.job, b = this.waiting[best]!.job;
-        const rank = (j: NearTileJob): number => (j.edited ? 0 : 2) + (j.heavy ? 1 : 0);
-        if (rank(a) < rank(b) || (rank(a) === rank(b) && this.away(a) < this.away(b))) best = k;
+        if (!!a.edited !== !!b.edited) { if (a.edited) best = k; continue; }
+        const da = this.away(a), db = this.away(b);
+        if (da < db || (da === db && !a.heavy && b.heavy)) best = k;
       }
       const [entry] = this.waiting.splice(best, 1);
       this.running++;
