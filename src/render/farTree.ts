@@ -194,7 +194,7 @@ export class FarTree<P> implements FarTiles {
     if (this.planning && !this.cacheless) plantRoots(this.roots.values(), this.eyeNow, this.reach, (k, i, j) => this.ensure(k, i, j), (n) => this.forget(n));
     for (const root of this.roots.values()) this.visit(root);
     // The standing level over the map, kept and waited for (`STANDING_LEVEL`); one landed stands as it is, at an older version too, until the view wants it.
-    if (this.planning && !this.cacheless) for (const n of standingNodes((k, i, j) => this.ensure(k, i, j))) if (this.desired.push(n) && n.landed === null) { this.ask(n, true); this.wanting++; }
+    if (this.planning && !this.cacheless) for (const n of standingNodes((k, i, j) => this.ensure(k, i, j))) if (this.desired.push(n) && n.landed === null) this.ask(n, true);
     const now = new Set(this.drawing), wanted = new Set(this.desired);
     // DO NOT keep on the GPU what is neither drawn nor wanted (the area visited would pile up): read back from the store when wanted again.
     for (const n of [...this.resident]) {
@@ -382,6 +382,7 @@ export class FarTree<P> implements FarTiles {
         this.nearWanted.push(n);
         this.askNear(n);
         if (n.near !== null) { this.nearDrawing.push(n); return true; }
+        if (this.inView(n)) this.wanting++;
       }
       if (n.landed !== null) { this.drawing.push(n); return true; }
       if (this.inView(n)) this.wanting++;
