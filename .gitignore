@@ -11,5 +11,4 @@ playwright-report/
 .cache/
 *.local
 .DS_Store
-# People cooked ahead (npm run cook:people); regenerated, never committed
-cooked/
+# DO NOT ignore cooked/: a clone must open the game and build a release without cooking first (the player's order, 2026-10-18)

@@ -1,0 +1,151 @@
+{
+ "hash": "c09f8fb3520ae40f",
+ "codec": "rgba8",
+ "textures": [
+  {
+   "name": "asphalt:map",
+   "file": "asphalt.map.ktx2",
+   "use": "color"
+  },
+  {
+   "name": "asphalt:normal",
+   "file": "asphalt.normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "asphalt:rough",
+   "file": "asphalt.rough.ktx2",
+   "use": "data"
+  },
+  {
+   "name": "asphalt-raised:map",
+   "file": "asphalt-raised.map.ktx2",
+   "use": "color"
+  },
+  {
+   "name": "footway:map",
+   "file": "footway.map.ktx2",
+   "use": "color"
+  },
+  {
+   "name": "footway:normal",
+   "file": "footway.normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "footway:rough",
+   "file": "footway.rough.ktx2",
+   "use": "data"
+  },
+  {
+   "name": "kerb:map",
+   "file": "kerb.map.ktx2",
+   "use": "color"
+  },
+  {
+   "name": "kerb:normal",
+   "file": "kerb.normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "kerb:rough",
+   "file": "kerb.rough.ktx2",
+   "use": "data"
+  },
+  {
+   "name": "verge:map",
+   "file": "verge.map.ktx2",
+   "use": "color"
+  },
+  {
+   "name": "verge:normal",
+   "file": "verge.normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "verge:rough",
+   "file": "verge.rough.ktx2",
+   "use": "data"
+  },
+  {
+   "name": "deck:map",
+   "file": "deck.map.ktx2",
+   "use": "color"
+  },
+  {
+   "name": "deck:normal",
+   "file": "deck.normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "deck:rough",
+   "file": "deck.rough.ktx2",
+   "use": "data"
+  },
+  {
+   "name": "building-finishes:map",
+   "file": "building-finishes.map.ktx2",
+   "use": "color"
+  },
+  {
+   "name": "building-finishes:normal",
+   "file": "building-finishes.normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "building-finishes:rough",
+   "file": "building-finishes.rough.ktx2",
+   "use": "data"
+  },
+  {
+   "name": "terrain-grass:map",
+   "file": "terrain-grass.map.ktx2",
+   "use": "color"
+  },
+  {
+   "name": "terrain-grass:normal",
+   "file": "terrain-grass.normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "asphalt:detail",
+   "file": "asphalt.detail.ktx2",
+   "use": "data"
+  },
+  {
+   "name": "asphalt:detail-normal",
+   "file": "asphalt.detail-normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "concrete:detail",
+   "file": "concrete.detail.ktx2",
+   "use": "data"
+  },
+  {
+   "name": "concrete:detail-normal",
+   "file": "concrete.detail-normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "grass:detail",
+   "file": "grass.detail.ktx2",
+   "use": "data"
+  },
+  {
+   "name": "grass:detail-normal",
+   "file": "grass.detail-normal.ktx2",
+   "use": "normal"
+  },
+  {
+   "name": "terrain-land:map",
+   "file": "terrain-land.map.ktx2",
+   "use": "color"
+  },
+  {
+   "name": "terrain-land:normal",
+   "file": "terrain-land.normal.ktx2",
+   "use": "normal"
+  }
+ ]
+}
