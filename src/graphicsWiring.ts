@@ -1,5 +1,6 @@
 import { DynamicResolution } from '@core/dynamicResolution';
 import { tierForGpu } from '@core/gpuTier';
+import { WEAK_MACHINE } from '@core/weakMachine';
 import { QUALITY, isQualityLevel, type QualityLevel, type QualitySettings } from '@render/quality';
 import type { SceneHandle } from '@render/renderer';
 import { createGraphicsPanel, type GraphicsChoices } from '@ui/graphicsPanel';
@@ -45,6 +46,8 @@ function writeStorage(key: string, value: string): void {
 
 /** The GPU's name from a context of its own, let go at once: the tier is needed before the game's renderer exists. */
 function gpuName(): string {
+  // A run playing a weaker machine (`core/weakMachine.ts`): its GPU, the tier that one holds.
+  if (WEAK_MACHINE.gpu) return WEAK_MACHINE.gpu;
   try {
     const gl = document.createElement('canvas').getContext('webgl2');
     if (!gl) return '';
@@ -106,7 +109,10 @@ export interface GraphicsWiring {
 export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): GraphicsWiring {
   const saved = readStorage(PRESET_KEY);
   let level: QualityLevel;
-  if (isQualityLevel(saved)) {
+  // A run playing a weaker machine starts at that machine's tier, whatever this one kept (and keeps nothing of it).
+  if (WEAK_MACHINE.gpu) {
+    level = tierForGpu(WEAK_MACHINE.gpu);
+  } else if (isQualityLevel(saved)) {
     level = saved;
   } else {
     // The first start: the tier this GPU can hold, kept as if the player had picked it.
@@ -125,7 +131,7 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
   const save = (): void => writeStorage(OPTIONS_KEY, JSON.stringify(kept));
   const fps = (): number => kept.fpsLimit ?? 0;
   /** The whole ratio the tier allows on this display; the dynamic resolution draws a share of it. */
-  const fullRatio = (): number => Math.min(window.devicePixelRatio || 1, settings.pixelRatio);
+  const fullRatio = (): number => Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), settings.pixelRatio);
   const applyScale = (scale: number): void => {
     if (!scene) return;
     scene.gl.setPixelRatio(fullRatio() * scale);

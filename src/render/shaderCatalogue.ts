@@ -1,5 +1,5 @@
 import { Group, type Material, type Mesh, type Object3D, type ShaderMaterial } from 'three';
-import { compileAhead, compileAheadWith, compileCopy, shadowStandIns } from './uploads';
+import { compileAhead, compileAheadWith, compileCopy, compilesQuiet, shadowStandIns } from './uploads';
 
 /** THE PROGRAMS COMPILED AT LOAD: a closed catalogue of what the game draws with, built before the curtain lifts */
 
@@ -67,7 +67,7 @@ export function litStandIns(roots: readonly Object3D[]): Group {
   return group;
 }
 
-/** `people`: every program a person can be drawn with (`people/proceduralCrowd.ts` personProgramStandIns), built without a body. `lightVariants`: the sets of the scene's lights a light switched on or off makes (`renderer.ts`), each compiled once the opening's are, never waited for. */
+/** `people`: every program a person can be drawn with (`people/proceduralCrowd.ts` personProgramStandIns), built without a body. `lightVariants`: the sets of the scene's lights a light switched on or off makes (`renderer.ts`), each compiled once the opening's are, one at a time when nothing else compiles (`compilesQuiet`), never waited for. */
 export function createShaderCatalogue(people: () => FamilyStandIns, lightVariants: () => readonly (readonly Object3D[])[] = () => []): ShaderCatalogue {
   const counts = Object.fromEntries(PROGRAM_FAMILIES.map((name) => [name, null])) as Record<ProgramFamily, FamilyCount | null>;
   let settle: () => void = () => {};
@@ -119,7 +119,14 @@ export function createShaderCatalogue(people: () => FamilyStandIns, lightVariant
         const sets = lightVariants();
         if (sets.length === 0) return;
         const standIns = litStandIns(peopleLit ? [scene, peopleLit] : [scene]);
-        void Promise.all(sets.map((lights) => compileAheadWith(standIns, lights))).then(() => standIns.clear());
+        // DO NOT ask them all at once alongside the view's: four sets of every lit program held the driver 12-15 s after the opening and the reopening, the cell at the camera waiting behind them at the door (`__compileLog`, prova motor-compilacao, 2026-10-18). One set at a time, each when nothing else is compiling.
+        void (async () => {
+          for (const lights of sets) {
+            await compilesQuiet();
+            await compileAheadWith(standIns, lights);
+          }
+          standIns.clear();
+        })();
       });
     },
     counts() {

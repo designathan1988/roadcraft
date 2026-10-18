@@ -4,7 +4,7 @@ import {
   type Camera, type Material, type Object3D, type WebGLRenderer,
 } from 'three';
 
-import { drainCompiles } from '@render/uploads';
+import { compileAhead, drainCompiles } from '@render/uploads';
 import { PROGRAM_FAMILIES, createShaderCatalogue, litStandIns } from '@render/shaderCatalogue';
 
 /** THE PROGRAMS COMPILED AT LOAD (`shaderCatalogue.ts`) */
@@ -117,10 +117,43 @@ describe('the shader catalogue', () => {
     catalogue.compile(scene);
     drainCompiles(lighted, camera, scene, null);
     await catalogue.ready;
-    await new Promise((done) => setTimeout(done, 0));
-    drainCompiles(lighted, camera, scene, null);
+    // One set a drain at most, each when the door is quiet.
+    for (let frame = 0; frame < 6; frame++) {
+      await new Promise((done) => setTimeout(done, 0));
+      drainCompiles(lighted, camera, scene, null);
+    }
     expect(sets.sort()).toEqual([1, 2]);
     // Five meshes of one material and geometry: one stand-in.
     expect(litStandIns([scene]).children.length).toBe(1);
+  });
+
+  it('asks the light variants only once nothing else compiles, one set at a time: the programs of the view never wait behind them', async () => {
+    const scene = new Scene();
+    const asked: string[] = [];
+    let view: () => void = () => {};
+    const renderer = {
+      getRenderTarget: () => null,
+      setRenderTarget: () => {},
+      compileAsync: (object: Object3D) => {
+        if (object.name === 'view') { asked.push('view'); return new Promise<void>((done) => { view = done; }); }
+        if ((object as Group).isGroup && object.children.length) { asked.push('variant'); return new Promise<void>((done) => setTimeout(done, 0)); }
+        return Promise.resolve();
+      },
+    } as unknown as WebGLRenderer;
+    drainCompiles(renderer, camera, scene, null);
+    scene.add(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), new DirectionalLight());
+    const sun = scene.children.at(-1)!;
+    const catalogue = createShaderCatalogue(() => ({ lit: new Group(), shadow: new Group() }), () => [[sun], [sun], [sun]]);
+    catalogue.compile(scene);
+    drainCompiles(renderer, camera, scene, null);
+    await catalogue.ready;
+    // A mesh of the view comes in and is compiling: no variant asked meanwhile.
+    const mesh = Object.assign(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), { name: 'view' });
+    void compileAhead(mesh);
+    for (let frame = 0; frame < 4; frame++) { await new Promise((done) => setTimeout(done, 0)); drainCompiles(renderer, camera, scene, null); }
+    expect(asked).toEqual(['view']);
+    view();
+    for (let frame = 0; frame < 12; frame++) { await new Promise((done) => setTimeout(done, 0)); drainCompiles(renderer, camera, scene, null); }
+    expect(asked).toEqual(['view', 'variant', 'variant', 'variant']);
   });
 });

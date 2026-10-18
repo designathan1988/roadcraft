@@ -63,6 +63,7 @@ import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { renderTargetsBytes } from './targetBytes';
 import { deviceGpuCap, gpuLedger, readGpuDevice } from './gpuLedger';
+import { WEAK_MACHINE } from '@core/weakMachine';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, dropSurfaceBlocks, noRoadSurfaces, passLook, roadSurfaceSteps, surfaceLook, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
@@ -2029,7 +2030,7 @@ export function createSceneRenderer(
     quality = settings;
     // The far woods as dense as the near ones, on the same budget (`farWoods.ts`).
     terrain.setVegetation?.(quality.vegetation);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.pixelRatio));
+    renderer.setPixelRatio(Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), quality.pixelRatio));
     renderer.shadowMap.enabled = quality.shadows;
     materials.setDetail(quality.surfaceDetail);
     environment.setQuality({ shadows: quality.shadows, shadowMapSize: quality.shadowMapSize });
@@ -2042,7 +2043,7 @@ export function createSceneRenderer(
   };
 
   let post: PostChain = createPostChain(renderer, scene, rig.camera, quality, governor.current);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.pixelRatio));
+  renderer.setPixelRatio(Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), quality.pixelRatio));
 
   function resize(): void {
     const width = Math.max(1, canvas.clientWidth);
