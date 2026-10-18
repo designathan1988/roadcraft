@@ -15,6 +15,7 @@ import { keepTileFarRoads, queuedRoadCache, tileRoads } from './render/farRoadTi
 import { keepTileNearBuildings } from './render/nearBuildings';
 import { queuedNearCache } from './render/nearTileBake';
 import type { SharedGroundData } from './render/sharedGround';
+import { readDerived } from '@core/derivedCache';
 
 /** This service of the job system (`job.worker.ts`): one tile of the streamed world built off the page (`editor/wholeMapTile.ts`, `world/tiles.ts`), asked for by `tileGenerator.ts`. */
 
@@ -54,10 +55,31 @@ async function keepFar(records: TileRecords, full: TileRecords, version: number,
   for (const bake of bakes) if (bake.status === 'rejected') console.warn(`[city tile] tile ${records.key}'s far level not kept; the far jobs bake it`, bake.reason);
 }
 
-/** The streamed tile built (its key and records), stored here (its version, and its records prepared when asked for), or why it could not be. */
-export type StreamTileAnswer = { readonly key: number; readonly records: TileRecords }
+/** The streamed tile built (its key and records), stored here (its version, and its records prepared when asked for), or why it could not be; `settled`, the answer to a `SettleAsk`. Each with the worker's state (`WorkerState`). */
+export type StreamTileAnswer = ({ readonly key: number; readonly records: TileRecords }
   | { readonly key: number; readonly stored: number | null; readonly prepared?: PreparedTile; readonly existed?: boolean; readonly legacy?: boolean; readonly bays?: boolean }
-  | { readonly i: number; readonly j: number; readonly error: string };
+  | { readonly i: number; readonly j: number; readonly error: string }
+  | { readonly settled: true }) & WorkerState;
+
+/** What the worker says of itself with each answer (`tileGenerator.ts` lets a worker go past `TILE_HEAP_CAP`): its JS heap where the browser tells it (`performance.memory`, Chromium), and when its service loaded, ms from the worker's start. */
+export interface WorkerState { readonly heap?: number; readonly born?: number }
+
+/** Asked before the worker is let go (`tileGenerator.ts` retire): answered once every write this worker queued is done. */
+export interface SettleAsk { readonly settle: true }
+
+/** When this service loaded, ms from the worker's start (a worker's `performance.now` counts from its creation). */
+const BORN = performance.now();
+
+/** The scope with the worker's state added to each answer. */
+function withState(scope: JobScope): JobScope {
+  return {
+    onmessage: null,
+    postMessage: (data, transfer) => {
+      const memory = (performance as { memory?: { totalJSHeapSize?: number } }).memory;
+      scope.postMessage({ ...(data as object), born: BORN, ...(memory?.totalJSHeapSize ? { heap: memory.totalJSHeapSize } : {}) }, transfer);
+    },
+  };
+}
 
 /** A tile asked only if missing (`StreamTileAsk.store.ifMissing`): what the store has of it, read here, or null to make it. */
 async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: number, j: number): Promise<StreamTileAnswer | null> {
@@ -125,9 +147,13 @@ function migratedOnce(buildings: TileRecords['buildings']): TileRecords['buildin
 let parts: ReturnType<typeof workerParts> | null = null;
 const stored = (): ReturnType<typeof workerParts> => (parts ??= workerParts());
 
-export function serve(self: JobScope): void {
-  self.onmessage = (event: MessageEvent<StreamTileAsk>) => {
-    const { store, i, j } = event.data;
+export function serve(scope: JobScope): void {
+  const self = withState(scope);
+  scope.onmessage = (event: MessageEvent<StreamTileAsk | SettleAsk>) => {
+    // The far levels' writes are queued (`keepDerivedQueued`): a read of the same store starts only once every write asked before it is done (IndexedDB's transaction order), then the worker can go.
+    const ask = event.data;
+    if ('settle' in ask) { void readDerived('settle').finally(() => self.postMessage({ settled: true } satisfies StreamTileAnswer)); return; }
+    const { store, i, j } = ask;
     if (store?.sectionsOnly) {
       const key = tileKey(i, j);
       bakeStoredTile(stored(), store.map, key, store.after, (r) => bakeTileSections(r, true)).then(
@@ -142,11 +168,11 @@ export function serve(self: JobScope): void {
     }
     // DO NOT make a tile the store has: looked up here, where the store is open, not through the save worker's lanes.
     if (store?.ifMissing) {
-      storedAnswer(store, i, j).then((answer) => (answer ? self.postMessage(answer) : make(self, event.data)),
+      storedAnswer(store, i, j).then((answer) => (answer ? self.postMessage(answer) : make(self, ask)),
         (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} could not be looked up: ${String(error)}` } satisfies StreamTileAnswer));
       return;
     }
-    make(self, event.data);
+    make(self, ask);
   };
 }
 

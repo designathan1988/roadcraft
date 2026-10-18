@@ -2,8 +2,8 @@ import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import { tileKey, tileOfKey } from '@world/tiles';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
-import type { FarTileBake, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
-import { jobPort, jobsQuiet, longWorkers, onJobsQuiet, shortWorkers } from './jobs/jobPool';
+import type { FarTileBake, SettleAsk, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
+import { jobPort, jobsQuiet, longWorkers, onJobsQuiet, retireJobPort, shortWorkers } from './jobs/jobPool';
 
 /** THE TILES MADE ON DEMAND (CLAUDE.md, "Streaming world"): a tile the store does not have is generated in a worker of the job pool (`cityTile.worker.ts`, `editor/wholeMapTile.ts` buildStreamTile), a pure function of the seed and its place */
 
@@ -26,8 +26,13 @@ interface Waiting {
   readonly failed: (why: string) => void;
 }
 
-/** A worker's lane of the generator: on a worker of the long-running side, or set aside on another kind's while the map is made (`setAside`). */
-interface Lane { readonly port: Worker; readonly inFlight: Waiting[]; readonly aside: boolean }
+/** A worker's lane of the generator: on a worker of the long-running side, or set aside on another kind's while the map is made (`setAside`); its worker's answers (`made`) and its heap as last told; `retiring`, given no more work, its worker let go once it is done (`retire`). */
+interface Lane { readonly port: Worker; readonly inFlight: Waiting[]; readonly aside: boolean; made: number; heap: number; retiring: 'no' | 'draining' | 'settling' }
+
+/** DO NOT keep a tile worker for the whole opening: each tile leaves its isolate's heap larger (hundreds of MB of total against ~30 MB live), and seven of them filled the one V8 cage the page and its workers share (hw20: the 20 km out of memory, the pool's own reuse never let one go - a tile lane always holds its worker). A worker past this heap, or past `TILE_WORKER_ANSWERS` where the browser does not tell its heap, is let go after its tile and a new one made: the same lanes, a fresh isolate (V8's heap is not given back to the cage while the isolate lives). */
+export const TILE_HEAP_CAP = 250 * 2 ** 20;
+/** Answers a tile worker gives before it is let go, where its heap is not told (a new worker's modules load in under a second, its first tile ~0.4 s slower: a tenth of four tiles at most). */
+export const TILE_WORKER_ANSWERS = 6;
 
 /** Tiles posted to a lane at once while the map is made (`setAside`): DO NOT post a lane its next tile only when the page hears the last one's answer, its worker idle for a round trip through the page's long frames (the workers' profile, wprof8-10: the tile workers 0-50% busy from 30 to 50 s of the opening); one after, the page's asks kept to the tile under way. */
 const RUSH_DEPTH = 2;
@@ -106,7 +111,7 @@ export class TileGenerator {
     this.dropAside(!this.aside || this.queue.length === 0 ? 0 : asideLanes());
     const own = this.lanes.filter((l) => !l.aside).length, aside = this.lanes.length - own;
     // A lane set aside keeps one: the queue's worker is given back at the end of the tile under way.
-    const depthOf = (l: Lane): number => (this.aside && !l.aside ? RUSH_DEPTH : 1);
+    const depthOf = (l: Lane): number => (l.retiring !== 'no' ? 0 : this.aside && !l.aside ? RUSH_DEPTH : 1);
     // Room for tiles on the lanes there are: each lane's free places.
     const idle = (): number => this.lanes.reduce((n, l) => n + Math.max(0, depthOf(l) - l.inFlight.length), 0);
     // The low work on the generator's own lanes alone, never on those set aside.
@@ -118,6 +123,8 @@ export class TileGenerator {
     for (let made = own; made < tileLanes() && this.queue.length + (quiet ? Math.min(this.lowQueue.length, LOW_IN_FLIGHT) : 0) > idle(); made++) this.lanes.push(this.lane(false));
     if (this.aside) for (let made = aside; made < asideLanes() && this.queue.length > idle(); made++) this.lanes.push(this.lane(true));
     let low = this.lanes.filter((l) => l.inFlight.some((w) => w.store?.baysOnly)).length;
+    // A lane let go with its tiles done: its worker asked to finish its writes (`retire`).
+    for (const lane of this.lanes) if (lane.retiring === 'draining' && lane.inFlight.length === 0) { lane.retiring = 'settling'; lane.port.postMessage({ settle: true } satisfies SettleAsk); }
     for (const lane of this.lanes) {
       while (lane.inFlight.length < depthOf(lane)) {
         // DO NOT start low work while a queued job waits or runs (conf67: the bays of the whole map on six of seven tile workers at once, the far levels, cells and near roads left two workers): only on a quiet queue, the one under way let finish; and on an empty lane alone.
@@ -130,10 +137,27 @@ export class TileGenerator {
     }
   }
 
+  /** A lane whose worker finished its writes let go, its worker ended by the pool, and the next tile given to a lane on a new one (`pump`). */
+  private retire(lane: Lane): void {
+    const at = this.lanes.indexOf(lane);
+    if (at < 0) return;
+    this.lanes.splice(at, 1);
+    retireJobPort(lane.port);
+    this.pump();
+  }
+
   private lane(aside: boolean): Lane {
-    const lane: Lane = { port: jobPort(aside ? 'cityTilesAside' : 'cityTiles'), inFlight: [], aside };
+    const lane: Lane = { port: jobPort(aside ? 'cityTilesAside' : 'cityTiles'), inFlight: [], aside, made: 0, heap: 0, retiring: 'no' };
     lane.port.onmessage = (event: MessageEvent<StreamTileAnswer>) => {
       const answer = event.data;
+      if ('settled' in answer) { this.retire(lane); return; }
+      // Its own worker's heap watched (a lane set aside is on another kind's worker, given back at the rush's end); a tile read from the store makes no garbage worth a count.
+      if (!('existed' in answer && answer.existed)) lane.made++;
+      if (answer.heap) lane.heap = answer.heap;
+      if (!lane.aside && lane.retiring === 'no' && (lane.heap > 0 ? lane.heap >= TILE_HEAP_CAP : lane.made >= TILE_WORKER_ANSWERS)) {
+        lane.retiring = 'draining';
+        if (import.meta.env.DEV) console.info(`[tiles] a tile worker let go after ${lane.made} answers, heap ${lane.heap ? `${(lane.heap / 2 ** 20).toFixed(0)} MB` : 'not told'}${answer.born !== undefined ? `, its service loaded ${answer.born.toFixed(0)} ms after it started` : ''}`);
+      }
       // The tile it answers, by its key: a tile that fails at once may answer before the one ahead of it is stored.
       const key = 'error' in answer ? tileKey(answer.i, answer.j) : answer.key;
       const at = lane.inFlight.findIndex((w) => w.key === key);
@@ -150,6 +174,8 @@ export class TileGenerator {
     };
     lane.port.onerror = (event) => {
       for (const waiting of lane.inFlight.splice(0)) waiting.failed(`a tile worker failed: ${event.message}`);
+      // Being let go, it will not say it settled.
+      if (lane.retiring !== 'no') { this.retire(lane); return; }
       this.pump();
     };
     return lane;
