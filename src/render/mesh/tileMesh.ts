@@ -1,3 +1,4 @@
+import { type Stream, doubles, indices as indexStream } from './stream';
 import type { PieceShape, SkirtRing, SurfaceShape } from './tileShape';
 
 /** ONE TILE OF A ROAD SURFACE MESHED FROM ITS SHAPE (`tileShape.ts`) */
@@ -28,17 +29,22 @@ export interface TileMeshOptions {
   readonly skirtUvScale?: number;
 }
 
-/** Vertex and index streams of a mesh under construction. */
+/** Vertex and index streams of a mesh under construction: the attributes as the doubles they are computed in (the float32 the mesh stores is taken when it is welded, `weldVertices`). */
 export interface Streams {
-  readonly positions: number[];
-  readonly normals: number[];
-  readonly uvs: number[];
-  readonly colors: number[];
-  readonly sections: number[];
-  readonly indices: number[];
+  readonly positions: Stream<Float64Array>;
+  readonly normals: Stream<Float64Array>;
+  readonly uvs: Stream<Float64Array>;
+  readonly colors: Stream<Float64Array>;
+  readonly sections: Stream<Float64Array>;
+  readonly indices: Stream<Uint32Array>;
 }
 
-export const streams = (): Streams => ({ positions: [], normals: [], uvs: [], colors: [], sections: [], indices: [] });
+export const streams = (): Streams => ({ positions: doubles(), normals: doubles(), uvs: doubles(), colors: doubles(), sections: doubles(), indices: indexStream() });
+
+/** The streams' arrays as written (`Stream.view`). */
+export function streamArrays(out: Streams): { positions: Float64Array; normals: Float64Array; uvs: Float64Array; colors: Float64Array; sections: Float64Array; indices: Uint32Array } {
+  return { positions: out.positions.view(), normals: out.normals.view(), uvs: out.uvs.view(), colors: out.colors.view(), sections: out.sections.view(), indices: out.indices.view() };
+}
 
 /** One build's options and the scratch its callbacks write into. */
 export interface Context {
@@ -61,39 +67,47 @@ export function meshPiece(piece: PieceShape, context: Context, out: Streams): vo
   for (let i = 0; i < xy.length / 2; i++) {
     const x = xy[i * 2] as number;
     const y = xy[i * 2 + 1] as number;
-    positions.push(x, top(x, y), -y);
+    positions.push3(x, top(x, y), -y);
     uv(x, y, scratch);
-    uvs.push(scratch[0], scratch[1]);
-    normals.push(0, 1, 0);
+    uvs.push2(scratch[0], scratch[1]);
+    normals.push3(0, 1, 0);
     // A surface with no tint nor section carries neither: one value everywhere, filled where a material reads it (`surfaceTiles.ts` tileArrays).
-    if (tint) { tint(x, y, rgb); colors.push(rgb[0], rgb[1], rgb[2]); }
-    if (section) { section(x, y, cut); sections.push(cut[0], cut[1], cut[2]); }
+    if (tint) { tint(x, y, rgb); colors.push3(rgb[0], rgb[1], rgb[2]); }
+    if (section) { section(x, y, cut); sections.push3(cut[0], cut[1], cut[2]); }
   }
   // World Y is mirrored into three's Z.
   for (let i = 0; i < tris.length; i += 3) {
     let a = base + (tris[i] as number);
     let b = base + (tris[i + 1] as number);
     let c = base + (tris[i + 2] as number);
-    if (options.uvFrame && options.uvWorld && !uvConsistent(positions, uvs, a, b, c, options.uvWorld)) {
-      const cx = (positions[a * 3]! + positions[b * 3]! + positions[c * 3]!) / 3;
-      const cy = -(positions[a * 3 + 2]! + positions[b * 3 + 2]! + positions[c * 3 + 2]!) / 3;
-      const fresh: number[] = [];
-      for (const v of [a, b, c]) {
-        const x = positions[v * 3]!;
-        const y = -positions[v * 3 + 2]!;
-        positions.push(x, positions[v * 3 + 1]!, -y);
-        options.uvFrame(x, y, cx, cy, scratch);
-        uvs.push(scratch[0], scratch[1]);
-        normals.push(0, 1, 0);
-        if (tint) colors.push(colors[v * 3]!, colors[v * 3 + 1]!, colors[v * 3 + 2]!);
-        if (section) sections.push(sections[v * 3]!, sections[v * 3 + 1]!, sections[v * 3 + 2]!);
-        fresh.push(positions.length / 3 - 1);
-      }
-      [a, b, c] = fresh as [number, number, number];
+    if (options.uvFrame && options.uvWorld && !uvConsistent(positions.data, uvs.data, a, b, c, options.uvWorld)) {
+      const p = positions.data;
+      const cx = (p[a * 3]! + p[b * 3]! + p[c * 3]!) / 3;
+      const cy = -(p[a * 3 + 2]! + p[b * 3 + 2]! + p[c * 3 + 2]!) / 3;
+      // Each corner copied in the frame of the road nearest the triangle's middle (no array a triangle: `copyCorner`).
+      a = copyCorner(a, cx, cy, context, out);
+      b = copyCorner(b, cx, cy, context, out);
+      c = copyCorner(c, cx, cy, context, out);
     }
-    if (flip) indices.push(a, c, b);
-    else indices.push(a, b, c);
+    if (flip) indices.push3(a, c, b);
+    else indices.push3(a, b, c);
   }
+}
+
+/** A corner `v` copied with its UV in the frame of the road nearest (cx, cy) (`TileMeshOptions.uvFrame`): the copy's index. */
+function copyCorner(v: number, cx: number, cy: number, context: Context, out: Streams): number {
+  const { options, uv: scratch } = context;
+  const { positions, normals, uvs, colors, sections } = out;
+  // Read again for each corner: a push may have grown the arrays.
+  const x = positions.data[v * 3]!;
+  const y = -positions.data[v * 3 + 2]!;
+  positions.push3(x, positions.data[v * 3 + 1]!, -y);
+  options.uvFrame!(x, y, cx, cy, scratch);
+  uvs.push2(scratch[0], scratch[1]);
+  normals.push3(0, 1, 0);
+  if (options.tint) colors.push3(colors.data[v * 3]!, colors.data[v * 3 + 1]!, colors.data[v * 3 + 2]!);
+  if (options.section) sections.push3(sections.data[v * 3]!, sections.data[v * 3 + 1]!, sections.data[v * 3 + 2]!);
+  return positions.length / 3 - 1;
 }
 
 /** The walls hung from a surface's outline down to `bottom`, along the edges of its shape (`tileShape.ts` `skirtShape`). */
@@ -120,19 +134,19 @@ export function meshSkirts(skirts: readonly SkirtRing[], context: Context, out: 
       const lowA = bottom(ax, ay);
       const lowB = bottom(bx, by);
       const side = positions.length / 3;
-      positions.push(ax, topA, -ay, bx, topB, -by, bx, lowB, -by, ax, lowA, -ay);
-      if (tint) { tint((ax + bx) / 2, (ay + by) / 2, rgb); for (let n = 0; n < 4; n++) colors.push(rgb[0], rgb[1], rgb[2]); }
+      positions.push3(ax, topA, -ay); positions.push3(bx, topB, -by); positions.push3(bx, lowB, -by); positions.push3(ax, lowA, -ay);
+      if (tint) { tint((ax + bx) / 2, (ay + by) / 2, rgb); for (let n = 0; n < 4; n++) colors.push3(rgb[0], rgb[1], rgb[2]); }
       // A skirt has no place in the section: none (written only for a surface whose top carries one).
-      if (section) for (let n = 0; n < 4; n++) sections.push(0, -1, 0);
+      if (section) for (let n = 0; n < 4; n++) sections.push3(0, -1, 0);
       // Written rather than averaged, so a kerb keeps its hard edge instead of smearing into the surface above it.
-      for (let n = 0; n < 4; n++) normals.push(nx, 0, nz);
+      for (let n = 0; n < 4; n++) normals.push3(nx, 0, nz);
       const u0 = run / scale;
       const u1 = (run + span) / scale;
-      uvs.push(u0, topA / scale, u1, topB / scale, u1, lowB / scale, u0, lowA / scale);
+      uvs.push2(u0, topA / scale); uvs.push2(u1, topB / scale); uvs.push2(u1, lowB / scale); uvs.push2(u0, lowA / scale);
       run += span;
       // Wound so the face looks the same way as the normal written above.
-      if (flip) indices.push(side, side + 1, side + 2, side, side + 2, side + 3);
-      else indices.push(side, side + 2, side + 1, side, side + 3, side + 2);
+      if (flip) { indices.push3(side, side + 1, side + 2); indices.push3(side, side + 2, side + 3); }
+      else { indices.push3(side, side + 2, side + 1); indices.push3(side, side + 3, side + 2); }
     }
   }
 }
@@ -159,14 +173,14 @@ export function meshTileShape(shape: SurfaceShape, options: TileMeshOptions): Ti
   const out = streams();
   for (const piece of shape.pieces) meshPiece(piece, context, out);
   // No vertex is shared with another tile, so the smoothing is the one the whole mesh would get.
-  smoothTopNormals(out.positions, out.normals, out.indices);
+  smoothTopNormals(out.positions.view(), out.normals.view(), out.indices.view());
   if (shape.skirts) meshSkirts(shape.skirts, context, out);
-  const welded = weldVertices(out);
+  const welded = weldVertices(streamArrays(out));
   return { ...welded, box: boxOf(welded.positions) };
 }
 
 /** DO NOT leave the vertices a triangle at a time: a copy per corner is what an unindexed mesh is. */
-export function weldVertices(out: { positions: number[]; normals: number[]; uvs: number[]; colors: number[]; sections: number[]; indices: number[] }):
+export function weldVertices(out: { readonly [K in 'positions' | 'normals' | 'uvs' | 'colors' | 'sections' | 'indices']: ArrayLike<number> }):
   { positions: Float32Array; normals: Float32Array; uvs: Float32Array; colors: Float32Array; sections: Float32Array; indices: Uint32Array } {
   const count = out.positions.length / 3;
   // Every attribute as the float32 the mesh stores, so equal means equal as drawn.
@@ -189,7 +203,7 @@ export function weldVertices(out: { positions: number[]; normals: number[]; uvs:
     && ub[i * 2] === ub[j * 2] && ub[i * 2 + 1] === ub[j * 2 + 1]
     && (!hasC || (cb[i * 3] === cb[j * 3] && cb[i * 3 + 1] === cb[j * 3 + 1] && cb[i * 3 + 2] === cb[j * 3 + 2]))
     && (!hasQ || (qb[i * 3] === qb[j * 3] && qb[i * 3 + 1] === qb[j * 3 + 1] && qb[i * 3 + 2] === qb[j * 3 + 2]));
-  const first: number[] = [];
+  const first = new Uint32Array(count);
   for (let i = 0; i < count; i++) {
     let h = 0x811c9dc5;
     for (let k = 0; k < 3; k++) { h = Math.imul(h ^ pb[i * 3 + k]!, 0x01000193); h = Math.imul(h ^ nb[i * 3 + k]!, 0x01000193); }
@@ -199,7 +213,7 @@ export function weldVertices(out: { positions: number[]; normals: number[]; uvs:
     let slot = (h ^ (h >>> 15)) & mask;
     for (;;) {
       const at = table[slot]!;
-      if (at < 0) { table[slot] = i; remap[i] = kept++; first.push(i); break; }
+      if (at < 0) { table[slot] = i; first[kept] = i; remap[i] = kept++; break; }
       if (same(at, i)) { remap[i] = remap[at]!; break; }
       slot = (slot + 1) & mask;
     }
@@ -229,8 +243,8 @@ function boxOf(positions: Float32Array): Float32Array {
 
 /** Whether a triangle's UV edges have the lengths its world edges say they should. */
 function uvConsistent(
-  positions: readonly number[],
-  uvs: readonly number[],
+  positions: ArrayLike<number>,
+  uvs: ArrayLike<number>,
   a: number,
   b: number,
   c: number,
@@ -241,7 +255,7 @@ function uvConsistent(
 }
 
 /** One edge of `uvConsistent`: a function of its own, not a closure made per triangle. */
-function uvEdgeConsistent(positions: readonly number[], uvs: readonly number[], p: number, q: number, uvWorld: number): boolean {
+function uvEdgeConsistent(positions: ArrayLike<number>, uvs: ArrayLike<number>, p: number, q: number, uvWorld: number): boolean {
   const world = Math.hypot(positions[p * 3]! - positions[q * 3]!, positions[p * 3 + 2]! - positions[q * 3 + 2]!);
   if (world < 1e-3) return true;
   const texture = Math.hypot(uvs[p * 2]! - uvs[q * 2]!, uvs[p * 2 + 1]! - uvs[q * 2 + 1]!) * uvWorld;
@@ -251,9 +265,9 @@ function uvEdgeConsistent(positions: readonly number[], uvs: readonly number[], 
 
 /** Recomputes normals for the up-facing vertices only, in place. */
 export function smoothTopNormals(
-  positions: readonly number[],
-  normals: number[],
-  indices: readonly number[],
+  positions: ArrayLike<number>,
+  normals: { [index: number]: number; readonly length: number },
+  indices: ArrayLike<number>,
 ): void {
   // By a flag per vertex, not a Set of them: asked three times per triangle of every road tile
   const count = normals.length / 3;

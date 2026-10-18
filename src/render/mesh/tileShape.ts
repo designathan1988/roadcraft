@@ -1,6 +1,7 @@
 import earcut from 'earcut';
 
 import { cutAtAxis } from '@core/axisCut';
+import { type Stream, doubles, indices } from './stream';
 import { intersection, type MultiPoly, type Poly } from '@core/clipper';
 import { m } from '@world/units';
 
@@ -52,18 +53,20 @@ function pieceShape(polygon: Poly, maxEdge: number, flips: Flips): PieceShape | 
   if (seed.length === 0) return null;
   // Which way round the TRIANGLES run decides which side faces the sky, so that is what is measured.
   const flip = trianglesArea(flat, seed) < 0;
-  const builder: Builder = { xs: [], ys: [], tris: [...seed], midpoints: new Map() };
+  const builder: Builder = { xs: doubles(flat.length / 2 + 16), ys: doubles(flat.length / 2 + 16), tris: indices(seed.length + 16), midpoints: new Map() };
+  for (const v of seed) builder.tris.push1(v);
   for (let i = 0; i < flat.length; i += 2) {
-    builder.xs.push(flat[i] as number);
-    builder.ys.push(flat[i + 1] as number);
+    builder.xs.push1(flat[i] as number);
+    builder.ys.push1(flat[i + 1] as number);
   }
   // Ear clipping joins the outline's points with long thin triangles (a fan)
   flipToDelaunay(builder, maxEdge, flips);
   refine(builder, maxEdge);
   flipToDelaunay(builder, maxEdge, flips);
+  const xs = builder.xs.data, ys = builder.ys.data;
   const xy = new Float64Array(builder.xs.length * 2);
-  for (let i = 0; i < builder.xs.length; i++) { xy[i * 2] = builder.xs[i]!; xy[i * 2 + 1] = builder.ys[i]!; }
-  return { xy, tris: Uint32Array.from(builder.tris), flip };
+  for (let i = 0; i < builder.xs.length; i++) { xy[i * 2] = xs[i]!; xy[i * 2 + 1] = ys[i]!; }
+  return { xy, tris: builder.tris.data.slice(0, builder.tris.length), flip };
 }
 
 /** The edges the walls hang from, from the ORIGINAL outlines, never from the pieces */
@@ -217,8 +220,9 @@ const edgeKey = (i: number, j: number): number => (i < j ? i * 0x4000_0000 + j :
 
 /** DO NOT leave the fan ear clipping made: its slivers were most of the road surfaces' triangles */
 function flipToDelaunay(b: Builder, maxEdge: number, flips: Flips): void {
-  const t = b.tris, xs = b.xs, ys = b.ys;
-  const count = t.length / 3;
+  // Read in place: a flip moves corners, it adds no vertex nor triangle.
+  const t = b.tris.data, xs = b.xs.data, ys = b.ys.data;
+  const count = b.tris.length / 3;
   if (count < 2) return;
   const owners = flips.owners;
   owners.reset(count * 3);
@@ -277,16 +281,17 @@ function flipToDelaunay(b: Builder, maxEdge: number, flips: Flips): void {
   }
 }
 
+/** A piece's vertices and triangles as it is refined, in typed streams (`stream.ts`). */
 interface Builder {
-  readonly xs: number[];
-  readonly ys: number[];
-  readonly tris: number[];
+  readonly xs: Stream<Float64Array>;
+  readonly ys: Stream<Float64Array>;
+  readonly tris: Stream<Uint32Array>;
   readonly midpoints: Map<number, number>;
 }
 
 function addVertex(b: Builder, x: number, y: number): number {
-  b.xs.push(x);
-  b.ys.push(y);
+  b.xs.push1(x);
+  b.ys.push1(y);
   return b.xs.length - 1;
 }
 
@@ -294,36 +299,36 @@ function midpoint(b: Builder, i: number, j: number): number {
   const key = i < j ? i * 0x4000_0000 + j : j * 0x4000_0000 + i;
   const cached = b.midpoints.get(key);
   if (cached !== undefined) return cached;
-  const index = addVertex(
-    b,
-    ((b.xs[i] as number) + (b.xs[j] as number)) / 2,
-    ((b.ys[i] as number) + (b.ys[j] as number)) / 2,
-  );
+  const xs = b.xs.data, ys = b.ys.data;
+  const index = addVertex(b, ((xs[i] as number) + (xs[j] as number)) / 2, ((ys[i] as number) + (ys[j] as number)) / 2);
   b.midpoints.set(key, index);
   return index;
 }
 
 const edgeLength = (b: Builder, i: number, j: number): number =>
-  Math.hypot((b.xs[i] as number) - (b.xs[j] as number), (b.ys[i] as number) - (b.ys[j] as number));
+  Math.hypot((b.xs.data[i] as number) - (b.xs.data[j] as number), (b.ys.data[i] as number) - (b.ys.data[j] as number));
 
 /** Refines until no triangle edge is longer than `maxEdge`. ## Longest-edge bisection */
 function refine(b: Builder, maxEdge: number, maxRounds = 24, budget = 600_000): void {
   // A triangle with every edge within `maxEdge` is finished: no round marks one of its edges
-  const done: number[] = [];
-  let active: number[] = [];
+  const done = indices(b.tris.length + 16);
+  let active = indices(b.tris.length + 16);
+  let next = indices(b.tris.length + 16);
   const long = (x: number, y: number, z: number): boolean =>
     edgeLength(b, x, y) > maxEdge || edgeLength(b, y, z) > maxEdge || edgeLength(b, z, x) > maxEdge;
+  const tris = b.tris.data;
   for (let t = 0; t < b.tris.length; t += 3) {
-    const a = b.tris[t] as number, c = b.tris[t + 1] as number, d = b.tris[t + 2] as number;
-    if (long(a, c, d)) active.push(a, c, d); else done.push(a, c, d);
+    const a = tris[t] as number, c = tris[t + 1] as number, d = tris[t + 2] as number;
+    if (long(a, c, d)) active.push3(a, c, d); else done.push3(a, c, d);
   }
   for (let round = 0; round < maxRounds && active.length; round++) {
     if ((done.length + active.length) / 3 > budget) break;
     const marked = new Set<number>();
+    const on = active.data;
     for (let t = 0; t < active.length; t += 3) {
-      const a = active[t] as number;
-      const c = active[t + 1] as number;
-      const d = active[t + 2] as number;
+      const a = on[t] as number;
+      const c = on[t + 1] as number;
+      const d = on[t + 2] as number;
       // The three edges in the order a-c, c-d, d-a; the first of equal longest wins.
       const ac = edgeLength(b, a, c);
       const cd = edgeLength(b, c, d);
@@ -343,27 +348,34 @@ function refine(b: Builder, maxEdge: number, maxRounds = 24, budget = 600_000): 
       return marked.has(key) ? midpoint(b, i, j) : null;
     };
 
-    const next: number[] = [];
+    next.clear();
     for (let t = 0; t < active.length; t += 3) {
-      const a = active[t] as number;
-      const c = active[t + 1] as number;
-      const d = active[t + 2] as number;
+      const a = on[t] as number;
+      const c = on[t + 1] as number;
+      const d = on[t + 2] as number;
       emit(next, a, c, d, split(a, c), split(c, d), split(d, a));
     }
-    active = [];
-    for (let t = 0; t < next.length; t += 3) {
-      const a = next[t] as number, c = next[t + 1] as number, d = next[t + 2] as number;
-      if (long(a, c, d)) active.push(a, c, d); else done.push(a, c, d);
+    // The two streams swapped: the one just read is written next round.
+    const made = next;
+    next = active;
+    active.clear();
+    const fresh = made.data;
+    for (let t = 0; t < made.length; t += 3) {
+      const a = fresh[t] as number, c = fresh[t + 1] as number, d = fresh[t + 2] as number;
+      if (long(a, c, d)) next.push3(a, c, d); else done.push3(a, c, d);
     }
+    active = next;
+    next = made;
   }
-  b.tris.length = 0;
-  for (const v of done) b.tris.push(v);
-  for (const v of active) b.tris.push(v);
+  b.tris.clear();
+  const d0 = done.data, a0 = active.data;
+  for (let k = 0; k < done.length; k++) b.tris.push1(d0[k]!);
+  for (let k = 0; k < active.length; k++) b.tris.push1(a0[k]!);
 }
 
 /** The red/green cases: 0, 1, 2 or 3 split edges of one triangle. */
 function emit(
-  out: number[],
+  out: Stream<Uint32Array>,
   a: number,
   b: number,
   c: number,
@@ -373,26 +385,26 @@ function emit(
 ): void {
   const count = (ab !== null ? 1 : 0) + (bc !== null ? 1 : 0) + (ca !== null ? 1 : 0);
   if (count === 0) {
-    out.push(a, b, c);
+    out.push3(a, b, c);
     return;
   }
   if (count === 3) {
-    out.push(a, ab as number, ca as number);
-    out.push(ab as number, b, bc as number);
-    out.push(ca as number, bc as number, c);
-    out.push(ab as number, bc as number, ca as number);
+    out.push3(a, ab as number, ca as number);
+    out.push3(ab as number, b, bc as number);
+    out.push3(ca as number, bc as number, c);
+    out.push3(ab as number, bc as number, ca as number);
     return;
   }
   if (count === 1) {
-    if (ab !== null) out.push(a, ab, c, ab, b, c);
-    else if (bc !== null) out.push(b, bc, a, bc, c, a);
-    else out.push(c, ca as number, b, ca as number, a, b);
+    if (ab !== null) { out.push3(a, ab, c); out.push3(ab, b, c); }
+    else if (bc !== null) { out.push3(b, bc, a); out.push3(bc, c, a); }
+    else { out.push3(c, ca as number, b); out.push3(ca as number, a, b); }
     return;
   }
   // Two split edges: cut off the corner they share, then split the quad left over along its shorter diagonal
-  if (ab !== null && bc !== null) out.push(b, bc, ab, ab, bc, c, ab, c, a);
-  else if (bc !== null && ca !== null) out.push(c, ca as number, bc, bc, ca as number, a, bc, a, b);
-  else out.push(a, ab as number, ca as number, ca as number, ab as number, b, ca as number, b, c);
+  if (ab !== null && bc !== null) { out.push3(b, bc, ab); out.push3(ab, bc, c); out.push3(ab, c, a); }
+  else if (bc !== null && ca !== null) { out.push3(c, ca as number, bc); out.push3(bc, ca as number, a); out.push3(bc, a, b); }
+  else { out.push3(a, ab as number, ca as number); out.push3(ca as number, ab as number, b); out.push3(ca as number, b, c); }
 }
 
 /** Appends a ring, inserting points so no edge is longer than `step`. */
