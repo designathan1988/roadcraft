@@ -95,12 +95,12 @@ export function createMaterials(anisotropy: number): SceneMaterials {
   applyDetail(deckMaterial, { kind: 'concrete', macroTile: DECK_TILE, albedo: 0.6, normal: 0.8, macroBlur: 1 }, anisotropy);
   applyDetail(parapetMaterial, { kind: 'concrete', macroTile: DECK_TILE, albedo: 0.6, normal: 0.8, macroBlur: 1 }, anisotropy);
   // The lots coloured into the street's own surfaces (`lotOverlay.ts`)
-  applyLotOverlay(asphalt, 'asphalt');
-  applyLotOverlay(asphaltRaised, 'asphalt-raised');
-  applyLotOverlay(footwayMaterial, 'footway');
-  applyLotOverlay(kerbMaterial, 'kerb');
-  applyLotOverlay(vergeMaterial, 'verge');
-  applyLotOverlay(deckMaterial, 'deck');
+  applyLotOverlay(asphalt);
+  applyLotOverlay(asphaltRaised);
+  applyLotOverlay(footwayMaterial);
+  applyLotOverlay(kerbMaterial);
+  applyLotOverlay(vergeMaterial);
+  applyLotOverlay(deckMaterial);
 
   return {
     asphalt,

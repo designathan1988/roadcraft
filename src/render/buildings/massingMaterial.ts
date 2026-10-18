@@ -117,7 +117,7 @@ if (vFacade.y > 0.0) {
   };
   material.customProgramCacheKey = () => (boxes ? 'building-massing-boxes-v2' : 'building-massing-lamps-v4');
   // A built lot's yard, coloured from afar as up close (`lotOverlay.ts`).
-  applyLotOverlay(material, 'massing', { building: true });
+  applyLotOverlay(material, { building: true });
   return material;
 }
 

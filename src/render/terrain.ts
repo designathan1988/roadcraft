@@ -441,7 +441,7 @@ function terrainMaterial(bakes: TerrainBakes, data: TerrainData, lod: TerrainLod
   // A changed program key forces three to compile this variant separately from any other standard material in the scene.
   material.customProgramCacheKey = () => (lod ? 'terrain-splat-v34-lod' : 'terrain-splat-v34');
   // The lots coloured into the land (`lotOverlay.ts`), at its world position.
-  applyLotOverlay(material, 'terrain', { world: 'vTerrainAtlas' });
+  applyLotOverlay(material, { world: 'vTerrainAtlas' });
   return material;
 }
 
