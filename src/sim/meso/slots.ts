@@ -190,6 +190,11 @@ export class Threads {
     return this.groups.values();
   }
 
+  /** `visit` called with every group, in the order they were made (`Map.prototype.forEach`): DO NOT walk them with an iterator a step, a result object a group (the meso's step, sim20a). */
+  eachGroup(visit: (group: number) => void): void {
+    this.groups.forEach(visit);
+  }
+
   /** A group's first slot (-1: none), the slot after `slot` in its group (-1: the last), how many it holds. */
   head(g: number): number {
     return g >= 0 ? this.gHead[g]! : -1;
