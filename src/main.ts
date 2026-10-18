@@ -2028,7 +2028,7 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
 
 /** Whether every tile the opening's view reaches is made (`world/reachTiles.ts`): none counted before the far trees chose once (their reach 0). */
 function openingViewMade(streamer: WorldStreamer): boolean {
-  const keys = tilesInReach(camera.x, camera.y, scene.farReach, tileOnMap);
+  const keys = tilesInReach(camera.x, camera.y, scene.farReach, tileOnMap, scene.farSees);
   return keys.length > 0 && keys.every((key) => streamer.isMade(key));
 }
 

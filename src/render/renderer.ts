@@ -21,6 +21,7 @@ import {
   PointLight,
   Group,
   Frustum,
+  Box3,
   Matrix4,
   type Material,
   Mesh,
@@ -234,6 +235,8 @@ export interface SceneHandle {
   nearDrawn(key: number): boolean;
   /** How far round the eye the far levels are drawn now (`FarTree.reachNow`; 0 before the first choice): the tiles the opening waits for. */
   readonly farReach: number;
+  /** Whether the view the far levels were last chosen in sees a square of the plan (x0, y0)-(x1, y1), from under the ground to 500 m (`farTree.ts` inView before a node lands): the tiles the opening waits for. */
+  readonly farSees: (x0: number, y0: number, x1: number, y1: number) => boolean;
   onNearDrawn: ((key: number) => void) | null;
   /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
   readonly farBuildings: FarTiles;
@@ -942,6 +945,8 @@ export function createSceneRenderer(
   /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
   const detailFrustum = new Frustum();
   const detailProjection = new Matrix4();
+  /** A square of the plan as `farSees` tests it. */
+  const seenBox = new Box3();
   const crowdProjection = new Matrix4();
   const crowdBounds = new Sphere(new Vector3(), 8);
   const pedestrianVisible = (x: number, y: number, height: number): boolean => {
@@ -2471,6 +2476,12 @@ export function createSceneRenderer(
     },
     get farReach() {
       return farRoads.reachNow;
+    },
+    farSees(x0, y0, x1, y1) {
+      // Three's axes: the plan's y is -z.
+      seenBox.min.set(x0, -m(50), -y1);
+      seenBox.max.set(x1, m(500), -y0);
+      return detailFrustum.intersectsBox(seenBox);
     },
     get onNearDrawn() { return onNearDrawn; },
     set onNearDrawn(fn) { onNearDrawn = fn; },

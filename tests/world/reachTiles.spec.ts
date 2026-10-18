@@ -13,6 +13,14 @@ describe('the tiles the opening view reaches', () => {
     expect(new Set(counts).size).toBe(1);
   });
 
+  it('are only those the view sees: none wholly behind the camera', () => {
+    // A view looking north from the origin: it sees nothing wholly south of it.
+    const all = tilesInReach(0, 0, 5 * TILE, mapOf(20));
+    const keys = tilesInReach(0, 0, 5 * TILE, mapOf(20), (_x0, _y0, _x1, y1) => y1 > 0);
+    expect(keys.length).toBe(66);
+    expect(keys.every((key) => all.includes(key))).toBe(true);
+  });
+
   it('stop at the map\'s edge, and are none with no reach yet', () => {
     expect(tilesInReach(0, 0, 5 * TILE, mapOf(10)).length).toBe(100);
     expect(tilesInReach(0, 0, 0, mapOf(10))).toEqual([]);
