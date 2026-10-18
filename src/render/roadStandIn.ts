@@ -5,6 +5,7 @@ import type { Network } from '@world/network';
 import { Level } from '@world/roadTypes';
 import { tileKeyAt } from '@world/tiles';
 import { pullTowardEye } from './depthConvention';
+import { STREET_MEANS } from './farRoadTiles';
 
 /** A ROAD JUST BUILT, DRAWN ON THE PAGE IN THE NEXT FRAME UNTIL ITS TILE'S NEAR ROADS COME BACK FROM THEIR WORKER (`farRoads.ts`): its casing and its carriageway, and the junctions at its ends, from the network the commit solved; let go tile by tile as each tile's bake is drawn
  *  - DO NOT leave a road built invisible until the worker answers: the edited tile's bake is ~0.6 s on a worker for a dense tile, after a worker is free and before its upload (over 2 s, the player's measure); the coarse in place until the fine comes, as every level does. */
@@ -15,13 +16,9 @@ export interface StandInHeights {
   at(x: number, y: number): number;
 }
 
-/** The casing's tone and the carriageway's, sRGB: the footway's paving and the asphalt as the far level paints them. */
-const CASING = 0x9a978f;
-const ASPHALT = 0x45474b;
-
-/** One material each, made once: a plain standard material (its program the same as every untextured one), pulled over the ground it lies on. */
-function standInMaterial(colour: number, steps: number): MeshStandardMaterial {
-  const material = new MeshStandardMaterial({ color: new Color(colour), roughness: 0.9, metalness: 0 });
+/** One material each, made once: the mean of the street's texture (`STREET_MEANS`, linear, as the far level paints it; a light slab stood out over the asphalt), a plain standard material (its program the same as every untextured one), pulled over the ground it lies on. */
+function standInMaterial(mean: readonly [number, number, number], steps: number): MeshStandardMaterial {
+  const material = new MeshStandardMaterial({ color: new Color().setRGB(mean[0], mean[1], mean[2]), roughness: 0.9, metalness: 0 });
   material.name = 'road-stand-in';
   pullTowardEye(material, 1, steps);
   return material;
@@ -60,8 +57,8 @@ function meshOf(parts: { positions: number[]; indices: number[] }, material: Mes
 /** THE ROADS JUST BUILT, BY THE TILE THEIR MIDDLE IS IN, until each tile's near roads are drawn. */
 export class RoadStandIn {
   readonly group = new Group();
-  private readonly casing = standInMaterial(CASING, 2);
-  private readonly asphalt = standInMaterial(ASPHALT, 3);
+  private readonly casing = standInMaterial(STREET_MEANS.footway, 2);
+  private readonly asphalt = standInMaterial(STREET_MEANS.asphalt, 3);
   /** Each tile's stand-in meshes. */
   private readonly byTile = new Map<number, Mesh[]>();
   /** The tiles given a stand-in this frame: not looked at for letting go before the near roads were asked of the edit (`settle`). */
@@ -86,8 +83,10 @@ export class RoadStandIn {
     this.fresh.clear();
   }
 
-  /** The roads `segments` drawn now (the commit's network solved): their outlines and the junctions at their ends, each under the tile its middle is in. */
+  /** The roads `segments` drawn now (the commit's network solved): their outlines, and the junctions at their ends whose every road is one of them, each under the tile its middle is in.
+   *  - DO NOT draw a road or a junction that was there before (a street the new one meets, split at the new junction): its near roads are drawn, and the stand-in's flat tone covered them until the bake came (via2 37/40). */
   show(net: Network, heights: StandInHeights, segments: Iterable<SegmentId>): void {
+    const only = new Set(segments);
     const byTile = new Map<number, { casing: { positions: number[]; indices: number[] }; asphalt: { positions: number[]; indices: number[] } }>();
     const partsOf = (tile: number) => {
       let parts = byTile.get(tile);
@@ -95,7 +94,7 @@ export class RoadStandIn {
       return parts;
     };
     const nodes = new Set<NodeId>();
-    for (const id of segments) {
+    for (const id of only) {
       const ribbon = net.ribbons.get(id);
       const segment = net.doc.segment(id);
       if (!ribbon || !segment) continue;
@@ -111,7 +110,7 @@ export class RoadStandIn {
     for (const id of nodes) {
       const levels = net.junctions.get(id);
       const node = net.doc.node(id);
-      if (!levels || !node) continue;
+      if (!levels || !node || !node.incident.every((s) => only.has(s))) continue;
       const parts = partsOf(tileKeyAt(node.x, node.y));
       const height = (x: number, y: number): number => heights.at(x, y);
       const casing = levels.get(Level.Casing), asphalt = levels.get(Level.Asphalt);

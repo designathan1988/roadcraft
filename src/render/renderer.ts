@@ -39,7 +39,7 @@ import {
 } from 'three';
 
 import { Digest } from '@core/digest';
-import { type Change, type ChangeJournal, type ChangeKind, type ChangeRect, type DerivedChangeKind, isStreaming } from '@world/changes';
+import type { Change, ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind } from '@world/changes';
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
@@ -662,7 +662,8 @@ export function createSceneRenderer(
   /** A road just built drawn at once (`roadStandIn.ts`) until its tile's near roads come back from their worker: the diary's road edits read for it, the tiles' loads left out. */
   const roadStandIn = new RoadStandIn();
   world.add(roadStandIn.group);
-  const roadsBuiltRead = new JournalCursor(['roads'], true);
+  /** The roads the tool just laid (`flashRoads`: the player's road alone, never the street it meets split at the new junction), stood in once their heights are solved. */
+  const pendingStandIn: SegmentId[] = [];
   /** The streamed world's near products per tile, chosen by the view and baked in workers from the store (`nearTiles.ts`): the poles and wires (`poleTiles.ts`). */
   const nearTiles = new NearTiles();
   nearTiles.add(poleProduct(sceneryKit, world));
@@ -2403,6 +2404,7 @@ export function createSceneRenderer(
     flashRoads(ids) {
       // Built in the next frame, once the new roads' heights are solved (`draw`).
       pendingRoadFlash.push(...ids);
+      pendingStandIn.push(...ids);
       onAssetsReady();
     },
     setGrid(on) {
@@ -2905,10 +2907,9 @@ export function createSceneRenderer(
         // DO NOT leave a road just built invisible until its tile's near roads come back (over 2 s, the player): drawn now from the network the commit solved, let go once its tile's edit is drawn or no near roads are wanted there (`farTree.ts` standInDone).
         for (const tile of roadStandIn.settled()) if (farRoads.standInDone(tile)) roadStandIn.drop(tile);
         roadStandIn.settle();
-        if (activeAt !== null && elevation && net.revision === net.doc.revision) {
-          const built = roadsBuiltRead.read(net.doc.changes);
-          if (built === null) roadStandIn.clear();
-          else for (const entry of built) if (!isStreaming(entry) && entry.segments?.length) roadStandIn.show(net, elevation, entry.segments as readonly SegmentId[]);
+        if (pendingStandIn.length && elevation && net.revision === net.doc.revision) {
+          const laid = pendingStandIn.splice(0);
+          if (activeAt !== null) roadStandIn.show(net, elevation, laid);
         }
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;
