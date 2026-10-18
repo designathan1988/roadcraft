@@ -40,6 +40,9 @@ const browser = electron ? await desktopBrowser() : await chromium.launch({ chan
 /** The desktop app as a browser of one page (Playwright `_electron`): its window the page; closing it ends the app. */
 async function desktopBrowser() {
   const app = await _electron.launch({ args: [join(resolve('.'), 'desktop', 'main.cjs')], env: { ...process.env, ROADCRAFT_LOOK: '1', ROADCRAFT_NO_STEAM: '1' } });
+  // The shell's own lines (each process's memory, `main.cjs` LOOK), as they come.
+  app.process().stdout?.on('data', (chunk) => { for (const line of String(chunk).split('
+')) if (line.startsWith('[metrics]')) console.log(`${new Date().toISOString().slice(11, 19)} ${line} MB`); });
   const window = await app.firstWindow();
   window.desktop = true;
   // A dialog of the page's (an alert, a confirm): said, then dismissed, never left open under the run.

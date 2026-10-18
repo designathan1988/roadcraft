@@ -247,6 +247,11 @@ app.whenReady().then(() => {
   });
   serveIpc();
   createWindow();
+  // A run of `look.mjs --electron`: every process's memory each 5 s, the job processes by name (Electron `app.getAppMetrics`: working set and private bytes, KB).
+  if (LOOK) setInterval(() => {
+    const rows = app.getAppMetrics().map((m) => `${m.serviceName || m.name || m.type}=${Math.round(m.memory.workingSetSize / 1024)}/${Math.round((m.memory.privateBytes ?? 0) / 1024)}`);
+    console.log(`[metrics] ${rows.join(' ')}`);
+  }, 5000).unref();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
