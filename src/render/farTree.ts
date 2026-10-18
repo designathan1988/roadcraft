@@ -86,6 +86,11 @@ export class FarTree<P> implements FarTiles {
   }
 
   /** Nodes the view would draw IN THE FRUSTUM whose meshes have not come: the opening waits for these (`renderer.ts` reveal); those beside or behind the camera are asked and drawn all the same, never waited for. */
+  /** How far round the eye the tree draws now (`viewReach`, set by `choose`; 0 before it): the tiles the opening's view waits for (`main.ts`). */
+  get reachNow(): number {
+    return this.reach;
+  }
+
   get waiting(): number {
     return this.wanting;
   }

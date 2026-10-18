@@ -232,6 +232,8 @@ export interface SceneHandle {
   tileLoaded(key: number, rect: ChangeRect, revision: number): void;
   tileLetGo(key: number): void;
   nearDrawn(key: number): boolean;
+  /** How far round the eye the far levels are drawn now (`FarTree.reachNow`; 0 before the first choice): the tiles the opening waits for. */
+  readonly farReach: number;
   onNearDrawn: ((key: number) => void) | null;
   /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
   readonly farBuildings: FarTiles;
@@ -2466,6 +2468,9 @@ export function createSceneRenderer(
     },
     nearDrawn(key) {
       return !nearPending.has(key);
+    },
+    get farReach() {
+      return farRoads.reachNow;
     },
     get onNearDrawn() { return onNearDrawn; },
     set onNearDrawn(fn) { onNearDrawn = fn; },

@@ -216,6 +216,11 @@ export class WorldStreamer {
     return this.known.size + failed;
   }
 
+  /** Whether a tile is made (in the store, or failed and told): what the opening's view waits for (`main.ts` holdOpening, `world/reachTiles.ts`). */
+  isMade(key: number): boolean {
+    return this.known.has(key) || this.failedAt.has(key);
+  }
+
   /** Whether every tile the camera wants is in the document (the opening shows the town once it is). */
   get settled(): boolean {
     // A tile that failed does not hold the opening (told, and asked again later).

@@ -5,6 +5,7 @@ import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool
 import { WorldStreamer, mapTilesFrom } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
+import { tilesInReach } from '@world/reachTiles';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
 import { mountProfilerHud } from '@ui/profilerHud';
@@ -2014,7 +2015,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   streamer.rush = true;
   // Every worker makes tiles while the map is made (the other kinds' work is light then): let go once it is (`frame`).
   generator.setAside(true);
-  scene.holdOpening(() => doc.loadedTiles.size > 0 && streamer.mapMade >= streamer.mapTotal);
+  // DO NOT wait for every tile of the map (the opening grew with it: 63 s at 10 km, 183 s at 20 km, the tiles' growth 3/4 of it; wprof20, 2026-10-17): the tiles the opening's view reaches (`world/reachTiles.ts`, the far trees' reach), the rest made after it, nearest first (`streamer.rush` and the generator's lanes until `mapMade`).
+  scene.holdOpening(() => doc.loadedTiles.size > 0 && (streamer.mapMade >= streamer.mapTotal || openingViewMade(streamer)));
   // A new world opens over its first city, at the origin (`cityGen/wholeMap.ts`); one opened again where the camera was left.
   if (fresh) { camera.x = 0; camera.y = 0; view.moveTo({ x: 0, y: 0 }); }
   streamer.focus(camera.x, camera.y);
@@ -2023,6 +2025,12 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   if (refused) throw new Error(refused);
 }
 
+
+/** Whether every tile the opening's view reaches is made (`world/reachTiles.ts`): none counted before the far trees chose once (their reach 0). */
+function openingViewMade(streamer: WorldStreamer): boolean {
+  const keys = tilesInReach(camera.x, camera.y, scene.farReach, tileOnMap);
+  return keys.length > 0 && keys.every((key) => streamer.isMade(key));
+}
 
 /** THE GROWTH (`editor/growthFeed.ts`): the generated city's buildings and the zones' (`growZones`), one at a time, each designed in the growth's worker (`growthPool.ts`, `growth.worker.ts`) and written here when its answer comes - outside the frame, in the worker's message - checked again first when the document moved meanwhile. */
 const growthPool = new GrowthPool((answer) => growthAnswered(answer), () => growth.restart());
