@@ -191,6 +191,8 @@ export interface TerrainSurface {
   waiting?(): boolean;
   /** The vegetation the quality tier allows (`quality.ts` vegetation, as the near trees' budget reads it) */
   setVegetation?(amount: number): void;
+  /** The plates the quality tier holds in full (`quality.ts`): drawn round the view at most, and made but not drawn kept at most (`flatAtlas.ts`; 9 and 9 unless a tier says fewer). */
+  setPlates?(near: number, kept: number): void;
   /** The woods' density but the ecosystem's share per cell, made off the page with the plate's first build */
   woodsBase?(): Float32Array | null;
   /** Moves whenever the woods' base changes (a stamp of the land redoes its cells). */
