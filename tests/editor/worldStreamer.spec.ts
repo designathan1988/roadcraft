@@ -695,4 +695,24 @@ describe('an edited tile', () => {
     expect(new Set(bays).size).toBe(bays.length);
     expect(bays.slice(before).every((key) => near(key, -5, -5))).toBe(true);
   });
+
+  it('closed (another world opened), asks nothing more when its calls under way settle, and tells nothing', async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const written: number[] = [];
+    const streamer = new WorldStreamer(doc, store, { written: (key) => written.push(key) }, 4);
+    streamer.rush = true;
+    streamer.focus(0, 0);
+    for (let frame = 0; frame < 30 && store.ensures.length === 0; frame++) { await turns(1); streamer.focus(0, 0); streamer.apply(frame); }
+    const asked = store.ensures.length;
+    expect(asked).toBeGreaterThan(0);
+    const told = written.length;
+    streamer.close();
+    // The tiles under way come: none asked after them, none told.
+    for (const key of [...store.ensures]) store.finish(key);
+    await turns(5);
+    expect(store.ensures.length).toBe(asked);
+    expect(written.length).toBe(told);
+  });
 });
+

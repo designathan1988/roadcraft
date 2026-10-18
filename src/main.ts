@@ -2061,6 +2061,8 @@ function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
   if (!open) return replace();
   // Posted now, from the records the page holds; nothing streams in or out after.
   const written = open.streamer.flush();
+  // Nothing asked or told by it any more: its calls under way settle into nothing (`WorldStreamer.close`).
+  open.streamer.close();
   open.streamer.aheadQuiet = null;
   streamed = null;
   void written.finally(() => open.release());

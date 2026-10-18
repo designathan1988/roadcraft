@@ -112,7 +112,7 @@ export class WorldStreamer {
   private worldPosting = false;
 
   /** `inFlight`: how many tiles are asked of the store at once (the generator's lanes, `tileGenerator.ts` `lanesWanted`: more while the map is made), read as they are asked. */
-  constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private readonly tell: StreamerEvents = {},
+  constructor(private readonly doc: RoadDoc, private readonly source: TileSource, private tell: StreamerEvents = {},
     private readonly lanes: number | (() => number) = IN_FLIGHT) {}
 
   private get inFlight(): number {
@@ -212,6 +212,16 @@ export class WorldStreamer {
   /** Whether the workers' queue is quiet, and a listener told when it goes so (`jobPool.ts` jobsQuiet, onJobsQuiet): past the ring round the camera, a tile is made ahead only then. None: always. */
   aheadQuiet: { readonly now: () => boolean; readonly on: (listener: () => void) => () => void } | null = null;
   private quietWait: (() => void) | null = null;
+  /** Closed (`close`): another world opened or the map replaced; nothing more asked of the store, nothing told. */
+  private closed = false;
+
+  /** THE WORLD CLOSED (`main.ts` afterStreamedWorld, "new map" and "open"): DO NOT let a call still under way ask again when it settles (a bake's or bays' `finally`, the manifest read): the generator let go was started again by it, the old world's tiles made beside the new one's opening. Its writes posted (`flush`) still settle; nothing is told any more (the far levels and the simulation are the next world's). */
+  close(): void {
+    this.closed = true;
+    this.tell = {};
+    this.quietWait?.();
+    this.quietWait = null;
+  }
 
   /** The map's tiles there are, and those made (in the store, or failed and told): the opening waits for all (`main.ts` holdOpening). */
   get mapTotal(): number {
@@ -380,6 +390,7 @@ export class WorldStreamer {
 
   /** The nearest wanted tiles not here nor asked: asked of the store, a few at a time; then the tiles ahead made in the store, one at a time. */
   private ask(): void {
+    if (this.closed) return;
     for (const key of [...this.wanted, ...this.held]) {
       if (this.asked.size >= this.inFlight) break;
       if (this.doc.hasTile(key) || this.asked.has(key) || this.ready.has(key)) continue;
@@ -410,6 +421,7 @@ export class WorldStreamer {
   /** DO NOT leave every tile's bays to its first coming into the region (1-2 s a dense tile as the camera moves): once the map is made (`mapMade`), the generator's lanes left idle bake them, from the camera's tile outwards, one lane short of all (a tile the camera moves onto goes first). */
   /** DO NOT bake every tile of the map's bays (65-161 ms a tile, 100 tiles at 10 km, 2,500 at 50): only those within `BAYS_RADIUS` of the camera's tile, the same count on any map. */
   private askBays(): void {
+    if (this.closed) return;
     const add = this.source.addBays;
     if (!add || this.rush || this.mapMade < this.mapTotal || this.asked.size > 0 || this.ready.size > 0) return;
     // Past the tiles whose bays are asked or that are on the page (theirs come with them, `cityTile.worker.ts` addBays): never walked again.
@@ -429,6 +441,7 @@ export class WorldStreamer {
 
   /** DO NOT make tiles ahead while the region waits for its own: once every tile it wants is in, the ring it loads next (several at once), then every other tile of the map nearest first (the far levels draw them, `written`). */
   private askAhead(): void {
+    if (this.closed) return;
     // The opening's view made and its town not shown yet (`main.ts`): the workers go to what the curtain waits for, the rest of the map after.
     if (this.aheadHeld) return;
     // The map being made (`rush`): every lane the region's tiles leave free, at once; after, once the region is in.
