@@ -200,6 +200,8 @@ interface Host {
   laneWork: number;
   /** Told when it fails: the lanes it serves for another thread (`jobChannel`), whose ports say nothing of it. */
   readonly channelLost: (() => void)[];
+  /** Let go by its last lane (`retireJobPort`): no queued job given to it, ended once it holds no lane, job nor lane message. */
+  retiring?: boolean;
 }
 
 /** The pool of this thread: its workers (made as work waits, `grow`), its lanes by port, its queue and the point the view looks at. */
@@ -257,7 +259,7 @@ function grow(long: boolean): Host | null {
     const port = system.ports.get(event.data.port);
     if (port) {
       // A lane's answer: its worker has one message less before a queued job (a lane posting without answer only ranks its worker lower).
-      if (port.answered()) dispatch();
+      if (port.answered()) { endIfRetired(host); dispatch(); }
       if (event.data.error !== undefined) port.onerror?.(new ErrorEvent('error', { message: event.data.error }));
       else port.onmessage?.(new MessageEvent('message', { data: event.data.data }));
       return;
@@ -268,6 +270,7 @@ function grow(long: boolean): Host | null {
     host.job = null;
     if (event.data.error !== undefined) system.queue.fail(job, event.data.error);
     else system.queue.answer(job, event.data.data);
+    endIfRetired(host);
     dispatch();
     toldQuiet();
   };
@@ -306,7 +309,7 @@ function queuePort(host: Host, service: JobService): number {
 function hostFor(service: JobService, priority = 0): Host | null {
   let cold: Host | null = null, idleLong: Host | null = null, warmBusy: Host | null = null, coldBusy: Host | null = null;
   for (const host of system.workers) {
-    if (host.job || host.failed) continue;
+    if (host.job || host.failed || host.retiring) continue;
     if (keptClear(host) && system.workers.length > 1) continue;
     if (host.long && system.workers.length > 1) { if (host.laneWork === 0 && (!system.tilesWaiting || priority < 0)) idleLong ??= host; continue; }
     const warm = host.queuePorts.has(service);
@@ -401,7 +404,7 @@ function place(service: JobService): Host {
   let best: Host | null = null;
   let bestScore = Infinity;
   for (const w of system.workers) {
-    if (w.long !== long) continue;
+    if (w.long !== long || w.retiring) continue;
     // Lanes of a kind on different workers, then the least loaded; the kept-clear services' worker kept to them, on a worker of their own where there is one.
     // The kept-clear lanes together on their worker (never a worker each: the pool's workers are the jobs').
     const clear = KEPT_CLEAR.includes(service);
@@ -414,7 +417,7 @@ function place(service: JobService): Host {
   const own = best !== null && KEPT_CLEAR.includes(service) && keptClear(best) && otherKinds(best) === 0;
   if (best === null || (bestScore > 0 && !own)) best = grow(long) ?? best;
   // A pool of one worker: the two sides share it.
-  if (!best) best = system.workers.reduce<Host | null>((a, w) => (a === null || w.ports < a.ports ? w : a), null);
+  if (!best) best = system.workers.filter((w) => !w.retiring).reduce<Host | null>((a, w) => (a === null || w.ports < a.ports ? w : a), null);
   if (!best) throw new Error('no job worker could be made');
   return best;
 }
@@ -464,6 +467,30 @@ export class JobPort {
     const left = (this.host.services.get(this.service) ?? 1) - 1;
     if (left > 0) this.host.services.set(this.service, left); else this.host.services.delete(this.service);
   }
+
+  /** The lane let go and its worker with it (`retireJobPort`). */
+  retire(): void {
+    this.host.retiring = true;
+    this.terminate();
+    endIfRetired(this.host);
+    dispatch();
+  }
+}
+
+/** A WORKER LET GO WHOLE (its heap back to the V8 cage the page's workers share): its lane closed and the worker ended once nothing runs on it; `grow` makes another as work comes. For the service that knows when a worker grew big (`tileGenerator.ts`, after a tile): DO NOT end a worker's isolate under its lanes or a job - it is ended only once its last port, its job and its lanes' messages are gone. */
+export function retireJobPort(port: Worker): void {
+  const lane = port as unknown as JobPort;
+  if (!(lane instanceof JobPort)) { port.terminate(); return; }
+  lane.retire();
+}
+
+/** Ends a worker let go (`retiring`) once it holds no lane, job nor lane message. */
+function endIfRetired(host: Host): void {
+  if (!host.retiring || host.ports > 0 || host.job || host.laneWork > 0) return;
+  const at = system.workers.indexOf(host);
+  if (at < 0) return;
+  system.workers.splice(at, 1);
+  host.worker.terminate();
 }
 
 /** A port of the pool for one of `service`'s lanes (`jobLanes` lanes at most), typed as the `Worker` its pool was written for. */

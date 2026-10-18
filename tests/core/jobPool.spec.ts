@@ -10,7 +10,8 @@ class FakeWorker {
   readonly asked: ToJob[] = [];
   constructor() { FakeWorker.made.push(this); }
   postMessage(message: ToJob): void { this.asked.push(message); }
-  terminate(): void { /* the pool's workers outlive a lane */ }
+  ended = false;
+  terminate(): void { this.ended = true; }
 }
 
 /** Which fake worker a port posts to. */
