@@ -622,10 +622,12 @@ export function createBuildingLayer(): BuildingLayer {
           for (const cell of dirty) { askMass(cell, groundAt, groundKey, pavedAt); pendingCells.add(cell); }
           levels.flush(env);
           chooseNow();
+          // The buildings gone from the document: their floors let go after the loop (`cellPool.ts` `forgetFloors`).
+          const gone = new Set<string>();
           for (const id of ids) {
             const b = doc.buildings.get(id);
             if (b) cover.set(b);
-            else { cover.remove(id); dropKept(id); sent.delete(String(id)); groundDigests.delete(id); }
+            else { cover.remove(id); dropKept(id); sent.delete(String(id)); groundDigests.delete(id); gone.add(String(id)); }
             const shown = b && town.has(id) ? b : undefined;
             if (!shown) { lastShown.delete(id); flagsFor(id); signatures.remove(id); continue; }
             lastShown.set(id, shown);
@@ -634,6 +636,7 @@ export function createBuildingLayer(): BuildingLayer {
             if (!k && fliesFlag(shown)) backlog.push(shown);
             signatures.set(shown, k?.summary.signatureFloor ?? signatureFloorOf(shown, naturalAt, pavedAt));
           }
+          if (gone.size) pool.forgetFloors((key) => !gone.has(key.split('|')[0]!));
         } else {
           // @rebuild The whole town filed again (a first look, or a diary that cannot say what changed).
           if (stored) {
@@ -644,6 +647,8 @@ export function createBuildingLayer(): BuildingLayer {
           for (const id of [...kept.keys()]) if (!doc.buildings.has(id)) dropKept(id);
           for (const [k, b] of sent) if (!doc.buildings.has(b.id) || (k.includes('|') && !cutaway)) sent.delete(k);
           for (const id of groundDigests.keys()) if (!doc.buildings.has(id)) groundDigests.delete(id);
+          // The floors measured by the workers (`cellPool.ts`), of the buildings still in the document only.
+          pool.forgetFloors((key) => doc.buildings.has(Number(key.split('|')[0]) as BuildingId));
           const solid = shown.filter(inCell);
           activeFlipped.length = 0;
           town.reset(solid);

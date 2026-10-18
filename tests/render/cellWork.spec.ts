@@ -166,6 +166,11 @@ describe('a cell put together off the page', () => {
     expect(reads).toBeGreaterThan(0);
     // Without the paving, a floor measured on it is not handed.
     for (const e of entries) expect(pool.floorKnown(e, false)).toBeUndefined();
+    // Half the buildings gone from the document (a tile let go as the eye walked on): their floors let go, the others' kept.
+    const staying = new Set(entries.filter((_, i) => i % 2 === 0).map((e) => e.key));
+    pool.forgetFloors((key) => staying.has(key));
+    // (The floors kept are those measured last, on the other ground.)
+    for (const e of moved) expect(pool.floorKnown(e, true) === undefined, e.key).toBe(!staying.has(e.key));
   });
 
   for (const paved of [pavedAt, undefined]) {
