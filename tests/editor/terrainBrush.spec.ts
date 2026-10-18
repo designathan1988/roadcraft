@@ -57,6 +57,17 @@ describe('the terrain brush', () => {
     expect(doc.terrainStamps.length).toBe(held);
   });
 
+  it('cuts the trees standing where a river is carved, and clears the woods there', () => {
+    const { brush: b, doc } = brush('river');
+    doc.plantTrees([{ kind: 'oak', x: 60, y: 0, height: 8 } as never, { kind: 'oak', x: 60, y: 300, height: 8 } as never]);
+    b.begin(1, { x: 0, y: 0 });
+    b.paint({ x: 120, y: 0 });
+    b.end();
+    expect(doc.terrainStamps.every((st) => st.mode === 'river')).toBe(true);
+    expect(doc.trees.map((t) => t.y)).toEqual([300]);
+    expect(doc.treeClearings.length).toBeGreaterThan(0);
+  });
+
   it('paints the ground without moving the land', () => {
     const { brush: b, doc } = brush('paint');
     b.begin(1, { x: 0, y: 0 });

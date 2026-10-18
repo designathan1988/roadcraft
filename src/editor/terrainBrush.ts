@@ -131,6 +131,8 @@ function stampTerrain(doc: RoadDoc, at: Vec2, level: number, stroke: number | nu
   });
   // The landform's rock, under the whole dab: a little wider than the dab, so the rock reaches the foot of its cliff.
   if (!stamp) return false;
+  // A river's water fills its whole reach: the trees standing there go with the ground it carves (a clearing, the woods' own trees too).
+  if (mode === 'river') doc.cutTrees(at.x, at.y, s.radius);
   if (landform) doc.addPaintDab({ kind: landform.rock, x: at.x, y: at.y, radius: s.radius * 1.15, strength: 1 });
   return true;
 }
