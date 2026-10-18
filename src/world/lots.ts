@@ -1049,6 +1049,41 @@ function pavingNear(net: Network, box: ChangeRect, grow = 0): MultiPoly | null {
 /** Room round a lot's box the paving is read over: past the clearance, so the cut inside the box is the whole map's. */
 const PAVING_MARGIN = m(2);
 
+/** Area a road takes off a lot under which it counts as crossing it: less is the paving's own outline round the lot, not a road through it. */
+const CROSSED_AREA = m(1) * m(1);
+
+/** A ROAD EDIT CUTS THE LOTS IT CROSSES (`main.ts` mutateBuilt, beside the buildings it razes): each lot the changed paving (`rects`; null, every lot) takes land from is replaced by the pieces of it left on land, each a lot of its zone where it is big enough, the rest let go - DO NOT leave a lot whole over a new road (its zone painted over the asphalt and nothing grown there, 2026-10-18). In the edit's own undo step. The lots cut. */
+export function cutLotsByRoads(doc: RoadDoc, net: Network, rects: readonly ChangeRect[] | null): number {
+  if (!net.ribbons.size || rects?.length === 0) return 0;
+  const seen = new Set<number>();
+  const lots = rects === null ? [...doc.lotStore.all()] : rects.flatMap((r) => doc.lotsIn(r));
+  let cut = 0;
+  for (const lot of lots) {
+    if (seen.has(lot.id)) continue;
+    seen.add(lot.id);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of lot.corners) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+    const paving = pavingNear(net, [x0 - PAVING_MARGIN, y0 - PAVING_MARGIN, x1 + PAVING_MARGIN, y1 + PAVING_MARGIN]);
+    if (!paving?.length) continue;
+    const pieces: Vec2[][] = [];
+    let left = 0;
+    for (const poly of difference([[lot.corners.map((p) => [p.x, p.y])]], paving)) {
+      const ring = (poly[0] ?? []).map(([x, y]) => ({ x: x!, y: y! }));
+      if (ring.length < 3) continue;
+      const area = Math.abs(lotArea({ corners: ring }));
+      left += area;
+      if (area >= MIN_LOT * MIN_LOT / 2) pieces.push(ring);
+    }
+    // The paving meets the lot's outline only: not crossed.
+    if (Math.abs(lotArea(lot)) - left < CROSSED_AREA) continue;
+    const front: [Vec2, Vec2] = [lot.corners[0]!, lot.corners[1]!];
+    const made = pieces.map((piece) => ({ corners: facingCorners(withFront(piece, front)), ...(lot.use ? { use: lot.use, density: lot.density ?? 'low' as const } : {}) }));
+    doc.lotStore.apply({ remove: [lot.id], add: made }, 'lot cut by a road');
+    cut++;
+  }
+  return cut;
+}
+
 /** A lot drawn over the street, cut back to the land: what falls on the paving is taken off, so the lot */
 export function onLand(net: Network, points: readonly Vec2[], square = true, clearance = 0): Vec2[] | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;

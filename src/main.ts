@@ -31,6 +31,7 @@ import { type Vec2, dist } from '@core/vec2';
 import { clamp } from '@core/scalar';
 import { flattenSegment } from '@core/bezier';
 import { RoadDoc, type JunctionControl, type RecordPart } from '@world/doc';
+import { cutLotsByRoads } from '@world/lots';
 import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from '@world/changes';
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
@@ -828,6 +829,9 @@ function mutateBuilt(fn: () => boolean): boolean {
     if (net.revision !== doc.revision) net.rebuild();
     // A road over a building demolishes it (where the network changed only).
     buildings.afterRoadEdit(roadsBefore);
+    // And cuts the lots it crosses: the pieces left on land, each a lot of its zone (`world/lots.ts` cutLotsByRoads).
+    const roadDelta = net.changesSince(roadsBefore);
+    cutLotsByRoads(doc, net, roadDelta === null ? null : roadDelta.rects);
     // And nothing stands in a turning circle's carriageway (V8): what stood on a road end's footway goes.
     clearBulbs(doc, net);
   }
