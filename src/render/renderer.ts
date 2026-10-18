@@ -401,18 +401,8 @@ export function createSceneRenderer(
 ): SceneHandle {
   /** Something landed or asked for a frame since the last shadow pass: the casters kept still in the sun's stores may have changed (`ShadowPassInput.still`). */
   let castersStirred = true;
-  // TEMPORARY (DEV only, to be taken out): each shadow pass's stillness and what broke it (`window.__stillLog`).
-  const stillLog: { at: number; view: boolean; scale: boolean; stirred: boolean; by: string[] }[] = [];
-  if (import.meta.env.DEV) Object.assign(window, { __stillLog: stillLog });
-  // TEMPORARY (DEV only, to be taken out): what stirred the casters this frame, for `window.__stillLog`.
-  const stirredBy = new Map<string, number>();
-  const stir = (by: () => string): void => {
-    castersStirred = true;
-    if (!import.meta.env.DEV) return;
-    const key = by();
-    stirredBy.set(key, (stirredBy.get(key) ?? 0) + 1);
-  };
-  const onAssetsReady = (): void => { stir(() => `assets ${new Error().stack?.split(String.fromCharCode(10))[3]?.trim().slice(0, 90) ?? ''}`); askDraw(); };
+  const stir = (): void => { castersStirred = true; };
+  const onAssetsReady = (): void => { stir(); askDraw(); };
   // A plate's ecosystem read off the page (`ecologyPool.ts`) is drawn as it comes back.
   onEcologyRead(onAssetsReady);
   /** The shadow map is drawn only when it can have changed. */
@@ -502,13 +492,13 @@ export function createSceneRenderer(
   // DO NOT stir the sun's stores for what comes or goes under a mover (people, vehicles, trains): never in a store, drawn over it every frame (`sunCascades.ts` movers); people walking into view stirred them every frame of a still view (`__stillLog`, 2026-10-17).
   const onChildAdded = (event: { child: Object3D; target?: Object3D }): void => {
     const casts = !inMover(event.target);
-    if (casts) stir(() => `added to ${event.target?.name || '?'}: ${event.child.name || event.child.type}`);
+    if (casts) stir();
     watchShadowDepth(event.child);
     // Out of the door into the drawn layers: a caster from now on (`uploads.ts` gateUntilBuilt).
-    gateUntilBuilt(event.child, casts ? () => stir(() => `opened: ${event.child.name || event.child.type}`) : undefined);
+    gateUntilBuilt(event.child, casts ? stir : undefined);
   };
   const onChildRemoved = (event: { child: Object3D; target?: Object3D }): void => {
-    if (!inMover(event.target)) stir(() => `removed from ${event.target?.name || '?'}: ${event.child.name || event.child.type}`);
+    if (!inMover(event.target)) stir();
     event.child.traverse((o) => noteSway(o, false));
   };
   /** The roots of what moves (`environment.setMovers`): what is under them is drawn over the stores, never kept in them. */
@@ -3119,11 +3109,6 @@ export function createSceneRenderer(
         const scaleStill = shadowScale === buildings.frame.scale;
         shadowScale = buildings.frame.scale;
         const still = viewStill && scaleStill && !castersStirred;
-        if (import.meta.env.DEV) {
-          stillLog.push({ at: Math.round(performance.now()), view: viewStill, scale: scaleStill, stirred: castersStirred, by: [...stirredBy].map(([k, n]) => `${n}x ${k}`).slice(0, 6) });
-          if (stillLog.length > 4000) stillLog.splice(0, 1000);
-          stirredBy.clear();
-        }
         castersStirred = false;
         if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), still })) {
           renderer.shadowMap.needsUpdate = true;
