@@ -78,9 +78,50 @@ export function fileParts(key: string, details: readonly (readonly [string, Cell
   return { bands };
 }
 
+/** Sub-cell `m`'s instances of a kind banded (`bands`), each band's count and largest scales in `perBand`; the band they all are (-1: mixed). */
+/** DO NOT loop over a sub-cell's instances inside `fileKind`'s loop of sub-cells: entered on the stack (OSR) for the inner loop, its code left at each sub-cell's end (119 times a job), the rest run unoptimised. */
+function bandSubCell(e: Float32Array, count: number, m: number, bands: Uint8Array, perBand: Map<number, { counts: Uint32Array; scale: Float32Array }>, screen: PartBanding): number {
+  const first = screen.first;
+  let only = -2, lastBand = -1;
+  let into: { counts: Uint32Array; scale: Float32Array } | undefined;
+  for (let i = 0; i < count; i++) {
+    const o = i * POSE_FLOATS;
+    // The model's axes as the instance scales them: its pose's scale.
+    const sx = e[o + 5]!, sy = e[o + 6]!, sz = e[o + 7]!;
+    const metres = first ? Math.max(first[0] * sx, first[1] * sy, first[2] * sz) : Math.sqrt((screen.extent[0] * sx) ** 2 + (screen.extent[1] * sy) ** 2 + (screen.extent[2] * sz) ** 2);
+    // A shell's part too, by its size: its small ones a band of their own, left out under a pixel (`partCells.ts` `levelAt`).
+    const b = bandOf(metres);
+    bands[i] = b;
+    only = only === -2 || only === b ? b : -1;
+    if (b !== lastBand || !into) {
+      into = perBand.get(b);
+      if (!into) perBand.set(b, into = { counts: new Uint32Array(LEAVES), scale: new Float32Array(LEAVES * 3) });
+      lastBand = b;
+    }
+    into.counts[m] = into.counts[m]! + 1;
+    const at = m * 3, scale = into.scale;
+    if (sx > scale[at]!) scale[at] = sx;
+    if (sy > scale[at + 1]!) scale[at + 1] = sy;
+    if (sz > scale[at + 2]!) scale[at + 2] = sz;
+  }
+  return only;
+}
+
+/** A sub-cell's instances of `band` (after the merge, `into`) copied in at `at`; where the next goes. */
+function copyBand(bands: Uint8Array, into: Uint8Array, band: number, count: number, e: Float32Array, tint: Uint16Array | undefined, look: Float32Array | undefined,
+  poses: Float32Array, colours: Uint16Array | null, looks: Float32Array | null, at: number): number {
+  for (let i = 0; i < count; i++) {
+    if (into[bands[i]!] !== band) continue;
+    for (let k = 0; k < POSE_FLOATS; k++) poses[at * POSE_FLOATS + k] = e[i * POSE_FLOATS + k]!;
+    if (colours && tint) for (let k = 0; k < 3; k++) colours[at * 3 + k] = tint[i * 3 + k]!;
+    if (looks && look) for (let k = 0; k < LOOK_FLOATS; k++) looks[at * LOOK_FLOATS + k] = look[i * LOOK_FLOATS + k]!;
+    at++;
+  }
+  return at;
+}
+
 /** One kind's bands: one pass reads each instance's scales and band, the other copies; a sub-cell all of one band is copied whole. */
 function fileKind(kind: PartKind, slots: readonly (CellArrays | undefined)[], screen: PartBanding): FiledBand[] {
-  const first = screen.first;
   // Each instance's band; each band's count and largest scales by sub-cell; the band each sub-cell is all of (-1: mixed).
   const bandsOf: (Uint8Array | undefined)[] = [];
   const perBand = new Map<number, { counts: Uint32Array; scale: Float32Array }>();
@@ -91,31 +132,9 @@ function fileKind(kind: PartKind, slots: readonly (CellArrays | undefined)[], sc
     if (!p) continue;
     coloured ||= p.instanceColor !== undefined;
     looked ||= p.looks !== undefined;
-    const bands = new Uint8Array(p.count), e = p.poses;
-    let only = -2, lastBand = -1;
-    let into: { counts: Uint32Array; scale: Float32Array } | undefined;
-    for (let i = 0; i < p.count; i++) {
-      const o = i * POSE_FLOATS;
-      // The model's axes as the instance scales them: its pose's scale.
-      const sx = e[o + 5]!, sy = e[o + 6]!, sz = e[o + 7]!;
-      const metres = first ? Math.max(first[0] * sx, first[1] * sy, first[2] * sz) : Math.sqrt((screen.extent[0] * sx) ** 2 + (screen.extent[1] * sy) ** 2 + (screen.extent[2] * sz) ** 2);
-      // A shell's part too, by its size: its small ones a band of their own, left out under a pixel (`partCells.ts` `levelAt`).
-      const b = bandOf(metres);
-      bands[i] = b;
-      only = only === -2 || only === b ? b : -1;
-      if (b !== lastBand || !into) {
-        into = perBand.get(b);
-        if (!into) perBand.set(b, into = { counts: new Uint32Array(LEAVES), scale: new Float32Array(LEAVES * 3) });
-        lastBand = b;
-      }
-      into.counts[m] = into.counts[m]! + 1;
-      const at = m * 3, scale = into.scale;
-      if (sx > scale[at]!) scale[at] = sx;
-      if (sy > scale[at + 1]!) scale[at + 1] = sy;
-      if (sz > scale[at + 2]!) scale[at + 2] = sz;
-    }
+    const bands = new Uint8Array(p.count);
     bandsOf[m] = bands;
-    whole[m] = only;
+    whole[m] = bandSubCell(p.poses, p.count, m, bands, perBand, screen);
   }
   // A band drawing less than a draw's worth joins the next coarser one (or the last the one before): its error only grows.
   const order = [...perBand.keys()].sort((a, b) => a - b);
@@ -165,14 +184,7 @@ function fileKind(kind: PartKind, slots: readonly (CellArrays | undefined)[], sc
         at += p.count;
         continue;
       }
-      const bands = bandsOf[m]!;
-      for (let i = 0; i < p.count; i++) {
-        if (into[bands[i]!] !== band) continue;
-        for (let k = 0; k < POSE_FLOATS; k++) poses[at * POSE_FLOATS + k] = e[i * POSE_FLOATS + k]!;
-        if (colours && tint) for (let k = 0; k < 3; k++) colours[at * 3 + k] = tint[i * 3 + k]!;
-        if (looks && look) for (let k = 0; k < LOOK_FLOATS; k++) looks[at * LOOK_FLOATS + k] = look[i * LOOK_FLOATS + k]!;
-        at++;
-      }
+      at = copyBand(bandsOf[m]!, into, band, p.count, e, tint, look, poses, colours, looks, at);
     }
     start[LEAVES] = at;
     out.push({ kind, start, box, scale, poses, colours, looks });

@@ -49,6 +49,70 @@ export function floorKind(b: Building, level: number): FloorKind {
   return ((Math.imul(b.id + 7, 0x9e3779b1) >>> 0) % 10) < 3 ? 0 : 2;
 }
 
+/** Numbers a pane is looked up by: its face's start, along and out directions, its place on the face and its ceiling. */
+const PANE_KEY = 9;
+
+/** The rooms worked out for a storey's panes, by their nine numbers: equal as numbers is the same pane (0 and -0 alike, as their text was). */
+class PaneMemo {
+  /** The pane being looked up, written by the caller. */
+  readonly key = new Float64Array(PANE_KEY);
+  readonly rooms: (readonly number[])[] = [];
+  private keys = new Float64Array(16 * PANE_KEY);
+  private slots = new Int32Array(32);
+  private readonly bits = new Float64Array(1);
+  private readonly words = new Int32Array(this.bits.buffer);
+
+  /** The index of the room kept for `key`, or -1. */
+  find(): number {
+    const mask = this.slots.length - 1, key = this.key, keys = this.keys;
+    for (let s = this.hash(key, 0) & mask; ; s = (s + 1) & mask) {
+      const at = this.slots[s]! - 1;
+      if (at < 0) return -1;
+      let same = true;
+      for (let k = 0; k < PANE_KEY; k++) if (keys[at * PANE_KEY + k] !== key[k]) { same = false; break; }
+      if (same) return at;
+    }
+  }
+
+  /** `room` kept for `key` (just looked up and not found). */
+  add(room: readonly number[]): void {
+    const at = this.rooms.length;
+    this.rooms.push(room);
+    if ((at + 1) * PANE_KEY > this.keys.length) {
+      const next = new Float64Array(this.keys.length * 2);
+      next.set(this.keys);
+      this.keys = next;
+    }
+    this.keys.set(this.key, at * PANE_KEY);
+    if ((at + 1) * 2 > this.slots.length) this.rehash(this.slots.length * 2);
+    else this.place(at);
+  }
+
+  private place(at: number): void {
+    const mask = this.slots.length - 1;
+    let s = this.hash(this.keys, at * PANE_KEY) & mask;
+    while (this.slots[s] !== 0) s = (s + 1) & mask;
+    this.slots[s] = at + 1;
+  }
+
+  private rehash(size: number): void {
+    this.slots = new Int32Array(size);
+    for (let at = 0; at < this.rooms.length; at++) this.place(at);
+  }
+
+  /** The bits of the nine numbers of `from` at `o` mixed (MurmurHash3's finaliser), -0 as 0. */
+  private hash(from: Float64Array, o: number): number {
+    let h = 0x2545f491;
+    for (let k = 0; k < PANE_KEY; k++) {
+      this.bits[0] = from[o + k]! + 0;
+      h = Math.imul(h ^ this.words[0]!, 0x9e3779b1) ^ this.words[1]!;
+      h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+    }
+    h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
+    return h ^ (h >>> 16);
+  }
+}
+
 /** The rooms of one block's storey seen from its facade */
 export function roomsOfStorey(b: Building, v: Volume, inside: FloorInterior, level: number) {
   const walls: number[] = [];
@@ -60,11 +124,15 @@ export function roomsOfStorey(b: Building, v: Volume, inside: FloorInterior, lev
   }
   const stone = floorKind(b, level);
   // A pane alike - the same place on the block's plan, height and ceiling - on another level of the type looked at once.
-  const known = new Map<string, readonly number[]>();
+  // DO NOT key them by the nine numbers written out as text (each pane's nine numbers turned to strings): the numbers themselves, in a table hashed on their bits.
+  const known = new PaneMemo();
   return (ax: number, ay: number, tx: number, ty: number, nx: number, ny: number, a: number, h: number, ceiling: number): readonly number[] => {
-    const key = `${ax},${ay},${tx},${ty},${nx},${ny},${a},${h},${ceiling}`;
-    let room = known.get(key);
-    if (!room) known.set(key, room = roomAt(ax, ay, tx, ty, nx, ny, a, h, ceiling));
+    const key = known.key;
+    key[0] = ax; key[1] = ay; key[2] = tx; key[3] = ty; key[4] = nx; key[5] = ny; key[6] = a; key[7] = h; key[8] = ceiling;
+    const at = known.find();
+    if (at >= 0) return known.rooms[at]!;
+    const room = roomAt(ax, ay, tx, ty, nx, ny, a, h, ceiling);
+    known.add(room);
     return room;
   };
   function roomAt(ax: number, ay: number, tx: number, ty: number, nx: number, ny: number, a: number, h: number, ceiling: number): number[] {

@@ -3,6 +3,7 @@ import { eachRecord, readRecords } from '@world/buildings/recordTable';
 import { type PavingData, pavingReader } from '@world/paving';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { ShellWriter, chunkSummary, emitChunk, letGoEmitted } from './buildingMesh';
+export { ShellWriter } from './buildingMesh';
 import { type CellArrays, type CellMass, type CellSelection, type KitBoxes, cellArrays, cellBuffers, cellMass, cellMassBuffers } from './cellArrays';
 import type { BuildingChunk, CellJobEntry, LotGroundRecipe } from './chunk';
 import type { FlagInstance } from './flagLayer';
@@ -83,15 +84,17 @@ export function replyBuffers(reply: WorkReply): ArrayBuffer[] {
 /** What a job reads: the ground (shared, or the page's own), and the paving, undefined where it cannot be read here. */
 interface CellReads extends GroundReaders {
   readonly pavedAt?: (x: number, y: number) => number | undefined;
+  /** The worker's own shell and rows (`ShellWriter`): DO NOT make them for each job, their arrays grown again from nothing. */
+  readonly writer?: ShellWriter;
 }
 
 /** A job's reads in a worker: the shared ground, the paving off the roads it was handed (reading the shared natural ground where they need it). */
-export function workerReads(job: CellJob): CellReads {
+export function workerReads(job: CellJob, writer?: ShellWriter): CellReads {
   if (!job.ground) throw new Error(`[buildings] a cell job with no shared ground (${job.cell})`);
   const shared = sharedGroundReaders(job.ground);
   const naturalAt = job.naturalIsGround ? shared.groundAt : shared.naturalAt;
   const pavedAt = job.paving ? pavingReader(job.paving, naturalAt) : undefined;
-  return { groundAt: shared.groundAt, naturalAt, ...(pavedAt ? { pavedAt } : {}) };
+  return { groundAt: shared.groundAt, naturalAt, ...(pavedAt ? { pavedAt } : {}), ...(writer ? { writer } : {}) };
 }
 
 const COARSE: Omit<CellSelection, 'ghost' | 'dim'> = { parts: PART_KINDS.filter((k) => COARSE_PARTS.has(k)), shells: true, furniture: true };
@@ -150,8 +153,8 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   }
   // The detail and its far level: the buildings of the cell as one another's neighbours, a party wall's covered bays not laid (`partyWalls.ts`).
   const party = new PartyWalls(buildings, naturalAt, paved, known);
-  // One shell written again for each building of the job (`ShellWriter`).
-  const writer = new ShellWriter();
+  // One shell and one set of rows written again for each building of the job, and of every job the worker runs (`CellReads.writer`).
+  const writer = reads.writer ?? new ShellWriter();
   const chunks = buildings.map((b) => {
     const chunk = emitChunk(b, groundAt, paved, naturalAt, undefined, job.kind === 'facade', true, party, writer);
     // Its furniture and bays let go now: the job reads them no more (`letGoEmitted`).
