@@ -111,7 +111,9 @@ export class FarTree<P> implements FarTiles {
     // The plan's version and the map's size in it (`worldKey`): bakes of an older plan never read for this one.
     const world = plan ? `${new Digest().addPlain(plan).value().toString(36)}.${worldKey(plan.seed)}` : '';
     if (world !== this.world) {
-      // Another world: every bake asked again under its own keys.
+      // Another world (or none, the world closed): DO NOT keep its tiles - a node of them in view, never baked again with no source, was waited for by the curtain to its limit (the empty map's 90 s, 2026-10-18). The next world's are told again (`stored`).
+      for (const [tile, leaf] of [...this.leaves]) this.unstore(tile, leaf);
+      // Every bake asked again under its own keys.
       this.refill();
       for (const n of [...this.nodes.values()]) if (n.tiles === 0 && this.nodes.get(n.key) === n) this.forget(n);
       for (const n of this.nodes.values()) { n.baked = null; n.landed = null; n.failed = null; }
