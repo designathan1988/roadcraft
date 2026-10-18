@@ -61,5 +61,15 @@ describe("a world's lock", () => {
     const open = main.slice(main.indexOf('async function openStreamedWorld('), main.indexOf('const store = new TileStore(mapName'));
     expect(open).toMatch(/if \(!release && !imported\) \{[\s\S]*t\('map\.otherTab'\)[\s\S]*holdWorld\(mapName, \{ wait: true \}\)/);
   });
+
+  it("closed (a new map), lets the map be replaced at once and its lock go only once its writes settle (`main.ts` afterStreamedWorld)", async () => {
+    const { readFileSync } = await import('node:fs');
+    const main = readFileSync('src/main.ts', 'utf8');
+    const close = main.slice(main.indexOf('function afterStreamedWorld<T>('), main.indexOf('function newMap(): void {'));
+    // The writes' end lets the lock go; the map is not replaced behind them.
+    expect(close).toMatch(/written\.then\(.*\)\.finally\(\(\) => open\.release\(\)\)/);
+    expect(close).not.toMatch(/return written\.then/);
+    expect(close.indexOf('const out = replace();')).toBeGreaterThan(close.indexOf('open.streamer.flush()'));
+  });
 });
 
