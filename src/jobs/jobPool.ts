@@ -219,6 +219,19 @@ class JobSystem {
   tilesWaiting = false;
 }
 const system = new JobSystem();
+// TEMPORARY, DEV only (ROADCRAFT, measuring the queue after the curtain): the jobs waiting by service and band (priority / 1e6, rounded), and what each worker runs.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __jobCensus: () => unknown }).__jobCensus = () => {
+    const waiting: Record<string, number> = {};
+    for (const job of (system.queue as unknown as { heap: Queued[] }).heap) {
+      if (job.state !== 'waiting') continue;
+      const key = `${job.spec.service}@${Math.round(job.spec.priority / 1e6)}`;
+      waiting[key] = (waiting[key] ?? 0) + 1;
+    }
+    const running = system.workers.map((h) => (h.job ? `${h.job.spec.service}@${Math.round(h.job.spec.priority / 1e6)}` : h.laneWork > 0 ? `lanes:${[...h.services.keys()].join('+')}` : 'idle'));
+    return { waiting, running };
+  };
+}
 
 /** Whether tiles of the map wait for the long-running side's lanes (`tileGenerator.ts` pump): while they do, a long worker between two tiles takes no queued job of the cells' bands and after (priority 0 on: a cell, a facade, a mass, a near level), only those ahead of them (a far level, an edit; `cellPool.ts` FAR_TIER, EDIT_TIER), short and what the opening's view waits for - kept off them all, the map's edges stood empty after the curtain (conf55, 2026-10-17). DO NOT give it a cell's job: one of seconds held the next tile behind it - the opening's tile workers ran 103 s of cells' jobs (wprof4, 2026-10-17), whenever the queue's worker had a lane's message in flight. Told off, the jobs waiting go out to them. */
 export function setTilesWaiting(on: boolean): void {
