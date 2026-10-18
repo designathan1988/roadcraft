@@ -138,6 +138,8 @@ import { createToolMachine, isTool, type Tool } from '@editor/toolMachine';
 import { createGameKeys } from '@editor/gameKeys';
 import { RoadTop } from '@editor/roadTop';
 import { editRandom } from '@editor/editStream';
+import { cpuPopulationShare } from '@sim/populationGovernor';
+import { WEAK_MACHINE } from '@core/weakMachine';
 
 /** The turning circles cleared after each edit, from the network's changes since the last one (`bulbClearing`). */
 const clearBulbs = bulbClearing();
@@ -260,6 +262,8 @@ let maxPopulationShare = 1;
 function syncPopulationShare(): void {
   maxPopulationShare = window.innerWidth < NARROW_SCREEN_WIDTH ? NARROW_SCREEN_SHARE : 1;
 }
+/** Where the population starts, by the machine's threads (the run's pretended ones, `core/weakMachine.ts`): the governor fills it from there when its steps are cheap. */
+const startPopulationShare = cpuPopulationShare(WEAK_MACHINE.threads ?? navigator.hardwareConcurrency ?? 8);
 syncPopulationShare();
 
 /** The zoom range the renderer we are about to boot can actually represent. */
@@ -2527,7 +2531,7 @@ function frame(now: number): void {
   frameTimer.mark('topology');
   // The simulation steps in its own thread (`sim/host/simHost.ts`): the page sends the wall time and draws the last frame it wrote.
   // DO NOT hold the city for the page's world job (the roads' meshes): the worker steps its own network, and the streamed world's job runs whenever a tile comes.
-  sim.frame(wall, holdSim, { traffic: !game.paused, pedestrians: !game.paused, maxShare: maxPopulationShare });
+  sim.frame(wall, holdSim, { traffic: !game.paused, pedestrians: !game.paused, maxShare: maxPopulationShare, startShare: startPopulationShare });
   const alpha = holdSim ? 1 : sim.alpha;
   // The city's own periodic work, on its clock (`SimPeriodic`).
   const simTime = sim.clock.time;
