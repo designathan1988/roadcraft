@@ -50,8 +50,6 @@ export class BayPool implements BayWorkers {
   }
 
   check(now = performance.now()): void {
-    // Asked through the page's queue (`jobQueueChannel`): silent by design while it waits its turn.
-    if (this.ports) return;
     for (const lane of this.lanes ?? []) {
       if (lane.told || !lane.waiting.size || now - lane.heard <= SILENCE_MS) continue;
       // Said once a stretch, and waited for: the page working the lots out itself would stall it.
