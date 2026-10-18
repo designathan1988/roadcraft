@@ -93,6 +93,26 @@ describe('the far woods\' bookkeeping', () => {
     expect(book.stats.ready).toBe(RING.length);
   });
 
+  it('works out and holds no woods for a tier without vegetation, and asks them again when the tier has some', () => {
+    const { read, asked } = stubReader();
+    const book = bookOf(read);
+    book.sync(RELIEF_NATURAL, NATURE, 0, 0);
+    expect(asked).toHaveLength(RING.length);
+    book.arrived = [];
+    // The low tier (`quality.ts` vegetation 0): every plate's woods let go, their meshes written away.
+    book.setVegetation(0);
+    for (const p of book.plates.values()) expect(p.woods).toBeNull();
+    expect(book.arrived).toHaveLength(RING.length);
+    // A plate coming in meanwhile: not asked.
+    const far = plateRegion(plateKey(40, 40));
+    book.add(far.key, RING.length, far.cx, far.cy);
+    expect(asked).toHaveLength(RING.length);
+    // Vegetation again: every plate asked once more.
+    book.setVegetation(2_600);
+    expect(asked).toHaveLength(2 * RING.length + 1);
+    for (const p of book.plates.values()) expect(p.woods).not.toBeNull();
+  });
+
   it('asks each plate once per land and ecosystem, however many frames ask again', () => {
     const { read, asked } = stubReader();
     const book = bookOf(read);

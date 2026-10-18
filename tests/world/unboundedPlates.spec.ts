@@ -189,6 +189,32 @@ describe('the ground of the map', () => {
     expect(short).toBeLessThanOrEqual(long);
   });
 
+  it('holds as many plates as its tier: fewer for a weak machine in a district view and after a walk, the strong tier as before', () => {
+    /** The plates made and not let go in a district's view at the map's middle (3 x 3 plates within its reach), then after a walk and in the map's view. */
+    const held = (plates?: readonly [number, number]): { district: number; map: number } => {
+      seen.live.clear();
+      const atlas = createFlatAtlas(1);
+      if (plates) atlas.setPlates!(plates[0], plates[1]);
+      for (let frame = 0; frame < 12; frame++) atlas.focus!(0, 0, m(800));
+      // The first plate, at the origin, is one of the 3 x 3.
+      const district = seen.live.size;
+      for (let x = -MAP_HALF + m(600); x < MAP_HALF - m(600); x += m(512)) for (let frame = 0; frame < 3; frame++) atlas.focus!(x, m(2048), m(800));
+      // The map's view: no plate in full, the ones kept made.
+      for (let frame = 0; frame < 12; frame++) atlas.focus!(0, 0, m(12_000));
+      // The first plate is never let go, nor counted among those kept.
+      const map = seen.live.size - 1;
+      atlas.dispose();
+      return { district, map };
+    };
+    const strong = held(), weak = held([4, 2]);
+    // The strong tier as before: the 3 x 3 drawn, nine kept for a zoom out and back.
+    expect(strong).toEqual({ district: 9, map: 9 });
+    expect(held([9, 9])).toEqual(strong);
+    // A weak machine's: four drawn, two kept (each plate ~10 MB of arrays on the page and ~7-17 MB on the GPU).
+    expect(weak.district).toBe(4);
+    expect(weak.map).toBeLessThanOrEqual(2);
+  });
+
   it('makes every plate the view wants whose corners are in in the frame it is wanted, not one a frame', () => {
     seen.live.clear();
     seen.made = 0;

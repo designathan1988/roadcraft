@@ -110,7 +110,8 @@ export class FarWoodsBook {
   /** Asks plate `p`'s woods of the worker for the land known, once. */
   private ask(p: PlateState): void {
     const land = this.land;
-    if (!land?.nature || p.asked === this.landKey) return;
+    // A tier that draws no far woods (`setVegetation` 0): none worked out nor held (asked once it draws some).
+    if (!land?.nature || p.asked === this.landKey || this.budget === 0) return;
     const key = this.landKey;
     p.asked = key;
     this.asks++;
@@ -133,7 +134,14 @@ export class FarWoodsBook {
   setVegetation(amount: number): void {
     const budget = FAR_WOODS_BUDGET * Math.min(1, Math.max(0, amount) / 2_600);
     if (budget === this.budget) return;
+    const was = this.budget;
     this.budget = budget;
+    // DO NOT keep woods drawn at a scale of 0 (a tier without vegetation): every plate's let go, its trees and its mesh; asked again when the tier draws some.
+    if (budget === 0) {
+      for (const p of this.plates.values()) { p.woods = null; p.scale = 0; p.asked = ''; if (!this.arrived.includes(p.key)) this.arrived.push(p.key); }
+      return;
+    }
+    if (was === 0) for (const p of this.plates.values()) this.ask(p);
     // Every plate's scale again, its instances written again (`arrived`).
     for (const p of this.plates.values()) {
       if (!p.woods) continue;
