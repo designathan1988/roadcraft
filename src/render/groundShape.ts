@@ -95,6 +95,9 @@ export class ShapeScratch {
   ys = new Float64Array(0);
   lands = new Float64Array(0);
   visited = new Int32Array(0);
+  /** The corners a pass shaped and their heights, in the order shaped (a corner once a pass: never more than the plate's). */
+  shaped = new Int32Array(0);
+  heights = new Float64Array(0);
   pass = 0;
 }
 
@@ -106,13 +109,14 @@ export function shapeGroundAsk(ask: GroundShapeAsk, scratch = new ShapeScratch()
   const pads = ask.pads ? padShaper(ask.pads) : null;
   const shapeAt = pads ? shapeBoth(roads, pads) : roads ? roads.shapeAt : null;
   return ask.plates.map((plate) => {
-    const corners: number[] = [];
-    const heights: number[] = [];
+    // DO NOT gather the corners shaped in arrays of numbers (a plate's 103,041 at most, in the worker's heap): the scratch's typed arrays, copied out once.
+    let count = 0;
     if (shapeAt) {
       const { n, cx, cy } = plate;
       const size = n * n;
       if (scratch.visited.length < size) {
         scratch.xs = new Float64Array(size); scratch.ys = new Float64Array(size); scratch.lands = new Float64Array(size); scratch.visited = new Int32Array(size);
+        scratch.shaped = new Int32Array(size); scratch.heights = new Float64Array(size);
       }
       const { xs, ys, lands, visited } = scratch;
       const regions: TerrainRegion[] = [];
@@ -139,9 +143,10 @@ export function shapeGroundAsk(ask: GroundShapeAsk, scratch = new ShapeScratch()
       // In the world's coordinates, as the atlas asks its plates' shapers (`flatAtlas.ts` `shaperFor`).
       const shaper = { shapeAt: (x: number, y: number, ground: number) => shapeAt(x + cx, y + cy, ground), shapeBounds: NO_BOUNDS };
       const pass = ++scratch.pass;
-      shapeCorners(grid, lands, shaper, regions, visited, pass, (i, height) => { corners.push(i); heights.push(height); });
+      const { shaped, heights } = scratch;
+      shapeCorners(grid, lands, shaper, regions, visited, pass, (i, height) => { shaped[count] = i; heights[count++] = height; });
     }
-    return { corners: Int32Array.from(corners), heights: Float64Array.from(heights) };
+    return { corners: scratch.shaped.slice(0, count), heights: scratch.heights.slice(0, count) };
   });
 }
 
