@@ -392,7 +392,8 @@ function tryOnLot(lot: Lot, frame: ReturnType<typeof frameOf>, density: ZoneDens
   // The lot in the building's frame: x along the front, y back into it.
   const ring = lot.corners.map((c) => ({ x: (c.x - anchor.x) * u.x + (c.y - anchor.y) * u.y, y: (c.x - anchor.x) * n.x + (c.y - anchor.y) * n.y }));
   // Set back from the street (a try's margin), its front still reaches the street (`reachStreet`); the plan as laid is kept in case that is refused.
-  const bare = t.front > 0 ? structuredClone({ volumes: body.volumes, elements: body.elements }) : null;
+  // Each part copied, not cloned deep: `reachStreet` and `fitToLot` set a part's own fields and lists only, never its storeys (a whole clone a try was ~44 MB of a dense tile's garbage).
+  const bare = t.front > 0 ? { volumes: body.volumes.map((v) => ({ ...v })), elements: body.elements?.map((e) => ({ ...e })) } : null;
   if (bare) reachStreet(body, t.front, lotW);
   fitToLot(body, ring);
   return { body, bare, ring, made: count, kept, floor: floorRead, keptState, afterState };
@@ -524,14 +525,43 @@ function reachStreet(body: { volumes: Volume[]; elements?: BuildingElement[] }, 
   lay(x, width / 2);
 }
 
+/** Whether a volume's rectangle lies strictly inside a ring: a corner inside it and no side of it meeting or touching a side of the ring (a ring wholly inside the rectangle has its sides crossing none either, so the corner is asked too). */
+function rectInside(v: Volume, ring: readonly Vec2[]): boolean {
+  const x0 = v.x, y0 = v.y, x1 = v.x + v.w, y1 = v.y + v.d;
+  if (!pointInPolygon({ x: x0, y: y0 }, ring as Vec2[])) return false;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!, b = ring[(i + 1) % ring.length]!;
+    // The side's box clear of the rectangle's: it meets no side of it.
+    if (Math.max(a.x, b.x) < x0 || Math.min(a.x, b.x) > x1 || Math.max(a.y, b.y) < y0 || Math.min(a.y, b.y) > y1) continue;
+    if (meets(a, b, x0, y0, x1, y0) || meets(a, b, x1, y0, x1, y1) || meets(a, b, x1, y1, x0, y1) || meets(a, b, x0, y1, x0, y0)) return false;
+  }
+  return true;
+}
+
+/** Whether segment a-b meets segment (cx, cy)-(dx, dy), touching counted. */
+function meets(a: Vec2, b: Vec2, cx: number, cy: number, dx: number, dy: number): boolean {
+  const o1 = (b.x - a.x) * (cy - a.y) - (b.y - a.y) * (cx - a.x), o2 = (b.x - a.x) * (dy - a.y) - (b.y - a.y) * (dx - a.x);
+  const o3 = (dx - cx) * (a.y - cy) - (dy - cy) * (a.x - cx), o4 = (dx - cx) * (b.y - cy) - (dy - cy) * (b.x - cx);
+  if (o1 * o2 > 0 || o3 * o4 > 0) return false;
+  // Collinear: their spans along the line overlap.
+  if (o1 === 0 && o2 === 0) return Math.max(a.x, b.x) >= Math.min(cx, dx) && Math.min(a.x, b.x) <= Math.max(cx, dx) && Math.max(a.y, b.y) >= Math.min(cy, dy) && Math.min(a.y, b.y) <= Math.max(cy, dy);
+  return true;
+}
+
 /** A grown building made to its lot's own shape (the player, 2026-10-05: "as construções devem seguir o formato dos lotes"). The plan was laid on the lot's front rectangle; on a lot of another shape - a polygon, a curved side, a lot narrowing or widening at the back: - the ground of the whole lot is laid as a lawn (an open block with the lot's own outline), the plan's surfaces clipped to the lot over it; - the boundary (walls, fences, hedges) is taken off the rectangle and run along the lot's own sides, all but the front; - whatever of the plan falls outside the lot (a tree, a shed, a bench, a surface) is left out. A rectangular lot is left as planned. */
 function fitToLot(body: { volumes: Volume[]; elements?: BuildingElement[] }, ring: readonly Vec2[]): void {
-  const xs = ring.map((p) => p.x), ys = ring.map((p) => p.y);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  let area = 0;
-  for (let i = 0; i < ring.length; i++) { const p = ring[i]!, q = ring[(i + 1) % ring.length]!; area += p.x * q.y - q.x * p.y; }
+  // Its box and area in one walk, no list of its coordinates (most lots are rectangles and stop here).
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, area = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i]!, q = ring[(i + 1) % ring.length]!;
+    x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+    area += p.x * q.y - q.x * p.y;
+  }
   if (ring.length === 4 && Math.abs(area / 2) > (x1 - x0) * (y1 - y0) * 0.97) return;
   const inside = (p: Vec2): boolean => pointInPolygon(p, ring as Vec2[]);
+  // One point asked at a time (`insideAt`): no point made to be asked.
+  const at = { x: 0, y: 0 };
+  const insideAt = (x: number, y: number): boolean => { at.x = x; at.y = y; return pointInPolygon(at, ring as Vec2[]); };
   const elements = (body.elements ??= []);
   // The boundary's kind and height, from the plan's own.
   const old = elements.filter((e) => BOUNDARY_KINDS.has(e.kind) && e.kind !== 'gate');
@@ -540,7 +570,7 @@ function fitToLot(body: { volumes: Volume[]; elements?: BuildingElement[] }, rin
   const height = old.find((e) => e.kind === kind)?.h ?? m(1.4);
   const thick = kind === 'fence' ? m(0.12) : kind === 'hedge' ? m(0.7) : m(0.2);
   // Everything off the lot, and the side and back boundary, out.
-  const kept = elements.filter((e) => (front.includes(e)) || (!BOUNDARY_KINDS.has(e.kind) && inside({ x: e.x, y: e.y })));
+  const kept = elements.filter((e) => (front.includes(e)) || (!BOUNDARY_KINDS.has(e.kind) && insideAt(e.x, e.y)));
   let nextId = Math.max(0, ...elements.map((e) => e.id)) + 1;
   // The new boundary along every side but the front (side 0), in pieces of 20 m at most.
   for (let i = 1; i < ring.length; i++) {
@@ -590,6 +620,13 @@ function fitToLot(body: { volumes: Volume[]; elements?: BuildingElement[] }, rin
     if (sound(lawn)) volumes.push(lawn);
   }
   for (const v of body.volumes) {
+    // A rectangle wholly inside the lot is its own cut, kept as it is: the boolean intersection ran for it too (clipper's inputs and edges, ~140 MB of a dense tile's garbage).
+    if (v.open && !v.outline && rectInside(v, ring)) { if (sound(v)) volumes.push(v); continue; }
+    // A building's rectangle asked corner by corner, not made into a ring first.
+    if (!v.open && !v.outline) {
+      if (insideAt(v.x, v.y) || insideAt(v.x + v.w, v.y) || insideAt(v.x + v.w, v.y + v.d) || insideAt(v.x, v.y + v.d) || insideAt(v.x + v.w / 2, v.y + v.d / 2)) volumes.push(v);
+      continue;
+    }
     const ringOf = v.outline ? v.outline.map((p) => ({ x: v.x + p.x * v.w, y: v.y + p.y * v.d }))
       : [{ x: v.x, y: v.y }, { x: v.x + v.w, y: v.y }, { x: v.x + v.w, y: v.y + v.d }, { x: v.x, y: v.y + v.d }];
     if (v.open) {

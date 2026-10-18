@@ -228,6 +228,14 @@ interface Lot {
   busy(x: number, y: number, r?: number): boolean;
 }
 
+/** `Math.hypot(dx, dy) > r`, the same answer: the square settles it clear of `r` by far more than hypot's error, hypot asked only near `r` (its result a new heap number a call, two parts' test each; ~35 MB of a dense tile). */
+function apart(dx: number, dy: number, r: number): boolean {
+  const d2 = dx * dx + dy * dy, r2 = r * r;
+  if (d2 > r2 * (1 + 1e-9)) return true;
+  if (d2 < r2 * (1 - 1e-9)) return false;
+  return Math.hypot(dx, dy) > r;
+}
+
 /** Lays the plan on a body whose building already stands in its envelope */
 export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuilding, rng: Rng,
   /** The lot's slope: the natural ground in the middle of the back yard less at the street front, metres */
@@ -269,7 +277,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
     return r;
   };
   /** Not set apart by the circles round their footprints: the test `elementsMeet` makes first, the same sum. */
-  const near = (a: BuildingElement, b: BuildingElement): boolean => !(Math.hypot(b.x - a.x, b.y - a.y) > reachOf(a) + reachOf(b));
+  const near = (a: BuildingElement, b: BuildingElement): boolean => !apart(b.x - a.x, b.y - a.y, reachOf(a) + reachOf(b));
 
   const lot: Lot = {
     surface(r, s) {
@@ -319,7 +327,7 @@ export function furnishLot(body: BlueprintBody, plan: LotPlan, made: MadeBuildin
       if (laying || isStructure(el)) return true;
       // Its reach worked out here, not kept: the candidate is written again for the next.
       const reach = planReach(el);
-      for (const o of elements) if (!(Math.hypot(o.x - el.x, o.y - el.y) > reach + reachOf(o)) && elementsMeet(el, o)) return false;
+      for (const o of elements) if (!apart(o.x - el.x, o.y - el.y, reach + reachOf(o)) && elementsMeet(el, o)) return false;
       return true;
     },
     put(kind, x, y, facing, w, d, h, z = 0, material) {

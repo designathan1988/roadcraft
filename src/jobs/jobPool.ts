@@ -200,8 +200,8 @@ interface Host {
   laneWork: number;
   /** Told when it fails: the lanes it serves for another thread (`jobChannel`), whose ports say nothing of it. */
   readonly channelLost: (() => void)[];
-  /** Let go by its last lane (`retireJobPort`): no queued job given to it, ended once it holds no lane, job nor lane message. */
-  retiring?: boolean;
+  /** Let go (`retireJobPort`): given no queued job nor lane, ended when its job is answered. */
+  retiring: boolean;
 }
 
 /** The pool of this thread: its workers (made as work waits, `grow`), its lanes by port, its queue and the point the view looks at. */
@@ -250,16 +250,18 @@ export const jobLanes = (most: number): number => Math.max(1, Math.min(most, sho
 
 /** One more worker of its side (`long`), while the pool and that side have room (`longWorkers`, `shortWorkers`); null when full. */
 function grow(long: boolean): Host | null {
-  if (system.workers.length >= jobWorkers()) return null;
-  if (system.workers.filter((h) => h.long === long).length >= (long ? longWorkers() : shortWorkers())) return null;
+  // A worker let go and still ending its queued job (`retireJobPort`) counts no more: its place is the new one's.
+  const live = system.workers.filter((h) => !h.retiring);
+  if (live.length >= jobWorkers()) return null;
+  if (live.filter((h) => h.long === long).length >= (long ? longWorkers() : shortWorkers())) return null;
   const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
   system.setup?.(worker);
-  const host: Host = { worker, long, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [] };
+  const host: Host = { worker, long, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [], retiring: false };
   worker.onmessage = (event: MessageEvent<FromJob>) => {
     const port = system.ports.get(event.data.port);
     if (port) {
       // A lane's answer: its worker has one message less before a queued job (a lane posting without answer only ranks its worker lower).
-      if (port.answered()) { endIfRetired(host); dispatch(); }
+      if (port.answered()) dispatch();
       if (event.data.error !== undefined) port.onerror?.(new ErrorEvent('error', { message: event.data.error }));
       else port.onmessage?.(new MessageEvent('message', { data: event.data.data }));
       return;
@@ -270,7 +272,7 @@ function grow(long: boolean): Host | null {
     host.job = null;
     if (event.data.error !== undefined) system.queue.fail(job, event.data.error);
     else system.queue.answer(job, event.data.data);
-    endIfRetired(host);
+    endRetired(host);
     dispatch();
     toldQuiet();
   };
@@ -417,7 +419,7 @@ function place(service: JobService): Host {
   const own = best !== null && KEPT_CLEAR.includes(service) && keptClear(best) && otherKinds(best) === 0;
   if (best === null || (bestScore > 0 && !own)) best = grow(long) ?? best;
   // A pool of one worker: the two sides share it.
-  if (!best) best = system.workers.filter((w) => !w.retiring).reduce<Host | null>((a, w) => (a === null || w.ports < a.ports ? w : a), null);
+  if (!best) best = system.workers.reduce<Host | null>((a, w) => (!w.retiring && (a === null || w.ports < a.ports) ? w : a), null);
   if (!best) throw new Error('no job worker could be made');
   return best;
 }
@@ -468,29 +470,27 @@ export class JobPort {
     if (left > 0) this.host.services.set(this.service, left); else this.host.services.delete(this.service);
   }
 
-  /** The lane let go and its worker with it (`retireJobPort`). */
-  retire(): void {
-    this.host.retiring = true;
-    this.terminate();
-    endIfRetired(this.host);
-    dispatch();
-  }
 }
 
-/** A WORKER LET GO WHOLE (its heap back to the V8 cage the page's workers share): its lane closed and the worker ended once nothing runs on it; `grow` makes another as work comes. For the service that knows when a worker grew big (`tileGenerator.ts`, after a tile): DO NOT end a worker's isolate under its lanes or a job - it is ended only once its last port, its job and its lanes' messages are gone. */
-export function retireJobPort(port: Worker): void {
+/** A lane let go and its worker ended when nothing else is on it (no lane, queued job or channel): a new one is made when work waits (`grow`). DO NOT keep a long-running worker for the whole opening: its heap grew to hundreds of MB against ~30 live, seven of them in the one V8 cage (hw20, the page out of memory). Whether the worker was ended. */
+export function retireJobPort(port: Worker): boolean {
   const lane = port as unknown as JobPort;
-  if (!(lane instanceof JobPort)) { port.terminate(); return; }
-  lane.retire();
+  lane.terminate();
+  const host = system.workers.find((h) => h.worker === lane.worker);
+  if (!host || host.ports > 0 || host.laneWork > 0 || host.channelLost.length > 0) return false;
+  // A queued job given it as its lane went quiet (`dispatch` runs before the lane hears its answer): ended once that job is answered (`endRetired`).
+  host.retiring = true;
+  return endRetired(host);
 }
 
-/** Ends a worker let go (`retiring`) once it holds no lane, job nor lane message. */
-function endIfRetired(host: Host): void {
-  if (!host.retiring || host.ports > 0 || host.job || host.laneWork > 0) return;
+/** A worker let go (`retireJobPort`) ended, once no queued job runs on it and no lane came to it meanwhile. */
+function endRetired(host: Host): boolean {
+  if (!host.retiring || host.job || host.ports > 0) return false;
   const at = system.workers.indexOf(host);
-  if (at < 0) return;
+  if (at < 0) return false;
   system.workers.splice(at, 1);
   host.worker.terminate();
+  return true;
 }
 
 /** A port of the pool for one of `service`'s lanes (`jobLanes` lanes at most), typed as the `Worker` its pool was written for. */
