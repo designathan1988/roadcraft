@@ -18,7 +18,6 @@ import { furnitureChosen } from '@ui/roads/furnitureChoice';
 import { isMarkingStyle } from '@world/roads/markingStyle';
 import { createActions } from './actionsWiring';
 import { FrameClock, Periodic, SimPeriodic, coalescedTask } from './frameLoop';
-import { beginFrameWork } from '@core/frameWork';
 import { GameState } from '@core/gameState';
 import { Engine } from '@core/engine';
 import { InputQueue } from '@core/events';
@@ -2551,7 +2550,6 @@ function frame(now: number): void {
   profiler.beginFrame();
   // Each system's time in this frame (`core/health.ts`): a long frame is told with the systems that took it.
   frameTimer.begin();
-  beginFrameWork();
   // The input since the last frame, in the order it came (`core/events.ts`).
   canvasInput.drain(handleInput);
   // Everyone watching the game's state is told what changed, once, here.

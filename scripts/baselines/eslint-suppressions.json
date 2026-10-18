@@ -23,11 +23,6 @@
       "count": 2
     }
   },
-  "src/core/frameWork.ts": {
-    "roadcraft/no-module-state": {
-      "count": 1
-    }
-  },
   "src/editor/buildingTool.ts": {
     "max-lines": {
       "count": 1

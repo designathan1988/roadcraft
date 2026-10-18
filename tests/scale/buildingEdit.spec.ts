@@ -5,7 +5,6 @@ import { RoadDoc } from '@world/doc';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building, BuildingElement } from '@world/buildings/types';
 import { createBuildingLayer } from '@render/buildings/layer';
-import { beginFrameWork } from '@core/frameWork';
 import { m } from '@world/units';
 import { type DerivedChangeKind, journalWork } from '@world/changes';
 import type { Area, GroundRecord, Rect } from '@render/groundChanges';
@@ -51,7 +50,6 @@ const flat = (): number => 0;
 /** The buildings layer (`render/buildings/layer.ts`) run frame by frame until it is done, as the game runs it. */
 function settle(layer: ReturnType<typeof createBuildingLayer>, doc: RoadDoc): void {
   for (let frame = 0; frame < 2000; frame++) {
-    beginFrameWork();
     layer.update(doc, flat, 'g');
     if (!layer.pending) return;
   }

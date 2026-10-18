@@ -2,7 +2,6 @@ import { PAINT_ATTRIBUTE, PAINT_UNIT, WEAR_STEPS } from '@render/buildings/cellA
 import { describe, expect, it } from 'vitest';
 import type { Mesh, Object3D } from 'three';
 
-import { beginFrameWork } from '@core/frameWork';
 import { createBuildingLayer } from '@render/buildings/layer';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
 import type { Building, BuildingId } from '@world/buildings/types';
@@ -22,7 +21,6 @@ function body(index: number, x: number, y: number): Omit<Building, 'id'> {
 function settle(layer: ReturnType<typeof createBuildingLayer>, doc: RoadDoc): boolean {
   let rebuilt = false;
   for (let frame = 0; frame < 5000; frame++) {
-    beginFrameWork();
     if (layer.update(doc, flat, 'g')) rebuilt = true;
     if (!layer.pending) return rebuilt;
   }
@@ -71,7 +69,6 @@ describe('the buildings layer, a change at a time', () => {
       }
       // A change overtaking one still being put together: the cells of both are swapped.
       if (round === 9) {
-        beginFrameWork();
         live.update(doc, flat, 'g');
         const b = doc.buildings.get([...doc.buildings.all()][0]!.id)!;
         doc.buildings.put({ ...b, x: b.x + m(250) });
@@ -160,7 +157,6 @@ describe('the far sun cascades', () => {
     const layer = createBuildingLayer();
     // An eye low over the town: its cells near and in detail, their masses come too.
     for (let frame = 0; frame < 400; frame++) {
-      beginFrameWork();
       layer.update(doc, flat, 'g');
       layer.levelOfDetail(SPACING, SPACING, m(40), 1000, null);
       if (!layer.pending && frame > 20) break;
@@ -205,7 +201,6 @@ describe('the ground under the buildings, followed', () => {
     let asked = 0;
     const movedUnder = (): readonly never[] => { asked++; return []; };
     for (let frame = 0; frame < 400; frame++) {
-      beginFrameWork();
       layer.update(doc, ground, 'g', undefined, ground, movedUnder);
       layer.levelOfDetail(SPACING, SPACING, m(40), 1000, null);
       if (!layer.pending && frame > 20) break;
@@ -213,7 +208,6 @@ describe('the ground under the buildings, followed', () => {
     // Nothing changes: no digest made again, frame after frame.
     sampled = 0;
     for (let frame = 0; frame < 30; frame++) {
-      beginFrameWork();
       layer.update(doc, ground, 'g', undefined, ground, movedUnder);
       layer.levelOfDetail(SPACING, SPACING, m(40), 1000, null);
     }
@@ -221,7 +215,6 @@ describe('the ground under the buildings, followed', () => {
     // The ground changed where no building stands: every digest kept, what moved asked once for the key the buildings were sampled at.
     asked = 0;
     for (let frame = 0; frame < 30; frame++) {
-      beginFrameWork();
       layer.update(doc, ground, 'g2', undefined, ground, movedUnder);
       layer.levelOfDetail(SPACING, SPACING, m(40), 1000, null);
     }
@@ -252,7 +245,6 @@ describe('the cells the budget of triangles held back', () => {
   /** Frames as the renderer draws them on demand: stopped at the first with nothing pending; how many ran. */
   const frames = (layer: ReturnType<typeof createBuildingLayer>, doc: RoadDoc, least = 1): number => {
     for (let frame = 0; frame < 2000; frame++) {
-      beginFrameWork();
       layer.update(doc, flat, 'g');
       layer.levelOfDetail(m(384), m(384), m(300), 1000, null);
       layer.cullDetails(m(384), m(384), m(300), 1000, null, m(1));
@@ -300,7 +292,6 @@ describe('the cells the budget of triangles held back', () => {
     expect(held.masses).toBeGreaterThan(0);
     // Further frames of the same still view: nothing to wait for, nothing changes.
     for (let frame = 0; frame < 5; frame++) {
-      beginFrameWork();
       layer.update(doc, flat, 'g');
       layer.levelOfDetail(m(384), m(384), m(300), 1000, null);
       layer.cullDetails(m(384), m(384), m(300), 1000, null, m(1));
@@ -328,7 +319,6 @@ describe('what the layer keeps while the camera walks the town', () => {
       region = [lo, hi];
       layer.setActive((x) => x >= lo && x < hi, rects);
       for (let frame = 0; frame < 600; frame++) {
-        beginFrameWork();
         layer.update(doc, flat, 'g');
         layer.levelOfDetail(eyeX, CELL / 2, m(60), 1000, null);
         layer.cullDetails(eyeX, CELL / 2, m(60), 1000, null, m(1));

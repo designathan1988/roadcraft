@@ -12,7 +12,6 @@ import { type BuildingChunk, assembleBuildingMeshes, emitChunk } from '@render/b
 import { emitBoxes, emitMassing } from '@render/buildings/massing';
 import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { createBuildingLayer } from '@render/buildings/layer';
-import { beginFrameWork } from '@core/frameWork';
 import { shapeBody } from '@editor/buildingPlans';
 import { addRoofDetail, updateRoofDetail } from '@editor/buildingRoofs';
 import { applyFacadePattern } from '@editor/buildingFacade';
@@ -203,7 +202,6 @@ describe('buildings layer', () => {
     const settle = (ground: string): boolean => {
       let rebuilt = false;
       for (let frame = 0; frame < 200; frame++) {
-        beginFrameWork();
         rebuilt = layer.update(doc, slope, ground) || rebuilt;
         if (!layer.pending) break;
       }

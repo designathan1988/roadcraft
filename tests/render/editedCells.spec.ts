@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { beginFrameWork } from '@core/frameWork';
 import { CellPool } from '@render/buildings/cellPool';
 import { createBuildingLayer, playerCause } from '@render/buildings/layer';
 import { BLUEPRINTS } from '@world/buildings/blueprints';
@@ -18,7 +17,6 @@ function body(index: number, x: number, y: number): Omit<Building, 'id'> {
 
 function settle(layer: ReturnType<typeof createBuildingLayer>, doc: RoadDoc): void {
   for (let frame = 0; frame < 5000; frame++) {
-    beginFrameWork();
     layer.update(doc, flat, 'g');
     if (!layer.pending) return;
   }
