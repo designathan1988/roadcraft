@@ -219,6 +219,20 @@ class JobSystem {
   tilesWaiting = false;
 }
 const system = new JobSystem();
+// TEMPORARY, DEV only (ROADCRAFT, measuring whether ending an idle worker gives its heap back to the cage): ends every worker with no job, no lane and no port; `grow` makes new ones as work comes.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __retireIdle: () => number }).__retireIdle = () => {
+    let n = 0;
+    for (const host of [...system.workers]) {
+      if (host.job || host.failed || host.laneWork > 0 || host.ports > 0 || host.services.size > 0) continue;
+      host.worker.terminate();
+      system.workers.splice(system.workers.indexOf(host), 1);
+      n++;
+    }
+    dispatch();
+    return n;
+  };
+}
 
 /** Whether tiles of the map wait for the long-running side's lanes (`tileGenerator.ts` pump): while they do, a long worker between two tiles takes no queued job of the cells' bands and after (priority 0 on: a cell, a facade, a mass, a near level), only those ahead of them (a far level, an edit; `cellPool.ts` FAR_TIER, EDIT_TIER), short and what the opening's view waits for - kept off them all, the map's edges stood empty after the curtain (conf55, 2026-10-17). DO NOT give it a cell's job: one of seconds held the next tile behind it - the opening's tile workers ran 103 s of cells' jobs (wprof4, 2026-10-17), whenever the queue's worker had a lane's message in flight. Told off, the jobs waiting go out to them. */
 export function setTilesWaiting(on: boolean): void {
