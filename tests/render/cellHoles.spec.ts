@@ -4,7 +4,7 @@ import { BufferGeometry, Float32BufferAttribute, Mesh, MeshBasicMaterial, type W
 import type { CellEnv, CellPool } from '@render/buildings/cellPool';
 import type { BuildingKit } from '@render/buildings/kit';
 import { CellRequests, MOST_HOLES } from '@render/buildings/cellRequests';
-import { cancelWarm, drainWarm, warmFull, warmLooseAhead } from '@render/uploads';
+import { WARM_CEILING, cancelWarm, drainWarm, warmFull, warmLooseAhead, warmQueuedBytes, warmReservedBytes } from '@render/uploads';
 
 /** THE HOLE AT THE CAMERA PAST A FULL UPLOAD QUEUE (`cellRequests.ts` want with `hole`): a cell wanted in detail with no level landed is asked, a few at once; the rest waits */
 
@@ -53,5 +53,32 @@ describe('a cell wanted in detail with no level landed', () => {
     expect(requests.holeRoom()).toBe(false);
     requests.drop('cell', '0,5');
     expect(requests.holeRoom()).toBe(true);
+  });
+});
+
+describe('the levels asked of the workers', () => {
+  it('hold their bytes in the upload queue from the ask: the jobs in flight never bring it past its ceiling by more than one', () => {
+    const renderer = { render: () => {}, getRenderTarget: () => null, setRenderTarget: () => {}, autoClear: true } as unknown as WebGLRenderer;
+    drainWarm(renderer);
+    let id = 0;
+    const pool = { run: () => ++id, supersede: () => {}, cancel: () => {} } as unknown as CellPool;
+    const level = 10 * 1024 * 1024;
+    const requests = new CellRequests(pool, {} as BuildingKit, () => {}, () => true, () => 0, () => level);
+    const env = {} as CellEnv;
+    let asked = 0, most = 0;
+    for (let i = 0; i < 40; i++) {
+      requests.want('cell', `${i},9`, [], env, true);
+      if (requests.isAsked('cell', `${i},9`)) asked++;
+      most = Math.max(most, warmQueuedBytes() + warmReservedBytes());
+    }
+    // Asked while the queue and the jobs in flight are under the ceiling: about 64 MiB of 10 MiB levels, not all forty.
+    expect(asked).toBe(Math.floor(WARM_CEILING / level) + 1);
+    expect(most).toBeLessThanOrEqual(WARM_CEILING + level);
+    // Let go, their bytes are let go too: the next ones are asked.
+    for (let i = 0; i < 40; i++) requests.drop('cell', `${i},9`);
+    expect(warmReservedBytes()).toBe(0);
+    requests.want('cell', '50,9', [], env, true);
+    expect(requests.isAsked('cell', '50,9')).toBe(true);
+    requests.drop('cell', '50,9');
   });
 });

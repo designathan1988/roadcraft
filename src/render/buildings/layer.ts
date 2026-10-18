@@ -382,7 +382,8 @@ export function createBuildingLayer(): BuildingLayer {
   };
   /** A landing's upload ranked by the pixels the masses standing for it leave out (`uploads.ts`). */
   const rank = (_kind: BatchKind, cell: string): number => massCells.pixels(cell, FAR_ERROR);
-  const requests = new CellRequests(pool, kit, keep, admit, rank);
+  // What a level asked will bring to the upload queue: as its kind's landed measured (`landedBytes`), its cell's masses before any did.
+  const requests = new CellRequests(pool, kit, keep, admit, rank, (kind, cell) => { const mean = landedBytes.of(kind, cell); return Number.isNaN(mean) ? massCells.massBytes(cell) : mean; });
   /** The tiles' (L2) and plates' (L3) masses, asked again only where a cell's buildings changed (`massLevels.ts`). */
   const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key),
     (key) => massCells.planLevel(key), (key) => massCells.wanted(key));

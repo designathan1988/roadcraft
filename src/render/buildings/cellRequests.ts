@@ -1,5 +1,5 @@
 import type { Mesh } from 'three';
-import { cancelWarm, warmFull, warmLooseAhead } from '../uploads';
+import { cancelWarm, reserveWarm, warmFull, warmLooseAhead } from '../uploads';
 import { type BuildingMeshes, meshesOf } from './buildingMesh';
 import { type CellMass, cellBytes } from './cellArrays';
 import type { CellEnv, CellPool } from './cellPool';
@@ -31,7 +31,7 @@ export const MOST_HOLES = 4;
 export class CellRequests {
   /** The levels asked past a full queue as a hole in the view: counted while asked or on their way to the GPU (`MOST_HOLES`). */
   private readonly holes = new Set<string>();
-  private readonly asked = new Map<string, { readonly entries: readonly CellEntry[]; id: number }>();
+  private readonly asked = new Map<string, { readonly entries: readonly CellEntry[]; id: number; readonly release: () => void }>();
   private readonly landed = new Map<string, Landing>();
   /** Summary jobs asked and not answered: cancelled with the rest (`clear`). */
   private readonly summaries = new Set<number>();
@@ -40,7 +40,8 @@ export class CellRequests {
 
   /** `admit`: whether a level landed is still wanted within the GPU's room, its bytes measured (refused: disposed, never uploaded); `rank`: its upload's pixels of error (`uploads.ts`). */
   constructor(private readonly pool: CellPool, private readonly kit: BuildingKit, private readonly onSummaries: (summaries: readonly ChunkSummary[], entries: readonly CellEntry[], env: CellEnv) => void,
-    private readonly admit: (kind: BatchKind, cell: string, bytes: number) => boolean = () => true, private readonly rank: (kind: BatchKind, cell: string) => number = () => 0) {}
+    private readonly admit: (kind: BatchKind, cell: string, bytes: number) => boolean = () => true, private readonly rank: (kind: BatchKind, cell: string) => number = () => 0,
+    private readonly estimate: (kind: BatchKind, cell: string) => number = () => 0) {}
 
   /** Cells asked and not landed, or landed and still on their way to the GPU. */
   get waiting(): number {
@@ -63,13 +64,15 @@ export class CellRequests {
       if (!hole || !this.holeRoom()) return null;
     }
     // Replaced by the cell as it is now: never sent if waiting, its answer dropped if begun (the queue's key does the same).
-    if (asked) this.pool.supersede(asked.id);
-    const ask = { entries, id: 0 };
+    if (asked) { this.pool.supersede(asked.id); asked.release(); }
+    // What it will bring to the upload queue, held there from now (`reserveWarm`): the queue's ceiling counts the jobs in flight.
+    const ask = { entries, id: 0, release: upload ? reserveWarm(this.estimate(kind, cell)) : () => {} };
     this.asked.set(key, ask);
     if (hole) this.holes.add(key);
     ask.id = this.pool.run(kind, cell, entries, env, (result) => {
       if (this.asked.get(key) !== ask) return;
       this.asked.delete(key);
+      ask.release();
       this.onSummaries(result.summaries, entries, env);
       const landing = this.land(kind, cell, entries, result, upload);
       if (landing) this.landed.set(key, landing);
@@ -113,7 +116,7 @@ export class CellRequests {
   drop(kind: BatchKind, cell: string): void {
     const key = `${kind}|${cell}`;
     const asked = this.asked.get(key);
-    if (asked) { this.pool.cancel(asked.id); this.asked.delete(key); }
+    if (asked) { this.pool.cancel(asked.id); this.asked.delete(key); asked.release(); }
     const got = this.landed.get(key);
     if (got) { disposeLanded(got); this.landed.delete(key); }
   }
@@ -160,7 +163,7 @@ export class CellRequests {
 
   /** Every request forgotten and every batch not taken disposed (a context restored, the layer gone). */
   clear(): void {
-    for (const { id } of this.asked.values()) this.pool.cancel(id);
+    for (const { id, release } of this.asked.values()) { this.pool.cancel(id); release(); }
     this.asked.clear();
     for (const id of this.summaries) this.pool.cancel(id);
     this.summaries.clear();
