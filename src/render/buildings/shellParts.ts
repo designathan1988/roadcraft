@@ -32,9 +32,11 @@ function lattice(ti: number, tj: number, tk: number): number {
   return ((h ^ (h >>> 13)) >>> 0) / 4_294_967_296;
 }
 
-/** Smooth 3D value noise, 0..1, for tone that drifts over a whole facade, written in `out[at]`: DO NOT return it (a number out of a call not inlined is boxed: one a vertex of every shell). */
+/** Smooth 3D value noise, 0..1, for tone that drifts over a whole facade: the point read from `io[0..2]`, the noise written in `io[3]`. */
+/** DO NOT pass the point as numbers or return the noise: a double into or out of a call not inlined is boxed (three a vertex of every shell). */
 /** DO NOT hash each of a cell's eight corners from its coordinates: each axis's two terms once (the same integers as each corner hashed alone, the xor in any order the same). */
-export function macroNoiseInto(x: number, y: number, z: number, out: Float64Array, at: number): void {
+export function macroNoiseInto(io: Float64Array): void {
+  const x = io[0]!, y = io[1]!, z = io[2]!;
   const x0 = Math.floor(x), y0 = Math.floor(y), z0 = Math.floor(z);
   let fx = x - x0, fy = y - y0, fz = z - z0;
   fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
@@ -46,7 +48,7 @@ export function macroNoiseInto(x: number, y: number, z: number, out: Float64Arra
   const ab0 = p0a + (p0b - p0a) * fx, cd0 = p0c + (p0d - p0c) * fx;
   const ab1 = p1a + (p1b - p1a) * fx, cd1 = p1c + (p1d - p1c) * fx;
   const plane0 = ab0 + (cd0 - ab0) * fy, plane1 = ab1 + (cd1 - ab1) * fy;
-  out[at] = plane0 + (plane1 - plane0) * fz;
+  io[3] = plane0 + (plane1 - plane0) * fz;
 }
 
 /** A shell vertex's planar uv, metres along its face and up it, from its place and its face's normal in three's axes (x, y up, -z north): `SHELL_UV_GLSL` to the formula, as `Shell.face` once laid it. */

@@ -1,3 +1,4 @@
+import { least, most } from '@core/minMax';
 import { DataUtils } from 'three';
 import { CELL } from '@world/cells';
 import { FINISHES, type Finish } from '@world/buildings/materials';
@@ -448,7 +449,7 @@ function shellArrays(chunks: readonly BuildingChunk[], of: FragmentsOf): ShellAr
         grid?.set(part.grid, v * FACADE_GRID);
         opening?.set(part.opening, v * FACADE_BYTES);
       }
-      for (let i = 0; i < part.index.length; i++) index[n + i] = (part.index[i] as number) + v;
+      offsetIndices(index, n, part.index, v);
       v += part.position.length / 3;
       n += part.index.length;
     }
@@ -502,29 +503,65 @@ function furniturePoses(chunks: readonly BuildingChunk[], kind: FurnitureKind, c
   return poses;
 }
 
+/** A fragment's indices written into `out` at `at`, each `add` more (its vertices' place in the merged arrays): a loop of its own, DO NOT inline it in `shellArrays` (entered on the stack, its code left at every fragment's end, 205 times a job). */
+function offsetIndices(out: Uint16Array | Uint32Array, at: number, from: ArrayLike<number>, add: number): void {
+  for (let i = 0; i < from.length; i++) out[at + i] = from[i]! + add;
+}
+
+/** What `shellBounds`'s loops write: the box (min x, y, z, max x, y, z) and the farthest squared distance from its centre. */
+const SHELL_BOX = new Float64Array(7);
+
 /** A shell's box and sphere as three's `BufferGeometry.computeBoundingBox` and `computeBoundingSphere` work them out */
+/** DO NOT work the box's centre and radius out after its loops in one function: entered on the stack (OSR), its code never saw them run and left there for each shell (`instanceBounds`). */
 export function shellBounds(position: Float32Array): Bounds {
+  boxOfPoints(position, SHELL_BOX);
+  const minX = SHELL_BOX[0]!, minY = SHELL_BOX[1]!, minZ = SHELL_BOX[2]!, maxX = SHELL_BOX[3]!, maxY = SHELL_BOX[4]!, maxZ = SHELL_BOX[5]!;
+  const cx = (minX + maxX) * 0.5, cy = (minY + maxY) * 0.5, cz = (minZ + maxZ) * 0.5;
+  farthestFrom(position, cx, cy, cz, SHELL_BOX);
+  return Float64Array.of(minX, minY, minZ, maxX, maxY, maxZ, cx, cy, cz, Math.sqrt(SHELL_BOX[6]!));
+}
+
+/** The box of the points, written into `out` after each one. */
+function boxOfPoints(position: Float32Array, out: Float64Array): void {
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  out[0] = minX; out[1] = minY; out[2] = minZ; out[3] = maxX; out[4] = maxY; out[5] = maxZ;
   for (let i = 0; i < position.length; i += 3) {
     const x = position[i]!, y = position[i + 1]!, z = position[i + 2]!;
-    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
-    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+    minX = least(minX, x); minY = least(minY, y); minZ = least(minZ, z);
+    maxX = most(maxX, x); maxY = most(maxY, y); maxZ = most(maxZ, z);
+    out[0] = minX; out[1] = minY; out[2] = minZ; out[3] = maxX; out[4] = maxY; out[5] = maxZ;
   }
-  const cx = (minX + maxX) * 0.5, cy = (minY + maxY) * 0.5, cz = (minZ + maxZ) * 0.5;
-  let most = 0;
+}
+
+/** The farthest squared distance of the points from (cx, cy, cz), written into `out[6]` after each one. */
+function farthestFrom(position: Float32Array, cx: number, cy: number, cz: number, out: Float64Array): void {
+  let far = 0;
+  out[6] = far;
   for (let i = 0; i < position.length; i += 3) {
     const dx = cx - position[i]!, dy = cy - position[i + 1]!, dz = cz - position[i + 2]!;
-    most = Math.max(most, dx * dx + dy * dy + dz * dz);
+    far = most(far, dx * dx + dy * dy + dz * dz);
+    out[6] = far;
   }
-  return Float64Array.of(minX, minY, minZ, maxX, maxY, maxZ, cx, cy, cz, Math.sqrt(most));
 }
 
 /** One instance's matrix, written over by each instance `instanceBounds` reads. */
 const BOUNDS_MATRIX = new Float32Array(16);
+/** The box `boxOfInstances` widens: min x, y, z, max x, y, z. */
+const BOUNDS_BOX = new Float64Array(6);
 
 /** An instanced batch's box and sphere as three's `InstancedMesh.computeBoundingBox` works the box out */
+/** DO NOT end the loop over the instances with the box's sums in the same function: entered on the stack (OSR) on its first long batch, its code never saw the sums run and left on them for every batch after (138 times a job), each batch's start run unoptimised, every number boxed. */
 function instanceBounds(poses: Float32Array, count: number, box: readonly number[]): Bounds {
+  boxOfInstances(poses, count, box, BOUNDS_BOX);
+  const minX = BOUNDS_BOX[0]!, minY = BOUNDS_BOX[1]!, minZ = BOUNDS_BOX[2]!, maxX = BOUNDS_BOX[3]!, maxY = BOUNDS_BOX[4]!, maxZ = BOUNDS_BOX[5]!;
+  const sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
+  return Float64Array.of(minX, minY, minZ, maxX, maxY, maxZ, (minX + maxX) * 0.5, (minY + maxY) * 0.5, (minZ + maxZ) * 0.5, Math.sqrt(sx * sx + sy * sy + sz * sz) * 0.5);
+}
+
+/** The box of every instance's corners, written into `out` (min x, y, z, max x, y, z) after each instance: nothing after the loop for its code to have never run. */
+function boxOfInstances(poses: Float32Array, count: number, box: readonly number[], out: Float64Array): void {
   let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  out[0] = minX; out[1] = minY; out[2] = minZ; out[3] = maxX; out[4] = maxY; out[5] = maxZ;
   const [bx0, by0, bz0, bx1, by1, bz1] = box as [number, number, number, number, number, number];
   const matrices = BOUNDS_MATRIX, o = 0;
   for (let i = 0; i < count; i++) {
@@ -541,10 +578,10 @@ function instanceBounds(poses: Float32Array, count: number, box: readonly number
       const px = (e0 * x + e4 * y + e8 * z + e12) * w;
       const py = (e1 * x + e5 * y + e9 * z + e13) * w;
       const pz = (e2 * x + e6 * y + e10 * z + e14) * w;
-      minX = Math.min(minX, px); minY = Math.min(minY, py); minZ = Math.min(minZ, pz);
-      maxX = Math.max(maxX, px); maxY = Math.max(maxY, py); maxZ = Math.max(maxZ, pz);
+      // Comparisons, not the built-ins: each `Math.min` here was a call and a boxed result (`core/minMax.ts`).
+      minX = least(minX, px); minY = least(minY, py); minZ = least(minZ, pz);
+      maxX = most(maxX, px); maxY = most(maxY, py); maxZ = most(maxZ, pz);
     }
+    out[0] = minX; out[1] = minY; out[2] = minZ; out[3] = maxX; out[4] = maxY; out[5] = maxZ;
   }
-  const sx = maxX - minX, sy = maxY - minY, sz = maxZ - minZ;
-  return Float64Array.of(minX, minY, minZ, maxX, maxY, maxZ, (minX + maxX) * 0.5, (minY + maxY) * 0.5, (minZ + maxZ) * 0.5, Math.sqrt(sx * sx + sy * sy + sz * sz) * 0.5);
 }

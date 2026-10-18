@@ -261,7 +261,8 @@ function defaultFunction(b: Building): BuildingFunction {
 
 /** The side of the cells the pieces of a floor are filed by (`Plan.free`). */
 const ITEM_CELL = m(2);
-const itemCell = (x: number, y: number): number => (x + 32768) * 65536 + (y + 32768);
+/** A cell's key, a small integer (cells within 32 km of the block's frame): DO NOT key past 2^30, every key a heap number made for each lookup. */
+const itemCell = (x: number, y: number): number => (x + 16384) * 32768 + (y + 16384);
 /** A piece's half extents across the floor, with the gap kept round it (`Plan.free`). */
 /** A cell no piece is filed in (`Plan.free`): DO NOT make an empty list for each one looked in. */
 const NONE_FILED: readonly Furniture[] = Object.freeze([]);
@@ -307,11 +308,15 @@ class Plan {
       corner.y = k < 2 ? y - hd : y + hd;
       if (!pointInPolygon(corner, this.ring)) return false;
     }
-    for (const c of this.cores) if (x + hw > c[0] && x - hw < c[2] && y + hd > c[1] && y - hd < c[3]) return false;
+    // Index loops: DO NOT walk these with an iterator, one made for each piece tried (`free` is asked for every place a piece is tried).
+    const cores = this.cores;
+    for (let i = 0; i < cores.length; i++) { const c = cores[i]!; if (x + hw > c[0]! && x - hw < c[2]! && y + hd > c[1]! && y - hd < c[3]!) return false; }
     // Two boxes that overlap share a cell: only the pieces filed in this box's cells can be in its way.
     for (let gx = Math.floor((x - hw) / ITEM_CELL); gx <= Math.floor((x + hw) / ITEM_CELL); gx++) {
       for (let gy = Math.floor((y - hd) / ITEM_CELL); gy <= Math.floor((y + hd) / ITEM_CELL); gy++) {
-        for (const it of this.filed.get(itemCell(gx, gy)) ?? NONE_FILED) {
+        const filed = this.filed.get(itemCell(gx, gy)) ?? NONE_FILED;
+        for (let i = 0; i < filed.length; i++) {
+          const it = filed[i]!;
           const t2 = Math.abs(Math.sin(it.angle)) > 0.5;
           const iw = (t2 ? it.d : it.w) / 2 + m(0.15);
           const id = (t2 ? it.w : it.d) / 2 + m(0.15);

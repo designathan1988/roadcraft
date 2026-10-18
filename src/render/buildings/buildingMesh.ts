@@ -1,3 +1,4 @@
+import { hypot3 } from '@core/hypot';
 import { identityMemo } from '@core/identityMemo';
 import earcut from 'earcut';
 import clipping from 'polygon-clipping';
@@ -137,23 +138,6 @@ export interface AssemblySelection {
   readonly parts: ReadonlySet<PartKind>;
   readonly shells: boolean;
   readonly furniture: boolean;
-}
-
-interface Placement {
-  x: number;
-  y: number;
-  z: number;
-  yaw: number;
-  sx: number;
-  sy: number;
-  sz: number;
-  colour?: Color;
-  /** A window pane's space (`lightSlots.ts`): lit when its room is. */
-  slot?: number;
-  /** A window pane's room behind it (`roomBehind.ts`, ROOM_FLOATS numbers). */
-  room?: readonly number[];
-  /** A shell's part (`shellParts.ts`): its paint, and the shell's wear and ground where it was laid (`Shell.decay`, `Shell.ground`). */
-  look?: { readonly paint: Paint; readonly decay: number; readonly ground: number };
 }
 
 type Rgb = readonly [number, number, number];
@@ -389,6 +373,101 @@ class Grow<T extends Typed> {
   private words: Int32Array | null = null;
 }
 
+/** A kind's instances as the arrays of its batch (`PartBatch`), written as each is placed: DO NOT make an object of each placement (its numbers boxed, every pane, frame and chair of a job). */
+class PartRows {
+  readonly poses = new Grow((n) => new Float32Array(n), 8 * POSE_FLOATS);
+  readonly colours: Grow<Float32Array> | null;
+  readonly looks: Grow<Float32Array> | null;
+  readonly slots: Grow<Float32Array> | null;
+  readonly rooms: Grow<Uint16Array> | null;
+  count = 0;
+
+  /** `fallback`: the colour of an instance placed with none (`PART_DEFAULT_COLOUR`). */
+  constructor(coloured: boolean, looked: boolean, readonly glassy: boolean, private readonly fallback: Rgb = WHITE_RGB) {
+    this.colours = coloured ? new Grow((n) => new Float32Array(n), 8 * 3) : null;
+    this.looks = looked ? new Grow((n) => new Float32Array(n), 8 * LOOK_FLOATS) : null;
+    this.slots = glassy ? new Grow((n) => new Float32Array(n), 8) : null;
+    this.rooms = glassy ? new Grow((n) => new Uint16Array(n), 8 * ROOM_FLOATS) : null;
+  }
+
+  /** Emptied for the next building, its arrays kept at their size. */
+  clear(): void {
+    this.count = 0;
+    this.poses.length = 0;
+    if (this.colours) this.colours.length = 0;
+    if (this.looks) this.looks.length = 0;
+    if (this.slots) this.slots.length = 0;
+    if (this.rooms) this.rooms.length = 0;
+  }
+
+  /** One instance at (x, y, z) in world axes, turned `yaw`, sized (sx, sy, sz): its pose (`partPose.ts`), the kind's colour, no look, slot or room; its index. */
+  add(x: number, y: number, z: number, yaw: number, sx: number, sy: number, sz: number): number {
+    const i = this.count++;
+    const out = this.poses.room(POSE_FLOATS), o = i * POSE_FLOATS;
+    // World y is mirrored into three's z, as everywhere else in this layer.
+    out[o] = x; out[o + 1] = z; out[o + 2] = -y; out[o + 3] = Math.cos(yaw);
+    out[o + 4] = Math.sin(yaw); out[o + 5] = sx; out[o + 6] = sy; out[o + 7] = sz;
+    this.poses.length = o + POSE_FLOATS;
+    if (this.colours) {
+      const c = this.colours.room(3), f = this.fallback;
+      c[i * 3] = f[0]; c[i * 3 + 1] = f[1]; c[i * 3 + 2] = f[2];
+      this.colours.length = i * 3 + 3;
+    }
+    if (this.looks) {
+      const l = this.looks.room(LOOK_FLOATS);
+      for (let k = 0; k < LOOK_FLOATS; k++) l[i * LOOK_FLOATS + k] = 0;
+      this.looks.length = (i + 1) * LOOK_FLOATS;
+    }
+    if (this.slots) {
+      this.slots.room(1)[i] = -1;
+      this.slots.length = i + 1;
+    }
+    if (this.rooms) {
+      const r = this.rooms.room(ROOM_FLOATS);
+      for (let k = 0; k < ROOM_FLOATS; k++) r[i * ROOM_FLOATS + k] = 0;
+      this.rooms.length = (i + 1) * ROOM_FLOATS;
+    }
+    return i;
+  }
+
+  /** Instance `i`'s own colour (a kind drawn with none keeps none). */
+  colour(i: number, r: number, g: number, b: number): void {
+    const c = this.colours?.array;
+    if (!c) return;
+    c[i * 3] = r; c[i * 3 + 1] = g; c[i * 3 + 2] = b;
+  }
+
+  /** A shell's part's look (`shellParts.ts`): its finish id, its wear as the shell's vertices carry it and its ground (`NO_GROUND`: none). */
+  look(i: number, finish: number, wear: number, ground: number): void {
+    const l = this.looks?.array;
+    if (!l) return;
+    l[i * LOOK_FLOATS] = finish; l[i * LOOK_FLOATS + 1] = wear; l[i * LOOK_FLOATS + 2] = ground;
+  }
+
+  /** A pane's light slot and the room behind it (`roomBehind.ts`, ROOM_FLOATS numbers as half floats), when known. */
+  pane(i: number, slot: number, room: readonly number[] | null): void {
+    if (!this.slots || !this.rooms) return;
+    this.slots.array[i] = slot;
+    if (room) for (let k = 0; k < ROOM_FLOATS; k++) this.rooms.array[i * ROOM_FLOATS + k] = DataUtils.toHalfFloat(room[k]!);
+  }
+
+  /** The batch of what was placed, in arrays of its own (the rows are written again for the next building). */
+  batch(): PartBatch {
+    const poses = this.poses.copy(), colours = this.colours ? this.colours.copy() : null, count = this.count;
+    if (this.slots && this.rooms) return { poses, colours, count, slots: this.slots.copy(), rooms: this.rooms.copy() };
+    return this.looks ? { poses, colours, count, looks: this.looks.copy() } : { poses, colours, count };
+  }
+}
+
+/** Every part kind's rows, written again for each building (`ShellWriter`). */
+type PartSink = Record<PartKind, PartRows>;
+/** The furniture's rows by kind, made as a kind is first placed. */
+type FurnitureSink = Partial<Record<FurnitureKind, PartRows>>;
+
+const partSink = (): PartSink => Object.fromEntries(PART_KINDS.map((k) =>
+  [k, new PartRows(COLOURED_PARTS.has(k), SHELL_PARTS.has(k), k === 'glass' || k === 'glassDark', PART_DEFAULT_COLOUR[k] ?? WHITE_RGB)])) as PartSink;
+const furnitureRows = (sink: FurnitureSink, kind: FurnitureKind): PartRows => (sink[kind] ??= new PartRows(false, false, false));
+
 /** One of a part's arrays as a vertex fills it: its numbers and its 32-bit words a vertex (every vertex whole words, so the weld reads them as words). */
 interface Stream {
   readonly grow: Grow<Typed>;
@@ -553,8 +632,8 @@ const toByte = (x: number): number => Math.round(Math.max(0, Math.min(1, x)) * 2
 /** Triangles in THREE's axes, one buffer set per finish; winding fixed per face. */
 class Shell {
   readonly parts = new Map<Finish, ShellPart>();
-  /** Where `macroNoiseInto` writes a vertex's tone noise. */
-  private readonly noise = new Float64Array(1);
+  /** A vertex's place in and its tone noise out of `macroNoiseInto`. */
+  private readonly noise = new Float64Array(4);
   /** The far level's runs of bays with openings, apart (`RunChunk`): only their vertices pay for the window grid. */
   readonly runs = new Map<Finish, ShellPart>();
   /** The ground floor's height for the building being emitted: walls darken towards it */
@@ -598,7 +677,8 @@ class Shell {
     }
     if (part.index.length === 0) (st ? this.runOrder : this.order).push(c.finish);
     const count = points.length;
-    const length = Math.hypot(n[0], n[1], n[2]) || 1;
+    // DO NOT ask the built-in: its result comes back boxed, one heap number a face (`core/hypot.ts`).
+    const length = hypot3(n[0], n[1], n[2]) || 1;
     const wx = n[0] / length;
     const wy = n[1] / length;
     const wz = n[2] / length;
@@ -627,8 +707,10 @@ class Shell {
       position[p3] = x + 0; position[p3 + 1] = z + 0; position[p3 + 2] = 0 - y;
       // No two stretches of wall quite the same tone, and the base weathered.
       // A vertex's own shade (a streak under a sill darker at its foot, `emitStreak`).
-      macroNoiseInto(x / MACRO_SCALE, y / MACRO_SCALE, z / MACRO_SCALE, this.noise, 0);
-      let tone = (0.97 + this.noise[0]! * 0.06) * (shades?.[i] ?? 1);
+      const noise = this.noise;
+      noise[0] = x / MACRO_SCALE; noise[1] = y / MACRO_SCALE; noise[2] = z / MACRO_SCALE;
+      macroNoiseInto(noise);
+      let tone = (0.97 + noise[3]! * 0.06) * (shades?.[i] ?? 1);
       if (grime) {
         const t = Math.min(1, Math.max(0, (z - this.ground) / GRIME_REACH));
         tone *= 0.8 + 0.2 * t * t * (3 - 2 * t);
@@ -685,6 +767,10 @@ class Shell {
 }
 
 type V3 = [number, number, number];
+/** Straight up and down, and the two sides of a centre (-1, 1): DO NOT write them as literals in what lays every bay (a new array each time). */
+const UP: Readonly<V3> = Object.freeze([0, 0, 1] as V3);
+const DOWN: Readonly<V3> = Object.freeze([0, 0, -1] as V3);
+const EITHER_SIDE: readonly number[] = Object.freeze([-1, 1]);
 
 /** A face of one bay: its frame in the building's local plan, and its storey. */
 interface BayFace {
@@ -707,19 +793,32 @@ function sideFrame(v: Volume, side: FaceId, along: number, push = 0): Pick<BayFa
   return { ax: s.x + s.tx * along + edge.nx * push, ay: s.y + s.ty * along + edge.ny * push, tx: s.tx, ty: s.ty, nx: edge.nx, ny: edge.ny };
 }
 
+/** `sideFrame` written into `out` (`sideStart`'s numbers without its object): DO NOT make a frame and a face for each bay of every building. */
+function sideFrameInto(out: BayFace, v: Volume, side: FaceId, along: number, push = 0): void {
+  const edge = edgeFrame(v, side);
+  let x: number, y: number, tx: number, ty: number;
+  if (v.outline) { x = edge.x; y = edge.y; tx = edge.tx; ty = edge.ty; }
+  else if (side === 0) { x = v.x; y = v.y; tx = 1; ty = 0; }
+  else if (side === 1) { x = v.x + v.w; y = v.y; tx = 0; ty = 1; }
+  else if (side === 2) { x = v.x; y = v.y + v.d; tx = 1; ty = 0; }
+  else { x = v.x; y = v.y; tx = 0; ty = 1; }
+  out.ax = x + tx * along + edge.nx * push; out.ay = y + ty * along + edge.ny * push;
+  out.tx = tx; out.ty = ty; out.nx = edge.nx; out.ny = edge.ny;
+}
+
 // ------------------------------------------------------------------ one building
 
 class Emitter {
   private readonly c: number;
   private readonly s: number;
-  readonly parts: Record<PartKind, Placement[]>;
+  readonly parts: PartSink;
 
   constructor(
     private readonly b: Building,
     readonly shell: Shell,
-    parts: Record<PartKind, Placement[]>,
+    parts: PartSink,
     /** Furniture pieces, by kind, drawn instanced from the furniture kit. */
-    readonly furniture: Partial<Record<FurnitureKind, Placement[]>> = {},
+    readonly furniture: FurnitureSink = {},
   ) {
     this.c = Math.cos(b.rotation);
     this.s = Math.sin(b.rotation);
@@ -752,6 +851,9 @@ class Emitter {
   /** Where `put` works out an instance's place. */
   private readonly spot: V3 = [0, 0, 0];
 
+  /** A facade prop's colour, set from its hex for each prop (`put` copies it at once): DO NOT make a Color for each. */
+  readonly propColour = new Color();
+
   /** `P` written into `out`, the same arithmetic. */
   private corner(out: V3, f: BayFace, a: number, h: number, depth: number): void {
     const lx = f.ax + f.tx * a - f.nx * depth, ly = f.ay + f.ty * a - f.ny * depth;
@@ -761,7 +863,7 @@ class Emitter {
   }
 
   /** A rectangle on (or parallel to) a bay face. */
-  rect(f: BayFace, a0: number, a1: number, h0: number, h1: number, depth: number, n: V3, c: Paint): void {
+  rect(f: BayFace, a0: number, a1: number, h0: number, h1: number, depth: number, n: Readonly<V3>, c: Paint): void {
     if (a1 - a0 < 1e-4 || h1 - h0 < 1e-4) return;
     const q = this.quad;
     this.corner(q[0], f, a0, h0, depth); this.corner(q[1], f, a1, h0, depth); this.corner(q[2], f, a1, h1, depth); this.corner(q[3], f, a0, h1, depth);
@@ -777,7 +879,7 @@ class Emitter {
       const [ax, ay] = at(k), [bx, by] = at(k + 1);
       const mid = ((k + 0.5) / sides) * Math.PI * 2;
       sh.face([this.L(ax, ay, z0), this.L(bx, by, z0), this.L(bx, by, z1), this.L(ax, ay, z1)], this.N(Math.cos(mid), Math.sin(mid)), c);
-      sh.face([this.L(cx, cy, z1), this.L(ax, ay, z1), this.L(bx, by, z1)], [0, 0, 1], top);
+      sh.face([this.L(cx, cy, z1), this.L(ax, ay, z1), this.L(bx, by, z1)], UP, top);
     }
   }
 
@@ -793,7 +895,7 @@ class Emitter {
     sh.face([this.L(x1, y1, z0), this.L(x0, y1, z0), this.L(x0, y1, z1), this.L(x1, y1, z1)], this.N(0, 1), c);
     sh.face([this.L(x1, y0, z0), this.L(x1, y1, z0), this.L(x1, y1, z1), this.L(x1, y0, z1)], this.N(1, 0), c);
     sh.face([this.L(x0, y1, z0), this.L(x0, y0, z0), this.L(x0, y0, z1), this.L(x0, y1, z1)], this.N(-1, 0), c);
-    sh.face([this.L(x0, y0, z1), this.L(x1, y0, z1), this.L(x1, y1, z1), this.L(x0, y1, z1)], [0, 0, 1], top);
+    sh.face([this.L(x0, y0, z1), this.L(x1, y0, z1), this.L(x1, y1, z1), this.L(x0, y1, z1)], UP, top);
   }
 
   /** A box whose sides stand `inset` in from the edges of its top. */
@@ -810,18 +912,18 @@ class Emitter {
     sh.face([this.L(a1, b1, z0), this.L(a0, b1, z0), this.L(a0, b1, z1), this.L(a1, b1, z1)], this.N(0, 1), c);
     sh.face([this.L(a1, b0, z0), this.L(a1, b1, z0), this.L(a1, b1, z1), this.L(a1, b0, z1)], this.N(1, 0), c);
     sh.face([this.L(a0, b1, z0), this.L(a0, b0, z0), this.L(a0, b0, z1), this.L(a0, b1, z1)], this.N(-1, 0), c);
-    sh.face([this.L(x0, y0, z1), this.L(x1, y0, z1), this.L(x1, y1, z1), this.L(x0, y1, z1)], [0, 0, 1], c);
+    sh.face([this.L(x0, y0, z1), this.L(x1, y0, z1), this.L(x1, y1, z1), this.L(x0, y1, z1)], UP, c);
   }
 
   /** A horizontal strip at height h, from depth d0 to d1 into the wall. */
-  strip(f: BayFace, a0: number, a1: number, h: number, d0: number, d1: number, n: V3, c: Paint): void {
+  strip(f: BayFace, a0: number, a1: number, h: number, d0: number, d1: number, n: Readonly<V3>, c: Paint): void {
     const q = this.quad;
     this.corner(q[0], f, a0, h, d0); this.corner(q[1], f, a1, h, d0); this.corner(q[2], f, a1, h, d1); this.corner(q[3], f, a0, h, d1);
     this.shell.face(q, n, c);
   }
 
   /** A vertical strip across the wall's thickness at `a`, from h0 to h1. */
-  jamb(f: BayFace, a: number, h0: number, h1: number, d0: number, d1: number, n: V3, c: Paint): void {
+  jamb(f: BayFace, a: number, h0: number, h1: number, d0: number, d1: number, n: Readonly<V3>, c: Paint): void {
     const q = this.quad;
     this.corner(q[0], f, a, h0, d0); this.corner(q[1], f, a, h0, d1); this.corner(q[2], f, a, h1, d1); this.corner(q[3], f, a, h1, d0);
     this.shell.face(q, n, c);
@@ -842,13 +944,10 @@ class Emitter {
     const p = this.spot;
     this.corner(p, f, a, h, depth);
     const nx = f.nx * this.c - f.ny * this.s, ny = f.nx * this.s + f.ny * this.c;
-    const placement: Placement = { x: p[0], y: p[1], z: p[2], yaw: Math.atan2(nx, -ny) + turn, sx, sy, sz };
-    if (colour) placement.colour = colour;
-    if (kind === 'glass' || kind === 'glassDark') {
-      placement.slot = this.slot;
-      if (this.room) placement.room = this.room(a, h);
-    }
-    this.parts[kind].push(placement);
+    const rows = this.parts[kind];
+    const i = rows.add(p[0], p[1], p[2], Math.atan2(nx, -ny) + turn, sx, sy, sz);
+    if (colour) rows.colour(i, colour.r, colour.g, colour.b);
+    if (rows.glassy) rows.pane(i, this.slot, this.room ? this.room(a, h) : null);
   }
 
   /** An element being emitted (`emitElement`): its boxes are the shell's parts where the shell lets them be (`Shell.apart`). */
@@ -860,15 +959,18 @@ class Emitter {
   /** A shell's part (`shellParts.ts`) centred at plan point (lx, ly), from z0 to z1, `along` its own x turned `turn` from the building's and `across` it. */
   shellPart(kind: ShellPartKind, lx: number, ly: number, z0: number, z1: number, along: number, across: number, turn: number, c: Paint): void {
     const p = this.L(lx, ly, (z0 + z1) / 2);
-    const look = { paint: c, decay: this.shell.decay, ground: this.shell.ground };
-    this.parts[kind].push({ x: p[0], y: p[1], z: p[2], yaw: this.b.rotation + turn, sx: along, sy: z1 - z0, sz: across, look });
+    const rows = this.parts[kind];
+    const i = rows.add(p[0], p[1], p[2], this.b.rotation + turn, along, z1 - z0, across);
+    rows.colour(i, c.rgb[0], c.rgb[1], c.rgb[2]);
+    const ground = this.shell.ground;
+    rows.look(i, finishId(c.finish), wearShort(this.shell.decay), Number.isFinite(ground) ? ground : NO_GROUND);
   }
 
   /** An instance at a point of the building's plan (`L`), square to the building, its centre at height `z`. */
   putAt(kind: PartKind, lx: number, ly: number, z: number, sx: number, sy: number, sz: number): void {
     const p = this.L(lx, ly, z);
     const n = this.N(0, 1);
-    this.parts[kind].push({ x: p[0], y: p[1], z: p[2], yaw: Math.atan2(n[0], -n[1]), sx, sy, sz });
+    this.parts[kind].add(p[0], p[1], p[2], Math.atan2(n[0], -n[1]), sx, sy, sz);
   }
 }
 
@@ -907,13 +1009,16 @@ function slotOfBay(b: Building, v: Volume, bay: FacadeBay, spaces: ReturnType<ty
   return sp ? slots(b.id, bay.level, v.id, sp.x, sp.y) : -1;
 }
 
+/** A bay's place as one number (its block's id under 2^20, its level from -1,024 to 1,023, its side, its index from -1 under 2^20): DO NOT key the bays by text, four numbers written out for each bay and twice more for its neighbours. */
+const bayKey = (volume: number, level: number, side: number, index: number): number => ((volume * 2048 + level + 1024) * 4 + side) * 1_048_576 + index + 1;
+
 function emitBuilding(
   b: Building,
   groundAt: GroundAt,
   shell: Shell,
-  parts: Record<PartKind, Placement[]>,
+  parts: PartSink,
   pavedAt?: PavedAt,
-  furniture: Partial<Record<FurnitureKind, Placement[]>> = {},
+  furniture: FurnitureSink = {},
   onLot?: (el: BuildingElement) => boolean,
   designedFloor?: number,
   slots: SlotAllocator = spaceSeed,
@@ -926,8 +1031,8 @@ function emitBuilding(
   const f: Foundation = foundationOf(b, groundAt, bays, pavedAt, designedFloor);
   const floor = f.floor;
   shell.ground = floor;
-  const entranceKey = (volume: number, side: FaceId, index: number): string => `${volume}:${side}:${index}`;
-  const entrances = new Map<string, Entrance>(f.entrances.map((x) => [entranceKey(x.volume, x.side, x.index), x]));
+  const entrances = new Map<number, Entrance>();
+  for (const x of f.entrances) entrances.set(bayKey(x.volume, 0, x.side, x.index), x);
   /** The opening of an entrance, in its bay's face frame. */
   const entranceOpening = (x: Entrance): Opening =>
     openingOf(x.component, x.width, levelHeight(b, 0)) ??
@@ -984,23 +1089,26 @@ function emitBuilding(
   // The spaces of each floor, for which room a window lights.
   const spacesOf = deriveSpaces(b);
   // ---- facades, bay by bay: only outside walls are in `bays`
-  const componentAt = new Map<string, BayComponent>();
-  for (const bay of bays) componentAt.set(`${bay.volume}:${bay.level}:${bay.side}:${bay.index}`, bay.component);
+  const componentAt = new Map<number, BayComponent>();
+  for (const bay of bays) componentAt.set(bayKey(bay.volume, bay.level, bay.side, bay.index), bay.component);
   const volumes = new Map(b.volumes.map((v) => [v.id, v]));
   // The rooms behind the windows, a type of floor of a block at a time: the interior the cut-open view draws (`interiorAt`, furnished once a type for the blocks).
   const roomsOf = new Map<readonly Furniture[], Map<number, ReturnType<typeof roomsOfStorey>>>();
   // The far level's bays, laid as runs once all are known.
   const farBays: FarBay[] = [];
+  // One face written again for each bay (nothing keeps it past its bay: `e.room` is let go with it).
+  const face: BayFace = { ax: 0, ay: 0, tx: 0, ty: 0, nx: 0, ny: 0, z0: 0, W: 0, H: 0 };
   for (const bay of bays) {
     const v = volumes.get(bay.volume) as Volume;
-    const face: BayFace = { ...sideFrame(v, bay.side, bay.start, bay.push), z0: floor + bay.z, W: bay.width, H: bay.height };
+    sideFrameInto(face, v, bay.side, bay.start, bay.push);
+    face.z0 = floor + bay.z; face.W = bay.width; face.H = bay.height;
     if (covers.length > 0) {
       const [x, y] = e.L(face.ax, face.ay, 0), [tx, ty] = e.N(face.tx, face.ty), [nx, ny] = e.N(face.nx, face.ny);
       if (hiddenByCovers(covers, x, y, tx, ty, nx, ny, face.W, face.z0, face.z0 + face.H)) continue;
     }
-    const left = componentAt.get(`${bay.volume}:${bay.level}:${bay.side}:${bay.index - 1}`);
-    const right = componentAt.get(`${bay.volume}:${bay.level}:${bay.side}:${bay.index + 1}`);
-    const recess = bay.level === 0 ? entrances.get(entranceKey(bay.volume, bay.side, bay.index))?.recess ?? 0 : 0;
+    const left = componentAt.get(bayKey(bay.volume, bay.level, bay.side, bay.index - 1));
+    const right = componentAt.get(bayKey(bay.volume, bay.level, bay.side, bay.index + 1));
+    const recess = bay.level === 0 ? entrances.get(bayKey(bay.volume, 0, bay.side, bay.index))?.recess ?? 0 : 0;
     const composition = v.storeys[bay.storey]?.facade;
     const grammar = composition?.patterns?.[bay.side] ?? composition?.pattern ?? v.facadePattern;
     const controls = v.facadeGeometry?.[bay.side];
@@ -1284,8 +1392,7 @@ function placeFurniture(e: Emitter, f: Furniture, floorZ: number): void {
   const [w, d, h] = FURNITURE_SIZE[f.kind];
   const p = e.L(f.x, f.y, floorZ + 0.05);
   const front = e.N(Math.sin(f.angle), -Math.cos(f.angle));
-  const list = (e.furniture[f.kind] ??= []);
-  list.push({ x: p[0], y: p[1], z: p[2], yaw: Math.atan2(front[0], -front[1]), sx: f.w / w, sy: f.h / h, sz: f.d / d });
+  furnitureRows(e.furniture, f.kind).add(p[0], p[1], p[2], Math.atan2(front[0], -front[1]), f.w / w, f.h / h, f.d / d);
 }
 
 const PARTITION = paint({ finish: 'plaster', colour: 0xece6da });
@@ -1369,14 +1476,14 @@ function emitFacadeRuns(e: Emitter, volumes: ReadonlyMap<number, Volume>, floor:
   let last: FarRun | null = null;
   for (const x of sorted) {
     const kind = x.opening ? facadeKind(x.bay.component) + FACADE_STREAK * x.streak : FACADE_KIND.none;
-    const key = keyOf(x, kind);
     const at = last ? last.first.bay : null;
-    if (last && at && last.key === key && at.level === x.bay.level && x.bay.index === at.index + last.bays
+    // The key written out only for a bay that starts a run: the next bay is compared field by field, as its key would be.
+    if (last && at && alikeBays(last.first, last.kind, x, kind) && at.level === x.bay.level && x.bay.index === at.index + last.bays
       && sameLength(at.start + last.bays * at.width, x.bay.start)) {
       last.bays++;
       continue;
     }
-    last = { first: x, key, kind, bays: 1, storeys: 1 };
+    last = { first: x, key: keyOf(x, kind), kind, bays: 1, storeys: 1 };
     rows.push(last);
   }
   // Up the facade: a run over another alike, the same bays, one storey higher, joins it, but never over the base storey the grime darkens.
@@ -1422,6 +1529,23 @@ function emitFacadeRuns(e: Emitter, volumes: ReadonlyMap<number, Volume>, floor:
   shell.ground = ground;
 }
 
+/** Two numbers written alike to four places (`toFixed(4)`), the text made only when they differ. */
+const sameFixed = (a: number, b: number): boolean => a === b || a.toFixed(4) === b.toFixed(4);
+
+/** Whether two far bays have the same key in `emitFacadeRuns` (`keyOf`), field by field: DO NOT write each bay's key out as text, ten numbers to strings a bay. */
+function alikeBays(p: FarBay, pk: number, q: FarBay, qk: number): boolean {
+  const a = p.bay, b = q.bay;
+  if (a.volume !== b.volume || a.side !== b.side || pk !== qk || p.wall.finish !== q.wall.finish) return false;
+  if (!sameFixed(a.push, b.push) || !sameFixed(a.width, b.width) || !sameFixed(a.height, b.height) || !sameFixed(p.ground, q.ground)) return false;
+  const pr = p.wall.rgb, qr = q.wall.rgb;
+  if (pr.length !== qr.length) return false;
+  // Written out alike: the same number, or both NaN.
+  for (let i = 0; i < pr.length; i++) { const u = pr[i]!, w = qr[i]!; if (u !== w && (u === u || w === w)) return false; }
+  const po = p.opening && pk !== FACADE_KIND.none ? p.opening : null, qo = q.opening && qk !== FACADE_KIND.none ? q.opening : null;
+  if (!po || !qo) return po === qo;
+  return sameFixed(po.a0, qo.a0) && sameFixed(po.a1, qo.a1) && sameFixed(po.h0, qo.h0) && sameFixed(po.h1, qo.h1);
+}
+
 /** A stable number per bay, for choosing among window variants. */
 function bayHash(bay: FacadeBay): number {
   let h = Math.imul(bay.volume + 1, 0x27d4eb2d) ^ Math.imul(bay.level + 7, 0x165667b1) ^ Math.imul(bay.side + 3, 0x3c6ef372) ^ Math.imul(bay.index + 11, 0x85ebca6b);
@@ -1457,8 +1581,8 @@ function emitBay(
   if (bay.component === 'pillar') {
     // An arcade: the wall steps back, a column stands on the facade line.
     e.rect(f, 0, W, 0, H, ARCADE, out, wall);
-    e.strip(f, 0, W, H, 0, ARCADE, [0, 0, -1], trim);
-    e.strip(f, 0, W, 0.02, 0, ARCADE, [0, 0, 1], ARCADE_FLOOR);
+    e.strip(f, 0, W, H, 0, ARCADE, DOWN, trim);
+    e.strip(f, 0, W, 0.02, 0, ARCADE, UP, ARCADE_FLOOR);
     if (left !== 'pillar') e.jamb(f, 0, 0, H, 0, ARCADE, along, wall);
     if (right !== 'pillar') e.jamb(f, W, 0, H, 0, ARCADE, back, wall);
     const d = m(0.55);
@@ -1485,8 +1609,8 @@ function emitBay(
     e.jamb(f, o.a0, o.h0, o.h1, 0, o.depth, along, reveal);
     e.jamb(f, o.a1, o.h0, o.h1, 0, o.depth, back, reveal);
     // A sill; at the floor, a threshold as high as the plinth's ledge
-    if (recess <= 0) e.strip(f, o.a0, o.a1, o.h0 > 1e-6 ? o.h0 : PLINTH_RISE, 0, o.depth, [0, 0, 1], shaded(trim, 0.92));
-    e.strip(f, o.a0, o.a1, o.h1, 0, o.depth, [0, 0, -1], shaded(reveal, 0.8));
+    if (recess <= 0) e.strip(f, o.a0, o.a1, o.h0 > 1e-6 ? o.h0 : PLINTH_RISE, 0, o.depth, UP, shaded(trim, 0.92));
+    e.strip(f, o.a0, o.a1, o.h1, 0, o.depth, DOWN, shaded(reveal, 0.8));
   }
 
   const w = o.a1 - o.a0;
@@ -1528,7 +1652,7 @@ function emitBay(
         e.put('concrete', f, am, cz, -m(0.45), w + m(0.7), m(0.12), m(0.9));
         e.put('concrete', f, am, cz - m(0.04), -m(0.88), w + m(0.7), m(0.2), m(0.05));
         // The brackets up to the slab's soffit, not into it
-        for (const side of [-1, 1]) e.put('frame', f, am + side * (w / 2 + m(0.2)), cz - m(0.06) - m(0.15), -m(0.25), m(0.06), m(0.3), m(0.5), tc);
+        for (const side of EITHER_SIDE) e.put('frame', f, am + side * (w / 2 + m(0.2)), cz - m(0.06) - m(0.15), -m(0.25), m(0.06), m(0.3), m(0.5), tc);
         emitPorchLight(e, f, W, am, w, o.h1);
       }
       break;
@@ -1545,7 +1669,7 @@ function emitBay(
       // Two leaves up to door height, and a fanlight over them in a tall opening; a canopy over the whole on the ground floor.
       const leafTop = Math.min(h, m(2.5));
       const leafMid = o.h0 + leafTop / 2;
-      for (const side of [-1, 1]) {
+      for (const side of EITHER_SIDE) {
         const cx = am + side * (w / 4);
         e.put('door', f, cx, leafMid, o.depth + m(0.03), w / 2 - m(0.04), leafTop, m(0.06));
         e.put('glassDark', f, cx, leafMid + leafTop * 0.12, o.depth - m(0.01), w / 2 - m(0.5), leafTop * 0.5, m(0.02));
@@ -1586,8 +1710,8 @@ function emitBay(
       // A moulded surround in the trim, then the louvred leaves folded back on the wall either side, in the shutter paint
       const band = m(0.14);
       e.put('fin', f, am, o.h1 + band / 2, -m(0.03), w + band * 2, band, m(0.06), tc);
-      for (const side of [-1, 1]) e.put('fin', f, am + side * (w / 2 + band / 2), hm, -m(0.03), band, h, m(0.06), tc);
-      if (o.a0 >= w / 2 + band) for (const side of [-1, 1]) e.put('louvre', f, am + side * (w * 0.75 + band), hm, -m(0.05), w / 2, h, m(0.04), shutterColour(wall, trim));
+      for (const side of EITHER_SIDE) e.put('fin', f, am + side * (w / 2 + band / 2), hm, -m(0.03), band, h, m(0.06), tc);
+      if (o.a0 >= w / 2 + band) for (const side of EITHER_SIDE) e.put('louvre', f, am + side * (w * 0.75 + band), hm, -m(0.05), w / 2, h, m(0.04), shutterColour(wall, trim));
       e.put('concrete', f, am, o.h0 - m(0.04), (o.depth - m(0.1)) / 2, w + band * 2 + m(0.1), m(0.08), o.depth + m(0.1));
       emitStreak(e, f, bay, am, w, o.h0 - m(0.08), wall);
       break;
@@ -1632,7 +1756,7 @@ function emitBay(
   // What hangs on the bay and stands on its balcony (`facadeProps.ts`), its own by the bay.
   const b = e.building;
   for (const p of facadeProps(bay.component, bay.level, b.use, b.decay ?? 0, bayHash(bay), W, o)) {
-    e.put(p.kind, f, p.a, p.h, -p.out, p.sx, p.sy, p.sz, new Color(p.colour), p.turn);
+    e.put(p.kind, f, p.a, p.h, -p.out, p.sx, p.sy, p.sz, e.propColour.setHex(p.colour), p.turn);
   }
 }
 
@@ -1958,7 +2082,7 @@ const LAWN_LATTICE = { cell: TERRAIN_CELL, half: TERRAIN_HALF } as const;
 
 /** `entrances`: the building's ways in as its body's emission worked them out (`emitBuilding`): DO NOT work its foundation out again for the flights' feet. */
 function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, groundAt: GroundAt, shell: Shell,
-  parts: Record<PartKind, Placement[]>, buildingFloor?: number, pavedAt?: PavedAt,
+  parts: PartSink, buildingFloor?: number, pavedAt?: PavedAt,
   onLot?: (el: BuildingElement) => boolean, entrances?: readonly Entrance[]): LotGround | undefined {
   if (lots.length === 0) return lotGroundOf(b, [], buildingFloor, false);
   const e = new Emitter(b, shell, parts);
@@ -1997,10 +2121,7 @@ function emitLots(b: Building, lots: readonly Volume[], withParts: boolean, grou
       const cx = v.x + v.w / 2, cy = v.y + v.d / 2;
       const rim = height(cx, cy);
       const centre = e.L(cx, cy, 0);
-      e.parts.water.push({
-        x: centre[0], y: centre[1], z: rim - POOL_WATER_DROP - m(0.01),
-        yaw: b.rotation, sx: v.w, sy: m(0.02), sz: v.d,
-      });
+      e.parts.water.add(centre[0], centre[1], rim - POOL_WATER_DROP - m(0.01), b.rotation, v.w, m(0.02), v.d);
       // The coping: a white stone band round the rim.
       const band = m(0.3), lift = m(0.04);
       const ring = [
@@ -3490,28 +3611,6 @@ function emitRoof(
 
 // ------------------------------------------------------------------ chunks
 
-/** The rooms behind a batch of panes, ROOM_FLOATS half floats a pane (metres to a few millimetres, a kind's index whole); zeros (no room) where none is known. */
-function roomsOfPanes(list: readonly Placement[]): Uint16Array {
-  const out = new Uint16Array(list.length * ROOM_FLOATS);
-  list.forEach((p, i) => { if (p.room) for (let k = 0; k < ROOM_FLOATS; k++) out[i * ROOM_FLOATS + k] = DataUtils.toHalfFloat(p.room[k]!); });
-  return out;
-}
-
-/** A placement's pose (`partPose.ts`: T * Ry * S made by the GPU), written straight into `out` at instance `i`. */
-function writePose(out: Float32Array, i: number, p: Placement): void {
-  const o = i * POSE_FLOATS;
-  // World y is mirrored into three's z, as everywhere else in this layer.
-  out[o] = p.x; out[o + 1] = p.z; out[o + 2] = -p.y; out[o + 3] = Math.cos(p.yaw);
-  out[o + 4] = Math.sin(p.yaw); out[o + 5] = p.sx; out[o + 6] = p.sy; out[o + 7] = p.sz;
-}
-
-/** Every placement of a list as its pose. */
-function posesOf(list: readonly Placement[]): Float32Array {
-  const poses = new Float32Array(list.length * POSE_FLOATS);
-  list.forEach((p, i) => writePose(poses, i, p));
-  return poses;
-}
-
 /** Whether a building flies a flag: a spire or a lantern on its roof with a flag (`flagOf`). */
 export function fliesFlag(b: Building): boolean {
   return b.volumes.some((v) => (v.roofDetails ?? []).some((d) => (d.kind === 'spire' || d.kind === 'lantern') && flagOf(d) !== null));
@@ -3537,10 +3636,15 @@ export function letGoEmitted(b: Building): void {
 /** DO NOT grow a new shell's arrays for each building of a job from nothing (every one doubling its way up, the half let go, its chunk holding views of arrays twice its size): one shell written again for each, the arrays grown once to the largest, each chunk an exact copy. */
 export class ShellWriter {
   private readonly shell = new Shell();
+  /** The parts' and the furniture's rows, written again the same way. */
+  readonly parts = partSink();
+  readonly furniture: FurnitureSink = {};
   constructor() { this.shell.reused = true; }
-  /** The shell emptied for the next building. */
+  /** The shell and the rows emptied for the next building. */
   next(): Shell {
     this.shell.clear();
+    for (const kind of PART_KINDS) this.parts[kind].clear();
+    for (const kind of FURNITURE_KINDS) this.furniture[kind]?.clear();
     return this.shell;
   }
 }
@@ -3555,14 +3659,14 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   shell.decay = b.decay ?? 0;
   shell.far = far;
   shell.apart = apart;
-  const parts = Object.fromEntries(PART_KINDS.map((k) => [k, [] as Placement[]])) as Record<PartKind, Placement[]>;
+  const parts = writer ? writer.parts : partSink();
   // The blocks as drawn: unions, cuts and intersections resolved, the stored blocks untouched (`world/buildings/blocks.ts`).
   const resolved = resolveBlocks(b);
   // Open blocks are lots: laid on the ground, not built.
   const lots = resolved.volumes.filter((v) => v.open);
   // One list for the blocks: their bays laid out and their floors furnished once (`bayLayout`, `interiorAt`) for every reader and like building.
   const closed = closedBlocks(resolved.volumes);
-  const furnished: Partial<Record<FurnitureKind, Placement[]>> = {};
+  const furnished: FurnitureSink = writer ? writer.furniture : {};
   const inLot = (el: BuildingElement): boolean =>
     lots.some((v) => el.x >= v.x && el.x <= v.x + v.w && el.y >= v.y && el.y <= v.y + v.d);
   // The terrain is graded from this natural-ground floor.
@@ -3578,38 +3682,13 @@ export function emitChunk(b: Building, groundAt: GroundAt, pavedAt?: PavedAt, na
   flagSink = null;
   const lotGround = emitLots(resolved, lots, closed.length === 0, groundAt, shell, parts, floor, pavedAt, inLot, body?.entrances);
   const batches = {} as Record<PartKind, PartBatch>;
-  for (const kind of PART_KINDS) {
-    const list = parts[kind];
-    const poses = posesOf(list);
-    const coloured = COLOURED_PARTS.has(kind);
-    const colours = coloured ? new Float32Array(list.length * 3) : null;
-    const fallback = PART_DEFAULT_COLOUR[kind] ?? WHITE_RGB;
-    // A shell's part: its finish, its wear as the shell's vertices carry it and its ground (none: `NO_GROUND`).
-    const looks = SHELL_PARTS.has(kind) ? new Float32Array(list.length * LOOK_FLOATS) : null;
-    list.forEach((p, i) => {
-      if (colours) {
-        const rgb = p.look?.paint.rgb;
-        colours[i * 3] = rgb ? rgb[0] : p.colour ? p.colour.r : fallback[0];
-        colours[i * 3 + 1] = rgb ? rgb[1] : p.colour ? p.colour.g : fallback[1];
-        colours[i * 3 + 2] = rgb ? rgb[2] : p.colour ? p.colour.b : fallback[2];
-      }
-      if (looks && p.look) {
-        looks[i * LOOK_FLOATS] = finishId(p.look.paint.finish);
-        looks[i * LOOK_FLOATS + 1] = wearShort(p.look.decay);
-        looks[i * LOOK_FLOATS + 2] = Number.isFinite(p.look.ground) ? p.look.ground : NO_GROUND;
-      }
-    });
-    const glassy = kind === 'glass' || kind === 'glassDark';
-    batches[kind] = glassy
-      ? { poses, colours, count: list.length, slots: Float32Array.from(list, (p) => p.slot ?? -1), rooms: roomsOfPanes(list) }
-      : looks ? { poses, colours, count: list.length, looks } : { poses, colours, count: list.length };
-  }
+  for (const kind of PART_KINDS) batches[kind] = parts[kind].batch();
   const shells = shellChunks(shell);
   let furniture: Partial<Record<FurnitureKind, PartBatch>> | undefined;
   for (const kind of FURNITURE_KINDS) {
-    const list = furnished[kind];
-    if (!list || list.length === 0) continue;
-    (furniture ??= {})[kind] = { poses: posesOf(list), colours: null, count: list.length };
+    const rows = furnished[kind];
+    if (!rows || rows.count === 0) continue;
+    (furniture ??= {})[kind] = rows.batch();
   }
   const runs = runChunks(shell);
   const laid = runs ? { shells, runs } : { shells };
@@ -4003,8 +4082,8 @@ export function buildBuildingMeshes(
 
 /** The furniture of every floor of a building, as it stands inside: what a blow throws out of it when it breaks */
 export function interiorFurniture(b: Building, floor: number): Partial<Record<FurnitureKind, PartBatch>> {
-  const placed: Partial<Record<FurnitureKind, Placement[]>> = {};
-  const e = new Emitter(b, new Shell(), {} as Record<PartKind, Placement[]>, placed);
+  const placed: FurnitureSink = {};
+  const e = new Emitter(b, new Shell(), {} as PartSink, placed);
   let top = 0;
   for (const v of b.volumes) if (!v.open && v.mode !== 'void') top = Math.max(top, volumeTop(v));
   for (let level = 0; level < top; level++) {
@@ -4014,13 +4093,13 @@ export function interiorFurniture(b: Building, floor: number): Partial<Record<Fu
       placeFurniture(e, f, f.kind === 'ceilingLamp' ? z + levelHeight(b, level) - m(0.06) - f.h : z);
     }
     // Enough to fill the air when it breaks; a tower's every chair cost a second.
-    if (Object.values(placed).reduce((n, l) => n + (l?.length ?? 0), 0) > 140) break;
+    if (Object.values(placed).reduce((n, l) => n + (l?.count ?? 0), 0) > 140) break;
   }
   const out: Partial<Record<FurnitureKind, PartBatch>> = {};
   for (const kind of FURNITURE_KINDS) {
-    const list = placed[kind];
-    if (!list?.length) continue;
-    out[kind] = { poses: posesOf(list), colours: null, count: list.length };
+    const rows = placed[kind];
+    if (!rows?.count) continue;
+    out[kind] = rows.batch();
   }
   return out;
 }

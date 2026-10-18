@@ -23,12 +23,13 @@ function before(x: number, y: number, z: number): number {
 
 describe("the shell's tone noise", () => {
   it('is the one each corner hashed alone gave, bit for bit, across the lattice, negative and on its lines', () => {
-    const out = new Float64Array(1);
+    const io = new Float64Array(4);
     let n = 0;
     for (let a = -40; a <= 40; a++) {
       for (const [x, y, z] of [[a * 0.37, a * -0.91, a * 0.13], [a, -a, a * 0.5], [a * 123.456, a * 7.25, -a * 3.5]] as const) {
-        macroNoiseInto(x, y, z, out, 0);
-        expect(Object.is(out[0], before(x, y, z)), `${x} ${y} ${z}`).toBe(true);
+        io[0] = x; io[1] = y; io[2] = z;
+        macroNoiseInto(io);
+        expect(Object.is(io[3], before(x, y, z)), `${x} ${y} ${z}`).toBe(true);
         n++;
       }
     }
