@@ -3,7 +3,7 @@ import type { BodyPart, Severable } from '@sim/people/view';
 import {
   BufferAttribute, BufferGeometry, Color, DataTexture, DoubleSide, DynamicDrawUsage, FloatType, Group,
   InstancedBufferAttribute, InstancedMesh, Matrix4, MeshDepthMaterial, Quaternion, MeshStandardMaterial, Vector3, NearestFilter,
-  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, ShaderChunk, UnsignedByteType,
+  RedFormat, RGBADepthPacking, RGBAFormat, SRGBColorSpace, ShaderChunk, ShaderLib, UnsignedByteType,
   type Material, type Texture, type WebGLRenderer,
 } from 'three';
 import { bodyHeight } from '@people/body/morph';
@@ -625,10 +625,10 @@ function depthMaterial(cls: ClassShading, v: Variant, widen: number): MeshDepthM
   return material;
 }
 
-/** Every program a procedural person can be drawn with (`PERSON_VARIANTS`) and cast into the shadow with */
-export function personProgramStandIns(): { readonly lit: Group; readonly shadow: Group } {
+/** A class's shading with nothing in it: what a program is compiled against before any class is made. */
+function blankShading(): ClassShading {
   const blank = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
-  const shading: ClassShading = {
+  return {
     uniforms: {
       procBones: { value: blank }, procBase: { value: 0 }, procBodies: { value: blank }, procBodyStride: { value: 0 }, procCover: { value: blank },
       procCoverRows: { value: 0 }, procFace: { value: blank }, procFaceRows: { value: 0 }, procFaceHead: { value: 0 },
@@ -636,6 +636,24 @@ export function personProgramStandIns(): { readonly lit: Group; readonly shadow:
     },
     rig: { mesh: { bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4() } },
   };
+}
+
+/** The shader text a piece of variant `v` is compiled with (`depth`: the shadow's, cast by the next level), as three hands it to `onBeforeCompile`: one key, one text. */
+export function personShaderText(v: Variant, depth = false): string {
+  const shading = blankShading();
+  const material = depth ? depthMaterial(shading, v, 1) : pieceMaterial(shading, v, null, null, 1);
+  const lib = ShaderLib[depth ? 'depth' : 'physical'];
+  const shader = { vertexShader: lib.vertexShader, fragmentShader: lib.fragmentShader, uniforms: {} as Record<string, unknown> };
+  material.onBeforeCompile(shader as never, null as never);
+  material.dispose();
+  return `${shader.vertexShader}
+----
+${shader.fragmentShader}`;
+}
+
+/** Every program a procedural person can be drawn with (`PERSON_VARIANTS`) and cast into the shadow with */
+export function personProgramStandIns(): { readonly lit: Group; readonly shadow: Group } {
+  const shading = blankShading();
   // A position and a normal, as every piece has (`farMesh`, `computeVertexNormals`): `vertexNormals` is part of three's key.
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array(9), 3));
