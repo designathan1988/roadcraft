@@ -98,6 +98,24 @@ describe('standing vehicles while the camera moves', () => {
     agents.dispose();
   });
 
+  it('ask nothing of a walker off the view ground: neither whether a ragdoll hides them nor their pose', () => {
+    const peds = Array.from({ length: 200 }, (_, k) => {
+      const x = m(2000) + k * m(3), y = m(2000);
+      return { id: k + 1, x, y, prev: { x: x - m(1), y, heading: 0 }, heading: 0, v: m(1.3), turnV: 0, age: 0, segment: undefined, walking: true, kerbWait: 0, rank: 0, ground: 'footway', tickRead: 0 };
+    });
+    const world = { ...worldWith([], []), pedViews: peds, tick: 1 } as unknown as SimClient;
+    const net = { doc: { changes: new ChangeJournal() } } as unknown as Network;
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    let asked = 0;
+    agents.sync(world, net, 0.5, true, 40, { vehicleBox: { x0: 0, y0: 0, x1: m(300), y1: m(300) }, hiddenPed: () => { asked++; return false; } });
+    expect(asked).toBe(0);
+    // One walking into it, between where they were and are: asked.
+    peds[0]!.prev.x = m(250); peds[0]!.x = m(310); peds[0]!.y = m(100); peds[0]!.prev.y = m(100);
+    agents.sync(world, net, 0.5, true, 40, { vehicleBox: { x0: 0, y0: 0, x1: m(300), y1: m(300) }, hiddenPed: () => { asked++; return false; } });
+    expect(asked).toBe(1);
+    agents.dispose();
+  });
+
   it('draw what walking every car draws, frame by frame, while the camera pans and comes down through the levels', () => {
     const parked: VehicleView[] = [];
     for (let i = 0; i < 12; i++) for (let j = 0; j < 12; j++) parked.push(parkedCar(i * 12 + j + 1, m(4) + i * m(21), m(4) + j * m(21)));
