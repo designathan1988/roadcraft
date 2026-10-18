@@ -4,35 +4,43 @@ Browser city-builder (TypeScript, three.js r186, Vite; to be sold on Steam).
 Game: `npm run dev` (127.0.0.1:5300). Typecheck: `npm run typecheck`. Lint: `npm run lint`. Full suite: `npm test`.
 
 This file holds the project's rules, architecture and work list. Working documents live in `tests/playtest/`
-(test plan, defect list, playtest report: create them when needed and keep them current, one file each);
-shots go to `test-results/` (ignored by git). No `docs/`, nested `CLAUDE.md`, skills or hooks.
+(test plan, defect list, playtest report and whatever else the work needs, kept current, written in Brazilian
+Portuguese because the player reads them); shots go to `test-results/` (ignored by git). Skills, hooks and
+scripts that speed the work up may be added (`.claude/`, `scripts/`).
 
 ## The job: read the code, fix it, open the game and LOOK, commit
 What moves the game is reading the code, fixing the cause, and looking at the result on screen.
-- A turn's work is: read the part of the code the problem lives in (callers up to the frame, the edit or the
-  pointer, and siblings of the same shape), find the cause, fix it, run the typecheck and the tests of the files
-  touched, commit, then OPEN THE GAME AND LOOK: `node scripts/look.mjs <script.json> <out> --url=<dev server>`
-  (installed Chrome through Playwright, headless, GPU, 1920x1080; `scripts/look/` has scripts; steps click, move,
-  drag, wheel, keys, type, hold, wait, shot, clip; the `city` option `{ "size": "whole" }` opens the 10 km city).
+- A fix is: read the part of the code the problem lives in (callers up to the frame, the edit or the pointer,
+  and siblings of the same shape), find the cause, fix it, run the typecheck and the tests of the files touched,
+  OPEN THE GAME AND LOOK when the change shows on screen, then commit once the shots are right:
+  `node scripts/look.mjs <script.json> <out> --url=<dev server>` (installed Chrome through Playwright, headless,
+  GPU; the script's `viewport` (default [1920, 1080]; use larger, e.g. [2560, 1440] or [3840, 2160], and smaller,
+  e.g. [1366, 768], for the interface) and `dpr` set the shot size; `--electron` runs the desktop build the
+  player gets on Steam; `scripts/look/` has scripts; steps click, move, drag, wheel, keys, type, hold, wait, shot,
+  clip; the `city` option `{ "size": "whole" }` opens the 10 km city). New Playwright scripts may be written
+  in `scripts/` when `look.mjs` lacks a step.
   Shots from several views: map, district, street, after a middle-drag (pan), after a right-drag (turn), after
   wheel zooms, and again seconds later (what settles, what blinks). Open every PNG with Read and look for: holes,
   shadows without buildings, far level where near should be, blinking levels, cut text, floating pieces, wrong
   light, wrong language, overlapping or unclear interface. A defect seen is a cause to find in the code, fix, and
   shoot again. One shot is never "it is fine": the player has to be able to play it.
-- The built-in browser pane is 800x450: not for shots. Chrome through `look.mjs` only. Never a window on the screen.
-- Measuring points at the code and proves a fix: the CPU profile of the long frames while the camera moves
-  (`look.mjs` steps `{ "profile": "name" }` ... drags ... `{ "profileEnd": true }`) names the functions to read and
-  fix the same hour; frame times before and after a fix go in its commit message and the playtest report.
-  A number never replaces the fix or the shot.
+- The built-in browser pane is 800x450: not for shots. Shots through headless Chrome (Playwright); never a
+  window on the player's screen.
+- Measure whatever points at the code or proves a fix: the CPU profile of the long frames while the camera moves
+  (`look.mjs` steps `{ "profile": "name" }` ... drags ... `{ "profileEnd": true }`), frame times, memory, draw
+  calls, load times (`look.mjs` also has `trace`, `memory`, `allocations`, `budget`). Numbers before and after a
+  fix go in its commit message and the playtest report. A number never replaces the fix or the shot.
 - A world's tiles are stored under `worldKey` (seed, map size, `PLAN_VERSION` in `wholeMap.ts`): bump
   PLAN_VERSION whenever the plan puts things elsewhere, or the player sees the old city from the store.
 - Tests: `npm run typecheck` and `npx vitest run <files touched>` before each commit; a failure is fixed in the
   code, never by loosening the test. The full suite at the end of a block.
 - Every file written in the main folder reloads the player's game on 5300 (Vite). Work and commit in a worktree of
-  this repository (`git worktree add ../roadcraft-wt -b work/<topic> main`, then a junction `node_modules` to the
-  main folder's), look at it with its own dev server (`npx vite --host 127.0.0.1 --port 5301 --strictPort` in the
-  worktree), and fast-forward `main` in one go per batch once its shots are right. Never leave another session's
-  uncommitted edits in the main folder.
+  this repository of your own (`git worktree add ../roadcraft-wt-<topic> -b work/<topic> main`, then a junction
+  `node_modules` to the main folder's), look at it with its own dev server on a free port (5301, 5302, ...:
+  `npx vite --host 127.0.0.1 --port <port> --strictPort` in the worktree), and bring a batch into `main` once its
+  shots are right: rebase on `main` (or merge it in), run the tests, fast-forward `main`. Sessions working at the
+  same time each take their own worktree, port and files. Never leave another session's uncommitted edits in the
+  main folder.
 - The map: 10 km x 10 km (`wholeMap.ts` MAP_TILES), the city over ALL of it, nothing past the edge, the camera
   held to it. Never a world without an edge. The size becomes the player's choice later (10, 20, 40 km).
 - Rules taken from the reference game that opens the big city: a tile draws by cells only when every cell is
@@ -42,7 +50,8 @@ What moves the game is reading the code, fixing the cause, and looking at the re
 - Never tell the player what the game shows ("opened", "fills the map", "fixed") before you opened the shot
   with Read in this turn and saw it; name the shot. A run still going is "not seen yet", never "it works".
 - The player's message is followed in its turn. Do not turn one message into a new rule here: this file's
-  rules change only when he says to change this file.
+  rules of conduct change only when he says to change this file. Its facts (work list, lessons, traps, paths,
+  architecture as built) are kept current by whoever changes them, in the same commit.
 - If a fix does not hold, read more code and the official sources (three.js r186: `node_modules/three/src` and
   `examples/jsm`, docs at threejs.org; Cesium 3D Tiles spec for level refinement); do not try variations at random.
 - NEVER ask the player anything: every decision is yours; weigh the options and take the best one, then say in
@@ -51,7 +60,7 @@ What moves the game is reading the code, fixing the cause, and looking at the re
   resolution, fewer trees or buildings, weaker light or shadows, lower default quality level. A fix keeps or
   raises both; before/after shots of the same views prove the look is the same or better.
 - Do not stop until everything is solved: no pausing for approval, no "should I continue?", no ending a turn
-  with work left; finish each defect (fix, test, commit, shot) and go on to the next. Hard limits, never crossed:
+  with work left; finish each defect (fix, test, shot, commit) and go on to the next. Hard limits, never crossed:
   push only to `roadcraft4`; never delete the player's saves (a format change reads or migrates the old one,
   keeping a copy). Use agents whenever they help, as many as the work needs.
 
@@ -60,21 +69,22 @@ What moves the game is reading the code, fixing the cause, and looking at the re
   10 km map first, then larger.
 - **Fixed means the code no longer has the problem**: the right algorithm and data for a city of any size.
 - DO NOT amortize: slicing work across frames, holding a layer, a capped cache that evicts and redoes,
-  spacing out rebuilds. That hides the cost. Fix the cause.
+  spacing out rebuilds. That hides the cost. Fix the cause. (A memory bound that falls back to a coarser level
+  already built, like the detail residency below, is not amortizing.)
 - Never "already exists" or "works" without reading the code that USES it.
 - Before a technique the code does not use yet, read the official source: three.js of the game's version in
   `node_modules/three` (r186) and its docs at threejs.org.
 - One commit per fix: cause, technique, source. When a fix lands, delete its line from the work list below.
 
 ## Files and naming
-- Every file in English: code, comments, tests, this file. Talk to the player in Brazilian Portuguese;
-  commit messages in Portuguese. Comments are one line each.
+- Code, comments, tests and this file in English. Talk to the player in Brazilian Portuguese; commit messages
+  and the `tests/playtest/` documents in Portuguese. Comments are one line each.
 - No ALL-CAPS file names (only `CLAUDE.md` and shipped licence texts). Nothing at the root that is not
   strictly needed; tooling in `scripts/`.
 - No dead file, stray probe or duplicate. Scratch work goes to the session's scratchpad, never into the
   repository.
 
-## Architecture (binding; authorized 2026-10-15/16, no further authorization needed)
+## Architecture (authorized 2026-10-15/16; change it when the goal needs it and write the change here)
 - Threads: the page does input, UI, level choice, GPU upload of what became visible and drawing. Simulation
   in a worker (SoA typed arrays, poses in a SharedArrayBuffer). One job queue with priority, any free
   worker, a key that cancels the older job; stateless jobs reading shared memory, not services pinned to
@@ -185,7 +195,7 @@ a second RoadDoc + Network of the active region.
 - A tunnel is a step in the terrain plus a portal; `TUNNEL_*` and `CUT_SHOULDER` go together.
 - A road at grade is a projected line (`solveGround`); a junction takes its legs' height.
 - A building edit moves `doc.buildings.revision`, never `doc.revision`.
-- Terrain cell 6.4 m; one unit is one metre. Road numbers in `roads/tuning.ts`: only the player changes them.
+- Terrain cell 6.4 m; one unit is one metre. Road numbers in `roads/tuning.ts`: change one only to fix a defect seen in shots, old and new value in the commit.
 
 **sim**
 - One writer per field; stage order in `pipeline.ts`. `clock.tick` only at the end of `step`.
