@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath, URL } from 'node:url';
 import { cpus } from 'node:os';
-import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin';
+import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin.ts';
 import { joinSessionJob, share } from './scripts/sessionJob.mjs';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));

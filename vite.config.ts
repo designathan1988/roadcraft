@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite';
 import { createRequire } from 'node:module';
 import { fileURLToPath, URL } from 'node:url';
-import { buildStampPlugin } from './scripts/vite/build-stamp';
-import { cookPlugin } from './scripts/vite/cook-plugin';
-import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin';
-import { surfaceBakePlugin } from './scripts/vite/surface-bake-plugin';
+import { buildStampPlugin } from './scripts/vite/build-stamp.ts';
+import { cookPlugin } from './scripts/vite/cook-plugin.ts';
+import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin.ts';
+import { surfaceBakePlugin } from './scripts/vite/surface-bake-plugin.ts';
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 // The page cross-origin isolated: the same headers the desktop's `app://` sends (`desktop/isolation.cjs`; Vite replaces `import.meta.url` in its config with the file's own).

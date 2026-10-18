@@ -1,5 +1,5 @@
 import { type UserConfig, defineConfig, mergeConfig } from 'vite';
-import base from '../../vite.config';
+import base from '../../vite.config.ts';
 
 /** THE DESKTOP'S JOB THREADS BUILT FOR NODE (`desktop/jobs.cjs`, `src/jobs/nodeJobHost.ts`): the game's own job worker, every module it loads bundled in (no node_modules beside the game), next to the page's build (`dist/desktop-jobs/`, served nowhere: read by the job processes) */
 export default mergeConfig(base as UserConfig, defineConfig({

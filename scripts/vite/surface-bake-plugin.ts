@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { runnerImport, type Plugin } from 'vite';
-import { importClosure } from './cook-plugin';
-import { flipRows, mipChain, rgbaKtx2, uastcKtx2, type TextureCodec, type TextureUse } from './ktx2';
+import { importClosure } from './cook-plugin.ts';
+import { flipRows, mipChain, rgbaKtx2, uastcKtx2, type TextureCodec, type TextureUse } from './ktx2.ts';
 
 /** The procedural surfaces baked at build time: the game's own recipes (`src/render/bake/catalogue.ts`) run in Node, written as KTX2 files with their mipmaps, cached by a fingerprint of the recipes' code */
 
