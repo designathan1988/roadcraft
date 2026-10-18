@@ -188,4 +188,24 @@ describe('the far levels where no tile was made', () => {
     far.dispose();
     kit.dispose();
   }, 10_000);
+
+  it('stand in at once where the view jumps to a part of the map nothing of was baked (the standing level)', async () => {
+    const kit = createBuildingKit();
+    const cache = memoryCache();
+    // The workers stalled after the first view: nothing asked after the jump comes.
+    let stalled = false;
+    const run = runner(cache);
+    const far = new FarLevels(kit, (job, done) => (stalled ? () => undefined : run(job, done)), 'test:');
+    far.setSource({ records: () => Promise.resolve(null), plan: OPTIONS }, () => false);
+    // A street's view at one corner of the map, reaching 1.5 km: nothing near the other corner wanted.
+    const at = (x: number, y: number) => (): void => far.choose(m(x), m(y), m(300), 1000, null, m(1_500));
+    await until(at(-4_000, -4_000), () => far.waiting === 0);
+    expect(far.shownKeys().some((key) => { const n = farNode(key); return n.i >= 0 && n.j >= 0; })).toBe(false);
+    stalled = true;
+    at(4_000, 4_000)();
+    // The 16 km node over the other corner stands for it, baked before the jump.
+    expect(far.shownKeys()).toContain(farKey(4, 0, 0));
+    far.dispose();
+    kit.dispose();
+  }, 10_000);
 });

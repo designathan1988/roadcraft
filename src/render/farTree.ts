@@ -12,7 +12,7 @@ import { cancelWarm, warmFull, warmLooseAhead } from './uploads';
 import { nearSig } from './nearRoadTiles';
 import { geometryCost, gpuLedger } from './gpuLedger';
 import { PageCuts } from './farTreeCuts';
-import { drawable, nearOutsideKey, nearTilesOf, plantRoots, refinable } from './farTreePlan';
+import { STANDING_LEVEL, drawable, nearOutsideKey, nearTilesOf, plantRoots, refinable, standingNodes } from './farTreePlan';
 import { type Eye, type FarKind, type FarNearLanded, type FarNode, type FarTileSource, type FarTiles, type FarTreeJob, type FarTreeReply, type FarTreeRun, sameView } from './farTreeTypes';
 export type { FarKind, FarLanded, FarNear, FarNearLanded, FarTileSource, FarTiles, FarTreeJob, FarTreeRun } from './farTreeTypes';
 export { sameView } from './farTreeTypes';
@@ -193,6 +193,8 @@ export class FarTree<P> implements FarTiles {
     this.reach = viewReach(eye);
     if (this.planning && !this.cacheless) plantRoots(this.roots.values(), this.eyeNow, this.reach, (k, i, j) => this.ensure(k, i, j), (n) => this.forget(n));
     for (const root of this.roots.values()) this.visit(root);
+    // The standing level over the map, kept and waited for (`STANDING_LEVEL`); one landed stands as it is, at an older version too, until the view wants it.
+    if (this.planning && !this.cacheless) for (const n of standingNodes((k, i, j) => this.ensure(k, i, j))) if (this.desired.push(n) && n.landed === null) { this.ask(n, true); this.wanting++; }
     const now = new Set(this.drawing), wanted = new Set(this.desired);
     // DO NOT keep on the GPU what is neither drawn nor wanted (the area visited would pile up): read back from the store when wanted again.
     for (const n of [...this.resident]) {
@@ -395,6 +397,8 @@ export class FarTree<P> implements FarTiles {
       if (c && !this.visit(c)) all = false;
     }
     if (all) return true;
+    // At the standing level, only where nothing under it is drawn: DO NOT hide every tile of 16 km for one not come.
+    if (n.k === STANDING_LEVEL && this.planning && this.loadedOf(n) === 0 && n.landed !== null) { if (this.drawing.length === mark) this.drawing.push(n); return true; }
     // A child not come: this node, if it came and no tile under it is in the document, stands for them (refining).
     if (this.loadedOf(n) === 0 && n.landed !== null && drawable(n, this.planFrom)) {
       this.drawing.length = mark;

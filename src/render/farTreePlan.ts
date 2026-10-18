@@ -1,4 +1,5 @@
 import { Digest } from '@core/digest';
+import { MAP_HALF } from '@world/cityGen/wholeMap';
 import { tileKey } from '@world/tiles';
 import { TOP_LEVEL, nodeSide } from './buildings/farGrid';
 import type { PageCut, PageCuts } from './farTreeCuts';
@@ -14,11 +15,26 @@ export function refinable(n: FarNode, planFrom: number): boolean {
   if (!Number.isFinite(planFrom) || n.k - 1 >= planFrom) return true;
   return n.children.every((c) => c !== null && c.tiles === 4 ** c.k);
 }
-/** NOT MADE YET (CLAUDE.md: never a hole): the top-level nodes over the view's reach round the eye made, for the plan's to stand where no tile is (those past it, with no tile, let go; their bakes kept: they never change). */
+/** THE STANDING LEVEL: the level whose nodes over the WHOLE map are always baked, kept on the GPU and waited for by the opening's curtain, to stand in a place the view jumps to before anything finer of it came (the plan's where no tile is made). 16 km nodes: the finest whose plan still draws its avenues (`farRoadTiles.ts` bakePlanRoads: an 8 m error under an avenue's 14 m), 4 over a map of 10 or 20 km, 16 over 40 km.
+ *  - DO NOT stand in only round the eye: a jump to the far edge of a 20 km map (`escala` edge-east-1s) showed grass, nothing of it baked at any level, for a second (esc20c, 2026-10-17). */
+export const STANDING_LEVEL = 4;
+
+/** The standing level's nodes over the map (`STANDING_LEVEL`). */
+export function standingNodes(ensure: (k: number, i: number, j: number) => FarNode): FarNode[] {
+  const side = nodeSide(STANDING_LEVEL), lo = Math.floor(-MAP_HALF / side), hi = Math.floor((MAP_HALF - 1) / side);
+  const out: FarNode[] = [];
+  for (let i = lo; i <= hi; i++) for (let j = lo; j <= hi; j++) out.push(ensure(STANDING_LEVEL, i, j));
+  return out;
+}
+
+/** Whether a node meets the map (`MAP_HALF`). */
+const onMap = (n: FarNode): boolean => n.x1 > -MAP_HALF && n.x0 < MAP_HALF && n.y1 > -MAP_HALF && n.y0 < MAP_HALF;
+
+/** NOT MADE YET (CLAUDE.md: never a hole): the top-level nodes over the view's reach round the eye made, for the plan's to stand where no tile is (those past it, with no tile and off the map, let go: a root over the map holds the standing level, `standingNodes`). */
 export function plantRoots(roots: Iterable<FarNode>, e: { readonly x: number; readonly y: number }, r: number, ensure: (k: number, i: number, j: number) => FarNode, forget: (n: FarNode) => void): void {
   const side = nodeSide(TOP_LEVEL);
   const i0 = Math.floor((e.x - r) / side), i1 = Math.floor((e.x + r) / side), j0 = Math.floor((e.y - r) / side), j1 = Math.floor((e.y + r) / side);
-  for (const root of [...roots]) if (root.tiles === 0 && (root.i < i0 || root.i > i1 || root.j < j0 || root.j > j1)) forget(root);
+  for (const root of [...roots]) if (root.tiles === 0 && !onMap(root) && (root.i < i0 || root.i > i1 || root.j < j0 || root.j > j1)) forget(root);
   for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) ensure(TOP_LEVEL, i, j);
 }
 
