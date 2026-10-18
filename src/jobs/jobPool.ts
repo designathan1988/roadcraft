@@ -284,30 +284,13 @@ function grow(long: boolean): Host | null {
   return host;
 }
 
-/** TEMPORARY MEASURE, DEV only: one function a service that first reads an answer's data (the structured clone is read there), each on its own line for the sampling heap profile. */
-function answer_growth(e: MessageEvent): unknown { return e.data; }
-function answer_cityTiles(e: MessageEvent): unknown { return e.data; }
-function answer_cityTilesAside(e: MessageEvent): unknown { return e.data; }
-function answer_bays(e: MessageEvent): unknown { return e.data; }
-function answer_conflicts(e: MessageEvent): unknown { return e.data; }
-function answer_cells(e: MessageEvent): unknown { return e.data; }
-function answer_fracture(e: MessageEvent): unknown { return e.data; }
-function answer_citizenBake(e: MessageEvent): unknown { return e.data; }
-function answer_ecology(e: MessageEvent): unknown { return e.data; }
-function answer_flatGround(e: MessageEvent): unknown { return e.data; }
-function answer_groundShape(e: MessageEvent): unknown { return e.data; }
-function answer_garmentPadding(e: MessageEvent): unknown { return e.data; }
-function answer_peopleLod(e: MessageEvent): unknown { return e.data; }
-function answer_roadTiles(e: MessageEvent): unknown { return e.data; }
-function answer_farRoads(e: MessageEvent): unknown { return e.data; }
-function answer_terrainLight(e: MessageEvent): unknown { return e.data; }
-function answer_derivedWriter(e: MessageEvent): unknown { return e.data; }
-function answer_save(e: MessageEvent): unknown { return e.data; }
-function answer_tileRead(e: MessageEvent): unknown { return e.data; }
-function answer_roadStations(e: MessageEvent): unknown { return e.data; }
-function answer_nearTiles(e: MessageEvent): unknown { return e.data; }
-const DEV_TOUCH: Record<string, (e: MessageEvent) => unknown> = { growth: answer_growth, cityTiles: answer_cityTiles, cityTilesAside: answer_cityTilesAside, bays: answer_bays, conflicts: answer_conflicts, cells: answer_cells, fracture: answer_fracture, citizenBake: answer_citizenBake, ecology: answer_ecology, flatGround: answer_flatGround, groundShape: answer_groundShape, garmentPadding: answer_garmentPadding, peopleLod: answer_peopleLod, roadTiles: answer_roadTiles, farRoads: answer_farRoads, terrainLight: answer_terrainLight, derivedWriter: answer_derivedWriter, save: answer_save, tileRead: answer_tileRead, roadStations: answer_roadStations, nearTiles: answer_nearTiles };
-function devTouch(service: string, event: MessageEvent): void { (DEV_TOUCH[service] ?? answer_cells)(event); }
+/** TEMPORARY MEASURE, DEV only: a function named for each service that first reads an answer's data (the structured clone is read there). */
+const devTouchers = new Map<string, (event: MessageEvent) => unknown>();
+function devTouch(service: string, event: MessageEvent): void {
+  let touch = devTouchers.get(service);
+  if (!touch) { const name = `answer_${service}`; touch = ({ [name]: (e: MessageEvent) => e.data } as Record<string, (e: MessageEvent) => unknown>)[name]!; devTouchers.set(service, touch); }
+  touch(event);
+}
 
 /** A worker's queued job failed with it; a worker that failed whole (`dead`) is given no queued job again. */
 function failHost(host: Host, message: string, dead: boolean): void {
