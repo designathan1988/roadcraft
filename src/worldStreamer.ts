@@ -57,6 +57,8 @@ export interface TileSource {
   manifest?(): Promise<ReadonlyMap<number, number> | null>;
   /** The version written, or null when it was not. */
   write(records: TileRecords, keep?: { readonly buildings: boolean }): Promise<number | null>;
+  /** A tile come and not put in (the camera went on, `apply`): what the source kept for its putting in let go (`TileStore.forget`, its network bake). */
+  forget?(key: number): void;
   /** A stored tile's parking bays baked and added where it has none (`TileStore.addBays`); none: nothing to do. */
   addBays?(key: number): Promise<void>;
 }
@@ -227,7 +229,8 @@ export class WorldStreamer {
     // One tile put in a frame, the nearest first: a dense tile is ~1,500 buildings read and filed, the frame stays a frame (the work is the view's tiles, never the map's).
     let best: number | null = null, bestD = Infinity;
     for (const key of this.ready.keys()) {
-      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN) && !this.held.has(key)) { this.ready.delete(key); this.readDuringClear.delete(key); continue; }
+      // DO NOT leave what came with it behind: a tile come after the camera went on is let go whole (its bake kept by the store for its putting in, every tile driven past, 2026-10-17).
+      if (!this.wantedNear(key, ACTIVE_RADIUS + KEEP_MARGIN) && !this.held.has(key)) { this.ready.delete(key); this.readDuringClear.delete(key); this.source.forget?.(key); continue; }
       const { i, j } = tileOfKey(key);
       const d = Math.max(Math.abs(i - this.around.i), Math.abs(j - this.around.j));
       if (d < bestD) { bestD = d; best = key; }
