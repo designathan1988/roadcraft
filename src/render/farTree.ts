@@ -12,7 +12,7 @@ import { cancelWarm, warmFull, warmLooseAhead } from './uploads';
 import { nearSig } from './nearRoadTiles';
 import { geometryCost, gpuLedger } from './gpuLedger';
 import { PageCuts } from './farTreeCuts';
-import { STANDING_LEVEL, drawable, nearOutsideKey, nearTilesOf, plantRoots, refinable, standingNodes } from './farTreePlan';
+import { STANDING_LEVEL, STANDING_SKIP, drawable, nearKeyOf, nearOutsideKey, nearTilesOf, plantRoots, refinable, standingNodes } from './farTreePlan';
 import { type Eye, type FarKind, type FarNearLanded, type FarNode, type FarTileSource, type FarTiles, type FarTreeJob, type FarTreeReply, type FarTreeRun, sameView } from './farTreeTypes';
 export type { FarKind, FarLanded, FarNear, FarNearLanded, FarTileSource, FarTiles, FarTreeJob, FarTreeRun } from './farTreeTypes';
 export { sameView } from './farTreeTypes';
@@ -30,9 +30,6 @@ const PLAN_MAX_REACH = nodeSide(TOP_LEVEL);
 /** How far round the eye the view reaches (`PLAN_PER_HEIGHT`). */
 const viewReach = (e: { readonly z: number; readonly reach: number }): number =>
   Math.min(PLAN_MAX_REACH, Number.isFinite(e.reach) ? e.reach : PLAN_PER_HEIGHT * e.z + PLAN_MARGIN);
-
-/** A tile's near level's key in the store of bakes (`farKey`'s level 0 under it: `n0:i,j`). */
-const nearKeyOf = (n: { readonly i: number; readonly j: number }): string => `n0:${n.i},${n.j}`;
 
 export class FarTree<P> implements FarTiles {
   readonly group = new Group();
@@ -360,12 +357,12 @@ export class FarTree<P> implements FarTiles {
     return this.view.intersectsBox(this.viewBox);
   }
 
-  /** Whether the view wants a node drawn in place of its children, with hysteresis (as a cell near stays near). */
-  private fine(n: FarNode): boolean {
+  /** Whether the view wants a node drawn in place of its children, with hysteresis (as a cell near stays near); `skip`, the pixels allowed that many times over (`STANDING_SKIP`). */
+  private fine(n: FarNode, skip = 1): boolean {
     const e = this.eyeNow;
     measureSeen(this.seen, e.x, e.y, e.z, e.pxAtMetre, e.orthoPx, n.x0, n.y0, n.x1, n.y1, n.top);
     const allowed = Math.max(this.seen.allowed, this.kind.levelPixels?.(n.k) ?? 0);
-    return n.error * this.seen.perMetre < allowed * (this.shown.has(n) ? 1 : HYSTERESIS);
+    return n.error * this.seen.perMetre < skip * allowed * (this.shown.has(n) ? 1 : HYSTERESIS);
   }
 
   /** A node chosen: drawn whole, or its children; whether all it stands for is drawn (or none of it is the tree's). */
@@ -397,8 +394,8 @@ export class FarTree<P> implements FarTiles {
       if (c && !this.visit(c)) all = false;
     }
     if (all) return true;
-    // At the standing level, only where nothing under it is drawn: DO NOT hide every tile of 16 km for one not come.
-    if (n.k === STANDING_LEVEL && this.planning && this.loadedOf(n) === 0 && n.landed !== null) { if (this.drawing.length === mark) this.drawing.push(n); return true; }
+    // At the standing level, in place of what is drawn under it only while it is near what the view wants (`STANDING_SKIP`: a part of it bare, the map's band of tiles made after the curtain, k20d 03-map); past that only where nothing under it is drawn: DO NOT hide a street's 16 km for one tile not come.
+    if (n.k === STANDING_LEVEL && this.planning && this.loadedOf(n) === 0 && n.landed !== null) { if (this.drawing.length === mark || this.fine(n, STANDING_SKIP)) { this.drawing.length = mark; this.drawing.push(n); } return true; }
     // A child not come: this node, if it came and no tile under it is in the document, stands for them (refining).
     if (this.loadedOf(n) === 0 && n.landed !== null && drawable(n, this.planFrom)) {
       this.drawing.length = mark;

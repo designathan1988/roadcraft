@@ -64,3 +64,9 @@ export function nearTilesOf(n: FarNode, leaves: ReadonlyMap<number, FarNode>, cu
   }
   return out;
 }
+
+/** A tile's near level's key in the store of bakes (`farKey`'s level 0 under it: `n0:i,j`). */
+export const nearKeyOf = (n: { readonly i: number; readonly j: number }): string => `n0:${n.i},${n.j}`;
+
+/** How much coarser than the view wants the standing level may be and still stand for a square partly drawn under it (Cesium's `skipScreenSpaceErrorFactor`, a loaded ancestor drawn where its descendants are not): two levels; past it, only where nothing under it is drawn (a street's view would show 16 km at an 8 m error). */
+export const STANDING_SKIP = 4;
