@@ -139,8 +139,31 @@ async function steps(page, report) {
     requestAnimationFrame(tick);
   }), n);
 
+  // A STEP THAT NEVER ENDS (the page stuck or gone): after LOOK_STALL_MS (60 s by default) with no step ended, 5 s of the page's CPU profile taken on a session of its own, its heap, and the run ended - the stall is the defect, never waited out.
+  const stall = { at: Date.now(), i: -1, step: '' };
+  const stallMs = Number(process.env.LOOK_STALL_MS ?? 60_000);
+  const watchdog = setInterval(async () => {
+    if (Date.now() - stall.at < stallMs) return;
+    clearInterval(watchdog);
+    console.log(`STALLED at step ${stall.i} (${stall.step}) for ${Math.round((Date.now() - stall.at) / 1000)} s`);
+    try {
+      const probe = await page.context().newCDPSession(page);
+      const heap = await Promise.race([probe.send('Runtime.getHeapUsage'), new Promise((r) => setTimeout(() => r(null), 5000))]);
+      console.log(`  page heap: ${heap ? `${Math.round(heap.usedSize / 1e6)} MB used of ${Math.round(heap.totalSize / 1e6)} MB` : 'no answer'}`);
+      await probe.send('Profiler.enable');
+      await probe.send('Profiler.setSamplingInterval', { interval: 1000 });
+      await probe.send('Profiler.start');
+      await new Promise((r) => setTimeout(r, 5000));
+      const { profile } = await Promise.race([probe.send('Profiler.stop'), new Promise((_, no) => setTimeout(() => no(new Error('no profile in 30 s')), 30_000))]);
+      writeFileSync(join(out, 'stalled.cpuprofile'), JSON.stringify(profile));
+      console.log(`  profile: ${join(out, 'stalled.cpuprofile')}`);
+    } catch (error) { console.log(`  no profile: ${String(error)}`); }
+    process.exit(3);
+  }, 5000);
+  watchdog.unref?.();
   for (const [i, step] of plan.steps.entries()) {
     const line = { i, step: Object.keys(step)[0] };
+    stall.at = Date.now(); stall.i = i; stall.step = JSON.stringify(step).slice(0, 80);
     if (process.env.LOOK_STEPS) console.log(`step ${i}: ${JSON.stringify(step).slice(0, 120)}`);
     if (step.lookAt) await page.evaluate(([x, y, zoom]) => window.__roadcraft.lookAt(x, y, zoom), step.lookAt);
     // An exact view: centre, zoom, bearing and tilt in degrees.
@@ -296,6 +319,7 @@ async function steps(page, report) {
     stillThere();
     report.steps.push(line);
   }
+  clearInterval(watchdog);
 }
 
 /** In the page: every animation frame's time kept from now (the game draws on demand; a late frame is a late callback). */
