@@ -217,7 +217,7 @@ export function createShellMaterial(options: { readonly plain?: boolean; readonl
   const key = `building-shell-v2-${plain ? 'plain' : 'weathered'}-${carried ? 'carried' : 'laid'}-${maps ? 'maps' : 'none'}`;
   material.customProgramCacheKey = () => key;
   // A built lot's yard - the paving and paths are this shell's level faces at the lot's ground
-  if (!plain) applyLotOverlay(material, 'building-shell', { building: true });
+  if (!plain) applyLotOverlay(material, { building: true });
   return material;
 }
 
