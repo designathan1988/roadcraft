@@ -90,10 +90,10 @@ export class WorldStreamer {
   /** When a tile last failed to come (`RETRY_MS`). */
   private readonly failedAt = new Map<number, number>();
   /** Tiles known to be in the store (read or made this session), and those being made ahead now. */
-  private readonly known = new Set<number>();
+  private readonly known = new MapTileSet();
   private readonly ahead = new Set<number>();
-  /** The tiles to make ahead: every tile of the map, nearest the camera's tile first. */
-  private aheadOrder: number[] = [];
+  /** The tiles to make ahead: every tile of the map, nearest the camera's tile first; their keys in a typed array (its bytes outside V8's cage, as `MapTileSet`'s). */
+  private aheadOrder: Float64Array = new Float64Array(0);
   /** How far along `aheadOrder` every tile is known (`askAhead`): DO NOT walk the whole map each frame for the few tiles left (a frame's walk of 100 tiles at 10 km, 1,600 at 40). Back to 0 when the order is made again. */
   private aheadAt = 0;
   /** The tiles whose bays are baked ahead, nearest the camera's tile first (`BAYS_RADIUS`), made again when the region recentres; and how far along it every tile's bays are asked or on the page. */
@@ -138,7 +138,7 @@ export class WorldStreamer {
     if (flipped.length) this.tell.activeChanged?.(flipped, flipped.map((key) => { const t = tileOfKey(key); return tileRect(t.i, t.j); }));
     // DO NOT order the whole map again once nothing of it is left to ask (the map made).
     if (this.aheadAt < this.aheadOrder.length || this.aheadOrder.length === 0) {
-      this.aheadOrder = mapTilesFrom(i, j);
+      this.aheadOrder = Float64Array.from(mapTilesFrom(i, j));
       this.aheadAt = 0;
     }
     this.baysOrder = tilesAround(i, j, BAYS_RADIUS).filter((t) => tileOnMap(t.i, t.j)).map((t) => tileKey(t.i, t.j));
@@ -612,6 +612,30 @@ interface Behind {
 }
 
 /** DO NOT leave the far city to the plan's stand-ins (`farPlan.ts`: boxes on a lattice and the avenues alone, the "city only in the middle" of 2026-10-16): every tile of the map, nearest (i, j) first, made once and stored, so the far levels draw the tiles themselves (the map is bounded, `wholeMap.ts` MAP_TILES). */
+/** THE MAP'S TILES AS ONE BYTE EACH, by their place on the map (`tileOnMap`), with their count: DO NOT keep a set of every tile's key on the page (a hash table in V8's cage, the size of the map: 1,600 entries at 40 km); a typed array's bytes are outside the cage (V8 sandbox, pointer compression). A tile off the map is never in it. */
+class MapTileSet {
+  private readonly bits = new Uint8Array(MAP_TILES * MAP_TILES);
+  size = 0;
+
+  private at(key: number): number {
+    const { i, j } = tileOfKey(key);
+    const a = i + MAP_TILES / 2, b = j + MAP_TILES / 2;
+    return a >= 0 && a < MAP_TILES && b >= 0 && b < MAP_TILES ? a * MAP_TILES + b : -1;
+  }
+
+  has(key: number): boolean {
+    const at = this.at(key);
+    return at >= 0 && this.bits[at] === 1;
+  }
+
+  add(key: number): void {
+    const at = this.at(key);
+    if (at < 0 || this.bits[at] === 1) return;
+    this.bits[at] = 1;
+    this.size++;
+  }
+}
+
 export function mapTilesFrom(i: number, j: number): number[] {
   const half = MAP_TILES / 2, out: { key: number; ring: number; d: number }[] = [];
   for (let a = -half; a < half; a++) {
