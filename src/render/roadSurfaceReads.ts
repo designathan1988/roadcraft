@@ -135,9 +135,13 @@ export function passSurfaces(pass: PassDesc, reads: SurfaceReads): SurfaceRead[]
     ? (x, y) => deck(x, y) - depth - FOOTWAY_RISE
     : (x, y) => Math.min(deck(x, y) - VERGE_SKIRT, reads.terrainAt(x, y) - 0.2);
 
+  /** A vertex's frame read into one object (`surfaceFrameInto`): DO NOT make one a vertex. */
+  const at = { along: 0, across: 0 };
   const frameFor = (tile: number, panel?: number): UvFrameFn => (x, y, pickX, pickY, out) => {
-    const frame = field.surfaceFrameAt(x, y, only, pickX, pickY,
-      pass.segment !== undefined, pass.segment === undefined ? undefined : segmentAt(pickX, pickY), panel);
+    const segment = pass.segment === undefined ? undefined : segmentAt(pickX, pickY);
+    const frame = field.surfaceFrameInto
+      ? field.surfaceFrameInto(x, y, only, pickX, pickY, pass.segment !== undefined, segment, panel, at)
+      : field.surfaceFrameAt(x, y, only, pickX, pickY, pass.segment !== undefined, segment, panel);
     out[0] = frame.across / tile;
     out[1] = frame.along / tile;
   };

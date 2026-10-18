@@ -111,6 +111,18 @@ export class CellFiling<Id extends number, T extends object> {
     return [...out].sort((a, b) => a - b);
   }
 
+  /** Whether `test` holds for some id whose bounds hold the point (x, y): its one cell looked at, nothing made (no rectangle, set nor list a point, as `idsMeeting` makes: asked for every vertex of a road surface). */
+  someAt(x: number, y: number, test: (id: Id, item: T) => boolean): boolean {
+    cellWork.cellsRead++;
+    const set = this.byCell.get(cellKey(Math.floor(x / this.side), Math.floor(y / this.side)));
+    if (!set) return false;
+    for (const id of set) {
+      const entry = this.entries.get(id)!, r = entry.rect;
+      if (r[0] <= x && r[2] >= x && r[1] <= y && r[3] >= y && test(id, entry.item)) return true;
+    }
+    return false;
+  }
+
   /** DO NOT ask `idsMeeting` rectangle by rectangle for a change of many */
   idsMeetingAny(rects: readonly ChangeRect[]): Id[] {
     if (rects.length === 1) return this.idsMeeting(rects[0]!);

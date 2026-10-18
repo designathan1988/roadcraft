@@ -1,6 +1,7 @@
 import { EPS, FINE_EPS, clamp } from './scalar';
 import type { Vec2 } from './vec2';
 import { type Aabb, fromFlat } from './aabb';
+import { hypot2 } from './hypot';
 
 /** A position on a polyline, with its local frame. */
 export interface Frame {
@@ -82,7 +83,7 @@ export class Polyline {
     for (let i = 1; i < this.n; i++) {
       const dx = (this.xy[i * 2] as number) - (this.xy[i * 2 - 2] as number);
       const dy = (this.xy[i * 2 + 1] as number) - (this.xy[i * 2 - 1] as number);
-      acc += Math.hypot(dx, dy);
+      acc += hypot2(dx, dy);
       c[i] = acc;
     }
     this._cum = c;
@@ -97,7 +98,7 @@ export class Polyline {
     for (let i = 0; i < segs; i++) {
       const dx = (this.xy[i * 2 + 2] as number) - (this.xy[i * 2] as number);
       const dy = (this.xy[i * 2 + 3] as number) - (this.xy[i * 2 + 1] as number);
-      const l = Math.hypot(dx, dy);
+      const l = hypot2(dx, dy);
       if (l < EPS) {
         t[i * 2] = 1;
         t[i * 2 + 1] = 0;
@@ -379,7 +380,7 @@ function dedupe(points: readonly Vec2[], eps = FINE_EPS): Vec2[] {
   const out: Vec2[] = [];
   for (const p of points) {
     const last = out[out.length - 1];
-    if (!last || Math.hypot(p.x - last.x, p.y - last.y) > eps) out.push(p);
+    if (!last || hypot2(p.x - last.x, p.y - last.y) > eps) out.push(p);
   }
   if (out.length === 1 && points.length > 1) out.push(points[points.length - 1] as Vec2);
   return out;

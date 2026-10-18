@@ -1,10 +1,12 @@
-import { Polyline } from '@core/polyline';
+import { Polyline, newFrame } from '@core/polyline';
 import type { Network } from '../network';
 import { CASING_BAND, FOOTWAY_RISE, type RoadType, flushOn, footwayOn } from '../roadTypes';
 
 /** DO NOT go back to a list of every flush road of the map, made again at each network revision and walked for every point. */
 
 const hit = { s: 0, distance: 0 };
+/** The frame a read's side is taken from (`flushHolds`): one, never kept. */
+const frame = newFrame();
 
 /** What `flushHolds` reads of a road: its widths and which footway is flush. */
 type FlushRoad = Pick<RoadType, 'width' | 'sidewalk' | 'sidewalkLeft' | 'sidewalkRight' | 'flushLeft' | 'flushRight'>;
@@ -14,7 +16,7 @@ function flushHolds(full: Polyline, road: FlushRoad, x: number, y: number): bool
   const reach = road.width / 2 + road.sidewalk + CASING_BAND;
   full.closestInto(x, y, hit);
   if (hit.distance > reach) return false;
-  const frame = full.sampleAt(hit.s);
+  full.sampleAtInto(hit.s, frame);
   const left = (x - frame.p.x) * frame.n.x + (y - frame.p.y) * frame.n.y >= 0;
   if (!flushOn(road as RoadType, left ? 'left' : 'right')) return false;
   const edge = road.width / 2;
@@ -23,13 +25,8 @@ function flushHolds(full: Polyline, road: FlushRoad, x: number, y: number): bool
 
 /** The share of `FOOTWAY_RISE` the footway at (x, y) stands at: 1 kerbed, 0 flush. */
 export function footwayRiseShare(net: Network, x: number, y: number): number {
-  // A ribbon's filed bounds reach its casing (`ribbonBounds`): every road whose footway holds the point.
-  for (const id of net.flushCells.idsMeeting([x, y, x, y])) {
-    const ribbon = net.ribbons.get(id);
-    if (!ribbon) continue;
-    if (flushHolds(ribbon.full, ribbon.road, x, y)) return 0;
-  }
-  return 1;
+  // A ribbon's filed bounds reach its casing (`ribbonBounds`): some road whose footway holds the point, whichever (the answer is 0 or 1, not which). DO NOT ask `idsMeeting` for it: a rectangle, a set and a sorted list a point, read for every vertex of a footway.
+  return net.flushCells.someAt(x, y, (id) => { const ribbon = net.ribbons.get(id); return !!ribbon && flushHolds(ribbon.full, ribbon.road, x, y); }) ? 0 : 1;
 }
 
 /** The footway's height over the carriageway at (x, y), world units. */

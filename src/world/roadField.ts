@@ -4,6 +4,7 @@ import { Polyline, newFrame } from '@core/polyline';
 import type { SegmentId } from './ids';
 import { ROAD_GROUND_CLEARANCE, type RoadStructure } from './structures';
 import { m } from './units';
+import { hypot2 } from '@core/hypot';
 
 /** THE READS OF THE ROADS' HEIGHT FIELD (`elevation.ts`) */
 
@@ -25,7 +26,7 @@ const BOX_SLACK = 1e-6;
 function boxDistance(b: Aabb, x: number, y: number): number {
   const dx = x < b.minX ? b.minX - x : x > b.maxX ? x - b.maxX : 0;
   const dy = y < b.minY ? b.minY - y : y > b.maxY ? y - b.maxY : 0;
-  return Math.hypot(dx, dy);
+  return hypot2(dx, dy);
 }
 
 /** What a query reads of one road's solved profile. */
@@ -113,6 +114,9 @@ export interface RoadReads {
     /** Lay `along` at the true length of each line parallel to the road */
     panel?: number,
   ): { along: number; across: number };
+  /** `surfaceFrameAt` written into `out`, nothing made (asked for every vertex of a road surface, `roadSurfaceReads.ts`). */
+  surfaceFrameInto?(x: number, y: number, structures: ReadonlySet<RoadStructure> | undefined, pickX: number, pickY: number,
+    includeManual: boolean | undefined, segment: SegmentId | undefined, panel: number | undefined, out: { along: number; across: number }): { along: number; across: number };
   /** Runs `work` with every point it reads remembered, so a point asked again */
   remembering?<T>(work: () => T): T;
 }
@@ -548,6 +552,40 @@ export function roadField<P extends FieldProfile>(
     return height;
   };
 
+  /** The frames a surface's texture coordinates are read in (`frameInto`): two, never kept. DO NOT make a frame a vertex (`Polyline.sampleAt`): three objects for every vertex of every road surface of a near job. */
+  const uvFrame = newFrame(), panelFrame = newFrame();
+  const frameInto = (x: number, y: number, structures: ReadonlySet<RoadStructure> | undefined, pickX: number, pickY: number,
+    includeManual: boolean, segment: SegmentId | undefined, panel: number | undefined, out: { along: number; across: number }): { along: number; across: number } => {
+    const best = segment === undefined
+      ? nearest(pickX, pickY, structures, includeManual)
+      : byId.get(segment);
+    if (!best) { out.along = y; out.across = x; return out; }
+    let s = segment === undefined ? last.s : 0;
+    if (segment !== undefined) {
+      best.line.closestInto(pickX, pickY, hit);
+      s = hit.s;
+    }
+    if (pickX !== x || pickY !== y) {
+      best.line.closestInto(x, y, hit);
+      s = hit.s;
+    }
+    const f = best.line.sampleAtInto(s, uvFrame);
+    const dx = x - f.p.x;
+    const dy = y - f.p.y;
+    const across = dx * f.n.x + dy * f.n.y;
+    let along = s + dx * f.t.x + dy * f.t.y;
+    if (panel !== undefined && panel > 0) {
+      // A line `across` to the left of a curve is shorter than the centreline by `across` times the turn: d(along) =
+      const start = Math.floor(Math.max(0, Math.min(best.length, s)) / panel) * panel;
+      const t0 = best.line.sampleAtInto(start, panelFrame).t;
+      const turn = Math.atan2(t0.x * f.t.y - t0.y * f.t.x, t0.x * f.t.x + t0.y * f.t.y);
+      along -= across * turn;
+    }
+    out.along = along;
+    out.across = across;
+    return out;
+  };
+
   return {
     at: query,
     remembering(work) {
@@ -602,32 +640,10 @@ export function roadField<P extends FieldProfile>(
       };
     },
     surfaceFrameAt(x, y, structures, pickX, pickY, includeManual = true, segment, panel) {
-      const best = segment === undefined
-        ? nearest(pickX, pickY, structures, includeManual)
-        : byId.get(segment);
-      if (!best) return { along: y, across: x };
-      let s = segment === undefined ? last.s : 0;
-      if (segment !== undefined) {
-        best.line.closestInto(pickX, pickY, hit);
-        s = hit.s;
-      }
-      if (pickX !== x || pickY !== y) {
-        best.line.closestInto(x, y, hit);
-        s = hit.s;
-      }
-      const frame = best.line.sampleAt(s);
-      const dx = x - frame.p.x;
-      const dy = y - frame.p.y;
-      const across = dx * frame.n.x + dy * frame.n.y;
-      let along = s + dx * frame.t.x + dy * frame.t.y;
-      if (panel !== undefined && panel > 0) {
-        // A line `across` to the left of a curve is shorter than the centreline by `across` times the turn: d(along) =
-        const start = Math.floor(Math.max(0, Math.min(best.length, s)) / panel) * panel;
-        const t0 = best.line.sampleAt(start).t;
-        const turn = Math.atan2(t0.x * frame.t.y - t0.y * frame.t.x, t0.x * frame.t.x + t0.y * frame.t.y);
-        along -= across * turn;
-      }
-      return { along, across };
+      return frameInto(x, y, structures, pickX, pickY, includeManual, segment, panel, { along: 0, across: 0 });
+    },
+    surfaceFrameInto(x, y, structures, pickX, pickY, includeManual = true, segment, panel, out) {
+      return frameInto(x, y, structures, pickX, pickY, includeManual, segment, panel, out);
     },
   };
 }
