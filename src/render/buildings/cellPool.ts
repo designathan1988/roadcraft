@@ -258,6 +258,11 @@ export class CellPool {
     return known && known.sig === entry.sig && known.digest === entry.digest && known.paved === paved ? known.floor : undefined;
   }
 
+  /** DO NOT keep the floor of a building gone from the document (a tile let go as the eye walked on): the floors kept follow what is loaded, not the way walked. `keep`: whether an entry's building is still there, by its key (an id, or a building cut open, `id|...`). */
+  forgetFloors(keep: (key: string) => boolean): void {
+    for (const key of this.floors.keys()) if (!keep(key)) this.floors.delete(key);
+  }
+
   /** The floors a job stood its buildings on, kept for their next jobs. */
   private learn(asked: Asked, result: CellResult): void {
     const floors = result.floors;
