@@ -207,6 +207,9 @@ export class WorldStreamer {
   rush = false;
   /** No tile made ahead while set (`main.ts`: the opening's view made, its far levels and cells to come before the curtain falls). */
   aheadHeld = false;
+  /** Whether the workers' queue is quiet, and a listener told when it goes so (`jobPool.ts` jobsQuiet, onJobsQuiet): past the ring round the camera, a tile is made ahead only then. None: always. */
+  aheadQuiet: { readonly now: () => boolean; readonly on: (listener: () => void) => () => void } | null = null;
+  private quietWait: (() => void) | null = null;
 
   /** The map's tiles there are, and those made (in the store, or failed and told): the opening waits for all (`main.ts` holdOpening). */
   get mapTotal(): number {
@@ -437,6 +440,12 @@ export class WorldStreamer {
       if (this.rush ? this.asked.size + this.ahead.size >= 2 * this.inFlight
         : this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, this.inFlight - 1))) return;
       if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key) || this.wantedNear(key, ACTIVE_RADIUS)) continue;
+      // DO NOT make the map's other tiles while the view's work waits (its cells, near roads, far levels): a tile on each worker behind the shown town left the street without its markings and the building at the camera in its mass 6 s on (conf127, 2026-10-17). The plan stands where they are not made yet; asked again when the queue goes quiet.
+      const quiet = this.aheadQuiet;
+      if (!this.rush && quiet && !this.wantedNear(key, RING_RADIUS) && !quiet.now()) {
+        this.quietWait ??= quiet.on(() => { this.quietWait?.(); this.quietWait = null; if (this.aheadQuiet === quiet) this.ask(); });
+        return;
+      }
       this.ahead.add(key);
       // DO NOT bring a tile made ahead onto the page: only its version is wanted here (the far levels and the meso read it from the store).
       const made = this.source.ensure ? this.source.ensure(key) : this.source.load(key).then((records) => records.version);

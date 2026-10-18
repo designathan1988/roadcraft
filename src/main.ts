@@ -1,7 +1,7 @@
 import { measureHitch } from '@core/hitch';
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
-import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
+import { jobChannel, jobLanes, jobPort, jobsQuiet, onJobsQuiet, setJobWorkerSetup } from './jobs/jobPool';
 import { WorldStreamer, mapTilesFrom } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
@@ -2013,6 +2013,8 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
   // THE WHOLE MAP MADE BEFORE THE TOWN IS SHOWN (the city-game's opening): every tile generated and stored (`streamer.mapMade`), so every far level is drawn from a tile, never from a stand-in; the region's own detail lands behind the curtain's fall (`renderer.ts` reveal, the opening in two steps).
   streamer.rush = true;
+  // Past the rush, the map's other tiles in the gaps of the view's own work (`WorldStreamer.aheadQuiet`).
+  streamer.aheadQuiet = { now: jobsQuiet, on: onJobsQuiet };
   // Every worker makes tiles while the map is made (the other kinds' work is light then): let go once it is (`frame`).
   generator.setAside(true);
   // DO NOT wait for every tile of the map (the opening grew with it: 63 s at 10 km, 183 s at 20 km, the tiles' growth 3/4 of it; wprof20, 2026-10-17): the tiles the opening's view reaches (`world/reachTiles.ts`, the far trees' reach), the rest made after it, nearest first (`streamer.rush` and the generator's lanes until `mapMade`).
@@ -2059,6 +2061,7 @@ function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
   if (!open) return replace();
   // Posted now, from the records the page holds; nothing streams in or out after.
   const written = open.streamer.flush();
+  open.streamer.aheadQuiet = null;
   streamed = null;
   void written.finally(() => open.release());
   open.generator.dispose();
