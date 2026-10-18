@@ -1858,7 +1858,7 @@ export function createSceneRenderer(
     surfaceBlocks = [];
     if (!byTile) {
       derived(net, 'surfaces', freshRoads.rebuilt, 'road surfaces rebuilt', worldCause,
-        { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles feitos, ${freshRoads.reused} aproveitados` });
+        { ms: freshRoads.workMs, detail: `${freshRoads.built} tiles built, ${freshRoads.reused} reused` });
     }
     // The structures' details, the poles and the street furniture are each kept as they are when the edit's blocks reach none
     // A streamed world's structures are the tiles' (`structureTiles.ts`, baked in workers): the region builds none, its cells let go.
