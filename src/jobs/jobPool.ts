@@ -217,6 +217,8 @@ class JobSystem {
   rankedY = 0;
   /** What each worker is told when it is made, before any job (`setJobWorkerSetup`). */
   setup: ((worker: Worker) => void) | null = null;
+  /** Where a worker of a side is made instead of a page's Worker (`setJobWorkerMaker`: the desktop's utility process for the long side); null: the page's. */
+  makeWorker: ((long: boolean) => Worker | null) | null = null;
   /** Tiles of the map waiting for the long side's lanes (`tilesWaiting`): its workers take no queued job meanwhile. */
   tilesWaiting = false;
 }
@@ -227,6 +229,11 @@ export function setTilesWaiting(on: boolean): void {
   if (system.tilesWaiting === on) return;
   system.tilesWaiting = on;
   if (!on) dispatch();
+}
+
+/** Where the pool's workers are made, by side (`long`: tiles and growth); null from it: the page's own Worker. On the desktop the long side goes to a utility process outside the renderer's V8 cage (`jobs/processWorker.ts`), whose `terminate` ends that thread (the recycling, `retireJobPort`). */
+export function setJobWorkerMaker(make: ((long: boolean) => Worker | null) | null): void {
+  system.makeWorker = make;
 }
 
 /** Told to every worker of the pool, those made and those to come, before its first job: on the desktop, the port it reads and writes the tiles through (`editor/workerParts.ts`). */
@@ -254,7 +261,7 @@ function grow(long: boolean): Host | null {
   const live = system.workers.filter((h) => !h.retiring);
   if (live.length >= jobWorkers()) return null;
   if (live.filter((h) => h.long === long).length >= (long ? longWorkers() : shortWorkers())) return null;
-  const worker = new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
+  const worker = system.makeWorker?.(long) ?? new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
   system.setup?.(worker);
   const host: Host = { worker, long, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [], retiring: false };
   worker.onmessage = (event: MessageEvent<FromJob>) => {

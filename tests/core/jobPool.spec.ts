@@ -236,4 +236,16 @@ describe('the job system', () => {
     expect(FakeWorker.made[save]!.asked.filter((m) => m.seq !== undefined)).toEqual([]);
     expect(FakeWorker.made.length).toBeLessThanOrEqual(jobWorkers());
   });
+
+  it("makes a side's workers where the maker says, the page's Worker where it says nothing", async () => {
+    const { jobPort, setJobWorkerMaker } = await import('@/jobs/jobPool');
+    const made: boolean[] = [];
+    setJobWorkerMaker((long) => { made.push(long); return long ? new FakeWorker() as unknown as Worker : null; });
+    const before = FakeWorker.made.length;
+    jobPort('cityTiles');
+    jobPort('roadTiles');
+    expect(made).toEqual([true, false]);
+    expect(FakeWorker.made.length).toBe(before + 2);
+    setJobWorkerMaker(null);
+  });
 });
