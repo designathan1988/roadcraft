@@ -74,6 +74,8 @@ describe('the near products chosen by tile', () => {
     expect(nearPriority({}, true)).toBeGreaterThan(cellPriority('massPlate', far, false, true));
     expect(edit).toBe(EDIT_TIER * TIER_SPAN);
     expect(edit + far).toBeLessThan(cellPriority('cell', 0, false, false));
+    // A tile the view looks at keeps the detail's band behind the curtain: the curtain lifts on it in its final detail.
+    expect(nearPriority({ seen: true }, true)).toBe(cellPriority('cell', 0, false, false));
   });
 
   it('chooses nothing again on the frames where the eye, the view, the stored tiles, the edits and the kinds stand as they were', () => {
@@ -144,6 +146,24 @@ describe('the near products chosen by tile', () => {
     const near2 = keptAfter(2);
     expect(near2[0]).toBeGreaterThan(0);
     expect(keptAfter(20)).toEqual(near2);
+  });
+
+  it('says how many tiles in view wait for a first bake, none once they land, the same however large the map', () => {
+    const pendingAfter = (side: number, land: boolean): number => {
+      const { jobs, run } = runs();
+      const near = new NearTiles(run, null);
+      near.add(product([]));
+      for (let i = -side; i <= side; i++) for (let j = -side; j <= side; j++) near.stored(tileKey(i, j), 1);
+      near.setSource({ records: async (key) => emptyRecords(key, 1), plan: null }, () => false);
+      near.choose(m(512), m(512), m(100), 1000, null);
+      expect([...jobs.values()].every((held) => held.job.seen)).toBe(true);
+      if (land) for (const held of [...jobs.values()]) answer(held, 'a');
+      return near.pendingInView();
+    };
+    const waiting = pendingAfter(4, false);
+    expect(waiting).toBeGreaterThan(0);
+    expect(pendingAfter(40, false)).toBe(waiting);
+    expect(pendingAfter(4, true)).toBe(0);
   });
 
   it('asks the tiles where the kind spans a pixel, keeps a bake drawn until the next lands, and lets go what the view leaves', () => {
