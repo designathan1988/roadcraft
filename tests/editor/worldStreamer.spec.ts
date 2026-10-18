@@ -714,5 +714,19 @@ describe('an edited tile', () => {
     expect(store.ensures.length).toBe(asked);
     expect(written.length).toBe(told);
   });
+
+  it('behind the curtain puts every tile come in at once (one world build for them), in sight one a frame', async () => {
+    const unseen = new WorldStreamer(new RoadDoc(), source());
+    unseen.focus(0, 0);
+    await turns(3);
+    // The region's nine come together (one a frame would take nine frames, each after the world's build of the one before).
+    unseen.apply(0, true);
+    expect(unseen.settled).toBe(true);
+    const seen = new WorldStreamer(new RoadDoc(), source());
+    seen.focus(0, 0);
+    await turns(3);
+    seen.apply(0);
+    expect(seen.settled).toBe(false);
+  });
 });
 

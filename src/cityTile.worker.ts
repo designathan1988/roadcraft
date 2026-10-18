@@ -9,7 +9,7 @@ import { withGrownBuildings } from '@world/growth/grownRows';
 import { migrateBuilding } from '@world/buildings/serialize';
 import type { Building } from '@world/buildings/types';
 import { BAYS_SECTION } from '@sim/tileBays';
-import { NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, tileBaysSection, tileNetworkSection } from '@sim/tileSections';
+import { NETWORK_SECTION, TRAFFIC_SECTION, bakeTileSections, networkOfSection, tileBaysSection, tileNetworkSection } from '@sim/tileSections';
 import { type FarCache, type FarGroundEnv, keepTileFar } from './render/buildings/farTiles';
 import { type FarRoadCache, keepTileFarRoads, tileRoads } from './render/farRoadTiles';
 import { keepTileNearBuildings } from './render/nearBuildings';
@@ -87,6 +87,10 @@ async function storedAnswer(store: NonNullable<StreamTileAsk['store']>, i: numbe
   const records = await readTile(stored(), store.map, key);
   if (!records) return null;
   await addBays(store.map, records);
+  // DO NOT solve the junctions of a tile stored with them (`NETWORK_SECTION`, baked at its version from these records): read, as the simulation reads them (`tileReader.ts` network); solved and added only where it has none.
+  const section = await readTileSection(stored(), store.map, key, NETWORK_SECTION);
+  const network = section && 'value' in section ? networkOfSection(section.value) : null;
+  if (network) return { key, stored: records.version, prepared: { ...prepareTile(records, false), network }, existed: true };
   const prepared = prepareTile(records);
   await addNetwork(store.map, records, prepared);
   return { key, stored: records.version, prepared, existed: true };
