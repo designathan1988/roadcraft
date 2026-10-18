@@ -1,6 +1,6 @@
 import { shapeFromControl } from '@core/bezier';
 import type { Vec2 } from '@core/vec2';
-import { insideWorld } from '@world/bounds';
+import { MAP_HALF } from '@world/cityGen/wholeMap';
 import type { RoadDoc } from '@world/doc';
 import type { NodeId, SegmentId } from '@world/ids';
 import { Network } from '@world/network';
@@ -15,24 +15,13 @@ export type RoundaboutResult =
   | { readonly committed: true; readonly ring: readonly SegmentId[]; readonly entrances: readonly SegmentId[] }
   | { readonly committed: false; readonly reason: 'size' | 'bounds' | 'occupied' | 'geometry' };
 
-/** Places a single-lane roundabout on vacant ground. */
-export function commitRoundabout(
-  doc: RoadDoc,
-  net: Network,
-  centre: Vec2,
-  radius = m(40),
-  type = 0,
-): RoundaboutResult {
+/** Why a roundabout of `radius` round `centre` cannot be placed, or null when it can: what the click would answer, asked before it (the preview). */
+export function roundaboutRefusal(doc: RoadDoc, net: Network, centre: Vec2, radius: number, type = 0): Exclude<RoundaboutResult, { committed: true }>['reason'] | null {
   if (!Number.isFinite(radius) || radius < ROUNDABOUT_MIN_RADIUS || radius > ROUNDABOUT_MAX_RADIUS ||
-    !Number.isFinite(centre.x) || !Number.isFinite(centre.y) || !Number.isInteger(type) || !ROAD_TYPES[type]) {
-    return { committed: false, reason: 'size' };
-  }
+    !Number.isFinite(centre.x) || !Number.isFinite(centre.y) || !Number.isInteger(type) || !ROAD_TYPES[type]) return 'size';
   const reach = radius + ROUNDABOUT_APPROACH_LENGTH;
-  // Only the world's reach holds it (`world/bounds.ts`): no map edge.
-  if (!insideWorld({ x: centre.x - reach, y: centre.y - reach }) ||
-      !insideWorld({ x: centre.x + reach, y: centre.y + reach })) {
-    return { committed: false, reason: 'bounds' };
-  }
+  // The ring and its four approaches inside the map (`wholeMap.ts` MAP_HALF).
+  if (Math.abs(centre.x) + reach > MAP_HALF || Math.abs(centre.y) + reach > MAP_HALF) return 'bounds';
   // Refuse instead of silently burying existing roads or leaving unconnected geometric crossings.
   const width = casingHalf(roadProfile(type, 2, 'both'));
   // DO NOT measure every road of the map for one placement.
@@ -41,10 +30,21 @@ export function commitRoundabout(
     const segment = doc.segment(ribbon.id);
     if (!segment) continue;
     const otherWidth = casingHalf(roadProfile(segment.type, segment.lanes, segment.direction, segment.section, segment.parking));
-    if (net.polylines.get(doc, segment.id).distanceTo(centre) < reach + width + otherWidth) {
-      return { committed: false, reason: 'occupied' };
-    }
+    if (net.polylines.get(doc, segment.id).distanceTo(centre) < reach + width + otherWidth) return 'occupied';
   }
+  return null;
+}
+
+/** Places a single-lane roundabout on vacant ground. */
+export function commitRoundabout(
+  doc: RoadDoc,
+  net: Network,
+  centre: Vec2,
+  radius = m(40),
+  type = 0,
+): RoundaboutResult {
+  const refused = roundaboutRefusal(doc, net, centre, radius, type);
+  if (refused) return { committed: false, reason: refused };
 
   const work = doc.fork();
   const nodes: NodeId[] = [];
@@ -71,7 +71,7 @@ export function commitRoundabout(
     ring.push(segment.id);
   }
   for (let i = 0; i < 8; i += 2) {
-    const outer = work.addNode(point(i * step, reach));
+    const outer = work.addNode(point(i * step, radius + ROUNDABOUT_APPROACH_LENGTH));
     const segment = work.addSegment(outer.id, nodes[i]!, type, null, 0, 'both', 2);
     if (!segment) return { committed: false, reason: 'geometry' };
     entrances.push(segment.id);

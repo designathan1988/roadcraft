@@ -3,8 +3,8 @@ import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { LaneletGraph } from '@world/lanelets';
 import { History, followNetwork } from '@editor/history';
-import { commitRoundabout } from '@editor/roundabout';
-import { WORLD_HALF } from '@world/bounds';
+import { commitRoundabout, roundaboutRefusal } from '@editor/roundabout';
+import { MAP_HALF } from '@world/cityGen/wholeMap';
 import { segmentMarkings } from '@world/markings';
 import { Level, SURFACE_LEVELS } from '@world/roadTypes';
 import { SimWorld } from '@sim/world';
@@ -99,8 +99,11 @@ describe('roundabout command', () => {
     net.rebuild();
     const before = doc.toJSON();
     expect(commitRoundabout(doc, net, { x: 0, y: 0 }, 100)).toMatchObject({ committed: false, reason: 'occupied' });
-    // Past the world's reach (no map edge any more).
-    expect(commitRoundabout(doc, net, { x: WORLD_HALF + 50, y: 0 }, 100)).toMatchObject({ committed: false, reason: 'bounds' });
+    // Its ring or an approach past the map's edge (CLAUDE.md: nothing past the edge).
+    expect(commitRoundabout(doc, net, { x: MAP_HALF - 100, y: 0 }, 100)).toMatchObject({ committed: false, reason: 'bounds' });
+    expect(commitRoundabout(doc, net, { x: 0, y: -MAP_HALF - 50 }, 100)).toMatchObject({ committed: false, reason: 'bounds' });
+    expect(roundaboutRefusal(doc, net, { x: 0, y: 2000 }, 40)).toBeNull();
+    expect(roundaboutRefusal(doc, net, { x: 0, y: 0 }, 100)).toBe('occupied');
     expect(commitRoundabout(doc, net, { x: 0, y: 0 }, NaN).committed).toBe(false);
     expect(commitRoundabout(doc, net, { x: 0, y: 0 }, 5).committed).toBe(false);
     expect(doc.toJSON()).toEqual(before);

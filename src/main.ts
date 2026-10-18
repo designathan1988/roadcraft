@@ -85,7 +85,7 @@ import { type Anchor, anchorForHeight, findAnchor, roadSnap, setRoadSnap } from 
 import { duplicateSegment, joinSegments, splitSegment } from '@editor/commit';
 import { type RoadEditRefusal, guardRoadEdit } from '@editor/editRules';
 import { commitPedestrianCrossing, commitUturn } from '@editor/streetObjects';
-import { commitRoundabout } from '@editor/roundabout';
+import { commitRoundabout, roundaboutRefusal } from '@editor/roundabout';
 import { RoadTool, type RoadDraft } from '@editor/roadTool';
 import { Bulldozer } from '@editor/bulldozer';
 import { NodeMover } from '@editor/nodeMover';
@@ -363,7 +363,7 @@ const gameState = new GameState({
   alignment: 'straight' as Alignment,
   roadHeightOffset: 0,
   roadLanePreset: null as number | null,
-  roundaboutRadius: 100,
+  roundaboutRadius: 40,
   // The terrain brush.
   terrainMode: 'raise' as BrushMode,
   terrainRadius: 80,
@@ -1168,13 +1168,11 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
 
   switch (game.tool) {
     case 'roundabout':
-      if (freeRoadsEnabled()) {
-        mutate(() => {
-          const result = commitRoundabout(doc, net, world, game.roundaboutRadius, 0);
-          if (!result.committed) flashHint(`hint.roundabout.${result.reason}`);
-          return result.committed;
-        });
-      }
+      mutate(() => {
+        const result = commitRoundabout(doc, net, world, game.roundaboutRadius, 0);
+        if (!result.committed) flashHint(`hint.roundabout.${result.reason}`);
+        return result.committed;
+      });
       break;
     case 'road':
       if (blockGridChoice.armed) {
@@ -1815,7 +1813,7 @@ function mountInterface(): void {
     toggleCongestion,
     camera: cameraCommand,
     cameraTurns: view.kind !== '2d',
-    roundabout: freeRoadsEnabled(),
+    roundabout: true,
     roadClasses,
     selectRoadType,
     setAlignment: (next) => { if (next === 'straight' || next === 'curve' || next === 'free') setAlignment(next); },
@@ -2871,7 +2869,8 @@ function drawOverlayScreen(): void {
 
   if (game.tool === 'roundabout' && hoverAnchor) {
     ctx.save();
-    ctx.strokeStyle = HOVER;
+    // Red where the click would be refused (`roundaboutRefusal`), the reason said as the hint.
+    ctx.strokeStyle = roundaboutRefusal(doc, net, hoverAnchor.at, game.roundaboutRadius) ? INVALID : HOVER;
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
