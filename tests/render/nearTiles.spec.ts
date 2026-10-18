@@ -62,6 +62,19 @@ describe('the near products chosen by tile', () => {
     expect(sent).not.toContain('9,0');
   });
 
+  it('sends the job nearest to where the view looks first, light or heavy: the camera\'s heavy job before the light ones far off', () => {
+    const job = (i: number, heavy: boolean): NearTileJob => ({ node: `${i},0`, asks: [], prefix: null, heavy, tiles: [{ key: tileKey(i, 0), version: 1 }], ground: { ground: null, naturalIsGround: true } });
+    const sent: string[] = [];
+    const gate = new NearGate(() => 1, (j) => Math.abs(tileOfKey(j.tiles[0]!.key).i) * 1000);
+    const ask = (j: NearTileJob): void => { gate.ask(j, () => { sent.push(`${j.node}${j.heavy ? 'h' : 'l'}`); return { cancel: () => {} }; }); };
+    // One on a worker; light jobs of tiles far off and the camera's own heavy and light jobs waiting.
+    ask(job(6, false));
+    ask(job(5, false)); ask(job(4, false)); ask(job(0, true)); ask(job(0, false));
+    for (let k = 0; k < 4; k++) gate.settle();
+    // The camera's tile first (its light job before its heavy one), then the nearest.
+    expect(sent).toEqual(['6,0l', '0,0l', '0,0h', '4,0l', '5,0l']);
+  });
+
   it('waits in the queue as a cell\'s detail does, nearest first with the cells, put back with them behind the curtain, and goes before everything for an edit of what it reads', () => {
     // The queue's rank: the band plus the distance to the view's focus (`jobPool.ts` rankOf).
     const far = m(2000);
