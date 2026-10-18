@@ -1,5 +1,5 @@
 import type { TileRecords } from '@world/doc';
-import type { FarNode, FarTileSource } from './farTreeTypes';
+import type { FarTileSource } from './farTreeTypes';
 
 /** A tile the page holds edited, cut to what a near level reads, and the digest of that. */
 export interface PageCut { readonly records: TileRecords; readonly digest: string }
@@ -39,22 +39,9 @@ export class PageCuts {
     asked.set(sig, cut.digest);
   }
 
-  /** Whether a tile's edit is cut and not drawn yet (`drawn`): its near level still to come of it. */
-  pending(key: number): boolean {
-    const known = this.known.get(key);
-    return !!known?.cut && !known.drawn;
-  }
-
   /** A tile's near level drawn of what it read (`sig`): the tile's cut, if it was made of it, drawn - the edit is on the screen. */
   drawn(key: number, sig: string): void {
     const known = this.known.get(key);
     if (known?.cut && this.askedOf.get(key)?.get(sig) === known.cut.digest) known.drawn = true;
   }
-}
-
-/** Whether a tile's road stand-in can go (`roadStandIn.ts`): its edit drawn and nothing more asked nor coming, or no near level wanted there at all (out of its reach, out of the region, `n` gone). */
-export function standInDone(n: FarNode | undefined, cuts: PageCuts, tile: number): boolean {
-  if (!n) return true;
-  if (cuts.pending(tile)) return false;
-  return n.nearAsked === null && n.nearComing === null;
 }

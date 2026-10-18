@@ -64,8 +64,6 @@ export class RoadStandIn {
   private readonly asphalt = standInMaterial(ASPHALT, 3);
   /** Each tile's stand-in meshes. */
   private readonly byTile = new Map<number, Mesh[]>();
-  /** The tiles given a stand-in this frame: not looked at for letting go before the near roads were asked of the edit (`settle`). */
-  private readonly fresh = new Set<number>();
 
   constructor() {
     this.group.name = 'road-stand-ins';
@@ -74,16 +72,6 @@ export class RoadStandIn {
   /** The tiles with a road standing in. */
   get tiles(): readonly number[] {
     return [...this.byTile.keys()];
-  }
-
-  /** The tiles with a road standing in since an earlier frame: those `done` may let go (`renderer.ts`, after the near roads were chosen). */
-  settled(): number[] {
-    return [...this.byTile.keys()].filter((tile) => !this.fresh.has(tile));
-  }
-
-  /** The frame's stand-ins looked at from the next frame on. */
-  settle(): void {
-    this.fresh.clear();
   }
 
   /** The roads `segments` drawn now (the commit's network solved): their outlines and the junctions at their ends, each under the tile its middle is in. */
@@ -123,7 +111,6 @@ export class RoadStandIn {
       if (!meshes.length) continue;
       const kept = this.byTile.get(tile);
       if (kept) kept.push(...meshes); else this.byTile.set(tile, meshes);
-      this.fresh.add(tile);
       for (const mesh of meshes) this.group.add(mesh);
     }
   }
@@ -133,17 +120,11 @@ export class RoadStandIn {
     const meshes = this.byTile.get(tile);
     if (!meshes) return;
     this.byTile.delete(tile);
-    this.fresh.delete(tile);
     for (const mesh of meshes) { this.group.remove(mesh); mesh.geometry.dispose(); }
   }
 
-  /** Every stand-in let go (another map, the diary read from nothing). */
-  clear(): void {
-    for (const tile of [...this.byTile.keys()]) this.drop(tile);
-  }
-
   dispose(): void {
-    this.clear();
+    for (const tile of [...this.byTile.keys()]) this.drop(tile);
     this.casing.dispose();
     this.asphalt.dispose();
   }
