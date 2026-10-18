@@ -96,6 +96,8 @@ describe('the streamer', () => {
     await turns(2);
     expect(told).toHaveLength(0);
     expect(store.ensures.some((key) => ring(key) > 2)).toBe(true);
+    // Two at once past the ring (`BACKGROUND_LANES`), whatever the generator's lanes: the others take the view's jobs.
+    expect(store.ensures.filter((key) => ring(key) > 2).length).toBeLessThanOrEqual(2);
   });
 
   it('makes the whole map while the opening waits for it (`rush`): every lane the region leaves free, nearest first, counted to the last tile', async () => {

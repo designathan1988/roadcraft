@@ -19,6 +19,8 @@ const KEEP_MARGIN = 1;
 const IN_FLIGHT = 4;
 /** The ring the region loads next as the camera moves (the tiles it keeps past its radius): made ahead first, as many at once as the region asks. */
 const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
+/** Tiles made at once past the ring, the map shown (`askAhead`): DO NOT put one on every generator's lane - a quiet moment of the queue put six behind the shown town (2-25 s each), and the street's cells asked a second later waited behind them in their mass (conf131 09-street, 2026-10-18). The other lanes' workers take the queue's jobs between tiles (`jobPool.ts` hostFor). */
+const BACKGROUND_LANES = 2;
 /** How far round the camera's tile the bays are baked ahead (`askBays`): the ring and the tiles it reaches next; past it, a tile's bays come with it into the region (`cityTile.worker.ts` addBays). */
 const BAYS_RADIUS = RING_RADIUS + 1;
 /** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
@@ -438,7 +440,7 @@ export class WorldStreamer {
       const key = this.aheadOrder[at]!;
       // Nearest first: past the ring, one lane kept free for the tiles the camera moves onto. The map being made: twice the lanes asked, so a lane that ends a tile finds the next waiting in the generator's queue - DO NOT let it wait for the page to hear of the last and ask again (the opening's lanes at half load, 30-50 s, 2026-10-17).
       if (this.rush ? this.asked.size + this.ahead.size >= 2 * this.inFlight
-        : this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, this.inFlight - 1))) return;
+        : this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, Math.min(BACKGROUND_LANES, this.inFlight - 1)))) return;
       if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key) || this.wantedNear(key, ACTIVE_RADIUS)) continue;
       // DO NOT make the map's other tiles while the view's work waits (its cells, near roads, far levels): a tile on each worker behind the shown town left the street without its markings and the building at the camera in its mass 6 s on (conf127, 2026-10-17). The plan stands where they are not made yet; asked again when the queue goes quiet.
       const quiet = this.aheadQuiet;
