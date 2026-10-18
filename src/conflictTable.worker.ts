@@ -71,9 +71,11 @@ export function serve(self: JobScope): void {
   self.onmessage = async (event: MessageEvent<PairsAsk | TurnsAsk | SweepsAsk | FinishAsk | CornersAsk | JunctionsAsk>) => {
     const ask = event.data;
     let spoke = performance.now();
+    // Asked as a queued job (`jobPool.ts` jobQueueChannel): its answer alone, one message.
+    const quiet = (ask as { readonly quiet?: boolean }).quiet === true;
     const beat = (): void => {
       const now = performance.now();
-      if (now - spoke >= BEAT_MS) { spoke = now; self.postMessage({ id: ask.id, beat: true }); }
+      if (!quiet && now - spoke >= BEAT_MS) { spoke = now; self.postMessage({ id: ask.id, beat: true }); }
     };
     try {
       if (ask.kind === 'turns') {
