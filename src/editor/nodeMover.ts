@@ -5,6 +5,7 @@ import type { NodeId, SegmentId } from '@world/ids';
 import type { CurveShape } from '@core/bezier';
 import type { Network } from '@world/network';
 import { type DraftResult, moveNodeChecked } from './commit';
+import { carryStreetKit } from './roads/streetKit';
 
 /** What the node mover reads of the game and does to it. */
 export interface NodeMoverHost {
@@ -94,12 +95,13 @@ export class NodeMover {
     }
     // The drop is reconciled like a drawn road
     let refused: DraftResult['reason'] | undefined;
-    host.mutate(() => {
+    // The roads that move take their power line and furniture along (`roads/streetKit.ts`).
+    host.mutate(() => carryStreetKit(doc, net, [...drag.curves.keys()], () => {
       const result = moveNodeChecked(doc, net, drag.node, now);
       if (result.committed) return true;
       refused = result.reason === 'duplicate' ? undefined : result.reason;
       return false;
-    });
+    }, () => doc.node(drag.node)?.incident ?? []));
     if (refused) {
       host.hint(refused === 'clearance' ? 'hint.move.clearance'
         : refused === 'tooShort' || refused === 'degenerate' ? 'hint.move.tooShort' : `hint.rule.${refused}`);

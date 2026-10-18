@@ -93,6 +93,7 @@ import { CameraGestures, type PointerSample } from '@view/cameraGestures';
 import { CameraMotion } from '@view/cameraMotion';
 import { freeRoadsEnabled } from '@ui/roadSectionEditor';
 import { applyProfileTo } from '@editor/roads/profile';
+import { carryStreetKit } from '@editor/roads/streetKit';
 import { drawProfile, setDrawProfile } from '@ui/roads/drawProfile';
 import { cutWallsChosen } from '@ui/roads/cutWalls';
 import { ROAD_PARKING_PRESETS, type RoadParkingPreset, roadParking, roadParkingPreset, setRoadParkingPreset } from '@editor/roadParking';
@@ -1272,10 +1273,10 @@ function pointerDown(e: PointerEvent, r: DOMRect): void {
         const id = anchor.segment;
         const seg = doc.segment(id);
         if (seg && seg.type < LAST_UPGRADE_CLASS) {
-          mutateRoads((doc) => {
+          mutateRoads((doc, net) => carryStreetKit(doc, net, [id], () => {
             doc.setSegmentType(id, seg.type + 1);
             return true;
-          });
+          }));
         }
       }
       break;
@@ -3481,42 +3482,42 @@ function showInspector(): void {
       onUpgrade: (id) => {
         const seg = doc.segment(id);
         if (!seg || seg.type >= LAST_UPGRADE_CLASS) return;
-        mutateRoads((doc) => {
+        mutateRoads((doc, net) => carryStreetKit(doc, net, [id], () => {
           doc.setSegmentType(id, seg.type + 1);
           return true;
-        });
+        }));
       },
       onSetType: (id, type) => {
         const seg = doc.segment(id);
         if (!seg || seg.type === type) return;
-        mutateRoads((doc) => {
+        mutateRoads((doc, net) => carryStreetKit(doc, net, [id], () => {
           doc.setSegmentType(id, type);
           return true;
-        });
+        }));
       },
       onSetLanes: (id, lanes) => {
         if (!doc.segment(id)) return;
-        mutateRoads((doc) => {
+        mutateRoads((doc, net) => carryStreetKit(doc, net, [id], () => {
           doc.setSegmentLanes(id, lanes);
           return true;
-        });
+        }));
       },
       onSetParking: (id, parking) => {
         if (!doc.segment(id)) return;
-        mutateRoads((doc) => {
+        mutateRoads((doc, net) => carryStreetKit(doc, net, [id], () => {
           doc.setSegmentParking(id, parking);
           return true;
-        });
+        }));
       },
       // A profile or template applied to the road in place: judged and paid for as every road edit
       onApplyProfile: (id, profile, type) => {
         if (!doc.segment(id)) return;
         let problem: string | undefined;
-        mutateRoads((doc) => {
+        mutateRoads((doc, net) => carryStreetKit(doc, net, [id], () => {
           const result = applyProfileTo(doc, [id], profile, type);
           problem = result.problems[0];
           return result.changed;
-        });
+        }));
         if (problem) flashHint(`profile.problem.${problem}`);
       },
       // V8: the road's profile on the whole street it runs in, one edit, paid for.
@@ -3526,7 +3527,7 @@ function showInspector(): void {
         if (!seg) return;
         const profile = profileOf(seg);
         let problem: string | undefined;
-        mutateRoads((doc) => {
+        mutateRoads((doc, net) => carryStreetKit(doc, net, streetChain(doc, id).map((piece) => piece.id).filter((piece) => piece !== id), () => {
           let changed = false;
           for (const piece of streetChain(doc, id)) {
             if (piece.id === id) continue;
@@ -3535,7 +3536,7 @@ function showInspector(): void {
             changed = result.changed || changed;
           }
           return changed;
-        });
+        }));
         flashHint(problem ? `profile.problem.${problem}` : 'hint.profile.toStreet');
       },
       // The eyedropper: the road tool in hand, drawing with the profile just picked.
@@ -3549,10 +3550,10 @@ function showInspector(): void {
       },
       onSetSection: (id, section) => {
         if (!freeRoadsEnabled() || !doc.segment(id)) return;
-        mutateRoads((doc) => {
+        mutateRoads((doc, net) => carryStreetKit(doc, net, [id], () => {
           doc.setSegmentSection(id, section);
           return true;
-        });
+        }));
       },
       onSetDirection: (id, direction) => {
         if (!doc.segment(id)) return;
