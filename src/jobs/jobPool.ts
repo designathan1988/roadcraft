@@ -252,8 +252,6 @@ function grow(long: boolean): Host | null {
   system.setup?.(worker);
   const host: Host = { worker, long, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [] };
   worker.onmessage = (event: MessageEvent<FromJob>) => {
-    // TEMPORARY MEASURE, DEV only (2026-10-17, removed after): the answer's data first read inside a function named for the service it most likely is, so a sampling heap profile tells the answers kept apart by service.
-    if (import.meta.env.DEV) devTouch(host.job?.spec.service ?? host.services.keys().next().value ?? 'none', event);
     const port = system.ports.get(event.data.port);
     if (port) {
       // A lane's answer: its worker has one message less before a queued job (a lane posting without answer only ranks its worker lower).
@@ -282,14 +280,6 @@ function grow(long: boolean): Host | null {
   };
   system.workers.push(host);
   return host;
-}
-
-/** TEMPORARY MEASURE, DEV only: a function named for each service that first reads an answer's data (the structured clone is read there). */
-const devTouchers = new Map<string, (event: MessageEvent) => unknown>();
-function devTouch(service: string, event: MessageEvent): void {
-  let touch = devTouchers.get(service);
-  if (!touch) { const name = `answer_${service}`; touch = ({ [name]: (e: MessageEvent) => e.data } as Record<string, (e: MessageEvent) => unknown>)[name]!; devTouchers.set(service, touch); }
-  touch(event);
 }
 
 /** A worker's queued job failed with it; a worker that failed whole (`dead`) is given no queued job again. */
