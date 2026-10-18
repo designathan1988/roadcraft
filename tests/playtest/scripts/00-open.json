@@ -9,13 +9,67 @@
    "wait": 6000
   },
   {
+   "shot": "title"
+  },
+  {
+   "key": "Enter"
+  },
+  {
+   "wait": 2000
+  },
+  {
    "shot": "opened"
   },
   {
-   "wait": 4000
+   "press": "Ajuda"
   },
   {
-   "shot": "opened-later"
+   "wait": 500
+  },
+  {
+   "shot": "help"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "English"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "press": "Help"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "help-en"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Português"
+  },
+  {
+   "key": "Escape"
   }
  ]
 }

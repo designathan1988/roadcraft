@@ -670,7 +670,20 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     road: [['v2.key.drag', 'v2.do.road'], ['help.key.pageUpDown', 'palette.height'], ['v2.key.digits', 'palette.kind']],
   };
   const CAMERA_KEYS = [['help.key.orbitDrag', 'help.do.orbit'], ['help.key.panDrag', 'help.do.pan'], ['help.key.wheel', 'help.do.zoom'], ['help.key.qe', 'help.do.turn'], ['help.key.home', 'help.do.resetView']] as const;
-  const GLOBAL_KEYS = [['v2.key.tools', 'v2.do.tools'], ['help.key.undo', 'v2.do.undo'], ['v2.key.redo', 'v2.do.redo'], ['v2.key.space', 'v2.do.pause'], ['v2.key.f9', 'v2.do.health']] as const;
+  const GLOBAL_KEYS = [['help.key.undo', 'v2.do.undo'], ['v2.key.redo', 'v2.do.redo'], ['v2.key.space', 'v2.do.pause']] as const;
+  /** Each tool's key and its name, one row each (not "1 Z H T O B I" on one key cap). */
+  const toolKeys = (): HTMLElement => {
+    const box = el('div', 'v2-keys');
+    box.appendChild(el('div', 'v2-subhead', t('v2.do.tools')));
+    const dl = el('dl');
+    for (const c of CATS) {
+      const dt = el('dt');
+      dt.appendChild(el('kbd', '', c.key));
+      dl.append(dt, el('dd', '', c.label()));
+    }
+    box.appendChild(dl);
+    return box;
+  };
   const keyList = (title: string, rows: readonly (readonly [string, string])[]): HTMLElement => {
     const box = el('div', 'v2-keys');
     box.appendChild(el('div', 'v2-subhead', title));
@@ -787,7 +800,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
         }
         body.appendChild(more);
       }
-      body.append(keyList(t('help.section.camera'), CAMERA_KEYS), keyList(t('v2.help.global'), GLOBAL_KEYS));
+      body.append(keyList(t('help.section.camera'), CAMERA_KEYS), keyList(t('v2.help.global'), GLOBAL_KEYS), toolKeys());
     }
     return body;
   }

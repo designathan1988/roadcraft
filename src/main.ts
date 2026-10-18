@@ -69,6 +69,7 @@ import { type Viewport, flatViewport } from '@view/viewport';
 import { CanvasSurface } from '@ui/overlay/surface';
 import { INVALID, SELECTION, HOVER } from '@ui/overlay/palette';
 import { drawCongestion } from '@ui/overlay/congestion';
+import { mountStart } from '@ui/v2/start';
 import { createSceneRenderer, type SceneHandle, type SkyMode } from '@render/renderer';
 import { countMemory } from '@render/memoryCounters';
 import { formatInventory, sceneInventory } from '@render/inventory';
@@ -1860,8 +1861,8 @@ function mountInterface(): void {
       return { roads: doc.segments.size, nodes: doc.nodes.size, zoom: view.zoom, x: centre.x, y: centre.y };
     },
   });
-  // F9's button in the top bar, before Help (`ui/healthPanel.ts`): in a development build.
-  if (healthPanel) shell.addToBar(healthPanel.button);
+  // The title screen first (`ui/v2/start.ts`); the game's health stays on F9, out of the player's bar.
+  mountStart(document.querySelector<HTMLElement>('.v2') ?? document.body, { saved: saved !== null && saved !== undefined, newMap, openMap: () => void openMap(), graphicsOptions: () => graphics.openPanel(), about: openAbout });
   // The compass in a corner (`ui/v2/compass.ts`): a click faces north, a drag turns and tilts.
   if (view.kind !== '2d') {
     compass = mountCompass(document.querySelector<HTMLElement>('.v2') ?? document.body, {

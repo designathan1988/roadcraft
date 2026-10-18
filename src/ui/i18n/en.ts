@@ -168,7 +168,7 @@ export const EN: Dictionary = {
   'help.do.orbit': 'Turn and tilt the camera (a right click cancels)',
   'help.do.pan': 'Move the map',
   'help.do.zoom': 'Zoom',
-  'help.do.turn': 'Turn 15° (Shift: 90°)',
+  'help.do.turn': 'Turn while held (Shift: a quarter turn)',
   'help.do.resetView': 'Default view, map framed',
   'build.stamp': '{branch} · {hash} · {date}',
   'action.about': 'About',
@@ -1774,4 +1774,7 @@ export const EN: Dictionary = {
   'map.loading': 'Loading the map…',
   'map.otherTab': 'This city is open in another tab or window of the game. Close the other one to play here: it opens by itself.',
   'map.generating': 'Generating the city… {done} of {total} parts',
+  'start.tagline': 'Build the streets, the city grows by itself.',
+  'start.continue': 'Continue',
+  'start.play': 'Start building',
 };

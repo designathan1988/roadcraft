@@ -9,6 +9,9 @@
    "wait": 5000
   },
   {
+   "key": "Enter"
+  },
+  {
    "evalFile": "tests/playtest/scripts/buttons.js"
   },
   {
