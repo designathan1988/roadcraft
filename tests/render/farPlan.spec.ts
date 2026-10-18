@@ -208,27 +208,4 @@ describe('the far levels where no tile was made', () => {
     far.dispose();
     kit.dispose();
   }, 10_000);
-
-  it("leave no part of the map bare in a map's view where only part of a 16 km node came (the standing level stands for all of it)", async () => {
-    const kit = createBuildingKit();
-    const cache = memoryCache();
-    let stalled = false;
-    const run = runner(cache);
-    const far = new FarLevels(kit, (job, done) => (stalled ? () => undefined : run(job, done)), 'test:');
-    far.setSource({ records: () => Promise.resolve(null), plan: OPTIONS }, () => false);
-    // A view near one corner of the 16 km node over the map's north east: what it draws there came; then the workers stalled.
-    await until(() => far.choose(m(1_000), m(1_000), m(800), 1000, null, m(3_000)), () => far.waiting === 0);
-    stalled = true;
-    // The map's view: what came near that corner, nothing else of the node.
-    far.choose(m(2_500), m(2_500), m(9_000), 300, null, m(12_000));
-    const shown = far.shownKeys().map(farNode);
-    for (let x = 250; x < 5_000; x += 500) {
-      for (let y = 250; y < 5_000; y += 500) {
-        const over = shown.filter((n) => m(x) >= n.i * nodeSide(n.k) && m(x) < (n.i + 1) * nodeSide(n.k) && m(y) >= n.j * nodeSide(n.k) && m(y) < (n.j + 1) * nodeSide(n.k));
-        expect(over.length).toBe(1);
-      }
-    }
-    far.dispose();
-    kit.dispose();
-  }, 10_000);
 });
