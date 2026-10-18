@@ -1,4 +1,4 @@
-import { jobLanes, jobPort, queuePortWorker } from './jobs/jobPool';
+import { jobLanes, jobPort, portWorker } from './jobs/jobPool';
 import type { Bay } from '@sim/agents/bay';
 import { type LotAsk, shareOf } from '@sim/agents/lotBays';
 import type { BayWorkers } from '@sim/agents/parking';
@@ -20,7 +20,7 @@ const SILENCE_MS = 10_000;
 const MOST_LANES = 4;
 
 export class BayPool implements BayWorkers {
-  /** `ports`: the page's lanes for this thread (`jobPool.ts` jobQueueChannel, the simulation's worker): DO NOT open a pool here when given them. None: lanes of this thread's own pool (the page). */
+  /** `ports`: the page's lanes for this thread (`jobPool.ts` jobChannel, the simulation's worker): DO NOT open a pool here when given them. None: lanes of this thread's own pool (the page). */
   constructor(private readonly ports: readonly MessagePort[] | null = null) {}
 
   private lanes: Lane[] | null = null;
@@ -65,7 +65,7 @@ export class BayPool implements BayWorkers {
     const lanes: Lane[] = [];
     try {
       for (let k = 0; k < count; k++) {
-        const worker = this.ports ? queuePortWorker(this.ports[k]!) : jobPort('bays');
+        const worker = this.ports ? portWorker(this.ports[k]!) : jobPort('bays');
         const lane: Lane = { worker, waiting: new Map(), heard: performance.now(), told: false };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; bays?: Bay[][]; error?: string; laneFailed?: string }>) => {
           if (this.lanes !== lanes) return;

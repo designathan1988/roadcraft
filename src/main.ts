@@ -1,7 +1,7 @@
 import { measureHitch } from '@core/hitch';
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
-import { jobLanes, jobPort, jobQueueChannel, setJobWorkerSetup } from './jobs/jobPool';
+import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
 import { WorldStreamer, mapTilesFrom } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
@@ -138,8 +138,6 @@ import { createToolMachine, isTool, type Tool } from '@editor/toolMachine';
 import { createGameKeys } from '@editor/gameKeys';
 import { RoadTop } from '@editor/roadTop';
 import { editRandom } from '@editor/editStream';
-import { cpuPopulationShare } from '@sim/populationGovernor';
-import { WEAK_MACHINE } from '@core/weakMachine';
 
 /** The turning circles cleared after each edit, from the network's changes since the last one (`bulbClearing`). */
 const clearBulbs = bulbClearing();
@@ -262,8 +260,6 @@ let maxPopulationShare = 1;
 function syncPopulationShare(): void {
   maxPopulationShare = window.innerWidth < NARROW_SCREEN_WIDTH ? NARROW_SCREEN_SHARE : 1;
 }
-/** Where the population starts, by the machine's threads (the run's pretended ones, `core/weakMachine.ts`): the governor fills it from there when its steps are cheap. */
-const startPopulationShare = cpuPopulationShare(WEAK_MACHINE.threads ?? navigator.hardwareConcurrency ?? 8);
 syncPopulationShare();
 
 /** The zoom range the renderer we are about to boot can actually represent. */
@@ -601,8 +597,8 @@ const achievements = createSteamAchievements();
 primeSurfaceBake(await surfaceBake);
 // The traffic's worker, given the map as it opened and the conflict zones measured in earlier sessions.
 const engineFlags = new URLSearchParams(location.search);
-// Its lots' bays and conflict pairs as queued jobs of this page's pool, on any free worker (DO NOT let the worker open a pool of its own: more isolates in the one V8 cage; nor pin them to a worker, `jobPool.ts` jobQueueChannel). Four asks at once: as many workers as are free share a batch.
-const simLanes = (service: 'bays' | 'conflicts'): MessagePort[] => Array.from({ length: 4 }, () => jobQueueChannel(service));
+// Its lots' bays and conflict pairs on this page's pool, talked to straight (DO NOT let the worker open a pool of its own: more isolates in the one V8 cage).
+const simLanes = (service: 'bays' | 'conflicts'): MessagePort[] => Array.from({ length: jobLanes(4) }, () => jobChannel(service, () => sim.laneLost(service)));
 await sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient') === 'view' ? 'view' : 'edges',
   typeof MessageChannel === 'undefined' || typeof Worker === 'undefined' ? null : { bays: simLanes('bays'), conflicts: simLanes('conflicts') });
 /** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */
@@ -2531,7 +2527,7 @@ function frame(now: number): void {
   frameTimer.mark('topology');
   // The simulation steps in its own thread (`sim/host/simHost.ts`): the page sends the wall time and draws the last frame it wrote.
   // DO NOT hold the city for the page's world job (the roads' meshes): the worker steps its own network, and the streamed world's job runs whenever a tile comes.
-  sim.frame(wall, holdSim, { traffic: !game.paused, pedestrians: !game.paused, maxShare: maxPopulationShare, startShare: startPopulationShare });
+  sim.frame(wall, holdSim, { traffic: !game.paused, pedestrians: !game.paused, maxShare: maxPopulationShare });
   const alpha = holdSim ? 1 : sim.alpha;
   // The city's own periodic work, on its clock (`SimPeriodic`).
   const simTime = sim.clock.time;
