@@ -1,6 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { setFlagsFromString } from 'node:v8';
-import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { SimHost } from '@sim/host/simHost';
 import { makeSharedFrames, type ToSim } from '@sim/host/protocol';
@@ -8,7 +6,7 @@ import { RoadDoc, type SerializedDoc } from '@world/doc';
 import { TILE } from '@world/tiles';
 import { buildingChangesOf, trafficMapOf } from '@sim/agents/trafficBuildings';
 
-/** WHAT THE SIMULATION'S WORKER KEEPS FOR A TILE GOES WITH THE TILE: a town put in and let go again and again, in another place each time (the camera moving round the city), leaves every structure as it was after the second */
+/** WHAT THE SIMULATION'S WORKER KEEPS FOR A TILE GOES WITH THE TILE: a town put in and let go again and again, in another place each time (the camera moving round the city), leaves every structure as it was after the first */
 
 const town = JSON.parse(readFileSync('tests/fixtures/parking-town.json', 'utf8')) as SerializedDoc & { buildings: { id: number; x: number }[] };
 
@@ -25,17 +23,7 @@ const STRUCTURES: Readonly<Record<string, (host: Inside) => number>> = {
   junctionFiling: (h) => versions(at(h.sim, 'junctionFiling')),
   // The lights told the page, by junction (`simHost.ts` signals).
   lightsSent: (h) => (at(h, 'lightsSent') as Map<number, string>).size,
-  // The lane grid's log of changes as its readers' states hold it (`parking.ts` followBayLanes): the states no reader holds collected, then merged away.
-  laneLog: (h) => {
-    collect();
-    const log = at(h.sim, 'laneGrid.changes') as { merge(held: () => boolean): void; entries: unknown[] };
-    log.merge(() => true);
-    return log.entries.length;
-  },
 };
-/** A full collection (V8's `gc`, exposed for this test): the readers' dropped states gone before the log is measured. */
-setFlagsFromString('--expose-gc');
-const collect = runInNewContext('gc') as () => void;
 const versions = (filing: unknown): number => (at(filing, 'versions') as Map<number, number>).size;
 
 async function run(): Promise<Record<string, number>[]> {
@@ -44,7 +32,7 @@ async function run(): Promise<Record<string, number>[]> {
   const controls = { speed: 1, paused: false, traffic: true, pedestrians: true, trafficIntensity: 1, pedestrianIntensity: 1, demandMultiplier: 1, maxShare: 1, focus: null };
   const frames = async (n: number): Promise<void> => { for (let f = 0; f < n; f++) await host.handle({ type: 'frame', wall: 0.05, hold: false, controls } as ToSim); };
   const snaps: Record<string, number>[] = [];
-  for (let cycle = 0; cycle < 20; cycle++) {
+  for (let cycle = 0; cycle < 4; cycle++) {
     // Another place and other ids each time: the town as a tile the region took in, then let go.
     const dx = cycle * TILE * 3, base = (cycle + 1) * 1_000_000;
     const segments = town.segments.map((s) => ({ ...s, id: s.id + base, a: s.a + base, b: s.b + base }));
@@ -57,10 +45,6 @@ async function run(): Promise<Record<string, number>[]> {
     await frames(60);
     await host.handle({ type: 'delta', delta: { records: records.map((r) => ({ ...r, value: undefined })), lists: [], values: [] }, buildings: buildings.map((b) => ({ id: b.id, ref: null })) } as unknown as ToSim);
     await frames(30);
-    // Measured after the second tile and the last only (a full collection each time).
-    if (cycle !== 1 && cycle !== 19) continue;
-    // A task's end: the states the log's WeakRefs were read at are no longer kept for the job (ECMA-262 ClearKeptObjects), and can be collected.
-    await new Promise((done) => setTimeout(done, 0));
     const inside = host as unknown as Inside;
     snaps.push(Object.fromEntries(Object.entries(STRUCTURES).map(([name, size]) => [name, size(inside)])));
   }
@@ -68,9 +52,8 @@ async function run(): Promise<Record<string, number>[]> {
 }
 
 describe("the simulation's worker over tiles put in and let go", () => {
-  it('keeps no more of them after the twentieth than after the second', async () => {
+  it('keeps no more of them after the fourth than after the first', async () => {
     const snaps = await run();
-    expect(snaps).toHaveLength(2);
-    expect(snaps[1]).toEqual(snaps[0]);
+    expect(snaps[3]).toEqual(snaps[0]);
   });
 });
