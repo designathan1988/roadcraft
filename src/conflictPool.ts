@@ -1,4 +1,4 @@
-import { jobLanes, jobPort, portWorker } from './jobs/jobPool';
+import { jobLanes, jobPort, queuePortWorker } from './jobs/jobPool';
 import { type FinishAsk, type FinishedPair, type PairMeasurer, type SampledSweep, type SweepAsk, type SweepSamples, TABLE_SIZE } from '@world/conflictTable';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from '@world/junctionTurns';
 import type { CornerAsk } from '@world/walkingLines';
@@ -20,7 +20,7 @@ const MOST_LANES = 4;
 
 export class ConflictPool implements PairMeasurer {
   /** `keepPrefix`: the key prefix the tables are kept under for the next session */
-  /** `ports`: the page's lanes for this thread (`jobPool.ts` jobChannel, the simulation's worker): DO NOT open a pool here when given them. None: lanes of this thread's own pool. */
+  /** `ports`: the page's lanes for this thread (`jobPool.ts` jobQueueChannel, the simulation's worker): DO NOT open a pool here when given them. None: lanes of this thread's own pool. */
   constructor(private readonly keepPrefix: string | null = null, private readonly ports: readonly MessagePort[] | null = null) {}
 
   get keeps(): boolean {
@@ -214,7 +214,7 @@ export class ConflictPool implements PairMeasurer {
     const lanes: Lane[] = [];
     try {
       for (let k = 0; k < count; k++) {
-        const worker = this.ports ? portWorker(this.ports[k]!) : jobPort('conflicts');
+        const worker = this.ports ? queuePortWorker(this.ports[k]!) : jobPort('conflicts');
         const lane: Lane = { worker, waiting: new Map(), watchdog: null };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; finished?: FinishedPair[]; corners?: (Float64Array | null)[][]; junctions?: JunctionAnswer[]; error?: string; laneFailed?: string }>) => {
           if (this.lanes !== lanes) return;
