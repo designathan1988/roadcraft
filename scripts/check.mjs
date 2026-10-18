@@ -64,6 +64,8 @@ export const ALWAYS = [
   'tests/editor/lotProposalPlace.spec.ts',
   'tests/editor/tileStore.spec.ts',
   'tests/editor/worldStreamer.spec.ts',
+  'tests/editor/worldLock.spec.ts',
+  'tests/desktop/jobs.spec.ts',
   'tests/render/canyonLight.spec.ts',
   'tests/render/frameBudget.spec.ts',
   'tests/render/layerIncremental.spec.ts',

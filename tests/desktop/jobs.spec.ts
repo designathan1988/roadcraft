@@ -72,18 +72,17 @@ describe("a long job worker's message to another process", () => {
     const { port1, port2 } = new MessageChannel();
     closers.push(() => { port1.close(); port2.close(); });
     const seen: unknown[] = [];
-    port2.on('message', (data) => seen.push(data));
+    // Both held messages come once the port is given: waited for, not for a time.
+    const both = new Promise<void>((done) => port2.on('message', (data) => { seen.push(data); if (seen.length === 2) done(); }));
     give!(port1 as unknown as MessagePort);
-    await new Promise((done) => setTimeout(done, 10));
+    await both;
     expect(seen).toEqual([{ k: 1 }, { k: 2 }]);
-    const errors: string[] = [];
-    worker.onerror = (event) => errors.push(event.message);
+    const failed = new Promise<string>((done) => { worker.onerror = (event) => done(event.message); });
     port2.postMessage({ threadFailed: 'the job thread stopped (1)' });
-    await new Promise((done) => setTimeout(done, 10));
-    expect(errors).toEqual(['the job thread stopped (1)']);
-    // Nothing sent to a failed worker.
+    expect(await failed).toBe('the job thread stopped (1)');
+    // Nothing sent to a failed worker: its port closed, the message dropped where it is posted.
     worker.postMessage({ k: 3 });
-    await new Promise((done) => setTimeout(done, 10));
+    await Promise.resolve();
     expect(seen).toHaveLength(2);
   });
 });
