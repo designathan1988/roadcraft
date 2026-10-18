@@ -298,6 +298,23 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
       }
     } else if (step.move) await page.mouse.move(step.move[0], step.move[1], { steps: step.steps ?? 1 });
     else if (step.click) await page.mouse.click(step.click[0], step.click[1], { button: step.button ?? 'left', clickCount: step.count ?? 1 });
+    // A control found by what it says (its label, its tooltip or its text, the last match if several), clicked with the mouse where it stands.
+    else if (step.press) {
+      const at = await page.evaluate((name) => {
+        const said = (b) => [b.getAttribute('aria-label'), b.title, b.textContent].map((s) => (s ?? '').trim());
+        const seen = [...document.querySelectorAll('button, [role=button], [role=switch], summary, label')].filter((b) => {
+          const r = b.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && getComputedStyle(b).visibility !== 'hidden' && said(b).some((s) => s === name || s.startsWith(name));
+        });
+        const exact = seen.filter((b) => said(b).some((s) => s === name));
+        const b = (exact.length ? exact : seen).at(-1);
+        if (!b) return null;
+        const r = b.getBoundingClientRect();
+        return [r.x + r.width / 2, r.y + r.height / 2];
+      }, step.press);
+      if (!at) throw new Error(`no control says "${step.press}"`);
+      await page.mouse.click(at[0], at[1], { button: step.button ?? 'left' });
+    }
     else if (step.key) await page.keyboard.press(step.key);
     // A key held down for `ms` (WASD panning, a held modifier), as a hand holds it.
     else if (step.hold) {
