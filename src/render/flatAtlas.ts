@@ -45,10 +45,10 @@ import { TILE, tileOfKey } from '@world/tiles';
 const REGION_STRIDE = 1000;
 /** DO NOT cap the plates by count: the six newest were kept wherever the view stood */
 const KEEP_MARGIN = 1.25;
-/** Most plates drawn in full near the view. */
-const NEAR_MOST = 9;
+/** Most plates drawn in full near the view, unless the tier holds fewer (`setPlates`). */
+export const NEAR_MOST = 9;
 /** Most plates made but not drawn kept (nearest the view first), past the GPU's room: a view's worth, for a zoom out and back. DO NOT keep them by the GPU's room alone: a plate holds 10-20 MB of arrays on the page the GPU's book does not count (its corners, water, rock, ecosystem, paint), and every plate the view passed stayed made. */
-const CACHED_MOST = NEAR_MOST;
+export const CACHED_MOST = NEAR_MOST;
 /** Beyond this much ground in view, no plate is drawn in full: the far mesh alone. */
 const NEAR_VIEW = m(1400);
 /** Corners along a plate's side (the terrain's grid). */
@@ -249,6 +249,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   const farForest = createFarForest(WOODS_MOST, { side: SIDE, cell: TERRAIN_CELL, half: TERRAIN_HALF, base: TERRAIN_BASE, farQuads: FAR_QUADS }, readFarWoods);
   root.add(farForest.object);
   let focusX = 0, focusY = 0;
+  /** The plates drawn in full and kept made at most, as the tier holds them (`setPlates`). */
+  let nearMost = NEAR_MOST, keptMost = CACHED_MOST;
   /** How far from the view a made plate not drawn is kept (`KEEP_MARGIN`); set with the view (`focus`). */
   let keepReach = Infinity;
   let farRelief: ReliefVersion | null = null;
@@ -516,7 +518,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     for (const p of cached) {
       if (p === home) continue;
       room -= p.surface!.gpuBytes();
-      if (room < 0 || ++kept > CACHED_MOST) letGo(p);
+      if (room < 0 || ++kept > keptMost) letGo(p);
     }
   };
 
@@ -718,7 +720,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
             if (Math.abs(r.cx - x) <= radius && Math.abs(r.cy - y) <= radius) wantedNear.push(plateFor(k));
           }
           wantedNear.sort((a, b) => Math.hypot(a.cx - x, a.cy - y) - Math.hypot(b.cx - x, b.cy - y));
-          if (wantedNear.length > NEAR_MOST) wantedNear.length = NEAR_MOST;
+          if (wantedNear.length > nearMost) wantedNear.length = nearMost;
         }
         for (const p of plates.values()) if (p.asked && !wantedNear.includes(p) && !content.has(p.key)) { cancelFlatGround(p.key); p.asked = false; }
       }
@@ -772,6 +774,14 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
 
     setVegetation(amount) {
       farForest.book.setVegetation(amount);
+    },
+    setPlates(nearPlates, keptPlates) {
+      const n = Math.max(1, Math.min(NEAR_MOST, Math.floor(nearPlates))), k = Math.max(0, Math.min(CACHED_MOST, Math.floor(keptPlates)));
+      if (n === nearMost && k === keptMost) return;
+      nearMost = n; keptMost = k;
+      // The plates wanted chosen again at the next focus, the ones past the caps let go now.
+      focusKey = '';
+      refresh();
     },
     vergeMaterial: firstSurface.vergeMaterial,
     meshMaterial: firstSurface.meshMaterial,

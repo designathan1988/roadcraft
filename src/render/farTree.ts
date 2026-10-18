@@ -52,6 +52,8 @@ export class FarTree<P> implements FarTiles {
   private shown = new Set<FarNode>();
   private readonly drawing: FarNode[] = [];
   private readonly desired: FarNode[] = [];
+  /** Nodes whose mesh is asked of the workers and not come (`ask` with `want`): let go when the view no longer wants them. */
+  private readonly asking = new Set<FarNode>();
   private highest = -Infinity;
   private wanting = 0;
   /** DO NOT read every tile's records ahead of the workers: the page would hold them all while they wait; `lanes` in flight */
@@ -90,18 +92,12 @@ export class FarTree<P> implements FarTiles {
 
   /** Nodes the view would draw IN THE FRUSTUM whose meshes have not come: the opening waits for these (`renderer.ts` reveal); those beside or behind the camera are asked and drawn all the same, never waited for. */
   /** How far round the eye the tree draws now (`viewReach`, set by `choose`; 0 before it): the tiles the opening's view waits for (`main.ts`). */
-  get reachNow(): number {
-    return this.reach;
-  }
+  get reachNow(): number { return this.reach; }
 
-  get waiting(): number {
-    return this.wanting;
-  }
+  get waiting(): number { return this.wanting; }
 
   /** The highest point drawn (-Infinity with none). */
-  top(): number {
-    return this.highest;
-  }
+  top(): number { return this.highest; }
 
   /** The nodes drawn now, by key. */
   shownKeys(): string[] {
@@ -196,6 +192,8 @@ export class FarTree<P> implements FarTiles {
     // The standing level over the map, kept and waited for (`STANDING_LEVEL`); one landed stands as it is, at an older version too, until the view wants it.
     if (this.planning && !this.cacheless) for (const n of standingNodes((k, i, j) => this.ensure(k, i, j))) if (this.desired.push(n) && n.landed === null) this.ask(n, true);
     const now = new Set(this.drawing), wanted = new Set(this.desired);
+    // DO NOT keep asking a mesh the view no longer wants (Cesium cancels the requests of the tiles it stopped needing), save for a parent waiting on its bake: the map's view left ~500 far bakes ahead of the district's cells for seconds (census10, k20e 06-district in masses, 2026-10-18).
+    for (const n of [...this.asking]) if (n.asked === null || !n.askedWant || !wanted.has(n)) { this.asking.delete(n); if (n.asked !== null && n.askedWant && !n.parent?.waitingFor?.has(n.key)) { n.cancel?.(); n.cancel = null; n.asked = null; } }
     // DO NOT keep on the GPU what is neither drawn nor wanted (the area visited would pile up): read back from the store when wanted again.
     for (const n of [...this.resident]) {
       if (now.has(n)) continue;
@@ -604,6 +602,7 @@ export class FarTree<P> implements FarTiles {
     n.cancel?.();
     n.asked = sig;
     n.askedWant = want;
+    if (want) this.asking.add(n);
     this.submit(n);
   }
 

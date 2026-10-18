@@ -220,6 +220,7 @@ export class SimHost {
     sim.demandMultiplier = controls.demandMultiplier;
     if (controls.focus) sim.focus = controls.focus;
     this.governor.setMax(controls.maxShare);
+    if (controls.startShare !== undefined) this.governor.start(controls.startShare);
     // Not while a tile's network is being read: its junctions would be solved here, then handed.
     if (this.net.revision !== this.doc.revision && this.networkReads === 0) this.net.rebuild();
     const held = hold;
