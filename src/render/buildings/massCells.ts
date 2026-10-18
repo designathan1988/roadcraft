@@ -108,6 +108,8 @@ export interface MassCells {
   cap(eyeX: number, eyeY: number, budget: number, bytesOf: (key: string, fine: boolean) => number, forced: boolean | ReadonlySet<string>, farOf?: (key: string) => number): void;
   /** The triangles drawn for what is not near: the tiles and plates shown and the far cells' masses (a near cell's masses, hidden under its detail or standing until it lands, are counted by its level: `layer.ts` chosenTriangles). */
   farTriangles(): number;
+  /** TEMPORARY (DEV only, to be taken out): what `choose` reads of a cell from the last eye and view (`layer.ts` __budgetLog). */
+  explain(key: string): Record<string, number | boolean | string> | null;
   /** What it keeps, by book: cells, tiles and plates known, masses standing (`BuildingLayer.books`). */
   books(): Readonly<Record<string, number>>;
   /** The frame's choosing is over (`layer.ts` levelOfDetail): what its last choice left unexposed or unwanted let go. */
@@ -376,6 +378,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
   const tileState: { tile: Level; coarse: boolean }[] = [];
   /** The last eye (`choose`), for `pixels`. */
   const lastEye = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null as number | null, known: false };
+  // TEMPORARY (DEV only, to be taken out): the last reach `choose` was given (`explain`).
+  let lastReach = Infinity;
   /** The tiles and plates holding a cell held near (`choose`'s `allNear`): never drawn in its place. */
   const forcedLevels = new Set<string>();
   /** What the eye reads of a box, one object for every box measured (`measureSeen`). */
@@ -524,6 +528,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     },
     choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity, view = null) {
       Object.assign(lastEye, { x: eyeX, y: eyeY, z: eyeZ, pxAtMetre, orthoPx, known: true });
+      if (import.meta.env.DEV) lastReach = reach;
       followView(view);
       // THE LEVELS FIRST, from the plates down (Cesium `selectTiles`): a level is drawn in place of its children while what it leaves out spans under the pixels the cells' masses are drawn for
       forcedLevels.clear();
@@ -660,6 +665,22 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     massBytes(key) {
       const mesh = cells.get(key)?.mesh;
       return mesh ? meshBytes(mesh) : 0;
+    },
+    explain(key) {
+      const cell = cells.get(key);
+      if (!cell || !lastEye.known) return null;
+      measure(lastEye.x, lastEye.y, lastEye.z, lastEye.pxAtMetre, lastEye.orthoPx, cell.x0, cell.y0, cell.x1, cell.y1, cell.top);
+      const g = VIEW_COME * cellSize;
+      viewBox.min.set(cell.x0 - g, Math.min(cell.bottom, cell.top), -(cell.y1 + g));
+      viewBox.max.set(cell.x1 + g, Math.max(cell.bottom, cell.top), -(cell.y0 - g));
+      return {
+        errorPx: +(FAR_ERROR * seen.perMetre).toFixed(2), allowedPx: +seen.allowed.toFixed(2), across: Math.round(seen.across), near: cell.near, covered: cell.covered,
+        massless: cell.massless, landed: cell.landed, heldFar: heldFar.has(key), inViewNow: testedKnown ? testedView.intersectsBox(viewBox) : 'no view',
+        memo: String(tested.get(cell)?.inside ?? 'none'), box: `${Math.round(cell.x0)},${Math.round(cell.y0)}..${Math.round(cell.x1)},${Math.round(cell.y1)} y ${Math.round(cell.bottom)}..${Math.round(cell.top)}`,
+        eye: `${Math.round(lastEye.x)},${Math.round(lastEye.y)},${Math.round(lastEye.z)}`, reach: Math.round(lastReach),
+        // The square far cells are looked for in (`choose`: within the farthest a near cell may be, round the eye).
+        within: Math.round(lastEye.orthoPx !== null ? lastReach : Math.min(lastReach, (FAR_ERROR * lastEye.pxAtMetre) / (NEAR_PIXELS * (seen.scale ?? 1)))),
+      };
     },
     books() {
       return { massCells: cells.size, massTiles: tiles.size, massPlates: plates.size, massStanding: standing.size, massNear: nearKeys.size };

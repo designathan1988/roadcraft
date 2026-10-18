@@ -144,7 +144,13 @@ export function compileCopy(object: Object3D): Object3D {
 }
 
 /** Every compile asked for and not settled, and since when (`performance.now`). DO NOT settle one after a count of frames: the door opened on a program still linking, its first draw waited for the link in the frame (three's onFirstUse, getProgramInfoLog: 716 ms of the conferencia 110 move). It settles when three says its programs are ready (linked, or failed: the error said by onShaderError at the first draw, as ever), when a material of it is disposed (its programs never come, nothing of it is drawn), or past `COMPILE_GIVE_UP_MS`, said. */
-const inFlight = new Set<{ readonly since: number; readonly what: string; settle: () => void }>();
+const inFlight = new Set<{ readonly since: number; readonly what: string; started: number; settle: () => void }>();
+// TEMPORARY (DEV only, to be taken out): every compile at the door, asked, started, settled and how many were in flight (`window.__compileLog`).
+const compileLog: { what: string; asked: number; started: number; settled: number; waitedMs: number; builtMs: number; inFlight: number; programs: number; how: string }[] = [];
+const programSamples: { at: number; programs: number; inFlight: number; queued: number }[] = [];
+if (import.meta.env.DEV && typeof window !== 'undefined') Object.assign(window, { __compileLog: compileLog, __programSamples: programSamples });
+let lastProgramCount = 0;
+const entryOf = new WeakMap<() => void, { started: number }>();
 /** A driver that never says a program is built: given up on and said, never a mesh held for ever (a slow driver shows in the opening's time, `programsReady`). */
 const COMPILE_GIVE_UP_MS = 10_000;
 /** `done` once, however many times it is called, and taken off `inFlight`; settled too when a material of `object` is disposed. */
@@ -156,14 +162,21 @@ function once(done: () => void, object: Object3D): () => void {
   });
   // What it is, said if it is given up on: the object and its materials, by name or type.
   const what = `${object.name || object.type} [${[...materials].map((m) => m.name || m.type).slice(0, 4).join(', ')}]`;
-  const entry = { since: performance.now(), what, settle: () => {} };
+  const entry = { since: performance.now(), what, started: -1, settle: () => {} };
   entry.settle = () => {
     if (!inFlight.delete(entry)) return;
+    if (import.meta.env.DEV) {
+      const now = performance.now();
+      compileLog.push({ what, asked: Math.round(entry.since), started: Math.round(entry.started), settled: Math.round(now), waitedMs: Math.round((entry.started < 0 ? now : entry.started) - entry.since),
+        builtMs: entry.started < 0 ? 0 : Math.round(now - entry.started), inFlight: inFlight.size + 1, programs: lastProgramCount, how: now - entry.since > COMPILE_GIVE_UP_MS ? 'given up' : 'built' });
+      if (compileLog.length > 5000) compileLog.splice(0, 1000);
+    }
     for (const m of materials) m.removeEventListener('dispose', entry.settle);
     done();
   };
   for (const m of materials) m.addEventListener('dispose', entry.settle);
   inFlight.add(entry);
+  if (import.meta.env.DEV) entryOf.set(entry.settle, entry);
   return entry.settle;
 }
 
@@ -201,6 +214,11 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
     console.warn('[uploads] a program was not built in', COMPILE_GIVE_UP_MS, 'ms: drawn as it is:', entry.what, `(${inFlight.size} compiles in flight)`);
     entry.settle();
   }
+  if (import.meta.env.DEV) {
+    lastProgramCount = (renderer as { info?: { programs?: unknown[] | null } }).info?.programs?.length ?? 0;
+    const last = programSamples[programSamples.length - 1];
+    if (!last || now - last.at >= 250) { programSamples.push({ at: Math.round(now), programs: lastProgramCount, inFlight: inFlight.size, queued: toCompile.length }); if (programSamples.length > 5000) programSamples.splice(0, 1000); }
+  }
   if (!toCompile.length) return;
   // Without the parallel compile, three's compileAsync polls each program with a timer: built here at once instead, off the draw, and settled.
   const extensions = (renderer as { extensions?: { has?: (name: string) => boolean } }).extensions;
@@ -217,6 +235,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
   try {
     while (toCompile.length) {
       const { object, shadow, done, pass, lights } = toCompile.shift()!;
+      if (import.meta.env.DEV) { const asked = entryOf.get(done); if (asked && asked.started < 0) asked.started = performance.now(); }
       if (pass) {
         // Its own scene's lights (none) and its own target, as it is drawn.
         renderer.setRenderTarget(pass.target);
