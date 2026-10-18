@@ -60,6 +60,7 @@ import { NIGHT_LUMINANCE, nightGain } from './lightLevels';
 import { DOOR_SWING, createKerbFigure, kerbFigure, occupantPlays, type Play } from './occupants';
 import { blobInto, blobMesh } from './blobShadows';
 import { ERROR_PIXELS, LEVELS, LEVEL_ERRORS, levelFor, partLevels, type Weld } from './vehicleLevels';
+import { VEHICLE_WHOLE_CAP, type QualitySettings } from './quality';
 import { jobPort } from '../jobs/jobPool';
 import { provideLanes } from './pagePorts';
 import { lodPool } from './people/lodPool';
@@ -91,7 +92,7 @@ const VEHICLE_HYSTERESIS = 0.1;
 /** A car's length, for the smallest scale anything is drawn at (2 px). */
 const CAR_LENGTH = m(4.5);
 /** At most this many vehicles whole at once: past it, the smallest on the screen are drawn a level down. */
-const VEHICLE_NEAR_CAP = 200;
+const VEHICLE_NEAR_CAP = VEHICLE_WHOLE_CAP;
 /** A culled vehicle's deck is reused while it has moved under this; the steepest a road climbs (`ROAD_TUNING.grade.refuse`), and the sphere's growth per metre climbed (its centre rises with its radius, `vehicleVisible`). */
 const CULL_REUSE = m(24);
 const CULL_GRADE = 0.35;
@@ -140,6 +141,8 @@ interface AgentRenderOptions {
   readonly vehicleBox?: Readonly<GroundBox>;
   /** Zoom from which vehicle cabins and occupants are drawn. */
   readonly occupantZoom?: number;
+  /** The tier's vehicle and people detail (`quality.ts`): none given, what every tier but the weak one draws. */
+  readonly tier?: Pick<QualitySettings, 'vehicleErrorPixels' | 'vehicleWholeCap' | 'hairStrandPeople'>;
   /** Each motor vehicle drawn: where its tail smoke leaves from (`exhaust.ts`). */
   readonly exhaust?: (x: number, y: number, z: number, angle: number, length: number, speed: number, dusty: boolean) => void;
   /** The bodies of people killed by a blow (`ragdoll.ts`), drawn with the crowd's own meshes. */
@@ -1877,7 +1880,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     rangeHi: number;
     x0: number; y0: number; x1: number; y1: number;
     radius: number;
-    band: number; ratio: number; shadows: boolean; occupant: number; levels: number;
+    band: number; ratio: number; nearCap: number; shadows: boolean; occupant: number; levels: number;
   }
   /** What a standing car's levels hold over (`standingRange`), reused. */
   const range = { lo: 0, hi: 0 };
@@ -2068,6 +2071,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
 
       const screenScale = options.screenScale;
       const pixelRatio = options.pixelRatio ?? 1;
+      // A part's level by its error in pixels drawn, against the tier's pixels (`levelFor` is against `ERROR_PIXELS`): one where the tier draws as every tier did.
+      const levelRatio = pixelRatio * (ERROR_PIXELS / (options.tier?.vehicleErrorPixels ?? ERROR_PIXELS));
+      const nearCap = options.tier?.vehicleWholeCap ?? VEHICLE_NEAR_CAP;
       const softShadows = options.shadows !== false;
       let whole = 0;
       nearCount = 0;
@@ -2079,7 +2085,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const wholeOrNot = (pixels: number): number => {
         if (nearCount === nearCandidates.length) { const grown = new Float64Array(nearCount * 2); grown.set(nearCandidates); nearCandidates = grown; }
         nearCandidates[nearCount++] = pixels;
-        if (pixels < nearFloor || whole >= VEHICLE_NEAR_CAP) return 1;
+        if (pixels < nearFloor || whole >= nearCap) return 1;
         whole++;
         return 2;
       };
@@ -2092,7 +2098,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const keepsCells = !!options.vehicleInside && !!screenScale;
       const standsIn = (record: CellRecord, plan: BodyPlan, own: number, pixels: number, onScreen: boolean, x: number, y: number, radius: number): void => {
         if (!keepsCells) return;
-        standingRange(plan, own, pixels, pixelRatio, occupantZoom, range);
+        standingRange(plan, own, pixels, levelRatio, occupantZoom, range);
         if (range.lo > record.rangeLo) record.rangeLo = range.lo;
         if (range.hi < record.rangeHi) record.rangeHi = range.hi;
         if (!onScreen) record.onScreen = false;
@@ -2159,7 +2165,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         // A car's tyres cast only with its whole body (level 2): at level 1 its shadow is the soft disc, the tyres' dots under it were the player's to drop (2026-10-17).
         if (!twoWheeled && level >= 2) { carsWheeled = true; if (cellRecord) cellRecord.wheeled = true; }
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
-        drawPixels = pixels * pixelRatio;
+        drawPixels = pixels * levelRatio;
         // Stopped in the traffic a whole tick (a light, a queue), no indicator flashing, nobody drawn in it: as still as a parked car.
         const stopped = !free && vehicle.v === 0 && vehicle.prev.v === 0 && vehicle.indicator === 0 && (level < 2 || vehicle.seats === 0);
         // Standing where it stood, drawn as it was: its instances kept where they were written, nothing written or sent.
@@ -2296,7 +2302,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           }
           // DO NOT walk the parked cars of a cell standing as drawn while the view moves: the cell wholly on screen, and its cars' scales there (at the corners of where they stand: `screenScale` goes as one over the depth) within those every car keeps its levels over.
           if (was && options.vehicleInside && screenScale && was.still && was.onScreen && was.kept.length === was.count && was.count === cell.items.length
-            && was.version === cell.version && was.serial === offRoadSerial && was.band === vehicleBand && was.ratio === pixelRatio && was.shadows === softShadows
+            && was.version === cell.version && was.serial === offRoadSerial && was.band === vehicleBand && was.ratio === levelRatio && was.nearCap === nearCap && was.shadows === softShadows
             && was.occupant === occupantZoom && was.levels === levelsVersion && was.bounded && was.rangeLo < was.rangeHi) {
             const across = Math.hypot((was.x1 - was.x0) / 2, (was.y1 - was.y0) / 2);
             const upright = (was.hi + 0.3 * was.radius - was.lo) / 2;
@@ -2324,11 +2330,11 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
             if (!options.vehicleVisible((cell.cx + 0.5) * FLEET_CELL, (cell.cy + 0.5) * FLEET_CELL, middle - 0.3 * radius, radius)) continue;
           }
           cellRecord = was ?? { version: 0, lo: 0, hi: 0, bounded: false, serial: -1, still: true, kept: [], pixels: [], whole: [], wheeled: false,
-            count: 0, onScreen: true, rangeLo: 0, rangeHi: 0, x0: 0, y0: 0, x1: 0, y1: 0, radius: 0, band: 0, ratio: 0, shadows: false, occupant: 0, levels: 0 };
+            count: 0, onScreen: true, rangeLo: 0, rangeHi: 0, x0: 0, y0: 0, x1: 0, y1: 0, radius: 0, band: 0, ratio: 0, nearCap: 0, shadows: false, occupant: 0, levels: 0 };
           cellRecord.version = cell.version; cellRecord.still = true; cellRecord.kept.length = 0;
           cellRecord.pixels.length = 0; cellRecord.whole.length = 0; cellRecord.wheeled = false;
           Object.assign(cellRecord, { count: cell.items.length, onScreen: true, rangeLo: -Infinity, rangeHi: Infinity, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, radius: 0,
-            band: vehicleBand, ratio: pixelRatio, shadows: softShadows, occupant: occupantZoom, levels: levelsVersion });
+            band: vehicleBand, ratio: levelRatio, nearCap, shadows: softShadows, occupant: occupantZoom, levels: levelsVersion });
           cellsDrawn.set(cell.key, cellRecord);
           let lo = Infinity, hi = -Infinity, bounded = true;
           for (const vehicle of cell.items) {
@@ -2357,7 +2363,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       for (const part of wheelLevels.parts) part.mesh.castShadow = bikesCast || carsWheeled;
       bikesWhole = bikesWholeNow;
       // Next frame's floor for the whole level: the cap's smallest of this frame (the cap-th largest, sorted ascending).
-      if (nearCount > VEHICLE_NEAR_CAP) nearFloor = nearCandidates.subarray(0, nearCount).sort()[nearCount - VEHICLE_NEAR_CAP]!;
+      if (nearCount > nearCap) nearFloor = nearCandidates.subarray(0, nearCount).sort()[nearCount - nearCap]!;
       else nearFloor = 0;
 
       // Pedestrians start at band 1: zoomed out past it a whole person is smaller than a car's wing mirror
@@ -2425,7 +2431,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         for (const id of procHeld) if (!procHeldNow.has(id)) { const p = procPeople.get(id)?.person; if (p) procedural.ragdoll.hold(p, null); }
         procHeld.clear();
         for (const id of procHeldNow) procHeld.add(id);
-        procedural.update(options.eye, gaitClock < 0 ? undefined : gaitClock, options.shadows !== false);
+        procedural.update(options.eye, gaitClock < 0 ? undefined : gaitClock, options.shadows !== false, options.tier?.hairStrandPeople);
       }
       pedestrians.finish();
 

@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry, Sphere, Vector3 } from 'three';
 import { MeshoptSimplifier } from 'meshoptimizer';
+import { VEHICLE_ERROR_PIXELS } from './quality';
 import { lodPool } from './people/lodPool';
 import { LEVEL_ERRORS, partLevelArrays, type ArrayOf, type PartArrays, type PartLevels, type Weld } from './partLevelsWork';
 
@@ -8,7 +9,7 @@ const attributeOf = (a: ArrayOf): BufferAttribute => new BufferAttribute(a.array
 
 export { LEVEL_ERRORS, type Weld } from './partLevelsWork';
 /** A level is drawn only while its error on the screen is under this: the swap is not seen (meshoptimizer README, `ErrorAbsolute`). */
-export const ERROR_PIXELS = 0.5;
+export const ERROR_PIXELS = VEHICLE_ERROR_PIXELS;
 /** Levels of a part: 0 is the model's own geometry, `i + 1` the one within `LEVEL_ERRORS[i]`. */
 export const LEVELS = LEVEL_ERRORS.length + 1;
 

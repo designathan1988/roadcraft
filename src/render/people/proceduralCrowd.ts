@@ -30,6 +30,7 @@ import { buildClassAnimation, createPalettePass, type ClassAnimation, type Palet
 import { BODY_WIDTH, createClassBodies, type ClassBodies } from './crowdBodies';
 import { createGpuRows, type GpuRows } from './gpuRows';
 import { classRigInWorker, personFaceInWorker, wearInWorker } from '../bakePool';
+import { HAIR_STRAND_PEOPLE } from '../quality';
 import type { WornPiece } from './personRig';
 import { rigFromMade, sharedCopy } from './classRigMade';
 import type { PersonFaceJob } from '../citizenBake.worker';
@@ -784,7 +785,8 @@ export interface ProceduralCrowd {
   readonly group: Group;
   add(spec: PersonSpec): Promise<ProceduralPerson>;
   /** Every person's level, pose and place: once a frame, after setting `matrix`, `clip`, `phase` (and `pixels`). */
-  update(eye?: Vector3, time?: number, shadows?: boolean): void;
+  /** `strands`: how many of the nearest people get their hair's strands (the tier's, `quality.ts` hairStrandPeople). */
+  update(eye?: Vector3, time?: number, shadows?: boolean, strands?: number): void;
   /** The skeletons worked out on the GPU (`crowdAnimation.ts`): once a frame, after `update`, before the scene is drawn. */
   renderPalettes(renderer: WebGLRenderer): void;
   /** The ragdolls' side (`agents.ts`, `ragdoll.ts`): a person's skeleton */
@@ -1548,7 +1550,9 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   };
 
   /** Strands close up: a grown hairstyle's strands */
-  const NEAR = 8, NEAR_RANGE = 14;
+  const NEAR_RANGE = 14;
+  /** The nearest people with strands this frame (`update`'s `strands`). */
+  let strandPeople = HAIR_STRAND_PEOPLE;
   let strandTexture: DataTexture | null = null;
   /** A strand ribbon's texture: solid across (its edges fade in the shader), root to tip in G. */
   const strandMap = (): DataTexture => {
@@ -1620,7 +1624,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       near.push(entry);
     }
     near.sort(byDistance);
-    if (near.length > NEAR) near.length = NEAR;
+    if (near.length > strandPeople) near.length = strandPeople;
     wanted.clear();
     for (const piece of shown) piece.people.length = 0;
     for (const { p } of near) {
@@ -2169,7 +2173,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         refresh(person);
       },
     },
-    update(eye, simTime, shadows = true) {
+    update(eye, simTime, shadows = true, strands = HAIR_STRAND_PEOPLE) {
+      strandPeople = strands;
       const time = simTime ?? performance.now() / 1000;
       levelCount.fill(0);
       trianglesDrawn = 0;
