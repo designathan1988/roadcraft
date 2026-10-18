@@ -163,6 +163,32 @@ describe('the ground of the map', () => {
     atlas.dispose();
   });
 
+  it('keeps as many plates made after a long walk as after a short one: what the view holds, never the way it came', () => {
+    /** The plates made and not let go after the view walked `tiles` tiles along a snake over the map, a street's view at each step. */
+    const after = (tiles: number): number => {
+      seen.live.clear();
+      const atlas = createFlatAtlas(1);
+      const step = m(256);
+      let x = -MAP_HALF + m(600), y = -MAP_HALF + m(600), dx = step;
+      for (let walked = 0; walked < (tiles * m(1024)) / step; walked++) {
+        x += dx;
+        // Back the other way a row up at the map's edge.
+        if (Math.abs(x) > MAP_HALF - m(600)) { x -= dx; dx = -dx; y += m(2048); }
+        for (let frame = 0; frame < 3; frame++) atlas.focus!(x, y, m(300));
+      }
+      // The same view at the end of every walk.
+      for (let frame = 0; frame < 12; frame++) atlas.focus!(m(100), m(-50), m(300));
+      const live = seen.live.size;
+      atlas.dispose();
+      return live;
+    };
+    const short = after(4), long = after(20), longer = after(40);
+    // The plates drawn round the view, the ones kept for a zoom out and back (`CACHED_MOST`), and the first one: not the plates walked over.
+    expect(long).toBeLessThanOrEqual(1 + 9 + 9);
+    expect(longer).toBe(long);
+    expect(short).toBeLessThanOrEqual(long);
+  });
+
   it('makes every plate the view wants whose corners are in in the frame it is wanted, not one a frame', () => {
     seen.live.clear();
     seen.made = 0;

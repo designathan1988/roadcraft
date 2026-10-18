@@ -47,6 +47,8 @@ const REGION_STRIDE = 1000;
 const KEEP_MARGIN = 1.25;
 /** Most plates drawn in full near the view. */
 const NEAR_MOST = 9;
+/** Most plates made but not drawn kept (nearest the view first), past the GPU's room: a view's worth, for a zoom out and back. DO NOT keep them by the GPU's room alone: a plate holds 10-20 MB of arrays on the page the GPU's book does not count (its corners, water, rock, ecosystem, paint), and every plate the view passed stayed made. */
+const CACHED_MOST = NEAR_MOST;
 /** Beyond this much ground in view, no plate is drawn in full: the far mesh alone. */
 const NEAR_VIEW = m(1400);
 /** Corners along a plate's side (the terrain's grid). */
@@ -503,17 +505,18 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     measureHighest();
   };
   /**
-   * The plates made but not drawn kept, nearest the view first, while the GPU's book has room for them past what it holds and the plates drawn:
+   * The plates made but not drawn kept, nearest the view first, `CACHED_MOST` at most and while the GPU's book has room for them past what it holds and the plates drawn:
    * DO NOT let every one go once the view takes in more than `NEAR_VIEW` (a zoom out and back made each again from nothing).
    */
   const keepWithinBudget = (cached: Plate[]): void => {
     let room = gpuLedger.cap - gpuLedger.bytes();
     for (const p of shownList) room -= p.surface!.gpuBytes();
     cached.sort((a, b) => Math.hypot(a.cx - focusX, a.cy - focusY) - Math.hypot(b.cx - focusX, b.cy - focusY));
+    let kept = 0;
     for (const p of cached) {
       if (p === home) continue;
       room -= p.surface!.gpuBytes();
-      if (room < 0) letGo(p);
+      if (room < 0 || ++kept > CACHED_MOST) letGo(p);
     }
   };
 
