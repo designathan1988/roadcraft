@@ -1,7 +1,8 @@
 import { measureHitch } from '@core/hitch';
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
-import { jobChannel, jobLanes, jobPort, jobsQuiet, onJobsQuiet, setJobWorkerSetup } from './jobs/jobPool';
+import { jobChannel, jobLanes, jobPort, jobsQuiet, onJobsQuiet, setJobWorkerMaker, setJobWorkerSetup } from './jobs/jobPool';
+import { desktopJobWorkers } from './desktopJobs';
 import { WorldStreamer, mapTilesFrom } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
@@ -189,6 +190,9 @@ const history = new History();
 const desktopStores = desktopSaves();
 const persistence = desktopStores ? new Persistence(undefined, desktopStores.store, desktopStores.parts) : new Persistence();
 /** DO NOT read or write the desktop's tiles through the page: each job worker is handed a port of its own to the saves writer, before its first job (`editor/workerParts.ts`), and a new one when the writer started again. */
+/** On the desktop the long job workers (the tiles' maker, the growth) run in the shell's job processes, a V8 cage each (`desktopJobs.ts`); before any worker is made. */
+const desktopJobs = desktopJobWorkers();
+if (desktopJobs) setJobWorkerMaker((long) => desktopJobs(long) as Worker | null);
 if (desktopStores) {
   const workers: Worker[] = [];
   const handPort = (worker: Worker): void => {

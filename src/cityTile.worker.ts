@@ -47,18 +47,22 @@ export interface FarTileBake extends FarGroundEnv {
 /** Bytes of far levels this worker may have handed IndexedDB and not seen committed: a tile's far writes past it wait for the earlier ones (`WriteBudget`). */
 const FAR_WRITES_MOST = 48 * 2 ** 20;
 
-/** Where this worker keeps the far levels it bakes: its write budget. */
-interface FarCaches { readonly budget: WriteBudget }
+/** Where this worker keeps the far levels it bakes: its write budget, and whether it keeps the derived cache itself (none in a thread of the desktop's job process: no IndexedDB in a utility process, `desktop/jobs.cjs`). */
+interface FarCaches { readonly budget: WriteBudget; readonly ownCache: Promise<boolean> }
 
-/** A tile's far bakes gathered, not written one by one: what `keepTileFar`, `keepTileFarRoads` and `keepTileNearBuildings` put, kept together after (`keepDerivedQueuedMany`). */
-function gathered(): { readonly far: FarCache; readonly roads: FarRoadCache; readonly near: NearTileCache; readonly entries: [string, unknown][] } {
+/** A tile's far bakes gathered, not written one by one: what `keepTileFar`, `keepTileFarRoads` and `keepTileNearBuildings` put, kept together after (`keepDerivedQueuedMany`). `own`: this thread opens the cache (none: a thread of the desktop's job process, whose bakes go to the page in the answer). */
+function gathered(own: boolean): { readonly far: FarCache; readonly roads: FarRoadCache; readonly near: NearTileCache; readonly entries: [string, unknown][] } {
   const entries: [string, unknown][] = [];
   const put = (key: string, value: unknown): Promise<void> => { entries.push([key, value]); return Promise.resolve(); };
-  return { far: { ready: derivedCacheOpen, get: (key) => readDerived(key), put }, roads: { ready: derivedCacheOpen, get: (key) => readDerived(key), put }, near: { ready: derivedCacheOpen, get: (key) => readDerived(key), put }, entries };
+  const ready = own ? derivedCacheOpen : (): Promise<boolean> => Promise.resolve(true);
+  const get = own ? (key: string) => readDerived(key) : (): Promise<null> => Promise.resolve(null);
+  return { far: { ready, get, put }, roads: { ready, get, put }, near: { ready, get, put }, entries };
 }
 
-async function keepFar(records: TileRecords, full: TileRecords, version: number, far: FarTileBake, caches: FarCaches): Promise<void> {
-  const into = gathered();
+/** The tile's far levels baked; kept here, or (a thread with no cache of its own) handed back to be kept by the page, in the answer. */
+async function keepFar(records: TileRecords, full: TileRecords, version: number, far: FarTileBake, caches: FarCaches): Promise<[string, unknown][] | null> {
+  const own = await caches.ownCache;
+  const into = gathered(own);
   const bakes = await Promise.allSettled([
     keepTileFar(full, version, far, far.massPrefix, into.far),
     keepTileFarRoads(tileRoads(records), version, far.roadGround, far.roadPrefix, into.roads),
@@ -66,13 +70,17 @@ async function keepFar(records: TileRecords, full: TileRecords, version: number,
     keepTileNearBuildings(records, full, version, far.nearPrefix ?? null, into.near),
   ]);
   for (const bake of bakes) if (bake.status === 'rejected') console.warn(`[city tile] tile ${records.key}'s far level not kept; the far jobs bake it`, bake.reason);
+  if (!own) return into.entries;
   // One transaction for them all, queued, not waited for: the page's far job for the tile asks after this answer, and its read comes after this write.
   await keepDerivedQueuedMany(into.entries, caches.budget);
+  return null;
 }
 
 /** The streamed tile built (its key and records), stored here (its version, and its records prepared when asked for), or why it could not be; `settled`, the answer to a `SettleAsk`. Each with the worker's state (`WorkerState`). */
 export type StreamTileAnswer = ({ readonly key: number; readonly records: TileRecords }
-  | { readonly key: number; readonly stored: number | null; readonly prepared?: PreparedTile; readonly existed?: boolean; readonly legacy?: boolean; readonly bays?: boolean }
+  | { readonly key: number; readonly stored: number | null; readonly prepared?: PreparedTile; readonly existed?: boolean; readonly legacy?: boolean; readonly bays?: boolean;
+    /** Its far levels baked, for the page to keep (a thread of the desktop's job process keeps no cache itself, `keepFar`). */
+    readonly far?: readonly (readonly [string, unknown])[] }
   | { readonly i: number; readonly j: number; readonly error: string }
   | { readonly settled: true }) & WorkerState;
 
@@ -170,7 +178,7 @@ export function serve(scope: JobScope): void {
   const self = withState(scope);
   // The far levels' writes of this worker held under one budget (the V8 cage the page and its workers share).
   const budget = new WriteBudget(FAR_WRITES_MOST);
-  const caches: FarCaches = { budget };
+  const caches: FarCaches = { budget, ownCache: derivedCacheOpen() };
   scope.onmessage = (event: MessageEvent<StreamTileAsk | SettleAsk>) => {
     // The far levels' writes are queued (`keepDerivedQueued`): a read of the same store starts only once every write asked before it is done (IndexedDB's transaction order), then the worker can go.
     const ask = event.data;
@@ -212,9 +220,9 @@ function make(self: JobScope, ask: StreamTileAsk, caches: FarCaches): void {
     void writeTile(stored(), store.map, records, (r) => bakeTileSections(r, store.records), full).then(
       async ({ ok }) => {
         // Its far levels kept before the page hears of it: the far tree's job for it then finds them (`farTiles.ts` `runFarJob` level 0).
-        if (ok && store.far) await keepFar(records, full, version, store.far, caches);
+        const far = ok && store.far ? await keepFar(records, full, version, store.far, caches) : null;
         // The records handed back prepared (migrated and interned here, `prepareTile`: the page only files them); kept for the page even when the write failed.
-        const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full, true, records.grown) } : {}) };
+        const answer: StreamTileAnswer = { key: tileKey(i, j), stored: ok ? version : null, ...(store.records ? { prepared: prepareTile(full, true, records.grown) } : {}), ...(far ? { far } : {}) };
         self.postMessage(answer);
       },
       (error: unknown) => self.postMessage({ i, j, error: `tile ${i},${j} was made and not stored: ${String(error)}` } satisfies StreamTileAnswer));

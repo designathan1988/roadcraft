@@ -21,6 +21,8 @@ app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 // The compiled programs kept on disk between runs (Chromium `--gpu-disk-cache-size-kb`, default 6 MB on desktop, `gpu_preferences.cc`): the game's set must fit or the next start compiles again.
 app.commandLine.appendSwitch('gpu-disk-cache-size-kb', String(256 * 1024));
+// The old space grown by its own size at each step rather than V8's guess (`--heap-growing-percent`, V8 flags; the best of the conf116-120 runs): fewer collections for the same peak.
+app.commandLine.appendSwitch('js-flags', '--heap-growing-percent=100');
 
 /** The player's desktop choices that must be known before the window exists (`desktop-settings.json` in userData). */
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'desktop-settings.json');
@@ -88,11 +90,16 @@ protocol.registerSchemesAsPrivileged([
 const GAME = app.isPackaged ? path.join(process.resourcesPath, 'game') : path.join(__dirname, '..', 'dist');
 const ORIGIN = 'app://roadcraft/';
 
+/** A run of `scripts/look.mjs --electron`: the window never shown, the game drawn at 1920x1080 all the same (`paintWhenInitiallyHidden`). */
+const LOOK = process.env.ROADCRAFT_LOOK === '1';
+
 function createWindow() {
   const window = new BrowserWindow({
-    width: 1600,
-    height: 900,
+    width: LOOK ? 1920 : 1600,
+    height: LOOK ? 1080 : 900,
+    useContentSize: LOOK,
     show: false,
+    paintWhenInitiallyHidden: true,
     backgroundColor: '#10161c',
     title: 'Roadcraft',
     autoHideMenuBar: true,
@@ -104,6 +111,7 @@ function createWindow() {
     },
   });
   window.once('ready-to-show', () => {
+    if (LOOK) return;
     window.maximize();
     if (settings.fullscreen) window.setFullScreen(true);
     window.show();
@@ -159,6 +167,14 @@ function serveIpc() {
     if (!fromGame(event) || !steam || typeof id !== 'string' || !NAME.test(id)) return false;
     return safe(() => steam.achievement.isActivated(id) || steam.achievement.activate(id), false);
   });
+  // A long job worker's own line to a thread of a job process (`jobs.cjs`, `src/desktopJobs.ts`), as the saves' is: the processes taken in turn.
+  ipcMain.on('jobs:connect', (event) => {
+    if (!fromGame(event) || !event.senderFrame) return;
+    const at = nextJobs++ % JOB_PROCESSES;
+    const { port1, port2 } = new MessageChannelMain();
+    jobsProcess(at).postMessage(null, [port2]);
+    event.senderFrame.postMessage('jobs:port', at, [port1]);
+  });
   // The page's own line to the saves' writer (Electron, "MessagePorts": a `MessageChannelMain` between the page and a utility process; nothing of a save passes through here).
   ipcMain.on('saves:connect', (event) => {
     if (!fromGame(event) || !event.senderFrame) return;
@@ -166,6 +182,25 @@ function serveIpc() {
     savesWriter().postMessage(null, [port2]);
     event.senderFrame.postMessage('saves:port', null, [port1]);
   });
+}
+
+/** THE JOB PROCESSES (`jobs.cjs`): the page's long job workers (the tiles' maker, the growth) as threads of utility processes, each process a V8 cage of its own (Electron `utilityProcess`; V8 pointer compression, one cage a process): a 20 km map's tile workers no longer fill the page's. Two, the long workers shared between them. */
+const JOB_PROCESSES = 2;
+/** The job threads' code, built for Node beside the game (`scripts/vite/desktop-jobs.config.ts`). */
+const JOB_HOST = path.join(GAME, 'desktop-jobs', 'jobHost.mjs');
+const jobs = [];
+let nextJobs = 0;
+function jobsProcess(at) {
+  if (jobs[at]) return jobs[at];
+  const child = utilityProcess.fork(path.join(__dirname, 'jobs.cjs'), [JOB_HOST], { serviceName: `Roadcraft jobs ${at + 1}` });
+  // Gone (a crash, a cage full): each page's workers in it fail as workers do, and the pool makes others (`src/desktopJobs.ts`).
+  child.once('exit', (code) => {
+    console.error(`job process ${at + 1} stopped`, code);
+    if (jobs[at] === child) jobs[at] = null;
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('jobs:lost', at);
+  });
+  jobs[at] = child;
+  return child;
 }
 
 /** The saves' writer (`saves.cjs`): a Node utility process, so a big map's encoding and disk writes stop neither this process nor the page. */
