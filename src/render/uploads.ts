@@ -150,6 +150,34 @@ const compileLog: { what: string; asked: number; started: number; settled: numbe
 const programSamples: { at: number; programs: number; inFlight: number; queued: number }[] = [];
 if (import.meta.env.DEV && typeof window !== 'undefined') Object.assign(window, { __compileLog: compileLog, __programSamples: programSamples });
 let lastProgramCount = 0;
+// TEMPORARY (DEV only, to be taken out): the programs three built, by name and the end of their key (the material's customProgramCacheKey), with what differs between those of a group (`window.__programsTable()`).
+let devRenderer: WebGLRenderer | null = null;
+type BuiltProgram = { readonly name: string; readonly cacheKey: string; readonly usedTimes: number };
+const programsTable = (): unknown => {
+  const programs = ((devRenderer as unknown as { info?: { programs?: BuiltProgram[] | null } } | null)?.info?.programs ?? []).slice();
+  const groups = new Map<string, BuiltProgram[]>();
+  for (const p of programs) {
+    const tokens = p.cacheKey.split(',');
+    const key = `${p.name} | ${tokens[tokens.length - 1]!.slice(0, 90)}`;
+    let list = groups.get(key);
+    if (!list) groups.set(key, list = []);
+    list.push(p);
+  }
+  const rows = [...groups].map(([key, list]) => {
+    // The places of the key that differ between the group's programs, and their values: what makes the variants.
+    const split = list.map((p) => p.cacheKey.split(','));
+    const length = Math.max(...split.map((t) => t.length));
+    const varies: Record<string, string[]> = {};
+    for (let i = 0; i < length; i++) {
+      const values = new Set(split.map((t) => t[i] ?? ''));
+      if (values.size > 1) varies[`#${i}`] = [...values].map((v) => v.slice(0, 40)).slice(0, 6);
+    }
+    return { key, programs: list.length, used: list.reduce((n, p) => n + p.usedTimes, 0), varies: Object.fromEntries(Object.entries(varies).slice(0, 12)) };
+  }).sort((a, b) => b.programs - a.programs);
+  const extensions = (devRenderer as unknown as { extensions?: { has?: (name: string) => boolean } } | null)?.extensions;
+  return { total: programs.length, groups: rows.length, parallelCompile: extensions?.has?.('KHR_parallel_shader_compile') ?? null, rows };
+};
+if (import.meta.env.DEV && typeof window !== 'undefined') Object.assign(window, { __programsTable: programsTable });
 const entryOf = new WeakMap<() => void, { started: number }>();
 /** A driver that never says a program is built: given up on and said, never a mesh held for ever (a slow driver shows in the opening's time, `programsReady`). */
 const COMPILE_GIVE_UP_MS = 10_000;
@@ -223,6 +251,7 @@ export function drainCompiles(renderer: WebGLRenderer, camera: Camera, scene: Sc
     entry.settle();
   }
   if (import.meta.env.DEV) {
+    devRenderer = renderer;
     lastProgramCount = (renderer as { info?: { programs?: unknown[] | null } }).info?.programs?.length ?? 0;
     const last = programSamples[programSamples.length - 1];
     if (!last || now - last.at >= 250) { programSamples.push({ at: Math.round(now), programs: lastProgramCount, inFlight: inFlight.size, queued: toCompile.length }); if (programSamples.length > 5000) programSamples.splice(0, 1000); }
