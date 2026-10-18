@@ -123,6 +123,8 @@ export interface SimControls {
   /** Where the population starts (`populationGovernor.ts` cpuPopulationShare): taken before the first step is measured. */
   readonly startShare?: number;
   readonly focus: SimFocus | null;
+  /** The city's time of day set to these minutes after midnight (a saved map reopened), told once. */
+  readonly clock?: number;
 }
 
 export interface SimFocus {

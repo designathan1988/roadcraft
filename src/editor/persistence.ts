@@ -43,6 +43,8 @@ export interface SavedSettings {
   readonly people?: number;
   readonly demandMultiplier?: number;
   readonly congestionOverlay: boolean;
+  /** The city's time of day, minutes after midnight of its first day; absent in saves before 2026-10-18 (the city wakes at 06:30). */
+  readonly minutes?: number;
   /** Metres per world unit the camera was saved in; absent: 0.4, before 2026-10-10. */
   readonly unit?: number;
 }
@@ -420,6 +422,7 @@ function isSavedSettings(settings: unknown): settings is SavedSettings {
     (settings.cars === undefined || isFiniteNumber(settings.cars)) &&
     (settings.people === undefined || isFiniteNumber(settings.people)) &&
     (settings.demandMultiplier === undefined || isFiniteNumber(settings.demandMultiplier)) &&
+    (settings.minutes === undefined || isFiniteNumber(settings.minutes)) &&
     typeof settings.congestionOverlay === 'boolean';
 }
 

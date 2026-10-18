@@ -422,10 +422,19 @@ export class SimClient implements JournalReader {
       speed: this.clock.speed, paused: this.clock.paused, traffic: run.traffic, pedestrians: run.pedestrians,
       trafficIntensity: this.trafficIntensity, pedestrianIntensity: this.pedestrianIntensity, demandMultiplier: this.demandMultiplier,
       maxShare: run.maxShare, ...(run.startShare !== undefined ? { startShare: run.startShare } : {}), focus: this.focus,
+      ...(this.clockAsked !== null ? { clock: this.clockAsked } : {}),
     };
+    this.clockAsked = null;
     this.send({ type: 'frame', wall: this.wallOwed, hold, controls });
     this.wallOwed = 0;
   }
+
+  /** The city's time of day put at `minutes` after midnight (a saved map reopened): sent with the next frame. */
+  setClock(minutes: number): void {
+    this.clockAsked = minutes;
+    this.minutes = minutes;
+  }
+  private clockAsked: number | null = null;
 
   /** The player's hand on the simulation, answered when the worker has done it. */
   act(act: SimAct): Promise<unknown> {

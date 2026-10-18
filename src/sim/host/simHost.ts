@@ -81,6 +81,9 @@ export class SimHost {
   /** The casualties already told (the page keeps their clocks). */
   private readonly casualtiesSent = new WeakSet<Casualty>();
 
+  /** A time of day the page asked for before the city could take it (`SimControls.clock`). */
+  private clockAsked: number | null = null;
+
   constructor(private readonly post: (message: FromSim, transfer?: Transferable[]) => void) {}
 
   async handle(message: ToSim): Promise<void> {
@@ -211,8 +214,11 @@ export class SimHost {
 
   /** One frame of the page: the topology brought up, the city stepped by the wall time, the frame written for the page. */
   private frame(wall: number, hold: boolean, controls: SimControls): void {
+    if (controls.clock !== undefined) this.clockAsked = controls.clock;
     const sim = this.sim;
     if (!sim || !this.topology) return;
+    // The time of day asked for, put once the city is there to take it.
+    if (this.clockAsked !== null) { sim.city.setMinutes(sim, this.clockAsked); this.clockAsked = null; }
     sim.clock.speed = controls.speed;
     sim.clock.paused = controls.paused;
     sim.trafficIntensity = controls.trafficIntensity;

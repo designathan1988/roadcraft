@@ -349,6 +349,8 @@ sim.clock.speed = savedSession?.settings.speed ?? 1;
 sim.trafficIntensity = savedSession?.settings.trafficIntensity ?? 1;
 sim.pedestrianIntensity = savedSession?.settings.pedestrianIntensity ?? 1;
 sim.demandMultiplier = savedSession?.settings.demandMultiplier ?? 1;
+// The saved city's time of day, not 06:30 again (`SavedSettings.minutes`).
+if (bootSettings?.minutes !== undefined) sim.setClock(bootSettings.minutes);
 /** The game's state - the tool in hand, the pause and speed, the quality, the selection */
 const gameState = new GameState({
   tool: 'inspect' as Tool,
@@ -410,6 +412,7 @@ function sessionSettings(): SavedSettings {
     pedestrianIntensity: sim.pedestrianIntensity,
     demandMultiplier: sim.demandMultiplier,
     congestionOverlay: game.congestionOverlay,
+    minutes: sim.minutes,
   };
 }
 
@@ -2280,6 +2283,7 @@ function restoreSettings(settings: SavedSettings): void {
   sim.trafficIntensity = settings.trafficIntensity;
   sim.pedestrianIntensity = settings.pedestrianIntensity;
   sim.demandMultiplier = settings.demandMultiplier ?? 1;
+  if (settings.minutes !== undefined) sim.setClock(settings.minutes);
   gameState.set('congestionOverlay', settings.congestionOverlay, 'map loaded');
   persistence.saveSettingsSoon(sessionSettings);
   requestDraw();

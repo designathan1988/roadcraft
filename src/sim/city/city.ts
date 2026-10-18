@@ -22,6 +22,11 @@ export class City {
     return DAY_START + this.skipped + (w.clock.tick * DT * TIME_SCALE) / 60;
   }
 
+  /** Puts the clock at `minutes` after midnight of the first day (a saved city's time), the simulation's ticks as they are. */
+  setMinutes(w: SimWorld, minutes: number): void {
+    if (Number.isFinite(minutes)) this.skipped += minutes - this.minutes(w);
+  }
+
   /** Moves the clock on. */
   skip(minutes: number): void {
     this.skipped += Math.max(0, minutes);
