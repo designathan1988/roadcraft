@@ -15,6 +15,7 @@ import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
 import { FAR_ERROR, createMassCells } from './massCells';
+import { cellIndex, plateOf, tileOf } from './levelKeys';
 import { FrameScale, LandedMeasure, TYPICAL_LEVEL_TRIANGLES, letBackFitting, letGoPassed } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
@@ -201,6 +202,33 @@ export function createBuildingLayer(): BuildingLayer {
   const heldFar = new Set<string>(), heldCoarse = new Set<string>();
   /** How far down the order the budget coarsens in a cell stands (`MassCells.cap`): the less a metre spans there, the sooner it goes; DO NOT rank it by its distance to the eye's point on the plan (two cells alike either side of it were ranked apart). */
   const rankOf = (key: string): number => -massCells.pixels(key, 1);
+  // TEMPORARY (DEV only, to be taken out): why each cell of the town is drawn below its detail (`window.__budgetLog`): the eye's error, its tile or plate drawn in its place, the bytes' cap, the triangles' cap, or no level landed yet.
+  type Levels = Map<string, 'L0' | 'L1' | 'far'>;
+  let lastFit: { scale: number; chosen: number; byEye: Levels; byBytes: Levels; byTriangles: Levels } | null = null;
+  const levelsNow = (): Levels => {
+    const out: Levels = new Map();
+    for (const key of townCells.keys()) out.set(key, !massCells.near(key) ? 'far' : massCells.fine(key) ? 'L0' : 'L1');
+    return out;
+  };
+  const budgetLog: Record<string, unknown> = {};
+  if (import.meta.env.DEV && typeof window !== 'undefined') Object.assign(window, { __budgetLog: budgetLog });
+  const budgetLogged = (fit: NonNullable<typeof lastFit>): void => {
+    const cellsOut: { key: string; px: number; eye: string; bytes: string; triangles: string; shown: string; why: string }[] = [];
+    const why: Record<string, number> = {};
+    for (const [key, eye] of fit.byEye) {
+      const bytes = fit.byBytes.get(key)!, tri = fit.byTriangles.get(key)!;
+      const [i, j] = cellIndex(key);
+      const covered = massCells.coarse(tileOf(i, j)) || massCells.coarse(plateOf(i, j));
+      const shown = levelShown(key) === 'cell' ? 'L0' : levelShown(key) === 'facade' ? 'L1' : 'none';
+      const reason = eye !== 'L0' ? (covered ? `covered (${eye})` : `eye (${eye})`) : bytes !== 'L0' ? `bytes (${bytes})` : tri !== 'L0' ? `triangles (${tri}${heldFar.has(key) ? ', held far' : heldCoarse.has(key) ? ', held coarse' : ''})` : shown !== 'L0' ? `not landed (${shown})` : 'L0';
+      why[reason] = (why[reason] ?? 0) + 1;
+      cellsOut.push({ key, px: +massCells.pixels(key, 1).toFixed(2), eye, bytes, triangles: tri, shown, why: reason });
+    }
+    Object.assign(budgetLog, {
+      at: Math.round(performance.now()), scale: fit.scale, floor: frame.floor, budgetTriangles: frame.budget, chosenTriangles: fit.chosen,
+      farTriangles: massCells.farTriangles(), roomBytes: room(), residentBytes: resident.total, detailBudgetBytes: budget, why, cells: cellsOut,
+    });
+  };
   const capTriangles = (): void => {
     if (!eye || !Number.isFinite(frame.budget)) return;
     const masses = massCells.farTriangles();
@@ -773,8 +801,20 @@ export function createBuildingLayer(): BuildingLayer {
       viewKnown = view !== null;
       if (view) eyeView.copy(view);
       // The levels chosen at the floor the GPU's time sets, over the view's budget of triangles the farthest coarsened first (`capTriangles`); only when the masses alone pass it does the scale rise (`frameBudget.ts`). The building cut open and the one being edited stay in detail whatever the eye says.
-      const fitted = (scale: number): number => { massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseNow(); capNow(); capTriangles(); return chosenTriangles(); };
+      const fitted = (scale: number): number => {
+        massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseNow();
+        // TEMPORARY (DEV only, to be taken out): each cell's level after the eye's choice, the bytes' cap and the triangles' cap (`window.__budgetLog`).
+        const byEye = import.meta.env.DEV ? levelsNow() : null;
+        capNow();
+        const byBytes = import.meta.env.DEV ? levelsNow() : null;
+        capTriangles();
+        const chosen = chosenTriangles();
+        if (byEye && byBytes) lastFit = { scale, chosen, byEye, byBytes, byTriangles: levelsNow() };
+        return chosen;
+      };
+      lastFit = null;
       if (fitted(frame.floor) > frame.budget) frame.fit(fitted); else frame.scale = frame.floor;
+      if (import.meta.env.DEV && lastFit) budgetLogged(lastFit);
       farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach, view);
       // What the frame's last choice left unexposed or unwanted let go, not what a scale tried on the way did (`MassCells.settle`).
       massCells.settle();
