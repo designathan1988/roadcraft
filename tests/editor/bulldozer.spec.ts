@@ -38,3 +38,41 @@ describe('the bulldozer box', () => {
     expect(left.size).toBe(lots.length - expected.length);
   });
 });
+
+/** A CLICK ON A ROAD'S CARRIAGEWAY TAKES THE ROAD, NOT THE LAMP ON ITS FOOTWAY WITHIN PICK REACH */
+describe('the bulldozer click', () => {
+  function street(): { doc: RoadDoc; net: Network; tool: Bulldozer; segment: number } {
+    const doc = new RoadDoc();
+    const a = doc.addNode({ x: m(-120), y: 0 }).id, b = doc.addNode({ x: m(120), y: 0 }).id;
+    const segment = doc.addSegment(a, b, 1)!.id;
+    const net = new Network(doc);
+    net.rebuild();
+    doc.addLandscape('lamp', { x: 0, y: m(5) });
+    doc.addPole({ x: m(10), y: -m(5) });
+    // Zoomed out: a reach of some 7 m, past the kerb from the centre line.
+    const tool = new Bulldozer({
+      doc, net, bulldozeBuildingAt: () => false, poleReach: () => m(7), itemReach: () => m(7),
+      mutate: (fn) => { fn(); }, hint: () => {}, redraw: () => {},
+    });
+    return { doc, net, tool, segment };
+  }
+  const click = (tool: Bulldozer, at: { x: number; y: number }, anchor: Parameters<Bulldozer['down']>[3]): void => {
+    tool.down(1, { x: 0, y: 0 }, at, anchor);
+    tool.up(1, true);
+  };
+
+  it('removes the road clicked in its lanes, not only the lamp within reach: the street goes, its furniture with it', () => {
+    const { doc, tool, segment } = street();
+    click(tool, { x: m(2), y: 0 }, { kind: 'segment', segment, s: m(122), at: { x: m(2), y: 0 } } as never);
+    expect(doc.segments.size).toBe(0);
+    expect(doc.landscape.size).toBe(0);
+    expect(doc.poles.size).toBe(0);
+  });
+
+  it('removes the lamp clicked on the footway', () => {
+    const { doc, tool, segment } = street();
+    click(tool, { x: 0, y: m(5) }, { kind: 'segment', segment, s: m(120), at: { x: 0, y: m(5) } } as never);
+    expect(doc.landscape.size).toBe(0);
+    expect(doc.segments.size).toBe(1);
+  });
+});

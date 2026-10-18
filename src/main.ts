@@ -87,7 +87,7 @@ import { type RoadEditRefusal, guardRoadEdit } from '@editor/editRules';
 import { commitPedestrianCrossing, commitUturn } from '@editor/streetObjects';
 import { commitRoundabout, roundaboutRefusal } from '@editor/roundabout';
 import { RoadTool, type RoadDraft } from '@editor/roadTool';
-import { Bulldozer } from '@editor/bulldozer';
+import { Bulldozer, removeRoads } from '@editor/bulldozer';
 import { NodeMover } from '@editor/nodeMover';
 import { CameraGestures, type PointerSample } from '@view/cameraGestures';
 import { CameraMotion } from '@view/cameraMotion';
@@ -2409,11 +2409,7 @@ const gameKeys = createGameKeys({
     const id = game.selectedSegment;
     if (id === null) return;
     closeInspectorPanel();
-    mutate(() => {
-      doc.removeSegment(id);
-      doc.pruneOrphanNodes();
-      return true;
-    });
+    mutate(() => removeRoads(doc, net, [id]));
   },
   // A button the player reached with the keyboard keeps Space for itself; one merely clicked with the mouse
   keyboardOnButton: (e) => e.target instanceof HTMLButtonElement && focusCameFromKeyboard(),
@@ -3702,20 +3698,15 @@ function showInspector(): void {
         mutate(() => {
           const source = doc.node(node);
           if (!source) return false;
-          for (const seg of [...source.incident]) doc.removeSegment(seg);
-          doc.removeNode(node);
-          doc.pruneOrphanNodes();
+          removeRoads(doc, net, [...source.incident]);
+          if (doc.node(node)) doc.removeNode(node);
           return true;
         });
         select(game.selectedSegment, game.selectedSegmentS, null, 'point removed');
         closeInspector();
       },
       onDelete: (id) => {
-        mutate(() => {
-          doc.removeSegment(id);
-          doc.pruneOrphanNodes();
-          return true;
-        });
+        mutate(() => removeRoads(doc, net, [id]));
         select(null, game.selectedSegmentS, game.selectedNode, 'road deleted');
         closeInspector();
       },

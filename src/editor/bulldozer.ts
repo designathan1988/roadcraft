@@ -3,8 +3,11 @@ import type { RoadDoc } from '@world/doc';
 import type { Network } from '@world/network';
 import { deleteLot, lotCentre } from '@world/lots';
 import { landscapeNearIn } from '@world/landscape';
+import { onCarriageway } from '@world/carriageway';
 import { type Anchor, ribbonsNear } from './snap';
 import { roadsBefore, settleRoadEdit } from './roads/economy';
+import { removeWithStreetKit } from './roads/streetKit';
+import type { SegmentId } from '@world/ids';
 
 /** What the bulldozer reads of the game and does to it. */
 export interface BulldozerHost {
@@ -19,6 +22,17 @@ export interface BulldozerHost {
   mutate(fn: () => boolean): void;
   hint(key: string): void;
   redraw(): void;
+}
+
+/** Roads taken away as the player demolishes them, by any tool: their power line and furniture with them, a share of their price back (`editor/roads/economy.ts`). */
+export function removeRoads(doc: RoadDoc, net: Network, ids: readonly SegmentId[]): boolean {
+  return removeWithStreetKit(doc, net, ids, () => {
+    const money = roadsBefore(doc);
+    for (const id of ids) doc.removeSegment(id);
+    doc.pruneOrphanNodes();
+    settleRoadEdit(money, doc);
+    return true;
+  });
 }
 
 /** A press that moved less than this many screen pixels is a click. */
@@ -82,8 +96,10 @@ export class Bulldozer {
     const { doc } = host;
     // A building stands over whatever is under it, so it is tried first.
     if (host.bulldozeBuildingAt(screen)) return;
+    // A click on a road's carriageway is for the road: poles and street items stand on the footways, and their pick reach (some 7 m zoomed out) must not take a lamp for the road under the pointer.
+    const onRoad = anchor.kind === 'segment' && onCarriageway(host.net, world);
     // A pole stands ON the footway of a road
-    const pole = doc.poleNear(world, host.poleReach());
+    const pole = onRoad ? null : doc.poleNear(world, host.poleReach());
     if (pole) {
       host.mutate(() => {
         doc.removePole(pole.id);
@@ -93,7 +109,7 @@ export class Bulldozer {
       return;
     }
     // Likewise a bench, a tree or a street light on the footway.
-    const item = landscapeNearIn(doc, world, host.itemReach());
+    const item = onRoad ? null : landscapeNearIn(doc, world, host.itemReach());
     if (item) {
       host.mutate(() => doc.removeLandscape(item.id));
       host.hint('hint.streetscape.removed');
@@ -101,14 +117,7 @@ export class Bulldozer {
     }
     if (anchor.kind === 'segment' && anchor.segment !== undefined) {
       const id = anchor.segment;
-      host.mutate(() => {
-        // A share of the road's price comes back (`editor/roads/economy.ts`).
-        const money = roadsBefore(doc);
-        doc.removeSegment(id);
-        doc.pruneOrphanNodes();
-        settleRoadEdit(money, doc);
-        return true;
-      });
+      host.mutate(() => removeRoads(doc, host.net, [id]));
     }
   }
 
@@ -128,10 +137,7 @@ export class Bulldozer {
     const walls = doc.barriersIn(box).filter((bar) => bar.points.some(inside)).map((bar) => bar.id);
     if (!segments.length && !builtIds.length && !lots.length && !poles.length && !items.length && !walls.length) return;
     this.host.mutate(() => {
-      const money = roadsBefore(doc);
-      for (const id of segments) doc.removeSegment(id);
-      if (segments.length) doc.pruneOrphanNodes();
-      if (segments.length) settleRoadEdit(money, doc);
+      if (segments.length) removeRoads(doc, net, segments);
       for (const id of lots) deleteLot(doc, id);
       for (const id of builtIds) doc.buildings.remove(id);
       for (const id of poles) doc.removePole(id);

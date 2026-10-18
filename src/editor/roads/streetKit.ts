@@ -58,6 +58,16 @@ function kitOf(doc: RoadDoc, net: Network, segments: readonly SegmentId[]): Kit 
   return { poles, items, line: poles.length > 0 };
 }
 
+/** Runs an edit that takes `segments` away (`edit`, true when it changed the map), and their power line and furniture with them: nothing of a street left standing in the grass. */
+export function removeWithStreetKit(doc: RoadDoc, net: Network, segments: readonly SegmentId[], edit: () => boolean): boolean {
+  if (net.revision !== doc.revision) net.rebuild();
+  const kit = kitOf(doc, net, segments);
+  if (!edit()) return false;
+  for (const id of kit.poles) doc.removePole(id);
+  for (const id of kit.items) doc.removeLandscape(id);
+  return true;
+}
+
 /** Runs a road edit of `segments` (`edit`, true when it changed the map), then lays their power line and furniture again on the roads it left (`after`: their ids then, the same by default) */
 export function carryStreetKit(doc: RoadDoc, net: Network, segments: readonly SegmentId[], edit: () => boolean,
   after: () => readonly SegmentId[] = () => segments.filter((id) => doc.segment(id) !== undefined)): boolean {

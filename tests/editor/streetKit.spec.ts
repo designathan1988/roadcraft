@@ -58,3 +58,19 @@ describe('a street\'s power line and furniture through an edit of its road', () 
     expect(doc.landscape.size).toBe(items);
   });
 });
+
+describe('a street demolished', () => {
+  it('takes its power line and furniture with it, and gives a share of its price back', async () => {
+    const { removeRoads } = await import('@editor/bulldozer');
+    const { doc, net } = furnished();
+    const id = [...doc.segments.keys()][0]!;
+    expect(doc.poles.size).toBeGreaterThan(3);
+    expect(doc.landscape.size).toBeGreaterThan(3);
+    const money = doc.economy.balance;
+    expect(removeRoads(doc, net, [id])).toBe(true);
+    expect(doc.segments.size).toBe(0);
+    expect(doc.poles.size).toBe(0);
+    expect(doc.landscape.size).toBe(0);
+    expect(doc.economy.balance).toBeGreaterThan(money);
+  });
+});
