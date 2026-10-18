@@ -970,7 +970,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const procFinish = (eye: Vector3 | undefined, live: ReadonlySet<number>): void => {
     for (const [id, entry] of procPeople) {
       if (entry.seen === procFrame) continue;
-      if (!entry.person) { if (!live.has(id)) procPeople.delete(id); continue; }
+      // Those a ragdoll holds (struck, down, or dead) keep their person.
+      if (!entry.person) { if (!live.has(id) && !procHeld.has(id)) procPeople.delete(id); continue; }
       if (procHeld.has(id)) continue;
       entry.person.matrix.makeScale(0, 0, 0);
       // Kept a few frames off the street
@@ -992,6 +993,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const procHeld = new Set<number>(), procHeldNow = new Set<number>();
   /** The walkers of the simulation this frame (`sync`), one set for every frame. */
   const procLive = new Set<number>();
+  /** The tick `procLive` was gathered for, and how many walkers it had. */
+  let procLiveTick = -1, procLiveViews = -1;
   /** People made to play a clip (`forceClip`), and those whose clip did not move this frame. */
   const procForced = new Map<number, ProcClip>();
   const procFrozen = new Set<number>();
@@ -1225,6 +1228,14 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     part.n++;
     touch(part, at, at + 1);
     return at;
+  };
+  /** The kept cars seen this frame (`seeKept`): none missing when it reaches `keptList.length`. */
+  let keptSeenNow = 0;
+  /** A kept car drawn this frame, counted once while it is kept. */
+  const seeKept = (s: VehicleDraw): void => {
+    if (s.keptSeen === suspensionFrame) return;
+    s.keptSeen = suspensionFrame;
+    if (s.keptAt >= 0) keptSeenNow++;
   };
   /** A parked car's kept instances let go: the last kept one of each part takes each one's place, and this frame's last the place it left. */
   const dropKept = (s: VehicleDraw): void => {
@@ -2074,6 +2085,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       };
       /** The cell being walked (null: the traffic): what it drew, to be kept as it is while nothing of it nor of the view changes. */
       let cellRecord: CellRecord | null = null;
+      keptSeenNow = 0;
       fieldFrame = -1;
       /** A car of `record` drawn standing: the scales its levels hold over narrow the cell's, its place and sphere grow the cell's. */
       // Only where a cell can be kept whole in a moving view (`vehicleInside`): DO NOT work out each car's range for nothing.
@@ -2156,7 +2168,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           if (s.keptAt >= 0 && s.keptX === pose.p.x && s.keptY === pose.p.y && s.keptAngle === pose.angle && s.keptDeck === deck
             && s.keptBand === level && s.keptLevels === levels && s.keptVersion === levelsVersion && s.keptPaint === s.paint
             && s.keptShadows === softShadows && s.keptCastOnly === !onScreen && s.keptParked === parked) {
-            s.keptSeen = suspensionFrame;
+            seeKept(s);
             s.seen = suspensionFrame;
             s.lod = own;
             if (cellRecord) { cellRecord.kept.push(s); standsIn(cellRecord, plan, own, pixels, onScreen, pose.p.x, pose.p.y, seen); }
@@ -2245,7 +2257,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         }
         if (still) {
           recording = null;
-          s.keptSeen = suspensionFrame;
+          seeKept(s);
           s.keptX = pose.p.x; s.keptY = pose.p.y; s.keptAngle = pose.angle; s.keptDeck = deck;
           s.keptBand = level; s.keptLevels = levels; s.keptVersion = levelsVersion; s.keptPaint = s.paint; s.keptShadows = softShadows; s.keptCastOnly = !onScreen; s.keptParked = parked;
         }
@@ -2277,7 +2289,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           cellsSeen.add(cell.key);
           const was = cellsDrawn.get(cell.key);
           if (viewStands && was && was.version === cell.version && was.still && replays(was)) {
-            for (const s of was.kept) { s.keptSeen = suspensionFrame; s.seen = suspensionFrame; }
+            for (const s of was.kept) { seeKept(s); s.seen = suspensionFrame; }
             if (was.wheeled) carsWheeled = true;
             continue;
           }
@@ -2298,7 +2310,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
                 far += Math.max(g * a, g * b);
               }
               if (field.valid && near > 0 && 1 / far * (1 - FIELD_SLACK) > was.rangeLo && 1 / near * (1 + FIELD_SLACK) < was.rangeHi) {
-                for (const s of was.kept) { s.keptSeen = suspensionFrame; s.seen = suspensionFrame; }
+                for (const s of was.kept) { seeKept(s); s.seen = suspensionFrame; }
                 if (was.wheeled) carsWheeled = true;
                 continue;
               }
@@ -2332,7 +2344,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if (cellsDrawn.size > cellsSeen.size) for (const key of cellsDrawn.keys()) if (!cellsSeen.has(key)) cellsDrawn.delete(key);
       } else for (const list of [world.traffic, world.parked]) for (const vehicle of list) drawVehicle(vehicle);
       // The parked cars kept and not drawn this frame (gone, out of view, under two pixels, moving off): let go before the frame is drawn.
-      for (let i = keptList.length - 1; i >= 0; i--) { const s = keptList[i]!; if (s.keptSeen !== suspensionFrame) dropKept(s); }
+      // DO NOT walk every kept car to find none missing: only when fewer were seen than are kept.
+      if (keptSeenNow < keptList.length) for (let i = keptList.length - 1; i >= 0; i--) { const s = keptList[i]!; if (s.keptSeen !== suspensionFrame) dropKept(s); }
       // The two-wheelers cast only while one is drawn whole; the shared tyres also while a car is drawn with its wheels.
       castersChanged = thinWheels.mesh.castShadow !== bikesCast;
       for (const t of twoWheelerParts.values()) {
@@ -2353,6 +2366,11 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         const box = PED_IN_BOX ? options.vehicleBox : undefined;
         for (const ped of world.pedViews) {
           if (pedCount >= MAX_PEDS) break;
+          // DO NOT ask a walker off the view's ground whether a ragdoll hides them, nor their pose: it lies between where they were and are (`pedPoseInto`), tested with those two.
+          if (box) {
+            const ax = ped.prev.x, ay = ped.prev.y, bx = ped.x, by = ped.y;
+            if ((ax < bx ? bx : ax) < box.x0 || (ax < bx ? ax : bx) > box.x1 || (ay < by ? by : ay) < box.y0 || (ay < by ? ay : by) > box.y1) continue;
+          }
           if (options.hiddenPed?.(ped.id)) continue;
           pedPoseInto(ped, alpha, POSE);
           const pose = POSE;
@@ -2390,12 +2408,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       }
 
       if (procedural) {
-        const live = procLive;
-        live.clear();
-        for (const ped of world.pedViews) live.add(ped.id);
-        // Those a ragdoll holds (struck, down, or dead) keep their person.
-        for (const id of procHeld) live.add(id);
-        procFinish(options.eye, live);
+        // The walkers of the simulation, gathered once a tick (DO NOT add every walker of the region to a set each frame: they change only when a tick is read).
+        if (procLiveTick !== world.tick || procLiveViews !== world.pedViews.length) {
+          procLiveTick = world.tick; procLiveViews = world.pedViews.length;
+          procLive.clear();
+          for (const ped of world.pedViews) procLive.add(ped.id);
+        }
+        procFinish(options.eye, procLive);
       }
       // The ragdolls draw the procedural people as themselves (`procRagdoll`), the rest as cooked bodies.
       procHeldNow.clear();
