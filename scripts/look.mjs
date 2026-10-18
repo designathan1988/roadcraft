@@ -90,6 +90,12 @@ async function steps(page, report) {
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') report.console.push(`${m.type()}: ${m.text()}`); });
   // With its stack: the message alone does not say which code threw.
   page.on('pageerror', (e) => report.console.push(`pageerror: ${e.message}\n${e.stack ?? ''}`));
+  // A confirm or alert of the game's answered as the player would (`plan.dialogs`: "accept", or dismissed), and said.
+  if (!page.desktop) page.on('dialog', (d) => { console.log(`dialog (${d.type()}): ${d.message()}`); void (plan.dialogs === 'accept' ? d.accept() : d.dismiss()).catch(() => {}); });
+  // A file the game offers (a saved map) kept in the run's folder, its path said.
+  page.on('download', (d) => { const path = join(out, d.suggestedFilename()); void d.saveAs(path).then(() => console.log(`download: ${path}`)); });
+  // The file the next file picker gets ("file" step), as the player picks one.
+  page.on('filechooser', (chooser) => { if (page.nextFile) void chooser.setFiles(page.nextFile); page.nextFile = null; });
   const url = plan.url ?? 'http://127.0.0.1:5300/';
   try {
     // The desktop's window opens its own game (`app://roadcraft/`).
@@ -323,6 +329,7 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
       await page.keyboard.up(step.hold);
     }
     else if (step.type !== undefined) await page.keyboard.type(step.type);
+    else if (step.file) page.nextFile = resolve(step.file.replace('<out>', out));
     else if (step.eval) line.value = await page.evaluate(step.eval);
     else if (step.evalFile) {
       line.value = await page.evaluate(readFileSync(step.evalFile, 'utf8'));

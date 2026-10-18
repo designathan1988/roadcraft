@@ -573,6 +573,15 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     const target = e.target as Node;
     if (!pop.contains(target) && !popAnchor?.contains(target)) closePop();
   }, true);
+  // Escape closes the open menu first, before the game's own Escape (the tool in hand is kept); an open list inside it closes before it (its listener runs first).
+  window.addEventListener('keydown', (e) => {
+    if (!popId || e.key !== 'Escape' || ddOpen) return;
+    const anchor = popAnchor;
+    closePop();
+    anchor?.focus({ preventScroll: true });
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
   const toggle = (id: string, anchor: HTMLElement): void => {
     if (popId === id) return closePop();
     popId = id;
