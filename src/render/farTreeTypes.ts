@@ -181,6 +181,8 @@ export interface FarNode {
   /** The version the level on its way to the GPU stands for now: a newer answer of the same content moves it here, never the upload (`landNear`). */
   nearComingSig: string | null;
   nearFailed: string | null;
+  /** When its near level was last drawn (`FarTree.nearSerial`), 0 never: what a road shown on the page in its place waits for (`roadStandIn.ts`). */
+  nearDrawn: number;
 }
 
 /** The eye the nodes were last chosen for (map x/y, height; a metre's pixels at a metre, or the orthographic view's; how far the view reaches, Infinity in perspective). */

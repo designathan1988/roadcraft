@@ -56,6 +56,7 @@ export class FarTree<P> implements FarTiles {
   private readonly asking = new Set<FarNode>();
   private highest = -Infinity;
   private wanting = 0;
+  private nearPuts = 0;
   /** DO NOT read every tile's records ahead of the workers: the page would hold them all while they wait; `lanes` in flight */
   private readonly fetchQueue: FarNode[] = [];
   private fetching = 0;
@@ -100,14 +101,16 @@ export class FarTree<P> implements FarTiles {
   top(): number { return this.highest; }
 
   /** The nodes drawn now, by key. */
-  shownKeys(): string[] {
-    return [...this.shown].map((n) => n.key);
-  }
+  shownKeys(): string[] { return [...this.shown].map((n) => n.key); }
 
   /** The tiles whose near level is drawn now, by key (`FarKind.near`). */
-  nearKeys(): string[] {
-    return [...this.nearShown].map((n) => n.key);
-  }
+  nearKeys(): string[] { return [...this.nearShown].map((n) => n.key); }
+
+  /** How many near levels were drawn so far: a road shown on the page waits for its tile's next (`nearDrawnSince`). */
+  get nearSerial(): number { return this.nearPuts; }
+
+  /** Whether a tile's near level was drawn after `serial` with nothing newer asked of it nor on its way: what stood in for it can go (`roadStandIn.ts`). */
+  nearDrawnSince(tile: number, serial: number): boolean { const n = this.leaves.get(tile); return !!n && n.nearDrawn > serial && n.nearAsked === null && n.nearComing === null; }
 
   setSource(source: FarTileSource | null, isLoaded: (tileKey: number) => boolean): void {
     const plan = source?.plan ?? null;
@@ -258,18 +261,14 @@ export class FarTree<P> implements FarTiles {
     return this.prefix === null ? null : this.world ? `${this.prefix}${this.world}:` : this.prefix;
   }
 
-  get bakePrefix(): string | null {
-    return this.cacheless ? null : this.keyPrefix;
-  }
+  get bakePrefix(): string | null { return this.cacheless ? null : this.keyPrefix; }
 
   /** The finest level drawn from the plan (Infinity: none, no plan or a kind that bakes none). */
   private get planFrom(): number {
     return this.plan !== null && this.kind.planFrom !== undefined ? this.kind.planFrom : Infinity;
   }
 
-  private get planning(): boolean {
-    return Number.isFinite(this.planFrom);
-  }
+  private get planning(): boolean { return Number.isFinite(this.planFrom); }
 
   /** NOT MADE YET (CLAUDE.md: never a hole): the top-level nodes over the view's reach round the eye made, for the plan's to stand where no tile is (those past it, with no tile, let go; their bakes kept: they never change). */
   private ensure(k: number, i: number, j: number): FarNode {
@@ -283,7 +282,7 @@ export class FarTree<P> implements FarTiles {
       x0: i * side, y0: j * side, x1: (i + 1) * side, y1: (j + 1) * side, top: 0,
       tiles: 0, loaded: 0, version: 0, inDoc: false, sig: null, baked: null, landed: null, mesh: null, error: this.kind.levelError(k),
       asked: null, askedWant: false, cancel: null, blocked: null, waitingFor: null, blockedWant: false, failed: null, queued: false,
-      near: null, nearComing: null, nearComingSig: null, nearLanded: null, nearAsked: null, nearCancel: null, nearFailed: null,
+      near: null, nearComing: null, nearComingSig: null, nearLanded: null, nearAsked: null, nearCancel: null, nearFailed: null, nearDrawn: 0,
     };
     this.nodes.set(key, n);
     if (parent) parent.children[(i - 2 * parent.i) + 2 * (j - 2 * parent.j)] = n;
@@ -339,9 +338,7 @@ export class FarTree<P> implements FarTiles {
   }
 
   /** The tiles under a node the page's document draws (none, for a kind that draws them too). */
-  private loadedOf(n: FarNode): number {
-    return this.kind.near?.drawsLoaded ? 0 : n.loaded;
-  }
+  private loadedOf(n: FarNode): number { return this.kind.near?.drawsLoaded ? 0 : n.loaded; }
 
   /** A node wholly past what the view reaches: nothing of it drawn nor asked. */
   private outOfReach(n: FarNode): boolean {
@@ -497,6 +494,8 @@ export class FarTree<P> implements FarTiles {
   }
 
   /** A tile's near level come (null: no road near): its new blocks sent to the GPU, and drawn in place of the one before only once they are there (DO NOT upload a tile's roads in a frame: tens of megabytes); an answer built on the one drawn (`base`) keeps that one's other blocks. */
+  private nearDrew(n: FarNode, sig: string): void { this.cuts.drawn(tileKey(n.i, n.j), sig); n.nearDrawn = ++this.nearPuts; }
+
   private landNear(n: FarNode, payload: P | null, sig: string, base: FarNearLanded | null): void {
     // DO NOT throw away what is drawn or on its way to the GPU for an answer of the same content (a neighbour written, the same roads at another version): the upload restarted at every write, and the street view kept the far level (conferencia 09-street, 2026-10-17; found by the near-tiles session).
     const same = payload !== null ? this.kind.near!.contentOf?.(payload) : undefined;
@@ -508,7 +507,7 @@ export class FarTree<P> implements FarTiles {
       }
       if (!coming && n.near && n.near.bake === same.bake && n.near.variant === same.variant) {
         n.nearLanded = sig;
-        this.cuts.drawn(tileKey(n.i, n.j), sig);
+        this.nearDrew(n, sig);
         if (n.nearAsked === sig) n.nearAsked = null;
         this.again();
         return;
@@ -518,7 +517,7 @@ export class FarTree<P> implements FarTiles {
     if (payload === null) {
       this.dropNear(n);
       n.nearLanded = sig;
-      this.cuts.drawn(tileKey(n.i, n.j), sig);
+      this.nearDrew(n, sig);
       if (n.nearAsked === sig) n.nearAsked = null;
       return;
     }
@@ -540,7 +539,7 @@ export class FarTree<P> implements FarTiles {
       }
       n.near = landed;
       n.nearLanded = done;
-      this.cuts.drawn(tileKey(n.i, n.j), done);
+      this.nearDrew(n, done);
       if (n.nearAsked === done) n.nearAsked = null;
       this.nearResident.add(n);
       this.again();

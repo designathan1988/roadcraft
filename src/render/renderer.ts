@@ -150,7 +150,8 @@ const viewOf = (zoom: number): CityView => (zoom >= STREET_ZOOM ? 'street' : zoo
 /** Frames in a window of the GPU's time read by the governor (`buildings/frameBudget.ts` `TimeGovernor`). */
 const GOVERN_FRAMES = 30;
 
-import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
+import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer, playerCause } from './buildings/layer';
+import { RoadStandIn } from './roadStandIn';
 import { TimeGovernor } from './buildings/frameBudget';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
@@ -658,6 +659,12 @@ export function createSceneRenderer(
     ready: () => buildingsGrounded,
   });
   world.add(farRoads.group);
+  /** THE ROADS THE PLAYER JUST BUILT, ON THE PAGE IN THE NEXT FRAME (`roadStandIn.ts`), each tile's until its near roads are drawn (`FarTree.nearDrawnSince`): DO NOT leave a built road invisible while its tile's bake waits for a worker (over 2 s, the player's measure, 2026-10-18). */
+  const roadStandIn = new RoadStandIn();
+  world.add(roadStandIn.group);
+  const standInRead = new JournalCursor(['roads'], true);
+  /** Each tile standing in, and `farRoads.nearSerial` when it was shown: let go once a near level drawn after it. */
+  const standInSince = new Map<number, number>();
   /** The streamed world's near products per tile, chosen by the view and baked in workers from the store (`nearTiles.ts`): the poles and wires (`poleTiles.ts`). */
   const nearTiles = new NearTiles();
   nearTiles.add(poleProduct(sceneryKit, world));
@@ -1293,6 +1300,24 @@ export function createSceneRenderer(
     if (step.done) { roadsWalk = walk = { net, at: net.ribbons.values() }; step = walk.at.next(); }
     return step.done ? null : step.value;
   };
+  /** The roads the player's edits since the last frame laid, shown (`roadStandIn`); each tile let go once its near roads are drawn after it, or left the region. */
+  const standInRoads = (net: Network): void => {
+    const changed = standInRead.read(net.doc.changes);
+    const laid: SegmentId[] = [];
+    for (const e of changed ?? []) if (playerCause(e.cause)) for (const id of e.segments ?? []) if (net.doc.segment(id as SegmentId)) laid.push(id as SegmentId);
+    if (laid.length) {
+      roadStandIn.show(net, { onSegment: (segment, x, y) => deckHeight(x, y, segment), at: (x, y) => deckHeight(x, y, undefined) }, laid);
+      for (const tile of roadStandIn.tiles) standInSince.set(tile, farRoads.nearSerial);
+    }
+    for (const tile of roadStandIn.tiles) {
+      const { i, j } = tileOfKey(tile);
+      const since = standInSince.get(tile) ?? 0;
+      // Let go too once out of what the far trees draw (a road built and left: no near level asked of it again).
+      const reach = farRoads.reachNow, x = (i + 0.5) * TILE - rig.target.x, y = (j + 0.5) * TILE + rig.target.z;
+      if (farRoads.nearDrawnSince(tile, since) || (reach > 0 && Math.max(Math.abs(x), Math.abs(y)) > reach + TILE)) { roadStandIn.drop(tile); standInSince.delete(tile); }
+    }
+  };
+
   const watchRoads = (net: Network): void => {
     const now = performance.now();
     // Not while the world is being rebuilt: until the job lands the new roads have no picture yet by design
@@ -2896,6 +2921,7 @@ export function createSceneRenderer(
         buildings.frame.budget = VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles;
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
+        if (activeAt !== null && worldNet) standInRoads(worldNet);
         nearTiles.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;
