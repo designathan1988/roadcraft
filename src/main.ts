@@ -1,7 +1,7 @@
 import { measureHitch } from '@core/hitch';
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
-import { jobLanes, jobPort, jobQueueChannel, jobsQuiet, onJobsQuiet, setJobWorkerSetup } from './jobs/jobPool';
+import { jobChannel, jobLanes, jobPort, jobsQuiet, onJobsQuiet, setJobWorkerSetup } from './jobs/jobPool';
 import { WorldStreamer, mapTilesFrom } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
@@ -622,8 +622,8 @@ const achievements = createSteamAchievements();
 primeSurfaceBake(await surfaceBake);
 // The traffic's worker, given the map as it opened and the conflict zones measured in earlier sessions.
 const engineFlags = new URLSearchParams(location.search);
-// Its lots' bays and conflict pairs as queued jobs of this page's pool, on any free worker (DO NOT let the worker open a pool of its own: more isolates in the one V8 cage; nor pin them to a worker, `jobPool.ts` jobQueueChannel). Four asks at once: as many workers as are free share a batch.
-const simLanes = (service: 'bays' | 'conflicts'): MessagePort[] => Array.from({ length: 4 }, () => jobQueueChannel(service));
+// Its lots' bays and conflict pairs on this page's pool, talked to straight (DO NOT let the worker open a pool of its own: more isolates in the one V8 cage).
+const simLanes = (service: 'bays' | 'conflicts'): MessagePort[] => Array.from({ length: jobLanes(4) }, () => jobChannel(service, () => sim.laneLost(service)));
 await sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient') === 'view' ? 'view' : 'edges',
   typeof MessageChannel === 'undefined' || typeof Worker === 'undefined' ? null : { bays: simLanes('bays'), conflicts: simLanes('conflicts') });
 /** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */

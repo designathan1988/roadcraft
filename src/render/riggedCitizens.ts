@@ -254,10 +254,11 @@ export function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial,
     shader.uniforms.bindMatrixInverse = { value: mesh.bindMatrixInverse };
     shader.vertexShader = shader.vertexShader.replace('#include <skinning_pars_vertex>', SKINNING);
     if (look > 0 && material instanceof MeshStandardMaterial) {
-      const tint = new Color(CHILD_SHIRTS[look]!);
+      // The shirt's colour a uniform: DO NOT write it into the shader, a program a colour (one for every child's shirt).
+      shader.uniforms.citizenShirt = { value: new Color(CHILD_SHIRTS[look]!) };
       shader.vertexShader = `attribute float clothingMask; varying float vClothingMask;\n${shader.vertexShader}`
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n vClothingMask = clothingMask;');
-      shader.fragmentShader = `varying float vClothingMask;\n${shader.fragmentShader}`;
+      shader.fragmentShader = `varying float vClothingMask;\nuniform vec3 citizenShirt;\n${shader.fragmentShader}`;
       // The centre island of the Rocketbox child body atlas is the shirt.
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
         #include <map_fragment>
@@ -266,13 +267,13 @@ export function skinMaterial(material: MeshStandardMaterial | MeshDepthMaterial,
         float shirtLow = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
         if (vClothingMask > 0.5 && shirtHigh - shirtLow > 0.09) {
           float shade = clamp(shirtHigh / 0.68, 0.35, 1.2);
-          diffuseColor.rgb = vec3(${tint.r.toFixed(6)}, ${tint.g.toFixed(6)}, ${tint.b.toFixed(6)}) * shade;
+          diffuseColor.rgb = citizenShirt * shade;
         }
         #endif
       `);
     }
   };
-  material.customProgramCacheKey = () => `citizen-skinning-v4-look${look}`;
+  material.customProgramCacheKey = () => `citizen-skinning-v5${look > 0 && material instanceof MeshStandardMaterial ? '-shirt' : ''}`;
 }
 
 export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,

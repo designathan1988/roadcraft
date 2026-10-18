@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process';
 // LOOK AT THE GAME AS THE PLAYER SEES IT, at full resolution, without taking anyone's window
 import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -83,6 +84,8 @@ async function steps(page, report) {
   }
   page.reloads = 0;
   page.on('load', () => { page.reloads++; });
+  // DO NOT wait on a page that is gone: Playwright's awaits hang, and the run looked like a stall (k20g/i/j/m: the renderer's out-of-memory dump, 0xE0000008, seconds after the last picture). Said and ended.
+  page.on('crash', () => { console.log('PAGE CRASHED (the renderer process died: Crashpad in the profile says why)'); report.console.push('PAGE CRASHED'); process.exitCode = 4; void browser.close().finally(() => process.exit(4)); });
   const stillThere = () => { if (page.reloads) throw new Error(RELOADED); };
 
   report.renderer = await page.evaluate(() => {
@@ -139,8 +142,44 @@ async function steps(page, report) {
     requestAnimationFrame(tick);
   }), n);
 
+  // A STEP THAT NEVER ENDS (the page stuck or gone): after LOOK_STALL_MS (60 s by default) with no step ended, 5 s of the page's CPU profile taken on a session of its own, its heap, and the run ended - the stall is the defect, never waited out.
+  const stall = { at: Date.now(), i: -1, step: '' };
+  const stallMs = Number(process.env.LOOK_STALL_MS ?? 60_000);
+  const watchdog = setInterval(async () => {
+    if (Date.now() - stall.at < stallMs) return;
+    clearInterval(watchdog);
+    console.log(`STALLED at step ${stall.i} (${stall.step}) for ${Math.round((Date.now() - stall.at) / 1000)} s`);
+    // Which of Chrome's processes is working (the page's renderer, the GPU's): CPU seconds of each, twice 5 s apart (Windows), every call bounded.
+    const cpu = () => new Promise((done) => execFile('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | Where-Object { $_.CommandLine -match 'headless' } | ForEach-Object { $t = if ($_.CommandLine -match '--type=([a-z-]+)') { $matches[1] } else { 'browser' }; '{0} {1} {2:N1}' -f $_.ProcessId, $t, (((Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue).TotalProcessorTime.TotalSeconds)) }"], { timeout: 20_000 }, (_, text) => done(String(text ?? '').trim())));
+    try { console.log(`  chrome CPU s (pid type cpu):
+${(await cpu()).replace(/^/gm, '    ')}`); await new Promise((r) => setTimeout(r, 5000)); console.log(`  5 s later:
+${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no CPU: ${String(error)}`); }
+    const bounded = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`no answer in ${ms} ms`)), ms))]);
+    // A profile already running when the page stopped (a "profile" step before the stall): its samples up to the stall, the stall's own frames among them.
+    if (profiling && cdp) {
+      try { const { profile } = await bounded(cdp.send('Profiler.stop'), 30_000); writeFileSync(join(out, `stalled-${profiling.name}.cpuprofile`), JSON.stringify(profile)); console.log(`  running profile kept: stalled-${profiling.name}.cpuprofile`); profiling = null; }
+      catch (error) { console.log(`  running profile not stopped: ${String(error)}`); }
+    }
+    try {
+      const probe = await bounded(page.context().newCDPSession(page), 10_000);
+      const heap = await Promise.race([probe.send('Runtime.getHeapUsage'), new Promise((r) => setTimeout(() => r(null), 5000))]);
+      console.log(`  page heap: ${heap ? `${Math.round(heap.usedSize / 1e6)} MB used of ${Math.round(heap.totalSize / 1e6)} MB` : 'no answer'}`);
+      await bounded(probe.send('Profiler.enable'), 10_000);
+      await bounded(probe.send('Profiler.setSamplingInterval', { interval: 1000 }), 10_000);
+      await bounded(probe.send('Profiler.start'), 10_000);
+      await new Promise((r) => setTimeout(r, 5000));
+      const { profile } = await Promise.race([probe.send('Profiler.stop'), new Promise((_, no) => setTimeout(() => no(new Error('no profile in 30 s')), 30_000))]);
+      writeFileSync(join(out, 'stalled.cpuprofile'), JSON.stringify(profile));
+      console.log(`  profile: ${join(out, 'stalled.cpuprofile')}`);
+    } catch (error) { console.log(`  no profile: ${String(error)}`); }
+    // DO NOT leave the headless Chrome behind (CLAUDE.md): closed, or its processes killed.
+    try { await Promise.race([browser.close(), new Promise((r) => setTimeout(r, 15_000))]); } catch { /* closed by the kill below */ }
+    execFile('powershell', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"name='chrome.exe'\" | Where-Object { $_.CommandLine -match 'headless' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"], () => process.exit(3));
+  }, 5000);
+  watchdog.unref?.();
   for (const [i, step] of plan.steps.entries()) {
     const line = { i, step: Object.keys(step)[0] };
+    stall.at = Date.now(); stall.i = i; stall.step = JSON.stringify(step).slice(0, 80);
     if (process.env.LOOK_STEPS) console.log(`step ${i}: ${JSON.stringify(step).slice(0, 120)}`);
     if (step.lookAt) await page.evaluate(([x, y, zoom]) => window.__roadcraft.lookAt(x, y, zoom), step.lookAt);
     // An exact view: centre, zoom, bearing and tilt in degrees.
@@ -296,6 +335,7 @@ async function steps(page, report) {
     stillThere();
     report.steps.push(line);
   }
+  clearInterval(watchdog);
 }
 
 /** In the page: every animation frame's time kept from now (the game draws on demand; a late frame is a late callback). */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ActiveTiles } from '@render/activeTiles';
-import { createLotOverlay, frameHalfFor, type LotOverlayGroup, type LotOverlayInput } from '@render/lotOverlay';
+import { MeshStandardMaterial } from 'three';
+import { applyLotOverlay, createLotOverlay, frameHalfFor, type LotOverlayGroup, type LotOverlayInput } from '@render/lotOverlay';
 import { PLATE_SIZE } from '@world/bounds';
 import { ChangeJournal } from '@world/changes';
 import { TILE, tileKey, tileKeyAt, tileRect } from '@world/tiles';
@@ -236,4 +237,22 @@ describe('lot overlay', () => {
     expect(frameHalfFor(0, 0, -100, -100, PLATE_SIZE * 1.5 + 1, 100)).toBe(PLATE_SIZE * 2.5);
     expect(frameHalfFor(PLATE_SIZE * 10, 0, PLATE_SIZE * 6, 0, PLATE_SIZE * 10, 0)).toBe(PLATE_SIZE * 4.5);
   });
+
+  it("makes one program of materials whose code is the same, whatever they are named: the key is the code's shape (the varying, the walls), not the material", () => {
+    const shaded = (options?: Parameters<typeof applyLotOverlay>[1]): { key: string; vertex: string; fragment: string } => {
+      const material = new MeshStandardMaterial();
+      applyLotOverlay(material, options);
+      const shader = { uniforms: {}, vertexShader: ['#include <common>', '#include <worldpos_vertex>'].join('\n'), fragmentShader: ['#include <common>', '#include <opaque_fragment>'].join('\n') };
+      material.onBeforeCompile(shader as never, undefined as never);
+      return { key: material.customProgramCacheKey(), vertex: shader.vertexShader, fragment: shader.fragmentShader };
+    };
+    // The street's surfaces (the asphalt and the raised one, the kerb and the deck): one program each pair, as their code is one.
+    expect(shaded()).toEqual(shaded());
+    expect(shaded({ building: true })).toEqual(shaded({ building: true }));
+    // Another shape of code, another program.
+    const keys = new Set([shaded().key, shaded({ building: true }).key, shaded({ world: 'vTerrainAtlas' }).key]);
+    expect(keys.size).toBe(3);
+    expect(shaded({ building: true }).fragment).not.toBe(shaded().fragment);
+  });
 });
+

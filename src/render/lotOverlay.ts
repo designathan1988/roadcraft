@@ -206,7 +206,7 @@ const LOT_PARS = /* glsl */ `
 `;
 
 /** Makes a material colour the lots into itself */
-export function applyLotOverlay(material: Material, key: string, options: { readonly world?: string; readonly building?: boolean } = {}): void {
+export function applyLotOverlay(material: Material, options: { readonly world?: string; readonly building?: boolean } = {}): void {
   const { world, building = false } = options;
   const previous = material.onBeforeCompile.bind(material);
   const previousKey = material.customProgramCacheKey.bind(material);
@@ -248,7 +248,8 @@ export function applyLotOverlay(material: Material, key: string, options: { read
             : 'gl_FragColor.rgb = lotOver(gl_FragColor.rgb, lotW, lotDx, lotDy, 0.0, false);'}
         }`);
   };
-  material.customProgramCacheKey = () => `${previousKey()}-lots-${key}`;
+  // Keyed by what the code put in depends on (the varying read, the walls left out), not by the material's name: DO NOT make one program a material of the same shader (the asphalt and the raised asphalt, the kerb and the deck were two each; three r186 runs onBeforeCompile for each material before its program is looked up, so each keeps its own uniforms).
+  material.customProgramCacheKey = () => `${previousKey()}-lots-${world ?? 'own'}${building ? '-walls' : ''}`;
 }
 
 /** What one shape of a group is, its key: the same key, the same shape; `band` 0 polygons, 1 lines, 2 dots. */

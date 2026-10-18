@@ -316,7 +316,8 @@ export function createPlantImpostors(models: readonly ImpostorModel[], wind: Win
       .replace('#include <map_fragment>', COLOUR_MAP)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>\n${COLOUR_NORMAL}`);
   };
-  material.customProgramCacheKey = () => `plant-impostor-${key}`;
+  // One program for every set of pictures (the scenery's, the nature's): the same code, their atlas and blocks uniforms. DO NOT key it by the set.
+  material.customProgramCacheKey = () => 'plant-impostor';
 
   const depth = windDepthMaterial(wind, `${key}-impostor`);
   const windDepth = depth.onBeforeCompile.bind(depth);
@@ -330,7 +331,7 @@ export function createPlantImpostors(models: readonly ImpostorModel[], wind: Win
       .replace('#include <common>', `#include <common>\n${FRAGMENT_PARS}\nuniform sampler2D uShadow;`)
       .replace('#include <alphatest_fragment>', `${SHADOW_CUT}\n#include <alphatest_fragment>`);
   };
-  depth.customProgramCacheKey = () => `plant-impostor-depth-${key}`;
+  depth.customProgramCacheKey = () => 'plant-impostor-depth';
 
   const quads = pictures.map((picture, k) => {
     const g = new BufferGeometry();

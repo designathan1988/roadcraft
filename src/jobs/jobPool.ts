@@ -219,19 +219,6 @@ class JobSystem {
   tilesWaiting = false;
 }
 const system = new JobSystem();
-// TEMPORARY, DEV only (ROADCRAFT, measuring the queue after the curtain): the jobs waiting by service and band (priority / 1e6, rounded), and what each worker runs.
-if (import.meta.env.DEV && typeof window !== 'undefined') {
-  (window as unknown as { __jobCensus: () => unknown }).__jobCensus = () => {
-    const waiting: Record<string, number> = {};
-    for (const job of (system.queue as unknown as { heap: Queued[] }).heap) {
-      if (job.state !== 'waiting') continue;
-      const key = `${job.spec.service}@${Math.round(job.spec.priority / 1e6)}`;
-      waiting[key] = (waiting[key] ?? 0) + 1;
-    }
-    const running = system.workers.map((h) => (h.job ? `${h.job.spec.service}@${Math.round(h.job.spec.priority / 1e6)}` : h.laneWork > 0 ? `lanes:${[...h.services.keys()].join('+')}` : 'idle'));
-    return { waiting, running };
-  };
-}
 
 /** Whether tiles of the map wait for the long-running side's lanes (`tileGenerator.ts` pump): while they do, a long worker between two tiles takes no queued job of the cells' bands and after (priority 0 on: a cell, a facade, a mass, a near level), only those ahead of them (a far level, an edit; `cellPool.ts` FAR_TIER, EDIT_TIER), short and what the opening's view waits for - kept off them all, the map's edges stood empty after the curtain (conf55, 2026-10-17). DO NOT give it a cell's job: one of seconds held the next tile behind it - the opening's tile workers ran 103 s of cells' jobs (wprof4, 2026-10-17), whenever the queue's worker had a lane's message in flight. Told off, the jobs waiting go out to them. */
 export function setTilesWaiting(on: boolean): void {
@@ -482,37 +469,6 @@ export class JobPort {
 /** A port of the pool for one of `service`'s lanes (`jobLanes` lanes at most), typed as the `Worker` its pool was written for. */
 export function jobPort(service: JobService): Worker {
   return new JobPort(service) as unknown as Worker;
-}
-
-/** What another thread sends over a queue channel (`jobQueueChannel`, `queuePortWorker`): its ask and the buffers handed over with it. */
-interface QueuedAsk { readonly ask: { readonly id: number }; readonly transfer: Transferable[] }
-
-/** THE QUEUE OF THIS PAGE'S POOL HANDED TO ANOTHER THREAD (the simulation's worker): each ask sent on the channel runs as a queued job (`submitJob`) on any free worker, nearest work first, and its answer comes back on the channel.
- *  DO NOT pin another thread's work to a worker (`jobChannel`): with four threads the pool has one worker for every other kind, and a batch of the traffic's conflict pairs or bays held the view's cells and near roads behind it for seconds (the weak machine's plan, 2026-10-18). `quiet` asks the service for its answer alone (no beat: one message is a queued job's answer). */
-export function jobQueueChannel(service: JobService): MessagePort {
-  const channel = new MessageChannel();
-  const here = channel.port1;
-  here.onmessage = (event: MessageEvent<QueuedAsk>) => {
-    const { ask, transfer } = event.data;
-    submitJob({
-      service, key: null, priority: 0,
-      write: () => ({ data: { ...ask, quiet: true }, transfer }),
-      done: (answer) => here.postMessage(answer),
-      failed: (message) => here.postMessage({ id: ask.id, error: message }),
-    });
-  };
-  return channel.port2;
-}
-
-/** A queue channel's port (`jobQueueChannel`) as the `Worker` a pool was written for: each message an ask, its buffers handed over with it. */
-export function queuePortWorker(port: MessagePort): Worker {
-  return {
-    postMessage: (message: unknown, transfer?: Transferable[]) => port.postMessage({ ask: message as QueuedAsk['ask'], transfer: transfer ?? [] } satisfies QueuedAsk, transfer ?? []),
-    set onmessage(handler: ((event: MessageEvent) => void) | null) { port.onmessage = handler; },
-    set onmessageerror(handler: ((event: MessageEvent) => void) | null) { port.onmessageerror = handler; },
-    onerror: null,
-    terminate: () => port.close(),
-  } as unknown as Worker;
 }
 
 /** A LANE OF THIS PAGE'S POOL HANDED TO ANOTHER THREAD (the simulation's worker): a channel, one end served by a worker of the pool (`job.worker.ts` adopt), the other returned to be transferred; that thread and the worker talk straight. DO NOT let another thread open a pool of its own: its workers were more isolates in the one V8 cage every worker of the page shares. `lost`: told if the serving worker fails (a port says nothing of it). */

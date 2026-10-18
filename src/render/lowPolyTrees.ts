@@ -549,7 +549,7 @@ export function foliageAtlas(): CanvasTexture | null {
 }
 
 /** Turns a material's foliage cards to face the camera - or the light, in a shadow pass */
-function billboardCards(material: Material, key: string): void {
+function billboardCards(material: Material): void {
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
     previous(shader, renderer);
@@ -566,11 +566,11 @@ function billboardCards(material: Material, key: string): void {
         }`);
   };
   const cacheKey = material.customProgramCacheKey.bind(material);
-  material.customProgramCacheKey = () => `${cacheKey()}-billboard-${key}`;
+  material.customProgramCacheKey = () => `${cacheKey()}-billboard`;
 }
 
 /** Keeps the leaves as covered at a distance as up close */
-function keepLeafCoverage(material: Material, key: string): void {
+function keepLeafCoverage(material: Material): void {
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
     previous(shader, renderer);
@@ -584,11 +584,11 @@ function keepLeafCoverage(material: Material, key: string): void {
       #endif`);
   };
   const cacheKey = material.customProgramCacheKey.bind(material);
-  material.customProgramCacheKey = () => `${cacheKey()}-coverage-${key}`;
+  material.customProgramCacheKey = () => `${cacheKey()}-coverage`;
 }
 
 /** The near clump on cards close to the eye (`NEAR_LEAVES`) */
-function nearLeaves(material: Material, key: string): void {
+function nearLeaves(material: Material): void {
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
     previous(shader, renderer);
@@ -614,10 +614,10 @@ function nearLeaves(material: Material, key: string): void {
         #endif`);
   };
   const cacheKey = material.customProgramCacheKey.bind(material);
-  material.customProgramCacheKey = () => `${cacheKey()}-near-${key}`;
+  material.customProgramCacheKey = () => `${cacheKey()}-near`;
 }
 
-/** The foliage cards' material (leaf-cluster texture, alpha to coverage, billboards, the wind) and the depth material their shadows would use. */
+/** The foliage cards' material (leaf-cluster texture, alpha to coverage, billboards, the wind) and the depth material their shadows would use: the same programs for every kit (`key` names the wind's user only), the patches being the same code. */
 export function leafCardMaterials(wind: WindResponse, key: string): { material: MeshStandardMaterial; depth: MeshDepthMaterial } {
   const map = foliageAtlas();
   const material = new MeshStandardMaterial({
@@ -625,11 +625,11 @@ export function leafCardMaterials(wind: WindResponse, key: string): { material: 
     roughness: 0.8, metalness: 0, envMapIntensity: 0.3,
   });
   applyWind(material, wind, `${key}-cards`);
-  billboardCards(material, key);
-  keepLeafCoverage(material, key);
-  nearLeaves(material, key);
+  billboardCards(material);
+  keepLeafCoverage(material);
+  nearLeaves(material);
   const depth = windDepthMaterial(wind, `${key}-cards`);
-  billboardCards(depth, `${key}-depth`);
+  billboardCards(depth);
   depth.map = map;
   depth.alphaTest = 0.5;
   return { material, depth };
