@@ -2082,7 +2082,8 @@ function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
   open.streamer.close();
   open.streamer.aheadQuiet = null;
   streamed = null;
-  void written.finally(() => open.release());
+  // The world's lock let go once every write settles (written or failed): the same world opened again waits for them (`worldLock.ts`, its last hold).
+  void written.then((ok) => { if (!ok) console.error('[world] some changed tiles were not confirmed written after the world was closed'); }).finally(() => open.release());
   open.generator.dispose();
   scene.farBuildings.setSource(null, () => false);
   scene.farRoads.setSource(null, () => false);
@@ -2091,17 +2092,14 @@ function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
   sim.storeBehind = () => false;
   scene.holdOpening(null);
   try { window.localStorage.removeItem(STREAMED_MARK); } catch { /* storage blocked */ }
-  // Every write settles, written or failed (`WorldStreamer.flush`): DO NOT race it with a timer.
-  return written.then((ok) => {
-    if (!ok) console.error('[world] some changed tiles were not confirmed written before the map was replaced');
-    doc.leaveTiles();
-    const out = replace();
-    // The region's records are no map of their own: no undo back into them; the next map is saved as a map.
-    history.clear();
-    persistence.paused = false;
-    updateHistoryButtons();
-    return out;
-  });
+  // DO NOT wait for the writes to replace the map: they were posted from the records as they stood (`flush`), and settle on their own; the map waited ~22 s behind the game's own last changes of a world the player never edited (2026-10-18).
+  doc.leaveTiles();
+  const out = replace();
+  // The region's records are no map of their own: no undo back into them; the next map is saved as a map.
+  history.clear();
+  persistence.paused = false;
+  updateHistoryButtons();
+  return out;
 }
 
 function newMap(): void {
