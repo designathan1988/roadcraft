@@ -12,7 +12,7 @@ import { cancelWarm, warmFull, warmLooseAhead } from './uploads';
 import { nearSig } from './nearRoadTiles';
 import { geometryCost, gpuLedger } from './gpuLedger';
 import { PageCuts } from './farTreeCuts';
-import { STANDING_LEVEL, drawable, nearOutsideKey, nearTilesOf, plantRoots, refinable, standingNodes } from './farTreePlan';
+import { STANDING_LEVEL, drawable, nearOutsideKey, nearTilesOf, plantRoots, refinable, standingNodes, standsInPlan } from './farTreePlan';
 import { type Eye, type FarKind, type FarNearLanded, type FarNode, type FarTileSource, type FarTiles, type FarTreeJob, type FarTreeReply, type FarTreeRun, sameView } from './farTreeTypes';
 export type { FarKind, FarLanded, FarNear, FarNearLanded, FarTileSource, FarTiles, FarTreeJob, FarTreeRun } from './farTreeTypes';
 export { sameView } from './farTreeTypes';
@@ -593,7 +593,7 @@ export class FarTree<P> implements FarTiles {
 
   /** A node asked of the workers at its version: its mesh (`want`), or its bake only (for a parent); once. */
   private ask(n: FarNode, want: boolean): void {
-    const sig = this.sigOf(n);
+    const sig = want && !this.cacheless && standsInPlan(n, this.planFrom) ? PLAN_SIG : this.sigOf(n);
     if (want ? n.landed === sig : n.baked === sig) return;
     if (n.failed === sig) return;
     if (n.asked === sig && (n.askedWant || !want)) return;
@@ -645,9 +645,9 @@ export class FarTree<P> implements FarTiles {
     switch (reply.kind) {
       case 'far':
         n.asked = null;
-        n.baked = sig;
+        // A made node's plan stands in until its tiles' bake comes (`standsInPlan`): drawn, never taken for its bake.
+        if (sig !== PLAN_SIG || n.tiles === 0) { n.baked = sig; this.childBaked(n); }
         if (n.askedWant) this.land(n, reply.payload, sig);
-        this.childBaked(n);
         break;
       case 'farRecords':
         if (!n.queued) { n.queued = true; this.fetchQueue.push(n); }

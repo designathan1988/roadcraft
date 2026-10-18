@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { FarLevels, type FarRun } from '@render/buildings/farLevels';
 import { planBoxes } from '@render/buildings/farPlan';
 import { AGGREGATE, type FarCache, PLAN_SIG, emptyRecords, farKey, farNode, nodeSide, runFarJob } from '@render/buildings/farTiles';
+import { planKey } from '@render/buildings/farGrid';
 import { createBuildingKit } from '@render/buildings/kit';
 import { BOX_FLOATS, emitBoxes } from '@render/buildings/massing';
 import { drawsSignature } from '@render/buildings/signature';
@@ -132,7 +133,9 @@ describe('the far levels where no tile was made', () => {
     const node = farKey(2, 0, 0);
     await until(look, () => far.waiting === 0);
     expect(far.shownKeys()).toContain(node);
-    expect(entryOf(cache, node)?.sig).toBe(PLAN_SIG);
+    // The plan's bake kept apart from its tiles' (`planKey`), none of theirs yet.
+    expect(entryOf(cache, planKey(node))?.sig).toBe(PLAN_SIG);
+    expect(entryOf(cache, node)).toBeUndefined();
 
     // Two tiles of it made: the node stays (its plates not whole), their buildings in it, the plan's for the rest.
     const placed = [building(0, 0.5 * TILE, 0.5 * TILE), building(1, 1.5 * TILE, 0.5 * TILE)];
@@ -141,7 +144,8 @@ describe('the far levels where no tile was made', () => {
       tiles.set(key, { ...emptyRecords(key, 1), buildings: [JSON.parse(JSON.stringify(b)) as unknown] });
       far.stored(key, 1);
     });
-    await until(look, () => far.waiting === 0 && entryOf(cache, node)?.sig !== PLAN_SIG);
+    await until(look, () => far.waiting === 0 && entryOf(cache, node) !== undefined);
+    expect(entryOf(cache, node)?.sig).not.toBe(PLAN_SIG);
     expect(far.shownKeys()).toContain(node);
     // The boxes kept apart from the mesh (`farGrid.ts` NODE_BOX_KEY, R20).
     const mixed = boxesOf(entryOf(cache, `${node}#boxes`)!.boxes);
@@ -205,6 +209,24 @@ describe('the far levels where no tile was made', () => {
     at(4_000, 4_000)();
     // The 16 km node over the other corner stands for it, baked before the jump.
     expect(far.shownKeys()).toContain(farKey(4, 0, 0));
+    far.dispose();
+    kit.dispose();
+  }, 10_000);
+
+  it('stand a node with a tile made in its plan while its tiles\' bake has not come (never bare)', async () => {
+    const kit = createBuildingKit();
+    const cache = memoryCache();
+    const run = runner(cache);
+    // The workers bake the plan, never the tiles' bakes (they wait behind other work).
+    const far = new FarLevels(kit, (job, done) => (job.sig === PLAN_SIG ? run(job, done) : () => undefined), 'test:');
+    const key = tileKey(0, 0);
+    far.setSource({ records: () => Promise.resolve({ ...emptyRecords(key, 1), buildings: [JSON.parse(JSON.stringify(building(0, 0.5 * TILE, 0.5 * TILE))) as unknown] }), plan: OPTIONS }, () => false);
+    // A tile of node f2:0,0 made before the tree ever saw the node.
+    far.stored(key, 1);
+    const look = (): void => far.choose(0.5 * nodeSide(2), 0.5 * nodeSide(2), m(2_000), 1000, null, m(6_000));
+    const node = farKey(2, 0, 0);
+    await until(look, () => far.shownKeys().includes(node));
+    expect(entryOf(cache, planKey(node))?.sig).toBe(PLAN_SIG);
     far.dispose();
     kit.dispose();
   }, 10_000);

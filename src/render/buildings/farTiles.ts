@@ -10,7 +10,7 @@ import { derivedCacheOpen, keepDerivedDurably, readDerived } from '../derivedCac
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { BOX_INSTANCE, type BoxMass, type CellMass, type FarMass, MASS_FACADE, MASS_GRID, type MassSquare, cellMass, farMassBuffers, indexArray, massOnGrid, massPlaces, shellBounds } from './cellArrays';
 import { TILE_CELLS } from './levelKeys';
-import { AGGREGATE, PLAN_SIG, LEVEL_MASS_KEY as MASS_KEY, NODE_BOX_KEY as BOX_KEY, TILE_PLATE_KEY as PLATE_KEY, farKey, farNode, nodeSide, readStored } from './farGrid';
+import { AGGREGATE, PLAN_SIG, LEVEL_MASS_KEY as MASS_KEY, NODE_BOX_KEY as BOX_KEY, TILE_PLATE_KEY as PLATE_KEY, farKey, farNode, nodeSide, planKey, readStored } from './farGrid';
 import { planBoxes } from './farPlan';
 import { BOX_FLOATS, type MassDetail, type MassingChunk, PLATE_DETAIL, TILE_DETAIL, emitBoxes, emitMassing, emitMassingLevels, massFloor } from './massing';
 
@@ -339,10 +339,12 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
   if (!keeps) return { kind: 'farNoCache', node, sig };
   // A node no tile is made under yet: the plan's boxes, baked once per world (it never changes); its mesh at the box levels.
   if (sig === PLAN_SIG) {
+    const known = job.want ? await kept<MassEntry>(planKey(node), sig) : undefined;
+    if (known) return { kind: 'far', node, sig, mass: known.mass };
     const boxes = planBoxesOf(job, k, i, j);
     const mass = k >= 2 ? boxMass(boxes, levelDrop(k)) : null;
-    await cache.put(`${prefix}${node}`, { sig, mass });
-    await cache.put(`${prefix}${node}${BOX_KEY}`, { sig, boxes });
+    await cache.put(`${prefix}${planKey(node)}`, { sig, mass });
+    await cache.put(`${prefix}${planKey(node)}${BOX_KEY}`, { sig, boxes });
     return { kind: 'far', node, sig, mass: job.want ? mass : null };
   }
   // DO NOT read its four tiles' entries whole whenever a level-1 node is drawn: its tiles' plate masses are kept merged under a key of their own (`MASS_KEY`), apart from the boxes its parent reads.
@@ -354,11 +356,11 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
   // Its children's boxes unless its own are kept; a plate's node drawn, its tiles' plate masses.
   // MIXING: a quarter no tile is made under yet is the plan's (`PLAN_SIG`, baked here); the others' bakes are read.
   const planned = async (key: string): Promise<BoxEntry> => {
-    const known = await kept<BoxEntry>(`${key}${BOX_KEY}`, PLAN_SIG);
+    const known = await kept<BoxEntry>(`${planKey(key)}${BOX_KEY}`, PLAN_SIG);
     if (known) return known;
     const at = farNode(key);
     const made = { sig: PLAN_SIG, boxes: planBoxesOf(job, at.k, at.i, at.j) };
-    if (at.k > 0) await cache.put(`${prefix}${key}${BOX_KEY}`, made);
+    if (at.k > 0) await cache.put(`${prefix}${planKey(key)}${BOX_KEY}`, made);
     return made;
   };
   const got = boxed ? children.map(() => null) : await Promise.all(children.map((c) => (!c ? Promise.resolve(null) : c.sig === PLAN_SIG ? planned(c.key) : kept<BoxEntry>(`${c.key}${BOX_KEY}`, c.sig))));

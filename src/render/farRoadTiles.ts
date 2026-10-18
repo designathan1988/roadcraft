@@ -12,7 +12,7 @@ import type { TileRecords } from '@world/doc';
 import { METERS_PER_UNIT, m } from '@world/units';
 import { derivedCacheOpen, keepDerivedDurably, readDerived } from './derivedCache';
 import { surfaceShape } from './mesh/tileShape';
-import { PLAN_SIG, farKey, farNode, readStored } from './buildings/farGrid';
+import { PLAN_SIG, farKey, farNode, planKey, readStored } from './buildings/farGrid';
 import { medianOf } from './roadSurfaceRings';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR, FOOTWAY_TINT } from './roadTones';
 import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
@@ -564,14 +564,15 @@ export async function runFarRoadJob(job: FarRoadJob, cache: FarRoadCache): Promi
     const entry = await cache.get(`${prefix}${key}`) as RoadEntry | undefined;
     return entry?.sig === version ? entry : undefined;
   };
-  let entry = keeps ? await kept(node, sig) : undefined;
+  // A node's plan kept apart from its tiles' bake (`planKey`).
+  let entry = keeps ? await kept(sig === PLAN_SIG ? planKey(node) : node, sig) : undefined;
   const ground = job.ground ? sharedGroundReaders(job.ground).groundAt : FLAT;
-  // A node no tile is made under yet: the plan's roads, baked once per world.
+  // A node no tile is made under yet, or one standing in its plan until its tiles' bake comes: the plan's roads, baked once per world.
   if (sig === PLAN_SIG) {
     if (!job.plan) return { kind: 'farError', node, sig, message: `far road node ${node}: no tile and no plan` };
     if (!entry) {
       entry = { sig, mesh: bakePlanRoads(job.plan, k, i, j, ground) };
-      if (keeps) await cache.put(`${prefix}${node}`, entry);
+      if (keeps) await cache.put(`${prefix}${planKey(node)}`, entry);
     }
     return { kind: 'far', node, sig, payload: job.want ? entry.mesh : null };
   }
@@ -589,11 +590,11 @@ export async function runFarRoadJob(job: FarRoadJob, cache: FarRoadCache): Promi
     const children = job.children ?? [];
     // MIXING: a quarter no tile is made under yet is the plan's (baked here once per world and kept); the others' bakes are read.
     const planned = async (key: string): Promise<RoadEntry | undefined> => {
-      const known = await kept(key, PLAN_SIG);
+      const known = await kept(planKey(key), PLAN_SIG);
       if (known || !job.plan) return known;
       const at = farNode(key);
       const made: RoadEntry = { sig: PLAN_SIG, mesh: bakePlanRoads(job.plan, at.k, at.i, at.j, ground) };
-      await cache.put(`${prefix}${key}`, made);
+      await cache.put(`${prefix}${planKey(key)}`, made);
       return made;
     };
     const got = await Promise.all(children.map((c) => (!c ? Promise.resolve(null) : c.sig === PLAN_SIG ? planned(c.key) : kept(c.key, c.sig))));

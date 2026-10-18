@@ -64,3 +64,6 @@ export function nearTilesOf(n: FarNode, leaves: ReadonlyMap<number, FarNode>, cu
   }
   return out;
 }
+
+/** NOT COME YET (CLAUDE.md: never a hole): a node with a tile made under it and nothing of it on the GPU, at a level the plan draws, asks its plan first (a quick bake, kept apart, `planKey`) and stands in it until its tiles' bake comes. DO NOT leave it bare while its tiles' bake waits on theirs: the 20 km map showed a band of blocks with avenues only for seconds round the town just made (ring20a, band5, 2026-10-18). */
+export const standsInPlan = (n: FarNode, planFrom: number): boolean => Number.isFinite(planFrom) && n.k >= planFrom && n.tiles > 0 && n.landed === null;

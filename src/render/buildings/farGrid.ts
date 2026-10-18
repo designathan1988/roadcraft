@@ -7,6 +7,8 @@ import { TILE } from '@world/tiles';
 
 /** The version of a node no tile is stored under yet: the generator's plan alone (`farPlan.ts`, `../farRoadTiles.ts` bakePlanRoads), the same for ever in one world - drawn there until its tiles are made (`../farTree.ts`, refinement by replacement), never a hole. */
 export const PLAN_SIG = 'plan';
+/** Where a node's plan bake is kept, apart from its tiles' bake under the node's own key: a node with a tile made stands in its plan until its tiles' bake comes (`farTreePlan.ts` standsInPlan), and DO NOT let either overwrite the other (a reopening would bake its tiles again). */
+export const planKey = (node: string): string => `${node}#plan`;
 
 /** The coarsest level: 2^7 tiles a side (131 km); a bigger world has more roots. */
 export const TOP_LEVEL = 7;
