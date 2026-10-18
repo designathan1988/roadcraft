@@ -13,9 +13,8 @@ interface Sampled { readonly callFrame: { readonly functionName: string; readonl
 
 describe("a dense tile's growth", () => {
   it('allocates no deep copy a try, no cut of a surface inside its lot, no number a pair of parts', async () => {
-    // Warmed on two tiles: an interpreted function boxes every number, the steady state does not.
-    buildStreamTilePair(options, 0, 0);
-    buildStreamTilePair(options, 2, 3);
+    // Warmed on the tile itself: an interpreted function boxes every number, the steady state does not.
+    buildStreamTilePair(options, 4, 4);
     const session = new Session();
     session.connect();
     const post = (method: string, params?: object): Promise<{ profile?: { head: Sampled } }> => new Promise((ok, no) => session.post(method, params ?? {}, (e, r) => (e ? no(e) : ok(r as { profile?: { head: Sampled } }))));
@@ -37,5 +36,5 @@ describe("a dense tile's growth", () => {
     expect(mb('structuredClone')).toBe(0);
     expect(mb('hypot < fits') + mb('hypot < put') + mb('hypot < near')).toBeLessThan(12);
     expect(mb('fitToLot')).toBeLessThan(150);
-  }, 120_000);
+  }, 10_000);
 });
