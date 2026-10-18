@@ -45,6 +45,8 @@ export interface SignalDeps {
   readonly approachSpeed?: (lane: string) => number;
   /** Movements that physically conflict with a connector (swept zones). */
   readonly conflictsOf?: (id: string) => readonly string[];
+  /** Whether `conflictsOf` knows a junction's movements: where it does not (out of the micro window), the plan pairs opposing approaches by their geometry. */
+  readonly conflictsKnown?: (node: NodeId) => boolean;
   /** Pedestrians still inside a crossing that this stage released. */
   readonly pedestriansCrossing: (node: NodeId, crossings: readonly CrossingId[]) => boolean;
   /** Whether any vehicle is waiting on the given groups (and movements). */
@@ -143,7 +145,8 @@ function safePlan(
   deps: SignalDeps,
 ): { plan: SignalPlan; degraded: boolean } {
   try {
-    return { plan: buildSignalPlan(junction, crossings, deps.connectorsOf, deps.conflictsOf, deps.approachSpeed), degraded: false };
+    const conflicts = deps.conflictsKnown && !deps.conflictsKnown(junction.node) ? undefined : deps.conflictsOf;
+    return { plan: buildSignalPlan(junction, crossings, deps.connectorsOf, conflicts, deps.approachSpeed), degraded: false };
   } catch (err) {
     if (!(err instanceof PlanValidationError)) throw err;
     if (isStrict()) throw err;

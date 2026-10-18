@@ -82,14 +82,18 @@ export class ConflictIndex {
   private readonly inWindow = (node: NodeId): boolean => this.kept === null || this.kept.has(node);
 
   /** The window moved: the junctions it left let go (their pairs with them, `unuse`), those it reached built (`update`); false when none changed. */
-  setWindow(graph: LaneletGraph, next: ReadonlySet<NodeId>): boolean {
+  setWindow(graph: LaneletGraph, next: ReadonlySet<NodeId>): ReadonlySet<NodeId> {
     const changed = new Set<NodeId>();
     for (const node of this.ofJunction.keys()) if (!next.has(node)) changed.add(node);
     for (const node of next) if (!this.ofJunction.has(node) && graph.junctions.has(node)) changed.add(node);
     this.kept = next;
-    if (!changed.size) return false;
-    this.update(graph, changed);
-    return true;
+    if (changed.size) this.update(graph, changed);
+    return changed;
+  }
+
+  /** Whether this index holds a junction's pairs: outside the window it holds none, and none of its movements reads as conflicting. */
+  holds(node: NodeId): boolean {
+    return this.ofJunction.has(node);
   }
 
   /** The junctions of `next` this index does not hold yet: what a window moved to must have prepared first (`SimWorld.moveWindowSteps`). */

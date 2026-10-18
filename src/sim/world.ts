@@ -688,7 +688,7 @@ export class SimWorld {
   useMicroWindow(): void {
     this.microWindow = true;
     this.windowTick = -Infinity;
-    if (this.conflicts.setWindow(this.graph, new Set())) this.claims.dropMissing(this.conflicts);
+    this.windowMoved(this.conflicts.setWindow(this.graph, new Set()));
   }
 
   /** The window moved to the one asked for: the pairs of the junctions it reaches measured off the thread first (`measurer`, `conflictPool.ts`), then the swap (`TopologyCatchUp.stepWindow`). */
@@ -699,7 +699,15 @@ export class SimWorld {
     const entering = this.conflicts.entering(this.graph, next);
     // DO NOT build them here unprepared: each new pair measured on the simulation's thread held it for minutes on a large city.
     if (entering.size) yield* this.conflicts.prepare(this.graph, measurer, entering, next);
-    if (this.conflicts.setWindow(this.graph, next)) this.claims.dropMissing(this.conflicts);
+    this.windowMoved(this.conflicts.setWindow(this.graph, next));
+  }
+
+  /** The junctions whose conflict pairs came into the index or left it: claims on pairs gone dropped, and their signals planned again, now from the pairs or from the approaches' geometry (`planInputsOf`). */
+  private windowMoved(changed: ReadonlySet<NodeId>): void {
+    if (!changed.size) return;
+    this.claims.dropMissing(this.conflicts);
+    const signalled = new Set([...changed].filter((node) => this.controllers.has(node)));
+    if (signalled.size) this.syncControllers(signalled);
   }
 
   /** Whether a point lies within the micro window's reach round the view (`keepMicroWindow`'s focus square), grown by `pad`; true with no window or no view (everything is micro then). */
@@ -991,6 +999,7 @@ export class SimWorld {
       // Each stage's yellow is timed for the fastest approach it releases (ITE kinematic equation, `plan.ts` `withAmbers`).
       approachSpeed: (lane: string) => this.graph.lanelets.get(lane)?.speedLimit ?? 0,
       // Conflicts between two CARS.
+      conflictsKnown: (node: NodeId) => this.conflicts.holds(node),
       conflictsOf: (id: string) => this.conflicts.refs(id)
         .filter((ref) => this.conflicts.points[ref.point]?.zone(id, CAR_CLASS, CAR_CLASS))
         .map((ref) => ref.other),
@@ -1135,6 +1144,7 @@ export class SimWorld {
       groups: junction.groups,
       connectors: junction.connectors.map((id) => this.graph.connectors.get(id)),
       signalised: junction.signalised,
+      conflicts: this.conflicts.holds(junction.node),
       crossings: crossings.join(','),
       settings: settingsKey(settings),
     };
@@ -1268,6 +1278,8 @@ interface PlanInputs {
   readonly groups: JunctionTopology['groups'];
   readonly connectors: readonly (Connector | undefined)[];
   readonly signalised: boolean;
+  /** Whether the conflict index held the junction's pairs (`ConflictIndex.holds`). */
+  readonly conflicts: boolean;
   readonly crossings: string;
   readonly settings: string;
 }
@@ -1279,7 +1291,7 @@ function settingsKey(s: SignalSettings | undefined): string {
 }
 
 function samePlanInputs(a: PlanInputs, b: PlanInputs): boolean {
-  if (a.groups !== b.groups || a.signalised !== b.signalised || a.crossings !== b.crossings || a.settings !== b.settings) return false;
+  if (a.groups !== b.groups || a.signalised !== b.signalised || a.conflicts !== b.conflicts || a.crossings !== b.crossings || a.settings !== b.settings) return false;
   if (a.connectors.length !== b.connectors.length) return false;
   for (let i = 0; i < a.connectors.length; i++) if (a.connectors[i] !== b.connectors[i]) return false;
   return true;
