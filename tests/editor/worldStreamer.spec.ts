@@ -728,5 +728,23 @@ describe('an edited tile', () => {
     seen.apply(0);
     expect(seen.settled).toBe(false);
   });
+
+  it('behind the curtain waits for the whole region before putting any of it in: no world build for the first tile alone', async () => {
+    const doc = new RoadDoc();
+    const base = source();
+    let release: (() => void) | null = null;
+    const late = tileKey(1, 1);
+    const store = { ...base, load: (key: number) => (key === late ? new Promise<TileRecords>((done) => { release = () => done(emptyTile(key)); }) : base.load(key)) };
+    const streamer = new WorldStreamer(doc, store);
+    streamer.focus(0, 0);
+    await turns(3);
+    streamer.apply(0, true);
+    expect(doc.loadedTiles.size).toBe(0);
+    release!();
+    await turns(3);
+    streamer.focus(0, 0);
+    streamer.apply(1, true);
+    expect(streamer.settled).toBe(true);
+  });
 });
 
