@@ -153,6 +153,11 @@ async function steps(page, report) {
 ${(await cpu()).replace(/^/gm, '    ')}`); await new Promise((r) => setTimeout(r, 5000)); console.log(`  5 s later:
 ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no CPU: ${String(error)}`); }
     const bounded = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`no answer in ${ms} ms`)), ms))]);
+    // A profile already running when the page stopped (a "profile" step before the stall): its samples up to the stall, the stall's own frames among them.
+    if (profiling && cdp) {
+      try { const { profile } = await bounded(cdp.send('Profiler.stop'), 30_000); writeFileSync(join(out, `stalled-${profiling.name}.cpuprofile`), JSON.stringify(profile)); console.log(`  running profile kept: stalled-${profiling.name}.cpuprofile`); profiling = null; }
+      catch (error) { console.log(`  running profile not stopped: ${String(error)}`); }
+    }
     try {
       const probe = await bounded(page.context().newCDPSession(page), 10_000);
       const heap = await Promise.race([probe.send('Runtime.getHeapUsage'), new Promise((r) => setTimeout(() => r(null), 5000))]);
