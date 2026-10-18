@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import { chromium } from '@playwright/test';
+import { _electron, chromium } from '@playwright/test';
 
 // `node scripts/look.mjs <script.json> [out folder] [--video] [--url=http://…]`
 const args = process.argv.slice(2);
@@ -33,7 +33,21 @@ const RELOADED = 'the page reloaded midway (a file was saved and Vite reloaded t
 
 // LOOK_JS_FLAGS: V8 flags for the run's Chrome, as the desktop build passes them (`desktop/main.cjs` js-flags): the dev run measured as the product runs.
 const jsFlags = process.env.LOOK_JS_FLAGS ? [`--js-flags=${process.env.LOOK_JS_FLAGS}`] : [];
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist', ...jsFlags] });
+/** `--electron`: the desktop build as the player runs it (`desktop/main.cjs`, the game from `dist/`: build it first, `--mode development` for the probes the steps call), its window hidden at 1920x1080 (`ROADCRAFT_LOOK`), no Steam. */
+const electron = flags.includes('--electron');
+const browser = electron ? await desktopBrowser() : await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist', ...jsFlags] });
+
+/** The desktop app as a browser of one page (Playwright `_electron`): its window the page; closing it ends the app. */
+async function desktopBrowser() {
+  const app = await _electron.launch({ args: [join(resolve('.'), 'desktop', 'main.cjs')], env: { ...process.env, ROADCRAFT_LOOK: '1', ROADCRAFT_NO_STEAM: '1' } });
+  // The shell's own lines (each process's memory, `main.cjs` LOOK), as they come.
+  app.process().stdout?.on('data', (chunk) => { for (const line of String(chunk).split(/\r?\n/)) if (line.startsWith('[metrics]')) console.log(`${new Date().toISOString().slice(11, 19)} ${line} MB`); });
+  const window = await app.firstWindow();
+  window.desktop = true;
+  // A dialog of the page's (an alert, a confirm): said, then dismissed, never left open under the run.
+  window.on('dialog', (dialog) => { console.log(`dialog (${dialog.type()}): ${dialog.message()}`); void dialog.dismiss().catch(() => {}); });
+  return { newPage: async () => window, close: () => app.close(), startTracing: () => Promise.reject(new Error('no trace in --electron')), stopTracing: () => Promise.resolve() };
+}
 let report;
 try {
   for (let attempt = 1; ; attempt++) {
@@ -68,7 +82,7 @@ async function runOnce(report) {
     if (page.reloads) throw new Error(`${RELOADED} (${String(err.message).split('\n')[0]})`, { cause: err });
     throw err;
   } finally {
-    await page.close();
+    if (!page.desktop) await page.close();
   }
 }
 
@@ -78,7 +92,9 @@ async function steps(page, report) {
   page.on('pageerror', (e) => report.console.push(`pageerror: ${e.message}\n${e.stack ?? ''}`));
   const url = plan.url ?? 'http://127.0.0.1:5300/';
   try {
-    await page.goto(url, { waitUntil: 'load' });
+    // The desktop's window opens its own game (`app://roadcraft/`).
+    if (page.desktop) await page.waitForLoadState('load');
+    else await page.goto(url, { waitUntil: 'load' });
   } catch (err) {
     throw new Error(`the game did not answer at ${url} (${err.message.split('\n')[0]}): start the server with \`npm run dev\``, { cause: err });
   }

@@ -1772,5 +1772,6 @@ export const EN: Dictionary = {
   'hint.transit.lineShort': 'A line needs at least two stops.',
   'hint.transit.lineMade': 'Line made.',
   'map.loading': 'Loading the map…',
+  'map.otherTab': 'This city is open in another tab or window of the game. Close the other one to play here: it opens by itself.',
   'map.generating': 'Generating the city… {done} of {total} parts',
 };

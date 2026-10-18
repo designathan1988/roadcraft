@@ -58,7 +58,8 @@ export default defineConfig({
   },
   preview: { headers: ISOLATED },
   // ES workers: the simulation's worker makes workers of its own and imports its walkers when it starts (Vite, worker.format).
-  worker: { format: 'es' },
+  // The workers' own bundles take the model URLs too (Vite `worker.plugins`): the people's worker reads the proxies (`people/body/proxy.ts`).
+  worker: { format: 'es', plugins: () => [modelUrlsPlugin()] },
   build: {
     target: 'es2022',
     sourcemap: true,

@@ -1,7 +1,8 @@
 import { measureHitch } from '@core/hitch';
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
-import { jobChannel, jobLanes, jobPort, jobsQuiet, onJobsQuiet, setJobWorkerSetup } from './jobs/jobPool';
+import { jobChannel, jobLanes, jobPort, jobsQuiet, onJobsQuiet, setJobWorkerMaker, setJobWorkerSetup } from './jobs/jobPool';
+import { desktopJobWorkers } from './desktopJobs';
 import { WorldStreamer, mapTilesFrom } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
@@ -189,6 +190,9 @@ const history = new History();
 const desktopStores = desktopSaves();
 const persistence = desktopStores ? new Persistence(undefined, desktopStores.store, desktopStores.parts) : new Persistence();
 /** DO NOT read or write the desktop's tiles through the page: each job worker is handed a port of its own to the saves writer, before its first job (`editor/workerParts.ts`), and a new one when the writer started again. */
+/** On the desktop the long job workers (the tiles' maker, the growth) run in the shell's job processes, a V8 cage each (`desktopJobs.ts`); before any worker is made. */
+const desktopJobs = desktopJobWorkers();
+if (desktopJobs) setJobWorkerMaker((long) => desktopJobs(long) as Worker | null);
 if (desktopStores) {
   const workers: Worker[] = [];
   const handPort = (worker: Worker): void => {
@@ -1933,7 +1937,16 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   // Under the plan's version and the map's size (`worldKey`): DO NOT reopen tiles an older plan made (a city of 5 km, land past the edge).
   const mapName = `roadcraft.tiles.${worldKey(options.seed)}`;
   // Read, written and made in the job workers, the desktop's as a browser's (each worker its own port to the shell's saves, `editor/workerParts.ts`).
-  const release = await holdWorld(mapName);
+  let release = await holdWorld(mapName);
+  // DO NOT open a world another tab holds as if it were this tab's (read only, its edits never written, a flash of a hint the only word of it; the player saw an empty map, 2026-10-18): said on the curtain, and opened here once that tab lets it go. A file opened over it is refused as before.
+  if (!release && !imported) {
+    waitingForTab = true;
+    loadingCurtain.style.display = 'flex';
+    loadingCurtain.textContent = t('map.otherTab');
+    release = await holdWorld(mapName, { wait: true });
+    waitingForTab = false;
+    loadingCurtain.textContent = t('map.loading');
+  }
   const store = new TileStore(mapName, portTiles(() => jobPort('save'), jobLanes(3), () => jobPort('tileRead')),
     (i, j) => generator.generate(tileKey(i, j)),
     // Every tile made (the region's and those made ahead) stored by the generator's worker itself, never through the page.
@@ -2485,6 +2498,8 @@ function growZones(): void {
 }
 
 /** The loading curtain: over the page while a town is put together unseen */
+/** Waiting for another tab to let this world go (`openStreamedWorld`): the curtain stays up, saying so. */
+let waitingForTab = false;
 const loadingCurtain = document.createElement('div');
 loadingCurtain.className = 'loading-curtain';
 loadingCurtain.setAttribute('role', 'status');
@@ -2522,7 +2537,7 @@ function syncLoadingCurtain(): void {
       requestDraw();
     });
   }
-  const show = scene.opening || !programsCompiled;
+  const show = waitingForTab || scene.opening || !programsCompiled;
   if ((loadingCurtain.style.display !== 'none') !== show) loadingCurtain.style.display = show ? 'flex' : 'none';
 }
 /** A frame has been drawn, and the first world has been put in place (the opening builds it in parts). */

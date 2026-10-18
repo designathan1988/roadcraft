@@ -1,5 +1,9 @@
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
-import { tileKey, tileOfKey } from '@world/tiles';
+import { tileKey, tileOfKey, tileRect } from '@world/tiles';
+import { plateOf } from '@world/bounds';
+import { m } from '@world/units';
+import { WriteBudget, keepDerivedQueuedMany } from '@core/derivedCache';
+import type { SharedGroundData } from './render/sharedGround';
 import type { TileRecords } from '@world/doc';
 import type { MadeTile } from '@editor/tileStore';
 import type { FarTileBake, SettleAsk, StreamTileAnswer, StreamTileAsk } from './cityTile.worker';
@@ -15,6 +19,24 @@ export const tileLanes = (): number => longWorkers();
 export const LOW_IN_FLIGHT = 2;
 
 export const asideLanes = (): number => Math.max(0, shortWorkers() - 2) + (jobsQuiet() ? 1 : 0);
+
+/** How far past its square a tile's far bakes read the ground: its plates and the next one's within it. */
+const GROUND_PAD = m(64);
+/** The ground a tile's bakes read: the plates its square (and `GROUND_PAD` round it) lies on, DO NOT every plate made - in another process each is copied (`jobs/processWorker.ts` unshared), dozens of MB a tile. A plate not named is read off the relief, as before it was made. */
+function tileGround(ground: SharedGroundData | null, i: number, j: number): SharedGroundData | null {
+  if (!ground) return ground;
+  const [x0, y0, x1, y1] = tileRect(i, j);
+  const plates = new Map<number, SharedArrayBuffer>();
+  // A plate (2,048 m) is wider than a tile and its pad: the four corners name every plate the square meets.
+  for (const x of [x0 - GROUND_PAD, x1 + GROUND_PAD]) for (const y of [y0 - GROUND_PAD, y1 + GROUND_PAD]) {
+    const key = plateOf(x, y), buffer = ground.plates.get(key);
+    if (buffer) plates.set(key, buffer);
+  }
+  return { ...ground, plates };
+}
+
+/** The far bakes the page keeps for a tile made where no cache is open (a thread of the desktop's job process): written here, under one budget. */
+const PAGE_FAR_WRITES = 48 * 2 ** 20;
 
 /** Where a tile made is stored by the worker, and whether its texts come back with its version. */
 type StoreAsk = NonNullable<StreamTileAsk['store']>;
@@ -39,6 +61,8 @@ const RUSH_DEPTH = 2;
 
 export class TileGenerator {
   private readonly lanes: Lane[] = [];
+  /** The far bakes handed back by threads with no cache of their own, kept by the page under one budget. */
+  private readonly farWrites = new WriteBudget(PAGE_FAR_WRITES);
   private readonly queue: Waiting[] = [];
   /** Work that waits for the lanes to have nothing else (`makeStored` with `low`): a tile asked meanwhile goes first. */
   private readonly lowQueue: Waiting[] = [];
@@ -145,7 +169,9 @@ export class TileGenerator {
         if (!next) break;
         lane.inFlight.push(next);
         const { i, j } = tileOfKey(next.key);
-        lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: { ...next.store, far: this.far() } } : {}) } satisfies StreamTileAsk);
+        const far = next.store ? this.far() : null;
+        const tileFar = far ? { ...far, ground: tileGround(far.ground, i, j), roadGround: tileGround(far.roadGround, i, j) } : null;
+        lane.port.postMessage({ stream: true, options: this.options, i, j, ...(next.store ? { store: { ...next.store, far: tileFar } } : {}) } satisfies StreamTileAsk);
       }
     }
     // The map's tiles waiting: the long side's workers kept for them, no queued job between two tiles (`jobPool.ts` setTilesWaiting).
@@ -177,6 +203,8 @@ export class TileGenerator {
       const key = 'error' in answer ? tileKey(answer.i, answer.j) : answer.key;
       const at = lane.inFlight.findIndex((w) => w.key === key);
       const waiting = at < 0 ? undefined : lane.inFlight.splice(at, 1)[0];
+      // Its far levels handed back (a job process keeps no cache): kept by the page before the tile is told made, so the far job asked after it finds them.
+      if ('far' in answer && answer.far?.length) void keepDerivedQueuedMany(answer.far, this.farWrites).catch((error: unknown) => console.warn(`[tiles] tile ${key}'s far levels were not kept`, error));
       if (waiting) {
         if ('error' in answer) waiting.failed(answer.error);
         else if ('stored' in answer) {

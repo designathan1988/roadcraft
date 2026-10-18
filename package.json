@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5300 --strictPort",
     "build": "node scripts/run-limited.mjs npm run build:raw",
-    "build:raw": "tsc --noEmit && vite build",
+    "build:raw": "tsc --noEmit && vite build && vite build -c scripts/vite/desktop-jobs.config.ts",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --suppressions-location scripts/baselines/eslint-suppressions.json",
@@ -65,6 +65,9 @@
       "desktop/main.cjs",
       "desktop/preload.cjs",
       "desktop/saves.cjs",
+      "desktop/jobs.cjs",
+      "src/jobs/nodeJobHost.ts!",
+      "scripts/vite/desktop-jobs.config.ts",
       "eslint-rules/*.js"
     ],
     "project": [
