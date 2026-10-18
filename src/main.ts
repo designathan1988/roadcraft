@@ -68,6 +68,7 @@ import { Camera } from '@view/camera';
 import { type Viewport, flatViewport } from '@view/viewport';
 import { CanvasSurface } from '@ui/overlay/surface';
 import { INVALID, SELECTION, HOVER } from '@ui/overlay/palette';
+import { drawCongestion } from '@ui/overlay/congestion';
 import { createSceneRenderer, type SceneHandle, type SkyMode } from '@render/renderer';
 import { countMemory } from '@render/memoryCounters';
 import { formatInventory, sceneInventory } from '@render/inventory';
@@ -2884,6 +2885,12 @@ function drawOverlayScreen(): void {
     ctx.restore();
   }
 
+  // The congestion map (Layers), over the roads in view: the screen's corners on the ground, grown a little.
+  if (game.congestionOverlay) {
+    const corners = [worldAtScreen(0, 0), worldAtScreen(w, 0), worldAtScreen(0, h), worldAtScreen(w, h)];
+    const xs = corners.map((p) => p.x), ys = corners.map((p) => p.y);
+    drawCongestion(ctx, net, sim.vehicles.values(), [Math.min(...xs) - 50, Math.min(...ys) - 50, Math.max(...xs) + 50, Math.max(...ys) + 50], at);
+  }
   // The pole run being drawn.
   drawPolePlan(framePolePlan, ctx, at);
   // The universal grid (`world/grid.ts`) on the ground while roads are built
