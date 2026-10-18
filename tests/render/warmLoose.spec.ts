@@ -125,7 +125,12 @@ describe('a loose mesh sent to the GPU', () => {
     const source = readFileSync('src/render/renderer.ts', 'utf8');
     const drain = source.indexOf('drainWarm(renderer');
     expect(drain).toBeGreaterThan(0);
-    expect(source.slice(drain, drain + 400)).toMatch(/if \(warmPending\(\)\) onAssetsReady\(\);/);
+    // A frame asked (`askDraw`), the sun's stores left as they are: a mesh waiting to go up casts nothing yet (e1db6063).
+    const asks = /if \(warmPending\(\)\) askDraw\(\);/;
+    expect(source.slice(drain, drain + 600)).toMatch(asks);
+    // The same test on the renderer without the line fails: it reads that line, not one like it elsewhere.
+    const without = source.replace(asks, '');
+    expect(without.slice(drain, drain + 600)).not.toMatch(asks);
   });
 
   it('leaves no road block with an array on the CPU once the queue is drained', () => {
