@@ -249,7 +249,8 @@ export class WorldStreamer {
     if (this.doc.editing) return;
     this.noteEdits();
     // DO NOT put the region in one tile at a time behind the curtain: each tile waited for the world's build the one before it started (`main.ts` worldBusy), nine builds one after the other (the reopening's 6-19 s, 2026-10-18); together, one build for them all.
-    if (unseen) while (this.ready.size > 0 && this.putIn()) { /* the next nearest */ }
+    // Nor the first that comes alone: it started a world build of seconds, and the rest of the region, come meanwhile, waited for it (5-10 s, 2026-10-18). Behind the curtain the region goes in once it is all here (a tile that failed is not waited for).
+    if (unseen) { if (this.asked.size === 0) while (this.ready.size > 0 && this.putIn()) { /* the next nearest */ } }
     else this.putIn();
     this.letGoFar();
     this.save(now);
