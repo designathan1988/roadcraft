@@ -2992,6 +2992,8 @@ export function createSceneRenderer(
         vehicleInside,
         vehicleBox,
         occupantZoom: quality.occupantZoom,
+        // The tier's lighter vehicles and people (`quality.ts`; only the low tier draws them lighter).
+        tier: quality,
         exhaust: (x, y, z, angle, length, speed, dusty) => {
           exhaust.emit(x, y, z, angle, length, speed, dusty);
           if (!dusty && Math.abs(speed) > 0.5) wear.wheels(x, y, angle, Math.min(length * 0.42, m(1.7)), wallDt);

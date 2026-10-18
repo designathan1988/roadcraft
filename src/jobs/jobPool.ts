@@ -1,3 +1,4 @@
+import { WEAK_MACHINE } from '@core/weakMachine';
 import type { AdoptLane, CloseLane, FromJob, JobService, ToJob } from './jobScope';
 
 /** THE JOB SYSTEM: one pool of workers (hardwareConcurrency - 2, within the machine's memory) for every kind of work off the page, in place of a pool per kind */
@@ -234,7 +235,8 @@ export function setJobWorkerSetup(setup: (worker: Worker) => void): void {
 
 /** The most workers the pool holds: the cores less the page's and the simulation's (the city-game's pool), within the V8 cage the page and its workers share (at least one). DO NOT size it by `navigator.deviceMemory`: the browser tells 8 GB at most, 32 GB included, and a 24-thread machine made the map's 100 tiles on 2 workers (2026-10-16). */
 export function jobWorkers(): number {
-  const cores = (typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 0) || 2;
+  // A weaker machine played on this one (`core/weakMachine.ts`): its threads.
+  const cores = WEAK_MACHINE.threads ?? ((typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 0) || 2);
   // Inside the simulation's worker (no document): its own few, for the lots' bays and the junctions' pairs.
   if (typeof document === 'undefined') return Math.max(1, Math.min(2, cores - 2));
   const byCage = Math.floor((CAGE_BYTES * POOL_CAGE_SHARE) / WORKER_HEAP_BYTES);

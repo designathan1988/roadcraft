@@ -16,7 +16,8 @@ if (!Number.isInteger(MAP_TILES) || MAP_TILES < 2 || MAP_TILES > 64 || MAP_TILES
 
 export default defineConfig({
   root: '.',
-  define: { __MAP_TILES__: String(MAP_TILES) },
+  // The map's size and a weaker machine played on this one (`core/weakMachine.ts`), the page and every worker the same.
+  define: { __MAP_TILES__: String(MAP_TILES), __WEAK_MACHINE__: JSON.stringify(process.env['ROADCRAFT_WEAK'] ?? '') },
   // `modelUrlsPlugin`: the model files' URLs, a module per folder, never inlined (`model-urls-plugin.ts`).
   // `surfaceBakePlugin`: the procedural surfaces baked at build time into KTX2 (`surface-bake-plugin.ts`); before `cookPlugin`, whose middleware serves them once baked.
   plugins: [buildStampPlugin(), surfaceBakePlugin(), cookPlugin(), modelUrlsPlugin()],
