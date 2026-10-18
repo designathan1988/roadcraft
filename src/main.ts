@@ -1,10 +1,11 @@
 import { measureHitch } from '@core/hitch';
 import { MESO_REACH } from '@sim/meso/tileFeed';
 import { type ClearablePart, TileStore, portTiles } from '@editor/tileStore';
-import { jobChannel, jobLanes, jobPort, setJobWorkerSetup } from './jobs/jobPool';
+import { jobChannel, jobLanes, jobPort, jobsQuiet, onJobsQuiet, setJobWorkerSetup } from './jobs/jobPool';
 import { WorldStreamer, mapTilesFrom } from './worldStreamer';
 import { TileGenerator } from './tileGenerator';
 import { OWNER, tileKey, tileKeyAt, tileOfRecord, tileOfKey, tileRect } from '@world/tiles';
+import { tilesInReach } from '@world/reachTiles';
 import { profileOf } from '@world/roads/profile';
 import { profiler } from '@core/profiler';
 import { mountProfilerHud } from '@ui/profilerHud';
@@ -2012,9 +2013,12 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   try { window.localStorage.setItem(STREAMED_MARK, JSON.stringify(options)); } catch { /* storage blocked: the world is not reopened at the next start */ }
   // THE WHOLE MAP MADE BEFORE THE TOWN IS SHOWN (the city-game's opening): every tile generated and stored (`streamer.mapMade`), so every far level is drawn from a tile, never from a stand-in; the region's own detail lands behind the curtain's fall (`renderer.ts` reveal, the opening in two steps).
   streamer.rush = true;
+  // Past the rush, the map's other tiles in the gaps of the view's own work (`WorldStreamer.aheadQuiet`).
+  streamer.aheadQuiet = { now: jobsQuiet, on: onJobsQuiet };
   // Every worker makes tiles while the map is made (the other kinds' work is light then): let go once it is (`frame`).
   generator.setAside(true);
-  scene.holdOpening(() => doc.loadedTiles.size > 0 && streamer.mapMade >= streamer.mapTotal);
+  // DO NOT wait for every tile of the map (the opening grew with it: 63 s at 10 km, 183 s at 20 km, the tiles' growth 3/4 of it; wprof20, 2026-10-17): the tiles the opening's view reaches (`world/reachTiles.ts`, the far trees' reach), the rest made after it, nearest first (`streamer.rush` and the generator's lanes until `mapMade`).
+  scene.holdOpening(() => doc.loadedTiles.size > 0 && (streamer.mapMade >= streamer.mapTotal || openingViewMade(streamer)));
   // A new world opens over its first city, at the origin (`cityGen/wholeMap.ts`); one opened again where the camera was left.
   if (fresh) { camera.x = 0; camera.y = 0; view.moveTo({ x: 0, y: 0 }); }
   streamer.focus(camera.x, camera.y);
@@ -2023,6 +2027,12 @@ async function openStreamedWorld(options: WholeMapOptions, fresh: boolean,
   if (refused) throw new Error(refused);
 }
 
+
+/** Whether every tile the opening's view reaches is made (`world/reachTiles.ts`): none counted before the far trees chose once (their reach 0). */
+function openingViewMade(streamer: WorldStreamer): boolean {
+  const keys = tilesInReach(camera.x, camera.y, scene.farReach, tileOnMap, scene.farSees);
+  return keys.length > 0 && keys.every((key) => streamer.isMade(key));
+}
 
 /** THE GROWTH (`editor/growthFeed.ts`): the generated city's buildings and the zones' (`growZones`), one at a time, each designed in the growth's worker (`growthPool.ts`, `growth.worker.ts`) and written here when its answer comes - outside the frame, in the worker's message - checked again first when the document moved meanwhile. */
 const growthPool = new GrowthPool((answer) => growthAnswered(answer), () => growth.restart());
@@ -2051,6 +2061,7 @@ function afterStreamedWorld<T>(replace: () => T): T | Promise<T> {
   if (!open) return replace();
   // Posted now, from the records the page holds; nothing streams in or out after.
   const written = open.streamer.flush();
+  open.streamer.aheadQuiet = null;
   streamed = null;
   void written.finally(() => open.release());
   open.generator.dispose();
@@ -2487,8 +2498,11 @@ function syncLoadingCurtain(): void {
       if (loadingCurtain.textContent !== text) loadingCurtain.textContent = text;
     } else if (loadingCurtain.textContent !== t('map.loading')) loadingCurtain.textContent = t('map.loading');
     if (!scene.opening) streamer.rush = false;
-    // The map made: the other kinds' workers theirs again (`TileGenerator.setAside`).
-    if (streamer.mapMade >= streamer.mapTotal) streamed.generator.setAside(false);
+    // The map made, or the opening's view made: the other kinds' workers theirs again (`TileGenerator.setAside`), and while the curtain is up no tile is made ahead - DO NOT keep every worker on the tiles behind the view: the far levels and the cells the curtain waits for stood behind them until its limit (k20b, 2026-10-17: the view's tiles made at ~51 s, the curtain fell at 90 s of work, not whole).
+    const viewMade = scene.opening && streamer.mapMade < streamer.mapTotal && openingViewMade(streamer);
+    if (viewMade) streamer.rush = false;
+    streamer.aheadHeld = viewMade;
+    if (viewMade || streamer.mapMade >= streamer.mapTotal) streamed.generator.setAside(false);
   }
   const ready = scene.programsReady;
   if (ready !== programsWaited) {

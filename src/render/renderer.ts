@@ -21,6 +21,7 @@ import {
   PointLight,
   Group,
   Frustum,
+  Box3,
   Matrix4,
   type Material,
   Mesh,
@@ -232,6 +233,10 @@ export interface SceneHandle {
   tileLoaded(key: number, rect: ChangeRect, revision: number): void;
   tileLetGo(key: number): void;
   nearDrawn(key: number): boolean;
+  /** How far round the eye the far levels are drawn now (`FarTree.reachNow`; 0 before the first choice): the tiles the opening waits for. */
+  readonly farReach: number;
+  /** Whether the view the far levels were last chosen in sees a square of the plan (x0, y0)-(x1, y1), from under the ground to 500 m (`farTree.ts` inView before a node lands): the tiles the opening waits for. */
+  readonly farSees: (x0: number, y0: number, x1: number, y1: number) => boolean;
   onNearDrawn: ((key: number) => void) | null;
   /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
   readonly farBuildings: FarTiles;
@@ -647,7 +652,8 @@ export function createSceneRenderer(
     markingStyle: () => worldNet?.doc.markingStyle ?? 'classic',
     naturalIsGround: () => buildings.farEnv().naturalIsGround,
     dress: (source, raised) => surfaceLook(source, raised, materials, terrain.vergeMaterial, nearPaintFor),
-    coarseFirst: () => buildings.hidden,
+    // DO NOT put the view's near roads behind the curtain's masses: the curtain waits for them (`whole`).
+    coarseFirst: () => false,
     ready: () => buildingsGrounded,
   });
   world.add(farRoads.group);
@@ -940,6 +946,8 @@ export function createSceneRenderer(
   /** The view's frustum the buildings' detail is chosen in (`levelOfDetail`), and its matrix. */
   const detailFrustum = new Frustum();
   const detailProjection = new Matrix4();
+  /** A square of the plan as `farSees` tests it. */
+  const seenBox = new Box3();
   const crowdProjection = new Matrix4();
   const crowdBounds = new Sphere(new Vector3(), 8);
   const pedestrianVisible = (x: number, y: number, height: number): boolean => {
@@ -2467,6 +2475,15 @@ export function createSceneRenderer(
     nearDrawn(key) {
       return !nearPending.has(key);
     },
+    get farReach() {
+      return farRoads.reachNow;
+    },
+    farSees(x0, y0, x1, y1) {
+      // Three's axes: the plan's y is -z.
+      seenBox.min.set(x0, -m(50), -y1);
+      seenBox.max.set(x1, m(500), -y0);
+      return detailFrustum.intersectsBox(seenBox);
+    },
     get onNearDrawn() { return onNearDrawn; },
     set onNearDrawn(fn) { onNearDrawn = fn; },
     setActiveTiles(at, rects) {
@@ -3232,7 +3249,8 @@ export function createSceneRenderer(
       if (!reveal.opened) {
         // THE OPENING IN TWO STEPS (CLAUDE.md "Streaming world"): shown once the roads built so far, the masses and the far levels are in; the near cells' detail, the tiles still coming and the world's later builds land after, as they do when the camera moves (DO NOT wait for `buildings.pending`, `worldJob` or every tile of the region: the whole city waited 2.5-4.5 min for them, 2026-10-16).
         const held = openingHeld?.() ?? true;
-        const whole = roads !== null && !buildings.coarsePending && natureTreesStarted && !natureTreesPending && held;
+        // OPEN = WHAT THE VIEW SEES IN ITS FINAL DETAIL (CLAUDE.md; Cesium3DTileset tilesLoaded: every tile meeting the screen's error this frame loaded): the near cells, the near roads and the tiles' near products in the frustum too, not the masses alone - the curtain fell with the district in masses and the street in a smooth mass (conf130/131/133).
+        const whole = roads !== null && !buildings.coarsePending && !buildings.viewPending && farRoads.waiting === 0 && nearTiles.pendingInView() === 0 && natureTreesStarted && !natureTreesPending && held;
         // DO NOT draw the unseen frame before the town's programs are built: drawn first, each program was built at its first use, one after the other, in that one frame (4.5 s of the opening's 62, 2026-10-16); asked together, the driver builds them in parallel (KHR_parallel_shader_compile).
         if (whole && openingPrograms === 'no') {
           openingPrograms = 'asked';

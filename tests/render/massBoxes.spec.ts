@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { InstancedBufferGeometry, InterleavedBufferAttribute } from 'three';
+import { type InstancedBufferGeometry, type InterleavedBufferAttribute, ShaderChunk, ShaderLib, type WebGLProgramParametersWithUniforms } from 'three';
 
 import { BOX_INSTANCE, isBoxMass } from '@render/buildings/cellArrays';
 import { type FarCache, runFarJob } from '@render/buildings/farTiles';
 import { createBuildingKit } from '@render/buildings/kit';
 import { boxesMesh, unitBox } from '@render/buildings/massBoxes';
 import { BOX_FLOATS } from '@render/buildings/massing';
+import { createMassingMaterial } from '@render/buildings/massingMaterial';
 
 /** A BOX LEVEL'S BOXES ARE INSTANCES OF ONE BOX: EVERY VERTEX THE SHADER LAYS IS THE ONE THE BOXES' MESH OF MASSES LAID (`massBoxes.ts`, `massingMaterial.ts` `boxes`) */
 
@@ -103,5 +104,20 @@ describe('a box level\'s boxes', () => {
     expect(kit.massBox.getAttribute('boxVertex').count).toBe(20);
     expect(kit.massBox.index!.count).toBe(30);
     kit.dispose();
+  });
+});
+
+describe("the box levels' program", () => {
+  it('puts only a colour three declares in vColor (a vec4 in r186)', () => {
+    const material = createMassingMaterial({ roomsAwake: { value: 0 }, massingNight: { value: 0 } }, true);
+    const shader = { vertexShader: ShaderLib.standard.vertexShader, fragmentShader: ShaderLib.standard.fragmentShader, uniforms: {} } as unknown as WebGLProgramParametersWithUniforms;
+    material.onBeforeCompile(shader, undefined as never);
+    // As three's program resolves its includes (`WebGLProgram` resolveIncludes).
+    const resolve = (source: string): string => source.replace(/^[ \t]*#include +<([\w\d./]+)>/gm, (_, name: string) => resolve((ShaderChunk as Record<string, string>)[name] ?? ''));
+    const vertex = resolve(shader.vertexShader);
+    expect(vertex).toMatch(/varying vec4 vColor;/);
+    // Whole, only a vec4; a colour of three numbers goes in its rgb.
+    for (const line of vertex.split('\n').filter((l) => /^\s*vColor\s*=/.test(l))) expect(line).toMatch(/=\s*vec4\(/);
+    material.dispose();
   });
 });

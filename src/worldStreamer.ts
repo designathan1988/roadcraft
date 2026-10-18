@@ -19,6 +19,8 @@ const KEEP_MARGIN = 1;
 const IN_FLIGHT = 4;
 /** The ring the region loads next as the camera moves (the tiles it keeps past its radius): made ahead first, as many at once as the region asks. */
 const RING_RADIUS = ACTIVE_RADIUS + KEEP_MARGIN;
+/** Tiles made at once past the ring, the map shown (`askAhead`): DO NOT put one on every generator's lane - a quiet moment of the queue put six behind the shown town (2-25 s each), and the street's cells asked a second later waited behind them in their mass (conf131 09-street, 2026-10-18). The other lanes' workers take the queue's jobs between tiles (`jobPool.ts` hostFor). */
+const BACKGROUND_LANES = 2;
 /** How far round the camera's tile the bays are baked ahead (`askBays`): the ring and the tiles it reaches next; past it, a tile's bays come with it into the region (`cityTile.worker.ts` addBays). */
 const BAYS_RADIUS = RING_RADIUS + 1;
 /** A tile that could not be had is asked again only after this (a generator failing on it fails again at once). */
@@ -205,6 +207,11 @@ export class WorldStreamer {
 
   /** THE WHOLE MAP MADE BEFORE IT IS SHOWN (the city-game's opening: every tile generated, then the city): while set, the tiles ahead take every lane (nothing else waits on them); let go once the town is shown. */
   rush = false;
+  /** No tile made ahead while set (`main.ts`: the opening's view made, its far levels and cells to come before the curtain falls). */
+  aheadHeld = false;
+  /** Whether the workers' queue is quiet, and a listener told when it goes so (`jobPool.ts` jobsQuiet, onJobsQuiet): past the ring round the camera, a tile is made ahead only then. None: always. */
+  aheadQuiet: { readonly now: () => boolean; readonly on: (listener: () => void) => () => void } | null = null;
+  private quietWait: (() => void) | null = null;
 
   /** The map's tiles there are, and those made (in the store, or failed and told): the opening waits for all (`main.ts` holdOpening). */
   get mapTotal(): number {
@@ -214,6 +221,11 @@ export class WorldStreamer {
     let failed = 0;
     for (const key of this.failedAt.keys()) if (!this.known.has(key)) failed++;
     return this.known.size + failed;
+  }
+
+  /** Whether a tile is made (in the store, or failed and told): what the opening's view waits for (`main.ts` holdOpening, `world/reachTiles.ts`). */
+  isMade(key: number): boolean {
+    return this.known.has(key) || this.failedAt.has(key);
   }
 
   /** Whether every tile the camera wants is in the document (the opening shows the town once it is). */
@@ -417,6 +429,8 @@ export class WorldStreamer {
 
   /** DO NOT make tiles ahead while the region waits for its own: once every tile it wants is in, the ring it loads next (several at once), then every other tile of the map nearest first (the far levels draw them, `written`). */
   private askAhead(): void {
+    // The opening's view made and its town not shown yet (`main.ts`): the workers go to what the curtain waits for, the rest of the map after.
+    if (this.aheadHeld) return;
     // The map being made (`rush`): every lane the region's tiles leave free, at once; after, once the region is in.
     if (!this.rush && (this.asked.size > 0 || this.ready.size > 0 || !this.settled)) return;
     if (!this.knowStored()) return;
@@ -426,8 +440,14 @@ export class WorldStreamer {
       const key = this.aheadOrder[at]!;
       // Nearest first: past the ring, one lane kept free for the tiles the camera moves onto. The map being made: twice the lanes asked, so a lane that ends a tile finds the next waiting in the generator's queue - DO NOT let it wait for the page to hear of the last and ask again (the opening's lanes at half load, 30-50 s, 2026-10-17).
       if (this.rush ? this.asked.size + this.ahead.size >= 2 * this.inFlight
-        : this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, this.inFlight - 1))) return;
+        : this.ahead.size >= (this.wantedNear(key, RING_RADIUS) ? this.inFlight : Math.max(1, Math.min(BACKGROUND_LANES, this.inFlight - 1)))) return;
       if (this.known.has(key) || this.ahead.has(key) || this.doc.hasTile(key) || this.wantedNear(key, ACTIVE_RADIUS)) continue;
+      // DO NOT make the map's other tiles while the view's work waits (its cells, near roads, far levels): a tile on each worker behind the shown town left the street without its markings and the building at the camera in its mass 6 s on (conf127, 2026-10-17). The plan stands where they are not made yet; asked again when the queue goes quiet.
+      const quiet = this.aheadQuiet;
+      if (!this.rush && quiet && !this.wantedNear(key, RING_RADIUS) && !quiet.now()) {
+        this.quietWait ??= quiet.on(() => { this.quietWait?.(); this.quietWait = null; if (this.aheadQuiet === quiet) this.ask(); });
+        return;
+      }
       this.ahead.add(key);
       // DO NOT bring a tile made ahead onto the page: only its version is wanted here (the far levels and the meso read it from the store).
       const made = this.source.ensure ? this.source.ensure(key) : this.source.load(key).then((records) => records.version);

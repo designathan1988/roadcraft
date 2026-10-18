@@ -28,6 +28,8 @@ export interface BuildingLayer {
   readonly pending: boolean;
   /** The coarse levels still to come: masses and far levels asked of the workers (never the near cells' detail: the opening shows the town with its masses, the detail lands after, `renderer.ts` reveal). */
   readonly coarsePending: boolean;
+  /** The near cells the view wants in detail and that have not landed (in its frustum): what the opening waits for besides the coarse levels (CLAUDE.md "abrir"). */
+  readonly viewPending: boolean;
   /** Nothing is being shown (a map loading behind its curtain, `SceneHandle.opening`). */
   hidden: boolean;
   /** Rebuilds what is stale. */

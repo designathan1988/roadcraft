@@ -50,6 +50,8 @@ export interface FarTreeJob {
   readonly records?: TileRecords;
   /** The store's map the worker reads the tile from itself (`core/storedTiles.ts`), when it can (`FarTileSource.workersRead`): DO NOT drop it on the way to the worker. */
   readonly store?: string;
+  /** The world's generator options, for a kind that bakes from the plan where no tile is made yet (`PLAN_SIG`). */
+  readonly plan?: WholeMapOptions;
   /** A tile's near level (`FarKind.near`): the tiles it reads, each at its version (the tile first, then its neighbours stored), the version of what it reads (`bake`), the level wanted and the version of it drawn now (`shown`: only what changed since comes back); the page's records of the tiles it holds edited (or of all, where no worker reads the store), in that order, null for one read from the store. */
   readonly near?: {
     readonly tiles: readonly { readonly key: number; readonly version: number }[];
@@ -95,6 +97,8 @@ export interface FarKind<P> {
   levelError(k: number): number;
   /** The least pixels a level's error may span before it gives way to its quarters (none: the near levels' own, `massCells.ts` `measureSeen`): what a level draws never smaller on the screen than this asks. */
   levelPixels?(k: number): number;
+  /** The finest level its worker bakes from the world's plan where no tile is made yet (`PLAN_SIG`); the levels under it only from tiles. None: nothing drawn where no tile is. */
+  readonly planFrom?: number;
   /** A level under the tiles (the roads' near level, `nearRoadTiles.ts`); none: a tile is the finest the tree draws (the buildings', whose cells draw the near). */
   readonly near?: FarNear<P>;
 }

@@ -250,6 +250,8 @@ export function createBuildingLayer(): BuildingLayer {
   };
   /** The cells whose batches must be made for the town as it is now, shown as they land (`landCells`). */
   const pendingCells = new Set<string>();
+  /** The town behind its curtain (`hidden`). */
+  let hiddenNow = false;
   /** DO NOT let a far cell's detail go */
   let shownNear = new Set<string>();
   /** Over the budget, the cells drawn far let go, those spanning least of the screen first (`rankOf`): their masses, on the GPU already, stand for them */
@@ -581,14 +583,18 @@ export function createBuildingLayer(): BuildingLayer {
     get coarsePending() {
       return requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;
     },
+    get viewPending() {
+      // The cells the view wants in detail (near, in its frustum, `massCells.nearKeys`) whose detail has not landed.
+      return pendingCells.size > 0;
+    },
     far: farTiles,
     farEnv,
-    // Behind the curtain the coarse levels go first in the queue (`CellPool.coarseFirst`): they are what the opening shows.
+    // DO NOT put the view's detail behind the masses while the curtain is up (`CellPool.coarseFirst`): the curtain waits for it (`viewPending`, CLAUDE.md "abrir"), and behind every mass and far level it held the opening or let it fall with the view in masses (conf130/131, conf133). The cells asked are only those the view wants near (`massCells.nearKeys`).
     get hidden() {
-      return pool.coarseFirst;
+      return hiddenNow;
     },
     set hidden(on: boolean) {
-      pool.coarseFirst = on;
+      hiddenNow = on;
     },
     kit,
     chunkOf(b) {

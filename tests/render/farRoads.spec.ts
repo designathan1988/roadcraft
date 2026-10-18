@@ -270,6 +270,23 @@ describe('the far roads chosen top down', () => {
     roads.dispose();
   });
 
+  it("counts a tile's near level the view wants and has not got as waiting: the opening waits for the street's detail, not its far level alone", async () => {
+    const cache = memoryCache();
+    const tiles = world();
+    const run = runner(cache, kit);
+    // The workers bake the far levels; the near ones wait behind other work.
+    const roads = new FarRoads(() => null, (job, done) => (job.near ? () => undefined : run(job, done)), 'test:', kit);
+    roads.setSource(storeOf(tiles), () => false);
+    for (const [key, records] of tiles) roads.stored(key, records.version);
+    const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
+    // Its far level drawn, its near level not come: still waiting.
+    await until(over, () => roads.shownKeys().includes(farKey(0, 0, 0)));
+    for (let turn = 0; turn < 20; turn++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    expect(roads.nearKeys()).toEqual([]);
+    expect(roads.waiting).toBeGreaterThan(0);
+    roads.dispose();
+  });
+
   it("draws a tile the page holds edited from the page's records, its bake asked before anything", async () => {
     const cache = memoryCache();
     const tiles = world();
@@ -492,7 +509,10 @@ describe('a near level of the roads and the ground it is baked on', () => {
     for (const [key, records] of tiles) roads.stored(key, records.version);
     const over = (): void => roads.choose(0.5 * TILE, 0.5 * TILE, m(300), 1000, null);
     const nearPuts = (): number => cache.puts.filter((key) => key.includes('n0:')).length;
-    await until(over, () => roads.waiting === 0);
+    // Its far level drawn; its near level wanted and not asked before the ground is known (counted as waiting: the opening waits for it).
+    await until(over, () => roads.shownKeys().includes(farKey(0, 0, 0)));
+    for (let turn = 0; turn < 20; turn++) { over(); await new Promise((resolve) => setTimeout(resolve, 0)); }
+    expect(roads.waiting).toBeGreaterThan(0);
     expect(nearPuts()).toBe(0);
     expect(roads.nearKeys()).not.toContain(farKey(0, 0, 0));
     // The buildings put on the ground: the near levels asked, on the built ground.

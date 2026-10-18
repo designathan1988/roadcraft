@@ -67,6 +67,7 @@ export function farJobOf(job: FarTreeJob): FarJob {
     ...(job.children ? { children: job.children } : {}),
     ...(job.records ? { buildings: tileRows(job.records.buildings) } : {}),
     ...(job.store !== undefined ? { store: job.store } : {}),
+    ...(job.plan ? { plan: job.plan } : {}),
   };
 }
 
@@ -91,6 +92,8 @@ export class FarLevels extends FarTree<FarMass> {
       levelError: (k) => Math.max(FAR_ERROR, levelDrop(k)),
       // A box level's error is its square's diagonal (`levelDrop`): a square `BOX_PIXELS` wide on the screen at the least.
       levelPixels: (k) => (k >= BOX_LEVEL ? BOX_PIXELS * Math.SQRT2 : 0),
+      // Where no tile is made yet, the plan's boxes from the boxes' levels up (`farPlan.ts`): never a hole while the map is made.
+      planFrom: BOX_LEVEL,
     };
     super(kind, asTreeRun(run), prefix, lanes);
     // The bakes of an older build of this code: let go.

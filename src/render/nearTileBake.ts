@@ -132,6 +132,8 @@ export interface NearTileJob {
   readonly records?: readonly (Partial<TileRecords> | null)[];
   /** The tile itself held edited by the page: what the player just did, baked before anything (`cellPool.ts` EDIT_TIER). */
   readonly edited?: boolean;
+  /** A tile in the view's frustum when asked: in the detail's band even behind the curtain (`nearTiles.ts` nearPriority). */
+  readonly seen?: boolean;
   readonly ground: NearGround;
   /** Its kinds read the roads (their network and heights solved: seconds), or not (a tile's gardens, barriers, elements: milliseconds): a tile's two jobs, the light one sent first (`nearTiles.ts` NearGate). */
   readonly heavy: boolean;

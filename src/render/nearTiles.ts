@@ -87,8 +87,9 @@ export function recordsFor(records: TileRecords, parts: readonly NearPart[]): Pa
 
 /** A near job's place in the queue (`jobPool.ts`: lower first, the distance to the view's focus added within a band): an edit of what its kinds read before anything (`cellPool.ts` EDIT_TIER), else a cell's detail (`cellPriority` 'cell', put back past the masses behind the curtain, `coarseFirst`): a tile's products are asked only where the view wants them in detail, as a cell's detail is, nearest first with the cells and the roads' near level (`farRoads.ts` farRoadPriority).
  *  - DO NOT put them after every cell, mass and road near level of the queue, whatever the distances (`NEAR_TIER` + 0.05 was): after a reload the camera's tile had its tree and slab but no pole nor fence 4 s on, behind the re-bake of the whole region (conferencia 99-100, photo 51); the gate keeps them on half the short workers (`NearGate`), so the street's cells and roads always have workers. */
-export const nearPriority = (job: Pick<NearTileJob, 'edited'>, coarseFirst = false): number =>
-  (job.edited ? EDIT_TIER * TIER_SPAN : cellPriority('cell', 0, false, coarseFirst));
+export const nearPriority = (job: Pick<NearTileJob, 'edited' | 'seen'>, coarseFirst = false): number =>
+  // DO NOT put back what the view looks at behind the curtain: the curtain lifts on the view in its final detail (CLAUDE.md "abrir"), and the street came up bare or green after it (k20c/51).
+  (job.edited ? EDIT_TIER * TIER_SPAN : cellPriority('cell', 0, false, coarseFirst && !job.seen));
 
 /** The page's own cache of bakes where no worker runs (tests): nothing kept. */
 const NO_CACHE: NearTileCache = { ready: async () => false, get: async () => undefined, put: async () => {} };
@@ -300,6 +301,19 @@ export class NearTiles implements FarTiles {
   /** Whether a tile's bake of a kind is drawn (an empty one too: nothing of the kind there). */
   landed(kind: NearKind, tile: number): boolean {
     return (this.leaves.get(tile)?.slots.get(kind)?.bake ?? null) !== null;
+  }
+
+  /** How many of a kind's tiles in the view's frustum the view wants and have not landed a first bake (failed ones left out): what the curtain waits for (`renderer.ts`); walked over the tiles held, never the map. */
+  pendingInView(): number {
+    let pending = 0;
+    for (const product of this.products) {
+      for (const leaf of this.held.get(product.kind)!) {
+        const slot = leaf.slots.get(product.kind);
+        if (!slot || slot.bake !== null || slot.failed !== null) continue;
+        if (this.inView(leaf, product.top)) pending++;
+      }
+    }
+    return pending;
   }
 
   /** The tiles whose `kind` is drawn now, by key. */
@@ -562,6 +576,7 @@ export class NearTiles implements FarTiles {
       ...(posted ? { records: posted } : {}),
       heavy,
       ...(kinds.some((p) => leaf.slots.get(p.kind)!.urgent) ? { edited: true } : {}),
+      ...(kinds.some((p) => this.inView(leaf, p.top)) ? { seen: true } : {}),
       ...(this.source?.workersRead ? { store: this.source.workersRead } : {}),
     };
     let answered = false;

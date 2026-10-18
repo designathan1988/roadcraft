@@ -55,8 +55,9 @@ export function createMassingMaterial(uniforms: MassingUniforms, boxes = false):
     shader.vertexShader = boxes
       ? shader.vertexShader
         .replace('#include <common>', `#include <common>\n${BOX_PARS}\n${BOX_LOOK}\nvarying vec4 vFacade;\nvarying vec2 vGlazing;\nvarying float vHeight;`)
+        // DO NOT assign vColor whole: three r186 declares it vec4 always (`color_pars_vertex`), and a vec3 put in it left the box levels' program uncompiled, every box level drawn as nothing (esc20d, 2026-10-17).
         // A wall's colour, its facade (along it, bay, storey, its floor) and glass; the roof's colour, no windows (bay 0), its seed.
-        .replace('#include <color_vertex>', `#include <color_vertex>\nvColor = massBoxFace() == 4 ? boxD.rgb : boxC.rgb;`)
+        .replace('#include <color_vertex>', `#include <color_vertex>\nvColor.rgb = massBoxFace() == 4 ? boxD.rgb : boxC.rgb;`)
         .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = massBoxNormal();')
         .replace('#include <begin_vertex>', `vec3 transformed = massBoxPosition();
 {
@@ -114,7 +115,7 @@ if (vFacade.y > 0.0) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.12, massGlass);')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += massLamp * massingNight * massLit * massGlass;`);
   };
-  material.customProgramCacheKey = () => (boxes ? 'building-massing-boxes-v1' : 'building-massing-lamps-v4');
+  material.customProgramCacheKey = () => (boxes ? 'building-massing-boxes-v2' : 'building-massing-lamps-v4');
   // A built lot's yard, coloured from afar as up close (`lotOverlay.ts`).
   applyLotOverlay(material, 'massing', { building: true });
   return material;

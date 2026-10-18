@@ -302,6 +302,8 @@ export class FarRoads extends FarTree<RoadPayload> {
     const material = createFarRoadMaterial();
     const kind: FarKind<RoadPayload> = {
       name: 'roads', land: (data) => farRoadMesh(data as FarRoadMesh, material), levelError: farLevelError,
+      // Drawn from the plan where no tile is made yet, down to a tile (`farRoadTiles.ts` bakePlanRoads): the roads go on past the tiles made, as the buildings do.
+      planFrom: 0,
       // Where the buildings' cells come near (`massCells.ts` FAR_ERROR): the roads under them with their own detail.
       // Its simplified level near, its full detail where the simplification would show (`roadLodPure.ts` COARSE_ERROR); every tile drawn here, those of the page's document too: one way for the roads.
       ...(near ? {

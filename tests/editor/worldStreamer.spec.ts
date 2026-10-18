@@ -76,6 +76,30 @@ describe('the streamer', () => {
     for (let k = 1; k < rings.length; k++) expect(rings[k]!).toBeGreaterThanOrEqual(rings[k - 1]!);
   });
 
+  it("makes the map's tiles past the ring only while the workers' queue is quiet (the view's work first), then on as it goes quiet", async () => {
+    const doc = new RoadDoc();
+    const store = source();
+    const streamer = new WorldStreamer(doc, store);
+    let busy = true;
+    const told: (() => void)[] = [];
+    streamer.aheadQuiet = { now: () => !busy, on: (listener) => { told.push(listener); return () => { told.splice(told.indexOf(listener), 1); }; } };
+    streamer.focus(0, 0);
+    for (let frame = 0; frame < 30 && !streamer.settled; frame++) { await turns(1); streamer.focus(0, 0); streamer.apply(frame); }
+    // The ring round the camera whatever the queue: the tiles it moves onto.
+    for (let round = 0; round < 4; round++) { for (const key of [...store.ensures]) store.finish(key); await turns(2); }
+    expect(store.ensures.filter((key) => ring(key) === 2)).toHaveLength(16);
+    expect(store.ensures.some((key) => ring(key) > 2)).toBe(false);
+    expect(told).toHaveLength(1);
+    // The queue quiet: the map's other tiles, nearest first.
+    busy = false;
+    told[0]!();
+    await turns(2);
+    expect(told).toHaveLength(0);
+    expect(store.ensures.some((key) => ring(key) > 2)).toBe(true);
+    // Two at once past the ring (`BACKGROUND_LANES`), whatever the generator's lanes: the others take the view's jobs.
+    expect(store.ensures.filter((key) => ring(key) > 2).length).toBeLessThanOrEqual(2);
+  });
+
   it('makes the whole map while the opening waits for it (`rush`): every lane the region leaves free, nearest first, counted to the last tile', async () => {
     const doc = new RoadDoc();
     const store = source();
