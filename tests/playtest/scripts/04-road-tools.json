@@ -1,0 +1,408 @@
+{
+ "viewport": [
+  1920,
+  1080
+ ],
+ "dpr": 1.3333333333333333,
+ "steps": [
+  {
+   "until": "window.__roadcraft && !window.__roadcraft.scene().opening",
+   "timeout": 60000
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "press": "Via"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "click": [
+    400,
+    300
+   ]
+  },
+  {
+   "move": [
+    1500,
+    300
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    1500,
+    300
+   ]
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "click": [
+    950,
+    120
+   ]
+  },
+  {
+   "move": [
+    950,
+    700
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    950,
+    700
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/segs.js"
+  },
+  {
+   "shot": "two-roads"
+  },
+  {
+   "press": "Melhorar"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    600,
+    300
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/segs.js"
+  },
+  {
+   "shot": "upgraded"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/poles-on-road.js"
+  },
+  {
+   "press": "Dividir"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    1250,
+    300
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/segs.js"
+  },
+  {
+   "shot": "split"
+  },
+  {
+   "press": "Controle"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    950,
+    300
+   ]
+  },
+  {
+   "wait": 1000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/segs.js"
+  },
+  {
+   "shot": "control-1"
+  },
+  {
+   "click": [
+    950,
+    300
+   ]
+  },
+  {
+   "wait": 1000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/segs.js"
+  },
+  {
+   "shot": "control-2"
+  },
+  {
+   "press": "Mover"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     1250,
+     300
+    ],
+    [
+     1250,
+     420
+    ]
+   ],
+   "button": "left",
+   "ms": 800,
+   "steps": 30,
+   "hold": 200
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "moved"
+  },
+  {
+   "eval": "(() => { const g = window.__roadcraft; const ns = [...g.doc.nodes.values()]; const xs = ns.map((n) => n.x), ys = ns.map((n) => n.y); const x = (Math.min(...xs) + Math.max(...xs)) / 2 + 40, y = (Math.min(...ys) + Math.max(...ys)) / 2; g.setView({ x, y, zoom: 6, azimuth: 3.6, elevation: 0.9 }); return [Math.round(x), Math.round(y)]; })()"
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "shot": "edited-close"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/poles-on-road.js"
+  },
+  {
+   "setView": [
+    0,
+    0,
+    3.75,
+    45,
+    48
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "press": "Rotatória"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "move": [
+    500,
+    560
+   ],
+   "steps": 5
+  },
+  {
+   "wait": 300
+  },
+  {
+   "move": [
+    870,
+    560
+   ],
+   "steps": 5
+  },
+  {
+   "wait": 300
+  },
+  {
+   "shot": "roundabout-refused-aim"
+  },
+  {
+   "shot": "roundabout-aiming"
+  },
+  {
+   "click": [
+    500,
+    560
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "roundabout"
+  },
+  {
+   "press": "Paisagem"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "drag": [
+    [
+     1450,
+     560
+    ],
+    [
+     1550,
+     620
+    ]
+   ],
+   "button": "left",
+   "ms": 2500,
+   "steps": 60,
+   "hold": 1500
+  },
+  {
+   "drag": [
+    [
+     1500,
+     640
+    ],
+    [
+     1420,
+     580
+    ]
+   ],
+   "button": "left",
+   "ms": 2500,
+   "steps": 60,
+   "hold": 1500
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "shot": "hill"
+  },
+  {
+   "press": "Via"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "press": "Desenhar"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    1150,
+    520
+   ]
+  },
+  {
+   "move": [
+    1800,
+    680
+   ],
+   "steps": 10
+  },
+  {
+   "wait": 300
+  },
+  {
+   "shot": "slope-aiming"
+  },
+  {
+   "click": [
+    1800,
+    680
+   ]
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/segs.js"
+  },
+  {
+   "shot": "slope-built"
+  },
+  {
+   "press": "Fechar"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     960,
+     540
+    ],
+    [
+     1400,
+     500
+    ]
+   ],
+   "button": "right",
+   "ms": 1200,
+   "steps": 40
+  },
+  {
+   "wait": 1000
+  },
+  {
+   "wheel": [
+    0,
+    -100
+   ],
+   "at": [
+    1450,
+    600
+   ],
+   "count": 6,
+   "ms": 1000
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "shot": "slope-turned"
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "shot": "slope-turned-later"
+  }
+ ]
+}

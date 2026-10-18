@@ -1,0 +1,1 @@
+(() => { const d = window.__roadcraft.doc; const st = d.terrainStamps; const by = {}; for (const s of st) by[s.mode] = (by[s.mode] ?? 0) + 1; const sc = window.__roadcraft.scene(); return `stamps=${st.length} ${JSON.stringify(by)} h(0,-150)=${sc.terrainHeightAt?.(0, -150)?.toFixed?.(2)}`; })()

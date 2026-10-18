@@ -1,0 +1,1 @@
+(() => { const g = window.__roadcraft; const v = g.view(); const c = g.camera; return `cam x=${Math.round(c.x)} y=${Math.round(c.y)} zoom=${c.zoom.toFixed(3)} az=${(v.azimuth*180/Math.PI).toFixed(0)} el=${(v.elevation*180/Math.PI).toFixed(0)}`; })()

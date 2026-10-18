@@ -1,0 +1,216 @@
+{
+ "viewport": [
+  1920,
+  1080
+ ],
+ "dpr": 1.3333333333333333,
+ "steps": [
+  {
+   "wait": 5000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/buttons.js"
+  },
+  {
+   "click": [
+    1882,
+    35
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "menu-app"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/buttons.js"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    1806,
+    35
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "menu-sim"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    1844,
+    35
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "menu-help"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    1616,
+    35
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "menu-layers"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    1654,
+    35
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "menu-camera"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    1692,
+    35
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "menu-photo"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    751,
+    1036
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "tool-roads"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/buttons.js"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    819,
+    1036
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "tool-zones"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    887,
+    1036
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "tool-build"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    955,
+    1036
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "tool-landscape"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    1024,
+    1036
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "tool-transit"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    1093,
+    1036
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "tool-demolish"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "click": [
+    1165,
+    1036
+   ]
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "tool-info"
+  },
+  {
+   "key": "Escape"
+  }
+ ]
+}

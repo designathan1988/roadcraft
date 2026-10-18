@@ -1,0 +1,1 @@
+(() => { const s = window.__roadcraft.sim.signals; const out = []; for (const n of s.nodes()) { const l = s.layout(n); out.push(`n${n} stage=${s.stage(n)} ` + l.groups.map((g) => `g${g.id}[${(g.movements ?? g.members ?? []).length ?? ''}]=${s.state(n, g.id)}`).join(' ') + ' keys=' + Object.keys(l.groups[0] ?? {}).join(',')); } return out.join(' || '); })()

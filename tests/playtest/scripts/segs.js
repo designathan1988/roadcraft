@@ -1,0 +1,1 @@
+(() => { const d = window.__roadcraft.doc; return [...d.segments.values()].map((s) => `s${s.id}:${s.a}-${s.b} t${s.type} ${s.structure}`).join(' ') + ' | ' + [...d.nodes.values()].filter((n) => n.incident.length > 2 || n.control !== 'auto').map((n) => `n${n.id}:${n.control}(${n.incident.length})`).join(' '); })()

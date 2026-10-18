@@ -1,0 +1,189 @@
+{
+ "viewport": [
+  1920,
+  1080
+ ],
+ "dpr": 1.3333333333333333,
+ "dialogs": "accept",
+ "steps": [
+  {
+   "until": "window.__roadcraft && !window.__roadcraft.scene().opening",
+   "timeout": 60000
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "press": "Via"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    450,
+    300
+   ]
+  },
+  {
+   "move": [
+    1500,
+    300
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    1500,
+    300
+   ]
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "click": [
+    950,
+    120
+   ]
+  },
+  {
+   "move": [
+    950,
+    700
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    950,
+    700
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "press": "Zoneamento"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     460,
+     330
+    ],
+    [
+     1490,
+     480
+    ]
+   ],
+   "button": "left",
+   "ms": 1200,
+   "steps": 30,
+   "hold": 300
+  },
+  {
+   "wait": 800
+  },
+  {
+   "press": "Fechar"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "press": "Velocidade da simulação 4×"
+  },
+  {
+   "wait": 15000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "before-save"
+  },
+  {
+   "key": "Control+s"
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "saved"
+  },
+  {
+   "eval": "window.__roadcraft.sim.minutes.toFixed(1)"
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "reload": "Boolean(window.__roadcraft) && !window.__roadcraft.scene().opening",
+   "timeout": 120000
+  },
+  {
+   "wait": 4000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "reloaded"
+  },
+  {
+   "eval": "window.__roadcraft.sim.minutes.toFixed(1)"
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Novo mapa"
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "new-map"
+  },
+  {
+   "file": "<out>/roadcraft-map.json"
+  },
+  {
+   "key": "Control+o"
+  },
+  {
+   "wait": 4000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "opened-file"
+  },
+  {
+   "key": "Control+z"
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "open-undone"
+  }
+ ]
+}

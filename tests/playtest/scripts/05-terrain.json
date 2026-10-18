@@ -1,0 +1,248 @@
+{
+ "viewport": [
+  1920,
+  1080
+ ],
+ "dpr": 1.3333333333333333,
+ "steps": [
+  {
+   "until": "window.__roadcraft && !window.__roadcraft.scene().opening",
+   "timeout": 60000
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "press": "Paisagem"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "drag": [
+    [
+     500,
+     400
+    ],
+    [
+     560,
+     440
+    ]
+   ],
+   "button": "left",
+   "ms": 2000,
+   "steps": 40,
+   "hold": 1200
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "shot": "raised"
+  },
+  {
+   "press": "Rebaixar"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     1300,
+     400
+    ],
+    [
+     1360,
+     440
+    ]
+   ],
+   "button": "left",
+   "ms": 2000,
+   "steps": 40,
+   "hold": 1200
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "shot": "lowered"
+  },
+  {
+   "press": "Nivelar"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     540,
+     420
+    ],
+    [
+     700,
+     420
+    ]
+   ],
+   "button": "left",
+   "ms": 1500,
+   "steps": 40,
+   "hold": 300
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "shot": "levelled"
+  },
+  {
+   "press": "Rio"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "drag": [
+    [
+     340,
+     700
+    ],
+    [
+     1750,
+     560
+    ]
+   ],
+   "button": "left",
+   "ms": 3000,
+   "steps": 80,
+   "hold": 300
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "river"
+  },
+  {
+   "press": "Chapada"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "click": [
+    1500,
+    250
+   ]
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "shot": "chapada"
+  },
+  {
+   "press": "Fechar"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     960,
+     540
+    ],
+    [
+     1300,
+     480
+    ]
+   ],
+   "button": "right",
+   "ms": 1200,
+   "steps": 40
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "shot": "terrain-turned"
+  },
+  {
+   "wheel": [
+    0,
+    -100
+   ],
+   "at": [
+    960,
+    600
+   ],
+   "count": 6,
+   "ms": 1200
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "shot": "river-close"
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "shot": "river-close-later"
+  },
+  {
+   "press": "Paisagem"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Solo"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "shot": "tab-solo"
+  },
+  {
+   "press": "Natureza"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "shot": "tab-nature"
+  },
+  {
+   "press": "Céu e clima"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "shot": "tab-sky"
+  },
+  {
+   "press": "Rua"
+  },
+  {
+   "wait": 400
+  },
+  {
+   "shot": "tab-street"
+  }
+ ]
+}

@@ -1,0 +1,254 @@
+{
+ "viewport": [
+  1920,
+  1080
+ ],
+ "dpr": 1.3333333333333333,
+ "steps": [
+  {
+   "until": "window.__roadcraft && !window.__roadcraft.scene().opening",
+   "timeout": 60000
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "press": "Via"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    450,
+    300
+   ]
+  },
+  {
+   "move": [
+    1500,
+    300
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    1500,
+    300
+   ]
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "click": [
+    950,
+    120
+   ]
+  },
+  {
+   "move": [
+    950,
+    700
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    950,
+    700
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "press": "Zoneamento"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     460,
+     330
+    ],
+    [
+     1490,
+     480
+    ]
+   ],
+   "button": "left",
+   "ms": 1200,
+   "steps": 30,
+   "hold": 300
+  },
+  {
+   "wait": 800
+  },
+  {
+   "press": "Fechar"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "press": "Velocidade da simulação 4×"
+  },
+  {
+   "wait": 25000
+  },
+  {
+   "press": "Velocidade da simulação 1×"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "town"
+  },
+  {
+   "press": "Informações"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    700,
+    300
+   ]
+  },
+  {
+   "wait": 800
+  },
+  {
+   "shot": "inspect-road"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/buttons.js"
+  },
+  {
+   "click": [
+    950,
+    300
+   ]
+  },
+  {
+   "wait": 800
+  },
+  {
+   "shot": "inspect-junction"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Demolir"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    1200,
+    300
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "demolished-road"
+  },
+  {
+   "drag": [
+    [
+     500,
+     330
+    ],
+    [
+     800,
+     480
+    ]
+   ],
+   "button": "left",
+   "ms": 800,
+   "steps": 20,
+   "hold": 200
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "demolished-box"
+  },
+  {
+   "key": "Control+z"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "undo-1"
+  },
+  {
+   "key": "Control+z"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "undo-2"
+  },
+  {
+   "key": "Control+y"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "redo-1"
+  },
+  {
+   "press": "Desfazer (Ctrl+Z)"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "press": "Refazer (Ctrl+Y)"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "redo-button"
+  }
+ ]
+}

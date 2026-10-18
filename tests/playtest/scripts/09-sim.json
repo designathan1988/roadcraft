@@ -1,0 +1,307 @@
+{
+ "viewport": [
+  1920,
+  1080
+ ],
+ "dpr": 1.3333333333333333,
+ "steps": [
+  {
+   "until": "window.__roadcraft && !window.__roadcraft.scene().opening",
+   "timeout": 60000
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "press": "Via"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    350,
+    300
+   ]
+  },
+  {
+   "move": [
+    1600,
+    300
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    1600,
+    300
+   ]
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "click": [
+    350,
+    600
+   ]
+  },
+  {
+   "move": [
+    1600,
+    600
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    1600,
+    600
+   ]
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "click": [
+    700,
+    120
+   ]
+  },
+  {
+   "move": [
+    700,
+    740
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    700,
+    740
+   ]
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "click": [
+    1250,
+    120
+   ]
+  },
+  {
+   "move": [
+    1250,
+    740
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    1250,
+    740
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "press": "Controle"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "click": [
+    700,
+    300
+   ]
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    1250,
+    600
+   ]
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Zoneamento"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     360,
+     330
+    ],
+    [
+     1590,
+     570
+    ]
+   ],
+   "button": "left",
+   "ms": 1200,
+   "steps": 30,
+   "hold": 300
+  },
+  {
+   "wait": 500
+  },
+  {
+   "press": "Comercial"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "drag": [
+    [
+     360,
+     150
+    ],
+    [
+     1590,
+     270
+    ]
+   ],
+   "button": "left",
+   "ms": 1200,
+   "steps": 30,
+   "hold": 300
+  },
+  {
+   "wait": 500
+  },
+  {
+   "press": "Fechar"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "press": "Velocidade da simulação 4×"
+  },
+  {
+   "wait": 40000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/signals.js"
+  },
+  {
+   "shot": "sim-town"
+  },
+  {
+   "press": "Simulação"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "sim-panel"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "press": "Camadas do mapa"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Mapa de congestionamento"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "shot": "congestion"
+  },
+  {
+   "press": "Camadas do mapa"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Mapa de congestionamento"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "press": "Velocidade da simulação 1×"
+  },
+  {
+   "eval": "(() => { const g = window.__roadcraft; const n = g.doc.node([...g.sim.signals.nodes()][0]); g.setView({ x: n.x, y: n.y, zoom: 22, azimuth: 0.6, elevation: 0.75 }); return n.id; })()"
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "shot": "signal-close"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/signals.js"
+  },
+  {
+   "wait": 6000
+  },
+  {
+   "shot": "signal-close-later"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/signals.js"
+  },
+  {
+   "wheel": [
+    0,
+    -100
+   ],
+   "at": [
+    960,
+    540
+   ],
+   "count": 6,
+   "ms": 1200
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "shot": "people-close"
+  },
+  {
+   "press": "Pausar"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "shot": "paused"
+  },
+  {
+   "key": "Space"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  }
+ ]
+}

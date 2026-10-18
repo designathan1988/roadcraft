@@ -1,0 +1,444 @@
+{
+ "viewport": [
+  1920,
+  1080
+ ],
+ "dpr": 1.3333333333333333,
+ "steps": [
+  {
+   "until": "window.__roadcraft && !window.__roadcraft.scene().opening",
+   "timeout": 60000
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "press": "Via"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Nenhum"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "click": [
+    300,
+    540
+   ]
+  },
+  {
+   "move": [
+    1650,
+    540
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    1650,
+    540
+   ]
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "click": [
+    960,
+    150
+   ]
+  },
+  {
+   "move": [
+    960,
+    720
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    960,
+    720
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "press": "Fechar"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "wheel": [
+    0,
+    -100
+   ],
+   "at": [
+    700,
+    540
+   ],
+   "count": 5,
+   "ms": 1000
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/view.js"
+  },
+  {
+   "shot": "bare-street"
+  },
+  {
+   "press": "Paisagem"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Rua"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Banco"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "move": [
+    500,
+    512
+   ],
+   "steps": 5
+  },
+  {
+   "wait": 300
+  },
+  {
+   "shot": "bench-aim"
+  },
+  {
+   "click": [
+    500,
+    512
+   ]
+  },
+  {
+   "wait": 800
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "press": "Iluminação"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "drag": [
+    [
+     300,
+     567
+    ],
+    [
+     800,
+     567
+    ]
+   ],
+   "button": "left",
+   "ms": 1200,
+   "steps": 30,
+   "hold": 200
+  },
+  {
+   "wait": 800
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "press": "Árvore"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "drag": [
+    [
+     300,
+     512
+    ],
+    [
+     800,
+     512
+    ]
+   ],
+   "button": "left",
+   "ms": 1200,
+   "steps": 30,
+   "hold": 200
+  },
+  {
+   "wait": 800
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "press": "Placa"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "shot": "sign-panel"
+  },
+  {
+   "click": [
+    600,
+    567
+   ]
+  },
+  {
+   "wait": 800
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "press": "Cerca"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "click": [
+    300,
+    380
+   ]
+  },
+  {
+   "click": [
+    800,
+    380
+   ]
+  },
+  {
+   "click": [
+    800,
+    250
+   ],
+   "count": 2
+  },
+  {
+   "wait": 1000
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "press": "Construir rede"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    350,
+    568
+   ]
+  },
+  {
+   "click": [
+    850,
+    568
+   ]
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "shot": "street-furnished"
+  },
+  {
+   "press": "Fechar"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     960,
+     540
+    ],
+    [
+     1260,
+     500
+    ]
+   ],
+   "button": "right",
+   "ms": 1200,
+   "steps": 40
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "shot": "street-furnished-turned"
+  },
+  {
+   "press": "Transporte"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    700,
+    495
+   ]
+  },
+  {
+   "wait": 800
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "click": [
+    400,
+    500
+   ]
+  },
+  {
+   "wait": 800
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "bus-stops"
+  },
+  {
+   "press": "Criar linha"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    700,
+    495
+   ]
+  },
+  {
+   "click": [
+    400,
+    500
+   ],
+   "count": 2
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "press": "Trilho de trem"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    300,
+    250
+   ]
+  },
+  {
+   "click": [
+    1600,
+    250
+   ],
+   "count": 2
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "press": "Estação de trem"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    1100,
+    250
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "evalFile": "tests/playtest/scripts/state.js"
+  },
+  {
+   "shot": "transit"
+  },
+  {
+   "press": "Fechar"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Velocidade da simulação 4×"
+  },
+  {
+   "wait": 15000
+  },
+  {
+   "shot": "transit-running"
+  },
+  {
+   "wheel": [
+    0,
+    100
+   ],
+   "at": [
+    960,
+    540
+   ],
+   "count": 4,
+   "ms": 1000
+  },
+  {
+   "wait": 2500
+  },
+  {
+   "shot": "transit-out"
+  }
+ ]
+}

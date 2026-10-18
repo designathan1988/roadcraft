@@ -1,0 +1,367 @@
+{
+ "viewport": [
+  1920,
+  1080
+ ],
+ "dpr": 1.3333333333333333,
+ "steps": [
+  {
+   "until": "window.__roadcraft && !window.__roadcraft.scene().opening",
+   "timeout": 60000
+  },
+  {
+   "wait": 2000
+  },
+  {
+   "press": "Via"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    450,
+    300
+   ]
+  },
+  {
+   "move": [
+    1500,
+    300
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    1500,
+    300
+   ]
+  },
+  {
+   "wait": 1200
+  },
+  {
+   "click": [
+    950,
+    120
+   ]
+  },
+  {
+   "move": [
+    950,
+    700
+   ],
+   "steps": 10
+  },
+  {
+   "click": [
+    950,
+    700
+   ]
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "press": "Zoneamento"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "drag": [
+    [
+     460,
+     330
+    ],
+    [
+     1490,
+     480
+    ]
+   ],
+   "button": "left",
+   "ms": 1200,
+   "steps": 30,
+   "hold": 300
+  },
+  {
+   "wait": 800
+  },
+  {
+   "press": "Fechar"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "press": "Velocidade da simulação 4×"
+  },
+  {
+   "wait": 15000
+  },
+  {
+   "press": "Pausar"
+  },
+  {
+   "setView": [
+    -40,
+    30,
+    9,
+    30,
+    40
+   ]
+  },
+  {
+   "wait": 3000
+  },
+  {
+   "shot": "q-ultra"
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Alta"
+  },
+  {
+   "wait": 4000
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 1000
+  },
+  {
+   "shot": "q-high"
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Média"
+  },
+  {
+   "wait": 4000
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 1000
+  },
+  {
+   "shot": "q-medium"
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Baixa"
+  },
+  {
+   "wait": 4000
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 1000
+  },
+  {
+   "shot": "q-low"
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Ultra"
+  },
+  {
+   "wait": 4000
+  },
+  {
+   "press": "Opções gráficas…"
+  },
+  {
+   "wait": 800
+  },
+  {
+   "shot": "graphics-options"
+  },
+  {
+   "evalFile": "tests/playtest/scripts/buttons.js"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "English"
+  },
+  {
+   "wait": 1500
+  },
+  {
+   "shot": "english-menu"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Roads"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "en-roads"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "press": "Landscape"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "en-landscape"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "press": "Build"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "en-build"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 200
+  },
+  {
+   "press": "Info"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "click": [
+    700,
+    300
+   ]
+  },
+  {
+   "wait": 800
+  },
+  {
+   "shot": "en-inspect"
+  },
+  {
+   "press": "Simulation"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "en-sim"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "press": "Help"
+  },
+  {
+   "wait": 500
+  },
+  {
+   "shot": "en-help"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "About"
+  },
+  {
+   "wait": 800
+  },
+  {
+   "shot": "en-about"
+  },
+  {
+   "key": "Escape"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Menu"
+  },
+  {
+   "wait": 300
+  },
+  {
+   "press": "Português"
+  },
+  {
+   "wait": 800
+  },
+  {
+   "key": "Escape"
+  }
+ ]
+}
