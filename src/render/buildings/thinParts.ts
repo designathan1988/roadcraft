@@ -40,7 +40,11 @@ export function prefilterThinParts<K extends string>(
   const list: readonly (readonly [string, number, number])[] = [['frame', 0.05, 0.08], ['railing', 0.02, 0.16], ['roofRailing', 0.02, 0.16], ...more];
   for (const [kind, bar, behind] of list) {
     const thin = material[kind as 'frame'] as MeshStandardMaterial;
+    // Its bar and the tone behind as uniforms, the numbers the source once spelled (`toFixed(3)`): DO NOT write them into the source, one program a kind (r186 shares a program between materials of one key, `WebGLRenderer.getProgram`).
+    const thinBar = { value: Number(bar.toFixed(3)) }, thinBehind = { value: Number(behind.toFixed(3)) };
     thin.onBeforeCompile = (shader) => {
+      shader.uniforms.thinBar = thinBar;
+      shader.uniforms.thinBehind = thinBehind;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vThinWorld;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -50,15 +54,15 @@ export function prefilterThinParts<K extends string>(
   vThinWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
 #endif`);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vThinWorld;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vThinWorld;\nuniform float thinBar;\nuniform float thinBehind;')
         .replace('#include <color_fragment>', `#include <color_fragment>
   {
     // Metres a pixel spans here, and the bar's share of it.
     float metresPerPixel = max(length(fwidth(vThinWorld)) * 0.7071, 1e-4);
-    float cover = clamp(${bar.toFixed(3)} / metresPerPixel, 0.0, 1.0);
-    diffuseColor.rgb = mix(vec3(${behind.toFixed(3)}), diffuseColor.rgb, cover);
+    float cover = clamp(thinBar / metresPerPixel, 0.0, 1.0);
+    diffuseColor.rgb = mix(vec3(thinBehind), diffuseColor.rgb, cover);
   }`);
     };
-    thin.customProgramCacheKey = () => `thin-part-prefiltered-v1-${kind}`;
+    thin.customProgramCacheKey = () => 'thin-part-prefiltered-v2';
   }
 }

@@ -5,7 +5,6 @@ import { ROOM_LAMP_GLSL, TV_SHARE } from './roomLamps';
 /** The window panes' material: the room behind each pane drawn by interior mapping */
 export function roomBehindGlass(
   material: MeshStandardMaterial,
-  kind: 'glass' | 'glassDark',
   shared: {
     /** The furniture's colours (`furnitureKit.ts` `furnitureTones`). */
     readonly tones: Float32Array;
@@ -251,5 +250,6 @@ totalEmissiveRadiance *= roomLit * roomTint * (0.35 + 1.3 * clamp(roomSeen / 0.5
 }
 totalEmissiveRadiance += roomSeen * roomDaylight;`);
   };
-  glassy.customProgramCacheKey = () => `room-lights-awake-interior-v10-${kind}`;
+  // One key for the clear and the dark panes: their source is the same (no number of the kind in it), so one program (r186 `WebGLRenderer.getProgram`: each material its own uniforms, the program shared by key).
+  glassy.customProgramCacheKey = () => 'room-lights-awake-interior-v11';
 }
