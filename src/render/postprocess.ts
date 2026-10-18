@@ -229,6 +229,7 @@ export function createPostChain(
   // Light that is brighter than white spills a little round itself: the sun on glass, lit windows and lamps at night.
   const bloomStrength = level === 'ultra' ? 0.22 : 0.18;
   const bloom = new UnrealBloomPass(new Vector2(size.x, size.y), bloomStrength, 0.32, 1.05);
+  shareBloomBlur(bloom.separableBlurMaterials as ShaderMaterial[]);
   bloom.enabled = false;
   composer.addPass(bloom);
   // Its shaders built now, in parallel (KHR_parallel_shader_compile), not at the first dusk
@@ -1151,3 +1152,23 @@ const GRADED_OUTPUT_FRAGMENT = /* glsl */ `
     gl_FragColor = vec4(clamp(c, 0.0, 1.0), src.a);
   }
 `;
+
+/** DO NOT build a program for each of the bloom's blur radii: three's UnrealBloomPass (r186 `_getSeparableBlurMaterial`) writes the radius's pairs of taps into a define (`KERNEL_PAIRS` 3, 5, 7, 9, 11), five programs for one shader (the ~300 programs, prova motor-programas, 2026-10-18). One program for all: the arrays at the widest's length, padded with nothing, and the loop stopped at each one's own pairs (a uniform), the same taps summed in the same order. */
+export function shareBloomBlur(materials: readonly ShaderMaterial[]): void {
+  const most = Math.max(...materials.map((m) => Number(m.defines['KERNEL_PAIRS'])));
+  for (const material of materials) {
+    const pairs = Number(material.defines['KERNEL_PAIRS']);
+    const offsets = material.uniforms['gaussianOffsets']!.value as number[];
+    const weights = material.uniforms['gaussianWeights']!.value as number[];
+    material.uniforms['gaussianOffsets']!.value = [...offsets, ...new Array<number>(most - offsets.length).fill(0)];
+    material.uniforms['gaussianWeights']!.value = [...weights, ...new Array<number>(most - weights.length).fill(0)];
+    material.uniforms['uPairs'] = { value: pairs };
+    material.defines['KERNEL_PAIRS'] = most;
+    const loop = 'for ( int i = 0; i < KERNEL_PAIRS; i ++ ) {';
+    if (!material.fragmentShader.includes(loop)) throw new Error('[postprocess] the bloom blur shader is not the one shared (three r186 UnrealBloomPass)');
+    material.fragmentShader = material.fragmentShader
+      .replace('uniform float centerWeight;', 'uniform float centerWeight; uniform int uPairs;')
+      .replace(loop, `${loop} if ( i >= uPairs ) break;`);
+    material.needsUpdate = true;
+  }
+}
