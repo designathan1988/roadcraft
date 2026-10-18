@@ -46,8 +46,10 @@ What moves the game is reading the code, fixing the cause, and looking at the re
 - If a fix does not hold, read more code and the official sources (three.js r186: `node_modules/three/src` and
   `examples/jsm`, docs at threejs.org; Cesium 3D Tiles spec for level refinement); do not try variations at random.
 - NEVER ask the player anything: every decision is yours; weigh the options and take the best one, then say in
-  the report what you chose and why. That includes graphics trade-offs (before/after shots in the playtest
-  report), interface design and any architecture change the goal needs.
+  the report what you chose and why. That includes interface design and any architecture change the goal needs.
+- NEVER lower graphics quality or performance to fix something: no removed detail, shorter view distance, lower
+  resolution, fewer trees or buildings, weaker light or shadows, lower default quality level. A fix keeps or
+  raises both; before/after shots of the same views prove the look is the same or better.
 - Do not stop until everything is solved: no pausing for approval, no "should I continue?", no ending a turn
   with work left; finish each defect (fix, test, commit, shot) and go on to the next. Hard limits, never crossed:
   push only to `roadcraft4`; never delete the player's saves (a format change reads or migrates the old one,
@@ -112,7 +114,7 @@ a second RoadDoc + Network of the active region.
   `roads.adopt`. Fix: each step's product built in a job from the changed blocks, the page only uploading it.
 - `renderer.ts` `natureSweep`: the trees' scale is the average over the shown plates, so a plate shown re-picks
   every plate's lattice on the page (`farForest.ts` keeps each tree's pick and moves a uniform). Fix: picks kept
-  per plate; check the forest density near the camera in shots before and after.
+  per plate, the forest density near the camera unchanged (shots before and after).
 - Sim parked cars: the scenery's are rows (`ambient.ts` `SceneryCar`), but every row of the region is still
   told to the page, which keeps a view each (`simClient.ts` `parked`), and the walkers file a zone for each
   (`walk.ts` `ParkedZoneIndex`). Fix: the page told the rows near the view only (by place), the walkers'
@@ -183,7 +185,7 @@ a second RoadDoc + Network of the active region.
 - A tunnel is a step in the terrain plus a portal; `TUNNEL_*` and `CUT_SHOULDER` go together.
 - A road at grade is a projected line (`solveGround`); a junction takes its legs' height.
 - A building edit moves `doc.buildings.revision`, never `doc.revision`.
-- Terrain cell 6.4 m; one unit is one metre. Road numbers in `roads/tuning.ts`: change one only for a defect seen in a shot, the reason in the commit.
+- Terrain cell 6.4 m; one unit is one metre. Road numbers in `roads/tuning.ts`: only the player changes them.
 
 **sim**
 - One writer per field; stage order in `pipeline.ts`. `clock.tick` only at the end of `step`.
