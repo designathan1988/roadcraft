@@ -59,8 +59,10 @@ export class RoadStandIn {
   readonly group = new Group();
   private readonly casing = standInMaterial(STREET_MEANS.footway, 2);
   private readonly asphalt = standInMaterial(STREET_MEANS.asphalt, 3);
-  /** Each tile's stand-in meshes. */
+  /** Each tile's stand-in meshes (a world drawn by tiles: let go as each tile's near roads are drawn). */
   private readonly byTile = new Map<number, Mesh[]>();
+  /** Each commit's stand-in meshes by the network revision it made (a world the page draws whole: let go once a build of that revision landed, `landed`). DO NOT keep only the last commit's: each edit starts the world's build again, and the roads of every commit before it were drawn nowhere until the last build landed (two blocks laid one road a second, jogador-vazio 08-10). */
+  private readonly byRevision = new Map<number, Mesh[]>();
   /** The tiles given a stand-in this frame: not looked at for letting go before the near roads were asked of the edit (`settle`). */
   private readonly fresh = new Set<number>();
 
@@ -85,7 +87,7 @@ export class RoadStandIn {
 
   /** The roads `segments` drawn now (the commit's network solved): their outlines, and the junctions at their ends whose every road is one of them, each under the tile its middle is in.
    *  - DO NOT draw a road or a junction that was there before (a street the new one meets, split at the new junction): its near roads are drawn, and the stand-in's flat tone covered them until the bake came (via2 37/40). */
-  show(net: Network, heights: StandInHeights, segments: Iterable<SegmentId>): void {
+  show(net: Network, heights: StandInHeights, segments: Iterable<SegmentId>, revision?: number): void {
     const only = new Set(segments);
     const byTile = new Map<number, { casing: { positions: number[]; indices: number[] }; asphalt: { positions: number[]; indices: number[] } }>();
     const partsOf = (tile: number) => {
@@ -120,11 +122,31 @@ export class RoadStandIn {
     for (const [tile, parts] of byTile) {
       const meshes = [meshOf(parts.casing, this.casing, 1), meshOf(parts.asphalt, this.asphalt, 2)].filter((m): m is Mesh => m !== null);
       if (!meshes.length) continue;
-      const kept = this.byTile.get(tile);
-      if (kept) kept.push(...meshes); else this.byTile.set(tile, meshes);
-      this.fresh.add(tile);
+      // By the commit's revision where the page draws the world whole; by the tile where tiles draw it.
+      const into = revision === undefined ? this.byTile : this.byRevision, key = revision ?? tile;
+      const kept = into.get(key);
+      if (kept) kept.push(...meshes); else into.set(key, meshes);
+      if (revision === undefined) this.fresh.add(tile);
       for (const mesh of meshes) this.group.add(mesh);
     }
+  }
+
+  /** The commits whose stand-ins wait for the world's build (`show` with a revision). */
+  get revisions(): readonly number[] {
+    return [...this.byRevision.keys()];
+  }
+
+  /** A build of the world landed, of network revision `revision`: every commit it holds (made at that revision or before) let go, the later ones kept. */
+  landed(revision: number): void {
+    for (const [key, meshes] of [...this.byRevision]) {
+      if (key > revision) continue;
+      this.byRevision.delete(key);
+      this.letGo(meshes);
+    }
+  }
+
+  private letGo(meshes: readonly Mesh[]): void {
+    for (const mesh of meshes) { this.group.remove(mesh); mesh.geometry.dispose(); }
   }
 
   /** A tile's near roads drawn (its bake of the edit come): what stood in there let go. */
@@ -133,12 +155,13 @@ export class RoadStandIn {
     if (!meshes) return;
     this.byTile.delete(tile);
     this.fresh.delete(tile);
-    for (const mesh of meshes) { this.group.remove(mesh); mesh.geometry.dispose(); }
+    this.letGo(meshes);
   }
 
   /** Every stand-in let go (another map, the diary read from nothing). */
   clear(): void {
     for (const tile of [...this.byTile.keys()]) this.drop(tile);
+    this.landed(Infinity);
   }
 
   dispose(): void {

@@ -2908,9 +2908,10 @@ export function createSceneRenderer(
         for (const tile of roadStandIn.settled()) if (farRoads.standInDone(tile)) roadStandIn.drop(tile);
         roadStandIn.settle();
         if (pendingStandIn.length && elevation && net.revision === net.doc.revision) {
-          const laid = pendingStandIn.splice(0);
-          if (activeAt !== null) roadStandIn.show(net, elevation, laid);
+          // Drawn by tiles: let go by each tile's near roads; drawn whole by the page (a map of its own): by the build of the commit's revision landing, every commit not landed yet standing.
+          roadStandIn.show(net, elevation, pendingStandIn.splice(0), activeAt === null ? net.revision : undefined);
         }
+        roadStandIn.landed(landedRevision);
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;
         const texel = environment.sun.castShadow ? (shadow.camera.right - shadow.camera.left) / shadow.camera.zoom / shadow.mapSize.x : Infinity;
