@@ -384,7 +384,24 @@ export function warmQueuedBytes(): number {
 }
 /** Whether the queue holds more than it may: the producers (`farTree.ts`, `cellRequests.ts`, `massCells.ts`) ask no new mesh until it drains; never where no frame warms (tests). */
 export function warmFull(): boolean {
-  return warmer && queuedBytes > WARM_CEILING;
+  return warmer && queuedBytes + reservedBytes > WARM_CEILING;
+}
+/** The bytes asked of the workers and not landed yet, as their askers reckon them (`reserveWarm`): counted with the queue. DO NOT let only what already waits hold the producers back: every job in flight landed into the queue at once, past its ceiling (the page holding the answers until they went up). */
+let reservedBytes = 0;
+/** `bytes` a job asked will bring to the queue, counted from now until the job lands or is let go (the returned call, once). */
+export function reserveWarm(bytes: number): () => void {
+  const held = Math.max(0, bytes);
+  reservedBytes += held;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    reservedBytes -= held;
+  };
+}
+/** The bytes reserved by jobs in flight (`reserveWarm`). */
+export function warmReservedBytes(): number {
+  return reservedBytes;
 }
 const toWarmLoose: LooseJob[] = [];
 let warmer = false;
