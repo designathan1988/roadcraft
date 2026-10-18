@@ -697,8 +697,9 @@ export function bodySignature(body: BlueprintBody): Signature {
 
 /** How unlike two signatures are, 0 (the same building) to about 4 */
 export function signatureDistance(a: Signature, b: Signature): number {
-  const rgb = (c: number): [number, number, number] => [(c >> 16) & 255, (c >> 8) & 255, c & 255];
-  const [r1, g1, b1] = rgb(a.colour), [r2, g2, b2] = rgb(b.colour);
+  // The channels read straight, no list a colour (four a pair of buildings, every candidate against every neighbour).
+  const r1 = (a.colour >> 16) & 255, g1 = (a.colour >> 8) & 255, b1 = a.colour & 255;
+  const r2 = (b.colour >> 16) & 255, g2 = (b.colour >> 8) & 255, b2 = b.colour & 255;
   const colour = Math.min(1, Math.hypot(r1 - r2, g1 - g2, b1 - b2) / 90);
   return (a.form === b.form ? 0 : 1.5) + colour + (a.roof === b.roof ? 0 : 0.7) + Math.min(1, Math.abs(a.storeys - b.storeys) / 2) * 0.8;
 }
