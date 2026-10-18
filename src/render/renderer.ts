@@ -839,7 +839,8 @@ export function createSceneRenderer(
     const fill = scene.getObjectByName('fill');
     const base: Object3D[] = [];
     scene.traverse((o) => { if ((o as PointLight).isLight && o.visible && o !== fill && !points.includes(o)) base.push(o); });
-    return [false, true].flatMap((lit) => [false, true].map((filled) => [...base, ...(lit ? points : []), ...(filled && fill ? [fill] : [])]));
+    // The fill is always in the scene (`environment.ts`): only the point lights switched on or off make a variant.
+    return [false, true].map((lit) => [...base, ...(lit ? points : []), ...(fill ? [fill] : [])]);
   };
   const programs = createShaderCatalogue(personProgramStandIns, lightVariants);
   let openingSince: number | null = null;

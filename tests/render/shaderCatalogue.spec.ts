@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   BoxGeometry, DirectionalLight, Group, Mesh, MeshDepthMaterial, MeshStandardMaterial, PointLight, Scene,
@@ -155,5 +156,17 @@ describe('the shader catalogue', () => {
     view();
     for (let frame = 0; frame < 12; frame++) { await new Promise((done) => setTimeout(done, 0)); drainCompiles(renderer, camera, scene, null); }
     expect(asked).toEqual(['view', 'variant', 'variant', 'variant']);
+  });
+});
+
+describe('the lights in the key of every program', () => {
+  it('keeps the fill in the scene day and night (one program a material for it, not two), and makes a variant only of the point lights switched on or off', () => {
+    const environment = readFileSync('src/render/environment.ts', 'utf8');
+    // Its intensity follows the day; it never leaves the scene (r186 counts every visible light in the key).
+    expect(environment).not.toMatch(/fill\.visible\s*=/);
+    const renderer = readFileSync('src/render/renderer.ts', 'utf8');
+    const variants = /const lightVariants = [^]*?\n {2}\};/.exec(renderer)?.[0] ?? '';
+    expect(variants).toMatch(/\[false, true\]\.map\(\(lit\)/);
+    expect(variants).not.toMatch(/filled/);
   });
 });

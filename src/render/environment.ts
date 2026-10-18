@@ -267,8 +267,7 @@ export function createEnvironment(
       // No town-wide haze (the player: the smoke stays where the fire is).
       void smog; void SMOG;
       scene.environmentIntensity = 0.6 * (0.2 + 0.8 * light) * (1 - smog * 0.4);
-      // DO NOT leave the fill in the scene unlit: three counts every visible light, and each lit fragment evaluates it (its variant without it compiled ahead, `shaderCatalogue.ts`).
-      fill.visible = fill.intensity > 0;
+      // DO NOT take the fill out of the scene at night (it was, at intensity 0): three counts every visible light in each program's key (r186 numDirLights), and every lit material was built twice, with and without it. Kept at 0, a directional light without a shadow costs a fragment a few multiplies and adds nothing to it.
       cascades.syncLight();
       return dark;
     },
