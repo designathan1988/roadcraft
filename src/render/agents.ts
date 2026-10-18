@@ -50,7 +50,7 @@ import { ageFromYears } from '@people/body/macro';
 import { PLAYER_ID } from '@sim/ambient/playerId';
 import type { RagdollCitizens } from './ragdoll';
 import type { Company } from './citizenCasting';
-import { kerbTransfer, seatAgeClass, seatPerson, type KerbStop } from '@sim/vehicles/kerbStops';
+import { kerbTransfer, seatAgeClass, seatPersonInto, type KerbStop, type SeatPerson } from '@sim/vehicles/kerbStops';
 import { footwayRiseAt } from '@world/roads/footwayRise';
 import { walkingRise } from '@world/curbRamps';
 import { groundGradient } from './groundShear';
@@ -1617,6 +1617,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const vehicleCompany = (vehicle: SimVehicle): Company =>
     vehicle.archetype.shape === 'bus' ? 'bus' : vehicle.archetype.shape === 'truck' ? 'truck'
       : vehicle.archetype.shape === 'motorcycle' || vehicle.archetype.shape === 'bicycle' ? 'rider' : 'car';
+  /** The person of the seat asked, written over for each (`seatPersonInto`): never an object a seat a frame. */
+  const seated: SeatPerson = { seed: 0, gender: 'm', ageClass: 'adult' };
   /** Whether anybody aboard is a child: a car with a child in it is never on a work trip. */
   const carriesChild = (vehicle: SimVehicle): boolean => {
     const seats = Math.min(32, vehicle.archetype.seats);
@@ -1665,7 +1667,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const seat = model.seats[index]!;
       if (seat.row > rowsDrawn) continue;
       seatWorldInto(seat, seatPoint, seat.hipY);
-      const who = seatIdentity(vehicle, seatPerson(vehicle, index), hasChild);
+      const who = seatIdentity(vehicle, seatPersonInto(vehicle, index, seated), hasChild);
       // The seat's pose (`riderPoses.ts`) with a glance now and then (`occupants.ts`).
       const slain = seat.driver && vehicle.slain === true;
       const plays = occupantPlays(seat, who.seed, frame[FRAME_CLOCK]!, seatPlays, slain);
@@ -1831,7 +1833,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       riderPlay('motoStop', 0, 1 - moving);
     }
     // At the size the pose was solved at: the hands are on the grips and the feet on the pegs or pedals only there.
-    const drawn = pedestrians.drawClip(seatIdentity(vehicle, seatPerson(vehicle, 0), false), x, y, height, frame[FRAME_YAW]!, riderPlays, frame[FRAME_ROLL]!, Infinity, false, 1,
+    const drawn = pedestrians.drawClip(seatIdentity(vehicle, seatPersonInto(vehicle, 0, seated), false), x, y, height, frame[FRAME_YAW]!, riderPlays, frame[FRAME_ROLL]!, Infinity, false, 1,
       cyclist ? null : helmetMatrix);
     if (!cyclist && drawn > 0) {
       // A motorcyclist's helmet, fitted to this body's head (`riderPoses.helmetShape`) and put where the pose just drawn has it.
@@ -2085,7 +2087,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       if (clip) procForced.set(id, clip); else procForced.delete(id);
     },
     driverBody(vehicle, x, y) {
-      return pedestrians.indexFor(seatIdentity(vehicle, seatPerson(vehicle, 0), false), vehicle.archetype.shape === 'motorcycle', x, y);
+      return pedestrians.indexFor(seatIdentity(vehicle, seatPersonInto(vehicle, 0, seated), false), vehicle.archetype.shape === 'motorcycle', x, y);
     },
     carcass(vehicle, intact = false) {
       const a = vehicle.archetype;
