@@ -202,6 +202,8 @@ export class ConflictPool implements PairMeasurer {
   /** The lane's silence report started again, or stopped when nothing waits on it: said, and still waited for (measuring on the page would stall the simulation). */
   private arm(lane: Lane): void {
     if (lane.watchdog !== null) clearTimeout(lane.watchdog);
+    // Asked through the page's queue (`jobQueueChannel`): it waits its turn behind the view's jobs, silent by design, and a failure comes back as an answer.
+    if (this.ports) { lane.watchdog = null; return; }
     lane.watchdog = lane.waiting.size
       ? setTimeout(() => console.warn(`[traffic] a conflict worker has been silent for ${SILENCE_MS} ms with pairs waiting (busy or without CPU); still waiting`), SILENCE_MS)
       : null;
