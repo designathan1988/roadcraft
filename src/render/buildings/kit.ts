@@ -13,7 +13,8 @@ import {
   MeshStandardMaterial,
   PlaneGeometry,
 } from 'three';
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { weldGeometry } from '../mesh/weld';
 
 import type { Finish } from '@world/buildings/materials';
 import { SHELL_NORMAL_GLSL, createShellMaterial, finishAlbedo } from './finishes';
@@ -187,7 +188,7 @@ const trianglesOf = (g: BufferGeometry): number => (g.index ? g.index.count : g.
 /** The coarser levels of a prop: welded, then simplified at each error with its normals and tones weighed in (meshoptimizer README, `simplifyWithAttributes`) */
 async function simplerLevels(source: BufferGeometry, finest: number): Promise<PartLevel[]> {
   await MeshoptSimplifier.ready;
-  const welded = mergeVertices(source.clone(), 1e-4);
+  const welded = weldGeometry(source.clone(), 1e-4);
   const index = welded.getIndex(), position = welded.getAttribute('position'), normal = welded.getAttribute('normal'), colour = welded.getAttribute('color');
   if (!index || !normal) return [];
   const count = position.count;

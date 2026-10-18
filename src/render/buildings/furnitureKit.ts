@@ -5,7 +5,8 @@ import {
   MeshStandardMaterial,
   SphereGeometry,
 } from 'three';
-import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { weldGeometry } from '../mesh/weld';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { FURNITURE_KINDS, FURNITURE_SIZE, type FurnitureKind } from '@world/buildings/interior';
 
@@ -42,7 +43,7 @@ function paint(g: BufferGeometry, c: RGB, x = 0, y = 0, z = 0): BufferGeometry {
   const colours = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) colours.set(c, i * 3);
   g.setAttribute('color', new BufferAttribute(colours, 3));
-  return g.index ? g : mergeVertices(g);
+  return g.index ? g : weldGeometry(g);
 }
 
 /** A box with rounded edges, its bottom at `y`. */

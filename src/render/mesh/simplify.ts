@@ -1,5 +1,5 @@
 import { BufferAttribute, type BufferGeometry } from 'three';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { weldGeometry } from './weld';
 import { MeshoptSimplifier } from 'meshoptimizer';
 
 /** A coarser copy of a mesh for when it is a few pixels big */
@@ -9,7 +9,7 @@ export async function simplified(source: BufferGeometry, ratio: number, error: n
   } catch {
     return source;
   }
-  const welded = mergeVertices(source.clone(), 1e-4);
+  const welded = weldGeometry(source.clone(), 1e-4);
   const index = welded.getIndex();
   const position = welded.getAttribute('position');
   if (!index || !position) return source;

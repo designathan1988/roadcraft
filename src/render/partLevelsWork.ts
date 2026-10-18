@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry, Float32BufferAttribute, type InterleavedBufferAttribute, type TypedArray } from 'three';
-import { mergeVertices, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+import { weldGeometry } from './mesh/weld';
 import { MeshoptSimplifier } from 'meshoptimizer';
 
 /** One welded mesh simplified once per error: its positions, its other attributes interleaved (`weights` a float each), its index. */
@@ -59,7 +60,7 @@ export function partLevelArrays(part: PartArrays, weld: Weld): PartLevels {
   const count = copy.getAttribute('position').count;
   if (!copy.getAttribute('color')) copy.setAttribute('color', new Float32BufferAttribute(new Float32Array(count * 3).fill(1), 3));
   if (weld === 'smooth' && !copy.getAttribute('normal')) copy.computeVertexNormals();
-  const welded = mergeVertices(copy, 1e-4);
+  const welded = weldGeometry(copy, 1e-4);
   const position = welded.getAttribute('position') as BufferAttribute;
   const colour = welded.getAttribute('color') as BufferAttribute;
   const normal = welded.getAttribute('normal') as BufferAttribute | undefined;

@@ -14,7 +14,8 @@ import {
   Vector2,
   Vector3,
 } from 'three';
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { weldGeometry } from './mesh/weld';
 
 import type { Archetype } from '@sim/vehicles/archetypes';
 import { m } from '@world/units';
@@ -237,7 +238,7 @@ function weldPart(g: BufferGeometry): BufferGeometry {
   }
   n.clearGroups();
   if (n.index) return n;
-  const welded = mergeVertices(n);
+  const welded = weldGeometry(n);
   if (n !== g) n.dispose();
   return welded;
 }

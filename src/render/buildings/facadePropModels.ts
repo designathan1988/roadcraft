@@ -9,7 +9,8 @@ import {
   RingGeometry,
   SphereGeometry,
 } from 'three';
-import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { weldGeometry } from '../mesh/weld';
 import { AC, type FacadePropKind, POT_HIGH } from './facadeProps';
 
 /** The models of the props on the facades and balconies (`facadeProps.ts` places them) */
@@ -20,7 +21,7 @@ import { AC, type FacadePropKind, POT_HIGH } from './facadeProps';
 /** DO NOT `toNonIndexed` a part: every instance of the prop drew each corner once per triangle; a loose list is indexed instead (identical vertices only, so a faceted part stays faceted; three `BufferGeometryUtils.mergeVertices`). */
 function tone(g: BufferGeometry, rgb: readonly [number, number, number]): BufferGeometry {
   g.deleteAttribute('uv');
-  const part = g.index ? g : mergeVertices(g);
+  const part = g.index ? g : weldGeometry(g);
   if (part !== g) g.dispose();
   const n = part.getAttribute('position').count;
   const c = new Float32Array(n * 3);
