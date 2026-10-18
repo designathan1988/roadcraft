@@ -128,8 +128,9 @@ describe('the far levels where no tile was made', () => {
     const tiles = new Map<number, TileRecords>();
     const far = new FarLevels(kit, runner(cache), 'test:');
     far.setSource({ records: (key) => Promise.resolve(tiles.get(key) ?? null), plan: OPTIONS }, () => false);
-    // 2 km over the middle of node f2:0,0, the view reaching 6 km.
-    const look = (): void => far.choose(0.5 * nodeSide(2), 0.5 * nodeSide(2), m(2_000), 1000, null, m(6_000));
+    // 2 km over the middle of node f2:0,0, the view reaching 6 km, at a scale its 4 km level is what the view asks for (the plan is drawn finer where the view asks finer).
+    const look = (): void => far.choose(0.5 * nodeSide(2), 0.5 * nodeSide(2), m(2_000), 150, null, m(6_000));
+    const lookNear = (): void => far.choose(0.5 * nodeSide(2), 0.5 * nodeSide(2), m(2_000), 1000, null, m(6_000));
     const node = farKey(2, 0, 0);
     await until(look, () => far.waiting === 0);
     expect(far.shownKeys()).toContain(node);
@@ -165,7 +166,7 @@ describe('the far levels where no tile was made', () => {
         if (!tiles.has(key)) { tiles.set(key, emptyRecords(key, 1)); far.stored(key, 1); }
       }
     }
-    await until(look, () => far.waiting === 0 && !far.shownKeys().includes(node));
+    await until(lookNear, () => far.waiting === 0 && !far.shownKeys().includes(node));
     const under = far.shownKeys().map(farNode).filter((n) => n.i * nodeSide(n.k) >= 0 && (n.i + 1) * nodeSide(n.k) <= nodeSide(2) && n.j * nodeSide(n.k) >= 0 && (n.j + 1) * nodeSide(n.k) <= nodeSide(2));
     expect(under.length).toBeGreaterThan(0);
     for (const n of under) expect(n.k).toBeLessThanOrEqual(1);
@@ -223,10 +224,32 @@ describe('the far levels where no tile was made', () => {
     far.setSource({ records: () => Promise.resolve({ ...emptyRecords(key, 1), buildings: [JSON.parse(JSON.stringify(building(0, 0.5 * TILE, 0.5 * TILE))) as unknown] }), plan: OPTIONS }, () => false);
     // A tile of node f2:0,0 made before the tree ever saw the node.
     far.stored(key, 1);
-    const look = (): void => far.choose(0.5 * nodeSide(2), 0.5 * nodeSide(2), m(2_000), 1000, null, m(6_000));
+    const look = (): void => far.choose(0.5 * nodeSide(2), 0.5 * nodeSide(2), m(2_000), 150, null, m(6_000));
     const node = farKey(2, 0, 0);
     await until(look, () => far.shownKeys().includes(node));
     expect(entryOf(cache, planKey(node))?.sig).toBe(PLAN_SIG);
+    far.dispose();
+    kit.dispose();
+  }, 10_000);
+
+  it("leave no tile bare round the page's region: a node with a tile of the document under it is drawn by its quarters, the plan's where none is made", async () => {
+    const kit = createBuildingKit();
+    const cache = memoryCache();
+    const loaded = tileKey(0, 0);
+    const far = new FarLevels(kit, runner(cache), 'test:');
+    far.setSource({ records: (key) => Promise.resolve(key === loaded ? emptyRecords(key, 1) : null), plan: OPTIONS }, (key) => key === loaded);
+    // The page holds tile (0, 0); no other tile of node f2:0,0 is made.
+    far.stored(loaded, 1);
+    const look = (): void => far.choose(0.5 * nodeSide(2), 0.5 * nodeSide(2), m(2_000), 1000, null, m(6_000));
+    await until(look, () => far.waiting === 0);
+    const shown = far.shownKeys().map(farNode);
+    for (let x = 0.5; x < 4; x++) {
+      for (let y = 0.5; y < 4; y++) {
+        if (x < 1 && y < 1) continue;
+        const over = shown.filter((n) => x * TILE >= n.i * nodeSide(n.k) && x * TILE < (n.i + 1) * nodeSide(n.k) && y * TILE >= n.j * nodeSide(n.k) && y * TILE < (n.j + 1) * nodeSide(n.k));
+        expect(over.length).toBe(1);
+      }
+    }
     far.dispose();
     kit.dispose();
   }, 10_000);

@@ -324,6 +324,18 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
     const entry = await cache.get(`${prefix}${key}`) as T | undefined;
     return entry?.sig === version ? entry : undefined;
   };
+  // A node no tile is made under yet: the plan's boxes, baked once per world (it never changes); as boxes at every level (a tile's plan is no tile: before the tile's own reading).
+  if (sig === PLAN_SIG) {
+    if (!keeps) return { kind: 'farNoCache', node, sig };
+    const known = job.want ? await kept<MassEntry>(planKey(node), sig) : undefined;
+    if (known) return { kind: 'far', node, sig, mass: known.mass };
+    const boxes = planBoxesOf(job, k, i, j);
+    // As boxes at every level, a tile's and a plate's too: the plan has no masses of its own (`massBoxes.ts`).
+    const mass = boxMass(boxes, levelDrop(k));
+    await cache.put(`${prefix}${planKey(node)}`, { sig, mass });
+    await cache.put(`${prefix}${planKey(node)}${BOX_KEY}`, { sig, boxes });
+    return { kind: 'far', node, sig, mass: job.want ? mass : null };
+  }
   if (k === 0) {
     // Its masses alone when drawn; its boxes when baked for its parent (`BOX_KEY`).
     const known = keeps ? await kept<MassEntry | BoxEntry>(job.want ? node : `${node}${BOX_KEY}`, sig) : undefined;
@@ -337,16 +349,6 @@ export async function runFarJob(job: FarJob, cache: FarCache): Promise<FarReply>
     return { kind: 'far', node, sig, mass: job.want ? bake.tile : null };
   }
   if (!keeps) return { kind: 'farNoCache', node, sig };
-  // A node no tile is made under yet: the plan's boxes, baked once per world (it never changes); its mesh at the box levels.
-  if (sig === PLAN_SIG) {
-    const known = job.want ? await kept<MassEntry>(planKey(node), sig) : undefined;
-    if (known) return { kind: 'far', node, sig, mass: known.mass };
-    const boxes = planBoxesOf(job, k, i, j);
-    const mass = k >= 2 ? boxMass(boxes, levelDrop(k)) : null;
-    await cache.put(`${prefix}${planKey(node)}`, { sig, mass });
-    await cache.put(`${prefix}${planKey(node)}${BOX_KEY}`, { sig, boxes });
-    return { kind: 'far', node, sig, mass: job.want ? mass : null };
-  }
   // DO NOT read its four tiles' entries whole whenever a level-1 node is drawn: its tiles' plate masses are kept merged under a key of their own (`MASS_KEY`), apart from the boxes its parent reads.
   const drawn = job.want ? await kept<MassEntry>(k === 1 ? `${node}${MASS_KEY}` : node, sig) : undefined;
   if (drawn) return { kind: 'far', node, sig, mass: drawn.mass };
