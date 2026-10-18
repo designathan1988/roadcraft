@@ -1,4 +1,4 @@
-import { jobLanes, jobPort, queuePortWorker } from './jobs/jobPool';
+import { jobLanes, jobPort, portWorker } from './jobs/jobPool';
 import { type FinishAsk, type FinishedPair, type PairMeasurer, type SampledSweep, type SweepAsk, type SweepSamples, TABLE_SIZE } from '@world/conflictTable';
 import type { ChosenTurn, SurfaceRings, TurnAsk } from '@world/junctionTurns';
 import type { CornerAsk } from '@world/walkingLines';
@@ -20,7 +20,7 @@ const MOST_LANES = 4;
 
 export class ConflictPool implements PairMeasurer {
   /** `keepPrefix`: the key prefix the tables are kept under for the next session */
-  /** `ports`: the page's lanes for this thread (`jobPool.ts` jobQueueChannel, the simulation's worker): DO NOT open a pool here when given them. None: lanes of this thread's own pool. */
+  /** `ports`: the page's lanes for this thread (`jobPool.ts` jobChannel, the simulation's worker): DO NOT open a pool here when given them. None: lanes of this thread's own pool. */
   constructor(private readonly keepPrefix: string | null = null, private readonly ports: readonly MessagePort[] | null = null) {}
 
   get keeps(): boolean {
@@ -202,8 +202,6 @@ export class ConflictPool implements PairMeasurer {
   /** The lane's silence report started again, or stopped when nothing waits on it: said, and still waited for (measuring on the page would stall the simulation). */
   private arm(lane: Lane): void {
     if (lane.watchdog !== null) clearTimeout(lane.watchdog);
-    // Asked through the page's queue (`jobQueueChannel`): it waits its turn behind the view's jobs, silent by design, and a failure comes back as an answer.
-    if (this.ports) { lane.watchdog = null; return; }
     lane.watchdog = lane.waiting.size
       ? setTimeout(() => console.warn(`[traffic] a conflict worker has been silent for ${SILENCE_MS} ms with pairs waiting (busy or without CPU); still waiting`), SILENCE_MS)
       : null;
@@ -216,7 +214,7 @@ export class ConflictPool implements PairMeasurer {
     const lanes: Lane[] = [];
     try {
       for (let k = 0; k < count; k++) {
-        const worker = this.ports ? queuePortWorker(this.ports[k]!) : jobPort('conflicts');
+        const worker = this.ports ? portWorker(this.ports[k]!) : jobPort('conflicts');
         const lane: Lane = { worker, waiting: new Map(), watchdog: null };
         worker.onmessage = (event: MessageEvent<{ id: number; beat?: true; tables?: (Float64Array | null)[]; turns?: ChosenTurn[]; sweeps?: SampledSweep[]; finished?: FinishedPair[]; corners?: (Float64Array | null)[][]; junctions?: JunctionAnswer[]; error?: string; laneFailed?: string }>) => {
           if (this.lanes !== lanes) return;
