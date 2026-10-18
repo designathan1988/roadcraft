@@ -53,7 +53,7 @@ What moves the game is reading the code, fixing the cause, and looking at the re
 - Do not stop until everything is solved: no pausing for approval, no "should I continue?", no ending a turn
   with work left; finish each defect (fix, test, commit, shot) and go on to the next. Hard limits, never crossed:
   push only to `roadcraft4`; never delete the player's saves (a format change reads or migrates the old one,
-  keeping a copy). No agents unless he asks: do the work yourself.
+  keeping a copy). Use agents whenever they help, as many as the work needs.
 
 ## What the player wants
 - Excellent performance and graphics on different computers, toward the unlimited city: the whole
@@ -154,8 +154,8 @@ a second RoadDoc + Network of the active region.
 ## Commits, branches, agents
 - `git status` first; commit only your paths (`git commit --only <paths>`) after reading their diff. Every
   file saved in the main folder reloads the game on 5300.
-- Agents only when the player asks for them: up to 10 at once, each in its own worktree from local `main`,
-  one part each, no two on the same files. Agents run no process besides git and reading/writing files. Read each diff whole before merging.
+- Agents: free to use, no limit on number. An agent that writes code works in its own worktree from local `main`,
+  one part each, no two on the same files; it may run typecheck, tests and `look.mjs`. Read each diff whole before merging.
   Remove a worktree's junctions with `rmdir`, never `rm -rf`; delete the branch once merged.
 - Push only to `roadcraft4` (https://github.com/designathan1988/roadcraft-4.0.git); NEVER to `original` (a
   local copy of an older extract). Never touch ports 4180-4183, 5173, 5175-5178.
