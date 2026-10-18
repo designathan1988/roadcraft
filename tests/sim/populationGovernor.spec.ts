@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PopulationGovernor, cpuPopulationShare } from '@sim/populationGovernor';
+import { PopulationGovernor } from '@sim/populationGovernor';
 
 /** THE POPULATION THE MACHINE SUSTAINS (`sim/populationGovernor.ts`) */
 
@@ -54,20 +54,5 @@ describe('the population governor', () => {
     for (let f = 0; f < 600; f++) g.feed(0, 0, f / 60, 0, 0);
     expect(g.stepMs).toBe(0);
     expect(g.share).toBe(1);
-  });
-
-  it('starts a machine of few threads at a part of the town, and fills it from there while a step is cheap', () => {
-    expect([cpuPopulationShare(4), cpuPopulationShare(8), cpuPopulationShare(24)]).toEqual([0.5, 0.75, 1]);
-    const g = new PopulationGovernor(1);
-    g.start(cpuPopulationShare(4));
-    expect(g.share).toBe(0.5);
-    // Taken once, before any step: a later start changes nothing.
-    g.start(1);
-    expect(g.share).toBe(0.5);
-    expect(run(g, 2, 0, 60)).toBe(1);
-    // This machine's 24 threads: the whole town from the start, as before.
-    const strong = new PopulationGovernor(1);
-    strong.start(cpuPopulationShare(24));
-    expect(strong.share).toBe(1);
   });
 });

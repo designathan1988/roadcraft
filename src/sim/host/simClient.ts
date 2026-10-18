@@ -407,7 +407,7 @@ export class SimClient implements JournalReader {
   }
 
   /** A frame of the page: the map's changes since the last sent, then the wall time and the controls (one frame asked at a time). */
-  frame(wall: number, hold: boolean, run: { readonly traffic: boolean; readonly pedestrians: boolean; readonly maxShare: number; readonly startShare?: number }): void {
+  frame(wall: number, hold: boolean, run: { readonly traffic: boolean; readonly pedestrians: boolean; readonly maxShare: number }): void {
     this.sendChanges();
     this.wallOwed += wall;
     this.askClock += wall;
@@ -421,7 +421,7 @@ export class SimClient implements JournalReader {
     const controls: SimControls = {
       speed: this.clock.speed, paused: this.clock.paused, traffic: run.traffic, pedestrians: run.pedestrians,
       trafficIntensity: this.trafficIntensity, pedestrianIntensity: this.pedestrianIntensity, demandMultiplier: this.demandMultiplier,
-      maxShare: run.maxShare, ...(run.startShare !== undefined ? { startShare: run.startShare } : {}), focus: this.focus,
+      maxShare: run.maxShare, focus: this.focus,
     };
     this.send({ type: 'frame', wall: this.wallOwed, hold, controls });
     this.wallOwed = 0;
