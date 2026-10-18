@@ -540,7 +540,7 @@ export function createBuildingKit(): BuildingKit {
   // The furniture's models, made once
   const furnitureGeometry = createFurnitureGeometries();
   const tones = furnitureTones(furnitureGeometry);
-  for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(own[kind] as MeshStandardMaterial, kind, { tones, roomsAwake, roomDaylight, tvClock });
+  for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(own[kind] as MeshStandardMaterial, { tones, roomsAwake, roomDaylight, tvClock });
   const shell = createShellMaterial();
   const ruinShell = createShellMaterial({ carried: true });
   // The shell's parts are the shell drawn instanced (`shellParts.ts`): its own material, not pulled towards the eye, not renamed.
