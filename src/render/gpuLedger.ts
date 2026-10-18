@@ -1,3 +1,4 @@
+import { WEAK_MACHINE, type WeakMachine } from '@core/weakMachine';
 import type { BufferAttribute, BufferGeometry } from 'three';
 
 /** THE GPU'S BYTES IN ONE BOOK: every owner of video memory registers what it holds (bytes and triangles by class), and selection asks it before it requests (Cesium `cacheBytes`, 3DTilesRendererJS `lruCache.maxBytes`) */
@@ -117,9 +118,10 @@ export function deviceGpuCap(device: GpuDevice): number {
 }
 
 /** The device as the page can read it: `navigator.deviceMemory`, the unmasked renderer string (`WEBGL_debug_renderer_info`; Firefox gives it as `RENDERER`). */
-export function readGpuDevice(gl: WebGLRenderingContext | WebGL2RenderingContext, pixels: number): GpuDevice {
+export function readGpuDevice(gl: WebGLRenderingContext | WebGL2RenderingContext, pixels: number, weak: WeakMachine = WEAK_MACHINE): GpuDevice {
+  // A run playing a weaker machine (`core/weakMachine.ts`): its GPU's name and its memory, the cap an integrated GPU of it has.
   const info = gl.getExtension('WEBGL_debug_renderer_info') as { UNMASKED_RENDERER_WEBGL: number } | null;
-  const renderer = String((info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null) ?? gl.getParameter(gl.RENDERER) ?? '');
+  const renderer = weak.gpu ?? String((info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null) ?? gl.getParameter(gl.RENDERER) ?? '');
   const said = (globalThis.navigator as unknown as { deviceMemory?: number } | undefined)?.deviceMemory;
-  return { memoryGB: typeof said === 'number' && said > 0 ? said : null, renderer, pixels };
+  return { memoryGB: weak.memoryGB ?? (typeof said === 'number' && said > 0 ? said : null), renderer, pixels };
 }

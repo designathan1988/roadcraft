@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry } from 'three';
 
-import { GpuLedger, deviceGpuCap, geometryCost, gpuLedger, integratedGpu } from '@render/gpuLedger';
+import { GpuLedger, deviceGpuCap, geometryCost, gpuLedger, integratedGpu, readGpuDevice } from '@render/gpuLedger';
+import { parseWeakMachine } from '@core/weakMachine';
+import { tierForGpu } from '@core/gpuTier';
 import { cellMass } from '@render/buildings/cellArrays';
 import type { CellEnv, CellPool } from '@render/buildings/cellPool';
 import { CellRequests } from '@render/buildings/cellRequests';
@@ -123,5 +125,33 @@ describe('the owners in the ledger', () => {
     expect(asked).toEqual(['0,0', '0,0']);
     requests.clear();
     kit.dispose();
+  });
+});
+
+describe('the device read for a run playing a weaker machine (ROADCRAFT_WEAK)', () => {
+  /** This machine as WebGL names it: the RTX 3060, 32 GB said. */
+  const gl = {
+    getExtension: () => ({ UNMASKED_RENDERER_WEBGL: 1 }),
+    getParameter: () => 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)',
+    RENDERER: 2,
+  } as unknown as WebGL2RenderingContext;
+  const pixels = 1920 * 1.5 * 1080 * 1.5;
+
+  it('reads the UHD 770 with 8 GB when the run asks for it: the low tier, the cap of an integrated GPU', () => {
+    const weak = parseWeakMachine('uhd770');
+    const device = readGpuDevice(gl, 1920 * 1080, weak);
+    expect(device.renderer).toBe(weak.gpu);
+    expect(device.memoryGB).toBe(8);
+    expect(tierForGpu(device.renderer)).toBe('low');
+    expect(integratedGpu(device.renderer)).toBe(true);
+    expect(deviceGpuCap(device)).toBeLessThanOrEqual(2 * 2 ** 30);
+  });
+
+  it('reads this machine as it is without one: its own name, its tier and its cap unchanged', () => {
+    const device = readGpuDevice(gl, pixels, parseWeakMachine(''));
+    expect(device.renderer).toContain('RTX 3060');
+    expect(tierForGpu(device.renderer)).toBe(tierForGpu('ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)'));
+    expect(deviceGpuCap(device)).toBe(deviceGpuCap({ memoryGB: device.memoryGB, renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002504) Direct3D11 vs_5_0 ps_5_0, D3D11)', pixels }));
+    expect(integratedGpu(device.renderer)).toBe(false);
   });
 });

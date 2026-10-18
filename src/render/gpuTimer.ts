@@ -1,3 +1,4 @@
+import { WEAK_MACHINE } from '@core/weakMachine';
 import type { WebGLRenderer } from 'three';
 import { SampleRing } from '@core/sampleRing';
 
@@ -30,7 +31,8 @@ export function createGpuTimer(renderer: WebGLRenderer, size = 16): GpuTimer {
     (typeof gl.getExtension === 'function' ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null) as TimerExtension | null;
   let ext = timerExtension();
   const info = typeof gl.getExtension === 'function' ? gl.getExtension('WEBGL_debug_renderer_info') : null;
-  const label = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unknown';
+  // A run playing a weaker machine names its GPU (`core/weakMachine.ts`).
+  const label = WEAK_MACHINE.gpu ?? (info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unknown');
   const samples = new SampleRing(2400);
   if (!ext || typeof gl.createQuery !== 'function') {
     return { supported: false, label, samples, skipped: 0, disjoint: 0, begin() {}, end() {}, poll() {} };
