@@ -2,7 +2,7 @@ import {
   Color, DepthTexture, type DirectionalLight, FloatType, HalfFloatType, Matrix4, Mesh, NoBlending,
   RGFormat, RedFormat, SRGBColorSpace, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
-import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
+import { FullScreenQuad, type Pass } from 'three/examples/jsm/postprocessing/Pass.js';
 import { CopyShader } from 'three/examples/jsm/shaders/CopyShader.js';
 import { m, perM } from '@world/units';
 import { driftedCloud, type PlacedCloud } from '@world/clouds';
@@ -53,6 +53,10 @@ export interface PostChain {
   setSwitches(switches: PostSwitches): void;
   dispose(): void;
 }
+
+/** Told round every composer pass drawn (the lab's per-pass GPU timing, `lab/gpu`): set on the scene's `userData[POST_PASS_HOOK]`; absent, the passes draw as ever. */
+export interface PostPassHook { before(pass: string): void; after(pass: string): void }
+export const POST_PASS_HOOK = 'postPassHook';
 
 /** The player's sky (Landscape > Sky and weather) */
 export interface Atmosphere {
@@ -393,6 +397,17 @@ export function createPostChain(
   output.uniforms['uTexel'] = { value: new Vector2(1 / Math.max(1, size.x * ratio), 1 / Math.max(1, size.y * ratio)) };
   output.material.needsUpdate = true;
   composer.addPass(output);
+  // Each pass told to the lab's observer when one is set (`PostPassHook`).
+  for (const [pass, name] of [[scenePass, 'scene'], [gtao, 'gtao'], [canyon?.pass, 'canyon'], [bloom, 'bloom'], [clouds, 'clouds'], [smaa, 'smaa'], [output, 'output']] as [Pass | null | undefined, string][]) {
+    if (!pass) continue;
+    const draw = pass.render.bind(pass);
+    pass.render = (...args: Parameters<Pass['render']>) => {
+      const hook = scene.userData[POST_PASS_HOOK] as PostPassHook | undefined;
+      if (!hook) { draw(...args); return; }
+      hook.before(name);
+      try { draw(...args); } finally { hook.after(name); }
+    };
+  }
 
   // A cloud's shadow takes the sun's direct light and leaves the sky's (global = diffuse + direct * cos(zenith))
   let night = 0;

@@ -14,6 +14,10 @@ export interface GpuTimer {
   readonly skipped: number;
   /** Results thrown away: the GPU was disjoint (a clock change, a context loss). */
   readonly disjoint: number;
+  /** Whether the frames go unmeasured for a while (`pause`). */
+  readonly paused: boolean;
+  /** No frame measured while on: the lab times the passes one after another with queries of its own (`lab/gpu/passTimer.ts`), and TIME_ELAPSED queries cannot overlap (EXT_disjoint_timer_query). Set between frames, never inside `begin`/`end`. */
+  pause(on: boolean): void;
   begin(): void;
   end(): void;
   /** Reads what came in; once a frame, before `begin`. */
@@ -35,7 +39,7 @@ export function createGpuTimer(renderer: WebGLRenderer, size = 16): GpuTimer {
   const label = WEAK_MACHINE.gpu ?? (info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unknown');
   const samples = new SampleRing(2400);
   if (!ext || typeof gl.createQuery !== 'function') {
-    return { supported: false, label, samples, skipped: 0, disjoint: 0, begin() {}, end() {}, poll() {} };
+    return { supported: false, label, samples, skipped: 0, disjoint: 0, paused: false, pause() {}, begin() {}, end() {}, poll() {} };
   }
   const queries: WebGLQuery[] = [];
   for (let i = 0; i < size; i++) queries.push(gl.createQuery()!);
@@ -57,8 +61,12 @@ export function createGpuTimer(renderer: WebGLRenderer, size = 16): GpuTimer {
     samples,
     skipped: 0,
     disjoint: 0,
+    paused: false,
+    pause(on: boolean): void {
+      timer.paused = on;
+    },
     begin(): void {
-      if (lost || !ext) return;
+      if (lost || !ext || timer.paused) return;
       if (running || waiting >= size) { timer.skipped++; return; }
       gl.beginQuery(ext.TIME_ELAPSED_EXT, queries[(first + waiting) % size]!);
       running = true;
