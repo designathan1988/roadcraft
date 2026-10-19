@@ -87,6 +87,15 @@ export function commitRoadPath(
   const timed = (what: string): void => { const now = performance.now(); measureHitch(`hitch:commit/${what}`, lap, now); lap = now; };
   // DO NOT copy the map to judge against when the network is behind (`snapshotRoads`)
   if (net.revision !== doc.revision) net.rebuild();
+  // DO NOT work the road out again at the click when the draft at rest was judged on this same map (`roadTool.ts` judge): its copy laid.
+  const key = dryRunKey(start, end, type, pieces, lanes, parking, ground !== undefined);
+  const kept = lastDryRun;
+  lastDryRun = null;
+  if (!options.dryRun && kept && kept.doc === doc && kept.net === net && kept.version === doc.changes.version && kept.netRevision === net.revision
+    && kept.groundSolve === (options.groundSolve ?? null) && kept.key === key) {
+    dryRunsReused++;
+    return layCopy(doc, net, kept.work, kept.workNet, kept.bore, kept.heightLimited, kept.finalHeightOffset, ground, timed);
+  }
   const work = doc.fork();
   timed('fork');
   const workNet = net.fork(work);
@@ -133,20 +142,50 @@ export function commitRoadPath(
   const refused = refuseRoadEdit({ doc, net }, { doc: work, net: workNet });
   timed('rules');
   if (refused) return { committed: false, reason: refused };
-  // Paid for on the copy, so the live map takes the balance with the roads and undo gives it back
-  const charge = settleRoadEdit(roadsBefore(doc), work, !options.dryRun);
-  if (!charge.affordable) return { committed: false, reason: 'funds', cost: charge.amount };
   if (options.dryRun) {
+    // Paid for on the copy only at the click (`layCopy`): the balance read then.
+    const charge = settleRoadEdit(roadsBefore(doc), work, false);
+    if (!charge.affordable) return { committed: false, reason: 'funds', cost: charge.amount };
     const stations = draftStations(doc, work, workNet, pieces, type, start.at, ground, bore, options.groundSolve ?? null);
     timed('stations');
+    // `draftStations` reads the copy and writes nothing to it: the click lays it as it is.
+    lastDryRun = { doc, net, version: doc.changes.version, netRevision: net.revision, groundSolve: options.groundSolve ?? null, key,
+      work, workNet, bore, heightLimited, finalHeightOffset: currentHeight };
     return { committed: true, heightLimited, finalHeightOffset: currentHeight, cost: charge.amount, stations };
   }
+  return layCopy(doc, net, work, workNet, bore, heightLimited, currentHeight, ground, timed);
+}
+
+/** The road worked out on the copy, paid for on it (so the live map takes the balance with the roads and undo gives it back) and taken back. */
+function layCopy(doc: RoadDoc, net: Network, work: RoadDoc, workNet: Network, bore: { bored: boolean; elevation: RoadElevation | null },
+  heightLimited: boolean, finalHeightOffset: number, ground: ((x: number, y: number) => number) | undefined, timed: (what: string) => void): DraftResult {
+  const charge = settleRoadEdit(roadsBefore(doc), work);
+  if (!charge.affordable) return { committed: false, reason: 'funds', cost: charge.amount };
   const laid = work.addedSegments(doc).map((seg) => seg.id);
   doc.takeBack(work);
   net.takeBack(workNet);
   timed('replace');
-  return { committed: true, heightLimited, finalHeightOffset: currentHeight, cost: charge.amount, laid,
+  return { committed: true, heightLimited, finalHeightOffset, cost: charge.amount, laid,
     ...(!bore.bored && ground && bore.elevation ? { elevation: bore.elevation } : {}) };
+}
+
+/** The last dry run that would lay its road, with the map it was worked out on: the click on the same road lays its copy (`commitRoadPath`).
+ *  Kept only while nothing of the document was written since (its whole diary's `version`: roads, money, land, buildings), the network
+ *  is the one it read, the roads' last solve on the ground is the same object, and the road asked is the same, piece by piece. */
+let lastDryRun: {
+  readonly doc: RoadDoc; readonly net: Network; readonly version: number; readonly netRevision: number;
+  readonly groundSolve: RoadElevation | null; readonly key: string;
+  readonly work: RoadDoc; readonly workNet: Network; readonly bore: { bored: boolean; elevation: RoadElevation | null };
+  readonly heightLimited: boolean; readonly finalHeightOffset: number;
+} | null = null;
+
+/** Roads laid from their dry run's copy, for the tests. */
+export let dryRunsReused = 0;
+
+/** The road asked, as a key: its ends, class, pieces (joined), lanes, parking, and whether the ground was handed in. */
+function dryRunKey(start: Anchor, end: Anchor, type: number, pieces: readonly RoadPathPiece[], lanes: number | null,
+  parking: SegmentParking | undefined, sampled: boolean): string {
+  return JSON.stringify([start, end, type, pieces, lanes, parking ?? null, sampled]);
 }
 
 /** Turns the roads just laid at grade into tunnels wherever their profile would run deeper than `AUTO_TUNNEL_COVER` under */
