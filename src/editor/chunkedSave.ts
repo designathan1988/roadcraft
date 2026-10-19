@@ -14,6 +14,9 @@ import {
 } from '@world/doc';
 import { type PartStore, type SaveEntry, type SaveWriter, gunzip, storeWriter } from './saveStore';
 
+/** How many saved squares are decompressed at once when a map is read (`readTiles`). */
+const GUNZIP_BATCH = 32;
+
 /** THE MAP SAVED BY TILES: each record in the square of the map it stands in, and a save writes only the squares the diary says changed */
 
 /** DO NOT walk the map to find what changed, nor write what did not: an edit in one tile writes that tile, whatever the map's size */
@@ -579,10 +582,19 @@ export class TiledSaves {
     }
     const keyedRead = new Map<KeyedName, { record: unknown; id: number; order: number; square: string }[]>();
     const listRead = new Map<ListName, { item: unknown; ord: number; square: string }[]>();
+    // DO NOT wait for each square's decompression before starting the next (EDT-03: hundreds, one after the other, at the opening): a batch at a time in flight, read in the same order.
+    const texts: string[] = [];
+    for (let i = 0; i < blobs.length; i += GUNZIP_BATCH) {
+      const batch: Promise<string>[] = [];
+      for (let k = i; k < Math.min(blobs.length, i + GUNZIP_BATCH); k++) {
+        const blob = got[k];
+        if (!blob) return null;
+        batch.push(gunzip(blob));
+      }
+      texts.push(...await Promise.all(batch));
+    }
     for (let i = 0; i < blobs.length; i++) {
-      const blob = got[i];
-      if (!blob) return null;
-      const value: unknown = JSON.parse(await gunzip(blob));
+      const value: unknown = JSON.parse(texts[i]!);
       if (!isSquareBlob(value)) return null;
       const { layer, square } = blobs[i]!;
       if ((KEYED_NAMES as readonly LayerName[]).includes(layer)) {
