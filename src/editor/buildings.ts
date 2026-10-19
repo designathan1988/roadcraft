@@ -800,7 +800,6 @@ export function opUnionVolumes(b: Building, volumeId: number, sameLookOnly = fal
 /** Welds every building the draft touches or overlaps into the draft */
 export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly BuildingId[] = []): BuildingId[] {
   const absorbed: BuildingId[] = [];
-  const fresh = new Set(draft.volumes.map((v) => v.id));
   const mine = buildingBounds(draft, 0.5);
   // The draft's rings and boxes once, before the neighbours (each neighbour's are kept per record, `neighbourOf`).
   let mineRings: { readonly ring: readonly Vec2[]; readonly box: Aabb }[] | null = null;
@@ -818,10 +817,12 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
       const ring = localFootprint(v).map((p) => worldToLocalAt(draft, localToWorld(other, p.x, p.y)));
       const volume = JSON.parse(JSON.stringify(v)) as Volume;
       volume.id = draft.nextVolumeId++;
-      volume.x = polygonBounds(ring).minX;
-      volume.y = polygonBounds(ring).minY;
-      volume.w = Math.max(MIN_SIZE, polygonBounds(ring).maxX - volume.x);
-      volume.d = Math.max(MIN_SIZE, polygonBounds(ring).maxY - volume.y);
+      // Its ring's bounds once, not five times (EDT-13).
+      const b0 = polygonBounds(ring);
+      volume.x = b0.minX;
+      volume.y = b0.minY;
+      volume.w = Math.max(MIN_SIZE, b0.maxX - volume.x);
+      volume.d = Math.max(MIN_SIZE, b0.maxY - volume.y);
       // Each mass keeps the look it had: walls and roof of the building it came from.
       volume.materials = {
         ...volume.materials,
@@ -829,7 +830,6 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
         roof: roofMaterial(other, v),
       };
       // A box that stays square to this building's frame is a plain volume
-      const b0 = polygonBounds(ring);
       const square = ring.length === 4 && ring.every((p) =>
         (Math.abs(p.x - b0.minX) < 1e-6 || Math.abs(p.x - b0.maxX) < 1e-6) &&
         (Math.abs(p.y - b0.minY) < 1e-6 || Math.abs(p.y - b0.maxY) < 1e-6));
@@ -837,17 +837,21 @@ export function weldInto(ctx: BuildingContext, draft: Building, skip: readonly B
       else if (!setVolumePlan(volume, ring)) delete volume.outline;
       draft.volumes.push(volume);
     }
-    for (const el of other.elements ?? []) {
-      const p = worldToLocal(draft, localToWorld(other, el.x, el.y));
-      const element: BuildingElement = JSON.parse(JSON.stringify(el)) as BuildingElement;
-      draft.elements = [...(draft.elements ?? []), { ...element, id: takeElementId(draft), x: p.x, y: p.y }];
+    // One new list of the draft's elements for this neighbour's, not one per element (EDT-13): the list the draft had is never written.
+    if (other.elements?.length) {
+      const elements = [...(draft.elements ?? [])];
+      draft.elements = elements;
+      for (const el of other.elements) {
+        const p = worldToLocal(draft, localToWorld(other, el.x, el.y));
+        const element: BuildingElement = JSON.parse(JSON.stringify(el)) as BuildingElement;
+        elements.push({ ...element, id: takeElementId(draft), x: p.x, y: p.y });
+      }
     }
     absorbed.push(other.id);
     // The draft grew by it: its rings made again, so a building touching the one absorbed welds in too (a chain).
     mineRings = null;
   }
   // Nothing is cut: the blocks of both buildings stay whole, overlapping where they overlap, and can be moved apart again.
-  void fresh;
   return absorbed;
 }
 
