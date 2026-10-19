@@ -43,6 +43,8 @@ export interface GameKeyDeps {
   toggleChanges(): void;
   /** The F9 monitor (`ui/healthPanel.ts`): toggled, or closed (false: it was not open). */
   health: { toggle(): void; close(): boolean };
+  /** The F7 effects panel (`ui/effectsPanel.ts`): toggled, or closed (false: it was not open). */
+  effects: { toggle(): void; close(): boolean };
   /** A tool's key: takes the tool or puts it down (`toolMachine` `toggle`), and the drawer follows. */
   toolKey(tool: Tool): void;
   /** Escape, one step back: the stroke, then what Inspect picked, then the tool; false: nothing to put down. */
@@ -92,6 +94,8 @@ export function createGameKeys(d: GameKeyDeps): CommandRegistry<KeyboardEvent> {
   command('debug.changes', () => done(d.toggleChanges));
   command('debug.health', () => done(d.health.toggle));
   command('health.close', () => used(d.health.close()));
+  command('debug.effects', () => done(d.effects.toggle));
+  command('effects.close', () => used(d.effects.close()));
   command('tool.key', (e) => done(() => d.toolKey(TOOL_LETTERS[e.key.toLowerCase()]!)));
   command('escape', () => used(d.escape()));
   command('camera.keys', (e) => held(d.camera.press(e.code, e.shiftKey), d.requestDraw));
@@ -103,6 +107,8 @@ export function createGameKeys(d: GameKeyDeps): CommandRegistry<KeyboardEvent> {
     // The F9 monitor: an open popover takes Escape before the tool in hand (WAI-ARIA, Escape closes the popup).
     { key: 'F9', command: 'debug.health' },
     { key: 'Escape', command: 'health.close' },
+    { key: 'F7', command: 'debug.effects' },
+    { key: 'Escape', command: 'effects.close' },
     // The tool in hand reads its own keys first.
     { command: 'building.keys', when: tool('building') },
     { ctrl: false, command: 'transit.keys', when: tool('transit') },

@@ -9,7 +9,7 @@ const DEFAULTS: Readonly<Record<RoadKeyAction, string>> = { heightUp: 'PageUp', 
 const STORAGE_KEY = 'roadcraft.roadKeys';
 
 /** Keys the game keeps for itself: not given to the road tool. */
-const RESERVED: ReadonlySet<string> = new Set(['Escape', 'Enter', 'Tab', ' ', 'Delete', 'Backspace', 'Shift', 'Control', 'Alt', 'Meta', 'F8', 'F9',
+const RESERVED: ReadonlySet<string> = new Set(['Escape', 'Enter', 'Tab', ' ', 'Delete', 'Backspace', 'Shift', 'Control', 'Alt', 'Meta', 'F7', 'F8', 'F9',
   'u', 'm', 'x', 'b', 'c', 't', 'i', 'p', 'g', 'f', 'z', 'h', 'o', 'Home',
   '1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
 

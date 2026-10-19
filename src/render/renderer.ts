@@ -66,6 +66,7 @@ import { deviceGpuCap, gpuLedger, readGpuDevice } from './gpuLedger';
 import { screenSizer } from './screenSize';
 import { WEAK_MACHINE } from '@core/weakMachine';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
+import { ALL_EFFECTS_ON, createFrameHider, type EffectSwitches } from './effectSwitches';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, dropSurfaceBlocks, noRoadSurfaces, passLook, roadSurfaceSteps, surfaceLook, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { SurfaceInputs } from './roadSurfaceInputs';
@@ -370,6 +371,8 @@ export interface SceneHandle {
   /** A tier, or the player's own settings on it (the options panel: shadows, occlusion, smoothing). */
   setQuality(level: QualityLevel | 'auto', settings?: QualitySettings): void;
   readonly quality: QualityLevel | 'auto';
+  /** The effects panel's switches (`effectSwitches.ts`): each effect and layer on or off, from the next frame. */
+  setEffects(switches: EffectSwitches): void;
   /** The inspection camera (`inspector.ts`); null outside development builds. */
   readonly inspect: Inspector | null;
   /** Every figure drawn last frame and the body it was cast as: the runtime census. */
@@ -2058,14 +2061,42 @@ export function createSceneRenderer(
     }
   };
 
+  /** The effects panel's switches (`setEffects`), and the sky's reflection kept while it is switched off. */
+  let effectSwitches: EffectSwitches = ALL_EFFECTS_ON;
+  let keptEnvironment: Scene['environment'] = null;
+  const frameHider = createFrameHider();
+  /** The rivers and lakes of every plate shown (named so by `terrain.ts`), looked for only while the water is switched off. */
+  const waterMeshes = (): Object3D[] => {
+    const found: Object3D[] = [];
+    for (const root of terrain.meshes) root.traverse((object) => { if (object.name.includes('water')) found.push(object); });
+    return found;
+  };
+  /** What the switches leave out of this frame's drawing (the shadows' passes included: they draw inside `post.render`). */
+  const switchedOff = (on: EffectSwitches): (Object3D | null | undefined)[] => [
+    ...(on.terrain ? [] : terrain.meshes),
+    ...(on.water || !on.terrain ? [] : waterMeshes()),
+    ...(on.roads ? [] : [roads?.group, details?.group, roadStandIn.group]),
+    ...(on.farRoads ? [] : [farRoads.group]),
+    ...(on.buildings ? [] : [buildings.group]),
+    ...(on.vegetation ? [] : [...[coverCells, natureCards, natureForest, paintedForest, plantedForest].map((plants) => plants?.group), ...(gardens?.meshes ?? [])]),
+    ...(on.furniture ? [] : [furniture.group, furniture.grass]),
+    ...(on.props ? [] : [signs.group, barriers.group, utilities?.group, elementLayer?.group]),
+    ...(on.transit ? [] : [transit.group]),
+    ...(on.people ? [] : [agentParts]),
+    ...(on.farTraffic ? [] : [densityCars.object]),
+    ...(on.signals ? [] : [signals.group]),
+    ...(on.particles ? [] : [exhaust.points]),
+    ...(on.weather ? [] : [rain.object, lightning.group]),
+    ...(on.pointLights ? [] : [fxLights.muzzle, fxLights.blast, ...roomLights]),
+  ];
   const applyQuality = (level: QualityLevel, settings: QualitySettings = QUALITY[level]): void => {
     quality = settings;
     // The far woods as dense as the near ones, on the same budget (`farWoods.ts`).
     terrain.setVegetation?.(quality.vegetation);
     renderer.setPixelRatio(Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), quality.pixelRatio));
-    renderer.shadowMap.enabled = quality.shadows;
-    materials.setDetail(quality.surfaceDetail);
-    environment.setQuality({ shadows: quality.shadows, shadowMapSize: quality.shadowMapSize });
+    renderer.shadowMap.enabled = quality.shadows && effectSwitches.shadows;
+    materials.setDetail(quality.surfaceDetail && effectSwitches.surfaceDetail);
+    environment.setQuality({ shadows: quality.shadows && effectSwitches.shadows, shadowMapSize: quality.shadowMapSize });
     post?.dispose();
     post = createPostChain(renderer, scene, rig.camera, quality, level);
     post.setNight(Math.max(0, lastDark));
@@ -2429,6 +2460,19 @@ export function createSceneRenderer(
     version: () => `${!natureTreeKit && !natureTreesPending ? 'cards' : 'trees'}:${natureTreeKit?.variants.length ?? 0}`,
     extra: (tile) => coverExtraFor(tile, coverKit, natureTreeKit?.variants.length ?? 0, !natureTreeKit && !natureTreesPending, worldNet?.doc.treeClearings ?? []),
   }));
+  /** A change of the lit materials' programs: built off the draw, the last picture held meanwhile. */
+  function compileChanged(): void {
+    // DO NOT draw the next frame with the new settings' programs not built: shadows switched off or on change every lit material's program,
+    // and the frame built them all in the draw (the probe, 2026-10-19: one frame of 6.9 s, 6.8 s waiting on the driver in `getProgramInfoLog`).
+    // Built off the draw (`compileAsync`, the driver's parallel compile); the last picture stays on screen until they are, the page answering.
+    const compiling: Promise<void> = renderer.compileAsync(scene, rig.camera, scene).then(() => undefined, () => undefined).then(() => {
+      if (qualityCompile === compiling) qualityCompile = null;
+      askDraw();
+    });
+    qualityCompile = compiling;
+    qualityCompileSince = performance.now();
+  }
+
   const handle: SceneHandle = {
     // Asked for by the Actions (a shot, a bomb) and the weapons lab: the effects, and now the physics the bodies fall with
     effects: () => loadEffects().then(() => import('./ragdoll')).then((mod) => mod.warmPhysics()),
@@ -3355,9 +3399,16 @@ export function createSceneRenderer(
       else if (reveal.opened) {
         // Round the frame's whole drawing: the shadow, the scene, every pass.
         gpuTimer.poll();
+        // The effects panel's switches: the passes skipped, the layers hidden for this drawing only, the shadows kept as they stand.
+        post.setSwitches(effectSwitches);
+        if (effectSwitches !== ALL_EFFECTS_ON) {
+          frameHider.hide(switchedOff(effectSwitches));
+          if (!effectSwitches.shadowUpdate) renderer.shadowMap.needsUpdate = false;
+        }
         gpuTimer.begin();
         post.render(delta);
         gpuTimer.end();
+        frameHider.restore();
         tellTargets();
         // What this frame drew, before anything after it draws more (the compiles and warm-ups below render too).
         frameDrawn.calls = renderer.info.render.calls;
@@ -3385,15 +3436,38 @@ export function createSceneRenderer(
       const resolved = level === 'auto' ? governor.current : level;
       governor.set(resolved);
       applyQuality(resolved, settings);
-      // DO NOT draw the next frame with the new settings' programs not built: shadows switched off or on change every lit material's program,
-      // and the frame built them all in the draw (the probe, 2026-10-19: one frame of 6.9 s, 6.8 s waiting on the driver in `getProgramInfoLog`).
-      // Built off the draw (`compileAsync`, the driver's parallel compile); the last picture stays on screen until they are, the page answering.
-      const compiling: Promise<void> = renderer.compileAsync(scene, rig.camera, scene).then(() => undefined, () => undefined).then(() => {
-        if (qualityCompile === compiling) qualityCompile = null;
-        askDraw();
-      });
-      qualityCompile = compiling;
-      qualityCompileSince = performance.now();
+      compileChanged();
+    },
+    setEffects(next) {
+      const before = effectSwitches;
+      effectSwitches = Object.values(next).every(Boolean) ? ALL_EFFECTS_ON : next;
+      // The shadows and the lights change every lit material's program: built off the draw, as a quality change's.
+      let programs = false;
+      if (before.shadows !== next.shadows) {
+        renderer.shadowMap.enabled = quality.shadows && next.shadows;
+        environment.setQuality({ shadows: quality.shadows && next.shadows, shadowMapSize: quality.shadowMapSize });
+        programs = true;
+      }
+      if (before.shadows !== next.shadows || before.shadowUpdate !== next.shadowUpdate) shadowMoved = true;
+      if (before.surfaceDetail !== next.surfaceDetail) materials.setDetail(quality.surfaceDetail && next.surfaceDetail);
+      if (before.environmentMap !== next.environmentMap) {
+        if (!next.environmentMap) {
+          keptEnvironment = scene.environment;
+          scene.environment = null;
+        } else {
+          scene.environment = keptEnvironment;
+          keptEnvironment = null;
+        }
+        programs = true;
+      }
+      for (const [name, key] of [['sky-fill', 'skyFill'], ['ambient-floor', 'ambient'], ['fill', 'fillLight']] as const) {
+        if (before[key] === next[key]) continue;
+        const light = scene.getObjectByName(name);
+        if (light) light.visible = next[key];
+        programs = true;
+      }
+      if (programs) compileChanged();
+      askDraw();
     },
     get quality() {
       return requested;

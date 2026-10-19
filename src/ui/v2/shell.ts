@@ -384,6 +384,8 @@ export interface ShellDeps {
   setQuality(level: string): void;
   /** Opens the graphics options (`ui/graphicsPanel.ts`). */
   graphicsOptions(): void;
+  /** Opens the effects panel (`ui/effectsPanel.ts`): each effect switched to measure its cost. */
+  effectsPanel(): void;
   markingStyle(): string;
   setMarkingStyle(style: string): void;
   setSky(mode: string): void;
@@ -713,6 +715,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
         el('hr'),
         seg(t('menu.quality'), deps.qualityLevels.map((q) => [q, t(`quality.${q}`)] as const), game.quality, (v) => deps.setQuality(v)),
         row(t('menu.graphicsOptions'), () => deps.graphicsOptions(), svg('m_quality', 18)),
+        row(t('menu.effectsPanel'), () => deps.effectsPanel(), svg('m_quality', 18)),
         seg(t('menu.language'), LANGUAGES.map((l) => [l.code, l.label] as const), language(), (v) => { if (v === 'en' || v === 'pt-BR') setLanguage(v); }),
         seg(t('menu.paint'), (['br', 'us', 'eu', 'classic'] as const).map((p) => [p, t(`paint.${p}`)] as const), deps.markingStyle(), (v) => deps.setMarkingStyle(v)),
         el('hr'),

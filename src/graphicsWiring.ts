@@ -102,6 +102,8 @@ export interface GraphicsWiring {
   /** A tier picked (the menu's row or the panel): its own settings, the player's apart from it cleared. */
   setPreset(level: QualityLevel): void;
   openPanel(): void;
+  /** The whole pixel ratio the tier allows on this display (the effects panel draws a share of it). */
+  fullRatio(): number;
   /** After each frame drawn: the dynamic resolution reads the GPU's times. */
   frame(): void;
 }
@@ -176,6 +178,7 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
       apply();
       onPreset(next);
     },
+    fullRatio,
     openPanel() {
       const bridge = desktop();
       if (!bridge) {

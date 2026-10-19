@@ -49,6 +49,7 @@ function setup(start: Partial<World> = {}) {
       toggle: log('health toggle'),
       close: () => { if (!w.healthOpen) return false; w.healthOpen = false; w.calls.push('health close'); return true; },
     },
+    effects: { toggle: log('effects toggle'), close: () => false },
     toolKey: (t) => w.calls.push(`tool ${t}`),
     escape: () => { w.calls.push('escape'); return true; },
   };

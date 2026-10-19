@@ -119,6 +119,7 @@ import {
 import { QUALITY_LEVELS, isQualityLevel } from '@render/quality';
 import { createBuildingWiring } from './buildingsWiring';
 import { createGraphicsWiring } from './graphicsWiring';
+import { createEffectsWiring } from './effectsWiring';
 import { createSteamAchievements } from './steamAchievements';
 import { desktopSaves } from './desktopSaves';
 import { levelElevation, roofRise } from '@world/buildings/geometry';
@@ -609,6 +610,8 @@ canvas3d.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;displ
 canvas.parentElement?.insertBefore(canvas3d, canvas);
 /** The graphics options (`graphicsWiring.ts`): the tier the player chose, or the one this GPU holds at the first start, and their settings on it. */
 const graphics = createGraphicsWiring((level) => gameState.set('quality', level, 'quality menu'));
+/** The effects panel (F7, `effectsWiring.ts`): every effect and heavy system switched live, to measure what each costs. */
+const effects = createEffectsWiring();
 /** The city's milestones told to Steam when the desktop shell runs under it (`steamAchievements.ts`). */
 const achievements = createSteamAchievements();
 // The graphics are what the player chose: the game lowers only the resolution, and only with "dynamic resolution" on.
@@ -1789,6 +1792,7 @@ function mountInterface(): void {
     qualityLevels: QUALITY_LEVELS,
     setQuality,
     graphicsOptions: () => graphics.openPanel(),
+    effectsPanel: () => effects.panel.open(),
     markingStyle: () => doc.markingStyle,
     setMarkingStyle,
     setSky,
@@ -2248,6 +2252,8 @@ const gameKeys = createGameKeys({
   toggleChanges: () => { showChanges = !showChanges; requestDraw(); },
   // F9: the monitor (`healthPanel`, mounted at the end of this file).
   health: { toggle: () => healthPanel?.toggle() ?? false, close: () => healthPanel?.close() ?? false },
+  // F7: the effects panel (`effectsWiring.ts`).
+  effects: { toggle: () => effects.panel.toggle(), close: () => effects.panel.close() },
   toolKey: (next) => {
     pickTool(next);
     shell?.toolKeyed(next);
@@ -2277,6 +2283,7 @@ window.addEventListener('blur', () => cameraMotion.releaseAll());
 /** The frame asked for, and the time between frames (`frameLoop.ts`). */
 const frameClock = new FrameClock(frame, () => booted && scene.opening);
 graphics.attach(scene, frameClock, requestDraw);
+effects.attach(scene, () => graphics.fullRatio(), requestDraw);
 /** The flat camera kept up with the view (what the tools measure their pixels with): ten times a second. */
 const flatCameraDue = new Periodic(0.1);
 /** The status bar, the inspector, the simulation's checks. */
@@ -2364,7 +2371,7 @@ function frame(now: number): void {
   // The town shown (`SceneHandle.opening`): DO NOT wait for the world's job, which the streamed world starts again at every tile put in.
   if (!worldShown && drawnOnce && !scene.opening) worldShown = true;
   // Moving a node is an authoring preview.
-  let holdSim = mover.dragging || topologyAfterDraw || !worldShown;
+  let holdSim = mover.dragging || topologyAfterDraw || !worldShown || !effects.simulation;
   // The pistol or the bomb chosen: their effects and the physics the bodies fall with loaded now, while the player aims
   if (!actionsWarm && game.tool === 'bulldoze' && strikeChoice.mode !== 'demolish') {
     actionsWarm = true;
@@ -2373,14 +2380,14 @@ function frame(now: number): void {
   frameTimer.mark('topology');
   // The simulation steps in its own thread (`sim/host/simHost.ts`): the page sends the wall time and draws the last frame it wrote.
   // DO NOT hold the city for the page's world job (the roads' meshes): the worker steps its own network, and the streamed world's job runs whenever a tile comes.
-  sim.frame(wall, holdSim, { traffic: !game.paused, pedestrians: !game.paused, maxShare: maxPopulationShare, startShare: startPopulationShare });
+  sim.frame(wall, holdSim, { traffic: !game.paused && effects.traffic, pedestrians: !game.paused && effects.pedestrians, maxShare: maxPopulationShare, startShare: startPopulationShare });
   const alpha = holdSim ? 1 : sim.alpha;
   // The city's own periodic work, on its clock (`SimPeriodic`).
   const simTime = sim.clock.time;
   // An answer held through a drag; the growth on the page where there is no worker.
   growthPool.pump();
-  if (growthDue.due(simTime)) growZones();
-  if (decayDue.due(simTime)) decayWatch();
+  if (effects.growth && growthDue.due(simTime)) growZones();
+  if (effects.growth && decayDue.due(simTime)) decayWatch();
   actions.tick(simTime);
   frameTimer.mark('simulation');
 
@@ -2426,12 +2433,13 @@ function frame(now: number): void {
   frameTimer.mark('panels');
   const timed = frameTimer.end();
   healthWatch.frameEnded(timed.start, timed.end);
+  effects.frameEnded(timed.end - timed.start);
   if (profiler.enabled) for (const [system, ms] of timed.systems) profiler.step(`frame ${system}`, ms);
   profileFrameEnd();
 
   // Keep animating while anything is moving; otherwise settle.
   const simMoving = !game.paused && simShowsMotion();
-  if (!pageHidden() && (measure.on || simMoving || roadTool.draft || mover.dragging || cameraHand.active || cameraHand.coasting || cameraMotion.moving || scene.busy())) requestDraw();
+  if (!pageHidden() && (measure.on || !effects.onDemand || simMoving || roadTool.draft || mover.dragging || cameraHand.active || cameraHand.coasting || cameraMotion.moving || scene.busy())) requestDraw();
   // Only the clouds moving (they drift, form and fade), or the clock alone: a slower frame.
   else if (!pageHidden() && (!game.paused || scene.drifting())) frameClock.drift();
 }

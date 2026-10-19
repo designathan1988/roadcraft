@@ -19,6 +19,7 @@ import { fullScreenTriangle } from './uploads';
 import { createCanyonLight } from './canyonLight';
 import { DEPTH_GLSL } from './depthConvention';
 import { CloudShadowStamp } from './cloudShadowStamp';
+import { ALL_EFFECTS_ON, type PostSwitches } from './effectSwitches';
 import type { CameraSolids } from '@world/buildings/cameraSolids';
 
 /** The post chain: ambient occlusion, then anti-aliasing */
@@ -48,6 +49,8 @@ export interface PostChain {
   setCloudDrift(x: number, y: number): void;
   /** The painted fog (`render/fogLayer.ts`): its map, the slab of ground it lies over, and the map's settings - or none. */
   setGroundFog(fog: { texture: Texture; low: number; high: number; density: number; window: readonly [number, number, number] } | null): void;
+  /** Passes switched off from the effects panel (`effectSwitches.ts`): skipped by the composer from the next frame. */
+  setSwitches(switches: PostSwitches): void;
   dispose(): void;
 }
 
@@ -101,6 +104,9 @@ export function createPostChain(
         /* no painted fog without the chain */
       },
       setCloudDrift() {},
+      setSwitches() {
+        /* no passes without the chain */
+      },
       setPlacedClouds() {
         /* no clouds without the chain */
       },
@@ -391,6 +397,8 @@ export function createPostChain(
   // A cloud's shadow takes the sun's direct light and leaves the sky's (global = diffuse + direct * cos(zenith))
   let night = 0;
   let directShare = CLOUD_SHADOW_STRENGTH;
+  /** The passes the effects panel left on (`setSwitches`). */
+  let switches: PostSwitches = ALL_EFFECTS_ON;
   const shadowStrength = (): number => directShare * Math.max(0, 1 - night * 1.5);
 
   return {
@@ -427,8 +435,13 @@ export function createPostChain(
         lastView.copy(camera.matrixWorld);
         lastProjection.copy(camera.projectionMatrix);
         // The air round the map is always drawn: the pass runs once it is built.
-        clouds.enabled = cloudsReady;
+        clouds.enabled = cloudsReady && switches.clouds;
       }
+      if (gtao) gtao.enabled = switches.ambientOcclusion;
+      if (canyon) canyon.pass.enabled = switches.canyonLight;
+      bloom.enabled = night > 0.05 && switches.bloom;
+      if (smaa) smaa.enabled = switches.smaa;
+      (output.uniforms['uSharpen'] as { value: number }).value = switches.sharpen ? quality.sharpen : 0;
       composer.render(delta);
     },
     setNight(dark) {
@@ -445,6 +458,9 @@ export function createPostChain(
     },
     setPlacedClouds(clouds) {
       placedClouds = clouds;
+    },
+    setSwitches(next) {
+      switches = next;
     },
     setCloudDrift(x, y) {
       cloudDrift.x = x;
