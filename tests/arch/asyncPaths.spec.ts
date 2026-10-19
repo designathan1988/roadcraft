@@ -94,13 +94,6 @@ describe('the road tiles kept for a later session', () => {
 });
 
 describe('the workers', () => {
-  // The city's maker reaches the editor's city generator (as the growth's worker reaches the editor's growth), never three nor the page.
-  it('src/editor/smallCity.worker.ts reaches no three and no page', () => {
-    const modules = [...reach('src/editor/smallCity.worker.ts')];
-    expect(modules.filter((m) => m === 'three' || m.startsWith('three/'))).toEqual([]);
-    expect(modules.filter((m) => /src\/(main|render\/|ui\/|view\/)/.test(m))).toEqual([]);
-  });
-
   for (const worker of ['src/render/roadTile.worker.ts', 'src/render/farRoads.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts', 'src/bays.worker.ts', 'src/render/groundShape.worker.ts']) {
     it(`${worker} reaches pure modules only`, () => {
       const modules = [...reach(worker)];

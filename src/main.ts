@@ -30,7 +30,7 @@ import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
 import type { CityOptions } from '@world/cityGen/plan';
-import { createSmallCityMaker } from '@editor/smallCityPool';
+import { buildSmallCityMap } from '@editor/smallCityMap';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
 import { MAX_TERRAIN_STAMPS, RELIEF_FLAT, type TerrainMode } from '@world/terrain';
@@ -1923,21 +1923,15 @@ function newMap(): void {
 /** A NEW CITY from the menu: the small city of Roadcraft 2.0 (`buildSmallCityMap`: straight blocks, medium size) laid out as ONE map, no tiles - the player, 2026-10-18: the tiles were for a city over the whole map, which never worked. */
 function newWorld(): void {
   if (!window.confirm(t('confirm.newWorld'))) return;
-  void openSmallCity(Math.floor(Math.random() * 0x7fff_ffff) || 1);
+  openSmallCity(Math.floor(Math.random() * 0x7fff_ffff) || 1);
 }
 /** The small city of a seed put in place of the map (the menu's, and the probes' with a seed of their own). */
-/** The small city made in a job worker (`editor/smallCityPool.ts`), and the newest asked for (`openSmallCity`): an older one that comes after it is not opened over it. */
-const smallCityAsk = { serial: 0, maker: createSmallCityMaker() };
-function openSmallCity(seed: number): Promise<void> {
-  // Made in a job worker (`editor/smallCityPool.ts`): it was one task of 1.6 s on this thread at every new city (the probe, 2026-10-19).
-  const serial = ++smallCityAsk.serial;
-  return smallCityAsk.maker.make(seed).then((data) => {
-    if (serial !== smallCityAsk.serial) return;
-    history.begin(doc);
-    applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
-    roadTool.reset();
-    fitView();
-  });
+function openSmallCity(seed: number): void {
+  const data = buildSmallCityMap(seed);
+  history.begin(doc);
+  applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
+  roadTool.reset();
+  fitView();
 }
 // The sky: always day (the default), always night, or the residents' clock; kept.
 const SKY_KEY = 'roadcraft.sky';
