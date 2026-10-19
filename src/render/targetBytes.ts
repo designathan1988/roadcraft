@@ -44,3 +44,8 @@ export function renderTargetsBytes(targets: Iterable<Parameters<typeof renderTar
   }
   return total;
 }
+
+/** The targets that hold memory on the GPU now: those bound at least once, three having made their framebuffer (r186 `WebGLTextures.setupRenderTarget`; a disposed one loses its properties). A target made and never drawn into holds none (RND-19). */
+export function liveTargets<T extends object>(targets: readonly T[], properties: { get(object: object): unknown }): T[] {
+  return targets.filter((t) => (properties.get(t) as { __webglFramebuffer?: unknown }).__webglFramebuffer !== undefined);
+}

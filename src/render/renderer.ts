@@ -61,7 +61,7 @@ import { createEnvironment, sunShadowChunks } from './environment';
 import type { Movers, SunCascades } from './sunCascades';
 import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
-import { renderTargetsBytes } from './targetBytes';
+import { liveTargets, renderTargetsBytes } from './targetBytes';
 import { deviceGpuCap, gpuLedger, readGpuDevice } from './gpuLedger';
 import { screenSizer } from './screenSize';
 import { WEAK_MACHINE } from '@core/weakMachine';
@@ -2073,6 +2073,16 @@ export function createSceneRenderer(
   };
 
   let post: PostChain = createPostChain(renderer, scene, rig.camera, quality, governor.current);
+  /** The chain's targets that hold memory on the GPU now: those bound at least once (three makes a target's framebuffer at its first `setRenderTarget`, r186 `WebGLTextures.setupRenderTarget`; a disposed one loses it). DO NOT charge the ledger for targets never drawn into (the clouds' with no cloud placed, the bloom's mips by day): ~40 MB at 1440p taken from the buildings' detail for nothing (RND-19). */
+  const livePostTargets = (): ReturnType<PostChain['targets']>[number][] => liveTargets(post.targets(), renderer.properties);
+  /** How many were live when the ledger was last told: told again when that changes (a target drawn into for the first time, the bloom at nightfall). */
+  let targetsTold = -1;
+  const tellTargets = (): void => {
+    const live = livePostTargets();
+    if (live.length === targetsTold) return;
+    targetsTold = live.length;
+    gpuLedger.set('render targets', 'render targets', renderTargetsBytes(live));
+  };
   renderer.setPixelRatio(Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), quality.pixelRatio));
 
   // DO NOT make the targets again for the size they have (the window's resize event and the next frame both ask), nor the drawing buffer twice.
@@ -2082,7 +2092,8 @@ export function createSceneRenderer(
       post.setSize(width, height, ratio);
       // The GPU's cap from the device and the pixels at the tier's whole ratio, not the dynamic resolution's share: the buildings' detail does not follow it. And the frame's targets in the ledger (`gpuLedger.ts`).
       gpuLedger.cap = deviceGpuCap(readGpuDevice(renderer.getContext(), wholePixels));
-      gpuLedger.set('render targets', 'render targets', renderTargetsBytes(post.targets()));
+      targetsTold = -1;
+      tellTargets();
     });
   function resize(ratio = renderer.getPixelRatio()): void {
     sizeScreen(Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight), ratio, post);
@@ -3345,6 +3356,7 @@ export function createSceneRenderer(
         gpuTimer.begin();
         post.render(delta);
         gpuTimer.end();
+        tellTargets();
         // What this frame drew, before anything after it draws more (the compiles and warm-ups below render too).
         frameDrawn.calls = renderer.info.render.calls;
         frameDrawn.triangles = renderer.info.render.triangles;
