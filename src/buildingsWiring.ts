@@ -147,6 +147,9 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       deps.afterEdit();
       return result;
     },
+    hovered() {
+      // The screen follows the pointer each frame (`setBuildingPreview`, `drawOverlay`); the panel is not told.
+    },
     changed() {
       dirty = true;
       if (tool.builderHintKey() !== lastHint) {
@@ -1040,8 +1043,10 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
         dirty = true;
         return;
       }
+      // A hover changes nothing the panel shows (PRD-09: the Builder's state built and compared on every move): the panel told only otherwise.
+      const hover = tool.hoversOnly();
       tool.pointerMove(screen, world, shift);
-      dirty = true;
+      if (!hover) dirty = true;
     },
     pointerUp(cancelled) {
       if (painting) {

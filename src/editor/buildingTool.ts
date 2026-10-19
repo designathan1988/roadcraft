@@ -112,6 +112,8 @@ export interface ToolHost {
   commit(edit: () => EditResult): EditResult;
   /** Something the screen or the panel shows has changed. */
   changed(): void;
+  /** Only what the pointer is over changed (`hover`, `hoverHandle`, `preview`): the screen, never the panel (`changed` where absent). */
+  hovered?(): void;
   /** A transient message in the hint bar (a translation key). */
   flash(key: string): void;
   focus?(building: Building): void;
@@ -2129,6 +2131,11 @@ export class BuildingTool {
   }
 
   /** @perInput Runs once a pointer move: nothing it reaches may walk the map. */
+  /** Whether a pointer move now only hovers (`pointerMove`: no bay zone dragged, no plan drawn, no drag): it changes what the pointer is over alone. */
+  hoversOnly(): boolean {
+    return !(this.zone && this.drag) && !this.planPoints && !this.drag;
+  }
+
   pointerMove(screen: Vec2, world: Vec2, shift: boolean): void {
     this.lastScreen = screen;
     this.lastWorld = world;
@@ -2168,7 +2175,8 @@ export class BuildingTool {
       } else {
         this.hover = this.pick(screen);
       }
-      this.host.changed();
+      // DO NOT tell the panel on every hover (PRD-09): nothing it shows reads what the pointer is over.
+      if (this.host.hovered) this.host.hovered(); else this.host.changed();
       return;
     }
     if (drag.kind === 'click') {
