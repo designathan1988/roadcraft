@@ -48,7 +48,7 @@ import { ageFromYears } from '@people/body/macro';
 import { PLAYER_ID } from '@sim/ambient/playerId';
 import type { RagdollCitizens } from './ragdoll';
 import type { Company } from './citizenCasting';
-import { kerbTransfer, seatPerson, type KerbStop } from '@sim/vehicles/kerbStops';
+import { kerbTransfer, seatAgeClass, seatPerson, type KerbStop } from '@sim/vehicles/kerbStops';
 import { footwayRiseAt } from '@world/roads/footwayRise';
 import { walkingRise } from '@world/curbRamps';
 import { groundGradient } from './groundShear';
@@ -1504,7 +1504,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** Whether anybody aboard is a child: a car with a child in it is never on a work trip. */
   const carriesChild = (vehicle: SimVehicle): boolean => {
     const seats = Math.min(32, vehicle.archetype.seats);
-    for (let i = 0; i < seats; i++) if ((vehicle.seats & (1 << i)) !== 0 && seatPerson(vehicle, i).ageClass === 'child') return true;
+    for (let i = 0; i < seats; i++) if ((vehicle.seats & (1 << i)) !== 0 && seatAgeClass(vehicle, i) === 'child') return true;
     return false;
   };
   /** The vehicles whose people were cast (`seatIdentity`), by id */

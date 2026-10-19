@@ -103,6 +103,15 @@ export function seatPerson(v: Seated, seat: number): { seed: number; gender: Per
   return { seed, gender, ageClass: back && ((hash >>> 7) & 3) === 0 ? 'child' : 'adult' };
 }
 
+/** `seatPerson(v, seat).ageClass` without the object (AGT-32: read for every seat of every car drawn, each frame). */
+export function seatAgeClass(v: Seated, seat: number): PersonAgeClass {
+  const picked = v.people[seat];
+  if (picked !== undefined) return v.peopleAge[seat] ?? 'adult';
+  const perSide = v.archetype.doorsPerSide;
+  const back = perSide > 1 && seat % perSide !== 0;
+  return back && ((personHash(PERSON_BASE + v.id * SEAT_STRIDE + seat) >>> 7) & 3) === 0 ? 'child' : 'adult';
+}
+
 /** Fixed at spawn: which seats are taken, and whether the trip has an errand. */
 export function assignOccupancy(w: SimWorld, v: Vehicle): void {
   const perSide = v.archetype.doorsPerSide;
