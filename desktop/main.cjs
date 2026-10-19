@@ -147,6 +147,8 @@ function createWindow() {
 /** Only the game's own page may ask (Electron security checklist: validate the sender of every IPC message). */
 const fromGame = (event) => typeof event.senderFrame?.url === 'string' && event.senderFrame.url.startsWith(ORIGIN);
 const NAME = /^[A-Za-z0-9_.-]{1,128}$/;
+/** A lab report's two files together, characters (a long recording's frames fit well under it). */
+const LAB_REPORT_MAX = 64 * 1024 * 1024;
 
 function serveIpc() {
   ipcMain.handle('desktop:state', (event) => {
@@ -172,6 +174,22 @@ function serveIpc() {
   ipcMain.handle('steam:unlock', (event, id) => {
     if (!fromGame(event) || !steam || typeof id !== 'string' || !NAME.test(id)) return false;
     return safe(() => steam.achievement.isActivated(id) || steam.achievement.activate(id), false);
+  });
+  // The lab recorder's report (`src/lab/recorder/deliver.ts`): two files into `<userData>/lab-reports`, the name checked, the size bounded.
+  ipcMain.handle('lab:report', async (event, report) => {
+    if (!fromGame(event) || !report || typeof report !== 'object') return null;
+    const { stamp, json, md } = report;
+    if (typeof stamp !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(stamp) || typeof json !== 'string' || typeof md !== 'string' || json.length + md.length > LAB_REPORT_MAX) return null;
+    const folder = path.join(app.getPath('userData'), 'lab-reports');
+    try {
+      await fs.promises.mkdir(folder, { recursive: true });
+      await fs.promises.writeFile(path.join(folder, `${stamp}.json`), json, 'utf8');
+      await fs.promises.writeFile(path.join(folder, `${stamp}.md`), md, 'utf8');
+      return folder;
+    } catch (error) {
+      console.error('lab report not written', error);
+      return null;
+    }
   });
   // A long job worker's own line to a thread of a job process (`jobs.cjs`, `src/desktopJobs.ts`), as the saves' is: the processes taken in turn.
   ipcMain.on('jobs:connect', (event) => {

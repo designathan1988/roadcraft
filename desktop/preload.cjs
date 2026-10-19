@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('roadcraftDesktop', {
   connectSaves: () => ipcRenderer.send('saves:connect'),
   // A long job worker's port in a job process (`src/desktopJobs.ts`), handed on as the saves' is.
   connectJobs: () => ipcRenderer.send('jobs:connect'),
+  // The lab recorder's report written into the data folder (`src/lab/recorder/deliver.ts`): the folder it went to, or null.
+  saveLabReport: (stamp, json, md) => ipcRenderer.invoke('lab:report', { stamp, json, md }),
 });
 
 // Electron, "MessagePorts", main world of a context-isolated page: the port handed on with `window.postMessage`, the page checks the source is its own window.

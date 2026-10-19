@@ -14,3 +14,5 @@ playwright-report/
 *.local
 .DS_Store
 # DO NOT ignore cooked/: a clone must open the game and build a release without cooking first (the player's order, 2026-10-18)
+# The lab recorder's reports, written by the dev server (`scripts/vite/labReports.ts`)
+lab-reports/
