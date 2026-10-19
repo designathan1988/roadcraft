@@ -159,27 +159,41 @@ export function wireWindGlsl(swing: string, phase: string): string {
 
 /** A stiff structure in the wind - a signal post, its arm and heads */
 export function applyStructureSway(material: Material, originHeight: number, tall: number, amplitude: number, key: string): void {
+  installStructureSway(material, { uSwayOrigin: { value: originHeight } }, `
+        uniform float uSwayOrigin;`, `
+           float swayGround = instanceMatrix[3].y - uSwayOrigin;
+           vec2 swayRoot = instanceMatrix[3].xz;`, tall, amplitude, key);
+}
+
+/** `applyStructureSway` for parts merged into one geometry: each vertex names its part's place in the instance and its origin height
+ *  (`aSwayPart`: xyz, w), so each part sways as it did as an instance of its own, from its own foot and with its own phase. */
+export function applyPartSway(material: Material, tall: number, amplitude: number, key: string): void {
+  installStructureSway(material, {}, `
+        attribute vec4 aSwayPart;`, `
+           vec3 swayPartAt = (instanceMatrix * vec4(aSwayPart.xyz, 1.0)).xyz;
+           float swayGround = swayPartAt.y - aSwayPart.w;
+           vec2 swayRoot = swayPartAt.xz;`, tall, amplitude, key);
+}
+
+/** The structures' sway, with `foot` declaring where the instance's part stands (`swayGround`, `swayRoot`). */
+function installStructureSway(material: Material, uniforms: Record<string, { value: unknown }>, declarations: string, foot: string,
+  tall: number, amplitude: number, key: string): void {
   markSway(material);
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
     previous(shader, renderer);
-    Object.assign(shader.uniforms, windUniforms, {
-      uSwayOrigin: { value: originHeight }, uSwayTall: { value: tall }, uSwayAmp: { value: amplitude },
-    });
+    Object.assign(shader.uniforms, windUniforms, uniforms, { uSwayTall: { value: tall }, uSwayAmp: { value: amplitude } });
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
         uniform float uWindTime;
         uniform vec2 uWindDir;
-        uniform float uWindStrength;
-        uniform float uSwayOrigin;
+        uniform float uWindStrength;${declarations}
         uniform float uSwayTall;
         uniform float uSwayAmp;`)
       .replace('#include <project_vertex>', ShaderChunk.project_vertex.replace(
         'mvPosition = modelViewMatrix * mvPosition;',
-        `#ifdef USE_INSTANCING
-           float swayGround = instanceMatrix[3].y - uSwayOrigin;
+        `#ifdef USE_INSTANCING${foot}
            float swayH = clamp((mvPosition.y - swayGround) / uSwayTall, 0.0, 1.4);
-           vec2 swayRoot = instanceMatrix[3].xz;
            float swayFront = dot(swayRoot, uWindDir) * ${perM(0.03).toFixed(6)} - uWindTime * 0.42;
            float swayGust = 0.45 + 0.55 * smoothstep(-0.6, 1.0, sin(swayFront));
            float swayPhase = dot(floor(swayRoot / ${m(1.6).toFixed(6)}), vec2(1.7, 2.3));

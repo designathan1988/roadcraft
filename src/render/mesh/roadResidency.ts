@@ -10,8 +10,11 @@ export const FAR_MARGIN = 1.25;
 const BRING_PER_LOOK = 3;
 
 /** The block's distance to the camera in the ground plane, scene units (x, z = -y). */
-const distance = (levels: BlockLevels, focusX: number, focusY: number): number =>
-  Math.hypot(levels.x - focusX, levels.z + focusY);
+const distance = (levels: BlockLevels, focusX: number, focusY: number): number => {
+  let d = Math.hypot(levels.x - focusX, levels.z + focusY);
+  for (const [x, z] of levels.also ?? []) d = Math.min(d, Math.hypot(x - focusX, z + focusY));
+  return d;
+};
 
 /** The arrays of a mesh's attributes and index let go (made again by `refillArrays`). */
 function giveBackArrays(mesh: Mesh): void {

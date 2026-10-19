@@ -25,6 +25,9 @@ export interface BlockLevels {
   /** The block's centre in the scene (x, z), for the distance to the camera. */
   readonly x: number;
   readonly z: number;
+  /** A block of several surfaces drawn alike (`roadSurfaces.ts` drawGroups): each other surface's centre (x, z), as its own block had it.
+   *  The block is near where any of them would be: none drawn coarser than it was as a block of its own. */
+  readonly also?: readonly (readonly [number, number])[];
   /** Whether the full level is on the GPU (its arrays given back when it comes near: `bring`, else `refillArrays`). */
   full: boolean;
   /** The full level's arrays made off the page when the block comes near (the kept tiles read from the store, `roadSurfaces.ts`); null: not kept, cut again on the page. Unset: no such source (tests). */

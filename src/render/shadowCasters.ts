@@ -11,6 +11,10 @@ export interface SizedCaster {
 
 const casters = new Set<SizedCaster>();
 
+/** The texel of the cascade being drawn (world units), 0 between the passes: a uniform for a depth material whose geometry merges parts of
+ *  different sizes, each leaving the cascade where it would have as a mesh of its own (`signals.ts` frame). */
+export const casterTexel = { value: 0 };
+
 /** `caster` chosen at each cascade from now on; the function returned takes it off (its mesh disposed). */
 export function castBySize(caster: SizedCaster): () => void {
   casters.add(caster);
@@ -19,6 +23,7 @@ export function castBySize(caster: SizedCaster): () => void {
 
 /** Each caster's `castShadow` for a cascade of `texel` world units; null: back to what its maker set, between the shadow passes (what the programs compiled ahead look at, `uploads.ts` shadowStandIns). */
 export function castCastersInto(texel: number | null): void {
+  casterTexel.value = texel ?? 0;
   for (const c of casters) {
     if (texel === null) { c.mesh.castShadow = c.casts; continue; }
     const instanced = c.mesh as InstancedMesh;

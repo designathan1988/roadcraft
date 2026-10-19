@@ -32,6 +32,8 @@ import { COARSE_EPS, EPS } from '@core/scalar';
 const MIN_DRAFT_LENGTH = m(9.6);
 /** Two nodes closer than this are the same node. */
 const MERGE_EPS = m(1.04);
+/** Slack round a piece's box when looking for crossings in it: only ever lets more pairs through to `segSeg`, which decides. */
+const CROSS_PAD = m(1e-3);
 /** Distinct decks at the same map point remain separate networks. */
 const HEIGHT_JOIN_EPS = m(0.3);
 /** Vertical room required before two crossing carriageways can pass independently. */
@@ -87,6 +89,15 @@ export function commitRoadPath(
   const timed = (what: string): void => { const now = performance.now(); measureHitch(`hitch:commit/${what}`, lap, now); lap = now; };
   // DO NOT copy the map to judge against when the network is behind (`snapshotRoads`)
   if (net.revision !== doc.revision) net.rebuild();
+  // DO NOT work the road out again at the click when the draft at rest was judged on this same map (`roadTool.ts` judge): its copy laid.
+  const key = dryRunKey(start, end, type, pieces, lanes, parking, ground !== undefined);
+  const kept = lastDryRun;
+  lastDryRun = null;
+  if (!options.dryRun && kept && kept.doc === doc && kept.net === net && kept.version === doc.changes.version && kept.netRevision === net.revision
+    && kept.groundSolve === (options.groundSolve ?? null) && kept.key === key) {
+    dryRunsReused++;
+    return layCopy(doc, net, kept.work, kept.workNet, kept.bore, kept.heightLimited, kept.finalHeightOffset, ground, timed);
+  }
   const work = doc.fork();
   timed('fork');
   const workNet = net.fork(work);
@@ -133,20 +144,50 @@ export function commitRoadPath(
   const refused = refuseRoadEdit({ doc, net }, { doc: work, net: workNet });
   timed('rules');
   if (refused) return { committed: false, reason: refused };
-  // Paid for on the copy, so the live map takes the balance with the roads and undo gives it back
-  const charge = settleRoadEdit(roadsBefore(doc), work, !options.dryRun);
-  if (!charge.affordable) return { committed: false, reason: 'funds', cost: charge.amount };
   if (options.dryRun) {
+    // Paid for on the copy only at the click (`layCopy`): the balance read then.
+    const charge = settleRoadEdit(roadsBefore(doc), work, false);
+    if (!charge.affordable) return { committed: false, reason: 'funds', cost: charge.amount };
     const stations = draftStations(doc, work, workNet, pieces, type, start.at, ground, bore, options.groundSolve ?? null);
     timed('stations');
+    // `draftStations` reads the copy and writes nothing to it: the click lays it as it is.
+    lastDryRun = { doc, net, version: doc.changes.version, netRevision: net.revision, groundSolve: options.groundSolve ?? null, key,
+      work, workNet, bore, heightLimited, finalHeightOffset: currentHeight };
     return { committed: true, heightLimited, finalHeightOffset: currentHeight, cost: charge.amount, stations };
   }
+  return layCopy(doc, net, work, workNet, bore, heightLimited, currentHeight, ground, timed);
+}
+
+/** The road worked out on the copy, paid for on it (so the live map takes the balance with the roads and undo gives it back) and taken back. */
+function layCopy(doc: RoadDoc, net: Network, work: RoadDoc, workNet: Network, bore: { bored: boolean; elevation: RoadElevation | null },
+  heightLimited: boolean, finalHeightOffset: number, ground: ((x: number, y: number) => number) | undefined, timed: (what: string) => void): DraftResult {
+  const charge = settleRoadEdit(roadsBefore(doc), work);
+  if (!charge.affordable) return { committed: false, reason: 'funds', cost: charge.amount };
   const laid = work.addedSegments(doc).map((seg) => seg.id);
   doc.takeBack(work);
   net.takeBack(workNet);
   timed('replace');
-  return { committed: true, heightLimited, finalHeightOffset: currentHeight, cost: charge.amount, laid,
+  return { committed: true, heightLimited, finalHeightOffset, cost: charge.amount, laid,
     ...(!bore.bored && ground && bore.elevation ? { elevation: bore.elevation } : {}) };
+}
+
+/** The last dry run that would lay its road, with the map it was worked out on: the click on the same road lays its copy (`commitRoadPath`).
+ *  Kept only while nothing of the document was written since (its whole diary's `version`: roads, money, land, buildings), the network
+ *  is the one it read, the roads' last solve on the ground is the same object, and the road asked is the same, piece by piece. */
+let lastDryRun: {
+  readonly doc: RoadDoc; readonly net: Network; readonly version: number; readonly netRevision: number;
+  readonly groundSolve: RoadElevation | null; readonly key: string;
+  readonly work: RoadDoc; readonly workNet: Network; readonly bore: { bored: boolean; elevation: RoadElevation | null };
+  readonly heightLimited: boolean; readonly finalHeightOffset: number;
+} | null = null;
+
+/** Roads laid from their dry run's copy, for the tests. */
+export let dryRunsReused = 0;
+
+/** The road asked, as a key: its ends, class, pieces (joined), lanes, parking, and whether the ground was handed in. */
+function dryRunKey(start: Anchor, end: Anchor, type: number, pieces: readonly RoadPathPiece[], lanes: number | null,
+  parking: SegmentParking | undefined, sampled: boolean): string {
+  return JSON.stringify([start, end, type, pieces, lanes, parking ?? null, sampled]);
 }
 
 /** Turns the roads just laid at grade into tunnels wherever their profile would run deeper than `AUTO_TUNNEL_COVER` under */
@@ -361,15 +402,21 @@ function commitDraftInPlace(
     if (!seg) continue;
     if (!heights && seg.structure !== structure) continue;
     const existing = net.polylines.get(doc, id);
+    // DO NOT test every piece of the draft against every piece of the road: a crossing lies in both pieces' boxes (`segSeg` keeps t and u in 0..1).
+    const eb = existing.bbox;
 
     for (let di = 0; di + 1 < draft.n; di++) {
       const d0 = draft.point(di);
       const d1 = draft.point(di + 1);
+      const dx0 = Math.min(d0.x, d1.x) - CROSS_PAD, dx1 = Math.max(d0.x, d1.x) + CROSS_PAD;
+      const dy0 = Math.min(d0.y, d1.y) - CROSS_PAD, dy1 = Math.max(d0.y, d1.y) + CROSS_PAD;
+      if (dx1 < eb.minX || dx0 > eb.maxX || dy1 < eb.minY || dy0 > eb.maxY) continue;
       const draftPiece = (draft.cum[di + 1] as number) - (draft.cum[di] as number);
 
       for (let ei = 0; ei + 1 < existing.n; ei++) {
         const e0 = existing.point(ei);
         const e1 = existing.point(ei + 1);
+        if (Math.max(e0.x, e1.x) < dx0 || Math.min(e0.x, e1.x) > dx1 || Math.max(e0.y, e1.y) < dy0 || Math.min(e0.y, e1.y) > dy1) continue;
         const hit = segSeg(d0, d1, e0, e1);
         if (!hit) continue;
 

@@ -55,7 +55,9 @@ function tileArrays(parts: readonly Tile[], reads: SurfaceReads): BlockArrays | 
 /** DO NOT pass a source that returns `parts`: the closure would hold every tile's arrays for as long as the mesh lives. */
 export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOptions,
   'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
-  far?: { readonly lock: readonly [number, number, number, number]; readonly near: boolean; readonly start?: (mesh: Mesh, arrays: BlockArrays) => void }): Mesh | null {
+  far?: { readonly lock: readonly [number, number, number, number]; readonly near: boolean; readonly start?: (mesh: Mesh, arrays: BlockArrays) => void;
+    /** The other surfaces' blocks' boxes, for a block of several (`BlockLevels.also`). */
+    readonly also?: readonly (readonly [number, number, number, number])[] }): Mesh | null {
   const arrays = tileArrays(parts, readsOf(options.material));
   if (!arrays) return null;
   const geometry = coarseGeometry(arrays);
@@ -75,7 +77,10 @@ export function mergeTiles(parts: readonly Tile[], options: Pick<SurfaceMeshOpti
   tilesOnGpu(mesh, source);
   if (far) {
     // DO NOT simplify it here, a block after the other on the page.
-    mesh.userData[LOD_KEY] = { coarse: null, x: (far.lock[0] + far.lock[2]) / 2, z: -(far.lock[1] + far.lock[3]) / 2, full: true } satisfies BlockLevels;
+    mesh.userData[LOD_KEY] = {
+      coarse: null, x: (far.lock[0] + far.lock[2]) / 2, z: -(far.lock[1] + far.lock[3]) / 2, full: true,
+      ...(far.also?.length ? { also: far.also.map((b): [number, number] => [(b[0] + b[2]) / 2, -(b[1] + b[3]) / 2]) } : {}),
+    } satisfies BlockLevels;
     far.start?.(mesh, arrays);
   }
   return mesh;
@@ -90,13 +95,68 @@ export function cloneBlock(arrays: BlockArrays): BlockArrays {
   };
 }
 
-/** The block's far level (`roadLod.ts`) as it arrives from its worker */
+/** A block's arrays cut back into its surfaces' (`members`: each surface's tiles, in the order they were merged), each a copy: what a block
+ *  of several surfaces drawn alike hands its workers to simplify, a surface at a time, as each was simplified when it was a block of its own. */
+export function splitBlock(arrays: BlockArrays, members: readonly (readonly Tile[])[]): BlockArrays[] {
+  const out: BlockArrays[] = [];
+  let v = 0, k = 0;
+  for (const tiles of members) {
+    let vertices = 0, count = 0;
+    for (const tile of tiles) { vertices += tile.positions.length / 3; count += tile.indices.length; }
+    const index = vertices > 0xffff ? new Uint32Array(count) : new Uint16Array(count);
+    for (let i = 0; i < count; i++) index[i] = arrays.index[k + i]! - v;
+    const cut = (a: Float32Array, size: number): Float32Array => a.slice(v * size, (v + vertices) * size);
+    out.push({
+      position: cut(arrays.position, 3), normal: cut(arrays.normal, 3), uv: cut(arrays.uv, 2),
+      ...(arrays.color ? { color: cut(arrays.color, 3) } : {}), ...(arrays.roadSection ? { roadSection: cut(arrays.roadSection, 3) } : {}), index,
+    });
+    v += vertices;
+    k += count;
+  }
+  return out;
+}
+
+/** Blocks' arrays end to end, as one mesh's (the indices shifted). */
+export function joinBlocks(parts: readonly BlockArrays[]): BlockArrays {
+  if (parts.length === 1) return parts[0]!;
+  let vertices = 0, count = 0;
+  for (const part of parts) { vertices += part.position.length / 3; count += part.index.length; }
+  const join = (pick: (part: BlockArrays) => Float32Array | undefined, size: number): Float32Array | undefined => {
+    if (!pick(parts[0]!)) return undefined;
+    const out = new Float32Array(vertices * size);
+    let at = 0;
+    for (const part of parts) { out.set(pick(part)!, at); at += (part.position.length / 3) * size; }
+    return out;
+  };
+  const index = vertices > 0xffff ? new Uint32Array(count) : new Uint16Array(count);
+  let v = 0, k = 0;
+  for (const part of parts) {
+    for (let i = 0; i < part.index.length; i++) index[k++] = part.index[i]! + v;
+    v += part.position.length / 3;
+  }
+  const color = join((p) => p.color, 3), roadSection = join((p) => p.roadSection, 3);
+  return {
+    position: join((p) => p.position, 3)!, normal: join((p) => p.normal, 3)!, uv: join((p) => p.uv, 2)!,
+    ...(color ? { color } : {}), ...(roadSection ? { roadSection } : {}), index,
+  };
+}
+
+/** One surface of a block: its tiles, and its own block's edge, locked when it is simplified (`coarseArrays`). */
+export interface BlockMember {
+  readonly source: () => readonly Tile[];
+  readonly lock: readonly [number, number, number, number];
+}
+
+/** The block's far level (`roadLod.ts`) as it arrives from its worker; `members`, each surface it draws (one, or several drawn alike), each simplified on its own. */
 export function attachFarLevel(mesh: Mesh, coarse: BlockArrays, options: Pick<SurfaceMeshOptions,
-  'name' | 'material' | 'castShadow' | 'receiveShadow'>, source: () => readonly Tile[],
-  lock: readonly [number, number, number, number], near: boolean): Mesh {
+  'name' | 'material' | 'castShadow' | 'receiveShadow'>, members: readonly BlockMember[], near: boolean): Mesh {
   const level = finish(coarseGeometry(coarse), { ...options, name: `${options.name}-far` });
   // Made again from the block's tiles when a lost context asks, like the block's own. DO NOT fall back on `coarse`: the closure held the worker's arrays on the page for the block's life, after they were on the GPU.
-  gpuOnly(level, () => coarseArrays(tileArrays(source(), readsOf(options.material))!, lock) ?? emptyLike(level));
+  const reads = readsOf(options.material);
+  gpuOnly(level, members.length === 1
+    ? () => coarseArrays(tileArrays(members[0]!.source(), reads)!, members[0]!.lock) ?? emptyLike(level)
+    // A surface too small to simplify is drawn whole in the far level, as its own block was.
+    : () => joinBlocks(members.flatMap(({ source, lock }) => { const full = tileArrays(source(), reads); return full ? [coarseArrays(full, lock) ?? full] : []; })));
   const levels = mesh.userData[LOD_KEY] as BlockLevels;
   (levels as { coarse: Mesh | null }).coarse = level;
   level.renderOrder = mesh.renderOrder;

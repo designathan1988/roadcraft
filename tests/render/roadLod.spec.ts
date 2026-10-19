@@ -2,11 +2,11 @@ import { readFileSync } from 'node:fs';
 import { MeshBasicMaterial, type BufferAttribute, type Mesh } from 'three';
 import { describe, expect, it } from 'vitest';
 
-import { coarseArrays } from '@render/mesh/roadLod';
+import { coarseArrays, levelsOf } from '@render/mesh/roadLod';
 import { marksRoadSection } from '@render/mesh/roadEdges';
 import { COARSE_ERROR } from '@render/mesh/roadLodPure';
 import { FAR_MARGIN, makeFar, makeNear, updateRoadLevels } from '@render/mesh/roadResidency';
-import { attachFarLevel, blockArraysOf, cloneBlock, mergeTiles } from '@render/mesh/surfaceTiles';
+import { attachFarLevel, blockArraysOf, cloneBlock, joinBlocks, mergeTiles, splitBlock } from '@render/mesh/surfaceTiles';
 import { refillArrays } from '@render/mesh/gpuOnly';
 import type { Tile } from '@render/mesh/tileMesh';
 
@@ -38,7 +38,7 @@ const lock = [0, -60, W, H + 60] as const;
 /** The block with its far level made as a worker makes it (`roadTile.worker.ts`): the arrays copied, simplified, handed back. */
 const make = (near: boolean): Mesh => mergeTiles([strip()], options, () => [strip()], {
   lock, near,
-  start: (block, arrays) => { const made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(block, made, options, () => [strip()], lock, near); },
+  start: (block, arrays) => { const made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(block, made, options, [{ source: () => [strip()], lock }], near); },
 })!;
 const levels = (mesh: Mesh): { coarse: Mesh; full: boolean } => mesh.userData.lod as { coarse: Mesh; full: boolean };
 const trianglesOf = (mesh: Mesh): number => (mesh.geometry.index?.count ?? 0) / 3;
@@ -55,7 +55,7 @@ describe('a block of road with a far level', () => {
     const both = { ...options, material: reading };
     const mesh = mergeTiles([strip()], both, () => [strip()], {
       lock, near: true,
-      start: (block, arrays) => { const made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(block, made, both, () => [strip()], lock, true); },
+      start: (block, arrays) => { const made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(block, made, both, [{ source: () => [strip()], lock }], true); },
     })!;
     for (const level of [mesh, levels(mesh).coarse]) {
       expect(level.geometry.getAttribute('color')).toBeDefined();
@@ -121,7 +121,7 @@ describe('a far level on the GPU', () => {
     let made: ReturnType<typeof coarseArrays> = null;
     const block = mergeTiles([strip()], options, () => tiles, {
       lock, near: false,
-      start: (b, arrays) => { made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(b, made, options, () => tiles, lock, false); },
+      start: (b, arrays) => { made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(b, made, options, [{ source: () => tiles, lock }], false); },
     })!;
     const level = levels(block).coarse;
     expect(made).not.toBeNull();
@@ -266,5 +266,34 @@ describe('the far levels made by the workers while the roads are built', () => {
     }
     // A block too small for a far level stays what it was, drawn at full detail.
     for (const mesh of chunks.filter((m) => !levelsOf(m)?.coarse)) expect(mesh.visible).toBe(true);
+  });
+});
+
+describe('a block of several surfaces drawn alike (`roadSurfaces.ts` drawGroups)', () => {
+  it('cuts back into each surface as its own block was, and joins again to the block', () => {
+    const a = strip(), b = strip();
+    const block = blockArraysOf([a, b], options.material)!;
+    const [first, second] = splitBlock(block, [[a], [b]]);
+    // Each piece the arrays its surface alone would have made: what its worker simplified when it was a block of its own.
+    for (const piece of [first!, second!]) {
+      const own = blockArraysOf([strip()], options.material)!;
+      expect(Array.from(piece.position)).toEqual(Array.from(own.position));
+      expect(Array.from(piece.index)).toEqual(Array.from(own.index));
+      expect(piece.index.constructor).toBe(own.index.constructor);
+    }
+    const joined = joinBlocks([first!, second!]);
+    for (const key of ['position', 'normal', 'uv', 'index'] as const) expect(Array.from(joined[key])).toEqual(Array.from(block[key]));
+  });
+
+  it('stays near while any of its surfaces would be near, and goes far once none is', () => {
+    const block = mergeTiles([strip()], options, () => [strip()], {
+      lock, near: true, also: [[5000, 0, 5200, 10]],
+      start: (b, arrays) => { const made = coarseArrays(cloneBlock(arrays), lock); if (made) attachFarLevel(b, made, options, [{ source: () => [strip()], lock }], true); },
+    })!;
+    // The eye over the other surface's block: the first surface's is far from it, the block stays whole.
+    updateRoadLevels([block], 5100, 5, 300);
+    expect(levelsOf(block)!.full).toBe(true);
+    updateRoadLevels([block], -5000, 0, 300);
+    expect(levelsOf(block)!.full).toBe(false);
   });
 });

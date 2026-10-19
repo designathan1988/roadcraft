@@ -1,8 +1,9 @@
-import { applyStructureSway } from './wind';
-import { castBySize } from './shadowCasters';
+import { applyPartSway, applyStructureSway } from './wind';
+import { castBySize, casterTexel } from './shadowCasters';
 import { holdStill } from './stillTree';
 import {
   BoxGeometry,
+  BufferAttribute,
   Color,
   CylinderGeometry,
   DynamicDrawUsage,
@@ -11,15 +12,18 @@ import {
   InstancedMesh,
   Matrix4,
   MeshBasicMaterial,
+  MeshDepthMaterial,
   MeshStandardMaterial,
   Quaternion,
+  RGBADepthPacking,
   Scene,
   Sphere,
   Vector3,
   type Frustum,
-  type BufferGeometry,
+  BufferGeometry,
   type Material,
 } from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 import { signalPostPlace } from '@world/signalPosts';
 import { JournalCursor } from '@world/derived';
@@ -83,13 +87,16 @@ interface Junction {
   stage: string;
 }
 
-type BatchName = 'posts' | 'arms' | 'boxes' | 'visors' | 'lit' | 'halos' | 'red' | 'amber' | 'green';
+/** A cell's meshes: the frame (post, arm and housing as one geometry, one instance a head), the visors, every lens lit or not, the lit lenses' halos. */
+type BatchName = 'frame' | 'visors' | 'lenses' | 'halos';
 
 interface Cell {
   readonly junctions: Junction[];
   readonly heads: Head[];
   readonly batches: Record<BatchName, InstancedMesh>;
   readonly sphere: Sphere;
+  /** Its lenses lit now. */
+  lit: number;
   /** A head's state changed: its lenses are written again (this cell's only). */
   stale: boolean;
 }
@@ -116,87 +123,6 @@ export function createSignalHeads(
     .rotateX(Math.PI / 2);
   const visorGeometry = new BoxGeometry(LAMP_RADIUS * 2.5, u(0.06), VISOR_DEPTH);
 
-  const steel = new MeshStandardMaterial({ color: 0x2b302d, roughness: 0.7, metalness: 0.45 });
-  const housing = new MeshStandardMaterial({ color: 0x15191a, roughness: 0.78, metalness: 0.1 });
-  // A signal post sways a few centimetres at the top in a gust, its arm and heads with it (`applyStructureSway`).
-  const armSteel = steel.clone();
-  const SWAY = m(0.05);
-  applyStructureSway(steel, POST_HEIGHT / 2, POST_HEIGHT, SWAY, 'signal-post');
-  applyStructureSway(armSteel, POST_HEIGHT - u(0.3), POST_HEIGHT, SWAY, 'signal-arm');
-  applyStructureSway(housing, HEAD_CENTRE, POST_HEIGHT, SWAY, 'signal-housing');
-  // Lit lenses keep their hue at full brightness: basic and untone-mapped, white here and coloured per instance.
-  const lit = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-  const LIT: Record<Lamp, Color> = {
-    red: new Color(0xff4034),
-    amber: new Color(0xffb219),
-    green: new Color(0x3bf06a),
-  };
-  // Off, but still obviously a coloured filter over a dark can.
-  const dark: Record<Lamp, MeshStandardMaterial> = {
-    red: lensMaterial(0x8d221c, 0x2a0705),
-    amber: lensMaterial(0x8a6410, 0x281c04),
-    green: lensMaterial(0x1d6b33, 0x07230f),
-  };
-  const halo = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.28 });
-  for (const [k, mat] of [['lit', lit], ['halo', halo], ['red', dark.red], ['amber', dark.amber], ['green', dark.green]] as const) {
-    applyStructureSway(mat, HEAD_CENTRE, POST_HEIGHT, SWAY, `signal-${k}`);
-  }
-  const HALO: Record<Lamp, Color> = {
-    red: new Color(0xff5145),
-    amber: new Color(0xffc850),
-    green: new Color(0x59ff86),
-  };
-
-  const solid = { cast: true, receive: true };
-  const shading = { cast: true, receive: false };
-  const glow = { cast: false, receive: false };
-  /** Each kind of part: its geometry, material, instances a head, shadows, and whether it takes a colour per instance. */
-  const KINDS: Record<BatchName, readonly [BufferGeometry, Material, number, { cast: boolean; receive: boolean }, boolean]> = {
-    posts: [postGeometry, steel, 1, solid, false],
-    arms: [armGeometry, armSteel, 1, solid, false],
-    boxes: [housingGeometry, housing, 1, solid, false],
-    visors: [visorGeometry, housing, LAMPS.length * FACES.length, shading, false],
-    lit: [lensGeometry, lit, FACES.length, glow, true],
-    halos: [haloGeometry, halo, FACES.length, glow, true],
-    red: [lensGeometry, dark.red, FACES.length, glow, false],
-    amber: [lensGeometry, dark.amber, FACES.length, glow, false],
-    green: [lensGeometry, dark.green, FACES.length, glow, false],
-  };
-  const NAMES = Object.keys(KINDS) as BatchName[];
-  const FIXED: readonly BatchName[] = ['posts', 'arms', 'boxes', 'visors'];
-  const LENSES: readonly BatchName[] = ['lit', 'halos', 'red', 'amber', 'green'];
-  /** A cell's batches, sized for its heads, culled by its sphere. */
-  /** Each casting batch taken off the casters chosen by cascade when its cell goes (`castBySize`). */
-  const uncast = new Map<InstancedMesh, () => void>();
-  const batchesFor = (heads: number, sphere: Sphere): Record<BatchName, InstancedMesh> => {
-    const out = {} as Record<BatchName, InstancedMesh>;
-    for (const name of NAMES) {
-      const [geometry, material, perHead, shadows, coloured] = KINDS[name];
-      const capacity = Math.max(1, heads * perHead);
-      const mesh = new InstancedMesh(geometry, material, capacity);
-      mesh.name = `signal-${name}`;
-      mesh.count = 0;
-      mesh.castShadow = shadows.cast;
-      mesh.receiveShadow = shadows.receive;
-      if (shadows.cast) {
-        // Cast into a cascade only with heads, and where the part reaches a texel (a visor's hood is a few centimetres): `shadowCasters.ts`.
-        if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-        const reach = geometry.boundingSphere?.radius ?? 0;
-        uncast.set(mesh, castBySize({ mesh, casts: true, radius: () => reach }));
-      }
-      // Culled as a cell, by the sphere round its heads (three's own test, `frustumCulled` left on).
-      mesh.boundingSphere = sphere;
-      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-      if (coloured) {
-        mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
-        mesh.instanceColor.setUsage(DynamicDrawUsage);
-      }
-      group.add(mesh);
-      out[name] = mesh;
-    }
-    return out;
-  };
-
   // Where each part sits in its head, relative to the foot of the post.
   const at = (x: number, y: number, z: number, rotateZ = 0): Matrix4 =>
     new Matrix4().makeRotationZ(rotateZ).setPosition(x, y, z);
@@ -217,12 +143,179 @@ export function createSignalHeads(
     }
   });
 
+  // A signal post sways a few centimetres at the top in a gust, its arm and heads with it (`applyStructureSway`).
+  const SWAY = m(0.05);
+  const STEEL = { color: new Color(0x2b302d), roughness: 0.7, metalness: 0.45 };
+  const HOUSING = { color: new Color(0x15191a), roughness: 0.78, metalness: 0.1 };
+  const housing = new MeshStandardMaterial({ color: HOUSING.color, roughness: HOUSING.roughness, metalness: HOUSING.metalness });
+  applyStructureSway(housing, HEAD_CENTRE, POST_HEIGHT, SWAY, 'signal-housing');
+
+  // DO NOT draw the post, the arm and the housing as a mesh each (three draws a cell): one geometry, each part painted and swaying as its own mesh did.
+  /** A part of the frame in its head: its colour, roughness and metal, its sway's foot (`applyPartSway`) and its size (`frameDepth`). */
+  const framePart = (geometry: BufferGeometry, local: Matrix4, look: typeof STEEL, swayOrigin: number): BufferGeometry => {
+    geometry.computeBoundingSphere();
+    const part = geometry.clone().applyMatrix4(local);
+    const n = part.getAttribute('position').count;
+    const colour = new Float32Array(n * 3), surface = new Float32Array(n * 2), sway = new Float32Array(n * 4);
+    const reach = new Float32Array(n).fill(geometry.boundingSphere!.radius);
+    const e = local.elements;
+    for (let i = 0; i < n; i++) {
+      colour.set([look.color.r, look.color.g, look.color.b], i * 3);
+      surface.set([look.roughness, look.metalness], i * 2);
+      sway.set([e[12]!, e[13]!, e[14]!, swayOrigin], i * 4);
+    }
+    part.setAttribute('color', new BufferAttribute(colour, 3));
+    part.setAttribute('aSurface', new BufferAttribute(surface, 2));
+    part.setAttribute('aSwayPart', new BufferAttribute(sway, 4));
+    part.setAttribute('aCastReach', new BufferAttribute(reach, 1));
+    return part;
+  };
+  const frameParts = [
+    framePart(postGeometry, POST, STEEL, POST_HEIGHT / 2),
+    framePart(armGeometry, ARM, STEEL, POST_HEIGHT - u(0.3)),
+    framePart(housingGeometry, BOX, HOUSING, HEAD_CENTRE),
+  ];
+  const frameGeometry = mergeGeometries(frameParts)!;
+  for (const part of frameParts) part.dispose();
+  /** The frame's widest part: what decides whether it casts into a cascade at all (`castBySize`). */
+  const frameReach = Math.max(postGeometry.boundingSphere!.radius, armGeometry.boundingSphere!.radius, housingGeometry.boundingSphere!.radius);
+  const frame = new MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 1, metalness: 1 });
+  frame.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        attribute vec2 aSurface;
+        varying vec2 vSurface;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vSurface = aSurface;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec2 vSurface;`)
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vSurface.x;')
+      .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vSurface.y;');
+  };
+  applyPartSway(frame, POST_HEIGHT, SWAY, 'signal-frame');
+  // Its shadow at rest, as the parts' was; a part narrower than the cascade's texel left out of it, as its own mesh was (`casterTexel`).
+  const frameDepth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false });
+  frameDepth.onBeforeCompile = (shader) => {
+    shader.uniforms.uCastTexel = casterTexel;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        attribute float aCastReach;
+        uniform float uCastTexel;`)
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        if (aCastReach < uCastTexel) gl_Position = vec4(0.0, 0.0, 2.0, 1.0);`);
+  };
+  frameDepth.customProgramCacheKey = () => 'signal-frame-depth';
+
+  // DO NOT draw the lenses as a mesh a colour and one for the lit: every lens in one mesh, its colours its instance's.
+  // Off, but still obviously a coloured filter over a dark can: its colour and glow (`aLensGlow` rgb).
+  const DARK: Record<Lamp, { readonly color: Color; readonly glow: Color }> = {
+    red: { color: new Color(0x8d221c), glow: new Color(0x2a0705) },
+    amber: { color: new Color(0x8a6410), glow: new Color(0x281c04) },
+    green: { color: new Color(0x1d6b33), glow: new Color(0x07230f) },
+  };
+  // Lit lenses keep their hue at full brightness: their colour as it is and untone-mapped, as a basic material draws it (`aLensGlow` a = 1).
+  const LIT: Record<Lamp, Color> = {
+    red: new Color(0xff4034),
+    amber: new Color(0xffb219),
+    green: new Color(0x3bf06a),
+  };
+  const lenses = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0 });
+  lenses.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+        attribute vec4 aLensGlow;
+        varying vec4 vLensGlow;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vLensGlow = aLensGlow;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec4 vLensGlow;`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        totalEmissiveRadiance = vLensGlow.rgb;`)
+      .replace('#include <opaque_fragment>', `if (vLensGlow.a > 0.5) outgoingLight = diffuseColor.rgb;
+        #include <opaque_fragment>`)
+      .replace('#include <tonemapping_fragment>', `if (vLensGlow.a < 0.5) {
+        #include <tonemapping_fragment>
+        }`);
+  };
+  const halo = new MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.28 });
+  for (const [k, mat] of [['lens', lenses], ['halo', halo]] as const) {
+    applyStructureSway(mat, HEAD_CENTRE, POST_HEIGHT, SWAY, `signal-${k}`);
+  }
+  const HALO: Record<Lamp, Color> = {
+    red: new Color(0xff5145),
+    amber: new Color(0xffc850),
+    green: new Color(0x59ff86),
+  };
+
+  const solid = { cast: true, receive: true };
+  const shading = { cast: true, receive: false };
+  const glow = { cast: false, receive: false };
+  /** Each kind of part: its geometry, material, instances a head, shadows, and whether it takes a colour per instance. */
+  const KINDS: Record<BatchName, readonly [BufferGeometry, Material, number, { cast: boolean; receive: boolean }, boolean]> = {
+    frame: [frameGeometry, frame, 1, solid, false],
+    visors: [visorGeometry, housing, LAMPS.length * FACES.length, shading, false],
+    lenses: [lensGeometry, lenses, LAMPS.length * FACES.length, glow, true],
+    halos: [haloGeometry, halo, FACES.length, glow, true],
+  };
+  const NAMES = Object.keys(KINDS) as BatchName[];
+  const FIXED: readonly BatchName[] = ['frame', 'visors'];
+  const LENSES: readonly BatchName[] = ['lenses', 'halos'];
+  /** A cell's batches, sized for its heads, culled by its sphere. */
+  /** Each casting batch taken off the casters chosen by cascade when its cell goes (`castBySize`). */
+  const uncast = new Map<InstancedMesh, () => void>();
+  /** A geometry holding `shape`'s attributes and index themselves (three uploads an attribute once, whatever holds it). */
+  const sharing = (shape: BufferGeometry): BufferGeometry => {
+    const geometry = new BufferGeometry();
+    geometry.setIndex(shape.index);
+    for (const [key, attribute] of Object.entries(shape.attributes)) geometry.setAttribute(key, attribute);
+    return geometry;
+  };
+  const batchesFor =(heads: number, sphere: Sphere): Record<BatchName, InstancedMesh> => {
+    const out = {} as Record<BatchName, InstancedMesh>;
+    for (const name of NAMES) {
+      const [shape, material, perHead, shadows, coloured] = KINDS[name];
+      const capacity = Math.max(1, heads * perHead);
+      // The lenses' glows are their instances': a geometry of the cell's own over the shape's own arrays (never copied, one buffer on the GPU).
+      const geometry = name === 'lenses' ? sharing(shape) : shape;
+      if (name === 'lenses') {
+        const glows = new InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
+        glows.setUsage(DynamicDrawUsage);
+        geometry.setAttribute('aLensGlow', glows);
+      }
+      const mesh = new InstancedMesh(geometry, material, capacity);
+      mesh.name = `signal-${name}`;
+      mesh.count = 0;
+      mesh.castShadow = shadows.cast;
+      mesh.receiveShadow = shadows.receive;
+      if (name === 'frame') mesh.customDepthMaterial = frameDepth;
+      if (shadows.cast) {
+        // Cast into a cascade only with heads, and where the part reaches a texel (a visor's hood is a few centimetres): `shadowCasters.ts`.
+        if (!geometry.boundingSphere) geometry.computeBoundingSphere();
+        const reach = name === 'frame' ? frameReach : geometry.boundingSphere?.radius ?? 0;
+        uncast.set(mesh, castBySize({ mesh, casts: true, radius: () => reach }));
+      }
+      // Culled as a cell, by the sphere round its heads (three's own test, `frustumCulled` left on).
+      mesh.boundingSphere = sphere;
+      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+      if (coloured) {
+        mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+        mesh.instanceColor.setUsage(DynamicDrawUsage);
+      }
+      group.add(mesh);
+      out[name] = mesh;
+    }
+    return out;
+  };
+
   const root = new Matrix4();
   const place = new Matrix4();
   const turn = new Quaternion();
   const up = new Vector3(0, 1, 0);
   const foot = new Vector3();
   const one = new Vector3(1, 1, 1);
+  const HEAD = new Matrix4();
   const put = (mesh: InstancedMesh, local: Matrix4, colour?: Color): void => {
     place.multiplyMatrices(root, local);
     mesh.setMatrixAt(mesh.count, place);
@@ -240,6 +333,12 @@ export function createSignalHeads(
       mesh.instanceColor.clearUpdateRanges();
       mesh.instanceColor.addUpdateRange(0, mesh.count * 3);
       mesh.instanceColor.needsUpdate = true;
+    }
+    const glows = mesh.geometry.getAttribute('aLensGlow') as InstancedBufferAttribute | undefined;
+    if (glows) {
+      glows.clearUpdateRanges();
+      glows.addUpdateRange(0, mesh.count * 4);
+      glows.needsUpdate = true;
     }
   };
   const rootOf = (head: Head): void => {
@@ -264,6 +363,14 @@ export function createSignalHeads(
       uncast.delete(mesh);
       group.remove(mesh);
       mesh.dispose();
+      // The lenses' geometry is the cell's own (its glows): the shape's arrays let go of first, or its dispose would free them on the GPU
+      // for every other cell too (three r186 `WebGLGeometries` onGeometryDispose removes each attribute the geometry holds).
+      const shape = KINDS[name][0];
+      if (mesh.geometry !== shape) {
+        mesh.geometry.setIndex(null);
+        for (const key of Object.keys(shape.attributes)) mesh.geometry.deleteAttribute(key);
+        mesh.geometry.dispose();
+      }
     }
   };
   const dropCells = (): void => {
@@ -276,16 +383,22 @@ export function createSignalHeads(
   const writeLenses = (cell: Cell): void => {
     const b = cell.batches;
     for (const name of LENSES) b[name].count = 0;
+    const glows = b.lenses.geometry.getAttribute('aLensGlow') as InstancedBufferAttribute;
+    cell.lit = 0;
     for (const head of cell.heads) {
       rootOf(head);
       for (const name of LAMPS) {
         const on = head.state === name;
         for (let face = 0; face < FACES.length; face++) {
           if (on) {
-            put(b.lit, lens[name][face] as Matrix4, LIT[name]);
+            glows.setXYZW(b.lenses.count, 0, 0, 0, 1);
+            put(b.lenses, lens[name][face] as Matrix4, LIT[name]);
             put(b.halos, halos[name][face] as Matrix4, HALO[name]);
+            cell.lit++;
           } else {
-            put(b[name], lens[name][face] as Matrix4);
+            const dark = DARK[name];
+            glows.setXYZW(b.lenses.count, dark.glow.r, dark.glow.g, dark.glow.b, 0);
+            put(b.lenses, lens[name][face] as Matrix4, dark.color);
           }
         }
       }
@@ -335,12 +448,10 @@ export function createSignalHeads(
     let r = 0;
     for (const h of heads) r = Math.max(r, Math.hypot(h.x - cx, h.height - cy, -h.y - cz));
     const sphere = new Sphere(new Vector3(cx, cy, cz), r + HEAD_REACH);
-    const cell: Cell = { junctions, heads, batches: batchesFor(heads.length, sphere), sphere, stale: true };
+    const cell: Cell = { junctions, heads, batches: batchesFor(heads.length, sphere), sphere, lit: 0, stale: true };
     for (const head of heads) {
       rootOf(head);
-      put(cell.batches.posts, POST);
-      put(cell.batches.arms, ARM);
-      put(cell.batches.boxes, BOX);
+      put(cell.batches.frame, HEAD);
       for (const visor of visors) put(cell.batches.visors, visor);
     }
     for (const name of FIXED) flush(cell.batches[name]);
@@ -441,7 +552,7 @@ export function createSignalHeads(
           }
         }
         if (cell.stale) writeLenses(cell);
-        litLenses += cell.batches.lit.count;
+        litLenses += cell.lit;
       }
       group.userData.litLamps = litLenses;
     },
@@ -454,25 +565,15 @@ export function createSignalHeads(
         postGeometry,
         armGeometry,
         housingGeometry,
+        frameGeometry,
         lensGeometry,
         haloGeometry,
         visorGeometry,
       ]) {
         geometry.dispose();
       }
-      const materials: Material[] = [steel, armSteel, housing, lit, halo, ...Object.values(dark)];
+      const materials: Material[] = [frame, frameDepth, housing, lenses, halo];
       for (const material of materials) material.dispose();
     },
   };
-}
-
-/** An unlit lens: a coloured filter with a faint glow, over a dark can. */
-function lensMaterial(color: number, emissive: number): MeshStandardMaterial {
-  return new MeshStandardMaterial({
-    color,
-    emissive,
-    emissiveIntensity: 1,
-    roughness: 0.35,
-    metalness: 0,
-  });
 }
