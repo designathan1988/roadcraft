@@ -30,6 +30,8 @@ function atlasTexture(pixels: Float32Array, width: number, height: number): Data
   const texture = new DataTexture(pixels, width, height, RGBAFormat, FloatType);
   texture.minFilter = texture.magFilter = NearestFilter;
   texture.needsUpdate = true;
+  // Up whole once (`appendClip` adds ranges only after: three sends only the ranges of a texture that has some, its first upload too, AGT-16).
+  texture.onUpdate = () => { texture.userData['uploaded'] = true; };
   return texture;
 }
 
@@ -76,7 +78,8 @@ export function appendClip(atlas: CitizenAtlas, clip: ClipFrames): boolean {
   }
   (texture.image.data as Float32Array).set(clip.data.subarray(0, count * packed), at * width * 4);
   // Each update range is one row of the image (three's WebGLTextures): the new rows only.
-  if (!grown) for (let r = 0; r < count; r++) texture.addUpdateRange((at + r) * width * 4, width * 4);
+  // DO NOT put ranges on a texture not yet sent: grown by an earlier clip this frame, it would go up with these rows alone, the rest zero (bodies collapsed to a point, AGT-16).
+  if (!grown && texture.userData['uploaded'] === true) for (let r = 0; r < count; r++) texture.addUpdateRange((at + r) * width * 4, width * 4);
   texture.needsUpdate = true;
   (atlas.rowOf as Map<ClipFrames, number>).set(clip, at);
   atlas.rows = at + count;

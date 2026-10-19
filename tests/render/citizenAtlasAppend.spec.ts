@@ -31,6 +31,8 @@ describe("a cooked body's atlas", () => {
     const a = clip(4, 100);
     const atlas = citizenAtlas([a, clip(14, 300)], BONES);
     const texture = atlas.anim.atlas;
+    // Sent up whole once, as three tells it (`onUpdate`): ranges from now on.
+    texture.onUpdate?.(texture);
     texture.clearUpdateRanges();
     const late = clip(1, 500);
     expect(appendClip(atlas, late)).toBe(false);
@@ -52,5 +54,17 @@ describe("a cooked body's atlas", () => {
     expect(texels(atlas)[0]).toBe(100);
     expect(texels(atlas)[3 * WIDTH]).toBe(103);
     expect(texels(atlas)[4 * WIDTH]).toBe(700);
+  });
+
+  it('puts no range on a texture not yet sent: a clip after one that grew it leaves the new texture to go up whole (AGT-16)', () => {
+    const atlas = citizenAtlas([clip(2, 100)], BONES);
+    const height = atlas.anim.atlas.image.height;
+    // Just past its room (a clip is its frames and two rows): it doubles, room left after it.
+    expect(appendClip(atlas, clip(height - atlas.rows, 700))).toBe(true);
+    const grown = atlas.anim.atlas;
+    // Not drawn since (no upload): the next clip adds no range, or only its rows would go up, the rest zero on the GPU.
+    expect(appendClip(atlas, clip(1, 900))).toBe(false);
+    expect(atlas.anim.atlas).toBe(grown);
+    expect(grown.updateRanges.length).toBe(0);
   });
 });

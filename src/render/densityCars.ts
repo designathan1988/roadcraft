@@ -135,9 +135,10 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
   // The lines, a link's slot a run of `LINK_POINTS` texels: x, height, -y (three's axes) and the road's length; in the road's own order (a to b).
   let rows = 1;
   let lines = new Float32Array(TEX_WIDTH * rows * 4);
-  let texture = makeTexture(lines, rows);
-  /** A texture made this frame is uploaded whole at its first draw: no ranges on it (three uploads only the ranges when it has some). */
+  /** A texture not yet uploaded whole is sent whole: no ranges on it (three r186 `updateTexture` sends only the ranges when it has some, its first upload too, the rest left zero on the GPU: the far cars of those roads hidden, AGT-16). Whole until three says it went up (`onUpdate`), not until the next frame (it is not drawn while no far tile is in view). */
   let whole = true;
+  const watch = (t: DataTexture): DataTexture => { t.onUpdate = () => { whole = false; }; return t; };
+  let texture = watch(makeTexture(lines, rows));
   const uniforms = { uLinks: { value: texture }, uTime: { value: 0 }, uWindow: { value: new Vector3() } };
 
   const material = new MeshStandardMaterial({ roughness: 0.45, metalness: 0.2 });
@@ -224,7 +225,7 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     tiles.delete(tile.key);
     total -= tile.n;
     group.remove(tile.mesh);
-    tile.geometry.dispose();
+    letGoTile(tile.geometry);
   }
 
   /** The slot's link filed in the tile of its middle (`ML.mx`, `ML.my`); the tiles it left and joined written again. */
@@ -256,7 +257,7 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
     lines = grown;
     rows = next;
     texture.dispose();
-    texture = makeTexture(lines, rows);
+    texture = watch(makeTexture(lines, rows));
     uniforms.uLinks.value = texture;
     whole = true;
   }
@@ -413,7 +414,7 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
         tile.link.set(keepLink.subarray(0, n * 4));
         tile.move.set(keepMove.subarray(0, n * 4));
         tile.mesh.geometry = tile.geometry;
-        old.dispose();
+        letGoTile(old);
       }
       const at = n * 4;
       const link = tile.link, move = tile.move;
@@ -465,8 +466,6 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
   return {
     object: group,
     update(net, sim, focusX, focusY) {
-      // The texture made or rewritten whole last frame was drawn (uploaded whole) since: ranges again from now.
-      whole = false;
       tellWindow(sim, focusX, focusY);
       syncLines(net);
       const head = memory.head;
@@ -490,6 +489,14 @@ export function createDensityCars(heightAt: (x: number, y: number, segment: Segm
       texture.dispose();
     },
   };
+}
+
+/** A tile's geometry let go: the car's shape it shares with every tile (its index, position and normal) taken off first, so three frees the tile's own buffers only (r186 `WebGLGeometries` frees every attribute and the index a disposed geometry holds, AGT-17). */
+function letGoTile(g: BufferGeometry): void {
+  g.setIndex(null);
+  g.deleteAttribute('position');
+  g.deleteAttribute('normal');
+  g.dispose();
 }
 
 function makeTexture(data: Float32Array, rows: number): DataTexture {
