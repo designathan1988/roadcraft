@@ -63,6 +63,7 @@ import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { renderTargetsBytes } from './targetBytes';
 import { deviceGpuCap, gpuLedger, readGpuDevice } from './gpuLedger';
+import { screenSizer } from './screenSize';
 import { WEAK_MACHINE } from '@core/weakMachine';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { createInspector, type Inspector } from './inspector';
@@ -363,7 +364,8 @@ export interface SceneHandle {
   surfaceHeightAt(x: number, y: number): number;
   /** The height of the paving at a point (NaN off the roads); with `pack`, what a worker reads it from over a rectangle (`world/paving.ts`). */
   readonly pavedHeightAt: PavingSource;
-  resize(): void;
+  /** The canvas's size read again, or `pixelRatio` taken (the dynamic resolution): the drawing buffer and the screen's targets made again only when either changed. */
+  resize(pixelRatio?: number): void;
   draw(net: Network, sim: SimClient, alpha: number, delta: number, options?: DrawOptions): void;
   /** A tier, or the player's own settings on it (the options panel: shadows, occlusion, smoothing). */
   setQuality(level: QualityLevel | 'auto', settings?: QualitySettings): void;
@@ -2069,15 +2071,17 @@ export function createSceneRenderer(
   let post: PostChain = createPostChain(renderer, scene, rig.camera, quality, governor.current);
   renderer.setPixelRatio(Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), quality.pixelRatio));
 
-  function resize(): void {
-    const width = Math.max(1, canvas.clientWidth);
-    const height = Math.max(1, canvas.clientHeight);
-    renderer.setSize(width, height, false);
-    rig.resize(width, height);
-    post.setSize(width, height, renderer.getPixelRatio());
-    // The GPU's cap from the device and the drawing buffer's pixels, and the frame's targets in the ledger (`gpuLedger.ts`).
-    gpuLedger.cap = deviceGpuCap(readGpuDevice(renderer.getContext(), canvas.width * canvas.height));
-    gpuLedger.set('render targets', 'render targets', renderTargetsBytes(post.targets()));
+  // DO NOT make the targets again for the size they have (the window's resize event and the next frame both ask), nor the drawing buffer twice.
+  const sizeScreen = screenSizer(renderer, () => Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), quality.pixelRatio),
+    (width, height, ratio, wholePixels) => {
+      rig.resize(width, height);
+      post.setSize(width, height, ratio);
+      // The GPU's cap from the device and the pixels at the tier's whole ratio, not the dynamic resolution's share: the buildings' detail does not follow it. And the frame's targets in the ledger (`gpuLedger.ts`).
+      gpuLedger.cap = deviceGpuCap(readGpuDevice(renderer.getContext(), wholePixels));
+      gpuLedger.set('render targets', 'render targets', renderTargetsBytes(post.targets()));
+    });
+  function resize(ratio = renderer.getPixelRatio()): void {
+    sizeScreen(Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight), ratio, post);
   }
   resize();
 

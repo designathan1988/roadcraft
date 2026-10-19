@@ -1,6 +1,6 @@
 import {
   Color, DepthTexture, type DirectionalLight, FloatType, HalfFloatType, Matrix4, Mesh, NoBlending,
-  RGFormat, SRGBColorSpace, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
+  RGFormat, RedFormat, SRGBColorSpace, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderTarget, type Camera, type Texture, type WebGLRenderer,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { CopyShader } from 'three/examples/jsm/shaders/CopyShader.js';
@@ -18,6 +18,7 @@ import type { QualityLevel, QualitySettings } from './quality';
 import { fullScreenTriangle } from './uploads';
 import { createCanyonLight } from './canyonLight';
 import { DEPTH_GLSL } from './depthConvention';
+import { CloudShadowStamp } from './cloudShadowStamp';
 import type { CameraSolids } from '@world/buildings/cameraSolids';
 
 /** The post chain: ambient occlusion, then anti-aliasing */
@@ -268,8 +269,12 @@ export function createPostChain(
   /** Whether the last frame drew any cloud (a history of nothing is none). */
   let hadClouds = false;
   let bodiesQuad: FullScreenQuad | null = null;
-  // The clouds' shadow map (`CLOUD_SHADOW_MAP_MAIN`): drawn once a frame, read once a pixel.
-  const shadowMapTarget = new WebGLRenderTarget(CLOUD_SHADOW_MAP, CLOUD_SHADOW_MAP, { type: HalfFloatType, depthBuffer: false });
+  // The clouds' shadow map (`CLOUD_SHADOW_MAP_MAIN`): one channel, drawn when what it shows changes (`mapStamp`), read once a pixel.
+  const shadowMapTarget = new WebGLRenderTarget(CLOUD_SHADOW_MAP, CLOUD_SHADOW_MAP, { type: HalfFloatType, format: RedFormat, depthBuffer: false });
+  const mapStamp = new CloudShadowStamp();
+  // A lost context takes the map's texels with it.
+  const mapLost = (): void => mapStamp.invalidate();
+  renderer.domElement.addEventListener('webglcontextrestored', mapLost);
   let shadowMapQuad: FullScreenQuad | null = null;
   if (clouds) {
     const pass = clouds;
@@ -294,7 +299,11 @@ export function createPostChain(
       const on = (pass.uniforms['uCloudCount']!.value as number) > 0;
       pass.uniforms['uCloudsOn']!.value = on ? 1 : 0;
       const gl = args[0];
-      if (on && (pass.uniforms['uShadowMapOn']!.value as number) > 0.5 && (pass.uniforms['uStrength']!.value as number) > 0) {
+      const u = pass.uniforms as Record<string, { value: unknown }>;
+      if (on && (u['uShadowMapOn']!.value as number) > 0.5 && (u['uStrength']!.value as number) > 0
+        && mapStamp.changed(u['uCloudCount']!.value as number, CLOUD_PUFFS, u['uCloud']!.value as Vector4[], u['uPuff']!.value as Vector4[],
+          u['uLife']!.value as number[], u['uBase']!.value as number[], u['uShow']!.value as number[], u['uSunDir']!.value as Vector3,
+          u['uShadowRect']!.value as Vector4, u['uShadowPlane']!.value as number)) {
         const previous = gl.getRenderTarget();
         gl.setRenderTarget(shadowMapTarget);
         mapQuad.render(gl);
@@ -302,7 +311,6 @@ export function createPostChain(
       }
       if (on) {
         // With the view still, fewer steps and the last frame blended in (Playdead's TAA feedback)
-        const u = pass.uniforms as Record<string, { value: unknown }>;
         const still = historyValid;
         u['uSteps']!.value = still ? CLOUD_STEPS_STILL : CLOUD_STEPS_MOVING;
         u['uHistory']!.value = still ? CLOUD_HISTORY : 0;
@@ -496,6 +504,7 @@ export function createPostChain(
     for (const t of bodiesTargets) t.dispose();
     (shadowMapQuad?.material as ShaderMaterial | undefined)?.dispose();
     shadowMapTarget.dispose();
+    renderer.domElement.removeEventListener('webglcontextrestored', mapLost);
   }
 }
 

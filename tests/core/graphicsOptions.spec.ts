@@ -33,26 +33,62 @@ describe('tierForGpu', () => {
 });
 
 describe('DynamicResolution', () => {
+  /** A decision's worth of frames, and the samples left out after a change before them (`SETTLE`). */
+  const feeder = (drs: DynamicResolution) => (ms: number): number | null => {
+    let last: number | null = null;
+    for (let i = 0; i < 35; i++) last = drs.sample(ms, 16.7) ?? last;
+    return last;
+  };
+
   it('stays whole while the frames fit, falls when they do not, and rises back by steps', () => {
     const drs = new DynamicResolution(0.5);
-    const feed = (ms: number): number | null => {
-      let last: number | null = null;
-      for (let i = 0; i < 30; i++) last = drs.sample(ms, 16.7) ?? last;
-      return last;
-    };
+    const feed = feeder(drs);
     expect(feed(8)).toBeNull();
     expect(drs.scale).toBe(1);
-    // Twice the budget: the pixels a half of it (the linear scale near 0.65), at once.
-    const fallen = feed(33.4)!;
-    expect(fallen).toBeGreaterThan(0.6);
-    expect(fallen).toBeLessThan(0.7);
+    // Twice the budget: the pixels a half of it (the linear scale near 0.65), at once, to the step under it.
+    expect(feed(33.4)).toBe(0.6);
     // Never under the floor.
     feed(400);
     expect(drs.scale).toBe(0.5);
     // Cheap frames: up a step at a time, never past the whole.
-    expect(feed(1)).toBeCloseTo(0.6);
+    expect(feed(1) ?? feed(1)).toBe(0.6);
     for (let i = 0; i < 10; i++) feed(1);
     expect(drs.scale).toBe(1);
+  });
+
+  it('draws only a few fixed scales, so the targets of the screen are not made again for every small change (JOB-11)', () => {
+    const drs = new DynamicResolution(0.5);
+    const feed = feeder(drs);
+    const seen = new Set<number>();
+    for (let k = 0; k < 200; k++) {
+      const scale = feed(10 + 15 * Math.abs(Math.sin(k * 0.7)));
+      if (scale !== null) seen.add(scale);
+    }
+    for (const scale of seen) expect([1, 0.9, 0.8, 0.7, 0.6, 0.5]).toContain(scale);
+  });
+
+  it('does not breathe on a steady cost between two steps (JOB-11)', () => {
+    const drs = new DynamicResolution(0.5);
+    const feed = feeder(drs);
+    // A cost that wants a scale of about 0.86 at the whole: down to 0.8 once, and there it stays.
+    const at1 = (16.7 * 0.85) / 0.86 ** 2;
+    let changes = 0;
+    for (let k = 0; k < 50; k++) {
+      // The cost goes with the pixels drawn.
+      if (feed(at1 * drs.scale ** 2) !== null) changes++;
+    }
+    expect(drs.scale).toBe(0.8);
+    expect(changes).toBe(1);
+  });
+
+  it('leaves out the samples that come back after a change, which are of the scale before (JOB-11)', () => {
+    const drs = new DynamicResolution(0.5);
+    for (let i = 0; i < 30; i++) drs.sample(33.4, 16.7);
+    expect(drs.scale).toBe(0.6);
+    // The late samples of the old, dear frames: they would push it down again.
+    for (let i = 0; i < 5; i++) drs.sample(33.4, 16.7);
+    for (let i = 0; i < 30; i++) drs.sample(10, 16.7);
+    expect(drs.scale).toBe(0.6);
   });
 
   it('ignores a cost or budget it cannot read', () => {
