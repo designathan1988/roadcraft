@@ -181,9 +181,10 @@ function applyLaneChange(w: SimWorld, v: Vehicle): ReturnType<SimWorld['lanelet'
   v.lanelet = target;
   w.enterLanelet(v, target, false);
   if (v.desiredLane === target) v.desiredLane = null;
-  v.route = [target];
-  w.noteRoute(v);
+  // The plan from the new lane. DO NOT file the one-lane route first: `planFrom` files the route it plans; only one it gives up on is filed here.
+  const bare = v.route = [target];
   planFrom(w, v);
+  if (v.route === bare) w.noteRoute(v);
   return lane;
 }
 

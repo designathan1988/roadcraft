@@ -5,6 +5,8 @@ export class RouteIndex<V extends { readonly route: readonly LaneletId[] }> {
   private readonly byLane = new Map<LaneletId, Set<V>>();
   /** The ids each vehicle is filed under: its route as last noted. */
   private readonly filed = new Map<V, readonly LaneletId[]>();
+  private readonly before = new Set<LaneletId>();
+  private readonly after = new Set<LaneletId>();
 
   /** A vehicle filed under its route now, out of the lanes of the route it had: DO NOT take it out of every lane and put it back for a step along its route (each lane it enters), only what came and went is touched. */
   file(v: V): void {
@@ -17,9 +19,14 @@ export class RouteIndex<V extends { readonly route: readonly LaneletId[] }> {
       // A step along: the lane left, unless the route comes back to it.
       if (!ids.includes(was[0]!)) this.drop(was[0]!, v);
     } else {
-      const before = new Set(was), after = new Set(ids);
+      // Two sets kept for every call, not made for each (SIM-02).
+      const before = this.before, after = this.after;
+      for (const id of was) before.add(id);
+      for (const id of ids) after.add(id);
       for (const id of before) if (!after.has(id)) this.drop(id, v);
       for (const id of after) if (!before.has(id)) this.add(id, v);
+      before.clear();
+      after.clear();
     }
     this.filed.set(v, ids);
   }
