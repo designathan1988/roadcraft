@@ -521,11 +521,24 @@ class ShellPart {
 
   /** Emptied for the next building, its arrays and its table kept at their size (`ShellWriter`). */
   clear(): void {
+    // The table first, while the vertices it holds are still counted.
+    this.clearSlots();
     this.vertices = 0;
     for (const s of this.streams) s.grow.length = 0;
     this.index.length = 0;
     this.hashes.length = 0;
-    this.slots.fill(0);
+  }
+
+  /** The weld's table emptied. DO NOT zero the whole table for a few vertices: it is as large as the largest building seen, and every finish of every building cleared it whole (PRD-13); the slots its vertices took are found again by their hashes (a probe never stops at an empty slot here: each vertex is in the table). Many vertices: the table filled, as cheap. */
+  private clearSlots(): void {
+    const slots = this.slots, mask = slots.length - 1, n = this.vertices;
+    if (n * 4 >= slots.length) { slots.fill(0); return; }
+    const hashes = this.hashes.array;
+    for (let v = 0; v < n; v++) {
+      let at = hashes[v]! & mask;
+      while (slots[at] !== v + 1) at = (at + 1) & mask;
+      slots[at] = 0;
+    }
   }
 
   /** Each stream's array as 32-bit words and its words a vertex, as they are after `room` (an array only changes there, as it grows). */
