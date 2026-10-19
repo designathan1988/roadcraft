@@ -409,8 +409,8 @@ export function createLotOverlay(groundAt: (x: number, y: number) => number = ()
     shapesOf(group, levelOf).forEach((s, i) => {
       const order = s.band * BAND + Math.min(group.rank, MAX_RANK - 1) * RANK + i;
       let shape = old?.get(s.key)?.pop();
-      // A kept shape in another place of the order: its cells written again, in the new order.
-      if (shape && shape.order !== order) { lattice.remove(shape); shape.order = order; lattice.add(shape); }
+      // A kept shape in another place of the order: its cells written again, in the new order (its records kept).
+      if (shape && shape.order !== order) lattice.reorder(shape, order);
       if (!shape) { shape = s.make(order); lattice.add(shape); }
       let list = kept.get(s.key);
       if (!list) kept.set(s.key, list = []);
