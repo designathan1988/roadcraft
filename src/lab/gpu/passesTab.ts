@@ -10,6 +10,8 @@ const BAR_FRAMES = 160;
 
 export function createPassesTab(lab: GpuLab): LabTab {
   const root = el('div');
+  /** What this tab switched on when shown, switched off again when left. */
+  let startedTiming = false, startedLayers = false;
   const timing = button('Medir por passe', 'Mede cada passe com consultas de tempo da GPU, uma após a outra; o cronômetro do quadro inteiro fica pausado e o jogo redesenha sem parar enquanto ligado', () => {
     lab.setPassTiming(!lab.passTiming);
     draw();
@@ -122,7 +124,18 @@ export function createPassesTab(lab: GpuLab): LabTab {
   return {
     id: 'gpu',
     title: 'GPU',
-    mount(host) { host.appendChild(root); draw(); },
+    mount(host) {
+      host.appendChild(root);
+      // Shown, it measures at once (nothing to switch on to see something): the passes timed and the layers counted while the tab is open.
+      if (lab.ctx.scene.gpu.supported && !lab.passTiming) { lab.setPassTiming(true); startedTiming = true; }
+      if (!lab.liveLayers) { lab.setLiveLayers(true); startedLayers = true; }
+      draw();
+    },
+    unmount() {
+      if (startedTiming) lab.setPassTiming(false);
+      if (startedLayers) lab.setLiveLayers(false);
+      startedTiming = startedLayers = false;
+    },
     refresh: draw,
     focus(params) {
       // `{ filter }` (a pass or a layer), `{ view }` a debug view, `{ timing: 'on' }` the per-pass mode.

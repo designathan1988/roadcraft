@@ -1,6 +1,7 @@
-import { LAB_REFRESH_MS, type LabContext, type LabTab } from './labTypes';
+import { LAB_REFRESH_MS, type LabContext, type LabSubject, type LabTab } from './labTypes';
 import type { UsageMeter, UsageReading } from './usage';
 import { icon, tabIcon } from './icons';
+import { INVESTIGATE_EVENT, createInvestigator } from './investigate';
 
 /** THE LAB'S WINDOW: docked at either side, centred large, maximised or reduced to its meters; resized from any edge, dragged by its head; tabs at the side when wide; the usage meters on top, each opening what consumes it; a status line at the foot. Its place and size are kept. */
 
@@ -23,6 +24,16 @@ const MODES: readonly (readonly [Mode, string, string])[] = [
   ['center', 'center', 'Centralizar, grande'],
   ['max', 'max', 'Maximizar (duplo clique no título)'],
   ['mini', 'mini', 'Só os medidores'],
+];
+
+/** The tabs' groups, in the order shown (a tab of no group goes to the last). */
+const GROUPS: readonly (readonly [string, readonly string[]])[] = [
+  ['Diagnóstico', ['doctor', 'overview', 'diagnostics']],
+  ['Elementos', ['inspector', 'scene', 'console']],
+  ['GPU', ['gpu', 'gpu-frame', 'gpu-objects', 'gpu-webgl']],
+  ['CPU e memória', ['consumers', 'code', 'coverage']],
+  ['Controles', ['switches', 'optimizations']],
+  ['Gravar e testar', ['recorder', 'recorder-reports', 'tests-sweep', 'tests-bench', 'probes']],
 ];
 
 /** Where each meter leads when clicked: the tab and what it is asked to show. */
@@ -52,6 +63,8 @@ export interface LabWindow {
   open(id?: string, params?: Readonly<Record<string, string>>): void;
   close(): boolean;
   readonly current: string | null;
+  /** The investigation drawer opened on `subject`, the window opened if closed. */
+  investigate(subject: LabSubject): void;
 }
 
 export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage: UsageMeter): LabWindow {
@@ -106,7 +119,13 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
   const tabBar = el('nav', 'lab-tabs');
   tabBar.setAttribute('role', 'tablist');
   const body = el('section', 'lab-body');
-  main.append(tabBar, body);
+  const investigator = createInvestigator(ctx);
+  main.append(tabBar, body, investigator.element);
+  // Any table row (or anything) sends its subject up: investigated here.
+  panel.addEventListener(INVESTIGATE_EVENT, (e) => {
+    const subject = (e as CustomEvent<LabSubject>).detail;
+    investigator.open(subject.from || !current ? subject : { ...subject, from: current.title });
+  });
   const status = el('footer', 'lab-status');
   const statusText = el('span', 'lab-status-text');
   const copyState = button('copy', 'Copiar estado', 'Copiar para a área de transferência o estado completo do laboratório (todas as seções do relatório) em JSON', () => {
@@ -168,7 +187,15 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
   // ---- tabs
   let current: LabTab | null = null;
   const tabButtons = new Map<string, HTMLButtonElement>();
-  tabs.forEach((tab, i) => {
+  const groupOf = (id: string): number => { const i = GROUPS.findIndex(([, ids]) => ids.includes(id)); return i < 0 ? GROUPS.length : i; };
+  const ordered = [...tabs].sort((a, b) => groupOf(a.id) - groupOf(b.id) || (GROUPS[groupOf(a.id)]?.[1].indexOf(a.id) ?? 0) - (GROUPS[groupOf(b.id)]?.[1].indexOf(b.id) ?? 0));
+  let lastGroup = -1;
+  ordered.forEach((tab, i) => {
+    const g = groupOf(tab.id);
+    if (g !== lastGroup) {
+      lastGroup = g;
+      tabBar.appendChild(el('div', 'lab-tab-group', GROUPS[g]?.[0] ?? 'Outros'));
+    }
     const b = button(tabIcon(tab.id), tab.title, `${tab.title}${i < 9 ? ` (Alt+${i + 1})` : ''}`, () => show(tab.id), 'lab-tab');
     b.setAttribute('role', 'tab');
     tabButtons.set(tab.id, b);
@@ -178,6 +205,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
     const tab = tabs.find((t) => t.id === id) ?? tabs[0];
     if (!tab) return;
     if (current !== tab) {
+      investigator.close();
       current?.unmount?.();
       current = tab;
       for (const [key, b] of tabButtons) { b.classList.toggle('on', key === tab.id); b.setAttribute('aria-selected', String(key === tab.id)); }
@@ -220,7 +248,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
         break;
       }
     }
-    panel.classList.toggle('wide', panel.getBoundingClientRect().width >= 820);
+    panel.classList.toggle('wide', panel.getBoundingClientRect().width >= 700);
   }
   function setMode(mode: Mode): void {
     kept.mode = mode;
@@ -278,7 +306,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
   panel.addEventListener('keydown', (e) => {
     if (!e.altKey || e.ctrlKey) return;
     const i = Number(e.key) - 1;
-    if (Number.isInteger(i) && i >= 0 && i < tabs.length) { e.preventDefault(); show(tabs[i]!.id); }
+    if (Number.isInteger(i) && i >= 0 && i < ordered.length) { e.preventDefault(); show(ordered[i]!.id); }
   });
 
   // ---- the refresh while open
@@ -302,6 +330,10 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
   };
 
   const win: LabWindow = {
+    investigate(subject) {
+      if (panel.hidden) win.open();
+      investigator.open(subject.from || !current ? subject : { ...subject, from: current.title });
+    },
     get isOpen() { return !panel.hidden; },
     get current() { return current?.id ?? null; },
     open(id, params) {

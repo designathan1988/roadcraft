@@ -35,14 +35,14 @@ export interface ConsumersView {
   rows(window?: ResourceWindow): MeterReading[];
 }
 
-export function createConsumersTab(ctx: LabContext, collector: Collector, view: ConsumersView): LabTab {
+export function createConsumersTab(_ctx: LabContext, collector: Collector, view: ConsumersView): LabTab {
   const table = createLabTable<MeterReading>({
     columns: columns(() => Math.max(0.001, Math.min(WINDOW_MS[view.window], performance.now() - collector.resetAt) / 1000)),
     rows: () => view.rows(),
     sort: { key: 'share', desc: true },
     categoryKey: 'category',
     limit: 300,
-    onRow: (row) => ctx.emit('resources.row', row.name, row),
+    from: 'Consumo',
   });
   let info: HTMLElement | null = null;
 

@@ -59,15 +59,18 @@
 .lab-panel input[type=checkbox], .lab-panel input[type=radio] { accent-color: var(--lab-accent); }
 .lab-panel input[type=range] { accent-color: var(--lab-accent); padding: 0; }
 
-/* Tabs on top, or a column at the side when the window is wide. */
-.lab-main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.lab-tabs { flex: none; display: flex; gap: 2px; padding: 4px 6px; overflow-x: auto; border-bottom: 1px solid var(--lab-line); background: var(--lab-bg2); }
-.lab-tab { border-color: transparent !important; background: transparent !important; color: var(--lab-muted) !important; padding: 4px 8px !important; }
+/* The tabs: a column at the side, grouped (DevTools' and VS Code's activity bar); only their icons when the window is narrow. */
+.lab-main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: row; }
+.lab-tabs { flex: none; display: flex; flex-direction: column; gap: 1px; width: 176px; padding: 6px; overflow-y: auto; overflow-x: hidden; border-right: 1px solid var(--lab-line); background: var(--lab-bg2); }
+.lab-tab-group { margin: 8px 6px 2px; font-size: 0.78em; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #6f838c; white-space: nowrap; }
+.lab-tab-group:first-child { margin-top: 2px; }
+.lab-tab { justify-content: flex-start; width: 100%; border-color: transparent !important; background: transparent !important; color: var(--lab-muted) !important; padding: 5px 8px !important; }
 .lab-tab:hover { color: var(--lab-text) !important; background: rgb(255 255 255 / 0.06) !important; }
-.lab-tab.on { color: var(--lab-accent) !important; background: rgb(47 194 171 / 0.14) !important; }
-.lab-panel.wide .lab-main { flex-direction: row; }
-.lab-panel.wide .lab-tabs { flex-direction: column; overflow-x: hidden; overflow-y: auto; width: 168px; border-bottom: 0; border-right: 1px solid var(--lab-line); padding: 6px; }
-.lab-panel.wide .lab-tab { justify-content: flex-start; width: 100%; padding: 6px 8px !important; }
+.lab-tab.on { color: var(--lab-accent) !important; background: rgb(47 194 171 / 0.14) !important; box-shadow: inset 2px 0 0 var(--lab-accent); }
+.lab-panel:not(.wide) .lab-tabs { width: 46px; padding: 6px 4px; }
+.lab-panel:not(.wide) .lab-tab { justify-content: center; padding: 7px 0 !important; }
+.lab-panel:not(.wide) .lab-tab span { display: none; }
+.lab-panel:not(.wide) .lab-tab-group { height: 1px; margin: 6px 4px; background: var(--lab-line2); color: transparent; overflow: hidden; }
 
 /* The body scrolls (DO NOT let a flex child grow past its box: min-height 0). */
 .lab-body { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; padding: 10px 12px 14px; }
@@ -123,3 +126,31 @@
 /* The embedded switches (`ui/effectsPanel.ts`) in the lab's colours. */
 .lab-body .effects-panel.embedded { --text: var(--lab-text); --muted: var(--lab-muted); --ui-border: var(--lab-line2); --v-accent-ink: var(--lab-accent); color: var(--lab-text); }
 .lab-body .effects-panel.embedded .effects-group { background: var(--lab-bg2); }
+
+/* The investigation drawer (`investigate.ts`): over the tab's right side, its own scroll. */
+.lab-main { position: relative; }
+.lab-investigate { position: absolute; top: 0; right: 0; bottom: 0; width: min(560px, 62%); min-width: 320px; z-index: 5; overflow: auto; padding: 10px 12px 16px;
+  background: var(--lab-bg); border-left: 1px solid var(--lab-line2); box-shadow: -14px 0 30px rgb(0 0 0 / 0.45); }
+.lab-investigate[hidden] { display: none; }
+.lab-inv-head { display: flex; align-items: center; gap: 6px; position: sticky; top: -10px; background: var(--lab-bg); padding: 2px 0 6px; z-index: 1; }
+.lab-inv-title { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; color: var(--lab-accent); }
+.lab-inv-title strong { color: var(--lab-text); font-size: 1.1em; overflow-wrap: anywhere; }
+.lab-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--lab-bg3); border: 1px solid var(--lab-line); color: var(--lab-muted); font-size: 0.9em; }
+.lab-inv-section { margin-top: 10px; }
+.lab-inv-section > button { margin: 2px 4px 2px 0; }
+.lab-inv-fields { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; padding: 6px 8px; background: var(--lab-bg2); border-radius: 6px; }
+.lab-inv-fields dt { color: var(--lab-muted); }
+.lab-inv-fields dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.lab-inv-hit pre { margin: 6px 0 0; max-height: 240px; }
+.lab-inv-line { white-space: pre; }
+.lab-inv-line.on { background: rgb(47 194 171 / 0.22); }
+.lab-inv-no { color: #5d7079; user-select: none; }
+.lab-inv-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.lab-inv-table th { text-align: left; color: var(--lab-muted); font-weight: 600; padding: 3px 6px; }
+.lab-inv-table td { padding: 2px 6px; border-top: 1px solid var(--lab-line); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-inv-table td.num { text-align: right; }
+.lab-inv-table tr:hover td { background: rgb(47 194 171 / 0.12); cursor: pointer; }
+.lab-table td.lab-look { width: 24px; padding: 0 2px; }
+.lab-table td.lab-look button { padding: 2px 3px; border: 0; background: transparent; color: var(--lab-muted); opacity: 0.55; }
+.lab-table tbody tr:hover td.lab-look button { opacity: 1; color: var(--lab-accent); }
+.lab-table tbody tr { cursor: pointer; }

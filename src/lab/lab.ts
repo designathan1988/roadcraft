@@ -3,7 +3,7 @@ import type { FrameRecord, FrameTimer } from '@core/health';
 import type { SceneHandle } from '@render/renderer';
 import type { SimClient } from '@sim/host/simClient';
 import type { EffectsWiring } from '../effectsWiring';
-import { type LabContext, type LabEvent, type LabSample, type LabTab } from './labTypes';
+import { type LabContext, type LabSubject, type LabEvent, type LabSample, type LabTab } from './labTypes';
 import { createLabTabs } from './tabs';
 import { createUsageMeter } from './usage';
 import { createLabWindow } from './window';
@@ -17,6 +17,8 @@ export interface LabDeps {
   readonly engine: Engine;
   readonly frameTimer: FrameTimer;
   readonly effects: EffectsWiring;
+  /** Picks a quality preset as the menu does (`graphicsWiring.ts`). */
+  setPreset(level: string): void;
   requestDraw(): void;
 }
 
@@ -38,6 +40,7 @@ export function createLab(deps: LabDeps): Lab {
   const frameListeners: ((sample: LabSample, frame: FrameRecord) => void)[] = [];
   const sections = new Map<string, () => unknown>();
   let navigateTo: (id: string, params?: Readonly<Record<string, string>>) => void = () => {};
+  let investigateWith: (subject: LabSubject) => void = () => {};
   const productListeners: ((name: string, phase: string, ms: number, keys: number, idle: boolean) => void)[] = [];
   const listen = <T>(list: T[], listener: T): (() => void) => {
     list.push(listener);
@@ -57,6 +60,14 @@ export function createLab(deps: LabDeps): Lab {
     frameTimer: deps.frameTimer,
     effects: deps.effects,
     requestDraw: deps.requestDraw,
+    quality: {
+      level: () => String(deps.scene.quality),
+      levels: ['low', 'medium', 'high', 'ultra'],
+      setPreset(level) {
+        context.emit('quality.preset', `predefinição = ${level}`, { level });
+        deps.setPreset(level);
+      },
+    },
     emit(kind, detail, data) {
       const event: LabEvent = { t: performance.now(), kind, detail, ...(data === undefined ? {} : { data }) };
       events.push(event);
@@ -69,6 +80,7 @@ export function createLab(deps: LabDeps): Lab {
     onProduct: (listener) => listen(productListeners, listener),
     events: () => events,
     navigate: (id, params) => navigateTo(id, params),
+    investigate: (subject) => investigateWith(subject),
     reportSection(name, collect) {
       sections.set(name, collect);
     },
@@ -91,6 +103,7 @@ export function createLab(deps: LabDeps): Lab {
   const usage = createUsageMeter(context);
   const win = createLabWindow(context, tabs, usage);
   navigateTo = (id, params) => win.open(id, params);
+  investigateWith = (subject) => win.investigate(subject);
 
   // ---- the frames
   let lastStart = 0;

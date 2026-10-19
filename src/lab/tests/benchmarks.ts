@@ -239,7 +239,8 @@ async function hitch(ctx: LabContext, cancel: Cancel, progress: (l: string) => v
       if (values.length > 1) flips.push({ name: `opt.${id}`, get: () => opt.get(id), set: (v) => opt.set(id, v), values });
     }
   }
-  if (!flips.length) warnings.push('sem predefinição de qualidade exposta (__labOpt): usados os interruptores que trocam shaders');
+  // The presets themselves, as the menu picks them (`LabContext.quality`).
+  flips.push({ name: 'quality.preset', get: () => ctx.quality.level(), set: (v) => ctx.quality.setPreset(String(v)), values: [...ctx.quality.levels] });
   const snap = (key: string): unknown => ctx.effects.snapshot()[key];
   for (const key of ['shadows', 'ambientOcclusion', 'bloom', 'environmentMap', 'surfaceDetail']) {
     flips.push({ name: `switch.${key}`, get: () => snap(key), set: (v) => ctx.effects.setMany({ [key]: v as boolean }), values: [false, true] });

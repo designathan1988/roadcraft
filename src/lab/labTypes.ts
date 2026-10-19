@@ -41,6 +41,8 @@ export interface LabContext {
   readonly effects: EffectsWiring;
   /** A frame asked for. */
   requestDraw(): void;
+  /** The quality preset: the one drawn now, and another picked as the menu picks it (`graphicsWiring.ts` setPreset). */
+  readonly quality: { level(): string; readonly levels: readonly string[]; setPreset(level: string): void };
   /** Told to every listener and kept for the recorder. */
   emit(kind: string, detail: string, data?: unknown): void;
   /** Every event from now on; the call returned stops it. */
@@ -57,6 +59,18 @@ export interface LabContext {
   collectReport(): Record<string, unknown>;
   /** Shows the tab `id` (the lab opened if closed) and hands it `params` (`LabTab.focus`): a usage meter clicked opens what consumes it. */
   navigate(id: string, params?: Readonly<Record<string, string>>): void;
+  /** Opens the investigation of `subject` (what it is, its code, its profile, what touches it) over the current tab. Every table row does it on click. */
+  investigate(subject: LabSubject): void;
+}
+
+/** Anything clicked to be investigated (`investigate.ts`): its name, and every field it showed. */
+export interface LabSubject {
+  readonly name: string;
+  readonly category?: string;
+  readonly origin?: string;
+  /** The tab it came from. */
+  readonly from?: string;
+  readonly fields: readonly (readonly [string, string])[];
 }
 
 /** A tab of the lab: built once, mounted when shown, refreshed a few times a second while shown. */

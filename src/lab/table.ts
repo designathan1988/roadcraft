@@ -1,3 +1,6 @@
+import { icon } from './icons';
+import { sendInvestigate } from './investigate';
+
 /** THE LAB'S TABLE: rows sorted by any column (a click on its head, again to reverse), filtered by text and by category, copied as CSV or JSON. Every tab lists what it measures with it. */
 
 export interface LabColumn<R> {
@@ -20,8 +23,10 @@ export interface LabTableOptions<R> {
   readonly sort?: { readonly key: string; readonly desc: boolean };
   /** A column whose values are offered as a filter (a select). */
   readonly categoryKey?: string;
-  /** A row clicked. */
+  /** A row clicked (its own detail); without it, a click investigates the row (`investigate.ts`), as the magnifier at its end always does. */
   onRow?(row: R): void;
+  /** The tab the table is in, told to the investigation. */
+  readonly from?: string;
   /** At most this many rows drawn (default 400): the rest counted. */
   readonly limit?: number;
 }
@@ -72,6 +77,7 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
 
   const drawHead = (): void => {
     const tr = document.createElement('tr');
+    tr.appendChild(document.createElement('th'));
     for (const c of options.columns) {
       const th = document.createElement('th');
       th.textContent = c.label + (c.key === sortKey ? (desc ? ' ▼' : ' ▲') : '');
@@ -147,11 +153,39 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
         }
         tr.appendChild(td);
       }
-      if (options.onRow) tr.onclick = () => options.onRow!(row);
+      const look = document.createElement('td');
+      look.className = 'lab-look';
+      const lookButton = document.createElement('button');
+      lookButton.type = 'button';
+      lookButton.title = 'Investigar: o que é, onde está no código, o que está ligado';
+      lookButton.appendChild(icon('search', 13));
+      lookButton.onclick = (e) => { e.stopPropagation(); investigate(row, tr); };
+      look.appendChild(lookButton);
+      tr.prepend(look);
+      tr.onclick = () => {
+        for (const other of body.querySelectorAll('tr[data-selected]')) other.removeAttribute('data-selected');
+        tr.dataset['selected'] = 'true';
+        if (options.onRow) options.onRow(row); else investigate(row, tr);
+      };
       rows.push(tr);
     }
     body.replaceChildren(...rows);
     count.textContent = shown.length > limit ? `${limit} de ${shown.length}` : `${shown.length} linhas`;
+  }
+
+  /** The row as a subject: its first text its name, its category and origin columns, every column as a field. */
+  function investigate(row: R, from: Element): void {
+    const fields: [string, string][] = [];
+    let name = '', category: string | undefined, origin: string | undefined;
+    for (const c of options.columns) {
+      const v = c.value(row);
+      const text = v === null || v === undefined ? '' : typeof v === 'number' ? (c.format ? c.format(v, row) : fmt(v)) : v;
+      fields.push([c.label, text]);
+      if (!name && typeof v === 'string' && v) name = v;
+      if (/^(categoria|category|cat)$/i.test(c.key) || /^categoria$/i.test(c.label)) category = text;
+      if (/^(origin|origem|source)$/i.test(c.key) || /^origem$/i.test(c.label)) origin = text;
+    }
+    sendInvestigate(from, { name: name || fields[0]?.[1] || '(sem nome)', ...(category ? { category } : {}), ...(origin ? { origin } : {}), ...(options.from ? { from: options.from } : {}), fields });
   }
 
   const copy = (text: string): void => {

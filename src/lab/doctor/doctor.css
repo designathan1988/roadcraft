@@ -1,0 +1,46 @@
+/* THE DIAGNOSIS (`doctor/index.ts`): the verdict, where the GPU and the CPU spend, the causes as cards. */
+.lab-doctor { display: flex; flex-direction: column; gap: 10px; max-width: 1100px; }
+.lab-doc-top { position: sticky; top: -10px; z-index: 2; background: var(--lab-bg); padding: 4px 0; margin: 0; }
+.lab-doc-primary { background: var(--lab-accent) !important; color: var(--lab-accent-ink) !important; border-color: var(--lab-accent) !important; font-weight: 600; }
+.lab-doc-primary:hover { filter: brightness(1.1); }
+
+.lab-doc-verdict { border-radius: 10px; padding: 10px 14px; border: 1px solid var(--lab-line2); background: var(--lab-bg2); }
+.lab-doc-verdict h2 { margin: 0 0 4px; font-size: 1.35em; }
+.lab-doc-verdict p { margin: 0; color: #c7d3d8; }
+.lab-doc-verdict.bound-gpu { border-left: 4px solid var(--lab-bad); }
+.lab-doc-verdict.bound-gpu h2 { color: var(--lab-bad); }
+.lab-doc-verdict.bound-cpu { border-left: 4px solid var(--lab-warn); }
+.lab-doc-verdict.bound-cpu h2 { color: var(--lab-warn); }
+.lab-doc-verdict.bound-ok { border-left: 4px solid var(--lab-good); }
+.lab-doc-verdict.bound-ok h2 { color: var(--lab-good); }
+
+.lab-doc-section h3 { margin: 4px 0 6px; }
+.lab-doc-stack { display: flex; height: 22px; border-radius: 6px; overflow: hidden; background: var(--lab-bg3); }
+.lab-doc-stack span { display: block; height: 100%; min-width: 2px; cursor: pointer; border-right: 1px solid rgb(0 0 0 / 0.35); }
+.lab-doc-stack span:hover { filter: brightness(1.25); }
+.lab-doc-legend { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.lab-doc-key { gap: 6px !important; }
+.lab-doc-key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.lab-doc-key strong { font-variant-numeric: tabular-nums; }
+
+.lab-doc-layers { display: flex; flex-direction: column; gap: 3px; }
+.lab-doc-layer { position: relative; display: grid !important; grid-template-columns: 1fr auto; gap: 8px; text-align: left; padding: 5px 8px !important; overflow: hidden; }
+.lab-doc-layer-name, .lab-doc-layer-tris { position: relative; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
+.lab-doc-layer-tris { color: var(--lab-muted); font-variant-numeric: tabular-nums; }
+.lab-doc-layer-bar { position: absolute; left: 0; top: 0; bottom: 0; background: rgb(47 194 171 / 0.22); }
+
+.lab-doc-card { border: 1px solid var(--lab-line2); border-left-width: 4px; border-radius: 8px; background: var(--lab-bg2); padding: 8px 12px; margin: 6px 0; }
+.lab-doc-card.sev-alta { border-left-color: var(--lab-bad); }
+.lab-doc-card.sev-media { border-left-color: var(--lab-warn); }
+.lab-doc-card.sev-baixa { border-left-color: #6aa9ff; }
+.lab-doc-card.sev-info { border-left-color: var(--lab-line2); }
+.lab-doc-card header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.lab-doc-card header strong { font-size: 1.06em; }
+.lab-doc-sev, .lab-doc-area { font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 4px; background: var(--lab-bg3); color: var(--lab-muted); }
+.sev-alta .lab-doc-sev { background: rgb(255 111 97 / 0.2); color: var(--lab-bad); }
+.sev-media .lab-doc-sev { background: rgb(255 195 90 / 0.18); color: var(--lab-warn); }
+.lab-doc-card ul { margin: 6px 0; padding-left: 18px; }
+.lab-doc-card li { margin: 2px 0; font-variant-numeric: tabular-nums; }
+.lab-doc-why { margin: 4px 0 6px; color: var(--lab-muted); }
+.lab-doc-ab { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--lab-bg3); }
+.lab-doc-ab-row { display: grid; grid-template-columns: 90px 160px 1fr; gap: 8px; font-variant-numeric: tabular-nums; }
