@@ -155,8 +155,9 @@ export function serialize(doc: RoadDoc): string {
 }
 
 /** Loads data from OUTSIDE the running model - the autosave at boot, an imported file: legacy repairs apply */
-export function restoreInto(target: RoadDoc, data: SerializedDoc, net: Network): void {
-  target.replaceFromJSON(data);
+/** `preparedBuildings`: the buildings made ready in a worker (`smallCity.worker.ts`), filed as they are (`BuildingStore.loadPrepared`). */
+export function restoreInto(target: RoadDoc, data: SerializedDoc, net: Network, preparedBuildings = false): void {
+  target.replaceFromJSON(data, { preparedBuildings });
   // A map opened is built whole, nothing taken from the map before it (`Network.rebuild`)
   net.rebuild({ full: true });
   repairNearConnections(target, net);
