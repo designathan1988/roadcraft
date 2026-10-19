@@ -26,7 +26,9 @@ export interface PlantCells {
 }
 
 /** A layer of cells, each a run made by `runOf`; `neighbourly`: a change of a cell writes its neighbours again too */
-function plantLayer(name: string, stores: readonly RunStore[], format: PoseFormat, runOf: (cell: number, builder: RunBuilder) => void, neighbourly: boolean, margin: number): PlantCells {
+/** `syncing`: told as a sync starts and ends, round the runs it makes. */
+function plantLayer(name: string, stores: readonly RunStore[], format: PoseFormat, runOf: (cell: number, builder: RunBuilder) => void, neighbourly: boolean, margin: number,
+  syncing?: { begin(): void; end(): void }): PlantCells {
   const runs = createInstanceRuns(name, stores, margin, format);
   const drawn = new Map<number, Run>();
   return {
@@ -45,14 +47,17 @@ function plantLayer(name: string, stores: readonly RunStore[], format: PoseForma
         }
       }
       const removed: Run[] = [], added: Run[] = [];
-      for (const cell of dirty) {
-        const was = drawn.get(cell);
-        if (was) { removed.push(was); drawn.delete(cell); }
-        const builder = new RunBuilder(stores, format);
-        runOf(cell, builder);
-        const run = builder.build();
-        if (run.size) { added.push(run); drawn.set(cell, run); }
-      }
+      syncing?.begin();
+      try {
+        for (const cell of dirty) {
+          const was = drawn.get(cell);
+          if (was) { removed.push(was); drawn.delete(cell); }
+          const builder = new RunBuilder(stores, format);
+          runOf(cell, builder);
+          const run = builder.build();
+          if (run.size) { added.push(run); drawn.set(cell, run); }
+        }
+      } finally { syncing?.end(); }
       if (removed.length || added.length) runs.update({ removed, added });
     },
     cull(frustum, view) { runs.cull(frustum, view); },
@@ -69,7 +74,10 @@ function treesRound(cell: number, treesIn: (cell: number) => TreePlacement[]): {
   if (!own.length) return { own, among: own };
   const [i, j] = keepCellOf(cell);
   const among: TreePlacement[] = [];
-  for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) among.push(...(di === 0 && dj === 0 ? own : treesIn(keepCellKey(i + di, j + dj))));
+  for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+    const trees = di === 0 && dj === 0 ? own : treesIn(keepCellKey(i + di, j + dj));
+    for (const tree of trees) among.push(tree);
+  }
   return { own, among };
 }
 
@@ -92,10 +100,18 @@ export function createTreeCells(kit: NatureTreeKit, name: string, treesIn: (cell
         castShadow: true, receiveShadow: false, cards: false, far: true, made: far.attach },
     ],
   }));
+  // DO NOT ask a cell's trees again for each of its neighbours in one sync (VEG-06: each cell's trees made ~9 times a sweep, 81 times round an edit): asked once a sync, read only.
+  let asked: Map<number, TreePlacement[]> | null = null;
+  const treesOnce = (cell: number): TreePlacement[] => {
+    if (!asked) return treesIn(cell);
+    let trees = asked.get(cell);
+    if (!trees) asked.set(cell, trees = treesIn(cell));
+    return trees;
+  };
   return plantLayer(name, stores, TREE_POSE, (cell, builder) => {
-    const { own, among } = treesRound(cell, treesIn);
+    const { own, among } = treesRound(cell, treesOnce);
     if (own.length) treesInto(builder, own, among, kit.variants.length);
-  }, true, TREE_SHADOW_REACH);
+  }, true, TREE_SHADOW_REACH, { begin: () => { asked = new Map(); }, end: () => { asked = null; } });
 }
 
 /** A cell's trees put in a run of the woods' stores (`TREE_POSE`, a store a model): each shaped by the trees round it (`standsAmong`, `among` its cell's and its neighbours'), tinted, its model picked of `variants` (`varietyOf`); the page's cells and a tile's bake (`plantedTiles.ts`) alike. */

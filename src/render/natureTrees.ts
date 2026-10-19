@@ -17,9 +17,11 @@ import { m } from '@world/units';
 /** The models, in seed order: each takes its share of the seed's range (`world/trees.ts` KIND_SLOTS). */
 export const TREE_MODELS = ['oak', 'oak', 'cypress', 'cypress', 'palm', 'palm'] as const;
 export type TreeModelKind = (typeof TREE_MODELS)[number];
+/** Each kind's models' places in `TREE_MODELS`, worked out once (VEG-06: a list made for every tree planted). */
+const SLOTS_OF_KIND = Object.fromEntries(TREE_MODELS.map((kind) => [kind, TREE_MODELS.flatMap((k, i) => (k === kind ? [i] : []))])) as Record<TreeModelKind, number[]>;
 /** A seed (0..1) that grows as this kind of tree, `r` (0..1) choosing among its models. */
 export function seedOfKind(kind: TreeModelKind, r: number): number {
-  const slots = TREE_MODELS.flatMap((k, i) => (k === kind ? [i] : []));
+  const slots = SLOTS_OF_KIND[kind];
   const slot = slots[Math.min(slots.length - 1, Math.floor(r * slots.length))]!;
   return (slot + 0.05 + ((r * 7.31) % 1) * 0.9) / TREE_MODELS.length;
 }
