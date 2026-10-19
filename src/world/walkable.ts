@@ -10,7 +10,9 @@ import { levelRingsOf } from './surfaces';
 
 /** DO NOT go back to one index of every ring of the map made at each network rebuild */
 export class WalkableSurface {
-  private readonly made = new Map<number, { readonly stamp: string; readonly outer: RegionIndex; readonly road: RegionIndex }>();
+  /** Each cell made, its stamp, and the two filings and their epochs when it was last found to match (`cellOf`). */
+  private readonly made = new Map<number, { readonly stamp: string; readonly outer: RegionIndex; readonly road: RegionIndex;
+    filings: readonly [object, number, object, number] }>();
   /** The network's state the cells kept were checked against (`forgetChanged`). */
   private seen: object | null = null;
 
@@ -55,9 +57,13 @@ export class WalkableSurface {
     // The cell itself, its far edges left out: a point there is the next cell's.
     const area: ChangeRect = [x0, y0, x1 - CELL * 1e-9, y1 - CELL * 1e-9];
     const net = this.net;
-    const stamp = `${net.segmentCells.stamp(area)}|${net.junctionCells.stamp(area)}`;
     const known = this.made.get(key);
-    if (known && known.stamp === stamp) return known;
+    // DO NOT write the cell's stamp again while neither filing changed anywhere (EDT-25: a string a cell of each filing, at every point asked): their epochs move with each change.
+    const seg = net.segmentCells, jun = net.junctionCells, was = known?.filings;
+    if (known && was![0] === seg && was![1] === seg.epoch && was![2] === jun && was![3] === jun.epoch) return known;
+    const stamp = `${seg.stamp(area)}|${jun.stamp(area)}`;
+    const filings = [seg, seg.epoch, jun, jun.epoch] as const;
+    if (known && known.stamp === stamp) { known.filings = filings; return known; }
     const ribbons = net.ribbonsMeeting(area);
     const junctions: [NodeId, ReadonlyMap<SurfaceLevel, Junction>][] = [];
     for (const id of net.junctionCells.idsMeeting(area)) {
@@ -78,6 +84,7 @@ export class WalkableSurface {
     };
     const cell = {
       stamp,
+      filings,
       outer: RegionIndex.fromRings(ringsOf(Level.Sidewalk), 'nonzero'),
       road: RegionIndex.fromRings(ringsOf(Level.Asphalt), 'nonzero'),
     };
