@@ -22,7 +22,7 @@ function detailTextures(kind: DetailKind, anisotropy: number): DetailTextures {
   };
 }
 
-/** The shared on/off switch, so a low tier pays nothing but a uniform read. */
+/** The shared on/off switch: off, the layer reads none of its textures (its weight 0, `detailW`). */
 export const detailSwitch = { value: 1 };
 
 /** GLSL for sampling a detail layer. */
@@ -38,14 +38,15 @@ export const DETAIL_GLSL = /* glsl */ `
     float perPixel = max(footprint.x, footprint.y);
     return uDetailOn * (1.0 - smoothstep(DETAIL_NEAR, DETAIL_FAR, perPixel));
   }
-  vec3 detailSample(sampler2D tex, vec2 uv) {
-    vec3 a = texture2D(tex, uv).rgb * 2.0;
-    vec3 b = texture2D(tex, DETAIL_TURN * uv * 0.4137 + 0.31).rgb * 2.0;
+  // Read with the uv's own derivatives, taken outside the branch they are read in (textureGrad: a texture read in a branch has no derivatives of its own).
+  vec3 detailSample(sampler2D tex, vec2 uv, vec2 dx, vec2 dy) {
+    vec3 a = textureGrad(tex, uv, dx, dy).rgb * 2.0;
+    vec3 b = textureGrad(tex, DETAIL_TURN * uv * 0.4137 + 0.31, DETAIL_TURN * dx * 0.4137, DETAIL_TURN * dy * 0.4137).rgb * 2.0;
     return a * mix(vec3(1.0), b, 0.55);
   }
-  vec3 detailNormal(sampler2D tex, vec2 uv) {
-    vec3 a = texture2D(tex, uv).xyz * 2.0 - 1.0;
-    vec3 b = texture2D(tex, DETAIL_TURN * uv * 0.4137 + 0.31).xyz * 2.0 - 1.0;
+  vec3 detailNormal(sampler2D tex, vec2 uv, vec2 dx, vec2 dy) {
+    vec3 a = textureGrad(tex, uv, dx, dy).xyz * 2.0 - 1.0;
+    vec3 b = textureGrad(tex, DETAIL_TURN * uv * 0.4137 + 0.31, DETAIL_TURN * dx * 0.4137, DETAIL_TURN * dy * 0.4137).xyz * 2.0 - 1.0;
     // The second sample was read through a rotation
     b.xy = b.xy * DETAIL_TURN;
     return vec3(a.xy + b.xy * 0.55, a.z);
@@ -97,16 +98,22 @@ export function applyDetail(material: MeshStandardMaterial, spec: DetailSpec, an
         `float detailW = detailWeight(vMapUv * uMacroTile);
          vec2 detailUv = vMapUv * uDetailRepeat;
          vec4 sampledDiffuseColor = texture2D(map, vMapUv, detailW * uMacroBlur);
-         vec3 detailAlbedo = detailSample(uDetailMap, detailUv);
-         sampledDiffuseColor.rgb *= mix(vec3(1.0), detailAlbedo, detailW * uDetailAlbedo);
+         // DO NOT read the detail where it weighs nothing (afar, or switched off): 4 reads a pixel of every road for a mix by 0 (VIA-05).
+         vec2 detailDx = dFdx(detailUv), detailDy = dFdy(detailUv);
+         if (detailW > 0.0) {
+           vec3 detailAlbedo = detailSample(uDetailMap, detailUv, detailDx, detailDy);
+           sampledDiffuseColor.rgb *= mix(vec3(1.0), detailAlbedo, detailW * uDetailAlbedo);
+         }
          diffuseColor *= sampledDiffuseColor;`,
       )
       .replace(
         '#include <normal_fragment_maps>',
         `vec3 mapN = texture2D(normalMap, vNormalMapUv, detailW * uMacroBlur).xyz * 2.0 - 1.0;
          mapN.xy *= normalScale;
-         vec3 fineN = detailNormal(uDetailNormal, detailUv);
-         mapN.xy += fineN.xy * uDetailNormalScale * detailW;
+         if (detailW > 0.0) {
+           vec3 fineN = detailNormal(uDetailNormal, detailUv, detailDx, detailDy);
+           mapN.xy += fineN.xy * uDetailNormalScale * detailW;
+         }
          normal = normalize(tbn * mapN);`,
       );
   };
