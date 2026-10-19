@@ -3362,7 +3362,8 @@ export function createSceneRenderer(
         // What this frame drew, before anything after it draws more (the compiles and warm-ups below render too).
         frameDrawn.calls = renderer.info.render.calls;
         frameDrawn.triangles = renderer.info.render.triangles;
-      } else onAssetsReady();
+      // Not open yet: looked at again in `WAIT_LOOK_MS`, the programs and workers it waits on waking it at once when they land (`onAssetsReady`). DO NOT ask the next frame straight away: thousands of empty frames a second (a MessageChannel, no vsync while loading) starved the very workers and driver threads the opening waits for (UI-02).
+      } else lookAgain();
       measureHitch('hitch:draw/Render', atRender);
       if (shake > 0) { rig.camera.position.sub(shakeOffset); rig.camera.updateMatrixWorld(); }
       // And those queued while the frame drew: on the GPU before the next one draws.
