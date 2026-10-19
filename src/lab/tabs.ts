@@ -1,6 +1,7 @@
 import type { LabContext, LabTab } from './labTypes';
 import { createCodeTabs } from './code';
 import { createGpuTabs } from './gpu';
+import { createInspectorTabs } from './inspector';
 import { createOptimizationTabs } from './optimizations';
 import { createRecorderTabs } from './recorder';
 import { createResourceTabs } from './resources';
@@ -17,6 +18,7 @@ export function createLabTabs(ctx: LabContext): LabTab[] {
   const [overview = null, ...resources] = createResourceTabs(ctx);
   return [
     ...(overview ? [overview] : []),
+    ...createInspectorTabs(ctx),
     switches,
     ...createOptimizationTabs(ctx),
     ...resources,

@@ -4,6 +4,7 @@ import { fileURLToPath, URL } from 'node:url';
 import { buildStampPlugin } from './scripts/vite/build-stamp.ts';
 import { cookPlugin } from './scripts/vite/cook-plugin.ts';
 import { labReportsPlugin } from './scripts/vite/labReports.ts';
+import { labSourcePlugin } from './scripts/vite/labSource.ts';
 import { modelUrlsPlugin } from './scripts/vite/model-urls-plugin.ts';
 import { surfaceBakePlugin } from './scripts/vite/surface-bake-plugin.ts';
 
@@ -22,7 +23,8 @@ export default defineConfig({
   // `modelUrlsPlugin`: the model files' URLs, a module per folder, never inlined (`model-urls-plugin.ts`).
   // `surfaceBakePlugin`: the procedural surfaces baked at build time into KTX2 (`surface-bake-plugin.ts`); before `cookPlugin`, whose middleware serves them once baked.
   // `labReportsPlugin`: the lab recorder's reports written into `lab-reports/` (dev server only, `labReports.ts`).
-  plugins: [buildStampPlugin(), surfaceBakePlugin(), cookPlugin(), modelUrlsPlugin(), labReportsPlugin()],
+  // `labSourcePlugin`: the lab inspector's search of where a 3D object's name is made in `src/` (dev server only, `labSource.ts`).
+  plugins: [buildStampPlugin(), surfaceBakePlugin(), cookPlugin(), modelUrlsPlugin(), labReportsPlugin(), labSourcePlugin()],
   publicDir: false,
   // The dependencies are found from the game's own pages only.
   optimizeDeps: { entries: ['*.html'] },
