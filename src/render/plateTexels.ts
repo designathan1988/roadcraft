@@ -35,15 +35,14 @@ export interface CornerStore {
 /** The covers painted at a corner, 0..1 (`terrain.ts` coverAt). */
 export type CornerCover = (corner: number, kind: 'flowers' | 'scrub' | 'forest') => number;
 
-/** The ground corners' layer (the shore array's first): R the water's level, G the flowers low and the sandstone high, B the scrub low and the basalt high, A the forest. */
-export function groundCornersInto(into: Float32Array, store: CornerStore, cover: CornerCover): void {
-  const { levels, sand, basalt } = store;
-  for (let k = 0; k < levels.length; k++) {
-    into[k * 4] = levels[k] as number;
-    // Two bytes to a channel, exact in a float.
-    into[k * 4 + 1] = byte(cover(k, 'flowers')) + 256 * byte(sand[k] as number);
-    into[k * 4 + 2] = byte(cover(k, 'scrub')) + 256 * byte(basalt[k] as number);
-    into[k * 4 + 3] = cover(k, 'forest');
+/** The ground corners' covers (`terrain.ts` ShoreTextures, RGBA 16 bits; the water's level is a texture of its own): R the flowers low and the sandstone high, G the scrub low and the basalt high, B the forest's byte. */
+export function groundCornersInto(into: Uint16Array, store: CornerStore, cover: CornerCover): void {
+  const { sand, basalt } = store;
+  for (let k = 0; k < sand.length; k++) {
+    into[k * 4] = byte(cover(k, 'flowers')) + 256 * byte(sand[k] as number);
+    into[k * 4 + 1] = byte(cover(k, 'scrub')) + 256 * byte(basalt[k] as number);
+    into[k * 4 + 2] = byte(cover(k, 'forest'));
+    into[k * 4 + 3] = 0;
   }
 }
 

@@ -49,17 +49,18 @@ describe('the shore array from the corner store', () => {
   const basalt = Float32Array.from({ length: n }, (_, k) => 1 - k / 8);
   const density = (k: number, kind: string): number => ((k * 37 + kind.length * 11) % 256) / 255;
 
-  it('packs the levels, the covers and the geology as the plates did', () => {
-    const into = new Float32Array(n * 4);
+  it('packs the covers and the geology as the plates did, two bytes a channel, the forest\'s byte (the level a texture of its own, TER-07)', () => {
+    const into = new Uint16Array(n * 4);
     groundCornersInto(into, { levels, sand, basalt }, density);
     const byte = (v: number): number => Math.round(Math.min(1, Math.max(0, v)) * 255);
     for (let k = 0; k < n; k++) {
       // The former pack, from a Float32 copy of each cover.
       const flowers = Math.fround(density(k, 'flowers')), scrub = Math.fround(density(k, 'scrub')), forest = Math.fround(density(k, 'forest'));
-      expect(into[k * 4]).toBe(levels[k]);
-      expect(into[k * 4 + 1]).toBe(byte(flowers) + 256 * byte(sand[k]!));
-      expect(into[k * 4 + 2]).toBe(byte(scrub) + 256 * byte(basalt[k]!));
-      expect(into[k * 4 + 3]).toBe(forest);
+      expect(into[k * 4]).toBe(byte(flowers) + 256 * byte(sand[k]!));
+      expect(into[k * 4 + 1]).toBe(byte(scrub) + 256 * byte(basalt[k]!));
+      // The forest is a byte of the covers' grid (`coverOf`): its byte over 255 is the float the plates sent.
+      expect(Math.fround(into[k * 4 + 2]! / 255)).toBe(forest);
+      expect(into[k * 4 + 3]).toBe(0);
     }
   });
 
