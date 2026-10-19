@@ -167,8 +167,12 @@ export function findingsOf(s: Snapshot): Finding[] {
     out.push({
       id: 'cpu.frame', area: 'CPU', severity: severityOf(s.cpuMs - 6), ms: s.cpuMs,
       title: `A CPU leva ${fmtN(s.cpuMs)} ms por quadro${first ? `, ${pct(first[1] / systemsMs)} em "${first[0]}"` : ''}`,
-      evidence: s.systems.slice(0, 4).map(([k, ms]) => `sistema ${k}: ${fmtN(ms)} ms`),
-      why: 'O trabalho do quadro na thread principal: preparar a cena, escolher níveis, sincronizar pessoas e veículos, enviar à GPU.',
+      evidence: [
+        ...s.systems.slice(0, 3).map(([k, ms]) => `sistema ${k}: ${fmtN(ms)} ms`),
+        ...s.functions.slice(0, 5).map((f) => `função ${f.name || '(anônima)'} — ${f.where}: ${fmtN(f.selfMs)} ms próprios, ${fmtN(f.totalMs)} ms com o que chama`),
+      ],
+      why: 'O trabalho do quadro na thread principal: preparar a cena, escolher níveis, sincronizar pessoas e veículos, enviar à GPU. As funções listadas são onde a CPU mais ficou durante a medida (perfil por amostragem).',
+      ...(s.functions[0] ? { where: s.functions[0].where } : {}),
     });
   }
   for (const f of s.functions.slice(0, 5)) {

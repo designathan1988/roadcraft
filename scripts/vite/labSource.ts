@@ -27,6 +27,8 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 export function patternsOf(name: string): { text: string; how: string; score: number }[] {
   const out: { text: string; how: string; score: number }[] = [];
   for (const q of ["'", '"', '`']) out.push({ text: `${q}${name}${q}`, how: 'nome inteiro', score: 100 });
+  // A piece of code asked as it is written (the lab's investigation: `mark('drawing')`, `hitch:draw/Render`, `gpuTimer.begin()`).
+  if (name.length >= 4) out.push({ text: name, how: 'texto', score: 90 });
   // A level's mark (`@4`, a ladder of detail) is added to the name made: the parts are looked for without it.
   const parts = name.replace(/@\w+$/, '').split('-');
   for (let k = parts.length - 1; k >= 1; k--) {

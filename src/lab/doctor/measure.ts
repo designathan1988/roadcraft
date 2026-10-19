@@ -32,7 +32,7 @@ interface GpuProbe {
   capture(): Promise<{ records: readonly Draw[] }>;
   lab?: { passTiming: boolean };
 }
-interface CodeProbe { start(live?: boolean): void; functions(view?: string): ProfileFn[]; state?: { live: boolean } }
+interface CodeProbe { start(live?: boolean): void; functions(view?: string): ProfileFn[]; status(): { running: boolean } }
 
 export const gpuProbe = (): GpuProbe | null => (window as unknown as { __labGpu?: GpuProbe }).__labGpu ?? null;
 export const codeProbe = (): CodeProbe | null => (window as unknown as { __labCode?: CodeProbe }).__labCode ?? null;
@@ -64,12 +64,13 @@ export async function framesFor(ctx: LabContext, ms: number): Promise<{ samples:
 export async function snapshot(ctx: LabContext, progress: (text: string) => void): Promise<Snapshot> {
   const gpu = gpuProbe();
   const code = codeProbe();
-  const wasLive = code?.state?.live ?? false;
+  // Sampling only while asked (its tab open, or here): started for the measure if it was not running, stopped after.
+  const wasRunning = code?.status().running ?? false;
   // The frame measured first, with nothing of the lab's measuring running (the CPU profile and the per-pass queries cost time themselves).
   gpu?.passTiming(false);
   progress('medindo os quadros…');
   const plain = await framesFor(ctx, 2000);
-  if (code && !wasLive) code.start(true);
+  if (code && !wasRunning) code.start(true);
   let passes: PassTime[] = [];
   if (gpu && ctx.scene.gpu.supported) {
     progress('medindo cada passe da GPU…');
@@ -83,7 +84,14 @@ export async function snapshot(ctx: LabContext, progress: (text: string) => void
     progress('capturando um quadro…');
     try { draws = (await gpu.capture()).records; } catch (error) { console.warn('lab doctor: capture failed', error); }
   }
-  if (code && !wasLive) code.start(false);
+  // The profile's window closes a few seconds after it began: its functions read once it has.
+  if (code) {
+    for (let t = 0; t < 5000 && !code.functions('session').some((f) => f.category === 'jogo'); t += 500) {
+      progress('lendo o perfil de CPU…');
+      await framesFor(ctx, 500);
+    }
+  }
+  if (code && !wasRunning) code.start(false);
   const systems = new Map<string, number[]>();
   for (const s of plain.samples) for (const [k, v] of s.systems) (systems.get(k) ?? systems.set(k, []).get(k)!).push(v);
   const passSum = passes.reduce((a, p) => a + p.avg, 0);

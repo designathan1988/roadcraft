@@ -132,6 +132,8 @@ export function createInvestigator(ctx: LabContext): Investigator {
         if (!r.ok) continue;
         const { hits } = (await r.json()) as { hits: SourceHit[] };
         for (const h of hits) {
+          // The lab's own sources name every subject (its searches, its labels): never where the subject is.
+          if (h.file.startsWith('src/lab/') && !/lab/i.test(subject.origin ?? '')) continue;
           const key = `${h.file}:${h.line}`;
           const known = all.get(key);
           if (!known || known.score < h.score) all.set(key, h);
