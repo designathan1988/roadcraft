@@ -8,7 +8,7 @@ import { ForkMap } from '@core/forkMap';
 import { storedBounds } from './geometry';
 import { BuildingGrid } from './grid';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
-import { type Building, type BuildingId, asBuildingId, cloneBuilding, settleBuilding } from './types';
+import { type Building, type BuildingId, asBuildingId, settleBuilding } from './types';
 
 /** Two records the same in every field but their wear (`decay`), compared field by field, no copy and no text. */
 function sameButWear(a: Building, b: Building): boolean {
@@ -230,8 +230,9 @@ export class BuildingStore {
     this.changed(null, 'cleared');
   }
 
+  /** DO NOT copy the records out again: every record is plain JSON data already and never changed in place (OWNERSHIP above), and the undo's whole image (`RoadDoc.replaceWith`) copied every building of the map, 100-400 ms and tens of MB. The records themselves: read them, do not write them. */
   toJSON(): SerializedBuilding[] {
-    return [...this.items.values()].map((b) => cloneBuilding(b));
+    return [...this.items.values()];
   }
 
   /** Written when asked (the autosave, an export), never kept: DO NOT keep each record's text beside it */
@@ -299,11 +300,15 @@ export class BuildingStore {
     this.ids = new IdAllocator(copy.ids.peek);
   }
 
-  /** A working copy about to write: its questions by place its own from now on (the grid made when first asked). */
+  /** A working copy about to write: its questions by place its own from now on, on a grid over the original's (`BuildingGrid.over`: the original is not written while its copy is). */
   private leaveBelow(): void {
-    if (!this.below) return;
+    let below = this.below;
+    if (!below) return;
     this.below = null;
-    this.grid = null;
+    // A copy of a copy that wrote nothing: the store that answers for both.
+    while (below.below) below = below.below;
+    below.grid ??= new BuildingGrid(below.items.values(), (b) => storedBounds(b));
+    this.grid = BuildingGrid.over(below.grid);
   }
 
   /** Keeps id allocation monotonic across a clone (see `RoadDoc.clone`). */
