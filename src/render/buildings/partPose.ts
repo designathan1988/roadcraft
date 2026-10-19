@@ -94,5 +94,6 @@ export function posePart<M extends Material>(material: M): M {
 /** The shadow pass's material of a part's material: three's depth material drawn from the poses, one per material (r186 `WebGLShadowMap` copies its map and alpha test onto it each draw). */
 export function partPoseDepth(material: Material): MeshDepthMaterial {
   const caster = material as Posed;
-  return posePart(caster[POSE_DEPTH] ??= new MeshDepthMaterial());
+  // // No colour: the sun's maps are read by their depth texture alone (three r186 PCF compares `shadow.map.depthTexture`), nothing reads the packed colour (AGT-35).
+  return posePart(caster[POSE_DEPTH] ??= new MeshDepthMaterial({ colorWrite: false }));
 }

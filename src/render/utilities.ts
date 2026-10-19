@@ -434,7 +434,8 @@ function wireMaterials(): { readonly lit: MeshStandardMaterial; readonly depth: 
   };
   lit.customProgramCacheKey = () => 'wire-instanced';
   // The shadow as it was: the wire at rest, without the wind, at its full width.
-  const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+  // // No colour: the sun's maps are read by their depth texture alone (three r186 PCF compares `shadow.map.depthTexture`), nothing reads the packed colour (AGT-35).
+  const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false });
   depth.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>${WIRE_GLSL}`)

@@ -586,7 +586,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           owned.add(material);
           return material;
         });
-        const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+        // // No colour: the sun's maps are read by their depth texture alone (three r186 PCF compares `shadow.map.depthTexture`), nothing reads the packed colour (AGT-35).
+        const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false });
         const source = original[0] as MeshStandardMaterial;
         depth.map = source.map;
         depth.alphaTest = source.alphaTest;

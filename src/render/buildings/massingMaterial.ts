@@ -123,7 +123,8 @@ if (vFacade.y > 0.0) {
 
 /** The box levels' shadow: each box laid from its instance, as the masses' material lays it (three's shadow pass takes a mesh's `customDepthMaterial`). */
 export function createMassBoxDepth(): MeshDepthMaterial {
-  const material = new MeshDepthMaterial();
+  // // No colour: the sun's maps are read by their depth texture alone (three r186 PCF compares `shadow.map.depthTexture`), nothing reads the packed colour (AGT-35).
+  const material = new MeshDepthMaterial({ colorWrite: false });
   material.name = 'building-massing-boxes-depth';
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader

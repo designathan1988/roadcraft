@@ -614,7 +614,8 @@ reflectedLight.indirectSpecular *= personIndirect();`);
 
 /** DO NOT cast a piece with its own level's program: it casts the next level's triangles (`castsAt`), so the next level's skinning, without the face or expressions the shadow cannot show. */
 function depthMaterial(cls: ClassShading, v: Variant, widen: number): MeshDepthMaterial {
-  const material = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+  // // No colour: the sun's maps are read by their depth texture alone (three r186 PCF compares `shadow.map.depthTexture`), nothing reads the packed colour (AGT-35).
+  const material = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, colorWrite: false });
   material.defines = { USE_SKINNING: '' };
   const cast: Variant = { ...v, level: v.level + 1 };
   material.onBeforeCompile = (shader) => {
