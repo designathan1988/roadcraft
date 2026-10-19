@@ -138,7 +138,7 @@ export default tseslint.config(
   },
   {
     // Where waiting on the page is the point
-    files: ['src/ui/**/*.ts', 'src/editor/persistence.ts', 'src/editor/mapExport.ts', 'src/conflictPool.ts',
+    files: ['src/ui/**/*.ts', 'src/lab/**/*.ts', 'src/editor/persistence.ts', 'src/editor/mapExport.ts', 'src/conflictPool.ts',
       'src/render/people/**/*.ts', 'src/render/riggedCitizens.ts', 'src/render/citizenBake.ts',
       'src/render/buildings/parts.ts', 'src/frameLoop.ts'],
     rules: { 'roadcraft/no-logic-timer': 'off' },

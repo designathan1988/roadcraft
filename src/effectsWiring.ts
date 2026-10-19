@@ -56,6 +56,12 @@ export interface EffectsWiring {
   readonly onDemand: boolean;
   /** A frame's whole time on the CPU, ms (`frameTimer`). */
   frameEnded(ms: number): void;
+  /** Every setting as it stands now (the lab's recorder keeps it with each recording). */
+  snapshot(): Readonly<Record<string, unknown>>;
+  /** Told of every change made from now on: the key and its new value (the lab's recorder marks it). */
+  onChange(listener: (key: string, value: unknown) => void): () => void;
+  /** Several switches set at once by key (the lab's tests): on or off, or a building setting's value. */
+  setMany(values: Readonly<Record<string, boolean | string | number>>): void;
 }
 
 export function createEffectsWiring(): EffectsWiring {
@@ -65,6 +71,8 @@ export function createEffectsWiring(): EffectsWiring {
   let redraw = (): void => {};
   const cpuTimes = new Float64Array(AVERAGE_OF);
   let cpuCount = 0;
+  const listeners: ((key: string, value: unknown) => void)[] = [];
+  const told = (key: string, value: unknown): void => { for (const listener of listeners) listener(key, value); };
 
   const save = (): void => {
     try {
@@ -90,6 +98,7 @@ export function createEffectsWiring(): EffectsWiring {
     cpu = nextCpu;
     save();
     apply();
+    for (const key of keys) told(key, on);
   };
 
   const GROUPS: readonly { id: string; keys: readonly (EffectSwitch | CpuSwitch)[] }[] = [
@@ -151,6 +160,7 @@ export function createEffectsWiring(): EffectsWiring {
       buildings = { ...buildings, [choice.field]: v };
       save();
       apply();
+      told(key, v);
     },
     setGroup: (id, on) => set(GROUPS.find((group) => group.id === id)?.keys ?? [], on),
     reset() {
@@ -163,6 +173,7 @@ export function createEffectsWiring(): EffectsWiring {
       resolution = scale;
       save();
       apply();
+      told('resolution', scale);
     },
     stats,
   });
@@ -180,6 +191,24 @@ export function createEffectsWiring(): EffectsWiring {
     get pedestrians() { return cpu.pedestrians; },
     get growth() { return cpu.growth; },
     get onDemand() { return cpu.onDemand; },
+    snapshot: () => ({ ...effects, ...cpu, resolution, ...Object.fromEntries(Object.entries(buildings).map(([k, v]) => [`buildings.${k}`, v])) }),
+    onChange(listener) {
+      listeners.push(listener);
+      return () => { const i = listeners.indexOf(listener); if (i >= 0) listeners.splice(i, 1); };
+    },
+    setMany(values) {
+      const on = Object.entries(values).filter((e): e is [string, boolean] => typeof e[1] === 'boolean');
+      for (const value of [true, false]) {
+        const keys = on.filter(([, v]) => v === value).map(([k]) => k);
+        if (keys.length) set(keys, value);
+      }
+      for (const [key, value] of Object.entries(values)) {
+        if (typeof value === 'boolean') continue;
+        if (key === 'resolution' && typeof value === 'number') { resolution = value; save(); apply(); told(key, value); continue; }
+        const choice = BUILDING_CHOICES.find((c) => c.key === key);
+        if (choice && choice.values.includes(value)) { buildings = { ...buildings, [choice.field]: value }; save(); apply(); told(key, value); }
+      }
+    },
     frameEnded(ms) {
       cpuTimes[cpuCount % AVERAGE_OF] = ms;
       cpuCount++;

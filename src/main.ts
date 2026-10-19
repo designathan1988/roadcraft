@@ -120,6 +120,7 @@ import { QUALITY_LEVELS, isQualityLevel } from '@render/quality';
 import { createBuildingWiring } from './buildingsWiring';
 import { createGraphicsWiring } from './graphicsWiring';
 import { createEffectsWiring } from './effectsWiring';
+import { createLab } from './lab/lab';
 import { createSteamAchievements } from './steamAchievements';
 import { desktopSaves } from './desktopSaves';
 import { levelElevation, roofRise } from '@world/buildings/geometry';
@@ -1792,7 +1793,7 @@ function mountInterface(): void {
     qualityLevels: QUALITY_LEVELS,
     setQuality,
     graphicsOptions: () => graphics.openPanel(),
-    effectsPanel: () => effects.panel.open(),
+    effectsPanel: () => lab.open('switches'),
     markingStyle: () => doc.markingStyle,
     setMarkingStyle,
     setSky,
@@ -2252,8 +2253,8 @@ const gameKeys = createGameKeys({
   toggleChanges: () => { showChanges = !showChanges; requestDraw(); },
   // F9: the monitor (`healthPanel`, mounted at the end of this file).
   health: { toggle: () => healthPanel?.toggle() ?? false, close: () => healthPanel?.close() ?? false },
-  // F7: the effects panel (`effectsWiring.ts`).
-  effects: { toggle: () => effects.panel.toggle(), close: () => effects.panel.close() },
+  // F7: the debugging lab (`lab/lab.ts`).
+  effects: { toggle: () => lab.toggle(), close: () => lab.close() },
   toolKey: (next) => {
     pickTool(next);
     shell?.toolKeyed(next);
@@ -2284,6 +2285,10 @@ window.addEventListener('blur', () => cameraMotion.releaseAll());
 const frameClock = new FrameClock(frame, () => booted && scene.opening);
 graphics.attach(scene, frameClock, requestDraw);
 effects.attach(scene, () => graphics.fullRatio(), requestDraw);
+/** The debugging lab (F7, `lab/lab.ts`): the switches, what each system costs, the code that runs, recordings and tests. */
+const lab = createLab({ scene, sim, engine, frameTimer, effects, requestDraw });
+// For the probes and for an AI reading the game: the lab's context (events, frames, every switch).
+(window as unknown as { __lab: unknown }).__lab = lab.context;
 /** The flat camera kept up with the view (what the tools measure their pixels with): ten times a second. */
 const flatCameraDue = new Periodic(0.1);
 /** The status bar, the inspector, the simulation's checks. */
@@ -2434,6 +2439,7 @@ function frame(now: number): void {
   const timed = frameTimer.end();
   healthWatch.frameEnded(timed.start, timed.end);
   effects.frameEnded(timed.end - timed.start);
+  lab.frameEnded(timed);
   if (profiler.enabled) for (const [system, ms] of timed.systems) profiler.step(`frame ${system}`, ms);
   profileFrameEnd();
 

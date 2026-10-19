@@ -37,6 +37,9 @@ export interface EffectsPanel {
   toggle(): void;
   open(): void;
   close(): boolean;
+  /** Drawn inside `host` (a tab of the lab, `lab/lab.ts`) instead of floating; `release` takes it back out. */
+  embed(host: HTMLElement): void;
+  release(): void;
 }
 
 const RESOLUTIONS = [1, 0.75, 0.5, 0.25] as const;
@@ -161,6 +164,16 @@ export function createEffectsPanel(deps: EffectsPanelDeps): EffectsPanel {
     },
     toggle() {
       if (!effectsPanel.close()) effectsPanel.open();
+    },
+    embed(host) {
+      panel.classList.add('embedded');
+      host.appendChild(panel);
+      effectsPanel.open();
+    },
+    release() {
+      effectsPanel.close();
+      panel.classList.remove('embedded');
+      document.body.appendChild(panel);
     },
   };
   return effectsPanel;
