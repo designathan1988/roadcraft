@@ -52,8 +52,8 @@ function uploaded(meshes: readonly InstancedMesh[]): void {
   }
 }
 
-/** Each drawn body's place along x (its instance's translation), in order. */
-const centres = (agents: ReturnType<typeof createAgentMeshes>): number[] => meshesOf(agents, /^car-.*-shell$/)
+/** Each drawn body's place along x (its instance's translation), in order: the shell, or the shell joined with its roof (`vehiclePanels.ts`). */
+const centres = (agents: ReturnType<typeof createAgentMeshes>): number[] => meshesOf(agents, /^car-.*-(shell|body)$/)
   .flatMap((mesh) => (mesh.visible ? Array.from({ length: mesh.count }, (_, i) => mesh.instanceMatrix.array[i * 16 + 12]!) : []))
   .sort((a, b) => a - b);
 
@@ -82,7 +82,7 @@ describe('parked cars drawn from instances kept where they were written', () => 
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => lot);
     const world = worldWith([parkedCar(1, m(5), m(5))]);
     const net = netWith(changes);
-    const bodies = meshesOf(agents, /^car-.*-shell$/);
+    const bodies = meshesOf(agents, /^car-.*-(shell|body)$/);
     const height = (): number => {
       const mesh = bodies.find((b) => b.visible && b.count > 0);
       if (!mesh) throw new Error('no body drawn');
@@ -128,7 +128,7 @@ describe('parked cars drawn from instances kept where they were written', () => 
     const cars: VehicleView[] = [];
     for (let i = 0; i < count; i++) cars.push(parkedCar(i + 1, (i % 60) * m(8), Math.floor(i / 60) * m(8)));
     const world = worldWith(cars);
-    const bodies = meshesOf(agents, /^car-.*-(shell|shell-lite|far)$/);
+    const bodies = meshesOf(agents, /^car-.*-(shell|shell-lite|body|body-lite|far)$/);
     // The cars' wheels alone: hubs and lamps grow with them too, past the ceiling (`growPart`).
     const wheels = meshesOf(agents, /^vehicle-wheels$/);
     agents.sync(world, netWith(), 0, true);
