@@ -32,6 +32,8 @@ import { COARSE_EPS, EPS } from '@core/scalar';
 const MIN_DRAFT_LENGTH = m(9.6);
 /** Two nodes closer than this are the same node. */
 const MERGE_EPS = m(1.04);
+/** Slack round a piece's box when looking for crossings in it: only ever lets more pairs through to `segSeg`, which decides. */
+const CROSS_PAD = m(1e-3);
 /** Distinct decks at the same map point remain separate networks. */
 const HEIGHT_JOIN_EPS = m(0.3);
 /** Vertical room required before two crossing carriageways can pass independently. */
@@ -400,15 +402,21 @@ function commitDraftInPlace(
     if (!seg) continue;
     if (!heights && seg.structure !== structure) continue;
     const existing = net.polylines.get(doc, id);
+    // DO NOT test every piece of the draft against every piece of the road: a crossing lies in both pieces' boxes (`segSeg` keeps t and u in 0..1).
+    const eb = existing.bbox;
 
     for (let di = 0; di + 1 < draft.n; di++) {
       const d0 = draft.point(di);
       const d1 = draft.point(di + 1);
+      const dx0 = Math.min(d0.x, d1.x) - CROSS_PAD, dx1 = Math.max(d0.x, d1.x) + CROSS_PAD;
+      const dy0 = Math.min(d0.y, d1.y) - CROSS_PAD, dy1 = Math.max(d0.y, d1.y) + CROSS_PAD;
+      if (dx1 < eb.minX || dx0 > eb.maxX || dy1 < eb.minY || dy0 > eb.maxY) continue;
       const draftPiece = (draft.cum[di + 1] as number) - (draft.cum[di] as number);
 
       for (let ei = 0; ei + 1 < existing.n; ei++) {
         const e0 = existing.point(ei);
         const e1 = existing.point(ei + 1);
+        if (Math.max(e0.x, e1.x) < dx0 || Math.min(e0.x, e1.x) > dx1 || Math.max(e0.y, e1.y) < dy0 || Math.min(e0.y, e1.y) > dy1) continue;
         const hit = segSeg(d0, d1, e0, e1);
         if (!hit) continue;
 
