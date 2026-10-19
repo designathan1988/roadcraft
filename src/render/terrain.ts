@@ -70,6 +70,9 @@ import { type NaturalPlate, type PlateShapeAnswer, type PlateShapeAsk, askPlate 
 import type { Aabb } from '@core/aabb';
 import { geometryCost } from './gpuLedger';
 import { measureHitch } from '@core/hitch';
+import type { JobTicket } from '../jobs/jobPool';
+import { type LevelsJob, type StrokeBox, unionBox } from './landStroke';
+import { askLandStroke, landStrokeOffPage } from './landStrokePool';
 import { woodsBase, woodsBaseInto } from './woodsBase';
 import type { PlateHeights } from './sharedGround';
 import { TERRAIN_CELL, TERRAIN_HALF, TERRAIN_SEGMENTS, TERRAIN_SIZE } from './terrainGrid';
@@ -186,6 +189,8 @@ export interface TerrainSurface {
   readonly parts: readonly TerrainPart[];
   /** The highest corner of the drawn ground, when the surface keeps it as its ground moves (the atlas, from its plates') */
   highest?(): number;
+  /** Moves each time the levels of the drawn ground land (`highest` read again): a dab's are measured off the page and come after it (`landStroke.ts`). */
+  readonly levelsRevision?: number;
   /** Where the view looks (world x, y) and how much ground it takes in (the screen's half height, world units) */
   focus?(x: number, y: number, reach: number): void;
   /** Whether a plate the view wants still waits to be shown (its corners from the workers, its programs, the refresh that shows it): the frames must go on meanwhile, or a still camera keeps its far patch. */
@@ -1430,14 +1435,61 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     // A moved corner tilts the faces round it, and with them its neighbours' normals: a corner round the box sent again.
     const held = landTexels.held;
     if (held) landTexelsInto(grid, flip, GRID, TERRAIN_HALF, TERRAIN_CELL, held, { x0: x0 - 1, x1: x1 + 1, y0: y0 - 1, y1: y1 + 1 });
-    levels.markBox(x0, x1, y0, y1);
+    levelsBox = unionBox(levelsBox, [x0, x1, y0, y1]);
+    measureMoved();
+  };
+  /** THE LEVELS OFF THE PAGE: the corners moved since the levels were last measured, the one job measuring them (`landStroke.ts`), and the drawing it stands for. */
+  /** DO NOT send the moved corners' rows before their levels are in: the patches would draw the new ground on the old bounds and errors (`terrainLod.ts`) - the old drawing stays until both are. */
+  let levelsBox: StrokeBox | null = null;
+  let levelsJob: JobTicket | null = null;
+  /** Moves when the levels are measured whole on the page (`wholePlateMoved`): a job asked before brings nothing then. */
+  let levelsGeneration = 0;
+  /** Moves each time the levels landed (`levelsRevision`): the plate's highest corner read again. */
+  let levelsRevision = 0;
+  const levelsLanded = (box: StrokeBox): void => {
+    sendLand(box[0] - 1, box[1] + 1, box[2] - 1, box[3] + 1);
+    levelsRevision++;
+  };
+  const measureOnPage = (box: StrokeBox): void => {
+    levels.markBox(box[0], box[1], box[2], box[3]);
     levels.measure(grid, flip);
-    sendLand(x0 - 1, x1 + 1, y0 - 1, y1 + 1);
+    levelsLanded(box);
+  };
+  /** The moved corners' levels asked of a worker, one job at a time: what moves meanwhile is asked when it lands. */
+  const measureMoved = (): void => {
+    if (levelsJob || !levelsBox) return;
+    const box = levelsBox;
+    levelsBox = null;
+    if (!landStrokeOffPage()) { measureOnPage(box); return; }
+    const generation = levelsGeneration;
+    const job: LevelsJob = { kind: 'levels', seg: TERRAIN_SEGMENTS, heights: grid.slice(), flip: flip.slice(), levels: levels.data.slice(), box };
+    levelsJob = askLandStroke(job, [job.heights.buffer, job.flip.buffer, job.levels.buffer], (data) => {
+      levelsJob = null;
+      if (disposed) return;
+      // Nothing else wrote the levels meanwhile (a whole measure moves the generation): the worker's are the page's own, measured.
+      if (generation === levelsGeneration) { levels.take(data); levelsLanded(box); }
+      measureMoved();
+    }, (message) => {
+      levelsJob = null;
+      if (disposed) return;
+      console.warn('[terrain] the levels of a dab are measured on the page', message);
+      if (generation === levelsGeneration) measureOnPage(box);
+      measureMoved();
+    });
+  };
+  /** Nothing asked of the workers lands any more: the levels are measured whole on the page. */
+  const levelsMeasuredWhole = (): void => {
+    levelsGeneration++;
+    levelsBox = null;
+    levelsJob?.cancel();
+    levelsJob = null;
+    levelsRevision++;
   };
   /** @rebuild The whole plate's diagonals and levels worked out again, its texels at their send: every corner moved */
   const wholePlateMoved = (): void => {
     rediagonal(0, GRID - 1, 0, GRID - 1);
     landTexels.hold(null);
+    levelsMeasuredWhole();
     levels.markAll();
     levels.measure(grid, flip);
     sendAllLand();
@@ -2223,6 +2275,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         lastRegion = null;
         // The workers' texels sent as they are, then let go: never worked out again on the page.
         landTexels.hold(made.texels as Float32Array<ArrayBuffer>);
+        levelsMeasuredWhole();
         levels.take(made.levels);
         sendAllLand();
         landTexels.letGoWhenSent();
@@ -2277,9 +2330,11 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       rim.visible = shown && lod.rimGeometry.instanceCount > 0;
     },
     highest: () => levels.hi(LOD_LEVELS - 1, 0, 0),
+    get levelsRevision() { return levelsRevision; },
     meshMaterial: material,
     dispose() {
       disposed = true;
+      levelsJob?.cancel();
       lod.dispose();
       land.dispose();
       groundMaterial.dispose();

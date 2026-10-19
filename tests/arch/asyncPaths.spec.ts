@@ -101,7 +101,8 @@ describe('the workers', () => {
     expect(modules.filter((m) => /src\/(main|render\/|ui\/|view\/)/.test(m))).toEqual([]);
   });
 
-  for (const worker of ['src/render/roadTile.worker.ts', 'src/render/farRoads.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts', 'src/bays.worker.ts', 'src/render/groundShape.worker.ts']) {
+  for (const worker of ['src/render/roadTile.worker.ts', 'src/render/farRoads.worker.ts', 'src/conflictTable.worker.ts', 'src/render/derivedWriter.worker.ts', 'src/bays.worker.ts', 'src/render/groundShape.worker.ts',
+    'src/render/landStroke.worker.ts']) {
     it(`${worker} reaches pure modules only`, () => {
       const modules = [...reach(worker)];
       expect(modules.filter((m) => m === 'three' || m.startsWith('three/'))).toEqual([]);

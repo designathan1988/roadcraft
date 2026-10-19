@@ -768,6 +768,7 @@ export function createSceneRenderer(
   /** Each rewrite of the drawn ground by the land (`terrain.update`), and the highest corner read after one (`landTop`). */
   let landVersion = 0;
   let landTopFor = -1;
+  let landTopLevels: number | undefined = -1;
   let landTopValue = 0;
 
   // What each rebuild keeps for the next
@@ -2474,8 +2475,10 @@ export function createSceneRenderer(
       return terrain.renderedHeightAt(x, y);
     },
     landTop() {
-      if (landTopFor !== landVersion) {
+      // The drawn ground's levels land after a dab, off the page (`landStroke.ts`): read again then too.
+      if (landTopFor !== landVersion || landTopLevels !== terrain.levelsRevision) {
         landTopFor = landVersion;
+        landTopLevels = terrain.levelsRevision;
         // Kept by the atlas as its plates' ground moves
         let top = terrain.highest?.() ?? -Infinity;
         const corners = Math.round((TERRAIN_HALF * 2) / TERRAIN_CELL);

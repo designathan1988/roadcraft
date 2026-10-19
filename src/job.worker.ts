@@ -34,6 +34,8 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   roadStations: () => import('./render/roadStations.worker'),
   nearTiles: () => import('./render/nearTiles.worker'),
   terrainLight: () => import('./render/terrainLight.worker'),
+  // A dab's work on a plate: its levels, its woods, its shore (`render/landStroke.ts`).
+  landStroke: () => import('./render/landStroke.worker'),
   derivedWriter: () => import('./render/derivedWriter.worker'),
   // A new small city made off the page (`editor/smallCityPool.ts`).
   smallCity: () => import('./editor/smallCity.worker'),

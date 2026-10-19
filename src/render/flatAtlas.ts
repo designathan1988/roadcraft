@@ -104,6 +104,8 @@ interface Plate {
   asked: boolean;
   /** The highest corner of its drawn ground, kept as it changes. */
   top: number;
+  /** Its surface's levels as `top` was read from them (`TerrainSurface.levelsRevision`). */
+  topSeen: number;
 }
 
 /** A node of the far ground resident: what it is, its slot in the far mesh, and its woods' slot (level 0 only). */
@@ -360,7 +362,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   /** A plate's highest drawn corner, read each time its ground moved (its levels keep it, `terrainLevels.ts`). */
   const measureTop = (p: Plate): void => {
     p.top = p.surface!.highest!();
+    p.topSeen = p.surface!.levelsRevision ?? 0;
   };
+  /** Moves each time a shown plate's highest corner was read again after its levels landed (`levelsRevision`). */
+  let levelsRevision = 0;
   const measureHighest = (): void => {
     highest = -Infinity;
     for (const p of shownList) if (p.top > highest) highest = p.top;
@@ -410,7 +415,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const r = plateRegion(key);
     p = {
       key, cx: r.cx, cy: r.cy, source: new PlateSource(), stampCopies: new WeakMap(), dabCopies: new WeakMap(),
-      surface: null, shown: false, ready: false, heights: null, mesh: null, asked: false, top: -Infinity,
+      surface: null, shown: false, ready: false, heights: null, mesh: null, asked: false, top: -Infinity, topSeen: -1,
     };
     plates.set(key, p);
     if (lastDoc) fill(p, lastDoc);
@@ -695,6 +700,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   return {
     meshes: [root],
     highest: () => highest,
+    get levelsRevision() { return levelsRevision; },
     ground: firstSurface.ground,
     get parts() { return partsShown; },
     focus(x, y, reach) {
@@ -801,14 +807,17 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     },
     update(doc, stroking) {
       sync(doc);
-      let moved = false;
+      let moved = false, topMoved = false;
       for (const p of shownList) {
-        if (!p.surface!.update(p.source, stroking)) continue;
-        moved = true;
-        lastPlate = p;
+        if (p.surface!.update(p.source, stroking)) {
+          moved = true;
+          lastPlate = p;
+        } else if ((p.surface!.levelsRevision ?? 0) === p.topSeen) continue;
+        // A dab's levels come after it, off the page (`landStroke.ts`): the plate's top read again when they land.
         measureTop(p);
+        topMoved = true;
       }
-      if (moved) measureHighest();
+      if (topMoved) { measureHighest(); levelsRevision++; }
       return moved;
     },
     updatePaint(doc) {

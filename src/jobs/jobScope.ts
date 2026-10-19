@@ -6,7 +6,7 @@ export interface JobScope {
 
 /** The services the job workers run, each a module with `serve(scope)`. */
 export type JobService = 'growth' | 'bays' | 'conflicts' | 'cells' | 'fracture' | 'citizenBake' | 'ecology' | 'flatGround' | 'groundShape'
-  | 'garmentPadding' | 'peopleLod' | 'roadTiles' | 'farRoads' | 'terrainLight' | 'derivedWriter' | 'save' | 'tileRead' | 'roadStations' | 'nearTiles' | 'smallCity';
+  | 'garmentPadding' | 'peopleLod' | 'roadTiles' | 'farRoads' | 'terrainLight' | 'landStroke' | 'derivedWriter' | 'save' | 'tileRead' | 'roadStations' | 'nearTiles' | 'smallCity';
 
 /** Page to job worker: a message for a service's port (the service made on the port's first message); `seq`, a queued job's number (`jobPool.ts` `submitJob`). */
 export interface ToJob { readonly port: number; readonly service: JobService; readonly data: unknown; readonly seq?: number }
