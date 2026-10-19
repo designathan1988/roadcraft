@@ -9,10 +9,11 @@ import { Digest } from '@core/digest';
 /** A PLATE'S ECOSYSTEM AND ITS FAR WOODS READ BACK FROM THE PLAYER'S BROWSER BEFORE THEY ARE WORKED OUT (`ecologyKept.ts`) */
 
 /** The browser's store in memory: a copy each value (structured clone), every key written. */
-function memory(): EcologyCache & { readonly kept: Map<string, unknown>; readonly puts: string[] } {
+function memory(): EcologyCache & { readonly kept: Map<string, unknown>; readonly puts: string[]; readonly gets: string[] } {
   const kept = new Map<string, unknown>();
   const puts: string[] = [];
-  return { kept, puts, ready: () => Promise.resolve(true), get: (key) => Promise.resolve(kept.get(key)), put: (key, value) => { kept.set(key, structuredClone(value)); puts.push(key); return Promise.resolve(); } };
+  const gets: string[] = [];
+  return { kept, puts, gets, ready: () => Promise.resolve(true), get: (key) => { gets.push(key); return Promise.resolve(kept.get(key)); }, put: (key, value) => { kept.set(key, structuredClone(value)); puts.push(key); return Promise.resolve(); } };
 }
 
 const SIDE = 33;
@@ -30,15 +31,22 @@ describe('a plate\'s ecosystem kept', () => {
     const cache = memory();
     const first = await keptEcology(land(10), cache, 'ecology:t:');
     expect(same(first, computeEcology(land(10)))).toBe(true);
-    expect(cache.puts).toEqual(['ecology:t:2048,-4096']);
+    // The entry and its digest beside it (VEG-13).
+    expect(cache.puts).toEqual(['ecology:t:2048,-4096', 'ecology:t:2048,-4096:d']);
     // A reload: what is kept comes back, nothing worked out (a value no working-out makes, under the same land's digest).
     const marked = { ...first, side: -1 };
     cache.kept.set('ecology:t:2048,-4096', { digest: ecologyDigest(land(10)), value: marked });
     expect((await keptEcology(land(10), cache, 'ecology:t:')).side).toBe(-1);
-    // The river moved: worked out again, the plate's one entry written over.
+    // The river moved: worked out again, the plate's one entry written over - the entry itself never read, its digest beside it was another.
+    cache.gets.length = 0;
     const moved = await keptEcology(land(20), cache, 'ecology:t:');
     expect(same(moved, computeEcology(land(20)))).toBe(true);
-    expect(cache.kept.size).toBe(1);
+    expect(cache.gets).toEqual(['ecology:t:2048,-4096:d']);
+    expect(cache.kept.size).toBe(2);
+    // An entry kept before the digests were beside it: read whole, as ever.
+    cache.kept.delete('ecology:t:2048,-4096:d');
+    cache.kept.set('ecology:t:2048,-4096', { digest: ecologyDigest(land(20)), value: marked });
+    expect((await keptEcology(land(20), cache, 'ecology:t:')).side).toBe(-1);
     expect(ecologyDigest(land(20))).not.toBe(ecologyDigest(land(10)));
   });
 
@@ -62,6 +70,6 @@ describe('a far plate\'s woods kept', () => {
     expect((await keptWoods(ask, work, cache, 'farWoods:t:')).count).toBe(-1);
     const other = await keptWoods({ ...ask, nature: { region: 'atlantic', seed: 6 } }, work, cache, 'farWoods:t:');
     expect(other.count).toBe(farWoods({ ...ask, nature: { region: 'atlantic', seed: 6 } }).count);
-    expect(cache.kept.size).toBe(1);
+    expect(cache.kept.size).toBe(2);
   });
 });

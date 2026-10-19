@@ -36,6 +36,23 @@ export function derivedEcologyCache(budget = new WriteBudget(ECOLOGY_WRITES_MOST
 
 interface Kept<T> { readonly digest: number; readonly value: T }
 
+/** Where an entry's digest is kept beside it, a few bytes: read first, so a plate whose land changed is not read whole (~5 MB) only to be found out of date (VEG-13). */
+const digestKey = (key: string): string => `${key}:d`;
+
+/** The entry kept for `digest`, or undefined: the whole entry read only when its digest beside it is the same, or when there is none beside it (an entry kept before the digests were). */
+async function keptFor<T>(cache: EcologyCache, key: string, digest: number): Promise<T | undefined> {
+  const beside = await cache.get(digestKey(key));
+  if (typeof beside === 'number' && beside !== digest) return undefined;
+  const kept = await cache.get(key) as Kept<T> | undefined;
+  return kept?.digest === digest ? kept.value : undefined;
+}
+
+/** Keeps an entry and its digest beside it. */
+async function keep<T>(cache: EcologyCache, key: string, digest: number, value: T): Promise<void> {
+  await cache.put(key, { digest, value } satisfies Kept<T>);
+  await cache.put(digestKey(key), digest);
+}
+
 /** Everything a plate's field is read from: the grid, its place, the settings, the land, the water, the rock and the paint. */
 export function ecologyDigest(input: EcologyInput): number {
   const d = new Digest().add(input.side).add(input.cell).add(input.centre?.x ?? NaN).add(input.centre?.y ?? NaN).addPlain(input.settings);
@@ -49,10 +66,10 @@ export async function keptEcology(input: EcologyInput, cache: EcologyCache, pref
   if (prefix === null || !input.centre || !(await cache.ready())) return computeEcology(input);
   const key = `${prefix}${input.centre.x},${input.centre.y}`;
   const digest = ecologyDigest(input);
-  const kept = await cache.get(key) as Kept<EcologyField> | undefined;
-  if (kept?.digest === digest) return kept.value;
+  const kept = await keptFor<EcologyField>(cache, key, digest);
+  if (kept !== undefined) return kept;
   const field = computeEcology(input);
-  await cache.put(key, { digest, value: field } satisfies Kept<EcologyField>);
+  await keep(cache, key, digest, field);
   return field;
 }
 
@@ -61,9 +78,9 @@ export async function keptWoods(ask: FarWoodsAsk, work: FarWoodsWork, cache: Eco
   if (prefix === null || !(await cache.ready())) return farWoods(ask, work);
   const key = `${prefix}${ask.cx},${ask.cy}`;
   const digest = new Digest().addPlain(ask).value();
-  const kept = await cache.get(key) as Kept<FarWoods> | undefined;
-  if (kept?.digest === digest) return kept.value;
+  const kept = await keptFor<FarWoods>(cache, key, digest);
+  if (kept !== undefined) return kept;
   const woods = farWoods(ask, work);
-  await cache.put(key, { digest, value: woods } satisfies Kept<FarWoods>);
+  await keep(cache, key, digest, woods);
   return woods;
 }
