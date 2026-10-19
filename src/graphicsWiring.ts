@@ -134,8 +134,7 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
   const fullRatio = (): number => Math.min(WEAK_MACHINE.pixelRatio ?? (window.devicePixelRatio || 1), settings.pixelRatio);
   const applyScale = (scale: number): void => {
     if (!scene) return;
-    scene.gl.setPixelRatio(fullRatio() * scale);
-    scene.resize();
+    scene.resize(fullRatio() * scale);
     redraw();
   };
   const apply = (): void => {
@@ -194,10 +193,10 @@ export function createGraphicsWiring(onPreset: (level: QualityLevel) => void): G
       const fresh = Math.min(ring.pushed - seenSamples, ring.size);
       seenSamples = ring.pushed;
       const budget = 1000 / (fps() || 60);
-      for (let back = fresh - 1; back >= 0; back--) {
-        const scale = resolution.sample(ring.newest(back), budget);
-        if (scale !== null) applyScale(scale);
-      }
+      // The last scale the samples ask for, taken once.
+      let scale: number | null = null;
+      for (let back = fresh - 1; back >= 0; back--) scale = resolution.sample(ring.newest(back), budget) ?? scale;
+      if (scale !== null) applyScale(scale);
     },
   };
 
