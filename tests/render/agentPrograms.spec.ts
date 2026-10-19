@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Matrix4, MeshStandardMaterial, ShaderLib, Texture } from 'three';
+import { Matrix4, MeshStandardMaterial, ShaderLib, Texture, type Material, type Mesh } from 'three';
 import { createAgentMeshes } from '@render/agents';
 import { skinMaterial } from '@render/riggedCitizens';
 import { personShaderText } from '@render/people/proceduralCrowd';
@@ -37,9 +37,19 @@ describe('the programs of the agents', () => {
   beforeAll(() => { vi.stubGlobal('window', { setInterval: () => 0, clearInterval: () => {} }); vi.stubGlobal('location', { search: '?bodies=cooked' }); });
   afterAll(() => { vi.unstubAllGlobals(); });
 
-  it("vehicles: the 579 meshes of every body and part ask 9 programs of three", () => {
+  it("vehicles: the meshes of every body and part ask 10 programs of three (the 10th the body joined with its roof, `vehiclePanels.ts`)", () => {
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
-    expect(programKeys(agents.meshes).size).toBe(9);
+    expect(programKeys(agents.meshes).size).toBe(10);
+    agents.dispose();
+  });
+
+  it('vehicles: a body joined with its roof is drawn where the shells were, before the lamps and the trim (three sorts the opaque by material id)', () => {
+    const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
+    const meshes = agents.meshes.filter((o): o is Mesh => (o as Mesh).isMesh === true);
+    const id = (pattern: RegExp): number => (meshes.find((o) => pattern.test(o.name))!.material as Material & { id: number }).id;
+    expect(id(/^car-sedan-sedan-body$/)).toBe(id(/^car-sedan-sedan-shell$/) + 1);
+    expect(id(/^vehicle-lamps$/)).toBeGreaterThan(id(/^car-sedan-sedan-body$/));
+    expect(id(/^car-sedan-sedan-trim$/)).toBeGreaterThan(id(/^car-sedan-sedan-body$/));
     agents.dispose();
   });
 

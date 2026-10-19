@@ -1,6 +1,7 @@
 import { gaitSpeed, type BodyPart, type PersonAgeClass, type Severable } from '@sim/people/view';
 import { fitInstances } from './instanceBounds';
 import { simplified } from './mesh/simplify';
+import { createPanelJoiner, panelGeometry, panelPaint, type JoinedPanels } from './vehiclePanels';
 import {
   BoxGeometry,
   Color,
@@ -467,11 +468,13 @@ interface Part {
   shown: number;
   /** Whether it cast last frame: a part turned to cast, or not, changes the shadow too. */
   castLast: boolean;
+  /** A body joined with its panel (`vehiclePanels.ts`): the panel's colour per instance, on the mesh's geometry; null for every other part. */
+  panel: InstancedBufferAttribute | null;
 }
 
 /** A part over `mesh`: nothing drawn, every upload clearing what was waiting to go. */
 function partOf(mesh: InstancedMesh, casts = false): Part {
-  const part: Part = { mesh, kept: 0, n: 0, holders: [], holderAt: [], tinted: false, lo: 0, hi: 0, listed: false, casts, shown: 0, castLast: false };
+  const part: Part = { mesh, kept: 0, n: 0, holders: [], holderAt: [], tinted: false, lo: 0, hi: 0, listed: false, casts, shown: 0, castLast: false, panel: null };
   watchUploads(part);
   return part;
 }
@@ -550,6 +553,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     roughness: 0.38, metalness: 0.28, clearcoat: 1, clearcoatRoughness: 0.07,
     envMapIntensity: 1.35, vertexColors: true,
   });
+  // The paint of a body joined with its panel (`vehiclePanels.ts`): the same numbers, the panel's colour its own. Made next, so its id is
+  // the paint's next: three sorts the opaque by material id and keeps the later of two equal depths (LessEqualDepth), and the joined bodies
+  // must be drawn where the paint's shells and roofs were, before the lamps, trim and cabin that touch them.
+  const joinedPaint = panelPaint(paint);
   const trim = new MeshStandardMaterial({ roughness: 0.45, metalness: 0.35, vertexColors: true });
   const glassMaterial = new MeshStandardMaterial({
     color: 0x7896a2,
@@ -633,6 +640,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     readonly accentLite: Ladder | null;
     readonly far: Part;
     readonly steering: Part | null;
+    /** The body and its panel (the roof, or else the accent) in one draw, doors shut (`vehiclePanels.ts`); null for a body with no panel. */
+    readonly panel: Ladder | null;
+    readonly panelLite: Ladder | null;
   }
   const carParts = new Map<string, CarParts>();
   /** Which body a vehicle is drawn with: its class and, for a car, the style its id picks. */
@@ -648,6 +658,16 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   /** Moves when levels arrive: a parked car's kept instances name the parts it was drawn with (`VehicleDraw` kept). */
   let levelsVersion = 0;
   const ladderParts: Part[] = [];
+  /** The levels of `source`, made once. */
+  const levelsFor = (source: BufferGeometry, weld: Weld): Promise<(BufferGeometry | null)[]> => {
+    let levels = levelsOf.get(source);
+    if (!levels) {
+      levels = partLevels(source, weld);
+      levelsOf.set(source, levels);
+      void levels.then((all) => { for (const g of new Set(all)) if (g && g !== source) modelGeometries.push(g); });
+    }
+    return levels;
+  };
   /** `base` and a part per coarser level, empty until drawn (they grow, `growPart`), routed to `base` until the levels are made. */
   const ladder = (base: Part, weld: Weld): Ladder => {
     const parts = [base];
@@ -657,14 +677,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       ladderParts.push(part);
     }
     const made: Ladder = { parts, route: new Array<number>(LEVELS).fill(0) };
-    const source = base.mesh.geometry;
-    let levels = levelsOf.get(source);
-    if (!levels) {
-      levels = partLevels(source, weld);
-      levelsOf.set(source, levels);
-      void levels.then((all) => { for (const g of new Set(all)) if (g && g !== source) modelGeometries.push(g); });
-    }
-    void levels.then((all) => {
+    void levelsFor(base.mesh.geometry, weld).then((all) => {
       for (let k = 1; k < all.length; k++) {
         const geometry = all[k];
         if (!geometry) made.route[k] = -1;
@@ -674,6 +687,50 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       levelsVersion++;
       onAssetsReady();
     }, (error: unknown) => console.error(`[vehicles] ${base.mesh.name}: levels not made, drawn whole`, error));
+    return made;
+  };
+  const joinPanels = createPanelJoiner();
+  const panelParts: Part[] = [];
+  /** Bodies whose panel could not be joined at some level: drawn as two parts, as before. */
+  const panelsApart = new Set<Ladder>();
+  const panelPart = (name: string, joined: JoinedPanels, casts: boolean): Part => {
+    const colours = new InstancedBufferAttribute(new Float32Array(PART_CAPACITY * 3).fill(1), 3);
+    colours.setUsage(DynamicDrawUsage);
+    const geometry = panelGeometry(joined, colours);
+    modelGeometries.push(geometry);
+    const part = instanced(name, geometry, joinedPaint, casts);
+    part.panel = colours;
+    part.tinted = true;
+    panelParts.push(part);
+    return part;
+  };
+  /** A body and its panel joined at every level: each level the body's and the panel's own (`vehicleLevels.ts`), null without a panel. */
+  const panelLadder = (name: string, body: BufferGeometry, panel: BufferGeometry | null, casts: boolean): Ladder | null => {
+    if (!panel) return null;
+    const base = joinPanels(body, panel);
+    if (!base) { console.error(`[vehicles] ${name}: body and panel not joined, drawn apart`); return null; }
+    const parts: Part[] = [];
+    for (let k = 0; k < LEVELS; k++) parts.push(panelPart(k ? `${name}@${k}` : name, base, casts));
+    const made: Ladder = { parts, route: new Array<number>(LEVELS).fill(0) };
+    void Promise.all([levelsFor(body, 'smooth'), levelsFor(panel, 'smooth')]).then(([bodies, panels]) => {
+      // A part whose levels were not made is drawn whole at every level (`ladder`).
+      const at = (all: readonly (BufferGeometry | null)[], k: number): BufferGeometry | null => (k < all.length ? all[k]! : all[0]!);
+      for (let k = 1; k < LEVELS; k++) {
+        const b = at(bodies, k), p = at(panels, k);
+        if (b === at(bodies, k - 1) && p === at(panels, k - 1)) { made.route[k] = made.route[k - 1]!; continue; }
+        const joined = joinPanels(b, p);
+        if (!joined) {
+          if (b || p) { panelsApart.add(made); console.error(`[vehicles] ${name}@${k}: body and panel not joined, drawn apart`); }
+          made.route[k] = -1;
+          continue;
+        }
+        parts[k]!.mesh.geometry = panelGeometry(joined, parts[k]!.panel!);
+        modelGeometries.push(parts[k]!.mesh.geometry);
+        made.route[k] = k;
+      }
+      levelsVersion++;
+      onAssetsReady();
+    }, (error: unknown) => console.error(`[vehicles] ${name}: levels not made, drawn whole`, error));
     return made;
   };
   const wheelLevels = ladder(wheels, 'boxes');
@@ -715,6 +772,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       // A car under twelve pixels: its shadow is the soft disc under it.
       far: instanced(`car-${id}-far`, model.far, paint, false),
       steering: model.steering ? instanced(`car-${id}-wheel`, model.steering.geometry, cabinMaterial, false) : null,
+      panel: panelLadder(`car-${id}-body`, model.shell, model.roof ?? model.accent, true),
+      panelLite: panelLadder(`car-${id}-body-lite`, model.shell, model.roof ?? model.accent, false),
     });
   }
   // The far proxy is drawn under FAR_BODY_ZOOM, a car under nine pixels long
@@ -758,7 +817,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   }
   const twoWheelerPartList: Part[] = [...twoWheelerParts.values()].flatMap((t) =>
     [t.body.parts[0]!, t.trim.parts[0]!, t.steering.parts[0]!, ...(t.cranks ? [t.cranks.parts[0]!] : [])]);
-  const allParts: readonly Part[] = [...parts, ...carPartList, ...twoWheelerPartList, ...ladderParts];
+  const allParts: readonly Part[] = [...parts, ...carPartList, ...twoWheelerPartList, ...ladderParts, ...panelParts];
 
   // The scenery's people: the few bodies of the scenery cast
   const pedestrians = createRiggedCitizens(CROWD_IDS, onAssetsReady);
@@ -1205,6 +1264,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       c[to * 3] = c[from * 3]!; c[to * 3 + 1] = c[from * 3 + 1]!; c[to * 3 + 2] = c[from * 3 + 2]!;
     }
     if (part === lamps) { const g = lampGlow.array as Float32Array; g[to] = g[from]!; }
+    if (part.panel) {
+      const p = part.panel.array as Float32Array;
+      p[to * 3] = p[from * 3]!; p[to * 3 + 1] = p[from * 3 + 1]!; p[to * 3 + 2] = p[from * 3 + 2]!;
+    }
     touch(part, to, to + 1);
   };
   const listed = (part: Part): void => {
@@ -1339,6 +1402,13 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     // DO NOT give a colour to a mesh made without one (the discs): another program, built during play.
     const colours = mesh.instanceColor ? new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3) : null;
     if (colours && mesh.instanceColor) { colours.array.set(mesh.instanceColor.array); colours.setUsage(DynamicDrawUsage); }
+    if (part.panel) {
+      const panel = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+      panel.array.set(part.panel.array);
+      panel.setUsage(DynamicDrawUsage);
+      part.panel = panel;
+      mesh.geometry.setAttribute('panelColor', panel);
+    }
     // DO NOT `dispose` the mesh to let its old buffers go: three's releaseStatesOfObject walks every geometry the renderer knows (WebGLBindingStates), ms a call; the old buffers stay on the GPU till the context goes (less than the new one's size, a doubling at a time).
     mesh.instanceMatrix = matrices;
     mesh.instanceColor = colours;
@@ -1408,6 +1478,17 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const part = l ? rung(l, detail) : null;
     if (part) placeWhole(part, tint);
   };
+  /** A body and its panel (`vehiclePanels.ts`) at the level `detail` allows: the vehicle's own frame, the body's tint and the panel's. */
+  const wholePanels = (l: Ladder, detail: number, tint: Tint, panelTint: Tint): void => {
+    const part = rung(l, detail);
+    if (!part || (castOnly && !part.casts)) return;
+    const at = slotOf(part);
+    const m = part.mesh.instanceMatrix.array as Float32Array, o = at * 16;
+    for (let i = 0; i < 16; i++) m[o + i] = F[i]!;
+    tintAt(part, at, tint);
+    const p = part.panel!.array as Float32Array;
+    p[at * 3] = panelTint.r; p[at * 3 + 1] = panelTint.g; p[at * 3 + 2] = panelTint.b;
+  };
   /** A door's lowered window this frame (`windowPane`), written in place. */
   const pane = { visible: true, up: 0, sy: 1 };
 
@@ -1429,13 +1510,18 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const detail = levelFor(frame[FRAME_PIXELS]!);
     // Real shadows from the whole vehicle only; the middle level's is a soft disc (`sync`).
     const shell = band >= 2 ? car.shell : car.shellLite;
+    // Doors shut, the body and its panel (a painted roof, or the accent) in one draw (`vehiclePanels.ts`).
+    const panels = band >= 2 ? car.panel : car.panelLite;
+    const joined = !doorsMoving && panels && !panelsApart.has(panels) && !(car.roof && look.glassRoof) ? panels : null;
+    const panelTint = car.roof ? (look.blackRoof ? T_BLACK_ROOF : paint) : s.accent;
     const doors = model.doors;
+    if (joined) wholePanels(joined, detail, paint, panelTint);
     if (!doorsMoving && look.windowsDown === 0) {
-      wholeAt(shell, detail, paint);
+      if (!joined) wholeAt(shell, detail, paint);
       wholeAt(car.glass, detail, null);
     } else if (!doorsMoving) {
       // A window down: the fixed glazing, then each door's window, lowered into its door
-      wholeAt(shell, detail, paint);
+      if (!joined) wholeAt(shell, detail, paint);
       placeWhole(car.openGlass, null);
       for (let i = 0; i < doors.length; i++) {
         const door = doors[i]!;
@@ -1468,9 +1554,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const accent = band >= 2 ? car.accent : car.accentLite;
     if (roof && car.roofGlass) {
       if (look.glassRoof) placeWhole(car.roofGlass, null);
-      else wholeAt(roof, detail, look.blackRoof ? T_BLACK_ROOF : paint);
+      else if (!joined) wholeAt(roof, detail, look.blackRoof ? T_BLACK_ROOF : paint);
     }
-    wholeAt(accent, detail, s.accent);
+    if (!joined || roof) wholeAt(accent, detail, s.accent);
     placeWheels(s.plan, band);
 
     wholeAt(car.trim, detail, null);
@@ -2453,6 +2539,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         if (hi <= part.lo) continue;
         send(mesh.instanceMatrix, part.lo, hi, 16);
         if (part.tinted) send(mesh.instanceColor!, part.lo, hi, 3);
+        if (part.panel) send(part.panel, part.lo, hi, 3);
         if (part === lamps) send(lampGlow, part.lo, hi, 1);
       }
       live.length = drawn;
@@ -2476,7 +2563,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         geometry.dispose();
       }
       for (const geometry of modelGeometries) geometry.dispose();
-      for (const material of [paint, trim, glassMaterial, rubber, lampMaterial, cloth, cabinMaterial]) {
+      for (const material of [paint, joinedPaint, trim, glassMaterial, rubber, lampMaterial, cloth, cabinMaterial]) {
         material.dispose();
       }
     },
