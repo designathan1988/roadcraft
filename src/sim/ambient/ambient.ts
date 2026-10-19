@@ -152,9 +152,6 @@ export class AmbientWorld {
 
   step(w: SimWorld): void {
     if (!this.enabled) return;
-    // The walks that ended: in through a door.
-    const engine = w.pedEngine;
-    engine.takeArrivals?.(w);
     // Still walking, out on the street or waiting inside to step out (`walkerOf` sees only those out).
     for (const id of this.walkers) if (!walkerAlive(w, id)) this.walkers.delete(id);
     for (const id of this.drivers) if (!w.vehicles.has(id)) { this.drivers.delete(id); this.sighted.delete(id); }
