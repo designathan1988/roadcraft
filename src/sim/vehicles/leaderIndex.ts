@@ -14,10 +14,8 @@ const LOOKAHEAD_HOPS = 3;
 export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
   const rt = w.rt(v.lanelet);
   const idx = laneSlot(w, rt.order, v);
-  let best: Obstacle | null = null;
-  const consider = (o: Obstacle): void => {
-    if (!best || o.gap < best.gap) best = o;
-  };
+  // The nearest so far, as numbers: DO NOT make an obstacle for every candidate and a closure to weigh them (a vehicle a step, SIM-07); one made for the winner. The first of the least gap wins, as before.
+  let bestGap = Infinity, bestSpeed = 0, bestAccel = 0, found = false;
 
   // Ahead in the same lane: the list is ascending by arc position.
   if (idx >= 0 && idx + 1 < rt.order.length) {
@@ -34,18 +32,15 @@ export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
       const standing = lead.kerbStop && lead.kerbStop.phase !== 'approach' ? pullOutRoom(w, v) : 0;
       const real = lead.s - lead.archetype.length - v.s;
       const hold = real - Math.max(0, standing - Math.max(v.driver.s0, 0));
-      consider({
-        gap: hold < real && canStopComfortably(v.driver, v.v, hold - v.driver.s0) ? hold : real,
-        speed: lead.v,
-        accel: lead.accel,
-        kind: 'vehicle',
-      });
+      const gap = hold < real && canStopComfortably(v.driver, v.v, hold - v.driver.s0) ? hold : real;
+      if (!found || gap < bestGap) { bestGap = gap; bestSpeed = lead.v; bestAccel = lead.accel; found = true; }
     }
   }
   for (const shadow of shadowsAhead(w, v.lanelet, v.s, v.id)) {
-    consider({ gap: shadow.rear - v.s, speed: shadow.vehicle.v, accel: shadow.vehicle.accel, kind: 'vehicle' });
+    const gap = shadow.rear - v.s;
+    if (!found || gap < bestGap) { bestGap = gap; bestSpeed = shadow.vehicle.v; bestAccel = shadow.vehicle.accel; found = true; }
   }
-  if (best) return best;
+  if (found) return { gap: bestGap, speed: bestSpeed, accel: bestAccel, kind: 'vehicle' };
 
   // Head of this lanelet: walk forward along the planned route.
   const here = w.lanelet(v.lanelet);
@@ -69,17 +64,14 @@ export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
       tail = next === undefined ? undefined : w.veh(next);
     }
     if (tail) {
-      consider({
-        gap: dist + tail.s - tail.archetype.length,
-        speed: tail.v,
-        accel: tail.accel,
-        kind: 'vehicle',
-      });
+      const gap = dist + tail.s - tail.archetype.length;
+      if (!found || gap < bestGap) { bestGap = gap; bestSpeed = tail.v; bestAccel = tail.accel; found = true; }
     }
     for (const shadow of shadowsAhead(w, nextId, -Infinity, v.id)) {
-      consider({ gap: dist + shadow.rear, speed: shadow.vehicle.v, accel: shadow.vehicle.accel, kind: 'vehicle' });
+      const gap = dist + shadow.rear;
+      if (!found || gap < bestGap) { bestGap = gap; bestSpeed = shadow.vehicle.v; bestAccel = shadow.vehicle.accel; found = true; }
     }
-    if (best) return best;
+    if (found) return { gap: bestGap, speed: bestSpeed, accel: bestAccel, kind: 'vehicle' };
     const lanelet = w.lanelet(nextId);
     if (!lanelet) break;
     dist += lanelet.length;
