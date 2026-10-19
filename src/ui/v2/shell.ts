@@ -2012,7 +2012,13 @@ export function mountShell(deps: ShellDeps): ShellHandle {
   syncHistory();
   // The Builder reports its state whenever it marks it changed - a hint, a drag, a selection
   let builderSig = '';
-  const sigOf = (s: BuilderState): string => JSON.stringify([s.category, s.tool, s.armed, [...s.ready].sort().join(','), s.floor, s.snap, s.grid, s.hideOthers,
+  // The ready tools' part sorted once per set the Builder hands (the catalogue's one, PRD-09), not on every hover.
+  let readySet: ReadonlySet<string> | null = null, readySig = '';
+  const readyOf = (ready: ReadonlySet<string>): string => {
+    if (ready !== readySet) { readySet = ready; readySig = [...ready].sort().join(','); }
+    return readySig;
+  };
+  const sigOf = (s: BuilderState): string => JSON.stringify([s.category, s.tool, s.armed, readyOf(s.ready), s.floor, s.snap, s.grid, s.hideOthers,
     s.selection, s.planning, s.planPoints, s.userBlueprints.map((b) => b.key), s.pattern, s.scope, s.roof, s.material, s.drawAction, s.inspectorOpen]);
   workspace.subscribe((state) => {
     const same = state === builder;

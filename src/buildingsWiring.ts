@@ -922,7 +922,8 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
       category,
       tool: toolId,
       armed: tool.armed,
-      ready: new Set(READY),
+      // The catalogue's one set (read only), not a copy each time the panel is told (PRD-09).
+      ready: READY,
       floor: {
         active: volume && tool.selection?.bay ? volume.base + tool.selection.bay.storey : volume?.base ?? 0,
         total: building ? topLevel(building) : 1,
