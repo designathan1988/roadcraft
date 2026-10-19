@@ -43,7 +43,7 @@ export interface CellEntry {
 
 /** Whether two lists are the same buildings with the same records on the same ground (the strings compared by reference). */
 export const sameEntries = (a: readonly CellEntry[], b: readonly CellEntry[]): boolean =>
-  a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.sig === b[i]!.sig && e.digest === b[i]!.digest);
+  a === b || a.length === b.length && a.every((e, i) => e.key === b[i]!.key && e.sig === b[i]!.sig && e.digest === b[i]!.digest);
 
 /** An entry as a job is sent it: where its worker reads the record (its tile's shared table and row, `recordTable.ts`), never the record. */
 export interface CellJobEntry extends CellEntry {

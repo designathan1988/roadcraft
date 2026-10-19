@@ -23,7 +23,13 @@ export function letGoPassed(heldFar: Set<string>, heldCoarse: Set<string>, kept:
 
 /** THE CELLS HELD BACK THAT FIT AGAIN (`layer.ts` capTriangles): each a level back, the ones spanning most of the screen first (`rank`, least first), while `drawn` with what it adds (`more`: far to its facade level, facade level to its detail) stays within `budget`; a far one comes back to its facade level only (held coarse), its detail when that fits too. DO NOT wait for the view to fall under `SLACK` of the budget: a still view never does, and the cells cut stayed cut (conferencia 40). */
 export function letBackFitting(heldFar: Set<string>, heldCoarse: Set<string>, drawn: number, budget: number, rank: (key: string) => number, more: (key: string, far: boolean) => number): void {
-  for (const key of [...new Set([...heldCoarse, ...heldFar])].sort((a, b) => rank(a) - rank(b))) {
+  // Each key ranked once, not twice per comparison (PRD-30): the same stable order.
+  const keys = new Set(heldCoarse);
+  for (const key of heldFar) keys.add(key);
+  const ranked: { key: string; rank: number }[] = [];
+  for (const key of keys) ranked.push({ key, rank: rank(key) });
+  ranked.sort((a, b) => a.rank - b.rank);
+  for (const { key } of ranked) {
     const far = heldFar.has(key);
     const add = more(key, far);
     if (drawn + add > budget) continue;
