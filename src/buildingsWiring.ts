@@ -84,8 +84,9 @@ export function createBuildingWiring(deps: BuildingWiringDeps): BuildingWiring {
   let userBlueprints = library.list();
 
   const view: ToolView = {
-    project: (x, y, z) => deps.view().toScreen({ x, y }, deps.size().w, deps.size().h, z),
-    planeAt: (s, z) => deps.view().toWorldAt(s.x, s.y, z, deps.size().w, deps.size().h),
+    // The size read once a call, not twice (PRD-09: the overlay projects hundreds of points a frame).
+    project: (x, y, z) => { const size = deps.size(); return deps.view().toScreen({ x, y }, size.w, size.h, z); },
+    planeAt: (s, z) => { const size = deps.size(); return deps.view().toWorldAt(s.x, s.y, z, size.w, size.h); },
     ray(s) {
       const { w, h } = deps.size();
       // The camera's own line of sight where the view has one (`Viewport.rayAt`)
