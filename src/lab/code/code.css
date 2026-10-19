@@ -1,0 +1,13 @@
+/* THE LAB'S CODE TABS (`lab/code`): the code viewer and the profiler's controls, in the lab's colours (`lab.css` --lab-*). */
+.lab-code-viewer pre { position: relative; max-height: 40vh; white-space: pre; }
+.lab-code-line { min-height: 1.4em; }
+.lab-code-hit { background: color-mix(in srgb, var(--lab-accent) 24%, transparent); outline: 1px solid color-mix(in srgb, var(--lab-accent) 60%, transparent); }
+.lab-code-summary { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 6px; color: var(--lab-muted); }
+.lab-code-summary b { font-weight: 600; color: var(--lab-text); }
+.lab-code-summary b.lab-warn { color: var(--lab-warn); }
+.lab-code-summary b.lab-good { color: var(--lab-good); }
+.lab-code-sections { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.lab-code-note { margin: 4px 0; color: var(--lab-muted); }
+.lab-code-note.lab-bad { color: var(--lab-bad); }
+.lab-code-sel strong { color: var(--lab-accent); }
+.lab-panel button .lab-icon { display: inline-block; vertical-align: -2px; }
