@@ -88,6 +88,8 @@ export interface Blast {
   leak(x: number, y: number, z: number, seconds: number): void;
   /** Whether anything is still moving, burning or flashing. */
   active(): boolean;
+  /** Whether anything that casts a shadow moves (debris and wrecks not yet at rest): fire, smoke, water, sparks and wires cast none (AGT-01). */
+  casting(): boolean;
   /** Everything gone: debris, wrecks, craters, soot, fires, wires, jets (the weapons lab's clean slate). */
   clear(): void;
   update(dt: number, world: BlastWorld): void;
@@ -599,6 +601,7 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
       drawnPieces = -1;
       flash = 0; ringAge = Infinity; shakeAmp = 0;
     },
+    casting: () => pieces.some((b) => !b.asleep),
     active: () => geysers.length > 0 || flash > 1 || ringAge < 0.7 || fires.length > 0 || arcs.length > 0 || pieces.some((b) => !b.asleep) || ropes.some((r) => r.age < 12),
     update(dt, world) {
       const wall = Math.min(0.1, Math.max(0, dt));
@@ -646,6 +649,8 @@ ${shader.fragmentShader}`.replace('#include <color_fragment>', `#include <color_
       }
       // Light, ring, shake decay.
       flash = Math.max(0, flash - (flash / Math.max(0.03, flashLife)) * wall * 2.5);
+      // Out under 1, as `active` takes it: DO NOT let the decay run on to zero by underflow (~100 s after an explosion, every lit pixel paying for the eight point lights, AGT-02).
+      if (flash < 1) flash = 0;
       // Falls off with the distance in world units: the same flash in metres at any unit.
       light.intensity = flash * TUNED_UNIT ** light.decay;
       // Always in the scene, dark when off

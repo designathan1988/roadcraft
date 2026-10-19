@@ -69,6 +69,8 @@ export interface PlayEffects {
   /** How far an explosion shakes the camera now. */
   shake(): number;
   busy(): boolean;
+  /** Whether anything that casts a shadow moves: debris and wrecks not at rest, bodies falling (`busy` asks frames; this, the shadow cascades again, AGT-01). */
+  castersMoving(): boolean;
   shootBody(a: readonly [number, number, number], b: readonly [number, number, number]): { alive: number; part: BodyPart } | 'hit' | null;
   ragdollProbe(): RagdollProbe[];
   clearCasualties(): void;
@@ -347,6 +349,7 @@ export function createPlayEffects(ctx: PlayEffectsContext): PlayEffects {
     },
     shake: () => blast.shake(),
     busy: () => blast.active() || ragdolls.active(),
+    castersMoving: () => blast.casting() || ragdolls.active(),
     shootBody(a, b) {
       const hit = ragdolls.shootBody(new Vector3(a[0], a[2], -a[1]), new Vector3(b[0], b[2], -b[1]));
       if (hit) onAssetsReady();

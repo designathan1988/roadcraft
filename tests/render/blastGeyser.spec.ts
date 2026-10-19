@@ -53,3 +53,32 @@ describe('blast geyser', () => {
     blast.dispose();
   });
 });
+
+describe('the blast and the GPU (AGT-01, AGT-02)', () => {
+  it("puts an explosion's flash light out within seconds, not after ~100 s of decay to underflow", () => {
+    const exhaust = { burst: () => {} } as unknown as Exhaust;
+    const light = new PointLight();
+    const blast = createBlast(exhaust, light);
+    const world = { groundAt: () => 0 };
+    blast.explode(0, 0, 0, 8, 'road');
+    blast.update(1 / 60, world);
+    expect(light.intensity).toBeGreaterThan(0);
+    // Five seconds on: dark (the renderer then leaves the eight point lights out of every shader).
+    for (let frame = 0; frame < 60 * 5; frame++) blast.update(1 / 60, world);
+    expect(light.intensity).toBe(0);
+  });
+
+  it('says a fire or a hydrant casts nothing moving (the cascades kept), debris in flight does', () => {
+    const exhaust = { burst: () => {} } as unknown as Exhaust;
+    const blast = createBlast(exhaust, new PointLight());
+    const world = { groundAt: () => 0 };
+    blast.burn(0, 0, 0, 2, 40);
+    blast.geyser(10, 0, 0);
+    blast.update(1 / 60, world);
+    expect(blast.active()).toBe(true);
+    expect(blast.casting()).toBe(false);
+    blast.explode(0, 0, 0, 8, 'building');
+    blast.update(1 / 60, world);
+    expect(blast.casting()).toBe(true);
+  });
+});

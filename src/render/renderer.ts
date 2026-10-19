@@ -420,7 +420,8 @@ export function createSceneRenderer(
   /** Whether the simulation runs: what it moves moves (`environment.setMovers`). */
   let simRunning = false;
   /** DO NOT walk the scene for it each frame: whether anything that moves is drawn into the shadow map, as the layers that move it say */
-  const movingCasters = (): boolean => agents.casting || transit.moving || (fx?.busy() ?? false);
+  // DO NOT take the effects being busy for casters moving: a fire or a hydrant runs 30-50 s and casts nothing, and every cascade was drawn whole all that time (AGT-01).
+  const movingCasters = (): boolean => agents.casting || transit.moving || (fx?.castersMoving() ?? false);
   /** Moving casters in the last shadow frame: when they stop, the map is drawn once more with them at rest. */
   let castersMoved = false;
   /** The camera at the last shadow pass: a view moved re-culls the instanced layers, the casters kept still are not those (`ShadowPassInput.still`). */
@@ -3188,7 +3189,7 @@ export function createSceneRenderer(
         shadowScale = buildings.frame.scale;
         const still = castersSame && scaleStill && !castersStirred;
         castersStirred = false;
-        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), still })) {
+        if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.castersMoving() ?? false), still })) {
           renderer.shadowMap.needsUpdate = true;
         }
         shadowMoved = false;
