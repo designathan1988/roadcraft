@@ -23,21 +23,28 @@ export function gpuNeighbours(least = 3) {
   return out.split(/\r?\n/).filter(Boolean).map((line) => { const [pid, name, percent] = line.split('|'); return { pid: Number(pid), name, percent: Number(percent) }; });
 }
 
-/** The processes busy on the CPU now, past `leastCores` of one core (Windows' "Process" counters, the dev server's node and this measure's
- *  own shells left out), and the free memory, bytes. */
-export function cpuNeighbours(leastCores = 0.5) {
+/** The processes busy on the CPU now, past `leastCores` of one core, and the free memory, bytes: each process's CPU time read twice a second
+ *  apart (`Get-Process`). DO NOT read the "Process" performance counters by their English names: on a Windows in Portuguese they do not exist,
+ *  `Get-Counter` answered nothing and every machine passed as free (found 2026-10-19 by the probe's Etapa 0).
+ *  Left out by PROCESS ID, not by name: this measure's own node and its parent, the counting shell, and the dev server listening on `port`.
+ *  DO NOT leave out every `chrome` and `node` by name: the player's Chrome with the game open, or a test run, passed as a free machine (report AST-15). */
+export function cpuNeighbours(leastCores = 0.5, { port = Number(new URL(arg('--base', 'http://127.0.0.1:5300/')).port || 80) } = {}) {
   if (process.platform !== 'win32') return { busy: [], freeBytes: Infinity };
   const ps = [
-    "$s = (Get-Counter '\\Process(*)\\% Processor Time' -ErrorAction SilentlyContinue).CounterSamples;",
-    "$s | Where-Object { $_.InstanceName -notmatch '^(_total|idle|node|powershell|conhost|chrome)(#\\d+)?$' -and $_.CookedValue -gt " + leastCores * 100 + " }",
-    "| ForEach-Object { \"$($_.InstanceName)|$([math]::Round($_.CookedValue / 100, 2))\" };",
+    '$a = @{}; foreach ($p in Get-Process) { $a[$p.Id] = $p.TotalProcessorTime.TotalSeconds };',
+    '$t0 = Get-Date; Start-Sleep -Milliseconds 1000; $s = ((Get-Date) - $t0).TotalSeconds;',
+    "foreach ($p in Get-Process) { if ($a.ContainsKey($p.Id) -and $p.ProcessName -notmatch '^(Idle|System|conhost)$') { $d = ($p.TotalProcessorTime.TotalSeconds - $a[$p.Id]) / $s; if ($d -gt " + leastCores + ') { "$($p.ProcessName)|$($p.Id)|$([math]::Round($d, 2))" } } };',
+    `"listen|$((Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique) -join ',')";`,
+    '"self|$PID";',
     "\"free|$((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory)\"",
   ].join(' ');
   const lines = execFileSync('powershell.exe', ['-NoProfile', '-Command', ps], { encoding: 'utf8' }).split(/\r?\n/).filter(Boolean);
-  const free = lines.find((l) => l.startsWith('free|'));
+  const value = (key) => lines.find((l) => l.startsWith(`${key}|`))?.slice(key.length + 1) ?? '';
+  const mine = new Set([process.pid, process.ppid, Number(value('self')), ...value('listen').split(',').filter(Boolean).map(Number)]);
+  const free = value('free');
   return {
-    busy: lines.filter((l) => !l.startsWith('free|')).map((l) => { const [name, cores] = l.split('|'); return { name, cores: Number(cores) }; }),
-    freeBytes: free ? Number(free.split('|')[1]) * 1024 : Infinity,
+    busy: lines.filter((l) => !/^(free|listen|self)\|/.test(l)).map((l) => { const [name, pid, cores] = l.split('|'); return { name, pid: Number(pid), cores: Number(cores) }; }).filter((p) => !mine.has(p.pid)),
+    freeBytes: free ? Number(free) * 1024 : Infinity,
   };
 }
 
@@ -105,9 +112,10 @@ function installHelpers() {
   /** What makes the scene the scene: the buildings' levels chosen and shown, the vehicles and people. */
   const scene = () => {
     const lv = handle.buildingLevels();
-    return { tri: lv.chosenTriangles, detail: lv.shownDetail, facade: lv.shownFacade, notLanded: lv.notLanded, vehicles: r.sim.vehicles.size, people: r.sim.pedViews.length };
+    return { tri: lv.chosenTriangles, detail: lv.shownDetail, facade: lv.shownFacade, notLanded: lv.notLanded, vehicles: r.sim.vehicles.size, people: r.sim.pedViews.length, programs: handle.gl.info.programs?.length ?? 0 };
   };
-  const sign = (s) => `${s.tri}|${s.detail}|${s.facade}|${s.vehicles}|${s.people}`;
+  // The programs too (report AST-15): a window that compiled a program (shadows or post turned on) measured the compile, the same triangles.
+  const sign = (s) => `${s.tri}|${s.detail}|${s.facade}|${s.vehicles}|${s.people}|${s.programs}`;
   window.__measure = {
     scene, sign,
     /** Settled: nothing waiting to land and the scene's signature the same for `stableMs`. */
@@ -144,7 +152,7 @@ function installHelpers() {
 export function sameScene(windows) {
   const scenes = [...new Set(windows.map((w) => w.scene))];
   return scenes.length === 1
-    ? { ok: true, line: `cena igual em todas as ${windows.length} janelas (triângulos|detalhe|fachada|veículos|pessoas = ${scenes[0]})` }
+    ? { ok: true, line: `cena igual em todas as ${windows.length} janelas (triângulos|detalhe|fachada|veículos|pessoas|programas = ${scenes[0]})` }
     : { ok: false, line: `CENA MUDOU entre as janelas - MEDIÇÃO INVÁLIDA: ${scenes.join(' ; ')}` };
 }
 

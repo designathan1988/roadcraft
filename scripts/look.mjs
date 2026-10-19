@@ -398,17 +398,22 @@ function stopFrames() {
   return rec.times;
 }
 
-/** The frames' intervals in ms: percentiles, the ones a player sees as a hitch and the vsyncs missed (60 Hz). */
+/** The frames' intervals in ms: percentiles, the ones a player sees as a hitch and the vsyncs missed.
+ *  The display's period is read off the intervals, not taken as 60 Hz (a 120 or 144 Hz display counted at 60 Hz hid half its missed vsyncs:
+ *  report AST-15): the 10th percentile, since no frame comes faster than the display (DO NOT take the median: a game held at 30 fps on a 60 Hz
+ *  display would read 33 ms and miss nothing). 60 Hz when that is no display's period (under 240 Hz or over 30 Hz). */
 function frameStats(times) {
-  const VSYNC = 1000 / 60;
   const gaps = times.slice(1).map((t, k) => t - times[k]);
   const sorted = [...gaps].sort((a, b) => a - b);
+  const fast = sorted.length ? sorted[Math.floor(sorted.length * 0.1)] : 0;
+  const VSYNC = fast >= 1000 / 240 && fast <= 1000 / 30 ? fast : 1000 / 60;
   const at = (q) => (sorted.length ? Math.round(sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * q) - 1)] * 10) / 10 : null);
   return {
     frames: gaps.length, seconds: times.length > 1 ? Math.round(times.at(-1) - times[0]) / 1000 : 0,
     p50: at(0.5), p95: at(0.95), p99: at(0.99), max: sorted.length ? Math.round(sorted.at(-1)) : null,
     hitches: gaps.filter((g) => g > 25).length,
     dropped: gaps.reduce((a, g) => a + Math.max(0, Math.round(g / VSYNC) - 1), 0),
+    vsyncMs: Math.round(VSYNC * 100) / 100,
     worst: [...gaps.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, g]) => [Math.round(times[k] - times[0]), Math.round(g)]),
   };
 }

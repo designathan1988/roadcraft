@@ -70,11 +70,18 @@ export const ALWAYS = [
   'tests/render/openingNature.spec.ts',
   'tests/render/programsGate.spec.ts',
   'tests/render/textureUploads.spec.ts',
-  'tests/ui/statusScope.spec.ts',
   'tests/core/derivedDurability.spec.ts',
   'tests/render/cellHoles.spec.ts',
   'tests/render/shaderCatalogue.spec.ts',
 ];
+
+/** `ALWAYS` expanded (a folder stands for each spec in it). DO NOT drop a missing entry quietly: a spec deleted and left here made the check pass
+ *  without it (report TST-11, `tests/ui/statusScope.spec.ts`); the check stops and names it. */
+function alwaysSpecs(specs) {
+  const missing = ALWAYS.filter((a) => !existsSync(join(ROOT, a)));
+  if (missing.length) throw new Error(`check: ALWAYS names what does not exist (take it out of scripts/check.mjs): ${missing.join(', ')}`);
+  return ALWAYS.flatMap((a) => (a.endsWith('/') ? specs(a) : [a]));
+}
 
 /** The specs a change calls for: `null` */
 export function specsFor(files) {
@@ -83,7 +90,7 @@ export function specsFor(files) {
   // `related` matches whole paths: a folder of `ALWAYS` stands for each spec in it.
   const specs = (dir) => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? specs(`${dir}${e.name}/`) : e.name.endsWith('.spec.ts') ? [`${dir}${e.name}`] : []);
-  const always = ALWAYS.flatMap((a) => (a.endsWith('/') ? specs(a) : [a]));
+  const always = alwaysSpecs(specs);
   return [...new Set([...existing, ...always])];
 }
 
@@ -106,7 +113,7 @@ export function directSpecsFor(files) {
     if (!mine.length) mine = texts.filter(([s, t]) => s.startsWith(area(stem)) && names(t, stem)).map(([s]) => s);
     own.push(...mine);
   }
-  const always = ALWAYS.flatMap((a) => (a.endsWith('/') ? specs(a) : [a]));
+  const always = alwaysSpecs(specs);
   return [...new Set([...files.filter((f) => f.endsWith('.spec.ts') && existsSync(join(ROOT, f))), ...own, ...always])];
 }
 
