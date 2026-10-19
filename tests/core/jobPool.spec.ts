@@ -198,4 +198,75 @@ describe('the job system', () => {
     expect(FakeWorker.made.length).toBe(before + 2);
     setJobWorkerMaker(null);
   });
+
+  /** The page's clock and heap as the pool reads them (`performance.now`, `performance.memory`). */
+  const pageHeap = { now: 0, heap: 100 * 2 ** 20 };
+  const stubPage = (): void => {
+    pageHeap.now = 0;
+    pageHeap.heap = 100 * 2 ** 20;
+    vi.stubGlobal('performance', { now: () => pageHeap.now, memory: { get totalJSHeapSize() { return pageHeap.heap; } } });
+  };
+  /** Room in the 4 GB cage for two workers at their peak (`pageRoomWorkers`), the page grown to fill the rest. */
+  const GROWN_PAGE = 4 * 2 ** 30 - 600 * 2 ** 20 - 2 * 600 * 2 ** 20 - 1;
+  const cellJob = (submitJob: typeof import('@/jobs/jobPool').submitJob, name: string): void => {
+    submitJob({ service: 'cells', key: null, priority: 1, write: () => ({ data: name, transfer: [] }), done: () => {}, failed: () => {} });
+  };
+  const answerJob = (name: string): void => {
+    const w = FakeWorker.made.find((x) => x.asked.some((m) => m.data === name))!;
+    const m = w.asked.find((x) => x.data === name)!;
+    w.onmessage!({ data: { port: m.port, data: `${name} done`, seq: m.seq } });
+  };
+
+  it("lets go of the page's idle workers once the page has grown past room for them, after they stood idle a while", async () => {
+    stubPage();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { jobPort, submitJob, RETIRE_IDLE_MS } = await import('@/jobs/jobPool');
+      // A growth lane (its worker kept: it holds the lane's state) and two queued jobs, made while the page was small.
+      jobPort('growth');
+      cellJob(submitJob, 'a');
+      cellJob(submitJob, 'b');
+      expect(FakeWorker.made).toHaveLength(3);
+      answerJob('a');
+      answerJob('b');
+      // The page grows: room for two of the three.
+      pageHeap.heap = GROWN_PAGE;
+      pageHeap.now = RETIRE_IDLE_MS / 2;
+      vi.advanceTimersByTime(RETIRE_IDLE_MS / 2);
+      expect(FakeWorker.made.filter((w) => w.ended)).toHaveLength(0);
+      cellJob(submitJob, 'c');
+      answerJob('c');
+      pageHeap.now = 2 * RETIRE_IDLE_MS;
+      vi.advanceTimersByTime(2 * RETIRE_IDLE_MS);
+      // One let go, the growth's kept, the pool at the page's room: the next job runs on the worker left, none made.
+      const ended = FakeWorker.made.filter((w) => w.ended);
+      expect(ended).toHaveLength(1);
+      expect(ended[0]!.asked.some((m) => m.service === 'growth')).toBe(false);
+      cellJob(submitJob, 'd');
+      expect(FakeWorker.made).toHaveLength(3);
+      expect(FakeWorker.made.find((w) => w.asked.some((m) => m.data === 'd'))!.ended).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the page's workers while the page has room for them, idle or not", async () => {
+    stubPage();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { jobPort, submitJob, RETIRE_IDLE_MS } = await import('@/jobs/jobPool');
+      jobPort('growth');
+      cellJob(submitJob, 'a');
+      cellJob(submitJob, 'b');
+      answerJob('a');
+      answerJob('b');
+      pageHeap.now = 10 * RETIRE_IDLE_MS;
+      vi.advanceTimersByTime(10 * RETIRE_IDLE_MS);
+      cellJob(submitJob, 'c');
+      expect(FakeWorker.made.filter((w) => w.ended)).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
 });
