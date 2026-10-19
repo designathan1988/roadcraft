@@ -65,5 +65,5 @@ describe('the same map sent again', () => {
     expect(inner.doc.segments.size).toBe(doc.segments.size);
     // Before: another map's load, every vehicle gone.
     expect(inner.sim.vehicles.get(car.id)).toBe(car);
-  }, 60_000);
+  });
 });

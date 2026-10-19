@@ -35,7 +35,7 @@ describe('the dense trip searches', () => {
     expect(compared).toBe(960);
     // The plans that begin with a lane change (the search's second state per lane, and its second search) are among them.
     expect(changes).toBeGreaterThan(20);
-  }, 120_000);
+  });
 
   it('make no Map entries a search', () => {
     const { sim } = avenueGrid();
@@ -64,5 +64,5 @@ describe('the dense trip searches', () => {
     }
     // Before: two to three entries for every state the searches relaxed, thousands here.
     expect(sets).toBe(0);
-  }, 60_000);
+  });
 });

@@ -38,5 +38,5 @@ describe('the walks that end', () => {
     // Before: every trip that ended, held until somebody took them, and nobody did.
     const engine = w.pedEngine as { takeArrivals?: (w: SimWorld) => number[] };
     expect(engine.takeArrivals?.(w) ?? []).toEqual([]);
-  }, 60_000);
+  });
 });

@@ -65,5 +65,5 @@ describe("the worker's network when the map opens", () => {
     expect(taken.solved).toBe(0);
     const all = (net: Network): NetworkBake => net.exportBake(doc.nodes.keys(), doc.segments.keys());
     expect(all(taken.net)).toEqual(all(solvedHere.net));
-  }, 60_000);
+  });
 });

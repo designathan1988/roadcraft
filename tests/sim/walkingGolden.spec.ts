@@ -19,5 +19,5 @@ describe('walking golden', () => {
     expect(trips).toBeGreaterThan(60);
     const trace = traceRun(sim, 3600);
     expect(trace).toEqual({ hash: 74238317, vehicles: 108, laneChanges: 77, routeChanges: 152 });
-  }, 120_000);
+  });
 });

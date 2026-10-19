@@ -55,5 +55,5 @@ describe('the vehicles near a point', () => {
       Array.prototype.sort = sort;
     }
     expect(sorts).toBe(0);
-  }, 60_000);
+  });
 });
