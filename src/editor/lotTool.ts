@@ -1,3 +1,4 @@
+import { segSeg } from '@core/intersect';
 import type { Vec2 } from '@core/vec2';
 import type { ChangeRect } from '@world/changes';
 import type { RoadDoc } from '@world/doc';
@@ -856,7 +857,18 @@ export class LotTool {
 }
 
 /** Whether the segment a-b passes through the inside of a lot. */
-function segmentCrossesLot(a: Vec2, b: Vec2, q: readonly Vec2[]): boolean {
+export function segmentCrossesLot(a: Vec2, b: Vec2, q: readonly Vec2[]): boolean {
   for (let k = 0; k <= 20; k++) if (insideLot({ x: a.x + (b.x - a.x) * k / 20, y: a.y + (b.y - a.y) * k / 20 }, { corners: q })) return true;
+  // DO NOT decide by the samples alone (EDT-12: a lot narrower than a twentieth of the cut fell between two and was not cut): where the cut meets the lot's sides, and the middle of each stretch between those inside or not.
+  const at: number[] = [0, 1];
+  for (let i = 0; i < q.length; i++) {
+    const hit = segSeg(a, b, q[i]!, q[(i + 1) % q.length]!);
+    if (hit) at.push(hit.t);
+  }
+  at.sort((x, y) => x - y);
+  for (let i = 1; i < at.length; i++) {
+    const t = (at[i - 1]! + at[i]!) / 2;
+    if (at[i]! - at[i - 1]! > 1e-9 && insideLot({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, { corners: q })) return true;
+  }
   return false;
 }
