@@ -14,7 +14,7 @@ import { LANE_LINE } from '@world/roadTypes';
 import { type Reach, SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadSurfaceInputs';
 import type { SceneMaterials } from './materials';
 import { type PassLook, passDesc, passRaised, passReads, polysOf, tileBundle } from './roadSurfacePass';
-import { attachFarLevel, blockArraysOf, cloneBlock, mergeTiles, tilesOnGpu } from './mesh/surfaceTiles';
+import { attachFarLevel, blockArraysOf, cloneBlock, joinBlocks, mergeTiles, splitBlock, tilesOnGpu } from './mesh/surfaceTiles';
 import { cancelWarm, warmLooseAhead } from './uploads';
 import { type BlockArrays, levelsOf } from './mesh/roadLod';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR } from './roadTones';
@@ -154,9 +154,41 @@ export interface PassState {
   readonly pending: Set<string>;
 }
 
+/** A block's tiles by digest, surface by surface of its group (a surface after the first marked by minus its place: digests are never negative). */
+function tileSignature(lists: readonly (readonly PassTile[])[]): number[] {
+  return lists.flatMap((list, i) => [...(i ? [-i] : []), ...list.map((tile) => tile.value)]);
+}
+
 /** Whether a block's tiles are the ones its mesh was merged from, by digest. */
-function sameTiles(parts: readonly number[], list: readonly PassTile[]): boolean {
-  return parts.length === list.length && list.every((tile, i) => tile.value === parts[i]);
+function sameTiles(parts: readonly number[], lists: readonly (readonly PassTile[])[]): boolean {
+  const now = tileSignature(lists);
+  return parts.length === now.length && now.every((value, i) => value === parts[i]);
+}
+
+/** Surfaces drawn alike - one material, order and shadows - drawn as one mesh a block (`drawGroups`): its name, theirs joined by `+`. */
+interface DrawGroup {
+  readonly name: string;
+  readonly specs: readonly SurfaceSpec[];
+  readonly options: SurfaceSpec['options'];
+  readonly renderOrder?: number;
+}
+
+/** DO NOT draw a mesh a surface where surfaces are drawn alike (the footway and its ramps, a kerb and a median's kerb: one material each): a
+ *  draw call a surface a block. The pass's surfaces grouped by how they are drawn, in the order each group's first surface comes; each
+ *  surface keeps its own tiles, and its own far level (`attachFarLevel`). */
+function drawGroups(specs: readonly SurfaceSpec[]): DrawGroup[] {
+  const byLook = new Map<string, SurfaceSpec[]>();
+  for (const spec of specs) {
+    const o = spec.options;
+    const look = `${o.material.uuid}|${spec.renderOrder ?? ''}|${o.castShadow ?? false}|${o.receiveShadow ?? true}`;
+    const list = byLook.get(look);
+    if (list) list.push(spec); else byLook.set(look, [spec]);
+  }
+  return [...byLook.values()].map((members) => {
+    const name = members.map((spec) => spec.options.name).join('+');
+    const lead = members[0]!;
+    return { name, specs: members, options: { ...lead.options, name }, ...(lead.renderOrder !== undefined ? { renderOrder: lead.renderOrder } : {}) };
+  });
 }
 
 /** One surface's tiles in a block, built again from their rings (a lost WebGL context, `mesh/gpuOnly.ts`) */
@@ -318,6 +350,7 @@ export function* roadSurfaceSteps(
     /** The pass as its surfaces read it, plain data: the same on the page and in a worker (`roadSurfaceReads.ts`). */
     const desc: PassDesc = passDesc(net, pass, raised, passLook(materials, groundMaterial), paintColours);
     const specs = passSurfaces(desc, pageReads).map((read) => dress(read, raised, materials, groundMaterial, paintFor));
+    const groups = drawGroups(specs);
 
     // Everything a tile's build reads besides its rings and its surroundings
     const specSalt = (spec: SurfaceSpec): number => new Digest().addText(spec.options.name).add(spec.options.maxEdge)
@@ -535,30 +568,29 @@ export function* roadSurfaceSteps(
     reused += state.tiles.size - builtHere;
 
     // A block keeps its mesh while its tiles are the same (by digest).
-    const keyOf = (spec: SurfaceSpec, chunk: string): string =>
-      `${pass.id}|${spec.options.name}|${chunk}|${spec.options.material.uuid}|${spec.renderOrder ?? ''}`;
-    /** Each surface's tiles in each block a visited tile touched, in tile order. */
-    const parts = new Map<string, Map<string, PassTile[]>>();
-    for (const spec of specs) parts.set(spec.options.name, new Map());
+    const keyOf = (group: DrawGroup, chunk: string): string =>
+      `${pass.id}|${group.name}|${chunk}|${group.options.material.uuid}|${group.renderOrder ?? ''}`;
+    /** Each group's tiles in each block a visited tile touched, surface by surface of the group, in tile order. */
+    const parts = new Map<string, Map<string, PassTile[][]>>();
+    for (const group of groups) parts.set(group.name, new Map());
     for (const chunk of affected) {
       const inChunk = [...(state.chunkTiles.get(chunk) ?? [])].sort((p, q) => p - q).map((key) => state.tiles.get(key)!);
       if (inChunk.length === 0) state.chunkTiles.delete(chunk);
-      for (const spec of specs) {
-        const name = spec.options.name;
-        const list = inChunk.filter((tile) => tile.surfaces!.includes(name));
-        if (list.length) { parts.get(name)!.set(chunk, list); continue; }
-        // No tile of the block has this surface any more: its mesh goes.
-        state.blocks.get(name)?.delete(chunk);
-        const gone = chunks?.get(keyOf(spec, chunk));
-        if (gone) { retire(gone.mesh); chunks!.delete(keyOf(spec, chunk)); }
+      for (const group of groups) {
+        const lists = group.specs.map((spec) => inChunk.filter((tile) => tile.surfaces!.includes(spec.options.name)));
+        if (lists.some((list) => list.length)) { parts.get(group.name)!.set(chunk, lists); continue; }
+        // No tile of the block has a surface of the group any more: its mesh goes.
+        state.blocks.get(group.name)?.delete(chunk);
+        const gone = chunks?.get(keyOf(group, chunk));
+        if (gone) { retire(gone.mesh); chunks!.delete(keyOf(group, chunk)); }
       }
     }
     const again = new Set<PassTile>();
-    for (const spec of specs) {
-      for (const [chunk, list] of parts.get(spec.options.name) ?? []) {
-        const known = chunks?.get(keyOf(spec, chunk));
-        if (known && sameTiles(known.parts, list)) continue;
-        for (const tile of list) if (!tile.bundle) again.add(tile);
+    for (const group of groups) {
+      for (const [chunk, lists] of parts.get(group.name) ?? []) {
+        const known = chunks?.get(keyOf(group, chunk));
+        if (known && sameTiles(known.parts, lists)) continue;
+        for (const tile of lists.flat()) if (!tile.bundle) again.add(tile);
       }
     }
     yield* buildAll([...again], () => { remade++; });
@@ -566,14 +598,17 @@ export function* roadSurfaceSteps(
     /** The blocks merged here without a cache to keep them (`buildRoadSurfaces` with no reuse). */
     const own = new Map<string, Mesh>();
     const mergeAt = performance.now();
-    for (const spec of specs) {
-      for (const [chunk, list] of parts.get(spec.options.name) ?? []) {
-        const key = keyOf(spec, chunk);
+    for (const group of groups) {
+      for (const [chunk, lists] of parts.get(group.name) ?? []) {
+        const key = keyOf(group, chunk);
         const known = chunks?.get(key);
+        // The group's surfaces that have tiles in the block, each with its tiles: drawn one after the other in one mesh.
+        const members = group.specs.flatMap((spec, i) => (lists[i]!.length ? [{ spec, list: lists[i]! }] : []));
         let mesh: Mesh | null;
         // DO NOT let the mesh hold its tiles for it: a second copy of every road on the GPU, kept on the CPU
-        const source = surfaceSource(spec, list.map((tile) => ({ rect: tile.rect, into: tile.into })), reading);
-        if (known && sameTiles(known.parts, list)) {
+        const sources = members.map(({ spec, list: tiles }) => surfaceSource(spec, tiles.map((tile) => ({ rect: tile.rect, into: tile.into })), reading));
+        const source = sources.length === 1 ? sources[0]! : (): Tile[] => sources.flatMap((s) => s());
+        if (known && sameTiles(known.parts, lists)) {
           mesh = known.mesh;
           // Bound to this build's rings: the build that made it lets go of its own.
           tilesOnGpu(mesh, source);
@@ -581,19 +616,26 @@ export function* roadSurfaceSteps(
         } else {
           if (known) retire(known.mesh);
           // The block's box and centre, to lock its edge in the far level and to tell near from far (`roadLod.ts`).
+          // Each surface's own: its block was its tiles' box, a surface of a group keeps it (its far level locked to it, near by it).
           const coarsen = reuse?.near && tiler?.coarsen ? tiler.coarsen.bind(tiler) : null;
-          const lock = coarsen ? blockBox(list.map((tile) => tile.rect)) : null;
-          const near = lock ? reuse!.near!((lock[0] + lock[2]) / 2, (lock[1] + lock[3]) / 2) : true;
-          mesh = mergeTiles(list.map((tile) => tile.bundle!.get(spec.options.name)!), spec.options, source,
+          const locks = coarsen ? members.map(({ list: tiles }) => blockBox(tiles.map((tile) => tile.rect))) : null;
+          const lock = locks?.[0] ?? null;
+          const near = locks ? locks.some((b) => reuse!.near!((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) : true;
+          const memberTiles = members.map(({ spec, list: tiles }) => tiles.map((tile) => tile.bundle!.get(spec.options.name)!));
+          mesh = mergeTiles(memberTiles.flat(), group.options, source,
             lock ? {
-              lock, near,
+              lock, near, also: locks!.slice(1),
               start: (block, arrays) => {
                 coarsening++;
-                coarsen!(cloneBlock(arrays), lock).then((made) => {
+                // Each surface simplified on its own, as when it was a block of its own; one too small to gain is drawn whole in the far level.
+                const pieces = memberTiles.length === 1 ? [cloneBlock(arrays)] : splitBlock(arrays, memberTiles);
+                const whole = memberTiles.length === 1 ? [] : splitBlock(arrays, memberTiles);
+                Promise.all(pieces.map((piece, i) => coarsen!(piece, locks![i]!))).then((made) => {
                   // The block may have been built again meanwhile: its far level is of the one it was made for.
                   if (chunks?.get(key)?.mesh !== block) return;
-                  if (made) {
-                    const level = attachFarLevel(block, made, spec.options, source, lock, near);
+                  if (made.some((m) => m !== null)) {
+                    const coarse = made.length === 1 ? made[0]! : joinBlocks(made.map((m, i) => m ?? whole[i]!));
+                    const level = attachFarLevel(block, coarse, group.options, sources.map((s, i) => ({ source: s, lock: locks![i]! })), near);
                     if (!near) void warmLooseAhead([level]);
                   } else if (!near) void warmLooseAhead([block]);
                 }).catch((error: unknown) => {
@@ -606,40 +648,43 @@ export function* roadSurfaceSteps(
           // Its full level, when it comes back near, copied from the kept tiles (`reuse.stored`): DO NOT cut and triangulate the block's tiles on the page again (`roadResidency.ts` makeNear).
           const levels = mesh && lock ? levelsOf(mesh) : undefined;
           if (mesh && levels && reuse?.stored) {
-            const stored = reuse.stored, keys = list.map((tile) => tile.stored), name = spec.options.name, material = spec.options.material;
+            const stored = reuse.stored, material = group.options.material;
+            const wanted = members.map(({ spec, list: tiles }) => ({ name: spec.options.name, keys: tiles.map((tile) => tile.stored) }));
             levels.bring = async (): Promise<BlockArrays | null> => {
-              const got = await stored.fetch(keys);
+              const got = await stored.fetch(wanted.flatMap((w) => w.keys));
               const read: Tile[] = [];
-              for (const k of keys) {
-                const tile = got.get(k)?.get(name);
-                if (!tile) return null;
-                read.push(tile);
+              for (const { name, keys } of wanted) {
+                for (const k of keys) {
+                  const tile = got.get(k)?.get(name);
+                  if (!tile) return null;
+                  read.push(tile);
+                }
               }
               return blockArraysOf(read, material);
             };
           }
-          if (mesh && spec.renderOrder !== undefined) mesh.renderOrder = spec.renderOrder;
+          if (mesh && group.renderOrder !== undefined) mesh.renderOrder = group.renderOrder;
           // DO NOT wait for the camera to frame it: a block out of view was never uploaded and kept its copy on the CPU
           if (mesh && !(lock && !near)) void warmLooseAhead([mesh]);
-          if (mesh) chunks?.set(key, { parts: list.map((tile) => tile.value), mesh });
+          if (mesh) chunks?.set(key, { parts: tileSignature(lists), mesh });
           else chunks?.delete(key);
           chunksMerged++;
           yield;
         }
-        let order = state.blocks.get(spec.options.name);
-        if (!order) state.blocks.set(spec.options.name, order = new Map());
+        let order = state.blocks.get(group.name);
+        if (!order) state.blocks.set(group.name, order = new Map());
         if (!mesh) { order.delete(chunk); continue; }
-        // Where a fresh build draws it: by its first tile holding the surface.
-        order.set(chunk, list[0]!.key);
+        // Where a fresh build draws it: by its first tile holding a surface of the group.
+        order.set(chunk, Math.min(...members.map((member) => member.list[0]!.key)));
         if (!chunks) own.set(key, mesh);
       }
     }
     // Every block of the pass, the ones merged now and the ones standing, in the order a fresh build draws them.
-    for (const spec of specs) {
-      const order = state.blocks.get(spec.options.name);
+    for (const drawn of groups) {
+      const order = state.blocks.get(drawn.name);
       if (!order) continue;
       for (const [chunk] of [...order].sort((p, q) => p[1] - q[1])) {
-        const key = keyOf(spec, chunk);
+        const key = keyOf(drawn, chunk);
         const mesh = chunks?.get(key)?.mesh ?? own.get(key);
         if (!mesh) continue;
         usedChunks.add(key);
