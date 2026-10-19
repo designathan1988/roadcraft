@@ -51,6 +51,10 @@ describe('a loose mesh sent to the GPU', () => {
     const before = b.matrixWorld.clone();
     drainWarm(renderer);
     drawn.length = 0;
+    // No child event on its group (the renderer takes them for casters come and gone, and throws the sun's stores away: TST-05).
+    let events = 0;
+    group.addEventListener('childadded', () => { events++; });
+    group.addEventListener('childremoved', () => { events++; });
     const sent = warmLooseAhead([b]);
     expect(warmPending()).toBe(true);
     drainWarm(renderer);
@@ -62,6 +66,7 @@ describe('a loose mesh sent to the GPU', () => {
     expect(group.children).toEqual([a, b, c]);
     expect(b.parent).toBe(group);
     expect(b.matrixWorld.equals(before)).toBe(true);
+    expect(events).toBe(0);
     expect(warmPending()).toBe(false);
   });
 

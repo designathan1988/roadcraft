@@ -577,12 +577,13 @@ LOOSE.scene.overrideMaterial = LOOSE.material;
 LOOSE.camera.layers.enableAll();
 
 /** DO NOT draw the whole scene for it (on a layer of its own) */
+/** DO NOT move it with `add`/`remove`: they fire `childremoved`/`childadded` on its group, and the renderer takes those for casters come and gone (`renderer.ts` stir): every warm threw the sun cascades' stores away and drew them whole (TST-05, RND-17). It is put in the loose scene by hand, never taken out of its group's children: three's render reads the scene's children and the mesh's matrixWorld (r186 `projectObject`, the loose scene updating no matrix), and uploads in `objects.update` there. */
 function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly BufferGeometry[]): void {
   const parent = mesh.parent;
-  const at = parent ? parent.children.indexOf(mesh) : -1;
   const visible = mesh.visible, culled = mesh.frustumCulled, original = mesh.geometry;
   const previous = renderer.getRenderTarget();
-  LOOSE.scene.add(mesh);
+  LOOSE.scene.children.push(mesh);
+  mesh.parent = LOOSE.scene;
   try {
     mesh.visible = true;
     mesh.frustumCulled = false;
@@ -595,9 +596,9 @@ function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly Buf
     mesh.geometry = original;
     mesh.visible = visible;
     mesh.frustumCulled = culled;
-    LOOSE.scene.remove(mesh);
-    // Back where it was among its group's children: the order meshes of one render order are drawn in.
-    if (parent) { parent.add(mesh); parent.children.splice(parent.children.length - 1, 1); parent.children.splice(at, 0, mesh); }
+    LOOSE.scene.children.length = 0;
+    // Back under its group, where it never left its group's children: no event, the order meshes are drawn in kept.
+    mesh.parent = parent;
     renderer.setRenderTarget(previous);
   }
 }
