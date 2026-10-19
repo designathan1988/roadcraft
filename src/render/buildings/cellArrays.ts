@@ -149,13 +149,6 @@ interface ShellArrays {
   readonly opening?: Uint8Array;
 }
 
-/** A detail cell's instances of a kind in a batch: its first, how many and their bounds. */
-export interface InstancePiece {
-  readonly start: number;
-  readonly count: number;
-  readonly bounds: Bounds;
-}
-
 interface InstanceArrays {
   readonly count: number;
   readonly poses: Float32Array;
@@ -167,8 +160,6 @@ interface InstanceArrays {
   /** The shell's parts: each one's finish id, wear and ground (`shellParts.ts`). */
   readonly looks?: Float32Array;
   readonly bounds: Bounds;
-  /** Pieced by detail cell (`cellArrays` groups): each one's first instance, count and bounds, each drawn by a mesh of its own, culled by its own box. */
-  readonly pieces?: readonly InstancePiece[];
 }
 
 export interface CellArrays {
@@ -196,8 +187,6 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
   for (const piece of floats) lowest = Math.min(lowest, piece.bounds[1]!);
   const shells = selection.grid && floats.length ? onGrid(floats, cellShellGrid(selection.grid[0], selection.grid[1], lowest)) ?? floats : floats;
   const parts: Partial<Record<PartKind, InstanceArrays>> = {};
-  // The instances pieced by detail cell as the shells are: the chunks group by group, each group's in its order.
-  const grouped = groups && !ghost ? groupChunks(chunks, groups) : null;
   for (const kind of selection.parts) {
     // A lantern's light on the wall is light, not a part: no ghost or faded copy of it.
     if (kind === 'wash' && (ghost || dim)) continue;
@@ -209,9 +198,8 @@ export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSele
     const coloured = !ghost && (dim || COLOURED_PARTS.has(kind));
     // The shell's parts read their finish, wear and ground as the shell's vertices do, faded too (`fade.ts`); the preview's ghost reads none.
     const looked = !ghost && SHELL_PARTS.has(kind);
-    const arrays = partArrays(grouped ? grouped.chunks : chunks, kind, count, glassy, coloured, looked);
-    const pieces = grouped ? instancePieces(grouped, kind, arrays.poses, boxes.parts[kind]) : null;
-    parts[kind] = { count, ...arrays, bounds: instanceBounds(arrays.poses, count, boxes.parts[kind]), ...(pieces ? { pieces } : {}) };
+    const arrays = partArrays(chunks, kind, count, glassy, coloured, looked);
+    parts[kind] = { count, ...arrays, bounds: instanceBounds(arrays.poses, count, boxes.parts[kind]) };
   }
   const furniture: Partial<Record<FurnitureKind, InstanceArrays>> = {};
   // Furniture, only where an interior is drawn: one batch per kind.
@@ -507,28 +495,6 @@ function partArrays(chunks: readonly BuildingChunk[], kind: PartKind, count: num
     at += batch.count;
   }
   return { poses, ...(instanceColor ? { instanceColor } : {}), ...(litSlot ? { litSlot } : {}), ...(rooms ? { rooms } : {}), ...(looks ? { looks } : {}) };
-}
-
-/** `chunks` group by group (each group's in its order, the groups in the order they first come), and where each group's run of them ends. */
-function groupChunks(chunks: readonly BuildingChunk[], groups: readonly string[]): { chunks: BuildingChunk[]; ends: number[] } {
-  const byGroup = new Map<string, BuildingChunk[]>();
-  chunks.forEach((chunk, i) => { const key = groups[i]!; const list = byGroup.get(key); if (list) list.push(chunk); else byGroup.set(key, [chunk]); });
-  const out: BuildingChunk[] = [], ends: number[] = [];
-  for (const list of byGroup.values()) { out.push(...list); ends.push(out.length); }
-  return { chunks: out, ends };
-}
-
-/** A kind's instances by group (`groupChunks`), the groups with none left out; null when they are all in one. */
-function instancePieces(grouped: { chunks: readonly BuildingChunk[]; ends: readonly number[] }, kind: PartKind, poses: Float32Array, box: readonly number[]): InstancePiece[] | null {
-  const pieces: InstancePiece[] = [];
-  let chunk = 0, at = 0;
-  for (const end of grouped.ends) {
-    let count = 0;
-    for (; chunk < end; chunk++) count += grouped.chunks[chunk]!.parts[kind].count;
-    if (count) pieces.push({ start: at, count, bounds: instanceBounds(poses.subarray(at * POSE_FLOATS, (at + count) * POSE_FLOATS), count, box) });
-    at += count;
-  }
-  return pieces.length > 1 ? pieces : null;
 }
 
 /** The furniture of one kind of every chunk, its poses in chunk order. */

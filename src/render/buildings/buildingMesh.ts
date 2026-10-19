@@ -3940,71 +3940,62 @@ export function meshesOf(arrays: CellArrays, kit: BuildingKit, ghost: boolean, d
     const glassy = part.litSlot !== undefined;
     // And the shell's parts their finish, wear and ground (`shellParts.ts`).
     const looked = part.looks !== undefined;
-    // The batch's instance buffers, shared by its meshes: one a detail cell where the batch is pieced (`cellArrays.ts` pieces), each bound at its first instance (three binds an interleaved attribute at its `offset`, as `partCells.ts` does).
+    // The kit's model with this batch's poses (`partPose.ts`): its own attributes shared, never copied.
     const poseBuffer = new InstancedInterleavedBuffer(part.poses, POSE_FLOATS);
-    const slotBuffer = glassy ? new InstancedInterleavedBuffer(part.litSlot!, 1) : null;
+    const geometry = posedCopy(kit.geometry[kind], poseBuffer);
     let roomBuffer: InstancedInterleavedBuffer | null = null;
     if (glassy) {
+      geometry.setAttribute('litSlot', new InstancedBufferAttribute(part.litSlot!, 1));
+      // And the room behind each, for the interior drawn through it (`kit.ts`).
       roomBuffer = new InstancedInterleavedBuffer(part.rooms!, ROOM_FLOATS);
       // Half floats: three uploads a Uint16Array as HALF_FLOAT where its buffer says so (r186 `WebGLAttributes.createBuffer`, an interleaved attribute by its buffer).
       (roomBuffer as InstancedInterleavedBuffer & { isFloat16BufferAttribute: boolean }).isFloat16BufferAttribute = true;
+      geometry.setAttribute('roomA', new InterleavedBufferAttribute(roomBuffer, 4, 0));
+      geometry.setAttribute('roomB', new InterleavedBufferAttribute(roomBuffer, 4, 4));
+      geometry.setAttribute('roomC', new InterleavedBufferAttribute(roomBuffer, 4, 8));
     }
     const lookBuffer = looked ? new InstancedInterleavedBuffer(part.looks!, LOOK_FLOATS) : null;
-    // Tints in half floats: HALF_FLOAT where the buffer says so (r186 `WebGLAttributes.createBuffer`).
-    const colourBuffer = part.instanceColor ? Object.assign(new InstancedInterleavedBuffer(part.instanceColor, 3), { isFloat16BufferAttribute: true }) : null;
+    if (lookBuffer) {
+      geometry.setAttribute(FINISH_ATTRIBUTE, new InterleavedBufferAttribute(lookBuffer, 1, 0));
+      geometry.setAttribute('aDecay', new InterleavedBufferAttribute(lookBuffer, 1, 1));
+      geometry.setAttribute(GROUND_ATTRIBUTE, new InterleavedBufferAttribute(lookBuffer, 1, 2));
+    }
     // Faded, each kind as `fade.ts` fades it: the shell's parts with the shell. No matrix of three's (`posePart`): the poses are the instances.
     const material = ghost ? kit.ghostParts : partLook(kit, kind, dim).material;
-    const ranges = part.pieces ?? [{ start: 0, count, bounds: part.bounds }];
-    ranges.forEach((range, r) => {
-      const at = range.start;
-      // The kit's model with this batch's poses (`partPose.ts`): its own attributes shared, never copied.
-      const geometry = posedCopy(kit.geometry[kind], poseBuffer, at);
-      if (slotBuffer && roomBuffer) {
-        geometry.setAttribute('litSlot', new InterleavedBufferAttribute(slotBuffer, 1, at));
-        // And the room behind each, for the interior drawn through it (`kit.ts`).
-        geometry.setAttribute('roomA', new InterleavedBufferAttribute(roomBuffer, 4, at * ROOM_FLOATS));
-        geometry.setAttribute('roomB', new InterleavedBufferAttribute(roomBuffer, 4, at * ROOM_FLOATS + 4));
-        geometry.setAttribute('roomC', new InterleavedBufferAttribute(roomBuffer, 4, at * ROOM_FLOATS + 8));
+    const mesh = new InstancedMesh(geometry, material, 0);
+    mesh.count = count;
+    mesh.userData['posedFrom'] = kit.geometry[kind];
+    mesh.name = `building-${kind}${ghost ? '-preview' : ''}`;
+    mesh.castShadow = !ghost && kit.castsShadow.has(kind);
+    if (mesh.castShadow) mesh.customDepthMaterial = partPoseDepth(material);
+    mesh.receiveShadow = !ghost;
+    // Tints in half floats: HALF_FLOAT where the attribute says so (r186 `WebGLAttributes.createBuffer`).
+    if (part.instanceColor) mesh.instanceColor = Object.assign(new InstancedBufferAttribute(part.instanceColor, 3), { isFloat16BufferAttribute: true });
+    mesh.boundingBox = boxOf(part.bounds);
+    mesh.boundingSphere = sphereOf(part.bounds);
+    // DO NOT let go of the kit's model it draws: it is shared by every batch of the kind; only its own instance buffers go.
+    if (!ghost) {
+      const own: Record<string, BufferAttribute | InstancedInterleavedBuffer> = { poses: poseBuffer };
+      if (mesh.instanceColor) own.instanceColor = mesh.instanceColor;
+      if (glassy) {
+        own.litSlot = geometry.getAttribute('litSlot') as BufferAttribute;
+        own.rooms = roomBuffer!;
       }
-      if (lookBuffer) {
-        geometry.setAttribute(FINISH_ATTRIBUTE, new InterleavedBufferAttribute(lookBuffer, 1, at * LOOK_FLOATS));
-        geometry.setAttribute('aDecay', new InterleavedBufferAttribute(lookBuffer, 1, at * LOOK_FLOATS + 1));
-        geometry.setAttribute(GROUND_ATTRIBUTE, new InterleavedBufferAttribute(lookBuffer, 1, at * LOOK_FLOATS + 2));
-      }
-      const mesh = new InstancedMesh(geometry, material, 0);
-      mesh.count = range.count;
-      mesh.userData['posedFrom'] = kit.geometry[kind];
-      mesh.name = `building-${kind}${ghost ? '-preview' : ''}`;
-      mesh.castShadow = !ghost && kit.castsShadow.has(kind);
-      if (mesh.castShadow) mesh.customDepthMaterial = partPoseDepth(material);
-      mesh.receiveShadow = !ghost;
-      if (colourBuffer) mesh.instanceColor = new InterleavedBufferAttribute(colourBuffer, 3, at * 3) as unknown as InstancedBufferAttribute;
-      mesh.boundingBox = boxOf(range.bounds);
-      mesh.boundingSphere = sphereOf(range.bounds);
-      // DO NOT let go of the kit's model it draws: it is shared by every batch of the kind; only its own instance buffers go, once, by the first of its meshes.
-      if (!ghost && r === 0) {
-        const own: Record<string, InstancedInterleavedBuffer> = { poses: poseBuffer };
-        if (colourBuffer) own.instanceColor = colourBuffer;
-        if (slotBuffer && roomBuffer) {
-          own.litSlot = slotBuffer;
-          own.rooms = roomBuffer;
+      if (lookBuffer) own.looks = lookBuffer;
+      gpuOnlyAttributes(mesh, own, () => {
+        const again = refill?.().parts[kind];
+        if (!again) return {};
+        const out: Record<string, ArrayLike<number>> = { poses: again.poses };
+        if (again.instanceColor) out.instanceColor = again.instanceColor;
+        if (glassy) {
+          out.litSlot = again.litSlot!;
+          out.rooms = again.rooms!;
         }
-        if (lookBuffer) own.looks = lookBuffer;
-        gpuOnlyAttributes(mesh, own, () => {
-          const again = refill?.().parts[kind];
-          if (!again) return {};
-          const out: Record<string, ArrayLike<number>> = { poses: again.poses };
-          if (again.instanceColor) out.instanceColor = again.instanceColor;
-          if (glassy) {
-            out.litSlot = again.litSlot!;
-            out.rooms = again.rooms!;
-          }
-          if (looked) out.looks = again.looks!;
-          return out;
-        });
-      }
-      meshes.push(mesh);
-    });
+        if (looked) out.looks = again.looks!;
+        return out;
+      });
+    }
+    meshes.push(mesh);
     const g = kit.geometry[kind];
     triangles += ((g.index ? g.index.count : g.getAttribute('position').count) / 3) * count;
   }
