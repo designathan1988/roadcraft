@@ -90,9 +90,12 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   if (pedestrians) w.pedEngine.step(w);
   lap('3 pedestrians');
 
-  // 4. longitudinal constraints
-  for (const v of w.vehiclesInIdOrder()) {
-    v.constraints = longitudinalConstraints(w, v);
+  // 4. longitudinal constraints. Without traffic only the audit reads them (and the stall counters it reads): DO NOT build them for the whole fleet then (SIM-32); traffic coming back builds them again here before anything reads them.
+  const constrained = traffic || w.auditEnabled;
+  if (constrained) {
+    for (const v of w.vehiclesInIdOrder()) {
+      v.constraints = longitudinalConstraints(w, v);
+    }
   }
   lap('4 constraints');
 
@@ -108,7 +111,7 @@ export function step(w: SimWorld, opts: StepOptions = {}): void {
   stepDespawn(w);
   collectGhosts(w);
   runWatchdog(w);
-  updateStallCounters(w);
+  if (constrained) updateStallCounters(w);
   lap('7 cleanup');
 
   // 8. audit
