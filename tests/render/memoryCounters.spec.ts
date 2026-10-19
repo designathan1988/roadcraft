@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BatchedMesh, BoxGeometry, BufferAttribute, BufferGeometry, DataTexture, Group, InstancedMesh, InterleavedBuffer, InterleavedBufferAttribute, Mesh, MeshBasicMaterial, ShaderMaterial } from 'three';
-import { countMemory } from '@render/memoryCounters';
+import { BatchedMesh, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, DataArrayTexture, DataTexture, Group, InstancedMesh, InterleavedBuffer, InterleavedBufferAttribute, Mesh, MeshBasicMaterial, ShaderMaterial, WebGLRenderTarget } from 'three';
+import { countMemory, textureGpuBytes } from '@render/memoryCounters';
 
 /** THE SCENE'S MEMORY, COUNTED (`render/memoryCounters.ts`) */
 describe('countMemory', () => {
@@ -25,10 +25,52 @@ describe('countMemory', () => {
     const position = new BufferAttribute(new Float32Array(300), 3);
     geometry.setAttribute('position', position);
     const root = new Mesh(geometry, new MeshBasicMaterial());
-    (position as { array: ArrayLike<number> | null }).array = null; // as `buildingMesh.ts` letGoOfArray
+    // As `mesh/gpuOnly.ts` letGo: the size kept, the array let go.
+    (position as unknown as { keptBytes: number }).keptBytes = 300 * 4;
+    (position as { array: ArrayLike<number> | null }).array = null;
     const c = countMemory(root);
     expect(c.geometryBytes).toBe(300 * 4);
     expect(c.geometryCpuBytes).toBe(0);
+  });
+
+  it('holds nothing for a buffer let go with no size kept (a far road block given back and disposed)', () => {
+    const geometry = new BufferGeometry();
+    const position = new BufferAttribute(new Float32Array(300), 3);
+    geometry.setAttribute('position', position);
+    (position as { array: ArrayLike<number> | null }).array = null; // as `mesh/roadResidency.ts` giveBackArrays
+    const c = countMemory(new Mesh(geometry, new MeshBasicMaterial()));
+    expect(c.geometryBytes).toBe(0);
+    expect(c.releasedBuffers).toBe(1);
+  });
+
+  it("counts an array texture's given levels once, every layer already in each level's array", () => {
+    // 4 layers of 8x8 RGBA8 with two levels: 8*8*4*4 and 4*4*4*4 bytes, the layers inside each.
+    const layered = new DataArrayTexture(new Uint8Array(8 * 8 * 4 * 4), 8, 8, 4);
+    layered.mipmaps = [{ data: new Uint8Array(8 * 8 * 4 * 4), width: 8, height: 8 }, { data: new Uint8Array(4 * 4 * 4 * 4), width: 4, height: 4 }] as never;
+    expect(textureGpuBytes(layered)).toBe(8 * 8 * 4 * 4 + 4 * 4 * 4 * 4);
+  });
+
+  it("leaves a render target's texture to the targets' count", () => {
+    const target = new WebGLRenderTarget(64, 64);
+    const material = new ShaderMaterial({ uniforms: { tDiffuse: { value: target.texture } } });
+    expect(countMemory(new Mesh(new BufferGeometry(), material)).textures).toBe(0);
+  });
+
+  it("counts a texture's mip chain, a canvas emptied after upload, and the uniforms a material was compiled with", () => {
+    const mipped = new CanvasTexture({ width: 64, height: 64 } as unknown as HTMLCanvasElement);
+    expect(textureGpuBytes(mipped)).toBe(Math.round((64 * 64 * 4 * 4) / 3));
+    // `signs.ts`: the size kept before the canvas was emptied.
+    const sheet = new CanvasTexture({ width: 0, height: 0 } as unknown as HTMLCanvasElement);
+    sheet.userData['uploadedBytes'] = 4096;
+    expect(textureGpuBytes(sheet)).toBe(4096);
+    // A texture put in by `onBeforeCompile`: in no field of the material, only in what it was compiled with.
+    const injected = new DataTexture(new Uint8Array(16 * 16 * 4), 16, 16);
+    const material = new MeshBasicMaterial();
+    const mesh = new Mesh(new BufferGeometry(), material);
+    expect(countMemory(mesh).textures).toBe(0);
+    const c = countMemory(mesh, { uniformsOf: (m) => (m === material ? { uLots: { value: injected } } : undefined) });
+    expect(c.textures).toBe(1);
+    expect(c.textureBytes).toBe(16 * 16 * 4);
   });
 
   it('counts instance matrices, an interleaved buffer once, and shader uniforms', () => {

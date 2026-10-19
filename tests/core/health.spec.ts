@@ -71,6 +71,18 @@ describe('FrameTimer', () => {
   });
 });
 
+describe('FrameTimer keeps a stretch of time, not a count', () => {
+  it('keeps every frame of the last 30 s (240 frames lost the first second of a 5 s window)', () => {
+    const timer = new FrameTimer();
+    // 10 s at 60 Hz: 600 frames, all kept.
+    for (let i = 0; i < 600; i++) { timer.begin(i * 16.7); timer.end(i * 16.7 + 5); }
+    expect(timer.recent().length).toBe(600);
+    // 40 s on: the frames older than 30 s let go.
+    for (let i = 600; i < 2400; i++) { timer.begin(i * 16.7); timer.end(i * 16.7 + 5); }
+    expect(timer.recent()[0]!.end).toBeGreaterThanOrEqual(2399 * 16.7 + 5 - 30_000);
+  });
+});
+
 describe('frameStats', () => {
   it('takes percentiles by nearest rank: always one of the values, the 100th the largest', () => {
     const values = [15, 20, 35, 40, 50];

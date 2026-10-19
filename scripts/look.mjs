@@ -351,7 +351,7 @@ ${(await cpu()).replace(/^/gm, '    ')}`); } catch (error) { console.log(`  no C
       line.value = await page.evaluate(() => {
         const r = window.__roadcraft.memory();
         const d = window.__roadcraft.doc;
-        return { buildings: d.buildings.size, segments: d.segments.size, lots: d.lots.length, heapMB: r.heapMB, geometryMB: r.geometryMB, geometryCpuMB: r.geometryCpuMB, textureMB: r.textureMB, targetMB: r.targetMB, buildingDetailMB: r.buildingDetailMB, drawCalls: r.drawCalls, triangles: r.triangles, programs: r.programs, cpuByName: r.cpuByName.slice(0, 8) };
+        return { buildings: d.buildings.size, segments: d.segments.size, lots: d.lots.length, heapMB: r.heapMB, geometryMB: r.geometryMB, geometryCpuMB: r.geometryCpuMB, textureMB: r.textureMB, targetMB: r.targetMB, buildingDetailMB: r.buildingDetailMB, drawCalls: r.drawCalls, builtTriangles: r.builtTriangles, drawnTriangles: r.drawnTriangles, programs: r.programs, cpuByName: r.cpuByName.slice(0, 8) };
       });
       // The heap exact after a collection (CDP Runtime.getHeapUsage), not `performance.memory`'s rounded figure.
       if (step.memory === 'exact') {

@@ -135,8 +135,10 @@ export interface FrameRecord {
   readonly systems: ReadonlyMap<string, number>;
 }
 
-/** How many frames are kept to be matched against a long frame. */
-const FRAMES_KEPT = 240;
+/** How long frames are kept, ms: a measure of a stretch reads all of it (240 frames, the count kept before, was 4 s at 60 Hz: a 5 s window lost its first second, found by the probe 2026-10-19). */
+const FRAMES_KEPT_MS = 30_000;
+/** And never more than this many (a page drawing far past 60 Hz). */
+const FRAMES_KEPT_MAX = 4096;
 
 /** Times the systems of each frame: `begin` at the top of the frame, `mark` after each system with its name */
 export class FrameTimer {
@@ -161,7 +163,7 @@ export class FrameTimer {
   end(now = performance.now()): FrameRecord {
     const frame: FrameRecord = { start: this.start, end: now, systems: this.current };
     this.frames.push(frame);
-    if (this.frames.length > FRAMES_KEPT) this.frames.shift();
+    while (this.frames.length > FRAMES_KEPT_MAX || (this.frames.length > 0 && this.frames[0]!.end < now - FRAMES_KEPT_MS)) this.frames.shift();
     return frame;
   }
 
@@ -170,7 +172,7 @@ export class FrameTimer {
     return this.frames.filter((f) => f.end >= from && f.start <= to);
   }
 
-  /** The frames kept (the last `FRAMES_KEPT`), oldest first. */
+  /** The frames kept (the last `FRAMES_KEPT_MS`), oldest first. */
   recent(): readonly FrameRecord[] {
     return this.frames;
   }

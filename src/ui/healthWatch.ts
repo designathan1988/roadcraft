@@ -28,11 +28,17 @@ export interface LongFrameEntry {
   readonly scripts?: readonly { readonly duration: number }[];
 }
 
-/** The work in a long frame, ms: its scripts and its rendering */
-export function longFrameWork(entry: LongFrameEntry): number {
-  const scripts = (entry.scripts ?? []).reduce((sum, s) => sum + s.duration, 0);
+/** The work in a long frame, ms: its scripts and its rendering
+ *  DO NOT take the listed scripts alone: the browser lists only scripts over 5 ms, and a frame of 30 callbacks of 4 ms reported only its render
+ *  (report TST-09). The game's own steps measured inside the frame (`stepsMs`) count, and with no script listed the time before the render
+ *  (`renderStart - startTime`) is where the unlisted ones ran. */
+export function longFrameWork(entry: LongFrameEntry, stepsMs = 0): number {
+  const listed = entry.scripts ?? [];
+  const scripts = listed.reduce((sum, s) => sum + s.duration, 0);
+  const beforeRender = !listed.length && entry.renderStart ? entry.renderStart - entry.startTime : 0;
+  const work = Math.max(scripts, stepsMs, beforeRender);
   const render = entry.renderStart ? entry.startTime + entry.duration - entry.renderStart : 0;
-  return Math.max(Math.min(entry.duration, scripts + render), entry.blockingDuration ?? 0);
+  return Math.max(Math.min(entry.duration, work + render), entry.blockingDuration ?? 0);
 }
 
 /** The code's measured steps that ran IN a frame: begun and ended within it, as a synchronous step does. */
@@ -167,7 +173,8 @@ export function watchHealth(options: {
           if (entry.duration < LONG_FRAME_MS) continue;
           const loaf = entry as PerformanceEntry & LongFrameEntry & { scripts?: readonly { duration: number; invoker?: string; sourceFunctionName?: string; sourceURL?: string }[] };
           // Long by the clock with no work in it is the browser idle, not a hitch.
-          const work = longFrameWork(loaf);
+          const stepsMs = stepsWithin(hitches, entry.startTime, entry.startTime + entry.duration).reduce((sum, h) => sum + (h.end - h.start), 0);
+          const work = longFrameWork(loaf, stepsMs);
           if (work < LONG_FRAME_MS) continue;
           const scripts = [...(loaf.scripts ?? [])].sort((a, b) => b.duration - a.duration).slice(0, 3)
             .filter((s) => s.duration >= 5)

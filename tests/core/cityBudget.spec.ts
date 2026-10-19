@@ -42,8 +42,26 @@ describe("the city plan's budgets", () => {
     const rows = cityBudgetTable(measure({ gpuMs: null, heapBytes: 7_000e6, bytesByName: new Map([['asphalt', 80e6]]) }));
     expect(rows.find((r) => r.item === 'GPU p95 (street)')?.status).toBe('not measured');
     expect(rows.find((r) => r.item === 'video memory: roads')?.status).toBe('no budget in the plan');
-    expect(rows.find((r) => r.item.startsWith('JS heap'))?.status).toBe('approximate');
+    // A heap of 7 GB fails (it passed as "approximate": report JOB-15), and says the workers were not in it.
+    expect(rows.find((r) => r.item.startsWith('JS heap'))).toMatchObject({ status: 'over', item: expect.stringContaining('workers not measured') });
     expect(rows.find((r) => r.item.startsWith('video memory: render targets'))?.status).toBe('not measured');
+  });
+
+  it("adds the workers' heaps to the page's when they are measured", () => {
+    const row = cityBudgetTable(measure({ heapBytes: 1_000e6, workerHeapBytes: 700e6 })).find((r) => r.item.startsWith('JS heap'))!;
+    expect(row).toMatchObject({ item: 'JS heap, the page and its workers', status: 'over', measured: '1,700 MB' });
+  });
+
+  it('fails geometry under a name no group knows, and names it', () => {
+    const row = (names: [string, number][]) => cityBudgetTable(measure({ bytesByName: new Map(names) })).find((r) => r.item.startsWith('video memory: other'))!;
+    expect(row([['asphalt', 10e6]]).status).toBe('ok');
+    const odd = row([['mystery-mesh', 12e6], ['asphalt', 10e6]]);
+    expect(odd.status).toBe('over');
+    expect(odd.measured).toContain('mystery-mesh 12');
+  });
+
+  it('does not take an fps it could not measure for one', () => {
+    expect(cityBudgetTable(measure({ fps: null })).find((r) => r.item === 'fps (street)')?.status).toBe('not measured');
   });
 
   it('holds the fps as a floor, per view', () => {

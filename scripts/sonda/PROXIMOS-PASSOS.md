@@ -30,7 +30,20 @@ Os achados estão na seção 2, ordenados pelo custo medido. Os que pesam, lidos
 
 Defeitos da própria sonda achados e consertados nesta rodada, para o registro: o trace de 892 MB não cabia numa string e ficou sem leitura (agora é lido em fluxo); o buffer de trace do Chrome encheu na cena 7 e as cenas 8 e 9 ficaram só com LoAF e perfil (próxima rodada: um trace por cena); cada tarefa longa era contada duas vezes (`RunTask` dentro de `ThreadControllerImpl::RunTask`); o cruzamento com o knip dava zero porque os caminhos dos mapas do Vite vinham sem a pasta; as chamadas da própria sonda no início da janela apareciam como trabalho do jogo.
 
-### Fica para src/ (nada feito; cada item precisa do seu sim)
+### Feito em src/ com o sim do jogador (19/10/2026): os itens 1 a 12 abaixo
+
+- **Itens 1, 2 e 10:** o renderer guarda chamadas e triângulos logo depois do pós (`frameDrawn`), e `budget()` lê isso. `memory()` separa `builtTriangles` de `drawnTriangles`. O `autoReset` já estava desligado e o `info.reset()` já era um por quadro.
+- **Item 3:** `budget()` tira o fps da mediana dos intervalos dos últimos 2 s. Sem 60 quadros seguidos, diz "não medido".
+- **Item 4:** o `countMemory` conta os mips, o array real das texturas de dados, os níveis dados (sem multiplicar pelas camadas), o canvas das placas pelo tamanho enviado e as texturas dos uniforms compilados. Deixa as texturas de alvo de render para a conta dos alvos e não conta como residente um buffer solto sem tamanho. Medido na cidade pequena: texturas de 41 MB para cerca de 385 MB.
+- **Item 5:** `dispose.target` no pico e no "último" do HUD.
+- **Item 6:** `growTimed` pede ao worker e mede até o prédio escrito. O teste de arquitetura agora proíbe qualquer `growOnLot` na página.
+- **Item 7:** `longFrameWork` soma os passos medidos pelo jogo e o tempo antes do render quando nenhum script foi listado.
+- **Item 8:** `perfBudget` reprova o grupo `other` e lista os nomes a classificar, compara o heap com 1,5 GB e soma os workers quando medidos. O comentário do governador de tempo foi corrigido.
+- **Item 9:** `npm run build:probe` e `npm run preview:probe` (porta 5301) expõem as sondas num build de produção, sem os painéis de DEV.
+- **Item 11:** o `FrameTimer` guarda 30 s de quadros (até 4096), não 240.
+- **Item 12:** `measure('running')` roda a simulação com passo fixo de 1/60 s por quadro.
+
+### A lista original (todos feitos, mantida como referência)
 
 | # | Defeito | O que fazer | Onde (conferido) |
 |---|---|---|---|

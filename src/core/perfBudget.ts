@@ -40,7 +40,7 @@ export function stepBudget(name: string): { readonly key: string; readonly budge
 export type CityView = 'street' | 'district' | 'map';
 
 /** Per view: triangles and draw calls (colour + shadow) of one frame, GPU ms (p95), fps (a floor).
- *  DO NOT set the triangles under what the view draws at full facade level on a dedicated GPU (district 13 M, street 5.4 M, map 4.9 M measured 2026-10-16): the levels' error scale rises until they fit (`buildings/frameBudget.ts`), and at 8 M the district view fell to masses - the picture lost for a number. A GPU that cannot play the view at all is the time governor's to pace (`gpuMs` times `OVER`), a step at a time and only while a step pays. */
+ *  DO NOT set the triangles under what the view draws at full facade level on a dedicated GPU (district 13 M, street 5.4 M, map 4.9 M measured 2026-10-16): the levels' error scale rises until they fit (`buildings/frameBudget.ts`), and at 8 M the district view fell to masses - the picture lost for a number. `gpuMs` is a gate: a view over it is `over` (`TimeGovernor` in `buildings/frameBudget.ts` is wired to nothing: no governor paces the detail by the GPU's time, report JOB-15). */
 export const VIEW_BUDGETS: Readonly<Record<CityView, { readonly triangles: number; readonly drawCalls: number; readonly gpuMs: number; readonly fps: number }>> = {
   street: { triangles: 16_000_000, drawCalls: 700 + 300, gpuMs: 12, fps: 60 },
   district: { triangles: 16_000_000, drawCalls: 800 + 300, gpuMs: 12, fps: 60 },
@@ -62,11 +62,14 @@ const MEMORY_BUDGETS_MB: Readonly<Record<MemoryGroup, number | null>> = {
   terrain: null,
   vegetation: null,
   'people and vehicles': null,
-  other: null,
+  // DO NOT leave it without a budget: a mesh with a name no group knows fell here and never failed (report JOB-15). Nothing is meant to be
+  // here, so 0: what lands is a name to classify in `memoryGroup`, listed by the row.
+  other: 0,
 };
 
-/** Textures (600 MB) and the live JavaScript heap (1.5 GB, `CIDADE-10KM.md`). */
+/** Textures (600 MB), the render targets and shadow maps (300 MB), the live JavaScript heap of the page and its workers (1.5 GB): `CIDADE-10KM.md`. */
 const TEXTURE_BUDGET_MB = 600;
+const TARGET_BUDGET_MB = 300;
 const HEAP_BUDGET_MB = 1500;
 
 /** The plan's group of a scene object, by its name (`mesh.name`, as `buildingMesh.ts` and the others set it). */
@@ -91,7 +94,8 @@ export interface CityMeasure {
   readonly drawCalls: number;
   /** p95 of the last frames' GPU time; null when the GPU timer is not there. */
   readonly gpuMs: number | null;
-  readonly fps: number;
+  /** Frames a second of a stretch drawn back to back, from the frames' own times; null when the game was not drawing every refresh (the loop on demand: a smoothed 1/delta then told how often it drew, report UI-15 d). */
+  readonly fps: number | null;
   /** GPU geometry bytes by object name (`render/memoryCounters.ts`). */
   readonly bytesByName: ReadonlyMap<string, number>;
   readonly textureBytes: number;
@@ -101,6 +105,8 @@ export interface CityMeasure {
   readonly geometryCpuBytes: number;
   /** Chromium's `performance.memory.usedJSHeapSize`: V8 heap PLUS external memory (the arrays), bucketed; null elsewhere. */
   readonly heapBytes: number | null;
+  /** The workers' heaps (`measureUserAgentSpecificMemory`), added to the page's when measured; null: the page's alone, said so. */
+  readonly workerHeapBytes?: number | null;
 }
 
 export interface BudgetRow {
@@ -129,25 +135,32 @@ export function cityBudgetTable(m: CityMeasure): BudgetRow[] {
   cap(`triangles drawn (${m.view})`, m.triangles, v.triangles, '');
   cap(`draw calls, colour + shadow (${m.view})`, m.drawCalls, v.drawCalls, '');
   cap(`GPU p95 (${m.view})`, m.gpuMs, v.gpuMs, 'ms');
-  const slow = m.fps < v.fps;
-  rows.push({ item: `fps (${m.view})`, measured: fmt(m.fps), budget: `≥ ${v.fps}`, status: slow ? 'over' : 'ok', times: slow && m.fps > 0 ? Math.round((v.fps / m.fps) * 10) / 10 : 0 });
+  if (m.fps === null) rows.push({ item: `fps (${m.view})`, measured: '—', budget: `≥ ${v.fps}`, status: 'not measured', times: 0 });
+  else {
+    const slow = m.fps < v.fps;
+    rows.push({ item: `fps (${m.view})`, measured: fmt(m.fps), budget: `≥ ${v.fps}`, status: slow ? 'over' : 'ok', times: slow && m.fps > 0 ? Math.round((v.fps / m.fps) * 10) / 10 : 0 });
+  }
 
   const groups = new Map<MemoryGroup, number>();
+  const unclassified = new Map<string, number>();
   for (const [name, bytes] of m.bytesByName) {
     const g = memoryGroup(name);
     groups.set(g, (groups.get(g) ?? 0) + bytes);
+    if (g === 'other' && bytes > 0) unclassified.set(name, bytes);
   }
-  for (const g of Object.keys(MEMORY_BUDGETS_MB) as MemoryGroup[]) cap(`video memory: ${g}`, mb(groups.get(g) ?? 0), MEMORY_BUDGETS_MB[g], 'MB');
-  cap('video memory: textures (no mipmaps)', mb(m.textureBytes), TEXTURE_BUDGET_MB, 'MB');
-  cap('video memory: render targets and shadows', m.targetBytes == null ? null : mb(m.targetBytes), 300, 'MB');
+  for (const g of Object.keys(MEMORY_BUDGETS_MB) as MemoryGroup[]) {
+    if (g !== 'other') { cap(`video memory: ${g}`, mb(groups.get(g) ?? 0), MEMORY_BUDGETS_MB[g], 'MB'); continue; }
+    // The names to classify, the largest first: the row says what to add to `memoryGroup`.
+    const names = [...unclassified].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([n, b]) => `${n} ${mb(b)}`).join(', ');
+    const other = mb(groups.get('other') ?? 0);
+    rows.push({ item: 'video memory: other (names no group knows)', measured: `${fmt(other)} MB${names ? ` (${names})` : ''}`, budget: '0 MB', status: other > 0 ? 'over' : 'ok', times: 0 });
+  }
+  cap('video memory: textures (every mip level, by format)', mb(m.textureBytes), TEXTURE_BUDGET_MB, 'MB');
+  cap('video memory: render targets and shadows', m.targetBytes == null ? null : mb(m.targetBytes), TARGET_BUDGET_MB, 'MB');
   rows.push({ item: 'geometry held on the CPU (part of the heap)', measured: `${fmt(mb(m.geometryCpuBytes))} MB`, budget: '—', status: 'no budget in the plan', times: 0 });
-  rows.push({
-    item: 'JS heap (performance.memory: heap + arrays, rounded)',
-    measured: m.heapBytes === null ? '—' : `${fmt(mb(m.heapBytes))} MB`,
-    budget: `≤ ${fmt(HEAP_BUDGET_MB)} MB`,
-    status: m.heapBytes === null ? 'not measured' : 'approximate',
-    times: 0,
-  });
+  // DO NOT call it approximate and never fail it: a heap of 5 GB passed (report JOB-15). The page's figure is an upper bound (arrays in it, bucketed); the workers' are added when measured.
+  const workers = m.workerHeapBytes ?? null;
+  cap(workers === null ? 'JS heap, the page alone (performance.memory: heap + arrays; the workers not measured)' : 'JS heap, the page and its workers', m.heapBytes === null ? null : mb(m.heapBytes + (workers ?? 0)), HEAP_BUDGET_MB, 'MB');
   const order = { over: 0, ok: 1, approximate: 2, 'no budget in the plan': 3, 'not measured': 4 } as const;
   return rows.sort((a, b) => order[a.status] - order[b.status] || b.times - a.times);
 }

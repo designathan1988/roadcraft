@@ -191,11 +191,14 @@ export interface BlastHit {
 }
 
 interface RenderStats {
-  /** Built scene geometry budget; `gl.info.render.triangles` counts drawn passes. */
-  readonly triangles: number;
-  /** Actual draw calls across every pass of the last game frame. */
+  /** The triangles BUILT (every mesh the scene holds, shown or not). DO NOT read it as what was drawn: `drawnTriangles` is (report UI-15 c, the two had one name). */
+  readonly builtTriangles: number;
+  /** The triangles DRAWN by the last game frame's every pass, read right after its post chain (`frameDrawn`). */
+  readonly drawnTriangles: number;
+  /** The draw calls of the last game frame's every pass, read right after its post chain. DO NOT read `renderer.info.render` for it at any other time: the programs warmed and the uploads drained after the frame (`drainCompiles`, `drainWarm`) add theirs to it (report UI-15 b). */
   readonly drawCalls: number;
   readonly quality: QualityLevel;
+  /** A smoothed 1/delta of the drawn frames: with the loop on demand it says how often the game drew, not how fast it could (report UI-15 d). DO NOT budget on it: `__roadcraft.budget` takes the frames' own times. */
   readonly fps: number;
   /** Wall time of the last world rebuild, in milliseconds. */
   readonly rebuildMs: number;
@@ -2050,6 +2053,8 @@ export function createSceneRenderer(
 
   const target = new Vector3();
   let fps = 60;
+  /** The last game frame's draw calls and triangles, every pass, read right after its post chain (`RenderStats.drawCalls`). */
+  const frameDrawn = { calls: 0, triangles: 0 };
   /** Wall-clock seconds, for the wind; independent of the simulation speed. */
   let windClock = 0;
   let lastWidth = 0;
@@ -2419,8 +2424,9 @@ export function createSceneRenderer(
     gpu: gpuTimer,
     get stats(): RenderStats {
       return {
-        triangles: builtTriangles + buildings.triangles,
-        drawCalls: renderer.info.render.calls,
+        builtTriangles: builtTriangles + buildings.triangles,
+        drawnTriangles: frameDrawn.triangles,
+        drawCalls: frameDrawn.calls,
         quality: governor.current,
         fps: Math.round(fps),
         rebuildMs: Math.round(rebuildMs),
@@ -3286,6 +3292,9 @@ export function createSceneRenderer(
         gpuTimer.begin();
         post.render(delta);
         gpuTimer.end();
+        // What this frame drew, before anything after it draws more (the compiles and warm-ups below render too).
+        frameDrawn.calls = renderer.info.render.calls;
+        frameDrawn.triangles = renderer.info.render.triangles;
       } else onAssetsReady();
       measureHitch('hitch:draw/Render', atRender);
       if (shake > 0) { rig.camera.position.sub(shakeOffset); rig.camera.updateMatrixWorld(); }

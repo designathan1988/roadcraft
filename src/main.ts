@@ -123,7 +123,7 @@ import { desktopSaves } from './desktopSaves';
 import { levelElevation, roofRise } from '@world/buildings/geometry';
 import { volumeTop } from '@world/buildings/types';
 import { type ZoneUse, type ZoneDensity } from '@world/zones';
-import { LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
+import { LOT_PLAN_VERSION } from '@world/growth/zoning';
 import { GrowthSession } from '@editor/growthFeed';
 import type { GrowAnswer } from '@editor/growthReplica';
 import { GrowthPool } from './growthPool';
@@ -259,8 +259,14 @@ if (saved) {
 const sim = new SimClient(doc);
 /** The population the machine sustains (`sim/populationGovernor.ts`, run in the worker), never more than the device's own share. */
 let maxPopulationShare = 1;
-/** A measure running (`__roadcraft.measure`, `scripts/lib/measureCity.mjs`, dev only): the simulation held and a frame drawn every refresh, so the scene measured stays the same and is drawn as when it plays. */
-let measuring = false;
+/** A measure running (`__roadcraft.measure`, `scripts/lib/measureCity.mjs`): `on` a frame drawn every refresh; `step` the simulation going on a fixed step of
+ *  `MEASURE_STEP_S` a frame, whatever the wall clock did, so two runs of a scene step the same (report UI-15 a: the held clock left the agents, the growth and
+ *  the wear out of every measure); `grown` the probes waiting for the next growth answer (`__roadcraft.growTimed`). One holder for the console's measures. */
+const measure = { on: false, step: false, grown: [] as ((grown: readonly number[]) => void)[] };
+/** The console's probes (`__roadcraft`, `__frames`, `__gpu`, `__state`, `__changes`): in development, and in a build made to be measured (`npm run build:probe`, mode `probe`) - the product's code measured, without the development panels (report AST-15: every measure ran the development build). */
+const PROBES = import.meta.env.DEV || import.meta.env.MODE === 'probe';
+/** One display frame at 60 Hz, s: the simulation's step a frame in `measure('running')`. */
+const MEASURE_STEP_S = 1 / 60;
 function syncPopulationShare(): void {
   maxPopulationShare = window.innerWidth < NARROW_SCREEN_WIDTH ? NARROW_SCREEN_SHARE : 1;
 }
@@ -1892,6 +1898,7 @@ function growthAnswered(answer: GrowAnswer): boolean {
     const fresh = doc.buildings.get(id as BuildingId);
     if (fresh) doc.buildings.put({ ...fresh, builtAt: sim.minutes, decay: 0, lotPlan: LOT_PLAN_VERSION });
   }));
+  for (const told of measure.grown.splice(0)) told(outcome.kind === 'answered' ? outcome.grown : []);
   if (outcome.kind === 'answered' && outcome.grown.length) {
     persistence.saveSessionSoon(doc, sessionSettings);
     updateStatus();
@@ -2327,7 +2334,8 @@ function frame(now: number): void {
   // Everyone watching the game's state is told what changed, once, here.
   gameState.flush();
   frameTimer.mark('panels');
-  const wall = frameClock.tick(now);
+  const ticked = frameClock.tick(now);
+  const wall = measure.step ? MEASURE_STEP_S : ticked;
   // The camera's glide: keys held, the wheel's notches being spent.
   if (cameraMotion.step(now)) persistence.saveSettingsSoon(sessionSettings);
   // The coast of a drag let go (`cameraGestures.ts`), taken to this frame's time on the events' clock
@@ -2406,7 +2414,7 @@ function frame(now: number): void {
 
   // Keep animating while anything is moving; otherwise settle.
   const simMoving = !game.paused && simShowsMotion();
-  if (!document.hidden && (measuring || simMoving || roadTool.draft || mover.dragging || cameraHand.active || cameraHand.coasting || cameraMotion.moving || scene.busy())) requestDraw();
+  if (!document.hidden && (measure.on || simMoving || roadTool.draft || mover.dragging || cameraHand.active || cameraHand.coasting || cameraMotion.moving || scene.busy())) requestDraw();
   // Only the clouds moving (they drift, form and fade), or the clock alone: a slower frame.
   else if (!document.hidden && (!game.paused || scene.drifting())) frameClock.drift();
 }
@@ -3600,7 +3608,7 @@ function setQuality(value: string): void {
   if (isQualityLevel(value)) graphics.setPreset(value);
 }
 /** The game's state in the console (`core/gameState.ts`): `__state()` its values now and the last changes */
-if (import.meta.env.DEV) (window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({
+if (PROBES) (window as unknown as { __state: unknown }).__state = (count = 20): unknown => ({
   now: gameState.snapshot(),
   changes: gameState.latest(count).map((c) => `#${c.serial} ${c.key}: ${String(c.from)} → ${String(c.to)} (${c.cause})`),
   toolMachine: tools.latest(count).map((r) => `#${r.serial} ${r.from} → ${r.to} (${r.event})`),
@@ -3608,7 +3616,7 @@ if (import.meta.env.DEV) (window as unknown as { __state: unknown }).__state = (
 /** The game's health in the console (`core/health.ts`): what broke or was slow, newest first. */
 if (import.meta.env.DEV) (window as unknown as { __health: unknown }).__health = (count = 30): unknown => health.latest(count);
 /** The last frames per system (`core/health.ts` `frameStats`) */
-if (import.meta.env.DEV) (window as unknown as { __frames: unknown }).__frames = (since = 0): unknown =>
+if (PROBES) (window as unknown as { __frames: unknown }).__frames = (since = 0): unknown =>
   frameStats(frameTimer.recent().filter((f) => f.start >= since));
 /** The GPU time of the frames drawn since the last `__gpu(true)` (or the last 40 s) */
 /** The F9 monitor's GPU lines (state tab, the whole width) */
@@ -3619,7 +3627,7 @@ function gpuLines(): string[] {
   const s = t.samples.stats(STUTTER_MS);
   return [`gpu: p50 ${s.p50} · p95 ${s.p95} · p99 ${s.p99} · max ${s.max} ms · n ${s.n}`, `gpuName: ${name}`];
 }
-if (import.meta.env.DEV) (window as unknown as { __gpu: unknown }).__gpu = (reset = false): unknown => {
+if (PROBES) (window as unknown as { __gpu: unknown }).__gpu = (reset = false): unknown => {
   const t = scene.gpu;
   const out = { supported: t.supported, label: t.label, ...t.samples.stats(STUTTER_MS), skipped: t.skipped, disjoint: t.disjoint };
   if (reset) t.samples.clear();
@@ -3656,7 +3664,7 @@ const healthPanel = !import.meta.env.DEV ? null : mountHealthPanel({
   }),
 });
 /** The diary of changes in the console (`world/changes.ts`): `__changes()` lists the last ones */
-if (import.meta.env.DEV) (window as unknown as { __changes: unknown }).__changes = (count = 30, serial?: number): unknown => {
+if (PROBES) (window as unknown as { __changes: unknown }).__changes = (count = 30, serial?: number): unknown => {
   const row = (c: Change) => ({
     serial: c.serial, kind: c.kind, cause: c.cause, after: c.parent ?? '',
     where: c.rects === null ? 'whole map' : `${c.rects.length} rects ${Math.round(c.rects.reduce((a, r) => a + (r[2] - r[0]) * (r[3] - r[1]), 0) / 1e3)}k u²`,
@@ -3673,8 +3681,22 @@ if (import.meta.env.DEV) (window as unknown as { __changes: unknown }).__changes
   return rows;
 };
 
+/** The uniforms the renderer compiled a material with: `onBeforeCompile` puts textures there that are in no field of the material (report TST-09). */
+function compiledUniforms(material: object): Record<string, { value: unknown }> | undefined {
+  return (scene.gl.properties.get(material) as { uniforms?: Record<string, { value: unknown }> } | undefined)?.uniforms;
+}
+/** Frames a second of the last 2 s, from the frames' own start times; null when the game did not draw every refresh in them
+ *  (the loop on demand: a smoothed 1/delta then told how often it drew, not how fast it could - report UI-15 d). */
+function pacedFps(): number | null {
+  const since = performance.now() - 2000;
+  const starts = frameTimer.recent().filter((f) => f.start >= since).map((f) => f.start);
+  if (starts.length < 60) return null;
+  const gaps = starts.slice(1).map((t, i) => t - starts[i]!).sort((a, b) => a - b);
+  return Math.round(1000 / gaps[Math.floor(gaps.length / 2)]!);
+}
+
 // Diagnostic surface for browser-driven checks.
-if (import.meta.env.DEV) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
+if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
   /** The surgical profiler's numbers (`core/profiler.ts`), as its HUD shows them. */
   profiler: () => profiler.view(),
   /** The engine's ledger: each product's computes, last refresh and in all (`core/engine.ts`). */
@@ -3692,11 +3714,12 @@ if (import.meta.env.DEV) (window as unknown as { __roadcraft: unknown }).__roadc
   importMap: async () => openImported(await importFromFile()),
   /** The public transport tool. */
   transit: transitEditor,
-  /** A measure's mode (`scripts/lib/measureCity.mjs`): the simulation's clock held (the sun, the population and the vehicles still) and a frame drawn every refresh; off: the speed as it was. */
-  measure: (on: boolean) => {
-    measuring = on;
+  /** A measure's mode (`scripts/lib/measureCity.mjs`), a frame drawn every refresh: `true` the simulation's clock held (the sun, the population and the vehicles still); `'running'` the simulation going on a fixed step of 1/60 s a frame; `false` the speed as it was. */
+  measure: (on: boolean | 'running') => {
+    measure.on = on !== false;
+    measure.step = on === 'running';
     // The clock alone, not the player's pause: DO NOT go through `setPaused`, which keeps the pause in the player's settings.
-    sim.clock.paused = on || game.paused;
+    sim.clock.paused = on === true || game.paused;
     frameClock.restart();
     requestDraw();
   },
@@ -3710,7 +3733,13 @@ if (import.meta.env.DEV) (window as unknown as { __roadcraft: unknown }).__roadc
   /** A generated city: the small city of Roadcraft 2.0 as one map (`smallCity`). DO NOT open the world by tiles: the player, 2026-10-18, wants no city by tiles. */
   generateCity: (options: Partial<CityOptions> = {}) => openSmallCity(options.seed ?? 7),
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
-  growTimed: () => { const t = performance.now(); const id = growOnLot({ doc, net, groundAt: (x, y) => scene.terrainHeightAt(x, y), pavedAt: (x, y) => scene.pavedHeightAt(x, y) }, lotTool.refused, 0x5eed); return { id, ms: performance.now() - t }; },
+  /** Probe: one building grown as the game grows them - asked of the growth's worker, written when its answer comes - and the ms from the ask to the building written. DO NOT time the page's own grower: the game never grows there (report UI-15 g). */
+  growTimed: (): Promise<{ grown: readonly number[]; ms: number } | { grown: null; why: string }> => {
+    if (growth.busy) return Promise.resolve({ grown: null, why: 'a building is being made already' });
+    const t = performance.now();
+    if (!growth.ask(lotTool.refusedNow(), 0x5eed)) return Promise.resolve({ grown: null, why: 'no open lot' });
+    return new Promise((done) => measure.grown.push((grown) => done({ grown, ms: performance.now() - t })));
+  },
   /** Replaces the map as loading a file does: document, network and simulation topology. */
   loadDoc: (data: ReturnType<RoadDoc['toJSON']>) => {
     history.begin(doc);
@@ -3751,7 +3780,7 @@ if (import.meta.env.DEV) (window as unknown as { __roadcraft: unknown }).__roadc
         landscape: doc.landscape.size, barriers: doc.barriers.size, trees: doc.trees.length, zones: doc.zones.length, people: doc.people.length,
       },
       sim: { vehicles: sim.vehicles.size, people: sim.pedViews.length },
-      gl: { geometries: scene.gl.info.memory.geometries, textures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0, drawCalls: scene.stats.drawCalls, triangles: scene.stats.triangles },
+      gl: { geometries: scene.gl.info.memory.geometries, textures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0, drawCalls: scene.stats.drawCalls, builtTriangles: scene.stats.builtTriangles, drawnTriangles: scene.stats.drawnTriangles },
       heapMB: heap === undefined ? null : Math.round(heap / 1e6),
     };
     if (options.text) return `${formatInventory(inv, options.top ?? 40)}
@@ -3761,29 +3790,29 @@ ${JSON.stringify(counts)}`;
   },
   memory: () => {
     const mb = (bytes: number): number => Math.round(bytes / 1e5) / 10;
-    const c = countMemory(scene.scene);
+    const c = countMemory(scene.scene, { uniformsOf: compiledUniforms });
     const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
     return {
       geometryMB: mb(c.geometryBytes), geometryCpuMB: mb(c.geometryCpuBytes), textureMB: mb(c.textureBytes), targetMB: mb(scene.targetBytes()),
       buildingDetailMB: mb(scene.buildingDetailBytes()),
       heapMB: heap === undefined ? null : mb(heap),
       cpuByName: c.cpuByName.map(([name, bytes]) => `${name} ${mb(bytes)}`),
-      buffers: c.buffers, textures: c.textures,
+      buffers: c.buffers, releasedBuffers: c.releasedBuffers, textures: c.textures,
       glGeometries: scene.gl.info.memory.geometries, glTextures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0,
-      drawCalls: scene.stats.drawCalls, triangles: scene.stats.triangles,
+      drawCalls: scene.stats.drawCalls, builtTriangles: scene.stats.builtTriangles, drawnTriangles: scene.stats.drawnTriangles,
     };
   },
   /** The running game against the city plan's budgets */
   budget: (view: CityView) => {
     if (!(view in VIEW_BUDGETS)) throw new Error(`view: ${Object.keys(VIEW_BUDGETS).join(' | ')}`);
-    const c = countMemory(scene.scene);
+    const c = countMemory(scene.scene, { uniformsOf: compiledUniforms });
     const gpu = scene.gpu.supported ? scene.gpu.samples.toArray().slice(-120).sort((a, b) => a - b) : [];
     const rows = cityBudgetTable({
       view,
-      triangles: scene.gl.info.render.triangles,
-      drawCalls: scene.gl.info.render.calls,
+      triangles: scene.stats.drawnTriangles,
+      drawCalls: scene.stats.drawCalls,
       gpuMs: gpu.length ? Math.round(gpu[Math.ceil(gpu.length * 0.95) - 1]! * 10) / 10 : null,
-      fps: scene.stats.fps,
+      fps: pacedFps(),
       bytesByName: c.bytesByName,
       textureBytes: c.textureBytes,
       targetBytes: scene.targetBytes(),

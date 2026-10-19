@@ -147,7 +147,7 @@ for (const n of new Set([...counting.keys(), ...clean.keys()])) {
     framesDrawn: { contagem: c?.readings?.framesDrawn ?? null, limpa: l?.readings?.framesDrawn ?? null },
     frames: l?.readings?.frames ? { n: l.readings.frames.frames, long: l.readings.frames.long, p50: l.readings.frames.total?.p50, p95: l.readings.frames.total?.p95, max: l.readings.frames.total?.max, systems: l.readings.frames.systems } : null,
     gpu: l?.readings?.gpu ? { p50: l.readings.gpu.p50, p95: l.readings.gpu.p95, n: l.readings.gpu.n, disjoint: l.readings.gpu.disjoint } : null,
-    drawCalls: r.memory?.drawCalls ?? null, builtTriangles: r.memory?.triangles ?? null, drawnTriangles: r.gl?.render?.triangles ?? null, programs: r.memory?.programs ?? null,
+    drawCalls: r.memory?.drawCalls ?? null, builtTriangles: r.memory?.builtTriangles ?? r.memory?.triangles ?? null, drawnTriangles: r.gl?.render?.triangles ?? null, programs: r.memory?.programs ?? null,
     memoryMB: r.memory ? { heap: r.memory.heapMB, geometry: r.memory.geometryMB, geometryCpu: r.memory.geometryCpuMB, texture: r.memory.textureMB, target: r.memory.targetMB, buildingDetail: r.memory.buildingDetailMB } : null,
     heapAfterGcMB: c?.heapAfterGc ? Math.round(c.heapAfterGc.usedBytes / 1e6) : null,
     uaMemoryMB: c?.uaMemory?.bytes ? Math.round(c.uaMemory.bytes / 1e6) : (c?.uaMemory?.error ?? null),

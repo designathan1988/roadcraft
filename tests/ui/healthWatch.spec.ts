@@ -13,6 +13,13 @@ describe('long frames in the health monitor', () => {
     expect(longFrameWork({ startTime: 0, duration: 300, blockingDuration: 220, scripts: [{ duration: 90 }] })).toBe(220);
   });
 
+  it('count the scripts too short for the browser to list (report TST-09)', () => {
+    // Many callbacks under 5 ms, none listed: the time before the render is theirs.
+    expect(longFrameWork({ startTime: 0, duration: 200, renderStart: 180, scripts: [] })).toBe(200);
+    // The game's own steps inside the frame, more than the one script listed.
+    expect(longFrameWork({ startTime: 0, duration: 200, renderStart: 150, scripts: [{ duration: 10 }] }, 120)).toBe(170);
+  });
+
   it('blames only the steps that ran inside the frame', () => {
     const steps = [
       { name: 'draw/Render', start: 105, end: 160 },

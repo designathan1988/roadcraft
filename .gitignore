@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The build with the console's probes (npm run build:probe)
+dist-probe/
 # The desktop packages (npm run package:desktop)
 release/
 coverage/

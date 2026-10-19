@@ -61,11 +61,11 @@ function render(v: ProfilerView): string {
 
   // 1. Disposes.
   const disposes = n('dispose.geometry') + n('dispose.material') + n('dispose.texture') + n('dispose.target');
-  const disposePeak = Math.max(peak('dispose.geometry'), peak('dispose.material'), peak('dispose.texture'));
+  const disposePeak = Math.max(peak('dispose.geometry'), peak('dispose.material'), peak('dispose.texture'), peak('dispose.target'));
   out.push('', head('1. DISPOSES') + `  in the last second: ${disposes ? red(String(disposes)) : '0'} (peak ${disposePeak}/frame) — geom ${n('dispose.geometry')} · mat ${n('dispose.material')} · tex ${n('dispose.texture')} · target ${n('dispose.target')}`);
   const disposeSites = merge(['dispose.geometry', 'dispose.material', 'dispose.texture', 'dispose.target'].map((k) => e(k)?.sites ?? []));
   for (const [site, c] of disposeSites.slice(0, 5)) out.push(`  ${amber(String(c).padStart(6))}  ${esc(site)}`);
-  const last = ['dispose.geometry', 'dispose.material', 'dispose.texture'].map((k) => e(k)?.last).filter((l) => l).sort((a, b) => b!.at - a!.at)[0];
+  const last = ['dispose.geometry', 'dispose.material', 'dispose.texture', 'dispose.target'].map((k) => e(k)?.last).filter((l) => l).sort((a, b) => b!.at - a!.at)[0];
   if (last) out.push(`  last: ${esc(last.site)}`, ...last.stack.split('\n').slice(1, 5).map((l) => `    ← ${esc(l)}`));
 
   // 2. Rebuilds: geometries built, bytes sent, and what changed.

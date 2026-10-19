@@ -122,9 +122,8 @@ describe('the growth of the buildings', () => {
     expect(bodyOf(main, 'growZones')).toMatch(/growth\.ask\(lotRefused, /);
     expect(main).toMatch(/new GrowthPool\(\(answer\) => growthAnswered\(answer\)/);
     expect(main).toMatch(/new GrowthSession\(growthPool, /);
-    // On the page only the probe that times `growOnLot` itself (`growTimed`) calls it.
-    const calls = [...main.matchAll(/growOnLot\(/g)].map((m) => main.lastIndexOf('\n', m.index));
-    expect(calls.map((at) => main.slice(at, at + 40).trim().split(':')[0])).toEqual(['growTimed']);
+    // Not even a probe grows on the page: `growTimed` asks the worker as the game does (report UI-15 g: it timed `growOnLot` on the page).
+    expect(main).not.toMatch(/growOnLot\(/);
     expect(main).not.toMatch(/designOnLot/);
   });
 
