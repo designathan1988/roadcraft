@@ -51,7 +51,7 @@ describe('the shore array from the corner store', () => {
 
   it('packs the covers and the geology as the plates did, two bytes a channel, the forest\'s byte (the level a texture of its own, TER-07)', () => {
     const into = new Uint16Array(n * 4);
-    groundCornersInto(into, { levels, sand, basalt }, density);
+    groundCornersInto(into, { levels, sand, basalt }, density, 3);
     const byte = (v: number): number => Math.round(Math.min(1, Math.max(0, v)) * 255);
     for (let k = 0; k < n; k++) {
       // The former pack, from a Float32 copy of each cover.
@@ -61,6 +61,20 @@ describe('the shore array from the corner store', () => {
       // The forest is a byte of the covers' grid (`coverOf`): its byte over 255 is the float the plates sent.
       expect(Math.fround(into[k * 4 + 2]! / 255)).toBe(forest);
       expect(into[k * 4 + 3]).toBe(0);
+    }
+  });
+
+  it('works out only the corners of the box a send takes, each as the whole plate gives it (TER-08)', () => {
+    const whole = new Uint16Array(n * 4);
+    groundCornersInto(whole, { levels, sand, basalt }, density, 3);
+    const part = new Uint16Array(n * 4).fill(7);
+    let asked = 0;
+    groundCornersInto(part, { levels, sand, basalt }, (k, kind) => { asked++; return density(k, kind); }, 3, { x0: 1, x1: 2, y0: 0, y1: 1 });
+    // Four corners, three covers each.
+    expect(asked).toBe(4 * 3);
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) {
+      const k = x + y * 3, inside = x >= 1 && y <= 1;
+      for (let c = 0; c < 4; c++) expect(part[k * 4 + c]).toBe(inside ? whole[k * 4 + c] : 7);
     }
   });
 

@@ -36,13 +36,20 @@ export interface CornerStore {
 export type CornerCover = (corner: number, kind: 'flowers' | 'scrub' | 'forest') => number;
 
 /** The ground corners' covers (`terrain.ts` ShoreTextures, RGBA 16 bits; the water's level is a texture of its own): R the flowers low and the sandstone high, G the scrub low and the basalt high, B the forest's byte. */
-export function groundCornersInto(into: Uint16Array, store: CornerStore, cover: CornerCover): void {
+/** `side` corners a side; `box` (null: all) the corners a send takes: DO NOT work out the whole plate's 103 thousand corners for a stroke's few rows (TER-08), as `landTexelsInto` keeps to its box. */
+export function groundCornersInto(into: Uint16Array, store: CornerStore, cover: CornerCover, side: number, box: TexelBox | null = null): void {
   const { sand, basalt } = store;
-  for (let k = 0; k < sand.length; k++) {
-    into[k * 4] = byte(cover(k, 'flowers')) + 256 * byte(sand[k] as number);
-    into[k * 4 + 1] = byte(cover(k, 'scrub')) + 256 * byte(basalt[k] as number);
-    into[k * 4 + 2] = byte(cover(k, 'forest'));
-    into[k * 4 + 3] = 0;
+  const seg = side - 1;
+  const x0 = Math.max(0, box?.x0 ?? 0), x1 = Math.min(seg, box?.x1 ?? seg);
+  const y0 = Math.max(0, box?.y0 ?? 0), y1 = Math.min(seg, box?.y1 ?? seg);
+  for (let iy = y0; iy <= y1; iy++) {
+    for (let ix = x0; ix <= x1; ix++) {
+      const k = ix + iy * side;
+      into[k * 4] = byte(cover(k, 'flowers')) + 256 * byte(sand[k] as number);
+      into[k * 4 + 1] = byte(cover(k, 'scrub')) + 256 * byte(basalt[k] as number);
+      into[k * 4 + 2] = byte(cover(k, 'forest'));
+      into[k * 4 + 3] = 0;
+    }
   }
 }
 

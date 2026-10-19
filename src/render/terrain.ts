@@ -1716,7 +1716,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let shoreWhole = true;
   shore.onUpdate = () => { shoreWhole = false; };
   // The cover texture from the store and the covers, at each send.
-  stageTexels(shore, Uint16Array, GRID * GRID * 4, 4, (into) => groundCornersInto(into, store, coverCorner));
+  stageTexels(shore, Uint16Array, GRID * GRID * 4, 4, (into, part) => groundCornersInto(into, store, coverCorner, GRID, part.box));
   /** The covers or the painted geology changed over `rect` (the plate's own x, y; null: anywhere): those rows of corners sent again, never the plate for a dab. */
   const sendCorners = (rect: readonly [number, number, number, number] | null = null): void => {
     if (rect && !shoreWhole) {
