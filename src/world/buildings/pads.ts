@@ -56,10 +56,15 @@ const BOUND_SLACK = 1e-6;
 /** The work `shapeAt` did: rings measured (`ringDistance` calls). */
 export const padsWork = { rings: 0 };
 
+/** Squares of an edge's distance this close to the least (relative) have their `Math.hypot` taken: far wider than the rounding of either, so the edge `Math.hypot` puts nearest is always among them. */
+const HYPOT_TIE = 1e-9;
+
 /** Distance from a point to a closed ring: 0 inside it. */
-function ringDistance(ring: readonly Vec2[], x: number, y: number): number {
+/** DO NOT take `Math.hypot` of every edge again (it ran for each edge of each ring at each corner of the ground's grid): the edges compared by their squares, the root only of those that can be the nearest. The answer is the least `Math.hypot` of all the edges, to the bit, as before. */
+export function ringDistance(ring: readonly Vec2[], x: number, y: number): number {
   let inside = false;
   let best = Infinity;
+  let best2 = Infinity;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const a = ring[j]!;
     const b = ring[i]!;
@@ -68,7 +73,14 @@ function ringDistance(ring: readonly Vec2[], x: number, y: number): number {
     const dy = b.y - a.y;
     const len2 = dx * dx + dy * dy;
     const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2)) : 0;
-    best = Math.min(best, Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t)));
+    const ex = x - (a.x + dx * t), ey = y - (a.y + dy * t);
+    const d2 = ex * ex + ey * ey;
+    // A point not a number: the distance not one either, as `Math.min` made it.
+    if (d2 !== d2) { best = NaN; continue; }
+    // The least square only falls: an edge left out here is past every later least by more than the tie, and its root past the nearest's.
+    if (!(d2 <= best2 * (1 + HYPOT_TIE)) && best2 !== Infinity) continue;
+    if (d2 < best2) best2 = d2;
+    best = Math.min(best, Math.hypot(ex, ey));
   }
   return inside ? 0 : best;
 }
