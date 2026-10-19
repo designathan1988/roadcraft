@@ -55,6 +55,8 @@ interface Band {
   casts: boolean;
   /** Its widest piece as drawn now, m (`choose`): what a cascade's texel is measured against (`castInto`). */
   width: number;
+  /** Its widest piece, NaN until first read (`choose`): its pieces and scales never change, so worked out once (PRD-30). */
+  widest: number;
 }
 
 /** The largest of three lengths scaled. */
@@ -92,7 +94,7 @@ export class PartCell {
         // Tints in half floats: HALF_FLOAT where the buffer says so (r186 `WebGLAttributes.createBuffer`, an interleaved attribute by its buffer).
         poses: new InstancedInterleavedBuffer(f.poses, POSE_FLOATS), colours: f.colours ? Object.assign(new InstancedInterleavedBuffer(f.colours, 3), { isFloat16BufferAttribute: true }) : null,
         looks: f.looks ? new InstancedInterleavedBuffer(f.looks, LOOK_FLOATS) : null,
-        meshes: new Map(), drawn: new Map(), held: new Uint8Array(LEAVES), casts: false, width: 0,
+        meshes: new Map(), drawn: new Map(), held: new Uint8Array(LEAVES), casts: false, width: 0, widest: Number.NaN,
       };
       own[`${f.kind}-${this.bands.length}-poses`] = band.poses;
       if (band.colours) own[`${f.kind}-${this.bands.length}-colours`] = band.colours;
@@ -110,8 +112,12 @@ export class PartCell {
     Object.assign(was, view);
     for (const band of this.bands) {
       const runs = this.runsOf(band, view);
-      let width = 0;
-      for (const piece of band.screen.pieces) width = Math.max(width, middle(piece, band.scale, LEAVES * 3));
+      if (Number.isNaN(band.widest)) {
+        let widest = 0;
+        for (const piece of band.screen.pieces) widest = Math.max(widest, middle(piece, band.scale, LEAVES * 3));
+        band.widest = widest;
+      }
+      const width = band.widest;
       // A shell's part too, by its widest piece: out of a cascade whose texel is wider than it (its colour drawn whatever its size, `levelAt`).
       band.width = width;
       const casts = this.kit.castsShadow.has(band.kind) && Number.isFinite(view.shadowTexel) && width >= view.shadowTexel * (band.casts ? COARSEN : 1);

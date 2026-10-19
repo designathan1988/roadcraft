@@ -533,7 +533,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       return cells.keys();
     },
     choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, allNear, reach = Infinity, view = null) {
-      Object.assign(lastEye, { x: eyeX, y: eyeY, z: eyeZ, pxAtMetre, orthoPx, known: true });
+      // Field by field, no literal each frame (PRD-30).
+      lastEye.x = eyeX; lastEye.y = eyeY; lastEye.z = eyeZ; lastEye.pxAtMetre = pxAtMetre; lastEye.orthoPx = orthoPx; lastEye.known = true;
       if (import.meta.env.DEV) lastReach = reach;
       followView(view);
       // THE LEVELS FIRST, from the plates down (Cesium `selectTiles`): a level is drawn in place of its children while what it leaves out spans under the pixels the cells' masses are drawn for
