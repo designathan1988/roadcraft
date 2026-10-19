@@ -66,6 +66,23 @@ describe('a batch as arrays', () => {
     const span = (p: (typeof whole)[number]): number => Math.max(p.bounds[3]! - p.bounds[0]!, p.bounds[5]! - p.bounds[2]!);
     const widest = Math.max(...whole.map(span));
     for (const p of pieced) expect(span(p)).toBeLessThan(widest);
+    // The panes pieced the same way: each detail cell's run, every pane once, each run's box inside the batch's.
+    const glassTake = { parts: ['glass'] as const, shells: false, furniture: false, ghost: false, dim: false };
+    const glass = cellArrays(chunks, { ...glassTake, parts: [...glassTake.parts] }, kitBoxes(kit), groups).parts.glass!;
+    expect(glass.pieces!.length).toBeGreaterThan(1);
+    let next = 0;
+    for (const p of glass.pieces!) {
+      expect(p.start).toBe(next);
+      next += p.count;
+      for (let k = 0; k < 3; k++) expect(p.bounds[k]!).toBeGreaterThanOrEqual(glass.bounds[k]! - 1e-6);
+      for (let k = 3; k < 6; k++) expect(p.bounds[k]!).toBeLessThanOrEqual(glass.bounds[k]! + 1e-6);
+    }
+    expect(next).toBe(glass.count);
+    const plain = cellArrays(chunks, { ...glassTake, parts: [...glassTake.parts] }, kitBoxes(kit)).parts.glass!;
+    expect(plain.pieces).toBeUndefined();
+    // The same panes, in another order: every pose of one is a pose of the other.
+    const posesOf = (a: Float32Array): string[] => Array.from({ length: a.length / 8 }, (_v, i) => Array.from(a.subarray(i * 8, i * 8 + 8)).join()).sort();
+    expect(posesOf(glass.poses)).toEqual(posesOf(plain.poses));
     // The same chunks and groups make the same pieces (the lost context's refill).
     const again = cellArrays(chunks, take, kitBoxes(kit), groups).shells;
     expect(again.map((p) => p.index.length)).toEqual(pieced.map((p) => p.index.length));

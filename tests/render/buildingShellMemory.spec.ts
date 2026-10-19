@@ -55,7 +55,9 @@ describe("the town's shells", () => {
     const own = (p: InstancedMesh): { array: ArrayLike<number> | null; onUploadCallback(): void }[] => {
       const shared = model(p);
       const list = uploads(p, false).filter((a) => !shared.has(a));
-      if (p.instanceColor) list.push(p.instanceColor);
+      // The tints bound into the batch's buffer (one for every mesh of the batch, `buildingMesh.ts`): that buffer is what goes up.
+      const tint = p.instanceColor as unknown as { data?: { array: ArrayLike<number> | null; onUploadCallback(): void } } | null;
+      if (tint) list.push(tint.data ?? (p.instanceColor as unknown as { array: ArrayLike<number> | null; onUploadCallback(): void }));
       return list;
     };
     const before = parts.map((p) => own(p).map((a) => Array.from(a.array!)));
