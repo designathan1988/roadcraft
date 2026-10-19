@@ -1,5 +1,5 @@
 import { measureHitch } from '@core/hitch';
-import { RoadDoc, type SerializedDoc } from '@world/doc';
+import { RoadDoc, wholeBytes, type SerializedDoc } from '@world/doc';
 import { sideOf, type DocPatch } from '@world/docImage';
 import type { Network } from '@world/network';
 import { repairNearConnections } from './repair';
@@ -46,6 +46,14 @@ export class History {
     return this.close();
   }
 
+  /** The open edit dropped: what it changed put back, no step kept, nothing to redo (a map that failed to open). */
+  cancel(doc: RoadDoc): void {
+    if (this.open !== doc) return;
+    this.open = null;
+    const patch = doc.endEdit();
+    if (patch) doc.restore(sideOf(patch, 'before'));
+  }
+
   /** The steps closed from now joined into `group` (a long road laid in parts, `RoadTool.layHeld`), until `null`: one undo for them all. */
   grouped(group: number | null): void {
     this.settle();
@@ -63,7 +71,8 @@ export class History {
       // A step that replaced the whole map keeps the map after only from now, for its redo (`RoadDoc.endEdit`).
       if (patch.whole && !patch.whole.after) {
         const kept = this.groupOf.get(patch);
-        patch = { ...patch, whole: { before: patch.whole.before, after: doc.toJSON() } };
+        const after = doc.toText();
+        patch = { ...patch, whole: { before: patch.whole.before, after }, bytes: wholeBytes(patch.whole.before, after) };
         if (kept !== undefined) this.groupOf.set(patch, kept);
       }
       doc.restore(sideOf(patch, 'before'));
