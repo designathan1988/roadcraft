@@ -7,7 +7,7 @@ import {
 } from 'three';
 import { posedMaterial, type SlotFormat } from './cellInstances';
 import type { TreePlacement } from './groundCover';
-import { leafCardMaterials, lowPolyTreeParts } from './lowPolyTrees';
+import { type LowPolyParts, leafCardMaterials, lowPolyTreeParts } from './lowPolyTrees';
 import { PICTURE_WIND, createPlantImpostors, type PlantImpostors } from './plantImpostors';
 import { applyWind, windDepthMaterial, type WindResponse } from './wind';
 import { m } from '@world/units';
@@ -56,10 +56,15 @@ const treeSeed = (i: number): number => 0x7ee5 + i * 7919;
 /** The trees' pictures and who holds them. */
 let treePictures: { readonly set: PlantImpostors; users: number } | null = null;
 /** ONE ATLAS OF THE TREES' PICTURES for the near trees' far level and the far woods (`farForest.ts`): the same models from the same seeds, taken once (DO NOT take a second atlas of them, ~22 MB). `release` when done: the pictures go with the last holder. */
-export function natureTreePictures(): { readonly set: PlantImpostors; release(): void } {
+/** `grown`: the models already grown from the same seeds (`loadNatureTrees`), copied rather than grown again (VEG-08: noise and normals for every vertex, twice at the opening). */
+export function natureTreePictures(grown?: readonly LowPolyParts[]): { readonly set: PlantImpostors; release(): void } {
   if (!treePictures) {
     // Their own models, let go once taken: a palm's fronds throw its shadow, the others' crown hearts do.
-    const models = TREE_MODELS.map((kind, i) => ({ ...lowPolyTreeParts(kind, treeSeed(i)), cardsCast: kind === 'palm' }));
+    const models = TREE_MODELS.map((kind, i) => {
+      const had = grown?.[i];
+      const parts = had ? { body: had.body.clone(), cards: had.cards?.clone() ?? null } : lowPolyTreeParts(kind, treeSeed(i));
+      return { ...parts, cardsCast: kind === 'palm' };
+    });
     treePictures = { set: createPlantImpostors(models, PICTURE_WIND, 'nature', true), users: 0 };
   }
   const held = treePictures;
@@ -79,16 +84,14 @@ export function natureTreePictures(): { readonly set: PlantImpostors; release():
 
 /** Makes the trees; their materials share the forest's wind. */
 export async function loadNatureTrees(_anisotropy: number): Promise<NatureTreeKit> {
-  const variants: Variant[] = TREE_MODELS.map((kind, i) => {
-    const { body, cards } = lowPolyTreeParts(kind, treeSeed(i));
-    return { levels: [body, body, body], cards };
-  });
+  const grown = TREE_MODELS.map((kind, i) => lowPolyTreeParts(kind, treeSeed(i)));
+  const variants: Variant[] = grown.map(({ body, cards }) => ({ levels: [body, body, body], cards }));
   // Opaque, matt, faceted: the trunk and the crown's shaded heart.
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, flatShading: true, envMapIntensity: 0.35 });
   applyWind(material, FOREST_WIND, 'nature-trees-lowpoly');
   const depth = windDepthMaterial(FOREST_WIND, 'nature-trees-lowpoly-depth');
   const cardKit = leafCardMaterials(FOREST_WIND, 'nature-trees');
-  const held = natureTreePictures();
+  const held = natureTreePictures(grown);
   const pictures = held.set;
   // Drawn from the trees' poses (`plantCells.ts`): the sample compiled ahead (`buildNatureForest`) builds the programs drawn.
   for (const made of [material, depth, cardKit.material, cardKit.depth, pictures.material, pictures.depth]) posedMaterial(made, TREE_POSE);
