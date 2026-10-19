@@ -193,6 +193,10 @@ interface Host {
   readonly worker: Worker;
   /** A worker of the long-running services (`longWorkers`) or of every other kind: never both. */
   readonly long: boolean;
+  /** A thread of the page's own process, in the page's V8 cage (`pageRoomWorkers`); not a desktop job process's. */
+  readonly inPage: boolean;
+  /** Since when it has had nothing on it (`idle`), NaN while it has. */
+  freeSince: number;
   ports: number;
   readonly services: Map<JobService, number>;
   readonly queuePorts: Map<JobService, number>;
@@ -224,7 +228,7 @@ class JobSystem {
 }
 const system = new JobSystem();
 
-/** Where the pool's workers are made, by side (`long`: tiles and growth); null from it: the page's own Worker. On the desktop the long side goes to a utility process outside the renderer's V8 cage (`jobs/processWorker.ts`), whose `terminate` ends that thread (the recycling, `retireJobPort`). */
+/** Where the pool's workers are made, by side (`long`: tiles and growth); null from it: the page's own Worker. On the desktop the long side goes to a utility process outside the renderer's V8 cage (`jobs/processWorker.ts`), whose `terminate` ends that thread; the short side stays the page's own. */
 export function setJobWorkerMaker(make: ((long: boolean) => Worker | null) | null): void {
   system.makeWorker = make;
 }
@@ -250,7 +254,7 @@ export function jobWorkers(): number {
 const PAGE_WORKER_PEAK_BYTES = 600 * 2 ** 20;
 /** Of the cage, what the page keeps clear of its own heap and its workers' (the simulation's worker, the thread stacks, the next collection's room). */
 const CAGE_KEPT_BYTES = 600 * 2 ** 20;
-/** How many workers the page's process holds now, by the room its cage has (in a browser every worker is a thread of the page's process): the page's heap as V8 holds it now (`performance.memory.totalJSHeapSize`), each worker at its peak. DO NOT count on the page staying small: with a city open the page's heap ran to 2.7 GB between its collections, and the tile workers made on top of it took the cage past 4 GB - Chrome killed the page (2026-10-18). Two at least (one each side, or no tile is ever made); the workers already made stay until they are let go (a tile worker every few tiles, `tileGenerator.ts`), and the next is made only if it fits. */
+/** How many workers the page's process holds now, by the room its cage has (in a browser every worker is a thread of the page's process): the page's heap as V8 holds it now (`performance.memory.totalJSHeapSize`), each worker at its peak. DO NOT count on the page staying small: with a city open the page's heap ran to 2.7 GB between its collections, and the tile workers made on top of it took the cage past 4 GB - Chrome killed the page (2026-10-18). Two at least (one each side, or no tile is ever made); the next is made only if it fits, and one made while the page was small is let go once idle when the page has grown past room for it (`retireIdle`). */
 function pageRoomWorkers(): number {
   const page = (performance as { memory?: { totalJSHeapSize: number } }).memory?.totalJSHeapSize;
   if (page === undefined) return Infinity;
@@ -265,10 +269,12 @@ function grow(long: boolean): Host | null {
   const live = system.workers;
   if (live.length >= jobWorkers()) return null;
   if (live.filter((h) => h.long === long).length >= (long ? longWorkers() : shortWorkers())) return null;
-  if (!system.makeWorker && live.length >= pageRoomWorkers()) return null;
-  const worker = system.makeWorker?.(long) ?? new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
+  // The guard by where the worker is made: on the desktop the short side is the page's own (`desktopJobs.ts`), in the page's cage.
+  const made = system.makeWorker?.(long) ?? null;
+  if (made === null && pageWorkers() >= pageRoomWorkers()) return null;
+  const worker = made ?? new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
   system.setup?.(worker);
-  const host: Host = { worker, long, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [] };
+  const host: Host = { worker, long, inPage: made === null, freeSince: NaN, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [] };
   worker.onmessage = (event: MessageEvent<FromJob>) => {
     const port = system.ports.get(event.data.port);
     if (port) {
@@ -297,6 +303,48 @@ function grow(long: boolean): Host | null {
   };
   system.workers.push(host);
   return host;
+}
+
+/** The workers made in the page's own process. */
+function pageWorkers(): number {
+  let n = 0;
+  for (const host of system.workers) if (host.inPage) n++;
+  return n;
+}
+
+/** How long a worker of the page stands with nothing on it before it may be let go: a burst of jobs keeps its workers. */
+export const RETIRE_IDLE_MS = 10_000;
+let retireTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Nothing on it: no queued job, no lane (each service's own state is kept by its lanes: `classRigs`, the fixed lanes), no message in flight, no other thread's channel, not failed. */
+const idle = (host: Host): boolean =>
+  host.job === null && host.ports === 0 && host.laneWork === 0 && host.services.size === 0 && host.channelLost.length === 0 && !host.failed;
+
+/** The page's workers idle for `RETIRE_IDLE_MS` let go while the page holds more of them than its cage has room for now (`pageRoomWorkers`): DO NOT keep for the session a worker made while the page was small (each holds up to 600 MB of the cage). The next job makes one again (`grow`). */
+function retireIdle(): void {
+  const now = performance.now();
+  let waiting = Infinity;
+  let candidates = 0;
+  for (const host of system.workers) {
+    if (!host.inPage || !idle(host)) { host.freeSince = NaN; continue; }
+    if (Number.isNaN(host.freeSince)) host.freeSince = now;
+    candidates++;
+  }
+  if (candidates === 0) return;
+  let over = pageWorkers() - pageRoomWorkers();
+  for (let i = 0; i < system.workers.length && over > 0; i++) {
+    const host = system.workers[i]!;
+    if (!host.inPage || Number.isNaN(host.freeSince)) continue;
+    const left = host.freeSince + RETIRE_IDLE_MS - now;
+    if (left > 0) { waiting = Math.min(waiting, left); continue; }
+    system.workers.splice(i--, 1);
+    host.worker.terminate();
+    over--;
+  }
+  // The others idle not long enough yet: looked at again when they will have been.
+  if (over > 0 && waiting < Infinity && retireTimer === null) {
+    retireTimer = setTimeout(() => { retireTimer = null; retireIdle(); }, waiting);
+  }
 }
 
 /** A worker's queued job failed with it; a worker that failed whole (`dead`) is given no queued job again. */
@@ -347,6 +395,7 @@ function dispatch(): void {
     }
     if (!host) {
       if (system.workers.length > 0 && system.workers.every((h) => h.failed)) system.queue.failAll('every job worker failed');
+      retireIdle();
       return;
     }
     system.queue.take();
@@ -359,6 +408,7 @@ function dispatch(): void {
       system.queue.fail(job, String(error));
     }
   }
+  retireIdle();
 }
 
 
@@ -465,6 +515,7 @@ export class JobPort {
     this.host.ports--;
     const left = (this.host.services.get(this.service) ?? 1) - 1;
     if (left > 0) this.host.services.set(this.service, left); else this.host.services.delete(this.service);
+    retireIdle();
   }
 
 }

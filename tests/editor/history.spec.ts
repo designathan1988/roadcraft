@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { History, followNetwork } from '@editor/history';
 import { RoadDoc } from '@world/doc';
@@ -211,3 +211,82 @@ describe('steps joined into a group', () => {
   });
 });
 
+
+/** A map with something of every kind, its contents drawn from `seed`. */
+function fullMap(seed: number): RoadDoc {
+  const rng = new Rng(seed);
+  const doc = new RoadDoc();
+  const at = (): { x: number; y: number } => ({ x: rng.float() * 2000, y: rng.float() * 2000 });
+  let last = doc.addNode(at());
+  for (let i = 0; i < 12; i++) { const n = doc.addNode(at()); doc.addSegment(last.id, n.id, 1 + (i % 3)); last = n; }
+  for (let i = 0; i < 6; i++) doc.addPole(at(), i % 2 === 0);
+  for (let i = 0; i < 5; i++) doc.buildings.add({ ...generateBody('residential', 30, 30, 2), ...at(), rotation: 0 } as unknown as Building);
+  doc.plantTrees(Array.from({ length: 40 }, () => ({ ...at(), height: 8 + rng.float() * 10, yaw: rng.float(), seed: rng.float() })));
+  doc.addElements(Array.from({ length: 10 }, () => ({ kind: 'stones' as const, ...at(), size: 3, yaw: rng.float(), seed: rng.float() })));
+  doc.addClouds(Array.from({ length: 4 }, () => ({ ...at(), height: 200, size: 100, density: 0.5, yaw: rng.float() })));
+  doc.addTerrainStamp({ mode: 'raise', ...at(), radius: 50, strength: 2 });
+  doc.addPaintDab({ kind: 'sand', ...at(), radius: 40, strength: 0.6 });
+  doc.setWeather({ rain: rng.float() });
+  return doc;
+}
+
+/** A step that replaced the whole map (a map opened, a city generated), as `restoreInto` replaces it. */
+describe('a step that replaced the whole map', () => {
+  it('undoes and redoes to the very same text, again and again', () => {
+    const doc = fullMap(1);
+    const history = new History();
+    const before = doc.toText();
+    const opened = fullMap(2).toJSON();
+    history.begin(doc);
+    doc.replaceFromJSON(opened);
+    expect(history.end(doc)).toBe(true);
+    const after = doc.toText();
+    expect(after).not.toBe(before);
+    for (let round = 0; round < 3; round++) {
+      expect(history.undo(doc)).toBe(true);
+      expect(doc.toText(), `round ${round}, undone`).toBe(before);
+      expect(doc.toJSON()).toEqual(JSON.parse(before));
+      expect(history.redo(doc)).toBe(true);
+      expect(doc.toText(), `round ${round}, redone`).toBe(after);
+      expect(doc.toJSON()).toEqual(JSON.parse(after));
+    }
+  });
+
+  it('keeps the maps as their text, its bytes their lengths, and never copies the map as objects nor writes a list only to compare it', () => {
+    const doc = fullMap(1);
+    const history = new History();
+    const before = doc.toText();
+    const opened = fullMap(2).toJSON();
+    const toJSON = vi.spyOn(RoadDoc.prototype, 'toJSON');
+    const stringify = vi.spyOn(JSON, 'stringify');
+    try {
+      history.begin(doc);
+      doc.replaceFromJSON(opened);
+      history.end(doc);
+      expect(history.bytes).toBe(2 * before.length);
+      const after = doc.toText();
+      stringify.mockClear();
+      history.undo(doc);
+      expect(history.bytes).toBe(2 * (before.length + after.length));
+      history.redo(doc);
+      expect(toJSON).not.toHaveBeenCalled();
+      // `toText` writes the map's head and tail objects; no list (trees, elements, clouds...) is written to be compared.
+      expect(stringify.mock.calls.filter(([value]) => Array.isArray(value))).toEqual([]);
+    } finally {
+      toJSON.mockRestore();
+      stringify.mockRestore();
+    }
+  });
+
+  it('dropped (a map that failed to open) puts the map before back, no step kept', () => {
+    const doc = fullMap(1);
+    const history = new History();
+    const before = doc.toText();
+    history.begin(doc);
+    doc.replaceFromJSON(fullMap(2).toJSON());
+    history.cancel(doc);
+    expect(doc.toText()).toBe(before);
+    expect(history.canUndo).toBe(false);
+    expect(history.canRedo).toBe(false);
+  });
+});

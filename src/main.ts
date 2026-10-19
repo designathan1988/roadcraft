@@ -851,6 +851,10 @@ function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snap
   }
   // A map opened: its traffic built now, the old simulation gone.
   if (source === 'import') scene.beginLoad();
+  snapshotApplied();
+}
+/** The game after the map was put in place whole. */
+function snapshotApplied(): void {
   buildings.restored();
   select(null, game.selectedSegmentS, null, 'another map');
   closeInspector();
@@ -1966,15 +1970,17 @@ function openImported(result: ImportResult): boolean | Promise<boolean> {
 }
 /** A picked map's session put in place of the map. */
 function openSession(session: Extract<ImportResult, { status: 'ok' }>['session']): boolean {
-  const before = doc.toJSON();
   // Opening a map is an edit like any other: undo gives the map before it back.
   history.begin(doc);
   try {
     applySnapshot(session.document, 'import');
   } catch (error) {
     console.error('The map could not be loaded.', error);
-    applySnapshot(before);
-    history.end(doc);
+    // DO NOT copy the map before for this: the open edit holds it (`RoadDoc.replaceWith`), and puts it back.
+    roadTool.cancel();
+    history.cancel(doc);
+    followNetwork(doc, net);
+    snapshotApplied();
     flashHint('hint.openFailed');
     return false;
   }

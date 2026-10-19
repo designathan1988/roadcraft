@@ -21,3 +21,29 @@ export function samePlain(a: unknown, b: unknown): boolean {
   for (const k in y) if (y[k] !== undefined) count--;
   return count === 0;
 }
+
+/** Whether two plain values write the same text (`JSON.stringify`), keys in the same order, without writing it; stricter only for numbers JSON writes as null. */
+export function sameText(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a === 'number' && typeof b === 'number') return Number.isNaN(a) && Number.isNaN(b);
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  const arrayA = Array.isArray(a);
+  if (arrayA !== Array.isArray(b)) return false;
+  if (arrayA) {
+    const x = a as unknown[], y = b as unknown[];
+    if (x.length !== y.length) return false;
+    for (let i = 0; i < x.length; i++) if (!sameText(x[i], y[i])) return false;
+    return true;
+  }
+  const x = a as Record<string, unknown>, y = b as Record<string, unknown>;
+  const keysY = Object.keys(y);
+  let j = 0;
+  for (const k of Object.keys(x)) {
+    if (x[k] === undefined) continue;
+    while (j < keysY.length && y[keysY[j]!] === undefined) j++;
+    if (keysY[j] !== k || !sameText(x[k], y[k])) return false;
+    j++;
+  }
+  while (j < keysY.length && y[keysY[j]!] === undefined) j++;
+  return j === keysY.length;
+}

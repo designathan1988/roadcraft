@@ -54,7 +54,7 @@ import { rescaleSerializedDoc } from './rescale';
 import { METERS_PER_UNIT, m } from './units';
 import { ForkMap, forkWork } from '@core/forkMap';
 import { RecordMap } from '@core/recordMap';
-import { samePlain } from '@core/plain';
+import { samePlain, sameText } from '@core/plain';
 
 /** `shape` flattened until no band of a road of this profile folds over (see `RoadDoc.fitCurve`). */
 export function fitRoadCurve(
@@ -1257,7 +1257,7 @@ export class RoadDoc {
     if (this.clouds.length >= MAX_PLACED_CLOUDS) return null;
     this.ownList('clouds');
     const id = this.clouds.reduce((m, c) => Math.max(m, c.id), 0) + 1;
-    const cloud = { ...value, id };
+    const cloud = placedCloud(value, id);
     this.clouds.push(cloud);    this.changes.record('clouds', [rectAround([cloud], cloud.size)!], { ids: [id] });
     return cloud;
   }
@@ -1269,7 +1269,7 @@ export class RoadDoc {
     let added = 0;
     for (const value of values) {
       if (this.clouds.length >= MAX_PLACED_CLOUDS) break;
-      this.clouds.push({ ...value, id: ++id });
+      this.clouds.push(placedCloud(value, ++id));
       added++;
     }
     if (added > 0) {      const placed = this.clouds.slice(-added);
@@ -2055,7 +2055,8 @@ export class RoadDoc {
       return;
     }
     // The whole map replaced during an edit (a map opened, a city generated): the edit's undo puts back the map as it was.
-    if (this.recorder && !this.recorder.whole) this.recorder.whole = this.toJSON();
+    // As its text (`toText`, the buildings' text kept per record): a third of the objects' memory, and its bytes the budget's own.
+    if (this.recorder && !this.recorder.whole) this.recorder.whole = this.toText();
     const moved = this.movedIn(source);
     // Read before anything here is written: it holds while this diary stands where the copy was made.
     const buildingIds = this.buildingsMovedIn(source);
@@ -2064,7 +2065,8 @@ export class RoadDoc {
     const stamps = !moved('terrain') ? { rects: [], ids: [] }
       : this.terrainRelief !== source.terrainRelief ? null : stampDifferences(this.terrainStamps, source.terrainStamps);
     const items = itemDifferences(this, source, moved);
-    const changed = this.replaceContents(source, moved, buildingIds, lotIds);
+    // The roads differ exactly where `roadDifferences` found a node or a segment that does: DO NOT walk them twice.
+    const changed = this.replaceContents(source, moved, buildingIds, lotIds, roads.nodes.length > 0 || roads.segments.length > 0);
     const where = (rects: readonly ChangeRect[] | undefined): readonly ChangeRect[] | null => rects && rects.length ? rects : null;
     // The traffic's plan only when it moved (`roadDifferences`): a node only raised leaves it, as `setNodeHeightOffset` does.
     if (changed.roads || roads.rects.length) this.roadsChanged(where(roads.rects), roads.traffic, { nodes: roads.nodes, segments: roads.segments });
@@ -2121,8 +2123,7 @@ export class RoadDoc {
     this.listen(null);
     // The map after is the map as it stands: taken only when the step is undone (`editor/history.ts`), never kept twice.
     if (rec.whole) {
-      const whole = { before: rec.whole, after: null };
-      return { records: [], lists: [], values: [], whole, bytes: patchBytes([], [], [], whole) };
+      return { records: [], lists: [], values: [], whole: { before: rec.whole, after: null }, bytes: wholeBytes(rec.whole, null) };
     }
     const records: DocPatch['records'][number][] = [];
     for (const [part, kept] of rec.records) {
@@ -2202,7 +2203,7 @@ export class RoadDoc {
   }
 
   restore(r: Restoration): void {
-    if (r.whole) { this.replaceFromJSON(r.whole, { repair: false }); return; }
+    if (r.whole) { this.replaceFromJSON(JSON.parse(r.whole) as SerializedDoc, { repair: false }); return; }
     const roads: ChangeRect[] = [], utilities: ChangeRect[] = [], landscape: ChangeRect[] = [], barriers: ChangeRect[] = [];
     // The kinds changed as a whole (a value: the relief, the weather...)
     const kinds = new Set<DocChangeKind>();
@@ -2366,7 +2367,7 @@ export class RoadDoc {
   }
 
   /** Takes `source`'s contents and says what differed: the roads, the land, the poles and the barriers */
-  private replaceContents(source: RoadDoc, moved: MovedKinds, buildingIds: readonly BuildingId[] | null, lotIds: readonly number[] | null): {
+  private replaceContents(source: RoadDoc, moved: MovedKinds, buildingIds: readonly BuildingId[] | null, lotIds: readonly number[] | null, roadsDiffer: boolean): {
     roads: boolean; land: boolean; barriers: boolean; others: DocChangeKind[];
   } {
     const others: DocChangeKind[] = [];
@@ -2375,7 +2376,7 @@ export class RoadDoc {
     const landMoved = moved('terrain') && (!sameStamps(this.terrainStamps, source.terrainStamps) || this.terrainRelief !== source.terrainRelief);
     // Likewise the roads and the utility network
     const roadsMoved = moved('roads', 'traffic');
-    const roadsChanged = roadsMoved && !sameRoads(this, source);
+    const roadsChanged = roadsMoved && roadsDiffer;
 
     if (roadsMoved) {
       this.nodes.clear();
@@ -2405,7 +2406,7 @@ export class RoadDoc {
     this.buildings.replaceWith(source.buildings, buildingIds);
     // The zones and the lots moved only when their content did
     this.nextZoneId = source.nextZoneId;
-    if (moved('zones') && (JSON.stringify(this.zones) !== JSON.stringify(source.zones) || JSON.stringify(this.zoneMarks) !== JSON.stringify(source.zoneMarks))) {
+    if (moved('zones') && (!sameText(this.zones, source.zones) || !sameText(this.zoneMarks, source.zoneMarks))) {
       this.ownList('zones');
       this.ownList('zoneMarks');
       this.zones.length = 0;
@@ -2416,18 +2417,18 @@ export class RoadDoc {
     }
     // The lots write their own, by id (`LotStore.replaceWith`); of a working copy, only those its diary names.
     if (moved('lots', 'lotKeys')) this.lotStore.replaceWith(source.lotStore, lotIds, 'replaced by an edit or an undo');
-    if (moved('transit') && JSON.stringify(this.transit) !== JSON.stringify(source.transit)) {
+    if (moved('transit') && !sameText(this.transit, source.transit)) {
       this.transit = JSON.parse(JSON.stringify(source.transit)) as TransitData;
       others.push('transit');
     }
-    if (moved('people') && JSON.stringify(this.people) !== JSON.stringify(source.people)) {
+    if (moved('people') && !sameText(this.people, source.people)) {
       this.ownList('people');
       this.people.length = 0;
       this.people.push(...source.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec));
       others.push('people');
     }
 
-    if (moved('nature') && JSON.stringify(this.nature) !== JSON.stringify(source.nature)) {
+    if (moved('nature') && !sameText(this.nature, source.nature)) {
       this.nature = source.nature ? { ...source.nature } : null;
       others.push('nature');
     }
@@ -2436,25 +2437,25 @@ export class RoadDoc {
       this.economy = { ...source.economy };
       others.push('economy');
     }
-    if (moved('weather') && JSON.stringify(this.weather) !== JSON.stringify(source.weather)) {
+    if (moved('weather') && !sameText(this.weather, source.weather)) {
       this.weather = { ...source.weather };
       others.push('weather');
     }
-    if (moved('trees') && JSON.stringify(this.trees) !== JSON.stringify(source.trees)) {
+    if (moved('trees') && !sameText(this.trees, source.trees)) {
       this.ownList('trees');
       this.trees.length = 0;
       this.treeGrid = null;
       this.trees.push(...source.trees.map((t) => ({ ...t })));
       others.push('trees');
     }
-    if (moved('clearings') && JSON.stringify(this.treeClearings) !== JSON.stringify(source.treeClearings)) {
+    if (moved('clearings') && !sameText(this.treeClearings, source.treeClearings)) {
       this.ownList('treeClearings');
       this.treeClearings.length = 0;
       this.treeClearings.push(...source.treeClearings.map((c) => ({ ...c })));
       others.push('clearings');
     }
 
-    if (moved('elements') && (this.elements.length !== source.elements.length || JSON.stringify(this.elements) !== JSON.stringify(source.elements))) {
+    if (moved('elements') && (this.elements.length !== source.elements.length || !sameText(this.elements, source.elements))) {
       this.ownList('elements');
       this.elements.length = 0;
       this.elementGrid = null;
@@ -2462,14 +2463,14 @@ export class RoadDoc {
       others.push('elements');
     }
 
-    if (moved('clouds') && JSON.stringify(this.clouds) !== JSON.stringify(source.clouds)) {
+    if (moved('clouds') && !sameText(this.clouds, source.clouds)) {
       this.ownList('clouds');
       this.clouds.length = 0;
       this.clouds.push(...source.clouds.map((c) => ({ ...c })));
       others.push('clouds');
     }
 
-    if (moved('gullies') && (this.gullyAuto !== source.gullyAuto || JSON.stringify(this.gullyDabs) !== JSON.stringify(source.gullyDabs))) {
+    if (moved('gullies') && (this.gullyAuto !== source.gullyAuto || !sameText(this.gullyDabs, source.gullyDabs))) {
       this.ownList('gullyDabs');
       this.gullyDabs.length = 0;
       this.gullyDabs.push(...source.gullyDabs.map((dab) => ({ ...dab })));
@@ -2477,7 +2478,7 @@ export class RoadDoc {
       others.push('gullies');
     }
 
-    if (moved('fog') && (JSON.stringify(this.fogDabs) !== JSON.stringify(source.fogDabs) || JSON.stringify(this.fogSettings) !== JSON.stringify(source.fogSettings))) {
+    if (moved('fog') && (!sameText(this.fogDabs, source.fogDabs) || !sameText(this.fogSettings, source.fogSettings))) {
       this.ownList('fogDabs');
       this.fogDabs.length = 0;
       this.fogDabs.push(...source.fogDabs.map((dab) => ({ ...dab })));
@@ -3078,17 +3079,20 @@ export interface DocPatch {
   readonly records: readonly { readonly part: RecordPart; readonly id: number; readonly before: unknown; readonly after: unknown }[];
   readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly before: readonly unknown[]; readonly after: readonly unknown[] }[];
   readonly values: readonly { readonly part: ValuePart; readonly before: unknown; readonly after: unknown }[];
-  /** The whole map before and after, when the edit replaced it whole (a map opened, a city generated). */
-  readonly whole?: { readonly before: SerializedDoc; readonly after: SerializedDoc | null };
+  /** The whole map before and after as its text (`RoadDoc.toText`), when the edit replaced it whole (a map opened, a city generated). */
+  readonly whole?: { readonly before: string; readonly after: string | null };
   /** Roughly what it holds, UTF-16 bytes of its text. */
   readonly bytes: number;
 }
 
 const textBytes = (value: unknown): number => (value === undefined ? 0 : 2 * JSON.stringify(value).length);
 
+/** What a step that replaced the whole map holds: its texts, UTF-16 bytes, read off their lengths. */
+export const wholeBytes = (before: string, after: string | null): number => 2 * (before.length + (after?.length ?? 0));
+
 /** What a patch holds, UTF-16 bytes of its text (`editor/history.ts` keeps the steps under a budget). */
-function patchBytes(records: DocPatch['records'], lists: DocPatch['lists'], values: DocPatch['values'], whole?: DocPatch['whole']): number {
-  let bytes = whole ? textBytes(whole.before) + textBytes(whole.after) : 0;
+function patchBytes(records: DocPatch['records'], lists: DocPatch['lists'], values: DocPatch['values']): number {
+  let bytes = 0;
   for (const r of records) bytes += textBytes(r.before) + (r.part === 'buildings' || r.part === 'lots' ? 0 : textBytes(r.after));
   for (const l of lists) bytes += textBytes(l.before) + textBytes(l.after);
   for (const v of values) bytes += textBytes(v.before) + textBytes(v.after);
@@ -3097,8 +3101,8 @@ function patchBytes(records: DocPatch['records'], lists: DocPatch['lists'], valu
 
 export interface Restoration {
   readonly records: readonly { readonly part: RecordPart; readonly id: number; readonly value: unknown }[];
-  /** The whole map, when the edit replaced it whole (`RoadDoc.replaceWith`): put back as it is, nothing else. */
-  readonly whole?: SerializedDoc;
+  /** The whole map as its text, when the edit replaced it whole (`RoadDoc.replaceWith`): put back as it is, nothing else. */
+  readonly whole?: string;
   readonly lists: readonly { readonly part: ListPart; readonly start: number; readonly remove: number; readonly items: readonly unknown[] }[];
   readonly values: readonly { readonly part: ValuePart; readonly value: unknown }[];
 }
@@ -3239,18 +3243,9 @@ function copySegment(segment: RoadSegment): RoadSegment {
   };
 }
 
-function sameRoads(a: RoadDoc, b: RoadDoc): boolean {
-  if (a.nodes.size !== b.nodes.size || a.segments.size !== b.segments.size) return false;
-  for (const [id, p] of a.nodes) {
-    const q = b.nodes.get(id);
-    if (!q || !sameNode(p, q)) return false;
-  }
-  for (const [id, p] of a.segments) {
-    const q = b.segments.get(id);
-    if (!q || !sameSegment(p, q)) return false;
-  }
-  return true;
-}
+/** A cloud placed, its keys in the order a map read back has them (`readCloud`): DO NOT let an undo of the whole map write them in another. */
+const placedCloud = (v: Omit<PlacedCloud, 'id'>, id: number): PlacedCloud =>
+  ({ id, x: v.x, y: v.y, height: v.height, size: v.size, density: v.density, yaw: v.yaw });
 
 /** Around a junction with no road yet, world units. */
 const NODE_PAD = 30;
@@ -3364,7 +3359,7 @@ function stampDifferences(a: readonly TerrainStamp[], b: readonly TerrainStamp[]
   const theirs = new Map(b.map((s) => [s.id, s]));
   for (const [id, s] of mine) {
     const t = theirs.get(id);
-    if (t && JSON.stringify(s) === JSON.stringify(t)) continue;
+    if (t && sameText(s, t)) continue;
     ids.push(id);
     rects.push(circleRect(s));
     if (t) rects.push(circleRect(t));
@@ -3399,7 +3394,7 @@ function itemDifferences(a: RoadDoc, b: RoadDoc, moved: MovedKinds): { utilities
   if (moved('barriers')) {
     for (const [id, p] of a.barriers) {
       const q = b.barriers.get(id);
-      if (q && JSON.stringify(p) === JSON.stringify(q)) continue;
+      if (q && sameText(p, q)) continue;
       barriers.push(rectAround(p.points, ITEM_PAD)!);
       if (q) barriers.push(rectAround(q.points, ITEM_PAD)!);
     }
@@ -3501,7 +3496,8 @@ interface EditRecorder {
   readonly records: Map<RecordPart, Map<number, unknown>>;
   readonly lists: Map<ListPart, unknown[]>;
   readonly values: Map<ValuePart, unknown>;
-  whole: SerializedDoc | null;
+  /** The map before, as its text (`toText`). */
+  whole: string | null;
 }
 
 const VALUE_PARTS: readonly ValuePart[] = ['terrainRelief', 'markingStyle', 'nature', 'fogSettings', 'gullyAuto', 'weather', 'economy', 'transit', 'nextZoneId', 'nextLotId', 'allocators'];

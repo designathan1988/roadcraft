@@ -1,6 +1,7 @@
 import type { Vec2 } from '@core/vec2';
 import type { Network } from '@world/network';
 import type { SegmentId } from '@world/ids';
+import type { SegmentRibbon } from '@world/ribbons';
 import { m } from '@world/units';
 
 /** THE CONGESTION MAP (Layers > Congestion): each road in view coloured by how full its lanes are, green free, red jammed */
@@ -34,26 +35,48 @@ export function roadOccupancy(net: Network, vehicles: Iterable<Moving>): Map<Seg
   return out;
 }
 
+/** A road's line as the map draws it: the middle, the middle moved across by the road's width, then each point of the band (x, y). */
+const sampled = new WeakMap<SegmentRibbon, Float64Array>();
+
+/** The points of a road's band, sampled once: a road changed is a new ribbon (`networkBuild.ts`), so DO NOT sample it again each frame. */
+function bandOf(ribbon: SegmentRibbon): Float64Array {
+  let band = sampled.get(ribbon);
+  if (band) return band;
+  const line = ribbon.full;
+  const steps = Math.max(2, Math.min(48, Math.ceil(line.length / 12)));
+  band = new Float64Array(4 + 2 * (steps + 1));
+  const mid = line.sampleAt(line.length / 2);
+  band[0] = mid.p.x; band[1] = mid.p.y;
+  band[2] = mid.p.x + mid.n.x * ribbon.road.width; band[3] = mid.p.y + mid.n.y * ribbon.road.width;
+  const frame = line.sampleAt(0);
+  for (let k = 0; k <= steps; k++) {
+    line.sampleAtInto((k / steps) * line.length, frame);
+    band[4 + 2 * k] = frame.p.x; band[5 + 2 * k] = frame.p.y;
+  }
+  sampled.set(ribbon, band);
+  return band;
+}
+
 /** The congestion map drawn on the editor's overlay: the roads meeting `view` (a world box), as bands as wide as their carriageway. */
 export function drawCongestion(ctx: CanvasRenderingContext2D, net: Network, vehicles: Iterable<Moving>,
   view: readonly [number, number, number, number], at: (p: Vec2) => Vec2): void {
   const occupancy = roadOccupancy(net, vehicles);
+  const point = { x: 0, y: 0 };
+  const atPoint = (band: Float64Array, i: number): Vec2 => { point.x = band[i]!; point.y = band[i + 1]!; return at(point); };
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (const ribbon of net.ribbonsMeeting(view)) {
-    const line = ribbon.full;
-    const steps = Math.max(2, Math.min(48, Math.ceil(line.length / 12)));
-    const mid = line.sampleAt(line.length / 2);
-    const a = at(mid.p), b = at({ x: mid.p.x + mid.n.x * ribbon.road.width, y: mid.p.y + mid.n.y * ribbon.road.width });
+    const band = bandOf(ribbon);
+    const a = atPoint(band, 0), b = atPoint(band, 2);
     const width = Math.max(3, Math.hypot(b.x - a.x, b.y - a.y) * 0.7);
     ctx.strokeStyle = congestionColour(occupancy.get(ribbon.id) ?? 0);
     ctx.lineWidth = width;
     ctx.globalAlpha = 0.75;
     ctx.beginPath();
-    for (let k = 0; k <= steps; k++) {
-      const p = at(line.sampleAt((k / steps) * line.length).p);
-      if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    for (let i = 4; i < band.length; i += 2) {
+      const p = atPoint(band, i);
+      if (i === 4) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
     }
     ctx.stroke();
   }
