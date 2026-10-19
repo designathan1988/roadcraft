@@ -1575,7 +1575,8 @@ function mapSlider(min: number, max: number, step: number, get: () => number, se
       persistence.saveSessionSoon(doc, sessionSettings);
       requestDraw();
     },
-    end: () => { recorded = false; },
+    // The drag's one step closed as it is let go (EDT-10).
+    end: () => { if (recorded) { history.end(doc); updateHistoryButtons(); } recorded = false; },
   };
 }
 /** A slider of a brush, kept between sessions (`ui/toolChoices.ts`): not the map's, no undo. */
@@ -1691,6 +1692,8 @@ function setMapBiome(key: string): void {
   if (JSON.stringify(doc.nature) === JSON.stringify(next)) return;
   history.begin(doc);
   doc.setNature(next);
+  // Closed at once (EDT-10): what grows after it is not its.
+  history.end(doc);
   updateHistoryButtons();
   requestDraw();
 }
@@ -1700,6 +1703,7 @@ function wholeMapEdit(confirmKey: string | null, edit: () => void): void {
   if (confirmKey && !window.confirm(t(confirmKey))) return;
   history.begin(doc);
   edit();
+  history.end(doc);
   updateHistoryButtons();
   persistence.saveSessionSoon(doc, sessionSettings);
   requestDraw();
@@ -3622,6 +3626,7 @@ function setMarkingStyle(value: string): void {
   if (!isMarkingStyle(value) || value === doc.markingStyle) return;
   history.begin(doc);
   doc.setMarkingStyle(value);
+  history.end(doc);
   persistence.saveSessionSoon(doc, sessionSettings);
   updateHistoryButtons();
   requestDraw();
