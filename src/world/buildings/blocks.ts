@@ -127,7 +127,8 @@ function volumeOf(s: Volume, ring: readonly Vec2[], base: number, storeys: Volum
     delete storey.facade.bays;
     delete storey.facade.sides;
   }
-  if (v.materials?.sides) delete v.materials.sides;
+  // A copy without the sides: DO NOT delete them from the block's own `materials`, shared (read-only) and, in a stored record, interned and frozen (a TypeError there, the sides lost from a draft's save elsewhere, PRD-11).
+  if (v.materials?.sides) { const { sides: _sides, ...rest } = v.materials; v.materials = rest; }
   if (v.roofDetails) v.roofDetails = v.roofDetails.filter((part) => roofPartFits(v, part));
   return v;
 }
