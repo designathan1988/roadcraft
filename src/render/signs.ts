@@ -220,7 +220,14 @@ export interface Sheet {
   readonly plates: Map<number, { readonly type: SignType; readonly text: string }>;
   /** Plates placed since it was last painted. */
   dirty: boolean;
+  /** To be painted whole (new, grown, its context lost): its cells cannot be sent one by one onto a texture never sent. */
+  whole: boolean;
+  /** Cells let go since it was last painted: blank again at the next flush, as a whole painting leaves them. */
+  readonly blank: number[];
 }
+
+/** Copies a picture onto a sheet's texture on the GPU, its corner at `x`, `y` (three's `copyTextureToTexture`, which makes the sheet's mipmaps again, r186). */
+export type SheetCopier = (picture: CanvasTexture, sheet: CanvasTexture, x: number, y: number) => void;
 /** A plate on a sheet: its cell, the height its picture takes in it, and the last build that read it. */
 export interface Placed { readonly sheet: Sheet; readonly cell: number; readonly h: number; build: number }
 const pitchOf = (sheet: Sheet): number => sheet.cellHeight + 2 * GUTTER;
@@ -252,7 +259,17 @@ export class SignSheets {
   private readonly pending = new Map<string, HTMLCanvasElement>();
 
   /** `watch`: told when a sheet grew (its cells' uv moved) and when one was let go. */
-  constructor(private readonly watch?: { grown?(sheet: Sheet): void; gone?(sheet: Sheet): void }) {}
+  /** `copy`: a sheet already on the GPU takes its new plates cell by cell (VIA-04); without it every sheet is painted whole. */
+  constructor(private readonly watch?: { grown?(sheet: Sheet): void; gone?(sheet: Sheet): void }, private copy?: SheetCopier) {}
+
+  /** The GPU copy, once the renderer is there (`renderer.ts`). */
+  useCopier(copy: SheetCopier): void {
+    this.copy = copy;
+  }
+
+  /** One cell's picture as the whole painting lays it: its gutters clear, the plate at `GUTTER` in, sent onto the sheet alone. */
+  private cellCanvas: HTMLCanvasElement | null = null;
+  private cellTexture: CanvasTexture | null = null;
 
   /** A plate's cell, held for one more standing plate (`drop` lets it go). */
   take(type: SignType, text: string): Placed {
@@ -275,6 +292,7 @@ export class SignSheets {
     // The cell freed keeps its old picture on the GPU until painted over: no plate's uv reads it.
     kept.sheet.plates.delete(kept.cell);
     kept.sheet.free.push(kept.cell);
+    kept.sheet.blank.push(kept.cell);
     kept.sheet.used--;
     if (kept.sheet.used > 0) return;
     const at = this.sheets.indexOf(kept.sheet);
@@ -310,14 +328,19 @@ export class SignSheets {
 
   /** Every sheet with new plates painted whole from its plates and handed to the GPU; its canvas let go after the upload */
   flush(): void {
-    for (const sheet of this.sheets) if (sheet.dirty) this.paint(sheet);
+    // DO NOT paint a whole sheet again for a plate or two (a canvas of up to 2176 x 2176, every plate drawn again, the sheet and its mipmaps sent whole: 20-100 ms a new street name, VIA-04): a sheet already on the GPU takes its new cells alone.
+    for (const sheet of this.sheets) {
+      if (!sheet.dirty) continue;
+      if (this.copy && !sheet.whole && sheet.texture.userData['uploadedBytes'] !== undefined) this.paintCells(sheet);
+      else this.paint(sheet);
+    }
     for (const picture of this.pending.values()) { picture.width = 0; picture.height = 0; }
     this.pending.clear();
   }
 
   /** The WebGL context restored: every sheet painted again from its plates (their pixels were only on the GPU). */
   refill(): void {
-    for (const sheet of this.sheets) sheet.dirty = true;
+    for (const sheet of this.sheets) { sheet.dirty = true; sheet.whole = true; }
     this.flush();
   }
 
@@ -346,6 +369,37 @@ export class SignSheets {
     }
     sheet.texture.needsUpdate = true;
     sheet.dirty = false;
+    sheet.whole = false;
+    sheet.blank.length = 0;
+  }
+
+  /** A sheet on the GPU: each cell let go cleared and each new plate drawn in its cell, every one sent onto the sheet where the whole painting puts it (the same pixels: the canvas is turned over as the sheet is, three's UNPACK_FLIP_Y of the sheet). */
+  private paintCells(sheet: Sheet): void {
+    const pitch = pitchOf(sheet);
+    const canvas = this.cellCanvas ??= document.createElement('canvas');
+    if (canvas.width !== PITCH || canvas.height !== pitch || !this.cellTexture) {
+      canvas.width = PITCH;
+      canvas.height = pitch;
+      this.cellTexture?.dispose();
+      this.cellTexture = new CanvasTexture(canvas);
+    }
+    const texture = this.cellTexture;
+    texture.colorSpace = sheet.texture.colorSpace;
+    const g = canvas.getContext('2d')!;
+    const send = (cell: number, picture: HTMLCanvasElement | null): void => {
+      g.clearRect(0, 0, PITCH, pitch);
+      if (picture) g.drawImage(picture, GUTTER, GUTTER);
+      const x = (cell % COLUMNS) * PITCH, y = Math.floor(cell / COLUMNS) * pitch;
+      // The canvas's rows go up turned over, as the whole sheet's do: its top row at the sheet's `height - y - 1`.
+      this.copy!(texture, sheet.texture, x, sheet.height - y - pitch);
+    };
+    for (const cell of sheet.blank) if (!sheet.plates.has(cell)) send(cell, null);
+    for (const [cell, { type, text }] of sheet.plates) {
+      const picture = this.pending.get(`${type}|${text}`);
+      if (picture) send(cell, picture);
+    }
+    sheet.dirty = false;
+    sheet.blank.length = 0;
   }
 
   private newSheet(cellHeight: number): Sheet {
@@ -353,7 +407,7 @@ export class SignSheets {
     const width = COLUMNS * PITCH, height = rows * (cellHeight + 2 * GUTTER);
     const texture = sheetTexture(width, height);
     const material = plateMaterial(texture);
-    const sheet: Sheet = { texture, material, cellHeight, rows, free: range(0, rows * COLUMNS), used: 0, width, height, plates: new Map(), dirty: true };
+    const sheet: Sheet = { texture, material, cellHeight, rows, free: range(0, rows * COLUMNS), used: 0, width, height, plates: new Map(), dirty: true, whole: true, blank: [] };
     this.sheets.push(sheet);
     return sheet;
   }
@@ -369,6 +423,7 @@ export class SignSheets {
     sheet.free.push(...range(sheet.rows * COLUMNS, rows * COLUMNS));
     sheet.rows = rows;
     sheet.dirty = true;
+    sheet.whole = true;
     this.watch?.grown?.(sheet);
   }
 

@@ -12,7 +12,7 @@ import { sectionOf, LAMP_ZONE } from '@world/section';
 import { m } from '@world/units';
 import type { ActiveTiles } from './activeTiles';
 import { createInstanceRuns, RunBuilder, warmMeshes, type Run, type RunStore } from './instanceRuns';
-import { PLATE, POST, QUAD, QUAD_ORDER, SignSheets, cellUv, onTopOfPost, plateFaces, plateMaterial, streetChain, type Placed, type Sheet } from './signs';
+import { PLATE, POST, QUAD, QUAD_ORDER, SignSheets, cellUv, onTopOfPost, plateFaces, plateMaterial, streetChain, type Placed, type Sheet, type SheetCopier } from './signs';
 
 /** DO NOT build every sign of the map again */
 
@@ -246,6 +246,8 @@ export interface SignLayerKept {
   cull(frustum: Frustum, view: Matrix4): void;
   /** A WebGL context restored: the plates' sheets painted again (their pixels were only on the GPU). */
   refill(): void;
+  /** The GPU copy a sheet already sent takes its new plates by (`SignSheets.useCopier`, VIA-04). */
+  useCopier(copy: SheetCopier): void;
   /** The streamed world: the signs are the tiles' (`signTiles.ts`, `put`), the page's own taken away and none stood by `sync`; off, the page's own stood again from the diary. */
   setTiled(tiled: boolean): void;
   /** A tile's bake stood (`bakeSigns`); taken away by `take` with the same bake. */
@@ -437,6 +439,9 @@ export function createSignLayer(active?: ActiveTiles): SignLayerKept {
     },
     refill() {
       sheets.refill();
+    },
+    useCopier(copy) {
+      sheets.useCopier(copy);
     },
     setTiled(on) {
       if (on === tiled) return;

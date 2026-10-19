@@ -39,6 +39,36 @@ describe('the sheets of the sign plates', () => {
     }
   });
 
+  it('sends a new plate onto a sheet already on the GPU as its cell alone, where the whole painting puts it, and clears a cell let go (VIA-04)', () => {
+    const copies: { x: number; y: number }[] = [];
+    const sheets = new SignSheets(undefined, (_picture, _sheet, x, y) => { copies.push({ x, y }); });
+    const a = sheets.take('street', 'Rua A');
+    sheets.flush();
+    // The first painting: the sheet whole, no cell copied.
+    expect(copies).toEqual([]);
+    const texture = a.sheet.texture;
+    texture.onUpdate?.(texture);
+    const version = texture.version;
+    drawn = 0;
+    const b = sheets.take('street', 'Rua B');
+    sheets.flush();
+    // One plate drawn and sent alone: the sheet neither painted again nor sent whole.
+    expect(drawn).toBe(1);
+    expect(texture.version).toBe(version);
+    expect(copies.length).toBe(1);
+    const sheet = b.sheet, pitch = sheet.cellHeight + 2 * 8;
+    expect(copies[0]).toEqual({ x: (b.cell % 8) * (256 + 16), y: sheet.height - Math.floor(b.cell / 8) * pitch - pitch });
+    // A plate let go: its cell cleared at the next flush (as a whole painting leaves it), nothing drawn in it.
+    sheets.drop('street', 'Rua B');
+    sheets.take('street', 'Rua C');
+    copies.length = 0;
+    drawn = 0;
+    sheets.flush();
+    // B's cell cleared and C drawn in its own (the next free one): two cells sent, one plate drawn.
+    expect(copies.length).toBe(2);
+    expect(drawn).toBe(1);
+  });
+
   it('lets a sheet\'s canvas go once uploaded, and paints it again from its plates when the context comes back', () => {
     drawn = 0;
     const sheets = new SignSheets();

@@ -759,6 +759,8 @@ export function createSceneRenderer(
   let polePreview: Utilities | null = null;
   /** Placed signs, street name plates and the junctions' rule plates, kept sign by sign from the diary (`signLayer.ts`). */
   const signs = createSignLayer(activeTiles);
+  // A new plate onto a sheet already on the GPU: its cell alone (three r186 `copyTextureToTexture` makes the sheet's mipmaps again), not the whole sheet painted and sent (VIA-04).
+  signs.useCopier((picture, sheet, x, y) => renderer.copyTextureToTexture(picture, sheet, null, new Vector2(x, y)));
   // The streamed world's furniture and signs per tile (`furnitureTiles.ts`, `signTiles.ts`), in the layers' own cells and sheets: the region makes none of them.
   nearTiles.add(furnitureProduct(furniture, sceneryKit.lens, () => cityMinutes));
   nearTiles.add(signProduct(signs, () => worldNet?.doc.markingStyle ?? 'classic'));
