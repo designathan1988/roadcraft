@@ -551,14 +551,20 @@ export interface PairZones {
 }
 
 /** A pair's zones over its table (`pairTable`): what is kept between sessions. */
+/** DO NOT make a zone each time one is read (two numbers of a table that never changes, read dozens of times a vehicle near a junction: SIM-07): each of the 18 made once, frozen, at its first read. */
 export function zonesOf(table: Float64Array): PairZones {
+  const made: (Zone | null | undefined)[] = new Array(18);
   return {
     get(mine, theirs, onB) {
       const at = onB ? (theirs * 3 + mine) * 4 + 2 : (mine * 3 + theirs) * 4;
+      const key = at >> 1;
+      const kept = made[key];
+      if (kept !== undefined) return kept;
       const enter = table[at] as number;
-      if (Number.isNaN(enter)) return null;
       // Half a step either side covers the motion between two samples.
-      return { enter: enter - SWEEP_STEP / 2, exit: (table[at + 1] as number) + SWEEP_STEP / 2 };
+      const zone = Number.isNaN(enter) ? null : Object.freeze({ enter: enter - SWEEP_STEP / 2, exit: (table[at + 1] as number) + SWEEP_STEP / 2 });
+      made[key] = zone;
+      return zone;
     },
   };
 }
