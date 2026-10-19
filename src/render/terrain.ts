@@ -460,6 +460,8 @@ function terrainData(bakes: TerrainBakes, paint: DataArrayTexture, shore: ShoreT
     uPaintRes: { value: paint.image.width },
     uPaintHalf: { value: TERRAIN_HALF },
     uPaintSize: { value: TERRAIN_SIZE },
+    // 1 once a ground dab (not geology, not biome) was laid on this plate: its paint layers read only then (TER-02); they are all 0 before.
+    uHasPaint: { value: 0 },
     uGrassField: GRASS_FIELD,
     uGrid: TERRAIN_GRID,
     uShoreLevel: { value: shore.level as Texture },
@@ -557,6 +559,7 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          uniform float uPaintRes; // the array's side (\`growPaint\`)
          uniform float uPaintHalf;
          uniform float uPaintSize;
+         uniform float uHasPaint;
          uniform vec4 uGrassField; // world x, y, reach, on
          uniform vec2 uGrid; // cell, strength
          // The corners' water, and their flowers, scrub, geology and forest (\`ShoreTextures\`).
@@ -996,8 +999,12 @@ function landShader(shader: WebGLProgramParametersWithUniforms, grid: LandGrid |
          blended.rgb *= mix(1.0, 0.8, grassUnder * (1.0 - clamp(dirtMix + rockMix, 0.0, 1.0)));
          // Painted ground (world/terrainPaint.ts): a weight per layer, the grass showing through what the weights leave.
          vec2 paintUv = vec2((vTerrainWorld.x + uPaintHalf) / uPaintSize, (uPaintHalf - vTerrainWorld.z) / uPaintSize);
-         vec4 pa = texture(uPaint, vec3(paintUv, 0.0));
-         vec4 pb = texture(uPaint, vec3(paintUv, 1.0));
+         // DO NOT read the paint layers of a plate never painted: they are all 0 there, the branch below never taken (TER-02; a uniform's branch, the derivatives kept).
+         vec4 pa = vec4(0.0), pb = vec4(0.0);
+         if (uHasPaint > 0.5) {
+           pa = texture(uPaint, vec3(paintUv, 0.0));
+           pb = texture(uPaint, vec3(paintUv, 1.0));
+         }
          float painted = pa.r + pa.g + pa.b + pa.a + pb.r + pb.g + pb.b;
          if (painted > 0.002) {
            float grain = dirtTex(vTerrainWorld.xz * ${perM(0.275).toFixed(6)}).r;
@@ -2156,6 +2163,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
         natural = unionDab(natural, dab);
         return;
       }
+      // Its paint layers read from now on (TER-02): never back to 0, a dab taken away leaves the layers 0 where it was.
+      (material.userData['terrainUniforms'] as { uHasPaint: { value: number } }).uHasPaint.value = 1;
       // The layers laid from the dabs before these (`paintDabs`), then these; only their box sent (`flushPaint`).
       if (appended) { rasterPaint(raster ??= paintRaster(), dab); paintBox = unionTexels(paintBox, paintTexelBox(dab)); }
       rasterCover(covers, dab);
