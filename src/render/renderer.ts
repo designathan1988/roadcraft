@@ -2055,6 +2055,11 @@ export function createSceneRenderer(
   let fps = 60;
   /** The last game frame's draw calls and triangles, every pass, read right after its post chain (`RenderStats.drawCalls`). */
   const frameDrawn = { calls: 0, triangles: 0 };
+  /** The programs of a quality change being built off the draw (`setQuality`); null when none is. */
+  let qualityCompile: Promise<void> | null = null;
+  let qualityCompileSince = 0;
+  /** How long the last picture is held for a quality change's programs, ms, at the most. */
+  const QUALITY_COMPILE_GIVE_UP_MS = 10_000;
   /** Wall-clock seconds, for the wind; independent of the simulation speed. */
   let windClock = 0;
   let lastWidth = 0;
@@ -3286,7 +3291,10 @@ export function createSceneRenderer(
           performance.mark('opening:shown', { detail: { waitedMs: performance.now() - openingSince, workedMs: reveal.worked, whole } });
         }
       }
-      if (reveal.opened) {
+      // A quality change's programs still being built (`setQuality`): the last picture kept on screen, nothing drawn with programs not ready.
+      // DO NOT wait for ever on a driver that never answers (a lost context): drawn after `QUALITY_COMPILE_GIVE_UP_MS` whatever it built, as `uploads.ts` gives up on a compile.
+      if (reveal.opened && qualityCompile && performance.now() - qualityCompileSince < QUALITY_COMPILE_GIVE_UP_MS) { /* drawn again once built: `setQuality` asks for the frame */ }
+      else if (reveal.opened) {
         // Round the frame's whole drawing: the shadow, the scene, every pass.
         gpuTimer.poll();
         gpuTimer.begin();
@@ -3317,6 +3325,15 @@ export function createSceneRenderer(
       const resolved = level === 'auto' ? governor.current : level;
       governor.set(resolved);
       applyQuality(resolved, settings);
+      // DO NOT draw the next frame with the new settings' programs not built: shadows switched off or on change every lit material's program,
+      // and the frame built them all in the draw (the probe, 2026-10-19: one frame of 6.9 s, 6.8 s waiting on the driver in `getProgramInfoLog`).
+      // Built off the draw (`compileAsync`, the driver's parallel compile); the last picture stays on screen until they are, the page answering.
+      const compiling: Promise<void> = renderer.compileAsync(scene, rig.camera, scene).then(() => undefined, () => undefined).then(() => {
+        if (qualityCompile === compiling) qualityCompile = null;
+        askDraw();
+      });
+      qualityCompile = compiling;
+      qualityCompileSince = performance.now();
     },
     get quality() {
       return requested;
