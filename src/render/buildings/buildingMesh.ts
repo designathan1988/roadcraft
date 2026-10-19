@@ -4077,8 +4077,13 @@ export function buildBuildingMeshes(
   pavedAt?: PavedAt,
   naturalAt: GroundAt = groundAt,
 ): BuildingMeshes {
-  return assembleBuildingMeshes([...buildings].map((b) => emitChunk(b, groundAt, pavedAt, naturalAt)), kit, ghost);
+  previewWriter ??= new ShellWriter();
+  const writer = previewWriter;
+  return assembleBuildingMeshes([...buildings].map((b) => emitChunk(b, groundAt, pavedAt, naturalAt, undefined, false, true, undefined, writer)), kit, ghost);
 }
+
+/** DO NOT emit each preview into a new shell: the ghost is emitted again at every change of the draft, and a new shell's arrays start at 64 and double up to the building's size. One shell written again for every preview of the page (`ShellWriter`), each chunk copying out its own. */
+let previewWriter: ShellWriter | null = null;
 
 /** The furniture of every floor of a building, as it stands inside: what a blow throws out of it when it breaks */
 export function interiorFurniture(b: Building, floor: number): Partial<Record<FurnitureKind, PartBatch>> {
