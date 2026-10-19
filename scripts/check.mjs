@@ -73,6 +73,8 @@ export const ALWAYS = [
   'tests/core/derivedDurability.spec.ts',
   'tests/render/cellHoles.spec.ts',
   'tests/render/shaderCatalogue.spec.ts',
+  'tests/render/pixelSkips.spec.ts',
+  'tests/render/weatheringCost.spec.ts',
 ];
 
 /** `ALWAYS` expanded (a folder stands for each spec in it). DO NOT drop a missing entry quietly: a spec deleted and left here made the check pass

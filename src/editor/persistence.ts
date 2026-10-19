@@ -190,6 +190,9 @@ export class Persistence {
     this.loadedParts = bestParts;
     const stored = await this.store.get(this.storageKey);
     if (!stored) return best;
+    // DO NOT parse and check a whole map only to find it older than the copy chosen (EDT-03: the copy kept here before the parts, read at every opening): its time is at its head, as written (`saveSession`).
+    const head = /^\{"version":2,"savedAt":(\d+)[,}]/.exec(stored.slice(0, 64));
+    if (head && Number(head[1]) <= bestAt) return best;
     try {
       const parsed: unknown = JSON.parse(stored);
       if (isRecord(parsed) && isSavedSession(parsed)) {
