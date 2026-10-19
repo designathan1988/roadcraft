@@ -3,10 +3,8 @@ import { applyLots, planLots } from '@world/lots';
 import { Network } from '@world/network';
 import { pavedHeightFrom } from '@world/paving';
 import { footwayRiseAt } from '@world/roads/footwayRise';
-import type { Building, BuildingId } from '@world/buildings/types';
-import { internMembers } from '@world/buildings/intern';
-import { migrateBuilding } from '@world/buildings/serialize';
-import type { RoadDoc, SerializedDoc } from '@world/doc';
+import type { BuildingId } from '@world/buildings/types';
+import type { SerializedDoc } from '@world/doc';
 import { smallCityPlan } from '@world/cityGen/smallCity';
 import { LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
 import { greenCity, layCity, widenCityFootways, zoneCity } from './cityGenerator';
@@ -16,11 +14,6 @@ const GROWTH_SEED = 0x5eed;
 
 /** THE SMALL CITY OF ROADCRAFT 2.0, WHOLE, AS ONE MAP (the player, 2026-10-18: no city by tiles). Planned as 2.0 planned it (`smallCity.ts`: straight blocks, medium size), then laid out on one document: its footways, lots, green and zones, and every lot grown, on the flat ground of a new map. */
 export function buildSmallCityMap(seed: number): SerializedDoc {
-  return buildSmallCityDoc(seed).toJSON();
-}
-
-/** The small city's document as made (`buildSmallCityMap` writes it out): its buildings' records as the store holds them, migrated and sharing their members (`intern.ts`). */
-export function buildSmallCityDoc(seed: number): RoadDoc {
   const city = smallCityPlan(seed);
   const doc = layCity(city);
   widenCityFootways(doc);
@@ -45,18 +38,5 @@ export function buildSmallCityDoc(seed: number): RoadDoc {
       doc.buildings.put({ ...fresh, builtAt: 0, decay: 0, lotPlan: LOT_PLAN_VERSION });
     } else if (doc.openLots.count(refused) === 0) break;
   }
-  return doc;
-}
-
-/** The small city as `smallCity.worker.ts` sends it: each record migrated and interned there as `tileStore.ts` prepareTile does (the page's own load writes them so: the keys in their order, the members shared), the message's clone keeping what they share, so the page files them as they are (`BuildingStore.loadPrepared`). */
-export function preparedSmallCity(seed: number): SerializedDoc {
-  const json = buildSmallCityDoc(seed).toJSON();
-  const buildings: Building[] = [];
-  for (const raw of json.buildings ?? []) {
-    const b = migrateBuilding(raw);
-    if (!b) continue;
-    internMembers(b as unknown as Record<string, unknown>);
-    buildings.push(b);
-  }
-  return { ...json, buildings: buildings as unknown as NonNullable<SerializedDoc['buildings']> };
+  return doc.toJSON();
 }

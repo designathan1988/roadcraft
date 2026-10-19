@@ -839,11 +839,11 @@ function mutateBuilt(fn: () => boolean): boolean {
 }
 
 /** `snapshot`: the model's own undo/redo state, restored exactly. */
-function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snapshot' | 'import' = 'snapshot', preparedBuildings = false): void {
+function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snapshot' | 'import' = 'snapshot'): void {
   if (!data) return;
   roadTool.cancel();
   if (source === 'import') {
-    caused('map opened', () => restoreInto(doc, data, net, preparedBuildings));
+    caused('map opened', () => restoreInto(doc, data, net));
     // A different map: nothing of the old simulation may carry over.
     sim.load();
   } else {
@@ -1931,10 +1931,10 @@ const smallCityAsk = { serial: 0, maker: createSmallCityMaker() };
 function openSmallCity(seed: number): Promise<void> {
   // Made in a job worker (`editor/smallCityPool.ts`): it was one task of 1.6 s on this thread at every new city (the probe, 2026-10-19).
   const serial = ++smallCityAsk.serial;
-  return smallCityAsk.maker.make(seed).then(({ data, prepared }) => {
+  return smallCityAsk.maker.make(seed).then((data) => {
     if (serial !== smallCityAsk.serial) return;
     history.begin(doc);
-    applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import', prepared);
+    applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
     roadTool.reset();
     fitView();
   });
