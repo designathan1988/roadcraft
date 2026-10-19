@@ -2005,28 +2005,28 @@ export class RoadDoc {
     for (const barrier of this.barriers.values()) copy.putBarrierRecord({ ...barrier, points: barrier.points.map((q) => ({ ...q })) });
     copy.buildings.shareFrom(this.buildings);
     copy.buildings.copyAllocator(this.buildings);
-    copy.terrainStamps.push(...this.terrainStamps.map((stamp) => ({ ...stamp })));
+    pushAll(copy.terrainStamps, this.terrainStamps.map((stamp) => ({ ...stamp })));
     copy.terrainRelief = this.terrainRelief;
     copy.markingStyle = this.markingStyle;
     copy.nature = this.nature ? { ...this.nature } : null;
-    copy.terrainPaint.push(...this.terrainPaint.map((dab) => ({ ...dab })));
-    copy.fogDabs.push(...this.fogDabs.map((dab) => ({ ...dab })));
+    pushAll(copy.terrainPaint, this.terrainPaint.map((dab) => ({ ...dab })));
+    pushAll(copy.fogDabs, this.fogDabs.map((dab) => ({ ...dab })));
     copy.fogSettings = { ...this.fogSettings };
-    copy.gullyDabs.push(...this.gullyDabs.map((dab) => ({ ...dab })));
+    pushAll(copy.gullyDabs, this.gullyDabs.map((dab) => ({ ...dab })));
     copy.gullyAuto = this.gullyAuto;
-    copy.clouds.push(...this.clouds.map((c) => ({ ...c })));
-    copy.elements.push(...this.elements.map((e) => ({ ...e })));
-    copy.trees.push(...this.trees.map((t) => ({ ...t })));
-    copy.treeClearings.push(...this.treeClearings.map((c) => ({ ...c })));
+    pushAll(copy.clouds, this.clouds.map((c) => ({ ...c })));
+    pushAll(copy.elements, this.elements.map((e) => ({ ...e })));
+    pushAll(copy.trees, this.trees.map((t) => ({ ...t })));
+    pushAll(copy.treeClearings, this.treeClearings.map((c) => ({ ...c })));
     copy.weather = { ...this.weather };
     copy.economy = { ...this.economy };
-    copy.zones.push(...this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })));
-    copy.zoneMarks.push(...this.zoneMarks.map((mark) => ({ ...mark })));
+    pushAll(copy.zones, this.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })));
+    pushAll(copy.zoneMarks, this.zoneMarks.map((mark) => ({ ...mark })));
     // The records shared, as the buildings' (never changed in place: `LotStore` OWNERSHIP).
     copy.lotStore.shareFrom(this.lotStore);
     copy.nextZoneId = this.nextZoneId;
     // Deep, as the file writes them (`serialized`): nested specs, never aliased.
-    copy.people.push(...this.people.map((person) => JSON.parse(JSON.stringify(person)) as PersonSpec));
+    pushAll(copy.people, this.people.map((person) => JSON.parse(JSON.stringify(person)) as PersonSpec));
     copy.transit = JSON.parse(JSON.stringify(this.transit)) as TransitData;
     copy.nodeIds = new IdAllocator(this.nodeIds.peek);
     copy.segIds = new IdAllocator(this.segIds.peek);
@@ -2410,9 +2410,9 @@ export class RoadDoc {
       this.ownList('zones');
       this.ownList('zoneMarks');
       this.zones.length = 0;
-      this.zones.push(...source.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })));
+      pushAll(this.zones, source.zones.map((zone) => ({ ...zone, buildingIds: [...zone.buildingIds] })));
       this.zoneMarks.length = 0;
-      this.zoneMarks.push(...source.zoneMarks.map((mark) => ({ ...mark })));
+      pushAll(this.zoneMarks, source.zoneMarks.map((mark) => ({ ...mark })));
       others.push('zones');
     }
     // The lots write their own, by id (`LotStore.replaceWith`); of a working copy, only those its diary names.
@@ -2424,7 +2424,7 @@ export class RoadDoc {
     if (moved('people') && !sameText(this.people, source.people)) {
       this.ownList('people');
       this.people.length = 0;
-      this.people.push(...source.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec));
+      pushAll(this.people, source.people.map((p) => JSON.parse(JSON.stringify(p)) as PersonSpec));
       others.push('people');
     }
 
@@ -2445,13 +2445,13 @@ export class RoadDoc {
       this.ownList('trees');
       this.trees.length = 0;
       this.treeGrid = null;
-      this.trees.push(...source.trees.map((t) => ({ ...t })));
+      pushAll(this.trees, source.trees.map((t) => ({ ...t })));
       others.push('trees');
     }
     if (moved('clearings') && !sameText(this.treeClearings, source.treeClearings)) {
       this.ownList('treeClearings');
       this.treeClearings.length = 0;
-      this.treeClearings.push(...source.treeClearings.map((c) => ({ ...c })));
+      pushAll(this.treeClearings, source.treeClearings.map((c) => ({ ...c })));
       others.push('clearings');
     }
 
@@ -2459,21 +2459,21 @@ export class RoadDoc {
       this.ownList('elements');
       this.elements.length = 0;
       this.elementGrid = null;
-      this.elements.push(...source.elements);
+      pushAll(this.elements, source.elements);
       others.push('elements');
     }
 
     if (moved('clouds') && !sameText(this.clouds, source.clouds)) {
       this.ownList('clouds');
       this.clouds.length = 0;
-      this.clouds.push(...source.clouds.map((c) => ({ ...c })));
+      pushAll(this.clouds, source.clouds.map((c) => ({ ...c })));
       others.push('clouds');
     }
 
     if (moved('gullies') && (this.gullyAuto !== source.gullyAuto || !sameText(this.gullyDabs, source.gullyDabs))) {
       this.ownList('gullyDabs');
       this.gullyDabs.length = 0;
-      this.gullyDabs.push(...source.gullyDabs.map((dab) => ({ ...dab })));
+      pushAll(this.gullyDabs, source.gullyDabs.map((dab) => ({ ...dab })));
       this.gullyAuto = source.gullyAuto;
       others.push('gullies');
     }
@@ -2481,7 +2481,7 @@ export class RoadDoc {
     if (moved('fog') && (!sameText(this.fogDabs, source.fogDabs) || !sameText(this.fogSettings, source.fogSettings))) {
       this.ownList('fogDabs');
       this.fogDabs.length = 0;
-      this.fogDabs.push(...source.fogDabs.map((dab) => ({ ...dab })));
+      pushAll(this.fogDabs, source.fogDabs.map((dab) => ({ ...dab })));
       this.fogSettings = { ...source.fogSettings };
       others.push('fog');
     }
@@ -2489,7 +2489,7 @@ export class RoadDoc {
     if (moved('paint') && !samePaint(this.terrainPaint, source.terrainPaint)) {
       this.ownList('terrainPaint');
       this.terrainPaint.length = 0;
-      this.terrainPaint.push(...source.terrainPaint.map((dab) => ({ ...dab })));
+      pushAll(this.terrainPaint, source.terrainPaint.map((dab) => ({ ...dab })));
       others.push('paint');
     }
 
@@ -2501,7 +2501,7 @@ export class RoadDoc {
     if (landMoved) {
       this.ownList('terrainStamps');
       this.terrainStamps.length = 0;
-      this.terrainStamps.push(...source.terrainStamps.map((stamp) => ({ ...stamp })));
+      pushAll(this.terrainStamps, source.terrainStamps.map((stamp) => ({ ...stamp })));
       this.terrainRelief = source.terrainRelief;
     }
 
@@ -3582,3 +3582,8 @@ export const savedLandscape = (item: LandscapeItem): NonNullable<SerializedDoc['
   ...(item.signType ? { signType: item.signType } : {}), ...(item.text ? { text: item.text } : {}),
   ...(item.planted !== undefined ? { planted: item.planted } : {}) });
 export const savedBarrier = (b: Barrier): NonNullable<SerializedDoc['barriers']>[number] => ({ id: b.id, kind: b.kind, points: b.points.map((p) => ({ x: p.x, y: p.y })) });
+
+/** Each of `items` pushed onto `into`, in order. DO NOT spread a whole map's list into `push` (EDT-14): its arguments past the engine's stack (~100 000) threw RangeError. */
+function pushAll<T>(into: T[], items: readonly T[]): void {
+  for (let i = 0; i < items.length; i++) into.push(items[i]!);
+}

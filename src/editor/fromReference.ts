@@ -36,7 +36,7 @@ export function blocksFromTriangles(tris: readonly Triangle[]): ReferenceBlock[]
   const absorb = (a: Top, b: Top): void => {
     a.x0 = Math.min(a.x0, b.x0); a.x1 = Math.max(a.x1, b.x1);
     a.y0 = Math.min(a.y0, b.y0); a.y1 = Math.max(a.y1, b.y1);
-    a.pts.push(...b.pts);
+    for (const p of b.pts) a.pts.push(p);
   };
   for (const [a, b, c] of tris) {
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
