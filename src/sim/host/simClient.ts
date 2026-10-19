@@ -1,4 +1,5 @@
 import type { RoadDoc, Restoration, RecordPart, ValuePart } from '@world/doc';
+import type { Network, NetworkBake } from '@world/network';
 import { type DocChangeKind, type JournalReader } from '@world/changes';
 import type { NodeId, SegmentId } from '@world/ids';
 import type { LotPlan } from '@world/lots';
@@ -212,7 +213,17 @@ export class SimClient implements JournalReader {
   private wounds: Wound[] = [];
   private casualtyList: Casualty[] = [];
 
-  constructor(readonly doc: RoadDoc) {}
+  /** `net`: the page's network of `doc`, whose junctions and ribbons the worker takes as solved (`bake`, SIM-04); none: the worker solves them. */
+  constructor(readonly doc: RoadDoc, private readonly net: Network | null = null) {}
+
+  /** The page's junctions and ribbons of the whole map: the worker's build takes each whose inputs are the same. */
+  private bake(): NetworkBake | null {
+    const net = this.net;
+    if (!net || net.doc !== this.doc) return null;
+    // Brought up to the document first: the rebuild the page's next frame would make (`main.ts`).
+    if (net.revision !== this.doc.revision) net.rebuild();
+    return net.exportBake(this.doc.nodes.keys(), this.doc.segments.keys());
+  }
 
   /** The wounds told since the last call, taken (`render/playEffects.ts`). */
   takeWounds(): Wound[] {
@@ -251,7 +262,7 @@ export class SimClient implements JournalReader {
       worker.onmessageerror = () => lost('a message from the worker could not be read');
     });
     this.markSent();
-    this.send({ type: 'init', frames: this.frames, map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles], seed, zones, zonesPrefix, ambient });
+    this.send({ type: 'init', frames: this.frames, map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles], seed, zones, zonesPrefix, ambient, bake: this.bake() });
     return ready;
   }
 
@@ -263,8 +274,14 @@ export class SimClient implements JournalReader {
   /** Another map (opened, generated, new): the worker's copy made whole again (only what traffic reads), the simulation started over. */
   load(): void {
     this.markSent();
-    this.send({ type: 'load', map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles] });
+    this.send({ type: 'load', map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles], bake: this.bake() });
     this.clearViews();
+  }
+
+  /** The same map whole again, when the diary cannot say what changed: the worker's copy brought up to it, its traffic and the views kept (SIM-18). */
+  private resync(): void {
+    this.markSent();
+    this.send({ type: 'resync', map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles] });
   }
 
   /** The simulation started over on the same map. */
@@ -389,7 +406,8 @@ export class SimClient implements JournalReader {
     if (this.seenDoc !== this.doc) { this.load(); return; }
     if (changes.version === this.seen) return;
     const entries = changes.since(this.seen, FOLLOWED);
-    if (entries === null) { this.load(); return; }
+    // The same map, its entries let go: DO NOT start the simulation over for it.
+    if (entries === null) { this.resync(); return; }
     this.seen = changes.version;
     if (!entries.length) return;
     const named = new Map<RecordPart, Set<number>>();
@@ -398,15 +416,15 @@ export class SimClient implements JournalReader {
     let keys = false;
     for (const e of entries) {
       if (e.kind === 'buildings') {
-        // A change of buildings that does not say which: the worker's copy made whole again.
-        if (!e.ids) { this.load(); return; }
+        // A change of buildings that does not say which: the worker's copy made whole again, its traffic kept.
+        if (!e.ids) { this.resync(); return; }
         for (const id of e.ids) buildings.add(id as BuildingId);
         continue;
       }
       const parts = RECORD_KINDS[e.kind as DocChangeKind];
       if (parts) {
-        // A change of records that does not say which: the worker's copy made whole again.
-        if (!e.ids) { this.load(); return; }
+        // A change of records that does not say which: the worker's copy made whole again, its traffic kept.
+        if (!e.ids) { this.resync(); return; }
         for (const part of parts) {
           let set = named.get(part);
           if (!set) named.set(part, set = new Set());

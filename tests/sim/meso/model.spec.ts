@@ -5,7 +5,7 @@ import { JAM_SPACING, MesoModel, WAVE_SPEED, laneCapacity } from '@sim/meso/mode
 import { ObjectModel } from './support/objectModel';
 
 /** The model's public face, as both the tables by slot and the object model have it. */
-type Model = Omit<MesoModel, 'bytes' | 'setRates'>;
+type Model = Omit<MesoModel, 'bytes' | 'setRates' | 'flowInto'>;
 
 /** THE MESO MODEL (Link Transmission Model, equal-priority node model): vehicles kept, capacities respected, queues spilling back */
 
@@ -189,9 +189,17 @@ function reading(model: Model): number[] {
     out.push(model.has(s) ? 1 : 0, model.isInside(s) ? 1 : 0, model.count(s), model.queued(s), model.speed(s), model.pending(s),
       model.outflowOf(s), model.inflowOf(s), model.lengthAt(s), model.lanesAt(s), model.capacityAt(s), model.freeSpeedAt(s), model.toAt(s),
       -1, ...model.turnsAt(s));
+    // What the page's buffer is given (`MesoModel.flowInto`, SIM-26): the getters' three numbers, exactly.
+    if (model.has(s)) {
+      if (model instanceof MesoModel) {
+        model.flowInto(s, flow);
+        out.push(flow.count, flow.queued, flow.speed);
+      } else out.push(model.count(s), model.queued(s), model.speed(s));
+    }
   }
   return out;
 }
+const flow = { count: 0, queued: 0, speed: 0 };
 
 describe('the meso model in tables by slot', () => {
   it('gives the object model\'s numbers exactly, step by step, through links made, changed, dropped, taken again and handed to the window', () => {
@@ -257,6 +265,30 @@ describe('the meso model in tables by slot', () => {
     }
     expect(a.generated).toBeGreaterThan(100);
     expect(a.handedOut).toBeGreaterThan(0);
+  });
+
+  it("gives a link's count, queue and speed from three readings of its rings, not ten (SIM-26)", () => {
+    const model = new MesoModel(1);
+    const slots = grid(model);
+    for (const s of slots) { model.seed(s, 6); model.setGeneration(s, 0.4); }
+    for (let t = 0; t < 200; t++) model.step();
+    const proto = MesoModel.prototype as unknown as { cum: (...a: number[]) => number };
+    const cum = proto.cum;
+    let reads = 0;
+    proto.cum = function (this: unknown, ...a: number[]) { reads++; return cum.apply(this, a); };
+    const out = { count: 0, queued: 0, speed: 0 };
+    let before = 0;
+    try {
+      // What publish asked before: the three getters, each reading the rings again.
+      for (const s of slots) { model.count(s); model.queued(s); model.speed(s); }
+      before = reads;
+      reads = 0;
+      for (const s of slots) model.flowInto(s, out);
+    } finally {
+      proto.cum = cum;
+    }
+    expect(before).toBe(10 * slots.length);
+    expect(reads).toBe(3 * slots.length);
   });
 
   it('holds a link in a few hundred bytes of typed arrays, and takes back the blocks of the links let go', () => {

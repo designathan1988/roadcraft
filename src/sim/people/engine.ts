@@ -24,8 +24,6 @@ export interface PedestrianEngine {
   readonly bridge: PeopleBridge;
   /** A resident walking from one place to another (`sim/city`): put on the footway at `from`, walking to `to` and in. */
   walkTrip?(w: SimWorld, trip: ResidentWalk): number | null;
-  /** The trips (by `ResidentWalk.trip`) that ended since the last call. */
-  takeArrivals?(w: SimWorld): number[];
   /** The walkable point nearest `(x, y)` within `reach`, or null */
   walkableNear?(w: SimWorld, x: number, y: number, reach: number): { x: number; y: number } | null;
   /** A blow at (x, y) - a building struck, a wall coming down (`editor/impact`) */

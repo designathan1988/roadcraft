@@ -359,7 +359,6 @@ interface State {
   wayIndex: Map<number, number[]>;
   walkers: Walker[];
   byId: Map<number, Walker>;
-  arrivals: number[];
   /** For each car holding (or asking for) its way across the footway, the walkers who were on that ground when it took it */
   onCarWay: Map<number, Set<number>>;
   /** Shocking events (as GTA's peds have them) */
@@ -460,7 +459,7 @@ const STATES = new WeakMap<SimWorld, State>();
 function stateOf(w: SimWorld): State {
   let s = STATES.get(w);
   if (!s) {
-    s = { graph: null, graphState: null, wayIndex: new Map(), walkers: [], byId: new Map(), arrivals: [], onCarWay: new Map(),
+    s = { graph: null, graphState: null, wayIndex: new Map(), walkers: [], byId: new Map(), onCarWay: new Map(),
       shocks: [], clock: 0, shockLook: 0, near: new WalkerGrid(), nearAt: -1, crossingPool: new Map(), trafficAt: -1, fastest: 0,
       grid: new WalkerGrid(), parked: new ParkedZoneIndex(), parties: new Map() };
     STATES.set(w, s);
@@ -870,16 +869,16 @@ function gapOpen(w: SimWorld, s: State, z: Zebra, pace: number, waited: number):
   const box = path.bbox;
   const pose = TRAFFIC_POSE;
   const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
-  for (const vehicle of w.vehiclesNear(cx, cy, reach + Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
-    if (!vehiclePoseNowInto(w, vehicle, pose)) continue;
+  // A yes or no: the vehicles asked in no order, not sorted first (SIM-28).
+  return !w.someVehicleNear(cx, cy, reach + Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2, (vehicle) => {
+    if (!vehiclePoseNowInto(w, vehicle, pose)) return false;
     const v = pose.p;
     const hit = path.closestPoint(v);
-    if (hit.distance < GAP_NEAR) return false;
-    if (vehicle.v < m(0.5) || hit.distance > vehicle.v * time) continue;
+    if (hit.distance < GAP_NEAR) return true;
+    if (vehicle.v < m(0.5) || hit.distance > vehicle.v * time) return false;
     // Coming towards it, not going away.
-    if ((hit.point.x - v.x) * Math.cos(pose.angle) + (hit.point.y - v.y) * Math.sin(pose.angle) > 0) return false;
-  }
-  return true;
+    return (hit.point.x - v.x) * Math.cos(pose.angle) + (hit.point.y - v.y) * Math.sin(pose.angle) > 0;
+  });
 }
 
 /** The zebra a walker is coming up to and has not been let onto, and the distance along its route to where it waits for it */
@@ -960,7 +959,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
       const p = s.byId.get(id);
       if (!p || p.done || p.inside || p.player || hypot(p.x - door.x, p.y - door.y) > reach) return null;
       const boarder = { seed: p.id, gender: p.view.gender, ageClass: p.view.ageClass, footX: p.x, footY: p.y, footHeading: p.heading };
-      finish(s, p, false);
+      finish(s, p);
       prune(s);
       return boarder;
     },
@@ -1024,12 +1023,6 @@ export function createAgentWalkEngine(): PedestrianEngine {
       STATES.delete(w);
     },
     walkTrip(w, trip) { return startWalk(w, trip); },
-    takeArrivals(w) {
-      const s = stateOf(w);
-      const out = s.arrivals.slice();
-      s.arrivals.length = 0;
-      return out;
-    },
     impact(w, x, y, kill, scare) {
       // A blow (`editor` strike): killed within `kill` - off the street for good, a body for the renderer to throw
       const s = stateOf(w);
@@ -1050,7 +1043,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
             : (roll & 3) !== 0 ? [all[1 + ((roll >>> 4) % 4)]!, ...((roll & 12) === 12 ? ['head' as const] : [])] : [];
           // Burnt black, everybody it kills
           recordCasualty(w, { ...who, kind: torn ? 'torn' : 'dead', power: 1 - d / kill, severed, lost: severed, charred: true });
-          finish(s, p, false);
+          finish(s, p);
           dead++;
           continue;
         }
@@ -1108,7 +1101,7 @@ export function createAgentWalkEngine(): PedestrianEngine {
           party: { id: v.party.id, size: v.party.size, archetype: v.party.archetype, hasChild: v.party.hasChild },
           blastX: fromX, blastY: fromY, kind: 'dead', power: 0.25, lost: [...p.lost], struck: part, ...(severed ? { severed: [severed] } : {}),
           ...(opened ? { opened } : {}) });
-        finish(s, p, false);
+        finish(s, p);
         prune(s);
         mourn(s, p);
         startle(w, p.x, p.y, m(45), 18, null);
@@ -1255,7 +1248,7 @@ function startWalk(w: SimWorld, trip: ResidentWalk, head: readonly Vec2[] = NO_P
   const steps = head.length || tail.length ? [...lotSteps(head), ...mid, ...lotSteps(tail)] : mid;
   const id = trip.person ?? w.nextPersonId++;
   const old = s.byId.get(id);
-  if (old) finish(s, old, false);
+  if (old) finish(s, old);
   const gender: PersonGender = trip.person !== undefined ? ((personHash(trip.person) & 1) === 0 ? 'f' : 'm')
     : (trip.seed & 1) === 1 ? 'f' : 'm';
   const ageClass: PersonAgeClass = trip.ageClass;
@@ -1303,10 +1296,9 @@ function joinParty(s: State, p: Walker): void {
   if (list) list.push(p); else s.parties.set(p.view.party.id, [p]);
 }
 
-function finish(s: State, p: Walker, arrived = true): void {
+function finish(s: State, p: Walker): void {
   p.done = true;
   s.byId.delete(p.id);
-  if (arrived) s.arrivals.push(p.trip);
   const party = s.parties.get(p.view.party.id);
   if (party) {
     const at = party.indexOf(p);
@@ -1580,7 +1572,7 @@ function stepWalkers(w: SimWorld): void {
       party: { id: v.party.id, size: v.party.size, archetype: v.party.archetype, hasChild: v.party.hasChild },
       blastX: p.x, blastY: p.y, kind: 'dead', power: 0, lost: [...(p.lost ?? [])], faded: true });
     shock(s, p.x, p.y, BODY_SHOCK);
-    finish(s, p, false);
+    finish(s, p);
     bled = true;
   }
   if (bled) prune(s);
@@ -2030,7 +2022,7 @@ export function addPlayerWalker(w: SimWorld, id: number, x: number, y: number, h
   ageClass: PersonAgeClass, gender: PersonGender): void {
   const s = stateOf(w);
   const old = s.byId.get(id);
-  if (old) finish(s, old, false);
+  if (old) finish(s, old);
   prune(s);
   const view: PedView = {
     id, x, y, heading, prev: { x, y, heading }, v: 0, turnV: 0, age: 0, ageClass, gender,
@@ -2101,7 +2093,7 @@ export function joinsFootway(w: SimWorld, p: Vec2): boolean {
 export function removeWalker(w: SimWorld, id: number): void {
   const s = stateOf(w);
   const p = s.byId.get(id);
-  if (p) { finish(s, p, false); prune(s); }
+  if (p) { finish(s, p); prune(s); }
 }
 
 /** Somebody stops a while to do something (talk, fall down), facing a point. */
@@ -2258,7 +2250,7 @@ export function releaseWalker(w: SimWorld, id: number, to: Vec2 | null): void {
   const p = s.byId.get(id);
   if (!p) return;
   p.player = false;
-  if (!to) { finish(s, p, false); prune(s); return; }
+  if (!to) { finish(s, p); prune(s); return; }
   replan(w, s, p, to);
 }
 

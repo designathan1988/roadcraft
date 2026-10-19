@@ -22,6 +22,8 @@ interface Filed {
   readonly cells: readonly number[];
   /** The lane's digest (`digest`), worked out when first asked; NaN until then. */
   digest: number;
+  /** The query that last met it (`LaneGrid.visit`): a lane in several of a query's cells is taken once. */
+  visit: number;
 }
 
 /** DO NOT file every lane of the map again when the graph moves */
@@ -33,6 +35,8 @@ export class LaneGrid {
   readonly changes = new ChangeLog<readonly ChangeRect[]>();
   /** Lanes filed or taken out since made: the engine's ledger (`main.ts`). */
   work = 0;
+  /** The query under way (`Filed.visit`). */
+  private visit = 0;
 
   /** Brought up to the lane graph's changes since it was last. */
   follow(graph: LaneletGraph, log: ChangeLog<GraphChange>): void {
@@ -73,7 +77,7 @@ export class LaneGrid {
         if (list) list.push(lane.id); else this.cells.set(k, [lane.id]);
       }
     }
-    this.filed.set(lane.id, { lane, cells, digest: NaN });
+    this.filed.set(lane.id, { lane, cells, digest: NaN, visit: 0 });
   }
 
   private unfile(was: Filed): void {
@@ -90,13 +94,33 @@ export class LaneGrid {
 
   /** The lanes filed in the cells a box covers, in id order. */
   private lanesIn(x0: number, y0: number, x1: number, y1: number): Lanelet[] {
-    const picked = new Set<LaneletId>();
+    const out: Lanelet[] = [];
+    this.gather(x0, y0, x1, y1, out);
+    return out.sort(byId);
+  }
+
+  /** The lanes filed in the cells a box covers, each once, into `out` in no set order: DO NOT make a set and a list of them for each query (SIM-28). */
+  private gather(x0: number, y0: number, x1: number, y1: number, out: Lanelet[]): void {
+    const visit = ++this.visit;
     for (let gx = Math.floor(x0 / LANE_CELL); gx <= Math.floor(x1 / LANE_CELL); gx++) {
       for (let gy = Math.floor(y0 / LANE_CELL); gy <= Math.floor(y1 / LANE_CELL); gy++) {
-        for (const id of this.cells.get(cellKey(gx, gy)) ?? []) picked.add(id);
+        const list = this.cells.get(cellKey(gx, gy));
+        if (!list) continue;
+        for (const id of list) {
+          const filed = this.filed.get(id)!;
+          if (filed.visit === visit) continue;
+          filed.visit = visit;
+          out.push(filed.lane);
+        }
       }
     }
-    return [...picked].map((id) => this.filed.get(id)!.lane).sort(byId);
+  }
+
+  /** `near`'s lanes into `out`, in NO set order: for a reader whose answer does not depend on it (`SimWorld.vehiclesNear` sorts its vehicles itself). */
+  nearInto(x: number, y: number, reach: number, out: Lanelet[]): void {
+    out.length = 0;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) { for (const f of this.filed.values()) out.push(f.lane); return; }
+    this.gather(x - reach, y - reach, x + reach, y + reach, out);
   }
 
   /** The lanes whose bounds come within `reach` of a point (their cells), in id order (the tie-break) */
@@ -148,6 +172,11 @@ export function laneGrid(w: LaneGridWorld): LaneGrid {
 /** The lanes whose bounds come within `reach` of a point, in id order (`LaneGrid.near`). */
 export function lanesNear(w: LaneGridWorld, x: number, y: number, reach: number): readonly Lanelet[] {
   return laneGrid(w).near(x, y, reach);
+}
+
+/** `lanesNear` into `out`, in no set order (`LaneGrid.nearInto`). */
+export function lanesNearInto(w: LaneGridWorld, x: number, y: number, reach: number, out: Lanelet[]): void {
+  laneGrid(w).nearInto(x, y, reach, out);
 }
 
 /** The lanes whose bounds meet a box, in id order (`LaneGrid.inBox`). */
