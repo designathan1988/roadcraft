@@ -1687,7 +1687,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   const jolts = new Map<ProceduralPerson, { start: number; axis: Vector3; strength: number }>();
   const joltRot = new Matrix4(), joltDir = new Vector3();
   const joltSpine = new Map<BodyClass, { root: number; bind: Vector3; bones: number[] } | null>();
-  const joltM = new Matrix4(), joltT = new Matrix4(), joltP = new Vector3();
+  const joltM = new Matrix4(), joltT = new Matrix4(), joltP = new Vector3(), joltBack = new Matrix4(), joltBone = new Matrix4();
   /** A wounded body's posture over its clip (Euphoria's reach-for-wound and a body guarding a wound) */
   interface Posture { hunch: number; reach: number; part: BodyPart; cover?: number; miss?: number; hand?: 'L' | 'R' }
   const postures = new Map<ProceduralPerson, Posture>();
@@ -1732,6 +1732,10 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     return rig;
   };
   const pM = new Matrix4(), pT = new Matrix4(), pR = new Matrix4(), pQ = new Quaternion(), pA = new Vector3(), pB = new Vector3(), pC = new Vector3(), pD = new Vector3();
+  // DO NOT make the posture's points anew for every person every frame (25-30 objects each, a crowd in panic posed here: AGT-21): one each, by its part, never two parts in one.
+  const postureHead = new Vector3(), postureUp = new Vector3(), postureLat = new Vector3(), postureTarget = new Vector3(), postureTmp = new Vector3(), postureAlong = new Vector3(), postureFwd = new Vector3();
+  const reachFwd = new Vector3(), reachS = new Vector3(), reachE = new Vector3(), reachH = new Vector3(), reachT = new Vector3(), reachA = new Vector3(), reachB = new Vector3();
+  const reachN = new Vector3(), reachH2 = new Vector3(), reachTS = new Vector3(), reachEnd = new Vector3();
   /** Where a joint (bind point `bind`) is in the posed row `at`, bone `i`. */
   const posed = (cls: BodyClass, at: number, i: number, bind: Vector3, out: Vector3): Vector3 =>
     out.copy(bind).applyMatrix4(pM.fromArray(cls.palette, at + i * SKIN_BONE_FLOATS));
@@ -1756,14 +1760,14 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
       const pelvis = posed(cls, at, rig.pelvis, rig.bindOf(rig.pelvis), pC);
       const chest = posed(cls, at, rig.chest, rig.bindOf(rig.chest), pD);
       const torsoLen = chest.distanceTo(pelvis);
-      const head = posed(cls, at, rig.head, rig.bindOf(rig.head), new Vector3());
-      const up = chest.clone().sub(pelvis).normalize();
+      const head = posed(cls, at, rig.head, rig.bindOf(rig.head), postureHead);
+      const up = postureUp.copy(chest).sub(pelvis).normalize();
       for (const side of ['L', 'R'] as const) {
         const arm = rig.arm[side];
         if (!arm) continue;
-        const lateral = posed(cls, at, arm.shoulder, arm.bind[0], new Vector3()).sub(chest).setY(0).normalize();
+        const lateral = posed(cls, at, arm.shoulder, arm.bind[0], postureLat).sub(chest).setY(0).normalize();
         // The wrist beside the crown, a little above the ear: the hand over the top of the head.
-        const target = head.clone().addScaledVector(up, torsoLen * 0.32).addScaledVector(lateral, torsoLen * 0.2);
+        const target = postureTarget.copy(head).addScaledVector(up, torsoLen * 0.32).addScaledVector(lateral, torsoLen * 0.2);
         reachTo(cls, at, rig, arm, target, pose.cover!);
       }
       return;
@@ -1775,25 +1779,25 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     if (!arm) return;
     const pelvis = posed(cls, at, rig.pelvis, rig.bindOf(rig.pelvis), pC);
     const chest = posed(cls, at, rig.chest, rig.bindOf(rig.chest), pD);
-    const along = chest.clone().sub(pelvis);
+    const along = postureAlong.copy(chest).sub(pelvis);
     const torsoLen = along.length();
-    const fwd = rig.forward.clone();
+    const fwd = postureFwd.copy(rig.forward);
     // The posed forward: the bind forward carried by the chest's turn.
     pM.fromArray(cls.palette, at + rig.chest * SKIN_BONE_FLOATS);
     fwd.transformDirection(pM).setY(0).normalize();
     let target: Vector3;
     if (pose.part === 'legL' || pose.part === 'legR') {
       const thigh = rig.thigh[pose.part === 'legL' ? 'L' : 'R'];
-      target = thigh >= 0 ? posed(cls, at, thigh, rig.bindOf(thigh), new Vector3()).addScaledVector(fwd, torsoLen * 0.35).addScaledVector(rig.up, -torsoLen * 0.4) : pelvis.clone();
+      target = thigh >= 0 ? posed(cls, at, thigh, rig.bindOf(thigh), postureTarget).addScaledVector(fwd, torsoLen * 0.35).addScaledVector(rig.up, -torsoLen * 0.4) : postureTarget.copy(pelvis);
     } else if (pose.part === 'armL' || pose.part === 'armR') {
       const other = rig.arm[pose.part === 'armL' ? 'L' : 'R'];
       // The wrist at the middle of the hurt upper arm, in front of it and a little in from it
-      target = other ? posed(cls, at, other.shoulder, other.bind[0], new Vector3()).lerp(posed(cls, at, other.elbow, other.bind[1], new Vector3()), 0.6) : chest.clone();
+      target = other ? posed(cls, at, other.shoulder, other.bind[0], postureTarget).lerp(posed(cls, at, other.elbow, other.bind[1], postureTmp), 0.6) : postureTarget.copy(chest);
       target.addScaledVector(fwd, torsoLen * 0.2).lerp(chest, 0.22);
     } else {
       // Belly or chest, a hand's breadth in front of the trunk, towards the hand's own side a little.
-      target = pelvis.clone().addScaledVector(along, pose.part === 'head' ? 1.15 : 0.45).addScaledVector(fwd, torsoLen * 0.42);
-      const lateral = posed(cls, at, arm.shoulder, arm.bind[0], new Vector3()).sub(chest).setY(0);
+      target = postureTarget.copy(pelvis).addScaledVector(along, pose.part === 'head' ? 1.15 : 0.45).addScaledVector(fwd, torsoLen * 0.42);
+      const lateral = posed(cls, at, arm.shoulder, arm.bind[0], postureLat).sub(chest).setY(0);
       target.addScaledVector(lateral, 0.25);
     }
     // How far the hand ended from where it was sent, against the arm's length (for probes).
@@ -1804,29 +1808,29 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
   type PostureArm = NonNullable<PostureRig['arm']['L']>;
   /** One arm's hand sent towards `target` by `weight` (0..1), a two-bone solve */
   const reachTo = (cls: BodyClass, at: number, rig: PostureRig, arm: PostureArm, target: Vector3, weight: number): number => {
-    const fwd = rig.forward.clone();
+    const fwd = reachFwd.copy(rig.forward);
     pM.fromArray(cls.palette, at + rig.chest * SKIN_BONE_FLOATS);
     fwd.transformDirection(pM).setY(0).normalize();
-    const S = posed(cls, at, arm.shoulder, arm.bind[0], new Vector3());
-    const E = posed(cls, at, arm.elbow, arm.bind[1], new Vector3());
-    const H = posed(cls, at, arm.hand, arm.bind[2], new Vector3());
-    const T = H.clone().lerp(target, weight);
+    const S = posed(cls, at, arm.shoulder, arm.bind[0], reachS);
+    const E = posed(cls, at, arm.elbow, arm.bind[1], reachE);
+    const H = posed(cls, at, arm.hand, arm.bind[2], reachH);
+    const T = reachT.copy(H).lerp(target, weight);
     const l1 = E.distanceTo(S), l2 = H.distanceTo(E);
     const d = Math.min(l1 + l2 - 1e-4, Math.max(Math.abs(l1 - l2) + 1e-4, T.distanceTo(S)));
     // The elbow's angle for that reach.
     const want = Math.acos(Math.min(1, Math.max(-1, (l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2))));
-    const a = S.clone().sub(E), b = H.clone().sub(E);
+    const a = reachA.copy(S).sub(E), b = reachB.copy(H).sub(E);
     const now = a.angleTo(b);
     // The elbow bends in the arm's natural plane, the forearm coming forward
-    let n = new Vector3().crossVectors(a, fwd);
-    if (n.lengthSq() < 1e-10) n = new Vector3().crossVectors(a, b);
+    const n = reachN.crossVectors(a, fwd);
+    if (n.lengthSq() < 1e-10) n.crossVectors(a, b);
     n.normalize();
     turnAbout(cls, at, arm.foreSet, E, pR.makeRotationAxis(n, want - now));
     // Then the arm turned at the shoulder so the hand comes onto the target.
-    const H2 = posed(cls, at, arm.hand, arm.bind[2], new Vector3());
-    pQ.setFromUnitVectors(H2.sub(S).normalize(), T.clone().sub(S).normalize());
+    const H2 = posed(cls, at, arm.hand, arm.bind[2], reachH2);
+    pQ.setFromUnitVectors(H2.sub(S).normalize(), reachTS.copy(T).sub(S).normalize());
     turnAbout(cls, at, arm.upperSet, S, pR.makeRotationFromQuaternion(pQ));
-    return posed(cls, at, arm.hand, arm.bind[2], new Vector3()).distanceTo(T) / (l1 + l2);
+    return posed(cls, at, arm.hand, arm.bind[2], reachEnd).distanceTo(T) / (l1 + l2);
   };
 
   /** The upper body turned about the lower spine by `angle`, in a palette row at `at`. */
@@ -1849,8 +1853,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
     joltM.fromArray(px, at + spine.root * SKIN_BONE_FLOATS);
     joltP.copy(spine.bind).applyMatrix4(joltM);
     // T(p) R T(-p), before each upper-body bone's own matrix.
-    joltT.makeTranslation(joltP.x, joltP.y, joltP.z).multiply(joltM.makeRotationAxis(axis, angle)).multiply(new Matrix4().makeTranslation(-joltP.x, -joltP.y, -joltP.z));
-    const bone = new Matrix4();
+    joltT.makeTranslation(joltP.x, joltP.y, joltP.z).multiply(joltM.makeRotationAxis(axis, angle)).multiply(joltBack.makeTranslation(-joltP.x, -joltP.y, -joltP.z));
+    const bone = joltBone;
     for (const i of spine.bones) {
       const o = at + i * SKIN_BONE_FLOATS;
       bone.fromArray(px, o).premultiply(joltT).toArray(px, o);
