@@ -824,13 +824,16 @@ export class LotTool {
       const side = this.sideNear(this.hover);
       if (side) lines.push({ a: side.a, b: side.b, colour: 0xffd25e, dashed: false, width: 0.7 });
     }
+    // DO NOT snap the same point three times: each snap unites every footway ring near it with the clipper (3 unions a pointer move while drawing a lot, EDT-05).
+    let snapped: Vec2 | null = null;
+    const hoverSnapped = (hover: Vec2): Vec2 => (snapped ??= this.snap(hover));
     if (this.polygon.length) {
-      const pts = [...this.polygon, ...(this.hover ? [this.snap(this.hover)] : [])];
+      const pts = [...this.polygon, ...(this.hover ? [hoverSnapped(this.hover)] : [])];
       for (let i = 1; i < pts.length; i++) lines.push({ a: pts[i - 1]!, b: pts[i]!, colour: 0xffffff, dashed: false, width: 0.5 });
       for (const q of this.polygon) points.push({ p: q, colour: 0xffffff, radius: 0.6 });
     }
     if (editing && (settings.mode === 'polygon' || settings.mode === 'add' || corner) && this.hover) {
-      points.push({ p: corner ? corner.to : this.snap(this.hover), colour: 0x5ee0ff, radius: 0.9 });
+      points.push({ p: corner ? corner.to : hoverSnapped(this.hover), colour: 0x5ee0ff, radius: 0.9 });
     }
     if (this.drawn) {
       // As it will be made: cut back to the footways.
@@ -843,7 +846,7 @@ export class LotTool {
       const f = lotFrame(hoverLot);
       labels = [{ at: lotCentre(hoverLot), kind: 'size', width: f.width, depth: f.depth }];
     } else if (this.polygon.length && this.hover) {
-      const a = this.polygon[this.polygon.length - 1]!, b = this.snap(this.hover);
+      const a = this.polygon[this.polygon.length - 1]!, b = hoverSnapped(this.hover);
       labels = [{ at: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, kind: 'length', length: Math.hypot(b.x - a.x, b.y - a.y) }];
     }
     this.book.labels = labels;
