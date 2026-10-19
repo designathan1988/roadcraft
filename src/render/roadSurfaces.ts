@@ -593,6 +593,24 @@ export function* roadSurfaceSteps(
         for (const tile of lists.flat()) if (!tile.bundle) again.add(tile);
       }
     }
+    /** The kept tiles given arrays for this merge (read or built): let go once merged. */
+    const mergedKept = new Set(again);
+    // DO NOT build again what the store holds of them (a block's 15 unchanged tiles cut, triangulated and sampled again for an edit in one, VIA-03): read in one transaction, as the new ones are; its key holds the tile's digest, so what it reads is what a build makes.
+    if (again.size && reuse?.stored) {
+      const stored = [...again].filter((t) => reuse.stored!.has(t.stored));
+      if (stored.length) {
+        let got: ReadonlyMap<string, TileBundle> | null = null;
+        reuse.stored.fetch(stored.map((t) => t.stored)).then((map) => { got = map; }, () => { got = new Map(); });
+        while (got === null) yield 'wait';
+        const read: ReadonlyMap<string, TileBundle> = got;
+        for (const tile of stored) {
+          const bundle = read.get(tile.stored);
+          if (!bundle) continue;
+          tile.bundle = bundle;
+          again.delete(tile);
+        }
+      }
+    }
     yield* buildAll([...again], () => { remade++; });
 
     /** The blocks merged here without a cache to keep them (`buildRoadSurfaces` with no reuse). */
@@ -704,6 +722,8 @@ export function* roadSurfaceSteps(
       else reuse?.keep?.(tile.stored, tile.bundle!);
     }
     for (const tile of tiles) tile.bundle = null;
+    // And the kept tiles read or built again for a merge: their arrays are the blocks' now (VIA-02: held for good, 50-300 MB over an editing session).
+    for (const tile of mergedKept) tile.bundle = null;
   }
   // Blocks no surface has any more.
   if (chunks) for (const [key, { mesh }] of chunks) if (!usedChunks.has(key)) { retire(mesh); chunks.delete(key); }

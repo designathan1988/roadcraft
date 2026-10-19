@@ -261,4 +261,50 @@ describe('road surface tiles', () => {
       expect(fingerprint(mesh)).toBe(before);
     }
   });
+
+  it('reads the unchanged tiles of a block an edit reaches from the store, never builds them again, and keeps none of their arrays (VIA-02, VIA-03)', async () => {
+    const town = new RoadDoc();
+    buildDefaultTown(town);
+    const net = new Network(town);
+    net.rebuild();
+    let elevation = buildRoadElevation(net, ground);
+    const store = new Map<string, unknown>();
+    const reuse = {
+      ...reuseFor(() => elevation),
+      passes: new Map(),
+      keep: (key: string, bundle: unknown) => { store.set(key, bundle); },
+      stored: {
+        has: (key: string) => store.has(key),
+        fetch: async (keys: readonly string[]) => new Map(keys.filter((k) => store.has(k)).map((k) => [k, store.get(k)])),
+      },
+    } as unknown as SurfaceReuse;
+    // The builder waits on the store: driven a step at a time.
+    const build = async (): Promise<ReturnType<typeof buildRoadSurfaces>> => {
+      const steps = roadSurfaceSteps(net, elevation, materials, ground, reuse);
+      let step = steps.next();
+      while (!step.done) {
+        if (step.value === 'wait') await new Promise((done) => setTimeout(done, 0));
+        step = steps.next();
+      }
+      step.value.adopt();
+      return step.value;
+    };
+    await build();
+    expect(store.size).toBeGreaterThan(0);
+    const end = [...town.nodes.values()].filter((n) => n.incident.length === 1).sort((p, q) => q.x - p.x)[0]!;
+    town.addSegment(end.id, town.addNode({ x: end.x + 60, y: end.y + 20 }).id, 1);
+    net.rebuild();
+    elevation = buildRoadElevation(net, ground);
+    const after = await build();
+    // The blocks the street reached merged again from their tiles in the store: none built again from its rings.
+    expect(after.built).toBeGreaterThan(0);
+    expect(after.remade).toBe(0);
+    // The same picture as a build from nothing.
+    const fresh = buildRoadSurfaces(net, elevation, materials, ground, reuseFor(() => elevation));
+    expect(fingerprint(after.group)).toBe(fingerprint(fresh.group));
+    // No tile kept between builds holds its arrays.
+    for (const state of (reuse.passes as Map<string, { tiles: Map<number, { bundle: unknown }> }>).values()) {
+      for (const tile of state.tiles.values()) expect(tile.bundle).toBeNull();
+    }
+  });
 });
