@@ -1,9 +1,9 @@
 import type { Severable } from '@sim/people/view';
+import { fitInstances } from './instanceBounds';
 import {
   BufferAttribute, BufferGeometry, Color, DataTexture, DynamicDrawUsage, FloatType, Group, InstancedBufferAttribute, InstancedMesh,
   Matrix4, MeshDepthMaterial, MeshStandardMaterial, Object3D, Quaternion, RGBAFormat,
-  RGBADepthPacking, SkinnedMesh, Texture, Vector3, type WebGLRenderer,
-} from 'three';
+  RGBADepthPacking, SkinnedMesh, Texture, Vector3, type WebGLRenderer, Sphere } from 'three';
 import { PIXAR, REALISTIC, type CartoonStyle } from './people/cartoon';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { personHash, type PartyView, type PedView } from '@sim/people/view';
@@ -38,6 +38,8 @@ import { measureHitch } from '@core/hitch';
 export type { CitizenClipKey } from './citizenBake';
 export { CROWD_IDS } from './citizenCasting';
 const CAPACITY = 1000;
+/** A figure's limbs reach past its rest pose's sphere by up to this much of it (a stride, an arm thrown out, a fall): the sphere it is culled by (`fitInstances`). */
+const LIMB_REACH = 2;
 /** Instances a level's mesh starts with; it doubles with the figures drawn at that level (`growLevel`), up to `CAPACITY`. */
 const LEVEL_START = 16;
 /** One level of one part of a body: its own mesh, and each instance's palette row (`citizenRow`, read by the skinning). */
@@ -609,7 +611,9 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           mesh.count = 0;
           // Hidden until it has somebody to draw (`finish` shows it then).
           mesh.visible = false;
-          mesh.frustumCulled = false;
+          // Culled by a sphere fitted round its figures each frame (`finish`, AGT-04), twice the body's rest sphere for the limbs' swing.
+          mesh.frustumCulled = true;
+          mesh.boundingSphere = new Sphere();
           mesh.instanceMatrix.setUsage(DynamicDrawUsage);
           mesh.castShadow = true;
           // Small animated figures do not receive shadow maps
@@ -1101,6 +1105,7 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
           mesh.castShadow = detail > 0 && band < 2;
           if (mesh.castShadow && count > 0) casting = true;
           if (count === 0) continue;
+          fitInstances(mesh, count, LIMB_REACH);
           mesh.instanceMatrix.clearUpdateRanges();
           mesh.instanceMatrix.addUpdateRange(0, count * 16);
           mesh.instanceMatrix.needsUpdate = true;

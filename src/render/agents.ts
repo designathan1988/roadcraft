@@ -1,4 +1,5 @@
 import { gaitSpeed, type BodyPart, type PersonAgeClass, type Severable } from '@sim/people/view';
+import { fitInstances } from './instanceBounds';
 import { simplified } from './mesh/simplify';
 import {
   BoxGeometry,
@@ -18,6 +19,7 @@ import {
   type BufferGeometry,
   type Material,
   type WebGLRenderer,
+  Sphere,
 } from 'three';
 
 import { framesPoseInto, newPose, pedPoseInto } from '@sim/pose';
@@ -494,8 +496,9 @@ function instanced(
   mesh.instanceColor.setUsage(DynamicDrawUsage);
   mesh.castShadow = castShadow;
   mesh.receiveShadow = false;
-  // Instances move every frame, so a bounding sphere computed once is wrong
-  mesh.frustumCulled = false;
+  // Culled by a sphere fitted round its instances each time they change (`fitInstances`, AGT-04): the camera and each sun cascade leave out a part none of whose instances they see (three r186 `WebGLShadowMap` and `projectObject` test `intersectsFrustum`). DO NOT leave it unculled: every cascade drew the whole fleet.
+  mesh.frustumCulled = true;
+  mesh.boundingSphere = new Sphere();
   mesh.count = 0;
   // Shown once something is written in it (`sync`); its programs are still built at load (`compileAsync` walks hidden meshes too).
   mesh.visible = false;
@@ -2437,6 +2440,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       let drawn = 0;
       for (let i = 0; i < live.length; i++) {
         const part = live[i]!, mesh = part.mesh, n = part.n;
+        // Its sphere fitted again only when its instances changed (written, moved or gone).
+        if (n > 0 && (n !== part.shown || part.hi > part.lo || n > part.kept)) fitInstances(mesh, n);
         mesh.count = n;
         // An empty instanced mesh still costs a program bind, its uniforms and a state change in every pass
         mesh.visible = n > 0;

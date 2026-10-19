@@ -1,6 +1,7 @@
+import { fitInstances } from '../instanceBounds';
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, ConeGeometry, CylinderGeometry, DynamicDrawUsage, Group,
-  InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, Vector3,
+  InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, Sphere, Vector3,
 } from 'three';
 import { castBySize } from '../shadowCasters';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -109,7 +110,9 @@ export function createHeldProps(): HeldProps {
     const mesh = new InstancedMesh(model(kind), material, CAPACITY);
     mesh.name = `held-${kind}`;
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-    mesh.frustumCulled = false;
+    // Culled by a sphere fitted round what it holds as each is placed (`put`, AGT-04).
+    mesh.frustumCulled = true;
+    mesh.boundingSphere = new Sphere();
     mesh.castShadow = true;
     mesh.count = 0;
     meshes.set(kind, mesh);
@@ -126,6 +129,7 @@ export function createHeldProps(): HeldProps {
     mesh.instanceMatrix.addUpdateRange(mesh.count * 16, 16);
     mesh.setMatrixAt(mesh.count++, matrix);
     mesh.instanceMatrix.needsUpdate = true;
+    fitInstances(mesh, mesh.count);
     mesh.visible = true;
   };
   return {
