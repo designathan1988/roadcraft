@@ -1205,12 +1205,21 @@ export class SimWorld {
     if (rt.order.length === 0) this.occupied.delete(id);
   }
 
+  /** A lane's queue ordered by arc position, then id (the one order every reader of it assumes). DO NOT sort it whole with a new comparator each step (300-400 lanes a step, SIM-09): an insertion pass with the same key, linear on a queue already in order (nobody overtakes within a lane); the key a total order, so the same order any sort gives. */
   sortLane(rt: LaneletRuntime): void {
-    rt.order.sort((a, b) => {
-      const va = this.vehicles.get(a);
-      const vb = this.vehicles.get(b);
-      return (va?.s ?? 0) - (vb?.s ?? 0) || a - b;
-    });
+    const order = rt.order;
+    for (let i = 1; i < order.length; i++) {
+      const id = order[i]!;
+      const s = this.vehicles.get(id)?.s ?? 0;
+      let j = i - 1;
+      while (j >= 0) {
+        const other = order[j]!;
+        if (((this.vehicles.get(other)?.s ?? 0) - s || other - id) <= 0) break;
+        order[j + 1] = other;
+        j--;
+      }
+      order[j + 1] = id;
+    }
   }
 
   /** The vehicle nearest the exit of a lanelet, or undefined. */
