@@ -1,4 +1,3 @@
-import { BEHIND, OCCLUDER, setDrawClass } from '../drawClass';
 import {
   BoxGeometry,
   BufferAttribute,
@@ -596,9 +595,6 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   // The facade level's walls: the shell's every finish, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
   const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
   const facade = createFacadeMaterial(shell, panes, { roomsAwake, massingNight });
-  // Drawn first among the opaques, the walls and masses that hide the rest; the panes last (`drawClass.ts`, PRD-05).
-  for (const m of [shell, ruinShell, facade, massing, massingBoxes]) setDrawClass(m, OCCLUDER);
-  for (const m of [material.glass, material.glassDark]) setDrawClass(m, BEHIND);
   const unique = new Set<Material>([...Object.values(material), shell, ruinShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing, massingBoxes, massBoxDepth]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;

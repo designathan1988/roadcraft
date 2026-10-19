@@ -1,5 +1,4 @@
 import { onMap } from '@world/cityGen/wholeMap';
-import { opaqueSort } from './drawClass';
 import type { FarTiles } from './buildings/farLevels';
 import { jobPort } from '../jobs/jobPool';
 import { onEcologyRead } from './ecologyPool';
@@ -442,8 +441,6 @@ export function createSceneRenderer(
   });
   // One game frame has the scene, shadows and several postprocess renders.
   renderer.info.autoReset = false;
-  // The big occluders first among the opaques, the panes last (`drawClass.ts`, PRD-05).
-  renderer.setOpaqueSort(opaqueSort);
   // Checking every program's compile and link log makes each new shader wait for the driver on the main thread
   renderer.debug.checkShaderErrors = import.meta.env.DEV;
   // The GPU time of every frame.
