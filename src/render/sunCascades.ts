@@ -249,8 +249,38 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       return radius;
     }
     let radius = spheres.get(object);
-    if (radius === undefined) spheres.set(object, radius = measureSphere(object));
+    if (radius !== undefined) return radius;
+    // DO NOT read every instance's matrix of every mover each frame for the largest scale (the probe, 2026-10-19: the page's first CPU cost
+    // with the camera turning, and growing with the city's vehicles and people). Kept across frames: measured again when the instances change
+    // in number (one more car, a bigger one among them) and every `REMEASURE_PASSES` passes for a scale changed in place.
+    const count = instancesUnder(object);
+    const kept = moverSpheres.get(object);
+    if (kept && kept.count === count && passNo - kept.pass < REMEASURE_PASSES) radius = kept.radius;
+    else {
+      radius = measureSphere(object);
+      moverSpheres.set(object, { radius, count, pass: passNo });
+    }
+    spheres.set(object, radius);
     return radius;
+  };
+  /** The movers' reach, kept from pass to pass with the instances it was measured at and when. */
+  const moverSpheres = new WeakMap<Object3D, { readonly radius: number; readonly count: number; readonly pass: number }>();
+  /** Passes a mover's reach is trusted for (half a second at 60 Hz): a scale changed in place is seen within it; a count changed at once. */
+  const REMEASURE_PASSES = 30;
+  /** The passes run, for `moverSpheres`' age. */
+  let passNo = 0;
+  /** How many instances a root draws (an instanced mesh by its count, any other mesh as one): its meshes walked, never their matrices. */
+  const instancesUnder = (object: Object3D): number => {
+    let n = 0;
+    walk.length = 0;
+    walk.push(object);
+    while (walk.length > 0) {
+      const o = walk.pop()!;
+      for (const child of o.children) walk.push(child);
+      const mesh = o as Mesh & { isInstancedMesh?: boolean; count?: number };
+      if (mesh.isMesh) n += mesh.isInstancedMesh ? (mesh.count ?? 0) + 1 : 1;
+    }
+    return n;
   };
   /** The reach of the roots that never change size (`Movers.fixedSize`), kept from frame to frame with the instances it was measured at. */
   const fixedSpheres = new WeakMap<Object3D, { readonly radius: number; readonly count: number }>();
@@ -529,6 +559,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       if (!enabled) return false;
       stats.passes++;
       // DO NOT walk every mover's meshes for its radius once per cascade and draw: once a frame.
+      passNo++;
       spheres.clear();
       radii.clear();
       let any = false;
