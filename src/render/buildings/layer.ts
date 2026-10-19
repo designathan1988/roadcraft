@@ -866,10 +866,15 @@ export function createBuildingLayer(): BuildingLayer {
     drawnOver(rect, revision = -Infinity) {
       if (townAt < revision) return false;
       const i0 = Math.floor(rect[0] / BATCH_CELL), j0 = Math.floor(rect[1] / BATCH_CELL), i1 = Math.ceil(rect[2] / BATCH_CELL), j1 = Math.ceil(rect[3] / BATCH_CELL);
-      for (const key of townCells.keys()) {
-        const comma = key.indexOf(',');
-        const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
-        if (i < i0 || i >= i1 || j < j0 || j >= j1) continue;
+      // The rectangle's cells looked up when it holds fewer than the town (PRD-30: a tile's rectangle against the 10 km town's every cell, each key parsed); the same answer, whichever cell fails first.
+      const walkRect = (i1 - i0) * (j1 - j0) < townCells.size;
+      const keys: Iterable<string> = walkRect ? cellKeysIn(i0, j0, i1, j1) : townCells.keys();
+      for (const key of keys) {
+        if (walkRect) { if (!townCells.has(key)) continue; } else {
+          const comma = key.indexOf(',');
+          const i = Number(key.slice(0, comma)), j = Number(key.slice(comma + 1));
+          if (i < i0 || i >= i1 || j < j0 || j >= j1) continue;
+        }
         // A tile's or plate's mesh made before the tile's buildings came in stands for none of them (the plate of the map's centre: four tiles, the second to come handed to the cells under the first's plate, 2026-10-17).
         if (levelShown(key) === null && !massCells.drawn(key, (level) => !levels.outdated(level))) return false;
       }
@@ -1017,4 +1022,9 @@ export function createBuildingLayer(): BuildingLayer {
       group.clear();
     },
   };
+}
+
+/** The coarse cells' keys of `[i0, i1) x [j0, j1)`, as `townCells` keys them. */
+function* cellKeysIn(i0: number, j0: number, i1: number, j1: number): Generator<string> {
+  for (let i = i0; i < i1; i++) for (let j = j0; j < j1; j++) yield `${i},${j}`;
 }
