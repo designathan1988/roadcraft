@@ -1,4 +1,5 @@
 import { LandLevels } from './terrainLevels';
+import { TERRAIN_CELL, TERRAIN_HALF, TERRAIN_SEGMENTS } from './terrainGrid';
 import { sampleCorners } from './terrainShaping';
 import { onPlate, woodsBaseInto, woodsSpan } from './woodsBase';
 
@@ -41,8 +42,58 @@ export interface WoodsJob {
 /** Some cells of the woods' base: the box of them (inclusive) and their values, row by row. */
 export interface WoodsBlock { readonly i0: number; readonly i1: number; readonly j0: number; readonly j1: number; readonly cells: Float32Array }
 
-export type LandStrokeJob = LevelsJob | WoodsJob;
-export type LandStrokeAnswer<J extends LandStrokeJob> = J extends LevelsJob ? Float32Array : J extends WoodsJob ? WoodsBlock : never;
+/** The water's level at the corners near water, for the water's mesh made again (`terrain.ts` rebuildWater). */
+export interface ShoreJob {
+  readonly kind: 'shore';
+  /** The water mesh's positions, x, height, z a vertex (three's axes, the plate's own), and how many. */
+  readonly position: Float32Array;
+  readonly count: number;
+  /** The drawn corners the water was made on (a copy). */
+  readonly ground: Float64Array;
+}
+
+export type LandStrokeJob = LevelsJob | WoodsJob | ShoreJob;
+export type LandStrokeAnswer<J extends LandStrokeJob> = J extends LevelsJob ? Float32Array : J extends WoodsJob ? WoodsBlock
+  : J extends ShoreJob ? Float32Array : never;
+
+/** A shore texel with no water near it (`shoreLevelsInto`). */
+export const NO_WATER = -100_000;
+/** Corners per side of a terrain plate. */
+const GRID = TERRAIN_SEGMENTS + 1;
+
+/** The water's level at every terrain corner within a few cells of water, for the shore bands of the terrain shader (`position`: the water mesh's x, height, z a vertex) */
+export function shoreLevelsInto(levels: Float32Array, position: ArrayLike<number>, count: number, ground: ArrayLike<number>): void {
+  levels.fill(NO_WATER);
+  for (let i = 0; i < count; i++) {
+    const gx = (position[i * 3]! + TERRAIN_HALF) / TERRAIN_CELL;
+    const gy = (position[i * 3 + 2]! + TERRAIN_HALF) / TERRAIN_CELL;
+    const ix = Math.round(gx);
+    const iy = Math.round(gy);
+    if (ix < 0 || iy < 0 || ix >= GRID || iy >= GRID) continue;
+    const k = iy * GRID + ix;
+    // Only a corner the water really stands over
+    if ((ground[k] as number) >= position[i * 3 + 1]!) continue;
+    levels[k] = Math.max(levels[k] as number, position[i * 3 + 1]!);
+  }
+  // Out three corners (48 units, about 19 m), each pass taking the highest water next to it.
+  for (let pass = 0; pass < 3; pass++) {
+    const from = levels.slice();
+    for (let iy = 0; iy < GRID; iy++) {
+      for (let ix = 0; ix < GRID; ix++) {
+        const k = iy * GRID + ix;
+        if ((from[k] as number) > NO_WATER / 2) continue;
+        let best = NO_WATER;
+        if (ix > 0) best = Math.max(best, from[k - 1] as number);
+        if (ix + 1 < GRID) best = Math.max(best, from[k + 1] as number);
+        if (iy > 0) best = Math.max(best, from[k - GRID] as number);
+        if (iy + 1 < GRID) best = Math.max(best, from[k + GRID] as number);
+        // Only onto a BANK, ground above the water
+        if (best > NO_WATER / 2 && (ground[k] as number) < best) continue;
+        levels[k] = best;
+      }
+    }
+  }
+}
 
 /** The levels' nodes after `job.box` moved, as the page's `LandLevels` measures them (`markBox`, `measure`). */
 export function measureLevels(job: LevelsJob): Float32Array {
@@ -53,23 +104,24 @@ export function measureLevels(job: LevelsJob): Float32Array {
   return levels.data;
 }
 
-/** A whole base the cells are worked out in, kept between jobs: only the block asked is read back. */
-let woodsScratch: Float32Array | null = null;
+/** A whole base the cells are worked out in, kept between jobs by their worker: only the block asked is read back. */
+export interface LandStrokeScratch { woods: Float32Array | null }
 
 /** The cells of the base `job.rect` reaches, as the page works them out (`woodsBaseInto` on the plate's natural land, `terrain.ts` sampleGrid). */
-export function woodsBlock(job: WoodsJob): WoodsBlock {
+export function woodsBlock(job: WoodsJob, scratch: LandStrokeScratch = { woods: null }): WoodsBlock {
   const { n, cell, half, natural, flip, outside } = job;
   const grid = { n, cell, half };
   let next = 0;
   // On the plate its corners, as the page reads them; off it the land the page read there, in the order the cells read it.
   const land = (x: number, y: number): number => (onPlate(half, x, y) ? sampleCorners(grid, natural, flip, x, y) : outside[next++]!);
   const { cells, i0, i1, j0, j1 } = woodsSpan(half, job.rect);
-  if (woodsScratch?.length !== cells * cells) woodsScratch = new Float32Array(cells * cells);
-  woodsBaseInto(woodsScratch, land, half, job.cx, job.cy, job.rect);
+  if (scratch.woods?.length !== cells * cells) scratch.woods = new Float32Array(cells * cells);
+  const whole = scratch.woods;
+  woodsBaseInto(whole, land, half, job.cx, job.cy, job.rect);
   if (next !== outside.length) throw new Error(`the woods read ${next} points off the plate, ${outside.length} were given`);
   const w = Math.max(0, i1 - i0 + 1), h = Math.max(0, j1 - j0 + 1);
   const block = new Float32Array(w * h);
-  for (let j = 0; j < h; j++) block.set(woodsScratch.subarray((j0 + j) * cells + i0, (j0 + j) * cells + i0 + w), j * w);
+  for (let j = 0; j < h; j++) block.set(whole.subarray((j0 + j) * cells + i0, (j0 + j) * cells + i0 + w), j * w);
   return { i0, i1, j0, j1, cells: block };
 }
 
@@ -80,9 +132,14 @@ export function writeWoodsBlock(woods: Float32Array, cells: number, block: Woods
 }
 
 /** A job's answer and the buffers it hands back. */
-export function runLandStroke(job: LandStrokeJob): { readonly answer: unknown; readonly transfer: Transferable[] } {
+export function runLandStroke(job: LandStrokeJob, scratch: LandStrokeScratch = { woods: null }): { readonly answer: unknown; readonly transfer: Transferable[] } {
+  if (job.kind === 'shore') {
+    const levels = new Float32Array(GRID * GRID);
+    shoreLevelsInto(levels, job.position, job.count, job.ground);
+    return { answer: levels, transfer: [levels.buffer] };
+  }
   if (job.kind === 'woods') {
-    const block = woodsBlock(job);
+    const block = woodsBlock(job, scratch);
     return { answer: block, transfer: [block.cells.buffer] };
   }
   const data = measureLevels(job);

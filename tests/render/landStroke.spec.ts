@@ -8,7 +8,9 @@ import { LandLevels } from '@render/terrainLevels';
 import { TERRAIN_CELL, TERRAIN_HALF, TERRAIN_SEGMENTS } from '@render/terrainGrid';
 import { sampleCorners } from '@render/terrainShaping';
 import { onPlate, woodsBase, woodsBaseInto, woodsOutsideReads, woodsSpan } from '@render/woodsBase';
-import { type WoodsBlock, writeWoodsBlock } from '@render/landStroke';
+import { NO_WATER, type WoodsBlock, shoreLevelsInto, writeWoodsBlock } from '@render/landStroke';
+import { unifiedWaterGeometry } from '@render/terrain';
+import type { BufferGeometry } from 'three';
 import type { JobScope } from '@/jobs/jobScope';
 
 /** A DAB'S WORK ON A PLATE, ON THE PAGE AND IN ITS WORKER: the same arrays to the last float (`render/landStroke.ts`) */
@@ -128,5 +130,63 @@ describe("a dab's woods", () => {
     }
     // The edges' dabs read the land beyond the plate.
     expect(offPlate).toBeGreaterThan(0);
+  });
+});
+
+/** The shore as the page worked it out before it went to the worker: read through the water mesh's attribute (`terrain.ts` shoreLevels, 2026-10-18). */
+function shoreLevelsBefore(water: BufferGeometry, levels: Float32Array, ground: ArrayLike<number>): void {
+  levels.fill(NO_WATER);
+  const position = water.getAttribute('position');
+  if (position) {
+    for (let i = 0; i < position.count; i++) {
+      const gx = (position.getX(i) + TERRAIN_HALF) / TERRAIN_CELL;
+      const gy = (position.getZ(i) + TERRAIN_HALF) / TERRAIN_CELL;
+      const ix = Math.round(gx);
+      const iy = Math.round(gy);
+      if (ix < 0 || iy < 0 || ix >= GRID || iy >= GRID) continue;
+      const k = iy * GRID + ix;
+      if ((ground[k] as number) >= position.getY(i)) continue;
+      levels[k] = Math.max(levels[k] as number, position.getY(i));
+    }
+  }
+  for (let pass = 0; pass < 3; pass++) {
+    const from = levels.slice();
+    for (let iy = 0; iy < GRID; iy++) {
+      for (let ix = 0; ix < GRID; ix++) {
+        const k = iy * GRID + ix;
+        if ((from[k] as number) > NO_WATER / 2) continue;
+        let best = NO_WATER;
+        if (ix > 0) best = Math.max(best, from[k - 1] as number);
+        if (ix + 1 < GRID) best = Math.max(best, from[k + 1] as number);
+        if (iy > 0) best = Math.max(best, from[k - GRID] as number);
+        if (iy + 1 < GRID) best = Math.max(best, from[k + GRID] as number);
+        if (best > NO_WATER / 2 && (ground[k] as number) < best) continue;
+        levels[k] = best;
+      }
+    }
+  }
+}
+
+describe('the shore of a water made again', () => {
+  it('is worked out in the worker as the page worked it out', () => {
+    const land = plate(m(1_000), m(2_000));
+    // A river cut and its water, as `rebuildWater` lays it: a disc a few metres over the bed it carved.
+    const river: TerrainStamp = { id: 1, x: m(60), y: m(-40), radius: m(45), strength: m(5), mode: 'river', rough: true };
+    land.dab(river);
+    const grid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF };
+    const heightAt = (x: number, y: number): number => sampleCorners(grid, land.heights, land.flip, x, y);
+    const bed = heightAt(river.x, river.y);
+    const water = unifiedWaterGeometry([{ x: river.x, y: river.y, radius: river.radius * 0.92, level: bed + m(2) }], heightAt);
+    const position = water.getAttribute('position');
+    expect(position.count).toBeGreaterThan(0);
+    const before = new Float32Array(GRID * GRID);
+    shoreLevelsBefore(water, before, land.heights);
+    expect(before.some((v) => v > NO_WATER / 2)).toBe(true);
+    // The page now: the attribute's own array.
+    const page = new Float32Array(GRID * GRID);
+    shoreLevelsInto(page, position.array, position.count, land.heights);
+    same(page, before);
+    const answer = inWorker({ kind: 'shore', position: (position.array as Float32Array).slice(), count: position.count, ground: land.heights.slice() }) as Float32Array;
+    same(answer, before);
   });
 });

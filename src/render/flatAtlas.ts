@@ -104,8 +104,6 @@ interface Plate {
   asked: boolean;
   /** The highest corner of its drawn ground, kept as it changes. */
   top: number;
-  /** Its surface's levels as `top` was read from them (`TerrainSurface.levelsRevision`). */
-  topSeen: number;
 }
 
 /** A node of the far ground resident: what it is, its slot in the far mesh, and its woods' slot (level 0 only). */
@@ -360,12 +358,11 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   let seenRelief: ReliefVersion | null = null;
 
   /** A plate's highest drawn corner, read each time its ground moved (its levels keep it, `terrainLevels.ts`). */
+  /** The atlas as its callers hold it, once made: told when a plate's levels land (`onLevels`). */
+  let atlas: TerrainSurface | null = null;
   const measureTop = (p: Plate): void => {
     p.top = p.surface!.highest!();
-    p.topSeen = p.surface!.levelsRevision ?? 0;
   };
-  /** Moves each time a shown plate's highest corner was read again after its levels landed (`levelsRevision`). */
-  let levelsRevision = 0;
   const measureHighest = (): void => {
     highest = -Infinity;
     for (const p of shownList) if (p.top > highest) highest = p.top;
@@ -415,7 +412,7 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     const r = plateRegion(key);
     p = {
       key, cx: r.cx, cy: r.cy, source: new PlateSource(), stampCopies: new WeakMap(), dabCopies: new WeakMap(),
-      surface: null, shown: false, ready: false, heights: null, mesh: null, asked: false, top: -Infinity, topSeen: -1,
+      surface: null, shown: false, ready: false, heights: null, mesh: null, asked: false, top: -Infinity,
     };
     plates.set(key, p);
     if (lastDoc) fill(p, lastDoc);
@@ -427,6 +424,13 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     // Each step of a plate's making measured (F9 and the probes read hitch: measures).
     const t0 = performance.now();
     const s = createTerrainSurface(anisotropy, { x: p.cx, y: p.cy }, p.key, p.mesh, share.open(p.key));
+    // A dab's levels come after it, off the page (`landStroke.ts`): the plate's top read again when they land, and the atlas's told on.
+    s.onLevels = () => {
+      if (p.surface !== s) return;
+      measureTop(p);
+      measureHighest();
+      atlas?.onLevels?.();
+    };
     // The surface keeps what it copied; the plate keeps only its corners (its land's field).
     p.mesh = null;
     const t1 = performance.now();
@@ -697,10 +701,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   followFar(0, 0);
   refresh();
   const firstSurface = home.surface!;
-  return {
+  atlas = {
     meshes: [root],
     highest: () => highest,
-    get levelsRevision() { return levelsRevision; },
+    onLevels: null,
     ground: firstSurface.ground,
     get parts() { return partsShown; },
     focus(x, y, reach) {
@@ -807,17 +811,14 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     },
     update(doc, stroking) {
       sync(doc);
-      let moved = false, topMoved = false;
+      let moved = false;
       for (const p of shownList) {
-        if (p.surface!.update(p.source, stroking)) {
-          moved = true;
-          lastPlate = p;
-        } else if ((p.surface!.levelsRevision ?? 0) === p.topSeen) continue;
-        // A dab's levels come after it, off the page (`landStroke.ts`): the plate's top read again when they land.
+        if (!p.surface!.update(p.source, stroking)) continue;
+        moved = true;
+        lastPlate = p;
         measureTop(p);
-        topMoved = true;
       }
-      if (topMoved) { measureHighest(); levelsRevision++; }
+      if (moved) measureHighest();
       return moved;
     },
     updatePaint(doc) {
@@ -930,4 +931,5 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       (slab.material as MeshStandardMaterial).dispose();
     },
   };
+  return atlas;
 }

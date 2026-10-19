@@ -71,7 +71,7 @@ import type { Aabb } from '@core/aabb';
 import { geometryCost } from './gpuLedger';
 import { measureHitch } from '@core/hitch';
 import type { JobTicket } from '../jobs/jobPool';
-import { type LevelsJob, type StrokeBox, type WoodsJob, unionBox, unionRect, writeWoodsBlock } from './landStroke';
+import { type LevelsJob, NO_WATER, type ShoreJob, type StrokeBox, type WoodsJob, shoreLevelsInto, unionBox, unionRect, writeWoodsBlock } from './landStroke';
 import { askLandStroke, landStrokeOffPage } from './landStrokePool';
 import { woodsBase, woodsBaseInto, woodsOutsideReads, woodsSpan } from './woodsBase';
 import type { PlateHeights } from './sharedGround';
@@ -94,9 +94,6 @@ const WATER_MARGIN = m(0.16);
 const WATER_CELL = m(1.6);
 
 
-
-/** A shore texel with no water near it (`shoreLevels`). */
-const NO_WATER = -100_000;
 
 /** Corners per side of the terrain grid — one more than its cells. */
 const GRID = TERRAIN_SEGMENTS + 1;
@@ -189,8 +186,8 @@ export interface TerrainSurface {
   readonly parts: readonly TerrainPart[];
   /** The highest corner of the drawn ground, when the surface keeps it as its ground moves (the atlas, from its plates') */
   highest?(): number;
-  /** Moves each time the levels of the drawn ground land (`highest` read again): a dab's are measured off the page and come after it (`landStroke.ts`). */
-  readonly levelsRevision?: number;
+  /** Told each time the levels of the drawn ground land after a dab or a shaping pass (`highest` to read again): they are measured off the page and come after it (`landStroke.ts`). */
+  onLevels?: (() => void) | null;
   /** Where the view looks (world x, y) and how much ground it takes in (the screen's half height, world units) */
   focus?(x: number, y: number, reach: number): void;
   /** Whether a plate the view wants still waits to be shown (its corners from the workers, its programs, the refresh that shows it): the frames must go on meanwhile, or a still camera keeps its far patch. */
@@ -269,43 +266,6 @@ const LAND_DIRT = 8;
 /** The terrain material: three surfaces blended by slope, height and noise. */
 /** Texels across a plate in each painted-ground weight texture. */
 const PAINT_RES = 1024;
-
-/** The water's level at every terrain corner within a few cells of water, for the shore bands of the terrain shader */
-function shoreLevels(water: BufferGeometry, levels: Float32Array, ground: ArrayLike<number>): void {
-  levels.fill(NO_WATER);
-  const position = water.getAttribute('position');
-  if (position) {
-    for (let i = 0; i < position.count; i++) {
-      const gx = (position.getX(i) + TERRAIN_HALF) / TERRAIN_CELL;
-      const gy = (position.getZ(i) + TERRAIN_HALF) / TERRAIN_CELL;
-      const ix = Math.round(gx);
-      const iy = Math.round(gy);
-      if (ix < 0 || iy < 0 || ix >= GRID || iy >= GRID) continue;
-      const k = iy * GRID + ix;
-      // Only a corner the water really stands over
-      if ((ground[k] as number) >= position.getY(i)) continue;
-      levels[k] = Math.max(levels[k] as number, position.getY(i));
-    }
-  }
-  // Out three corners (48 units, about 19 m), each pass taking the highest water next to it.
-  for (let pass = 0; pass < 3; pass++) {
-    const from = levels.slice();
-    for (let iy = 0; iy < GRID; iy++) {
-      for (let ix = 0; ix < GRID; ix++) {
-        const k = iy * GRID + ix;
-        if ((from[k] as number) > NO_WATER / 2) continue;
-        let best = NO_WATER;
-        if (ix > 0) best = Math.max(best, from[k - 1] as number);
-        if (ix + 1 < GRID) best = Math.max(best, from[k + 1] as number);
-        if (iy > 0) best = Math.max(best, from[k - GRID] as number);
-        if (iy + 1 < GRID) best = Math.max(best, from[k + GRID] as number);
-        // Only onto a BANK, ground above the water
-        if (best > NO_WATER / 2 && (ground[k] as number) < best) continue;
-        levels[k] = best;
-      }
-    }
-  }
-}
 
 /** Lays one biome dab on the terrain's corners: within its radius the painted biome weights move towards the dab's biome */
 function rasterBiome(weights: Float32Array, dab: PaintDab): void {
@@ -1491,11 +1451,9 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let levelsJob: JobTicket | null = null;
   /** Moves when the levels are measured whole on the page (`wholePlateMoved`): a job asked before brings nothing then. */
   let levelsGeneration = 0;
-  /** Moves each time the levels landed (`levelsRevision`): the plate's highest corner read again. */
-  let levelsRevision = 0;
   const levelsLanded = (box: StrokeBox): void => {
     sendLand(box[0] - 1, box[1] + 1, box[2] - 1, box[3] + 1);
-    levelsRevision++;
+    surface.onLevels?.();
   };
   const measureOnPage = (box: StrokeBox): void => {
     levels.markBox(box[0], box[1], box[2], box[3]);
@@ -1530,7 +1488,6 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     levelsBox = null;
     levelsJob?.cancel();
     levelsJob = null;
-    levelsRevision++;
   };
   /** @rebuild The whole plate's diagonals and levels worked out again, its texels at their send: every corner moved */
   const wholePlateMoved = (): void => {
@@ -1565,8 +1522,8 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   groundTexture.generateMipmaps = false;
   // The corners as the water last read them, held until sent; the drawn corners again only after a context restored.
   const groundTexels = stageTexels(groundTexture, Float32Array, GRID * GRID, 1, (into) => into.set(grid));
-  const sendGround = (): void => {
-    groundTexels.hold(Float32Array.from(grid));
+  const sendGround = (corners: Float32Array<ArrayBuffer> = Float32Array.from(grid)): void => {
+    groundTexels.hold(corners);
     groundTexture.needsUpdate = true;
     groundTexels.letGoWhenSent();
   };
@@ -1898,12 +1855,57 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       discs.push({ x: stamp.x, y: stamp.y, radius: stamp.radius * WATER_RADIUS, level });
     }
     wetDiscs = discs;
-    sendGround();
-    const previous = water.geometry;
     floodCells = new Map();
-    water.geometry = unifiedWaterGeometry(discs, renderedHeightAt, floodCells, ribbons);
+    const made: WaterMade = { geometry: unifiedWaterGeometry(discs, renderedHeightAt, floodCells, ribbons), ground: Float32Array.from(grid) };
+    if (waterJob) {
+      // One shore in flight: the newest water waits for it, any older one waiting let go.
+      waterNext?.geometry.dispose();
+      waterNext = made;
+      return;
+    }
+    askShore(made);
+  };
+  /** THE SHORE OFF THE PAGE: a water mesh made again waits for its shore's levels (`landStroke.ts` shoreLevelsInto), and the old water and shore are drawn until both are in. */
+  interface WaterMade { readonly geometry: BufferGeometry; readonly ground: Float32Array<ArrayBuffer> }
+  let waterJob: JobTicket | null = null;
+  let waterNext: WaterMade | null = null;
+  const askShore = (made: WaterMade): void => {
+    const position = made.geometry.getAttribute('position') as BufferAttribute | undefined;
+    const xyz = (position?.array ?? new Float32Array(0)) as Float32Array;
+    const count = position?.count ?? 0;
+    if (!landStrokeOffPage()) {
+      shoreLevelsInto(store.levels, xyz, count, grid);
+      waterLanded(made);
+      return;
+    }
+    const job: ShoreJob = { kind: 'shore', position: xyz.slice(), count, ground: grid.slice() };
+    const ground = job.ground.slice();
+    waterJob = askLandStroke(job, [job.position.buffer, job.ground.buffer], (levels) => {
+      waterJob = null;
+      if (disposed) { made.geometry.dispose(); return; }
+      store.levels.set(levels);
+      waterLanded(made);
+      shoreNext();
+    }, (message) => {
+      waterJob = null;
+      if (disposed) { made.geometry.dispose(); return; }
+      console.warn('[terrain] the shore is worked out on the page', message);
+      shoreLevelsInto(store.levels, xyz, count, ground);
+      waterLanded(made);
+      shoreNext();
+    });
+  };
+  const shoreNext = (): void => {
+    const next = waterNext;
+    waterNext = null;
+    if (next) askShore(next);
+  };
+  /** A water mesh and its shore in: drawn from now on, with the corners it was made on. */
+  const waterLanded = ({ geometry, ground }: WaterMade): void => {
+    sendGround(ground);
+    const previous = water.geometry;
+    water.geometry = geometry;
     previous.dispose();
-    shoreLevels(water.geometry, store.levels, grid);
     sendCorners();
     water.geometry.computeBoundingBox();
     const box = water.geometry.boundingBox;
@@ -2381,12 +2383,14 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       rim.visible = shown && lod.rimGeometry.instanceCount > 0;
     },
     highest: () => levels.hi(LOD_LEVELS - 1, 0, 0),
-    get levelsRevision() { return levelsRevision; },
+    onLevels: null,
     meshMaterial: material,
     dispose() {
       disposed = true;
       levelsJob?.cancel();
       woodsJob?.cancel();
+      waterJob?.cancel();
+      waterNext?.geometry.dispose();
       lod.dispose();
       land.dispose();
       groundMaterial.dispose();
