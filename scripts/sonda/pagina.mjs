@@ -33,8 +33,10 @@ export function initScript({ hooks, largeBytes }) {
   /** The bytes a structured clone of `v` carries, bounded: exact for buffers and strings, 8 a number, the first 1024 items of an array. */
   const sizeOf = (v, depth = 0) => {
     if (v == null) return 0;
-    if (v instanceof ArrayBuffer) return v.byteLength;
-    if (ArrayBuffer.isView(v)) return v.byteLength;
+    // Copied bytes only: memory shared (a SharedArrayBuffer) or moved (in the transfer list, `moved`) is not cloned (the citizen bake's basis is shared: v0 counted 641 MB of it as copies).
+    if (typeof SharedArrayBuffer !== 'undefined' && v instanceof SharedArrayBuffer) return 0;
+    if (v instanceof ArrayBuffer) return sizeOf.moved?.has(v) ? 0 : v.byteLength;
+    if (ArrayBuffer.isView(v)) return (typeof SharedArrayBuffer !== 'undefined' && v.buffer instanceof SharedArrayBuffer) || sizeOf.moved?.has(v.buffer) ? 0 : v.byteLength;
     if (typeof v === 'string') return v.length * 2;
     if (typeof v !== 'object' || depth > 4) return 8;
     let n = 0;
@@ -64,14 +66,18 @@ export function initScript({ hooks, largeBytes }) {
   OrigWorker.prototype.postMessage = function (data, transfer) {
     const name = names.get(this) ?? 'worker';
     const row = (S.msgs.byWorker[name] ??= { made: '?', url: '?', out: 0, outBytes: 0, in: 0, inBytes: 0 });
+    sizeOf.moved = new Set(transfer ?? []);
     const b = sizeOf(data);
+    sizeOf.moved = null;
     row.out++; row.outBytes += b;
     if (b >= largeBytes) S.msgs.large.push({ dir: 'to', worker: name, bytes: b, kind: String(data?.kind ?? data?.type ?? data?.service ?? ''), site: site(), at: performance.now() });
     return post.call(this, data, transfer);
   };
   const portPost = MessagePort.prototype.postMessage;
   MessagePort.prototype.postMessage = function (data, transfer) {
+    sizeOf.moved = new Set(transfer ?? []);
     const b = sizeOf(data);
+    sizeOf.moved = null;
     S.msgs.ports.n++; S.msgs.ports.bytes += b;
     if (b >= largeBytes) S.msgs.large.push({ dir: 'port', worker: '(port)', bytes: b, kind: String(data?.kind ?? data?.type ?? data?.service ?? ''), site: site(), at: performance.now() });
     return portPost.call(this, data, transfer);
@@ -84,8 +90,10 @@ export function workerHooks() {
   const S = (self.__sonda = { in: 0, inBytes: 0, out: 0, outBytes: 0, portOut: 0, portOutBytes: 0, portIn: 0, portInBytes: 0, big: [] });
   const sizeOf = (v, depth = 0) => {
     if (v == null) return 0;
-    if (v instanceof ArrayBuffer) return v.byteLength;
-    if (ArrayBuffer.isView(v)) return v.byteLength;
+    // Copied bytes only: memory shared (a SharedArrayBuffer) or moved (in the transfer list, `moved`) is not cloned (the citizen bake's basis is shared: v0 counted 641 MB of it as copies).
+    if (typeof SharedArrayBuffer !== 'undefined' && v instanceof SharedArrayBuffer) return 0;
+    if (v instanceof ArrayBuffer) return sizeOf.moved?.has(v) ? 0 : v.byteLength;
+    if (ArrayBuffer.isView(v)) return (typeof SharedArrayBuffer !== 'undefined' && v.buffer instanceof SharedArrayBuffer) || sizeOf.moved?.has(v.buffer) ? 0 : v.byteLength;
     if (typeof v === 'string') return v.length * 2;
     if (typeof v !== 'object' || depth > 4) return 8;
     let n = 0;
