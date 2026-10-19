@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createFogField, createFogTexture } from '@render/fogLayer';
 import type { FogDab } from '@world/fogPaint';
 import { m } from '@world/units';
@@ -73,5 +73,34 @@ describe('fog field', () => {
     // A row written in part reads the rest of its slab back from the half floats: to their step.
     expect(moved.low).toBeCloseTo(laid.low, 1);
     expect(moved.high).toBeCloseTo(laid.high, 1);
+  });
+});
+
+describe('fog field sends (TER-14)', () => {
+  it('sends a band along x whole in one call, reads back only the blocks written, and sends a dab\'s band by its columns', async () => {
+    const { DataUtils } = await import('three');
+    const ground = (x: number, y: number): number => Math.sin(x / m(300)) * m(10) + y / m(500);
+    const dabs = [dab(m(-800), m(400), m(1500)), dab(m(2600), m(-300), m(2000)), dab(m(5200), m(900), m(1200))];
+    const texture = createFogTexture();
+    const field = createFogField(texture);
+    const sent = (): void => { texture.onUpdate?.(texture); texture.clearUpdateRanges(); };
+    field.whole(dabs, ground);
+    sent();
+    // Two steps along x: each a strip of every row, sent whole (no range a row).
+    field.follow(m(1600), 0, dabs, ground)!;
+    expect(texture.updateRanges).toHaveLength(0);
+    sent();
+    const decode = vi.spyOn(DataUtils, 'fromHalfFloat');
+    field.follow(m(3200), 0, dabs, ground)!;
+    expect(texture.updateRanges).toHaveLength(0);
+    // The rest of each row read back from the blocks kept: only the blocks the strips cut (a whole row's 512 texels before, 3 floats each with fog).
+    expect(decode.mock.calls.length).toBeLessThan(512 * 2 * 64 * 3);
+    decode.mockRestore();
+    sent();
+    // A dab's square: its rows sent by its columns only.
+    const r = dabs[1]!;
+    field.update(dabs, ground, [[r.x - m(100), r.y - m(100), r.x + m(100), r.y + m(100)]]);
+    expect(texture.updateRanges.length).toBeGreaterThan(0);
+    for (const range of texture.updateRanges) expect(range.count).toBeLessThan(512 * 4);
   });
 });

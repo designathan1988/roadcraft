@@ -17,7 +17,7 @@ import { takeWaitingPictures } from './plantImpostors';
 import { natureTreePictures } from './natureTrees';
 import { FAR_WOODS_BUDGET, woodsScale, type FarWoods, type FarWoodsAsk, type FarWoodsGrid } from './farWoods';
 import { IMPOSTOR_FRAGMENT_MAP, IMPOSTOR_FRAGMENT_NORMAL, IMPOSTOR_VERTEX, IMPOSTOR_VERTEX_PARS, IMPOSTOR_FRAGMENT_PARS } from './impostorShaders';
-import { gpuOnlyAttributes } from './mesh/gpuOnly';
+import { fillArrays, gpuOnlyAttributes } from './mesh/gpuOnly';
 
 /** DO NOT go back to one mesh of the map: its 102,400 instances */
 
@@ -71,6 +71,8 @@ export class FarWoodsBook {
   arrived: number[] = [];
   /** The keys of the plates let go: their meshes to drop. */
   gone: number[] = [];
+  /** The keys of the plates whose scale alone changed (the quality tier): their picks sent again, their meshes kept (VEG-09). */
+  rescaled: number[] = [];
   /** The trees per 1920 m square the quality tier allows (`setVegetation`). */
   private budget = FAR_WOODS_BUDGET;
 
@@ -92,6 +94,7 @@ export class FarWoodsBook {
     p.asked = '';
     this.plates.delete(key);
     this.arrived = this.arrived.filter((k) => k !== key);
+    this.rescaled = this.rescaled.filter((k) => k !== key);
     this.gone.push(key);
   }
 
@@ -142,11 +145,11 @@ export class FarWoodsBook {
       return;
     }
     if (was === 0) for (const p of this.plates.values()) this.ask(p);
-    // Every plate's scale again, its instances written again (`arrived`).
+    // Every plate's scale again: its picks sent again (`rescaled`), its mesh kept; a plate whose instances wait to be written gets the scale with them.
     for (const p of this.plates.values()) {
       if (!p.woods) continue;
       p.scale = this.scaleOf(p.woods);
-      if (!this.arrived.includes(p.key)) this.arrived.push(p.key);
+      if (!this.arrived.includes(p.key) && !this.rescaled.includes(p.key)) this.rescaled.push(p.key);
     }
   }
 
@@ -246,8 +249,8 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
     return geometry;
   };
 
-  /** A plate's trees as its instances: x, height, three's z, size; the model and the plate's slot, the pick, the yaw, the tint. */
-  const arraysOf = (key: number): { aSpot: Float32Array; aLook: Float32Array } | null => {
+  /** A plate's trees as its instances: x, height, three's z, size; the model and the plate's slot, the pick, the yaw, the tint (`aLook` alone when `lookOnly`). */
+  const arraysOf = (key: number, lookOnly = false): { aSpot: Float32Array | undefined; aLook: Float32Array } | null => {
     const plate = book.plates.get(key);
     const woods = plate?.woods;
     if (!plate || !woods || woods.count === 0 || models.length === 0) return null;
@@ -255,11 +258,11 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
     let order: number[] | null = null;
     if (woods.count > SLOT) order = Array.from({ length: woods.count }, (_, i) => i).sort((a, b) => woods.pick[a]! - woods.pick[b]!).slice(0, SLOT);
     const count = Math.min(SLOT, woods.count);
-    const s = new Float32Array(count * 4), l = new Float32Array(count * 4);
+    const s = lookOnly ? undefined : new Float32Array(count * 4), l = new Float32Array(count * 4);
     for (let n = 0; n < count; n++) {
       const i = order ? order[n]! : n;
       const o = n * 4;
-      s[o] = woods.x[i]!; s[o + 1] = woods.z[i]!; s[o + 2] = -woods.y[i]!; s[o + 3] = woods.size[i]!;
+      if (s) { s[o] = woods.x[i]!; s[o + 1] = woods.z[i]!; s[o + 2] = -woods.y[i]!; s[o + 3] = woods.size[i]!; }
       const seed = woods.seed[i]!;
       // Its pick over the plate's scale: the shader's test against a scale of 1 is the test against the plate's (`impostorShaders.ts`: want - pick, both over the scale); none stands at a scale of 0.
       const pick = plate.scale > 0 ? woods.pick[i]! / plate.scale : 2;
@@ -283,16 +286,17 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
     unwrite(key);
     const arrays = arraysOf(key);
     if (!arrays) return;
-    const count = arrays.aSpot.length / 4;
-    const spot = new InstancedBufferAttribute(arrays.aSpot, 4), look = new InstancedBufferAttribute(arrays.aLook, 4);
+    const aSpot = arrays.aSpot!;
+    const count = aSpot.length / 4;
+    const spot = new InstancedBufferAttribute(aSpot, 4), look = new InstancedBufferAttribute(arrays.aLook, 4);
     const geometry = quadOf(spot, look);
     // The woods' bounds: every foot, grown by the farthest a picture reaches (`reachPerSize`).
     const box = new Box3();
     const foot = new Vector3();
     let tallest = 0;
     for (let n = 0; n < count; n++) {
-      box.expandByPoint(foot.fromArray(arrays.aSpot, n * 4));
-      tallest = Math.max(tallest, arrays.aSpot[n * 4 + 3]!);
+      box.expandByPoint(foot.fromArray(aSpot, n * 4));
+      tallest = Math.max(tallest, aSpot[n * 4 + 3]!);
     }
     box.expandByScalar(tallest * reachPerSize);
     geometry.boundingBox = box;
@@ -323,6 +327,16 @@ export function createFarForest(slots: number, grid: FarWoodsGrid, read: FarWood
       if (book.arrived.length) {
         for (const key of book.arrived) write(key);
         book.arrived = [];
+      }
+      // A scale alone changed (the quality tier): the picks sent again into the mesh there is (one attribute's upload), never a mesh, a geometry and its bounds made again (VEG-09).
+      if (book.rescaled.length) {
+        for (const key of book.rescaled) {
+          const mesh = meshes.get(key);
+          const arrays = mesh ? arraysOf(key, true) : null;
+          if (!mesh || !arrays || arrays.aLook.length !== (mesh.geometry.getAttribute('aLook') as InstancedBufferAttribute).count * 4) write(key);
+          else fillArrays(mesh, { aLook: arrays.aLook });
+        }
+        book.rescaled = [];
       }
       book.step(now);
       // Every far plate's fade into its slot each frame (a few dozen numbers): a slot handed on starts from its new plate's.

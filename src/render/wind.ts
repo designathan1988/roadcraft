@@ -1,6 +1,5 @@
 import {
   MeshDepthMaterial,
-  RGBADepthPacking,
   ShaderChunk,
   Vector2,
   type Material,
@@ -124,7 +123,8 @@ ${NEAR_FADE_GLSL}`);
 
 /** The shadow-pass twin of a wind material, for `mesh.customDepthMaterial`: one program for every response (`applyWind`). */
 export function windDepthMaterial(response: WindResponse, _name: string): MeshDepthMaterial {
-  const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+  // No colour: the cascades compare their depth texture, nothing reads their colour (`sunCascades.ts` cascadeMap, VEG-10).
+  const depth = new MeshDepthMaterial({ colorWrite: false });
   markSway(depth);
   depth.onBeforeCompile = (shader) => install(shader, response);
   depth.customProgramCacheKey = () => 'wind-depth';

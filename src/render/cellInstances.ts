@@ -161,7 +161,8 @@ export function posedMaterial<M extends Material>(material: M, format: SlotForma
 /** The shadow pass's material of a caster with none of its own: three's (r186 `WebGLShadowMap` `_depthMaterial`, one per caster as its `_materialCache`), drawn from the poses. */
 export function poseDepthOf(material: Material, format: SlotFormat): MeshDepthMaterial {
   const caster = material as Posed;
-  return posedMaterial(caster[POSE_DEPTH] ??= new MeshDepthMaterial(), format);
+  // No colour: the cascades compare their depth texture, nothing reads their colour (`sunCascades.ts` cascadeMap, VEG-10).
+  return posedMaterial(caster[POSE_DEPTH] ??= new MeshDepthMaterial({ colorWrite: false }), format);
 }
 
 /** A mesh the cells draw: its level's poses (one buffer for the level's meshes) and their format. */

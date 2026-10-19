@@ -30,8 +30,8 @@ describe('the land material', () => {
 
   it('reads the ecology from the corner layer of the paint array: no unit of its own', () => {
     const units = textureUnits(far.material, { instanceColor: false, morph: false, instanced: false });
-    // 11 with the 3 cascades (its normal map and a plate's \`uLand\` make 13 of ANGLE's 16, uncounted here)
-    expect(total(units), listed(units)).toBeLessThanOrEqual(Math.min(MAX_UNITS, 11));
-    expect(units.has('uPaint') && units.has('uShore'), listed(units)).toBe(true);
+    // 12 with the 3 cascades (its normal map and a plate's \`uLand\` make 14 of ANGLE's 16, uncounted here): the water's level and the covers two textures (TER-07)
+    expect(total(units), listed(units)).toBeLessThanOrEqual(Math.min(MAX_UNITS, 12));
+    expect(units.has('uPaint') && units.has('uShoreLevel') && units.has('uShoreCover'), listed(units)).toBe(true);
   });
 });

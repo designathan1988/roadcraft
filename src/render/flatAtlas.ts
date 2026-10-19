@@ -139,14 +139,18 @@ export function writeFarPatch(far: FlatFar, slot: number, cx: number, cy: number
   writeFarNode(far, slot, cx - TERRAIN_HALF, cy - TERRAIN_HALF, PLATE_SIZE / FAR_QUADS, SKIRT, ground);
 }
 
+const FAR_RING_SIDE = FAR_SIDE + 2;
+/** `writeFarNode`'s heights, one array for every node written (each fills it whole before reading it). */
+const farRingHeights = new Float64Array(FAR_RING_SIDE * FAR_RING_SIDE);
+
 /** Writes the patch of `FAR_QUADS` quads of `step` from (x0, y0) into `slot`, its skirts `skirt` deep (a coarser node's sampling misses more: deeper), from the land `ground` (the base added here); marks only that slot to be sent. */
 export function writeFarNode(far: FlatFar, slot: number, x0: number, y0: number, step: number, skirt: number, ground: (x: number, y: number) => number): void {
   const position = far.geometry.getAttribute('position') as BufferAttribute;
   const normal = far.geometry.getAttribute('normal') as BufferAttribute;
   const positions = position.array as Float32Array, normals = normal.array as Float32Array;
   // Heights on a ring one cell wider than the patch, for its normals.
-  const RING = FAR_SIDE + 2;
-  const h = new Float64Array(RING * RING);
+  const RING = FAR_RING_SIDE;
+  const h = farRingHeights;
   for (let j = 0; j < RING; j++) for (let i = 0; i < RING; i++) h[j * RING + i] = TERRAIN_BASE + ground(x0 + (i - 1) * step, y0 + (j - 1) * step);
   const first = slot * FAR_VERTS;
   let v = first;
@@ -279,10 +283,13 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     was.geometry.dispose();
     farDrawn = '';
   };
+  /** The relief the slab was last made for: it reads the relief alone, never the far nodes the view asks (TER-15). */
+  let slabRelief: ReliefVersion | null = null;
   /** The cut sides on the map's edge, along the far patches' own edge (their quads' step): where the land ends. */
   const buildSlab = (): void => {
     const relief = farRelief;
-    if (relief === null || !ringSet) return;
+    if (relief === null || !ringSet || relief === slabRelief) return;
+    slabRelief = relief;
     slab.geometry.dispose();
     slab.geometry = slabGeometry(-MAP_HALF, MAP_HALF, -MAP_HALF, MAP_HALF, PLATE_SIZE / FAR_QUADS, (x, y) => TERRAIN_BASE + reliefHeight(relief, x, y));
     slab.visible = true;
@@ -330,7 +337,6 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       changed = true;
     }
     if (!changed) return false;
-    buildSlab();
     drawFar();
     return true;
   };
@@ -358,6 +364,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   let seenRelief: ReliefVersion | null = null;
 
   /** A plate's highest drawn corner, read each time its ground moved (its levels keep it, `terrainLevels.ts`). */
+  /** The atlas as its callers hold it, once made: told when a plate's levels land (`onLevels`). */
+  let atlas: TerrainSurface | null = null;
   const measureTop = (p: Plate): void => {
     p.top = p.surface!.highest!();
   };
@@ -422,6 +430,13 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
     // Each step of a plate's making measured (F9 and the probes read hitch: measures).
     const t0 = performance.now();
     const s = createTerrainSurface(anisotropy, { x: p.cx, y: p.cy }, p.key, p.mesh, share.open(p.key));
+    // A dab's levels come after it, off the page (`landStroke.ts`): the plate's top read again when they land, and the atlas's told on.
+    s.onLevels = () => {
+      if (p.surface !== s) return;
+      measureTop(p);
+      measureHighest();
+      atlas?.onLevels?.();
+    };
     // The surface keeps what it copied; the plate keeps only its corners (its land's field).
     p.mesh = null;
     const t1 = performance.now();
@@ -692,9 +707,10 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   followFar(0, 0);
   refresh();
   const firstSurface = home.surface!;
-  return {
+  atlas = {
     meshes: [root],
     highest: () => highest,
+    onLevels: null,
     ground: firstSurface.ground,
     get parts() { return partsShown; },
     focus(x, y, reach) {
@@ -921,4 +937,5 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
       (slab.material as MeshStandardMaterial).dispose();
     },
   };
+  return atlas;
 }

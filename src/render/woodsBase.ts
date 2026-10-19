@@ -17,13 +17,8 @@ export function woodsBase(natural: (x: number, y: number) => number, half: numbe
 /** The base's cells whose slope reads the plate's own (x, y) in `rect` (null: every cell) worked out again into `out`: a stamp of the land redoes its own cells, never the plate's (`terrain.ts`). */
 export function woodsBaseInto(out: Float32Array, natural: (x: number, y: number) => number, half: number, cx: number, cy: number,
   rect: readonly [number, number, number, number] | null): void {
-  const cells = Math.floor((half * 2) / WOODS_SPACING);
+  const { cells, i0, i1, j0, j1 } = woodsSpan(half, rect);
   const d = WOODS_SLOPE_STEP;
-  // A cell reads the land `d` either side of its centre.
-  const i0 = rect ? Math.max(0, Math.floor((rect[0] - d + half) / WOODS_SPACING - 0.5)) : 0;
-  const i1 = rect ? Math.min(cells - 1, Math.ceil((rect[2] + d + half) / WOODS_SPACING - 0.5)) : cells - 1;
-  const j0 = rect ? Math.max(0, Math.floor((rect[1] - d + half) / WOODS_SPACING - 0.5)) : 0;
-  const j1 = rect ? Math.min(cells - 1, Math.ceil((rect[3] + d + half) / WOODS_SPACING - 0.5)) : cells - 1;
   for (let j = j0; j <= j1; j++) {
     for (let i = i0; i <= i1; i++) {
       const x = -half + (i + 0.5) * WOODS_SPACING, y = -half + (j + 0.5) * WOODS_SPACING;
@@ -32,6 +27,39 @@ export function woodsBaseInto(out: Float32Array, natural: (x: number, y: number)
       out[j * cells + i] = natureDensity(x + cx, y + cy, m(1), hillside, 0);
     }
   }
+}
+
+/** The base's cells along a side, and the box of them (inclusive) whose slope reads the plate's own (x, y) in `rect` (null: every cell). */
+export function woodsSpan(half: number, rect: readonly [number, number, number, number] | null): { cells: number; i0: number; i1: number; j0: number; j1: number } {
+  const cells = Math.floor((half * 2) / WOODS_SPACING);
+  const d = WOODS_SLOPE_STEP;
+  // A cell reads the land `d` either side of its centre.
+  return {
+    cells,
+    i0: rect ? Math.max(0, Math.floor((rect[0] - d + half) / WOODS_SPACING - 0.5)) : 0,
+    i1: rect ? Math.min(cells - 1, Math.ceil((rect[2] + d + half) / WOODS_SPACING - 0.5)) : cells - 1,
+    j0: rect ? Math.max(0, Math.floor((rect[1] - d + half) / WOODS_SPACING - 0.5)) : 0,
+    j1: rect ? Math.min(cells - 1, Math.ceil((rect[3] + d + half) / WOODS_SPACING - 0.5)) : cells - 1,
+  };
+}
+
+/** Whether a point of the plate's own (x, y) lies on it, as the terrain asks before reading its corners (`terrain.ts` sampleGrid). */
+export const onPlate = (half: number, x: number, y: number): boolean => x >= -half && x <= half && y >= -half && y <= half;
+
+/** The points off the plate `woodsBaseInto` reads over `rect`, x then y, in the order it reads them: their land read where the land beyond the plate is known (the page), handed to a worker that reads the plate's corners (`landStroke.ts`). */
+export function woodsOutsideReads(half: number, rect: readonly [number, number, number, number] | null): Float64Array {
+  const { i0, i1, j0, j1 } = woodsSpan(half, rect);
+  const d = WOODS_SLOPE_STEP;
+  const out: number[] = [];
+  const read = (x: number, y: number): void => { if (!onPlate(half, x, y)) out.push(x, y); };
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const x = -half + (i + 0.5) * WOODS_SPACING, y = -half + (j + 0.5) * WOODS_SPACING;
+      // As `woodsBaseInto` reads them, one after another.
+      read(x + d, y); read(x - d, y); read(x, y + d); read(x, y - d);
+    }
+  }
+  return Float64Array.from(out);
 }
 
 /** A plate's natural land read from its corners as the terrain reads them */

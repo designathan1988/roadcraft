@@ -659,6 +659,8 @@ export function createSceneRenderer(
   const sceneryKit: SceneryKit = createSceneryKit();
   // The map's ground, in plates (`flatAtlas.ts`).
   const terrain: TerrainSurface = createFlatAtlas(anisotropy);
+  // The drawn ground's levels land after a dab, off the page (`landStroke.ts`): its highest corner read again then.
+  terrain.onLevels = () => { landTopFor = -1; };
   /** The ground what is built stands on - the roads solved on it, the buildings' floors worked out on it */
   const builtGroundAt = (x: number, y: number): number => terrain.naturalRenderedHeightAt(x, y);
   // The perspective view looks at the ground and stays over it (`IsoRig.setGround`).
@@ -1801,9 +1803,9 @@ export function createSceneRenderer(
     const started = performance.now();
     // Only the roads changed (the land did not): the ground is cut and filled again only where the solve of the roads differs.
     const landStill = terrainRevision === net.doc.terrainRevision && elevation !== null;
-    // Where the land moved (a stroke's region), when it can be said: the solve and the surfaces follow it there only.
+    // Where the land moved (a stroke's region), when it can be said: the solve and the surfaces follow it there only. Kept until the solve
+    // runs: cleared before a wait for the roads' stations, the next frame found no region and solved the whole map (TER-01, VIA-01).
     const land = landDirty;
-    landDirty = null;
     const landBlocks = !landStill && land !== null && land !== 'all' ? blocksOver(land) : null;
     const groundMoved = landBlocks && land !== null && land !== 'all' ? [land] : null;
     const from = landStill || groundMoved ? elevation : null;
@@ -1812,6 +1814,7 @@ export function createSceneRenderer(
     stationsWait = !solvedAhead && roadStations.waiting(roadsRead.of(groundMoved ? null : [net.state, from], () => roadsToRead(net, builtGroundAt, from, groundMoved)),
       (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision);
     if (stationsWait) return;
+    landDirty = null;
     const previousElevation = elevation;
     networkRevision = net.revision;
     terrainRevision = net.doc.terrainRevision;

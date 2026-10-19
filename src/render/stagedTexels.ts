@@ -3,7 +3,7 @@ import type { DataArrayTexture, DataTexture, Texture } from 'three';
 /** A DATA TEXTURE'S TEXELS ON THE PAGE ONLY WHILE THREE SENDS THEM: no CPU copy of what the GPU holds (`terrain.ts`) */
 // three r186 reads `image.data` only in `WebGLTextures.uploadTexture` (whole, its `layerUpdates`, or its `updateRanges`), then calls `onUpdate`.
 
-type Texels = Float32Array | Uint8Array;
+type Texels = Float32Array | Uint16Array | Uint8Array;
 type TexelsOf<T extends Texels> = { new (length: number): T; readonly name: string };
 
 /** A box of texels, inclusive (column x, row y). */
