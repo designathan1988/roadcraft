@@ -85,14 +85,16 @@ const WEATHERING = `
 {
   // After the texture: the stains darken the finish as painted (streaks, grime), heavier as a building runs down (aDecay).
   float d = max(vDecay, shellKind.z > 0.5 ? 0.0 : 0.3);
-  vec3 w = vDecayWorld;
-  bool wall = abs(vDecayNormal.y) < 0.5;
-  // Rain streaks: thin, long, running down from sills and copings.
-  float streak = smoothstep(0.55, 0.85, dNoise(vec3(w.x * 2.2, w.y * 0.08, w.z * 2.2)));
-  // Grime: darker towards the foot of the wall and in soft patches.
-  float grime = 0.5 + 0.5 * dNoise(w * 0.22);
-  float darken = d * (0.18 + 0.12 * grime + (wall ? 0.28 * streak : 0.1));
-  diffuseColor.rgb *= 1.0 - darken;
+  // DO NOT work the stains out where they weigh nothing (a glassy finish not run down: 16 sines a pixel multiplied by 0, PRD-03), nor the streaks off a wall.
+  if (d > 0.0) {
+    vec3 w = vDecayWorld;
+    bool wall = abs(vDecayNormal.y) < 0.5;
+    // Grime: darker towards the foot of the wall and in soft patches.
+    float grime = 0.5 + 0.5 * dNoise(w * 0.22);
+    // Rain streaks: thin, long, running down from sills and copings.
+    float darken = d * (0.18 + 0.12 * grime + (wall ? 0.28 * smoothstep(0.55, 0.85, dNoise(vec3(w.x * 2.2, w.y * 0.08, w.z * 2.2))) : 0.1));
+    diffuseColor.rgb *= 1.0 - darken;
+  }
 }
 if (vDecay > 0.001 && shellKind.z < 0.5) {
   float d = vDecay;
@@ -102,9 +104,11 @@ if (vDecay > 0.001 && shellKind.z < 0.5) {
     // Dark moss in the low corners of the roof.
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.55, 0.62, 0.45), d * 0.6 * smoothstep(0.6, 0.85, dNoise(w * 0.3)));
   } else {
-    // Paint gone in a few small patches, the darker render showing.
-    float peel = smoothstep(0.8 - d * 0.12, 0.83 - d * 0.12, dNoise(w * 1.3 + 7.0));
-    if (wall) diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.68, 0.62), peel * d);
+    // Paint gone in a few small patches, the darker render showing (worked out on a wall only, where it shows).
+    if (wall) {
+      float peel = smoothstep(0.8 - d * 0.12, 0.83 - d * 0.12, dNoise(w * 1.3 + 7.0));
+      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.68, 0.62), peel * d);
+    }
   }
 }`;
 
