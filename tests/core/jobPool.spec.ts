@@ -269,4 +269,23 @@ describe('the job system', () => {
     }
   });
 
+
+  it('counts a beat as no answer, and a setup as no message awaiting one (JOB-01)', async () => {
+    const { jobPort, postSetup } = await import('@/jobs/jobPool');
+    const port = jobPort('roadTiles');
+    const lane = port as unknown as { inFlight: number };
+    port.postMessage({ id: 1 });
+    const sent = FakeWorker.made.flatMap((w) => w.asked).find((m) => (m.data as { id?: number } | undefined)?.id === 1)!;
+    const host = FakeWorker.made.find((w) => w.asked.includes(sent))!;
+    expect(lane.inFlight).toBe(1);
+    // A batch's beat: still in flight (its worker busy).
+    host.onmessage!({ data: { port: sent.port, data: { id: 1, beat: true } } });
+    expect(lane.inFlight).toBe(1);
+    // The answer: none in flight.
+    host.onmessage!({ data: { port: sent.port, data: { id: 1, done: true } } });
+    expect(lane.inFlight).toBe(0);
+    // A setup posted (a lane's grid): never counted.
+    postSetup(port, { grid: 1 });
+    expect(lane.inFlight).toBe(0);
+  });
 });

@@ -1,4 +1,4 @@
-import { jobPort } from '../jobs/jobPool';
+import { jobPort, postSetup } from '../jobs/jobPool';
 import type { LightGrid, LightRequest, LightResult } from './terrainLightCompute';
 
 /** THE LAND'S SLOPE, WORKED OUT BY A FEW SHARED WORKERS. */
@@ -28,7 +28,8 @@ function start(grid: LightGrid): Lane[] | null {
   try {
     lanes = Array.from({ length: POOL_SIZE }, () => {
       const worker = jobPort('terrainLight');
-      worker.postMessage({ grid });
+      // Its grid once, answered by nothing: not counted as awaiting an answer (JOB-01).
+      postSetup(worker, { grid });
       const lane: Lane = { worker, queue: [], busy: null };
       worker.onmessage = (event: MessageEvent<(LightResult & { key: number }) | { error: string; key: number }>) => {
         const job = lane.busy;

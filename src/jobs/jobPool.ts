@@ -279,7 +279,10 @@ function grow(long: boolean): Host | null {
     const port = system.ports.get(event.data.port);
     if (port) {
       // A lane's answer: its worker has one message less before a queued job (a lane posting without answer only ranks its worker lower).
-      if (port.answered()) dispatch();
+      // DO NOT count a beat as an answer (`{ beat: true }`, every 500 ms of a long batch: road tiles, conflicts, bays): the first one freed a worker mid-batch, and a cell's job waited behind the batch (JOB-01). The pool's own lane still hears it (its watchdog).
+      const said = event.data.data as { beat?: unknown } | null | undefined;
+      const beat = typeof said === 'object' && said !== null && said.beat === true;
+      if (!beat && port.answered()) dispatch();
       if (event.data.error !== undefined) port.onerror?.(new ErrorEvent('error', { message: event.data.error }));
       else port.onmessage?.(new MessageEvent('message', { data: event.data.data }));
       return;
@@ -498,6 +501,12 @@ export class JobPort {
     this.host.laneWork++;
   }
 
+  /** A message that asks for no answer (a lane's setup: `terrainLightPool.ts` grid): never counted in flight, or its worker looked busy for good (JOB-01). */
+  postSetup(data: unknown, transfer: Transferable[] = []): void {
+    const message: ToJob = { port: this.id, service: this.service, data };
+    this.worker.postMessage(message, transfer);
+  }
+
   /** An answer came on this lane: one message less in flight on its worker; whether that left the worker with none. */
   answered(): boolean {
     if (this.inFlight === 0) return false;
@@ -518,6 +527,12 @@ export class JobPort {
     retireIdle();
   }
 
+}
+
+/** A lane's setup posted to `worker` (a pool's port, or any worker): on a pool's port, not counted as a message awaiting an answer (`JobPort.postSetup`). */
+export function postSetup(worker: Worker, data: unknown): void {
+  if (worker instanceof JobPort) worker.postSetup(data);
+  else worker.postMessage(data);
 }
 
 /** A port of the pool for one of `service`'s lanes (`jobLanes` lanes at most), typed as the `Worker` its pool was written for. */
