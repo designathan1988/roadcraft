@@ -55,7 +55,8 @@ export function createGraphicsPanel(deps: GraphicsPanelDeps): { open(): void } {
       b.className = `v2-choice${v === value ? ' on' : ''}`;
       b.textContent = text;
       b.setAttribute('aria-pressed', String(v === value));
-      b.onclick = () => { pick(v); render(); };
+      // The choice already made: nothing to apply (UI-08: the post chain was made again, the canvas sized twice, for a click on the lit button).
+      b.onclick = () => { if (v === value) return; pick(v); render(); };
       group.appendChild(b);
     }
     row.append(label, group);
