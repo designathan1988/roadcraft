@@ -126,7 +126,7 @@ describe('the pool of a browser and of the desktop', () => {
     // The page sets the pool's maker only where there is one (`main.ts`), and the pool falls back on its own Worker (`jobPool.ts` grow).
     const main = readFileSync('src/main.ts', 'utf8');
     expect(main).toMatch(/const desktopJobs = desktopJobWorkers\(\);\s*if \(desktopJobs\) setJobWorkerMaker\(/);
-    expect(readFileSync('src/jobs/jobPool.ts', 'utf8')).toMatch(/system\.makeWorker\?\.\(long\) \?\? new Worker\(/);
+    expect(readFileSync('src/jobs/jobPool.ts', 'utf8')).toMatch(/const made = system\.makeWorker\?\.\(long\) \?\? null;[\s\S]*?const worker = made \?\? new Worker\(/);
   });
 
   it('on the desktop puts the long side in a job process, the short side on the page', () => {
