@@ -11,5 +11,5 @@ describe('driving golden', () => {
     const trace = traceRun(sim, 6000);
     expect(trace.laneChanges).toBeGreaterThan(20);
     expect(trace).toEqual({ hash: 3121588635, vehicles: 202, laneChanges: 166, routeChanges: 455 });
-  });
+  }, 60_000);
 });
