@@ -2,6 +2,7 @@ import { type Blueprint } from '@world/buildings/blueprints';
 import { type Finish } from '@world/buildings/materials';
 import {
   type BuilderCategoryId,
+  type BuilderField,
   type BuilderSelectionInfo,
   tabSpec,
 } from './catalog';
@@ -162,6 +163,10 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
   // ------------------------------------------------------------ inspector
   /** The language the quick buttons' titles were last written in (`renderInspector`). */
   let titledIn: string | null = null;
+  /** The inspector's fields as last drawn, by id: what their handlers read (a value written in place, `renderInspector`), and each one's element showing its value. */
+  const liveFields = new Map<string, BuilderField>();
+  const fieldShows = new Map<string, HTMLElement>();
+  let nameShows: HTMLElement | null = null, materialShows: HTMLElement | null = null;
   function renderInspector(state: BuilderState): void {
     const info = state.selection;
     inspector.hidden = info === null || mode !== 'builder';
@@ -183,6 +188,28 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
     const signature = `${info.titleKey}|${info.name}|${info.material ?? ''}|${info.fields.map((f) => `${f.id}:${f.text ?? f.value}`).join(',')}`;
     if (inspectorBody.dataset['signature'] === signature) return;
     const focused = document.activeElement;
+    // DO NOT remake the inspector for a value changed (PRD-09: every key typed in a field remade it, the caret thrown to the end): the same fields, their values written in place, the field typed in left as it is.
+    const structure = `${language()}|${info.titleKey}|${info.material !== undefined}|${info.fields.map((f) => `${f.id}:${f.labelKey}:${f.text !== undefined ? 'text' : f.options ? f.options.map((o) => `${o.value}=${o.labelKey}`).join('/') : `${f.unit}/${f.min}/${f.max}/${f.step}`}`).join(',')}`;
+    if (inspectorBody.dataset['structure'] === structure) {
+      inspectorBody.dataset['signature'] = signature;
+      if (nameShows) nameShows.textContent = info.name;
+      if (materialShows && info.material !== undefined) materialShows.textContent = info.material;
+      for (const field of info.fields) {
+        liveFields.set(field.id, field);
+        const shows = fieldShows.get(field.id);
+        if (!shows) continue;
+        if (shows instanceof HTMLSelectElement) {
+          for (const o of shows.options) o.selected = o.value === String(field.value);
+        } else if (shows instanceof HTMLInputElement) {
+          if (shows !== focused) shows.value = field.unit === 'count' ? String(Math.round(field.value)) : formatDecimal(field.value, 2);
+        } else shows.textContent = field.text ?? '';
+      }
+      return;
+    }
+    inspectorBody.dataset['structure'] = structure;
+    liveFields.clear();
+    fieldShows.clear();
+    materialShows = null;
     // What is being typed, read before the redraw: removing the field fires its blur, which writes the value out in full.
     const typed = focused instanceof HTMLInputElement && focused.dataset['field'] ? { id: focused.dataset['field'], text: focused.value } : null;
     inspectorBody.dataset['signature'] = signature;
@@ -191,7 +218,11 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
     const name = el('div', 'bw-inspector-name');
     name.textContent = info.name;
     inspectorBody.appendChild(name);
+    nameShows = name;
     for (const field of info.fields) {
+      liveFields.set(field.id, field);
+      /** The field as now: its value written in place since it was drawn. */
+      const now = (): BuilderField => liveFields.get(field.id) ?? field;
       const row = el('label', 'bw-field');
       const label = el('span', 'bw-field-label');
       label.textContent = t(field.labelKey);
@@ -199,6 +230,7 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
       if (field.text !== undefined) {
         const value = el('span', 'bw-field-text');
         value.textContent = field.text;
+        fieldShows.set(field.id, value);
         row.appendChild(value);
         inspectorBody.appendChild(row);
         continue;
@@ -214,6 +246,7 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
           select.appendChild(o);
         }
         select.onchange = () => actions.setField(field.id, Number(select.value));
+        fieldShows.set(field.id, select);
         row.appendChild(select);
         inspectorBody.appendChild(row);
         continue;
@@ -230,10 +263,11 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
       // The field being typed in keeps what was typed through the redraw each change causes
       input.value = typed?.id === field.id ? typed.text : shown(field.value);
       input.dataset['field'] = field.id;
+      fieldShows.set(field.id, input);
       // Live: every key, arrow step or wheel step shows on the building at once, not only when the field is left.
       const nudge = (sign: number): void => {
-        const now = parseDecimal(input.value);
-        const next = clamp(Math.round(((Number.isFinite(now) ? now : field.value) + sign * step) / step) * step);
+        const typedNow = parseDecimal(input.value);
+        const next = clamp(Math.round(((Number.isFinite(typedNow) ? typedNow : now().value) + sign * step) / step) * step);
         input.value = shown(next);
         actions.setField(field.id, next);
       };
@@ -243,7 +277,7 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
       };
       input.onblur = () => {
         const n = parseDecimal(input.value);
-        input.value = shown(Number.isFinite(n) ? clamp(n) : field.value);
+        input.value = shown(Number.isFinite(n) ? clamp(n) : now().value);
       };
       input.onwheel = (e) => {
         if (document.activeElement !== input) return;
@@ -270,6 +304,7 @@ export function initBuilderWorkspace(actions: BuilderActions): BuilderWorkspace 
       label.textContent = t('builder.field.material');
       const value = el('span', 'bw-field-text');
       value.textContent = info.material;
+      materialShows = value;
       materialRow.append(label, value);
       inspectorBody.appendChild(materialRow);
     }
