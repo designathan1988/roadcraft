@@ -56,10 +56,12 @@ export interface BuildingLayer {
   /** Whether every cell of the town over `rect` has something drawn (a level shown, its masses, or a tile or plate in its place): DO NOT let the far level of a tile go before this says so (`farTree.ts`): the city showed holes with shadows while the near levels were made. */
   /** `revision`: the document's when the tile came in (`RoadDoc.revision`): DO NOT say a tile's cells are drawn before the town was put together from the document as it stood then - over a tile whose buildings were not taken in yet there is no cell, and "every cell drawn" held for none: the tile was handed to the cells with nothing drawn (the centre of the map empty, 2026-10-17). */
   drawnOver(rect: ChangeRect, revision?: number): boolean;
-  /** The frame's scale (`frameBudget.ts`): the view's budget of triangles (`core/perfBudget.ts` `VIEW_BUDGETS`), the error scale that fits it (1 draws for 2 px of error, 2 for 4 px...; the roads' reach follows it, `renderer.ts`) and the floor the GPU's time sets (`governFrame`). */
+  /** The frame's scale (`frameBudget.ts`): the view's budget of triangles (`core/perfBudget.ts` `VIEW_BUDGETS`), the error scale that fits it (1 draws for 2 px of error, 2 for 4 px...; the roads' reach follows it, `renderer.ts`). */
   readonly frame: FrameScale;
   /** What the cells' detail holds on the GPU now, bytes. */
   readonly residentBytes: number;
+  /** The town's cells by the level chosen and the level shown, those held back by the triangles' budget, and the budgets: asked by the measures (`scripts/lib/measureCity.mjs`), never each frame. */
+  levels(): Readonly<Record<string, number>>;
   /** "Ocultar outros": undefined draws every building solid, null fades them all */
   setDimmed(except: BuildingId | null | undefined): void;
   /** Buildings drawn by someone else (a ruin being knocked down, `destruction.ts`): left out here. */

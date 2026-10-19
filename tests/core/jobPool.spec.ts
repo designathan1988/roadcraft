@@ -42,7 +42,7 @@ describe('the job system', () => {
     const traffic = FakeWorker.made.filter((w) => w.asked.some((m) => (m as unknown as { adopt?: string }).adopt === 'conflicts')).map((w) => FakeWorker.made.indexOf(w));
     // The adopt messages read: `hostOf` finds a worker by what it was last sent.
     for (const w of FakeWorker.made) w.asked.length = 0;
-    const tiles = [0, 1].map(() => hostOf(jobPort('cityTiles')));
+    const tiles = [0, 1].map(() => hostOf(jobPort('growth')));
     const growth = hostOf(jobPort('growth'));
     const roads = [0, 1].map(() => hostOf(jobPort('roadTiles')));
     expect(new Set(traffic).size).toBe(2);
@@ -119,54 +119,6 @@ describe('the job system', () => {
     expect(written).toEqual(['busy1', 'busy2', 'busy3', 'far level', 'street', 'district farther']);
   });
 
-  it('sends a queued job to a worker whose lanes have nothing in flight, to an idle tile worker before a busy one, never behind a tile', async () => {
-    const { jobPort, submitJob } = await import('@/jobs/jobPool');
-    // Two lanes on the two workers of the other kinds, one with a request in flight; a tile lane with a tile being made, another idle.
-    const lanes = [0, 1].map(() => jobPort('roadTiles'));
-    const tiles = [0, 1].map(() => jobPort('cityTiles'));
-    expect(FakeWorker.made).toHaveLength(4);
-    const workerOf = (lane: Worker): FakeWorker => (lane as unknown as { worker: FakeWorker }).worker;
-    lanes[0]!.postMessage({ tiles: [] });
-    tiles[0]!.postMessage({ stream: true });
-    const job = (name: string): void => { submitJob({ service: 'cells', key: null, priority: 1, write: () => ({ data: name, transfer: [] }), done: () => {}, failed: () => {} }); };
-    const queuedOn = (name: string): number => FakeWorker.made.findIndex((w) => w.asked.some((m) => m.data === name && m.seq !== undefined));
-    job('first');
-    expect(queuedOn('first')).toBe(FakeWorker.made.indexOf(workerOf(lanes[1]!)));
-    // The other kinds' free workers busy: the idle tile worker, never the one making a tile.
-    job('second');
-    expect(queuedOn('second')).toBe(FakeWorker.made.indexOf(workerOf(tiles[1]!)));
-    // Only a worker with lane work left: it takes the next rather than waiting, still not the tile worker.
-    job('third');
-    expect(queuedOn('third')).toBe(FakeWorker.made.indexOf(workerOf(lanes[0]!)));
-  });
-
-  it('keeps an idle tile worker for the map while its tiles wait: the queued job goes to the other kinds worker, the tile worker takes the waiting ones once no tile waits', async () => {
-    const { jobPort, setTilesWaiting, submitJob } = await import('@/jobs/jobPool');
-    const lanes = [0, 1].map(() => jobPort('roadTiles'));
-    const tiles = [0, 1].map(() => jobPort('cityTiles'));
-    const workerOf = (lane: Worker): FakeWorker => (lane as unknown as { worker: FakeWorker }).worker;
-    // Both workers of the other kinds with a lane's message in flight; one tile worker making a tile, the other between two tiles.
-    lanes[0]!.postMessage({ tiles: [] });
-    lanes[1]!.postMessage({ tiles: [] });
-    tiles[0]!.postMessage({ stream: true });
-    setTilesWaiting(true);
-    const job = (name: string): void => { submitJob({ service: 'cells', key: null, priority: 1, write: () => ({ data: name, transfer: [] }), done: () => {}, failed: () => {} }); };
-    const queuedOn = (name: string): number => FakeWorker.made.findIndex((w) => w.asked.some((m) => m.data === name && m.seq !== undefined));
-    job('cell');
-    // The tile worker between two tiles kept for the next tile: the cell's job beside a lane's message instead.
-    expect(queuedOn('cell')).not.toBe(FakeWorker.made.indexOf(workerOf(tiles[1]!)));
-    expect([workerOf(lanes[0]!), workerOf(lanes[1]!)].map((w) => FakeWorker.made.indexOf(w))).toContain(queuedOn('cell'));
-    job('second');
-    job('third');
-    expect(queuedOn('third')).toBe(-1);
-    // A far level's bake (ahead of the cells' bands): the tile worker between two tiles takes it.
-    submitJob({ service: 'farRoads', key: null, priority: -1, write: () => ({ data: 'far', transfer: [] }), done: () => {}, failed: () => {} });
-    expect(queuedOn('far')).toBe(FakeWorker.made.indexOf(workerOf(tiles[1]!)));
-    // No tile waits any more: a waiting job goes out once a worker is free.
-    setTilesWaiting(false);
-    expect(queuedOn('third')).toBe(-1);
-  });
-
   it('drops the answer of a job cancelled while it ran', async () => {
     const { submitJob } = await import('@/jobs/jobPool');
     const done: unknown[] = [];
@@ -222,14 +174,12 @@ describe('the job system', () => {
     expect(hostOf(jobPort('save'))).toBe(save);
   });
 
-  it("puts the tile store's reads on the save's worker, where no queued job nor the rush's tiles run, within the pool's count (conf37)", async () => {
+  it("puts the tile store's reads on the save's worker, where no queued job runs, within the pool's count (conf37)", async () => {
     const { jobPort, jobWorkers, submitJob } = await import('@/jobs/jobPool');
     const save = hostOf(jobPort('save'));
     const reads = [0, 1, 2].map(() => hostOf(jobPort('tileRead')));
     for (const r of reads) expect(r).toBe(save);
-    // The rush's lanes of tiles and the queue full of long jobs: elsewhere, the reads' worker never given one.
-    const aside = [0, 1].map(() => hostOf(jobPort('cityTilesAside')));
-    for (const a of aside) expect(a).not.toBe(save);
+    // The queue full of long jobs: the reads' worker never given one.
     for (let k = 0; k < 12; k++) {
       submitJob({ service: 'cells', key: null, priority: k, write: () => ({ data: k, transfer: [] }), done: () => {}, failed: () => {} });
     }
@@ -242,7 +192,7 @@ describe('the job system', () => {
     const made: boolean[] = [];
     setJobWorkerMaker((long) => { made.push(long); return long ? new FakeWorker() as unknown as Worker : null; });
     const before = FakeWorker.made.length;
-    jobPort('cityTiles');
+    jobPort('growth');
     jobPort('roadTiles');
     expect(made).toEqual([true, false]);
     expect(FakeWorker.made.length).toBe(before + 2);

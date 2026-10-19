@@ -12,7 +12,7 @@ import type { TileRecords } from '@world/doc';
 import { METERS_PER_UNIT, m } from '@world/units';
 import { derivedCacheOpen, keepDerivedDurably, readDerived } from './derivedCache';
 import { surfaceShape } from './mesh/tileShape';
-import { PLAN_SIG, farKey, farNode, planKey, readStored } from './buildings/farGrid';
+import { PLAN_SIG, farNode, planKey, readStored } from './buildings/farGrid';
 import { medianOf } from './roadSurfaceRings';
 import { ASPHALT_REFERENCE, CARRIAGEWAY_COLOUR, FOOTWAY_TINT } from './roadTones';
 import { type SharedGroundData, sharedGroundReaders } from './sharedGround';
@@ -540,17 +540,6 @@ interface RoadEntry {
   readonly mesh: FarRoadMesh | null;
 }
 
-/** A TILE'S FAR ROADS KEPT WHERE THE TILE WAS JUST MADE (`cityTile.worker.ts`): baked from its stored roads and kept under the key and version the page's job for it asks (`runFarRoadJob` level 0), so no worker reads the tile back to bake them */
-export async function keepTileFarRoads(records: TileRoads, version: number, ground: SharedGroundData | null, prefix: string | null, cache: FarRoadCache = derivedRoadCache): Promise<boolean> {
-  if (prefix === null) return false;
-  // DO NOT simplify before the simplifier's WebAssembly is made (meshoptimizer README, `MeshoptSimplifier.ready`).
-  await MeshoptSimplifier.ready;
-  if (!(await cache.ready())) return false;
-  const { i, j } = tileOfKey(records.key);
-  const entry: RoadEntry = { sig: String(version), mesh: bakeTileRoads(records, ground ? sharedGroundReaders(ground).groundAt : FLAT) };
-  await cache.put(`${prefix}${farKey(0, i, j)}`, entry);
-  return true;
-}
 
 /** DO NOT bake what is kept: a node is baked once per version of its tiles (kept under its key with that version), from its tile's records or its children's bakes, never from the page's document */
 export async function runFarRoadJob(job: FarRoadJob, cache: FarRoadCache): Promise<FarRoadReply> {

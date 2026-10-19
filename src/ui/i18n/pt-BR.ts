@@ -618,9 +618,6 @@ export const PT_BR: Dictionary = {
 
   'hint.road': 'Clique no início, mire, ajuste {heightUp}/{heightDown} e clique no fim · {alignmentKey}: traçado · Esc: cancelar',
   'hint.road.gradeLimited': 'A via atingiu a inclinação segura; continue desenhando para chegar à altura escolhida.',
-  'hint.road.waitTiles': 'O mapa ali ainda está carregando: a via é assentada assim que ele entrar.',
-  'hint.road.tooFar': 'A via alcança mapa demais fora da área carregada em volta da câmera: desenhe-a em partes ou mais perto.',
-  'hint.road.undoGone': 'A via longa passa por partes do mapa que já não estão carregadas: ela não pode mais ser desfeita.',
   'hint.road.invalid': 'Esta conexão precisa de mais distância ou outro ponto final.',
   'hint.rule.sharp': 'Recusado: as vias se encontrariam num ângulo fechado demais (menos de 25°).',
   'hint.rule.squeezed': 'Recusado: trecho curto demais para as faixas se separarem na junção (junções perto demais ou ângulo fechado).',
@@ -922,7 +919,6 @@ export const PT_BR: Dictionary = {
   'health.context.opening': 'abrindo o jogo',
   'status.impossible.one': '1 nó impossível de construir',
   'status.impossible.other': '{count} nós impossíveis de construir',
-  'status.region': 'Contados na região em volta da câmera, não na cidade inteira',
 
   'quality.auto': 'Automática',
   'quality.low': 'Baixa',
@@ -1762,6 +1758,4 @@ export const PT_BR: Dictionary = {
   'hint.transit.lineShort': 'Uma linha precisa de pelo menos duas paradas.',
   'hint.transit.lineMade': 'Linha criada.',
   'map.loading': 'Carregando o mapa…',
-  'map.otherTab': 'Esta cidade está aberta em outra aba ou janela do jogo. Feche a outra para jogar aqui: ela abre sozinha.',
-  'map.generating': 'Gerando a cidade… {done} de {total} partes',
 };

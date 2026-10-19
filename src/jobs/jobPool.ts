@@ -8,10 +8,12 @@ import type { AdoptLane, CloseLane, FromJob, JobService, ToJob } from './jobScop
 const CAGE_BYTES = 4 * 2 ** 30;
 /** Two fifths of the cage for the pool (2026-10-16: the worker that took it down was a Clipper2 union that never ended, fixed in `scripts/patches`; a busy worker holds 100-250 MB): 9 workers at most by the cage, the page's heap and the simulation's keep the rest. */
 const POOL_CAGE_SHARE = 2 / 5;
+/** In a browser every worker is a thread of the page's process, in the page's cage: a fifth of it, 4 workers. DO NOT give it two fifths there: the page alone runs to 2.7 GB of V8 between its collections on the 10 km city (969 MB live after one), and with 9 workers beside it the cage ran out and Chrome killed the page whenever the camera drew back (2026-10-18). */
+const PAGE_POOL_CAGE_SHARE = 1 / 5;
 const WORKER_HEAP_BYTES = 170 * 2 ** 20;
 
 /** Services whose one job runs for seconds: kept on workers of their own, never beside another kind's lane or a queued job (a streamed tile is 2-25 s, `cityTile.worker.ts`: the traffic's conflict pairs waited behind tile after tile and the city's clock stood still). */
-const LONG_RUNNING: readonly JobService[] = ['growth', 'cityTiles'];
+const LONG_RUNNING: readonly JobService[] = ['growth'];
 
 /** Services whose worker no queued job runs on (where another worker can take it), all on one worker (never one each: the short side has two, the V8 cage's count, `jobWorkers`): the save's writes are a few short awaits, and each waited for the job running on its worker - under load a tile's write took past a reload, the edit lost (conf15, conf22); the store's reads (`tileRead`) beside them, never beside the queue or the rush's tiles - a reopening's tiles waited behind far levels' bakes of seconds (conf37). No bake runs there (`tileStore.ts` upgraded, `TileStore.write`). */
 const KEPT_CLEAR: readonly JobService[] = ['save', 'tileRead'];
@@ -200,8 +202,6 @@ interface Host {
   laneWork: number;
   /** Told when it fails: the lanes it serves for another thread (`jobChannel`), whose ports say nothing of it. */
   readonly channelLost: (() => void)[];
-  /** Let go (`retireJobPort`): given no queued job nor lane, ended when its job is answered. */
-  retiring: boolean;
 }
 
 /** The pool of this thread: its workers (made as work waits, `grow`), its lanes by port, its queue and the point the view looks at. */
@@ -224,13 +224,6 @@ class JobSystem {
 }
 const system = new JobSystem();
 
-/** Whether tiles of the map wait for the long-running side's lanes (`tileGenerator.ts` pump): while they do, a long worker between two tiles takes no queued job of the cells' bands and after (priority 0 on: a cell, a facade, a mass, a near level), only those ahead of them (a far level, an edit; `cellPool.ts` FAR_TIER, EDIT_TIER), short and what the opening's view waits for - kept off them all, the map's edges stood empty after the curtain (conf55, 2026-10-17). DO NOT give it a cell's job: one of seconds held the next tile behind it - the opening's tile workers ran 103 s of cells' jobs (wprof4, 2026-10-17), whenever the queue's worker had a lane's message in flight. Told off, the jobs waiting go out to them. */
-export function setTilesWaiting(on: boolean): void {
-  if (system.tilesWaiting === on) return;
-  system.tilesWaiting = on;
-  if (!on) dispatch();
-}
-
 /** Where the pool's workers are made, by side (`long`: tiles and growth); null from it: the page's own Worker. On the desktop the long side goes to a utility process outside the renderer's V8 cage (`jobs/processWorker.ts`), whose `terminate` ends that thread (the recycling, `retireJobPort`). */
 export function setJobWorkerMaker(make: ((long: boolean) => Worker | null) | null): void {
   system.makeWorker = make;
@@ -248,8 +241,20 @@ export function jobWorkers(): number {
   const cores = WEAK_MACHINE.threads ?? ((typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : 0) || 2);
   // Inside the simulation's worker (no document): its own few, for the lots' bays and the junctions' pairs.
   if (typeof document === 'undefined') return Math.max(1, Math.min(2, cores - 2));
-  const byCage = Math.floor((CAGE_BYTES * POOL_CAGE_SHARE) / WORKER_HEAP_BYTES);
+  const share = system.makeWorker ? POOL_CAGE_SHARE : PAGE_POOL_CAGE_SHARE;
+  const byCage = Math.floor((CAGE_BYTES * share) / WORKER_HEAP_BYTES);
   return Math.max(1, Math.min(cores - 2, byCage));
+}
+
+/** A worker of the page's own process at its busiest, measured (CDP `Runtime.getHeapUsage` on the 10 km city's generation, 2026-10-18): a tile worker held 450-650 MB of V8 heap, not the ~170 MB `WORKER_HEAP_BYTES` counts. */
+const PAGE_WORKER_PEAK_BYTES = 600 * 2 ** 20;
+/** Of the cage, what the page keeps clear of its own heap and its workers' (the simulation's worker, the thread stacks, the next collection's room). */
+const CAGE_KEPT_BYTES = 600 * 2 ** 20;
+/** How many workers the page's process holds now, by the room its cage has (in a browser every worker is a thread of the page's process): the page's heap as V8 holds it now (`performance.memory.totalJSHeapSize`), each worker at its peak. DO NOT count on the page staying small: with a city open the page's heap ran to 2.7 GB between its collections, and the tile workers made on top of it took the cage past 4 GB - Chrome killed the page (2026-10-18). Two at least (one each side, or no tile is ever made); the workers already made stay until they are let go (a tile worker every few tiles, `tileGenerator.ts`), and the next is made only if it fits. */
+function pageRoomWorkers(): number {
+  const page = (performance as { memory?: { totalJSHeapSize: number } }).memory?.totalJSHeapSize;
+  if (page === undefined) return Infinity;
+  return Math.max(2, Math.floor((CAGE_BYTES - CAGE_KEPT_BYTES - page) / PAGE_WORKER_PEAK_BYTES));
 }
 
 /** How many lanes a kind of work may have: never more than the workers its side has (a lane per worker, `jobPort`; the long-running services' are `tileLanes`). */
@@ -257,13 +262,13 @@ export const jobLanes = (most: number): number => Math.max(1, Math.min(most, sho
 
 /** One more worker of its side (`long`), while the pool and that side have room (`longWorkers`, `shortWorkers`); null when full. */
 function grow(long: boolean): Host | null {
-  // A worker let go and still ending its queued job (`retireJobPort`) counts no more: its place is the new one's.
-  const live = system.workers.filter((h) => !h.retiring);
+  const live = system.workers;
   if (live.length >= jobWorkers()) return null;
   if (live.filter((h) => h.long === long).length >= (long ? longWorkers() : shortWorkers())) return null;
+  if (!system.makeWorker && live.length >= pageRoomWorkers()) return null;
   const worker = system.makeWorker?.(long) ?? new Worker(new URL('../job.worker.ts', import.meta.url), { type: 'module' });
   system.setup?.(worker);
-  const host: Host = { worker, long, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [], retiring: false };
+  const host: Host = { worker, long, ports: 0, services: new Map(), queuePorts: new Map(), job: null, failed: false, laneWork: 0, channelLost: [] };
   worker.onmessage = (event: MessageEvent<FromJob>) => {
     const port = system.ports.get(event.data.port);
     if (port) {
@@ -279,9 +284,7 @@ function grow(long: boolean): Host | null {
     host.job = null;
     if (event.data.error !== undefined) system.queue.fail(job, event.data.error);
     else system.queue.answer(job, event.data.data);
-    endRetired(host);
     dispatch();
-    toldQuiet();
   };
   worker.onerror = (event) => {
     for (const port of system.ports.values()) if (port.worker === worker) port.onerror?.(event);
@@ -315,12 +318,12 @@ function queuePort(host: Host, service: JobService): number {
 /** The worker a queued job of `service` goes to: a free one already running the kind, else a new one while the pool has room, else any free one
  *  - a long-running service's worker only while its lanes have nothing in flight: a tile asked after it waits one job, never a job behind a tile (only a pool of one worker shares it otherwise).
  *  - DO NOT give it to a worker whose lanes have messages in flight while one with none is free: it waited behind a tile read or a batch of road tiles (`JobPort` posts straight to its worker); such a worker only when no other is free. */
-function hostFor(service: JobService, priority = 0): Host | null {
+function hostFor(service: JobService): Host | null {
   let cold: Host | null = null, idleLong: Host | null = null, warmBusy: Host | null = null, coldBusy: Host | null = null;
   for (const host of system.workers) {
-    if (host.job || host.failed || host.retiring) continue;
+    if (host.job || host.failed) continue;
     if (keptClear(host) && system.workers.length > 1) continue;
-    if (host.long && system.workers.length > 1) { if (host.laneWork === 0 && (!system.tilesWaiting || priority < 0)) idleLong ??= host; continue; }
+    if (host.long && system.workers.length > 1) { if (host.laneWork === 0) idleLong ??= host; continue; }
     const warm = host.queuePorts.has(service);
     if (host.laneWork > 0) {
       if (warm) warmBusy ??= host; else coldBusy ??= host;
@@ -337,7 +340,7 @@ function dispatch(): void {
   for (let job = system.queue.peek(); job; job = system.queue.peek()) {
     let host: Host | null;
     try {
-      host = hostFor(job.spec.service, job.spec.priority);
+      host = hostFor(job.spec.service);
     } catch (error) {
       system.queue.failAll(`no job workers: ${String(error)}`);
       return;
@@ -358,19 +361,6 @@ function dispatch(): void {
   }
 }
 
-/** Whether no queued job waits nor runs on the other kinds' workers: only then does the queue's worker make a tile too (`TileGenerator` asideLanes). */
-export const jobsQuiet = (): boolean => system.queue.waiting === 0 && !system.workers.some((h) => !h.long && h.job !== null);
-/** Told when a queued job's answer leaves the queue quiet (`jobsQuiet`). */
-const quietListeners = new Set<() => void>();
-/** `listener` told each time the queue goes quiet; the returned function stops it. */
-export function onJobsQuiet(listener: () => void): () => void {
-  quietListeners.add(listener);
-  return () => { quietListeners.delete(listener); };
-}
-/** The listeners told, when the queue is quiet after an answer. */
-function toldQuiet(): void {
-  if (quietListeners.size > 0 && jobsQuiet()) for (const listener of [...quietListeners]) listener();
-}
 
 /** A job for the queue: run by the first free worker, nearest the eye first (`JobSpec`). */
 export function submitJob(spec: JobSpec): JobTicket {
@@ -413,7 +403,7 @@ function place(service: JobService): Host {
   let best: Host | null = null;
   let bestScore = Infinity;
   for (const w of system.workers) {
-    if (w.long !== long || w.retiring) continue;
+    if (w.long !== long) continue;
     // Lanes of a kind on different workers, then the least loaded; the kept-clear services' worker kept to them, on a worker of their own where there is one.
     // The kept-clear lanes together on their worker (never a worker each: the pool's workers are the jobs').
     const clear = KEPT_CLEAR.includes(service);
@@ -426,7 +416,7 @@ function place(service: JobService): Host {
   const own = best !== null && KEPT_CLEAR.includes(service) && keptClear(best) && otherKinds(best) === 0;
   if (best === null || (bestScore > 0 && !own)) best = grow(long) ?? best;
   // A pool of one worker: the two sides share it.
-  if (!best) best = system.workers.reduce<Host | null>((a, w) => (!w.retiring && (a === null || w.ports < a.ports) ? w : a), null);
+  if (!best) best = system.workers.reduce<Host | null>((a, w) => (a === null || w.ports < a.ports ? w : a), null);
   if (!best) throw new Error('no job worker could be made');
   return best;
 }
@@ -477,27 +467,6 @@ export class JobPort {
     if (left > 0) this.host.services.set(this.service, left); else this.host.services.delete(this.service);
   }
 
-}
-
-/** A lane let go and its worker ended when nothing else is on it (no lane, queued job or channel): a new one is made when work waits (`grow`). DO NOT keep a long-running worker for the whole opening: its heap grew to hundreds of MB against ~30 live, seven of them in the one V8 cage (hw20, the page out of memory). Whether the worker was ended. */
-export function retireJobPort(port: Worker): boolean {
-  const lane = port as unknown as JobPort;
-  lane.terminate();
-  const host = system.workers.find((h) => h.worker === lane.worker);
-  if (!host || host.ports > 0 || host.laneWork > 0 || host.channelLost.length > 0) return false;
-  // A queued job given it as its lane went quiet (`dispatch` runs before the lane hears its answer): ended once that job is answered (`endRetired`).
-  host.retiring = true;
-  return endRetired(host);
-}
-
-/** A worker let go (`retireJobPort`) ended, once no queued job runs on it and no lane came to it meanwhile. */
-function endRetired(host: Host): boolean {
-  if (!host.retiring || host.job || host.ports > 0) return false;
-  const at = system.workers.indexOf(host);
-  if (at < 0) return false;
-  system.workers.splice(at, 1);
-  host.worker.terminate();
-  return true;
 }
 
 /** A port of the pool for one of `service`'s lanes (`jobLanes` lanes at most), typed as the `Worker` its pool was written for. */

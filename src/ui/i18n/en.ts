@@ -625,9 +625,6 @@ export const EN: Dictionary = {
   // ------------------------------------------------------------------ hints
   'hint.road': 'Click a start, aim, {heightUp}/{heightDown} for height, then click the end · {alignmentKey}: plan · Esc: cancel',
   'hint.road.gradeLimited': 'The road reached its safe grade; continue drawing to reach the selected height.',
-  'hint.road.waitTiles': 'The map there is still loading: the road is laid as soon as it is in.',
-  'hint.road.tooFar': 'The road reaches too much of the map past the area loaded round the camera: draw it in parts, or nearer.',
-  'hint.road.undoGone': 'The long road runs through parts of the map no longer loaded: it can no longer be undone.',
   'hint.road.invalid': 'This connection needs more distance or a different endpoint.',
   'hint.rule.sharp': 'Refused: the roads would meet at too sharp an angle (under 25°).',
   'hint.rule.squeezed': 'Refused: stretch too short for the lanes to separate at the junction (junctions too close or angle too narrow).',
@@ -931,7 +928,6 @@ export const EN: Dictionary = {
   'health.context.opening': 'opening the game',
   'status.impossible.one': '1 node cannot be built',
   'status.impossible.other': '{count} nodes cannot be built',
-  'status.region': 'Counted in the region round the camera, not in the whole city',
 
   // ---------------------------------------------------------------- quality
   'quality.auto': 'Automatic',
@@ -1772,6 +1768,4 @@ export const EN: Dictionary = {
   'hint.transit.lineShort': 'A line needs at least two stops.',
   'hint.transit.lineMade': 'Line made.',
   'map.loading': 'Loading the map…',
-  'map.otherTab': 'This city is open in another tab or window of the game. Close the other one to play here: it opens by itself.',
-  'map.generating': 'Generating the city… {done} of {total} parts',
 };

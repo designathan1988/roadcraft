@@ -128,10 +128,10 @@ describe('the growth of the buildings', () => {
     expect(main).not.toMatch(/designOnLot/);
   });
 
-  it('lays no city on the page: a generated city is the streamed world, made by the tile generator', () => {
-    // A round city was laid on the page 100 ms a frame (`GROW_SLICE_MS`, `layoutSteps`): one path now, the tiles' (`wholeMapTile.ts`).
+  it('lays no city frame by frame on the page: a generated city is the small city of 2.0, built whole and put in as one map', () => {
+    // A round city was laid on the page 100 ms a frame (`GROW_SLICE_MS`, `layoutSteps`); the small city is built whole (`editor/smallCityMap.ts`) and put in at once (the player, 2026-10-18: no city by tiles).
     expect(main).not.toMatch(/layCity\(|planCity\(|zoneCity\(|GROW_SLICE_MS = /);
-    expect(main).toMatch(/generateCity: \(options[^]{0,400}?void openStreamedWorld\(/);
+    expect(main).toMatch(/generateCity: \(options[^]{0,200}?openSmallCity\(/);
   });
 
   it('the pool posts to the growth worker, and the page writes only what it answers', () => {

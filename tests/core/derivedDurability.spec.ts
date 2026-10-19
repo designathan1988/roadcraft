@@ -57,25 +57,3 @@ describe("the derived cache's writes", () => {
   });
 });
 
-describe("a tile's far levels kept by its maker", () => {
-  it('go in one transaction, every key of them, not one commit a key', async () => {
-    const fake = fakeIndexedDb();
-    vi.stubGlobal('indexedDB', fake.api);
-    vi.resetModules();
-    const cache = await import('@core/derivedCache');
-    await cache.keepDerivedQueuedMany([['m:t', 1], ['m:t:plate', 2], ['m:t:boxes', 3], ['r:t', 4]], new cache.WriteBudget(1024));
-    const writes = fake.transactions.filter((t) => t.mode === 'readwrite');
-    expect(writes).toHaveLength(1);
-    expect(writes[0]!.puts).toEqual(['m:t', 'm:t:plate', 'm:t:boxes', 'r:t']);
-  });
-
-  it("are gathered from both bakes in the maker's worker, then kept in one call", async () => {
-    const { readFileSync } = await import('node:fs');
-    const worker = readFileSync('src/cityTile.worker.ts', 'utf8');
-    const keepFar = worker.slice(worker.indexOf('async function keepFar('), worker.indexOf('/** The streamed tile built'));
-    expect(keepFar).toMatch(/keepTileFar\(.*into\.far\)/);
-    expect(keepFar).toMatch(/keepTileFarRoads\(.*into\.roads\)/);
-    expect(keepFar.match(/keepDerivedQueuedMany\(/g)).toHaveLength(1);
-  });
-});
-

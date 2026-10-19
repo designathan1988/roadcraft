@@ -1442,7 +1442,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         geometry.setAttribute('aRefs', new BufferAttribute(Float32Array.from(it.pack.refs), 3));
         geometry.setAttribute('aRefW', new BufferAttribute(it.pack.weights, 3));
         if (it.pack.fade) geometry.setAttribute('aFade', new BufferAttribute(it.pack.fade, 1));
-        geometry.setIndex(Array.from(it.pack.index));
+        geometry.setIndex(new BufferAttribute(it.pack.index, 1)); // DO NOT `Array.from` it: a JS array of every index, made to be turned back into this one (the page's garbage, a memory probe, 2026-10-18).
         geometry.computeVertexNormals();
         geometry.computeBoundingSphere();
         const made = await makeItem(cls, name, kindOf(it), role, geometry, map, null, name.startsWith('hair:'));
@@ -1607,7 +1607,7 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         geometry.setAttribute('aRefs', new BufferAttribute(Float32Array.from(pack.refs), 3));
         geometry.setAttribute('aRefW', new BufferAttribute(pack.weights, 3));
         geometry.setAttribute('aFade', new BufferAttribute(pack.fade!, 1));
-        geometry.setIndex(Array.from(pack.index));
+        geometry.setIndex(new BufferAttribute(pack.index, 1));
         geometry.computeVertexNormals();
         const v: Variant = { kind: 'hair', level: 0, widen: false, grown: true, lash: false };
         const piece = makePiece(cls, null, v, geometry, pieceMaterial(cls, v, strandMap(), null, 1), ENTRIES, null, null, pack.index.length / 3);

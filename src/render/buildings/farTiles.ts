@@ -5,7 +5,7 @@ import { type RecordRef, readRecords, refOf } from '@world/buildings/recordTable
 import type { Building } from '@world/buildings/types';
 import type { WholeMapOptions } from '@world/cityGen/wholeMap';
 import type { TileRecords } from '@world/doc';
-import { tileKey, tileOfKey } from '@world/tiles';
+import { tileKey } from '@world/tiles';
 import { derivedCacheOpen, keepDerivedDurably, readDerived } from '../derivedCache';
 import { type GroundReaders, type SharedGroundData, sharedGroundReaders } from '../sharedGround';
 import { BOX_INSTANCE, type BoxMass, type CellMass, type FarMass, MASS_FACADE, MASS_GRID, type MassSquare, cellMass, farMassBuffers, indexArray, massOnGrid, massPlaces, shellBounds } from './cellArrays';
@@ -297,13 +297,6 @@ function joinMasses(list: readonly (CellMass | null)[]): CellMass | null {
 }
 
 
-/** A TILE'S FAR LEVEL KEPT WHERE THE TILE WAS JUST MADE (`cityTile.worker.ts`): its buildings as grown, baked and kept under the key and version the page's job for it asks (`runFarJob` level 0), so no worker reads the tile back and grows its buildings again to bake it */
-export async function keepTileFar(records: TileRecords, version: number, env: FarGroundEnv, prefix: string | null, cache: FarCache = derivedFarCache): Promise<boolean> {
-  if (prefix === null || !(await cache.ready())) return false;
-  const { i, j } = tileOfKey(records.key);
-  await keepTile(cache, `${prefix}${farKey(0, i, j)}`, bakeTile(tileBuildings(records), String(version), readsOf(env), env.tone, tileSquare(i, j)));
-  return true;
-}
 
 /** The plan's boxes of a node as a stored node's are kept (`aggregateBoxes` at its level; a tile's in its plate's squares, as a stored tile's are merged there). */
 function planBoxesOf(job: FarJob, k: number, i: number, j: number): Float32Array {

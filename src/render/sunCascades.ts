@@ -97,6 +97,8 @@ export interface SunCascades {
   follow(camera: Camera, sunDirection: Vector3, groundAt: (x: number, y: number) => number, target: Vector3, top: number): boolean;
   /** Marks the cascades that must be drawn this frame; true when any is (the renderer's `shadowMap.needsUpdate`). */
   pass(input: ShadowPassInput): boolean;
+  /** How the passes went since the last call (counts, then zeroed): each cascade's whole draws and draws over its store, and why a whole draw was asked (`scripts/layers.mjs`). */
+  takeStats(): { readonly passes: number; readonly whole: readonly number[]; readonly over: readonly number[]; readonly why: Readonly<Record<string, number>> };
   setEnabled(on: boolean, mapSize: number): void;
   /** Copies the sun's colour and intensity to the other cascades. */
   syncLight(): void;
@@ -170,6 +172,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   const fits: Fit[] = lights.map(() => ({ cr: 0, cu: 0, half: 0, sLo: 0, sHi: 0, placed: false }));
   const refitted = lights.map(() => true);
   const framesSince = lights.map(() => 0);
+  /** What `takeStats` tells. */
+  const stats = { passes: 0, whole: lights.map(() => 0), over: lights.map(() => 0), why: { refit: 0, changed: 0, effects: 0, safety: 0, noStore: 0 } };
   const hold = new SunHold();
   let sunStepped = true;
   let movers: readonly Movers[] = [];
@@ -204,11 +208,17 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   const splits = new Float64Array(SUN_CASCADES + 1);
 
   /** The radius a root's casters reach (largest piece), for the texel test: an instanced piece at its largest instance's scale (a train's cars, a platform's bays are a unit geometry scaled by their instances: read at the geometry's own size they lost their shadow in the far cascade). */
+  /** DO NOT walk it with `traverse` and a closure: the closure and its boxed `radius` were made again for every root, cascade and frame (sunCascades.ts was the page's first source of garbage, 109 MB in 20 s, 2026-10-18). */
+  const walk: Object3D[] = [];
   const measureSphere = (object: Object3D): number => {
     let radius = 0;
-    object.traverse((o) => {
+    walk.length = 0;
+    walk.push(object);
+    while (walk.length > 0) {
+      const o = walk.pop()!;
+      for (const child of o.children) walk.push(child);
       const mesh = o as Mesh & { isInstancedMesh?: boolean; count?: number; instanceMatrix?: { array: ArrayLike<number> } };
-      if (!mesh.isMesh) return;
+      if (!mesh.isMesh) continue;
       const geometry = mesh.geometry;
       if (!geometry.boundingSphere) geometry.computeBoundingSphere();
       let scale = 1;
@@ -223,7 +233,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         scale = Math.sqrt(scale);
       }
       radius = Math.max(radius, (geometry.boundingSphere?.radius ?? 0) * scale * mesh.matrixWorld.getMaxScaleOnAxis());
-    });
+    }
     return radius;
   };
   /** DO NOT walk a root's tree for every cascade and twice a frame: each root's radius once a frame (`pass` clears it). */
@@ -509,8 +519,15 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       }
       return any || sunStepped;
     },
+    takeStats() {
+      const out = { passes: stats.passes, whole: [...stats.whole], over: [...stats.over], why: { ...stats.why } };
+      stats.passes = 0; stats.whole.fill(0); stats.over.fill(0);
+      for (const k of Object.keys(stats.why) as (keyof typeof stats.why)[]) stats.why[k] = 0;
+      return out;
+    },
     pass({ changed, effects, still = false }) {
       if (!enabled) return false;
+      stats.passes++;
       // DO NOT walk every mover's meshes for its radius once per cascade and draw: once a frame.
       spheres.clear();
       radii.clear();
@@ -528,12 +545,14 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         const all = refitted[i]! || changed || effects || framesSince[i]! >= SAFETY_FRAMES || (moved && (!renderer || !storeValid[i]));
         if (!fits[i]!.placed || !(all || moved)) continue;
         if (all) {
+          stats.whole[i]!++;
+          if (refitted[i]) stats.why.refit++; else if (changed) stats.why.changed++; else if (effects) stats.why.effects++; else if (framesSince[i]! >= SAFETY_FRAMES) stats.why.safety++; else stats.why.noStore++;
           lights[i]!.shadow.needsUpdate = true;
           // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame): the movers drawn in the same pass, no copy, no second pass over them.
           whole[i] = renderer !== null && still;
           refitted[i] = false;
           framesSince[i] = 0;
-        } else over[i] = true;
+        } else { over[i] = true; stats.over[i]!++; }
         any = true;
       }
       return any;

@@ -37,7 +37,7 @@ import { POLE_LAMP_MODES } from '@world/utilities';
 import { builderIconSvg } from '../builder/icons';
 import { SNAP_MODES, type BuilderState, type BuilderWorkspace } from '../builder/workspace';
 import { t, plural, onLanguageChange, LANGUAGES, language, setLanguage, formatDecimal } from '../i18n';
-import { nodeCountLabel, roadCountLabel, statusScopeTip } from '../labels';
+import { nodeCountLabel, roadCountLabel } from '../labels';
 import { UNITS_PER_METER } from '@world/units';
 import { balanceTip, formatMoney } from '../roads/money';
 import { drawProfile } from '../roads/drawProfile';
@@ -332,8 +332,6 @@ export interface ShellStatus {
   readonly impossible: number;
   /** The money in hand (`world/economy.ts`). */
   readonly balance: number;
-  /** The counts are the region's round the camera (a streamed world), not the city's. */
-  readonly region: boolean;
 }
 /** The map's own numbers the old status bar showed (`main.ts`): its roads and nodes, the zoom */
 interface ShellReadouts {
@@ -1944,10 +1942,7 @@ export function mountShell(deps: ShellDeps): ShellHandle {
     if (clockText.data !== now.clock) clockText.data = now.clock;
     const line = [now.vehicles, now.people].filter(Boolean).join('  ·  ');
     if (statsText.data !== line) statsText.data = line;
-    // The counts' reach said (a streamed world: the region round the camera).
-    const scope = statusScopeTip(now.region);
-    if (stats.title !== scope) stats.title = scope;
-    syncImpossible(now.impossible, scope);
+    syncImpossible(now.impossible, '');
     syncMoney(now.balance);
     if (popId === 'sim') syncMetrics();
   };

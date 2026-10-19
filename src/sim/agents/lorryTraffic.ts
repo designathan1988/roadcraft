@@ -208,7 +208,10 @@ export class LorryTraffic {
     if (yard === undefined) return;
     if (!yard || !yard.docks[p.dock]) { this.planning = null; return; }
     yard.plan(p.dock, PLAN_BUDGET);
-    if (yard.planned(p.dock)) this.planning = null;
+    if (!yard.planned(p.dock)) return;
+    // DO NOT leave a yard with docks unplanned: its grid, clearance and distance maps are let go only once every dock is planned (`Yard.plan`), and a yard whose other docks no lorry was drawn for kept them for good - one a yard of the map, the simulation's heap past 900 MB (a memory probe, 2026-10-18). Its other docks planned next, in the same slices; the one drawn is called meanwhile.
+    const rest = yard.docks.findIndex((_, k) => !yard.planned(k));
+    this.planning = rest >= 0 ? { building: p.building, dock: rest } : null;
   }
 
   /** A yard with no lorry, a dock of it drawn; planned, it is sent the nearest passing lorry. */

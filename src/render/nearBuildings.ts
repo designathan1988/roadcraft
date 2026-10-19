@@ -81,16 +81,6 @@ export function buildingStage(records: Partial<TileRecords> & Pick<TileRecords, 
   return stageOf(records, buildings, version);
 }
 
-/** A TILE'S STAGE KEPT WHERE THE TILE WAS JUST MADE (`cityTile.worker.ts`), from its buildings as just grown (`full`: never made again), under the version written: no bake makes them again */
-export async function keepTileNearBuildings(records: TileRecords, full: TileRecords, version: number, prefix: string | null,
-  cache: { ready(): Promise<boolean>; put(key: string, value: unknown): Promise<void> }): Promise<boolean> {
-  if (prefix === null || !(await cache.ready())) return false;
-  // Migrated once where the tile was made (`cityTile.worker.ts` migratedOnce): each comes back as it is.
-  const buildings: Building[] = [];
-  for (const raw of full.buildings) { const b = migrateBuilding(raw); if (b) buildings.push(b); }
-  await cache.put(stageKey(prefix, records.key), stageOf(records, buildings, version));
-  return true;
-}
 
 /** Side of a cover filing's buckets. */
 const BUCKET = m(25.6);

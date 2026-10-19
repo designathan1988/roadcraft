@@ -16,7 +16,7 @@ import {
   type WebGLRenderTarget,
 } from 'three';
 import { m } from '@world/units';
-import { cascadedSunChunks, createSunCascades, SUN_CASCADES, type Movers, type ShadowPassInput } from './sunCascades';
+import { cascadedSunChunks, createSunCascades, SUN_CASCADES, type Movers, type ShadowPassInput, type SunCascades } from './sunCascades';
 
 /** Sky, sun and atmosphere. */
 
@@ -42,6 +42,8 @@ export interface SceneEnvironment {
   follow(camera: Camera, target: Vector3, top: number, groundAt: (x: number, y: number) => number): void;
   /** Marks the cascades to draw this frame; true when any is (the renderer's `shadowMap.needsUpdate`). */
   shadowPass(input: ShadowPassInput): boolean;
+  /** The cascades' passes since the last call (`SunCascades.takeStats`). */
+  shadowStats(): ReturnType<SunCascades['takeStats']>;
   /** What moves and is drawn into the shadows (`sunCascades.ts` `Movers`). */
   setMovers(movers: readonly Movers[]): void;
   /** What chooses its casters by each cascade's texel (`SunCascades.setCasters`). */
@@ -210,6 +212,7 @@ export function createEnvironment(
       cascades.follow(camera, sunDirection, groundAt, target, top);
     },
     shadowPass: (input) => cascades.pass(input),
+    shadowStats: () => cascades.takeStats(),
     setMovers: (movers) => cascades.setMovers(movers),
     setCasters: (casters) => cascades.setCasters(casters),
     shadowMaps: () => cascades.maps(),

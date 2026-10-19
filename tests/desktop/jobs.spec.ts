@@ -91,7 +91,7 @@ describe("a job process's thread", () => {
   it("is posted what the page sends, and the page what it posts", async () => {
     const page = pageEnd();
     serve(page.port, ECHO);
-    page.send({ port: 3, service: 'cityTiles', data: { i: 1, j: 2, bytes: new Uint8Array([1, 2, 3]) } });
+    page.send({ port: 3, service: 'growth', data: { i: 1, j: 2, bytes: new Uint8Array([1, 2, 3]) } });
     const answer = (await page.next()) as { echo: { data: { bytes: Uint8Array } } };
     expect(answer.echo.data.bytes).toEqual(new Uint8Array([1, 2, 3]));
     page.send({ crash: true });

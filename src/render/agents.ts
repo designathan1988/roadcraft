@@ -1118,16 +1118,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
 
   // Frame of the agent currently being written.
   let occupantBand = 0;
-  let fx = 0;
-  let fy = 0;
-  let fdx = 1;
-  let fdy = 0;
-  let fyaw = 0;
-  let fdeck = 0;
-  // Lean of a two-wheeler into a bend, radians, positive to the left
-  let froll = 0;
-  let fcos = 1;
-  let fsin = 0;
+  // DO NOT keep these as nine `let`s: a double written to a closure's variable is a new heap number, for every vehicle and every frame (`drawVehicle` was the page's first garbage, a memory probe, 2026-10-18). x, y, the heading's cosine and sine, the heading, the deck; the lean of a two-wheeler into a bend (radians, positive to the left), its cosine and sine.
+  const FRAME_X = 0, FRAME_Y = 1, FRAME_DX = 2, FRAME_DY = 3, FRAME_YAW = 4, FRAME_DECK = 5, FRAME_ROLL = 6, FRAME_COS = 7, FRAME_SIN = 8;
+  const frame = new Float64Array([0, 0, 1, 0, 0, 0, 0, 1, 0]);
   /** THE vehicle's one transform, as a rotation */
   const fq = new Quaternion();
   const qPitch = new Quaternion();
@@ -1143,15 +1136,15 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   eulerScratch.rotation.order = 'YXZ';
 
   const frameAt = (x: number, y: number, angle: number, deck: number, roll = 0, pitch = 0, roadRoll = 0): void => {
-    fx = x;
-    fy = y;
-    fyaw = angle;
-    fdx = Math.cos(angle);
-    fdy = Math.sin(angle);
-    fdeck = deck;
-    froll = roll;
-    fcos = Math.cos(roll);
-    fsin = Math.sin(roll);
+    frame[FRAME_X] = x;
+    frame[FRAME_Y] = y;
+    frame[FRAME_YAW] = angle;
+    frame[FRAME_DX] = Math.cos(angle);
+    frame[FRAME_DY] = Math.sin(angle);
+    frame[FRAME_DECK] = deck;
+    frame[FRAME_ROLL] = roll;
+    frame[FRAME_COS] = Math.cos(roll);
+    frame[FRAME_SIN] = Math.sin(roll);
     fq.setFromAxisAngle(AXIS_Y, angle);
     qPitch.setFromAxisAngle(AXIS_Z, pitch);
     qRoll.setFromAxisAngle(AXIS_X, roadRoll - roll);
@@ -1563,7 +1556,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const slain = seat.driver && vehicle.slain === true;
       const plays = occupantPlays(seat, who.seed, frameClock, seatPlays, slain);
       const fixed = seat.pose === 'car' ? 0 : 1;
-      const drawn = pedestrians.drawClip(who, seatPoint.x, seatPoint.y, seatPoint.h ?? fdeck + seat.hipY, fyaw, plays as readonly { key: CitizenClipKey; phase: number; weight: number }[],
+      const drawn = pedestrians.drawClip(who, seatPoint.x, seatPoint.y, seatPoint.h ?? frame[FRAME_DECK]! + seat.hipY, frame[FRAME_YAW]!, plays as readonly { key: CitizenClipKey; phase: number; weight: number }[],
         0, seatFitScale(seat), false, fixed, null, slain ? 'dead' : undefined);
       if (seat.driver) driverScale = drawn;
     }
@@ -1603,7 +1596,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   };
 
   const seatWorld = (seat: { x: number; z: number }): { x: number; y: number } =>
-    ({ x: fx + fdx * seat.x + fdy * seat.z, y: fy + fdy * seat.x - fdx * seat.z });
+    ({ x: frame[FRAME_X]! + frame[FRAME_DX]! * seat.x + frame[FRAME_DY]! * seat.z, y: frame[FRAME_Y]! + frame[FRAME_DY]! * seat.x - frame[FRAME_DX]! * seat.z });
   /** A seat (X forward, Z to the right, `up` above the road) to world, through the vehicle's transform */
   const seatWorldInto = (seat: { x: number; z: number }, out: { x: number; y: number; h?: number }, up = 0): void => {
     toWorld(seat.x, up, -seat.z, partPoint);
@@ -1616,9 +1609,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const kerb = createKerbFigure();
   /** A world point in the current vehicle's frame: X forward, Z to the right. */
   const toVehicle = (x: number, y: number): { x: number; z: number } => {
-    const dx = x - fx;
-    const dy = y - fy;
-    return { x: dx * fdx + dy * fdy, z: dx * fdy - dy * fdx };
+    const dx = x - frame[FRAME_X]!;
+    const dy = y - frame[FRAME_Y]!;
+    return { x: dx * frame[FRAME_DX]! + dy * frame[FRAME_DY]!, z: dx * frame[FRAME_DY]! - dy * frame[FRAME_DX]! };
   };
 
   /** Somebody getting out at the kerb, or in. */
@@ -1635,7 +1628,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     if (seat && door.kind === 'hinge' && !(progress.walked >= 1 && (stop.phase === 'hold' || stop.phase === 'close'))) {
       const f = kerbFigure({ seat, door, foot: toVehicle(person.footX, person.footY) }, stop.kind, progress.seated, progress.walked, kerb);
       seatWorldInto(f, seatPoint, f.y);
-      pedestrians.drawClip(identity, seatPoint.x, seatPoint.y, seatPoint.h ?? fdeck + f.y, fyaw + f.heading, f.plays,
+      pedestrians.drawClip(identity, seatPoint.x, seatPoint.y, seatPoint.h ?? frame[FRAME_DECK]! + f.y, frame[FRAME_YAW]! + f.heading, f.plays,
         0, f.seated ? seatFitScale(seat) : Infinity, f.anchor === 'pelvis' ? false : f.anchor === 'feet' ? true : 'pelvisOver');
       return;
     }
@@ -1652,21 +1645,21 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     };
     if (progress.walked >= 1 && (stop.phase === 'hold' || stop.phase === 'close')) {
       // Standing on the footway: the truck's mate with the load, facing the truck.
-      pedestrians.drawClip(identity, person.footX, person.footY, fdeck,
+      pedestrians.drawClip(identity, person.footX, person.footY, frame[FRAME_DECK]!,
         Math.atan2(outside.y - person.footY, outside.x - person.footX),
         [{ key: 'idle', phase: (stop.t * 0.1) % 1, weight: 1 }], 0, Infinity, true);
       return;
     }
     if (progress.walked > 0 || progress.seated <= 0) {
       // Between the door and the footway.
-      if (stop.kind === 'drop') walkTo(outside.x, outside.y, person.footX, person.footY, progress.walked, fdeck);
-      else walkTo(person.footX, person.footY, outside.x, outside.y, 1 - progress.walked, fdeck);
+      if (stop.kind === 'drop') walkTo(outside.x, outside.y, person.footX, person.footY, progress.walked, frame[FRAME_DECK]!);
+      else walkTo(person.footX, person.footY, outside.x, outside.y, 1 - progress.walked, frame[FRAME_DECK]!);
       return;
     }
     // A bus: stepping up through the door, then gone inside.
     const t = stop.kind === 'drop' ? 1 - progress.seated : progress.seated;
     if (stop.kind === 'pick' && t > 0.9) return;
-    walkTo(outside.x, outside.y, inside.x, inside.y, stop.kind === 'pick' ? t : 1 - t, fdeck + m(0.25) * t);
+    walkTo(outside.x, outside.y, inside.x, inside.y, stop.kind === 'pick' ? t : 1 - t, frame[FRAME_DECK]! + m(0.25) * t);
   };
 
   /** A motorcycle or a bicycle from its model */
@@ -1706,10 +1699,10 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     if (occupantBand < 1) return;
     const pelvisUp = model.seatY;
     // The seat point rolled about the road-level forward axis (`place`).
-    const sideOffset = pelvisUp * fsin;
-    const x = fx + fdx * model.seatX - fdy * sideOffset;
-    const y = fy + fdy * model.seatX + fdx * sideOffset;
-    const height = fdeck + pelvisUp * fcos;
+    const sideOffset = pelvisUp * frame[FRAME_SIN]!;
+    const x = frame[FRAME_X]! + frame[FRAME_DX]! * model.seatX - frame[FRAME_DY]! * sideOffset;
+    const y = frame[FRAME_Y]! + frame[FRAME_DY]! * model.seatX + frame[FRAME_DX]! * sideOffset;
+    const height = frame[FRAME_DECK]! + pelvisUp * frame[FRAME_COS]!;
     const moving = riderMoving(vehicle);
     const steer = Math.max(-1, Math.min(1, lamp.steer / STEER_FULL));
     riderPlays.length = 0;
@@ -1726,7 +1719,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       riderPlay('motoStop', 0, 1 - moving);
     }
     // At the size the pose was solved at: the hands are on the grips and the feet on the pegs or pedals only there.
-    const drawn = pedestrians.drawClip(seatIdentity(vehicle, seatPerson(vehicle, 0), false), x, y, height, fyaw, riderPlays, froll, Infinity, false, 1,
+    const drawn = pedestrians.drawClip(seatIdentity(vehicle, seatPerson(vehicle, 0), false), x, y, height, frame[FRAME_YAW]!, riderPlays, frame[FRAME_ROLL]!, Infinity, false, 1,
       cyclist ? null : helmetMatrix);
     if (!cyclist && drawn > 0) {
       // A motorcyclist's helmet, fitted to this body's head (`riderPoses.helmetShape`) and put where the pose just drawn has it.

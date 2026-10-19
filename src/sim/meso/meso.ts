@@ -11,7 +11,6 @@ import { MesoModel, type MesoLinkSpec } from './model';
 import { DemandCells } from './demand';
 import { MC, MESO_INSIDE, MESO_ONE_WAY, MESO_PRESENT, MESO_RECORD, MH, MICRO_RADIUS, ML, type MesoMemory, followView } from './memory';
 import { LINK_CROSSING, LINK_ONE_WAY, NODE_BULB, type TileLinks, linkId, linkSegment, reverseLink } from './tileLinks';
-import type { TileLinkFeed } from './tileFeed';
 import { SlotIndex, Threads, grown } from './slots';
 
 /** THE MESO TRAFFIC IN THE SIMULATION: the world's flows (`model.ts`) over the page's tiles (the lane graph) and the stored tiles round them (`tileLinks.ts`), and the micro window they hand their cars to and take them back from */
@@ -88,9 +87,6 @@ export class Meso {
   private offered: TileLinks[] = [];
   /** Live tiles whose first link went live: what is left of their table and not in the document is dropped. */
   private readonly sweep = new Set<number>();
-  private feed: TileLinkFeed | null = null;
-  /** The camera's focus (the window's centre asked last): the reach of the tables is round it. */
-  private focusAt: { x: number; y: number } | null = null;
   /** The micro window: where it stands, and where it was asked to go (`want`). */
   private micro = { x: 0, y: 0, r: 0 };
   private wanted: { x: number; y: number; r: number } | null = null;
@@ -155,18 +151,9 @@ export class Meso {
   /** The micro window asked to stand round (x, y), moved at the next step (the far tables' reach round it too); `r` the most it grows to (`follow`). */
   want(x: number, y: number, r = MICRO_RADIUS): void {
     this.wanted = { x, y, r };
-    this.focusAt = { x, y };
     this.most = r;
   }
   private most = 0;
-
-  /** The stored tiles round the camera read for the meso (`tileFeed.ts`): the tables of another world forgotten. */
-  useTiles(feed: TileLinkFeed): void {
-    this.feed = feed;
-    for (const key of this.live) feed.loaded(key);
-    for (const key of [...this.tables.keys()]) this.dropTable(key);
-    this.offered = [];
-  }
 
   /** The tiles the page's document holds (the map sent whole). */
   setLive(keys: Iterable<number>): void {
@@ -176,7 +163,7 @@ export class Meso {
 
   /** A tile of the page taken in, let go or written (`worldStreamer.ts` StreamerEvents)
    *  - taken in: its links handed to the lane graph as it builds them (the same slots, so their vehicles stay); let go: its links held as they are until its table comes, then the table's. */
-  tileEvent(event: TileEvent, key: number, version: number): void {
+  tileEvent(event: TileEvent, key: number, _version: number): void {
     switch (event) {
       case 'loaded':
         this.live.add(key);
@@ -184,15 +171,12 @@ export class Meso {
         this.tables.delete(key);
         this.offered = this.offered.filter((t) => t.key !== key);
         this.demand.dropFar(key);
-        this.feed?.loaded(key);
         return;
       case 'letGo':
         this.live.delete(key);
         this.awaiting.add(key);
-        this.feed?.letGo(key);
         return;
       case 'written':
-        this.feed?.written(key, version);
         return;
     }
   }
@@ -473,12 +457,6 @@ export class Meso {
 
   /** The tables come (the feed's, offered): put in over their tiles; the tiles gone out of reach dropped. */
   private takeTables(): void {
-    const feed = this.feed;
-    if (feed) {
-      if (this.focusAt) feed.focus(this.focusAt.x, this.focusAt.y);
-      for (const key of feed.gone()) this.dropTable(key);
-      for (const table of feed.take()) this.offered.push(table);
-    }
     if (!this.offered.length) return;
     const offered = this.offered;
     this.offered = [];
@@ -502,15 +480,6 @@ export class Meso {
       if (!this.isLive(slot)) this.placeTableLink(slot, table, k);
     }
     for (const slot of this.tiles.list(key)) if (!kept.has(slot) && !this.isLive(slot)) this.dropSlot(slot);
-  }
-
-  /** A tile out of the meso's reach: its links and their vehicles leave the model. */
-  private dropTable(key: number): void {
-    this.tables.delete(key);
-    this.awaiting.delete(key);
-    this.demand.dropFar(key);
-    if (this.live.has(key)) return;
-    for (const slot of this.tiles.list(key)) if (!this.isLive(slot)) this.dropSlot(slot);
   }
 
   /** A slot made from its table link: its ends, its line, its numbers; a new one starts as its street stands at this hour. */

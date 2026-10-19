@@ -58,7 +58,7 @@ import type { Viewport } from '@view/viewport';
 import { VEHICLE_REACH, createAgentMeshes, type AgentMeshes } from './agents';
 import { frustumGroundBox } from './frustumGround';
 import { createEnvironment, sunShadowChunks } from './environment';
-import type { Movers } from './sunCascades';
+import type { Movers, SunCascades } from './sunCascades';
 import { createMaterials, type SceneMaterials } from './materials';
 import { PERSPECTIVE_FOV, createIsoRig } from './isoViewport';
 import { renderTargetsBytes } from './targetBytes';
@@ -128,7 +128,6 @@ import { gardenProduct } from './gardenTiles';
 import { coverExtraFor, coverProduct } from './coverTiles';
 import { elementProduct } from './elementTiles';
 import type { SharedGroundAt, SharedGroundData } from './sharedGround';
-import type { FarTileBake } from '../cityTile.worker';
 import { WOODS_SPACING } from './woodsBase';
 import { siteGrading } from '@world/buildings/siteGrading';
 import { type CameraSolids, type GroundSince, cameraSolidsKeeper } from '@world/buildings/cameraSolids';
@@ -148,11 +147,8 @@ const KEPT_TILES_WAIT_MS = 3000;
 const STREET_ZOOM = perM(8);
 const DISTRICT_ZOOM = perM(0.8);
 const viewOf = (zoom: number): CityView => (zoom >= STREET_ZOOM ? 'street' : zoom >= DISTRICT_ZOOM ? 'district' : 'map');
-/** Frames in a window of the GPU's time read by the governor (`buildings/frameBudget.ts` `TimeGovernor`). */
-const GOVERN_FRAMES = 30;
 
 import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
-import { TimeGovernor } from './buildings/frameBudget';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
 import { wantAllTexels } from './surfaceTextures';
@@ -242,10 +238,12 @@ export interface SceneHandle {
   onNearDrawn: ((key: number) => void) | null;
   /** The buildings of the tiles not in the page's document, baked per tile from the tile store (`buildings/farLevels.ts`). */
   readonly farBuildings: FarTiles;
+  /** The sun's cascades' passes since the last call (`SunCascades.takeStats`). */
+  shadowStats(): ReturnType<SunCascades['takeStats']> | null;
+  /** The town's cells by level and why below their detail (`BuildingLayer.levels`): asked by the probe, never each frame. */
+  buildingLevels(): Readonly<Record<string, number>>;
   /** The roads of the tiles not in the page's document, baked per tile from the tile store (`farRoads.ts`). */
   readonly farRoads: FarTiles;
-  /** What a tile's maker bakes its far levels with (`cityTile.worker.ts`): the ground and tones the far trees' jobs read now and the keys they keep a tile's level 0 under. */
-  farBakeEnv(): FarTileBake;
   readonly backend: 'three-webgl';
   readonly viewport: Viewport;
   readonly scene: Scene;
@@ -761,20 +759,6 @@ export function createSceneRenderer(
   const tileWrites = tileWriter ? new DerivedWriterLane(tileWriter, 48 * 2 ** 20) : null;
   /** Where the camera looks and how far the roads are at full detail round it (`mesh/roadResidency.ts`). */
   const roadFocus = { x: initialCentre.x, y: initialCentre.y, reach: 700, frames: 0 };
-  /** THE GPU'S TIME GOVERNS THE ERROR SCALE'S FLOOR: every `GOVERN_FRAMES` frames, the window's p95 against the view's budget (`VIEW_BUDGETS` gpuMs) asks the floor a step up or down (`BuildingLayer.pressTime`), a step up kept only if it paid (`TimeGovernor`). */
-  let governFrames = 0;
-  let governView: CityView | null = null;
-  const timeGovernor = new TimeGovernor();
-  const governFrame = (): void => {
-    if (!gpuTimer.supported || ++governFrames < GOVERN_FRAMES) return;
-    governFrames = 0;
-    const last = gpuTimer.samples.toArray().slice(-GOVERN_FRAMES).sort((a, b) => a - b);
-    if (last.length < GOVERN_FRAMES) return;
-    const p95 = last[Math.ceil(last.length * 0.95) - 1]!;
-    const view = viewOf(rig.viewport.zoom);
-    if (view !== governView) { governView = view; timeGovernor.reset(); }
-    timeGovernor.read(p95, VIEW_BUDGETS[view].gpuMs, (up) => buildings.frame.press(up));
-  };
   const surfaceReuse: SurfaceReuse = {
     tiles: new Map(),
     depends: new Map(),
@@ -2521,8 +2505,11 @@ export function createSceneRenderer(
     get farRoads() {
       return roadsAndNear;
     },
-    farBakeEnv() {
-      return { ...buildings.farEnv(), massPrefix: buildings.far.bakePrefix, roadPrefix: farRoads.bakePrefix, roadGround: farRoadGround(), nearPrefix: nearTiles.bakePrefix };
+    shadowStats() {
+      return environment.shadowStats();
+    },
+    buildingLevels() {
+      return buildings.levels();
     },
     beginLoad() {
       reveal.begin();
@@ -3299,7 +3286,6 @@ export function createSceneRenderer(
         gpuTimer.begin();
         post.render(delta);
         gpuTimer.end();
-        governFrame();
       } else onAssetsReady();
       measureHitch('hitch:draw/Render', atRender);
       if (shake > 0) { rig.camera.position.sub(shakeOffset); rig.camera.updateMatrixWorld(); }

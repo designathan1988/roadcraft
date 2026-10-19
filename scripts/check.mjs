@@ -63,8 +63,6 @@ export const ALWAYS = [
   'tests/editor/history.spec.ts',
   'tests/editor/lotProposalPlace.spec.ts',
   'tests/editor/tileStore.spec.ts',
-  'tests/editor/worldStreamer.spec.ts',
-  'tests/editor/worldLock.spec.ts',
   'tests/desktop/jobs.spec.ts',
   'tests/render/canyonLight.spec.ts',
   'tests/render/frameBudget.spec.ts',
@@ -76,7 +74,6 @@ export const ALWAYS = [
   'tests/core/derivedDurability.spec.ts',
   'tests/render/cellHoles.spec.ts',
   'tests/render/shaderCatalogue.spec.ts',
-  'tests/editor/storedNetwork.spec.ts',
 ];
 
 /** The specs a change calls for: `null` */

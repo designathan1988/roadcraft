@@ -4,14 +4,12 @@ import { Network } from '@world/network';
 import { type LotPlan, planLots } from '@world/lots';
 import type { NodeId } from '@world/ids';
 import { SimWorld, issuesSince } from '../world';
-import { type BuildingChange, TrafficBuildingTable, type TrafficMap, takeTrafficMap, trafficChangesOf } from '../agents/trafficBuildings';
+import { TrafficBuildingTable, type TrafficMap, takeTrafficMap, trafficChangesOf } from '../agents/trafficBuildings';
 import { step } from '../pipeline';
-import { Meso, type TileEvent } from '../meso/meso';
+import { Meso } from '../meso/meso';
 import { MesoMemory } from '../meso/memory';
-import { type TileReader, TileLinkFeed } from '../meso/tileFeed';
-import { storeTileReader } from '../../tileReader';
 import { laneGrid } from '../agents/laneGrid';
-import { tileBaysGone, tileBaysRead, tileBaysReset, tileBaysWanted, useBayWorkers } from '../agents/parking';
+import { useBayWorkers } from '../agents/parking';
 import { BayPool } from '../../bayPool';
 import { ConflictPool } from '../../conflictPool';
 import { TopologyCatchUp } from '../topologyCatchUp';
@@ -41,12 +39,6 @@ export class SimHost {
   private net = new Network(this.doc);
   /** The buildings as traffic reads them, by the world's cells, written in the copy's diary. */
   private readonly buildings = new TrafficBuildingTable(this.doc.changes);
-  /** The streamed world's tile store as this worker reads it (`tiles`), and the read under way for each tile put in the page's document. */
-  private reader: TileReader | null = null;
-  private readonly tileReads = new Map<number, number>();
-  private readSerial = 0;
-  /** Tiles' networks being read from the store (`tileBuildings`): the network is not built again until they land, so their junctions are taken, not solved here. */
-  private networkReads = 0;
   private sim: SimWorld | null = null;
   /** The meso traffic and its micro window: made before the world, so a window told early is kept for it. */
   private readonly meso = new Meso();
@@ -95,22 +87,10 @@ export class SimHost {
       case 'load': this.meso.setLive(message.live); this.load(message.map); return;
       case 'lanes': this.lanes = { bays: message.bays, conflicts: message.conflicts }; return;
       case 'laneLost': (message.service === 'bays' ? this.bayPool : this.conflictPool)?.lanesLost(message.why); return;
-      case 'tiles': {
-        // The store read here, never through the page: IndexedDB opened in this worker, or the desktop's saves writer through a port of this worker's own.
-        const reader = storeTileReader(message.map, message.port);
-        this.reader = reader;
-        this.meso.useTiles(new TileLinkFeed(reader, message.reach));
-        return;
-      }
-      case 'tile':
-        this.meso.tileEvent(message.event, message.key, message.version);
-        this.tileBuildings(message.event, message.key, message.fromPage === true);
-        return;
       case 'delta':
         this.doc.restore(message.delta);
         this.buildings.apply(trafficChangesOf(message.buildings));
         return;
-      case 'bake': this.net.offerBake(message.bake); return;
       case 'reset': this.sim?.reset(); this.sim?.ambient.reset(this.sim); return;
       case 'window':
         this.meso.attach(new MesoMemory(message.meso));
@@ -154,53 +134,8 @@ export class SimHost {
     this.post({ type: 'ready' });
   }
 
-  /** A tile put in the page's document: its buildings as the traffic reads them read here from the store (`trafficBuilding`, baked with the tile), never on the page (`SimClient.sendChanges`)
-   *  - one let go before its read lands is not placed; a building the page already told (an edit since) keeps the page's. */
-  private tileBuildings(event: TileEvent, key: number, fromPage = false): void {
-    const sim = this.sim;
-    if (event === 'letGo' || (event === 'loaded' && fromPage)) {
-      // Let go, or loaded with the store behind the page (its buildings sent from the page): no read of the store stands for it, its bays worked out here.
-      this.tileReads.delete(key);
-      if (sim) tileBaysGone(sim, key);
-      return;
-    }
-    if (event !== 'loaded' || !this.reader) return;
-    // Numbered across tiles: a tile let go and loaded again does not take a read of before for its own.
-    const read = ++this.readSerial;
-    this.tileReads.set(key, read);
-    // Its parking bays as baked with it (`sim/tileBays.ts`), read with its buildings: its streets wait for them, DO NOT lay them out before they land.
-    const reader = this.reader;
-    const bays = sim && reader.bays ? reader.bays(key).catch((error: unknown) => {
-      console.warn(`[sim] tile ${key}'s bays could not be read from the store: worked out here`, error);
-      return null;
-    }) : Promise.resolve(null);
-    if (sim && reader.bays) tileBaysWanted(sim, key, read);
-    // Its junctions and ribbons as baked with it, read from the store (DO NOT have the page post them: `SimClient.offerBake`); the network waits for them (`frame`).
-    if (reader.network) {
-      this.networkReads++;
-      reader.network(key).then((bake) => { if (bake && this.tileReads.get(key) === read) this.net.offerBake(bake); }, (error: unknown) => {
-        console.warn(`[sim] tile ${key}'s network could not be read from the store: solved here`, error);
-      }).finally(() => { this.networkReads--; });
-    }
-    // Its traffic section alone, baked where the tile was written (`sim/tileSections.ts`): DO NOT parse the whole tile here a second time.
-    Promise.all([reader.traffic(key), bays]).then(([traffic, baked]) => {
-      // The bays offered before the buildings are put: their lots take them at the next look (`parking.ts` lookAtLot).
-      if (sim) tileBaysRead(sim, key, read, this.tileReads.get(key) === read ? baked : null);
-      if (this.tileReads.get(key) !== read || !traffic) return;
-      const changes: BuildingChange[] = [];
-      for (const t of traffic) if (!this.buildings.get(t.id)) changes.push({ id: t.id, value: t });
-      this.buildings.apply(changes);
-    }, (error: unknown) => {
-      if (sim) tileBaysRead(sim, key, read, null);
-      console.warn(`[sim] tile ${key}'s buildings could not be read from the store`, error);
-    });
-  }
-
   /** Another map: the replica made whole again, and nothing of the old simulation carried over. */
   private load(map: TrafficMap): void {
-    // DO NOT let a tile's read of the old map land in the new one: its buildings and bays would be put in this map (`tileBuildings`).
-    this.tileReads.clear();
-    if (this.sim) tileBaysReset(this.sim);
     takeTrafficMap(this.doc, this.buildings, map);
     this.net.rebuild({ full: true });
     this.sim?.reset();
@@ -227,8 +162,7 @@ export class SimHost {
     if (controls.focus) sim.focus = controls.focus;
     this.governor.setMax(controls.maxShare);
     if (controls.startShare !== undefined) this.governor.start(controls.startShare);
-    // Not while a tile's network is being read: its junctions would be solved here, then handed.
-    if (this.net.revision !== this.doc.revision && this.networkReads === 0) this.net.rebuild();
+    if (this.net.revision !== this.doc.revision) this.net.rebuild();
     const held = hold;
     // DO NOT stop the clock while a tile's topology is prepared (its lanes, turns and conflict pairs, on the workers): the city runs on the graph it has meanwhile, and takes the new one when it is ready.
     const catching = this.topology.step(sim, this.net.trafficRevision, false);
@@ -449,7 +383,7 @@ export class SimHost {
 
   /** THE ZONING TOOL'S PROPOSAL (`editor/lotTool.ts`): the land along the streets cut into lots on this copy of the region, which the page's diary keeps as the page has it (sent before the question, `SimClient.lotPlan`) - planned again only where the roads and the lots changed (`world/lots.ts` LotPlanner, one for this network), DO NOT plan it on the page. Null while a tile's network is being read (its junctions would be solved here): asked again. */
   private lotPlan(): LotPlan | null {
-    if (!this.sim || this.networkReads > 0) return null;
+    if (!this.sim) return null;
     // Brought up to the diary sent before the question (nothing to do when the frame built it: the build reads what changed).
     this.net.rebuild();
     return planLots(this.doc, this.net);
