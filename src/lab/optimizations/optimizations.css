@@ -1,0 +1,15 @@
+/* THE LAB'S OPTIMISATIONS (`index.ts`): one card per optimisation (`lab-card`), its choices beside its name, what it affects under it. The lab's colours (`lab.css` --lab-*). */
+.opt-summary { margin: 4px 0 6px; color: var(--lab-text); }
+.opt-item { padding: 6px 9px; }
+.opt-item.opt-on { border-color: color-mix(in srgb, var(--lab-warn) 55%, transparent); background: color-mix(in srgb, var(--lab-warn) 6%, var(--lab-bg2)); }
+.opt-item.opt-focus { outline: 2px solid var(--lab-accent); outline-offset: 1px; }
+.opt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.opt-head strong { font-size: 1.04em; }
+.opt-badge { font-size: 0.88em; }
+.opt-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-left: auto; }
+.lab-panel .opt-choices button { padding: 1px 7px; }
+.opt-slider { width: 120px; }
+.lab-panel .opt-number { width: 84px; }
+.opt-what, .opt-tradeoff { margin: 4px 0 0; }
+.opt-affects { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+.lab-panel .opt-tag { padding: 0 6px; font-size: 0.86em; color: var(--lab-muted); background: var(--lab-bg3); border-color: var(--lab-line); border-radius: 9px; }

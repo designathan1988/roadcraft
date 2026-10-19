@@ -68,6 +68,8 @@ import { WEAK_MACHINE } from '@core/weakMachine';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
 import { ALL_EFFECTS_ON, DEFAULT_BUILDING_CHOICES, createFrameHider, type BuildingChoices, type EffectSwitches } from './effectSwitches';
 import { createBuildingSwitcher } from './buildingSwitches';
+import { DEFAULT_OPTIMIZATIONS, qualityOptionsDiffer, withOptimizations, type Optimizations } from './optimizations';
+import { createOptimizer } from './optimizationsApply';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, dropSurfaceBlocks, noRoadSurfaces, passLook, roadSurfaceSteps, surfaceLook, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { SurfaceInputs } from './roadSurfaceInputs';
@@ -374,6 +376,10 @@ export interface SceneHandle {
   readonly quality: QualityLevel | 'auto';
   /** The effects panel's switches (`effectSwitches.ts`): each effect and layer on or off, and the buildings' settings, from the next frame. */
   setEffects(switches: EffectSwitches, buildings?: BuildingChoices): void;
+  /** The lab's optimisations (`optimizations.ts`): each from the next frame; all at their defaults, the game as it draws. */
+  setOptimizations(values: Optimizations): void;
+  /** What the optimisations hold now (`optimizationsApply.ts` report). */
+  optimizationReport(): Readonly<Record<string, number>>;
   /** The inspection camera (`inspector.ts`); null outside development builds. */
   readonly inspect: Inspector | null;
   /** Every figure drawn last frame and the body it was cast as: the runtime census. */
@@ -1059,7 +1065,8 @@ export function createSceneRenderer(
   environment.setCasters((texel, cascade) => {
     // The effects panel's buildings without shadows: out of every cascade's pass (`buildingSwitches.ts`).
     buildingSwitcher.casters(effectSwitches, texel);
-    buildings.castInto(texel, cascade >= 1);
+    // The lab's optimisations: the parts cast by a wider texel, the masses from another cascade (`optimizationsApply.ts`).
+    buildings.castInto(texel === null ? null : texel * optimizer.castTexel, cascade >= optimizer.coarseFrom);
     castCastersInto(texel);
   });
   // The town's meshes keep their arrays only until they are on the GPU (`mesh/gpuOnly.ts`)
@@ -2070,6 +2077,9 @@ export function createSceneRenderer(
   const frameHider = createFrameHider();
   let buildingChoices: BuildingChoices = DEFAULT_BUILDING_CHOICES;
   const buildingSwitcher = createBuildingSwitcher(buildings);
+  /** The lab's optimisations (`optimizationsApply.ts`), and the tier's settings before them (`withOptimizations`). */
+  const optimizer = createOptimizer({ renderer, scene, environment, waterMeshes: () => waterMeshes() });
+  let baseQuality: QualitySettings = quality;
   /** The rivers and lakes of every plate shown (named so by `terrain.ts`), looked for only while the water is switched off. */
   const waterMeshes = (): Object3D[] => {
     const found: Object3D[] = [];
@@ -2999,9 +3009,9 @@ export function createSceneRenderer(
         gpuLedger.set('shadow maps', 'shadow maps', renderTargetsBytes(environment.shadowMaps()));
         // The view's budget of triangles (`core/perfBudget.ts`): the levels' error scale rises until they fit (`buildings/frameBudget.ts`).
         buildings.frame.budget = buildingChoices.triangles === 0 ? Infinity : VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles * buildingChoices.triangles;
-        buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
-        farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
-        nearTiles.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
+        buildings.levelOfDetail(ex, ey, ez, pxAtMetre * optimizer.buildingPx, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
+        farRoads.choose(ex, ey, ez, pxAtMetre * optimizer.roadPx, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
+        nearTiles.choose(ex, ey, ez, pxAtMetre * optimizer.roadPx, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         // DO NOT leave a road just built invisible until its tile's near roads come back (over 2 s, the player): drawn now from the network the commit solved, let go once its tile's edit is drawn or no near roads are wanted there (`farTree.ts` standInDone).
         for (const tile of roadStandIn.settled()) if (farRoads.standInDone(tile)) roadStandIn.drop(tile);
         roadStandIn.settle();
@@ -3013,7 +3023,7 @@ export function createSceneRenderer(
         // A shadow texel's side, m: a part's shadow narrower than it is not cast.
         const shadow = environment.sun.shadow;
         const texel = environment.sun.castShadow ? (shadow.camera.right - shadow.camera.left) / shadow.camera.zoom / shadow.mapSize.x : Infinity;
-        buildings.cullDetails(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, texel);
+        buildings.cullDetails(ex, ey, ez, pxAtMetre * optimizer.buildingPx, rig.perspective ? null : rig.viewport.zoom, texel * optimizer.castTexel);
       }
       if (roads) roads.group.visible = true;
       if (details) details.group.visible = true;
@@ -3101,7 +3111,7 @@ export function createSceneRenderer(
         personPixels,
         screenScale,
         pixelRatio: renderer.getPixelRatio(),
-        shadows: renderer.shadowMap.enabled,
+        shadows: renderer.shadowMap.enabled && optimizer.agentShadows,
         eye: cullCamera.position,
         vehicleVisible,
         vehicleInside,
@@ -3110,8 +3120,8 @@ export function createSceneRenderer(
         // The tier's lighter vehicles and people (`quality.ts`; only the low tier draws them lighter).
         tier: quality,
         exhaust: (x, y, z, angle, length, speed, dusty) => {
-          exhaust.emit(x, y, z, angle, length, speed, dusty);
-          if (!dusty && Math.abs(speed) > 0.5) wear.wheels(x, y, angle, Math.min(length * 0.42, m(1.7)), wallDt);
+          if (optimizer.exhaust) exhaust.emit(x, y, z, angle, length, speed, dusty);
+          if (optimizer.wear && !dusty && Math.abs(speed) > 0.5) wear.wheels(x, y, angle, Math.min(length * 0.42, m(1.7)), wallDt);
         },
         // The bodies of shots and blows (`playEffects.ts`), once anybody has shot or struck.
         ...(fx ? { ragdolls: (citizens: Parameters<PlayEffects['frame']>[0]) => fx!.frame(citizens, sim, wallDt, fxDt) } : {}),
@@ -3119,11 +3129,13 @@ export function createSceneRenderer(
       });
       // The micro window follows the view's centre; the far cars of the meso step drawn round it.
       densityCars.update(net, sim, rig.target.x, -rig.target.z);
-      exhaust.tick(windClock, renderer.domElement.height / 2);
+      if (optimizer.exhaust) exhaust.tick(windClock, renderer.domElement.height / 2);
       fx?.update(wallDt, fxDt);
-      for (const ped of sim.pedViews) if (ped.v > 0.05) wear.feet(ped.x, ped.y, wallDt);
-      wear.follow(rig.viewport.centre.x, rig.viewport.centre.y);
-      wear.tick(wallDt);
+      if (optimizer.wear) {
+        for (const ped of sim.pedViews) if (ped.v > 0.05) wear.feet(ped.x, ped.y, wallDt);
+        wear.follow(rig.viewport.centre.x, rig.viewport.centre.y);
+        wear.tick(wallDt);
+      }
       // The rooms cut open are lit from inside: brighter as the day goes.
       const key = cutSpec ? `${cutSpec.level}@${cutSpec.x},${cutSpec.y}:${net.doc.buildings.revision}` : '';
       if (key !== lampsKey) {
@@ -3220,13 +3232,14 @@ export function createSceneRenderer(
           x: target.x,
           y: -target.z,
           r: Math.hypot(halfWidth, groundHalfDepth) + m(20),
-          detail: rig.viewport.zoom * m(1.7) >= 10,
+          detail: optimizer.focusDetail && rig.viewport.zoom * m(1.7) >= 10,
           view,
         };
       }
 
       // The shadow pass, drawn when the map can have changed.
-      if (renderer.shadowMap.enabled) {
+      // Every frame, or every few (the lab's `shadowEvery`): what asked for it waits for the next, nothing let go.
+      if (renderer.shadowMap.enabled && optimizer.shadowDue()) {
         // The two-wheelers changed between casting and a soft disc: their shadows come or go now.
         if (agents.castersChanged) shadowMoved = true;
         // Moving only when something that moves is in the pass (`movingCasters`) or the wind bends the trees
@@ -3284,7 +3297,7 @@ export function createSceneRenderer(
         // The atlas keeps in full only the plates near what the view takes in (`flatAtlas.ts`).
         terrain.focus?.(centre.x, centre.y, halfHeight);
         // Each plate's patches for this camera, where a coarser level would move the ground by under a pixel (`terrainLod.ts`).
-        terrain.lookFrom?.(rig.camera, renderer.domElement.height);
+        terrain.lookFrom?.(rig.camera, renderer.domElement.height * optimizer.terrainPixels);
         // The roads at full detail within reach of what the view takes in, the far level beyond: a few frames apart
         roadFocus.x = centre.x; roadFocus.y = centre.y;
         // Shortened by the frame's error scale: a frame that cannot afford the buildings' detail cannot afford the roads' either.
@@ -3294,7 +3307,7 @@ export function createSceneRenderer(
           for (const { mesh } of surfaceReuse.chunks.values()) blocks.push(mesh);
           updateRoadLevels(blocks, roadFocus.x, roadFocus.y, roadFocus.reach);
         }
-        terrain.bakeRelief(renderer, close ? reliefFocus : null);
+        if (optimizer.reliefDue()) terrain.bakeRelief(renderer, close ? reliefFocus : null);
       }
       {
         // The painted fog: its map again when the fog or the land under it changed (never in the middle of a sculpting stroke).
@@ -3405,15 +3418,18 @@ export function createSceneRenderer(
         // Round the frame's whole drawing: the shadow, the scene, every pass.
         gpuTimer.poll();
         // The effects panel's switches: the passes skipped, the layers hidden for this drawing only, the shadows kept as they stand.
-        post.setSwitches(effectSwitches);
+        post.setSwitches(optimizer.postSwitches(effectSwitches));
         if (effectSwitches !== ALL_EFFECTS_ON || buildingChoices !== DEFAULT_BUILDING_CHOICES) {
           frameHider.hide(switchedOff(effectSwitches));
           buildingSwitcher.beforeRender(effectSwitches, buildingChoices, frameHider);
           if (!effectSwitches.shadowUpdate) renderer.shadowMap.needsUpdate = false;
         }
+        optimizer.beforeRender();
         gpuTimer.begin();
         post.render(delta);
         gpuTimer.end();
+        // What came into the scene given the optimisations on, a few times a second: built off the draw when that changed programs.
+        if (optimizer.afterRender()) compileChanged();
         buildingSwitcher.afterRender();
         frameHider.restore();
         tellTargets();
@@ -3432,7 +3448,7 @@ export function createSceneRenderer(
       warmBlastShaders();
       warmPreviewShaders();
       // One waiting body's geometry a frame to the GPU, before anybody draws it.
-      drainWarm(renderer);
+      if (optimizer.uploadsDue()) drainWarm(renderer);
       // Meshes still waiting to go up: another frame, so the queue never stands while the game is still (DO NOT stir the stores for it: a mesh is a caster once through the door, which says so).
       if (warmPending()) askDraw();
 
@@ -3442,9 +3458,25 @@ export function createSceneRenderer(
       requested = level;
       const resolved = level === 'auto' ? governor.current : level;
       governor.set(resolved);
-      applyQuality(resolved, settings);
+      baseQuality = settings ?? QUALITY[resolved];
+      // The lab's optimisations over the tier's settings: the same settings when none changes them.
+      applyQuality(resolved, withOptimizations(baseQuality, optimizer.values));
       compileChanged();
     },
+    setOptimizations(next) {
+      const before = optimizer.values;
+      const values = (Object.keys(DEFAULT_OPTIMIZATIONS) as (keyof Optimizations)[]).every((k) => next[k] === DEFAULT_OPTIMIZATIONS[k]) ? DEFAULT_OPTIMIZATIONS : next;
+      const { programs, shadows } = optimizer.set(values);
+      let compile = programs;
+      if (qualityOptionsDiffer(before, values)) {
+        applyQuality(governor.current, withOptimizations(baseQuality, values));
+        compile = true;
+      }
+      if (shadows) shadowMoved = true;
+      if (compile) compileChanged();
+      askDraw();
+    },
+    optimizationReport: () => optimizer.report(),
     setEffects(next, nextBuildings = DEFAULT_BUILDING_CHOICES) {
       const before = effectSwitches;
       effectSwitches = Object.values(next).every(Boolean) ? ALL_EFFECTS_ON : next;
@@ -3493,6 +3525,7 @@ export function createSceneRenderer(
       // Everything the renderer made, the GPU's included: the layers, the previews and the effects too
       fx?.dispose();
       buildingSwitcher.dispose();
+      optimizer.dispose();
       densityCars.dispose();
       exhaust.dispose();
       wear.dispose();

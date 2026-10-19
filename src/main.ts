@@ -2286,7 +2286,7 @@ const frameClock = new FrameClock(frame, () => booted && scene.opening);
 graphics.attach(scene, frameClock, requestDraw);
 effects.attach(scene, () => graphics.fullRatio(), requestDraw);
 /** The debugging lab (F7, `lab/lab.ts`): the switches, what each system costs, the code that runs, recordings and tests. */
-const lab = createLab({ scene, sim, engine, frameTimer, effects, requestDraw });
+const lab = createLab({ scene, sim, engine, frameTimer, effects, requestDraw, setPreset: (level) => { if (isQualityLevel(level)) graphics.setPreset(level); } });
 // For the probes and for an AI reading the game: the lab's context (events, frames, every switch).
 (window as unknown as { __lab: unknown }).__lab = lab.context;
 /** The flat camera kept up with the view (what the tools measure their pixels with): ten times a second. */
@@ -2385,7 +2385,7 @@ function frame(now: number): void {
   frameTimer.mark('topology');
   // The simulation steps in its own thread (`sim/host/simHost.ts`): the page sends the wall time and draws the last frame it wrote.
   // DO NOT hold the city for the page's world job (the roads' meshes): the worker steps its own network, and the streamed world's job runs whenever a tile comes.
-  sim.frame(wall, holdSim, { traffic: !game.paused && effects.traffic, pedestrians: !game.paused && effects.pedestrians, maxShare: maxPopulationShare, startShare: startPopulationShare });
+  sim.frame(wall, holdSim, { traffic: !game.paused && effects.traffic, pedestrians: !game.paused && effects.pedestrians, maxShare: maxPopulationShare * effects.populationShare, startShare: startPopulationShare });
   const alpha = holdSim ? 1 : sim.alpha;
   // The city's own periodic work, on its clock (`SimPeriodic`).
   const simTime = sim.clock.time;

@@ -1,4 +1,5 @@
 import {
+  BasicShadowMap,
   DepthFormat,
   DepthTexture,
   DirectionalLight,
@@ -102,6 +103,10 @@ export interface SunCascades {
   /** How the passes went since the last call (counts, then zeroed): each cascade's whole draws and draws over its store, and why a whole draw was asked (`scripts/layers.mjs`). */
   takeStats(): { readonly passes: number; readonly whole: readonly number[]; readonly over: readonly number[]; readonly why: Readonly<Record<string, number>> };
   setEnabled(on: boolean, mapSize: number): void;
+  /** The far cascades (1 and on) drawn at most every `n` passes, what changed meanwhile kept for their turn (the lab's optimisations, `optimizationsApply.ts`); 1: every pass, as the game draws. */
+  setFarEvery(n: number): void;
+  /** The maps made again, for the renderer's shadow map type changed (`shadowMap.type`: PCF compares its depth, Basic reads it): every cascade drawn whole next. */
+  remakeMaps(): void;
   /** Copies the sun's colour and intensity to the other cascades. */
   syncLight(): void;
   /** Every cascade's map, for the video memory count. */
@@ -138,15 +143,15 @@ class SunHold {
 
 const NDC: readonly (readonly [number, number])[] = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
 
-/** A cascade's map as three's PCF shadow map makes it (r186 `WebGLShadowMap`: a depth texture compared, linear), its colour, which nothing reads, one byte a texel instead of four. */
-function cascadeMap(size: number, name: string, reversed: boolean): WebGLRenderTarget {
+/** A cascade's map as three's PCF shadow map makes it (r186 `WebGLShadowMap`: a depth texture compared, linear), its colour, which nothing reads, one byte a texel instead of four. `basic`: as its Basic map (no comparison, nearest: `sampler2D` read by `getShadow`, a compare mode under it is undefined in GLSL ES 3.0). */
+function cascadeMap(size: number, name: string, reversed: boolean, basic = false): WebGLRenderTarget {
   const map = new WebGLRenderTarget(size, size, { format: RedFormat, type: UnsignedByteType, depthTexture: new DepthTexture(size, size, UnsignedIntType) });
   const depth = map.depthTexture!;
   depth.name = name;
   depth.format = DepthFormat;
-  depth.compareFunction = reversed ? GreaterEqualCompare : LessEqualCompare;
-  depth.minFilter = LinearFilter;
-  depth.magFilter = LinearFilter;
+  depth.compareFunction = basic ? null : reversed ? GreaterEqualCompare : LessEqualCompare;
+  depth.minFilter = basic ? NearestFilter : LinearFilter;
+  depth.magFilter = basic ? NearestFilter : LinearFilter;
   return map;
 }
 
@@ -181,6 +186,9 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   let movers: readonly Movers[] = [];
   let casters: ((texel: number | null, cascade: number) => void) | null = null;
   let enabled = true;
+  /** The far cascades drawn every this many passes (`setFarEvery`), and whether each had a change or effects asked while it waited. */
+  let farEvery = 1;
+  const carried = lights.map(() => false);
   /** The roots hidden in this frame's shadow pass, put back after it (`restore`). */
   const hidden: Object3D[] = [];
   /** Each cascade's still casters' depth, whether it holds this cascade's town as it stands, and what this frame draws of the cascade: all of it (`whole`), or what moves over the store (`over`). */
@@ -318,7 +326,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     if (!renderer) return;
     const shadow = lights[i]!.shadow;
     const size = shadow.mapSize.x;
-    if (!shadow.map) shadow.map = cascadeMap(size, `${lights[i]!.name}.shadowMap`, renderer.capabilities.reversedDepthBuffer);
+    if (!shadow.map) shadow.map = cascadeMap(size, `${lights[i]!.name}.shadowMap`, renderer.capabilities.reversedDepthBuffer, renderer.shadowMap.type === BasicShadowMap);
     let store = stores[i];
     if (!store || store.width !== size) {
       store?.dispose();
@@ -574,17 +582,24 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         framesSince[i]!++;
         // A store stands for its town only while nothing of it changed since it was taken.
         if (!still) storeValid[i] = false;
+        // A far cascade out of its turn (`setFarEvery`): what asked it to be drawn kept for its turn, its map and its matrix left as they were drawn (three updates a light's shadow matrix only as it draws it).
+        if (i > 0 && farEvery > 1 && (passNo + i) % farEvery !== 0) {
+          carried[i] = carried[i]! || changed || effects;
+          continue;
+        }
+        const wasCarried = carried[i]!;
+        carried[i] = false;
         // The town under the cascade drawn again: it changed, the cascade moved, or no store stands for it. What the wind sways is a mover (`wind.ts` markSway, `renderer.ts`): drawn over the store each frame, never frozen in it (2cc436e0), and the town under a near cascade no longer drawn again every frame for it.
-        const all = refitted[i]! || changed || effects || framesSince[i]! >= SAFETY_FRAMES || (moved && (!renderer || !storeValid[i]));
+        const all = refitted[i]! || changed || wasCarried || effects || framesSince[i]! >= SAFETY_FRAMES || (moved && (!renderer || !storeValid[i]));
         if (!fits[i]!.placed || !(all || moved)) continue;
         if (all) {
           stats.whole[i]!++;
-          if (refitted[i]) stats.why.refit++; else if (changed) stats.why.changed++; else if (effects) stats.why.effects++; else if (framesSince[i]! >= SAFETY_FRAMES) stats.why.safety++; else stats.why.noStore++;
+          if (refitted[i]) stats.why.refit++; else if (changed || wasCarried) stats.why.changed++; else if (effects) stats.why.effects++; else if (framesSince[i]! >= SAFETY_FRAMES) stats.why.safety++; else stats.why.noStore++;
           lights[i]!.shadow.needsUpdate = true;
           // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame): the movers drawn in the same pass, no copy, no second pass over them.
           whole[i] = renderer !== null && still;
           // Drawn for safety alone: its turn kept; drawn with the others (a change, a refit, effects): its turn set apart from theirs.
-          const safetyAlone = !refitted[i] && !changed && !effects && framesSince[i]! >= SAFETY_FRAMES;
+          const safetyAlone = !refitted[i] && !changed && !wasCarried && !effects && framesSince[i]! >= SAFETY_FRAMES;
           refitted[i] = false;
           framesSince[i] = safetyAlone ? 0 : -i * SAFETY_STAGGER;
         } else { over[i] = true; stats.over[i]!++; }
@@ -611,6 +626,18 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           stores[i]?.dispose();
           stores[i] = null;
         }
+        storeValid[i] = false;
+        refitted[i] = true;
+      });
+    },
+    setFarEvery(n) {
+      farEvery = Math.max(1, Math.floor(n));
+      if (farEvery === 1) carried.fill(false);
+    },
+    remakeMaps() {
+      lights.forEach((light, i) => {
+        light.shadow.map?.dispose();
+        light.shadow.map = null;
         storeValid[i] = false;
         refitted[i] = true;
       });

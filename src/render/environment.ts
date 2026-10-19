@@ -51,6 +51,10 @@ export interface SceneEnvironment {
   /** The cascades' maps, for the video memory count. */
   shadowMaps(): (WebGLRenderTarget | null)[];
   setQuality(quality: EnvironmentQuality): void;
+  /** The far cascades drawn at most every `n` passes (`SunCascades.setFarEvery`). */
+  setFarCascadeEvery(n: number): void;
+  /** The cascades' maps made again for the renderer's shadow map type (`SunCascades.remakeMaps`). */
+  remakeShadowMaps(): void;
   /** The time of day, minutes after midnight: the sun's path, the sky, the light; the moon at night. */
   setTimeOfDay(minutes: number): number;
   /** Smoke in the air, 0..1: the fog closes in and browns, the light dims. */
@@ -283,6 +287,8 @@ export function createEnvironment(
     },
     setSmog(k) { smog = Math.max(0, Math.min(1, k)); },
     setWeather(k, f) { overcast = Math.max(0, Math.min(1, k)); flash = Math.max(0, Math.min(1.5, f)); },
+    setFarCascadeEvery: (n) => cascades.setFarEvery(n),
+    remakeShadowMaps: () => cascades.remakeMaps(),
     setQuality(next) {
       cascades.setEnabled(next.shadows, next.shadowMapSize);
     },

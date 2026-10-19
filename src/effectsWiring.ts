@@ -1,4 +1,5 @@
 import { ALL_EFFECTS_ON, BUILDING_SWITCHES, DEFAULT_BUILDING_CHOICES, LAYER_SWITCHES, LIGHT_SWITCHES, POST_SWITCHES, isEffectSwitch, type BuildingChoices, type EffectSwitch, type EffectSwitches } from '@render/effectSwitches';
+import { DEFAULT_OPTIMIZATIONS, OPTIMIZATIONS, optimizationChoice, optimizationSpec, type OptId, type OptValue, type OptimizationSpec, type Optimizations } from '@render/optimizations';
 import type { SceneHandle } from '@render/renderer';
 import { createEffectsPanel, type EffectsPanel, type EffectsPanelGroup } from '@ui/effectsPanel';
 import { t } from '@ui/i18n';
@@ -19,6 +20,8 @@ const BUILDING_CHOICES: readonly { key: string; field: keyof BuildingChoices; va
 ];
 
 const STORE_KEY = 'roadcraft.effects';
+/** The lab's optimisations kept apart (`optimizations.ts`): only those set away from the game's own. */
+const OPT_STORE_KEY = 'roadcraft.optimizations';
 /** The frames the readings average over. */
 const AVERAGE_OF = 60;
 
@@ -43,6 +46,40 @@ function readKept(): Kept {
   return { ...kept, buildings: kept.buildings as unknown as BuildingChoices };
 }
 
+function readOptimizations(): Optimizations {
+  const kept: Record<string, OptValue> = { ...DEFAULT_OPTIMIZATIONS };
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(OPT_STORE_KEY) ?? '{}') as Record<string, unknown>;
+    for (const [id, value] of Object.entries(raw)) {
+      const v = optimizationChoice(id, value);
+      if (v !== undefined) kept[id] = v;
+    }
+  } catch (error) {
+    console.warn('optimizations unreadable: the game as it draws', error);
+  }
+  return kept as Optimizations;
+}
+
+/** One optimisation as the lab lists it: its spec, the value set, whether that is the game's own. */
+export interface OptimizationState {
+  readonly spec: OptimizationSpec;
+  readonly value: OptValue;
+  readonly isDefault: boolean;
+}
+
+/** The lab's optimisations (`optimizations.ts`), set live, kept between runs (`roadcraft.optimizations`). Every change told to `EffectsWiring.onChange` as `opt.<id>`. */
+export interface OptimizationControl {
+  list(): OptimizationState[];
+  get(id: string): OptValue | undefined;
+  /** False when `id` or the value is not one of its choices. */
+  set(id: string, value: unknown): boolean;
+  /** Every one back to the game's own. */
+  reset(): void;
+  values(): Optimizations;
+  /** Told of every change: the id and its new value. */
+  onChange(listener: (id: OptId, value: OptValue) => void): () => void;
+}
+
 export interface EffectsWiring {
   /** The renderer made: the switches kept apply to it from now on. `fullRatio` the whole pixel ratio the graphics options allow. */
   attach(scene: SceneHandle, fullRatio: () => number, redraw: () => void): void;
@@ -54,6 +91,10 @@ export interface EffectsWiring {
   readonly growth: boolean;
   /** Off: a frame drawn every vsync whether anything moved or not (a steady load to measure). */
   readonly onDemand: boolean;
+  /** The share of the population the simulation may put out at most, of what the screen allows (the lab's `population`). */
+  readonly populationShare: number;
+  /** The lab's optimisations. */
+  readonly optimizations: OptimizationControl;
   /** A frame's whole time on the CPU, ms (`frameTimer`). */
   frameEnded(ms: number): void;
   /** Every setting as it stands now (the lab's recorder keeps it with each recording). */
@@ -66,6 +107,8 @@ export interface EffectsWiring {
 
 export function createEffectsWiring(): EffectsWiring {
   let { effects, cpu, resolution, buildings } = readKept();
+  let optimizations = readOptimizations();
+  const optListeners: ((id: OptId, value: OptValue) => void)[] = [];
   let scene: SceneHandle | null = null;
   let fullRatio = (): number => 1;
   let redraw = (): void => {};
@@ -80,6 +123,42 @@ export function createEffectsWiring(): EffectsWiring {
     } catch (error) {
       console.warn('effects panel settings not kept', error);
     }
+  };
+  const saveOptimizations = (): void => {
+    const changed = Object.fromEntries(Object.entries(optimizations).filter(([id, v]) => v !== DEFAULT_OPTIMIZATIONS[id as OptId]));
+    try {
+      window.localStorage.setItem(OPT_STORE_KEY, JSON.stringify(changed));
+    } catch (error) {
+      console.warn('optimizations not kept', error);
+    }
+  };
+  const setOptimizations = (patch: Readonly<Record<string, OptValue>>): void => {
+    const changed = Object.entries(patch).filter(([id, v]) => optimizations[id as OptId] !== v);
+    if (!changed.length) return;
+    optimizations = { ...optimizations, ...patch };
+    saveOptimizations();
+    scene?.setOptimizations(optimizations);
+    redraw();
+    for (const [id, v] of changed) {
+      told(`opt.${id}`, v);
+      for (const listener of optListeners) listener(id as OptId, v);
+    }
+  };
+  const optimizationControl: OptimizationControl = {
+    list: () => OPTIMIZATIONS.map((spec) => ({ spec, value: optimizations[spec.id], isDefault: optimizations[spec.id] === spec.choices[0]!.value })),
+    get: (id) => (optimizationSpec(id) ? optimizations[id as OptId] : undefined),
+    set(id, value) {
+      const v = optimizationChoice(id, value);
+      if (v === undefined) return false;
+      setOptimizations({ [id]: v });
+      return true;
+    },
+    reset: () => setOptimizations(DEFAULT_OPTIMIZATIONS),
+    values: () => optimizations,
+    onChange(listener) {
+      optListeners.push(listener);
+      return () => { const i = optListeners.indexOf(listener); if (i >= 0) optListeners.splice(i, 1); };
+    },
   };
   const apply = (): void => {
     if (!scene) return;
@@ -184,6 +263,8 @@ export function createEffectsWiring(): EffectsWiring {
       fullRatio = nextFullRatio;
       redraw = nextRedraw;
       apply();
+      // DO NOT tell the renderer the defaults: it draws as the game does until one is set.
+      if (optimizations !== DEFAULT_OPTIMIZATIONS && Object.entries(optimizations).some(([id, v]) => v !== DEFAULT_OPTIMIZATIONS[id as OptId])) scene.setOptimizations(optimizations);
     },
     panel,
     get simulation() { return cpu.simulation; },
@@ -191,7 +272,10 @@ export function createEffectsWiring(): EffectsWiring {
     get pedestrians() { return cpu.pedestrians; },
     get growth() { return cpu.growth; },
     get onDemand() { return cpu.onDemand; },
-    snapshot: () => ({ ...effects, ...cpu, resolution, ...Object.fromEntries(Object.entries(buildings).map(([k, v]) => [`buildings.${k}`, v])) }),
+    get populationShare() { return typeof optimizations.population === 'number' ? optimizations.population : 1; },
+    optimizations: optimizationControl,
+    snapshot: () => ({ ...effects, ...cpu, resolution, ...Object.fromEntries(Object.entries(buildings).map(([k, v]) => [`buildings.${k}`, v])),
+      ...Object.fromEntries(Object.entries(optimizations).map(([k, v]) => [`opt.${k}`, v])) }),
     onChange(listener) {
       listeners.push(listener);
       return () => { const i = listeners.indexOf(listener); if (i >= 0) listeners.splice(i, 1); };
@@ -203,6 +287,8 @@ export function createEffectsWiring(): EffectsWiring {
         if (keys.length) set(keys, value);
       }
       for (const [key, value] of Object.entries(values)) {
+        // An optimisation by `opt.<id>` (`snapshot`).
+        if (key.startsWith('opt.')) { optimizationControl.set(key.slice(4), value); continue; }
         if (typeof value === 'boolean') continue;
         if (key === 'resolution' && typeof value === 'number') { resolution = value; save(); apply(); told(key, value); continue; }
         const choice = BUILDING_CHOICES.find((c) => c.key === key);
