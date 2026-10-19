@@ -51,6 +51,10 @@ export interface LabContext {
   onProduct(listener: (name: string, phase: string, ms: number, keys: number, idle: boolean) => void): () => void;
   /** The events kept (the last 5000). */
   events(): readonly LabEvent[];
+  /** A section every report carries (the recorder's, the tests'): `collect` asked when the report is made, its answer JSON-able. Each area registers its own (the consumers, the code profile, the GPU passes...). */
+  reportSection(name: string, collect: () => unknown): void;
+  /** Every section registered, collected now (`name` → data; a failing one gives its error). */
+  collectReport(): Record<string, unknown>;
 }
 
 /** A tab of the lab: built once, mounted when shown, refreshed a few times a second while shown. */

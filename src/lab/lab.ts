@@ -34,6 +34,7 @@ export function createLab(deps: LabDeps): Lab {
   const events: LabEvent[] = [];
   const eventListeners: ((event: LabEvent) => void)[] = [];
   const frameListeners: ((sample: LabSample, frame: FrameRecord) => void)[] = [];
+  const sections = new Map<string, () => unknown>();
   const productListeners: ((name: string, phase: string, ms: number, keys: number, idle: boolean) => void)[] = [];
   const listen = <T>(list: T[], listener: T): (() => void) => {
     list.push(listener);
@@ -63,6 +64,21 @@ export function createLab(deps: LabDeps): Lab {
     onFrame: (listener) => listen(frameListeners, listener),
     onProduct: (listener) => listen(productListeners, listener),
     events: () => events,
+    reportSection(name, collect) {
+      sections.set(name, collect);
+    },
+    collectReport() {
+      const out: Record<string, unknown> = {};
+      for (const [name, collect] of sections) {
+        try {
+          out[name] = collect();
+        } catch (error) {
+          console.error(`lab report section ${name} failed`, error);
+          out[name] = { error: String(error) };
+        }
+      }
+      return out;
+    },
   };
   deps.effects.onChange((key, value) => context.emit(`switch.${key}`, `${key} = ${String(value)}`, { key, value }));
 
