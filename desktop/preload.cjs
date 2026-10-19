@@ -14,5 +14,7 @@ contextBridge.exposeInMainWorld('roadcraftDesktop', {
 // Electron, "MessagePorts", main world of a context-isolated page: the port handed on with `window.postMessage`, the page checks the source is its own window.
 ipcRenderer.on('saves:port', (event) => window.postMessage('roadcraft:saves-port', '*', event.ports));
 ipcRenderer.on('saves:lost', () => window.postMessage('roadcraft:saves-lost', '*'));
+// The window minimized or hidden, and back (`desktop/main.cjs`): the page stops drawing and saves, as a hidden tab does (`src/desktopShown.ts`).
+ipcRenderer.on('desktop:shown', (event, shown) => window.postMessage({ roadcraftShown: shown === true }, '*'));
 ipcRenderer.on('jobs:port', (event, process) => window.postMessage({ roadcraftJobsPort: process }, '*', event.ports));
 ipcRenderer.on('jobs:lost', (event, process) => window.postMessage({ roadcraftJobsLost: process }, '*'));

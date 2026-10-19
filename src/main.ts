@@ -1,4 +1,5 @@
 import { measureHitch } from '@core/hitch';
+import { watchDesktopShown } from './desktopShown';
 import { jobChannel, jobLanes, setJobWorkerMaker, setJobWorkerSetup } from './jobs/jobPool';
 import { desktopJobWorkers } from './desktopJobs';
 import { profileOf } from '@world/roads/profile';
@@ -2420,9 +2421,9 @@ function frame(now: number): void {
 
   // Keep animating while anything is moving; otherwise settle.
   const simMoving = !game.paused && simShowsMotion();
-  if (!document.hidden && (measure.on || simMoving || roadTool.draft || mover.dragging || cameraHand.active || cameraHand.coasting || cameraMotion.moving || scene.busy())) requestDraw();
+  if (!pageHidden() && (measure.on || simMoving || roadTool.draft || mover.dragging || cameraHand.active || cameraHand.coasting || cameraMotion.moving || scene.busy())) requestDraw();
   // Only the clouds moving (they drift, form and fade), or the clock alone: a slower frame.
-  else if (!document.hidden && (!game.paused || scene.drifting())) frameClock.drift();
+  else if (!pageHidden() && (!game.paused || scene.drifting())) frameClock.drift();
 }
 
 /** Whether anything the simulation moves can be seen moving: vehicles, cars parking, people, signals, public transport. */
@@ -3540,6 +3541,17 @@ function updateStatus(): void {
   if (statusListeners.length === 0) return;
   const status = currentStatus();
   for (const listen of statusListeners) listen(status);
+}
+
+/** The desktop window minimized or hidden (`desktopShown.ts`): drawn no more and saved, as a hidden tab; drawn again when back. */
+const desktopShown = watchDesktopShown((shown) => {
+  if (!shown) { persistence.flush(); return; }
+  frameClock.restart();
+  requestDraw();
+});
+/** Nobody can see the game: the tab hidden, or the desktop window minimized or hidden. */
+function pageHidden(): boolean {
+  return document.hidden || desktopShown.hidden;
 }
 
 document.addEventListener('visibilitychange', () => {

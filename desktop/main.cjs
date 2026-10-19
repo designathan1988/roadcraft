@@ -110,6 +110,12 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
     },
   });
+  // DO NOT let the page draw minimized: with `backgroundThrottling: false` the page stays visible to the Page Visibility API (Electron, WebPreferences), its own guards never fire (AST-03). The page told when the window is out of sight and back (`src/desktopShown.ts`).
+  const tellShown = (shown) => { if (!window.isDestroyed()) window.webContents.send('desktop:shown', shown); };
+  window.on('minimize', () => tellShown(false));
+  window.on('hide', () => tellShown(false));
+  window.on('restore', () => tellShown(true));
+  window.on('show', () => tellShown(true));
   window.once('ready-to-show', () => {
     if (LOOK) return;
     window.maximize();
