@@ -160,10 +160,13 @@ describe('the far woods\' bookkeeping', () => {
     const home = RING[0]!.key;
     const scale = (): number => book.plates.get(home)!.scale;
     const full = scale();
+    // Its woods written into its mesh (the frame's \`update\`).
+    book.arrived = [];
     book.setVegetation(1_300);
     expect(scale()).toBeLessThan(full);
-    // Its instances written again at the new scale.
-    expect(book.arrived).toContain(home);
+    // Its picks sent again at the new scale, its mesh kept: never its instances written again (VEG-09).
+    expect(book.rescaled).toContain(home);
+    expect(book.arrived).not.toContain(home);
     book.setVegetation(0);
     expect(scale()).toBe(0);
     book.setVegetation(2_600);
