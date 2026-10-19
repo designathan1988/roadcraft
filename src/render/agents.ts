@@ -1122,8 +1122,9 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   // Frame of the agent currently being written.
   let occupantBand = 0;
   // DO NOT keep these as nine `let`s: a double written to a closure's variable is a new heap number, for every vehicle and every frame (`drawVehicle` was the page's first garbage, a memory probe, 2026-10-18). x, y, the heading's cosine and sine, the heading, the deck; the lean of a two-wheeler into a bend (radians, positive to the left), its cosine and sine.
-  const FRAME_X = 0, FRAME_Y = 1, FRAME_DX = 2, FRAME_DY = 3, FRAME_YAW = 4, FRAME_DECK = 5, FRAME_ROLL = 6, FRAME_COS = 7, FRAME_SIN = 8;
-  const frame = new Float64Array([0, 0, 1, 0, 0, 0, 0, 1, 0]);
+  // Here too (AGT-32, the same reason): the pixels a metre where the vehicle being drawn stands (`screenScale`: its parts' levels, `vehicleLevels.ts`), and its seconds of simulation for its occupants' own motion, both set per vehicle.
+  const FRAME_X = 0, FRAME_Y = 1, FRAME_DX = 2, FRAME_DY = 3, FRAME_YAW = 4, FRAME_DECK = 5, FRAME_ROLL = 6, FRAME_COS = 7, FRAME_SIN = 8, FRAME_PIXELS = 9, FRAME_CLOCK = 10;
+  const frame = new Float64Array([0, 0, 1, 0, 0, 0, 0, 1, 0, Number.POSITIVE_INFINITY, 0]);
   /** THE vehicle's one transform, as a rotation */
   const fq = new Quaternion();
   const qPitch = new Quaternion();
@@ -1188,8 +1189,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   let recording: VehicleDraw | null = null;
   /** The vehicle being written is off the screen and only in the shadows' reach: only the parts that cast are written (`Part.casts`). */
   let castOnly = false;
-  /** Pixels a metre where the vehicle being drawn stands (`screenScale`): its parts' levels (`vehicleLevels.ts`). */
-  let drawPixels = Number.POSITIVE_INFINITY;
 
   /** Instances [from, to) of a part changed: sent at the end of the frame, with whatever the GPU has not taken yet. */
   const touch = (part: Part, from: number, to: number): void => {
@@ -1365,8 +1364,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   const placeWheels = (plan: BodyPlan, band: number): void => {
     const d = plan.wheelRadius * 2;
     // Each at the level its size on the screen allows: the unit tyre and rim scaled by the wheel (its largest scale).
-    const wheels = rung(wheelLevels, levelFor(drawPixels * tyreSize(plan)));
-    const hubs = rung(hubLevels, levelFor(drawPixels * rimSize(plan)));
+    const wheels = rung(wheelLevels, levelFor(frame[FRAME_PIXELS]! * tyreSize(plan)));
+    const hubs = rung(hubLevels, levelFor(frame[FRAME_PIXELS]! * rimSize(plan)));
     const axles = plan.axleAlong;
     for (let axle = 0; axle < axles.length; axle++) {
       const along = axles[axle]!;
@@ -1427,7 +1426,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const look = s.look;
     const doorsMoving = vehicle.doors.length > 0;
     // The parts that do not move, each at the level whose error is under half a pixel at this car's size (`vehicleLevels.ts`).
-    const detail = levelFor(drawPixels);
+    const detail = levelFor(frame[FRAME_PIXELS]!);
     // Real shadows from the whole vehicle only; the middle level's is a soft disc (`sync`).
     const shell = band >= 2 ? car.shell : car.shellLite;
     const doors = model.doors;
@@ -1557,7 +1556,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
       const who = seatIdentity(vehicle, seatPerson(vehicle, index), hasChild);
       // The seat's pose (`riderPoses.ts`) with a glance now and then (`occupants.ts`).
       const slain = seat.driver && vehicle.slain === true;
-      const plays = occupantPlays(seat, who.seed, frameClock, seatPlays, slain);
+      const plays = occupantPlays(seat, who.seed, frame[FRAME_CLOCK]!, seatPlays, slain);
       const fixed = seat.pose === 'car' ? 0 : 1;
       const drawn = pedestrians.drawClip(who, seatPoint.x, seatPoint.y, seatPoint.h ?? frame[FRAME_DECK]! + seat.hipY, frame[FRAME_YAW]!, plays as readonly { key: CitizenClipKey; phase: number; weight: number }[],
         0, seatFitScale(seat), false, fixed, null, slain ? 'dead' : undefined);
@@ -1577,8 +1576,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
 
   /** Reused by every seated person: what they play this frame. */
   const seatPlays: Play[] = [];
-  /** Seconds of simulation, for the occupants' own motion; set per vehicle. */
-  let frameClock = 0;
   /** Seat rows drawn this frame (`SeatModel.row`); set per sync from the zoom. */
   let rowsDrawn = Infinity;
 
@@ -1670,7 +1667,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const bike = s.bike;
     if (!bike) return;
     const model = bike.model;
-    const detail = levelFor(drawPixels);
+    const detail = levelFor(frame[FRAME_PIXELS]!);
     wholeAt(bike.body, detail, s.paintTint);
     const steering = rung(bike.steering, detail);
     if (steering) place(steering, model.headX, 0, model.headY, 1, 1, 1, T_CHROME, 0, lamp.steer);
@@ -2164,12 +2161,12 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
         // A car's tyres cast only with its whole body (level 2): at level 1 its shadow is the soft disc, the tyres' dots under it were the player's to drop (2026-10-17).
         if (!twoWheeled && level >= 2) { carsWheeled = true; if (cellRecord) cellRecord.wheeled = true; }
         const parked = free && vehicle.seats === 0 && vehicle.v === 0;
-        drawPixels = pixels * levelRatio;
+        frame[FRAME_PIXELS] = pixels * levelRatio;
         // Stopped in the traffic a whole tick (a light, a queue), no indicator flashing, nobody drawn in it: as still as a parked car.
         const stopped = !free && vehicle.v === 0 && vehicle.prev.v === 0 && vehicle.indicator === 0 && (level < 2 || vehicle.seats === 0);
         // Standing where it stood, drawn as it was: its instances kept where they were written, nothing written or sent.
         let still = (parked || stopped) && !twoWheeled && vehicle.doors.length === 0 && !vehicle.kerbStop;
-        const levels = still ? levelsKey(plan, drawPixels) : 0;
+        const levels = still ? levelsKey(plan, frame[FRAME_PIXELS]!) : 0;
         if (still) {
           if (s.keptAt >= 0 && s.keptX === pose.p.x && s.keptY === pose.p.y && s.keptAngle === pose.angle && s.keptDeck === deck
             && s.keptBand === level && s.keptLevels === levels && s.keptVersion === levelsVersion && s.keptPaint === s.paint
@@ -2222,7 +2219,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
           twoWheeled ? leanOf(vehicle, s) + (fit ? fit.stopTilt * (1 - riderMoving(vehicle)) : 0) : 0,
           s.pitch, s.roll);
         occupantBand = twoWheeled ? vehicleBand : level;
-        frameClock = vehicle.age;
+        frame[FRAME_CLOCK] = vehicle.age;
 
         // Brakes and indicators, straight off the simulation.
         const decel = (vehicle.prev.v - vehicle.v) / DT;
