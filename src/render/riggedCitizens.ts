@@ -944,11 +944,11 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
         motion.set(ped, gait);
       }
       stepGait(gait, ped, batch.gait, time, heading, m(scale) / m(1), hash);
-      plays.length = 0;
-      gaitPlays(gait, batch.gait, plays);
+      const playing = gaitPlays(gait, batch.gait, plays);
       mixClips.length = 0; mixPhases.length = 0; mixWeights.length = 0;
       const carrying = ped.carry !== undefined;
-      for (const play of plays) {
+      for (let p = 0; p < playing; p++) {
+        const play = plays[p]!;
         const at = (carrying ? CARRY_AT[play.name] : undefined) ?? GAIT_AT[play.name];
         if (batch.deferred.size) want(batch, at);
         mixClips.push(batch.clips[at]!);

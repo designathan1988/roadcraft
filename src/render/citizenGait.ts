@@ -572,32 +572,37 @@ function moving(g: Gait, ped: PedView, clips: GaitClips, dt: number, speed: numb
   g.cycle = (g.cycle + stepping * dt / Math.max(1e-3, g.stride)) % 1;
 }
 
-/** Appends what the body plays now, as weighted clips at baked frames. */
-export function gaitPlays(g: Gait, clips: GaitClips, out: GaitPlay[]): void {
+/** What the body plays now, as weighted clips at baked frames, written into `out` from its start: how many. DO NOT make the plays anew each frame (some 8 objects a walker a frame, 16 thousand with a crowd, AGT-32): `out`'s own are written over, made only while it is shorter. */
+export function gaitPlays(g: Gait, clips: GaitClips, out: GaitPlay[]): number {
   const eased = g.fade * g.fade * (3 - 2 * g.fade);
-  add(g, clips, g.cur, eased, out);
-  if (g.prev) add(g, clips, g.prev, 1 - eased, out);
+  let n = add(g, clips, g.cur, eased, out, 0);
+  if (g.prev) n = add(g, clips, g.prev, 1 - eased, out, n);
+  return n;
 }
 
-function add(g: Gait, clips: GaitClips, entry: Play, weight: number, out: GaitPlay[]): void {
-  if (weight < 0.001) return;
+/** A play written at `out[n]` (made if `out` is that short), at or over the least weight: the next free place. */
+function put(out: GaitPlay[], n: number, name: GaitClipName, frame: number, weight: number): number {
+  if (weight < 0.001) return n;
+  const play = out[n];
+  if (play) { play.name = name; play.frame = frame; play.weight = weight; } else out.push({ name, frame, weight });
+  return n + 1;
+}
+
+function add(g: Gait, clips: GaitClips, entry: Play, weight: number, out: GaitPlay[], n: number): number {
+  if (weight < 0.001) return n;
   if (entry.key === 'loco') {
-    const push = (name: Cycle, w: number): void => {
-      if (w >= 0.001) out.push({ name, frame: g.cycle * clips[name].frames, weight: w });
-    };
     const forwardWalk = weight * g.forwardWeight * (1 - g.run);
     const strideWeight = forwardWalk * g.stepScale;
-    push('walkRest', forwardWalk * (1 - g.stepScale) + weight * (g.backWeight * (1 - g.backScale) + g.leftWeight * (1 - g.leftScale) + g.rightWeight * (1 - g.rightScale)));
-    push('walkBack', weight * g.backScale * g.backWeight);
-    push('walkLeft', weight * g.leftScale * g.leftWeight);
-    push('walkRight', weight * g.rightScale * g.rightWeight);
-    if (g.walkA === g.walkB) push(g.walkA, strideWeight);
+    n = put(out, n, 'walkRest', g.cycle * clips.walkRest.frames, forwardWalk * (1 - g.stepScale) + weight * (g.backWeight * (1 - g.backScale) + g.leftWeight * (1 - g.leftScale) + g.rightWeight * (1 - g.rightScale)));
+    n = put(out, n, 'walkBack', g.cycle * clips.walkBack.frames, weight * g.backScale * g.backWeight);
+    n = put(out, n, 'walkLeft', g.cycle * clips.walkLeft.frames, weight * g.leftScale * g.leftWeight);
+    n = put(out, n, 'walkRight', g.cycle * clips.walkRight.frames, weight * g.rightScale * g.rightWeight);
+    if (g.walkA === g.walkB) n = put(out, n, g.walkA, g.cycle * clips[g.walkA].frames, strideWeight);
     else {
-      push(g.walkA, strideWeight * (1 - g.walkW));
-      push(g.walkB, strideWeight * g.walkW);
+      n = put(out, n, g.walkA, g.cycle * clips[g.walkA].frames, strideWeight * (1 - g.walkW));
+      n = put(out, n, g.walkB, g.cycle * clips[g.walkB].frames, strideWeight * g.walkW);
     }
-    push('run', weight * g.forwardWeight * g.run);
-    return;
+    return put(out, n, 'run', g.cycle * clips.run.frames, weight * g.forwardWeight * g.run);
   }
-  out.push({ name: entry.key, frame: entry.phase * clips[entry.key].frames, weight });
+  return put(out, n, entry.key, entry.phase * clips[entry.key].frames, weight);
 }
