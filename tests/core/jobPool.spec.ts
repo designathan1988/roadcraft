@@ -36,7 +36,8 @@ describe('the job system', () => {
   it('keeps the long-running services and every other kind on workers apart, the lanes of a kind spread over its side', async () => {
     const { jobChannel, jobPort, jobWorkers, longWorkers, shortWorkers } = await import('@/jobs/jobPool');
     expect(jobWorkers()).toBe(4);
-    expect([longWorkers(), shortWorkers()]).toEqual([2, 2]);
+    // In a browser one long worker (the growth's one lane), three short: one of them left for the save's lanes (JOB-02).
+    expect([longWorkers(), shortWorkers()]).toEqual([1, 3]);
     // The traffic's lanes first (as the page opens), the tiles' and the growth's after: never on the traffic's workers.
     const conflicts = [0, 1].map(() => jobChannel('conflicts', () => {}));
     const traffic = FakeWorker.made.filter((w) => w.asked.some((m) => (m as unknown as { adopt?: string }).adopt === 'conflicts')).map((w) => FakeWorker.made.indexOf(w));
@@ -48,8 +49,12 @@ describe('the job system', () => {
     expect(new Set(traffic).size).toBe(2);
     for (const t of [...tiles, growth]) expect(traffic).not.toContain(t);
     for (const r of roads) expect([...tiles, growth]).not.toContain(r);
-    expect(new Set(tiles).size).toBe(2);
+    expect(new Set([...tiles, growth]).size).toBe(1);
     expect(new Set(roads).size).toBe(2);
+    // The fourth worker is the save's, made with its first lane.
+    expect(FakeWorker.made).toHaveLength(3);
+    const save = hostOf(jobPort('save'));
+    expect([...traffic, ...tiles, ...roads]).not.toContain(save);
     expect(FakeWorker.made).toHaveLength(4);
     for (const port of conflicts) port.close();
   });

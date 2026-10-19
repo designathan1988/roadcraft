@@ -21,9 +21,11 @@ const keptClear = (host: Host): boolean => KEPT_CLEAR.some((service) => host.ser
 /** How many kinds a worker hosts lanes of besides the kept-clear ones. */
 const otherKinds = (host: Host): number => { let n = 0; for (const service of host.services.keys()) if (!KEPT_CLEAR.includes(service)) n++; return n; };
 
-/** Workers set apart for the long-running services: the pool less two kept for every other kind, one at least. */
+/** Workers set apart for the long-running services: the pool less two kept for every other kind, one at least (the desktop's, in job processes outside the page's cage).
+ *  In a browser one: the long-running services have one lane (`growthPool.ts`), and a second long worker of the page's four took no lane, while the traffic's, the roads' and the ground's lanes and the save were crowded on the other two, the save waiting behind a batch of conflicts or bays (JOB-02). */
 export function longWorkers(): number {
   const n = jobWorkers();
+  if (!system.makeWorker) return 1;
   return n >= 3 ? n - 2 : 1;
 }
 
@@ -262,7 +264,10 @@ function pageRoomWorkers(): number {
 }
 
 /** How many lanes a kind of work may have: never more than the workers its side has (a lane per worker, `jobPort`; the long-running services' are `tileLanes`). */
-export const jobLanes = (most: number): number => Math.max(1, Math.min(most, shortWorkers()));
+export const jobLanes = (most: number): number => Math.max(1, Math.min(most, laneWorkers()));
+
+/** The short side's workers a kind's lanes may take: all but one while it has more than one, that one left for the kept-clear lanes (the save's writes, `KEPT_CLEAR`) - DO NOT let the traffic's lanes take every worker at the boot: the save made later shared one with them, and waited behind each batch (JOB-02). */
+const laneWorkers = (): number => { const n = shortWorkers(); return n > 1 ? n - 1 : 1; };
 
 /** One more worker of its side (`long`), while the pool and that side have room (`longWorkers`, `shortWorkers`); null when full. */
 function grow(long: boolean): Host | null {
@@ -462,13 +467,14 @@ function place(service: JobService): Host {
     // The kept-clear lanes together on their worker (never a worker each: the pool's workers are the jobs').
     const clear = KEPT_CLEAR.includes(service);
     const apart = clear ? (otherKinds(w) > 0 ? 1 : 0) : keptClear(w) ? 1 : 0;
-    const score = apart * 1_000_000 + (clear ? (keptClear(w) ? 0 : 1) : (w.services.get(service) ?? 0) * 10_000) + w.ports;
+    const score = apart * 1_000_000 + (clear ? (keptClear(w) ? 0 : 10_000) : (w.services.get(service) ?? 0) * 10_000) + w.ports;
     if (score < bestScore) { bestScore = score; best = w; }
   }
   // A worker with nothing on it scores 0: one is made for the lane while its side has room, as if every worker were there.
   // A kept-clear lane goes to their own worker once there is one, not to a new worker.
   const own = best !== null && KEPT_CLEAR.includes(service) && keptClear(best) && otherKinds(best) === 0;
-  if (best === null || (bestScore > 0 && !own)) best = grow(long) ?? best;
+  const roomForLane = long || KEPT_CLEAR.includes(service) || system.workers.filter((w) => !w.long).length < laneWorkers();
+  if (best === null || (bestScore > 0 && !own && roomForLane)) best = grow(long) ?? best;
   // A pool of one worker: the two sides share it.
   if (!best) best = system.workers.reduce<Host | null>((a, w) => (a === null || w.ports < a.ports ? w : a), null);
   if (!best) throw new Error('no job worker could be made');
