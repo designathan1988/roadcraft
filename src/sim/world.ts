@@ -6,7 +6,7 @@ import type { Network } from '@world/network';
 import { type Connector, type GraphChange, type JunctionTopology, type Lanelet, type LaneletId, LaneletGraph } from '@world/lanelets';
 import { ChangeLog } from '@core/changeLog';
 import { NetworkLength } from '@world/networkLength';
-import { LaneGrid, lanesNear } from './agents/laneGrid';
+import { LaneGrid, lanesNearInto } from './agents/laneGrid';
 import { LaneReaches } from './routing/laneReach';
 import { RouteIndex } from './routing/routeIndex';
 import { ConflictIndex, type BodyClass, WAITING } from '@world/conflictPoints';
@@ -440,14 +440,38 @@ export class SimWorld {
   /** The vehicles on the lanes within `reach` of a point and a body's length and a lane's width more, in id order: DO NOT walk the fleet to find who is near. */
   vehiclesNear(x: number, y: number, reach: number): Vehicle[] {
     const out: Vehicle[] = [];
-    for (const lane of lanesNear(this, x, y, reach + BODY_OFF_LANE)) {
+    // The lanes in no order: the vehicles are sorted by id after (SIM-28).
+    const lanes = this.nearLanes;
+    lanesNearInto(this, x, y, reach + BODY_OFF_LANE, lanes);
+    for (const lane of lanes) {
       for (const id of this.rt(lane.id).order) {
         const v = this.vehicles.get(id);
         if (v) out.push(v);
       }
     }
+    lanes.length = 0;
     return out.sort((a, b) => a.id - b.id);
   }
+
+  /** Whether `test` holds for one of `vehiclesNear`'s vehicles, asked in NO set order: for a yes or no that does not depend on it (a walker's gap, `walk.ts`). */
+  someVehicleNear(x: number, y: number, reach: number, test: (v: Vehicle) => boolean): boolean {
+    const lanes = this.nearLanes;
+    lanesNearInto(this, x, y, reach + BODY_OFF_LANE, lanes);
+    try {
+      for (const lane of lanes) {
+        for (const id of this.rt(lane.id).order) {
+          const v = this.vehicles.get(id);
+          if (v && test(v)) return true;
+        }
+      }
+      return false;
+    } finally {
+      lanes.length = 0;
+    }
+  }
+
+  /** `vehiclesNear`'s and `someVehicleNear`'s lanes, made once. */
+  private readonly nearLanes: Lanelet[] = [];
 
   /** DO NOT sort the fleet again at each change of it */
   vehiclesInIdOrder(): readonly Vehicle[] {

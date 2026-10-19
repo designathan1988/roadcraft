@@ -869,16 +869,16 @@ function gapOpen(w: SimWorld, s: State, z: Zebra, pace: number, waited: number):
   const box = path.bbox;
   const pose = TRAFFIC_POSE;
   const cx = (box.minX + box.maxX) / 2, cy = (box.minY + box.maxY) / 2;
-  for (const vehicle of w.vehiclesNear(cx, cy, reach + Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2)) {
-    if (!vehiclePoseNowInto(w, vehicle, pose)) continue;
+  // A yes or no: the vehicles asked in no order, not sorted first (SIM-28).
+  return !w.someVehicleNear(cx, cy, reach + Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2, (vehicle) => {
+    if (!vehiclePoseNowInto(w, vehicle, pose)) return false;
     const v = pose.p;
     const hit = path.closestPoint(v);
-    if (hit.distance < GAP_NEAR) return false;
-    if (vehicle.v < m(0.5) || hit.distance > vehicle.v * time) continue;
+    if (hit.distance < GAP_NEAR) return true;
+    if (vehicle.v < m(0.5) || hit.distance > vehicle.v * time) return false;
     // Coming towards it, not going away.
-    if ((hit.point.x - v.x) * Math.cos(pose.angle) + (hit.point.y - v.y) * Math.sin(pose.angle) > 0) return false;
-  }
-  return true;
+    return (hit.point.x - v.x) * Math.cos(pose.angle) + (hit.point.y - v.y) * Math.sin(pose.angle) > 0;
+  });
 }
 
 /** The zebra a walker is coming up to and has not been let onto, and the distance along its route to where it waits for it */
