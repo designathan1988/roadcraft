@@ -166,13 +166,21 @@ export function applyWear(material: Material, field: WearField, channel: 0 | 1, 
           ${channel === 0 ? `
           // Tyre rubber darkens the tracks; hard-used, the surface breaks up.
           diffuseColor.rgb *= 1.0 - 0.38 * smoothstep(0.0, 0.8, wear);
-          float holes = smoothstep(0.55, 1.0, wear) * smoothstep(0.62, 0.8, wearNoise(vWearWorld.xz * 0.45));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.06, 0.06, 0.065), holes * 0.9);
-          float cracks = smoothstep(0.3, 0.9, wear) * smoothstep(0.47, 0.5, abs(wearNoise(vWearWorld.xz * 1.7) - 0.5) * -1.0 + 0.5);
-          diffuseColor.rgb *= 1.0 - 0.3 * cracks;` : `
+          // DO NOT work the noise out under each term's threshold: its smoothstep is 0 there, the term multiplied by 0 (8 sines a pixel of every road, VIA-09).
+          if (wear > 0.55) {
+            float holes = smoothstep(0.55, 1.0, wear) * smoothstep(0.62, 0.8, wearNoise(vWearWorld.xz * 0.45));
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.06, 0.06, 0.065), holes * 0.9);
+          }
+          if (wear > 0.3) {
+            float cracks = smoothstep(0.3, 0.9, wear) * smoothstep(0.47, 0.5, abs(wearNoise(vWearWorld.xz * 1.7) - 0.5) * -1.0 + 0.5);
+            diffuseColor.rgb *= 1.0 - 0.3 * cracks;
+          }` : `
           // Feet scuff and stain the paving where people walk most.
-          float stain = smoothstep(0.0, 0.9, wear) * (0.6 + 0.4 * wearNoise(vWearWorld.xz * 0.8));
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.62, 0.6, 0.55), stain);`}
+          // None where nobody walked: its smoothstep is 0 there (VIA-09).
+          if (wear > 0.0) {
+            float stain = smoothstep(0.0, 0.9, wear) * (0.6 + 0.4 * wearNoise(vWearWorld.xz * 0.8));
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.62, 0.6, 0.55), stain);
+          }`}
         }`);
   };
   material.customProgramCacheKey = () => `${previousKey()}-wear-${key}`;
