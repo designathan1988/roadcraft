@@ -85,6 +85,8 @@ export class SimHost {
         await this.init(message.map, message.seed, message.zones, message.frames.data, message.frames.control, message.zonesPrefix, message.ambient);
         return;
       case 'load': this.meso.setLive(message.live); this.load(message.map); return;
+      // The replica made the map again by its differences (`RoadDoc.replaceWith`): the frame rebuilds what moved, the vehicles drive on (rebound where their lanes went).
+      case 'resync': this.meso.setLive(message.live); takeTrafficMap(this.doc, this.buildings, message.map); return;
       case 'lanes': this.lanes = { bays: message.bays, conflicts: message.conflicts }; return;
       case 'laneLost': (message.service === 'bays' ? this.bayPool : this.conflictPool)?.lanesLost(message.why); return;
       case 'delta':

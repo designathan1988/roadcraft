@@ -88,6 +88,8 @@ export type ToSim =
   /** `live`: the tiles the page's document holds (`world/tiles.ts`): the meso takes the others from their link tables. */
   | { readonly type: 'init'; readonly frames: SharedFrames; readonly map: TrafficMap; readonly live: readonly number[]; readonly seed: number; readonly zones: ReadonlyMap<string, Float64Array | null>; readonly zonesPrefix: string | null; readonly ambient: 'view' | 'edges' }
   | { readonly type: 'load'; readonly map: TrafficMap; readonly live: readonly number[] }
+  /** The SAME map sent whole again, when the diary cannot say what changed (its entries let go, a change without ids): the replica brought up to it, the simulation kept running (SIM-18). */
+  | { readonly type: 'resync'; readonly map: TrafficMap; readonly live: readonly number[] }
   /** The streamed world's tile store the meso reads its far tiles from (`meso/tileFeed.ts`), in IndexedDB by `map`, or over `port` (the desktop's), within `reach` of the camera. */
   | { readonly type: 'tiles'; readonly map: string; readonly reach: number; readonly port: MessagePort | null }
   /** The page's job lanes for the lots' bays and the conflict pairs (`jobPool.ts` jobChannel), before `init`: the worker opens no pool of its own. */

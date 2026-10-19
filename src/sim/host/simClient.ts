@@ -267,6 +267,12 @@ export class SimClient implements JournalReader {
     this.clearViews();
   }
 
+  /** The same map whole again, when the diary cannot say what changed: the worker's copy brought up to it, its traffic and the views kept (SIM-18). */
+  private resync(): void {
+    this.markSent();
+    this.send({ type: 'resync', map: trafficMapOf(this.doc), live: [...this.doc.loadedTiles] });
+  }
+
   /** The simulation started over on the same map. */
   reset(): void {
     this.send({ type: 'reset' });
@@ -389,7 +395,8 @@ export class SimClient implements JournalReader {
     if (this.seenDoc !== this.doc) { this.load(); return; }
     if (changes.version === this.seen) return;
     const entries = changes.since(this.seen, FOLLOWED);
-    if (entries === null) { this.load(); return; }
+    // The same map, its entries let go: DO NOT start the simulation over for it.
+    if (entries === null) { this.resync(); return; }
     this.seen = changes.version;
     if (!entries.length) return;
     const named = new Map<RecordPart, Set<number>>();
@@ -398,15 +405,15 @@ export class SimClient implements JournalReader {
     let keys = false;
     for (const e of entries) {
       if (e.kind === 'buildings') {
-        // A change of buildings that does not say which: the worker's copy made whole again.
-        if (!e.ids) { this.load(); return; }
+        // A change of buildings that does not say which: the worker's copy made whole again, its traffic kept.
+        if (!e.ids) { this.resync(); return; }
         for (const id of e.ids) buildings.add(id as BuildingId);
         continue;
       }
       const parts = RECORD_KINDS[e.kind as DocChangeKind];
       if (parts) {
-        // A change of records that does not say which: the worker's copy made whole again.
-        if (!e.ids) { this.load(); return; }
+        // A change of records that does not say which: the worker's copy made whole again, its traffic kept.
+        if (!e.ids) { this.resync(); return; }
         for (const part of parts) {
           let set = named.get(part);
           if (!set) named.set(part, set = new Set());
