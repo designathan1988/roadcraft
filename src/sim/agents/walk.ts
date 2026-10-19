@@ -1725,7 +1725,10 @@ function stepWalkers(w: SimWorld): void {
     }
 
     // --- the stripe: the most room ahead, keeping to the right (SUMO's striping).
-    if (span[1] > span[0]) {
+    // A stripe just taken is kept a moment unless it shuts (`AIM_HOLD`): DO NOT sweep the stripes while it is kept, every candidate's room ahead worked out and thrown away (SIM-06); the sweep changes nothing it reads.
+    const freeAim = span[1] > span[0] ? freeAhead(p.aim) : 0;
+    const mayChange = p.age - (p.aimAt ?? -Infinity) >= AIM_HOLD || freeAim < KEEP || p.held > HELD_SWITCH;
+    if (span[1] > span[0] && mayChange) {
       const right = span[0] + Math.min(span[1] - span[0], STRIPE * 0.5);
       // A metre less room for every stripe away from where the body is, unless its own stripe is shut or it is held
       const lateral = p.held === 0 && freeAhead(p.d) > m(0.05) ? LATERAL_PENALTY : 0;
@@ -1742,14 +1745,14 @@ function stepWalkers(w: SimWorld): void {
       const wide = span[1] - span[0] > STRIPE;
       // Held up, the stripe it holds is worth less than a free one
       const gain = p.held > HELD_SWITCH ? SWITCH_GAIN / 4 : SWITCH_GAIN;
-      let best = p.aim, bestScore = freeAhead(p.aim) - (p.aim - right) * 0.15 - Math.abs(p.aim - p.d) * lateral + gain - reserveCost(p.aim, leftEdge, oncomingLeft, leftmost, wide) / 2;
+      let best = p.aim, bestScore = freeAim - (p.aim - right) * 0.15 - Math.abs(p.aim - p.d) * lateral + gain - reserveCost(p.aim, leftEdge, oncomingLeft, leftmost, wide) / 2;
       for (let c = span[0]; c <= span[1] + 1e-6; c += STRIPE / 2) {
         const score = freeAhead(c) - (c - right) * 0.15 - Math.abs(c - p.d) * Math.max(lateral, 0.2) - reserveCost(c, leftEdge, oncomingLeft, leftmost, wide);
         if (score > bestScore) { bestScore = score; best = c; }
       }
       // A stripe just taken is kept a moment unless it shuts (`AIM_HOLD`)
       const next = clamp(best, span);
-      if (Math.abs(next - p.aim) > 1e-6 && (p.age - (p.aimAt ?? -Infinity) >= AIM_HOLD || freeAhead(p.aim) < KEEP || p.held > HELD_SWITCH)) { p.aim = next; p.aimAt = p.age; }
+      if (Math.abs(next - p.aim) > 1e-6) { p.aim = next; p.aimAt = p.age; }
     }
     p.aim = clamp(p.aim, span);
 
