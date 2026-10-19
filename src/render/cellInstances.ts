@@ -474,6 +474,7 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
     const mesh = dressedMesh(spec, posedGeometry(spec.geometry, b.poses!), format);
     mesh.instanceColor = b.tints;
     s.mesh = mesh;
+    meshList = null;
     mesh.count = 0;
     // Made at the map zoom: its cards left out as the others' (`setMap`).
     if (spec.cards && mapMode === true && !k.pictured) mesh.visible = false;
@@ -737,7 +738,9 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
       s.home = null;
     }
   };
-  const meshes = (): InstancedMesh[] => kinds.flatMap((k) => k.meshes.flatMap((s) => (s.mesh ? [s.mesh] : [])));
+  /** The meshes made, listed again only when one is made (`makeMesh`; VEG-11: read each frame for the gardens). */
+  let meshList: InstancedMesh[] | null = null;
+  const meshes = (): InstancedMesh[] => meshList ??= kinds.flatMap((k) => k.meshes.flatMap((s) => (s.mesh ? [s.mesh] : [])));
   return {
     get meshes() { return meshes(); },
     get triangles() {
@@ -774,7 +777,12 @@ export function createCellInstances(kindSpecs: readonly KindSpec[], format: Slot
         }
         for (const s of k.meshes) {
           if (!s.mesh && k.capacity > 0) made.push(makeMesh(k, s));
-          if (s.mesh && k.bounds) s.mesh.boundingSphere = new Sphere(new Vector3(k.bounds.x, k.bounds.y, k.bounds.z), k.bounds.r);
+          // Its one sphere set again, not a new one each update (VEG-11).
+          if (s.mesh && k.bounds) {
+            const sphere = s.mesh.boundingSphere ??= new Sphere();
+            sphere.center.set(k.bounds.x, k.bounds.y, k.bounds.z);
+            sphere.radius = k.bounds.r;
+          }
         }
         // Its slots came or went: culled again at the next frame.
         k.current = false;
