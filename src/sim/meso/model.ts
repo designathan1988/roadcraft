@@ -212,6 +212,28 @@ export class MesoModel {
     return c > EPS ? L / (L / v + q / c) : 0;
   }
 
+  /**
+   * `count`, `queued` and `speed` of a present link at once, into `out` (the page's buffer, `meso.ts` publish): the same numbers,
+   * from three interpolations of the rings, not ten (`queued` counts again, `speed` queues again; SIM-26).
+   */
+  flowInto(slot: number, out: { count: number; queued: number; speed: number }): void {
+    const v = this.vFreeOf[slot]!;
+    if (this.insideOf[slot]) {
+      out.count = this.microOf[slot]! + this.pendingOf[slot]!;
+      out.queued = 0;
+      out.speed = v;
+      return;
+    }
+    const L = this.lengthOf[slot]!, c = this.capOf[slot]!;
+    const ua = this.upAt[slot]!, ul = this.upLen[slot]!;
+    const down = this.cum(this.downAt[slot]!, this.downLen[slot]!, 0);
+    const count = Math.max(0, this.cum(ua, ul, 0) - down);
+    const q = Math.min(count, Math.max(0, this.cum(ua, ul, L / v / this.dt) - down));
+    out.count = count;
+    out.queued = q;
+    out.speed = q <= EPS ? v : c > EPS ? L / (L / v + q / c) : 0;
+  }
+
   /** `n` vehicles put on a link outside the window, spread along it in free flow (counted as generated). */
   seed(slot: number, n: number): void {
     if (!this.has(slot) || this.insideOf[slot] || n <= 0) return;

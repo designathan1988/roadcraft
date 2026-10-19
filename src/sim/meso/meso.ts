@@ -797,6 +797,10 @@ export class Meso {
   // ------------------------------------------------------------ the page's buffer
 
   /** Each link's numbers (and its line when it changed) into the page's buffer, then the step's serial (Atomics: the page reads a whole step's serial after its numbers). */
+  /** `flowInto`'s numbers, written into the buffer at once. */
+  private readonly flow = { count: 0, queued: 0, speed: 0 };
+  /** How many slots the last publish wrote: those past it hold no link. */
+  private publishedLinks = 0;
   private publish(w: SimWorld): void {
     const memory = this.memory;
     if (!memory) return;
@@ -808,9 +812,11 @@ export class Meso {
       const at = slot * MESO_RECORD;
       if (!model.has(slot)) { links[at + ML.flags] = 0; continue; }
       const inside = model.isInside(slot);
-      links[at + ML.count] = model.count(slot);
-      links[at + ML.queued] = model.queued(slot);
-      links[at + ML.speed] = model.speed(slot);
+      const flow = this.flow;
+      model.flowInto(slot, flow);
+      links[at + ML.count] = flow.count;
+      links[at + ML.queued] = flow.queued;
+      links[at + ML.speed] = flow.speed;
       links[at + ML.length] = model.lengthAt(slot);
       links[at + ML.lanes] = model.lanesAt(slot);
       links[at + ML.flags] = MESO_PRESENT | (inside ? MESO_INSIDE : 0) | (this.oneWay[slot] ? MESO_ONE_WAY : 0);
@@ -820,7 +826,9 @@ export class Meso {
       this.shapeSerial = (this.shapeSerial % SHAPE_WRAP) + 1;
       links[at + ML.shape] = this.shapeSerial;
     }
-    for (let slot = n; slot < memory.capacity; slot++) links[slot * MESO_RECORD + ML.flags] = 0;
+    // DO NOT clear every slot past the links each step: only those a longer list wrote before, or all of a new buffer.
+    for (let slot = n, end = whole ? memory.capacity : Math.min(memory.capacity, this.publishedLinks); slot < end; slot++) links[slot * MESO_RECORD + ML.flags] = 0;
+    this.publishedLinks = n;
     // The slots past the buffer keep their lines owed: the page makes a bigger buffer (`wanted`), written whole.
     this.dirty.fill(0, 0, n);
     memory.head[MH.time] = w.clock.time;
