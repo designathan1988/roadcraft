@@ -247,7 +247,7 @@ export class RoadTool {
     if (this.draft) {
       const at = { x: world.x + this.shift.x, y: world.y + this.shift.y };
       this.draft.snap = snapRoadEndpoint(host.doc, host.net, this.draft.start, at, host.zoom(), this.draft.heightOffset);
-      if (this.draft.samples.length < 256) this.draft.samples.push({ at, heightOffset: this.draft.heightOffset });
+      pushSample(this.draft.samples, at, this.draft.heightOffset);
       host.redraw();
       return true;
     }
@@ -585,3 +585,15 @@ const FURNITURE_CELL = m(40);
 
 /** A draft's numbers as it is judged (`RoadTool.draftKey`): the same array while none of them moved. */
 type DraftKey = readonly (string | number | null)[];
+
+/** Every sample of a stroke kept as it comes up to `DENSE_SAMPLES`; past them, one a metre or a height changed, up to `MOST_SAMPLES` (EDT-11: past the first 256 every sample was dropped, and a long stroke ran straight from its 256th to its end). A short stroke's samples, and so its path, are as ever; `roadPathFromGesture` reads them no denser than 7.2 m. */
+function pushSample(samples: RoadPathPoint[], at: Vec2, heightOffset: number): void {
+  if (samples.length >= DENSE_SAMPLES) {
+    if (samples.length >= MOST_SAMPLES) return;
+    const last = samples[samples.length - 1]!;
+    if (Math.hypot(at.x - last.at.x, at.y - last.at.y) < m(1) && last.heightOffset === heightOffset) return;
+  }
+  samples.push({ at, heightOffset });
+}
+const DENSE_SAMPLES = 256;
+const MOST_SAMPLES = 4096;
