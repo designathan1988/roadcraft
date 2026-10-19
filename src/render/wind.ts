@@ -158,26 +158,26 @@ export function wireWindGlsl(swing: string, phase: string): string {
 }
 
 /** A stiff structure in the wind - a signal post, its arm and heads */
-export function applyStructureSway(material: Material, originHeight: number, tall: number, amplitude: number, key: string): void {
+export function applyStructureSway(material: Material, originHeight: number, tall: number, amplitude: number, _key: string): void {
   installStructureSway(material, { uSwayOrigin: { value: originHeight } }, `
         uniform float uSwayOrigin;`, `
            float swayGround = instanceMatrix[3].y - uSwayOrigin;
-           vec2 swayRoot = instanceMatrix[3].xz;`, tall, amplitude, key);
+           vec2 swayRoot = instanceMatrix[3].xz;`, tall, amplitude, 'structure');
 }
 
 /** `applyStructureSway` for parts merged into one geometry: each vertex names its part's place in the instance and its origin height
  *  (`aSwayPart`: xyz, w), so each part sways as it did as an instance of its own, from its own foot and with its own phase. */
-export function applyPartSway(material: Material, tall: number, amplitude: number, key: string): void {
+export function applyPartSway(material: Material, tall: number, amplitude: number, _key: string): void {
   installStructureSway(material, {}, `
         attribute vec4 aSwayPart;`, `
            vec3 swayPartAt = (instanceMatrix * vec4(aSwayPart.xyz, 1.0)).xyz;
            float swayGround = swayPartAt.y - aSwayPart.w;
-           vec2 swayRoot = swayPartAt.xz;`, tall, amplitude, key);
+           vec2 swayRoot = swayPartAt.xz;`, tall, amplitude, 'part');
 }
 
 /** The structures' sway, with `foot` declaring where the instance's part stands (`swayGround`, `swayRoot`). */
 function installStructureSway(material: Material, uniforms: Record<string, { value: unknown }>, declarations: string, foot: string,
-  tall: number, amplitude: number, key: string): void {
+  tall: number, amplitude: number, variant: 'structure' | 'part'): void {
   markSway(material);
   const previous = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
@@ -203,5 +203,7 @@ function installStructureSway(material: Material, uniforms: Record<string, { val
          mvPosition = modelViewMatrix * mvPosition;`,
       ));
   };
-  material.customProgramCacheKey = () => `sway-${key}`;
+  // DO NOT key the program by whose it is (VEG-14: a program per signal part of the same code, as `applyWind` was): by the patch (its foot, `variant`), after whatever keyed it before.
+  const before = material.customProgramCacheKey.bind(material);
+  material.customProgramCacheKey = () => `${before()}-sway-${variant}`;
 }
