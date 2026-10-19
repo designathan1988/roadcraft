@@ -530,6 +530,36 @@ export function createSceneRenderer(
     } else if (!swayMeshes.delete(mesh)) return;
     swayChanged = true;
   };
+  /** What casts and stands still as the shadow pass draws it, as one number: every visible mesh that casts, outside the movers and what
+   *  sways - which one, its instances drawn, its draw range, its geometry and the versions of its buffers (a layer writes them only when
+   *  what it shows changed: `cellInstances.ts` reconcile). The same number, the same still casters, whatever the view did (`sunCascades.ts`
+   *  stores). Walked with one kept stack, no closure. */
+  const casterStack: Object3D[] = [];
+  const casterSignature = (): number => {
+    let h = 0x811c9dc5;
+    const mix = (v: number): void => { h = Math.imul(h ^ (v | 0), 16777619); };
+    casterStack.length = 0;
+    for (const child of scene.children) casterStack.push(child);
+    while (casterStack.length > 0) {
+      const o = casterStack.pop()!;
+      if (!o.visible || moverRoots.has(o)) continue;
+      for (const child of o.children) casterStack.push(child);
+      const mesh = o as Mesh & { isInstancedMesh?: boolean; count?: number; instanceMatrix?: { version: number } };
+      if (!mesh.isMesh || !mesh.castShadow || swayMeshes.has(mesh)) continue;
+      const g = mesh.geometry;
+      mix(mesh.id);
+      mix(g.id);
+      mix(mesh.count ?? -1);
+      mix(mesh.instanceMatrix?.version ?? -1);
+      mix(g.drawRange.start);
+      mix(g.drawRange.count === Infinity ? -1 : g.drawRange.count);
+      mix(g.index?.version ?? -1);
+      const attributes = g.attributes as Record<string, { version?: number; data?: { version: number } }>;
+      for (const name in attributes) { const a = attributes[name]!; mix(a.version ?? a.data?.version ?? -1); }
+    }
+    return h;
+  };
+  let lastCasterSignature = 0;
   const swaying: Movers = {
     get roots() {
       if (swayChanged) { swayList = [...swayMeshes]; swayChanged = false; }
@@ -3139,10 +3169,17 @@ export function createSceneRenderer(
         const viewStill = shadowView.equals(rig.camera.matrixWorld) && shadowProjection.equals(rig.camera.projectionMatrix);
         shadowView.copy(rig.camera.matrixWorld);
         shadowProjection.copy(rig.camera.projectionMatrix);
+        // DO NOT take a view that moved for casters that changed: the camera turning redrew every cascade whole at nearly every frame
+        // (the probe, 2026-10-19: 309 of 533 passes in the district turning, 369 of 592 in the street), the stores thrown away for a view
+        // whose still casters were the same. What the layers cull by the view shows in what they draw (`casterSignature`): the same
+        // signature, the same still casters, the stores stand.
+        const signature = viewStill ? lastCasterSignature : casterSignature();
+        const castersSame = viewStill || signature === lastCasterSignature;
+        lastCasterSignature = signature;
         // The buildings' levels follow the frame's error scale too (`frameBudget.ts`): one moved, other levels cast.
         const scaleStill = shadowScale === buildings.frame.scale;
         shadowScale = buildings.frame.scale;
-        const still = viewStill && scaleStill && !castersStirred;
+        const still = castersSame && scaleStill && !castersStirred;
         castersStirred = false;
         if (environment.shadowPass({ changed: shadowMoved, effects: simRunning && (fx?.busy() ?? false), still })) {
           renderer.shadowMap.needsUpdate = true;
