@@ -256,6 +256,57 @@ describe('sun cascades', () => {
     }
   });
 
+  it('gives its maps and stores back with the shadows off, and makes them again when they are on (RND-21)', () => {
+    const made: string[] = [];
+    const renderer = {
+      capabilities: { reversedDepthBuffer: false },
+      clear: () => {}, initRenderTarget: () => { made.push('store'); }, copyTextureToTexture: () => {},
+      getRenderTarget: () => null, getActiveCubeFace: () => 0, getActiveMipmapLevel: () => 0, setRenderTarget: () => {},
+      shadowMap: {
+        needsUpdate: false,
+        render(lights: DirectionalLight[]) {
+          for (const light of lights) {
+            if (!light.shadow.needsUpdate) continue;
+            light.shadow.updateMatrices(light);
+            light.shadow.needsUpdate = false;
+          }
+        },
+      },
+    };
+    const sun = new DirectionalLight(), others = [new DirectionalLight(), new DirectionalLight()];
+    const cascades = createSunCascades(sun, others, 2, renderer as unknown as WebGLRenderer);
+    cascades.setEnabled(true, 512);
+    const camera = new PerspectiveCamera(50, 16 / 9, m(0.4), m(2500));
+    camera.position.set(0, m(10), m(30));
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const sunDirection = new Vector3(-0.5, 0.75, -0.3).normalize();
+    const frame = (): void => {
+      cascades.follow(camera, sunDirection, flat, new Vector3(), m(40));
+      cascades.pass({ changed: false, effects: false, still: true });
+      renderer.shadowMap.render(cascades.lights as DirectionalLight[]);
+      cascades.restore();
+    };
+    frame();
+    const held = (): number => cascades.maps().filter((t) => t !== null).length;
+    expect(held()).toBe(2 * SUN_CASCADES);
+    const disposed: number[] = [];
+    cascades.maps().forEach((t, i) => t!.addEventListener('dispose', () => disposed.push(i)));
+    // Off: no map, no store left on the GPU
+    cascades.setEnabled(false, 512);
+    expect(held()).toBe(0);
+    expect(disposed.length).toBe(2 * SUN_CASCADES);
+    made.length = 0;
+    frame();
+    expect(held()).toBe(0);
+    expect(made).toEqual([]);
+    // On again: every cascade drawn into maps and stores made again
+    cascades.setEnabled(true, 512);
+    frame();
+    expect(held()).toBe(2 * SUN_CASCADES);
+    expect(made.length).toBe(SUN_CASCADES);
+  });
+
   it('lights the sun once in three\'s shaders, by the finest cascade that holds the point', () => {
     cascadedSunChunks();
     cascadedSunChunks();

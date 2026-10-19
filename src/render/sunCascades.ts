@@ -600,6 +600,13 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           light.shadow.map = null;
           fits[i]!.placed = false;
         }
+        // Off: the map and the store given back (`ensureMap` makes them again when the cascade is next drawn, `refitted` below).
+        if (!on) {
+          light.shadow.map?.dispose();
+          light.shadow.map = null;
+          stores[i]?.dispose();
+          stores[i] = null;
+        }
         storeValid[i] = false;
         refitted[i] = true;
       });
