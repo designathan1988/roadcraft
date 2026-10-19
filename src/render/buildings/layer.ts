@@ -332,12 +332,15 @@ export function createBuildingLayer(): BuildingLayer {
   const entriesOf = (list: readonly Building[], groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt): CellEntry[] =>
     list.map((b) => entryFor(b, groundAt, groundKey, pavedAt));
   /** Each pending cell's entries as last made, and what they were made from: DO NOT make them again every frame while the cell waits (4.8 s of the opening's page in entryFor, wprof4): the same records, ground and cut-open view give the same entries. */
-  const cellEntries = new Map<string, { readonly list: readonly Building[]; readonly groundKey: string; readonly cutaway: CutawaySpec | null; readonly entries: CellEntry[] }>();
+  const cellEntries = new Map<string, { readonly list: readonly Building[]; readonly groundKey: string; readonly cut: string; readonly entries: CellEntry[] }>();
+  /** What a cell's entries read of the cut-open view (`near`, `entryOf`), exactly: DO NOT compare the spec by identity, the wiring hands a new one every frame and every pending cell's entries were made again (PRD-12). */
+  const cutOf = (c: CutawaySpec | null): string => c ? `${c.only ?? ''}:${c.level}:${c.x}:${c.y}:${c.radius}:${Math.round(Math.atan2(c.view.y, c.view.x) / (Math.PI / 4))}` : '';
   const entriesFor = (cell: string, list: readonly Building[], groundAt: GroundAt, groundKey: string, pavedAt?: PavedAt): CellEntry[] => {
     const known = cellEntries.get(cell);
-    if (known && known.groundKey === groundKey && known.cutaway === cutaway && known.list.length === list.length && known.list.every((b, i) => list[i] === b)) return known.entries;
+    const cut = cutOf(cutaway);
+    if (known && known.groundKey === groundKey && known.cut === cut && known.list.length === list.length && known.list.every((b, i) => list[i] === b)) return known.entries;
     const entries = entriesOf(list, groundAt, groundKey, pavedAt);
-    cellEntries.set(cell, { list: list.slice(), groundKey, cutaway, entries });
+    cellEntries.set(cell, { list: list.slice(), groundKey, cut, entries });
     return entries;
   };
   /** What the page keeps of each building the workers emitted */

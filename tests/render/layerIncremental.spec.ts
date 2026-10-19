@@ -240,7 +240,10 @@ describe('a cell waiting for its level', () => {
     const land = layer.slice(layer.indexOf('const landCells'), layer.indexOf('const landCells') + 3000);
     expect(land).toMatch(/const entries = entriesFor\(cell, list, groundAt, groundKey, pavedAt\)/);
     const keep = layer.slice(layer.indexOf('const entriesFor'), layer.indexOf('const entriesFor') + 600);
-    expect(keep).toMatch(/known\.groundKey === groundKey && known\.cutaway === cutaway && known\.list\.length === list\.length && known\.list\.every/);
+    expect(keep).toMatch(/known\.groundKey === groundKey && known\.cut === cut && known\.list\.length === list\.length && known\.list\.every/);
+    // The cut-open view by every number its entries read, not by identity (a new spec every frame from the wiring, PRD-12).
+    const cutOf = layer.slice(layer.indexOf('const cutOf'), layer.indexOf('const cutOf') + 300);
+    for (const field of ['c.only', 'c.level', 'c.x', 'c.y', 'c.radius', 'c.view.y, c.view.x']) expect(cutOf).toContain(field);
   });
 });
 
