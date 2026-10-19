@@ -117,13 +117,13 @@ function legacyOutput(polygons: KernelMultiPoly): MultiPoly {
 function compatibleRun(kind: ClipType, a: MultiPoly, b: MultiPoly = []): MultiPoly {
   try {
     return run(kind, a, b);
-  } catch {
-    return martinezRun(kind, a, b);
+  } catch (error) {
+    return martinezRun(kind, a, b, { error });
   }
 }
 
-/** The Martinez kernel (`polygon-clipping`), with Clipper2 for its failures. */
-function martinezRun(kind: ClipType, a: MultiPoly, b: MultiPoly = []): MultiPoly {
+/** The Martinez kernel (`polygon-clipping`), with Clipper2 for its failures; `clipperFailed`: Clipper2 already failed on these, with that error. */
+function martinezRun(kind: ClipType, a: MultiPoly, b: MultiPoly = [], clipperFailed?: { readonly error: unknown }): MultiPoly {
   const subjects = legacyInput(a);
   if (!subjects.length) return [];
   const clips = legacyInput(b);
@@ -133,6 +133,8 @@ function martinezRun(kind: ClipType, a: MultiPoly, b: MultiPoly = []): MultiPoly
     return legacyOutput(clipping.intersection(subjects, clips));
   } catch {
     // Martinez can fail to locate a sweep segment or grow its event queue indefinitely on a valid cluster of nearly coincident
+    // DO NOT run Clipper2 again on what it already failed on (JOB-13): the same run, the same error.
+    if (clipperFailed) throw clipperFailed.error;
     return run(kind, a, b);
   }
 }
