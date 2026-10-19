@@ -26,7 +26,7 @@ import { loadRocketboxClips } from './citizenWalk';
 import { type Gradient, shearMatrix } from './groundShear';
 import { PACKED_BONE_FLOATS, SKIN_BONE_FLOATS, blendPackedFrames } from './citizenPalette';
 import { GPU_PLAYS, appendClip, citizenAtlas, cpuPose, gpuPlays, type CitizenAtlas, type Play } from './citizenPlays';
-import { createPalettePass, type PalettePass } from './people/crowdAnimation';
+import { createPalettePass, type PalettePass, MOST_ROW_RANGES } from './people/crowdAnimation';
 import { createGait, gaitHeading, gaitPlays, stepGait, type Gait, type GaitClips, type GaitPlay } from './citizenGait';
 import {
   CARRY_AT, GAIT_AT, LIBRARY_AT, RIDER_AT, WALK, WALK_ELDER, WALK_SHUFFLE, afterFrame, bake, gaitClips,
@@ -1124,7 +1124,8 @@ export function createRiggedCitizens(models: readonly string[] = CROWD_IDS,
             const morph = mesh.morphTexture;
             morph.clearUpdateRanges();
             const row = morph.image.width;
-            if (count * 2 < morph.image.height) for (let i = 0; i < count; i++) morph.addUpdateRange(i * row, row);
+            // A row a call for a few faces; past them the whole texture in one (three sends each range alone, a row high: AGT-06).
+            if (count <= MOST_ROW_RANGES) for (let i = 0; i < count; i++) morph.addUpdateRange(i * row, row);
             morph.needsUpdate = true;
           }
         }

@@ -23,6 +23,9 @@ import { freeSlab, growSlab, takeSlab } from './paletteTargets';
 /** A crowd's animation on the GPU, as GPU Gems 3, chapter 2 ("Animated Crowd Rendering") lays it out */
 
 /** Texels a bone takes in the animation texture (twelve floats). */
+/** Rows sent a range a call at most: three sends each update range as its own texSubImage2D, a row high (r186 `WebGLTextures.updateTexture`); past this many the whole texture goes in one call (AGT-06). */
+export const MOST_ROW_RANGES = 8;
+
 const ATLAS_TEXELS = 3;
 /** Plays blended per person in the palette pass (a rider's are four). */
 const PLAYS = 4;
@@ -279,14 +282,15 @@ export function createPalettePass(anim: ClassAnimation, parent: Int16Array, join
       if (dirtyAll || dirty.size) {
         // Each update range is one row of the image in three (WebGLTextures.js)
         playTexture.clearUpdateRanges();
-        if (!dirtyAll && dirty.size <= 8) for (const row of dirty) playTexture.addUpdateRange(row * PLAY_TEXELS * 4, PLAY_TEXELS * 4);
+        if (!dirtyAll && dirty.size <= MOST_ROW_RANGES) for (const row of dirty) playTexture.addUpdateRange(row * PLAY_TEXELS * 4, PLAY_TEXELS * 4);
         playTexture.needsUpdate = true;
         dirty.clear();
         dirtyAll = false;
       }
       if (overrideRows.size) {
         overrideTexture.clearUpdateRanges();
-        for (const row of overrideRows) overrideTexture.addUpdateRange(row * width * 4, width * 4);
+        // A row a call for a few; past them the whole texture in one (AGT-06), as the plays above.
+        if (overrideRows.size <= MOST_ROW_RANGES) for (const row of overrideRows) overrideTexture.addUpdateRange(row * width * 4, width * 4);
         overrideTexture.needsUpdate = true;
         overrideRows.clear();
       }

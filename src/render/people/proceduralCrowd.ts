@@ -26,7 +26,7 @@ import {
   EXPR, EXPR_SLOTS, FACE_WIDTH, SHAPES, classData, classFromRecord, classRig, cookAll, createBakeEnv,
   hairBase, hairCards, packFromRecord, type AgeBand,
 } from './proceduralBake';
-import { buildClassAnimation, createPalettePass, type ClassAnimation, type PalettePass } from './crowdAnimation';
+import { buildClassAnimation, createPalettePass, type ClassAnimation, type PalettePass, MOST_ROW_RANGES } from './crowdAnimation';
 import { BODY_WIDTH, createClassBodies, type ClassBodies } from './crowdBodies';
 import { createGpuRows, type GpuRows } from './gpuRows';
 import { classRigInWorker, personFaceInWorker, wearInWorker } from '../bakePool';
@@ -2284,7 +2284,8 @@ export function createProceduralCrowd(options: { hair?: boolean; /** World units
         }
         // The rows of the people placed, a range a row; most of the class: the whole (small) texture.
         const places = cls.uniforms.procPerson.value;
-        if (cls.placed.length * 2 < cls.capacity) for (const row of cls.placed) touchRows(places, row, 1);
+        // DO NOT send them a row a call past a few: three sends each range as its own texSubImage2D, a row high (r186 `updateTexture`), and 500 people were 500 calls a frame (AGT-06); the whole texture is one, as `crowdAnimation.ts` does past `MOST_ROW_RANGES`.
+        if (cls.placed.length <= MOST_ROW_RANGES) for (const row of cls.placed) touchRows(places, row, 1);
         else if (cls.placed.length) { places.clearUpdateRanges(); places.needsUpdate = true; }
         cls.placed.length = 0;
         for (const piece of cls.pieces) {
