@@ -9,6 +9,8 @@ export interface LabColumn<R> {
   format?(value: number, row: R): string;
   /** A tooltip for the head. */
   readonly title?: string;
+  /** A bar behind each number, its length its share of the column's largest shown: the biggest consumers seen at a glance. */
+  readonly bar?: boolean;
 }
 
 export interface LabTableOptions<R> {
@@ -28,6 +30,8 @@ export interface LabTable {
   readonly element: HTMLElement;
   /** The rows read again and drawn (sorted and filtered as set). */
   refresh(): void;
+  /** The filter set from outside (a usage meter clicked, `LabTab.focus`): the text searched and/or the category shown. */
+  setFilter(filter: { readonly text?: string; readonly category?: string }): void;
 }
 
 const fmt = (v: number): string => (Number.isInteger(v) ? v.toLocaleString('pt-BR') : v.toLocaleString('pt-BR', { maximumFractionDigits: 2 }));
@@ -117,8 +121,16 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
     drawCategories();
     shown = filtered();
     const limit = options.limit ?? 400;
+    const page = shown.slice(0, limit);
+    const largest = new Map<string, number>();
+    for (const c of options.columns) {
+      if (!c.bar) continue;
+      let most = 0;
+      for (const row of page) { const v = c.value(row); if (typeof v === 'number' && Math.abs(v) > most) most = Math.abs(v); }
+      largest.set(c.key, most);
+    }
     const rows: HTMLElement[] = [];
-    for (const row of shown.slice(0, limit)) {
+    for (const row of page) {
       const tr = document.createElement('tr');
       for (const c of options.columns) {
         const td = document.createElement('td');
@@ -126,7 +138,13 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
         if (typeof v === 'number') {
           td.className = 'num';
           td.textContent = c.format ? c.format(v, row) : fmt(v);
-        } else td.textContent = v ?? '';
+          const most = largest.get(c.key);
+          if (most) td.style.setProperty('--bar', `${Math.min(100, (Math.abs(v) / most) * 100).toFixed(1)}%`);
+          if (most) td.classList.add('bar');
+        } else {
+          td.textContent = v ?? '';
+          td.title = v ?? '';
+        }
         tr.appendChild(td);
       }
       if (options.onRow) tr.onclick = () => options.onRow!(row);
@@ -148,5 +166,17 @@ export function createLabTable<R>(options: LabTableOptions<R>): LabTable {
   search.oninput = refresh;
   category.onchange = refresh;
   drawHead();
-  return { element: root, refresh };
+  return {
+    element: root,
+    refresh,
+    setFilter(filter) {
+      if (filter.text !== undefined) search.value = filter.text;
+      if (filter.category !== undefined) {
+        drawCategories();
+        if (![...category.options].some((o) => o.value === filter.category)) category.appendChild(new Option(filter.category, filter.category));
+        category.value = filter.category;
+      }
+      refresh();
+    },
+  };
 }

@@ -3,8 +3,10 @@ import type { FrameRecord, FrameTimer } from '@core/health';
 import type { SceneHandle } from '@render/renderer';
 import type { SimClient } from '@sim/host/simClient';
 import type { EffectsWiring } from '../effectsWiring';
-import { LAB_REFRESH_MS, type LabContext, type LabEvent, type LabSample, type LabTab } from './labTypes';
+import { type LabContext, type LabEvent, type LabSample, type LabTab } from './labTypes';
 import { createLabTabs } from './tabs';
+import { createUsageMeter } from './usage';
+import { createLabWindow } from './window';
 import './lab.css';
 
 /** THE DEBUGGING LAB (F7): one window of tabs over the game - the switches and optimisations, what every system costs, the code that runs, the GPU's passes, the recordings and the tests. Every tab is handed the same context (`labTypes.ts`). */
@@ -35,6 +37,7 @@ export function createLab(deps: LabDeps): Lab {
   const eventListeners: ((event: LabEvent) => void)[] = [];
   const frameListeners: ((sample: LabSample, frame: FrameRecord) => void)[] = [];
   const sections = new Map<string, () => unknown>();
+  let navigateTo: (id: string, params?: Readonly<Record<string, string>>) => void = () => {};
   const productListeners: ((name: string, phase: string, ms: number, keys: number, idle: boolean) => void)[] = [];
   const listen = <T>(list: T[], listener: T): (() => void) => {
     list.push(listener);
@@ -64,6 +67,7 @@ export function createLab(deps: LabDeps): Lab {
     onFrame: (listener) => listen(frameListeners, listener),
     onProduct: (listener) => listen(productListeners, listener),
     events: () => events,
+    navigate: (id, params) => navigateTo(id, params),
     reportSection(name, collect) {
       sections.set(name, collect);
     },
@@ -82,96 +86,21 @@ export function createLab(deps: LabDeps): Lab {
   };
   deps.effects.onChange((key, value) => context.emit(`switch.${key}`, `${key} = ${String(value)}`, { key, value }));
 
-  // ---- the window
-  const panel = document.createElement('aside');
-  panel.className = 'lab-panel';
-  panel.hidden = true;
-  panel.setAttribute('aria-label', 'Laboratório de depuração');
-  const header = document.createElement('header');
-  const title = document.createElement('strong');
-  title.textContent = 'Laboratório';
-  const tabBar = document.createElement('nav');
-  tabBar.className = 'lab-tabs';
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'lab-close';
-  close.textContent = '×';
-  close.title = 'Fechar (Esc, F7)';
-  header.append(title, tabBar, close);
-  const body = document.createElement('section');
-  body.className = 'lab-body';
-  panel.append(header, body);
-  document.body.appendChild(panel);
-
-  // Dragged by its head.
-  header.addEventListener('pointerdown', (e) => {
-    if (e.target !== header && e.target !== title) return;
-    const rect = panel.getBoundingClientRect();
-    const dx = e.clientX - rect.left, dy = e.clientY - rect.top;
-    const move = (m: PointerEvent): void => {
-      panel.style.left = `${Math.max(0, Math.min(window.innerWidth - 80, m.clientX - dx))}px`;
-      panel.style.top = `${Math.max(0, Math.min(window.innerHeight - 40, m.clientY - dy))}px`;
-      panel.style.right = 'auto';
-    };
-    const up = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-  });
-
   const tabs: LabTab[] = createLabTabs(context);
-  let current: LabTab | null = null;
-  let timer: number | null = null;
-  const buttons = new Map<string, HTMLButtonElement>();
-  for (const tab of tabs) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = tab.title;
-    b.onclick = () => show(tab.id);
-    buttons.set(tab.id, b);
-    tabBar.appendChild(b);
-  }
-
-  function show(id: string): void {
-    const tab = tabs.find((t) => t.id === id) ?? tabs[0];
-    if (!tab) return;
-    if (current && current !== tab) current.unmount?.();
-    current = tab;
-    for (const [key, b] of buttons) b.classList.toggle('on', key === tab.id);
-    body.replaceChildren();
-    tab.mount(body);
-    try { window.localStorage.setItem('roadcraft.lab.tab', tab.id); } catch (error) { console.warn('lab tab not kept', error); }
-  }
-  const tick = (): void => {
-    try {
-      current?.refresh?.();
-    } catch (error) {
-      console.error('lab tab refresh failed', error);
-    }
-  };
+  const usage = createUsageMeter(context);
+  const win = createLabWindow(context, tabs, usage);
+  navigateTo = (id, params) => win.open(id, params);
 
   // ---- the frames
   let lastStart = 0;
   const lab: Lab = {
     context,
     open(id) {
-      panel.hidden = false;
-      let kept: string | null = null;
-      try { kept = window.localStorage.getItem('roadcraft.lab.tab'); } catch (error) { console.warn('lab tab not read', error); }
-      show(id ?? current?.id ?? kept ?? tabs[0]?.id ?? '');
-      timer ??= window.setInterval(tick, LAB_REFRESH_MS);
-      context.emit('lab.open', 'laboratório aberto');
+      win.open(id);
     },
-    close() {
-      if (panel.hidden) return false;
-      panel.hidden = true;
-      current?.unmount?.();
-      current = null;
-      if (timer !== null) window.clearInterval(timer);
-      timer = null;
-      return true;
-    },
+    close: () => win.close(),
     toggle() {
-      if (!lab.close()) lab.open();
+      if (!win.close()) win.open();
     },
     frameEnded(frame) {
       if (!frameListeners.length) { lastStart = frame.start; return; }
@@ -193,6 +122,5 @@ export function createLab(deps: LabDeps): Lab {
       for (const listener of frameListeners) listener(sample, frame);
     },
   };
-  close.onclick = () => lab.close();
   return lab;
 }

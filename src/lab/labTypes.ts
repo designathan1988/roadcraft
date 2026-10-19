@@ -55,6 +55,8 @@ export interface LabContext {
   reportSection(name: string, collect: () => unknown): void;
   /** Every section registered, collected now (`name` → data; a failing one gives its error). */
   collectReport(): Record<string, unknown>;
+  /** Shows the tab `id` (the lab opened if closed) and hands it `params` (`LabTab.focus`): a usage meter clicked opens what consumes it. */
+  navigate(id: string, params?: Readonly<Record<string, string>>): void;
 }
 
 /** A tab of the lab: built once, mounted when shown, refreshed a few times a second while shown. */
@@ -67,6 +69,8 @@ export interface LabTab {
   refresh?(): void;
   /** Hidden (another tab, or the lab closed). */
   unmount?(): void;
+  /** Asked to show something in particular, after `mount` (`LabContext.navigate`): e.g. `{ category: 'GPU' }`, `{ filter: 'shadow' }`, `{ id: 'bShadows' }`. */
+  focus?(params: Readonly<Record<string, string>>): void;
 }
 
 export const LAB_REFRESH_MS = 300;
