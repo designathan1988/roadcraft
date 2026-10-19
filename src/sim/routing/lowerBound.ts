@@ -19,14 +19,23 @@ export function tripLowerBound(w: LaneLookup, goal: LaneletId): (lane: LaneletId
   return (id) => {
     let h = known.get(id);
     if (h === undefined) {
-      const lane = w.lanelet(id);
-      if (!lane) h = 0;
-      else {
-        const p = lane.centre.point(lane.centre.n - 1);
-        h = Math.hypot(end.x - p.x, end.y - p.y) / FASTEST_LIMIT;
-      }
+      h = laneLowerBound(w, id, end);
       known.set(id, h);
     }
     return h;
   };
+}
+
+/** The end of the goal lane, for `laneLowerBound`; null when there is no goal lane. */
+export function goalEnd(w: LaneLookup, goal: LaneletId): { readonly x: number; readonly y: number } | null {
+  const target = w.lanelet(goal);
+  return target ? target.centre.point(target.centre.n - 1) : null;
+}
+
+/** The bound to the goal ending at `end` from the end of lane `id`, seconds (`tripLowerBound` works each out once a search). */
+export function laneLowerBound(w: LaneLookup, id: LaneletId, end: { readonly x: number; readonly y: number }): number {
+  const lane = w.lanelet(id);
+  if (!lane) return 0;
+  const p = lane.centre.point(lane.centre.n - 1);
+  return Math.hypot(end.x - p.x, end.y - p.y) / FASTEST_LIMIT;
 }

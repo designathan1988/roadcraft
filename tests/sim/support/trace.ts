@@ -1,4 +1,5 @@
 import { RoadDoc } from '@world/doc';
+import type { NodeId } from '@world/ids';
 import { Network } from '@world/network';
 import { SimWorld } from '@sim/world';
 import { step } from '@sim/pipeline';
@@ -7,7 +8,7 @@ import { step } from '@sim/pipeline';
 export function avenueGrid(seed = 0x5eed): { doc: RoadDoc; net: Network; sim: SimWorld } {
   const doc = new RoadDoc();
   const n = 3, gap = 320;
-  const ids: number[][] = [];
+  const ids: NodeId[][] = [];
   for (let i = 0; i < n; i++) {
     ids.push([]);
     for (let j = 0; j < n; j++) ids[i]!.push(doc.addNode({ x: (i - 1) * gap, y: (j - 1) * gap }).id);

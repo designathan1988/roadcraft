@@ -1,0 +1,184 @@
+// The trip searches as they were before SIM-01 (string keys, a Map per search), the oracle the dense ones are checked against.
+import type { LaneletId } from '@world/lanelets';
+import type { BodyClass } from '@world/conflictPoints';
+import { m } from '@world/units';
+import type { SimWorld } from '@sim/world';
+import { tripLowerBound } from '@sim/routing/lowerBound';
+
+/** Drive v2, tactical layer: which LANE a trip is driven in. */
+
+/** Seconds a lane change costs the trip, per lane crossed. Also the hysteresis. */
+const CHANGE_COST = 4;
+/** Road a change needs, per lane crossed. */
+const ROOM_PER_LANE = m(24);
+
+export interface TripPlan {
+  /** Drivable from the start lane: links joined by their connectors */
+  readonly route: LaneletId[];
+  /** The sibling lane to move into before leaving the start lane, or null. */
+  readonly changeTo: LaneletId | null;
+  /** With `changeTo`: the connector the trip leaves that lane by. */
+  readonly intent: LaneletId | null;
+  readonly cost: number;
+}
+
+interface Node {
+  readonly key: string;
+  readonly lane: LaneletId;
+  /** Arrived by a lane change: another may not follow on the same lane. */
+  readonly changed: boolean;
+  readonly cost: number;
+  /** `cost` and a lower bound of what is left to the goal (`tripLowerBound`): the order the search takes nodes in. */
+  readonly f: number;
+}
+
+interface Step {
+  readonly from: string;
+  /** The connector taken, or null for a lane change. */
+  readonly connector: LaneletId | null;
+}
+
+const keyOf = (lane: LaneletId, changed: boolean): string => (changed ? `${lane}|c` : lane);
+
+const compare = (a: Node, b: Node): number => a.f - b.f || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
+function push(heap: Node[], value: Node): void {
+  let at = heap.length;
+  heap.push(value);
+  while (at > 0) {
+    const parent = (at - 1) >> 1;
+    if (compare(heap[parent]!, value) <= 0) break;
+    heap[at] = heap[parent]!;
+    at = parent;
+  }
+  heap[at] = value;
+}
+
+function pop(heap: Node[]): Node | undefined {
+  const first = heap[0];
+  const tail = heap.pop();
+  if (!first || !tail || heap.length === 0) return first;
+  let at = 0;
+  while (at * 2 + 1 < heap.length) {
+    let child = at * 2 + 1;
+    if (child + 1 < heap.length && compare(heap[child + 1]!, heap[child]!) < 0) child++;
+    if (compare(tail, heap[child]!) <= 0) break;
+    heap[at] = heap[child]!;
+    at = child;
+  }
+  heap[at] = tail;
+  return first;
+}
+
+/** Seconds to drive on through a connector and the link it leads to, with its congestion. */
+function connectorCost(w: SimWorld, connectorId: LaneletId, body: BodyClass, shape: string): number {
+  const connector = w.connector(connectorId);
+  const out = connector && w.lanelet(connector.toLane);
+  if (!connector || connector.maxBodyClass < body || !out || out.kind !== 'link' || w.rt(out.id).ghost) return Infinity;
+  // A bus lane is buses only.
+  if (!w.graph.laneUsable(out.id, shape)) return Infinity;
+  const density = w.rt(out.id).order.length / Math.max(1, out.length / m(4.8));
+  const travel = out.length / Math.max(m(0.2), out.speedLimit) * (1 + density * 2.6);
+  const turn = connector.turn === 'uturn' ? 4 : connector.turn === 'through' ? 0 : 0.35;
+  return connector.length / Math.max(m(0.2), out.speedLimit * 0.65) + travel + turn;
+}
+
+/** DO NOT go back to Dijkstra's order (cost alone) */
+export function planTripOld(
+  w: SimWorld,
+  start: LaneletId,
+  startS: number,
+  goal: LaneletId,
+  body: BodyClass,
+  startChange = true,
+  /** The vehicle's shape (`VehicleShape`): who may drive a bus lane. */
+  shape = 'car',
+  /** Whether a plan that changes lanes first needs its route as driven without the change (a second search): DO NOT ask it when the route is let go (`router.ts` extend, a bus's check). */
+  fallback = true,
+): TripPlan | null {
+  const startLane = w.lanelet(start);
+  if (!startLane || startLane.kind !== 'link' || !w.lanelet(goal) || w.rt(goal).ghost) return null;
+  if (start === goal) return { route: [start], changeTo: null, intent: null, cost: 0 };
+  // DO NOT expand the whole graph to find out a goal cannot be reached: the lanes' components say so first (`laneReach.ts`).
+  if (!w.laneReaches.mayReach(w, start, goal, body)) return null;
+
+  const best = new Map<string, number>([[start, 0]]);
+  const parent = new Map<string, Step>();
+  const heap: Node[] = [];
+  const toGo = tripLowerBound(w, goal);
+  push(heap, { key: start, lane: start, changed: !startChange, cost: 0, f: toGo(start) });
+
+  let reached: Node | null = null;
+  while (heap.length) {
+    const node = pop(heap)!;
+    if (node.cost > (best.get(node.key) ?? Infinity) + 1e-9) continue;
+    if (node.lane === goal) {
+      reached = node;
+      break;
+    }
+    const lane = w.lanelet(node.lane);
+    if (!lane || lane.kind !== 'link') continue;
+
+    for (const id of w.graph.exitsOf(node.lane)) {
+      const step = connectorCost(w, id, body, shape);
+      if (!Number.isFinite(step)) continue;
+      const out = w.connector(id)!.toLane;
+      const cost = node.cost + step;
+      relax(heap, best, parent, out, out, false, cost, toGo, node.key, id);
+    }
+
+    if (node.changed || lane.laneIndex === undefined) continue;
+    const room = node.lane === start ? lane.length - startS : lane.length;
+    // Only across dashed lines, into lanes this vehicle may drive.
+    for (const sibling of w.graph.changeTargets(node.lane, shape)) {
+      const other = w.lanelet(sibling);
+      if (!other || other.kind !== 'link' || other.laneIndex === undefined || w.rt(sibling).ghost) continue;
+      const lanes = Math.abs(other.laneIndex - lane.laneIndex);
+      if (lanes === 0 || room < lanes * ROOM_PER_LANE) continue;
+      const key = keyOf(sibling, true);
+      const cost = node.cost + lanes * CHANGE_COST;
+      relax(heap, best, parent, key, sibling, true, cost, toGo, node.key, null);
+    }
+  }
+  if (!reached) return null;
+
+  // The steps, start to goal.
+  const steps: { lane: LaneletId; connector: LaneletId | null }[] = [];
+  for (let key = reached.key; key !== start;) {
+    const step = parent.get(key);
+    if (!step) return null;
+    steps.push({ lane: key.endsWith('|c') ? key.slice(0, -2) : key, connector: step.connector });
+    key = step.from;
+  }
+  steps.reverse();
+
+  const first = steps[0];
+  if (first && first.connector === null) {
+    // Change lanes here first. The route is the trip as driven without it.
+    const next = steps[1];
+    const without = fallback ? planTripOld(w, start, startS, goal, body, false, shape) : null;
+    return {
+      route: without?.route ?? [start],
+      changeTo: first.lane,
+      intent: next?.connector ?? null,
+      cost: reached.cost,
+    };
+  }
+
+  const route: LaneletId[] = [start];
+  for (const step of steps) {
+    // The next change is made on the lane the route has reached: it ends there.
+    if (step.connector === null) break;
+    route.push(step.connector, step.lane);
+  }
+  return { route, changeTo: null, intent: null, cost: reached.cost };
+}
+
+/** DO NOT make the node and its step before knowing it is kept: most are not (the allocation profile, 2026-10-17: `planTrip` 317 MB in the simulation's worker). */
+function relax(heap: Node[], best: Map<string, number>, parent: Map<string, Step>, key: string, lane: LaneletId, changed: boolean, cost: number,
+  toGo: (lane: LaneletId) => number, from: string, connector: LaneletId | null): void {
+  if (cost >= (best.get(key) ?? Infinity) - 1e-9) return;
+  best.set(key, cost);
+  parent.set(key, { from, connector });
+  push(heap, { key, lane, changed, cost, f: cost + toGo(lane) });
+}

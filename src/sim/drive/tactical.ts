@@ -2,7 +2,8 @@ import type { LaneletId } from '@world/lanelets';
 import type { BodyClass } from '@world/conflictPoints';
 import { m } from '@world/units';
 import type { SimWorld } from '../world';
-import { tripLowerBound } from '../routing/lowerBound';
+import { goalEnd, laneLowerBound } from '../routing/lowerBound';
+import { type SearchScratch, searchScratch } from '../routing/searchScratch';
 
 /** Drive v2, tactical layer: which LANE a trip is driven in. */
 
@@ -19,54 +20,6 @@ export interface TripPlan {
   /** With `changeTo`: the connector the trip leaves that lane by. */
   readonly intent: LaneletId | null;
   readonly cost: number;
-}
-
-interface Node {
-  readonly key: string;
-  readonly lane: LaneletId;
-  /** Arrived by a lane change: another may not follow on the same lane. */
-  readonly changed: boolean;
-  readonly cost: number;
-  /** `cost` and a lower bound of what is left to the goal (`tripLowerBound`): the order the search takes nodes in. */
-  readonly f: number;
-}
-
-interface Step {
-  readonly from: string;
-  /** The connector taken, or null for a lane change. */
-  readonly connector: LaneletId | null;
-}
-
-const keyOf = (lane: LaneletId, changed: boolean): string => (changed ? `${lane}|c` : lane);
-
-const compare = (a: Node, b: Node): number => a.f - b.f || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
-
-function push(heap: Node[], value: Node): void {
-  let at = heap.length;
-  heap.push(value);
-  while (at > 0) {
-    const parent = (at - 1) >> 1;
-    if (compare(heap[parent]!, value) <= 0) break;
-    heap[at] = heap[parent]!;
-    at = parent;
-  }
-  heap[at] = value;
-}
-
-function pop(heap: Node[]): Node | undefined {
-  const first = heap[0];
-  const tail = heap.pop();
-  if (!first || !tail || heap.length === 0) return first;
-  let at = 0;
-  while (at * 2 + 1 < heap.length) {
-    let child = at * 2 + 1;
-    if (child + 1 < heap.length && compare(heap[child + 1]!, heap[child]!) < 0) child++;
-    if (compare(tail, heap[child]!) <= 0) break;
-    heap[at] = heap[child]!;
-    at = child;
-  }
-  heap[at] = tail;
-  return first;
 }
 
 /** Seconds to drive on through a connector and the link it leads to, with its congestion. */
@@ -101,83 +54,91 @@ export function planTrip(
   // DO NOT expand the whole graph to find out a goal cannot be reached: the lanes' components say so first (`laneReach.ts`).
   if (!w.laneReaches.mayReach(w, start, goal, body)) return null;
 
-  const best = new Map<string, number>([[start, 0]]);
-  const parent = new Map<string, Step>();
-  const heap: Node[] = [];
-  const toGo = tripLowerBound(w, goal);
-  push(heap, { key: start, lane: start, changed: !startChange, cost: 0, f: toGo(start) });
+  const scratch = searchScratch(w);
+  scratch.begin(w.graph.lanelets.size + w.graph.connectors.size);
+  const end = goalEnd(w, goal)!;
+  const toGo = (slot: number): number => {
+    let h = scratch.boundOf(slot);
+    if (h === undefined) scratch.setBound(slot, h = laneLowerBound(w, scratch.ids[slot]!, end));
+    return h;
+  };
+  const startSlot = scratch.slot(start);
+  const startState = startSlot * 2;
+  if (!startChange) scratch.markPlainNoChange(startState);
+  scratch.setBest(startState, 0, -1, -1);
+  scratch.push(startState, 0, toGo(startSlot));
 
-  let reached: Node | null = null;
-  while (heap.length) {
-    const node = pop(heap)!;
-    if (node.cost > (best.get(node.key) ?? Infinity) + 1e-9) continue;
-    if (node.lane === goal) {
-      reached = node;
+  let reached = -1, reachedCost = 0;
+  while (scratch.size) {
+    const state = scratch.pop();
+    const nodeCost = scratch.poppedCost;
+    if (nodeCost > scratch.best(state) + 1e-9) continue;
+    const nodeLane = scratch.ids[state >> 1]!;
+    if (nodeLane === goal) {
+      reached = state;
+      reachedCost = nodeCost;
       break;
     }
-    const lane = w.lanelet(node.lane);
+    const lane = w.lanelet(nodeLane);
     if (!lane || lane.kind !== 'link') continue;
 
-    for (const id of w.graph.exitsOf(node.lane)) {
+    for (const id of w.graph.exitsOf(nodeLane)) {
       const step = connectorCost(w, id, body, shape);
       if (!Number.isFinite(step)) continue;
       const out = w.connector(id)!.toLane;
-      const cost = node.cost + step;
-      relax(heap, best, parent, out, out, false, cost, toGo, node.key, id);
+      relax(scratch, scratch.slot(out) * 2, nodeCost + step, toGo, state, scratch.slot(id));
     }
 
-    if (node.changed || lane.laneIndex === undefined) continue;
-    const room = node.lane === start ? lane.length - startS : lane.length;
+    if (scratch.changed(state) || lane.laneIndex === undefined) continue;
+    const room = nodeLane === start ? lane.length - startS : lane.length;
     // Only across dashed lines, into lanes this vehicle may drive.
-    for (const sibling of w.graph.changeTargets(node.lane, shape)) {
+    for (const sibling of w.graph.changeTargets(nodeLane, shape)) {
       const other = w.lanelet(sibling);
       if (!other || other.kind !== 'link' || other.laneIndex === undefined || w.rt(sibling).ghost) continue;
       const lanes = Math.abs(other.laneIndex - lane.laneIndex);
       if (lanes === 0 || room < lanes * ROOM_PER_LANE) continue;
-      const key = keyOf(sibling, true);
-      const cost = node.cost + lanes * CHANGE_COST;
-      relax(heap, best, parent, key, sibling, true, cost, toGo, node.key, null);
+      relax(scratch, scratch.slot(sibling) * 2 + 1, nodeCost + lanes * CHANGE_COST, toGo, state, -1);
     }
   }
-  if (!reached) return null;
+  if (reached < 0) return null;
 
-  // The steps, start to goal.
-  const steps: { lane: LaneletId; connector: LaneletId | null }[] = [];
-  for (let key = reached.key; key !== start;) {
-    const step = parent.get(key);
-    if (!step) return null;
-    steps.push({ lane: key.endsWith('|c') ? key.slice(0, -2) : key, connector: step.connector });
-    key = step.from;
+  // The steps, goal back to start.
+  const lanes: LaneletId[] = [], connectors: (LaneletId | null)[] = [];
+  for (let state = reached; state !== startState;) {
+    if (scratch.best(state) === Infinity) return null;
+    const via = scratch.via[state]!;
+    lanes.push(scratch.ids[state >> 1]!);
+    connectors.push(via < 0 ? null : scratch.ids[via]!);
+    state = scratch.parent[state]!;
   }
-  steps.reverse();
+  const last = lanes.length - 1;
 
-  const first = steps[0];
-  if (first && first.connector === null) {
+  if (last >= 0 && connectors[last] === null) {
     // Change lanes here first. The route is the trip as driven without it.
-    const next = steps[1];
+    const changeTo = lanes[last]!;
+    const intent = last >= 1 ? connectors[last - 1]! : null;
     const without = fallback ? planTrip(w, start, startS, goal, body, false, shape) : null;
     return {
       route: without?.route ?? [start],
-      changeTo: first.lane,
-      intent: next?.connector ?? null,
-      cost: reached.cost,
+      changeTo,
+      intent,
+      cost: reachedCost,
     };
   }
 
   const route: LaneletId[] = [start];
-  for (const step of steps) {
+  for (let k = last; k >= 0; k--) {
     // The next change is made on the lane the route has reached: it ends there.
-    if (step.connector === null) break;
-    route.push(step.connector, step.lane);
+    const connector = connectors[k]!;
+    if (connector === null) break;
+    route.push(connector, lanes[k]!);
   }
-  return { route, changeTo: null, intent: null, cost: reached.cost };
+  return { route, changeTo: null, intent: null, cost: reachedCost };
 }
 
-/** DO NOT make the node and its step before knowing it is kept: most are not (the allocation profile, 2026-10-17: `planTrip` 317 MB in the simulation's worker). */
-function relax(heap: Node[], best: Map<string, number>, parent: Map<string, Step>, key: string, lane: LaneletId, changed: boolean, cost: number,
-  toGo: (lane: LaneletId) => number, from: string, connector: LaneletId | null): void {
-  if (cost >= (best.get(key) ?? Infinity) - 1e-9) return;
-  best.set(key, cost);
-  parent.set(key, { from, connector });
-  push(heap, { key, lane, changed, cost, f: cost + toGo(lane) });
+/** DO NOT make anything for a state before knowing it is kept: most are not (the allocation profile, 2026-10-17: `planTrip` 317 MB in the simulation's worker). */
+function relax(scratch: SearchScratch, state: number, cost: number, toGo: (slot: number) => number, from: number, via: number): void {
+  if (cost >= scratch.best(state) - 1e-9) return;
+  scratch.setBest(state, cost, from, via);
+  scratch.push(state, cost, cost + toGo(state >> 1));
 }
