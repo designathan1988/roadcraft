@@ -1,4 +1,5 @@
 import { laneletId, type LaneletId } from '@world/lanelets';
+import { newFrame, type Polyline } from '@core/polyline';
 import type { SimWorld } from '../world';
 import { m } from '@world/units';
 import type { Vehicle } from './state';
@@ -38,6 +39,16 @@ const SIGNAL_LEAD = 1.4;
 const SIGNAL_LEAD_CRAWLING = 0.8;
 
 export function stepLaneChange(w: SimWorld): void {
+  // Nothing moves in this stage: each lane's resting rears are worked out once for all of it (SIM-12).
+  resting.open(w);
+  try {
+    decideLaneChanges(w);
+  } finally {
+    resting.close();
+  }
+}
+
+function decideLaneChanges(w: SimWorld): void {
   for (const v of w.vehiclesInIdOrder()) {
     v.laneChange = null;
 
@@ -182,9 +193,20 @@ function sideways(w: SimWorld, v: Vehicle, target: LaneletId): number | null {
   const lane = w.lanelet(v.lanelet);
   const other = w.lanelet(target);
   if (!lane || !other) return null;
-  const here = lane.centre.sampleAt(Math.min(Math.max(0, v.s), lane.length)).p;
-  return other.centre.closestPoint(here).distance;
+  // The same projection asked up to four times a tick for a vehicle that has not moved (SIM-12): the last one is kept.
+  const at = Math.min(Math.max(0, v.s), lane.length);
+  const last = lastSideways;
+  if (last.from === lane.centre && last.to === other.centre && last.at === at) return last.across;
+  const across = other.centre.distanceTo(lane.centre.sampleAtInto(at, sidewaysFrame).p);
+  last.from = lane.centre;
+  last.to = other.centre;
+  last.at = at;
+  last.across = across;
+  return across;
 }
+
+const sidewaysFrame = newFrame();
+const lastSideways: { from: Polyline | null; to: Polyline | null; at: number; across: number } = { from: null, to: null, at: NaN, across: 0 };
 
 /** Ticks between two weighings of a discretionary change by the same driver (MOBIL): a quarter of a second. */
 const MOBIL_EVERY = Math.max(1, Math.round(0.25 / DT));
@@ -355,12 +377,11 @@ function canLeaveLane(w: SimWorld, v: Vehicle, target: LaneletId): boolean {
   const lane = w.lanelet(v.lanelet);
   const other = w.lanelet(target);
   if (!lane || !other) return true;
-  const here = lane.centre.sampleAt(Math.min(Math.max(0, v.s), lane.length)).p;
-  const start = other.centre.closestPoint(here).distance;
+  const start = sideways(w, v, target)!;
   const length = laneChangeLength(start, v.v, v.archetype.length);
   const clear = shadowClearDistance(v, start, length);
   const need = clear + Math.max(JAM_GAP, v.driver.s0);
-  if (restingRearAhead(w, v.lanelet, v.s, v.id) - v.s < need) return false;
+  if (resting.ahead(w, v.lanelet, v.s, v.id) - v.s < need) return false;
   // And any body still sliding out of this lane ahead of this one.
   for (const body of w.bodiesIn(v.lanelet)) {
     const ahead = body.vehicle;
@@ -388,6 +409,88 @@ function restingRearAhead(w: SimWorld, laneId: LaneletId, s: number, self: numbe
   return rear;
 }
 
+/**
+ * `restingRearAhead` for every lane asked in one lane-change stage, each lane's cascade worked out once, head to tail (SIM-12):
+ * the rear each vehicle comes to rest at, given the ones ahead of it, and a query finds where the walk from the head would stop.
+ * Exact: the walk's answer is the rest of the last vehicle it passed, which does not depend on where it is stopped.
+ * A lane whose order is not sorted by `s`, or a query whose own vehicle stands ahead of `s` in the lane, is walked as before.
+ */
+class RestingRears {
+  private w: SimWorld | null = null;
+  private readonly lanes = new Map<LaneletId, number>();
+  /** Per lane from its offset: the count, then that many (s, rear, id) of its vehicles in the lane's order. */
+  private data = new Float64Array(1024);
+  private used = 0;
+
+  open(w: SimWorld): void {
+    this.w = w;
+  }
+
+  close(): void {
+    this.w = null;
+    this.lanes.clear();
+    this.used = 0;
+  }
+
+  ahead(w: SimWorld, laneId: LaneletId, s: number, self: number): number {
+    if (this.w !== w) return restingRearAhead(w, laneId, s, self);
+    let at = this.lanes.get(laneId);
+    if (at === undefined) this.lanes.set(laneId, at = this.build(w, laneId));
+    if (at < 0) return restingRearAhead(w, laneId, s, self);
+    const d = this.data, n = d[at]!, base = at + 1;
+    // The last vehicle with its front at or behind `s`: where the walk from the head stops.
+    let lo = 0, hi = n;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (d[base + mid * 3]! <= s) lo = mid + 1;
+      else hi = mid;
+    }
+    // The walk passes `self` without counting it: only when it stands ahead of `s` does that change the answer.
+    const me = w.veh(self);
+    if (me && me.s > s) {
+      for (let k = lo; k < n && d[base + k * 3]! <= me.s; k++) if (d[base + k * 3 + 2] === self) return restingRearAhead(w, laneId, s, self);
+    }
+    return lo < n ? d[base + lo * 3 + 1]! : Infinity;
+  }
+
+  private build(w: SimWorld, laneId: LaneletId): number {
+    const order = w.rt(laneId).order;
+    const at = this.used;
+    if (this.data.length < at + 1 + order.length * 3) {
+      const more = new Float64Array(Math.max(this.data.length * 2, at + 1 + order.length * 3));
+      more.set(this.data.subarray(0, at));
+      this.data = more;
+    }
+    const d = this.data, base = at + 1;
+    let n = 0, sorted = true, previous = -Infinity;
+    for (let i = 0; i < order.length; i++) {
+      const v = w.veh(order[i] as number);
+      if (!v) continue;
+      if (v.s < previous) sorted = false;
+      previous = v.s;
+      d[base + n * 3] = v.s;
+      d[base + n * 3 + 2] = v.id;
+      n++;
+    }
+    if (!sorted) return -1;
+    // The cascade from the head, as `restingRearAhead` walks it.
+    let limit = Infinity;
+    for (let k = n - 1; k >= 0; k--) {
+      const ahead = w.veh(d[base + k * 3 + 2]!)!;
+      const own = ahead.v <= CRAWL ? ahead.s : ahead.s + restingReach(ahead);
+      const nose = Math.max(ahead.s, Math.min(own, limit));
+      const rear = nose - ahead.archetype.length;
+      d[base + k * 3 + 1] = rear;
+      limit = rear - Math.max(JAM_GAP, ahead.driver.s0);
+    }
+    d[at] = n;
+    this.used = base + n * 3;
+    return at;
+  }
+}
+
+const resting = new RestingRears();
+
 /** How much further a vehicle rolls before something standing holds it; Infinity when nothing does. */
 function restingReach(v: Vehicle): number {
   let reach = Infinity;
@@ -403,17 +506,20 @@ export function pullOutRoom(w: SimWorld, v: Vehicle): number {
   const lane = w.lanelet(v.lanelet);
   if (!lane || lane.kind !== 'link') return 0;
   let best = 0;
+  let here: { readonly x: number; readonly y: number } | null = null;
   for (const sibling of w.graph.siblingLanes(lane.id)) {
     const other = w.lanelet(sibling);
     if (!other || Math.abs((other.laneIndex ?? 0) - (lane.laneIndex ?? 0)) !== 1) continue;
-    const here = lane.centre.sampleAt(Math.min(Math.max(0, v.s), lane.length)).p;
-    const start = other.centre.closestPoint(here).distance;
+    here ??= lane.centre.sampleAtInto(Math.min(Math.max(0, v.s), lane.length), pullOutFrame).p;
+    const start = other.centre.distanceTo(here);
     const length = laneChangeLength(start, 0, v.archetype.length);
     const room = shadowClearDistance(v, start, length) + Math.max(JAM_GAP, v.driver.s0);
     best = best === 0 ? room : Math.min(best, room);
   }
   return best;
 }
+
+const pullOutFrame = newFrame();
 
 /** Road driven before no corner of the body is over the line between two lanes `start` apart, on a change `length` long */
 function shadowClearDistance(v: Vehicle, start: number, length: number): number {
@@ -444,7 +550,7 @@ function gapIsSafe(w: SimWorld, v: Vehicle, target: LaneletId): boolean {
   const to = w.lanelet(target);
   if (to && to.kind === 'link' && finish > to.length) return false;
   // Nor to be caught by a queue in the new lane that is still rolling now but will have stopped before the change is over
-  if (restingRearAhead(w, target, v.s, v.id) < finish) return false;
+  if (resting.ahead(w, target, v.s, v.id) < finish) return false;
 
   // Every BODY in the target lane, not just its occupancy list
   for (const body of w.bodiesIn(target)) {
