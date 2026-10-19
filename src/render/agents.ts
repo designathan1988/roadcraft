@@ -731,7 +731,6 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     return made;
   };
   const wheelLevels = ladder(wheels, 'boxes');
-  (globalThis as { __bumpLevels?: () => void }).__bumpLevels = () => { levelsVersion++; };
   const hubLevels = ladder(hubs, 'boxes');
   // One set per class and body style: a sedan may be drawn as an estate and an SUV as a pick-up
   const bodies: { key: string; model: VehicleModel }[] = [];
@@ -1511,7 +1510,7 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
     const shell = band >= 2 ? car.shell : car.shellLite;
     // Doors shut, the body and its panel (a painted roof, or the accent) in one draw (`vehiclePanels.ts`).
     const panels = band >= 2 ? car.panel : car.panelLite;
-    const joined = !(globalThis as { __panelsApart?: boolean }).__panelsApart && !doorsMoving && panels && !panelsApart.has(panels) && !(car.roof && look.glassRoof) ? panels : null;
+    const joined = !doorsMoving && panels && !panelsApart.has(panels) && !(car.roof && look.glassRoof) ? panels : null;
     const panelTint = car.roof ? (look.blackRoof ? T_BLACK_ROOF : paint) : s.accent;
     const doors = model.doors;
     if (joined) wholePanels(joined, detail, paint, panelTint);

@@ -40,7 +40,7 @@ function worldWith(parked: readonly VehicleView[], traffic: readonly VehicleView
 }
 
 const bodiesOf = (agents: ReturnType<typeof createAgentMeshes>): InstancedMesh[] =>
-  agents.meshes.filter((o): o is InstancedMesh => (o as InstancedMesh).isInstancedMesh === true && /^car-.*-(shell|shell-lite|far)$/.test(o.name));
+  agents.meshes.filter((o): o is InstancedMesh => (o as InstancedMesh).isInstancedMesh === true && /^car-.*-(shell|shell-lite|body|body-lite|far)$/.test(o.name));
 const drawn = (meshes: readonly InstancedMesh[]): number => meshes.reduce((n, mesh) => n + (mesh.visible ? mesh.count : 0), 0);
 
 describe('standing vehicles while the camera moves', () => {
@@ -139,7 +139,7 @@ describe('standing vehicles while the camera moves', () => {
     for (const level of ['medium', 'high', 'ultra'] as const) expect(frame(QUALITY[level])).toEqual(none);
     // The weak tier: at most its cap whole (a car's shell drawn whole), the rest a level down.
     const weak = frame(QUALITY.low);
-    const whole = (f: { names: string[] }): number => f.names.filter((n) => /^car-.*-shell:/.test(n)).reduce((a, n) => a + Number(n.split(':').pop()), 0);
+    const whole = (f: { names: string[] }): number => f.names.filter((n) => /^car-.*-(shell|body):/.test(n)).reduce((a, n) => a + Number(n.split(':').pop()), 0);
     expect(whole(none)).toBe(VEHICLE_WHOLE_CAP);
     expect(whole(weak)).toBe(60);
   });

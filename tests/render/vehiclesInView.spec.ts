@@ -111,7 +111,7 @@ function worldWith(parked: readonly VehicleView[]): SimClient {
 
 const netWith = (): Network => ({ doc: { changes: new ChangeJournal() } }) as unknown as Network;
 const bodiesOf = (agents: ReturnType<typeof createAgentMeshes>): InstancedMesh[] =>
-  agents.meshes.filter((o): o is InstancedMesh => (o as InstancedMesh).isInstancedMesh === true && /^car-.*-(shell|shell-lite|far)$/.test(o.name));
+  agents.meshes.filter((o): o is InstancedMesh => (o as InstancedMesh).isInstancedMesh === true && /^car-.*-(shell|shell-lite|body|body-lite|far)$/.test(o.name));
 const drawn = (meshes: readonly InstancedMesh[]): number => meshes.reduce((n, mesh) => n + (mesh.visible ? mesh.count : 0), 0);
 
 describe('vehicles drawn from the grid', () => {
@@ -216,13 +216,13 @@ describe('vehicles drawn from the grid', () => {
     const big = (): number => 50;
     // Seen: the body, its glass and its lamps.
     agents.sync(world, netWith(), 0, true, undefined, { vehicleVisible: () => true, screenScale: big });
-    expect(named(/^car-.*-shell$/)).toBe(1);
+    expect(named(/^car-.*-(shell|body)$/)).toBe(1);
     expect(named(/^car-.*-glass$/)).toBe(1);
     expect(named(/^vehicle-lamps$/)).toBeGreaterThan(0);
     // Only its shadow's sphere in the view: the body and the wheels, no glass, no lamps.
     const reachOnly = (_x: number, _y: number, _h: number, radius: number): boolean => radius > m(4.5);
     agents.sync(world, netWith(), 0, true, undefined, { vehicleVisible: reachOnly, screenScale: big });
-    expect(named(/^car-.*-shell$/)).toBe(1);
+    expect(named(/^car-.*-(shell|body)$/)).toBe(1);
     expect(named(/^vehicle-wheels$/)).toBe(4);
     expect(named(/^car-.*-glass$/)).toBe(0);
     expect(named(/^vehicle-lamps$/)).toBe(0);

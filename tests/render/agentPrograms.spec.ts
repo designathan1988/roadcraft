@@ -46,7 +46,7 @@ describe('the programs of the agents', () => {
   it('vehicles: a body joined with its roof is drawn where the shells were, before the lamps and the trim (three sorts the opaque by material id)', () => {
     const agents = createAgentMeshes(() => 0, () => {}, () => 0, () => 0);
     const meshes = agents.meshes.filter((o): o is Mesh => (o as Mesh).isMesh === true);
-    const id = (pattern: RegExp): number => (meshes.find((o) => pattern.test(o.name))!.material as Material).id;
+    const id = (pattern: RegExp): number => (meshes.find((o) => pattern.test(o.name))!.material as Material & { id: number }).id;
     expect(id(/^car-sedan-sedan-body$/)).toBe(id(/^car-sedan-sedan-shell$/) + 1);
     expect(id(/^vehicle-lamps$/)).toBeGreaterThan(id(/^car-sedan-sedan-body$/));
     expect(id(/^car-sedan-sedan-trim$/)).toBeGreaterThan(id(/^car-sedan-sedan-body$/));
