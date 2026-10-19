@@ -6,6 +6,9 @@ import { serve } from '@render/landStroke.worker';
 import type { LandStrokeJob } from '@render/landStroke';
 import { LandLevels } from '@render/terrainLevels';
 import { TERRAIN_CELL, TERRAIN_HALF, TERRAIN_SEGMENTS } from '@render/terrainGrid';
+import { sampleCorners } from '@render/terrainShaping';
+import { onPlate, woodsBase, woodsBaseInto, woodsOutsideReads, woodsSpan } from '@render/woodsBase';
+import { type WoodsBlock, writeWoodsBlock } from '@render/landStroke';
 import type { JobScope } from '@/jobs/jobScope';
 
 /** A DAB'S WORK ON A PLATE, ON THE PAGE AND IN ITS WORKER: the same arrays to the last float (`render/landStroke.ts`) */
@@ -87,5 +90,43 @@ describe("a dab's levels", () => {
       taken.take(answer);
       same(taken.worst, levels.worst);
     }
+  });
+});
+
+describe("a dab's woods", () => {
+  it('are worked out in the worker as the page works them out, the land off the plate read on the page', () => {
+    const cx = m(-2_048), cy = m(4_096);
+    const land = plate(cx, cy);
+    const grid = { n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF };
+    // The page's natural land (`terrain.ts` naturalRenderedHeightAt): the corners on the plate, the stamps and the relief off it.
+    const naturalAt = (x: number, y: number): number => (onPlate(TERRAIN_HALF, x, y) ? sampleCorners(grid, land.heights, land.flip, x, y) : land.naturalAt(x, y));
+    const page = woodsBase(naturalAt, TERRAIN_HALF, cx, cy);
+    const worker = page.slice();
+    const cells = woodsSpan(TERRAIN_HALF, null).cells;
+    const stamps: TerrainStamp[] = [
+      { id: 1, x: -TERRAIN_HALF + m(8), y: TERRAIN_HALF - m(12), radius: m(50), strength: m(8), mode: 'raise', rough: true },
+      { id: 2, x: m(40), y: m(-200), radius: m(30), strength: m(5), mode: 'lower' },
+      { id: 3, x: TERRAIN_HALF - m(4), y: m(0), radius: m(70), strength: m(4), mode: 'flatten', level: m(-3) },
+    ];
+    let offPlate = 0;
+    for (const stamp of stamps) {
+      const box = land.dab(stamp);
+      // `terrain.ts` rectOf: the box's corners a corner round, in the plate's own (x, y).
+      const rect = [(box[0] - 1) * TERRAIN_CELL - TERRAIN_HALF, TERRAIN_HALF - (box[3] + 1) * TERRAIN_CELL,
+        (box[1] + 1) * TERRAIN_CELL - TERRAIN_HALF, TERRAIN_HALF - (box[2] - 1) * TERRAIN_CELL] as const;
+      const before = page.slice();
+      woodsBaseInto(page, naturalAt, TERRAIN_HALF, cx, cy, rect);
+      expect(page.some((v, k) => v !== before[k])).toBe(true);
+      const points = woodsOutsideReads(TERRAIN_HALF, rect);
+      const outside = new Float64Array(points.length / 2);
+      for (let k = 0; k < outside.length; k++) outside[k] = land.naturalAt(points[k * 2]!, points[k * 2 + 1]!);
+      offPlate += outside.length;
+      const block = inWorker({ kind: 'woods', n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF, cx, cy,
+        natural: land.heights.slice(), flip: land.flip.slice(), rect, outside }) as WoodsBlock;
+      writeWoodsBlock(worker, cells, block);
+      same(worker, page);
+    }
+    // The edges' dabs read the land beyond the plate.
+    expect(offPlate).toBeGreaterThan(0);
   });
 });

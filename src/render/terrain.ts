@@ -71,9 +71,9 @@ import type { Aabb } from '@core/aabb';
 import { geometryCost } from './gpuLedger';
 import { measureHitch } from '@core/hitch';
 import type { JobTicket } from '../jobs/jobPool';
-import { type LevelsJob, type StrokeBox, unionBox } from './landStroke';
+import { type LevelsJob, type StrokeBox, type WoodsJob, unionBox, unionRect, writeWoodsBlock } from './landStroke';
 import { askLandStroke, landStrokeOffPage } from './landStrokePool';
-import { woodsBase, woodsBaseInto } from './woodsBase';
+import { woodsBase, woodsBaseInto, woodsOutsideReads, woodsSpan } from './woodsBase';
 import type { PlateHeights } from './sharedGround';
 import { TERRAIN_CELL, TERRAIN_HALF, TERRAIN_SEGMENTS, TERRAIN_SIZE } from './terrainGrid';
 import { FOREST_RES, coverOf, geologyOf, rasterCover, rasterGeology } from './coverRaster';
@@ -1397,6 +1397,53 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   let woods: Float32Array | null = null;
   /** Moves whenever `woods` changes (`woodsRevision`). */
   let woodsRevision = 0;
+  /** THE WOODS OFF THE PAGE: where the natural land moved since the woods were last worked out (the plate's own x, y), and the one job working it out (`landStroke.ts`). */
+  let woodsRect: readonly [number, number, number, number] | null = null;
+  let woodsJob: JobTicket | null = null;
+  /** Moves when the woods are made whole on the page: a job asked before brings nothing then. */
+  let woodsGeneration = 0;
+  const woodsOnPage = (rect: readonly [number, number, number, number]): void => {
+    if (!woods) return;
+    woodsBaseInto(woods, naturalRenderedHeightAt, TERRAIN_HALF, origin.x, origin.y, rect);
+    woodsRevision++;
+  };
+  /** The woods' cells a dab's natural land reaches, asked of a worker one job at a time: the old woods stand until the new are in. */
+  const woodsMoved = (rect: readonly [number, number, number, number] | null = null): void => {
+    if (rect) woodsRect = unionRect(woodsRect, rect);
+    if (woodsJob || !woodsRect || !woods) return;
+    const asked = woodsRect;
+    woodsRect = null;
+    if (!landStrokeOffPage()) { woodsOnPage(asked); return; }
+    // The land off the plate the edge cells read, read here, where the stamps and the map's relief beyond it are known.
+    const points = woodsOutsideReads(TERRAIN_HALF, asked);
+    const outside = new Float64Array(points.length / 2);
+    for (let k = 0; k < outside.length; k++) outside[k] = naturalHeightAt(points[k * 2]!, points[k * 2 + 1]!);
+    const job: WoodsJob = { kind: 'woods', n: GRID, cell: TERRAIN_CELL, half: TERRAIN_HALF, cx: origin.x, cy: origin.y,
+      natural: natural.slice(), flip: naturalFlip.slice(), rect: asked, outside };
+    const generation = woodsGeneration;
+    woodsJob = askLandStroke(job, [job.natural.buffer, job.flip.buffer, outside.buffer], (block) => {
+      woodsJob = null;
+      if (disposed) return;
+      if (generation === woodsGeneration && woods) {
+        writeWoodsBlock(woods, woodsSpan(TERRAIN_HALF, null).cells, block);
+        woodsRevision++;
+      }
+      woodsMoved();
+    }, (message) => {
+      woodsJob = null;
+      if (disposed) return;
+      console.warn('[terrain] the woods of a dab are worked out on the page', message);
+      if (generation === woodsGeneration) woodsOnPage(asked);
+      woodsMoved();
+    });
+  };
+  /** Nothing asked of the workers lands any more: the woods are made whole. */
+  const woodsMadeWhole = (): void => {
+    woodsGeneration++;
+    woodsRect = null;
+    woodsJob?.cancel();
+    woodsJob = null;
+  };
 
   const waterSurface = createWaterSurface(anisotropy);
   const water = new Mesh(new BufferGeometry(), waterSurface.material);
@@ -2266,6 +2313,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       prebuilt = null;
       if (made) {
         // The woods' base worked out with it, on the same land.
+        woodsMadeWhole();
         woods = made.woods ?? null;
         woodsRevision++;
         grid.set(made.heights);
@@ -2305,9 +2353,12 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
       if (box) cornersMoved(box[0], box[1], box[2], box[3]);
       else wholePlateMoved();
       // The woods' base on the land as it is: the dab's own cells, or the plate's with the plate (DO NOT drop it: the nature's sweep then worked each plate's out on the page, a plate a frame).
-      if (box && woods) woodsBaseInto(woods, naturalRenderedHeightAt, TERRAIN_HALF, origin.x, origin.y, surface.rectOf(box));
-      else woods = woodsBase(naturalRenderedHeightAt, TERRAIN_HALF, origin.x, origin.y);
-      woodsRevision++;
+      if (box && woods) woodsMoved(surface.rectOf(box));
+      else {
+        woodsMadeWhole();
+        woods = woodsBase(naturalRenderedHeightAt, TERRAIN_HALF, origin.x, origin.y);
+        woodsRevision++;
+      }
       lastStamps = doc.terrainStamps;
       // The water is the deferred part of a stroke: a river dab makes water, any other dab is its box (with what a stroke left waiting).
       markWaterDirty(added && added.mode !== 'river' ? box : null);
@@ -2335,6 +2386,7 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
     dispose() {
       disposed = true;
       levelsJob?.cancel();
+      woodsJob?.cancel();
       lod.dispose();
       land.dispose();
       groundMaterial.dispose();
