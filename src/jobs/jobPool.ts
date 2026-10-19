@@ -526,11 +526,14 @@ export class JobPort {
   terminate(): void {
     if (!system.ports.delete(this.id)) return;
     this.worker.postMessage({ close: this.id } satisfies CloseLane);
+    const freed = this.inFlight > 0 && this.host.laneWork === this.inFlight;
     this.host.laneWork -= this.inFlight;
     this.inFlight = 0;
     this.host.ports--;
     const left = (this.host.services.get(this.service) ?? 1) - 1;
     if (left > 0) this.host.services.set(this.service, left); else this.host.services.delete(this.service);
+    // Its worker counted free now, as an answer that empties it does (`answered`): the waiting jobs given out (JOB-16: they waited for another job's answer or a new one).
+    if (freed) dispatch();
     retireIdle();
   }
 

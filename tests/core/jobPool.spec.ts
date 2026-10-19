@@ -216,6 +216,19 @@ describe('the job system', () => {
     setJobWorkerMaker(null);
   });
 
+  it('gives a waiting job out when a lane let go frees its worker (JOB-16)', async () => {
+    const { jobPort, submitJob } = await import('@/jobs/jobPool');
+    const growth = jobPort('growth');
+    // A tile asked: the long worker busy with it.
+    growth.postMessage({ ask: 1 });
+    const sent: string[] = [];
+    for (const name of ['a', 'b', 'c', 'd']) submitJob({ service: 'cells', key: null, priority: 1, write: () => { sent.push(name); return { data: name, transfer: [] }; }, done: () => {}, failed: () => {} });
+    expect(sent).toEqual(['a', 'b', 'c']);
+    // The lane let go: its worker free, the fourth job given to it at once.
+    growth.terminate();
+    expect(sent).toEqual(['a', 'b', 'c', 'd']);
+  });
+
   /** The page's clock and heap as the pool reads them (`performance.now`, `performance.memory`). */
   const pageHeap = { now: 0, heap: 100 * 2 ** 20 };
   const stubPage = (): void => {
