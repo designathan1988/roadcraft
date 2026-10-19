@@ -256,7 +256,7 @@ if (saved) {
 }
 
 /** The simulation, in a worker of its own (`sim/host/simHost.ts`): the page sends it the map's changes and reads its frames. */
-const sim = new SimClient(doc);
+const sim = new SimClient(doc, net);
 /** The population the machine sustains (`sim/populationGovernor.ts`, run in the worker), never more than the device's own share. */
 let maxPopulationShare = 1;
 /** A measure running (`__roadcraft.measure`, `scripts/lib/measureCity.mjs`): `on` a frame drawn every refresh; `step` the simulation going on a fixed step of

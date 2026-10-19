@@ -1,6 +1,6 @@
 import { readDerivedSome, writeDerivedMany } from '@core/derivedCache';
 import { RoadDoc } from '@world/doc';
-import { Network } from '@world/network';
+import { Network, type NetworkBake } from '@world/network';
 import { type LotPlan, planLots } from '@world/lots';
 import type { NodeId } from '@world/ids';
 import { SimWorld, issuesSince } from '../world';
@@ -82,9 +82,9 @@ export class SimHost {
     switch (message.type) {
       case 'init':
         this.meso.setLive(message.live);
-        await this.init(message.map, message.seed, message.zones, message.frames.data, message.frames.control, message.zonesPrefix, message.ambient);
+        await this.init(message.map, message.seed, message.zones, message.frames.data, message.frames.control, message.zonesPrefix, message.ambient, message.bake ?? null);
         return;
-      case 'load': this.meso.setLive(message.live); this.load(message.map); return;
+      case 'load': this.meso.setLive(message.live); this.load(message.map, message.bake ?? null); return;
       // The replica made the map again by its differences (`RoadDoc.replaceWith`): the frame rebuilds what moved, the vehicles drive on (rebound where their lanes went).
       case 'resync': this.meso.setLive(message.live); takeTrafficMap(this.doc, this.buildings, message.map); return;
       case 'lanes': this.lanes = { bays: message.bays, conflicts: message.conflicts }; return;
@@ -106,10 +106,12 @@ export class SimHost {
   }
 
   private async init(map: TrafficMap, seed: number, zones: ReadonlyMap<string, Float64Array | null>, data: SharedArrayBuffer, control: SharedArrayBuffer,
-    prefix: string | null, ambient: 'view' | 'edges'): Promise<void> {
+    prefix: string | null, ambient: 'view' | 'edges', bake: NetworkBake | null): Promise<void> {
     this.data = new Float64Array(data);
     this.control = new Int32Array(control);
     takeTrafficMap(this.doc, this.buildings, map);
+    // The page's junctions and ribbons, taken where their inputs are this copy's: DO NOT solve the whole map's junctions again (SIM-04).
+    if (bake) this.net.offerBake(bake);
     this.net.rebuild({ full: true });
     const sim = new SimWorld(this.doc, this.net, seed, this.buildings);
     // Conflicts only where traffic is (the micro window), not every junction of the map.
@@ -137,8 +139,9 @@ export class SimHost {
   }
 
   /** Another map: the replica made whole again, and nothing of the old simulation carried over. */
-  private load(map: TrafficMap): void {
+  private load(map: TrafficMap, bake: NetworkBake | null): void {
     takeTrafficMap(this.doc, this.buildings, map);
+    if (bake) this.net.offerBake(bake);
     this.net.rebuild({ full: true });
     this.sim?.reset();
     if (this.sim) this.sim.ambient.reset(this.sim);
