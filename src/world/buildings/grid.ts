@@ -21,14 +21,46 @@ interface Filed {
 }
 
 export class BuildingGrid<T extends Filed> {
-  /** Each cell's buildings in the store's order (by rank). */
+  /** Each cell's buildings in the store's order (by rank); over another grid (`over`), the cells written here (an empty one hides the base's). */
   private readonly cells = new Map<number, BuildingId[]>();
   private readonly placed = new Map<BuildingId, Placed>();
   private nextRank = 0;
+  /** The grid this one lies over (`over`): read through for every cell and building not written here. */
+  private base: BuildingGrid<T> | null = null;
+  /** The base's buildings deleted here. */
+  private readonly gone = new Set<BuildingId>();
 
   /** Every building, in the store's order (a load, a clear, a whole store taken over). `boxOf`: its box as the store files it (`storedBounds`), the same for whatever stands in for it, so a grid of neighbours (`editor/growthReplica.ts`) answers as the store's does. */
   constructor(all: Iterable<T>, private readonly boxOf: (item: T) => Aabb) {
     for (const b of all) this.insert(b);
+  }
+
+  /** DO NOT file a working copy's whole map again at its first write (`BuildingStore.forkFrom`): 10-40 ms a commit that writes buildings and then asks by place. A grid over `base`, answering as one made of the copy's buildings would: a cell is copied here when first written, the rest read through. `base` must not change while this one is used. */
+  static over<T extends Filed>(base: BuildingGrid<T>): BuildingGrid<T> {
+    const grid = new BuildingGrid<T>([], base.boxOf);
+    grid.base = base;
+    grid.nextRank = base.nextRank;
+    return grid;
+  }
+
+  private cellAt(k: number): readonly BuildingId[] | undefined {
+    const own = this.cells.get(k);
+    return own ?? this.base?.cellAt(k);
+  }
+
+  /** A cell to write: the base's copied here first. */
+  private ownCell(k: number): BuildingId[] | undefined {
+    const own = this.cells.get(k);
+    if (own || !this.base) return own;
+    const below = this.base.cellAt(k);
+    if (!below) return undefined;
+    const copy = below.slice();
+    this.cells.set(k, copy);
+    return copy;
+  }
+
+  private placedOf(id: BuildingId): Placed | undefined {
+    return this.placed.get(id) ?? (this.base && !this.gone.has(id) ? this.base.placedOf(id) : undefined);
   }
 
   private keysOf(b: T): number[] {
@@ -43,35 +75,37 @@ export class BuildingGrid<T extends Filed> {
 
   private file(id: BuildingId, rank: number, keys: readonly number[]): void {
     for (const k of keys) {
-      const cell = this.cells.get(k);
+      const cell = this.ownCell(k);
       if (!cell) { this.cells.set(k, [id]); continue; }
       // In rank order: a new building is last; one replaced goes back where it stood.
       let at = cell.length;
-      while (at > 0 && this.placed.get(cell[at - 1]!)!.rank > rank) at--;
+      while (at > 0 && this.placedOf(cell[at - 1]!)!.rank > rank) at--;
       cell.splice(at, 0, id);
     }
   }
 
   private unfile(id: BuildingId, keys: readonly number[]): void {
     for (const k of keys) {
-      const cell = this.cells.get(k);
+      const cell = this.ownCell(k);
       if (!cell) continue;
       const at = cell.indexOf(id);
       if (at >= 0) cell.splice(at, 1);
-      if (cell.length === 0) this.cells.delete(k);
+      // Over a base, an empty cell stays: it hides the base's.
+      if (cell.length === 0 && !this.base) this.cells.delete(k);
     }
   }
 
   /** A building new to the store: last in its order. */
   insert(b: T): void {
     const keys = this.keysOf(b), rank = this.nextRank++;
+    this.gone.delete(b.id);
     this.placed.set(b.id, { keys, rank });
     this.file(b.id, rank, keys);
   }
 
   /** A building's record replaced: it keeps its place in the order. */
   update(b: T): void {
-    const was = this.placed.get(b.id);
+    const was = this.placedOf(b.id);
     if (!was) { this.insert(b); return; }
     const keys = this.keysOf(b);
     this.unfile(b.id, was.keys);
@@ -80,24 +114,25 @@ export class BuildingGrid<T extends Filed> {
   }
 
   delete(id: BuildingId): void {
-    const was = this.placed.get(id);
+    const was = this.placedOf(id);
     if (!was) return;
     this.unfile(id, was.keys);
     this.placed.delete(id);
+    if (this.base) this.gone.add(id);
   }
 
   /** The ids of the buildings whose box (or anchor) may reach the rectangle, in the store's order. */
   near(minX: number, minY: number, maxX: number, maxY: number): BuildingId[] {
     const i0 = Math.floor(minX / CELL), i1 = Math.floor(maxX / CELL), j0 = Math.floor(minY / CELL), j1 = Math.floor(maxY / CELL);
     // One cell (the common question): already in order, nothing repeated.
-    if (i0 === i1 && j0 === j1) return [...(this.cells.get(keyOf(i0, j0)) ?? [])];
+    if (i0 === i1 && j0 === j1) return [...(this.cellAt(keyOf(i0, j0)) ?? [])];
     const found = new Set<BuildingId>();
     for (let i = i0; i <= i1; i++) {
       for (let j = j0; j <= j1; j++) {
-        for (const id of this.cells.get(keyOf(i, j)) ?? []) found.add(id);
+        for (const id of this.cellAt(keyOf(i, j)) ?? []) found.add(id);
       }
     }
-    return [...found].sort((a, b) => this.placed.get(a)!.rank - this.placed.get(b)!.rank);
+    return [...found].sort((a, b) => this.placedOf(a)!.rank - this.placedOf(b)!.rank);
   }
 
   /** DO NOT ask `near` rectangle by rectangle for many */
@@ -110,7 +145,7 @@ export class BuildingGrid<T extends Filed> {
       for (let i = i0; i <= i1; i++) {
         for (let j = j0; j <= j1; j++) {
           const k = keyOf(i, j);
-          if (!this.cells.has(k)) continue;
+          if (!this.cellAt(k)?.length) continue;
           const list = over.get(k);
           if (list) list.push(r); else over.set(k, [r]);
         }
@@ -118,11 +153,11 @@ export class BuildingGrid<T extends Filed> {
     }
     const kept = new Set<BuildingId>();
     for (const [k, list] of over) {
-      for (const id of this.cells.get(k)!) {
+      for (const id of this.cellAt(k)!) {
         if (kept.has(id)) continue;
         for (const r of list) if (meets(id, r)) { kept.add(id); break; }
       }
     }
-    return [...kept].sort((a, b) => this.placed.get(a)!.rank - this.placed.get(b)!.rank);
+    return [...kept].sort((a, b) => this.placedOf(a)!.rank - this.placedOf(b)!.rank);
   }
 }

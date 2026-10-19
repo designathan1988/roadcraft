@@ -6,6 +6,10 @@ export const LOT_CELL = 8;
 export const TILE_CELLS = 16;
 /** Texels a row of the texture. */
 export const TEXTURE_WIDTH = 2048;
+/** Ranges of one row closer than this many texels go up as one (`takeUpload`). */
+const UPLOAD_GAP = 64;
+/** More ranges than this after joining: the whole texture goes up, one call. */
+const UPLOAD_RANGES = 256;
 /** How far past a cell an edge is still listed in it, beyond its stroke's half width */
 export const AA_MARGIN = 1.5;
 /** A dashed line: dash and gap, metres. */
@@ -204,22 +208,48 @@ export class LotLattice {
   }
 
   /** What to send to the GPU since the last call: everything */
+  /** DO NOT send each range as written: a big edit wrote hundreds to thousands of one-texel entries, one `texSubImage2D` each (three joins only ranges that touch). Sorted, and joined across gaps under `UPLOAD_GAP` texels in a row (the texels between are the same bytes the GPU holds); past `UPLOAD_RANGES` the texture goes whole. */
   takeUpload(): { whole: boolean; ranges: number[] } {
-    const whole = this.wholeChanged;
+    let whole = this.wholeChanged;
     const ranges: number[] = [];
-    if (!whole) {
+    if (!whole && this.written.length) {
+      const pieces: number[] = [];
       for (let i = 0; i < this.written.length; i += 2) {
         let start = this.written[i]!, count = this.written[i + 1]!;
         while (count > 0) {
           const inRow = Math.min(count, TEXTURE_WIDTH - (start % TEXTURE_WIDTH));
-          ranges.push(start * 4, inRow * 4);
+          pieces.push(start, inRow);
           start += inRow; count -= inRow;
         }
       }
+      const order = Array.from({ length: pieces.length / 2 }, (_, i) => i * 2).sort((a, b) => pieces[a]! - pieces[b]!);
+      let start = -1, end = -1;
+      for (const at of order) {
+        const s = pieces[at]!, e = s + pieces[at + 1]!;
+        if (start >= 0 && s - end < UPLOAD_GAP && Math.floor(s / TEXTURE_WIDTH) === Math.floor(start / TEXTURE_WIDTH)) { if (e > end) end = e; continue; }
+        if (start >= 0) ranges.push(start * 4, (end - start) * 4);
+        start = s; end = e;
+      }
+      ranges.push(start * 4, (end - start) * 4);
+      if (ranges.length / 2 > UPLOAD_RANGES) { whole = true; ranges.length = 0; }
     }
     this.written = [];
     this.wholeChanged = false;
     return { whole, ranges };
+  }
+
+  /** A shape held moved in the drawing order (`order`): its cells written again in the new order, its records kept (they do not depend on the order). The same lattice as taking it out and putting it back. */
+  reorder(shape: LatticeShape, order: number): void {
+    const placed = this.placed.get(shape);
+    shape.order = order;
+    if (!placed) return;
+    for (const cell of placed.records.keys()) {
+      const set = this.cellShapes.get(cell)!;
+      // Last in its cell's set again, as `remove` then `add` leave it (shapes of one order keep that order).
+      set.delete(placed);
+      set.add(placed);
+      this.dirty.add(cell);
+    }
   }
 
   // ------------------------------------------------------------ records

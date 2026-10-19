@@ -146,4 +146,44 @@ describe('lot lattice', () => {
       });
     }
   });
+  it('sends a big edit in few ranges, the same bytes, and reorders without recomputing records', () => {
+    const lattice = new LotLattice(HALF);
+    const shapes = Array.from({ length: 400 }, (_, i) => polygon(quad(-400 + (i % 20) * 40, -400 + Math.floor(i / 20) * 40, 30, 30, 0.3), i));
+    for (const s of shapes) lattice.add(s);
+    lattice.flush();
+    lattice.takeUpload();
+    // The GPU's copy as the last upload left it.
+    const gpu = lattice.data.slice();
+    // A big edit: every other lot taken out (each cell's entry rewritten, one texel each).
+    for (let i = 0; i < shapes.length; i += 2) lattice.remove(shapes[i]!);
+    lattice.flush();
+    const up = lattice.takeUpload();
+    expect(up.whole || up.ranges.length / 2 <= 256).toBe(true);
+    if (!up.whole) {
+      for (let i = 0; i < up.ranges.length; i += 2) gpu.set(lattice.data.subarray(up.ranges[i]!, up.ranges[i]! + up.ranges[i + 1]!), up.ranges[i]!);
+      // Joined across gaps: what reaches the GPU is the lattice, texel for texel.
+      expect(gpu).toEqual(lattice.data);
+      // Sorted and apart: no two ranges of one row closer than the gap.
+      for (let i = 2; i < up.ranges.length; i += 2) {
+        expect(up.ranges[i]!).toBeGreaterThanOrEqual(up.ranges[i - 2]! + up.ranges[i - 1]!);
+        const row = Math.floor(up.ranges[i]! / 4 / TEXTURE_WIDTH);
+        if (row === Math.floor(up.ranges[i - 2]! / 4 / TEXTURE_WIDTH)) expect(up.ranges[i]! - up.ranges[i - 2]! - up.ranges[i - 1]!).toBeGreaterThanOrEqual(64 * 4);
+      }
+    }
+    // A reorder is the lattice a remove and an add make, its cells rewritten and not its records.
+    const twin = new LotLattice(HALF);
+    const kept = shapes.filter((_, i) => i % 2 === 1);
+    const copies = kept.map((s) => ({ ...s }));
+    for (const s of copies) twin.add(s);
+    twin.flush();
+    for (let i = 0; i < kept.length; i += 3) {
+      lattice.reorder(kept[i]!, 1000 - i);
+      twin.remove(copies[i]!); copies[i]!.order = 1000 - i; twin.add(copies[i]!);
+    }
+    lattice.flush(); twin.flush();
+    for (let k = 0; k < 2000; k++) {
+      const x = -410 + (k % 50) * 16.3, y = -410 + Math.floor(k / 50) * 20.1;
+      expect(sampleLattice(lattice, x, y)).toEqual(sampleLattice(twin, x, y));
+    }
+  });
 });

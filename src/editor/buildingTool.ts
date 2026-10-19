@@ -1105,6 +1105,9 @@ export class BuildingTool {
     const found = this.primitiveDraft(this.pick(screen), world);
     if (!found) { this.setPreview(null); return; }
     const problem = validateBuilding(this.host.context(), found.draft, found.existing ?? undefined);
+    // The same ghost as shown (the pointer still over the same spot): DO NOT bump the serial, the renderer would emit it all again (as `showDraft`).
+    const shown = this.preview;
+    if (shown && shown.hides === found.existing && shown.problem === problem && samePlain(shown.building, found.draft)) return;
     this.setPreview({ building: found.draft, valid: problem === null, problem, hides: found.existing, serial: 0 });
   }
 

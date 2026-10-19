@@ -483,8 +483,9 @@ export function createBuildingKit(): BuildingKit {
   const concrete = new MeshStandardMaterial({ color: 0xcfc9bd, roughness: 0.82, metalness: 0 });
   const metal = new MeshStandardMaterial({ color: 0x33373a, roughness: 0.45, metalness: 0.55 });
   const own: Record<Exclude<PartKind, ShellPartKind>, Material> = {
-    // Both sides in the shadow pass: a pane is one-sided, and three draws a front-sided material's BACK faces for shadows
-    glass: new MeshStandardMaterial({ color: 0x7c8e98, roughness: 0.06, metalness: 0, envMapIntensity: 1.6, shadowSide: DoubleSide }),
+    // Its front in the shadow pass (three draws a front-sided material's BACK faces for shadows): a pane is one-sided and faces out, so the sun reaches its front first;
+    // DO NOT cast both sides again: a pane whose back faces the sun is behind its own building's walls (the shell casts both sides), every pane facing away drawn for nothing.
+    glass: new MeshStandardMaterial({ color: 0x7c8e98, roughness: 0.06, metalness: 0, envMapIntensity: 1.6, shadowSide: FrontSide }),
     // White: each frame takes its building's trim as an instance colour (`buildingMesh.ts` COLOURED_PARTS)
     frame: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.05 }),
     concrete,
@@ -497,7 +498,7 @@ export function createBuildingKit(): BuildingKit {
     awning: new MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0 }),
     column: concrete,
     // Window variety: a pane that reflects less (a darker room behind it) - no two rows of windows alike.
-    glassDark: new MeshStandardMaterial({ color: 0x5d6c74, roughness: 0.08, metalness: 0, envMapIntensity: 1.3, shadowSide: DoubleSide }),
+    glassDark: new MeshStandardMaterial({ color: 0x5d6c74, roughness: 0.08, metalness: 0, envMapIntensity: 1.3, shadowSide: FrontSide }),
     // Pool water: clear, glossy and a little turquoise, the tiled floor showing through it
     water: new MeshStandardMaterial({
       color: 0x58c4dd, roughness: 0.03, metalness: 0.15, envMapIntensity: 1.8,

@@ -1,6 +1,6 @@
 import type { Vec2 } from '@core/vec2';
 import { m } from '../units';
-import { type BuildingFrame, buildingFrame, frameToLocal, frameToWorld, frameX, frameY } from './geometry';
+import { type BuildingFrame, buildingFrame, frameToWorld, frameX, frameY } from './geometry';
 import type { Building, Volume } from './types';
 
 /** The surface of a building's open lot - its car park, its yard - as it is laid */
@@ -29,10 +29,12 @@ const clamp01 = (t: number): number => Math.max(0, Math.min(1, t));
 /** DO NOT change its arithmetic for one side only */
 export function lotHeightAt(s: LotSlope, x: number, y: number): number {
   if (s.kind === 'level') return s.level;
-  const p = frameToLocal(s.frame, x, y);
-  if (s.kind === 'ramp') return s.from + (s.level - s.from) * Math.max(0, Math.min(1, (p.y - s.y0) / s.d));
+  // `frameToLocal` inline, the same arithmetic: DO NOT make a point for each height asked (every corner of the ground's grid near a lot).
+  const f = s.frame, dx = x - f.x, dy = y - f.y;
+  const px = dx * f.c + dy * f.s, py = -dx * f.s + dy * f.c;
+  if (s.kind === 'ramp') return s.from + (s.level - s.from) * Math.max(0, Math.min(1, (py - s.y0) / s.d));
   const { ha, hb, floor } = s;
-  const u = clamp01((p.x - s.x0) / s.w), w = clamp01((p.y - s.y0) / s.d);
+  const u = clamp01((px - s.x0) / s.w), w = clamp01((py - s.y0) / s.d);
   switch (s.side) {
     case 0: return (ha + (hb - ha) * u) * (1 - w) + floor * w;
     case 2: return (ha + (hb - ha) * u) * w + floor * (1 - w);
