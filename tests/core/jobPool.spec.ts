@@ -199,6 +199,18 @@ describe('the job system', () => {
     setJobWorkerMaker(null);
   });
 
+  it("never sends a queued job to a worker in a desktop job process: it waits for the page's (JOB-03, each cell job copied every ground plate there)", async () => {
+    const { jobPort, setJobWorkerMaker, submitJob } = await import('@/jobs/jobPool');
+    const remote = new Set<FakeWorker>();
+    setJobWorkerMaker((long) => { if (!long) return null; const w = new FakeWorker(); remote.add(w); return w as unknown as Worker; });
+    jobPort('growth');
+    for (const name of ['a', 'b', 'c', 'd']) submitJob({ service: 'cells', key: null, priority: 1, write: () => ({ data: name, transfer: [] }), done: () => {}, failed: () => {} });
+    const queued = (w: FakeWorker): number => w.asked.filter((m) => typeof m.data === 'string').length;
+    expect([...remote].map(queued)).toEqual(new Array(remote.size).fill(0));
+    expect(FakeWorker.made.filter((w) => !remote.has(w)).map(queued)).toEqual([1, 1]);
+    setJobWorkerMaker(null);
+  });
+
   /** The page's clock and heap as the pool reads them (`performance.now`, `performance.memory`). */
   const pageHeap = { now: 0, heap: 100 * 2 ** 20 };
   const stubPage = (): void => {

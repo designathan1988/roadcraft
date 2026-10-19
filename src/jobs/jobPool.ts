@@ -368,13 +368,14 @@ function queuePort(host: Host, service: JobService): number {
 
 /** The worker a queued job of `service` goes to: a free one already running the kind, else a new one while the pool has room, else any free one
  *  - a long-running service's worker only while its lanes have nothing in flight: a tile asked after it waits one job, never a job behind a tile (only a pool of one worker shares it otherwise).
+ *  - DO NOT give it to a long worker in a desktop job process (`inPage` false), nor make one for it: the message went there copied whole, every ground plate of the page's shared memory with it (`processWorker.ts` unshared, ~33 MB a cell job, JOB-03); it waits for the page's own.
  *  - DO NOT give it to a worker whose lanes have messages in flight while one with none is free: it waited behind a tile read or a batch of road tiles (`JobPort` posts straight to its worker); such a worker only when no other is free. */
 function hostFor(service: JobService): Host | null {
   let cold: Host | null = null, idleLong: Host | null = null, warmBusy: Host | null = null, coldBusy: Host | null = null;
   for (const host of system.workers) {
     if (host.job || host.failed) continue;
     if (keptClear(host) && system.workers.length > 1) continue;
-    if (host.long && system.workers.length > 1) { if (host.laneWork === 0) idleLong ??= host; continue; }
+    if (host.long && system.workers.length > 1) { if (host.laneWork === 0 && host.inPage) idleLong ??= host; continue; }
     const warm = host.queuePorts.has(service);
     if (host.laneWork > 0) {
       if (warm) warmBusy ??= host; else coldBusy ??= host;
@@ -383,7 +384,7 @@ function hostFor(service: JobService): Host | null {
     if (warm) return host;
     cold ??= host;
   }
-  return grow(false) ?? cold ?? idleLong ?? grow(true) ?? warmBusy ?? coldBusy;
+  return grow(false) ?? cold ?? idleLong ?? (system.makeWorker ? null : grow(true)) ?? warmBusy ?? coldBusy;
 }
 
 /** Each waiting job, nearest first, to a worker free for it (Cidade's `pump`): one queued job at a time on a worker. */
