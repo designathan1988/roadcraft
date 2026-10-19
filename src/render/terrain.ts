@@ -1810,6 +1810,14 @@ export function createTerrainSurface(anisotropy: number, origin: { readonly x: n
   };
 
   const rebuildWater = (stamps: readonly TerrainStamp[]): void => {
+    // DO NOT make water for a plate with no river that had none (every plate's first build): no mesh, no shore, no ground sent (TER-10).
+    // Its levels are NO_WATER already, and the shore's first send reads them from the store.
+    if (waterBox === null && waterJob === null && !stamps.some((stamp) => stamp.mode === 'river')) {
+      wetDiscs = [];
+      floodCells = new Map();
+      ecologyAll();
+      return;
+    }
     // A river stands at the level its channel was cut INTO, below the banks
     const land = stamps.filter((stamp) => stamp.mode !== 'river');
     const landIndex = new TerrainIndex(land, 0, index.relief, index.ground);
