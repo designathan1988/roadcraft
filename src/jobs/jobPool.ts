@@ -75,6 +75,11 @@ class JobQueue {
     return this.count;
   }
 
+  /** Jobs ever asked of the queue (read only: the debugging lab). */
+  get submitted(): number {
+    return this.seq;
+  }
+
   submit(spec: JobSpec): Queued {
     const job: Queued = { seq: ++this.seq, spec, state: 'waiting', rank: rankOf(spec) };
     if (spec.key !== null) {
@@ -428,6 +433,43 @@ export function submitJob(spec: JobSpec): JobTicket {
   return {
     cancel: () => system.queue.cancel(job),
     get pending() { return job.state !== 'over'; },
+  };
+}
+
+/** One worker of the pool as the debugging lab reads it (`lab/resources`). */
+export interface JobWorkerStats {
+  readonly long: boolean;
+  readonly inPage: boolean;
+  /** The service of the queued job it runs now; null: none. */
+  readonly running: string | null;
+  /** The services it hosts lanes of, and how many lanes each. */
+  readonly lanes: readonly (readonly [string, number])[];
+  /** Messages its lanes posted and not yet answered. */
+  readonly laneWork: number;
+  readonly failed: boolean;
+  /** How long it has stood with nothing on it, ms; null while it has work (or was not looked at since). */
+  readonly idleMs: number | null;
+}
+
+/** The pool as it stands, read only: its workers, the queue's waiting jobs, the most it may hold (the debugging lab's consumers; nothing is changed). */
+export function jobPoolStats(): { readonly most: number; readonly longMost: number; readonly shortMost: number; readonly waiting: number; readonly submitted: number; readonly ports: number; readonly workers: readonly JobWorkerStats[] } {
+  const now = performance.now();
+  return {
+    most: jobWorkers(),
+    longMost: longWorkers(),
+    shortMost: shortWorkers(),
+    waiting: system.queue.waiting,
+    submitted: system.queue.submitted,
+    ports: system.ports.size,
+    workers: system.workers.map((h) => ({
+      long: h.long,
+      inPage: h.inPage,
+      running: h.job ? h.job.spec.service : null,
+      lanes: [...h.services],
+      laneWork: h.laneWork,
+      failed: h.failed,
+      idleMs: Number.isNaN(h.freeSince) ? null : now - h.freeSince,
+    })),
   };
 }
 

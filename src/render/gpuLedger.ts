@@ -53,6 +53,11 @@ export class GpuLedger {
     return n;
   }
 
+  /** Every owner and what it holds now, read only (the debugging lab's consumers, `lab/resources`): nothing is copied, the book is walked as it stands. */
+  *entries(): IterableIterator<{ readonly owner: unknown; readonly cls: GpuClass; readonly bytes: number; readonly triangles: number }> {
+    for (const [owner, entry] of this.owners) yield { owner, cls: entry.cls, bytes: entry.bytes, triangles: entry.triangles };
+  }
+
   /** Bytes under the cap left for `classes` once every other class is counted: what they may hold together. */
   roomFor(classes: readonly GpuClass[]): number {
     let theirs = 0;

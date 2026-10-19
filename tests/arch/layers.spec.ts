@@ -44,7 +44,8 @@ describe('determinism', () => {
 
     for (const file of tsFilesUnder(SRC)) {
       const rel = relative(SRC, file).split(sep).join('/');
-      if (rel.startsWith('render/')) continue;
+      // The debugging lab inspects the scene itself (picking, its materials, its draws): the one place above render that holds three's objects.
+      if (rel.startsWith('render/') || rel.startsWith('lab/')) continue;
       const body = code(readFileSync(file, 'utf8'));
       if (/from '(three|three\/[^']*)'/.test(body)) offenders.push(rel);
     }

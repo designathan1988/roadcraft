@@ -61,7 +61,8 @@ export function createLab(deps: LabDeps): Lab {
       const event: LabEvent = { t: performance.now(), kind, detail, ...(data === undefined ? {} : { data }) };
       events.push(event);
       if (events.length > EVENTS_KEPT) events.splice(0, events.length - EVENTS_KEPT);
-      for (const listener of eventListeners) listener(event);
+      // A copy: a listener that stops itself while told does not skip the next one.
+      for (const listener of [...eventListeners]) listener(event);
     },
     onEvent: (listener) => listen(eventListeners, listener),
     onFrame: (listener) => listen(frameListeners, listener),

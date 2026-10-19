@@ -22,6 +22,8 @@ const LAYERS: Readonly<Record<string, readonly string[]>> = {
   render: ['core', 'people', 'world', 'sim', 'view', 'jobs', 'render'],
   editor: ['core', 'people', 'world', 'jobs', 'editor'],
   ui: ['core', 'people', 'world', 'sim', 'view', 'ui'],
+  /** The debugging lab (F7, `lab/lab.ts`): it watches every layer, so it sits above them all; nothing imports it but `main.ts`. */
+  lab: ['core', 'people', 'world', 'sim', 'view', 'jobs', 'render', 'editor', 'ui', 'lab'],
 };
 
 const posix = (p: string): string => p.split(sep).join('/');
