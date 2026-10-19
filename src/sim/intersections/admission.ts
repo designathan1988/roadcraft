@@ -706,10 +706,9 @@ function bankerSafeInGroup(
   // The resources this grant concerns
   const mine = new Set<ResourceKey>();
   for (const intention of proposal) for (const r of connectorResources(w, intention.connector)) mine.add(r);
-  for (const r of actualAllocation(w, applicant)) mine.add(r);
-
-  // The applicant, as it would be after the grant.
+  // The applicant, as it would be after the grant: what it holds now read once (SIM-11).
   const allocation0 = actualAllocation(w, applicant);
+  for (const r of allocation0) mine.add(r);
   const maximum0 = new Set(allocation0);
   const current = proposal[0];
   if (current) {
@@ -756,7 +755,7 @@ function bankerSafeInGroup(
     if (!maximum.size) continue;
     for (const resource of allocation) {
       const owner = owners.get(resource);
-      if (owner !== undefined && owner !== vehicleId && !sharedConvoyResource(w, resource) && mine.has(resource)) return false;
+      if (owner !== undefined && owner !== vehicleId && mine.has(resource) && !sharedConvoyResource(w, resource)) return false;
       owners.set(resource, vehicleId);
       universe.add(resource);
     }
@@ -773,7 +772,8 @@ function bankerSafeInGroup(
   let progressed = true;
   while (unfinished.size && progressed) {
     progressed = false;
-    for (const index of [...unfinished]) {
+    // A Set's own iteration: only the index visited is ever deleted, so no copy each round.
+    for (const index of unfinished) {
       const process = processes[index];
       if (!process) continue;
       let canFinish = true;
