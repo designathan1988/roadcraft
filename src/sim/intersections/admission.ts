@@ -38,6 +38,9 @@ interface Verdict {
   readonly reserveOnly?: boolean;
 }
 
+/** A head on red whose declared chain stands: reserve only, keep `reservedConnectors`. */
+const KEEP_DECLARED: Verdict = { ok: true, reserveOnly: true };
+
 interface ConnectorReservation {
   readonly connector: Connector;
   readonly points: readonly number[];
@@ -160,10 +163,12 @@ function admit(w: SimWorld, banker: BankerPass): void {
     if (verdict.ok) {
       const reservations = verdict.reservations ?? [];
       if (verdict.reserveOnly) {
-        // `reservedConnectors` is a Banker's maximum claim, not physical ownership.
-        r.v.reservedConnectors = reservations.map(
-          (reservation) => reservation.connector.id,
-        );
+        // `reservedConnectors` is a Banker's maximum claim, not physical ownership. Kept as it is when the chain asked for is the one declared (no `reservations`): the same ids, and the same array for `reconcileReservedChain`'s memo (SIM-10).
+        if (verdict.reservations) {
+          r.v.reservedConnectors = reservations.map(
+            (reservation) => reservation.connector.id,
+          );
+        }
         banker.changed(r.v);
         // `longitudinalConstraints` has already pushed the signal obstacle for this vehicle from the same `mustStopAtSignal`
         if (!r.v.constraints.obstacles.some((o) => o.kind === 'signal')) {
@@ -280,6 +285,8 @@ function evaluate(w: SimWorld, r: Request, banker: BankerPass): Verdict {
   if (alreadyDeclared && chain.length !== r.v.reservedConnectors.length) {
     return { ok: false, reason: 'spillback' };
   }
+  // DO NOT build the chain's points for a head declared and still held at its red each tick (SIM-10): the reservation it would set is the one it holds.
+  if (alreadyDeclared && chain.length > 0 && r.row === 'none') return KEEP_DECLARED;
 
   const reservations = chain.map((connector) => ({
     connector,
