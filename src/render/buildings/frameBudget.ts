@@ -74,11 +74,15 @@ export const TYPICAL_LEVEL_TRIANGLES: Readonly<Record<'cell' | 'facade', number>
 export class LandedMeasure<K extends string> {
   private readonly landed = new Map<string, number>();
   private readonly sums = new Map<K, { sum: number; n: number }>();
+  /** Called whenever what it answers may change (`layer.ts` levelOfDetail chooses the levels again then). */
+  changed: () => void = () => {};
   constructor(private readonly typical: Readonly<Record<K, number>>) {}
   set(kind: K, key: string, triangles: number): void {
     const at = `${kind}|${key}`;
     const s = this.sums.get(kind) ?? { sum: 0, n: 0 };
     const was = this.landed.get(at);
+    if (was === triangles) return;
+    this.changed();
     if (was !== undefined) s.sum -= was; else s.n++;
     s.sum += triangles;
     this.sums.set(kind, s);
@@ -90,6 +94,7 @@ export class LandedMeasure<K extends string> {
       const at = `${kind}|${key}`;
       const was = this.landed.get(at);
       if (was === undefined) continue;
+      this.changed();
       this.landed.delete(at);
       s.sum -= was;
       s.n--;

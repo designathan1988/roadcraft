@@ -300,6 +300,33 @@ describe('the cells the budget of triangles held back', () => {
     expect(shown(layer)).toEqual(held);
     layer.dispose();
   });
+  it('choose the levels no more while the view stands still and nothing changed, and again once the eye moves (PRD-01)', () => {
+    const doc = town(4);
+    const layer = createBuildingLayer();
+    layer.frame.budget = 40_000;
+    frames(layer, doc);
+    const held = shown(layer);
+    // A choice reads the budget of triangles in its cap (`capTriangles`) and its fit: a frame that does not choose reads it once, to see it did not change.
+    let reads = 0, budget = layer.frame.budget;
+    Object.defineProperty(layer.frame, 'budget', { get: () => { reads++; return budget; }, set: (v: number) => { budget = v; }, configurable: true });
+    // Settled first: a choice that moved anything is run again until it does not.
+    for (let frame = 0; frame < 3; frame++) layer.levelOfDetail(m(384), m(384), m(300), 1000, null);
+    const still: number[] = [];
+    for (let frame = 0; frame < 10; frame++) {
+      layer.update(doc, flat, 'g');
+      reads = 0;
+      layer.levelOfDetail(m(384), m(384), m(300), 1000, null);
+      still.push(reads);
+      layer.cullDetails(m(384), m(384), m(300), 1000, null, m(1));
+    }
+    expect(shown(layer)).toEqual(held);
+    reads = 0;
+    layer.levelOfDetail(m(390), m(384), m(300), 1000, null);
+    const moved = reads;
+    expect(moved).toBeGreaterThan(1);
+    expect(still).toEqual(still.map(() => 1));
+    layer.dispose();
+  });
 });
 
 describe('what the layer keeps while the camera walks the town', () => {

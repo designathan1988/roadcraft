@@ -18,6 +18,8 @@ export class MassLevels {
   private readonly stale = new Set<string>();
   /** Each level's job asked and not answered. */
   private readonly asked = new Map<string, number>();
+  /** Called whenever what it answers may change (`layer.ts` levelOfDetail chooses the levels again then). */
+  changed: () => void = () => {};
 
   /** `land`: a level's masses come (null: none of its buildings has any); `remove`: a level with no building left; `plan`: a level that has buildings (its place known before its masses);
    *  `wanted`: whether a tile is wanted now (its plate refined for the view) - DO NOT ask every tile of the map: a plate stands for them from afar (Cesium asks a tile's children only when it refines). */
@@ -34,6 +36,7 @@ export class MassLevels {
     if (was && entries && sameEntries(was, entries)) return;
     if (!was && !entries?.length) return;
     if (entries?.length) this.entries.set(cell, entries); else this.entries.delete(cell);
+    this.changed();
     const [i, j] = cellIndex(cell);
     this.dirty.add(tileOf(i, j));
     this.dirty.add(plateOf(i, j));
@@ -42,6 +45,7 @@ export class MassLevels {
 
   /** Every plate touched asked once, made of its cells' entries; a tile touched asked once it is wanted (`pump`); a level with none left removed. */
   flush(env: CellEnv): void {
+    if (this.dirty.size) this.changed();
     for (const key of this.dirty) {
       const list = this.listOf(key);
       if (list.length === 0) {
@@ -79,7 +83,7 @@ export class MassLevels {
 
   /** A tile whose masses were let go, neither drawn nor wanted (`massCells.ts`): asked again once a view wants it (`pump`). */
   release(key: string): void {
-    if (key[0] === 't' && this.listOf(key).length) this.stale.add(key);
+    if (key[0] === 't' && this.listOf(key).length) { this.stale.add(key); this.changed(); }
   }
 
   /** A level's buildings, its cells' in order. */
@@ -105,6 +109,7 @@ export class MassLevels {
     const edited = this.edited.delete(key);
     id = this.pool.run(kind, key, list, env, (result) => {
       if (this.asked.get(key) === id) this.asked.delete(key);
+      this.changed();
       this.land(key, result.mass ?? null);
     }, `${kind}|${key}`, edited);
     if (this.pool.isRunning(id)) this.asked.set(key, id);
@@ -122,6 +127,7 @@ export class MassLevels {
 
   /** Every request cancelled and every cell forgotten (a context restored, the layer gone): the next filing touches them all again. */
   clear(): void {
+    this.changed();
     for (const id of this.asked.values()) this.pool.cancel(id);
     this.asked.clear();
     this.entries.clear();

@@ -14,7 +14,7 @@ import { type PartCell, type PartView, dropParts } from './partCells';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
-import { FAR_ERROR, createMassCells } from './massCells';
+import { FAR_ERROR, createMassCells, sameFrustum } from './massCells';
 import { FrameScale, LandedMeasure, TYPICAL_LEVEL_TRIANGLES, letBackFitting, letGoPassed } from './frameBudget';
 import { type GpuClass, gpuLedger } from '../gpuLedger';
 import { MassLevels } from './massLevels';
@@ -50,10 +50,13 @@ export function createBuildingLayer(): BuildingLayer {
   const flagLayer = createFlagLayer();
   group.add(flagLayer.group);
   /** The buildings from afar, a mesh a cell (`massCells.ts`); what it lets go is asked again once wanted (a tile by its levels, a cell by `askExposed`). */
+  /** Something the levels' choice reads changed since it last ran (`MassCells`, `MassLevels`, the measures, the town filed again, a level landed or admitted): `levelOfDetail` chooses again. */
+  let lodStale = true;
+  const lodChanged = (): void => { lodStale = true; };
   const massCells = createMassCells(kit, BATCH_CELL, (key) => {
     if (key[0] === 't' || key[0] === 'p') levels.release(key);
     else massAsked.delete(key);
-  }, (key) => !levels.outdated(key));
+  }, (key) => !levels.outdated(key), lodChanged);
   group.add(massCells.group);
   const signatureRoot = new Group();
   signatureRoot.name = 'signature-buildings';
@@ -89,12 +92,15 @@ export function createBuildingLayer(): BuildingLayer {
   const room = (): number => Math.min(budget, gpuLedger.roomFor(DETAIL_CLASSES));
   /** The bytes the cells' levels hold on the GPU, and what each level measured when it last landed (`layerCells.ts`). */
   const resident = new ResidentBytes();
+  resident.changed = lodChanged;
   /** THE FRAME'S SCALE (`frameBudget.ts`): the view's budget of triangles, the error scale that fits it. */
   const frame = new FrameScale();
   /** What each cell's level drew when it last landed (`show`): what a level not landed yet is reckoned at. */
   const landedTriangles = new LandedMeasure<BatchKind>(TYPICAL_LEVEL_TRIANGLES);
+  landedTriangles.changed = lodChanged;
   /** What each cell's level held when it last landed, bytes: a level never landed counts as its kind's landed do on average (NaN before any: its cell's masses, `capNow`). */
   const landedBytes = new LandedMeasure<BatchKind>({ cell: Number.NaN, facade: Number.NaN });
+  landedBytes.changed = lodChanged;
   /** A cell's level come or gone: its bytes counted (here and in the ledger), the level shown chosen again. */
   const counted = (kind: BatchKind, key: string, has: boolean): void => {
     const part = has ? (kind === 'cell' ? cells : facades).get(key)! : null;
@@ -165,10 +171,18 @@ export function createBuildingLayer(): BuildingLayer {
     massCells.setDetailed(key, level !== null);
   };
   const chooseNow = (): void => {
+    lodStale = true;
+    chooseRaw();
+  };
+  const chooseRaw = (): void => {
     if (eye) massCells.choose(eye.x, eye.y, eye.z, eye.pxAtMetre, eye.orthoPx, forcedNear, eye.reach, viewKnown ? eyeView : null);
   };
   /** The detail drawn within the room the ledger leaves (`MassCells.cap`): a level never landed counts as its kind's landed do on average, and before any of its kind landed as its cell's masses. DO NOT reckon it at a fixed number (64 MB each capped every cell before one came), nor at the masses once a level of its kind measured (the facade level holds 4-5 times its masses: the cap asked too many and the admission threw whole jobs away). */
   const capNow = (): void => {
+    lodStale = true;
+    capRaw();
+  };
+  const capRaw = (): void => {
     if (!eye) return;
     massCells.cap(eye.x, eye.y, room(), (key, fine) => {
       const kind: BatchKind = fine ? 'cell' : 'facade';
@@ -199,6 +213,20 @@ export function createBuildingLayer(): BuildingLayer {
   /** DO NOT fit the view's budget of triangles by raising one error scale for the whole view: every cell coarsened at once, the ones at the eye fell to their facade level; the farthest go first (`MassCells.cap`, as the bytes' budget), detail to facade level to masses, the nearest kept in detail */
   /** The cells the budget held back, remembered (`MassCells.hold`): a cell capped stays capped until its next level fits the budget with what the view draws, then comes back a level, the ones spanning most of the screen first (let all back at once, the view passed the budget again and they were capped again: the city blinked, cells loaded and unloaded by turns). */
   const heldFar = new Set<string>(), heldCoarse = new Set<string>();
+  /** What the frame's last choice read (`levelOfDetail`), the levels it left, and whether it left them as the one before it with the same reading (settled). */
+  const lodRead = new Float64Array(10), lodLast = new Float64Array(10).fill(Number.NaN);
+  const lodView = new Frustum();
+  let lodForced: ReadonlySet<string> | null = null, lodChoice = '', lodSettled = false;
+  /** The levels chosen, as a string: the scale, each near cell and whether at full detail, the cells held. */
+  const lodChosen = (): string => {
+    let out = `${frame.scale}|`;
+    for (const key of massCells.nearKeys()) out += `${key}${massCells.fine(key) ? '+' : '-'};`;
+    out += '|';
+    for (const key of heldFar) out += `${key};`;
+    out += '|';
+    for (const key of heldCoarse) out += `${key};`;
+    return out;
+  };
   /** How far down the order the budget coarsens in a cell stands (`MassCells.cap`): the less a metre spans there, the sooner it goes; DO NOT rank it by its distance to the eye's point on the plan (two cells alike either side of it were ranked apart). */
   const rankOf = (key: string): number => -massCells.pixels(key, 1);
   const capTriangles = (): void => {
@@ -359,6 +387,7 @@ export function createBuildingLayer(): BuildingLayer {
   /** The tiles' (L2) and plates' (L3) masses, asked again only where a cell's buildings changed (`massLevels.ts`). */
   const levels = new MassLevels(pool, (key, mass) => { massCells.landLevel(key, mass); chooseNow(); }, (key) => massCells.removeLevel(key),
     (key) => massCells.planLevel(key), (key) => massCells.wanted(key));
+  levels.changed = lodChanged;
   /** Each cell's buildings as last filed (`askMass`), and as last asked of the workers for its own masses: asked only while the view draws the cell one by one (`askExposed`). */
   const massEntries = new Map<string, readonly CellEntry[]>();
   /** The cells the player's edit changed since their jobs were last asked (a road demolishing buildings, in its own tile or the next): their detail and masses asked first (`cellPool.ts` EDIT_TIER), in whichever tile. DO NOT put the growth here: every building grown ahead of the queue held the view's detail behind it (the near tiles, conf23). */
@@ -662,6 +691,7 @@ export function createBuildingLayer(): BuildingLayer {
           activeFlipped.length = 0;
           town.reset(solid);
           townCells = town.byCell;
+          lodStale = true;
           [townSeen, townDoc] = [doc.changes.version, doc];
           // The far level: every cell's masses asked, the cells with no building left gone.
           massTown = town.byCell;
@@ -781,12 +811,27 @@ export function createBuildingLayer(): BuildingLayer {
       if (view) eyeView.copy(view);
       // The levels chosen at scale 1, over the view's budget of triangles the farthest coarsened first (`capTriangles`); only when the masses alone pass it does the scale rise (`frameBudget.ts`). The building cut open and the one being edited stay in detail whatever the eye says.
       const fitted = (scale: number): number => {
-        massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseNow();
-        capNow();
+        massCells.setErrorScale(scale); farTiles.setErrorScale(scale); chooseRaw();
+        capRaw();
         capTriangles();
         return chosenTriangles();
       };
-      if (fitted(1) > frame.budget) frame.fit(fitted); else frame.scale = 1;
+      // DO NOT choose the levels again when nothing they read changed and the last choice left them as the one before it did (the choice is deterministic: the same inputs from where it settled give the same levels; 2 to 4 whole choices and caps a frame, PRD-01). A choice that moved anything (a held cell let back a level, a scale stepping down) is run again until it settles.
+      const read = lodRead;
+      read[0] = eyeX; read[1] = eyeY; read[2] = eyeZ; read[3] = pxAtMetre; read[4] = orthoPx ?? -1; read[5] = reach;
+      read[6] = frame.budget; read[7] = frame.floor; read[8] = room(); read[9] = view ? 1 : 0;
+      const sameRead = lodForced === forcedNear && read.every((v, i) => Object.is(v, lodLast[i])) && (!view || sameFrustum(lodView, view));
+      if (lodStale || !sameRead || !lodSettled) {
+        const wasStale = lodStale;
+        lodStale = false;
+        if (fitted(1) > frame.budget) frame.fit(fitted); else frame.scale = 1;
+        const chose = lodChosen();
+        lodSettled = !wasStale && sameRead && chose === lodChoice;
+        lodChoice = chose;
+        lodLast.set(read);
+        lodForced = forcedNear;
+        if (view) lodView.copy(view);
+      }
       farTiles.choose(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, reach, view);
       // What the frame's last choice left unexposed or unwanted let go, not what a scale tried on the way did (`MassCells.settle`).
       massCells.settle();

@@ -214,18 +214,23 @@ export class ResidentBytes {
   total = 0;
   private readonly resident = new Map<string, number>();
   private readonly measured = new Map<string, number>();
+  /** Called whenever what it answers may change (`layer.ts` levelOfDetail chooses the levels again then). */
+  changed: () => void = () => {};
   /** A level come (`bytes` over 0) or gone (0). */
   count(kind: LevelKind, key: string, bytes: number): void {
     const at = `${kind}|${key}`;
+    this.changed();
     this.total += bytes - (this.resident.get(at) ?? 0);
     if (bytes) this.resident.set(at, bytes); else this.resident.delete(at);
   }
   /** A level landed, uploaded or not: what it measured. */
   landed(kind: LevelKind, key: string, bytes: number): void {
     this.measured.set(`${kind}|${key}`, bytes);
+    this.changed();
   }
   /** A cell's buildings changed: what its levels measured no longer holds. */
   forget(key: string): void {
+    this.changed();
     this.measured.delete(`cell|${key}`);
     this.measured.delete(`facade|${key}`);
   }

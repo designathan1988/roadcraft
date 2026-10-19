@@ -204,8 +204,9 @@ export function cellMesh(mass: CellMass, kit: BuildingKit, name = 'building-mass
 
 /** `released`: a cell's or a level's masses let go, neither drawn nor wanted (or refused as they came): to be asked again once wanted (`layer.ts`). */
 /** `current`: whether a tile's or plate's masses are of its buildings as they are now (`MassLevels.outdated`): a level made before they changed is never coarsened into. */
+/** `changed`: what `choose` and `cap` read changed from outside them (a cell or level planned, landed or gone, a cell's detail shown or hidden, a tile let go at `settle`): `layer.ts` levelOfDetail chooses again then. */
 export function createMassCells(kit: BuildingKit, cellSize: number, released: (key: string) => void = () => {},
-  current: (levelKey: string) => boolean = () => true): MassCells {
+  current: (levelKey: string) => boolean = () => true, changed: () => void = () => {}): MassCells {
   const group = new Group();
   group.name = 'buildings-far';
   group.matrixAutoUpdate = false;
@@ -424,6 +425,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
   return {
     group,
     plan(key, bottom = 0, top = 0) {
+      changed();
       const known = cells.get(key);
       if (known) {
         if (!known.mesh) { known.bottom = bottom; known.top = top; }
@@ -437,6 +439,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       setNear(key, cell, !covered);
     },
     land(key, mass) {
+      changed();
       const known = cells.get(key);
       if (known) drop(known);
       const [i, j] = cellIndex(key);
@@ -472,12 +475,14 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     remove(key) {
       const cell = cells.get(key);
       if (!cell) return;
+      changed();
       drop(cell);
       cells.delete(key);
       nearKeys.delete(key);
       lowered(cell.top);
     },
     landLevel(key, mass) {
+      changed();
       const level = ensure(key);
       if (level.mesh) { dropMesh(level.mesh); level.mesh = null; }
       const { i0, j0, n } = level;
@@ -502,9 +507,10 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
     },
     removeLevel(key) {
       const level = levelsOf(key).get(key);
-      if (level) forget(level);
+      if (level) { changed(); forget(level); }
     },
     planLevel(key) {
+      changed();
       ensure(key);
     },
     wanted(key) {
@@ -686,6 +692,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       return { massCells: cells.size, massTiles: tiles.size, massPlates: plates.size, massStanding: standing.size, massNear: nearKeys.size };
     },
     settle() {
+      if (toSettle.size) changed();
       for (const tile of toSettle) {
         if (!tile.exposed) letCellsGo(tile);
         if (!tile.wanted) letTileGo(tile);
@@ -721,6 +728,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
       return nearKeys;
     },
     setDetailed(key, on) {
+      if (on !== detailed.has(key)) changed();
       if (on) detailed.add(key); else detailed.delete(key);
       const cell = cells.get(key);
       if (cell) showMass(key, cell);
@@ -778,7 +786,7 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
 }
 
 /** Whether two frusta are the same: every plane's normal and constant. */
-function sameFrustum(a: Frustum, b: Frustum): boolean {
+export function sameFrustum(a: Frustum, b: Frustum): boolean {
   for (let i = 0; i < 6; i++) {
     const p = a.planes[i]!, q = b.planes[i]!;
     if (p.constant !== q.constant || !p.normal.equals(q.normal)) return false;
