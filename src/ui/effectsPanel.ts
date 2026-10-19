@@ -6,6 +6,9 @@ export interface EffectsPanelItem {
   readonly key: string;
   readonly label: string;
   readonly on: boolean;
+  /** A setting of several values instead of on and off: its values and the one set (`EffectsPanelDeps.choose`). */
+  readonly choices?: readonly (readonly [string, string])[];
+  readonly value?: string;
 }
 
 export interface EffectsPanelGroup {
@@ -17,6 +20,8 @@ export interface EffectsPanelGroup {
 export interface EffectsPanelDeps {
   groups(): readonly EffectsPanelGroup[];
   toggle(key: string, on: boolean): void;
+  /** A setting of several values set (`EffectsPanelItem.choices`). */
+  choose(key: string, value: string): void;
   /** Every switch of a group on or off at once. */
   setGroup(id: string, on: boolean): void;
   /** Every switch of every group on: the game as it draws. */
@@ -101,6 +106,22 @@ export function createEffectsPanel(deps: EffectsPanelDeps): EffectsPanel {
       legend.append(group.title, button(t('fx.allOn'), () => deps.setGroup(group.id, true)), button(t('fx.allOff'), () => deps.setGroup(group.id, false)));
       box.appendChild(legend);
       for (const item of group.items) {
+        if (item.choices) {
+          const row = document.createElement('div');
+          row.className = 'effects-choice';
+          const name = document.createElement('span');
+          name.textContent = item.label;
+          const choices = document.createElement('div');
+          choices.className = 'options-choices';
+          for (const [value, text] of item.choices) {
+            const b = button(text, () => deps.choose(item.key, value), `v2-choice${value === item.value ? ' on' : ''}`);
+            b.setAttribute('aria-pressed', String(value === item.value));
+            choices.appendChild(b);
+          }
+          row.append(name, choices);
+          box.appendChild(row);
+          continue;
+        }
         const label = document.createElement('label');
         label.className = 'effects-item';
         const check = document.createElement('input');

@@ -182,6 +182,7 @@ body { user-select: none; -webkit-user-select: none; }
 .effects-stats dd { margin: 0; text-align: right; }
 .effects-group { margin: 8px 0 0; padding: 6px 8px; border: 1px solid var(--ui-border); border-radius: 8px; }
 .effects-group legend { display: flex; align-items: center; gap: 4px; padding: 0 4px; color: var(--muted); font-weight: 600; }
+.effects-choice { display: grid; gap: 4px; padding: 4px 0; }
 .effects-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
 .about-dialog #aboutCredits { font-size: 12px; max-height: 50vh; overflow: auto; white-space: pre-wrap; }
 

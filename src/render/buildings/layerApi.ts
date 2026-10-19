@@ -6,7 +6,7 @@ import type { FarTiles } from './farLevels';
 import type { FarGroundEnv } from './farTiles';
 import type { FrameScale } from './frameBudget';
 import type { BuildingKit } from './kit';
-import type { Frustum, Group } from 'three';
+import type { Frustum, Group, Object3D } from 'three';
 import type { ChangeRect } from '@world/changes';
 
 /** DO NOT put the detail of every cell together again, and DO NOT hold a far cell's detail for a while */
@@ -58,6 +58,8 @@ export interface BuildingLayer {
   drawnOver(rect: ChangeRect, revision?: number): boolean;
   /** The frame's scale (`frameBudget.ts`): the view's budget of triangles (`core/perfBudget.ts` `VIEW_BUDGETS`), the error scale that fits it (1 draws for 2 px of error, 2 for 4 px...; the roads' reach follows it, `renderer.ts`). */
   readonly frame: FrameScale;
+  /** The layer's parts by what they draw, for the effects panel (`effectSwitches.ts`): each hidden on its own to measure it. */
+  roots(): Readonly<Record<BuildingRoot, Object3D | null>>;
   /** What the cells' detail holds on the GPU now, bytes. */
   readonly residentBytes: number;
   /** The town's cells by the level chosen and the level shown, those held back by the triangles' budget, and the budgets: asked by the measures (`scripts/lib/measureCity.mjs`), never each frame. */
@@ -86,6 +88,9 @@ export interface BuildingLayer {
   refill(): void;
   dispose(): void;
 }
+
+/** What the layer draws, part by part: the masses and their far levels, the tiles out of the document, the facade level, the cells in detail, their parts, the signature buildings, the flags. */
+export type BuildingRoot = 'masses' | 'farTiles' | 'facades' | 'cells' | 'parts' | 'signatures' | 'flags';
 
 export interface CutawaySpec {
   readonly level: number;

@@ -893,6 +893,15 @@ export function createBuildingLayer(): BuildingLayer {
       if (rects.length || at === null) activeSerial++;
     },
     frame,
+    roots: () => ({
+      masses: massCells.group,
+      farTiles: farTiles.group,
+      facades: facadeStored.group,
+      cells: stored?.group ?? null,
+      parts: partRoot,
+      signatures: signatureRoot,
+      flags: flagLayer.group,
+    }),
     get residentBytes() {
       return resident.total;
     },

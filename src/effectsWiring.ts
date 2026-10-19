@@ -1,4 +1,4 @@
-import { ALL_EFFECTS_ON, LAYER_SWITCHES, LIGHT_SWITCHES, POST_SWITCHES, isEffectSwitch, type EffectSwitch, type EffectSwitches } from '@render/effectSwitches';
+import { ALL_EFFECTS_ON, BUILDING_SWITCHES, DEFAULT_BUILDING_CHOICES, LAYER_SWITCHES, LIGHT_SWITCHES, POST_SWITCHES, isEffectSwitch, type BuildingChoices, type EffectSwitch, type EffectSwitches } from '@render/effectSwitches';
 import type { SceneHandle } from '@render/renderer';
 import { createEffectsPanel, type EffectsPanel, type EffectsPanelGroup } from '@ui/effectsPanel';
 import { t } from '@ui/i18n';
@@ -11,6 +11,13 @@ type CpuSwitch = (typeof CPU_SWITCHES)[number];
 type CpuSwitches = Readonly<Record<CpuSwitch, boolean>>;
 const ALL_CPU_ON: CpuSwitches = { simulation: true, traffic: true, pedestrians: true, growth: true, onDemand: true };
 
+/** The buildings' settings of several values, each with its values as the panel offers them (`BuildingChoices`). */
+const BUILDING_CHOICES: readonly { key: string; field: keyof BuildingChoices; values: readonly (string | number)[] }[] = [
+  { key: 'bMaterial', field: 'material', values: ['normal', 'lambert', 'basic'] },
+  { key: 'bTriangles', field: 'triangles', values: [1, 0.5, 0.25, 0.1, 0.02, 0] },
+  { key: 'bDetailMemory', field: 'detailMemoryMB', values: [-1, 1024, 512, 256, 128, 32, 0] },
+];
+
 const STORE_KEY = 'roadcraft.effects';
 /** The frames the readings average over. */
 const AVERAGE_OF = 60;
@@ -19,19 +26,21 @@ interface Kept {
   readonly effects: EffectSwitches;
   readonly cpu: CpuSwitches;
   readonly resolution: number;
+  readonly buildings: BuildingChoices;
 }
 
 function readKept(): Kept {
-  const kept = { effects: { ...ALL_EFFECTS_ON }, cpu: { ...ALL_CPU_ON }, resolution: 1 };
+  const kept = { effects: { ...ALL_EFFECTS_ON }, cpu: { ...ALL_CPU_ON }, resolution: 1, buildings: { ...DEFAULT_BUILDING_CHOICES } as Record<keyof BuildingChoices, unknown> };
   try {
-    const raw = JSON.parse(window.localStorage.getItem(STORE_KEY) ?? '{}') as { effects?: Record<string, unknown>; cpu?: Record<string, unknown>; resolution?: unknown };
+    const raw = JSON.parse(window.localStorage.getItem(STORE_KEY) ?? '{}') as { effects?: Record<string, unknown>; cpu?: Record<string, unknown>; resolution?: unknown; buildings?: Record<string, unknown> };
+    for (const { field, values } of BUILDING_CHOICES) if (values.includes(raw.buildings?.[field] as string | number)) kept.buildings[field] = raw.buildings![field];
     for (const [key, on] of Object.entries(raw.effects ?? {})) if (isEffectSwitch(key) && typeof on === 'boolean') kept.effects[key] = on;
     for (const key of CPU_SWITCHES) if (typeof raw.cpu?.[key] === 'boolean') kept.cpu[key] = raw.cpu[key];
     if (typeof raw.resolution === 'number' && raw.resolution > 0 && raw.resolution <= 1) kept.resolution = raw.resolution;
   } catch (error) {
     console.warn('effects panel settings unreadable: everything on', error);
   }
-  return kept;
+  return { ...kept, buildings: kept.buildings as unknown as BuildingChoices };
 }
 
 export interface EffectsWiring {
@@ -50,7 +59,7 @@ export interface EffectsWiring {
 }
 
 export function createEffectsWiring(): EffectsWiring {
-  let { effects, cpu, resolution } = readKept();
+  let { effects, cpu, resolution, buildings } = readKept();
   let scene: SceneHandle | null = null;
   let fullRatio = (): number => 1;
   let redraw = (): void => {};
@@ -59,14 +68,14 @@ export function createEffectsWiring(): EffectsWiring {
 
   const save = (): void => {
     try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify({ effects, cpu, resolution }));
+      window.localStorage.setItem(STORE_KEY, JSON.stringify({ effects, cpu, resolution, buildings }));
     } catch (error) {
       console.warn('effects panel settings not kept', error);
     }
   };
   const apply = (): void => {
     if (!scene) return;
-    scene.setEffects(effects);
+    scene.setEffects(effects, buildings);
     scene.resize(fullRatio() * resolution);
     redraw();
   };
@@ -87,6 +96,7 @@ export function createEffectsWiring(): EffectsWiring {
     { id: 'post', keys: POST_SWITCHES },
     { id: 'light', keys: LIGHT_SWITCHES },
     { id: 'layers', keys: LAYER_SWITCHES },
+    { id: 'buildings', keys: BUILDING_SWITCHES },
     { id: 'cpu', keys: CPU_SWITCHES },
   ];
   const isOn = (key: EffectSwitch | CpuSwitch): boolean => (isEffectSwitch(key) ? effects[key] : cpu[key as CpuSwitch]);
@@ -124,12 +134,28 @@ export function createEffectsWiring(): EffectsWiring {
     groups: (): EffectsPanelGroup[] => GROUPS.map((group) => ({
       id: group.id,
       title: t(`fx.group.${group.id}`),
-      items: group.keys.map((key) => ({ key, label: t(`fx.${key}`), on: isOn(key) })),
+      items: [
+        ...(group.id === 'buildings' ? BUILDING_CHOICES.map(({ key, field, values }) => ({
+          key, label: t(`fx.${key}`), on: true, value: String(buildings[field]),
+          choices: values.map((v) => [String(v), t(`fx.${key}.${v}`)] as const),
+        })) : []),
+        ...group.keys.map((key) => ({ key, label: t(`fx.${key}`), on: isOn(key) })),
+      ],
     })),
     toggle: (key, on) => set([key], on),
+    choose(key, value) {
+      const choice = BUILDING_CHOICES.find((c) => c.key === key);
+      if (!choice) return;
+      const v = choice.values.find((x) => String(x) === value);
+      if (v === undefined) return;
+      buildings = { ...buildings, [choice.field]: v };
+      save();
+      apply();
+    },
     setGroup: (id, on) => set(GROUPS.find((group) => group.id === id)?.keys ?? [], on),
     reset() {
       resolution = 1;
+      buildings = DEFAULT_BUILDING_CHOICES;
       set([...GROUPS.flatMap((group) => group.keys)], true);
     },
     resolution: () => resolution,

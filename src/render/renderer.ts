@@ -66,7 +66,8 @@ import { deviceGpuCap, gpuLedger, readGpuDevice } from './gpuLedger';
 import { screenSizer } from './screenSize';
 import { WEAK_MACHINE } from '@core/weakMachine';
 import { DEFAULT_ATMOSPHERE, createPostChain, type Atmosphere, type PostChain } from './postprocess';
-import { ALL_EFFECTS_ON, createFrameHider, type EffectSwitches } from './effectSwitches';
+import { ALL_EFFECTS_ON, DEFAULT_BUILDING_CHOICES, createFrameHider, type BuildingChoices, type EffectSwitches } from './effectSwitches';
+import { createBuildingSwitcher } from './buildingSwitches';
 import { createInspector, type Inspector } from './inspector';
 import { buildRoadSurfaces, disposeSurfaceReuse, dropSurfaceBlocks, noRoadSurfaces, passLook, roadSurfaceSteps, surfaceLook, type RoadSurfaces, type SurfaceReuse, type TileBundle } from './roadSurfaces';
 import { SurfaceInputs } from './roadSurfaceInputs';
@@ -371,8 +372,8 @@ export interface SceneHandle {
   /** A tier, or the player's own settings on it (the options panel: shadows, occlusion, smoothing). */
   setQuality(level: QualityLevel | 'auto', settings?: QualitySettings): void;
   readonly quality: QualityLevel | 'auto';
-  /** The effects panel's switches (`effectSwitches.ts`): each effect and layer on or off, from the next frame. */
-  setEffects(switches: EffectSwitches): void;
+  /** The effects panel's switches (`effectSwitches.ts`): each effect and layer on or off, and the buildings' settings, from the next frame. */
+  setEffects(switches: EffectSwitches, buildings?: BuildingChoices): void;
   /** The inspection camera (`inspector.ts`); null outside development builds. */
   readonly inspect: Inspector | null;
   /** Every figure drawn last frame and the body it was cast as: the runtime census. */
@@ -1056,6 +1057,8 @@ export function createSceneRenderer(
   // And every layer that registered its meshes by size (`shadowCasters.ts`): cellInstances, flags, signals, things in the hand.
   // The far cascades (1 and 2) take the buildings by their masses only (`BuildingLayer.castInto` coarse).
   environment.setCasters((texel, cascade) => {
+    // The effects panel's buildings without shadows: out of every cascade's pass (`buildingSwitches.ts`).
+    buildingSwitcher.casters(effectSwitches, texel);
     buildings.castInto(texel, cascade >= 1);
     castCastersInto(texel);
   });
@@ -2065,6 +2068,8 @@ export function createSceneRenderer(
   let effectSwitches: EffectSwitches = ALL_EFFECTS_ON;
   let keptEnvironment: Scene['environment'] = null;
   const frameHider = createFrameHider();
+  let buildingChoices: BuildingChoices = DEFAULT_BUILDING_CHOICES;
+  const buildingSwitcher = createBuildingSwitcher(buildings);
   /** The rivers and lakes of every plate shown (named so by `terrain.ts`), looked for only while the water is switched off. */
   const waterMeshes = (): Object3D[] => {
     const found: Object3D[] = [];
@@ -2993,7 +2998,7 @@ export function createSceneRenderer(
         // The sun's cascades are made by three at their first draw: counted as they stand before the detail is chosen.
         gpuLedger.set('shadow maps', 'shadow maps', renderTargetsBytes(environment.shadowMaps()));
         // The view's budget of triangles (`core/perfBudget.ts`): the levels' error scale rises until they fit (`buildings/frameBudget.ts`).
-        buildings.frame.budget = VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles;
+        buildings.frame.budget = buildingChoices.triangles === 0 ? Infinity : VIEW_BUDGETS[viewOf(rig.viewport.zoom)].triangles * buildingChoices.triangles;
         buildings.levelOfDetail(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         farRoads.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
         nearTiles.choose(ex, ey, ez, pxAtMetre, rig.perspective ? null : rig.viewport.zoom, reach, detailFrustum);
@@ -3189,7 +3194,7 @@ export function createSceneRenderer(
         agents.setNight(dark);
       }
       // The windows every frame: how many rooms are lit follows the clock
-      buildings.setNight(lastDark, clock / 60);
+      buildings.setNight(effectSwitches.bNightWindows ? lastDark : 0, clock / 60);
       // The sun's cascades fitted to what the camera sees, up to the tallest top.
       environment.follow(rig.camera, target, tallestTop, builtGroundAt);
       // What the simulation must show in full: people step round each other only where they are seen, and big enough to see it
@@ -3401,13 +3406,15 @@ export function createSceneRenderer(
         gpuTimer.poll();
         // The effects panel's switches: the passes skipped, the layers hidden for this drawing only, the shadows kept as they stand.
         post.setSwitches(effectSwitches);
-        if (effectSwitches !== ALL_EFFECTS_ON) {
+        if (effectSwitches !== ALL_EFFECTS_ON || buildingChoices !== DEFAULT_BUILDING_CHOICES) {
           frameHider.hide(switchedOff(effectSwitches));
+          buildingSwitcher.beforeRender(effectSwitches, buildingChoices, frameHider);
           if (!effectSwitches.shadowUpdate) renderer.shadowMap.needsUpdate = false;
         }
         gpuTimer.begin();
         post.render(delta);
         gpuTimer.end();
+        buildingSwitcher.afterRender();
         frameHider.restore();
         tellTargets();
         // What this frame drew, before anything after it draws more (the compiles and warm-ups below render too).
@@ -3438,9 +3445,15 @@ export function createSceneRenderer(
       applyQuality(resolved, settings);
       compileChanged();
     },
-    setEffects(next) {
+    setEffects(next, nextBuildings = DEFAULT_BUILDING_CHOICES) {
       const before = effectSwitches;
       effectSwitches = Object.values(next).every(Boolean) ? ALL_EFFECTS_ON : next;
+      if (nextBuildings.detailMemoryMB !== buildingChoices.detailMemoryMB) {
+        buildings.setDetailBudget(nextBuildings.detailMemoryMB < 0 ? Infinity : nextBuildings.detailMemoryMB * 1048576);
+      }
+      const plain = (Object.keys(DEFAULT_BUILDING_CHOICES) as (keyof BuildingChoices)[]).every((key) => nextBuildings[key] === DEFAULT_BUILDING_CHOICES[key]);
+      buildingChoices = plain ? DEFAULT_BUILDING_CHOICES : nextBuildings;
+      if (before.bShadows !== next.bShadows) shadowMoved = true;
       // The shadows and the lights change every lit material's program: built off the draw, as a quality change's.
       let programs = false;
       if (before.shadows !== next.shadows) {
@@ -3479,6 +3492,7 @@ export function createSceneRenderer(
       tileWriter?.terminate();
       // Everything the renderer made, the GPU's included: the layers, the previews and the effects too
       fx?.dispose();
+      buildingSwitcher.dispose();
       densityCars.dispose();
       exhaust.dispose();
       wear.dispose();
