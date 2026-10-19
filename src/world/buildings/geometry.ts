@@ -268,6 +268,11 @@ export function buildingBounds(b: Building, grow = 0): { minX: number; minY: num
 
 type Bounds = { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number };
 const STORED_BOUNDS = new WeakMap<Building, Map<number, Bounds>>();
+/** `to`'s boxes are `from`'s: the same building in every respect its box reads (its wear changed alone, `BuildingStore.wear`). */
+export function inheritStoredBounds(from: Building, to: Building): void {
+  const boxes = STORED_BOUNDS.get(from);
+  if (boxes && !STORED_BOUNDS.has(to)) STORED_BOUNDS.set(to, boxes);
+}
 /** `buildingBounds` of a record held by the store, worked out once per record and margin. */
 export function storedBounds(b: Building, grow = 0): Bounds {
   let byGrow = STORED_BOUNDS.get(b);

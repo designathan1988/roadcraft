@@ -5,7 +5,7 @@ import { ChangeJournal, type ChangeRect, rectsAround } from '../changes';
 import { JournalCursor } from '../derived';
 import { samePlain } from '@core/plain';
 import { ForkMap } from '@core/forkMap';
-import { storedBounds } from './geometry';
+import { inheritStoredBounds, storedBounds } from './geometry';
 import { BuildingGrid } from './grid';
 import { migrateBuilding, type SerializedBuilding } from './serialize';
 import { type Building, type BuildingId, asBuildingId, settleBuilding } from './types';
@@ -152,7 +152,8 @@ export class BuildingStore {
     const now = settleBuilding({ ...was, decay }, this.settled, was, this.internShared);
     this.leaveBelow();
     this.items.set(id, now);
-    this.grid?.update(now);
+    // DO NOT file it again in the grid: the grid holds ids and the wear moves nothing; its box the record's before it (PRD-02).
+    inheritStoredBounds(was, now);
     this.journal.record('buildingWear', [rectOf(now)], { ids: [id as number] });
   }
 

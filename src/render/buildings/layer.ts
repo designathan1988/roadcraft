@@ -63,6 +63,16 @@ export function createBuildingLayer(): BuildingLayer {
   group.add(signatureRoot);
   /** DO NOT keep each record's JSON text instead: a string the size of the record, for every building of the town */
   const sigs = new WeakMap<Building, number>();
+  /** A building's signature without its wear (`decay`): what its masses are made of (`massing.ts` reads no wear), so a cell whose buildings only wore asks no mass again, nor its tile's or plate's (PRD-02). */
+  const massSigs = new WeakMap<Building, number>();
+  const massSigOf = (b: Building): number => {
+    let sig = massSigs.get(b);
+    if (sig === undefined) {
+      const { decay: _wear, ...shape } = b;
+      massSigs.set(b, sig = new Digest().addPlain(shape).value());
+    }
+    return sig;
+  };
   const sigOf = (b: Building): number => {
     let sig = sigs.get(b);
     if (sig === undefined) sigs.set(b, sig = new Digest().addPlain(b).value());
@@ -437,10 +447,12 @@ export function createBuildingLayer(): BuildingLayer {
     }
     massCells.plan(cell, bottom, top);
     const entries = list.map((b): CellEntry => {
-      const sig = sigOf(b);
       sent.set(String(b.id), b);
-      return { key: String(b.id), sig, digest: digestFor(b, sig, groundKey, groundAt, pavedAt) };
+      return { key: String(b.id), sig: massSigOf(b), digest: digestFor(b, sigOf(b), groundKey, groundAt, pavedAt) };
     });
+    // The same buildings on the same ground (their wear changed alone): its masses stand, asked of nobody again.
+    const was = massEntries.get(cell);
+    if (was && sameEntries(was, entries)) return;
     // Its tile and plate asked again once every cell changed is touched (`levels.flush`); its own masses once the view draws it alone (`askExposed`).
     levels.touch(cell, entries, editedCells.has(cell));
     massEntries.set(cell, entries);

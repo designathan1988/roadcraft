@@ -114,6 +114,14 @@ describe('the buildings layer, a change at a time', () => {
       return most;
     };
     expect(worn()).toBeLessThan(0.9);
+    // The masses (cells', tiles', plates'), as meshes: none made again for a wear (PRD-02: the masses read no wear).
+    const masses = (): Set<Object3D> => {
+      const out = new Set<Object3D>();
+      live.group.traverse((o: Object3D) => { if ((o as Mesh).isMesh && /massing|buildings-far/.test(`${o.name} ${o.parent?.name ?? ''}`)) out.add(o); });
+      return out;
+    };
+    const massesBefore = masses();
+    expect(massesBefore.size).toBeGreaterThan(0);
     const shape = doc.buildings.revision;
     doc.buildings.wear([...doc.buildings.all()][4]!.id, 0.9);
     expect(doc.buildings.revision).toBe(shape);
@@ -126,6 +134,7 @@ describe('the buildings layer, a change at a time', () => {
     expect(walked).toBe(0);
     // A byte's step on the GPU (`cellArrays.ts` `finishWear`): 0.9 reads back within 1/510.
     expect(worn()).toBeCloseTo(0.9, 2);
+    expect(masses()).toEqual(massesBefore);
     live.dispose();
   });
 });
