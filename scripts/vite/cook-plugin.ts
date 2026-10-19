@@ -115,6 +115,8 @@ export function cookPlugin(): Plugin {
     }
   };
   let building = false;
+  /** The build is a server-side bundle (the desktop's job host): nothing to copy beside it. */
+  let serverSide = false;
   let checked = false;
   return {
     name: 'roadcraft-cook',
@@ -137,6 +139,8 @@ export function cookPlugin(): Plugin {
     configResolved(resolved) {
       outDir = path.resolve(resolved.root, resolved.build.outDir);
       building = resolved.command === 'build';
+      // DO NOT copy the cast into a server-side build (`desktop-jobs.config.ts`): the job host reads none of it, and the 170 MB went into the package twice (AST-04).
+      serverSide = Boolean(resolved.build.ssr);
     },
     configureServer(server) {
       // A change to how a derived kind is made changes its fingerprint: the server restarts with the new one
@@ -170,6 +174,7 @@ export function cookPlugin(): Plugin {
       });
     },
     closeBundle() {
+      if (serverSide) return;
       for (const c of COOKS) {
         if (stampOf(c.dir) !== c.stamp) continue;
         const from = path.join(root, DIR, c.dir);

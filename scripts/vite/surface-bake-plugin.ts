@@ -93,6 +93,8 @@ export function surfaceBakePlugin(): Plugin {
   let outDir = 'dist';
   let hash = '';
   let building = false;
+  /** The build is a server-side bundle (the desktop's job host): nothing to copy beside it. */
+  let serverSide = false;
   const copyInto = (from: string, to: string, names: readonly string[]): void => {
     fs.mkdirSync(to, { recursive: true });
     for (const name of names) fs.copyFileSync(path.join(from, name), path.join(to, name));
@@ -107,6 +109,8 @@ export function surfaceBakePlugin(): Plugin {
     configResolved(resolved) {
       outDir = path.resolve(resolved.root, resolved.build.outDir);
       building = resolved.command === 'build';
+      // DO NOT copy the surfaces into a server-side build (`desktop-jobs.config.ts`): the job host reads none of them (AST-04).
+      serverSide = Boolean(resolved.build.ssr);
     },
     async buildStart() {
       if (building) await bake(root, hash, (message) => this.info(message));
@@ -137,7 +141,7 @@ export function surfaceBakePlugin(): Plugin {
       });
     },
     closeBundle() {
-      if (!building) return;
+      if (!building || serverSide) return;
       const from = path.join(root, OUT);
       copyInto(from, path.join(outDir, OUT), fs.readdirSync(from));
       if (CODEC === 'uastc') copyInto(path.join(root, BASIS), path.join(outDir, 'basis'), BASIS_FILES);
