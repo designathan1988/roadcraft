@@ -166,11 +166,13 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   // The far level's shells on the cell's grid (`cellArrays.ts` `ShellGrid`); the detail's in floats (its millimetre steps).
   const comma = job.cell.indexOf(',');
   const grid = job.kind === 'facade' ? [Number(job.cell.slice(0, comma)), Number(job.cell.slice(comma + 1))] as const : undefined;
-  const batch = cellArrays(chunks, { ...COARSE, ghost: false, dim: false, ...(grid ? { grid } : {}) }, job.boxes);
   // The detail cells inside, each its buildings in the cell's order (`layerCells.ts` `chunksByCell`).
+  const detailOf = buildings.map((b) => `${Math.floor(b.x / DETAIL_CELL)},${Math.floor(b.y / DETAIL_CELL)}`);
+  // The shells pieced by detail cell: each piece culled by its own box (`cellArrays` groups).
+  const batch = cellArrays(chunks, { ...COARSE, ghost: false, dim: false, ...(grid ? { grid } : {}) }, job.boxes, detailOf);
   const byDetail = new Map<string, BuildingChunk[]>();
-  buildings.forEach((b, i) => {
-    const key = `${Math.floor(b.x / DETAIL_CELL)},${Math.floor(b.y / DETAIL_CELL)}`;
+  buildings.forEach((_b, i) => {
+    const key = detailOf[i]!;
     const list = byDetail.get(key);
     if (list) list.push(chunks[i]!); else byDetail.set(key, [chunks[i]!]);
   });

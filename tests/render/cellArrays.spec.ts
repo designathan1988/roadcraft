@@ -51,6 +51,26 @@ describe('a batch as arrays', () => {
     }
   });
 
+  it('pieces its shell by detail cell when given one for each chunk: no piece holds two cells, every triangle kept', () => {
+    // The chunks laid 70 m apart: a 64 m detail cell by column and row.
+    const groups = chunks.map((_c, i) => `${Math.floor(((i % 7) * m(70)) / m(64))},${Math.floor((Math.floor(i / 7) * m(70)) / m(64))}`);
+    const take = { parts: [], shells: true, furniture: false, ghost: false, dim: false } as const;
+    const whole = cellArrays(chunks, take, kitBoxes(kit)).shells;
+    const pieced = cellArrays(chunks, take, kitBoxes(kit), groups).shells;
+    const cells = new Set(groups);
+    expect(pieced.length).toBeGreaterThanOrEqual(cells.size);
+    expect(pieced.length).toBeGreaterThan(whole.length);
+    const tris = (list: typeof whole): number => list.reduce((n, p) => n + p.index.length / 3, 0);
+    expect(tris(pieced)).toBe(tris(whole));
+    // Each piece's box no wider than a few buildings of one cell: far under the whole batch's.
+    const span = (p: (typeof whole)[number]): number => Math.max(p.bounds[3]! - p.bounds[0]!, p.bounds[5]! - p.bounds[2]!);
+    const widest = Math.max(...whole.map(span));
+    for (const p of pieced) expect(span(p)).toBeLessThan(widest);
+    // The same chunks and groups make the same pieces (the lost context's refill).
+    const again = cellArrays(chunks, take, kitBoxes(kit), groups).shells;
+    expect(again.map((p) => p.index.length)).toEqual(pieced.map((p) => p.index.length));
+  });
+
   it('cuts its shell into pieces of whole buildings with 16-bit indices, every triangle kept', () => {
     const verticesOf = (list: typeof chunks): number => list.reduce((n, c) => n + Object.values(c.shells).reduce((k, s) => k + s.position.length / 3, 0), 0);
     // Enough buildings to pass two pieces' vertices.

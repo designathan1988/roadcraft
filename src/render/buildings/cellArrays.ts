@@ -178,9 +178,10 @@ export interface KitBoxes {
 }
 
 /** The batch of `chunks` that `selection` takes, as arrays. */
-export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSelection, boxes: KitBoxes): CellArrays {
+/** `groups`: each chunk's detail cell (`DETAIL_CELL`), its shells then pieced cell by cell: each piece's box that cell's, so three leaves out of the view and out of each sun cascade the cells outside them (a piece of buildings from across the whole cell was drawn whole for a corner of it in view). */
+export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSelection, boxes: KitBoxes, groups?: readonly string[]): CellArrays {
   const { ghost, dim } = selection;
-  const floats = selection.shells ? [...shellPieces(chunks, (c) => c.shells), ...shellPieces(chunks, (c) => c.runs)] : [];
+  const floats = selection.shells ? [...shellPieces(chunks, (c) => c.shells, groups), ...shellPieces(chunks, (c) => c.runs, groups)] : [];
   // The far level's: on its cell's grid, its height from its lowest point (`ShellGrid`).
   let lowest = Infinity;
   for (const piece of floats) lowest = Math.min(lowest, piece.bounds[1]!);
@@ -393,7 +394,13 @@ function chunkVertices(chunk: BuildingChunk, of: FragmentsOf): number {
 }
 
 /** Every chunk's fragments in pieces, the chunks in order, a piece closed before a chunk would take it past `SHELL_PIECE` vertices (a chunk is never cut: a larger one is a piece alone, with 32-bit indices). */
-function shellPieces(chunks: readonly BuildingChunk[], of: FragmentsOf): ShellArrays[] {
+function shellPieces(chunks: readonly BuildingChunk[], of: FragmentsOf, groups?: readonly string[]): ShellArrays[] {
+  // By group: each group's chunks in their order, the groups in the order they first come (the same chunks make the same pieces, `buildingMesh.ts` refill).
+  if (groups) {
+    const byGroup = new Map<string, BuildingChunk[]>();
+    chunks.forEach((chunk, i) => { const key = groups[i]!; const list = byGroup.get(key); if (list) list.push(chunk); else byGroup.set(key, [chunk]); });
+    if (byGroup.size > 1) return [...byGroup.values()].flatMap((list) => shellPieces(list, of));
+  }
   const pieces: ShellArrays[] = [];
   let from = 0, vertices = 0;
   for (let i = 0; i < chunks.length; i++) {
