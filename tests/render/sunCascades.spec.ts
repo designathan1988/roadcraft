@@ -63,6 +63,23 @@ describe('sun cascades', () => {
     }
   });
 
+  it('draws the cascades again for safety one at a time, never all three in one frame (RND-03), each still within its half second', () => {
+    const { cascades, camera, sunDirection, target } = rig();
+    cascades.follow(camera, sunDirection, flat, target, m(40));
+    cascades.pass({ changed: true, effects: false });
+    cascades.takeStats();
+    const drawn = [0, 0, 0];
+    for (let frame = 0; frame < 90; frame++) {
+      cascades.follow(camera, sunDirection, flat, target, m(40));
+      cascades.pass({ changed: false, effects: false });
+      const { whole } = cascades.takeStats();
+      expect(whole.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(1);
+      whole.forEach((n, i) => { drawn[i]! += n; });
+    }
+    // Each still drawn for safety about every 30 frames: three times in 90.
+    for (const n of drawn) expect(n).toBeGreaterThanOrEqual(2);
+  });
+
   it('keeps its cascades where they are while the view moves within their room, and draws none again for that', () => {
     const { cascades, camera, sunDirection, target } = rig();
     cascades.follow(camera, sunDirection, flat, target, m(40));

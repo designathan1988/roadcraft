@@ -38,6 +38,8 @@ const SUN_STEP = (0.1 * Math.PI) / 180;
 const SHADOW_BIAS_WORLD = m(0.04);
 /** A cascade drawn over this many frames' worth of change at most: a missed change shows for half a second, never for good. */
 const SAFETY_FRAMES = 30;
+/** DO NOT let the cascades' safety draws fall in one frame: three whole passes at once every half second (RND-03). Each cascade's count starts this many frames apart after a draw they all made; one drawn for safety alone keeps its place. */
+const SAFETY_STAGGER = 10;
 /** A cascade's half-side is one of the steps 2^(k/4) m; it is fitted to what it must hold with this much room (`fit`). */
 const ROOM = 1.2;
 /** Fitted again smaller once the cascade is this many times wider than what it must hold. */
@@ -171,7 +173,7 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
   });
   const fits: Fit[] = lights.map(() => ({ cr: 0, cu: 0, half: 0, sLo: 0, sHi: 0, placed: false }));
   const refitted = lights.map(() => true);
-  const framesSince = lights.map(() => 0);
+  const framesSince = lights.map((_light, i) => -i * SAFETY_STAGGER);
   /** What `takeStats` tells. */
   const stats = { passes: 0, whole: lights.map(() => 0), over: lights.map(() => 0), why: { refit: 0, changed: 0, effects: 0, safety: 0, noStore: 0 } };
   const hold = new SunHold();
@@ -581,8 +583,10 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
           lights[i]!.shadow.needsUpdate = true;
           // DO NOT keep a store no frame will use: the view moving (`still` false, it stands for nothing next frame): the movers drawn in the same pass, no copy, no second pass over them.
           whole[i] = renderer !== null && still;
+          // Drawn for safety alone: its turn kept; drawn with the others (a change, a refit, effects): its turn set apart from theirs.
+          const safetyAlone = !refitted[i] && !changed && !effects && framesSince[i]! >= SAFETY_FRAMES;
           refitted[i] = false;
-          framesSince[i] = 0;
+          framesSince[i] = safetyAlone ? 0 : -i * SAFETY_STAGGER;
         } else { over[i] = true; stats.over[i]!++; }
         any = true;
       }
