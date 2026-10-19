@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { History, followNetwork } from '@editor/history';
@@ -288,5 +289,26 @@ describe('a step that replaced the whole map', () => {
     expect(doc.toText()).toBe(before);
     expect(history.canUndo).toBe(false);
     expect(history.canRedo).toBe(false);
+  });
+});
+
+/** EDT-10: a gesture's step closed when the gesture ends, so what grows after it is not undone with it. */
+describe("a gesture's step", () => {
+  it('closed at its end keeps a building grown after it out of its undo', () => {
+    const { doc } = city();
+    const history = new History();
+    history.begin(doc);
+    doc.buildings.add({ ...generateBody('residential', 30, 30, 2), x: 0, y: 80, rotation: 0 } as unknown as Building);
+    history.end(doc);
+    // Grown afterwards, outside any step.
+    doc.buildings.add({ ...generateBody('residential', 30, 30, 2), x: 120, y: 80, rotation: 0 } as unknown as Building);
+    expect(history.undo(doc)).toBe(true);
+    expect(doc.buildings.size).toBe(1);
+  });
+
+  it("is closed by the page when the terrain's stroke and the clouds' gesture end", () => {
+    const main = readFileSync('src/main.ts', 'utf8');
+    expect(main.slice(main.indexOf('const wasPainting = terrainBrush.end();'), main.indexOf('const wasPainting = terrainBrush.end();') + 300)).toContain('if (wasPainting) { history.end(doc);');
+    expect(main.slice(main.indexOf('cloudTool.up(e.pointerId);'), main.indexOf('cloudTool.up(e.pointerId);') + 200)).toContain('if (cloudStepOpen) { cloudStepOpen = false; history.end(doc);');
   });
 });

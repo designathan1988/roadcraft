@@ -1045,13 +1045,15 @@ function cancelMove(): void {
 
 
 // THE CLOUD TOOL (Paisagem > Terreno > Nuvens)
+/** A step the clouds' tool opened and its gesture has not closed yet. */
+let cloudStepOpen = false;
 const cloudTool = new CloudTool({
   doc,
   mode: () => cloudMode(),
   brush: () => cloudBrush(),
   drift: () => scene.cloudDrift(),
   rayAt: (px, py, height) => view.toWorldAt(px, py, height, surface.cssW, surface.cssH),
-  record: () => history.begin(doc),
+  record: () => { history.begin(doc); cloudStepOpen = true; },
   changed: () => {
     updateHistoryButtons();
     persistence.saveSessionSoon(doc, sessionSettings);
@@ -1062,6 +1064,8 @@ const cloudTool = new CloudTool({
 /** Ends the brush stroke (`TerrainBrush.end`), warning when the land's stamps near their cap. */
 function endTerrainStroke(): void {
   const wasPainting = terrainBrush.end();
+  // DO NOT leave the stroke's step open (EDT-10): the buildings grown after it went into it, and the player's undo of the stroke took them away too.
+  if (wasPainting) { history.end(doc); updateHistoryButtons(); }
   // Past the cap the oldest sculpting is dropped to make room.
   if (wasPainting && doc.terrainStamps.length >= MAX_TERRAIN_STAMPS * 0.9) {
     flashHint(doc.terrainStamps.length >= MAX_TERRAIN_STAMPS ? 'hint.terrain.capReached' : 'hint.terrain.capNear');
@@ -1400,6 +1404,8 @@ function endPointer(e: PointerEvent): void {
   }
   if (terrainBrush.pointer === e.pointerId) endTerrainStroke();
   cloudTool.up(e.pointerId);
+  // Its step closed with the gesture (EDT-10, as the terrain's stroke).
+  if (cloudStepOpen) { cloudStepOpen = false; history.end(doc); updateHistoryButtons(); }
   if (game.tool === 'building') buildings.pointerUp(cancelled || wasPinching);
   bulldozer.up(e.pointerId, !cancelled && !wasPinching);
   lotTool.up(e.pointerId, !cancelled && !wasPinching);
