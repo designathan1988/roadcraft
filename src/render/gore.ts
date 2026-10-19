@@ -1,5 +1,6 @@
+import { fitInstances } from './instanceBounds';
 import {
-  Color, CylinderGeometry, DynamicDrawUsage, Group, InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, SphereGeometry, Vector3,
+  Color, CylinderGeometry, DynamicDrawUsage, Group, InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, Sphere, SphereGeometry, Vector3,
 } from 'three';
 import { m } from '@world/units';
 
@@ -50,6 +51,13 @@ const MAX_BONES = 120;
 const GRAVITY = m(9.8);
 const LINKS = 14;
 
+/** Whether two arrays of floats hold the same numbers. */
+function equalFloats(a: Float32Array, b: Float32Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 export function createGore(): Gore {
   const group = new Group();
   group.name = 'gore';
@@ -65,12 +73,25 @@ export function createGore(): Gore {
   for (const mesh of [segments, organs, bones, cuffs]) {
     mesh.instanceMatrix.setUsage(DynamicDrawUsage);
     mesh.count = 0;
-    mesh.frustumCulled = false;
+    // Culled by a sphere round its pieces, fitted when they change (`fitInstances`, AGT-04/15): out of the cascades that do not reach it.
+    mesh.frustumCulled = true;
+    mesh.boundingSphere = new Sphere();
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     if (mesh !== bones) mesh.setColorAt(0, new Color(1, 1, 1));
     group.add(mesh);
   }
+  /** What each mesh last sent: its matrices and colours over its count. */
+  const sent = new Map<InstancedMesh, { matrices: Float32Array; colours: Float32Array | null; count: number }>();
+  /** Whether a mesh's pieces are the ones it last sent (count, matrices, colours); if not, they are kept as sent now. */
+  const sameAsSent = (mesh: InstancedMesh): boolean => {
+    const n = mesh.count, m = (mesh.instanceMatrix.array as Float32Array).subarray(0, n * 16);
+    const c = mesh.instanceColor ? (mesh.instanceColor.array as Float32Array).subarray(0, n * 3) : null;
+    const was = sent.get(mesh);
+    const same = was !== undefined && was.count === n && equalFloats(was.matrices, m) && (c === null || (was.colours !== null && equalFloats(was.colours, c)));
+    if (!same) sent.set(mesh, { matrices: m.slice(), colours: c ? c.slice() : null, count: n });
+    return same;
+  };
   const chains: Chain[] = [];
   const loose: Organ[] = [];
   const stubs: Ends[] = [];
@@ -210,6 +231,9 @@ export function createGore(): Gore {
       for (const mesh of [segments, organs, bones, cuffs]) {
         mesh.visible = mesh.count > 0;
         if (!mesh.visible) continue;
+        // DO NOT send what lies still: the same pieces as last frame go up again for nothing (AGT-15).
+        if (sameAsSent(mesh)) continue;
+        fitInstances(mesh, mesh.count);
         mesh.instanceMatrix.clearUpdateRanges();
         mesh.instanceMatrix.addUpdateRange(0, mesh.count * 16);
         mesh.instanceMatrix.needsUpdate = true;
