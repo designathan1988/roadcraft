@@ -35,6 +35,8 @@ const LOADERS: Readonly<Record<JobService, () => Promise<{ serve: Serve }>>> = {
   nearTiles: () => import('./render/nearTiles.worker'),
   terrainLight: () => import('./render/terrainLight.worker'),
   derivedWriter: () => import('./render/derivedWriter.worker'),
+  // A new small city made off the page (`editor/smallCityPool.ts`).
+  smallCity: () => import('./editor/smallCity.worker'),
   // A tile written here has its simulation's sections baked with it (`sim/tileSections.ts`): the editor's layer does not import the simulation.
   save: () => Promise.all([import('./editor/save.worker'), import('./sim/tileSections')])
     .then(([save, sections]) => ({ serve: (scope: JobScope) => save.serve(scope, sections.bakeTileSections) })),
