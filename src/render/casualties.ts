@@ -119,15 +119,25 @@ export function createCasualties(): CasualtyLayer {
     return { variant, material, mesh };
   });
   const o = new Object3D();
+  /** The stains as last laid out (their count, first and last) and whether one was still spreading: a stain is fixed once laid but for its age, which only a spreading pool's size reads. */
+  let laidCount = -1, laidFirst: unknown = null, laidLast: unknown = null, spreading = false;
+  const n = stamps.map(() => 0);
   return {
     group,
     sync(list) {
-      const n = stamps.map(() => 0);
+      // DO NOT compose and send every stain each frame while none was added, taken or is spreading (AGT-15): the same matrices.
+      if (!spreading && list.length === laidCount && list[0] === laidFirst && list[list.length - 1] === laidLast) return;
+      laidCount = list.length;
+      laidFirst = list[0] ?? null;
+      laidLast = list[list.length - 1] ?? null;
+      spreading = false;
+      n.fill(0);
       for (const c of list) {
         // A spreading patch is a pool; a small one a few drops; else spatter.
         const k = c.spread > 0 ? 0 : c.size < m(0.45) ? 2 : 1;
         if (n[k]! >= MAX) continue;
         const grow = c.spread > 0 ? Math.min(1, 0.2 + c.age / c.spread) : 1;
+        if (grow < 1) spreading = true;
         const size = c.size * grow * (k === 0 ? 1 : 1.6);
         o.position.set(c.x, c.z + 0.02, -c.y);
         o.rotation.set(0, c.angle, 0);
