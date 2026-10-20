@@ -216,8 +216,8 @@ export interface RoadSurfaces {
   dispose(): void;
 }
 
-/** Tiles a side of one mesh. */
-const CHUNK = 4;
+/** Tiles a side of one mesh: eight tiles of 76.8 m, a mesh a surface over 614 m of roads. An edit re-merges its block's tiles, never builds them again (kept by digest). */
+const CHUNK = 8;
 /** Tiles a batch asked of the workers at once (`roadTilePool.ts`) */
 const SHAPE_BATCH = 64;
 
@@ -529,7 +529,7 @@ export function* roadSurfaceSteps(
           const tile = list[k]!;
           const tileAt = performance.now();
           // Made off the page: taken as it is.
-          const bundle = made ? made[k - from]! : reading(() => buildTile(tile.into, tile.rect, specs));
+          const bundle = made ? made[k - from]! : reading(() => tileBundle(tile.into, tile.rect, specs));
           tile.bundle = bundle;
           tile.surfaces = [...bundle.keys()];
           tilesMs += performance.now() - tileAt;
@@ -797,9 +797,4 @@ function dress(read: SurfaceRead, raised: boolean, materials: SceneMaterials, gr
     options: { ...read.options, material: look.material, ...(look.castShadow !== undefined ? { castShadow: look.castShadow } : {}), receiveShadow: true },
     ...(look.renderOrder !== undefined ? { renderOrder: look.renderOrder } : {}),
   };
-}
-
-/** Every surface of one tile, from the rings that reach it (`roadSurfacePass.ts` tileBundle): a tile the page builds itself (a worker makes its own, `roadTileMesh.ts`). */
-function buildTile(into: Reach, rect: TileRect, specs: readonly SurfaceSpec[]): TileBundle {
-  return tileBundle(into, rect, specs);
 }
