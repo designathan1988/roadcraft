@@ -1051,6 +1051,11 @@ function lookDigest(rt: RoadType): number {
 /** The ground under a road: the dilated ceiling and the designed grade line (see the stations step). */
 function readStations(line: Polyline, half: number, count: number, step: number,
   terrainAt: (x: number, y: number) => number): { ceil: number[]; base: number[] } {
+  // Level ground: every sample is the same; DO NOT sample seven points a station and smooth a line already flat (most of a generated city's solve).
+  if (terrainAt === FLAT_GROUND) {
+    const level = new Array<number>(count).fill(ROAD_GROUND_CLEARANCE);
+    return { ceil: level, base: level.slice() };
+  }
   const ceil: number[] = [];
   /** Mean ground across the casing: the line that balances cut against fill. */
   const mid: number[] = [];

@@ -1808,6 +1808,7 @@ function mountInterface(): void {
     redo,
     newMap,
     newWorld,
+    newLargeWorld,
     openMap: () => void openMap(),
     saveMap,
     about: openAbout,
@@ -1967,6 +1968,11 @@ function newWorld(): void {
   if (!window.confirm(t('confirm.newWorld'))) return;
   void openSmallCity(Math.floor(Math.random() * 0x7fff_ffff) || 1);
 }
+/** A LARGE PLANNED CITY (the goal of 2026-10-20: a city of tens of thousands of buildings, not the small city's 2.5 thousand): laid whole by the plan's generator off the page, opened at a district while the rest of the world fills in behind the curtain. */
+function newLargeWorld(): void {
+  if (!window.confirm(t('confirm.newLargeWorld'))) return;
+  void openGeneratedCity({ seed: Math.floor(Math.random() * 0x7fff_ffff) || 1, size: 'large', radius: 3_000 });
+}
 /** A city being made off the page (`cityGen.worker.ts`): the curtain over the map while the worker builds it, no frame of it on the page. */
 let generatingCity = false;
 /** The opening asked for while one is made: the same promise, never a second city over the first's answer. */
@@ -2052,6 +2058,8 @@ function fitOpeningView(): void {
   const half = m(300);
   camera.fit({ minX: cx - half, minY: cy - half, maxX: cx + half, maxY: cy + half }, surface.cssW, surface.cssH);
   syncViewFromFlatCamera();
+  // At the old inclined opening a large city's tall, dense towers hid the whole street grid behind them (the player, 2026-10-20: "as vias não são carregadas"): looking down, the roads and blocks read as a map at every zoom, the way the city is planned.
+  view.setOrbit(view.azimuth, Math.max(view.elevation, 1.38));
 }
 // The sky: always day (the default), always night, or the residents' clock; kept.
 const SKY_KEY = 'roadcraft.sky';

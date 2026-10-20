@@ -1,4 +1,4 @@
-import { GROUND_ONLY, buildRoadElevation } from '@world/elevation';
+import { FLAT_GROUND, GROUND_ONLY, buildRoadElevation } from '@world/elevation';
 import { applyLots, planLots } from '@world/lots';
 import { Network } from '@world/network';
 import { pavedHeightFrom } from '@world/paving';
@@ -29,9 +29,9 @@ export function buildCityMap(city: CityPlan): SerializedDoc {
   // The roads as they stand for the zones (a rebuild finds what changed, nothing when nothing did).
   net.rebuild();
   zoneCity(doc, net, city);
-  // The flat ground of a new map, and the paving its streets lay on it (as the renderer reads it, `renderer.ts` `pavedHeightAt`).
-  const ground = (): number => 0;
-  const elevation = buildRoadElevation(net, ground);
+  // The flat ground of a new map, and the paving its streets lay on it (as the renderer reads it, `renderer.ts` `pavedHeightAt`). `FLAT_GROUND` lets the solve skip the ground reads of every station (level ground: every sample the same).
+  const ground = FLAT_GROUND;
+  const elevation = buildRoadElevation(net, FLAT_GROUND);
   const pavedAt = (x: number, y: number): number => (elevation.has(GROUND_ONLY) ? pavedHeightFrom(elevation, GROUND_ONLY, (px, py) => footwayRiseAt(net, px, py), x, y) : NaN);
   const refused = new Set<number>();
   const open = doc.openLots.count(refused);

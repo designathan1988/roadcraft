@@ -89,6 +89,7 @@ export const EN: Dictionary = {
   'hint.sampleTown': 'The town built · the previous map comes back with Ctrl+Z',
   'action.newMap': 'New map',
   'action.newWorld': 'New city (10 km × 10 km)',
+  'action.newLargeWorld': 'New metropolis (large city)',
   'action.saveMap': 'Save map',
   'action.openMap': 'Open map',
   'action.undo': 'Undo (Ctrl+Z)',
@@ -315,6 +316,7 @@ export const EN: Dictionary = {
   'confirm.clearTerrain': 'Flatten the whole terrain? This can be undone.',
   'confirm.newMap': 'Start a new map? The current one has already been saved automatically.',
   'confirm.newWorld': 'Create a new city over the whole 10 km × 10 km map? The current map has already been saved automatically.',
+  'confirm.newLargeWorld': 'Create a large planned city (about 30,000 buildings)? It opens at a district; the rest of the city fills in after the curtain.',
 
   // ------------------------------------------------------------------ tools
   'tool.road': 'Road',

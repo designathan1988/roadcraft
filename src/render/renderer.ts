@@ -43,14 +43,14 @@ import type { Change, ChangeJournal, ChangeKind, ChangeRect, DerivedChangeKind }
 import type { Vec2 } from '@core/vec2';
 import type { SegmentId } from '@world/ids';
 import { Network, type SegmentRibbon } from '@world/network';
-import { GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, roadsToRead, type RoadElevation } from '@world/elevation';
+import { FLAT_GROUND, GROUND_ONLY, SURFACE_READ_REACH, buildRoadElevation, roadsToRead, type RoadElevation } from '@world/elevation';
 import { RoadsRead } from './roadsRead';
 import { RoadStations } from './roadStations';
 import { FOOTWAY_RISE, LANE_LINE, sidewalkHalf } from '@world/roadTypes';
 import { footwayRiseAt, packFlush } from '@world/roads/footwayRise';
 import { type PavingData, type PavingSource, pavedHeightFrom } from '@world/paving';
 import type { RoadStructure } from '@world/structures';
-import { TERRAIN_MAX_HEIGHT, TERRAIN_MIN_HEIGHT } from '@world/terrain';
+import { RELIEF_FLAT, TERRAIN_MAX_HEIGHT, TERRAIN_MIN_HEIGHT } from '@world/terrain';
 import type { SimClient, VehicleView } from '@sim/host/simClient';
 import type { GroundBox } from '@sim/host/fleetGrid';
 import type { Viewport } from '@view/viewport';
@@ -1849,10 +1849,17 @@ export function createSceneRenderer(
     const landBlocks = !landStill && land !== null && land !== 'all' ? blocksOver(land) : null;
     const groundMoved = landBlocks && land !== null && land !== 'all' ? [land] : null;
     const from = landStill || groundMoved ? elevation : null;
+    // A new map on level ground (`RELIEF_FLAT`, no stamp): every station's ground is the same, and reading it costs most of a large city's solve. A stroke or a height stamp makes it real ground again.
+    const levelLand = net.doc.terrainRelief === RELIEF_FLAT && net.doc.terrainStamps.length === 0;
+    const groundAt = levelLand ? FLAT_GROUND : builtGroundAt;
     // DO NOT read the ground under a tile's hundreds of new roads in this frame: a job reads it off the shared plates, the solve waits for it.
     const solvedAhead = offeredElevation !== null && offeredElevation.revision === net.revision && offeredElevation.terrain === net.doc.terrainRevision;
-    stationsWait = !solvedAhead && roadStations.waiting(roadsRead.of(groundMoved ? null : [net.state, from], () => roadsToRead(net, builtGroundAt, from, groundMoved)),
+    performance.mark('world:stations-start');
+    const stationAsk = roadsRead.of(groundMoved ? null : [net.state, from], () => roadsToRead(net, groundAt, from, groundMoved));
+    performance.mark('world:stations-read');
+    stationsWait = !solvedAhead && roadStations.waiting(stationAsk,
       (terrain.renderedHeightAt as SharedGroundAt).share?.current ?? null, net.doc.terrainRevision);
+    performance.mark('world:stations-done');
     if (stationsWait) return;
     landDirty = null;
     const previousElevation = elevation;
@@ -1863,10 +1870,12 @@ export function createSceneRenderer(
     // ONE solve for the whole network, shared by every consumer below.
     const offered = offeredElevation;
     offeredElevation = null;
+    performance.mark('world:solve');
     elevation = offered && offered.revision === net.revision && offered.terrain === terrainRevision
       ? offered.elevation
       // On land that has not moved, from the last solve
-      : buildRoadElevation(net, builtGroundAt, from, roadStations.current, groundMoved);
+      : buildRoadElevation(net, groundAt, from, roadStations.current, groundMoved);
+    performance.mark('world:solved');
     roadStations.used();
     measureHitch('hitch:road-edit/elevation', started);
     // Now the ground comes to meet the roads
@@ -1876,14 +1885,14 @@ export function createSceneRenderer(
     const elevationMs = performance.now() - started;
     const cause = net.doc.changes.version;
     // DO NOT build it in one go: the roads of a generated city were built in the frame of the change, on the page
-    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true, openingRegion);
+    worldJob = worldSteps(net, pendingBlocks, { cause, elevationMs }, started, true, openingRegion, levelLand);
     worldJobFresh = true;
     worldJobGround = true;
   };
 
   /** @rebuild What `worldSteps` builds before it is put in place at once. */
   function* worldSteps(net: Network, compares: readonly (BlockCompare | null)[], solved: { readonly cause: number; readonly elevationMs: number },
-    started: number, sliced: boolean, region: TerrainRegion | null): Generator<'wait' | void, void, void> {
+    started: number, sliced: boolean, region: TerrainRegion | null, levelLand: boolean): Generator<'wait' | void, void, void> {
     const solve = elevation!;
     // The revision this build is of: what its landing says the near roads are built for (`settleNearTiles`).
     const builtOf = networkRevision;
@@ -1898,7 +1907,10 @@ export function createSceneRenderer(
     // DO NOT shape the whole map when the blocks are known, however many: past a quarter of the plates loaded it re-floored and re-graded every building of the region at each tile the streamed world put in (5 floors a building in an opening, 2026-10-16); the blocks' work follows what moved.
     const blocks = compares.includes(null) ? null : compares.flatMap((c) => c!.blocks);
     performance.mark('world:shape');
-    if (blocks === null) {
+    if (levelLand) {
+      // Level ground (a generated city's new map): nothing to cut or fill, and its buildings were grown on this ground. DO NOT shape 29 thousand pads and follow every floor for a land that is already level (12.5 s of the opening).
+      gradedFor = net.doc.buildings.revision;
+    } else if (blocks === null) {
       const shaping = shapeGround(net, region);
       while (!shaping.landed) { landShapes(); if (shaping.landed) break; yield 'wait'; }
     } else if (blocks.length || gradedFor !== net.doc.buildings.revision) yield* shapeBlocksSteps(net, blocks);
@@ -2791,6 +2803,7 @@ export function createSceneRenderer(
     resize,
     // Wall-clock time between drawn frames, for things that age as they are watched.
     draw(net, sim, alpha, delta, options) {
+      performance.mark('frame:draw-start');
       renderer.info.reset();
       groundDiary = net.doc.changes;
       // Planted trees and shrubs grow with the city's clock: resized once a city hour.
@@ -2811,6 +2824,7 @@ export function createSceneRenderer(
       const terrainStarted = performance.now();
       const stroking = !!options?.holdRoads && !!elevation && networkRevision === net.revision;
       const groundMoved = terrain.update(net.doc, stroking);
+      performance.mark('frame:terrain');
       const landEntries = landRead.read(net.doc.changes);
       if (groundMoved) {
         landVersion++;
@@ -2828,21 +2842,27 @@ export function createSceneRenderer(
         }
       } else {
         const atRebuild = performance.now();
+        performance.mark('frame:rebuild-start');
         rebuildWorld(net);
+        performance.mark('frame:rebuild');
         measureHitch('hitch:draw/Rebuild', atRebuild);
         terrain.settle();
       }
       const atPump = performance.now();
       pumpWorld();
+      performance.mark('frame:pump');
       measureHitch('hitch:draw/Pump', atPump);
-      // A building placed, moved or reshaped grades its own site.
+      // A building placed, moved or reshaped grades its own site. Level ground (a generated city's new map) moves under nothing: DO NOT follow 29 thousand floors or grade every pad again (3.7 s of the opening's frame).
+      const levelLand = net.doc.terrainRelief === RELIEF_FLAT && net.doc.terrainStamps.length === 0;
       landShapes();
-      followFloors(net);
-      if (!(worldJob && worldJobGround) && gradedFor !== net.doc.buildings.revision) {
+      if (!levelLand) followFloors(net);
+      performance.mark('frame:follow');
+      if (!levelLand && !(worldJob && worldJobGround) && gradedFor !== net.doc.buildings.revision) {
         gradedFor = net.doc.buildings.revision;
         const changed = sitesGraded.changedSites(net.doc.buildings);
         if (changed) shapeGround(net, changed.map(terrainRegion), true);
       }
+      performance.mark('frame:graded');
       // What stands on the ground - the buildings, the walls, the transport, the gardens
       const groundSettled = !stroking && !worldJob;
       // The street furniture, the signs, the barriers and the transport on the world as it stands (the engine's 'draw' products)
@@ -2861,10 +2881,12 @@ export function createSceneRenderer(
         nearTiles.coarseFirst(buildings.hidden);
         // Buildings put together or streamed in (HLOD, `layer.ts`) are new casters: the shadow map is drawn again.
         settleNearTiles();
+        performance.mark('frame:buildings-start');
         if (buildings.update(net.doc, terrain.renderedHeightAt, buildingGround, pavedHeightAt, builtGroundAt,
           (since) => (since === '' ? null : buildingsOnGroundSince(net.doc, Number(since))))) shadowMoved = true;
         // Another frame while they land, nothing more: what lands stirs the stores itself (childadded, the door, `update`'s answer).
         if (buildings.pending) askDraw();
+        performance.mark('frame:buildings-end');
       }
       // The countryside's trees' kit (its models, its programs compiled ahead: `loadNatureTrees`) made while the first world is built, not after: it reads nothing of the world, and the opening waited for it once the world was in (`natureTreesPending`, the curtain's `whole`). The trees themselves are grown once the world stands (the nature's keeps, `!worldJob`).
       if (!natureTreesStarted && roads !== null) startNatureTrees();

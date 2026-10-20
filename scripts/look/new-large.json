@@ -1,0 +1,25 @@
+{
+  "viewport": [1280, 720],
+  "dialogs": "accept",
+  "steps": [
+    { "usageStart": { "every": 250 } },
+    { "until": "performance.getEntriesByName('opening:shown').length > 0", "name": "boot map shown", "timeout": 180000, "polling": 250 },
+    { "eval": "performance.clearMarks()" },
+    { "press": "Menu" }, { "wait": 500 },
+    { "press": "Nova metrópole (cidade grande)" }, { "wait": 800 },
+    { "until": "performance.getEntriesByName('city:applied').length > 0 && performance.getEntriesByName('opening:shown').length > 0", "name": "metropolis shown", "timeout": 300000, "polling": 250 },
+    { "shot": "opening-district" },
+    { "eval": "performance.getEntriesByType('mark').filter(m => /^(city:|world:|frame:)/.test(m.name)).map(m => ({ name: m.name, at: Math.round(m.startTime) }))" },
+    { "usageEnd": true },
+    { "setView": [0, 0, 0.6, 0, 89] }, { "wait": 6000 },
+    { "shot": "map-top" }, { "memory": "exact" },
+    { "setView": [0, 0, 2.5, 0, 89] }, { "wait": 6000 },
+    { "shot": "district-top" },
+    { "lookAt": [0, 0, 0.35] }, { "wait": 15000 },
+    { "shot": "map" }, { "memory": "exact" },
+    { "lookAt": [0, 0, 2.5] }, { "wait": 6000 },
+    { "shot": "district" }, { "memory": "exact" },
+    { "setView": [300, 0, 8, 20, 12] }, { "wait": 6000 },
+    { "shot": "street" }, { "memory": "exact" }
+  ]
+}

@@ -88,6 +88,7 @@ export const PT_BR: Dictionary = {
   'hint.sampleTown': 'Vila construída · o mapa anterior volta com Ctrl+Z',
   'action.newMap': 'Novo mapa',
   'action.newWorld': 'Nova cidade (10 km × 10 km)',
+  'action.newLargeWorld': 'Nova metrópole (cidade grande)',
   'action.saveMap': 'Salvar mapa',
   'action.openMap': 'Abrir mapa',
   'action.undo': 'Desfazer (Ctrl+Z)',
@@ -314,6 +315,7 @@ export const PT_BR: Dictionary = {
   'confirm.clearTerrain': 'Aplainar todo o terreno? Esta ação pode ser desfeita.',
   'confirm.newMap': 'Criar um novo mapa? O mapa atual já foi salvo automaticamente.',
   'confirm.newWorld': 'Criar uma nova cidade no mapa inteiro de 10 km × 10 km? O mapa atual já foi salvo automaticamente.',
+  'confirm.newLargeWorld': 'Criar uma cidade grande planejada (cerca de 30.000 prédios)? Ela abre num distrito; o resto da cidade chega depois da cortina.',
 
   'tool.road': 'Via',
   'tool.draw': 'Desenhar',
