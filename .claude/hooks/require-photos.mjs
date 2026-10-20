@@ -30,8 +30,12 @@ const walk = (dir) => {
 walk(reports);
 const named = (pattern) => pngs.filter((path) => pattern.test(path));
 const map = named(/(^|[^a-z])(map|mapa|overview|plano)([^a-z]|$)/i);
-const district = named(/(district|distrito|bairro)/i);
-const street = named(/(street|rua|detail|detalhe)/i);
+const close = named(/(map-close|city-high|close|perto)/i);
+const far = named(/(map|edge|far|longe)/i);
+const district = named(/(district|distrito)/i);
+const neighbourhood = named(/(neighbourhood|neighborhood|bairro)/i);
+const street = named(/(street|rua)/i);
+const angles = named(/(angle|angulo|ângulo)/i);
 const reportsRead = [];
 const look = (dir) => {
   let entries = [];
@@ -66,16 +70,22 @@ const measured = reportsRead.some((report) => {
 const analysisPath = join(reports, 'last-analysis.md');
 let analysis = '';
 try { if (statSync(analysisPath).mtimeMs > since) analysis = readFileSync(analysisPath, 'utf8'); } catch { /* none */ }
-const analysisOk = analysis.trim().length >= 800
-  && /map|mapa/i.test(analysis) && /district|distrito|bairro/i.test(analysis) && /street|rua|detalhe|detail/i.test(analysis)
+const analysisOk = analysis.trim().length >= 1200
+  && /map|mapa/i.test(analysis) && /district|distrito/i.test(analysis) && /neighbourhood|neighborhood|bairro/i.test(analysis)
+  && /street|rua/i.test(analysis) && /angle|angulo|ângulo/i.test(analysis)
+  && /close|perto/i.test(analysis) && /far|longe|edge|borda/i.test(analysis)
   && /cpu/i.test(analysis) && /(memory|mem[oó]ria|heap)/i.test(analysis) && /gpu/i.test(analysis)
-  && (analysis.match(/\d+(?:\.\d+)?\s*(?:%|mb|gb|ms|fps)/gi) ?? []).length >= 4;
+  && (analysis.match(/\d+(?:\.\d+)?\s*(?:%|mb|gb|ms|fps)/gi) ?? []).length >= 8;
 
 const missing = [];
-if (pngs.length < 5) missing.push(`at least 5 screenshots newer than the change (${pngs.length} now)`);
+if (pngs.length < 18) missing.push(`at least 18 screenshots newer than the change (${pngs.length} now): the whole city, far, middle, close, a neighbourhood, the edge and streets at several angles`);
 if (!map.length) missing.push('a whole-map screenshot (its name saying map)');
-if (!district.length) missing.push('a district screenshot');
-if (!street.length) missing.push('a street screenshot');
+if (!close.length) missing.push('a close screenshot (map-close, city-high or close)');
+if (!far.length) missing.push('a far screenshot (map, edge or far)');
+if (!district.length) missing.push('district screenshots');
+if (!neighbourhood.length) missing.push('a neighbourhood screenshot (neighbourhood/bairro)');
+if (street.length < 4) missing.push(`at least 4 street screenshots at different places and angles (${street.length} now)`);
+if (angles.length < 3) missing.push(`at least 3 screenshots named with the angle they look from (${angles.length} now)`);
 if (!reportsRead.length) missing.push('a report.json from scripts/look.mjs newer than the change');
 if (!measured) missing.push('the process readings in that report: steps "memory" (heap, geometry, textures MB), "record"/"recordEnd" (frame and GPU p95 ms) and a "usage" series (8+ samples with the peak CPU, GPU and heap the process reached)');
 if (!analysisOk) missing.push('lab-reports/last-analysis.md newer than the change (800+ chars judging the map, the district and the street, with the problems found and the peak CPU, memory and GPU values of the sampled series)');
