@@ -3956,6 +3956,8 @@ ${JSON.stringify(counts)}`;
     return {
       at: Math.round(performance.now()), opening: scene.opening, worldBusy: scene.worldBusy,
       cpuP50: frames.p50, cpuP95: frames.p95, cpuP99: frames.p99, cpuMax: frames.max, cpuN: frames.n, hitches: frames.over,
+      // The last `recent` frames' own CPU time (a measure's window, not the ring's 40 s): its median.
+      cpuRecentP50: ((recent: number) => { const a: number[] = []; for (let i = 0; i < recent; i++) { const v = frameTimes.newest(i); if (Number.isFinite(v)) a.push(v); } a.sort((x, y) => x - y); return a.length ? a[a.length >> 1]! : NaN; })(120),
       gpuP50: gpu.p50, gpuP95: gpu.p95, gpuP99: gpu.p99, gpuMax: gpu.max, gpuN: gpu.n, gpuSupported: scene.gpu.supported,
       heapMB: heap ? mb(heap.usedJSHeapSize) : null, heapTotalMB: heap ? mb(heap.totalJSHeapSize) : null, heapLimitMB: heap ? mb(heap.jsHeapSizeLimit) : null,
       geometries: scene.gl.info.memory.geometries, textures: scene.gl.info.memory.textures, programs: scene.gl.info.programs?.length ?? 0,

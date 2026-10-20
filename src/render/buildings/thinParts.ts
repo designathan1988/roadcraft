@@ -30,6 +30,32 @@ export function twoSided(g: BufferGeometry): BufferGeometry {
   return out;
 }
 
+/** A part's card (`kit.ts` cards): which pattern its single face draws, per vertex (0 on every other geometry: WebGL's default for a missing attribute). */
+export const CARD_ATTRIBUTE = 'partCard';
+/** The cards' patterns: a window frame, a roof's railing, a balcony railing's front and its sides. */
+export const CARD = { frame: 1, roofRailing: 2, railingFront: 3, railingSide: 4 } as const;
+
+/** GLSL: whether a card's point lies on one of its bars, each at least a pixel wide (`fw`, the coordinate a pixel spans): a bar thinner than a pixel is drawn a pixel wide and its colour mixed by its true share (`thinBar`), so it neither flickers nor brightens the wall. The coordinates are the model's (-0.5..0.5 across, 0..1 up for the railings), as `kit.ts` lays the full models. */
+const CARD_GLSL = `
+float cardBar(float x, float c, float w, float fw) { return step(abs(x - c), 0.5 * max(w, fw)); }
+float cardEvery(float x, float pitch, float w, float fw) { return step(abs(fract(x / pitch + 0.5) - 0.5) * pitch, 0.5 * max(w, fw)); }
+bool cardOn(int kind, vec3 p) {
+  vec2 q = kind == 4 ? p.zy : p.xy;
+  vec2 fw = fwidth(q);
+  float on = 0.0;
+  if (kind == 1) {
+    const float t = 0.045;
+    on = max(max(cardBar(q.x, -0.5 + t * 0.5, t, fw.x), cardBar(q.x, 0.5 - t * 0.5, t, fw.x)), max(cardBar(q.y, -0.5 + t * 0.5, t, fw.y), cardBar(q.y, 0.5 - t * 0.5, t, fw.y)));
+    on = max(on, max(cardBar(q.x, 0.0, t * 0.8, fw.x), cardBar(q.y, 0.18, t * 0.8, fw.y)));
+  } else if (kind == 2) {
+    on = max(max(cardBar(q.y, 0.97, 0.06, fw.y), cardBar(q.y, 0.45, 0.04, fw.y)), cardEvery(q.x + 0.5, 0.25, 0.02, fw.x) * step(q.y, 1.0));
+  } else {
+    on = max(cardBar(q.y, 0.97, 0.06, fw.y), cardBar(q.y, 0.12, 0.04, fw.y));
+    on = max(on, cardEvery(kind == 3 ? q.x + 0.5 : q.x, kind == 3 ? 0.1 : 0.25, 0.015, fw.x));
+  }
+  return on > 0.5;
+}`;
+
 /** The thin parts' materials pre-filtered (see below), set once on the kit's materials. */
 export function prefilterThinParts<K extends string>(
   material: Readonly<Record<'frame' | 'railing' | 'roofRailing' | K, Material>>,
@@ -46,16 +72,20 @@ export function prefilterThinParts<K extends string>(
       shader.uniforms.thinBar = thinBar;
       shader.uniforms.thinBehind = thinBehind;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vThinWorld;')
+        .replace('#include <common>', `#include <common>\nvarying vec3 vThinWorld;\nattribute float ${CARD_ATTRIBUTE};\nvarying float vCard;\nvarying vec3 vCardPoint;`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>
+vCard = ${CARD_ATTRIBUTE};
+vCardPoint = position;
 #ifdef USE_INSTANCING
   vThinWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 #else
   vThinWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
 #endif`);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vThinWorld;\nuniform float thinBar;\nuniform float thinBehind;')
+        .replace('#include <common>', `#include <common>\nvarying vec3 vThinWorld;\nuniform float thinBar;\nuniform float thinBehind;\nvarying float vCard;\nvarying vec3 vCardPoint;\n${CARD_GLSL}`)
         .replace('#include <color_fragment>', `#include <color_fragment>
+  // A card: its face drawn on its bars only.
+  if (vCard > 0.5 && !cardOn(int(vCard + 0.5), vCardPoint)) discard;
   {
     // Metres a pixel spans here, and the bar's share of it.
     float metresPerPixel = max(length(fwidth(vThinWorld)) * 0.7071, 1e-4);
@@ -63,6 +93,6 @@ export function prefilterThinParts<K extends string>(
     diffuseColor.rgb = mix(vec3(thinBehind), diffuseColor.rgb, cover);
   }`);
     };
-    thin.customProgramCacheKey = () => 'thin-part-prefiltered-v2';
+    thin.customProgramCacheKey = () => 'thin-part-prefiltered-v3-cards';
   }
 }

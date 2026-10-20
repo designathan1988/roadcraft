@@ -26,7 +26,7 @@ import { createMassBoxDepth, createMassingMaterial } from './massingMaterial';
 import { unitBox as unitMassBox } from './massBoxes';
 import { posePart } from './partPose';
 import { type FacadePanes, createFacadeMaterial } from './facadeLevel';
-import { prefilterThinParts, twoSided } from './thinParts';
+import { CARD, CARD_ATTRIBUTE, prefilterThinParts, twoSided } from './thinParts';
 import { roomBehindGlass } from './glassRoom';
 import { FACADE_PROP_KINDS, SHADOWED_PROPS, THIN_PROPS } from './facadeProps';
 import type { PartKind } from './chunk';
@@ -127,6 +127,8 @@ export type Axes = readonly [number, number, number];
 export interface PartLevel {
   readonly geometry: BufferGeometry;
   readonly triangles: number;
+  /** One face whose bars its material draws (`thinParts.ts` cards): it casts no shadow (its bars are under a texel where it is drawn). */
+  readonly card?: true;
   /** What it leaves out of the finest, along the model's axes: its error, the largest axis once scaled. */
   readonly error: Axes;
 }
@@ -291,46 +293,29 @@ function quad(w: number, h: number, x: number, y: number, z: number, axis: 'z' |
   return g;
 }
 
-/** The far versions: what of a part is seen from a distance, its faces to the street only. */
-function frameFarGeometry(): BufferGeometry {
-  const t = FRAME_BAR;
-  const parts = [
-    quad(1, t, 0, 0.5 - t / 2, 0.5),
-    quad(1, t, 0, -0.5 + t / 2, 0.5),
-    quad(t, 1, 0.5 - t / 2, 0, 0.5),
-    quad(t, 1, -0.5 + t / 2, 0, 0.5),
-    quad(t * 0.8, 1, 0, 0, 0.5),
-    quad(1, t * 0.8, 0, 0.18, 0.5),
-  ];
-  const merged = mergeGeometries(parts) as BufferGeometry;
-  for (const p of parts) p.dispose();
-  return merged;
+/** A card: `faces` with every vertex's pattern (`CARD`) set by `patternOf` (its normal), the material drawing its bars (`thinParts.ts`). */
+function card(faces: BufferGeometry, patternOf: (nx: number) => number): BufferGeometry {
+  const normal = faces.getAttribute('normal');
+  const pattern = new Float32Array(normal.count);
+  for (let i = 0; i < normal.count; i++) pattern[i] = patternOf(normal.getX(i));
+  faces.setAttribute(CARD_ATTRIBUTE, new BufferAttribute(pattern, 1));
+  return faces;
 }
 
-function railingFarGeometry(): BufferGeometry {
-  const parts: BufferGeometry[] = [
-    quad(1, 0.06, 0, 0.97, 1.025),
-    quad(1, 0.04, 0, 0.12, 1.015),
-    quad(1, 0.06, -0.525, 0.97, 0.5, '-x'),
-    quad(1, 0.06, 0.525, 0.97, 0.5, 'x'),
-  ];
-  for (let i = 0; i <= 10; i++) parts.push(quad(0.015, 0.94, -0.5 + i / 10, 0.5, 1.0075));
-  for (let i = 1; i < 4; i++) {
-    parts.push(quad(0.015, 0.94, -0.5075, 0.5, i / 4, '-x'));
-    parts.push(quad(0.015, 0.94, 0.5075, 0.5, i / 4, 'x'));
-  }
-  const merged = mergeGeometries(parts) as BufferGeometry;
-  for (const p of parts) p.dispose();
-  return twoSided(merged);
+/** THE THIN PARTS FROM AFAR AS CARDS: a window frame is one face over its window, a railing a face a side, each bar drawn by the fragment (`thinParts.ts`). DO NOT draw their bars as faces there: a frame's six bars were 24 vertices of slivers under a pixel wide, 167 thousand frames 6 M vertices a frame of micro-triangles, the GPU shading each in 2x2 blocks (the parts were 4.8 ms of a 19 ms frame at 1080p, measured 2026-10-20). */
+function frameCardGeometry(): BufferGeometry {
+  return card(quad(1, 1, 0, 0, 0.5), () => CARD.frame);
+}
+function roofRailingCardGeometry(): BufferGeometry {
+  return card(twoSided(quad(1, 1, 0, 0.5, 0)), () => CARD.roofRailing);
+}
+function railingCardGeometry(): BufferGeometry {
+  const faces = mergeGeometries([quad(1, 1, 0, 0.5, 1), quad(1, 1, -0.5, 0.5, 0.5, '-x'), quad(1, 1, 0.5, 0.5, 0.5, 'x')]) as BufferGeometry;
+  return card(twoSided(faces), (nx) => (Math.abs(nx) > 0.5 ? CARD.railingSide : CARD.railingFront));
 }
 
-function roofRailingFarGeometry(): BufferGeometry {
-  const parts: BufferGeometry[] = [quad(1, 0.06, 0, 0.97, 0.025), quad(1, 0.04, 0, 0.45, 0.015)];
-  for (let i = 0; i <= 4; i++) parts.push(quad(0.02, 0.94, -0.5 + i / 4, 0.5, 0.01));
-  const merged = mergeGeometries(parts) as BufferGeometry;
-  for (const p of parts) p.dispose();
-  return twoSided(merged);
-}
+
+
 
 /** A straight railing along a roof edge, centred at z = 0. */
 function roofRailingGeometry(): BufferGeometry {
@@ -608,11 +593,11 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;
   for (const kind of PART_KINDS) levels[kind] = [{ geometry: geometry[kind], triangles: trianglesOf(geometry[kind]), error: [0, 0, 0] }];
-  const coarser = (kind: PartKind, g: BufferGeometry, error: Axes): void => { levels[kind].push({ geometry: g, triangles: trianglesOf(g), error }); };
-  // Their street faces only: a frame's depth, a railing's bars' and rails' thickness.
-  coarser('frame', frameFarGeometry(), [0, 0, 1]);
-  coarser('railing', railingFarGeometry(), [0.05, 0, 0.05]);
-  coarser('roofRailing', roofRailingFarGeometry(), [0.02, 0, 0.05]);
+  const coarser = (kind: PartKind, g: BufferGeometry, error: Axes, asCard = false): void => { levels[kind].push({ geometry: g, triangles: trianglesOf(g), error, ...(asCard ? { card: true as const } : {}) }); };
+  // Their street faces only, as cards: a frame's depth, a railing's bars' and rails' thickness.
+  coarser('frame', frameCardGeometry(), [0, 0, 1], true);
+  coarser('railing', railingCardGeometry(), [0.05, 0, 0.05], true);
+  coarser('roofRailing', roofRailingCardGeometry(), [0.02, 0, 0.05], true);
   // The case and its arms: the grille's rings, the coil's louvres and the lines into the wall left out (4.4 cm the thickest).
   coarser('acUnit', acFarGeometry(), [0.045, 0.045, 0.045]);
   coarser('brise', briseFarGeometry(), [BRISE_BLADE, 0, 0]);

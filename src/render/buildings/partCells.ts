@@ -136,8 +136,6 @@ export class PartCell {
     Object.assign(was, view);
     this.tick++;
     for (const band of this.bands) {
-      // A lot's walls are drawn by the layer's batch over the whole town (`detailShells.ts`): no run of them here.
-      if (SHELL_PARTS.has(band.kind)) continue;
       const runs = this.runsOf(band, view);
       if (Number.isNaN(band.widest)) {
         let widest = 0;
@@ -169,7 +167,8 @@ export class PartCell {
         if (!mesh) band.meshes.set(key, mesh = this.make(band, this.runFirst[r]!, this.runLast[r]!));
         // A run's posed copy of its level: a shell's part too, now that it has a coarse level (`kit.ts`).
         mesh.geometry = this.posedLevel(band, mesh, level);
-        mesh.castShadow = casts;
+        // A card casts nothing: its bars are under the texel where it is drawn, and its face would cast whole (`kit.ts` cards).
+        mesh.castShadow = casts && !band.screen.levels[level]!.card;
         mesh.visible = visible;
         band.drawn.set(key, level);
       }
@@ -244,7 +243,7 @@ export class PartCell {
   castInto(texel: number): void {
     for (const band of this.bands) {
       const casts = this.kit.castsShadow.has(band.kind) && band.width >= texel;
-      for (const key of band.drawn.keys()) band.meshes.get(key)!.castShadow = casts;
+      for (const [key, level] of band.drawn) band.meshes.get(key)!.castShadow = casts && !band.screen.levels[level]!.card;
     }
   }
 

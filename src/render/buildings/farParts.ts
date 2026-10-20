@@ -61,7 +61,8 @@ export class FarPartBatch {
       const geometry = posedCopy(level.geometry, poseBuffer, 0);
       const mesh = new InstancedMesh(geometry, material, 0);
       mesh.name = `building-${kind}`;
-      mesh.castShadow = kit.castsShadow.has(kind);
+      // A card casts nothing (`kit.ts` cards): its face would cast whole.
+      mesh.castShadow = kit.castsShadow.has(kind) && !level.card;
       mesh.receiveShadow = true;
       mesh.customDepthMaterial = partPoseDepth(material);
       // One draw a kind over the whole town: it is not culled by a piece's bounds (the pieces stand everywhere).
