@@ -778,8 +778,8 @@ export function createAgentMeshes(elevationAt: ElevationAt, onAssetsReady: () =>
   }
   // The far proxy is drawn under FAR_BODY_ZOOM, a car under nine pixels long
   for (const c of carParts.values()) {
-    // At most nine pixels long: an error of 5% of the car is under half a pixel there.
-    void simplified(c.far.mesh.geometry, 0.03, 0.05).then((coarse) => {
+    // At most nine pixels long: an error of 10% of the car is under a pixel there (meshoptimizer's error is a share of the mesh's extent). DO NOT hold it to 5%: it kept ~440 triangles a car, and a city's thousands of far cars drew 3.5 M triangles no pixel told apart (2026-10-20).
+    void simplified(c.far.mesh.geometry, 0.01, 0.1).then((coarse) => {
       if (coarse === c.far.mesh.geometry) return;
       modelGeometries.push(coarse);
       c.far.mesh.geometry = coarse;

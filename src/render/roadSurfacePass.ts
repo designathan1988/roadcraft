@@ -6,6 +6,7 @@ import { Level, laneWidth } from '@world/roadTypes';
 import { footwayRiseShare } from '@world/roads/footwayRise';
 import { walkingRise } from '@world/curbRamps';
 import { RAISED_LIFT, isRaised, roadStructure } from '@world/structures';
+import { RELIEF_FLAT } from '@world/terrain';
 import type { Input } from './roadSurfaceRings';
 import type { Reach, SurfaceInputs, SurfacePass } from './roadSurfaceInputs';
 import type { PassDesc, RoadLook, SurfaceReads } from './roadSurfaceReads';
@@ -22,6 +23,8 @@ import { TERRAIN_CELL } from './terrainGrid';
 export const GROUND_MAX_EDGE = TERRAIN_CELL / 2;
 /** A raised deck follows nothing, so it needs vertices only for its shading. */
 export const RAISED_MAX_EDGE = TERRAIN_CELL;
+/** Whether a road at grade has ground to follow: on a new map's level ground (`RELIEF_FLAT`, no stamp) it follows nothing either, and is laid as a deck is (`RAISED_MAX_EDGE`). DO NOT refine it to half a terrain cell there: a large city's streets drew 6 M triangles of a flat plane, a quarter of the frame's (2026-10-20). */
+const followsGround = (net: Network): boolean => net.doc.terrainRelief !== RELIEF_FLAT || net.doc.terrainStamps.length > 0;
 
 /** The page's constants a pass is drawn with: its materials' texture scales, whether the ground verge wears the terrain's material, the carriageway's tints (made on the page with three's colour management); numbers, handed to a worker as they are. */
 export interface PassLook {
@@ -98,7 +101,7 @@ export function passDesc(net: Network, pass: SurfacePass, raised: boolean, look:
     ...(pass.chain !== undefined ? { chain: pass.chain } : {}),
     rootType: pass.segment === undefined ? 0 : net.doc.segment(pass.segment)?.type ?? 0,
     raised,
-    maxEdge: raised ? RAISED_MAX_EDGE : GROUND_MAX_EDGE,
+    maxEdge: raised || !followsGround(net) ? RAISED_MAX_EDGE : GROUND_MAX_EDGE,
     groundMaterial: look.groundMaterial,
     scale: { asphalt: look.scale.asphalt, footway: look.scale.footway, kerb: look.scale.kerb, verge: look.scale.verge, deck: look.scale.deck },
     paint,

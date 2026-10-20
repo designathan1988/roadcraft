@@ -108,9 +108,9 @@ describe('the cells at an error scale', () => {
     cells.dispose();
   });
 
-  it('at 8: near at their facade level (16 px allowed, the detail held to a quarter of it, 4 px, 3.4 with the hysteresis: 0.3 m spans 3, no longer resolved; the facade level does)', () => {
+  it('at 7: near at their facade level (14 px allowed: the detail no longer resolves, the facade level does)', () => {
     const cells = row();
-    cells.setErrorScale(8);
+    cells.setErrorScale(7);
     cells.choose(CELL / 2, CELL / 2, m(300), 1000, 10, false, Infinity);
     for (let i = 0; i < 5; i++) expect([cells.near(`${i},0`), cells.fine(`${i},0`)]).toEqual([true, false]);
     cells.dispose();

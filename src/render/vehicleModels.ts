@@ -480,13 +480,9 @@ function headrestAt(hipX: number, hipY: number, recline: number): { x: number; y
 
 /** Plain dark wheels for the far LOD. */
 function farWheels(axles: readonly number[], r: number, halfW: number, tread: number): BufferGeometry[] {
-  const out: BufferGeometry[] = [];
-  for (const ax of axles) {
-    for (const side of [-1, 1] as const) {
-      out.push(tint(new CylinderGeometry(r, r, tread, 8).rotateX(Math.PI / 2).translate(ax, r, side * (halfW - tread / 2)), RUBBER_TRIM));
-    }
-  }
-  return out;
+  // The far proxy is a car under nine pixels long (`agents.ts` FAR_BODY_ZOOM): a wheel is a pixel there. An axle's pair is one dark box across the car, 12 triangles, not two cylinders of 32 each (thousands of cars in a city view drew millions of triangles of wheels no pixel resolved, 2026-10-20).
+  void tread;
+  return axles.map((ax) => tint(box(r * 1.8, r * 1.8, halfW * 2, ax, r * 0.9, 0), RUBBER_TRIM));
 }
 
 // ------------------------------------------------------------------ wheels

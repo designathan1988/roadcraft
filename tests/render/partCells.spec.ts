@@ -46,8 +46,8 @@ describe('the parts of a cell', () => {
 
   it('draw a window frame by its street faces once its depth is under a pixel, a deep post whole', () => {
     const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([windows, posts], 10, 10))]], partBandings(kit.screen)), kit);
-    // 200 m off: the windows' 6 cm are 0.3 px, the posts' 50 cm are 2.5 px.
-    cell.choose(view(10, 210, 5));
+    // 100 m off: the windows' 6 cm deep are 0.6 px (their bars, 6 cm and more, still half a pixel: drawn), the posts' 50 cm are 5 px.
+    cell.choose(view(10, 110, 5));
     const levels = kit.screen.frame.levels;
     const shown = drawn(cell);
     expect(shown.map((mesh) => levelOf(levels, mesh)).sort()).toEqual([0, 1]);
@@ -55,14 +55,23 @@ describe('the parts of a cell', () => {
     expect(cell.triangles).toBe(400 * levels[0]!.triangles + 400 * levels[1]!.triangles);
   });
 
+  it('leave a frame out once its bars span under half a pixel, its box however large: a deep post stays', () => {
+    const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([windows, posts], 10, 10))]], partBandings(kit.screen)), kit);
+    // 200 m off: the windows' bars are a third of a pixel (shimmer, not detail); their 1.9 m diagonal would have kept them to 1.9 km. The posts' bars stand.
+    cell.choose(view(10, 210, 5));
+    const shown = drawn(cell);
+    expect(shown.map((mesh) => mesh.count)).toEqual([400]);
+    expect(cell.triangles).toBe(400 * kit.screen.frame.levels[0]!.triangles);
+  });
+
   it('draw nothing where an instance is under a pixel, and come back without being made again', () => {
     const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(frames([windows, posts], 10, 10))]], partBandings(kit.screen)), kit);
     cell.choose(view(10, 5010, 5));
     expect(drawn(cell)).toHaveLength(0);
     const made = cell.group.children.length;
-    cell.choose(view(10, 210, 5));
+    cell.choose(view(10, 110, 5));
     cell.choose(view(10, 5010, 5));
-    cell.choose(view(10, 210, 5));
+    cell.choose(view(10, 110, 5));
     expect(drawn(cell)).toHaveLength(2);
     expect(cell.group.children.length).toBe(Math.max(made, 2));
   });
@@ -80,10 +89,10 @@ describe('the parts of a cell', () => {
   });
 
   it('choose by sub-cell: the near sub-cell whole, the far one by its street faces', () => {
-    // Two sub-cells 192 m apart in the same cell, the eye over the first: enough frames for a split to spare more than its draws.
+    // Two sub-cells 100 m apart in the same cell, the eye over the first: enough frames for a split to spare more than its draws (the far frames' bars still half a pixel: drawn by their street faces).
     const many = [600, 1.2, 1.5, 0.06] as const;
-    const near = frames([many], 10, 10), far = frames([many], 10, 202);
-    const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(near)], ['0,3', arrays(far)]], partBandings(kit.screen)), kit);
+    const near = frames([many], 10, 10), far = frames([many], 10, 110);
+    const cell = new PartCell('0,0', fileParts('0,0', [['0,0', arrays(near)], ['0,1', arrays(far)]], partBandings(kit.screen)), kit);
     cell.choose(view(10, 10, 20));
     const levels = kit.screen.frame.levels;
     const shown = drawn(cell).map((mesh) => levelOf(levels, mesh)).sort();

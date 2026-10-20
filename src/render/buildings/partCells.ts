@@ -20,6 +20,8 @@ import { DRAW_TRIANGLES, LEAVES, type PartFiling } from './partFiling';
 const COARSEN = 0.85;
 /** A sub-cell not drawn: every instance in it under a pixel. */
 const NONE = 127;
+/** A part made of bars (a frame's rails and stiles, a railing's, a brise's blades: its `pieces`) leaves the drawing once its bars span under this many pixels: what it covers is its bars, not its box. DO NOT keep it until its whole diagonal is under a pixel: 300 thousand window frames of 6 cm bars were drawn to 1-2 km as lines a fifth of a pixel wide, 6 M triangles of shimmer (2026-10-20). */
+const BAR_PIXELS = 0.5;
 /** The choices a run's mesh is kept after it leaves the drawing, before its buffers go: a run that comes back within a camera's pause keeps its mesh; one left behind by a turn does not hold its copies for the rest of the cell's life (the lab's +53 geometries a minute, 2026-10-20). */
 const EVICT_AFTER = 240;
 
@@ -65,6 +67,12 @@ interface Band {
 
 /** The largest of three lengths scaled. */
 const largest = (a: Axes, s: Float32Array, o: number): number => Math.max(a[0] * s[o]!, a[1] * s[o + 1]!, a[2] * s[o + 2]!);
+/** The widest of a part's bars across (`PartScreen.pieces`, the middle side of each), at a sub-cell's scale. */
+function barsAcross(band: { readonly screen: { readonly pieces: readonly Axes[] }; readonly scale: Float32Array }, m: number): number {
+  let widest = 0;
+  for (const piece of band.screen.pieces) widest = Math.max(widest, middle(piece, band.scale, m * 3));
+  return widest;
+}
 /** The diagonal of a box scaled. */
 const diagonal = (a: Axes, s: Float32Array, o: number): number => Math.hypot(a[0] * s[o]!, a[1] * s[o + 1]!, a[2] * s[o + 2]!);
 /** The middle of three lengths scaled: a piece's shadow is this wide from some side of the sun. */
@@ -287,10 +295,11 @@ export class PartCell {
     let k = 0;
     for (; k < levels.length; k++) {
       const next = k + 1;
+      const bars = next === levels.length && band.screen.pieces[0] !== extent;
       const metres = next < levels.length
         ? (shell ? shellPartError(band.scale, m * 3) : largest(levels[next]!.error, band.scale, m * 3))
-        : diagonal(extent, band.scale, m * 3);
-      if (metres * perMetre >= (next <= held ? 1 : COARSEN)) break;
+        : bars ? barsAcross(band, m) : diagonal(extent, band.scale, m * 3);
+      if (metres * perMetre >= (bars ? BAR_PIXELS : 1) * (next <= held ? 1 : COARSEN)) break;
     }
     // Under a pixel across its diagonal: not drawn, a shell's part too.
     return k === levels.length ? NONE : k;

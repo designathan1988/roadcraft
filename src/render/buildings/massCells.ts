@@ -19,8 +19,8 @@ export const FAR_ERROR = m(1.5);
 const FACADE_ERROR = FLAT_DEPTH;
 /** The detail is drawn while what the far level leaves out spans this many pixels or more. */
 const NEAR_PIXELS = 2;
-/** The full detail (L0) while what the facade level lays flat, 0.3 m, spans this many pixels: half a pixel, twice as far as one (~560 m at 1080 p), so a tower keeps its own frames and reveals well past the street it stands in (the player, 2026-10-20: "details at a greater distance, not only with the camera against them"); the frame's budget of triangles still steps it down under load. */
-const FINE_PIXELS = 0.5;
+/** The full detail (L0) while what the facade level lays flat, 0.3 m, spans this many pixels at the frame's own scale (~280 m at 1080 p). DO NOT take it to half a pixel: twice the cells in detail cost 26 ms of GPU a frame in a district view against 19 (measured 2026-10-20); the facade level past it draws the same glass and windows (`facadeLevel.ts`), and the frame's budget steps it down under load. */
+const FINE_PIXELS = 1;
 /** A cell drawn near stays near down to this share of `NEAR_PIXELS`. */
 export const HYSTERESIS = 0.85;
 const DETAIL_REACH = m(1_400); // cells within 1.4 km draw the detail level itself, whatever their pixels: the player asks for no LOD there (2026-10-20)

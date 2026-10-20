@@ -911,12 +911,21 @@ export function buildCarModel(a: Archetype, styleName: CarStyle = (a.style ?? 's
   const wheelSpec = st.cab ? CAB_WHEEL : DRIVER_WHEEL;
   const steering = driverIndex >= 0 ? { geometry: steeringWheel(M(wheelSpec.radius)), seat: driverIndex, wheel: wheelSpec } : null;
 
-  // ---- far LOD: the same surface, coarse, glass drawn dark and opaque.
+  // ---- far LOD: a car under nine pixels long (`agents.ts` FAR_BODY_ZOOM), drawn as the body's own proportions in three boxes: the wheels' dark band, the painted body to the waist, the cabin's dark glass. DO NOT draw the whole surface coarsened: meshoptimizer cannot collapse its faces' locked borders, it kept ~440 triangles a car, and a city's thousands of far cars drew 3.5 M triangles no pixel told apart (2026-10-20). 36 triangles.
   const farFaces: BufferGeometry[] = [];
   {
-    const dark = faces.map((f) => ({ ...f, region: f.region === 'glass' ? 'frame' as Region : f.region }));
-    farFaces.push(fromFaces(dark));
-    farFaces.push(capGeometry());
+    const surface = fromFaces(faces);
+    surface.computeBoundingBox();
+    const b = surface.boundingBox!;
+    surface.dispose();
+    const L = b.max.x - b.min.x, H = b.max.y - b.min.y, W = b.max.z - b.min.z;
+    const cx = (b.max.x + b.min.x) / 2, cz = (b.max.z + b.min.z) / 2, y0 = b.min.y;
+    // The waist from the model's own belt line at mid length, bounded to a car's shares of its height.
+    const waist = Math.min(Math.max(belt(cx), y0 + H * 0.45), y0 + H * 0.7);
+    const sill = y0 + H * 0.2;
+    farFaces.push(tint(box(L * 0.8, sill - y0, W * 0.94, cx, (y0 + sill) / 2, cz), 0x121315));
+    farFaces.push(box(L, waist - sill, W, cx, (sill + waist) / 2, cz));
+    farFaces.push(tint(box(L * 0.55, y0 + H - waist, W * 0.9, cx - L * 0.04, (waist + y0 + H) / 2, cz), 0x1b2328));
   }
 
   const roofFaces = faces.filter(isRoof);
