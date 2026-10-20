@@ -236,11 +236,9 @@ export class BuildingStore {
     return [...this.items.values()];
   }
 
-  /** Written when asked (the autosave, an export), never kept: DO NOT keep each record's text beside it */
+  /** Written when asked (a whole-map undo image, an export), never kept: one pass over the records, not a text per record and a join of thousands (MDN JSON.stringify, an array of the values). DO NOT keep each record's text beside it */
   toText(): string {
-    const parts: string[] = [];
-    for (const b of this.items.values()) parts.push(JSON.stringify(b));
-    return `[${parts.join(',')}]`;
+    return JSON.stringify([...this.items.values()]);
   }
 
   /** Loads buildings a worker prepared (`editor/tileStore.ts` `prepareTile`: each migrated and interned there, the tile's shapes shared through the message's clone): filed as they are, nothing read again (DO NOT migrate and intern 900 records in the page's frame: 100-300 ms a dense tile, 2026-10-16). */
