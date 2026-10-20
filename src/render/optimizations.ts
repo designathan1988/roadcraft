@@ -208,7 +208,7 @@ const BASE = [
     id: 'vehicleWhole', system: 'vehicles', title: 'Veículos inteiros (no máximo)',
     what: 'Quantos veículos são desenhados inteiros (carroceria, cabine e rodas à parte), os maiores na tela (QualitySettings.vehicleWholeCap).',
     tradeoff: 'Menos malhas por veículo; os demais em peça única.',
-    choices: [TIER, { value: 100, label: '100' }, { value: 50, label: '50' }, { value: 20, label: '20' }, { value: 0, label: '0' }],
+    choices: [{ value: 50, label: '50' }, TIER, { value: 100, label: '100' }, { value: 20, label: '20' }, { value: 0, label: '0' }],
   },
   {
     id: 'occupants', system: 'vehicles', title: 'Ocupantes dos veículos',
