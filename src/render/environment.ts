@@ -16,7 +16,7 @@ import {
   type WebGLRenderTarget,
 } from 'three';
 import { m } from '@world/units';
-import { cascadedSunChunks, createSunCascades, SUN_CASCADES, type Movers, type ShadowPassInput, type SunCascades } from './sunCascades';
+import { cascadedSunChunks, cascadedSunVertexChunk, createSunCascades, SUN_CASCADES, type Movers, type ShadowPassInput, type SunCascades } from './sunCascades';
 
 /** Sky, sun and atmosphere. */
 
@@ -311,6 +311,7 @@ export function createEnvironment(
 export function sunShadowChunks(): void {
   cascadedSunChunks();
   slopeScaledShadowOffset();
+  cascadedSunVertexChunk();
 }
 
 /** The sun's normal offset by the slope of the receiver: as Unity's URP biases a shadow */

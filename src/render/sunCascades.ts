@@ -675,6 +675,20 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
 
 /** The sun's cascades in three's shaders: the directional lights that cast shadows are the sun's cascades, all of one direction and colour */
 export function cascadedSunChunks(): void {
+  // The cascades' coordinates worked out in the fragment, from its world position and normal (`SUN_CASCADE_COORD`): the vertex passes those two, not three coordinates.
+  const varyingCoords = 'varying vec4 vDirectionalShadowCoord[ NUM_DIR_LIGHT_SHADOWS ];';
+  for (const name of ['shadowmap_pars_vertex', 'shadowmap_pars_fragment'] as const) {
+    const pars = ShaderChunk[name];
+    if (pars.includes('vSunCascadeWorld')) continue;
+    if (!pars.includes(varyingCoords)) throw new Error(`three.js ${name} changed: the sun cascades' world varyings no longer apply`);
+    const matrices = name === 'shadowmap_pars_fragment' ? '\n\t\tuniform mat4 directionalShadowMatrix[ NUM_DIR_LIGHT_SHADOWS ];' : '';
+    ShaderChunk[name] = pars.replace(varyingCoords, `#if NUM_DIR_LIGHT_SHADOWS == ${SUN_CASCADES}
+		varying vec3 vSunCascadeWorld;
+		varying vec3 vSunCascadeNormal;${matrices}
+		#else
+		${varyingCoords}
+		#endif`);
+  }
   const parsEnd = '\n#endif\n';
   if (!ShaderChunk.shadowmap_pars_fragment.includes('sunCascadeShadow')) {
     const pars = ShaderChunk.shadowmap_pars_fragment;
@@ -690,6 +704,20 @@ export function cascadedSunChunks(): void {
   ShaderChunk.lights_fragment_begin = `${lights.slice(0, at)}${CASCADE_LIGHTS}#elif ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )\n${lights.slice(at + head.length)}`;
 }
 
+/** The vertex's part of the cascades (after `environment.ts` slopeScaledShadowOffset): its world position and normal passed on, each cascade's coordinate worked out in the fragment (`SUN_CASCADE_COORD`). The loop for any other count of directional shadows stays as three wrote it. */
+export function cascadedSunVertexChunk(): void {
+  const chunk = ShaderChunk.shadowmap_vertex;
+  if (chunk.includes('vSunCascadeWorld')) return;
+  const head = '#if NUM_DIR_LIGHT_SHADOWS > 0';
+  if (chunk.split(head).length !== 2) throw new Error("three.js shadowmap_vertex changed: the sun cascades' world varyings no longer apply");
+  ShaderChunk.shadowmap_vertex = chunk.replace(head, `#if NUM_DIR_LIGHT_SHADOWS == ${SUN_CASCADES}
+
+		vSunCascadeWorld = worldPosition.xyz;
+		vSunCascadeNormal = shadowWorldNormal;
+
+	#elif NUM_DIR_LIGHT_SHADOWS > 0`);
+}
+
 /** The finest cascade that holds the point, blended into the next one over the outer `BAND` of its map; past the last, no shadow */
 const CASCADE_PARS = /* glsl */ `
 	#if NUM_DIR_LIGHT_SHADOWS == ${SUN_CASCADES}
@@ -701,26 +729,53 @@ const CASCADE_PARS = /* glsl */ `
 			vec2 d = min( c.xy - inset, 1.0 - inset - c.xy );
 			return min( d.x, d.y );
 		}
-		#define SUN_CASCADE_SHADOW( i ) getShadow( directionalShadowMap[ i ], directionalLightShadows[ i ].shadowMapSize, directionalLightShadows[ i ].shadowIntensity, directionalLightShadows[ i ].shadowBias, directionalLightShadows[ i ].shadowRadius, vDirectionalShadowCoord[ i ] )
+		// A cascade's coordinate of the fragment: its world position offset along its normal by the slope of the receiver (Unity URP's bias, environment.ts slopeScaledShadowOffset), as three's shadowmap_vertex did per vertex for every cascade. DO NOT work the three out in the vertex: the city's 15-20 M vertices a frame each paid three matrices and three normalised axes, and the frame is bound by its vertices (a quarter of the pixels saved 1.2 ms of 18.5, shadows off 3.7, measured 2026-10-20).
+		vec4 sunCascadeCoordOf( mat4 shadowMatrix, float normalBias ) {
+			vec3 sunAxis = normalize( vec3( shadowMatrix[ 0 ][ 2 ], shadowMatrix[ 1 ][ 2 ], shadowMatrix[ 2 ][ 2 ] ) );
+			#ifdef USE_REVERSED_DEPTH_BUFFER
+				sunAxis = - sunAxis;
+			#endif
+			float grazing = 1.0 - clamp( - dot( vSunCascadeNormal, sunAxis ), 0.0, 1.0 );
+			return shadowMatrix * vec4( vSunCascadeWorld + vSunCascadeNormal * normalBias * ( 0.4 + 2.6 * grazing ), 1.0 );
+		}
+		#define SUN_CASCADE_COORD( i ) sunCascadeCoordOf( directionalShadowMatrix[ i ], directionalLightShadows[ i ].shadowNormalBias )
+		#define SUN_CASCADE_RIM( i, c ) sunCascadeRim( c, directionalLightShadows[ i ].shadowMapSize, directionalLightShadows[ i ].shadowRadius )
+		#define SUN_CASCADE_SHADOW( i, c ) getShadow( directionalShadowMap[ i ], directionalLightShadows[ i ].shadowMapSize, directionalLightShadows[ i ].shadowIntensity, directionalLightShadows[ i ].shadowBias, directionalLightShadows[ i ].shadowRadius, c )
 		float sunCascadeShadow() {
 			const float BAND = 0.08;
-			float e0 = sunCascadeRim( vDirectionalShadowCoord[ 0 ], directionalLightShadows[ 0 ].shadowMapSize, directionalLightShadows[ 0 ].shadowRadius );
-			float e1 = sunCascadeRim( vDirectionalShadowCoord[ 1 ], directionalLightShadows[ 1 ].shadowMapSize, directionalLightShadows[ 1 ].shadowRadius );
-			float e2 = sunCascadeRim( vDirectionalShadowCoord[ 2 ], directionalLightShadows[ 2 ].shadowMapSize, directionalLightShadows[ 2 ].shadowRadius );
+			// Each cascade's coordinate only when it is read: the finest that holds the point, the next only in the band it is blended over.
+			vec4 c0 = SUN_CASCADE_COORD( 0 );
+			float e0 = SUN_CASCADE_RIM( 0, c0 );
 			// One return, every path assigned (fxc warns X4000 on the early returns through ANGLE).
 			float shadow = 1.0;
 			if ( e0 > 0.0 ) {
-				float near = SUN_CASCADE_SHADOW( 0 );
+				float near = SUN_CASCADE_SHADOW( 0, c0 );
 				float next = near;
-				if ( e0 < BAND ) next = e1 > 0.0 ? SUN_CASCADE_SHADOW( 1 ) : e2 > 0.0 ? SUN_CASCADE_SHADOW( 2 ) : near;
+				if ( e0 < BAND ) {
+					vec4 c1 = SUN_CASCADE_COORD( 1 );
+					if ( SUN_CASCADE_RIM( 1, c1 ) > 0.0 ) next = SUN_CASCADE_SHADOW( 1, c1 );
+					else {
+						vec4 c2 = SUN_CASCADE_COORD( 2 );
+						if ( SUN_CASCADE_RIM( 2, c2 ) > 0.0 ) next = SUN_CASCADE_SHADOW( 2, c2 );
+					}
+				}
 				shadow = mix( next, near, min( 1.0, e0 / BAND ) );
-			} else if ( e1 > 0.0 ) {
-				float near = SUN_CASCADE_SHADOW( 1 );
-				float next = near;
-				if ( e1 < BAND ) next = e2 > 0.0 ? SUN_CASCADE_SHADOW( 2 ) : near;
-				shadow = mix( next, near, min( 1.0, e1 / BAND ) );
-			} else if ( e2 > 0.0 ) {
-				shadow = mix( 1.0, SUN_CASCADE_SHADOW( 2 ), min( 1.0, e2 / BAND ) );
+			} else {
+				vec4 c1 = SUN_CASCADE_COORD( 1 );
+				float e1 = SUN_CASCADE_RIM( 1, c1 );
+				if ( e1 > 0.0 ) {
+					float near = SUN_CASCADE_SHADOW( 1, c1 );
+					float next = near;
+					if ( e1 < BAND ) {
+						vec4 c2 = SUN_CASCADE_COORD( 2 );
+						if ( SUN_CASCADE_RIM( 2, c2 ) > 0.0 ) next = SUN_CASCADE_SHADOW( 2, c2 );
+					}
+					shadow = mix( next, near, min( 1.0, e1 / BAND ) );
+				} else {
+					vec4 c2 = SUN_CASCADE_COORD( 2 );
+					float e2 = SUN_CASCADE_RIM( 2, c2 );
+					if ( e2 > 0.0 ) shadow = mix( 1.0, SUN_CASCADE_SHADOW( 2, c2 ), min( 1.0, e2 / BAND ) );
+				}
 			}
 			return shadow;
 		}

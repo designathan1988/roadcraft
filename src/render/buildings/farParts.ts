@@ -3,7 +3,7 @@ import { type BufferGeometry, Group, InstancedBufferAttribute, InstancedInterlea
 import { COLOURED_PARTS } from './cellArrays';
 import { partLook } from './fade';
 import { PART_KINDS, type BuildingKit, type PartKind } from './kit';
-import type { PartCell } from './partCells';
+import { BAR_PIXELS, type PartCell, widestBar } from './partCells';
 import { DETAIL_CELL, type PartFiling } from './partFiling';
 import { POSE_FLOATS, letGoPosed, partPoseDepth, posedCopy } from './partPose';
 import { SHELL_PARTS } from './shellParts';
@@ -21,6 +21,8 @@ interface Run {
   readonly cell: string;
   start: number;
   count: number;
+  /** A kind made of bars (`PartScreen.pieces`): its instances' widest bar in this cell, m; NaN for a solid kind. */
+  readonly bar: number;
 }
 
 /** One kind over every facade cell: its master buffers, its mesh, and each cell's run. */
@@ -93,6 +95,8 @@ export class FarPartBatch {
       const extent = this.kit.screen[batch.kind].extent;
       const across = Math.hypot(extent[0], extent[1], extent[2]);
       let nearest = Infinity;
+      /** A kind of bars: drawn while some cell's bars span half a pixel where it stands (`partCells.ts` BAR_PIXELS). DO NOT judge them by their whole diagonal at the nearest cell: every facade cell's window frames, 6 cm bars a fifth of a pixel wide that the facade shader already paints, were drawn over the town (5 M triangles of a district's frame, 2026-10-20). */
+      let barPixels = 0;
       for (const run of batch.runs) {
         const comma = run.cell.indexOf(',');
         const i = Number(run.cell.slice(0, comma)), j = Number(run.cell.slice(comma + 1));
@@ -103,7 +107,9 @@ export class FarPartBatch {
         const dz = Math.max(0, eyeZ);
         const distance = Math.hypot(dx, dy, dz);
         if (distance < nearest) nearest = distance;
+        if (run.bar > 0) barPixels = Math.max(barPixels, run.bar * (orthoPx !== null ? orthoPx : pxAtMetre / Math.max(distance, 1)));
       }
+      if (batch.runs.length && !Number.isNaN(batch.runs[0]!.bar)) { batch.mesh.visible = barPixels >= BAR_PIXELS; continue; }
       const perMetre = orthoPx !== null ? orthoPx : pxAtMetre / Math.max(nearest, 1);
       // As the near cells hide an instance under a pixel across its diagonal (`partCells.ts` `levelAt`).
       batch.mesh.visible = across * perMetre >= 1;
@@ -171,7 +177,9 @@ export class FarPartBatch {
       this.grow(batch, start + count);
       (batch.poses.array as Float32Array).set(band.poses, start * POSE_FLOATS);
       if (batch.colours && band.colours) (batch.colours.array as Uint16Array).set(band.colours, start * 3);
-      batch.runs.push({ cell, start, count });
+      const screen = this.kit.screen[band.kind];
+      const bar = screen.pieces[0] !== screen.extent ? widestBar(screen.pieces, band.scale) : Number.NaN;
+      batch.runs.push({ cell, start, count, bar });
       batch.used += count;
       batch.mesh.count = batch.used;
       batch.mesh.visible = true;

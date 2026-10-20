@@ -21,7 +21,7 @@ const COARSEN = 0.85;
 /** A sub-cell not drawn: every instance in it under a pixel. */
 const NONE = 127;
 /** A part made of bars (a frame's rails and stiles, a railing's, a brise's blades: its `pieces`) leaves the drawing once its bars span under this many pixels: what it covers is its bars, not its box. DO NOT keep it until its whole diagonal is under a pixel: 300 thousand window frames of 6 cm bars were drawn to 1-2 km as lines a fifth of a pixel wide, 6 M triangles of shimmer (2026-10-20). */
-const BAR_PIXELS = 0.5;
+export const BAR_PIXELS = 0.5;
 /** The choices a run's mesh is kept after it leaves the drawing, before its buffers go: a run that comes back within a camera's pause keeps its mesh; one left behind by a turn does not hold its copies for the rest of the cell's life (the lab's +53 geometries a minute, 2026-10-20). */
 const EVICT_AFTER = 240;
 
@@ -71,6 +71,12 @@ const largest = (a: Axes, s: Float32Array, o: number): number => Math.max(a[0] *
 function barsAcross(band: { readonly screen: { readonly pieces: readonly Axes[] }; readonly scale: Float32Array }, m: number): number {
   let widest = 0;
   for (const piece of band.screen.pieces) widest = Math.max(widest, middle(piece, band.scale, m * 3));
+  return widest;
+}
+/** A band's widest bar over all its sub-cells (`barsAcross`), metres: what the facade level's batch judges a kind of bars by (`farParts.ts`). */
+export function widestBar(pieces: readonly Axes[], scale: Float32Array): number {
+  let widest = 0;
+  for (let o = 0; o + 2 < scale.length; o += 3) for (const piece of pieces) widest = Math.max(widest, middle(piece, scale, o));
   return widest;
 }
 /** The diagonal of a box scaled. */
