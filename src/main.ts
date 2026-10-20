@@ -1,3 +1,5 @@
+import { ALL_EFFECTS_ON, DEFAULT_BUILDING_CHOICES, type BuildingChoices, type EffectSwitches } from '@render/effectSwitches';
+import { DEFAULT_OPTIMIZATIONS, type Optimizations } from '@render/optimizations';
 import { measureHitch } from '@core/hitch';
 import { watchDesktopShown } from './desktopShown';
 import { canQueueJobs, jobChannel, jobLanes, setJobWorkerMaker, setJobWorkerSetup, submitJob } from './jobs/jobPool';
@@ -3916,6 +3918,12 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
   /** The camera put at a centre, zoom, bearing and tilt (radians) exactly, as `view()` reads them (`scripts/look.mjs`) */
   /** The small city of Roadcraft 2.0 of a seed, as the menu's "New city" opens it, with no question asked (`scripts/sonda.mjs`, `scripts/lib/measureCity.mjs`). */
   smallCity: (seed = 7) => openSmallCity(seed),
+  /** Probe: the effects, the buildings' choices and the optimisations as the game holds them, each patch over its default (none: the default itself, the very object the game compares by). */
+  variant: (fx?: Partial<EffectSwitches> | null, b?: Partial<BuildingChoices> | null, opt?: Partial<Optimizations> | null) => {
+    scene.setEffects(fx ? { ...ALL_EFFECTS_ON, ...fx } : ALL_EFFECTS_ON, b ? { ...DEFAULT_BUILDING_CHOICES, ...b } : DEFAULT_BUILDING_CHOICES);
+    scene.setOptimizations(opt ? { ...DEFAULT_OPTIMIZATIONS, ...opt } as Optimizations : DEFAULT_OPTIMIZATIONS);
+    requestDraw();
+  },
   setView: (at: { x: number; y: number; zoom: number; azimuth: number; elevation: number }) => {
     camera.x = at.x;
     camera.y = at.y;

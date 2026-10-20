@@ -1,4 +1,4 @@
-import { DoubleSide, MeshStandardMaterial, ShaderChunk, type WebGLProgramParametersWithUniforms } from 'three';
+import { BackSide, MeshStandardMaterial, ShaderChunk, type WebGLProgramParametersWithUniforms } from 'three';
 
 import { type Finish, FINISHES } from '@world/buildings/materials';
 import { LOOKS, finishTiles } from '../bake/finishRecipes';
@@ -213,8 +213,8 @@ export function createShellMaterial(options: { readonly plain?: boolean; readonl
   const plain = options.plain === true;
   const carried = options.carried === true;
   const maps = surfaceMaps('building-finishes', anisotropy);
-  // The shell is not a closed solid (openings, no underside), so it casts from both sides; roughness, metalness and the sky's share are each finish's row times these.
-  const material = new MeshStandardMaterial({ vertexColors: true, roughness: maps ? 1 : 0.9, metalness: 1, envMapIntensity: 1, shadowSide: DoubleSide });
+  // Cast by its back faces (the walls turned from the sun, the roofs' undersides): the silhouette is the same, and a face the sun lights never shades itself. DO NOT cast both sides: a lit wall at a grazing sun shadowed itself in diagonal bands of acne whatever the offset (the street views, 2026-10-20).
+  const material = new MeshStandardMaterial({ vertexColors: true, roughness: maps ? 1 : 0.9, metalness: 1, envMapIntensity: 1, shadowSide: BackSide });
   material.name = plain ? 'building-shell-plain' : carried ? 'building-ruin' : 'building-shell';
   const looks = { value: finishLookTable(maps !== undefined) };
   material.onBeforeCompile = (shader) => shellShader(shader, maps, looks, !plain, carried);
