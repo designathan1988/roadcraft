@@ -178,7 +178,7 @@ export interface KitBoxes {
 }
 
 /** The batch of `chunks` that `selection` takes, as arrays. */
-/** `groups`: each chunk's detail cell (`DETAIL_CELL`), its shells then pieced cell by cell: each piece's box that cell's, so three leaves out of the view and out of each sun cascade the cells outside them (a piece of buildings from across the whole cell was drawn whole for a corner of it in view). */
+/** `groups`: each chunk's square (`cellWork.ts` gives the shells quadrants of two detail cells), its shells then pieced square by square: each piece's box that square's, so three leaves out of the view and out of each sun cascade the squares outside them (a piece of buildings from across the whole cell was drawn whole for a corner of it in view). */
 export function cellArrays(chunks: readonly BuildingChunk[], selection: CellSelection, boxes: KitBoxes, groups?: readonly string[]): CellArrays {
   const { ghost, dim } = selection;
   const floats = selection.shells ? [...shellPieces(chunks, (c) => c.shells, groups), ...shellPieces(chunks, (c) => c.runs, groups)] : [];

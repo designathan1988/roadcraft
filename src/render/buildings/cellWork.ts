@@ -168,8 +168,10 @@ export function runCellJob(job: CellJob, reads: CellReads): WorkReply {
   const grid = job.kind === 'facade' ? [Number(job.cell.slice(0, comma)), Number(job.cell.slice(comma + 1))] as const : undefined;
   // The detail cells inside, each its buildings in the cell's order (`layerCells.ts` `chunksByCell`).
   const detailOf = buildings.map((b) => `${Math.floor(b.x / DETAIL_CELL)},${Math.floor(b.y / DETAIL_CELL)}`);
-  // The shells pieced by detail cell: each piece culled by its own box (`cellArrays` groups).
-  const batch = cellArrays(chunks, { ...COARSE, ghost: false, dim: false, ...(grid ? { grid } : {}) }, job.boxes, detailOf);
+  // The shells pieced by quadrant (two detail cells a side): each piece culled by its own box (`cellArrays` groups), and a cell
+  // at the district's scale drawing four pieces rather than sixteen. The parts keep the detail cell's finer levels (`partFiling.ts`).
+  const shellOf = buildings.map((b) => `${Math.floor(b.x / (2 * DETAIL_CELL))},${Math.floor(b.y / (2 * DETAIL_CELL))}`);
+  const batch = cellArrays(chunks, { ...COARSE, ghost: false, dim: false, ...(grid ? { grid } : {}) }, job.boxes, shellOf);
   const byDetail = new Map<string, BuildingChunk[]>();
   buildings.forEach((_b, i) => {
     const key = detailOf[i]!;
