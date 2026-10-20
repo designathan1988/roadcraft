@@ -1,5 +1,5 @@
 import { Group, type Material, type Mesh, type Object3D, type ShaderMaterial } from 'three';
-import { compileAhead, compileAheadWith, compileCopy, shadowStandIns } from './uploads';
+import { compileAhead, compileAheadWith, compileCopy, shadowStandIns, warmPending } from './uploads';
 
 /** THE PROGRAMS COMPILED AT LOAD: a closed catalogue of what the game draws with, built before the curtain lifts */
 
@@ -27,6 +27,8 @@ interface ShaderCatalogue {
   begin(): void;
   /** The town is in (`RevealGate` warm or show): every family compiled, once an opening. */
   compile(scene: Object3D): void;
+  /** The curtain lifted: the light variants the opening did not wait for are asked now, once the uploads that came with the town are in (`warmPending`), never while they hold the driver. */
+  afterReveal(): void;
   /** Each family's stand-ins and whether they compiled: null for one not compiled yet. */
   counts(): Readonly<Record<ProgramFamily, FamilyCount | null>>;
 }
@@ -76,6 +78,8 @@ export function createShaderCatalogue(people: () => FamilyStandIns, lightVariant
   let peopleDone: Promise<void> | null = null;
   /** The people's lit stand-ins, kept for the light variants. */
   let peopleLit: Object3D | null = null;
+  /** The light variants the curtain did not wait for, asked once the curtain lifts and the town's uploads are in (`afterReveal`). */
+  let deferred: (() => Promise<void>) | null = null;
 
   /** One family's stand-ins compiled ahead, lit and in the shadow; counted when done. A family that cannot be built is said, never awaited for ever. */
   const family = (name: ProgramFamily, build: () => FamilyStandIns): Promise<void> => {
@@ -101,6 +105,7 @@ export function createShaderCatalogue(people: () => FamilyStandIns, lightVariant
     begin() {
       if (!compiled) return;
       compiled = false;
+      deferred = null;
       ready = new Promise<void>((done) => { settle = done; });
     },
     /** @rebuild Once an opening; every later call returns at its first check. */
@@ -113,17 +118,18 @@ export function createShaderCatalogue(people: () => FamilyStandIns, lightVariant
       // The people come after the town is shown: their programs, every one of them, now (`personVariants.ts`).
       peopleDone ??= family('people', () => { const made = people(); peopleLit = made.lit; return made; });
       void Promise.all([world, peopleDone]).then(async () => {
-        // The variants of the lights switched on or off (the room and effect lights, the fill at night): built now, before the curtain
-        // lifts and the first switch draws with one. DO NOT leave them to a quiet moment during play (they waited minutes, then every
-        // lit material of the view was built in one frame). They are still asked one set at a time: four sets at once held the driver
-        // 12-15 s after the opening (`__compileLog`, prova motor-compilacao, 2026-10-18).
+        // The variants of the lights switched on or off (the room and effect lights, the fill at night), the set the town opens under
+        // FIRST (`renderer.ts` lightVariants): only that one holds the curtain. The others are asked right after it lifts, one set at a
+        // time: no pixel of the opening shows them, and waiting for them held the driver half the opening's compile time (measured 2026-10-20).
         try {
           const sets = lightVariants();
           const standIns = sets.length ? litStandIns(peopleLit ? [scene, peopleLit] : [scene]) : null;
-          // DO NOT wait for a quiet moment here: the cells still streaming in queue compiles of their own, and the curtain would wait
-          // for a gap that never comes. One set at a time, each awaited, asks the driver no more than the quiet wait did.
-          if (standIns) for (const lights of sets) await compileAheadWith(standIns, lights);
-          standIns?.clear();
+          if (standIns) {
+            await compileAheadWith(standIns, sets[0]!);
+            const rest = sets.slice(1);
+            if (rest.length) deferred = async () => { try { for (const lights of rest) await compileAheadWith(standIns, lights); } finally { standIns.clear(); } };
+            else standIns.clear();
+          }
         } catch (error) {
           // Said, the curtain let go: a variant that cannot be built is built at its first draw, as before.
           console.error('[programs] the light variants did not compile', error);
@@ -131,6 +137,17 @@ export function createShaderCatalogue(people: () => FamilyStandIns, lightVariant
         performance.mark('programs:compiled', { detail: counts });
         done();
       });
+    },
+    afterReveal() {
+      if (!deferred) return;
+      const job = deferred;
+      deferred = null;
+      void (async () => {
+        // Never while the town's buffers go up (`warmPending`): the driver builds the variants and uploads at once, and the first frames
+        // of play waited seconds for both (measured 2026-10-20).
+        for (let waited = 0; waited < 30_000 && warmPending(); waited += 500) await new Promise((done) => setTimeout(done, 500));
+        await job();
+      })();
     },
     counts() {
       return counts;

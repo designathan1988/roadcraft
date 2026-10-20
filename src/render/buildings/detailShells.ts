@@ -148,6 +148,8 @@ export class DetailShellBatch {
     batch.looksArray = new Float32Array(capacity * LOOK_FLOATS);
     batch.looksArray.set(batch.looks.array as Float32Array);
     batch.looks = new InstancedInterleavedBuffer(batch.looksArray, LOOK_FLOATS);
+    // Three frees an InstancedMesh's instance buffers only on its dispose (r186 `WebGLObjects` onInstancedMeshDispose): let the old colour buffer go before it is replaced, or its GPU buffer is never freed.
+    batch.mesh.dispose();
     letGoPosed(batch.mesh.geometry, this.kit.screen[batch.kind].levels[0]!.geometry);
     batch.mesh.geometry.dispose();
     batch.mesh.geometry = this.posed(this.kit.screen[batch.kind].levels[0]!.geometry, batch.poses, batch.looks);
@@ -203,17 +205,14 @@ export class DetailShellBatch {
   }
 }
 
-/** A run's poses and looks sent to the GPU, its range only. */
+/** A run's poses and looks sent to the GPU, its range only. DO NOT clear the ranges a change already added: every cell added or taken out this frame adds its own, and three merges and clears them once, after the upload (r186 `WebGLAttributes.updateBuffer`). */
 function dirty(batch: KindBatch, start: number, count: number): void {
   if (count <= 0) return;
-  batch.poses.clearUpdateRanges();
   batch.poses.addUpdateRange(start * POSE_FLOATS, count * POSE_FLOATS);
   batch.poses.needsUpdate = true;
-  batch.looks.clearUpdateRanges();
   batch.looks.addUpdateRange(start * LOOK_FLOATS, count * LOOK_FLOATS);
   batch.looks.needsUpdate = true;
   if (batch.colours) {
-    batch.colours.clearUpdateRanges();
     batch.colours.addUpdateRange(start * 3, count * 3);
     batch.colours.needsUpdate = true;
   }

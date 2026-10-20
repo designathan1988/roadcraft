@@ -31,8 +31,12 @@ import { m } from '@world/units';
 type Mat = string;
 
 let materials: Record<Mat, Material> | null = null;
-/** Facade materials, by style and storey rhythm, made once each. */
+/** One material a facade style: the UV rhythm (bays, storeys, base) is baked into each piece's uv when it is pushed, so a building does not need a material and a texture of its own. */
 const facades = new Map<string, Material>();
+/** What a facade use key lays: its style and the uv rhythm baked into its pieces. */
+const facadeUses = new Map<string, { readonly kind: FacadeKind; readonly bay: number; readonly storey: number; readonly base: number }>();
+const FACADE = 'facade|';
+const facadeMaterialKey = (kind: FacadeKind): Mat => `${FACADE}${kind}`;
 /** A seed from a name (FNV-1a): the same pictures in every run. */
 const seedOf = (name: string): number => {
   let h = 0x811c9dc5;
@@ -46,13 +50,14 @@ type FacadeKind = 'curtainBlue' | 'curtainDark' | 'curtainGreen' | 'punchedBeige
 
 /** A facade drawn as a picture of its bays - panes and mullions, spandrels, punched windows in a wall */
 function facade(kind: FacadeKind, bay: number, storey: number, base: number): Mat {
-  const key = `${kind}|${bay}|${storey}|${base}`;
-  if (facades.has(key)) return key;
+  const key = `${FACADE}${kind}|${bay}|${storey}|${base}`;
+  if (!facadeUses.has(key)) facadeUses.set(key, { kind, bay, storey, base });
+  const materialKey = facadeMaterialKey(kind);
+  if (facades.has(materialKey)) return key;
   // DO NOT paint a picture per rhythm
-  const first = facades.get(`picture|${kind}`) as MeshStandardMaterial | undefined;
   // Its noise seeded by the style: the same picture in every run (DO NOT use Math.random here).
   const rng = new Rng(seedOf(kind));
-  const picture = first?.map ?? canvasTexture(256, (g, s) => {
+  const picture = canvasTexture(256, (g, s) => {
     const glass = (top: string, bottom: string, x: number, y: number, w: number, h: number): void => {
       const grad = g.createLinearGradient(0, y, 0, y + h);
       grad.addColorStop(0, top); grad.addColorStop(1, bottom);
@@ -170,13 +175,11 @@ function facade(kind: FacadeKind, bay: number, storey: number, base: number): Ma
       if (kind === 'punchedBeige' || kind === 'punchedCream') { g.fillStyle = 'rgba(255,255,255,.5)'; g.fillRect(x - 8, y + h + 5, w + 16, 6); }
     }
   });
-  const t = first ? picture.clone() : picture;
-  t.repeat.set(1 / bay, 1 / storey);
-  t.offset.y = -base / storey;
+  // The picture is one bay and one storey: the repeat and the offset a building's walls were drawn with are baked into their uv (`Parts.push`), so every building of a style shares this one material and texture.
+  picture.repeat.set(1, 1);
+  picture.offset.set(0, 0);
   const glassy = kind.startsWith('curtain') || kind === 'copperFins';
-  const material = new MeshStandardMaterial({ map: t, roughness: glassy ? 0.15 : 0.85, metalness: glassy ? 0.45 : 0 });
-  facades.set(key, material);
-  if (!first) facades.set(`picture|${kind}`, material);
+  facades.set(materialKey, new MeshStandardMaterial({ map: picture, roughness: glassy ? 0.15 : 0.85, metalness: glassy ? 0.45 : 0 }));
   return key;
 }
 
@@ -364,6 +367,13 @@ class Parts {
   pushRaw(mat: Mat, g: BufferGeometry): void { this.push(mat, g); }
 
   private push(mat: Mat, g: BufferGeometry): void {
+    // A facade use: the rhythm its material used to carry (repeat and offset) goes into the pieces' uv, and every building of the style is drawn with the style's one material.
+    const use = facadeUses.get(mat);
+    if (use) {
+      const uv = g.getAttribute('uv') as BufferAttribute | undefined;
+      if (uv) for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / use.bay, uv.getY(i) / use.storey - use.base / use.storey);
+      mat = facadeMaterialKey(use.kind);
+    }
     const geo = g.index ? g.toNonIndexed() : g;
     const list = this.byMat.get(mat);
     if (list) list.push(geo);

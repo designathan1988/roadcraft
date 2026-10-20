@@ -1955,6 +1955,7 @@ function newMap(): void {
     history.begin(doc);
     // A new map is empty, painted to the Brazilian standard.
     applySnapshot({ ...new RoadDoc().toJSON(), relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
+    history.end(doc);
     roadTool.reset();
     fitView();
     flashHint('hint.newMap');
@@ -1978,6 +1979,8 @@ function openGeneratedCity(options: Partial<CityOptions>): void {
 function openCity(data: ReturnType<typeof buildSmallCityMap>): void {
   history.begin(doc);
   applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
+  // The map is one undo step, and the recorder is closed: left open, it recorded a before-image of every building the growth wrote afterwards (`editor/history.ts`).
+  history.end(doc);
   roadTool.reset();
   fitView();
 }

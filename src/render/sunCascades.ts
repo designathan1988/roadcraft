@@ -104,7 +104,8 @@ export interface SunCascades {
   pass(input: ShadowPassInput): boolean;
   /** How the passes went since the last call (counts, then zeroed): each cascade's whole draws and draws over its store, and why a whole draw was asked (`scripts/layers.mjs`). */
   takeStats(): { readonly passes: number; readonly whole: readonly number[]; readonly over: readonly number[]; readonly why: Readonly<Record<string, number>> };
-  setEnabled(on: boolean, mapSize: number): void;
+  /** `mapSize`: one size for every cascade, or a size for each: the near cascade carries the shadow detail, the far ones are filtered over a texel's spread (a 2048 far map held 12.6 M texels for 6.2 M pixels, 2026-10-20). */
+  setEnabled(on: boolean, mapSize: number | readonly number[]): void;
   /** The far cascades (1 and on) drawn at most every `n` passes, what changed meanwhile kept for their turn (the lab's optimisations, `optimizationsApply.ts`); 1: every pass, as the game draws. */
   setFarEvery(n: number): void;
   /** The maps made again, for the renderer's shadow map type changed (`shadowMap.type`: PCF compares its depth, Basic reads it): every cascade drawn whole next. */
@@ -384,7 +385,14 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       // A render of another scene (its own lights): nothing of the cascades' here.
       if (!shadowLights.includes(sun)) { base(shadowLights, scene, camera); return; }
       for (let i = 0; i < lights.length; i++) if (whole[i] || over[i]) ensureMap(i);
-      base(shadowLights, scene, camera);
+      // Nothing reads a cascade's colour (PCF samples its depth texture, `cascadeMap`): clear the depth alone and spare a byte a texel of dead colour per map and pass.
+      const clear = renderer.clear;
+      renderer.clear = (_color, depth, stencil) => clear.call(renderer, false, depth ?? true, stencil ?? true);
+      try {
+        base(shadowLights, scene, camera);
+      } finally {
+        renderer.clear = clear;
+      }
       if (!whole.includes(true) && !over.includes(true)) return;
       restore();
       const target = renderer.getRenderTarget(), face = renderer.getActiveCubeFace(), level = renderer.getActiveMipmapLevel();
@@ -618,8 +626,10 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
         light.castShadow = on;
         // The other cascades light nothing of their own: without shadows they are not lights at all
         if (i > 0) light.visible = on;
-        if (light.shadow.mapSize.x !== mapSize) {
-          light.shadow.mapSize.set(mapSize, mapSize);
+        // The near cascade at the full size; the far ones at half (a quarter of the texels each): their shadows are filtered over a texel's spread anyway.
+        const size = typeof mapSize === 'number' ? (i === 0 ? mapSize : Math.max(512, Math.floor(mapSize / 2))) : mapSize[i] ?? mapSize[0]!;
+        if (light.shadow.mapSize.x !== size) {
+          light.shadow.mapSize.set(size, size);
           light.shadow.map?.dispose();
           light.shadow.map = null;
           fits[i]!.placed = false;

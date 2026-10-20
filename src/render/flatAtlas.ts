@@ -35,7 +35,7 @@ import { GroundShare, type SharedGroundAt } from './sharedGround';
 import { setJobFocus } from '../jobs/jobPool';
 import { gpuLedger } from './gpuLedger';
 import { measureHitch } from '@core/hitch';
-import { compilesAhead, programsReady, queueUpload } from './uploads';
+import { cancelUploads, compilesAhead, programsReady, queueUpload } from './uploads';
 import { MAP_HALF } from '@world/cityGen/wholeMap';
 import { type FarNode, farNodesFor } from './farGround';
 import { TILE, tileOfKey } from '@world/tiles';
@@ -476,6 +476,8 @@ export function createFlatAtlas(anisotropy: number): TerrainSurface {
   const letGo = (p: Plate): void => {
     if (!p.surface) return;
     show(p, false);
+    // A texture still waiting to be sent would be sent by the queue after this dispose: its GL texture would outlive every reference to it.
+    cancelUploads(p.surface.textures());
     p.surface.dispose();
     p.surface = null;
     // Read off the relief from now on, as `ask` reads it.

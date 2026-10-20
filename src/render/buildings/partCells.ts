@@ -20,6 +20,8 @@ import { DRAW_TRIANGLES, LEAVES, type PartFiling } from './partFiling';
 const COARSEN = 0.85;
 /** A sub-cell not drawn: every instance in it under a pixel. */
 const NONE = 127;
+/** The choices a run's mesh is kept after it leaves the drawing, before its buffers go: a run that comes back within a camera's pause keeps its mesh; one left behind by a turn does not hold its copies for the rest of the cell's life (the lab's +53 geometries a minute, 2026-10-20). */
+const EVICT_AFTER = 240;
 
 /** Where the eye is (map x/y, height), the pixels a metre spans at a metre's distance (or everywhere, `orthoPx`) and a shadow texel's side, m (Infinity: no shadows). */
 export interface PartView {
@@ -50,6 +52,8 @@ interface Band {
   /** A mesh for each run of sub-cells it was ever drawn by (first * LEAVES + last), and the level each is drawn at now. */
   readonly meshes: Map<number, InstancedMesh>;
   readonly drawn: Map<number, number>;
+  /** When each run was last drawn, by run key (`PartCell.tick`): a run out of the drawing for long enough gives its mesh back (`PartCell.evictStale`). */
+  readonly unseen: Map<number, number>;
   /** The level each sub-cell was last chosen at (hysteresis). */
   readonly held: Uint8Array;
   casts: boolean;
@@ -75,6 +79,8 @@ export class PartCell {
   private faded = false;
   /** The view the levels were last chosen for: the same view chooses the same levels. */
   private readonly chosenFor = { x: NaN, y: NaN, z: NaN, pxAtMetre: NaN, orthoPx: null as number | null, shadowTexel: NaN };
+  /** The choices made so far: what a run's mesh kept out of the drawing is measured against (`EVICT_AFTER`). */
+  private tick = 0;
   /** Scratch for one band's runs this frame: each run's first and last sub-cell, its level and its instances. */
   private readonly runFirst = new Uint8Array(LEAVES);
   private readonly runLast = new Uint8Array(LEAVES);
@@ -98,7 +104,7 @@ export class PartCell {
         // Tints in half floats: HALF_FLOAT where the buffer says so (r186 `WebGLAttributes.createBuffer`, an interleaved attribute by its buffer).
         poses: new InstancedInterleavedBuffer(f.poses, POSE_FLOATS), colours: f.colours ? Object.assign(new InstancedInterleavedBuffer(f.colours, 3), { isFloat16BufferAttribute: true }) : null,
         looks: f.looks ? new InstancedInterleavedBuffer(f.looks, LOOK_FLOATS) : null,
-        meshes: new Map(), drawn: new Map(), held: new Uint8Array(LEAVES), casts: false, width: 0, widest: Number.NaN,
+        meshes: new Map(), drawn: new Map(), unseen: new Map(), held: new Uint8Array(LEAVES), casts: false, width: 0, widest: Number.NaN,
       };
       own[`${f.kind}-${this.bands.length}-poses`] = band.poses;
       if (band.colours) own[`${f.kind}-${this.bands.length}-colours`] = band.colours;
@@ -114,6 +120,7 @@ export class PartCell {
     const was = this.chosenFor;
     if (was.x === view.x && was.y === view.y && was.z === view.z && was.pxAtMetre === view.pxAtMetre && was.orthoPx === view.orthoPx && was.shadowTexel === view.shadowTexel) return;
     Object.assign(was, view);
+    this.tick++;
     for (const band of this.bands) {
       // A lot's walls are drawn by the layer's batch over the whole town (`detailShells.ts`): no run of them here.
       if (SHELL_PARTS.has(band.kind)) continue;
@@ -129,18 +136,20 @@ export class PartCell {
       const casts = this.kit.castsShadow.has(band.kind) && Number.isFinite(view.shadowTexel) && width >= view.shadowTexel * (band.casts ? COARSEN : 1);
       const recast = casts !== band.casts;
       band.casts = casts;
-      // Out: the runs drawn before and not now.
+      // Out: the runs drawn before and not now. Its mesh is kept a while (a camera pause brings the run back), then given back (`evictStale`).
       for (const [key] of band.drawn) {
         let kept = false;
         for (let r = 0; r < runs && !kept; r++) kept = this.runFirst[r]! * LEAVES + this.runLast[r]! === key;
         if (kept) continue;
         band.meshes.get(key)!.visible = false;
         band.drawn.delete(key);
+        band.unseen.set(key, this.tick);
       }
       // In: each run now, at its level.
       const visible = partLook(this.kit, band.kind, this.faded).visible;
       for (let r = 0; r < runs; r++) {
         const key = this.runFirst[r]! * LEAVES + this.runLast[r]!, level = this.runLevel[r]!;
+        band.unseen.delete(key);
         if (band.drawn.get(key) === level && !recast) continue;
         let mesh = band.meshes.get(key);
         if (!mesh) band.meshes.set(key, mesh = this.make(band, this.runFirst[r]!, this.runLast[r]!));
@@ -151,9 +160,24 @@ export class PartCell {
         band.drawn.set(key, level);
       }
     }
+    if (this.tick % 60 === 0) this.evictStale();
   }
 
-  /** A band's runs this frame (in the scratch arrays, their count returned): neighbours at one level, or joined at the finer where that costs less than a draw. */
+  /** The run meshes out of the drawing longer than `EVICT_AFTER` given back: their posed copies freed and the mesh taken out of the cell (a run wanted again is made anew). */
+  private evictStale(): void {
+    for (const band of this.bands) {
+      for (const [key, seen] of band.unseen) {
+        if (this.tick - seen < EVICT_AFTER) continue;
+        band.unseen.delete(key);
+        const mesh = band.meshes.get(key);
+        if (!mesh || band.drawn.has(key)) continue;
+        band.meshes.delete(key);
+        for (const [level, copy] of mesh.userData['posed'] as Map<number, BufferGeometry>) letGoPosed(copy, band.screen.levels[level]!.geometry);
+        mesh.dispose();
+        this.group.remove(mesh);
+      }
+    }
+  }
   private runsOf(band: Band, view: PartView): number {
     const { runFirst, runLast, runLevel, runCount } = this;
     const triangles = (k: number): number => band.screen.levels[k]!.triangles;

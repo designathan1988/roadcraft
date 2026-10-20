@@ -880,12 +880,17 @@ export function createSceneRenderer(
     const base: Object3D[] = [];
     scene.traverse((o) => { if ((o as PointLight).isLight && o.visible && o !== fill && !points.includes(o)) base.push(o); });
     // The fill is always in the scene (`environment.ts`): only the point lights switched on or off make a variant.
-    return [false, true].map((lit) => [...base, ...(lit ? points : []), ...(fill ? [fill] : [])]);
+    const off = [...base, ...(fill ? [fill] : [])], on = [...base, ...points, ...(fill ? [fill] : [])];
+    // The set the town opens under first (`shaderCatalogue.ts` waits for that one only): asking the driver for the other before the curtain held it seconds for light no pixel of the opening shows.
+    const lit = roomLights.some((light) => light.intensity > 0) || fxLights.muzzle.intensity > 0 || fxLights.blast.intensity > 0;
+    return lit ? [on, off] : [off, on];
   };
   const programs = createShaderCatalogue(personProgramStandIns, lightVariants);
   let openingSince: number | null = null;
   /** The opening's programs, asked of the driver all at once when the town is whole (`compileAsync`, built in parallel), and whether they are built: its unseen frame is drawn only then (`reveal` warm). */
   let openingPrograms: 'no' | 'asked' | 'built' = 'no';
+  /** The town has been shown once this opening: the light variants the curtain did not wait for are asked now (`shaderCatalogue.ts` `afterReveal`). */
+  let revealedPrograms = false;
   /** The streamed world's tiles round the camera (`holdOpening`): the opening shows the town once they are in. */
   let openingHeld: (() => boolean) | null = null;
   /** Builds the world of the last edit up to its next wait on a worker; it puts itself in place once complete. */
@@ -2638,6 +2643,7 @@ export function createSceneRenderer(
       programs.begin();
       openingSince = null;
       openingPrograms = 'no';
+      revealedPrograms = false;
       onAssetsReady();
     },
     offerElevation(solved, revision) {
@@ -3390,20 +3396,27 @@ export function createSceneRenderer(
         // OPEN = WHAT THE VIEW SEES IN ITS FINAL DETAIL (CLAUDE.md; Cesium3DTileset tilesLoaded: every tile meeting the screen's error this frame loaded): the near cells, the near roads and the tiles' near products in the frustum too, not the masses alone - the curtain fell with the district in masses and the street in a smooth mass (conf130/131/133).
         const whole = roads !== null && !buildings.coarsePending && !buildings.viewPending && farRoads.waiting === 0 && nearTiles.pendingInView() === 0 && natureTreesStarted && !natureTreesPending && held;
         // DO NOT draw the unseen frame before the town's programs are built: drawn first, each program was built at its first use, one after the other, in that one frame (4.5 s of the opening's 62, 2026-10-16); asked together, the driver builds them in parallel (KHR_parallel_shader_compile).
-        if (whole && openingPrograms === 'no') {
+        // The programs are asked once the BUILDINGS are in, not when every road tile and tree is: the town's cells are what bring every
+        // material the reveal draws, and the driver builds the shaders while the last tiles stream (the compile was on the critical path
+        // after everything else was ready: 2.4-7.4 s of the opening, measured 2026-10-20).
+        const drawablesIn = roads !== null && !buildings.coarsePending && !buildings.viewPending;
+        if (openingPrograms === 'no' && (whole || drawablesIn)) {
           openingPrograms = 'asked';
+          performance.mark('reveal:whole');
           programs.compile(scene);
           const ready = programs.ready;
-          void ready.then(() => { if (programs.ready === ready) { openingPrograms = 'built'; onAssetsReady(); } });
+          void ready.then(() => { if (programs.ready === ready) { openingPrograms = 'built'; performance.mark('reveal:programs'); onAssetsReady(); } });
         }
         const next = reveal.step(whole && openingPrograms === 'built', performance.now(), !held);
         if (next === 'warm') {
           // One frame drawn unseen first, its programs built: the new meshes go to the GPU
+          performance.mark('reveal:warm');
           if (post.target) {
             renderer.setRenderTarget(post.target);
             renderer.render(scene, rig.camera);
             renderer.setRenderTarget(null);
           }
+          performance.mark('reveal:warm-drawn');
           programs.compile(scene);
           onAssetsReady();
         } else if (next === 'show') {
@@ -3416,6 +3429,7 @@ export function createSceneRenderer(
       // DO NOT wait for ever on a driver that never answers (a lost context): drawn after `QUALITY_COMPILE_GIVE_UP_MS` whatever it built, as `uploads.ts` gives up on a compile.
       if (reveal.opened && qualityCompile && performance.now() - qualityCompileSince < QUALITY_COMPILE_GIVE_UP_MS) { /* drawn again once built: `setQuality` asks for the frame */ }
       else if (reveal.opened) {
+        if (!revealedPrograms) { revealedPrograms = true; programs.afterReveal(); }
         // Round the frame's whole drawing: the shadow, the scene, every pass.
         gpuTimer.poll();
         // The effects panel's switches: the passes skipped, the layers hidden for this drawing only, the shadows kept as they stand.

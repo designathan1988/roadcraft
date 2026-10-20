@@ -215,6 +215,8 @@ export class FarPartBatch {
     const poses = new Float32Array(capacity * POSE_FLOATS);
     poses.set(batch.poses.array as Float32Array);
     const poseBuffer = new InstancedInterleavedBuffer(poses, POSE_FLOATS);
+    // Three frees an InstancedMesh's instance buffers only on its dispose (r186 `WebGLObjects` onInstancedMeshDispose): let the old colour buffer go before it is replaced, or its GPU buffer is never freed.
+    batch.mesh.dispose();
     letGoPosed(batch.mesh.geometry, batch.model);
     batch.mesh.geometry.dispose();
     batch.mesh.geometry = posedCopy(batch.model, poseBuffer, 0);
@@ -230,15 +232,13 @@ export class FarPartBatch {
   }
 }
 
-/** The run's poses and colours sent to the GPU, its range only. */
+/** The run's poses and colours sent to the GPU, its range only. DO NOT clear the ranges a change already added: every cell added or taken out this frame adds its own, and three merges and clears them once, after the upload (r186 `WebGLAttributes.updateBuffer`). */
 function dirty(batch: KindBatch, start: number, count: number): void {
   if (count <= 0) return;
   const poses = batch.poses;
-  poses.clearUpdateRanges();
   poses.addUpdateRange(start * POSE_FLOATS, count * POSE_FLOATS);
   poses.needsUpdate = true;
   if (batch.colours) {
-    batch.colours.clearUpdateRanges();
     batch.colours.addUpdateRange(start * 3, count * 3);
     batch.colours.needsUpdate = true;
   }

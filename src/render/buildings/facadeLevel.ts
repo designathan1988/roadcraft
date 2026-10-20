@@ -55,6 +55,8 @@ float facadePulseIntegral(float x, float a0, float a1) { return floor(x) * (a1 -
 // The pulse averaged over a pixel's footprint w (a box filter): far away the facade's mean, no moire.
 float facadePulse(float x, float w, float a0, float a1) {
   if (a1 <= a0) return 0.0;
+  // A pixel covering more than half a period: the mean IS the answer (the filter's variation is under a pixel): none of the floor/fract work, and none of its moire.
+  if (w >= 0.5) return clamp(a1 - a0, 0.0, 1.0);
   return (facadePulseIntegral(x + 0.5 * w, a0, a1) - facadePulseIntegral(x - 0.5 * w, a0, a1)) / w;
 }
 // buildingMesh.ts bayHash, to the bit: Math.imul is a uint product, >>> a uint shift.

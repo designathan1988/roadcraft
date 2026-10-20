@@ -186,6 +186,17 @@ export function createPostChain(
       screenSpaceRadius: false,
     });
     gtao.blendIntensity = 0.85;
+    // The denoise: half the Poisson taps of three's default (16), the noise it takes out is under an edge no player can tell apart (the lab's passes, 2026-10-20).
+    gtao.updatePdMaterial({ samples: 8 });
+    // An occlusion factor is a smooth 0..1, not an HDR colour: half floats held 12.4 MB of it at the half resolution. An 8-bit channel is enough for both the denoise and the multiply (`canyonLight.ts` reads the denoised target).
+    {
+      const width = gtao.gtaoRenderTarget.width, height = gtao.gtaoRenderTarget.height;
+      gtao.gtaoRenderTarget.dispose();
+      gtao.pdRenderTarget.dispose();
+      gtao.gtaoRenderTarget = new WebGLRenderTarget(width, height, { depthBuffer: false });
+      gtao.pdRenderTarget = new WebGLRenderTarget(width, height, { depthBuffer: false });
+      gtao.pdMaterial.uniforms['tDiffuse']!.value = gtao.gtaoRenderTarget.texture;
+    }
     // The occlusion is worked out from the depth the scene was just drawn with (normals rebuilt from it).
     const pass = gtao;
     const draw = pass.render.bind(pass);
@@ -242,6 +253,11 @@ export function createPostChain(
   // Light that is brighter than white spills a little round itself: the sun on glass, lit windows and lamps at night.
   const bloomStrength = level === 'ultra' ? 0.22 : 0.18;
   const bloom = new UnrealBloomPass(new Vector2(size.x, size.y), bloomStrength, 0.32, 1.05);
+  // The glow is low frequency: its ten mips at half the screen's width are indistinguishable and 45.6 MB → 11.4 at 2560 wide, and the bright pass and blurs cost a quarter of the fragments.
+  {
+    const resize = bloom.setSize.bind(bloom);
+    bloom.setSize = (width: number, height: number) => resize(Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2)));
+  }
   shareBloomBlur(bloom.separableBlurMaterials as ShaderMaterial[]);
   bloom.enabled = false;
   composer.addPass(bloom);
@@ -1167,17 +1183,18 @@ const GRADED_OUTPUT_FRAGMENT = /* glsl */ `
     float sharpen = uSharpen > 0.0 ? uSharpen * sharpMask() : 0.0;
     if (sharpen > 0.0) {
       vec2 texel = uTexel;
-      vec3 cl = pow(c, vec3(2.2));
-      vec3 b = pow(display(texture2D(tDiffuse, vUv + vec2(0.0, -texel.y))).rgb, vec3(2.2));
-      vec3 d = pow(display(texture2D(tDiffuse, vUv + vec2(-texel.x, 0.0))).rgb, vec3(2.2));
-      vec3 f = pow(display(texture2D(tDiffuse, vUv + vec2(texel.x, 0.0))).rgb, vec3(2.2));
-      vec3 h = pow(display(texture2D(tDiffuse, vUv + vec2(0.0, texel.y))).rgb, vec3(2.2));
+      // CAS works on the picture as it is seen (display space): DO NOT round-trip every tap through pow(2.2)/pow(1/2.2) - ten powers a pixel, five of them on the centre - for the same result.
+      vec3 cl = c;
+      vec3 b = display(texture2D(tDiffuse, vUv + vec2(0.0, -texel.y))).rgb;
+      vec3 d = display(texture2D(tDiffuse, vUv + vec2(-texel.x, 0.0))).rgb;
+      vec3 f = display(texture2D(tDiffuse, vUv + vec2(texel.x, 0.0))).rgb;
+      vec3 h = display(texture2D(tDiffuse, vUv + vec2(0.0, texel.y))).rgb;
       vec3 mn = min(min(min(d, cl), min(f, b)), h);
       vec3 mx = max(max(max(d, cl), max(f, b)), h);
       vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(1e-4)), 0.0, 1.0));
       float w = amp.g * (-1.0 / mix(8.0, 5.0, uSharpen));
       cl = clamp(((b + d + f + h) * w + cl) / (1.0 + 4.0 * w), 0.0, 1.0);
-      c = mix(c, pow(cl, vec3(1.0 / 2.2)), sharpen / max(uSharpen, 1e-4));
+      c = mix(c, cl, sharpen / max(uSharpen, 1e-4));
     }
     float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
     // Contrast, an S round the middle grey.
