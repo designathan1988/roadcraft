@@ -3936,3 +3936,13 @@ const actions = createActions({
 // Everything is set up: the first frame may be drawn.
 booted = true;
 requestDraw();
+
+// A development shortcut for the browser checks and a player testing the small city: ?city=small&seed=7 opens it, whatever the
+// autosave holds. The probes' own `generateCity` asks the same (`openSmallCity`).
+if (PROBES) {
+  const query = new URLSearchParams(location.search);
+  if (query.get('city') === 'small') {
+    const seed = Number(query.get('seed') ?? 7);
+    openSmallCity(Number.isFinite(seed) ? seed : 7);
+  }
+}
