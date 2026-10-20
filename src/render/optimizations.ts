@@ -135,8 +135,8 @@ const BASE = [
     id: 'buildingLod', system: 'buildings', title: 'Erro de tela dos prédios',
     what: 'Multiplica o erro na tela que os níveis dos prédios aceitam (levelOfDetail e cullDetails com menos pixels por metro).',
     tradeoff: 'Níveis mais grossos antes: menos triângulos e malhas; trocas de nível mais perto da câmera.',
-    // The game's own: two pixels of error at a distance, where a detail is under the eye's reach; ×1.5 changes almost no level.
-    choices: [{ value: 2, label: '×2' }, { value: 1, label: '×1' }, { value: 1.5, label: '×1,5' }, { value: 4, label: '×4' }],
+    // The game's own: four pixels of error at a distance, where a detail is under the eye's reach (the street measured 15,8 → 13,5 ms of GPU with the pictures equal at the district, the street and the close-up, 2026-10-20); ×1.5 changes almost no level.
+    choices: [{ value: 4, label: '×4' }, { value: 2, label: '×2' }, { value: 3, label: '×3' }, { value: 1, label: '×1' }, { value: 1.5, label: '×1,5' }],
   },
   {
     id: 'roadLod', system: 'roads', title: 'Erro de tela das ruas',
