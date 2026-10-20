@@ -18,11 +18,15 @@ export interface SaveBatch { readonly put: readonly SaveEntry[]; readonly remove
 /** Writes a save's batch, true once it is stored. */
 export interface SaveWriter { write(batch: SaveBatch): Promise<boolean> }
 
-/** gzip streams (MDN, `CompressionStream`): in every browser the game runs in and in Node 18+. */
+/** gzip streams (MDN, `CompressionStream`); a browser without them keeps the save's tiles plain, never the whole map in one text. */
 export const gzip = (text: string): Promise<Blob> =>
-  new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+  typeof CompressionStream === 'undefined'
+    ? Promise.resolve(new Blob([text]))
+    : new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
 export const gunzip = (blob: Blob): Promise<string> =>
-  new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+  typeof DecompressionStream === 'undefined'
+    ? blob.text()
+    : new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text();
 
 /** The batch made text and blobs and written to `store` in one transaction. */
 export async function writeBatch(store: PartStore, batch: SaveBatch): Promise<boolean> {
@@ -78,7 +82,8 @@ export function openSaves(): Promise<IDBDatabase | null> {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(null);
       request.onblocked = () => resolve(null);
-    } catch {
+    } catch (error) {
+      console.error('[save] the saves database could not be opened', error);
       resolve(null);
     }
   });

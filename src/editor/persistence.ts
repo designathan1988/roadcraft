@@ -612,7 +612,8 @@ export interface LargeStore {
 const indexedDbStore: LargeStore = { get: (key) => storeGet(key), put: (key, text) => storePut(key, text), delete: (key) => storeDelete(key) };
 /** The map's tiles in IndexedDB where the browser has it and gzip streams (MDN, `CompressionStream`), written by the job system's `save` lane; none elsewhere. */
 function defaultParts(): PartStore | null {
-  if (typeof indexedDB === 'undefined' || typeof CompressionStream === 'undefined') return null;
+  // The tiles are plain JSON when the browser has no CompressionStream (`saveStore.ts` `gzip`): never the whole map in one text for it.
+  if (typeof indexedDB === 'undefined') return null;
   // DO NOT encode and write the save on the page: the page hands the worker the changed squares' records, the worker does the rest.
   const writer = typeof Worker !== 'undefined' ? portWriter(() => jobPort('save')) : undefined;
   return indexedDbParts(openSaves, SAVES_STORE, writer);

@@ -933,5 +933,10 @@
     "roadcraft/no-silent-catch": {
       "count": 1
     }
+  },
+  "src/editor/saveStore.ts": {
+    "roadcraft/no-module-state": {
+      "count": 1
+    }
   }
 }
