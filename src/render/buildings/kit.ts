@@ -611,9 +611,9 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   coarser('louvre', unitBox, [0, 0.105, 0.6]);
   coarser('door', doorFarGeometry(), [0, 0, 1.6]);
   // A lot's box, rail or slab seen from afar: its sides are under a pixel there, so its top alone draws it (2 triangles
-  // instead of 8–10). The error is the half-extent the sides lose; the close view keeps the full model.
+  // instead of 8–10). The sides give a silhouette half the part's height (model y), not its length: the error is that half.
   for (const kind of SHELL_PART_KINDS) {
-    coarser(kind, shellPartGeometry(SHELL_PART_FACES[kind].filter((f) => f.n[2] > 0)), [0.25, 0.25, 0.25]);
+    coarser(kind, shellPartGeometry(SHELL_PART_FACES[kind].filter((f) => f.n[2] > 0)), [0, 0.5, 0]);
   }
   const extentOf = (g: BufferGeometry): Axes => {
     if (!g.boundingBox) g.computeBoundingBox();
