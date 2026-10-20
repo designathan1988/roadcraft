@@ -133,7 +133,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     postProcessing: true,
     ambientOcclusion: true,
     smaa: true,
-    msaa: 8,
+    // SMAA still smooths every edge: 8 samples of MSAA on top of it cost their bandwidth for no edge a player can tell from 4.
+    msaa: 4,
     aoFull: false,
     sharpen: 0.35,
     anisotropy: 8,
@@ -163,7 +164,8 @@ export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
     postProcessing: true,
     ambientOcclusion: true,
     smaa: true,
-    msaa: 8,
+    // SMAA still smooths every edge: 8 samples of MSAA on top of it cost their bandwidth for no edge a player can tell from 4.
+    msaa: 4,
     aoFull: false,
     sharpen: 0.45,
     anisotropy: 16,
