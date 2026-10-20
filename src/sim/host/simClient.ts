@@ -607,12 +607,14 @@ export class SimClient implements JournalReader {
       const id = data[at + P.id]!;
       const r = pedRich?.get(id);
       let view = this.pedById.get(id);
-      if (!view || r) {
-        const base = r ?? view;
-        if (!base) continue;
-        const { id: _i, x: _x, y: _y, heading: _h, prev: _p, v: _v, turnV: _t, age: _a, segment: _s, walking: _w, kerbWait: _k, rank: _r, ...carried } = base as PedView;
-        view = { ...carried, id, x: 0, y: 0, heading: 0, prev: { x: 0, y: 0, heading: 0 }, v: 0, turnV: 0, age: 0, segment: undefined, walking: false, kerbWait: 0, rank: 0, tickRead: -1 } as PedRead;
+      if (!view) {
+        if (!r) continue;
+        // The first view of a walker: its carried look and the numbers below, made once (DO NOT copy it again a tick).
+        view = { ...r, id, x: 0, y: 0, heading: 0, prev: { x: 0, y: 0, heading: 0 }, v: 0, turnV: 0, age: 0, segment: undefined, walking: false, kerbWait: 0, rank: 0, tickRead: -1 } as PedRead;
         this.pedById.set(id, view);
+      } else if (r) {
+        // What a walker carries changed: written into the view it already has (MDN `Object.assign`), not into a new object a tick.
+        Object.assign(view, r);
       }
       const w = view as { -readonly [K in keyof PedView]: PedView[K] };
       w.x = data[at + P.x]!; w.y = data[at + P.y]!; w.heading = data[at + P.heading]!;
