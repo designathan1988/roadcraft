@@ -6,6 +6,7 @@ import { footwayRiseAt } from '@world/roads/footwayRise';
 import type { BuildingId } from '@world/buildings/types';
 import type { SerializedDoc } from '@world/doc';
 import { smallCityPlan } from '@world/cityGen/smallCity';
+import type { CityPlan } from '@world/cityGen/plan';
 import { LOT_PLAN_VERSION, growOnLot } from '@world/growth/zoning';
 import { greenCity, layCity, widenCityFootways, zoneCity } from './cityGenerator';
 
@@ -14,13 +15,17 @@ const GROWTH_SEED = 0x5eed;
 
 /** THE SMALL CITY OF ROADCRAFT 2.0, WHOLE, AS ONE MAP (the player, 2026-10-18: no city by tiles). Planned as 2.0 planned it (`smallCity.ts`: straight blocks, medium size), then laid out on one document: its footways, lots, green and zones, and every lot grown, on the flat ground of a new map. */
 export function buildSmallCityMap(seed: number): SerializedDoc {
-  const city = smallCityPlan(seed);
+  return buildCityMap(smallCityPlan(seed));
+}
+
+/** A planned city laid out as one map: its footways, lots, green and zones, and every lot grown, on the flat ground of a new map. The size is the plan's (`cityGen/plan.ts`): the probes' larger cities test the renderer's scale. */
+export function buildCityMap(city: CityPlan): SerializedDoc {
   const doc = layCity(city);
   widenCityFootways(doc);
   const net = new Network(doc);
   net.rebuild();
   applyLots(doc, planLots(doc, net));
-  greenCity(doc, net, (seed * 0x711e) >>> 0);
+  greenCity(doc, net, (city.options.seed * 0x711e) >>> 0);
   // The roads as they stand for the zones (a rebuild finds what changed, nothing when nothing did).
   net.rebuild();
   zoneCity(doc, net, city);

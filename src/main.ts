@@ -30,8 +30,8 @@ import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from 
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
-import type { CityOptions } from '@world/cityGen/plan';
-import { buildSmallCityMap } from '@editor/smallCityMap';
+import { type CityOptions, DEFAULT_CITY, planCity } from '@world/cityGen/plan';
+import { buildCityMap, buildSmallCityMap } from '@editor/smallCityMap';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
 import { MAX_TERRAIN_STAMPS, RELIEF_FLAT, type TerrainMode } from '@world/terrain';
@@ -1947,7 +1947,15 @@ function newWorld(): void {
 }
 /** The small city of a seed put in place of the map (the menu's, and the probes' with a seed of their own). */
 function openSmallCity(seed: number): void {
-  const data = buildSmallCityMap(seed);
+  openCity(buildSmallCityMap(seed));
+}
+
+/** A planned city of any size put in place of the map (the probes' larger cities, `cityGen/plan.ts`). */
+function openGeneratedCity(options: Partial<CityOptions>): void {
+  openCity(buildCityMap(planCity({ ...DEFAULT_CITY, ...options })));
+}
+
+function openCity(data: ReturnType<typeof buildSmallCityMap>): void {
   history.begin(doc);
   applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
   roadTool.reset();
@@ -3774,7 +3782,7 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
     requestDraw();
   },
   /** A generated city: the small city of Roadcraft 2.0 as one map (`smallCity`). DO NOT open the world by tiles: the player, 2026-10-18, wants no city by tiles. */
-  generateCity: (options: Partial<CityOptions> = {}) => openSmallCity(options.seed ?? 7),
+  generateCity: (options: Partial<CityOptions> = {}) => openGeneratedCity(options),
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   /** Probe: one building grown as the game grows them - asked of the growth's worker, written when its answer comes - and the ms from the ask to the building written. DO NOT time the page's own grower: the game never grows there (report UI-15 g). */
   growTimed: (): Promise<{ grown: readonly number[]; ms: number } | { grown: null; why: string }> => {
@@ -3941,8 +3949,8 @@ requestDraw();
 // autosave holds. The probes' own `generateCity` asks the same (`openSmallCity`).
 if (PROBES) {
   const query = new URLSearchParams(location.search);
-  if (query.get('city') === 'small') {
-    const seed = Number(query.get('seed') ?? 7);
-    openSmallCity(Number.isFinite(seed) ? seed : 7);
-  }
+  const city = query.get('city');
+  const seed = Number(query.get('seed') ?? 7);
+  if (city === 'small') openSmallCity(Number.isFinite(seed) ? seed : 7);
+  else if (city === 'medium' || city === 'large') openGeneratedCity({ seed: Number.isFinite(seed) ? seed : 7, size: city });
 }
