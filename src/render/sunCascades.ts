@@ -741,6 +741,8 @@ const CASCADE_PARS = /* glsl */ `
 		#define SUN_CASCADE_COORD( i ) sunCascadeCoordOf( directionalShadowMatrix[ i ], directionalLightShadows[ i ].shadowNormalBias )
 		#define SUN_CASCADE_RIM( i, c ) sunCascadeRim( c, directionalLightShadows[ i ].shadowMapSize, directionalLightShadows[ i ].shadowRadius )
 		#define SUN_CASCADE_SHADOW( i, c ) getShadow( directionalShadowMap[ i ], directionalLightShadows[ i ].shadowMapSize, directionalLightShadows[ i ].shadowIntensity, directionalLightShadows[ i ].shadowBias, directionalLightShadows[ i ].shadowRadius, c )
+		// The last cascade's shadow where it holds the point, else the fallback.
+		float sunCascadeLast( float fallback ) { vec4 c2 = SUN_CASCADE_COORD( 2 ); return SUN_CASCADE_RIM( 2, c2 ) > 0.0 ? SUN_CASCADE_SHADOW( 2, c2 ) : fallback; }
 		float sunCascadeShadow() {
 			const float BAND = 0.08;
 			// Each cascade's coordinate only when it is read: the finest that holds the point, the next only in the band it is blended over.
@@ -749,28 +751,15 @@ const CASCADE_PARS = /* glsl */ `
 			// One return, every path assigned (fxc warns X4000 on the early returns through ANGLE).
 			float shadow = 1.0;
 			if ( e0 > 0.0 ) {
-				float near = SUN_CASCADE_SHADOW( 0, c0 );
-				float next = near;
-				if ( e0 < BAND ) {
-					vec4 c1 = SUN_CASCADE_COORD( 1 );
-					if ( SUN_CASCADE_RIM( 1, c1 ) > 0.0 ) next = SUN_CASCADE_SHADOW( 1, c1 );
-					else {
-						vec4 c2 = SUN_CASCADE_COORD( 2 );
-						if ( SUN_CASCADE_RIM( 2, c2 ) > 0.0 ) next = SUN_CASCADE_SHADOW( 2, c2 );
-					}
-				}
+				float near = SUN_CASCADE_SHADOW( 0, c0 ), next = near;
+				if ( e0 < BAND ) { vec4 c1 = SUN_CASCADE_COORD( 1 ); next = SUN_CASCADE_RIM( 1, c1 ) > 0.0 ? SUN_CASCADE_SHADOW( 1, c1 ) : sunCascadeLast( near ); }
 				shadow = mix( next, near, min( 1.0, e0 / BAND ) );
 			} else {
 				vec4 c1 = SUN_CASCADE_COORD( 1 );
 				float e1 = SUN_CASCADE_RIM( 1, c1 );
 				if ( e1 > 0.0 ) {
 					float near = SUN_CASCADE_SHADOW( 1, c1 );
-					float next = near;
-					if ( e1 < BAND ) {
-						vec4 c2 = SUN_CASCADE_COORD( 2 );
-						if ( SUN_CASCADE_RIM( 2, c2 ) > 0.0 ) next = SUN_CASCADE_SHADOW( 2, c2 );
-					}
-					shadow = mix( next, near, min( 1.0, e1 / BAND ) );
+					shadow = mix( e1 < BAND ? sunCascadeLast( near ) : near, near, min( 1.0, e1 / BAND ) );
 				} else {
 					vec4 c2 = SUN_CASCADE_COORD( 2 );
 					float e2 = SUN_CASCADE_RIM( 2, c2 );

@@ -6,11 +6,7 @@ import { m } from '../units';
 /** The large city's radius: its grid spans 1.7 radii, about 2.7 km across (the small city's 1.1 km). */
 export const LARGE_CITY_RADIUS = m(1_600);
 
-const plans = new Map<number, CityPlan>();
-
-/** The large city of a seed, planned once. */
+/** The large city of a seed (made once a city is asked for, `cityGen.worker.ts`: nothing kept between them). */
 export function largeCityPlan(seed: number): CityPlan {
-  let plan = plans.get(seed);
-  if (!plan) plans.set(seed, plan = planCity({ ...DEFAULT_CITY, seed, size: 'large', radius: LARGE_CITY_RADIUS }));
-  return plan;
+  return planCity({ ...DEFAULT_CITY, seed, size: 'large', radius: LARGE_CITY_RADIUS });
 }
