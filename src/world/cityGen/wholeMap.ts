@@ -22,9 +22,6 @@ export const MAP_HALF = (MAP_TILES / 2) * TILE;
 export const tileOnMap = (i: number, j: number): boolean => i >= -MAP_TILES / 2 && i < MAP_TILES / 2 && j >= -MAP_TILES / 2 && j < MAP_TILES / 2;
 /** Whether a point is on the map. */
 export const onMap = (x: number, y: number): boolean => x >= -MAP_HALF && x < MAP_HALF && y >= -MAP_HALF && y < MAP_HALF;
-/** A point held to the map (the camera's focus). */
-export const clampToMap = (x: number, y: number): { x: number; y: number } => ({ x: Math.max(-MAP_HALF, Math.min(MAP_HALF, x)), y: Math.max(-MAP_HALF, Math.min(MAP_HALF, y)) });
-
 /** THE WORLD AS CITIES AND COUNTRYSIDE (rewrite F7, "Streaming world"): the world's tiles (`tiles.ts`), each planned and built on its own (`tile.ts`, `editor/wholeMapTile.ts`) from the seed and its own place alone, so any tile of an unbounded world can be made in any order on any worker and come out the same. What the tiles share is decided here, by rules that read only the seed and the coordinates: the border avenues on every tile edge, the gates where streets cross them (the same for a whole row or column of tiles, so a street goes straight on into the next tile), and the districts - downtowns, neighbourhood centres, villages, industry, parks - from an endless lattice of district cells, each holding a city or countryside by a hash of the seed and the cell. */
 
 /** No gate this near a tile's corner: the corner is the two border avenues' junction. */

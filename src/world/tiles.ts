@@ -1,6 +1,5 @@
 import type { ChangeRect } from './changes';
 import { m } from './units';
-import { lotCentre } from './lotRings';
 
 /** THE WORLD'S TILES: an unbounded grid of 1,024 m squares, the unit the world is generated, kept, loaded and drawn by (CLAUDE.md, "Streaming world") */
 
@@ -78,16 +77,6 @@ export function tilesAround(i: number, j: number, radius: number): TileIJ[] {
     }
   }
   return out;
-}
-
-/** Which tile a record belongs to: every record to one tile only, by the point that files it */
-/** The tile a record of the document belongs to (`OWNER`), from its value (a node, a lot, a barrier...) or, for a road or a span whose value is gone, from its per-tile id; null when it cannot be said (a pre-tile map's road). */
-export function tileOfRecord(part: string, id: number, value: unknown): number | null {
-  const v = value as { x?: number; y?: number; corners?: readonly { x: number; y: number }[]; points?: readonly { x: number; y: number }[] } | undefined;
-  if (v && Number.isFinite(v.x) && Number.isFinite(v.y)) return OWNER.at(v as { x: number; y: number });
-  if (v?.corners?.length) return OWNER.at(lotCentre(v as { corners: readonly { x: number; y: number }[] }));
-  if (v?.points?.length) return OWNER.at(v.points[0]!);
-  return id >= TILE_IDS && (part === 'segments' || part === 'poleSpans') ? Math.floor(id / TILE_IDS) - 1 : null;
 }
 
 export const OWNER = {

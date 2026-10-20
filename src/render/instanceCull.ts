@@ -1,4 +1,4 @@
-import type { Frustum, InstancedBufferAttribute, InterleavedBuffer } from 'three';
+import type { Frustum } from 'three';
 
 /** DO NOT bring back a cull that is made for the whole map at once. */
 
@@ -26,17 +26,5 @@ export function planeMask(frustum: Frustum, x: number, y: number, z: number, r: 
     if (d < r) out |= bit;
   }
   return out;
-}
-
-/** A changed run of an attribute to upload, kept as ONE pending range: three clears the ranges only when it uploads */
-export function markRange(attribute: InstancedBufferAttribute | InterleavedBuffer, start: number, count: number): void {
-  const pending = attribute.updateRanges[0];
-  if (!pending) attribute.addUpdateRange(start, count);
-  else {
-    const end = Math.max(pending.start + pending.count, start + count);
-    pending.start = Math.min(pending.start, start);
-    pending.count = end - pending.start;
-  }
-  attribute.needsUpdate = true;
 }
 

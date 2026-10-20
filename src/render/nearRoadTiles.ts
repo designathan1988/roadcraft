@@ -10,7 +10,7 @@ import { isMarkingStyle } from '@world/roads/markingStyle';
 import { roadStructure } from '@world/structures';
 import { TILE as WORLD_TILE, tileOfKey } from '@world/tiles';
 import { METERS_PER_UNIT, m } from '@world/units';
-import { emptyRecords, readStored, readStoredNetwork } from './buildings/farGrid';
+import { readStored, readStoredNetwork } from './buildings/farGrid';
 import { coarseArrays } from './mesh/roadLodPure';
 import type { Tile } from './mesh/tileMesh';
 import { SurfaceInputs, TILE, TILE_BIAS, TILE_ORIGIN } from './roadSurfaceInputs';
@@ -526,8 +526,3 @@ export async function runNearRoadJob(job: NearRoadJob, cache: NearRoadCache): Pr
   return { kind: 'far', node, sig, payload: nearMeshOf(kept, near.variant, base) };
 }
 
-/** A tile with nothing stored under it, as a near bake reads one (a neighbour the store has none of). */
-export const noRoads = (key: number): NearTileRoads => {
-  const { nodes, borrowedNodes, segments } = emptyRecords(key, 0);
-  return { key, nodes, borrowedNodes, segments, gates: [] };
-};
