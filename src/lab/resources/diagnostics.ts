@@ -274,5 +274,5 @@ export function createDiagnosticsTab(ctx: LabContext, collector: Collector): Lab
     }
   }
 
-  return { id: 'diagnostics', title: 'Diagnóstico', mount, refresh, unmount: () => { summaryEl = null; } };
+  return { id: 'diagnostics', title: 'Verificações', mount, refresh, unmount: () => { summaryEl = null; } };
 }

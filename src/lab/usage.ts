@@ -39,6 +39,19 @@ export function createUsageMeter(ctx: LabContext): UsageMeter {
   };
   readStorage();
   const storageTimer = window.setInterval(readStorage, 5000);
+  /** The video memory as found on the GPU (`lab/gpu` objects: textures and geometries, buffers shared counted once) plus the frame's targets and shadow maps: DO NOT add `gpuLedger.bytes()` to `targetBytes()`, the ledger holds those targets too, and it holds neither the textures nor the detail's geometry. */
+  let vramFound: number | null = null;
+  const readVram = (): void => {
+    const gpu = (window as unknown as { __labGpu?: { objects(): { textures: { bytes: number }[]; geometries: { bytes: number }[] } } }).__labGpu;
+    if (!gpu) return;
+    try {
+      const o = gpu.objects();
+      vramFound = o.textures.reduce((a, x) => a + x.bytes, 0) + o.geometries.reduce((a, x) => a + x.bytes, 0) + ctx.scene.targetBytes();
+    } catch (error) {
+      console.warn('lab: video memory not scanned', error);
+    }
+  };
+  const vramTimer = window.setInterval(readVram, 5000);
 
   const compute = (now: number): UsageReading[] => {
     while (frames.length && frames[0]!.t < now - WINDOW_MS) frames.shift();
@@ -53,7 +66,8 @@ export function createUsageMeter(ctx: LabContext): UsageMeter {
     const fps = n > 1 ? (n - 1) / ((frames[n - 1]!.t - frames[0]!.t) / 1000) : 0;
     const gpuAvg = gpuN ? gpu / gpuN : null;
     const heap = (performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
-    const vram = gpuLedger.bytes() + ctx.scene.targetBytes();
+    const vram = vramFound ?? ctx.scene.targetBytes();
+    const counted = gpuLedger.bytes();
     const cap = gpuLedger.cap;
     const clamp = (v: number): number => Math.max(0, Math.min(100, v));
     return [
@@ -64,7 +78,7 @@ export function createUsageMeter(ctx: LabContext): UsageMeter {
       { id: 'ram', label: 'RAM', percent: heap ? clamp((heap.usedJSHeapSize / heap.jsHeapSizeLimit) * 100) : null,
         detail: heap ? `${mb(heap.usedJSHeapSize)} / ${mb(heap.jsHeapSizeLimit)}` : 'indisponível', title: 'Heap JS da página sobre o limite do heap. Clique: o que ocupa a memória.' },
       { id: 'vram', label: 'VRAM', percent: Number.isFinite(cap) && cap > 0 ? clamp((vram / cap) * 100) : null,
-        detail: `${mb(vram)}${Number.isFinite(cap) ? ` / ${mb(cap)}` : ''}`, title: 'Memória de vídeo contada pelo jogo (ledger + render targets) sobre o teto do dispositivo. Clique: os objetos na GPU.' },
+        detail: `${mb(vram)}${Number.isFinite(cap) ? ` / ${mb(cap)}` : ''} (o jogo conta ${mb(counted)})`, title: 'Memória de vídeo achada na GPU (texturas + geometrias + alvos e sombras) sobre o teto do dispositivo; entre parênteses o que o gpuLedger do jogo conta. Clique: os objetos na GPU.' },
       { id: 'disk', label: 'Disco', percent: storage && storage.quota > 0 ? clamp((storage.usage / storage.quota) * 100) : null,
         detail: storage ? `${mb(storage.usage)} / ${mb(storage.quota)}` : 'indisponível', title: 'Armazenamento do site (IndexedDB, OPFS, cache) sobre a cota. Clique: o que usa o disco.' },
       { id: 'fps', label: 'FPS', percent: n > 1 ? clamp((fps / 60) * 100) : null,
@@ -98,6 +112,7 @@ export function createUsageMeter(ctx: LabContext): UsageMeter {
     dispose() {
       stop();
       window.clearInterval(storageTimer);
+      window.clearInterval(vramTimer);
     },
   };
 }

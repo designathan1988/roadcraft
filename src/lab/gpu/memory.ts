@@ -117,9 +117,10 @@ export function scanGpuObjects(renderer: WebGLRenderer, scene: Scene, seenTarget
     live: (props.get(t) as { __webglFramebuffer?: unknown }).__webglFramebuffer !== undefined,
   }));
 
+  // A buffer shared by several geometries (posed copies, levels of one mesh) is on the GPU once: counted with the first geometry that holds it.
+  const seen = new Set<object>();
   const geometryRows: GeometryRow[] = [...geometries].map(([g, { holder, users }]) => {
     const geometry = g as { name: string; attributes: Record<string, Attribute>; index: Attribute | null; morphAttributes: Record<string, Attribute[]> };
-    const seen = new Set<object>();
     let bytes = 0, gpuOnlyBytes = 0;
     const add = (a: Attribute | null | undefined): void => {
       if (!a) return;
