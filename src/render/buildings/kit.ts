@@ -610,6 +610,11 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   // A leaf of slats from afar is a box: the slats' pitch and their depth in the frame left out.
   coarser('louvre', unitBox, [0, 0.105, 0.6]);
   coarser('door', doorFarGeometry(), [0, 0, 1.6]);
+  // A lot's box, rail or slab seen from afar: its sides are under a pixel there, so its top alone draws it (2 triangles
+  // instead of 8–10). The error is the half-extent the sides lose; the close view keeps the full model.
+  for (const kind of SHELL_PART_KINDS) {
+    coarser(kind, shellPartGeometry(SHELL_PART_FACES[kind].filter((f) => f.n[2] > 0)), [0.25, 0.25, 0.25]);
+  }
   const extentOf = (g: BufferGeometry): Axes => {
     if (!g.boundingBox) g.computeBoundingBox();
     const b = g.boundingBox!;

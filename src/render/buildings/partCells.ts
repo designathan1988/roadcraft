@@ -138,8 +138,8 @@ export class PartCell {
         if (band.drawn.get(key) === level && !recast) continue;
         let mesh = band.meshes.get(key);
         if (!mesh) band.meshes.set(key, mesh = this.make(band, this.runFirst[r]!, this.runLast[r]!));
-        // A shell's part keeps its run's own copy of its one level (`make`); another kind its run's posed copy of the level.
-        if (!band.looks) mesh.geometry = this.posedLevel(band, mesh, level);
+        // A run's posed copy of its level: a shell's part too, now that it has a coarse level (`kit.ts`).
+        mesh.geometry = this.posedLevel(band, mesh, level);
         mesh.castShadow = casts;
         mesh.visible = visible;
         band.drawn.set(key, level);
@@ -276,7 +276,17 @@ export class PartCell {
   private posedLevel(band: Band, mesh: InstancedMesh, level: number): BufferGeometry {
     const copies = mesh.userData['posed'] as Map<number, BufferGeometry>;
     let copy = copies.get(level);
-    if (!copy) copies.set(level, copy = posedCopy(band.screen.levels[level]!.geometry, band.poses, mesh.userData['first'] as number));
+    if (!copy) {
+      const at = mesh.userData['first'] as number;
+      copy = posedCopy(band.screen.levels[level]!.geometry, band.poses, at);
+      // A shell's part carries its finish, wear and ground per instance; the coarse level needs them too (`make`).
+      if (band.looks) {
+        copy.setAttribute(FINISH_ATTRIBUTE, new InterleavedBufferAttribute(band.looks, 1, at * LOOK_FLOATS));
+        copy.setAttribute('aDecay', new InterleavedBufferAttribute(band.looks, 1, at * LOOK_FLOATS + 1));
+        copy.setAttribute(GROUND_ATTRIBUTE, new InterleavedBufferAttribute(band.looks, 1, at * LOOK_FLOATS + 2));
+      }
+      copies.set(level, copy);
+    }
     return copy;
   }
 
