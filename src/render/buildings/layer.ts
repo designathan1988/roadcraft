@@ -141,9 +141,15 @@ export function createBuildingLayer(): BuildingLayer {
   let storedKey = '';
   let ghostKey = '';
   let preview: BuildingPreviewInput | null = null;
+  /** The preview of the last update: its building looked for in the document once the preview is gone (`bridges`). */
+  let lastPreview: BuildingPreviewInput | null = null;
   let cutaway: CutawaySpec | null = null;
   /** The preview's and the solid building's tops (`top`), measured once each is made. */
   let ghostTop = -Infinity, soloTop = -Infinity;
+  /** A building just placed or edited, drawn whole on its own until a level of its cell holds it (the preview gone, the cell still being made in a worker): never a moment with no building where the player put one. */
+  const bridges = new Map<BuildingId, { meshes: BuildingMeshes; cell: string; sig: number; since: number }>();
+  /** The longest a bridge stands, ms, whatever the workers do. */
+  const BRIDGE_MAX_MS = 20_000;
   /** The eye the parts' levels are chosen for (`cullDetails`), one object for every frame. */
   const partView: { -readonly [K in keyof PartView]: PartView[K] } = { x: 0, y: 0, z: 0, pxAtMetre: 0, orthoPx: null, shadowTexel: Infinity };
   /** HLOD streaming (see the file's comment). */
@@ -545,6 +551,13 @@ export function createBuildingLayer(): BuildingLayer {
           const kind: BatchKind = cellFine(cell) ? 'cell' : 'facade';
           requests.drop(kind === 'cell' ? 'facade' : 'cell', cell);
           const known = (kind === 'cell' ? cells : facades).get(cell);
+          // DO NOT keep the other level of a cell whose buildings changed: the eye coming back to it found it "made" and drew the buildings as they were (an edited tower shown with its old floors when zoomed out, the player 2026-10-20); let go once the level wanted is current, made again when wanted.
+          const otherKind: BatchKind = kind === 'cell' ? 'facade' : 'cell';
+          const other = (otherKind === 'cell' ? cells : facades).get(cell);
+          if (known && sameEntries(known.entries, entries) && other && !sameEntries(other.entries, entries)) {
+            patchCell(cell, null, shownAt(otherKind));
+            changed = true;
+          }
           if (known && sameEntries(known.entries, entries)) requests.drop(kind, cell);
           else {
             done = false;
@@ -785,6 +798,28 @@ export function createBuildingLayer(): BuildingLayer {
         }
       }
       const wanted = preview ? `${preview.serial}|${groundKey}` : '';
+      // The preview's building is in the document now (placed, or its edit committed): drawn as it is until its cell's level holds it.
+      if (wanted !== ghostKey && ghost && lastPreview) {
+        const placed = doc.buildings.get(lastPreview.building.id);
+        if (placed && placed.id !== preview?.hides && inCell(placed) && !bridges.has(placed.id)) {
+          const meshes = buildBuildingMeshes([placed], groundAt, kit, false, pavedAt, naturalAt);
+          group.add(meshes.group);
+          bridges.set(placed.id, { meshes, cell: cellOf(placed), sig: sigOf(placed), since: performance.now() });
+        }
+      }
+      lastPreview = preview;
+      for (const [id, bridge] of bridges) {
+        const b = doc.buildings.get(id);
+        const level = cells.get(bridge.cell) ?? facades.get(bridge.cell);
+        const held = level !== undefined && !pendingCells.has(bridge.cell) && level.entries.some((e) => e.key === String(id));
+        const far = !cellNear(bridge.cell) && requests.massing === 0;
+        if (!b || sigOf(b) !== bridge.sig || held || far || performance.now() - bridge.since > BRIDGE_MAX_MS) {
+          group.remove(bridge.meshes.group);
+          bridge.meshes.dispose();
+          bridges.delete(id);
+          rebuilt = true;
+        }
+      }
       if (wanted !== ghostKey) {
         ghostKey = wanted;
         if (ghost) {
@@ -1017,6 +1052,8 @@ export function createBuildingLayer(): BuildingLayer {
       farTiles.dispose();
       stored?.dispose();
       solo?.dispose();
+      for (const bridge of bridges.values()) bridge.meshes.dispose();
+      bridges.clear();
       for (const cache of [cells, facades]) {
         for (const cell of cache.values()) cell.part.dispose();
         cache.clear();
