@@ -21,6 +21,16 @@ describe('the shader catalogue', () => {
     },
   } as unknown as WebGLRenderer;
   const camera = {} as Camera;
+  /** Drained a frame at a time until `until` settles: the curtain's light set is asked only once the families are built. */
+  const drainUntil = async (target: WebGLRenderer, scene: Scene, until: Promise<void>): Promise<void> => {
+    let settled = false;
+    void until.then(() => { settled = true; });
+    for (let frame = 0; frame < 50 && !settled; frame++) {
+      drainCompiles(target, camera, scene, null);
+      await new Promise((done) => setTimeout(done, 0));
+    }
+    expect(settled).toBe(true);
+  };
 
   it('compiles every family, lit and in the shadow, before it is ready', async () => {
     const scene = new Scene();
@@ -93,7 +103,7 @@ describe('the shader catalogue', () => {
     expect(catalogue.counts().people).toBeNull();
   });
 
-  it('compiles each light variant once the opening is ready, one stand-in a lit program, with that variant\'s lights', async () => {
+  it('compiles the light variant the town opens under before it is ready, the others once the curtain lifts, one stand-in a lit program, with that variant\'s lights', async () => {
     const scene = new Scene();
     const sets: number[] = [];
     const lighted = {
@@ -116,9 +126,10 @@ describe('the shader catalogue', () => {
     const sun = scene.children.at(-1)!;
     const catalogue = createShaderCatalogue(() => ({ lit: new Group(), shadow: new Group() }), () => [[sun], [sun, lamp]]);
     catalogue.compile(scene);
-    drainCompiles(lighted, camera, scene, null);
-    await catalogue.ready;
-    // One set a drain at most, each when the door is quiet.
+    await drainUntil(lighted, scene, catalogue.ready);
+    // Only the first set (the lights the town opens under) holds the curtain.
+    expect(sets).toEqual([1]);
+    catalogue.afterReveal();
     for (let frame = 0; frame < 6; frame++) {
       await new Promise((done) => setTimeout(done, 0));
       drainCompiles(lighted, camera, scene, null);
@@ -128,7 +139,7 @@ describe('the shader catalogue', () => {
     expect(litStandIns([scene]).children.length).toBe(1);
   });
 
-  it('asks the light variants only once nothing else compiles, one set at a time: the programs of the view never wait behind them', async () => {
+  it('asks the light variants the curtain did not wait for only once it lifts, one set at a time: the programs of the view never wait behind them', async () => {
     const scene = new Scene();
     const asked: string[] = [];
     let view: () => void = () => {};
@@ -146,16 +157,22 @@ describe('the shader catalogue', () => {
     const sun = scene.children.at(-1)!;
     const catalogue = createShaderCatalogue(() => ({ lit: new Group(), shadow: new Group() }), () => [[sun], [sun], [sun]]);
     catalogue.compile(scene);
-    drainCompiles(renderer, camera, scene, null);
-    await catalogue.ready;
-    // A mesh of the view comes in and is compiling: no variant asked meanwhile.
+    await drainUntil(renderer, scene, catalogue.ready);
+    // The set the town opens under, before the curtain; the others wait for it to lift.
+    expect(asked).toEqual(['variant']);
+    // A mesh of the view comes in and is compiling: no variant asked meanwhile, nor ahead of it once the curtain lifts.
     const mesh = Object.assign(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), { name: 'view' });
     void compileAhead(mesh);
     for (let frame = 0; frame < 4; frame++) { await new Promise((done) => setTimeout(done, 0)); drainCompiles(renderer, camera, scene, null); }
-    expect(asked).toEqual(['view']);
-    view();
+    expect(asked).toEqual(['variant', 'view']);
+    catalogue.afterReveal();
+    drainCompiles(renderer, camera, scene, null);
+    drainCompiles(renderer, camera, scene, null);
+    // One set at a time: the next is asked once the last is built.
+    expect(asked).toEqual(['variant', 'view', 'variant']);
     for (let frame = 0; frame < 12; frame++) { await new Promise((done) => setTimeout(done, 0)); drainCompiles(renderer, camera, scene, null); }
-    expect(asked).toEqual(['view', 'variant', 'variant', 'variant']);
+    expect(asked).toEqual(['variant', 'view', 'variant', 'variant']);
+    view();
   });
 });
 
@@ -166,7 +183,9 @@ describe('the lights in the key of every program', () => {
     expect(environment).not.toMatch(/fill\.visible\s*=/);
     const renderer = readFileSync('src/render/renderer.ts', 'utf8');
     const variants = /const lightVariants = [^]*?\n {2}\};/.exec(renderer)?.[0] ?? '';
-    expect(variants).toMatch(/\[false, true\]\.map\(\(lit\)/);
+    // Two sets, the points off and on, the fill in both; the one the town opens under first.
+    expect(variants).toMatch(/const off = \[\.\.\.base, \.\.\.\(fill \? \[fill\] : \[\]\)\], on = \[\.\.\.base, \.\.\.points, \.\.\.\(fill \? \[fill\] : \[\]\)\];/);
+    expect(variants).toMatch(/return lit \? \[on, off\] : \[off, on\];/);
     expect(variants).not.toMatch(/filled/);
   });
 });

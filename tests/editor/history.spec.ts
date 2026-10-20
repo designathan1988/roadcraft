@@ -5,6 +5,7 @@ import { History, followNetwork } from '@editor/history';
 import { RoadDoc } from '@world/doc';
 import { Network } from '@world/network';
 import { generateBody } from '@world/buildings/blueprints';
+import { BuildingStore } from '@world/buildings/store';
 import type { Building } from '@world/buildings/types';
 import { Rng } from '@core/rng';
 
@@ -260,6 +261,7 @@ describe('a step that replaced the whole map', () => {
     const opened = fullMap(2).toJSON();
     const toJSON = vi.spyOn(RoadDoc.prototype, 'toJSON');
     const stringify = vi.spyOn(JSON, 'stringify');
+    const buildingsText = vi.spyOn(BuildingStore.prototype, 'toText');
     try {
       history.begin(doc);
       doc.replaceFromJSON(opened);
@@ -267,15 +269,20 @@ describe('a step that replaced the whole map', () => {
       expect(history.bytes).toBe(2 * before.length);
       const after = doc.toText();
       stringify.mockClear();
+      buildingsText.mockClear();
       history.undo(doc);
       expect(history.bytes).toBe(2 * (before.length + after.length));
       history.redo(doc);
       expect(toJSON).not.toHaveBeenCalled();
-      // `toText` writes the map's head and tail objects; no list (trees, elements, clouds...) is written to be compared.
-      expect(stringify.mock.calls.filter(([value]) => Array.isArray(value))).toEqual([]);
+      // `toText` writes the map's head and tail objects and the buildings' records in one pass (`BuildingStore.toText`); no other list (trees, elements, clouds...) is written to be compared.
+      const building = (item: unknown): boolean => typeof item === 'object' && item !== null && 'volumes' in item && 'storeyHeight' in item;
+      const lists = stringify.mock.calls.filter(([value]) => Array.isArray(value)).map(([value]) => value as unknown[]);
+      expect(lists.filter((list) => !list.every(building))).toEqual([]);
+      expect(lists).toHaveLength(buildingsText.mock.calls.length);
     } finally {
       toJSON.mockRestore();
       stringify.mockRestore();
+      buildingsText.mockRestore();
     }
   });
 

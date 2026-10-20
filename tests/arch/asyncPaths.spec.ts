@@ -33,7 +33,7 @@ describe('the frame and the world rebuild', () => {
 
   it('builds the world sliced, its roads shaped by the tile workers', () => {
     const renderer = read('src/render/renderer.ts');
-    expect(renderer).toMatch(/worldJob = worldSteps\([^;]*, true\);/);
+    expect(renderer).toMatch(/worldJob = worldSteps\([^;]*, started, true, [^;]*\);/);
     expect(renderer).not.toMatch(/const sliced = /);
     expect(renderer).toMatch(/roadSurfaceSteps\([\s\S]{0,200}sliced \? roadTiles : null,[^)]*\)/);
   });
@@ -214,7 +214,7 @@ describe('the road tiles made off the page', () => {
     // The page takes a served tile's arrays as they are: DO NOT read its vertices again here.
     const surfaces = read('src/render/roadSurfaces.ts');
     const buildAll = surfaces.slice(surfaces.indexOf('const buildAll = function*'), surfaces.indexOf('/** The tiles built afresh this pass'));
-    expect(buildAll).toMatch(/const bundle = made \? made\[k - from\]! : reading\(\(\) => buildTile\(/);
+    expect(buildAll).toMatch(/const bundle = made \? made\[k - from\]! : reading\(\(\) => tileBundle\(/);
     expect(buildAll).not.toMatch(/bundleOf|meshTileShape|tileShapes/);
     // The pool hands the tiles and answers the ground; it neither shapes nor meshes.
     expect(read('src/render/roadTilePool.ts')).not.toMatch(/meshTileShape\(|tileShapes\(|passSurfaces\(/);

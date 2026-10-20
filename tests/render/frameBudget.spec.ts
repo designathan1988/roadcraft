@@ -108,9 +108,9 @@ describe('the cells at an error scale', () => {
     cells.dispose();
   });
 
-  it('at 7: near at their facade level (14 px allowed: the detail no longer resolves, the facade level does)', () => {
+  it('at 8: near at their facade level (16 px allowed, the detail held to a quarter of it, 4 px, 3.4 with the hysteresis: 0.3 m spans 3, no longer resolved; the facade level does)', () => {
     const cells = row();
-    cells.setErrorScale(7);
+    cells.setErrorScale(8);
     cells.choose(CELL / 2, CELL / 2, m(300), 1000, 10, false, Infinity);
     for (let i = 0; i < 5; i++) expect([cells.near(`${i},0`), cells.fine(`${i},0`)]).toEqual([true, false]);
     cells.dispose();
@@ -310,7 +310,8 @@ describe('what a level is reckoned to draw', () => {
   it('once landed: measured with its parts chosen (`cullDetails`), not as it lands with none chosen yet', async () => {
     const { readFileSync } = await import('node:fs');
     const layer = readFileSync('src/render/buildings/layer.ts', 'utf8');
-    const cull = layer.slice(layer.indexOf('    cullDetails(eyeX'), layer.indexOf('    cullDetails(eyeX') + 1200);
-    expect(cull).toMatch(/cell\.choose\(partView\);[\s\S]*landedTriangles\.set\(kind, key, level\.triangles \+ cell\.triangles\)/);
+    const cull = layer.slice(layer.indexOf('    cullDetails(eyeX'), layer.indexOf('    cullDetails(eyeX') + 2200);
+    // A facade cell's batched far parts (`farParts.ts`) are drawn for it too: counted with it.
+    expect(cull).toMatch(/cell\.choose\(partView\);[\s\S]*landedTriangles\.set\(kind, key, level\.triangles \+ cell\.triangles \+ \(kind === 'facade' \? farParts\.trianglesOf\(key\) : 0\)\)/);
   });
 });

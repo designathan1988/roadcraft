@@ -1,6 +1,6 @@
 import type { MeshStandardMaterial } from 'three';
 import { m } from '@world/units';
-import type { MassingUniforms } from './massingMaterial';
+import { ROOM_SEEN_GLSL, type MassingUniforms } from './massingMaterial';
 import { ROOM_LAMP_GLSL } from './roomLamps';
 
 /** THE BUILDINGS' FAR LEVEL (L1): the same building emitted again with its walls as runs of bays (`emitChunk` `far`) */
@@ -34,6 +34,7 @@ function facadeFragmentPars(p: FacadePanes): string {
   return `
 uniform float roomsAwake;
 uniform float massingNight;
+uniform float roomDaylight;
 varying vec4 vFacadeGrid;
 varying vec4 vFacadeKey;
 varying vec4 vFacadeOpening;
@@ -125,7 +126,8 @@ if (facadeKind > ${K.none}) {
     float rise = clamp((fract(cell.y) * storeyH - bottom) / max(top - bottom, 1e-3), 0.0, 1.0);
     facadeStreak = 1.0 - under * rise * (0.07 + 0.12 * vDecay);
   }
-  vec3 glassColour = mix(FACADE_GLASS, FACADE_GLASS_DARK, facadeDark);
+  // The pane scatters next to nothing, as the detail's (\`glassRoom.ts\`: its albedo times 0.06): its sky reflection and the room behind it show (emissive). DO NOT draw it its base colour: black glass read pale blue at this level (the player, 2026-10-20).
+  vec3 glassColour = mix(FACADE_GLASS, FACADE_GLASS_DARK, facadeDark) * 0.06;
   vec3 solidColour = mix(FACADE_DOOR, FACADE_SHUTTER, facadeShutter);
   diffuseColor.rgb = diffuseColor.rgb * facadeWall * facadeStreak + vFacadeTrim.rgb * facadeFrame + glassColour * facadeGlass + solidColour * facadeSolid;
   // Its room lit at night: the share awake once the window is under a pixel, its lamp from the mix the detailed panes draw from.
@@ -154,6 +156,7 @@ export function createFacadeMaterial(base: MeshStandardMaterial, p: FacadePanes,
   material.onBeforeCompile = (shader, renderer) => {
     shader.uniforms['roomsAwake'] = uniforms.roomsAwake;
     shader.uniforms['massingNight'] = uniforms.massingNight;
+    shader.uniforms['roomDaylight'] = uniforms.roomDaylight ?? { value: 0 };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
 attribute vec2 facadeSize;
@@ -189,7 +192,7 @@ metalnessFactor = metalnessFactor * facadeWall + ${num(p.frame.metalness)} * fac
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 normal = normalize(mix(normal, nonPerturbedNormal, 1.0 - facadeWall));`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-totalEmissiveRadiance += facadeLamp * massingNight * facadeLit * facadeGlass * mix(1.0, 0.64, facadeDark);`)
+totalEmissiveRadiance += (facadeLamp * massingNight * facadeLit + ${ROOM_SEEN_GLSL} * roomDaylight) * facadeGlass * mix(1.0, 0.64, facadeDark);`)
       // The panes reflect the sky as the detail's do (their own envMapIntensity, not the wall's finish's, `shellEnvScale`).
       .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
 #if defined( RE_IndirectSpecular ) && defined( USE_ENVMAP )
@@ -198,6 +201,6 @@ totalEmissiveRadiance += facadeLamp * massingNight * facadeLit * facadeGlass * m
     // The shell's own after: each of its additions lands right after its chunk, so before these (its finish's map, roughness, metalness and relief first).
     baseCompile(shader, renderer);
   };
-  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v5`;
+  material.customProgramCacheKey = () => `${baseKey()}-facade-level-v6`;
   return material;
 }

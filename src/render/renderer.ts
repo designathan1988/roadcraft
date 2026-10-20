@@ -1072,7 +1072,7 @@ export function createSceneRenderer(
   const signals: SignalHeads = createSignalHeads(scene, deckHeight);
 
   // Modular buildings: their own layer, behind their own gate
-  const buildings = createBuildingLayer();
+  const buildings = createBuildingLayer(anisotropy);
   // Buildings are placed once, never moved: a still tree.
   holdStill(buildings.group);
   scene.add(buildings.group);

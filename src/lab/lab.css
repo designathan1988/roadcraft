@@ -8,7 +8,8 @@
   font: 12px/1.4 Inter, ui-sans-serif, "Segoe UI", Roboto, sans-serif; color-scheme: dark; overflow: hidden;
 }
 .lab-panel[hidden] { display: none; }
-.lab-panel.see-through { background: rgb(15 22 26 / 0.72); backdrop-filter: blur(6px); }
+/* No blur behind it (DECISION 5.5): the canvas changes every frame, and the blur was made again every frame. */
+.lab-panel.see-through { background: rgb(15 22 26 / 0.72); }
 .lab-panel *, .lab-panel *::before, .lab-panel *::after { box-sizing: border-box; }
 
 /* Scrollbars: thin, dark, never the system's light ones. */

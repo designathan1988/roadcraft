@@ -461,7 +461,8 @@ function shellPartGeometry(faces: readonly ShellPartFace[]): BufferGeometry {
   return g;
 }
 
-export function createBuildingKit(): BuildingKit {
+/** `anisotropy`: the tier's taps for the facades' maps (`quality.ts`), as the ground's: at 4 a wall seen along the street blurred into its mean. */
+export function createBuildingKit(anisotropy = 4): BuildingKit {
   const unitBox = new BoxGeometry(1, 1, 1);
   const glassPlane = new PlaneGeometry(1, 1);
   const geometry: Record<PartKind, BufferGeometry> = {
@@ -551,8 +552,8 @@ export function createBuildingKit(): BuildingKit {
   const furnitureGeometry = createFurnitureGeometries();
   const tones = furnitureTones(furnitureGeometry);
   for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(own[kind] as MeshStandardMaterial, { tones, roomsAwake, roomDaylight, tvClock });
-  const shell = createShellMaterial();
-  const ruinShell = createShellMaterial({ carried: true });
+  const shell = createShellMaterial({}, anisotropy);
+  const ruinShell = createShellMaterial({ carried: true }, anisotropy);
   // The shell's parts are the shell drawn instanced (`shellParts.ts`): its own material, not pulled towards the eye, not renamed.
   const material: Record<PartKind, Material> = { ...own, ...{ lotBox: shell, lotRail: shell, lotSlab: shell } satisfies Record<ShellPartKind, Material> };
   const ghostShell = new MeshStandardMaterial({
@@ -596,13 +597,13 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
 
   // How bright a lit window glows from afar: set with the detailed panes' (`setNight`).
   const massingNight = { value: 0 };
-  const massing = createMassingMaterial({ roomsAwake, massingNight });
-  const massingBoxes = createMassingMaterial({ roomsAwake, massingNight }, true);
+  const massing = createMassingMaterial({ roomsAwake, massingNight, roomDaylight });
+  const massingBoxes = createMassingMaterial({ roomsAwake, massingNight, roomDaylight }, true);
   const massBoxDepth = createMassBoxDepth();
   const massBox = unitMassBox();
   // The facade level's walls: the shell's every finish, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
   const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
-  const facade = createFacadeMaterial(shell, panes, { roomsAwake, massingNight });
+  const facade = createFacadeMaterial(shell, panes, { roomsAwake, massingNight, roomDaylight });
   const unique = new Set<Material>([...Object.values(material), shell, ruinShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing, massingBoxes, massBoxDepth]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;

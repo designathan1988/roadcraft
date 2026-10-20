@@ -11,6 +11,6 @@ describe('the opening and the nature trees', () => {
     expect(calls[0]).not.toMatch(/worldJob/);
     expect(calls[0]).toMatch(/roads !== null/);
     // The curtain still waits for the trees themselves.
-    expect(source).toMatch(/const whole = [^\n]*natureTreesStarted && !natureTreesPending/);
+    expect(source).toMatch(/const whole = [^;]*natureTreesStarted && !natureTreesPending/);
   });
 });

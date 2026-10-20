@@ -9,11 +9,12 @@ const code = (path: string): string => read(path).replace(/\/\*[\s\S]*?\*\//g, '
 describe('the sites graded', () => {
   it('in the frames while a world job makes its road tiles', () => {
     const renderer = code('src/render/renderer.ts');
-    expect(renderer).toMatch(/if \(!\(worldJob && worldJobGround\) && gradedFor !== net\.doc\.buildings\.revision\)/);
-    expect(renderer).not.toMatch(/if \(!worldJob && gradedFor/);
+    // Level ground (a generated city's new map) grades nothing: its buildings were grown on it.
+    expect(renderer).toMatch(/if \(!levelLand && !\(worldJob && worldJobGround\) && gradedFor !== net\.doc\.buildings\.revision\)/);
+    expect(renderer).not.toMatch(/!worldJob && gradedFor/);
     // Set when the job starts, cleared once its ground is shaped.
     expect(renderer).toMatch(/worldJob = worldSteps\([^;]*\);\s*worldJobFresh = true;\s*worldJobGround = true;/);
-    expect(renderer).toMatch(/yield\* shapeBlocksSteps\(net, blocks\);\s*pendingBlocks = \[\];\s*worldJobGround = false;/);
+    expect(renderer).toMatch(/yield\* shapeBlocksSteps\(net, blocks\);\s*(?:performance\.mark\('world:shaped'\);\s*)?pendingBlocks = \[\];\s*worldJobGround = false;/);
   });
 
   it('shape the corners of their regions, not every box against every region', () => {

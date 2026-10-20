@@ -80,8 +80,13 @@ export const TYPICAL_LEVEL_TRIANGLES: Readonly<Record<'cell' | 'facade', number>
 export class LandedMeasure<K extends string> {
   private readonly landed = new Map<string, number>();
   private readonly sums = new Map<K, { sum: number; n: number }>();
+  /** Each landed level's weight when it landed (`weightOf`), and per kind the levels' sum over their weights' sum. */
+  private readonly weights = new Map<string, number>();
+  private readonly ratios = new Map<K, { measured: number; weight: number }>();
   /** Called whenever what it answers may change (`layer.ts` levelOfDetail chooses the levels again then). */
   changed: () => void = () => {};
+  /** What a cell weighs whatever its level (`layer.ts`: its masses' triangles, always at hand), 0 when unknown: a level never landed, or let go, is reckoned at its weight times what the landed ones measured per unit of theirs. DO NOT reckon it at a dense cell's `typical`: a suburb's cell let go came back as 1.3 M triangles, never fitted the budget again and stood in its masses for good. */
+  weightOf: (key: string) => number = () => 0;
   constructor(private readonly typical: Readonly<Record<K, number>>) {}
   set(kind: K, key: string, triangles: number): void {
     const at = `${kind}|${key}`;
@@ -93,6 +98,29 @@ export class LandedMeasure<K extends string> {
     s.sum += triangles;
     this.sums.set(kind, s);
     this.landed.set(at, triangles);
+    this.unweigh(kind, at, was);
+    const weight = this.weightOf(key);
+    if (weight > 0) {
+      const r = this.ratios.get(kind) ?? { measured: 0, weight: 0 };
+      r.measured += triangles; r.weight += weight;
+      this.ratios.set(kind, r);
+      this.weights.set(at, weight);
+    }
+  }
+  /** The cell's levels of the other kinds that landed, with what they measured (none when the typical figures are not numbers). */
+  private *othersOf(kind: K, key: string): Generator<[K, number]> {
+    for (const other of Object.keys(this.typical) as K[]) {
+      if (other === kind || !(this.typical[other] > 0) || !(this.typical[kind] > 0)) continue;
+      const measured = this.landed.get(`${other}|${key}`);
+      if (measured !== undefined) yield [other, measured];
+    }
+  }
+  private unweigh(kind: K, at: string, was: number | undefined): void {
+    const weight = this.weights.get(at);
+    if (weight === undefined || was === undefined) return;
+    const r = this.ratios.get(kind)!;
+    r.measured -= was; r.weight -= weight;
+    this.weights.delete(at);
   }
   /** A cell gone from the town (its tile left the active region): its measures let go, out of the means too (DO NOT keep every cell the camera ever passed: the books grew with the road walked, not with the view). */
   forget(key: string): void {
@@ -101,6 +129,7 @@ export class LandedMeasure<K extends string> {
       const was = this.landed.get(at);
       if (was === undefined) continue;
       this.changed();
+      this.unweigh(kind, at, was);
       this.landed.delete(at);
       s.sum -= was;
       s.n--;
@@ -113,6 +142,10 @@ export class LandedMeasure<K extends string> {
   of(kind: K, key: string): number {
     const got = this.landed.get(`${kind}|${key}`);
     if (got !== undefined) return got;
+    const weight = this.weightOf(key), r = this.ratios.get(kind);
+    if (weight > 0 && r && r.weight > 0) return (weight * r.measured) / r.weight;
+    // The same cell's other level measured: this one in the typical proportion between the two. DO NOT reckon a cell's facade level at a dense cell's 600 k when its detail measured 3 k: stepping it down to that level looked dearer than its detail, and it went to its masses.
+    for (const [other, measured] of this.othersOf(kind, key)) return (measured * this.typical[kind]) / this.typical[other];
     const s = this.sums.get(kind);
     return s?.n ? s.sum / s.n : this.typical[kind];
   }

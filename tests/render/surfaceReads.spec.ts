@@ -20,6 +20,7 @@ function readingAll(): MeshBasicMaterial {
 }
 
 /** DO NOT update these digests to make a change pass: a different digest is a different road on screen. */
+/** Set again for eight tiles a mesh (27029a71, `CHUNK` 4 -> 8): the meshes regrouped, every triangle of every surface the same as before, attribute for attribute (checked 2026-10-20). */
 const materials = new Proxy({}, {
   get: (_target, key) => key === 'scale' ? new Proxy({}, { get: () => 4 }) : readingAll(),
 }) as unknown as SceneMaterials;
@@ -47,12 +48,12 @@ describe('road surface reads', () => {
   for (const [name, make, plain, onTerrain] of [
     ['the grid and bends fixture',
       () => RoadDoc.fromJSON(JSON.parse(readFileSync('tests/fixtures/grid-and-bends.json', 'utf8')).document),
-      '134 a49be03eb61108d3f884c6692e205483e5e160b2a7488f1f9ad1cd0bd23d3c7d',
-      '134 6f9da7fcfd51ca72eccda047d22aeeeb501efdcec078baf0168fedfc14082a25'],
+      '75 32e7abb668a6e0481cb12572b1a0a41b9860aa6221deab6305d38b98a16dd3eb',
+      '75 5462bdfd991b37afdd84f3c39b460c5bb226fc7e4619334da0f7c1d42a8aff8e'],
     ['a generated city',
       () => layCity(planCity({ ...DEFAULT_CITY, seed: 2, size: 'small', radius: 640 })),
-      '144 397f75d14eebe42a9caf6a829f959f91cd193487e40a13216e9c866415e6aa85',
-      '144 8ad9d88d159469c4fb5d10e58b10db01ece588ac9482e01a5cdfa8ead7dbf731'],
+      '36 8de0eb395f75ee872f213b1425817ae5f7ea944bd41e95be4f6702d8b5c3c8ad',
+      '36 8f80b80fe113155a4535783337f4c511c76b7891f0302c0bd45b9efde0f0ccc4'],
   ] as const) it(`build ${name} byte for byte as before`, () => {
     const net = new Network(make());
     net.rebuild();

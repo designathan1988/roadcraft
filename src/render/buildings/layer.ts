@@ -50,8 +50,8 @@ export const playerCause = (cause: string): boolean => cause.startsWith('tool ')
  *  grow the memory for ever. The player's panel sets another value; -1 is this one. */
 export const GAME_DETAIL_MEMORY_MB = 768;
 
-export function createBuildingLayer(): BuildingLayer {
-  const kit: BuildingKit = createBuildingKit();
+export function createBuildingLayer(anisotropy = 4): BuildingLayer {
+  const kit: BuildingKit = createBuildingKit(anisotropy);
   const group = new Group();
   group.name = 'buildings-layer';
   // Every flag in the city, waving: one instanced draw (`flagLayer.ts`).
@@ -116,6 +116,7 @@ export function createBuildingLayer(): BuildingLayer {
   /** What each cell's level drew when it last landed (`show`): what a level not landed yet is reckoned at. */
   const landedTriangles = new LandedMeasure<BatchKind>(TYPICAL_LEVEL_TRIANGLES);
   landedTriangles.changed = lodChanged;
+  landedTriangles.weightOf = (key) => massCells.massTriangles(key);
   /** What each cell's level held when it last landed, bytes: a level never landed counts as its kind's landed do on average (NaN before any: its cell's masses, `capNow`). */
   const landedBytes = new LandedMeasure<BatchKind>({ cell: Number.NaN, facade: Number.NaN });
   landedBytes.changed = lodChanged;
@@ -632,7 +633,8 @@ export function createBuildingLayer(): BuildingLayer {
     },
     get pending() {
       // What the view draws, not the whole map: the cells near, the cells drawn one by one, the tiles and plates standing for the rest, the far levels.
-      return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;
+      // And a choice not settled yet (a held cell let back a level, `levelOfDetail`): the frames are drawn on demand, and a still view asked none, the cells let back stood in their masses until the camera moved.
+      return pendingCells.size > 0 || requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0 || (eye !== null && !lodSettled);
     },
     get coarsePending() {
       return requests.massing > 0 || massCells.waiting > 0 || farTiles.waiting > 0;

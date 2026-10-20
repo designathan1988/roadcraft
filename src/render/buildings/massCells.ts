@@ -19,6 +19,8 @@ export const FAR_ERROR = m(1.5);
 const FACADE_ERROR = FLAT_DEPTH;
 /** The detail is drawn while what the far level leaves out spans this many pixels or more. */
 const NEAR_PIXELS = 2;
+/** The full detail (L0) while what the facade level lays flat, 0.3 m, spans this many pixels: half a pixel, twice as far as one (~560 m at 1080 p), so a tower keeps its own frames and reveals well past the street it stands in (the player, 2026-10-20: "details at a greater distance, not only with the camera against them"); the frame's budget of triangles still steps it down under load. */
+const FINE_PIXELS = 0.5;
 /** A cell drawn near stays near down to this share of `NEAR_PIXELS`. */
 export const HYSTERESIS = 0.85;
 const DETAIL_REACH = m(1_400); // cells within 1.4 km draw the detail level itself, whatever their pixels: the player asks for no LOD there (2026-10-20)
@@ -548,7 +550,8 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
         if (level.empty || allNear === true || forcedLevels.has(level.key)) return false;
         measure(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, level.x0, level.y0, level.x1, level.y1, level.top);
         // A tile or plate reaching into `DETAIL_REACH` gives way to its cells: the town keeps its own facades to 2 km, where a painted box is all its masses can be (the player, 2026-10-20).
-        if (seen.across <= DETAIL_REACH) return false;
+        // As the cells' reach (`decide`): only where a metre still spans enough pixels to be seen and at the frame's own scale - DO NOT hold the whole map's cells with the camera above it, nor stop the budget's coarsening.
+        if (seen.across <= DETAIL_REACH && seen.perMetre >= DETAIL_REACH_VISIBLE && (seen.scale ?? 1) <= 1) return false;
         // Refined while its error spans the pixels, down to `HYSTERESIS` of them once refined (as a cell near stays near).
         return (level.mesh ? level.error : level.bound) * seen.perMetre < seen.allowed * (level.coarse ? 1 : HYSTERESIS);
       };
@@ -596,11 +599,13 @@ export function createMassCells(kit: BuildingKit, cellSize: number, released: (k
           measure(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, cell.x0, cell.y0, cell.x1, cell.y1, cell.top);
           const { perMetre, allowed, across } = seen;
           // Within reach, with a margin for a cell already near (hysteresis); every cell within `DETAIL_REACH` of the eye is drawn near while it spans enough pixels to be seen (the player, 2026-10-20: the town keeps its buildings' own facades to 2 km; the whole map at once spans too few).
-          near = (FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) || (across <= DETAIL_REACH && perMetre >= DETAIL_REACH_VISIBLE))
+          // The reach holds at the frame's own scale only: under load (a scale past 1) the budget must be able to step these cells down too, or it climbs to its coarsest and takes every other cell to its masses (the scale at 32 in a street view, 2026-10-20).
+          near = (FAR_ERROR * perMetre >= allowed * (cell.near ? HYSTERESIS : 1) || (across <= DETAIL_REACH && perMetre >= DETAIL_REACH_VISIBLE && (seen.scale ?? 1) <= 1))
             && across <= reach * (cell.near ? 1.25 : 1)
             && inView(view, cell, cell.near ? VIEW_KEEP : VIEW_COME);
           // The full detail (L0) while a detail it draws, 0.3 m, spans a pixel: the building shows its own windows, frames and balconies at any zoom close enough to tell them apart (the player, 2026-10-20: no LOD within 1.4 km). The frame's own budget still trims it under load.
-          fine = !heldCoarse.has(key) && (FACADE_ERROR * perMetre >= Math.min(1, allowed * (cell.fine ? HYSTERESIS : 1)));
+          // DO NOT cap what is allowed (a `Math.min(1, …)` here left the budget no way to step the detail down: every cell within reach stayed at its heaviest level whatever the scale).
+          fine = !heldCoarse.has(key) && (FACADE_ERROR * perMetre >= (allowed / NEAR_PIXELS) * FINE_PIXELS * (cell.fine ? HYSTERESIS : 1));
         }
         if (near !== cell.near || (near && fine) !== cell.fine) setNear(key, cell, near, fine);
       };

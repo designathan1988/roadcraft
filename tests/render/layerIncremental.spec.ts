@@ -284,8 +284,9 @@ describe('the cells the budget of triangles held back', () => {
     const layer = createBuildingLayer();
     layer.frame.budget = 58_000;
     frames(layer, doc);
-    // The heavy middle building: the cells spanning least held back in their masses.
-    expect(shown(layer).masses).toBeGreaterThan(0);
+    // The heavy middle building: the cells spanning least held back a level (their facade level, reckoned from their own detail's measure, or their masses).
+    const held = layer.levels();
+    expect(held.chosenDetail).toBeLessThan(9);
     const middle = [...doc.buildings.all()][4]!;
     doc.buildings.put({ ...middle, ...body(20, middle.x, middle.y), id: middle.id } as Building);
     frames(layer, doc);

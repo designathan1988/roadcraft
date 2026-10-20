@@ -83,7 +83,8 @@ float roomHash(float n) { return fract(sin(n * 91.345 + 7.13) * 43758.5453); }
 ${ROOM_LAMP_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
 // A pane a few pixels across or less (\`vPane\` spans the pane), so it holds at any zoom and lens: worked out first, a pane under it shows its mean alone and its room is never looked into.
-float paneTiny = smoothstep(0.12, 0.45, max(fwidth(vPane.x), fwidth(vPane.y)));
+// Faded from ~20 px a pane down to ~3: past that the room's furniture, blinds and frames are under a pixel each and only shimmer (the town's towers read as noise, the player, 2026-10-20), and a pane faded skips the room's trace.
+float paneTiny = smoothstep(0.05, 0.3, max(fwidth(vPane.x), fwidth(vPane.y)));
 vec3 roomSeen = vec3(0.42, 0.45, 0.47);
 if (paneTiny < 1.0) {
 if (vRoomA.z > 0.05) {
@@ -251,5 +252,5 @@ totalEmissiveRadiance *= roomLit * roomTint * (0.35 + 1.3 * clamp(roomSeen / 0.5
 totalEmissiveRadiance += roomSeen * roomDaylight;`);
   };
   // One key for the clear and the dark panes: their source is the same (no number of the kind in it), so one program (r186 `WebGLRenderer.getProgram`: each material its own uniforms, the program shared by key).
-  glassy.customProgramCacheKey = () => 'room-lights-awake-interior-v11';
+  glassy.customProgramCacheKey = () => 'room-lights-awake-interior-v12';
 }

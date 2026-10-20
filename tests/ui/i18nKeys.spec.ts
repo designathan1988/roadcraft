@@ -77,9 +77,9 @@ describe('keys used in code', () => {
       .map((m) => m[1] as string)
       // A template with no word of its own (`${prefix}.${tool}`) would stand for any key.
       .filter((template) => template.includes('.') && /[a-z]/i.test(template.replace(/\$\{[^}]*\}/g, '')))
-      .map((template) => new RegExp(`^${template.split(/\$\{[^}]*\}/).map(escape).join('([\\w.-]+)')}$`));
-    // What one `${...}` may stand for: one segment, or a dotted text the code itself writes or builds
-    const fills = (part: string): boolean => !part.includes('.') || quoted.has(part)
+      .map((template) => new RegExp(`^${template.split(/\$\{[^}]*\}/).map(escape).join('([\\w.-]+?)')}$`));
+    // What one `${...}` may stand for: one segment, a number (`fx.${key}.${v}` with v 0.25, the shortest fill first), or a dotted text the code itself writes or builds
+    const fills = (part: string): boolean => !part.includes('.') || /^\d+\.\d+$/.test(part) || quoted.has(part)
       || built.some((pattern) => pattern.exec(part)?.slice(1).every((inner) => !inner.includes('.')) ?? false);
     const asked = (key: string): boolean => quoted.has(key)
       || built.some((pattern) => pattern.exec(key)?.slice(1).every(fills) ?? false);

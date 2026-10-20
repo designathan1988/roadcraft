@@ -100,8 +100,8 @@ describe('a cell put together off the page', () => {
           pool.run('cell', cell, buildings.map(entryOf), env, (result) => { got = result; });
           expect(got).not.toBeNull();
           const result = got! as CellResult;
-          // Pieced by detail cell, as the job pieces them (`cellArrays` groups).
-          const groups = [...chunks.keys()].map((b) => `${Math.floor(b.x / DETAIL_CELL)},${Math.floor(b.y / DETAIL_CELL)}`);
+          // The shells pieced by quadrant (two detail cells a side), as the job pieces them (`cellWork.ts`, `cellArrays` groups).
+          const groups = [...chunks.keys()].map((b) => `${Math.floor(b.x / (2 * DETAIL_CELL))},${Math.floor(b.y / (2 * DETAIL_CELL))}`);
           const coarse = cellArrays([...chunks.values()], { parts: PART_KINDS.filter((k) => COARSE_PARTS.has(k)), shells: true, furniture: true, ghost: false, dim: false }, boxes, groups);
           expect(difference(result.batch, coarse), cell).toBe('');
           const details = chunksByCell(buildings, (b) => chunks.get(b)!, DETAIL_CELL);
