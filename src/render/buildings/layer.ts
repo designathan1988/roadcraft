@@ -984,6 +984,8 @@ export function createBuildingLayer(): BuildingLayer {
       partView.x = eyeX; partView.y = eyeY; partView.z = eyeZ; partView.pxAtMetre = pxAtMetre; partView.orthoPx = orthoPx; partView.shadowTexel = shadowTexel;
       // The facade cells the view draws in the batched kinds, and no others (`farParts.ts`): one draw a kind, its instances added and taken out here.
       farParts.sync(facadeParts, (key) => levelShown(key) === 'facade');
+      // A kind whose pieces span under a pixel where its nearest cell stands is not drawn: the far band keeps its walls, not its noise.
+      farParts.view(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx);
       // Drawn while its cell is drawn in detail (the masses stand for it from afar, `massCells.ts`), each kind by its error on the screen.
       for (const [kind, map] of [['cell', partCells], ['facade', facadeParts]] as const) {
         for (const [key, cell] of map) {

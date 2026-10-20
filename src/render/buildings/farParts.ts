@@ -4,7 +4,7 @@ import { COLOURED_PARTS } from './cellArrays';
 import { partLook } from './fade';
 import { PART_KINDS, type BuildingKit, type PartKind } from './kit';
 import type { PartCell } from './partCells';
-import type { PartFiling } from './partFiling';
+import { DETAIL_CELL, type PartFiling } from './partFiling';
 import { POSE_FLOATS, letGoPosed, partPoseDepth, posedCopy } from './partPose';
 import { SHELL_PARTS } from './shellParts';
 
@@ -84,6 +84,30 @@ export class FarPartBatch {
   sync(cells: ReadonlyMap<string, PartCell>, shown: (key: string) => boolean): void {
     for (const key of this.cells) if (!cells.has(key) || !shown(key)) this.remove(key);
     for (const [key, cell] of cells) if (!this.cells.has(key) && shown(key)) this.add(key, cell.filing);
+  }
+
+  /** Each kind drawn only while its pieces span a pixel where the nearest cell stands: a balcony a kilometre off is under one, and only its cost is left (the near cells hide them so, `partCells.ts` `levelAt`). */
+  view(eyeX: number, eyeY: number, eyeZ: number, pxAtMetre: number, orthoPx: number | null): void {
+    for (const batch of this.kinds.values()) {
+      if (batch.used === 0) { batch.mesh.visible = false; continue; }
+      const extent = this.kit.screen[batch.kind].extent;
+      const across = Math.hypot(extent[0], extent[1], extent[2]);
+      let nearest = Infinity;
+      for (const run of batch.runs) {
+        const comma = run.cell.indexOf(',');
+        const i = Number(run.cell.slice(0, comma)), j = Number(run.cell.slice(comma + 1));
+        const x0 = i * DETAIL_CELL, y0 = j * DETAIL_CELL;
+        const dx = Math.max(x0 - eyeX, 0, eyeX - (x0 + DETAIL_CELL));
+        const dy = Math.max(y0 - eyeY, 0, eyeY - (y0 + DETAIL_CELL));
+        // Three's world: the plan's y is -z; the eye's height over the cell's ground is the third term.
+        const dz = Math.max(0, eyeZ);
+        const distance = Math.hypot(dx, dy, dz);
+        if (distance < nearest) nearest = distance;
+      }
+      const perMetre = orthoPx !== null ? orthoPx : pxAtMetre / Math.max(nearest, 1);
+      // As the near cells hide an instance under a pixel across its diagonal (`partCells.ts` `levelAt`).
+      batch.mesh.visible = across * perMetre >= 1;
+    }
   }
 
   /** Every instance let go (a lost context's cells asked again): the buffers kept, nothing drawn until cells land. */
