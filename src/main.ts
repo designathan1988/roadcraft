@@ -880,11 +880,16 @@ function applySnapshot(data: ReturnType<RoadDoc['toJSON']> | null, source: 'snap
   snapshotApplied();
 }
 /** The game after the map was put in place whole. */
+/** A large city just opened: its session save waits for the fill after the curtain, instead of running on top of it (the 3.4 GB peak of the metropolis). */
+let deferSessionSave = false;
 function snapshotApplied(): void {
   buildings.restored();
   select(null, game.selectedSegmentS, null, 'another map');
   closeInspector();
-  persistence.saveSessionSoon(doc, sessionSettings);
+  if (deferSessionSave) {
+    deferSessionSave = false;
+    setTimeout(() => persistence.saveSessionSoon(doc, sessionSettings), 30_000);
+  } else persistence.saveSessionSoon(doc, sessionSettings);
   updateHistoryButtons();
   updateStatus();
   requestDraw();
@@ -2041,6 +2046,7 @@ function openGeneratedCity(options: Partial<CityOptions>): Promise<void> {
 function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false): void {
   history.begin(doc);
   // A large city opens at a district, its first world covering the view alone (`renderer.ts` openingBuild): the whole map's roads took tens of seconds the curtain showed nothing of.
+  deferSessionSave = large;
   if (large) scene.scopeOpening(true);
   applySnapshot({ ...data, relief: NEW_RELIEF, markingStyle: 'br' }, 'import');
   // The map is one undo step, and the recorder is closed: left open, it recorded a before-image of every building the growth wrote afterwards (`editor/history.ts`).

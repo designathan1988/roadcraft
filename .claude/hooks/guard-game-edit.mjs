@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 /**
@@ -20,6 +20,12 @@ const inside = relative(join(project, 'src'), file);
 if (inside.startsWith('..') || isAbsolute(inside)) process.exit(0);
 const marker = join(project, '.claude', 'verify-needed.json');
 if (!existsSync(marker)) process.exit(0);
+// One change set may touch the same file in a few hunks: the verification is owed once the change is whole, not between its hunks.
+try {
+  const waiting = JSON.parse(readFileSync(marker, 'utf8'));
+  const age = Date.now() - Date.parse(waiting.at);
+  if (waiting.file === relative(project, file) && age >= 0 && age < 120_000) process.exit(0);
+} catch { /* an unreadable marker: the check below refuses */ }
 
 let answer = '';
 try {
