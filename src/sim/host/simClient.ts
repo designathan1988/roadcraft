@@ -193,7 +193,7 @@ export class SimClient implements JournalReader {
   /** The simulation's own checks told so far (`sim/invariants.ts`), oldest first. */
   readonly issues: SimStats['issues'][number][] = [];
   /** The topology the worker's simulation stands at (the network's `trafficRevision` it caught up to). */
-  get topologyRevision(): number { return this.stats?.topologyRevision ?? -1; }
+  get topologyRevision(): number { return this.stats?.topology ?? -1; }
   /** What the simulation must show in full round the view (`render/renderer.ts` sets it each frame; sent with the next frame). */
   focus: SimControls['focus'] = null;
   /** Called with each frame read (a tick written), and once the worker stands. */
@@ -203,6 +203,16 @@ export class SimClient implements JournalReader {
   /** What the vehicles and the people carry as told this tick, by id (`readTick`): one map each, emptied and filled each tick. */
   private readonly vehicleRich = new Map<number, Extract<FromSim, { type: 'tick' }>['vehicles'][number][1]>();
   private readonly pedRich = new Map<number, Extract<FromSim, { type: 'tick' }>['peds'][number][1]>();
+  /** Each gesture told, by the age (`PedView.age`) its clock started at. */
+  private readonly gestureFrom = new WeakMap<object, number>();
+  /** A colour as the worker numbers it: the strings kept, one per colour. */
+  private readonly colours = new Map<number, string>();
+
+  private colourOf(n: number): string {
+    let c = this.colours.get(n);
+    if (c === undefined) this.colours.set(n, c = colourString(n));
+    return c;
+  }
   private readonly signalLog: NodeId[] = [];
   private signalBase = 0;
   private signalAll = 0;
@@ -221,7 +231,7 @@ export class SimClient implements JournalReader {
     const net = this.net;
     if (!net || net.doc !== this.doc) return null;
     // Brought up to the document first: the rebuild the page's next frame would make (`main.ts`).
-    if (net.revision !== this.doc.revision) net.rebuild();
+    if (!net.isBuilt()) net.rebuild();
     return net.exportBake(this.doc.nodes.keys(), this.doc.segments.keys());
   }
 
@@ -627,8 +637,8 @@ export class SimClient implements JournalReader {
       // A gesture is told once, when it starts: its clock (`t`) kept here from the age it started at (DO NOT have it told each tick for its clock).
       const gesture = view.gesture;
       if (gesture) {
-        let from = GESTURE_FROM.get(gesture);
-        if (from === undefined) GESTURE_FROM.set(gesture, from = w.age - gesture.t);
+        let from = this.gestureFrom.get(gesture);
+        if (from === undefined) this.gestureFrom.set(gesture, from = w.age - gesture.t);
         gesture.t = w.age - from;
       }
       this.pedViews.push(view);
@@ -671,7 +681,7 @@ export class SimClient implements JournalReader {
       if (cars[at + PK.gone] === 1) { if (known) this.dropParked(known); continue; }
       const view = known ?? newView(id);
       view.archetype = ARCHETYPES[cars[at + PK.archetype]!] ?? archetypeById('');
-      view.color = colourOf(cars[at + PK.color]!);
+      view.color = this.colourOf(cars[at + PK.color]!);
       const x = cars[at + PK.x]!, y = cars[at + PK.y]!, angle = cars[at + PK.angle]!, lot = cars[at + PK.lot]!;
       setFree(view, x, y, angle, x, y, angle, lot < 0 ? null : lot);
       view.v = 0; view.prev.v = 0; view.seats = 0;
@@ -715,15 +725,10 @@ function fillMap<K, V>(map: Map<K, V>, pairs: readonly (readonly [K, V])[]): Map
   return map;
 }
 
-/** Each gesture told, by the age (`PedView.age`) its clock started at. */
-const GESTURE_FROM = new WeakMap<object, number>();
-
-/** A colour as the worker numbers it (0xrrggbb), as its palette writes it; the strings kept, one per colour. */
-const COLOURS = new Map<number, string>();
-function colourOf(n: number): string {
-  let c = COLOURS.get(n);
-  if (c === undefined) COLOURS.set(n, c = `#${n.toString(16).padStart(6, '0')}`);
-  return c;
+/** The client's own caches: a gesture's clock origin, and a colour as the worker numbers it (0xrrggbb) as its palette writes it. */
+// Kept by the client, not loose in the module (`eslint-rules/no-module-state.js`).
+function colourString(n: number): string {
+  return `#${n.toString(16).padStart(6, '0')}`;
 }
 
 function newView(id: number): VehicleView {

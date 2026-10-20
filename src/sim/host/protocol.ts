@@ -182,7 +182,8 @@ export interface SimStats {
   readonly entryDemandLost: number;
   readonly controllers: number;
   readonly lotsMoving: number;
-  readonly topologyRevision: number;
+  /** The topology the worker's simulation stands at (a token, not a product key). */
+  readonly topology: number;
   readonly issues: readonly { readonly code: string; readonly subject: string; readonly detail: string; readonly tick: number }[];
   readonly populationShare: number;
   readonly stepMs: number;

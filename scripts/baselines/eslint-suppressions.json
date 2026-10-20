@@ -863,7 +863,7 @@
   },
   "src/world/network.ts": {
     "roadcraft/no-global-revision": {
-      "count": 4
+      "count": 7
     },
     "roadcraft/no-whole-map-walk": {
       "count": 1

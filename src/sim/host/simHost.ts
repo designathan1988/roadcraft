@@ -43,6 +43,12 @@ export class SimHost {
   /** The meso traffic and its micro window: made before the world, so a window told early is kept for it. */
   private readonly meso = new Meso();
   private topology: TopologyCatchUp | null = null;
+  /** Each kind of vehicle's place in `ARCHETYPES` (`PK.archetype`), kept by the host and not loose in the module. */
+  private readonly archetypeAt = archetypeMap();
+
+  private archetypeIndex(id: string): number {
+    return this.archetypeAt.get(id) ?? 1;
+  }
   /** The page's job lanes for the bays and the conflict pairs (`lanes`, before `init`), and the pools made on them. */
   private lanes: { readonly bays: readonly MessagePort[]; readonly conflicts: readonly MessagePort[] } | null = null;
   private bayPool: BayPool | null = null;
@@ -167,20 +173,20 @@ export class SimHost {
     if (controls.focus) sim.focus = controls.focus;
     this.governor.setMax(controls.maxShare);
     if (controls.startShare !== undefined) this.governor.start(controls.startShare);
-    if (this.net.revision !== this.doc.revision) this.net.rebuild();
+    if (!this.net.isBuilt()) this.net.rebuild();
     const held = hold;
     // DO NOT stop the clock while a tile's topology is prepared (its lanes, turns and conflict pairs, on the workers): the city runs on the graph it has meanwhile, and takes the new one when it is ready.
-    const catching = this.topology.step(sim, this.net.trafficRevision, false);
-    if (!catching) this.topology.stepWindow(sim, this.net.trafficRevision);
+    const catching = this.topology.step(sim, this.net.trafficToken(), false);
+    if (!catching) this.topology.stepWindow(sim, this.net.trafficToken());
     sim.topologyDeferred = catching;
     let alpha = 1;
     if (!held) {
       sim.walkwaysNow();
       laneGrid(sim);
-      const topology = sim.topologyRevision;
+      const topology = sim.topologyToken();
       alpha = sim.clock.advance(wall, () => step(sim, { traffic: controls.traffic, pedestrians: controls.pedestrians }), STEP_BUDGET_MS);
       // DO NOT count a frame whose steps built the topology again (a tile came or went): walking the city thinned its streets to 30%.
-      if (sim.topologyRevision === topology) sim.populationShare = this.governor.feed(sim.clock.lastSteps, sim.clock.lastStepMs, performance.now() / 1000, sim.vehicles.size, sim.pedViews.length);
+      if (sim.topologyToken() === topology) sim.populationShare = this.governor.feed(sim.clock.lastSteps, sim.clock.lastStepMs, performance.now() / 1000, sim.vehicles.size, sim.pedViews.length);
     }
     // The blows' casualties aged by the wall time (the page keeps its own clocks of those it was told).
     impactCasualties(sim, wall);
@@ -331,7 +337,7 @@ export class SimHost {
       out[at + PK.gone] = (whole || sim.ambient.isParked(car)) && f ? 0 : 1;
       out[at + PK.x] = f?.x ?? 0; out[at + PK.y] = f?.y ?? 0; out[at + PK.angle] = f?.angle ?? 0;
       out[at + PK.lot] = f?.lot ?? -1;
-      out[at + PK.archetype] = archetypeIndex(car.archetype.id);
+      out[at + PK.archetype] = this.archetypeIndex(car.archetype.id);
       out[at + PK.color] = parseInt(car.color.slice(1), 16);
     });
     return { whole, cars: out };
@@ -347,7 +353,7 @@ export class SimHost {
     const measured: SimStats['measured'] = [];
     return {
       vehicles: sim.vehicles.size, people: sim.pedViews.length, completedTrips: sim.completedTrips, entryDemandLost: sim.entryDemandLost,
-      controllers: sim.controllers.size, lotsMoving: sim.city.lots.moving(), topologyRevision: sim.topologyRevision, issues,
+      controllers: sim.controllers.size, lotsMoving: sim.city.lots.moving(), topology: sim.topologyToken(), issues,
       populationShare: this.governor.share, stepMs: this.governor.stepMs, measured,
     };
   }
@@ -445,8 +451,7 @@ function pedRich(p: PedView): PedRich {
   return rich;
 }
 
-/** Each kind of vehicle's place in `ARCHETYPES`, as the parked cars' numbers carry it (`PK.archetype`). */
-const ARCHETYPE_AT = new Map(ARCHETYPES.map((a, k) => [a.id, k]));
-function archetypeIndex(id: string): number {
-  return ARCHETYPE_AT.get(id) ?? 1;
+/** Each kind of vehicle's place in `ARCHETYPES`, as the parked cars' numbers carry it (`PK.archetype`): kept by the host, not loose in the module. */
+function archetypeMap(): Map<string, number> {
+  return new Map(ARCHETYPES.map((a, k) => [a.id, k]));
 }

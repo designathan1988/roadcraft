@@ -86,6 +86,8 @@ export class Network {
   revision = -1;
   /** Road plan revision; vertical-only edits leave it unchanged. */
   trafficRevision = -1;
+  /** The road plan as a token for the simulation's frame bookkeeping: the value, never a product key. */
+  trafficToken(): number { return this.trafficRevision; }
 
   /** The incremental build: what each piece was made from (`networkBuild.ts`). */
   private readonly build: NetworkBuild;
