@@ -1047,7 +1047,8 @@ export function createSceneRenderer(
   scene.add(densityCars.object);
   // What moves and casts: each sun cascade it is drawn into is drawn again while it moves (`sunCascades.ts`).
   environment.setMovers([
-    { roots: agents.meshes, moving: () => simRunning && agents.casting },
+    // The people and the vehicles cast into the two nearest cascades: in the far one their shadows are under a texel's spread and redrew a million triangles a frame (the lab's shadow pass, 2026-10-20).
+    { roots: agents.meshes, moving: () => simRunning && agents.casting, maxCascade: 1 },
     { roots: [transit.group], moving: () => simRunning && transit.moving },
     swaying,
   ]);

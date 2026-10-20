@@ -77,6 +77,8 @@ export interface Movers {
   moving(): boolean;
   /** Its roots never change size (what the wind sways in place): each one's reach measured once, not every frame. */
   readonly fixedSize?: boolean;
+  /** The last cascade it is drawn into (cascades are 0 near to the farthest): the people and the vehicles stop at the mid one, where their shadows are under a texel's spread (the far cascades redraw a million of their triangles a frame). */
+  readonly maxCascade?: number;
 }
 
 export interface ShadowPassInput {
@@ -309,9 +311,11 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
       // The movers alone over the store: nothing hidden, and the town's casters left as they are.
       if (drawingMovers) return;
       for (const mover of movers) {
+        // Past its last cascade a mover casts nothing: hidden from the still casters' store and drawn over none (`drawOver`).
+        const past = i > (mover.maxCascade ?? Infinity);
         for (const root of mover.roots) {
           // Kept in a store this frame (`whole`): every mover is drawn over it after the still casters (`drawOver`); else drawn with them, those too small for the texels left out.
-          if (!root.visible || (!whole[i] && drawnIn(root, i, mover.fixedSize))) continue;
+          if (!root.visible || (!past && !whole[i] && drawnIn(root, i, mover.fixedSize))) continue;
           root.visible = false;
           hidden.push(root);
         }
@@ -354,7 +358,8 @@ export function createSunCascades(sun: DirectionalLight, others: readonly Direct
     if (!renderer) return;
     moverList.length = 0;
     const texel = texelOf(i);
-    for (const mover of movers) for (const root of mover.roots) if (root.visible && drawnIn(root, i, mover.fixedSize)) castersIn(root, texel, moverList);
+    // A mover past its last cascade is not drawn over the store (the people and the vehicles in the far one).
+    for (const mover of movers) if (i <= (mover.maxCascade ?? Infinity)) for (const root of mover.roots) if (root.visible && drawnIn(root, i, mover.fixedSize)) castersIn(root, texel, moverList);
     if (moverList.length === 0) return;
     moverRoot.children = moverList;
     const clear = renderer.clear;
