@@ -1841,13 +1841,15 @@ export function createSceneRenderer(
     openingWithin = opening ? (rect) => rect[0] <= centre.x + openingHalf && rect[2] >= centre.x - openingHalf
       && rect[1] <= centre.y + openingHalf && rect[3] >= centre.y - openingHalf : null;
     const openingRegion = opening ? terrainRegion([centre.x - openingHalf, centre.y - openingHalf, centre.x + openingHalf, centre.y + openingHalf]) : null;
+    // The fill after the reveal (`full`): the solve stands and only the road tiles the opening's scope left out are built, in place - DO NOT rebuild every tile of the city and hold the old and the new surfaces at once (the 3.4 GB peak of the metropolis).
+    const fillBlocks = full ? blocksOver([-TERRAIN_HALF, -TERRAIN_HALF, TERRAIN_HALF, TERRAIN_HALF]) : null;
     // Only the roads changed (the land did not): the ground is cut and filled again only where the solve of the roads differs.
-    const landStill = !full && terrainRevision === net.doc.terrainRevision && elevation !== null;
+    const landStill = full || (terrainRevision === net.doc.terrainRevision && elevation !== null);
     // Where the land moved (a stroke's region), when it can be said: the solve and the surfaces follow it there only. Kept until the solve
     // runs: cleared before a wait for the roads' stations, the next frame found no region and solved the whole map (TER-01, VIA-01).
-    const land = full ? 'all' : landDirty;
-    const landBlocks = !landStill && land !== null && land !== 'all' ? blocksOver(land) : null;
-    const groundMoved = landBlocks && land !== null && land !== 'all' ? [land] : null;
+    const land = full ? null : landDirty;
+    const landBlocks = full ? fillBlocks : (!landStill && land !== null && land !== 'all' ? blocksOver(land) : null);
+    const groundMoved = full ? null : (landBlocks && land !== null && land !== 'all' ? [land] : null);
     const from = landStill || groundMoved ? elevation : null;
     // A new map on level ground (`RELIEF_FLAT`, no stamp): every station's ground is the same, and reading it costs most of a large city's solve. A stroke or a height stamp makes it real ground again.
     const levelLand = net.doc.terrainRelief === RELIEF_FLAT && net.doc.terrainStamps.length === 0;
@@ -1879,9 +1881,9 @@ export function createSceneRenderer(
     roadStations.used();
     measureHitch('hitch:road-edit/elevation', started);
     // Now the ground comes to meet the roads
-    // The blocks the two solves differ in, digested off the page (`compareSolves`) and read by the job, which waits for them
-    const compare = previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null;
-    pendingBlocks = compare && !pendingBlocks.includes(null) ? [...pendingBlocks, compare] : [null];
+    // The blocks the two solves differ in, digested off the page (`compareSolves`) and read by the job, which waits for them. A fill compares none: its blocks are the surfaces' visit list, not a ground change (`worldSteps` shapes none on level land).
+    const compare = full ? null : (previousElevation && (landStill || landBlocks) ? compareSolves(previousElevation, elevation, landBlocks) : null);
+    pendingBlocks = full ? [{ blocks: fillBlocks!, ready: true, ms: 0 }] : (compare && !pendingBlocks.includes(null) ? [...pendingBlocks, compare] : [null]);
     const elevationMs = performance.now() - started;
     const cause = net.doc.changes.version;
     // DO NOT build it in one go: the roads of a generated city were built in the frame of the change, on the page
@@ -2904,6 +2906,7 @@ export function createSceneRenderer(
         for (const mesh of swapped.removed) world.remove(mesh);
         for (const mesh of swapped.added) world.add(mesh);
       }
+      performance.mark('frame:plants');
       // THE PLANTS AND STONES (`coverSweep.ts`/`coverKeeps`, `natureSweep`/`natureKeeps`, the planted trees)
       if (!stroking && !worldJob) {
         keepNet = net;
@@ -3032,12 +3035,22 @@ export function createSceneRenderer(
         }
         vegetationRedraw = false;
       }
-      // The perspective camera kept out of the buildings (`IsoRig.setSolids`)
-      followFloors(net);
-      if (cameraSolidsKept.follow(net.doc.buildings, floorGroundSince)) {
-        rig.setSolids((x, y) => cameraSolidsKept.solids().floorAt(x, y), (x, y) => cameraSolidsKept.solids().roofAt(x, y));
-        townSolids = () => cameraSolidsKept.solids();
+      performance.mark('frame:vegetation');
+      // The perspective camera kept out of the buildings (`IsoRig.setSolids`). Level ground moves under nothing: DO NOT follow every floor again.
+      if (!levelLand) followFloors(net);
+      performance.mark('frame:follow2');
+      // Looking down from above, the eye crosses no building: the solids (boxes of 28,800 buildings, 2 s of the opening's first frame) are built only where the camera tilts low enough to enter one, as in a street.
+      const solidsNeeded = rig.perspective && rig.viewport.elevation < 1.2;
+      if (solidsNeeded) {
+        if (cameraSolidsKept.follow(net.doc.buildings, floorGroundSince)) {
+          rig.setSolids((x, y) => cameraSolidsKept.solids().floorAt(x, y), (x, y) => cameraSolidsKept.solids().roofAt(x, y));
+          townSolids = () => cameraSolidsKept.solids();
+        }
+      } else if (townSolids !== null) {
+        rig.setSolids(null);
+        townSolids = null;
       }
+      performance.mark('frame:solids');
       // The light the buildings shut out of the streets round the view (`canyonLight.ts`).
       post.followTown(rig.target.x, -rig.target.z, townSolids, canyonChanges(net.doc.changes));
       const detailed = rig.viewport.zoom >= quality.detailCutoffZoom;
