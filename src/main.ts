@@ -626,6 +626,26 @@ await sim.start(0x2024, await keptZones, ZONES_PREFIX, engineFlags.get('ambient'
 /** The engine that brings every derived product up to date, its ledger the work each did (`core/engine.ts`). */
 const engine = new Engine();
 const scene: SceneHandle = createSceneRenderer(canvas3d, { x: camera.x, y: camera.y }, camera.zoom, graphics.level, requestDraw, engine, graphics.settings);
+// A WebGL context lost for good leaves a black canvas with the game still running behind it (Chrome after hours in a tab, a driver reset): a tab the browser does not give its context back comes back by itself, the session saved first.
+function comesBackFromLostContext(canvas: HTMLCanvasElement): void {
+  const RELOAD_MS = 4000;
+  let reload: ReturnType<typeof setTimeout> | undefined;
+  canvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    clearTimeout(reload);
+    reload = setTimeout(() => {
+      try {
+        persistence.saveSessionSoon(doc, sessionSettings);
+        persistence.flush();
+      } catch (error) {
+        console.warn('the session could not be saved before coming back from a lost context', error);
+      }
+      location.reload();
+    }, RELOAD_MS);
+  });
+  canvas.addEventListener('webglcontextrestored', () => { clearTimeout(reload); reload = undefined; });
+}
+comesBackFromLostContext(canvas3d);
 // The surgical profiler (`core/profiler.ts`)
 // Decision 5.4: the profiler, the F9 monitor and the console's hooks in a development build only (`scripts/look.mjs` runs on the dev server).
 const profileFrameEnd = import.meta.env.DEV ? wireProfiler() : (): void => {};
