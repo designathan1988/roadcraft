@@ -604,7 +604,13 @@ function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly Buf
       // A geometry whose arrays were let go once on the GPU (`gpuOnly`) is already there: drawn again, three would read the null array to upload it (`createBuffer`), and the warm has nothing to send it.
       if (released(geometry)) continue;
       mesh.geometry = geometry;
-      renderer.render(LOOSE.scene, LOOSE.camera);
+      // A mesh let go while its warm waited (its arrays taken off the GPU with it) is not worth the frame: nothing else is drawn from this hidden scene, and the real draw is the next one.
+      try {
+        renderer.render(LOOSE.scene, LOOSE.camera);
+      } catch (error) {
+        console.warn('[uploads] a loose mesh could not be sent ahead; it waits for its first draw', error);
+        break;
+      }
     }
   } finally {
     mesh.geometry = original;
