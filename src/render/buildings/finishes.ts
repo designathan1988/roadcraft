@@ -209,7 +209,7 @@ ${maps ? `{
  * `plain`: the faded copy's look ("Ocultar outros"): the finishes' maps and scalars without the wear or the lots, as the per-finish clones drew it.
  * `carried`: a ruin's (`destruction.ts`): its pieces move, so each vertex carries its uv, colour and finish (`shellShader`).
  */
-export function createShellMaterial(options: { readonly plain?: boolean; readonly carried?: boolean } = {}, anisotropy = 8): MeshStandardMaterial {
+export function createShellMaterial(options: { readonly plain?: boolean; readonly carried?: boolean } = {}, anisotropy = 4): MeshStandardMaterial {
   const plain = options.plain === true;
   const carried = options.carried === true;
   const maps = surfaceMaps('building-finishes', anisotropy);
