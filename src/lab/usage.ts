@@ -18,6 +18,8 @@ export interface UsageMeter {
   readings(): readonly UsageReading[];
   /** The last minute of each share, one value a second (sparklines). */
   history(id: UsageReading['id']): readonly number[];
+  /** The lab window opened or closed: the GPU's objects are scanned only while it is open (MDN `requestIdleCallback`). */
+  setActive(active: boolean): void;
   dispose(): void;
 }
 
@@ -37,10 +39,10 @@ export function createUsageMeter(ctx: LabContext): UsageMeter {
     void navigator.storage.estimate().then((e) => { storage = { usage: e.usage ?? 0, quota: e.quota ?? 0 }; },
       (error: unknown) => console.warn('lab: storage estimate unread', error));
   };
-  readStorage();
-  const storageTimer = window.setInterval(readStorage, 5000);
   /** The video memory as found on the GPU (`lab/gpu` objects: textures and geometries, buffers shared counted once) plus the frame's targets and shadow maps: DO NOT add `gpuLedger.bytes()` to `targetBytes()`, the ledger holds those targets too, and it holds neither the textures nor the detail's geometry. */
   let vramFound: number | null = null;
+  let active = false;
+  let idle: number | null = null;
   const readVram = (): void => {
     const gpu = (window as unknown as { __labGpu?: { objects(): { textures: { bytes: number }[]; geometries: { bytes: number }[] } } }).__labGpu;
     if (!gpu) return;
@@ -51,7 +53,14 @@ export function createUsageMeter(ctx: LabContext): UsageMeter {
       console.warn('lab: video memory not scanned', error);
     }
   };
-  const vramTimer = window.setInterval(readVram, 5000);
+  /** The scan walks the whole scene (textures and geometries), 170 ms in the audit: only when the lab is open, in an idle period, and never in the middle of a frame. */
+  const scanWhenIdle = (): void => {
+    if (!active || idle !== null) return;
+    idle = window.requestIdleCallback(() => {
+      idle = null;
+      if (active) readVram();
+    }, { timeout: 2_000 });
+  };
 
   const compute = (now: number): UsageReading[] => {
     while (frames.length && frames[0]!.t < now - WINDOW_MS) frames.shift();
@@ -66,7 +75,8 @@ export function createUsageMeter(ctx: LabContext): UsageMeter {
     const fps = n > 1 ? (n - 1) / ((frames[n - 1]!.t - frames[0]!.t) / 1000) : 0;
     const gpuAvg = gpuN ? gpu / gpuN : null;
     const heap = (performance as Performance & { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
-    const vram = vramFound ?? ctx.scene.targetBytes();
+    // The scene's own targets are cheap; the full scan is the lab's, and only while its window is open.
+    const vram = vramFound ?? gpuLedger.bytes();
     const counted = gpuLedger.bytes();
     const cap = gpuLedger.cap;
     const clamp = (v: number): number => Math.max(0, Math.min(100, v));
@@ -109,10 +119,17 @@ export function createUsageMeter(ctx: LabContext): UsageMeter {
       return current.length ? current : compute(performance.now());
     },
     history: (id) => histories.get(id) ?? [],
+    setActive(next) {
+      if (next === active) return;
+      active = next;
+      if (idle !== null) { window.cancelIdleCallback(idle); idle = null; }
+      if (!next) return;
+      readStorage();
+      scanWhenIdle();
+    },
     dispose() {
       stop();
-      window.clearInterval(storageTimer);
-      window.clearInterval(vramTimer);
+      if (idle !== null) window.cancelIdleCallback(idle);
     },
   };
 }

@@ -339,6 +339,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
     open(id, params) {
       const wasOpen = !panel.hidden;
       panel.hidden = false;
+      usage.setActive(true);
       place();
       let keptTab: string | null = null;
       try { keptTab = window.localStorage.getItem('roadcraft.lab.tab'); } catch (error) { console.warn('lab tab not read', error); }
@@ -351,6 +352,7 @@ export function createLabWindow(ctx: LabContext, tabs: readonly LabTab[], usage:
     close() {
       if (panel.hidden) return false;
       panel.hidden = true;
+      usage.setActive(false);
       current?.unmount?.();
       current = null;
       if (timer !== null) window.clearInterval(timer);
