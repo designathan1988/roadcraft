@@ -3,7 +3,7 @@ import type { Connector, JunctionTopology } from '@world/lanelets';
 import { CONVOY_ROLLING, CRITICAL_GAP, CRITICAL_GAP_FLOOR, IMPATIENCE_MAX, IMPATIENCE_RATE, JAM_GAP, REQUEST_MIN_DISTANCE, REQUEST_TIME, WAIT_CEILING } from '../params';
 import type { SimWorld } from '../world';
 import type { Vehicle } from '../vehicles/state';
-import { canStopComfortably, type ObstacleKind } from '../vehicles/idm';
+import { addObstacle, canStopComfortably, type ObstacleKind } from '../vehicles/idm';
 import { pedestrianSignalState, signalStateFor } from '../signals/query';
 import { signalHolds } from '../signals/permission';
 import { PED_COURTESY, vehicleBodyIntersectsCrossing } from '../crossings/permission';
@@ -123,11 +123,7 @@ function admit(w: SimWorld, banker: BankerPass): void {
       const reservedCurrent = head.reservedConnectors[0] === conn.id;
       // A declared maximum claim pins the route.
       if (head.reservedConnectors.length > 0 && !reservedCurrent) {
-        head.constraints.obstacles.push({
-          gap: Math.max(0, d),
-          speed: 0,
-          kind: 'conflict',
-        });
+        addObstacle(head.constraints, Math.max(0, d), 0, 'conflict');
         continue;
       }
 
@@ -155,7 +151,7 @@ function admit(w: SimWorld, banker: BankerPass): void {
   // A zone that reaches back over a stop line cannot be protected by a claim alone
   for (const r of requests) {
     const stop = stopShortOfIntrusion(w, r.v, r.conn, r.d);
-    if (stop !== null) r.v.constraints.obstacles.push({ gap: stop, speed: 0, kind: 'conflict' });
+    if (stop !== null) addObstacle(r.v.constraints, stop, 0, 'conflict');
   }
 
   for (const r of requests) {
@@ -172,11 +168,7 @@ function admit(w: SimWorld, banker: BankerPass): void {
         banker.changed(r.v);
         // `longitudinalConstraints` has already pushed the signal obstacle for this vehicle from the same `mustStopAtSignal`
         if (!r.v.constraints.obstacles.some((o) => o.kind === 'signal')) {
-          r.v.constraints.obstacles.push({
-            gap: Math.max(0, r.d),
-            speed: 0,
-            kind: 'signal',
-          });
+          addObstacle(r.v.constraints, Math.max(0, r.d), 0, 'signal');
         }
         continue;
       }
@@ -216,11 +208,7 @@ function admit(w: SimWorld, banker: BankerPass): void {
       if (verdict.reason === 'pedestrian') r.v.heldByPedestriansTick = w.clock.tick;
       const held = r.d - PED_CROSSING_STOP_BUFFER;
       const pedestrianGap = canStopComfortably(r.v.driver, r.v.v, held - r.v.driver.s0) ? held : r.d;
-      r.v.constraints.obstacles.push({
-        gap: Math.max(0, verdict.reason === 'pedestrian' ? pedestrianGap : r.d),
-        speed: 0,
-        kind: verdict.reason ?? 'signal',
-      });
+      addObstacle(r.v.constraints, Math.max(0, verdict.reason === 'pedestrian' ? pedestrianGap : r.d), 0, verdict.reason ?? 'signal');
     }
   }
 }

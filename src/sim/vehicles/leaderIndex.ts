@@ -1,7 +1,7 @@
 import type { LaneletId } from '@world/lanelets';
 import type { SimWorld } from '../world';
 import type { Vehicle } from './state';
-import { canStopComfortably, type Obstacle } from './idm';
+import { canStopComfortably, type MutableObstacle, type Obstacle, obstacleInto } from './idm';
 import { bodyClassOfArchetype } from './archetypes';
 import { pullOutRoom } from './laneChange';
 import { outOfTheWay } from './cycleLane';
@@ -10,8 +10,8 @@ import { m } from '@world/units';
 /** How many lanelets ahead the leader search will walk. */
 const LOOKAHEAD_HOPS = 3;
 
-/** Nearest obstacle ahead, following the vehicle's own planned lanelet sequence. */
-export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
+/** Nearest obstacle ahead, following the vehicle's own planned lanelet sequence; `out` written as the winner (a set's slot reused, `idm.ts`). */
+export function findLeader(w: SimWorld, v: Vehicle, out?: MutableObstacle | null): Obstacle | null {
   const rt = w.rt(v.lanelet);
   const idx = laneSlot(w, rt.order, v);
   // The nearest so far, as numbers: DO NOT make an obstacle for every candidate and a closure to weigh them (a vehicle a step, SIM-07); one made for the winner. The first of the least gap wins, as before.
@@ -40,7 +40,7 @@ export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
     const gap = shadow.rear - v.s;
     if (!found || gap < bestGap) { bestGap = gap; bestSpeed = shadow.vehicle.v; bestAccel = shadow.vehicle.accel; found = true; }
   }
-  if (found) return { gap: bestGap, speed: bestSpeed, accel: bestAccel, kind: 'vehicle' };
+  if (found) return obstacleInto(out, bestGap, bestSpeed, 'vehicle', bestAccel);
 
   // Head of this lanelet: walk forward along the planned route.
   const here = w.lanelet(v.lanelet);
@@ -71,7 +71,7 @@ export function findLeader(w: SimWorld, v: Vehicle): Obstacle | null {
       const gap = dist + shadow.rear;
       if (!found || gap < bestGap) { bestGap = gap; bestSpeed = shadow.vehicle.v; bestAccel = shadow.vehicle.accel; found = true; }
     }
-    if (found) return { gap: bestGap, speed: bestSpeed, accel: bestAccel, kind: 'vehicle' };
+    if (found) return obstacleInto(out, bestGap, bestSpeed, 'vehicle', bestAccel);
     const lanelet = w.lanelet(nextId);
     if (!lanelet) break;
     dist += lanelet.length;

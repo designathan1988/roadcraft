@@ -10,9 +10,9 @@ export interface Obstacle {
   readonly speed: number;
   readonly kind: ObstacleKind;
   /** Excluded from the hard safe-speed cap when false. */
-  readonly hard?: boolean;
+  readonly hard?: boolean | undefined;
   /** Its acceleration, when it is a vehicle: what it is doing, not just how fast. */
-  readonly accel?: number;
+  readonly accel?: number | undefined;
 }
 
 export type ObstacleKind =
@@ -26,11 +26,54 @@ export type ObstacleKind =
   | 'curvature'
   | 'kerbStop';
 
-export interface ConstraintSet {
-  obstacles: Obstacle[];
+/** An obstacle the set owns and may write again (its fields as the set reads them). */
+export interface MutableObstacle {
+  gap: number;
+  speed: number;
+  kind: ObstacleKind;
+  hard?: boolean | undefined;
+  accel?: number | undefined;
 }
 
-export const emptyConstraints = (): ConstraintSet => ({ obstacles: [] });
+export interface ConstraintSet {
+  obstacles: Obstacle[];
+  /** The obstacle written at each place this tick, kept from the ticks before: an obstacle a vehicle does not carry a tick (a leader, a signal) is written in the same object, never a new one. */
+  readonly pool: MutableObstacle[];
+  /** How many of `pool` this tick's obstacles take (`resetConstraints` puts it back to none). */
+  used: number;
+}
+
+export const emptyConstraints = (): ConstraintSet => ({ obstacles: [], pool: [], used: 0 });
+
+/** The set emptied for a tick: its slots kept (nothing made), and nothing of the tick before left in the list. */
+export function resetConstraints(c: ConstraintSet): void {
+  c.obstacles.length = 0;
+  c.used = 0;
+}
+
+/** The next slot of the set, its object made once and written again at every tick: DO NOT make an obstacle a vehicle a tick (hundreds a tick, every tick). */
+export function nextObstacle(c: ConstraintSet): MutableObstacle {
+  const at = c.used++;
+  let o = c.pool[at];
+  if (!o) c.pool[at] = o = { gap: 0, speed: 0, kind: 'signal' };
+  return o;
+}
+
+/** An obstacle written into one of the set's slots and appended: the fields it does not carry left undefined (not the last tick's). */
+export function addObstacle(c: ConstraintSet, gap: number, speed: number, kind: ObstacleKind, accel?: number, hard?: boolean): void {
+  const o = nextObstacle(c);
+  o.gap = gap; o.speed = speed; o.kind = kind;
+  o.accel = accel; o.hard = hard;
+  c.obstacles.push(o);
+}
+
+/** `out` filled as the found obstacle, or a new one when the caller keeps none (`findLeader` without a set): what a finder writes its winner into. */
+export function obstacleInto(out: MutableObstacle | null | undefined, gap: number, speed: number, kind: ObstacleKind, accel?: number, hard?: boolean): Obstacle {
+  const o: MutableObstacle = out ?? { gap: 0, speed: 0, kind };
+  o.gap = gap; o.speed = speed; o.kind = kind;
+  o.accel = accel; o.hard = hard;
+  return o;
+}
 
 /** Follower speed by which the queue-release response has faded out, world units a second. */
 const RELEASE_FADE = m(4);

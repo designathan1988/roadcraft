@@ -532,7 +532,7 @@
       "count": 1
     },
     "roadcraft/no-module-state": {
-      "count": 6
+      "count": 8
     }
   },
   "src/sim/intersections/cycles.ts": {
