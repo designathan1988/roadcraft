@@ -1,6 +1,5 @@
 import {
   type Camera,
-  InstancedBufferAttribute,
   type InstancedBufferGeometry,
   InstancedInterleavedBuffer,
   InstancedMesh,
@@ -14,7 +13,6 @@ import {
   type WebGLRenderer,
 } from 'three';
 
-import { cellAt } from '@world/cells';
 import type { Change, ChangeRect } from '@world/changes';
 import type { RoadDoc } from '@world/doc';
 import type { PoleId, SpanId } from '@world/ids';
@@ -87,9 +85,7 @@ interface PoleState {
   readonly top: number;
   readonly kerb: { x: number; y: number } | null;
   readonly frame: PoleArms;
-  /** The cell holding its parts (`cellAt`). */
-  readonly cell: number;
-  /** Its slots in each part's mesh of that cell (`POLE_PART`). */
+  /** Its slots in each part's mesh (`POLE_PART`). */
   readonly slots: number[][];
 }
 
@@ -139,14 +135,18 @@ class ScreenScale {
 
   /** Pixels a unit spans at the sphere's nearest depth: Infinity when the eye is level with it or inside it. */
   at(sphere: Sphere): number {
+    return this.atPoint(sphere.center.x, sphere.center.y, sphere.center.z, sphere.radius);
+  }
+
+  atPoint(x: number, y: number, z: number, radius: number): number {
     if (!this.perspective) return this.pixels;
-    const c = sphere.center, e = this.eye, a = this.ahead;
-    const depth = (c.x - e.x) * a.x + (c.y - e.y) * a.y + (c.z - e.z) * a.z - sphere.radius;
+    const e = this.eye, a = this.ahead;
+    const depth = (x - e.x) * a.x + (y - e.y) * a.y + (z - e.z) * a.z - radius;
     return depth > 1e-3 ? this.pixels / depth : Infinity;
   }
 }
 
-/** One part's instances in one cell: a mesh with room for `capacity`, the first `count` drawn, and which pole holds each slot. */
+/** A part's instances over the whole layer: a mesh with room for `capacity`, the first `count` drawn, and which pole holds each slot (DO NOT draw a mesh a cell: a city's cells were forty meshes a part, `poleLayer.ts` before 2026-10-20). */
 class PartStore {
   private mesh: InstancedMesh | null = null;
   private capacity = 0;
@@ -167,13 +167,9 @@ class PartStore {
     this.shape = partShape(spec.geometry);
   }
 
-  /** A mesh of the part with room for `capacity` instances; with `matrices` (a bake's), those taken as they came, never copied into a buffer of the mesh's own. */
-  private meshOf(capacity: number, matrices?: Float32Array): InstancedMesh {
-    const mesh = new InstancedMesh(this.spec.levels[this.level]!.geometry, this.spec.material, matrices ? 0 : capacity);
-    if (matrices) {
-      mesh.instanceMatrix = new InstancedBufferAttribute(matrices, 16);
-      mesh.count = capacity;
-    }
+  /** A mesh of the part with room for `capacity` instances. */
+  private meshOf(capacity: number): InstancedMesh {
+    const mesh = new InstancedMesh(this.spec.levels[this.level]!.geometry, this.spec.material, capacity);
     mesh.name = this.spec.name;
     mesh.castShadow = this.spec.castShadow;
     mesh.receiveShadow = this.spec.receiveShadow;
@@ -183,17 +179,18 @@ class PartStore {
     return mesh;
   }
 
-  /** A bake's pieces (`bakePoles`), on a store with none: drawn as they came. */
+  /** A bake's pieces (`bakePoles`) appended: drawn as they came (a baked layer is never edited). */
   load(baked: BakedPart): void {
-    const mesh = this.meshOf(baked.count, baked.matrices);
-    this.group.add(mesh);
-    this.mesh = mesh;
-    this.capacity = baked.count;
-    this.count = baked.count;
+    this.reserve(this.count + baked.count);
+    (this.mesh!.instanceMatrix.array as Float32Array).set(baked.matrices, this.count * 16);
+    this.count += baked.count;
     this.whole = true;
-    this.bounds.box.splice(0, 6, ...baked.box);
-    this.bounds.scale = baked.scale;
-    this.bounds.cover = baked.cover;
+    for (let i = 0; i < 6; i++) {
+      this.bounds.box[i] = Math.min(this.bounds.box[i]!, baked.box[i]!);
+      this.bounds.box[i + 3] = Math.max(this.bounds.box[i + 3]!, baked.box[i + 3]!);
+    }
+    this.bounds.scale = Math.max(this.bounds.scale, baked.scale);
+    this.bounds.cover = Math.max(this.bounds.cover, baked.cover);
     this.boundsMoved = true;
   }
 
@@ -268,16 +265,15 @@ class PartStore {
     }
   }
 
-  /** As the camera sees the cell: a piece covering under a pixel (times its brightness) not drawn, nor cast where it covers under a shadow texel; the coarsest shape off by under a pixel. */
-  view(scale: ScreenScale): void {
+  /** As the camera sees the nearest pole: a piece covering under a pixel (times its brightness) not drawn, nor cast where it covers under a shadow texel; the coarsest shape off by under a pixel. */
+  view(scale: ScreenScale, nearest: number): void {
     const mesh = this.mesh, spec = this.spec;
     if (!mesh || this.count === 0 || spec.glows) return;
-    const s = scale.at(mesh.boundingSphere!);
-    mesh.visible = this.bounds.cover * s * s * spec.brightness() >= 1;
+    mesh.visible = this.bounds.cover * nearest * nearest * spec.brightness() >= 1;
     mesh.castShadow = spec.castShadow && (scale.texel === 0 || this.bounds.cover >= scale.texel * scale.texel);
     let level = 0;
     for (let i = spec.levels.length - 1; i > 0; i--) {
-      if (spec.levels[i]!.error * s < 1) { level = i; break; }
+      if (spec.levels[i]!.error * nearest < 1) { level = i; break; }
     }
     if (level !== this.level) {
       this.level = level;
@@ -329,21 +325,22 @@ class WireStore {
     this.makeMesh();
   }
 
-  /** A bake's wires (`bakePoles`), on a store with none: drawn as they came. */
+  /** A bake's wires (`bakePoles`) appended: drawn as they came (a baked layer is never edited). */
   load(baked: BakedWires): void {
-    this.data = baked.data;
-    this.buffer = new InstancedInterleavedBuffer(baked.data, WIRE_STRIDE, 1);
-    this.capacity = baked.count;
-    this.count = baked.count;
+    this.reserve(this.count + baked.count);
+    this.data.set(baked.data, this.count * WireStore.BLOCK);
+    this.count += baked.count;
     this.whole = true;
-    this.bounds.box.splice(0, 6, ...baked.box);
-    this.bounds.sag = baked.sag;
+    for (let i = 0; i < 6; i++) {
+      this.bounds.box[i] = Math.min(this.bounds.box[i]!, baked.box[i]!);
+      this.bounds.box[i + 3] = Math.max(this.bounds.box[i + 3]!, baked.box[i + 3]!);
+    }
+    this.bounds.sag = Math.max(this.bounds.sag, baked.sag);
     this.boundsMoved = true;
-    this.makeMesh();
   }
 
   private makeMesh(): void {
-    // One draw for the cell's wires: a template, and each wire's eight numbers as instances.
+    // One draw for the layer's wires: a template, and each wire's eight numbers as instances.
     const { material, depth } = wireParts();
     const mesh = new Mesh(this.geometry(this.level), material);
     // The shadow drawn from the same bent template (three draws a caster's shadow with its depth material).
@@ -419,11 +416,11 @@ class WireStore {
     }
   }
 
-  /** As the camera sees the cell: the template its nearest wire needs (`wireLevel`), none once faded; cast while a texel or wider. */
-  view(scale: ScreenScale): void {
+  /** As the camera sees the nearest pole: the template its wires need (`wireLevel`), none once faded; cast while a texel or wider. */
+  view(scale: ScreenScale, nearest: number): void {
     const mesh = this.mesh;
     if (!mesh || this.count === 0) return;
-    const level = wireLevel(scale.at(this.sphere), this.bounds.sag);
+    const level = wireLevel(nearest, this.bounds.sag);
     mesh.visible = level >= 0;
     if (level < 0) return;
     mesh.castShadow = scale.texel === 0 || WIRE_WIDTH >= scale.texel;
@@ -436,36 +433,6 @@ class WireStore {
   dispose(): void {
     this.dropLevels();
     if (this.mesh) this.group.remove(this.mesh);
-  }
-}
-
-/** The poles and wires of one cell of the world's grid (`cellAt`): what the view draws, keeps out of the shadow or coarsens, cell by cell. */
-class PoleCell {
-  readonly parts: PartStore[];
-  readonly wires: WireStore;
-
-  constructor(specs: readonly PolePartSpec[], group: Object3D) {
-    this.parts = specs.map((spec) => new PartStore(spec, group));
-    this.wires = new WireStore(group);
-  }
-
-  get empty(): boolean {
-    return this.wires.count === 0 && this.parts.every((part) => part.count === 0);
-  }
-
-  flush(): void {
-    for (const part of this.parts) part.flush();
-    this.wires.flush();
-  }
-
-  view(scale: ScreenScale): void {
-    for (const part of this.parts) part.view(scale);
-    this.wires.view(scale);
-  }
-
-  dispose(): void {
-    for (const part of this.parts) part.dispose();
-    this.wires.dispose();
   }
 }
 
@@ -483,11 +450,12 @@ class ViewedRoot extends LOD {
 export class PoleLayer implements Utilities {
   readonly group: ViewedRoot;
   private readonly specs: readonly PolePartSpec[];
-  /** The cells holding poles or wires, by key. */
-  private readonly cells = new Map<number, PoleCell>();
+  /** A store a part for the whole layer: one draw a part, wherever its poles stand. */
+  private readonly parts: PartStore[];
+  private readonly wires: WireStore;
   private readonly poles = new Map<PoleId, PoleState>();
-  /** Each span strung here, with its cell and its block there. */
-  private readonly spans = new Map<SpanId, { readonly span: UtilitySpan; readonly cell: number; block: number }>();
+  /** Each span strung here, with its block in the wires' store. */
+  private readonly spans = new Map<SpanId, { readonly span: UtilitySpan; block: number }>();
   /** The poles drawn here by place, and the spans strung to each: what an edit takes away is found here. */
   private readonly index = new PoleIndex();
   private readonly scratch: Placement[][] = Array.from({ length: POLE_PART_COUNT }, () => []);
@@ -497,11 +465,13 @@ export class PoleLayer implements Utilities {
     this.group = new ViewedRoot((camera) => this.view(camera));
     this.group.name = name;
     this.specs = polePartSpecs(kit);
+    this.parts = this.specs.map((spec) => new PartStore(spec, this.group));
+    this.wires = new WireStore(this.group);
   }
 
   get triangles(): number {
     let triangles = 0;
-    for (const cell of this.cells.values()) for (const part of cell.parts) triangles += part.perInstance * part.count;
+    for (const part of this.parts) triangles += part.perInstance * part.count;
     return triangles;
   }
 
@@ -568,34 +538,24 @@ export class PoleLayer implements Utilities {
     this.redo(net, groundAt, source, seeds);
   }
 
-  /** The cell at a key, made when first needed. */
-  private cell(key: number): PoleCell {
-    let cell = this.cells.get(key);
-    if (!cell) this.cells.set(key, cell = new PoleCell(this.specs, this.group));
-    return cell;
-  }
-
-  /** A pole framed and its parts placed in its cell; its way to the kerb kept from before, or undefined to read it (`kerbward`). */
+  /** A pole framed and its parts placed; its way to the kerb kept from before, or undefined to read it (`kerbward`). */
   private place(net: Network, groundAt: (x: number, y: number) => number, source: PoleSource,
     pole: UtilityPole, kept: { x: number; y: number } | null | undefined): void {
     const { top, kerb, frame } = framePole(net, groundAt, source, pole, kept);
-    const key = cellAt(pole.x, pole.y);
     const slots: number[][] = Array.from({ length: POLE_PART_COUNT }, () => []);
     if (source.draws?.(pole) ?? true) {
       const out = this.scratch;
       for (const list of out) list.length = 0;
       placePole(pole, top, frame, kerb, groundAt, out);
-      const parts = this.cell(key).parts;
-      out.forEach((list, part) => { for (const placement of list) slots[part]!.push(parts[part]!.add(pole.id, placement)); });
+      out.forEach((list, part) => { for (const placement of list) slots[part]!.push(this.parts[part]!.add(pole.id, placement)); });
     }
-    this.poles.set(pole.id, { x: pole.x, y: pole.y, top, kerb, frame, cell: key, slots });
+    this.poles.set(pole.id, { x: pole.x, y: pole.y, top, kerb, frame, slots });
     this.index.putPole(pole);
   }
 
   private unplace(id: PoleId, state: PoleState): void {
-    const cell = this.cells.get(state.cell);
     state.slots.forEach((slots, part) => {
-      const store = cell?.parts[part];
+      const store = this.parts[part];
       if (!store) return;
       // Highest first: the last slot is then never one of this pole's still to go.
       for (const slot of [...slots].sort((a, b) => b - a)) {
@@ -609,57 +569,59 @@ export class PoleLayer implements Utilities {
     this.index.deletePole(id);
   }
 
-  /** A span's wires, when both its poles stand here, in the cell of its middle; framed as each end frames it. */
+  /** A span's wires, when both its poles stand here; framed as each end frames it. */
   private string(span: UtilitySpan): void {
     if (this.spans.has(span.id)) return;
     const a = this.poles.get(span.a), b = this.poles.get(span.b);
     if (!a || !b) return;
-    const key = cellAt((a.x + b.x) / 2, (a.y + b.y) / 2);
-    const block = this.cell(key).wires.add(span, wireEnd(span, a), wireEnd(span, b));
-    this.spans.set(span.id, { span, cell: key, block });
+    const block = this.wires.add(span, wireEnd(span, a), wireEnd(span, b));
+    this.spans.set(span.id, { span, block });
     this.index.putSpan(span);
   }
 
   private unstring(id: SpanId): void {
     const held = this.spans.get(id);
     if (!held) return;
-    const moved = this.cells.get(held.cell)!.wires.remove(held.block);
+    const moved = this.wires.remove(held.block);
     if (moved !== null) this.spans.get(moved)!.block = held.block;
     this.spans.delete(id);
     this.index.deleteSpan(held.span);
   }
 
-  /** Every cell's changes sent; a cell left with nothing let go. */
+  /** Every store's changes sent. */
   private flush(): void {
-    for (const [key, cell] of this.cells) {
-      if (cell.empty) {
-        cell.dispose();
-        this.cells.delete(key);
-      } else cell.flush();
-    }
+    for (const part of this.parts) part.flush();
+    this.wires.flush();
   }
 
-  /** Each cell as this camera sees it, each time three draws the layer: cells walked, not poles or wires. */
+  /** The nearest pole as this camera sees it, each time three draws the layer: what the parts fade and coarsen by. */
   private view(camera: Camera): void {
     this.scale.set(camera);
     wireScreen.uWirePixels.value = screen.halfHeight;
-    for (const cell of this.cells.values()) cell.view(this.scale);
+    let nearest = -Infinity;
+    if (this.poles.size > 0) {
+      // A pole's own reach, the top of its mast standing at (x, top, -y) in three's axes.
+      for (const pole of this.poles.values()) {
+        nearest = Math.max(nearest, this.scale.atPoint(pole.x, pole.top / 2, -pole.y, pole.top / 2));
+      }
+    }
+    for (const part of this.parts) part.view(this.scale, nearest);
+    this.wires.view(this.scale, nearest);
   }
 
   dispose(): void {
     // The instances and the wires are this layer's; the parts' shapes and materials are shared (`PARTS`).
-    for (const cell of this.cells.values()) cell.dispose();
-    this.cells.clear();
+    for (const part of this.parts) part.dispose();
+    this.wires.dispose();
     this.group.clear();
   }
 
-  /** A TILE'S POLES AS A BAKE HANDS THEM (`bakePoles`, in a worker): each cell's parts and wires drawn as they came, viewed as a layer filled on the page is (the same cells, levels and shadows); never edited, a new bake replaces it whole */
+  /** A TILE'S POLES AS A BAKE HANDS THEM (`bakePoles`, in a worker): its parts and wires appended to the layer's stores, drawn as they came, viewed as a layer filled on the page is (the same levels and shadows); never edited, a new bake replaces it whole */
   static fromBake(kit: SceneryKit, bake: PoleBake, name = 'utilities'): PoleLayer {
     const layer = new PoleLayer(kit, name);
     for (const baked of bake.cells) {
-      const cell = layer.cell(baked.key);
-      baked.parts.forEach((part, k) => { if (part) cell.parts[k]!.load(part); });
-      if (baked.wires) cell.wires.load(baked.wires);
+      baked.parts.forEach((part, k) => { if (part) layer.parts[k]!.load(part); });
+      if (baked.wires) layer.wires.load(baked.wires);
     }
     layer.flush();
     return layer;
