@@ -180,7 +180,9 @@ export function createPostChain(
       distanceExponent: 1.6,
       thickness: 0.8,
       scale: 1.05,
-      samples: level === 'ultra' ? 16 : 8,
+      // Eight samples on every tier: the Poisson denoise takes the noise out, and sixteen at the scene's half resolution
+      // (the AO's default) cost the pass about a third more for an edge no player can tell apart (the lab's passes, 2026-10-20).
+      samples: 8,
       screenSpaceRadius: false,
     });
     gtao.blendIntensity = 0.85;
