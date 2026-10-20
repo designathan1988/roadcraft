@@ -1976,7 +1976,11 @@ function newWorld(): void {
 /** A LARGE PLANNED CITY (the goal of 2026-10-20: a city of tens of thousands of buildings, not the small city's 2.5 thousand): laid whole by the plan's generator off the page, opened at a district while the rest of the world fills in behind the curtain. */
 function newLargeWorld(): void {
   if (!window.confirm(t('confirm.newLargeWorld'))) return;
-  void openGeneratedCity({ seed: Math.floor(Math.random() * 0x7fff_ffff) || 1, size: 'large', radius: 3_000 });
+  void openGeneratedCity({
+    seed: Math.floor(Math.random() * 0x7fff_ffff) || 1, size: 'large', radius: 3_000,
+    // The mixed grain left 36 % of the lots empty and generated more roads: the reliable grid, with three centres, a lower density and parks, keeps every lot built while breaking the carpet of equal towers.
+    style: 'blocks', centres: 3, density: 0.45, parks: 0.06,
+  });
 }
 /** A city being made off the page (`cityGen.worker.ts`): the curtain over the map while the worker builds it, no frame of it on the page. */
 let generatingCity = false;
