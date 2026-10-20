@@ -67,7 +67,7 @@ export function litStandIns(roots: readonly Object3D[]): Group {
   return group;
 }
 
-/** `people`: every program a person can be drawn with (`people/proceduralCrowd.ts` personProgramStandIns), built without a body. `lightVariants`: the sets of the scene's lights a light switched on or off makes (`renderer.ts`), each compiled once the opening's are, one at a time when nothing else compiles (`compilesQuiet`), never waited for. */
+/** `people`: every program a person can be drawn with (`people/proceduralCrowd.ts` personProgramStandIns), built without a body. `lightVariants`: the sets of the scene's lights a light switched on or off makes (`renderer.ts`), each compiled before the curtain lifts, one at a time and when nothing else compiles (`compilesQuiet`): a program first used in play waits for its link in the frame (three's WebGLRenderer.compileAsync: precompile before the first render). */
 export function createShaderCatalogue(people: () => FamilyStandIns, lightVariants: () => readonly (readonly Object3D[])[] = () => []): ShaderCatalogue {
   const counts = Object.fromEntries(PROGRAM_FAMILIES.map((name) => [name, null])) as Record<ProgramFamily, FamilyCount | null>;
   let settle: () => void = () => {};
@@ -112,21 +112,20 @@ export function createShaderCatalogue(people: () => FamilyStandIns, lightVariant
       const world = family('world', () => ({ lit: scene, shadow: shadowStandIns(scene) }));
       // The people come after the town is shown: their programs, every one of them, now (`personVariants.ts`).
       peopleDone ??= family('people', () => { const made = people(); peopleLit = made.lit; return made; });
-      void Promise.all([world, peopleDone]).then(() => {
+      void Promise.all([world, peopleDone]).then(async () => {
+        // The variants of the lights switched on or off (the room and effect lights, the fill at night): built now, before the curtain
+        // lifts and the first switch draws with one. DO NOT leave them to a quiet moment during play (they waited minutes, then every
+        // lit material of the view was built in one frame). They are still asked one set at a time: four sets at once held the driver
+        // 12-15 s after the opening (`__compileLog`, prova motor-compilacao, 2026-10-18).
+        const sets = lightVariants();
+        const standIns = sets.length ? litStandIns(peopleLit ? [scene, peopleLit] : [scene]) : null;
+        if (standIns) for (const lights of sets) {
+          await compilesQuiet();
+          await compileAheadWith(standIns, lights);
+        }
+        standIns?.clear();
         performance.mark('programs:compiled', { detail: counts });
         done();
-        // The variants of the lights switched on or off (the room and effect lights, the fill at night): built now, before the first switch draws with one.
-        const sets = lightVariants();
-        if (sets.length === 0) return;
-        const standIns = litStandIns(peopleLit ? [scene, peopleLit] : [scene]);
-        // DO NOT ask them all at once alongside the view's: four sets of every lit program held the driver 12-15 s after the opening and the reopening, the cell at the camera waiting behind them at the door (`__compileLog`, prova motor-compilacao, 2026-10-18). One set at a time, each when nothing else is compiling.
-        void (async () => {
-          for (const lights of sets) {
-            await compilesQuiet();
-            await compileAheadWith(standIns, lights);
-          }
-          standIns.clear();
-        })();
       });
     },
     counts() {
