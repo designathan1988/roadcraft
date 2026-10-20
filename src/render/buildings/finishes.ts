@@ -248,5 +248,41 @@ export function finishAlbedo(): Record<Finish, readonly [number, number, number]
   return out;
 }
 
+/**
+ * THE SHELL'S PARTS FROM AFAR (a lot's boxes, rails and slabs, `partCells.ts` LIGHT_PIXELS): each instance its paint times its finish's colour from afar (`finishAlbedo`) and its wear's mean, the lot's paving as near.
+ * DO NOT draw them with the shell's own program where their finish's texture is under a pixel: the whole of it (maps, normal frame, wear, the look table) on 376 thousand boxes of 20 vertices cost a large city's close view 3 ms a frame; no one feature of it did, the program's weight did (measured 2026-10-20).
+ */
+export function createFarShellMaterial(): MeshStandardMaterial {
+  const albedo = finishAlbedo();
+  const tones = new Float32Array(FINISHES.length * 3);
+  FINISHES.forEach((finish, id) => { tones.set(albedo[finish], id * 3); });
+  const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, shadowSide: BackSide });
+  material.name = 'building-shell-far';
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms['shellTones'] = { value: tones };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>
+#ifdef USE_INSTANCING
+attribute float ${FINISH_ATTRIBUTE};
+attribute float aDecay;
+#endif
+uniform vec3 shellTones[${FINISHES.length}];
+varying vec3 vShellTone;`)
+      .replace('#include <color_vertex>', `#include <color_vertex>
+#ifdef USE_INSTANCING
+// The wear's mean darkening, as the near program's stains leave a wall (\`WEATHERING\`).
+vShellTone = shellTones[int(${FINISH_ATTRIBUTE} + 0.5)] * (1.0 - 0.3 * aDecay);
+#else
+vShellTone = vec3(1.0);
+#endif`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vShellTone;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vShellTone;');
+  };
+  material.customProgramCacheKey = () => 'building-shell-far-v1';
+  applyLotOverlay(material, { building: true });
+  return material;
+}
+
 /** How dark the light weathering of every wall leaves it on average (`WEATHERING`, `d` of 0.3: 0.3 x (0.18 + 0.12 x 0.75 + a few streaks)). */
 const WEATHERED_MEAN = 0.91;

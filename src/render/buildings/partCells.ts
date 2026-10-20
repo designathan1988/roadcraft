@@ -22,6 +22,9 @@ const COARSEN = 0.85;
 const NONE = 127;
 /** A part made of bars (a frame's rails and stiles, a railing's, a brise's blades: its `pieces`) leaves the drawing once its bars span under this many pixels: what it covers is its bars, not its box. DO NOT keep it until its whole diagonal is under a pixel: 300 thousand window frames of 6 cm bars were drawn to 1-2 km as lines a fifth of a pixel wide, 6 M triangles of shimmer (2026-10-20). */
 export const BAR_PIXELS = 0.5;
+/** A shell's part is drawn with the far program (`kit.farShell`) once a metre spans under this many pixels where its run stands nearest (a finish's texture holds features of some 15 cm: under a pixel past it), the near one back at `LIGHT_BACK`. */
+const LIGHT_PIXELS = 6;
+const LIGHT_BACK = 7;
 /** The choices a run's mesh is kept after it leaves the drawing, before its buffers go: a run that comes back within a camera's pause keeps its mesh; one left behind by a turn does not hold its copies for the rest of the cell's life (the lab's +53 geometries a minute, 2026-10-20). */
 const EVICT_AFTER = 240;
 
@@ -159,12 +162,19 @@ export class PartCell {
       }
       // In: each run now, at its level.
       const visible = partLook(this.kit, band.kind, this.faded).visible;
+      const shell = SHELL_PARTS.has(band.kind) && !this.faded;
       for (let r = 0; r < runs; r++) {
         const key = this.runFirst[r]! * LEAVES + this.runLast[r]!, level = this.runLevel[r]!;
         band.unseen.delete(key);
-        if (band.drawn.get(key) === level && !recast) continue;
         let mesh = band.meshes.get(key);
-        if (!mesh) band.meshes.set(key, mesh = this.make(band, this.runFirst[r]!, this.runLast[r]!));
+        // A shell's part: the far program where its finish's texture is under a pixel (`LIGHT_PIXELS`), the near one where it is not.
+        const far = shell && this.runPixels(band, r, view) < (mesh?.userData['far'] === true ? LIGHT_BACK : LIGHT_PIXELS);
+        if (mesh && shell && mesh.userData['far'] !== far) this.drawFar(band, mesh, far);
+        if (band.drawn.get(key) === level && !recast) continue;
+        if (!mesh) {
+          band.meshes.set(key, mesh = this.make(band, this.runFirst[r]!, this.runLast[r]!));
+          if (shell) this.drawFar(band, mesh, far);
+        }
         // A run's posed copy of its level: a shell's part too, now that it has a coarse level (`kit.ts`).
         mesh.geometry = this.posedLevel(band, mesh, level);
         // A card casts nothing: its bars are under the texel where it is drawn, and its face would cast whole (`kit.ts` cards).
@@ -254,7 +264,9 @@ export class PartCell {
     for (const band of this.bands) {
       const look = partLook(this.kit, band.kind, faded);
       for (const [key, mesh] of band.meshes) {
-        mesh.material = look.material;
+        // A shell's part drawn from afar keeps its far program once shown again (`drawFar`).
+        mesh.material = !faded && mesh.userData['far'] === true ? this.kit.farShell : look.material;
+        if (faded) mesh.userData['far'] = false;
         mesh.customDepthMaterial = partPoseDepth(look.material);
         mesh.renderOrder = look.renderOrder;
         mesh.visible = band.drawn.has(key) && look.visible;
@@ -308,6 +320,19 @@ export class PartCell {
     }
     // Under a pixel across its diagonal: not drawn, a shell's part too.
     return k === levels.length ? NONE : k;
+  }
+
+  /** The most pixels a metre spans over a run's sub-cells (its nearest). */
+  private runPixels(band: Band, r: number, view: PartView): number {
+    let most = 0;
+    for (let m = this.runFirst[r]!; m <= this.runLast[r]!; m++) if (band.start[m + 1]! > band.start[m]!) most = Math.max(most, this.perMetre(band, m, view));
+    return most;
+  }
+
+  /** A shell's part run drawn with the far program or the near one. */
+  private drawFar(band: Band, mesh: InstancedMesh, far: boolean): void {
+    mesh.userData['far'] = far;
+    mesh.material = far ? this.kit.farShell : partLook(this.kit, band.kind, this.faded).material;
   }
 
   /** The pixels a metre spans at a sub-cell's nearest point to the eye. */

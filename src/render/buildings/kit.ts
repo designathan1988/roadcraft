@@ -17,7 +17,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { weldGeometry } from '../mesh/weld';
 
 import type { Finish } from '@world/buildings/materials';
-import { SHELL_NORMAL_GLSL, createShellMaterial, finishAlbedo } from './finishes';
+import { SHELL_NORMAL_GLSL, createFarShellMaterial, createShellMaterial, finishAlbedo } from './finishes';
 import { SHELL_NORMAL } from './cellArrays';
 import { createFurnitureGeometries, createFurnitureMaterial, furnitureTones } from './furnitureKit';
 import type { FurnitureKind } from '@world/buildings/interior';
@@ -150,6 +150,8 @@ export interface BuildingKit {
   readonly material: Readonly<Record<PartKind, Material>>;
   /** The merged shell - walls, plinths, bands, roofs, steps - of every finish: one material, vertex coloured, each vertex's finish picking its maps (`finishes.ts`). */
   readonly shellMaterial: MeshStandardMaterial;
+  /** The shell's parts where their finish's texture is under a pixel (`finishes.ts` createFarShellMaterial). */
+  readonly farShell: MeshStandardMaterial;
   /** A broken building's pieces (`destruction.ts`): the shell's look, each vertex carrying its uv, colour and finish as its piece moves. */
   readonly ruinShell: MeshStandardMaterial;
   /** Ghost materials for the placement / drag preview, tinted by validity. */
@@ -539,6 +541,7 @@ export function createBuildingKit(anisotropy = 4): BuildingKit {
   for (const kind of ['glass', 'glassDark'] as const) roomBehindGlass(own[kind] as MeshStandardMaterial, { tones, roomsAwake, roomDaylight, tvClock });
   const shell = createShellMaterial({}, anisotropy);
   const ruinShell = createShellMaterial({ carried: true }, anisotropy);
+  const farShell = createFarShellMaterial();
   // The shell's parts are the shell drawn instanced (`shellParts.ts`): its own material, not pulled towards the eye, not renamed.
   const material: Record<PartKind, Material> = { ...own, ...{ lotBox: shell, lotRail: shell, lotSlab: shell } satisfies Record<ShellPartKind, Material> };
   const ghostShell = new MeshStandardMaterial({
@@ -589,7 +592,7 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   // The facade level's walls: the shell's every finish, its openings drawn with the panes', doors' and frames' looks (`facadeLevel.ts`).
   const panes = { glass: material.glass, glassDark: material.glassDark, door: material.door, shutter: material.shutter, frame: material.frame } as FacadePanes;
   const facade = createFacadeMaterial(shell, panes, { roomsAwake, massingNight, roomDaylight });
-  const unique = new Set<Material>([...Object.values(material), shell, ruinShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing, massingBoxes, massBoxDepth]);
+  const unique = new Set<Material>([...Object.values(material), shell, ruinShell, farShell, dimShell, facade, ghostShell, ghostParts, dimParts, massing, massingBoxes, massBoxDepth]);
   // LEVELS OF DETAIL: each kind's finest, then lighter ones by what they leave out (a frame's depth, a blade's thickness)
   const levels = {} as Record<PartKind, PartLevel[]>;
   for (const kind of PART_KINDS) levels[kind] = [{ geometry: geometry[kind], triangles: trianglesOf(geometry[kind]), error: [0, 0, 0] }];
@@ -643,12 +646,13 @@ objectNormal = shellUnfold(${SHELL_NORMAL});
   let furniture: { geometry: Record<FurnitureKind, BufferGeometry>; material: MeshStandardMaterial } | null = null;
 
   // DO NOT give the parts' instanced meshes three's matrices: every material a part is drawn with makes it from the part's pose, after all its own patches (`partPose.ts`); its meshes that are not instanced draw as before.
-  for (const m of new Set<Material>([...Object.values(material), ghostParts, dimParts, dimShell])) posePart(m);
+  for (const m of new Set<Material>([...Object.values(material), farShell, ghostParts, dimParts, dimShell])) posePart(m);
   return {
     geometry,
     screen,
     material,
     shellMaterial: shell,
+    farShell,
     ruinShell,
     ghostShell,
     ghostParts,
