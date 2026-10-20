@@ -1,4 +1,4 @@
-import { BackSide, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, Group, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, MeshDepthMaterial, Object3D, OrthographicCamera, Scene as ThreeScene, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
+import { BackSide, BufferAttribute, BufferGeometry, DoubleSide, Float32BufferAttribute, FrontSide, Group, InstancedBufferAttribute, InstancedMesh, MeshBasicMaterial, MeshDepthMaterial, Object3D, OrthographicCamera, Scene as ThreeScene, WebGLRenderTarget, type Camera, type Light, type Material, type Mesh, type Scene, type Side, type Texture, type WebGLRenderer } from 'three';
 
 /** Textures waiting to be sent to the GPU ahead of their first use. three.js uploads a texture the first time something */
 const queue: Texture[] = [];
@@ -576,6 +576,15 @@ const LOOSE = {
 LOOSE.scene.overrideMaterial = LOOSE.material;
 LOOSE.camera.layers.enableAll();
 
+/** Whether a geometry's arrays were let go once on the GPU (`gpuOnly`): its attributes' arrays are null. */
+function released(geometry: BufferGeometry): boolean {
+  for (const attribute of Object.values(geometry.attributes)) {
+    const buffer = attribute as BufferAttribute & { data?: { array: ArrayLike<number> | null } };
+    if ((buffer.array ?? buffer.data?.array) === null) return true;
+  }
+  return false;
+}
+
 /** DO NOT draw the whole scene for it (on a layer of its own) */
 /** DO NOT move it with `add`/`remove`: they fire `childremoved`/`childadded` on its group, and the renderer takes those for casters come and gone (`renderer.ts` stir): every warm threw the sun cascades' stores away and drew them whole (TST-05, RND-17). It is put in the loose scene by hand, never taken out of its group's children: three's render reads the scene's children and the mesh's matrixWorld (r186 `projectObject`, the loose scene updating no matrix), and uploads in `objects.update` there. */
 function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly BufferGeometry[]): void {
@@ -589,6 +598,8 @@ function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly Buf
     mesh.frustumCulled = false;
     renderer.setRenderTarget(LOOSE.target);
     for (const geometry of geometries) {
+      // A geometry whose arrays were let go once on the GPU (`gpuOnly`) is already there: drawn again, three would read the null array to upload it (`createBuffer`), and the warm has nothing to send it.
+      if (released(geometry)) continue;
       mesh.geometry = geometry;
       renderer.render(LOOSE.scene, LOOSE.camera);
     }
