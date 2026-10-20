@@ -87,13 +87,13 @@ interface Junction {
   stage: string;
 }
 
-/** A cell's meshes: the frame (post, arm and housing as one geometry, one instance a head), the visors, every lens lit or not, the lit lenses' halos. */
+/** The kinds of a head's parts, each a batch: the frame (post, arm and housing as one geometry, one instance a head), the visors, every lens lit or not, the lit lenses' halos. */
 type BatchName = 'frame' | 'visors' | 'lenses' | 'halos';
 
 interface Cell {
+  readonly key: number;
   readonly junctions: Junction[];
   readonly heads: Head[];
-  readonly batches: Record<BatchName, InstancedMesh>;
   readonly sphere: Sphere;
   /** Its lenses lit now. */
   lit: number;
@@ -220,6 +220,8 @@ export function createSignalHeads(
     amber: new Color(0xffb219),
     green: new Color(0x3bf06a),
   };
+  /** A lit lens's glow: none, its colour at full brightness and untone-mapped (`aLensGlow` a = 1). */
+  const GLOW_ON = new Color(0, 0, 0);
   const lenses = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0 });
   lenses.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
@@ -262,9 +264,6 @@ export function createSignalHeads(
   const NAMES = Object.keys(KINDS) as BatchName[];
   const FIXED: readonly BatchName[] = ['frame', 'visors'];
   const LENSES: readonly BatchName[] = ['lenses', 'halos'];
-  /** A cell's batches, sized for its heads, culled by its sphere. */
-  /** Each casting batch taken off the casters chosen by cascade when its cell goes (`castBySize`). */
-  const uncast = new Map<InstancedMesh, () => void>();
   /** A geometry holding `shape`'s attributes and index themselves (three uploads an attribute once, whatever holds it). */
   const sharing = (shape: BufferGeometry): BufferGeometry => {
     const geometry = new BufferGeometry();
@@ -272,42 +271,168 @@ export function createSignalHeads(
     for (const [key, attribute] of Object.entries(shape.attributes)) geometry.setAttribute(key, attribute);
     return geometry;
   };
-  const batchesFor =(heads: number, sphere: Sphere): Record<BatchName, InstancedMesh> => {
-    const out = {} as Record<BatchName, InstancedMesh>;
-    for (const name of NAMES) {
-      const [shape, material, perHead, shadows, coloured] = KINDS[name];
-      const capacity = Math.max(1, heads * perHead);
-      // The lenses' glows are their instances': a geometry of the cell's own over the shape's own arrays (never copied, one buffer on the GPU).
-      const geometry = name === 'lenses' ? sharing(shape) : shape;
-      if (name === 'lenses') {
-        const glows = new InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-        glows.setUsage(DynamicDrawUsage);
-        geometry.setAttribute('aLensGlow', glows);
+  /** Each casting batch taken off the casters chosen by cascade when it goes (`castBySize`). */
+  const uncast = new Map<InstancedMesh, () => void>();
+
+  /** One kind's instances over every cell: a master array, one InstancedMesh, a run a cell (`buildCell`).
+   *  DO NOT draw a mesh a cell: a city's thirty cells were a hundred and twenty draws (the lab's frame, 2026-10-20). */
+  class SignalBatch {
+    private mesh: InstancedMesh | null = null;
+    private geometry: BufferGeometry;
+    private data = new Float32Array(0);
+    private colours: Float32Array | null = null;
+    private glows: Float32Array | null = null;
+    private capacity = 0;
+    private count = 0;
+    private readonly runs = new Map<number, { start: number; count: number; sphere: Sphere }>();
+    private readonly sphere = new Sphere(new Vector3(), 0);
+    private dirty = false;
+
+    constructor(private readonly name: BatchName) {
+      const [shape] = KINDS[name];
+      this.geometry = name === 'lenses' ? sharing(shape) : shape;
+      this.reserve(16);
+    }
+
+    /** A cell's instances appended: its run, and the sphere they stand in. */
+    add(key: number, matrices: Float32Array, colours: Float32Array | null, glows: Float32Array | null, sphere: Sphere): void {
+      this.remove(key);
+      const n = matrices.length / 16;
+      if (!n) return;
+      this.reserve(this.count + n);
+      this.data.set(matrices, this.count * 16);
+      if (this.colours && colours) this.colours.set(colours, this.count * 3);
+      if (this.glows && glows) this.glows.set(glows, this.count * 4);
+      this.runs.set(key, { start: this.count, count: n, sphere });
+      this.count += n;
+      this.dirty = true;
+    }
+
+    /** A cell's instances let go: the runs after its own move down. */
+    remove(key: number): void {
+      const gone = this.runs.get(key);
+      if (!gone) return;
+      this.data.copyWithin(gone.start * 16, (gone.start + gone.count) * 16, this.count * 16);
+      if (this.colours) this.colours.copyWithin(gone.start * 3, (gone.start + gone.count) * 3, this.count * 3);
+      if (this.glows) this.glows.copyWithin(gone.start * 4, (gone.start + gone.count) * 4, this.count * 4);
+      this.runs.delete(key);
+      for (const run of this.runs.values()) if (run.start > gone.start) run.start -= gone.count;
+      this.count -= gone.count;
+      this.dirty = true;
+    }
+
+    private reserve(needed: number): void {
+      if (needed <= this.capacity) return;
+      const capacity = Math.max(needed, this.capacity * 2, 16);
+      const data = new Float32Array(capacity * 16);
+      data.set(this.data.subarray(0, this.count * 16));
+      this.data = data;
+      const [, , , , coloured] = KINDS[this.name];
+      if (coloured) {
+        const colours = new Float32Array(capacity * 3).fill(1);
+        if (this.colours) colours.set(this.colours.subarray(0, this.count * 3));
+        this.colours = colours;
       }
-      const mesh = new InstancedMesh(geometry, material, capacity);
-      mesh.name = `signal-${name}`;
+      if (this.name === 'lenses') {
+        const glows = new Float32Array(capacity * 4);
+        if (this.glows) glows.set(this.glows.subarray(0, this.count * 4));
+        this.glows = glows;
+        // The glows are the instances': a geometry of the batch's own over the shape's arrays (never copied, one buffer on the GPU).
+        const previous = this.geometry;
+        this.geometry = sharing(KINDS.lenses[0]);
+        const attribute = new InstancedBufferAttribute(glows, 4);
+        attribute.setUsage(DynamicDrawUsage);
+        this.geometry.setAttribute('aLensGlow', attribute);
+        if (previous !== KINDS.lenses[0]) {
+          previous.setIndex(null);
+          for (const key of Object.keys(KINDS.lenses[0].attributes)) previous.deleteAttribute(key);
+          previous.dispose();
+        }
+      }
+      this.capacity = capacity;
+      this.makeMesh();
+    }
+
+    private makeMesh(): void {
+      const [, material, , shadows] = KINDS[this.name];
+      if (this.mesh) {
+        uncast.get(this.mesh)?.();
+        uncast.delete(this.mesh);
+        group.remove(this.mesh);
+        this.mesh.dispose();
+      }
+      const mesh = new InstancedMesh(this.geometry, material, 0);
+      mesh.name = `signal-${this.name}`;
       mesh.count = 0;
       mesh.castShadow = shadows.cast;
       mesh.receiveShadow = shadows.receive;
-      if (name === 'frame') mesh.customDepthMaterial = frameDepth;
-      if (shadows.cast) {
-        // Cast into a cascade only with heads, and where the part reaches a texel (a visor's hood is a few centimetres): `shadowCasters.ts`.
-        if (!geometry.boundingSphere) geometry.computeBoundingSphere();
-        const reach = name === 'frame' ? frameReach : geometry.boundingSphere?.radius ?? 0;
-        uncast.set(mesh, castBySize({ mesh, casts: true, radius: () => reach }));
-      }
-      // Culled as a cell, by the sphere round its heads (three's own test, `frustumCulled` left on).
-      mesh.boundingSphere = sphere;
+      if (this.name === 'frame') mesh.customDepthMaterial = frameDepth;
+      mesh.instanceMatrix = new InstancedBufferAttribute(this.data, 16);
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-      if (coloured) {
-        mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+      if (this.colours) {
+        mesh.instanceColor = new InstancedBufferAttribute(this.colours, 3);
         mesh.instanceColor.setUsage(DynamicDrawUsage);
       }
+      if (shadows.cast) {
+        // Cast into a cascade only with heads, and where the part reaches a texel (a visor's hood is a few centimetres): `shadowCasters.ts`.
+        if (!this.geometry.boundingSphere) this.geometry.computeBoundingSphere();
+        const reach = this.name === 'frame' ? frameReach : this.geometry.boundingSphere?.radius ?? 0;
+        uncast.set(mesh, castBySize({ mesh, casts: true, radius: () => reach }));
+      }
+      mesh.boundingSphere = this.sphere;
       group.add(mesh);
-      out[name] = mesh;
+      this.mesh = mesh;
+      this.dirty = true;
     }
-    return out;
-  };
+
+    /** The drawn count and the masters sent; bounds round every cell's heads. */
+    flush(): void {
+      const mesh = this.mesh;
+      if (!mesh) return;
+      mesh.count = this.count;
+      mesh.visible = this.count > 0;
+      if (!this.dirty) return;
+      mesh.instanceMatrix.clearUpdateRanges();
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) {
+        mesh.instanceColor.clearUpdateRanges();
+        mesh.instanceColor.needsUpdate = true;
+      }
+      const glows = this.geometry.getAttribute('aLensGlow') as InstancedBufferAttribute | undefined;
+      if (glows) {
+        glows.clearUpdateRanges();
+        glows.needsUpdate = true;
+      }
+      if (this.count > 0) {
+        let cx = 0, cy = 0, cz = 0, n = 0;
+        for (const run of this.runs.values()) { const c = run.sphere.center; cx += c.x; cy += c.y; cz += c.z; n++; }
+        cx /= n; cy /= n; cz /= n;
+        this.sphere.center.set(cx, cy, cz);
+        let r = 0;
+        for (const run of this.runs.values()) r = Math.max(r, run.sphere.center.distanceTo(this.sphere.center) + run.sphere.radius);
+        this.sphere.radius = r;
+      }
+      this.dirty = false;
+    }
+
+    dispose(): void {
+      if (!this.mesh) return;
+      uncast.get(this.mesh)?.();
+      uncast.delete(this.mesh);
+      group.remove(this.mesh);
+      this.mesh.dispose();
+      this.mesh = null;
+      const shape = KINDS[this.name][0];
+      if (this.geometry !== shape) {
+        // The lenses' own geometry over the shape's arrays: those let go first, or its dispose would free them on the GPU
+        // for every other use too (three r186 `WebGLGeometries` onGeometryDispose removes each attribute the geometry holds).
+        this.geometry.setIndex(null);
+        for (const key of Object.keys(shape.attributes)) this.geometry.deleteAttribute(key);
+        this.geometry.dispose();
+      }
+    }
+  }
+  const batches = Object.fromEntries(NAMES.map((name) => [name, new SignalBatch(name)])) as Record<BatchName, SignalBatch>;
 
   const root = new Matrix4();
   const place = new Matrix4();
@@ -316,30 +441,10 @@ export function createSignalHeads(
   const foot = new Vector3();
   const one = new Vector3(1, 1, 1);
   const HEAD = new Matrix4();
-  const put = (mesh: InstancedMesh, local: Matrix4, colour?: Color): void => {
+  /** A part's matrix in its head, written into `out` at `at`: the head's place and the part's own. */
+  const put = (out: Float32Array, at: number, local: Matrix4): void => {
     place.multiplyMatrices(root, local);
-    mesh.setMatrixAt(mesh.count, place);
-    if (colour) mesh.setColorAt(mesh.count, colour);
-    mesh.count++;
-  };
-  /** What was written of a mesh to the GPU: its first `count` instances. */
-  const flush = (mesh: InstancedMesh): void => {
-    mesh.visible = mesh.count > 0;
-    if (!mesh.count) return;
-    mesh.instanceMatrix.clearUpdateRanges();
-    mesh.instanceMatrix.addUpdateRange(0, mesh.count * 16);
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.clearUpdateRanges();
-      mesh.instanceColor.addUpdateRange(0, mesh.count * 3);
-      mesh.instanceColor.needsUpdate = true;
-    }
-    const glows = mesh.geometry.getAttribute('aLensGlow') as InstancedBufferAttribute | undefined;
-    if (glows) {
-      glows.clearUpdateRanges();
-      glows.addUpdateRange(0, mesh.count * 4);
-      glows.needsUpdate = true;
-    }
+    place.toArray(out, at);
   };
   const rootOf = (head: Head): void => {
     root.compose(foot.set(head.x, head.height, -head.y), turn.setFromAxisAngle(up, head.yaw), one);
@@ -357,21 +462,8 @@ export function createSignalHeads(
   const landRead = new JournalCursor(['terrain', 'elevation']);
 
   const dropCell = (cell: Cell): void => {
-    for (const name of NAMES) {
-      const mesh = cell.batches[name];
-      uncast.get(mesh)?.();
-      uncast.delete(mesh);
-      group.remove(mesh);
-      mesh.dispose();
-      // The lenses' geometry is the cell's own (its glows): the shape's arrays let go of first, or its dispose would free them on the GPU
-      // for every other cell too (three r186 `WebGLGeometries` onGeometryDispose removes each attribute the geometry holds).
-      const shape = KINDS[name][0];
-      if (mesh.geometry !== shape) {
-        mesh.geometry.setIndex(null);
-        for (const key of Object.keys(shape.attributes)) mesh.geometry.deleteAttribute(key);
-        mesh.geometry.dispose();
-      }
-    }
+    for (const name of NAMES) batches[name].remove(cell.key);
+    for (const name of NAMES) batches[name].flush();
   };
   const dropCells = (): void => {
     for (const cell of cells.values()) dropCell(cell);
@@ -379,31 +471,41 @@ export function createSignalHeads(
     junctionCell.clear();
   };
 
-  /** A cell's lenses written again from its heads' states: that cell's alone. */
+  /** A cell's lenses written again from its heads' states: that cell's run alone. */
   const writeLenses = (cell: Cell): void => {
-    const b = cell.batches;
-    for (const name of LENSES) b[name].count = 0;
-    const glows = b.lenses.geometry.getAttribute('aLensGlow') as InstancedBufferAttribute;
+    const heads = cell.heads;
+    const per = LAMPS.length * FACES.length;
+    const matrices = new Float32Array(heads.length * per * 16);
+    const colours = new Float32Array(heads.length * per * 3);
+    const glows = new Float32Array(heads.length * per * 4);
+    const haloMatrices: number[] = [];
+    const haloColours: number[] = [];
     cell.lit = 0;
-    for (const head of cell.heads) {
+    let at = 0;
+    for (const head of heads) {
       rootOf(head);
       for (const name of LAMPS) {
         const on = head.state === name;
         for (let face = 0; face < FACES.length; face++) {
+          const glow = on ? GLOW_ON : DARK[name].glow;
+          const colour = on ? LIT[name] : DARK[name].color;
+          glows[at * 4] = glow.r; glows[at * 4 + 1] = glow.g; glows[at * 4 + 2] = glow.b; glows[at * 4 + 3] = on ? 1 : 0;
+          colours[at * 3] = colour.r; colours[at * 3 + 1] = colour.g; colours[at * 3 + 2] = colour.b;
+          put(matrices, at * 16, lens[name][face] as Matrix4);
           if (on) {
-            glows.setXYZW(b.lenses.count, 0, 0, 0, 1);
-            put(b.lenses, lens[name][face] as Matrix4, LIT[name]);
-            put(b.halos, halos[name][face] as Matrix4, HALO[name]);
             cell.lit++;
-          } else {
-            const dark = DARK[name];
-            glows.setXYZW(b.lenses.count, dark.glow.r, dark.glow.g, dark.glow.b, 0);
-            put(b.lenses, lens[name][face] as Matrix4, dark.color);
+            place.multiplyMatrices(root, halos[name][face] as Matrix4);
+            const e = place.elements;
+            for (let k = 0; k < 16; k++) haloMatrices.push(e[k]!);
+            haloColours.push(HALO[name].r, HALO[name].g, HALO[name].b);
           }
+          at++;
         }
       }
     }
-    for (const name of LENSES) flush(b[name]);
+    batches.lenses.add(cell.key, matrices, colours, glows, cell.sphere);
+    batches.halos.add(cell.key, Float32Array.from(haloMatrices), Float32Array.from(haloColours), null, cell.sphere);
+    for (const name of LENSES) batches[name].flush();
     cell.stale = false;
   };
 
@@ -448,14 +550,22 @@ export function createSignalHeads(
     let r = 0;
     for (const h of heads) r = Math.max(r, Math.hypot(h.x - cx, h.height - cy, -h.y - cz));
     const sphere = new Sphere(new Vector3(cx, cy, cz), r + HEAD_REACH);
-    const cell: Cell = { junctions, heads, batches: batchesFor(heads.length, sphere), sphere, lit: 0, stale: true };
+    const cell: Cell = { key, junctions, heads, sphere, lit: 0, stale: true };
+    const frames = new Float32Array(heads.length * 16);
+    const shields = new Float32Array(heads.length * visors.length * 16);
+    let f = 0, v = 0;
     for (const head of heads) {
       rootOf(head);
-      put(cell.batches.frame, HEAD);
-      for (const visor of visors) put(cell.batches.visors, visor);
+      put(frames, f, HEAD);
+      f += 16;
+      for (const visor of visors) { put(shields, v, visor); v += 16; }
     }
-    for (const name of FIXED) flush(cell.batches[name]);
-    for (const name of LENSES) cell.batches[name].visible = false;
+    batches.frame.add(key, frames, null, null, sphere);
+    batches.visors.add(key, shields, null, null, sphere);
+    for (const name of FIXED) batches[name].flush();
+    batches.lenses.remove(key);
+    batches.halos.remove(key);
+    for (const name of LENSES) batches[name].flush();
     cells.set(key, cell);
   };
   const countLamps = (): void => {
@@ -559,6 +669,7 @@ export function createSignalHeads(
     dispose() {
       scene.remove(group);
       dropCells();
+      for (const name of NAMES) batches[name].dispose();
       group.clear();
       shown.clear();
       for (const geometry of [

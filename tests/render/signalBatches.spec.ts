@@ -34,7 +34,48 @@ function feedOf(node: NodeId, segments: readonly SegmentId[], states: SignalStat
   };
 }
 
-describe('signal heads batched by cell', () => {
+describe('signal heads batched over the map', () => {
+  it('draws two junctions a kilometre apart with the same four batches: frame, visors, every lens, halos', () => {
+    const doc = new RoadDoc();
+    const layouts = new Map<NodeId, SignalLayout>();
+    const all: SegmentId[] = [];
+    for (const y of [0, 1000]) {
+      const a = doc.addNode({ x: -250, y }, 1), b = doc.addNode({ x: 250, y }, 3);
+      all.push(doc.addSegment(a.id, b.id, 1, null, 17, 'both', 2, 'ground',
+        { laneWidth: 9, sidewalk: 7, median: 0, speedKmh: 30, priority: 1 })!.id);
+    }
+    let net = new Network(doc);
+    net.rebuild();
+    for (const id of all) {
+      const result = commitPedestrianCrossing(doc, net, id, 'signal');
+      if (!result.committed) throw new Error('crossing refused');
+      layouts.set(result.node, { groups: result.segments.map((s, g) => ({ id: g, segments: [s] })) } as unknown as SignalLayout);
+      net = new Network(doc);
+      net.rebuild();
+    }
+    net = new Network(doc);
+    net.rebuild();
+    const feed: SignalFeed = {
+      changesSince: () => ({ serial: 1, nodes: null }),
+      layout: (n) => layouts.get(n),
+      state: (_n, group) => (group === 0 ? 'green' : 'red'),
+      stage: (n) => `${n}`,
+      nodes: () => [...layouts.keys()],
+    };
+    const heads = createSignalHeads(new Scene());
+    heads.sync(feed, net, true);
+    const meshes = heads.group.children.filter((c): c is InstancedMesh => c instanceof InstancedMesh);
+    expect(meshes.map((m) => m.name).sort()).toEqual(['signal-frame', 'signal-halos', 'signal-lenses', 'signal-visors']);
+    const by = Object.fromEntries(meshes.map((m) => [m.name, m]));
+    const n = layouts.size * 2;
+    expect(by['signal-frame']!.count).toBe(n);
+    expect(by['signal-visors']!.count).toBe(n * 6);
+    expect(by['signal-lenses']!.count).toBe(n * 6);
+    expect(by['signal-halos']!.count).toBe(n * 2);
+    expect(heads.group.userData.litLamps).toBe(n * 2);
+    heads.dispose();
+  });
+
   it('draws a cell with four meshes: frame, visors, every lens, halos', () => {
     const { net, node, segments } = crossing();
     const heads = createSignalHeads(new Scene());
