@@ -1,13 +1,14 @@
 import type { Mesh } from 'three';
 import { cancelWarm, reserveWarm, warmFull, warmLooseAhead } from '../uploads';
 import { type BuildingMeshes, meshesOf } from './buildingMesh';
-import { type CellMass, cellBytes } from './cellArrays';
+import { type CellMass, cellBytes, SHELL_MESH } from './cellArrays';
 import type { CellEnv, CellPool } from './cellPool';
 import type { CellEntry, CellResult, ChunkSummary } from './cellWork';
 import { sameEntries } from './chunk';
 import type { BuildingKit } from './kit';
 import { PartCell } from './partCells';
 import { filingBytes } from './partFiling';
+import { SHELL_PARTS } from './shellParts';
 
 /** THE BUILDINGS' CELLS ASKED OF THE WORKERS AND LANDED (`layer.ts`) */
 
@@ -179,7 +180,10 @@ export class CellRequests {
     if (result.parts) bytes += filingBytes(result.parts);
     if (upload && !this.admit(kind, cell, bytes)) return null;
     const batch = result.batch ? meshesOf(result.batch, this.kit, false, false) : null;
-    const parts = result.parts ? new PartCell(cell, result.parts, this.kit) : null;
+    // A facade cell's detailed parts are batched by kind for the whole town (`farParts.ts`); its shell's parts stay here.
+    const parts = result.parts
+      ? new PartCell(cell, kind === 'facade' ? { bands: result.parts.bands.filter((band) => SHELL_PARTS.has(band.kind)) } : result.parts, this.kit, result.parts)
+      : null;
     const landing: Landing = { entries, batch, parts, bytes, uploads: 0 };
     if (!upload) return landing;
     const sent = warmLooseAhead(meshesIn(landing), () => this.rank(kind, cell));
@@ -188,10 +192,11 @@ export class CellRequests {
   }
 }
 
-/** Every mesh of a landed cell. */
+/** Every mesh of a landed cell, but its shells: those go into the multi-draw batch when the cell is shown, and their arrays are still
+ *  read there (a warmed mesh has them let go once uploaded, `gpuOnly.ts`). */
 function meshesIn(l: LandedCell): Mesh[] {
   const meshes: Mesh[] = [];
-  l.batch?.group.traverse((o) => { if ((o as Mesh).isMesh) meshes.push(o as Mesh); });
+  l.batch?.group.traverse((o) => { const mesh = o as Mesh; if (mesh.isMesh && mesh.name !== SHELL_MESH) meshes.push(mesh); });
   if (l.parts) meshes.push(...l.parts.warmMeshes());
   return meshes;
 }

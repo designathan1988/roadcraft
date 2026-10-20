@@ -204,8 +204,11 @@
     }
   },
   "src/render/buildings/layer.ts": {
+    "max-lines": {
+      "count": 1
+    },
     "roadcraft/no-global-revision": {
-      "count": 3
+      "count": 4
     }
   },
   "src/render/buildings/parts.ts": {

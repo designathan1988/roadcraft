@@ -81,8 +81,12 @@ export class PartCell {
   private readonly runLevel = new Uint8Array(LEAVES);
   private readonly runCount = new Uint32Array(LEAVES);
 
-  /** `filing`: the cell's parts by band and sub-cell, as its job filed them (`partFiling.ts`): DO NOT read an instance here, the page only wraps the buffers handed over. */
-  constructor(key: string, filing: PartFiling, private readonly kit: BuildingKit) {
+  /** The cell's whole filing, as its job filed it: the far parts' batch draws the kinds this cell's bands leave out (`farParts.ts`). */
+  readonly filing: PartFiling;
+
+  /** `filing`: the cell's parts by band and sub-cell, as its job filed them (`partFiling.ts`): DO NOT read an instance here, the page only wraps the buffers handed over. `full`: the whole filing when `filing` leaves the far batch's kinds out (a facade cell's shell parts alone). */
+  constructor(key: string, filing: PartFiling, private readonly kit: BuildingKit, full: PartFiling = filing) {
+    this.filing = full;
     this.group.name = 'building-parts';
     this.group.matrixAutoUpdate = false;
     this.group.updateMatrix();

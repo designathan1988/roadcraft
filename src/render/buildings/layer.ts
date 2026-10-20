@@ -11,6 +11,8 @@ import { type BuildingMeshes, type LotGround, buildBuildingMeshes, emitChunk, fl
 import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, cellGroup, createCoverIndex, dropCell, groundDigest, recordRef } from './layerCells';
 import type { ChangeRect } from '@world/changes';
 import { type PartCell, type PartView, dropParts } from './partCells';
+import { FarPartBatch } from './farParts';
+import { ShellBatch } from './shellBatch';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
 import { fadeMeshes } from './fade';
@@ -41,6 +43,11 @@ const detailClass = (kind: BatchKind): GpuClass => (kind === 'cell' ? 'building 
 
 /** Whether a diary entry is the player's edit (`main.ts` mutateBuilt's `tool …`, undo, redo), not the growth (`zone growth`) nor a tile coming in. */
 export const playerCause = (cause: string): boolean => cause.startsWith('tool ') || cause === 'desfazer' || cause === 'refazer';
+
+/** The most the cells' detail may hold on the GPU as the game sets it (MB): a large city keeps its far levels and masses for the
+ *  whole map, but the detail of the places the camera walked through is bounded (`keepToBudget`), and the road walked does not
+ *  grow the memory for ever. The player's panel sets another value; -1 is this one. */
+export const GAME_DETAIL_MEMORY_MB = 768;
 
 export function createBuildingLayer(): BuildingLayer {
   const kit: BuildingKit = createBuildingKit();
@@ -98,7 +105,7 @@ export function createBuildingLayer(): BuildingLayer {
   const farTiles = new FarLevels(kit, farRunner(farEnv));
   group.add(farTiles.group);
   /** DO NOT keep every cell's detail the eye ever came near (`reach = Infinity` in perspective kept it all): it holds what the GPU ledger's cap leaves once every other owner is counted (`room`), and draws no more than that (`MassCells.cap`). */
-  let budget = Infinity;
+  let budget = GAME_DETAIL_MEMORY_MB * 1048576;
   const room = (): number => Math.min(budget, gpuLedger.roomFor(DETAIL_CLASSES));
   /** The bytes the cells' levels hold on the GPU, and what each level measured when it last landed (`layerCells.ts`). */
   const resident = new ResidentBytes();
@@ -131,6 +138,12 @@ export function createBuildingLayer(): BuildingLayer {
   partRoot.name = 'building-part-cells';
   partRoot.matrixAutoUpdate = false;
   partRoot.updateMatrix();
+  // The facade level's detail parts, one draw a kind for the whole town (`farParts.ts`).
+  const farParts = new FarPartBatch(kit);
+  partRoot.add(farParts.group);
+  // The cells' walls, one multi-draw a material (`shellBatch.ts`).
+  const shellBatch = new ShellBatch(kit);
+  facadeStored.group.add(shellBatch.facadeGroup);
   group.add(partRoot);
   let dimmed: BuildingId | null | undefined = undefined;
   /** "Ocultar outros" as the cells were last set (`fadeMeshes`), and the building left solid, drawn on its own */
@@ -181,6 +194,8 @@ export function createBuildingLayer(): BuildingLayer {
     const level = levelShown(key);
     cells.get(key)?.part.setVisible(level === 'cell');
     facades.get(key)?.part.setVisible(level === 'facade');
+    shellBatch.setVisible('cell', key, level === 'cell');
+    shellBatch.setVisible('facade', key, level === 'facade');
     const p0 = partCells.get(key), p1 = facadeParts.get(key);
     if (p0 && level !== 'cell') p0.group.visible = false;
     if (p1 && level !== 'facade') p1.group.visible = false;
@@ -221,7 +236,7 @@ export function createBuildingLayer(): BuildingLayer {
     for (const key of massCells.nearKeys()) {
       const level = levelShown(key);
       if (level === 'cell') n += cells.get(key)!.part.triangles + (partCells.get(key)?.triangles ?? 0);
-      else if (level === 'facade') n += facades.get(key)!.part.triangles + (facadeParts.get(key)?.triangles ?? 0);
+      else if (level === 'facade') n += facades.get(key)!.part.triangles + (facadeParts.get(key)?.triangles ?? 0) + farParts.trianglesOf(key);
       else if (townCells.has(key)) n += landedTriangles.of(massCells.fine(key) ? 'cell' : 'facade', key);
     }
     return n;
@@ -280,6 +295,7 @@ export function createBuildingLayer(): BuildingLayer {
       const far = [...cache.keys()].filter((key) => levelShown(key) !== kind && !pendingCells.has(key)).sort((a, b) => rankOf(b) - rankOf(a));
       for (const key of far) {
         if (resident.total <= budget) return;
+        shellBatch.remove(kind, key);
         if (kind === 'cell') { dropCell(cells, key, stored); dropParts(partCells, key, partRoot); }
         else { dropCell(facades, key, facadeStored); dropParts(facadeParts, key, partRoot); }
       }
@@ -496,6 +512,8 @@ export function createBuildingLayer(): BuildingLayer {
     : { cells: facades, parts: facadeParts, stored: facadeStored, partRoot };
   /** A cell's level landed shown; its parts drawn from the next `cullDetails`, at the levels the eye allows. */
   const show = (kind: BatchKind, key: string, landed: Parameters<typeof patchCell>[1]): void => {
+    // The cell's walls go into the multi-draw batch of their material before its group is put in the scene.
+    if (landed?.batch) shellBatch.add(kind, key, landed.batch);
     patchCell(key, landed, shownAt(kind));
     const part = (kind === 'cell' ? cells : facades).get(key)?.part;
     if (!part) return;
@@ -528,6 +546,7 @@ export function createBuildingLayer(): BuildingLayer {
     for (const cell of order) {
       if (!cellNear(cell)) {
         for (const kind of ['cell', 'facade'] as const) {
+          shellBatch.remove(kind, cell);
           patchCell(cell, null, shownAt(kind));
           requests.drop(kind, cell);
         }
@@ -543,7 +562,7 @@ export function createBuildingLayer(): BuildingLayer {
         if (list.length === 0) {
           for (const kind of ['cell', 'facade'] as const) {
             requests.drop(kind, cell);
-            if ((kind === 'cell' ? cells : facades).has(cell)) { patchCell(cell, null, shownAt(kind)); changed = true; }
+            if ((kind === 'cell' ? cells : facades).has(cell)) { shellBatch.remove(kind, cell); patchCell(cell, null, shownAt(kind)); changed = true; }
           }
         } else {
           const entries = entriesFor(cell, list, groundAt, groundKey, pavedAt);
@@ -555,6 +574,7 @@ export function createBuildingLayer(): BuildingLayer {
           const otherKind: BatchKind = kind === 'cell' ? 'facade' : 'cell';
           const other = (otherKind === 'cell' ? cells : facades).get(cell);
           if (known && sameEntries(known.entries, entries) && other && !sameEntries(other.entries, entries)) {
+            shellBatch.remove(otherKind, cell);
             patchCell(cell, null, shownAt(otherKind));
             changed = true;
           }
@@ -732,16 +752,19 @@ export function createBuildingLayer(): BuildingLayer {
           // Only the cells drawn near have their detail; the rest stand as their masses
           for (const cell of [...cells.keys()]) {
             if (townCells.has(cell) && cellNear(cell)) continue;
+            shellBatch.remove('cell', cell);
             dropCell(cells, cell, null);
             dropParts(partCells, cell, partRoot);
           }
           for (const cell of [...facades.keys()]) {
             if (townCells.has(cell) && cellNear(cell)) continue;
+            shellBatch.remove('facade', cell);
             dropCell(facades, cell, facadeStored);
             dropParts(facadeParts, cell, partRoot);
           }
           stored = cellGroup(cells);
           group.add(stored.group);
+          stored.group.add(shellBatch.detailGroup);
           // DO NOT only clear the set: the requests stayed asked, held `STREAM_AHEAD`, and what landed was never taken.
           const wanted = new Set([...townCells.keys()].filter(cellNear));
           for (const cell of pendingCells) if (!wanted.has(cell)) { requests.drop('cell', cell); requests.drop('facade', cell); }
@@ -763,6 +786,8 @@ export function createBuildingLayer(): BuildingLayer {
         if ((dimmed !== undefined) !== (storedDimmed !== undefined)) {
           for (const cache of [cells, facades]) for (const cell of cache.values()) fadeMeshes(cell.part.group, kit, dimmed !== undefined);
           for (const map of [partCells, facadeParts]) for (const cell of map.values()) cell.setFaded(dimmed !== undefined);
+          farParts.setFaded(dimmed !== undefined);
+          shellBatch.setFaded(dimmed !== undefined);
         }
         [storedGround, storedHides, storedRuined, storedDimmed] = [groundKey, hides, ruined, dimmed];
         storedCut = cutKey;
@@ -957,6 +982,8 @@ export function createBuildingLayer(): BuildingLayer {
     },
     cullDetails(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx, shadowTexel) {
       partView.x = eyeX; partView.y = eyeY; partView.z = eyeZ; partView.pxAtMetre = pxAtMetre; partView.orthoPx = orthoPx; partView.shadowTexel = shadowTexel;
+      // The facade cells the view draws in the batched kinds, and no others (`farParts.ts`): one draw a kind, its instances added and taken out here.
+      farParts.sync(facadeParts, (key) => levelShown(key) === 'facade');
       // Drawn while its cell is drawn in detail (the masses stand for it from afar, `massCells.ts`), each kind by its error on the screen.
       for (const [kind, map] of [['cell', partCells], ['facade', facadeParts]] as const) {
         for (const [key, cell] of map) {
@@ -965,13 +992,15 @@ export function createBuildingLayer(): BuildingLayer {
           cell.choose(partView);
           // What the level draws, measured with its parts chosen (DO NOT measure it as it lands: its parts are chosen at this cull, they counted 0 and the facade level's mean fell 7 times under what it draws).
           const level = (kind === 'cell' ? cells : facades).get(key)?.part;
-          if (level) landedTriangles.set(kind, key, level.triangles + cell.triangles);
+          if (level) landedTriangles.set(kind, key, level.triangles + cell.triangles + (kind === 'facade' ? farParts.trianglesOf(key) : 0));
         }
       }
     },
     castInto(texel, coarse = false) {
       // DO NOT draw hundreds of detail meshes into a far cascade: a cell's masses are its silhouette at those texels, one mesh. Only the cells whose masses stand in: the detail of any other (none landed yet, a town drawn whole) still casts, never a hole.
       if (texel === null || !coarse) {
+        farParts.castShadow(true);
+        shellBatch.castShadow(true);
         if (shadowCoarse) {
           shadowCoarse = false;
           for (const [group, was] of shadowHidden) group.visible = was;
@@ -984,6 +1013,8 @@ export function createBuildingLayer(): BuildingLayer {
       }
       if (shadowCoarse) return;
       shadowCoarse = true;
+      farParts.castShadow(false);
+      shellBatch.castShadow(false);
       for (const key of massCells.shadowMasses(true)) {
         for (const group of [cells.get(key)?.part.group, facades.get(key)?.part.group, partCells.get(key)?.group, facadeParts.get(key)?.group]) {
           if (!group || shadowHidden.has(group)) continue;
@@ -1032,6 +1063,10 @@ export function createBuildingLayer(): BuildingLayer {
         map.clear();
       }
       partRoot.clear();
+      farParts.clear();
+      partRoot.add(farParts.group);
+      shellBatch.reset();
+      facadeStored.group.add(shellBatch.facadeGroup);
       // The masses too, the tiles' and plates' with them: asked again whole by the next update.
       levels.clear();
       massEntries.clear();
@@ -1064,6 +1099,8 @@ export function createBuildingLayer(): BuildingLayer {
       }
       groundDigests.clear();
       ghost?.dispose();
+      farParts.dispose();
+      shellBatch.dispose();
       kit.dispose();
       group.clear();
     },

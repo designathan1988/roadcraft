@@ -153,7 +153,7 @@ const STREET_ZOOM = perM(8);
 const DISTRICT_ZOOM = perM(0.8);
 const viewOf = (zoom: number): CityView => (zoom >= STREET_ZOOM ? 'street' : zoom >= DISTRICT_ZOOM ? 'district' : 'map');
 
-import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer } from './buildings/layer';
+import { type BuildingPreviewInput, type CutawaySpec, createBuildingLayer, GAME_DETAIL_MEMORY_MB } from './buildings/layer';
 import { buildBuildingMeshes } from './buildings/buildingMesh';
 import { refillArrays } from './mesh/gpuOnly';
 import { wantAllTexels } from './surfaceTextures';
@@ -3482,7 +3482,7 @@ export function createSceneRenderer(
       const before = effectSwitches;
       effectSwitches = Object.values(next).every(Boolean) ? ALL_EFFECTS_ON : next;
       if (nextBuildings.detailMemoryMB !== buildingChoices.detailMemoryMB) {
-        buildings.setDetailBudget(nextBuildings.detailMemoryMB < 0 ? Infinity : nextBuildings.detailMemoryMB * 1048576);
+        buildings.setDetailBudget(nextBuildings.detailMemoryMB < 0 ? GAME_DETAIL_MEMORY_MB * 1048576 : nextBuildings.detailMemoryMB * 1048576);
       }
       const plain = (Object.keys(DEFAULT_BUILDING_CHOICES) as (keyof BuildingChoices)[]).every((key) => nextBuildings[key] === DEFAULT_BUILDING_CHOICES[key]);
       buildingChoices = plain ? DEFAULT_BUILDING_CHOICES : nextBuildings;

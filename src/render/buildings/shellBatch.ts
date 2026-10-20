@@ -1,0 +1,187 @@
+import { BatchedMesh, BufferAttribute, BufferGeometry, Group, type Material, Matrix4, type Mesh } from 'three';
+
+import { SHELL_MESH } from './cellArrays';
+import type { BuildingKit } from './kit';
+import type { BuildingMeshes } from './buildingMesh';
+
+/** THE CELLS' WALLS, ONE MULTI-DRAW A MATERIAL */
+// Every cell landed its shells as meshes of its own: a cell at its facade level drew a piece a group of buildings (`cellArrays.ts`
+// shellPieces), and the view counted dozens of draws of the same two materials (the player's lab, 2026-10-20: 52 draws of
+// `building-shell` at a small city). Three's BatchedMesh draws many geometries with one material in one multi-draw call (three.js
+// BatchedMesh: "reduce the number of draw calls"); its instances take identity matrices, the pieces' vertices already in the
+// world, and a piece is hidden as its cell is.
+
+/** The three attribute sets a cell's shells come in: the detail level's plain walls, the facade level's plain ones, and its runs
+ *  of bays with openings (their own window grid attributes). One batch each, one draw each. */
+type ShellSet = 'detail' | 'facade' | 'runs';
+
+const IDENTITY = new Matrix4();
+
+interface Batch {
+  readonly set: ShellSet;
+  mesh: BatchedMesh;
+  vertices: number;
+  indices: number;
+  instances: number;
+}
+
+export class ShellBatch {
+  /** The batches' meshes live under these, in the layer's roots (the effect switches hide a root whole). */
+  readonly detailGroup = new Group();
+  readonly facadeGroup = new Group();
+  private batches: Batch[];
+  private readonly cells = new Map<string, { batch: Batch; id: number; geometryId: number }[]>();
+  private readonly visible = new Map<string, boolean>();
+  private faded = false;
+  private casting = true;
+
+  constructor(private readonly kit: BuildingKit) {
+    this.detailGroup.name = 'building-shells-batched';
+    this.facadeGroup.name = 'building-facades-batched';
+    for (const group of [this.detailGroup, this.facadeGroup]) {
+      group.matrixAutoUpdate = false;
+      group.updateMatrix();
+    }
+    this.batches = this.makeBatches();
+  }
+
+  /** A cell's shells (every mesh of `SHELL_MESH` in its batch) taken into the batches; the meshes let go. */
+  add(kind: 'cell' | 'facade', key: string, batch: BuildingMeshes): void {
+    const id = `${kind}|${key}`;
+    const made: { batch: Batch; id: number; geometryId: number }[] = [];
+    for (const child of [...batch.group.children]) {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh || mesh.name !== SHELL_MESH) continue;
+      const source = mesh.geometry;
+      const runs = source.hasAttribute('facadeCell');
+      const set: ShellSet = kind === 'cell' ? 'detail' : runs ? 'runs' : 'facade';
+      const target = this.batches.find((one) => one.set === set)!;
+      const geometry = worldGeometry(mesh);
+      const vertices = geometry.getAttribute('position').count;
+      const indices = geometry.getIndex()?.count ?? vertices;
+      this.ensure(target, vertices, indices);
+      const geometryId = target.mesh.addGeometry(geometry);
+      const instanceId = target.mesh.addInstance(geometryId);
+      target.mesh.setMatrixAt(instanceId, IDENTITY);
+      target.mesh.setVisibleAt(instanceId, this.visible.get(id) ?? true);
+      made.push({ batch: target, id: instanceId, geometryId });
+      batch.group.remove(mesh);
+      source.dispose();
+      if (geometry !== source) geometry.dispose();
+    }
+    if (made.length) this.cells.set(id, made);
+  }
+
+  /** A cell's shells taken out: its geometries (and their instances) deleted from their batch. */
+  remove(kind: 'cell' | 'facade', key: string): void {
+    const id = `${kind}|${key}`;
+    const made = this.cells.get(id);
+    if (!made) return;
+    this.cells.delete(id);
+    this.visible.delete(id);
+    for (const entry of made) entry.batch.mesh.deleteGeometry(entry.geometryId);
+  }
+
+  /** A cell's level shown or hidden (a cell still on another level is not drawn, and its pieces cost nothing). */
+  setVisible(kind: 'cell' | 'facade', key: string, visible: boolean): void {
+    const id = `${kind}|${key}`;
+    if (this.visible.get(id) === visible) return;
+    this.visible.set(id, visible);
+    for (const entry of this.cells.get(id) ?? []) entry.batch.mesh.setVisibleAt(entry.id, visible);
+  }
+
+  /** The far cascades take the buildings by their masses alone: the walls cast nothing into them. */
+  castShadow(cast: boolean): void {
+    if (cast === this.casting) return;
+    this.casting = cast;
+    for (const batch of this.batches) batch.mesh.castShadow = cast;
+  }
+
+  setFaded(faded: boolean): void {
+    if (faded === this.faded) return;
+    this.faded = faded;
+    const material = faded ? this.kit.dimShell : this.kit.shellMaterial;
+    const facadeMaterial = faded ? this.kit.dimShell : this.kit.facade;
+    for (const batch of this.batches) batch.mesh.material = batch.set === 'detail' ? material : facadeMaterial;
+  }
+
+  /** Every instance let go (a lost context's cells asked again): the batches made again, their meshes put back in the groups. */
+  reset(): void {
+    for (const batch of this.batches) batch.mesh.dispose();
+    this.detailGroup.clear();
+    this.facadeGroup.clear();
+    this.cells.clear();
+    this.visible.clear();
+    this.batches = this.makeBatches();
+    this.casting = true;
+    if (this.faded) this.setFaded(true);
+  }
+
+  dispose(): void {
+    for (const batch of this.batches) batch.mesh.dispose();
+    this.detailGroup.clear();
+    this.facadeGroup.clear();
+    this.cells.clear();
+    this.visible.clear();
+  }
+
+  private makeBatches(): Batch[] {
+    const make = (set: ShellSet, group: Group, material: Material): Batch => {
+      const mesh = new BatchedMesh(256, 1 << 16, 1 << 17, material);
+      mesh.name = `building-shell-batch-${set}`;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
+      mesh.updateMatrix();
+      mesh.frustumCulled = false;
+      group.add(mesh);
+      return { set, mesh, vertices: 1 << 16, indices: 1 << 17, instances: 256 };
+    };
+    return [
+      make('detail', this.detailGroup, this.kit.shellMaterial),
+      make('facade', this.facadeGroup, this.kit.facade),
+      make('runs', this.facadeGroup, this.kit.facade),
+    ];
+  }
+
+  /** Room in a batch for a geometry and an instance: its vertex and index buffers grown by a doubling (the drawn pieces kept). */
+  private ensure(batch: Batch, vertices: number, indices: number): void {
+    const mesh = batch.mesh;
+    if (vertices > mesh.unusedVertexCount || indices > mesh.unusedIndexCount) {
+      const usedVertices = batch.vertices - mesh.unusedVertexCount;
+      const usedIndices = batch.indices - mesh.unusedIndexCount;
+      batch.vertices = Math.max(batch.vertices * 2, usedVertices + vertices);
+      batch.indices = Math.max(batch.indices * 2, usedIndices + indices);
+      mesh.setGeometrySize(batch.vertices, batch.indices);
+    }
+    if (mesh.instanceCount >= batch.instances) {
+      batch.instances *= 2;
+      mesh.setInstanceCount(batch.instances);
+    }
+  }
+}
+
+/** The mesh's shell as world vertices: the far level's positions come quantized on the cell's grid, the mesh's place putting them
+ *  in the world (`buildingMesh.ts` `place`). The batch takes identity matrices, so they are written out here. */
+function worldGeometry(mesh: Mesh): BufferGeometry {
+  const source = mesh.geometry;
+  const position = source.getAttribute('position') as BufferAttribute;
+  if (position.itemSize !== 4 || !position.normalized) return source;
+  const g = new BufferGeometry();
+  const count = position.count;
+  const out = new Float32Array(count * 3);
+  const sx = mesh.scale.x, sy = mesh.scale.y, sz = mesh.scale.z;
+  const ox = mesh.position.x, oy = mesh.position.y, oz = mesh.position.z;
+  // `getX` denormalises a normalized attribute already (r186 `BufferAttribute.getX`): its value is the 0..1 of the cell's grid.
+  for (let i = 0; i < count; i++) {
+    out[i * 3] = ox + position.getX(i) * sx;
+    out[i * 3 + 1] = oy + position.getY(i) * sy;
+    out[i * 3 + 2] = oz + position.getZ(i) * sz;
+  }
+  g.setAttribute('position', new BufferAttribute(out, 3));
+  for (const name of Object.keys(source.attributes)) if (name !== 'position') g.setAttribute(name, source.attributes[name]!);
+  g.setIndex(source.getIndex());
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
+}
