@@ -12,6 +12,7 @@ import { BATCH_CELL, type CellCache, ResidentBytes, watchedCells, STREAM_AHEAD, 
 import type { ChangeRect } from '@world/changes';
 import { type PartCell, type PartView, dropParts } from './partCells';
 import { FarPartBatch } from './farParts';
+import { DetailShellBatch } from './detailShells';
 import { ShellBatch } from './shellBatch';
 import { type FlagInstance, createFlagLayer } from './flagLayer';
 import { TownIndex, patchCell, signatureBodies } from './townIndex';
@@ -141,6 +142,9 @@ export function createBuildingLayer(): BuildingLayer {
   // The facade level's detail parts, one draw a kind for the whole town (`farParts.ts`).
   const farParts = new FarPartBatch(kit);
   partRoot.add(farParts.group);
+  // A lot's walls at the detail level, one draw a kind for the whole town (`detailShells.ts`).
+  const detailShells = new DetailShellBatch(kit);
+  partRoot.add(detailShells.group);
   // The cells' walls, one multi-draw a material (`shellBatch.ts`).
   const shellBatch = new ShellBatch(kit);
   facadeStored.group.add(shellBatch.facadeGroup);
@@ -235,7 +239,7 @@ export function createBuildingLayer(): BuildingLayer {
     let n = massCells.farTriangles();
     for (const key of massCells.nearKeys()) {
       const level = levelShown(key);
-      if (level === 'cell') n += cells.get(key)!.part.triangles + (partCells.get(key)?.triangles ?? 0);
+      if (level === 'cell') n += cells.get(key)!.part.triangles + (partCells.get(key)?.triangles ?? 0) + detailShells.trianglesOf(key);
       else if (level === 'facade') n += facades.get(key)!.part.triangles + (facadeParts.get(key)?.triangles ?? 0) + farParts.trianglesOf(key);
       else if (townCells.has(key)) n += landedTriangles.of(massCells.fine(key) ? 'cell' : 'facade', key);
     }
@@ -984,6 +988,7 @@ export function createBuildingLayer(): BuildingLayer {
       partView.x = eyeX; partView.y = eyeY; partView.z = eyeZ; partView.pxAtMetre = pxAtMetre; partView.orthoPx = orthoPx; partView.shadowTexel = shadowTexel;
       // The facade cells the view draws in the batched kinds, and no others (`farParts.ts`): one draw a kind, its instances added and taken out here.
       farParts.sync(facadeParts, (key) => levelShown(key) === 'facade');
+      detailShells.sync(partCells, (key) => levelShown(key) === 'cell');
       // A kind whose pieces span under a pixel where its nearest cell stands is not drawn: the far band keeps its walls, not its noise.
       farParts.view(eyeX, eyeY, eyeZ, pxAtMetre, orthoPx);
       // Drawn while its cell is drawn in detail (the masses stand for it from afar, `massCells.ts`), each kind by its error on the screen.
@@ -1066,6 +1071,7 @@ export function createBuildingLayer(): BuildingLayer {
       }
       partRoot.clear();
       farParts.clear();
+      detailShells.clear();
       partRoot.add(farParts.group);
       shellBatch.reset();
       facadeStored.group.add(shellBatch.facadeGroup);
@@ -1102,6 +1108,7 @@ export function createBuildingLayer(): BuildingLayer {
       groundDigests.clear();
       ghost?.dispose();
       farParts.dispose();
+      detailShells.dispose();
       shellBatch.dispose();
       kit.dispose();
       group.clear();

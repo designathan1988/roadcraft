@@ -115,6 +115,8 @@ export class PartCell {
     if (was.x === view.x && was.y === view.y && was.z === view.z && was.pxAtMetre === view.pxAtMetre && was.orthoPx === view.orthoPx && was.shadowTexel === view.shadowTexel) return;
     Object.assign(was, view);
     for (const band of this.bands) {
+      // A lot's walls are drawn by the layer's batch over the whole town (`detailShells.ts`): no run of them here.
+      if (SHELL_PARTS.has(band.kind)) continue;
       const runs = this.runsOf(band, view);
       if (Number.isNaN(band.widest)) {
         let widest = 0;
@@ -232,7 +234,7 @@ export class PartCell {
 
   /** A mesh a band over the whole cell, made now to send its instances to the GPU ahead (`uploads.ts`): every run shares its buffers. */
   warmMeshes(): Mesh[] {
-    return this.bands.map((band) => {
+    return this.bands.filter((band) => !SHELL_PARTS.has(band.kind)).map((band) => {
       const key = LEAVES - 1;
       let mesh = band.meshes.get(key);
       if (!mesh) band.meshes.set(key, mesh = this.make(band, 0, LEAVES - 1));

@@ -8,6 +8,7 @@ import { PART_KINDS, createBuildingKit } from '@render/buildings/kit';
 import { BATCH_CELL, DETAIL_CELL, DETAIL_PARTS } from '@render/buildings/layerCells';
 import { PartCell, type PartView } from '@render/buildings/partCells';
 import { SHELL_PART_KINDS } from '@render/buildings/shellParts';
+import { DetailShellBatch } from '@render/buildings/detailShells';
 import { growOnLot } from '@world/growth/zoning';
 import type { Building } from '@world/buildings/types';
 import { RoadDoc } from '@world/doc';
@@ -159,7 +160,9 @@ describe("the shell's parts of a grown town's cells", () => {
         if (list) list.push(chunk);
         else subs.set(sub, [chunk]);
       }
-      let seen = 0, left = 0;
+      let seen = 0;
+      // One batch for the test: a cell's lot walls synced in and let go per cell (its own creation is the kit's, once).
+      const shells = new DetailShellBatch(kit);
       for (const [key, subs] of byCell) {
         const details = [...subs].map(([sub, chunks]) => [sub, cellArrays(chunks, { parts: detailParts, shells: false, furniture: false, ghost: false, dim: false }, boxes)] as const);
         const cell = new PartCell(key, fileParts(key, details, partBandings(kit.screen)), kit);
@@ -170,31 +173,19 @@ describe("the shell's parts of a grown town's cells", () => {
         for (const eye of eyes) {
           cell.choose(eye);
           cell.castInto(eye.shadowTexel);
+          // A lot's walls are the layer's batch now (`detailShells.ts`), every instance of the cell once, whichever the eye.
+          if (eye === eyes[0]) {
+          shells.clear();
+          shells.sync(new Map([[key, cell]]), () => true);
           for (const kind of SHELL_PART_KINDS) {
             const sources = details.flatMap(([, a]) => { const p = a.parts[kind]; return p ? [p] : []; });
-            const meshes = drawn(cell).filter((mesh) => mesh.name === `building-${kind}`);
-            const got = places(meshes.map((mesh) => {
-              const attribute = mesh.geometry.getAttribute('instancePoseA') as InterleavedBufferAttribute;
-              return { array: attribute.data.array, stride: attribute.data.stride, offset: attribute.offset, count: mesh.count };
-            }));
-            // None drawn twice, none but the sub-cells sent.
-            expect(new Set(got).size, `${key} ${kind}`).toBe(got.length);
+            const mesh = shells.group.children.find((o) => o.name === `building-lot-${kind}`) as InstancedMesh | undefined;
+            const got = mesh ? places([{ array: (mesh.geometry.getAttribute('instancePoseA') as InterleavedBufferAttribute).data.array, stride: POSE_FLOATS, offset: 0, count: mesh.count }]) : [];
             const all = places(sources.map((p) => ({ array: p.poses, stride: POSE_FLOATS, offset: 0, count: p.count })));
-            const known = new Set(all);
-            for (const place of got) expect(known.has(place), `${key} ${kind}`).toBe(true);
-            // Every instance a pixel or more across its diagonal where it stands is drawn (`levelAt`).
-            const extent = kit.screen[kind].extent, drawnAt = new Set(got);
-            for (const p of sources) {
-              for (let i = 0; i < p.count; i++) {
-                const o = i * POSE_FLOATS, e = p.poses;
-                const across = Math.hypot(extent[0] * e[o + 5]!, extent[1] * e[o + 6]!, extent[2] * e[o + 7]!);
-                const perMetre = eye.orthoPx ?? eye.pxAtMetre / Math.max(Math.hypot(e[o]! - eye.x, -e[o + 2]! - eye.y, e[o + 1]! - eye.z), 1);
-                const at = [0, 1, 2].map((k) => e[o + k]!.toFixed(4)).join(' ');
-                if (across * perMetre >= 1) expect(drawnAt.has(at), `${key} ${kind} ${at}`).toBe(true);
-                else if (!drawnAt.has(at)) left++;
-                seen++;
-              }
-            }
+            expect(got.length, `${key} ${kind}`).toBe(all.length);
+            for (const place of got) expect(new Set(all).has(place), `${key} ${kind}`).toBe(true);
+            seen += got.length;
+          }
           }
           // Into no cascade whose texel is wider than its widest piece.
           cell.castInto(1e6);
@@ -202,9 +193,9 @@ describe("the shell's parts of a grown town's cells", () => {
         }
         cell.dispose();
       }
+      shells.dispose();
       expect(seen).toBeGreaterThan(0);
-      // Some left out: those under a pixel.
-      expect(left).toBeGreaterThan(0);
+      // Every lot wall of the cell drawn, the batch taking them all at the finest level (no run left out): `left` counted none.
     });
   }
 });
