@@ -4,7 +4,7 @@ import { POLE_HEIGHT } from '@world/utilities';
 import { m } from '@world/units';
 import type { NearBaker, NearProduct } from './nearTileBake';
 import { type PartShape, type PoleBake, type PoleSource, bakePoles, partShape, poleBakeBuffers } from './poleBake';
-import { PoleLayer } from './poleLayer';
+import { PoleTilesBatch } from './poleTilesBatch';
 import type { SceneryKit } from './scenery';
 import { WIRE_FADE, WIRE_WIDTH, poleGroundAt, polePartSpecs } from './utilities';
 
@@ -42,22 +42,24 @@ export const poleBaker: NearBaker<PoleBake | null, PoleExtra> = {
   buffers: (bake) => (bake ? poleBakeBuffers(bake) : []),
 };
 
-/** A tile's poles as the page draws them: each tile's layer under `parent`, viewed by its own cells. */
+/** A tile's poles as the page draws them: every landed tile's instances appended to the batch's masters (`poleTilesBatch.ts`), one mesh a part for the whole streamed world. */
 export function poleProduct(kit: SceneryKit, parent: Object3D): NearProduct<PoleBake> {
   const specs = polePartSpecs(kit);
   const shapes = specs.map((spec) => partShape(spec.geometry));
   const mast = shapes[0] ? [...shapes[0]].sort((p, q) => q - p) : [POLE_HEIGHT, m(0.36)];
+  // Made with the product: the batch is added to the world once, not a group a tile.
+  const batch = new PoleTilesBatch(specs, parent);
   return {
     kind: 'poles',
-    // As far as a mast or a wire shows: a mast while it covers a pixel (`PartStore.view`), a wire until it fades (`wireLevel`).
+    // As far as a mast or a wire shows: a mast while it covers a pixel (`PoleTilesBatch` PartBatch.view), a wire until it fades (`wireLevel`).
     cover: Math.max(mast[0]! * mast[1]!, (WIRE_WIDTH / WIRE_FADE[1]) ** 2),
     top: POLE_HEIGHT,
     extra: (): PoleExtra => ({ shapes }),
-    land(bake) {
-      const layer = PoleLayer.fromBake(kit, bake);
+    land(bake, tile) {
+      let added = false;
       return {
-        put: () => parent.add(layer.group),
-        remove: () => { parent.remove(layer.group); layer.dispose(); },
+        put: () => { if (added) return; added = true; batch.add(tile, bake); },
+        remove: () => { if (!added) return; added = false; batch.remove(tile); },
       };
     },
   };

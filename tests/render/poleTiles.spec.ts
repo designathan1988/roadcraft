@@ -70,10 +70,11 @@ describe('a tile\'s poles baked in a worker', () => {
     // The tiles the town reaches, each baked from the records of the 3 x 3 round it, as a worker bakes it.
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const n of doc.nodes.values()) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); }
-    const product = poleProduct(kit, new Group());
-    const bakes = await bakeEveryTile(doc, [x0, y0, x1, y1], 'poles', product.extra!(0)) as PoleBake[];
+    // The product every landed tile appends to (the page's own path, `poleTiles.ts`), not a layer a tile.
     const drawn = new Group();
-    for (const bake of bakes) drawn.add(PoleLayer.fromBake(kit, bake).group);
+    const product = poleProduct(kit, drawn);
+    const bakes = await bakeEveryTile(doc, [x0, y0, x1, y1], 'poles', product.extra!(0)) as PoleBake[];
+    bakes.forEach((bake, tile) => product.land(bake, tile).put());
     const baked = bakes.length;
     expect(baked).toBeGreaterThan(1);
     // A tile's poles in one cell, one mesh a part and one for its wires: never the world's cells of 256 m (twelve meshes each, ~200 a tile).
