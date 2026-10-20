@@ -588,6 +588,9 @@ function released(geometry: BufferGeometry): boolean {
 /** DO NOT draw the whole scene for it (on a layer of its own) */
 /** DO NOT move it with `add`/`remove`: they fire `childremoved`/`childadded` on its group, and the renderer takes those for casters come and gone (`renderer.ts` stir): every warm threw the sun cascades' stores away and drew them whole (TST-05, RND-17). It is put in the loose scene by hand, never taken out of its group's children: three's render reads the scene's children and the mesh's matrixWorld (r186 `projectObject`, the loose scene updating no matrix), and uploads in `objects.update` there. */
 function warmLoose(renderer: WebGLRenderer, mesh: Mesh, geometries: readonly BufferGeometry[]): void {
+  // A mesh whose own instance buffers were let go once on the GPU has nothing left to upload either (the same `gpuOnly` release).
+  const instances = mesh as Mesh & { instanceMatrix?: { array: ArrayLike<number> | null }; instanceColor?: { array: ArrayLike<number> | null } | null };
+  if (instances.instanceMatrix?.array === null || instances.instanceColor?.array === null) return;
   const parent = mesh.parent;
   const visible = mesh.visible, culled = mesh.frustumCulled, original = mesh.geometry;
   const previous = renderer.getRenderTarget();
