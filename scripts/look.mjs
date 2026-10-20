@@ -33,9 +33,11 @@ const RELOADED = 'the page reloaded midway (a file was saved and Vite reloaded t
 
 // LOOK_JS_FLAGS: V8 flags for the run's Chrome, as the desktop build passes them (`desktop/main.cjs` js-flags): the dev run measured as the product runs.
 const jsFlags = process.env.LOOK_JS_FLAGS ? [`--js-flags=${process.env.LOOK_JS_FLAGS}`] : [];
+// LOOK_CHROME_ARGS: more of the run's Chrome flags, space-separated (a graphics backend compared: --use-angle=vulkan, gl, d3d11on12).
+const chromeArgs = process.env.LOOK_CHROME_ARGS ? process.env.LOOK_CHROME_ARGS.split(' ').filter(Boolean) : [];
 /** `--electron`: the desktop build as the player runs it (`desktop/main.cjs`, the game from `dist/`: build it first, `--mode development` for the probes the steps call), its window hidden at 1920x1080 (`ROADCRAFT_LOOK`), no Steam. */
 const electron = flags.includes('--electron');
-const browser = electron ? await desktopBrowser() : await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist', ...jsFlags] });
+const browser = electron ? await desktopBrowser() : await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-gpu', '--ignore-gpu-blocklist', ...jsFlags, ...chromeArgs] });
 
 /** The desktop app as a browser of one page (Playwright `_electron`): its window the page; closing it ends the app. */
 async function desktopBrowser() {

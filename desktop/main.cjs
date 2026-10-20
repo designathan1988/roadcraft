@@ -44,6 +44,9 @@ function writeSettings() {
     console.error('desktop settings not written', error);
   }
 }
+// A look run's own Chromium switches, 'name=value' space-separated (a backend's presentation compared): never read outside a look run.
+if (process.env.ROADCRAFT_LOOK === '1') for (const sw of (process.env.ROADCRAFT_SWITCHES ?? '').split(' ').filter(Boolean)) { const at = sw.indexOf('='); if (at > 0) app.commandLine.appendSwitch(sw.slice(0, at), sw.slice(at + 1)); else app.commandLine.appendSwitch(sw); }
+
 // VSync off: frames as fast as the GPU draws them (Chromium `--disable-gpu-vsync`, `--disable-frame-rate-limit`); read at start, so a change waits for the next one.
 if (!settings.vsync) {
   app.commandLine.appendSwitch('disable-gpu-vsync');
@@ -92,9 +95,12 @@ const ORIGIN = 'app://roadcraft/';
 
 /** A run of `scripts/look.mjs --electron`: the window never shown, the game drawn at 1920x1080 all the same (`paintWhenInitiallyHidden`). */
 const LOOK = process.env.ROADCRAFT_LOOK === '1';
+/** A look run that measures frames: the window shown without focus off every screen (a hidden window is drawn once a second), never in the player's way. */
+const LOOK_SHOWN = LOOK && process.env.ROADCRAFT_LOOK_SHOWN === '1';
 
 function createWindow() {
   const window = new BrowserWindow({
+    ...(LOOK_SHOWN ? { x: -6000, y: 0 } : {}),
     width: LOOK ? 1920 : 1600,
     height: LOOK ? 1080 : 900,
     useContentSize: LOOK,
@@ -117,6 +123,7 @@ function createWindow() {
   window.on('restore', () => tellShown(true));
   window.on('show', () => tellShown(true));
   window.once('ready-to-show', () => {
+    if (LOOK_SHOWN) { window.showInactive(); window.setPosition(-6000, 0); return; }
     if (LOOK) return;
     window.maximize();
     if (settings.fullscreen) window.setFullScreen(true);

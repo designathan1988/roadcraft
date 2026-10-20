@@ -569,6 +569,8 @@ export function createSceneRenderer(
       mix(g.drawRange.start);
       mix(g.drawRange.count === Infinity ? -1 : g.drawRange.count);
       mix(g.index?.version ?? -1);
+      // A batch's pieces shown, hidden, added or taken out (`shellBatch.ts` castChanged): none of its attributes says so.
+      mix((mesh.userData['castVersion'] as number | undefined) ?? -1);
       const attributes = g.attributes as Record<string, { version?: number; data?: { version: number } }>;
       for (const name in attributes) { const a = attributes[name]!; mix(a.version ?? a.data?.version ?? -1); }
     }

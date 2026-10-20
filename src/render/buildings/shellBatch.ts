@@ -17,6 +17,11 @@ type ShellSet = 'detail' | 'facade' | 'runs';
 
 const IDENTITY = new Matrix4();
 
+/** A batch whose drawn pieces changed (one added, taken out, shown or hidden): its `castVersion` stepped, read by the shadows' signature of their still casters (`renderer.ts` casterSignature). DO NOT leave it to a timed redraw: a batch's pieces shown or hidden change none of its attributes, and only the cascades' safety redraw caught them (a whole cascade every ten frames, the frames that missed their vsync). */
+function castChanged(mesh: BatchedMesh): void {
+  mesh.userData['castVersion'] = ((mesh.userData['castVersion'] as number | undefined) ?? 0) + 1;
+}
+
 interface Batch {
   readonly set: ShellSet;
   mesh: BatchedMesh;
@@ -75,6 +80,7 @@ export class ShellBatch {
       target.mesh.setMatrixAt(instanceId, IDENTITY);
       target.mesh.setVisibleAt(instanceId, this.visible.get(id) ?? true);
       made.push({ batch: target, id: instanceId, geometryId });
+      castChanged(target.mesh);
       batch.group.remove(mesh);
       source.dispose();
       if (geometry !== source) geometry.dispose();
@@ -89,7 +95,7 @@ export class ShellBatch {
     if (!made) return;
     this.cells.delete(id);
     this.visible.delete(id);
-    for (const entry of made) entry.batch.mesh.deleteGeometry(entry.geometryId);
+    for (const entry of made) { entry.batch.mesh.deleteGeometry(entry.geometryId); castChanged(entry.batch.mesh); }
     for (const batch of new Set(made.map((entry) => entry.batch))) this.squeeze(batch);
   }
 
@@ -111,7 +117,7 @@ export class ShellBatch {
     const id = `${kind}|${key}`;
     if (this.visible.get(id) === visible) return;
     this.visible.set(id, visible);
-    for (const entry of this.cells.get(id) ?? []) entry.batch.mesh.setVisibleAt(entry.id, visible);
+    for (const entry of this.cells.get(id) ?? []) { entry.batch.mesh.setVisibleAt(entry.id, visible); castChanged(entry.batch.mesh); }
   }
 
   /** The far cascades take the buildings by their masses alone: the walls cast nothing into them. */

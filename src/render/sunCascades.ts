@@ -37,8 +37,8 @@ const SHADOW_DEPTH_MAX = m(8000);
 const SUN_STEP = (0.1 * Math.PI) / 180;
 /** Depth offset of the shadow test, world units (4 cm). */
 const SHADOW_BIAS_WORLD = m(0.04);
-/** A cascade drawn over this many frames' worth of change at most: a missed change shows for half a second, never for good. */
-const SAFETY_FRAMES = 30;
+/** A cascade drawn whole after this many frames however still, a last resort for a change nothing told it of (ten seconds at 60 Hz): the casters' signature tells it of every change of what it draws (`renderer.ts` casterSignature, a batch's pieces too). DO NOT redraw it every half second: a whole cascade every ten frames was the frame that missed its vsync in every still view of a large city (a tenth of the frames, measured 2026-10-20). */
+const SAFETY_FRAMES = 600;
 /** DO NOT let the cascades' safety draws fall in one frame: three whole passes at once every half second (RND-03). Each cascade's count starts this many frames apart after a draw they all made; one drawn for safety alone keeps its place. */
 const SAFETY_STAGGER = 10;
 /** A cascade's half-side is one of the steps 2^(k/4) m; it is fitted to what it must hold with this much room (`fit`). */
