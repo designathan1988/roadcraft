@@ -202,6 +202,28 @@ export function buildReport(ctx: LabContext, rec: Recording): LabReport {
     for (const x of base.systems.slice(0, 8)) md.push(`- ${x.name}: ${fmtNum(x.meanMs, 2)} ms/quadro`);
     md.push('');
   }
+  // The CPU profile recorded with it (`lab/code`): which functions, in which file and line, the main thread spent its time in.
+  const code = sections['code'] as { windows?: number; samples?: number; spanMs?: number; busyMs?: number; gcMs?: number;
+    top?: { name: string; where: string; category: string; selfMs: number; totalMs: number; selfPct: number }[];
+    recursion?: { name: string; where: string; depth: number; ms: number }[]; suspects?: { kind: string; name: string; where: string; value: number; detail: string }[] } | undefined;
+  md.push('## Funções que mais gastaram CPU (perfil gravado junto)', '');
+  if (!code?.top?.length) md.push('O perfil de CPU não teve amostras (JS Self-Profiling indisponível ou gravação curta demais).', '');
+  else {
+    md.push(`${code.samples ?? 0} amostras em ${code.windows ?? 0} janelas · ocupado ${fmtNum((code.busyMs ?? 0) / 1000, 1)} s de ${fmtNum((code.spanMs ?? 0) / 1000, 1)} s · coleta de lixo ${fmtNum((code.gcMs ?? 0) / 1000, 1)} s. "Próprio": a função no topo da pilha; "total": com o que ela chama.`, '');
+    md.push('| função | onde | categoria | próprio ms | total ms | % próprio |', '|---|---|---|---|---|---|');
+    for (const f of code.top.slice(0, 25)) md.push(`| ${f.name || '(anônima)'} | ${f.where} | ${f.category} | ${fmtNum(f.selfMs, 1)} | ${fmtNum(f.totalMs, 1)} | ${fmtNum(f.selfPct, 1)} |`);
+    md.push('');
+    if (code.suspects?.length) {
+      md.push('Suspeitas do perfil:', '');
+      for (const x of code.suspects.slice(0, 15)) md.push(`- **${x.kind}** — ${x.name || '(anônima)'} em ${x.where}: ${x.detail}`);
+      md.push('');
+    }
+    if (code.recursion?.length) {
+      md.push('Recursão:', '');
+      for (const x of code.recursion.slice(0, 8)) md.push(`- ${x.name || '(anônima)'} em ${x.where}: até ${x.depth}× na mesma pilha, ${fmtNum(x.ms, 1)} ms`);
+      md.push('');
+    }
+  }
   const edits = rec.events.filter((e) => e.kind.startsWith('edit.'));
   if (edits.length || sections['inspector'] !== undefined) {
     md.push('## Edições feitas pelo Inspector', '');

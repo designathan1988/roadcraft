@@ -116,6 +116,9 @@ export function startRecording(ctx: LabContext, limitMs: number | null, onStop: 
   const settings: SettingsSnapshot[] = [];
   let state: RecState = 'recording';
   let pausedSince = 0, pausedTotal = 0, endMs = 0, stopReason = '';
+  // The CPU profile recorded with it (`lab/code`, JS Self-Profiling): the report says which functions the frames spent their time in.
+  const code = (window as unknown as { __labCode?: { record(on: boolean): void } }).__labCode;
+  code?.record(true);
   let nextGap = false, lastView = -Infinity, lastSim = -Infinity, viewMovedAt = -Infinity;
   const now = (): number => performance.now() - t0;
   const snapshot = (cause: string): void => {
@@ -226,7 +229,9 @@ export function startRecording(ctx: LabContext, limitMs: number | null, onStop: 
       stopFrames();
       stopEvents();
       longTasks?.disconnect();
-      onStop(recording);
+      // The profile's running window folded in first (the Profiler's stop is asynchronous), then the report made with it.
+      code?.record(false);
+      if (code) window.setTimeout(() => onStop(recording), 600); else onStop(recording);
     },
     mark(name) {
       ctx.emit('rec.marker', name.trim() || 'marcador');
