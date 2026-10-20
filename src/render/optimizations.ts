@@ -77,9 +77,8 @@ const BASE = [
   {
     id: 'farCascadeEvery', system: 'shadows', title: 'Cascatas distantes a cada N quadros',
     what: 'As cascatas 1 e 2 (as distantes) só são redesenhadas a cada N passes; a próxima (0) como sempre.',
-    tradeoff: 'Corta a maioria dos redesenhos inteiros das distantes; sombras ao longe atrasam ao girar a câmera.',
-    // The game's own: every two passes, the far cascades' shadows a frame behind — under a texel's movement for a still sun and a gliding camera.
-    choices: [{ value: 2, label: '2' }, { value: 1, label: '1' }, { value: 4, label: '4' }, { value: 8, label: '8' }],
+    tradeoff: 'Corta a maioria dos redesenhos inteiros das distantes; sombras ao longe atrasam ao girar a câmera (faixas quebradas com a câmera em movimento).',
+    choices: [{ value: 1, label: '1' }, { value: 2, label: '2' }, { value: 4, label: '4' }, { value: 8, label: '8' }],
   },
   {
     id: 'castMasses', system: 'shadows', title: 'Prédios na sombra pelas massas',
@@ -136,7 +135,8 @@ const BASE = [
     id: 'buildingLod', system: 'buildings', title: 'Erro de tela dos prédios',
     what: 'Multiplica o erro na tela que os níveis dos prédios aceitam (levelOfDetail e cullDetails com menos pixels por metro).',
     tradeoff: 'Níveis mais grossos antes: menos triângulos e malhas; trocas de nível mais perto da câmera.',
-    choices: [{ value: 1, label: '×1' }, { value: 1.5, label: '×1,5' }, { value: 2, label: '×2' }, { value: 4, label: '×4' }],
+    // The game's own: two pixels of error at a distance, where a detail is under the eye's reach; ×1.5 changes almost no level.
+    choices: [{ value: 2, label: '×2' }, { value: 1, label: '×1' }, { value: 1.5, label: '×1,5' }, { value: 4, label: '×4' }],
   },
   {
     id: 'roadLod', system: 'roads', title: 'Erro de tela das ruas',
