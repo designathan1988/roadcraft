@@ -90,6 +90,23 @@ export class ShellBatch {
     this.cells.delete(id);
     this.visible.delete(id);
     for (const entry of made) entry.batch.mesh.deleteGeometry(entry.geometryId);
+    for (const batch of new Set(made.map((entry) => entry.batch))) this.squeeze(batch);
+  }
+
+  /** A batch with more room than it uses made smaller (two cells on the far side of the town let go leave their vertices reserved for no one): the arrays reallocated to what stands, a quarter more. */
+  private squeeze(batch: Batch): void {
+    const mesh = batch.mesh;
+    const usedVertices = batch.vertices - mesh.unusedVertexCount;
+    const usedIndices = batch.indices - mesh.unusedIndexCount;
+    if (mesh.unusedVertexCount > Math.max(1 << 15, usedVertices) || mesh.unusedIndexCount > Math.max(1 << 15, usedIndices)) {
+      batch.vertices = Math.max(Math.ceil(usedVertices * 1.25), 1 << 14);
+      batch.indices = Math.max(Math.ceil(usedIndices * 1.25), 1 << 15);
+      mesh.setGeometrySize(batch.vertices, batch.indices);
+    }
+    if (batch.instances > 64 && mesh.instanceCount * 2 < batch.instances) {
+      batch.instances = Math.max(64, mesh.instanceCount * 2);
+      mesh.setInstanceCount(batch.instances);
+    }
   }
 
   /** A cell's level shown or hidden (a cell still on another level is not drawn, and its pieces cost nothing). */
@@ -137,7 +154,8 @@ export class ShellBatch {
 
   private makeBatches(): Batch[] {
     const make = (set: ShellSet, group: Group, material: Material): Batch => {
-      const mesh = new BatchedMesh(256, 1 << 16, 1 << 17, material);
+      // Small at first: a set the view never fills (the detail level from afar) held 65k vertices of nothing before (measured 2026-10-20).
+      const mesh = new BatchedMesh(64, 1 << 14, 1 << 15, material);
       mesh.name = `building-shell-batch-${set}`;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -145,7 +163,7 @@ export class ShellBatch {
       mesh.updateMatrix();
       mesh.frustumCulled = false;
       group.add(mesh);
-      return { set, mesh, vertices: 1 << 16, indices: 1 << 17, instances: 256 };
+      return { set, mesh, vertices: 1 << 14, indices: 1 << 15, instances: 64 };
     };
     return [
       make('detail', this.detailGroup, this.kit.shellMaterial),
@@ -154,14 +172,14 @@ export class ShellBatch {
     ];
   }
 
-  /** Room in a batch for a geometry and an instance: its vertex and index buffers grown by a doubling (the drawn pieces kept). */
+  /** Room in a batch for a geometry and an instance: its vertex and index buffers grown a quarter more than it holds (the drawn pieces kept; doubling left up to half the reserved space empty, tens of MB of arrays, measured 2026-10-20). */
   private ensure(batch: Batch, vertices: number, indices: number): void {
     const mesh = batch.mesh;
     if (vertices > mesh.unusedVertexCount || indices > mesh.unusedIndexCount) {
       const usedVertices = batch.vertices - mesh.unusedVertexCount;
       const usedIndices = batch.indices - mesh.unusedIndexCount;
-      batch.vertices = Math.max(batch.vertices * 2, usedVertices + vertices);
-      batch.indices = Math.max(batch.indices * 2, usedIndices + indices);
+      batch.vertices = Math.max(Math.ceil((usedVertices + vertices) * 1.25), 1 << 14);
+      batch.indices = Math.max(Math.ceil((usedIndices + indices) * 1.25), 1 << 15);
       mesh.setGeometrySize(batch.vertices, batch.indices);
     }
     if (mesh.instanceCount >= batch.instances) {
