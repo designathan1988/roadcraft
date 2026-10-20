@@ -1807,6 +1807,18 @@ export function createSceneRenderer(
     }
     return out;
   };
+  /** The box every node of the network stands in, a block wider each way (a road's width past its last node). */
+  const networkExtent = (net: Network): Rect => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of net.doc.nodes.values()) {
+      if (n.x < minX) minX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y > maxY) maxY = n.y;
+    }
+    if (!Number.isFinite(minX)) return [0, 0, 0, 0];
+    return [minX - SHAPE_BLOCK, minY - SHAPE_BLOCK, maxX + SHAPE_BLOCK, maxY + SHAPE_BLOCK];
+  };
   /** The diary entry the world being built follows from (`world/changes.ts`). */
   let worldCause = 0;
   /** Writes what the world derived in the document's diary, after `parent`; its serial (0: nothing written). */
@@ -1842,7 +1854,8 @@ export function createSceneRenderer(
       && rect[1] <= centre.y + openingHalf && rect[3] >= centre.y - openingHalf : null;
     const openingRegion = opening ? terrainRegion([centre.x - openingHalf, centre.y - openingHalf, centre.x + openingHalf, centre.y + openingHalf]) : null;
     // The fill after the reveal (`full`): the solve stands and only the road tiles the opening's scope left out are built, in place - DO NOT rebuild every tile of the city and hold the old and the new surfaces at once (the 3.4 GB peak of the metropolis).
-    const fillBlocks = full ? blocksOver([-TERRAIN_HALF, -TERRAIN_HALF, TERRAIN_HALF, TERRAIN_HALF]) : null;
+    // Over the whole network's extent: DO NOT take one plate's (`TERRAIN_HALF`) - a metropolis spans several, and every street past the middle plate was left unbuilt (the player, 2026-10-20: "não gera vias").
+    const fillBlocks = full ? blocksOver(networkExtent(net)) : null;
     // Only the roads changed (the land did not): the ground is cut and filled again only where the solve of the roads differs.
     const landStill = full || (terrainRevision === net.doc.terrainRevision && elevation !== null);
     // Where the land moved (a stroke's region), when it can be said: the solve and the surfaces follow it there only. Kept until the solve

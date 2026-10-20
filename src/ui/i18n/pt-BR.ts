@@ -315,7 +315,7 @@ export const PT_BR: Dictionary = {
   'confirm.clearTerrain': 'Aplainar todo o terreno? Esta ação pode ser desfeita.',
   'confirm.newMap': 'Criar um novo mapa? O mapa atual já foi salvo automaticamente.',
   'confirm.newWorld': 'Criar uma nova cidade no mapa inteiro de 10 km × 10 km? O mapa atual já foi salvo automaticamente.',
-  'confirm.newLargeWorld': 'Criar uma cidade grande planejada (cerca de 30.000 prédios)? Ela abre num distrito; o resto da cidade chega depois da cortina.',
+  'confirm.newLargeWorld': 'Criar uma cidade grande planejada (a cidade pequena em tamanho grande, cerca de 2,7 km)? Ela abre num distrito; o resto da cidade chega depois da cortina.',
 
   'tool.road': 'Via',
   'tool.draw': 'Desenhar',

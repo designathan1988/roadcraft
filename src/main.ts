@@ -31,8 +31,7 @@ import { DOC_CHANGE_KINDS, type Change, type ChangeKind, type ChangeRect } from 
 import { MIN_LINK_LENGTH } from '@world/approach';
 import { MAX_AUTHORED_GRADE } from '@world/elevation';
 import { Network } from '@world/network';
-import { type CityOptions, DEFAULT_CITY, planCity } from '@world/cityGen/plan';
-import { buildCityMap, buildSmallCityMap } from '@editor/smallCityMap';
+import { buildLargeCityMap, buildSmallCityMap } from '@editor/smallCityMap';
 import { LAST_UPGRADE_CLASS, ROAD_TYPES, roadProfile, roadType } from '@world/roadTypes';
 import { UNITS_PER_METER } from '@world/units';
 import { MAX_TERRAIN_STAMPS, RELIEF_FLAT, type TerrainMode } from '@world/terrain';
@@ -1973,14 +1972,10 @@ function newWorld(): void {
   if (!window.confirm(t('confirm.newWorld'))) return;
   void openSmallCity(Math.floor(Math.random() * 0x7fff_ffff) || 1);
 }
-/** A LARGE PLANNED CITY (the goal of 2026-10-20: a city of tens of thousands of buildings, not the small city's 2.5 thousand): laid whole by the plan's generator off the page, opened at a district while the rest of the world fills in behind the curtain. */
+/** A LARGE CITY: the small city's generator over a larger radius (`largeCity.ts`), every block built, opened at a district while the rest of the world fills in behind the curtain. */
 function newLargeWorld(): void {
   if (!window.confirm(t('confirm.newLargeWorld'))) return;
-  void openGeneratedCity({
-    seed: Math.floor(Math.random() * 0x7fff_ffff) || 1, size: 'large', radius: 3_000,
-    // The mixed grain left 36 % of the lots empty and generated more roads: the reliable grid, with three centres, a lower density and parks, keeps every lot built while breaking the carpet of equal towers.
-    style: 'blocks', centres: 3, density: 0.45, parks: 0.06,
-  });
+  void openLargeCity(Math.floor(Math.random() * 0x7fff_ffff) || 1);
 }
 /** A city being made off the page (`cityGen.worker.ts`): the curtain over the map while the worker builds it, no frame of it on the page. */
 let generatingCity = false;
@@ -1991,9 +1986,7 @@ let cityAskId = 1;
 /** The city's document made by the worker (the game's own generator); without a job queue (a test) it is made on the page, as before. */
 function cityData(ask: CityGenAsk): Promise<ReturnType<typeof buildSmallCityMap>> {
   if (!canQueueJobs()) {
-    return Promise.resolve(ask.kind === 'small'
-      ? buildSmallCityMap(ask.seed ?? 7)
-      : buildCityMap(planCity({ ...DEFAULT_CITY, ...ask.options })));
+    return Promise.resolve(ask.kind === 'large' ? buildLargeCityMap(ask.seed ?? 7) : buildSmallCityMap(ask.seed ?? 7));
   }
   return new Promise((done, fail) => {
     submitJob({
@@ -2042,9 +2035,9 @@ function openSmallCity(seed: number): Promise<void> {
   return openCityOffPage({ id: cityAskId++, kind: 'small', seed });
 }
 
-/** A planned city of any size put in place of the map (the probes' larger cities, `cityGen/plan.ts`). */
-function openGeneratedCity(options: Partial<CityOptions>): Promise<void> {
-  return openCityOffPage({ id: cityAskId++, kind: 'planned', options });
+/** The large city of a seed put in place of the map (the menu's, and the probes'). */
+function openLargeCity(seed: number): Promise<void> {
+  return openCityOffPage({ id: cityAskId++, kind: 'large', seed });
 }
 
 function openCity(data: ReturnType<typeof buildSmallCityMap>, large = false): void {
@@ -3896,7 +3889,7 @@ if (PROBES) (window as unknown as { __roadcraft: unknown }).__roadcraft = {
     requestDraw();
   },
   /** A generated city: the small city of Roadcraft 2.0 as one map (`smallCity`). DO NOT open the world by tiles: the player, 2026-10-18, wants no city by tiles. */
-  generateCity: (options: Partial<CityOptions> = {}) => openGeneratedCity(options),
+  generateCity: (options: { seed?: number; size?: 'small' | 'large' } = {}) => (options.size === 'large' ? openLargeCity(options.seed ?? 7) : openSmallCity(options.seed ?? 7)),
   /** Probe: one building grown on a zoned lot, and what it cost (ms). */
   /** Probe: one building grown as the game grows them - asked of the growth's worker, written when its answer comes - and the ms from the ask to the building written. DO NOT time the page's own grower: the game never grows there (report UI-15 g). */
   growTimed: (): Promise<{ grown: readonly number[]; ms: number } | { grown: null; why: string }> => {
@@ -4082,5 +4075,5 @@ if (PROBES) {
   const city = query.get('city');
   const seed = Number(query.get('seed') ?? 7);
   if (city === 'small') openSmallCity(Number.isFinite(seed) ? seed : 7);
-  else if (city === 'medium' || city === 'large') openGeneratedCity({ seed: Number.isFinite(seed) ? seed : 7, size: city });
+  else if (city === 'large') openLargeCity(Number.isFinite(seed) ? seed : 7);
 }

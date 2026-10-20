@@ -2,7 +2,7 @@
   "viewport": [1280, 720],
   "steps": [
     { "usageStart": { "every": 250 } },
-    { "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'large', radius: 2200 }); 'started'" },
+    { "eval": "performance.clearMarks(); window.__roadcraft.generateCity({ seed: 7, size: 'large' }); 'started'" },
     { "until": "performance.getEntriesByName('city:applied').length > 0 && performance.getEntriesByName('opening:shown').length > 0", "name": "city shown", "timeout": 300000, "polling": 250 },
     { "wait": 3000 },
     { "eval": "performance.getEntriesByType('mark').filter(m => m.name.startsWith('city:') || m.name.startsWith('reveal:') || m.name.startsWith('world:') || m.name === 'opening:shown').map(m => ({ name: m.name, at: Math.round(m.startTime) }))" },
